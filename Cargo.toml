@@ -1,0 +1,11 @@
+[package]
+name = "zircon-object"
+version = "0.1.0"
+authors = ["Runji Wang <wangrunji0408@163.com>"]
+edition = "2018"
+description = "Zircon kernel objects"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+bitflags = "1.2"
