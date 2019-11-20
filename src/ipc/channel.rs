@@ -1,6 +1,6 @@
 use crate::object::*;
-use core::any::Any;
 use alloc::sync::Arc;
+use core::any::Any;
 use spin::Mutex;
 
 pub struct Channel {
@@ -26,26 +26,25 @@ impl KernelObject for Channel {
         self.koid
     }
 
-    fn as_any(&mut self) -> &mut dyn Any{
+    fn as_any(&mut self) -> &mut dyn Any {
         self
     }
 }
-
 
 #[cfg(test)]
 mod tests {
     #[test]
     fn is_work() {
-        use crate::object::handle::Handle;
-        use crate::ipc::channel::Channel;
         use crate::error::*;
+        use crate::ipc::channel::Channel;
+        use crate::object::handle::Handle;
         use crate::object::KernelObject;
         let (handle0, handle1) = Channel::create();
-        handle0.do_mut(|ch: &mut Channel|{
+        handle0.do_mut(|ch: &mut Channel| {
             assert_eq!(0u64, ch.id());
             ZxError::OK
         });
-        handle1.do_mut(|ch: &mut Channel|{
+        handle1.do_mut(|ch: &mut Channel| {
             assert_eq!(1u64, ch.id());
             ZxError::OK
         });

@@ -1,6 +1,6 @@
 use super::*;
-use crate::ipc::channel::Channel;
 use crate::io::port::Port;
+use crate::ipc::channel::Channel;
 
 pub mod exception;
 pub mod job;
