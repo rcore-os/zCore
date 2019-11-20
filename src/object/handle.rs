@@ -17,7 +17,7 @@ impl Handle {
         self.object.lock().id()
     }
 
-    pub fn do_mut<T: KernelObject, F: FnMut(&mut T) -> ZxError>(&self, mut f: F) -> ZxError {
+    pub fn do_mut<T: KernelObject, F: FnOnce(&mut T) -> ZxError>(&self, mut f: F) -> ZxError {
         let mut lock_object = self.object.lock();
         let obj = lock_object.downcast::<T>().unwrap();
         f(obj)
