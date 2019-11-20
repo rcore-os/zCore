@@ -1,5 +1,9 @@
 use core::any::Any;
 
+pub use super::*;
+pub use handle::*;
+pub use rights::*;
+
 pub mod handle;
 pub mod rights;
 
