@@ -6,6 +6,9 @@ extern crate alloc;
 #[macro_use]
 extern crate bitflags;
 
+#[cfg(test)]
+extern crate std;
+
 mod error;
 pub mod io;
 pub mod ipc;
