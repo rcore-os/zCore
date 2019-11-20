@@ -5,6 +5,7 @@ extern crate alloc;
 
 #[macro_use]
 extern crate bitflags;
+extern crate std;
 
 mod error;
 pub mod io;
