@@ -1,0 +1,31 @@
+dist: bionic
+
+sudo: false
+
+language: rust
+
+cache: cargo
+
+# Dependencies of kcov, used for cargo-travis
+addons:
+  apt:
+    packages:
+      - libcurl4-openssl-dev
+      - libelf-dev
+      - libdw-dev
+      - binutils-dev
+      - cmake
+
+before_script:
+  - cargo install cargo-travis || echo "cargo-travis already installed"
+  - rustup component add rustfmt-preview
+
+script:
+  - cargo fmt -- --check
+  - cargo build
+  - cargo test
+  - cargo bench
+  - cargo doc
+
+after_success:
+  - cargo coveralls
