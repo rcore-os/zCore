@@ -4,6 +4,7 @@ use crate::ipc::channel::Channel;
 
 pub mod exception;
 pub mod job;
+pub mod job_policy;
 pub mod process;
 pub mod thread;
 

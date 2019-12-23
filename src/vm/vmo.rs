@@ -1,2 +1,2 @@
 /// Virtual Memory Objects
-pub struct VMO {}
+pub struct VMObject {}

@@ -12,8 +12,8 @@ extern crate std;
 mod error;
 pub mod io;
 pub mod ipc;
-pub mod memory;
 pub mod object;
 pub mod task;
+pub mod vm;
 
 pub use self::error::*;

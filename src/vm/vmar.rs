@@ -1,2 +1,2 @@
 /// Virtual Memory Address Regions
-pub struct VMAR {}
+pub struct VmAddressRegion {}
