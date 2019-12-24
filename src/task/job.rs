@@ -3,6 +3,7 @@ use super::process::Process;
 use crate::object::*;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+use lazy_static::lazy_static;
 use spin::Mutex;
 
 pub struct Job {
@@ -13,10 +14,20 @@ pub struct Job {
 
 impl_kobject!(Job);
 
+#[derive(Default)]
 struct JobInner {
     policy: JobPolicy,
     children: Vec<Arc<Job>>,
     processes: Vec<Arc<Process>>,
+}
+
+lazy_static! {
+    /// The root job
+    pub static ref ROOT_JOB: Arc<Job> = Arc::new(Job {
+        base: KObjectBase::new(),
+        parent: None,
+        inner: Mutex::new(JobInner::default()),
+    });
 }
 
 impl Job {
@@ -26,11 +37,7 @@ impl Job {
         let child = Arc::new(Job {
             base: KObjectBase::new(),
             parent: Some(parent.clone()),
-            inner: Mutex::new(JobInner {
-                policy: JobPolicy::default(),
-                children: Vec::default(),
-                processes: Vec::default(),
-            }),
+            inner: Mutex::new(JobInner::default()),
         });
         parent.inner.lock().children.push(child.clone());
         Ok(child)
@@ -62,5 +69,15 @@ impl Job {
     /// Add a process to the job.
     pub(super) fn add_process(&self, process: Arc<Process>) {
         self.inner.lock().processes.push(process);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn create() {
+        let job = Job::create_child(&ROOT_JOB, 0).expect("failed to create job");
     }
 }

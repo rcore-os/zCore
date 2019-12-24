@@ -8,7 +8,7 @@ pub type ZxResult<T> = Result<T, ZxError>;
 ///   and will never be defined by the system.
 #[allow(non_camel_case_types)]
 #[repr(i32)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum ZxError {
     OK = 0,
 

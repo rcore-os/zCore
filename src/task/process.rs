@@ -22,6 +22,7 @@ pub struct Process {
 
 impl_kobject!(Process);
 
+#[derive(Default)]
 struct ProcessInner {
     handles: BTreeMap<HandleValue, Handle>,
     threads: Vec<Arc<Thread>>,
@@ -36,10 +37,7 @@ impl Process {
             job: job.clone(),
             policy: job.policy(),
             vmar: Arc::new(VmAddressRegion {}),
-            inner: Mutex::new(ProcessInner {
-                handles: BTreeMap::default(),
-                threads: Vec::new(),
-            }),
+            inner: Mutex::new(ProcessInner::default()),
         });
         job.add_process(proc.clone());
         Ok(proc)
@@ -71,6 +69,7 @@ impl Process {
 
     /// Add a handle to the process
     pub fn add_handle(&self, handle: Handle) -> HandleValue {
+        // FIXME: handle value from ptr
         let mut inner = self.inner.lock();
         let value = (0 as HandleValue..)
             .find(|idx| !inner.handles.contains_key(idx))
@@ -112,5 +111,52 @@ impl Process {
     /// Add a thread to the process.
     pub(super) fn add_thread(&self, thread: Arc<Thread>) {
         self.inner.lock().threads.push(thread);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn create() {
+        let proc = Process::create(&job::ROOT_JOB, "proc", 0).expect("failed to create process");
+    }
+
+    #[test]
+    fn handle() {
+        let proc = Process::create(&job::ROOT_JOB, "proc", 0).expect("failed to create process");
+        let handle = Handle::new(proc.clone(), Rights::DEFAULT_PROCESS);
+
+        let handle_value = proc.add_handle(handle);
+
+        // getting object should success
+        let object: Arc<Process> = proc
+            .get_object_with_rights(handle_value, Rights::DEFAULT_PROCESS)
+            .expect("failed to get object");
+        assert!(Arc::ptr_eq(&object, &proc));
+
+        // getting object with an extra rights should fail.
+        assert_eq!(
+            proc.get_object_with_rights::<Process>(handle_value, Rights::MANAGE_JOB)
+                .err(),
+            Some(ZxError::ACCESS_DENIED)
+        );
+
+        // getting object with invalid type should fail.
+        assert_eq!(
+            proc.get_object_with_rights::<Job>(handle_value, Rights::DEFAULT_PROCESS)
+                .err(),
+            Some(ZxError::WRONG_TYPE)
+        );
+
+        proc.remove_handle(handle_value);
+
+        // getting object with invalid handle should fail.
+        assert_eq!(
+            proc.get_object_with_rights::<Process>(handle_value, Rights::DEFAULT_PROCESS)
+                .err(),
+            Some(ZxError::BAD_HANDLE)
+        );
     }
 }

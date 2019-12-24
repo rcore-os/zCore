@@ -61,7 +61,6 @@ mod tests {
         let (handle0, handle1) = Channel::create();
         let ch0 = handle0.object.downcast_ref::<Channel>().unwrap();
         let ch1 = handle1.object.downcast_ref::<Channel>().unwrap();
-        assert_eq!(ch0.id(), 0);
-        assert_eq!(ch1.id(), 1);
+        assert_eq!(ch1.id(), ch0.id() + 1);
     }
 }

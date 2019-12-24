@@ -55,3 +55,14 @@ pub enum ThreadStateKind {
 
 #[derive(Debug)]
 pub enum ThreadState {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn create() {
+        let proc = Process::create(&job::ROOT_JOB, "proc", 0).expect("failed to create process");
+        let thread = Thread::create(&proc, "thread", 0).expect("failed to create thread");
+    }
+}
