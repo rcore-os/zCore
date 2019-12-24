@@ -7,7 +7,7 @@ use alloc::sync::Arc;
 pub struct Thread {
     base: KObjectBase,
     name: String,
-    proc: Arc<Process>,
+    pub(crate) proc: Arc<Process>,
 }
 
 impl_kobject!(Thread);

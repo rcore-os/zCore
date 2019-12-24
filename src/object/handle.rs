@@ -6,7 +6,7 @@ use alloc::sync::Arc;
 pub type HandleValue = u32;
 
 /// A Handle is how a specific process refers to a specific kernel object.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Handle {
     pub object: Arc<dyn KernelObject>,
     pub rights: Rights,

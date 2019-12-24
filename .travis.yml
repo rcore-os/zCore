@@ -4,6 +4,8 @@ sudo: false
 
 language: rust
 
+rust: nightly
+
 cache: cargo
 
 # Dependencies of kcov, used for cargo-travis
