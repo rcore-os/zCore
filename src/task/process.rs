@@ -54,7 +54,7 @@ impl Process {
         &self,
         handle_value: HandleValue,
         desired_rights: Rights,
-    ) -> ZxResult<Arc<dyn KernelObject>> {
+    ) -> ZxResult<Arc<T>> {
         let handle = self.handles.get(&handle_value).ok_or(ZxError::BAD_HANDLE)?;
         // check type before rights
         if handle.object.downcast_ref::<T>().is_none() {
@@ -63,6 +63,6 @@ impl Process {
         if !handle.rights.contains(desired_rights) {
             return Err(ZxError::ACCESS_DENIED);
         }
-        Ok(handle.object.clone())
+        Ok(handle.object.clone().downcast_arc::<T>().unwrap())
     }
 }

@@ -1,5 +1,7 @@
 use core::any::Any;
+use core::fmt::Debug;
 use core::sync::atomic::*;
+use downcast_rs::{impl_downcast, DowncastSync};
 
 pub use super::*;
 pub use handle::*;
@@ -8,18 +10,14 @@ pub use rights::*;
 pub mod handle;
 pub mod rights;
 
-pub trait KernelObject: Any + Sync + Send {
+pub trait KernelObject: DowncastSync + Debug {
     fn id(&self) -> KoID;
-    fn as_any(&self) -> &dyn Any;
 }
 
-impl dyn KernelObject {
-    pub fn downcast_ref<T: KernelObject>(&self) -> Option<&T> {
-        self.as_any().downcast_ref::<T>()
-    }
-}
+impl_downcast!(sync KernelObject);
 
 /// The base struct of a kernel object
+#[derive(Debug)]
 pub struct KObjectBase {
     pub id: KoID,
 }
@@ -40,8 +38,10 @@ macro_rules! impl_kobject {
             fn id(&self) -> KoID {
                 self.base.id
             }
-            fn as_any(&self) -> &dyn core::any::Any {
-                self
+        }
+        impl core::fmt::Debug for $class {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> Result<(), core::fmt::Error> {
+                write!(f, "{:?}", self.base)
             }
         }
     };
