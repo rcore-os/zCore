@@ -24,11 +24,13 @@ impl_kobject!(Process);
 
 #[derive(Default)]
 struct ProcessInner {
+    started: bool,
     handles: BTreeMap<HandleValue, Handle>,
     threads: Vec<Arc<Thread>>,
 }
 
 impl Process {
+    /// Create a new process in the `job`.
     pub fn create(job: &Arc<Job>, name: &str, options: u32) -> ZxResult<Arc<Self>> {
         // TODO: options
         let proc = Arc::new(Process {
@@ -43,18 +45,35 @@ impl Process {
         Ok(proc)
     }
 
+    /// Start the first `thread` in the process.
+    ///
+    /// This causes a thread to begin execution at the program
+    /// counter specified by `entry` and with the stack pointer set to `stack`.
+    /// The arguments `arg1` and `arg2` are arranged to be in the architecture
+    /// specific registers used for the first two arguments of a function call
+    /// before the thread is started. All other registers are zero upon start.
     pub fn start(
-        &mut self,
-        thread: &Thread,
+        &self,
+        thread: &Arc<Thread>,
         entry: usize,
         stack: usize,
         arg1: Handle,
         arg2: usize,
-    ) {
-        unimplemented!()
+    ) -> ZxResult<()> {
+        let mut inner = self.inner.lock();
+        if !inner.contains_thread(thread) {
+            return Err(ZxError::ACCESS_DENIED);
+        }
+        let handle_value = inner.add_handle(arg1);
+        if inner.started {
+            return Err(ZxError::BAD_STATE);
+        }
+        inner.started = true;
+        thread.start(entry, stack, handle_value as usize, arg2)?;
+        Ok(())
     }
 
-    pub fn exit(&mut self, retcode: usize) {
+    pub fn exit(&self, retcode: usize) {
         unimplemented!()
     }
 
@@ -69,13 +88,7 @@ impl Process {
 
     /// Add a handle to the process
     pub fn add_handle(&self, handle: Handle) -> HandleValue {
-        // FIXME: handle value from ptr
-        let mut inner = self.inner.lock();
-        let value = (0 as HandleValue..)
-            .find(|idx| !inner.handles.contains_key(idx))
-            .unwrap();
-        inner.handles.insert(value, handle);
-        value
+        self.inner.lock().add_handle(handle)
     }
 
     /// Remove a handle from the process
@@ -111,6 +124,26 @@ impl Process {
     /// Add a thread to the process.
     pub(super) fn add_thread(&self, thread: Arc<Thread>) {
         self.inner.lock().threads.push(thread);
+    }
+}
+
+impl ProcessInner {
+    /// Add a handle to the process
+    fn add_handle(&mut self, handle: Handle) -> HandleValue {
+        // FIXME: handle value from ptr
+        let value = (0 as HandleValue..)
+            .find(|idx| !self.handles.contains_key(idx))
+            .unwrap();
+        self.handles.insert(value, handle);
+        value
+    }
+
+    /// Whether `thread` is in this process.
+    fn contains_thread(&self, thread: &Arc<Thread>) -> bool {
+        self.threads
+            .iter()
+            .find(|&t| Arc::ptr_eq(t, thread))
+            .is_some()
     }
 }
 

@@ -1,5 +1,6 @@
 #![no_std]
 #![deny(unsafe_code, unused_must_use)]
+#![feature(asm, linkage)]
 
 #[macro_use]
 extern crate alloc;
@@ -14,6 +15,7 @@ extern crate log;
 extern crate std;
 
 mod error;
+mod hal;
 pub mod io;
 pub mod ipc;
 pub mod object;
