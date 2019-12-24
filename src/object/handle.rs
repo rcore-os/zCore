@@ -1,10 +1,11 @@
 //use super::rights::Rights;
 use super::*;
 use alloc::sync::Arc;
-use spin::Mutex;
 
+/// The value refers to a Handle in user space.
 pub type HandleValue = u32;
 
+/// A Handle is how a specific process refers to a specific kernel object.
 #[derive(Clone)]
 pub struct Handle {
     pub object: Arc<dyn KernelObject>,

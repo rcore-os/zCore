@@ -1,6 +1,6 @@
 use super::process::Process;
 use super::*;
-use crate::object::KObjectBase;
+use crate::object::*;
 use alloc::string::String;
 use alloc::sync::Arc;
 
@@ -10,15 +10,17 @@ pub struct Thread {
     proc: Arc<Process>,
 }
 
+impl_kobject!(Thread);
+
 impl Thread {
-    pub fn create(proc: Arc<Process>, name: &str, options: u32) -> ZxResult<Self> {
+    pub fn create(proc: &Arc<Process>, name: &str, _options: u32) -> ZxResult<Arc<Self>> {
         // TODO: options
-        // TODO: add thread to proc
-        let thread = Thread {
+        let thread = Arc::new(Thread {
             base: KObjectBase::new(),
             name: String::from(name),
-            proc,
-        };
+            proc: proc.clone(),
+        });
+        proc.add_thread(thread.clone());
         Ok(thread)
     }
 

@@ -12,6 +12,7 @@ pub mod rights;
 
 pub trait KernelObject: DowncastSync + Debug {
     fn id(&self) -> KoID;
+    fn type_name(&self) -> &'static str;
 }
 
 impl_downcast!(sync KernelObject);
@@ -38,10 +39,16 @@ macro_rules! impl_kobject {
             fn id(&self) -> KoID {
                 self.base.id
             }
+            fn type_name(&self) -> &'static str {
+                stringify!($class)
+            }
         }
         impl core::fmt::Debug for $class {
             fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> Result<(), core::fmt::Error> {
-                write!(f, "{:?}", self.base)
+                f.debug_tuple("KObject")
+                    .field(&self.id())
+                    .field(&self.type_name())
+                    .finish()
             }
         }
     };

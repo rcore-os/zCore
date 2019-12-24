@@ -1,5 +1,14 @@
-#[derive(Copy, Clone)]
-pub struct JobPolicy {}
+#[derive(Default, Copy, Clone)]
+pub struct JobPolicy {
+    // TODO: use bitset
+    action: [Option<PolicyAction>; 15],
+}
+
+impl JobPolicy {
+    pub fn get_action(&self, policy: PolicyCondition) -> PolicyAction {
+        self.action[policy as usize].unwrap_or(PolicyAction::Allow)
+    }
+}
 
 #[derive(Debug, Copy, Clone)]
 pub enum SetPolicyOptions {
