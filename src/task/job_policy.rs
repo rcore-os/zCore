@@ -1,3 +1,5 @@
+use crate::ZxResult;
+
 #[derive(Default, Copy, Clone)]
 pub struct JobPolicy {
     // TODO: use bitset
@@ -5,8 +7,25 @@ pub struct JobPolicy {
 }
 
 impl JobPolicy {
-    pub fn get_action(&self, policy: PolicyCondition) -> PolicyAction {
-        self.action[policy as usize].unwrap_or(PolicyAction::Allow)
+    /// Get the action of a policy `condition`.
+    pub fn get_action(&self, condition: PolicyCondition) -> Option<PolicyAction> {
+        self.action[condition as usize]
+    }
+
+    /// Apply a basic policy.
+    pub fn apply(&mut self, policy: BasicPolicy) {
+        self.action[policy.condition as usize] = Some(policy.action);
+    }
+
+    /// Merge the policy with `parent`'s.
+    pub fn merge(&self, parent: &Self) -> Self {
+        let mut new = self.clone();
+        for i in 0..15 {
+            if parent.action[i].is_some() {
+                new.action[i] = parent.action[i];
+            }
+        }
+        new
     }
 }
 
@@ -21,8 +40,8 @@ pub enum SetPolicyOptions {
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct BasicPolicy {
-    condition: PolicyCondition,
-    action: PolicyAction,
+    pub condition: PolicyCondition,
+    pub action: PolicyAction,
 }
 
 #[repr(u32)]
@@ -67,7 +86,7 @@ pub enum PolicyCondition {
 }
 
 #[repr(u32)]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum PolicyAction {
     /// Allow condition.
     Allow = 0,

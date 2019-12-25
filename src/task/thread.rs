@@ -78,18 +78,21 @@ pub enum ThreadState {}
 
 #[cfg(test)]
 mod tests {
+    use super::job::Job;
     use super::*;
 
     #[test]
     fn create() {
-        let proc = Process::create(&job::ROOT_JOB, "proc", 0).expect("failed to create process");
+        let root_job = Job::root();
+        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
         let thread = Thread::create(&proc, "thread", 0).expect("failed to create thread");
     }
 
     #[test]
     #[allow(unsafe_code)]
     fn start() {
-        let proc = Process::create(&job::ROOT_JOB, "proc", 0).expect("failed to create process");
+        let root_job = Job::root();
+        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
         let thread = Thread::create(&proc, "thread", 0).expect("failed to create thread");
         let thread1 = Thread::create(&proc, "thread1", 0).expect("failed to create thread");
 

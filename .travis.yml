@@ -1,6 +1,6 @@
 dist: bionic
 
-sudo: false
+os: linux
 
 language: rust
 

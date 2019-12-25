@@ -79,7 +79,11 @@ impl Process {
 
     /// Check whether `condition` is allowed in the parent job's policy.
     pub fn check_policy(&self, condition: PolicyCondition) -> ZxResult<()> {
-        match self.policy.get_action(condition) {
+        match self
+            .policy
+            .get_action(condition)
+            .unwrap_or(PolicyAction::Allow)
+        {
             PolicyAction::Allow => Ok(()),
             PolicyAction::Deny => Err(ZxError::ACCESS_DENIED),
             _ => unimplemented!(),
@@ -153,12 +157,14 @@ mod tests {
 
     #[test]
     fn create() {
-        let proc = Process::create(&job::ROOT_JOB, "proc", 0).expect("failed to create process");
+        let root_job = Job::root();
+        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
     }
 
     #[test]
     fn handle() {
-        let proc = Process::create(&job::ROOT_JOB, "proc", 0).expect("failed to create process");
+        let root_job = Job::root();
+        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
         let handle = Handle::new(proc.clone(), Rights::DEFAULT_PROCESS);
 
         let handle_value = proc.add_handle(handle);

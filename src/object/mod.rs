@@ -25,6 +25,12 @@ pub struct KObjectBase {
 
 impl KObjectBase {
     pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl Default for KObjectBase {
+    fn default() -> Self {
         static KOID: AtomicU64 = AtomicU64::new(0);
         KObjectBase {
             id: KOID.fetch_add(1, Ordering::SeqCst),
