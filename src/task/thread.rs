@@ -104,6 +104,8 @@ mod tests {
         // function for new thread
         extern "C" fn entry(arg1: usize, arg2: usize) -> ! {
             unsafe {
+                // align the stack to 16 bytes
+                asm!("and rsp, -16" :::: "volatile" "intel");
                 ARG1 = arg1;
                 ARG2 = arg2;
             }
