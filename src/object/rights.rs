@@ -21,5 +21,13 @@ bitflags! {
         const MANAGE_THREAD = 1 << 18;
         const APPLY_PROFILE = 1 << 19;
         const SAME_RIGHTS = 1 << 31;
+
+        const BASIC = Self::TRANSFER.bits | Self::DUPLICATE.bits | Self::WAIT.bits | Self::INSPECT.bits;
+        const IO = Self::READ.bits | Self::WRITE.bits;
+        const PROPERTY = Self::GET_PROPERTY.bits | Self::SET_PROPERTY.bits;
+
+        const DEFAULT_CHANNEL = Self::BASIC.bits & !Self::DUPLICATE.bits | Self::IO.bits | Self::SIGNAL.bits | Self::SIGNAL_PEER.bits;
+        const DEFAULT_PROCESS = Self::BASIC.bits | Self::IO.bits | Self::PROPERTY.bits | Self::ENUMERATE.bits | Self::DESTROY.bits
+            | Self::SIGNAL.bits | Self::MANAGE_PROCESS.bits | Self::MANAGE_THREAD.bits;
    }
 }

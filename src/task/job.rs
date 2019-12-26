@@ -1,9 +1,55 @@
-pub struct Job {}
+use super::job_policy::*;
+use super::process::Process;
+use crate::object::*;
+use alloc::sync::Arc;
+use alloc::vec::Vec;
+use lazy_static::lazy_static;
+use spin::Mutex;
+
+pub struct Job {
+    base: KObjectBase,
+    parent: Option<Arc<Job>>,
+    parent_policy: JobPolicy,
+    inner: Mutex<JobInner>,
+}
+
+impl_kobject!(Job);
+
+#[derive(Default)]
+struct JobInner {
+    policy: JobPolicy,
+    children: Vec<Arc<Job>>,
+    processes: Vec<Arc<Process>>,
+}
 
 impl Job {
+    /// Create the root job.
+    pub fn root() -> Arc<Self> {
+        Arc::new(Job {
+            base: KObjectBase::new(),
+            parent: None,
+            parent_policy: JobPolicy::default(),
+            inner: Mutex::new(JobInner::default()),
+        })
+    }
+
     /// Create a new child job object.
-    pub fn create_child(&mut self, _options: u32) -> Self {
-        unimplemented!()
+    pub fn create_child(parent: &Arc<Self>, _options: u32) -> ZxResult<Arc<Self>> {
+        // TODO: options
+        let mut inner = parent.inner.lock();
+        let child = Arc::new(Job {
+            base: KObjectBase::new(),
+            parent: Some(parent.clone()),
+            parent_policy: inner.policy.merge(&parent.parent_policy),
+            inner: Mutex::new(JobInner::default()),
+        });
+        inner.children.push(child.clone());
+        Ok(child)
+    }
+
+    /// Get the policy of the job.
+    pub fn policy(&self) -> JobPolicy {
+        self.inner.lock().policy.merge(&self.parent_policy)
     }
 
     /// Sets one or more security and/or resource policies to an empty job.
@@ -13,102 +59,137 @@ impl Job {
     ///
     /// After this call succeeds any new child process or child job will have
     /// the new effective policy applied to it.
-    pub fn set_policy_basic(&mut self, _options: SetPolicyOptions, _policys: &[BasicPolicy]) {
-        unimplemented!()
+    pub fn set_policy_basic(
+        &self,
+        options: SetPolicyOptions,
+        policys: &[BasicPolicy],
+    ) -> ZxResult<()> {
+        let mut inner = self.inner.lock();
+        if !inner.is_empty() {
+            return Err(ZxError::BAD_STATE);
+        }
+        for policy in policys {
+            if self.parent_policy.get_action(policy.condition).is_some() {
+                match options {
+                    SetPolicyOptions::Absolute => return Err(ZxError::ALREADY_EXISTS),
+                    SetPolicyOptions::Relative => {}
+                }
+            } else {
+                inner.policy.apply(*policy);
+            }
+        }
+        Ok(())
     }
 
     pub fn set_policy_timer_slack(
-        &mut self,
+        &self,
         _options: SetPolicyOptions,
         _policys: &[TimerSlackPolicy],
     ) {
         unimplemented!()
     }
+
+    /// Add a process to the job.
+    pub(super) fn add_process(&self, process: Arc<Process>) {
+        self.inner.lock().processes.push(process);
+    }
 }
 
-#[derive(Debug, Copy, Clone)]
-pub enum SetPolicyOptions {
-    /// Policy is applied for all conditions in policy or the call fails.
-    Absolute,
-    /// Policy is applied for the conditions not specifically overridden by the parent policy.
-    Relative,
+impl JobInner {
+    fn is_empty(&self) -> bool {
+        self.processes.is_empty() && self.children.is_empty()
+    }
 }
 
-#[repr(C)]
-#[derive(Debug, Copy, Clone)]
-pub struct BasicPolicy {
-    condition: PolicyCondition,
-    action: PolicyAction,
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-#[repr(u32)]
-#[derive(Debug, Copy, Clone)]
-pub enum PolicyCondition {
-    /// A process under this job is attempting to issue a syscall with an invalid handle.
-    /// In this case, `PolicyAction::Allow` and `PolicyAction::Deny` are equivalent:
-    /// if the syscall returns, it will always return the error ZX_ERR_BAD_HANDLE.
-    BadHandle = 0,
-    /// A process under this job is attempting to issue a syscall with a handle that does not support such operation.
-    WrongObject = 1,
-    /// A process under this job is attempting to map an address region with write-execute access.
-    VmarWx = 2,
-    /// A special condition that stands for all of the above ZX_NEW conditions
-    /// such as NEW_VMO, NEW_CHANNEL, NEW_EVENT, NEW_EVENTPAIR, NEW_PORT, NEW_SOCKET, NEW_FIFO,
-    /// And any future ZX_NEW policy.
-    /// This will include any new kernel objects which do not require a parent object for creation.
-    NewAny = 3,
-    /// A process under this job is attempting to create a new vm object.
-    NewVMO = 4,
-    /// A process under this job is attempting to create a new channel.
-    NewChannel = 5,
-    /// A process under this job is attempting to create a new event.
-    NewEvent = 6,
-    /// A process under this job is attempting to create a new event pair.
-    NewEventPair = 7,
-    /// A process under this job is attempting to create a new port.
-    NewPort = 8,
-    /// A process under this job is attempting to create a new socket.
-    NewSocket = 9,
-    /// A process under this job is attempting to create a new fifo.
-    NewFIFO = 10,
-    /// A process under this job is attempting to create a new timer.
-    NewTimer = 11,
-    /// A process under this job is attempting to create a new process.
-    NewProcess = 12,
-    /// A process under this job is attempting to create a new profile.
-    NewProfile = 13,
-    /// A process under this job is attempting to use zx_vmo_replace_as_executable()
-    /// with a ZX_HANDLE_INVALID as the second argument rather than a valid ZX_RSRC_KIND_VMEX.
-    AmbientMarkVMOExec = 14,
-}
+    #[test]
+    fn create() {
+        let root_job = Job::root();
+        let job = Job::create_child(&root_job, 0).expect("failed to create job");
+    }
 
-#[repr(u32)]
-#[derive(Debug, Copy, Clone)]
-pub enum PolicyAction {
-    /// Allow condition.
-    Allow = 0,
-    /// Prevent condition.
-    Deny = 1,
-    /// Generate an exception via the debug port. An exception generated this
-    /// way acts as a breakpoint. The thread may be resumed after the exception.
-    AllowException = 2,
-    /// Just like `AllowException`, but after resuming condition is denied.
-    DenyException = 3,
-    /// Terminate the process.
-    Kill = 4,
-}
+    #[test]
+    fn set_policy() {
+        let root_job = Job::root();
 
-#[repr(C)]
-#[derive(Debug, Copy, Clone)]
-pub struct TimerSlackPolicy {
-    min_slack: i64,
-    default_mode: TimerSlackDefaultMode,
-}
+        // default policy
+        assert_eq!(
+            root_job.policy().get_action(PolicyCondition::BadHandle),
+            None
+        );
 
-#[repr(u32)]
-#[derive(Debug, Copy, Clone)]
-pub enum TimerSlackDefaultMode {
-    Center = 0,
-    Early = 1,
-    Late = 2,
+        // set policy for root job
+        let policy = &[BasicPolicy {
+            condition: PolicyCondition::BadHandle,
+            action: PolicyAction::Deny,
+        }];
+        root_job
+            .set_policy_basic(SetPolicyOptions::Relative, policy)
+            .expect("failed to set policy");
+        assert_eq!(
+            root_job.policy().get_action(PolicyCondition::BadHandle),
+            Some(PolicyAction::Deny)
+        );
+
+        // override policy should success
+        let policy = &[BasicPolicy {
+            condition: PolicyCondition::BadHandle,
+            action: PolicyAction::Allow,
+        }];
+        root_job
+            .set_policy_basic(SetPolicyOptions::Relative, policy)
+            .expect("failed to set policy");
+        assert_eq!(
+            root_job.policy().get_action(PolicyCondition::BadHandle),
+            Some(PolicyAction::Allow)
+        );
+
+        // create a child job
+        let job = Job::create_child(&root_job, 0).expect("failed to create job");
+
+        // should inherit parent's policy.
+        assert_eq!(
+            job.policy().get_action(PolicyCondition::BadHandle),
+            Some(PolicyAction::Allow)
+        );
+
+        // setting policy for a non-empty job should fail.
+        assert_eq!(
+            root_job.set_policy_basic(SetPolicyOptions::Relative, &[]),
+            Err(ZxError::BAD_STATE)
+        );
+
+        // set new policy should success.
+        let policy = &[BasicPolicy {
+            condition: PolicyCondition::WrongObject,
+            action: PolicyAction::Allow,
+        }];
+        job.set_policy_basic(SetPolicyOptions::Relative, policy)
+            .expect("failed to set policy");
+        assert_eq!(
+            job.policy().get_action(PolicyCondition::WrongObject),
+            Some(PolicyAction::Allow)
+        );
+
+        // relatively setting existing policy should be ignored.
+        let policy = &[BasicPolicy {
+            condition: PolicyCondition::BadHandle,
+            action: PolicyAction::Deny,
+        }];
+        job.set_policy_basic(SetPolicyOptions::Relative, policy)
+            .expect("failed to set policy");
+        assert_eq!(
+            job.policy().get_action(PolicyCondition::BadHandle),
+            Some(PolicyAction::Allow)
+        );
+
+        // absolutely setting existing policy should fail.
+        assert_eq!(
+            job.set_policy_basic(SetPolicyOptions::Absolute, policy),
+            Err(ZxError::ALREADY_EXISTS)
+        );
+    }
 }

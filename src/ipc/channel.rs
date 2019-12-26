@@ -1,52 +1,120 @@
 use crate::object::*;
-use alloc::sync::Arc;
+use alloc::collections::VecDeque;
+use alloc::sync::{Arc, Weak};
+use alloc::vec::Vec;
 use core::any::Any;
 use spin::Mutex;
 
-pub struct Channel {
-    koid: KoID,
+pub type Channel = Channel_<MessagePacket>;
+
+pub struct Channel_<T> {
+    base: KObjectBase,
+    send_queue: Weak<Mutex<VecDeque<T>>>,
+    recv_queue: Arc<Mutex<VecDeque<T>>>,
 }
 
-impl Channel {
-    fn new(koid: KoID) -> Self {
-        Channel { koid }
+impl_kobject!(Channel);
+
+impl<T> Channel_<T> {
+    /// Create a channel and return a pair of its endpoints
+    pub fn create() -> (Arc<Self>, Arc<Self>) {
+        let queue0 = Arc::new(Mutex::new(VecDeque::new()));
+        let queue1 = Arc::new(Mutex::new(VecDeque::new()));
+        let channel0 = Arc::new(Channel_ {
+            base: KObjectBase::new(),
+            send_queue: Arc::downgrade(&queue0),
+            recv_queue: queue1.clone(),
+        });
+        let channel1 = Arc::new(Channel_ {
+            base: KObjectBase::new(),
+            send_queue: Arc::downgrade(&queue1),
+            recv_queue: queue0,
+        });
+        (channel0, channel1)
     }
 
-    pub fn create() -> (Handle, Handle) {
-        let end0 = Channel::new(0);
-        let end1 = Channel::new(1);
-        let handle0 = Handle::new(Arc::new(Mutex::new(end0)), Rights::DUPLICATE);
-        let handle1 = Handle::new(Arc::new(Mutex::new(end1)), Rights::DUPLICATE);
-        (handle0, handle1)
+    /// Read a packet from the channel
+    pub fn read(&self) -> ZxResult<T> {
+        if let Some(msg) = self.recv_queue.lock().pop_front() {
+            return Ok(msg);
+        }
+        if self.peer_closed() {
+            return Err(ZxError::PEER_CLOSED);
+        } else {
+            return Err(ZxError::SHOULD_WAIT);
+        }
+    }
+
+    /// Write a packet to the channel
+    pub fn write(&self, msg: T) -> ZxResult<()> {
+        self.send_queue
+            .upgrade()
+            .ok_or(ZxError::PEER_CLOSED)?
+            .lock()
+            .push_back(msg);
+        Ok(())
+    }
+
+    fn peer_closed(&self) -> bool {
+        self.send_queue.strong_count() == 0
     }
 }
 
-impl KernelObject for Channel {
-    fn id(&self) -> KoID {
-        self.koid
-    }
-
-    fn as_any(&mut self) -> &mut dyn Any {
-        self
-    }
+#[derive(Default)]
+pub struct MessagePacket {
+    pub data: Vec<u8>,
+    pub handles: Vec<Handle>,
 }
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
-    fn is_work() {
-        use crate::error::*;
-        use crate::ipc::channel::Channel;
-        use crate::object::handle::Handle;
-        use crate::object::KernelObject;
-        let (handle0, handle1) = Channel::create();
-        handle0.do_mut(|ch: &mut Channel| {
-            assert_eq!(0u64, ch.id());
-            ZxError::OK
-        });
-        handle1.do_mut(|ch: &mut Channel| {
-            assert_eq!(1u64, ch.id());
-            ZxError::OK
-        });
+    fn read_write() {
+        let (channel0, channel1) = Channel::create();
+        // write a message to each other
+        channel0
+            .write(MessagePacket {
+                data: Vec::from("hello 1"),
+                handles: Vec::new(),
+            })
+            .unwrap();
+        channel1
+            .write(MessagePacket {
+                data: Vec::from("hello 0"),
+                handles: Vec::new(),
+            })
+            .unwrap();
+
+        // read message should success
+        let recv_msg = channel1.read().unwrap();
+        assert_eq!(recv_msg.data.as_slice(), b"hello 1");
+        assert!(recv_msg.handles.is_empty());
+
+        let recv_msg = channel0.read().unwrap();
+        assert_eq!(recv_msg.data.as_slice(), b"hello 0");
+        assert!(recv_msg.handles.is_empty());
+
+        // read more message should fail.
+        assert_eq!(channel0.read().err(), Some(ZxError::SHOULD_WAIT));
+        assert_eq!(channel1.read().err(), Some(ZxError::SHOULD_WAIT));
+    }
+
+    #[test]
+    fn peer_closed() {
+        let (channel0, channel1) = Channel::create();
+        // write a message from peer, then drop it
+        channel1.write(MessagePacket::default()).unwrap();
+        drop(channel1);
+        // read the first message should success.
+        channel0.read().unwrap();
+        // read more message should fail.
+        assert_eq!(channel0.read().err(), Some(ZxError::PEER_CLOSED));
+        // write message should fail.
+        assert_eq!(
+            channel0.write(MessagePacket::default()),
+            Err(ZxError::PEER_CLOSED)
+        );
     }
 }
