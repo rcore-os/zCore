@@ -1,6 +1,7 @@
 #![no_std]
 #![deny(unsafe_code, unused_must_use)]
 #![feature(asm, linkage)]
+#![feature(drain_filter)]
 
 #[macro_use]
 extern crate alloc;
