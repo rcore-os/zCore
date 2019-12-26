@@ -38,7 +38,7 @@ impl Process {
             name: String::from(name),
             job: job.clone(),
             policy: job.policy(),
-            vmar: Arc::new(VmAddressRegion {}),
+            vmar: VmAddressRegion::new_root(),
             inner: Mutex::new(ProcessInner::default()),
         });
         job.add_process(proc.clone());
