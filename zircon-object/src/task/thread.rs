@@ -8,7 +8,7 @@ use spin::Mutex;
 pub struct Thread {
     base: KObjectBase,
     name: String,
-    pub(crate) proc: Arc<Process>,
+    pub proc: Arc<Process>,
     inner: Mutex<ThreadInner>,
 }
 

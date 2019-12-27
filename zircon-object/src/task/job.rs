@@ -3,7 +3,6 @@ use super::process::Process;
 use crate::object::*;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
-use lazy_static::lazy_static;
 use spin::Mutex;
 
 pub struct Job {

@@ -1,15 +1,5 @@
-[package]
-name = "zircon-object"
-version = "0.1.0"
-authors = ["Runji Wang <wangrunji0408@163.com>", "Qinglin Pan <panqinglin00@163.com>"]
-edition = "2018"
-description = "Zircon kernel objects"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[dependencies]
-bitflags = "1.2"
-spin = "0.5"
-log = "0.4"
-lazy_static = "1.4"
-downcast-rs = { git = "https://github.com/rcore-os/downcast-rs" }
+[workspace]
+members = [
+    "zircon-object",
+    "zircon-syscall"
+]
