@@ -1,4 +1,5 @@
 use super::*;
+use crate::hal::PageTable;
 use crate::object::*;
 use crate::vm::vmo::VMObject;
 use alloc::sync::Arc;
@@ -11,7 +12,7 @@ pub struct VmAddressRegion {
     addr: VirtAddr,
     size: usize,
     parent: Option<Arc<VmAddressRegion>>,
-    page_table: Arc<Mutex<hal::PageTable>>,
+    page_table: Arc<Mutex<PageTable>>,
     /// If inner is None, this region is destroyed, all operations are invalid.
     inner: Mutex<Option<VmarInner>>,
 }
@@ -23,14 +24,6 @@ impl_kobject!(VmAddressRegion);
 struct VmarInner {
     children: Vec<Arc<VmAddressRegion>>,
     mappings: Vec<VmMapping>,
-}
-
-/// Virtual Memory Mapping
-pub struct VmMapping {
-    addr: VirtAddr,
-    size: usize,
-    vmo: Arc<dyn VMObject>,
-    vmo_offset: usize,
 }
 
 impl VmAddressRegion {
@@ -96,7 +89,9 @@ impl VmAddressRegion {
             size: len,
             vmo,
             vmo_offset,
+            page_table: self.page_table.clone(),
         };
+        mapping.map();
         inner.mappings.push(mapping);
         Ok(())
     }
@@ -195,15 +190,43 @@ impl VmAddressRegion {
     }
 }
 
+/// Virtual Memory Mapping
+pub struct VmMapping {
+    addr: VirtAddr,
+    size: usize,
+    vmo: Arc<dyn VMObject>,
+    vmo_offset: usize,
+    page_table: Arc<Mutex<PageTable>>,
+}
+
 impl VmMapping {
+    fn map(&self) {
+        let mut page_table = self.page_table.lock();
+        self.vmo
+            .map_to(&mut page_table, self.addr, self.vmo_offset, self.size);
+    }
+
+    fn unmap(&self) {
+        let mut page_table = self.page_table.lock();
+        self.vmo
+            .unmap_from(&mut page_table, self.addr, self.vmo_offset, self.size);
+    }
+
     fn overlap(&self, begin: VirtAddr, end: VirtAddr) -> bool {
         !(self.addr >= end || self.addr + self.size <= begin)
+    }
+}
+
+impl Drop for VmMapping {
+    fn drop(&mut self) {
+        self.unmap();
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::vm::vmo::VMObjectPaged;
 
     #[test]
     fn create_child() {
@@ -229,6 +252,45 @@ mod tests {
             child.create_child(0x1000, 0x2000).err(),
             Some(ZxError::INVALID_ARGS)
         );
+    }
+
+    /// A valid virtual address base to mmap.
+    const VBASE: VirtAddr = 0x200000000;
+    const VSIZE: VirtAddr = 0x100000;
+    const MAGIC: usize = 0xdeadbeaf;
+
+    #[test]
+    #[allow(unsafe_code)]
+    fn map() {
+        let root_vmar = VmAddressRegion::new_root();
+        let vmar = root_vmar.create_child(VBASE, VSIZE).unwrap();
+        let vmo = VMObjectPaged::new(4);
+
+        // invalid argument
+        assert_eq!(
+            vmar.map(0, vmo.clone(), 0x4000, 0x1000),
+            Err(ZxError::INVALID_ARGS)
+        );
+        assert_eq!(
+            vmar.map(0, vmo.clone(), 0, 0x5000),
+            Err(ZxError::INVALID_ARGS)
+        );
+        assert_eq!(
+            vmar.map(0, vmo.clone(), 0x1000, 1),
+            Err(ZxError::INVALID_ARGS)
+        );
+        assert_eq!(
+            vmar.map(0, vmo.clone(), 1, 0x1000),
+            Err(ZxError::INVALID_ARGS)
+        );
+
+        vmar.map(0, vmo.clone(), 0, 0x4000).unwrap();
+        vmar.map(0x12000, vmo.clone(), 0x2000, 0x1000).unwrap();
+
+        unsafe {
+            ((VBASE + 0x2000) as *mut usize).write(MAGIC);
+            assert_eq!(((VBASE + 0x12000) as *const usize).read(), MAGIC);
+        }
     }
 
     /// ```text

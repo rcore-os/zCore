@@ -6,7 +6,7 @@ extern crate log;
 use lazy_static::lazy_static;
 use std::collections::BTreeMap;
 use std::fs::{File, OpenOptions};
-use std::io::Write;
+use std::io::{Error, Write};
 use std::os::unix::io::AsRawFd;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
@@ -16,7 +16,6 @@ type ThreadId = usize;
 type PhysAddr = usize;
 type VirtAddr = usize;
 type MMUFlags = usize;
-type APIResult = usize;
 
 #[repr(C)]
 pub struct Thread {
@@ -57,7 +56,7 @@ impl PageTable {
 
     /// Map the page of `vaddr` to the frame of `paddr` with `flags`.
     #[export_name = "hal_pt_map"]
-    fn map(&mut self, vaddr: VirtAddr, paddr: PhysAddr, flags: MMUFlags) -> Result<(), ()> {
+    pub fn map(&mut self, vaddr: VirtAddr, paddr: PhysAddr, flags: MMUFlags) -> Result<(), ()> {
         debug_assert!(page_aligned(vaddr));
         debug_assert!(page_aligned(paddr));
         mmap(FRAME_FILE.as_raw_fd(), paddr, PAGE_SIZE, vaddr);
@@ -66,25 +65,25 @@ impl PageTable {
 
     /// Unmap the page of `vaddr`.
     #[export_name = "hal_pt_unmap"]
-    fn unmap(&mut self, vaddr: VirtAddr) -> Result<(), ()> {
+    pub fn unmap(&mut self, vaddr: VirtAddr) -> Result<(), ()> {
         debug_assert!(page_aligned(vaddr));
         let ret = unsafe { libc::munmap(vaddr as _, PAGE_SIZE) };
-        assert_eq!(ret, 0, "failed to munmap");
+        assert_eq!(ret, 0, "failed to munmap: {:?}", Error::last_os_error());
         Ok(())
     }
 
     /// Change the `flags` of the page of `vaddr`.
     #[export_name = "hal_pt_protect"]
-    fn protect(&mut self, vaddr: VirtAddr, flags: MMUFlags) -> Result<(), ()> {
+    pub fn protect(&mut self, vaddr: VirtAddr, flags: MMUFlags) -> Result<(), ()> {
         debug_assert!(page_aligned(vaddr));
         let ret = unsafe { libc::mprotect(vaddr as _, PAGE_SIZE, flags as libc::c_int) };
-        assert_eq!(ret, 0, "failed to mprotect");
+        assert_eq!(ret, 0, "failed to mprotect: {:?}", Error::last_os_error());
         Ok(())
     }
 
     /// Query the physical address which the page of `vaddr` maps to.
     #[export_name = "hal_pt_query"]
-    fn query(&mut self, vaddr: VirtAddr) -> Result<(PhysAddr, MMUFlags), ()> {
+    pub fn query(&mut self, vaddr: VirtAddr) -> Result<(PhysAddr, MMUFlags), ()> {
         debug_assert!(page_aligned(vaddr));
         unimplemented!()
     }
@@ -170,20 +169,27 @@ fn create_pmem_file() -> File {
         .create(true)
         .open(dir.path().join("pmem"))
         .expect("failed to create pmem file");
-    file.set_len(PMEM_SIZE as u64).expect("failed to resize file");
+    file.set_len(PMEM_SIZE as u64)
+        .expect("failed to resize file");
     mmap(file.as_raw_fd(), 0, PMEM_SIZE, phys_to_virt(0));
     file
 }
 
 /// Mmap frame file `fd` to `vaddr`.
 fn mmap(fd: libc::c_int, offset: usize, len: usize, vaddr: VirtAddr) {
-    let ptr = unsafe {
+    let ret = unsafe {
         let prot = libc::PROT_READ | libc::PROT_WRITE | libc::PROT_EXEC;
         let flags = libc::MAP_SHARED | libc::MAP_FIXED;
         libc::mmap(vaddr as _, len, prot, flags, fd, offset as _)
-    };
-    assert_eq!(ptr as usize, vaddr, "failed to mmap");
-    trace!("mmap frame file (fd={}) to {:#x}", fd, vaddr);
+    } as usize;
+    assert_eq!(ret, vaddr, "failed to mmap: {:?}", Error::last_os_error());
+    trace!(
+        "mmap file (fd={}, offset={:#x}, len={:#x}) to {:#x}",
+        fd,
+        offset,
+        len,
+        vaddr
+    );
 }
 
 /// A dummy function.
