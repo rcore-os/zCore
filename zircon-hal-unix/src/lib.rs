@@ -10,7 +10,7 @@ use std::io::Write;
 use std::os::unix::io::AsRawFd;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
-use tempfile::{tempdir_in, TempDir};
+use tempfile::tempdir_in;
 
 type ThreadId = usize;
 type PhysAddr = usize;
@@ -60,8 +60,7 @@ impl PageTable {
     fn map(&mut self, vaddr: VirtAddr, paddr: PhysAddr, flags: MMUFlags) -> Result<(), ()> {
         debug_assert!(page_aligned(vaddr));
         debug_assert!(page_aligned(paddr));
-        let fd = open_frame_file(paddr);
-        mmap(fd, vaddr);
+        mmap(FRAME_FILE.as_raw_fd(), paddr, PAGE_SIZE, vaddr);
         Ok(())
     }
 
@@ -123,19 +122,15 @@ fn phys_to_virt(paddr: PhysAddr) -> VirtAddr {
     PMEM_BASE + paddr
 }
 
-/// Ensure physical memory in `[paddr, paddr + len)` are mmapped and accessible.
-fn ensure_mmap_pmem(paddr: PhysAddr, len: usize) {
-    let begin = align_to_page(paddr);
-    let end = align_to_page(paddr + len) + PAGE_SIZE;
-    for paddr in (begin..end).step_by(PAGE_SIZE) {
-        open_frame_file(paddr);
-    }
+/// Ensure physical memory are mmapped and accessible.
+fn ensure_mmap_pmem() {
+    FRAME_FILE.as_raw_fd();
 }
 
 /// Read physical memory from `paddr` to `buf`.
 #[export_name = "hal_pmem_read"]
 pub fn pmem_read(paddr: PhysAddr, buf: &mut [u8]) {
-    ensure_mmap_pmem(paddr, buf.len());
+    ensure_mmap_pmem();
     unsafe {
         (phys_to_virt(paddr) as *const u8).copy_to_nonoverlapping(buf.as_mut_ptr(), buf.len());
     }
@@ -144,7 +139,7 @@ pub fn pmem_read(paddr: PhysAddr, buf: &mut [u8]) {
 /// Write physical memory to `paddr` from `buf`.
 #[export_name = "hal_pmem_write"]
 pub fn pmem_write(paddr: PhysAddr, buf: &[u8]) {
-    ensure_mmap_pmem(paddr, buf.len());
+    ensure_mmap_pmem();
     unsafe {
         buf.as_ptr()
             .copy_to_nonoverlapping(phys_to_virt(paddr) as _, buf.len());
@@ -161,35 +156,31 @@ fn align_to_page(x: VirtAddr) -> VirtAddr {
     x / PAGE_SIZE * PAGE_SIZE
 }
 
-fn open_frame_file(paddr: PhysAddr) -> i32 {
-    lazy_static! {
-        static ref PHYS_MEM_PATH: TempDir =
-            tempdir_in("/tmp").expect("failed to create physical memory dir");
-        static ref FILES: Mutex<BTreeMap<PhysAddr, File>> = Mutex::default();
-    }
-    let mut files = FILES.lock().unwrap();
-    if !files.contains_key(&paddr) {
-        let file_path = PHYS_MEM_PATH.path().join(format!("{:#x}", paddr));
-        let mut file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .open(file_path)
-            .expect("failed to open file");
-        file.write(&[0u8; PAGE_SIZE]).unwrap();
-        mmap(file.as_raw_fd(), phys_to_virt(paddr));
-        files.insert(paddr, file);
-        trace!("create frame file: {:#x}", paddr);
-    }
-    files.get(&paddr).unwrap().as_raw_fd()
+const PMEM_SIZE: usize = 0x100000;
+
+lazy_static! {
+    static ref FRAME_FILE: File = create_pmem_file();
+}
+
+fn create_pmem_file() -> File {
+    let dir = tempdir_in("/tmp").expect("failed to create pmem dir");
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .open(dir.path().join("pmem"))
+        .expect("failed to create pmem file");
+    file.set_len(PMEM_SIZE as u64).expect("failed to resize file");
+    mmap(file.as_raw_fd(), 0, PMEM_SIZE, phys_to_virt(0));
+    file
 }
 
 /// Mmap frame file `fd` to `vaddr`.
-fn mmap(fd: libc::c_int, vaddr: VirtAddr) {
+fn mmap(fd: libc::c_int, offset: usize, len: usize, vaddr: VirtAddr) {
     let ptr = unsafe {
         let prot = libc::PROT_READ | libc::PROT_WRITE | libc::PROT_EXEC;
         let flags = libc::MAP_SHARED | libc::MAP_FIXED;
-        libc::mmap(vaddr as _, PAGE_SIZE, prot, flags, fd, 0)
+        libc::mmap(vaddr as _, len, prot, flags, fd, offset as _)
     };
     assert_eq!(ptr as usize, vaddr, "failed to mmap");
     trace!("mmap frame file (fd={}) to {:#x}", fd, vaddr);
