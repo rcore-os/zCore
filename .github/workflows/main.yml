@@ -1,0 +1,27 @@
+name: CI
+
+on: [push]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v1
+    - name: Check code format
+      run: |
+        rustup component add rustfmt-preview
+        cargo fmt -- --check
+    - name: Build
+      run: cargo build --verbose
+    - name: Run tests
+      run: cargo test --verbose
+    - name: Run benchmarks
+      run: cargo bench --verbose
+    - name: Build docs
+      run: cargo doc --verbose
+    - name: Code coverage
+      run: |
+        cargo install cargo-travis || echo "cargo-travis already installed"
+        cargo coveralls
