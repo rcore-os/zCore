@@ -1,5 +1,6 @@
 [workspace]
 members = [
     "zircon-object",
-    "zircon-syscall"
+    "zircon-syscall",
+    "zircon-hal-unix"
 ]
