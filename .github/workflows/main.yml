@@ -21,7 +21,3 @@ jobs:
       run: cargo bench --verbose
     - name: Build docs
       run: cargo doc --verbose
-    - name: Code coverage
-      run: |
-        cargo install cargo-travis || echo "cargo-travis already installed"
-        cargo coveralls

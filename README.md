@@ -1,5 +1,6 @@
 # zircon-rs
 
+[![Actions Status](https://github.com/rcore-os/zircon-rs/workflows/CI/badge.svg)](https://github.com/rcore-os/zircon-rs/actions)
 [![Build Status](https://travis-ci.org/rcore-os/zircon-rs.svg?branch=master)](https://travis-ci.org/rcore-os/zircon-rs)
 [![Coverage Status](https://coveralls.io/repos/github/rcore-os/zircon-rs/badge.svg?branch=master)](https://coveralls.io/github/rcore-os/zircon-rs?branch=master)
 
