@@ -11,6 +11,7 @@ pub struct VmAddressRegion {
     addr: VirtAddr,
     size: usize,
     parent: Option<Arc<VmAddressRegion>>,
+    page_table: Arc<Mutex<hal::PageTable>>,
     /// If inner is None, this region is destroyed, all operations are invalid.
     inner: Mutex<Option<VmarInner>>,
 }
@@ -40,6 +41,7 @@ impl VmAddressRegion {
             addr: 0,
             size: 0x8000_00000000,
             parent: None,
+            page_table: Arc::new(Mutex::new(hal::PageTable::new())),
             inner: Mutex::new(Some(VmarInner::default())),
         })
     }
@@ -62,6 +64,7 @@ impl VmAddressRegion {
             addr: self.addr + offset,
             size: len,
             parent: Some(self.clone()),
+            page_table: self.page_table.clone(),
             inner: Mutex::new(Some(VmarInner::default())),
         });
         inner.children.push(child.clone());
@@ -79,7 +82,7 @@ impl VmAddressRegion {
         if !page_aligned(offset)
             || !page_aligned(vmo_offset)
             || !page_aligned(len)
-            || vmo_offset + len > vmo.size()
+            || vmo_offset + len > vmo.len()
         {
             return Err(ZxError::INVALID_ARGS);
         }
@@ -196,10 +199,6 @@ impl VmMapping {
     fn overlap(&self, begin: VirtAddr, end: VirtAddr) -> bool {
         !(self.addr >= end || self.addr + self.size <= begin)
     }
-}
-
-fn page_aligned(x: usize) -> bool {
-    x % 0x1000 == 0
 }
 
 #[cfg(test)]

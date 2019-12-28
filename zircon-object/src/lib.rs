@@ -21,6 +21,7 @@ pub mod io;
 pub mod ipc;
 pub mod object;
 pub mod task;
+mod util;
 pub mod vm;
 
 pub use self::error::*;

@@ -1,6 +1,7 @@
 //! Hardware Abstraction Layer
 
 use super::*;
+use crate::vm::PAGE_SIZE;
 
 type ThreadId = usize;
 type PhysAddr = usize;
@@ -78,7 +79,7 @@ impl PageTable {
     ) -> Result<(), ()> {
         for &paddr in paddrs {
             self.map(vaddr, paddr, flags)?;
-            vaddr += 0x1000;
+            vaddr += PAGE_SIZE;
         }
         Ok(())
     }
@@ -91,10 +92,56 @@ impl PageTable {
         flags: MMUFlags,
     ) -> Result<(), ()> {
         for i in 0..pages {
-            let paddr = paddr + i * 0x1000;
+            let paddr = paddr + i * PAGE_SIZE;
             self.map(vaddr, paddr, flags)?;
-            vaddr += 0x1000;
+            vaddr += PAGE_SIZE;
         }
         Ok(())
     }
+
+    pub fn unmap_cont(&mut self, vaddr: VirtAddr, pages: usize) -> Result<(), ()> {
+        for i in 0..pages {
+            self.unmap(vaddr + i * PAGE_SIZE)?;
+        }
+        Ok(())
+    }
+}
+
+#[repr(C)]
+pub struct PhysFrame {
+    paddr: PhysAddr,
+}
+
+impl PhysFrame {
+    #[linkage = "weak"]
+    #[export_name = "hal_frame_alloc"]
+    pub fn alloc() -> Option<Self> {
+        unimplemented!()
+    }
+
+    pub fn addr(&self) -> PhysAddr {
+        self.paddr
+    }
+}
+
+impl Drop for PhysFrame {
+    #[linkage = "weak"]
+    #[export_name = "hal_frame_dealloc"]
+    fn drop(&mut self) {
+        unimplemented!()
+    }
+}
+
+/// Read physical memory from `paddr` to `buf`.
+#[linkage = "weak"]
+#[export_name = "hal_pmem_read"]
+pub fn pmem_read(paddr: PhysAddr, buf: &mut [u8]) {
+    unimplemented!()
+}
+
+/// Write physical memory to `paddr` from `buf`.
+#[linkage = "weak"]
+#[export_name = "hal_pmem_write"]
+pub fn pmem_write(paddr: PhysAddr, buf: &[u8]) {
+    unimplemented!()
 }
