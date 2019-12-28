@@ -83,6 +83,8 @@ impl VMObject for VMObjectPaged {
 impl VMObjectPagedInner {
     /// Helper function to split range into sub-ranges within pages.
     ///
+    /// All covered pages will be committed implicitly.
+    ///
     /// ```text
     /// VMO range:
     /// |----|----|----|----|----|
@@ -102,7 +104,7 @@ impl VMObjectPagedInner {
     /// * `paddr`: the start physical address of the in-page range.
     /// * `buf_range`: the range in view of the input buffer.
     fn for_each_page(
-        &self,
+        &mut self,
         offset: usize,
         buf_len: usize,
         mut f: impl FnMut(PhysAddr, Range<usize>),
@@ -113,11 +115,10 @@ impl VMObjectPagedInner {
             block_size_log2: 12,
         };
         for block in iter {
-            let paddr = self.frames[block.block]
-                .as_ref()
-                .expect("TODO: handle no map");
+            self.commit(block.block);
+            let paddr = self.frames[block.block].as_ref().unwrap().addr();
             let buf_range = block.origin_begin() - offset..block.origin_end() - offset;
-            f(paddr.addr() + block.begin, buf_range);
+            f(paddr + block.begin, buf_range);
         }
     }
 

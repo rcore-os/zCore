@@ -8,6 +8,7 @@ description = "Zircon HAL implementation on Linux and macOS."
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+log = "0.4"
 libc = "0.2"
 tempfile = "3"
 lazy_static = "1.4"
