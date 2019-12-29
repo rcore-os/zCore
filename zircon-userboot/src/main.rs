@@ -18,10 +18,13 @@ fn main() {
     env_logger::init();
 
     let vmar = VmAddressRegion::new_root();
+    const VBASE: usize = 0x400000000;
+    const USERBOOT_SIZE: usize = 0x7000;
+    const VDSO_SIZE: usize = 0x8000;
 
     // userboot
     let entry_addr = {
-        let vmar = vmar.create_child(0x300000000, 0x7000).unwrap();
+        let vmar = vmar.create_child(VBASE, USERBOOT_SIZE).unwrap();
         let path = std::env::args()
             .nth(1)
             .expect("failed to read userboot path");
@@ -36,7 +39,7 @@ fn main() {
 
     // vdso
     {
-        let vmar = vmar.create_child(0x300007000, 0x10000).unwrap();
+        let vmar = vmar.create_child(VBASE + USERBOOT_SIZE, VDSO_SIZE).unwrap();
         let path = std::env::args().nth(2).expect("failed to read vdso path");
         let mut file = File::open(path).expect("failed to open file");
         let mut elf_data = Vec::new();
@@ -48,20 +51,20 @@ fn main() {
         unsafe {
             // TODO: fix magic number
             // fill syscall entry
-            ((0x300000000usize + 0x7000 + 0x4836) as *mut usize).write(syscall_entry as usize);
+            ((VBASE + USERBOOT_SIZE + 0x4836) as *mut usize).write(syscall_entry as usize);
         }
     }
 
     let job = Job::root();
     let proc = Process::create(&job, "proc", 0).unwrap();
     let thread = Thread::create(&proc, "thread", 0).unwrap();
-
     unsafe {
         THREAD = Some(thread);
     }
 
-    let entry: extern "C" fn() = unsafe { core::mem::transmute(0x300000000 + entry_addr) };
+    let entry: extern "C" fn() = unsafe { core::mem::transmute(VBASE + entry_addr) };
     entry();
+    unreachable!();
 }
 
 // TODO: support multi-thread

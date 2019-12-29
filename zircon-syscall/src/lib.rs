@@ -41,7 +41,7 @@ impl Syscall {
                 a7.into(),
             ),
             SYS_DEBUG_WRITE => self.sys_debug_write(a0.into(), a1 as _),
-            SYS_PROCESS_EXIT => self.sys_process_exit(),
+            SYS_PROCESS_EXIT => self.sys_process_exit(a0 as _),
             _ => {
                 warn!("syscall unimplemented");
                 Err(ZxError::NOT_SUPPORTED)
