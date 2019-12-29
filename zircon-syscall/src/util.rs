@@ -1,6 +1,7 @@
 #![allow(unsafe_code)]
 
 use crate::ZxResult;
+use alloc::vec::Vec;
 use core::fmt::{Debug, Error, Formatter};
 use core::marker::PhantomData;
 
@@ -34,10 +35,29 @@ impl<T, P: Policy> Debug for UserPtr<T, P> {
     }
 }
 
-impl<T, P: Read> UserPtr<T, P> {
+impl<T, P: Policy> From<usize> for UserPtr<T, P> {
+    fn from(x: usize) -> Self {
+        UserPtr {
+            ptr: x as _,
+            mark: PhantomData,
+        }
+    }
+}
+
+impl<T: Copy, P: Read> UserPtr<T, P> {
     pub fn read(&self) -> ZxResult<T> {
         // TODO: check ptr and return err
         Ok(unsafe { self.ptr.read() })
+    }
+
+    pub fn read_array(&self, len: usize) -> ZxResult<Vec<T>> {
+        let mut ret = Vec::with_capacity(len);
+        unsafe {
+            ret.set_len(len);
+            let src = core::slice::from_raw_parts(self.ptr, len);
+            ret.as_mut_slice().copy_from_slice(src);
+        }
+        Ok(ret)
     }
 }
 
