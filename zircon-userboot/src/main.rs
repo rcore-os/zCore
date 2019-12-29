@@ -1,10 +1,13 @@
 #![feature(asm)]
+#![feature(naked_functions)]
 
 use std::fs::File;
 use std::io::Read;
+use std::sync::Arc;
 use xmas_elf::ElfFile;
+use zircon_object::task::*;
 use zircon_object::vm::vmar::VmAddressRegion;
-use zircon_object::ZxError;
+use zircon_syscall::Syscall;
 use zircon_userboot::VmarExt;
 
 #[macro_use]
@@ -41,45 +44,53 @@ fn main() {
             .expect("failed to read file");
         let elf = ElfFile::new(&elf_data).unwrap();
         vmar.load_from_elf(&elf).unwrap();
+
+        unsafe {
+            // TODO: fix magic number
+            // fill syscall entry
+            ((0x300000000usize + 0x7000 + 0x4836) as *mut usize).write(syscall_entry as usize);
+        }
     }
 
+    let job = Job::root();
+    let proc = Process::create(&job, "proc", 0).unwrap();
+    let thread = Thread::create(&proc, "thread", 0).unwrap();
+
     unsafe {
-        // TODO: fix magic number
-        // fill syscall entry
-        ((0x300000000usize + 0x7000 + 0x4836) as *mut usize).write(syscall as usize);
+        THREAD = Some(thread);
     }
 
     let entry: extern "C" fn() = unsafe { core::mem::transmute(0x300000000 + entry_addr) };
     entry();
 }
 
+// TODO: support multi-thread
+static mut THREAD: Option<Arc<Thread>> = None;
+
+#[naked]
+unsafe fn syscall_entry() {
+    asm!(r#"
+        push rax
+        call _syscall
+        add rsp, 8
+        ret
+        "# :::: "volatile" "intel");
+}
+
+#[no_mangle]
 extern "C" fn syscall(
-    arg0: usize,
-    arg1: usize,
-    arg2: usize,
-    arg3: usize,
-    arg4: usize,
-    arg5: usize,
+    a0: usize,
+    a1: usize,
+    a2: usize,
+    a3: usize,
+    a4: usize,
+    a5: usize,
+    num: u32,
+    a6: usize,
+    a7: usize,
 ) -> isize {
-    let num: u32;
-    unsafe { asm!("" : "={eax}"(num) ::: "volatile") };
-    info!(
-        "syscall: num={}, args={:x?}",
-        num,
-        &[arg0, arg1, arg2, arg3, arg4, arg5]
-    );
-    const SYS_DEBUG_WRITE: u32 = 96;
-    const SYS_PROCESS_EXIT: u32 = 38;
-    match num {
-        SYS_DEBUG_WRITE => {
-            let buf = unsafe { std::slice::from_raw_parts(arg0 as _, arg1) };
-            let s = std::str::from_utf8(buf).unwrap();
-            println!("{}", s);
-            0
-        }
-        SYS_PROCESS_EXIT => {
-            panic!("zircon process exit");
-        }
-        _ => ZxError::NOT_SUPPORTED as isize,
-    }
+    let syscall = Syscall {
+        thread: unsafe { THREAD.as_ref().unwrap().clone() },
+    };
+    syscall.syscall(num, [a0, a1, a2, a3, a4, a5, a6, a7])
 }

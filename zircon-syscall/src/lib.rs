@@ -1,5 +1,5 @@
 #![no_std]
-#![deny(unsafe_code, unused_must_use)]
+#![deny(unsafe_code, unused_must_use, unreachable_patterns)]
 
 #[macro_use]
 extern crate alloc;
@@ -7,56 +7,50 @@ extern crate alloc;
 #[macro_use]
 extern crate log;
 
+use self::consts::*;
 use crate::util::*;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
-use zircon_object::ipc::channel::Channel;
 use zircon_object::object::*;
-use zircon_object::task::thread::Thread;
-use zircon_object::ZxResult;
+use zircon_object::task::Thread;
+use zircon_object::*;
 
+mod channel;
+mod consts;
+mod debug;
+mod task;
 mod util;
 
 pub struct Syscall {
-    thread: Arc<Thread>,
+    pub thread: Arc<Thread>,
 }
 
 impl Syscall {
-    /// Read a message from a channel.
-    pub fn sys_channel_read(
-        &self,
-        handle_value: HandleValue,
-        options: u32,
-        bytes: UserOutPtr<u8>,
-        handles: UserOutPtr<HandleValue>,
-        num_bytes: u32,
-        num_handles: u32,
-        actual_bytes: UserOutPtr<u32>,
-        actual_handles: UserOutPtr<u32>,
-    ) -> ZxResult<()> {
-        info!(
-            "channel.read: handle={:?}, options={:?}, bytes={:?}, handles={:?}, num_bytes={:?}, num_handles={:?}",
-            handle_value, options, bytes, handles, num_bytes, num_handles,
-        );
-        let proc = &self.thread.proc;
-        let channel = proc.get_object_with_rights::<Channel>(handle_value, Rights::READ)?;
-        let msg = channel.read()?;
-        actual_bytes.write_if_not_null(msg.data.len() as u32)?;
-        actual_handles.write_if_not_null(msg.handles.len() as u32)?;
-        if num_bytes < msg.data.len() as u32 || num_handles < msg.handles.len() as u32 {
-            const MAY_DISCARD: u32 = 1;
-            if options & MAY_DISCARD == 0 {
-                unimplemented!("always discard when buffer too small for now");
+    pub fn syscall(&self, num: u32, args: [usize; 8]) -> isize {
+        info!("syscall => num={}, args={:x?}", num, args);
+        let [a0, a1, a2, a3, a4, a5, a6, a7] = args;
+        let ret = match num {
+            SYS_CHANNEL_READ => self.sys_channel_read(
+                a0 as _,
+                a1 as _,
+                a2.into(),
+                a3.into(),
+                a4 as _,
+                a5 as _,
+                a6.into(),
+                a7.into(),
+            ),
+            SYS_DEBUG_WRITE => self.sys_debug_write(a0.into(), a1 as _),
+            SYS_PROCESS_EXIT => self.sys_process_exit(),
+            _ => {
+                warn!("syscall unimplemented");
+                Err(ZxError::NOT_SUPPORTED)
             }
-            return Err(ZxError::BUFFER_TOO_SMALL);
+        };
+        info!("syscall <= {:?}", ret);
+        match ret {
+            Ok(_) => 0,
+            Err(err) => err as isize,
         }
-        bytes.write_array(msg.data.as_slice())?;
-        let handle_values: Vec<_> = msg
-            .handles
-            .into_iter()
-            .map(|handle| proc.add_handle(handle))
-            .collect();
-        handles.write_array(handle_values.as_slice())?;
-        unimplemented!()
     }
 }
