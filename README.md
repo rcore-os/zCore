@@ -21,7 +21,7 @@ Reimplement [Zircon][zircon] microkernel in safe Rust as a userspace program!
 
   It implements Zircon [syscalls][syscalls] using the above objects.
 
-* `zircon-userboot`: [TODO] User program loader.
+* `zircon-userboot`: User program loader.
 
 * `zircon-hal-unix`: HAL implementation on Unix.
 

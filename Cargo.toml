@@ -2,5 +2,6 @@
 members = [
     "zircon-object",
     "zircon-syscall",
+    "zircon-userboot",
     "zircon-hal-unix"
 ]

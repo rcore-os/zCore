@@ -5,6 +5,7 @@ extern crate log;
 
 use lazy_static::lazy_static;
 use std::collections::BTreeMap;
+use std::fmt::{Debug, Formatter};
 use std::fs::{File, OpenOptions};
 use std::io::{Error, Write};
 use std::os::unix::io::AsRawFd;
@@ -94,19 +95,28 @@ pub struct PhysFrame {
     paddr: PhysAddr,
 }
 
+impl Debug for PhysFrame {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(f, "PhysFrame({:#x})", self.paddr)
+    }
+}
+
 impl PhysFrame {
     #[export_name = "hal_frame_alloc"]
     pub fn alloc() -> Option<Self> {
         let frame_id = GLOBAL_FRAME_ID.fetch_add(1, Ordering::SeqCst);
-        Some(PhysFrame {
+        let ret = Some(PhysFrame {
             paddr: frame_id * PAGE_SIZE,
-        })
+        });
+        trace!("frame alloc: {:?}", ret);
+        ret
     }
 }
 
 impl Drop for PhysFrame {
     #[export_name = "hal_frame_dealloc"]
     fn drop(&mut self) {
+        trace!("frame dealloc: {:?}", self);
         // we don't deallocate frames
     }
 }
@@ -129,6 +139,7 @@ fn ensure_mmap_pmem() {
 /// Read physical memory from `paddr` to `buf`.
 #[export_name = "hal_pmem_read"]
 pub fn pmem_read(paddr: PhysAddr, buf: &mut [u8]) {
+    trace!("pmem read: paddr={:#x}, len={:#x}", paddr, buf.len());
     ensure_mmap_pmem();
     unsafe {
         (phys_to_virt(paddr) as *const u8).copy_to_nonoverlapping(buf.as_mut_ptr(), buf.len());
@@ -138,6 +149,7 @@ pub fn pmem_read(paddr: PhysAddr, buf: &mut [u8]) {
 /// Write physical memory to `paddr` from `buf`.
 #[export_name = "hal_pmem_write"]
 pub fn pmem_write(paddr: PhysAddr, buf: &[u8]) {
+    trace!("pmem write: paddr={:#x}, len={:#x}", paddr, buf.len());
     ensure_mmap_pmem();
     unsafe {
         buf.as_ptr()
@@ -163,14 +175,16 @@ lazy_static! {
 
 fn create_pmem_file() -> File {
     let dir = tempdir_in("/tmp").expect("failed to create pmem dir");
+    let path = dir.path().join("pmem");
     let file = OpenOptions::new()
         .read(true)
         .write(true)
         .create(true)
-        .open(dir.path().join("pmem"))
+        .open(&path)
         .expect("failed to create pmem file");
     file.set_len(PMEM_SIZE as u64)
         .expect("failed to resize file");
+    trace!("create pmem file: path={:?}, size={:#x}", path, PMEM_SIZE);
     mmap(file.as_raw_fd(), 0, PMEM_SIZE, phys_to_virt(0));
     file
 }
@@ -182,7 +196,6 @@ fn mmap(fd: libc::c_int, offset: usize, len: usize, vaddr: VirtAddr) {
         let flags = libc::MAP_SHARED | libc::MAP_FIXED;
         libc::mmap(vaddr as _, len, prot, flags, fd, offset as _)
     } as usize;
-    assert_eq!(ret, vaddr, "failed to mmap: {:?}", Error::last_os_error());
     trace!(
         "mmap file (fd={}, offset={:#x}, len={:#x}) to {:#x}",
         fd,
@@ -190,6 +203,7 @@ fn mmap(fd: libc::c_int, offset: usize, len: usize, vaddr: VirtAddr) {
         len,
         vaddr
     );
+    assert_eq!(ret, vaddr, "failed to mmap: {:?}", Error::last_os_error());
 }
 
 /// A dummy function.
