@@ -69,12 +69,12 @@ static mut THREAD: Option<Arc<Thread>> = None;
 
 #[naked]
 unsafe fn syscall_entry() {
-    asm!(r#"
-        push rax
-        call _syscall
-        add rsp, 8
-        ret
-        "# :::: "volatile" "intel");
+    asm!("push rax" :::: "intel");
+    #[cfg(not(target_os = "macos"))]
+    asm!("call syscall" :::: "intel");
+    #[cfg(target_os = "macos")]
+    asm!("call _syscall" :::: "intel");
+    asm!("add rsp, 8" :::: "intel");
 }
 
 #[no_mangle]
@@ -85,7 +85,8 @@ extern "C" fn syscall(
     a3: usize,
     a4: usize,
     a5: usize,
-    num: u32,
+    num: u32, // pushed %eax
+    _: usize, // return address
     a6: usize,
     a7: usize,
 ) -> isize {
