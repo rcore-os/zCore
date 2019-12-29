@@ -1,10 +1,21 @@
-use crate::ipc::channel::Channel;
-use crate::object::*;
-use crate::task::thread::Thread;
+#![no_std]
+#![deny(unsafe_code, unused_must_use)]
+
+#[macro_use]
+extern crate alloc;
+
+#[macro_use]
+extern crate log;
+
 use crate::util::*;
-use crate::ZxResult;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+use zircon_object::ipc::channel::Channel;
+use zircon_object::object::*;
+use zircon_object::task::thread::Thread;
+use zircon_object::ZxResult;
+
+mod util;
 
 pub struct Syscall {
     thread: Arc<Thread>,
