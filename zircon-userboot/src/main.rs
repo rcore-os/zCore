@@ -1,11 +1,15 @@
 #![feature(asm)]
 #![feature(naked_functions)]
 
+#[macro_use]
+extern crate alloc;
+
+use alloc::vec::Vec;
 use std::fs::File;
 use std::io::Read;
 use std::sync::Arc;
 use xmas_elf::ElfFile;
-use zircon_object::ipc::channel::Channel;
+use zircon_object::ipc::channel::{Channel, MessagePacket};
 use zircon_object::object::*;
 use zircon_object::task::*;
 use zircon_object::vm::vmar::VmAddressRegion;
@@ -65,6 +69,11 @@ fn main() {
     let handle = Handle::new(user_channel, Rights::DEFAULT_CHANNEL);
 
     // TODO: pass handles from kernel channel to user
+    let msg = MessagePacket {
+        data: Vec::new(),
+        handles: vec![handle.clone(); 13],
+    };
+    kernel_channel.write(msg);
 
     const STACK_SIZE: usize = 0x8000;
     let stack = Vec::<u8>::with_capacity(STACK_SIZE);

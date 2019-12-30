@@ -37,6 +37,6 @@ impl Syscall {
             .map(|handle| proc.add_handle(handle))
             .collect();
         handles.write_array(handle_values.as_slice())?;
-        unimplemented!()
+        Ok(ZxError::OK as usize)
     }
 }

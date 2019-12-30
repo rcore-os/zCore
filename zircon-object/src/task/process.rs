@@ -139,6 +139,7 @@ impl ProcessInner {
             .find(|idx| !self.handles.contains_key(idx))
             .unwrap();
         self.handles.insert(value, handle);
+        info!("A new handle is added : {}", value);
         value
     }
 
