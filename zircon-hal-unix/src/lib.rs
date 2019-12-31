@@ -4,13 +4,11 @@
 extern crate log;
 
 use lazy_static::lazy_static;
-use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
 use std::fs::{File, OpenOptions};
 use std::io::{Error, Write};
 use std::os::unix::io::AsRawFd;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Mutex;
 use tempfile::tempdir_in;
 
 type ThreadId = usize;
