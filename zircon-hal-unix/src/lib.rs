@@ -23,10 +23,12 @@ pub struct Thread {
 
 impl Thread {
     #[export_name = "hal_thread_spawn"]
-    pub fn spawn(entry: usize, stack: usize, arg1: usize, arg2: usize) -> Self {
+    pub fn spawn(entry: usize, mut stack: usize, arg1: usize, arg2: usize) -> Self {
+        // align stack pointer to 16 bytes
+        stack &= !0xf;
         let handle = std::thread::spawn(move || {
             unsafe {
-                asm!("jmp $0" :: "r"(entry), "{rsp}"(stack), "{rdi}"(arg1), "{rsi}"(arg2) :: "volatile" "intel");
+                asm!("call $0" :: "r"(entry), "{rsp}"(stack), "{rdi}"(arg1), "{rsi}"(arg2) :: "volatile" "intel");
             }
             unreachable!()
         });

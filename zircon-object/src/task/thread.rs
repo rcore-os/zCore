@@ -80,6 +80,7 @@ pub enum ThreadState {}
 mod tests {
     use super::job::Job;
     use super::*;
+    use std::sync::atomic::*;
 
     #[test]
     fn create() {
@@ -101,17 +102,13 @@ mod tests {
         let stack_top = unsafe { STACK.as_ptr() } as usize + 0x1000;
 
         // global variable for validation
-        static mut ARG1: usize = 0;
-        static mut ARG2: usize = 0;
+        static ARG1: AtomicUsize = AtomicUsize::new(0);
+        static ARG2: AtomicUsize = AtomicUsize::new(0);
 
         // function for new thread
         extern "C" fn entry(arg1: usize, arg2: usize) -> ! {
-            unsafe {
-                // align the stack to 16 bytes
-                asm!("and rsp, -16" :::: "volatile" "intel");
-                ARG1 = arg1;
-                ARG2 = arg2;
-            }
+            ARG1.store(arg1, Ordering::SeqCst);
+            ARG2.store(arg2, Ordering::SeqCst);
             loop {
                 std::thread::park();
             }
@@ -126,8 +123,8 @@ mod tests {
         std::thread::sleep(core::time::Duration::from_millis(100));
 
         // validate the thread have started and received correct arguments
-        assert_eq!(unsafe { ARG1 }, 0);
-        assert_eq!(unsafe { ARG2 }, 2);
+        assert_eq!(ARG1.load(Ordering::SeqCst), 0);
+        assert_eq!(ARG2.load(Ordering::SeqCst), 2);
 
         // start again should fail
         assert_eq!(
