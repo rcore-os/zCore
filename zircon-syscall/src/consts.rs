@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 pub const SYS_CLOCK_GET: u32 = 0;
 pub const SYS_CLOCK_GET_NEW: u32 = 1;
 pub const SYS_CLOCK_GET_MONOTONIC: u32 = 2;

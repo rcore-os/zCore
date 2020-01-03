@@ -1,6 +1,6 @@
 name: CI
 
-on: [push]
+on: [push, pull_request]
 
 jobs:
   build:
@@ -10,13 +10,23 @@ jobs:
     steps:
     - uses: actions/checkout@v1
     - name: Check code format
-      run: |
-        rustup component add rustfmt-preview
-        cargo fmt -- --check
+      run: cargo fmt -- --check
     - name: Build
       run: cargo build --verbose
-    - name: Run tests
-      run: cargo test --verbose
+    - uses: actions-rs/cargo@v1
+      with:
+        command: test
+        args: --all-features --no-fail-fast  # Customize args for your own needs
+      env:
+        CARGO_INCREMENTAL: '0'
+        RUSTFLAGS: '-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Zno-landing-pads'
+    - id: coverage
+      uses: actions-rs/grcov@v0.1
+    - name: Coveralls upload
+      uses: coverallsapp/github-action@master
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        path-to-lcov: ${{ steps.coverage.outputs.report }}
     - name: Run benchmarks
       run: cargo bench --verbose
     - name: Build docs

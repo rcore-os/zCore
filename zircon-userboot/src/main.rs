@@ -5,6 +5,8 @@ use std::fs::File;
 use std::io::Read;
 use std::sync::Arc;
 use xmas_elf::ElfFile;
+use zircon_object::ipc::channel::Channel;
+use zircon_object::object::*;
 use zircon_object::task::*;
 use zircon_object::vm::vmar::VmAddressRegion;
 use zircon_syscall::Syscall;
@@ -23,7 +25,7 @@ fn main() {
     const VDSO_SIZE: usize = 0x8000;
 
     // userboot
-    let entry_addr = {
+    let entry = {
         let vmar = vmar.create_child(VBASE, USERBOOT_SIZE).unwrap();
         let path = std::env::args()
             .nth(1)
@@ -34,7 +36,7 @@ fn main() {
             .expect("failed to read file");
         let elf = ElfFile::new(&elf_data).unwrap();
         vmar.load_from_elf(&elf).unwrap();
-        elf.header.pt2.entry_point() as usize
+        VBASE + elf.header.pt2.entry_point() as usize
     };
 
     // vdso
@@ -58,17 +60,22 @@ fn main() {
     let job = Job::root();
     let proc = Process::create(&job, "proc", 0).unwrap();
     let thread = Thread::create(&proc, "thread", 0).unwrap();
-    unsafe {
-        THREAD = Some(thread);
+
+    let (user_channel, kernel_channel) = Channel::create();
+    let handle = Handle::new(user_channel, Rights::DEFAULT_CHANNEL);
+
+    // TODO: pass handles from kernel channel to user
+
+    const STACK_SIZE: usize = 0x8000;
+    let stack = Vec::<u8>::with_capacity(STACK_SIZE);
+    let sp = stack.as_ptr() as usize + STACK_SIZE;
+    proc.start(&thread, entry, sp, handle, 0)
+        .expect("failed to start main thread");
+
+    loop {
+        std::thread::park();
     }
-
-    let entry: extern "C" fn() = unsafe { core::mem::transmute(VBASE + entry_addr) };
-    entry();
-    unreachable!();
 }
-
-// TODO: support multi-thread
-static mut THREAD: Option<Arc<Thread>> = None;
 
 #[naked]
 unsafe fn syscall_entry() {
@@ -94,7 +101,7 @@ extern "C" fn handle_syscall(
     a7: usize,
 ) -> isize {
     let syscall = Syscall {
-        thread: unsafe { THREAD.as_ref().unwrap().clone() },
+        thread: Thread::current(),
     };
     syscall.syscall(num, [a0, a1, a2, a3, a4, a5, a6, a7])
 }

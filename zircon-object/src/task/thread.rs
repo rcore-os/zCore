@@ -32,8 +32,22 @@ impl Thread {
         Ok(thread)
     }
 
-    pub fn start(&self, entry: usize, stack: usize, arg1: usize, arg2: usize) -> ZxResult<()> {
-        let hal_thread = crate::hal::Thread::spawn(entry, stack, arg1, arg2);
+    /// Get current `Thread` object.
+    #[allow(unsafe_code)]
+    pub fn current() -> Arc<Self> {
+        // FIXME: move unsafe code into HAL
+        unsafe { Arc::from_raw(crate::hal::Thread::tls() as _) }
+    }
+
+    pub fn start(
+        self: &Arc<Self>,
+        entry: usize,
+        stack: usize,
+        arg1: usize,
+        arg2: usize,
+    ) -> ZxResult<()> {
+        let tls = Arc::into_raw(self.clone()) as usize;
+        let hal_thread = crate::hal::Thread::spawn(entry, stack, arg1, arg2, tls);
         let mut inner = self.inner.lock();
         if inner.hal_thread.is_some() {
             return Err(ZxError::BAD_STATE);
@@ -80,6 +94,7 @@ pub enum ThreadState {}
 mod tests {
     use super::job::Job;
     use super::*;
+    use std::sync::atomic::*;
 
     #[test]
     fn create() {
@@ -101,17 +116,13 @@ mod tests {
         let stack_top = unsafe { STACK.as_ptr() } as usize + 0x1000;
 
         // global variable for validation
-        static mut ARG1: usize = 0;
-        static mut ARG2: usize = 0;
+        static ARG1: AtomicUsize = AtomicUsize::new(0);
+        static ARG2: AtomicUsize = AtomicUsize::new(0);
 
         // function for new thread
         extern "C" fn entry(arg1: usize, arg2: usize) -> ! {
-            unsafe {
-                // align the stack to 16 bytes
-                asm!("and rsp, -16" :::: "volatile" "intel");
-                ARG1 = arg1;
-                ARG2 = arg2;
-            }
+            ARG1.store(arg1, Ordering::SeqCst);
+            ARG2.store(arg2, Ordering::SeqCst);
             loop {
                 std::thread::park();
             }
@@ -126,8 +137,8 @@ mod tests {
         std::thread::sleep(core::time::Duration::from_millis(100));
 
         // validate the thread have started and received correct arguments
-        assert_eq!(unsafe { ARG1 }, 0);
-        assert_eq!(unsafe { ARG2 }, 2);
+        assert_eq!(ARG1.load(Ordering::SeqCst), 0);
+        assert_eq!(ARG2.load(Ordering::SeqCst), 2);
 
         // start again should fail
         assert_eq!(

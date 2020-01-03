@@ -17,7 +17,7 @@ pub struct Thread {
 impl Thread {
     #[linkage = "weak"]
     #[export_name = "hal_thread_spawn"]
-    pub fn spawn(entry: usize, stack: usize, arg1: usize, arg2: usize) -> Self {
+    pub fn spawn(entry: usize, stack: usize, arg1: usize, arg2: usize, tls: usize) -> Self {
         #[cfg(test)]
         zircon_hal_unix::init();
         unimplemented!()
@@ -25,6 +25,11 @@ impl Thread {
     #[linkage = "weak"]
     #[export_name = "hal_thread_exit"]
     pub fn exit(&mut self) {
+        unimplemented!()
+    }
+    #[linkage = "weak"]
+    #[export_name = "hal_thread_tls"]
+    pub fn tls() -> usize {
         unimplemented!()
     }
 }
