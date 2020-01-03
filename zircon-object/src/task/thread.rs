@@ -32,8 +32,22 @@ impl Thread {
         Ok(thread)
     }
 
-    pub fn start(&self, entry: usize, stack: usize, arg1: usize, arg2: usize) -> ZxResult<()> {
-        let hal_thread = crate::hal::Thread::spawn(entry, stack, arg1, arg2);
+    /// Get current `Thread` object.
+    #[allow(unsafe_code)]
+    pub fn current() -> Arc<Self> {
+        // FIXME: move unsafe code into HAL
+        unsafe { Arc::from_raw(crate::hal::Thread::tls() as _) }
+    }
+
+    pub fn start(
+        self: &Arc<Self>,
+        entry: usize,
+        stack: usize,
+        arg1: usize,
+        arg2: usize,
+    ) -> ZxResult<()> {
+        let tls = Arc::into_raw(self.clone()) as usize;
+        let hal_thread = crate::hal::Thread::spawn(entry, stack, arg1, arg2, tls);
         let mut inner = self.inner.lock();
         if inner.hal_thread.is_some() {
             return Err(ZxError::BAD_STATE);

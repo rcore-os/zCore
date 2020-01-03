@@ -4,6 +4,7 @@
 extern crate log;
 
 use lazy_static::lazy_static;
+use std::cell::Cell;
 use std::fmt::{Debug, Formatter};
 use std::fs::{File, OpenOptions};
 use std::io::{Error, Write};
@@ -23,10 +24,11 @@ pub struct Thread {
 
 impl Thread {
     #[export_name = "hal_thread_spawn"]
-    pub fn spawn(entry: usize, mut stack: usize, arg1: usize, arg2: usize) -> Self {
+    pub fn spawn(entry: usize, mut stack: usize, arg1: usize, arg2: usize, tls: usize) -> Self {
         // align stack pointer to 16 bytes
         stack &= !0xf;
         let handle = std::thread::spawn(move || {
+            TLS.with(|t| t.set(tls));
             unsafe {
                 asm!("call $0" :: "r"(entry), "{rsp}"(stack), "{rdi}"(arg1), "{rsi}"(arg2) :: "volatile" "intel");
             }
@@ -40,6 +42,15 @@ impl Thread {
     pub fn exit(&mut self) {
         unimplemented!()
     }
+
+    #[export_name = "hal_thread_tls"]
+    pub fn tls() -> usize {
+        TLS.with(|t| t.get())
+    }
+}
+
+thread_local! {
+    static TLS: Cell<usize> = Cell::new(0);
 }
 
 /// Page Table
