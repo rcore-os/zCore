@@ -1,5 +1,6 @@
 #![feature(asm)]
 #![feature(naked_functions)]
+#![deny(unused_must_use)]
 
 #[macro_use]
 extern crate alloc;
@@ -83,13 +84,14 @@ fn main() {
 
     // FIXME: pass correct handles
     let mut handles = vec![Handle::new(proc.clone(), Rights::DUPLICATE); 13];
+    handles[2] = Handle::new(job, Rights::DEFAULT_JOB);
     handles[4] = Handle::new(zbi_vmo, Rights::DEFAULT_VMO);
 
     let msg = MessagePacket {
         data: Vec::from(cmdline),
         handles,
     };
-    kernel_channel.write(msg);
+    kernel_channel.write(msg).unwrap();
 
     const STACK_SIZE: usize = 0x8000;
     let stack = Vec::<u8>::with_capacity(STACK_SIZE);

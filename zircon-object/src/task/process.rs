@@ -90,6 +90,11 @@ impl Process {
         }
     }
 
+    /// Get the `VmAddressRegion` of the process.
+    pub fn vmar(&self) -> Arc<VmAddressRegion> {
+        self.vmar.clone()
+    }
+
     /// Add a handle to the process
     pub fn add_handle(&self, handle: Handle) -> HandleValue {
         self.inner.lock().add_handle(handle)
@@ -101,12 +106,13 @@ impl Process {
     }
 
     /// Get a handle from the process
-    fn get_handle(&self, handle_value: HandleValue) -> Option<Handle> {
+    fn get_handle(&self, handle_value: HandleValue) -> ZxResult<Handle> {
         self.inner
             .lock()
             .handles
             .get(&handle_value)
             .map(|h| h.clone())
+            .ok_or(ZxError::BAD_HANDLE)
     }
 
     /// Duplicate a handle with new `rights`, return the new handle value.
@@ -142,13 +148,7 @@ impl Process {
         handle_value: HandleValue,
         desired_rights: Rights,
     ) -> ZxResult<Arc<T>> {
-        let handle = self
-            .inner
-            .lock()
-            .handles
-            .get(&handle_value)
-            .ok_or(ZxError::BAD_HANDLE)?
-            .clone();
+        let handle = self.get_handle(handle_value)?;
         // check type before rights
         let object = handle
             .object
@@ -166,13 +166,7 @@ impl Process {
         handle_value: HandleValue,
         desired_rights: Rights,
     ) -> ZxResult<Arc<dyn VMObject>> {
-        let handle = self
-            .inner
-            .lock()
-            .handles
-            .get(&handle_value)
-            .ok_or(ZxError::BAD_HANDLE)?
-            .clone();
+        let handle = self.get_handle(handle_value)?;
         // check type before rights
         let object: Arc<dyn VMObject> = handle
             .object
