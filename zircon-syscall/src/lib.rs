@@ -34,6 +34,8 @@ impl Syscall {
         let [a0, a1, a2, a3, a4, a5, a6, a7] = args;
         let ret = match num {
             SYS_HANDLE_DUPLICATE => self.sys_handle_duplicate(a0 as _, a1 as _, a2.into()),
+            SYS_HANDLE_CLOSE => self.sys_handle_close(a0 as _),
+            SYS_HANDLE_CLOSE_MANY => self.sys_handle_close_many(a0.into(), a1 as _),
             SYS_CHANNEL_READ => self.sys_channel_read(
                 a0 as _,
                 a1 as _,
