@@ -251,7 +251,7 @@ mod tests {
             Some(ZxError::WRONG_TYPE)
         );
 
-        proc.remove_handle(handle_value);
+        proc.remove_handle(handle_value).unwrap();
 
         // getting object with invalid handle should fail.
         assert_eq!(
