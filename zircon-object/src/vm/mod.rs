@@ -1,5 +1,8 @@
-pub mod vmar;
-pub mod vmo;
+mod vmar;
+mod vmo;
+
+pub use self::vmar::*;
+pub use self::vmo::*;
 
 /// Physical Address
 pub type PhysAddr = usize;
@@ -10,5 +13,9 @@ pub type VirtAddr = usize;
 pub const PAGE_SIZE: usize = 0x1000;
 
 fn page_aligned(x: usize) -> bool {
-    x % 0x1000 == 0
+    x % PAGE_SIZE == 0
+}
+
+pub fn pages(size: usize) -> usize {
+    (size + PAGE_SIZE - 1) / PAGE_SIZE
 }

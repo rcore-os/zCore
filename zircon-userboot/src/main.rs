@@ -9,10 +9,10 @@ use std::fs::File;
 use std::io::Read;
 use std::sync::Arc;
 use xmas_elf::ElfFile;
-use zircon_object::ipc::channel::{Channel, MessagePacket};
+use zircon_object::ipc::channel::*;
 use zircon_object::object::*;
 use zircon_object::task::*;
-use zircon_object::vm::vmar::VmAddressRegion;
+use zircon_object::vm::*;
 use zircon_syscall::Syscall;
 use zircon_userboot::VmarExt;
 
@@ -61,6 +61,18 @@ fn main() {
         }
     }
 
+    // zbi
+    let zbi_vmo = {
+        let path = std::env::args().nth(3).expect("failed to read zbi path");
+        let mut file = File::open(path).expect("failed to open file");
+        let mut zbi_data = Vec::new();
+        file.read_to_end(&mut zbi_data)
+            .expect("failed to read file");
+        let vmo = VMObjectPaged::new(zbi_data.len() / PAGE_SIZE + 1);
+        vmo.write(0, &zbi_data);
+        vmo
+    };
+
     let job = Job::root();
     let proc = Process::create(&job, "proc", 0).unwrap();
     let thread = Thread::create(&proc, "thread", 0).unwrap();
@@ -70,9 +82,12 @@ fn main() {
     let cmdline = "\0";
 
     // FIXME: pass correct handles
+    let mut handles = vec![Handle::new(proc.clone(), Rights::DUPLICATE); 13];
+    handles[4] = Handle::new(zbi_vmo, Rights::DEFAULT_VMO);
+
     let msg = MessagePacket {
         data: Vec::from(cmdline),
-        handles: vec![Handle::new(proc.clone(), Rights::DUPLICATE); 13],
+        handles,
     };
     kernel_channel.write(msg);
 

@@ -3,7 +3,7 @@ use super::job_policy::*;
 use super::thread::Thread;
 use super::*;
 use crate::object::*;
-use crate::vm::vmar::VmAddressRegion;
+use crate::vm::*;
 use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::sync::Arc;
@@ -153,6 +153,35 @@ impl Process {
         let object = handle
             .object
             .downcast_arc::<T>()
+            .map_err(|_| ZxError::WRONG_TYPE)?;
+        if !handle.rights.contains(desired_rights) {
+            return Err(ZxError::ACCESS_DENIED);
+        }
+        Ok(object)
+    }
+
+    /// Equal to `get_object_with_rights<dyn VMObject>`.
+    pub fn get_vmo_with_rights(
+        &self,
+        handle_value: HandleValue,
+        desired_rights: Rights,
+    ) -> ZxResult<Arc<dyn VMObject>> {
+        let handle = self
+            .inner
+            .lock()
+            .handles
+            .get(&handle_value)
+            .ok_or(ZxError::BAD_HANDLE)?
+            .clone();
+        // check type before rights
+        let object: Arc<dyn VMObject> = handle
+            .object
+            .downcast_arc::<VMObjectPaged>()
+            .map(|obj| obj as Arc<dyn VMObject>)
+            .or_else(|obj| {
+                obj.downcast_arc::<VMObjectPhysical>()
+                    .map(|obj| obj as Arc<dyn VMObject>)
+            })
             .map_err(|_| ZxError::WRONG_TYPE)?;
         if !handle.rights.contains(desired_rights) {
             return Err(ZxError::ACCESS_DENIED);
