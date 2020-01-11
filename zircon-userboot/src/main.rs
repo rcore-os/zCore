@@ -67,11 +67,12 @@ fn main() {
 
     let (user_channel, kernel_channel) = Channel::create();
     let handle = Handle::new(user_channel, Rights::DEFAULT_CHANNEL);
+    let cmdline = "\0";
 
-    // TODO: pass handles from kernel channel to user
+    // FIXME: pass correct handles
     let msg = MessagePacket {
-        data: Vec::new(),
-        handles: vec![handle.clone(); 13],
+        data: Vec::from(cmdline),
+        handles: vec![Handle::new(proc.clone(), Rights::DUPLICATE); 13],
     };
     kernel_channel.write(msg);
 

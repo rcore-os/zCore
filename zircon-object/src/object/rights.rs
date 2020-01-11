@@ -1,3 +1,6 @@
+use crate::{ZxError, ZxResult};
+use core::convert::TryFrom;
+
 bitflags! {
    pub struct Rights: u32 {
         const DUPLICATE = 1 << 0;
@@ -30,4 +33,12 @@ bitflags! {
         const DEFAULT_PROCESS = Self::BASIC.bits | Self::IO.bits | Self::PROPERTY.bits | Self::ENUMERATE.bits | Self::DESTROY.bits
             | Self::SIGNAL.bits | Self::MANAGE_PROCESS.bits | Self::MANAGE_THREAD.bits;
    }
+}
+
+impl TryFrom<u32> for Rights {
+    type Error = ZxError;
+
+    fn try_from(x: u32) -> ZxResult<Self> {
+        Self::from_bits(x).ok_or(ZxError::INVALID_ARGS)
+    }
 }

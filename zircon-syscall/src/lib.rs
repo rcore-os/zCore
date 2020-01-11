@@ -19,6 +19,7 @@ mod channel;
 mod consts;
 mod debug;
 mod debuglog;
+mod handle;
 mod task;
 mod util;
 
@@ -31,7 +32,7 @@ impl Syscall {
         info!("syscall => num={}, args={:x?}", num, args);
         let [a0, a1, a2, a3, a4, a5, a6, a7] = args;
         let ret = match num {
-            //SYS_HANDLE_DUPLICATE =>,
+            SYS_HANDLE_DUPLICATE => self.sys_handle_duplicate(a0 as _, a1 as _, a2.into()),
             SYS_CHANNEL_READ => self.sys_channel_read(
                 a0 as _,
                 a1 as _,
@@ -45,6 +46,7 @@ impl Syscall {
             SYS_DEBUG_WRITE => self.sys_debug_write(a0.into(), a1 as _),
             SYS_PROCESS_EXIT => self.sys_process_exit(a0 as _),
             SYS_DEBUGLOG_CREATE => self.sys_debuglog_create(a0.into(), a1.into(), a2.into()),
+            SYS_DEBUGLOG_WRITE => self.sys_debuglog_write(a0 as _, a1 as _, a2.into(), a3 as _),
             _ => {
                 warn!("syscall unimplemented");
                 Err(ZxError::NOT_SUPPORTED)
