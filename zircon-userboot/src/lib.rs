@@ -16,20 +16,22 @@ use zircon_object::{ZxError, ZxResult};
 mod vdso;
 
 pub trait VmarExt {
-    fn load_from_elf(&self, elf: &ElfFile) -> ZxResult<()>;
+    fn load_from_elf(&self, elf: &ElfFile) -> ZxResult<Arc<VMObjectPaged>>;
 }
 
 impl VmarExt for VmAddressRegion {
-    fn load_from_elf(&self, elf: &ElfFile) -> Result<(), ZxError> {
+    fn load_from_elf(&self, elf: &ElfFile) -> Result<Arc<VMObjectPaged>, ZxError> {
+        let mut first_vmo = None;
         for ph in elf.program_iter() {
             if ph.get_type().unwrap() != Type::Load {
                 continue;
             }
             let vmo = make_vmo(&elf, ph)?;
             let len = vmo.len();
-            self.map(ph.virtual_addr() as usize, vmo, 0, len)?;
+            self.map(ph.virtual_addr() as usize, vmo.clone(), 0, len)?;
+            first_vmo.get_or_insert(vmo);
         }
-        Ok(())
+        Ok(first_vmo.unwrap())
     }
 }
 

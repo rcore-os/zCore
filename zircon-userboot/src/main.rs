@@ -45,7 +45,7 @@ fn main() {
     };
 
     // vdso
-    {
+    let vdso_vmo = {
         let vmar = vmar.create_child(VBASE + USERBOOT_SIZE, VDSO_SIZE).unwrap();
         let path = std::env::args().nth(2).expect("failed to read vdso path");
         let mut file = File::open(path).expect("failed to open file");
@@ -53,14 +53,15 @@ fn main() {
         file.read_to_end(&mut elf_data)
             .expect("failed to read file");
         let elf = ElfFile::new(&elf_data).unwrap();
-        vmar.load_from_elf(&elf).unwrap();
+        let first_vmo = vmar.load_from_elf(&elf).unwrap();
 
         unsafe {
             // TODO: fix magic number
             // fill syscall entry
             ((VBASE + USERBOOT_SIZE + 0x4836) as *mut usize).write(syscall_entry as usize);
         }
-    }
+        first_vmo
+    };
 
     // zbi
     let zbi_vmo = {
@@ -86,6 +87,7 @@ fn main() {
     let mut handles = vec![Handle::new(proc.clone(), Rights::DUPLICATE); 13];
     handles[2] = Handle::new(job, Rights::DEFAULT_JOB);
     handles[4] = Handle::new(zbi_vmo, Rights::DEFAULT_VMO);
+    handles[5] = Handle::new(vdso_vmo, Rights::DEFAULT_VMO);
 
     let msg = MessagePacket {
         data: Vec::from(cmdline),
