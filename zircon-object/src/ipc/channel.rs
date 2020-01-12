@@ -10,7 +10,7 @@ pub type Channel = Channel_<MessagePacket>;
 
 pub struct Channel_<T> {
     base: KObjectBase,
-    send_queue: Weak<Mutex<VecDeque<T>>>,
+    peer: Weak<Channel_<T>>,
     recv_queue: Arc<Mutex<VecDeque<T>>>,
 }
 
@@ -18,46 +18,63 @@ impl_kobject!(Channel);
 
 impl<T> Channel_<T> {
     /// Create a channel and return a pair of its endpoints
+    #[allow(unsafe_code)]
     pub fn create() -> (Arc<Self>, Arc<Self>) {
-        let queue0 = Arc::new(Mutex::new(VecDeque::new()));
-        let queue1 = Arc::new(Mutex::new(VecDeque::new()));
-        let channel0 = Arc::new(Channel_ {
-            base: KObjectBase::new(),
-            send_queue: Arc::downgrade(&queue0),
-            recv_queue: queue1.clone(),
+        let mut channel0 = Arc::new(Channel_ {
+            base: KObjectBase::with_signal(Signal::WRITABLE),
+            peer: Weak::default(),
+            recv_queue: Default::default(),
         });
         let channel1 = Arc::new(Channel_ {
-            base: KObjectBase::new(),
-            send_queue: Arc::downgrade(&queue1),
-            recv_queue: queue0,
+            base: KObjectBase::with_signal(Signal::WRITABLE),
+            peer: Arc::downgrade(&channel0),
+            recv_queue: Default::default(),
         });
+        // no other reference of `channel0`
+        unsafe {
+            Arc::get_mut_unchecked(&mut channel0).peer = Arc::downgrade(&channel1);
+        }
         (channel0, channel1)
     }
 
     /// Read a packet from the channel
     pub fn read(&self) -> ZxResult<T> {
-        if let Some(msg) = self.recv_queue.lock().pop_front() {
+        let mut recv_queue = self.recv_queue.lock();
+        if let Some(msg) = recv_queue.pop_front() {
+            if recv_queue.is_empty() {
+                self.base.signal_clear(Signal::READABLE);
+            }
             return Ok(msg);
         }
         if self.peer_closed() {
-            return Err(ZxError::PEER_CLOSED);
+            Err(ZxError::PEER_CLOSED)
         } else {
-            return Err(ZxError::SHOULD_WAIT);
+            Err(ZxError::SHOULD_WAIT)
         }
     }
 
     /// Write a packet to the channel
     pub fn write(&self, msg: T) -> ZxResult<()> {
-        self.send_queue
-            .upgrade()
-            .ok_or(ZxError::PEER_CLOSED)?
-            .lock()
-            .push_back(msg);
+        let peer = self.peer.upgrade().ok_or(ZxError::PEER_CLOSED)?;
+        let mut send_queue = peer.recv_queue.lock();
+        send_queue.push_back(msg);
+        if send_queue.len() == 1 {
+            peer.base.signal_set(Signal::READABLE);
+        }
         Ok(())
     }
 
+    /// Is peer channel closed?
     fn peer_closed(&self) -> bool {
-        self.send_queue.strong_count() == 0
+        self.peer.strong_count() == 0
+    }
+}
+
+impl<T> Drop for Channel_<T> {
+    fn drop(&mut self) {
+        if let Some(peer) = self.peer.upgrade() {
+            peer.base.signal_set(Signal::PEER_CLOSED);
+        }
     }
 }
 
@@ -70,6 +87,8 @@ pub struct MessagePacket {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::boxed::Box;
+    use core::sync::atomic::*;
 
     #[test]
     fn read_write() {
@@ -117,5 +136,42 @@ mod tests {
             channel0.write(MessagePacket::default()),
             Err(ZxError::PEER_CLOSED)
         );
+    }
+
+    #[test]
+    fn signal() {
+        let (channel0, channel1) = Channel::create();
+
+        // initial status is writable and not readable.
+        let init_signal = channel0.base.signal();
+        assert!(!init_signal.contains(Signal::READABLE));
+        assert!(init_signal.contains(Signal::WRITABLE));
+
+        // register callback for `Signal::READABLE` & `Signal::PEER_CLOSED`:
+        //   set `readable` and `peer_closed`
+        let readable = Arc::new(AtomicBool::new(false));
+        let peer_closed = Arc::new(AtomicBool::new(false));
+        channel0.add_signal_callback(Box::new({
+            let readable = readable.clone();
+            let peer_closed = peer_closed.clone();
+            move |signal| {
+                readable.store(signal.contains(Signal::READABLE), Ordering::SeqCst);
+                peer_closed.store(signal.contains(Signal::PEER_CLOSED), Ordering::SeqCst);
+                false
+            }
+        }));
+
+        // writing to peer should trigger `Signal::READABLE`.
+        channel1.write(MessagePacket::default()).unwrap();
+        assert!(readable.load(Ordering::SeqCst));
+
+        // reading all messages should cause `Signal::READABLE` be cleared.
+        channel0.read().unwrap();
+        assert!(!readable.load(Ordering::SeqCst));
+
+        // peer closed should trigger `Signal::PEER_CLOSED`.
+        assert!(!peer_closed.load(Ordering::SeqCst));
+        drop(channel1);
+        assert!(peer_closed.load(Ordering::SeqCst));
     }
 }
