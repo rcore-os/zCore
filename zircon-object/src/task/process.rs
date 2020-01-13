@@ -3,7 +3,7 @@ use super::job_policy::*;
 use super::thread::Thread;
 use super::*;
 use crate::object::*;
-use crate::vm::vmar::VmAddressRegion;
+use crate::vm::*;
 use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::sync::Arc;
@@ -90,14 +90,58 @@ impl Process {
         }
     }
 
+    /// Get the `VmAddressRegion` of the process.
+    pub fn vmar(&self) -> Arc<VmAddressRegion> {
+        self.vmar.clone()
+    }
+
     /// Add a handle to the process
     pub fn add_handle(&self, handle: Handle) -> HandleValue {
         self.inner.lock().add_handle(handle)
     }
 
     /// Remove a handle from the process
-    pub fn remove_handle(&self, handle_value: HandleValue) {
-        self.inner.lock().handles.remove(&handle_value);
+    pub fn remove_handle(&self, handle_value: HandleValue) -> ZxResult<()> {
+        match self.inner.lock().handles.remove(&handle_value) {
+            Some(_) => Ok(()),
+            None => Err(ZxError::BAD_HANDLE),
+        }
+    }
+
+    /// Get a handle from the process
+    fn get_handle(&self, handle_value: HandleValue) -> ZxResult<Handle> {
+        self.inner
+            .lock()
+            .handles
+            .get(&handle_value)
+            .map(|h| h.clone())
+            .ok_or(ZxError::BAD_HANDLE)
+    }
+
+    /// Duplicate a handle with new `rights`, return the new handle value.
+    ///
+    /// The handle must have `Rights::DUPLICATE`.
+    /// To duplicate the handle with the same rights use `Rights::SAME_RIGHTS`.
+    /// If different rights are desired they must be strictly lesser than of the source handle,
+    /// or an `ZxError::ACCESS_DENIED` will be raised.
+    pub fn dup_handle(&self, handle_value: HandleValue, rights: Rights) -> ZxResult<HandleValue> {
+        let mut inner = self.inner.lock();
+        let mut handle = match inner.handles.get(&handle_value) {
+            Some(h) => h.clone(),
+            None => return Err(ZxError::BAD_HANDLE),
+        };
+        if !handle.rights.contains(Rights::DUPLICATE) {
+            return Err(ZxError::ACCESS_DENIED);
+        }
+        if !rights.contains(Rights::SAME_RIGHTS) {
+            // `rights` must be strictly lesser than of the source handle
+            if !(handle.rights.contains(rights) && handle.rights != rights) {
+                return Err(ZxError::INVALID_ARGS);
+            }
+            handle.rights = rights;
+        }
+        let new_handle_value = inner.add_handle(handle);
+        Ok(new_handle_value)
     }
 
     /// Get the kernel object corresponding to this `handle_value`,
@@ -107,17 +151,34 @@ impl Process {
         handle_value: HandleValue,
         desired_rights: Rights,
     ) -> ZxResult<Arc<T>> {
-        let handle = self
-            .inner
-            .lock()
-            .handles
-            .get(&handle_value)
-            .ok_or(ZxError::BAD_HANDLE)?
-            .clone();
+        let handle = self.get_handle(handle_value)?;
         // check type before rights
         let object = handle
             .object
             .downcast_arc::<T>()
+            .map_err(|_| ZxError::WRONG_TYPE)?;
+        if !handle.rights.contains(desired_rights) {
+            return Err(ZxError::ACCESS_DENIED);
+        }
+        Ok(object)
+    }
+
+    /// Equal to `get_object_with_rights<dyn VMObject>`.
+    pub fn get_vmo_with_rights(
+        &self,
+        handle_value: HandleValue,
+        desired_rights: Rights,
+    ) -> ZxResult<Arc<dyn VMObject>> {
+        let handle = self.get_handle(handle_value)?;
+        // check type before rights
+        let object: Arc<dyn VMObject> = handle
+            .object
+            .downcast_arc::<VMObjectPaged>()
+            .map(|obj| obj as Arc<dyn VMObject>)
+            .or_else(|obj| {
+                obj.downcast_arc::<VMObjectPhysical>()
+                    .map(|obj| obj as Arc<dyn VMObject>)
+            })
             .map_err(|_| ZxError::WRONG_TYPE)?;
         if !handle.rights.contains(desired_rights) {
             return Err(ZxError::ACCESS_DENIED);
@@ -139,6 +200,7 @@ impl ProcessInner {
             .find(|idx| !self.handles.contains_key(idx))
             .unwrap();
         self.handles.insert(value, handle);
+        info!("A new handle is added : {}", value);
         value
     }
 
@@ -189,13 +251,51 @@ mod tests {
             Some(ZxError::WRONG_TYPE)
         );
 
-        proc.remove_handle(handle_value);
+        proc.remove_handle(handle_value).unwrap();
 
         // getting object with invalid handle should fail.
         assert_eq!(
             proc.get_object_with_rights::<Process>(handle_value, Rights::DEFAULT_PROCESS)
                 .err(),
             Some(ZxError::BAD_HANDLE)
+        );
+    }
+
+    #[test]
+    fn handle_duplicate() {
+        let root_job = Job::root();
+        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
+
+        // duplicate non-exist handle should fail.
+        assert_eq!(
+            proc.dup_handle(0, Rights::empty()),
+            Err(ZxError::BAD_HANDLE)
+        );
+
+        // duplicate handle with the same rights.
+        let rights = Rights::DUPLICATE;
+        let handle_value = proc.add_handle(Handle::new(proc.clone(), rights));
+        let new_handle_value = proc.dup_handle(handle_value, Rights::SAME_RIGHTS).unwrap();
+        assert_eq!(proc.get_handle(new_handle_value).unwrap().rights, rights);
+
+        // duplicate handle with subset rights.
+        let new_handle_value = proc.dup_handle(handle_value, Rights::empty()).unwrap();
+        assert_eq!(
+            proc.get_handle(new_handle_value).unwrap().rights,
+            Rights::empty()
+        );
+
+        // duplicate handle with more rights should fail.
+        assert_eq!(
+            proc.dup_handle(handle_value, Rights::READ),
+            Err(ZxError::INVALID_ARGS)
+        );
+
+        // duplicate handle which does not have `Rights::DUPLICATE` should fail.
+        let handle_value = proc.add_handle(Handle::new(proc.clone(), Rights::empty()));
+        assert_eq!(
+            proc.dup_handle(handle_value, Rights::SAME_RIGHTS),
+            Err(ZxError::ACCESS_DENIED)
         );
     }
 }

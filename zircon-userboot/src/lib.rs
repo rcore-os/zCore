@@ -10,28 +10,28 @@ extern crate log;
 use alloc::sync::Arc;
 use xmas_elf::program::{ProgramHeader, SegmentData, Type};
 use xmas_elf::ElfFile;
-use zircon_object::vm::vmar::VmAddressRegion;
-use zircon_object::vm::vmo::{VMObject, VMObjectPaged};
-use zircon_object::vm::PAGE_SIZE;
+use zircon_object::vm::*;
 use zircon_object::{ZxError, ZxResult};
 
 mod vdso;
 
 pub trait VmarExt {
-    fn load_from_elf(&self, elf: &ElfFile) -> ZxResult<()>;
+    fn load_from_elf(&self, elf: &ElfFile) -> ZxResult<Arc<VMObjectPaged>>;
 }
 
 impl VmarExt for VmAddressRegion {
-    fn load_from_elf(&self, elf: &ElfFile) -> Result<(), ZxError> {
+    fn load_from_elf(&self, elf: &ElfFile) -> Result<Arc<VMObjectPaged>, ZxError> {
+        let mut first_vmo = None;
         for ph in elf.program_iter() {
             if ph.get_type().unwrap() != Type::Load {
                 continue;
             }
             let vmo = make_vmo(&elf, ph)?;
             let len = vmo.len();
-            self.map(ph.virtual_addr() as usize, vmo, 0, len)?;
+            self.map(ph.virtual_addr() as usize, vmo.clone(), 0, len)?;
+            first_vmo.get_or_insert(vmo);
         }
-        Ok(())
+        Ok(first_vmo.unwrap())
     }
 }
 

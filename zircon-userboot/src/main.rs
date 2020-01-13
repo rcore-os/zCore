@@ -1,14 +1,19 @@
 #![feature(asm)]
 #![feature(naked_functions)]
+#![deny(unused_must_use)]
 
+#[macro_use]
+extern crate alloc;
+
+use alloc::vec::Vec;
 use std::fs::File;
 use std::io::Read;
 use std::sync::Arc;
 use xmas_elf::ElfFile;
-use zircon_object::ipc::channel::Channel;
+use zircon_object::ipc::channel::*;
 use zircon_object::object::*;
 use zircon_object::task::*;
-use zircon_object::vm::vmar::VmAddressRegion;
+use zircon_object::vm::*;
 use zircon_syscall::Syscall;
 use zircon_userboot::VmarExt;
 
@@ -40,7 +45,7 @@ fn main() {
     };
 
     // vdso
-    {
+    let vdso_vmo = {
         let vmar = vmar.create_child(VBASE + USERBOOT_SIZE, VDSO_SIZE).unwrap();
         let path = std::env::args().nth(2).expect("failed to read vdso path");
         let mut file = File::open(path).expect("failed to open file");
@@ -48,14 +53,27 @@ fn main() {
         file.read_to_end(&mut elf_data)
             .expect("failed to read file");
         let elf = ElfFile::new(&elf_data).unwrap();
-        vmar.load_from_elf(&elf).unwrap();
+        let first_vmo = vmar.load_from_elf(&elf).unwrap();
 
         unsafe {
             // TODO: fix magic number
             // fill syscall entry
             ((VBASE + USERBOOT_SIZE + 0x4836) as *mut usize).write(syscall_entry as usize);
         }
-    }
+        first_vmo
+    };
+
+    // zbi
+    let zbi_vmo = {
+        let path = std::env::args().nth(3).expect("failed to read zbi path");
+        let mut file = File::open(path).expect("failed to open file");
+        let mut zbi_data = Vec::new();
+        file.read_to_end(&mut zbi_data)
+            .expect("failed to read file");
+        let vmo = VMObjectPaged::new(zbi_data.len() / PAGE_SIZE + 1);
+        vmo.write(0, &zbi_data);
+        vmo
+    };
 
     let job = Job::root();
     let proc = Process::create(&job, "proc", 0).unwrap();
@@ -63,8 +81,19 @@ fn main() {
 
     let (user_channel, kernel_channel) = Channel::create();
     let handle = Handle::new(user_channel, Rights::DEFAULT_CHANNEL);
+    let cmdline = "\0";
 
-    // TODO: pass handles from kernel channel to user
+    // FIXME: pass correct handles
+    let mut handles = vec![Handle::new(proc.clone(), Rights::DUPLICATE); 13];
+    handles[2] = Handle::new(job, Rights::DEFAULT_JOB);
+    handles[4] = Handle::new(zbi_vmo, Rights::DEFAULT_VMO);
+    handles[5] = Handle::new(vdso_vmo, Rights::DEFAULT_VMO);
+
+    let msg = MessagePacket {
+        data: Vec::from(cmdline),
+        handles,
+    };
+    kernel_channel.write(msg).unwrap();
 
     const STACK_SIZE: usize = 0x8000;
     let stack = Vec::<u8>::with_capacity(STACK_SIZE);

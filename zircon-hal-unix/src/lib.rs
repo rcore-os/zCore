@@ -178,7 +178,7 @@ fn align_to_page(x: VirtAddr) -> VirtAddr {
     x / PAGE_SIZE * PAGE_SIZE
 }
 
-const PMEM_SIZE: usize = 0x100000;
+const PMEM_SIZE: usize = 0x1000000; // 16MiB
 
 lazy_static! {
     static ref FRAME_FILE: File = create_pmem_file();

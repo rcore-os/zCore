@@ -1,9 +1,11 @@
 #![allow(unsafe_code)]
 
 use crate::ZxResult;
+use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt::{Debug, Error, Formatter};
 use core::marker::PhantomData;
+use zircon_object::ZxError;
 
 pub struct UserPtr<T, P: Policy> {
     ptr: *mut T,
@@ -58,6 +60,14 @@ impl<T: Copy, P: Read> UserPtr<T, P> {
             ret.as_mut_slice().copy_from_slice(src);
         }
         Ok(ret)
+    }
+}
+
+impl<P: Read> UserPtr<u8, P> {
+    pub fn read_string(&self, len: usize) -> ZxResult<String> {
+        let src = unsafe { core::slice::from_raw_parts(self.ptr, len) };
+        let s = core::str::from_utf8(src).map_err(|_| ZxError::INVALID_ARGS)?;
+        Ok(String::from(s))
     }
 }
 
