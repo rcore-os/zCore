@@ -7,11 +7,13 @@ extern crate alloc;
 #[macro_use]
 extern crate log;
 
-use alloc::sync::Arc;
-use xmas_elf::program::{ProgramHeader, SegmentData, Type};
-use xmas_elf::ElfFile;
-use zircon_object::vm::*;
-use zircon_object::{ZxError, ZxResult};
+use {
+    alloc::sync::Arc,
+    xmas_elf::program::{ProgramHeader, SegmentData, Type},
+    xmas_elf::ElfFile,
+    zircon_object::vm::*,
+    zircon_object::{ZxError, ZxResult},
+};
 
 mod vdso;
 

@@ -5,21 +5,23 @@
 #[macro_use]
 extern crate alloc;
 
-use alloc::vec::Vec;
-use std::fs::File;
-use std::io::Read;
-use std::sync::Arc;
-use xmas_elf::ElfFile;
-use zircon_object::ipc::channel::*;
-use zircon_object::object::*;
-use zircon_object::resource::{Resource, ResourceKind};
-use zircon_object::task::*;
-use zircon_object::vm::*;
-use zircon_syscall::Syscall;
-use zircon_userboot::VmarExt;
-
 #[macro_use]
 extern crate log;
+
+use {
+    alloc::vec::Vec,
+    std::fs::File,
+    std::io::Read,
+    std::sync::Arc,
+    xmas_elf::ElfFile,
+    zircon_object::ipc::channel::*,
+    zircon_object::object::*,
+    zircon_object::resource::{Resource, ResourceKind},
+    zircon_object::task::*,
+    zircon_object::vm::*,
+    zircon_syscall::Syscall,
+    zircon_userboot::VmarExt,
+};
 
 fn main() {
     zircon_hal_unix::init();
