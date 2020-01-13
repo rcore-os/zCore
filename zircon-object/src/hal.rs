@@ -150,3 +150,9 @@ pub fn pmem_read(paddr: PhysAddr, buf: &mut [u8]) {
 pub fn pmem_write(paddr: PhysAddr, buf: &[u8]) {
     unimplemented!()
 }
+
+#[linkage = "weak"]
+#[export_name = "hal_serial_write"]
+pub fn serial_write(c: char) {
+    unimplemented!()
+}
