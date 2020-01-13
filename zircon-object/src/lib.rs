@@ -20,6 +20,7 @@ mod hal;
 pub mod io;
 pub mod ipc;
 pub mod object;
+pub mod resource;
 pub mod task;
 mod util;
 pub mod vm;

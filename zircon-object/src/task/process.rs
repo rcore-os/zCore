@@ -163,6 +163,16 @@ impl Process {
         Ok(object)
     }
 
+    /// Get the kernel object corresponding to this `handle_value`
+    pub fn get_object<T: KernelObject>(&self, handle_value: HandleValue) -> ZxResult<Arc<T>> {
+        let handle = self.get_handle(handle_value)?;
+        let object = handle
+            .object
+            .downcast_arc::<T>()
+            .map_err(|_| ZxError::WRONG_TYPE)?;
+        Ok(object)
+    }
+
     /// Equal to `get_object_with_rights<dyn VMObject>`.
     pub fn get_vmo_with_rights(
         &self,

@@ -12,6 +12,7 @@ use crate::util::*;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use zircon_object::object::*;
+use zircon_object::resource::*;
 use zircon_object::task::Thread;
 use zircon_object::*;
 

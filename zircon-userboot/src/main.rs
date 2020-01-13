@@ -12,6 +12,7 @@ use std::sync::Arc;
 use xmas_elf::ElfFile;
 use zircon_object::ipc::channel::*;
 use zircon_object::object::*;
+use zircon_object::resource::Resource;
 use zircon_object::task::*;
 use zircon_object::vm::*;
 use zircon_syscall::Syscall;
@@ -78,6 +79,7 @@ fn main() {
     let job = Job::root();
     let proc = Process::create(&job, "proc", 0).unwrap();
     let thread = Thread::create(&proc, "thread", 0).unwrap();
+    let resource = Resource::create("root", 4).unwrap();
 
     let (user_channel, kernel_channel) = Channel::create();
     let handle = Handle::new(user_channel, Rights::DEFAULT_CHANNEL);
@@ -86,6 +88,7 @@ fn main() {
     // FIXME: pass correct handles
     let mut handles = vec![Handle::new(proc.clone(), Rights::DUPLICATE); 13];
     handles[2] = Handle::new(job, Rights::DEFAULT_JOB);
+    handles[3] = Handle::new(resource, Rights::DEFAULT_RESOURCE);
     handles[4] = Handle::new(zbi_vmo, Rights::DEFAULT_VMO);
     handles[5] = Handle::new(vdso_vmo, Rights::DEFAULT_VMO);
 
