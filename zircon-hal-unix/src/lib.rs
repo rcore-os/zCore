@@ -217,6 +217,11 @@ fn mmap(fd: libc::c_int, offset: usize, len: usize, vaddr: VirtAddr) {
     assert_eq!(ret, vaddr, "failed to mmap: {:?}", Error::last_os_error());
 }
 
+#[export_name = "hal_serial_write"]
+pub fn serial_write(c: char) {
+    print!("{}", c);
+}
+
 /// A dummy function.
 ///
 /// Call this anywhere to ensure this lib being linked.

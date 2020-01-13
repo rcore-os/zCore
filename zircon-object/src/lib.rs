@@ -25,3 +25,4 @@ mod util;
 pub mod vm;
 
 pub use self::error::*;
+pub use self::hal::serial_write;
