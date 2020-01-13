@@ -1,5 +1,5 @@
 use super::*;
-use zircon_object::resource::Resource;
+use zircon_object::resource::{Resource, ResourceKind};
 
 impl Syscall {
     pub fn sys_debuglog_create(
@@ -14,7 +14,7 @@ impl Syscall {
         );
         let proc = &self.thread.proc;
         let resource = proc.get_object::<Resource>(rsrc as u32)?;
-        resource.validate(4)?;
+        resource.validate(ResourceKind::ROOT)?;
         target.write(1u32)?;
         Ok(ZxError::OK as usize)
     }

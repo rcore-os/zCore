@@ -12,7 +12,7 @@ use std::sync::Arc;
 use xmas_elf::ElfFile;
 use zircon_object::ipc::channel::*;
 use zircon_object::object::*;
-use zircon_object::resource::Resource;
+use zircon_object::resource::{Resource, ResourceKind};
 use zircon_object::task::*;
 use zircon_object::vm::*;
 use zircon_syscall::Syscall;
@@ -79,7 +79,7 @@ fn main() {
     let job = Job::root();
     let proc = Process::create(&job, "proc", 0).unwrap();
     let thread = Thread::create(&proc, "thread", 0).unwrap();
-    let resource = Resource::create("root", 4).unwrap();
+    let resource = Resource::create("root", ResourceKind::ROOT).unwrap();
 
     let (user_channel, kernel_channel) = Channel::create();
     let handle = Handle::new(user_channel, Rights::DEFAULT_CHANNEL);
