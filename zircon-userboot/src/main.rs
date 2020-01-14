@@ -1,11 +1,10 @@
 #![feature(asm)]
 #![feature(naked_functions)]
-#![deny(unused_must_use)]
+#![deny(warnings, unused_must_use)]
 
 #[macro_use]
 extern crate alloc;
 
-#[macro_use]
 extern crate log;
 
 use {
