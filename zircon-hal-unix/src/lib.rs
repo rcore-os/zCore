@@ -4,14 +4,16 @@
 #[macro_use]
 extern crate log;
 
-use lazy_static::lazy_static;
-use std::cell::Cell;
-use std::fmt::{Debug, Formatter};
-use std::fs::{File, OpenOptions};
-use std::io::Error;
-use std::os::unix::io::AsRawFd;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use tempfile::tempdir_in;
+use {
+    lazy_static::lazy_static,
+    std::cell::Cell,
+    std::fmt::{Debug, Formatter},
+    std::fs::{File, OpenOptions},
+    std::io::Error,
+    std::os::unix::io::AsRawFd,
+    std::sync::atomic::{AtomicUsize, Ordering},
+    tempfile::tempdir_in,
+};
 
 type ThreadId = usize;
 type PhysAddr = usize;
