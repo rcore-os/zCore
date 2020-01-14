@@ -100,7 +100,7 @@ mod tests {
     fn create() {
         let root_job = Job::root();
         let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
-        let thread = Thread::create(&proc, "thread", 0).expect("failed to create thread");
+        let _thread = Thread::create(&proc, "thread", 0).expect("failed to create thread");
     }
 
     #[test]

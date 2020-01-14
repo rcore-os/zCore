@@ -12,7 +12,6 @@ use {
     alloc::vec::Vec,
     std::fs::File,
     std::io::Read,
-    std::sync::Arc,
     xmas_elf::ElfFile,
     zircon_object::ipc::channel::*,
     zircon_object::object::*,
