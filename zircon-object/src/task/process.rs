@@ -230,7 +230,7 @@ mod tests {
     #[test]
     fn create() {
         let root_job = Job::root();
-        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
+        let _proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
     }
 
     #[test]

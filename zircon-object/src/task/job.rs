@@ -107,7 +107,7 @@ mod tests {
     #[test]
     fn create() {
         let root_job = Job::root();
-        let job = Job::create_child(&root_job, 0).expect("failed to create job");
+        let _job = Job::create_child(&root_job, 0).expect("failed to create job");
     }
 
     #[test]
