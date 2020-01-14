@@ -1,5 +1,6 @@
 use super::job::Job;
 use super::job_policy::*;
+use super::resource::*;
 use super::thread::Thread;
 use super::*;
 use crate::object::*;
@@ -171,6 +172,16 @@ impl Process {
             .downcast_arc::<T>()
             .map_err(|_| ZxError::WRONG_TYPE)?;
         Ok(object)
+    }
+
+    /// Try to get Resource and validate it
+    pub fn validate_resource(&self, handle_value: HandleValue, kind: ResourceKind) -> ZxResult<()> {
+        let handle = self.get_handle(handle_value)?;
+        let object = handle
+            .object
+            .downcast_arc::<Resource>()
+            .map_err(|_| ZxError::WRONG_TYPE)?;
+        object.validate(kind)
     }
 
     /// Equal to `get_object_with_rights<dyn VMObject>`.
