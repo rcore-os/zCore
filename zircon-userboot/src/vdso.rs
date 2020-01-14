@@ -2,6 +2,7 @@
 /// once at boot time.  From the vDSO code's perspective, they are
 /// read-only data that can never change.  Hence, no synchronization is
 /// required to read them.
+#[allow(dead_code)]
 #[repr(C)]
 //#[derive(Debug)]
 struct VdsoConstants {

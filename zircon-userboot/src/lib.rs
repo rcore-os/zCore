@@ -1,10 +1,8 @@
 #![no_std]
 #![deny(unused_must_use)]
 
-#[macro_use]
 extern crate alloc;
 
-#[macro_use]
 extern crate log;
 
 use {
