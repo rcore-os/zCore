@@ -17,19 +17,21 @@ pub trait Read: Policy {}
 pub trait Write: Policy {}
 pub enum In {}
 pub enum Out {}
-pub enum _InOut {}
+#[allow(dead_code)]
+pub enum InOut {}
 
 impl Policy for In {}
 impl Policy for Out {}
-impl Policy for _InOut {}
+impl Policy for InOut {}
 impl Read for In {}
 impl Write for Out {}
-impl Read for _InOut {}
-impl Write for _InOut {}
+impl Read for InOut {}
+impl Write for InOut {}
 
 pub type UserInPtr<T> = UserPtr<T, In>;
 pub type UserOutPtr<T> = UserPtr<T, Out>;
-pub type _UserInOutPtr<T> = UserPtr<T, _InOut>;
+#[allow(dead_code)]
+pub type UserInOutPtr<T> = UserPtr<T, InOut>;
 
 impl<T, P: Policy> Debug for UserPtr<T, P> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
