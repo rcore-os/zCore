@@ -7,7 +7,7 @@ use spin::Mutex;
 
 pub struct Job {
     base: KObjectBase,
-    parent: Option<Arc<Job>>,
+    _parent: Option<Arc<Job>>,
     parent_policy: JobPolicy,
     inner: Mutex<JobInner>,
 }
@@ -26,7 +26,7 @@ impl Job {
     pub fn root() -> Arc<Self> {
         Arc::new(Job {
             base: KObjectBase::new(),
-            parent: None,
+            _parent: None,
             parent_policy: JobPolicy::default(),
             inner: Mutex::new(JobInner::default()),
         })
@@ -38,7 +38,7 @@ impl Job {
         let mut inner = parent.inner.lock();
         let child = Arc::new(Job {
             base: KObjectBase::new(),
-            parent: Some(parent.clone()),
+            _parent: Some(parent.clone()),
             parent_policy: inner.policy.merge(&parent.parent_policy),
             inner: Mutex::new(JobInner::default()),
         });

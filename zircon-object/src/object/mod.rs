@@ -1,4 +1,3 @@
-use core::any::Any;
 use core::fmt::Debug;
 use core::sync::atomic::*;
 use downcast_rs::{impl_downcast, DowncastSync};

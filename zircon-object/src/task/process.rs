@@ -8,13 +8,12 @@ use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
-use core::any::Any;
 use spin::Mutex;
 
 pub struct Process {
     base: KObjectBase,
-    name: String,
-    job: Arc<Job>,
+    _name: String,
+    _job: Arc<Job>,
     policy: JobPolicy,
     vmar: Arc<VmAddressRegion>,
     inner: Mutex<ProcessInner>,
@@ -31,12 +30,12 @@ struct ProcessInner {
 
 impl Process {
     /// Create a new process in the `job`.
-    pub fn create(job: &Arc<Job>, name: &str, options: u32) -> ZxResult<Arc<Self>> {
-        // TODO: options
+    pub fn create(job: &Arc<Job>, name: &str, _options: u32) -> ZxResult<Arc<Self>> {
+        // TODO: _options -> options
         let proc = Arc::new(Process {
             base: KObjectBase::new(),
-            name: String::from(name),
-            job: job.clone(),
+            _name: String::from(name),
+            _job: job.clone(),
             policy: job.policy(),
             vmar: VmAddressRegion::new_root(),
             inner: Mutex::new(ProcessInner::default()),
@@ -73,7 +72,8 @@ impl Process {
         Ok(())
     }
 
-    pub fn exit(&self, retcode: usize) {
+    pub fn exit(&self, _retcode: usize) {
+        // TODO _retcode -> retcode
         unimplemented!()
     }
 

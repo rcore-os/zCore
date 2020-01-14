@@ -14,11 +14,11 @@ pub struct BlockRange {
 }
 
 impl BlockRange {
-    pub fn len(&self) -> usize {
+    pub fn _len(&self) -> usize {
         self.end - self.begin
     }
-    pub fn is_full(&self) -> bool {
-        self.len() == (1usize << self.block_size_log2)
+    pub fn _is_full(&self) -> bool {
+        self._len() == (1usize << self.block_size_log2)
     }
     pub fn origin_begin(&self) -> usize {
         (self.block << self.block_size_log2) + self.begin

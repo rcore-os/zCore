@@ -1,4 +1,5 @@
 #![feature(asm)]
+#![deny(warnings)]
 
 #[macro_use]
 extern crate log;
@@ -7,7 +8,7 @@ use lazy_static::lazy_static;
 use std::cell::Cell;
 use std::fmt::{Debug, Formatter};
 use std::fs::{File, OpenOptions};
-use std::io::{Error, Write};
+use std::io::Error;
 use std::os::unix::io::AsRawFd;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tempfile::tempdir_in;
@@ -27,7 +28,7 @@ impl Thread {
     pub fn spawn(entry: usize, mut stack: usize, arg1: usize, arg2: usize, tls: usize) -> Self {
         // align stack pointer to 16 bytes
         stack &= !0xf;
-        let handle = std::thread::spawn(move || {
+        let _ = std::thread::spawn(move || {
             TLS.with(|t| t.set(tls));
             unsafe {
                 asm!("call $0" :: "r"(entry), "{rsp}"(stack), "{rdi}"(arg1), "{rsi}"(arg2) :: "volatile" "intel");
@@ -68,7 +69,7 @@ impl PageTable {
 
     /// Map the page of `vaddr` to the frame of `paddr` with `flags`.
     #[export_name = "hal_pt_map"]
-    pub fn map(&mut self, vaddr: VirtAddr, paddr: PhysAddr, flags: MMUFlags) -> Result<(), ()> {
+    pub fn map(&mut self, vaddr: VirtAddr, paddr: PhysAddr, _: MMUFlags) -> Result<(), ()> {
         debug_assert!(page_aligned(vaddr));
         debug_assert!(page_aligned(paddr));
         mmap(FRAME_FILE.as_raw_fd(), paddr, PAGE_SIZE, vaddr);
@@ -172,10 +173,6 @@ const PAGE_SIZE: usize = 0x1000;
 
 fn page_aligned(x: VirtAddr) -> bool {
     x % PAGE_SIZE == 0
-}
-
-fn align_to_page(x: VirtAddr) -> VirtAddr {
-    x / PAGE_SIZE * PAGE_SIZE
 }
 
 const PMEM_SIZE: usize = 0x1000000; // 16MiB

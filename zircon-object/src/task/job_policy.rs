@@ -1,5 +1,3 @@
-use crate::ZxResult;
-
 #[derive(Default, Copy, Clone)]
 pub struct JobPolicy {
     // TODO: use bitset

@@ -59,7 +59,8 @@ impl VMObject for VMObjectPhysical {
             .expect("failed to map")
     }
 
-    fn commit(&self, offset: usize, len: usize) {}
+    // TODO empty function should be denied
+    fn commit(&self, _offset: usize, _len: usize) {}
 }
 
 #[cfg(test)]

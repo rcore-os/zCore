@@ -16,7 +16,7 @@ pub enum ResourceKind {
 
 pub struct Resource {
     base: KObjectBase,
-    name: String,
+    _name: String,
     kind: ResourceKind,
 }
 
@@ -26,7 +26,7 @@ impl Resource {
     pub fn create(name: &str, kind: ResourceKind) -> ZxResult<Arc<Self>> {
         Ok(Arc::new(Resource {
             base: KObjectBase::new(),
-            name: String::from(name),
+            _name: String::from(name),
             kind: kind,
         }))
     }
