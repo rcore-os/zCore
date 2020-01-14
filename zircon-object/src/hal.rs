@@ -15,7 +15,7 @@ pub struct Thread {
 impl Thread {
     #[linkage = "weak"]
     #[export_name = "hal_thread_spawn"]
-    pub fn spawn(_: usize, _: usize, _: usize, _: usize, _: usize) -> Self {
+    pub fn spawn(_entry: usize, _stack: usize, _arg1: usize, _arg2: usize, _tls: usize) -> Self {
         #[cfg(test)]
         zircon_hal_unix::init();
         unimplemented!()
@@ -48,25 +48,25 @@ impl PageTable {
     /// Map the page of `vaddr` to the frame of `paddr` with `flags`.
     #[linkage = "weak"]
     #[export_name = "hal_pt_map"]
-    pub fn map(&mut self, _: VirtAddr, _: PhysAddr, _: MMUFlags) -> Result<(), ()> {
+    pub fn map(&mut self, _vaddr: VirtAddr, _paddr: PhysAddr, _flags: MMUFlags) -> Result<(), ()> {
         unimplemented!()
     }
     /// Unmap the page of `vaddr`.
     #[linkage = "weak"]
     #[export_name = "hal_pt_unmap"]
-    pub fn unmap(&mut self, _: VirtAddr) -> Result<(), ()> {
+    pub fn unmap(&mut self, _vaddr: VirtAddr) -> Result<(), ()> {
         unimplemented!()
     }
     /// Change the `flags` of the page of `vaddr`.
     #[linkage = "weak"]
     #[export_name = "hal_pt_protect"]
-    pub fn protect(&mut self, _: VirtAddr, _: MMUFlags) -> Result<(), ()> {
+    pub fn protect(&mut self, _vaddr: VirtAddr, _flags: MMUFlags) -> Result<(), ()> {
         unimplemented!()
     }
     /// Query the physical address which the page of `vaddr` maps to.
     #[linkage = "weak"]
     #[export_name = "hal_pt_query"]
-    pub fn query(&mut self, _: VirtAddr) -> Result<(PhysAddr, MMUFlags), ()> {
+    pub fn query(&mut self, _vaddr: VirtAddr) -> Result<(PhysAddr, MMUFlags), ()> {
         unimplemented!()
     }
     /// Get the physical address of root page table.
@@ -138,19 +138,19 @@ impl Drop for PhysFrame {
 /// Read physical memory from `paddr` to `buf`.
 #[linkage = "weak"]
 #[export_name = "hal_pmem_read"]
-pub fn pmem_read(_: PhysAddr, _: &mut [u8]) {
+pub fn pmem_read(_paddr: PhysAddr, _buf: &mut [u8]) {
     unimplemented!()
 }
 
 /// Write physical memory to `paddr` from `buf`.
 #[linkage = "weak"]
 #[export_name = "hal_pmem_write"]
-pub fn pmem_write(_: PhysAddr, _: &[u8]) {
+pub fn pmem_write(_paddr: PhysAddr, _buf: &[u8]) {
     unimplemented!()
 }
 
 #[linkage = "weak"]
 #[export_name = "hal_serial_write"]
-pub fn serial_write(_: char) {
+pub fn serial_write(_c: char) {
     unimplemented!()
 }
