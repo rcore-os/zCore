@@ -6,7 +6,6 @@ type ThreadId = usize;
 type PhysAddr = usize;
 type VirtAddr = usize;
 type MMUFlags = usize;
-type _APIResult = usize;
 
 #[repr(C)]
 pub struct Thread {
