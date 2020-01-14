@@ -17,7 +17,8 @@ pub trait VMObject: KernelObject {
 
     fn map_to(&self, page_table: &mut PageTable, vaddr: VirtAddr, offset: usize, len: usize);
 
-    fn unmap_from(&self, page_table: &mut PageTable, vaddr: VirtAddr, offset: usize, len: usize) {
+    fn unmap_from(&self, page_table: &mut PageTable, vaddr: VirtAddr, _offset: usize, len: usize) {
+        // TODO _offset unused?
         let pages = len / PAGE_SIZE;
         page_table
             .unmap_cont(vaddr, pages)

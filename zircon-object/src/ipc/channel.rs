@@ -2,7 +2,6 @@ use crate::object::*;
 use alloc::collections::VecDeque;
 use alloc::sync::{Arc, Weak};
 use alloc::vec::Vec;
-use core::any::Any;
 use spin::Mutex;
 
 pub type Channel = Channel_<MessagePacket>;

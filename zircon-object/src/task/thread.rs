@@ -7,7 +7,7 @@ use spin::Mutex;
 
 pub struct Thread {
     base: KObjectBase,
-    name: String,
+    _name: String,
     pub proc: Arc<Process>,
     inner: Mutex<ThreadInner>,
 }
@@ -24,7 +24,7 @@ impl Thread {
         // TODO: options
         let thread = Arc::new(Thread {
             base: KObjectBase::new(),
-            name: String::from(name),
+            _name: String::from(name),
             proc: proc.clone(),
             inner: Mutex::new(ThreadInner::default()),
         });
@@ -66,11 +66,11 @@ impl Thread {
         Ok(())
     }
 
-    pub fn read_state(&self, kind: ThreadStateKind) -> ZxResult<ThreadState> {
+    pub fn read_state(&self, _kind: ThreadStateKind) -> ZxResult<ThreadState> {
         unimplemented!()
     }
 
-    pub fn write_state(&self, state: &ThreadState) -> ZxResult<()> {
+    pub fn write_state(&self, _state: &ThreadState) -> ZxResult<()> {
         unimplemented!()
     }
 }
