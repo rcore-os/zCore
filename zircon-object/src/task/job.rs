@@ -1,9 +1,7 @@
-use super::job_policy::*;
-use super::process::Process;
-use crate::object::*;
-use alloc::sync::Arc;
-use alloc::vec::Vec;
-use spin::Mutex;
+use {
+    super::job_policy::*, super::process::Process, crate::object::*, alloc::sync::Arc,
+    alloc::vec::Vec, spin::Mutex,
+};
 
 pub struct Job {
     base: KObjectBase,

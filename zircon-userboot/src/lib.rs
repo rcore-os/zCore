@@ -1,5 +1,5 @@
 #![no_std]
-#![deny(unused_must_use)]
+#![deny(warnings, unused_must_use)]
 
 extern crate alloc;
 

@@ -1,5 +1,7 @@
-use crate::{ZxError, ZxResult};
-use core::convert::TryFrom;
+use {
+    crate::{ZxError, ZxResult},
+    core::convert::TryFrom,
+};
 
 bitflags! {
    pub struct Rights: u32 {

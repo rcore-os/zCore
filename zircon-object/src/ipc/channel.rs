@@ -1,8 +1,10 @@
-use crate::object::*;
-use alloc::collections::VecDeque;
-use alloc::sync::{Arc, Weak};
-use alloc::vec::Vec;
-use spin::Mutex;
+use {
+    crate::object::*,
+    alloc::collections::VecDeque,
+    alloc::sync::{Arc, Weak},
+    alloc::vec::Vec,
+    spin::Mutex,
+};
 
 pub type Channel = Channel_<MessagePacket>;
 

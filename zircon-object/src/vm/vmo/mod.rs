@@ -1,12 +1,9 @@
-use super::*;
-use crate::hal::PageTable;
-use crate::object::*;
+use {super::*, crate::hal::PageTable, crate::object::*};
 
 mod paged;
 mod physical;
 
-pub use self::paged::*;
-pub use self::physical::*;
+pub use {self::paged::*, self::physical::*};
 
 /// Virtual Memory Objects
 pub trait VMObject: KernelObject {

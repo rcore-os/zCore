@@ -24,5 +24,4 @@ pub mod task;
 mod util;
 pub mod vm;
 
-pub use self::error::*;
-pub use self::hal::serial_write;
+pub use {self::error::*, self::hal::serial_write};

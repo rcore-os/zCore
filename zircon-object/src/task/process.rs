@@ -1,15 +1,8 @@
-use super::job::Job;
-use super::job_policy::*;
-use super::resource::*;
-use super::thread::Thread;
-use super::*;
-use crate::object::*;
-use crate::vm::*;
-use alloc::collections::BTreeMap;
-use alloc::string::String;
-use alloc::sync::Arc;
-use alloc::vec::Vec;
-use spin::Mutex;
+use {
+    super::job::Job, super::job_policy::*, super::resource::*, super::thread::Thread, super::*,
+    crate::object::*, crate::vm::*, alloc::collections::BTreeMap, alloc::string::String,
+    alloc::sync::Arc, alloc::vec::Vec, spin::Mutex,
+};
 
 pub struct Process {
     base: KObjectBase,
