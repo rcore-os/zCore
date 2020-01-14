@@ -1,11 +1,13 @@
 #![allow(unsafe_code)]
 
-use crate::ZxResult;
-use alloc::string::String;
-use alloc::vec::Vec;
-use core::fmt::{Debug, Error, Formatter};
-use core::marker::PhantomData;
-use zircon_object::ZxError;
+use {
+    crate::ZxResult,
+    alloc::string::String,
+    alloc::vec::Vec,
+    core::fmt::{Debug, Error, Formatter},
+    core::marker::PhantomData,
+    zircon_object::ZxError,
+};
 
 pub struct UserPtr<T, P: Policy> {
     ptr: *mut T,

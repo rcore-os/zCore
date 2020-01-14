@@ -1,5 +1,4 @@
-use super::*;
-use core::convert::TryFrom;
+use {super::*, core::convert::TryFrom};
 
 impl Syscall {
     pub fn sys_handle_duplicate(

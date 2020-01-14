@@ -1,5 +1,4 @@
-use super::*;
-use zircon_object::ipc::channel::Channel;
+use {super::*, zircon_object::ipc::channel::Channel};
 
 impl Syscall {
     /// Read a message from a channel.
