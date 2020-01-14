@@ -1,8 +1,7 @@
 mod vmar;
 mod vmo;
 
-pub use self::vmar::*;
-pub use self::vmo::*;
+pub use {self::vmar::*, self::vmo::*};
 
 /// Physical Address
 pub type PhysAddr = usize;

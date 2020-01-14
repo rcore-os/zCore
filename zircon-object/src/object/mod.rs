@@ -1,10 +1,10 @@
-use core::fmt::Debug;
-use core::sync::atomic::*;
-use downcast_rs::{impl_downcast, DowncastSync};
+use {
+    core::fmt::Debug,
+    core::sync::atomic::*,
+    downcast_rs::{impl_downcast, DowncastSync},
+};
 
-pub use super::*;
-pub use handle::*;
-pub use rights::*;
+pub use {super::*, handle::*, rights::*};
 
 pub mod handle;
 pub mod rights;

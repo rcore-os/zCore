@@ -1,9 +1,7 @@
-use super::process::Process;
-use super::*;
-use crate::object::*;
-use alloc::string::String;
-use alloc::sync::Arc;
-use spin::Mutex;
+use {
+    super::process::Process, super::*, crate::object::*, alloc::string::String, alloc::sync::Arc,
+    spin::Mutex,
+};
 
 pub struct Thread {
     base: KObjectBase,

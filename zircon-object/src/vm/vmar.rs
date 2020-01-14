@@ -1,10 +1,7 @@
-use super::*;
-use crate::hal::PageTable;
-use crate::object::*;
-use crate::vm::vmo::VMObject;
-use alloc::sync::Arc;
-use alloc::vec::Vec;
-use spin::Mutex;
+use {
+    super::*, crate::hal::PageTable, crate::object::*, crate::vm::vmo::VMObject, alloc::sync::Arc,
+    alloc::vec::Vec, spin::Mutex,
+};
 
 /// Virtual Memory Address Regions
 pub struct VmAddressRegion {

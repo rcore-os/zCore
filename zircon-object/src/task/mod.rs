@@ -1,6 +1,4 @@
-use super::*;
-use crate::io::port::Port;
-use crate::ipc::channel::Channel;
+use {super::*, crate::io::port::Port, crate::ipc::channel::Channel};
 
 mod exception;
 mod job;
@@ -8,10 +6,7 @@ mod job_policy;
 mod process;
 mod thread;
 
-pub use self::job::*;
-pub use self::job_policy::*;
-pub use self::process::*;
-pub use self::thread::*;
+pub use {self::job::*, self::job_policy::*, self::process::*, self::thread::*};
 
 /// Task (Thread, Process, or Job)
 pub trait Task {

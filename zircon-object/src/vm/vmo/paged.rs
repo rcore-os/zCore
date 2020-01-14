@@ -1,10 +1,12 @@
-use super::*;
-use crate::hal::{PageTable, PhysFrame};
-use crate::util::block_range::BlockIter;
-use alloc::sync::Arc;
-use alloc::vec::Vec;
-use core::ops::Range;
-use spin::Mutex;
+use {
+    super::*,
+    crate::hal::{PageTable, PhysFrame},
+    crate::util::block_range::BlockIter,
+    alloc::sync::Arc,
+    alloc::vec::Vec,
+    core::ops::Range,
+    spin::Mutex,
+};
 
 /// The main VM object type, holding a list of pages.
 pub struct VMObjectPaged {

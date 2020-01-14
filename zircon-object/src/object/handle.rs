@@ -1,6 +1,4 @@
-//use super::rights::Rights;
-use super::*;
-use alloc::sync::Arc;
+use {super::*, alloc::sync::Arc};
 
 /// The value refers to a Handle in user space.
 pub type HandleValue = u32;
