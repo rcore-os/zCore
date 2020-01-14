@@ -7,12 +7,10 @@ extern crate alloc;
 #[macro_use]
 extern crate log;
 
-use self::consts::*;
-use crate::util::*;
-use alloc::sync::Arc;
-use alloc::vec::Vec;
-use zircon_object::object::*;
-use zircon_object::task::Thread;
+use {
+    self::consts::*, crate::util::*, alloc::sync::Arc, alloc::vec::Vec, zircon_object::object::*,
+    zircon_object::task::Thread,
+};
 
 mod channel;
 mod consts;

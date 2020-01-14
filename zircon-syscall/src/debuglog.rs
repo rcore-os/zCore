@@ -1,5 +1,4 @@
-use super::*;
-use zircon_object::resource::ResourceKind;
+use {super::*, zircon_object::resource::ResourceKind};
 
 impl Syscall {
     pub fn sys_debuglog_create(

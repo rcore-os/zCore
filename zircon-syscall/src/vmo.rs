@@ -1,5 +1,4 @@
-use super::*;
-use zircon_object::vm::*;
+use {super::*, zircon_object::vm::*};
 
 impl Syscall {
     pub fn sys_vmo_create(

@@ -1,5 +1,4 @@
-use super::*;
-use zircon_object::task::*;
+use {super::*, zircon_object::task::*};
 
 impl Syscall {
     pub fn sys_process_create(
