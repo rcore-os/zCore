@@ -4,10 +4,11 @@ use {
     alloc::sync::Arc, alloc::vec::Vec, spin::Mutex,
 };
 
+#[allow(dead_code)]
 pub struct Process {
     base: KObjectBase,
-    _name: String,
-    _job: Arc<Job>,
+    name: String,
+    job: Arc<Job>,
     policy: JobPolicy,
     vmar: Arc<VmAddressRegion>,
     inner: Mutex<ProcessInner>,
@@ -28,8 +29,8 @@ impl Process {
         // TODO: _options -> options
         let proc = Arc::new(Process {
             base: KObjectBase::new(),
-            _name: String::from(name),
-            _job: job.clone(),
+            name: String::from(name),
+            job: job.clone(),
             policy: job.policy(),
             vmar: VmAddressRegion::new_root(),
             inner: Mutex::new(ProcessInner::default()),
