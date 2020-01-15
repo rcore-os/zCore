@@ -1,6 +1,6 @@
 //! Hardware Abstraction Layer
 
-use crate::vm::PAGE_SIZE;
+use {crate::task::Thread as ThreadObject, crate::vm::PAGE_SIZE, alloc::sync::Arc};
 
 type ThreadId = usize;
 type PhysAddr = usize;
@@ -27,7 +27,7 @@ impl Thread {
     }
     #[linkage = "weak"]
     #[export_name = "hal_thread_tls"]
-    pub fn tls() -> usize {
+    pub fn tls() -> Arc<ThreadObject> {
         unimplemented!()
     }
 }

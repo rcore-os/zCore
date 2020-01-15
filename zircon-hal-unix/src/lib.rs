@@ -4,7 +4,10 @@
 #[macro_use]
 extern crate log;
 
+extern crate alloc;
+
 use {
+    alloc::sync::Arc,
     lazy_static::lazy_static,
     std::cell::Cell,
     std::fmt::{Debug, Formatter},
@@ -13,6 +16,7 @@ use {
     std::os::unix::io::AsRawFd,
     std::sync::atomic::{AtomicUsize, Ordering},
     tempfile::tempdir_in,
+    zircon_object::task::Thread as ThreadObject,
 };
 
 type ThreadId = usize;
@@ -47,8 +51,8 @@ impl Thread {
     }
 
     #[export_name = "hal_thread_tls"]
-    pub fn tls() -> usize {
-        TLS.with(|t| t.get())
+    pub fn tls() -> Arc<ThreadObject> {
+        unsafe { Arc::from_raw(TLS.with(|t| t.get()) as _) }
     }
 }
 
