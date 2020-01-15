@@ -15,7 +15,13 @@ pub struct Thread {
 impl Thread {
     #[linkage = "weak"]
     #[export_name = "hal_thread_spawn"]
-    pub fn spawn(_entry: usize, _stack: usize, _arg1: usize, _arg2: usize, _tls: usize) -> Self {
+    pub fn spawn(
+        _entry: usize,
+        _stack: usize,
+        _arg1: usize,
+        _arg2: usize,
+        _tls: Arc<ThreadObject>,
+    ) -> Self {
         #[cfg(test)]
         zircon_hal_unix::init();
         unimplemented!()
