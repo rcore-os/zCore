@@ -14,9 +14,10 @@ pub enum ResourceKind {
     COUNT = 7,
 }
 
+#[allow(dead_code)]
 pub struct Resource {
     base: KObjectBase,
-    _name: String,
+    name: String,
     kind: ResourceKind,
 }
 
@@ -26,7 +27,7 @@ impl Resource {
     pub fn create(name: &str, kind: ResourceKind) -> ZxResult<Arc<Self>> {
         Ok(Arc::new(Resource {
             base: KObjectBase::new(),
-            _name: String::from(name),
+            name: String::from(name),
             kind: kind,
         }))
     }
