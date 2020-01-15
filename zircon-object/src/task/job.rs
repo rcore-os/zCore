@@ -5,7 +5,8 @@ use {
 
 pub struct Job {
     base: KObjectBase,
-    _parent: Option<Arc<Job>>,
+    #[allow(dead_code)]
+    parent: Option<Arc<Job>>,
     parent_policy: JobPolicy,
     inner: Mutex<JobInner>,
 }
@@ -24,7 +25,7 @@ impl Job {
     pub fn root() -> Arc<Self> {
         Arc::new(Job {
             base: KObjectBase::new(),
-            _parent: None,
+            parent: None,
             parent_policy: JobPolicy::default(),
             inner: Mutex::new(JobInner::default()),
         })
@@ -36,7 +37,7 @@ impl Job {
         let mut inner = parent.inner.lock();
         let child = Arc::new(Job {
             base: KObjectBase::new(),
-            _parent: Some(parent.clone()),
+            parent: Some(parent.clone()),
             parent_policy: inner.policy.merge(&parent.parent_policy),
             inner: Mutex::new(JobInner::default()),
         });

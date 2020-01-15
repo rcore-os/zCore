@@ -5,7 +5,8 @@ use {
 
 pub struct Thread {
     base: KObjectBase,
-    _name: String,
+    #[allow(dead_code)]
+    name: String,
     pub proc: Arc<Process>,
     inner: Mutex<ThreadInner>,
 }
@@ -22,7 +23,7 @@ impl Thread {
         // TODO: options
         let thread = Arc::new(Thread {
             base: KObjectBase::new(),
-            _name: String::from(name),
+            name: String::from(name),
             proc: proc.clone(),
             inner: Mutex::new(ThreadInner::default()),
         });
