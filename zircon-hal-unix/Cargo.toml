@@ -12,4 +12,3 @@ log = "0.4"
 libc = "0.2"
 tempfile = "3"
 lazy_static = "1.4"
-zircon-object = { path = "../zircon-object" }

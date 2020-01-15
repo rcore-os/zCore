@@ -43,8 +43,7 @@ impl Thread {
         arg1: usize,
         arg2: usize,
     ) -> ZxResult<()> {
-        let tls = Arc::into_raw(self.clone()) as usize;
-        let hal_thread = crate::hal::Thread::spawn(entry, stack, arg1, arg2, tls);
+        let hal_thread = crate::hal::Thread::spawn(entry, stack, arg1, arg2, self.clone());
         let mut inner = self.inner.lock();
         if inner.hal_thread.is_some() {
             return Err(ZxError::BAD_STATE);

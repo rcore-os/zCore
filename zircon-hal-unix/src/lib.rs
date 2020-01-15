@@ -9,14 +9,13 @@ extern crate alloc;
 use {
     alloc::sync::Arc,
     lazy_static::lazy_static,
-    std::cell::Cell,
+    std::cell::RefCell,
     std::fmt::{Debug, Formatter},
     std::fs::{File, OpenOptions},
     std::io::Error,
     std::os::unix::io::AsRawFd,
     std::sync::atomic::{AtomicUsize, Ordering},
     tempfile::tempdir_in,
-    zircon_object::task::Thread as ThreadObject,
 };
 
 type ThreadId = usize;
@@ -31,11 +30,11 @@ pub struct Thread {
 
 impl Thread {
     #[export_name = "hal_thread_spawn"]
-    pub fn spawn(entry: usize, mut stack: usize, arg1: usize, arg2: usize, tls: usize) -> Self {
+    pub fn spawn(entry: usize, stack: usize, arg1: usize, arg2: usize, tls: Arc<usize>) -> Self {
         // align stack pointer to 16 bytes
-        stack &= !0xf;
+        let stack = stack & !0xf;
         let _ = std::thread::spawn(move || {
-            TLS.with(|t| t.set(tls));
+            TLS.with(|t| t.replace(Some(tls)));
             unsafe {
                 asm!("call $0" :: "r"(entry), "{rsp}"(stack), "{rdi}"(arg1), "{rsi}"(arg2) :: "volatile" "intel");
             }
@@ -51,13 +50,13 @@ impl Thread {
     }
 
     #[export_name = "hal_thread_tls"]
-    pub fn tls() -> Arc<ThreadObject> {
-        unsafe { Arc::from_raw(TLS.with(|t| t.get()) as _) }
+    pub fn tls() -> Arc<usize> {
+        TLS.with(|t| t.borrow().as_ref().unwrap().clone())
     }
 }
 
 thread_local! {
-    static TLS: Cell<usize> = Cell::new(0);
+    static TLS: RefCell<Option<Arc<usize>>> = RefCell::new(None);
 }
 
 /// Page Table
