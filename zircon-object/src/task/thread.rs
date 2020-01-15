@@ -32,10 +32,8 @@ impl Thread {
     }
 
     /// Get current `Thread` object.
-    #[allow(unsafe_code)]
     pub fn current() -> Arc<Self> {
-        // FIXME: move unsafe code into HAL
-        unsafe { Arc::from_raw(crate::hal::Thread::tls() as _) }
+        crate::hal::Thread::tls()
     }
 
     pub fn start(
