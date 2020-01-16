@@ -11,6 +11,7 @@ description = "Zircon kernel module which loads the first user program 'userboot
 log = "0.4"
 env_logger = "0.7"
 xmas-elf = "0.7"
+structopt = { version = "0.3", default-features = false }
 zircon-object = { path = "../zircon-object" }
 zircon-syscall = { path = "../zircon-syscall" }
 zircon-hal-unix = { path = "../zircon-hal-unix" }
