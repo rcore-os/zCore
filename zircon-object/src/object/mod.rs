@@ -1,6 +1,12 @@
 use {
-    alloc::{boxed::Box, vec::Vec},
-    core::{fmt::Debug, sync::atomic::*},
+    alloc::{boxed::Box, sync::Arc, vec::Vec},
+    core::{
+        fmt::Debug,
+        future::Future,
+        pin::Pin,
+        sync::atomic::*,
+        task::{Context, Poll},
+    },
     downcast_rs::{impl_downcast, DowncastSync},
     spin::Mutex,
 };
@@ -121,6 +127,47 @@ impl KObjectBase {
     }
 }
 
+impl dyn KernelObject {
+    pub fn wait_signal_async(self: &Arc<Self>, signal: Signal) -> SignalFuture {
+        SignalFuture {
+            object: self.clone(),
+            signal,
+            first: true,
+        }
+    }
+}
+
+pub struct SignalFuture {
+    object: Arc<dyn KernelObject>,
+    signal: Signal,
+    first: bool,
+}
+
+impl Future for SignalFuture {
+    type Output = ();
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        if !(self.object.signal() & self.signal).is_empty() {
+            return Poll::Ready(());
+        }
+        if self.first {
+            self.object.add_signal_callback(Box::new({
+                let signal = self.signal;
+                let waker = cx.waker().clone();
+                move |s| {
+                    if !(s & signal).is_empty() {
+                        waker.wake_by_ref();
+                        return true;
+                    }
+                    false
+                }
+            }));
+            self.first = false;
+        }
+        Poll::Pending
+    }
+}
+
 #[macro_export]
 macro_rules! impl_kobject {
     ($class:ident) => {
@@ -156,7 +203,7 @@ pub type SignalHandler = Box<dyn Fn(Signal) -> bool + Send>;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloc::sync::Arc;
+    use futures::task::SpawnExt;
 
     struct DummyObject {
         base: KObjectBase,
@@ -186,6 +233,28 @@ mod tests {
         });
         assert!(!flag.load(Ordering::SeqCst));
         object.base.wait_signal(Signal::READABLE);
+        assert!(flag.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn wait_async() {
+        let object = DummyObject::new();
+        let flag = Arc::new(AtomicBool::new(false));
+
+        let mut pool = futures::executor::LocalPool::new();
+        pool.spawner()
+            .spawn({
+                let object = object.clone();
+                let flag = flag.clone();
+                async move {
+                    flag.store(true, Ordering::SeqCst);
+                    object.base.signal_set(Signal::READABLE);
+                }
+            })
+            .unwrap();
+        let object: Arc<dyn KernelObject> = object;
+        assert!(!flag.load(Ordering::SeqCst));
+        pool.run_until(object.wait_signal_async(Signal::READABLE));
         assert!(flag.load(Ordering::SeqCst));
     }
 }
