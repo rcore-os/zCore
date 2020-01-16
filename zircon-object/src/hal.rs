@@ -36,6 +36,29 @@ impl Thread {
     pub fn tls() -> Arc<ThreadObject> {
         unimplemented!()
     }
+    #[linkage = "weak"]
+    #[export_name = "hal_thread_park"]
+    pub fn park() {
+        unimplemented!()
+    }
+    #[linkage = "weak"]
+    #[export_name = "hal_thread_get_waker"]
+    pub fn get_waker() -> Waker {
+        unimplemented!()
+    }
+}
+
+#[repr(C)]
+pub struct Waker {
+    id: ThreadId,
+}
+
+impl Waker {
+    #[linkage = "weak"]
+    #[export_name = "hal_thread_wake"]
+    pub fn wake(&self) {
+        unimplemented!()
+    }
 }
 
 /// Page Table

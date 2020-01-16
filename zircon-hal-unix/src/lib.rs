@@ -18,14 +18,13 @@ use {
     tempfile::tempdir_in,
 };
 
-type ThreadId = usize;
 type PhysAddr = usize;
 type VirtAddr = usize;
 type MMUFlags = usize;
 
 #[repr(C)]
 pub struct Thread {
-    id: ThreadId,
+    thread: std::thread::Thread,
 }
 
 impl Thread {
@@ -33,15 +32,16 @@ impl Thread {
     pub fn spawn(entry: usize, stack: usize, arg1: usize, arg2: usize, tls: Arc<usize>) -> Self {
         // align stack pointer to 16 bytes
         let stack = stack & !0xf;
-        let _ = std::thread::spawn(move || {
+        let handle = std::thread::spawn(move || {
             TLS.with(|t| t.replace(Some(tls)));
             unsafe {
                 asm!("call $0" :: "r"(entry), "{rsp}"(stack), "{rdi}"(arg1), "{rsi}"(arg2) :: "volatile" "intel");
             }
             unreachable!()
         });
-        let id = 0;
-        Thread { id }
+        Thread {
+            thread: handle.thread().clone(),
+        }
     }
 
     #[export_name = "hal_thread_exit"]
@@ -52,6 +52,30 @@ impl Thread {
     #[export_name = "hal_thread_tls"]
     pub fn tls() -> Arc<usize> {
         TLS.with(|t| t.borrow().as_ref().unwrap().clone())
+    }
+
+    #[export_name = "hal_thread_park"]
+    pub fn park() {
+        std::thread::park();
+    }
+
+    #[export_name = "hal_thread_get_waker"]
+    pub fn get_waker() -> Waker {
+        Waker {
+            thread: std::thread::current(),
+        }
+    }
+}
+
+#[repr(C)]
+pub struct Waker {
+    thread: std::thread::Thread,
+}
+
+impl Waker {
+    #[export_name = "hal_thread_wake"]
+    pub fn wake(&self) {
+        self.thread.unpark();
     }
 }
 
