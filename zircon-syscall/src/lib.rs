@@ -19,6 +19,7 @@ mod debuglog;
 mod handle;
 mod task;
 mod util;
+mod vmar;
 mod vmo;
 
 pub struct Syscall {
@@ -52,6 +53,9 @@ impl Syscall {
             SYS_DEBUGLOG_WRITE => self.sys_debuglog_write(a0 as _, a1 as _, a2.into(), a3 as _),
             SYS_VMO_CREATE => self.sys_vmo_create(a0 as _, a1 as _, a2.into()),
             SYS_VMO_READ => self.sys_vmo_read(a0 as _, a1.into(), a2 as _, a3 as _),
+            SYS_VMAR_ALLOCATE => {
+                self.sys_vmar_allocate(a0 as _, a1 as _, a2 as _, a3 as _, a4.into(), a5.into())
+            }
             _ => {
                 warn!("syscall unimplemented");
                 Err(ZxError::NOT_SUPPORTED)

@@ -9,4 +9,5 @@ description = "Zircon syscalls implementation"
 
 [dependencies]
 log = "0.4"
+bitflags = "1.2"
 zircon-object = { path = "../zircon-object" }

@@ -20,7 +20,10 @@ impl Syscall {
         let new_proc = Process::create(&job, &name, options)?;
         let new_vmar = new_proc.vmar();
         let proc_handle_value = proc.add_handle(Handle::new(new_proc, Rights::DEFAULT_PROCESS));
-        let vmar_handle_value = proc.add_handle(Handle::new(new_vmar, Rights::DEFAULT_VMAR));
+        let vmar_handle_value = proc.add_handle(Handle::new(
+            new_vmar,
+            Rights::DEFAULT_VMAR | Rights::READ | Rights::WRITE | Rights::EXECUTE,
+        ));
         proc_handle.write(proc_handle_value)?;
         vmar_handle.write(vmar_handle_value)?;
         Ok(0)

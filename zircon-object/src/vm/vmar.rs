@@ -143,6 +143,10 @@ impl VmAddressRegion {
         Ok(())
     }
 
+    pub fn addr(&self) -> usize {
+        self.addr
+    }
+
     pub fn is_dead(&self) -> bool {
         self.inner.lock().is_none()
     }
