@@ -18,7 +18,7 @@ use {
         vm::*,
     },
     zircon_syscall::Syscall,
-    zircon_userboot::VmarExt,
+    zircon_userboot::*,
 };
 
 fn main() {
@@ -27,33 +27,36 @@ fn main() {
 
     let vmar = VmAddressRegion::new_root();
     const VBASE: usize = 0x400000000;
-    const USERBOOT_SIZE: usize = 0x7000;
-    const VDSO_SIZE: usize = 0x9000;
 
     // userboot
-    let entry = {
-        let vmar = vmar.create_child(VBASE, USERBOOT_SIZE).unwrap();
+    let (entry, userboot_size) = {
         let path = std::env::args()
             .nth(1)
             .expect("failed to read userboot path");
         let elf_data = std::fs::read(path).expect("failed to read file");
         let elf = ElfFile::new(&elf_data).unwrap();
+        let size = elf.load_segment_size();
+        let vmar = vmar.create_child(VBASE, size).unwrap();
         vmar.load_from_elf(&elf).unwrap();
-        VBASE + elf.header.pt2.entry_point() as usize
+        (VBASE + elf.header.pt2.entry_point() as usize, size)
     };
 
     // vdso
     let vdso_vmo = {
-        let vmar = vmar.create_child(VBASE + USERBOOT_SIZE, VDSO_SIZE).unwrap();
         let path = std::env::args().nth(2).expect("failed to read vdso path");
         let elf_data = std::fs::read(path).expect("failed to read file");
         let elf = ElfFile::new(&elf_data).unwrap();
+        let size = elf.load_segment_size();
+        let syscall_entry_offset = elf
+            .get_symbol_address("zcore_syscall_entry")
+            .expect("failed to locate syscall entry") as usize;
+        let vmar = vmar.create_child(VBASE + userboot_size, size).unwrap();
         let first_vmo = vmar.load_from_elf(&elf).unwrap();
 
         unsafe {
-            // TODO: fix magic number
             // fill syscall entry
-            ((VBASE + USERBOOT_SIZE + 0x4a38) as *mut usize).write(syscall_entry as usize);
+            ((VBASE + userboot_size + syscall_entry_offset) as *mut usize)
+                .write(syscall_entry as usize);
         }
         first_vmo
     };
