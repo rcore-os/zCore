@@ -9,14 +9,14 @@ extern crate log;
 
 use {
     alloc::vec::Vec,
-    std::fs::File,
-    std::io::Read,
     xmas_elf::ElfFile,
-    zircon_object::ipc::channel::*,
-    zircon_object::object::*,
-    zircon_object::resource::{Resource, ResourceKind},
-    zircon_object::task::*,
-    zircon_object::vm::*,
+    zircon_object::{
+        ipc::channel::*,
+        object::*,
+        resource::{Resource, ResourceKind},
+        task::*,
+        vm::*,
+    },
     zircon_syscall::Syscall,
     zircon_userboot::VmarExt,
 };
@@ -28,7 +28,7 @@ fn main() {
     let vmar = VmAddressRegion::new_root();
     const VBASE: usize = 0x400000000;
     const USERBOOT_SIZE: usize = 0x7000;
-    const VDSO_SIZE: usize = 0x8000;
+    const VDSO_SIZE: usize = 0x9000;
 
     // userboot
     let entry = {
@@ -36,10 +36,7 @@ fn main() {
         let path = std::env::args()
             .nth(1)
             .expect("failed to read userboot path");
-        let mut file = File::open(path).expect("failed to open file");
-        let mut elf_data = Vec::new();
-        file.read_to_end(&mut elf_data)
-            .expect("failed to read file");
+        let elf_data = std::fs::read(path).expect("failed to read file");
         let elf = ElfFile::new(&elf_data).unwrap();
         vmar.load_from_elf(&elf).unwrap();
         VBASE + elf.header.pt2.entry_point() as usize
@@ -49,17 +46,14 @@ fn main() {
     let vdso_vmo = {
         let vmar = vmar.create_child(VBASE + USERBOOT_SIZE, VDSO_SIZE).unwrap();
         let path = std::env::args().nth(2).expect("failed to read vdso path");
-        let mut file = File::open(path).expect("failed to open file");
-        let mut elf_data = Vec::new();
-        file.read_to_end(&mut elf_data)
-            .expect("failed to read file");
+        let elf_data = std::fs::read(path).expect("failed to read file");
         let elf = ElfFile::new(&elf_data).unwrap();
         let first_vmo = vmar.load_from_elf(&elf).unwrap();
 
         unsafe {
             // TODO: fix magic number
             // fill syscall entry
-            ((VBASE + USERBOOT_SIZE + 0x4836) as *mut usize).write(syscall_entry as usize);
+            ((VBASE + USERBOOT_SIZE + 0x4a38) as *mut usize).write(syscall_entry as usize);
         }
         first_vmo
     };
@@ -67,10 +61,7 @@ fn main() {
     // zbi
     let zbi_vmo = {
         let path = std::env::args().nth(3).expect("failed to read zbi path");
-        let mut file = File::open(path).expect("failed to open file");
-        let mut zbi_data = Vec::new();
-        file.read_to_end(&mut zbi_data)
-            .expect("failed to read file");
+        let zbi_data = std::fs::read(path).expect("failed to read file");
         let vmo = VMObjectPaged::new(zbi_data.len() / PAGE_SIZE + 1);
         vmo.write(0, &zbi_data);
         vmo
@@ -86,7 +77,7 @@ fn main() {
     let cmdline = "\0";
 
     // FIXME: pass correct handles
-    let mut handles = vec![Handle::new(proc.clone(), Rights::DUPLICATE); 13];
+    let mut handles = vec![Handle::new(proc.clone(), Rights::DUPLICATE); 15];
     handles[2] = Handle::new(job, Rights::DEFAULT_JOB);
     handles[3] = Handle::new(resource, Rights::DEFAULT_RESOURCE);
     handles[4] = Handle::new(zbi_vmo, Rights::DEFAULT_VMO);
