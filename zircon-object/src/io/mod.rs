@@ -1,3 +1,6 @@
 use super::*;
 
-pub mod port;
+mod event;
+mod port;
+
+pub use self::{event::*, port::*};

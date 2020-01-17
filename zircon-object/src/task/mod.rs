@@ -1,4 +1,4 @@
-use {super::*, crate::io::port::Port, crate::ipc::channel::Channel};
+use {super::*, crate::io::Port, crate::ipc::Channel};
 
 mod exception;
 mod job;

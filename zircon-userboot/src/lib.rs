@@ -17,7 +17,7 @@ use {
         ElfFile,
     },
     zircon_object::{
-        ipc::channel::*,
+        ipc::*,
         object::*,
         resource::{Resource, ResourceKind},
         task::*,

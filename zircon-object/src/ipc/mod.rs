@@ -1,3 +1,5 @@
-pub mod channel;
-pub mod fifo;
-pub mod socket;
+mod channel;
+mod fifo;
+mod socket;
+
+pub use self::{channel::*, fifo::*, socket::*};
