@@ -99,7 +99,7 @@ impl PageTable {
 
     /// Map the page of `vaddr` to the frame of `paddr` with `flags`.
     #[export_name = "hal_pt_map"]
-    pub fn map(&mut self, vaddr: VirtAddr, paddr: PhysAddr, _: MMUFlags) -> Result<(), ()> {
+    pub fn map(&mut self, vaddr: VirtAddr, paddr: PhysAddr, _flags: MMUFlags) -> Result<(), ()> {
         debug_assert!(page_aligned(vaddr));
         debug_assert!(page_aligned(paddr));
         mmap(FRAME_FILE.as_raw_fd(), paddr, PAGE_SIZE, vaddr);
