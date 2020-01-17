@@ -15,6 +15,7 @@ use {
     std::io::Error,
     std::os::unix::io::AsRawFd,
     std::sync::atomic::{AtomicUsize, Ordering},
+    std::time::{Duration, SystemTime},
     tempfile::tempdir_in,
 };
 
@@ -246,6 +247,21 @@ fn mmap(fd: libc::c_int, offset: usize, len: usize, vaddr: VirtAddr) {
 #[export_name = "hal_serial_write"]
 pub fn serial_write(c: char) {
     print!("{}", c);
+}
+
+#[export_name = "hal_timer_now"]
+pub fn timer_now() -> Duration {
+    SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+}
+
+#[export_name = "hal_timer_set"]
+pub fn timer_set(deadline: Duration, callback: Box<dyn FnOnce(Duration) + Send + Sync>) {
+    std::thread::spawn(move || {
+        std::thread::sleep(deadline - timer_now());
+        callback(timer_now());
+    });
 }
 
 /// A dummy function.

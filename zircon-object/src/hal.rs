@@ -1,5 +1,8 @@
 //! Hardware Abstraction Layer
 
+use alloc::boxed::Box;
+use core::ops::FnOnce;
+use core::time::Duration;
 use {crate::task::Thread as ThreadObject, crate::vm::PAGE_SIZE, alloc::sync::Arc};
 
 type ThreadId = usize;
@@ -181,5 +184,17 @@ pub fn pmem_write(_paddr: PhysAddr, _buf: &[u8]) {
 #[linkage = "weak"]
 #[export_name = "hal_serial_write"]
 pub fn serial_write(_c: char) {
+    unimplemented!()
+}
+
+#[linkage = "weak"]
+#[export_name = "hal_timer_now"]
+pub fn timer_now() -> Duration {
+    unimplemented!()
+}
+
+#[linkage = "weak"]
+#[export_name = "hal_timer_set"]
+pub fn timer_set(_deadline: Duration, _callback: Box<dyn FnOnce(Duration) + Send + Sync>) {
     unimplemented!()
 }
