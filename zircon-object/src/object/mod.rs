@@ -173,6 +173,64 @@ impl dyn KernelObject {
     }
 }
 
+/// Asynchronous wait signal for multiple objects.
+pub fn wait_signal_many_async(
+    targets: &[(Arc<dyn KernelObject>, Signal)],
+) -> impl Future<Output = Vec<Signal>> {
+    struct SignalManyFuture {
+        targets: Vec<(Arc<dyn KernelObject>, Signal)>,
+        first: bool,
+    }
+
+    impl SignalManyFuture {
+        fn happened(&self, current_signals: &[Signal]) -> bool {
+            self.targets
+                .iter()
+                .zip(current_signals)
+                .filter(|&(&(_, desired), &current)| !(current & desired).is_empty())
+                .next()
+                .is_some()
+        }
+    }
+
+    impl Future for SignalManyFuture {
+        type Output = Vec<Signal>;
+
+        fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+            let current_signals: Vec<_> = self
+                .targets
+                .iter()
+                .map(|(object, _)| object.signal())
+                .collect();
+            if self.happened(&current_signals) {
+                return Poll::Ready(current_signals);
+            }
+            if self.first {
+                for (object, signal) in self.targets.iter() {
+                    object.add_signal_callback(Box::new({
+                        let signal = *signal;
+                        let waker = cx.waker().clone();
+                        move |s| {
+                            if !(s & signal).is_empty() {
+                                waker.wake_by_ref();
+                                return true;
+                            }
+                            false
+                        }
+                    }));
+                }
+                self.first = false;
+            }
+            Poll::Pending
+        }
+    }
+
+    SignalManyFuture {
+        targets: Vec::from(targets),
+        first: true,
+    }
+}
+
 #[macro_export]
 macro_rules! impl_kobject {
     ($class:ident) => {
@@ -208,7 +266,6 @@ pub type SignalHandler = Box<dyn Fn(Signal) -> bool + Send>;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use futures::task::SpawnExt;
     use std::time::Duration;
 
     struct DummyObject {
@@ -252,27 +309,70 @@ mod tests {
         assert_eq!(flag.load(Ordering::SeqCst), 2);
     }
 
-    #[test]
-    fn wait_async() {
+    #[tokio::test]
+    async fn wait_async() {
         let object = DummyObject::new();
         let flag = Arc::new(AtomicU8::new(0));
 
-        let mut pool = futures::executor::LocalPool::new();
-        pool.spawner()
-            .spawn({
-                let object = object.clone();
-                let flag = flag.clone();
-                async move {
-                    flag.store(1, Ordering::SeqCst);
-                    object.base.signal_set(Signal::READABLE);
-                }
-            })
-            .unwrap();
+        tokio::spawn({
+            let object = object.clone();
+            let flag = flag.clone();
+            async move {
+                flag.store(1, Ordering::SeqCst);
+                object.base.signal_set(Signal::READABLE);
+                tokio::time::delay_for(Duration::from_millis(1)).await;
+
+                flag.store(2, Ordering::SeqCst);
+                object.base.signal_set(Signal::WRITABLE);
+            }
+        });
         let object: Arc<dyn KernelObject> = object;
         assert_eq!(flag.load(Ordering::SeqCst), 0);
 
-        let signal = pool.run_until(object.wait_signal_async(Signal::READABLE));
+        let signal = object.wait_signal_async(Signal::READABLE).await;
         assert_eq!(signal, Signal::READABLE);
         assert_eq!(flag.load(Ordering::SeqCst), 1);
+
+        let signal = object.wait_signal_async(Signal::WRITABLE).await;
+        assert_eq!(signal, Signal::READABLE | Signal::WRITABLE);
+        assert_eq!(flag.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn wait_many_async() {
+        let objs = [DummyObject::new(), DummyObject::new()];
+        let flag = Arc::new(AtomicU8::new(0));
+
+        tokio::spawn({
+            let objs = objs.clone();
+            let flag = flag.clone();
+            async move {
+                flag.store(1, Ordering::SeqCst);
+                objs[0].base.signal_set(Signal::READABLE);
+                tokio::time::delay_for(Duration::from_millis(1)).await;
+
+                flag.store(2, Ordering::SeqCst);
+                objs[1].base.signal_set(Signal::WRITABLE);
+            }
+        });
+        let obj0: Arc<dyn KernelObject> = objs[0].clone();
+        let obj1: Arc<dyn KernelObject> = objs[1].clone();
+        assert_eq!(flag.load(Ordering::SeqCst), 0);
+
+        let signals = wait_signal_many_async(&[
+            (obj0.clone(), Signal::READABLE),
+            (obj1.clone(), Signal::READABLE),
+        ])
+        .await;
+        assert_eq!(signals, [Signal::READABLE, Signal::empty()]);
+        assert_eq!(flag.load(Ordering::SeqCst), 1);
+
+        let signals = wait_signal_many_async(&[
+            (obj0.clone(), Signal::WRITABLE),
+            (obj1.clone(), Signal::WRITABLE),
+        ])
+        .await;
+        assert_eq!(signals, [Signal::READABLE, Signal::WRITABLE]);
+        assert_eq!(flag.load(Ordering::SeqCst), 2);
     }
 }
