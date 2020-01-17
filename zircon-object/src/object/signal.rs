@@ -1,3 +1,5 @@
+use bitflags::bitflags;
+
 bitflags! {
     #[derive(Default)]
     pub struct Signal: u32 {

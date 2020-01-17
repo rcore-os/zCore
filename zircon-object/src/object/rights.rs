@@ -1,5 +1,6 @@
 use {
     crate::{ZxError, ZxResult},
+    bitflags::bitflags,
     core::convert::TryFrom,
 };
 
