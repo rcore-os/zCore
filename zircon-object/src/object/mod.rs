@@ -108,10 +108,11 @@ impl KObjectBase {
         inner.signal_callbacks.push(callback);
     }
 
-    /// Block until at least one `signal` assert.
-    pub fn wait_signal(&self, signal: Signal) {
-        if !(self.signal() & signal).is_empty() {
-            return;
+    /// Block until at least one `signal` assert. Return the current signal.
+    pub fn wait_signal(&self, signal: Signal) -> Signal {
+        let mut current_signal = self.signal();
+        if !(current_signal & signal).is_empty() {
+            return current_signal;
         }
         let waker = crate::hal::Thread::get_waker();
         self.add_signal_callback(Box::new(move |s| {
@@ -121,50 +122,54 @@ impl KObjectBase {
             }
             false
         }));
-        while (self.signal() & signal).is_empty() {
+        while (current_signal & signal).is_empty() {
             crate::hal::Thread::park();
+            current_signal = self.signal();
         }
+        current_signal
     }
 }
 
 impl dyn KernelObject {
-    pub fn wait_signal_async(self: &Arc<Self>, signal: Signal) -> SignalFuture {
+    /// Asynchronous wait for one of `signal`.
+    pub fn wait_signal_async(self: &Arc<Self>, signal: Signal) -> impl Future<Output = Signal> {
+        struct SignalFuture {
+            object: Arc<dyn KernelObject>,
+            signal: Signal,
+            first: bool,
+        }
+
+        impl Future for SignalFuture {
+            type Output = Signal;
+
+            fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+                let current_signal = self.object.signal();
+                if !(current_signal & self.signal).is_empty() {
+                    return Poll::Ready(current_signal);
+                }
+                if self.first {
+                    self.object.add_signal_callback(Box::new({
+                        let signal = self.signal;
+                        let waker = cx.waker().clone();
+                        move |s| {
+                            if !(s & signal).is_empty() {
+                                waker.wake_by_ref();
+                                return true;
+                            }
+                            false
+                        }
+                    }));
+                    self.first = false;
+                }
+                Poll::Pending
+            }
+        }
+
         SignalFuture {
             object: self.clone(),
             signal,
             first: true,
         }
-    }
-}
-
-pub struct SignalFuture {
-    object: Arc<dyn KernelObject>,
-    signal: Signal,
-    first: bool,
-}
-
-impl Future for SignalFuture {
-    type Output = ();
-
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        if !(self.object.signal() & self.signal).is_empty() {
-            return Poll::Ready(());
-        }
-        if self.first {
-            self.object.add_signal_callback(Box::new({
-                let signal = self.signal;
-                let waker = cx.waker().clone();
-                move |s| {
-                    if !(s & signal).is_empty() {
-                        waker.wake_by_ref();
-                        return true;
-                    }
-                    false
-                }
-            }));
-            self.first = false;
-        }
-        Poll::Pending
     }
 }
 
@@ -204,6 +209,7 @@ pub type SignalHandler = Box<dyn Fn(Signal) -> bool + Send>;
 mod tests {
     use super::*;
     use futures::task::SpawnExt;
+    use std::time::Duration;
 
     struct DummyObject {
         base: KObjectBase,
@@ -222,24 +228,34 @@ mod tests {
     #[test]
     fn wait() {
         let object = DummyObject::new();
-        let flag = Arc::new(AtomicBool::new(false));
+        let flag = Arc::new(AtomicU8::new(0));
         std::thread::spawn({
             let object = object.clone();
             let flag = flag.clone();
             move || {
-                flag.store(true, Ordering::SeqCst);
+                flag.store(1, Ordering::SeqCst);
                 object.base.signal_set(Signal::READABLE);
+                std::thread::sleep(Duration::from_millis(1));
+
+                flag.store(2, Ordering::SeqCst);
+                object.base.signal_set(Signal::WRITABLE);
             }
         });
-        assert!(!flag.load(Ordering::SeqCst));
-        object.base.wait_signal(Signal::READABLE);
-        assert!(flag.load(Ordering::SeqCst));
+        assert_eq!(flag.load(Ordering::SeqCst), 0);
+
+        let signal = object.base.wait_signal(Signal::READABLE);
+        assert_eq!(signal, Signal::READABLE);
+        assert_eq!(flag.load(Ordering::SeqCst), 1);
+
+        let signal = object.base.wait_signal(Signal::WRITABLE);
+        assert_eq!(signal, Signal::READABLE | Signal::WRITABLE);
+        assert_eq!(flag.load(Ordering::SeqCst), 2);
     }
 
     #[test]
     fn wait_async() {
         let object = DummyObject::new();
-        let flag = Arc::new(AtomicBool::new(false));
+        let flag = Arc::new(AtomicU8::new(0));
 
         let mut pool = futures::executor::LocalPool::new();
         pool.spawner()
@@ -247,14 +263,16 @@ mod tests {
                 let object = object.clone();
                 let flag = flag.clone();
                 async move {
-                    flag.store(true, Ordering::SeqCst);
+                    flag.store(1, Ordering::SeqCst);
                     object.base.signal_set(Signal::READABLE);
                 }
             })
             .unwrap();
         let object: Arc<dyn KernelObject> = object;
-        assert!(!flag.load(Ordering::SeqCst));
-        pool.run_until(object.wait_signal_async(Signal::READABLE));
-        assert!(flag.load(Ordering::SeqCst));
+        assert_eq!(flag.load(Ordering::SeqCst), 0);
+
+        let signal = pool.run_until(object.wait_signal_async(Signal::READABLE));
+        assert_eq!(signal, Signal::READABLE);
+        assert_eq!(flag.load(Ordering::SeqCst), 1);
     }
 }
