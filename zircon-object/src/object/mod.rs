@@ -1,4 +1,5 @@
 use {
+    crate::io::port::*,
     alloc::{boxed::Box, sync::Arc, vec::Vec},
     core::{
         fmt::Debug,
@@ -21,6 +22,7 @@ pub trait KernelObject: DowncastSync + Debug {
     fn id(&self) -> KoID;
     fn type_name(&self) -> &'static str;
     fn signal(&self) -> Signal;
+    fn signal_set(&self, signal: Signal);
     fn add_signal_callback(&self, callback: SignalHandler);
 }
 
@@ -116,11 +118,11 @@ impl KObjectBase {
         }
         let waker = crate::hal::Thread::get_waker();
         self.add_signal_callback(Box::new(move |s| {
-            if !(s & signal).is_empty() {
-                waker.wake();
-                return true;
+            if (s & signal).is_empty() {
+                return false;
             }
-            false
+            waker.wake();
+            true
         }));
         while (current_signal & signal).is_empty() {
             crate::hal::Thread::park();
@@ -152,11 +154,11 @@ impl dyn KernelObject {
                         let signal = self.signal;
                         let waker = cx.waker().clone();
                         move |s| {
-                            if !(s & signal).is_empty() {
-                                waker.wake_by_ref();
-                                return true;
+                            if (s & signal).is_empty() {
+                                return false;
                             }
-                            false
+                            waker.wake_by_ref();
+                            true
                         }
                     }));
                     self.first = false;
@@ -170,6 +172,35 @@ impl dyn KernelObject {
             signal,
             first: true,
         }
+    }
+
+    /// Once one of the `signal` asserted, push a packet with `key` into the `port`,
+    ///
+    /// It's used to implement `sys_object_wait_async`.
+    pub fn send_signal_to_port_async(self: &Arc<Self>, signal: Signal, port: &Arc<Port>, key: u64) {
+        let current_signal = self.signal();
+        if !(current_signal & signal).is_empty() {
+            port.push(PortPacket {
+                key,
+                status: ZxError::OK,
+                data: PortPacketPayload::Signal(current_signal),
+            });
+            return;
+        }
+        self.add_signal_callback(Box::new({
+            let port = port.clone();
+            move |s| {
+                if (s & signal).is_empty() {
+                    return false;
+                }
+                port.push(PortPacket {
+                    key,
+                    status: ZxError::OK,
+                    data: PortPacketPayload::Signal(s),
+                });
+                true
+            }
+        }));
     }
 }
 
@@ -197,11 +228,8 @@ pub fn wait_signal_many_async(
         type Output = Vec<Signal>;
 
         fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-            let current_signals: Vec<_> = self
-                .targets
-                .iter()
-                .map(|(object, _)| object.signal())
-                .collect();
+            let current_signals: Vec<_> =
+                self.targets.iter().map(|(obj, _)| obj.signal()).collect();
             if self.happened(&current_signals) {
                 return Poll::Ready(current_signals);
             }
@@ -211,11 +239,11 @@ pub fn wait_signal_many_async(
                         let signal = *signal;
                         let waker = cx.waker().clone();
                         move |s| {
-                            if !(s & signal).is_empty() {
-                                waker.wake_by_ref();
-                                return true;
+                            if (s & signal).is_empty() {
+                                return false;
                             }
-                            false
+                            waker.wake_by_ref();
+                            true
                         }
                     }));
                 }
@@ -244,6 +272,9 @@ macro_rules! impl_kobject {
             fn signal(&self) -> Signal {
                 self.base.signal()
             }
+            fn signal_set(&self, signal: Signal) {
+                self.base.signal_set(signal);
+            }
             fn add_signal_callback(&self, callback: SignalHandler) {
                 self.base.add_signal_callback(callback);
             }
@@ -263,24 +294,25 @@ pub type KoID = u64;
 
 pub type SignalHandler = Box<dyn Fn(Signal) -> bool + Send>;
 
+/// Empty kernel object. Just for test.
+pub struct DummyObject {
+    base: KObjectBase,
+}
+
+impl_kobject!(DummyObject);
+
+impl DummyObject {
+    pub fn new() -> Arc<Self> {
+        Arc::new(DummyObject {
+            base: KObjectBase::new(),
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::time::Duration;
-
-    struct DummyObject {
-        base: KObjectBase,
-    }
-
-    impl_kobject!(DummyObject);
-
-    impl DummyObject {
-        fn new() -> Arc<Self> {
-            Arc::new(DummyObject {
-                base: KObjectBase::new(),
-            })
-        }
-    }
 
     #[test]
     fn wait() {
