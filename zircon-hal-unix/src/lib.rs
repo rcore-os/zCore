@@ -92,6 +92,7 @@ pub struct PageTable {
 
 impl PageTable {
     /// Create a new `PageTable`.
+    #[allow(clippy::new_without_default)]
     #[export_name = "hal_pt_new"]
     pub fn new() -> Self {
         PageTable { table_phys: 0 }
@@ -168,7 +169,7 @@ static GLOBAL_FRAME_ID: AtomicUsize = AtomicUsize::new(1);
 
 fn phys_to_virt(paddr: PhysAddr) -> VirtAddr {
     /// Map physical memory from here.
-    const PMEM_BASE: VirtAddr = 0x800000000;
+    const PMEM_BASE: VirtAddr = 0x8_00000000;
 
     PMEM_BASE + paddr
 }
@@ -205,7 +206,7 @@ fn page_aligned(x: VirtAddr) -> bool {
     x % PAGE_SIZE == 0
 }
 
-const PMEM_SIZE: usize = 0x1000000; // 16MiB
+const PMEM_SIZE: usize = 0x10_00000; // 16MiB
 
 lazy_static! {
     static ref FRAME_FILE: File = create_pmem_file();
@@ -274,17 +275,17 @@ mod tests {
     use super::*;
 
     /// A valid virtual address base to mmap.
-    const VBASE: VirtAddr = 0x200000000;
+    const VBASE: VirtAddr = 0x2_00000000;
 
     #[test]
     fn map_unmap() {
         let mut pt = PageTable::new();
         // map 2 pages to 1 frame
-        pt.map(VBASE + 0, 0x1000, 0).unwrap();
+        pt.map(VBASE, 0x1000, 0).unwrap();
         pt.map(VBASE + 0x1000, 0x1000, 0).unwrap();
 
         unsafe {
-            const MAGIC: usize = 0xdeadbeaf;
+            const MAGIC: usize = 0xdead_beaf;
             (VBASE as *mut usize).write(MAGIC);
             assert_eq!(((VBASE + 0x1000) as *mut usize).read(), MAGIC);
         }

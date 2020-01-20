@@ -24,19 +24,19 @@ pub struct Resource {
 impl_kobject!(Resource);
 
 impl Resource {
-    pub fn create(name: &str, kind: ResourceKind) -> ZxResult<Arc<Self>> {
-        Ok(Arc::new(Resource {
+    pub fn create(name: &str, kind: ResourceKind) -> Arc<Self> {
+        Arc::new(Resource {
             base: KObjectBase::new(),
             name: String::from(name),
-            kind: kind,
-        }))
+            kind,
+        })
     }
 
     pub fn validate(&self, kind: ResourceKind) -> ZxResult<()> {
-        return if self.kind == kind {
+        if self.kind == kind {
             Ok(())
         } else {
             Err(ZxError::WRONG_TYPE)
-        };
+        }
     }
 }

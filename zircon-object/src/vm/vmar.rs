@@ -256,9 +256,9 @@ mod tests {
     }
 
     /// A valid virtual address base to mmap.
-    const VBASE: VirtAddr = 0x200000000;
-    const VSIZE: VirtAddr = 0x100000;
-    const MAGIC: usize = 0xdeadbeaf;
+    const VBASE: VirtAddr = 0x2_00000000;
+    const VSIZE: VirtAddr = 0x1_00000;
+    const MAGIC: usize = 0xdead_beaf;
 
     #[test]
     #[allow(unsafe_code)]

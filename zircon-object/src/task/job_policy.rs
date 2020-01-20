@@ -17,7 +17,7 @@ impl JobPolicy {
 
     /// Merge the policy with `parent`'s.
     pub fn merge(&self, parent: &Self) -> Self {
-        let mut new = self.clone();
+        let mut new = *self;
         for i in 0..15 {
             if parent.action[i].is_some() {
                 new.action[i] = parent.action[i];

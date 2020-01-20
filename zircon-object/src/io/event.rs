@@ -32,10 +32,7 @@ impl EventPair {
 
     /// Get the peer event.
     pub fn peer(&self) -> ZxResult<Arc<Self>> {
-        match self.peer.upgrade() {
-            Some(peer) => Ok(peer.clone()),
-            None => Err(ZxError::PEER_CLOSED),
-        }
+        self.peer.upgrade().ok_or(ZxError::PEER_CLOSED)
     }
 }
 

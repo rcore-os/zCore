@@ -60,7 +60,7 @@ impl Frame {
 /// Map physical memory from here.
 #[linkage = "weak"]
 #[export_name = "hal_pmem_base"]
-pub static PMEM_BASE: VirtAddr = 0x800000000;
+pub static PMEM_BASE: VirtAddr = 0x8_00000000;
 
 fn phys_to_virt(paddr: PhysAddr) -> VirtAddr {
     PMEM_BASE + paddr

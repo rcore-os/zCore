@@ -6,6 +6,7 @@ mod physical;
 pub use {self::paged::*, self::physical::*};
 
 /// Virtual Memory Objects
+#[allow(clippy::len_without_is_empty)]
 pub trait VMObject: KernelObject {
     fn read(&self, offset: usize, buf: &mut [u8]);
     fn write(&self, offset: usize, buf: &[u8]);

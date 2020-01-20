@@ -109,7 +109,7 @@ impl Process {
             .lock()
             .handles
             .get(&handle_value)
-            .map(|h| h.clone())
+            .cloned()
             .ok_or(ZxError::BAD_HANDLE)
     }
 
@@ -221,10 +221,7 @@ impl ProcessInner {
 
     /// Whether `thread` is in this process.
     fn contains_thread(&self, thread: &Arc<Thread>) -> bool {
-        self.threads
-            .iter()
-            .find(|&t| Arc::ptr_eq(t, thread))
-            .is_some()
+        self.threads.iter().any(|t| Arc::ptr_eq(t, thread))
     }
 }
 

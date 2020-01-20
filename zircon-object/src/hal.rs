@@ -72,6 +72,7 @@ pub struct PageTable {
 
 impl PageTable {
     /// Create a new `PageTable`.
+    #[allow(clippy::new_without_default)]
     #[linkage = "weak"]
     #[export_name = "hal_pt_new"]
     pub fn new() -> Self {

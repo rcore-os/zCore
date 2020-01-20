@@ -218,9 +218,7 @@ pub fn wait_signal_many_async(
             self.targets
                 .iter()
                 .zip(current_signals)
-                .filter(|&(&(_, desired), &current)| !(current & desired).is_empty())
-                .next()
-                .is_some()
+                .any(|(&(_, desired), &current)| !(current & desired).is_empty())
         }
     }
 

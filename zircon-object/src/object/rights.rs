@@ -5,7 +5,8 @@ use {
 };
 
 bitflags! {
-   pub struct Rights: u32 {
+    pub struct Rights: u32 {
+        #[allow(clippy::identity_op)]
         const DUPLICATE = 1 << 0;
         const TRANSFER = 1 << 1;
         const READ = 1 << 2;
@@ -41,7 +42,7 @@ bitflags! {
         const DEFAULT_JOB = Self::BASIC.bits | Self::IO.bits | Self::PROPERTY.bits | Self::POLICY.bits | Self::ENUMERATE.bits
             | Self::DESTROY.bits | Self::SIGNAL.bits | Self::MANAGE_JOB.bits | Self::MANAGE_PROCESS.bits | Self::MANAGE_THREAD.bits;
         const DEFAULT_RESOURCE = Self::TRANSFER.bits | Self::DUPLICATE.bits | Self::WRITE.bits | Self::INSPECT.bits;
-   }
+    }
 }
 
 impl TryFrom<u32> for Rights {

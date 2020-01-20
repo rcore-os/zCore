@@ -8,19 +8,37 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v1
+    - uses: actions/checkout@v2
+    - uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: nightly
+        override: true
+        components: rustfmt, clippy
     - name: Check code format
-      run: cargo fmt -- --check
+      uses: actions-rs/cargo@v1
+      with:
+        command: fmt
+        args: --all -- --check
     - name: Build
-      run: cargo build --verbose
-    - uses: actions-rs/cargo@v1
+      uses: actions-rs/cargo@v1
+      with:
+        command: build
+        args: --all-features
+    - name: Clippy
+      uses: actions-rs/cargo@v1
+      with:
+        command: clippy
+    - name: Test
+      uses: actions-rs/cargo@v1
       with:
         command: test
         args: --all-features --no-fail-fast  # Customize args for your own needs
       env:
         CARGO_INCREMENTAL: '0'
         RUSTFLAGS: '-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Zno-landing-pads'
-    - id: coverage
+    - name: Gather coverage data
+      id: coverage
       uses: actions-rs/grcov@v0.1
     - name: Coveralls upload
       uses: coverallsapp/github-action@master

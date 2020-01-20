@@ -33,6 +33,7 @@ impl Syscall {
 
 bitflags! {
     struct VmOptions: u32 {
+        #[allow(clippy::identity_op)]
         const PERM_READ             = 1 << 0;
         const PERM_WRITE            = 1 << 1;
         const PERM_EXECUTE          = 1 << 2;
@@ -50,7 +51,7 @@ bitflags! {
 }
 
 impl VmOptions {
-    fn to_rights(&self) -> Rights {
+    fn to_rights(self) -> Rights {
         let mut rights = Rights::empty();
         if self.contains(VmOptions::CAN_MAP_READ) {
             rights.insert(Rights::READ);

@@ -14,8 +14,9 @@ impl_kobject!(VMObjectPhysical);
 impl VMObjectPhysical {
     /// Create a new VMO representing a piece of contiguous physical memory.
     ///
-    /// It's unsafe since you must ensure nobody has the ownership of
-    /// this piece of memory yet.
+    /// # Safety
+    ///
+    /// You must ensure nobody has the ownership of this piece of memory yet.
     #[allow(unsafe_code)]
     pub unsafe fn new(paddr: PhysAddr, pages: usize) -> Arc<Self> {
         assert!(page_aligned(paddr));

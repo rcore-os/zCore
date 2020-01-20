@@ -33,10 +33,10 @@ pub fn run_userboot(userboot_data: &[u8], vdso_data: &[u8], zbi_data: &[u8], cmd
     let job = Job::root();
     let proc = Process::create(&job, "proc", 0).unwrap();
     let thread = Thread::create(&proc, "thread", 0).unwrap();
-    let resource = Resource::create("root", ResourceKind::ROOT).unwrap();
+    let resource = Resource::create("root", ResourceKind::ROOT);
     let vmar = proc.vmar();
 
-    const VBASE: usize = 0x400000000;
+    const VBASE: usize = 0x4_00000000;
 
     // userboot
     let (entry, userboot_size) = {

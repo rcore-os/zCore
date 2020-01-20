@@ -3,6 +3,7 @@ use bitflags::bitflags;
 bitflags! {
     #[derive(Default)]
     pub struct Signal: u32 {
+        #[allow(clippy::identity_op)]
         const READABLE                      = 1 << 0;
         const WRITABLE                      = 1 << 1;
         const PEER_CLOSED                   = 1 << 2;
