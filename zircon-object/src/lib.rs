@@ -14,6 +14,7 @@ extern crate log;
 #[cfg(test)]
 extern crate std;
 
+pub mod debuglog;
 mod error;
 pub mod hal;
 pub mod io;
