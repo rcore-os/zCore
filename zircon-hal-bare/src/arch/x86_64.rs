@@ -1,7 +1,6 @@
 use super::*;
+use bitflags::bitflags;
 use x86_64::structures::paging::{PageTableFlags as PTF, *};
-
-type MMUFlags = usize;
 
 /// Page Table
 #[repr(C)]
@@ -27,13 +26,12 @@ impl PageTableImpl {
         &mut self,
         vaddr: x86_64::VirtAddr,
         paddr: x86_64::PhysAddr,
-        _flags: MMUFlags,
+        flags: MMUFlags,
     ) -> Result<(), ()> {
         let mut pt = self.get();
         let page = Page::<Size4KiB>::from_start_address(vaddr).unwrap();
         let frame = unsafe { UnusedPhysFrame::new(PhysFrame::from_start_address(paddr).unwrap()) };
-        let flags = PTF::PRESENT | PTF::WRITABLE;
-        pt.map_to(page, frame, flags, &mut FrameAllocatorImpl)
+        pt.map_to(page, frame, flags.to_ptf(), &mut FrameAllocatorImpl)
             .unwrap()
             .flush();
         Ok(())
@@ -50,19 +48,48 @@ impl PageTableImpl {
 
     /// Change the `flags` of the page of `vaddr`.
     #[export_name = "hal_pt_protect"]
-    pub fn protect(&mut self, _vaddr: x86_64::VirtAddr, _flags: MMUFlags) -> Result<(), ()> {
-        unimplemented!()
+    pub fn protect(&mut self, vaddr: x86_64::VirtAddr, flags: MMUFlags) -> Result<(), ()> {
+        let mut pt = self.get();
+        let page = Page::<Size4KiB>::from_start_address(vaddr).unwrap();
+        pt.update_flags(page, flags.to_ptf()).unwrap().flush();
+        Ok(())
     }
 
     /// Query the physical address which the page of `vaddr` maps to.
     #[export_name = "hal_pt_query"]
-    pub fn query(&mut self, _vaddr: x86_64::VirtAddr) -> Result<(PhysAddr, MMUFlags), ()> {
-        unimplemented!()
+    pub fn query(&mut self, vaddr: x86_64::VirtAddr) -> Result<x86_64::PhysAddr, ()> {
+        let pt = self.get();
+        pt.translate_addr(vaddr).ok_or(())
     }
 
     fn get(&mut self) -> OffsetPageTable<'_> {
         let offset = x86_64::VirtAddr::new(PMEM_BASE as u64);
         unsafe { OffsetPageTable::new(self.root, offset) }
+    }
+}
+
+bitflags! {
+    pub struct MMUFlags: usize {
+        #[allow(clippy::identity_op)]
+        const READ      = 1 << 0;
+        const WRITE     = 1 << 1;
+        const EXECUTE   = 1 << 2;
+    }
+}
+
+impl MMUFlags {
+    fn to_ptf(self) -> PTF {
+        let mut flags = PTF::empty();
+        if self.contains(MMUFlags::READ) {
+            flags |= PTF::PRESENT;
+        }
+        if self.contains(MMUFlags::WRITE) {
+            flags |= PTF::WRITABLE;
+        }
+        if !self.contains(MMUFlags::EXECUTE) {
+            flags |= PTF::NO_EXECUTE;
+        }
+        flags
     }
 }
 

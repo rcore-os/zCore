@@ -68,6 +68,7 @@ impl VmAddressRegion {
         vmo: Arc<dyn VMObject>,
         vmo_offset: usize,
         len: usize,
+        flags: MMUFlags,
     ) -> ZxResult<()> {
         if !page_aligned(offset)
             || !page_aligned(vmo_offset)
@@ -84,6 +85,7 @@ impl VmAddressRegion {
         let mapping = VmMapping {
             addr: self.addr + offset,
             size: len,
+            flags,
             vmo,
             vmo_offset,
             page_table: self.page_table.clone(),
@@ -195,6 +197,7 @@ impl VmAddressRegion {
 pub struct VmMapping {
     addr: VirtAddr,
     size: usize,
+    flags: MMUFlags,
     vmo: Arc<dyn VMObject>,
     vmo_offset: usize,
     page_table: Arc<Mutex<PageTable>>,
@@ -203,8 +206,13 @@ pub struct VmMapping {
 impl VmMapping {
     fn map(&self) {
         let mut page_table = self.page_table.lock();
-        self.vmo
-            .map_to(&mut page_table, self.addr, self.vmo_offset, self.size);
+        self.vmo.map_to(
+            &mut page_table,
+            self.addr,
+            self.vmo_offset,
+            self.size,
+            self.flags,
+        );
     }
 
     fn unmap(&self) {
@@ -266,27 +274,29 @@ mod tests {
         let root_vmar = VmAddressRegion::new_root();
         let vmar = root_vmar.create_child(VBASE, VSIZE).unwrap();
         let vmo = VMObjectPaged::new(4);
+        let flags = MMUFlags::READ | MMUFlags::WRITE;
 
         // invalid argument
         assert_eq!(
-            vmar.map(0, vmo.clone(), 0x4000, 0x1000),
+            vmar.map(0, vmo.clone(), 0x4000, 0x1000, flags),
             Err(ZxError::INVALID_ARGS)
         );
         assert_eq!(
-            vmar.map(0, vmo.clone(), 0, 0x5000),
+            vmar.map(0, vmo.clone(), 0, 0x5000, flags),
             Err(ZxError::INVALID_ARGS)
         );
         assert_eq!(
-            vmar.map(0, vmo.clone(), 0x1000, 1),
+            vmar.map(0, vmo.clone(), 0x1000, 1, flags),
             Err(ZxError::INVALID_ARGS)
         );
         assert_eq!(
-            vmar.map(0, vmo.clone(), 1, 0x1000),
+            vmar.map(0, vmo.clone(), 1, 0x1000, flags),
             Err(ZxError::INVALID_ARGS)
         );
 
-        vmar.map(0, vmo.clone(), 0, 0x4000).unwrap();
-        vmar.map(0x12000, vmo.clone(), 0x2000, 0x1000).unwrap();
+        vmar.map(0, vmo.clone(), 0, 0x4000, flags).unwrap();
+        vmar.map(0x12000, vmo.clone(), 0x2000, 0x1000, flags)
+            .unwrap();
 
         unsafe {
             ((VBASE + 0x2000) as *mut usize).write(MAGIC);

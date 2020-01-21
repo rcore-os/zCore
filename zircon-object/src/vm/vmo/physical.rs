@@ -50,8 +50,14 @@ impl VMObject for VMObjectPhysical {
         unimplemented!()
     }
 
-    fn map_to(&self, page_table: &mut PageTable, vaddr: usize, offset: usize, len: usize) {
-        let flags = 0; // FIXME
+    fn map_to(
+        &self,
+        page_table: &mut PageTable,
+        vaddr: usize,
+        offset: usize,
+        len: usize,
+        flags: MMUFlags,
+    ) {
         let pages = len / PAGE_SIZE;
         page_table
             .map_cont(vaddr, self.paddr + offset, pages, flags)

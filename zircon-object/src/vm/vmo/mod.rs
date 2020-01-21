@@ -3,7 +3,7 @@ use {super::*, crate::hal::PageTable, crate::object::*};
 mod paged;
 mod physical;
 
-pub use {self::paged::*, self::physical::*};
+pub use self::{paged::*, physical::*};
 
 /// Virtual Memory Objects
 #[allow(clippy::len_without_is_empty)]
@@ -13,7 +13,14 @@ pub trait VMObject: KernelObject {
     fn len(&self) -> usize;
     fn set_len(&self);
 
-    fn map_to(&self, page_table: &mut PageTable, vaddr: VirtAddr, offset: usize, len: usize);
+    fn map_to(
+        &self,
+        page_table: &mut PageTable,
+        vaddr: VirtAddr,
+        offset: usize,
+        len: usize,
+        flags: MMUFlags,
+    );
 
     fn unmap_from(&self, page_table: &mut PageTable, vaddr: VirtAddr, _offset: usize, len: usize) {
         // TODO _offset unused?

@@ -9,6 +9,7 @@ description = "Zircon HAL implementation for bare metal environment."
 
 [dependencies]
 log = "0.4"
+bitflags = "1.2"
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 x86_64 = "0.8"

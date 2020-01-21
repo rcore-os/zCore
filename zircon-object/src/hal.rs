@@ -1,6 +1,7 @@
 //! Hardware Abstraction Layer
 
 use alloc::boxed::Box;
+use bitflags::bitflags;
 use core::ops::FnOnce;
 use core::time::Duration;
 use {crate::task::Thread as ThreadObject, crate::vm::PAGE_SIZE, alloc::sync::Arc};
@@ -8,7 +9,15 @@ use {crate::task::Thread as ThreadObject, crate::vm::PAGE_SIZE, alloc::sync::Arc
 type ThreadId = usize;
 type PhysAddr = usize;
 type VirtAddr = usize;
-type MMUFlags = usize;
+
+bitflags! {
+    pub struct MMUFlags: usize {
+        #[allow(clippy::identity_op)]
+        const READ      = 1 << 0;
+        const WRITE     = 1 << 1;
+        const EXECUTE   = 1 << 2;
+    }
+}
 
 #[repr(C)]
 pub struct Thread {
@@ -99,7 +108,7 @@ impl PageTable {
     /// Query the physical address which the page of `vaddr` maps to.
     #[linkage = "weak"]
     #[export_name = "hal_pt_query"]
-    pub fn query(&mut self, _vaddr: VirtAddr) -> Result<(PhysAddr, MMUFlags), ()> {
+    pub fn query(&mut self, _vaddr: VirtAddr) -> Result<PhysAddr, ()> {
         unimplemented!()
     }
     /// Get the physical address of root page table.

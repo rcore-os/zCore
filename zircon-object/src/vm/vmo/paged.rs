@@ -59,10 +59,16 @@ impl VMObject for VMObjectPaged {
         unimplemented!()
     }
 
-    fn map_to(&self, page_table: &mut PageTable, vaddr: usize, offset: usize, len: usize) {
+    fn map_to(
+        &self,
+        page_table: &mut PageTable,
+        vaddr: usize,
+        offset: usize,
+        len: usize,
+        flags: MMUFlags,
+    ) {
         let start_page = offset / PAGE_SIZE;
         let pages = len / PAGE_SIZE;
-        let flags = 0; // FIXME
         let mut inner = self.inner.lock();
         for i in 0..pages {
             let frame = inner.commit(start_page + i);

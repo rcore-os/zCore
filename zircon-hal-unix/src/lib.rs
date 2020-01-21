@@ -8,6 +8,7 @@ extern crate alloc;
 
 use {
     alloc::sync::Arc,
+    bitflags::bitflags,
     lazy_static::lazy_static,
     std::cell::RefCell,
     std::fmt::{Debug, Formatter},
@@ -21,7 +22,15 @@ use {
 
 type PhysAddr = usize;
 type VirtAddr = usize;
-type MMUFlags = usize;
+
+bitflags! {
+    pub struct MMUFlags: usize {
+        #[allow(clippy::identity_op)]
+        const READ      = 1 << 0;
+        const WRITE     = 1 << 1;
+        const EXECUTE   = 1 << 2;
+    }
+}
 
 #[repr(C)]
 pub struct Thread {
@@ -100,10 +109,11 @@ impl PageTable {
 
     /// Map the page of `vaddr` to the frame of `paddr` with `flags`.
     #[export_name = "hal_pt_map"]
-    pub fn map(&mut self, vaddr: VirtAddr, paddr: PhysAddr, _flags: MMUFlags) -> Result<(), ()> {
+    pub fn map(&mut self, vaddr: VirtAddr, paddr: PhysAddr, flags: MMUFlags) -> Result<(), ()> {
         debug_assert!(page_aligned(vaddr));
         debug_assert!(page_aligned(paddr));
-        mmap(FRAME_FILE.as_raw_fd(), paddr, PAGE_SIZE, vaddr);
+        let prot = flags.to_mmap_prot();
+        mmap(FRAME_FILE.as_raw_fd(), paddr, PAGE_SIZE, vaddr, prot);
         Ok(())
     }
 
@@ -120,14 +130,15 @@ impl PageTable {
     #[export_name = "hal_pt_protect"]
     pub fn protect(&mut self, vaddr: VirtAddr, flags: MMUFlags) -> Result<(), ()> {
         debug_assert!(page_aligned(vaddr));
-        let ret = unsafe { libc::mprotect(vaddr as _, PAGE_SIZE, flags as libc::c_int) };
+        let prot = flags.to_mmap_prot();
+        let ret = unsafe { libc::mprotect(vaddr as _, PAGE_SIZE, prot) };
         assert_eq!(ret, 0, "failed to mprotect: {:?}", Error::last_os_error());
         Ok(())
     }
 
     /// Query the physical address which the page of `vaddr` maps to.
     #[export_name = "hal_pt_query"]
-    pub fn query(&mut self, vaddr: VirtAddr) -> Result<(PhysAddr, MMUFlags), ()> {
+    pub fn query(&mut self, vaddr: VirtAddr) -> Result<PhysAddr, ()> {
         debug_assert!(page_aligned(vaddr));
         unimplemented!()
     }
@@ -224,25 +235,46 @@ fn create_pmem_file() -> File {
     file.set_len(PMEM_SIZE as u64)
         .expect("failed to resize file");
     trace!("create pmem file: path={:?}, size={:#x}", path, PMEM_SIZE);
-    mmap(file.as_raw_fd(), 0, PMEM_SIZE, phys_to_virt(0));
+    let prot = libc::PROT_READ | libc::PROT_WRITE;
+    mmap(file.as_raw_fd(), 0, PMEM_SIZE, phys_to_virt(0), prot);
     file
 }
 
 /// Mmap frame file `fd` to `vaddr`.
-fn mmap(fd: libc::c_int, offset: usize, len: usize, vaddr: VirtAddr) {
+fn mmap(fd: libc::c_int, offset: usize, len: usize, vaddr: VirtAddr, prot: libc::c_int) {
+    // workaround on macOS to avoid permission denied.
+    #[cfg(target_os = "macos")]
+    let prot = prot | libc::PROT_READ | libc::PROT_WRITE | libc::PROT_EXEC;
+
     let ret = unsafe {
-        let prot = libc::PROT_READ | libc::PROT_WRITE | libc::PROT_EXEC;
         let flags = libc::MAP_SHARED | libc::MAP_FIXED;
         libc::mmap(vaddr as _, len, prot, flags, fd, offset as _)
     } as usize;
     trace!(
-        "mmap file (fd={}, offset={:#x}, len={:#x}) to {:#x}",
+        "mmap file: fd={}, offset={:#x}, len={:#x}, vaddr={:#x}, prot={:#b}",
         fd,
         offset,
         len,
-        vaddr
+        vaddr,
+        prot,
     );
     assert_eq!(ret, vaddr, "failed to mmap: {:?}", Error::last_os_error());
+}
+
+impl MMUFlags {
+    fn to_mmap_prot(self) -> libc::c_int {
+        let mut flags = 0;
+        if self.contains(MMUFlags::READ) {
+            flags |= libc::PROT_READ;
+        }
+        if self.contains(MMUFlags::WRITE) {
+            flags |= libc::PROT_WRITE;
+        }
+        if self.contains(MMUFlags::EXECUTE) {
+            flags |= libc::PROT_EXEC;
+        }
+        flags
+    }
 }
 
 #[export_name = "hal_serial_write"]
@@ -280,9 +312,10 @@ mod tests {
     #[test]
     fn map_unmap() {
         let mut pt = PageTable::new();
+        let flags = MMUFlags::READ | MMUFlags::WRITE;
         // map 2 pages to 1 frame
-        pt.map(VBASE, 0x1000, 0).unwrap();
-        pt.map(VBASE + 0x1000, 0x1000, 0).unwrap();
+        pt.map(VBASE, 0x1000, flags).unwrap();
+        pt.map(VBASE + 0x1000, 0x1000, flags).unwrap();
 
         unsafe {
             const MAGIC: usize = 0xdead_beaf;

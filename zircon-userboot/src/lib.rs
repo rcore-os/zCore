@@ -8,6 +8,7 @@ extern crate alloc;
 
 extern crate log;
 
+use xmas_elf::program::Flags;
 use {
     alloc::{sync::Arc, vec::Vec},
     xmas_elf::{
@@ -56,12 +57,11 @@ pub fn run_userboot(userboot_data: &[u8], vdso_data: &[u8], zbi_data: &[u8], cmd
             .expect("failed to locate syscall entry") as usize;
         let vmar = vmar.create_child(VBASE + userboot_size, size).unwrap();
         let first_vmo = vmar.load_from_elf(&elf).unwrap();
-
-        unsafe {
-            // fill syscall entry
-            ((VBASE + userboot_size + syscall_entry_offset) as *mut usize)
-                .write(syscall_entry as usize);
-        }
+        // fill syscall entry
+        first_vmo.write(
+            syscall_entry_offset,
+            &(syscall_entry as usize).to_ne_bytes(),
+        );
         first_vmo
     };
 
@@ -169,10 +169,31 @@ impl VmarExt for VmAddressRegion {
             }
             let vmo = make_vmo(&elf, ph)?;
             let len = vmo.len();
-            self.map(ph.virtual_addr() as usize, vmo.clone(), 0, len)?;
+            let flags = ph.flags().to_mmu_flags();
+            self.map(ph.virtual_addr() as usize, vmo.clone(), 0, len, flags)?;
             first_vmo.get_or_insert(vmo);
         }
         Ok(first_vmo.unwrap())
+    }
+}
+
+trait FlagsExt {
+    fn to_mmu_flags(&self) -> MMUFlags;
+}
+
+impl FlagsExt for Flags {
+    fn to_mmu_flags(&self) -> MMUFlags {
+        let mut flags = MMUFlags::empty();
+        if self.is_read() {
+            flags.insert(MMUFlags::READ);
+        }
+        if self.is_write() {
+            flags.insert(MMUFlags::WRITE);
+        }
+        if self.is_execute() {
+            flags.insert(MMUFlags::EXECUTE);
+        }
+        flags
     }
 }
 
