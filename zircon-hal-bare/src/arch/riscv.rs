@@ -1,0 +1,124 @@
+use super::*;
+use bitflags::bitflags;
+use riscv::paging::{*, PageTableFlags as PTF};
+use riscv::addr::Page;
+
+/// Page Table
+#[repr(C)]
+pub struct PageTableImpl {
+    root: &'static mut PageTable,
+}
+
+impl PageTableImpl {
+    /// Create a new `PageTable`.
+    #[export_name = "hal_pt_new"]
+    pub fn new() -> Self {
+        let root_frame = Frame::alloc().expect("failed to alloc frame");
+        let root_vaddr = phys_to_virt(root_frame.paddr);
+        let root = unsafe { &mut *(root_vaddr as *mut PageTable) };
+        root.zero();
+        map_kernel(root_vaddr as _);
+        PageTableImpl { root }
+    }
+
+    /// Map the page of `vaddr` to the frame of `paddr` with `flags`.
+    #[export_name = "hal_pt_map"]
+    pub fn map(
+        &mut self,
+        vaddr: riscv::addr::VirtAddr,
+        paddr: riscv::addr::PhysAddr,
+        flags: MMUFlags,
+    ) -> Result<(), ()> {
+        let mut pt = self.get();
+        let page = Page::of_addr(vaddr);
+        let frame = riscv::addr::Frame::of_addr(paddr);
+        pt.map_to(page, frame, flags.to_ptf(), &mut FrameAllocatorImpl)
+            .unwrap()
+            .flush();
+        Ok(())
+    }
+
+    /// Unmap the page of `vaddr`.
+    #[export_name = "hal_pt_unmap"]
+    pub fn unmap(&mut self, vaddr: riscv::addr::VirtAddr) -> Result<(), ()> {
+        let mut pt = self.get();
+        let page = Page::of_addr(vaddr);
+        pt.unmap(page).unwrap().1.flush();
+        Ok(())
+    }
+
+    /// Change the `flags` of the page of `vaddr`.
+    #[export_name = "hal_pt_protect"]
+    pub fn protect(&mut self, vaddr: riscv::addr::VirtAddr, flags: MMUFlags) -> Result<(), ()> {
+        let mut pt = self.get();
+        let page = Page::of_addr(vaddr);
+        pt.update_flags(page, flags.to_ptf()).unwrap().flush();
+        Ok(())
+    }
+
+    /// Query the physical address which the page of `vaddr` maps to.
+    #[export_name = "hal_pt_query"]
+    pub fn query(&mut self, vaddr: riscv::addr::VirtAddr) -> Result<riscv::addr::PhysAddr, ()> {
+        let mut pt = self.get();
+        let page = Page::of_addr(vaddr);
+        match pt.ref_entry(page) {
+            Ok(entry) => Ok(entry.addr()),
+            Err(_) => Err(())
+        }
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    fn get(&mut self) -> Rv32PageTable<'_> {
+        Rv32PageTable::new(self.root, PMEM_BASE)
+    }
+
+    #[cfg(target_arch = "riscv64")]
+    fn get(&mut self) -> Rv39PageTable<'_> {
+        Rv39PageTable::new(self.root, PMEM_BASE)
+    }
+}
+
+bitflags! {
+    pub struct MMUFlags: usize {
+        #[allow(clippy::identity_op)]
+        const READ      = 1 << 0;
+        const WRITE     = 1 << 1;
+        const EXECUTE   = 1 << 2;
+    }
+}
+
+impl MMUFlags {
+    fn to_ptf(self) -> PTF {
+        let mut flags = PTF::empty();
+        if self.contains(MMUFlags::READ) {
+            flags |= PTF::VALID;
+        }
+        if self.contains(MMUFlags::WRITE) {
+            flags |= PTF::WRITABLE;
+        }
+        if !self.contains(MMUFlags::EXECUTE) {
+            flags |= PTF::EXECUTABLE;
+        }
+        flags
+    }
+}
+
+struct FrameAllocatorImpl;
+
+impl FrameAllocator for FrameAllocatorImpl {
+    fn alloc(&mut self) -> Option<riscv::addr::Frame> {
+        Frame::alloc().map(|f| {
+            let paddr = riscv::addr::PhysAddr::new(f.paddr);
+            riscv::addr::Frame::of_addr(paddr)
+        })
+    }
+}
+
+impl FrameDeallocator for FrameAllocatorImpl {
+    fn dealloc(&mut self, frame: riscv::addr::Frame) {
+        Frame {
+            paddr: frame.start_address().as_usize(),
+        }
+        .dealloc()
+    }
+}

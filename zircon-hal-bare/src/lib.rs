@@ -22,8 +22,6 @@ extern crate log;
 
 extern crate alloc;
 
-#[cfg(target_arch = "x86_64")]
-#[path = "arch/x86_64.rs"]
 mod arch;
 
 type PhysAddr = usize;
@@ -60,7 +58,7 @@ impl Frame {
 /// Map physical memory from here.
 #[linkage = "weak"]
 #[export_name = "hal_pmem_base"]
-pub static PMEM_BASE: VirtAddr = 0x8_00000000;
+pub static PMEM_BASE: VirtAddr = 0x8000_0000;
 
 fn phys_to_virt(paddr: PhysAddr) -> VirtAddr {
     PMEM_BASE + paddr
