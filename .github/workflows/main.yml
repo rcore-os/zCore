@@ -3,12 +3,11 @@ name: CI
 on: [push, pull_request]
 
 jobs:
-  build:
-
+  check:
     runs-on: ubuntu-latest
-
     steps:
     - uses: actions/checkout@v2
+    - run: rm rust-toolchain
     - uses: actions-rs/toolchain@v1
       with:
         profile: minimal
@@ -20,15 +19,43 @@ jobs:
       with:
         command: fmt
         args: --all -- --check
+    - name: Clippy
+      uses: actions-rs/cargo@v1
+      with:
+        command: clippy
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - name: Setup Rust toolchain
+      run: |
+        rustup target add riscv32imac-unknown-none-elf
+        rustup target add riscv64imac-unknown-none-elf
     - name: Build
       uses: actions-rs/cargo@v1
       with:
         command: build
         args: --all-features
-    - name: Clippy
+    - name: Build for riscv32
       uses: actions-rs/cargo@v1
       with:
-        command: clippy
+        command: build
+        args: --package zircon-hal-bare --target riscv32imac-unknown-none-elf
+    - name: Build for riscv64
+      uses: actions-rs/cargo@v1
+      with:
+        command: build
+        args: --package zircon-hal-bare --target riscv64imac-unknown-none-elf
+    - name: Build docs
+      uses: actions-rs/cargo@v1
+      with:
+        command: doc
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
     - name: Test
       uses: actions-rs/cargo@v1
       with:
@@ -46,6 +73,6 @@ jobs:
         github-token: ${{ secrets.GITHUB_TOKEN }}
         path-to-lcov: ${{ steps.coverage.outputs.report }}
     - name: Run benchmarks
-      run: cargo bench --verbose
-    - name: Build docs
-      run: cargo doc --verbose
+      uses: actions-rs/cargo@v1
+      with:
+        command: bench
