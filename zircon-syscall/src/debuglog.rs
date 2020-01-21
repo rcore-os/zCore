@@ -1,4 +1,7 @@
-use {super::*, zircon_object::debuglog::DebugLog, zircon_object::resource::ResourceKind};
+use {
+    super::*,
+    zircon_object::{debuglog::DebugLog, resource::ResourceKind},
+};
 
 const FLAG_READABLE: u32 = 0x4000_0000u32;
 
@@ -28,11 +31,16 @@ impl Syscall {
 
     pub fn sys_debuglog_write(
         &self,
-        _handle_value: HandleValue,
-        _options: u32,
+        handle_value: HandleValue,
+        flags: u32,
         buf: UserInPtr<u8>,
         len: usize,
     ) -> ZxResult<usize> {
-        self.sys_debug_write(buf, len)
+        let datalen = if len > 224 { 224 } else { len };
+        let data = buf.read_string(datalen as usize)?;
+        self.thread
+            .proc
+            .get_object_with_rights::<DebugLog>(handle_value, Rights::WRITE)?
+            .write(flags, &data)
     }
 }
