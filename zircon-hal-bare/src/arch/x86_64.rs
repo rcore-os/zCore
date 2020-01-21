@@ -5,11 +5,12 @@ use x86_64::structures::paging::{PageTableFlags as PTF, *};
 /// Page Table
 #[repr(C)]
 pub struct PageTableImpl {
-    root: &'static mut PageTable,
+    root_paddr: PhysAddr,
 }
 
 impl PageTableImpl {
     /// Create a new `PageTable`.
+    #[allow(clippy::new_without_default)]
     #[export_name = "hal_pt_new"]
     pub fn new() -> Self {
         let root_frame = Frame::alloc().expect("failed to alloc frame");
@@ -17,7 +18,8 @@ impl PageTableImpl {
         let root = unsafe { &mut *(root_vaddr as *mut PageTable) };
         root.zero();
         map_kernel(root_vaddr as _);
-        PageTableImpl { root }
+        trace!("create page table @ {:#x}", root_frame.paddr);
+        PageTableImpl { root_paddr: root_frame.paddr }
     }
 
     /// Map the page of `vaddr` to the frame of `paddr` with `flags`.
@@ -34,6 +36,7 @@ impl PageTableImpl {
         pt.map_to(page, frame, flags.to_ptf(), &mut FrameAllocatorImpl)
             .unwrap()
             .flush();
+        trace!("map: {:x?} -> {:x?}, flags={:?}", vaddr, paddr, flags);
         Ok(())
     }
 
@@ -43,6 +46,7 @@ impl PageTableImpl {
         let mut pt = self.get();
         let page = Page::<Size4KiB>::from_start_address(vaddr).unwrap();
         pt.unmap(page).unwrap().1.flush();
+        trace!("unmap: {:x?}", vaddr);
         Ok(())
     }
 
@@ -52,6 +56,7 @@ impl PageTableImpl {
         let mut pt = self.get();
         let page = Page::<Size4KiB>::from_start_address(vaddr).unwrap();
         pt.update_flags(page, flags.to_ptf()).unwrap().flush();
+        trace!("protect: {:x?}, flags={:?}", vaddr, flags);
         Ok(())
     }
 
@@ -59,12 +64,16 @@ impl PageTableImpl {
     #[export_name = "hal_pt_query"]
     pub fn query(&mut self, vaddr: x86_64::VirtAddr) -> Result<x86_64::PhysAddr, ()> {
         let pt = self.get();
-        pt.translate_addr(vaddr).ok_or(())
+        let ret = pt.translate_addr(vaddr).ok_or(());
+        trace!("query: {:x?} => {:x?}", vaddr, ret);
+        ret
     }
 
     fn get(&mut self) -> OffsetPageTable<'_> {
-        let offset = x86_64::VirtAddr::new(PMEM_BASE as u64);
-        unsafe { OffsetPageTable::new(self.root, offset) }
+        let root_vaddr = phys_to_virt(self.root_paddr);
+        let root = unsafe { &mut *(root_vaddr as *mut PageTable) };
+        let offset = x86_64::VirtAddr::new(phys_to_virt(0) as u64);
+        unsafe { OffsetPageTable::new(root, offset) }
     }
 }
 

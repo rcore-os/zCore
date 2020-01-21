@@ -29,7 +29,7 @@ impl VmAddressRegion {
         Arc::new(VmAddressRegion {
             base: KObjectBase::new(),
             addr: 0,
-            size: 0x8000_00000000,
+            size: usize::max_value(),
             parent: None,
             page_table: Arc::new(Mutex::new(hal::PageTable::new())),
             inner: Mutex::new(Some(VmarInner::default())),
@@ -145,6 +145,12 @@ impl VmAddressRegion {
         Ok(())
     }
 
+    /// Get physical address of the underlying page table.
+    pub fn table_phys(&self) -> PhysAddr {
+        self.page_table.lock().table_phys()
+    }
+
+    /// Get start address of this VMAR.
     pub fn addr(&self) -> usize {
         self.addr
     }

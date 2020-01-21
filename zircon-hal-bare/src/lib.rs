@@ -18,22 +18,33 @@
 #![feature(linkage)]
 #![deny(warnings)]
 
+#[macro_use]
 extern crate log;
 
 extern crate alloc;
 
-mod arch;
+pub mod arch;
 
 type PhysAddr = usize;
 type VirtAddr = usize;
 
+#[allow(improper_ctypes)]
+extern "C" {
+    fn hal_pt_map_kernel(pt: *mut u8);
+    fn hal_frame_alloc() -> Option<PhysAddr>;
+    fn hal_frame_dealloc(paddr: &PhysAddr);
+    #[link_name = "hal_pmem_base"]
+    static PMEM_BASE: usize;
+}
+
 /// Map kernel for the new page table.
 ///
 /// `pt` is a page-aligned pointer to the root page table.
-#[linkage = "weak"]
-#[export_name = "hal_pt_map_kernel"]
-pub fn map_kernel(_pt: *mut u8) {
-    unimplemented!()
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+pub fn map_kernel(pt: *mut u8) {
+    unsafe {
+        hal_pt_map_kernel(pt);
+    }
 }
 
 #[repr(C)]
@@ -42,26 +53,19 @@ pub struct Frame {
 }
 
 impl Frame {
-    #[linkage = "weak"]
-    #[export_name = "hal_frame_alloc"]
     pub fn alloc() -> Option<Self> {
-        unimplemented!()
+        unsafe { hal_frame_alloc().map(|paddr| Frame { paddr }) }
     }
 
-    #[linkage = "weak"]
-    #[export_name = "hal_frame_dealloc"]
     pub fn dealloc(&mut self) {
-        unimplemented!()
+        unsafe {
+            hal_frame_dealloc(&self.paddr);
+        }
     }
 }
 
-/// Map physical memory from here.
-#[linkage = "weak"]
-#[export_name = "hal_pmem_base"]
-pub static PMEM_BASE: VirtAddr = 0x8000_0000;
-
 fn phys_to_virt(paddr: PhysAddr) -> VirtAddr {
-    PMEM_BASE + paddr
+    unsafe { PMEM_BASE + paddr }
 }
 
 /// Read physical memory from `paddr` to `buf`.
@@ -80,3 +84,8 @@ pub fn pmem_write(paddr: PhysAddr, buf: &[u8]) {
             .copy_to_nonoverlapping(phys_to_virt(paddr) as _, buf.len());
     }
 }
+
+/// A dummy function.
+///
+/// Call this anywhere to ensure this lib being linked.
+pub fn init() {}

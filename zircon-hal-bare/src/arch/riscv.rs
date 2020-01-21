@@ -6,11 +6,12 @@ use riscv::addr::Page;
 /// Page Table
 #[repr(C)]
 pub struct PageTableImpl {
-    root: &'static mut PageTable,
+    root_paddr: PhysAddr,
 }
 
 impl PageTableImpl {
     /// Create a new `PageTable`.
+    #[allow(clippy::new_without_default)]
     #[export_name = "hal_pt_new"]
     pub fn new() -> Self {
         let root_frame = Frame::alloc().expect("failed to alloc frame");
@@ -18,7 +19,8 @@ impl PageTableImpl {
         let root = unsafe { &mut *(root_vaddr as *mut PageTable) };
         root.zero();
         map_kernel(root_vaddr as _);
-        PageTableImpl { root }
+        trace!("create page table @ {:#x}", root_frame.paddr);
+        PageTableImpl { root_paddr: root_frame.paddr }
     }
 
     /// Map the page of `vaddr` to the frame of `paddr` with `flags`.
@@ -35,6 +37,7 @@ impl PageTableImpl {
         pt.map_to(page, frame, flags.to_ptf(), &mut FrameAllocatorImpl)
             .unwrap()
             .flush();
+        trace!("map: {:x?} -> {:x?}, flags={:?}", vaddr, paddr, flags);
         Ok(())
     }
 
@@ -44,6 +47,7 @@ impl PageTableImpl {
         let mut pt = self.get();
         let page = Page::of_addr(vaddr);
         pt.unmap(page).unwrap().1.flush();
+        trace!("unmap: {:x?}", vaddr);
         Ok(())
     }
 
@@ -53,6 +57,7 @@ impl PageTableImpl {
         let mut pt = self.get();
         let page = Page::of_addr(vaddr);
         pt.update_flags(page, flags.to_ptf()).unwrap().flush();
+        trace!("protect: {:x?}, flags={:?}", vaddr, flags);
         Ok(())
     }
 
@@ -61,7 +66,9 @@ impl PageTableImpl {
     pub fn query(&mut self, vaddr: riscv::addr::VirtAddr) -> Result<riscv::addr::PhysAddr, ()> {
         let mut pt = self.get();
         let page = Page::of_addr(vaddr);
-        match pt.ref_entry(page) {
+        let res = pt.ref_entry(page);
+        trace!("query: {:x?} => {:x?}", vaddr, res);
+        match res {
             Ok(entry) => Ok(entry.addr()),
             Err(_) => Err(())
         }
@@ -69,12 +76,16 @@ impl PageTableImpl {
 
     #[cfg(target_arch = "riscv32")]
     fn get(&mut self) -> Rv32PageTable<'_> {
-        Rv32PageTable::new(self.root, PMEM_BASE)
+        let root_vaddr = phys_to_virt(self.root_paddr);
+        let root = unsafe { &mut *(root_vaddr as *mut PageTable) };
+        Rv32PageTable::new(root, phys_to_virt(0))
     }
 
     #[cfg(target_arch = "riscv64")]
     fn get(&mut self) -> Rv39PageTable<'_> {
-        Rv39PageTable::new(self.root, PMEM_BASE)
+        let root_vaddr = phys_to_virt(self.root_paddr);
+        let root = unsafe { &mut *(root_vaddr as *mut PageTable) };
+        Rv39PageTable::new(root, phys_to_virt(0))
     }
 }
 
@@ -89,14 +100,14 @@ bitflags! {
 
 impl MMUFlags {
     fn to_ptf(self) -> PTF {
-        let mut flags = PTF::empty();
+        let mut flags = PTF::VALID;
         if self.contains(MMUFlags::READ) {
-            flags |= PTF::VALID;
+            flags |= PTF::READABLE;
         }
         if self.contains(MMUFlags::WRITE) {
             flags |= PTF::WRITABLE;
         }
-        if !self.contains(MMUFlags::EXECUTE) {
+        if self.contains(MMUFlags::EXECUTE) {
             flags |= PTF::EXECUTABLE;
         }
         flags
