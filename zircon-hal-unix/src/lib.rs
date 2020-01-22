@@ -40,8 +40,6 @@ pub struct Thread {
 impl Thread {
     #[export_name = "hal_thread_spawn"]
     pub fn spawn(entry: usize, stack: usize, arg1: usize, arg2: usize, tls: Arc<usize>) -> Self {
-        // align stack pointer to 16 bytes
-        let stack = stack & !0xf;
         let handle = std::thread::spawn(move || {
             TLS.with(|t| t.replace(Some(tls)));
             swap_fs();
@@ -300,6 +298,14 @@ pub fn timer_set(deadline: Duration, callback: Box<dyn FnOnce(Duration) + Send +
         callback(timer_now());
     });
 }
+
+#[cfg(target_os = "macos")]
+#[export_name = "hal_set_back_fs"]
+pub fn set_back_fs(_fsbase: usize) {}
+
+#[cfg(target_os = "macos")]
+#[export_name = "hal_swap_fs"]
+pub fn swap_fs() {}
 
 #[cfg(target_os = "linux")]
 #[export_name = "hal_set_back_fs"]

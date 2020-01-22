@@ -17,6 +17,7 @@ use {
         symbol_table::Entry,
         ElfFile,
     },
+    zircon_hal_unix::swap_fs,
     zircon_object::{
         ipc::*,
         object::*,
@@ -97,7 +98,8 @@ pub fn run_userboot(
 
     const STACK_SIZE: usize = 0x8000;
     let stack = Vec::<u8>::with_capacity(STACK_SIZE);
-    let sp = stack.as_ptr() as usize + STACK_SIZE;
+    // WARN: align stack to 16B, then emulate a 'call' (push rip)
+    let sp = ((stack.as_ptr() as usize + STACK_SIZE) & !0xf) - 8;
     proc.start(&thread, entry, sp, handle, 0)
         .expect("failed to start main thread");
     proc
@@ -140,10 +142,13 @@ extern "C" fn handle_syscall(
     a6: usize,
     a7: usize,
 ) -> isize {
+    swap_fs();
     let syscall = Syscall {
         thread: Thread::current(),
     };
-    syscall.syscall(num, [a0, a1, a2, a3, a4, a5, a6, a7])
+    let ret = syscall.syscall(num, [a0, a1, a2, a3, a4, a5, a6, a7]);
+    swap_fs();
+    ret
 }
 
 pub trait ElfExt {
