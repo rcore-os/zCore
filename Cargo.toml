@@ -3,6 +3,8 @@ members = [
     "zircon-object",
     "zircon-syscall",
     "zircon-userboot",
+    "linux-syscall",
+    "linux-loader",
     "zircon-hal-unix",
     "zircon-hal-bare"
 ]

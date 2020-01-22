@@ -45,7 +45,7 @@ impl Thread {
         let handle = std::thread::spawn(move || {
             TLS.with(|t| t.replace(Some(tls)));
             unsafe {
-                asm!("call $0" :: "r"(entry), "{rsp}"(stack), "{rdi}"(arg1), "{rsi}"(arg2) :: "volatile" "intel");
+                asm!("jmp $0" :: "r"(entry), "{rsp}"(stack), "{rdi}"(arg1), "{rsi}"(arg2) :: "volatile" "intel");
             }
             unreachable!()
         });
