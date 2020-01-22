@@ -44,6 +44,7 @@ impl Thread {
         let stack = stack & !0xf;
         let handle = std::thread::spawn(move || {
             TLS.with(|t| t.replace(Some(tls)));
+            swap_fs();
             unsafe {
                 asm!("jmp $0" :: "r"(entry), "{rsp}"(stack), "{rdi}"(arg1), "{rsi}"(arg2) :: "volatile" "intel");
             }
@@ -298,6 +299,62 @@ pub fn timer_set(deadline: Duration, callback: Box<dyn FnOnce(Duration) + Send +
         std::thread::sleep(deadline - timer_now());
         callback(timer_now());
     });
+}
+
+#[cfg(target_os = "linux")]
+#[export_name = "hal_set_back_fs"]
+pub fn set_back_fs(fsbase: usize) {
+    unsafe {
+        linux_set_gs(fsbase);
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[export_name = "hal_swap_fs"]
+pub fn swap_fs() {
+    unsafe {
+        let fs = linux_get_fs();
+        let gs = linux_get_gs();
+        linux_set_fs(gs);
+        linux_set_gs(fs);
+    }
+}
+
+#[cfg(target_os = "linux")]
+unsafe fn linux_set_fs(fsbase: usize) {
+    const ARCH_SET_FS: i32 = 0x1002;
+    sys_arch_prctl(ARCH_SET_FS, fsbase);
+}
+
+#[cfg(target_os = "linux")]
+unsafe fn linux_set_gs(gsbase: usize) {
+    const ARCH_SET_GS: i32 = 0x1001;
+    sys_arch_prctl(ARCH_SET_GS, gsbase);
+}
+
+#[cfg(target_os = "linux")]
+unsafe fn linux_get_fs() -> usize {
+    let mut fsbase: usize = 0;
+    const ARCH_GET_FS: i32 = 0x1003;
+    sys_arch_prctl(ARCH_GET_FS, &mut fsbase as *mut _ as usize);
+    fsbase
+}
+
+#[cfg(target_os = "linux")]
+unsafe fn linux_get_gs() -> usize {
+    let mut gsbase: usize = 0;
+    const ARCH_GET_GS: i32 = 0x1004;
+    sys_arch_prctl(ARCH_GET_GS, &mut gsbase as *mut _ as usize);
+    gsbase
+}
+
+#[cfg(target_os = "linux")]
+unsafe fn sys_arch_prctl(code: i32, addr: usize) {
+    asm!("syscall"
+        :
+        : "{rax}"(libc::SYS_arch_prctl), "{rdi}"(code), "{rsi}"(addr)
+        : "rcx" "r11" "memory"
+        : "volatile");
 }
 
 /// A dummy function.

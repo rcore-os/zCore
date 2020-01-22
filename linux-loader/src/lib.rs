@@ -15,6 +15,7 @@ use {
         symbol_table::{DynEntry64, Entry},
         ElfFile,
     },
+    zircon_hal_unix::swap_fs,
     zircon_object::{task::*, vm::*, ZxError, ZxResult},
 };
 
@@ -123,10 +124,13 @@ extern "C" fn handle_syscall(
     a5: usize,
     num: u32, // pushed %eax
 ) -> isize {
+    swap_fs();
     let syscall = Syscall {
         thread: Thread::current(),
     };
-    syscall.syscall(num, [a0, a1, a2, a3, a4, a5])
+    let ret = syscall.syscall(num, [a0, a1, a2, a3, a4, a5]);
+    swap_fs();
+    ret
 }
 
 pub trait ElfExt {

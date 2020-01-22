@@ -8,8 +8,8 @@ extern crate alloc;
 extern crate log;
 
 use {
-    crate::consts::*, crate::error::*, crate::util::*, alloc::sync::Arc, zircon_object::object::*,
-    zircon_object::task::Thread,
+    crate::consts::*, crate::error::*, crate::util::*, alloc::sync::Arc, zircon_object::hal,
+    zircon_object::object::*, zircon_object::task::Thread,
 };
 
 mod consts;
@@ -44,6 +44,7 @@ impl Syscall {
         match code {
             ARCH_SET_FS => {
                 info!("sys_arch_prctl: set FSBASE to {:#x}", addr);
+                hal::set_back_fs(addr);
                 Ok(0)
             }
             _ => Err(SysError::EINVAL),

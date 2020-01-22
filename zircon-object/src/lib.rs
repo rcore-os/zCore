@@ -13,7 +13,7 @@ extern crate log;
 extern crate std;
 
 mod error;
-mod hal;
+pub mod hal;
 pub mod io;
 pub mod ipc;
 pub mod object;
@@ -22,4 +22,4 @@ pub mod task;
 mod util;
 pub mod vm;
 
-pub use {self::error::*, self::hal::serial_write};
+pub use self::error::*;
