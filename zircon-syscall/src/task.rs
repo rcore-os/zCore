@@ -30,6 +30,10 @@ impl Syscall {
     }
 
     pub fn sys_process_exit(&self, code: i64) -> ZxResult<usize> {
-        panic!("proc.exit: code={:?}", code);
+        info!("proc.exit: code={:?}", code);
+        let proc = &self.thread.proc;
+        proc.exit(code);
+        self.thread.exit().unwrap();
+        unreachable!()
     }
 }

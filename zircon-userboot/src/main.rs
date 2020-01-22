@@ -2,7 +2,7 @@
 
 extern crate log;
 
-use {std::path::PathBuf, structopt::StructOpt, zircon_userboot::*};
+use {std::path::PathBuf, structopt::StructOpt, zircon_object::object::*, zircon_userboot::*};
 
 #[derive(Debug, StructOpt)]
 #[structopt()]
@@ -29,11 +29,8 @@ fn main() {
     let vdso_data = std::fs::read(opt.vdso_path).expect("failed to read file");
     let zbi_data = std::fs::read(opt.zbi_path).expect("failed to read file");
 
-    run_userboot(&userboot_data, &vdso_data, &zbi_data, &opt.cmdline);
-
-    loop {
-        std::thread::park();
-    }
+    let proc = run_userboot(&userboot_data, &vdso_data, &zbi_data, &opt.cmdline);
+    proc.wait_signal(Signal::PROCESS_TERMINATED);
 }
 
 #[cfg(test)]
@@ -41,7 +38,6 @@ mod tests {
     use super::*;
 
     #[test]
-    #[ignore]
     fn userboot() {
         zircon_hal_unix::init();
 
@@ -56,7 +52,7 @@ mod tests {
         let vdso_data = std::fs::read(opt.vdso_path).expect("failed to read file");
         let zbi_data = std::fs::read(opt.zbi_path).expect("failed to read file");
 
-        run_userboot(&userboot_data, &vdso_data, &zbi_data, &opt.cmdline);
-        unimplemented!("join userboot thread")
+        let proc = run_userboot(&userboot_data, &vdso_data, &zbi_data, &opt.cmdline);
+        proc.wait_signal(Signal::PROCESS_TERMINATED);
     }
 }

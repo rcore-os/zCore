@@ -67,9 +67,9 @@ impl Process {
         Ok(())
     }
 
-    pub fn exit(&self, _retcode: usize) {
-        // TODO _retcode -> retcode
-        unimplemented!()
+    pub fn exit(&self, _retcode: i64) {
+        // TODO: exit process
+        self.base.signal_set(Signal::PROCESS_TERMINATED);
     }
 
     /// Check whether `condition` is allowed in the parent job's policy.

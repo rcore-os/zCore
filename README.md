@@ -25,11 +25,11 @@ Reimplement [Zircon][zircon] microkernel in safe Rust as a userspace program!
 
 * `zircon-hal-unix`: HAL implementation on Unix.
 
-  It used for unit testing and construct a libOS.
+  It's used for unit testing and construct a libOS.
 
-* `zircon-hal-bare`: [TODO] HAL implementation on bare metal environment.
+* `zircon-hal-bare`: HAL implementation on bare metal environment.
 
-  It used to construct a real Zircon "kernel" -- zCore.
+  It's used to construct a real Zircon "kernel" -- zCore.
 
 [zircon]: https://fuchsia.googlesource.com/fuchsia/+/master/zircon/README.md
 [kernel-objects]: https://github.com/PanQL/zircon/blob/master/docs/objects.md

@@ -56,7 +56,10 @@ impl Thread {
 
     #[export_name = "hal_thread_exit"]
     pub fn exit(&mut self) {
-        unimplemented!()
+        // FIXME: exit thread
+        loop {
+            std::thread::park();
+        }
     }
 
     #[export_name = "hal_thread_tls"]

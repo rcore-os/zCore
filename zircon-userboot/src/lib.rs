@@ -1,6 +1,6 @@
 #![no_std]
 #![feature(asm)]
-#![feature(naked_functions)]
+#![feature(global_asm)]
 #![deny(warnings, unused_must_use)]
 
 #[macro_use]
@@ -30,7 +30,12 @@ use {
 
 mod vdso;
 
-pub fn run_userboot(userboot_data: &[u8], vdso_data: &[u8], zbi_data: &[u8], cmdline: &str) {
+pub fn run_userboot(
+    userboot_data: &[u8],
+    vdso_data: &[u8],
+    zbi_data: &[u8],
+    cmdline: &str,
+) -> Arc<Process> {
     let job = Job::root();
     let proc = Process::create(&job, "proc", 0).unwrap();
     let thread = Thread::create(&proc, "thread", 0).unwrap();
@@ -58,6 +63,9 @@ pub fn run_userboot(userboot_data: &[u8], vdso_data: &[u8], zbi_data: &[u8], cmd
         let vmar = vmar.create_child(VBASE + userboot_size, size).unwrap();
         let first_vmo = vmar.load_from_elf(&elf).unwrap();
         // fill syscall entry
+        extern "C" {
+            fn syscall_entry();
+        }
         first_vmo.write(
             syscall_entry_offset,
             &(syscall_entry as usize).to_ne_bytes(),
@@ -92,17 +100,32 @@ pub fn run_userboot(userboot_data: &[u8], vdso_data: &[u8], zbi_data: &[u8], cmd
     let sp = stack.as_ptr() as usize + STACK_SIZE;
     proc.start(&thread, entry, sp, handle, 0)
         .expect("failed to start main thread");
+    proc
 }
 
-#[naked]
-unsafe fn syscall_entry() {
-    asm!("push rax" :::: "intel");
-    #[cfg(not(target_os = "macos"))]
-    asm!("call handle_syscall" :::: "intel");
-    #[cfg(target_os = "macos")]
-    asm!("call _handle_syscall" :::: "intel");
-    asm!("add rsp, 8" :::: "intel");
-}
+#[cfg(not(target_os = "macos"))]
+global_asm!(
+    r#"
+.intel_syntax noprefix
+syscall_entry:
+    push rax
+    call handle_syscall
+    add rsp, 8
+    ret
+"#
+);
+
+#[cfg(target_os = "macos")]
+global_asm!(
+    r#"
+.intel_syntax noprefix
+_syscall_entry:
+    push rax
+    call _handle_syscall
+    add rsp, 8
+    ret
+"#
+);
 
 #[no_mangle]
 extern "C" fn handle_syscall(

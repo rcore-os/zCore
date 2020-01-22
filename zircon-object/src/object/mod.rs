@@ -24,6 +24,7 @@ pub trait KernelObject: DowncastSync + Debug {
     fn signal(&self) -> Signal;
     fn signal_set(&self, signal: Signal);
     fn add_signal_callback(&self, callback: SignalHandler);
+    fn wait_signal(&self, signal: Signal) -> Signal;
 }
 
 impl_downcast!(sync KernelObject);
@@ -275,6 +276,9 @@ macro_rules! impl_kobject {
             }
             fn add_signal_callback(&self, callback: SignalHandler) {
                 self.base.add_signal_callback(callback);
+            }
+            fn wait_signal(&self, signal: Signal) -> Signal {
+                self.base.wait_signal(signal)
             }
         }
         impl core::fmt::Debug for $class {
