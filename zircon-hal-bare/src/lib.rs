@@ -89,3 +89,26 @@ pub fn pmem_write(paddr: PhysAddr, buf: &[u8]) {
 ///
 /// Call this anywhere to ensure this lib being linked.
 pub fn init() {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[no_mangle]
+    extern "C" fn hal_pt_map_kernel(_pt: *mut u8) {
+        unimplemented!()
+    }
+
+    #[no_mangle]
+    extern "C" fn hal_frame_alloc() -> Option<PhysAddr> {
+        unimplemented!()
+    }
+
+    #[no_mangle]
+    extern "C" fn hal_frame_dealloc(_paddr: &PhysAddr) {
+        unimplemented!()
+    }
+
+    #[export_name = "hal_pmem_base"]
+    static PMEM_BASE: usize = 0;
+}
