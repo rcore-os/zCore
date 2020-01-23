@@ -28,7 +28,11 @@ impl Syscall {
             SYS_ARCH_PRCTL => self.sys_arch_prctl(a0 as _, a1 as _),
             SYS_SET_TID_ADDRESS => self.sys_set_tid_address(a0.into()),
             _ => {
-                panic!("syscall unimplemented");
+                warn!("syscall unimplemented! exit...");
+                let proc = &self.thread.proc;
+                proc.exit(-1);
+                self.thread.exit().unwrap();
+                unreachable!()
             }
         };
         info!("syscall <= {:?}", ret);

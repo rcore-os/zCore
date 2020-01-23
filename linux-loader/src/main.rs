@@ -23,3 +23,24 @@ fn main() {
     let proc = run(&libc_data, args, envs);
     proc.wait_signal(Signal::PROCESS_TERMINATED);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn run_libc() {
+        zircon_hal_unix::init();
+
+        let base = PathBuf::from("../prebuilt");
+        let opt = Opt {
+            libc_path: base.join("libc.so"),
+        };
+        let libc_data = std::fs::read(opt.libc_path).expect("failed to read file");
+
+        let args = vec![]; // TODO
+        let envs = vec![]; // TODO
+        let proc = run(&libc_data, args, envs);
+        proc.wait_signal(Signal::PROCESS_TERMINATED);
+    }
+}

@@ -63,6 +63,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v2
+    - name: Pull Git LFS
+      run: |
+        git lfs install
+        git lfs pull
     - name: Test
       uses: actions-rs/cargo@v1
       with:
