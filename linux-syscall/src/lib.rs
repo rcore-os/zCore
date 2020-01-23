@@ -28,8 +28,7 @@ impl Syscall {
             SYS_ARCH_PRCTL => self.sys_arch_prctl(a0 as _, a1 as _),
             SYS_SET_TID_ADDRESS => self.sys_set_tid_address(a0.into()),
             _ => {
-                warn!("syscall unimplemented");
-                Err(SysError::ENOSYS)
+                panic!("syscall unimplemented");
             }
         };
         info!("syscall <= {:?}", ret);

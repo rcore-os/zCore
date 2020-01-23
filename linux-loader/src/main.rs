@@ -8,9 +8,6 @@ use {linux_loader::*, std::path::PathBuf, structopt::StructOpt, zircon_object::o
 #[structopt()]
 struct Opt {
     #[structopt(parse(from_os_str))]
-    ldso_path: PathBuf,
-
-    #[structopt(parse(from_os_str))]
     libc_path: PathBuf,
 }
 
@@ -19,11 +16,10 @@ fn main() {
     env_logger::init();
 
     let opt = Opt::from_args();
-    let ldso_data = std::fs::read(opt.ldso_path).expect("failed to read file");
     let libc_data = std::fs::read(opt.libc_path).expect("failed to read file");
 
-    let args = vec![]; // TODO
+    let args = vec![String::from("./prebuilt/busybox")]; // TODO
     let envs = vec![]; // TODO
-    let proc = run(&ldso_data, &libc_data, args, envs);
+    let proc = run(&libc_data, args, envs);
     proc.wait_signal(Signal::PROCESS_TERMINATED);
 }

@@ -20,12 +20,7 @@ use {
 
 mod abi;
 
-pub fn run(
-    _ldso_data: &[u8],
-    libc_data: &[u8],
-    mut args: Vec<String>,
-    envs: Vec<String>,
-) -> Arc<Process> {
+pub fn run(libc_data: &[u8], mut args: Vec<String>, envs: Vec<String>) -> Arc<Process> {
     let job = Job::root();
     let proc = Process::create(&job, "proc", 0).unwrap();
     let thread = Thread::create(&proc, "thread", 0).unwrap();
@@ -34,7 +29,7 @@ pub fn run(
     const VBASE: usize = 0x4_00000000;
 
     // libc.so
-    let entry = {
+    let elf = {
         let elf = ElfFile::new(libc_data).unwrap();
         let size = elf.load_segment_size();
         let syscall_entry_offset = elf
@@ -51,8 +46,9 @@ pub fn run(
             &(syscall_entry as usize).to_ne_bytes(),
         );
         elf.relocate(VBASE).unwrap();
-        VBASE + elf.header.pt2.entry_point() as usize
+        elf
     };
+    let entry = VBASE + elf.header.pt2.entry_point() as usize;
 
     // ld.so
     //    let entry = {
@@ -75,6 +71,9 @@ pub fn run(
         auxv: {
             let mut map = BTreeMap::new();
             map.insert(abi::AT_BASE, VBASE);
+            map.insert(abi::AT_PHDR, VBASE + elf.header.pt2.ph_offset() as usize);
+            map.insert(abi::AT_PHENT, elf.header.pt2.ph_entry_size() as usize);
+            map.insert(abi::AT_PHNUM, elf.header.pt2.ph_count() as usize);
             map.insert(abi::AT_PAGESZ, PAGE_SIZE);
             map
         },
@@ -92,6 +91,16 @@ global_asm!(
     r#"
 .intel_syntax noprefix
 syscall_entry:
+    # check stack alignment
+    mov r10, rsp
+    and r10, 0xf
+    jz _aligned
+_not_aligned:
+    push rax
+    call handle_syscall
+    add rsp, 8
+    ret
+_aligned:
     push rbp
     push rax
     call handle_syscall
