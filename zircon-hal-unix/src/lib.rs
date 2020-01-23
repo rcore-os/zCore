@@ -42,8 +42,15 @@ impl Thread {
     pub fn spawn(entry: usize, stack: usize, arg1: usize, arg2: usize, tls: Arc<usize>) -> Self {
         let handle = std::thread::spawn(move || {
             TLS.with(|t| t.replace(Some(tls)));
-            swap_fs(); // switch to user
+            #[cfg(target_os = "macos")]
+            {
+                let mut value = [0usize; 7];
+                let init_fsbase = value.as_ptr() as usize;
+                value[0] = init_fsbase;
+                set_user_fsbase(init_fsbase);
+            }
             unsafe {
+                switch_to_user();
                 asm!("jmp $0" :: "r"(entry), "{rsp}"(stack), "{rdi}"(arg1), "{rsi}"(arg2) :: "volatile" "intel");
             }
             unreachable!()
@@ -299,74 +306,20 @@ pub fn timer_set(deadline: Duration, callback: Box<dyn FnOnce(Duration) + Send +
     });
 }
 
+#[cfg(target_os = "linux")]
+include!("fsbase_linux.rs");
 #[cfg(target_os = "macos")]
-#[export_name = "hal_set_back_fs"]
-pub fn set_back_fs(_fsbase: usize) {}
-
-#[cfg(target_os = "macos")]
-#[export_name = "hal_swap_fs"]
-pub fn swap_fs() {}
-
-#[cfg(target_os = "linux")]
-#[export_name = "hal_set_back_fs"]
-pub fn set_back_fs(fsbase: usize) {
-    unsafe {
-        linux_set_gs(fsbase);
-    }
-}
-
-#[cfg(target_os = "linux")]
-#[export_name = "hal_swap_fs"]
-pub fn swap_fs() {
-    unsafe {
-        let fs = linux_get_fs();
-        let gs = linux_get_gs();
-        linux_set_fs(gs);
-        linux_set_gs(fs);
-    }
-}
-
-#[cfg(target_os = "linux")]
-unsafe fn linux_set_fs(fsbase: usize) {
-    const ARCH_SET_FS: i32 = 0x1002;
-    sys_arch_prctl(ARCH_SET_FS, fsbase);
-}
-
-#[cfg(target_os = "linux")]
-unsafe fn linux_set_gs(gsbase: usize) {
-    const ARCH_SET_GS: i32 = 0x1001;
-    sys_arch_prctl(ARCH_SET_GS, gsbase);
-}
-
-#[cfg(target_os = "linux")]
-unsafe fn linux_get_fs() -> usize {
-    let mut fsbase: usize = 0;
-    const ARCH_GET_FS: i32 = 0x1003;
-    sys_arch_prctl(ARCH_GET_FS, &mut fsbase as *mut _ as usize);
-    fsbase
-}
-
-#[cfg(target_os = "linux")]
-unsafe fn linux_get_gs() -> usize {
-    let mut gsbase: usize = 0;
-    const ARCH_GET_GS: i32 = 0x1004;
-    sys_arch_prctl(ARCH_GET_GS, &mut gsbase as *mut _ as usize);
-    gsbase
-}
-
-#[cfg(target_os = "linux")]
-unsafe fn sys_arch_prctl(code: i32, addr: usize) {
-    asm!("syscall"
-        :
-        : "{rax}"(libc::SYS_arch_prctl), "{rdi}"(code), "{rsi}"(addr)
-        : "rcx" "r11" "memory"
-        : "volatile");
-}
+include!("fsbase_macos.rs");
 
 /// A dummy function.
 ///
 /// Call this anywhere to ensure this lib being linked.
-pub fn init() {}
+pub fn init() {
+    #[cfg(target_os = "macos")]
+    unsafe {
+        register_sigsegv_handler();
+    }
+}
 
 #[cfg(test)]
 mod tests {

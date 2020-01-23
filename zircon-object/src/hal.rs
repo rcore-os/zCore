@@ -210,13 +210,7 @@ pub fn timer_set(_deadline: Duration, _callback: Box<dyn FnOnce(Duration) + Send
 }
 
 #[linkage = "weak"]
-#[export_name = "hal_set_back_fs"]
-pub fn set_back_fs(_fsbase: usize) {
-    unimplemented!()
-}
-
-#[linkage = "weak"]
-#[export_name = "hal_swap_fs"]
-pub fn swap_fs() {
+#[export_name = "hal_set_user_fsbase"]
+pub fn set_user_fsbase(_fsbase: usize) {
     unimplemented!()
 }

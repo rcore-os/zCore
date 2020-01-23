@@ -12,8 +12,8 @@ struct Opt {
 }
 
 fn main() {
-    zircon_hal_unix::init();
     env_logger::init();
+    zircon_hal_unix::init();
 
     let opt = Opt::from_args();
     let libc_data = std::fs::read(opt.libc_path).expect("failed to read file");

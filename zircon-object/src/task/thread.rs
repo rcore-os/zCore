@@ -117,8 +117,9 @@ mod tests {
 
         // function for new thread
         extern "C" fn entry(arg1: usize, arg2: usize) -> ! {
-            // switch back to kernel
-            crate::hal::swap_fs();
+            unsafe {
+                zircon_hal_unix::switch_to_kernel();
+            }
             ARG1.store(arg1, Ordering::SeqCst);
             ARG2.store(arg2, Ordering::SeqCst);
             loop {

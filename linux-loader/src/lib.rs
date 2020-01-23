@@ -15,7 +15,8 @@ use {
         symbol_table::{DynEntry64, Entry},
         ElfFile,
     },
-    zircon_object::{hal, task::*, vm::*, ZxError, ZxResult},
+    zircon_hal_unix::{switch_to_kernel, switch_to_user},
+    zircon_object::{task::*, vm::*, ZxError, ZxResult},
 };
 
 mod abi;
@@ -132,12 +133,16 @@ extern "C" fn handle_syscall(
     a5: usize,
     num: u32, // pushed %eax
 ) -> isize {
-    hal::swap_fs();
+    unsafe {
+        switch_to_kernel();
+    }
     let syscall = Syscall {
         thread: Thread::current(),
     };
     let ret = syscall.syscall(num, [a0, a1, a2, a3, a4, a5]);
-    hal::swap_fs();
+    unsafe {
+        switch_to_user();
+    }
     ret
 }
 
