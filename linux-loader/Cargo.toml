@@ -11,7 +11,6 @@ description = "Linux programs loader and runner."
 log = "0.4"
 env_logger = "0.7"
 xmas-elf = "0.7"
-elfloader = "0.9"
 structopt = { version = "0.3", default-features = false }
 linux-syscall = { path = "../linux-syscall" }
 zircon-object = { path = "../zircon-object" }

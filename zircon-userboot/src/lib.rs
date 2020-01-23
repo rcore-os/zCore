@@ -8,17 +8,16 @@ extern crate alloc;
 
 extern crate log;
 
-use xmas_elf::program::Flags;
 use {
     alloc::{sync::Arc, vec::Vec},
     xmas_elf::{
-        program::{ProgramHeader, SegmentData, Type},
+        program::{Flags, ProgramHeader, SegmentData, Type},
         sections::SectionData,
         symbol_table::Entry,
         ElfFile,
     },
-    zircon_hal_unix::swap_fs,
     zircon_object::{
+        hal,
         ipc::*,
         object::*,
         resource::{Resource, ResourceKind},
@@ -142,12 +141,12 @@ extern "C" fn handle_syscall(
     a6: usize,
     a7: usize,
 ) -> isize {
-    swap_fs();
+    hal::swap_fs();
     let syscall = Syscall {
         thread: Thread::current(),
     };
     let ret = syscall.syscall(num, [a0, a1, a2, a3, a4, a5, a6, a7]);
-    swap_fs();
+    hal::swap_fs();
     ret
 }
 

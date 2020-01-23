@@ -42,7 +42,7 @@ impl Thread {
     pub fn spawn(entry: usize, stack: usize, arg1: usize, arg2: usize, tls: Arc<usize>) -> Self {
         let handle = std::thread::spawn(move || {
             TLS.with(|t| t.replace(Some(tls)));
-            swap_fs();
+            swap_fs(); // switch to user
             unsafe {
                 asm!("jmp $0" :: "r"(entry), "{rsp}"(stack), "{rdi}"(arg1), "{rsi}"(arg2) :: "volatile" "intel");
             }

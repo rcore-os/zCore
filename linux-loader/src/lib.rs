@@ -15,8 +15,7 @@ use {
         symbol_table::{DynEntry64, Entry},
         ElfFile,
     },
-    zircon_hal_unix::swap_fs,
-    zircon_object::{task::*, vm::*, ZxError, ZxResult},
+    zircon_object::{hal, task::*, vm::*, ZxError, ZxResult},
 };
 
 mod abi;
@@ -124,12 +123,12 @@ extern "C" fn handle_syscall(
     a5: usize,
     num: u32, // pushed %eax
 ) -> isize {
-    swap_fs();
+    hal::swap_fs();
     let syscall = Syscall {
         thread: Thread::current(),
     };
     let ret = syscall.syscall(num, [a0, a1, a2, a3, a4, a5]);
-    swap_fs();
+    hal::swap_fs();
     ret
 }
 
