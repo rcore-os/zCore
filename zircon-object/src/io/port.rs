@@ -4,6 +4,14 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use spin::Mutex;
 
+/// Signaling and mailbox primitive
+///
+/// ## SYNOPSIS
+///
+/// Ports allow threads to wait for packets to be delivered from various
+/// events. These events include explicit queueing on the port,
+/// asynchronous waits on other handles bound to the port, and
+/// asynchronous message delivery from IPC transports.
 pub struct Port {
     base: KObjectBase,
     inner: Mutex<PortInner>,

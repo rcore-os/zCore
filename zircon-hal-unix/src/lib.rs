@@ -20,6 +20,11 @@ use {
     tempfile::tempdir_in,
 };
 
+#[cfg(target_os = "linux")]
+include!("fsbase_linux.rs");
+#[cfg(target_os = "macos")]
+include!("fsbase_macos.rs");
+
 type PhysAddr = usize;
 type VirtAddr = usize;
 
@@ -286,11 +291,13 @@ impl MMUFlags {
     }
 }
 
+/// Output a char to console.
 #[export_name = "hal_serial_write"]
 pub fn serial_write(c: char) {
     print!("{}", c);
 }
 
+/// Get current time.
 #[export_name = "hal_timer_now"]
 pub fn timer_now() -> Duration {
     SystemTime::now()
@@ -298,6 +305,9 @@ pub fn timer_now() -> Duration {
         .unwrap()
 }
 
+/// Set a new timer.
+///
+/// After `deadline`, the `callback` will be called.
 #[export_name = "hal_timer_set"]
 pub fn timer_set(deadline: Duration, callback: Box<dyn FnOnce(Duration) + Send + Sync>) {
     std::thread::spawn(move || {
@@ -306,14 +316,9 @@ pub fn timer_set(deadline: Duration, callback: Box<dyn FnOnce(Duration) + Send +
     });
 }
 
-#[cfg(target_os = "linux")]
-include!("fsbase_linux.rs");
-#[cfg(target_os = "macos")]
-include!("fsbase_macos.rs");
-
-/// A dummy function.
+/// Initialize the HAL.
 ///
-/// Call this anywhere to ensure this lib being linked.
+/// This function must be called at the beginning.
 pub fn init() {
     #[cfg(target_os = "macos")]
     unsafe {

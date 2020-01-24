@@ -1,6 +1,7 @@
 use bitflags::bitflags;
 
 bitflags! {
+    /// Signals that waitable kernel objects expose to applications.
     #[derive(Default)]
     pub struct Signal: u32 {
         #[allow(clippy::identity_op)]

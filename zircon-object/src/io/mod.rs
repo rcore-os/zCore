@@ -1,3 +1,5 @@
+//! Objects for IO.
+
 use super::*;
 
 mod event;

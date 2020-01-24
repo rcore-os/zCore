@@ -5,6 +5,12 @@ use alloc::sync::Arc;
 use core::time::Duration;
 use spin::Mutex;
 
+/// An object that may be signaled at some point in the future
+///
+/// ## SYNOPSIS
+///
+/// A timer is used to wait until a specified point in time has occurred
+/// or the timer has been canceled.
 pub struct Timer {
     base: KObjectBase,
     inner: Mutex<TimerInner>,

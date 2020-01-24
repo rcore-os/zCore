@@ -46,7 +46,7 @@ impl VMObject for VMObjectPhysical {
         self.pages * PAGE_SIZE
     }
 
-    fn set_len(&self) {
+    fn set_len(&self, _len: usize) {
         unimplemented!()
     }
 

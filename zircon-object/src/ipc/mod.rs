@@ -1,3 +1,5 @@
+//! Objects for IPC.
+
 mod channel;
 mod fifo;
 mod socket;

@@ -191,24 +191,28 @@ pub fn pmem_write(_paddr: PhysAddr, _buf: &[u8]) {
     unimplemented!()
 }
 
+/// Output a char to console.
 #[linkage = "weak"]
 #[export_name = "hal_serial_write"]
 pub fn serial_write(_c: char) {
     unimplemented!()
 }
 
+/// Get current time.
 #[linkage = "weak"]
 #[export_name = "hal_timer_now"]
 pub fn timer_now() -> Duration {
     unimplemented!()
 }
 
+/// Set a new timer. After `deadline`, the `callback` will be called.
 #[linkage = "weak"]
 #[export_name = "hal_timer_set"]
 pub fn timer_set(_deadline: Duration, _callback: Box<dyn FnOnce(Duration) + Send + Sync>) {
     unimplemented!()
 }
 
+/// Set FSBASE on user space.
 #[linkage = "weak"]
 #[export_name = "hal_set_user_fsbase"]
 pub fn set_user_fsbase(_fsbase: usize) {

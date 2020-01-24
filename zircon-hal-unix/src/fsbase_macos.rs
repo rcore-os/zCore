@@ -1,5 +1,6 @@
 use std::cell::Cell;
 
+/// Set FSBASE on user space.
 #[export_name = "hal_set_user_fsbase"]
 pub fn set_user_fsbase(fsbase: usize) {
     USER_FSBASE.with(|fs| fs.set(fsbase));
@@ -11,6 +12,9 @@ pub fn set_user_fsbase(fsbase: usize) {
 }
 
 /// Switch TLS from user to kernel.
+///
+/// # Safety
+/// This function should be called once when come from user.
 pub unsafe fn switch_to_kernel() {
     let kernel_gsbase: usize;
     asm!("mov %gs:48, $0" : "=r"(kernel_gsbase) ::: "volatile");
@@ -18,6 +22,9 @@ pub unsafe fn switch_to_kernel() {
 }
 
 /// Switch TLS from kernel to user.
+///
+/// # Safety
+/// This function should be called once when go back to user.
 pub unsafe fn switch_to_user() {
     let user_gsbase = USER_FSBASE.with(|f| f.get());
     set_gsbase(user_gsbase);
@@ -29,7 +36,7 @@ thread_local! {
 
 unsafe fn set_gsbase(gsbase: usize) {
     // Ref: https://gist.github.com/aras-p/5389747
-    asm!("syscall" :: "{eax}"(0x3000003), "{rdi}"(gsbase) :: "volatile");
+    asm!("syscall" :: "{eax}"(0x300_0003), "{rdi}"(gsbase) :: "volatile");
 }
 
 unsafe fn get_gsbase() -> usize {

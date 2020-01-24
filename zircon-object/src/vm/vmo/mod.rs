@@ -8,11 +8,19 @@ pub use self::{paged::*, physical::*};
 /// Virtual Memory Objects
 #[allow(clippy::len_without_is_empty)]
 pub trait VMObject: KernelObject {
+    /// Read memory to `buf` from VMO at `offset`.
     fn read(&self, offset: usize, buf: &mut [u8]);
-    fn write(&self, offset: usize, buf: &[u8]);
-    fn len(&self) -> usize;
-    fn set_len(&self);
 
+    /// Write memory from `buf` to VMO at `offset`.
+    fn write(&self, offset: usize, buf: &[u8]);
+
+    /// Get the length of VMO.
+    fn len(&self) -> usize;
+
+    /// Set the length of VMO.
+    fn set_len(&self, len: usize);
+
+    /// Map physical memory to `page_table`.
     fn map_to(
         &self,
         page_table: &mut PageTable,
@@ -22,6 +30,7 @@ pub trait VMObject: KernelObject {
         flags: MMUFlags,
     );
 
+    /// Unmap physical memory from `page_table`.
     fn unmap_from(&self, page_table: &mut PageTable, vaddr: VirtAddr, _offset: usize, len: usize) {
         // TODO _offset unused?
         let pages = len / PAGE_SIZE;
@@ -30,6 +39,7 @@ pub trait VMObject: KernelObject {
             .expect("failed to unmap")
     }
 
+    /// Commit allocating physical memory.
     fn commit(&self, offset: usize, len: usize);
 }
 

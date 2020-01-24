@@ -1,3 +1,5 @@
+//! Zircon syscall implementations
+
 #![no_std]
 #![deny(warnings, unsafe_code, unused_must_use, unreachable_patterns)]
 

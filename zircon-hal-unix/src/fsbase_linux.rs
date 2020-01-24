@@ -1,3 +1,4 @@
+/// Set FSBASE on user space.
 #[export_name = "hal_set_user_fsbase"]
 pub fn set_user_fsbase(fsbase: usize) {
     unsafe {
@@ -5,10 +6,18 @@ pub fn set_user_fsbase(fsbase: usize) {
     }
 }
 
+/// Switch TLS from user to kernel.
+///
+/// # Safety
+/// This function should be called once when come from user.
 pub unsafe fn switch_to_kernel() {
     swap_fs_gs();
 }
 
+/// Switch TLS from kernel to user.
+///
+/// # Safety
+/// This function should be called once when go back to user.
 pub unsafe fn switch_to_user() {
     swap_fs_gs();
 }

@@ -14,6 +14,7 @@ pub enum ResourceKind {
     COUNT = 7,
 }
 
+/// Address space rights and accounting.
 #[allow(dead_code)]
 pub struct Resource {
     base: KObjectBase,
@@ -24,6 +25,7 @@ pub struct Resource {
 impl_kobject!(Resource);
 
 impl Resource {
+    /// Create a new `Resource`.
     pub fn create(name: &str, kind: ResourceKind) -> Arc<Self> {
         Arc::new(Resource {
             base: KObjectBase::new(),

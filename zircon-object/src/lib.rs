@@ -1,3 +1,5 @@
+//! Zircon kernel objects
+
 #![no_std]
 #![deny(warnings, unsafe_code, unused_must_use)]
 #![feature(asm, linkage)]

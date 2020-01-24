@@ -1,3 +1,98 @@
+//! Kernel object basis.
+//!
+//! # Create new kernel object
+//!
+//! - Create a new struct.
+//! - Make sure it has a field named `base` with type [`KObjectBase`].
+//! - Implement [`KernelObject`] trait with [`impl_kobject`] macro.
+//!
+//! ## Example
+//! ```
+//! use zircon_object::object::*;
+//!
+//! pub struct SampleObject {
+//!    base: KObjectBase,
+//! }
+//! impl_kobject!(SampleObject);
+//! ```
+//!
+//! # Implement methods for kernel object
+//!
+//! ## Constructor
+//!
+//! Each kernel object should have a constructor returns `Arc<Self>`
+//! (or a pair of them, e.g. [`Channel`]).
+//!
+//! Don't return `Self` since it must be created on heap.
+//!
+//! ### Example
+//! ```
+//! use zircon_object::object::*;
+//! use std::sync::Arc;
+//!
+//! pub struct SampleObject {
+//!     base: KObjectBase,
+//! }
+//! impl SampleObject {
+//!     pub fn new() -> Arc<Self> {
+//!         Arc::new(SampleObject {
+//!             base: KObjectBase::new(),
+//!         })
+//!     }
+//! }
+//! ```
+//!
+//! ## Interior mutability
+//!
+//! All kernel objects use the [interior mutability pattern] :
+//! each method takes either `&self` or `&Arc<Self>` as the first argument.
+//!
+//! To handle mutable variable, create another **inner structure**,
+//! and put it into the object with a lock wrapped.
+//!
+//! ### Example
+//! ```
+//! use zircon_object::object::*;
+//! use std::sync::Arc;
+//! use spin::Mutex;
+//!
+//! pub struct SampleObject {
+//!     base: KObjectBase,
+//!     inner: Mutex<SampleObjectInner>,
+//! }
+//! struct SampleObjectInner {
+//!     x: usize,
+//! }
+//!
+//! impl SampleObject {
+//!     pub fn set_x(&self, x: usize) {
+//!         let mut inner = self.inner.lock();
+//!         inner.x = x;
+//!     }
+//! }
+//! ```
+//!
+//! # Downcast trait to concrete type
+//!
+//! [`KernelObject`] inherit [`downcast_rs::DowncastSync`] trait.
+//! You can use `downcast_arc` method to downcast `Arc<dyn KernelObject>` to `Arc<T: KernelObject>`.
+//!
+//! ## Example
+//! ```
+//! use zircon_object::object::*;
+//! use std::sync::Arc;
+//!
+//! let object: Arc<dyn KernelObject> = DummyObject::new();
+//! let concrete = object.downcast_arc::<DummyObject>().unwrap();
+//! ```
+//!
+//! [`Channel`]: crate::ipc::Channel_
+//! [`KObjectBase`]: KObjectBase
+//! [`KernelObject`]: KernelObject
+//! [`impl_kobject`]: impl_kobject
+//! [`downcast_rs::DowncastSync`]: downcast_rs::DowncastSync
+//! [interior mutability pattern]: https://doc.rust-lang.org/reference/interior-mutability.html
+
 use {
     crate::io::*,
     alloc::{boxed::Box, sync::Arc, vec::Vec},
@@ -18,6 +113,11 @@ mod handle;
 mod rights;
 mod signal;
 
+/// Common interface of a kernel object.
+///
+/// Implemented by [`impl_kobject`] macro.
+///
+/// [`impl_kobject`]: impl_kobject
 pub trait KernelObject: DowncastSync + Debug {
     fn id(&self) -> KoID;
     fn type_name(&self) -> &'static str;
@@ -52,6 +152,7 @@ impl Default for KObjectBase {
 }
 
 impl KObjectBase {
+    /// Create a new kernel object base.
     pub fn new() -> Self {
         Self::default()
     }
@@ -93,10 +194,12 @@ impl KObjectBase {
         inner.signal_callbacks.retain(|f| !f(new_signal));
     }
 
+    /// Assert `signal`.
     pub fn signal_set(&self, signal: Signal) {
         self.signal_change(Signal::empty(), signal);
     }
 
+    /// Deassert `signal`.
     pub fn signal_clear(&self, signal: Signal) {
         self.signal_change(signal, Signal::empty());
     }
@@ -258,10 +361,11 @@ pub fn wait_signal_many_async(
     }
 }
 
+/// Macro to auto implement `KernelObject` trait.
 #[macro_export]
 macro_rules! impl_kobject {
     ($class:ident) => {
-        impl crate::object::KernelObject for $class {
+        impl KernelObject for $class {
             fn id(&self) -> KoID {
                 self.base.id
             }
@@ -292,8 +396,10 @@ macro_rules! impl_kobject {
     };
 }
 
+/// The type of kernel object ID.
 pub type KoID = u64;
 
+/// The type of kernel object signal handler.
 pub type SignalHandler = Box<dyn Fn(Signal) -> bool + Send>;
 
 /// Empty kernel object. Just for test.

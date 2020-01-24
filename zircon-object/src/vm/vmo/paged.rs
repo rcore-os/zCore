@@ -55,7 +55,7 @@ impl VMObject for VMObjectPaged {
         self.inner.lock().frames.len() * PAGE_SIZE
     }
 
-    fn set_len(&self) {
+    fn set_len(&self, _len: usize) {
         unimplemented!()
     }
 

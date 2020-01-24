@@ -5,27 +5,69 @@ use {
 };
 
 bitflags! {
+    /// Rights are associated with handles and convey privileges to perform actions on
+    /// either the associated handle or the object associated with the handle.
     pub struct Rights: u32 {
+        /// Allows handle duplication via `zx_handle_duplicate()`.
         #[allow(clippy::identity_op)]
         const DUPLICATE = 1 << 0;
+
+        /// Allows handle transfer via `zx_channel_write()`.
         const TRANSFER = 1 << 1;
+
+        /// Allows reading of data from containers (channels, sockets, VM objects, etc).
+        /// Allows mapping as readable if `Rights::MAP` is also present.
         const READ = 1 << 2;
+
+        /// Allows writing of data to containers (channels, sockets, VM objects, etc).
+        /// Allows mapping as writeable if `Rights::MAP` is also present.
         const WRITE = 1 << 3;
+
+        /// Allows mapping as executable if `Rights::MAP` is also present.
         const EXECUTE = 1 << 4;
+
+        /// Allows mapping of a VM object into an address space.
         const MAP = 1 << 5;
+
+        /// Allows property inspection via `zx_object_get_property()`.
         const GET_PROPERTY = 1 << 6;
+
+        /// Allows property modification via `zx_object_set_property()`.
         const SET_PROPERTY = 1 << 7;
+
+        /// Allows enumerating child objects via `zx_object_get_info()` and `zx_object_get_child()`.
         const ENUMERATE = 1 << 8;
+
+        /// Allows termination of task objects via `zx_task_kill()`.
         const DESTROY = 1 << 9;
+
+        /// Allows policy modification via `zx_job_set_policy()`.
         const SET_POLICY = 1 << 10;
+
+        /// Allows policy inspection via `zx_job_get_policy()`.
         const GET_POLICY = 1 << 11;
+
+        /// Allows use of `zx_object_signal()`.
         const SIGNAL = 1 << 12;
+
+        /// Allows use of `zx_object_signal_peer()`.
         const SIGNAL_PEER = 1 << 13;
+
+        /// Allows use of `zx_object_wait_one()`, `zx_object_wait_many()`, and other waiting primitives.
         const WAIT = 1 << 14;
+
+        /// Allows inspection via `zx_object_get_info()`.
         const INSPECT = 1 << 15;
+
+        /// Allows creation of processes, subjobs, etc.
         const MANAGE_JOB = 1 << 16;
+
+        /// Allows creation of threads, etc.
         const MANAGE_PROCESS = 1 << 17;
+
+        /// Allows suspending/resuming threads, etc.
         const MANAGE_THREAD = 1 << 18;
+
         const APPLY_PROFILE = 1 << 19;
         const SAME_RIGHTS = 1 << 31;
 

@@ -8,6 +8,7 @@ use {
 
 pub type Channel = Channel_<MessagePacket>;
 
+/// Bidirectional interprocess communication
 pub struct Channel_<T> {
     base: KObjectBase,
     peer: Weak<Channel_<T>>,

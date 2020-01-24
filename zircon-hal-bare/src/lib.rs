@@ -85,7 +85,7 @@ pub fn pmem_write(paddr: PhysAddr, buf: &[u8]) {
     }
 }
 
-/// A dummy function.
+/// Initialize the HAL.
 ///
 /// Call this anywhere to ensure this lib being linked.
 pub fn init() {}

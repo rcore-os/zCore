@@ -2,8 +2,23 @@ use super::*;
 use crate::object::*;
 use alloc::sync::{Arc, Weak};
 
+/// Signalable event for concurrent programming
+///
+/// ## SYNOPSIS
+///
+/// Events are user-signalable objects. The 8 signal bits reserved for
+/// userspace (`ZX_USER_SIGNAL_0` through `ZX_USER_SIGNAL_7`) may be set,
+/// cleared, and waited upon.
 pub type Event = DummyObject;
 
+/// Mutually signalable pair of events for concurrent programming
+///
+/// ## SYNOPSIS
+///
+/// Event Pairs are linked pairs of user-signalable objects. The 8 signal
+/// bits reserved for userspace (`ZX_USER_SIGNAL_0` through
+/// `ZX_USER_SIGNAL_7`) may be set or cleared on the local or opposing
+/// endpoint of an Event Pair.
 pub struct EventPair {
     base: KObjectBase,
     peer: Weak<EventPair>,
