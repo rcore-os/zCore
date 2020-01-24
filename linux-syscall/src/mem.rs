@@ -11,7 +11,7 @@ impl Syscall {
         flags: usize,
         fd: FileDesc,
         offset: usize,
-    ) -> SysResult {
+    ) -> SysResult<usize> {
         let prot = MmapProt::from_bits_truncate(prot);
         let flags = MmapFlags::from_bits_truncate(flags);
         info!(
@@ -44,7 +44,7 @@ impl Syscall {
         }
     }
 
-    pub fn sys_mprotect(&self, addr: usize, len: usize, prot: usize) -> SysResult {
+    pub fn sys_mprotect(&self, addr: usize, len: usize, prot: usize) -> SysResult<usize> {
         let prot = MmapProt::from_bits_truncate(prot);
         info!(
             "mprotect: addr={:#x}, size={:#x}, prot={:?}",
@@ -53,7 +53,7 @@ impl Syscall {
         unimplemented!()
     }
 
-    pub fn sys_munmap(&self, addr: usize, len: usize) -> SysResult {
+    pub fn sys_munmap(&self, addr: usize, len: usize) -> SysResult<usize> {
         info!("munmap: addr={:#x}, size={:#x}", addr, len);
         let proc = &self.thread.proc;
         let vmar = proc.vmar();

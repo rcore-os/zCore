@@ -205,7 +205,7 @@ pub fn pmem_write(_paddr: PhysAddr, _buf: &[u8]) {
 /// Output a char to console.
 #[linkage = "weak"]
 #[export_name = "hal_serial_write"]
-pub fn serial_write(_c: char) {
+pub fn serial_write(_s: &str) {
     unimplemented!()
 }
 

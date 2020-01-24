@@ -294,8 +294,8 @@ impl MMUFlags {
 
 /// Output a char to console.
 #[export_name = "hal_serial_write"]
-pub fn serial_write(c: char) {
-    print!("{}", c);
+pub fn serial_write(s: &str) {
+    print!("{}", s);
 }
 
 /// Get current time.

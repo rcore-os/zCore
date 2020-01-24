@@ -1,7 +1,8 @@
 use core::fmt;
+use rcore_fs::vfs::FsError;
 use zircon_object::ZxError;
 
-pub type SysResult = Result<usize, SysError>;
+pub type SysResult<T> = Result<T, SysError>;
 
 #[allow(dead_code)]
 #[repr(isize)]
@@ -127,6 +128,31 @@ impl From<ZxError> for SysError {
             ZxError::PEER_CLOSED => SysError::EPIPE,
             ZxError::BAD_HANDLE => SysError::EBADF,
             _ => unimplemented!("unknown error type convertion"),
+        }
+    }
+}
+
+impl From<FsError> for SysError {
+    fn from(error: FsError) -> Self {
+        match error {
+            FsError::NotSupported => SysError::ENOSYS,
+            FsError::NotFile => SysError::EISDIR,
+            FsError::IsDir => SysError::EISDIR,
+            FsError::NotDir => SysError::ENOTDIR,
+            FsError::EntryNotFound => SysError::ENOENT,
+            FsError::EntryExist => SysError::EEXIST,
+            FsError::NotSameFs => SysError::EXDEV,
+            FsError::InvalidParam => SysError::EINVAL,
+            FsError::NoDeviceSpace => SysError::ENOMEM,
+            FsError::DirRemoved => SysError::ENOENT,
+            FsError::DirNotEmpty => SysError::ENOTEMPTY,
+            FsError::WrongFs => SysError::EINVAL,
+            FsError::DeviceError => SysError::EIO,
+            FsError::IOCTLError => SysError::EINVAL,
+            FsError::NoDevice => SysError::EINVAL,
+            FsError::Again => SysError::EAGAIN,
+            FsError::SymLoop => SysError::ELOOP,
+            FsError::Busy => SysError::EBUSY,
         }
     }
 }

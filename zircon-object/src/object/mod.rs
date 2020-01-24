@@ -386,7 +386,10 @@ macro_rules! impl_kobject {
             }
         }
         impl core::fmt::Debug for $class {
-            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> Result<(), core::fmt::Error> {
+            fn fmt(
+                &self,
+                f: &mut core::fmt::Formatter<'_>,
+            ) -> core::result::Result<(), core::fmt::Error> {
                 f.debug_tuple("KObject")
                     .field(&self.id())
                     .field(&self.type_name())

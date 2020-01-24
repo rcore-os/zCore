@@ -115,6 +115,16 @@ global_asm!(
     r#"
 .intel_syntax noprefix
 _syscall_entry:
+    # check stack alignment
+    mov r10, rsp
+    and r10, 0xf
+    jz _aligned
+_not_aligned:
+    push rax
+    call _handle_syscall
+    add rsp, 8
+    ret
+_aligned:
     push rbp
     push rax
     call _handle_syscall

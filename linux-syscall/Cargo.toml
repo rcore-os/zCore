@@ -9,5 +9,12 @@ description = "Linux syscalls implementation"
 
 [dependencies]
 log = "0.4"
+spin = "0.5"
 bitflags = "1.2"
+lazy_static = "1.4"
 zircon-object = { path = "../zircon-object" }
+rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "d8d6119" }
+rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "d8d6119" }
+rcore-fs-ramfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "d8d6119" }
+rcore-fs-mountfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "d8d6119" }
+rcore-fs-devfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "d8d6119" }

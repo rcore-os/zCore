@@ -14,6 +14,17 @@ pub struct UserPtr<T, P: Policy> {
     mark: PhantomData<P>,
 }
 
+impl<T, P: Policy> Clone for UserPtr<T, P> {
+    fn clone(&self) -> Self {
+        UserPtr {
+            ptr: self.ptr,
+            mark: PhantomData,
+        }
+    }
+}
+
+impl<T, P: Policy> Copy for UserPtr<T, P> {}
+
 pub trait Policy {}
 pub trait Read: Policy {}
 pub trait Write: Policy {}
