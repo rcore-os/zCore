@@ -15,14 +15,16 @@ impl Syscall {
             "vmar.allocate: parent={:?}, options={:?}, offset={:?}, size={:?}",
             parent_vmar, options, offset, size,
         );
-        if !options.contains(VmOptions::SPECIFIC) && offset != 0 {
-            return Err(ZxError::INVALID_ARGS);
-        }
+        let offset = match options.contains(VmOptions::SPECIFIC) {
+            true => Some(offset as usize),
+            false if offset == 0 => None,
+            _ => return Err(ZxError::INVALID_ARGS),
+        };
         // TODO: process options
         let perm_rights = options.to_rights();
         let proc = &self.thread.proc;
         let parent = proc.get_object_with_rights::<VmAddressRegion>(parent_vmar, perm_rights)?;
-        let child = parent.create_child(offset as usize, size as usize)?;
+        let child = parent.create_child(offset, size as usize)?;
         let child_addr = child.addr();
         let child_handle = proc.add_handle(Handle::new(child, Rights::DEFAULT_VMAR | perm_rights));
         out_child_vmar.write(child_handle)?;

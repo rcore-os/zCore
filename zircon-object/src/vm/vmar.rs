@@ -36,19 +36,26 @@ impl VmAddressRegion {
         })
     }
 
+    /// Create a child VMAR at given `offset`.
+    pub fn create_child_at(self: &Arc<Self>, offset: usize, len: usize) -> ZxResult<Arc<Self>> {
+        self.create_child(Some(offset), len)
+    }
+
     /// Create a child VMAR at `offset` with `len`.
     ///
     /// The `offset` and `len` should be page aligned,
     /// or an `INVALID_ARGS` error will be returned.
-    pub fn create_child(self: &Arc<Self>, offset: usize, len: usize) -> ZxResult<Arc<Self>> {
-        if !page_aligned(offset) || !page_aligned(len) {
+    pub fn create_child(
+        self: &Arc<Self>,
+        offset: Option<usize>,
+        len: usize,
+    ) -> ZxResult<Arc<Self>> {
+        if !page_aligned(offset.unwrap_or(0)) || !page_aligned(len) {
             return Err(ZxError::INVALID_ARGS);
         }
         let mut guard = self.inner.lock();
         let inner = guard.as_mut().ok_or(ZxError::BAD_STATE)?;
-        if !self.test_map(&inner, offset, len) {
-            return Err(ZxError::INVALID_ARGS);
-        }
+        let offset = self.determine_offset(inner, offset, len)?;
         let child = Arc::new(VmAddressRegion {
             base: KObjectBase::new(),
             addr: self.addr + offset,
@@ -61,8 +68,8 @@ impl VmAddressRegion {
         Ok(child)
     }
 
-    /// Map the `vmo` into this VMAR.
-    pub fn map(
+    /// Map the `vmo` into this VMAR at given `offset`.
+    pub fn map_at(
         &self,
         offset: usize,
         vmo: Arc<dyn VMObject>,
@@ -70,7 +77,19 @@ impl VmAddressRegion {
         len: usize,
         flags: MMUFlags,
     ) -> ZxResult<()> {
-        if !page_aligned(offset)
+        self.map(Some(offset), vmo, vmo_offset, len, flags)
+    }
+
+    /// Map the `vmo` into this VMAR.
+    pub fn map(
+        &self,
+        offset: Option<usize>,
+        vmo: Arc<dyn VMObject>,
+        vmo_offset: usize,
+        len: usize,
+        flags: MMUFlags,
+    ) -> ZxResult<()> {
+        if !page_aligned(offset.unwrap_or(0))
             || !page_aligned(vmo_offset)
             || !page_aligned(len)
             || vmo_offset + len > vmo.len()
@@ -79,9 +98,7 @@ impl VmAddressRegion {
         }
         let mut guard = self.inner.lock();
         let inner = guard.as_mut().ok_or(ZxError::BAD_STATE)?;
-        if !self.test_map(&inner, offset, len) {
-            return Err(ZxError::INVALID_ARGS);
-        }
+        let offset = self.determine_offset(inner, offset, len)?;
         let mapping = VmMapping {
             addr: self.addr + offset,
             size: len,
@@ -163,6 +180,25 @@ impl VmAddressRegion {
         !self.is_dead()
     }
 
+    /// Determine final address with given input `offset` and `len`.
+    fn determine_offset(
+        &self,
+        inner: &VmarInner,
+        offset: Option<usize>,
+        len: usize,
+    ) -> ZxResult<VirtAddr> {
+        match offset {
+            Some(offset) => match self.test_map(&inner, offset, len) {
+                true => Ok(offset),
+                false => Err(ZxError::INVALID_ARGS),
+            },
+            None => match self.find_free_area(&inner, 0, len) {
+                Some(offset) => Ok(offset),
+                None => Err(ZxError::NO_MEMORY),
+            },
+        }
+    }
+
     /// Test if can create a new mapping at `offset` with `len`.
     fn test_map(&self, inner: &VmarInner, offset: usize, len: usize) -> bool {
         debug_assert!(page_aligned(offset));
@@ -173,25 +209,43 @@ impl VmAddressRegion {
             return false;
         }
         // brute force
-        for vmar in inner.children.iter() {
-            if vmar.overlap(begin, end) {
-                return false;
-            }
+        if inner.children.iter().any(|vmar| vmar.overlap(begin, end)) {
+            return false;
         }
-        for map in inner.mappings.iter() {
-            if map.overlap(begin, end) {
-                return false;
-            }
+        if inner.mappings.iter().any(|map| map.overlap(begin, end)) {
+            return false;
         }
         true
     }
 
+    /// Find a free area with `len`.
+    fn find_free_area(
+        &self,
+        inner: &VmarInner,
+        offset_hint: usize,
+        len: usize,
+    ) -> Option<VirtAddr> {
+        // TODO: randomize
+        debug_assert!(page_aligned(offset_hint));
+        debug_assert!(page_aligned(len));
+        // brute force:
+        // try each area's end address as the start
+        core::iter::once(self.addr + offset_hint)
+            .chain(inner.children.iter().map(|vmar| vmar.end_addr()))
+            .chain(inner.mappings.iter().map(|map| map.end_addr()))
+            .find(|&addr| self.test_map(inner, addr - self.addr, len))
+    }
+
+    fn end_addr(&self) -> VirtAddr {
+        self.addr + self.size
+    }
+
     fn overlap(&self, begin: VirtAddr, end: VirtAddr) -> bool {
-        !(self.addr >= end || self.addr + self.size <= begin)
+        !(self.addr >= end || self.end_addr() <= begin)
     }
 
     fn within(&self, begin: VirtAddr, end: VirtAddr) -> bool {
-        begin <= self.addr && self.addr + self.size <= end
+        begin <= self.addr && self.end_addr() <= end
     }
 
     fn partial_overlap(&self, begin: VirtAddr, end: VirtAddr) -> bool {
@@ -230,6 +284,10 @@ impl VmMapping {
     fn overlap(&self, begin: VirtAddr, end: VirtAddr) -> bool {
         !(self.addr >= end || self.addr + self.size <= begin)
     }
+
+    fn end_addr(&self) -> VirtAddr {
+        self.addr + self.size
+    }
 }
 
 impl Drop for VmMapping {
@@ -247,24 +305,24 @@ mod tests {
     fn create_child() {
         let root_vmar = VmAddressRegion::new_root();
         let child = root_vmar
-            .create_child(0, 0x2000)
+            .create_child_at(0, 0x2000)
             .expect("failed to create child VMAR");
 
         // test invalid argument
         assert_eq!(
-            root_vmar.create_child(0x2001, 0x1000).err(),
+            root_vmar.create_child_at(0x2001, 0x1000).err(),
             Some(ZxError::INVALID_ARGS)
         );
         assert_eq!(
-            root_vmar.create_child(0x2000, 1).err(),
+            root_vmar.create_child_at(0x2000, 1).err(),
             Some(ZxError::INVALID_ARGS)
         );
         assert_eq!(
-            root_vmar.create_child(0, 0x1000).err(),
+            root_vmar.create_child_at(0, 0x1000).err(),
             Some(ZxError::INVALID_ARGS)
         );
         assert_eq!(
-            child.create_child(0x1000, 0x2000).err(),
+            child.create_child_at(0x1000, 0x2000).err(),
             Some(ZxError::INVALID_ARGS)
         );
     }
@@ -278,30 +336,30 @@ mod tests {
     #[allow(unsafe_code)]
     fn map() {
         let root_vmar = VmAddressRegion::new_root();
-        let vmar = root_vmar.create_child(VBASE, VSIZE).unwrap();
+        let vmar = root_vmar.create_child_at(VBASE, VSIZE).unwrap();
         let vmo = VMObjectPaged::new(4);
         let flags = MMUFlags::READ | MMUFlags::WRITE;
 
         // invalid argument
         assert_eq!(
-            vmar.map(0, vmo.clone(), 0x4000, 0x1000, flags),
+            vmar.map_at(0, vmo.clone(), 0x4000, 0x1000, flags),
             Err(ZxError::INVALID_ARGS)
         );
         assert_eq!(
-            vmar.map(0, vmo.clone(), 0, 0x5000, flags),
+            vmar.map_at(0, vmo.clone(), 0, 0x5000, flags),
             Err(ZxError::INVALID_ARGS)
         );
         assert_eq!(
-            vmar.map(0, vmo.clone(), 0x1000, 1, flags),
+            vmar.map_at(0, vmo.clone(), 0x1000, 1, flags),
             Err(ZxError::INVALID_ARGS)
         );
         assert_eq!(
-            vmar.map(0, vmo.clone(), 1, 0x1000, flags),
+            vmar.map_at(0, vmo.clone(), 1, 0x1000, flags),
             Err(ZxError::INVALID_ARGS)
         );
 
-        vmar.map(0, vmo.clone(), 0, 0x4000, flags).unwrap();
-        vmar.map(0x12000, vmo.clone(), 0x2000, 0x1000, flags)
+        vmar.map_at(0, vmo.clone(), 0, 0x4000, flags).unwrap();
+        vmar.map_at(0x12000, vmo.clone(), 0x2000, 0x1000, flags)
             .unwrap();
 
         unsafe {
@@ -330,10 +388,10 @@ mod tests {
     impl Sample {
         fn new() -> Self {
             let root = VmAddressRegion::new_root();
-            let child1 = root.create_child(0, 0x2000).unwrap();
-            let child2 = root.create_child(0x2000, 0x1000).unwrap();
-            let grandson1 = child1.create_child(0, 0x1000).unwrap();
-            let grandson2 = child1.create_child(0x1000, 0x1000).unwrap();
+            let child1 = root.create_child_at(0, 0x2000).unwrap();
+            let child2 = root.create_child_at(0x2000, 0x1000).unwrap();
+            let grandson1 = child1.create_child_at(0, 0x1000).unwrap();
+            let grandson2 = child1.create_child_at(0x1000, 0x1000).unwrap();
             Sample {
                 root,
                 child1,
@@ -369,6 +427,6 @@ mod tests {
         assert!(s.grandson2.is_dead());
         assert!(s.child2.is_alive());
         // address space should be released
-        assert!(s.root.create_child(0, 0x1000).is_ok());
+        assert!(s.root.create_child_at(0, 0x1000).is_ok());
     }
 }

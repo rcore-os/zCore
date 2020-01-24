@@ -36,7 +36,7 @@ pub fn run(libc_data: &[u8], mut args: Vec<String>, envs: Vec<String>) -> Arc<Pr
         let syscall_entry_offset = elf
             .get_symbol_address("rcore_syscall_entry")
             .expect("failed to locate syscall entry") as usize;
-        let vmar = vmar.create_child(VBASE, size).unwrap();
+        let vmar = vmar.create_child_at(VBASE, size).unwrap();
         let vmo = vmar.load_from_elf(&elf).unwrap();
         // fill syscall entry
         extern "C" {
@@ -250,7 +250,7 @@ impl VmarExt for VmAddressRegion {
             let vmo = make_vmo(&elf, ph)?;
             let offset = ph.virtual_addr() as usize / PAGE_SIZE * PAGE_SIZE;
             let flags = ph.flags().to_mmu_flags();
-            self.map(offset, vmo.clone(), 0, vmo.len(), flags)?;
+            self.map_at(offset, vmo.clone(), 0, vmo.len(), flags)?;
             first_vmo.get_or_insert(vmo);
         }
         Ok(first_vmo.unwrap())

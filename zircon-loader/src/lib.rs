@@ -48,7 +48,7 @@ pub fn run_userboot(
     let (entry, userboot_size) = {
         let elf = ElfFile::new(userboot_data).unwrap();
         let size = elf.load_segment_size();
-        let vmar = vmar.create_child(VBASE, size).unwrap();
+        let vmar = vmar.create_child_at(VBASE, size).unwrap();
         vmar.load_from_elf(&elf).unwrap();
         (VBASE + elf.header.pt2.entry_point() as usize, size)
     };
@@ -60,7 +60,7 @@ pub fn run_userboot(
         let syscall_entry_offset = elf
             .get_symbol_address("zcore_syscall_entry")
             .expect("failed to locate syscall entry") as usize;
-        let vmar = vmar.create_child(VBASE + userboot_size, size).unwrap();
+        let vmar = vmar.create_child_at(VBASE + userboot_size, size).unwrap();
         let first_vmo = vmar.load_from_elf(&elf).unwrap();
         // fill syscall entry
         extern "C" {
@@ -201,7 +201,7 @@ impl VmarExt for VmAddressRegion {
             let vmo = make_vmo(&elf, ph)?;
             let len = vmo.len();
             let flags = ph.flags().to_mmu_flags();
-            self.map(ph.virtual_addr() as usize, vmo.clone(), 0, len, flags)?;
+            self.map_at(ph.virtual_addr() as usize, vmo.clone(), 0, len, flags)?;
             first_vmo.get_or_insert(vmo);
         }
         Ok(first_vmo.unwrap())
