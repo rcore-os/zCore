@@ -25,6 +25,7 @@ pub struct Thread {
 }
 
 impl Thread {
+    /// Spawn a new thread.
     #[linkage = "weak"]
     #[export_name = "hal_thread_spawn"]
     pub fn spawn(
@@ -38,21 +39,29 @@ impl Thread {
         zircon_hal_unix::init();
         unimplemented!()
     }
+
+    /// Exit current thread.
     #[linkage = "weak"]
     #[export_name = "hal_thread_exit"]
-    pub fn exit(&mut self) {
+    pub fn exit() -> ! {
         unimplemented!()
     }
+
+    /// Get TLS variable of current thread passed from `spawn`.
     #[linkage = "weak"]
     #[export_name = "hal_thread_tls"]
     pub fn tls() -> Arc<ThreadObject> {
         unimplemented!()
     }
+
+    /// Blocks current thread.
     #[linkage = "weak"]
     #[export_name = "hal_thread_park"]
     pub fn park() {
         unimplemented!()
     }
+
+    /// Get a waker of current thread.
     #[linkage = "weak"]
     #[export_name = "hal_thread_get_waker"]
     pub fn get_waker() -> Waker {
@@ -60,12 +69,14 @@ impl Thread {
     }
 }
 
+/// A handle for waking up thread.
 #[repr(C)]
 pub struct Waker {
     id: ThreadId,
 }
 
 impl Waker {
+    /// Wake up related thread.
     #[linkage = "weak"]
     #[export_name = "hal_thread_wake"]
     pub fn wake(&self) {

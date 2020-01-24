@@ -1,5 +1,8 @@
 use {
-    super::process::Process, super::*, crate::object::*, alloc::string::String, alloc::sync::Arc,
+    super::process::Process,
+    super::*,
+    crate::{hal, object::*},
+    alloc::{string::String, sync::Arc},
     spin::Mutex,
 };
 
@@ -80,7 +83,7 @@ impl_kobject!(Thread);
 
 #[derive(Default)]
 struct ThreadInner {
-    hal_thread: Option<crate::hal::Thread>,
+    hal_thread: Option<hal::Thread>,
 }
 
 impl Thread {
@@ -99,7 +102,7 @@ impl Thread {
 
     /// Get current `Thread` object.
     pub fn current() -> Arc<Self> {
-        crate::hal::Thread::tls()
+        hal::Thread::tls()
     }
 
     /// Start execution on the thread.
@@ -110,24 +113,22 @@ impl Thread {
         arg1: usize,
         arg2: usize,
     ) -> ZxResult<()> {
-        let hal_thread = crate::hal::Thread::spawn(entry, stack, arg1, arg2, self.clone());
         let mut inner = self.inner.lock();
         if inner.hal_thread.is_some() {
             return Err(ZxError::BAD_STATE);
         }
+        let hal_thread = hal::Thread::spawn(entry, stack, arg1, arg2, self.clone());
         inner.hal_thread = Some(hal_thread);
+        self.base.signal_set(Signal::THREAD_RUNNING);
         Ok(())
     }
 
     /// Terminate the current running thread.
-    pub fn exit(&self) -> ZxResult<()> {
-        self.inner
-            .lock()
-            .hal_thread
-            .as_mut()
-            .ok_or(ZxError::BAD_STATE)?
-            .exit();
-        Ok(())
+    pub fn exit() -> ! {
+        let thread = Thread::current();
+        thread.base.signal_set(Signal::THREAD_TERMINATED);
+        drop(thread);
+        hal::Thread::exit();
     }
 
     /// Read one aspect of thread state.
@@ -192,12 +193,11 @@ mod tests {
             }
             ARG1.store(arg1, Ordering::SeqCst);
             ARG2.store(arg2, Ordering::SeqCst);
-            loop {
-                std::thread::park();
-            }
+            Thread::exit();
         }
 
         // start a new thread
+        let thread_ref_count = Arc::strong_count(&thread);
         let handle = Handle::new(proc.clone(), Rights::DEFAULT_PROCESS);
         proc.start(&thread, entry as usize, stack_top, handle.clone(), 2)
             .expect("failed to start thread");
@@ -208,6 +208,9 @@ mod tests {
         // validate the thread have started and received correct arguments
         assert_eq!(ARG1.load(Ordering::SeqCst), 0);
         assert_eq!(ARG2.load(Ordering::SeqCst), 2);
+
+        // no other references to `Thread`
+        assert_eq!(Arc::strong_count(&thread), thread_ref_count);
 
         // start again should fail
         assert_eq!(

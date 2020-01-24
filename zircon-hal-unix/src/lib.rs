@@ -66,7 +66,8 @@ impl Thread {
     }
 
     #[export_name = "hal_thread_exit"]
-    pub fn exit(&mut self) {
+    pub fn exit() -> ! {
+        TLS.with(|t| t.replace(None));
         // FIXME: exit thread
         loop {
             std::thread::park();

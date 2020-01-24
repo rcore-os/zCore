@@ -2,7 +2,7 @@
 
 extern crate log;
 
-use {std::path::PathBuf, structopt::StructOpt, zircon_object::object::*, zircon_loader::*};
+use {std::path::PathBuf, structopt::StructOpt, zircon_loader::*, zircon_object::object::*};
 
 #[derive(Debug, StructOpt)]
 #[structopt()]

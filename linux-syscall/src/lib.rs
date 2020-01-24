@@ -33,8 +33,7 @@ impl Syscall {
                 warn!("syscall unimplemented! exit...");
                 let proc = &self.thread.proc;
                 proc.exit(-1);
-                self.thread.exit().unwrap();
-                unreachable!()
+                Thread::exit();
             }
         };
         info!("syscall <= {:?}", ret);
