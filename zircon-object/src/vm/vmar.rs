@@ -77,7 +77,8 @@ impl VmAddressRegion {
         len: usize,
         flags: MMUFlags,
     ) -> ZxResult<()> {
-        self.map(Some(offset), vmo, vmo_offset, len, flags)
+        self.map(Some(offset), vmo, vmo_offset, len, flags)?;
+        Ok(())
     }
 
     /// Map the `vmo` into this VMAR.
@@ -88,7 +89,7 @@ impl VmAddressRegion {
         vmo_offset: usize,
         len: usize,
         flags: MMUFlags,
-    ) -> ZxResult<()> {
+    ) -> ZxResult<VirtAddr> {
         if !page_aligned(offset.unwrap_or(0))
             || !page_aligned(vmo_offset)
             || !page_aligned(len)
@@ -99,8 +100,9 @@ impl VmAddressRegion {
         let mut guard = self.inner.lock();
         let inner = guard.as_mut().ok_or(ZxError::BAD_STATE)?;
         let offset = self.determine_offset(inner, offset, len)?;
+        let addr = self.addr + offset;
         let mapping = VmMapping {
-            addr: self.addr + offset,
+            addr,
             size: len,
             flags,
             vmo,
@@ -109,7 +111,7 @@ impl VmAddressRegion {
         };
         mapping.map();
         inner.mappings.push(mapping);
-        Ok(())
+        Ok(addr)
     }
 
     pub fn unmap(&self, addr: VirtAddr, len: usize) -> ZxResult<()> {

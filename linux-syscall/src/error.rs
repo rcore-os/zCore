@@ -1,4 +1,5 @@
 use core::fmt;
+use zircon_object::ZxError;
 
 pub type SysResult = Result<usize, SysError>;
 
@@ -113,5 +114,19 @@ impl fmt::Display for SysError {
             _ => "Unknown error",
         };
         write!(f, "{}", explain)
+    }
+}
+
+impl From<ZxError> for SysError {
+    fn from(e: ZxError) -> Self {
+        match e {
+            ZxError::INVALID_ARGS => SysError::EINVAL,
+            ZxError::NOT_SUPPORTED => SysError::ENOSYS,
+            ZxError::ALREADY_EXISTS => SysError::EEXIST,
+            ZxError::SHOULD_WAIT => SysError::EAGAIN,
+            ZxError::PEER_CLOSED => SysError::EPIPE,
+            ZxError::BAD_HANDLE => SysError::EBADF,
+            _ => unimplemented!("unknown error type convertion"),
+        }
     }
 }

@@ -16,6 +16,7 @@ use {
 
 mod consts;
 mod error;
+mod mem;
 mod util;
 
 pub struct Syscall {
@@ -25,8 +26,11 @@ pub struct Syscall {
 impl Syscall {
     pub fn syscall(&self, num: u32, args: [usize; 6]) -> isize {
         info!("syscall => num={}, args={:x?}", num, args);
-        let [a0, a1, _a2, _a3, _a4, _a5] = args;
+        let [a0, a1, a2, a3, a4, a5] = args;
         let ret = match num {
+            SYS_MMAP => self.sys_mmap(a0, a1, a2, a3, a4 as _, a5),
+            SYS_MPROTECT => self.sys_mprotect(a0, a1, a2),
+            SYS_MUNMAP => self.sys_munmap(a0, a1),
             SYS_ARCH_PRCTL => self.sys_arch_prctl(a0 as _, a1 as _),
             SYS_SET_TID_ADDRESS => self.sys_set_tid_address(a0.into()),
             _ => {
@@ -62,3 +66,5 @@ impl Syscall {
         Ok(tid as usize)
     }
 }
+
+type FileDesc = isize;
