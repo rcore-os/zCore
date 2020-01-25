@@ -6,25 +6,32 @@ use rcore_fs_mountfs::MountFS;
 use rcore_fs_ramfs::RamFS;
 use rcore_fs_sfs::SimpleFileSystem;
 
-pub use self::file::*;
-//pub use self::stdio::*;
-//pub use self::pseudo::*;
 use self::device::MemBuf;
+pub use self::file::*;
+pub use self::pseudo::*;
 pub use self::random::*;
+pub use self::stdio::*;
 use crate::error::*;
-use crate::FileDesc;
+
+use core::convert::TryFrom;
+use downcast_rs::impl_downcast;
 use lazy_static::lazy_static;
-use zircon_object::object::{HandleValue, KernelObject};
+use zircon_object::object::*;
 use zircon_object::task::Process;
 use zircon_object::ZxError;
 
 mod device;
 mod file;
 mod ioctl;
-//mod pseudo;
+mod pseudo;
 mod random;
-//mod stdio;
+mod stdio;
 
+/// Generic file interface
+///
+/// - Normal file, Directory
+/// - Socket
+/// - Epoll instance
 pub trait FileLike: KernelObject {
     fn read(&self, buf: &mut [u8]) -> LxResult<usize>;
     fn write(&self, buf: &[u8]) -> LxResult<usize>;
@@ -35,18 +42,39 @@ pub trait FileLike: KernelObject {
     fn fcntl(&self, cmd: usize, arg: usize) -> LxResult<()>;
 }
 
-pub trait ProcessExt {
-    fn get_file_like(&self, fd: FileDesc) -> LxResult<Arc<dyn FileLike>>;
+impl_downcast!(sync FileLike);
+
+#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
+pub struct FileDesc(isize);
+
+impl FileDesc {
+    /// Pathname is interpreted relative to the current working directory(CWD)
+    pub const CWD: Self = FileDesc(-100);
 }
 
-impl ProcessExt for Process {
-    fn get_file_like(&self, fd: isize) -> LxResult<Arc<dyn FileLike>> {
-        match self.get_object::<File>(fd as HandleValue) {
-            Ok(file) => return Ok(file as Arc<dyn FileLike>),
-            Err(ZxError::WRONG_TYPE) => {}
-            Err(e) => return Err(e.into()),
-        }
-        unimplemented!("unknown file type")
+impl From<usize> for FileDesc {
+    fn from(x: usize) -> Self {
+        FileDesc(x as isize)
+    }
+}
+
+impl TryFrom<&str> for FileDesc {
+    type Error = SysError;
+    fn try_from(name: &str) -> LxResult<Self> {
+        let x: isize = name.parse().map_err(|_| SysError::EINVAL)?;
+        Ok(FileDesc(x))
+    }
+}
+
+impl Into<usize> for FileDesc {
+    fn into(self) -> usize {
+        self.0 as _
+    }
+}
+
+impl Into<HandleValue> for FileDesc {
+    fn into(self) -> HandleValue {
+        self.0 as _
     }
 }
 
@@ -83,8 +111,6 @@ lazy_static! {
         root
     };
 }
-
-//pub const FOLLOW_MAX_DEPTH: usize = 1;
 
 pub trait INodeExt {
     fn read_as_vec(&self) -> Result<Vec<u8>>;

@@ -4,8 +4,8 @@
 
 use alloc::{string::String, sync::Arc};
 
+use super::FileLike;
 use crate::error::{LxResult, SysError};
-use crate::fs::FileLike;
 use rcore_fs::vfs::{FsError, INode, Metadata, PollStatus};
 use spin::Mutex;
 use zircon_object::object::*;

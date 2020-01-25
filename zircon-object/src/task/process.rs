@@ -1,7 +1,9 @@
 use {
-    super::job::Job, super::job_policy::*, super::resource::*, super::thread::Thread, super::*,
-    crate::object::*, crate::vm::*, alloc::collections::BTreeMap, alloc::string::String,
-    alloc::sync::Arc, alloc::vec::Vec, spin::Mutex,
+    super::{job::Job, job_policy::*, resource::*, thread::Thread, *},
+    crate::{object::*, vm::*},
+    alloc::{boxed::Box, collections::BTreeMap, string::String, sync::Arc, vec::Vec},
+    core::any::Any,
+    spin::Mutex,
 };
 
 /// Process abstraction
@@ -50,6 +52,7 @@ pub struct Process {
     job: Arc<Job>,
     policy: JobPolicy,
     vmar: Arc<VmAddressRegion>,
+    ext: Box<dyn Any + Send + Sync>,
     inner: Mutex<ProcessInner>,
 }
 
@@ -65,6 +68,15 @@ struct ProcessInner {
 impl Process {
     /// Create a new process in the `job`.
     pub fn create(job: &Arc<Job>, name: &str, _options: u32) -> ZxResult<Arc<Self>> {
+        Self::create_with_ext(job, name, ())
+    }
+
+    /// Create a new process with extension info.
+    pub fn create_with_ext(
+        job: &Arc<Job>,
+        name: &str,
+        ext: impl Any + Send + Sync,
+    ) -> ZxResult<Arc<Self>> {
         // TODO: _options -> options
         let proc = Arc::new(Process {
             base: KObjectBase::new(),
@@ -72,6 +84,7 @@ impl Process {
             job: job.clone(),
             policy: job.policy(),
             vmar: VmAddressRegion::new_root(),
+            ext: Box::new(ext),
             inner: Mutex::new(ProcessInner::default()),
         });
         job.add_process(proc.clone());
@@ -122,6 +135,11 @@ impl Process {
             PolicyAction::Deny => Err(ZxError::ACCESS_DENIED),
             _ => unimplemented!(),
         }
+    }
+
+    /// Get the extension.
+    pub fn ext(&self) -> &(dyn Any + Send + Sync) {
+        &self.ext
     }
 
     /// Get the `VmAddressRegion` of the process.

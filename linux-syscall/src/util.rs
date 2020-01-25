@@ -1,13 +1,12 @@
 #![allow(unsafe_code, dead_code)]
 
-use crate::error::LxResult;
 use {
-    crate::ZxResult,
+    crate::error::*,
     alloc::string::String,
     alloc::vec::Vec,
     core::fmt::{Debug, Error, Formatter},
     core::marker::PhantomData,
-    zircon_object::ZxError,
+    zircon_object::{ZxError, ZxResult},
 };
 
 #[repr(C)]
@@ -72,6 +71,11 @@ impl<P: Read> UserPtr<u8, P> {
         let s = core::str::from_utf8(src).map_err(|_| ZxError::INVALID_ARGS)?;
         Ok(String::from(s))
     }
+
+    pub fn read_cstring(&self) -> ZxResult<String> {
+        let len = unsafe { (0usize..).find(|&i| *self.ptr.add(i) == 0).unwrap() };
+        self.read_string(len)
+    }
 }
 
 impl<T, P: Write> UserPtr<T, P> {
@@ -93,6 +97,17 @@ impl<T, P: Write> UserPtr<T, P> {
         unsafe {
             self.ptr
                 .copy_from_nonoverlapping(values.as_ptr(), values.len());
+        }
+        Ok(())
+    }
+}
+
+impl<P: Write> UserPtr<u8, P> {
+    pub fn write_cstring(&mut self, s: &str) -> ZxResult<()> {
+        let bytes = s.as_bytes();
+        self.write_array(bytes)?;
+        unsafe {
+            self.ptr.add(bytes.len()).write(0);
         }
         Ok(())
     }

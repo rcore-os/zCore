@@ -287,7 +287,7 @@ impl Syscall {
     //
     /// Exit the current thread group (i.e. process)
     pub fn sys_exit_group(&self, exit_code: usize) -> ! {
-        let proc = self.process();
+        let proc = self.zircon_process();
         info!("exit_group: code={}", exit_code);
         proc.exit(exit_code as i64);
         Thread::exit();
@@ -306,12 +306,13 @@ impl Syscall {
     //        thread_manager().set_priority(pid, priority as u8);
     //        Ok(0)
     //    }
-    //
-    //    pub fn sys_set_tid_address(&mut self, tidptr: *mut u32) -> SysResult {
-    //        info!("set_tid_address: {:?}", tidptr);
-    //        self.thread.clear_child_tid = tidptr as usize;
-    //        Ok(thread::current().id())
-    //    }
+
+    pub fn sys_set_tid_address(&self, tidptr: UserOutPtr<u32>) -> SysResult {
+        warn!("set_tid_address: {:?}. unimplemented!", tidptr);
+        //        self.thread.clear_child_tid = tidptr as usize;
+        let tid = self.thread.id();
+        Ok(tid as usize)
+    }
 }
 
 //bitflags! {
@@ -325,7 +326,7 @@ impl Syscall {
 //        const VFORK =           0x00004000;
 //        const PARENT =          0x00008000;
 //        const THREAD =          0x00010000;
-//        const NEWNS	 =          0x00020000;
+//        const NEWNS	 =        0x00020000;
 //        const SYSVSEM =         0x00040000;
 //        const SETTLS =          0x00080000;
 //        const PARENT_SETTID =   0x00100000;
