@@ -39,9 +39,6 @@ pub fn run(libc_data: &[u8], mut args: Vec<String>, envs: Vec<String>) -> Arc<Pr
         let vmar = vmar.create_child_at(VBASE, size).unwrap();
         let vmo = vmar.load_from_elf(&elf).unwrap();
         // fill syscall entry
-        extern "C" {
-            fn syscall_entry();
-        }
         vmo.write(
             syscall_entry_offset,
             &(syscall_entry as usize).to_ne_bytes(),
@@ -87,61 +84,14 @@ pub fn run(libc_data: &[u8], mut args: Vec<String>, envs: Vec<String>) -> Arc<Pr
     proc
 }
 
-#[cfg(not(target_os = "macos"))]
-global_asm!(
-    r#"
-.intel_syntax noprefix
-syscall_entry:
-    # check stack alignment
-    mov r10, rsp
-    and r10, 0xf
-    jz _aligned
-_not_aligned:
-    push rax
-    call handle_syscall
-    add rsp, 8
-    ret
-_aligned:
-    push rbp
-    push rax
-    call handle_syscall
-    add rsp, 16
-    ret
-"#
-);
-
-#[cfg(target_os = "macos")]
-global_asm!(
-    r#"
-.intel_syntax noprefix
-_syscall_entry:
-    # check stack alignment
-    mov r10, rsp
-    and r10, 0xf
-    jz _aligned
-_not_aligned:
-    push rax
-    call _handle_syscall
-    add rsp, 8
-    ret
-_aligned:
-    push rbp
-    push rax
-    call _handle_syscall
-    add rsp, 16
-    ret
-"#
-);
-
-#[no_mangle]
-extern "C" fn handle_syscall(
+extern "C" fn syscall_entry(
+    num: u32,
     a0: usize,
     a1: usize,
     a2: usize,
     a3: usize,
     a4: usize,
     a5: usize,
-    num: u32, // pushed %eax
 ) -> isize {
     unsafe {
         switch_to_kernel();
