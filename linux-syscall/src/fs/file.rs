@@ -4,7 +4,7 @@
 
 use alloc::{string::String, sync::Arc};
 
-use crate::error::{SysError, SysResult};
+use crate::error::{LxResult, SysError};
 use crate::fs::FileLike;
 use rcore_fs::vfs::{FsError, INode, Metadata, PollStatus};
 use spin::Mutex;
@@ -52,14 +52,14 @@ impl File {
         })
     }
 
-    pub fn read(&self, buf: &mut [u8]) -> SysResult<usize> {
+    pub fn read(&self, buf: &mut [u8]) -> LxResult<usize> {
         let mut inner = self.inner.lock();
         let len = self.read_at(inner.offset as usize, buf)?;
         inner.offset += len as u64;
         Ok(len)
     }
 
-    pub fn read_at(&self, offset: usize, buf: &mut [u8]) -> SysResult<usize> {
+    pub fn read_at(&self, offset: usize, buf: &mut [u8]) -> LxResult<usize> {
         if !self.options.read {
             return Err(SysError::EBADF);
         }
@@ -80,7 +80,7 @@ impl File {
         Ok(len)
     }
 
-    pub fn write(&self, buf: &[u8]) -> SysResult<usize> {
+    pub fn write(&self, buf: &[u8]) -> LxResult<usize> {
         let mut inner = self.inner.lock();
         let offset = if self.options.append {
             self.inode.metadata()?.size
@@ -92,7 +92,7 @@ impl File {
         Ok(len)
     }
 
-    pub fn write_at(&self, offset: usize, buf: &[u8]) -> SysResult<usize> {
+    pub fn write_at(&self, offset: usize, buf: &[u8]) -> LxResult<usize> {
         if !self.options.write {
             return Err(SysError::EBADF);
         }
@@ -100,7 +100,7 @@ impl File {
         Ok(len)
     }
 
-    pub fn seek(&self, pos: SeekFrom) -> SysResult<u64> {
+    pub fn seek(&self, pos: SeekFrom) -> LxResult<u64> {
         let mut inner = self.inner.lock();
         inner.offset = match pos {
             SeekFrom::Start(offset) => offset,
@@ -110,7 +110,7 @@ impl File {
         Ok(inner.offset)
     }
 
-    pub fn set_len(&self, len: u64) -> SysResult<()> {
+    pub fn set_len(&self, len: u64) -> LxResult<()> {
         if !self.options.write {
             return Err(SysError::EBADF);
         }
@@ -118,27 +118,27 @@ impl File {
         Ok(())
     }
 
-    pub fn sync_all(&self) -> SysResult<()> {
+    pub fn sync_all(&self) -> LxResult<()> {
         self.inode.sync_all()?;
         Ok(())
     }
 
-    pub fn sync_data(&self) -> SysResult<()> {
+    pub fn sync_data(&self) -> LxResult<()> {
         self.inode.sync_data()?;
         Ok(())
     }
 
-    pub fn metadata(&self) -> SysResult<Metadata> {
+    pub fn metadata(&self) -> LxResult<Metadata> {
         let metadata = self.inode.metadata()?;
         Ok(metadata)
     }
 
-    pub fn lookup_follow(&self, path: &str, max_follow: usize) -> SysResult<Arc<dyn INode>> {
+    pub fn lookup_follow(&self, path: &str, max_follow: usize) -> LxResult<Arc<dyn INode>> {
         let inode = self.inode.lookup_follow(path, max_follow)?;
         Ok(inode)
     }
 
-    pub fn read_entry(&self) -> SysResult<String> {
+    pub fn read_entry(&self) -> LxResult<String> {
         if !self.options.read {
             return Err(SysError::EBADF);
         }
@@ -148,12 +148,12 @@ impl File {
         Ok(name)
     }
 
-    pub fn poll(&self) -> SysResult<PollStatus> {
+    pub fn poll(&self) -> LxResult<PollStatus> {
         let status = self.inode.poll()?;
         Ok(status)
     }
 
-    pub fn io_control(&self, cmd: u32, arg: usize) -> SysResult<()> {
+    pub fn io_control(&self, cmd: u32, arg: usize) -> LxResult<()> {
         self.inode.io_control(cmd, arg)?;
         Ok(())
     }
@@ -162,7 +162,7 @@ impl File {
         self.inode.clone()
     }
 
-    pub fn fcntl(&self, _cmd: usize, _arg: usize) -> SysResult<()> {
+    pub fn fcntl(&self, _cmd: usize, _arg: usize) -> LxResult<()> {
         //        if arg & 0x800 > 0 && cmd == 4 {
         //            self.options.nonblock = true;
         //        }
@@ -171,23 +171,31 @@ impl File {
 }
 
 impl FileLike for File {
-    fn read(&self, buf: &mut [u8]) -> SysResult<usize> {
+    fn read(&self, buf: &mut [u8]) -> LxResult<usize> {
         self.read(buf)
     }
 
-    fn write(&self, buf: &[u8]) -> SysResult<usize> {
+    fn write(&self, buf: &[u8]) -> LxResult<usize> {
         self.write(buf)
     }
 
-    fn poll(&self) -> SysResult<PollStatus> {
+    fn read_at(&self, offset: usize, buf: &mut [u8]) -> LxResult<usize> {
+        self.read_at(offset, buf)
+    }
+
+    fn write_at(&self, offset: usize, buf: &[u8]) -> LxResult<usize> {
+        self.write_at(offset, buf)
+    }
+
+    fn poll(&self) -> LxResult<PollStatus> {
         self.poll()
     }
 
-    fn ioctl(&self, request: usize, arg1: usize, _arg2: usize, _arg3: usize) -> SysResult<()> {
+    fn ioctl(&self, request: usize, arg1: usize, _arg2: usize, _arg3: usize) -> LxResult<()> {
         self.io_control(request as u32, arg1)
     }
 
-    fn fcntl(&self, cmd: usize, arg: usize) -> SysResult<()> {
+    fn fcntl(&self, cmd: usize, arg: usize) -> LxResult<()> {
         self.fcntl(cmd, arg)
     }
 }

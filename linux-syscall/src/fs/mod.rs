@@ -11,7 +11,7 @@ pub use self::file::*;
 //pub use self::pseudo::*;
 use self::device::MemBuf;
 pub use self::random::*;
-use crate::error::SysResult;
+use crate::error::*;
 use crate::FileDesc;
 use lazy_static::lazy_static;
 use zircon_object::object::{HandleValue, KernelObject};
@@ -26,19 +26,21 @@ mod random;
 //mod stdio;
 
 pub trait FileLike: KernelObject {
-    fn read(&self, buf: &mut [u8]) -> SysResult<usize>;
-    fn write(&self, buf: &[u8]) -> SysResult<usize>;
-    fn poll(&self) -> SysResult<PollStatus>;
-    fn ioctl(&self, request: usize, arg1: usize, arg2: usize, arg3: usize) -> SysResult<()>;
-    fn fcntl(&self, cmd: usize, arg: usize) -> SysResult<()>;
+    fn read(&self, buf: &mut [u8]) -> LxResult<usize>;
+    fn write(&self, buf: &[u8]) -> LxResult<usize>;
+    fn read_at(&self, offset: usize, buf: &mut [u8]) -> LxResult<usize>;
+    fn write_at(&self, offset: usize, buf: &[u8]) -> LxResult<usize>;
+    fn poll(&self) -> LxResult<PollStatus>;
+    fn ioctl(&self, request: usize, arg1: usize, arg2: usize, arg3: usize) -> LxResult<()>;
+    fn fcntl(&self, cmd: usize, arg: usize) -> LxResult<()>;
 }
 
 pub trait ProcessExt {
-    fn get_file_like(&self, fd: FileDesc) -> SysResult<Arc<dyn FileLike>>;
+    fn get_file_like(&self, fd: FileDesc) -> LxResult<Arc<dyn FileLike>>;
 }
 
 impl ProcessExt for Process {
-    fn get_file_like(&self, fd: isize) -> SysResult<Arc<dyn FileLike>> {
+    fn get_file_like(&self, fd: isize) -> LxResult<Arc<dyn FileLike>> {
         match self.get_object::<File>(fd as HandleValue) {
             Ok(file) => return Ok(file as Arc<dyn FileLike>),
             Err(ZxError::WRONG_TYPE) => {}

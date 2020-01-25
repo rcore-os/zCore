@@ -3,7 +3,7 @@
 #![no_std]
 #![deny(warnings, unsafe_code, unused_must_use, unreachable_patterns)]
 
-//#[macro_use]
+#[macro_use]
 extern crate alloc;
 
 #[macro_use]
@@ -32,9 +32,14 @@ impl Syscall {
         info!("syscall => num={}, args={:x?}", num, args);
         let [a0, a1, a2, a3, a4, a5] = args;
         let ret = match num {
-            SYS_EXIT_GROUP => self.sys_exit_group(a0),
-
+            SYS_READ => self.sys_read(a0 as _, a1.into(), a2),
+            SYS_WRITE => self.sys_write(a0 as _, a1.into(), a2),
+            SYS_PREAD64 => self.sys_pread(a0 as _, a1.into(), a2, a3),
+            SYS_PWRITE64 => self.sys_pwrite(a0 as _, a1.into(), a2, a3),
+            SYS_READV => self.sys_readv(a0 as _, a1.into(), a2),
             SYS_WRITEV => self.sys_writev(a0 as _, a1.into(), a2),
+
+            SYS_EXIT_GROUP => self.sys_exit_group(a0),
 
             SYS_MMAP => self.sys_mmap(a0, a1, a2, a3, a4 as _, a5),
             SYS_MPROTECT => self.sys_mprotect(a0, a1, a2),
@@ -60,7 +65,7 @@ impl Syscall {
         &self.thread.proc
     }
 
-    fn sys_arch_prctl(&self, code: i32, addr: usize) -> SysResult<usize> {
+    fn sys_arch_prctl(&self, code: i32, addr: usize) -> SysResult {
         const ARCH_SET_FS: i32 = 0x1002;
         match code {
             ARCH_SET_FS => {
@@ -72,7 +77,7 @@ impl Syscall {
         }
     }
 
-    fn sys_set_tid_address(&self, tidptr: UserOutPtr<u32>) -> SysResult<usize> {
+    fn sys_set_tid_address(&self, tidptr: UserOutPtr<u32>) -> SysResult {
         warn!("set_tid_address: {:?}. unimplemented!", tidptr);
         //        self.thread.clear_child_tid = tidptr as usize;
         let tid = self.thread.id();
