@@ -189,15 +189,17 @@ impl VmAddressRegion {
         offset: Option<usize>,
         len: usize,
     ) -> ZxResult<VirtAddr> {
-        match offset {
-            Some(offset) => match self.test_map(&inner, offset, len) {
-                true => Ok(offset),
-                false => Err(ZxError::INVALID_ARGS),
-            },
-            None => match self.find_free_area(&inner, 0, len) {
+        if let Some(offset) = offset {
+            if self.test_map(&inner, offset, len) {
+                Ok(offset)
+            } else {
+                Err(ZxError::INVALID_ARGS)
+            }
+        } else {
+            match self.find_free_area(&inner, 0, len) {
                 Some(offset) => Ok(offset),
                 None => Err(ZxError::NO_MEMORY),
-            },
+            }
         }
     }
 

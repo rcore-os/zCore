@@ -82,10 +82,11 @@ impl File {
 
     pub fn write(&self, buf: &[u8]) -> SysResult<usize> {
         let mut inner = self.inner.lock();
-        let offset = match self.options.append {
-            true => self.inode.metadata()?.size as u64,
-            false => inner.offset,
-        } as usize;
+        let offset = if self.options.append {
+            self.inode.metadata()?.size
+        } else {
+            inner.offset as usize
+        };
         let len = self.write_at(offset, buf)?;
         inner.offset = (offset + len) as u64;
         Ok(len)

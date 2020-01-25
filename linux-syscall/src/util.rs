@@ -60,12 +60,12 @@ impl<T, P: Policy> From<usize> for UserPtr<T, P> {
 }
 
 impl<T: Copy, P: Read> UserPtr<T, P> {
-    pub fn read(&self) -> ZxResult<T> {
+    pub fn read(self) -> ZxResult<T> {
         // TODO: check ptr and return err
         Ok(unsafe { self.ptr.read() })
     }
 
-    pub fn read_array(&self, len: usize) -> ZxResult<Vec<T>> {
+    pub fn read_array(self, len: usize) -> ZxResult<Vec<T>> {
         let mut ret = Vec::with_capacity(len);
         unsafe {
             ret.set_len(len);
@@ -77,7 +77,7 @@ impl<T: Copy, P: Read> UserPtr<T, P> {
 }
 
 impl<P: Read> UserPtr<u8, P> {
-    pub fn read_string(&self, len: usize) -> ZxResult<String> {
+    pub fn read_string(self, len: usize) -> ZxResult<String> {
         let src = unsafe { core::slice::from_raw_parts(self.ptr, len) };
         let s = core::str::from_utf8(src).map_err(|_| ZxError::INVALID_ARGS)?;
         Ok(String::from(s))
@@ -85,21 +85,21 @@ impl<P: Read> UserPtr<u8, P> {
 }
 
 impl<T: Copy, P: Write> UserPtr<T, P> {
-    pub fn write(&self, value: T) -> ZxResult<()> {
+    pub fn write(self, value: T) -> ZxResult<()> {
         unsafe {
             self.ptr.write(value);
         }
         Ok(())
     }
 
-    pub fn write_if_not_null(&self, value: T) -> ZxResult<()> {
+    pub fn write_if_not_null(self, value: T) -> ZxResult<()> {
         if self.ptr.is_null() {
             return Ok(());
         }
         self.write(value)
     }
 
-    pub fn write_array(&self, values: &[T]) -> ZxResult<()> {
+    pub fn write_array(self, values: &[T]) -> ZxResult<()> {
         unsafe {
             core::slice::from_raw_parts_mut(self.ptr, values.len()).copy_from_slice(values);
         }

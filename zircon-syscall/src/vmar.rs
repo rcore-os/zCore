@@ -15,10 +15,12 @@ impl Syscall {
             "vmar.allocate: parent={:?}, options={:?}, offset={:?}, size={:?}",
             parent_vmar, options, offset, size,
         );
-        let offset = match options.contains(VmOptions::SPECIFIC) {
-            true => Some(offset as usize),
-            false if offset == 0 => None,
-            _ => return Err(ZxError::INVALID_ARGS),
+        let offset = if options.contains(VmOptions::SPECIFIC) {
+            Some(offset as usize)
+        } else if offset == 0 {
+            None
+        } else {
+            return Err(ZxError::INVALID_ARGS);
         };
         // TODO: process options
         let perm_rights = options.to_rights();

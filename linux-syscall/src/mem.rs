@@ -28,9 +28,10 @@ impl Syscall {
             // so just skip it
             addr = PAGE_SIZE;
         }
-        let addr = match flags.contains(MmapFlags::FIXED) {
-            true => Some(addr),
-            false => None,
+        let addr = if flags.contains(MmapFlags::FIXED) {
+            Some(addr)
+        } else {
+            None
         };
         if flags.contains(MmapFlags::ANONYMOUS) {
             if flags.contains(MmapFlags::SHARED) {
@@ -64,6 +65,7 @@ impl Syscall {
 
 bitflags! {
     pub struct MmapFlags: usize {
+        #[allow(clippy::identity_op)]
         /// Changes are shared.
         const SHARED = 1 << 0;
         /// Changes are private.
@@ -82,8 +84,7 @@ const MMAP_ANONYMOUS: usize = 1 << 5;
 
 bitflags! {
     pub struct MmapProt: usize {
-        /// Data cannot be accessed
-        const NONE = 0;
+        #[allow(clippy::identity_op)]
         /// Data can be read
         const READ = 1 << 0;
         /// Data can be written

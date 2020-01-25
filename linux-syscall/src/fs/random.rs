@@ -29,17 +29,13 @@ impl RandomINode {
 
 impl INode for RandomINode {
     fn read_at(&self, _offset: usize, buf: &mut [u8]) -> Result<usize> {
-        if buf.len() > 0 {
-            let mut data = self.data.lock();
-            // from K&R
-            for i in 0..buf.len() {
-                data.seed = data.seed.wrapping_mul(1103515245).wrapping_add(12345);
-                buf[i] = (data.seed / 65536) as u8;
-            }
-            Ok(buf.len())
-        } else {
-            Ok(0)
+        let mut data = self.data.lock();
+        // from K&R
+        for x in buf.iter_mut() {
+            data.seed = data.seed.wrapping_mul(1_103_515_245).wrapping_add(12345);
+            *x = (data.seed / 65536) as u8;
         }
+        Ok(buf.len())
     }
 
     fn write_at(&self, _offset: usize, _buf: &[u8]) -> Result<usize> {
