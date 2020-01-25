@@ -8,7 +8,7 @@ extern crate log;
 
 use {
     alloc::{collections::BTreeMap, string::String, sync::Arc, vec::Vec},
-    linux_syscall::Syscall,
+    linux_syscall::{ProcessExt, Syscall},
     xmas_elf::{
         program::{Flags, ProgramHeader, SegmentData, Type},
         sections::SectionData,
@@ -23,7 +23,7 @@ mod abi;
 
 pub fn run(libc_data: &[u8], mut args: Vec<String>, envs: Vec<String>) -> Arc<Process> {
     let job = Job::root();
-    let proc = Process::create(&job, "proc", 0).unwrap();
+    let proc = Process::create_linux(&job, "proc").unwrap();
     let thread = Thread::create(&proc, "thread", 0).unwrap();
     let vmar = proc.vmar();
 

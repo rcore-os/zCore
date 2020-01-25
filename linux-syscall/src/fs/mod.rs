@@ -17,8 +17,6 @@ use core::convert::TryFrom;
 use downcast_rs::impl_downcast;
 use lazy_static::lazy_static;
 use zircon_object::object::*;
-use zircon_object::task::Process;
-use zircon_object::ZxError;
 
 mod device;
 mod file;

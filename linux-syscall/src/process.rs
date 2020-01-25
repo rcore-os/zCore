@@ -6,13 +6,20 @@ use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::sync::Arc;
 use spin::{Mutex, MutexGuard};
-use zircon_object::task::Process;
+use zircon_object::task::{Job, Process};
+use zircon_object::ZxResult;
 
 pub trait ProcessExt {
+    fn create_linux(job: &Arc<Job>, name: &str) -> ZxResult<Arc<Self>>;
     fn lock_linux(&self) -> MutexGuard<'_, LinuxProcess>;
 }
 
 impl ProcessExt for Process {
+    fn create_linux(job: &Arc<Job>, name: &str) -> ZxResult<Arc<Self>> {
+        let linux_proc = Mutex::new(LinuxProcess::new());
+        Process::create_with_ext(job, name, linux_proc)
+    }
+
     fn lock_linux(&self) -> MutexGuard<'_, LinuxProcess> {
         self.ext()
             .downcast_ref::<Mutex<LinuxProcess>>()
@@ -64,11 +71,16 @@ impl LinuxProcess {
         }
     }
 
-    /// Add a file-like, return its file descriptor.
-    pub fn add_file_like(&mut self, file: Arc<dyn FileLike>) -> FileDesc {
+    /// Add a file to the file descriptor table.
+    pub fn add_file(&mut self, file: Arc<dyn FileLike>) -> LxResult<FileDesc> {
         let fd = self.get_free_fd();
         self.files.insert(fd, file);
-        fd
+        Ok(fd)
+    }
+
+    /// Add a file to the file descriptor table at given `fd`.
+    pub fn add_file_at(&mut self, fd: FileDesc, file: Arc<dyn FileLike>) {
+        self.files.insert(fd, file);
     }
 
     /// Get the `File` with given `fd`.

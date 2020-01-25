@@ -138,7 +138,7 @@ impl Process {
     }
 
     /// Get the extension.
-    pub fn ext(&self) -> &(dyn Any + Send + Sync) {
+    pub fn ext(&self) -> &Box<dyn Any + Send + Sync> {
         &self.ext
     }
 

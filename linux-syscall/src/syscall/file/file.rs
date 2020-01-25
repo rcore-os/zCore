@@ -14,7 +14,7 @@ use super::*;
 impl Syscall {
     pub fn sys_read(&self, fd: FileDesc, mut base: UserOutPtr<u8>, len: usize) -> SysResult {
         info!("read: fd={:?}, base={:?}, len={:#x}", fd, base, len);
-        let proc = self.process();
+        let proc = self.lock_linux_process();
         let file_like = proc.get_file_like(fd)?;
         let mut buf = vec![0u8; len];
         let len = file_like.read(&mut buf)?;
@@ -24,7 +24,7 @@ impl Syscall {
 
     pub fn sys_write(&self, fd: FileDesc, base: UserInPtr<u8>, len: usize) -> SysResult {
         info!("write: fd={:?}, base={:?}, len={:#x}", fd, base, len);
-        let proc = self.process();
+        let proc = self.lock_linux_process();
         let buf = base.read_array(len)?;
         let file_like = proc.get_file_like(fd)?;
         let len = file_like.write(&buf)?;
@@ -42,7 +42,7 @@ impl Syscall {
             "pread: fd={:?}, base={:?}, len={}, offset={}",
             fd, base, len, offset
         );
-        let proc = self.process();
+        let proc = self.lock_linux_process();
         let file_like = proc.get_file_like(fd)?;
         let mut buf = vec![0u8; len];
         let len = file_like.read_at(offset, &mut buf)?;
@@ -61,7 +61,7 @@ impl Syscall {
             "pwrite: fd={:?}, base={:?}, len={}, offset={}",
             fd, base, len, offset
         );
-        let proc = self.process();
+        let proc = self.lock_linux_process();
         let buf = base.read_array(len)?;
         let file_like = proc.get_file_like(fd)?;
         let len = file_like.write_at(offset, &buf)?;
@@ -76,7 +76,7 @@ impl Syscall {
     ) -> SysResult {
         info!("readv: fd={:?}, iov={:?}, count={}", fd, iov_ptr, iov_count);
         let mut iovs = IoVecs::new(iov_ptr, iov_count)?;
-        let proc = self.process();
+        let proc = self.lock_linux_process();
         let file_like = proc.get_file_like(fd)?;
         let mut buf = vec![0u8; iovs.total_len()];
         let len = file_like.read(&mut buf)?;
@@ -96,26 +96,30 @@ impl Syscall {
         );
         let iovs = IoVecs::new(iov_ptr, iov_count)?;
         let buf = iovs.read_to_vec()?;
-        let proc = self.process();
+        let proc = self.lock_linux_process();
         let file_like = proc.get_file_like(fd)?;
         let len = file_like.write(&buf)?;
         Ok(len)
     }
 
-    //    pub fn sys_lseek(&self, fd: FileDesc, offset: i64, whence: u8) -> SysResult {
-    //        let pos = match whence {
-    //            SEEK_SET => SeekFrom::Start(offset as u64),
-    //            SEEK_END => SeekFrom::End(offset),
-    //            SEEK_CUR => SeekFrom::Current(offset),
-    //            _ => return Err(SysError::EINVAL),
-    //        };
-    //        info!("lseek: fd={:?}, pos={:?}", fd, pos);
-    //
-    //        let proc = self.process();
-    //        let file = proc.get_file(fd)?;
-    //        let offset = file.seek(pos)?;
-    //        Ok(offset as usize)
-    //    }
+    pub fn sys_lseek(&self, fd: FileDesc, offset: i64, whence: u8) -> SysResult {
+        const SEEK_SET: u8 = 0;
+        const SEEK_CUR: u8 = 1;
+        const SEEK_END: u8 = 2;
+
+        let pos = match whence {
+            SEEK_SET => SeekFrom::Start(offset as u64),
+            SEEK_END => SeekFrom::End(offset),
+            SEEK_CUR => SeekFrom::Current(offset),
+            _ => return Err(SysError::EINVAL),
+        };
+        info!("lseek: fd={:?}, pos={:?}", fd, pos);
+
+        let proc = self.lock_linux_process();
+        let file = proc.get_file(fd)?;
+        let offset = file.seek(pos)?;
+        Ok(offset as usize)
+    }
 
     //    pub fn sys_truncate(&self, path: UserInPtr<u8>, len: usize) -> SysResult {
     //        let proc = self.process();
@@ -295,7 +299,3 @@ impl Syscall {
     //        Ok(0)
     //    }
 }
-
-const SEEK_SET: u8 = 0;
-const SEEK_CUR: u8 = 1;
-const SEEK_END: u8 = 2;
