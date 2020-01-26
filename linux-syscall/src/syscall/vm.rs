@@ -5,7 +5,7 @@ use zircon_object::vm::*;
 impl Syscall {
     pub fn sys_mmap(
         &self,
-        mut addr: usize,
+        addr: usize,
         len: usize,
         prot: usize,
         flags: usize,
@@ -19,29 +19,25 @@ impl Syscall {
             addr, len, prot, flags, fd, offset
         );
 
-        let proc = &self.thread.proc;
+        let proc = self.zircon_process();
         let vmar = proc.vmar();
 
-        if addr == 0 {
-            // although NULL can be a valid address
-            // but in C, NULL is regarded as allocation failure
-            // so just skip it
-            addr = PAGE_SIZE;
-        }
-        let addr = if flags.contains(MmapFlags::FIXED) {
-            Some(addr)
-        } else {
-            None
-        };
+        let vmar_offset = flags.contains(MmapFlags::FIXED).then(|| addr - vmar.addr());
         if flags.contains(MmapFlags::ANONYMOUS) {
             if flags.contains(MmapFlags::SHARED) {
                 return Err(SysError::EINVAL);
             }
             let vmo = VMObjectPaged::new(pages(len));
-            let addr = vmar.map(addr, vmo.clone(), 0, vmo.len(), prot.to_flags())?;
+            let addr = vmar.map(vmar_offset, vmo.clone(), 0, vmo.len(), prot.to_flags())?;
             Ok(addr)
         } else {
-            unimplemented!()
+            let vmo = VMObjectPaged::new(pages(len));
+            let addr = vmar.map(vmar_offset, vmo.clone(), 0, vmo.len(), prot.to_flags())?;
+            let file = self.lock_linux_process().get_file(fd)?;
+            let mut buf = vec![0; len];
+            let len = file.read_at(offset, &mut buf)?;
+            vmo.write(0, &buf[..len]);
+            Ok(addr)
         }
     }
 

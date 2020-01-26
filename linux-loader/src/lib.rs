@@ -28,26 +28,24 @@ pub fn run(libc_data: &[u8], mut args: Vec<String>, envs: Vec<String>) -> Arc<Pr
     let thread = Thread::create(&proc, "thread", 0).unwrap();
     let vmar = proc.vmar();
 
-    const VBASE: usize = 0x4_00000000;
-
     // libc.so
-    let elf = {
+    let (base, elf) = {
         let elf = ElfFile::new(libc_data).unwrap();
         let size = elf.load_segment_size();
         let syscall_entry_offset = elf
             .get_symbol_address("rcore_syscall_entry")
             .expect("failed to locate syscall entry") as usize;
-        let vmar = vmar.create_child_at(VBASE, size).unwrap();
+        let vmar = vmar.create_child(None, size).unwrap();
         let vmo = vmar.load_from_elf(&elf).unwrap();
         // fill syscall entry
         vmo.write(
             syscall_entry_offset,
             &(syscall_entry as usize).to_ne_bytes(),
         );
-        elf.relocate(VBASE).unwrap();
-        elf
+        elf.relocate(vmar.addr()).unwrap();
+        (vmar.addr(), elf)
     };
-    let entry = VBASE + elf.header.pt2.entry_point() as usize;
+    let entry = base + elf.header.pt2.entry_point() as usize;
 
     // file system
     let hostfs = HostFS::new("prebuilt");
@@ -63,8 +61,8 @@ pub fn run(libc_data: &[u8], mut args: Vec<String>, envs: Vec<String>) -> Arc<Pr
         envs,
         auxv: {
             let mut map = BTreeMap::new();
-            map.insert(abi::AT_BASE, VBASE);
-            map.insert(abi::AT_PHDR, VBASE + elf.header.pt2.ph_offset() as usize);
+            map.insert(abi::AT_BASE, base);
+            map.insert(abi::AT_PHDR, base + elf.header.pt2.ph_offset() as usize);
             map.insert(abi::AT_PHENT, elf.header.pt2.ph_entry_size() as usize);
             map.insert(abi::AT_PHNUM, elf.header.pt2.ph_count() as usize);
             map.insert(abi::AT_PAGESZ, PAGE_SIZE);

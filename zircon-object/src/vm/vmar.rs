@@ -26,10 +26,11 @@ struct VmarInner {
 impl VmAddressRegion {
     /// Create a new root VMAR.
     pub fn new_root() -> Arc<Self> {
+        const BASE: usize = 0x2_00000000;
         Arc::new(VmAddressRegion {
             base: KObjectBase::new(),
-            addr: 0,
-            size: usize::max_value(),
+            addr: BASE,
+            size: usize::max_value() - 0xfff - BASE,
             parent: None,
             page_table: Arc::new(Mutex::new(hal::PageTable::new())),
             inner: Mutex::new(Some(VmarInner::default())),
@@ -223,21 +224,16 @@ impl VmAddressRegion {
     }
 
     /// Find a free area with `len`.
-    fn find_free_area(
-        &self,
-        inner: &VmarInner,
-        offset_hint: usize,
-        len: usize,
-    ) -> Option<VirtAddr> {
+    fn find_free_area(&self, inner: &VmarInner, offset_hint: usize, len: usize) -> Option<usize> {
         // TODO: randomize
         debug_assert!(page_aligned(offset_hint));
         debug_assert!(page_aligned(len));
         // brute force:
         // try each area's end address as the start
-        core::iter::once(self.addr + offset_hint)
-            .chain(inner.children.iter().map(|vmar| vmar.end_addr()))
-            .chain(inner.mappings.iter().map(|map| map.end_addr()))
-            .find(|&addr| self.test_map(inner, addr - self.addr, len))
+        core::iter::once(offset_hint)
+            .chain(inner.children.iter().map(|map| map.end_addr() - self.addr))
+            .chain(inner.mappings.iter().map(|map| map.end_addr() - self.addr))
+            .find(|&offset| self.test_map(inner, offset, len))
     }
 
     fn end_addr(&self) -> VirtAddr {
@@ -332,15 +328,12 @@ mod tests {
     }
 
     /// A valid virtual address base to mmap.
-    const VBASE: VirtAddr = 0x2_00000000;
-    const VSIZE: VirtAddr = 0x1_00000;
     const MAGIC: usize = 0xdead_beaf;
 
     #[test]
     #[allow(unsafe_code)]
     fn map() {
-        let root_vmar = VmAddressRegion::new_root();
-        let vmar = root_vmar.create_child_at(VBASE, VSIZE).unwrap();
+        let vmar = VmAddressRegion::new_root();
         let vmo = VMObjectPaged::new(4);
         let flags = MMUFlags::READ | MMUFlags::WRITE;
 
@@ -367,8 +360,8 @@ mod tests {
             .unwrap();
 
         unsafe {
-            ((VBASE + 0x2000) as *mut usize).write(MAGIC);
-            assert_eq!(((VBASE + 0x12000) as *const usize).read(), MAGIC);
+            ((vmar.addr() + 0x2000) as *mut usize).write(MAGIC);
+            assert_eq!(((vmar.addr() + 0x12000) as *const usize).read(), MAGIC);
         }
     }
 
@@ -409,17 +402,21 @@ mod tests {
     #[test]
     fn unmap() {
         let s = Sample::new();
-        s.child1.unmap(0, 0x1000).unwrap();
+        let base = s.root.addr();
+        s.child1.unmap(base, 0x1000).unwrap();
         assert!(s.grandson1.is_dead());
         assert!(s.grandson2.is_alive());
 
         // partial overlap sub-region should fail.
         let s = Sample::new();
-        assert_eq!(s.root.unmap(0x1000, 0x2000), Err(ZxError::INVALID_ARGS));
+        assert_eq!(
+            s.root.unmap(base + 0x1000, 0x2000),
+            Err(ZxError::INVALID_ARGS)
+        );
 
         // unmap nothing should success.
         let s = Sample::new();
-        s.child1.unmap(0x8000, 0x1000).unwrap();
+        s.child1.unmap(base + 0x8000, 0x1000).unwrap();
     }
 
     #[test]

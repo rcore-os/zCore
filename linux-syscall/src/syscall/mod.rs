@@ -43,7 +43,7 @@ impl Syscall {
             #[cfg(target_arch = "x86_64")]
             _ => self.x86_64_syscall(num, args),
         };
-        info!("syscall <= {:?}", ret);
+        info!("syscall <= {:x?}", ret);
         match ret {
             Ok(value) => value as isize,
             Err(err) => -(err as isize),
