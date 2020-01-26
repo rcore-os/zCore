@@ -115,6 +115,12 @@ impl VmAddressRegion {
         Ok(addr)
     }
 
+    /// Unmaps all VMO mappings and destroys all sub-regions within the absolute range
+    /// including `addr` and ending before exclusively at `addr + len`.
+    /// Any sub-region that is in the range must be fully in the range
+    /// (i.e. partial overlaps are an error).
+    /// If a mapping is only partially in the range, the mapping is split and the requested
+    /// portion is unmapped.
     pub fn unmap(&self, addr: VirtAddr, len: usize) -> ZxResult<()> {
         if !page_aligned(addr) || !page_aligned(len) || len == 0 {
             return Err(ZxError::INVALID_ARGS);
@@ -130,8 +136,14 @@ impl VmAddressRegion {
                 return Err(ZxError::INVALID_ARGS);
             }
         }
-        // FIXME: split partial-overlapped VmMappings
-        inner.mappings.drain_filter(|map| map.overlap(begin, end));
+        let mut new_maps = Vec::new();
+        inner.mappings.drain_filter(|map| {
+            if let Some(new) = map.cut(begin, end) {
+                new_maps.push(new);
+            }
+            map.size == 0
+        });
+        inner.mappings.extend(new_maps);
         for vmar in inner.children.drain_filter(|vmar| vmar.within(begin, end)) {
             vmar.destroy_internal()?;
         }
@@ -251,6 +263,22 @@ impl VmAddressRegion {
     fn partial_overlap(&self, begin: VirtAddr, end: VirtAddr) -> bool {
         self.overlap(begin, end) && !self.within(begin, end)
     }
+
+    #[cfg(test)]
+    fn count(&self) -> usize {
+        let mut guard = self.inner.lock();
+        let inner = guard.as_mut().unwrap();
+        inner.mappings.len() + inner.children.len()
+    }
+
+    #[cfg(test)]
+    fn used_size(&self) -> usize {
+        let mut guard = self.inner.lock();
+        let inner = guard.as_mut().unwrap();
+        let map_size: usize = inner.mappings.iter().map(|map| map.size).sum();
+        let vmar_size: usize = inner.children.iter().map(|vmar| vmar.size).sum();
+        map_size + vmar_size
+    }
 }
 
 /// Virtual Memory Mapping
@@ -281,8 +309,59 @@ impl VmMapping {
             .unmap_from(&mut page_table, self.addr, self.vmo_offset, self.size);
     }
 
+    /// Cut and unmap regions in `[begin, end)`.
+    ///
+    /// If it will be split, return another one.
+    fn cut(&mut self, begin: VirtAddr, end: VirtAddr) -> Option<Self> {
+        if !self.overlap(begin, end) {
+            return None;
+        }
+        if self.addr >= begin && self.end_addr() <= end {
+            // subset: [xxxxxxxxxx]
+            self.unmap();
+            self.size = 0;
+            None
+        } else if self.addr >= begin && self.addr < end {
+            // prefix: [xxxx------]
+            let cut_len = end - self.addr;
+            let mut page_table = self.page_table.lock();
+            self.vmo
+                .unmap_from(&mut page_table, self.addr, self.vmo_offset, cut_len);
+            self.addr = end;
+            self.size -= cut_len;
+            self.vmo_offset += cut_len;
+            None
+        } else if self.end_addr() <= end && self.end_addr() > begin {
+            // postfix: [------xxxx]
+            let cut_len = self.end_addr() - begin;
+            let new_len = begin - self.addr;
+            let mut page_table = self.page_table.lock();
+            self.vmo
+                .unmap_from(&mut page_table, begin, self.vmo_offset + new_len, cut_len);
+            self.size = new_len;
+            None
+        } else {
+            // superset: [---xxxx---]
+            let cut_len = end - begin;
+            let new_len1 = begin - self.addr;
+            let new_len2 = self.end_addr() - end;
+            let mut page_table = self.page_table.lock();
+            self.vmo
+                .unmap_from(&mut page_table, begin, self.vmo_offset + new_len1, cut_len);
+            self.size = new_len1;
+            Some(VmMapping {
+                addr: end,
+                size: new_len2,
+                flags: self.flags,
+                vmo: self.vmo.clone(),
+                vmo_offset: self.vmo_offset + (end - self.addr),
+                page_table: self.page_table.clone(),
+            })
+        }
+    }
+
     fn overlap(&self, begin: VirtAddr, end: VirtAddr) -> bool {
-        !(self.addr >= end || self.addr + self.size <= begin)
+        !(self.addr >= end || self.end_addr() <= begin)
     }
 
     fn end_addr(&self) -> VirtAddr {
@@ -400,7 +479,7 @@ mod tests {
     }
 
     #[test]
-    fn unmap() {
+    fn unmap_vmar() {
         let s = Sample::new();
         let base = s.root.addr();
         s.child1.unmap(base, 0x1000).unwrap();
@@ -429,5 +508,46 @@ mod tests {
         assert!(s.child2.is_alive());
         // address space should be released
         assert!(s.root.create_child_at(0, 0x1000).is_ok());
+    }
+
+    #[test]
+    fn unmap_mapping() {
+        //   +--------+--------+--------+--------+--------+
+        // 1 [--------------------------|xxxxxxxx|--------]
+        // 2 [xxxxxxxx|-----------------]
+        // 3          [--------|xxxxxxxx]
+        // 4          [xxxxxxxx]
+        let vmar = VmAddressRegion::new_root();
+        let base = vmar.addr();
+        let vmo = VMObjectPaged::new(5);
+        let flags = MMUFlags::READ | MMUFlags::WRITE;
+        vmar.map_at(0, vmo, 0, 0x5000, flags).unwrap();
+        assert_eq!(vmar.count(), 1);
+        assert_eq!(vmar.used_size(), 0x5000);
+
+        // 0. unmap none.
+        vmar.unmap(base + 0x5000, 0x1000).unwrap();
+        assert_eq!(vmar.count(), 1);
+        assert_eq!(vmar.used_size(), 0x5000);
+
+        // 1. unmap middle.
+        vmar.unmap(base + 0x3000, 0x1000).unwrap();
+        assert_eq!(vmar.count(), 2);
+        assert_eq!(vmar.used_size(), 0x4000);
+
+        // 2. unmap prefix.
+        vmar.unmap(base, 0x1000).unwrap();
+        assert_eq!(vmar.count(), 2);
+        assert_eq!(vmar.used_size(), 0x3000);
+
+        // 3. unmap postfix.
+        vmar.unmap(base + 0x2000, 0x1000).unwrap();
+        assert_eq!(vmar.count(), 2);
+        assert_eq!(vmar.used_size(), 0x2000);
+
+        // 4. unmap all.
+        vmar.unmap(base + 0x1000, 0x1000).unwrap();
+        assert_eq!(vmar.count(), 1);
+        assert_eq!(vmar.used_size(), 0x1000);
     }
 }
