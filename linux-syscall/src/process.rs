@@ -5,6 +5,8 @@ use crate::fs::*;
 use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::sync::Arc;
+use rcore_fs::vfs::{FileSystem, FileType, INode};
+use rcore_fs_mountfs::MNode;
 use spin::{Mutex, MutexGuard};
 use zircon_object::task::{Job, Process};
 use zircon_object::ZxResult;
@@ -34,6 +36,7 @@ pub struct LinuxProcess {
     pub cwd: String,
     pub exec_path: String,
     pub files: BTreeMap<FileDesc, Arc<dyn FileLike>>,
+    pub root_inode: Arc<dyn INode>,
 }
 
 impl LinuxProcess {
@@ -68,6 +71,7 @@ impl LinuxProcess {
             cwd: String::from(""),
             exec_path: String::new(),
             files,
+            root_inode: create_root_fs(),
         }
     }
 
@@ -107,5 +111,16 @@ impl LinuxProcess {
             .map(|i| i.into())
             .find(|fd| !self.files.contains_key(fd))
             .unwrap()
+    }
+
+    /// Mount file system.
+    pub fn mount(&self, name: &str, fs: Arc<dyn FileSystem>) {
+        self.root_inode
+            .create(name, FileType::Dir, 0o666)
+            .expect("failed to mkdir")
+            .downcast_ref::<MNode>()
+            .unwrap()
+            .mount(fs)
+            .expect("failed to mount");
     }
 }

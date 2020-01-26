@@ -15,3 +15,4 @@ structopt = { version = "0.3", default-features = false }
 linux-syscall = { path = "../linux-syscall" }
 zircon-object = { path = "../zircon-object" }
 zircon-hal-unix = { path = "../zircon-hal-unix" }
+rcore-fs-hostfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "8902cfa6" }

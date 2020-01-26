@@ -18,7 +18,7 @@ fn main() {
     let opt = Opt::from_args();
     let libc_data = std::fs::read(opt.libc_path).expect("failed to read file");
 
-    let args = vec![String::from("./prebuilt/busybox")]; // TODO
+    let args = vec![String::from("host/busybox")]; // TODO
     let envs = vec![]; // TODO
     let proc = run(&libc_data, args, envs);
     proc.wait_signal(Signal::PROCESS_TERMINATED);

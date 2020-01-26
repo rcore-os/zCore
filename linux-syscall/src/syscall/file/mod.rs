@@ -52,7 +52,8 @@ impl LinuxProcess {
 
         let follow_max_depth = if follow { FOLLOW_MAX_DEPTH } else { 0 };
         if dirfd == FileDesc::CWD {
-            Ok(ROOT_INODE
+            Ok(self
+                .root_inode
                 .lookup(&self.cwd)?
                 .lookup_follow(path, follow_max_depth)?)
         } else {

@@ -9,6 +9,7 @@ extern crate log;
 use {
     alloc::{collections::BTreeMap, string::String, sync::Arc, vec::Vec},
     linux_syscall::{ProcessExt, Syscall},
+    rcore_fs_hostfs::HostFS,
     xmas_elf::{
         program::{Flags, ProgramHeader, SegmentData, Type},
         sections::SectionData,
@@ -48,15 +49,9 @@ pub fn run(libc_data: &[u8], mut args: Vec<String>, envs: Vec<String>) -> Arc<Pr
     };
     let entry = VBASE + elf.header.pt2.entry_point() as usize;
 
-    // ld.so
-    //    let entry = {
-    //        let elf = ElfFile::new(ldso_data).unwrap();
-    //        let size = elf.load_segment_size();
-    //        let vmar = vmar.create_child(VBASE + 0x400000, size).unwrap();
-    //        let first_vmo = vmar.load_from_elf(&elf).unwrap();
-    //        elf.relocate(VBASE + 0x400000).unwrap();
-    //        VBASE + 0x400000 + elf.header.pt2.entry_point() as usize
-    //    };
+    // file system
+    let hostfs = HostFS::new("prebuilt");
+    proc.lock_linux().mount("host", hostfs);
 
     const STACK_SIZE: usize = 0x8000;
     let stack = Vec::<u8>::with_capacity(STACK_SIZE);

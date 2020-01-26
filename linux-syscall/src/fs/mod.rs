@@ -4,9 +4,7 @@ use rcore_fs::vfs::*;
 use rcore_fs_devfs::{special::*, DevFS};
 use rcore_fs_mountfs::MountFS;
 use rcore_fs_ramfs::RamFS;
-use rcore_fs_sfs::SimpleFileSystem;
 
-use self::device::MemBuf;
 pub use self::file::*;
 pub use self::pseudo::*;
 pub use self::random::*;
@@ -15,7 +13,6 @@ use crate::error::*;
 
 use core::convert::TryFrom;
 use downcast_rs::impl_downcast;
-use lazy_static::lazy_static;
 use zircon_object::object::*;
 
 mod device;
@@ -76,38 +73,42 @@ impl Into<HandleValue> for FileDesc {
     }
 }
 
-lazy_static! {
-    /// The root of file system
-    pub static ref ROOT_INODE: Arc<dyn INode> = {
-        let device = Arc::new(MemBuf::new(Vec::new()));
+pub fn create_root_fs() -> Arc<dyn INode> {
+    // use RamFS as rootfs
+    let rootfs = MountFS::new(RamFS::new());
+    let root = rootfs.root_inode();
 
-        // use SFS as rootfs
-        let sfs = SimpleFileSystem::open(device).expect("failed to open SFS");
-        let rootfs = MountFS::new(sfs);
-        let root = rootfs.root_inode();
+    // create DevFS
+    let devfs = DevFS::new();
+    devfs
+        .add("null", Arc::new(NullINode::default()))
+        .expect("failed to mknod /dev/null");
+    devfs
+        .add("zero", Arc::new(ZeroINode::default()))
+        .expect("failed to mknod /dev/zero");
+    devfs
+        .add("random", Arc::new(RandomINode::new(false)))
+        .expect("failed to mknod /dev/random");
+    devfs
+        .add("urandom", Arc::new(RandomINode::new(true)))
+        .expect("failed to mknod /dev/urandom");
 
-        // create DevFS
-        let devfs = DevFS::new();
-        devfs.add("null", Arc::new(NullINode::default())).expect("failed to mknod /dev/null");
-        devfs.add("zero", Arc::new(ZeroINode::default())).expect("failed to mknod /dev/zero");
-        devfs.add("random", Arc::new(RandomINode::new(false))).expect("failed to mknod /dev/zero");
-        devfs.add("urandom", Arc::new(RandomINode::new(true))).expect("failed to mknod /dev/zero");
+    // mount DevFS at /dev
+    let dev = root.find(true, "dev").unwrap_or_else(|_| {
+        root.create("dev", FileType::Dir, 0o666)
+            .expect("failed to mkdir /dev")
+    });
+    dev.mount(devfs).expect("failed to mount DevFS");
 
-        // mount DevFS at /dev
-        let dev = root.find(true, "dev").unwrap_or_else(|_| {
-            root.create("dev", FileType::Dir, 0o666).expect("failed to mkdir /dev")
-        });
-        dev.mount(devfs).expect("failed to mount DevFS");
+    // mount RamFS at /tmp
+    let ramfs = RamFS::new();
+    let tmp = root.find(true, "tmp").unwrap_or_else(|_| {
+        root.create("tmp", FileType::Dir, 0o666)
+            .expect("failed to mkdir /tmp")
+    });
+    tmp.mount(ramfs).expect("failed to mount RamFS");
 
-        // mount RamFS at /tmp
-        let ramfs = RamFS::new();
-        let tmp = root.find(true, "tmp").unwrap_or_else(|_| {
-            root.create("tmp", FileType::Dir, 0o666).expect("failed to mkdir /tmp")
-        });
-        tmp.mount(ramfs).expect("failed to mount RamFS");
-
-        root
-    };
+    root
 }
 
 pub trait INodeExt {

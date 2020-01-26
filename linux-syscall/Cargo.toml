@@ -14,8 +14,8 @@ bitflags = "1.2"
 lazy_static = "1.4"
 zircon-object = { path = "../zircon-object" }
 downcast-rs = { git = "https://github.com/rcore-os/downcast-rs" }
-rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "d8d6119" }
-rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "d8d6119" }
-rcore-fs-ramfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "d8d6119" }
-rcore-fs-mountfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "d8d6119" }
-rcore-fs-devfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "d8d6119" }
+rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "8902cfa6" }
+rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "8902cfa6" }
+rcore-fs-ramfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "8902cfa6" }
+rcore-fs-mountfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "8902cfa6" }
+rcore-fs-devfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "8902cfa6" }
