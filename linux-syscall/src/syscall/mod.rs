@@ -40,6 +40,9 @@ impl Syscall {
             SYS_ARCH_PRCTL => self.sys_arch_prctl(a0 as _, a1 as _),
             SYS_SET_TID_ADDRESS => self.sys_set_tid_address(a0.into()),
 
+            SYS_GETUID => Ok(0),
+            SYS_IOCTL => Ok(0),
+
             #[cfg(target_arch = "x86_64")]
             _ => self.x86_64_syscall(num, args),
         };

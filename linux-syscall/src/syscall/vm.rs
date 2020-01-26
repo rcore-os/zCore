@@ -22,6 +22,10 @@ impl Syscall {
         let proc = self.zircon_process();
         let vmar = proc.vmar();
 
+        if flags.contains(MmapFlags::FIXED) {
+            // unmap first
+            vmar.unmap(addr, len)?;
+        }
         let vmar_offset = flags.contains(MmapFlags::FIXED).then(|| addr - vmar.addr());
         if flags.contains(MmapFlags::ANONYMOUS) {
             if flags.contains(MmapFlags::SHARED) {
@@ -47,7 +51,8 @@ impl Syscall {
             "mprotect: addr={:#x}, size={:#x}, prot={:?}",
             addr, len, prot
         );
-        unimplemented!()
+        warn!("mprotect: unimplemented");
+        Ok(0)
     }
 
     pub fn sys_munmap(&self, addr: usize, len: usize) -> SysResult {

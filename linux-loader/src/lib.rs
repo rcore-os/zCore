@@ -48,7 +48,12 @@ pub fn run(libc_data: &[u8], mut args: Vec<String>, envs: Vec<String>) -> Arc<Pr
     let entry = base + elf.header.pt2.entry_point() as usize;
 
     // file system
-    let hostfs = HostFS::new("prebuilt");
+    let path = if cfg!(test) {
+        "prebuilt"
+    } else {
+        "../prebuilt"
+    };
+    let hostfs = HostFS::new(path);
     proc.lock_linux().mount("host", hostfs);
 
     const STACK_SIZE: usize = 0x8000;
