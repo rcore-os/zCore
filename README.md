@@ -8,6 +8,31 @@ Reimplement [Zircon][zircon] microkernel in safe Rust as a userspace program!
 
 🚧 Working In Progress
 
+## Getting started
+
+```sh
+git clone https://github.com/rcore-os/zircon-rs
+git lfs pull
+cd zircon-rs
+```
+
+Run native Linux program (Busybox):
+
+```sh
+cargo run --release -p linux-loader prebuilt/libc.so host/busybox [args]
+```
+
+Run native Zircon program (userboot):
+
+```sh
+cargo run --release -p zircon-loader prebuilt/userboot.so prebuilt/libzircon.so prebuilt/legacy-image-x64.zbi
+```
+
+To debug, set `RUST_LOG` environment variable to one of `error`, `warn`, `info`, `debug`, `trace`.
+
+
+NOTE: On macOS, sometimes it may raise an error `Operation not permitted` when performing mmap. I don't know why. Just retry...
+
 ## Components
 
 ### Overview
