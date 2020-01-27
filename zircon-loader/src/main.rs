@@ -21,7 +21,7 @@ struct Opt {
 }
 
 fn main() {
-    zircon_hal_unix::init();
+    kernel_hal_unix::init();
     env_logger::init();
 
     let opt = Opt::from_args();
@@ -39,7 +39,7 @@ mod tests {
 
     #[test]
     fn userboot() {
-        zircon_hal_unix::init();
+        kernel_hal_unix::init();
 
         let base = PathBuf::from("../prebuilt");
         let opt = Opt {

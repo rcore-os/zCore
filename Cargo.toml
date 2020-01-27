@@ -5,6 +5,6 @@ members = [
     "zircon-loader",
     "linux-syscall",
     "linux-loader",
-    "zircon-hal-unix",
-    "zircon-hal-bare"
+    "kernel-hal-unix",
+    "kernel-hal-bare"
 ]

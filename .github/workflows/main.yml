@@ -48,12 +48,12 @@ jobs:
       uses: actions-rs/cargo@v1
       with:
         command: build
-        args: --package zircon-hal-bare --target riscv32imac-unknown-none-elf
+        args: --package kernel-hal-bare --target riscv32imac-unknown-none-elf
     - name: Build for riscv64
       uses: actions-rs/cargo@v1
       with:
         command: build
-        args: --package zircon-hal-bare --target riscv64imac-unknown-none-elf
+        args: --package kernel-hal-bare --target riscv64imac-unknown-none-elf
     - name: Build docs
       uses: actions-rs/cargo@v1
       with:

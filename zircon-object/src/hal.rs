@@ -36,7 +36,7 @@ impl Thread {
         _tls: Arc<ThreadObject>,
     ) -> Self {
         #[cfg(test)]
-        zircon_hal_unix::init();
+        kernel_hal_unix::init();
         unimplemented!()
     }
 

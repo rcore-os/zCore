@@ -26,11 +26,11 @@ Reimplement [Zircon][zircon] microkernel in safe Rust as a userspace program!
 
 * `linux-loader`: Linux user program loader.
 
-* `zircon-hal-unix`: HAL implementation on Unix.
+* `kernel-hal-unix`: HAL implementation on Unix.
 
   It's used for unit testing and construct a libOS.
 
-* `zircon-hal-bare`: HAL implementation on bare metal environment.
+* `kernel-hal-bare`: HAL implementation on bare metal environment.
 
   It's used to construct a real Zircon "kernel" -- zCore.
 

@@ -1,9 +1,9 @@
 [package]
-name = "zircon-hal-unix"
+name = "kernel-hal-unix"
 version = "0.1.0"
 authors = ["Runji Wang <wangrunji0408@163.com>"]
 edition = "2018"
-description = "Zircon HAL implementation on Linux and macOS."
+description = "Kernel HAL implementation on Linux and macOS."
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

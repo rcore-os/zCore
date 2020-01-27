@@ -10,13 +10,13 @@ extern crate log;
 
 use {
     alloc::{sync::Arc, vec::Vec},
+    kernel_hal_unix::{switch_to_kernel, switch_to_user},
     xmas_elf::{
         program::{Flags, ProgramHeader, SegmentData, Type},
         sections::SectionData,
         symbol_table::Entry,
         ElfFile,
     },
-    zircon_hal_unix::{switch_to_kernel, switch_to_user},
     zircon_object::{
         ipc::*,
         object::*,

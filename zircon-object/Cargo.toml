@@ -15,5 +15,5 @@ core = { package = "core-futures-tls", version = "0.1.0" }
 downcast-rs = { git = "https://github.com/rcore-os/downcast-rs" }
 
 [dev-dependencies]
-zircon-hal-unix = { path = "../zircon-hal-unix" }
+kernel-hal-unix = { path = "../kernel-hal-unix" }
 tokio = { version = "0.2", features = ["macros", "rt-threaded", "time"] }

@@ -16,7 +16,7 @@ struct Opt {
 
 fn main() {
     env_logger::init();
-    zircon_hal_unix::init();
+    kernel_hal_unix::init();
 
     let opt = Opt::from_args();
     let libc_data = std::fs::read(opt.libc_path).expect("failed to read file");
@@ -32,7 +32,7 @@ mod tests {
 
     #[test]
     fn run_libc() {
-        zircon_hal_unix::init();
+        kernel_hal_unix::init();
 
         let base = PathBuf::from("../prebuilt");
         let opt = Opt {

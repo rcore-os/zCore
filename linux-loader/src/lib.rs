@@ -8,6 +8,7 @@ extern crate log;
 
 use {
     alloc::{collections::BTreeMap, string::String, sync::Arc, vec::Vec},
+    kernel_hal_unix::{switch_to_kernel, switch_to_user},
     linux_syscall::{ProcessExt, Syscall},
     rcore_fs_hostfs::HostFS,
     xmas_elf::{
@@ -16,7 +17,6 @@ use {
         symbol_table::{DynEntry64, Entry},
         ElfFile,
     },
-    zircon_hal_unix::{switch_to_kernel, switch_to_user},
     zircon_object::{task::*, vm::*, ZxError, ZxResult},
 };
 
