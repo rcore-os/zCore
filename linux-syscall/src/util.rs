@@ -53,6 +53,17 @@ impl<T, P: Policy> UserPtr<T, P> {
     pub fn is_null(&self) -> bool {
         self.ptr.is_null()
     }
+
+    pub fn add(&self, count: usize) -> Self {
+        UserPtr {
+            ptr: unsafe { self.ptr.add(count) },
+            mark: PhantomData,
+        }
+    }
+
+    pub fn as_ptr(&self) -> *mut T {
+        self.ptr
+    }
 }
 
 impl<T, P: Read> UserPtr<T, P> {

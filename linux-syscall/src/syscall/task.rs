@@ -4,7 +4,7 @@ use super::*;
 
 impl Syscall {
     //    /// Fork the current process. Return the child's PID.
-    //    pub fn sys_fork(&mut self) -> SysResult {
+    //    pub fn sys_fork(&self) -> SysResult {
     //        let new_thread = self.thread.fork(self.tf);
     //        let pid = new_thread.proc.lock().pid.get();
     //        let tid = thread_manager().add(new_thread);
@@ -13,7 +13,7 @@ impl Syscall {
     //        Ok(pid)
     //    }
     //
-    //    pub fn sys_vfork(&mut self) -> SysResult {
+    //    pub fn sys_vfork(&self) -> SysResult {
     //        self.sys_fork()
     //    }
     //
@@ -23,7 +23,7 @@ impl Syscall {
     //    /// The child tid will be stored at both `parent_tid` and `child_tid`.
     //    /// This is partially implemented for musl only.
     //    pub fn sys_clone(
-    //        &mut self,
+    //        &self,
     //        flags: usize,
     //        newsp: usize,
     //        parent_tid: *mut u32,
@@ -60,23 +60,24 @@ impl Syscall {
     //        *child_tid_ref = tid as u32;
     //        Ok(tid)
     //    }
-    //
-    //    /// Wait for the process exit.
-    //    /// Return the PID. Store exit code to `wstatus` if it's not null.
-    //    pub fn sys_wait4(&mut self, pid: isize, wstatus: *mut i32) -> SysResult {
-    //        info!("wait4: pid: {}, code: {:?}", pid, wstatus);
-    //        let wstatus = if !wstatus.is_null() {
-    //            Some(unsafe { self.vm().check_write_ptr(wstatus)? })
-    //        } else {
-    //            None
-    //        };
+
+    /// Wait for the process exit.
+    /// Return the PID. Store exit code to `wstatus` if it's not null.
+    pub fn sys_wait4(&self, pid: i32, wstatus: UserOutPtr<i32>, options: u32) -> SysResult {
+        info!(
+            "wait4: pid={}, wstatus={:?}, options={:#x}",
+            pid, wstatus, options
+        );
+        return Err(SysError::ECHILD);
+        // FIXME: wait4
+
     //        #[derive(Debug)]
     //        enum WaitFor {
     //            AnyChild,
     //            AnyChildInGroup,
     //            Pid(usize),
     //        }
-    //        let target = match pid {
+    //        let _target = match pid {
     //            -1 => WaitFor::AnyChild,
     //            0 => WaitFor::AnyChildInGroup,
     //            p if p > 0 => WaitFor::Pid(p as usize),
@@ -100,9 +101,7 @@ impl Syscall {
     //                    let mut process_table = PROCESSES.write();
     //                    process_table.remove(&pid);
     //                }
-    //                if let Some(wstatus) = wstatus {
-    //                    *wstatus = exit_code as i32;
-    //                }
+    //                wstatus.write_if_not_null(exit_code as i32)?;
     //                return Ok(pid);
     //            }
     //            // if not, check pid
@@ -131,8 +130,8 @@ impl Syscall {
     //            let condvar = proc.child_exit.clone();
     //            condvar.wait(proc);
     //        }
-    //    }
-    //
+    }
+
     //    /// Replaces the current ** process ** with a new process image
     //    ///
     //    /// `argv` is an array of argument strings passed to the new program.
@@ -146,7 +145,7 @@ impl Syscall {
     //    /// shall result in all threads being terminated and the new executable image
     //    /// being loaded and executed.
     //    pub fn sys_exec(
-    //        &mut self,
+    //        &self,
     //        path: *const u8,
     //        argv: *const *const u8,
     //        envp: *const *const u8,
@@ -202,13 +201,13 @@ impl Syscall {
     //        Ok(0)
     //    }
     //
-    //    pub fn sys_yield(&mut self) -> SysResult {
+    //    pub fn sys_yield(&self) -> SysResult {
     //        thread::yield_now();
     //        Ok(0)
     //    }
     //
     //    /// Kill the process
-    //    pub fn sys_kill(&mut self, pid: usize, sig: usize) -> SysResult {
+    //    pub fn sys_kill(&self, pid: usize, sig: usize) -> SysResult {
     //        info!(
     //            "kill: thread {} kill process {} with signal {}",
     //            thread::current().id(),
@@ -229,31 +228,32 @@ impl Syscall {
     //            }
     //        }
     //    }
-    //
-    //    /// Get the current process id
-    //    pub fn sys_getpid(&mut self) -> SysResult {
-    //        info!("getpid");
-    //        Ok(self.process().pid.get())
-    //    }
-    //
-    //    /// Get the current thread id
-    //    pub fn sys_gettid(&mut self) -> SysResult {
-    //        info!("gettid");
-    //        // use pid as tid for now
-    //        Ok(thread::current().id())
-    //    }
-    //
-    //    /// Get the parent process id
-    //    pub fn sys_getppid(&mut self) -> SysResult {
-    //        if let Some(parent) = self.process().parent.upgrade() {
-    //            Ok(parent.lock().pid.get())
-    //        } else {
-    //            Ok(0)
-    //        }
-    //    }
-    //
+
+    /// Get the current thread ID.
+    pub fn sys_gettid(&self) -> SysResult {
+        info!("gettid:");
+        let tid = self.thread.id();
+        Ok(tid as usize)
+    }
+
+    /// Get the current process ID.
+    pub fn sys_getpid(&self) -> SysResult {
+        info!("getpid:");
+        let proc = self.zircon_process();
+        let pid = proc.id();
+        Ok(pid as usize)
+    }
+
+    /// Get the parent process ID.
+    pub fn sys_getppid(&self) -> SysResult {
+        info!("getppid:");
+        let proc = self.lock_linux_process();
+        let ppid = proc.parent().map(|p| p.id()).unwrap_or(0);
+        Ok(ppid as usize)
+    }
+
     //    /// Exit the current thread
-    //    pub fn sys_exit(&mut self, exit_code: usize) -> ! {
+    //    pub fn sys_exit(&self, exit_code: usize) -> ! {
     //        let tid = thread::current().id();
     //        info!("exit: {}, code: {}", tid, exit_code);
     //        let mut proc = self.process();
@@ -284,7 +284,7 @@ impl Syscall {
     //        thread::yield_now();
     //        unreachable!();
     //    }
-    //
+
     /// Exit the current thread group (i.e. process)
     pub fn sys_exit_group(&self, exit_code: usize) -> ! {
         let proc = self.zircon_process();
@@ -292,8 +292,8 @@ impl Syscall {
         proc.exit(exit_code as i64);
         Thread::exit();
     }
-    //
-    //    pub fn sys_nanosleep(&mut self, req: *const TimeSpec) -> SysResult {
+
+    //    pub fn sys_nanosleep(&self, req: *const TimeSpec) -> SysResult {
     //        let time = unsafe { *self.vm().check_read_ptr(req)? };
     //        info!("nanosleep: time: {:#?}", time);
     //        // TODO: handle spurious wakeup
@@ -301,7 +301,7 @@ impl Syscall {
     //        Ok(0)
     //    }
     //
-    //    pub fn sys_set_priority(&mut self, priority: usize) -> SysResult {
+    //    pub fn sys_set_priority(&self, priority: usize) -> SysResult {
     //        let pid = thread::current().id();
     //        thread_manager().set_priority(pid, priority as u8);
     //        Ok(0)

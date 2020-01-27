@@ -1,7 +1,7 @@
 //! Linux syscall implementations
 
 #![no_std]
-#![deny(unsafe_code, unused_must_use, unreachable_patterns)]
+#![deny(warnings, unsafe_code, unused_must_use, unreachable_patterns)]
 #![feature(bool_to_option)]
 
 #[macro_use]

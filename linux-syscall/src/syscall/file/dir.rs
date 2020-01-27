@@ -1,5 +1,7 @@
 //! Directory operations
 //!
+//! - getcwd
+//! - chdir
 //! - mkdir(at)
 //! - rmdir(at)
 //! - getdents64
@@ -10,10 +12,61 @@
 
 use super::*;
 use crate::util::UserOutPtr;
+use alloc::vec::Vec;
 use bitflags::bitflags;
 use rcore_fs::vfs::FileType;
 
 impl Syscall {
+    pub fn sys_getcwd(&self, mut buf: UserOutPtr<u8>, len: usize) -> SysResult {
+        info!("getcwd: buf={:?}, len={:#x}", buf, len);
+        let proc = self.lock_linux_process();
+        if proc.cwd.len() + 1 > len {
+            return Err(SysError::ERANGE);
+        }
+        buf.write_cstring(&proc.cwd)?;
+        Ok(buf.as_ptr() as usize)
+    }
+
+    pub fn sys_chdir(&self, path: UserInPtr<u8>) -> SysResult {
+        let path = path.read_cstring()?;
+        info!("chdir: path={:?}", path);
+
+        let mut proc = self.lock_linux_process();
+        let inode = proc.lookup_inode(&path)?;
+        let info = inode.metadata()?;
+        if info.type_ != FileType::Dir {
+            return Err(SysError::ENOTDIR);
+        }
+
+        // BUGFIX: '..' and '.'
+        if path.len() > 0 {
+            let cwd = match path.as_bytes()[0] {
+                b'/' => String::from("/"),
+                _ => proc.cwd.clone(),
+            };
+            let mut cwd_vec: Vec<_> = cwd.split("/").filter(|&x| x != "").collect();
+            let path_split = path.split("/").filter(|&x| x != "");
+            for seg in path_split {
+                if seg == ".." {
+                    cwd_vec.pop();
+                } else if seg == "." {
+                    // nothing to do here.
+                } else {
+                    cwd_vec.push(seg);
+                }
+            }
+            proc.cwd = String::from("");
+            for seg in cwd_vec {
+                proc.cwd.push_str("/");
+                proc.cwd.push_str(seg);
+            }
+            if proc.cwd == "" {
+                proc.cwd = String::from("/");
+            }
+        }
+        Ok(0)
+    }
+
     pub fn sys_mkdir(&self, path: UserInPtr<u8>, mode: usize) -> SysResult {
         self.sys_mkdirat(FileDesc::CWD, path, mode)
     }
@@ -192,6 +245,7 @@ impl Syscall {
     }
 }
 
+#[allow(dead_code)]
 #[repr(packed)] // Don't use 'C'. Or its size will align up to 8 bytes.
 pub struct LinuxDirent64 {
     /// Inode number

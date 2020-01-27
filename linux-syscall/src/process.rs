@@ -4,7 +4,8 @@ use crate::error::*;
 use crate::fs::*;
 use alloc::collections::BTreeMap;
 use alloc::string::String;
-use alloc::sync::Arc;
+use alloc::sync::{Arc, Weak};
+use alloc::vec::Vec;
 use rcore_fs::vfs::{FileSystem, FileType, INode};
 use rcore_fs_mountfs::MNode;
 use spin::{Mutex, MutexGuard};
@@ -35,8 +36,11 @@ pub struct LinuxProcess {
     /// Current Working Directory
     pub cwd: String,
     pub exec_path: String,
-    pub files: BTreeMap<FileDesc, Arc<dyn FileLike>>,
-    pub root_inode: Arc<dyn INode>,
+    files: BTreeMap<FileDesc, Arc<dyn FileLike>>,
+    root_inode: Arc<dyn INode>,
+    parent: Weak<Process>,
+    #[allow(dead_code)]
+    children: Vec<Weak<Process>>,
 }
 
 impl LinuxProcess {
@@ -68,10 +72,12 @@ impl LinuxProcess {
         files.insert(2.into(), stdout);
 
         LinuxProcess {
-            cwd: String::from(""),
+            cwd: String::from("/"),
             exec_path: String::new(),
             files,
             root_inode: create_root_fs(),
+            parent: Weak::default(),
+            children: Vec::new(),
         }
     }
 
@@ -113,6 +119,11 @@ impl LinuxProcess {
             .unwrap()
     }
 
+    /// Get root INode of the process.
+    pub fn root_inode(&self) -> &Arc<dyn INode> {
+        &self.root_inode
+    }
+
     /// Mount file system.
     pub fn mount(&self, name: &str, fs: Arc<dyn FileSystem>) {
         self.root_inode
@@ -122,5 +133,10 @@ impl LinuxProcess {
             .unwrap()
             .mount(fs)
             .expect("failed to mount");
+    }
+
+    /// Get parent process.
+    pub fn parent(&self) -> Option<Arc<Process>> {
+        self.parent.upgrade()
     }
 }

@@ -12,9 +12,7 @@ fn main() {
     kernel_hal_unix::init();
 
     let args: Vec<_> = std::env::args().skip(1).collect();
-    let envs: Vec<_> = std::env::vars()
-        .map(|(k, v)| format!("{}={}", k, v))
-        .collect();
+    let envs = vec!["PATH=/usr/sbin:/usr/bin:/sbin:/bin:/usr/x86_64-alpine-linux-musl/bin".into()];
 
     let libc_path = &args[0];
     let libc_data = std::fs::read(libc_path).expect("failed to read file");

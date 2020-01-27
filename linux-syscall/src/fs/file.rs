@@ -162,11 +162,12 @@ impl File {
         self.inode.clone()
     }
 
-    pub fn fcntl(&self, _cmd: usize, _arg: usize) -> LxResult<usize> {
-        //        if arg & 0x800 > 0 && cmd == 4 {
-        //            self.options.nonblock = true;
-        //        }
-        unimplemented!()
+    pub fn fcntl(&self, cmd: usize, arg: usize) -> LxResult<usize> {
+        if arg & 0x800 > 0 && cmd == 4 {
+            unimplemented!()
+            //            self.options.nonblock = true;
+        }
+        Ok(0)
     }
 }
 
