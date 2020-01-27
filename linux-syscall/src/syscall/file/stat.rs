@@ -8,46 +8,49 @@ use super::*;
 use rcore_fs::vfs::{FileType, Metadata};
 
 impl Syscall {
-    //    pub fn sys_lstat(&self, path: *const u8, stat_ptr: *mut Stat) -> SysResult {
-    //        self.sys_fstatat(FileDesc::CWD, path, stat_ptr, AtFlags::SYMLINK_NOFOLLOW.bits())
-    //    }
-    //
-    //    pub fn sys_fstat(&self, fd: usize, stat_ptr: *mut Stat) -> SysResult {
-    //        info!("fstat: fd={}, stat_ptr={:?}", fd, stat_ptr);
-    //        let proc = self.process();
-    //        let stat_ref = unsafe { self.vm().check_write_ptr(stat_ptr)? };
-    //        let file = proc.get_file(fd)?;
-    //        let stat = Stat::from(file.metadata()?);
-    //        *stat_ref = stat;
-    //        Ok(0)
-    //    }
-    //
-    //    pub fn sys_fstatat(
-    //        &self,
-    //        dirfd: usize,
-    //        path: *const u8,
-    //        stat_ptr: *mut Stat,
-    //        flags: usize,
-    //    ) -> SysResult {
-    //        let proc = self.process();
-    //        let path = check_and_clone_cstr(path)?;
-    //        let stat_ref = unsafe { self.vm().check_write_ptr(stat_ptr)? };
-    //        let flags = AtFlags::from_bits_truncate(flags);
-    //        info!(
-    //            "fstatat: dirfd={}, path={:?}, stat_ptr={:?}, flags={:?}",
-    //            dirfd as isize, path, stat_ptr, flags
-    //        );
-    //
-    //        let inode =
-    //            proc.lookup_inode_at(dirfd, &path, !flags.contains(AtFlags::SYMLINK_NOFOLLOW))?;
-    //        let stat = Stat::from(inode.metadata()?);
-    //        *stat_ref = stat;
-    //        Ok(0)
-    //    }
-    //
-    //    pub fn sys_stat(&self, path: *const u8, stat_ptr: *mut Stat) -> SysResult {
-    //        self.sys_fstatat(FileDesc::CWD, path, stat_ptr, 0)
-    //    }
+    pub fn sys_lstat(&self, path: UserInPtr<u8>, stat_ptr: UserOutPtr<Stat>) -> SysResult {
+        self.sys_fstatat(
+            FileDesc::CWD,
+            path,
+            stat_ptr,
+            AtFlags::SYMLINK_NOFOLLOW.bits(),
+        )
+    }
+
+    pub fn sys_fstat(&self, fd: FileDesc, mut stat_ptr: UserOutPtr<Stat>) -> SysResult {
+        info!("fstat: fd={:?}, stat_ptr={:?}", fd, stat_ptr);
+        let proc = self.lock_linux_process();
+        let file = proc.get_file(fd)?;
+        let stat = Stat::from(file.metadata()?);
+        stat_ptr.write(stat)?;
+        Ok(0)
+    }
+
+    pub fn sys_fstatat(
+        &self,
+        dirfd: FileDesc,
+        path: UserInPtr<u8>,
+        mut stat_ptr: UserOutPtr<Stat>,
+        flags: usize,
+    ) -> SysResult {
+        let path = path.read_cstring()?;
+        let flags = AtFlags::from_bits_truncate(flags);
+        info!(
+            "fstatat: dirfd={:?}, path={:?}, stat_ptr={:?}, flags={:?}",
+            dirfd, path, stat_ptr, flags
+        );
+
+        let proc = self.lock_linux_process();
+        let follow = !flags.contains(AtFlags::SYMLINK_NOFOLLOW);
+        let inode = proc.lookup_inode_at(dirfd, &path, follow)?;
+        let stat = Stat::from(inode.metadata()?);
+        stat_ptr.write(stat)?;
+        Ok(0)
+    }
+
+    pub fn sys_stat(&self, path: UserInPtr<u8>, stat_ptr: UserOutPtr<Stat>) -> SysResult {
+        self.sys_fstatat(FileDesc::CWD, path, stat_ptr, 0)
+    }
 }
 
 #[cfg(not(target_arch = "mips"))]

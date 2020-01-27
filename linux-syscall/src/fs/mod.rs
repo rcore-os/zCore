@@ -30,17 +30,17 @@ mod stdio;
 pub trait FileLike: KernelObject {
     fn read(&self, buf: &mut [u8]) -> LxResult<usize>;
     fn write(&self, buf: &[u8]) -> LxResult<usize>;
-    fn read_at(&self, offset: usize, buf: &mut [u8]) -> LxResult<usize>;
-    fn write_at(&self, offset: usize, buf: &[u8]) -> LxResult<usize>;
+    fn read_at(&self, offset: u64, buf: &mut [u8]) -> LxResult<usize>;
+    fn write_at(&self, offset: u64, buf: &[u8]) -> LxResult<usize>;
     fn poll(&self) -> LxResult<PollStatus>;
-    fn ioctl(&self, request: usize, arg1: usize, arg2: usize, arg3: usize) -> LxResult<()>;
-    fn fcntl(&self, cmd: usize, arg: usize) -> LxResult<()>;
+    fn ioctl(&self, request: usize, arg1: usize, arg2: usize, arg3: usize) -> LxResult<usize>;
+    fn fcntl(&self, cmd: usize, arg: usize) -> LxResult<usize>;
 }
 
 impl_downcast!(sync FileLike);
 
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
-pub struct FileDesc(isize);
+pub struct FileDesc(i32);
 
 impl FileDesc {
     /// Pathname is interpreted relative to the current working directory(CWD)
@@ -49,26 +49,20 @@ impl FileDesc {
 
 impl From<usize> for FileDesc {
     fn from(x: usize) -> Self {
-        FileDesc(x as isize)
+        FileDesc(x as i32)
     }
 }
 
 impl TryFrom<&str> for FileDesc {
     type Error = SysError;
     fn try_from(name: &str) -> LxResult<Self> {
-        let x: isize = name.parse().map_err(|_| SysError::EINVAL)?;
+        let x: i32 = name.parse().map_err(|_| SysError::EINVAL)?;
         Ok(FileDesc(x))
     }
 }
 
 impl Into<usize> for FileDesc {
     fn into(self) -> usize {
-        self.0 as _
-    }
-}
-
-impl Into<HandleValue> for FileDesc {
-    fn into(self) -> HandleValue {
         self.0 as _
     }
 }

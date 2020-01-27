@@ -11,6 +11,8 @@ mod file;
 mod poll;
 mod stat;
 
+use self::dir::AtFlags;
+
 impl LinuxProcess {
     /// Lookup INode from the process.
     ///

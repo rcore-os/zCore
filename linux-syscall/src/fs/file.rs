@@ -54,19 +54,19 @@ impl File {
 
     pub fn read(&self, buf: &mut [u8]) -> LxResult<usize> {
         let mut inner = self.inner.lock();
-        let len = self.read_at(inner.offset as usize, buf)?;
+        let len = self.read_at(inner.offset, buf)?;
         inner.offset += len as u64;
         Ok(len)
     }
 
-    pub fn read_at(&self, offset: usize, buf: &mut [u8]) -> LxResult<usize> {
+    pub fn read_at(&self, offset: u64, buf: &mut [u8]) -> LxResult<usize> {
         if !self.options.read {
             return Err(SysError::EBADF);
         }
         if !self.options.nonblock {
             // block
             loop {
-                match self.inode.read_at(offset, buf) {
+                match self.inode.read_at(offset as usize, buf) {
                     Ok(read_len) => return Ok(read_len),
                     Err(FsError::Again) => {
                         //thread::yield_now();
@@ -76,27 +76,27 @@ impl File {
                 }
             }
         }
-        let len = self.inode.read_at(offset, buf)?;
+        let len = self.inode.read_at(offset as usize, buf)?;
         Ok(len)
     }
 
     pub fn write(&self, buf: &[u8]) -> LxResult<usize> {
         let mut inner = self.inner.lock();
         let offset = if self.options.append {
-            self.inode.metadata()?.size
+            self.inode.metadata()?.size as u64
         } else {
-            inner.offset as usize
+            inner.offset
         };
         let len = self.write_at(offset, buf)?;
-        inner.offset = (offset + len) as u64;
+        inner.offset = offset + len as u64;
         Ok(len)
     }
 
-    pub fn write_at(&self, offset: usize, buf: &[u8]) -> LxResult<usize> {
+    pub fn write_at(&self, offset: u64, buf: &[u8]) -> LxResult<usize> {
         if !self.options.write {
             return Err(SysError::EBADF);
         }
-        let len = self.inode.write_at(offset, buf)?;
+        let len = self.inode.write_at(offset as usize, buf)?;
         Ok(len)
     }
 
@@ -153,16 +153,16 @@ impl File {
         Ok(status)
     }
 
-    pub fn io_control(&self, cmd: u32, arg: usize) -> LxResult<()> {
+    pub fn io_control(&self, cmd: u32, arg: usize) -> LxResult<usize> {
         self.inode.io_control(cmd, arg)?;
-        Ok(())
+        Ok(0)
     }
 
     pub fn inode(&self) -> Arc<dyn INode> {
         self.inode.clone()
     }
 
-    pub fn fcntl(&self, _cmd: usize, _arg: usize) -> LxResult<()> {
+    pub fn fcntl(&self, _cmd: usize, _arg: usize) -> LxResult<usize> {
         //        if arg & 0x800 > 0 && cmd == 4 {
         //            self.options.nonblock = true;
         //        }
@@ -179,11 +179,11 @@ impl FileLike for File {
         self.write(buf)
     }
 
-    fn read_at(&self, offset: usize, buf: &mut [u8]) -> LxResult<usize> {
+    fn read_at(&self, offset: u64, buf: &mut [u8]) -> LxResult<usize> {
         self.read_at(offset, buf)
     }
 
-    fn write_at(&self, offset: usize, buf: &[u8]) -> LxResult<usize> {
+    fn write_at(&self, offset: u64, buf: &[u8]) -> LxResult<usize> {
         self.write_at(offset, buf)
     }
 
@@ -191,11 +191,11 @@ impl FileLike for File {
         self.poll()
     }
 
-    fn ioctl(&self, request: usize, arg1: usize, _arg2: usize, _arg3: usize) -> LxResult<()> {
+    fn ioctl(&self, request: usize, arg1: usize, _arg2: usize, _arg3: usize) -> LxResult<usize> {
         self.io_control(request as u32, arg1)
     }
 
-    fn fcntl(&self, cmd: usize, arg: usize) -> LxResult<()> {
+    fn fcntl(&self, cmd: usize, arg: usize) -> LxResult<usize> {
         self.fcntl(cmd, arg)
     }
 }

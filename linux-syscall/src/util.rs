@@ -49,6 +49,12 @@ impl<T, P: Policy> From<usize> for UserPtr<T, P> {
     }
 }
 
+impl<T, P: Policy> UserPtr<T, P> {
+    pub fn is_null(&self) -> bool {
+        self.ptr.is_null()
+    }
+}
+
 impl<T, P: Read> UserPtr<T, P> {
     pub fn read(&self) -> ZxResult<T> {
         // TODO: check ptr and return err

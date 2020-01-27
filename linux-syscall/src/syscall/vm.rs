@@ -10,7 +10,7 @@ impl Syscall {
         prot: usize,
         flags: usize,
         fd: FileDesc,
-        offset: usize,
+        offset: u64,
     ) -> SysResult {
         let prot = MmapProt::from_bits_truncate(prot);
         let flags = MmapFlags::from_bits_truncate(flags);
