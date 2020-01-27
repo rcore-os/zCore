@@ -1,10 +1,9 @@
-use crate::fs::FileDesc;
-use crate::process::{LinuxProcess, ProcessExt};
-use spin::MutexGuard;
-use zircon_object::task::Process;
 use {
-    self::consts::*, crate::error::*, crate::util::*, alloc::sync::Arc, zircon_object::hal,
-    zircon_object::object::*, zircon_object::task::Thread,
+    self::consts::*,
+    crate::{error::*, fs::FileDesc, process::*, util::*},
+    alloc::sync::Arc,
+    spin::MutexGuard,
+    zircon_object::{hal, object::*, task::*, vm::VirtAddr},
 };
 
 mod consts;
@@ -15,6 +14,7 @@ mod vm;
 
 pub struct Syscall {
     pub thread: Arc<Thread>,
+    pub syscall_entry: VirtAddr,
 }
 
 impl Syscall {
@@ -114,7 +114,7 @@ impl Syscall {
 
             // process
             //            SYS_CLONE => self.sys_clone(a0, a1, a2.into(), a3.into(), a4),
-            //            SYS_EXECVE => self.sys_exec(a0.into(), a1.into(), a2.into()),
+            SYS_EXECVE => self.sys_execve(a0.into(), a1.into(), a2.into()),
             //            SYS_EXIT => self.sys_exit(a0 as usize),
             SYS_EXIT_GROUP => self.sys_exit_group(a0),
             SYS_WAIT4 => self.sys_wait4(a0 as _, a1.into(), a2 as _),

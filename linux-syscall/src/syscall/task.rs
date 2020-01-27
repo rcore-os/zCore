@@ -1,6 +1,8 @@
 //! Syscalls for process
 
 use super::*;
+use crate::fs::INodeExt;
+use crate::loader::LinuxElfLoader;
 
 impl Syscall {
     //    /// Fork the current process. Return the child's PID.
@@ -132,74 +134,59 @@ impl Syscall {
     //        }
     }
 
-    //    /// Replaces the current ** process ** with a new process image
-    //    ///
-    //    /// `argv` is an array of argument strings passed to the new program.
-    //    /// `envp` is an array of strings, conventionally of the form `key=value`,
-    //    /// which are passed as environment to the new program.
-    //    ///
-    //    /// NOTICE: `argv` & `envp` can not be NULL (different from Linux)
-    //    ///
-    //    /// NOTICE: for multi-thread programs
-    //    /// A call to any exec function from a process with more than one thread
-    //    /// shall result in all threads being terminated and the new executable image
-    //    /// being loaded and executed.
-    //    pub fn sys_exec(
-    //        &self,
-    //        path: *const u8,
-    //        argv: *const *const u8,
-    //        envp: *const *const u8,
-    //    ) -> SysResult {
-    //        info!(
-    //            "exec:BEG: path: {:?}, argv: {:?}, envp: {:?}",
-    //            path, argv, envp
-    //        );
-    //        let mut proc = self.process();
-    //        let path = check_and_clone_cstr(path)?;
-    //        let args = check_and_clone_cstr_array(argv)?;
-    //        let envs = check_and_clone_cstr_array(envp)?;
-    //
-    //        if args.is_empty() {
-    //            error!("exec: args is null");
-    //            return Err(SysError::EINVAL);
-    //        }
-    //
-    //        info!(
-    //            "exec:STEP2: path: {:?}, args: {:?}, envs: {:?}",
-    //            path, args, envs
-    //        );
-    //
-    //        // Kill other threads
-    //        proc.threads.retain(|&tid| {
-    //            if tid != thread::current().id() {
-    //                thread_manager().exit(tid, 1);
-    //            }
-    //            tid == thread::current().id()
-    //        });
-    //
-    //        // Read program file
-    //        let inode = proc.lookup_inode(&path)?;
-    //
-    //        // Make new Thread
-    //        let (mut vm, entry_addr, ustack_top) =
-    //            Thread::new_user_vm(&inode, &path, args, envs).map_err(|_| SysError::EINVAL)?;
-    //
-    //        // Activate new page table
-    //        core::mem::swap(&mut *self.vm(), &mut vm);
-    //        unsafe {
-    //            self.vm().activate();
-    //        }
-    //
-    //        // Modify exec path
-    //        proc.exec_path = path.clone();
-    //        drop(proc);
-    //
-    //        // Modify the TrapFrame
-    //        *self.tf = TrapFrame::new_user_thread(entry_addr, ustack_top);
-    //
-    //        info!("exec:END: path: {:?}", path);
-    //        Ok(0)
-    //    }
+    /// Replaces the current ** process ** with a new process image
+    ///
+    /// `argv` is an array of argument strings passed to the new program.
+    /// `envp` is an array of strings, conventionally of the form `key=value`,
+    /// which are passed as environment to the new program.
+    ///
+    /// NOTICE: `argv` & `envp` can not be NULL (different from Linux)
+    ///
+    /// NOTICE: for multi-thread programs
+    /// A call to any exec function from a process with more than one thread
+    /// shall result in all threads being terminated and the new executable image
+    /// being loaded and executed.
+    pub fn sys_execve(
+        &self,
+        path: UserInPtr<u8>,
+        argv: UserInPtr<UserInPtr<u8>>,
+        envp: UserInPtr<UserInPtr<u8>>,
+    ) -> SysResult {
+        info!(
+            "execve: path: {:?}, argv: {:?}, envp: {:?}",
+            path, argv, envp
+        );
+        let path = path.read_cstring()?;
+        let args = argv.read_cstring_array()?;
+        let envs = envp.read_cstring_array()?;
+        if args.is_empty() {
+            error!("execve: args is null");
+            return Err(SysError::EINVAL);
+        }
+
+        // TODO: check and kill other threads
+
+        // Read program file
+        let mut proc = self.lock_linux_process();
+        let inode = proc.lookup_inode(&path)?;
+        let data = inode.read_as_vec()?;
+
+        let vmar = self.zircon_process().vmar();
+        vmar.clear()?;
+        let loader = LinuxElfLoader {
+            syscall_entry: self.syscall_entry,
+            stack_pages: 8,
+        };
+        let (_entry, _sp) = loader.load(&vmar, &data, args, envs)?;
+
+        // Modify exec path
+        proc.exec_path = path.clone();
+
+        //        // Modify the TrapFrame
+        //        *self.tf = TrapFrame::new_user_thread(entry_addr, ustack_top);
+
+        Ok(0)
+    }
     //
     //    pub fn sys_yield(&self) -> SysResult {
     //        thread::yield_now();

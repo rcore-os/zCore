@@ -177,6 +177,17 @@ impl VmAddressRegion {
         Ok(())
     }
 
+    /// Unmap all mappings and destroy all sub-regions of VMAR.
+    pub fn clear(&self) -> ZxResult<()> {
+        let mut guard = self.inner.lock();
+        let inner = guard.as_mut().ok_or(ZxError::BAD_STATE)?;
+        for vmar in inner.children.drain(..) {
+            vmar.destroy_internal()?;
+        }
+        inner.mappings.clear();
+        Ok(())
+    }
+
     /// Get physical address of the underlying page table.
     pub fn table_phys(&self) -> PhysAddr {
         self.page_table.lock().table_phys()

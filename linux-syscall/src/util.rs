@@ -95,6 +95,20 @@ impl<P: Read> UserPtr<u8, P> {
     }
 }
 
+impl<P: Read> UserPtr<UserPtr<u8, P>, P> {
+    pub fn read_cstring_array(&self) -> ZxResult<Vec<String>> {
+        let len = unsafe {
+            (0usize..)
+                .find(|&i| self.ptr.add(i).read().is_null())
+                .unwrap()
+        };
+        self.read_array(len)?
+            .into_iter()
+            .map(|ptr| ptr.read_cstring())
+            .collect()
+    }
+}
+
 impl<T, P: Write> UserPtr<T, P> {
     pub fn write(&mut self, value: T) -> ZxResult<()> {
         unsafe {

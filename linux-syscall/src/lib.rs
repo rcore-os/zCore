@@ -18,10 +18,12 @@ mod util;
 mod fs;
 
 // layer 2
+mod loader;
 mod process;
 
 // layer 3
 mod syscall;
 
+pub use loader::LinuxElfLoader;
 pub use process::ProcessExt;
 pub use syscall::Syscall;
