@@ -1,0 +1,9 @@
+(function() {var implementors = {};
+implementors["zircon_object"] = [{"text":"impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/default/trait.Default.html\" title=\"trait core::default::Default\">Default</a> for <a class=\"struct\" href=\"zircon_object/ipc/struct.MessagePacket.html\" title=\"struct zircon_object::ipc::MessagePacket\">MessagePacket</a>","synthetic":false,"types":["zircon_object::ipc::channel::MessagePacket"]},{"text":"impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/default/trait.Default.html\" title=\"trait core::default::Default\">Default</a> for <a class=\"struct\" href=\"zircon_object/object/struct.Signal.html\" title=\"struct zircon_object::object::Signal\">Signal</a>","synthetic":false,"types":["zircon_object::object::signal::Signal"]},{"text":"impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/default/trait.Default.html\" title=\"trait core::default::Default\">Default</a> for <a class=\"struct\" href=\"zircon_object/object/struct.KObjectBase.html\" title=\"struct zircon_object::object::KObjectBase\">KObjectBase</a>","synthetic":false,"types":["zircon_object::object::KObjectBase"]},{"text":"impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/default/trait.Default.html\" title=\"trait core::default::Default\">Default</a> for <a class=\"struct\" href=\"zircon_object/task/struct.JobPolicy.html\" title=\"struct zircon_object::task::JobPolicy\">JobPolicy</a>","synthetic":false,"types":["zircon_object::task::job_policy::JobPolicy"]}];
+
+            if (window.register_implementors) {
+                window.register_implementors(implementors);
+            } else {
+                window.pending_implementors = implementors;
+            }
+        })()

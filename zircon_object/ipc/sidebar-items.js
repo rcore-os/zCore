@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["Channel_","Bidirectional interprocess communication"],["MessagePacket",""]],"type":[["Channel",""]]});

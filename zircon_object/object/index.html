@@ -1,0 +1,88 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="API documentation for the Rust `object` mod in crate `zircon_object`."><meta name="keywords" content="rust, rustlang, rust-lang, object"><title>zircon_object::object - Rust</title><link rel="stylesheet" type="text/css" href="../../normalize.css"><link rel="stylesheet" type="text/css" href="../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../dark.css"><link rel="stylesheet" type="text/css" href="../../light.css" id="themeStyle"><script src="../../storage.js"></script><noscript><link rel="stylesheet" href="../../noscript.css"></noscript><link rel="shortcut icon" href="../../favicon.ico"><style type="text/css">#crate-search{background-image:url("../../down-arrow.svg");}</style></head><body class="rustdoc mod"><!--[if lte IE 8]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu">&#9776;</div><a href='../../zircon_object/index.html'><div class='logo-container'><img src='../../rust-logo.png' alt='logo'></div></a><p class='location'>Module object</p><div class="sidebar-elems"><div class="block items"><ul><li><a href="#reexports">Re-exports</a></li><li><a href="#structs">Structs</a></li><li><a href="#constants">Constants</a></li><li><a href="#traits">Traits</a></li><li><a href="#functions">Functions</a></li><li><a href="#types">Type Definitions</a></li></ul></div><p class='location'><a href='../index.html'>zircon_object</a></p><script>window.sidebarCurrent = {name: 'object', ty: 'mod', relpath: '../'};</script><script defer src="../sidebar-items.js"></script></div></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!"><img src="../../brush.svg" width="18" alt="Pick another theme!"></button><div id="theme-choices"></div></div><script src="../../theme.js"></script><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><a id="settings-menu" href="../../settings.html"><img src="../../wheel.svg" width="18" alt="Change settings"></a></div></form></nav><section id="main" class="content"><h1 class='fqn'><span class='out-of-band'><span id='render-detail'><a id="toggle-all-docs" href="javascript:void(0)" title="collapse all docs">[<span class='inner'>&#x2212;</span>]</a></span><a class='srclink' href='../../src/zircon_object/object/mod.rs.html#1-521' title='goto source code'>[src]</a></span><span class='in-band'>Module <a href='../index.html'>zircon_object</a>::<wbr><a class="mod" href=''>object</a></span></h1><div class='docblock'><p>Kernel object basis.</p>
+<h1 id="create-new-kernel-object" class="section-header"><a href="#create-new-kernel-object">Create new kernel object</a></h1>
+<ul>
+<li>Create a new struct.</li>
+<li>Make sure it has a field named <code>base</code> with type <a href="../../zircon_object/object/struct.KObjectBase.html"><code>KObjectBase</code></a>.</li>
+<li>Implement <a href="../../zircon_object/object/trait.KernelObject.html"><code>KernelObject</code></a> trait with <a href="../../zircon_object/macro.impl_kobject.html"><code>impl_kobject</code></a> macro.</li>
+</ul>
+<h2 id="example" class="section-header"><a href="#example">Example</a></h2>
+<div class="example-wrap"><pre class="rust rust-example-rendered">
+<span class="kw">use</span> <span class="ident">zircon_object</span>::<span class="ident">object</span>::<span class="kw-2">*</span>;
+
+<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">SampleObject</span> {
+   <span class="ident">base</span>: <span class="ident">KObjectBase</span>,
+}
+<span class="macro">impl_kobject</span><span class="macro">!</span>(<span class="ident">SampleObject</span>);</pre></div>
+<h1 id="implement-methods-for-kernel-object" class="section-header"><a href="#implement-methods-for-kernel-object">Implement methods for kernel object</a></h1><h2 id="constructor" class="section-header"><a href="#constructor">Constructor</a></h2>
+<p>Each kernel object should have a constructor returns <code>Arc&lt;Self&gt;</code>
+(or a pair of them, e.g. <a href="../../zircon_object/ipc/struct.Channel_.html"><code>Channel</code></a>).</p>
+<p>Don't return <code>Self</code> since it must be created on heap.</p>
+<h3 id="example-1" class="section-header"><a href="#example-1">Example</a></h3>
+<div class="example-wrap"><pre class="rust rust-example-rendered">
+<span class="kw">use</span> <span class="ident">zircon_object</span>::<span class="ident">object</span>::<span class="kw-2">*</span>;
+<span class="kw">use</span> <span class="ident">std</span>::<span class="ident">sync</span>::<span class="ident">Arc</span>;
+
+<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">SampleObject</span> {
+    <span class="ident">base</span>: <span class="ident">KObjectBase</span>,
+}
+<span class="kw">impl</span> <span class="ident">SampleObject</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
+        <span class="ident">Arc</span>::<span class="ident">new</span>(<span class="ident">SampleObject</span> {
+            <span class="ident">base</span>: <span class="ident">KObjectBase</span>::<span class="ident">new</span>(),
+        })
+    }
+}</pre></div>
+<h2 id="interior-mutability" class="section-header"><a href="#interior-mutability">Interior mutability</a></h2>
+<p>All kernel objects use the <a href="https://doc.rust-lang.org/reference/interior-mutability.html">interior mutability pattern</a> :
+each method takes either <code>&amp;self</code> or <code>&amp;Arc&lt;Self&gt;</code> as the first argument.</p>
+<p>To handle mutable variable, create another <strong>inner structure</strong>,
+and put it into the object with a lock wrapped.</p>
+<h3 id="example-2" class="section-header"><a href="#example-2">Example</a></h3>
+<div class="example-wrap"><pre class="rust rust-example-rendered">
+<span class="kw">use</span> <span class="ident">zircon_object</span>::<span class="ident">object</span>::<span class="kw-2">*</span>;
+<span class="kw">use</span> <span class="ident">std</span>::<span class="ident">sync</span>::<span class="ident">Arc</span>;
+<span class="kw">use</span> <span class="ident">spin</span>::<span class="ident">Mutex</span>;
+
+<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">SampleObject</span> {
+    <span class="ident">base</span>: <span class="ident">KObjectBase</span>,
+    <span class="ident">inner</span>: <span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">SampleObjectInner</span><span class="op">&gt;</span>,
+}
+<span class="kw">struct</span> <span class="ident">SampleObjectInner</span> {
+    <span class="ident">x</span>: <span class="ident">usize</span>,
+}
+
+<span class="kw">impl</span> <span class="ident">SampleObject</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">set_x</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">x</span>: <span class="ident">usize</span>) {
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
+        <span class="ident">inner</span>.<span class="ident">x</span> <span class="op">=</span> <span class="ident">x</span>;
+    }
+}</pre></div>
+<h1 id="downcast-trait-to-concrete-type" class="section-header"><a href="#downcast-trait-to-concrete-type">Downcast trait to concrete type</a></h1>
+<p><a href="../../zircon_object/object/trait.KernelObject.html"><code>KernelObject</code></a> inherit <a href="downcast_rs::DowncastSync"><code>downcast_rs::DowncastSync</code></a> trait.
+You can use <code>downcast_arc</code> method to downcast <code>Arc&lt;dyn KernelObject&gt;</code> to <code>Arc&lt;T: KernelObject&gt;</code>.</p>
+<h2 id="example-3" class="section-header"><a href="#example-3">Example</a></h2>
+<div class="example-wrap"><pre class="rust rust-example-rendered">
+<span class="kw">use</span> <span class="ident">zircon_object</span>::<span class="ident">object</span>::<span class="kw-2">*</span>;
+<span class="kw">use</span> <span class="ident">std</span>::<span class="ident">sync</span>::<span class="ident">Arc</span>;
+
+<span class="kw">let</span> <span class="ident">object</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">KernelObject</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">DummyObject</span>::<span class="ident">new</span>();
+<span class="kw">let</span> <span class="ident">concrete</span> <span class="op">=</span> <span class="ident">object</span>.<span class="ident">downcast_arc</span>::<span class="op">&lt;</span><span class="ident">DummyObject</span><span class="op">&gt;</span>().<span class="ident">unwrap</span>();</pre></div>
+</div><h2 id='reexports' class='section-header'><a href="#reexports">Re-exports</a></h2>
+<table><tr><td><code>pub use <a class="mod" href="../../zircon_object/index.html" title="mod zircon_object">super</a>::*;</code></td></tr></table><h2 id='structs' class='section-header'><a href="#structs">Structs</a></h2>
+<table><tr class='module-item'><td><a class="struct" href="struct.DummyObject.html" title='zircon_object::object::DummyObject struct'>DummyObject</a></td><td class='docblock-short'><p>Empty kernel object. Just for test.</p>
+</td></tr><tr class='module-item'><td><a class="struct" href="struct.Handle.html" title='zircon_object::object::Handle struct'>Handle</a></td><td class='docblock-short'><p>A Handle is how a specific process refers to a specific kernel object.</p>
+</td></tr><tr class='module-item'><td><a class="struct" href="struct.KObjectBase.html" title='zircon_object::object::KObjectBase struct'>KObjectBase</a></td><td class='docblock-short'><p>The base struct of a kernel object.</p>
+</td></tr><tr class='module-item'><td><a class="struct" href="struct.Rights.html" title='zircon_object::object::Rights struct'>Rights</a></td><td class='docblock-short'><p>Rights are associated with handles and convey privileges to perform actions on
+either the associated handle or the object associated with the handle.</p>
+</td></tr><tr class='module-item'><td><a class="struct" href="struct.Signal.html" title='zircon_object::object::Signal struct'>Signal</a></td><td class='docblock-short'><p>Signals that waitable kernel objects expose to applications.</p>
+</td></tr></table><h2 id='constants' class='section-header'><a href="#constants">Constants</a></h2>
+<table><tr class='module-item'><td><a class="constant" href="constant.INVALID_HANDLE.html" title='zircon_object::object::INVALID_HANDLE constant'>INVALID_HANDLE</a></td><td class='docblock-short'><p>Invalid handle value.</p>
+</td></tr></table><h2 id='traits' class='section-header'><a href="#traits">Traits</a></h2>
+<table><tr class='module-item'><td><a class="trait" href="trait.KernelObject.html" title='zircon_object::object::KernelObject trait'>KernelObject</a></td><td class='docblock-short'><p>Common interface of a kernel object.</p>
+</td></tr></table><h2 id='functions' class='section-header'><a href="#functions">Functions</a></h2>
+<table><tr class='module-item'><td><a class="fn" href="fn.wait_signal_many_async.html" title='zircon_object::object::wait_signal_many_async fn'>wait_signal_many_async</a></td><td class='docblock-short'><p>Asynchronous wait signal for multiple objects.</p>
+</td></tr></table><h2 id='types' class='section-header'><a href="#types">Type Definitions</a></h2>
+<table><tr class='module-item'><td><a class="type" href="type.HandleValue.html" title='zircon_object::object::HandleValue type'>HandleValue</a></td><td class='docblock-short'><p>The value refers to a Handle in user space.</p>
+</td></tr><tr class='module-item'><td><a class="type" href="type.KoID.html" title='zircon_object::object::KoID type'>KoID</a></td><td class='docblock-short'><p>The type of kernel object ID.</p>
+</td></tr><tr class='module-item'><td><a class="type" href="type.SignalHandler.html" title='zircon_object::object::SignalHandler type'>SignalHandler</a></td><td class='docblock-short'><p>The type of kernel object signal handler.</p>
+</td></tr></table></section><section id="search" class="content hidden"></section><section class="footer"></section><script>window.rootPath = "../../";window.currentCrate = "zircon_object";</script><script src="../../aliases.js"></script><script src="../../main.js"></script><script defer src="../../search-index.js"></script></body></html>
