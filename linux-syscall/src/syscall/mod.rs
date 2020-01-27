@@ -211,7 +211,7 @@ impl Syscall {
     }
 
     fn unknown_syscall(&self) -> ! {
-        warn!("unknown syscall! exit...");
+        error!("unknown syscall! exit...");
         let proc = self.zircon_process();
         proc.exit(-1);
         Thread::exit();

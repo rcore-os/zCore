@@ -10,7 +10,6 @@ use {
     alloc::{collections::BTreeMap, string::String, sync::Arc, vec::Vec},
     kernel_hal_unix::{switch_to_kernel, switch_to_user},
     linux_syscall::{ProcessExt, Syscall},
-    rcore_fs_hostfs::HostFS,
     xmas_elf::{
         program::{Flags, ProgramHeader, SegmentData, Type},
         sections::SectionData,
@@ -22,7 +21,7 @@ use {
 
 mod abi;
 
-pub fn run(libc_data: &[u8], mut args: Vec<String>, envs: Vec<String>) -> Arc<Process> {
+pub fn run(libc_data: &[u8], args: Vec<String>, envs: Vec<String>) -> Arc<Process> {
     let job = Job::root();
     let proc = Process::create_linux(&job, "proc").unwrap();
     let thread = Thread::create(&proc, "thread", 0).unwrap();
@@ -47,20 +46,10 @@ pub fn run(libc_data: &[u8], mut args: Vec<String>, envs: Vec<String>) -> Arc<Pr
     };
     let entry = base + elf.header.pt2.entry_point() as usize;
 
-    // file system
-    let path = if cfg!(test) {
-        "prebuilt"
-    } else {
-        "../prebuilt"
-    };
-    let hostfs = HostFS::new(path);
-    proc.lock_linux().mount("host", hostfs);
-
     const STACK_SIZE: usize = 0x8000;
     let stack = Vec::<u8>::with_capacity(STACK_SIZE);
     let mut sp = (stack.as_ptr() as usize + STACK_SIZE) & !0xf;
 
-    args.insert(0, String::from("libc.so"));
     let info = abi::ProcInitInfo {
         args,
         envs,
