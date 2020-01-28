@@ -112,12 +112,13 @@ impl Thread {
         stack: usize,
         arg1: usize,
         arg2: usize,
+        tp: usize,
     ) -> ZxResult<()> {
         let mut inner = self.inner.lock();
         if inner.hal_thread.is_some() {
             return Err(ZxError::BAD_STATE);
         }
-        let hal_thread = hal::Thread::spawn(entry, stack, arg1, arg2, self.clone());
+        let hal_thread = hal::Thread::spawn(self.clone(), entry, stack, arg1, arg2, tp);
         inner.hal_thread = Some(hal_thread);
         self.base.signal_set(Signal::THREAD_RUNNING);
         Ok(())

@@ -10,24 +10,20 @@ use std::cell::Cell;
 
 /// Set FSBASE on user space.
 #[export_name = "hal_set_user_fsbase"]
-pub fn set_user_fsbase(fsbase: usize) {
+pub fn set_user_fsbase(mut fsbase: usize) {
+    if fsbase == 0 {
+        // HACK: alloc init pthread struct
+        let mut pthread = vec![0; 7];
+        fsbase = pthread.as_ptr() as usize;
+        pthread[0] = fsbase;
+        core::mem::forget(pthread); // FIXME: fix leak
+    }
     USER_FSBASE.with(|fs| fs.set(fsbase));
     unsafe {
         assert_eq!(fsbase, (fsbase as *const usize).read());
         let kernel_gs = get_gsbase();
         ((fsbase + 48) as *mut usize).write(kernel_gs);
     }
-}
-
-/// Init FSBASE on user space.
-#[export_name = "hal_init_user_fsbase"]
-pub fn init_user_fsbase() {
-    // HACK: alloc init pthread struct
-    let mut pthread = vec![0; 7];
-    let init_fsbase = pthread.as_ptr() as usize;
-    pthread[0] = init_fsbase;
-    set_user_fsbase(init_fsbase);
-    core::mem::forget(pthread); // FIXME: fix leak
 }
 
 /// Switch TLS from user to kernel.

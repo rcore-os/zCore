@@ -29,11 +29,12 @@ impl Thread {
     #[linkage = "weak"]
     #[export_name = "hal_thread_spawn"]
     pub fn spawn(
+        _self: Arc<ThreadObject>,
         _entry: usize,
         _stack: usize,
         _arg1: usize,
         _arg2: usize,
-        _tls: Arc<ThreadObject>,
+        _tp: usize,
     ) -> Self {
         #[cfg(test)]
         kernel_hal_unix::init();
@@ -227,12 +228,5 @@ pub fn timer_set(_deadline: Duration, _callback: Box<dyn FnOnce(Duration) + Send
 #[linkage = "weak"]
 #[export_name = "hal_set_user_fsbase"]
 pub fn set_user_fsbase(_fsbase: usize) {
-    unimplemented!()
-}
-
-/// Init FSBASE on user space.
-#[linkage = "weak"]
-#[export_name = "hal_init_user_fsbase"]
-pub fn init_user_fsbase() {
     unimplemented!()
 }

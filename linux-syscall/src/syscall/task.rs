@@ -50,7 +50,7 @@ impl Syscall {
             panic!("unsupported sys_clone flags: {:#x}", flags);
         }
         let new_thread = Thread::create(self.zircon_process(), "", 0)?;
-        new_thread.start(self.user_pc(), newsp, 0, 0)?;
+        new_thread.start(self.user_pc(), newsp, 0, 0, newtls)?;
 
         let tid = new_thread.id();
         info!("clone: {} -> {}", self.thread.id(), tid);
@@ -181,7 +181,7 @@ impl Syscall {
 
         #[allow(unsafe_code)]
         unsafe {
-            zircon_object::hal::init_user_fsbase();
+            zircon_object::hal::set_user_fsbase(0);
             self.reset_return(entry, sp);
         }
         Ok(0)

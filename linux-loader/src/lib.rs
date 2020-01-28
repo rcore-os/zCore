@@ -32,7 +32,7 @@ pub fn run(
     let (entry, sp) = loader.load(&proc.vmar(), &data, args, envs).unwrap();
 
     thread
-        .start(entry, sp, 0, 0)
+        .start(entry, sp, 0, 0, 0)
         .expect("failed to start main thread");
     proc
 }

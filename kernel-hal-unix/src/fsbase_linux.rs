@@ -6,14 +6,6 @@ pub fn set_user_fsbase(fsbase: usize) {
     }
 }
 
-/// Init FSBASE on user space.
-#[export_name = "hal_init_user_fsbase"]
-pub fn init_user_fsbase() {
-    unsafe {
-        set_gsbase(0);
-    }
-}
-
 /// Switch TLS from user to kernel.
 ///
 /// # Safety

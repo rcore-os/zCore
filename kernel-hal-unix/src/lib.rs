@@ -44,10 +44,17 @@ pub struct Thread {
 
 impl Thread {
     #[export_name = "hal_thread_spawn"]
-    pub fn spawn(entry: usize, stack: usize, arg1: usize, arg2: usize, tls: Arc<usize>) -> Self {
+    pub fn spawn(
+        thread: Arc<usize>,
+        entry: usize,
+        stack: usize,
+        arg1: usize,
+        arg2: usize,
+        tp: usize,
+    ) -> Self {
         let handle = std::thread::spawn(move || {
-            TLS.with(|t| t.replace(Some(tls)));
-            init_user_fsbase();
+            TLS.with(|t| t.replace(Some(thread)));
+            set_user_fsbase(tp);
             #[cfg(target_os = "linux")]
             unsafe {
                 // HACK: save kernel stack to [fs:64]. glibc seems not use it?
