@@ -49,10 +49,16 @@ impl Thread {
             TLS.with(|t| t.replace(Some(tls)));
             #[cfg(target_os = "macos")]
             {
-                let mut value = [0usize; 7];
-                let init_fsbase = value.as_ptr() as usize;
-                value[0] = init_fsbase;
+                // HACK: alloc init pthread struct
+                let mut pthread = [0usize; 7];
+                let init_fsbase = pthread.as_ptr() as usize;
+                pthread[0] = init_fsbase;
                 set_user_fsbase(init_fsbase);
+            }
+            #[cfg(target_os = "linux")]
+            unsafe {
+                // HACK: save kernel stack to [fs:64]. glibc seems not use it?
+                asm!("mov fs:64, rsp" ::::  "volatile" "intel");
             }
             unsafe {
                 switch_to_user();

@@ -1,5 +1,13 @@
 use std::cell::Cell;
 
+// User:
+// - gs:0   (pthread.self)      = user gsbase
+// - gs:48  (pthread.canary2)   = kernel gsbase
+//
+// Kernel:
+// - gs:-48 (pthread.stackaddr) = kernel stack
+// - gs:0   (pthread.tsd[self]) = kernel gsbase - 224
+
 /// Set FSBASE on user space.
 #[export_name = "hal_set_user_fsbase"]
 pub fn set_user_fsbase(fsbase: usize) {

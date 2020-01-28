@@ -29,7 +29,57 @@ pub fn run(libc_data: &[u8], args: Vec<String>, envs: Vec<String>) -> Arc<Proces
     proc
 }
 
-extern "C" fn syscall_entry(
+extern "C" {
+    fn syscall_entry();
+}
+
+#[cfg(target_os = "linux")]
+global_asm!(
+    r#"
+.intel_syntax noprefix
+syscall_entry:
+    # save user stack to r10 (caller-saved)
+    mov r10, rsp
+
+    # switch to kernel stack
+    mov rsp, gs:64
+
+    # pass argument in stack
+    push r10                # user stack
+    push [r10 + 8]          # arg6
+    call handle_syscall
+
+    # switch to user stack
+    mov rsp, [rsp + 8]
+    ret
+"#
+);
+
+#[cfg(target_os = "macos")]
+global_asm!(
+    r#"
+.intel_syntax noprefix
+_syscall_entry:
+    # save user stack to r10 (caller-saved)
+    mov r10, rsp
+
+    # switch to kernel stack
+    mov rsp, gs:48          # rsp = kernel gsbase
+    mov rsp, [rsp - 48]     # rsp = kernel stack
+
+    # pass argument in stack
+    push r10                # user stack
+    push [r10 + 8]          # arg6
+    call _handle_syscall
+
+    # switch to user stack
+    mov rsp, [rsp + 8]
+    ret
+"#
+);
+
+#[no_mangle]
+extern "C" fn handle_syscall(
     num: u32,
     a0: usize,
     a1: usize,
