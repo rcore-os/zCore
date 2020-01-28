@@ -157,7 +157,7 @@ impl Syscall {
             path, argv, envp
         );
         let path = path.read_cstring()?;
-        let args = argv.read_cstring_array()?;
+        let mut args = argv.read_cstring_array()?;
         let envs = envp.read_cstring_array()?;
         if args.is_empty() {
             error!("execve: args is null");
@@ -168,8 +168,9 @@ impl Syscall {
 
         // Read program file
         let mut proc = self.lock_linux_process();
-        let inode = proc.lookup_inode(&path)?;
+        let inode = proc.lookup_inode("/host/libc.so")?;
         let data = inode.read_as_vec()?;
+        args.insert(0, "/host/libc.so".into());
 
         let vmar = self.zircon_process().vmar();
         vmar.clear()?;
@@ -177,14 +178,15 @@ impl Syscall {
             syscall_entry: self.syscall_entry,
             stack_pages: 8,
         };
-        let (_entry, _sp) = loader.load(&vmar, &data, args, envs)?;
+        let (entry, sp) = loader.load(&vmar, &data, args, envs)?;
 
         // Modify exec path
         proc.exec_path = path.clone();
 
-        //        // Modify the TrapFrame
-        //        *self.tf = TrapFrame::new_user_thread(entry_addr, ustack_top);
-
+        #[allow(unsafe_code)]
+        unsafe {
+            self.reset_return(entry, sp);
+        }
         Ok(0)
     }
     //

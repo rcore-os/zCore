@@ -34,6 +34,7 @@ impl LinuxElfLoader {
         let base = image_vmar.addr();
         let vmo = image_vmar.load_from_elf(&elf)?;
         let entry = base + elf.header.pt2.entry_point() as usize;
+        debug!("interp: {:?}", elf.get_interpreter());
 
         // fill syscall entry
         let syscall_entry_offset = elf
@@ -128,6 +129,7 @@ fn make_vmo(elf: &ElfFile, ph: ProgramHeader) -> ZxResult<Arc<VMObjectPaged>> {
 trait ElfExt {
     fn load_segment_size(&self) -> usize;
     fn get_symbol_address(&self, symbol: &str) -> Option<u64>;
+    fn get_interpreter(&self) -> Result<&str, &str>;
     fn dynsym(&self) -> Result<&[DynEntry64], &'static str>;
     fn relocate(&self, base: usize) -> Result<(), &'static str>;
 }
@@ -155,6 +157,20 @@ impl ElfExt for ElfFile<'_> {
             }
         }
         None
+    }
+
+    fn get_interpreter(&self) -> Result<&str, &str> {
+        let header = self
+            .program_iter()
+            .find(|ph| ph.get_type() == Ok(Type::Interp))
+            .ok_or("no interp header")?;
+        let data = match header.get_data(self)? {
+            SegmentData::Undefined(data) => data,
+            _ => return Err("bad interp"),
+        };
+        let len = (0..).find(|&i| data[i] == 0).unwrap();
+        let path = core::str::from_utf8(&data[..len]).map_err(|_| "failed to convert to utf8")?;
+        Ok(path)
     }
 
     fn dynsym(&self) -> Result<&[DynEntry64], &'static str> {

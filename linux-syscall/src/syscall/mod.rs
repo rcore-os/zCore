@@ -15,6 +15,7 @@ mod vm;
 pub struct Syscall {
     pub thread: Arc<Thread>,
     pub syscall_entry: VirtAddr,
+    pub ptr: *mut usize,
 }
 
 impl Syscall {
@@ -228,5 +229,11 @@ impl Syscall {
 
     fn lock_linux_process(&self) -> MutexGuard<'_, LinuxProcess> {
         self.zircon_process().lock_linux()
+    }
+
+    #[allow(unsafe_code)]
+    unsafe fn reset_return(&self, entry: usize, sp: usize) {
+        self.ptr.write(entry);
+        self.ptr.add(1).write(sp);
     }
 }

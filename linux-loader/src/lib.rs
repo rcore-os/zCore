@@ -39,19 +39,22 @@ global_asm!(
 .intel_syntax noprefix
 syscall_entry:
     # save user stack to r10 (caller-saved)
-    mov r10, rsp
+    lea r10, [rsp + 8]
 
     # switch to kernel stack
     mov rsp, gs:64
 
     # pass argument in stack
-    push r10                # user stack
-    push [r10 + 8]          # arg6
+    push r10                # user sp
+    push [r10 - 8]          # user pc
+    push rsp                # ptr to [pc, sp]
+    push [r10]              # arg6
     call handle_syscall
 
-    # switch to user stack
-    mov rsp, [rsp + 8]
-    ret
+    # back to user
+    mov r10, [rsp + 16]     # load pc
+    mov rsp, [rsp + 24]     # load sp
+    jmp r10
 "#
 );
 
@@ -61,20 +64,23 @@ global_asm!(
 .intel_syntax noprefix
 _syscall_entry:
     # save user stack to r10 (caller-saved)
-    mov r10, rsp
+    lea r10, [rsp + 8]
 
     # switch to kernel stack
     mov rsp, gs:48          # rsp = kernel gsbase
     mov rsp, [rsp - 48]     # rsp = kernel stack
 
     # pass argument in stack
-    push r10                # user stack
-    push [r10 + 8]          # arg6
+    push r10                # user sp
+    push [r10 - 8]          # user pc
+    push rsp                # ptr to [pc, sp]
+    push [r10]              # arg6
     call _handle_syscall
 
-    # switch to user stack
-    mov rsp, [rsp + 8]
-    ret
+    # back to user
+    mov r10, [rsp + 16]     # load pc
+    mov rsp, [rsp + 24]     # load sp
+    jmp r10
 "#
 );
 
@@ -87,6 +93,7 @@ extern "C" fn handle_syscall(
     a3: usize,
     a4: usize,
     a5: usize,
+    ptr: *mut usize,
 ) -> isize {
     unsafe {
         switch_to_kernel();
@@ -94,6 +101,7 @@ extern "C" fn handle_syscall(
     let syscall = Syscall {
         thread: Thread::current(),
         syscall_entry: syscall_entry as usize,
+        ptr,
     };
     let ret = syscall.syscall(num, [a0, a1, a2, a3, a4, a5]);
     unsafe {
