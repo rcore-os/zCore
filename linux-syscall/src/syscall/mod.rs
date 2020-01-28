@@ -114,9 +114,9 @@ impl Syscall {
             //            SYS_GETSOCKOPT => self.sys_getsockopt(a0, a1, a2, a3.into(), a4.into()),
 
             // process
-            //            SYS_CLONE => self.sys_clone(a0, a1, a2.into(), a3.into(), a4),
+            SYS_CLONE => self.sys_clone(a0, a1, a2.into(), a3.into(), a4),
             SYS_EXECVE => self.sys_execve(a0.into(), a1.into(), a2.into()),
-            //            SYS_EXIT => self.sys_exit(a0 as usize),
+            SYS_EXIT => self.sys_exit(a0 as _),
             SYS_EXIT_GROUP => self.sys_exit_group(a0),
             SYS_WAIT4 => self.sys_wait4(a0 as _, a1.into(), a2 as _),
             SYS_SET_TID_ADDRESS => self.sys_set_tid_address(a0.into()),
@@ -235,5 +235,10 @@ impl Syscall {
     unsafe fn reset_return(&self, entry: usize, sp: usize) {
         self.ptr.write(entry);
         self.ptr.add(1).write(sp);
+    }
+
+    #[allow(unsafe_code)]
+    fn user_pc(&self) -> usize {
+        unsafe { self.ptr.read() }
     }
 }

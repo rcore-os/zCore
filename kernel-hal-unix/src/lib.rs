@@ -55,7 +55,9 @@ impl Thread {
             }
             unsafe {
                 switch_to_user();
-                asm!("jmp $0" :: "r"(entry), "{rsp}"(stack), "{rdi}"(arg1), "{rsi}"(arg2) :: "volatile" "intel");
+                asm!("jmp $0"
+                :: "r"(entry), "{rsp}"(stack), "{rdi}"(arg1), "{rsi}"(arg2), "{rax}"(0)
+                :: "volatile" "intel");
             }
             unreachable!()
         });

@@ -107,6 +107,10 @@ impl MmapProt {
         if self.contains(MmapProt::EXEC) {
             flags |= MMUFlags::EXECUTE;
         }
+        // FIXME: hack for unimplemented mprotect
+        if flags == MMUFlags::empty() {
+            flags = MMUFlags::READ | MMUFlags::WRITE;
+        }
         flags
     }
 }
