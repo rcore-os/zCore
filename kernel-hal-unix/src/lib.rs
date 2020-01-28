@@ -47,14 +47,7 @@ impl Thread {
     pub fn spawn(entry: usize, stack: usize, arg1: usize, arg2: usize, tls: Arc<usize>) -> Self {
         let handle = std::thread::spawn(move || {
             TLS.with(|t| t.replace(Some(tls)));
-            #[cfg(target_os = "macos")]
-            {
-                // HACK: alloc init pthread struct
-                let mut pthread = [0usize; 7];
-                let init_fsbase = pthread.as_ptr() as usize;
-                pthread[0] = init_fsbase;
-                set_user_fsbase(init_fsbase);
-            }
+            init_user_fsbase();
             #[cfg(target_os = "linux")]
             unsafe {
                 // HACK: save kernel stack to [fs:64]. glibc seems not use it?

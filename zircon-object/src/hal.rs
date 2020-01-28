@@ -229,3 +229,10 @@ pub fn timer_set(_deadline: Duration, _callback: Box<dyn FnOnce(Duration) + Send
 pub fn set_user_fsbase(_fsbase: usize) {
     unimplemented!()
 }
+
+/// Init FSBASE on user space.
+#[linkage = "weak"]
+#[export_name = "hal_init_user_fsbase"]
+pub fn init_user_fsbase() {
+    unimplemented!()
+}

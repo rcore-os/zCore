@@ -73,65 +73,65 @@ impl Syscall {
         return Err(SysError::ECHILD);
         // FIXME: wait4
 
-    //        #[derive(Debug)]
-    //        enum WaitFor {
-    //            AnyChild,
-    //            AnyChildInGroup,
-    //            Pid(usize),
-    //        }
-    //        let _target = match pid {
-    //            -1 => WaitFor::AnyChild,
-    //            0 => WaitFor::AnyChildInGroup,
-    //            p if p > 0 => WaitFor::Pid(p as usize),
-    //            _ => unimplemented!(),
-    //        };
-    //        loop {
-    //            let mut proc = self.process();
-    //            // check child_exit_code
-    //            let find = match target {
-    //                WaitFor::AnyChild | WaitFor::AnyChildInGroup => proc
-    //                    .child_exit_code
-    //                    .iter()
-    //                    .next()
-    //                    .map(|(&pid, &code)| (pid, code)),
-    //                WaitFor::Pid(pid) => proc.child_exit_code.get(&pid).map(|&code| (pid, code)),
-    //            };
-    //            // if found, return
-    //            if let Some((pid, exit_code)) = find {
-    //                proc.child_exit_code.remove(&pid);
-    //                {
-    //                    let mut process_table = PROCESSES.write();
-    //                    process_table.remove(&pid);
-    //                }
-    //                wstatus.write_if_not_null(exit_code as i32)?;
-    //                return Ok(pid);
-    //            }
-    //            // if not, check pid
-    //            let invalid = {
-    //                let children: Vec<_> = proc
-    //                    .children
-    //                    .iter()
-    //                    .filter_map(|weak| weak.upgrade())
-    //                    .collect();
-    //                match target {
-    //                    WaitFor::AnyChild | WaitFor::AnyChildInGroup => children.len() == 0,
-    //                    WaitFor::Pid(pid) => children
-    //                        .iter()
-    //                        .find(|p| p.lock().pid.get() == pid)
-    //                        .is_none(),
-    //                }
-    //            };
-    //            if invalid {
-    //                return Err(SysError::ECHILD);
-    //            }
-    //            info!(
-    //                "wait: thread {} -> {:?}, sleep",
-    //                thread::current().id(),
-    //                target
-    //            );
-    //            let condvar = proc.child_exit.clone();
-    //            condvar.wait(proc);
-    //        }
+        //        #[derive(Debug)]
+        //        enum WaitFor {
+        //            AnyChild,
+        //            AnyChildInGroup,
+        //            Pid(usize),
+        //        }
+        //        let _target = match pid {
+        //            -1 => WaitFor::AnyChild,
+        //            0 => WaitFor::AnyChildInGroup,
+        //            p if p > 0 => WaitFor::Pid(p as usize),
+        //            _ => unimplemented!(),
+        //        };
+        //        loop {
+        //            let mut proc = self.process();
+        //            // check child_exit_code
+        //            let find = match target {
+        //                WaitFor::AnyChild | WaitFor::AnyChildInGroup => proc
+        //                    .child_exit_code
+        //                    .iter()
+        //                    .next()
+        //                    .map(|(&pid, &code)| (pid, code)),
+        //                WaitFor::Pid(pid) => proc.child_exit_code.get(&pid).map(|&code| (pid, code)),
+        //            };
+        //            // if found, return
+        //            if let Some((pid, exit_code)) = find {
+        //                proc.child_exit_code.remove(&pid);
+        //                {
+        //                    let mut process_table = PROCESSES.write();
+        //                    process_table.remove(&pid);
+        //                }
+        //                wstatus.write_if_not_null(exit_code as i32)?;
+        //                return Ok(pid);
+        //            }
+        //            // if not, check pid
+        //            let invalid = {
+        //                let children: Vec<_> = proc
+        //                    .children
+        //                    .iter()
+        //                    .filter_map(|weak| weak.upgrade())
+        //                    .collect();
+        //                match target {
+        //                    WaitFor::AnyChild | WaitFor::AnyChildInGroup => children.len() == 0,
+        //                    WaitFor::Pid(pid) => children
+        //                        .iter()
+        //                        .find(|p| p.lock().pid.get() == pid)
+        //                        .is_none(),
+        //                }
+        //            };
+        //            if invalid {
+        //                return Err(SysError::ECHILD);
+        //            }
+        //            info!(
+        //                "wait: thread {} -> {:?}, sleep",
+        //                thread::current().id(),
+        //                target
+        //            );
+        //            let condvar = proc.child_exit.clone();
+        //            condvar.wait(proc);
+        //        }
     }
 
     /// Replaces the current ** process ** with a new process image
@@ -185,6 +185,7 @@ impl Syscall {
 
         #[allow(unsafe_code)]
         unsafe {
+            zircon_object::hal::init_user_fsbase();
             self.reset_return(entry, sp);
         }
         Ok(0)
