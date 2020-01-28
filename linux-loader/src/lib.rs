@@ -13,15 +13,23 @@ use {
     zircon_object::task::*,
 };
 
-pub fn run(libc_data: &[u8], args: Vec<String>, envs: Vec<String>) -> Arc<Process> {
+pub fn run(
+    exec_path: &str,
+    args: Vec<String>,
+    envs: Vec<String>,
+    rootfs: Arc<dyn FileSystem>,
+) -> Arc<Process> {
     let job = Job::root();
-    let proc = Process::create_linux(&job, "proc").unwrap();
+    let proc = Process::create_linux(&job, rootfs.clone()).unwrap();
     let thread = Thread::create(&proc, "thread", 0).unwrap();
     let loader = LinuxElfLoader {
         syscall_entry: syscall_entry as usize,
         stack_pages: 8,
+        root_inode: rootfs.root_inode(),
     };
-    let (entry, sp) = loader.load(&proc.vmar(), libc_data, args, envs).unwrap();
+    let inode = rootfs.root_inode().lookup(&exec_path).unwrap();
+    let data = inode.read_as_vec().unwrap();
+    let (entry, sp) = loader.load(&proc.vmar(), &data, args, envs).unwrap();
 
     thread
         .start(entry, sp, 0, 0)

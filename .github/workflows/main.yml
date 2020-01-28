@@ -67,6 +67,8 @@ jobs:
       run: |
         git lfs install
         git lfs pull
+    - name: Prepare rootfs
+      run: make rootfs
     - name: Test
       uses: actions-rs/cargo@v1
       with:

@@ -157,7 +157,7 @@ impl Syscall {
             path, argv, envp
         );
         let path = path.read_cstring()?;
-        let mut args = argv.read_cstring_array()?;
+        let args = argv.read_cstring_array()?;
         let envs = envp.read_cstring_array()?;
         if args.is_empty() {
             error!("execve: args is null");
@@ -168,15 +168,15 @@ impl Syscall {
 
         // Read program file
         let mut proc = self.lock_linux_process();
-        let inode = proc.lookup_inode("/host/libc.so")?;
+        let inode = proc.lookup_inode(&path)?;
         let data = inode.read_as_vec()?;
-        args.insert(0, "/host/libc.so".into());
 
         let vmar = self.zircon_process().vmar();
         vmar.clear()?;
         let loader = LinuxElfLoader {
             syscall_entry: self.syscall_entry,
             stack_pages: 8,
+            root_inode: proc.root_inode().clone(),
         };
         let (entry, sp) = loader.load(&vmar, &data, args, envs)?;
 

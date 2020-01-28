@@ -67,9 +67,8 @@ impl Into<usize> for FileDesc {
     }
 }
 
-pub fn create_root_fs() -> Arc<dyn INode> {
-    // use RamFS as rootfs
-    let rootfs = MountFS::new(RamFS::new());
+pub fn create_root_fs(rootfs: Arc<dyn FileSystem>) -> Arc<dyn INode> {
+    let rootfs = MountFS::new(rootfs);
     let root = rootfs.root_inode();
 
     // create DevFS

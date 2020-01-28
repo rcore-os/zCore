@@ -16,10 +16,16 @@ git lfs pull
 cd zircon-rs
 ```
 
+Prepare Alpine Linux rootfs:
+
+```sh
+make rootfs
+```
+
 Run native Linux program (Busybox):
 
 ```sh
-cargo run --release -p linux-loader prebuilt/libc.so host/busybox [args]
+cargo run --release -p linux-loader /bin/busybox [args]
 ```
 
 Run native Zircon program (userboot):

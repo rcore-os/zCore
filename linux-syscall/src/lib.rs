@@ -24,6 +24,8 @@ mod process;
 // layer 3
 mod syscall;
 
+pub use fs::INodeExt;
 pub use loader::LinuxElfLoader;
 pub use process::ProcessExt;
+pub use rcore_fs::vfs::{FileSystem, INode};
 pub use syscall::Syscall;

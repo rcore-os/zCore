@@ -2,7 +2,10 @@
 #![allow(unsafe_code)]
 
 use {
+    crate::error::LxResult,
+    crate::fs::INodeExt,
     alloc::{collections::BTreeMap, string::String, sync::Arc, vec::Vec},
+    rcore_fs::vfs::INode,
     xmas_elf::{
         program::{Flags, ProgramHeader, SegmentData, Type},
         sections::SectionData,
@@ -18,6 +21,7 @@ mod abi;
 pub struct LinuxElfLoader {
     pub syscall_entry: usize,
     pub stack_pages: usize,
+    pub root_inode: Arc<dyn INode>,
 }
 
 impl LinuxElfLoader {
@@ -25,22 +29,28 @@ impl LinuxElfLoader {
         &self,
         vmar: &Arc<VmAddressRegion>,
         data: &[u8],
-        args: Vec<String>,
+        mut args: Vec<String>,
         envs: Vec<String>,
-    ) -> ZxResult<(VirtAddr, VirtAddr)> {
+    ) -> LxResult<(VirtAddr, VirtAddr)> {
         let elf = ElfFile::new(data).map_err(|_| ZxError::INVALID_ARGS)?;
+        if let Ok(interp) = elf.get_interpreter() {
+            info!("interp: {:?}", interp);
+            let inode = self.root_inode.lookup(interp)?;
+            let data = inode.read_as_vec()?;
+            args.insert(0, interp.into());
+            return self.load(vmar, &data, args, envs);
+        }
+
         let size = elf.load_segment_size();
         let image_vmar = vmar.create_child(None, size)?;
         let base = image_vmar.addr();
         let vmo = image_vmar.load_from_elf(&elf)?;
         let entry = base + elf.header.pt2.entry_point() as usize;
-        debug!("interp: {:?}", elf.get_interpreter());
 
         // fill syscall entry
-        let syscall_entry_offset = elf
-            .get_symbol_address("rcore_syscall_entry")
-            .expect("failed to locate syscall entry") as usize;
-        vmo.write(syscall_entry_offset, &self.syscall_entry.to_ne_bytes());
+        if let Some(offset) = elf.get_symbol_address("rcore_syscall_entry") {
+            vmo.write(offset as usize, &self.syscall_entry.to_ne_bytes());
+        }
 
         elf.relocate(base).map_err(|_| ZxError::INVALID_ARGS)?;
 

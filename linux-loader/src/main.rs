@@ -3,7 +3,6 @@
 extern crate log;
 
 use linux_loader::*;
-use linux_syscall::ProcessExt;
 use rcore_fs_hostfs::HostFS;
 use zircon_object::object::*;
 
@@ -14,15 +13,9 @@ fn main() {
     let args: Vec<_> = std::env::args().skip(1).collect();
     let envs = vec!["PATH=/usr/sbin:/usr/bin:/sbin:/bin:/usr/x86_64-alpine-linux-musl/bin".into()];
 
-    let libc_path = &args[0];
-    let libc_data = std::fs::read(libc_path).expect("failed to read file");
-
-    let proc = run(&libc_data, args, envs);
-
-    // file system
-    let hostfs = HostFS::new("prebuilt");
-    proc.lock_linux().mount("host", hostfs);
-
+    let exec_path = args[0].clone();
+    let hostfs = HostFS::new("rootfs");
+    let proc = run(&exec_path, args, envs, hostfs);
     proc.wait_signal(Signal::PROCESS_TERMINATED);
 }
 
@@ -34,16 +27,12 @@ mod tests {
     fn run_libc() {
         kernel_hal_unix::init();
 
-        let libc_data = std::fs::read("../prebuilt/libc.so").expect("failed to read file");
-
-        let args = vec!["libc.so".into(), "host/busybox".into()];
+        let args = vec![String::from("/bin/busybox")];
         let envs = vec![]; // TODO
-        let proc = run(&libc_data, args, envs);
 
-        // file system
-        let hostfs = HostFS::new("../prebuilt");
-        proc.lock_linux().mount("host", hostfs);
-
+        let exec_path = args[0].clone();
+        let hostfs = HostFS::new("../rootfs");
+        let proc = run(&exec_path, args, envs, hostfs);
         proc.wait_signal(Signal::PROCESS_TERMINATED);
     }
 }
