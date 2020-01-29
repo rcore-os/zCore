@@ -240,3 +240,6 @@ fn make_vmo(elf: &ElfFile, ph: ProgramHeader) -> ZxResult<Arc<VMObjectPaged>> {
     vmo.write(0, data);
     Ok(vmo)
 }
+
+#[no_mangle]
+pub extern "C" fn _start(bootinfo: 
