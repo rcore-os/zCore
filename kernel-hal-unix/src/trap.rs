@@ -97,9 +97,14 @@ syscall_return_sp:
 );
 
 extern "C" {
-    // defined by user
-    fn handle_syscall(regs: *mut GeneralRegs);
+    pub fn syscall_entry();
     pub fn syscall_return(regs: &GeneralRegs) -> !;
+}
+
+#[linkage = "weak"]
+#[no_mangle]
+extern "C" fn handle_syscall(_regs: *mut GeneralRegs) {
+    unimplemented!()
 }
 
 #[no_mangle]

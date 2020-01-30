@@ -92,7 +92,7 @@ trait FlagsExt {
     fn to_ptf(self) -> PTF;
 }
 
-impl MMUFlags {
+impl FlagsExt for MMUFlags {
     fn to_ptf(self) -> PTF {
         let mut flags = PTF::VALID;
         if self.contains(MMUFlags::READ) {

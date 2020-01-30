@@ -1,4 +1,5 @@
 #![feature(asm, global_asm)]
+#![feature(linkage)]
 #![deny(warnings)]
 
 #[macro_use]
@@ -19,6 +20,7 @@ use {
     tempfile::tempdir_in,
 };
 
+pub use self::trap::syscall_entry;
 pub use kernel_hal::defs::*;
 
 #[cfg(target_os = "linux")]

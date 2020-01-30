@@ -9,7 +9,7 @@ extern crate log;
 
 use {
     alloc::{string::String, sync::Arc, vec::Vec},
-    kernel_hal_unix::GeneralRegs,
+    kernel_hal_unix::{syscall_entry, GeneralRegs},
     linux_syscall::*,
     zircon_object::task::*,
 };
@@ -36,10 +36,6 @@ pub fn run(
         .start(entry, sp, 0, 0)
         .expect("failed to start main thread");
     proc
-}
-
-extern "C" {
-    fn syscall_entry();
 }
 
 #[no_mangle]
