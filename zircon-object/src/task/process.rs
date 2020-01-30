@@ -115,7 +115,7 @@ impl Process {
             return Err(ZxError::BAD_STATE);
         }
         inner.started = true;
-        thread.start(entry, stack, handle_value as usize, arg2, 0)?;
+        thread.start(entry, stack, handle_value as usize, arg2)?;
         Ok(())
     }
 

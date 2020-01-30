@@ -32,17 +32,10 @@ pub struct Thread {
 
 impl Thread {
     #[export_name = "hal_thread_spawn"]
-    pub fn spawn(
-        thread: Arc<usize>,
-        entry: usize,
-        stack: usize,
-        arg1: usize,
-        arg2: usize,
-        tp: usize,
-    ) -> Self {
+    pub fn spawn(thread: Arc<usize>, regs: GeneralRegs) -> Self {
         let handle = std::thread::spawn(move || {
             TLS.with(|t| t.replace(Some(thread)));
-            set_user_fsbase(tp);
+            set_user_fsbase(regs.fs_base);
             #[cfg(target_os = "linux")]
             unsafe {
                 // HACK: save kernel stack to [fs:64]. glibc seems not use it?
@@ -50,8 +43,29 @@ impl Thread {
             }
             unsafe {
                 switch_to_user();
-                asm!("jmp $0"
-                :: "r"(entry), "{rsp}"(stack), "{rdi}"(arg1), "{rsi}"(arg2), "{rax}"(0)
+                asm!(r#"
+                    pop rax
+                    pop rbx
+                    pop rcx     # rcx is clobber
+                    pop rdx
+                    pop rsi
+                    pop rdi
+                    pop rbp
+                    pop rcx     # rcx = rsp
+                    pop r8
+                    pop r9
+                    pop r10
+                    pop r11     # r11 is clobber
+                    pop r12
+                    pop r13
+                    pop r14
+                    pop r15
+                    pop r11     # r11 = rip
+                    popfq       # pop rflags
+                    mov rsp, rcx
+                    jmp r11
+                "#
+                :: "{rsp}"(&regs)
                 :: "volatile" "intel");
             }
             unreachable!()

@@ -123,13 +123,18 @@ impl Thread {
         stack: usize,
         arg1: usize,
         arg2: usize,
-        tp: usize,
     ) -> ZxResult<()> {
+        let regs = GeneralRegs::new_fn(entry, stack, arg1, arg2);
+        self.start_with_regs(regs)
+    }
+
+    /// Start execution with given registers.
+    pub fn start_with_regs(self: &Arc<Self>, regs: GeneralRegs) -> ZxResult<()> {
         let mut inner = self.inner.lock();
         if inner.hal_thread.is_some() {
             return Err(ZxError::BAD_STATE);
         }
-        let hal_thread = kernel_hal::Thread::spawn(self.clone(), entry, stack, arg1, arg2, tp);
+        let hal_thread = kernel_hal::Thread::spawn(self.clone(), regs);
         inner.hal_thread = Some(hal_thread);
         self.base.signal_set(Signal::THREAD_RUNNING);
         Ok(())
@@ -256,7 +261,7 @@ mod tests {
             rsi: 4,
             rdi: 5,
             rbp: 6,
-            rsp: stack_top - 96,
+            rsp: stack_top,
             r8: 8,
             r9: 9,
             r10: 10,
@@ -265,21 +270,25 @@ mod tests {
             r13: 13,
             r14: 14,
             r15: 15,
-            rip: entry as usize + 18,
-            rflags: 0x246,
+            rip: entry as usize,
+            rflags: 0x202,
             fs_base: 0,
             gs_base: 0,
         };
 
         // function for new thread
         #[naked]
-        unsafe extern "C" fn entry(_arg1: usize, _arg2: usize) -> ! {
+        unsafe extern "C" fn entry() -> ! {
+            // dump registers at stack
             asm!(r#"
                 push 0      # ignore gs_base
                 push 0      # ignore fs_base
-                pushf       # push rflags
-                call 1f     # push rip <entry + 18>
-            1:  push r15
+                pushfq      # push rflags
+                call 1f     # push rip <entry + 10>
+            1:  pop rcx
+                sub rcx, 10
+                push rcx    # push rip <entry>
+                push r15
                 push r14
                 push r13
                 push r12
@@ -287,7 +296,8 @@ mod tests {
                 push r10
                 push r9
                 push r8
-                push rsp    # rsp - 12 * 8
+                lea rcx, [rsp + 96]
+                push rcx    # push rsp
                 push rbp
                 push rdi
                 push rsi
@@ -302,11 +312,15 @@ mod tests {
 
         // start new thread and join
         thread
-            .start(entry as usize, stack_top, regs.rdi, regs.rsi, 0)
+            .start_with_regs(regs)
             .expect("failed to start thread");
         thread.wait_signal(Signal::THREAD_TERMINATED);
 
-        let actual_regs = unsafe { *(stack_top as *const GeneralRegs).sub(1) };
+        // load registers dumped at stack
+        let mut actual_regs = unsafe { *(stack_top as *const GeneralRegs).sub(1) };
+        // rcx and r11 is clobbers, ignore in compare
+        actual_regs.rcx = regs.rcx;
+        actual_regs.r11 = regs.r11;
         assert_eq!(actual_regs, regs);
     }
 }

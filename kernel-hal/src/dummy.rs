@@ -15,14 +15,7 @@ impl Thread {
     /// Spawn a new thread.
     #[linkage = "weak"]
     #[export_name = "hal_thread_spawn"]
-    pub fn spawn<T>(
-        _self: Arc<T>,
-        _entry: usize,
-        _stack: usize,
-        _arg1: usize,
-        _arg2: usize,
-        _tp: usize,
-    ) -> Self {
+    pub fn spawn<T>(_self: Arc<T>, _regs: GeneralRegs) -> Self {
         unimplemented!()
     }
 

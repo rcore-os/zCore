@@ -50,7 +50,7 @@ impl Syscall {
             panic!("unsupported sys_clone flags: {:#x}", flags);
         }
         let new_thread = Thread::create(self.zircon_process(), "", 0)?;
-        new_thread.start(self.user_pc(), newsp, 0, 0, newtls)?;
+        new_thread.start(self.user_pc(), newsp, 0, 0)?;
 
         let tid = new_thread.id();
         info!("clone: {} -> {}", self.thread.id(), tid);

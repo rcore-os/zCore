@@ -6,6 +6,9 @@
 extern crate alloc;
 
 pub mod defs {
+    #[cfg(target_arch = "x86_64")]
+    include!("arch/x86_64.rs");
+
     use bitflags::bitflags;
 
     bitflags! {

@@ -1,4 +1,5 @@
 use crate::{ZxError, ZxResult};
+pub use kernel_hal::GeneralRegs;
 
 #[repr(u32)]
 #[derive(Debug, Copy, Clone)]
@@ -16,31 +17,6 @@ pub enum ThreadStateKind {
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
 pub struct ThreadState {
     general: GeneralRegs,
-}
-
-#[repr(C)]
-#[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
-pub struct GeneralRegs {
-    pub rax: usize,
-    pub rbx: usize,
-    pub rcx: usize,
-    pub rdx: usize,
-    pub rsi: usize,
-    pub rdi: usize,
-    pub rbp: usize,
-    pub rsp: usize,
-    pub r8: usize,
-    pub r9: usize,
-    pub r10: usize,
-    pub r11: usize,
-    pub r12: usize,
-    pub r13: usize,
-    pub r14: usize,
-    pub r15: usize,
-    pub rip: usize,
-    pub rflags: usize,
-    pub fs_base: usize,
-    pub gs_base: usize,
 }
 
 impl ThreadState {
