@@ -26,7 +26,7 @@ endif
 run: build justrun
 
 justrun:
-	@$(qemu) $(qemu_opts)
+	@$(qemu) $(qemu_opts) -s -S
 
 build: $(kernel_img)
 
