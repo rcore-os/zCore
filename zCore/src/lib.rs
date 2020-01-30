@@ -43,7 +43,7 @@ pub extern "C" fn _start(boot_info: &BootInfo) -> ! {
 
 /// Global heap allocator
 ///
-/// Available after `memory::init()`.
+/// Available after `memory::init_heap()`.
 ///
 /// It should be defined in memory mod, but in Rust `global_allocator` must be in root mod.
 #[global_allocator]

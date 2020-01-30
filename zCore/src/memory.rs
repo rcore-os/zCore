@@ -25,7 +25,6 @@ const MEMORY_OFFSET: usize = 0;
 
 pub fn init_frame_allocator(boot_info: &BootInfo) {
     let mut ba = FRAME_ALLOCATOR.lock();
-    info!("frame allocator init start");
     for region in boot_info.memory_map.clone().iter {
         if region.ty == MemoryType::CONVENTIONAL {
             let start_frame = region.phys_start as usize / PAGE_SIZE;
@@ -33,20 +32,13 @@ pub fn init_frame_allocator(boot_info: &BootInfo) {
             ba.insert(start_frame..end_frame);
         }
     }
-    info!("frame allocator init end");
+    info!("Frame allocator init end");
 }
 
 pub fn init_heap() {
     const MACHINE_ALIGN: usize = mem::size_of::<usize>();
     const HEAP_BLOCK: usize = KERNEL_HEAP_SIZE / MACHINE_ALIGN;
     static mut HEAP: [usize; HEAP_BLOCK] = [0; HEAP_BLOCK];
-    unsafe {
-        info!(
-            "HEAP is in {:#x}, with {:#x} blocks",
-            HEAP.as_ptr() as usize,
-            HEAP_BLOCK
-        );
-    }
     unsafe {
         HEAP_ALLOCATOR
             .lock()
