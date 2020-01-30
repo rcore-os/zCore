@@ -50,7 +50,8 @@ impl Syscall<'_> {
             panic!("unsupported sys_clone flags: {:#x}", flags);
         }
         let new_thread = Thread::create(self.zircon_process(), "", 0)?;
-        new_thread.start(self.user_pc(), newsp, 0, 0)?;
+        let regs = self.regs.clone(newsp, newtls);
+        new_thread.start_with_regs(regs)?;
 
         let tid = new_thread.id();
         info!("clone: {} -> {}", self.thread.id(), tid);
@@ -180,11 +181,8 @@ impl Syscall<'_> {
         proc.exec_path = path.clone();
         drop(proc);
 
-        #[allow(unsafe_code)]
-        unsafe {
-            kernel_hal::set_user_fsbase(0);
-            self.reset_return(entry, sp);
-        }
+        kernel_hal::set_user_fsbase(0);
+        *self.regs = GeneralRegs::new_fn(entry, sp, 0, 0);
         Ok(0)
     }
     //

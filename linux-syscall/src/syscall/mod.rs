@@ -231,15 +231,4 @@ impl Syscall<'_> {
     fn lock_linux_process(&self) -> MutexGuard<'_, LinuxProcess> {
         self.zircon_process().lock_linux()
     }
-
-    #[allow(unsafe_code)]
-    unsafe fn reset_return(&mut self, entry: usize, sp: usize) {
-        self.regs.rip = entry;
-        self.regs.rsp = sp;
-    }
-
-    #[allow(unsafe_code)]
-    fn user_pc(&self) -> usize {
-        self.regs.rip
-    }
 }

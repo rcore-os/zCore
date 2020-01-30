@@ -33,4 +33,13 @@ impl GeneralRegs {
             ..Default::default()
         }
     }
+
+    pub fn clone(&self, newsp: usize, newtls: usize) -> Self {
+        GeneralRegs {
+            rax: 0,
+            rsp: newsp,
+            fs_base: newtls,
+            ..*self
+        }
+    }
 }
