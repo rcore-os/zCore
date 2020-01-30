@@ -19,3 +19,4 @@ bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator" }
 
 [build-dependencies]
 cc = "1.0"
+

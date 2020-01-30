@@ -1,5 +1,5 @@
 arch ?= x86_64
-mode ?= debug
+mode ?= release
 LOG ?=
 
 build_args := -Z build-std=core,alloc --target zCore/$(arch).json
@@ -9,6 +9,10 @@ kernel_img := $(build_path)/zcore.img
 ESP := $(build_path)/esp
 OVMF := ./rboot/OVMF.fd
 qemu := qemu-system-$(arch)
+
+ifeq ($(mode), release)
+	build_args += --release
+endif
 
 qemu_opts := \
 	-smp cores=1
@@ -26,7 +30,7 @@ endif
 run: build justrun
 
 justrun:
-	@$(qemu) $(qemu_opts) -s -S
+	@$(qemu) $(qemu_opts)
 
 build: $(kernel_img)
 
