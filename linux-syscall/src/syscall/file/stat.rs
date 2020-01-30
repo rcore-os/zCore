@@ -189,6 +189,7 @@ pub struct Stat {
 }
 
 impl From<Metadata> for Stat {
+    #[allow(clippy::identity_conversion)]
     fn from(info: Metadata) -> Self {
         Stat {
             dev: info.dev as u64,
@@ -216,26 +217,26 @@ impl From<Metadata> for Stat {
 bitflags! {
     pub struct StatMode: u32 {
         /// Type
-        const TYPE_MASK = 0o170000;
+        const TYPE_MASK = 0o170_000;
         /// FIFO
-        const FIFO  = 0o010000;
+        const FIFO  = 0o010_000;
         /// character device
-        const CHAR  = 0o020000;
+        const CHAR  = 0o020_000;
         /// directory
-        const DIR   = 0o040000;
+        const DIR   = 0o040_000;
         /// block device
-        const BLOCK = 0o060000;
+        const BLOCK = 0o060_000;
         /// ordinary regular file
-        const FILE  = 0o100000;
+        const FILE  = 0o100_000;
         /// symbolic link
-        const LINK  = 0o120000;
+        const LINK  = 0o120_000;
         /// socket
-        const SOCKET = 0o140000;
+        const SOCKET = 0o140_000;
 
         /// Set-user-ID on execution.
-        const SET_UID = 0o4000;
+        const SET_UID = 0o4_000;
         /// Set-group-ID on execution.
-        const SET_GID = 0o2000;
+        const SET_GID = 0o2_000;
 
         /// Read, write, execute/search by owner.
         const OWNER_MASK = 0o700;

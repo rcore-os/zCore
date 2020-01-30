@@ -7,6 +7,7 @@ use rcore_fs::vfs::{FileType, FsError, INode};
 
 mod dir;
 mod fd;
+#[allow(clippy::module_inception)]
 mod file;
 mod poll;
 mod stat;
@@ -36,20 +37,14 @@ impl LinuxProcess {
             dirfd, self.cwd, path, follow
         );
         // hard code special path
-        match path {
-            "/proc/self/exe" => {
-                return Ok(Arc::new(Pseudo::new(&self.exec_path, FileType::SymLink)));
-            }
-            _ => {}
+        if path == "/proc/self/exe" {
+            return Ok(Arc::new(Pseudo::new(&self.exec_path, FileType::SymLink)));
         }
         let (fd_dir_path, fd_name) = split_path(&path);
-        match fd_dir_path {
-            "/proc/self/fd" => {
-                let fd = FileDesc::try_from(fd_name)?;
-                let fd_path = &self.get_file(fd)?.path;
-                return Ok(Arc::new(Pseudo::new(fd_path, FileType::SymLink)));
-            }
-            _ => {}
+        if fd_dir_path == "/proc/self/fd" {
+            let fd = FileDesc::try_from(fd_name)?;
+            let fd_path = &self.get_file(fd)?.path;
+            return Ok(Arc::new(Pseudo::new(fd_path, FileType::SymLink)));
         }
 
         let follow_max_depth = if follow { FOLLOW_MAX_DEPTH } else { 0 };

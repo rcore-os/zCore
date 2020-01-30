@@ -43,7 +43,7 @@ impl Syscall<'_> {
             unimplemented!()
             //            return self.sys_fork();
         }
-        if flags != 0x7d0f00 && flags != 0x5d0f00 {
+        if flags != 0x7d_0f00 && flags != 0x5d_0f00 {
             // 0x5d0f00: gcc of alpine linux
             // 0x7d0f00: pthread_create of alpine linux
             // warn!("sys_clone only support musl pthread_create");
@@ -67,7 +67,7 @@ impl Syscall<'_> {
             "wait4: pid={}, wstatus={:?}, options={:#x}",
             pid, wstatus, options
         );
-        return Err(SysError::ECHILD);
+        Err(SysError::ECHILD)
         // FIXME: wait4
 
         //        #[derive(Debug)]
@@ -288,29 +288,29 @@ impl Syscall<'_> {
 
 bitflags! {
     pub struct CloneFlags: usize {
-        const CSIGNAL =         0x000000ff;
-        const VM =              0x00000100;
-        const FS =              0x00000200;
-        const FILES =           0x00000400;
-        const SIGHAND =         0x00000800;
-        const PTRACE =          0x00002000;
-        const VFORK =           0x00004000;
-        const PARENT =          0x00008000;
-        const THREAD =          0x00010000;
-        const NEWNS	=           0x00020000;
-        const SYSVSEM =         0x00040000;
-        const SETTLS =          0x00080000;
-        const PARENT_SETTID =   0x00100000;
-        const CHILD_CLEARTID =  0x00200000;
-        const DETACHED =        0x00400000;
-        const UNTRACED =        0x00800000;
-        const CHILD_SETTID =    0x01000000;
-        const NEWCGROUP =       0x02000000;
-        const NEWUTS =          0x04000000;
-        const NEWIPC =          0x08000000;
-        const NEWUSER =         0x10000000;
-        const NEWPID =          0x20000000;
-        const NEWNET =          0x40000000;
-        const IO =              0x80000000;
+        const CSIGNAL =         0xff;
+        const VM =              1 << 8;
+        const FS =              1 << 9;
+        const FILES =           1 << 10;
+        const SIGHAND =         1 << 11;
+        const PTRACE =          1 << 13;
+        const VFORK =           1 << 14;
+        const PARENT =          1 << 15;
+        const THREAD =          1 << 16;
+        const NEWNS	=           1 << 17;
+        const SYSVSEM =         1 << 18;
+        const SETTLS =          1 << 19;
+        const PARENT_SETTID =   1 << 20;
+        const CHILD_CLEARTID =  1 << 21;
+        const DETACHED =        1 << 22;
+        const UNTRACED =        1 << 23;
+        const CHILD_SETTID =    1 << 24;
+        const NEWCGROUP =       1 << 25;
+        const NEWUTS =          1 << 26;
+        const NEWIPC =          1 << 27;
+        const NEWUSER =         1 << 28;
+        const NEWPID =          1 << 29;
+        const NEWNET =          1 << 30;
+        const IO =              1 << 31;
     }
 }

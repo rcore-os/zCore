@@ -47,7 +47,7 @@ impl Syscall<'_> {
             proc.lookup_inode_at(dir_fd, &path, true)?
         };
 
-        let file = File::new(inode, flags.to_options(), String::from(path));
+        let file = File::new(inode, flags.to_options(), path);
         let fd = proc.add_file(file)?;
         Ok(fd.into())
     }
@@ -127,15 +127,15 @@ bitflags! {
 }
 
 impl OpenFlags {
-    fn readable(&self) -> bool {
+    fn readable(self) -> bool {
         let b = self.bits() & 0b11;
         b == Self::RDONLY.bits() || b == Self::RDWR.bits()
     }
-    fn writable(&self) -> bool {
+    fn writable(self) -> bool {
         let b = self.bits() & 0b11;
         b == Self::WRONLY.bits() || b == Self::RDWR.bits()
     }
-    fn to_options(&self) -> OpenOptions {
+    fn to_options(self) -> OpenOptions {
         OpenOptions {
             read: self.readable(),
             write: self.writable(),

@@ -39,13 +39,13 @@ impl Syscall<'_> {
         }
 
         // BUGFIX: '..' and '.'
-        if path.len() > 0 {
+        if !path.is_empty() {
             let cwd = match path.as_bytes()[0] {
                 b'/' => String::from("/"),
                 _ => proc.cwd.clone(),
             };
-            let mut cwd_vec: Vec<_> = cwd.split("/").filter(|&x| x != "").collect();
-            let path_split = path.split("/").filter(|&x| x != "");
+            let mut cwd_vec: Vec<_> = cwd.split('/').filter(|&x| x != "").collect();
+            let path_split = path.split('/').filter(|&x| x != "");
             for seg in path_split {
                 if seg == ".." {
                     cwd_vec.pop();
@@ -128,7 +128,7 @@ impl Syscall<'_> {
                 r => r,
             }?;
             // TODO: get ino from dirent
-            let ok = writer.try_write(0, DirentType::from_type(&info.type_).bits(), &name);
+            let ok = writer.try_write(0, DirentType::from(info.type_).bits(), &name);
             if !ok {
                 break;
             }
@@ -328,8 +328,8 @@ bitflags! {
     }
 }
 
-impl DirentType {
-    fn from_type(type_: &FileType) -> Self {
+impl From<FileType> for DirentType {
+    fn from(type_: FileType) -> Self {
         match type_ {
             FileType::File => Self::REG,
             FileType::Dir => Self::DIR,
