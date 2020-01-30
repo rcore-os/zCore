@@ -13,6 +13,7 @@ buddy_system_allocator = "0.3"
 uart_16550 = "0.2"
 rlibc = "1.0"
 rboot = { path = "../rboot", default-features = false }
+kernel-hal-bare = { path = "../kernel-hal-bare" }
 
 [build-dependencies]
 cc = "1.0"

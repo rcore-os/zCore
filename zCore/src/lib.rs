@@ -6,7 +6,7 @@
 #![feature(panic_info_message)]
 #![feature(global_asm)]
 #![feature(alloc_prelude)]
-#![deny(unused_must_use, unused_unsafe, unused_imports)]
+#![deny(unused_must_use, unsafe_code, unused_imports)]
 #![deny(stable_features)]
 #![deny(ellipsis_inclusive_range_patterns)]
 #![no_std]
@@ -22,20 +22,8 @@ pub mod lang;
 
 use {
     buddy_system_allocator::{Heap, LockedHeapWithRescue},
-    core::fmt::{Arguments, Write},
     rboot::BootInfo,
-    spin::Mutex,
-    uart_16550::SerialPort,
 };
-
-pub static COM1: Mutex<SerialPort> = Mutex::new(unsafe { SerialPort::new(0x3F8) });
-
-pub fn putfmt(fmt: Arguments) {
-    unsafe {
-        COM1.force_unlock();
-    }
-    COM1.lock().write_fmt(fmt).unwrap();
-}
 
 #[no_mangle]
 pub extern "C" fn _start(boot_info: &BootInfo) -> ! {

@@ -37,11 +37,11 @@ macro_rules! with_color {
 }
 
 fn print_in_color(args: fmt::Arguments, color_code: u8) {
-    crate::putfmt(with_color!(args, color_code));
+    kernel_hal_bare::arch::putfmt(with_color!(args, color_code));
 }
 
 pub fn print(args: fmt::Arguments) {
-    crate::putfmt(args);
+    kernel_hal_bare::arch::putfmt(args);
 }
 
 struct SimpleLogger;

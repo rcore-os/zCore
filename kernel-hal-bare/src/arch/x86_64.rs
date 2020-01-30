@@ -1,6 +1,11 @@
-use super::*;
-use bitflags::bitflags;
-use x86_64::structures::paging::{PageTableFlags as PTF, *};
+use {
+    super::*,
+    bitflags::bitflags,
+    core::fmt::{Arguments, Write},
+    spin::Mutex,
+    uart_16550::SerialPort,
+    x86_64::structures::paging::{PageTableFlags as PTF, *},
+};
 
 /// Page Table
 #[repr(C)]
@@ -19,7 +24,9 @@ impl PageTableImpl {
         root.zero();
         map_kernel(root_vaddr as _);
         trace!("create page table @ {:#x}", root_frame.paddr);
-        PageTableImpl { root_paddr: root_frame.paddr }
+        PageTableImpl {
+            root_paddr: root_frame.paddr,
+        }
     }
 
     /// Map the page of `vaddr` to the frame of `paddr` with `flags`.
@@ -120,4 +127,13 @@ impl FrameDeallocator<Size4KiB> for FrameAllocatorImpl {
         }
         .dealloc()
     }
+}
+
+static COM1: Mutex<SerialPort> = Mutex::new(unsafe { SerialPort::new(0x3F8) });
+
+pub fn putfmt(fmt: Arguments) {
+    unsafe {
+        COM1.force_unlock();
+    }
+    COM1.lock().write_fmt(fmt).unwrap();
 }

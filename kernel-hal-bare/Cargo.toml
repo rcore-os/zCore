@@ -9,7 +9,9 @@ description = "Kernel HAL implementation for bare metal environment."
 
 [dependencies]
 log = "0.4"
+spin = "0.5"
 bitflags = "1.2"
+uart_16550 = "0.2"
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 x86_64 = "0.8"
