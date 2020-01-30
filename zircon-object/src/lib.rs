@@ -17,7 +17,6 @@ extern crate log;
 extern crate std;
 
 mod error;
-pub mod hal;
 pub mod io;
 pub mod ipc;
 pub mod object;

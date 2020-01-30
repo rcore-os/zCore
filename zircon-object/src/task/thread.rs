@@ -2,7 +2,7 @@ use {
     self::thread_state::*,
     super::process::Process,
     super::*,
-    crate::{hal, object::*},
+    crate::object::*,
     alloc::{string::String, sync::Arc},
     spin::Mutex,
 };
@@ -84,18 +84,17 @@ pub struct Thread {
 
 impl_kobject!(Thread);
 
+#[derive(Default)]
 struct ThreadInner {
-    hal_thread: Option<hal::Thread>,
-    state: Option<ThreadState>,
-}
+    /// HAL thread handle
+    ///
+    /// Should be `None` before start or after terminated.
+    hal_thread: Option<kernel_hal::Thread>,
 
-impl Default for ThreadInner {
-    fn default() -> Self {
-        ThreadInner {
-            hal_thread: None,
-            state: Some(ThreadState::default()),
-        }
-    }
+    /// Thread state
+    ///
+    /// Only be `Some` on suspended.
+    state: Option<ThreadState>,
 }
 
 impl Thread {
@@ -114,7 +113,7 @@ impl Thread {
 
     /// Get current `Thread` object.
     pub fn current() -> Arc<Self> {
-        hal::Thread::tls()
+        kernel_hal::Thread::tls()
     }
 
     /// Start execution on the thread.
@@ -130,7 +129,7 @@ impl Thread {
         if inner.hal_thread.is_some() {
             return Err(ZxError::BAD_STATE);
         }
-        let hal_thread = hal::Thread::spawn(self.clone(), entry, stack, arg1, arg2, tp);
+        let hal_thread = kernel_hal::Thread::spawn(self.clone(), entry, stack, arg1, arg2, tp);
         inner.hal_thread = Some(hal_thread);
         self.base.signal_set(Signal::THREAD_RUNNING);
         Ok(())
@@ -141,7 +140,7 @@ impl Thread {
         let thread = Thread::current();
         thread.base.signal_set(Signal::THREAD_TERMINATED);
         drop(thread);
-        hal::Thread::exit();
+        kernel_hal::Thread::exit();
     }
 
     /// Read one aspect of thread state.
@@ -239,11 +238,11 @@ mod tests {
 
         let mut buf = vec![0xffu8; 0x1000];
 
-        // init state should be zero
-        let len = thread
-            .read_state(ThreadStateKind::General, &mut buf)
-            .unwrap();
-        assert_eq!(len, 20 * 8);
+        // init state is None
+        assert_eq!(
+            thread.read_state(ThreadStateKind::General, &mut buf),
+            Err(ZxError::BAD_STATE)
+        );
 
         // reuse buf as stack
         let stack_top = buf.as_mut_ptr() as usize + 0x1000;
@@ -271,9 +270,6 @@ mod tests {
             fs_base: 0,
             gs_base: 0,
         };
-        thread
-            .write_state(ThreadStateKind::General, &mut buf)
-            .unwrap();
 
         // function for new thread
         #[naked]

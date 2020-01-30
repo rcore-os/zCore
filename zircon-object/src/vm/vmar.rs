@@ -1,6 +1,6 @@
 use {
-    super::*, crate::hal::PageTable, crate::object::*, crate::vm::vmo::VMObject, alloc::sync::Arc,
-    alloc::vec::Vec, spin::Mutex,
+    super::*, crate::object::*, crate::vm::vmo::VMObject, alloc::sync::Arc, alloc::vec::Vec,
+    kernel_hal::PageTable, spin::Mutex,
 };
 
 /// Virtual Memory Address Regions
@@ -32,7 +32,7 @@ impl VmAddressRegion {
             addr: BASE,
             size: usize::max_value() - 0xfff - BASE,
             parent: None,
-            page_table: Arc::new(Mutex::new(hal::PageTable::new())),
+            page_table: Arc::new(Mutex::new(kernel_hal::PageTable::new())),
             inner: Mutex::new(Some(VmarInner::default())),
         })
     }

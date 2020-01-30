@@ -3,7 +3,7 @@ use {
     crate::{error::*, fs::FileDesc, process::*, util::*},
     alloc::sync::Arc,
     spin::MutexGuard,
-    zircon_object::{hal, object::*, task::*, vm::VirtAddr},
+    zircon_object::{object::*, task::*, vm::VirtAddr},
 };
 
 mod consts;

@@ -4,7 +4,7 @@ mod vmar;
 mod vmo;
 
 pub use self::{vmar::*, vmo::*};
-pub use crate::hal::MMUFlags;
+pub use kernel_hal::MMUFlags;
 
 /// Physical Address
 pub type PhysAddr = usize;

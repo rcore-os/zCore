@@ -1,10 +1,10 @@
 use {
     super::*,
-    crate::hal::{PageTable, PhysFrame},
     crate::util::block_range::BlockIter,
     alloc::sync::Arc,
     alloc::vec::Vec,
     core::ops::Range,
+    kernel_hal::{PageTable, PhysFrame},
     spin::Mutex,
 };
 
@@ -39,7 +39,7 @@ impl VMObject for VMObjectPaged {
         self.inner
             .lock()
             .for_each_page(offset, buf.len(), |paddr, buf_range| {
-                hal::pmem_read(paddr, &mut buf[buf_range]);
+                kernel_hal::pmem_read(paddr, &mut buf[buf_range]);
             });
     }
 
@@ -47,7 +47,7 @@ impl VMObject for VMObjectPaged {
         self.inner
             .lock()
             .for_each_page(offset, buf.len(), |paddr, buf_range| {
-                hal::pmem_write(paddr, &buf[buf_range]);
+                kernel_hal::pmem_write(paddr, &buf[buf_range]);
             });
     }
 

@@ -1,23 +1,10 @@
-//! Hardware Abstraction Layer
-
+use super::*;
 use alloc::boxed::Box;
-use bitflags::bitflags;
+use alloc::sync::Arc;
 use core::ops::FnOnce;
 use core::time::Duration;
-use {crate::task::Thread as ThreadObject, crate::vm::PAGE_SIZE, alloc::sync::Arc};
 
 type ThreadId = usize;
-type PhysAddr = usize;
-type VirtAddr = usize;
-
-bitflags! {
-    pub struct MMUFlags: usize {
-        #[allow(clippy::identity_op)]
-        const READ      = 1 << 0;
-        const WRITE     = 1 << 1;
-        const EXECUTE   = 1 << 2;
-    }
-}
 
 #[repr(C)]
 pub struct Thread {
@@ -28,16 +15,14 @@ impl Thread {
     /// Spawn a new thread.
     #[linkage = "weak"]
     #[export_name = "hal_thread_spawn"]
-    pub fn spawn(
-        _self: Arc<ThreadObject>,
+    pub fn spawn<T>(
+        _self: Arc<T>,
         _entry: usize,
         _stack: usize,
         _arg1: usize,
         _arg2: usize,
         _tp: usize,
     ) -> Self {
-        #[cfg(test)]
-        kernel_hal_unix::init();
         unimplemented!()
     }
 
@@ -51,7 +36,7 @@ impl Thread {
     /// Get TLS variable of current thread passed from `spawn`.
     #[linkage = "weak"]
     #[export_name = "hal_thread_tls"]
-    pub fn tls() -> Arc<ThreadObject> {
+    pub fn tls<T>() -> Arc<T> {
         unimplemented!()
     }
 

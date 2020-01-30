@@ -7,7 +7,7 @@ impl Syscall {
         match code {
             ARCH_SET_FS => {
                 info!("sys_arch_prctl: set FSBASE to {:#x}", addr);
-                hal::set_user_fsbase(addr);
+                kernel_hal::set_user_fsbase(addr);
                 Ok(0)
             }
             _ => Err(SysError::EINVAL),

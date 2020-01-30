@@ -181,7 +181,7 @@ impl Syscall {
 
         #[allow(unsafe_code)]
         unsafe {
-            zircon_object::hal::set_user_fsbase(0);
+            kernel_hal::set_user_fsbase(0);
             self.reset_return(entry, sp);
         }
         Ok(0)

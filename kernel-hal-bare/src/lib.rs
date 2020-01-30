@@ -23,10 +23,9 @@ extern crate log;
 
 extern crate alloc;
 
-pub mod arch;
+use kernel_hal::defs::*;
 
-type PhysAddr = usize;
-type VirtAddr = usize;
+pub mod arch;
 
 #[allow(improper_ctypes)]
 extern "C" {

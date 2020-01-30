@@ -9,7 +9,6 @@ use rcore_fs::vfs::*;
 use super::ioctl::*;
 //use spin::Mutex;
 use lazy_static::lazy_static;
-use zircon_object::hal;
 
 //#[derive(Default)]
 //pub struct Stdin {
@@ -92,7 +91,7 @@ impl INode for Stdout {
     fn write_at(&self, _offset: usize, buf: &[u8]) -> Result<usize> {
         // we do not care the utf-8 things, we just want to print it!
         let s = unsafe { core::str::from_utf8_unchecked(buf) };
-        hal::serial_write(s);
+        kernel_hal::serial_write(s);
         Ok(buf.len())
     }
     fn poll(&self) -> Result<PollStatus> {

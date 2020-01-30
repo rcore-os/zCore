@@ -8,7 +8,7 @@ extern crate alloc;
 
 use {
     alloc::sync::Arc,
-    bitflags::bitflags,
+    kernel_hal::defs::*,
     lazy_static::lazy_static,
     std::cell::RefCell,
     std::fmt::{Debug, Formatter},
@@ -24,18 +24,6 @@ use {
 include!("fsbase_linux.rs");
 #[cfg(target_os = "macos")]
 include!("fsbase_macos.rs");
-
-type PhysAddr = usize;
-type VirtAddr = usize;
-
-bitflags! {
-    pub struct MMUFlags: usize {
-        #[allow(clippy::identity_op)]
-        const READ      = 1 << 0;
-        const WRITE     = 1 << 1;
-        const EXECUTE   = 1 << 2;
-    }
-}
 
 #[repr(C)]
 pub struct Thread {
@@ -284,7 +272,11 @@ fn mmap(fd: libc::c_int, offset: usize, len: usize, vaddr: VirtAddr, prot: libc:
     assert_eq!(ret, vaddr, "failed to mmap: {:?}", Error::last_os_error());
 }
 
-impl MMUFlags {
+trait FlagsExt {
+    fn to_mmap_prot(self) -> libc::c_int;
+}
+
+impl FlagsExt for MMUFlags {
     fn to_mmap_prot(self) -> libc::c_int {
         let mut flags = 0;
         if self.contains(MMUFlags::READ) {

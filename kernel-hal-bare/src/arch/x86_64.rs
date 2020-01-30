@@ -1,5 +1,4 @@
 use super::*;
-use bitflags::bitflags;
 use x86_64::structures::paging::{PageTableFlags as PTF, *};
 
 /// Page Table
@@ -77,16 +76,11 @@ impl PageTableImpl {
     }
 }
 
-bitflags! {
-    pub struct MMUFlags: usize {
-        #[allow(clippy::identity_op)]
-        const READ      = 1 << 0;
-        const WRITE     = 1 << 1;
-        const EXECUTE   = 1 << 2;
-    }
+trait FlagsExt {
+    fn to_ptf(self) -> PTF;
 }
 
-impl MMUFlags {
+impl FlagsExt for MMUFlags {
     fn to_ptf(self) -> PTF {
         let mut flags = PTF::empty();
         if self.contains(MMUFlags::READ) {
