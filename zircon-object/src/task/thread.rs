@@ -1,10 +1,13 @@
 use {
+    self::thread_state::*,
     super::process::Process,
     super::*,
     crate::{hal, object::*},
     alloc::{string::String, sync::Arc},
     spin::Mutex,
 };
+
+mod thread_state;
 
 /// Runnable / computation entity
 ///
@@ -81,9 +84,18 @@ pub struct Thread {
 
 impl_kobject!(Thread);
 
-#[derive(Default)]
 struct ThreadInner {
     hal_thread: Option<hal::Thread>,
+    state: Option<ThreadState>,
+}
+
+impl Default for ThreadInner {
+    fn default() -> Self {
+        ThreadInner {
+            hal_thread: None,
+            state: Some(ThreadState::default()),
+        }
+    }
 }
 
 impl Thread {
@@ -133,36 +145,28 @@ impl Thread {
     }
 
     /// Read one aspect of thread state.
-    pub fn read_state(&self, _kind: ThreadStateKind) -> ZxResult<ThreadState> {
-        unimplemented!()
+    pub fn read_state(&self, kind: ThreadStateKind, buf: &mut [u8]) -> ZxResult<usize> {
+        let inner = self.inner.lock();
+        let state = inner.state.as_ref().ok_or(ZxError::BAD_STATE)?;
+        let len = state.read(kind, buf)?;
+        Ok(len)
     }
 
     /// Write one aspect of thread state.
-    pub fn write_state(&self, _state: &ThreadState) -> ZxResult<()> {
-        unimplemented!()
+    pub fn write_state(&self, kind: ThreadStateKind, buf: &[u8]) -> ZxResult<()> {
+        let mut inner = self.inner.lock();
+        let state = inner.state.as_mut().ok_or(ZxError::BAD_STATE)?;
+        state.write(kind, buf)?;
+        Ok(())
     }
 }
-
-#[repr(u32)]
-#[derive(Debug, Copy, Clone)]
-pub enum ThreadStateKind {
-    General = 0,
-    FloatPoint = 1,
-    Vector = 2,
-    Debug = 4,
-    SingleStep = 5,
-    FS = 6,
-    GS = 7,
-}
-
-#[derive(Debug)]
-pub enum ThreadState {}
 
 #[cfg(test)]
 mod tests {
     use super::job::Job;
     use super::*;
     use std::sync::atomic::*;
+    use std::vec;
 
     #[test]
     fn create() {
@@ -172,7 +176,6 @@ mod tests {
     }
 
     #[test]
-    #[allow(unsafe_code)]
     fn start() {
         let root_job = Job::root();
         let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
@@ -180,14 +183,15 @@ mod tests {
         let thread1 = Thread::create(&proc, "thread1", 0).expect("failed to create thread");
 
         // allocate stack for new thread
-        static mut STACK: [u8; 0x1000] = [0u8; 0x1000];
-        let stack_top = unsafe { STACK.as_ptr() } as usize + 0x1000;
+        let mut stack = vec![0u8; 0x1000];
+        let stack_top = stack.as_mut_ptr() as usize + 0x1000;
 
         // global variable for validation
         static ARG1: AtomicUsize = AtomicUsize::new(0);
         static ARG2: AtomicUsize = AtomicUsize::new(0);
 
         // function for new thread
+        #[allow(unsafe_code)]
         extern "C" fn entry(arg1: usize, arg2: usize) -> ! {
             unsafe {
                 kernel_hal_unix::switch_to_kernel();
@@ -224,5 +228,89 @@ mod tests {
             proc.start(&thread1, entry as usize, stack_top, handle.clone(), 2),
             Err(ZxError::BAD_STATE)
         );
+    }
+
+    #[allow(unsafe_code)]
+    #[test]
+    fn state() {
+        let root_job = Job::root();
+        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
+        let thread = Thread::create(&proc, "thread", 0).expect("failed to create thread");
+
+        let mut buf = vec![0xffu8; 0x1000];
+
+        // init state should be zero
+        let len = thread
+            .read_state(ThreadStateKind::General, &mut buf)
+            .unwrap();
+        assert_eq!(len, 20 * 8);
+
+        // reuse buf as stack
+        let stack_top = buf.as_mut_ptr() as usize + 0x1000;
+
+        // set general registers
+        let regs = GeneralRegs {
+            rax: 0,
+            rbx: 1,
+            rcx: 2,
+            rdx: 3,
+            rsi: 4,
+            rdi: 5,
+            rbp: 6,
+            rsp: stack_top - 96,
+            r8: 8,
+            r9: 9,
+            r10: 10,
+            r11: 11,
+            r12: 12,
+            r13: 13,
+            r14: 14,
+            r15: 15,
+            rip: entry as usize + 18,
+            rflags: 0x246,
+            fs_base: 0,
+            gs_base: 0,
+        };
+        thread
+            .write_state(ThreadStateKind::General, &mut buf)
+            .unwrap();
+
+        // function for new thread
+        #[naked]
+        unsafe extern "C" fn entry(_arg1: usize, _arg2: usize) -> ! {
+            asm!(r#"
+                push 0      # ignore gs_base
+                push 0      # ignore fs_base
+                pushf       # push rflags
+                call 1f     # push rip <entry + 18>
+            1:  push r15
+                push r14
+                push r13
+                push r12
+                push r11
+                push r10
+                push r9
+                push r8
+                push rsp    # rsp - 12 * 8
+                push rbp
+                push rdi
+                push rsi
+                push rdx
+                push rcx
+                push rbx
+                push rax
+            "# :::: "volatile" "intel");
+            kernel_hal_unix::switch_to_kernel();
+            Thread::exit();
+        }
+
+        // start new thread and join
+        thread
+            .start(entry as usize, stack_top, regs.rdi, regs.rsi, 0)
+            .expect("failed to start thread");
+        thread.wait_signal(Signal::THREAD_TERMINATED);
+
+        let actual_regs = unsafe { *(stack_top as *const GeneralRegs).sub(1) };
+        assert_eq!(actual_regs, regs);
     }
 }

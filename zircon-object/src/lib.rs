@@ -5,6 +5,7 @@
 #![feature(asm, linkage)]
 #![feature(drain_filter)]
 #![feature(get_mut_unchecked)]
+#![feature(naked_functions)]
 
 extern crate alloc;
 
@@ -12,6 +13,7 @@ extern crate alloc;
 extern crate log;
 
 #[cfg(test)]
+#[macro_use]
 extern crate std;
 
 mod error;
