@@ -4,11 +4,12 @@
 #![deny(warnings, unused_must_use)]
 
 extern crate alloc;
+#[macro_use]
 extern crate log;
 
 use {
     alloc::{string::String, sync::Arc, vec::Vec},
-    kernel_hal_unix::{switch_to_kernel, switch_to_user},
+    kernel_hal_unix::GeneralRegs,
     linux_syscall::*,
     zircon_object::task::*,
 };
@@ -41,79 +42,15 @@ extern "C" {
     fn syscall_entry();
 }
 
-#[cfg(target_os = "linux")]
-global_asm!(
-    r#"
-.intel_syntax noprefix
-syscall_entry:
-    # save user stack to r10 (caller-saved)
-    lea r10, [rsp + 8]
-
-    # switch to kernel stack
-    mov rsp, gs:64
-
-    # pass argument in stack
-    push r10                # user sp
-    push [r10 - 8]          # user pc
-    push rsp                # ptr to [pc, sp]
-    push [r10]              # arg6
-    call handle_syscall
-
-    # back to user
-    mov r10, [rsp + 16]     # load pc
-    mov rsp, [rsp + 24]     # load sp
-    jmp r10
-"#
-);
-
-#[cfg(target_os = "macos")]
-global_asm!(
-    r#"
-.intel_syntax noprefix
-_syscall_entry:
-    # save user stack to r10 (caller-saved)
-    lea r10, [rsp + 8]
-
-    # switch to kernel stack
-    mov rsp, gs:48          # rsp = kernel gsbase
-    mov rsp, [rsp - 48]     # rsp = kernel stack
-
-    # pass argument in stack
-    push r10                # user sp
-    push [r10 - 8]          # user pc
-    push rsp                # ptr to [pc, sp]
-    push [r10]              # arg6
-    call _handle_syscall
-
-    # back to user
-    mov r10, [rsp + 16]     # load pc
-    mov rsp, [rsp + 24]     # load sp
-    jmp r10
-"#
-);
-
 #[no_mangle]
-extern "C" fn handle_syscall(
-    num: u32,
-    a0: usize,
-    a1: usize,
-    a2: usize,
-    a3: usize,
-    a4: usize,
-    a5: usize,
-    ptr: *mut usize,
-) -> isize {
-    unsafe {
-        switch_to_kernel();
-    }
-    let syscall = Syscall {
+extern "C" fn handle_syscall(regs: &mut GeneralRegs) {
+    trace!("syscall: {:#x?}", regs);
+    let num = regs.rax as u32;
+    let args = [regs.rdi, regs.rsi, regs.rdx, regs.r10, regs.r8, regs.r9];
+    let mut syscall = Syscall {
         thread: Thread::current(),
         syscall_entry: syscall_entry as usize,
-        ptr,
+        regs,
     };
-    let ret = syscall.syscall(num, [a0, a1, a2, a3, a4, a5]);
-    unsafe {
-        switch_to_user();
-    }
-    ret
+    regs.rax = syscall.syscall(num, args) as usize;
 }

@@ -51,7 +51,7 @@ thread_local! {
 
 unsafe fn set_gsbase(gsbase: usize) {
     // Ref: https://gist.github.com/aras-p/5389747
-    asm!("syscall" :: "{eax}"(0x300_0003), "{rdi}"(gsbase) :: "volatile");
+    asm!("syscall" :: "{eax}"(0x300_0003), "{rdi}"(gsbase) : "rcx" "r11" : "volatile");
 }
 
 unsafe fn get_gsbase() -> usize {

@@ -1,6 +1,6 @@
 use super::*;
 
-impl Syscall {
+impl Syscall<'_> {
     #[cfg(target_arch = "x86_64")]
     pub fn sys_arch_prctl(&self, code: i32, addr: usize) -> SysResult {
         const ARCH_SET_FS: i32 = 0x1002;

@@ -2,7 +2,7 @@ use super::*;
 use bitflags::bitflags;
 use zircon_object::vm::*;
 
-impl Syscall {
+impl Syscall<'_> {
     pub fn sys_mmap(
         &self,
         addr: usize,

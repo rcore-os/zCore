@@ -1,4 +1,4 @@
-#![feature(asm)]
+#![feature(asm, global_asm)]
 #![deny(warnings)]
 
 #[macro_use]
@@ -8,7 +8,6 @@ extern crate alloc;
 
 use {
     alloc::sync::Arc,
-    kernel_hal::defs::*,
     lazy_static::lazy_static,
     std::cell::RefCell,
     std::fmt::{Debug, Formatter},
@@ -20,10 +19,14 @@ use {
     tempfile::tempdir_in,
 };
 
+pub use kernel_hal::defs::*;
+
 #[cfg(target_os = "linux")]
 include!("fsbase_linux.rs");
 #[cfg(target_os = "macos")]
 include!("fsbase_macos.rs");
+
+mod trap;
 
 #[repr(C)]
 pub struct Thread {
@@ -43,32 +46,8 @@ impl Thread {
             }
             unsafe {
                 switch_to_user();
-                asm!(r#"
-                    pop rax
-                    pop rbx
-                    pop rcx     # rcx is clobber
-                    pop rdx
-                    pop rsi
-                    pop rdi
-                    pop rbp
-                    pop rcx     # rcx = rsp
-                    pop r8
-                    pop r9
-                    pop r10
-                    pop r11     # r11 is clobber
-                    pop r12
-                    pop r13
-                    pop r14
-                    pop r15
-                    pop r11     # r11 = rip
-                    popfq       # pop rflags
-                    mov rsp, rcx
-                    jmp r11
-                "#
-                :: "{rsp}"(&regs)
-                :: "volatile" "intel");
+                trap::syscall_return(&regs);
             }
-            unreachable!()
         });
         Thread {
             thread: handle.thread().clone(),

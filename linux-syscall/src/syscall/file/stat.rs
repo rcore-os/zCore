@@ -7,7 +7,7 @@
 use super::*;
 use rcore_fs::vfs::{FileType, Metadata};
 
-impl Syscall {
+impl Syscall<'_> {
     pub fn sys_lstat(&self, path: UserInPtr<u8>, stat_ptr: UserOutPtr<Stat>) -> SysResult {
         self.sys_fstatat(
             FileDesc::CWD,

@@ -2,6 +2,7 @@ use {
     self::consts::*,
     crate::{error::*, fs::FileDesc, process::*, util::*},
     alloc::sync::Arc,
+    kernel_hal::GeneralRegs,
     spin::MutexGuard,
     zircon_object::{object::*, task::*, vm::VirtAddr},
 };
@@ -12,14 +13,14 @@ mod misc;
 mod task;
 mod vm;
 
-pub struct Syscall {
+pub struct Syscall<'a> {
     pub thread: Arc<Thread>,
     pub syscall_entry: VirtAddr,
-    pub ptr: *mut usize,
+    pub regs: &'a mut GeneralRegs,
 }
 
-impl Syscall {
-    pub fn syscall(&self, num: u32, args: [usize; 6]) -> isize {
+impl Syscall<'_> {
+    pub fn syscall(&mut self, num: u32, args: [usize; 6]) -> isize {
         debug!("syscall => num={}, args={:x?}", num, args);
         let [a0, a1, a2, a3, a4, a5] = args;
         let ret = match num {
@@ -181,7 +182,7 @@ impl Syscall {
     }
 
     #[cfg(target_arch = "x86_64")]
-    fn x86_64_syscall(&self, num: u32, args: [usize; 6]) -> SysResult {
+    fn x86_64_syscall(&mut self, num: u32, args: [usize; 6]) -> SysResult {
         let [a0, a1, a2, _a3, _a4, _a5] = args;
         match num {
             SYS_OPEN => self.sys_open(a0.into(), a1, a2),
@@ -232,13 +233,13 @@ impl Syscall {
     }
 
     #[allow(unsafe_code)]
-    unsafe fn reset_return(&self, entry: usize, sp: usize) {
-        self.ptr.write(entry);
-        self.ptr.add(1).write(sp);
+    unsafe fn reset_return(&mut self, entry: usize, sp: usize) {
+        self.regs.rip = entry;
+        self.regs.rsp = sp;
     }
 
     #[allow(unsafe_code)]
     fn user_pc(&self) -> usize {
-        unsafe { self.ptr.read() }
+        self.regs.rip
     }
 }

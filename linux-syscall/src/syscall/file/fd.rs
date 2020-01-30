@@ -7,7 +7,7 @@
 
 use super::*;
 
-impl Syscall {
+impl Syscall<'_> {
     pub fn sys_open(&self, path: UserInPtr<u8>, flags: usize, mode: usize) -> SysResult {
         self.sys_openat(FileDesc::CWD, path, flags, mode)
     }

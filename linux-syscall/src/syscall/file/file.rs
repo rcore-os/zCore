@@ -11,7 +11,7 @@
 
 use super::*;
 
-impl Syscall {
+impl Syscall<'_> {
     pub fn sys_read(&self, fd: FileDesc, mut base: UserOutPtr<u8>, len: usize) -> SysResult {
         info!("read: fd={:?}, base={:?}, len={:#x}", fd, base, len);
         let proc = self.lock_linux_process();

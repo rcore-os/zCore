@@ -5,7 +5,7 @@ use crate::fs::INodeExt;
 use crate::loader::LinuxElfLoader;
 use bitflags::bitflags;
 
-impl Syscall {
+impl Syscall<'_> {
     //    /// Fork the current process. Return the child's PID.
     //    pub fn sys_fork(&self) -> SysResult {
     //        let new_thread = self.thread.fork(self.tf);
@@ -143,7 +143,7 @@ impl Syscall {
     /// shall result in all threads being terminated and the new executable image
     /// being loaded and executed.
     pub fn sys_execve(
-        &self,
+        &mut self,
         path: UserInPtr<u8>,
         argv: UserInPtr<UserInPtr<u8>>,
         envp: UserInPtr<UserInPtr<u8>>,
@@ -178,6 +178,7 @@ impl Syscall {
 
         // Modify exec path
         proc.exec_path = path.clone();
+        drop(proc);
 
         #[allow(unsafe_code)]
         unsafe {

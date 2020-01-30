@@ -16,7 +16,7 @@ use alloc::vec::Vec;
 use bitflags::bitflags;
 use rcore_fs::vfs::FileType;
 
-impl Syscall {
+impl Syscall<'_> {
     pub fn sys_getcwd(&self, mut buf: UserOutPtr<u8>, len: usize) -> SysResult {
         info!("getcwd: buf={:?}, len={:#x}", buf, len);
         let proc = self.lock_linux_process();
