@@ -291,14 +291,6 @@
 <span id="291">291</span>
 <span id="292">292</span>
 <span id="293">293</span>
-<span id="294">294</span>
-<span id="295">295</span>
-<span id="296">296</span>
-<span id="297">297</span>
-<span id="298">298</span>
-<span id="299">299</span>
-<span id="300">300</span>
-<span id="301">301</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! File operations</span>
 <span class="doccomment">//!</span>
@@ -313,7 +305,7 @@
 
 <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
 
-<span class="kw">impl</span> <span class="ident">Syscall</span> {
+<span class="kw">impl</span> <span class="ident">Syscall</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span> {
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_read</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">fd</span>: <span class="ident">FileDesc</span>, <span class="kw-2">mut</span> <span class="ident">base</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>, <span class="ident">len</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
         <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;read: fd={:?}, base={:?}, len={:#x}&quot;</span>, <span class="ident">fd</span>, <span class="ident">base</span>, <span class="ident">len</span>);
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">lock_linux_process</span>();
@@ -338,7 +330,7 @@
         <span class="ident">fd</span>: <span class="ident">FileDesc</span>,
         <span class="kw-2">mut</span> <span class="ident">base</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>,
         <span class="ident">len</span>: <span class="ident">usize</span>,
-        <span class="ident">offset</span>: <span class="ident">usize</span>,
+        <span class="ident">offset</span>: <span class="ident">u64</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
         <span class="macro">info</span><span class="macro">!</span>(
             <span class="string">&quot;pread: fd={:?}, base={:?}, len={}, offset={}&quot;</span>,
@@ -357,7 +349,7 @@
         <span class="ident">fd</span>: <span class="ident">FileDesc</span>,
         <span class="ident">base</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>,
         <span class="ident">len</span>: <span class="ident">usize</span>,
-        <span class="ident">offset</span>: <span class="ident">usize</span>,
+        <span class="ident">offset</span>: <span class="ident">u64</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
         <span class="macro">info</span><span class="macro">!</span>(
             <span class="string">&quot;pwrite: fd={:?}, base={:?}, len={}, offset={}&quot;</span>,
@@ -423,183 +415,175 @@
         <span class="prelude-val">Ok</span>(<span class="ident">offset</span> <span class="kw">as</span> <span class="ident">usize</span>)
     }
 
-    <span class="comment">//    pub fn sys_truncate(&amp;self, path: UserInPtr&lt;u8&gt;, len: usize) -&gt; SysResult {</span>
-    <span class="comment">//        let proc = self.process();</span>
-    <span class="comment">//        let path = check_and_clone_cstr(path)?;</span>
-    <span class="comment">//        info!(&quot;truncate: path={:?}, len={}&quot;, path, len);</span>
-    <span class="comment">//        proc.lookup_inode(&amp;path)?.resize(len)?;</span>
-    <span class="comment">//        Ok(0)</span>
-    <span class="comment">//    }</span>
-    <span class="comment">//</span>
-    <span class="comment">//    pub fn sys_ftruncate(&amp;self, fd: FileDesc, len: usize) -&gt; SysResult {</span>
-    <span class="comment">//        info!(&quot;ftruncate: fd={:?}, len={}&quot;, fd, len);</span>
-    <span class="comment">//        self.process().get_file(fd)?.set_len(len as u64)?;</span>
-    <span class="comment">//        Ok(0)</span>
-    <span class="comment">//    }</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_truncate</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">path</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>, <span class="ident">len</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
+        <span class="kw">let</span> <span class="ident">path</span> <span class="op">=</span> <span class="ident">path</span>.<span class="ident">read_cstring</span>()<span class="question-mark">?</span>;
+        <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;truncate: path={:?}, len={}&quot;</span>, <span class="ident">path</span>, <span class="ident">len</span>);
+        <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">lock_linux_process</span>();
+        <span class="ident">proc</span>.<span class="ident">lookup_inode</span>(<span class="kw-2">&amp;</span><span class="ident">path</span>)<span class="question-mark">?</span>.<span class="ident">resize</span>(<span class="ident">len</span>)<span class="question-mark">?</span>;
+        <span class="prelude-val">Ok</span>(<span class="number">0</span>)
+    }
 
-    <span class="comment">//    pub fn sys_sendfile(</span>
-    <span class="comment">//        &amp;self,</span>
-    <span class="comment">//        out_fd: FileDesc,</span>
-    <span class="comment">//        in_fd: FileDesc,</span>
-    <span class="comment">//        offset_ptr: *mut usize,</span>
-    <span class="comment">//        count: usize,</span>
-    <span class="comment">//    ) -&gt; SysResult {</span>
-    <span class="comment">//        self.sys_copy_file_range(in_fd, offset_ptr, out_fd, 0 as *mut usize, count, 0)</span>
-    <span class="comment">//    }</span>
-    <span class="comment">//</span>
-    <span class="comment">//    pub fn sys_copy_file_range(</span>
-    <span class="comment">//        &amp;self,</span>
-    <span class="comment">//        in_fd: FileDesc,</span>
-    <span class="comment">//        in_offset: *mut usize,</span>
-    <span class="comment">//        out_fd: FileDesc,</span>
-    <span class="comment">//        out_offset: *mut usize,</span>
-    <span class="comment">//        count: usize,</span>
-    <span class="comment">//        flags: usize,</span>
-    <span class="comment">//    ) -&gt; SysResult {</span>
-    <span class="comment">//        info!(</span>
-    <span class="comment">//            &quot;copy_file_range:BEG in={}, out={}, in_offset={:?}, out_offset={:?}, count={} flags {}&quot;,</span>
-    <span class="comment">//            in_fd, out_fd, in_offset, out_offset, count, flags</span>
-    <span class="comment">//        );</span>
-    <span class="comment">//        let proc = self.process();</span>
-    <span class="comment">//        // We know it&#39;s save, pacify the borrow checker</span>
-    <span class="comment">//        let proc_cell = UnsafeCell::new(proc);</span>
-    <span class="comment">//        let in_file = unsafe { (*proc_cell.get()).get_file(in_fd)? };</span>
-    <span class="comment">//        let out_file = unsafe { (*proc_cell.get()).get_file(out_fd)? };</span>
-    <span class="comment">//        let mut buffer = [0u8; 1024];</span>
-    <span class="comment">//</span>
-    <span class="comment">//        // for in_offset and out_offset</span>
-    <span class="comment">//        // null means update file offset</span>
-    <span class="comment">//        // non-null means update {in,out}_offset instead</span>
-    <span class="comment">//</span>
-    <span class="comment">//        let mut read_offset = if !in_offset.is_null() {</span>
-    <span class="comment">//            unsafe { *self.vm().check_read_ptr(in_offset)? }</span>
-    <span class="comment">//        } else {</span>
-    <span class="comment">//            in_file.seek(SeekFrom::Current(0))? as usize</span>
-    <span class="comment">//        };</span>
-    <span class="comment">//</span>
-    <span class="comment">//        let orig_out_file_offset = out_file.seek(SeekFrom::Current(0))?;</span>
-    <span class="comment">//        let write_offset = if !out_offset.is_null() {</span>
-    <span class="comment">//            out_file.seek(SeekFrom::Start(</span>
-    <span class="comment">//                unsafe { *self.vm().check_read_ptr(out_offset)? } as u64,</span>
-    <span class="comment">//            ))? as usize</span>
-    <span class="comment">//        } else {</span>
-    <span class="comment">//            0</span>
-    <span class="comment">//        };</span>
-    <span class="comment">//</span>
-    <span class="comment">//        // read from specified offset and write new offset back</span>
-    <span class="comment">//        let mut bytes_read = 0;</span>
-    <span class="comment">//        let mut total_written = 0;</span>
-    <span class="comment">//        while bytes_read &lt; count {</span>
-    <span class="comment">//            let len = min(buffer.len(), count - bytes_read);</span>
-    <span class="comment">//            let read_len = in_file.read_at(read_offset, &amp;mut buffer[..len])?;</span>
-    <span class="comment">//            if read_len == 0 {</span>
-    <span class="comment">//                break;</span>
-    <span class="comment">//            }</span>
-    <span class="comment">//            bytes_read += read_len;</span>
-    <span class="comment">//            read_offset += read_len;</span>
-    <span class="comment">//</span>
-    <span class="comment">//            let mut bytes_written = 0;</span>
-    <span class="comment">//            let mut rlen = read_len;</span>
-    <span class="comment">//            while bytes_written &lt; read_len {</span>
-    <span class="comment">//                let write_len = out_file.write(&amp;buffer[bytes_written..(bytes_written + rlen)])?;</span>
-    <span class="comment">//                if write_len == 0 {</span>
-    <span class="comment">//                    info!(</span>
-    <span class="comment">//                        &quot;copy_file_range:END_ERR in={}, out={}, in_offset={:?}, out_offset={:?}, count={} = bytes_read {}, bytes_written {}, write_len {}&quot;,</span>
-    <span class="comment">//                        in_fd, out_fd, in_offset, out_offset, count, bytes_read, bytes_written, write_len</span>
-    <span class="comment">//                    );</span>
-    <span class="comment">//                    return Err(SysError::EBADF);</span>
-    <span class="comment">//                }</span>
-    <span class="comment">//                bytes_written += write_len;</span>
-    <span class="comment">//                rlen -= write_len;</span>
-    <span class="comment">//            }</span>
-    <span class="comment">//            total_written += bytes_written;</span>
-    <span class="comment">//        }</span>
-    <span class="comment">//</span>
-    <span class="comment">//        if !in_offset.is_null() {</span>
-    <span class="comment">//            unsafe {</span>
-    <span class="comment">//                in_offset.write(read_offset);</span>
-    <span class="comment">//            }</span>
-    <span class="comment">//        } else {</span>
-    <span class="comment">//            in_file.seek(SeekFrom::Current(bytes_read as i64))?;</span>
-    <span class="comment">//        }</span>
-    <span class="comment">//</span>
-    <span class="comment">//        if !out_offset.is_null() {</span>
-    <span class="comment">//            unsafe {</span>
-    <span class="comment">//                out_offset.write(write_offset + total_written);</span>
-    <span class="comment">//            }</span>
-    <span class="comment">//            out_file.seek(SeekFrom::Start(orig_out_file_offset))?;</span>
-    <span class="comment">//        }</span>
-    <span class="comment">//        info!(</span>
-    <span class="comment">//            &quot;copy_file_range:END in={}, out={}, in_offset={:?}, out_offset={:?}, count={} flags {}&quot;,</span>
-    <span class="comment">//            in_fd, out_fd, in_offset, out_offset, count, flags</span>
-    <span class="comment">//        );</span>
-    <span class="comment">//        return Ok(total_written);</span>
-    <span class="comment">//    }</span>
-    <span class="comment">//    pub fn sys_sync(&amp;self) -&gt; SysResult {</span>
-    <span class="comment">//        ROOT_INODE.fs().sync()?;</span>
-    <span class="comment">//        Ok(0)</span>
-    <span class="comment">//    }</span>
-    <span class="comment">//    pub fn sys_fsync(&amp;self, fd: FileDesc) -&gt; SysResult {</span>
-    <span class="comment">//        info!(&quot;fsync: fd={:?}&quot;, fd);</span>
-    <span class="comment">//        self.process().get_file(fd)?.sync_all()?;</span>
-    <span class="comment">//        Ok(0)</span>
-    <span class="comment">//    }</span>
-    <span class="comment">//</span>
-    <span class="comment">//    pub fn sys_fdatasync(&amp;self, fd: FileDesc) -&gt; SysResult {</span>
-    <span class="comment">//        info!(&quot;fdatasync: fd={:?}&quot;, fd);</span>
-    <span class="comment">//        self.process().get_file(fd)?.sync_data()?;</span>
-    <span class="comment">//        Ok(0)</span>
-    <span class="comment">//    }</span>
-    <span class="comment">//    pub fn sys_ioctl(</span>
-    <span class="comment">//        &amp;self,</span>
-    <span class="comment">//        fd: FileDesc,</span>
-    <span class="comment">//        request: usize,</span>
-    <span class="comment">//        arg1: usize,</span>
-    <span class="comment">//        arg2: usize,</span>
-    <span class="comment">//        arg3: usize,</span>
-    <span class="comment">//    ) -&gt; SysResult {</span>
-    <span class="comment">//        info!(</span>
-    <span class="comment">//            &quot;ioctl: fd={:?}, request={:#x}, args={:#x} {:#x} {:#x}&quot;,</span>
-    <span class="comment">//            fd, request, arg1, arg2, arg3</span>
-    <span class="comment">//        );</span>
-    <span class="comment">//        let proc = self.process();</span>
-    <span class="comment">//        let file_like = proc.get_file_like(fd)?;</span>
-    <span class="comment">//        file_like.ioctl(request, arg1, arg2, arg3)</span>
-    <span class="comment">//    }</span>
-    <span class="comment">//</span>
-    <span class="comment">//    pub fn sys_fcntl(&amp;self, fd: FileDesc, cmd: usize, arg: usize) -&gt; SysResult {</span>
-    <span class="comment">//        info!(&quot;fcntl: fd={:?}, cmd={:x}, arg={}&quot;, fd, cmd, arg);</span>
-    <span class="comment">//        let proc = self.process();</span>
-    <span class="comment">//        let file_like = proc.get_file_like(fd)?;</span>
-    <span class="comment">//        file_like.fcntl(cmd, arg)</span>
-    <span class="comment">//    }</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_ftruncate</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">fd</span>: <span class="ident">FileDesc</span>, <span class="ident">len</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
+        <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;ftruncate: fd={:?}, len={}&quot;</span>, <span class="ident">fd</span>, <span class="ident">len</span>);
+        <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">lock_linux_process</span>();
+        <span class="ident">proc</span>.<span class="ident">get_file</span>(<span class="ident">fd</span>)<span class="question-mark">?</span>.<span class="ident">set_len</span>(<span class="ident">len</span> <span class="kw">as</span> <span class="ident">u64</span>)<span class="question-mark">?</span>;
+        <span class="prelude-val">Ok</span>(<span class="number">0</span>)
+    }
 
-    <span class="comment">//    pub fn sys_access(&amp;self, path: *const u8, mode: usize) -&gt; SysResult {</span>
-    <span class="comment">//        self.sys_faccessat(FileDesc::CWD, path, mode, 0)</span>
-    <span class="comment">//    }</span>
-    <span class="comment">//</span>
-    <span class="comment">//    pub fn sys_faccessat(</span>
-    <span class="comment">//        &amp;self,</span>
-    <span class="comment">//        dirfd: usize,</span>
-    <span class="comment">//        path: *const u8,</span>
-    <span class="comment">//        mode: usize,</span>
-    <span class="comment">//        flags: usize,</span>
-    <span class="comment">//    ) -&gt; SysResult {</span>
-    <span class="comment">//        // TODO: check permissions based on uid/gid</span>
-    <span class="comment">//        let proc = self.process();</span>
-    <span class="comment">//        let path = check_and_clone_cstr(path)?;</span>
-    <span class="comment">//        let flags = AtFlags::from_bits_truncate(flags);</span>
-    <span class="comment">//        if !proc.pid.is_init() {</span>
-    <span class="comment">//            // we trust pid 0 process</span>
-    <span class="comment">//            info!(</span>
-    <span class="comment">//                &quot;faccessat: dirfd={}, path={:?}, mode={:#o}, flags={:?}&quot;,</span>
-    <span class="comment">//                dirfd as isize, path, mode, flags</span>
-    <span class="comment">//            );</span>
-    <span class="comment">//        }</span>
-    <span class="comment">//        let inode =</span>
-    <span class="comment">//            proc.lookup_inode_at(dirfd, &amp;path, !flags.contains(AtFlags::SYMLINK_NOFOLLOW))?;</span>
-    <span class="comment">//        Ok(0)</span>
-    <span class="comment">//    }</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_sendfile</span>(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        <span class="ident">out_fd</span>: <span class="ident">FileDesc</span>,
+        <span class="ident">in_fd</span>: <span class="ident">FileDesc</span>,
+        <span class="ident">offset_ptr</span>: <span class="ident">UserInOutPtr</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span>,
+        <span class="ident">count</span>: <span class="ident">usize</span>,
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
+        <span class="self">self</span>.<span class="ident">sys_copy_file_range</span>(<span class="ident">in_fd</span>, <span class="ident">offset_ptr</span>, <span class="ident">out_fd</span>, <span class="number">0</span>.<span class="ident">into</span>(), <span class="ident">count</span>, <span class="number">0</span>)
+    }
+
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_copy_file_range</span>(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        <span class="ident">in_fd</span>: <span class="ident">FileDesc</span>,
+        <span class="kw-2">mut</span> <span class="ident">in_offset</span>: <span class="ident">UserInOutPtr</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span>,
+        <span class="ident">out_fd</span>: <span class="ident">FileDesc</span>,
+        <span class="kw-2">mut</span> <span class="ident">out_offset</span>: <span class="ident">UserInOutPtr</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span>,
+        <span class="ident">count</span>: <span class="ident">usize</span>,
+        <span class="ident">flags</span>: <span class="ident">usize</span>,
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
+        <span class="macro">info</span><span class="macro">!</span>(
+            <span class="string">&quot;copy_file_range: in={:?}, out={:?}, in_offset={:?}, out_offset={:?}, count={}, flags={}&quot;</span>,
+            <span class="ident">in_fd</span>, <span class="ident">out_fd</span>, <span class="ident">in_offset</span>, <span class="ident">out_offset</span>, <span class="ident">count</span>, <span class="ident">flags</span>
+        );
+        <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">lock_linux_process</span>();
+        <span class="kw">let</span> <span class="ident">in_file</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_file</span>(<span class="ident">in_fd</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">out_file</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_file</span>(<span class="ident">out_fd</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">buffer</span> <span class="op">=</span> [<span class="number">0u8</span>; <span class="number">1024</span>];
+
+        <span class="comment">// for in_offset and out_offset</span>
+        <span class="comment">// null means update file offset</span>
+        <span class="comment">// non-null means update {in,out}_offset instead</span>
+
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">read_offset</span> <span class="op">=</span> <span class="kw">if</span> <span class="op">!</span><span class="ident">in_offset</span>.<span class="ident">is_null</span>() {
+            <span class="ident">in_offset</span>.<span class="ident">read</span>()<span class="question-mark">?</span>
+        } <span class="kw">else</span> {
+            <span class="ident">in_file</span>.<span class="ident">seek</span>(<span class="ident">SeekFrom</span>::<span class="ident">Current</span>(<span class="number">0</span>))<span class="question-mark">?</span>
+        };
+
+        <span class="kw">let</span> <span class="ident">orig_out_file_offset</span> <span class="op">=</span> <span class="ident">out_file</span>.<span class="ident">seek</span>(<span class="ident">SeekFrom</span>::<span class="ident">Current</span>(<span class="number">0</span>))<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">write_offset</span> <span class="op">=</span> <span class="kw">if</span> <span class="op">!</span><span class="ident">out_offset</span>.<span class="ident">is_null</span>() {
+            <span class="kw">let</span> <span class="ident">offset</span> <span class="op">=</span> <span class="ident">out_offset</span>.<span class="ident">read</span>()<span class="question-mark">?</span>;
+            <span class="ident">out_file</span>.<span class="ident">seek</span>(<span class="ident">SeekFrom</span>::<span class="ident">Start</span>(<span class="ident">offset</span>))<span class="question-mark">?</span>
+        } <span class="kw">else</span> {
+            <span class="number">0</span>
+        };
+
+        <span class="comment">// read from specified offset and write new offset back</span>
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">bytes_read</span> <span class="op">=</span> <span class="number">0</span>;
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">total_written</span> <span class="op">=</span> <span class="number">0</span>;
+        <span class="kw">while</span> <span class="ident">bytes_read</span> <span class="op">&lt;</span> <span class="ident">count</span> {
+            <span class="kw">let</span> <span class="ident">len</span> <span class="op">=</span> <span class="ident">buffer</span>.<span class="ident">len</span>().<span class="ident">min</span>(<span class="ident">count</span> <span class="op">-</span> <span class="ident">bytes_read</span>);
+            <span class="kw">let</span> <span class="ident">read_len</span> <span class="op">=</span> <span class="ident">in_file</span>.<span class="ident">read_at</span>(<span class="ident">read_offset</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">buffer</span>[..<span class="ident">len</span>])<span class="question-mark">?</span>;
+            <span class="kw">if</span> <span class="ident">read_len</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span> {
+                <span class="kw">break</span>;
+            }
+            <span class="ident">bytes_read</span> <span class="op">+</span><span class="op">=</span> <span class="ident">read_len</span>;
+            <span class="ident">read_offset</span> <span class="op">+</span><span class="op">=</span> <span class="ident">read_len</span> <span class="kw">as</span> <span class="ident">u64</span>;
+
+            <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">bytes_written</span> <span class="op">=</span> <span class="number">0</span>;
+            <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">rlen</span> <span class="op">=</span> <span class="ident">read_len</span>;
+            <span class="kw">while</span> <span class="ident">bytes_written</span> <span class="op">&lt;</span> <span class="ident">read_len</span> {
+                <span class="kw">let</span> <span class="ident">write_len</span> <span class="op">=</span> <span class="ident">out_file</span>.<span class="ident">write</span>(<span class="kw-2">&amp;</span><span class="ident">buffer</span>[<span class="ident">bytes_written</span>..(<span class="ident">bytes_written</span> <span class="op">+</span> <span class="ident">rlen</span>)])<span class="question-mark">?</span>;
+                <span class="kw">if</span> <span class="ident">write_len</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span> {
+                    <span class="macro">info</span><span class="macro">!</span>(
+                        <span class="string">&quot;copy_file_range:END_ERR in={:?}, out={:?}, in_offset={:?}, out_offset={:?}, count={} = bytes_read {}, bytes_written {}, write_len {}&quot;</span>,
+                        <span class="ident">in_fd</span>, <span class="ident">out_fd</span>, <span class="ident">in_offset</span>, <span class="ident">out_offset</span>, <span class="ident">count</span>, <span class="ident">bytes_read</span>, <span class="ident">bytes_written</span>, <span class="ident">write_len</span>
+                    );
+                    <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">SysError</span>::<span class="ident">EBADF</span>);
+                }
+                <span class="ident">bytes_written</span> <span class="op">+</span><span class="op">=</span> <span class="ident">write_len</span>;
+                <span class="ident">rlen</span> <span class="op">-</span><span class="op">=</span> <span class="ident">write_len</span>;
+            }
+            <span class="ident">total_written</span> <span class="op">+</span><span class="op">=</span> <span class="ident">bytes_written</span>;
+        }
+
+        <span class="kw">if</span> <span class="op">!</span><span class="ident">in_offset</span>.<span class="ident">is_null</span>() {
+            <span class="ident">in_offset</span>.<span class="ident">write</span>(<span class="ident">read_offset</span>)<span class="question-mark">?</span>;
+        } <span class="kw">else</span> {
+            <span class="ident">in_file</span>.<span class="ident">seek</span>(<span class="ident">SeekFrom</span>::<span class="ident">Current</span>(<span class="ident">bytes_read</span> <span class="kw">as</span> <span class="ident">i64</span>))<span class="question-mark">?</span>;
+        }
+        <span class="ident">out_offset</span>.<span class="ident">write_if_not_null</span>(<span class="ident">write_offset</span> <span class="op">+</span> <span class="ident">total_written</span> <span class="kw">as</span> <span class="ident">u64</span>)<span class="question-mark">?</span>;
+        <span class="kw">if</span> <span class="op">!</span><span class="ident">out_offset</span>.<span class="ident">is_null</span>() {
+            <span class="ident">out_file</span>.<span class="ident">seek</span>(<span class="ident">SeekFrom</span>::<span class="ident">Start</span>(<span class="ident">orig_out_file_offset</span>))<span class="question-mark">?</span>;
+        }
+        <span class="prelude-val">Ok</span>(<span class="ident">total_written</span>)
+    }
+
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_sync</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
+        <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;sync:&quot;</span>);
+        <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">lock_linux_process</span>();
+        <span class="ident">proc</span>.<span class="ident">root_inode</span>().<span class="ident">fs</span>().<span class="ident">sync</span>()<span class="question-mark">?</span>;
+        <span class="prelude-val">Ok</span>(<span class="number">0</span>)
+    }
+
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_fsync</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">fd</span>: <span class="ident">FileDesc</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
+        <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;fsync: fd={:?}&quot;</span>, <span class="ident">fd</span>);
+        <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">lock_linux_process</span>();
+        <span class="ident">proc</span>.<span class="ident">get_file</span>(<span class="ident">fd</span>)<span class="question-mark">?</span>.<span class="ident">sync_all</span>()<span class="question-mark">?</span>;
+        <span class="prelude-val">Ok</span>(<span class="number">0</span>)
+    }
+
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_fdatasync</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">fd</span>: <span class="ident">FileDesc</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
+        <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;fdatasync: fd={:?}&quot;</span>, <span class="ident">fd</span>);
+        <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">lock_linux_process</span>();
+        <span class="ident">proc</span>.<span class="ident">get_file</span>(<span class="ident">fd</span>)<span class="question-mark">?</span>.<span class="ident">sync_data</span>()<span class="question-mark">?</span>;
+        <span class="prelude-val">Ok</span>(<span class="number">0</span>)
+    }
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_ioctl</span>(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        <span class="ident">fd</span>: <span class="ident">FileDesc</span>,
+        <span class="ident">request</span>: <span class="ident">usize</span>,
+        <span class="ident">arg1</span>: <span class="ident">usize</span>,
+        <span class="ident">arg2</span>: <span class="ident">usize</span>,
+        <span class="ident">arg3</span>: <span class="ident">usize</span>,
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
+        <span class="macro">info</span><span class="macro">!</span>(
+            <span class="string">&quot;ioctl: fd={:?}, request={:#x}, args=[{:#x}, {:#x}, {:#x}]&quot;</span>,
+            <span class="ident">fd</span>, <span class="ident">request</span>, <span class="ident">arg1</span>, <span class="ident">arg2</span>, <span class="ident">arg3</span>
+        );
+        <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">lock_linux_process</span>();
+        <span class="kw">let</span> <span class="ident">file_like</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_file_like</span>(<span class="ident">fd</span>)<span class="question-mark">?</span>;
+        <span class="ident">file_like</span>.<span class="ident">ioctl</span>(<span class="ident">request</span>, <span class="ident">arg1</span>, <span class="ident">arg2</span>, <span class="ident">arg3</span>)
+    }
+
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_fcntl</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">fd</span>: <span class="ident">FileDesc</span>, <span class="ident">cmd</span>: <span class="ident">usize</span>, <span class="ident">arg</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
+        <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;fcntl: fd={:?}, cmd={:x}, arg={}&quot;</span>, <span class="ident">fd</span>, <span class="ident">cmd</span>, <span class="ident">arg</span>);
+        <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">lock_linux_process</span>();
+        <span class="kw">let</span> <span class="ident">file_like</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_file_like</span>(<span class="ident">fd</span>)<span class="question-mark">?</span>;
+        <span class="ident">file_like</span>.<span class="ident">fcntl</span>(<span class="ident">cmd</span>, <span class="ident">arg</span>)
+    }
+
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_access</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">path</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>, <span class="ident">mode</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
+        <span class="self">self</span>.<span class="ident">sys_faccessat</span>(<span class="ident">FileDesc</span>::<span class="ident">CWD</span>, <span class="ident">path</span>, <span class="ident">mode</span>, <span class="number">0</span>)
+    }
+
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_faccessat</span>(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        <span class="ident">dirfd</span>: <span class="ident">FileDesc</span>,
+        <span class="ident">path</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>,
+        <span class="ident">mode</span>: <span class="ident">usize</span>,
+        <span class="ident">flags</span>: <span class="ident">usize</span>,
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
+        <span class="comment">// TODO: check permissions based on uid/gid</span>
+        <span class="kw">let</span> <span class="ident">path</span> <span class="op">=</span> <span class="ident">path</span>.<span class="ident">read_cstring</span>()<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">flags</span> <span class="op">=</span> <span class="ident">AtFlags</span>::<span class="ident">from_bits_truncate</span>(<span class="ident">flags</span>);
+        <span class="macro">info</span><span class="macro">!</span>(
+            <span class="string">&quot;faccessat: dirfd={:?}, path={:?}, mode={:#o}, flags={:?}&quot;</span>,
+            <span class="ident">dirfd</span>, <span class="ident">path</span>, <span class="ident">mode</span>, <span class="ident">flags</span>
+        );
+        <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">lock_linux_process</span>();
+        <span class="kw">let</span> <span class="ident">follow</span> <span class="op">=</span> <span class="op">!</span><span class="ident">flags</span>.<span class="ident">contains</span>(<span class="ident">AtFlags</span>::<span class="ident">SYMLINK_NOFOLLOW</span>);
+        <span class="kw">let</span> <span class="ident">_inode</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">lookup_inode_at</span>(<span class="ident">dirfd</span>, <span class="kw-2">&amp;</span><span class="ident">path</span>, <span class="ident">follow</span>)<span class="question-mark">?</span>;
+        <span class="prelude-val">Ok</span>(<span class="number">0</span>)
+    }
 }
 </pre></div>
 </section><section id="search" class="content hidden"></section><section class="footer"></section><script>window.rootPath = "../../../../";window.currentCrate = "linux_syscall";</script><script src="../../../../aliases.js"></script><script src="../../../../main.js"></script><script src="../../../../source-script.js"></script><script src="../../../../source-files.js"></script><script defer src="../../../../search-index.js"></script></body></html>

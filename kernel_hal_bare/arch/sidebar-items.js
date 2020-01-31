@@ -1,1 +1,1 @@
-initSidebarItems({"struct":[["MMUFlags",""],["PageTableImpl","Page Table"]]});
+initSidebarItems({"struct":[["PageTableImpl","Page Table"]]});

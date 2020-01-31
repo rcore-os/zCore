@@ -1,1 +1,1 @@
-initSidebarItems({"fn":[["run",""]],"trait":[["ElfExt",""],["VmarExt",""]]});
+initSidebarItems({"fn":[["run",""]]});

@@ -339,20 +339,9 @@
 <span id="339">339</span>
 <span id="340">340</span>
 <span id="341">341</span>
-<span id="342">342</span>
-<span id="343">343</span>
-<span id="344">344</span>
-<span id="345">345</span>
-<span id="346">346</span>
-<span id="347">347</span>
-<span id="348">348</span>
-<span id="349">349</span>
-<span id="350">350</span>
-<span id="351">351</span>
-<span id="352">352</span>
-<span id="353">353</span>
 </pre><div class="example-wrap"><pre class="rust ">
-<span class="attribute">#![<span class="ident">feature</span>(<span class="ident">asm</span>)]</span>
+<span class="attribute">#![<span class="ident">feature</span>(<span class="ident">asm</span>, <span class="ident">global_asm</span>)]</span>
+<span class="attribute">#![<span class="ident">feature</span>(<span class="ident">linkage</span>)]</span>
 <span class="attribute">#![<span class="ident">deny</span>(<span class="ident">warnings</span>)]</span>
 
 <span class="attribute">#[<span class="ident">macro_use</span>]</span>
@@ -362,7 +351,6 @@
 
 <span class="kw">use</span> {
     <span class="ident">alloc</span>::<span class="ident">sync</span>::<span class="ident">Arc</span>,
-    <span class="ident">bitflags</span>::<span class="ident">bitflags</span>,
     <span class="ident">lazy_static</span>::<span class="ident">lazy_static</span>,
     <span class="ident">std</span>::<span class="ident">cell</span>::<span class="ident">RefCell</span>,
     <span class="ident">std</span>::<span class="ident">fmt</span>::{<span class="ident">Debug</span>, <span class="ident">Formatter</span>},
@@ -374,22 +362,15 @@
     <span class="ident">tempfile</span>::<span class="ident">tempdir_in</span>,
 };
 
+<span class="kw">pub</span> <span class="kw">use</span> <span class="self">self</span>::<span class="ident">trap</span>::<span class="ident">syscall_entry</span>;
+<span class="kw">pub</span> <span class="kw">use</span> <span class="ident">kernel_hal</span>::<span class="ident">defs</span>::<span class="kw-2">*</span>;
+
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_os</span> <span class="op">=</span> <span class="string">&quot;linux&quot;</span>)]</span>
 <span class="macro">include</span><span class="macro">!</span>(<span class="string">&quot;fsbase_linux.rs&quot;</span>);
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_os</span> <span class="op">=</span> <span class="string">&quot;macos&quot;</span>)]</span>
 <span class="macro">include</span><span class="macro">!</span>(<span class="string">&quot;fsbase_macos.rs&quot;</span>);
 
-<span class="kw">type</span> <span class="ident">PhysAddr</span> <span class="op">=</span> <span class="ident">usize</span>;
-<span class="kw">type</span> <span class="ident">VirtAddr</span> <span class="op">=</span> <span class="ident">usize</span>;
-
-<span class="macro">bitflags</span><span class="macro">!</span> {
-    <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">MMUFlags</span>: <span class="ident">usize</span> {
-        <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy</span>::<span class="ident">identity_op</span>)]</span>
-        <span class="kw">const</span> <span class="ident">READ</span>      <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">0</span>;
-        <span class="kw">const</span> <span class="ident">WRITE</span>     <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">1</span>;
-        <span class="kw">const</span> <span class="ident">EXECUTE</span>   <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">2</span>;
-    }
-}
+<span class="kw">mod</span> <span class="ident">trap</span>;
 
 <span class="attribute">#[<span class="ident">repr</span>(<span class="ident">C</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Thread</span> {
@@ -398,21 +379,12 @@
 
 <span class="kw">impl</span> <span class="ident">Thread</span> {
     <span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_thread_spawn&quot;</span>]</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">spawn</span>(<span class="ident">entry</span>: <span class="ident">usize</span>, <span class="ident">stack</span>: <span class="ident">usize</span>, <span class="ident">arg1</span>: <span class="ident">usize</span>, <span class="ident">arg2</span>: <span class="ident">usize</span>, <span class="ident">tls</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">spawn</span>(<span class="ident">thread</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>, <span class="kw-2">mut</span> <span class="ident">regs</span>: <span class="ident">GeneralRegs</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
         <span class="kw">let</span> <span class="ident">handle</span> <span class="op">=</span> <span class="ident">std</span>::<span class="ident">thread</span>::<span class="ident">spawn</span>(<span class="kw">move</span> <span class="op">|</span><span class="op">|</span> {
-            <span class="ident">TLS</span>.<span class="ident">with</span>(<span class="op">|</span><span class="ident">t</span><span class="op">|</span> <span class="ident">t</span>.<span class="ident">replace</span>(<span class="prelude-val">Some</span>(<span class="ident">tls</span>)));
-            <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_os</span> <span class="op">=</span> <span class="string">&quot;macos&quot;</span>)]</span>
-            {
-                <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">value</span> <span class="op">=</span> [<span class="number">0usize</span>; <span class="number">7</span>];
-                <span class="kw">let</span> <span class="ident">init_fsbase</span> <span class="op">=</span> <span class="ident">value</span>.<span class="ident">as_ptr</span>() <span class="kw">as</span> <span class="ident">usize</span>;
-                <span class="ident">value</span>[<span class="number">0</span>] <span class="op">=</span> <span class="ident">init_fsbase</span>;
-                <span class="ident">set_user_fsbase</span>(<span class="ident">init_fsbase</span>);
-            }
+            <span class="ident">TLS</span>.<span class="ident">with</span>(<span class="op">|</span><span class="ident">t</span><span class="op">|</span> <span class="ident">t</span>.<span class="ident">replace</span>(<span class="prelude-val">Some</span>(<span class="ident">thread</span>)));
             <span class="kw">unsafe</span> {
-                <span class="ident">switch_to_user</span>();
-                <span class="macro">asm</span><span class="macro">!</span>(<span class="string">&quot;jmp $0&quot;</span> :: <span class="string">&quot;r&quot;</span>(<span class="ident">entry</span>), <span class="string">&quot;{rsp}&quot;</span>(<span class="ident">stack</span>), <span class="string">&quot;{rdi}&quot;</span>(<span class="ident">arg1</span>), <span class="string">&quot;{rsi}&quot;</span>(<span class="ident">arg2</span>) :: <span class="string">&quot;volatile&quot;</span> <span class="string">&quot;intel&quot;</span>);
+                <span class="ident">trap</span>::<span class="ident">syscall_return</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">regs</span>);
             }
-            <span class="macro">unreachable</span><span class="macro">!</span>()
         });
         <span class="ident">Thread</span> {
             <span class="ident">thread</span>: <span class="ident">handle</span>.<span class="ident">thread</span>().<span class="ident">clone</span>(),
@@ -630,7 +602,11 @@
     <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">ret</span>, <span class="ident">vaddr</span>, <span class="string">&quot;failed to mmap: {:?}&quot;</span>, <span class="ident">Error</span>::<span class="ident">last_os_error</span>());
 }
 
-<span class="kw">impl</span> <span class="ident">MMUFlags</span> {
+<span class="kw">trait</span> <span class="ident">FlagsExt</span> {
+    <span class="kw">fn</span> <span class="ident">to_mmap_prot</span>(<span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">libc</span>::<span class="ident">c_int</span>;
+}
+
+<span class="kw">impl</span> <span class="ident">FlagsExt</span> <span class="kw">for</span> <span class="ident">MMUFlags</span> {
     <span class="kw">fn</span> <span class="ident">to_mmap_prot</span>(<span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">libc</span>::<span class="ident">c_int</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">flags</span> <span class="op">=</span> <span class="number">0</span>;
         <span class="kw">if</span> <span class="self">self</span>.<span class="ident">contains</span>(<span class="ident">MMUFlags</span>::<span class="ident">READ</span>) {

@@ -25,11 +25,15 @@
 <span id="25">25</span>
 <span id="26">26</span>
 <span id="27">27</span>
+<span id="28">28</span>
+<span id="29">29</span>
+<span id="30">30</span>
+<span id="31">31</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Linux syscall implementations</span>
 
 <span class="attribute">#![<span class="ident">no_std</span>]</span>
-<span class="attribute">#![<span class="ident">deny</span>(<span class="ident">unsafe_code</span>, <span class="ident">unused_must_use</span>, <span class="ident">unreachable_patterns</span>)]</span>
+<span class="attribute">#![<span class="ident">deny</span>(<span class="ident">warnings</span>, <span class="ident">unsafe_code</span>, <span class="ident">unused_must_use</span>, <span class="ident">unreachable_patterns</span>)]</span>
 <span class="attribute">#![<span class="ident">feature</span>(<span class="ident">bool_to_option</span>)]</span>
 
 <span class="attribute">#[<span class="ident">macro_use</span>]</span>
@@ -46,12 +50,16 @@
 <span class="kw">mod</span> <span class="ident">fs</span>;
 
 <span class="comment">// layer 2</span>
+<span class="kw">mod</span> <span class="ident">loader</span>;
 <span class="kw">mod</span> <span class="ident">process</span>;
 
 <span class="comment">// layer 3</span>
 <span class="kw">mod</span> <span class="ident">syscall</span>;
 
+<span class="kw">pub</span> <span class="kw">use</span> <span class="ident">fs</span>::<span class="ident">INodeExt</span>;
+<span class="kw">pub</span> <span class="kw">use</span> <span class="ident">loader</span>::<span class="ident">LinuxElfLoader</span>;
 <span class="kw">pub</span> <span class="kw">use</span> <span class="ident">process</span>::<span class="ident">ProcessExt</span>;
+<span class="kw">pub</span> <span class="kw">use</span> <span class="ident">rcore_fs</span>::<span class="ident">vfs</span>::{<span class="ident">FileSystem</span>, <span class="ident">INode</span>};
 <span class="kw">pub</span> <span class="kw">use</span> <span class="ident">syscall</span>::<span class="ident">Syscall</span>;
 </pre></div>
 </section><section id="search" class="content hidden"></section><section class="footer"></section><script>window.rootPath = "../../";window.currentCrate = "linux_syscall";</script><script src="../../aliases.js"></script><script src="../../main.js"></script><script src="../../source-script.js"></script><script src="../../source-files.js"></script><script defer src="../../search-index.js"></script></body></html>

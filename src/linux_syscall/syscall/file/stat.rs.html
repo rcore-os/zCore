@@ -278,6 +278,10 @@
 <span id="278">278</span>
 <span id="279">279</span>
 <span id="280">280</span>
+<span id="281">281</span>
+<span id="282">282</span>
+<span id="283">283</span>
+<span id="284">284</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! File status</span>
 <span class="doccomment">//!</span>
@@ -288,47 +292,50 @@
 <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
 <span class="kw">use</span> <span class="ident">rcore_fs</span>::<span class="ident">vfs</span>::{<span class="ident">FileType</span>, <span class="ident">Metadata</span>};
 
-<span class="kw">impl</span> <span class="ident">Syscall</span> {
-    <span class="comment">//    pub fn sys_lstat(&amp;self, path: *const u8, stat_ptr: *mut Stat) -&gt; SysResult {</span>
-    <span class="comment">//        self.sys_fstatat(FileDesc::CWD, path, stat_ptr, AtFlags::SYMLINK_NOFOLLOW.bits())</span>
-    <span class="comment">//    }</span>
-    <span class="comment">//</span>
-    <span class="comment">//    pub fn sys_fstat(&amp;self, fd: usize, stat_ptr: *mut Stat) -&gt; SysResult {</span>
-    <span class="comment">//        info!(&quot;fstat: fd={}, stat_ptr={:?}&quot;, fd, stat_ptr);</span>
-    <span class="comment">//        let proc = self.process();</span>
-    <span class="comment">//        let stat_ref = unsafe { self.vm().check_write_ptr(stat_ptr)? };</span>
-    <span class="comment">//        let file = proc.get_file(fd)?;</span>
-    <span class="comment">//        let stat = Stat::from(file.metadata()?);</span>
-    <span class="comment">//        *stat_ref = stat;</span>
-    <span class="comment">//        Ok(0)</span>
-    <span class="comment">//    }</span>
-    <span class="comment">//</span>
-    <span class="comment">//    pub fn sys_fstatat(</span>
-    <span class="comment">//        &amp;self,</span>
-    <span class="comment">//        dirfd: usize,</span>
-    <span class="comment">//        path: *const u8,</span>
-    <span class="comment">//        stat_ptr: *mut Stat,</span>
-    <span class="comment">//        flags: usize,</span>
-    <span class="comment">//    ) -&gt; SysResult {</span>
-    <span class="comment">//        let proc = self.process();</span>
-    <span class="comment">//        let path = check_and_clone_cstr(path)?;</span>
-    <span class="comment">//        let stat_ref = unsafe { self.vm().check_write_ptr(stat_ptr)? };</span>
-    <span class="comment">//        let flags = AtFlags::from_bits_truncate(flags);</span>
-    <span class="comment">//        info!(</span>
-    <span class="comment">//            &quot;fstatat: dirfd={}, path={:?}, stat_ptr={:?}, flags={:?}&quot;,</span>
-    <span class="comment">//            dirfd as isize, path, stat_ptr, flags</span>
-    <span class="comment">//        );</span>
-    <span class="comment">//</span>
-    <span class="comment">//        let inode =</span>
-    <span class="comment">//            proc.lookup_inode_at(dirfd, &amp;path, !flags.contains(AtFlags::SYMLINK_NOFOLLOW))?;</span>
-    <span class="comment">//        let stat = Stat::from(inode.metadata()?);</span>
-    <span class="comment">//        *stat_ref = stat;</span>
-    <span class="comment">//        Ok(0)</span>
-    <span class="comment">//    }</span>
-    <span class="comment">//</span>
-    <span class="comment">//    pub fn sys_stat(&amp;self, path: *const u8, stat_ptr: *mut Stat) -&gt; SysResult {</span>
-    <span class="comment">//        self.sys_fstatat(FileDesc::CWD, path, stat_ptr, 0)</span>
-    <span class="comment">//    }</span>
+<span class="kw">impl</span> <span class="ident">Syscall</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_lstat</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">path</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>, <span class="ident">stat_ptr</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">Stat</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
+        <span class="self">self</span>.<span class="ident">sys_fstatat</span>(
+            <span class="ident">FileDesc</span>::<span class="ident">CWD</span>,
+            <span class="ident">path</span>,
+            <span class="ident">stat_ptr</span>,
+            <span class="ident">AtFlags</span>::<span class="ident">SYMLINK_NOFOLLOW</span>.<span class="ident">bits</span>(),
+        )
+    }
+
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_fstat</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">fd</span>: <span class="ident">FileDesc</span>, <span class="kw-2">mut</span> <span class="ident">stat_ptr</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">Stat</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
+        <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;fstat: fd={:?}, stat_ptr={:?}&quot;</span>, <span class="ident">fd</span>, <span class="ident">stat_ptr</span>);
+        <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">lock_linux_process</span>();
+        <span class="kw">let</span> <span class="ident">file</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_file</span>(<span class="ident">fd</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">stat</span> <span class="op">=</span> <span class="ident">Stat</span>::<span class="ident">from</span>(<span class="ident">file</span>.<span class="ident">metadata</span>()<span class="question-mark">?</span>);
+        <span class="ident">stat_ptr</span>.<span class="ident">write</span>(<span class="ident">stat</span>)<span class="question-mark">?</span>;
+        <span class="prelude-val">Ok</span>(<span class="number">0</span>)
+    }
+
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_fstatat</span>(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        <span class="ident">dirfd</span>: <span class="ident">FileDesc</span>,
+        <span class="ident">path</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>,
+        <span class="kw-2">mut</span> <span class="ident">stat_ptr</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">Stat</span><span class="op">&gt;</span>,
+        <span class="ident">flags</span>: <span class="ident">usize</span>,
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
+        <span class="kw">let</span> <span class="ident">path</span> <span class="op">=</span> <span class="ident">path</span>.<span class="ident">read_cstring</span>()<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">flags</span> <span class="op">=</span> <span class="ident">AtFlags</span>::<span class="ident">from_bits_truncate</span>(<span class="ident">flags</span>);
+        <span class="macro">info</span><span class="macro">!</span>(
+            <span class="string">&quot;fstatat: dirfd={:?}, path={:?}, stat_ptr={:?}, flags={:?}&quot;</span>,
+            <span class="ident">dirfd</span>, <span class="ident">path</span>, <span class="ident">stat_ptr</span>, <span class="ident">flags</span>
+        );
+
+        <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">lock_linux_process</span>();
+        <span class="kw">let</span> <span class="ident">follow</span> <span class="op">=</span> <span class="op">!</span><span class="ident">flags</span>.<span class="ident">contains</span>(<span class="ident">AtFlags</span>::<span class="ident">SYMLINK_NOFOLLOW</span>);
+        <span class="kw">let</span> <span class="ident">inode</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">lookup_inode_at</span>(<span class="ident">dirfd</span>, <span class="kw-2">&amp;</span><span class="ident">path</span>, <span class="ident">follow</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">stat</span> <span class="op">=</span> <span class="ident">Stat</span>::<span class="ident">from</span>(<span class="ident">inode</span>.<span class="ident">metadata</span>()<span class="question-mark">?</span>);
+        <span class="ident">stat_ptr</span>.<span class="ident">write</span>(<span class="ident">stat</span>)<span class="question-mark">?</span>;
+        <span class="prelude-val">Ok</span>(<span class="number">0</span>)
+    }
+
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_stat</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">path</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>, <span class="ident">stat_ptr</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">Stat</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
+        <span class="self">self</span>.<span class="ident">sys_fstatat</span>(<span class="ident">FileDesc</span>::<span class="ident">CWD</span>, <span class="ident">path</span>, <span class="ident">stat_ptr</span>, <span class="number">0</span>)
+    }
 }
 
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">not</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;mips&quot;</span>))]</span>
@@ -467,6 +474,7 @@
 }
 
 <span class="kw">impl</span> <span class="ident">From</span><span class="op">&lt;</span><span class="ident">Metadata</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">Stat</span> {
+    <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy</span>::<span class="ident">identity_conversion</span>)]</span>
     <span class="kw">fn</span> <span class="ident">from</span>(<span class="ident">info</span>: <span class="ident">Metadata</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
         <span class="ident">Stat</span> {
             <span class="ident">dev</span>: <span class="ident">info</span>.<span class="ident">dev</span> <span class="kw">as</span> <span class="ident">u64</span>,
@@ -494,26 +502,26 @@
 <span class="macro">bitflags</span><span class="macro">!</span> {
     <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">StatMode</span>: <span class="ident">u32</span> {
         <span class="doccomment">/// Type</span>
-        <span class="kw">const</span> <span class="ident">TYPE_MASK</span> <span class="op">=</span> <span class="number">0o170000</span>;
+        <span class="kw">const</span> <span class="ident">TYPE_MASK</span> <span class="op">=</span> <span class="number">0o170_000</span>;
         <span class="doccomment">/// FIFO</span>
-        <span class="kw">const</span> <span class="ident">FIFO</span>  <span class="op">=</span> <span class="number">0o010000</span>;
+        <span class="kw">const</span> <span class="ident">FIFO</span>  <span class="op">=</span> <span class="number">0o010_000</span>;
         <span class="doccomment">/// character device</span>
-        <span class="kw">const</span> <span class="ident">CHAR</span>  <span class="op">=</span> <span class="number">0o020000</span>;
+        <span class="kw">const</span> <span class="ident">CHAR</span>  <span class="op">=</span> <span class="number">0o020_000</span>;
         <span class="doccomment">/// directory</span>
-        <span class="kw">const</span> <span class="ident">DIR</span>   <span class="op">=</span> <span class="number">0o040000</span>;
+        <span class="kw">const</span> <span class="ident">DIR</span>   <span class="op">=</span> <span class="number">0o040_000</span>;
         <span class="doccomment">/// block device</span>
-        <span class="kw">const</span> <span class="ident">BLOCK</span> <span class="op">=</span> <span class="number">0o060000</span>;
+        <span class="kw">const</span> <span class="ident">BLOCK</span> <span class="op">=</span> <span class="number">0o060_000</span>;
         <span class="doccomment">/// ordinary regular file</span>
-        <span class="kw">const</span> <span class="ident">FILE</span>  <span class="op">=</span> <span class="number">0o100000</span>;
+        <span class="kw">const</span> <span class="ident">FILE</span>  <span class="op">=</span> <span class="number">0o100_000</span>;
         <span class="doccomment">/// symbolic link</span>
-        <span class="kw">const</span> <span class="ident">LINK</span>  <span class="op">=</span> <span class="number">0o120000</span>;
+        <span class="kw">const</span> <span class="ident">LINK</span>  <span class="op">=</span> <span class="number">0o120_000</span>;
         <span class="doccomment">/// socket</span>
-        <span class="kw">const</span> <span class="ident">SOCKET</span> <span class="op">=</span> <span class="number">0o140000</span>;
+        <span class="kw">const</span> <span class="ident">SOCKET</span> <span class="op">=</span> <span class="number">0o140_000</span>;
 
         <span class="doccomment">/// Set-user-ID on execution.</span>
-        <span class="kw">const</span> <span class="ident">SET_UID</span> <span class="op">=</span> <span class="number">0o4000</span>;
+        <span class="kw">const</span> <span class="ident">SET_UID</span> <span class="op">=</span> <span class="number">0o4_000</span>;
         <span class="doccomment">/// Set-group-ID on execution.</span>
-        <span class="kw">const</span> <span class="ident">SET_GID</span> <span class="op">=</span> <span class="number">0o2000</span>;
+        <span class="kw">const</span> <span class="ident">SET_GID</span> <span class="op">=</span> <span class="number">0o2_000</span>;
 
         <span class="doccomment">/// Read, write, execute/search by owner.</span>
         <span class="kw">const</span> <span class="ident">OWNER_MASK</span> <span class="op">=</span> <span class="number">0o700</span>;

@@ -120,7 +120,6 @@
 <span id="120">120</span>
 <span id="121">121</span>
 <span id="122">122</span>
-<span id="123">123</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Implement INode for Stdin &amp; Stdout</span>
 <span class="attribute">#![<span class="ident">allow</span>(<span class="ident">unsafe_code</span>)]</span>
@@ -133,7 +132,6 @@
 <span class="kw">use</span> <span class="kw">super</span>::<span class="ident">ioctl</span>::<span class="kw-2">*</span>;
 <span class="comment">//use spin::Mutex;</span>
 <span class="kw">use</span> <span class="ident">lazy_static</span>::<span class="ident">lazy_static</span>;
-<span class="kw">use</span> <span class="ident">zircon_object</span>::<span class="ident">hal</span>;
 
 <span class="comment">//#[derive(Default)]</span>
 <span class="comment">//pub struct Stdin {</span>
@@ -216,7 +214,7 @@
     <span class="kw">fn</span> <span class="ident">write_at</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">_offset</span>: <span class="ident">usize</span>, <span class="ident">buf</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
         <span class="comment">// we do not care the utf-8 things, we just want to print it!</span>
         <span class="kw">let</span> <span class="ident">s</span> <span class="op">=</span> <span class="kw">unsafe</span> { <span class="ident">core</span>::<span class="ident">str</span>::<span class="ident">from_utf8_unchecked</span>(<span class="ident">buf</span>) };
-        <span class="ident">hal</span>::<span class="ident">serial_write</span>(<span class="ident">s</span>);
+        <span class="ident">kernel_hal</span>::<span class="ident">serial_write</span>(<span class="ident">s</span>);
         <span class="prelude-val">Ok</span>(<span class="ident">buf</span>.<span class="ident">len</span>())
     }
     <span class="kw">fn</span> <span class="ident">poll</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">PollStatus</span><span class="op">&gt;</span> {

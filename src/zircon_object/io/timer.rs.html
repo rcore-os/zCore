@@ -139,7 +139,7 @@
         <span class="ident">inner</span>.<span class="ident">deadline</span> <span class="op">=</span> <span class="prelude-val">Some</span>(<span class="ident">deadline</span>);
         <span class="self">self</span>.<span class="ident">base</span>.<span class="ident">signal_clear</span>(<span class="ident">Signal</span>::<span class="ident">SIGNALED</span>);
         <span class="kw">let</span> <span class="ident">me</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">clone</span>();
-        <span class="kw">crate</span>::<span class="ident">hal</span>::<span class="ident">timer_set</span>(<span class="ident">deadline</span>, <span class="ident">Box</span>::<span class="ident">new</span>(<span class="kw">move</span> <span class="op">|</span><span class="ident">now</span><span class="op">|</span> <span class="ident">me</span>.<span class="ident">touch</span>(<span class="ident">now</span>)));
+        <span class="ident">kernel_hal</span>::<span class="ident">timer_set</span>(<span class="ident">deadline</span>, <span class="ident">Box</span>::<span class="ident">new</span>(<span class="kw">move</span> <span class="op">|</span><span class="ident">now</span><span class="op">|</span> <span class="ident">me</span>.<span class="ident">touch</span>(<span class="ident">now</span>)));
     }
 
     <span class="doccomment">/// Cancel the pending timer started by `set`.</span>
@@ -163,7 +163,7 @@
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">test</span>)]</span>
 <span class="kw">mod</span> <span class="ident">tests</span> {
     <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
-    <span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">hal</span>::<span class="ident">timer_now</span>;
+    <span class="kw">use</span> <span class="ident">kernel_hal</span>::<span class="ident">timer_now</span>;
 
     <span class="attribute">#[<span class="ident">test</span>]</span>
     <span class="kw">fn</span> <span class="ident">set</span>() {

@@ -111,7 +111,6 @@
 <span id="111">111</span>
 <span id="112">112</span>
 <span id="113">113</span>
-<span id="114">114</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Zircon HAL implementation for bare metal environment.</span>
 <span class="doccomment">//!</span>
@@ -138,10 +137,9 @@
 
 <span class="kw">extern</span> <span class="kw">crate</span> <span class="ident">alloc</span>;
 
-<span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">arch</span>;
+<span class="kw">use</span> <span class="ident">kernel_hal</span>::<span class="ident">defs</span>::<span class="kw-2">*</span>;
 
-<span class="kw">type</span> <span class="ident">PhysAddr</span> <span class="op">=</span> <span class="ident">usize</span>;
-<span class="kw">type</span> <span class="ident">VirtAddr</span> <span class="op">=</span> <span class="ident">usize</span>;
+<span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">arch</span>;
 
 <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">improper_ctypes</span>)]</span>
 <span class="kw">extern</span> <span class="string">&quot;C&quot;</span> {

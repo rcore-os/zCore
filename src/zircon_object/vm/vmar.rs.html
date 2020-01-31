@@ -551,10 +551,21 @@
 <span id="551">551</span>
 <span id="552">552</span>
 <span id="553">553</span>
+<span id="554">554</span>
+<span id="555">555</span>
+<span id="556">556</span>
+<span id="557">557</span>
+<span id="558">558</span>
+<span id="559">559</span>
+<span id="560">560</span>
+<span id="561">561</span>
+<span id="562">562</span>
+<span id="563">563</span>
+<span id="564">564</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> {
-    <span class="kw">super</span>::<span class="kw-2">*</span>, <span class="kw">crate</span>::<span class="ident">hal</span>::<span class="ident">PageTable</span>, <span class="kw">crate</span>::<span class="ident">object</span>::<span class="kw-2">*</span>, <span class="kw">crate</span>::<span class="ident">vm</span>::<span class="ident">vmo</span>::<span class="ident">VMObject</span>, <span class="ident">alloc</span>::<span class="ident">sync</span>::<span class="ident">Arc</span>,
-    <span class="ident">alloc</span>::<span class="ident">vec</span>::<span class="ident">Vec</span>, <span class="ident">spin</span>::<span class="ident">Mutex</span>,
+    <span class="kw">super</span>::<span class="kw-2">*</span>, <span class="kw">crate</span>::<span class="ident">object</span>::<span class="kw-2">*</span>, <span class="kw">crate</span>::<span class="ident">vm</span>::<span class="ident">vmo</span>::<span class="ident">VMObject</span>, <span class="ident">alloc</span>::<span class="ident">sync</span>::<span class="ident">Arc</span>, <span class="ident">alloc</span>::<span class="ident">vec</span>::<span class="ident">Vec</span>,
+    <span class="ident">kernel_hal</span>::<span class="ident">PageTable</span>, <span class="ident">spin</span>::<span class="ident">Mutex</span>,
 };
 
 <span class="doccomment">/// Virtual Memory Address Regions</span>
@@ -586,7 +597,7 @@
             <span class="ident">addr</span>: <span class="ident">BASE</span>,
             <span class="ident">size</span>: <span class="ident">usize</span>::<span class="ident">max_value</span>() <span class="op">-</span> <span class="number">0xfff</span> <span class="op">-</span> <span class="ident">BASE</span>,
             <span class="ident">parent</span>: <span class="prelude-val">None</span>,
-            <span class="ident">page_table</span>: <span class="ident">Arc</span>::<span class="ident">new</span>(<span class="ident">Mutex</span>::<span class="ident">new</span>(<span class="ident">hal</span>::<span class="ident">PageTable</span>::<span class="ident">new</span>())),
+            <span class="ident">page_table</span>: <span class="ident">Arc</span>::<span class="ident">new</span>(<span class="ident">Mutex</span>::<span class="ident">new</span>(<span class="ident">kernel_hal</span>::<span class="ident">PageTable</span>::<span class="ident">new</span>())),
             <span class="ident">inner</span>: <span class="ident">Mutex</span>::<span class="ident">new</span>(<span class="prelude-val">Some</span>(<span class="ident">VmarInner</span>::<span class="ident">default</span>())),
         })
     }
@@ -728,6 +739,17 @@
             <span class="ident">vmar</span>.<span class="ident">destroy_internal</span>()<span class="question-mark">?</span>;
         }
         <span class="kw-2">*</span><span class="ident">guard</span> <span class="op">=</span> <span class="prelude-val">None</span>;
+        <span class="prelude-val">Ok</span>(())
+    }
+
+    <span class="doccomment">/// Unmap all mappings and destroy all sub-regions of VMAR.</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">clear</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">guard</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
+        <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="ident">guard</span>.<span class="ident">as_mut</span>().<span class="ident">ok_or</span>(<span class="ident">ZxError</span>::<span class="ident">BAD_STATE</span>)<span class="question-mark">?</span>;
+        <span class="kw">for</span> <span class="ident">vmar</span> <span class="kw">in</span> <span class="ident">inner</span>.<span class="ident">children</span>.<span class="ident">drain</span>(..) {
+            <span class="ident">vmar</span>.<span class="ident">destroy_internal</span>()<span class="question-mark">?</span>;
+        }
+        <span class="ident">inner</span>.<span class="ident">mappings</span>.<span class="ident">clear</span>();
         <span class="prelude-val">Ok</span>(())
     }
 

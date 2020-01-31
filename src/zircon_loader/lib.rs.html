@@ -202,44 +202,6 @@
 <span id="202">202</span>
 <span id="203">203</span>
 <span id="204">204</span>
-<span id="205">205</span>
-<span id="206">206</span>
-<span id="207">207</span>
-<span id="208">208</span>
-<span id="209">209</span>
-<span id="210">210</span>
-<span id="211">211</span>
-<span id="212">212</span>
-<span id="213">213</span>
-<span id="214">214</span>
-<span id="215">215</span>
-<span id="216">216</span>
-<span id="217">217</span>
-<span id="218">218</span>
-<span id="219">219</span>
-<span id="220">220</span>
-<span id="221">221</span>
-<span id="222">222</span>
-<span id="223">223</span>
-<span id="224">224</span>
-<span id="225">225</span>
-<span id="226">226</span>
-<span id="227">227</span>
-<span id="228">228</span>
-<span id="229">229</span>
-<span id="230">230</span>
-<span id="231">231</span>
-<span id="232">232</span>
-<span id="233">233</span>
-<span id="234">234</span>
-<span id="235">235</span>
-<span id="236">236</span>
-<span id="237">237</span>
-<span id="238">238</span>
-<span id="239">239</span>
-<span id="240">240</span>
-<span id="241">241</span>
-<span id="242">242</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="attribute">#![<span class="ident">no_std</span>]</span>
 <span class="attribute">#![<span class="ident">feature</span>(<span class="ident">asm</span>)]</span>
@@ -248,18 +210,18 @@
 
 <span class="attribute">#[<span class="ident">macro_use</span>]</span>
 <span class="kw">extern</span> <span class="kw">crate</span> <span class="ident">alloc</span>;
-
+<span class="attribute">#[<span class="ident">macro_use</span>]</span>
 <span class="kw">extern</span> <span class="kw">crate</span> <span class="ident">log</span>;
 
 <span class="kw">use</span> {
     <span class="ident">alloc</span>::{<span class="ident">sync</span>::<span class="ident">Arc</span>, <span class="ident">vec</span>::<span class="ident">Vec</span>},
+    <span class="ident">kernel_hal_unix</span>::{<span class="ident">syscall_entry</span>, <span class="ident">GeneralRegs</span>},
     <span class="ident">xmas_elf</span>::{
         <span class="ident">program</span>::{<span class="ident">Flags</span>, <span class="ident">ProgramHeader</span>, <span class="ident">SegmentData</span>, <span class="ident">Type</span>},
         <span class="ident">sections</span>::<span class="ident">SectionData</span>,
         <span class="ident">symbol_table</span>::<span class="ident">Entry</span>,
         <span class="ident">ElfFile</span>,
     },
-    <span class="ident">kernel_hal_unix</span>::{<span class="ident">switch_to_kernel</span>, <span class="ident">switch_to_user</span>},
     <span class="ident">zircon_object</span>::{
         <span class="ident">ipc</span>::<span class="kw-2">*</span>,
         <span class="ident">object</span>::<span class="kw-2">*</span>,
@@ -307,9 +269,6 @@
         <span class="kw">let</span> <span class="ident">vmar</span> <span class="op">=</span> <span class="ident">vmar</span>.<span class="ident">create_child_at</span>(<span class="ident">vdso_addr</span> <span class="op">-</span> <span class="ident">vmar</span>.<span class="ident">addr</span>(), <span class="ident">size</span>).<span class="ident">unwrap</span>();
         <span class="kw">let</span> <span class="ident">first_vmo</span> <span class="op">=</span> <span class="ident">vmar</span>.<span class="ident">load_from_elf</span>(<span class="kw-2">&amp;</span><span class="ident">elf</span>).<span class="ident">unwrap</span>();
         <span class="comment">// fill syscall entry</span>
-        <span class="kw">extern</span> <span class="string">&quot;C&quot;</span> {
-            <span class="kw">fn</span> <span class="ident">syscall_entry</span>();
-        }
         <span class="ident">first_vmo</span>.<span class="ident">write</span>(
             <span class="ident">syscall_entry_offset</span>,
             <span class="kw-2">&amp;</span>(<span class="ident">syscall_entry</span> <span class="kw">as</span> <span class="ident">usize</span>).<span class="ident">to_ne_bytes</span>(),
@@ -348,54 +307,19 @@
     <span class="ident">proc</span>
 }
 
-<span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">not</span>(<span class="ident">target_os</span> <span class="op">=</span> <span class="string">&quot;macos&quot;</span>))]</span>
-<span class="macro">global_asm</span><span class="macro">!</span>(
-    <span class="string">r#&quot;
-.intel_syntax noprefix
-syscall_entry:
-    push rax
-    call handle_syscall
-    add rsp, 8
-    ret
-&quot;#</span>
-);
-
-<span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_os</span> <span class="op">=</span> <span class="string">&quot;macos&quot;</span>)]</span>
-<span class="macro">global_asm</span><span class="macro">!</span>(
-    <span class="string">r#&quot;
-.intel_syntax noprefix
-_syscall_entry:
-    push rax
-    call _handle_syscall
-    add rsp, 8
-    ret
-&quot;#</span>
-);
-
 <span class="attribute">#[<span class="ident">no_mangle</span>]</span>
-<span class="kw">extern</span> <span class="string">&quot;C&quot;</span> <span class="kw">fn</span> <span class="ident">handle_syscall</span>(
-    <span class="ident">a0</span>: <span class="ident">usize</span>,
-    <span class="ident">a1</span>: <span class="ident">usize</span>,
-    <span class="ident">a2</span>: <span class="ident">usize</span>,
-    <span class="ident">a3</span>: <span class="ident">usize</span>,
-    <span class="ident">a4</span>: <span class="ident">usize</span>,
-    <span class="ident">a5</span>: <span class="ident">usize</span>,
-    <span class="ident">num</span>: <span class="ident">u32</span>, <span class="comment">// pushed %eax</span>
-    <span class="kw">_</span>: <span class="ident">usize</span>, <span class="comment">// return address</span>
-    <span class="ident">a6</span>: <span class="ident">usize</span>,
-    <span class="ident">a7</span>: <span class="ident">usize</span>,
-) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">isize</span> {
-    <span class="kw">unsafe</span> {
-        <span class="ident">switch_to_kernel</span>();
-    }
+<span class="kw">extern</span> <span class="string">&quot;C&quot;</span> <span class="kw">fn</span> <span class="ident">handle_syscall</span>(<span class="ident">regs</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">GeneralRegs</span>) {
+    <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;syscall: {:#x?}&quot;</span>, <span class="ident">regs</span>);
+    <span class="kw">let</span> <span class="ident">num</span> <span class="op">=</span> <span class="ident">regs</span>.<span class="ident">rax</span> <span class="kw">as</span> <span class="ident">u32</span>;
+    <span class="kw">let</span> <span class="ident">a6</span> <span class="op">=</span> <span class="kw">unsafe</span> { (<span class="ident">regs</span>.<span class="ident">rsp</span> <span class="kw">as</span> <span class="kw-2">*</span><span class="kw">const</span> <span class="ident">usize</span>).<span class="ident">read</span>() };
+    <span class="kw">let</span> <span class="ident">a7</span> <span class="op">=</span> <span class="kw">unsafe</span> { (<span class="ident">regs</span>.<span class="ident">rsp</span> <span class="kw">as</span> <span class="kw-2">*</span><span class="kw">const</span> <span class="ident">usize</span>).<span class="ident">add</span>(<span class="number">1</span>).<span class="ident">read</span>() };
+    <span class="kw">let</span> <span class="ident">args</span> <span class="op">=</span> [
+        <span class="ident">regs</span>.<span class="ident">rdi</span>, <span class="ident">regs</span>.<span class="ident">rsi</span>, <span class="ident">regs</span>.<span class="ident">rdx</span>, <span class="ident">regs</span>.<span class="ident">rcx</span>, <span class="ident">regs</span>.<span class="ident">r8</span>, <span class="ident">regs</span>.<span class="ident">r9</span>, <span class="ident">a6</span>, <span class="ident">a7</span>,
+    ];
     <span class="kw">let</span> <span class="ident">syscall</span> <span class="op">=</span> <span class="ident">Syscall</span> {
         <span class="ident">thread</span>: <span class="ident">Thread</span>::<span class="ident">current</span>(),
     };
-    <span class="kw">let</span> <span class="ident">ret</span> <span class="op">=</span> <span class="ident">syscall</span>.<span class="ident">syscall</span>(<span class="ident">num</span>, [<span class="ident">a0</span>, <span class="ident">a1</span>, <span class="ident">a2</span>, <span class="ident">a3</span>, <span class="ident">a4</span>, <span class="ident">a5</span>, <span class="ident">a6</span>, <span class="ident">a7</span>]);
-    <span class="kw">unsafe</span> {
-        <span class="ident">switch_to_user</span>();
-    }
-    <span class="ident">ret</span>
+    <span class="ident">regs</span>.<span class="ident">rax</span> <span class="op">=</span> <span class="ident">syscall</span>.<span class="ident">syscall</span>(<span class="ident">num</span>, <span class="ident">args</span>) <span class="kw">as</span> <span class="ident">usize</span>;
 }
 
 <span class="kw">pub</span> <span class="kw">trait</span> <span class="ident">ElfExt</span> {

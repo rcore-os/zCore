@@ -149,11 +149,11 @@
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> {
     <span class="kw">super</span>::<span class="kw-2">*</span>,
-    <span class="kw">crate</span>::<span class="ident">hal</span>::{<span class="ident">PageTable</span>, <span class="ident">PhysFrame</span>},
     <span class="kw">crate</span>::<span class="ident">util</span>::<span class="ident">block_range</span>::<span class="ident">BlockIter</span>,
     <span class="ident">alloc</span>::<span class="ident">sync</span>::<span class="ident">Arc</span>,
     <span class="ident">alloc</span>::<span class="ident">vec</span>::<span class="ident">Vec</span>,
     <span class="ident">core</span>::<span class="ident">ops</span>::<span class="ident">Range</span>,
+    <span class="ident">kernel_hal</span>::{<span class="ident">PageTable</span>, <span class="ident">PhysFrame</span>},
     <span class="ident">spin</span>::<span class="ident">Mutex</span>,
 };
 
@@ -188,7 +188,7 @@
         <span class="self">self</span>.<span class="ident">inner</span>
             .<span class="ident">lock</span>()
             .<span class="ident">for_each_page</span>(<span class="ident">offset</span>, <span class="ident">buf</span>.<span class="ident">len</span>(), <span class="op">|</span><span class="ident">paddr</span>, <span class="ident">buf_range</span><span class="op">|</span> {
-                <span class="ident">hal</span>::<span class="ident">pmem_read</span>(<span class="ident">paddr</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">buf</span>[<span class="ident">buf_range</span>]);
+                <span class="ident">kernel_hal</span>::<span class="ident">pmem_read</span>(<span class="ident">paddr</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">buf</span>[<span class="ident">buf_range</span>]);
             });
     }
 
@@ -196,7 +196,7 @@
         <span class="self">self</span>.<span class="ident">inner</span>
             .<span class="ident">lock</span>()
             .<span class="ident">for_each_page</span>(<span class="ident">offset</span>, <span class="ident">buf</span>.<span class="ident">len</span>(), <span class="op">|</span><span class="ident">paddr</span>, <span class="ident">buf_range</span><span class="op">|</span> {
-                <span class="ident">hal</span>::<span class="ident">pmem_write</span>(<span class="ident">paddr</span>, <span class="kw-2">&amp;</span><span class="ident">buf</span>[<span class="ident">buf_range</span>]);
+                <span class="ident">kernel_hal</span>::<span class="ident">pmem_write</span>(<span class="ident">paddr</span>, <span class="kw-2">&amp;</span><span class="ident">buf</span>[<span class="ident">buf_range</span>]);
             });
     }
 

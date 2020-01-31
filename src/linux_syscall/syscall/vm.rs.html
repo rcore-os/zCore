@@ -110,12 +110,16 @@
 <span id="110">110</span>
 <span id="111">111</span>
 <span id="112">112</span>
+<span id="113">113</span>
+<span id="114">114</span>
+<span id="115">115</span>
+<span id="116">116</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
 <span class="kw">use</span> <span class="ident">bitflags</span>::<span class="ident">bitflags</span>;
 <span class="kw">use</span> <span class="ident">zircon_object</span>::<span class="ident">vm</span>::<span class="kw-2">*</span>;
 
-<span class="kw">impl</span> <span class="ident">Syscall</span> {
+<span class="kw">impl</span> <span class="ident">Syscall</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span> {
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_mmap</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">addr</span>: <span class="ident">usize</span>,
@@ -123,7 +127,7 @@
         <span class="ident">prot</span>: <span class="ident">usize</span>,
         <span class="ident">flags</span>: <span class="ident">usize</span>,
         <span class="ident">fd</span>: <span class="ident">FileDesc</span>,
-        <span class="ident">offset</span>: <span class="ident">usize</span>,
+        <span class="ident">offset</span>: <span class="ident">u64</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
         <span class="kw">let</span> <span class="ident">prot</span> <span class="op">=</span> <span class="ident">MmapProt</span>::<span class="ident">from_bits_truncate</span>(<span class="ident">prot</span>);
         <span class="kw">let</span> <span class="ident">flags</span> <span class="op">=</span> <span class="ident">MmapFlags</span>::<span class="ident">from_bits_truncate</span>(<span class="ident">flags</span>);
@@ -219,6 +223,10 @@
         }
         <span class="kw">if</span> <span class="self">self</span>.<span class="ident">contains</span>(<span class="ident">MmapProt</span>::<span class="ident">EXEC</span>) {
             <span class="ident">flags</span> <span class="op">|</span><span class="op">=</span> <span class="ident">MMUFlags</span>::<span class="ident">EXECUTE</span>;
+        }
+        <span class="comment">// FIXME: hack for unimplemented mprotect</span>
+        <span class="kw">if</span> <span class="ident">flags</span> <span class="op">=</span><span class="op">=</span> <span class="ident">MMUFlags</span>::<span class="ident">empty</span>() {
+            <span class="ident">flags</span> <span class="op">=</span> <span class="ident">MMUFlags</span>::<span class="ident">READ</span> <span class="op">|</span> <span class="ident">MMUFlags</span>::<span class="ident">WRITE</span>;
         }
         <span class="ident">flags</span>
     }

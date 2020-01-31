@@ -115,15 +115,8 @@
 <span id="115">115</span>
 <span id="116">116</span>
 <span id="117">117</span>
-<span id="118">118</span>
-<span id="119">119</span>
-<span id="120">120</span>
-<span id="121">121</span>
-<span id="122">122</span>
-<span id="123">123</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
-<span class="kw">use</span> <span class="ident">bitflags</span>::<span class="ident">bitflags</span>;
 <span class="kw">use</span> <span class="ident">x86_64</span>::<span class="ident">structures</span>::<span class="ident">paging</span>::{<span class="ident">PageTableFlags</span> <span class="kw">as</span> <span class="ident">PTF</span>, <span class="kw-2">*</span>};
 
 <span class="doccomment">/// Page Table</span>
@@ -201,16 +194,11 @@
     }
 }
 
-<span class="macro">bitflags</span><span class="macro">!</span> {
-    <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">MMUFlags</span>: <span class="ident">usize</span> {
-        <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy</span>::<span class="ident">identity_op</span>)]</span>
-        <span class="kw">const</span> <span class="ident">READ</span>      <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">0</span>;
-        <span class="kw">const</span> <span class="ident">WRITE</span>     <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">1</span>;
-        <span class="kw">const</span> <span class="ident">EXECUTE</span>   <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">2</span>;
-    }
+<span class="kw">trait</span> <span class="ident">FlagsExt</span> {
+    <span class="kw">fn</span> <span class="ident">to_ptf</span>(<span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">PTF</span>;
 }
 
-<span class="kw">impl</span> <span class="ident">MMUFlags</span> {
+<span class="kw">impl</span> <span class="ident">FlagsExt</span> <span class="kw">for</span> <span class="ident">MMUFlags</span> {
     <span class="kw">fn</span> <span class="ident">to_ptf</span>(<span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">PTF</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">flags</span> <span class="op">=</span> <span class="ident">PTF</span>::<span class="ident">empty</span>();
         <span class="kw">if</span> <span class="self">self</span>.<span class="ident">contains</span>(<span class="ident">MMUFlags</span>::<span class="ident">READ</span>) {

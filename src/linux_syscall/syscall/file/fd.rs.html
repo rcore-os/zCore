@@ -154,7 +154,7 @@
 
 <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
 
-<span class="kw">impl</span> <span class="ident">Syscall</span> {
+<span class="kw">impl</span> <span class="ident">Syscall</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span> {
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_open</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">path</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>, <span class="ident">flags</span>: <span class="ident">usize</span>, <span class="ident">mode</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
         <span class="self">self</span>.<span class="ident">sys_openat</span>(<span class="ident">FileDesc</span>::<span class="ident">CWD</span>, <span class="ident">path</span>, <span class="ident">flags</span>, <span class="ident">mode</span>)
     }
@@ -194,7 +194,7 @@
             <span class="ident">proc</span>.<span class="ident">lookup_inode_at</span>(<span class="ident">dir_fd</span>, <span class="kw-2">&amp;</span><span class="ident">path</span>, <span class="bool-val">true</span>)<span class="question-mark">?</span>
         };
 
-        <span class="kw">let</span> <span class="ident">file</span> <span class="op">=</span> <span class="ident">File</span>::<span class="ident">new</span>(<span class="ident">inode</span>, <span class="ident">flags</span>.<span class="ident">to_options</span>(), <span class="ident">String</span>::<span class="ident">from</span>(<span class="ident">path</span>));
+        <span class="kw">let</span> <span class="ident">file</span> <span class="op">=</span> <span class="ident">File</span>::<span class="ident">new</span>(<span class="ident">inode</span>, <span class="ident">flags</span>.<span class="ident">to_options</span>(), <span class="ident">path</span>);
         <span class="kw">let</span> <span class="ident">fd</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">add_file</span>(<span class="ident">file</span>)<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(<span class="ident">fd</span>.<span class="ident">into</span>())
     }
@@ -274,15 +274,15 @@
 }
 
 <span class="kw">impl</span> <span class="ident">OpenFlags</span> {
-    <span class="kw">fn</span> <span class="ident">readable</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+    <span class="kw">fn</span> <span class="ident">readable</span>(<span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
         <span class="kw">let</span> <span class="ident">b</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">bits</span>() <span class="op">&amp;</span> <span class="number">0b11</span>;
         <span class="ident">b</span> <span class="op">=</span><span class="op">=</span> <span class="self">Self</span>::<span class="ident">RDONLY</span>.<span class="ident">bits</span>() <span class="op">|</span><span class="op">|</span> <span class="ident">b</span> <span class="op">=</span><span class="op">=</span> <span class="self">Self</span>::<span class="ident">RDWR</span>.<span class="ident">bits</span>()
     }
-    <span class="kw">fn</span> <span class="ident">writable</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+    <span class="kw">fn</span> <span class="ident">writable</span>(<span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
         <span class="kw">let</span> <span class="ident">b</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">bits</span>() <span class="op">&amp;</span> <span class="number">0b11</span>;
         <span class="ident">b</span> <span class="op">=</span><span class="op">=</span> <span class="self">Self</span>::<span class="ident">WRONLY</span>.<span class="ident">bits</span>() <span class="op">|</span><span class="op">|</span> <span class="ident">b</span> <span class="op">=</span><span class="op">=</span> <span class="self">Self</span>::<span class="ident">RDWR</span>.<span class="ident">bits</span>()
     }
-    <span class="kw">fn</span> <span class="ident">to_options</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">OpenOptions</span> {
+    <span class="kw">fn</span> <span class="ident">to_options</span>(<span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">OpenOptions</span> {
         <span class="ident">OpenOptions</span> {
             <span class="ident">read</span>: <span class="self">self</span>.<span class="ident">readable</span>(),
             <span class="ident">write</span>: <span class="self">self</span>.<span class="ident">writable</span>(),
