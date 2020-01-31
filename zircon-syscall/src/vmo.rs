@@ -12,7 +12,7 @@ impl Syscall {
             size, options, out
         );
         // TODO: options
-        let proc = &self.thread.proc;
+        let proc = self.thread.proc();
         let vmo = VMObjectPaged::new(pages(size as usize));
         let handle_value = proc.add_handle(Handle::new(vmo, Rights::DEFAULT_VMO));
         out.write(handle_value)?;
@@ -30,7 +30,7 @@ impl Syscall {
             "vmo.read: handle={:?}, offset={:?}, buf=({:?}; {:?})",
             handle_value, offset, buf, buf_size,
         );
-        let proc = &self.thread.proc;
+        let proc = self.thread.proc();
         let vmo = proc.get_vmo_with_rights(handle_value, Rights::READ)?;
         // TODO: optimize
         let mut buffer = vec![0u8; buf_size];

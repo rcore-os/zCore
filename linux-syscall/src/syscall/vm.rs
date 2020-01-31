@@ -57,7 +57,7 @@ impl Syscall<'_> {
 
     pub fn sys_munmap(&self, addr: usize, len: usize) -> SysResult {
         info!("munmap: addr={:#x}, size={:#x}", addr, len);
-        let proc = &self.thread.proc;
+        let proc = self.thread.proc();
         let vmar = proc.vmar();
         vmar.unmap(addr, len)?;
         Ok(0)

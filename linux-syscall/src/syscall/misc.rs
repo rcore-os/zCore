@@ -1,4 +1,6 @@
+use super::time::TimeSpec;
 use super::*;
+use bitflags::bitflags;
 
 impl Syscall<'_> {
     #[cfg(target_arch = "x86_64")]
@@ -23,5 +25,46 @@ impl Syscall<'_> {
             buf.add(i * OFFSET).write_cstring(s)?;
         }
         Ok(0)
+    }
+
+    pub async fn sys_futex(
+        &self,
+        uaddr: usize,
+        op: u32,
+        val: i32,
+        timeout: UserInPtr<TimeSpec>,
+    ) -> SysResult {
+        bitflags! {
+            struct FutexFlags: u32 {
+                const WAIT      = 0;
+                const WAKE      = 1;
+                const PRIVATE   = 0x80;
+            }
+        }
+        let op = FutexFlags::from_bits_truncate(op);
+        info!(
+            "futex: uaddr: {:#x}, op: {:?}, val: {}, timeout_ptr: {:?}",
+            uaddr, op, val, timeout
+        );
+        if op.contains(FutexFlags::PRIVATE) {
+            warn!("process-shared futex is unimplemented");
+        }
+        let futex = self.lock_linux_process().get_futex(uaddr);
+        match op.bits & 0xf {
+            0 => {
+                // FIXME: support timeout
+                let _timeout = timeout.read_if_not_null()?;
+                futex.wait_async(val).await?;
+                Ok(0)
+            }
+            1 => {
+                let woken_up_count = futex.wake(val as usize);
+                Ok(woken_up_count)
+            }
+            _ => {
+                warn!("unsupported futex operation: {:?}", op);
+                Err(SysError::ENOSYS)
+            }
+        }
     }
 }

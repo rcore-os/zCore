@@ -15,7 +15,7 @@ impl Syscall {
             "proc.create: job={:?}, name={:?}, options={:?}",
             job, name, options,
         );
-        let proc = &self.thread.proc;
+        let proc = self.thread.proc();
         let job = proc.get_object_with_rights::<Job>(job, Rights::MANAGE_PROCESS)?;
         let new_proc = Process::create(&job, &name, options)?;
         let new_vmar = new_proc.vmar();
@@ -31,7 +31,7 @@ impl Syscall {
 
     pub fn sys_process_exit(&self, code: i64) -> ! {
         info!("proc.exit: code={:?}", code);
-        let proc = &self.thread.proc;
+        let proc = self.thread.proc();
         proc.exit(code);
         Thread::exit();
     }

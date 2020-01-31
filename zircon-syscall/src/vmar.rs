@@ -24,7 +24,7 @@ impl Syscall {
         };
         // TODO: process options
         let perm_rights = options.to_rights();
-        let proc = &self.thread.proc;
+        let proc = self.thread.proc();
         let parent = proc.get_object_with_rights::<VmAddressRegion>(parent_vmar, perm_rights)?;
         let child = parent.create_child(offset, size as usize)?;
         let child_addr = child.addr();

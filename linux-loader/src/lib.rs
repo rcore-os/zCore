@@ -9,7 +9,8 @@ extern crate log;
 
 use {
     alloc::{string::String, sync::Arc, vec::Vec},
-    kernel_hal_unix::{syscall_entry, GeneralRegs},
+    // TODO: remove dependence of kernel-hal-unix
+    kernel_hal_unix::{block_on, syscall_entry, GeneralRegs},
     linux_syscall::*,
     zircon_object::task::*,
 };
@@ -22,7 +23,7 @@ pub fn run(
 ) -> Arc<Process> {
     let job = Job::root();
     let proc = Process::create_linux(&job, rootfs.clone()).unwrap();
-    let thread = Thread::create(&proc, "thread", 0).unwrap();
+    let thread = Thread::create_linux(&proc).unwrap();
     let loader = LinuxElfLoader {
         syscall_entry: syscall_entry as usize,
         stack_pages: 8,
@@ -48,5 +49,5 @@ extern "C" fn handle_syscall(regs: &mut GeneralRegs) {
         syscall_entry: syscall_entry as usize,
         regs,
     };
-    regs.rax = syscall.syscall(num, args) as usize;
+    regs.rax = block_on(syscall.syscall(num, args)) as usize;
 }

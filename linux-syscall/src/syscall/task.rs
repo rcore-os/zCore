@@ -3,6 +3,7 @@
 use super::*;
 use crate::fs::INodeExt;
 use crate::loader::LinuxElfLoader;
+use crate::thread::ThreadExt;
 use bitflags::bitflags;
 
 impl Syscall<'_> {
@@ -29,8 +30,8 @@ impl Syscall<'_> {
         &self,
         flags: usize,
         newsp: usize,
-        mut parent_tid: UserOutPtr<u32>,
-        mut child_tid: UserOutPtr<u32>,
+        mut parent_tid: UserOutPtr<i32>,
+        mut child_tid: UserOutPtr<i32>,
         newtls: usize,
     ) -> SysResult {
         let _flags = CloneFlags::from_bits_truncate(flags);
@@ -49,14 +50,15 @@ impl Syscall<'_> {
             // warn!("sys_clone only support musl pthread_create");
             panic!("unsupported sys_clone flags: {:#x}", flags);
         }
-        let new_thread = Thread::create(self.zircon_process(), "", 0)?;
+        let new_thread = Thread::create_linux(self.zircon_process())?;
         let regs = self.regs.clone(newsp, newtls);
         new_thread.start_with_regs(regs)?;
 
         let tid = new_thread.id();
         info!("clone: {} -> {}", self.thread.id(), tid);
-        parent_tid.write(tid as u32)?;
-        child_tid.write(tid as u32)?;
+        parent_tid.write(tid as i32)?;
+        child_tid.write(tid as i32)?;
+        new_thread.set_tid_address(child_tid);
         Ok(tid as usize)
     }
 
@@ -239,20 +241,7 @@ impl Syscall<'_> {
     /// Exit the current thread
     pub fn sys_exit(&self, exit_code: i32) -> ! {
         info!("exit: code={}", exit_code);
-        Thread::exit();
-        //        // perform futex wake 1
-        //        // ref: http://man7.org/linux/man-pages/man2/set_tid_address.2.html
-        //        // FIXME: do it in all possible ways a thread can exit
-        //        //        it has memory access so we can't move it to Thread::drop?
-        //        let clear_child_tid = self.thread.clear_child_tid as *mut u32;
-        //        if !clear_child_tid.is_null() {
-        //            info!("exit: futex {:#?} wake 1", clear_child_tid);
-        //            if let Ok(clear_child_tid_ref) = unsafe { self.vm().check_write_ptr(clear_child_tid) } {
-        //                *clear_child_tid_ref = 0;
-        //                let queue = proc.get_futex(clear_child_tid as usize);
-        //                queue.notify_one();
-        //            }
-        //        }
+        Thread::exit_linux(exit_code);
     }
 
     /// Exit the current thread group (i.e. process)
@@ -277,9 +266,9 @@ impl Syscall<'_> {
     //        Ok(0)
     //    }
 
-    pub fn sys_set_tid_address(&self, tidptr: UserOutPtr<u32>) -> SysResult {
+    pub fn sys_set_tid_address(&self, tidptr: UserOutPtr<i32>) -> SysResult {
         warn!("set_tid_address: {:?}. unimplemented!", tidptr);
-        //        self.thread.clear_child_tid = tidptr as usize;
+        self.thread.set_tid_address(tidptr);
         let tid = self.thread.id();
         Ok(tid as usize)
     }

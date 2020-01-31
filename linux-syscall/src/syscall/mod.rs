@@ -11,6 +11,7 @@ mod consts;
 mod file;
 mod misc;
 mod task;
+mod time;
 mod vm;
 
 pub struct Syscall<'a> {
@@ -20,7 +21,7 @@ pub struct Syscall<'a> {
 }
 
 impl Syscall<'_> {
-    pub fn syscall(&mut self, num: u32, args: [usize; 6]) -> isize {
+    pub async fn syscall(&mut self, num: u32, args: [usize; 6]) -> isize {
         debug!("syscall => num={}, args={:x?}", num, args);
         let [a0, a1, a2, a3, a4, a5] = args;
         let ret = match num {
@@ -121,7 +122,7 @@ impl Syscall<'_> {
             SYS_EXIT_GROUP => self.sys_exit_group(a0),
             SYS_WAIT4 => self.sys_wait4(a0 as _, a1.into(), a2 as _),
             SYS_SET_TID_ADDRESS => self.sys_set_tid_address(a0.into()),
-            //            SYS_FUTEX => self.sys_futex(a0, a1 as u32, a2 as i32, a3.into()),
+            SYS_FUTEX => self.sys_futex(a0, a1 as _, a2 as _, a3.into()).await,
             SYS_TKILL => self.unimplemented("tkill", Ok(0)),
 
             // time
@@ -225,7 +226,7 @@ impl Syscall<'_> {
     }
 
     fn zircon_process(&self) -> &Arc<Process> {
-        &self.thread.proc
+        self.thread.proc()
     }
 
     fn lock_linux_process(&self) -> MutexGuard<'_, LinuxProcess> {

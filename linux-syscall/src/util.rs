@@ -40,6 +40,10 @@ impl<T, P: Policy> Debug for UserPtr<T, P> {
     }
 }
 
+// FIXME: this is a workaround for `clear_child_tid`.
+unsafe impl<T, P: Policy> Send for UserPtr<T, P> {}
+unsafe impl<T, P: Policy> Sync for UserPtr<T, P> {}
+
 impl<T, P: Policy> From<usize> for UserPtr<T, P> {
     fn from(x: usize) -> Self {
         UserPtr {
@@ -70,6 +74,14 @@ impl<T, P: Read> UserPtr<T, P> {
     pub fn read(&self) -> ZxResult<T> {
         // TODO: check ptr and return err
         Ok(unsafe { self.ptr.read() })
+    }
+
+    pub fn read_if_not_null(&self) -> ZxResult<Option<T>> {
+        if self.ptr.is_null() {
+            return Ok(None);
+        }
+        let value = self.read()?;
+        Ok(Some(value))
     }
 
     pub fn read_array(&self, len: usize) -> ZxResult<Vec<T>> {

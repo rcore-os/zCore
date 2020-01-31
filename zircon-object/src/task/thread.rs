@@ -3,7 +3,8 @@ use {
     super::process::Process,
     super::*,
     crate::object::*,
-    alloc::{string::String, sync::Arc},
+    alloc::{boxed::Box, string::String, sync::Arc},
+    core::any::Any,
     spin::Mutex,
 };
 
@@ -78,7 +79,8 @@ pub struct Thread {
     base: KObjectBase,
     #[allow(dead_code)]
     name: String,
-    pub proc: Arc<Process>,
+    proc: Arc<Process>,
+    ext: Box<dyn Any + Send + Sync>,
     inner: Mutex<ThreadInner>,
 }
 
@@ -100,15 +102,35 @@ struct ThreadInner {
 impl Thread {
     /// Create a new thread.
     pub fn create(proc: &Arc<Process>, name: &str, _options: u32) -> ZxResult<Arc<Self>> {
+        Self::create_with_ext(proc, name, ())
+    }
+
+    /// Create a new thread with extension info.
+    pub fn create_with_ext(
+        proc: &Arc<Process>,
+        name: &str,
+        ext: impl Any + Send + Sync,
+    ) -> ZxResult<Arc<Self>> {
         // TODO: options
         let thread = Arc::new(Thread {
             base: KObjectBase::new(),
             name: String::from(name),
             proc: proc.clone(),
+            ext: Box::new(ext),
             inner: Mutex::new(ThreadInner::default()),
         });
         proc.add_thread(thread.clone());
         Ok(thread)
+    }
+
+    /// Get the process.
+    pub fn proc(&self) -> &Arc<Process> {
+        &self.proc
+    }
+
+    /// Get the extension.
+    pub fn ext(&self) -> &Box<dyn Any + Send + Sync> {
+        &self.ext
     }
 
     /// Get current `Thread` object.

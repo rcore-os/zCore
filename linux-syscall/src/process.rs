@@ -6,8 +6,11 @@ use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::sync::{Arc, Weak};
 use alloc::vec::Vec;
+use core::sync::atomic::AtomicI32;
+use kernel_hal::VirtAddr;
 use rcore_fs::vfs::{FileSystem, INode};
 use spin::{Mutex, MutexGuard};
+use zircon_object::signal::Futex;
 use zircon_object::task::{Job, Process};
 use zircon_object::ZxResult;
 
@@ -36,6 +39,7 @@ pub struct LinuxProcess {
     pub cwd: String,
     pub exec_path: String,
     files: BTreeMap<FileDesc, Arc<dyn FileLike>>,
+    futexes: BTreeMap<VirtAddr, Arc<Futex>>,
     root_inode: Arc<dyn INode>,
     parent: Weak<Process>,
     #[allow(dead_code)]
@@ -74,10 +78,24 @@ impl LinuxProcess {
             cwd: String::from("/"),
             exec_path: String::new(),
             files,
+            futexes: Default::default(),
             root_inode: create_root_fs(rootfs),
             parent: Weak::default(),
             children: Vec::new(),
         }
+    }
+
+    /// Get futex object.
+    #[allow(unsafe_code)]
+    pub fn get_futex(&mut self, uaddr: VirtAddr) -> Arc<Futex> {
+        self.futexes
+            .entry(uaddr)
+            .or_insert_with(|| {
+                // FIXME: check address
+                let value = unsafe { &*(uaddr as *const AtomicI32) };
+                Futex::new(value)
+            })
+            .clone()
     }
 
     /// Add a file to the file descriptor table.

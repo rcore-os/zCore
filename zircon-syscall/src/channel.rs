@@ -18,7 +18,7 @@ impl Syscall {
             "channel.read: handle={:?}, options={:?}, bytes=({:?}; {:?}), handles=({:?}; {:?})",
             handle_value, options, bytes, num_bytes, handles, num_handles,
         );
-        let proc = &self.thread.proc;
+        let proc = self.thread.proc();
         let channel = proc.get_object_with_rights::<Channel>(handle_value, Rights::READ)?;
         let msg = channel.read()?;
         actual_bytes.write_if_not_null(msg.data.len() as u32)?;

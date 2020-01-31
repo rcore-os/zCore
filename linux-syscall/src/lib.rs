@@ -20,6 +20,7 @@ mod fs;
 // layer 2
 mod loader;
 mod process;
+mod thread;
 
 // layer 3
 mod syscall;
@@ -29,3 +30,4 @@ pub use loader::LinuxElfLoader;
 pub use process::ProcessExt;
 pub use rcore_fs::vfs::{FileSystem, INode};
 pub use syscall::Syscall;
+pub use thread::ThreadExt;

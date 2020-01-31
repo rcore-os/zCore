@@ -9,6 +9,10 @@ extern crate alloc;
 
 use {
     alloc::sync::Arc,
+    core::{
+        future::Future,
+        task::{Context, Poll},
+    },
     lazy_static::lazy_static,
     std::cell::RefCell,
     std::fmt::{Debug, Formatter},
@@ -312,6 +316,26 @@ pub fn init() {
     #[cfg(target_os = "macos")]
     unsafe {
         register_sigsegv_handler();
+    }
+}
+
+/// Runs a future to completion on the current thread.
+///
+/// Ref: https://github.com/async-rs/async-task/blob/master/examples/block.rs
+pub fn block_on<F: Future>(future: F) -> F::Output {
+    pin_utils::pin_mut!(future);
+
+    let thread_waker = Thread::get_waker();
+    let waker = async_task::waker_fn(move || thread_waker.wake());
+
+    // Create the task context.
+    let cx = &mut Context::from_waker(&waker);
+    // Keep polling the future until completion.
+    loop {
+        match future.as_mut().poll(cx) {
+            Poll::Ready(output) => return output,
+            Poll::Pending => Thread::park(),
+        }
     }
 }
 

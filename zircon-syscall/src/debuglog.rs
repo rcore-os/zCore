@@ -11,7 +11,7 @@ impl Syscall {
             "debuglog_create: resource_handle={:?}, options={:?}",
             rsrc, options,
         );
-        let proc = &self.thread.proc;
+        let proc = self.thread.proc();
         proc.validate_resource(rsrc, ResourceKind::ROOT)?;
         target.write(1u32)?;
         Ok(ZxError::OK as usize)
