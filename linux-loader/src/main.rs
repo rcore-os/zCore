@@ -24,8 +24,20 @@ fn main() {
 fn init_logger() {
     env_logger::builder()
         .format(|buf, record| {
+            use env_logger::fmt::Color;
+            use log::Level;
+
             let tid = std::thread::current().id().as_u64();
-            writeln!(buf, "[{:>5}][{}] {}", record.level(), tid, record.args())
+            let mut style = buf.style();
+            match record.level() {
+                Level::Trace => style.set_color(Color::Black).set_intense(true),
+                Level::Debug => style.set_color(Color::White),
+                Level::Info => style.set_color(Color::Green),
+                Level::Warn => style.set_color(Color::Yellow),
+                Level::Error => style.set_color(Color::Red).set_bold(true),
+            };
+            let level = style.value(record.level());
+            writeln!(buf, "[{:>5}][{}] {}", level, tid, record.args())
         })
         .init();
 }
