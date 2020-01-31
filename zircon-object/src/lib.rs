@@ -2,7 +2,7 @@
 
 #![no_std]
 #![deny(warnings, unsafe_code, unused_must_use)]
-#![feature(asm, linkage)]
+#![feature(asm)]
 #![feature(drain_filter)]
 #![feature(get_mut_unchecked)]
 #![feature(naked_functions)]
