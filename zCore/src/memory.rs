@@ -9,6 +9,7 @@ use {
     lazy_static::*,
     rboot::{BootInfo, MemoryType},
     spin::Mutex,
+    kernel_hal_bare::arch::PageTableImpl,
 };
 
 // x86_64 support up to 1T memory
@@ -47,7 +48,7 @@ pub fn init_heap() {
     info!("heap init end");
 }
 
-pub fn alloc_frame() -> Option<usize> {
+pub extern "C" fn hal_frame_alloc() -> Option<usize> {
     // get the real address of the alloc frame
     let ret = FRAME_ALLOCATOR
         .lock()
@@ -56,11 +57,16 @@ pub fn alloc_frame() -> Option<usize> {
     trace!("Allocate frame: {:x?}", ret);
     ret
 }
-pub fn dealloc_frame(target: usize) {
-    trace!("Deallocate frame: {:x}", target);
+
+pub extern "C" fn hal_frame_dealloc(target: &usize) {
+    trace!("Deallocate frame: {:x}", *target);
     FRAME_ALLOCATOR
         .lock()
-        .dealloc((target - MEMORY_OFFSET) / PAGE_SIZE);
+        .dealloc((*target - MEMORY_OFFSET) / PAGE_SIZE);
+}
+
+pub extern "C" fn hal_pt_map_kernel(pt: &mut PageTableImpl) {
+    
 }
 
 pub fn enlarge_heap(heap: &mut Heap) {
@@ -70,7 +76,7 @@ pub fn enlarge_heap(heap: &mut Heap) {
     let mut addr_len = 0;
     let va_offset = MEMORY_OFFSET;
     for i in 0..16384 {
-        let page = alloc_frame().unwrap();
+        let page = hal_frame_alloc().unwrap();
         let va = va_offset + page;
         if addr_len > 0 {
             let (ref mut addr, ref mut len) = addrs[addr_len - 1];

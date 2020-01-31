@@ -24,19 +24,13 @@ mod memory;
 
 use {buddy_system_allocator::LockedHeapWithRescue, rboot::BootInfo};
 
-extern "C" {
-    fn stext();
-    fn etext();
-}
+pub use { memory::{ hal_frame_alloc, hal_frame_dealloc }, };
 
 #[no_mangle]
 pub extern "C" fn _start(boot_info: &BootInfo) -> ! {
     logging::init();
     memory::init_heap();
-    print!("Hello World! {:#x} {:#x}", stext as usize, etext as usize);
-    info!("{:#x?}", boot_info);
     memory::init_frame_allocator(boot_info);
-    print!("Hello World!");
     info!("{:#x?}", boot_info);
     loop {}
 }
