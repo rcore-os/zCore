@@ -4,7 +4,10 @@ use {
     core::fmt::{Arguments, Write},
     spin::Mutex,
     uart_16550::SerialPort,
-    x86_64::structures::paging::{PageTableFlags as PTF, *},
+    x86_64::{
+        registers::control::Cr3,
+        structures::paging::{PageTableFlags as PTF, *},
+    },
 };
 
 /// Page Table
@@ -82,6 +85,15 @@ impl PageTableImpl {
         let offset = x86_64::VirtAddr::new(phys_to_virt(0) as u64);
         unsafe { OffsetPageTable::new(root, offset) }
     }
+}
+
+pub fn kernel_root_table() -> &'static PageTable {
+    unsafe { &*frame_to_page_table(Cr3::read().0) }
+}
+
+fn frame_to_page_table(frame: PhysFrame) -> *mut PageTable {
+    let vaddr = phys_to_virt(frame.start_address().as_u64() as usize);
+    vaddr as *mut PageTable
 }
 
 bitflags! {

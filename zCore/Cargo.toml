@@ -20,3 +20,5 @@ bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator" }
 [build-dependencies]
 cc = "1.0"
 
+[target.'cfg(target_arch = "x86_64")'.dependencies]
+x86_64 = "0.8"
