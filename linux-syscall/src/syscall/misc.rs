@@ -2,12 +2,12 @@ use super::*;
 
 impl Syscall<'_> {
     #[cfg(target_arch = "x86_64")]
-    pub fn sys_arch_prctl(&self, code: i32, addr: usize) -> SysResult {
+    pub fn sys_arch_prctl(&mut self, code: i32, addr: usize) -> SysResult {
         const ARCH_SET_FS: i32 = 0x1002;
         match code {
             ARCH_SET_FS => {
                 info!("sys_arch_prctl: set FSBASE to {:#x}", addr);
-                kernel_hal::set_user_fsbase(addr);
+                self.regs.fs_base = addr;
                 Ok(0)
             }
             _ => Err(SysError::EINVAL),

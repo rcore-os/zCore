@@ -201,10 +201,3 @@ pub fn timer_now() -> Duration {
 pub fn timer_set(_deadline: Duration, _callback: Box<dyn FnOnce(Duration) + Send + Sync>) {
     unimplemented!()
 }
-
-/// Set FSBASE on user space.
-#[linkage = "weak"]
-#[export_name = "hal_set_user_fsbase"]
-pub fn set_user_fsbase(_fsbase: usize) {
-    unimplemented!()
-}

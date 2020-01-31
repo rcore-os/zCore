@@ -37,18 +37,11 @@ pub struct Thread {
 
 impl Thread {
     #[export_name = "hal_thread_spawn"]
-    pub fn spawn(thread: Arc<usize>, regs: GeneralRegs) -> Self {
+    pub fn spawn(thread: Arc<usize>, mut regs: GeneralRegs) -> Self {
         let handle = std::thread::spawn(move || {
             TLS.with(|t| t.replace(Some(thread)));
-            set_user_fsbase(regs.fs_base);
-            #[cfg(target_os = "linux")]
             unsafe {
-                // HACK: save kernel stack to [fs:64]. glibc seems not use it?
-                asm!("mov fs:64, rsp" ::::  "volatile" "intel");
-            }
-            unsafe {
-                switch_to_user();
-                trap::syscall_return(&regs);
+                trap::syscall_return(&mut regs);
             }
         });
         Thread {

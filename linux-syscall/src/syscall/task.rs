@@ -181,7 +181,6 @@ impl Syscall<'_> {
         proc.exec_path = path.clone();
         drop(proc);
 
-        kernel_hal::set_user_fsbase(0);
         *self.regs = GeneralRegs::new_fn(entry, sp, 0, 0);
         Ok(0)
     }

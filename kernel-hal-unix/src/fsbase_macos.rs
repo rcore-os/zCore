@@ -1,66 +1,10 @@
-use std::cell::Cell;
-
-// User:
-// - gs:0   (pthread.self)      = user gsbase
-// - gs:48  (pthread.canary2)   = kernel gsbase
-//
-// Kernel:
-// - gs:-48 (pthread.stackaddr) = kernel stack
-// - gs:0   (pthread.tsd[self]) = kernel gsbase - 224
-
-/// Set FSBASE on user space.
-#[export_name = "hal_set_user_fsbase"]
-pub fn set_user_fsbase(mut fsbase: usize) {
-    if fsbase == 0 {
-        // HACK: alloc init pthread struct
-        let mut pthread = vec![0; 7];
-        fsbase = pthread.as_ptr() as usize;
-        pthread[0] = fsbase;
-        core::mem::forget(pthread); // FIXME: fix leak
-    }
-    USER_FSBASE.with(|fs| fs.set(fsbase));
-    unsafe {
-        assert_eq!(fsbase, (fsbase as *const usize).read());
-        let kernel_gs = get_gsbase();
-        ((fsbase + 48) as *mut usize).write(kernel_gs);
-    }
-}
-
 /// Switch TLS from user to kernel.
 ///
 /// # Safety
 /// This function should be called once when come from user.
 pub unsafe fn switch_to_kernel() {
-    let kernel_gsbase: usize;
-    asm!("mov %gs:48, $0" : "=r"(kernel_gsbase) ::: "volatile");
-    set_gsbase(kernel_gsbase);
-}
-
-/// Switch TLS from kernel to user.
-///
-/// # Safety
-/// This function should be called once when go back to user.
-pub unsafe fn switch_to_user() {
-    let user_gsbase = USER_FSBASE.with(|f| f.get());
-    set_gsbase(user_gsbase);
-}
-
-thread_local! {
-    static USER_FSBASE: Cell<usize> = Cell::new(0);
-}
-
-unsafe fn set_gsbase(gsbase: usize) {
     // Ref: https://gist.github.com/aras-p/5389747
-    asm!("syscall" :: "{eax}"(0x300_0003), "{rdi}"(gsbase) : "rcx" "r11" : "volatile");
-}
-
-unsafe fn get_gsbase() -> usize {
-    // Ref:
-    // - https://github.com/DynamoRIO/dynamorio/issues/1568#issuecomment-239819506
-    // - https://github.com/apple/darwin-libpthread/blob/03c4628c8940cca6fd6a82957f683af804f62e7f/src/internal.h#L241
-    let pthread_self: usize;
-    asm!("mov %gs:0, $0" : "=r"(pthread_self) ::: "volatile");
-    pthread_self + 224
+    asm!("mov rdi, gs:48; syscall" :: "{eax}"(0x300_0003) : "rcx" "r11" : "volatile" "intel");
 }
 
 /// Register signal handler for SIGSEGV (Segmentation Fault).
