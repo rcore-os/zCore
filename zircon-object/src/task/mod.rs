@@ -1,6 +1,6 @@
 //! Objects for Task Management.
 
-use {super::*, crate::io::Port, crate::ipc::Channel};
+use {super::*, crate::ipc::Channel, crate::signal::Port};
 
 mod exception;
 mod job;

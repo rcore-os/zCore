@@ -94,7 +94,7 @@
 //! [interior mutability pattern]: https://doc.rust-lang.org/reference/interior-mutability.html
 
 use {
-    crate::io::*,
+    crate::signal::*,
     alloc::{boxed::Box, sync::Arc, vec::Vec},
     core::{
         fmt::Debug,

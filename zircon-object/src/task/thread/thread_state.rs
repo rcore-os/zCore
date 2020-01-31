@@ -9,7 +9,9 @@ pub enum ThreadStateKind {
     Vector = 2,
     Debug = 4,
     SingleStep = 5,
+    #[cfg(target_arch = "x86_64")]
     FS = 6,
+    #[cfg(target_arch = "x86_64")]
     GS = 7,
 }
 
@@ -23,7 +25,9 @@ impl ThreadState {
     pub fn read(&self, kind: ThreadStateKind, buf: &mut [u8]) -> ZxResult<usize> {
         match kind {
             ThreadStateKind::General => buf.write_struct(self.general),
+            #[cfg(target_arch = "x86_64")]
             ThreadStateKind::FS => buf.write_struct(self.general.fs_base),
+            #[cfg(target_arch = "x86_64")]
             ThreadStateKind::GS => buf.write_struct(self.general.gs_base),
             _ => unimplemented!(),
         }
@@ -32,7 +36,9 @@ impl ThreadState {
     pub fn write(&mut self, kind: ThreadStateKind, buf: &[u8]) -> ZxResult<()> {
         match kind {
             ThreadStateKind::General => self.general = buf.read_struct()?,
+            #[cfg(target_arch = "x86_64")]
             ThreadStateKind::FS => self.general.fs_base = buf.read_struct()?,
+            #[cfg(target_arch = "x86_64")]
             ThreadStateKind::GS => self.general.gs_base = buf.read_struct()?,
             _ => unimplemented!(),
         }
