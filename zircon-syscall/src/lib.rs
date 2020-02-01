@@ -26,10 +26,11 @@ mod vmo;
 
 pub struct Syscall {
     pub thread: Arc<Thread>,
+    pub exit: bool,
 }
 
 impl Syscall {
-    pub fn syscall(&self, num: u32, args: [usize; 8]) -> isize {
+    pub fn syscall(&mut self, num: u32, args: [usize; 8]) -> isize {
         info!("syscall => num={}, args={:x?}", num, args);
         let [a0, a1, a2, a3, a4, a5, a6, a7] = args;
         let ret = match num {

@@ -15,9 +15,11 @@ mod time;
 mod vm;
 
 pub struct Syscall<'a> {
-    pub thread: Arc<Thread>,
+    pub thread: &'a Arc<Thread>,
     pub syscall_entry: VirtAddr,
     pub regs: &'a mut GeneralRegs,
+    /// Set `true` to exit current task.
+    pub exit: bool,
 }
 
 impl Syscall<'_> {
@@ -119,7 +121,7 @@ impl Syscall<'_> {
             SYS_CLONE => self.sys_clone(a0, a1, a2.into(), a3.into(), a4),
             SYS_EXECVE => self.sys_execve(a0.into(), a1.into(), a2.into()),
             SYS_EXIT => self.sys_exit(a0 as _),
-            SYS_EXIT_GROUP => self.sys_exit_group(a0),
+            SYS_EXIT_GROUP => self.sys_exit_group(a0 as _),
             SYS_WAIT4 => self.sys_wait4(a0 as _, a1.into(), a2 as _),
             SYS_SET_TID_ADDRESS => self.sys_set_tid_address(a0.into()),
             SYS_FUTEX => self.sys_futex(a0, a1 as _, a2 as _, a3.into()).await,
@@ -213,11 +215,12 @@ impl Syscall<'_> {
         }
     }
 
-    fn unknown_syscall(&self, num: u32) -> ! {
+    fn unknown_syscall(&mut self, num: u32) -> SysResult {
         error!("unknown syscall: {}. exit...", num);
         let proc = self.zircon_process();
         proc.exit(-1);
-        Thread::exit();
+        self.exit = true;
+        Err(SysError::ENOSYS)
     }
 
     fn unimplemented(&self, name: &str, ret: SysResult) -> SysResult {

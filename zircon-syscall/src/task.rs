@@ -29,10 +29,11 @@ impl Syscall {
         Ok(0)
     }
 
-    pub fn sys_process_exit(&self, code: i64) -> ! {
+    pub fn sys_process_exit(&mut self, code: i64) -> ZxResult<usize> {
         info!("proc.exit: code={:?}", code);
         let proc = self.thread.proc();
         proc.exit(code);
-        Thread::exit();
+        self.exit = true;
+        Err(ZxError::INTERNAL)
     }
 }

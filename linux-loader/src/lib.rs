@@ -8,9 +8,10 @@ extern crate alloc;
 extern crate log;
 
 use {
-    alloc::{string::String, sync::Arc, vec::Vec},
+    alloc::{boxed::Box, string::String, sync::Arc, vec::Vec},
+    core::{future::Future, pin::Pin},
     // TODO: remove dependence of kernel-hal-unix
-    kernel_hal_unix::{block_on, syscall_entry, GeneralRegs},
+    kernel_hal_unix::{syscall_entry, GeneralRegs},
     linux_syscall::*,
     zircon_object::task::*,
 };
@@ -40,14 +41,25 @@ pub fn run(
 }
 
 #[no_mangle]
-extern "C" fn handle_syscall(regs: &mut GeneralRegs) {
+extern "C" fn handle_syscall(
+    thread: &'static Arc<Thread>,
+    regs: &'static mut GeneralRegs,
+) -> Pin<Box<dyn Future<Output = bool>>> {
+    Box::pin(handle_syscall_async(thread, regs))
+}
+
+async fn handle_syscall_async(thread: &Arc<Thread>, regs: &mut GeneralRegs) -> bool {
     trace!("syscall: {:#x?}", regs);
     let num = regs.rax as u32;
     let args = [regs.rdi, regs.rsi, regs.rdx, regs.r10, regs.r8, regs.r9];
     let mut syscall = Syscall {
-        thread: Thread::current(),
+        thread,
         syscall_entry: syscall_entry as usize,
         regs,
+        exit: false,
     };
-    regs.rax = block_on(syscall.syscall(num, args)) as usize;
+    let ret = syscall.syscall(num, args).await;
+    let exit = syscall.exit;
+    regs.rax = ret as usize;
+    exit
 }

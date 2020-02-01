@@ -133,11 +133,6 @@ impl Thread {
         &self.ext
     }
 
-    /// Get current `Thread` object.
-    pub fn current() -> Arc<Self> {
-        kernel_hal::Thread::tls()
-    }
-
     /// Start execution on the thread.
     pub fn start(
         self: &Arc<Self>,
@@ -163,11 +158,9 @@ impl Thread {
     }
 
     /// Terminate the current running thread.
-    pub fn exit() -> ! {
-        let thread = Thread::current();
-        thread.base.signal_set(Signal::THREAD_TERMINATED);
-        drop(thread);
-        kernel_hal::Thread::exit();
+    /// TODO: move to CurrentThread
+    pub fn exit(&self) {
+        self.base.signal_set(Signal::THREAD_TERMINATED);
     }
 
     /// Read one aspect of thread state.
@@ -224,7 +217,9 @@ mod tests {
             }
             ARG1.store(arg1, Ordering::SeqCst);
             ARG2.store(arg2, Ordering::SeqCst);
-            Thread::exit();
+            loop {
+                std::thread::park();
+            }
         }
 
         // start a new thread

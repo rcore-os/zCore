@@ -2,6 +2,7 @@ use super::*;
 use alloc::boxed::Box;
 use alloc::sync::Arc;
 use core::ops::FnOnce;
+use core::task::Waker;
 use core::time::Duration;
 
 type ThreadId = usize;
@@ -19,20 +20,6 @@ impl Thread {
         unimplemented!()
     }
 
-    /// Exit current thread.
-    #[linkage = "weak"]
-    #[export_name = "hal_thread_exit"]
-    pub fn exit() -> ! {
-        unimplemented!()
-    }
-
-    /// Get TLS variable of current thread passed from `spawn`.
-    #[linkage = "weak"]
-    #[export_name = "hal_thread_tls"]
-    pub fn tls<T>() -> Arc<T> {
-        unimplemented!()
-    }
-
     /// Blocks current thread.
     #[linkage = "weak"]
     #[export_name = "hal_thread_park"]
@@ -44,21 +31,6 @@ impl Thread {
     #[linkage = "weak"]
     #[export_name = "hal_thread_get_waker"]
     pub fn get_waker() -> Waker {
-        unimplemented!()
-    }
-}
-
-/// A handle for waking up thread.
-#[repr(C)]
-pub struct Waker {
-    id: ThreadId,
-}
-
-impl Waker {
-    /// Wake up related thread.
-    #[linkage = "weak"]
-    #[export_name = "hal_thread_wake"]
-    pub fn wake(&self) {
         unimplemented!()
     }
 }

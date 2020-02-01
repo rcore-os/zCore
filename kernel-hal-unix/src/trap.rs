@@ -41,11 +41,8 @@ global_asm!(
     mov fs:48, rdx          # user_fs:48 = kernel fsbase
 .endm
 
-.macro CALL_HANDLE_SYSCALL
-    call handle_syscall
-.endm
 .global syscall_entry
-.global syscall_return
+.global run_user
 "#
 );
 
@@ -96,13 +93,10 @@ global_asm!(
     mov gs:48, rsi          # user_gs:48 = kernel gsbase
 .endm
 
-.macro CALL_HANDLE_SYSCALL
-    call _handle_syscall
-.endm
 .global _syscall_entry
-.global _syscall_return
+.global _run_user
 .set _syscall_entry, syscall_entry
-.set _syscall_return, syscall_return
+.set _run_user, run_user
 "#
 );
 
@@ -114,6 +108,8 @@ syscall_entry:
     lea r11, [rsp + 8]      # save rsp to r11 (clobber)
 
     SWITCH_TO_KERNEL_STACK
+    pop rsp
+    lea rsp, [rsp + 20*8]   # rsp = top of trap frame
 
     # push trap frame (struct GeneralRegs)
     push 0                  # ignore gs_base
@@ -137,19 +133,35 @@ syscall_entry:
     push rbx
     push rax
 
+    # restore callee-saved registers
+    SWITCH_TO_KERNEL_STACK
+    pop rbx
+    pop rbx
+    pop rbp
+    pop r12
+    pop r13
+    pop r14
+    pop r15
+
     SWITCH_TO_KERNEL_FSBASE
 
-    # go to Rust
-    mov rdi, rsp            # arg0 = *mut GeneralRegs
-    CALL_HANDLE_SYSCALL
-    jmp .syscall_return_sp
+    # go back to Rust
+    ret
 
-    # extern "C" fn syscall_return(&mut GeneralRegs)
-syscall_return:
-    push rcx                # stack align to 16B
+    # extern "C" fn run_user(&mut GeneralRegs)
+run_user:
+    # save callee-saved registers
+    push r15
+    push r14
+    push r13
+    push r12
+    push rbp
+    push rbx
+
+    push rdi
     SAVE_KERNEL_STACK
     mov rsp, rdi
-.syscall_return_sp:
+
     POP_USER_FSBASE
 
     # pop trap frame (struct GeneralRegs)
@@ -178,7 +190,7 @@ syscall_return:
 
 extern "C" {
     pub fn syscall_entry();
-    pub fn syscall_return(regs: &mut GeneralRegs) -> !;
+    pub fn run_user(regs: &mut GeneralRegs);
 }
 
 #[linkage = "weak"]

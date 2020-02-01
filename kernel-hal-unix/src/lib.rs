@@ -11,10 +11,10 @@ use {
     alloc::sync::Arc,
     core::{
         future::Future,
-        task::{Context, Poll},
+        pin::Pin,
+        task::{Context, Poll, Waker},
     },
     lazy_static::lazy_static,
-    std::cell::RefCell,
     std::fmt::{Debug, Formatter},
     std::fs::{File, OpenOptions},
     std::io::Error,
@@ -42,29 +42,25 @@ pub struct Thread {
 impl Thread {
     #[export_name = "hal_thread_spawn"]
     pub fn spawn(thread: Arc<usize>, mut regs: GeneralRegs) -> Self {
-        let handle = std::thread::spawn(move || {
-            TLS.with(|t| t.replace(Some(thread)));
+        let handle = std::thread::spawn(move || loop {
             unsafe {
-                trap::syscall_return(&mut regs);
+                trap::run_user(&mut regs);
+            }
+            #[allow(improper_ctypes)]
+            extern "C" {
+                fn handle_syscall(
+                    thread: &Arc<usize>,
+                    regs: &mut GeneralRegs,
+                ) -> Pin<Box<dyn Future<Output = bool>>>;
+            }
+            let exit = block_on(unsafe { handle_syscall(&thread, &mut regs) });
+            if exit {
+                break;
             }
         });
         Thread {
             thread: handle.thread().clone(),
         }
-    }
-
-    #[export_name = "hal_thread_exit"]
-    pub fn exit() -> ! {
-        TLS.with(|t| t.replace(None));
-        // FIXME: exit thread
-        loop {
-            std::thread::park();
-        }
-    }
-
-    #[export_name = "hal_thread_tls"]
-    pub fn tls() -> Arc<usize> {
-        TLS.with(|t| t.borrow().as_ref().unwrap().clone())
     }
 
     #[export_name = "hal_thread_park"]
@@ -74,26 +70,9 @@ impl Thread {
 
     #[export_name = "hal_thread_get_waker"]
     pub fn get_waker() -> Waker {
-        Waker {
-            thread: std::thread::current(),
-        }
+        let thread = std::thread::current();
+        async_task::waker_fn(move || thread.unpark())
     }
-}
-
-#[repr(C)]
-pub struct Waker {
-    thread: std::thread::Thread,
-}
-
-impl Waker {
-    #[export_name = "hal_thread_wake"]
-    pub fn wake(&self) {
-        self.thread.unpark();
-    }
-}
-
-thread_local! {
-    static TLS: RefCell<Option<Arc<usize>>> = RefCell::new(None);
 }
 
 /// Page Table
@@ -325,8 +304,7 @@ pub fn init() {
 pub fn block_on<F: Future>(future: F) -> F::Output {
     pin_utils::pin_mut!(future);
 
-    let thread_waker = Thread::get_waker();
-    let waker = async_task::waker_fn(move || thread_waker.wake());
+    let waker = Thread::get_waker();
 
     // Create the task context.
     let cx = &mut Context::from_waker(&waker);

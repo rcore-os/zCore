@@ -225,7 +225,7 @@ impl KObjectBase {
             if (s & signal).is_empty() {
                 return false;
             }
-            waker.wake();
+            waker.wake_by_ref();
             true
         }));
         while (current_signal & signal).is_empty() {

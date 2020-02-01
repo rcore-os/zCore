@@ -239,17 +239,21 @@ impl Syscall<'_> {
     }
 
     /// Exit the current thread
-    pub fn sys_exit(&self, exit_code: i32) -> ! {
+    pub fn sys_exit(&mut self, exit_code: i32) -> SysResult {
         info!("exit: code={}", exit_code);
-        Thread::exit_linux(exit_code);
+        self.thread.exit_linux(exit_code);
+        self.exit = true;
+        Err(SysError::ENOSYS)
     }
 
     /// Exit the current thread group (i.e. process)
-    pub fn sys_exit_group(&self, exit_code: usize) -> ! {
+    pub fn sys_exit_group(&mut self, exit_code: i32) -> SysResult {
         let proc = self.zircon_process();
         info!("exit_group: code={}", exit_code);
         proc.exit(exit_code as i64);
-        Thread::exit();
+        self.thread.exit_linux(exit_code);
+        self.exit = true;
+        Err(SysError::ENOSYS)
     }
 
     //    pub fn sys_nanosleep(&self, req: *const TimeSpec) -> SysResult {

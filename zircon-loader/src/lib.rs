@@ -9,7 +9,8 @@ extern crate alloc;
 extern crate log;
 
 use {
-    alloc::{sync::Arc, vec::Vec},
+    alloc::{boxed::Box, sync::Arc, vec::Vec},
+    core::{future::Future, pin::Pin},
     kernel_hal_unix::{syscall_entry, GeneralRegs},
     xmas_elf::{
         program::{Flags, ProgramHeader, SegmentData, Type},
@@ -103,7 +104,14 @@ pub fn run_userboot(
 }
 
 #[no_mangle]
-extern "C" fn handle_syscall(regs: &mut GeneralRegs) {
+extern "C" fn handle_syscall(
+    thread: &'static Arc<Thread>,
+    regs: &'static mut GeneralRegs,
+) -> Pin<Box<dyn Future<Output = bool>>> {
+    Box::pin(handle_syscall_async(thread, regs))
+}
+
+async fn handle_syscall_async(thread: &Arc<Thread>, regs: &mut GeneralRegs) -> bool {
     trace!("syscall: {:#x?}", regs);
     let num = regs.rax as u32;
     let a6 = unsafe { (regs.rsp as *const usize).read() };
@@ -111,10 +119,14 @@ extern "C" fn handle_syscall(regs: &mut GeneralRegs) {
     let args = [
         regs.rdi, regs.rsi, regs.rdx, regs.rcx, regs.r8, regs.r9, a6, a7,
     ];
-    let syscall = Syscall {
-        thread: Thread::current(),
+    let mut syscall = Syscall {
+        thread: thread.clone(),
+        exit: false,
     };
-    regs.rax = syscall.syscall(num, args) as usize;
+    let ret = syscall.syscall(num, args);
+    let exit = syscall.exit;
+    regs.rax = ret as usize;
+    exit
 }
 
 pub trait ElfExt {

@@ -11,6 +11,7 @@ description = "Linux programs loader and runner."
 log = "0.4"
 env_logger = "0.7"
 xmas-elf = "0.7"
+core = { package = "core-futures-tls", version = "0.1.0" }
 linux-syscall = { path = "../linux-syscall" }
 zircon-object = { path = "../zircon-object" }
 kernel-hal-unix = { path = "../kernel-hal-unix" }
