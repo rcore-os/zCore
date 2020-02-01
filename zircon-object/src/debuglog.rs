@@ -1,6 +1,6 @@
 use {
     super::*,
-    crate::hal::serial_write,
+    crate::hal::{serial_write, timer_now},
     crate::object::*,
     alloc::sync::Arc,
     serde::{Deserialize, Serialize},
@@ -77,7 +77,7 @@ impl DlogBuffer {
             header,
             datalen: data.len() as u16,
             flags: flags as u16,
-            timestamp: 0u64,
+            timestamp: timer_now().as_nanos() as u64,
             pid: 0u64,
             tid: 0u64,
         })

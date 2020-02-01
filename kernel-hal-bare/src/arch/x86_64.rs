@@ -149,3 +149,13 @@ pub fn putfmt(fmt: Arguments) {
     }
     COM1.lock().write_fmt(fmt).unwrap();
 }
+
+#[export_name = "hal_serial_write"]
+pub fn serial_write(s: &str) {
+    unsafe {
+        COM1.force_unlock();
+    }
+    for byte in s.bytes() {
+        COM1.lock().send(byte);
+    }
+}
