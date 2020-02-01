@@ -267,7 +267,7 @@ impl Syscall<'_> {
     //    }
 
     pub fn sys_set_tid_address(&self, tidptr: UserOutPtr<i32>) -> SysResult {
-        warn!("set_tid_address: {:?}. unimplemented!", tidptr);
+        info!("set_tid_address: {:?}", tidptr);
         self.thread.set_tid_address(tidptr);
         let tid = self.thread.id();
         Ok(tid as usize)

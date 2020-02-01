@@ -54,8 +54,11 @@ impl Syscall<'_> {
             0 => {
                 // FIXME: support timeout
                 let _timeout = timeout.read_if_not_null()?;
-                futex.wait_async(val).await?;
-                Ok(0)
+                match futex.wait_async(val).await {
+                    Ok(_) => Ok(0),
+                    Err(ZxError::BAD_STATE) => Err(SysError::EAGAIN),
+                    Err(e) => Err(e.into()),
+                }
             }
             1 => {
                 let woken_up_count = futex.wake(val as usize);

@@ -128,7 +128,7 @@ impl From<ZxError> for SysError {
             ZxError::SHOULD_WAIT => SysError::EAGAIN,
             ZxError::PEER_CLOSED => SysError::EPIPE,
             ZxError::BAD_HANDLE => SysError::EBADF,
-            _ => unimplemented!("unknown error type convertion"),
+            _ => unimplemented!("unknown error type: {:?}", e),
         }
     }
 }

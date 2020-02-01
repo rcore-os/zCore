@@ -49,7 +49,7 @@ impl Futex {
     ///
     /// This implementation currently does not generate spurious wakeups.
     ///
-    /// [`wake`]: wake
+    /// [`wake`]: Futex::wake
     pub fn wait_async(self: &Arc<Self>, current_value: i32) -> impl Future<Output = ZxResult<()>> {
         struct FutexFuture {
             futex: Arc<Futex>,
@@ -91,6 +91,9 @@ impl Futex {
     }
 
     /// Wake some number of threads waiting on a futex.
+    ///
+    /// It wakes at most `wake_count` of the waiters that are waiting on this futex.
+    /// Return the number of waiters that were woken up.
     pub fn wake(&self, wake_count: usize) -> usize {
         let mut inner = self.inner.lock();
         for i in 0..wake_count {
