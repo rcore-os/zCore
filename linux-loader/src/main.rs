@@ -6,9 +6,11 @@ extern crate log;
 use linux_loader::*;
 use rcore_fs_hostfs::HostFS;
 use std::io::Write;
+use std::sync::Arc;
 use zircon_object::object::*;
 
-fn main() {
+#[tokio::main(core_threads = 1)]
+async fn main() {
     init_logger();
     kernel_hal_unix::init();
 
@@ -17,8 +19,8 @@ fn main() {
 
     let exec_path = args[0].clone();
     let hostfs = HostFS::new("rootfs");
-    let proc = run(&exec_path, args, envs, hostfs);
-    proc.wait_signal(Signal::PROCESS_TERMINATED);
+    let proc: Arc<dyn KernelObject> = run(&exec_path, args, envs, hostfs);
+    proc.wait_signal_async(Signal::PROCESS_TERMINATED).await;
 }
 
 fn init_logger() {

@@ -16,3 +16,4 @@ linux-syscall = { path = "../linux-syscall" }
 zircon-object = { path = "../zircon-object" }
 kernel-hal-unix = { path = "../kernel-hal-unix" }
 rcore-fs-hostfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "8902cfa6" }
+tokio = { version = "0.2", features = ["macros", "rt-threaded"] }

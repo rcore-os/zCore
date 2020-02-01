@@ -9,11 +9,7 @@ extern crate alloc;
 
 use {
     alloc::sync::Arc,
-    core::{
-        future::Future,
-        pin::Pin,
-        task::{Context, Poll, Waker},
-    },
+    core::{future::Future, pin::Pin, task::Waker},
     lazy_static::lazy_static,
     std::fmt::{Debug, Formatter},
     std::fs::{File, OpenOptions},
@@ -36,42 +32,41 @@ mod trap;
 
 #[repr(C)]
 pub struct Thread {
-    thread: std::thread::Thread,
+    thread: usize,
 }
 
 impl Thread {
     #[export_name = "hal_thread_spawn"]
     pub fn spawn(thread: Arc<usize>, mut regs: GeneralRegs) -> Self {
-        let handle = std::thread::spawn(move || loop {
-            unsafe {
-                trap::run_user(&mut regs);
-            }
-            #[allow(improper_ctypes)]
-            extern "C" {
-                fn handle_syscall(
-                    thread: &Arc<usize>,
-                    regs: &mut GeneralRegs,
-                ) -> Pin<Box<dyn Future<Output = bool>>>;
-            }
-            let exit = block_on(unsafe { handle_syscall(&thread, &mut regs) });
-            if exit {
-                break;
+        tokio::spawn(async move {
+            loop {
+                unsafe {
+                    trap::run_user(&mut regs);
+                }
+                #[allow(improper_ctypes)]
+                extern "C" {
+                    fn handle_syscall(
+                        thread: &Arc<usize>,
+                        regs: &mut GeneralRegs,
+                    ) -> Pin<Box<dyn Future<Output = bool> + Send>>;
+                }
+                let exit = unsafe { handle_syscall(&thread, &mut regs).await };
+                if exit {
+                    break;
+                }
             }
         });
-        Thread {
-            thread: handle.thread().clone(),
-        }
+        Thread { thread: 0 }
     }
 
     #[export_name = "hal_thread_park"]
     pub fn park() {
-        std::thread::park();
+        unimplemented!()
     }
 
     #[export_name = "hal_thread_get_waker"]
     pub fn get_waker() -> Waker {
-        let thread = std::thread::current();
-        async_task::waker_fn(move || thread.unpark())
+        unimplemented!()
     }
 }
 
@@ -295,25 +290,6 @@ pub fn init() {
     #[cfg(target_os = "macos")]
     unsafe {
         register_sigsegv_handler();
-    }
-}
-
-/// Runs a future to completion on the current thread.
-///
-/// Ref: https://github.com/async-rs/async-task/blob/master/examples/block.rs
-pub fn block_on<F: Future>(future: F) -> F::Output {
-    pin_utils::pin_mut!(future);
-
-    let waker = Thread::get_waker();
-
-    // Create the task context.
-    let cx = &mut Context::from_waker(&waker);
-    // Keep polling the future until completion.
-    loop {
-        match future.as_mut().poll(cx) {
-            Poll::Ready(output) => return output,
-            Poll::Pending => Thread::park(),
-        }
     }
 }
 
