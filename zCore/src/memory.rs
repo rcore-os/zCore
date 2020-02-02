@@ -33,6 +33,7 @@ const PHYSICAL_MEMORY_PM4: usize = (PHYSICAL_MEMORY_OFFSET >> 39) & 0o777;
 
 const PAGE_SIZE: usize = 1 << 12;
 
+#[allow(dead_code)]
 #[link_name = "hal_pmem_base"]
 pub static PMEM_BASE: usize = PHYSICAL_MEMORY_OFFSET;
 
@@ -93,7 +94,7 @@ pub fn enlarge_heap(heap: &mut Heap) {
     let mut addrs = [(0, 0); 32];
     let mut addr_len = 0;
     let va_offset = MEMORY_OFFSET;
-    for i in 0..16384 {
+    for _ in 0..16384 {
         let page = hal_frame_alloc().unwrap();
         let va = va_offset + page;
         if addr_len > 0 {
@@ -107,7 +108,7 @@ pub fn enlarge_heap(heap: &mut Heap) {
         addrs[addr_len] = (va, PAGE_SIZE);
         addr_len += 1;
     }
-    for (addr, len) in addrs[..addr_len].into_iter() {
+    for (addr, len) in addrs[..addr_len].iter() {
         info!("Adding {:#X} {:#X} to heap", addr, len);
         unsafe {
             heap.init(*addr, *len);
