@@ -19,6 +19,7 @@ extern crate rlibc;
 
 #[macro_use]
 pub mod logging;
+mod interrupt;
 pub mod lang;
 mod memory;
 
@@ -32,7 +33,14 @@ pub extern "C" fn _start(boot_info: &BootInfo) -> ! {
     memory::init_heap();
     memory::init_frame_allocator(boot_info);
     info!("{:#x?}", boot_info);
-    loop {}
+    interrupt::init();
+    loop {
+        unsafe {
+            asm!(
+                "int 3;"::::"intel" "volatile");
+        }
+        info!("Here is ok");
+    }
 }
 
 /// Global heap allocator

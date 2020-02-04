@@ -19,6 +19,7 @@ qemu_opts := \
 
 ifeq ($(arch), x86_64)
 qemu_opts += \
+    -cpu qemu64,fsgsbase \
 	-drive if=pflash,format=raw,file=$(OVMF),readonly=on \
 	-drive format=raw,file=fat:rw:$(ESP) \
 	-serial mon:stdio \
@@ -28,6 +29,11 @@ qemu_opts += \
 endif
 
 run: build justrun
+
+debug: build debugrun
+
+debugrun:
+	@$(qemu) $(qemu_opts) -s -S
 
 justrun:
 	@$(qemu) $(qemu_opts)

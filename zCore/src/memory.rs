@@ -7,19 +7,15 @@ use {
     buddy_system_allocator::Heap,
     core::mem,
     kernel_hal_bare::arch::kernel_root_table,
-    lazy_static::*,
     rboot::{BootInfo, MemoryType},
     spin::Mutex,
     x86_64::structures::paging::page_table::{PageTable, PageTableFlags as EF},
 };
 
-// x86_64 support up to 1T memory
 #[cfg(target_arch = "x86_64")]
-pub type FrameAlloc = bitmap_allocator::BitAlloc256M;
+pub type FrameAlloc = bitmap_allocator::BitAlloc16M;
 
-lazy_static! {
-    pub static ref FRAME_ALLOCATOR: Mutex<FrameAlloc> = Mutex::new(FrameAlloc::default());
-}
+pub static FRAME_ALLOCATOR: Mutex<FrameAlloc> = Mutex::new(FrameAlloc::DEFAULT);
 
 const MEMORY_OFFSET: usize = 0;
 const KERNEL_OFFSET: usize = 0xffffff00_00000000;

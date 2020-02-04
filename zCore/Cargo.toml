@@ -16,6 +16,7 @@ rboot = { path = "../rboot", default-features = false }
 kernel-hal-bare = { path = "../kernel-hal-bare" }
 lazy_static = { version = "1.4", features = ["spin_no_std" ] }
 bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator" }
+trapframe = { git = "https://github.com/rcore-os/trapframe-rs" }
 
 [build-dependencies]
 cc = "1.0"
