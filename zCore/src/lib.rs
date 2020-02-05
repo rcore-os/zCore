@@ -33,13 +33,7 @@ pub extern "C" fn _start(boot_info: &BootInfo) -> ! {
     memory::init_frame_allocator(boot_info);
     info!("{:#x?}", boot_info);
     interrupt::init();
-    loop {
-        unsafe {
-            asm!(
-                "int 3;"::::"intel" "volatile");
-        }
-        info!("Here is ok");
-    }
+    loop {}
 }
 
 /// Global heap allocator

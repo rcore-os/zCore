@@ -1,5 +1,6 @@
 use {
     super::*,
+    apic::{LocalApic, XApic},
     bitflags::bitflags,
     core::fmt::{Arguments, Write},
     spin::Mutex,
@@ -9,6 +10,11 @@ use {
         structures::paging::{PageTableFlags as PTF, *},
     },
 };
+
+extern "C" {
+    #[link_name = "hal_lapic_addr"]
+    static LAPIC_ADDR: usize;
+}
 
 /// Page Table
 #[repr(C)]
@@ -158,4 +164,15 @@ pub fn serial_write(s: &str) {
     for byte in s.bytes() {
         COM1.lock().send(byte);
     }
+}
+
+pub fn timer_init() {
+    let mut lapic = unsafe { XApic::new(phys_to_virt(LAPIC_ADDR)) };
+    lapic.cpu_init();
+}
+
+#[inline(always)]
+pub fn ack(_irq: u8) {
+    let mut lapic = unsafe { XApic::new(phys_to_virt(LAPIC_ADDR)) };
+    lapic.eoi();
 }

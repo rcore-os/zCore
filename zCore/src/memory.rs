@@ -28,9 +28,8 @@ const KSEG2_PM4: usize = (KSEG2_OFFSET >> 39) & 0o777;
 const PHYSICAL_MEMORY_PM4: usize = (PHYSICAL_MEMORY_OFFSET >> 39) & 0o777;
 
 const PAGE_SIZE: usize = 1 << 12;
-
 #[allow(dead_code)]
-#[link_name = "hal_pmem_base"]
+#[export_name = "hal_pmem_base"]
 pub static PMEM_BASE: usize = PHYSICAL_MEMORY_OFFSET;
 
 pub fn init_frame_allocator(boot_info: &BootInfo) {
