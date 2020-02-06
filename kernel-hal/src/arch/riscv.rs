@@ -10,4 +10,8 @@ impl GeneralRegs {
     pub fn clone(&self, _newsp: usize, _newtls: usize) -> Self {
         unimplemented!()
     }
+
+    pub fn fork(&self) -> Self {
+        unimplemented!()
+    }
 }

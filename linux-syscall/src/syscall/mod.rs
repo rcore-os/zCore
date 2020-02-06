@@ -122,7 +122,7 @@ impl Syscall<'_> {
             SYS_EXECVE => self.sys_execve(a0.into(), a1.into(), a2.into()),
             SYS_EXIT => self.sys_exit(a0 as _),
             SYS_EXIT_GROUP => self.sys_exit_group(a0 as _),
-            SYS_WAIT4 => self.sys_wait4(a0 as _, a1.into(), a2 as _),
+            SYS_WAIT4 => self.sys_wait4(a0 as _, a1.into(), a2 as _).await,
             SYS_SET_TID_ADDRESS => self.sys_set_tid_address(a0.into()),
             SYS_FUTEX => self.sys_futex(a0, a1 as _, a2 as _, a3.into()).await,
             SYS_TKILL => self.unimplemented("tkill", Ok(0)),
@@ -175,7 +175,7 @@ impl Syscall<'_> {
             SYS_FINIT_MODULE => self.unimplemented("finit_module", Err(SysError::ENOSYS)),
             //            SYS_DELETE_MODULE => self.sys_delete_module(a0.into(), a1 as u32),
             #[cfg(target_arch = "x86_64")]
-            _ => self.x86_64_syscall(num, args),
+            _ => self.x86_64_syscall(num, args).await,
         };
         info!("<= {:x?}", ret);
         match ret {
@@ -185,7 +185,7 @@ impl Syscall<'_> {
     }
 
     #[cfg(target_arch = "x86_64")]
-    fn x86_64_syscall(&mut self, num: u32, args: [usize; 6]) -> SysResult {
+    async fn x86_64_syscall(&mut self, num: u32, args: [usize; 6]) -> SysResult {
         let [a0, a1, a2, _a3, _a4, _a5] = args;
         match num {
             SYS_OPEN => self.sys_open(a0.into(), a1, a2),
@@ -197,8 +197,8 @@ impl Syscall<'_> {
             //            SYS_SELECT => self.sys_select(a0, a1.into(), a2.into(), a3.into(), a4.into()),
             SYS_DUP2 => self.sys_dup2(a0.into(), a1.into()),
             //            SYS_ALARM => self.unimplemented("alarm", Ok(0)),
-            //            SYS_FORK => self.sys_fork(),
-            //            SYS_VFORK => self.sys_vfork(),
+            SYS_FORK => self.sys_fork().await,
+            SYS_VFORK => self.sys_vfork().await,
             SYS_RENAME => self.sys_rename(a0.into(), a1.into()),
             SYS_MKDIR => self.sys_mkdir(a0.into(), a1),
             SYS_RMDIR => self.sys_rmdir(a0.into()),

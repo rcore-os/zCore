@@ -147,6 +147,11 @@ impl Process {
         self.vmar.clone()
     }
 
+    /// Get the job of the process.
+    pub fn job(&self) -> Arc<Job> {
+        self.job.clone()
+    }
+
     /// Add a handle to the process
     pub fn add_handle(&self, handle: Handle) -> HandleValue {
         self.inner.lock().add_handle(handle)

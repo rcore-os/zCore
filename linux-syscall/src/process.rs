@@ -17,6 +17,7 @@ use zircon_object::ZxResult;
 pub trait ProcessExt {
     fn create_linux(job: &Arc<Job>, rootfs: Arc<dyn FileSystem>) -> ZxResult<Arc<Self>>;
     fn lock_linux(&self) -> MutexGuard<'_, LinuxProcess>;
+    fn vfork(self: &Arc<Self>) -> ZxResult<Arc<Self>>;
 }
 
 impl ProcessExt for Process {
@@ -30,6 +31,20 @@ impl ProcessExt for Process {
             .downcast_ref::<Mutex<LinuxProcess>>()
             .unwrap()
             .lock()
+    }
+
+    fn vfork(self: &Arc<Self>) -> ZxResult<Arc<Self>> {
+        let linux_proc = self.lock_linux();
+        let new_linux_proc = Mutex::new(LinuxProcess {
+            cwd: linux_proc.cwd.clone(),
+            exec_path: linux_proc.exec_path.clone(),
+            files: linux_proc.files.clone(),
+            futexes: BTreeMap::new(),
+            root_inode: linux_proc.root_inode.clone(),
+            parent: Arc::downgrade(self),
+            children: Vec::new(),
+        });
+        Process::create_with_ext(&self.job(), "", new_linux_proc)
     }
 }
 

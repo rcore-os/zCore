@@ -1,3 +1,4 @@
+use core::sync::atomic::*;
 use {
     super::*, crate::object::*, crate::vm::vmo::VMObject, alloc::sync::Arc, alloc::vec::Vec,
     kernel_hal::PageTable, spin::Mutex,
@@ -26,11 +27,14 @@ struct VmarInner {
 impl VmAddressRegion {
     /// Create a new root VMAR.
     pub fn new_root() -> Arc<Self> {
-        const BASE: usize = 0x2_00000000;
+        // FIXME: workaround for unix
+        static VMAR_ID: AtomicUsize = AtomicUsize::new(0);
+        let i = VMAR_ID.fetch_add(1, Ordering::SeqCst);
+        let addr: usize = 0x10_00000000 + 0x1_00000000 * i;
         Arc::new(VmAddressRegion {
             base: KObjectBase::new(),
-            addr: BASE,
-            size: usize::max_value() - 0xfff - BASE,
+            addr,
+            size: 0x1_00000000,
             parent: None,
             page_table: Arc::new(Mutex::new(kernel_hal::PageTable::new())),
             inner: Mutex::new(Some(VmarInner::default())),

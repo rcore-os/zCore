@@ -7,19 +7,23 @@ use crate::thread::ThreadExt;
 use bitflags::bitflags;
 
 impl Syscall<'_> {
-    //    /// Fork the current process. Return the child's PID.
-    //    pub fn sys_fork(&self) -> SysResult {
-    //        let new_thread = self.thread.fork(self.tf);
-    //        let pid = new_thread.proc.lock().pid.get();
-    //        let tid = thread_manager().add(new_thread);
-    //        thread_manager().detach(tid);
-    //        info!("fork: {} -> {}", thread::current().id(), pid);
-    //        Ok(pid)
-    //    }
-    //
-    //    pub fn sys_vfork(&self) -> SysResult {
-    //        self.sys_fork()
-    //    }
+    /// Fork the current process. Return the child's PID.
+    pub async fn sys_fork(&self) -> SysResult {
+        warn!("fork: not supported! go to vfork");
+        self.sys_vfork().await
+    }
+
+    pub async fn sys_vfork(&self) -> SysResult {
+        info!("vfork:");
+        let new_proc = self.zircon_process().vfork()?;
+        let new_thread = Thread::create_linux(&new_proc)?;
+        new_thread.start_with_regs(self.regs.fork())?;
+
+        let new_proc: Arc<dyn KernelObject> = new_proc;
+        info!("vfork: {} -> {}", self.zircon_process().id(), new_proc.id());
+        new_proc.wait_signal_async(Signal::SIGNALED).await; // wait for execve
+        Ok(new_proc.id() as usize)
+    }
 
     /// Create a new thread in the current process.
     /// The new thread's stack pointer will be set to `newsp`,
@@ -64,12 +68,14 @@ impl Syscall<'_> {
 
     /// Wait for the process exit.
     /// Return the PID. Store exit code to `wstatus` if it's not null.
-    pub fn sys_wait4(&self, pid: i32, wstatus: UserOutPtr<i32>, options: u32) -> SysResult {
+    pub async fn sys_wait4(&self, pid: i32, wstatus: UserOutPtr<i32>, options: u32) -> SysResult {
         info!(
             "wait4: pid={}, wstatus={:?}, options={:#x}",
             pid, wstatus, options
         );
-        Err(SysError::ECHILD)
+        let proc: Arc<dyn KernelObject> = self.zircon_process().clone();
+        proc.wait_signal_async(Signal::SIGNALED).await;
+        Ok(0)
         // FIXME: wait4
 
         //        #[derive(Debug)]
@@ -182,6 +188,9 @@ impl Syscall<'_> {
         // Modify exec path
         proc.exec_path = path.clone();
         drop(proc);
+
+        // TODO: use right signal
+        self.zircon_process().signal_set(Signal::SIGNALED);
 
         *self.regs = GeneralRegs::new_fn(entry, sp, 0, 0);
         Ok(0)

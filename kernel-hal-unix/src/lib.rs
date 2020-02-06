@@ -54,6 +54,7 @@ impl Thread {
                 if exit {
                     break;
                 }
+                async_std::task::yield_now().await;
             }
         });
         Thread { thread: 0 }
@@ -217,9 +218,13 @@ fn create_pmem_file() -> File {
 
 /// Mmap frame file `fd` to `vaddr`.
 fn mmap(fd: libc::c_int, offset: usize, len: usize, vaddr: VirtAddr, prot: libc::c_int) {
-    // workaround on macOS to avoid permission denied.
+    // workaround on macOS to write text section.
     #[cfg(target_os = "macos")]
-    let prot = prot | libc::PROT_READ | libc::PROT_WRITE | libc::PROT_EXEC;
+    let prot = if prot & libc::PROT_EXEC != 0 {
+        prot | libc::PROT_WRITE
+    } else {
+        prot
+    };
 
     let ret = unsafe {
         let flags = libc::MAP_SHARED | libc::MAP_FIXED;

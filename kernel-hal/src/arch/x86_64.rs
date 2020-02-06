@@ -42,4 +42,11 @@ impl GeneralRegs {
             ..*self
         }
     }
+
+    pub fn fork(&self) -> Self {
+        GeneralRegs {
+            rax: 0,
+            ..*self
+        }
+    }
 }
