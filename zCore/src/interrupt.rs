@@ -8,7 +8,7 @@ use {
 };
 
 #[export_name = "hal_lapic_addr"]
-pub static LAPIC_ADDR: usize = 0xfee00000;
+pub static LAPIC_ADDR: usize = 0xfee0_0000;
 
 pub fn init() {
     check_and_set_cpu_features();
