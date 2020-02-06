@@ -2,6 +2,7 @@
 
 #![no_std]
 #![feature(linkage)]
+#![deny(warnings)]
 
 extern crate alloc;
 

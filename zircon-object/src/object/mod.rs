@@ -124,7 +124,6 @@ pub trait KernelObject: DowncastSync + Debug {
     fn signal(&self) -> Signal;
     fn signal_set(&self, signal: Signal);
     fn add_signal_callback(&self, callback: SignalHandler);
-    fn wait_signal(&self, signal: Signal) -> Signal;
 }
 
 impl_downcast!(sync KernelObject);
@@ -212,27 +211,6 @@ impl KObjectBase {
     pub fn add_signal_callback(&self, callback: SignalHandler) {
         let mut inner = self.inner.lock();
         inner.signal_callbacks.push(callback);
-    }
-
-    /// Block until at least one `signal` assert. Return the current signal.
-    pub fn wait_signal(&self, signal: Signal) -> Signal {
-        let mut current_signal = self.signal();
-        if !(current_signal & signal).is_empty() {
-            return current_signal;
-        }
-        let waker = kernel_hal::Thread::get_waker();
-        self.add_signal_callback(Box::new(move |s| {
-            if (s & signal).is_empty() {
-                return false;
-            }
-            waker.wake_by_ref();
-            true
-        }));
-        while (current_signal & signal).is_empty() {
-            kernel_hal::Thread::park();
-            current_signal = self.signal();
-        }
-        current_signal
     }
 }
 
@@ -381,9 +359,6 @@ macro_rules! impl_kobject {
             fn add_signal_callback(&self, callback: SignalHandler) {
                 self.base.add_signal_callback(callback);
             }
-            fn wait_signal(&self, signal: Signal) -> Signal {
-                self.base.wait_signal(signal)
-            }
         }
         impl core::fmt::Debug for $class {
             fn fmt(
@@ -424,33 +399,6 @@ impl DummyObject {
 mod tests {
     use super::*;
     use std::time::Duration;
-
-    #[test]
-    fn wait() {
-        let object = DummyObject::new();
-        let flag = Arc::new(AtomicU8::new(0));
-        std::thread::spawn({
-            let object = object.clone();
-            let flag = flag.clone();
-            move || {
-                flag.store(1, Ordering::SeqCst);
-                object.base.signal_set(Signal::READABLE);
-                std::thread::sleep(Duration::from_millis(1));
-
-                flag.store(2, Ordering::SeqCst);
-                object.base.signal_set(Signal::WRITABLE);
-            }
-        });
-        assert_eq!(flag.load(Ordering::SeqCst), 0);
-
-        let signal = object.base.wait_signal(Signal::READABLE);
-        assert_eq!(signal, Signal::READABLE);
-        assert_eq!(flag.load(Ordering::SeqCst), 1);
-
-        let signal = object.base.wait_signal(Signal::WRITABLE);
-        assert_eq!(signal, Signal::READABLE | Signal::WRITABLE);
-        assert_eq!(flag.load(Ordering::SeqCst), 2);
-    }
 
     #[tokio::test]
     async fn wait_async() {

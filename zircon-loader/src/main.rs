@@ -2,6 +2,7 @@
 
 extern crate log;
 
+use std::sync::Arc;
 use {std::path::PathBuf, structopt::StructOpt, zircon_loader::*, zircon_object::object::*};
 
 #[derive(Debug, StructOpt)]
@@ -20,7 +21,8 @@ struct Opt {
     cmdline: String,
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     kernel_hal_unix::init();
     env_logger::init();
 
@@ -29,16 +31,17 @@ fn main() {
     let vdso_data = std::fs::read(opt.vdso_path).expect("failed to read file");
     let zbi_data = std::fs::read(opt.zbi_path).expect("failed to read file");
 
-    let proc = run_userboot(&userboot_data, &vdso_data, &zbi_data, &opt.cmdline);
-    proc.wait_signal(Signal::PROCESS_TERMINATED);
+    let proc: Arc<dyn KernelObject> =
+        run_userboot(&userboot_data, &vdso_data, &zbi_data, &opt.cmdline);
+    proc.wait_signal_async(Signal::PROCESS_TERMINATED).await;
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn userboot() {
+    #[tokio::test]
+    async fn userboot() {
         kernel_hal_unix::init();
 
         let base = PathBuf::from("../prebuilt");
@@ -52,7 +55,8 @@ mod tests {
         let vdso_data = std::fs::read(opt.vdso_path).expect("failed to read file");
         let zbi_data = std::fs::read(opt.zbi_path).expect("failed to read file");
 
-        let proc = run_userboot(&userboot_data, &vdso_data, &zbi_data, &opt.cmdline);
-        proc.wait_signal(Signal::PROCESS_TERMINATED);
+        let proc: Arc<dyn KernelObject> =
+            run_userboot(&userboot_data, &vdso_data, &zbi_data, &opt.cmdline);
+        proc.wait_signal_async(Signal::PROCESS_TERMINATED).await;
     }
 }

@@ -48,7 +48,7 @@ fn init_logger() {
 mod tests {
     use super::*;
 
-    fn test(cmdline: &str) {
+    async fn test(cmdline: &str) {
         kernel_hal_unix::init();
 
         let args: Vec<String> = cmdline.split(' ').map(|s| s.into()).collect();
@@ -56,11 +56,12 @@ mod tests {
         let exec_path = args[0].clone();
         let hostfs = HostFS::new("../rootfs");
         let proc = run(&exec_path, args, envs, hostfs);
-        proc.wait_signal(Signal::PROCESS_TERMINATED);
+        let proc: Arc<dyn KernelObject> = proc;
+        proc.wait_signal_async(Signal::PROCESS_TERMINATED).await;
     }
 
-    #[test]
-    fn busybox() {
-        test("/bin/busybox");
+    #[tokio::test]
+    async fn busybox() {
+        test("/bin/busybox").await;
     }
 }

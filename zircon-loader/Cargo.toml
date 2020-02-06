@@ -16,3 +16,4 @@ core = { package = "core-futures-tls", version = "0.1.0" }
 zircon-object = { path = "../zircon-object" }
 zircon-syscall = { path = "../zircon-syscall" }
 kernel-hal-unix = { path = "../kernel-hal-unix" }
+tokio = { version = "0.2", features = ["macros", "rt-threaded"] }

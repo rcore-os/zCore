@@ -65,13 +65,12 @@ mod thread_state;
 /// [`THREAD_TERMINATED`] is asserted.
 ///
 /// Note that signals are OR'd into the state maintained by the
-/// [`KernelObject::wait_signal()`] family of functions thus
+/// `KernelObject::wait_signal_async()` family of functions thus
 /// you may see any combination of requested signals when they return.
 ///
 /// [`Thread::create()`]: Thread::create
 /// [`Thread::exit()`]: Thread::exit
 /// [`Process::exit()`]: crate::task::Process::exit
-/// [`KernelObject::wait_signal()`]: crate::object::KernelObject::wait_signal
 /// [`THREAD_TERMINATED`]: crate::object::Signal::THREAD_TERMINATED
 /// [`THREAD_SUSPENDED`]: crate::object::Signal::THREAD_SUSPENDED
 /// [`THREAD_RUNNING`]: crate::object::Signal::THREAD_RUNNING

@@ -9,7 +9,7 @@ extern crate alloc;
 
 use {
     alloc::sync::Arc,
-    core::{future::Future, pin::Pin, task::Waker},
+    core::{future::Future, pin::Pin},
     lazy_static::lazy_static,
     std::fmt::{Debug, Formatter},
     std::fs::{File, OpenOptions},
@@ -57,16 +57,6 @@ impl Thread {
             }
         });
         Thread { thread: 0 }
-    }
-
-    #[export_name = "hal_thread_park"]
-    pub fn park() {
-        unimplemented!()
-    }
-
-    #[export_name = "hal_thread_get_waker"]
-    pub fn get_waker() -> Waker {
-        unimplemented!()
     }
 }
 

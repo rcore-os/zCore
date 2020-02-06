@@ -2,7 +2,6 @@ use super::*;
 use alloc::boxed::Box;
 use alloc::sync::Arc;
 use core::ops::FnOnce;
-use core::task::Waker;
 use core::time::Duration;
 
 type ThreadId = usize;
@@ -17,20 +16,6 @@ impl Thread {
     #[linkage = "weak"]
     #[export_name = "hal_thread_spawn"]
     pub fn spawn<T>(_self: Arc<T>, _regs: GeneralRegs) -> Self {
-        unimplemented!()
-    }
-
-    /// Blocks current thread.
-    #[linkage = "weak"]
-    #[export_name = "hal_thread_park"]
-    pub fn park() {
-        unimplemented!()
-    }
-
-    /// Get a waker of current thread.
-    #[linkage = "weak"]
-    #[export_name = "hal_thread_get_waker"]
-    pub fn get_waker() -> Waker {
         unimplemented!()
     }
 }
