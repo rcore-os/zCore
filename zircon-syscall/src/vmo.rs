@@ -5,7 +5,7 @@ impl Syscall {
         &self,
         size: u64,
         options: u32,
-        out: UserOutPtr<HandleValue>,
+        mut out: UserOutPtr<HandleValue>,
     ) -> ZxResult<usize> {
         info!(
             "vmo.create: size={:?}, options={:?}, out={:?}",
@@ -22,7 +22,7 @@ impl Syscall {
     pub fn sys_vmo_read(
         &self,
         handle_value: HandleValue,
-        buf: UserOutPtr<u8>,
+        mut buf: UserOutPtr<u8>,
         offset: u64,
         buf_size: usize,
     ) -> ZxResult<usize> {

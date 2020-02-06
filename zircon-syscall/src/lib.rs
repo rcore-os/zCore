@@ -10,8 +10,8 @@ extern crate alloc;
 extern crate log;
 
 use {
-    self::consts::*, crate::util::*, alloc::sync::Arc, alloc::vec::Vec, zircon_object::object::*,
-    zircon_object::task::Thread,
+    self::consts::*, alloc::sync::Arc, alloc::vec::Vec, kernel_hal::user::*,
+    zircon_object::object::*, zircon_object::task::Thread,
 };
 
 mod channel;
@@ -20,7 +20,6 @@ mod debug;
 mod debuglog;
 mod handle;
 mod task;
-mod util;
 mod vmar;
 mod vmo;
 

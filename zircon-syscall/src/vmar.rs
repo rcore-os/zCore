@@ -7,8 +7,8 @@ impl Syscall {
         options: u32,
         offset: u64,
         size: u64,
-        out_child_vmar: UserOutPtr<HandleValue>,
-        out_child_addr: UserOutPtr<usize>,
+        mut out_child_vmar: UserOutPtr<HandleValue>,
+        mut out_child_addr: UserOutPtr<usize>,
     ) -> ZxResult<usize> {
         let options = VmOptions::from_bits(options).ok_or(ZxError::INVALID_ARGS)?;
         info!(

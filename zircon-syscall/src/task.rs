@@ -7,8 +7,8 @@ impl Syscall {
         name: UserInPtr<u8>,
         name_size: usize,
         options: u32,
-        proc_handle: UserOutPtr<HandleValue>,
-        vmar_handle: UserOutPtr<HandleValue>,
+        mut proc_handle: UserOutPtr<HandleValue>,
+        mut vmar_handle: UserOutPtr<HandleValue>,
     ) -> ZxResult<usize> {
         let name = name.read_string(name_size)?;
         info!(

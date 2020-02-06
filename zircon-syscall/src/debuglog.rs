@@ -5,7 +5,7 @@ impl Syscall {
         &self,
         rsrc: HandleValue,
         options: usize,
-        target: UserOutPtr<HandleValue>,
+        mut target: UserOutPtr<HandleValue>,
     ) -> ZxResult<usize> {
         info!(
             "debuglog_create: resource_handle={:?}, options={:?}",

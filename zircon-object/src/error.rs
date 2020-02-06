@@ -226,3 +226,14 @@ pub enum ZxError {
     /// Connection was aborted.
     CONNECTION_ABORTED = -76,
 }
+
+use kernel_hal::user::Error;
+
+impl From<Error> for ZxError {
+    fn from(e: Error) -> Self {
+        match e {
+            Error::InvalidUtf8 => ZxError::INVALID_ARGS,
+            Error::InvalidPointer => ZxError::INVALID_ARGS,
+        }
+    }
+}

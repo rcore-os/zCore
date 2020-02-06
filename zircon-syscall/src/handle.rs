@@ -5,7 +5,7 @@ impl Syscall {
         &self,
         handle_value: HandleValue,
         rights: u32,
-        new_handle_value: UserOutPtr<HandleValue>,
+        mut new_handle_value: UserOutPtr<HandleValue>,
     ) -> ZxResult<usize> {
         let rights = Rights::try_from(rights)?;
         info!("handle.dup: handle={:?}, rights={:?}", handle_value, rights);

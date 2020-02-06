@@ -7,12 +7,12 @@ impl Syscall {
         &self,
         handle_value: HandleValue,
         options: u32,
-        bytes: UserOutPtr<u8>,
-        handles: UserOutPtr<HandleValue>,
+        mut bytes: UserOutPtr<u8>,
+        mut handles: UserOutPtr<HandleValue>,
         num_bytes: u32,
         num_handles: u32,
-        actual_bytes: UserOutPtr<u32>,
-        actual_handles: UserOutPtr<u32>,
+        mut actual_bytes: UserOutPtr<u32>,
+        mut actual_handles: UserOutPtr<u32>,
     ) -> ZxResult<usize> {
         info!(
             "channel.read: handle={:?}, options={:?}, bytes=({:?}; {:?}), handles=({:?}; {:?})",

@@ -29,6 +29,7 @@ pub mod defs {
 }
 
 mod dummy;
+pub mod user;
 
 pub use self::defs::*;
 pub use self::dummy::*;
