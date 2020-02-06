@@ -17,7 +17,7 @@ use {
     std::os::unix::io::AsRawFd,
     std::sync::atomic::{AtomicUsize, Ordering},
     std::time::{Duration, SystemTime},
-    tempfile::tempdir_in,
+    tempfile::tempdir,
 };
 
 pub use self::trap::syscall_entry;
@@ -87,10 +87,7 @@ impl PageTable {
     /// Unmap the page of `vaddr`.
     #[export_name = "hal_pt_unmap"]
     pub fn unmap(&mut self, vaddr: VirtAddr) -> Result<(), ()> {
-        debug_assert!(page_aligned(vaddr));
-        let ret = unsafe { libc::munmap(vaddr as _, PAGE_SIZE) };
-        assert_eq!(ret, 0, "failed to munmap: {:?}", Error::last_os_error());
-        Ok(())
+        self.unmap_cont(vaddr, 1)
     }
 
     /// Change the `flags` of the page of `vaddr`.
@@ -108,6 +105,17 @@ impl PageTable {
     pub fn query(&mut self, vaddr: VirtAddr) -> Result<PhysAddr, ()> {
         debug_assert!(page_aligned(vaddr));
         unimplemented!()
+    }
+
+    #[export_name = "hal_pt_unmap_cont"]
+    pub fn unmap_cont(&mut self, vaddr: VirtAddr, pages: usize) -> Result<(), ()> {
+        if pages == 0 {
+            return Ok(());
+        }
+        debug_assert!(page_aligned(vaddr));
+        let ret = unsafe { libc::munmap(vaddr as _, PAGE_SIZE * pages) };
+        assert_eq!(ret, 0, "failed to munmap: {:?}", Error::last_os_error());
+        Ok(())
     }
 }
 
@@ -191,7 +199,7 @@ lazy_static! {
 }
 
 fn create_pmem_file() -> File {
-    let dir = tempdir_in("/tmp").expect("failed to create pmem dir");
+    let dir = tempdir().expect("failed to create pmem dir");
     let path = dir.path().join("pmem");
     let file = OpenOptions::new()
         .read(true)

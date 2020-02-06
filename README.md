@@ -37,7 +37,7 @@ cargo run --release -p zircon-loader prebuilt/userboot.so prebuilt/libzircon.so 
 To debug, set `RUST_LOG` environment variable to one of `error`, `warn`, `info`, `debug`, `trace`.
 
 
-NOTE: On macOS, sometimes it may raise an error `Operation not permitted` when performing mmap. I don't know why. Just retry...
+**NOTE for macOS**: Add your IDE and Terminal to `System Preference - Security & Privacy - Privacy - Developer Tools`. Otherwise it may raise an error `Operation not permitted` when performing mmap due to system policy.
 
 ## Components
 

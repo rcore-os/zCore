@@ -91,6 +91,8 @@ impl PageTable {
         Ok(())
     }
 
+    #[linkage = "weak"]
+    #[export_name = "hal_pt_unmap_cont"]
     pub fn unmap_cont(&mut self, vaddr: VirtAddr, pages: usize) -> Result<(), ()> {
         for i in 0..pages {
             self.unmap(vaddr + i * PAGE_SIZE)?;
