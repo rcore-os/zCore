@@ -31,7 +31,18 @@ pub struct Job {
     inner: Mutex<JobInner>,
 }
 
-impl_kobject!(Job);
+impl_kobject!(Job
+    fn get_child(&self, id: KoID) -> ZxResult<Arc<dyn KernelObject>> {
+        let inner = self.inner.lock();
+        if let Some(job) = inner.children.iter().find(|o| o.id() == id) {
+            return Ok(job.clone());
+        }
+        if let Some(proc) = inner.processes.iter().find(|o| o.id() == id) {
+            return Ok(proc.clone());
+        }
+        Err(ZxError::NOT_FOUND)
+    }
+);
 
 #[derive(Default)]
 struct JobInner {
@@ -208,6 +219,21 @@ mod tests {
         assert_eq!(
             job.set_policy_basic(SetPolicyOptions::Absolute, policy),
             Err(ZxError::ALREADY_EXISTS)
+        );
+    }
+
+    #[test]
+    fn get_child() {
+        let root_job = Job::root();
+        let job = Job::create_child(&root_job, 0).expect("failed to create job");
+        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
+
+        let root_job: Arc<dyn KernelObject> = root_job;
+        assert_eq!(root_job.get_child(job.id()).unwrap().id(), job.id());
+        assert_eq!(root_job.get_child(proc.id()).unwrap().id(), proc.id());
+        assert_eq!(
+            root_job.get_child(root_job.id()).err(),
+            Some(ZxError::NOT_FOUND)
         );
     }
 }

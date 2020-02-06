@@ -56,7 +56,13 @@ pub struct Process {
     inner: Mutex<ProcessInner>,
 }
 
-impl_kobject!(Process);
+impl_kobject!(Process
+    fn get_child(&self, id: KoID) -> ZxResult<Arc<dyn KernelObject>> {
+        let inner = self.inner.lock();
+        let thread = inner.threads.iter().find(|o| o.id() == id).ok_or(ZxError::NOT_FOUND)?;
+        Ok(thread.clone())
+    }
+);
 
 #[derive(Default)]
 struct ProcessInner {
@@ -371,5 +377,16 @@ mod tests {
             proc.dup_handle(handle_value, Rights::SAME_RIGHTS),
             Err(ZxError::ACCESS_DENIED)
         );
+    }
+
+    #[test]
+    fn get_child() {
+        let root_job = Job::root();
+        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
+        let thread = Thread::create(&proc, "thread", 0).expect("failed to create thread");
+
+        let proc: Arc<dyn KernelObject> = proc;
+        assert_eq!(proc.get_child(thread.id()).unwrap().id(), thread.id());
+        assert_eq!(proc.get_child(proc.id()).err(), Some(ZxError::NOT_FOUND));
     }
 }

@@ -124,6 +124,9 @@ pub trait KernelObject: DowncastSync + Debug {
     fn signal(&self) -> Signal;
     fn signal_set(&self, signal: Signal);
     fn add_signal_callback(&self, callback: SignalHandler);
+    fn get_child(&self, _id: KoID) -> ZxResult<Arc<dyn KernelObject>> {
+        Err(ZxError::WRONG_TYPE)
+    }
 }
 
 impl_downcast!(sync KernelObject);
@@ -342,7 +345,7 @@ pub fn wait_signal_many_async(
 /// Macro to auto implement `KernelObject` trait.
 #[macro_export]
 macro_rules! impl_kobject {
-    ($class:ident) => {
+    ($class:ident $( $fn:tt )*) => {
         impl KernelObject for $class {
             fn id(&self) -> KoID {
                 self.base.id
@@ -359,6 +362,7 @@ macro_rules! impl_kobject {
             fn add_signal_callback(&self, callback: SignalHandler) {
                 self.base.add_signal_callback(callback);
             }
+            $( $fn )*
         }
         impl core::fmt::Debug for $class {
             fn fmt(
