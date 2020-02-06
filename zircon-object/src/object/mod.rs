@@ -400,18 +400,18 @@ mod tests {
     use super::*;
     use std::time::Duration;
 
-    #[tokio::test]
+    #[async_std::test]
     async fn wait_async() {
         let object = DummyObject::new();
         let flag = Arc::new(AtomicU8::new(0));
 
-        tokio::spawn({
+        async_std::task::spawn({
             let object = object.clone();
             let flag = flag.clone();
             async move {
                 flag.store(1, Ordering::SeqCst);
                 object.base.signal_set(Signal::READABLE);
-                tokio::time::delay_for(Duration::from_millis(1)).await;
+                async_std::task::sleep(Duration::from_millis(1)).await;
 
                 flag.store(2, Ordering::SeqCst);
                 object.base.signal_set(Signal::WRITABLE);
@@ -429,18 +429,18 @@ mod tests {
         assert_eq!(flag.load(Ordering::SeqCst), 2);
     }
 
-    #[tokio::test]
+    #[async_std::test]
     async fn wait_many_async() {
         let objs = [DummyObject::new(), DummyObject::new()];
         let flag = Arc::new(AtomicU8::new(0));
 
-        tokio::spawn({
+        async_std::task::spawn({
             let objs = objs.clone();
             let flag = flag.clone();
             async move {
                 flag.store(1, Ordering::SeqCst);
                 objs[0].base.signal_set(Signal::READABLE);
-                tokio::time::delay_for(Duration::from_millis(1)).await;
+                async_std::task::sleep(Duration::from_millis(1)).await;
 
                 flag.store(2, Ordering::SeqCst);
                 objs[1].base.signal_set(Signal::WRITABLE);

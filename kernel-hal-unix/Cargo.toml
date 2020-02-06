@@ -14,4 +14,4 @@ tempfile = "3"
 bitflags = "1.2"
 lazy_static = "1.4"
 kernel-hal = { path = "../kernel-hal" }
-tokio = { version = "0.2", features = ["rt-core"] }
+async-std = "1.5"

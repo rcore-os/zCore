@@ -112,14 +112,14 @@ impl Futex {
 mod tests {
     use super::*;
 
-    #[tokio::test]
+    #[async_std::test]
     async fn wait_async() {
         static VALUE: AtomicI32 = AtomicI32::new(1);
         let futex = Futex::new(&VALUE);
 
         for _ in 0..4 {
             let futex = futex.clone();
-            tokio::spawn(async move {
+            async_std::task::spawn(async move {
                 futex.wait_async(1).await.unwrap();
             });
         }

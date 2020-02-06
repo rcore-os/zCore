@@ -38,7 +38,7 @@ pub struct Thread {
 impl Thread {
     #[export_name = "hal_thread_spawn"]
     pub fn spawn(thread: Arc<usize>, mut regs: GeneralRegs) -> Self {
-        tokio::spawn(async move {
+        async_std::task::spawn(async move {
             loop {
                 unsafe {
                     trap::run_user(&mut regs);

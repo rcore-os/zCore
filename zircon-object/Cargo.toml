@@ -17,4 +17,4 @@ kernel-hal = { path = "../kernel-hal" }
 
 [dev-dependencies]
 kernel-hal-unix = { path = "../kernel-hal-unix" }
-tokio = { version = "0.2", features = ["macros", "rt-threaded", "time"] }
+async-std = { version = "1.5", features = ["attributes"] }

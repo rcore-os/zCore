@@ -9,7 +9,7 @@ use std::io::Write;
 use std::sync::Arc;
 use zircon_object::object::*;
 
-#[tokio::main(core_threads = 1)]
+#[async_std::main]
 async fn main() {
     init_logger();
     kernel_hal_unix::init();
@@ -29,7 +29,7 @@ fn init_logger() {
             use env_logger::fmt::Color;
             use log::Level;
 
-            let tid = std::thread::current().id().as_u64();
+            let tid = async_std::task::current().id();
             let mut style = buf.style();
             match record.level() {
                 Level::Trace => style.set_color(Color::Black).set_intense(true),
@@ -60,7 +60,7 @@ mod tests {
         proc.wait_signal_async(Signal::PROCESS_TERMINATED).await;
     }
 
-    #[tokio::test]
+    #[async_std::test]
     async fn busybox() {
         test("/bin/busybox").await;
     }

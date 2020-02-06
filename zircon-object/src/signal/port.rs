@@ -77,18 +77,18 @@ mod tests {
     use super::*;
     use std::time::Duration;
 
-    #[tokio::test]
+    #[async_std::test]
     async fn wait_async() {
         let port = Port::new();
         let object = DummyObject::new() as Arc<dyn KernelObject>;
         object.send_signal_to_port_async(Signal::READABLE, &port, 1);
 
-        tokio::spawn({
+        async_std::task::spawn({
             let port = port.clone();
             let object = object.clone();
             async move {
                 object.signal_set(Signal::READABLE);
-                tokio::time::delay_for(Duration::from_millis(1)).await;
+                async_std::task::sleep(Duration::from_millis(1)).await;
 
                 port.push(PortPacket {
                     key: 2,

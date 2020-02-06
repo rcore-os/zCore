@@ -21,7 +21,7 @@ struct Opt {
     cmdline: String,
 }
 
-#[tokio::main]
+#[async_std::main]
 async fn main() {
     kernel_hal_unix::init();
     env_logger::init();
@@ -40,7 +40,7 @@ async fn main() {
 mod tests {
     use super::*;
 
-    #[tokio::test]
+    #[async_std::test]
     async fn userboot() {
         kernel_hal_unix::init();
 
