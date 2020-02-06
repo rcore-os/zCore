@@ -21,6 +21,7 @@ pub mod logging;
 mod interrupt;
 pub mod lang;
 mod memory;
+mod process;
 
 use {buddy_system_allocator::LockedHeapWithRescue, rboot::BootInfo};
 
@@ -33,7 +34,8 @@ pub extern "C" fn _start(boot_info: &BootInfo) -> ! {
     memory::init_frame_allocator(boot_info);
     info!("{:#x?}", boot_info);
     interrupt::init();
-    loop {}
+    process::init();
+    unreachable!();
 }
 
 /// Global heap allocator

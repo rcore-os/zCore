@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 #![allow(non_upper_case_globals)]
 use {
+    super::process::processor,
     kernel_hal_bare::arch::{ack, timer_init},
     trapframe::{init as init_interrupt, TrapFrame},
     x86_64::registers::control::*,
@@ -15,6 +16,7 @@ pub fn init() {
         init_interrupt();
     }
     timer_init();
+    x86_64::instructions::interrupts::enable();
 }
 
 fn check_and_set_cpu_features() {
@@ -67,16 +69,13 @@ pub extern "C" fn rust_trap(tf: &mut TrapFrame) {
             let irq = tf.trap_num as u8 - IRQ0;
             ack(irq); // must ack before switching
             match irq {
-                Timer => {
-                    trace!("TTTTTTTTTTTTTTIMER!!!");
-                    // TODO pass the tick to threadpoll
-                }
+                Timer => processor().tick(),
                 _ => {
                     warn!("unhandled external IRQ number: {}", irq);
                 }
             }
         }
-        _ => panic!("Unhandled interrupt {:x}", tf.trap_num),
+        _ => panic!("Unhandled interrupt {:x} {:#x?}", tf.trap_num, tf),
     }
 }
 
