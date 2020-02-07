@@ -84,7 +84,9 @@ bitflags! {
         const DEFAULT_JOB = Self::BASIC.bits | Self::IO.bits | Self::PROPERTY.bits | Self::POLICY.bits | Self::ENUMERATE.bits
             | Self::DESTROY.bits | Self::SIGNAL.bits | Self::MANAGE_JOB.bits | Self::MANAGE_PROCESS.bits | Self::MANAGE_THREAD.bits;
         const DEFAULT_RESOURCE = Self::TRANSFER.bits | Self::DUPLICATE.bits | Self::WRITE.bits | Self::INSPECT.bits;
-    }
+        const DEFAULT_LOG_WRITABLE = Self::WRITE.bits;
+        const DEFAULT_LOG_READABLE = Self::WRITE.bits | Self::READ.bits;
+   }
 }
 
 impl TryFrom<u32> for Rights {
