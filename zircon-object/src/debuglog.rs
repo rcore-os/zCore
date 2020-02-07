@@ -1,9 +1,9 @@
 use {
     super::*,
-    crate::hal::{serial_write, timer_now},
     crate::object::*,
     alloc::sync::Arc,
     core::convert::TryInto,
+    kernel_hal::{serial_write, timer_now},
     spin::Mutex,
 };
 

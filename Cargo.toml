@@ -8,7 +8,7 @@ members = [
     "kernel-hal-unix",
     "kernel-hal-bare",
 	"zCore",
-	"rboot"
+	"rboot",
     "kernel-hal",
     "kernel-hal-bare",
     "kernel-hal-bare",
