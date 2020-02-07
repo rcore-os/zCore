@@ -5,7 +5,7 @@
 use alloc::{string::String, sync::Arc};
 
 use super::FileLike;
-use crate::error::{LxResult, SysError};
+use crate::error::{LxError, LxResult};
 use rcore_fs::vfs::{FsError, INode, Metadata, PollStatus};
 use spin::Mutex;
 use zircon_object::object::*;
@@ -61,7 +61,7 @@ impl File {
 
     pub fn read_at(&self, offset: u64, buf: &mut [u8]) -> LxResult<usize> {
         if !self.options.read {
-            return Err(SysError::EBADF);
+            return Err(LxError::EBADF);
         }
         if !self.options.nonblock {
             // block
@@ -94,7 +94,7 @@ impl File {
 
     pub fn write_at(&self, offset: u64, buf: &[u8]) -> LxResult<usize> {
         if !self.options.write {
-            return Err(SysError::EBADF);
+            return Err(LxError::EBADF);
         }
         let len = self.inode.write_at(offset as usize, buf)?;
         Ok(len)
@@ -112,7 +112,7 @@ impl File {
 
     pub fn set_len(&self, len: u64) -> LxResult<()> {
         if !self.options.write {
-            return Err(SysError::EBADF);
+            return Err(LxError::EBADF);
         }
         self.inode.resize(len as usize)?;
         Ok(())
@@ -140,7 +140,7 @@ impl File {
 
     pub fn read_entry(&self) -> LxResult<String> {
         if !self.options.read {
-            return Err(SysError::EBADF);
+            return Err(LxError::EBADF);
         }
         let mut inner = self.inner.lock();
         let name = self.inode.get_entry(inner.offset as usize)?;

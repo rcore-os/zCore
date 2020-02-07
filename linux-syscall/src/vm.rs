@@ -29,7 +29,7 @@ impl Syscall<'_> {
         let vmar_offset = flags.contains(MmapFlags::FIXED).then(|| addr - vmar.addr());
         if flags.contains(MmapFlags::ANONYMOUS) {
             if flags.contains(MmapFlags::SHARED) {
-                return Err(SysError::EINVAL);
+                return Err(LxError::EINVAL);
             }
             let vmo = VMObjectPaged::new(pages(len));
             let addr = vmar.map(vmar_offset, vmo.clone(), 0, vmo.len(), prot.to_flags())?;

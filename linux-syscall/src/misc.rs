@@ -12,7 +12,7 @@ impl Syscall<'_> {
                 self.regs.fs_base = addr;
                 Ok(0)
             }
-            _ => Err(SysError::EINVAL),
+            _ => Err(LxError::EINVAL),
         }
     }
 
@@ -56,7 +56,7 @@ impl Syscall<'_> {
                 let _timeout = timeout.read_if_not_null()?;
                 match futex.wait_async(val).await {
                     Ok(_) => Ok(0),
-                    Err(ZxError::BAD_STATE) => Err(SysError::EAGAIN),
+                    Err(ZxError::BAD_STATE) => Err(LxError::EAGAIN),
                     Err(e) => Err(e.into()),
                 }
             }
@@ -66,7 +66,7 @@ impl Syscall<'_> {
             }
             _ => {
                 warn!("unsupported futex operation: {:?}", op);
-                Err(SysError::ENOSYS)
+                Err(LxError::ENOSYS)
             }
         }
     }

@@ -139,7 +139,7 @@ impl Syscall<'_> {
         let envs = envp.read_cstring_array()?;
         if args.is_empty() {
             error!("execve: args is null");
-            return Err(SysError::EINVAL);
+            return Err(LxError::EINVAL);
         }
 
         // TODO: check and kill other threads
@@ -192,7 +192,7 @@ impl Syscall<'_> {
     //                proc.exit(sig);
     //                Ok(0)
     //            } else {
-    //                Err(SysError::EINVAL)
+    //                Err(LxError::EINVAL)
     //            }
     //        }
     //    }
@@ -225,7 +225,7 @@ impl Syscall<'_> {
         info!("exit: code={}", exit_code);
         self.thread.exit_linux(exit_code);
         self.exit = true;
-        Err(SysError::ENOSYS)
+        Err(LxError::ENOSYS)
     }
 
     /// Exit the current thread group (i.e. process)
@@ -234,7 +234,7 @@ impl Syscall<'_> {
         let proc = self.zircon_process();
         proc.exit(exit_code as i64);
         self.exit = true;
-        Err(SysError::ENOSYS)
+        Err(LxError::ENOSYS)
     }
 
     //    pub fn sys_nanosleep(&self, req: *const TimeSpec) -> SysResult {

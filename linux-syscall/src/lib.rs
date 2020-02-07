@@ -66,7 +66,7 @@ impl Syscall<'_> {
             SYS_MKDIRAT => self.sys_mkdirat(a0.into(), a1.into(), a2),
             SYS_LINKAT => self.sys_linkat(a0.into(), a1.into(), a2.into(), a3.into(), a4),
             SYS_UNLINKAT => self.sys_unlinkat(a0.into(), a1.into(), a2),
-            SYS_SYMLINKAT => self.unimplemented("symlinkat", Err(SysError::EACCES)),
+            SYS_SYMLINKAT => self.unimplemented("symlinkat", Err(LxError::EACCES)),
             SYS_READLINKAT => self.sys_readlinkat(a0.into(), a1.into(), a2.into(), a3),
             SYS_FCHMOD => self.unimplemented("fchmod", Ok(0)),
             SYS_FCHMODAT => self.unimplemented("fchmodat", Ok(0)),
@@ -86,18 +86,18 @@ impl Syscall<'_> {
             //            SYS_EPOLL_CREATE1 => self.sys_epoll_create1(a0),
             //            SYS_EPOLL_CTL => self.sys_epoll_ctl(a0, a1, a2, a3.into()),
             //            SYS_EPOLL_PWAIT => self.sys_epoll_pwait(a0, a1.into(), a2, a3, a4),
-            //            SYS_EVENTFD2 => self.unimplemented("eventfd2", Err(SysError::EACCES)),
+            //            SYS_EVENTFD2 => self.unimplemented("eventfd2", Err(LxError::EACCES)),
 
-            //            SYS_SOCKETPAIR => self.unimplemented("socketpair", Err(SysError::EACCES)),
+            //            SYS_SOCKETPAIR => self.unimplemented("socketpair", Err(LxError::EACCES)),
             // file system
-            SYS_STATFS => self.unimplemented("statfs", Err(SysError::EACCES)),
-            SYS_FSTATFS => self.unimplemented("fstatfs", Err(SysError::EACCES)),
+            SYS_STATFS => self.unimplemented("statfs", Err(LxError::EACCES)),
+            SYS_FSTATFS => self.unimplemented("fstatfs", Err(LxError::EACCES)),
             SYS_SYNC => self.sys_sync(),
-            SYS_MOUNT => self.unimplemented("mount", Err(SysError::EACCES)),
-            SYS_UMOUNT2 => self.unimplemented("umount2", Err(SysError::EACCES)),
+            SYS_MOUNT => self.unimplemented("mount", Err(LxError::EACCES)),
+            SYS_UMOUNT2 => self.unimplemented("umount2", Err(LxError::EACCES)),
 
             // memory
-            SYS_BRK => self.unimplemented("brk", Err(SysError::ENOMEM)),
+            SYS_BRK => self.unimplemented("brk", Err(LxError::ENOMEM)),
             SYS_MMAP => self.sys_mmap(a0, a1, a2, a3, a4.into(), a5 as _),
             SYS_MPROTECT => self.sys_mprotect(a0, a1, a2),
             SYS_MUNMAP => self.sys_munmap(a0, a1),
@@ -185,7 +185,7 @@ impl Syscall<'_> {
 
             // kernel module
             //            SYS_INIT_MODULE => self.sys_init_module(a0.into(), a1 as usize, a2.into()),
-            SYS_FINIT_MODULE => self.unimplemented("finit_module", Err(SysError::ENOSYS)),
+            SYS_FINIT_MODULE => self.unimplemented("finit_module", Err(LxError::ENOSYS)),
             //            SYS_DELETE_MODULE => self.sys_delete_module(a0.into(), a1 as u32),
             #[cfg(target_arch = "x86_64")]
             _ => self.x86_64_syscall(num, args).await,
@@ -233,7 +233,7 @@ impl Syscall<'_> {
         let proc = self.zircon_process();
         proc.exit(-1);
         self.exit = true;
-        Err(SysError::ENOSYS)
+        Err(LxError::ENOSYS)
     }
 
     fn unimplemented(&self, name: &str, ret: SysResult) -> SysResult {

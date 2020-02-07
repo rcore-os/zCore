@@ -2,13 +2,13 @@ use core::fmt;
 use rcore_fs::vfs::FsError;
 use zircon_object::ZxError;
 
-pub type LxResult<T> = Result<T, SysError>;
+pub type LxResult<T> = Result<T, LxError>;
 pub type SysResult = LxResult<usize>;
 
 #[allow(dead_code)]
 #[repr(isize)]
 #[derive(Debug)]
-pub enum SysError {
+pub enum LxError {
     EUNDEF = 0,
     EPERM = 1,
     ENOENT = 2,
@@ -61,9 +61,9 @@ pub enum SysError {
 }
 
 #[allow(non_snake_case)]
-impl fmt::Display for SysError {
+impl fmt::Display for LxError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        use self::SysError::*;
+        use self::LxError::*;
         let explain = match self {
             EPERM => "Operation not permitted",
             ENOENT => "No such file or directory",
@@ -119,52 +119,52 @@ impl fmt::Display for SysError {
     }
 }
 
-impl From<ZxError> for SysError {
+impl From<ZxError> for LxError {
     fn from(e: ZxError) -> Self {
         match e {
-            ZxError::INVALID_ARGS => SysError::EINVAL,
-            ZxError::NOT_SUPPORTED => SysError::ENOSYS,
-            ZxError::ALREADY_EXISTS => SysError::EEXIST,
-            ZxError::SHOULD_WAIT => SysError::EAGAIN,
-            ZxError::PEER_CLOSED => SysError::EPIPE,
-            ZxError::BAD_HANDLE => SysError::EBADF,
+            ZxError::INVALID_ARGS => LxError::EINVAL,
+            ZxError::NOT_SUPPORTED => LxError::ENOSYS,
+            ZxError::ALREADY_EXISTS => LxError::EEXIST,
+            ZxError::SHOULD_WAIT => LxError::EAGAIN,
+            ZxError::PEER_CLOSED => LxError::EPIPE,
+            ZxError::BAD_HANDLE => LxError::EBADF,
             _ => unimplemented!("unknown error type: {:?}", e),
         }
     }
 }
 
-impl From<FsError> for SysError {
+impl From<FsError> for LxError {
     fn from(error: FsError) -> Self {
         match error {
-            FsError::NotSupported => SysError::ENOSYS,
-            FsError::NotFile => SysError::EISDIR,
-            FsError::IsDir => SysError::EISDIR,
-            FsError::NotDir => SysError::ENOTDIR,
-            FsError::EntryNotFound => SysError::ENOENT,
-            FsError::EntryExist => SysError::EEXIST,
-            FsError::NotSameFs => SysError::EXDEV,
-            FsError::InvalidParam => SysError::EINVAL,
-            FsError::NoDeviceSpace => SysError::ENOMEM,
-            FsError::DirRemoved => SysError::ENOENT,
-            FsError::DirNotEmpty => SysError::ENOTEMPTY,
-            FsError::WrongFs => SysError::EINVAL,
-            FsError::DeviceError => SysError::EIO,
-            FsError::IOCTLError => SysError::EINVAL,
-            FsError::NoDevice => SysError::EINVAL,
-            FsError::Again => SysError::EAGAIN,
-            FsError::SymLoop => SysError::ELOOP,
-            FsError::Busy => SysError::EBUSY,
+            FsError::NotSupported => LxError::ENOSYS,
+            FsError::NotFile => LxError::EISDIR,
+            FsError::IsDir => LxError::EISDIR,
+            FsError::NotDir => LxError::ENOTDIR,
+            FsError::EntryNotFound => LxError::ENOENT,
+            FsError::EntryExist => LxError::EEXIST,
+            FsError::NotSameFs => LxError::EXDEV,
+            FsError::InvalidParam => LxError::EINVAL,
+            FsError::NoDeviceSpace => LxError::ENOMEM,
+            FsError::DirRemoved => LxError::ENOENT,
+            FsError::DirNotEmpty => LxError::ENOTEMPTY,
+            FsError::WrongFs => LxError::EINVAL,
+            FsError::DeviceError => LxError::EIO,
+            FsError::IOCTLError => LxError::EINVAL,
+            FsError::NoDevice => LxError::EINVAL,
+            FsError::Again => LxError::EAGAIN,
+            FsError::SymLoop => LxError::ELOOP,
+            FsError::Busy => LxError::EBUSY,
         }
     }
 }
 
 use kernel_hal::user::Error;
 
-impl From<Error> for SysError {
+impl From<Error> for LxError {
     fn from(e: Error) -> Self {
         match e {
-            Error::InvalidUtf8 => SysError::EINVAL,
-            Error::InvalidPointer => SysError::EFAULT,
+            Error::InvalidUtf8 => LxError::EINVAL,
+            Error::InvalidPointer => LxError::EFAULT,
         }
     }
 }

@@ -56,9 +56,9 @@ impl From<usize> for FileDesc {
 }
 
 impl TryFrom<&str> for FileDesc {
-    type Error = SysError;
+    type Error = LxError;
     fn try_from(name: &str) -> LxResult<Self> {
-        let x: i32 = name.parse().map_err(|_| SysError::EINVAL)?;
+        let x: i32 = name.parse().map_err(|_| LxError::EINVAL)?;
         Ok(FileDesc(x))
     }
 }

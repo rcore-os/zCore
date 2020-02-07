@@ -111,7 +111,7 @@ impl Syscall<'_> {
             SEEK_SET => SeekFrom::Start(offset as u64),
             SEEK_END => SeekFrom::End(offset),
             SEEK_CUR => SeekFrom::Current(offset),
-            _ => return Err(SysError::EINVAL),
+            _ => return Err(LxError::EINVAL),
         };
         info!("lseek: fd={:?}, pos={:?}", fd, pos);
 
@@ -203,7 +203,7 @@ impl Syscall<'_> {
                         "copy_file_range:END_ERR in={:?}, out={:?}, in_offset={:?}, out_offset={:?}, count={} = bytes_read {}, bytes_written {}, write_len {}",
                         in_fd, out_fd, in_offset, out_offset, count, bytes_read, bytes_written, write_len
                     );
-                    return Err(SysError::EBADF);
+                    return Err(LxError::EBADF);
                 }
                 bytes_written += write_len;
                 rlen -= write_len;

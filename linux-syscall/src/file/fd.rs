@@ -34,14 +34,14 @@ impl Syscall<'_> {
             match dir_inode.find(file_name) {
                 Ok(file_inode) => {
                     if flags.contains(OpenFlags::EXCLUSIVE) {
-                        return Err(SysError::EEXIST);
+                        return Err(LxError::EEXIST);
                     }
                     file_inode
                 }
                 Err(FsError::EntryNotFound) => {
                     dir_inode.create(file_name, FileType::File, mode as u32)?
                 }
-                Err(e) => return Err(SysError::from(e)),
+                Err(e) => return Err(LxError::from(e)),
             }
         } else {
             proc.lookup_inode_at(dir_fd, &path, true)?

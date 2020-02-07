@@ -21,7 +21,7 @@ impl Syscall<'_> {
         info!("getcwd: buf={:?}, len={:#x}", buf, len);
         let proc = self.lock_linux_process();
         if proc.cwd.len() + 1 > len {
-            return Err(SysError::ERANGE);
+            return Err(LxError::ERANGE);
         }
         buf.write_cstring(&proc.cwd)?;
         Ok(buf.as_ptr() as usize)
@@ -35,7 +35,7 @@ impl Syscall<'_> {
         let inode = proc.lookup_inode(&path)?;
         let info = inode.metadata()?;
         if info.type_ != FileType::Dir {
-            return Err(SysError::ENOTDIR);
+            return Err(LxError::ENOTDIR);
         }
 
         // BUGFIX: '..' and '.'
@@ -83,7 +83,7 @@ impl Syscall<'_> {
         let proc = self.lock_linux_process();
         let inode = proc.lookup_inode_at(dirfd, dir_path, true)?;
         if inode.find(file_name).is_ok() {
-            return Err(SysError::EEXIST);
+            return Err(LxError::EEXIST);
         }
         inode.create(file_name, FileType::Dir, mode as u32)?;
         Ok(0)
@@ -98,7 +98,7 @@ impl Syscall<'_> {
         let dir_inode = proc.lookup_inode(dir_path)?;
         let file_inode = dir_inode.find(file_name)?;
         if file_inode.metadata()?.type_ != FileType::Dir {
-            return Err(SysError::ENOTDIR);
+            return Err(LxError::ENOTDIR);
         }
         dir_inode.unlink(file_name)?;
         Ok(0)
@@ -118,13 +118,13 @@ impl Syscall<'_> {
         let file = proc.get_file(fd)?;
         let info = file.metadata()?;
         if info.type_ != FileType::Dir {
-            return Err(SysError::ENOTDIR);
+            return Err(LxError::ENOTDIR);
         }
         let mut kbuf = vec![0; buf_size];
         let mut writer = DirentBufWriter::new(&mut kbuf);
         loop {
             let name = match file.read_entry() {
-                Err(SysError::ENOENT) => break,
+                Err(LxError::ENOENT) => break,
                 r => r,
             }?;
             // TODO: get ino from dirent
@@ -182,7 +182,7 @@ impl Syscall<'_> {
         let dir_inode = proc.lookup_inode_at(dirfd, dir_path, true)?;
         let file_inode = dir_inode.find(file_name)?;
         if file_inode.metadata()?.type_ == FileType::Dir {
-            return Err(SysError::EISDIR);
+            return Err(LxError::EISDIR);
         }
         dir_inode.unlink(file_name)?;
         Ok(0)
@@ -235,7 +235,7 @@ impl Syscall<'_> {
         let proc = self.lock_linux_process();
         let inode = proc.lookup_inode_at(dirfd, &path, false)?;
         if inode.metadata()?.type_ != FileType::SymLink {
-            return Err(SysError::EINVAL);
+            return Err(LxError::EINVAL);
         }
         // TODO: recursive link resolution and loop detection
         let mut buf = vec![0; len];

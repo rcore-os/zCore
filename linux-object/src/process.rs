@@ -76,13 +76,13 @@ impl ProcessExt for Process {
 pub async fn wait_child(proc: &Arc<Process>, pid: KoID, nonblock: bool) -> LxResult<ExitCode> {
     loop {
         let mut linux_proc = proc.lock_linux();
-        let child = linux_proc.children.get(&pid).ok_or(SysError::ECHILD)?;
+        let child = linux_proc.children.get(&pid).ok_or(LxError::ECHILD)?;
         if let Status::Exited(code) = child.status() {
             linux_proc.children.remove(&pid);
             return Ok(code as ExitCode);
         }
         if nonblock {
-            return Err(SysError::EAGAIN);
+            return Err(LxError::EAGAIN);
         }
         let child: Arc<dyn KernelObject> = child.clone();
         drop(linux_proc);
@@ -95,7 +95,7 @@ pub async fn wait_child_any(proc: &Arc<Process>, nonblock: bool) -> LxResult<(Ko
     loop {
         let mut linux_proc = proc.lock_linux();
         if linux_proc.children.is_empty() {
-            return Err(SysError::ECHILD);
+            return Err(LxError::ECHILD);
         }
         for (&pid, child) in linux_proc.children.iter() {
             if let Status::Exited(code) = child.status() {
@@ -105,7 +105,7 @@ pub async fn wait_child_any(proc: &Arc<Process>, nonblock: bool) -> LxResult<(Ko
         }
         drop(linux_proc);
         if nonblock {
-            return Err(SysError::EAGAIN);
+            return Err(LxError::EAGAIN);
         }
         let proc: Arc<dyn KernelObject> = proc.clone();
         proc.wait_signal_async(Signal::SIGCHLD).await;
@@ -201,18 +201,18 @@ impl LinuxProcess {
         let file = self
             .get_file_like(fd)?
             .downcast_arc::<File>()
-            .map_err(|_| SysError::EBADF)?;
+            .map_err(|_| LxError::EBADF)?;
         Ok(file)
     }
 
     /// Get the `FileLike` with given `fd`.
     pub fn get_file_like(&self, fd: FileDesc) -> LxResult<Arc<dyn FileLike>> {
-        self.files.get(&fd).cloned().ok_or(SysError::EBADF)
+        self.files.get(&fd).cloned().ok_or(LxError::EBADF)
     }
 
     /// Close file descriptor `fd`.
     pub fn close_file(&mut self, fd: FileDesc) -> LxResult<()> {
-        self.files.remove(&fd).map(|_| ()).ok_or(SysError::EBADF)
+        self.files.remove(&fd).map(|_| ()).ok_or(LxError::EBADF)
     }
 
     fn get_free_fd(&self) -> FileDesc {
