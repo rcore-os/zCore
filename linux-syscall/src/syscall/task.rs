@@ -15,7 +15,7 @@ impl Syscall<'_> {
 
     pub async fn sys_vfork(&self) -> SysResult {
         info!("vfork:");
-        let new_proc = self.zircon_process().vfork()?;
+        let new_proc = Process::vfork_from(self.zircon_process())?;
         let new_thread = Thread::create_linux(&new_proc)?;
         new_thread.start_with_regs(self.regs.fork())?;
 
@@ -66,77 +66,50 @@ impl Syscall<'_> {
         Ok(tid as usize)
     }
 
-    /// Wait for the process exit.
+    /// Wait for a child process exited.
+    ///
     /// Return the PID. Store exit code to `wstatus` if it's not null.
-    pub async fn sys_wait4(&self, pid: i32, wstatus: UserOutPtr<i32>, options: u32) -> SysResult {
+    pub async fn sys_wait4(
+        &self,
+        pid: i32,
+        mut wstatus: UserOutPtr<i32>,
+        options: u32,
+    ) -> SysResult {
+        #[derive(Debug)]
+        enum WaitTarget {
+            AnyChild,
+            AnyChildInGroup,
+            Pid(KoID),
+        }
+        bitflags! {
+            struct WaitFlags: u32 {
+                const NOHANG    = 1;
+                const STOPPED   = 2;
+                const EXITED    = 4;
+                const CONTINUED = 8;
+                const NOWAIT    = 0x100_0000;
+            }
+        }
+        let target = match pid {
+            -1 => WaitTarget::AnyChild,
+            0 => WaitTarget::AnyChildInGroup,
+            p if p > 0 => WaitTarget::Pid(p as KoID),
+            _ => unimplemented!(),
+        };
+        let flags = WaitFlags::from_bits_truncate(options);
+        let nohang = flags.contains(WaitFlags::NOHANG);
         info!(
-            "wait4: pid={}, wstatus={:?}, options={:#x}",
-            pid, wstatus, options
+            "wait4: target={:?}, wstatus={:?}, options={:?}",
+            target, wstatus, flags,
         );
-        let proc: Arc<dyn KernelObject> = self.zircon_process().clone();
-        proc.wait_signal_async(Signal::SIGNALED).await;
-        Ok(0)
-        // FIXME: wait4
-
-        //        #[derive(Debug)]
-        //        enum WaitFor {
-        //            AnyChild,
-        //            AnyChildInGroup,
-        //            Pid(usize),
-        //        }
-        //        let _target = match pid {
-        //            -1 => WaitFor::AnyChild,
-        //            0 => WaitFor::AnyChildInGroup,
-        //            p if p > 0 => WaitFor::Pid(p as usize),
-        //            _ => unimplemented!(),
-        //        };
-        //        loop {
-        //            let mut proc = self.process();
-        //            // check child_exit_code
-        //            let find = match target {
-        //                WaitFor::AnyChild | WaitFor::AnyChildInGroup => proc
-        //                    .child_exit_code
-        //                    .iter()
-        //                    .next()
-        //                    .map(|(&pid, &code)| (pid, code)),
-        //                WaitFor::Pid(pid) => proc.child_exit_code.get(&pid).map(|&code| (pid, code)),
-        //            };
-        //            // if found, return
-        //            if let Some((pid, exit_code)) = find {
-        //                proc.child_exit_code.remove(&pid);
-        //                {
-        //                    let mut process_table = PROCESSES.write();
-        //                    process_table.remove(&pid);
-        //                }
-        //                wstatus.write_if_not_null(exit_code as i32)?;
-        //                return Ok(pid);
-        //            }
-        //            // if not, check pid
-        //            let invalid = {
-        //                let children: Vec<_> = proc
-        //                    .children
-        //                    .iter()
-        //                    .filter_map(|weak| weak.upgrade())
-        //                    .collect();
-        //                match target {
-        //                    WaitFor::AnyChild | WaitFor::AnyChildInGroup => children.len() == 0,
-        //                    WaitFor::Pid(pid) => children
-        //                        .iter()
-        //                        .find(|p| p.lock().pid.get() == pid)
-        //                        .is_none(),
-        //                }
-        //            };
-        //            if invalid {
-        //                return Err(SysError::ECHILD);
-        //            }
-        //            info!(
-        //                "wait: thread {} -> {:?}, sleep",
-        //                thread::current().id(),
-        //                target
-        //            );
-        //            let condvar = proc.child_exit.clone();
-        //            condvar.wait(proc);
-        //        }
+        let (pid, code) = match target {
+            WaitTarget::AnyChild | WaitTarget::AnyChildInGroup => {
+                wait_child_any(self.zircon_process(), nohang).await?
+            }
+            WaitTarget::Pid(pid) => (pid, wait_child(self.zircon_process(), pid, nohang).await?),
+        };
+        wstatus.write_if_not_null(code)?;
+        Ok(pid as usize)
     }
 
     /// Replaces the current ** process ** with a new process image
@@ -257,10 +230,9 @@ impl Syscall<'_> {
 
     /// Exit the current thread group (i.e. process)
     pub fn sys_exit_group(&mut self, exit_code: i32) -> SysResult {
-        let proc = self.zircon_process();
         info!("exit_group: code={}", exit_code);
+        let proc = self.zircon_process();
         proc.exit(exit_code as i64);
-        self.thread.exit_linux(exit_code);
         self.exit = true;
         Err(SysError::ENOSYS)
     }

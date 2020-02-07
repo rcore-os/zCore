@@ -2,22 +2,24 @@
 
 use crate::error::*;
 use crate::fs::*;
+use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::sync::{Arc, Weak};
-use alloc::vec::Vec;
+use core::mem::drop;
 use core::sync::atomic::AtomicI32;
 use kernel_hal::VirtAddr;
 use rcore_fs::vfs::{FileSystem, INode};
 use spin::{Mutex, MutexGuard};
+use zircon_object::object::{KernelObject, KoID, Signal};
 use zircon_object::signal::Futex;
-use zircon_object::task::{Job, Process};
+use zircon_object::task::{Job, Process, Status};
 use zircon_object::ZxResult;
 
 pub trait ProcessExt {
     fn create_linux(job: &Arc<Job>, rootfs: Arc<dyn FileSystem>) -> ZxResult<Arc<Self>>;
     fn lock_linux(&self) -> MutexGuard<'_, LinuxProcess>;
-    fn vfork(self: &Arc<Self>) -> ZxResult<Arc<Self>>;
+    fn vfork_from(parent: &Arc<Self>) -> ZxResult<Arc<Self>>;
 }
 
 impl ProcessExt for Process {
@@ -33,18 +35,80 @@ impl ProcessExt for Process {
             .lock()
     }
 
-    fn vfork(self: &Arc<Self>) -> ZxResult<Arc<Self>> {
-        let linux_proc = self.lock_linux();
+    /// [Vfork] the process.
+    ///
+    /// [Vfork]: http://man7.org/linux/man-pages/man2/vfork.2.html
+    fn vfork_from(parent: &Arc<Self>) -> ZxResult<Arc<Self>> {
+        let mut linux_parent = parent.lock_linux();
         let new_linux_proc = Mutex::new(LinuxProcess {
-            cwd: linux_proc.cwd.clone(),
-            exec_path: linux_proc.exec_path.clone(),
-            files: linux_proc.files.clone(),
+            cwd: linux_parent.cwd.clone(),
+            exec_path: linux_parent.exec_path.clone(),
+            files: linux_parent.files.clone(),
             futexes: BTreeMap::new(),
-            root_inode: linux_proc.root_inode.clone(),
-            parent: Arc::downgrade(self),
-            children: Vec::new(),
+            root_inode: linux_parent.root_inode.clone(),
+            parent: Arc::downgrade(parent),
+            children: BTreeMap::new(),
         });
-        Process::create_with_ext(&self.job(), "", new_linux_proc)
+        let new_proc = Process::create_with_ext(&parent.job(), "", new_linux_proc)?;
+        linux_parent
+            .children
+            .insert(new_proc.id(), new_proc.clone());
+
+        // notify parent on terminated
+        let parent = parent.clone();
+        new_proc.add_signal_callback(Box::new(move |signal| {
+            if signal.contains(Signal::PROCESS_TERMINATED) {
+                parent.signal_set(Signal::SIGCHLD);
+            }
+            false
+        }));
+        Ok(new_proc)
+    }
+}
+
+/// Wait for state changes in a child of the calling process, and obtain information about
+/// the child whose state has changed.
+///
+/// A state change is considered to be:
+/// - the child terminated.
+/// - the child was stopped by a signal. TODO
+/// - the child was resumed by a signal. TODO
+pub async fn wait_child(proc: &Arc<Process>, pid: KoID, nonblock: bool) -> LxResult<ExitCode> {
+    loop {
+        let mut linux_proc = proc.lock_linux();
+        let child = linux_proc.children.get(&pid).ok_or(SysError::ECHILD)?;
+        if let Status::Exited(code) = child.status() {
+            linux_proc.children.remove(&pid);
+            return Ok(code as ExitCode);
+        }
+        if nonblock {
+            return Err(SysError::EAGAIN);
+        }
+        let child: Arc<dyn KernelObject> = child.clone();
+        drop(linux_proc);
+        child.wait_signal_async(Signal::PROCESS_TERMINATED).await;
+    }
+}
+
+/// Wait for state changes in a child of the calling process.
+pub async fn wait_child_any(proc: &Arc<Process>, nonblock: bool) -> LxResult<(KoID, ExitCode)> {
+    loop {
+        let mut linux_proc = proc.lock_linux();
+        if linux_proc.children.is_empty() {
+            return Err(SysError::ECHILD);
+        }
+        for (&pid, child) in linux_proc.children.iter() {
+            if let Status::Exited(code) = child.status() {
+                linux_proc.children.remove(&pid);
+                return Ok((pid, code as ExitCode));
+            }
+        }
+        drop(linux_proc);
+        if nonblock {
+            return Err(SysError::EAGAIN);
+        }
+        let proc: Arc<dyn KernelObject> = proc.clone();
+        proc.wait_signal_async(Signal::SIGCHLD).await;
     }
 }
 
@@ -52,14 +116,21 @@ impl ProcessExt for Process {
 pub struct LinuxProcess {
     /// Current Working Directory
     pub cwd: String,
+    /// Execute path
     pub exec_path: String,
+    /// Opened files
     files: BTreeMap<FileDesc, Arc<dyn FileLike>>,
+    /// Futexes
     futexes: BTreeMap<VirtAddr, Arc<Futex>>,
+    /// The root INode of file system
     root_inode: Arc<dyn INode>,
+    /// Parent process
     parent: Weak<Process>,
-    #[allow(dead_code)]
-    children: Vec<Weak<Process>>,
+    /// Child processes
+    children: BTreeMap<KoID, Arc<Process>>,
 }
+
+pub type ExitCode = i32;
 
 impl LinuxProcess {
     /// Create a new process.
@@ -96,7 +167,7 @@ impl LinuxProcess {
             futexes: Default::default(),
             root_inode: create_root_fs(rootfs),
             parent: Weak::default(),
-            children: Vec::new(),
+            children: BTreeMap::new(),
         }
     }
 

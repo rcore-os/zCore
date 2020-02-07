@@ -66,9 +66,22 @@ impl_kobject!(Process
 
 #[derive(Default)]
 struct ProcessInner {
-    started: bool,
+    status: Status,
     handles: BTreeMap<HandleValue, Handle>,
     threads: Vec<Arc<Thread>>,
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum Status {
+    Init,
+    Running,
+    Exited(i64),
+}
+
+impl Default for Status {
+    fn default() -> Self {
+        Status::Init
+    }
 }
 
 impl Process {
@@ -117,16 +130,19 @@ impl Process {
             return Err(ZxError::ACCESS_DENIED);
         }
         let handle_value = inner.add_handle(arg1);
-        if inner.started {
+        if inner.status != Status::Init {
             return Err(ZxError::BAD_STATE);
         }
-        inner.started = true;
+        inner.status = Status::Running;
         thread.start(entry, stack, handle_value as usize, arg2)?;
         Ok(())
     }
 
-    pub fn exit(&self, _retcode: i64) {
-        // TODO: exit process
+    /// Exit current process with `retcode`.
+    pub fn exit(&self, retcode: i64) {
+        let mut inner = self.inner.lock();
+        inner.status = Status::Exited(retcode);
+        // TODO: exit all threads
         self.base.signal_set(Signal::PROCESS_TERMINATED);
     }
 
@@ -141,6 +157,11 @@ impl Process {
             PolicyAction::Deny => Err(ZxError::ACCESS_DENIED),
             _ => unimplemented!(),
         }
+    }
+
+    /// Get process status.
+    pub fn status(&self) -> Status {
+        self.inner.lock().status
     }
 
     /// Get the extension.
@@ -271,7 +292,24 @@ impl Process {
 
     /// Add a thread to the process.
     pub(super) fn add_thread(&self, thread: Arc<Thread>) {
-        self.inner.lock().threads.push(thread);
+        let mut inner = self.inner.lock();
+        if let Status::Exited(_) = inner.status {
+            panic!("can not add thread to exited process");
+        }
+        inner.threads.push(thread);
+    }
+
+    /// Remove a thread to from process.
+    ///
+    /// If no more threads left, exit the process.
+    pub(super) fn remove_thread(&self, tid: KoID) {
+        let mut inner = self.inner.lock();
+        let idx = inner.threads.iter().position(|t| t.id() == tid).unwrap();
+        inner.threads.remove(idx);
+        if inner.threads.is_empty() {
+            drop(inner);
+            self.exit(0);
+        }
     }
 }
 

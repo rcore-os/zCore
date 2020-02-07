@@ -31,5 +31,8 @@ bitflags! {
         const THREAD_TERMINATED             = Self::SIGNALED.bits;
         const THREAD_RUNNING                = 1 << 4;
         const THREAD_SUSPENDED              = 1 << 5;
+
+        // for Linux
+        const SIGCHLD                       = 1 << 6;
     }
 }

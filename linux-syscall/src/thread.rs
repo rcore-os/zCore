@@ -48,6 +48,7 @@ impl ThreadExt for Thread {
             let futex = self.proc().lock_linux().get_futex(uaddr);
             futex.wake(1);
         }
+        self.exit();
     }
 }
 

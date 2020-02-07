@@ -159,6 +159,7 @@ impl Thread {
     /// Terminate the current running thread.
     /// TODO: move to CurrentThread
     pub fn exit(&self) {
+        self.proc().remove_thread(self.base.id);
         self.base.signal_set(Signal::THREAD_TERMINATED);
     }
 
