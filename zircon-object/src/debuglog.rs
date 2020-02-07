@@ -131,12 +131,6 @@ impl DlogBuffer {
     }
 
     #[cfg(test)]
-    pub fn clear(&mut self) {
-        self.head = 0;
-        self.tail = 0;
-    }
-
-    #[cfg(test)]
     pub fn check(&self, position: usize, value: u8) -> bool {
         assert!(position < DLOG_SIZE);
         assert_eq!(self.buf[position], value);
@@ -150,8 +144,7 @@ mod tests {
 
     #[test]
     fn buffer_cover1() {
-        DLOG.lock().clear();
-        let mut buffer = DLOG.lock();
+        let mut buffer = DlogBuffer::new();
         buffer.write(0u32, &[127u8; 100]);
         let head = buffer.get_head();
         assert_eq!(head, 132usize);
@@ -166,8 +159,7 @@ mod tests {
 
     #[test]
     fn buffer_cover2() {
-        DLOG.lock().clear();
-        let mut buffer = DLOG.lock();
+        let mut buffer = DlogBuffer::new();
         buffer.write(0u32, &[127u8; 2000]);
         for i in 32..2032 {
             assert!(buffer.check(i, 127u8));
@@ -191,8 +183,7 @@ mod tests {
 
     #[test]
     fn buffer_cover3() {
-        DLOG.lock().clear();
-        let mut buffer = DLOG.lock();
+        let mut buffer = DlogBuffer::new();
         buffer.write(0u32, &[127u8; 1984]);
         buffer.write(0xdead_beafu32, &[255u8; 101]);
         for i in 0..101 {
