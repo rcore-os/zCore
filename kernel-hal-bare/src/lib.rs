@@ -110,4 +110,7 @@ mod tests {
 
     #[export_name = "hal_pmem_base"]
     static PMEM_BASE: usize = 0;
+
+    #[export_name = "hal_lapic_addr"]
+    static LAPIC_ADDR: usize = 0;
 }

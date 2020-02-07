@@ -10,7 +10,6 @@ edition = "2018"
 log = "0.4"
 spin = "0.5"
 buddy_system_allocator = "0.3"
-uart_16550 = "0.2"
 rlibc = "1.0"
 rboot = { path = "../rboot", default-features = false }
 kernel-hal-bare = { path = "../kernel-hal-bare" }
@@ -21,3 +20,4 @@ rcore-thread = { git = "https://github.com/rcore-os/rcore-thread" }
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 x86_64 = "0.8"
+uart_16550 = "0.2"
