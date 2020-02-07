@@ -1,0 +1,22 @@
+[package]
+name = "linux-object"
+version = "0.1.0"
+authors = ["Runji Wang <wangrunji0408@163.com>"]
+edition = "2018"
+description = "Linux kernel objects"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+log = "0.4"
+spin = "0.5"
+xmas-elf = "0.7"
+core = { package = "core-futures-tls", version = "0.1.0" }
+zircon-object = { path = "../zircon-object" }
+kernel-hal = { path = "../kernel-hal" }
+downcast-rs = { git = "https://github.com/rcore-os/downcast-rs" }
+rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "8902cfa6" }
+rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "8902cfa6" }
+rcore-fs-ramfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "8902cfa6" }
+rcore-fs-mountfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "8902cfa6" }
+rcore-fs-devfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "8902cfa6" }

@@ -12,7 +12,13 @@ use {
     core::{future::Future, pin::Pin},
     // TODO: remove dependence of kernel-hal-unix
     kernel_hal_unix::{syscall_entry, GeneralRegs},
-    linux_syscall::*,
+    linux_object::{
+        fs::{vfs::FileSystem, INodeExt},
+        loader::LinuxElfLoader,
+        process::ProcessExt,
+        thread::ThreadExt,
+    },
+    linux_syscall::Syscall,
     zircon_object::task::*,
 };
 

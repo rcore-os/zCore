@@ -11,10 +11,10 @@
 //! - readlink(at)
 
 use super::*;
-use crate::util::UserOutPtr;
 use alloc::vec::Vec;
 use bitflags::bitflags;
-use rcore_fs::vfs::FileType;
+use kernel_hal::user::UserOutPtr;
+use linux_object::fs::vfs::FileType;
 
 impl Syscall<'_> {
     pub fn sys_getcwd(&self, mut buf: UserOutPtr<u8>, len: usize) -> SysResult {

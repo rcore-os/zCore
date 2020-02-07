@@ -11,14 +11,7 @@ description = "Linux syscalls implementation"
 log = "0.4"
 spin = "0.5"
 bitflags = "1.2"
-lazy_static = "1.4"
-xmas-elf = "0.7"
 core = { package = "core-futures-tls", version = "0.1.0" }
 zircon-object = { path = "../zircon-object" }
+linux-object = { path = "../linux-object" }
 kernel-hal = { path = "../kernel-hal" }
-downcast-rs = { git = "https://github.com/rcore-os/downcast-rs" }
-rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "8902cfa6" }
-rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "8902cfa6" }
-rcore-fs-ramfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "8902cfa6" }
-rcore-fs-mountfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "8902cfa6" }
-rcore-fs-devfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "8902cfa6" }

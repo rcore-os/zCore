@@ -1,8 +1,8 @@
 //! Linux Thread
 
-use crate::util::{Out, UserOutPtr, UserPtr};
-use crate::ProcessExt;
+use crate::process::ProcessExt;
 use alloc::sync::Arc;
+use kernel_hal::user::{Out, UserOutPtr, UserPtr};
 use kernel_hal::VirtAddr;
 use spin::{Mutex, MutexGuard};
 use zircon_object::task::{Process, Thread};

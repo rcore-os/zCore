@@ -3,6 +3,7 @@ members = [
     "zircon-object",
     "zircon-syscall",
     "zircon-loader",
+    "linux-object",
     "linux-syscall",
     "linux-loader",
     "kernel-hal",

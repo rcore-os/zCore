@@ -13,6 +13,7 @@ env_logger = "0.7"
 xmas-elf = "0.7"
 core = { package = "core-futures-tls", version = "0.1.0" }
 linux-syscall = { path = "../linux-syscall" }
+linux-object = { path = "../linux-object" }
 zircon-object = { path = "../zircon-object" }
 kernel-hal-unix = { path = "../kernel-hal-unix" }
 rcore-fs-hostfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "8902cfa6" }

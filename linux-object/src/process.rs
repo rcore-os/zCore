@@ -136,24 +136,24 @@ impl LinuxProcess {
     /// Create a new process.
     pub fn new(rootfs: Arc<dyn FileSystem>) -> Self {
         let stdin = File::new(
-            STDIN.clone(),
+            Arc::new(Stdout), // FIXME: stdin
             OpenOptions {
                 read: true,
                 write: false,
                 append: false,
                 nonblock: false,
             },
-            String::from("stdin"),
+            String::from("/dev/stdin"),
         ) as Arc<dyn FileLike>;
         let stdout = File::new(
-            STDOUT.clone(),
+            Arc::new(Stdout), // TODO: open from '/dev/stdout'
             OpenOptions {
                 read: false,
                 write: true,
                 append: false,
                 nonblock: false,
             },
-            String::from("stdout"),
+            String::from("/dev/stdout"),
         ) as Arc<dyn FileLike>;
         let mut files = BTreeMap::new();
         files.insert(0.into(), stdin);

@@ -1,10 +1,10 @@
 //! Syscalls for process
 
 use super::*;
-use crate::fs::INodeExt;
-use crate::loader::LinuxElfLoader;
-use crate::thread::ThreadExt;
 use bitflags::bitflags;
+use linux_object::fs::INodeExt;
+use linux_object::loader::LinuxElfLoader;
+use linux_object::thread::ThreadExt;
 
 impl Syscall<'_> {
     /// Fork the current process. Return the child's PID.

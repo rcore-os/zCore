@@ -5,7 +5,7 @@
 //! - fstat(at)
 
 use super::*;
-use rcore_fs::vfs::{FileType, Metadata};
+use linux_object::fs::vfs::{FileType, Metadata};
 
 impl Syscall<'_> {
     pub fn sys_lstat(&self, path: UserInPtr<u8>, stat_ptr: UserOutPtr<Stat>) -> SysResult {
@@ -54,7 +54,7 @@ impl Syscall<'_> {
 }
 
 #[cfg(not(target_arch = "mips"))]
-use rcore_fs::vfs::Timespec;
+use linux_object::fs::vfs::Timespec;
 
 #[cfg(target_arch = "mips")]
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
@@ -64,7 +64,7 @@ pub struct Timespec {
 }
 
 #[cfg(target_arch = "mips")]
-impl From<rcore_fs::vfs::Timespec> for Timespec {
+impl From<linux_object::fs::vfs::Timespec> for Timespec {
     fn from(t: Timespec) -> Self {
         Timespec {
             sec: t.sec as _,

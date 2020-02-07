@@ -157,3 +157,14 @@ impl From<FsError> for SysError {
         }
     }
 }
+
+use kernel_hal::user::Error;
+
+impl From<Error> for SysError {
+    fn from(e: Error) -> Self {
+        match e {
+            Error::InvalidUtf8 => SysError::EINVAL,
+            Error::InvalidPointer => SysError::EFAULT,
+        }
+    }
+}

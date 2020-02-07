@@ -1,14 +1,6 @@
-pub use kernel_hal::user::*;
-use {crate::error::*, alloc::vec::Vec};
-
-impl From<Error> for SysError {
-    fn from(e: Error) -> Self {
-        match e {
-            Error::InvalidUtf8 => SysError::EINVAL,
-            Error::InvalidPointer => SysError::EFAULT,
-        }
-    }
-}
+use alloc::vec::Vec;
+use kernel_hal::user::*;
+use linux_object::error::LxResult;
 
 #[derive(Debug)]
 #[repr(C)]

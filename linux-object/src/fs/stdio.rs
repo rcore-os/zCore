@@ -1,14 +1,10 @@
 //! Implement INode for Stdin & Stdout
 #![allow(unsafe_code)]
 
-use alloc::sync::Arc;
-use core::any::Any;
-
-use rcore_fs::vfs::*;
-
 use super::ioctl::*;
+use core::any::Any;
+use rcore_fs::vfs::*;
 //use spin::Mutex;
-use lazy_static::lazy_static;
 
 //#[derive(Default)]
 //pub struct Stdin {
@@ -39,11 +35,6 @@ use lazy_static::lazy_static;
 
 #[derive(Default)]
 pub struct Stdout;
-
-lazy_static! {
-    pub static ref STDIN: Arc<Stdout> = Arc::new(Stdout::default());
-    pub static ref STDOUT: Arc<Stdout> = Arc::new(Stdout::default());
-}
 
 //impl INode for Stdin {
 //    fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
