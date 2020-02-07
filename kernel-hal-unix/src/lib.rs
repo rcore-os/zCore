@@ -1,4 +1,5 @@
-#![feature(asm)]
+#![feature(asm, global_asm)]
+#![feature(linkage)]
 #![deny(warnings)]
 
 #[macro_use]
@@ -8,7 +9,6 @@ extern crate alloc;
 
 use {
     alloc::sync::Arc,
-    bitflags::bitflags,
     lazy_static::lazy_static,
     std::cell::RefCell,
     std::fmt::{Debug, Formatter},
@@ -20,22 +20,15 @@ use {
     tempfile::tempdir_in,
 };
 
+pub use self::trap::syscall_entry;
+pub use kernel_hal::defs::*;
+
 #[cfg(target_os = "linux")]
 include!("fsbase_linux.rs");
 #[cfg(target_os = "macos")]
 include!("fsbase_macos.rs");
 
-type PhysAddr = usize;
-type VirtAddr = usize;
-
-bitflags! {
-    pub struct MMUFlags: usize {
-        #[allow(clippy::identity_op)]
-        const READ      = 1 << 0;
-        const WRITE     = 1 << 1;
-        const EXECUTE   = 1 << 2;
-    }
-}
+mod trap;
 
 #[repr(C)]
 pub struct Thread {
@@ -44,21 +37,12 @@ pub struct Thread {
 
 impl Thread {
     #[export_name = "hal_thread_spawn"]
-    pub fn spawn(entry: usize, stack: usize, arg1: usize, arg2: usize, tls: Arc<usize>) -> Self {
+    pub fn spawn(thread: Arc<usize>, mut regs: GeneralRegs) -> Self {
         let handle = std::thread::spawn(move || {
-            TLS.with(|t| t.replace(Some(tls)));
-            #[cfg(target_os = "macos")]
-            {
-                let mut value = [0usize; 7];
-                let init_fsbase = value.as_ptr() as usize;
-                value[0] = init_fsbase;
-                set_user_fsbase(init_fsbase);
-            }
+            TLS.with(|t| t.replace(Some(thread)));
             unsafe {
-                switch_to_user();
-                asm!("jmp $0" :: "r"(entry), "{rsp}"(stack), "{rdi}"(arg1), "{rsi}"(arg2) :: "volatile" "intel");
+                trap::syscall_return(&mut regs);
             }
-            unreachable!()
         });
         Thread {
             thread: handle.thread().clone(),
@@ -276,7 +260,11 @@ fn mmap(fd: libc::c_int, offset: usize, len: usize, vaddr: VirtAddr, prot: libc:
     assert_eq!(ret, vaddr, "failed to mmap: {:?}", Error::last_os_error());
 }
 
-impl MMUFlags {
+trait FlagsExt {
+    fn to_mmap_prot(self) -> libc::c_int;
+}
+
+impl FlagsExt for MMUFlags {
     fn to_mmap_prot(self) -> libc::c_int {
         let mut flags = 0;
         if self.contains(MMUFlags::READ) {

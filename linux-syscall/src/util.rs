@@ -53,6 +53,17 @@ impl<T, P: Policy> UserPtr<T, P> {
     pub fn is_null(&self) -> bool {
         self.ptr.is_null()
     }
+
+    pub fn add(&self, count: usize) -> Self {
+        UserPtr {
+            ptr: unsafe { self.ptr.add(count) },
+            mark: PhantomData,
+        }
+    }
+
+    pub fn as_ptr(&self) -> *mut T {
+        self.ptr
+    }
 }
 
 impl<T, P: Read> UserPtr<T, P> {
@@ -81,6 +92,20 @@ impl<P: Read> UserPtr<u8, P> {
     pub fn read_cstring(&self) -> ZxResult<String> {
         let len = unsafe { (0usize..).find(|&i| *self.ptr.add(i) == 0).unwrap() };
         self.read_string(len)
+    }
+}
+
+impl<P: Read> UserPtr<UserPtr<u8, P>, P> {
+    pub fn read_cstring_array(&self) -> ZxResult<Vec<String>> {
+        let len = unsafe {
+            (0usize..)
+                .find(|&i| self.ptr.add(i).read().is_null())
+                .unwrap()
+        };
+        self.read_array(len)?
+            .into_iter()
+            .map(|ptr| ptr.read_cstring())
+            .collect()
     }
 }
 

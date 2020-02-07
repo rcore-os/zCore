@@ -1,7 +1,7 @@
 //! Linux syscall implementations
 
 #![no_std]
-#![deny(unsafe_code, unused_must_use, unreachable_patterns)]
+#![deny(warnings, unsafe_code, unused_must_use, unreachable_patterns)]
 #![feature(bool_to_option)]
 
 #[macro_use]
@@ -18,10 +18,14 @@ mod util;
 mod fs;
 
 // layer 2
+mod loader;
 mod process;
 
 // layer 3
 mod syscall;
 
+pub use fs::INodeExt;
+pub use loader::LinuxElfLoader;
 pub use process::ProcessExt;
+pub use rcore_fs::vfs::{FileSystem, INode};
 pub use syscall::Syscall;

@@ -1,10 +1,13 @@
 use {
+    self::thread_state::*,
     super::process::Process,
     super::*,
-    crate::{hal, object::*},
+    crate::object::*,
     alloc::{string::String, sync::Arc},
     spin::Mutex,
 };
+
+mod thread_state;
 
 /// Runnable / computation entity
 ///
@@ -83,7 +86,15 @@ impl_kobject!(Thread);
 
 #[derive(Default)]
 struct ThreadInner {
-    hal_thread: Option<hal::Thread>,
+    /// HAL thread handle
+    ///
+    /// Should be `None` before start or after terminated.
+    hal_thread: Option<kernel_hal::Thread>,
+
+    /// Thread state
+    ///
+    /// Only be `Some` on suspended.
+    state: Option<ThreadState>,
 }
 
 impl Thread {
@@ -102,7 +113,7 @@ impl Thread {
 
     /// Get current `Thread` object.
     pub fn current() -> Arc<Self> {
-        hal::Thread::tls()
+        kernel_hal::Thread::tls()
     }
 
     /// Start execution on the thread.
@@ -113,11 +124,17 @@ impl Thread {
         arg1: usize,
         arg2: usize,
     ) -> ZxResult<()> {
+        let regs = GeneralRegs::new_fn(entry, stack, arg1, arg2);
+        self.start_with_regs(regs)
+    }
+
+    /// Start execution with given registers.
+    pub fn start_with_regs(self: &Arc<Self>, regs: GeneralRegs) -> ZxResult<()> {
         let mut inner = self.inner.lock();
         if inner.hal_thread.is_some() {
             return Err(ZxError::BAD_STATE);
         }
-        let hal_thread = hal::Thread::spawn(entry, stack, arg1, arg2, self.clone());
+        let hal_thread = kernel_hal::Thread::spawn(self.clone(), regs);
         inner.hal_thread = Some(hal_thread);
         self.base.signal_set(Signal::THREAD_RUNNING);
         Ok(())
@@ -128,40 +145,32 @@ impl Thread {
         let thread = Thread::current();
         thread.base.signal_set(Signal::THREAD_TERMINATED);
         drop(thread);
-        hal::Thread::exit();
+        kernel_hal::Thread::exit();
     }
 
     /// Read one aspect of thread state.
-    pub fn read_state(&self, _kind: ThreadStateKind) -> ZxResult<ThreadState> {
-        unimplemented!()
+    pub fn read_state(&self, kind: ThreadStateKind, buf: &mut [u8]) -> ZxResult<usize> {
+        let inner = self.inner.lock();
+        let state = inner.state.as_ref().ok_or(ZxError::BAD_STATE)?;
+        let len = state.read(kind, buf)?;
+        Ok(len)
     }
 
     /// Write one aspect of thread state.
-    pub fn write_state(&self, _state: &ThreadState) -> ZxResult<()> {
-        unimplemented!()
+    pub fn write_state(&self, kind: ThreadStateKind, buf: &[u8]) -> ZxResult<()> {
+        let mut inner = self.inner.lock();
+        let state = inner.state.as_mut().ok_or(ZxError::BAD_STATE)?;
+        state.write(kind, buf)?;
+        Ok(())
     }
 }
-
-#[repr(u32)]
-#[derive(Debug, Copy, Clone)]
-pub enum ThreadStateKind {
-    General = 0,
-    FloatPoint = 1,
-    Vector = 2,
-    Debug = 4,
-    SingleStep = 5,
-    FS = 6,
-    GS = 7,
-}
-
-#[derive(Debug)]
-pub enum ThreadState {}
 
 #[cfg(test)]
 mod tests {
     use super::job::Job;
     use super::*;
     use std::sync::atomic::*;
+    use std::vec;
 
     #[test]
     fn create() {
@@ -171,7 +180,6 @@ mod tests {
     }
 
     #[test]
-    #[allow(unsafe_code)]
     fn start() {
         let root_job = Job::root();
         let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
@@ -179,14 +187,15 @@ mod tests {
         let thread1 = Thread::create(&proc, "thread1", 0).expect("failed to create thread");
 
         // allocate stack for new thread
-        static mut STACK: [u8; 0x1000] = [0u8; 0x1000];
-        let stack_top = unsafe { STACK.as_ptr() } as usize + 0x1000;
+        let mut stack = vec![0u8; 0x1000];
+        let stack_top = stack.as_mut_ptr() as usize + 0x1000;
 
         // global variable for validation
         static ARG1: AtomicUsize = AtomicUsize::new(0);
         static ARG2: AtomicUsize = AtomicUsize::new(0);
 
         // function for new thread
+        #[allow(unsafe_code)]
         extern "C" fn entry(arg1: usize, arg2: usize) -> ! {
             unsafe {
                 kernel_hal_unix::switch_to_kernel();

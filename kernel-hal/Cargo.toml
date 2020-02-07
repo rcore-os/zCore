@@ -1,14 +1,11 @@
 [package]
-name = "zircon-syscall"
+name = "kernel-hal"
 version = "0.1.0"
 authors = ["Runji Wang <wangrunji0408@163.com>"]
 edition = "2018"
-description = "Zircon syscalls implementation"
+description = "Kernel HAL interface definations."
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-log = "0.4"
 bitflags = "1.2"
-zircon-object = { path = "../zircon-object" }
-kernel-hal = { path = "../kernel-hal" }

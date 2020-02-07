@@ -1,23 +1,10 @@
-//! Hardware Abstraction Layer
-
+use super::*;
 use alloc::boxed::Box;
-use bitflags::bitflags;
+use alloc::sync::Arc;
 use core::ops::FnOnce;
 use core::time::Duration;
-use {crate::task::Thread as ThreadObject, crate::vm::PAGE_SIZE, alloc::sync::Arc};
 
 type ThreadId = usize;
-type PhysAddr = usize;
-type VirtAddr = usize;
-
-bitflags! {
-    pub struct MMUFlags: usize {
-        #[allow(clippy::identity_op)]
-        const READ      = 1 << 0;
-        const WRITE     = 1 << 1;
-        const EXECUTE   = 1 << 2;
-    }
-}
 
 #[repr(C)]
 pub struct Thread {
@@ -28,15 +15,7 @@ impl Thread {
     /// Spawn a new thread.
     #[linkage = "weak"]
     #[export_name = "hal_thread_spawn"]
-    pub fn spawn(
-        _entry: usize,
-        _stack: usize,
-        _arg1: usize,
-        _arg2: usize,
-        _tls: Arc<ThreadObject>,
-    ) -> Self {
-        #[cfg(test)]
-        kernel_hal_unix::init();
+    pub fn spawn<T>(_self: Arc<T>, _regs: GeneralRegs) -> Self {
         unimplemented!()
     }
 
@@ -50,7 +29,7 @@ impl Thread {
     /// Get TLS variable of current thread passed from `spawn`.
     #[linkage = "weak"]
     #[export_name = "hal_thread_tls"]
-    pub fn tls() -> Arc<ThreadObject> {
+    pub fn tls<T>() -> Arc<T> {
         unimplemented!()
     }
 
@@ -220,12 +199,5 @@ pub fn timer_now() -> Duration {
 #[linkage = "weak"]
 #[export_name = "hal_timer_set"]
 pub fn timer_set(_deadline: Duration, _callback: Box<dyn FnOnce(Duration) + Send + Sync>) {
-    unimplemented!()
-}
-
-/// Set FSBASE on user space.
-#[linkage = "weak"]
-#[export_name = "hal_set_user_fsbase"]
-pub fn set_user_fsbase(_fsbase: usize) {
     unimplemented!()
 }

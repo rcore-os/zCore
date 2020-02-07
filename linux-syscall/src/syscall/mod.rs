@@ -1,10 +1,10 @@
-use crate::fs::FileDesc;
-use crate::process::{LinuxProcess, ProcessExt};
-use spin::MutexGuard;
-use zircon_object::task::Process;
 use {
-    self::consts::*, crate::error::*, crate::util::*, alloc::sync::Arc, zircon_object::hal,
-    zircon_object::object::*, zircon_object::task::Thread,
+    self::consts::*,
+    crate::{error::*, fs::FileDesc, process::*, util::*},
+    alloc::sync::Arc,
+    kernel_hal::GeneralRegs,
+    spin::MutexGuard,
+    zircon_object::{object::*, task::*, vm::VirtAddr},
 };
 
 mod consts;
@@ -13,13 +13,15 @@ mod misc;
 mod task;
 mod vm;
 
-pub struct Syscall {
+pub struct Syscall<'a> {
     pub thread: Arc<Thread>,
+    pub syscall_entry: VirtAddr,
+    pub regs: &'a mut GeneralRegs,
 }
 
-impl Syscall {
-    pub fn syscall(&self, num: u32, args: [usize; 6]) -> isize {
-        info!("syscall => num={}, args={:x?}", num, args);
+impl Syscall<'_> {
+    pub fn syscall(&mut self, num: u32, args: [usize; 6]) -> isize {
+        debug!("syscall => num={}, args={:x?}", num, args);
         let [a0, a1, a2, a3, a4, a5] = args;
         let ret = match num {
             SYS_READ => self.sys_read(a0.into(), a1.into(), a2),
@@ -42,8 +44,8 @@ impl Syscall {
             SYS_TRUNCATE => self.sys_truncate(a0.into(), a1),
             SYS_FTRUNCATE => self.sys_ftruncate(a0.into(), a1),
             SYS_GETDENTS64 => self.sys_getdents64(a0.into(), a1.into(), a2),
-            //            SYS_GETCWD => self.sys_getcwd(a0.into(), a1),
-            //            SYS_CHDIR => self.sys_chdir(a0.into()),
+            SYS_GETCWD => self.sys_getcwd(a0.into(), a1),
+            SYS_CHDIR => self.sys_chdir(a0.into()),
             SYS_RENAMEAT => self.sys_renameat(a0.into(), a1.into(), a2.into(), a3.into()),
             SYS_MKDIRAT => self.sys_mkdirat(a0.into(), a1.into(), a2),
             SYS_LINKAT => self.sys_linkat(a0.into(), a1.into(), a2.into(), a3.into(), a4),
@@ -113,11 +115,11 @@ impl Syscall {
             //            SYS_GETSOCKOPT => self.sys_getsockopt(a0, a1, a2, a3.into(), a4.into()),
 
             // process
-            //            SYS_CLONE => self.sys_clone(a0, a1, a2.into(), a3.into(), a4),
-            //            SYS_EXECVE => self.sys_exec(a0.into(), a1.into(), a2.into()),
-            //            SYS_EXIT => self.sys_exit(a0 as usize),
+            SYS_CLONE => self.sys_clone(a0, a1, a2.into(), a3.into(), a4),
+            SYS_EXECVE => self.sys_execve(a0.into(), a1.into(), a2.into()),
+            SYS_EXIT => self.sys_exit(a0 as _),
             SYS_EXIT_GROUP => self.sys_exit_group(a0),
-            //            SYS_WAIT4 => self.sys_wait4(a0 as isize, a1.into()), // TODO: wait4
+            SYS_WAIT4 => self.sys_wait4(a0 as _, a1.into(), a2 as _),
             SYS_SET_TID_ADDRESS => self.sys_set_tid_address(a0.into()),
             //            SYS_FUTEX => self.sys_futex(a0, a1 as u32, a2 as i32, a3.into()),
             SYS_TKILL => self.unimplemented("tkill", Ok(0)),
@@ -137,9 +139,9 @@ impl Syscall {
             //            SYS_SEMCTL => self.sys_semctl(a0, a1, a2, a3 as isize),
 
             // system
-            //            SYS_GETPID => self.sys_getpid(),
-            //            SYS_GETTID => self.sys_gettid(),
-            //            SYS_UNAME => self.sys_uname(a0.into()),
+            SYS_GETPID => self.sys_getpid(),
+            SYS_GETTID => self.sys_gettid(),
+            SYS_UNAME => self.sys_uname(a0.into()),
             SYS_UMASK => self.unimplemented("umask", Ok(0o777)),
             //            SYS_GETRLIMIT => self.sys_getrlimit(),
             //            SYS_SETRLIMIT => self.sys_setrlimit(),
@@ -152,7 +154,7 @@ impl Syscall {
             SYS_GETEUID => self.unimplemented("geteuid", Ok(0)),
             SYS_GETEGID => self.unimplemented("getegid", Ok(0)),
             SYS_SETPGID => self.unimplemented("setpgid", Ok(0)),
-            //            SYS_GETPPID => self.sys_getppid(),
+            SYS_GETPPID => self.sys_getppid(),
             SYS_SETSID => self.unimplemented("setsid", Ok(0)),
             SYS_GETPGID => self.unimplemented("getpgid", Ok(0)),
             SYS_GETGROUPS => self.unimplemented("getgroups", Ok(0)),
@@ -172,7 +174,7 @@ impl Syscall {
             #[cfg(target_arch = "x86_64")]
             _ => self.x86_64_syscall(num, args),
         };
-        info!("syscall <= {:x?}", ret);
+        info!("<= {:x?}", ret);
         match ret {
             Ok(value) => value as isize,
             Err(err) => -(err as isize),
@@ -180,8 +182,8 @@ impl Syscall {
     }
 
     #[cfg(target_arch = "x86_64")]
-    fn x86_64_syscall(&self, num: u32, args: [usize; 6]) -> SysResult {
-        let [a0, a1, a2, a3, a4, a5] = args;
+    fn x86_64_syscall(&mut self, num: u32, args: [usize; 6]) -> SysResult {
+        let [a0, a1, a2, _a3, _a4, _a5] = args;
         match num {
             SYS_OPEN => self.sys_open(a0.into(), a1, a2),
             SYS_STAT => self.sys_stat(a0.into(), a1.into()),
@@ -206,12 +208,12 @@ impl Syscall {
             //            SYS_TIME => self.sys_time(a0 as *mut u64),
             //            SYS_EPOLL_CREATE => self.sys_epoll_create(a0),
             //            SYS_EPOLL_WAIT => self.sys_epoll_wait(a0, a1.into(), a2, a3),
-            _ => self.unknown_syscall(),
+            _ => self.unknown_syscall(num),
         }
     }
 
-    fn unknown_syscall(&self) -> ! {
-        error!("unknown syscall! exit...");
+    fn unknown_syscall(&self, num: u32) -> ! {
+        error!("unknown syscall: {}. exit...", num);
         let proc = self.zircon_process();
         proc.exit(-1);
         Thread::exit();

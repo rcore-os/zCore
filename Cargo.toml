@@ -9,4 +9,7 @@ members = [
     "kernel-hal-bare",
 	"zCore",
 	"rboot"
+    "kernel-hal",
+    "kernel-hal-bare",
+    "kernel-hal-bare",
 ]

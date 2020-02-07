@@ -63,10 +63,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v2
-    - name: Pull Git LFS
-      run: |
-        git lfs install
-        git lfs pull
+      with:
+        lfs: true
+    - name: Prepare rootfs
+      run: make rootfs
     - name: Test
       uses: actions-rs/cargo@v1
       with:
@@ -75,6 +75,11 @@ jobs:
       env:
         CARGO_INCREMENTAL: '0'
         RUSTFLAGS: '-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Zno-landing-pads'
+    - name: Cache grcov
+      uses: actions/cache@v1
+      with:
+        path: ~/.cargo/bin/grcov
+        key: ${{ runner.os }}-grcov
     - name: Gather coverage data
       id: coverage
       uses: actions-rs/grcov@v0.1

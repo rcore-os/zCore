@@ -12,6 +12,7 @@ log = "0.4"
 spin = "0.5"
 bitflags = "1.2"
 uart_16550 = "0.2"
+kernel-hal = { path = "../kernel-hal" }
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 x86_64 = "0.8"

@@ -5,12 +5,12 @@
 
 #[macro_use]
 extern crate alloc;
-
+#[macro_use]
 extern crate log;
 
 use {
     alloc::{sync::Arc, vec::Vec},
-    kernel_hal_unix::{switch_to_kernel, switch_to_user},
+    kernel_hal_unix::{syscall_entry, GeneralRegs},
     xmas_elf::{
         program::{Flags, ProgramHeader, SegmentData, Type},
         sections::SectionData,
@@ -64,9 +64,6 @@ pub fn run_userboot(
         let vmar = vmar.create_child_at(vdso_addr - vmar.addr(), size).unwrap();
         let first_vmo = vmar.load_from_elf(&elf).unwrap();
         // fill syscall entry
-        extern "C" {
-            fn syscall_entry();
-        }
         first_vmo.write(
             syscall_entry_offset,
             &(syscall_entry as usize).to_ne_bytes(),
@@ -105,54 +102,19 @@ pub fn run_userboot(
     proc
 }
 
-#[cfg(not(target_os = "macos"))]
-global_asm!(
-    r#"
-.intel_syntax noprefix
-syscall_entry:
-    push rax
-    call handle_syscall
-    add rsp, 8
-    ret
-"#
-);
-
-#[cfg(target_os = "macos")]
-global_asm!(
-    r#"
-.intel_syntax noprefix
-_syscall_entry:
-    push rax
-    call _handle_syscall
-    add rsp, 8
-    ret
-"#
-);
-
 #[no_mangle]
-extern "C" fn handle_syscall(
-    a0: usize,
-    a1: usize,
-    a2: usize,
-    a3: usize,
-    a4: usize,
-    a5: usize,
-    num: u32, // pushed %eax
-    _: usize, // return address
-    a6: usize,
-    a7: usize,
-) -> isize {
-    unsafe {
-        switch_to_kernel();
-    }
+extern "C" fn handle_syscall(regs: &mut GeneralRegs) {
+    trace!("syscall: {:#x?}", regs);
+    let num = regs.rax as u32;
+    let a6 = unsafe { (regs.rsp as *const usize).read() };
+    let a7 = unsafe { (regs.rsp as *const usize).add(1).read() };
+    let args = [
+        regs.rdi, regs.rsi, regs.rdx, regs.rcx, regs.r8, regs.r9, a6, a7,
+    ];
     let syscall = Syscall {
         thread: Thread::current(),
     };
-    let ret = syscall.syscall(num, [a0, a1, a2, a3, a4, a5, a6, a7]);
-    unsafe {
-        switch_to_user();
-    }
-    ret
+    regs.rax = syscall.syscall(num, args) as usize;
 }
 
 pub trait ElfExt {

@@ -11,7 +11,7 @@
 
 use super::*;
 
-impl Syscall {
+impl Syscall<'_> {
     pub fn sys_read(&self, fd: FileDesc, mut base: UserOutPtr<u8>, len: usize) -> SysResult {
         info!("read: fd={:?}, base={:?}, len={:#x}", fd, base, len);
         let proc = self.lock_linux_process();
@@ -226,7 +226,7 @@ impl Syscall {
     pub fn sys_sync(&self) -> SysResult {
         info!("sync:");
         let proc = self.lock_linux_process();
-        proc.root_inode.fs().sync()?;
+        proc.root_inode().fs().sync()?;
         Ok(0)
     }
 
@@ -287,7 +287,7 @@ impl Syscall {
         );
         let proc = self.lock_linux_process();
         let follow = !flags.contains(AtFlags::SYMLINK_NOFOLLOW);
-        let inode = proc.lookup_inode_at(dirfd, &path, follow)?;
+        let _inode = proc.lookup_inode_at(dirfd, &path, follow)?;
         Ok(0)
     }
 }

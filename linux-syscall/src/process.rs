@@ -4,22 +4,22 @@ use crate::error::*;
 use crate::fs::*;
 use alloc::collections::BTreeMap;
 use alloc::string::String;
-use alloc::sync::Arc;
-use rcore_fs::vfs::{FileSystem, FileType, INode};
-use rcore_fs_mountfs::MNode;
+use alloc::sync::{Arc, Weak};
+use alloc::vec::Vec;
+use rcore_fs::vfs::{FileSystem, INode};
 use spin::{Mutex, MutexGuard};
 use zircon_object::task::{Job, Process};
 use zircon_object::ZxResult;
 
 pub trait ProcessExt {
-    fn create_linux(job: &Arc<Job>, name: &str) -> ZxResult<Arc<Self>>;
+    fn create_linux(job: &Arc<Job>, rootfs: Arc<dyn FileSystem>) -> ZxResult<Arc<Self>>;
     fn lock_linux(&self) -> MutexGuard<'_, LinuxProcess>;
 }
 
 impl ProcessExt for Process {
-    fn create_linux(job: &Arc<Job>, name: &str) -> ZxResult<Arc<Self>> {
-        let linux_proc = Mutex::new(LinuxProcess::new());
-        Process::create_with_ext(job, name, linux_proc)
+    fn create_linux(job: &Arc<Job>, rootfs: Arc<dyn FileSystem>) -> ZxResult<Arc<Self>> {
+        let linux_proc = Mutex::new(LinuxProcess::new(rootfs));
+        Process::create_with_ext(job, "root", linux_proc)
     }
 
     fn lock_linux(&self) -> MutexGuard<'_, LinuxProcess> {
@@ -35,13 +35,16 @@ pub struct LinuxProcess {
     /// Current Working Directory
     pub cwd: String,
     pub exec_path: String,
-    pub files: BTreeMap<FileDesc, Arc<dyn FileLike>>,
-    pub root_inode: Arc<dyn INode>,
+    files: BTreeMap<FileDesc, Arc<dyn FileLike>>,
+    root_inode: Arc<dyn INode>,
+    parent: Weak<Process>,
+    #[allow(dead_code)]
+    children: Vec<Weak<Process>>,
 }
 
 impl LinuxProcess {
     /// Create a new process.
-    pub fn new() -> Self {
+    pub fn new(rootfs: Arc<dyn FileSystem>) -> Self {
         let stdin = File::new(
             STDIN.clone(),
             OpenOptions {
@@ -68,10 +71,12 @@ impl LinuxProcess {
         files.insert(2.into(), stdout);
 
         LinuxProcess {
-            cwd: String::from(""),
+            cwd: String::from("/"),
             exec_path: String::new(),
             files,
-            root_inode: create_root_fs(),
+            root_inode: create_root_fs(rootfs),
+            parent: Weak::default(),
+            children: Vec::new(),
         }
     }
 
@@ -113,14 +118,13 @@ impl LinuxProcess {
             .unwrap()
     }
 
-    /// Mount file system.
-    pub fn mount(&self, name: &str, fs: Arc<dyn FileSystem>) {
-        self.root_inode
-            .create(name, FileType::Dir, 0o666)
-            .expect("failed to mkdir")
-            .downcast_ref::<MNode>()
-            .unwrap()
-            .mount(fs)
-            .expect("failed to mount");
+    /// Get root INode of the process.
+    pub fn root_inode(&self) -> &Arc<dyn INode> {
+        &self.root_inode
+    }
+
+    /// Get parent process.
+    pub fn parent(&self) -> Option<Arc<Process>> {
+        self.parent.upgrade()
     }
 }

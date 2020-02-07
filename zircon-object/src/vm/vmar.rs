@@ -1,6 +1,6 @@
 use {
-    super::*, crate::hal::PageTable, crate::object::*, crate::vm::vmo::VMObject, alloc::sync::Arc,
-    alloc::vec::Vec, spin::Mutex,
+    super::*, crate::object::*, crate::vm::vmo::VMObject, alloc::sync::Arc, alloc::vec::Vec,
+    kernel_hal::PageTable, spin::Mutex,
 };
 
 /// Virtual Memory Address Regions
@@ -32,7 +32,7 @@ impl VmAddressRegion {
             addr: BASE,
             size: usize::max_value() - 0xfff - BASE,
             parent: None,
-            page_table: Arc::new(Mutex::new(hal::PageTable::new())),
+            page_table: Arc::new(Mutex::new(kernel_hal::PageTable::new())),
             inner: Mutex::new(Some(VmarInner::default())),
         })
     }
@@ -174,6 +174,17 @@ impl VmAddressRegion {
             vmar.destroy_internal()?;
         }
         *guard = None;
+        Ok(())
+    }
+
+    /// Unmap all mappings and destroy all sub-regions of VMAR.
+    pub fn clear(&self) -> ZxResult<()> {
+        let mut guard = self.inner.lock();
+        let inner = guard.as_mut().ok_or(ZxError::BAD_STATE)?;
+        for vmar in inner.children.drain(..) {
+            vmar.destroy_internal()?;
+        }
+        inner.mappings.clear();
         Ok(())
     }
 

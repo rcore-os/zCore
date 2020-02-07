@@ -220,7 +220,7 @@ impl KObjectBase {
         if !(current_signal & signal).is_empty() {
             return current_signal;
         }
-        let waker = crate::hal::Thread::get_waker();
+        let waker = kernel_hal::Thread::get_waker();
         self.add_signal_callback(Box::new(move |s| {
             if (s & signal).is_empty() {
                 return false;
@@ -229,7 +229,7 @@ impl KObjectBase {
             true
         }));
         while (current_signal & signal).is_empty() {
-            crate::hal::Thread::park();
+            kernel_hal::Thread::park();
             current_signal = self.signal();
         }
         current_signal

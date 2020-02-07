@@ -33,13 +33,13 @@ impl VMObject for VMObjectPhysical {
     fn read(&self, offset: usize, buf: &mut [u8]) {
         let _ = self.data_lock.lock();
         assert!(offset + buf.len() <= self.len());
-        hal::pmem_read(self.paddr + offset, buf);
+        kernel_hal::pmem_read(self.paddr + offset, buf);
     }
 
     fn write(&self, offset: usize, buf: &[u8]) {
         let _ = self.data_lock.lock();
         assert!(offset + buf.len() <= self.len());
-        hal::pmem_write(self.paddr + offset, buf);
+        kernel_hal::pmem_write(self.paddr + offset, buf);
     }
 
     fn len(&self) -> usize {

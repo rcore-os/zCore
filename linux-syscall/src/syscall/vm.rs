@@ -2,7 +2,7 @@ use super::*;
 use bitflags::bitflags;
 use zircon_object::vm::*;
 
-impl Syscall {
+impl Syscall<'_> {
     pub fn sys_mmap(
         &self,
         addr: usize,
@@ -106,6 +106,10 @@ impl MmapProt {
         }
         if self.contains(MmapProt::EXEC) {
             flags |= MMUFlags::EXECUTE;
+        }
+        // FIXME: hack for unimplemented mprotect
+        if flags == MMUFlags::empty() {
+            flags = MMUFlags::READ | MMUFlags::WRITE;
         }
         flags
     }

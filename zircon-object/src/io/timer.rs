@@ -41,7 +41,7 @@ impl Timer {
         inner.deadline = Some(deadline);
         self.base.signal_clear(Signal::SIGNALED);
         let me = self.clone();
-        crate::hal::timer_set(deadline, Box::new(move |now| me.touch(now)));
+        kernel_hal::timer_set(deadline, Box::new(move |now| me.touch(now)));
     }
 
     /// Cancel the pending timer started by `set`.
@@ -65,7 +65,7 @@ impl Timer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hal::timer_now;
+    use kernel_hal::timer_now;
 
     #[test]
     fn set() {

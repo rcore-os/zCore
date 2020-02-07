@@ -1,4 +1,4 @@
-use {super::*, crate::hal::PageTable, crate::object::*};
+use {super::*, crate::object::*, kernel_hal::PageTable};
 
 mod paged;
 mod physical;
