@@ -18,7 +18,7 @@ impl Syscall {
         );
         let proc = &self.thread.proc;
         proc.validate_resource(rsrc, ResourceKind::ROOT)?;
-        let dlog = DebugLog::create(options).unwrap();
+        let dlog = DebugLog::create(options);
         let dlog_right = if options & FLAG_READABLE == 0 {
             Rights::DEFAULT_LOG_WRITABLE
         } else {
@@ -36,7 +36,7 @@ impl Syscall {
         buf: UserInPtr<u8>,
         len: usize,
     ) -> ZxResult<usize> {
-        let datalen = if len > 224 { 224 } else { len };
+        let datalen = len.max(224);
         let data = buf.read_string(datalen as usize)?;
         self.thread
             .proc

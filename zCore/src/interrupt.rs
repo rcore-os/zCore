@@ -2,32 +2,18 @@
 #![allow(non_upper_case_globals)]
 use {
     super::process::processor,
-    kernel_hal_bare::arch::{ack, timer_init},
+    kernel_hal_bare::arch::ack,
     trapframe::{init as init_interrupt, TrapFrame},
-    x86_64::registers::control::*,
 };
 
 #[export_name = "hal_lapic_addr"]
 pub static LAPIC_ADDR: usize = 0xfee0_0000;
 
 pub fn init() {
-    check_and_set_cpu_features();
     unsafe {
         init_interrupt();
     }
-    timer_init();
     x86_64::instructions::interrupts::enable();
-}
-
-fn check_and_set_cpu_features() {
-    unsafe {
-        // Enable NX bit.
-        Efer::update(|f| f.insert(EferFlags::NO_EXECUTE_ENABLE));
-
-        // By default the page of CR3 have write protect.
-        // We have to remove that before editing page table.
-        Cr0::update(|f| f.remove(Cr0Flags::WRITE_PROTECT));
-    }
 }
 
 // Reference: https://wiki.osdev.org/Exceptions
@@ -59,7 +45,7 @@ const IRQ0: u8 = 32;
 const Timer: u8 = 0;
 
 #[no_mangle]
-pub extern "C" fn rust_trap(tf: &mut TrapFrame) {
+pub extern "C" fn trap_handler(tf: &mut TrapFrame) {
     trace!("Interrupt: {:#x} @ CPU{}", tf.trap_num, 0); // TODO 0 should replace in multi-core case
     match tf.trap_num as u8 {
         Breakpoint => breakpoint(),

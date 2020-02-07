@@ -23,7 +23,10 @@ pub mod lang;
 mod memory;
 mod process;
 
-use {buddy_system_allocator::LockedHeapWithRescue, rboot::BootInfo};
+use {
+    buddy_system_allocator::LockedHeapWithRescue, kernel_hal_bare::arch::timer_init,
+    rboot::BootInfo,
+};
 
 pub use memory::{hal_frame_alloc, hal_frame_dealloc, hal_pt_map_kernel};
 
@@ -34,6 +37,7 @@ pub extern "C" fn _start(boot_info: &BootInfo) -> ! {
     memory::init_frame_allocator(boot_info);
     info!("{:#x?}", boot_info);
     interrupt::init();
+    timer_init();
     process::init();
     unreachable!();
 }

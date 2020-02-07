@@ -10,6 +10,3 @@ members = [
 	"zCore",
 	"rboot"
 ]
-
-[profile.dev]
-opt-level = 2

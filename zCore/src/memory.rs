@@ -56,6 +56,7 @@ pub fn init_heap() {
     info!("heap init end");
 }
 
+#[no_mangle]
 pub extern "C" fn hal_frame_alloc() -> Option<usize> {
     // get the real address of the alloc frame
     let ret = FRAME_ALLOCATOR
@@ -66,6 +67,7 @@ pub extern "C" fn hal_frame_alloc() -> Option<usize> {
     ret
 }
 
+#[no_mangle]
 pub extern "C" fn hal_frame_dealloc(target: &usize) {
     trace!("Deallocate frame: {:x}", *target);
     FRAME_ALLOCATOR
@@ -73,6 +75,7 @@ pub extern "C" fn hal_frame_dealloc(target: &usize) {
         .dealloc((*target - MEMORY_OFFSET) / PAGE_SIZE);
 }
 
+#[no_mangle]
 pub extern "C" fn hal_pt_map_kernel(pt: &mut PageTable) {
     let table = kernel_root_table();
     let ekernel = table[KERNEL_PM4].clone();

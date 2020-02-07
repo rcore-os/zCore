@@ -3,7 +3,7 @@ use {
     crate::hal::{serial_write, timer_now},
     crate::object::*,
     alloc::sync::Arc,
-    serde::{Deserialize, Serialize},
+    core::convert::TryInto,
     spin::Mutex,
 };
 
@@ -16,15 +16,14 @@ const DLOG_SIZE: usize = 2usize * 1024usize;
 const DLOG_MASK: usize = DLOG_SIZE - 1;
 const DLOG_MIN_RECORD: usize = 32usize;
 
-#[derive(Serialize, Deserialize)]
 #[repr(C)]
 struct DlogHeader {
-    pub header: u32,
-    pub datalen: u16,
-    pub flags: u16,
-    pub timestamp: u64,
-    pub pid: u64,
-    pub tid: u64,
+    header: u32,
+    datalen: u16,
+    flags: u16,
+    timestamp: u64,
+    pid: u64,
+    tid: u64,
 }
 
 pub struct DebugLog {
@@ -36,12 +35,11 @@ pub struct DebugLog {
 impl_kobject!(DebugLog);
 
 impl DebugLog {
-    pub fn create(flags: u32) -> ZxResult<Arc<Self>> {
-        let dlog = Arc::new(DebugLog {
+    pub fn create(flags: u32) -> Arc<Self> {
+        Arc::new(DebugLog {
             base: KObjectBase::new(),
             flags,
-        });
-        Ok(dlog)
+        })
     }
 
     pub fn write(&self, flags: u32, data: &str) -> ZxResult<usize> {
@@ -69,62 +67,56 @@ impl DlogBuffer {
         }
     }
 
+    #[allow(unsafe_code)]
     pub fn write(&mut self, flags: u32, data: &[u8]) {
         let wire_size = DLOG_MIN_RECORD + ((data.len() + 3) & !3);
-        let header = (((DLOG_MIN_RECORD + data.len()) as u32 & 0xFFFu32) << 12)
+        let header_flag = (((DLOG_MIN_RECORD + data.len()) as u32 & 0xFFFu32) << 12)
             | (wire_size as u32 & 0xFFFu32);
-        let serde_header = bincode::serialize(&DlogHeader {
-            header,
+        let header = DlogHeader {
+            header: header_flag,
             datalen: data.len() as u16,
             flags: flags as u16,
             timestamp: timer_now().as_nanos() as u64,
             pid: 0u64,
             tid: 0u64,
-        })
-        .unwrap();
+        };
+        let serde_header: [u8; core::mem::size_of::<DlogHeader>()] =
+            unsafe { core::mem::transmute(header) };
         let head = self.head;
         while (head - self.tail) > (DLOG_SIZE - wire_size) {
             let tail_index = self.tail & DLOG_MASK;
             let header: u32 =
-                bincode::deserialize::<u32>(&self.buf[tail_index..tail_index + 4]).unwrap();
+                u32::from_ne_bytes(self.buf[tail_index..tail_index + 4].try_into().unwrap());
             self.tail += (header & 0xFFF) as usize;
         }
         let mut offset = head & DLOG_MASK;
         let fifo_size = DLOG_SIZE - offset;
         if fifo_size >= wire_size {
-            self.copy_and_write(offset, offset + DLOG_MIN_RECORD, serde_header.as_slice());
-            self.copy_and_write(
-                offset + DLOG_MIN_RECORD,
-                offset + DLOG_MIN_RECORD + data.len(),
-                data,
-            );
+            self.copy_and_write(offset, &serde_header);
+            self.copy_and_write(offset + DLOG_MIN_RECORD, data);
         } else if fifo_size < DLOG_MIN_RECORD {
-            self.copy_and_write(offset, DLOG_SIZE, &serde_header[..fifo_size]);
-            self.copy_and_write(0, DLOG_MIN_RECORD - fifo_size, &serde_header[fifo_size..]);
-            self.copy_and_write(
-                DLOG_MIN_RECORD - fifo_size,
-                DLOG_MIN_RECORD - fifo_size + data.len(),
-                data,
-            );
+            self.copy_and_write(offset, &serde_header[..fifo_size]);
+            self.copy_and_write(0, &serde_header[fifo_size..]);
+            self.copy_and_write(DLOG_MIN_RECORD - fifo_size, data);
         } else {
-            self.copy_and_write(offset, offset + DLOG_MIN_RECORD, serde_header.as_slice());
+            self.copy_and_write(offset, &serde_header);
             offset += DLOG_MIN_RECORD;
             if offset < DLOG_SIZE {
                 let fifo_size = DLOG_SIZE - offset;
-                self.copy_and_write(offset, DLOG_SIZE, &data[..fifo_size]);
-                self.copy_and_write(0, data.len() - fifo_size, &data[fifo_size..]);
+                self.copy_and_write(offset, &data[..fifo_size]);
+                self.copy_and_write(0, &data[fifo_size..]);
             } else {
-                self.copy_and_write(0, data.len(), data);
+                self.copy_and_write(0, data);
             }
         }
         self.head += wire_size;
     }
 
-    fn copy_and_write(&mut self, start: usize, end: usize, data: &[u8]) {
+    fn copy_and_write(&mut self, start: usize, data: &[u8]) {
+        let end = start + data.len();
         assert!(start < DLOG_SIZE);
         assert!(end <= DLOG_SIZE);
         assert!(start < end);
-        assert_eq!(end - start, data.len());
         self.buf[start..end].copy_from_slice(data);
     }
 
