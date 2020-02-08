@@ -117,13 +117,20 @@ mod tests {
         static VALUE: AtomicI32 = AtomicI32::new(1);
         let futex = Futex::new(&VALUE);
 
-        for _ in 0..4 {
+        // inconsistent value should fail.
+        assert_eq!(futex.wait_async(0).await, Err(ZxError::BAD_STATE));
+
+        // spawn a new task to wake me up.
+        {
             let futex = futex.clone();
             async_std::task::spawn(async move {
-                futex.wait_async(1).await.unwrap();
+                VALUE.store(2, Ordering::SeqCst);
+                let count = futex.wake(1);
+                assert_eq!(count, 1);
             });
         }
-        let count = futex.wake(2);
-        assert_eq!(count, 2);
+        // wait for wake.
+        futex.wait_async(1).await.unwrap();
+        assert_eq!(VALUE.load(Ordering::SeqCst), 2);
     }
 }

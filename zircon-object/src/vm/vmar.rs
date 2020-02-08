@@ -503,6 +503,7 @@ mod tests {
 
         // partial overlap sub-region should fail.
         let s = Sample::new();
+        let base = s.root.addr();
         assert_eq!(
             s.root.unmap(base + 0x1000, 0x2000),
             Err(ZxError::INVALID_ARGS)
@@ -510,6 +511,7 @@ mod tests {
 
         // unmap nothing should success.
         let s = Sample::new();
+        let base = s.root.addr();
         s.child1.unmap(base + 0x8000, 0x1000).unwrap();
     }
 
