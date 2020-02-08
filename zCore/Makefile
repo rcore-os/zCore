@@ -2,13 +2,14 @@ arch ?= x86_64
 mode ?= release
 LOG ?=
 
-build_args := -Z build-std=core,alloc --target $(arch).json
+build_args := --target $(arch).json
 build_path := target/$(arch)/$(mode)
 kernel := $(build_path)/zcore
 kernel_img := $(build_path)/zcore.img
 ESP := $(build_path)/esp
 OVMF := ../rboot/OVMF.fd
 qemu := qemu-system-$(arch)
+OBJDUMP := rust-objdump
 
 ifeq ($(mode), release)
 	build_args += --release
@@ -48,10 +49,16 @@ $(kernel_img): kernel bootloader
 
 kernel:
 	@echo Building zCore kenel
-	@cargo build -p zcore $(build_args)
+	@cargo xbuild $(build_args)
 
 bootloader:
 	@cd ../rboot && make build
 
 clean:
 	@cargo clean
+
+header:
+	$(OBJDUMP) -x $(kernel) | less
+
+asm:
+	$(OBJDUMP) -d $(kernel) | less
