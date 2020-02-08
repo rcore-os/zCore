@@ -43,13 +43,6 @@ impl Thread {
                 unsafe {
                     trap::run_user(&mut regs);
                 }
-                #[allow(improper_ctypes)]
-                extern "C" {
-                    fn handle_syscall(
-                        thread: &Arc<usize>,
-                        regs: &mut GeneralRegs,
-                    ) -> Pin<Box<dyn Future<Output = bool> + Send>>;
-                }
                 let exit = unsafe { handle_syscall(&thread, &mut regs).await };
                 if exit {
                     break;
@@ -59,6 +52,16 @@ impl Thread {
         });
         Thread { thread: 0 }
     }
+}
+
+#[linkage = "weak"]
+#[no_mangle]
+extern "C" fn handle_syscall(
+    _thread: &Arc<usize>,
+    _regs: &mut GeneralRegs,
+) -> Pin<Box<dyn Future<Output = bool> + Send>> {
+    // exit by default
+    Box::pin(async { true })
 }
 
 /// Page Table

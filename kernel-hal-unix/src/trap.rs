@@ -192,9 +192,3 @@ extern "C" {
     pub fn syscall_entry();
     pub fn run_user(regs: &mut GeneralRegs);
 }
-
-#[linkage = "weak"]
-#[no_mangle]
-extern "C" fn handle_syscall(_regs: *mut GeneralRegs) {
-    unimplemented!()
-}

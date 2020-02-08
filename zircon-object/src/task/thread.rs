@@ -211,15 +211,11 @@ mod tests {
 
         // function for new thread
         #[allow(unsafe_code)]
-        extern "C" fn entry(arg1: usize, arg2: usize) -> ! {
-            unsafe {
-                kernel_hal_unix::switch_to_kernel();
-            }
+        unsafe extern "C" fn entry(arg1: usize, arg2: usize) -> ! {
             ARG1.store(arg1, Ordering::SeqCst);
             ARG2.store(arg2, Ordering::SeqCst);
-            loop {
-                std::thread::park();
-            }
+            kernel_hal_unix::syscall_entry();
+            unreachable!();
         }
 
         // start a new thread
