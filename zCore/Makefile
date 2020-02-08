@@ -42,8 +42,8 @@ build: $(kernel_img)
 
 $(kernel_img): kernel bootloader
 	@mkdir -p $(ESP)/EFI/zCore $(ESP)/EFI/Boot
-	@cp ../target/x86_64-unknown-uefi/release/rboot.efi $(ESP)/EFI/Boot/BootX64.efi
-	@cp ../prebuilt/rboot.conf $(ESP)/EFI/Boot/rboot.conf
+	@cp ../rboot/target/x86_64-unknown-uefi/release/rboot.efi $(ESP)/EFI/Boot/BootX64.efi
+	@cp rboot.conf $(ESP)/EFI/Boot/rboot.conf
 	@cp $(kernel) $(ESP)/EFI/zCore/zcore.elf
 
 kernel:
