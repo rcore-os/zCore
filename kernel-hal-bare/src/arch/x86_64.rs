@@ -1,5 +1,20 @@
-use super::*;
-use x86_64::structures::paging::{PageTableFlags as PTF, *};
+use {
+    super::*,
+    apic::{LocalApic, XApic},
+    bitflags::bitflags,
+    core::fmt::{Arguments, Write},
+    spin::Mutex,
+    uart_16550::SerialPort,
+    x86_64::{
+        registers::control::Cr3,
+        structures::paging::{PageTableFlags as PTF, *},
+    },
+};
+
+extern "C" {
+    #[link_name = "hal_lapic_addr"]
+    static LAPIC_ADDR: usize;
+}
 
 /// Page Table
 #[repr(C)]
@@ -18,7 +33,9 @@ impl PageTableImpl {
         root.zero();
         map_kernel(root_vaddr as _);
         trace!("create page table @ {:#x}", root_frame.paddr);
-        PageTableImpl { root_paddr: root_frame.paddr }
+        PageTableImpl {
+            root_paddr: root_frame.paddr,
+        }
     }
 
     /// Map the page of `vaddr` to the frame of `paddr` with `flags`.
@@ -76,6 +93,24 @@ impl PageTableImpl {
     }
 }
 
+pub fn kernel_root_table() -> &'static PageTable {
+    unsafe { &*frame_to_page_table(Cr3::read().0) }
+}
+
+fn frame_to_page_table(frame: PhysFrame) -> *mut PageTable {
+    let vaddr = phys_to_virt(frame.start_address().as_u64() as usize);
+    vaddr as *mut PageTable
+}
+
+bitflags! {
+    pub struct MMUFlags: usize {
+        #[allow(clippy::identity_op)]
+        const READ      = 1 << 0;
+        const WRITE     = 1 << 1;
+        const EXECUTE   = 1 << 2;
+    }
+}
+
 trait FlagsExt {
     fn to_ptf(self) -> PTF;
 }
@@ -114,4 +149,34 @@ impl FrameDeallocator<Size4KiB> for FrameAllocatorImpl {
         }
         .dealloc()
     }
+}
+
+static COM1: Mutex<SerialPort> = Mutex::new(unsafe { SerialPort::new(0x3F8) });
+
+pub fn putfmt(fmt: Arguments) {
+    unsafe {
+        COM1.force_unlock();
+    }
+    COM1.lock().write_fmt(fmt).unwrap();
+}
+
+#[export_name = "hal_serial_write"]
+pub fn serial_write(s: &str) {
+    unsafe {
+        COM1.force_unlock();
+    }
+    for byte in s.bytes() {
+        COM1.lock().send(byte);
+    }
+}
+
+pub fn timer_init() {
+    let mut lapic = unsafe { XApic::new(phys_to_virt(LAPIC_ADDR)) };
+    lapic.cpu_init();
+}
+
+#[inline(always)]
+pub fn ack(_irq: u8) {
+    let mut lapic = unsafe { XApic::new(phys_to_virt(LAPIC_ADDR)) };
+    lapic.eoi();
 }

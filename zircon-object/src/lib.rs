@@ -16,6 +16,7 @@ extern crate log;
 #[macro_use]
 extern crate std;
 
+pub mod debuglog;
 mod error;
 pub mod ipc;
 pub mod object;

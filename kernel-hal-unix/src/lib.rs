@@ -202,6 +202,12 @@ lazy_static! {
 fn create_pmem_file() -> File {
     let dir = tempdir().expect("failed to create pmem dir");
     let path = dir.path().join("pmem");
+
+    // workaround on macOS to avoid permission denied.
+    // see https://jiege.ch/software/2020/02/07/macos-mmap-exec/ for analysis on this problem.
+    #[cfg(target_os = "macos")]
+    std::mem::forget(dir);
+
     let file = OpenOptions::new()
         .read(true)
         .write(true)

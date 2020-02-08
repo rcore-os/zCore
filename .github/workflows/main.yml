@@ -31,10 +31,17 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     steps:
     - uses: actions/checkout@v2
+    - name: Checkout submodules
+      shell: bash
+      run: |
+        auth_header="$(git config --local --get http.https://github.com/.extraheader)"
+        git submodule sync --recursive
+        git -c "http.extraheader=$auth_header" -c protocol.version=2 submodule update --init --force --recursive --depth=1
     - uses: actions-rs/toolchain@v1
       with:
         profile: minimal
-        toolchain: nightly
+        toolchain: nightly-2020-01-17
+        components: rust-src
     - name: Setup Rust toolchain
       run: |
         rustup target add riscv32imac-unknown-none-elf
@@ -54,6 +61,10 @@ jobs:
       with:
         command: build
         args: --package kernel-hal-bare --target riscv64imac-unknown-none-elf
+    - name: Build zCore
+      run: |
+        cd zCore
+        make build
     - name: Build docs
       uses: actions-rs/cargo@v1
       with:

@@ -1,0 +1,3 @@
+[submodule "rboot"]
+	path = rboot
+	url = https://github.com/rcore-os/rboot.git
