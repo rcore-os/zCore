@@ -16,6 +16,7 @@ bitflags = "1.2"
 hashbrown = "0.9"
 numeric-enum-macro = "0.2"
 zircon-object = { path = "../zircon-object", features = ["elf"] }
+smoltcp = "0.7"
 kernel-hal = { path = "../kernel-hal" }
 downcast-rs = { version = "1.2", default-features = false }
 lazy_static = { version = "1.4", features = ["spin_no_std"] }

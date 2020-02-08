@@ -3,6 +3,7 @@
 use crate::error::*;
 use crate::fs::*;
 use crate::ipc::*;
+use crate::net::Socket;
 use crate::signal::{Signal as LinuxSignal, SignalAction};
 use alloc::vec::Vec;
 use alloc::{
@@ -312,6 +313,21 @@ impl LinuxProcess {
     pub fn get_files(&self) -> LxResult<HashMap<FileDesc, Arc<dyn FileLike>>> {
         let inner = self.inner.lock();
         Ok(inner.files.clone())
+    }
+
+    /// Add a socket to the file descriptor table.
+    pub fn add_socket(&self, _socket: Box<dyn Socket>) -> LxResult<FileDesc> {
+        unimplemented!()
+    }
+
+    /// Get the `Socket` with given `fd`.
+    pub fn get_socket(&self, _fd: FileDesc) -> LxResult<&mut Box<dyn Socket>> {
+        unimplemented!()
+        //        let file = self
+        //            .get_file_like(fd)?
+        //            .downcast_arc::<Socket>()
+        //            .map_err(|_| LxError::EBADF)?;
+        //        Ok(file)
     }
 
     /// Close file descriptor `fd`.
