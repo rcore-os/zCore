@@ -316,12 +316,12 @@ impl LinuxProcess {
     }
 
     /// Add a socket to the file descriptor table.
-    pub fn add_socket(&self, _socket: Box<dyn Socket>) -> LxResult<FileDesc> {
+    pub fn add_socket(&self, _socket: Arc<dyn Socket>) -> LxResult<FileDesc> {
         unimplemented!()
     }
 
     /// Get the `Socket` with given `fd`.
-    pub fn get_socket(&self, _fd: FileDesc) -> LxResult<&mut Box<dyn Socket>> {
+    pub fn get_socket(&self, _fd: FileDesc) -> LxResult<Arc<dyn Socket>> {
         unimplemented!()
         //        let file = self
         //            .get_file_like(fd)?

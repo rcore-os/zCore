@@ -2,7 +2,6 @@
 #![allow(missing_docs)]
 
 use super::*;
-use alloc::boxed::Box;
 use core::cmp::min;
 use core::mem::size_of;
 use linux_object::net::{wire::*, *};
@@ -17,25 +16,26 @@ impl Syscall<'_> {
             "socket: domain={:?}, socket_type={:?}, protocol={}",
             domain, socket_type, protocol
         );
-        let proc = self.linux_process();
-        let socket: Box<dyn Socket> = match domain {
-            AddressFamily::Internet | AddressFamily::Unix => match socket_type {
-                SocketType::Stream => Box::new(TcpSocketState::new()),
-                SocketType::Datagram => Box::new(UdpSocketState::new()),
-                SocketType::Raw => Box::new(RawSocketState::new(protocol as u8)),
-            },
-            //            AddressFamily::Packet => match socket_type {
-            //                SocketType::Raw => Box::new(PacketSocketState::new()),
-            //                _ => return Err(LxError::EINVAL),
-            //            },
-            //            AddressFamily::Netlink => match socket_type {
-            //                SocketType::Raw => Box::new(NetlinkSocketState::new()),
-            //                _ => return Err(LxError::EINVAL),
-            //            },
-            _ => return Err(LxError::EAFNOSUPPORT),
-        };
-        let fd = proc.add_socket(socket)?;
-        Ok(fd.into())
+        unimplemented!();
+        // let proc = self.linux_process();
+        // let socket: Arc<dyn Socket> = match domain {
+        //     AddressFamily::Internet | AddressFamily::Unix => match socket_type {
+        //         SocketType::Stream => Arc::new(TcpSocketState::new()),
+        //         SocketType::Datagram => Arc::new(UdpSocketState::new()),
+        //         SocketType::Raw => Arc::new(RawSocketState::new(protocol as u8)),
+        //     },
+        //     AddressFamily::Packet => match socket_type {
+        //         SocketType::Raw => Arc::new(PacketSocketState::new()),
+        //         _ => return Err(LxError::EINVAL),
+        //     },
+        //     AddressFamily::Netlink => match socket_type {
+        //         SocketType::Raw => Arc::new(NetlinkSocketState::new()),
+        //         _ => return Err(LxError::EINVAL),
+        //     },
+        //     _ => return Err(LxError::EAFNOSUPPORT),
+        // };
+        // let fd = proc.add_socket(socket)?;
+        // Ok(fd.into())
     }
 
     pub fn sys_setsockopt(
@@ -61,7 +61,7 @@ impl Syscall<'_> {
         fd: FileDesc,
         level: usize,
         optname: usize,
-        mut optval: UserOutPtr<u32>,
+        optval: UserOutPtr<u32>,
         mut optlen: UserOutPtr<u32>,
     ) -> SysResult {
         info!(
@@ -71,12 +71,12 @@ impl Syscall<'_> {
         match level {
             SOL_SOCKET => match optname {
                 SO_SNDBUF => {
-                    optval.write(crate::net::TCP_SENDBUF as u32)?;
+                    //                    optval.write(TCP_SENDBUF as u32)?;
                     optlen.write(4)?;
                     Ok(0)
                 }
                 SO_RCVBUF => {
-                    optval.write(crate::net::TCP_RECVBUF as u32)?;
+                    //                    optval.write(TCP_RECVBUF as u32)?;
                     optlen.write(4)?;
                     Ok(0)
                 }
