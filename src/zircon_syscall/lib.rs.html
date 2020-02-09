@@ -83,8 +83,8 @@
 <span class="kw">extern</span> <span class="kw">crate</span> <span class="ident">log</span>;
 
 <span class="kw">use</span> {
-    <span class="self">self</span>::<span class="ident">consts</span>::<span class="kw-2">*</span>, <span class="kw">crate</span>::<span class="ident">util</span>::<span class="kw-2">*</span>, <span class="ident">alloc</span>::<span class="ident">sync</span>::<span class="ident">Arc</span>, <span class="ident">alloc</span>::<span class="ident">vec</span>::<span class="ident">Vec</span>, <span class="ident">zircon_object</span>::<span class="ident">object</span>::<span class="kw-2">*</span>,
-    <span class="ident">zircon_object</span>::<span class="ident">task</span>::<span class="ident">Thread</span>,
+    <span class="self">self</span>::<span class="ident">consts</span>::<span class="kw-2">*</span>, <span class="ident">alloc</span>::<span class="ident">sync</span>::<span class="ident">Arc</span>, <span class="ident">alloc</span>::<span class="ident">vec</span>::<span class="ident">Vec</span>, <span class="ident">kernel_hal</span>::<span class="ident">user</span>::<span class="kw-2">*</span>,
+    <span class="ident">zircon_object</span>::<span class="ident">object</span>::<span class="kw-2">*</span>, <span class="ident">zircon_object</span>::<span class="ident">task</span>::<span class="ident">Thread</span>,
 };
 
 <span class="kw">mod</span> <span class="ident">channel</span>;
@@ -93,16 +93,16 @@
 <span class="kw">mod</span> <span class="ident">debuglog</span>;
 <span class="kw">mod</span> <span class="ident">handle</span>;
 <span class="kw">mod</span> <span class="ident">task</span>;
-<span class="kw">mod</span> <span class="ident">util</span>;
 <span class="kw">mod</span> <span class="ident">vmar</span>;
 <span class="kw">mod</span> <span class="ident">vmo</span>;
 
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Syscall</span> {
     <span class="kw">pub</span> <span class="ident">thread</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Thread</span><span class="op">&gt;</span>,
+    <span class="kw">pub</span> <span class="ident">exit</span>: <span class="ident">bool</span>,
 }
 
 <span class="kw">impl</span> <span class="ident">Syscall</span> {
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">syscall</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">num</span>: <span class="ident">u32</span>, <span class="ident">args</span>: [<span class="ident">usize</span>; <span class="number">8</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">isize</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">syscall</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">num</span>: <span class="ident">u32</span>, <span class="ident">args</span>: [<span class="ident">usize</span>; <span class="number">8</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">isize</span> {
         <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;syscall =&gt; num={}, args={:x?}&quot;</span>, <span class="ident">num</span>, <span class="ident">args</span>);
         <span class="kw">let</span> [<span class="ident">a0</span>, <span class="ident">a1</span>, <span class="ident">a2</span>, <span class="ident">a3</span>, <span class="ident">a4</span>, <span class="ident">a5</span>, <span class="ident">a6</span>, <span class="ident">a7</span>] <span class="op">=</span> <span class="ident">args</span>;
         <span class="kw">let</span> <span class="ident">ret</span> <span class="op">=</span> <span class="kw">match</span> <span class="ident">num</span> {

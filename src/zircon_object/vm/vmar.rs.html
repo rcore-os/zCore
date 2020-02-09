@@ -562,7 +562,14 @@
 <span id="562">562</span>
 <span id="563">563</span>
 <span id="564">564</span>
+<span id="565">565</span>
+<span id="566">566</span>
+<span id="567">567</span>
+<span id="568">568</span>
+<span id="569">569</span>
+<span id="570">570</span>
 </pre><div class="example-wrap"><pre class="rust ">
+<span class="kw">use</span> <span class="ident">core</span>::<span class="ident">sync</span>::<span class="ident">atomic</span>::<span class="kw-2">*</span>;
 <span class="kw">use</span> {
     <span class="kw">super</span>::<span class="kw-2">*</span>, <span class="kw">crate</span>::<span class="ident">object</span>::<span class="kw-2">*</span>, <span class="kw">crate</span>::<span class="ident">vm</span>::<span class="ident">vmo</span>::<span class="ident">VMObject</span>, <span class="ident">alloc</span>::<span class="ident">sync</span>::<span class="ident">Arc</span>, <span class="ident">alloc</span>::<span class="ident">vec</span>::<span class="ident">Vec</span>,
     <span class="ident">kernel_hal</span>::<span class="ident">PageTable</span>, <span class="ident">spin</span>::<span class="ident">Mutex</span>,
@@ -591,11 +598,14 @@
 <span class="kw">impl</span> <span class="ident">VmAddressRegion</span> {
     <span class="doccomment">/// Create a new root VMAR.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new_root</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
-        <span class="kw">const</span> <span class="ident">BASE</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">0x2_00000000</span>;
+        <span class="comment">// FIXME: workaround for unix</span>
+        <span class="kw">static</span> <span class="ident">VMAR_ID</span>: <span class="ident">AtomicUsize</span> <span class="op">=</span> <span class="ident">AtomicUsize</span>::<span class="ident">new</span>(<span class="number">0</span>);
+        <span class="kw">let</span> <span class="ident">i</span> <span class="op">=</span> <span class="ident">VMAR_ID</span>.<span class="ident">fetch_add</span>(<span class="number">1</span>, <span class="ident">Ordering</span>::<span class="ident">SeqCst</span>);
+        <span class="kw">let</span> <span class="ident">addr</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">0x10_00000000</span> <span class="op">+</span> <span class="number">0x1_00000000</span> <span class="op">*</span> <span class="ident">i</span>;
         <span class="ident">Arc</span>::<span class="ident">new</span>(<span class="ident">VmAddressRegion</span> {
             <span class="ident">base</span>: <span class="ident">KObjectBase</span>::<span class="ident">new</span>(),
-            <span class="ident">addr</span>: <span class="ident">BASE</span>,
-            <span class="ident">size</span>: <span class="ident">usize</span>::<span class="ident">max_value</span>() <span class="op">-</span> <span class="number">0xfff</span> <span class="op">-</span> <span class="ident">BASE</span>,
+            <span class="ident">addr</span>,
+            <span class="ident">size</span>: <span class="number">0x1_00000000</span>,
             <span class="ident">parent</span>: <span class="prelude-val">None</span>,
             <span class="ident">page_table</span>: <span class="ident">Arc</span>::<span class="ident">new</span>(<span class="ident">Mutex</span>::<span class="ident">new</span>(<span class="ident">kernel_hal</span>::<span class="ident">PageTable</span>::<span class="ident">new</span>())),
             <span class="ident">inner</span>: <span class="ident">Mutex</span>::<span class="ident">new</span>(<span class="prelude-val">Some</span>(<span class="ident">VmarInner</span>::<span class="ident">default</span>())),
@@ -1064,6 +1074,7 @@
 
         <span class="comment">// partial overlap sub-region should fail.</span>
         <span class="kw">let</span> <span class="ident">s</span> <span class="op">=</span> <span class="ident">Sample</span>::<span class="ident">new</span>();
+        <span class="kw">let</span> <span class="ident">base</span> <span class="op">=</span> <span class="ident">s</span>.<span class="ident">root</span>.<span class="ident">addr</span>();
         <span class="macro">assert_eq</span><span class="macro">!</span>(
             <span class="ident">s</span>.<span class="ident">root</span>.<span class="ident">unmap</span>(<span class="ident">base</span> <span class="op">+</span> <span class="number">0x1000</span>, <span class="number">0x2000</span>),
             <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">INVALID_ARGS</span>)
@@ -1071,6 +1082,7 @@
 
         <span class="comment">// unmap nothing should success.</span>
         <span class="kw">let</span> <span class="ident">s</span> <span class="op">=</span> <span class="ident">Sample</span>::<span class="ident">new</span>();
+        <span class="kw">let</span> <span class="ident">base</span> <span class="op">=</span> <span class="ident">s</span>.<span class="ident">root</span>.<span class="ident">addr</span>();
         <span class="ident">s</span>.<span class="ident">child1</span>.<span class="ident">unmap</span>(<span class="ident">base</span> <span class="op">+</span> <span class="number">0x8000</span>, <span class="number">0x1000</span>).<span class="ident">unwrap</span>();
     }
 

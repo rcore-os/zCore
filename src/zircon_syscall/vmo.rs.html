@@ -47,14 +47,14 @@
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">size</span>: <span class="ident">u64</span>,
         <span class="ident">options</span>: <span class="ident">u32</span>,
-        <span class="ident">out</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">HandleValue</span><span class="op">&gt;</span>,
+        <span class="kw-2">mut</span> <span class="ident">out</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">HandleValue</span><span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
         <span class="macro">info</span><span class="macro">!</span>(
             <span class="string">&quot;vmo.create: size={:?}, options={:?}, out={:?}&quot;</span>,
             <span class="ident">size</span>, <span class="ident">options</span>, <span class="ident">out</span>
         );
         <span class="comment">// TODO: options</span>
-        <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>;
+        <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>();
         <span class="kw">let</span> <span class="ident">vmo</span> <span class="op">=</span> <span class="ident">VMObjectPaged</span>::<span class="ident">new</span>(<span class="ident">pages</span>(<span class="ident">size</span> <span class="kw">as</span> <span class="ident">usize</span>));
         <span class="kw">let</span> <span class="ident">handle_value</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">add_handle</span>(<span class="ident">Handle</span>::<span class="ident">new</span>(<span class="ident">vmo</span>, <span class="ident">Rights</span>::<span class="ident">DEFAULT_VMO</span>));
         <span class="ident">out</span>.<span class="ident">write</span>(<span class="ident">handle_value</span>)<span class="question-mark">?</span>;
@@ -64,7 +64,7 @@
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_vmo_read</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">handle_value</span>: <span class="ident">HandleValue</span>,
-        <span class="ident">buf</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>,
+        <span class="kw-2">mut</span> <span class="ident">buf</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>,
         <span class="ident">offset</span>: <span class="ident">u64</span>,
         <span class="ident">buf_size</span>: <span class="ident">usize</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
@@ -72,7 +72,7 @@
             <span class="string">&quot;vmo.read: handle={:?}, offset={:?}, buf=({:?}; {:?})&quot;</span>,
             <span class="ident">handle_value</span>, <span class="ident">offset</span>, <span class="ident">buf</span>, <span class="ident">buf_size</span>,
         );
-        <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>;
+        <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>();
         <span class="kw">let</span> <span class="ident">vmo</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_vmo_with_rights</span>(<span class="ident">handle_value</span>, <span class="ident">Rights</span>::<span class="ident">READ</span>)<span class="question-mark">?</span>;
         <span class="comment">// TODO: optimize</span>
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">buffer</span> <span class="op">=</span> <span class="macro">vec</span><span class="macro">!</span>[<span class="number">0u8</span>; <span class="ident">buf_size</span>];

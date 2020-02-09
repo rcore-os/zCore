@@ -1,1 +1,0 @@
-initSidebarItems({"enum":[["PortPacketPayload",""]],"struct":[["EventPair","Mutually signalable pair of events for concurrent programming"],["Port","Signaling and mailbox primitive"],["PortPacket",""],["Timer","An object that may be signaled at some point in the future"]],"type":[["Event","Signalable event for concurrent programming"]]});

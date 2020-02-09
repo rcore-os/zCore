@@ -94,6 +94,8 @@
 <span id="94">94</span>
 <span id="95">95</span>
 <span id="96">96</span>
+<span id="97">97</span>
+<span id="98">98</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> {
     <span class="kw">crate</span>::{<span class="ident">ZxError</span>, <span class="ident">ZxResult</span>},
@@ -181,7 +183,9 @@
         <span class="kw">const</span> <span class="ident">DEFAULT_JOB</span> <span class="op">=</span> <span class="self">Self</span>::<span class="ident">BASIC</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">IO</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">PROPERTY</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">POLICY</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">ENUMERATE</span>.<span class="ident">bits</span>
             <span class="op">|</span> <span class="self">Self</span>::<span class="ident">DESTROY</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">SIGNAL</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">MANAGE_JOB</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">MANAGE_PROCESS</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">MANAGE_THREAD</span>.<span class="ident">bits</span>;
         <span class="kw">const</span> <span class="ident">DEFAULT_RESOURCE</span> <span class="op">=</span> <span class="self">Self</span>::<span class="ident">TRANSFER</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">DUPLICATE</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">WRITE</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">INSPECT</span>.<span class="ident">bits</span>;
-    }
+        <span class="kw">const</span> <span class="ident">DEFAULT_LOG_WRITABLE</span> <span class="op">=</span> <span class="self">Self</span>::<span class="ident">WRITE</span>.<span class="ident">bits</span>;
+        <span class="kw">const</span> <span class="ident">DEFAULT_LOG_READABLE</span> <span class="op">=</span> <span class="self">Self</span>::<span class="ident">WRITE</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">READ</span>.<span class="ident">bits</span>;
+   }
 }
 
 <span class="kw">impl</span> <span class="ident">TryFrom</span><span class="op">&lt;</span><span class="ident">u32</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">Rights</span> {

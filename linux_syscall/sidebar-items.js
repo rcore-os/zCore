@@ -1,1 +1,1 @@
-initSidebarItems({"struct":[["LinuxElfLoader","Linux ELF Program Loader."],["Syscall",""]],"trait":[["FileSystem","Abstract file system"],["INode","Abstract file system object such as file or directory."],["INodeExt",""],["ProcessExt",""]]});
+initSidebarItems({"struct":[["Syscall",""]]});

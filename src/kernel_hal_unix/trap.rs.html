@@ -186,6 +186,12 @@
 <span id="186">186</span>
 <span id="187">187</span>
 <span id="188">188</span>
+<span id="189">189</span>
+<span id="190">190</span>
+<span id="191">191</span>
+<span id="192">192</span>
+<span id="193">193</span>
+<span id="194">194</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> <span class="kw">super</span>::<span class="ident">GeneralRegs</span>;
 
@@ -230,11 +236,8 @@
     mov fs:48, rdx          # user_fs:48 = kernel fsbase
 .endm
 
-.macro CALL_HANDLE_SYSCALL
-    call handle_syscall
-.endm
 .global syscall_entry
-.global syscall_return
+.global run_user
 &quot;#</span>
 );
 
@@ -285,13 +288,10 @@
     mov gs:48, rsi          # user_gs:48 = kernel gsbase
 .endm
 
-.macro CALL_HANDLE_SYSCALL
-    call _handle_syscall
-.endm
 .global _syscall_entry
-.global _syscall_return
+.global _run_user
 .set _syscall_entry, syscall_entry
-.set _syscall_return, syscall_return
+.set _run_user, run_user
 &quot;#</span>
 );
 
@@ -303,6 +303,8 @@ syscall_entry:
     lea r11, [rsp + 8]      # save rsp to r11 (clobber)
 
     SWITCH_TO_KERNEL_STACK
+    pop rsp
+    lea rsp, [rsp + 20*8]   # rsp = top of trap frame
 
     # push trap frame (struct GeneralRegs)
     push 0                  # ignore gs_base
@@ -326,19 +328,35 @@ syscall_entry:
     push rbx
     push rax
 
+    # restore callee-saved registers
+    SWITCH_TO_KERNEL_STACK
+    pop rbx
+    pop rbx
+    pop rbp
+    pop r12
+    pop r13
+    pop r14
+    pop r15
+
     SWITCH_TO_KERNEL_FSBASE
 
-    # go to Rust
-    mov rdi, rsp            # arg0 = *mut GeneralRegs
-    CALL_HANDLE_SYSCALL
-    jmp .syscall_return_sp
+    # go back to Rust
+    ret
 
-    # extern &quot;C&quot; fn syscall_return(&amp;mut GeneralRegs)
-syscall_return:
-    push rcx                # stack align to 16B
+    # extern &quot;C&quot; fn run_user(&amp;mut GeneralRegs)
+run_user:
+    # save callee-saved registers
+    push r15
+    push r14
+    push r13
+    push r12
+    push rbp
+    push rbx
+
+    push rdi
     SAVE_KERNEL_STACK
     mov rsp, rdi
-.syscall_return_sp:
+
     POP_USER_FSBASE
 
     # pop trap frame (struct GeneralRegs)
@@ -367,13 +385,7 @@ syscall_return:
 
 <span class="kw">extern</span> <span class="string">&quot;C&quot;</span> {
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">syscall_entry</span>();
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">syscall_return</span>(<span class="ident">regs</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">GeneralRegs</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="op">!</span>;
-}
-
-<span class="attribute">#[<span class="ident">linkage</span> <span class="op">=</span> <span class="string">&quot;weak&quot;</span>]</span>
-<span class="attribute">#[<span class="ident">no_mangle</span>]</span>
-<span class="kw">extern</span> <span class="string">&quot;C&quot;</span> <span class="kw">fn</span> <span class="ident">handle_syscall</span>(<span class="ident">_regs</span>: <span class="kw-2">*</span><span class="kw-2">mut</span> <span class="ident">GeneralRegs</span>) {
-    <span class="macro">unimplemented</span><span class="macro">!</span>()
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">run_user</span>(<span class="ident">regs</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">GeneralRegs</span>);
 }
 </pre></div>
 </section><section id="search" class="content hidden"></section><section class="footer"></section><script>window.rootPath = "../../";window.currentCrate = "kernel_hal_unix";</script><script src="../../aliases.js"></script><script src="../../main.js"></script><script src="../../source-script.js"></script><script src="../../source-files.js"></script><script defer src="../../search-index.js"></script></body></html>

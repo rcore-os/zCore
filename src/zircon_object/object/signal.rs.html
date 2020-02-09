@@ -33,6 +33,9 @@
 <span id="33">33</span>
 <span id="34">34</span>
 <span id="35">35</span>
+<span id="36">36</span>
+<span id="37">37</span>
+<span id="38">38</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> <span class="ident">bitflags</span>::<span class="ident">bitflags</span>;
 
@@ -67,6 +70,9 @@
         <span class="kw">const</span> <span class="ident">THREAD_TERMINATED</span>             <span class="op">=</span> <span class="self">Self</span>::<span class="ident">SIGNALED</span>.<span class="ident">bits</span>;
         <span class="kw">const</span> <span class="ident">THREAD_RUNNING</span>                <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">4</span>;
         <span class="kw">const</span> <span class="ident">THREAD_SUSPENDED</span>              <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">5</span>;
+
+        <span class="comment">// for Linux</span>
+        <span class="kw">const</span> <span class="ident">SIGCHLD</span>                       <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">6</span>;
     }
 }
 </pre></div>

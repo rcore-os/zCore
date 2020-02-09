@@ -3,6 +3,7 @@ ALIASES["kernel_hal"] = {};
 ALIASES["kernel_hal_bare"] = {};
 ALIASES["kernel_hal_unix"] = {};
 ALIASES["linux_loader"] = {};
+ALIASES["linux_object"] = {};
 ALIASES["linux_syscall"] = {};
 ALIASES["zircon_loader"] = {};
 ALIASES["zircon_object"] = {};

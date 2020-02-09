@@ -211,6 +211,32 @@
 <span id="211">211</span>
 <span id="212">212</span>
 <span id="213">213</span>
+<span id="214">214</span>
+<span id="215">215</span>
+<span id="216">216</span>
+<span id="217">217</span>
+<span id="218">218</span>
+<span id="219">219</span>
+<span id="220">220</span>
+<span id="221">221</span>
+<span id="222">222</span>
+<span id="223">223</span>
+<span id="224">224</span>
+<span id="225">225</span>
+<span id="226">226</span>
+<span id="227">227</span>
+<span id="228">228</span>
+<span id="229">229</span>
+<span id="230">230</span>
+<span id="231">231</span>
+<span id="232">232</span>
+<span id="233">233</span>
+<span id="234">234</span>
+<span id="235">235</span>
+<span id="236">236</span>
+<span id="237">237</span>
+<span id="238">238</span>
+<span id="239">239</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> {
     <span class="kw">super</span>::<span class="ident">job_policy</span>::<span class="kw-2">*</span>, <span class="kw">super</span>::<span class="ident">process</span>::<span class="ident">Process</span>, <span class="kw">crate</span>::<span class="ident">object</span>::<span class="kw-2">*</span>, <span class="ident">alloc</span>::<span class="ident">sync</span>::<span class="ident">Arc</span>,
@@ -245,7 +271,18 @@
     <span class="ident">inner</span>: <span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">JobInner</span><span class="op">&gt;</span>,
 }
 
-<span class="macro">impl_kobject</span><span class="macro">!</span>(<span class="ident">Job</span>);
+<span class="macro">impl_kobject</span><span class="macro">!</span>(<span class="ident">Job</span>
+    <span class="kw">fn</span> <span class="ident">get_child</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">id</span>: <span class="ident">KoID</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">KernelObject</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+        <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
+        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">job</span>) <span class="op">=</span> <span class="ident">inner</span>.<span class="ident">children</span>.<span class="ident">iter</span>().<span class="ident">find</span>(<span class="op">|</span><span class="ident">o</span><span class="op">|</span> <span class="ident">o</span>.<span class="ident">id</span>() <span class="op">=</span><span class="op">=</span> <span class="ident">id</span>) {
+            <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">job</span>.<span class="ident">clone</span>());
+        }
+        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">proc</span>) <span class="op">=</span> <span class="ident">inner</span>.<span class="ident">processes</span>.<span class="ident">iter</span>().<span class="ident">find</span>(<span class="op">|</span><span class="ident">o</span><span class="op">|</span> <span class="ident">o</span>.<span class="ident">id</span>() <span class="op">=</span><span class="op">=</span> <span class="ident">id</span>) {
+            <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">proc</span>.<span class="ident">clone</span>());
+        }
+        <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">NOT_FOUND</span>)
+    }
+);
 
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Default</span>)]</span>
 <span class="kw">struct</span> <span class="ident">JobInner</span> {
@@ -422,6 +459,21 @@
         <span class="macro">assert_eq</span><span class="macro">!</span>(
             <span class="ident">job</span>.<span class="ident">set_policy_basic</span>(<span class="ident">SetPolicyOptions</span>::<span class="ident">Absolute</span>, <span class="ident">policy</span>),
             <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">ALREADY_EXISTS</span>)
+        );
+    }
+
+    <span class="attribute">#[<span class="ident">test</span>]</span>
+    <span class="kw">fn</span> <span class="ident">get_child</span>() {
+        <span class="kw">let</span> <span class="ident">root_job</span> <span class="op">=</span> <span class="ident">Job</span>::<span class="ident">root</span>();
+        <span class="kw">let</span> <span class="ident">job</span> <span class="op">=</span> <span class="ident">Job</span>::<span class="ident">create_child</span>(<span class="kw-2">&amp;</span><span class="ident">root_job</span>, <span class="number">0</span>).<span class="ident">expect</span>(<span class="string">&quot;failed to create job&quot;</span>);
+        <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="ident">Process</span>::<span class="ident">create</span>(<span class="kw-2">&amp;</span><span class="ident">root_job</span>, <span class="string">&quot;proc&quot;</span>, <span class="number">0</span>).<span class="ident">expect</span>(<span class="string">&quot;failed to create process&quot;</span>);
+
+        <span class="kw">let</span> <span class="ident">root_job</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">KernelObject</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">root_job</span>;
+        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">root_job</span>.<span class="ident">get_child</span>(<span class="ident">job</span>.<span class="ident">id</span>()).<span class="ident">unwrap</span>().<span class="ident">id</span>(), <span class="ident">job</span>.<span class="ident">id</span>());
+        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">root_job</span>.<span class="ident">get_child</span>(<span class="ident">proc</span>.<span class="ident">id</span>()).<span class="ident">unwrap</span>().<span class="ident">id</span>(), <span class="ident">proc</span>.<span class="ident">id</span>());
+        <span class="macro">assert_eq</span><span class="macro">!</span>(
+            <span class="ident">root_job</span>.<span class="ident">get_child</span>(<span class="ident">root_job</span>.<span class="ident">id</span>()).<span class="ident">err</span>(),
+            <span class="prelude-val">Some</span>(<span class="ident">ZxError</span>::<span class="ident">NOT_FOUND</span>)
         );
     }
 }

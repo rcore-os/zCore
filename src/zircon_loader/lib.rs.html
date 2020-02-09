@@ -202,6 +202,18 @@
 <span id="202">202</span>
 <span id="203">203</span>
 <span id="204">204</span>
+<span id="205">205</span>
+<span id="206">206</span>
+<span id="207">207</span>
+<span id="208">208</span>
+<span id="209">209</span>
+<span id="210">210</span>
+<span id="211">211</span>
+<span id="212">212</span>
+<span id="213">213</span>
+<span id="214">214</span>
+<span id="215">215</span>
+<span id="216">216</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="attribute">#![<span class="ident">no_std</span>]</span>
 <span class="attribute">#![<span class="ident">feature</span>(<span class="ident">asm</span>)]</span>
@@ -214,7 +226,8 @@
 <span class="kw">extern</span> <span class="kw">crate</span> <span class="ident">log</span>;
 
 <span class="kw">use</span> {
-    <span class="ident">alloc</span>::{<span class="ident">sync</span>::<span class="ident">Arc</span>, <span class="ident">vec</span>::<span class="ident">Vec</span>},
+    <span class="ident">alloc</span>::{<span class="ident">boxed</span>::<span class="ident">Box</span>, <span class="ident">sync</span>::<span class="ident">Arc</span>, <span class="ident">vec</span>::<span class="ident">Vec</span>},
+    <span class="ident">core</span>::{<span class="ident">future</span>::<span class="ident">Future</span>, <span class="ident">pin</span>::<span class="ident">Pin</span>},
     <span class="ident">kernel_hal_unix</span>::{<span class="ident">syscall_entry</span>, <span class="ident">GeneralRegs</span>},
     <span class="ident">xmas_elf</span>::{
         <span class="ident">program</span>::{<span class="ident">Flags</span>, <span class="ident">ProgramHeader</span>, <span class="ident">SegmentData</span>, <span class="ident">Type</span>},
@@ -308,7 +321,14 @@
 }
 
 <span class="attribute">#[<span class="ident">no_mangle</span>]</span>
-<span class="kw">extern</span> <span class="string">&quot;C&quot;</span> <span class="kw">fn</span> <span class="ident">handle_syscall</span>(<span class="ident">regs</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">GeneralRegs</span>) {
+<span class="kw">extern</span> <span class="string">&quot;C&quot;</span> <span class="kw">fn</span> <span class="ident">handle_syscall</span>(
+    <span class="ident">thread</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;static</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Thread</span><span class="op">&gt;</span>,
+    <span class="ident">regs</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;static</span> <span class="kw-2">mut</span> <span class="ident">GeneralRegs</span>,
+) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Pin</span><span class="op">&lt;</span><span class="ident">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">Future</span><span class="op">&lt;</span><span class="ident">Output</span> <span class="op">=</span> <span class="ident">bool</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+    <span class="ident">Box</span>::<span class="ident">pin</span>(<span class="ident">handle_syscall_async</span>(<span class="ident">thread</span>, <span class="ident">regs</span>))
+}
+
+<span class="kw">async</span> <span class="kw">fn</span> <span class="ident">handle_syscall_async</span>(<span class="ident">thread</span>: <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Thread</span><span class="op">&gt;</span>, <span class="ident">regs</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">GeneralRegs</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
     <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;syscall: {:#x?}&quot;</span>, <span class="ident">regs</span>);
     <span class="kw">let</span> <span class="ident">num</span> <span class="op">=</span> <span class="ident">regs</span>.<span class="ident">rax</span> <span class="kw">as</span> <span class="ident">u32</span>;
     <span class="kw">let</span> <span class="ident">a6</span> <span class="op">=</span> <span class="kw">unsafe</span> { (<span class="ident">regs</span>.<span class="ident">rsp</span> <span class="kw">as</span> <span class="kw-2">*</span><span class="kw">const</span> <span class="ident">usize</span>).<span class="ident">read</span>() };
@@ -316,10 +336,14 @@
     <span class="kw">let</span> <span class="ident">args</span> <span class="op">=</span> [
         <span class="ident">regs</span>.<span class="ident">rdi</span>, <span class="ident">regs</span>.<span class="ident">rsi</span>, <span class="ident">regs</span>.<span class="ident">rdx</span>, <span class="ident">regs</span>.<span class="ident">rcx</span>, <span class="ident">regs</span>.<span class="ident">r8</span>, <span class="ident">regs</span>.<span class="ident">r9</span>, <span class="ident">a6</span>, <span class="ident">a7</span>,
     ];
-    <span class="kw">let</span> <span class="ident">syscall</span> <span class="op">=</span> <span class="ident">Syscall</span> {
-        <span class="ident">thread</span>: <span class="ident">Thread</span>::<span class="ident">current</span>(),
+    <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">syscall</span> <span class="op">=</span> <span class="ident">Syscall</span> {
+        <span class="ident">thread</span>: <span class="ident">thread</span>.<span class="ident">clone</span>(),
+        <span class="ident">exit</span>: <span class="bool-val">false</span>,
     };
-    <span class="ident">regs</span>.<span class="ident">rax</span> <span class="op">=</span> <span class="ident">syscall</span>.<span class="ident">syscall</span>(<span class="ident">num</span>, <span class="ident">args</span>) <span class="kw">as</span> <span class="ident">usize</span>;
+    <span class="kw">let</span> <span class="ident">ret</span> <span class="op">=</span> <span class="ident">syscall</span>.<span class="ident">syscall</span>(<span class="ident">num</span>, <span class="ident">args</span>);
+    <span class="kw">let</span> <span class="ident">exit</span> <span class="op">=</span> <span class="ident">syscall</span>.<span class="ident">exit</span>;
+    <span class="ident">regs</span>.<span class="ident">rax</span> <span class="op">=</span> <span class="ident">ret</span> <span class="kw">as</span> <span class="ident">usize</span>;
+    <span class="ident">exit</span>
 }
 
 <span class="kw">pub</span> <span class="kw">trait</span> <span class="ident">ElfExt</span> {

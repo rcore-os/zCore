@@ -1,1 +1,1 @@
-initSidebarItems({"struct":[["PageTableImpl","Page Table"]]});
+initSidebarItems({"fn":[["ack",""],["kernel_root_table",""],["putfmt",""],["serial_write",""],["timer_init",""]],"struct":[["MMUFlags",""],["PageTableImpl","Page Table"]]});

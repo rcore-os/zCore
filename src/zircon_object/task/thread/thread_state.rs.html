@@ -64,6 +64,12 @@
 <span id="64">64</span>
 <span id="65">65</span>
 <span id="66">66</span>
+<span id="67">67</span>
+<span id="68">68</span>
+<span id="69">69</span>
+<span id="70">70</span>
+<span id="71">71</span>
+<span id="72">72</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">ZxError</span>, <span class="ident">ZxResult</span>};
 <span class="kw">pub</span> <span class="kw">use</span> <span class="ident">kernel_hal</span>::<span class="ident">GeneralRegs</span>;
@@ -76,7 +82,9 @@
     <span class="ident">Vector</span> <span class="op">=</span> <span class="number">2</span>,
     <span class="ident">Debug</span> <span class="op">=</span> <span class="number">4</span>,
     <span class="ident">SingleStep</span> <span class="op">=</span> <span class="number">5</span>,
+    <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>)]</span>
     <span class="ident">FS</span> <span class="op">=</span> <span class="number">6</span>,
+    <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>)]</span>
     <span class="ident">GS</span> <span class="op">=</span> <span class="number">7</span>,
 }
 
@@ -90,7 +98,9 @@
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">read</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">kind</span>: <span class="ident">ThreadStateKind</span>, <span class="ident">buf</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> [<span class="ident">u8</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
         <span class="kw">match</span> <span class="ident">kind</span> {
             <span class="ident">ThreadStateKind</span>::<span class="ident">General</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">buf</span>.<span class="ident">write_struct</span>(<span class="self">self</span>.<span class="ident">general</span>),
+            <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>)]</span>
             <span class="ident">ThreadStateKind</span>::<span class="ident">FS</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">buf</span>.<span class="ident">write_struct</span>(<span class="self">self</span>.<span class="ident">general</span>.<span class="ident">fs_base</span>),
+            <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>)]</span>
             <span class="ident">ThreadStateKind</span>::<span class="ident">GS</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">buf</span>.<span class="ident">write_struct</span>(<span class="self">self</span>.<span class="ident">general</span>.<span class="ident">gs_base</span>),
             <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="macro">unimplemented</span><span class="macro">!</span>(),
         }
@@ -99,7 +109,9 @@
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">write</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">kind</span>: <span class="ident">ThreadStateKind</span>, <span class="ident">buf</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
         <span class="kw">match</span> <span class="ident">kind</span> {
             <span class="ident">ThreadStateKind</span>::<span class="ident">General</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">general</span> <span class="op">=</span> <span class="ident">buf</span>.<span class="ident">read_struct</span>()<span class="question-mark">?</span>,
+            <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>)]</span>
             <span class="ident">ThreadStateKind</span>::<span class="ident">FS</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">general</span>.<span class="ident">fs_base</span> <span class="op">=</span> <span class="ident">buf</span>.<span class="ident">read_struct</span>()<span class="question-mark">?</span>,
+            <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>)]</span>
             <span class="ident">ThreadStateKind</span>::<span class="ident">GS</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">general</span>.<span class="ident">gs_base</span> <span class="op">=</span> <span class="ident">buf</span>.<span class="ident">read_struct</span>()<span class="question-mark">?</span>,
             <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="macro">unimplemented</span><span class="macro">!</span>(),
         }

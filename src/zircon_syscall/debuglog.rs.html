@@ -27,34 +27,68 @@
 <span id="27">27</span>
 <span id="28">28</span>
 <span id="29">29</span>
+<span id="30">30</span>
+<span id="31">31</span>
+<span id="32">32</span>
+<span id="33">33</span>
+<span id="34">34</span>
+<span id="35">35</span>
+<span id="36">36</span>
+<span id="37">37</span>
+<span id="38">38</span>
+<span id="39">39</span>
+<span id="40">40</span>
+<span id="41">41</span>
+<span id="42">42</span>
+<span id="43">43</span>
+<span id="44">44</span>
+<span id="45">45</span>
+<span id="46">46</span>
 </pre><div class="example-wrap"><pre class="rust ">
-<span class="kw">use</span> {<span class="kw">super</span>::<span class="kw-2">*</span>, <span class="ident">zircon_object</span>::<span class="ident">resource</span>::<span class="ident">ResourceKind</span>};
+<span class="kw">use</span> {
+    <span class="kw">super</span>::<span class="kw-2">*</span>,
+    <span class="ident">zircon_object</span>::{<span class="ident">debuglog</span>::<span class="ident">DebugLog</span>, <span class="ident">resource</span>::<span class="ident">ResourceKind</span>},
+};
+
+<span class="kw">const</span> <span class="ident">FLAG_READABLE</span>: <span class="ident">u32</span> <span class="op">=</span> <span class="number">0x4000_0000u32</span>;
 
 <span class="kw">impl</span> <span class="ident">Syscall</span> {
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_debuglog_create</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">rsrc</span>: <span class="ident">HandleValue</span>,
-        <span class="ident">options</span>: <span class="ident">usize</span>,
-        <span class="ident">target</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">HandleValue</span><span class="op">&gt;</span>,
+        <span class="ident">options</span>: <span class="ident">u32</span>,
+        <span class="kw-2">mut</span> <span class="ident">target</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">HandleValue</span><span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
         <span class="macro">info</span><span class="macro">!</span>(
             <span class="string">&quot;debuglog_create: resource_handle={:?}, options={:?}&quot;</span>,
             <span class="ident">rsrc</span>, <span class="ident">options</span>,
         );
-        <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>;
+        <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>();
         <span class="ident">proc</span>.<span class="ident">validate_resource</span>(<span class="ident">rsrc</span>, <span class="ident">ResourceKind</span>::<span class="ident">ROOT</span>)<span class="question-mark">?</span>;
-        <span class="ident">target</span>.<span class="ident">write</span>(<span class="number">1u32</span>)<span class="question-mark">?</span>;
-        <span class="prelude-val">Ok</span>(<span class="ident">ZxError</span>::<span class="ident">OK</span> <span class="kw">as</span> <span class="ident">usize</span>)
+        <span class="kw">let</span> <span class="ident">dlog</span> <span class="op">=</span> <span class="ident">DebugLog</span>::<span class="ident">create</span>(<span class="ident">options</span>);
+        <span class="kw">let</span> <span class="ident">dlog_right</span> <span class="op">=</span> <span class="kw">if</span> <span class="ident">options</span> <span class="op">&amp;</span> <span class="ident">FLAG_READABLE</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span> {
+            <span class="ident">Rights</span>::<span class="ident">DEFAULT_LOG_WRITABLE</span>
+        } <span class="kw">else</span> {
+            <span class="ident">Rights</span>::<span class="ident">DEFAULT_LOG_READABLE</span>
+        };
+        <span class="kw">let</span> <span class="ident">dlog_handle</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>().<span class="ident">add_handle</span>(<span class="ident">Handle</span>::<span class="ident">new</span>(<span class="ident">dlog</span>, <span class="ident">dlog_right</span>));
+        <span class="ident">target</span>.<span class="ident">write</span>(<span class="ident">dlog_handle</span>)<span class="question-mark">?</span>;
+        <span class="prelude-val">Ok</span>(<span class="number">0</span>)
     }
 
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_debuglog_write</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
-        <span class="ident">_handle_value</span>: <span class="ident">HandleValue</span>,
-        <span class="ident">_options</span>: <span class="ident">u32</span>,
+        <span class="ident">handle_value</span>: <span class="ident">HandleValue</span>,
+        <span class="ident">flags</span>: <span class="ident">u32</span>,
         <span class="ident">buf</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>,
         <span class="ident">len</span>: <span class="ident">usize</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
-        <span class="self">self</span>.<span class="ident">sys_debug_write</span>(<span class="ident">buf</span>, <span class="ident">len</span>)
+        <span class="kw">let</span> <span class="ident">datalen</span> <span class="op">=</span> <span class="ident">len</span>.<span class="ident">max</span>(<span class="number">224</span>);
+        <span class="kw">let</span> <span class="ident">data</span> <span class="op">=</span> <span class="ident">buf</span>.<span class="ident">read_string</span>(<span class="ident">datalen</span> <span class="kw">as</span> <span class="ident">usize</span>)<span class="question-mark">?</span>;
+        <span class="self">self</span>.<span class="ident">thread</span>
+            .<span class="ident">proc</span>()
+            .<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">DebugLog</span><span class="op">&gt;</span>(<span class="ident">handle_value</span>, <span class="ident">Rights</span>::<span class="ident">WRITE</span>)<span class="question-mark">?</span>
+            .<span class="ident">write</span>(<span class="ident">flags</span>, <span class="kw-2">&amp;</span><span class="ident">data</span>)
     }
 }
 </pre></div>

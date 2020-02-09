@@ -53,11 +53,11 @@
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">handle_value</span>: <span class="ident">HandleValue</span>,
         <span class="ident">rights</span>: <span class="ident">u32</span>,
-        <span class="ident">new_handle_value</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">HandleValue</span><span class="op">&gt;</span>,
+        <span class="kw-2">mut</span> <span class="ident">new_handle_value</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">HandleValue</span><span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">rights</span> <span class="op">=</span> <span class="ident">Rights</span>::<span class="ident">try_from</span>(<span class="ident">rights</span>)<span class="question-mark">?</span>;
         <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;handle.dup: handle={:?}, rights={:?}&quot;</span>, <span class="ident">handle_value</span>, <span class="ident">rights</span>);
-        <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>;
+        <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>();
         <span class="kw">let</span> <span class="ident">new_value</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">dup_handle</span>(<span class="ident">handle_value</span>, <span class="ident">rights</span>)<span class="question-mark">?</span>;
         <span class="ident">new_handle_value</span>.<span class="ident">write</span>(<span class="ident">new_value</span>)<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(<span class="number">0</span>)
@@ -68,7 +68,7 @@
         <span class="kw">if</span> <span class="ident">handle</span> <span class="op">=</span><span class="op">=</span> <span class="ident">INVALID_HANDLE</span> {
             <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="number">0</span>);
         }
-        <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>;
+        <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>();
         <span class="ident">proc</span>.<span class="ident">remove_handle</span>(<span class="ident">handle</span>)<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(<span class="number">0</span>)
     }
@@ -82,7 +82,7 @@
             <span class="string">&quot;handle.close_many: handles=({:?}; {:?})&quot;</span>,
             <span class="ident">handles</span>, <span class="ident">num_handles</span>,
         );
-        <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>;
+        <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>();
         <span class="kw">let</span> <span class="ident">handles</span> <span class="op">=</span> <span class="ident">handles</span>.<span class="ident">read_array</span>(<span class="ident">num_handles</span>)<span class="question-mark">?</span>;
         <span class="kw">for</span> <span class="ident">handle</span> <span class="kw">in</span> <span class="ident">handles</span> {
             <span class="kw">if</span> <span class="ident">handle</span> <span class="op">=</span><span class="op">=</span> <span class="ident">INVALID_HANDLE</span> {
