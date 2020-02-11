@@ -2,13 +2,15 @@
 
 use core::alloc::Layout;
 use core::panic::PanicInfo;
+use core::sync::atomic::spin_loop_hint;
 use log::*;
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     error!("\n\n{}", info);
-    #[allow(clippy::empty_loop)]
-    loop {}
+    loop {
+        spin_loop_hint();
+    }
 }
 
 #[lang = "oom"]

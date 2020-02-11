@@ -2,10 +2,8 @@
 //! x86_64      --  64GB
 
 use {
-    super::HEAP_ALLOCATOR,
     bitmap_allocator::BitAlloc,
-    buddy_system_allocator::Heap,
-    core::mem,
+    buddy_system_allocator::{Heap, LockedHeapWithRescue},
     kernel_hal_bare::arch::kernel_root_table,
     rboot::{BootInfo, MemoryType},
     spin::Mutex,
@@ -13,9 +11,9 @@ use {
 };
 
 #[cfg(target_arch = "x86_64")]
-pub type FrameAlloc = bitmap_allocator::BitAlloc16M;
+type FrameAlloc = bitmap_allocator::BitAlloc16M;
 
-pub static FRAME_ALLOCATOR: Mutex<FrameAlloc> = Mutex::new(FrameAlloc::DEFAULT);
+static FRAME_ALLOCATOR: Mutex<FrameAlloc> = Mutex::new(FrameAlloc::DEFAULT);
 
 const MEMORY_OFFSET: usize = 0;
 const KERNEL_OFFSET: usize = 0xffffff00_00000000;
@@ -28,9 +26,10 @@ const KSEG2_PM4: usize = (KSEG2_OFFSET >> 39) & 0o777;
 const PHYSICAL_MEMORY_PM4: usize = (PHYSICAL_MEMORY_OFFSET >> 39) & 0o777;
 
 const PAGE_SIZE: usize = 1 << 12;
-#[allow(dead_code)]
+
+#[used]
 #[export_name = "hal_pmem_base"]
-pub static PMEM_BASE: usize = PHYSICAL_MEMORY_OFFSET;
+static PMEM_BASE: usize = PHYSICAL_MEMORY_OFFSET;
 
 pub fn init_frame_allocator(boot_info: &BootInfo) {
     let mut ba = FRAME_ALLOCATOR.lock();
@@ -45,7 +44,7 @@ pub fn init_frame_allocator(boot_info: &BootInfo) {
 }
 
 pub fn init_heap() {
-    const MACHINE_ALIGN: usize = mem::size_of::<usize>();
+    const MACHINE_ALIGN: usize = core::mem::size_of::<usize>();
     const HEAP_BLOCK: usize = KERNEL_HEAP_SIZE / MACHINE_ALIGN;
     static mut HEAP: [usize; HEAP_BLOCK] = [0; HEAP_BLOCK];
     unsafe {
@@ -86,7 +85,7 @@ pub extern "C" fn hal_pt_map_kernel(pt: &mut PageTable) {
     pt[KSEG2_PM4].set_addr(ekseg2.addr(), ekseg2.flags() | EF::GLOBAL);
 }
 
-pub fn enlarge_heap(heap: &mut Heap) {
+fn enlarge_heap(heap: &mut Heap) {
     info!("Enlarging heap to avoid oom");
 
     let mut addrs = [(0, 0); 32];
@@ -113,3 +112,9 @@ pub fn enlarge_heap(heap: &mut Heap) {
         }
     }
 }
+
+/// Global heap allocator
+///
+/// Available after `memory::init_heap()`.
+#[global_allocator]
+static HEAP_ALLOCATOR: LockedHeapWithRescue = LockedHeapWithRescue::new(enlarge_heap);

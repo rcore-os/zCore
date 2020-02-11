@@ -154,20 +154,12 @@ impl FrameDeallocator<Size4KiB> for FrameAllocatorImpl {
 static COM1: Mutex<SerialPort> = Mutex::new(unsafe { SerialPort::new(0x3F8) });
 
 pub fn putfmt(fmt: Arguments) {
-    unsafe {
-        COM1.force_unlock();
-    }
     COM1.lock().write_fmt(fmt).unwrap();
 }
 
 #[export_name = "hal_serial_write"]
 pub fn serial_write(s: &str) {
-    unsafe {
-        COM1.force_unlock();
-    }
-    for byte in s.bytes() {
-        COM1.lock().send(byte);
-    }
+    COM1.lock().write_str(s).unwrap();
 }
 
 pub fn timer_init() {
