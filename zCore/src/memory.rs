@@ -4,7 +4,6 @@
 use {
     bitmap_allocator::BitAlloc,
     buddy_system_allocator::{Heap, LockedHeapWithRescue},
-    kernel_hal_bare::arch::kernel_root_table,
     rboot::{BootInfo, MemoryType},
     spin::Mutex,
     x86_64::structures::paging::page_table::{PageTable, PageTableFlags as EF},
@@ -17,12 +16,10 @@ static FRAME_ALLOCATOR: Mutex<FrameAlloc> = Mutex::new(FrameAlloc::DEFAULT);
 
 const MEMORY_OFFSET: usize = 0;
 const KERNEL_OFFSET: usize = 0xffffff00_00000000;
-const KSEG2_OFFSET: usize = 0xfffffe80_00000000;
 const PHYSICAL_MEMORY_OFFSET: usize = 0xffff8000_00000000;
 const KERNEL_HEAP_SIZE: usize = 8 * 1024 * 1024; // 8 MB
 
 const KERNEL_PM4: usize = (KERNEL_OFFSET >> 39) & 0o777;
-const KSEG2_PM4: usize = (KSEG2_OFFSET >> 39) & 0o777;
 const PHYSICAL_MEMORY_PM4: usize = (PHYSICAL_MEMORY_OFFSET >> 39) & 0o777;
 
 const PAGE_SIZE: usize = 1 << 12;
@@ -75,14 +72,11 @@ pub extern "C" fn hal_frame_dealloc(target: &usize) {
 }
 
 #[no_mangle]
-pub extern "C" fn hal_pt_map_kernel(pt: &mut PageTable) {
-    let table = kernel_root_table();
-    let ekernel = table[KERNEL_PM4].clone();
-    let ephysical = table[PHYSICAL_MEMORY_PM4].clone();
-    let ekseg2 = table[KSEG2_PM4].clone();
+pub extern "C" fn hal_pt_map_kernel(pt: &mut PageTable, current: &PageTable) {
+    let ekernel = current[KERNEL_PM4].clone();
+    let ephysical = current[PHYSICAL_MEMORY_PM4].clone();
     pt[KERNEL_PM4].set_addr(ekernel.addr(), ekernel.flags() | EF::GLOBAL);
     pt[PHYSICAL_MEMORY_PM4].set_addr(ephysical.addr(), ephysical.flags() | EF::GLOBAL);
-    pt[KSEG2_PM4].set_addr(ekseg2.addr(), ekseg2.flags() | EF::GLOBAL);
 }
 
 fn enlarge_heap(heap: &mut Heap) {

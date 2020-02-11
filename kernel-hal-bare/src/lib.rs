@@ -30,7 +30,7 @@ pub mod arch;
 
 #[allow(improper_ctypes)]
 extern "C" {
-    fn hal_pt_map_kernel(pt: *mut u8);
+    fn hal_pt_map_kernel(pt: *mut u8, current: *const u8);
     fn hal_frame_alloc() -> Option<PhysAddr>;
     fn hal_frame_dealloc(paddr: &PhysAddr);
     #[link_name = "hal_pmem_base"]
@@ -41,9 +41,9 @@ extern "C" {
 ///
 /// `pt` is a page-aligned pointer to the root page table.
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub fn map_kernel(pt: *mut u8) {
+pub fn map_kernel(pt: *mut u8, current: *const u8) {
     unsafe {
-        hal_pt_map_kernel(pt);
+        hal_pt_map_kernel(pt, current);
     }
 }
 
@@ -90,7 +90,7 @@ mod tests {
     use super::*;
 
     #[no_mangle]
-    extern "C" fn hal_pt_map_kernel(_pt: *mut u8) {
+    extern "C" fn hal_pt_map_kernel(_pt: *mut u8, _current: *const u8) {
         unimplemented!()
     }
 

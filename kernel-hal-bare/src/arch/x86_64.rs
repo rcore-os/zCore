@@ -6,7 +6,7 @@ use {
     spin::Mutex,
     uart_16550::SerialPort,
     x86_64::{
-        registers::control::Cr3,
+        registers::control::{Cr3, Cr3Flags},
         structures::paging::{PageTableFlags as PTF, *},
     },
 };
@@ -31,7 +31,7 @@ impl PageTableImpl {
         let root_vaddr = phys_to_virt(root_frame.paddr);
         let root = unsafe { &mut *(root_vaddr as *mut PageTable) };
         root.zero();
-        map_kernel(root_vaddr as _);
+        map_kernel(root_vaddr as _, frame_to_page_table(Cr3::read().0) as _);
         trace!("create page table @ {:#x}", root_frame.paddr);
         PageTableImpl {
             root_paddr: root_frame.paddr,
