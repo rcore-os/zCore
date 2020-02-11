@@ -192,7 +192,7 @@ trait FlagsExt {
 
 impl FlagsExt for Flags {
     fn to_mmu_flags(&self) -> MMUFlags {
-        let mut flags = MMUFlags::empty();
+        let mut flags = MMUFlags::USER;
         if self.is_read() {
             flags.insert(MMUFlags::READ);
         }

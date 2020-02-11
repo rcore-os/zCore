@@ -1,7 +1,6 @@
 use {
     super::*,
     apic::{LocalApic, XApic},
-    bitflags::bitflags,
     core::fmt::{Arguments, Write},
     spin::Mutex,
     uart_16550::SerialPort,
@@ -49,9 +48,11 @@ impl PageTableImpl {
         let mut pt = self.get();
         let page = Page::<Size4KiB>::from_start_address(vaddr).unwrap();
         let frame = unsafe { UnusedPhysFrame::new(PhysFrame::from_start_address(paddr).unwrap()) };
-        pt.map_to(page, frame, flags.to_ptf(), &mut FrameAllocatorImpl)
-            .unwrap()
-            .flush();
+        let flush = pt.map_to(page, frame, flags.to_ptf(), &mut FrameAllocatorImpl).unwrap();
+        if flags.contains(MMUFlags::USER) {
+            self.allow_user_access(vaddr);
+        }
+        flush.flush();
         trace!("map: {:x?} -> {:x?}, flags={:?}", vaddr, paddr, flags);
         Ok(())
     }
@@ -71,7 +72,11 @@ impl PageTableImpl {
     pub fn protect(&mut self, vaddr: x86_64::VirtAddr, flags: MMUFlags) -> Result<(), ()> {
         let mut pt = self.get();
         let page = Page::<Size4KiB>::from_start_address(vaddr).unwrap();
-        pt.update_flags(page, flags.to_ptf()).unwrap().flush();
+        let flush = pt.update_flags(page, flags.to_ptf()).unwrap();
+        if flags.contains(MMUFlags::USER) {
+            self.allow_user_access(vaddr);
+        }
+        flush.flush();
         trace!("protect: {:x?}, flags={:?}", vaddr, flags);
         Ok(())
     }
@@ -91,6 +96,23 @@ impl PageTableImpl {
         let offset = x86_64::VirtAddr::new(phys_to_virt(0) as u64);
         unsafe { OffsetPageTable::new(root, offset) }
     }
+
+    /// Set user bit for 4-level PDEs of the page of `vaddr`.
+    ///
+    /// This is a workaround since `x86_64` crate does not set user bit for PDEs.
+    fn allow_user_access(&mut self, vaddr: x86_64::VirtAddr) {
+        let mut page_table = phys_to_virt(self.root_paddr) as *mut PageTable;
+        for level in 0..4 {
+            let index = (vaddr.as_u64() as usize >> (12 + (3 - level) * 9)) & 0o777;
+            let entry = unsafe { &mut (&mut *page_table)[index] };
+            let flags = entry.flags();
+            entry.set_flags(flags | PTF::USER_ACCESSIBLE);
+            if level == 3 || flags.contains(PTF::HUGE_PAGE) {
+                return;
+            }
+            page_table = frame_to_page_table(entry.frame().unwrap());
+        }
+    }
 }
 
 pub fn kernel_root_table() -> &'static PageTable {
@@ -100,15 +122,6 @@ pub fn kernel_root_table() -> &'static PageTable {
 fn frame_to_page_table(frame: PhysFrame) -> *mut PageTable {
     let vaddr = phys_to_virt(frame.start_address().as_u64() as usize);
     vaddr as *mut PageTable
-}
-
-bitflags! {
-    pub struct MMUFlags: usize {
-        #[allow(clippy::identity_op)]
-        const READ      = 1 << 0;
-        const WRITE     = 1 << 1;
-        const EXECUTE   = 1 << 2;
-    }
 }
 
 trait FlagsExt {
@@ -126,6 +139,9 @@ impl FlagsExt for MMUFlags {
         }
         if !self.contains(MMUFlags::EXECUTE) {
             flags |= PTF::NO_EXECUTE;
+        }
+        if self.contains(MMUFlags::USER) {
+            flags |= PTF::USER_ACCESSIBLE;
         }
         flags
     }

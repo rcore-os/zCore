@@ -20,6 +20,7 @@ pub mod defs {
             const READ      = 1 << 0;
             const WRITE     = 1 << 1;
             const EXECUTE   = 1 << 2;
+            const USER      = 1 << 3;
         }
     }
 

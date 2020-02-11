@@ -106,6 +106,9 @@ impl FlagsExt for MMUFlags {
         if self.contains(MMUFlags::EXECUTE) {
             flags |= PTF::EXECUTABLE;
         }
+        if self.contains(MMUFlags::USER) {
+            flags |= PTF::USER;
+        }
         flags
     }
 }
