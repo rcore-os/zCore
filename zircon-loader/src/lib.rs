@@ -82,6 +82,17 @@ pub fn run_userboot(
         vmo
     };
 
+    // stack
+    const STACK_PAGES: usize = 8;
+    let stack_vmo = VMObjectPaged::new(STACK_PAGES);
+    let flags = MMUFlags::READ | MMUFlags::WRITE | MMUFlags::USER;
+    let stack_bottom = vmar
+        .map(None, stack_vmo.clone(), 0, stack_vmo.len(), flags)
+        .unwrap();
+    // WARN: align stack to 16B, then emulate a 'call' (push rip)
+    let sp = stack_bottom + stack_vmo.len() - 8;
+
+    // channel
     let (user_channel, kernel_channel) = Channel::create();
     let handle = Handle::new(user_channel, Rights::DEFAULT_CHANNEL);
 
@@ -97,10 +108,6 @@ pub fn run_userboot(
     let msg = MessagePacket { data, handles };
     kernel_channel.write(msg).unwrap();
 
-    const STACK_SIZE: usize = 0x8000;
-    let stack = Vec::<u8>::with_capacity(STACK_SIZE);
-    // WARN: align stack to 16B, then emulate a 'call' (push rip)
-    let sp = ((stack.as_ptr() as usize + STACK_SIZE) & !0xf) - 8;
     proc.start(&thread, entry, sp, handle, 0)
         .expect("failed to start main thread");
     proc
@@ -117,10 +124,19 @@ extern "C" fn handle_syscall(
 async fn handle_syscall_async(thread: &Arc<Thread>, regs: &mut GeneralRegs) -> bool {
     trace!("syscall: {:#x?}", regs);
     let num = regs.rax as u32;
-    let a6 = unsafe { (regs.rsp as *const usize).read() };
-    let a7 = unsafe { (regs.rsp as *const usize).add(1).read() };
+    // LibOS: Function call ABI
+    #[cfg(feature = "std")]
+    let args = unsafe {
+        let a6 = (regs.rsp as *const usize).read();
+        let a7 = (regs.rsp as *const usize).add(1).read();
+        [
+            regs.rdi, regs.rsi, regs.rdx, regs.rcx, regs.r8, regs.r9, a6, a7,
+        ]
+    };
+    // RealOS: Zircon syscall ABI
+    #[cfg(not(feature = "std"))]
     let args = [
-        regs.rdi, regs.rsi, regs.rdx, regs.rcx, regs.r8, regs.r9, a6, a7,
+        regs.rdi, regs.rsi, regs.rdx, regs.r10, regs.r8, regs.r9, regs.r12, regs.r13,
     ];
     let mut syscall = Syscall {
         thread: thread.clone(),
