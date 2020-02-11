@@ -10,7 +10,9 @@ description = "Kernel HAL implementation for bare metal environment."
 [dependencies]
 log = "0.4"
 spin = "0.5"
-bitflags = "1.2"
+executor = "0.6.0"
+trapframe = "0.1.1"
+core = { package = "core-futures-tls", version = "0.1.0" }
 kernel-hal = { path = "../kernel-hal" }
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]

@@ -34,29 +34,29 @@ run: build justrun
 debug: build debugrun
 
 debugrun:
-	@$(qemu) $(qemu_opts) -s -S
+	$(qemu) $(qemu_opts) -s -S
 
 justrun:
-	@$(qemu) $(qemu_opts)
+	$(qemu) $(qemu_opts)
 
 build: $(kernel_img)
 
 $(kernel_img): kernel bootloader
-	@mkdir -p $(ESP)/EFI/zCore $(ESP)/EFI/Boot
-	@cp ../rboot/target/x86_64-unknown-uefi/release/rboot.efi $(ESP)/EFI/Boot/BootX64.efi
-	@cp rboot.conf $(ESP)/EFI/Boot/rboot.conf
-	@cp ../prebuilt/legacy-image-x64.zbi $(ESP)/EFI/zCore/fuchsia.zbi
-	@cp $(kernel) $(ESP)/EFI/zCore/zcore.elf
+	mkdir -p $(ESP)/EFI/zCore $(ESP)/EFI/Boot
+	cp ../rboot/target/x86_64-unknown-uefi/release/rboot.efi $(ESP)/EFI/Boot/BootX64.efi
+	cp rboot.conf $(ESP)/EFI/Boot/rboot.conf
+	cp ../prebuilt/legacy-image-x64.zbi $(ESP)/EFI/zCore/fuchsia.zbi
+	cp $(kernel) $(ESP)/EFI/zCore/zcore.elf
 
 kernel:
-	@echo Building zCore kenel
-	@cargo xbuild $(build_args)
+	echo Building zCore kenel
+	cargo xbuild $(build_args)
 
 bootloader:
-	@cd ../rboot && make build
+	cd ../rboot && make build
 
 clean:
-	@cargo clean
+	cargo clean
 
 header:
 	$(OBJDUMP) -x $(kernel) | less

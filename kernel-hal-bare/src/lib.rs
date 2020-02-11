@@ -23,7 +23,9 @@ extern crate log;
 
 extern crate alloc;
 
-pub use arch::init;
+use alloc::boxed::Box;
+use alloc::sync::Arc;
+use core::{future::Future, pin::Pin};
 use kernel_hal::defs::*;
 
 pub mod arch;
@@ -35,6 +37,46 @@ extern "C" {
     fn hal_frame_dealloc(paddr: &PhysAddr);
     #[link_name = "hal_pmem_base"]
     static PMEM_BASE: usize;
+}
+
+#[repr(C)]
+pub struct Thread {
+    thread: usize,
+}
+
+impl Thread {
+    #[export_name = "hal_thread_spawn"]
+    pub fn spawn(thread: Arc<usize>, regs: GeneralRegs, vmtoken: usize) -> Self {
+        executor::spawn(async move {
+            unsafe {
+                // TODO: switch page table between processes
+                arch::set_page_table(vmtoken);
+            }
+            let mut context = trapframe::UserContext {
+                // safety: same structure
+                general: unsafe { core::mem::transmute(regs) },
+                ..Default::default()
+            };
+            loop {
+                context.run();
+                let exit = unsafe { handle_syscall(&thread, &mut context.general).await };
+                if exit {
+                    break;
+                }
+            }
+        });
+        Thread { thread: 0 }
+    }
+}
+
+#[linkage = "weak"]
+#[no_mangle]
+extern "C" fn handle_syscall(
+    _thread: &Arc<usize>,
+    _regs: &mut trapframe::GeneralRegs,
+) -> Pin<Box<dyn Future<Output = bool> + Send>> {
+    // exit by default
+    Box::pin(async { true })
 }
 
 /// Map kernel for the new page table.
@@ -83,6 +125,14 @@ pub fn pmem_write(paddr: PhysAddr, buf: &[u8]) {
         buf.as_ptr()
             .copy_to_nonoverlapping(phys_to_virt(paddr) as _, buf.len());
     }
+}
+
+/// Initialize the HAL.
+pub fn init() {
+    unsafe {
+        trapframe::init();
+    }
+    arch::init();
 }
 
 #[cfg(test)]

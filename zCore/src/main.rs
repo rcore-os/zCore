@@ -4,7 +4,7 @@
 #![feature(asm)]
 #![feature(panic_info_message)]
 #![deny(unused_must_use)]
-#![deny(warnings)]  // comment this on develop
+#![deny(warnings)] // comment this on develop
 
 extern crate alloc;
 #[macro_use]

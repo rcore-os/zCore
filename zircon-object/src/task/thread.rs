@@ -150,7 +150,8 @@ impl Thread {
         if inner.hal_thread.is_some() {
             return Err(ZxError::BAD_STATE);
         }
-        let hal_thread = kernel_hal::Thread::spawn(self.clone(), regs);
+        let hal_thread =
+            kernel_hal::Thread::spawn(self.clone(), regs, self.proc.vmar().table_phys());
         inner.hal_thread = Some(hal_thread);
         self.base.signal_set(Signal::THREAD_RUNNING);
         Ok(())

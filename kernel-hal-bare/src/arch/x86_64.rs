@@ -115,8 +115,8 @@ impl PageTableImpl {
     }
 }
 
-pub fn kernel_root_table() -> &'static PageTable {
-    unsafe { &*frame_to_page_table(Cr3::read().0) }
+pub unsafe fn set_page_table(vmtoken: usize) {
+    Cr3::write(PhysFrame::containing_address(x86_64::PhysAddr::new(vmtoken as _)), Cr3Flags::empty());
 }
 
 fn frame_to_page_table(frame: PhysFrame) -> *mut PageTable {

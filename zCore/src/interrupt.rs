@@ -1,18 +1,12 @@
 #![allow(dead_code)]
 #![allow(non_upper_case_globals)]
-use {
-    kernel_hal_bare::arch::ack,
-    trapframe::{init as init_interrupt, TrapFrame},
-};
+use {kernel_hal_bare::arch::ack, trapframe::TrapFrame};
 
 #[export_name = "hal_lapic_addr"]
 pub static LAPIC_ADDR: usize = 0xfee0_0000;
 
 pub fn init() {
-    unsafe {
-        init_interrupt();
-    }
-    x86_64::instructions::interrupts::enable();
+    //    x86_64::instructions::interrupts::enable();
 }
 
 // Reference: https://wiki.osdev.org/Exceptions
