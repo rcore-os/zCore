@@ -23,7 +23,7 @@ pub use memory::{hal_frame_alloc, hal_frame_dealloc, hal_pt_map_kernel};
 
 #[no_mangle]
 pub extern "C" fn _start(boot_info: &BootInfo) -> ! {
-    logging::init();
+    logging::init(get_log_level(boot_info.cmdline));
     memory::init_heap();
     memory::init_frame_allocator(boot_info);
     info!("{:#x?}", boot_info);
@@ -31,4 +31,17 @@ pub extern "C" fn _start(boot_info: &BootInfo) -> ! {
     timer_init();
     process::init();
     unreachable!();
+}
+
+fn get_log_level(cmdline: &str) -> &str {
+    for opt in cmdline.split(',') {
+        // parse 'key=value'
+        let mut iter = opt.trim().splitn(2, '=');
+        let key = iter.next().expect("failed to parse key");
+        let value = iter.next().expect("failed to parse value");
+        if key == "LOG" {
+            return value;
+        }
+    }
+    ""
 }
