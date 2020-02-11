@@ -162,7 +162,7 @@ pub fn serial_write(s: &str) {
     COM1.lock().write_str(s).unwrap();
 }
 
-pub fn timer_init() {
+fn timer_init() {
     let mut lapic = unsafe { XApic::new(phys_to_virt(LAPIC_ADDR)) };
     lapic.cpu_init();
 }
@@ -171,4 +171,9 @@ pub fn timer_init() {
 pub fn ack(_irq: u8) {
     let mut lapic = unsafe { XApic::new(phys_to_virt(LAPIC_ADDR)) };
     lapic.eoi();
+}
+
+/// Initialize the HAL.
+pub fn init() {
+    timer_init();
 }

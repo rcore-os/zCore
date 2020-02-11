@@ -19,6 +19,7 @@ trapframe = "0.1.0"
 greenthread-future = "0.1.0"
 executor = "0.6.0"
 core = { package = "core-futures-tls", version = "0.1.0" }
+zircon-loader = { path = "../zircon-loader", default-features = false }
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 x86_64 = "0.8"

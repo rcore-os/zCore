@@ -1,5 +1,5 @@
 arch ?= x86_64
-mode ?= release
+mode ?= debug
 LOG ?=
 
 build_args := --target $(arch).json

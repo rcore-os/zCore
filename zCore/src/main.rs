@@ -3,7 +3,8 @@
 #![feature(lang_items)]
 #![feature(asm)]
 #![feature(panic_info_message)]
-#![deny(unused_must_use, unused_imports, warnings)]
+#![deny(unused_must_use)]
+#![deny(warnings)]  // comment this on develop
 
 extern crate alloc;
 #[macro_use]
@@ -17,9 +18,10 @@ mod lang;
 mod memory;
 mod process;
 
-use {kernel_hal_bare::arch::timer_init, rboot::BootInfo};
+use rboot::BootInfo;
 
 pub use memory::{hal_frame_alloc, hal_frame_dealloc, hal_pt_map_kernel};
+use zircon_loader::run_userboot;
 
 #[no_mangle]
 pub extern "C" fn _start(boot_info: &BootInfo) -> ! {
@@ -27,11 +29,26 @@ pub extern "C" fn _start(boot_info: &BootInfo) -> ! {
     memory::init_heap();
     memory::init_frame_allocator(boot_info);
     info!("{:#x?}", boot_info);
+    kernel_hal_bare::init();
     interrupt::init();
-    timer_init();
     process::init();
+
+    let zbi_data = unsafe {
+        core::slice::from_raw_parts(
+            (boot_info.initramfs_addr + boot_info.physical_memory_offset) as *const u8,
+            boot_info.initramfs_size as usize,
+        )
+    };
+    main(zbi_data, boot_info.cmdline);
     unreachable!();
 }
+
+fn main(zbi_data: &[u8], cmdline: &str) {
+    let _proc = run_userboot(USERBOOT_DATA, VDSO_DATA, &zbi_data, cmdline);
+}
+
+static USERBOOT_DATA: &[u8] = include_bytes!("../../prebuilt/zircon/userboot.so");
+static VDSO_DATA: &[u8] = include_bytes!("../../prebuilt/zircon/libzircon.so");
 
 fn get_log_level(cmdline: &str) -> &str {
     for opt in cmdline.split(',') {

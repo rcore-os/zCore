@@ -23,6 +23,7 @@ extern crate log;
 
 extern crate alloc;
 
+pub use arch::init;
 use kernel_hal::defs::*;
 
 pub mod arch;
@@ -83,11 +84,6 @@ pub fn pmem_write(paddr: PhysAddr, buf: &[u8]) {
             .copy_to_nonoverlapping(phys_to_virt(paddr) as _, buf.len());
     }
 }
-
-/// Initialize the HAL.
-///
-/// Call this anywhere to ensure this lib being linked.
-pub fn init() {}
 
 #[cfg(test)]
 mod tests {

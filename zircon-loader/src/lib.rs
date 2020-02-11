@@ -11,7 +11,7 @@ extern crate log;
 use {
     alloc::{boxed::Box, sync::Arc, vec::Vec},
     core::{future::Future, pin::Pin},
-    kernel_hal_unix::{syscall_entry, GeneralRegs},
+    kernel_hal::GeneralRegs,
     xmas_elf::{
         program::{Flags, ProgramHeader, SegmentData, Type},
         sections::SectionData,
@@ -59,16 +59,19 @@ pub fn run_userboot(
     let vdso_vmo = {
         let elf = ElfFile::new(vdso_data).unwrap();
         let size = elf.load_segment_size();
-        let syscall_entry_offset = elf
-            .get_symbol_address("zcore_syscall_entry")
-            .expect("failed to locate syscall entry") as usize;
         let vmar = vmar.create_child_at(vdso_addr - vmar.addr(), size).unwrap();
         let first_vmo = vmar.load_from_elf(&elf).unwrap();
-        // fill syscall entry
-        first_vmo.write(
-            syscall_entry_offset,
-            &(syscall_entry as usize).to_ne_bytes(),
-        );
+        #[cfg(feature = "std")]
+        {
+            let syscall_entry_offset =
+                elf.get_symbol_address("zcore_syscall_entry")
+                    .expect("failed to locate syscall entry") as usize;
+            // fill syscall entry
+            first_vmo.write(
+                syscall_entry_offset,
+                &(kernel_hal_unix::syscall_entry as usize).to_ne_bytes(),
+            );
+        }
         first_vmo
     };
 

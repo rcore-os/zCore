@@ -9,11 +9,16 @@ description = "Zircon user program (userboot) loader"
 
 [dependencies]
 log = "0.4"
-env_logger = "0.7"
 xmas-elf = "0.7"
-structopt = { version = "0.3", default-features = false }
 core = { package = "core-futures-tls", version = "0.1.0" }
 zircon-object = { path = "../zircon-object" }
 zircon-syscall = { path = "../zircon-syscall" }
-kernel-hal-unix = { path = "../kernel-hal-unix" }
-async-std = { version = "1.5", features = ["attributes"] }
+kernel-hal = { path = "../kernel-hal" }
+env_logger = { version = "0.7", optional = true }
+structopt = { version = "0.3", default-features = false, optional = true }
+kernel-hal-unix = { path = "../kernel-hal-unix", optional = true }
+async-std = { version = "1.5", features = ["attributes"], optional = true }
+
+[features]
+default = ["std"]
+std = ["env_logger", "structopt", "async-std", "kernel-hal-unix"]
