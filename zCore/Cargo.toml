@@ -17,7 +17,7 @@ lazy_static = { version = "1.4", features = ["spin_no_std" ] }
 bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator" }
 trapframe = "0.1.1"
 greenthread-future = "0.1.0"
-executor = "0.6.0"
+executor = { path = "../../executor/executor" }
 core = { package = "core-futures-tls", version = "0.1.0" }
 zircon-loader = { path = "../zircon-loader", default-features = false }
 

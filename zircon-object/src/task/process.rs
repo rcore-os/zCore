@@ -125,15 +125,18 @@ impl Process {
         arg1: Handle,
         arg2: usize,
     ) -> ZxResult<()> {
-        let mut inner = self.inner.lock();
-        if !inner.contains_thread(thread) {
-            return Err(ZxError::ACCESS_DENIED);
+        let handle_value;
+        {
+            let mut inner = self.inner.lock();
+            if !inner.contains_thread(thread) {
+                return Err(ZxError::ACCESS_DENIED);
+            }
+            handle_value = inner.add_handle(arg1);
+            if inner.status != Status::Init {
+                return Err(ZxError::BAD_STATE);
+            }
+            inner.status = Status::Running;
         }
-        let handle_value = inner.add_handle(arg1);
-        if inner.status != Status::Init {
-            return Err(ZxError::BAD_STATE);
-        }
-        inner.status = Status::Running;
         thread.start(entry, stack, handle_value as usize, arg2)?;
         Ok(())
     }
