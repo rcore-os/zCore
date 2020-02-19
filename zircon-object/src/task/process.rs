@@ -1,7 +1,7 @@
 use {
     super::{job::Job, job_policy::*, resource::*, thread::Thread, *},
     crate::{object::*, vm::*},
-    alloc::{boxed::Box, collections::BTreeMap, string::String, sync::Arc, vec::Vec},
+    alloc::{boxed::Box, collections::BTreeMap, sync::Arc, vec::Vec},
     core::any::Any,
     spin::Mutex,
 };
@@ -48,7 +48,6 @@ use {
 #[allow(dead_code)]
 pub struct Process {
     base: KObjectBase,
-    name: String,
     job: Arc<Job>,
     policy: JobPolicy,
     vmar: Arc<VmAddressRegion>,
@@ -98,8 +97,11 @@ impl Process {
     ) -> ZxResult<Arc<Self>> {
         // TODO: _options -> options
         let proc = Arc::new(Process {
-            base: KObjectBase::new(),
-            name: String::from(name),
+            base: {
+                let kobject = KObjectBase::new();
+                kobject.set_name(name);
+                kobject
+            },
             job: job.clone(),
             policy: job.policy(),
             vmar: VmAddressRegion::new_root(),
@@ -248,6 +250,19 @@ impl Process {
             return Err(ZxError::ACCESS_DENIED);
         }
         Ok(object)
+    }
+
+    pub fn get_dyn_object_with_rights(
+        &self,
+        handle_value: HandleValue,
+        desired_rights: Rights,
+    ) -> ZxResult<Arc<dyn KernelObject>> {
+        let handle = self.get_handle(handle_value)?;
+        // check type before rights
+        if !handle.rights.contains(desired_rights) {
+            return Err(ZxError::ACCESS_DENIED);
+        }
+        Ok(handle.object)
     }
 
     /// Get the kernel object corresponding to this `handle_value`

@@ -19,6 +19,7 @@ mod consts;
 mod debug;
 mod debuglog;
 mod handle;
+mod object;
 mod task;
 mod vmar;
 mod vmo;
@@ -48,6 +49,12 @@ impl Syscall {
                 a6.into(),
                 a7.into(),
             ),
+            SyscallType::OBJECT_GET_PROPERTY => {
+                self.sys_object_get_property(a0 as _, a1 as _, a2.into(), a3 as _)
+            }
+            SyscallType::OBJECT_SET_PROPERTY => {
+                self.sys_object_set_property(a0 as _, a1 as _, a2.into(), a3 as _)
+            }
             SyscallType::DEBUG_WRITE => self.sys_debug_write(a0.into(), a1 as _),
             SyscallType::PROCESS_CREATE => {
                 self.sys_process_create(a0 as _, a1.into(), a2 as _, a3 as _, a4.into(), a5.into())
