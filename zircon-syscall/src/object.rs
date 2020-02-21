@@ -24,7 +24,9 @@ impl Syscall {
                 if buffer_size < ZX_MAX_NAME_LEN {
                     Err(ZxError::BUFFER_TOO_SMALL)
                 } else {
-                    ptr.write_cstring(object.name())
+                    let s = object.name();
+                    info!("object_get_property: name is {}", s);
+                    ptr.write_cstring(s.as_str())
                         .expect("failed to write cstring");
                     Ok(0)
                 }
@@ -58,7 +60,9 @@ impl Syscall {
                 } else {
                     buffer_size as usize
                 };
-                object.set_name(&ptr.read_string(length)?);
+                let s = ptr.read_string(length)?;
+                info!("object_set_property name: {}", s);
+                object.set_name(&s);
                 Ok(0)
             }
             _ => {

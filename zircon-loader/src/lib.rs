@@ -31,6 +31,32 @@ use {
 
 mod vdso;
 
+#[allow(dead_code)]
+// These describe userboot itself
+const K_PROC_SELF: usize = 0;
+const K_VMARROOT_SELF: usize = 1;
+// Essential job and resource handles
+const K_ROOTJOB: usize = 2;
+const K_ROOTRESOURCE: usize = 3;
+// Essential VMO handles
+const K_ZBI: usize = 4;
+const K_FIRSTVDSO: usize = 5;
+#[allow(dead_code)]
+const K_LASTVDSO: usize = K_FIRSTVDSO + 2;
+const K_USERBOOT_DECOMPRESSOR: usize = 8;
+#[allow(dead_code)]
+const K_FIRSTKERNELFILE: usize = K_USERBOOT_DECOMPRESSOR;
+#[allow(dead_code)]
+const K_CRASHLOG: usize = 9;
+#[allow(dead_code)]
+const K_COUNTERNAMES: usize = 10;
+#[allow(dead_code)]
+const K_COUNTERS: usize = 11;
+#[allow(dead_code)]
+const K_FISTINSTRUMENTATIONDATA: usize = 12;
+#[allow(dead_code)]
+const K_HANDLECOUNT: usize = K_FISTINSTRUMENTATIONDATA + 3;
+
 pub fn run_userboot(
     userboot_data: &[u8],
     vdso_data: &[u8],
@@ -48,7 +74,7 @@ pub fn run_userboot(
         let elf = ElfFile::new(userboot_data).unwrap();
         let size = elf.load_segment_size();
         let vmar = vmar.create_child(None, size).unwrap();
-        vmar.load_from_elf(&elf).unwrap();
+        vmar.load_from_elf(&elf, |_, _| {}).unwrap();
         (
             vmar.addr() + elf.header.pt2.entry_point() as usize,
             vmar.addr() + size,
@@ -59,20 +85,25 @@ pub fn run_userboot(
     let vdso_vmo = {
         let elf = ElfFile::new(vdso_data).unwrap();
         let size = elf.load_segment_size();
+        let vdso_vmo = VMObjectPaged::new(size / PAGE_SIZE);
         let vmar = vmar.create_child_at(vdso_addr - vmar.addr(), size).unwrap();
-        let first_vmo = vmar.load_from_elf(&elf).unwrap();
+        vmar.load_from_elf(&elf, |ph, data| {
+            vdso_vmo.write(ph.virtual_addr() as usize, data);
+        })
+        .unwrap();
         #[cfg(feature = "std")]
         {
             let syscall_entry_offset =
                 elf.get_symbol_address("zcore_syscall_entry")
                     .expect("failed to locate syscall entry") as usize;
             // fill syscall entry
-            first_vmo.write(
+            vdso_vmo.write(
                 syscall_entry_offset,
                 &(kernel_hal_unix::syscall_entry as usize).to_ne_bytes(),
             );
         }
-        first_vmo
+        vdso_vmo.set_name("vdso/full");
+        vdso_vmo
     };
 
     // zbi
@@ -96,12 +127,22 @@ pub fn run_userboot(
     let (user_channel, kernel_channel) = Channel::create();
     let handle = Handle::new(user_channel, Rights::DEFAULT_CHANNEL);
 
+    // TODO: real UserbootDecompressor
+    let decompressor_vmo = {
+        let decompressor = VMObjectPaged::new(0);
+        decompressor.set_name("lib/hermetic/decompress-zbi.so");
+        decompressor
+    };
+
     // FIXME: pass correct handles
     let mut handles = vec![Handle::new(proc.clone(), Rights::DUPLICATE); 15];
-    handles[2] = Handle::new(job, Rights::DEFAULT_JOB);
-    handles[3] = Handle::new(resource, Rights::DEFAULT_RESOURCE);
-    handles[4] = Handle::new(zbi_vmo, Rights::DEFAULT_VMO);
-    handles[5] = Handle::new(vdso_vmo, Rights::DEFAULT_VMO);
+    handles[K_VMARROOT_SELF] = Handle::new(proc.vmar().clone(), Rights::DEFAULT_VMAR);
+    handles[K_ROOTJOB] = Handle::new(job, Rights::DEFAULT_JOB);
+    handles[K_ROOTRESOURCE] = Handle::new(resource, Rights::DEFAULT_RESOURCE);
+    handles[K_ZBI] = Handle::new(zbi_vmo, Rights::DEFAULT_VMO);
+    handles[K_FIRSTVDSO] = Handle::new(vdso_vmo, Rights::DEFAULT_VMO);
+    // FIXME correct rights for decompressor engine
+    handles[K_USERBOOT_DECOMPRESSOR] = Handle::new(decompressor_vmo, Rights::GET_PROPERTY);
 
     let mut data = Vec::from(cmdline);
     data.push(0);
@@ -180,25 +221,31 @@ impl ElfExt for ElfFile<'_> {
 }
 
 pub trait VmarExt {
-    fn load_from_elf(&self, elf: &ElfFile) -> ZxResult<Arc<VMObjectPaged>>;
+    fn load_from_elf<F: Fn(&ProgramHeader, &[u8]) + Copy>(
+        &self,
+        elf: &ElfFile,
+        func: F,
+    ) -> ZxResult<()>;
 }
 
 impl VmarExt for VmAddressRegion {
     /// Create `VMObject` from all LOAD segments of `elf` and map them to this VMAR.
     /// Return the first `VMObject`.
-    fn load_from_elf(&self, elf: &ElfFile) -> ZxResult<Arc<VMObjectPaged>> {
-        let mut first_vmo = None;
+    fn load_from_elf<F: Fn(&ProgramHeader, &[u8]) + Copy>(
+        &self,
+        elf: &ElfFile,
+        func: F,
+    ) -> ZxResult<()> {
         for ph in elf.program_iter() {
             if ph.get_type().unwrap() != Type::Load {
                 continue;
             }
-            let vmo = make_vmo(&elf, ph)?;
+            let vmo = make_vmo(&elf, ph, func)?;
             let len = vmo.len();
             let flags = ph.flags().to_mmu_flags();
             self.map_at(ph.virtual_addr() as usize, vmo.clone(), 0, len, flags)?;
-            first_vmo.get_or_insert(vmo);
         }
-        Ok(first_vmo.unwrap())
+        Ok(())
     }
 }
 
@@ -222,7 +269,11 @@ impl FlagsExt for Flags {
     }
 }
 
-fn make_vmo(elf: &ElfFile, ph: ProgramHeader) -> ZxResult<Arc<VMObjectPaged>> {
+fn make_vmo<F: Fn(&ProgramHeader, &[u8])>(
+    elf: &ElfFile,
+    ph: ProgramHeader,
+    func: F,
+) -> ZxResult<Arc<VMObjectPaged>> {
     assert_eq!(ph.get_type().unwrap(), Type::Load);
     let pages = pages(ph.mem_size() as usize);
     let vmo = VMObjectPaged::new(pages);
@@ -231,5 +282,6 @@ fn make_vmo(elf: &ElfFile, ph: ProgramHeader) -> ZxResult<Arc<VMObjectPaged>> {
         _ => return Err(ZxError::INVALID_ARGS),
     };
     vmo.write(0, data);
+    func(&ph, data);
     Ok(vmo)
 }

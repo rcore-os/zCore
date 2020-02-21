@@ -121,7 +121,7 @@ mod signal;
 pub trait KernelObject: DowncastSync + Debug {
     fn id(&self) -> KoID;
     fn type_name(&self) -> &'static str;
-    fn name(&self) -> &str;
+    fn name(&self) -> alloc::string::String;
     fn set_name(&self, name: &str);
     fn signal(&self) -> Signal;
     fn signal_set(&self, signal: Signal);
@@ -186,9 +186,8 @@ impl KObjectBase {
     }
 
     /// Get object's name
-    pub fn get_name(&self) -> &str {
-        "hello world"
-        //self.inner.into_inner().name.as_str()
+    pub fn get_name(&self) -> String {
+        String::from(self.inner.lock().name.as_str())
     }
 
     /// Create a kernel object base with initial `signal`.
@@ -386,7 +385,7 @@ macro_rules! impl_kobject {
             fn type_name(&self) -> &'static str {
                 stringify!($class)
             }
-            fn name(&self) -> &str{
+            fn name(&self) -> alloc::string::String{
                 self.base.get_name()
             }
             fn set_name(&self, name: &str){

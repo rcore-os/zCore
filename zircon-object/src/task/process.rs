@@ -252,6 +252,19 @@ impl Process {
         Ok(object)
     }
 
+    pub fn get_object_and_rights<T: KernelObject>(
+        &self,
+        handle_value: HandleValue,
+    ) -> ZxResult<(Arc<T>, Rights)> {
+        let handle = self.get_handle(handle_value)?;
+        // check type before rights
+        let object = handle
+            .object
+            .downcast_arc::<T>()
+            .map_err(|_| ZxError::WRONG_TYPE)?;
+        Ok((object, handle.rights))
+    }
+
     pub fn get_dyn_object_with_rights(
         &self,
         handle_value: HandleValue,
@@ -306,6 +319,24 @@ impl Process {
             return Err(ZxError::ACCESS_DENIED);
         }
         Ok(object)
+    }
+
+    pub fn get_vmo_and_rights(
+        &self,
+        handle_value: HandleValue,
+    ) -> ZxResult<(Arc<dyn VMObject>, Rights)> {
+        let handle = self.get_handle(handle_value)?;
+        // check type before rights
+        let object: Arc<dyn VMObject> = handle
+            .object
+            .downcast_arc::<VMObjectPaged>()
+            .map(|obj| obj as Arc<dyn VMObject>)
+            .or_else(|obj| {
+                obj.downcast_arc::<VMObjectPhysical>()
+                    .map(|obj| obj as Arc<dyn VMObject>)
+            })
+            .map_err(|_| ZxError::WRONG_TYPE)?;
+        Ok((object, handle.rights))
     }
 
     /// Add a thread to the process.
