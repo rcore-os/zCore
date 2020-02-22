@@ -75,7 +75,7 @@ pub fn run_userboot(
         let elf = ElfFile::new(userboot_data).unwrap();
         let size = elf.load_segment_size();
         let vmar = vmar.create_child(None, size).unwrap();
-        vmar.load_from_elf(&elf, |_, _| {}).unwrap();
+        vmar.load_from_elf(&elf).unwrap();
         (
             vmar.addr() + elf.header.pt2.entry_point() as usize,
             vmar.addr() + size,
@@ -85,13 +85,11 @@ pub fn run_userboot(
     // vdso
     let vdso_vmo = {
         let elf = ElfFile::new(vdso_data).unwrap();
+        let vdso_vmo = VMObjectPaged::new(vdso_data.len() / PAGE_SIZE + 1);
+        vdso_vmo.write(0, &vdso_data);
         let size = elf.load_segment_size();
-        let vdso_vmo = VMObjectPaged::new(size / PAGE_SIZE);
         let vmar = vmar.create_child_at(vdso_addr - vmar.addr(), size).unwrap();
-        vmar.load_from_elf(&elf, |ph, data| {
-            vdso_vmo.write(ph.virtual_addr() as usize, data);
-        })
-        .unwrap();
+        vmar.map_from_elf(&elf, vdso_vmo.clone()).unwrap();
         #[cfg(feature = "std")]
         {
             let syscall_entry_offset =
@@ -118,18 +116,8 @@ pub fn run_userboot(
     let decompressor_vmo = {
         let elf = ElfFile::new(decompressor_data).unwrap();
         let size = elf.load_segment_size();
-        info!("decompressor vmo size : {:#x}", size);
         let vmo = VMObjectPaged::new(size / PAGE_SIZE);
-        for ph in elf.program_iter() {
-            if ph.get_type().unwrap() != Type::Load {
-                continue;
-            }
-            let data = match ph.get_data(&elf).unwrap() {
-                SegmentData::Undefined(data) => data,
-                _ => unimplemented!(),
-            };
-            vmo.write(ph.virtual_addr() as usize, data);
-        }
+        vmo.write(0, decompressor_data);
         vmo.set_name("lib/hermetic/decompress-zbi.so");
         vmo
     };
@@ -235,29 +223,42 @@ impl ElfExt for ElfFile<'_> {
 }
 
 pub trait VmarExt {
-    fn load_from_elf<F: Fn(&ProgramHeader, &[u8]) + Copy>(
-        &self,
-        elf: &ElfFile,
-        func: F,
-    ) -> ZxResult<()>;
+    fn load_from_elf(&self, elf: &ElfFile) -> ZxResult<()>;
+    fn map_from_elf(&self, elf: &ElfFile, vmo: Arc<VMObjectPaged>) -> ZxResult<()>;
 }
 
 impl VmarExt for VmAddressRegion {
     /// Create `VMObject` from all LOAD segments of `elf` and map them to this VMAR.
     /// Return the first `VMObject`.
-    fn load_from_elf<F: Fn(&ProgramHeader, &[u8]) + Copy>(
-        &self,
-        elf: &ElfFile,
-        func: F,
-    ) -> ZxResult<()> {
+    fn load_from_elf(&self, elf: &ElfFile) -> ZxResult<()> {
         for ph in elf.program_iter() {
             if ph.get_type().unwrap() != Type::Load {
                 continue;
             }
-            let vmo = make_vmo(&elf, ph, func)?;
+            let vmo = make_vmo(&elf, ph)?;
             let len = vmo.len();
             let flags = ph.flags().to_mmu_flags();
             self.map_at(ph.virtual_addr() as usize, vmo.clone(), 0, len, flags)?;
+        }
+        Ok(())
+    }
+
+    fn map_from_elf(&self, elf: &ElfFile, vmo: Arc<VMObjectPaged>) -> ZxResult<()> {
+        for ph in elf.program_iter() {
+            warn!("{:#x?}", ph);
+            if ph.get_type().unwrap() != Type::Load {
+                continue;
+            }
+            let flags = ph.flags().to_mmu_flags();
+            let vmo_offset = pages(ph.physical_addr() as usize) * PAGE_SIZE;
+            let len = pages(ph.mem_size() as usize) * PAGE_SIZE;
+            self.map_at(
+                ph.virtual_addr() as usize,
+                vmo.clone(),
+                vmo_offset,
+                len,
+                flags,
+            )?;
         }
         Ok(())
     }
@@ -283,11 +284,7 @@ impl FlagsExt for Flags {
     }
 }
 
-fn make_vmo<F: Fn(&ProgramHeader, &[u8])>(
-    elf: &ElfFile,
-    ph: ProgramHeader,
-    func: F,
-) -> ZxResult<Arc<VMObjectPaged>> {
+fn make_vmo(elf: &ElfFile, ph: ProgramHeader) -> ZxResult<Arc<VMObjectPaged>> {
     assert_eq!(ph.get_type().unwrap(), Type::Load);
     let pages = pages(ph.mem_size() as usize);
     let vmo = VMObjectPaged::new(pages);
@@ -296,6 +293,5 @@ fn make_vmo<F: Fn(&ProgramHeader, &[u8])>(
         _ => return Err(ZxError::INVALID_ARGS),
     };
     vmo.write(0, data);
-    func(&ph, data);
     Ok(vmo)
 }
