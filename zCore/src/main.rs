@@ -44,12 +44,19 @@ pub extern "C" fn _start(boot_info: &BootInfo) -> ! {
 }
 
 fn main(zbi_data: &[u8], cmdline: &str) {
-    let _proc = run_userboot(USERBOOT_DATA, VDSO_DATA, &zbi_data, cmdline);
+    let _proc = run_userboot(
+        USERBOOT_DATA,
+        VDSO_DATA,
+        DECOMPRESSOR_DATA,
+        &zbi_data,
+        cmdline,
+    );
     executor::run();
 }
 
 static USERBOOT_DATA: &[u8] = include_bytes!("../../prebuilt/zircon/userboot.so");
 static VDSO_DATA: &[u8] = include_bytes!("../../prebuilt/zircon/libzircon.so");
+static DECOMPRESSOR_DATA: &[u8] = include_bytes!("../../prebuilt/zircon/decompress-zstd.so");
 
 fn get_log_level(cmdline: &str) -> &str {
     for opt in cmdline.split(',') {

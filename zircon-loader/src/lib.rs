@@ -60,6 +60,7 @@ const K_HANDLECOUNT: usize = K_FISTINSTRUMENTATIONDATA + 3;
 pub fn run_userboot(
     userboot_data: &[u8],
     vdso_data: &[u8],
+    decompressor_data: &[u8],
     zbi_data: &[u8],
     cmdline: &str,
 ) -> Arc<Process> {
@@ -113,6 +114,26 @@ pub fn run_userboot(
         vmo
     };
 
+    // decompressor
+    let decompressor_vmo = {
+        let elf = ElfFile::new(decompressor_data).unwrap();
+        let size = elf.load_segment_size();
+        info!("decompressor vmo size : {:#x}", size);
+        let vmo = VMObjectPaged::new(size / PAGE_SIZE);
+        for ph in elf.program_iter() {
+            if ph.get_type().unwrap() != Type::Load {
+                continue;
+            }
+            let data = match ph.get_data(&elf).unwrap() {
+                SegmentData::Undefined(data) => data,
+                _ => unimplemented!(),
+            };
+            vmo.write(ph.virtual_addr() as usize, data);
+        }
+        vmo.set_name("lib/hermetic/decompress-zbi.so");
+        vmo
+    };
+
     // stack
     const STACK_PAGES: usize = 8;
     let stack_vmo = VMObjectPaged::new(STACK_PAGES);
@@ -127,13 +148,6 @@ pub fn run_userboot(
     let (user_channel, kernel_channel) = Channel::create();
     let handle = Handle::new(user_channel, Rights::DEFAULT_CHANNEL);
 
-    // TODO: real UserbootDecompressor
-    let decompressor_vmo = {
-        let decompressor = VMObjectPaged::new(0);
-        decompressor.set_name("lib/hermetic/decompress-zbi.so");
-        decompressor
-    };
-
     // FIXME: pass correct handles
     let mut handles = vec![Handle::new(proc.clone(), Rights::DUPLICATE); 15];
     handles[K_VMARROOT_SELF] = Handle::new(proc.vmar().clone(), Rights::DEFAULT_VMAR);
@@ -142,7 +156,7 @@ pub fn run_userboot(
     handles[K_ZBI] = Handle::new(zbi_vmo, Rights::DEFAULT_VMO);
     handles[K_FIRSTVDSO] = Handle::new(vdso_vmo, Rights::DEFAULT_VMO);
     // FIXME correct rights for decompressor engine
-    handles[K_USERBOOT_DECOMPRESSOR] = Handle::new(decompressor_vmo, Rights::GET_PROPERTY);
+    handles[K_USERBOOT_DECOMPRESSOR] = Handle::new(decompressor_vmo, Rights::DEFAULT_VMO);
 
     let mut data = Vec::from(cmdline);
     data.push(0);

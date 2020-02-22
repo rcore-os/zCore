@@ -12,7 +12,7 @@ impl Syscall {
     ) -> ZxResult<usize> {
         let options = VmOptions::from_bits(options).ok_or(ZxError::INVALID_ARGS)?;
         info!(
-            "vmar.allocate: parent={:?}, options={:?}, offset={:?}, size={:?}",
+            "vmar.allocate: parent={:?}, options={:?}, offset={:#x?}, size={:#x?}",
             parent_vmar, options, offset, size,
         );
         let offset = if options.contains(VmOptions::SPECIFIC) {
