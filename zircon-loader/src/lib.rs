@@ -74,7 +74,7 @@ pub fn run_userboot(
     let (entry, vdso_addr) = {
         let elf = ElfFile::new(userboot_data).unwrap();
         let size = elf.load_segment_size();
-        let vmar = vmar.create_child(None, size).unwrap();
+        let vmar = vmar.create_child(size).unwrap();
         vmar.load_from_elf(&elf).unwrap();
         (
             vmar.addr() + elf.header.pt2.entry_point() as usize,
