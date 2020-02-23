@@ -81,6 +81,9 @@ impl Syscall {
                 self.sys_vmar_allocate(a0 as _, a1 as _, a2 as _, a3 as _, a4.into(), a5.into())
             }
             SyscallType::CPRNG_DRAW_ONCE => self.sys_cprng_draw_once(a0.into(), a1 as _),
+            SyscallType::THREAD_CREATE => {
+                self.sys_thread_create(a0 as _, a1.into(), a2 as _, a3 as _, a4.into())
+            }
             _ => {
                 warn!("syscall unimplemented");
                 Err(ZxError::NOT_SUPPORTED)

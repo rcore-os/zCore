@@ -36,4 +36,26 @@ impl Syscall {
         self.exit = true;
         Err(ZxError::INTERNAL)
     }
+
+    pub fn sys_thread_create(
+        &self,
+        proc_handle: HandleValue,
+        name: UserInPtr<u8>,
+        name_size: usize,
+        options: u32,
+        mut thread_handle: UserOutPtr<HandleValue>,
+    ) -> ZxResult<usize> {
+        let name = name.read_string(name_size)?;
+        info!(
+            "thread.create: proc={:?}, name={:?}, options={:?}",
+            proc_handle, name, options,
+        );
+        assert_eq!(options, 0);
+        let proc = self.thread.proc();
+        let process = proc.get_object_with_rights::<Process>(proc_handle, Rights::MANAGE_THREAD)?;
+        let thread = Thread::create(&process, &name, options)?;
+        let handle = proc.add_handle(Handle::new(thread, Rights::DEFAULT_THREAD));
+        thread_handle.write(handle)?;
+        Ok(0)
+    }
 }
