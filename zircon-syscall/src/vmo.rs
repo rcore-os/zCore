@@ -38,4 +38,21 @@ impl Syscall {
         buf.write_array(&buffer)?;
         Ok(0)
     }
+
+    pub fn sys_vmo_write(
+        &self,
+        handle_value: HandleValue,
+        buf: UserInPtr<u8>,
+        offset: u64,
+        buf_size: usize,
+    ) -> ZxResult<usize> {
+        info!(
+            "vmo.write: handle={:?}, offset={:?}, buf=({:?}; {:?})",
+            handle_value, offset, buf, buf_size,
+        );
+        let proc = self.thread.proc();
+        let vmo = proc.get_vmo_with_rights(handle_value, Rights::READ)?;
+        vmo.write(offset as usize, &buf.read_array(buf_size)?);
+        Ok(0)
+    }
 }

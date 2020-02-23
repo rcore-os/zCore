@@ -16,6 +16,7 @@ use {
 
 mod channel;
 mod consts;
+mod cprng;
 mod debug;
 mod debuglog;
 mod handle;
@@ -66,6 +67,7 @@ impl Syscall {
             }
             SyscallType::VMO_CREATE => self.sys_vmo_create(a0 as _, a1 as _, a2.into()),
             SyscallType::VMO_READ => self.sys_vmo_read(a0 as _, a1.into(), a2 as _, a3 as _),
+            SyscallType::VMO_WRITE => self.sys_vmo_write(a0 as _, a1.into(), a2 as _, a3 as _),
             SyscallType::VMAR_MAP => self.sys_vmar_map(
                 a0 as _,
                 a1 as _,
@@ -78,6 +80,7 @@ impl Syscall {
             SyscallType::VMAR_ALLOCATE => {
                 self.sys_vmar_allocate(a0 as _, a1 as _, a2 as _, a3 as _, a4.into(), a5.into())
             }
+            SyscallType::CPRNG_DRAW_ONCE => self.sys_cprng_draw_once(a0.into(), a1 as _),
             _ => {
                 warn!("syscall unimplemented");
                 Err(ZxError::NOT_SUPPORTED)
