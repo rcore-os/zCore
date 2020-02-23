@@ -92,30 +92,41 @@ impl VmAddressRegion {
         vmo_offset: usize,
         len: usize,
         flags: MMUFlags,
-    ) -> ZxResult<()> {
-        self.map(Some(offset), vmo, vmo_offset, len, flags)?;
-        Ok(())
+    ) -> ZxResult<VirtAddr> {
+        if !page_aligned(vmo_offset) || !page_aligned(len) || vmo_offset + len > vmo.len() {
+            return Err(ZxError::INVALID_ARGS);
+        }
+        let mut guard = self.inner.lock();
+        let inner = guard.as_mut().ok_or(ZxError::BAD_STATE)?;
+        let offset = self.determine_offset(inner, Some(offset), len)?;
+        let addr = self.addr + offset;
+        let mapping = VmMapping {
+            addr,
+            size: len,
+            flags,
+            vmo,
+            vmo_offset,
+            page_table: self.page_table.clone(),
+        };
+        mapping.map();
+        inner.mappings.push(mapping);
+        Ok(addr)
     }
 
     /// Map the `vmo` into this VMAR.
     pub fn map(
         &self,
-        offset: Option<usize>,
         vmo: Arc<dyn VMObject>,
         vmo_offset: usize,
         len: usize,
         flags: MMUFlags,
     ) -> ZxResult<VirtAddr> {
-        if !page_aligned(offset.unwrap_or(0))
-            || !page_aligned(vmo_offset)
-            || !page_aligned(len)
-            || vmo_offset + len > vmo.len()
-        {
+        if !page_aligned(vmo_offset) || !page_aligned(len) || vmo_offset + len > vmo.len() {
             return Err(ZxError::INVALID_ARGS);
         }
         let mut guard = self.inner.lock();
         let inner = guard.as_mut().ok_or(ZxError::BAD_STATE)?;
-        let offset = self.determine_offset(inner, offset, len)?;
+        let offset = self.determine_offset(inner, None, len)?;
         let addr = self.addr + offset;
         let mapping = VmMapping {
             addr,

@@ -70,6 +70,12 @@ impl Syscall {
                 return Err(ZxError::INVALID_ARGS);
             }
         }
+        // check SPECIFIC options with offset
+        let is_specific = options.contains(VmOptions::SPECIFIC)
+            || options.contains(VmOptions::SPECIFIC_OVERWRITE);
+        if !is_specific && vmar_offset != 0 {
+            return Err(ZxError::INVALID_ARGS);
+        }
         let mut mapping_flags = MMUFlags::USER;
         mapping_flags.set(
             MMUFlags::READ,
@@ -83,7 +89,12 @@ impl Syscall {
             MMUFlags::EXECUTE,
             vmar_rights.contains(Rights::EXECUTE) && vmo_rights.contains(Rights::EXECUTE),
         );
-        mapped_addr.write(vmar.map(Some(vmar_offset), vmo, vmo_offset, len, mapping_flags)?)?;
+        let vaddr = if is_specific {
+            vmar.map_at(vmar_offset, vmo, vmo_offset, len, mapping_flags)?
+        } else {
+            vmar.map(vmo, vmo_offset, len, mapping_flags)?
+        };
+        mapped_addr.write(vaddr)?;
         Ok(0)
     }
 }

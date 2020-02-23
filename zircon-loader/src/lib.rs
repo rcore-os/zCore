@@ -127,7 +127,7 @@ pub fn run_userboot(
     let stack_vmo = VMObjectPaged::new(STACK_PAGES);
     let flags = MMUFlags::READ | MMUFlags::WRITE | MMUFlags::USER;
     let stack_bottom = vmar
-        .map(None, stack_vmo.clone(), 0, stack_vmo.len(), flags)
+        .map(stack_vmo.clone(), 0, stack_vmo.len(), flags)
         .unwrap();
     // WARN: align stack to 16B, then emulate a 'call' (push rip)
     let sp = stack_bottom + stack_vmo.len() - 8;
