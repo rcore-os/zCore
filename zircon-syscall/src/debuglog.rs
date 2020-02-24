@@ -36,11 +36,13 @@ impl Syscall {
         buf: UserInPtr<u8>,
         len: usize,
     ) -> ZxResult<usize> {
-        let datalen = len.max(224);
+        let datalen = len.min(224);
         let data = buf.read_string(datalen as usize)?;
-        self.thread
-            .proc()
-            .get_object_with_rights::<DebugLog>(handle_value, Rights::WRITE)?
-            .write(flags, &data)
+        let thread = &self.thread;
+        let proc = thread.proc();
+        let tid = thread.id();
+        let pid = proc.id();
+        proc.get_object_with_rights::<DebugLog>(handle_value, Rights::WRITE)?
+            .write(flags, &data, tid, pid)
     }
 }
