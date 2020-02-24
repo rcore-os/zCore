@@ -58,6 +58,10 @@ impl Thread {
                 ..Default::default()
             };
             loop {
+                // 判断线程状态是否是RUNNABLE,不是则返回Pending
+                unsafe {
+                    thread_check_runnable(&thread).await;
+                }
                 context.run();
                 let exit = unsafe { handle_syscall(&thread, &mut context.general).await };
                 if exit {
@@ -77,6 +81,15 @@ extern "C" fn handle_syscall(
 ) -> Pin<Box<dyn Future<Output = bool> + Send>> {
     // exit by default
     Box::pin(async { true })
+}
+
+/// Check whether a thread is runnable
+#[linkage = "weak"]
+#[no_mangle]
+extern "C" fn thread_check_runnable(
+    _thread: &Arc<usize>,
+) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    Box::pin(async {})
 }
 
 /// Map kernel for the new page table.

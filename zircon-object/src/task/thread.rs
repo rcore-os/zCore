@@ -4,7 +4,12 @@ use {
     super::*,
     crate::object::*,
     alloc::{boxed::Box, string::String, sync::Arc},
-    core::any::Any,
+    core::{
+        any::Any,
+        future::Future,
+        pin::Pin,
+        task::{Context, Poll, Waker},
+    },
     spin::Mutex,
 };
 
@@ -85,6 +90,17 @@ pub struct Thread {
 
 impl_kobject!(Thread);
 
+#[no_mangle]
+extern "C" fn thread_check_runnable(
+    thread: &'static Arc<Thread>,
+) -> Pin<Box<dyn Future<Output = ()>>> {
+    Box::pin(check_runnable_async(thread))
+}
+/// Check whether a thread is runnable
+async fn check_runnable_async(thread: &Arc<Thread>) {
+    thread.check_runnable().await
+}
+
 #[derive(Default)]
 struct ThreadInner {
     /// HAL thread handle
@@ -96,6 +112,9 @@ struct ThreadInner {
     ///
     /// Only be `Some` on suspended.
     state: Option<ThreadState>,
+
+    suspend_count: usize,
+    waker: Option<Waker>,
 }
 
 impl Thread {
@@ -178,6 +197,55 @@ impl Thread {
         let state = inner.state.as_mut().ok_or(ZxError::BAD_STATE)?;
         state.write(kind, buf)?;
         Ok(())
+    }
+
+    pub fn suspend(&self) {
+        let mut inner = self.inner.lock();
+        inner.suspend_count += 1;
+    }
+
+    pub fn check_runnable(self: &Arc<Thread>) -> impl Future<Output = ()> {
+        struct RunnableChecker {
+            thread: Arc<Thread>,
+        }
+        impl Future for RunnableChecker {
+            type Output = ();
+
+            fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+                let count = self.thread.inner.lock().suspend_count;
+                if count == 0 {
+                    Poll::Ready(())
+                } else {
+                    // 把waker存起来，比如self.thread.get_waker
+                    let mut inner = self.thread.inner.lock();
+                    inner.waker = Some(cx.waker().clone());
+                    Poll::Pending
+                }
+            }
+        }
+        RunnableChecker {
+            thread: self.clone(),
+        }
+    }
+
+    pub fn resume(&self) {
+        // 如果自身存储着waker且suspend_count等于0，wake
+        let (waker, suspend_count) = {
+            let mut inner = self.inner.lock();
+            let waker = inner.waker.take();
+            let suspend_count = inner.suspend_count;
+            (waker, suspend_count)
+        };
+        if suspend_count == 0 {
+            if let Some(waker) = waker {
+                waker.wake_by_ref();
+            }
+            unimplemented!()
+        } else {
+            let mut inner = self.inner.lock();
+            inner.waker = waker;
+            inner.suspend_count = suspend_count - 1;
+        }
     }
 }
 
