@@ -87,6 +87,7 @@ bitflags! {
         const DEFAULT_RESOURCE = Self::TRANSFER.bits | Self::DUPLICATE.bits | Self::WRITE.bits | Self::INSPECT.bits;
         const DEFAULT_LOG_WRITABLE = Self::WRITE.bits;
         const DEFAULT_LOG_READABLE = Self::WRITE.bits | Self::READ.bits;
+        const DEFAULT_SUSPEND_TOKEN = Self::TRANSFER.bits | Self::INSPECT.bits;
    }
 }
 

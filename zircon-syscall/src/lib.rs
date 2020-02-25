@@ -21,6 +21,7 @@ mod debug;
 mod debuglog;
 mod handle;
 mod object;
+mod suspend_task;
 mod task;
 mod vmar;
 mod vmo;
@@ -84,6 +85,7 @@ impl Syscall {
             SyscallType::THREAD_CREATE => {
                 self.sys_thread_create(a0 as _, a1.into(), a2 as _, a3 as _, a4.into())
             }
+            SyscallType::TASK_SUSPEND_TOKEN => self.sys_task_suspend_token(a0 as _, a1.into()),
             _ => {
                 warn!("syscall unimplemented");
                 Err(ZxError::NOT_SUPPORTED)
