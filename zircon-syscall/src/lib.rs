@@ -34,7 +34,7 @@ pub struct Syscall {
 }
 
 impl Syscall {
-    pub fn syscall(&mut self, sys_type: SyscallType, args: [usize; 8]) -> isize {
+    pub async fn syscall(&mut self, sys_type: SyscallType, args: [usize; 8]) -> isize {
         info!("{:?}=> args={:x?}", sys_type, args);
         let [a0, a1, a2, a3, a4, a5, a6, a7] = args;
         let ret = match sys_type {
@@ -86,6 +86,12 @@ impl Syscall {
                 self.sys_thread_create(a0 as _, a1.into(), a2 as _, a3 as _, a4.into())
             }
             SyscallType::TASK_SUSPEND_TOKEN => self.sys_task_suspend_token(a0 as _, a1.into()),
+            SyscallType::PROCESS_START => {
+                self.sys_process_start(a0 as _, a1 as _, a2 as _, a3 as _, a4 as _, a5 as _)
+            }
+            SyscallType::OBJECT_WAIT_ONE => {
+                { self.sys_object_wait_one(a0 as _, a1 as _, a2 as _, a3.into()) }.await
+            }
             _ => {
                 warn!("syscall unimplemented");
                 Err(ZxError::NOT_SUPPORTED)

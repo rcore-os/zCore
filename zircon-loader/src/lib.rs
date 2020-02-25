@@ -185,7 +185,7 @@ async fn handle_syscall_async(thread: &Arc<Thread>, regs: &mut GeneralRegs) -> b
         thread: thread.clone(),
         exit: false,
     };
-    let ret = syscall.syscall(SyscallType::from(num), args);
+    let ret = syscall.syscall(SyscallType::from(num), args).await;
     let exit = syscall.exit;
     regs.rax = ret as usize;
     exit

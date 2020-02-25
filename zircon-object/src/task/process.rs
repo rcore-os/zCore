@@ -190,9 +190,9 @@ impl Process {
     }
 
     /// Remove a handle from the process
-    pub fn remove_handle(&self, handle_value: HandleValue) -> ZxResult<()> {
+    pub fn remove_handle(&self, handle_value: HandleValue) -> ZxResult<Handle> {
         match self.inner.lock().handles.remove(&handle_value) {
-            Some(_) => Ok(()),
+            Some(handle) => Ok(handle),
             None => Err(ZxError::BAD_HANDLE),
         }
     }

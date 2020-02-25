@@ -6,6 +6,7 @@ impl Syscall {
         handle: HandleValue,
         mut token: UserOutPtr<HandleValue>,
     ) -> ZxResult<usize> {
+        info!("task.suspend_token: handle={:?}, token={:?}", handle, token);
         let proc = self.thread.proc();
         if let Ok(thread) = proc.get_object_with_rights::<Thread>(handle, Rights::WRITE) {
             if Arc::ptr_eq(&thread, &self.thread) {

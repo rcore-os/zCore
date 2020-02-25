@@ -71,4 +71,24 @@ impl Syscall {
             }
         }
     }
+
+    pub async fn sys_object_wait_one(
+        &self,
+        handle: HandleValue,
+        signals: u32,
+        deadline: u64,
+        mut observed: UserOutPtr<Signal>,
+    ) -> ZxResult<usize> {
+        info!(
+            "object.wait_one: handle={:?}, signals={:#x?}, deadline={:#x?}, observed={:#x?}",
+            handle, signals, deadline, observed
+        );
+        let signals = Signal::from_bits(signals).ok_or(ZxError::INVALID_ARGS)?;
+        let object = self
+            .thread
+            .proc()
+            .get_dyn_object_with_rights(handle, Rights::WAIT)?;
+        observed.write(object.wait_signal_async(signals).await)?;
+        Ok(0)
+    }
 }

@@ -3,7 +3,7 @@ use {
     super::process::Process,
     super::*,
     crate::object::*,
-    alloc::{boxed::Box, string::String, sync::Arc},
+    alloc::{boxed::Box, sync::Arc},
     core::{
         any::Any,
         future::Future,
@@ -81,8 +81,6 @@ mod thread_state;
 /// [`THREAD_RUNNING`]: crate::object::Signal::THREAD_RUNNING
 pub struct Thread {
     base: KObjectBase,
-    #[allow(dead_code)]
-    name: String,
     proc: Arc<Process>,
     ext: Box<dyn Any + Send + Sync>,
     inner: Mutex<ThreadInner>,
@@ -131,8 +129,11 @@ impl Thread {
     ) -> ZxResult<Arc<Self>> {
         // TODO: options
         let thread = Arc::new(Thread {
-            base: KObjectBase::new(),
-            name: String::from(name),
+            base: {
+                let base = KObjectBase::new();
+                base.set_name(name);
+                base
+            },
             proc: proc.clone(),
             ext: Box::new(ext),
             inner: Mutex::new(ThreadInner::default()),
@@ -202,6 +203,12 @@ impl Thread {
     pub fn suspend(&self) {
         let mut inner = self.inner.lock();
         inner.suspend_count += 1;
+        self.base.signal_set(Signal::THREAD_SUSPENDED);
+        info!(
+            "thread {} suspend_count {}",
+            self.base.get_name(),
+            inner.suspend_count
+        );
     }
 
     pub fn check_runnable(self: &Arc<Thread>) -> impl Future<Output = ()> {
