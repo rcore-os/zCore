@@ -90,4 +90,19 @@ impl Syscall {
             }
         };
     }
+
+    pub fn sys_thread_write_state(
+        &self,
+        handle: HandleValue,
+        kind: u32,
+        buffer: UserInPtr<u8>,
+        buffer_size: usize,
+    ) -> ZxResult<usize> {
+        let proc = self.thread.proc();
+        let thread = proc.get_object_with_rights::<Thread>(handle, Rights::WRITE)?;
+        let buf = buffer.read_array(buffer_size)?;
+        assert_eq!(kind, 0u32);
+        thread.write_state(ThreadStateKind::General, &buf)?;
+        Ok(0)
+    }
 }

@@ -1,5 +1,4 @@
 use {
-    self::thread_state::*,
     super::process::Process,
     super::*,
     crate::object::*,
@@ -12,6 +11,8 @@ use {
     },
     spin::Mutex,
 };
+
+pub use self::thread_state::*;
 
 mod thread_state;
 
@@ -136,7 +137,10 @@ impl Thread {
             },
             proc: proc.clone(),
             ext: Box::new(ext),
-            inner: Mutex::new(ThreadInner::default()),
+            inner: Mutex::new(ThreadInner {
+                state: Some(ThreadState::default()),
+                ..Default::default()
+            }),
         });
         proc.add_thread(thread.clone());
         Ok(thread)

@@ -92,6 +92,9 @@ impl Syscall {
             SyscallType::OBJECT_WAIT_ONE => {
                 { self.sys_object_wait_one(a0 as _, a1 as _, a2 as _, a3.into()) }.await
             }
+            SyscallType::THREAD_WRITE_STATE => {
+                self.sys_thread_write_state(a0 as _, a1 as _, a2.into(), a3 as _)
+            }
             _ => {
                 warn!("syscall unimplemented");
                 Err(ZxError::NOT_SUPPORTED)
