@@ -255,22 +255,13 @@ impl Thread {
     }
 
     pub fn resume(&self) {
-        // 如果自身存储着waker且suspend_count等于0，wake
-        let (waker, suspend_count) = {
-            let mut inner = self.inner.lock();
-            let waker = inner.waker.take();
-            let suspend_count = inner.suspend_count;
-            (waker, suspend_count)
-        };
-        if suspend_count == 0 {
-            if let Some(waker) = waker {
-                waker.wake_by_ref();
+        let mut inner = self.inner.lock();
+        assert_ne!(inner.suspend_count, 0);
+        inner.suspend_count -= 1;
+        if inner.suspend_count == 0 {
+            if let Some(waker) = inner.waker.take() {
+                waker.wake();
             }
-            unimplemented!()
-        } else {
-            let mut inner = self.inner.lock();
-            inner.waker = waker;
-            inner.suspend_count = suspend_count - 1;
         }
     }
 }
