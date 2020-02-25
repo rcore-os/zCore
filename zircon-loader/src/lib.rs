@@ -142,9 +142,10 @@ pub fn run_userboot(
     handles[K_ROOTJOB] = Handle::new(job, Rights::DEFAULT_JOB);
     handles[K_ROOTRESOURCE] = Handle::new(resource, Rights::DEFAULT_RESOURCE);
     handles[K_ZBI] = Handle::new(zbi_vmo, Rights::DEFAULT_VMO);
-    handles[K_FIRSTVDSO] = Handle::new(vdso_vmo, Rights::DEFAULT_VMO);
+    handles[K_FIRSTVDSO] = Handle::new(vdso_vmo, Rights::DEFAULT_VMO | Rights::EXECUTE);
     // FIXME correct rights for decompressor engine
-    handles[K_USERBOOT_DECOMPRESSOR] = Handle::new(decompressor_vmo, Rights::DEFAULT_VMO);
+    handles[K_USERBOOT_DECOMPRESSOR] =
+        Handle::new(decompressor_vmo, Rights::DEFAULT_VMO | Rights::EXECUTE);
 
     let mut data = Vec::from(cmdline);
     data.push(0);

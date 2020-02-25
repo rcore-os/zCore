@@ -34,7 +34,7 @@ impl Syscall {
         let proc = self.thread.proc();
         proc.exit(code);
         self.exit = true;
-        Err(ZxError::INTERNAL)
+        Ok(0)
     }
 
     pub fn sys_thread_create(

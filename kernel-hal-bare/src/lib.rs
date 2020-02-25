@@ -25,7 +25,11 @@ extern crate alloc;
 
 use alloc::boxed::Box;
 use alloc::sync::Arc;
-use core::{future::Future, pin::Pin};
+use core::{
+    future::Future,
+    pin::Pin,
+    task::{Context, Poll},
+};
 use kernel_hal::defs::*;
 
 pub mod arch;
@@ -47,11 +51,23 @@ pub struct Thread {
 impl Thread {
     #[export_name = "hal_thread_spawn"]
     pub fn spawn(thread: Arc<usize>, regs: GeneralRegs, vmtoken: usize) -> Self {
-        executor::spawn(async move {
-            unsafe {
-                // TODO: switch page table between processes
-                arch::set_page_table(vmtoken);
+        struct PageTableSwitchWrapper<F: Future> {
+            inner: F,
+            vmtoken: usize,
+        }
+        impl<F: Future> Future for PageTableSwitchWrapper<F> {
+            type Output = F::Output;
+            fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+                unsafe {
+                    arch::set_page_table(self.vmtoken);
+                }
+                let inner: Pin<&mut F> =
+                    unsafe { core::mem::transmute(&mut self.get_unchecked_mut().inner) };
+                inner.poll(cx)
             }
+        }
+
+        let future = async move {
             thread_set_state(&thread, &regs);
             let mut context = trapframe::UserContext {
                 // safety: same structure
@@ -63,13 +79,16 @@ impl Thread {
                 unsafe {
                     thread_check_runnable(&thread).await;
                 }
-                warn!("{:#x?}", context);
                 context.run();
                 let exit = unsafe { handle_syscall(&thread, &mut context.general).await };
                 if exit {
                     break;
                 }
             }
+        };
+        executor::spawn(PageTableSwitchWrapper {
+            inner: future,
+            vmtoken,
         });
         Thread { thread: 0 }
     }
