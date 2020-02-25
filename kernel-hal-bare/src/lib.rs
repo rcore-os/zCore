@@ -52,6 +52,7 @@ impl Thread {
                 // TODO: switch page table between processes
                 arch::set_page_table(vmtoken);
             }
+            thread_set_state(&thread, &regs);
             let mut context = trapframe::UserContext {
                 // safety: same structure
                 general: unsafe { core::mem::transmute(regs) },
@@ -62,6 +63,7 @@ impl Thread {
                 unsafe {
                     thread_check_runnable(&thread).await;
                 }
+                warn!("{:#x?}", context);
                 context.run();
                 let exit = unsafe { handle_syscall(&thread, &mut context.general).await };
                 if exit {
@@ -81,6 +83,12 @@ extern "C" fn handle_syscall(
 ) -> Pin<Box<dyn Future<Output = bool> + Send>> {
     // exit by default
     Box::pin(async { true })
+}
+
+#[linkage = "weak"]
+#[export_name = "thread_set_state"]
+pub fn thread_set_state(_thread: &Arc<usize>, _state: &GeneralRegs) {
+    unimplemented!()
 }
 
 /// Check whether a thread is runnable

@@ -44,9 +44,31 @@ impl GeneralRegs {
     }
 
     pub fn fork(&self) -> Self {
+        GeneralRegs { rax: 0, ..*self }
+    }
+
+    pub const fn zero() -> Self {
         GeneralRegs {
-            rax: 0,
-            ..*self
+            rax: 0usize,
+            rbx: 0usize,
+            rcx: 0usize,
+            rdx: 0usize,
+            rsi: 0usize,
+            rdi: 0usize,
+            rbp: 0usize,
+            rsp: 0usize,
+            r8: 0usize,
+            r9: 0usize,
+            r10: 0usize,
+            r11: 0usize,
+            r12: 0usize,
+            r13: 0usize,
+            r14: 0usize,
+            r15: 0usize,
+            rip: 0usize,
+            rflags: 0usize,
+            fs_base: 0usize,
+            gs_base: 0usize,
         }
     }
 }

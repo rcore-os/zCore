@@ -100,6 +100,15 @@ async fn check_runnable_async(thread: &Arc<Thread>) {
     thread.check_runnable().await
 }
 
+#[export_name = "thread_set_state"]
+pub fn thread_set_state(thread: &'static Arc<Thread>, state: &'static mut ThreadState) {
+    let mut inner = thread.inner.lock();
+    if let Some(old_state) = inner.state.take() {
+        state.general = old_state.general;
+    }
+    inner.state = Some(state);
+}
+
 #[derive(Default)]
 struct ThreadInner {
     /// HAL thread handle
@@ -110,7 +119,7 @@ struct ThreadInner {
     /// Thread state
     ///
     /// Only be `Some` on suspended.
-    state: Option<ThreadState>,
+    state: Option<&'static mut ThreadState>,
 
     suspend_count: usize,
     waker: Option<Waker>,
@@ -137,10 +146,7 @@ impl Thread {
             },
             proc: proc.clone(),
             ext: Box::new(ext),
-            inner: Mutex::new(ThreadInner {
-                state: Some(ThreadState::default()),
-                ..Default::default()
-            }),
+            inner: Mutex::new(ThreadInner::default()),
         });
         proc.add_thread(thread.clone());
         Ok(thread)
@@ -196,10 +202,19 @@ impl Thread {
         Ok(len)
     }
 
+    #[allow(unsafe_code)]
     /// Write one aspect of thread state.
     pub fn write_state(&self, kind: ThreadStateKind, buf: &[u8]) -> ZxResult<()> {
         let mut inner = self.inner.lock();
-        let state = inner.state.as_mut().ok_or(ZxError::BAD_STATE)?;
+        //let state = inner.state.as_mut().ok_or(ZxError::BAD_STATE)?;
+        let state = inner.state.get_or_insert({
+            unsafe {
+                static mut STATE: ThreadState = ThreadState {
+                    general: GeneralRegs::zero(),
+                };
+                &mut STATE
+            }
+        });
         state.write(kind, buf)?;
         Ok(())
     }

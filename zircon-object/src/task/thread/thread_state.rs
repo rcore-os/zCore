@@ -18,7 +18,7 @@ pub enum ThreadStateKind {
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
 pub struct ThreadState {
-    general: GeneralRegs,
+    pub general: GeneralRegs,
 }
 
 impl ThreadState {
@@ -35,7 +35,10 @@ impl ThreadState {
 
     pub fn write(&mut self, kind: ThreadStateKind, buf: &[u8]) -> ZxResult<()> {
         match kind {
-            ThreadStateKind::General => self.general = buf.read_struct()?,
+            ThreadStateKind::General => {
+                self.general = buf.read_struct()?;
+                error!("{:#x?}", self.general);
+            }
             #[cfg(target_arch = "x86_64")]
             ThreadStateKind::FS => self.general.fs_base = buf.read_struct()?,
             #[cfg(target_arch = "x86_64")]
