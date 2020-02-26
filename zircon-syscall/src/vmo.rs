@@ -78,4 +78,14 @@ impl Syscall {
         out.write(new_handle)?;
         Ok(0)
     }
+
+    pub fn sys_vmo_get_size(
+        &self,
+        handle: HandleValue,
+        mut size: UserOutPtr<usize>,
+    ) -> ZxResult<usize> {
+        let vmo = self.thread.proc().get_vmo_and_rights(handle)?.0;
+        size.write(vmo.len())?;
+        Ok(0)
+    }
 }

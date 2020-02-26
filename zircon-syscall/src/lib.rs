@@ -101,6 +101,7 @@ impl Syscall {
             SyscallType::VMO_REPLACE_AS_EXECUTABLE => {
                 self.sys_vmo_replace_as_executable(a0 as _, a1 as _, a2.into())
             }
+            SyscallType::VMO_GET_SIZE => self.sys_vmo_get_size(a0 as _, a1.into()),
             _ => {
                 warn!("syscall unimplemented");
                 Err(ZxError::NOT_SUPPORTED)
