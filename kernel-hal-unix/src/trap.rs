@@ -167,23 +167,23 @@ run_user:
     # pop trap frame (struct GeneralRegs)
     pop rax
     pop rbx
-    pop rcx                 # rcx is clobber
+    pop rcx
     pop rdx
     pop rsi
     pop rdi
     pop rbp
-    pop rcx                 # rcx = rsp
+    pop r8                  # skip rsp
     pop r8
     pop r9
     pop r10
-    pop r11                 # r11 is clobber
+    pop r11
     pop r12
     pop r13
     pop r14
     pop r15
-    pop r11                 # r11 = rip
+    pop r11                 # r11 = rip. FIXME: don't overwrite r11!
     popfq                   # pop rflags
-    mov rsp, rcx            # restore rsp
+    mov rsp, [rsp - 8*11]   # restore rsp
     jmp r11                 # restore rip
 "#
 );

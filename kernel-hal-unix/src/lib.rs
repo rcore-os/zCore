@@ -40,13 +40,16 @@ impl Thread {
     pub fn spawn(thread: Arc<usize>, mut regs: GeneralRegs) -> Self {
         async_std::task::spawn(async move {
             thread_set_state(&thread, &regs);
+            let mut fxstate = [0u128; 512 / 16];
             loop {
                 // 判断线程状态是否是RUNNABLE,不是则返回Pending
                 unsafe {
                     thread_check_runnable(&thread).await;
                 }
                 unsafe {
+                    core::arch::x86_64::_fxrstor64(fxstate.as_ptr() as _);
                     trap::run_user(&mut regs);
+                    core::arch::x86_64::_fxsave64(fxstate.as_mut_ptr() as _);
                 }
                 let exit = unsafe { handle_syscall(&thread, &mut regs).await };
                 if exit {

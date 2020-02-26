@@ -62,6 +62,7 @@ impl Syscall {
         let child = parent.allocate(offset, size as usize, vmar_flags, align)?;
         let child_addr = child.addr();
         let child_handle = proc.add_handle(Handle::new(child, Rights::DEFAULT_VMAR | perm_rights));
+        info!("vmar.allocate: at {:#x?}", child_addr);
         out_child_vmar.write(child_handle)?;
         out_child_addr.write(child_addr)?;
         Ok(0)
@@ -80,7 +81,7 @@ impl Syscall {
     ) -> ZxResult<usize> {
         let options = VmOptions::from_bits(options).ok_or(ZxError::INVALID_ARGS)?;
         info!(
-            "vmar.map: vmar_handle={:?}, options={:?},vmar_offset={:#x?},  vmo_handle={:?}, vmo_offset={:#x?}, len={:#x?}",
+            "vmar.map: vmar_handle={:?}, options={:?}, vmar_offset={:#x?}, vmo_handle={:?}, vmo_offset={:#x?}, len={:#x?}",
             vmar_handle, options, vmar_offset, vmo_handle, vmo_offset, len
         );
         let proc = self.thread.proc();
@@ -122,6 +123,7 @@ impl Syscall {
         } else {
             vmar.map(None, vmo, vmo_offset, len, mapping_flags)?
         };
+        info!("vmar.map: at {:#x?}", vaddr);
         mapped_addr.write(vaddr)?;
         Ok(0)
     }
