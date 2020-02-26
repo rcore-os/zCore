@@ -1,4 +1,7 @@
-use {super::*, zircon_object::vm::*};
+use {
+    super::*,
+    zircon_object::{resource::*, vm::*},
+};
 
 impl Syscall {
     pub fn sys_vmo_create(
@@ -53,6 +56,26 @@ impl Syscall {
         let proc = self.thread.proc();
         let vmo = proc.get_vmo_with_rights(handle_value, Rights::READ)?;
         vmo.write(offset as usize, &buf.read_array(buf_size)?);
+        Ok(0)
+    }
+
+    pub fn sys_vmo_replace_as_executable(
+        &self,
+        handle: HandleValue,
+        vmex: HandleValue,
+        mut out: UserOutPtr<HandleValue>,
+    ) -> ZxResult<usize> {
+        let proc = self.thread.proc();
+        if vmex != INVALID_HANDLE {
+            proc.validate_resource(vmex, ResourceKind::VMEX)?;
+        } else {
+            unimplemented!()
+        }
+        let _ = proc.get_vmo_and_rights(handle)?;
+        let new_handle = proc.dup_handle_operating_rights(handle, |handle_rights| {
+            Ok(handle_rights | Rights::EXECUTE)
+        })?;
+        out.write(new_handle)?;
         Ok(0)
     }
 }

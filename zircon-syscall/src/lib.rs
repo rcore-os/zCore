@@ -95,6 +95,12 @@ impl Syscall {
             SyscallType::THREAD_WRITE_STATE => {
                 self.sys_thread_write_state(a0 as _, a1 as _, a2.into(), a3 as _)
             }
+            SyscallType::OBJECT_GET_INFO => {
+                self.sys_object_get_info(a0 as _, a1 as _, a2 as _, a3 as _, a4.into(), a5.into())
+            }
+            SyscallType::VMO_REPLACE_AS_EXECUTABLE => {
+                self.sys_vmo_replace_as_executable(a0 as _, a1 as _, a2.into())
+            }
             _ => {
                 warn!("syscall unimplemented");
                 Err(ZxError::NOT_SUPPORTED)

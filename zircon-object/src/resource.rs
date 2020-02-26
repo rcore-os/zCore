@@ -35,7 +35,7 @@ impl Resource {
     }
 
     pub fn validate(&self, kind: ResourceKind) -> ZxResult<()> {
-        if self.kind == kind {
+        if self.kind == kind || self.kind == ResourceKind::ROOT {
             Ok(())
         } else {
             Err(ZxError::WRONG_TYPE)
