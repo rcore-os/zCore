@@ -74,7 +74,7 @@ pub fn run_userboot(
     let (entry, vdso_addr) = {
         let elf = ElfFile::new(userboot_data).unwrap();
         let size = elf.load_segment_size();
-        let vmar = vmar.create_child(size).unwrap();
+        let vmar = vmar.create_child(None, size).unwrap();
         vmar.load_from_elf(&elf).unwrap();
         (
             vmar.addr() + elf.header.pt2.entry_point() as usize,
@@ -88,7 +88,9 @@ pub fn run_userboot(
         let vdso_vmo = VMObjectPaged::new(vdso_data.len() / PAGE_SIZE + 1);
         vdso_vmo.write(0, &vdso_data);
         let size = elf.load_segment_size();
-        let vmar = vmar.create_child_at(vdso_addr - vmar.addr(), size).unwrap();
+        let vmar = vmar
+            .create_child(Some(vdso_addr - vmar.addr()), size)
+            .unwrap();
         vmar.map_from_elf(&elf, vdso_vmo.clone()).unwrap();
         #[cfg(feature = "std")]
         {

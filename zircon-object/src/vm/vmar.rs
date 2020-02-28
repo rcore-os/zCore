@@ -42,36 +42,20 @@ impl VmAddressRegion {
     }
 
     /// Create a child VMAR at given `offset`.
-    pub fn create_child(self: &Arc<Self>, len: usize) -> ZxResult<Arc<Self>> {
+    pub fn create_child(
+        self: &Arc<Self>,
+        offset: Option<usize>,
+        len: usize,
+    ) -> ZxResult<Arc<Self>> {
+        if offset.is_some() && !page_aligned(offset.unwrap()) {
+            return Err(ZxError::INVALID_ARGS);
+        }
         if !page_aligned(len) {
             return Err(ZxError::INVALID_ARGS);
         }
         let mut guard = self.inner.lock();
         let inner = guard.as_mut().ok_or(ZxError::BAD_STATE)?;
-        let offset = self.determine_offset(inner, None, len)?;
-        let child = Arc::new(VmAddressRegion {
-            base: KObjectBase::new(),
-            addr: self.addr + offset,
-            size: len,
-            parent: Some(self.clone()),
-            page_table: self.page_table.clone(),
-            inner: Mutex::new(Some(VmarInner::default())),
-        });
-        inner.children.push(child.clone());
-        Ok(child)
-    }
-
-    /// Create a child VMAR at `offset` with `len`.
-    ///
-    /// The `offset` and `len` should be page aligned,
-    /// or an `INVALID_ARGS` error will be returned.
-    pub fn create_child_at(self: &Arc<Self>, offset: usize, len: usize) -> ZxResult<Arc<Self>> {
-        if !page_aligned(offset) || !page_aligned(len) {
-            return Err(ZxError::INVALID_ARGS);
-        }
-        let mut guard = self.inner.lock();
-        let inner = guard.as_mut().ok_or(ZxError::BAD_STATE)?;
-        let offset = self.determine_offset(inner, Some(offset), len)?;
+        let offset = self.determine_offset(inner, offset, len)?;
         let child = Arc::new(VmAddressRegion {
             base: KObjectBase::new(),
             addr: self.addr + offset,
