@@ -80,6 +80,10 @@ impl Thread {
                     thread_check_runnable(&thread).await;
                 }
                 context.run();
+                if context.error_code != 0 {
+                    panic!("{:#x?}", context);
+                }
+                assert_eq!(context.trap_num, 0x100, "user interrupt still no support");
                 let exit = unsafe { handle_syscall(&thread, &mut context.general).await };
                 if exit {
                     break;

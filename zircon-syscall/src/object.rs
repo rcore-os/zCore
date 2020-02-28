@@ -1,4 +1,7 @@
-use {super::*, zircon_object::task::*};
+use {
+    super::*,
+    zircon_object::{task::*, vm::*},
+};
 
 const ZX_PROP_NAME: u32 = 3;
 const ZX_MAX_NAME_LEN: u32 = 32;
@@ -108,6 +111,13 @@ impl Syscall {
                     .proc()
                     .get_object_with_rights::<Process>(handle, Rights::INSPECT)?;
                 UserOutPtr::<ProcessInfo>::from(buffer).write(proc.get_info())?;
+            }
+            ZxInfo::InfoVmar => {
+                let vmar = self
+                    .thread
+                    .proc()
+                    .get_object_with_rights::<VmAddressRegion>(handle, Rights::INSPECT)?;
+                UserOutPtr::<VmarInfo>::from(buffer).write(vmar.get_info())?;
             }
             _ => {
                 warn!("not supported info topic");

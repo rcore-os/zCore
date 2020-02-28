@@ -1,4 +1,4 @@
-use core::sync::atomic::*;
+//use core::sync::atomic::*;
 use {
     super::*, crate::object::*, crate::vm::vmo::VMObject, alloc::sync::Arc, alloc::vec::Vec,
     kernel_hal::PageTable, spin::Mutex,
@@ -28,13 +28,13 @@ impl VmAddressRegion {
     /// Create a new root VMAR.
     pub fn new_root() -> Arc<Self> {
         // FIXME: workaround for unix
-        static VMAR_ID: AtomicUsize = AtomicUsize::new(0);
-        let i = VMAR_ID.fetch_add(1, Ordering::SeqCst);
-        let addr: usize = 0x100_00000000 + 0x10_00000000 * i;
+        //static VMAR_ID: AtomicUsize = AtomicUsize::new(0);
+        //let i = VMAR_ID.fetch_add(1, Ordering::SeqCst);
+        //let addr: usize = 0x100_00000000 + 0x1000_00000000 * i;
         Arc::new(VmAddressRegion {
             base: KObjectBase::new(),
-            addr,
-            size: 0x10_00000000,
+            addr: 0x100_0000,
+            size: 0x7fff_fffff000,
             parent: None,
             page_table: Arc::new(Mutex::new(kernel_hal::PageTable::new())),
             inner: Mutex::new(Some(VmarInner::default())),
@@ -301,6 +301,15 @@ impl VmAddressRegion {
         self.overlap(begin, end) && !self.within(begin, end)
     }
 
+    pub fn get_info(&self) -> VmarInfo {
+        let ret = VmarInfo {
+            base: self.addr(),
+            len: self.size,
+        };
+        info!("vmar info: {:#x?}", ret);
+        ret
+    }
+
     #[cfg(test)]
     fn count(&self) -> usize {
         let mut guard = self.inner.lock();
@@ -316,6 +325,13 @@ impl VmAddressRegion {
         let vmar_size: usize = inner.children.iter().map(|vmar| vmar.size).sum();
         map_size + vmar_size
     }
+}
+
+#[repr(C)]
+#[derive(Debug)]
+pub struct VmarInfo {
+    base: usize,
+    len: usize,
 }
 
 /// Virtual Memory Mapping

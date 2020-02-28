@@ -39,4 +39,22 @@ impl Syscall {
         handles.write_array(handle_values.as_slice())?;
         Ok(ZxError::OK as usize)
     }
+
+    pub fn sys_channel_create(
+        &self,
+        options: u32,
+        mut out0: UserOutPtr<HandleValue>,
+        mut out1: UserOutPtr<HandleValue>,
+    ) -> ZxResult<usize> {
+        if options != 0u32 {
+            return Err(ZxError::INVALID_ARGS);
+        }
+        let proc = self.thread.proc();
+        let (end0, end1) = Channel::create();
+        let handle0 = proc.add_handle(Handle::new(end0, Rights::DEFAULT_CHANNEL));
+        let handle1 = proc.add_handle(Handle::new(end1, Rights::DEFAULT_CHANNEL));
+        out0.write(handle0)?;
+        out1.write(handle1)?;
+        Ok(0)
+    }
 }
