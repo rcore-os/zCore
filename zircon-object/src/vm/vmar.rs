@@ -1,11 +1,29 @@
 //use core::sync::atomic::*;
 use {
     super::*, crate::object::*, crate::vm::vmo::VMObject, alloc::sync::Arc, alloc::vec::Vec,
-    kernel_hal::PageTable, spin::Mutex,
+    bitflags::bitflags, kernel_hal::PageTable, spin::Mutex,
 };
+
+bitflags! {
+    pub struct VmarFlags: u32 {
+        #[allow(clippy::identity_op)]
+        const COMPACT               = 1 << 0;
+        const SPECIFIC              = 1 << 1;
+        const SPECIFIC_OVERWRITE    = 1 << 2;
+        const CAN_MAP_SPECIFIC      = 1 << 3;
+        const CAN_MAP_READ          = 1 << 4;
+        const CAN_MAP_WRITE         = 1 << 5;
+        const CAN_MAP_EXECUTE       = 1 << 6;
+        const REQUIRE_NON_RESIZABLE = 1 << 7;
+        const ALLOW_FAULTS          = 1 << 8;
+        const CAN_MAP_RXW           = Self::CAN_MAP_READ.bits | Self::CAN_MAP_EXECUTE.bits | Self::CAN_MAP_WRITE.bits;
+        const ROOT_FLAGS            = Self::CAN_MAP_RXW.bits | Self::CAN_MAP_SPECIFIC.bits;
+    }
+}
 
 /// Virtual Memory Address Regions
 pub struct VmAddressRegion {
+    flags: VmarFlags,
     base: KObjectBase,
     addr: VirtAddr,
     size: usize,
@@ -32,6 +50,7 @@ impl VmAddressRegion {
         //let i = VMAR_ID.fetch_add(1, Ordering::SeqCst);
         //let addr: usize = 0x100_00000000 + 0x1000_00000000 * i;
         Arc::new(VmAddressRegion {
+            flags: VmarFlags::ROOT_FLAGS,
             base: KObjectBase::new(),
             addr: 0x100_0000,
             size: 0x7fff_fffff000,
@@ -44,19 +63,30 @@ impl VmAddressRegion {
     /// Create a child VMAR at given `offset`.
     pub fn create_child(
         self: &Arc<Self>,
-        offset: Option<usize>,
+        offset: usize,
         len: usize,
+        flags: VmarFlags,
     ) -> ZxResult<Arc<Self>> {
-        if offset.is_some() && !page_aligned(offset.unwrap()) {
+        // TODO check SPECIFIC_OVERWRITE and handle it
+        let is_specific = flags.contains(VmarFlags::SPECIFIC);
+        if !is_specific && offset != 0 {
             return Err(ZxError::INVALID_ARGS);
         }
-        if !page_aligned(len) {
+        if is_specific && !self.flags.contains(VmarFlags::CAN_MAP_SPECIFIC) {
+            return Err(ZxError::ACCESS_DENIED);
+        }
+        if !page_aligned(len) || !page_aligned(offset) {
             return Err(ZxError::INVALID_ARGS);
         }
         let mut guard = self.inner.lock();
         let inner = guard.as_mut().ok_or(ZxError::BAD_STATE)?;
-        let offset = self.determine_offset(inner, offset, len)?;
+        let offset = if is_specific {
+            self.determine_offset(inner, Some(offset), len)?
+        } else {
+            self.determine_offset(inner, None, len)?
+        };
         let child = Arc::new(VmAddressRegion {
+            flags,
             base: KObjectBase::new(),
             addr: self.addr + offset,
             size: len,

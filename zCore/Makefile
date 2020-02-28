@@ -45,7 +45,7 @@ $(kernel_img): kernel bootloader
 	mkdir -p $(ESP)/EFI/zCore $(ESP)/EFI/Boot
 	cp ../rboot/target/x86_64-unknown-uefi/release/rboot.efi $(ESP)/EFI/Boot/BootX64.efi
 	cp rboot.conf $(ESP)/EFI/Boot/rboot.conf
-	cp ../prebuilt/legacy-image-x64.zbi $(ESP)/EFI/zCore/fuchsia.zbi
+	cp ../prebuilt/zircon/fuchsia.zbi $(ESP)/EFI/zCore/fuchsia.zbi
 	cp $(kernel) $(ESP)/EFI/zCore/zcore.elf
 
 kernel:

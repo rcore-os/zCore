@@ -19,24 +19,13 @@ impl Syscall {
         let perm_rights = options.to_rights();
         let proc = self.thread.proc();
         let parent = proc.get_object_with_rights::<VmAddressRegion>(parent_vmar, perm_rights)?;
+        let flags = options.to_flags();
 
         // check `size`
         if size == 0u64 {
             return Err(ZxError::INVALID_ARGS);
         }
-        // check SPECIFIC options with offset
-        let is_specific = options.contains(VmOptions::SPECIFIC)
-            || options.contains(VmOptions::SPECIFIC_OVERWRITE);
-        if !is_specific && offset != 0 {
-            return Err(ZxError::INVALID_ARGS);
-        }
-        let optional_offset = if is_specific {
-            Some(offset as usize)
-        } else {
-            None
-        };
-
-        let child = parent.create_child(optional_offset, size as usize)?;
+        let child = parent.create_child(offset as usize, size as usize, flags)?;
         let child_addr = child.addr();
         let child_handle = proc.add_handle(Handle::new(child, Rights::DEFAULT_VMAR | perm_rights));
         out_child_vmar.write(child_handle)?;
@@ -62,7 +51,6 @@ impl Syscall {
         let proc = self.thread.proc();
         let (vmar, vmar_rights) = proc.get_object_and_rights::<VmAddressRegion>(vmar_handle)?;
         let (vmo, vmo_rights) = proc.get_vmo_and_rights(vmo_handle)?;
-        // TODO check vmar_rights and vmo_rights
         if !vmo_rights.contains(Rights::MAP) {
             return Err(ZxError::ACCESS_DENIED);
         };
@@ -72,6 +60,9 @@ impl Syscall {
             {
                 return Err(ZxError::INVALID_ARGS);
             }
+        }
+        if options.contains(VmOptions::CAN_MAP_RXW) {
+            return Err(ZxError::INVALID_ARGS);
         }
         // check SPECIFIC options with offset
         let is_specific = options.contains(VmOptions::SPECIFIC)
@@ -118,6 +109,7 @@ bitflags! {
         const MAP_RANGE             = 1 << 10;
         const REQUIRE_NON_RESIZABLE = 1 << 11;
         const ALLOW_FAULTS          = 1 << 12;
+        const CAN_MAP_RXW           = Self::CAN_MAP_READ.bits | Self::CAN_MAP_EXECUTE.bits | Self::CAN_MAP_WRITE.bits;
     }
 }
 
@@ -134,5 +126,37 @@ impl VmOptions {
             rights.insert(Rights::EXECUTE);
         }
         rights
+    }
+
+    fn to_flags(self) -> VmarFlags {
+        let mut flags = VmarFlags::empty();
+        if self.contains(VmOptions::COMPACT) {
+            flags.insert(VmarFlags::COMPACT);
+        }
+        if self.contains(VmOptions::SPECIFIC) {
+            flags.insert(VmarFlags::SPECIFIC);
+        }
+        if self.contains(VmOptions::SPECIFIC_OVERWRITE) {
+            flags.insert(VmarFlags::SPECIFIC_OVERWRITE);
+        }
+        if self.contains(VmOptions::CAN_MAP_SPECIFIC) {
+            flags.insert(VmarFlags::CAN_MAP_SPECIFIC);
+        }
+        if self.contains(VmOptions::CAN_MAP_READ) {
+            flags.insert(VmarFlags::CAN_MAP_READ);
+        }
+        if self.contains(VmOptions::CAN_MAP_WRITE) {
+            flags.insert(VmarFlags::CAN_MAP_WRITE);
+        }
+        if self.contains(VmOptions::CAN_MAP_EXECUTE) {
+            flags.insert(VmarFlags::CAN_MAP_EXECUTE);
+        }
+        if self.contains(VmOptions::REQUIRE_NON_RESIZABLE) {
+            flags.insert(VmarFlags::REQUIRE_NON_RESIZABLE);
+        }
+        if self.contains(VmOptions::ALLOW_FAULTS) {
+            flags.insert(VmarFlags::ALLOW_FAULTS);
+        }
+        flags
     }
 }

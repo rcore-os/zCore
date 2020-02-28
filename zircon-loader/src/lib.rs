@@ -74,7 +74,7 @@ pub fn run_userboot(
     let (entry, vdso_addr) = {
         let elf = ElfFile::new(userboot_data).unwrap();
         let size = elf.load_segment_size();
-        let vmar = vmar.create_child(None, size).unwrap();
+        let vmar = vmar.create_child(0, size, VmarFlags::CAN_MAP_RXW).unwrap();
         vmar.load_from_elf(&elf).unwrap();
         (
             vmar.addr() + elf.header.pt2.entry_point() as usize,
@@ -89,7 +89,11 @@ pub fn run_userboot(
         vdso_vmo.write(0, &vdso_data);
         let size = elf.load_segment_size();
         let vmar = vmar
-            .create_child(Some(vdso_addr - vmar.addr()), size)
+            .create_child(
+                vdso_addr - vmar.addr(),
+                size,
+                VmarFlags::CAN_MAP_RXW | VmarFlags::SPECIFIC,
+            )
             .unwrap();
         vmar.map_from_elf(&elf, vdso_vmo.clone()).unwrap();
         #[cfg(feature = "std")]
@@ -140,7 +144,7 @@ pub fn run_userboot(
 
     // FIXME: pass correct handles
     let mut handles = vec![Handle::new(proc.clone(), Rights::DUPLICATE); 15];
-    handles[K_VMARROOT_SELF] = Handle::new(proc.vmar().clone(), Rights::DEFAULT_VMAR);
+    handles[K_VMARROOT_SELF] = Handle::new(proc.vmar().clone(), Rights::DEFAULT_VMAR | Rights::IO);
     handles[K_ROOTJOB] = Handle::new(job, Rights::DEFAULT_JOB);
     handles[K_ROOTRESOURCE] = Handle::new(resource, Rights::DEFAULT_RESOURCE);
     handles[K_ZBI] = Handle::new(zbi_vmo, Rights::DEFAULT_VMO);
