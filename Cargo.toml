@@ -7,13 +7,11 @@ members = [
     "linux-syscall",
     "linux-loader",
     "kernel-hal-unix",
-    "kernel-hal-bare",
     "kernel-hal",
-    "kernel-hal-bare",
-    "kernel-hal-bare",
 ]
 
 exclude = [
 	"zCore",
 	"rboot",
+    "kernel-hal-bare",
 ]

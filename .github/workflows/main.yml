@@ -51,18 +51,9 @@ jobs:
       with:
         command: build
         args: --all-features
-    - name: Build for riscv32
-      uses: actions-rs/cargo@v1
-      with:
-        command: build
-        args: --package kernel-hal-bare --target riscv32imac-unknown-none-elf
-    - name: Build for riscv64
-      uses: actions-rs/cargo@v1
-      with:
-        command: build
-        args: --package kernel-hal-bare --target riscv64imac-unknown-none-elf
     - name: Build zCore
       run: |
+        cargo install cargo-xbuild
         cd zCore
         make build
     - name: Build docs
