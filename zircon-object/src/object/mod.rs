@@ -9,6 +9,7 @@
 //! ## Example
 //! ```
 //! use zircon_object::object::*;
+//! extern crate alloc;
 //!
 //! pub struct SampleObject {
 //!    base: KObjectBase,

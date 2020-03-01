@@ -11,9 +11,6 @@ impl Syscall {
         info!("handle.dup: handle={:?}, rights={:?}", handle_value, rights);
         let proc = self.thread.proc();
         let new_value = proc.dup_handle_operating_rights(handle_value, |handle_rights| {
-            if !handle_rights.contains(Rights::DUPLICATE) {
-                return Err(ZxError::ACCESS_DENIED);
-            }
             if !rights.contains(Rights::SAME_RIGHTS) {
                 // `rights` must be strictly lesser than of the source handle
                 if !(handle_rights.contains(rights) && handle_rights != rights) {

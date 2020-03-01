@@ -223,6 +223,9 @@ impl Process {
             Some(h) => h.clone(),
             None => return Err(ZxError::BAD_HANDLE),
         };
+        if !handle.rights.contains(Rights::DUPLICATE) {
+            return Err(ZxError::ACCESS_DENIED);
+        }
         handle.rights = operation(handle.rights)?;
         let new_handle_value = inner.add_handle(handle);
         Ok(new_handle_value)
@@ -470,7 +473,7 @@ mod tests {
         let rights = Rights::DUPLICATE;
         let handle_value = proc.add_handle(Handle::new(proc.clone(), rights));
         let new_handle_value = proc
-            .dup_handle_operating_rights(handle_value, |_| Ok(Rights::SAME_RIGHTS))
+            .dup_handle_operating_rights(handle_value, |old_rights| Ok(old_rights))
             .unwrap();
         assert_eq!(proc.get_handle(new_handle_value).unwrap().rights, rights);
 
@@ -481,12 +484,6 @@ mod tests {
         assert_eq!(
             proc.get_handle(new_handle_value).unwrap().rights,
             Rights::empty()
-        );
-
-        // duplicate handle with more rights should fail.
-        assert_eq!(
-            proc.dup_handle_operating_rights(handle_value, |_| Ok(Rights::READ)),
-            Err(ZxError::INVALID_ARGS)
         );
 
         // duplicate handle which does not have `Rights::DUPLICATE` should fail.
