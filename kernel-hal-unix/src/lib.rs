@@ -8,6 +8,7 @@ extern crate log;
 extern crate alloc;
 
 use {
+    alloc::collections::VecDeque,
     alloc::sync::Arc,
     core::{future::Future, pin::Pin},
     lazy_static::lazy_static,
@@ -15,7 +16,7 @@ use {
     std::fs::{File, OpenOptions},
     std::io::Error,
     std::os::unix::io::AsRawFd,
-    std::sync::atomic::{AtomicUsize, Ordering},
+    std::sync::Mutex,
     std::time::{Duration, SystemTime},
     tempfile::tempdir,
 };
@@ -157,13 +158,19 @@ impl Debug for PhysFrame {
     }
 }
 
+lazy_static! {
+    static ref AVAILABLE_FRAMES: Mutex<VecDeque<usize>> =
+        Mutex::new({ (0..PMEM_SIZE).step_by(PAGE_SIZE).collect() });
+}
+
 impl PhysFrame {
     #[export_name = "hal_frame_alloc"]
     pub fn alloc() -> Option<Self> {
-        let frame_id = GLOBAL_FRAME_ID.fetch_add(1, Ordering::SeqCst);
-        let ret = Some(PhysFrame {
-            paddr: frame_id * PAGE_SIZE,
-        });
+        let ret = AVAILABLE_FRAMES
+            .lock()
+            .unwrap()
+            .pop_front()
+            .map(|paddr| PhysFrame { paddr });
         trace!("frame alloc: {:?}", ret);
         ret
     }
@@ -173,12 +180,9 @@ impl Drop for PhysFrame {
     #[export_name = "hal_frame_dealloc"]
     fn drop(&mut self) {
         trace!("frame dealloc: {:?}", self);
-        // we don't deallocate frames
+        AVAILABLE_FRAMES.lock().unwrap().push_back(self.paddr);
     }
 }
-
-/// Next allocated frame ID.
-static GLOBAL_FRAME_ID: AtomicUsize = AtomicUsize::new(1);
 
 fn phys_to_virt(paddr: PhysAddr) -> VirtAddr {
     /// Map physical memory from here.
@@ -197,6 +201,7 @@ fn ensure_mmap_pmem() {
 pub fn pmem_read(paddr: PhysAddr, buf: &mut [u8]) {
     trace!("pmem read: paddr={:#x}, len={:#x}", paddr, buf.len());
     ensure_mmap_pmem();
+    assert!(paddr < PMEM_SIZE);
     unsafe {
         (phys_to_virt(paddr) as *const u8).copy_to_nonoverlapping(buf.as_mut_ptr(), buf.len());
     }
@@ -207,6 +212,7 @@ pub fn pmem_read(paddr: PhysAddr, buf: &mut [u8]) {
 pub fn pmem_write(paddr: PhysAddr, buf: &[u8]) {
     trace!("pmem write: paddr={:#x}, len={:#x}", paddr, buf.len());
     ensure_mmap_pmem();
+    assert!(paddr < PMEM_SIZE);
     unsafe {
         buf.as_ptr()
             .copy_to_nonoverlapping(phys_to_virt(paddr) as _, buf.len());
@@ -219,7 +225,7 @@ fn page_aligned(x: VirtAddr) -> bool {
     x % PAGE_SIZE == 0
 }
 
-const PMEM_SIZE: usize = 0x20_00000; // 16MiB
+const PMEM_SIZE: usize = 0x100_00000; // 256MiB
 
 lazy_static! {
     static ref FRAME_FILE: File = create_pmem_file();
