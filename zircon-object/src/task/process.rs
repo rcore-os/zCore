@@ -462,18 +462,22 @@ mod tests {
 
         // duplicate non-exist handle should fail.
         assert_eq!(
-            proc.dup_handle(0, Rights::empty()),
+            proc.dup_handle_operating_rights(0, |_| Ok(Rights::empty())),
             Err(ZxError::BAD_HANDLE)
         );
 
         // duplicate handle with the same rights.
         let rights = Rights::DUPLICATE;
         let handle_value = proc.add_handle(Handle::new(proc.clone(), rights));
-        let new_handle_value = proc.dup_handle(handle_value, Rights::SAME_RIGHTS).unwrap();
+        let new_handle_value = proc
+            .dup_handle_operating_rights(handle_value, |_| Ok(Rights::SAME_RIGHTS))
+            .unwrap();
         assert_eq!(proc.get_handle(new_handle_value).unwrap().rights, rights);
 
         // duplicate handle with subset rights.
-        let new_handle_value = proc.dup_handle(handle_value, Rights::empty()).unwrap();
+        let new_handle_value = proc
+            .dup_handle_operating_rights(handle_value, |_| Ok(Rights::empty()))
+            .unwrap();
         assert_eq!(
             proc.get_handle(new_handle_value).unwrap().rights,
             Rights::empty()
@@ -481,14 +485,14 @@ mod tests {
 
         // duplicate handle with more rights should fail.
         assert_eq!(
-            proc.dup_handle(handle_value, Rights::READ),
+            proc.dup_handle_operating_rights(handle_value, |_| Ok(Rights::READ)),
             Err(ZxError::INVALID_ARGS)
         );
 
         // duplicate handle which does not have `Rights::DUPLICATE` should fail.
         let handle_value = proc.add_handle(Handle::new(proc.clone(), Rights::empty()));
         assert_eq!(
-            proc.dup_handle(handle_value, Rights::SAME_RIGHTS),
+            proc.dup_handle_operating_rights(handle_value, |_| Ok(Rights::SAME_RIGHTS)),
             Err(ZxError::ACCESS_DENIED)
         );
     }

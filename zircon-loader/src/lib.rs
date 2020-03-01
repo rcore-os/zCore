@@ -74,7 +74,9 @@ pub fn run_userboot(
     let (entry, vdso_addr) = {
         let elf = ElfFile::new(userboot_data).unwrap();
         let size = elf.load_segment_size();
-        let vmar = vmar.create_child(0, size, VmarFlags::CAN_MAP_RXW).unwrap();
+        let vmar = vmar
+            .allocate(None, size, VmarFlags::CAN_MAP_RXW, PAGE_SIZE)
+            .unwrap();
         vmar.load_from_elf(&elf).unwrap();
         (
             vmar.addr() + elf.header.pt2.entry_point() as usize,
@@ -89,10 +91,11 @@ pub fn run_userboot(
         vdso_vmo.write(0, &vdso_data);
         let size = elf.load_segment_size();
         let vmar = vmar
-            .create_child(
+            .allocate_at(
                 vdso_addr - vmar.addr(),
                 size,
                 VmarFlags::CAN_MAP_RXW | VmarFlags::SPECIFIC,
+                PAGE_SIZE,
             )
             .unwrap();
         vmar.map_from_elf(&elf, vdso_vmo.clone()).unwrap();
@@ -133,7 +136,7 @@ pub fn run_userboot(
     let stack_vmo = VMObjectPaged::new(STACK_PAGES);
     let flags = MMUFlags::READ | MMUFlags::WRITE | MMUFlags::USER;
     let stack_bottom = vmar
-        .map(stack_vmo.clone(), 0, stack_vmo.len(), flags)
+        .map(None, stack_vmo.clone(), 0, stack_vmo.len(), flags)
         .unwrap();
     // WARN: align stack to 16B, then emulate a 'call' (push rip)
     let sp = stack_bottom + stack_vmo.len() - 8;
@@ -144,7 +147,7 @@ pub fn run_userboot(
 
     // FIXME: pass correct handles
     let mut handles = vec![Handle::new(proc.clone(), Rights::DUPLICATE); 15];
-    handles[K_VMARROOT_SELF] = Handle::new(proc.vmar().clone(), Rights::DEFAULT_VMAR | Rights::IO);
+    handles[K_VMARROOT_SELF] = Handle::new(proc.vmar(), Rights::DEFAULT_VMAR | Rights::IO);
     handles[K_ROOTJOB] = Handle::new(job, Rights::DEFAULT_JOB);
     handles[K_ROOTRESOURCE] = Handle::new(resource, Rights::DEFAULT_RESOURCE);
     handles[K_ZBI] = Handle::new(zbi_vmo, Rights::DEFAULT_VMO);

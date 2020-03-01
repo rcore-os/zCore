@@ -140,12 +140,12 @@ mod tests {
     #[test]
     fn buffer_cover1() {
         let mut buffer = DlogBuffer::new();
-        buffer.write(0u32, &[127u8; 100]);
+        buffer.write(0u32, &[127u8; 100], 0, 0);
         let head = buffer.get_head();
         assert_eq!(head, 132usize);
         let tail = buffer.get_tail();
         assert_eq!(tail, 0usize);
-        buffer.write(0u32, &[255u8; 2000]);
+        buffer.write(0u32, &[255u8; 2000], 0, 0);
         let head = buffer.get_head();
         assert_eq!(head, 116usize);
         let tail = buffer.get_tail();
@@ -155,7 +155,7 @@ mod tests {
     #[test]
     fn buffer_cover2() {
         let mut buffer = DlogBuffer::new();
-        buffer.write(0u32, &[127u8; 2000]);
+        buffer.write(0u32, &[127u8; 2000], 0, 0);
         for i in 32..2032 {
             assert!(buffer.check(i, 127u8));
         }
@@ -163,7 +163,7 @@ mod tests {
         assert_eq!(head, 2032usize);
         let tail = buffer.get_tail();
         assert_eq!(tail, 0usize);
-        buffer.write(0u32, &[255u8; 101]);
+        buffer.write(0u32, &[255u8; 101], 0, 0);
         for i in 16..117 {
             assert!(buffer.check(i, 255u8));
         }
@@ -179,8 +179,8 @@ mod tests {
     #[test]
     fn buffer_cover3() {
         let mut buffer = DlogBuffer::new();
-        buffer.write(0u32, &[127u8; 1984]);
-        buffer.write(0xdead_beafu32, &[255u8; 101]);
+        buffer.write(0u32, &[127u8; 1984], 0, 0);
+        buffer.write(0xdead_beafu32, &[255u8; 101], 0, 0);
         for i in 0..101 {
             assert!(buffer.check(i, 255u8));
         }

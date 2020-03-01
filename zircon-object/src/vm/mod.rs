@@ -19,6 +19,10 @@ pub fn page_aligned(x: usize) -> bool {
     x % PAGE_SIZE == 0
 }
 
+pub fn check_aligned(x: usize, align: usize) -> bool {
+    x % align == 0
+}
+
 /// How many pages the `size` needs.
 pub fn pages(size: usize) -> usize {
     (size + PAGE_SIZE - 1) / PAGE_SIZE

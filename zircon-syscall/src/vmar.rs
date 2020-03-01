@@ -1,5 +1,14 @@
 use {super::*, bitflags::bitflags, zircon_object::vm::*};
 
+fn amount_of_alignments(options: u32) -> ZxResult<usize> {
+    let align_pow2 = (options >> 24) as usize;
+    if (align_pow2 < 10 && align_pow2 != 0) || (align_pow2 > 32) {
+        Err(ZxError::INVALID_ARGS)
+    } else {
+        Ok(1 << align_pow2)
+    }
+}
+
 impl Syscall {
     pub fn sys_vmar_allocate(
         &self,
@@ -10,22 +19,47 @@ impl Syscall {
         mut out_child_vmar: UserOutPtr<HandleValue>,
         mut out_child_addr: UserOutPtr<usize>,
     ) -> ZxResult<usize> {
-        let options = VmOptions::from_bits(options).ok_or(ZxError::INVALID_ARGS)?;
+        let vm_options = VmOptions::from_bits(options).ok_or(ZxError::INVALID_ARGS)?;
         info!(
             "vmar.allocate: parent={:?}, options={:?}, offset={:#x?}, size={:#x?}",
             parent_vmar, options, offset, size,
         );
         // try to get parent_vmar
-        let perm_rights = options.to_rights();
+        let perm_rights = vm_options.to_rights();
         let proc = self.thread.proc();
         let parent = proc.get_object_with_rights::<VmAddressRegion>(parent_vmar, perm_rights)?;
-        let flags = options.to_flags();
+
+        // get vmar_flags
+        let vmar_flags = vm_options.to_flags();
+        if vmar_flags.contains(
+            !(VmarFlags::SPECIFIC
+                | VmarFlags::CAN_MAP_SPECIFIC
+                | VmarFlags::COMPACT
+                | VmarFlags::CAN_MAP_RXW),
+        ) {
+            return Err(ZxError::INVALID_ARGS);
+        }
+
+        // get align
+        let align = amount_of_alignments(options)?;
+
+        // get offest with options
+        let offset = if vm_options.contains(VmOptions::SPECIFIC) {
+            Some(offset as usize)
+        } else if vm_options.contains(VmOptions::SPECIFIC_OVERWRITE) {
+            unimplemented!()
+        } else {
+            if offset != 0 {
+                return Err(ZxError::INVALID_ARGS);
+            }
+            None
+        };
 
         // check `size`
         if size == 0u64 {
             return Err(ZxError::INVALID_ARGS);
         }
-        let child = parent.create_child(offset as usize, size as usize, flags)?;
+        let child = parent.allocate(offset, size as usize, vmar_flags, align)?;
         let child_addr = child.addr();
         let child_handle = proc.add_handle(Handle::new(child, Rights::DEFAULT_VMAR | perm_rights));
         out_child_vmar.write(child_handle)?;
@@ -33,6 +67,7 @@ impl Syscall {
         Ok(0)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn sys_vmar_map(
         &self,
         vmar_handle: HandleValue,
@@ -54,12 +89,11 @@ impl Syscall {
         if !vmo_rights.contains(Rights::MAP) {
             return Err(ZxError::ACCESS_DENIED);
         };
-        if !options.contains(VmOptions::PERM_READ) {
-            if !(options.contains(VmOptions::PERM_WRITE)
+        if !options.contains(VmOptions::PERM_READ)
+            && (!options.contains(VmOptions::PERM_WRITE)
                 || options.contains(VmOptions::PERM_EXECUTE))
-            {
-                return Err(ZxError::INVALID_ARGS);
-            }
+        {
+            return Err(ZxError::INVALID_ARGS);
         }
         if options.contains(VmOptions::CAN_MAP_RXW) {
             return Err(ZxError::INVALID_ARGS);
@@ -86,7 +120,7 @@ impl Syscall {
         let vaddr = if is_specific {
             vmar.map_at(vmar_offset, vmo, vmo_offset, len, mapping_flags)?
         } else {
-            vmar.map(vmo, vmo_offset, len, mapping_flags)?
+            vmar.map(None, vmo, vmo_offset, len, mapping_flags)?
         };
         mapped_addr.write(vaddr)?;
         Ok(0)

@@ -48,7 +48,9 @@ impl PageTableImpl {
         let mut pt = self.get();
         let page = Page::<Size4KiB>::from_start_address(vaddr).unwrap();
         let frame = unsafe { UnusedPhysFrame::new(PhysFrame::from_start_address(paddr).unwrap()) };
-        let flush = pt.map_to(page, frame, flags.to_ptf(), &mut FrameAllocatorImpl).unwrap();
+        let flush = pt
+            .map_to(page, frame, flags.to_ptf(), &mut FrameAllocatorImpl)
+            .unwrap();
         if flags.contains(MMUFlags::USER) {
             self.allow_user_access(vaddr);
         }
@@ -115,8 +117,12 @@ impl PageTableImpl {
     }
 }
 
+#[allow(clippy::missing_safety_doc)]
 pub unsafe fn set_page_table(vmtoken: usize) {
-    Cr3::write(PhysFrame::containing_address(x86_64::PhysAddr::new(vmtoken as _)), Cr3Flags::empty());
+    Cr3::write(
+        PhysFrame::containing_address(x86_64::PhysAddr::new(vmtoken as _)),
+        Cr3Flags::empty(),
+    );
 }
 
 fn frame_to_page_table(frame: PhysFrame) -> *mut PageTable {

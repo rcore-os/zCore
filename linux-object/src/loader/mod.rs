@@ -42,7 +42,7 @@ impl LinuxElfLoader {
         }
 
         let size = elf.load_segment_size();
-        let image_vmar = vmar.create_child(None, size)?;
+        let image_vmar = vmar.allocate(None, size, VmarFlags::CAN_MAP_RXW, PAGE_SIZE)?;
         let base = image_vmar.addr();
         let vmo = image_vmar.load_from_elf(&elf)?;
         let entry = base + elf.header.pt2.entry_point() as usize;
