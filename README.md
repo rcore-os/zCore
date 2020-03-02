@@ -11,9 +11,9 @@ Reimplement [Zircon][zircon] microkernel in safe Rust as a userspace program!
 ## Getting started
 
 ```sh
-git clone https://github.com/rcore-os/zircon-rs
+git clone https://github.com/rcore-os/zCore
 git lfs pull
-cd zircon-rs
+cd zCore
 ```
 
 Prepare Alpine Linux rootfs:
@@ -31,7 +31,13 @@ cargo run --release -p linux-loader /bin/busybox [args]
 Run native Zircon program (userboot):
 
 ```sh
-cargo run --release -p zircon-loader prebuilt/userboot.so prebuilt/libzircon.so prebuilt/legacy-image-x64.zbi
+cargo run --release -p zircon-loader prebuilt/zircon
+```
+
+Run Zircon on bare-metal (zCore):
+
+```sh
+cd zCore && make run
 ```
 
 To debug, set `RUST_LOG` environment variable to one of `error`, `warn`, `info`, `debug`, `trace`.
@@ -48,9 +54,9 @@ To debug, set `RUST_LOG` environment variable to one of `error`, `warn`, `info`,
 
 ### Hardware Abstraction Layer
 
-|                           | Bare Metal     | Linux / macOS |
-| :------------------------ | -------------- | ------------- |
-| Virtual Memory Management | Page Table     | Mmap          |
-| Thread Management         | `rcore-thread` | `std::thread` |
-| Exception Handling        | Interrupt      | Signal        |
+|                           | Bare Metal | Linux / macOS     |
+| :------------------------ | ---------- | ----------------- |
+| Virtual Memory Management | Page Table | Mmap              |
+| Thread Management         | `executor` | `async-std::task` |
+| Exception Handling        | Interrupt  | Signal            |
 

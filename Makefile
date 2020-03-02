@@ -3,10 +3,10 @@ ROOTFS_URL := http://dl-cdn.alpinelinux.org/alpine/v3.11/releases/x86_64/$(ROOTF
 
 .PHONY: rootfs
 
-prebuilt/$(ROOTFS_TAR):
+prebuilt/linux/$(ROOTFS_TAR):
 	wget $(ROOTFS_URL) -O $@
 
-rootfs: prebuilt/$(ROOTFS_TAR)
+rootfs: prebuilt/linux/$(ROOTFS_TAR)
 	mkdir -p rootfs
 	tar xf $< -C rootfs
-	cp prebuilt/libc.so rootfs/lib/ld-musl-x86_64.so.1
+	cp prebuilt/linux/libc-libos.so rootfs/lib/ld-musl-x86_64.so.1

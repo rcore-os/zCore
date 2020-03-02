@@ -21,7 +21,7 @@ mod process;
 use rboot::BootInfo;
 
 pub use memory::{hal_frame_alloc, hal_frame_dealloc, hal_pt_map_kernel};
-use zircon_loader::run_userboot;
+use zircon_loader::{run_userboot, Images};
 
 #[no_mangle]
 pub extern "C" fn _start(boot_info: &BootInfo) -> ! {
@@ -44,19 +44,15 @@ pub extern "C" fn _start(boot_info: &BootInfo) -> ! {
 }
 
 fn main(zbi_data: &[u8], cmdline: &str) {
-    let _proc = run_userboot(
-        USERBOOT_DATA,
-        VDSO_DATA,
-        DECOMPRESSOR_DATA,
-        &zbi_data,
-        cmdline,
-    );
+    let images = Images::<&[u8]> {
+        userboot: include_bytes!("../../prebuilt/zircon/userboot.so"),
+        vdso: include_bytes!("../../prebuilt/zircon/libzircon.so"),
+        decompressor: include_bytes!("../../prebuilt/zircon/decompress-zstd.so"),
+        zbi: zbi_data,
+    };
+    let _proc = run_userboot(&images, cmdline);
     executor::run();
 }
-
-static USERBOOT_DATA: &[u8] = include_bytes!("../../prebuilt/zircon/userboot.so");
-static VDSO_DATA: &[u8] = include_bytes!("../../prebuilt/zircon/libzircon.so");
-static DECOMPRESSOR_DATA: &[u8] = include_bytes!("../../prebuilt/zircon/decompress-zstd.so");
 
 fn get_log_level(cmdline: &str) -> &str {
     for opt in cmdline.split(',') {

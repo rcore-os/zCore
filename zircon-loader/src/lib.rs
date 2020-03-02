@@ -10,7 +10,7 @@ extern crate log;
 
 use {
     alloc::{boxed::Box, sync::Arc, vec::Vec},
-    core::{future::Future, pin::Pin},
+    core::{convert::AsRef, future::Future, pin::Pin},
     kernel_hal::GeneralRegs,
     xmas_elf::{
         program::{Flags, ProgramHeader, SegmentData, Type},
@@ -57,13 +57,15 @@ const K_FISTINSTRUMENTATIONDATA: usize = 12;
 #[allow(dead_code)]
 const K_HANDLECOUNT: usize = K_FISTINSTRUMENTATIONDATA + 3;
 
-pub fn run_userboot(
-    userboot_data: &[u8],
-    vdso_data: &[u8],
-    decompressor_data: &[u8],
-    zbi_data: &[u8],
-    cmdline: &str,
-) -> Arc<Process> {
+/// Program images to run.
+pub struct Images<T: AsRef<[u8]>> {
+    pub userboot: T,
+    pub vdso: T,
+    pub decompressor: T,
+    pub zbi: T,
+}
+
+pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Process> {
     let job = Job::root();
     let proc = Process::create(&job, "proc", 0).unwrap();
     let thread = Thread::create(&proc, "thread", 0).unwrap();
@@ -72,7 +74,7 @@ pub fn run_userboot(
 
     // userboot
     let (entry, vdso_addr) = {
-        let elf = ElfFile::new(userboot_data).unwrap();
+        let elf = ElfFile::new(images.userboot.as_ref()).unwrap();
         let size = elf.load_segment_size();
         let vmar = vmar
             .allocate(None, size, VmarFlags::CAN_MAP_RXW, PAGE_SIZE)
@@ -86,9 +88,9 @@ pub fn run_userboot(
 
     // vdso
     let vdso_vmo = {
-        let elf = ElfFile::new(vdso_data).unwrap();
-        let vdso_vmo = VMObjectPaged::new(vdso_data.len() / PAGE_SIZE + 1);
-        vdso_vmo.write(0, &vdso_data);
+        let elf = ElfFile::new(images.vdso.as_ref()).unwrap();
+        let vdso_vmo = VMObjectPaged::new(images.vdso.as_ref().len() / PAGE_SIZE + 1);
+        vdso_vmo.write(0, images.vdso.as_ref());
         let size = elf.load_segment_size();
         let vmar = vmar
             .allocate_at(
@@ -116,17 +118,17 @@ pub fn run_userboot(
 
     // zbi
     let zbi_vmo = {
-        let vmo = VMObjectPaged::new(zbi_data.len() / PAGE_SIZE + 1);
-        vmo.write(0, &zbi_data);
+        let vmo = VMObjectPaged::new(images.zbi.as_ref().len() / PAGE_SIZE + 1);
+        vmo.write(0, images.zbi.as_ref());
         vmo
     };
 
     // decompressor
     let decompressor_vmo = {
-        let elf = ElfFile::new(decompressor_data).unwrap();
+        let elf = ElfFile::new(images.decompressor.as_ref()).unwrap();
         let size = elf.load_segment_size();
         let vmo = VMObjectPaged::new(size / PAGE_SIZE);
-        vmo.write(0, decompressor_data);
+        vmo.write(0, images.decompressor.as_ref());
         vmo.set_name("lib/hermetic/decompress-zbi.so");
         vmo
     };

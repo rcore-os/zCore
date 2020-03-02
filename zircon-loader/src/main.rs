@@ -9,16 +9,7 @@ use {std::path::PathBuf, structopt::StructOpt, zircon_loader::*, zircon_object::
 #[structopt()]
 struct Opt {
     #[structopt(parse(from_os_str))]
-    userboot_path: PathBuf,
-
-    #[structopt(parse(from_os_str))]
-    vdso_path: PathBuf,
-
-    #[structopt(parse(from_os_str))]
-    zbi_path: PathBuf,
-
-    #[structopt(parse(from_os_str))]
-    decompressor_path: PathBuf,
+    prebuilt_path: PathBuf,
 
     #[structopt(default_value = "")]
     cmdline: String,
@@ -30,19 +21,21 @@ async fn main() {
     env_logger::init();
 
     let opt = Opt::from_args();
-    let userboot_data = std::fs::read(opt.userboot_path).expect("failed to read file");
-    let vdso_data = std::fs::read(opt.vdso_path).expect("failed to read file");
-    let zbi_data = std::fs::read(opt.zbi_path).expect("failed to read file");
-    let decompressor_data = std::fs::read(opt.decompressor_path).expect("failed to read file");
+    let images = open_images(&opt.prebuilt_path).expect("failed to read file");
 
-    let proc: Arc<dyn KernelObject> = run_userboot(
-        &userboot_data,
-        &vdso_data,
-        &decompressor_data,
-        &zbi_data,
-        &opt.cmdline,
-    );
+    let proc: Arc<dyn KernelObject> = run_userboot(&images, &opt.cmdline);
+    drop(images);
+
     proc.wait_signal_async(Signal::PROCESS_TERMINATED).await;
+}
+
+fn open_images(path: &PathBuf) -> std::io::Result<Images<Vec<u8>>> {
+    Ok(Images {
+        userboot: std::fs::read(path.join("userboot-libos.so"))?,
+        vdso: std::fs::read(path.join("libzircon-libos.so"))?,
+        decompressor: std::fs::read(path.join("decompress-zstd.so"))?,
+        zbi: std::fs::read(path.join("fuchsia.zbi"))?,
+    })
 }
 
 #[cfg(test)]
@@ -53,26 +46,15 @@ mod tests {
     async fn userboot() {
         kernel_hal_unix::init();
 
-        let base = PathBuf::from("../prebuilt");
         let opt = Opt {
-            decompressor_path: base.join("zircon/decompress-zstd.so"),
-            userboot_path: base.join("userboot.so"),
-            vdso_path: base.join("libzircon.so"),
-            zbi_path: base.join("zircon/fuchsia.zbi"),
+            prebuilt_path: PathBuf::from("../prebuilt/zircon"),
             cmdline: String::from(""),
         };
-        let userboot_data = std::fs::read(opt.userboot_path).expect("failed to read file");
-        let vdso_data = std::fs::read(opt.vdso_path).expect("failed to read file");
-        let zbi_data = std::fs::read(opt.zbi_path).expect("failed to read file");
-        let decompressor_data = std::fs::read(opt.decompressor_path).expect("failed to read file");
+        let images = open_images(&opt.prebuilt_path).expect("failed to read file");
 
-        let proc: Arc<dyn KernelObject> = run_userboot(
-            &userboot_data,
-            &vdso_data,
-            &decompressor_data,
-            &zbi_data,
-            &opt.cmdline,
-        );
+        let proc: Arc<dyn KernelObject> = run_userboot(&images, &opt.cmdline);
+        drop(images);
+
         proc.wait_signal_async(Signal::PROCESS_TERMINATED).await;
     }
 }
