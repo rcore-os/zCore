@@ -99,13 +99,13 @@ impl Syscall {
         mut out: UserOutPtr<HandleValue>,
     ) -> ZxResult<usize> {
         let options = VmoCloneFlags::from_bits(options).ok_or(ZxError::INVALID_ARGS)?;
-        if options != VmoCloneFlags::SNAPSHOT_AT_LEAST_ON_WRITE {
-            return Err(ZxError::NOT_SUPPORTED);
-        }
         info!(
             "vmo_create_child: handle={}, options={:?}, offset={:#x}, size={:#x}",
             handle_value, options, offset, size
         );
+        if !options.contains(VmoCloneFlags::SNAPSHOT_AT_LEAST_ON_WRITE) {
+            return Err(ZxError::NOT_SUPPORTED);
+        }
         let proc = self.thread.proc();
         let vmo = proc.get_vmo_with_rights(handle_value, Rights::READ)?;
         // TODO: optimize
