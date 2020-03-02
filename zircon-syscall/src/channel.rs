@@ -23,16 +23,25 @@ impl Syscall {
         );
         let proc = self.thread.proc();
         let channel = proc.get_object_with_rights::<Channel>(handle_value, Rights::READ)?;
-        let msg = channel.read()?;
+        const MAY_DISCARD: u32 = 1;
+        let never_discard = options & MAY_DISCARD == 0;
+        let msg = if never_discard {
+            channel.check_and_read(|front_msg| {
+                if num_bytes < front_msg.data.len() as u32
+                    || num_handles < front_msg.handles.len() as u32
+                {
+                    actual_bytes.write_if_not_null(front_msg.data.len() as u32)?;
+                    actual_handles.write_if_not_null(front_msg.handles.len() as u32)?;
+                    Err(ZxError::BUFFER_TOO_SMALL)
+                } else {
+                    Ok(())
+                }
+            })?
+        } else {
+            channel.read()?
+        };
         actual_bytes.write_if_not_null(msg.data.len() as u32)?;
         actual_handles.write_if_not_null(msg.handles.len() as u32)?;
-        if num_bytes < msg.data.len() as u32 || num_handles < msg.handles.len() as u32 {
-            const MAY_DISCARD: u32 = 1;
-            if options & MAY_DISCARD == 1 {
-                unimplemented!("always discard when buffer too small for now");
-            }
-            return Err(ZxError::BUFFER_TOO_SMALL);
-        }
         bytes.write_array(msg.data.as_slice())?;
         let handle_values: Vec<_> = msg
             .handles
@@ -40,7 +49,7 @@ impl Syscall {
             .map(|handle| proc.add_handle(handle))
             .collect();
         handles.write_array(handle_values.as_slice())?;
-        Ok(ZxError::OK as usize)
+        Ok(0)
     }
 
     pub fn sys_channel_write(

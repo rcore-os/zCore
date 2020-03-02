@@ -42,6 +42,24 @@ impl<T> Channel_<T> {
         (channel0, channel1)
     }
 
+    /// Read a packet from the channel if check is ok, otherwise the msg will keep.
+    pub fn check_and_read(&self, checker: impl FnOnce(&T) -> ZxResult<()>) -> ZxResult<T> {
+        let mut recv_queue = self.recv_queue.lock();
+        if let Some(msg) = recv_queue.front() {
+            checker(msg)?;
+            let msg = recv_queue.pop_front().unwrap();
+            if recv_queue.is_empty() {
+                self.base.signal_clear(Signal::READABLE);
+            }
+            return Ok(msg);
+        }
+        if self.peer_closed() {
+            Err(ZxError::PEER_CLOSED)
+        } else {
+            Err(ZxError::SHOULD_WAIT)
+        }
+    }
+
     /// Read a packet from the channel
     pub fn read(&self) -> ZxResult<T> {
         let mut recv_queue = self.recv_queue.lock();
