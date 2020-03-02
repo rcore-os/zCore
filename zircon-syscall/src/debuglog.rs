@@ -20,9 +20,9 @@ impl Syscall {
         proc.validate_resource(rsrc, ResourceKind::ROOT)?;
         let dlog = DebugLog::create(options);
         let dlog_right = if options & FLAG_READABLE == 0 {
-            Rights::DEFAULT_LOG_WRITABLE
+            Rights::DEFAULT_DEBUGLOG
         } else {
-            Rights::DEFAULT_LOG_READABLE
+            Rights::DEFAULT_DEBUGLOG | Rights::READ
         };
         let dlog_handle = self.thread.proc().add_handle(Handle::new(dlog, dlog_right));
         target.write(dlog_handle)?;

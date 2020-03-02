@@ -1,7 +1,7 @@
 use {
     super::*,
     bitflags::bitflags,
-    zircon_object::{resource::*, vm::*},
+    zircon_object::{resource::*, task::PolicyCondition, vm::*},
 };
 
 impl Syscall {
@@ -70,7 +70,7 @@ impl Syscall {
         if vmex != INVALID_HANDLE {
             proc.validate_resource(vmex, ResourceKind::VMEX)?;
         } else {
-            unimplemented!()
+            proc.check_policy(PolicyCondition::AmbientMarkVMOExec)?;
         }
         let _ = proc.get_vmo_and_rights(handle)?;
         let new_handle = proc.dup_handle_operating_rights(handle, |handle_rights| {

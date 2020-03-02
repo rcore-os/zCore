@@ -257,7 +257,6 @@ impl VmarExt for VmAddressRegion {
 
     fn map_from_elf(&self, elf: &ElfFile, vmo: Arc<VMObjectPaged>) -> ZxResult<()> {
         for ph in elf.program_iter() {
-            warn!("{:#x?}", ph);
             if ph.get_type().unwrap() != Type::Load {
                 continue;
             }

@@ -19,8 +19,10 @@ impl Syscall {
                 if !(handle_rights.contains(rights) && handle_rights != rights) {
                     return Err(ZxError::INVALID_ARGS);
                 }
+                Ok(rights)
+            } else {
+                Ok(handle_rights)
             }
-            Ok(rights)
         })?;
         new_handle_value.write(new_value)?;
         Ok(0)

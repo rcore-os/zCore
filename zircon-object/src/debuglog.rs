@@ -24,7 +24,6 @@ struct DlogHeader {
 
 pub struct DebugLog {
     base: KObjectBase,
-    #[allow(dead_code)]
     flags: u32,
 }
 
