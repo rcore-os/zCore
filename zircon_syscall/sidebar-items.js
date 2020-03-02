@@ -1,1 +1,1 @@
-initSidebarItems({"struct":[["Syscall",""]]});
+initSidebarItems({"enum":[["SyscallType",""]],"struct":[["Syscall",""]]});

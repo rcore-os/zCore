@@ -23,6 +23,10 @@
 <span id="23">23</span>
 <span id="24">24</span>
 <span id="25">25</span>
+<span id="26">26</span>
+<span id="27">27</span>
+<span id="28">28</span>
+<span id="29">29</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Objects for Virtual Memory Management.</span>
 
@@ -41,8 +45,12 @@
 <span class="doccomment">/// Size of a page</span>
 <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">PAGE_SIZE</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">0x1000</span>;
 
-<span class="kw">fn</span> <span class="ident">page_aligned</span>(<span class="ident">x</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">page_aligned</span>(<span class="ident">x</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
     <span class="ident">x</span> <span class="op">%</span> <span class="ident">PAGE_SIZE</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span>
+}
+
+<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">check_aligned</span>(<span class="ident">x</span>: <span class="ident">usize</span>, <span class="ident">align</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+    <span class="ident">x</span> <span class="op">%</span> <span class="ident">align</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span>
 }
 
 <span class="doccomment">/// How many pages the `size` needs.</span>

@@ -1,6 +1,5 @@
 var ALIASES = {};
 ALIASES["kernel_hal"] = {};
-ALIASES["kernel_hal_bare"] = {};
 ALIASES["kernel_hal_unix"] = {};
 ALIASES["linux_loader"] = {};
 ALIASES["linux_object"] = {};

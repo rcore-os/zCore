@@ -24,6 +24,9 @@
 <span id="24">24</span>
 <span id="25">25</span>
 <span id="26">26</span>
+<span id="27">27</span>
+<span id="28">28</span>
+<span id="29">29</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Objects for Task Management.</span>
 
@@ -33,9 +36,12 @@
 <span class="kw">mod</span> <span class="ident">job</span>;
 <span class="kw">mod</span> <span class="ident">job_policy</span>;
 <span class="kw">mod</span> <span class="ident">process</span>;
+<span class="kw">mod</span> <span class="ident">suspend_task</span>;
 <span class="kw">mod</span> <span class="ident">thread</span>;
 
-<span class="kw">pub</span> <span class="kw">use</span> {<span class="self">self</span>::<span class="ident">job</span>::<span class="kw-2">*</span>, <span class="self">self</span>::<span class="ident">job_policy</span>::<span class="kw-2">*</span>, <span class="self">self</span>::<span class="ident">process</span>::<span class="kw-2">*</span>, <span class="self">self</span>::<span class="ident">thread</span>::<span class="kw-2">*</span>};
+<span class="kw">pub</span> <span class="kw">use</span> {
+    <span class="self">self</span>::<span class="ident">job</span>::<span class="kw-2">*</span>, <span class="self">self</span>::<span class="ident">job_policy</span>::<span class="kw-2">*</span>, <span class="self">self</span>::<span class="ident">process</span>::<span class="kw-2">*</span>, <span class="self">self</span>::<span class="ident">suspend_task</span>::<span class="kw-2">*</span>, <span class="self">self</span>::<span class="ident">thread</span>::<span class="kw-2">*</span>,
+};
 
 <span class="doccomment">/// Task (Thread, Process, or Job)</span>
 <span class="kw">pub</span> <span class="kw">trait</span> <span class="ident">Task</span> {

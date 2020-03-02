@@ -471,6 +471,45 @@
 <span id="471">471</span>
 <span id="472">472</span>
 <span id="473">473</span>
+<span id="474">474</span>
+<span id="475">475</span>
+<span id="476">476</span>
+<span id="477">477</span>
+<span id="478">478</span>
+<span id="479">479</span>
+<span id="480">480</span>
+<span id="481">481</span>
+<span id="482">482</span>
+<span id="483">483</span>
+<span id="484">484</span>
+<span id="485">485</span>
+<span id="486">486</span>
+<span id="487">487</span>
+<span id="488">488</span>
+<span id="489">489</span>
+<span id="490">490</span>
+<span id="491">491</span>
+<span id="492">492</span>
+<span id="493">493</span>
+<span id="494">494</span>
+<span id="495">495</span>
+<span id="496">496</span>
+<span id="497">497</span>
+<span id="498">498</span>
+<span id="499">499</span>
+<span id="500">500</span>
+<span id="501">501</span>
+<span id="502">502</span>
+<span id="503">503</span>
+<span id="504">504</span>
+<span id="505">505</span>
+<span id="506">506</span>
+<span id="507">507</span>
+<span id="508">508</span>
+<span id="509">509</span>
+<span id="510">510</span>
+<span id="511">511</span>
+<span id="512">512</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Kernel object basis.</span>
 <span class="doccomment">//!</span>
@@ -483,6 +522,7 @@
 <span class="doccomment">//! ## Example</span>
 <span class="doccomment">//! ```</span>
 <span class="doccomment">//! use zircon_object::object::*;</span>
+<span class="doccomment">//! extern crate alloc;</span>
 <span class="doccomment">//!</span>
 <span class="doccomment">//! pub struct SampleObject {</span>
 <span class="doccomment">//!    base: KObjectBase,</span>
@@ -569,7 +609,7 @@
 
 <span class="kw">use</span> {
     <span class="kw">crate</span>::<span class="ident">signal</span>::<span class="kw-2">*</span>,
-    <span class="ident">alloc</span>::{<span class="ident">boxed</span>::<span class="ident">Box</span>, <span class="ident">sync</span>::<span class="ident">Arc</span>, <span class="ident">vec</span>::<span class="ident">Vec</span>},
+    <span class="ident">alloc</span>::{<span class="ident">boxed</span>::<span class="ident">Box</span>, <span class="ident">string</span>::<span class="ident">String</span>, <span class="ident">sync</span>::<span class="ident">Arc</span>, <span class="ident">vec</span>::<span class="ident">Vec</span>},
     <span class="ident">core</span>::{
         <span class="ident">fmt</span>::<span class="ident">Debug</span>,
         <span class="ident">future</span>::<span class="ident">Future</span>,
@@ -595,6 +635,8 @@
 <span class="kw">pub</span> <span class="kw">trait</span> <span class="ident">KernelObject</span>: <span class="ident">DowncastSync</span> <span class="op">+</span> <span class="ident">Debug</span> {
     <span class="kw">fn</span> <span class="ident">id</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">KoID</span>;
     <span class="kw">fn</span> <span class="ident">type_name</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="lifetime">&#39;static</span> <span class="ident">str</span>;
+    <span class="kw">fn</span> <span class="ident">name</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">alloc</span>::<span class="ident">string</span>::<span class="ident">String</span>;
+    <span class="kw">fn</span> <span class="ident">set_name</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">name</span>: <span class="kw-2">&amp;</span><span class="ident">str</span>);
     <span class="kw">fn</span> <span class="ident">signal</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Signal</span>;
     <span class="kw">fn</span> <span class="ident">signal_set</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">signal</span>: <span class="ident">Signal</span>);
     <span class="kw">fn</span> <span class="ident">add_signal_callback</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">callback</span>: <span class="ident">SignalHandler</span>);
@@ -612,10 +654,26 @@
 }
 
 <span class="doccomment">/// The mutable part of `KObjectBase`.</span>
-<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Default</span>)]</span>
 <span class="kw">struct</span> <span class="ident">KObjectBaseInner</span> {
+    <span class="ident">name</span>: <span class="ident">String</span>,
     <span class="ident">signal</span>: <span class="ident">Signal</span>,
     <span class="ident">signal_callbacks</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">SignalHandler</span><span class="op">&gt;</span>,
+}
+
+<span class="kw">impl</span> <span class="ident">Default</span> <span class="kw">for</span> <span class="ident">KObjectBaseInner</span> {
+    <span class="kw">fn</span> <span class="ident">default</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
+        <span class="ident">KObjectBaseInner</span> {
+            <span class="ident">name</span>: {
+                <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">s</span> <span class="op">=</span> <span class="ident">String</span>::<span class="ident">with_capacity</span>(<span class="number">32</span>);
+                <span class="kw">for</span> <span class="kw">_</span> <span class="kw">in</span> <span class="number">0</span>..<span class="number">32</span> {
+                    <span class="ident">s</span>.<span class="ident">push</span>(<span class="string">&#39;\0&#39;</span>);
+                }
+                <span class="ident">s</span>
+            },
+            <span class="ident">signal</span>: <span class="ident">Signal</span>::<span class="ident">default</span>(),
+            <span class="ident">signal_callbacks</span>: <span class="ident">Vec</span>::<span class="ident">default</span>(),
+        }
+    }
 }
 
 <span class="kw">impl</span> <span class="ident">Default</span> <span class="kw">for</span> <span class="ident">KObjectBase</span> {
@@ -633,11 +691,25 @@
         <span class="self">Self</span>::<span class="ident">default</span>()
     }
 
+    <span class="doccomment">/// Set object&#39;s name</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">set_name</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">name</span>: <span class="kw-2">&amp;</span><span class="ident">str</span>) {
+        <span class="kw">let</span> <span class="ident">s</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">name</span>;
+        <span class="ident">s</span>.<span class="ident">clear</span>();
+        <span class="macro">assert</span><span class="macro">!</span>(<span class="ident">name</span>.<span class="ident">len</span>() <span class="op">&lt;</span><span class="op">=</span> <span class="number">32</span>, <span class="string">&quot;name is too long for object&quot;</span>);
+        <span class="ident">s</span>.<span class="ident">push_str</span>(<span class="ident">name</span>);
+    }
+
+    <span class="doccomment">/// Get object&#39;s name</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_name</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">String</span> {
+        <span class="ident">String</span>::<span class="ident">from</span>(<span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">name</span>.<span class="ident">as_str</span>())
+    }
+
     <span class="doccomment">/// Create a kernel object base with initial `signal`.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">with_signal</span>(<span class="ident">signal</span>: <span class="ident">Signal</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
         <span class="ident">KObjectBase</span> {
             <span class="ident">id</span>: <span class="self">Self</span>::<span class="ident">new_koid</span>(),
             <span class="ident">inner</span>: <span class="ident">Mutex</span>::<span class="ident">new</span>(<span class="ident">KObjectBaseInner</span> {
+                <span class="ident">name</span>: <span class="ident">String</span>::<span class="ident">default</span>(),
                 <span class="ident">signal</span>,
                 <span class="ident">signal_callbacks</span>: <span class="ident">Vec</span>::<span class="ident">new</span>(),
             }),
@@ -827,6 +899,12 @@
             <span class="kw">fn</span> <span class="ident">type_name</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="lifetime">&#39;static</span> <span class="ident">str</span> {
                 <span class="macro">stringify</span><span class="macro">!</span>(<span class="macro-nonterminal">$</span><span class="macro-nonterminal">class</span>)
             }
+            <span class="kw">fn</span> <span class="ident">name</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">alloc</span>::<span class="ident">string</span>::<span class="ident">String</span>{
+                <span class="self">self</span>.<span class="ident">base</span>.<span class="ident">get_name</span>()
+            }
+            <span class="kw">fn</span> <span class="ident">set_name</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">name</span>: <span class="kw-2">&amp;</span><span class="ident">str</span>){
+                <span class="self">self</span>.<span class="ident">base</span>.<span class="ident">set_name</span>(<span class="ident">name</span>)
+            }
             <span class="kw">fn</span> <span class="ident">signal</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Signal</span> {
                 <span class="self">self</span>.<span class="ident">base</span>.<span class="ident">signal</span>()
             }
@@ -889,7 +967,7 @@
             <span class="kw">async</span> <span class="kw">move</span> {
                 <span class="ident">flag</span>.<span class="ident">store</span>(<span class="number">1</span>, <span class="ident">Ordering</span>::<span class="ident">SeqCst</span>);
                 <span class="ident">object</span>.<span class="ident">base</span>.<span class="ident">signal_set</span>(<span class="ident">Signal</span>::<span class="ident">READABLE</span>);
-                <span class="ident">async_std</span>::<span class="ident">task</span>::<span class="ident">sleep</span>(<span class="ident">Duration</span>::<span class="ident">from_millis</span>(<span class="number">1</span>)).<span class="kw">await</span>;
+                <span class="ident">async_std</span>::<span class="ident">task</span>::<span class="ident">sleep</span>(<span class="ident">Duration</span>::<span class="ident">from_millis</span>(<span class="number">10</span>)).<span class="kw">await</span>;
 
                 <span class="ident">flag</span>.<span class="ident">store</span>(<span class="number">2</span>, <span class="ident">Ordering</span>::<span class="ident">SeqCst</span>);
                 <span class="ident">object</span>.<span class="ident">base</span>.<span class="ident">signal_set</span>(<span class="ident">Signal</span>::<span class="ident">WRITABLE</span>);

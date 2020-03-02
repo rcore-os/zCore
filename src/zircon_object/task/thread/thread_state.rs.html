@@ -91,7 +91,7 @@
 <span class="attribute">#[<span class="ident">repr</span>(<span class="ident">C</span>)]</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>, <span class="ident">Default</span>, <span class="ident">Copy</span>, <span class="ident">Clone</span>, <span class="ident">PartialEq</span>, <span class="ident">Eq</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">ThreadState</span> {
-    <span class="ident">general</span>: <span class="ident">GeneralRegs</span>,
+    <span class="kw">pub</span> <span class="ident">general</span>: <span class="ident">GeneralRegs</span>,
 }
 
 <span class="kw">impl</span> <span class="ident">ThreadState</span> {

@@ -44,6 +44,8 @@
 <span id="44">44</span>
 <span id="45">45</span>
 <span id="46">46</span>
+<span id="47">47</span>
+<span id="48">48</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> {
     <span class="kw">super</span>::<span class="kw-2">*</span>,
@@ -83,12 +85,14 @@
         <span class="ident">buf</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>,
         <span class="ident">len</span>: <span class="ident">usize</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="ident">datalen</span> <span class="op">=</span> <span class="ident">len</span>.<span class="ident">max</span>(<span class="number">224</span>);
+        <span class="kw">let</span> <span class="ident">datalen</span> <span class="op">=</span> <span class="ident">len</span>.<span class="ident">min</span>(<span class="number">224</span>);
         <span class="kw">let</span> <span class="ident">data</span> <span class="op">=</span> <span class="ident">buf</span>.<span class="ident">read_string</span>(<span class="ident">datalen</span> <span class="kw">as</span> <span class="ident">usize</span>)<span class="question-mark">?</span>;
-        <span class="self">self</span>.<span class="ident">thread</span>
-            .<span class="ident">proc</span>()
-            .<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">DebugLog</span><span class="op">&gt;</span>(<span class="ident">handle_value</span>, <span class="ident">Rights</span>::<span class="ident">WRITE</span>)<span class="question-mark">?</span>
-            .<span class="ident">write</span>(<span class="ident">flags</span>, <span class="kw-2">&amp;</span><span class="ident">data</span>)
+        <span class="kw">let</span> <span class="ident">thread</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">thread</span>;
+        <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="ident">thread</span>.<span class="ident">proc</span>();
+        <span class="kw">let</span> <span class="ident">tid</span> <span class="op">=</span> <span class="ident">thread</span>.<span class="ident">id</span>();
+        <span class="kw">let</span> <span class="ident">pid</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">id</span>();
+        <span class="ident">proc</span>.<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">DebugLog</span><span class="op">&gt;</span>(<span class="ident">handle_value</span>, <span class="ident">Rights</span>::<span class="ident">WRITE</span>)<span class="question-mark">?</span>
+            .<span class="ident">write</span>(<span class="ident">flags</span>, <span class="kw-2">&amp;</span><span class="ident">data</span>, <span class="ident">tid</span>, <span class="ident">pid</span>)
     }
 }
 </pre></div>
