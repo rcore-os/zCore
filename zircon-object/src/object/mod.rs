@@ -454,7 +454,7 @@ mod tests {
             async move {
                 flag.store(1, Ordering::SeqCst);
                 object.base.signal_set(Signal::READABLE);
-                async_std::task::sleep(Duration::from_millis(1)).await;
+                async_std::task::sleep(Duration::from_millis(10)).await;
 
                 flag.store(2, Ordering::SeqCst);
                 object.base.signal_set(Signal::WRITABLE);
