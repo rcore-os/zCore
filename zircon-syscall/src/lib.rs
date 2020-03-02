@@ -103,6 +103,10 @@ impl Syscall {
             }
             SyscallType::VMO_GET_SIZE => self.sys_vmo_get_size(a0 as _, a1.into()),
             SyscallType::CHANNEL_CREATE => self.sys_channel_create(a0 as _, a1.into(), a2.into()),
+            SyscallType::VMO_CREATE_CHILD => {
+                self.sys_vmo_create_child(a0 as _, a1 as _, a2 as _, a3 as _, a4.into())
+            }
+            SyscallType::HANDLE_REPLACE => self.sys_handle_replace(a0 as _, a1 as _, a2.into()),
             _ => {
                 warn!("syscall unimplemented");
                 Err(ZxError::NOT_SUPPORTED)

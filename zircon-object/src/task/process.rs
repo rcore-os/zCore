@@ -223,9 +223,6 @@ impl Process {
             Some(h) => h.clone(),
             None => return Err(ZxError::BAD_HANDLE),
         };
-        if !handle.rights.contains(Rights::DUPLICATE) {
-            return Err(ZxError::ACCESS_DENIED);
-        }
         handle.rights = operation(handle.rights)?;
         let new_handle_value = inner.add_handle(handle);
         Ok(new_handle_value)

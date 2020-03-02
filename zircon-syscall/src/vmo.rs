@@ -1,5 +1,6 @@
 use {
     super::*,
+    bitflags::bitflags,
     zircon_object::{resource::*, vm::*},
 };
 
@@ -87,5 +88,43 @@ impl Syscall {
         let vmo = self.thread.proc().get_vmo_and_rights(handle)?.0;
         size.write(vmo.len())?;
         Ok(0)
+    }
+
+    pub fn sys_vmo_create_child(
+        &self,
+        handle_value: HandleValue,
+        options: u32,
+        offset: u64,
+        size: u64,
+        mut out: UserOutPtr<HandleValue>,
+    ) -> ZxResult<usize> {
+        let options = VmoCloneFlags::from_bits(options).ok_or(ZxError::INVALID_ARGS)?;
+        if options != VmoCloneFlags::SNAPSHOT_AT_LEAST_ON_WRITE {
+            return Err(ZxError::NOT_SUPPORTED);
+        }
+        info!(
+            "vmo_create_child: handle={}, options={:?}, offset={:#x}, size={:#x}",
+            handle_value, options, offset, size
+        );
+        let proc = self.thread.proc();
+        let vmo = proc.get_vmo_with_rights(handle_value, Rights::READ)?;
+        // TODO: optimize
+        let mut buffer = vec![0u8; size as usize];
+        vmo.read(offset as usize, &mut buffer);
+        let child_vmo = VMObjectPaged::new(pages(size as usize));
+        child_vmo.write(0, &buffer);
+        out.write(proc.add_handle(Handle::new(child_vmo, Rights::DEFAULT_VMO)))?;
+        Ok(0)
+    }
+}
+
+bitflags! {
+    struct VmoCloneFlags: u32 {
+        #[allow(clippy::identity_op)]
+        const SNAPSHOT                   = 1 << 0;
+        const RESIZABLE                  = 1 << 2;
+        const SLICE                      = 1 << 3;
+        const SNAPSHOT_AT_LEAST_ON_WRITE = 1 << 4;
+        const NO_WRITE                   = 1 << 5;
     }
 }
