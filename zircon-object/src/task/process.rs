@@ -98,7 +98,8 @@ impl Process {
         // TODO: _options -> options
         let proc = Arc::new(Process {
             base: {
-                let kobject = KObjectBase::new();
+                let mut kobject = KObjectBase::new();
+                kobject.obj_type = OBJ_TYPE_PROCESS;
                 kobject.set_name(name);
                 kobject
             },
@@ -332,6 +333,11 @@ impl Process {
             })
             .map_err(|_| ZxError::WRONG_TYPE)?;
         Ok((object, handle.rights))
+    }
+
+    pub fn get_handle_info(&self, handle_value: HandleValue) -> ZxResult<HandleBasicInfo> {
+        let handle = self.get_handle(handle_value)?;
+        Ok(handle.get_info())
     }
 
     /// Add a thread to the process.

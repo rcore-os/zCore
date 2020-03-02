@@ -127,6 +127,14 @@ impl Syscall {
         mapped_addr.write(vaddr)?;
         Ok(0)
     }
+
+    pub fn sys_vmar_destroy(&self, handle_value: HandleValue) -> ZxResult<usize> {
+        let proc = self.thread.proc();
+        let vmar = proc.get_object::<VmAddressRegion>(handle_value)?;
+        vmar.destroy()?;
+        proc.remove_handle(handle_value)?;
+        Ok(0)
+    }
 }
 
 bitflags! {

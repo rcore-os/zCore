@@ -28,7 +28,11 @@ impl Resource {
     /// Create a new `Resource`.
     pub fn create(name: &str, kind: ResourceKind) -> Arc<Self> {
         Arc::new(Resource {
-            base: KObjectBase::new(),
+            base: {
+                let mut res = KObjectBase::new();
+                res.obj_type = OBJ_TYPE_RESOURCE;
+                res
+            },
             name: String::from(name),
             kind,
         })

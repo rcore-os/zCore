@@ -140,7 +140,8 @@ impl Thread {
         // TODO: options
         let thread = Arc::new(Thread {
             base: {
-                let base = KObjectBase::new();
+                let mut base = KObjectBase::new();
+                base.obj_type = OBJ_TYPE_THREAD;
                 base.set_name(name);
                 base
             },

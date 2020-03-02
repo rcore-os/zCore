@@ -121,7 +121,7 @@ mod signal;
 /// [`impl_kobject`]: impl_kobject
 pub trait KernelObject: DowncastSync + Debug {
     fn id(&self) -> KoID;
-    fn type_name(&self) -> &'static str;
+    fn obj_type(&self) -> u32;
     fn name(&self) -> alloc::string::String;
     fn set_name(&self, name: &str);
     fn signal(&self) -> Signal;
@@ -130,6 +130,14 @@ pub trait KernelObject: DowncastSync + Debug {
     fn get_child(&self, _id: KoID) -> ZxResult<Arc<dyn KernelObject>> {
         Err(ZxError::WRONG_TYPE)
     }
+    fn related_koid(&self) -> KoID {
+        0u64
+    }
+    fn get_info(&self, h_info: &mut HandleBasicInfo) {
+        h_info.koid = self.id();
+        h_info.obj_type = self.obj_type();
+        h_info.related_koid = self.related_koid();
+    }
 }
 
 impl_downcast!(sync KernelObject);
@@ -137,6 +145,7 @@ impl_downcast!(sync KernelObject);
 /// The base struct of a kernel object.
 pub struct KObjectBase {
     pub id: KoID,
+    pub obj_type: ObjType,
     inner: Mutex<KObjectBaseInner>,
 }
 
@@ -167,6 +176,7 @@ impl Default for KObjectBase {
     fn default() -> Self {
         KObjectBase {
             id: Self::new_koid(),
+            obj_type: 0,
             inner: Default::default(),
         }
     }
@@ -195,6 +205,7 @@ impl KObjectBase {
     pub fn with_signal(signal: Signal) -> Self {
         KObjectBase {
             id: Self::new_koid(),
+            obj_type: 0,
             inner: Mutex::new(KObjectBaseInner {
                 name: String::default(),
                 signal,
@@ -383,8 +394,8 @@ macro_rules! impl_kobject {
             fn id(&self) -> KoID {
                 self.base.id
             }
-            fn type_name(&self) -> &'static str {
-                stringify!($class)
+            fn obj_type(&self) -> u32{
+                self.base.obj_type
             }
             fn name(&self) -> alloc::string::String{
                 self.base.get_name()
@@ -410,7 +421,7 @@ macro_rules! impl_kobject {
             ) -> core::result::Result<(), core::fmt::Error> {
                 f.debug_tuple("KObject")
                     .field(&self.id())
-                    .field(&self.type_name())
+                    .field(&self.name())
                     .finish()
             }
         }
@@ -419,6 +430,38 @@ macro_rules! impl_kobject {
 
 /// The type of kernel object ID.
 pub type KoID = u64;
+
+/// The object type
+pub type ObjType = u32;
+
+pub const OBJ_TYPE_NONE: ObjType = 0;
+pub const OBJ_TYPE_PROCESS: ObjType = 1;
+pub const OBJ_TYPE_THREAD: ObjType = 2;
+pub const OBJ_TYPE_VMO: ObjType = 3;
+pub const OBJ_TYPE_CHANNEL: ObjType = 4;
+pub const OBJ_TYPE_EVENT: ObjType = 5;
+pub const OBJ_TYPE_PORT: ObjType = 6;
+pub const OBJ_TYPE_INTERRUPT: ObjType = 9;
+pub const OBJ_TYPE_PCI_DEVICE: ObjType = 11;
+pub const OBJ_TYPE_LOG: ObjType = 12;
+pub const OBJ_TYPE_SOCKET: ObjType = 14;
+pub const OBJ_TYPE_RESOURCE: ObjType = 15;
+pub const OBJ_TYPE_EVENTPAIR: ObjType = 16;
+pub const OBJ_TYPE_JOB: ObjType = 17;
+pub const OBJ_TYPE_VMAR: ObjType = 18;
+pub const OBJ_TYPE_FIFO: ObjType = 19;
+pub const OBJ_TYPE_GUEST: ObjType = 20;
+pub const OBJ_TYPE_VCPU: ObjType = 21;
+pub const OBJ_TYPE_TIMER: ObjType = 22;
+pub const OBJ_TYPE_IOMMU: ObjType = 23;
+pub const OBJ_TYPE_BTI: ObjType = 24;
+pub const OBJ_TYPE_PROFILE: ObjType = 25;
+pub const OBJ_TYPE_PMT: ObjType = 26;
+pub const OBJ_TYPE_SUSPEND_TOKEN: ObjType = 27;
+pub const OBJ_TYPE_PAGER: ObjType = 28;
+pub const OBJ_TYPE_EXCEPTION: ObjType = 29;
+pub const OBJ_TYPE_CLOCK: ObjType = 30;
+pub const OBJ_TYPE_STREAM: ObjType = 31;
 
 /// The type of kernel object signal handler.
 pub type SignalHandler = Box<dyn Fn(Signal) -> bool + Send>;

@@ -1,4 +1,7 @@
-use {super::*, zircon_object::ipc::Channel};
+use {
+    super::*,
+    zircon_object::ipc::{Channel, MessagePacket},
+};
 
 impl Syscall {
     /// Read a message from a channel.
@@ -25,7 +28,7 @@ impl Syscall {
         actual_handles.write_if_not_null(msg.handles.len() as u32)?;
         if num_bytes < msg.data.len() as u32 || num_handles < msg.handles.len() as u32 {
             const MAY_DISCARD: u32 = 1;
-            if options & MAY_DISCARD == 0 {
+            if options & MAY_DISCARD == 1 {
                 unimplemented!("always discard when buffer too small for now");
             }
             return Err(ZxError::BUFFER_TOO_SMALL);
@@ -38,6 +41,36 @@ impl Syscall {
             .collect();
         handles.write_array(handle_values.as_slice())?;
         Ok(ZxError::OK as usize)
+    }
+
+    pub fn sys_channel_write(
+        &self,
+        handle_value: HandleValue,
+        options: u32,
+        user_bytes: UserInPtr<u8>,
+        num_bytes: u32,
+        user_handles: UserInPtr<HandleValue>,
+        num_handles: u32,
+    ) -> ZxResult<usize> {
+        if options != 0 {
+            return Err(ZxError::INVALID_ARGS);
+        }
+        info!(
+            "channel.write: handle_value={}, num_bytes={:#x}, num_handles={:#x}",
+            handle_value, num_bytes, num_handles,
+        );
+        let proc = self.thread.proc();
+        let mut handles = Vec::new();
+        let user_handles = user_handles.read_array(num_handles as usize)?;
+        for handle in user_handles {
+            handles.push(proc.remove_handle(handle)?);
+        }
+        let channel = proc.get_object_with_rights::<Channel>(handle_value, Rights::WRITE)?;
+        channel.write(MessagePacket {
+            data: user_bytes.read_array(num_bytes as usize)?,
+            handles,
+        })?;
+        Ok(0)
     }
 
     pub fn sys_channel_create(

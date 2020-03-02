@@ -119,6 +119,10 @@ impl Syscall {
                     .get_object_with_rights::<VmAddressRegion>(handle, Rights::INSPECT)?;
                 UserOutPtr::<VmarInfo>::from(buffer).write(vmar.get_info())?;
             }
+            ZxInfo::InfoHandleBasic => {
+                UserOutPtr::<HandleBasicInfo>::from(buffer)
+                    .write(self.thread.proc().get_handle_info(handle)?)?;
+            }
             _ => {
                 warn!("not supported info topic");
                 return Err(ZxError::NOT_SUPPORTED);

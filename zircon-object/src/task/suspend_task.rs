@@ -15,7 +15,11 @@ impl_kobject!(SuspendTask);
 impl SuspendTask {
     pub fn create(thread: &Arc<Thread>) -> Arc<Self> {
         Arc::new(SuspendTask {
-            base: KObjectBase::new(),
+            base: {
+                let mut res = KObjectBase::new();
+                res.obj_type = OBJ_TYPE_SUSPEND_TOKEN;
+                res
+            },
             thread: {
                 thread.suspend();
                 Arc::downgrade(thread)

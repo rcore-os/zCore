@@ -31,7 +31,11 @@ impl EventPair {
     #[allow(unsafe_code)]
     pub fn create() -> (Arc<Self>, Arc<Self>) {
         let mut event0 = Arc::new(EventPair {
-            base: KObjectBase::default(),
+            base: {
+                let mut res = KObjectBase::default();
+                res.obj_type = OBJ_TYPE_EVENTPAIR;
+                res
+            },
             peer: Weak::default(),
         });
         let event1 = Arc::new(EventPair {

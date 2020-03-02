@@ -107,6 +107,10 @@ impl Syscall {
                 self.sys_vmo_create_child(a0 as _, a1 as _, a2 as _, a3 as _, a4.into())
             }
             SyscallType::HANDLE_REPLACE => self.sys_handle_replace(a0 as _, a1 as _, a2.into()),
+            SyscallType::CHANNEL_WRITE => {
+                self.sys_channel_write(a0 as _, a1 as _, a2.into(), a3 as _, a4.into(), a5 as _)
+            }
+            SyscallType::VMAR_DESTROY => self.sys_vmar_destroy(a0 as _),
             _ => {
                 warn!("syscall unimplemented");
                 Err(ZxError::NOT_SUPPORTED)
