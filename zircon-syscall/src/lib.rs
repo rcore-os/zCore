@@ -52,10 +52,10 @@ impl Syscall {
                 a7.into(),
             ),
             SyscallType::OBJECT_GET_PROPERTY => {
-                self.sys_object_get_property(a0 as _, a1 as _, a2.into(), a3 as _)
+                self.sys_object_get_property(a0 as _, a1 as _, a2 as _, a3 as _)
             }
             SyscallType::OBJECT_SET_PROPERTY => {
-                self.sys_object_set_property(a0 as _, a1 as _, a2.into(), a3 as _)
+                self.sys_object_set_property(a0 as _, a1 as _, a2 as _, a3 as _)
             }
             SyscallType::DEBUG_WRITE => self.sys_debug_write(a0.into(), a1 as _),
             SyscallType::PROCESS_CREATE => {
@@ -123,6 +123,7 @@ impl Syscall {
                 .await
             }
             SyscallType::VMO_SET_SIZE => self.sys_vmo_set_size(a0 as _, a1 as _),
+            SyscallType::VMAR_PROTECT => self.sys_vmar_protect(a0 as _, a1 as _, a2 as _, a3 as _),
             _ => {
                 warn!("syscall unimplemented");
                 Err(ZxError::NOT_SUPPORTED)

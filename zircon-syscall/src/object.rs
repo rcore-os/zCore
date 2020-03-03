@@ -4,6 +4,9 @@ use {
 };
 
 const ZX_PROP_NAME: u32 = 3;
+const ZX_PROP_REGISTER_FS: u32 = 4;
+const ZX_PROP_PROCESS_DEBUG_ADDR: u32 = 5;
+const ZX_PROP_PROCESS_BREAK_ON_LOAD: u32 = 7;
 const ZX_MAX_NAME_LEN: u32 = 32;
 
 impl Syscall {
@@ -11,7 +14,7 @@ impl Syscall {
         &self,
         handle_value: HandleValue,
         property: u32,
-        mut ptr: UserOutPtr<u8>,
+        ptr: usize,
         buffer_size: u32,
     ) -> ZxResult<usize> {
         info!(
@@ -29,10 +32,35 @@ impl Syscall {
                 } else {
                     let s = object.name();
                     info!("object_get_property: name is {}", s);
-                    ptr.write_cstring(s.as_str())
+                    UserOutPtr::<u8>::from(ptr)
+                        .write_cstring(s.as_str())
                         .expect("failed to write cstring");
                     Ok(0)
                 }
+            }
+            ZX_PROP_PROCESS_DEBUG_ADDR => {
+                if buffer_size < 8 {
+                    return Err(ZxError::BUFFER_TOO_SMALL);
+                }
+                let debug_addr = self
+                    .thread
+                    .proc()
+                    .get_object_with_rights::<Process>(handle_value, Rights::GET_PROPERTY)?
+                    .get_debug_addr();
+                UserOutPtr::<usize>::from(ptr).write(debug_addr)?;
+                Ok(0)
+            }
+            ZX_PROP_PROCESS_BREAK_ON_LOAD => {
+                if buffer_size < 8 {
+                    return Err(ZxError::BUFFER_TOO_SMALL);
+                }
+                let break_on_load = self
+                    .thread
+                    .proc()
+                    .get_object_with_rights::<Process>(handle_value, Rights::GET_PROPERTY)?
+                    .get_dyn_break_on_load();
+                UserOutPtr::<usize>::from(ptr).write(break_on_load)?;
+                Ok(0)
             }
             _ => {
                 warn!("unknown property {} in OBJECT_GET_PROPERTY", property);
@@ -45,7 +73,7 @@ impl Syscall {
         &self,
         handle_value: HandleValue,
         property: u32,
-        ptr: UserInPtr<u8>,
+        ptr: usize,
         buffer_size: u32,
     ) -> ZxResult<usize> {
         info!(
@@ -63,13 +91,41 @@ impl Syscall {
                 } else {
                     buffer_size as usize
                 };
-                let s = ptr.read_string(length)?;
+                let s = UserInPtr::<u8>::from(ptr).read_string(length)?;
                 info!("object_set_property name: {}", s);
                 object.set_name(&s);
                 Ok(0)
             }
+            ZX_PROP_PROCESS_DEBUG_ADDR => {
+                if buffer_size < 8 {
+                    return Err(ZxError::BUFFER_TOO_SMALL);
+                }
+                let addr = UserInPtr::<usize>::from(ptr).read()?;
+                self.thread
+                    .proc()
+                    .get_object_with_rights::<Process>(handle_value, Rights::SET_PROPERTY)?
+                    .set_debug_addr(addr);
+                Ok(0)
+            }
+            ZX_PROP_REGISTER_FS => {
+                if buffer_size < 8 {
+                    return Err(ZxError::BUFFER_TOO_SMALL);
+                }
+                unimplemented!()
+            }
+            ZX_PROP_PROCESS_BREAK_ON_LOAD => {
+                if buffer_size < 8 {
+                    return Err(ZxError::BUFFER_TOO_SMALL);
+                }
+                let addr = UserInPtr::<usize>::from(ptr).read()?;
+                self.thread
+                    .proc()
+                    .get_object_with_rights::<Process>(handle_value, Rights::SET_PROPERTY)?
+                    .set_dyn_break_on_load(addr);
+                Ok(0)
+            }
             _ => {
-                warn!("unknown property {} in OBJECT_GET_PROPERTY", property);
+                warn!("unknown property {} in OBJECT_SET_PROPERTY", property);
                 Err(ZxError::INVALID_ARGS)
             }
         }

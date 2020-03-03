@@ -41,7 +41,6 @@ impl DebugLog {
         let flags = flags | self.flags;
         DLOG.lock().write(flags, data.as_bytes(), tid, pid);
         serial_write(data);
-        serial_write("\n");
         Ok(0)
     }
 }

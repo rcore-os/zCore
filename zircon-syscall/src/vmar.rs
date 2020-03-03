@@ -135,6 +135,31 @@ impl Syscall {
         proc.remove_handle(handle_value)?;
         Ok(0)
     }
+
+    pub fn sys_vmar_protect(
+        &self,
+        handle_value: HandleValue,
+        options: u32,
+        addr: u64,
+        len: u64,
+    ) -> ZxResult<usize> {
+        let options = VmOptions::from_bits(options).ok_or(ZxError::INVALID_ARGS)?;
+        let rights = options.to_rights();
+        info!(
+            "vmar.protect: handle={}, options={:#x}, addr={:#x}, len={:#x}",
+            handle_value, options, addr, len
+        );
+        let vmar = self
+            .thread
+            .proc()
+            .get_object_with_rights::<VmAddressRegion>(handle_value, rights)?;
+        let mut mapping_flags = MMUFlags::empty();
+        mapping_flags.set(MMUFlags::READ, options.contains(VmOptions::PERM_READ));
+        mapping_flags.set(MMUFlags::WRITE, options.contains(VmOptions::PERM_WRITE));
+        mapping_flags.set(MMUFlags::EXECUTE, options.contains(VmOptions::PERM_EXECUTE));
+        vmar.protect(addr as usize, len as usize, mapping_flags)?;
+        Ok(0)
+    }
 }
 
 bitflags! {

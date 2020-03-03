@@ -68,6 +68,8 @@ struct ProcessInner {
     status: Status,
     handles: BTreeMap<HandleValue, Handle>,
     threads: Vec<Arc<Thread>>,
+    debug_addr: usize,
+    dyn_break_on_load: usize,
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -382,6 +384,22 @@ impl Process {
             }
         }
         info
+    }
+
+    pub fn set_debug_addr(&self, addr: usize) {
+        self.inner.lock().debug_addr = addr;
+    }
+
+    pub fn get_debug_addr(&self) -> usize {
+        self.inner.lock().debug_addr
+    }
+
+    pub fn set_dyn_break_on_load(&self, addr: usize) {
+        self.inner.lock().dyn_break_on_load = addr;
+    }
+
+    pub fn get_dyn_break_on_load(&self) -> usize {
+        self.inner.lock().dyn_break_on_load
     }
 }
 

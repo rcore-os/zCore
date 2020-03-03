@@ -175,8 +175,42 @@ impl VmAddressRegion {
         Ok(())
     }
 
-    pub fn protect(&self) {
-        unimplemented!()
+    pub fn protect(&self, addr: usize, len: usize, flags: MMUFlags) -> ZxResult<()> {
+        let mut guard = self.inner.lock();
+        let inner = guard.as_mut().ok_or(ZxError::BAD_STATE)?;
+        let end_addr = addr + len;
+        warn!("{:#x?}", inner.mappings);
+        let length: usize = inner
+            .mappings
+            .iter()
+            .filter_map(|map| {
+                if map.addr >= addr && map.end_addr() <= end_addr {
+                    Some(map.size)
+                } else {
+                    None
+                }
+            })
+            .sum();
+        if length != len {
+            return Err(ZxError::NOT_FOUND);
+        }
+        if inner
+            .mappings
+            .iter()
+            .filter(|map| map.addr >= addr && map.end_addr() <= addr) // get mappings in range: [addr, end_addr]
+            .any(|map| !map.is_valid_mapping_flags(flags))
+        // check if protect flags is valid
+        {
+            return Err(ZxError::ACCESS_DENIED);
+        }
+        inner
+            .mappings
+            .iter()
+            .filter(|map| map.addr >= addr && map.end_addr() <= addr)
+            .for_each(|map| {
+                map.protect(flags);
+            });
+        Ok(())
     }
 
     /// Unmap all mappings within the VMAR, and destroy all sub-regions of the region.
@@ -356,6 +390,12 @@ pub struct VmMapping {
     page_table: Arc<Mutex<PageTable>>,
 }
 
+impl core::fmt::Debug for VmMapping {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "addr: {:#x}, size: {:#x}", self.addr, self.size)
+    }
+}
+
 impl VmMapping {
     fn map(&self) {
         let mut page_table = self.page_table.lock();
@@ -431,6 +471,26 @@ impl VmMapping {
 
     fn end_addr(&self) -> VirtAddr {
         self.addr + self.size
+    }
+
+    pub fn is_valid_mapping_flags(&self, flags: MMUFlags) -> bool {
+        if !flags.contains(MMUFlags::READ) && self.flags.contains(MMUFlags::READ) {
+            return false;
+        }
+        if !flags.contains(MMUFlags::WRITE) && self.flags.contains(MMUFlags::WRITE) {
+            return false;
+        }
+        if !flags.contains(MMUFlags::EXECUTE) && self.flags.contains(MMUFlags::EXECUTE) {
+            return false;
+        }
+        true
+    }
+
+    pub fn protect(&self, flags: MMUFlags) {
+        let mut pg_table = self.page_table.lock();
+        for i in 0..self.size {
+            pg_table.protect(self.addr + i * PAGE_SIZE, flags).unwrap();
+        }
     }
 }
 
