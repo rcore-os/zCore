@@ -116,6 +116,21 @@ impl Syscall {
         out.write(proc.add_handle(Handle::new(child_vmo, Rights::DEFAULT_VMO)))?;
         Ok(0)
     }
+
+    pub fn sys_vmo_set_size(&self, handle_value: HandleValue, size: u64) -> ZxResult<usize> {
+        let vmo = self
+            .thread
+            .proc()
+            .get_vmo_with_rights(handle_value, Rights::WRITE)?;
+        info!(
+            "vmo.set_size: handle={}, size={:#x}, current_size={:#x}",
+            handle_value,
+            size,
+            vmo.len()
+        );
+        vmo.set_len(pages(size as usize));
+        Ok(0)
+    }
 }
 
 bitflags! {

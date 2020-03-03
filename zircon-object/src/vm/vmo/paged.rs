@@ -59,8 +59,16 @@ impl VMObject for VMObjectPaged {
         self.inner.lock().frames.len() * PAGE_SIZE
     }
 
-    fn set_len(&self, _len: usize) {
-        unimplemented!()
+    fn set_len(&self, len: usize) {
+        // FIXME parent and children? len < old_len?
+        let old_len = self.inner.lock().frames.len();
+        warn!("old_len: {:#x}, len: {:#x}", old_len, len);
+        if old_len < len {
+            self.inner.lock().frames.resize_with(len, Default::default);
+            self.commit(old_len, len - old_len);
+        } else {
+            unimplemented!()
+        }
     }
 
     fn map_to(

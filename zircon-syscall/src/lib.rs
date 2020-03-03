@@ -111,6 +111,18 @@ impl Syscall {
                 self.sys_channel_write(a0 as _, a1 as _, a2.into(), a3 as _, a4.into(), a5 as _)
             }
             SyscallType::VMAR_DESTROY => self.sys_vmar_destroy(a0 as _),
+            SyscallType::CHANNEL_CALL_NORETRY => {
+                self.sys_channel_call_noretry(
+                    a0 as _,
+                    a1 as _,
+                    a2 as _,
+                    a3.into(),
+                    a4.into(),
+                    a5.into(),
+                )
+                .await
+            }
+            SyscallType::VMO_SET_SIZE => self.sys_vmo_set_size(a0 as _, a1 as _),
             _ => {
                 warn!("syscall unimplemented");
                 Err(ZxError::NOT_SUPPORTED)

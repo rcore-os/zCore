@@ -72,16 +72,20 @@ impl Syscall {
             proc_handle, thread_handle, entry, stack, arg1_handle, arg2
         );
         let proc = self.thread.proc();
-        let arg1_handle = proc.remove_handle(arg1_handle)?;
         let process = proc.get_object_with_rights::<Process>(proc_handle, Rights::WRITE)?;
         let thread = proc.get_object_with_rights::<Thread>(thread_handle, Rights::WRITE)?;
         if !Arc::ptr_eq(&thread.proc(), &process) {
             return Err(ZxError::ACCESS_DENIED);
         }
-        if !arg1_handle.rights.contains(Rights::TRANSFER) {
-            return Err(ZxError::ACCESS_DENIED);
-        }
-        let arg1 = process.add_handle(arg1_handle);
+        let arg1 = if arg1_handle != INVALID_HANDLE {
+            let arg1 = proc.remove_handle(arg1_handle)?;
+            if !arg1.rights.contains(Rights::TRANSFER) {
+                return Err(ZxError::ACCESS_DENIED);
+            }
+            process.add_handle(arg1)
+        } else {
+            arg1_handle
+        };
         match thread.start(entry, stack, arg1 as usize, arg2) {
             Ok(()) => Ok(0),
             Err(e) => {

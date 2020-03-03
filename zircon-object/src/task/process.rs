@@ -389,7 +389,7 @@ impl ProcessInner {
     /// Add a handle to the process
     fn add_handle(&mut self, handle: Handle) -> HandleValue {
         // FIXME: handle value from ptr
-        let value = (0 as HandleValue..)
+        let value = (1 as HandleValue..)
             .find(|idx| !self.handles.contains_key(idx))
             .unwrap();
         self.handles.insert(value, handle);
