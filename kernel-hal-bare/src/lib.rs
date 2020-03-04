@@ -35,6 +35,8 @@ use spin::Mutex;
 
 pub mod arch;
 
+pub use self::arch::*;
+
 #[allow(improper_ctypes)]
 extern "C" {
     fn hal_pt_map_kernel(pt: *mut u8, current: *const u8);

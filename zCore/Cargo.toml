@@ -22,5 +22,5 @@ core = { package = "core-futures-tls", version = "0.1.0" }
 zircon-loader = { path = "../zircon-loader", default-features = false }
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
-x86_64 = "0.8"
+x86_64 = "0.9"
 uart_16550 = "0.2"

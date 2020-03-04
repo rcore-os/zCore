@@ -2,6 +2,7 @@ use {
     super::*,
     apic::{LocalApic, XApic},
     core::fmt::{Arguments, Write},
+    core::time::Duration,
     spin::Mutex,
     uart_16550::SerialPort,
     x86_64::{
@@ -182,6 +183,13 @@ pub fn putfmt(fmt: Arguments) {
 #[export_name = "hal_serial_write"]
 pub fn serial_write(s: &str) {
     COM1.lock().write_str(s).unwrap();
+}
+
+#[export_name = "hal_timer_now"]
+pub fn timer_now() -> Duration {
+    let tsc = unsafe { core::arch::x86_64::_rdtsc() };
+    // TODO: read frequency to calculate real time
+    Duration::from_nanos(tsc / 8)
 }
 
 fn timer_init() {
