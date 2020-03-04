@@ -99,7 +99,7 @@ pub fn run_task(_thread: Arc<Thread>) {
 #[derive(Default)]
 struct ThreadInner {
     /// Thread state
-    context: Option<Box<UserContext>>,
+    context: Option<UserContext>,
 
     suspend_count: usize,
     waker: Option<Waker>,
@@ -129,7 +129,7 @@ impl Thread {
             ext: Box::new(ext),
             inner: Mutex::new({
                 let mut inner = ThreadInner::default();
-                inner.context = Some(Box::new(UserContext::default()));
+                inner.context = Some(UserContext::default());
                 inner
             }),
         });
@@ -245,22 +245,19 @@ impl Thread {
         }
     }
 
-    pub fn get_context(&self) -> Box<UserContext> {
-        self.inner.lock().context.take().unwrap()
-    }
-
-    pub fn set_context(&self, context: Box<UserContext>) {
+    pub async fn run(self: &Arc<Thread>, f: impl FnOnce(&mut UserContext)) {
+        self.check_runnable().await;
         let mut inner = self.inner.lock();
-        assert!(inner.context.is_none());
-        inner.context = Some(context);
+        let mut cx = inner.context.take().unwrap();
+        f(&mut cx);
+        inner.context = Some(cx);
     }
 
-    pub fn get_general_regs(self: &Arc<Thread>) -> GeneralRegs {
-        self.inner.lock().context.as_ref().unwrap().general.clone()
-    }
-
-    pub fn set_ret_code(self: &Arc<Thread>, code: usize) {
-        self.inner.lock().context.as_mut().unwrap().general.rax = code;
+    pub fn with_general_regs(self: &Arc<Thread>, f: impl FnOnce(&mut GeneralRegs)) {
+        let mut inner = self.inner.lock();
+        let mut cx = inner.context.take().unwrap();
+        f(&mut cx.general);
+        inner.context = Some(cx);
     }
 }
 
