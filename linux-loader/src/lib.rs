@@ -9,9 +9,7 @@ extern crate log;
 
 use {
     alloc::{boxed::Box, string::String, sync::Arc, vec::Vec},
-    core::{future::Future, pin::Pin},
-    // TODO: remove dependence of kernel-hal-unix
-    kernel_hal_unix::{syscall_entry, GeneralRegs},
+    kernel_hal::GeneralRegs,
     linux_object::{
         fs::{vfs::FileSystem, INodeExt},
         loader::LinuxElfLoader,
@@ -32,7 +30,10 @@ pub fn run(
     let proc = Process::create_linux(&job, rootfs.clone()).unwrap();
     let thread = Thread::create_linux(&proc).unwrap();
     let loader = LinuxElfLoader {
-        syscall_entry: syscall_entry as usize,
+        #[cfg(feature = "std")]
+        syscall_entry: kernel_hal_unix::syscall_entry as usize,
+        #[cfg(not(feature = "std"))]
+        syscall_entry: 0,
         stack_pages: 8,
         root_inode: rootfs.root_inode(),
     };
@@ -47,20 +48,35 @@ pub fn run(
 }
 
 #[no_mangle]
-extern "C" fn handle_syscall(
-    thread: &'static Arc<Thread>,
-    regs: &'static mut GeneralRegs,
-) -> Pin<Box<dyn Future<Output = bool> + Send + Sync>> {
-    Box::pin(handle_syscall_async(thread, regs))
+pub fn run_task(thread: Arc<Thread>) {
+    let vmtoken = thread.proc().vmar().table_phys();
+    let future = async move {
+        loop {
+            let mut cx = thread.wait_for_run().await;
+            trace!("go to user: {:#x?}", cx);
+            kernel_hal::context_run(&mut cx);
+            trace!("back from user: {:#x?}", cx);
+            assert_eq!(cx.trap_num, 0x100, "user interrupt still no support");
+            let exit = handle_syscall(&thread, &mut cx.general).await;
+            thread.end_running(cx);
+            if exit {
+                break;
+            }
+        }
+    };
+    kernel_hal::Thread::spawn(Box::pin(future), vmtoken);
 }
 
-async fn handle_syscall_async(thread: &Arc<Thread>, regs: &mut GeneralRegs) -> bool {
+async fn handle_syscall(thread: &Arc<Thread>, regs: &mut GeneralRegs) -> bool {
     trace!("syscall: {:#x?}", regs);
     let num = regs.rax as u32;
     let args = [regs.rdi, regs.rsi, regs.rdx, regs.r10, regs.r8, regs.r9];
     let mut syscall = Syscall {
         thread,
-        syscall_entry: syscall_entry as usize,
+        #[cfg(feature = "std")]
+        syscall_entry: kernel_hal_unix::syscall_entry as usize,
+        #[cfg(not(feature = "std"))]
+        syscall_entry: 0,
         regs,
         exit: false,
     };

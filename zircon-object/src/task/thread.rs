@@ -92,7 +92,7 @@ impl_kobject!(Thread);
 
 #[linkage = "weak"]
 #[export_name = "run_task"]
-pub fn run_task(_thread: Arc<Thread>) {
+fn run_task(_thread: Arc<Thread>) {
     unimplemented!()
 }
 

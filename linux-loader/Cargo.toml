@@ -9,12 +9,17 @@ description = "Linux programs loader and runner."
 
 [dependencies]
 log = "0.4"
-env_logger = "0.7"
 xmas-elf = "0.7"
 core = { package = "core-futures-tls", version = "0.1.0" }
 linux-syscall = { path = "../linux-syscall" }
 linux-object = { path = "../linux-object" }
 zircon-object = { path = "../zircon-object" }
-kernel-hal-unix = { path = "../kernel-hal-unix" }
-rcore-fs-hostfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "8902cfa6" }
-async-std = { version = "1.5", features = ["attributes"] }
+kernel-hal = { path = "../kernel-hal" }
+rcore-fs-hostfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "8902cfa6", optional = true }
+env_logger = { version = "0.7", optional = true }
+kernel-hal-unix = { path = "../kernel-hal-unix", optional = true }
+async-std = { version = "1.5", features = ["attributes"], optional = true }
+
+[features]
+default = ["std"]
+std = ["env_logger", "async-std", "kernel-hal-unix", "rcore-fs-hostfs"]

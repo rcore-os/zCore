@@ -17,7 +17,7 @@ impl Syscall<'_> {
         info!("vfork:");
         let new_proc = Process::vfork_from(self.zircon_process())?;
         let new_thread = Thread::create_linux(&new_proc)?;
-        new_thread.start_with_regs(self.regs.fork())?;
+        new_thread.start_with_regs(GeneralRegs::new_fork(self.regs))?;
 
         let new_proc: Arc<dyn KernelObject> = new_proc;
         info!("vfork: {} -> {}", self.zircon_process().id(), new_proc.id());
@@ -55,7 +55,7 @@ impl Syscall<'_> {
             panic!("unsupported sys_clone flags: {:#x}", flags);
         }
         let new_thread = Thread::create_linux(self.zircon_process())?;
-        let regs = self.regs.clone(newsp, newtls);
+        let regs = GeneralRegs::new_clone(self.regs, newsp, newtls);
         new_thread.start_with_regs(regs)?;
 
         let tid = new_thread.id();
@@ -285,5 +285,37 @@ bitflags! {
         const NEWPID =          1 << 29;
         const NEWNET =          1 << 30;
         const IO =              1 << 31;
+    }
+}
+
+trait RegExt {
+    fn new_fn(entry: usize, sp: usize, arg1: usize, arg2: usize) -> Self;
+    fn new_clone(regs: &Self, newsp: usize, newtls: usize) -> Self;
+    fn new_fork(regs: &Self) -> Self;
+}
+
+#[cfg(target_arch = "x86_64")]
+impl RegExt for GeneralRegs {
+    fn new_fn(entry: usize, sp: usize, arg1: usize, arg2: usize) -> Self {
+        GeneralRegs {
+            rip: entry,
+            rsp: sp,
+            rdi: arg1,
+            rsi: arg2,
+            ..Default::default()
+        }
+    }
+
+    fn new_clone(regs: &Self, newsp: usize, newtls: usize) -> Self {
+        GeneralRegs {
+            rax: 0,
+            rsp: newsp,
+            fsbase: newtls,
+            ..*regs
+        }
+    }
+
+    fn new_fork(regs: &Self) -> Self {
+        GeneralRegs { rax: 0, ..*regs }
     }
 }
