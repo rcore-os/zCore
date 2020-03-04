@@ -99,7 +99,7 @@ pub fn run_task(_thread: Arc<Thread>) {
 #[derive(Default)]
 struct ThreadInner {
     /// Thread state
-    context: Option<UserContext>,
+    context: Option<Box<UserContext>>,
 
     suspend_count: usize,
     waker: Option<Waker>,
@@ -127,10 +127,9 @@ impl Thread {
             },
             proc: proc.clone(),
             ext: Box::new(ext),
-            inner: Mutex::new({
-                let mut inner = ThreadInner::default();
-                inner.context = Some(UserContext::default());
-                inner
+            inner: Mutex::new(ThreadInner {
+                context: Some(Box::new(UserContext::default())),
+                ..Default::default()
             }),
         });
         proc.add_thread(thread.clone());
@@ -157,7 +156,7 @@ impl Thread {
     ) -> ZxResult<()> {
         {
             let mut inner = self.inner.lock();
-            let context = inner.context.as_mut().unwrap();
+            let context = inner.context.as_mut().ok_or(ZxError::BAD_STATE)?;
             context.general.rip = entry;
             context.general.rsp = stack;
             context.general.rdi = arg1;
@@ -172,7 +171,7 @@ impl Thread {
     pub fn start_with_regs(self: &Arc<Self>, regs: GeneralRegs) -> ZxResult<()> {
         {
             let mut inner = self.inner.lock();
-            let context = inner.context.as_mut().unwrap();
+            let context = inner.context.as_mut().ok_or(ZxError::BAD_STATE)?;
             context.general = regs;
         }
         run_task(self.clone());
@@ -190,16 +189,18 @@ impl Thread {
     /// Read one aspect of thread state.
     pub fn read_state(&self, kind: ThreadStateKind, buf: &mut [u8]) -> ZxResult<usize> {
         let inner = self.inner.lock();
-        read_state(&inner.context.as_ref().unwrap().general, kind, buf)
+        let context = inner.context.as_ref().ok_or(ZxError::BAD_STATE)?;
+        context.read_state(kind, buf)
     }
 
     /// Write one aspect of thread state.
     pub fn write_state(&self, kind: ThreadStateKind, buf: &[u8]) -> ZxResult<()> {
         let mut inner = self.inner.lock();
-        write_state(&mut inner.context.as_mut().unwrap().general, kind, buf)
+        let context = inner.context.as_mut().ok_or(ZxError::BAD_STATE)?;
+        context.write_state(kind, buf)
     }
 
-    pub fn suspend(&self) {
+    pub(super) fn suspend(&self) {
         let mut inner = self.inner.lock();
         inner.suspend_count += 1;
         self.base.signal_set(Signal::THREAD_SUSPENDED);
@@ -210,31 +211,7 @@ impl Thread {
         );
     }
 
-    pub fn check_runnable(self: &Arc<Thread>) -> impl Future<Output = ()> {
-        struct RunnableChecker {
-            thread: Arc<Thread>,
-        }
-        impl Future for RunnableChecker {
-            type Output = ();
-
-            fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-                let count = self.thread.inner.lock().suspend_count;
-                if count == 0 {
-                    Poll::Ready(())
-                } else {
-                    // 把waker存起来，比如self.thread.get_waker
-                    let mut inner = self.thread.inner.lock();
-                    inner.waker = Some(cx.waker().clone());
-                    Poll::Pending
-                }
-            }
-        }
-        RunnableChecker {
-            thread: self.clone(),
-        }
-    }
-
-    pub fn resume(&self) {
+    pub(super) fn resume(&self) {
         let mut inner = self.inner.lock();
         assert_ne!(inner.suspend_count, 0);
         inner.suspend_count -= 1;
@@ -245,19 +222,32 @@ impl Thread {
         }
     }
 
-    pub async fn run(self: &Arc<Thread>, f: impl FnOnce(&mut UserContext)) {
-        self.check_runnable().await;
-        let mut inner = self.inner.lock();
-        let mut cx = inner.context.take().unwrap();
-        f(&mut cx);
-        inner.context = Some(cx);
+    pub fn wait_for_run(self: &Arc<Thread>) -> impl Future<Output = Box<UserContext>> {
+        struct RunnableChecker {
+            thread: Arc<Thread>,
+        }
+        impl Future for RunnableChecker {
+            type Output = Box<UserContext>;
+
+            fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+                let mut inner = self.thread.inner.lock();
+                if inner.suspend_count == 0 {
+                    // resume:  return the context token from thread object
+                    Poll::Ready(inner.context.take().unwrap())
+                } else {
+                    // suspend: put waker into the thread object
+                    inner.waker = Some(cx.waker().clone());
+                    Poll::Pending
+                }
+            }
+        }
+        RunnableChecker {
+            thread: self.clone(),
+        }
     }
 
-    pub fn with_general_regs(self: &Arc<Thread>, f: impl FnOnce(&mut GeneralRegs)) {
-        let mut inner = self.inner.lock();
-        let mut cx = inner.context.take().unwrap();
-        f(&mut cx.general);
-        inner.context = Some(cx);
+    pub fn end_running(&self, context: Box<UserContext>) {
+        self.inner.lock().context = Some(context);
     }
 }
 

@@ -2,7 +2,6 @@
 #![feature(asm)]
 #![feature(global_asm)]
 #![deny(warnings, unused_must_use)]
-#![feature(stmt_expr_attributes)]
 
 #[macro_use]
 extern crate alloc;
@@ -11,7 +10,7 @@ extern crate log;
 
 use {
     alloc::{boxed::Box, sync::Arc, vec::Vec},
-    core::{convert::AsRef, future::Future, pin::Pin},
+    core::convert::AsRef,
     kernel_hal::GeneralRegs,
     xmas_elf::{
         program::{Flags, ProgramHeader, SegmentData, Type},
@@ -174,16 +173,13 @@ pub fn run_task(thread: Arc<Thread>) {
     let vmtoken = thread.proc().vmar().table_phys();
     let future = async move {
         loop {
-            thread
-                .run(|cx| {
-                    cx.run();
-                    if cx.error_code != 0 {
-                        panic!("{:#x?}", cx);
-                    }
-                    assert_eq!(cx.trap_num, 0x100, "user interrupt still no support");
-                })
-                .await;
-            let exit = handle_syscall_async(&thread).await;
+            let mut cx = thread.wait_for_run().await;
+            trace!("go to user: {:#x?}", cx);
+            cx.run();
+            trace!("back from user: {:#x?}", cx);
+            assert_eq!(cx.trap_num, 0x100, "user interrupt still no support");
+            let exit = handle_syscall(&thread, &mut cx.general).await;
+            thread.end_running(cx);
             if exit {
                 break;
             }
@@ -192,41 +188,28 @@ pub fn run_task(thread: Arc<Thread>) {
     kernel_hal::Thread::spawn(Box::pin(future), vmtoken);
 }
 
-async fn handle_syscall_async(thread: &Arc<Thread>) -> bool {
-    let mut num: u32 = 0;
-    let mut args: [usize; 8] = Default::default();
+async fn handle_syscall(thread: &Arc<Thread>, regs: &mut GeneralRegs) -> bool {
+    let num = regs.rax as u32;
     // LibOS: Function call ABI
     #[cfg(feature = "std")]
-    thread.with_general_regs(|regs| {
-        trace!("syscall: {:#x?}", regs);
-        num = regs.rax as u32;
-        args = unsafe {
-            let a6 = (regs.rsp as *const usize).read();
-            let a7 = (regs.rsp as *const usize).add(1).read();
-            [
-                regs.rdi, regs.rsi, regs.rdx, regs.rcx, regs.r8, regs.r9, a6, a7,
-            ]
-        };
-    });
+    let args = unsafe {
+        let a6 = (regs.rsp as *const usize).read();
+        let a7 = (regs.rsp as *const usize).add(1).read();
+        [
+            regs.rdi, regs.rsi, regs.rdx, regs.rcx, regs.r8, regs.r9, a6, a7,
+        ]
+    };
     // RealOS: Zircon syscall ABI
     #[cfg(not(feature = "std"))]
-    thread.with_general_regs(|regs| {
-        trace!("syscall: {:#x?}", regs);
-        num = regs.rax as u32;
-        args = [
-            regs.rdi, regs.rsi, regs.rdx, regs.r10, regs.r8, regs.r9, regs.r12, regs.r13,
-        ];
-    });
+    let args = [
+        regs.rdi, regs.rsi, regs.rdx, regs.r10, regs.r8, regs.r9, regs.r12, regs.r13,
+    ];
     let mut syscall = Syscall {
         thread: thread.clone(),
         exit: false,
     };
-    let ret_code = syscall.syscall(SyscallType::from(num), args).await;
-    thread.with_general_regs(|regs| {
-        regs.rax = ret_code as usize;
-    });
-    let exit = syscall.exit;
-    exit
+    regs.rax = syscall.syscall(SyscallType::from(num), args).await as usize;
+    syscall.exit
 }
 
 pub trait ElfExt {

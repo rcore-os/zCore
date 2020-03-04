@@ -1,5 +1,5 @@
 use crate::{ZxError, ZxResult};
-use kernel_hal::GeneralRegs;
+use kernel_hal::UserContext;
 
 #[repr(u32)]
 #[derive(Debug, Copy, Clone)]
@@ -15,27 +15,34 @@ pub enum ThreadStateKind {
     GS = 7,
 }
 
-pub fn read_state(general: &GeneralRegs, kind: ThreadStateKind, buf: &mut [u8]) -> ZxResult<usize> {
-    match kind {
-        ThreadStateKind::General => buf.write_struct(general),
-        #[cfg(target_arch = "x86_64")]
-        ThreadStateKind::FS => buf.write_struct(&general.fsbase),
-        #[cfg(target_arch = "x86_64")]
-        ThreadStateKind::GS => buf.write_struct(&general.gsbase),
-        _ => unimplemented!(),
-    }
+pub trait ContextExt {
+    fn read_state(&self, kind: ThreadStateKind, buf: &mut [u8]) -> ZxResult<usize>;
+    fn write_state(&mut self, kind: ThreadStateKind, buf: &[u8]) -> ZxResult<()>;
 }
 
-pub fn write_state(general: &mut GeneralRegs, kind: ThreadStateKind, buf: &[u8]) -> ZxResult<()> {
-    match kind {
-        ThreadStateKind::General => *general = buf.read_struct()?,
-        #[cfg(target_arch = "x86_64")]
-        ThreadStateKind::FS => general.fsbase = buf.read_struct()?,
-        #[cfg(target_arch = "x86_64")]
-        ThreadStateKind::GS => general.gsbase = buf.read_struct()?,
-        _ => unimplemented!(),
+impl ContextExt for UserContext {
+    fn read_state(&self, kind: ThreadStateKind, buf: &mut [u8]) -> ZxResult<usize> {
+        match kind {
+            ThreadStateKind::General => buf.write_struct(&self.general),
+            #[cfg(target_arch = "x86_64")]
+            ThreadStateKind::FS => buf.write_struct(&self.general.fsbase),
+            #[cfg(target_arch = "x86_64")]
+            ThreadStateKind::GS => buf.write_struct(&self.general.gsbase),
+            _ => unimplemented!(),
+        }
     }
-    Ok(())
+
+    fn write_state(&mut self, kind: ThreadStateKind, buf: &[u8]) -> ZxResult<()> {
+        match kind {
+            ThreadStateKind::General => self.general = buf.read_struct()?,
+            #[cfg(target_arch = "x86_64")]
+            ThreadStateKind::FS => self.general.fsbase = buf.read_struct()?,
+            #[cfg(target_arch = "x86_64")]
+            ThreadStateKind::GS => self.general.gsbase = buf.read_struct()?,
+            _ => unimplemented!(),
+        }
+        Ok(())
+    }
 }
 
 trait BufExt {

@@ -125,11 +125,11 @@ impl Syscall {
             SyscallType::VMO_SET_SIZE => self.sys_vmo_set_size(a0 as _, a1 as _),
             SyscallType::VMAR_PROTECT => self.sys_vmar_protect(a0 as _, a1 as _, a2 as _, a3 as _),
             _ => {
-                warn!("syscall unimplemented");
+                warn!("syscall unimplemented: {:?}", sys_type);
                 Err(ZxError::NOT_SUPPORTED)
             }
         };
-        info!("{:?}<= {:?}", sys_type, ret);
+        info!("<= {:?}", ret);
         match ret {
             Ok(_) => 0,
             Err(err) => err as isize,
