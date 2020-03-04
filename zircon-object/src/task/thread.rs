@@ -99,9 +99,7 @@ pub fn run_task(_thread: Arc<Thread>) {
 #[derive(Default)]
 struct ThreadInner {
     /// Thread state
-    ///
-    /// Only be `Some` on suspended.
-    context: Option<UserContext>,
+    context: Option<Box<UserContext>>,
 
     suspend_count: usize,
     waker: Option<Waker>,
@@ -131,7 +129,7 @@ impl Thread {
             ext: Box::new(ext),
             inner: Mutex::new({
                 let mut inner = ThreadInner::default();
-                inner.context = Some(UserContext::default());
+                inner.context = Some(Box::new(UserContext::default()));
                 inner
             }),
         });
@@ -166,6 +164,7 @@ impl Thread {
             context.general.rsi = arg2;
         }
         run_task(self.clone());
+        self.base.signal_set(Signal::THREAD_RUNNING);
         Ok(())
     }
 
@@ -177,6 +176,7 @@ impl Thread {
             context.general = regs;
         }
         run_task(self.clone());
+        self.base.signal_set(Signal::THREAD_RUNNING);
         Ok(())
     }
 
@@ -245,14 +245,22 @@ impl Thread {
         }
     }
 
-    pub fn get_context(&self) -> UserContext {
+    pub fn get_context(&self) -> Box<UserContext> {
         self.inner.lock().context.take().unwrap()
     }
 
-    pub fn set_context(&self, context: UserContext) {
+    pub fn set_context(&self, context: Box<UserContext>) {
         let mut inner = self.inner.lock();
         assert!(inner.context.is_none());
         inner.context = Some(context);
+    }
+
+    pub fn get_general_regs(self: &Arc<Thread>) -> GeneralRegs {
+        self.inner.lock().context.as_ref().unwrap().general.clone()
+    }
+
+    pub fn set_ret_code(self: &Arc<Thread>, code: usize) {
+        self.inner.lock().context.as_mut().unwrap().general.rax = code;
     }
 }
 

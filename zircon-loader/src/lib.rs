@@ -191,8 +191,7 @@ pub fn run_task(thread: Arc<Thread>) {
 }
 
 async fn handle_syscall_async(thread: &Arc<Thread>) -> bool {
-    let mut context = thread.get_context();
-    let regs = &mut context.general;
+    let regs = thread.get_general_regs();
     trace!("syscall: {:#x?}", regs);
     let num = regs.rax as u32;
     // LibOS: Function call ABI
@@ -213,10 +212,8 @@ async fn handle_syscall_async(thread: &Arc<Thread>) -> bool {
         thread: thread.clone(),
         exit: false,
     };
-    let ret = syscall.syscall(SyscallType::from(num), args).await;
+    thread.set_ret_code(syscall.syscall(SyscallType::from(num), args).await as usize);
     let exit = syscall.exit;
-    regs.rax = ret as usize;
-    thread.set_context(context);
     exit
 }
 
