@@ -13,7 +13,7 @@ impl Syscall {
                 return Err(ZxError::NOT_SUPPORTED);
             }
             let token_handle =
-                Handle::new(SuspendTask::create(&thread), Rights::DEFAULT_SUSPEND_TOKEN);
+                Handle::new(SuspendToken::create(&thread), Rights::DEFAULT_SUSPEND_TOKEN);
             token.write(proc.add_handle(token_handle))?;
             return Ok(0);
         }

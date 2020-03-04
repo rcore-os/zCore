@@ -27,11 +27,7 @@ impl Timer {
     /// Create a new `Timer`.
     pub fn new() -> Arc<Self> {
         Arc::new(Timer {
-            base: {
-                let mut res = KObjectBase::default();
-                res.obj_type = OBJ_TYPE_TIMER;
-                res
-            },
+            base: KObjectBase::default(),
             inner: Mutex::default(),
         })
     }

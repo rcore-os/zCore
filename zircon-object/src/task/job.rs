@@ -55,11 +55,7 @@ impl Job {
     /// Create the root job.
     pub fn root() -> Arc<Self> {
         Arc::new(Job {
-            base: {
-                let mut res = KObjectBase::new();
-                res.obj_type = OBJ_TYPE_JOB;
-                res
-            },
+            base: KObjectBase::new(),
             parent: None,
             parent_policy: JobPolicy::default(),
             inner: Mutex::new(JobInner::default()),

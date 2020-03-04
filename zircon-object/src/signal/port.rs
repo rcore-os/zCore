@@ -42,11 +42,7 @@ impl Port {
     /// Create a new `Port`.
     pub fn new() -> Arc<Self> {
         Arc::new(Port {
-            base: {
-                let mut res = KObjectBase::default();
-                res.obj_type = OBJ_TYPE_PORT;
-                res
-            },
+            base: KObjectBase::default(),
             inner: Mutex::default(),
         })
     }

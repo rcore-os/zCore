@@ -120,8 +120,7 @@ impl Thread {
         // TODO: options
         let thread = Arc::new(Thread {
             base: {
-                let mut base = KObjectBase::new();
-                base.obj_type = OBJ_TYPE_THREAD;
+                let base = KObjectBase::new();
                 base.set_name(name);
                 base
             },
@@ -206,7 +205,7 @@ impl Thread {
         self.base.signal_set(Signal::THREAD_SUSPENDED);
         info!(
             "thread {} suspend_count {}",
-            self.base.get_name(),
+            self.base.name(),
             inner.suspend_count
         );
     }

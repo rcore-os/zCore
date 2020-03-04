@@ -22,11 +22,7 @@ impl<T> Channel_<T> {
     #[allow(unsafe_code)]
     pub fn create() -> (Arc<Self>, Arc<Self>) {
         let mut channel0 = Arc::new(Channel_ {
-            base: {
-                let mut res = KObjectBase::with_signal(Signal::WRITABLE);
-                res.obj_type = OBJ_TYPE_CHANNEL;
-                res
-            },
+            base: KObjectBase::with_signal(Signal::WRITABLE),
             peer: Weak::default(),
             recv_queue: Default::default(),
         });

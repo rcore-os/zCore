@@ -121,7 +121,7 @@ mod signal;
 /// [`impl_kobject`]: impl_kobject
 pub trait KernelObject: DowncastSync + Debug {
     fn id(&self) -> KoID;
-    fn obj_type(&self) -> u32;
+    fn obj_type(&self) -> ObjectType;
     fn name(&self) -> alloc::string::String;
     fn set_name(&self, name: &str);
     fn signal(&self) -> Signal;
@@ -135,7 +135,7 @@ pub trait KernelObject: DowncastSync + Debug {
     }
     fn get_info(&self, h_info: &mut HandleBasicInfo) {
         h_info.koid = self.id();
-        h_info.obj_type = self.obj_type();
+        h_info.obj_type = self.obj_type() as u32;
         h_info.related_koid = self.related_koid();
     }
 }
@@ -145,7 +145,6 @@ impl_downcast!(sync KernelObject);
 /// The base struct of a kernel object.
 pub struct KObjectBase {
     pub id: KoID,
-    pub obj_type: ObjType,
     inner: Mutex<KObjectBaseInner>,
 }
 
@@ -176,7 +175,6 @@ impl Default for KObjectBase {
     fn default() -> Self {
         KObjectBase {
             id: Self::new_koid(),
-            obj_type: 0,
             inner: Default::default(),
         }
     }
@@ -197,15 +195,14 @@ impl KObjectBase {
     }
 
     /// Get object's name
-    pub fn get_name(&self) -> String {
-        String::from(self.inner.lock().name.as_str())
+    pub fn name(&self) -> String {
+        self.inner.lock().name.clone()
     }
 
     /// Create a kernel object base with initial `signal`.
     pub fn with_signal(signal: Signal) -> Self {
         KObjectBase {
             id: Self::new_koid(),
-            obj_type: 0,
             inner: Mutex::new(KObjectBaseInner {
                 name: String::default(),
                 signal,
@@ -394,11 +391,11 @@ macro_rules! impl_kobject {
             fn id(&self) -> KoID {
                 self.base.id
             }
-            fn obj_type(&self) -> u32{
-                self.base.obj_type
+            fn obj_type(&self) -> $crate::object::ObjectType {
+                ObjectType::$class
             }
-            fn name(&self) -> alloc::string::String{
-                self.base.get_name()
+            fn name(&self) -> alloc::string::String {
+                self.base.name()
             }
             fn set_name(&self, name: &str){
                 self.base.set_name(name)
@@ -432,36 +429,48 @@ macro_rules! impl_kobject {
 pub type KoID = u64;
 
 /// The object type
-pub type ObjType = u32;
+#[repr(u32)]
+#[derive(Debug)]
+pub enum ObjectType {
+    None = 0,
+    Process = 1,
+    Thread = 2,
+    Vmo = 3,
+    Channel = 4,
+    Event = 5,
+    Port = 6,
+    Interrupt = 9,
+    PciDevice = 11,
+    Log = 12,
+    Socket = 14,
+    Resource = 15,
+    EventPair = 16,
+    Job = 17,
+    Vmar = 18,
+    Fifo = 19,
+    Guest = 20,
+    VCpu = 21,
+    Timer = 22,
+    Iommu = 23,
+    Bti = 24,
+    Profile = 25,
+    Pmt = 26,
+    SuspendToken = 27,
+    Pager = 28,
+    Exception = 29,
+    Clock = 30,
+    Stream = 31,
+}
 
-pub const OBJ_TYPE_NONE: ObjType = 0;
-pub const OBJ_TYPE_PROCESS: ObjType = 1;
-pub const OBJ_TYPE_THREAD: ObjType = 2;
-pub const OBJ_TYPE_VMO: ObjType = 3;
-pub const OBJ_TYPE_CHANNEL: ObjType = 4;
-pub const OBJ_TYPE_EVENT: ObjType = 5;
-pub const OBJ_TYPE_PORT: ObjType = 6;
-pub const OBJ_TYPE_INTERRUPT: ObjType = 9;
-pub const OBJ_TYPE_PCI_DEVICE: ObjType = 11;
-pub const OBJ_TYPE_LOG: ObjType = 12;
-pub const OBJ_TYPE_SOCKET: ObjType = 14;
-pub const OBJ_TYPE_RESOURCE: ObjType = 15;
-pub const OBJ_TYPE_EVENTPAIR: ObjType = 16;
-pub const OBJ_TYPE_JOB: ObjType = 17;
-pub const OBJ_TYPE_VMAR: ObjType = 18;
-pub const OBJ_TYPE_FIFO: ObjType = 19;
-pub const OBJ_TYPE_GUEST: ObjType = 20;
-pub const OBJ_TYPE_VCPU: ObjType = 21;
-pub const OBJ_TYPE_TIMER: ObjType = 22;
-pub const OBJ_TYPE_IOMMU: ObjType = 23;
-pub const OBJ_TYPE_BTI: ObjType = 24;
-pub const OBJ_TYPE_PROFILE: ObjType = 25;
-pub const OBJ_TYPE_PMT: ObjType = 26;
-pub const OBJ_TYPE_SUSPEND_TOKEN: ObjType = 27;
-pub const OBJ_TYPE_PAGER: ObjType = 28;
-pub const OBJ_TYPE_EXCEPTION: ObjType = 29;
-pub const OBJ_TYPE_CLOCK: ObjType = 30;
-pub const OBJ_TYPE_STREAM: ObjType = 31;
+#[allow(non_upper_case_globals)]
+impl ObjectType {
+    pub const DummyObject: ObjectType = ObjectType::None;
+    pub const DebugLog: ObjectType = ObjectType::Log;
+    pub const Futex: ObjectType = ObjectType::None; // TODO
+    pub const VmAddressRegion: ObjectType = ObjectType::Vmar;
+    pub const VMObjectPaged: ObjectType = ObjectType::Vmo;
+    pub const VMObjectPhysical: ObjectType = ObjectType::Vmo;
+}
 
 /// The type of kernel object signal handler.
 pub type SignalHandler = Box<dyn Fn(Signal) -> bool + Send>;

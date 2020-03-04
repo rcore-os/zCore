@@ -28,11 +28,7 @@ impl VMObjectPaged {
         frames.resize_with(pages, Default::default);
 
         Arc::new(VMObjectPaged {
-            base: {
-                let mut res = KObjectBase::default();
-                res.obj_type = OBJ_TYPE_VMO;
-                res
-            },
+            base: KObjectBase::default(),
             inner: Mutex::new(VMObjectPagedInner { frames }),
         })
     }

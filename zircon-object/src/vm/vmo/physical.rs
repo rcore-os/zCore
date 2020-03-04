@@ -21,11 +21,7 @@ impl VMObjectPhysical {
     pub unsafe fn new(paddr: PhysAddr, pages: usize) -> Arc<Self> {
         assert!(page_aligned(paddr));
         Arc::new(VMObjectPhysical {
-            base: {
-                let mut res = KObjectBase::default();
-                res.obj_type = OBJ_TYPE_VMO;
-                res
-            },
+            base: KObjectBase::default(),
             paddr,
             pages,
             data_lock: Mutex::default(),

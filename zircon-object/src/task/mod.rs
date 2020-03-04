@@ -6,11 +6,11 @@ mod exception;
 mod job;
 mod job_policy;
 mod process;
-mod suspend_task;
+mod suspend_token;
 mod thread;
 
 pub use {
-    self::job::*, self::job_policy::*, self::process::*, self::suspend_task::*, self::thread::*,
+    self::job::*, self::job_policy::*, self::process::*, self::suspend_token::*, self::thread::*,
 };
 
 /// Task (Thread, Process, or Job)

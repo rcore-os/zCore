@@ -51,11 +51,7 @@ impl VmAddressRegion {
         let addr: usize = 0x2_00000000 + 0x10_00000000 * i;
         Arc::new(VmAddressRegion {
             flags: VmarFlags::ROOT_FLAGS,
-            base: {
-                let mut res = KObjectBase::new();
-                res.obj_type = OBJ_TYPE_VMAR;
-                res
-            },
+            base: KObjectBase::new(),
             addr,
             size: 0x10_00000000,
             parent: None,

@@ -100,10 +100,9 @@ impl Process {
         // TODO: _options -> options
         let proc = Arc::new(Process {
             base: {
-                let mut kobject = KObjectBase::new();
-                kobject.obj_type = OBJ_TYPE_PROCESS;
-                kobject.set_name(name);
-                kobject
+                let base = KObjectBase::new();
+                base.set_name(name);
+                base
             },
             job: job.clone(),
             policy: job.policy(),
