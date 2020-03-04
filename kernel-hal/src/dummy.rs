@@ -1,7 +1,8 @@
 use super::*;
 use alloc::boxed::Box;
-use alloc::sync::Arc;
+use core::future::Future;
 use core::ops::FnOnce;
+use core::pin::Pin;
 use core::time::Duration;
 
 type ThreadId = usize;
@@ -15,7 +16,10 @@ impl Thread {
     /// Spawn a new thread.
     #[linkage = "weak"]
     #[export_name = "hal_thread_spawn"]
-    pub fn spawn<T>(_self: Arc<T>, _regs: GeneralRegs, _vmtoken: usize) -> Self {
+    pub fn spawn(
+        _future: Pin<Box<dyn Future<Output = ()> + Send + 'static>>,
+        _vmtoken: usize,
+    ) -> Self {
         unimplemented!()
     }
 }

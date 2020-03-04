@@ -168,15 +168,31 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
     proc
 }
 
-#[no_mangle]
-extern "C" fn handle_syscall(
-    thread: &'static Arc<Thread>,
-    regs: &'static mut GeneralRegs,
-) -> Pin<Box<dyn Future<Output = bool>>> {
-    Box::pin(handle_syscall_async(thread, regs))
+#[export_name = "run_task"]
+pub fn run_task(thread: Arc<Thread>) {
+    let vmtoken = thread.proc().vmar().table_phys();
+    let future = async move {
+        loop {
+            thread.check_runnable().await;
+            let mut context = thread.get_context();
+            context.run();
+            if context.error_code != 0 {
+                panic!("{:#x?}", context);
+            }
+            assert_eq!(context.trap_num, 0x100, "user interrupt still no support");
+            thread.set_context(context);
+            let exit = handle_syscall_async(&thread).await;
+            if exit {
+                break;
+            }
+        }
+    };
+    kernel_hal::Thread::spawn(Box::pin(future), vmtoken);
 }
 
-async fn handle_syscall_async(thread: &Arc<Thread>, regs: &mut GeneralRegs) -> bool {
+async fn handle_syscall_async(thread: &Arc<Thread>) -> bool {
+    let mut context = thread.get_context();
+    let regs = &mut context.general;
     trace!("syscall: {:#x?}", regs);
     let num = regs.rax as u32;
     // LibOS: Function call ABI
@@ -200,6 +216,7 @@ async fn handle_syscall_async(thread: &Arc<Thread>, regs: &mut GeneralRegs) -> b
     let ret = syscall.syscall(SyscallType::from(num), args).await;
     let exit = syscall.exit;
     regs.rax = ret as usize;
+    thread.set_context(context);
     exit
 }
 

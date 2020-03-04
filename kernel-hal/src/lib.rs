@@ -7,11 +7,6 @@
 extern crate alloc;
 
 pub mod defs {
-    #[cfg(target_arch = "x86_64")]
-    include!("arch/x86_64.rs");
-    #[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))]
-    include!("arch/riscv.rs");
-
     use bitflags::bitflags;
 
     bitflags! {
@@ -34,3 +29,4 @@ pub mod user;
 
 pub use self::defs::*;
 pub use self::dummy::*;
+pub use trapframe::{GeneralRegs, UserContext};

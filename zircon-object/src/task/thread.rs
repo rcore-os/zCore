@@ -9,6 +9,7 @@ use {
         pin::Pin,
         task::{Context, Poll, Waker},
     },
+    kernel_hal::{GeneralRegs, UserContext},
     spin::Mutex,
 };
 
@@ -89,37 +90,18 @@ pub struct Thread {
 
 impl_kobject!(Thread);
 
-#[no_mangle]
-extern "C" fn thread_check_runnable(
-    thread: &'static Arc<Thread>,
-) -> Pin<Box<dyn Future<Output = ()>>> {
-    Box::pin(check_runnable_async(thread))
-}
-/// Check whether a thread is runnable
-async fn check_runnable_async(thread: &Arc<Thread>) {
-    thread.check_runnable().await
-}
-
-#[export_name = "thread_set_state"]
-pub fn thread_set_state(thread: &'static Arc<Thread>, state: &'static mut ThreadState) {
-    let mut inner = thread.inner.lock();
-    if let Some(old_state) = inner.state.take() {
-        state.general = old_state.general;
-    }
-    inner.state = Some(state);
+#[linkage = "weak"]
+#[export_name = "run_task"]
+pub fn run_task(_thread: Arc<Thread>) {
+    unimplemented!()
 }
 
 #[derive(Default)]
 struct ThreadInner {
-    /// HAL thread handle
-    ///
-    /// Should be `None` before start or after terminated.
-    hal_thread: Option<kernel_hal::Thread>,
-
     /// Thread state
     ///
     /// Only be `Some` on suspended.
-    state: Option<&'static mut ThreadState>,
+    context: Option<UserContext>,
 
     suspend_count: usize,
     waker: Option<Waker>,
@@ -147,7 +129,11 @@ impl Thread {
             },
             proc: proc.clone(),
             ext: Box::new(ext),
-            inner: Mutex::new(ThreadInner::default()),
+            inner: Mutex::new({
+                let mut inner = ThreadInner::default();
+                inner.context = Some(UserContext::default());
+                inner
+            }),
         });
         proc.add_thread(thread.clone());
         Ok(thread)
@@ -171,20 +157,26 @@ impl Thread {
         arg1: usize,
         arg2: usize,
     ) -> ZxResult<()> {
-        let regs = GeneralRegs::new_fn(entry, stack, arg1, arg2);
-        self.start_with_regs(regs)
+        {
+            let mut inner = self.inner.lock();
+            let context = inner.context.as_mut().unwrap();
+            context.general.rip = entry;
+            context.general.rsp = stack;
+            context.general.rdi = arg1;
+            context.general.rsi = arg2;
+        }
+        run_task(self.clone());
+        Ok(())
     }
 
     /// Start execution with given registers.
     pub fn start_with_regs(self: &Arc<Self>, regs: GeneralRegs) -> ZxResult<()> {
-        let mut inner = self.inner.lock();
-        if inner.hal_thread.is_some() {
-            return Err(ZxError::BAD_STATE);
+        {
+            let mut inner = self.inner.lock();
+            let context = inner.context.as_mut().unwrap();
+            context.general = regs;
         }
-        let hal_thread =
-            kernel_hal::Thread::spawn(self.clone(), regs, self.proc.vmar().table_phys());
-        inner.hal_thread = Some(hal_thread);
-        self.base.signal_set(Signal::THREAD_RUNNING);
+        run_task(self.clone());
         Ok(())
     }
 
@@ -198,26 +190,13 @@ impl Thread {
     /// Read one aspect of thread state.
     pub fn read_state(&self, kind: ThreadStateKind, buf: &mut [u8]) -> ZxResult<usize> {
         let inner = self.inner.lock();
-        let state = inner.state.as_ref().ok_or(ZxError::BAD_STATE)?;
-        let len = state.read(kind, buf)?;
-        Ok(len)
+        read_state(&inner.context.as_ref().unwrap().general, kind, buf)
     }
 
-    #[allow(unsafe_code)]
     /// Write one aspect of thread state.
     pub fn write_state(&self, kind: ThreadStateKind, buf: &[u8]) -> ZxResult<()> {
         let mut inner = self.inner.lock();
-        //let state = inner.state.as_mut().ok_or(ZxError::BAD_STATE)?;
-        let state = inner.state.get_or_insert({
-            unsafe {
-                static mut STATE: ThreadState = ThreadState {
-                    general: GeneralRegs::zero(),
-                };
-                &mut STATE
-            }
-        });
-        state.write(kind, buf)?;
-        Ok(())
+        write_state(&mut inner.context.as_mut().unwrap().general, kind, buf)
     }
 
     pub fn suspend(&self) {
@@ -264,6 +243,16 @@ impl Thread {
                 waker.wake();
             }
         }
+    }
+
+    pub fn get_context(&self) -> UserContext {
+        self.inner.lock().context.take().unwrap()
+    }
+
+    pub fn set_context(&self, context: UserContext) {
+        let mut inner = self.inner.lock();
+        assert!(inner.context.is_none());
+        inner.context = Some(context);
     }
 }
 

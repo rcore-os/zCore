@@ -24,13 +24,13 @@ extern crate log;
 extern crate alloc;
 
 use alloc::boxed::Box;
-use alloc::sync::Arc;
 use core::{
     future::Future,
     pin::Pin,
     task::{Context, Poll},
 };
 use kernel_hal::defs::*;
+use spin::Mutex;
 
 pub mod arch;
 
@@ -50,77 +50,30 @@ pub struct Thread {
 
 impl Thread {
     #[export_name = "hal_thread_spawn"]
-    pub fn spawn(thread: Arc<usize>, regs: GeneralRegs, vmtoken: usize) -> Self {
-        struct PageTableSwitchWrapper<F: Future> {
-            inner: F,
+    pub fn spawn(
+        future: Pin<Box<dyn Future<Output = ()> + Send + 'static>>,
+        vmtoken: usize,
+    ) -> Self {
+        struct PageTableSwitchWrapper {
+            inner: Mutex<Pin<Box<dyn Future<Output = ()> + Send>>>,
             vmtoken: usize,
         }
-        impl<F: Future> Future for PageTableSwitchWrapper<F> {
-            type Output = F::Output;
+        impl Future for PageTableSwitchWrapper {
+            type Output = ();
             fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
                 unsafe {
                     arch::set_page_table(self.vmtoken);
                 }
-                let inner: Pin<&mut F> =
-                    unsafe { core::mem::transmute(&mut self.get_unchecked_mut().inner) };
-                inner.poll(cx)
+                self.inner.lock().as_mut().poll(cx)
             }
         }
 
-        let future = async move {
-            thread_set_state(&thread, &regs);
-            let mut context = trapframe::UserContext {
-                // safety: same structure
-                general: unsafe { core::mem::transmute(regs) },
-                ..Default::default()
-            };
-            loop {
-                // 判断线程状态是否是RUNNABLE,不是则返回Pending
-                unsafe {
-                    thread_check_runnable(&thread).await;
-                }
-                context.run();
-                if context.error_code != 0 {
-                    panic!("{:#x?}", context);
-                }
-                assert_eq!(context.trap_num, 0x100, "user interrupt still no support");
-                let exit = unsafe { handle_syscall(&thread, &mut context.general).await };
-                if exit {
-                    break;
-                }
-            }
-        };
         executor::spawn(PageTableSwitchWrapper {
-            inner: future,
+            inner: Mutex::new(future),
             vmtoken,
         });
         Thread { thread: 0 }
     }
-}
-
-#[linkage = "weak"]
-#[no_mangle]
-extern "C" fn handle_syscall(
-    _thread: &Arc<usize>,
-    _regs: &mut trapframe::GeneralRegs,
-) -> Pin<Box<dyn Future<Output = bool> + Send>> {
-    // exit by default
-    Box::pin(async { true })
-}
-
-#[linkage = "weak"]
-#[export_name = "thread_set_state"]
-pub fn thread_set_state(_thread: &Arc<usize>, _state: &GeneralRegs) {
-    unimplemented!()
-}
-
-/// Check whether a thread is runnable
-#[linkage = "weak"]
-#[no_mangle]
-extern "C" fn thread_check_runnable(
-    _thread: &Arc<usize>,
-) -> Pin<Box<dyn Future<Output = ()> + Send>> {
-    Box::pin(async {})
 }
 
 /// Map kernel for the new page table.
