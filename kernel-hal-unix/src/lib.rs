@@ -9,7 +9,6 @@ extern crate alloc;
 
 use {
     alloc::collections::VecDeque,
-    alloc::sync::Arc,
     core::{future::Future, pin::Pin},
     lazy_static::lazy_static,
     std::fmt::{Debug, Formatter},
@@ -39,54 +38,22 @@ pub struct Thread {
 
 impl Thread {
     #[export_name = "hal_thread_spawn"]
-    pub fn spawn(thread: Arc<usize>, mut regs: GeneralRegs) -> Self {
-        async_std::task::spawn(async move {
-            thread_set_state(&thread, &regs);
-            let mut fxstate = [0u128; 512 / 16];
-            loop {
-                // 判断线程状态是否是RUNNABLE,不是则返回Pending
-                unsafe {
-                    thread_check_runnable(&thread).await;
-                }
-                unsafe {
-                    core::arch::x86_64::_fxrstor64(fxstate.as_ptr() as _);
-                    trap::run_user(&mut regs);
-                    core::arch::x86_64::_fxsave64(fxstate.as_mut_ptr() as _);
-                }
-                let exit = unsafe { handle_syscall(&thread, &mut regs).await };
-                if exit {
-                    break;
-                }
-                async_std::task::yield_now().await;
-            }
-        });
+    pub fn spawn(
+        future: Pin<Box<dyn Future<Output = ()> + Send + 'static>>,
+        _vmtoken: usize,
+    ) -> Self {
+        async_std::task::spawn(future);
         Thread { thread: 0 }
     }
 }
 
-#[linkage = "weak"]
-#[export_name = "thread_set_state"]
-pub fn thread_set_state(_thread: &Arc<usize>, _state: &GeneralRegs) {
-    unimplemented!()
-}
-
-/// Check whether a thread is runnable
-#[linkage = "weak"]
-#[no_mangle]
-extern "C" fn thread_check_runnable(
-    _thread: &Arc<usize>,
-) -> Pin<Box<dyn Future<Output = ()> + Send>> {
-    Box::pin(async {})
-}
-
-#[linkage = "weak"]
-#[no_mangle]
-extern "C" fn handle_syscall(
-    _thread: &Arc<usize>,
-    _regs: &mut GeneralRegs,
-) -> Pin<Box<dyn Future<Output = bool> + Send>> {
-    // exit by default
-    Box::pin(async { true })
+#[export_name = "hal_context_run"]
+pub unsafe fn context_run(context: &mut UserContext) {
+    core::arch::x86_64::_fxrstor64(&context.vector as *const VectorRegs as _);
+    trap::run_user(&mut context.general);
+    core::arch::x86_64::_fxsave64(&mut context.vector as *mut VectorRegs as _);
+    // cause: syscall
+    context.trap_num = 0x100;
 }
 
 /// Page Table

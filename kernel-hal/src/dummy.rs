@@ -24,6 +24,12 @@ impl Thread {
     }
 }
 
+#[linkage = "weak"]
+#[export_name = "hal_context_run"]
+pub fn context_run(_context: &mut UserContext) {
+    unimplemented!()
+}
+
 /// Page Table
 #[repr(C)]
 pub struct PageTable {

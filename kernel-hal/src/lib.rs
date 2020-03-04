@@ -29,4 +29,4 @@ pub mod user;
 
 pub use self::defs::*;
 pub use self::dummy::*;
-pub use trapframe::{GeneralRegs, UserContext};
+pub use trapframe::{GeneralRegs, UserContext, VectorRegs};

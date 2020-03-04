@@ -11,7 +11,7 @@ description = "Kernel HAL implementation for bare metal environment."
 log = "0.4"
 spin = "0.5"
 executor = { git = "https://github.com/PanQL/executor.git", rev="1818b01" }
-trapframe = "0.1.2"
+trapframe = "0.1.3"
 core = { package = "core-futures-tls", version = "0.1.0" }
 kernel-hal = { path = "../kernel-hal" }
 

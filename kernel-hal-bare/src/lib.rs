@@ -30,6 +30,7 @@ use core::{
     task::{Context, Poll},
 };
 use kernel_hal::defs::*;
+use kernel_hal::UserContext;
 use spin::Mutex;
 
 pub mod arch;
@@ -74,6 +75,11 @@ impl Thread {
         });
         Thread { thread: 0 }
     }
+}
+
+#[export_name = "hal_context_run"]
+pub fn context_run(context: &mut UserContext) {
+    context.run();
 }
 
 /// Map kernel for the new page table.

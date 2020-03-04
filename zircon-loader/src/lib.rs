@@ -175,7 +175,7 @@ pub fn run_task(thread: Arc<Thread>) {
         loop {
             let mut cx = thread.wait_for_run().await;
             trace!("go to user: {:#x?}", cx);
-            cx.run();
+            kernel_hal::context_run(&mut cx);
             trace!("back from user: {:#x?}", cx);
             assert_eq!(cx.trap_num, 0x100, "user interrupt still no support");
             let exit = handle_syscall(&thread, &mut cx.general).await;
