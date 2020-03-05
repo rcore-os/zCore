@@ -1,6 +1,6 @@
 use {
     super::*, crate::object::*, alloc::sync::Arc, core::convert::TryInto, kernel_hal::serial_write,
-    spin::Mutex,
+    kernel_hal::timer_now, spin::Mutex,
 };
 
 static DLOG: Mutex<DlogBuffer> = Mutex::new(DlogBuffer::new());
@@ -69,7 +69,7 @@ impl DlogBuffer {
             header: header_flag,
             datalen: data.len() as u16,
             flags: flags as u16,
-            timestamp: 0u64, // FIXME timer_now() should be used here
+            timestamp: timer_now().as_secs(), // FIXME timer_now() should be used here
             pid,
             tid,
         };
