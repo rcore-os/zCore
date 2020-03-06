@@ -1,6 +1,6 @@
 use {super::*, zircon_object::task::*};
 
-impl Syscall {
+impl Syscall<'_> {
     pub fn sys_task_suspend_token(
         &self,
         handle: HandleValue,

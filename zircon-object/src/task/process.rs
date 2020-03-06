@@ -407,11 +407,15 @@ impl ProcessInner {
     fn add_handle(&mut self, handle: Handle) -> HandleValue {
         // FIXME: handle value from ptr
         let value = (1 as HandleValue..)
-            .find(|idx| !self.handles.contains_key(idx))
+            .find(|idx| {
+                let key = (idx << 2) | 0x3u32;
+                !self.handles.contains_key(&key)
+            })
             .unwrap();
-        self.handles.insert(value, handle);
-        info!("A new handle is added : {}", value);
-        value
+        let key = (value << 2) | 0x3u32;
+        self.handles.insert(key, handle);
+        info!("A new handle is added : {}", key);
+        key
     }
 
     /// Whether `thread` is in this process.

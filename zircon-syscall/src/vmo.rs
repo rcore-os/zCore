@@ -4,7 +4,7 @@ use {
     zircon_object::{resource::*, task::PolicyCondition, vm::*},
 };
 
-impl Syscall {
+impl Syscall<'_> {
     pub fn sys_vmo_create(
         &self,
         size: u64,

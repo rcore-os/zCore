@@ -9,7 +9,7 @@ const ZX_PROP_PROCESS_DEBUG_ADDR: u32 = 5;
 const ZX_PROP_PROCESS_BREAK_ON_LOAD: u32 = 7;
 const ZX_MAX_NAME_LEN: u32 = 32;
 
-impl Syscall {
+impl Syscall<'_> {
     pub fn sys_object_get_property(
         &self,
         handle_value: HandleValue,
@@ -70,7 +70,7 @@ impl Syscall {
     }
 
     pub fn sys_object_set_property(
-        &self,
+        &mut self,
         handle_value: HandleValue,
         property: u32,
         ptr: usize,
@@ -111,7 +111,10 @@ impl Syscall {
                 if buffer_size < 8 {
                     return Err(ZxError::BUFFER_TOO_SMALL);
                 }
-                unimplemented!()
+                let fsbase = UserInPtr::<u64>::from(ptr).read()?;
+                info!("to set fsbase as {:#x}", fsbase);
+                self.regs.fsbase = fsbase as usize;
+                Ok(0)
             }
             ZX_PROP_PROCESS_BREAK_ON_LOAD => {
                 if buffer_size < 8 {

@@ -9,7 +9,7 @@ fn amount_of_alignments(options: u32) -> ZxResult<usize> {
     }
 }
 
-impl Syscall {
+impl Syscall<'_> {
     pub fn sys_vmar_allocate(
         &self,
         parent_vmar: HandleValue,
@@ -21,7 +21,7 @@ impl Syscall {
     ) -> ZxResult<usize> {
         let vm_options = VmOptions::from_bits(options).ok_or(ZxError::INVALID_ARGS)?;
         info!(
-            "vmar.allocate: parent={:?}, options={:?}, offset={:#x?}, size={:#x?}",
+            "vmar.allocate: parent={:?}, options={:#x?}, offset={:#x?}, size={:#x?}",
             parent_vmar, options, offset, size,
         );
         // try to get parent_vmar
@@ -118,6 +118,11 @@ impl Syscall {
             MMUFlags::EXECUTE,
             vmar_rights.contains(Rights::EXECUTE) && vmo_rights.contains(Rights::EXECUTE),
         );
+        info!(
+            "mmuflags: {:?}, is_specific {:?}",
+            mapping_flags, is_specific
+        );
+        let len = pages(len) * PAGE_SIZE;
         let vaddr = if is_specific {
             vmar.map_at(vmar_offset, vmo, vmo_offset, len, mapping_flags)?
         } else {

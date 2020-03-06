@@ -1,6 +1,6 @@
 use {super::*, core::convert::TryFrom};
 
-impl Syscall {
+impl Syscall<'_> {
     pub fn sys_handle_duplicate(
         &self,
         handle_value: HandleValue,

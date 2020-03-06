@@ -48,12 +48,12 @@ impl VmAddressRegion {
         // FIXME: workaround for unix
         static VMAR_ID: AtomicUsize = AtomicUsize::new(0);
         let i = VMAR_ID.fetch_add(1, Ordering::SeqCst);
-        let addr: usize = 0x2_00000000 + 0x10_00000000 * i;
+        let addr: usize = 0x2_00000000 + 0x100_00000000 * i;
         Arc::new(VmAddressRegion {
             flags: VmarFlags::ROOT_FLAGS,
             base: KObjectBase::new(),
             addr,
-            size: 0x10_00000000,
+            size: 0x100_00000000,
             parent: None,
             page_table: Arc::new(Mutex::new(kernel_hal::PageTable::new())),
             inner: Mutex::new(Some(VmarInner::default())),
@@ -350,6 +350,20 @@ impl VmAddressRegion {
 
     pub fn get_flags(&self) -> VmarFlags {
         self.flags
+    }
+
+    // TODO print mappings
+    pub fn dump(&self) {
+        info!("addr: {:#x}, size:{:#x}", self.addr, self.size);
+        self.inner
+            .lock()
+            .as_ref()
+            .unwrap()
+            .children
+            .iter()
+            .for_each(|map| {
+                map.dump();
+            });
     }
 
     #[cfg(test)]

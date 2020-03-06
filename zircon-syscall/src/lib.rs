@@ -10,7 +10,10 @@ extern crate alloc;
 extern crate log;
 
 use {
-    alloc::sync::Arc, alloc::vec::Vec, kernel_hal::user::*, zircon_object::object::*,
+    alloc::sync::Arc,
+    alloc::vec::Vec,
+    kernel_hal::{user::*, GeneralRegs},
+    zircon_object::object::*,
     zircon_object::task::Thread,
 };
 
@@ -28,12 +31,13 @@ mod vmo;
 
 pub use consts::SyscallType;
 
-pub struct Syscall {
+pub struct Syscall<'a> {
+    pub regs: &'a mut GeneralRegs,
     pub thread: Arc<Thread>,
     pub exit: bool,
 }
 
-impl Syscall {
+impl Syscall<'_> {
     pub async fn syscall(&mut self, sys_type: SyscallType, args: [usize; 8]) -> isize {
         info!("{:?}=> args={:x?}", sys_type, args);
         let [a0, a1, a2, a3, a4, a5, a6, a7] = args;
@@ -81,7 +85,7 @@ impl Syscall {
             SyscallType::VMAR_ALLOCATE => {
                 self.sys_vmar_allocate(a0 as _, a1 as _, a2 as _, a3 as _, a4.into(), a5.into())
             }
-            SyscallType::CPRNG_DRAW_ONCE => self.sys_cprng_draw_once(a0.into(), a1 as _),
+            SyscallType::CPRNG_DRAW_ONCE => self.sys_cprng_draw_once(a0 as _, a1 as _),
             SyscallType::THREAD_CREATE => {
                 self.sys_thread_create(a0 as _, a1.into(), a2 as _, a3 as _, a4.into())
             }

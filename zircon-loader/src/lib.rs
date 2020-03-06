@@ -204,10 +204,11 @@ async fn handle_syscall(thread: &Arc<Thread>, regs: &mut GeneralRegs) -> bool {
         regs.rdi, regs.rsi, regs.rdx, regs.r10, regs.r8, regs.r9, regs.r12, regs.r13,
     ];
     let mut syscall = Syscall {
+        regs,
         thread: thread.clone(),
         exit: false,
     };
-    regs.rax = syscall.syscall(SyscallType::from(num), args).await as usize;
+    syscall.regs.rax = syscall.syscall(SyscallType::from(num), args).await as usize;
     syscall.exit
 }
 

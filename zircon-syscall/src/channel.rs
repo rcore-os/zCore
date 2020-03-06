@@ -3,7 +3,7 @@ use {
     zircon_object::ipc::{Channel, MessagePacket},
 };
 
-impl Syscall {
+impl Syscall<'_> {
     /// Read a message from a channel.
     #[allow(clippy::too_many_arguments)]
     pub fn sys_channel_read(
