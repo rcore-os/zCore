@@ -470,6 +470,9 @@ impl ObjectType {
     pub const VmAddressRegion: ObjectType = ObjectType::Vmar;
     pub const VMObjectPaged: ObjectType = ObjectType::Vmo;
     pub const VMObjectPhysical: ObjectType = ObjectType::Vmo;
+
+    // workaround for objects on linux
+    pub const File: ObjectType = ObjectType::None;
 }
 
 /// The type of kernel object signal handler.

@@ -24,10 +24,8 @@ pub use self::trap::syscall_entry;
 pub use kernel_hal::defs::*;
 pub use kernel_hal::*;
 
-#[cfg(target_os = "linux")]
-include!("fsbase_linux.rs");
 #[cfg(target_os = "macos")]
-include!("fsbase_macos.rs");
+include!("macos.rs");
 
 mod trap;
 

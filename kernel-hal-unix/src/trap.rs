@@ -41,7 +41,7 @@ global_asm!(
     mov fs:48, rdx          # user_fs:48 = kernel fsbase
 .endm
 
-.global syscall_entry
+.global unix_syscall_entry
 .global run_user
 "#
 );
@@ -93,9 +93,9 @@ global_asm!(
     mov gs:48, rsi          # user_gs:48 = kernel gsbase
 .endm
 
-.global _syscall_entry
+.global _unix_syscall_entry
 .global _run_user
-.set _syscall_entry, syscall_entry
+.set _unix_syscall_entry, unix_syscall_entry
 .set _run_user, run_user
 "#
 );
@@ -103,7 +103,7 @@ global_asm!(
 global_asm!(
     r#"
 .intel_syntax noprefix
-syscall_entry:
+unix_syscall_entry:
     # save rsp
     lea r11, [rsp + 8]      # save rsp to r11 (clobber)
 
@@ -189,6 +189,7 @@ run_user:
 );
 
 extern "C" {
+    #[link_name = "unix_syscall_entry"]
     pub fn syscall_entry();
     pub fn run_user(regs: &mut GeneralRegs);
 }

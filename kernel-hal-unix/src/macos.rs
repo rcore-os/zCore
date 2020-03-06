@@ -1,12 +1,3 @@
-/// Switch TLS from user to kernel.
-///
-/// # Safety
-/// This function should be called once when come from user.
-pub unsafe fn switch_to_kernel() {
-    // Ref: https://gist.github.com/aras-p/5389747
-    asm!("mov rdi, gs:48; syscall" :: "{eax}"(0x300_0003) : "rcx" "r11" : "volatile" "intel");
-}
-
 /// Register signal handler for SIGSEGV (Segmentation Fault).
 ///
 ///

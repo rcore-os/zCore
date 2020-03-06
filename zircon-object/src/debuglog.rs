@@ -69,7 +69,7 @@ impl DlogBuffer {
             header: header_flag,
             datalen: data.len() as u16,
             flags: flags as u16,
-            timestamp: timer_now().as_secs(), // FIXME timer_now() should be used here
+            timestamp: timer_now().as_secs(),
             pid,
             tid,
         };
