@@ -25,6 +25,7 @@ mod debug;
 mod debuglog;
 mod handle;
 mod object;
+mod resource;
 mod signal;
 mod suspend_task;
 mod task;
@@ -136,6 +137,15 @@ impl Syscall<'_> {
             SyscallType::EVENT_CREATE => self.sys_event_create(a0 as _, a1.into()),
             SyscallType::CLOCK_GET => self.sys_clock_get(a0 as _, a1.into()),
             SyscallType::VMAR_UNMAP => self.sys_vmar_unmap(a0 as _, a1 as _, a2 as _),
+            SyscallType::RESOURCE_CREATE => self.sys_resource_create(
+                a0 as _,
+                a1 as _,
+                a2 as _,
+                a3 as _,
+                a4.into(),
+                a5 as _,
+                a6.into(),
+            ),
             _ => {
                 warn!("syscall unimplemented: {:?}", sys_type);
                 Err(ZxError::NOT_SUPPORTED)
