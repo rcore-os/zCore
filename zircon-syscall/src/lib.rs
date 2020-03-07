@@ -18,6 +18,7 @@ use {
 };
 
 mod channel;
+mod clock;
 mod consts;
 mod cprng;
 mod debug;
@@ -131,6 +132,9 @@ impl Syscall<'_> {
             SyscallType::VMAR_PROTECT => self.sys_vmar_protect(a0 as _, a1 as _, a2 as _, a3 as _),
             SyscallType::JOB_SET_CRITICAL => self.sys_job_set_critical(a0 as _, a1 as _, a2 as _),
             SyscallType::PORT_CREATE => self.sys_port_create(a0 as _, a1.into()),
+            SyscallType::TIMER_CREATE => self.sys_timer_create(a0 as _, a1 as _, a2.into()),
+            SyscallType::EVENT_CREATE => self.sys_event_create(a0 as _, a1.into()),
+            SyscallType::CLOCK_GET => self.sys_clock_get(a0 as _, a1.into()),
             _ => {
                 warn!("syscall unimplemented: {:?}", sys_type);
                 Err(ZxError::NOT_SUPPORTED)

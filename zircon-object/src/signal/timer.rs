@@ -5,6 +5,10 @@ use alloc::sync::Arc;
 use core::time::Duration;
 use spin::Mutex;
 
+const SLACK_CENTER: u32 = 0;
+const SLACK_EARLY: u32 = 1;
+const SLACK_LATE: u32 = 2;
+
 /// An object that may be signaled at some point in the future
 ///
 /// ## SYNOPSIS
@@ -13,6 +17,8 @@ use spin::Mutex;
 /// or the timer has been canceled.
 pub struct Timer {
     base: KObjectBase,
+    #[allow(dead_code)]
+    flags: u32,
     inner: Mutex<TimerInner>,
 }
 
@@ -25,11 +31,15 @@ struct TimerInner {
 
 impl Timer {
     /// Create a new `Timer`.
-    pub fn new() -> Arc<Self> {
-        Arc::new(Timer {
-            base: KObjectBase::default(),
-            inner: Mutex::default(),
-        })
+    pub fn create(flags: u32) -> ZxResult<Arc<Self>> {
+        match flags {
+            SLACK_LATE | SLACK_EARLY | SLACK_CENTER => Ok(Arc::new(Timer {
+                base: KObjectBase::default(),
+                flags,
+                inner: Mutex::default(),
+            })),
+            _ => Err(ZxError::INVALID_ARGS),
+        }
     }
 
     /// Starts a one-shot timer that will fire when `deadline` passes.
