@@ -165,6 +165,24 @@ impl Syscall<'_> {
         vmar.protect(addr as usize, len as usize, mapping_flags)?;
         Ok(0)
     }
+
+    pub fn sys_vmar_unmap(
+        &self,
+        handle_value: HandleValue,
+        addr: usize,
+        len: usize,
+    ) -> ZxResult<usize> {
+        info!(
+            "vmar.unmap: handle_value={}, addr={:#x}, len={:#x}",
+            handle_value, addr, len
+        );
+        let vmar = self
+            .thread
+            .proc()
+            .get_object::<VmAddressRegion>(handle_value)?;
+        vmar.unmap(addr, pages(len) * PAGE_SIZE)?;
+        Ok(0)
+    }
 }
 
 bitflags! {

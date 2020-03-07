@@ -135,6 +135,7 @@ impl Syscall<'_> {
             SyscallType::TIMER_CREATE => self.sys_timer_create(a0 as _, a1 as _, a2.into()),
             SyscallType::EVENT_CREATE => self.sys_event_create(a0 as _, a1.into()),
             SyscallType::CLOCK_GET => self.sys_clock_get(a0 as _, a1.into()),
+            SyscallType::VMAR_UNMAP => self.sys_vmar_unmap(a0 as _, a1 as _, a2 as _),
             _ => {
                 warn!("syscall unimplemented: {:?}", sys_type);
                 Err(ZxError::NOT_SUPPORTED)
