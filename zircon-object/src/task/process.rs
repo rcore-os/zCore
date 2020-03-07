@@ -70,6 +70,7 @@ struct ProcessInner {
     threads: Vec<Arc<Thread>>,
     debug_addr: usize,
     dyn_break_on_load: usize,
+    critical_job: Option<(Arc<Job>, bool)>,
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -151,6 +152,15 @@ impl Process {
         inner.status = Status::Exited(retcode);
         // TODO: exit all threads
         self.base.signal_set(Signal::PROCESS_TERMINATED);
+        if let Some((_job, retcode_nonzero)) = &inner.critical_job {
+            if *retcode_nonzero {
+                if retcode != 0 {
+                    unimplemented!()
+                }
+            } else {
+                unimplemented!()
+            }
+        }
     }
 
     /// Check whether `condition` is allowed in the parent job's policy.
@@ -399,6 +409,16 @@ impl Process {
 
     pub fn get_dyn_break_on_load(&self) -> usize {
         self.inner.lock().dyn_break_on_load
+    }
+
+    pub fn set_critical_job(&self, job: Arc<Job>, retcode_nonzero: bool) -> ZxResult<()> {
+        let mut inner = self.inner.lock();
+        if inner.critical_job.is_none() {
+            inner.critical_job = Some((job, retcode_nonzero));
+            Ok(())
+        } else {
+            Err(ZxError::ALREADY_BOUND)
+        }
     }
 }
 

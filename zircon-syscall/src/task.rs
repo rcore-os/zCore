@@ -109,4 +109,28 @@ impl Syscall<'_> {
         thread.write_state(ThreadStateKind::General, &buf)?;
         Ok(0)
     }
+
+    pub fn sys_job_set_critical(
+        &self,
+        job_handle: HandleValue,
+        options: u32,
+        process_handle: HandleValue,
+    ) -> ZxResult<usize> {
+        info!(
+            "job.set_critical: job={}, options={}, process={}",
+            job_handle, options, process_handle,
+        );
+        let retcode_nonzero = if options == 1 {
+            true
+        } else if options == 0 {
+            false
+        } else {
+            unimplemented!()
+        };
+        let proc = self.thread.proc();
+        let job = proc.get_object_with_rights::<Job>(job_handle, Rights::DESTROY)?;
+        let process = proc.get_object_with_rights::<Process>(process_handle, Rights::WAIT)?;
+        process.set_critical_job(job, retcode_nonzero)?;
+        Ok(0)
+    }
 }
