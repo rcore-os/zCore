@@ -24,6 +24,7 @@ mod debug;
 mod debuglog;
 mod handle;
 mod object;
+mod signal;
 mod suspend_task;
 mod task;
 mod vmar;
@@ -129,6 +130,7 @@ impl Syscall<'_> {
             SyscallType::VMO_SET_SIZE => self.sys_vmo_set_size(a0 as _, a1 as _),
             SyscallType::VMAR_PROTECT => self.sys_vmar_protect(a0 as _, a1 as _, a2 as _, a3 as _),
             SyscallType::JOB_SET_CRITICAL => self.sys_job_set_critical(a0 as _, a1 as _, a2 as _),
+            SyscallType::PORT_CREATE => self.sys_port_create(a0 as _, a1.into()),
             _ => {
                 warn!("syscall unimplemented: {:?}", sys_type);
                 Err(ZxError::NOT_SUPPORTED)
