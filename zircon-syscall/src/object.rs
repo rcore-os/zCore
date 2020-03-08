@@ -111,6 +111,8 @@ impl Syscall<'_> {
                 if buffer_size < 8 {
                     return Err(ZxError::BUFFER_TOO_SMALL);
                 }
+                let thread = self.thread.proc().get_object::<Thread>(handle_value)?;
+                assert!(Arc::ptr_eq(&thread, &self.thread));
                 let fsbase = UserInPtr::<u64>::from(ptr).read()?;
                 info!("to set fsbase as {:#x}", fsbase);
                 self.regs.fsbase = fsbase as usize;
@@ -179,8 +181,9 @@ impl Syscall<'_> {
                 UserOutPtr::<VmarInfo>::from(buffer).write(vmar.get_info())?;
             }
             ZxInfo::InfoHandleBasic => {
-                UserOutPtr::<HandleBasicInfo>::from(buffer)
-                    .write(self.thread.proc().get_handle_info(handle)?)?;
+                let info = self.thread.proc().get_handle_info(handle)?;
+                info!("basic info: {:?}", info);
+                UserOutPtr::<HandleBasicInfo>::from(buffer).write(info)?;
             }
             _ => {
                 warn!("not supported info topic");

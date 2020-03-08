@@ -34,7 +34,7 @@ impl Handle {
 }
 
 #[repr(C)]
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct HandleBasicInfo {
     pub koid: u64,
     rights: u32,

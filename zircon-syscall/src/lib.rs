@@ -42,7 +42,12 @@ pub struct Syscall<'a> {
 
 impl Syscall<'_> {
     pub async fn syscall(&mut self, sys_type: SyscallType, args: [usize; 8]) -> isize {
-        info!("{:?}=> args={:x?}", sys_type, args);
+        info!(
+            "{} {:?}=> args={:x?}",
+            (self.thread.clone() as Arc<dyn KernelObject>).name(),
+            sys_type,
+            args
+        );
         let [a0, a1, a2, a3, a4, a5, a6, a7] = args;
         let ret = match sys_type {
             SyscallType::HANDLE_DUPLICATE => self.sys_handle_duplicate(a0 as _, a1 as _, a2.into()),
