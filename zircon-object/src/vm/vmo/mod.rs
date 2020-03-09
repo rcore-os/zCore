@@ -41,6 +41,9 @@ pub trait VMObject: KernelObject {
 
     /// Commit allocating physical memory.
     fn commit(&self, offset: usize, len: usize);
+
+    /// Decommit allocated physical memory.
+    fn decommit(&self, offset: usize, len: usize);
 }
 
 #[cfg(test)]

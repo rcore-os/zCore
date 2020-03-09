@@ -94,6 +94,15 @@ impl VMObject for VMObjectPaged {
             inner.commit(start_page + i);
         }
     }
+
+    fn decommit(&self, offset: usize, len: usize) {
+        let start_page = offset / PAGE_SIZE;
+        let pages = len / PAGE_SIZE;
+        let mut inner = self.inner.lock();
+        for i in 0..pages {
+            inner.decommit(start_page + i);
+        }
+    }
 }
 
 impl VMObjectPagedInner {
@@ -141,6 +150,10 @@ impl VMObjectPagedInner {
     fn commit(&mut self, page_idx: usize) -> &PhysFrame {
         self.frames[page_idx]
             .get_or_insert_with(|| PhysFrame::alloc().expect("failed to alloc frame"))
+    }
+
+    fn decommit(&mut self, page_idx: usize) {
+        self.frames[page_idx] = None;
     }
 }
 

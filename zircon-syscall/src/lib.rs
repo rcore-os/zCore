@@ -151,6 +151,9 @@ impl Syscall<'_> {
                 a5 as _,
                 a6.into(),
             ),
+            SyscallType::VMO_OP_RANGE => {
+                self.sys_vmo_op_range(a0 as _, a1 as _, a2 as _, a3 as _, a4.into(), a5 as _)
+            }
             _ => {
                 warn!("syscall unimplemented: {:?}", sys_type);
                 Err(ZxError::NOT_SUPPORTED)

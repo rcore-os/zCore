@@ -131,6 +131,44 @@ impl Syscall<'_> {
         vmo.set_len(pages(size as usize));
         Ok(0)
     }
+
+    pub fn sys_vmo_op_range(
+        &self,
+        handle_value: HandleValue,
+        op: u32,
+        offset: usize,
+        len: usize,
+        _buffer: UserOutPtr<u8>,
+        _buffer_size: usize,
+    ) -> ZxResult<usize> {
+        info!(
+            "vmo.op_range: handle={}, op={:#X}, offset={:#x}, len={:#x}, buffer_size={:#x}",
+            handle_value, op, offset, len, _buffer_size,
+        );
+        let (vmo, rights) = self.thread.proc().get_vmo_and_rights(handle_value)?;
+        if !page_aligned(offset) || !page_aligned(len) {
+            return Err(ZxError::INVALID_ARGS);
+        }
+        match op {
+            VMO_OP_COMMIT => {
+                if rights.contains(Rights::WRITE) {
+                    vmo.commit(offset, len);
+                    Ok(0)
+                } else {
+                    Err(ZxError::ACCESS_DENIED)
+                }
+            }
+            VMO_OP_DECOMMIT => {
+                if rights.contains(Rights::WRITE) {
+                    vmo.decommit(offset, len);
+                    Ok(0)
+                } else {
+                    Err(ZxError::ACCESS_DENIED)
+                }
+            }
+            _ => unimplemented!(),
+        }
+    }
 }
 
 bitflags! {
@@ -143,3 +181,7 @@ bitflags! {
         const NO_WRITE                   = 1 << 5;
     }
 }
+
+/// VMO Opcodes (for vmo_op_range)
+const VMO_OP_COMMIT: u32 = 1;
+const VMO_OP_DECOMMIT: u32 = 2;

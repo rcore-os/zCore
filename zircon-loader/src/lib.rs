@@ -156,6 +156,9 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
     // FIXME correct rights for decompressor engine
     handles[K_USERBOOT_DECOMPRESSOR] =
         Handle::new(decompressor_vmo, Rights::DEFAULT_VMO | Rights::EXECUTE);
+    // TODO CrashLogVmo handle
+
+    // check: handle to root proc should be only
 
     let mut data = Vec::from(cmdline);
     data.push(0);

@@ -65,7 +65,13 @@ impl VMObject for VMObjectPhysical {
     }
 
     // TODO empty function should be denied
-    fn commit(&self, _offset: usize, _len: usize) {}
+    fn commit(&self, _offset: usize, _len: usize) {
+        unimplemented!()
+    }
+
+    fn decommit(&self, _offset: usize, _len: usize) {
+        unimplemented!()
+    }
 }
 
 #[cfg(test)]
