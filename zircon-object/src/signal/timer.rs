@@ -79,7 +79,7 @@ mod tests {
 
     #[test]
     fn set() {
-        let timer = Timer::new();
+        let timer = Timer::create(0);
         timer.set(timer_now() + Duration::from_millis(10), Duration::default());
         timer.set(timer_now() + Duration::from_millis(20), Duration::default());
 
@@ -95,7 +95,7 @@ mod tests {
 
     #[test]
     fn cancel() {
-        let timer = Timer::new();
+        let timer = Timer::create(0);
         timer.set(timer_now() + Duration::from_millis(10), Duration::default());
 
         std::thread::sleep(Duration::from_millis(5));

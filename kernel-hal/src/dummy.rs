@@ -150,6 +150,13 @@ pub fn pmem_write(_paddr: PhysAddr, _buf: &[u8]) {
     unimplemented!()
 }
 
+/// Copy content of `src` frame to `target` frame
+#[linkage = "weak"]
+#[export_name = "hal_frame_copy"]
+pub fn frame_copy(_src: PhysAddr, _target: PhysAddr) {
+    unimplemented!()
+}
+
 /// Output a char to console.
 #[linkage = "weak"]
 #[export_name = "hal_serial_write"]

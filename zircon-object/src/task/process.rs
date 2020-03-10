@@ -533,7 +533,12 @@ mod tests {
         // duplicate handle which does not have `Rights::DUPLICATE` should fail.
         let handle_value = proc.add_handle(Handle::new(proc.clone(), Rights::empty()));
         assert_eq!(
-            proc.dup_handle_operating_rights(handle_value, |_| Ok(Rights::SAME_RIGHTS)),
+            proc.dup_handle_operating_rights(handle_value, |handle_rights| {
+                if !handle_rights.contains(Rights::DUPLICATE) {
+                    return Err(ZxError::ACCESS_DENIED);
+                }
+                Ok(handle_rights)
+            }),
             Err(ZxError::ACCESS_DENIED)
         );
     }

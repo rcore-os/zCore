@@ -27,3 +27,11 @@ pub fn check_aligned(x: usize, align: usize) -> bool {
 pub fn pages(size: usize) -> usize {
     (size + PAGE_SIZE - 1) / PAGE_SIZE
 }
+
+pub fn roundup_pages(size: usize) -> usize {
+    if page_aligned(size) {
+        size
+    } else {
+        pages(size) * PAGE_SIZE
+    }
+}

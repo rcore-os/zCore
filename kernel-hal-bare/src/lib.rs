@@ -132,6 +132,15 @@ pub fn pmem_write(paddr: PhysAddr, buf: &[u8]) {
     }
 }
 
+/// Copy content of `src` frame to `target` frame
+#[export_name = "hal_frame_copy"]
+pub fn frame_copy(src: PhysAddr, target: PhysAddr) {
+    unsafe {
+        let buf = phys_to_virt(src) as *const u8;
+        buf.copy_to_nonoverlapping(phys_to_virt(target) as _, 4096);
+    }
+}
+
 /// Initialize the HAL.
 pub fn init() {
     unsafe {

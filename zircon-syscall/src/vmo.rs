@@ -94,8 +94,8 @@ impl Syscall<'_> {
         &self,
         handle_value: HandleValue,
         options: u32,
-        offset: u64,
-        size: u64,
+        offset: usize,
+        size: usize,
         mut out: UserOutPtr<HandleValue>,
     ) -> ZxResult<usize> {
         let options = VmoCloneFlags::from_bits(options).ok_or(ZxError::INVALID_ARGS)?;
@@ -108,16 +108,14 @@ impl Syscall<'_> {
         }
         let proc = self.thread.proc();
         let vmo = proc.get_vmo_with_rights(handle_value, Rights::READ)?;
-        // TODO: optimize
-        let mut buffer = vec![0u8; size as usize];
-        vmo.read(offset as usize, &mut buffer);
-        let child_vmo = VMObjectPaged::new(pages(size as usize));
-        child_vmo.write(0, &buffer);
+        let child_size = roundup_pages(size);
+        info!("size of child vmo: {:#x}", child_size);
+        let child_vmo = vmo.create_clone(offset as usize, child_size);
         out.write(proc.add_handle(Handle::new(child_vmo, Rights::DEFAULT_VMO)))?;
         Ok(0)
     }
 
-    pub fn sys_vmo_set_size(&self, handle_value: HandleValue, size: u64) -> ZxResult<usize> {
+    pub fn sys_vmo_set_size(&self, handle_value: HandleValue, size: usize) -> ZxResult<usize> {
         let vmo = self
             .thread
             .proc()
@@ -128,7 +126,7 @@ impl Syscall<'_> {
             size,
             vmo.len()
         );
-        vmo.set_len(pages(size as usize));
+        vmo.set_len(size);
         Ok(0)
     }
 

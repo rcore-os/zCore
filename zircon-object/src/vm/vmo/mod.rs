@@ -1,4 +1,4 @@
-use {super::*, crate::object::*, kernel_hal::PageTable};
+use {super::*, crate::object::*, alloc::sync::Arc, kernel_hal::PageTable};
 
 mod paged;
 mod physical;
@@ -44,6 +44,11 @@ pub trait VMObject: KernelObject {
 
     /// Decommit allocated physical memory.
     fn decommit(&self, offset: usize, len: usize);
+
+    /// Create a child vmo
+    fn create_child(&self, offset: usize, len: usize) -> Arc<dyn VMObject>;
+
+    fn create_clone(&self, offset: usize, len: usize) -> Arc<dyn KernelObject>;
 }
 
 #[cfg(test)]

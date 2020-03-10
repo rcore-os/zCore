@@ -152,11 +152,36 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
     handles[K_ROOTJOB] = Handle::new(job, Rights::DEFAULT_JOB);
     handles[K_ROOTRESOURCE] = Handle::new(resource, Rights::DEFAULT_RESOURCE);
     handles[K_ZBI] = Handle::new(zbi_vmo, Rights::DEFAULT_VMO);
-    handles[K_FIRSTVDSO] = Handle::new(vdso_vmo, Rights::DEFAULT_VMO | Rights::EXECUTE);
+    handles[K_FIRSTVDSO] = Handle::new(vdso_vmo.clone(), Rights::DEFAULT_VMO | Rights::EXECUTE);
+    let vdso_test1 = vdso_vmo.create_clone(0, vdso_vmo.len());
+    vdso_test1.set_name("vdso/test1");
+    let vdso_test2 = vdso_vmo.create_clone(0, vdso_vmo.len());
+    vdso_test2.set_name("vdso/test2");
+    handles[K_FIRSTVDSO + 1] = Handle::new(vdso_test1, Rights::DEFAULT_VMO | Rights::EXECUTE);
+    handles[K_FIRSTVDSO + 2] = Handle::new(vdso_test2, Rights::DEFAULT_VMO | Rights::EXECUTE);
     // FIXME correct rights for decompressor engine
     handles[K_USERBOOT_DECOMPRESSOR] =
         Handle::new(decompressor_vmo, Rights::DEFAULT_VMO | Rights::EXECUTE);
-    // TODO CrashLogVmo handle
+    // TODO to use correct CrashLogVmo handle
+    let crash_log_vmo = VMObjectPaged::new(1);
+    handles[K_CRASHLOG] = Handle::new(crash_log_vmo, Rights::DEFAULT_VMO);
+    // TODO to use correct CounterName handle
+    let counter_name_vmo = VMObjectPaged::new(1);
+    counter_name_vmo.set_name("counters/desc");
+    handles[K_COUNTERNAMES] = Handle::new(counter_name_vmo, Rights::DEFAULT_VMO);
+    // TODO to use correct CounterName handle
+    let kcounters_vmo = VMObjectPaged::new(1);
+    kcounters_vmo.set_name("counters/arena");
+    handles[K_COUNTERS] = Handle::new(kcounters_vmo, Rights::DEFAULT_VMO);
+    // TODO to use correct Instrumentation data handle
+    let instrumentation_data_vmo = VMObjectPaged::new(1);
+    instrumentation_data_vmo.set_name("UNIMPLEMENTED_VMO");
+    handles[K_FISTINSTRUMENTATIONDATA] =
+        Handle::new(instrumentation_data_vmo.clone(), Rights::DEFAULT_VMO);
+    handles[K_FISTINSTRUMENTATIONDATA + 1] =
+        Handle::new(instrumentation_data_vmo.clone(), Rights::DEFAULT_VMO);
+    handles[K_FISTINSTRUMENTATIONDATA + 2] =
+        Handle::new(instrumentation_data_vmo.clone(), Rights::DEFAULT_VMO);
 
     // check: handle to root proc should be only
 

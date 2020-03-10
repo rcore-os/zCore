@@ -72,6 +72,14 @@ impl VMObject for VMObjectPhysical {
     fn decommit(&self, _offset: usize, _len: usize) {
         unimplemented!()
     }
+
+    fn create_child(&self, _offset: usize, _len: usize) -> Arc<dyn VMObject> {
+        unimplemented!()
+    }
+
+    fn create_clone(&self, _offset: usize, _len: usize) -> Arc<dyn KernelObject> {
+        unimplemented!()
+    }
 }
 
 #[cfg(test)]
