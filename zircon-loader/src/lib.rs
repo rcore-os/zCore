@@ -119,6 +119,7 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
     let zbi_vmo = {
         let vmo = VMObjectPaged::new(images.zbi.as_ref().len() / PAGE_SIZE + 1);
         vmo.write(0, images.zbi.as_ref());
+        vmo.set_name("zbi");
         vmo
     };
 
@@ -164,6 +165,7 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
         Handle::new(decompressor_vmo, Rights::DEFAULT_VMO | Rights::EXECUTE);
     // TODO to use correct CrashLogVmo handle
     let crash_log_vmo = VMObjectPaged::new(1);
+    crash_log_vmo.set_name("crashlog");
     handles[K_CRASHLOG] = Handle::new(crash_log_vmo, Rights::DEFAULT_VMO);
     // TODO to use correct CounterName handle
     let counter_name_vmo = VMObjectPaged::new(1);
@@ -174,7 +176,7 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
     kcounters_vmo.set_name("counters/arena");
     handles[K_COUNTERS] = Handle::new(kcounters_vmo, Rights::DEFAULT_VMO);
     // TODO to use correct Instrumentation data handle
-    let instrumentation_data_vmo = VMObjectPaged::new(1);
+    let instrumentation_data_vmo = VMObjectPaged::new(0);
     instrumentation_data_vmo.set_name("UNIMPLEMENTED_VMO");
     handles[K_FISTINSTRUMENTATIONDATA] =
         Handle::new(instrumentation_data_vmo.clone(), Rights::DEFAULT_VMO);

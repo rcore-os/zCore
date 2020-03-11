@@ -185,6 +185,15 @@ pub fn pmem_write(paddr: PhysAddr, buf: &[u8]) {
     }
 }
 
+/// Copy content of `src` frame to `target` frame
+#[export_name = "hal_frame_copy"]
+pub fn frame_copy(src: PhysAddr, target: PhysAddr) {
+    unsafe {
+        let buf = phys_to_virt(src) as *const u8;
+        buf.copy_to_nonoverlapping(phys_to_virt(target) as _, 4096);
+    }
+}
+
 const PAGE_SIZE: usize = 0x1000;
 
 fn page_aligned(x: VirtAddr) -> bool {
@@ -268,7 +277,7 @@ impl FlagsExt for MMUFlags {
 /// Output a char to console.
 #[export_name = "hal_serial_write"]
 pub fn serial_write(s: &str) {
-    print!("{}", s);
+    eprint!("{}\n", s);
 }
 
 /// Get current time.
