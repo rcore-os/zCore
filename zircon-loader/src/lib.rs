@@ -204,7 +204,11 @@ pub fn run_task(thread: Arc<Thread>) {
             trace!("go to user: {:#x?}", cx);
             kernel_hal::context_run(&mut cx);
             trace!("back from user: {:#x?}", cx);
-            assert_eq!(cx.trap_num, 0x100, "user interrupt still no support");
+            assert_eq!(
+                cx.trap_num, 0x100,
+                "user interrupt still no support, context: {:#x?}",
+                cx
+            );
             let exit = handle_syscall(&thread, &mut cx.general).await;
             thread.end_running(cx);
             if exit {

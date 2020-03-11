@@ -133,4 +133,24 @@ impl Syscall<'_> {
         process.set_critical_job(job, retcode_nonzero)?;
         Ok(0)
     }
+
+    pub fn sys_thread_start(
+        &self,
+        handle_value: HandleValue,
+        entry: usize,
+        stack: usize,
+        arg1: usize,
+        arg2: usize,
+    ) -> ZxResult<usize> {
+        info!(
+            "thread.start: handle={}, entry={:#x}, stack={:#x}, arg1={:#x} arg2={:#x}",
+            handle_value, entry, stack, arg1, arg2
+        );
+        let thread = self
+            .thread
+            .proc()
+            .get_object_with_rights::<Thread>(handle_value, Rights::MANAGE_THREAD)?;
+        thread.start(entry, stack, arg1, arg2)?;
+        Ok(0)
+    }
 }

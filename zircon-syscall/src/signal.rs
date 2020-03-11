@@ -54,4 +54,23 @@ impl Syscall<'_> {
         out.write(proc.add_handle(handle))?;
         Ok(0)
     }
+
+    pub async fn sys_port_wait(
+        &self,
+        handle_value: HandleValue,
+        deadline: u64,
+        mut packet_res: UserOutPtr<PortPacket>,
+    ) -> ZxResult<usize> {
+        info!(
+            "port.wait: handle={}, deadline={:#x}",
+            handle_value, deadline
+        );
+        let port = self
+            .thread
+            .proc()
+            .get_object_with_rights::<Port>(handle_value, Rights::READ)?;
+        let mut packet = port.wait_async().await;
+        packet_res.write(packet.pop().unwrap())?;
+        Ok(0)
+    }
 }
