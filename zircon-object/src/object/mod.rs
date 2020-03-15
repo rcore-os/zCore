@@ -138,6 +138,9 @@ pub trait KernelObject: DowncastSync + Debug {
         h_info.obj_type = self.obj_type() as u32;
         h_info.related_koid = self.related_koid();
     }
+    fn user_signal_peer(&self, _clear: Signal, _set: Signal) -> ZxResult<()> {
+        Err(ZxError::NOT_SUPPORTED)
+    }
 }
 
 impl_downcast!(sync KernelObject);

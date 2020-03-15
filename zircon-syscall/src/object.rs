@@ -192,6 +192,26 @@ impl Syscall<'_> {
         }
         Ok(0)
     }
+
+    pub fn sys_object_signal_peer(
+        &self,
+        handle_value: HandleValue,
+        clear_mask: u32,
+        set_mask: u32,
+    ) -> ZxResult<usize> {
+        info!(
+            "object.signal_peer: handle_value = {}, clear_mask = {:#x}, set_mask = {:#x}",
+            handle_value, clear_mask, set_mask
+        );
+        let object = self
+            .thread
+            .proc()
+            .get_dyn_object_with_rights(handle_value, Rights::SIGNAL_PEER)?;
+        let clear_signal = Signal::verify_user_signal(clear_mask)?;
+        let set_signal = Signal::verify_user_signal(set_mask)?;
+        object.user_signal_peer(clear_signal, set_signal)?;
+        Ok(0)
+    }
 }
 
 #[repr(u32)]

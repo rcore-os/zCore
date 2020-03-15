@@ -158,6 +158,9 @@ impl Syscall<'_> {
                 self.sys_thread_start(a0 as _, a1 as _, a2 as _, a3 as _, a4 as _)
             }
             SyscallType::PORT_WAIT => self.sys_port_wait(a0 as _, a1 as _, a2.into()).await,
+            SyscallType::OBJECT_SIGNAL_PEER => {
+                self.sys_object_signal_peer(a0 as _, a1 as _, a2 as _)
+            }
             _ => {
                 warn!("syscall unimplemented: {:?}", sys_type);
                 Err(ZxError::NOT_SUPPORTED)

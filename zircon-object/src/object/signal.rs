@@ -1,4 +1,4 @@
-use bitflags::bitflags;
+use {super::*, bitflags::bitflags};
 
 bitflags! {
     /// Signals that waitable kernel objects expose to applications.
@@ -34,5 +34,15 @@ bitflags! {
 
         // for Linux
         const SIGCHLD                       = 1 << 6;
+    }
+}
+
+impl Signal {
+    pub fn verify_user_signal(number: u32) -> ZxResult<Signal> {
+        if (number & !Signal::USER_ALL.bits()) != 0 {
+            Err(ZxError::INVALID_ARGS)
+        } else {
+            Ok(Signal::from_bits(number).ok_or(ZxError::INVALID_ARGS)?)
+        }
     }
 }
