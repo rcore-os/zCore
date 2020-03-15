@@ -69,8 +69,8 @@ impl Syscall<'_> {
             .thread
             .proc()
             .get_object_with_rights::<Port>(handle_value, Rights::READ)?;
-        let mut packet = port.wait_async().await;
-        packet_res.write(packet.pop().unwrap())?;
+        let packet = port.wait_async().await;
+        packet_res.write(packet)?;
         Ok(0)
     }
 }

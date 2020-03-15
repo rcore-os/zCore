@@ -1,7 +1,7 @@
 use super::*;
 use crate::object::*;
+use alloc::collections::vec_deque::VecDeque;
 use alloc::sync::Arc;
-use alloc::vec::Vec;
 use spin::Mutex;
 
 /// Signaling and mailbox primitive
@@ -21,7 +21,7 @@ impl_kobject!(Port);
 
 #[derive(Default)]
 struct PortInner {
-    queue: Vec<PortPacket>,
+    queue: VecDeque<PortPacket>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -50,19 +50,19 @@ impl Port {
     /// Push a `packet` into the port.
     pub fn push(&self, packet: PortPacket) {
         let mut inner = self.inner.lock();
-        inner.queue.push(packet);
+        inner.queue.push_back(packet);
         drop(inner);
         self.base.signal_set(Signal::READABLE);
     }
 
     /// Asynchronous wait until at least one packet is available, then take out all packets.
-    pub async fn wait_async(self: &Arc<Self>) -> Vec<PortPacket> {
+    pub async fn wait_async(self: &Arc<Self>) -> PortPacket {
         (self.clone() as Arc<dyn KernelObject>)
             .wait_signal_async(Signal::READABLE)
             .await;
         let mut inner = self.inner.lock();
         self.base.signal_clear(Signal::READABLE);
-        core::mem::take(&mut inner.queue)
+        inner.queue.pop_front().unwrap()
     }
 
     /// Get the number of packets in queue.
