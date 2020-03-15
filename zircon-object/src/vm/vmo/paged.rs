@@ -237,15 +237,9 @@ impl VMObjectPagedInner {
             self.frames[page_idx].as_ref().unwrap().addr()
         } else {
             let parent_idx_offset = self.parent_offset / PAGE_SIZE;
-            //info!(
-            //"page_idx {:#x}, parent_offset {:#x}",
-            //page_idx, parent_idx_offset
-            //);
             if for_write {
                 let target_addr = self.commit(page_idx).addr();
                 if self.parent.is_some() {
-                    // TODO copy a page from parent if need write
-                    //warn!("doing copy");
                     kernel_hal::frame_copy(
                         self.parent
                             .as_ref()
@@ -253,6 +247,8 @@ impl VMObjectPagedInner {
                             .get_page(parent_idx_offset + page_idx, false),
                         target_addr,
                     );
+                } else {
+                    kernel_hal::pmem_write(target_addr, &[0u8; PAGE_SIZE]);
                 }
                 target_addr
             } else {

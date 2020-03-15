@@ -107,11 +107,30 @@ impl Syscall<'_> {
             return Err(ZxError::NOT_SUPPORTED);
         }
         let proc = self.thread.proc();
-        let vmo = proc.get_vmo_with_rights(handle_value, Rights::READ)?;
+
+        let (vmo, parent_rights) = proc.get_vmo_and_rights(handle_value)?;
+        if !parent_rights.contains(Rights::DUPLICATE | Rights::READ) {
+            return Err(ZxError::ACCESS_DENIED);
+        }
+        let mut child_rights = parent_rights;
+        child_rights.insert(Rights::GET_PROPERTY | Rights::SET_PROPERTY);
+        if options.contains(VmoCloneFlags::NO_WRITE) {
+            child_rights.remove(Rights::WRITE);
+        } else if options.contains(VmoCloneFlags::SNAPSHOT)
+            || options.contains(VmoCloneFlags::SNAPSHOT_AT_LEAST_ON_WRITE)
+        {
+            child_rights.remove(Rights::EXECUTE);
+            child_rights.insert(Rights::WRITE);
+        };
+        info!(
+            "parent_rights: {:?} child_rights: {:?}",
+            parent_rights, child_rights
+        );
+
         let child_size = roundup_pages(size);
         info!("size of child vmo: {:#x}", child_size);
         let child_vmo = vmo.create_clone(offset as usize, child_size);
-        out.write(proc.add_handle(Handle::new(child_vmo, Rights::DEFAULT_VMO)))?;
+        out.write(proc.add_handle(Handle::new(child_vmo, child_rights)))?;
         Ok(0)
     }
 
