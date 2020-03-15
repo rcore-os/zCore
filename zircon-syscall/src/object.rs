@@ -1,6 +1,6 @@
 use {
     super::*,
-    zircon_object::{task::*, vm::*},
+    zircon_object::{signal::Port, task::*, vm::*},
 };
 
 const ZX_PROP_NAME: u32 = 3;
@@ -210,6 +210,30 @@ impl Syscall<'_> {
         let clear_signal = Signal::verify_user_signal(clear_mask)?;
         let set_signal = Signal::verify_user_signal(set_mask)?;
         object.user_signal_peer(clear_signal, set_signal)?;
+        Ok(0)
+    }
+
+    pub fn sys_object_wait_async(
+        &self,
+        handle_value: HandleValue,
+        port_handle_value: HandleValue,
+        key: u64,
+        signals: u32,
+        options: u32,
+    ) -> ZxResult<usize> {
+        let signals = Signal::from_bits(signals).ok_or(ZxError::INVALID_ARGS)?;
+        info!(
+            "object.wait_async: handle={}, port={}, key={:#x}, signal={:?}, options={:#X}",
+            handle_value, port_handle_value, key, signals, options
+        );
+        if options != 0 {
+            unimplemented!()
+        }
+        // TODO filter `options`
+        let proc = self.thread.proc();
+        let object = proc.get_dyn_object_with_rights(handle_value, Rights::WAIT)?;
+        let port = proc.get_object_with_rights::<Port>(port_handle_value, Rights::WRITE)?;
+        object.send_signal_to_port_async(signals, &port, key);
         Ok(0)
     }
 }
