@@ -1,3 +1,8 @@
+use {
+    alloc::{sync::Arc, vec::Vec},
+    spin::Mutex,
+    zircon_object::{object::*, vm::*},
+};
 /// This struct contains constants that are initialized by the kernel
 /// once at boot time.  From the vDSO code's perspective, they are
 /// read-only data that can never change.  Hence, no synchronization is
@@ -37,3 +42,36 @@ struct Features {
 }
 
 const MAX_BUILDID_SIZE: usize = 64;
+pub const VDSO_VARIANT_COUNT: usize = 3;
+const VDSO_NAMES: [&str; VDSO_VARIANT_COUNT] = ["vdso/full", "vdso/test1", "vdso/test2"];
+
+lazy_static! {
+    pub static ref VDSO_VMOS: Mutex<VDsos> = Mutex::new(VDsos {
+        vmos: {
+            let vmo = VmObject::new(VMObjectPaged::new(0));
+            vec![vmo.clone(); VDSO_VARIANT_COUNT]
+        },
+    });
+}
+
+pub struct VDsos {
+    vmos: Vec<Arc<VmObject>>,
+}
+
+impl VDsos {
+    pub fn init(&mut self, vdso_vmo: Arc<dyn VMObjectTrait>) {
+        self.vmos[0] = VmObject::new(vdso_vmo.clone());
+        self.vmos[0].set_name(VDSO_NAMES[0]);
+        for i in 1..VDSO_VARIANT_COUNT {
+            self.vmos[i] = VmObject::new(vdso_vmo.create_clone(0, vdso_vmo.len()));
+            self.vmos[i].set_name(VDSO_NAMES[i]);
+        }
+    }
+
+    pub fn get_vdso_handles(&self, handles: &mut [Handle]) {
+        assert_eq!(handles.len(), VDSO_VARIANT_COUNT);
+        for (i, vmo) in self.vmos.iter().enumerate() {
+            handles[i] = Handle::new(vmo.clone(), Rights::DEFAULT_VMO | Rights::EXECUTE);
+        }
+    }
+}

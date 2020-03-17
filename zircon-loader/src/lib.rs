@@ -7,10 +7,13 @@
 extern crate alloc;
 #[macro_use]
 extern crate log;
+#[macro_use]
+extern crate lazy_static;
 
 use {
     alloc::{boxed::Box, sync::Arc, vec::Vec},
     kernel_hal::GeneralRegs,
+    vdso::{VDSO_VARIANT_COUNT, VDSO_VMOS},
     xmas_elf::{
         program::{Flags, ProgramHeader, SegmentData, Type},
         sections::SectionData,
@@ -41,7 +44,7 @@ const K_ROOTRESOURCE: usize = 3;
 const K_ZBI: usize = 4;
 const K_FIRSTVDSO: usize = 5;
 #[allow(dead_code)]
-const K_LASTVDSO: usize = K_FIRSTVDSO + 2;
+const K_LASTVDSO: usize = K_FIRSTVDSO + VDSO_VARIANT_COUNT - 1;
 const K_USERBOOT_DECOMPRESSOR: usize = 8;
 #[allow(dead_code)]
 const K_FIRSTKERNELFILE: usize = K_USERBOOT_DECOMPRESSOR;
@@ -86,7 +89,7 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
     };
 
     // vdso
-    let vdso_vmo = {
+    {
         let elf = ElfFile::new(images.vdso.as_ref()).unwrap();
         let vdso_vmo = VMObjectPaged::new(images.vdso.as_ref().len() / PAGE_SIZE + 1);
         vdso_vmo.write(0, images.vdso.as_ref());
@@ -111,10 +114,8 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
                 &(kernel_hal_unix::syscall_entry as usize).to_ne_bytes(),
             );
         }
-        let vdso_vmo = VmObject::new(vdso_vmo);
-        vdso_vmo.set_name("vdso/full");
-        vdso_vmo
-    };
+        VDSO_VMOS.lock().init(vdso_vmo.clone());
+    }
 
     // zbi
     let zbi_vmo = {
@@ -156,13 +157,10 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
     handles[K_ROOTJOB] = Handle::new(job, Rights::DEFAULT_JOB);
     handles[K_ROOTRESOURCE] = Handle::new(resource, Rights::DEFAULT_RESOURCE);
     handles[K_ZBI] = Handle::new(zbi_vmo, Rights::DEFAULT_VMO);
-    handles[K_FIRSTVDSO] = Handle::new(vdso_vmo.clone(), Rights::DEFAULT_VMO | Rights::EXECUTE);
-    let vdso_test1 = VmObject::new(vdso_vmo.inner.create_clone(0, vdso_vmo.inner.len()));
-    vdso_test1.set_name("vdso/test1");
-    let vdso_test2 = VmObject::new(vdso_vmo.inner.create_clone(0, vdso_vmo.inner.len()));
-    vdso_test2.set_name("vdso/test2");
-    handles[K_FIRSTVDSO + 1] = Handle::new(vdso_test1, Rights::DEFAULT_VMO | Rights::EXECUTE);
-    handles[K_FIRSTVDSO + 2] = Handle::new(vdso_test2, Rights::DEFAULT_VMO | Rights::EXECUTE);
+    // set up handles[K_FIRSTVDSO..K_LASTVDSO + 1]
+    VDSO_VMOS
+        .lock()
+        .get_vdso_handles(handles.get_mut(K_FIRSTVDSO..K_LASTVDSO + 1).unwrap());
     // FIXME correct rights for decompressor engine
     handles[K_USERBOOT_DECOMPRESSOR] =
         Handle::new(decompressor_vmo, Rights::DEFAULT_VMO | Rights::EXECUTE);
