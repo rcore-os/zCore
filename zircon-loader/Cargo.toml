@@ -9,10 +9,8 @@ description = "Zircon user program (userboot) loader"
 
 [dependencies]
 log = "0.4"
-spin = "0.5"
 xmas-elf = "0.7"
 core = { package = "core-futures-tls", version = "0.1.0" }
-lazy_static = { version = "1.4", features = ["spin_no_std" ] }
 zircon-object = { path = "../zircon-object" }
 zircon-syscall = { path = "../zircon-syscall" }
 kernel-hal = { path = "../kernel-hal" }

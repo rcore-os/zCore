@@ -7,13 +7,10 @@
 extern crate alloc;
 #[macro_use]
 extern crate log;
-#[macro_use]
-extern crate lazy_static;
 
 use {
     alloc::{boxed::Box, sync::Arc, vec::Vec},
     kernel_hal::GeneralRegs,
-    vdso::{VDSO_VARIANT_COUNT, VDSO_VMOS},
     xmas_elf::{
         program::{Flags, ProgramHeader, SegmentData, Type},
         sections::SectionData,
@@ -25,13 +22,12 @@ use {
         object::*,
         resource::{Resource, ResourceFlags, ResourceKind},
         task::*,
+        vm::vdso::{VDSO_VARIANT_COUNT, VDSO_VMOS},
         vm::*,
         ZxError, ZxResult,
     },
     zircon_syscall::{Syscall, SyscallType},
 };
-
-mod vdso;
 
 #[allow(dead_code)]
 // These describe userboot itself

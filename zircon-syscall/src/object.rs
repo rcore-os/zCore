@@ -6,6 +6,7 @@ use {
 const ZX_PROP_NAME: u32 = 3;
 const ZX_PROP_REGISTER_FS: u32 = 4;
 const ZX_PROP_PROCESS_DEBUG_ADDR: u32 = 5;
+const ZX_PROCESS_VDSO_BASE_ADDRESS: u32 = 6;
 const ZX_PROP_PROCESS_BREAK_ON_LOAD: u32 = 7;
 const ZX_MAX_NAME_LEN: u32 = 32;
 
@@ -48,6 +49,20 @@ impl Syscall<'_> {
                     .get_object_with_rights::<Process>(handle_value, Rights::GET_PROPERTY)?
                     .get_debug_addr();
                 UserOutPtr::<usize>::from(ptr).write(debug_addr)?;
+                Ok(0)
+            }
+            ZX_PROCESS_VDSO_BASE_ADDRESS => {
+                if buffer_size < 8 {
+                    return Err(ZxError::BUFFER_TOO_SMALL);
+                }
+                let vdso_base = self
+                    .thread
+                    .proc()
+                    .vmar()
+                    .vdso_code_start()
+                    .lock()
+                    .unwrap_or(0);
+                UserOutPtr::<usize>::from(ptr).write(vdso_base)?;
                 Ok(0)
             }
             ZX_PROP_PROCESS_BREAK_ON_LOAD => {

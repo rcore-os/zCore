@@ -1,5 +1,6 @@
 //! Objects for Virtual Memory Management.
 
+pub mod vdso;
 mod vmar;
 mod vmo;
 

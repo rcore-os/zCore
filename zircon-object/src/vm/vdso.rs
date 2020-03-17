@@ -1,8 +1,9 @@
 use {
+    crate::{object::*, vm::*},
     alloc::{sync::Arc, vec::Vec},
     spin::Mutex,
-    zircon_object::{object::*, vm::*},
 };
+
 /// This struct contains constants that are initialized by the kernel
 /// once at boot time.  From the vDSO code's perspective, they are
 /// read-only data that can never change.  Hence, no synchronization is
@@ -74,4 +75,17 @@ impl VDsos {
             handles[i] = Handle::new(vmo.clone(), Rights::DEFAULT_VMO | Rights::EXECUTE);
         }
     }
+
+    /// Check if the `vmo` is a vdso vmo
+    pub fn check_vdso(&self, vmo: &Arc<dyn VMObjectTrait>) -> bool {
+        self.vmos.iter().any(|item| Arc::ptr_eq(&item.inner, vmo))
+    }
+}
+
+pub fn check_vmo_vdso(vmo: &Arc<dyn VMObjectTrait>) -> bool {
+    VDSO_VMOS.lock().check_vdso(vmo)
+}
+
+pub fn is_vdso_code_mapping(offset: usize, len: usize) -> bool {
+    offset == 0x7000 && len == 0x1000
 }
