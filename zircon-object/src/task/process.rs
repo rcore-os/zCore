@@ -305,47 +305,6 @@ impl Process {
         object.validate(kind)
     }
 
-    /// Equal to `get_object_with_rights<dyn VMObject>`.
-    pub fn get_vmo_with_rights(
-        &self,
-        handle_value: HandleValue,
-        desired_rights: Rights,
-    ) -> ZxResult<Arc<dyn VMObject>> {
-        let handle = self.get_handle(handle_value)?;
-        // check type before rights
-        let object: Arc<dyn VMObject> = handle
-            .object
-            .downcast_arc::<VMObjectPaged>()
-            .map(|obj| obj as Arc<dyn VMObject>)
-            .or_else(|obj| {
-                obj.downcast_arc::<VMObjectPhysical>()
-                    .map(|obj| obj as Arc<dyn VMObject>)
-            })
-            .map_err(|_| ZxError::WRONG_TYPE)?;
-        if !handle.rights.contains(desired_rights) {
-            return Err(ZxError::ACCESS_DENIED);
-        }
-        Ok(object)
-    }
-
-    pub fn get_vmo_and_rights(
-        &self,
-        handle_value: HandleValue,
-    ) -> ZxResult<(Arc<dyn VMObject>, Rights)> {
-        let handle = self.get_handle(handle_value)?;
-        // check type before rights
-        let object: Arc<dyn VMObject> = handle
-            .object
-            .downcast_arc::<VMObjectPaged>()
-            .map(|obj| obj as Arc<dyn VMObject>)
-            .or_else(|obj| {
-                obj.downcast_arc::<VMObjectPhysical>()
-                    .map(|obj| obj as Arc<dyn VMObject>)
-            })
-            .map_err(|_| ZxError::WRONG_TYPE)?;
-        Ok((object, handle.rights))
-    }
-
     pub fn get_handle_info(&self, handle_value: HandleValue) -> ZxResult<HandleBasicInfo> {
         let handle = self.get_handle(handle_value)?;
         Ok(handle.get_info())

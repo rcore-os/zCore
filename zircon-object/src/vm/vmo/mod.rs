@@ -7,7 +7,7 @@ pub use self::{paged::*, physical::*};
 
 /// Virtual Memory Objects
 #[allow(clippy::len_without_is_empty)]
-pub trait VMObject: KernelObject {
+pub trait VMObjectTrait: Sync + Send {
     /// Read memory to `buf` from VMO at `offset`.
     fn read(&self, offset: usize, buf: &mut [u8]);
 
@@ -46,10 +46,26 @@ pub trait VMObject: KernelObject {
     fn decommit(&self, offset: usize, len: usize);
 
     /// Create a child vmo
-    fn create_child(&self, offset: usize, len: usize) -> Arc<dyn VMObject>;
+    fn create_child(&self, offset: usize, len: usize) -> Arc<dyn VMObjectTrait>;
 
-    fn create_clone(&self, offset: usize, len: usize) -> Arc<dyn KernelObject>;
+    fn create_clone(&self, offset: usize, len: usize) -> Arc<dyn VMObjectTrait>;
 }
+
+pub struct VmObject {
+    base: KObjectBase,
+    pub inner: Arc<dyn VMObjectTrait>,
+}
+
+impl VmObject {
+    pub fn new(inner: Arc<dyn VMObjectTrait>) -> Arc<Self> {
+        Arc::new(VmObject {
+            base: KObjectBase::default(),
+            inner,
+        })
+    }
+}
+
+impl_kobject!(VmObject);
 
 #[cfg(test)]
 mod tests {

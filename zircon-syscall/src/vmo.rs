@@ -17,7 +17,7 @@ impl Syscall<'_> {
         );
         // TODO: options
         let proc = self.thread.proc();
-        let vmo = VMObjectPaged::new(pages(size as usize));
+        let vmo = VmObject::new(VMObjectPaged::new(pages(size as usize)));
         let handle_value = proc.add_handle(Handle::new(vmo, Rights::DEFAULT_VMO));
         out.write(handle_value)?;
         Ok(0)
@@ -35,7 +35,9 @@ impl Syscall<'_> {
             handle_value, offset, buf, buf_size,
         );
         let proc = self.thread.proc();
-        let vmo = proc.get_vmo_with_rights(handle_value, Rights::READ)?;
+        let vmo = &proc
+            .get_object_with_rights::<VmObject>(handle_value, Rights::READ)?
+            .inner;
         // TODO: optimize
         let mut buffer = vec![0u8; buf_size];
         vmo.read(offset as usize, &mut buffer);
@@ -55,7 +57,9 @@ impl Syscall<'_> {
             handle_value, offset, buf, buf_size,
         );
         let proc = self.thread.proc();
-        let vmo = proc.get_vmo_with_rights(handle_value, Rights::READ)?;
+        let vmo = &proc
+            .get_object_with_rights::<VmObject>(handle_value, Rights::WRITE)?
+            .inner;
         vmo.write(offset as usize, &buf.read_array(buf_size)?);
         Ok(0)
     }
@@ -72,7 +76,7 @@ impl Syscall<'_> {
         } else {
             proc.check_policy(PolicyCondition::AmbientMarkVMOExec)?;
         }
-        let _ = proc.get_vmo_and_rights(handle)?;
+        let _ = proc.get_object_and_rights::<VmObject>(handle)?;
         let new_handle = proc.dup_handle_operating_rights(handle, |handle_rights| {
             Ok(handle_rights | Rights::EXECUTE)
         })?;
@@ -85,7 +89,7 @@ impl Syscall<'_> {
         handle: HandleValue,
         mut size: UserOutPtr<usize>,
     ) -> ZxResult<usize> {
-        let vmo = self.thread.proc().get_vmo_and_rights(handle)?.0;
+        let vmo = &self.thread.proc().get_object::<VmObject>(handle)?.inner;
         size.write(vmo.len())?;
         Ok(0)
     }
@@ -108,7 +112,8 @@ impl Syscall<'_> {
         }
         let proc = self.thread.proc();
 
-        let (vmo, parent_rights) = proc.get_vmo_and_rights(handle_value)?;
+        let (vmo, parent_rights) = proc.get_object_and_rights::<VmObject>(handle_value)?;
+        let vmo = &vmo.inner;
         if !parent_rights.contains(Rights::DUPLICATE | Rights::READ) {
             return Err(ZxError::ACCESS_DENIED);
         }
@@ -130,15 +135,16 @@ impl Syscall<'_> {
         let child_size = roundup_pages(size);
         info!("size of child vmo: {:#x}", child_size);
         let child_vmo = vmo.create_clone(offset as usize, child_size);
-        out.write(proc.add_handle(Handle::new(child_vmo, child_rights)))?;
+        out.write(proc.add_handle(Handle::new(VmObject::new(child_vmo), child_rights)))?;
         Ok(0)
     }
 
     pub fn sys_vmo_set_size(&self, handle_value: HandleValue, size: usize) -> ZxResult<usize> {
-        let vmo = self
+        let vmo = &self
             .thread
             .proc()
-            .get_vmo_with_rights(handle_value, Rights::WRITE)?;
+            .get_object_with_rights::<VmObject>(handle_value, Rights::WRITE)?
+            .inner;
         info!(
             "vmo.set_size: handle={}, size={:#x}, current_size={:#x}",
             handle_value,
@@ -162,7 +168,11 @@ impl Syscall<'_> {
             "vmo.op_range: handle={}, op={:#X}, offset={:#x}, len={:#x}, buffer_size={:#x}",
             handle_value, op, offset, len, _buffer_size,
         );
-        let (vmo, rights) = self.thread.proc().get_vmo_and_rights(handle_value)?;
+        let (vmo, rights) = self
+            .thread
+            .proc()
+            .get_object_and_rights::<VmObject>(handle_value)?;
+        let vmo = &vmo.inner;
         if !page_aligned(offset) || !page_aligned(len) {
             return Err(ZxError::INVALID_ARGS);
         }

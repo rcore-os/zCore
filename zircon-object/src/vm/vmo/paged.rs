@@ -10,7 +10,6 @@ use {
 
 /// The main VM object type, holding a list of pages.
 pub struct VMObjectPaged {
-    base: KObjectBase,
     inner: Mutex<VMObjectPagedInner>,
 }
 
@@ -21,8 +20,6 @@ struct VMObjectPagedInner {
     frames: Vec<Option<PhysFrame>>,
 }
 
-impl_kobject!(VMObjectPaged);
-
 impl VMObjectPaged {
     /// Create a new VMO backing on physical memory allocated in pages.
     pub fn new(pages: usize) -> Arc<Self> {
@@ -30,7 +27,6 @@ impl VMObjectPaged {
         frames.resize_with(pages, Default::default);
 
         Arc::new(VMObjectPaged {
-            base: KObjectBase::default(),
             inner: Mutex::new(VMObjectPagedInner {
                 parent: None,
                 parent_offset: 0usize,
@@ -85,7 +81,7 @@ impl VMObjectPaged {
     }
 }
 
-impl VMObject for VMObjectPaged {
+impl VMObjectTrait for VMObjectPaged {
     fn read(&self, offset: usize, buf: &mut [u8]) {
         self.for_each_page(offset, buf.len(), false, |paddr, buf_range| {
             kernel_hal::pmem_read(paddr, &mut buf[buf_range]);
@@ -157,7 +153,7 @@ impl VMObject for VMObjectPaged {
         }
     }
 
-    fn create_child(&self, offset: usize, len: usize) -> Arc<dyn VMObject> {
+    fn create_child(&self, offset: usize, len: usize) -> Arc<dyn VMObjectTrait> {
         assert!(page_aligned(offset));
         assert!(page_aligned(len));
         let mut frames = Vec::new();
@@ -168,7 +164,6 @@ impl VMObject for VMObjectPaged {
 
         // construct hidden_vmo as shared parent
         let hidden_vmo = Arc::new(VMObjectPaged {
-            base: KObjectBase::default(),
             inner: Mutex::new(VMObjectPagedInner {
                 parent: old_parent,
                 parent_offset: 0usize,
@@ -184,7 +179,6 @@ impl VMObject for VMObjectPaged {
         let mut child_frames = Vec::new();
         child_frames.resize_with(len / PAGE_SIZE, Default::default);
         Arc::new(VMObjectPaged {
-            base: KObjectBase::default(),
             inner: Mutex::new(VMObjectPagedInner {
                 parent: Some(hidden_vmo),
                 parent_offset: offset,
@@ -193,7 +187,7 @@ impl VMObject for VMObjectPaged {
         })
     }
 
-    fn create_clone(&self, offset: usize, len: usize) -> Arc<dyn KernelObject> {
+    fn create_clone(&self, offset: usize, len: usize) -> Arc<dyn VMObjectTrait> {
         assert!(page_aligned(offset));
         assert!(page_aligned(len));
         let frames_offset = pages(offset);
@@ -212,7 +206,6 @@ impl VMObject for VMObjectPaged {
             }
         }
         Arc::new(VMObjectPaged {
-            base: KObjectBase::default(),
             inner: Mutex::new(VMObjectPagedInner {
                 parent: None,
                 parent_offset: offset,

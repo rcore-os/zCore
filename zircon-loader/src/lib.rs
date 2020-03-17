@@ -111,6 +111,7 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
                 &(kernel_hal_unix::syscall_entry as usize).to_ne_bytes(),
             );
         }
+        let vdso_vmo = VmObject::new(vdso_vmo);
         vdso_vmo.set_name("vdso/full");
         vdso_vmo
     };
@@ -119,6 +120,7 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
     let zbi_vmo = {
         let vmo = VMObjectPaged::new(images.zbi.as_ref().len() / PAGE_SIZE + 1);
         vmo.write(0, images.zbi.as_ref());
+        let vmo = VmObject::new(vmo);
         vmo.set_name("zbi");
         vmo
     };
@@ -129,6 +131,7 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
         let size = elf.load_segment_size();
         let vmo = VMObjectPaged::new(size / PAGE_SIZE);
         vmo.write(0, images.decompressor.as_ref());
+        let vmo = VmObject::new(vmo);
         vmo.set_name("lib/hermetic/decompress-zbi.so");
         vmo
     };
@@ -154,9 +157,9 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
     handles[K_ROOTRESOURCE] = Handle::new(resource, Rights::DEFAULT_RESOURCE);
     handles[K_ZBI] = Handle::new(zbi_vmo, Rights::DEFAULT_VMO);
     handles[K_FIRSTVDSO] = Handle::new(vdso_vmo.clone(), Rights::DEFAULT_VMO | Rights::EXECUTE);
-    let vdso_test1 = vdso_vmo.create_clone(0, vdso_vmo.len());
+    let vdso_test1 = VmObject::new(vdso_vmo.inner.create_clone(0, vdso_vmo.inner.len()));
     vdso_test1.set_name("vdso/test1");
-    let vdso_test2 = vdso_vmo.create_clone(0, vdso_vmo.len());
+    let vdso_test2 = VmObject::new(vdso_vmo.inner.create_clone(0, vdso_vmo.inner.len()));
     vdso_test2.set_name("vdso/test2");
     handles[K_FIRSTVDSO + 1] = Handle::new(vdso_test1, Rights::DEFAULT_VMO | Rights::EXECUTE);
     handles[K_FIRSTVDSO + 2] = Handle::new(vdso_test2, Rights::DEFAULT_VMO | Rights::EXECUTE);
@@ -164,19 +167,19 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
     handles[K_USERBOOT_DECOMPRESSOR] =
         Handle::new(decompressor_vmo, Rights::DEFAULT_VMO | Rights::EXECUTE);
     // TODO to use correct CrashLogVmo handle
-    let crash_log_vmo = VMObjectPaged::new(1);
+    let crash_log_vmo = VmObject::new(VMObjectPaged::new(1));
     crash_log_vmo.set_name("crashlog");
     handles[K_CRASHLOG] = Handle::new(crash_log_vmo, Rights::DEFAULT_VMO);
     // TODO to use correct CounterName handle
-    let counter_name_vmo = VMObjectPaged::new(1);
+    let counter_name_vmo = VmObject::new(VMObjectPaged::new(1));
     counter_name_vmo.set_name("counters/desc");
     handles[K_COUNTERNAMES] = Handle::new(counter_name_vmo, Rights::DEFAULT_VMO);
     // TODO to use correct CounterName handle
-    let kcounters_vmo = VMObjectPaged::new(1);
+    let kcounters_vmo = VmObject::new(VMObjectPaged::new(1));
     kcounters_vmo.set_name("counters/arena");
     handles[K_COUNTERS] = Handle::new(kcounters_vmo, Rights::DEFAULT_VMO);
     // TODO to use correct Instrumentation data handle
-    let instrumentation_data_vmo = VMObjectPaged::new(0);
+    let instrumentation_data_vmo = VmObject::new(VMObjectPaged::new(0));
     instrumentation_data_vmo.set_name("UNIMPLEMENTED_VMO");
     handles[K_FISTINSTRUMENTATIONDATA] =
         Handle::new(instrumentation_data_vmo.clone(), Rights::DEFAULT_VMO);

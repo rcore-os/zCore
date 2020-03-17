@@ -86,7 +86,8 @@ impl Syscall<'_> {
         );
         let proc = self.thread.proc();
         let (vmar, vmar_rights) = proc.get_object_and_rights::<VmAddressRegion>(vmar_handle)?;
-        let (vmo, vmo_rights) = proc.get_vmo_and_rights(vmo_handle)?;
+        let (vmo, vmo_rights) = proc.get_object_and_rights::<VmObject>(vmo_handle)?;
+        let vmo = vmo.inner.clone();
         if !vmo_rights.contains(Rights::MAP) {
             return Err(ZxError::ACCESS_DENIED);
         };

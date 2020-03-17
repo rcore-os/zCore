@@ -471,8 +471,7 @@ impl ObjectType {
     pub const DebugLog: ObjectType = ObjectType::Log;
     pub const Futex: ObjectType = ObjectType::None; // TODO
     pub const VmAddressRegion: ObjectType = ObjectType::Vmar;
-    pub const VMObjectPaged: ObjectType = ObjectType::Vmo;
-    pub const VMObjectPhysical: ObjectType = ObjectType::Vmo;
+    pub const VmObject: ObjectType = ObjectType::Vmo;
 
     // workaround for objects on linux
     pub const File: ObjectType = ObjectType::None;

@@ -1,6 +1,6 @@
 use core::sync::atomic::*;
 use {
-    super::*, crate::object::*, crate::vm::vmo::VMObject, alloc::sync::Arc, alloc::vec::Vec,
+    super::*, crate::object::*, crate::vm::vmo::VMObjectTrait, alloc::sync::Arc, alloc::vec::Vec,
     bitflags::bitflags, kernel_hal::PageTable, spin::Mutex,
 };
 
@@ -99,7 +99,7 @@ impl VmAddressRegion {
     pub fn map_at(
         &self,
         vmar_offset: usize,
-        vmo: Arc<dyn VMObject>,
+        vmo: Arc<dyn VMObjectTrait>,
         vmo_offset: usize,
         len: usize,
         flags: MMUFlags,
@@ -111,7 +111,7 @@ impl VmAddressRegion {
     pub fn map(
         &self,
         vmar_offset: Option<usize>,
-        vmo: Arc<dyn VMObject>,
+        vmo: Arc<dyn VMObjectTrait>,
         vmo_offset: usize,
         len: usize,
         flags: MMUFlags,
@@ -395,7 +395,7 @@ pub struct VmMapping {
     addr: VirtAddr,
     size: usize,
     flags: MMUFlags,
-    vmo: Arc<dyn VMObject>,
+    vmo: Arc<dyn VMObjectTrait>,
     vmo_offset: usize,
     page_table: Arc<Mutex<PageTable>>,
 }
