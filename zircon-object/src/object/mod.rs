@@ -311,6 +311,7 @@ impl dyn KernelObject {
         if !(current_signal & signal).is_empty() {
             port.push(PortPacket {
                 key,
+                _type: PortPacketType::SignalOne,
                 status: ZxError::OK,
                 data: PortPacketPayload::Signal(current_signal),
             });
@@ -324,6 +325,7 @@ impl dyn KernelObject {
                 }
                 port.push(PortPacket {
                     key,
+                    _type: PortPacketType::SignalOne,
                     status: ZxError::OK,
                     data: PortPacketPayload::Signal(s),
                 });

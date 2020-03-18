@@ -138,7 +138,6 @@ impl Syscall<'_> {
         let proc = self.thread.proc();
         let vmar = proc.get_object::<VmAddressRegion>(handle_value)?;
         vmar.destroy()?;
-        proc.remove_handle(handle_value)?;
         Ok(0)
     }
 

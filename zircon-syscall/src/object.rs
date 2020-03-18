@@ -62,6 +62,7 @@ impl Syscall<'_> {
                     .vdso_code_start()
                     .lock()
                     .unwrap_or(0);
+                info!("vdso_base_addr: {:#X}", vdso_base);
                 UserOutPtr::<usize>::from(ptr).write(vdso_base)?;
                 Ok(0)
             }

@@ -27,6 +27,7 @@ struct PortInner {
 #[derive(Debug, Eq, PartialEq)]
 pub struct PortPacket {
     pub key: u64,
+    pub _type: PortPacketType,
     pub status: ZxError,
     pub data: PortPacketPayload,
 }
@@ -36,6 +37,22 @@ pub struct PortPacket {
 pub enum PortPacketPayload {
     Signal(Signal),
     User([u8; 32]),
+}
+
+// reference: zircon/system/public/zircon/syscalls/port.h ZX_PKT_TYPE_*
+#[repr(u32)]
+#[derive(Debug, Eq, PartialEq)]
+pub enum PortPacketType {
+    User = 0u32,
+    SignalOne = 1u32,
+    SignalRep = 2u32,
+    GuestBell = 3u32,
+    GuestMem = 4u32,
+    GuestIo = 5u32,
+    GuestVcpu = 6u32,
+    Interrupt = 7u32,
+    Exception = 8u32, // TODO should be Exception(n) = 0x8 | ((0xFF & n) << 8)
+    PageRequest = 9u32,
 }
 
 impl Port {

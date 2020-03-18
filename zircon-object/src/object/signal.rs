@@ -34,6 +34,16 @@ bitflags! {
 
         // for Linux
         const SIGCHLD                       = 1 << 6;
+
+        // for user
+        const USER_SIGNAL_0                 = 1 << 24;
+        const USER_SIGNAL_1                 = 1 << 25;
+        const USER_SIGNAL_2                 = 1 << 26;
+        const USER_SIGNAL_3                 = 1 << 27;
+        const USER_SIGNAL_4                 = 1 << 28;
+        const USER_SIGNAL_5                 = 1 << 29;
+        const USER_SIGNAL_6                 = 1 << 30;
+        const USER_SIGNAL_7                 = 1 << 31;
     }
 }
 
