@@ -161,6 +161,10 @@ impl Syscall<'_> {
                 self.sys_object_wait_async(a0 as _, a1 as _, a2 as _, a3 as _, a4 as _)
             }
             SyscallType::PORT_QUEUE => self.sys_port_queue(a0 as _, a1.into()),
+            SyscallType::FUTEX_WAIT => {
+                self.sys_futex_wait(a0.into(), a1 as _, a2 as _, a3 as _)
+                    .await
+            }
             _ => {
                 warn!("syscall unimplemented: {:?}", sys_type);
                 Err(ZxError::NOT_SUPPORTED)

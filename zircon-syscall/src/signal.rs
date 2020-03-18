@@ -1,5 +1,6 @@
 use {
     super::*,
+    core::sync::atomic::*,
     zircon_object::{signal::*, task::PolicyCondition},
 };
 
@@ -91,5 +92,27 @@ impl Syscall<'_> {
         );
         port.push(packet);
         Ok(0)
+    }
+
+    #[allow(unsafe_code)]
+    pub async fn sys_futex_wait(
+        &self,
+        value_ptr: UserInPtr<AtomicI32>,
+        current_value: i32,
+        new_futex_owner: HandleValue,
+        deadline: u64,
+    ) -> ZxResult<usize> {
+        info!(
+            "futex.wait: value_ptr={:?}, current_value={:#x}, new_futex_owner={:#x}, deadline={:#x}",
+            value_ptr, current_value, new_futex_owner, deadline
+        );
+        assert!(!value_ptr.is_null());
+        let futex = Futex::new(unsafe { &*(value_ptr.as_ptr() as *const AtomicI32) });
+        if new_futex_owner == INVALID_HANDLE {
+            futex.wait_async(current_value).await?;
+        } else {
+            unimplemented!()
+        }
+        Err(ZxError::NOT_SUPPORTED)
     }
 }
