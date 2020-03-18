@@ -73,4 +73,23 @@ impl Syscall<'_> {
         packet_res.write(packet)?;
         Ok(0)
     }
+
+    pub fn sys_port_queue(
+        &self,
+        handle_value: HandleValue,
+        packcet_in: UserInPtr<PortPacket>,
+    ) -> ZxResult<usize> {
+        // TODO when to return ZX_ERR_SHOULD_WAIT
+        let port = self
+            .thread
+            .proc()
+            .get_object_with_rights::<Port>(handle_value, Rights::WRITE)?;
+        let packet = packcet_in.read()?;
+        info!(
+            "port.queue: handle={:#x}, packet={:?}",
+            handle_value, packet
+        );
+        port.push(packet);
+        Ok(0)
+    }
 }
