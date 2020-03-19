@@ -55,7 +55,7 @@ fn main(zbi_data: &[u8], cmdline: &str) {
 }
 
 fn get_log_level(cmdline: &str) -> &str {
-    for opt in cmdline.split(',') {
+    for opt in cmdline.split(':') {
         // parse 'key=value'
         let mut iter = opt.trim().splitn(2, '=');
         let key = iter.next().expect("failed to parse key");

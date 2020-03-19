@@ -66,11 +66,13 @@ impl Syscall<'_> {
             "port.wait: handle={}, deadline={:#x}",
             handle_value, deadline
         );
+        assert_eq!(core::mem::size_of::<PortPacket>(), 48);
         let port = self
             .thread
             .proc()
             .get_object_with_rights::<Port>(handle_value, Rights::READ)?;
         let packet = port.wait_async().await;
+        warn!("port.wait: packet={:#x?}", packet);
         packet_res.write(packet)?;
         Ok(0)
     }

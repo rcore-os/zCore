@@ -71,6 +71,7 @@ struct ProcessInner {
     debug_addr: usize,
     dyn_break_on_load: usize,
     critical_job: Option<(Arc<Job>, bool)>,
+    max_handle_id: u32,
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -385,15 +386,18 @@ impl ProcessInner {
     /// Add a handle to the process
     fn add_handle(&mut self, handle: Handle) -> HandleValue {
         // FIXME: handle value from ptr
-        let value = (1 as HandleValue..)
-            .find(|idx| {
-                let key = (idx << 2) | 0x3u32;
-                !self.handles.contains_key(&key)
-            })
-            .unwrap();
+        //let value = (1 as HandleValue..)
+        //.find(|idx| {
+        //let key = (idx << 2) | 0x3u32;
+        //!self.handles.contains_key(&key)
+        //})
+        //.unwrap();
+        let value = self.max_handle_id;
         let key = (value << 2) | 0x3u32;
+        let _type = handle.object.obj_type();
+        self.max_handle_id += 1;
         self.handles.insert(key, handle);
-        info!("A new handle is added : {}", key);
+        info!("A new handle is added : {}, type: {:?}", key, _type);
         key
     }
 

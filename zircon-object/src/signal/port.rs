@@ -29,14 +29,17 @@ pub struct PortPacket {
     pub key: u64,
     pub _type: PortPacketType,
     pub status: ZxError,
-    pub data: PortPacketPayload,
+    pub data: [u8; 32],
 }
 
-#[non_exhaustive]
+#[repr(C)]
 #[derive(Debug, Eq, PartialEq)]
-pub enum PortPacketPayload {
-    Signal(Signal),
-    User([u8; 32]),
+pub struct PortPacketSignal {
+    pub trigger: Signal,
+    pub observed: Signal,
+    pub count: u64,
+    pub timestamp: u64,
+    pub reserved1: u64,
 }
 
 // reference: zircon/system/public/zircon/syscalls/port.h ZX_PKT_TYPE_*

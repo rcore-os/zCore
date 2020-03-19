@@ -26,7 +26,7 @@ async fn main() {
     let proc: Arc<dyn KernelObject> = run_userboot(&images, &opt.cmdline);
     drop(images);
 
-    proc.wait_signal_async(Signal::PROCESS_TERMINATED).await;
+    proc.wait_signal_async(Signal::USER_SIGNAL_0).await;
 }
 
 fn open_images(path: &PathBuf) -> std::io::Result<Images<Vec<u8>>> {
