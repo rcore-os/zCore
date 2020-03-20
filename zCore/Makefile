@@ -1,6 +1,7 @@
 arch ?= x86_64
 mode ?= debug
 LOG ?=
+zbi_file ?= fuchsia
 
 build_args := --target $(arch).json
 build_path := target/$(arch)/$(mode)
@@ -45,7 +46,7 @@ $(kernel_img): kernel bootloader
 	mkdir -p $(ESP)/EFI/zCore $(ESP)/EFI/Boot
 	cp ../rboot/target/x86_64-unknown-uefi/release/rboot.efi $(ESP)/EFI/Boot/BootX64.efi
 	cp rboot.conf $(ESP)/EFI/Boot/rboot.conf
-	cp ../prebuilt/zircon/fuchsia.zbi $(ESP)/EFI/zCore/fuchsia.zbi
+	cp ../prebuilt/zircon/$(zbi_file).zbi $(ESP)/EFI/zCore/fuchsia.zbi
 	cp $(kernel) $(ESP)/EFI/zCore/zcore.elf
 
 kernel:

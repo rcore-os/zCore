@@ -2,6 +2,7 @@ use {
     super::*,
     core::sync::atomic::{AtomicU64, Ordering},
     kernel_hal::timer_now,
+    zircon_object::resource::*,
 };
 
 static UTC_OFFSET: AtomicU64 = AtomicU64::new(0);
@@ -23,6 +24,25 @@ impl Syscall<'_> {
             }
             ZX_CLOCK_THREAD => unimplemented!(),
             _ => Err(ZxError::NOT_SUPPORTED),
+        }
+    }
+
+    pub fn sys_clock_adjust(
+        &self,
+        hrsrc: HandleValue,
+        clock_id: u32,
+        offset: u64,
+    ) -> ZxResult<usize> {
+        self.thread
+            .proc()
+            .validate_resource(hrsrc, ResourceKind::ROOT)?;
+        match clock_id {
+            ZX_CLOCK_MONOTONIC => Err(ZxError::ACCESS_DENIED),
+            ZX_CLOCK_UTC => {
+                UTC_OFFSET.store(offset, Ordering::Relaxed);
+                Ok(0)
+            }
+            _ => Err(ZxError::INVALID_ARGS),
         }
     }
 }

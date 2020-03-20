@@ -1,6 +1,6 @@
 use {
     super::{job::Job, job_policy::*, resource::*, thread::Thread, *},
-    crate::{object::*, vm::*},
+    crate::{object::*, signal::Futex, vm::*},
     alloc::{boxed::Box, collections::BTreeMap, sync::Arc, vec::Vec},
     core::any::Any,
     spin::Mutex,
@@ -72,6 +72,7 @@ struct ProcessInner {
     dyn_break_on_load: usize,
     critical_job: Option<(Arc<Job>, bool)>,
     max_handle_id: u32,
+    futexes: BTreeMap<usize, Arc<Futex>>,
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -218,6 +219,21 @@ impl Process {
             .get(&handle_value)
             .cloned()
             .ok_or(ZxError::BAD_HANDLE)
+    }
+
+    /// Get a handle from the process
+    pub fn get_futex(&self, key: usize) -> ZxResult<Arc<Futex>> {
+        self.inner
+            .lock()
+            .futexes
+            .get(&key)
+            .cloned()
+            .ok_or(ZxError::BAD_HANDLE)
+    }
+
+    /// Add a futex to the process
+    pub fn add_futex(&self, key: usize, futex: Arc<Futex>) {
+        self.inner.lock().add_futex(key, futex)
     }
 
     /// Duplicate a handle with new `rights`, return the new handle value.
@@ -399,6 +415,12 @@ impl ProcessInner {
         self.handles.insert(key, handle);
         info!("A new handle is added : {}, type: {:?}", key, _type);
         key
+    }
+
+    /// Add a futex to this process
+    fn add_futex(&mut self, key: usize, futex: Arc<Futex>) {
+        assert!(!self.futexes.contains_key(&key));
+        self.futexes.insert(key, futex);
     }
 
     /// Whether `thread` is in this process.

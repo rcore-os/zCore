@@ -6,7 +6,7 @@ use {kernel_hal_bare::arch::ack, trapframe::TrapFrame};
 pub static LAPIC_ADDR: usize = 0xfee0_0000;
 
 pub fn init() {
-    //    x86_64::instructions::interrupts::enable();
+    x86_64::instructions::interrupts::enable();
 }
 
 // Reference: https://wiki.osdev.org/Exceptions

@@ -165,6 +165,8 @@ impl Syscall<'_> {
                 self.sys_futex_wait(a0.into(), a1 as _, a2 as _, a3 as _)
                     .await
             }
+            SyscallType::NANOSLEEP => self.sys_nanosleep(a0 as _).await,
+            SyscallType::FUTEX_WAKE => self.sys_futex_wake(a0 as _, a1 as _),
             _ => {
                 warn!("syscall unimplemented: {:?}", sys_type);
                 Err(ZxError::NOT_SUPPORTED)
