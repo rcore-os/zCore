@@ -1,5 +1,5 @@
 use super::*;
-use crate::object::*;
+use crate::{object::*, task::Thread};
 use alloc::collections::VecDeque;
 use alloc::sync::Arc;
 use core::future::Future;
@@ -7,6 +7,27 @@ use core::pin::Pin;
 use core::sync::atomic::*;
 use core::task::{Context, Poll, Waker};
 use spin::Mutex;
+
+struct Waiter {
+    thread: Arc<Thread>,
+    inner: Mutex<WaiterInner>,
+}
+
+struct WaiterInner {
+    waker: Option<Waker>,
+    woken: bool,
+    futex: Arc<Futex>,
+}
+
+impl Waiter {
+    pub fn set_woken(&self) {
+        self.inner.lock().woken = true;
+    }
+
+    pub fn set_futex(&self, futex: Arc<Futex>) {
+        self.inner.lock().futex = futex;
+    }
+}
 
 /// A primitive for creating userspace synchronization tools.
 ///
@@ -26,8 +47,8 @@ impl_kobject!(Futex);
 
 #[derive(Default)]
 struct FutexInner {
-    waiter_queue: VecDeque<Waker>,
-    wake_num: usize,
+    waiter_queue: VecDeque<Arc<Waiter>>,
+    owner: Option<Arc<Thread>>,
 }
 
 impl Futex {
@@ -50,43 +71,48 @@ impl Futex {
     /// This implementation currently does not generate spurious wakeups.
     ///
     /// [`wake`]: Futex::wake
-    pub fn wait_async(self: &Arc<Self>, current_value: i32) -> impl Future<Output = ZxResult<()>> {
+    pub fn wait_async(
+        self: &Arc<Self>,
+        current_value: i32,
+        thread: Arc<Thread>,
+    ) -> impl Future<Output = ZxResult<()>> {
+        let waiter = Arc::new(Waiter {
+            thread,
+            inner: Mutex::new(WaiterInner {
+                waker: None,
+                woken: false,
+                futex: self.clone(),
+            }),
+        });
+        self.inner.lock().waiter_queue.push_back(waiter.clone());
         struct FutexFuture {
-            futex: Arc<Futex>,
+            waiter: Arc<Waiter>,
             current_value: i32,
-            num: Option<usize>,
         }
         impl Future for FutexFuture {
             type Output = ZxResult<()>;
 
-            fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-                let mut inner = self.futex.inner.lock();
-                // if waiting, check wake num
-                if let Some(num) = self.num {
-                    return if inner.wake_num > num {
-                        Poll::Ready(Ok(()))
+            fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+                let mut inner = self.waiter.inner.lock();
+                if inner.woken {
+                    Poll::Ready(Ok(()))
+                } else {
+                    // if waiting, check wake num
+                    let value = inner.futex.value.load(Ordering::SeqCst);
+                    if value != self.current_value {
+                        Poll::Ready(Err(ZxError::BAD_STATE))
                     } else {
+                        inner.waker.replace(cx.waker().clone());
+                        drop(inner);
                         Poll::Pending
-                    };
+                    }
                 }
-                // first call, check value
-                let value = self.futex.value.load(Ordering::SeqCst);
-                if value != self.current_value {
-                    return Poll::Ready(Err(ZxError::BAD_STATE));
-                }
-                // push to wait queue
-                let wait_num = inner.wake_num + inner.waiter_queue.len();
-                inner.waiter_queue.push_back(cx.waker().clone());
-                drop(inner);
-                self.num = Some(wait_num);
-                Poll::Pending
             }
         }
 
         FutexFuture {
-            futex: self.clone(),
+            waiter,
             current_value,
-            num: None,
         }
     }
 
@@ -97,14 +123,90 @@ impl Futex {
     pub fn wake(&self, wake_count: usize) -> usize {
         let mut inner = self.inner.lock();
         for i in 0..wake_count {
-            if let Some(waker) = inner.waiter_queue.pop_front() {
+            if let Some(waiter) = inner.waiter_queue.pop_front() {
+                waiter.set_woken();
+                let waker = waiter.inner.lock().waker.as_ref().unwrap().clone();
                 waker.wake();
-                inner.wake_num += 1;
             } else {
                 return i + 1;
             }
         }
         wake_count
+    }
+
+    pub fn wake_single_owner(&self) {
+        let mut inner = self.inner.lock();
+        let new_owner = match inner.waiter_queue.pop_front() {
+            Some(waiter) => {
+                waiter.set_woken();
+                let waker = waiter.inner.lock().waker.as_ref().unwrap().clone();
+                waker.wake();
+                Some(waiter.thread.clone())
+            }
+            None => None,
+        };
+        inner.owner = new_owner;
+    }
+
+    pub fn get_owner(&self) -> KoID {
+        match self.inner.lock().owner.as_ref() {
+            Some(ptr) => ptr.id(),
+            None => 0,
+        }
+    }
+
+    // TODO: for a thread, to be owner of one futex means change on priority
+    // see fuchsia/docs/reference/kernel_objects/futex.md#Ownership and Priority Inheritance
+    pub fn set_owner(&self, owner: Option<Arc<Thread>>) -> ZxResult<()> {
+        self.check_thread(owner.as_ref())?;
+        let mut inner = self.inner.lock();
+        inner.owner = owner;
+        Ok(())
+    }
+
+    /// Check if `thread` can be owner of this futex
+    fn check_thread(&self, to_check: Option<&Arc<Thread>>) -> ZxResult<()> {
+        // TODO: to check whether the `to_check` thread has been started yet
+        let inner = self.inner.lock();
+        match to_check {
+            Some(to_check) => {
+                if inner
+                    .waiter_queue
+                    .iter()
+                    .any(|waiter| Arc::ptr_eq(&waiter.thread, to_check))
+                {
+                    Err(ZxError::INVALID_ARGS)
+                } else {
+                    Ok(())
+                }
+            }
+            None => Ok(()),
+        }
+    }
+
+    pub fn wake_and_requeue(
+        &self,
+        wake_count: usize,
+        requeue_futex: Arc<Futex>,
+        requeue_count: usize,
+    ) -> ZxResult<()> {
+        self.wake(wake_count);
+        self.set_owner(None)?;
+        let mut inner = self.inner.lock();
+        let current_len = inner.waiter_queue.len();
+        let mut waiter_list = VecDeque::new();
+        for _ in 0..requeue_count.min(current_len) {
+            let waiter = inner.waiter_queue.pop_front().unwrap();
+            waiter.set_futex(requeue_futex.clone());
+            waiter_list.push_back(waiter);
+        }
+        requeue_futex.push_waiters(waiter_list);
+        Ok(())
+    }
+
+    fn push_waiters(&self, mut waiters: VecDeque<Arc<Waiter>>) {
+        let mut inner = self.inner.lock();
+        inner.waiter_queue.append(&mut waiters);
     }
 }
 

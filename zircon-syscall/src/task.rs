@@ -153,4 +153,10 @@ impl Syscall<'_> {
         thread.start(entry, stack, arg1, arg2)?;
         Ok(0)
     }
+
+    pub fn sys_thread_exit(&mut self) -> ZxResult<usize> {
+        self.thread.exit();
+        self.exit = true;
+        Ok(0)
+    }
 }

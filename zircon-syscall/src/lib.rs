@@ -23,6 +23,7 @@ mod consts;
 mod cprng;
 mod debug;
 mod debuglog;
+mod futex;
 mod handle;
 mod object;
 mod resource;
@@ -166,7 +167,12 @@ impl Syscall<'_> {
                     .await
             }
             SyscallType::NANOSLEEP => self.sys_nanosleep(a0 as _).await,
-            SyscallType::FUTEX_WAKE => self.sys_futex_wake(a0 as _, a1 as _),
+            SyscallType::FUTEX_WAKE => self.sys_futex_wake(a0.into(), a1 as _),
+            SyscallType::FUTEX_REQUEUE => {
+                self.sys_futex_requeue(a0.into(), a1 as _, a2 as _, a3.into(), a4 as _, a5 as _)
+            }
+            SyscallType::FUTEX_WAKE_SINGLE_OWNER => self.sys_futex_wake_single_owner(a0.into()),
+            SyscallType::THREAD_EXIT => self.sys_thread_exit(),
             _ => {
                 warn!("syscall unimplemented: {:?}", sys_type);
                 Err(ZxError::NOT_SUPPORTED)
