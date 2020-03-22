@@ -11,7 +11,7 @@ description = "Kernel HAL implementation for bare metal environment."
 log = "0.4"
 spin = "0.5"
 executor = { git = "https://github.com/PanQL/executor.git", rev="2664dd1" }
-trapframe = { git = "https://github.com/rcore-os/trapframe-rs.git", rev = "b0ce75d"}
+trapframe = "0.1.3"
 kernel-hal = { path = "../kernel-hal" }
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
