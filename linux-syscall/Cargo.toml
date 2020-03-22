@@ -11,7 +11,6 @@ description = "Linux syscalls implementation"
 log = "0.4"
 spin = "0.5"
 bitflags = "1.2"
-core = { package = "core-futures-tls", version = "0.1.0" }
 zircon-object = { path = "../zircon-object" }
 linux-object = { path = "../linux-object" }
 kernel-hal = { path = "../kernel-hal" }

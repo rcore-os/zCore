@@ -2,9 +2,6 @@
 #![allow(non_upper_case_globals)]
 use {kernel_hal_bare::arch::ack, trapframe::TrapFrame};
 
-#[export_name = "hal_lapic_addr"]
-pub static LAPIC_ADDR: usize = 0xfee0_0000;
-
 pub fn init() {
     x86_64::instructions::interrupts::enable();
 }

@@ -3,7 +3,7 @@ mode ?= debug
 LOG ?=
 zbi_file ?= fuchsia
 
-build_args := --target $(arch).json
+build_args := -Z build-std=core,alloc --target $(arch).json
 build_path := target/$(arch)/$(mode)
 kernel := $(build_path)/zcore
 kernel_img := $(build_path)/zcore.img
@@ -22,7 +22,7 @@ qemu_opts := \
 ifeq ($(arch), x86_64)
 qemu_opts += \
     -cpu qemu64,fsgsbase,rdrand \
-	-drive if=pflash,format=raw,file=$(OVMF),readonly=on \
+	-bios $(OVMF) \
 	-drive format=raw,file=fat:rw:$(ESP) \
 	-serial mon:stdio \
 	-m 4G \
@@ -51,7 +51,7 @@ $(kernel_img): kernel bootloader
 
 kernel:
 	echo Building zCore kenel
-	cargo xbuild $(build_args)
+	cargo build $(build_args)
 
 bootloader:
 	cd ../rboot && make build

@@ -11,7 +11,7 @@ jobs:
     - uses: actions-rs/toolchain@v1
       with:
         profile: minimal
-        toolchain: nightly-2020-01-17
+        toolchain: nightly
         override: true
         components: rustfmt, clippy
     - name: Check code format
@@ -40,7 +40,7 @@ jobs:
     - uses: actions-rs/toolchain@v1
       with:
         profile: minimal
-        toolchain: nightly-2020-01-17
+        toolchain: nightly-2020-03-22
         components: rust-src
     - name: Setup Rust toolchain
       run: |
@@ -53,7 +53,6 @@ jobs:
         args: --all-features
     - name: Build zCore
       run: |
-        cargo install cargo-xbuild
         cd zCore
         make build
     - name: Build docs

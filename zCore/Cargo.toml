@@ -9,7 +9,7 @@ edition = "2018"
 [dependencies]
 log = "0.4"
 spin = "0.5"
-buddy_system_allocator = "0.3"
+buddy_system_allocator = "0.3.8"
 rlibc = "1.0"
 rboot = { path = "../rboot", default-features = false }
 kernel-hal-bare = { path = "../kernel-hal-bare" }
@@ -18,7 +18,6 @@ bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator" }
 trapframe = { git = "https://github.com/rcore-os/trapframe-rs.git", rev = "b0ce75d"}
 greenthread-future = "0.1.0"
 executor = { git = "https://github.com/PanQL/executor.git", rev="2664dd1" }
-core = { package = "core-futures-tls", version = "0.1.0" }
 zircon-loader = { path = "../zircon-loader", default-features = false }
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]

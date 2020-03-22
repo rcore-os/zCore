@@ -119,7 +119,7 @@ pub struct PhysFrame {
 impl PhysFrame {
     #[linkage = "weak"]
     #[export_name = "hal_frame_alloc"]
-    pub fn alloc() -> Option<Self> {
+    pub extern "C" fn alloc() -> Option<Self> {
         unimplemented!()
     }
 

@@ -11,11 +11,6 @@ use {
     },
 };
 
-extern "C" {
-    #[link_name = "hal_lapic_addr"]
-    static LAPIC_ADDR: usize;
-}
-
 /// Page Table
 #[repr(C)]
 pub struct PageTableImpl {
@@ -188,8 +183,11 @@ pub fn serial_write(s: &str) {
 #[export_name = "hal_timer_now"]
 pub fn timer_now() -> Duration {
     let tsc = unsafe { core::arch::x86_64::_rdtsc() };
-    // TODO: read frequency to calculate real time
-    Duration::from_nanos(tsc / 8)
+    let tsc_frequency = match raw_cpuid::CpuId::new().get_processor_frequency_info() {
+        Some(info) => info.processor_base_frequency(),
+        None => 3000,   // QEMU
+    };
+    Duration::from_nanos(tsc * 1000 / tsc_frequency as u64)
 }
 
 fn timer_init() {
@@ -202,6 +200,8 @@ pub fn ack(_irq: u8) {
     let mut lapic = unsafe { XApic::new(phys_to_virt(LAPIC_ADDR)) };
     lapic.eoi();
 }
+
+const LAPIC_ADDR: usize = 0xfee0_0000;
 
 /// Initialize the HAL.
 pub fn init() {

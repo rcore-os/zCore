@@ -12,12 +12,12 @@ log = "0.4"
 spin = "0.5"
 executor = { git = "https://github.com/PanQL/executor.git", rev="2664dd1" }
 trapframe = { git = "https://github.com/rcore-os/trapframe-rs.git", rev = "b0ce75d"}
-core = { package = "core-futures-tls", version = "0.1.0" }
 kernel-hal = { path = "../kernel-hal" }
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 x86_64 = "0.9"
 uart_16550 = "0.2"
+raw-cpuid = "7.0"
 apic = { git = "https://github.com/rcore-os/apic-rs" }
 
 [target.'cfg(any(target_arch = "riscv32", target_arch = "riscv64"))'.dependencies]

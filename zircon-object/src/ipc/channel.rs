@@ -16,11 +16,11 @@ pub struct Channel_<T> {
 }
 
 impl_kobject!(Channel
-    fn user_signal_peer(&self, clear: Signal, set: Signal) -> ZxResult<()> {
-        let peer = self.peer.upgrade().ok_or(ZxError::PEER_CLOSED)?;
-        peer.base.signal_change(clear, set);
-        Ok(())
-    });
+fn user_signal_peer(&self, clear: Signal, set: Signal) -> ZxResult<()> {
+    let peer = self.peer.upgrade().ok_or(ZxError::PEER_CLOSED)?;
+    peer.base.signal_change(clear, set);
+    Ok(())
+});
 
 impl<T> Channel_<T> {
     /// Create a channel and return a pair of its endpoints

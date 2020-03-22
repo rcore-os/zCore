@@ -118,6 +118,7 @@ fn phys_to_virt(paddr: PhysAddr) -> VirtAddr {
 /// Read physical memory from `paddr` to `buf`.
 #[export_name = "hal_pmem_read"]
 pub fn pmem_read(paddr: PhysAddr, buf: &mut [u8]) {
+    trace!("pmem_read: addr={:#x}, len={:#x}", paddr, buf.len());
     unsafe {
         (phys_to_virt(paddr) as *const u8).copy_to_nonoverlapping(buf.as_mut_ptr(), buf.len());
     }
@@ -126,6 +127,7 @@ pub fn pmem_read(paddr: PhysAddr, buf: &mut [u8]) {
 /// Write physical memory to `paddr` from `buf`.
 #[export_name = "hal_pmem_write"]
 pub fn pmem_write(paddr: PhysAddr, buf: &[u8]) {
+    trace!("pmem_write: addr={:#x}, len={:#x}", paddr, buf.len());
     unsafe {
         buf.as_ptr()
             .copy_to_nonoverlapping(phys_to_virt(paddr) as _, buf.len());
@@ -135,6 +137,7 @@ pub fn pmem_write(paddr: PhysAddr, buf: &[u8]) {
 /// Copy content of `src` frame to `target` frame
 #[export_name = "hal_frame_copy"]
 pub fn frame_copy(src: PhysAddr, target: PhysAddr) {
+    trace!("frame_copy: {:#x} <- {:#x}", target, src);
     unsafe {
         let buf = phys_to_virt(src) as *const u8;
         buf.copy_to_nonoverlapping(phys_to_virt(target) as _, 4096);
@@ -170,7 +173,4 @@ mod tests {
 
     #[export_name = "hal_pmem_base"]
     static PMEM_BASE: usize = 0;
-
-    #[export_name = "hal_lapic_addr"]
-    static LAPIC_ADDR: usize = 0;
 }
