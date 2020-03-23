@@ -88,6 +88,9 @@ impl<T, P: Read> UserPtr<T, P> {
     }
 
     pub fn read_array(&self, len: usize) -> Result<Vec<T>> {
+        if len == 0 {
+            return Ok(Vec::default());
+        }
         let mut ret = Vec::<T>::with_capacity(len);
         unsafe {
             ret.set_len(len);
