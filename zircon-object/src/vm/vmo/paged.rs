@@ -104,7 +104,6 @@ impl VMObjectTrait for VMObjectPaged {
         let mut inner = self.inner.lock();
         let old_pages = inner.frames.len();
         let new_pages = len / PAGE_SIZE;
-        warn!("old_pages: {:#x}, new_pages: {:#x}", old_pages, new_pages);
         if old_pages < new_pages {
             inner.frames.resize_with(len, Default::default);
             (old_pages..new_pages).for_each(|idx| {
@@ -138,7 +137,6 @@ impl VMObjectTrait for VMObjectPaged {
         let start_page = offset / PAGE_SIZE;
         let pages = len / PAGE_SIZE;
         let mut inner = self.inner.lock();
-        warn!("start_page: {:#x}, pages: {:#x}", start_page, pages);
         for i in 0..pages {
             inner.commit(start_page + i);
         }
@@ -197,12 +195,10 @@ impl VMObjectTrait for VMObjectPaged {
             Some(PhysFrame::alloc().expect("faild to alloc frame"))
         });
         let inner = self.inner.lock();
-        for i in 0..clone_size {
-            if inner.frames[frames_offset + i].is_some() {
-                kernel_hal::frame_copy(
-                    inner.frames[frames_offset + i].as_ref().unwrap().addr(),
-                    frames[i].as_ref().unwrap().addr(),
-                );
+        // copy physical memory
+        for (i, new_frame) in frames.iter().enumerate() {
+            if let Some(frame) = &inner.frames[frames_offset + i] {
+                kernel_hal::frame_copy(frame.addr(), new_frame.as_ref().unwrap().addr());
             }
         }
         Arc::new(VMObjectPaged {

@@ -28,12 +28,11 @@ mod handle;
 mod object;
 mod resource;
 mod signal;
-mod suspend_task;
 mod task;
 mod vmar;
 mod vmo;
 
-pub use consts::SyscallType;
+use consts::SyscallType as Sys;
 
 pub struct Syscall<'a> {
     pub regs: &'a mut GeneralRegs,
@@ -42,15 +41,52 @@ pub struct Syscall<'a> {
 }
 
 impl Syscall<'_> {
-    pub async fn syscall(&mut self, sys_type: SyscallType, args: [usize; 8]) -> isize {
+    pub async fn syscall(&mut self, num: u32, args: [usize; 8]) -> isize {
         let thread_name = self.thread.name();
-        info!("{} {:?}=> args={:x?}", thread_name, sys_type, args);
+        let sys_type = Sys::from(num);
+        debug!("{} {:?} => args={:x?}", thread_name, sys_type, args);
         let [a0, a1, a2, a3, a4, a5, a6, a7] = args;
         let ret = match sys_type {
-            SyscallType::HANDLE_DUPLICATE => self.sys_handle_duplicate(a0 as _, a1 as _, a2.into()),
-            SyscallType::HANDLE_CLOSE => self.sys_handle_close(a0 as _),
-            SyscallType::HANDLE_CLOSE_MANY => self.sys_handle_close_many(a0.into(), a1 as _),
-            SyscallType::CHANNEL_READ => self.sys_channel_read(
+            Sys::HANDLE_CLOSE => self.sys_handle_close(a0 as _),
+            Sys::HANDLE_CLOSE_MANY => self.sys_handle_close_many(a0.into(), a1 as _),
+            Sys::HANDLE_DUPLICATE => self.sys_handle_duplicate(a0 as _, a1 as _, a2.into()),
+            Sys::HANDLE_REPLACE => self.sys_handle_replace(a0 as _, a1 as _, a2.into()),
+            Sys::OBJECT_GET_INFO => {
+                self.sys_object_get_info(a0 as _, a1 as _, a2 as _, a3 as _, a4.into(), a5.into())
+            }
+            Sys::OBJECT_GET_PROPERTY => {
+                self.sys_object_get_property(a0 as _, a1 as _, a2 as _, a3 as _)
+            }
+            Sys::OBJECT_SET_PROPERTY => {
+                self.sys_object_set_property(a0 as _, a1 as _, a2 as _, a3 as _)
+            }
+            Sys::OBJECT_SIGNAL_PEER => self.sys_object_signal_peer(a0 as _, a1 as _, a2 as _),
+            Sys::OBJECT_WAIT_ONE => {
+                self.sys_object_wait_one(a0 as _, a1 as _, a2 as _, a3.into())
+                    .await
+            }
+            Sys::OBJECT_WAIT_ASYNC => {
+                self.sys_object_wait_async(a0 as _, a1 as _, a2 as _, a3 as _, a4 as _)
+            }
+            Sys::THREAD_CREATE => {
+                self.sys_thread_create(a0 as _, a1.into(), a2 as _, a3 as _, a4.into())
+            }
+            Sys::THREAD_START => self.sys_thread_start(a0 as _, a1 as _, a2 as _, a3 as _, a4 as _),
+            Sys::THREAD_WRITE_STATE => {
+                self.sys_thread_write_state(a0 as _, a1 as _, a2.into(), a3 as _)
+            }
+            Sys::THREAD_EXIT => self.sys_thread_exit(),
+            Sys::PROCESS_CREATE => {
+                self.sys_process_create(a0 as _, a1.into(), a2 as _, a3 as _, a4.into(), a5.into())
+            }
+            Sys::PROCESS_START => {
+                self.sys_process_start(a0 as _, a1 as _, a2 as _, a3 as _, a4 as _, a5 as _)
+            }
+            Sys::PROCESS_EXIT => self.sys_process_exit(a0 as _),
+            Sys::JOB_SET_CRITICAL => self.sys_job_set_critical(a0 as _, a1 as _, a2 as _),
+            Sys::TASK_SUSPEND_TOKEN => self.sys_task_suspend_token(a0 as _, a1.into()),
+            Sys::CHANNEL_CREATE => self.sys_channel_create(a0 as _, a1.into(), a2.into()),
+            Sys::CHANNEL_READ => self.sys_channel_read(
                 a0 as _,
                 a1 as _,
                 a2.into(),
@@ -60,67 +96,10 @@ impl Syscall<'_> {
                 a6.into(),
                 a7.into(),
             ),
-            SyscallType::OBJECT_GET_PROPERTY => {
-                self.sys_object_get_property(a0 as _, a1 as _, a2 as _, a3 as _)
-            }
-            SyscallType::OBJECT_SET_PROPERTY => {
-                self.sys_object_set_property(a0 as _, a1 as _, a2 as _, a3 as _)
-            }
-            SyscallType::DEBUG_WRITE => self.sys_debug_write(a0.into(), a1 as _),
-            SyscallType::PROCESS_CREATE => {
-                self.sys_process_create(a0 as _, a1.into(), a2 as _, a3 as _, a4.into(), a5.into())
-            }
-            SyscallType::PROCESS_EXIT => self.sys_process_exit(a0 as _),
-            SyscallType::DEBUGLOG_CREATE => self.sys_debuglog_create(a0 as _, a1 as _, a2.into()),
-            SyscallType::DEBUGLOG_WRITE => {
-                self.sys_debuglog_write(a0 as _, a1 as _, a2.into(), a3 as _)
-            }
-            SyscallType::VMO_CREATE => self.sys_vmo_create(a0 as _, a1 as _, a2.into()),
-            SyscallType::VMO_READ => self.sys_vmo_read(a0 as _, a1.into(), a2 as _, a3 as _),
-            SyscallType::VMO_WRITE => self.sys_vmo_write(a0 as _, a1.into(), a2 as _, a3 as _),
-            SyscallType::VMAR_MAP => self.sys_vmar_map(
-                a0 as _,
-                a1 as _,
-                a2 as _,
-                a3 as _,
-                a4 as _,
-                a5 as _,
-                a6.into(),
-            ),
-            SyscallType::VMAR_ALLOCATE => {
-                self.sys_vmar_allocate(a0 as _, a1 as _, a2 as _, a3 as _, a4.into(), a5.into())
-            }
-            SyscallType::CPRNG_DRAW_ONCE => self.sys_cprng_draw_once(a0 as _, a1 as _),
-            SyscallType::THREAD_CREATE => {
-                self.sys_thread_create(a0 as _, a1.into(), a2 as _, a3 as _, a4.into())
-            }
-            SyscallType::TASK_SUSPEND_TOKEN => self.sys_task_suspend_token(a0 as _, a1.into()),
-            SyscallType::PROCESS_START => {
-                self.sys_process_start(a0 as _, a1 as _, a2 as _, a3 as _, a4 as _, a5 as _)
-            }
-            SyscallType::OBJECT_WAIT_ONE => {
-                { self.sys_object_wait_one(a0 as _, a1 as _, a2 as _, a3.into()) }.await
-            }
-            SyscallType::THREAD_WRITE_STATE => {
-                self.sys_thread_write_state(a0 as _, a1 as _, a2.into(), a3 as _)
-            }
-            SyscallType::OBJECT_GET_INFO => {
-                self.sys_object_get_info(a0 as _, a1 as _, a2 as _, a3 as _, a4.into(), a5.into())
-            }
-            SyscallType::VMO_REPLACE_AS_EXECUTABLE => {
-                self.sys_vmo_replace_as_executable(a0 as _, a1 as _, a2.into())
-            }
-            SyscallType::VMO_GET_SIZE => self.sys_vmo_get_size(a0 as _, a1.into()),
-            SyscallType::CHANNEL_CREATE => self.sys_channel_create(a0 as _, a1.into(), a2.into()),
-            SyscallType::VMO_CREATE_CHILD => {
-                self.sys_vmo_create_child(a0 as _, a1 as _, a2 as _, a3 as _, a4.into())
-            }
-            SyscallType::HANDLE_REPLACE => self.sys_handle_replace(a0 as _, a1 as _, a2.into()),
-            SyscallType::CHANNEL_WRITE => {
+            Sys::CHANNEL_WRITE => {
                 self.sys_channel_write(a0 as _, a1 as _, a2.into(), a3 as _, a4.into(), a5 as _)
             }
-            SyscallType::VMAR_DESTROY => self.sys_vmar_destroy(a0 as _),
-            SyscallType::CHANNEL_CALL_NORETRY => {
+            Sys::CHANNEL_CALL_NORETRY => {
                 self.sys_channel_call_noretry(
                     a0 as _,
                     a1 as _,
@@ -131,15 +110,56 @@ impl Syscall<'_> {
                 )
                 .await
             }
-            SyscallType::VMO_SET_SIZE => self.sys_vmo_set_size(a0 as _, a1 as _),
-            SyscallType::VMAR_PROTECT => self.sys_vmar_protect(a0 as _, a1 as _, a2 as _, a3 as _),
-            SyscallType::JOB_SET_CRITICAL => self.sys_job_set_critical(a0 as _, a1 as _, a2 as _),
-            SyscallType::PORT_CREATE => self.sys_port_create(a0 as _, a1.into()),
-            SyscallType::TIMER_CREATE => self.sys_timer_create(a0 as _, a1 as _, a2.into()),
-            SyscallType::EVENT_CREATE => self.sys_event_create(a0 as _, a1.into()),
-            SyscallType::CLOCK_GET => self.sys_clock_get(a0 as _, a1.into()),
-            SyscallType::VMAR_UNMAP => self.sys_vmar_unmap(a0 as _, a1 as _, a2 as _),
-            SyscallType::RESOURCE_CREATE => self.sys_resource_create(
+            Sys::EVENT_CREATE => self.sys_event_create(a0 as _, a1.into()),
+            Sys::PORT_CREATE => self.sys_port_create(a0 as _, a1.into()),
+            Sys::PORT_WAIT => self.sys_port_wait(a0 as _, a1 as _, a2.into()).await,
+            Sys::PORT_QUEUE => self.sys_port_queue(a0 as _, a1.into()),
+            Sys::FUTEX_WAIT => {
+                self.sys_futex_wait(a0.into(), a1 as _, a2 as _, a3 as _)
+                    .await
+            }
+            Sys::FUTEX_WAKE => self.sys_futex_wake(a0.into(), a1 as _),
+            Sys::FUTEX_REQUEUE => {
+                self.sys_futex_requeue(a0.into(), a1 as _, a2 as _, a3.into(), a4 as _, a5 as _)
+            }
+            Sys::FUTEX_WAKE_SINGLE_OWNER => self.sys_futex_wake_single_owner(a0.into()),
+            Sys::VMO_CREATE => self.sys_vmo_create(a0 as _, a1 as _, a2.into()),
+            Sys::VMO_READ => self.sys_vmo_read(a0 as _, a1.into(), a2 as _, a3 as _),
+            Sys::VMO_WRITE => self.sys_vmo_write(a0 as _, a1.into(), a2 as _, a3 as _),
+            Sys::VMO_GET_SIZE => self.sys_vmo_get_size(a0 as _, a1.into()),
+            Sys::VMO_SET_SIZE => self.sys_vmo_set_size(a0 as _, a1 as _),
+            Sys::VMO_OP_RANGE => {
+                self.sys_vmo_op_range(a0 as _, a1 as _, a2 as _, a3 as _, a4.into(), a5 as _)
+            }
+            Sys::VMO_REPLACE_AS_EXECUTABLE => {
+                self.sys_vmo_replace_as_executable(a0 as _, a1 as _, a2.into())
+            }
+            Sys::VMO_CREATE_CHILD => {
+                self.sys_vmo_create_child(a0 as _, a1 as _, a2 as _, a3 as _, a4.into())
+            }
+            Sys::VMAR_MAP => self.sys_vmar_map(
+                a0 as _,
+                a1 as _,
+                a2 as _,
+                a3 as _,
+                a4 as _,
+                a5 as _,
+                a6.into(),
+            ),
+            Sys::VMAR_UNMAP => self.sys_vmar_unmap(a0 as _, a1 as _, a2 as _),
+            Sys::VMAR_ALLOCATE => {
+                self.sys_vmar_allocate(a0 as _, a1 as _, a2 as _, a3 as _, a4.into(), a5.into())
+            }
+            Sys::VMAR_PROTECT => self.sys_vmar_protect(a0 as _, a1 as _, a2 as _, a3 as _),
+            Sys::VMAR_DESTROY => self.sys_vmar_destroy(a0 as _),
+            Sys::CPRNG_DRAW_ONCE => self.sys_cprng_draw_once(a0 as _, a1 as _),
+            Sys::NANOSLEEP => self.sys_nanosleep(a0 as _).await,
+            Sys::CLOCK_GET => self.sys_clock_get(a0 as _, a1.into()),
+            Sys::TIMER_CREATE => self.sys_timer_create(a0 as _, a1 as _, a2.into()),
+            Sys::DEBUG_WRITE => self.sys_debug_write(a0.into(), a1 as _),
+            Sys::DEBUGLOG_CREATE => self.sys_debuglog_create(a0 as _, a1 as _, a2.into()),
+            Sys::DEBUGLOG_WRITE => self.sys_debuglog_write(a0 as _, a1 as _, a2.into(), a3 as _),
+            Sys::RESOURCE_CREATE => self.sys_resource_create(
                 a0 as _,
                 a1 as _,
                 a2 as _,
@@ -148,31 +168,6 @@ impl Syscall<'_> {
                 a5 as _,
                 a6.into(),
             ),
-            SyscallType::VMO_OP_RANGE => {
-                self.sys_vmo_op_range(a0 as _, a1 as _, a2 as _, a3 as _, a4.into(), a5 as _)
-            }
-            SyscallType::THREAD_START => {
-                self.sys_thread_start(a0 as _, a1 as _, a2 as _, a3 as _, a4 as _)
-            }
-            SyscallType::PORT_WAIT => self.sys_port_wait(a0 as _, a1 as _, a2.into()).await,
-            SyscallType::OBJECT_SIGNAL_PEER => {
-                self.sys_object_signal_peer(a0 as _, a1 as _, a2 as _)
-            }
-            SyscallType::OBJECT_WAIT_ASYNC => {
-                self.sys_object_wait_async(a0 as _, a1 as _, a2 as _, a3 as _, a4 as _)
-            }
-            SyscallType::PORT_QUEUE => self.sys_port_queue(a0 as _, a1.into()),
-            SyscallType::FUTEX_WAIT => {
-                self.sys_futex_wait(a0.into(), a1 as _, a2 as _, a3 as _)
-                    .await
-            }
-            SyscallType::NANOSLEEP => self.sys_nanosleep(a0 as _).await,
-            SyscallType::FUTEX_WAKE => self.sys_futex_wake(a0.into(), a1 as _),
-            SyscallType::FUTEX_REQUEUE => {
-                self.sys_futex_requeue(a0.into(), a1 as _, a2 as _, a3.into(), a4 as _, a5 as _)
-            }
-            SyscallType::FUTEX_WAKE_SINGLE_OWNER => self.sys_futex_wake_single_owner(a0.into()),
-            SyscallType::THREAD_EXIT => self.sys_thread_exit(),
             _ => {
                 warn!("syscall unimplemented: {:?}", sys_type);
                 Err(ZxError::NOT_SUPPORTED)

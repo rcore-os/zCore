@@ -1,3 +1,4 @@
+use core::convert::TryFrom;
 use {super::*, zircon_object::task::*};
 
 impl Syscall<'_> {
@@ -68,7 +69,7 @@ impl Syscall<'_> {
         arg1_handle: HandleValue,
         arg2: usize,
     ) -> ZxResult<usize> {
-        info!("process.start: proc_handle = {:?}, thread_handle = {:?}, entry = {:?}, stack = {:?}, arg1_handle = {:?}, arg2 = {:?}",
+        info!("process.start: proc_handle={:?}, thread_handle={:?}, entry={:?}, stack={:?}, arg1_handle={:?}, arg2={:?}",
             proc_handle, thread_handle, entry, stack, arg1_handle, arg2
         );
         let proc = self.thread.proc();
@@ -102,11 +103,15 @@ impl Syscall<'_> {
         buffer: UserInPtr<u8>,
         buffer_size: usize,
     ) -> ZxResult<usize> {
+        let kind = ThreadStateKind::try_from(kind)?;
+        info!(
+            "thread.write_state: handle={:?}, kind={:?}, buf=({:?}; {:?})",
+            handle, kind, buffer, buffer_size,
+        );
         let proc = self.thread.proc();
         let thread = proc.get_object_with_rights::<Thread>(handle, Rights::WRITE)?;
         let buf = buffer.read_array(buffer_size)?;
-        assert_eq!(kind, 0u32);
-        thread.write_state(ThreadStateKind::General, &buf)?;
+        thread.write_state(kind, &buf)?;
         Ok(0)
     }
 
@@ -117,7 +122,7 @@ impl Syscall<'_> {
         process_handle: HandleValue,
     ) -> ZxResult<usize> {
         info!(
-            "job.set_critical: job={}, options={}, process={}",
+            "job.set_critical: job={:?}, options={}, process={:?}",
             job_handle, options, process_handle,
         );
         let retcode_nonzero = if options == 1 {
@@ -143,7 +148,7 @@ impl Syscall<'_> {
         arg2: usize,
     ) -> ZxResult<usize> {
         info!(
-            "thread.start: handle={}, entry={:#x}, stack={:#x}, arg1={:#x} arg2={:#x}",
+            "thread.start: handle={:?}, entry={:#x}, stack={:#x}, arg1={:#x} arg2={:#x}",
             handle_value, entry, stack, arg1, arg2
         );
         let thread = self
@@ -157,6 +162,31 @@ impl Syscall<'_> {
     pub fn sys_thread_exit(&mut self) -> ZxResult<usize> {
         self.thread.exit();
         self.exit = true;
+        Ok(0)
+    }
+
+    pub fn sys_task_suspend_token(
+        &self,
+        handle: HandleValue,
+        mut token: UserOutPtr<HandleValue>,
+    ) -> ZxResult<usize> {
+        info!("task.suspend_token: handle={:?}, token={:?}", handle, token);
+        let proc = self.thread.proc();
+        if let Ok(thread) = proc.get_object_with_rights::<Thread>(handle, Rights::WRITE) {
+            if Arc::ptr_eq(&thread, &self.thread) {
+                return Err(ZxError::NOT_SUPPORTED);
+            }
+            let token_handle =
+                Handle::new(SuspendToken::create(&thread), Rights::DEFAULT_SUSPEND_TOKEN);
+            token.write(proc.add_handle(token_handle))?;
+            return Ok(0);
+        }
+        if let Ok(process) = proc.get_object_with_rights::<Process>(handle, Rights::WRITE) {
+            if Arc::ptr_eq(&process, &proc) {
+                return Err(ZxError::NOT_SUPPORTED);
+            }
+            unimplemented!()
+        }
         Ok(0)
     }
 }

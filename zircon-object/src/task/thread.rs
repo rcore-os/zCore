@@ -119,11 +119,7 @@ impl Thread {
     ) -> ZxResult<Arc<Self>> {
         // TODO: options
         let thread = Arc::new(Thread {
-            base: {
-                let base = KObjectBase::new();
-                base.set_name(name);
-                base
-            },
+            base: KObjectBase::with_name(name),
             proc: proc.clone(),
             ext: Box::new(ext),
             inner: Mutex::new(ThreadInner {
@@ -206,7 +202,7 @@ impl Thread {
         inner.suspend_count += 1;
         self.base.signal_set(Signal::THREAD_SUSPENDED);
         info!(
-            "thread {} suspend_count {}",
+            "thread {:?} suspend: count={}",
             self.base.name(),
             inner.suspend_count
         );

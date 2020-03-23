@@ -189,27 +189,24 @@ impl KObjectBase {
         Self::default()
     }
 
-    /// Set object's name
-    pub fn set_name(&self, name: &str) {
-        let s = &mut self.inner.lock().name;
-        s.clear();
-        assert!(name.len() <= 32, "name is too long for object");
-        s.push_str(name);
-    }
-
-    /// Get object's name
-    pub fn name(&self) -> String {
-        self.inner.lock().name.clone()
-    }
-
     /// Create a kernel object base with initial `signal`.
     pub fn with_signal(signal: Signal) -> Self {
         KObjectBase {
             id: Self::new_koid(),
             inner: Mutex::new(KObjectBaseInner {
-                name: String::default(),
                 signal,
-                signal_callbacks: Vec::new(),
+                ..Default::default()
+            }),
+        }
+    }
+
+    /// Create a kernel object base with `name`.
+    pub fn with_name(name: &str) -> Self {
+        KObjectBase {
+            id: Self::new_koid(),
+            inner: Mutex::new(KObjectBaseInner {
+                name: String::from(name),
+                ..Default::default()
             }),
         }
     }
@@ -218,6 +215,19 @@ impl KObjectBase {
     fn new_koid() -> KoID {
         static KOID: AtomicU64 = AtomicU64::new(1024);
         KOID.fetch_add(1, Ordering::SeqCst)
+    }
+
+    /// Get object's name.
+    pub fn name(&self) -> String {
+        self.inner.lock().name.clone()
+    }
+
+    /// Set object's name.
+    pub fn set_name(&self, name: &str) {
+        let s = &mut self.inner.lock().name;
+        s.clear();
+        assert!(name.len() <= 32, "name is too long for object");
+        s.push_str(name);
     }
 
     /// Get the signal status.

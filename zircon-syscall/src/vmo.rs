@@ -35,8 +35,7 @@ impl Syscall<'_> {
             handle_value, offset, buf, buf_size,
         );
         let proc = self.thread.proc();
-        let vmo = proc
-            .get_object_with_rights::<VmObject>(handle_value, Rights::READ)?;
+        let vmo = proc.get_object_with_rights::<VmObject>(handle_value, Rights::READ)?;
         // TODO: optimize
         let mut buffer = vec![0u8; buf_size];
         vmo.read(offset as usize, &mut buffer);
@@ -56,8 +55,7 @@ impl Syscall<'_> {
             handle_value, offset, buf, buf_size,
         );
         let proc = self.thread.proc();
-        let vmo = proc
-            .get_object_with_rights::<VmObject>(handle_value, Rights::WRITE)?;
+        let vmo = proc.get_object_with_rights::<VmObject>(handle_value, Rights::WRITE)?;
         vmo.write(offset as usize, &buf.read_array(buf_size)?);
         Ok(0)
     }
@@ -68,7 +66,10 @@ impl Syscall<'_> {
         vmex: HandleValue,
         mut out: UserOutPtr<HandleValue>,
     ) -> ZxResult<usize> {
-        info!("vmo.replace_as_executable: handle={:?}, vmex={:?}", handle, vmex);
+        info!(
+            "vmo.replace_as_executable: handle={:?}, vmex={:?}",
+            handle, vmex
+        );
         let proc = self.thread.proc();
         if vmex != INVALID_HANDLE {
             proc.validate_resource(vmex, ResourceKind::VMEX)?;
@@ -144,7 +145,9 @@ impl Syscall<'_> {
         let vmo = proc.get_object_with_rights::<VmObject>(handle_value, Rights::WRITE)?;
         info!(
             "vmo.set_size: handle={}, size={:#x}, current_size={:#x}",
-            handle_value, size, vmo.len()
+            handle_value,
+            size,
+            vmo.len(),
         );
         vmo.set_len(size);
         Ok(0)

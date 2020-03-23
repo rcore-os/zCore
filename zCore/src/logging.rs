@@ -58,10 +58,9 @@ impl Log for SimpleLogger {
 
         print_in_color(
             format_args!(
-                "[{:?} {:>5}  {}] {}\n",
+                "[{:?} {:>5}] {}\n",
                 kernel_hal_bare::timer_now(),
                 record.level(),
-                record.target(),
                 record.args()
             ),
             level_to_color_code(record.level()),

@@ -1,12 +1,7 @@
 use core::sync::atomic::*;
 use {
-    super::*,
-    crate::object::*,
-    alloc::sync::Arc,
-    alloc::vec::Vec,
-    bitflags::bitflags,
-    kernel_hal::PageTable,
-    spin::Mutex,
+    super::*, crate::object::*, alloc::sync::Arc, alloc::vec::Vec, bitflags::bitflags,
+    kernel_hal::PageTable, spin::Mutex,
 };
 
 bitflags! {
@@ -180,7 +175,6 @@ impl VmAddressRegion {
         let mut guard = self.inner.lock();
         let inner = guard.as_mut().ok_or(ZxError::BAD_STATE)?;
         let end_addr = addr + len;
-        warn!("{:#x?}", inner.mappings);
         let length: usize = inner
             .mappings
             .iter()
@@ -375,7 +369,8 @@ impl VmAddressRegion {
         let guard = self.inner.lock();
         let inner = guard.as_ref().unwrap();
         for map in inner.mappings.iter() {
-            if map.vmo.name().starts_with("vdso") && map.vmo_offset == 0x7000 && map.size == 0x1000 {
+            if map.vmo.name().starts_with("vdso") && map.vmo_offset == 0x7000 && map.size == 0x1000
+            {
                 return Some(map.addr);
             }
         }

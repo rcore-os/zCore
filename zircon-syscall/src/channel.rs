@@ -89,6 +89,7 @@ impl Syscall<'_> {
         mut out0: UserOutPtr<HandleValue>,
         mut out1: UserOutPtr<HandleValue>,
     ) -> ZxResult<usize> {
+        info!("channel.create: options={:#x}", options);
         if options != 0u32 {
             return Err(ZxError::INVALID_ARGS);
         }
@@ -113,7 +114,7 @@ impl Syscall<'_> {
         if options != 0 {
             return Err(ZxError::INVALID_ARGS);
         }
-        let args = user_args.read()?;
+        let mut args = user_args.read()?;
         info!(
             "channel.call_noretry: handle={}, args={:#x?}",
             handle_value, args
@@ -123,11 +124,10 @@ impl Syscall<'_> {
             proc.get_dyn_object_with_rights(handle_value, Rights::READ | Rights::WRITE)?;
         let channel = proc.get_object::<Channel>(handle_value)?;
         let wr_msg = MessagePacket {
-            data: UserInPtr::<u8>::from(args.wr_bytes).read_array(args.wr_num_bytes as usize)?,
+            data: args.wr_bytes.read_array(args.wr_num_bytes as usize)?,
             handles: {
                 let mut res = Vec::new();
-                let handles = UserInPtr::<HandleValue>::from(args.wr_handles)
-                    .read_array(args.wr_num_handles as usize)?;
+                let handles = args.wr_handles.read_array(args.wr_num_handles as usize)?;
                 for handle in handles {
                     res.push(proc.remove_handle(handle)?);
                 }
@@ -139,13 +139,13 @@ impl Syscall<'_> {
         let recv_msg = channel.read()?;
         actual_bytes.write_if_not_null(recv_msg.data.len() as u32)?;
         actual_handles.write_if_not_null(recv_msg.handles.len() as u32)?;
-        UserOutPtr::<u8>::from(args.rd_bytes).write_array(recv_msg.data.as_slice())?;
+        args.rd_bytes.write_array(recv_msg.data.as_slice())?;
         let handles: Vec<_> = recv_msg
             .handles
             .into_iter()
             .map(|handle| proc.add_handle(handle))
             .collect();
-        UserOutPtr::<HandleValue>::from(args.rd_handles).write_array(handles.as_slice())?;
+        args.rd_handles.write_array(handles.as_slice())?;
         Ok(0)
     }
 }
@@ -153,12 +153,12 @@ impl Syscall<'_> {
 #[repr(C)]
 #[derive(Debug)]
 pub struct ChannelCallArgs {
-    pub wr_bytes: usize,
-    pub wr_handles: usize,
-    pub rd_bytes: usize,
-    pub rd_handles: usize,
-    pub wr_num_bytes: u32,
-    pub wr_num_handles: u32,
-    pub rd_num_bytes: u32,
-    pub rd_num_handles: u32,
+    wr_bytes: UserInPtr<u8>,
+    wr_handles: UserInPtr<HandleValue>,
+    rd_bytes: UserOutPtr<u8>,
+    rd_handles: UserOutPtr<HandleValue>,
+    wr_num_bytes: u32,
+    wr_num_handles: u32,
+    rd_num_bytes: u32,
+    rd_num_handles: u32,
 }

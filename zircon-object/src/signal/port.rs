@@ -24,6 +24,7 @@ struct PortInner {
     queue: VecDeque<PortPacket>,
 }
 
+#[repr(C)]
 #[derive(Debug, Eq, PartialEq)]
 pub struct PortPacket {
     pub key: u64,

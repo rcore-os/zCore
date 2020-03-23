@@ -76,7 +76,7 @@ impl Syscall<'_> {
             .proc()
             .get_object_with_rights::<Port>(handle_value, Rights::READ)?;
         let packet = port.wait_async().await;
-        warn!("port.wait: packet={:#x?}", packet);
+        debug!("port.wait: packet={:#x?}", packet);
         packet_res.write(packet)?;
         Ok(0)
     }

@@ -3,13 +3,6 @@ use {
     zircon_object::{signal::Port, task::*, vm::*},
 };
 
-const ZX_PROP_NAME: u32 = 3;
-const ZX_PROP_REGISTER_FS: u32 = 4;
-const ZX_PROP_PROCESS_DEBUG_ADDR: u32 = 5;
-const ZX_PROCESS_VDSO_BASE_ADDRESS: u32 = 6;
-const ZX_PROP_PROCESS_BREAK_ON_LOAD: u32 = 7;
-const ZX_MAX_NAME_LEN: u32 = 32;
-
 impl Syscall<'_> {
     pub fn sys_object_get_property(
         &self,
@@ -18,61 +11,56 @@ impl Syscall<'_> {
         ptr: usize,
         buffer_size: u32,
     ) -> ZxResult<usize> {
+        let property = Property::from(property);
         info!(
-            "handle={:?}, property={:?}, buffer_ptr={:?}, size={:?}",
+            "object.get_property: handle={:?}, property={:?}, buffer=({:#x}; {:?})",
             handle_value, property, ptr, buffer_size
         );
-        let object = self
-            .thread
-            .proc()
-            .get_dyn_object_with_rights(handle_value, Rights::GET_PROPERTY)?;
+        let proc = self.thread.proc();
+        let object = proc.get_dyn_object_with_rights(handle_value, Rights::GET_PROPERTY)?;
         match property {
-            ZX_PROP_NAME => {
-                if buffer_size < ZX_MAX_NAME_LEN {
+            Property::Name => {
+                if buffer_size < MAX_NAME_LEN {
                     return Err(ZxError::BUFFER_TOO_SMALL);
                 }
                 let s = object.name();
-                info!("object_get_property: name is {}", s);
+                info!("name={:?}", s);
                 UserOutPtr::<u8>::from(ptr)
                     .write_cstring(s.as_str())
                     .expect("failed to write cstring");
                 Ok(0)
             }
-            ZX_PROP_PROCESS_DEBUG_ADDR => {
+            Property::ProcessDebugAddr => {
                 if buffer_size < 8 {
                     return Err(ZxError::BUFFER_TOO_SMALL);
                 }
-                let debug_addr = self
-                    .thread
-                    .proc()
+                let debug_addr = proc
                     .get_object_with_rights::<Process>(handle_value, Rights::GET_PROPERTY)?
                     .get_debug_addr();
                 UserOutPtr::<usize>::from(ptr).write(debug_addr)?;
                 Ok(0)
             }
-            ZX_PROCESS_VDSO_BASE_ADDRESS => {
+            Property::ProcessVdsoBaseAddress => {
                 if buffer_size < 8 {
                     return Err(ZxError::BUFFER_TOO_SMALL);
                 }
-                let vdso_base = self.thread.proc().vmar().vdso_base_addr().unwrap_or(0);
-                info!("vdso_base_addr: {:#X}", vdso_base);
+                let vdso_base = proc.vmar().vdso_base_addr().unwrap_or(0);
+                info!("vdso_base_addr={:#X}", vdso_base);
                 UserOutPtr::<usize>::from(ptr).write(vdso_base)?;
                 Ok(0)
             }
-            ZX_PROP_PROCESS_BREAK_ON_LOAD => {
+            Property::ProcessBreakOnLoad => {
                 if buffer_size < 8 {
                     return Err(ZxError::BUFFER_TOO_SMALL);
                 }
-                let break_on_load = self
-                    .thread
-                    .proc()
+                let break_on_load = proc
                     .get_object_with_rights::<Process>(handle_value, Rights::GET_PROPERTY)?
                     .get_dyn_break_on_load();
                 UserOutPtr::<usize>::from(ptr).write(break_on_load)?;
                 Ok(0)
             }
             _ => {
-                warn!("unknown property {} in OBJECT_GET_PROPERTY", property);
+                warn!("unknown property");
                 Err(ZxError::INVALID_ARGS)
             }
         }
@@ -85,57 +73,52 @@ impl Syscall<'_> {
         ptr: usize,
         buffer_size: u32,
     ) -> ZxResult<usize> {
+        let property = Property::from(property);
         info!(
-            "handle={:?}, property={:?}, buffer_ptr={:?}, size={:?}",
+            "object.set_property: handle={:?}, property={:?}, buffer=({:#x}; {:?})",
             handle_value, property, ptr, buffer_size
         );
-        let object = self
-            .thread
-            .proc()
-            .get_dyn_object_with_rights(handle_value, Rights::SET_PROPERTY)?;
+        let proc = self.thread.proc();
+        let object = proc.get_dyn_object_with_rights(handle_value, Rights::SET_PROPERTY)?;
         match property {
-            ZX_PROP_NAME => {
-                let length = buffer_size.min(ZX_MAX_NAME_LEN) as usize;
+            Property::Name => {
+                let length = buffer_size.min(MAX_NAME_LEN) as usize;
                 let s = UserInPtr::<u8>::from(ptr).read_string(length)?;
-                info!("object_set_property name: {}", s);
+                info!("set name={:?}", s);
                 object.set_name(&s);
                 Ok(0)
             }
-            ZX_PROP_PROCESS_DEBUG_ADDR => {
+            Property::ProcessDebugAddr => {
                 if buffer_size < 8 {
                     return Err(ZxError::BUFFER_TOO_SMALL);
                 }
                 let addr = UserInPtr::<usize>::from(ptr).read()?;
-                self.thread
-                    .proc()
-                    .get_object_with_rights::<Process>(handle_value, Rights::SET_PROPERTY)?
+                proc.get_object_with_rights::<Process>(handle_value, Rights::SET_PROPERTY)?
                     .set_debug_addr(addr);
                 Ok(0)
             }
-            ZX_PROP_REGISTER_FS => {
+            Property::RegisterFs => {
                 if buffer_size < 8 {
                     return Err(ZxError::BUFFER_TOO_SMALL);
                 }
-                let thread = self.thread.proc().get_object::<Thread>(handle_value)?;
+                let thread = proc.get_object::<Thread>(handle_value)?;
                 assert!(Arc::ptr_eq(&thread, &self.thread));
                 let fsbase = UserInPtr::<u64>::from(ptr).read()?;
-                info!("to set fsbase as {:#x}", fsbase);
+                info!("set fsbase = {:#x}", fsbase);
                 self.regs.fsbase = fsbase as usize;
                 Ok(0)
             }
-            ZX_PROP_PROCESS_BREAK_ON_LOAD => {
+            Property::ProcessBreakOnLoad => {
                 if buffer_size < 8 {
                     return Err(ZxError::BUFFER_TOO_SMALL);
                 }
                 let addr = UserInPtr::<usize>::from(ptr).read()?;
-                self.thread
-                    .proc()
-                    .get_object_with_rights::<Process>(handle_value, Rights::SET_PROPERTY)?
+                proc.get_object_with_rights::<Process>(handle_value, Rights::SET_PROPERTY)?
                     .set_dyn_break_on_load(addr);
                 Ok(0)
             }
             _ => {
-                warn!("unknown property {} in OBJECT_SET_PROPERTY", property);
+                warn!("unknown property");
                 Err(ZxError::INVALID_ARGS)
             }
         }
@@ -148,15 +131,13 @@ impl Syscall<'_> {
         deadline: u64,
         mut observed: UserOutPtr<Signal>,
     ) -> ZxResult<usize> {
+        let signals = Signal::from_bits(signals).ok_or(ZxError::INVALID_ARGS)?;
         info!(
-            "object.wait_one: handle={:?}, signals={:#x?}, deadline={:#x?}, observed={:#x?}",
+            "object.wait_one: handle={:?}, signals={:?}, deadline={:#x?}, observed={:#x?}",
             handle, signals, deadline, observed
         );
-        let signals = Signal::from_bits(signals).ok_or(ZxError::INVALID_ARGS)?;
-        let object = self
-            .thread
-            .proc()
-            .get_dyn_object_with_rights(handle, Rights::WAIT)?;
+        let proc = self.thread.proc();
+        let object = proc.get_dyn_object_with_rights(handle, Rights::WAIT)?;
         observed.write(object.wait_signal_async(signals).await)?;
         Ok(0)
     }
@@ -166,32 +147,32 @@ impl Syscall<'_> {
         handle: HandleValue,
         topic: u32,
         buffer: usize,
-        _buffer_size: usize,
+        buffer_size: usize,
         _actual: UserOutPtr<usize>,
         _avail: UserOutPtr<usize>,
     ) -> ZxResult<usize> {
-        match ZxInfo::from(topic) {
-            ZxInfo::InfoProcess => {
-                let proc = self
-                    .thread
-                    .proc()
-                    .get_object_with_rights::<Process>(handle, Rights::INSPECT)?;
+        let topic = Topic::from(topic);
+        info!(
+            "object.get_info: handle={:?}, topic={:?}, buffer=({:#x}; {:#x})",
+            handle, topic, buffer, buffer_size,
+        );
+        let proc = self.thread.proc();
+        match topic {
+            Topic::Process => {
+                let proc = proc.get_object_with_rights::<Process>(handle, Rights::INSPECT)?;
                 UserOutPtr::<ProcessInfo>::from(buffer).write(proc.get_info())?;
             }
-            ZxInfo::InfoVmar => {
-                let vmar = self
-                    .thread
-                    .proc()
-                    .get_object_with_rights::<VmAddressRegion>(handle, Rights::INSPECT)?;
+            Topic::Vmar => {
+                let vmar =
+                    proc.get_object_with_rights::<VmAddressRegion>(handle, Rights::INSPECT)?;
                 UserOutPtr::<VmarInfo>::from(buffer).write(vmar.get_info())?;
             }
-            ZxInfo::InfoHandleBasic => {
-                let info = self.thread.proc().get_handle_info(handle)?;
-                info!("basic info: {:?}", info);
+            Topic::HandleBasic => {
+                let info = proc.get_handle_info(handle)?;
                 UserOutPtr::<HandleBasicInfo>::from(buffer).write(info)?;
             }
             _ => {
-                warn!("not supported info topic");
+                warn!("not supported info topic: {:?}", topic);
                 return Err(ZxError::NOT_SUPPORTED);
             }
         }
@@ -208,10 +189,8 @@ impl Syscall<'_> {
             "object.signal_peer: handle_value = {}, clear_mask = {:#x}, set_mask = {:#x}",
             handle_value, clear_mask, set_mask
         );
-        let object = self
-            .thread
-            .proc()
-            .get_dyn_object_with_rights(handle_value, Rights::SIGNAL_PEER)?;
+        let proc = self.thread.proc();
+        let object = proc.get_dyn_object_with_rights(handle_value, Rights::SIGNAL_PEER)?;
         let clear_signal = Signal::verify_user_signal(clear_mask)?;
         let set_signal = Signal::verify_user_signal(set_mask)?;
         object.user_signal_peer(clear_signal, set_signal)?;
@@ -244,64 +223,67 @@ impl Syscall<'_> {
 }
 
 #[repr(u32)]
-enum ZxInfo {
-    InfoNone = 0u32,
-    InfoHandleValid = 1u32,
-    InfoHandleBasic = 2u32,
-    InfoProcess = 3u32,
-    InfoProcessThreads = 4u32,
-    InfoVmar = 7u32,
-    InfoJobChildren = 8u32,
-    InfoJobProcess = 9u32,
-    InfoThread = 10u32,
-    InfoThreadExceptionReport = 11u32,
-    InfoTaskStats = 12u32,
-    InfoProcessMaps = 13u32,
-    InfoProcessVmos = 14u32,
-    InfoThreadStats = 15u32,
-    InfoCpuStats = 16u32,
-    InfoKmemStats = 17u32,
-    InfoResource = 18u32,
-    InfoHandleCount = 19u32,
-    InfoBti = 20u32,
-    InfoProcessHandleStats = 21u32,
-    InfoSocket = 22u32,
-    InfoVmo = 23u32,
-    InfoJob = 24u32,
-    InfoTimer = 26u32,
-    InfoStream = 27u32,
+#[derive(Debug)]
+#[allow(dead_code)]
+enum Topic {
+    None = 0,
+    HandleValid = 1,
+    HandleBasic = 2,
+    Process = 3,
+    ProcessThreads = 4,
+    Vmar = 7,
+    JobChildren = 8,
+    JobProcess = 9,
+    Thread = 10,
+    ThreadExceptionReport = 11,
+    TaskStats = 12,
+    ProcessMaps = 13,
+    ProcessVmos = 14,
+    ThreadStats = 15,
+    CpuStats = 16,
+    KmemStats = 17,
+    Resource = 18,
+    HandleCount = 19,
+    Bti = 20,
+    ProcessHandleStats = 21,
+    Socket = 22,
+    Vmo = 23,
+    Job = 24,
+    Timer = 26,
+    Stream = 27,
     Unknown,
 }
 
-impl From<u32> for ZxInfo {
+impl From<u32> for Topic {
+    #[allow(unsafe_code)]
     fn from(number: u32) -> Self {
         match number {
-            0 => ZxInfo::InfoNone,
-            1 => ZxInfo::InfoHandleValid,
-            2 => ZxInfo::InfoHandleBasic,
-            3 => ZxInfo::InfoProcess,
-            4 => ZxInfo::InfoProcessThreads,
-            7 => ZxInfo::InfoVmar,
-            8 => ZxInfo::InfoJobChildren,
-            9 => ZxInfo::InfoJobProcess,
-            10 => ZxInfo::InfoThread,
-            11 => ZxInfo::InfoThreadExceptionReport,
-            12 => ZxInfo::InfoTaskStats,
-            13 => ZxInfo::InfoProcessMaps,
-            14 => ZxInfo::InfoProcessVmos,
-            15 => ZxInfo::InfoThreadStats,
-            16 => ZxInfo::InfoCpuStats,
-            17 => ZxInfo::InfoKmemStats,
-            18 => ZxInfo::InfoResource,
-            19 => ZxInfo::InfoHandleCount,
-            20 => ZxInfo::InfoBti,
-            21 => ZxInfo::InfoProcessHandleStats,
-            22 => ZxInfo::InfoSocket,
-            23 => ZxInfo::InfoVmo,
-            24 => ZxInfo::InfoJob,
-            26 => ZxInfo::InfoTimer,
-            27 => ZxInfo::InfoStream,
-            _ => ZxInfo::Unknown,
+            0..=4 | 7..=24 | 26..=27 => unsafe { core::mem::transmute(number) },
+            _ => Topic::Unknown,
         }
     }
 }
+
+#[repr(u32)]
+#[derive(Debug)]
+#[allow(dead_code)]
+enum Property {
+    Name = 3,
+    RegisterFs = 4,
+    ProcessDebugAddr = 5,
+    ProcessVdsoBaseAddress = 6,
+    ProcessBreakOnLoad = 7,
+    Unknown,
+}
+
+impl From<u32> for Property {
+    #[allow(unsafe_code)]
+    fn from(number: u32) -> Self {
+        match number {
+            3..=7 => unsafe { core::mem::transmute(number) },
+            _ => Property::Unknown,
+        }
+    }
+}
+
+const MAX_NAME_LEN: u32 = 32;

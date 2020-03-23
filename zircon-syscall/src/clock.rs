@@ -13,6 +13,7 @@ const ZX_CLOCK_THREAD: u32 = 2;
 
 impl Syscall<'_> {
     pub fn sys_clock_get(&self, clock_id: u32, mut time: UserOutPtr<u64>) -> ZxResult<usize> {
+        info!("clock.get: id={}", clock_id);
         match clock_id {
             ZX_CLOCK_MONOTONIC => {
                 time.write(timer_now().as_secs())?;
@@ -33,6 +34,10 @@ impl Syscall<'_> {
         clock_id: u32,
         offset: u64,
     ) -> ZxResult<usize> {
+        info!(
+            "clock.adjust: hrsrc={:?}, id={}, offset={:#x}",
+            hrsrc, clock_id, offset
+        );
         self.thread
             .proc()
             .validate_resource(hrsrc, ResourceKind::ROOT)?;

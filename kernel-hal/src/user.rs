@@ -74,6 +74,10 @@ impl<T, P: Policy> UserPtr<T, P> {
 }
 
 impl<T, P: Read> UserPtr<T, P> {
+    pub fn as_ref(&self) -> Result<&'static T> {
+        Ok(unsafe { &*self.ptr })
+    }
+
     pub fn read(&self) -> Result<T> {
         // TODO: check ptr and return err
         Ok(unsafe { self.ptr.read() })

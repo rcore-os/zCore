@@ -25,7 +25,7 @@ use {
         vm::*,
         ZxError, ZxResult,
     },
-    zircon_syscall::{Syscall, SyscallType},
+    zircon_syscall::Syscall,
 };
 
 #[allow(dead_code)]
@@ -75,16 +75,15 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
             .allocate(None, size, VmarFlags::CAN_MAP_RXW, PAGE_SIZE)
             .unwrap();
         vmar.load_from_elf(&elf).unwrap();
-        (
-            vmar.addr() + elf.header.pt2.entry_point() as usize,
-            size,
-        )
+        (vmar.addr() + elf.header.pt2.entry_point() as usize, size)
     };
 
     // vdso
     let vdso_vmo = {
         let elf = ElfFile::new(images.vdso.as_ref()).unwrap();
-        let vdso_vmo = VmObject::new(VMObjectPaged::new(images.vdso.as_ref().len() / PAGE_SIZE + 1));
+        let vdso_vmo = VmObject::new(VMObjectPaged::new(
+            images.vdso.as_ref().len() / PAGE_SIZE + 1,
+        ));
         vdso_vmo.write(0, images.vdso.as_ref());
         let size = elf.load_segment_size();
         let vmar = vmar
@@ -246,7 +245,7 @@ async fn handle_syscall(thread: &Arc<Thread>, regs: &mut GeneralRegs) -> bool {
         thread: thread.clone(),
         exit: false,
     };
-    syscall.regs.rax = syscall.syscall(SyscallType::from(num), args).await as usize;
+    syscall.regs.rax = syscall.syscall(num, args).await as usize;
     syscall.exit
 }
 

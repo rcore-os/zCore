@@ -104,11 +104,7 @@ impl Process {
     ) -> ZxResult<Arc<Self>> {
         // TODO: _options -> options
         let proc = Arc::new(Process {
-            base: {
-                let base = KObjectBase::new();
-                base.set_name(name);
-                base
-            },
+            base: KObjectBase::with_name(name),
             job: job.clone(),
             policy: job.policy(),
             vmar: VmAddressRegion::new_root(),

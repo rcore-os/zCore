@@ -134,6 +134,7 @@ impl Syscall<'_> {
     }
 
     pub fn sys_vmar_destroy(&self, handle_value: HandleValue) -> ZxResult<usize> {
+        info!("vmar.destroy: handle={:?}", handle_value);
         let proc = self.thread.proc();
         let vmar = proc.get_object::<VmAddressRegion>(handle_value)?;
         vmar.destroy()?;
@@ -153,10 +154,8 @@ impl Syscall<'_> {
             "vmar.protect: handle={}, options={:#x}, addr={:#x}, len={:#x}",
             handle_value, options, addr, len
         );
-        let vmar = self
-            .thread
-            .proc()
-            .get_object_with_rights::<VmAddressRegion>(handle_value, rights)?;
+        let proc = self.thread.proc();
+        let vmar = proc.get_object_with_rights::<VmAddressRegion>(handle_value, rights)?;
         let mut mapping_flags = MMUFlags::empty();
         mapping_flags.set(MMUFlags::READ, options.contains(VmOptions::PERM_READ));
         mapping_flags.set(MMUFlags::WRITE, options.contains(VmOptions::PERM_WRITE));
@@ -175,10 +174,8 @@ impl Syscall<'_> {
             "vmar.unmap: handle_value={}, addr={:#x}, len={:#x}",
             handle_value, addr, len
         );
-        let vmar = self
-            .thread
-            .proc()
-            .get_object::<VmAddressRegion>(handle_value)?;
+        let proc = self.thread.proc();
+        let vmar = proc.get_object::<VmAddressRegion>(handle_value)?;
         vmar.unmap(addr, pages(len) * PAGE_SIZE)?;
         Ok(0)
     }
