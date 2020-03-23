@@ -40,7 +40,7 @@ jobs:
     - uses: actions-rs/toolchain@v1
       with:
         profile: minimal
-        toolchain: nightly-2020-03-22
+        toolchain: nightly-2020-03-23
         components: rust-src
     - name: Setup Rust toolchain
       run: |
