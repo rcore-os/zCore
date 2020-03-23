@@ -1,9 +1,7 @@
 use core::sync::atomic::*;
 use {
-    super::vdso::{check_vmo_vdso, is_vdso_code_mapping},
     super::*,
     crate::object::*,
-    crate::vm::vmo::VMObjectTrait,
     alloc::sync::Arc,
     alloc::vec::Vec,
     bitflags::bitflags,
@@ -38,7 +36,6 @@ pub struct VmAddressRegion {
     page_table: Arc<Mutex<PageTable>>,
     /// If inner is None, this region is destroyed, all operations are invalid.
     inner: Mutex<Option<VmarInner>>,
-    vdso_code_start: Arc<Mutex<Option<usize>>>,
 }
 
 impl_kobject!(VmAddressRegion);
@@ -65,7 +62,6 @@ impl VmAddressRegion {
             parent: None,
             page_table: Arc::new(Mutex::new(kernel_hal::PageTable::new())),
             inner: Mutex::new(Some(VmarInner::default())),
-            vdso_code_start: Arc::new(Mutex::new(None)),
         })
     }
 
@@ -99,7 +95,6 @@ impl VmAddressRegion {
             parent: Some(self.clone()),
             page_table: self.page_table.clone(),
             inner: Mutex::new(Some(VmarInner::default())),
-            vdso_code_start: self.vdso_code_start(),
         });
         inner.children.push(child.clone());
         Ok(child)
@@ -109,7 +104,7 @@ impl VmAddressRegion {
     pub fn map_at(
         &self,
         vmar_offset: usize,
-        vmo: Arc<dyn VMObjectTrait>,
+        vmo: Arc<VmObject>,
         vmo_offset: usize,
         len: usize,
         flags: MMUFlags,
@@ -121,7 +116,7 @@ impl VmAddressRegion {
     pub fn map(
         &self,
         vmar_offset: Option<usize>,
-        vmo: Arc<dyn VMObjectTrait>,
+        vmo: Arc<VmObject>,
         vmo_offset: usize,
         len: usize,
         flags: MMUFlags,
@@ -129,19 +124,10 @@ impl VmAddressRegion {
         if !page_aligned(vmo_offset) || !page_aligned(len) || vmo_offset + len > vmo.len() {
             return Err(ZxError::INVALID_ARGS);
         }
-        let is_vdso_code = check_vmo_vdso(&vmo) && is_vdso_code_mapping(vmo_offset, len);
         let mut guard = self.inner.lock();
         let inner = guard.as_mut().ok_or(ZxError::BAD_STATE)?;
         let offset = self.determine_offset(inner, vmar_offset, len, PAGE_SIZE)?;
         let addr = self.addr + offset;
-        if is_vdso_code {
-            let mut option_addr = self.vdso_code_start.lock();
-            if option_addr.is_none() {
-                *option_addr = Some(addr.clone());
-            } else {
-                return Err(ZxError::ACCESS_DENIED);
-            }
-        }
         let mapping = VmMapping {
             addr,
             size: len,
@@ -385,8 +371,20 @@ impl VmAddressRegion {
             });
     }
 
-    pub fn vdso_code_start(&self) -> Arc<Mutex<Option<usize>>> {
-        self.vdso_code_start.clone()
+    pub fn vdso_base_addr(&self) -> Option<usize> {
+        let guard = self.inner.lock();
+        let inner = guard.as_ref().unwrap();
+        for map in inner.mappings.iter() {
+            if map.vmo.name().starts_with("vdso") && map.vmo_offset == 0x7000 && map.size == 0x1000 {
+                return Some(map.addr);
+            }
+        }
+        for vmar in inner.children.iter() {
+            if let Some(addr) = vmar.vdso_base_addr() {
+                return Some(addr);
+            }
+        }
+        None
     }
 
     #[cfg(test)]
@@ -418,7 +416,7 @@ pub struct VmMapping {
     addr: VirtAddr,
     size: usize,
     flags: MMUFlags,
-    vmo: Arc<dyn VMObjectTrait>,
+    vmo: Arc<VmObject>,
     vmo_offset: usize,
     page_table: Arc<Mutex<PageTable>>,
 }

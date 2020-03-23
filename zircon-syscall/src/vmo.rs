@@ -35,9 +35,8 @@ impl Syscall<'_> {
             handle_value, offset, buf, buf_size,
         );
         let proc = self.thread.proc();
-        let vmo = &proc
-            .get_object_with_rights::<VmObject>(handle_value, Rights::READ)?
-            .inner;
+        let vmo = proc
+            .get_object_with_rights::<VmObject>(handle_value, Rights::READ)?;
         // TODO: optimize
         let mut buffer = vec![0u8; buf_size];
         vmo.read(offset as usize, &mut buffer);
@@ -57,9 +56,8 @@ impl Syscall<'_> {
             handle_value, offset, buf, buf_size,
         );
         let proc = self.thread.proc();
-        let vmo = &proc
-            .get_object_with_rights::<VmObject>(handle_value, Rights::WRITE)?
-            .inner;
+        let vmo = proc
+            .get_object_with_rights::<VmObject>(handle_value, Rights::WRITE)?;
         vmo.write(offset as usize, &buf.read_array(buf_size)?);
         Ok(0)
     }
@@ -70,6 +68,7 @@ impl Syscall<'_> {
         vmex: HandleValue,
         mut out: UserOutPtr<HandleValue>,
     ) -> ZxResult<usize> {
+        info!("vmo.replace_as_executable: handle={:?}, vmex={:?}", handle, vmex);
         let proc = self.thread.proc();
         if vmex != INVALID_HANDLE {
             proc.validate_resource(vmex, ResourceKind::VMEX)?;
@@ -89,7 +88,9 @@ impl Syscall<'_> {
         handle: HandleValue,
         mut size: UserOutPtr<usize>,
     ) -> ZxResult<usize> {
-        let vmo = &self.thread.proc().get_object::<VmObject>(handle)?.inner;
+        info!("vmo.get_size: handle={:?}", handle);
+        let proc = self.thread.proc();
+        let vmo = proc.get_object::<VmObject>(handle)?;
         size.write(vmo.len())?;
         Ok(0)
     }
@@ -113,7 +114,6 @@ impl Syscall<'_> {
         let proc = self.thread.proc();
 
         let (vmo, parent_rights) = proc.get_object_and_rights::<VmObject>(handle_value)?;
-        let vmo = &vmo.inner;
         if !parent_rights.contains(Rights::DUPLICATE | Rights::READ) {
             return Err(ZxError::ACCESS_DENIED);
         }
@@ -140,16 +140,11 @@ impl Syscall<'_> {
     }
 
     pub fn sys_vmo_set_size(&self, handle_value: HandleValue, size: usize) -> ZxResult<usize> {
-        let vmo = &self
-            .thread
-            .proc()
-            .get_object_with_rights::<VmObject>(handle_value, Rights::WRITE)?
-            .inner;
+        let proc = self.thread.proc();
+        let vmo = proc.get_object_with_rights::<VmObject>(handle_value, Rights::WRITE)?;
         info!(
             "vmo.set_size: handle={}, size={:#x}, current_size={:#x}",
-            handle_value,
-            size,
-            vmo.len()
+            handle_value, size, vmo.len()
         );
         vmo.set_len(size);
         Ok(0)
@@ -168,30 +163,25 @@ impl Syscall<'_> {
             "vmo.op_range: handle={}, op={:#X}, offset={:#x}, len={:#x}, buffer_size={:#x}",
             handle_value, op, offset, len, _buffer_size,
         );
-        let (vmo, rights) = self
-            .thread
-            .proc()
-            .get_object_and_rights::<VmObject>(handle_value)?;
-        let vmo = &vmo.inner;
+        let proc = self.thread.proc();
+        let (vmo, rights) = proc.get_object_and_rights::<VmObject>(handle_value)?;
         if !page_aligned(offset) || !page_aligned(len) {
             return Err(ZxError::INVALID_ARGS);
         }
         match op {
             VMO_OP_COMMIT => {
-                if rights.contains(Rights::WRITE) {
-                    vmo.commit(offset, len);
-                    Ok(0)
-                } else {
-                    Err(ZxError::ACCESS_DENIED)
+                if !rights.contains(Rights::WRITE) {
+                    return Err(ZxError::ACCESS_DENIED);
                 }
+                vmo.commit(offset, len);
+                Ok(0)
             }
             VMO_OP_DECOMMIT => {
-                if rights.contains(Rights::WRITE) {
-                    vmo.decommit(offset, len);
-                    Ok(0)
-                } else {
-                    Err(ZxError::ACCESS_DENIED)
+                if !rights.contains(Rights::WRITE) {
+                    return Err(ZxError::ACCESS_DENIED);
                 }
+                vmo.decommit(offset, len);
+                Ok(0)
             }
             _ => unimplemented!(),
         }

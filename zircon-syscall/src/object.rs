@@ -29,15 +29,14 @@ impl Syscall<'_> {
         match property {
             ZX_PROP_NAME => {
                 if buffer_size < ZX_MAX_NAME_LEN {
-                    Err(ZxError::BUFFER_TOO_SMALL)
-                } else {
-                    let s = object.name();
-                    info!("object_get_property: name is {}", s);
-                    UserOutPtr::<u8>::from(ptr)
-                        .write_cstring(s.as_str())
-                        .expect("failed to write cstring");
-                    Ok(0)
+                    return Err(ZxError::BUFFER_TOO_SMALL);
                 }
+                let s = object.name();
+                info!("object_get_property: name is {}", s);
+                UserOutPtr::<u8>::from(ptr)
+                    .write_cstring(s.as_str())
+                    .expect("failed to write cstring");
+                Ok(0)
             }
             ZX_PROP_PROCESS_DEBUG_ADDR => {
                 if buffer_size < 8 {
@@ -55,13 +54,7 @@ impl Syscall<'_> {
                 if buffer_size < 8 {
                     return Err(ZxError::BUFFER_TOO_SMALL);
                 }
-                let vdso_base = self
-                    .thread
-                    .proc()
-                    .vmar()
-                    .vdso_code_start()
-                    .lock()
-                    .unwrap_or(0);
+                let vdso_base = self.thread.proc().vmar().vdso_base_addr().unwrap_or(0);
                 info!("vdso_base_addr: {:#X}", vdso_base);
                 UserOutPtr::<usize>::from(ptr).write(vdso_base)?;
                 Ok(0)
@@ -102,11 +95,7 @@ impl Syscall<'_> {
             .get_dyn_object_with_rights(handle_value, Rights::SET_PROPERTY)?;
         match property {
             ZX_PROP_NAME => {
-                let length = if buffer_size > ZX_MAX_NAME_LEN {
-                    (ZX_MAX_NAME_LEN - 1) as usize
-                } else {
-                    buffer_size as usize
-                };
+                let length = buffer_size.min(ZX_MAX_NAME_LEN) as usize;
                 let s = UserInPtr::<u8>::from(ptr).read_string(length)?;
                 info!("object_set_property name: {}", s);
                 object.set_name(&s);

@@ -54,7 +54,7 @@ impl LinuxElfLoader {
 
         elf.relocate(base).map_err(|_| ZxError::INVALID_ARGS)?;
 
-        let stack_vmo = VMObjectPaged::new(self.stack_pages);
+        let stack_vmo = VmObject::new(VMObjectPaged::new(self.stack_pages));
         let flags = MMUFlags::READ | MMUFlags::WRITE;
         let stack_bottom = vmar.map(None, stack_vmo.clone(), 0, stack_vmo.len(), flags)?;
         let mut sp = stack_bottom + stack_vmo.len();
@@ -81,13 +81,13 @@ impl LinuxElfLoader {
 }
 
 trait VmarExt {
-    fn load_from_elf(&self, elf: &ElfFile) -> ZxResult<Arc<VMObjectPaged>>;
+    fn load_from_elf(&self, elf: &ElfFile) -> ZxResult<Arc<VmObject>>;
 }
 
 impl VmarExt for VmAddressRegion {
     /// Create `VMObject` from all LOAD segments of `elf` and map them to this VMAR.
     /// Return the first `VMObject`.
-    fn load_from_elf(&self, elf: &ElfFile) -> ZxResult<Arc<VMObjectPaged>> {
+    fn load_from_elf(&self, elf: &ElfFile) -> ZxResult<Arc<VmObject>> {
         let mut first_vmo = None;
         for ph in elf.program_iter() {
             if ph.get_type().unwrap() != Type::Load {
@@ -123,11 +123,11 @@ impl FlagsExt for Flags {
     }
 }
 
-fn make_vmo(elf: &ElfFile, ph: ProgramHeader) -> ZxResult<Arc<VMObjectPaged>> {
+fn make_vmo(elf: &ElfFile, ph: ProgramHeader) -> ZxResult<Arc<VmObject>> {
     assert_eq!(ph.get_type().unwrap(), Type::Load);
     let page_offset = ph.virtual_addr() as usize % PAGE_SIZE;
     let pages = pages(ph.mem_size() as usize + page_offset);
-    let vmo = VMObjectPaged::new(pages);
+    let vmo = VmObject::new(VMObjectPaged::new(pages));
     let data = match ph.get_data(&elf).unwrap() {
         SegmentData::Undefined(data) => data,
         _ => return Err(ZxError::INVALID_ARGS),

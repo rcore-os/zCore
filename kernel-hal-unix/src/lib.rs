@@ -46,7 +46,7 @@ impl Thread {
 }
 
 #[export_name = "hal_context_run"]
-pub unsafe fn context_run(context: &mut UserContext) {
+unsafe fn context_run(context: &mut UserContext) {
     core::arch::x86_64::_fxrstor64(&context.vector as *const VectorRegs as _);
     trap::run_user(&mut context.general);
     core::arch::x86_64::_fxsave64(&mut context.vector as *mut VectorRegs as _);

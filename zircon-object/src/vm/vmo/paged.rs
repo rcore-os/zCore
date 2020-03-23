@@ -226,34 +226,27 @@ impl VMObjectPagedInner {
     }
 
     fn get_page(&mut self, page_idx: usize, for_write: bool) -> PhysAddr {
-        if self.frames[page_idx].is_some() {
-            self.frames[page_idx].as_ref().unwrap().addr()
-        } else {
-            let parent_idx_offset = self.parent_offset / PAGE_SIZE;
-            if for_write {
-                let target_addr = self.commit(page_idx).addr();
-                if self.parent.is_some() {
-                    kernel_hal::frame_copy(
-                        self.parent
-                            .as_ref()
-                            .unwrap()
-                            .get_page(parent_idx_offset + page_idx, false),
-                        target_addr,
-                    );
-                } else {
-                    kernel_hal::pmem_write(target_addr, &[0u8; PAGE_SIZE]);
-                }
-                target_addr
+        if let Some(frame) = &self.frames[page_idx] {
+            return frame.addr();
+        }
+        let parent_idx_offset = self.parent_offset / PAGE_SIZE;
+        if for_write {
+            let target_addr = self.commit(page_idx).addr();
+            if let Some(parent) = &self.parent {
+                // copy on write
+                kernel_hal::frame_copy(
+                    parent.get_page(parent_idx_offset + page_idx, false),
+                    target_addr,
+                );
             } else {
-                if self.parent.is_some() {
-                    self.parent
-                        .as_ref()
-                        .unwrap()
-                        .get_page(parent_idx_offset + page_idx, false)
-                } else {
-                    self.commit(page_idx).addr()
-                }
+                // zero the page
+                kernel_hal::pmem_write(target_addr, &[0u8; PAGE_SIZE]);
             }
+            target_addr
+        } else if let Some(parent) = &self.parent {
+            parent.get_page(parent_idx_offset + page_idx, false)
+        } else {
+            self.commit(page_idx).addr()
         }
     }
 }

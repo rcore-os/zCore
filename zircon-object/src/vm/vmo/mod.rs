@@ -4,6 +4,7 @@ mod paged;
 mod physical;
 
 pub use self::{paged::*, physical::*};
+use core::ops::Deref;
 
 /// Virtual Memory Objects
 #[allow(clippy::len_without_is_empty)]
@@ -53,7 +54,7 @@ pub trait VMObjectTrait: Sync + Send {
 
 pub struct VmObject {
     base: KObjectBase,
-    pub inner: Arc<dyn VMObjectTrait>,
+    inner: Arc<dyn VMObjectTrait>,
 }
 
 impl VmObject {
@@ -62,6 +63,14 @@ impl VmObject {
             base: KObjectBase::default(),
             inner,
         })
+    }
+}
+
+impl Deref for VmObject {
+    type Target = Arc<dyn VMObjectTrait>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
     }
 }
 

@@ -22,7 +22,6 @@ use {
         object::*,
         resource::{Resource, ResourceFlags, ResourceKind},
         task::*,
-        vm::vdso::{VDSO_VARIANT_COUNT, VDSO_VMOS},
         vm::*,
         ZxError, ZxResult,
     },
@@ -39,8 +38,6 @@ const K_ROOTRESOURCE: usize = 3;
 // Essential VMO handles
 const K_ZBI: usize = 4;
 const K_FIRSTVDSO: usize = 5;
-#[allow(dead_code)]
-const K_LASTVDSO: usize = K_FIRSTVDSO + VDSO_VARIANT_COUNT - 1;
 const K_USERBOOT_DECOMPRESSOR: usize = 8;
 #[allow(dead_code)]
 const K_FIRSTKERNELFILE: usize = K_USERBOOT_DECOMPRESSOR;
@@ -71,7 +68,7 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
     let vmar = proc.vmar();
 
     // userboot
-    let (entry, vdso_addr) = {
+    let (entry, userboot_size) = {
         let elf = ElfFile::new(images.userboot.as_ref()).unwrap();
         let size = elf.load_segment_size();
         let vmar = vmar
@@ -80,19 +77,19 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
         vmar.load_from_elf(&elf).unwrap();
         (
             vmar.addr() + elf.header.pt2.entry_point() as usize,
-            vmar.addr() + size,
+            size,
         )
     };
 
     // vdso
-    {
+    let vdso_vmo = {
         let elf = ElfFile::new(images.vdso.as_ref()).unwrap();
-        let vdso_vmo = VMObjectPaged::new(images.vdso.as_ref().len() / PAGE_SIZE + 1);
+        let vdso_vmo = VmObject::new(VMObjectPaged::new(images.vdso.as_ref().len() / PAGE_SIZE + 1));
         vdso_vmo.write(0, images.vdso.as_ref());
         let size = elf.load_segment_size();
         let vmar = vmar
             .allocate_at(
-                vdso_addr - vmar.addr(),
+                userboot_size,
                 size,
                 VmarFlags::CAN_MAP_RXW | VmarFlags::SPECIFIC,
                 PAGE_SIZE,
@@ -110,8 +107,8 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
                 &(kernel_hal_unix::syscall_entry as usize).to_ne_bytes(),
             );
         }
-        VDSO_VMOS.lock().init(vdso_vmo.clone());
-    }
+        vdso_vmo
+    };
 
     // zbi
     let zbi_vmo = {
@@ -135,7 +132,7 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
 
     // stack
     const STACK_PAGES: usize = 8;
-    let stack_vmo = VMObjectPaged::new(STACK_PAGES);
+    let stack_vmo = VmObject::new(VMObjectPaged::new(STACK_PAGES));
     let flags = MMUFlags::READ | MMUFlags::WRITE | MMUFlags::USER;
     let stack_bottom = vmar
         .map(None, stack_vmo.clone(), 0, stack_vmo.len(), flags)
@@ -154,9 +151,14 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
     handles[K_ROOTRESOURCE] = Handle::new(resource, Rights::DEFAULT_RESOURCE);
     handles[K_ZBI] = Handle::new(zbi_vmo, Rights::DEFAULT_VMO);
     // set up handles[K_FIRSTVDSO..K_LASTVDSO + 1]
-    VDSO_VMOS
-        .lock()
-        .get_vdso_handles(handles.get_mut(K_FIRSTVDSO..K_LASTVDSO + 1).unwrap());
+    vdso_vmo.set_name("vdso/full");
+    let vdso_test1 = VmObject::new(vdso_vmo.create_clone(0, vdso_vmo.len()));
+    vdso_test1.set_name("vdso/test1");
+    let vdso_test2 = VmObject::new(vdso_vmo.create_clone(0, vdso_vmo.len()));
+    vdso_test2.set_name("vdso/test2");
+    handles[K_FIRSTVDSO] = Handle::new(vdso_vmo, Rights::DEFAULT_VMO | Rights::EXECUTE);
+    handles[K_FIRSTVDSO + 1] = Handle::new(vdso_test1, Rights::DEFAULT_VMO | Rights::EXECUTE);
+    handles[K_FIRSTVDSO + 2] = Handle::new(vdso_test2, Rights::DEFAULT_VMO | Rights::EXECUTE);
     // FIXME correct rights for decompressor engine
     handles[K_USERBOOT_DECOMPRESSOR] =
         Handle::new(decompressor_vmo, Rights::DEFAULT_VMO | Rights::EXECUTE);
@@ -281,7 +283,7 @@ impl ElfExt for ElfFile<'_> {
 
 pub trait VmarExt {
     fn load_from_elf(&self, elf: &ElfFile) -> ZxResult<()>;
-    fn map_from_elf(&self, elf: &ElfFile, vmo: Arc<VMObjectPaged>) -> ZxResult<()>;
+    fn map_from_elf(&self, elf: &ElfFile, vmo: Arc<VmObject>) -> ZxResult<()>;
 }
 
 impl VmarExt for VmAddressRegion {
@@ -300,7 +302,7 @@ impl VmarExt for VmAddressRegion {
         Ok(())
     }
 
-    fn map_from_elf(&self, elf: &ElfFile, vmo: Arc<VMObjectPaged>) -> ZxResult<()> {
+    fn map_from_elf(&self, elf: &ElfFile, vmo: Arc<VmObject>) -> ZxResult<()> {
         for ph in elf.program_iter() {
             if ph.get_type().unwrap() != Type::Load {
                 continue;
@@ -340,10 +342,10 @@ impl FlagsExt for Flags {
     }
 }
 
-fn make_vmo(elf: &ElfFile, ph: ProgramHeader) -> ZxResult<Arc<VMObjectPaged>> {
+fn make_vmo(elf: &ElfFile, ph: ProgramHeader) -> ZxResult<Arc<VmObject>> {
     assert_eq!(ph.get_type().unwrap(), Type::Load);
     let pages = pages(ph.mem_size() as usize);
-    let vmo = VMObjectPaged::new(pages);
+    let vmo = VmObject::new(VMObjectPaged::new(pages));
     let data = match ph.get_data(&elf).unwrap() {
         SegmentData::Undefined(data) => data,
         _ => return Err(ZxError::INVALID_ARGS),

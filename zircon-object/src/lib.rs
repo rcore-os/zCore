@@ -8,13 +8,10 @@
 #![feature(get_mut_unchecked)]
 #![feature(naked_functions)]
 
-#[macro_use]
 extern crate alloc;
 
 #[macro_use]
 extern crate log;
-#[macro_use]
-extern crate lazy_static;
 
 #[cfg(test)]
 #[macro_use]

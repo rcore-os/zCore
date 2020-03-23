@@ -66,13 +66,15 @@ impl_kobject!(Process
 #[derive(Default)]
 struct ProcessInner {
     status: Status,
+    max_handle_id: u32,
     handles: BTreeMap<HandleValue, Handle>,
+    futexes: BTreeMap<usize, Arc<Futex>>,
     threads: Vec<Arc<Thread>>,
+
+    // special info
     debug_addr: usize,
     dyn_break_on_load: usize,
     critical_job: Option<(Arc<Job>, bool)>,
-    max_handle_id: u32,
-    futexes: BTreeMap<usize, Arc<Futex>>,
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -221,13 +223,13 @@ impl Process {
             .ok_or(ZxError::BAD_HANDLE)
     }
 
-    /// Get a handle from the process
+    /// Get a futex from the process
     pub fn get_futex(&self, addr: &'static AtomicI32) -> Arc<Futex> {
         let mut inner = self.inner.lock();
         inner
             .futexes
             .entry(addr as *const AtomicI32 as usize)
-            .or_insert(Futex::new(addr))
+            .or_insert_with(|| Futex::new(addr))
             .clone()
     }
 
@@ -397,18 +399,11 @@ impl ProcessInner {
     /// Add a handle to the process
     fn add_handle(&mut self, handle: Handle) -> HandleValue {
         // FIXME: handle value from ptr
-        //let value = (1 as HandleValue..)
-        //.find(|idx| {
-        //let key = (idx << 2) | 0x3u32;
-        //!self.handles.contains_key(&key)
-        //})
-        //.unwrap();
-        let value = self.max_handle_id;
-        let key = (value << 2) | 0x3u32;
-        let _type = handle.object.obj_type();
+        let key = (self.max_handle_id << 2) | 0x3u32;
+        let type_ = handle.object.obj_type();
         self.max_handle_id += 1;
         self.handles.insert(key, handle);
-        info!("A new handle is added : {}, type: {:?}", key, _type);
+        info!("add handle: {}, type={:?}", key, type_);
         key
     }
 
