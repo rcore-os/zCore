@@ -185,7 +185,7 @@ pub fn timer_now() -> Duration {
     let tsc = unsafe { core::arch::x86_64::_rdtsc() };
     let tsc_frequency = match raw_cpuid::CpuId::new().get_processor_frequency_info() {
         Some(info) => info.processor_base_frequency(),
-        None => 3000,   // QEMU
+        None => 3000, // QEMU
     };
     Duration::from_nanos(tsc * 1000 / tsc_frequency as u64)
 }
@@ -195,8 +195,8 @@ fn timer_init() {
     lapic.cpu_init();
 }
 
-#[inline(always)]
-pub fn ack(_irq: u8) {
+#[export_name = "hal_irq_ack"]
+pub fn irq_ack(_irq: u8) {
     let mut lapic = unsafe { XApic::new(phys_to_virt(LAPIC_ADDR)) };
     lapic.eoi();
 }

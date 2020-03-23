@@ -1,15 +1,17 @@
 use super::*;
 use crate::{object::*, task::Thread};
 use alloc::collections::VecDeque;
-use alloc::sync::Arc;
+use alloc::{boxed::Box, sync::Arc};
 use core::future::Future;
 use core::pin::Pin;
 use core::sync::atomic::*;
 use core::task::{Context, Poll, Waker};
+use core::time::Duration;
 use spin::Mutex;
 
 struct Waiter {
     thread: Arc<Thread>,
+    timer: Arc<Timer>,
     inner: Mutex<WaiterInner>,
 }
 
@@ -17,6 +19,7 @@ struct WaiterInner {
     waker: Option<Waker>,
     woken: bool,
     futex: Arc<Futex>,
+    time_out: bool,
 }
 
 impl Waiter {
@@ -26,6 +29,28 @@ impl Waiter {
 
     pub fn set_futex(&self, futex: Arc<Futex>) {
         self.inner.lock().futex = futex;
+    }
+
+    pub fn set_timer(self: &Arc<Waiter>, deadline: Duration, slack: Duration) {
+        self.timer.set(deadline, slack);
+        let weak_self = Arc::downgrade(self);
+        self.timer.add_signal_callback(Box::new(move |s| {
+            if let Some(real_self) = weak_self.upgrade() {
+                if (s & Signal::SIGNALED).is_empty() {
+                    panic!("fault signal when timer come!");
+                } else {
+                    real_self.set_time_out();
+                    real_self.inner.lock().waker.as_ref().unwrap().wake_by_ref();
+                    true
+                }
+            } else {
+                true
+            }
+        }));
+    }
+
+    pub fn set_time_out(&self) {
+        self.inner.lock().time_out = true;
     }
 }
 
@@ -75,15 +100,21 @@ impl Futex {
         self: &Arc<Self>,
         current_value: i32,
         thread: Arc<Thread>,
+        deadline: u64,
     ) -> impl Future<Output = ZxResult<()>> {
         let waiter = Arc::new(Waiter {
             thread,
+            timer: Timer::create(0).unwrap(),
             inner: Mutex::new(WaiterInner {
                 waker: None,
                 woken: false,
+                time_out: false,
                 futex: self.clone(),
             }),
         });
+        if deadline != 0x7fff_ffff_ffff_ffff {
+            waiter.set_timer(Duration::from_nanos(deadline), Duration::from_nanos(0));
+        }
         self.inner.lock().waiter_queue.push_back(waiter.clone());
         struct FutexFuture {
             waiter: Arc<Waiter>,
@@ -94,7 +125,9 @@ impl Futex {
 
             fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
                 let mut inner = self.waiter.inner.lock();
-                if inner.woken {
+                if self.waiter.timer.signal().contains(Signal::SIGNALED) {
+                    Poll::Ready(Err(ZxError::TIMED_OUT))
+                } else if inner.woken {
                     Poll::Ready(Ok(()))
                 } else {
                     // if waiting, check wake num

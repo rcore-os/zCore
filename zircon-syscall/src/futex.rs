@@ -24,7 +24,9 @@ impl Syscall<'_> {
             Some(proc.get_object::<Thread>(new_futex_owner)?)
         };
         futex.set_owner(new_owner)?;
-        futex.wait_async(current_value, self.thread.clone()).await?;
+        futex
+            .wait_async(current_value, self.thread.clone(), deadline)
+            .await?;
         Ok(0)
     }
 

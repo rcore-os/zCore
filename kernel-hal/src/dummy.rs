@@ -177,3 +177,16 @@ pub fn timer_now() -> Duration {
 pub fn timer_set(_deadline: Duration, _callback: Box<dyn FnOnce(Duration) + Send + Sync>) {
     unimplemented!()
 }
+
+/// check timers, call when timer interrupt happend
+#[linkage = "weak"]
+#[export_name = "hal_timer_tick"]
+pub fn timer_tick() {
+    unimplemented!()
+}
+
+#[linkage = "weak"]
+#[export_name = "hal_irq_ack"]
+pub fn irq_ack(_irq: u8) {
+    unimplemented!()
+}

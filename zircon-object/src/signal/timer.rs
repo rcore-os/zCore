@@ -50,8 +50,11 @@ impl Timer {
         let mut inner = self.inner.lock();
         inner.deadline = Some(deadline);
         self.base.signal_clear(Signal::SIGNALED);
-        let me = self.clone();
-        kernel_hal::timer_set(deadline, Box::new(move |now| me.touch(now)));
+        let me = Arc::downgrade(self);
+        kernel_hal::timer_set(
+            deadline,
+            Box::new(move |now| me.upgrade().map(|timer| timer.touch(now)).unwrap_or(())),
+        );
     }
 
     /// Cancel the pending timer started by `set`.

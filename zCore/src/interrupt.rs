@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 #![allow(non_upper_case_globals)]
-use {kernel_hal_bare::arch::ack, trapframe::TrapFrame};
+use {kernel_hal_bare::arch::irq_ack, trapframe::TrapFrame};
 
 pub fn init() {
     x86_64::instructions::interrupts::enable();
@@ -43,7 +43,7 @@ pub extern "C" fn trap_handler(tf: &mut TrapFrame) {
         PageFault => page_fault(tf),
         IRQ0..=63 => {
             let irq = tf.trap_num as u8 - IRQ0;
-            ack(irq); // must ack before switching
+            irq_ack(irq); // must ack before switching
             match irq {
                 Timer => timer(),
                 _ => {
@@ -67,4 +67,6 @@ fn page_fault(tf: &mut TrapFrame) {
     panic!("\nEXCEPTION: Page Fault\n{:#x?}", tf);
 }
 
-fn timer() {}
+fn timer() {
+    kernel_hal_bare::timer_tick();
+}

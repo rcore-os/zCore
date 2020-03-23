@@ -23,7 +23,11 @@ extern crate log;
 
 extern crate alloc;
 
+#[macro_use]
+extern crate lazy_static;
+
 use alloc::boxed::Box;
+use core::time::Duration;
 use core::{
     future::Future,
     pin::Pin,
@@ -31,6 +35,7 @@ use core::{
 };
 use kernel_hal::defs::*;
 use kernel_hal::UserContext;
+use naive_timer::Timer;
 use spin::Mutex;
 
 pub mod arch;
@@ -142,6 +147,22 @@ pub fn frame_copy(src: PhysAddr, target: PhysAddr) {
         let buf = phys_to_virt(src) as *const u8;
         buf.copy_to_nonoverlapping(phys_to_virt(target) as _, 4096);
     }
+}
+
+lazy_static! {
+    pub static ref NAIVE_TIMER: Mutex<Timer> = Mutex::new(Timer::default());
+}
+
+#[export_name = "hal_timer_set"]
+pub fn timer_set(deadline: Duration, callback: Box<dyn FnOnce(Duration) + Send + Sync>) {
+    warn!("deadlne: {:#x?}", deadline);
+    NAIVE_TIMER.lock().add(deadline, callback);
+}
+
+#[export_name = "hal_timer_tick"]
+pub fn timer_tick() {
+    let now = arch::timer_now();
+    NAIVE_TIMER.lock().expire(now);
 }
 
 /// Initialize the HAL.
