@@ -1,33 +1,18 @@
-use {crate::object::*, alloc::sync::Arc, bitflags::bitflags};
+use {crate::object::*, alloc::sync::Arc, bitflags::bitflags, numeric_enum_macro::numeric_enum};
 
-/// ResourceKind definition from fuchsia/zircon/system/public/zircon/syscalls/resource.h
-#[repr(u32)]
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub enum ResourceKind {
-    MMIO = 0,
-    IRQ = 1,
-    IOPORT = 2,
-    HYPERVISOR = 3,
-    ROOT = 4,
-    VMEX = 5,
-    SMC = 6,
-    COUNT = 7,
-    UNKNOWN,
-}
-
-impl ResourceKind {
-    pub fn from_number(number: u32) -> ZxResult<Self> {
-        match number {
-            0 => Ok(ResourceKind::MMIO),
-            1 => Ok(ResourceKind::IRQ),
-            2 => Ok(ResourceKind::IOPORT),
-            3 => Ok(ResourceKind::HYPERVISOR),
-            4 => Ok(ResourceKind::ROOT),
-            5 => Ok(ResourceKind::VMEX),
-            6 => Ok(ResourceKind::SMC),
-            7 => Ok(ResourceKind::COUNT),
-            _ => Err(ZxError::INVALID_ARGS),
-        }
+numeric_enum! {
+    #[repr(u32)]
+    /// ResourceKind definition from fuchsia/zircon/system/public/zircon/syscalls/resource.h
+    #[derive(Debug, Clone, Copy, Eq, PartialEq)]
+    pub enum ResourceKind {
+        MMIO = 0,
+        IRQ = 1,
+        IOPORT = 2,
+        HYPERVISOR = 3,
+        ROOT = 4,
+        VMEX = 5,
+        SMC = 6,
+        COUNT = 7,
     }
 }
 

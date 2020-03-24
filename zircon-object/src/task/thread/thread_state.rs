@@ -1,36 +1,20 @@
 use crate::{ZxError, ZxResult};
-use core::convert::TryFrom;
 use kernel_hal::UserContext;
+use numeric_enum_macro::numeric_enum;
 
-#[repr(u32)]
-#[derive(Debug, Copy, Clone)]
-pub enum ThreadStateKind {
-    General = 0,
-    FloatPoint = 1,
-    Vector = 2,
-    Debug = 4,
-    SingleStep = 5,
-    #[cfg(target_arch = "x86_64")]
-    FS = 6,
-    #[cfg(target_arch = "x86_64")]
-    GS = 7,
-}
-
-impl TryFrom<u32> for ThreadStateKind {
-    type Error = ZxError;
-    fn try_from(x: u32) -> Result<Self, Self::Error> {
-        match x {
-            0 => Ok(ThreadStateKind::General),
-            1 => Ok(ThreadStateKind::FloatPoint),
-            2 => Ok(ThreadStateKind::Vector),
-            4 => Ok(ThreadStateKind::Debug),
-            5 => Ok(ThreadStateKind::SingleStep),
-            #[cfg(target_arch = "x86_64")]
-            6 => Ok(ThreadStateKind::FS),
-            #[cfg(target_arch = "x86_64")]
-            7 => Ok(ThreadStateKind::GS),
-            _ => Err(ZxError::INVALID_ARGS),
-        }
+numeric_enum! {
+    #[repr(u32)]
+    #[derive(Debug, Copy, Clone)]
+    pub enum ThreadStateKind {
+        General = 0,
+        FloatPoint = 1,
+        Vector = 2,
+        Debug = 4,
+        SingleStep = 5,
+        #[cfg(target_arch = "x86_64")]
+        FS = 6,
+        #[cfg(target_arch = "x86_64")]
+        GS = 7,
     }
 }
 

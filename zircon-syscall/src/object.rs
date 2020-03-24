@@ -1,5 +1,7 @@
 use {
     super::*,
+    core::convert::TryFrom,
+    numeric_enum_macro::numeric_enum,
     zircon_object::{signal::Port, task::*, vm::*},
 };
 
@@ -11,7 +13,7 @@ impl Syscall<'_> {
         ptr: usize,
         buffer_size: u32,
     ) -> ZxResult<usize> {
-        let property = Property::from(property);
+        let property = Property::try_from(property).map_err(|_| ZxError::INVALID_ARGS)?;
         info!(
             "object.get_property: handle={:?}, property={:?}, buffer=({:#x}; {:?})",
             handle_value, property, ptr, buffer_size
@@ -73,7 +75,7 @@ impl Syscall<'_> {
         ptr: usize,
         buffer_size: u32,
     ) -> ZxResult<usize> {
-        let property = Property::from(property);
+        let property = Property::try_from(property).map_err(|_| ZxError::INVALID_ARGS)?;
         info!(
             "object.set_property: handle={:?}, property={:?}, buffer=({:#x}; {:?})",
             handle_value, property, ptr, buffer_size
@@ -151,7 +153,7 @@ impl Syscall<'_> {
         _actual: UserOutPtr<usize>,
         _avail: UserOutPtr<usize>,
     ) -> ZxResult<usize> {
-        let topic = Topic::from(topic);
+        let topic = Topic::try_from(topic).map_err(|_| ZxError::INVALID_ARGS)?;
         info!(
             "object.get_info: handle={:?}, topic={:?}, buffer=({:#x}; {:#x})",
             handle, topic, buffer, buffer_size,
@@ -243,67 +245,47 @@ impl Syscall<'_> {
     }
 }
 
-#[repr(u32)]
-#[derive(Debug)]
-#[allow(dead_code)]
-enum Topic {
-    None = 0,
-    HandleValid = 1,
-    HandleBasic = 2,
-    Process = 3,
-    ProcessThreads = 4,
-    Vmar = 7,
-    JobChildren = 8,
-    JobProcess = 9,
-    Thread = 10,
-    ThreadExceptionReport = 11,
-    TaskStats = 12,
-    ProcessMaps = 13,
-    ProcessVmos = 14,
-    ThreadStats = 15,
-    CpuStats = 16,
-    KmemStats = 17,
-    Resource = 18,
-    HandleCount = 19,
-    Bti = 20,
-    ProcessHandleStats = 21,
-    Socket = 22,
-    Vmo = 23,
-    Job = 24,
-    Timer = 26,
-    Stream = 27,
-    Unknown,
-}
-
-impl From<u32> for Topic {
-    #[allow(unsafe_code)]
-    fn from(number: u32) -> Self {
-        match number {
-            0..=4 | 7..=24 | 26..=27 => unsafe { core::mem::transmute(number) },
-            _ => Topic::Unknown,
-        }
+numeric_enum! {
+    #[repr(u32)]
+    #[derive(Debug)]
+    enum Topic {
+        None = 0,
+        HandleValid = 1,
+        HandleBasic = 2,
+        Process = 3,
+        ProcessThreads = 4,
+        Vmar = 7,
+        JobChildren = 8,
+        JobProcess = 9,
+        Thread = 10,
+        ThreadExceptionReport = 11,
+        TaskStats = 12,
+        ProcessMaps = 13,
+        ProcessVmos = 14,
+        ThreadStats = 15,
+        CpuStats = 16,
+        KmemStats = 17,
+        Resource = 18,
+        HandleCount = 19,
+        Bti = 20,
+        ProcessHandleStats = 21,
+        Socket = 22,
+        Vmo = 23,
+        Job = 24,
+        Timer = 26,
+        Stream = 27,
     }
 }
 
-#[repr(u32)]
-#[derive(Debug)]
-#[allow(dead_code)]
-enum Property {
-    Name = 3,
-    RegisterFs = 4,
-    ProcessDebugAddr = 5,
-    ProcessVdsoBaseAddress = 6,
-    ProcessBreakOnLoad = 7,
-    Unknown,
-}
-
-impl From<u32> for Property {
-    #[allow(unsafe_code)]
-    fn from(number: u32) -> Self {
-        match number {
-            3..=7 => unsafe { core::mem::transmute(number) },
-            _ => Property::Unknown,
-        }
+numeric_enum! {
+    #[repr(u32)]
+    #[derive(Debug)]
+    enum Property {
+        Name = 3,
+        RegisterFs = 4,
+        ProcessDebugAddr = 5,
+        ProcessVdsoBaseAddress = 6,
+        ProcessBreakOnLoad = 7,
     }
 }
 

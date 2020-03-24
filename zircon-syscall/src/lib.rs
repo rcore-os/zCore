@@ -12,6 +12,7 @@ extern crate log;
 use {
     alloc::sync::Arc,
     alloc::vec::Vec,
+    core::convert::TryFrom,
     kernel_hal::{user::*, GeneralRegs},
     zircon_object::object::*,
     zircon_object::task::Thread,
@@ -43,7 +44,13 @@ pub struct Syscall<'a> {
 impl Syscall<'_> {
     pub async fn syscall(&mut self, num: u32, args: [usize; 8]) -> isize {
         let thread_name = self.thread.name();
-        let sys_type = Sys::from(num);
+        let sys_type = match Sys::try_from(num) {
+            Ok(t) => t,
+            Err(_) => {
+                error!("invalid syscall number: {}", num);
+                return ZxError::INVALID_ARGS as _;
+            }
+        };
         debug!("{} {:?} => args={:x?}", thread_name, sys_type, args);
         let [a0, a1, a2, a3, a4, a5, a6, a7] = args;
         let ret = match sys_type {

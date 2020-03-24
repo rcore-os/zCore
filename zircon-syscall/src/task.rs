@@ -103,7 +103,7 @@ impl Syscall<'_> {
         buffer: UserInPtr<u8>,
         buffer_size: usize,
     ) -> ZxResult<usize> {
-        let kind = ThreadStateKind::try_from(kind)?;
+        let kind = ThreadStateKind::try_from(kind).map_err(|_| ZxError::INVALID_ARGS)?;
         info!(
             "thread.write_state: handle={:?}, kind={:?}, buf=({:?}; {:?})",
             handle, kind, buffer, buffer_size,
