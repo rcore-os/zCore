@@ -2,6 +2,7 @@ arch ?= x86_64
 mode ?= debug
 LOG ?=
 zbi_file ?= fuchsia
+graphic ?=
 
 build_args := -Z build-std=core,alloc --target $(arch).json
 build_path := target/$(arch)/$(mode)
@@ -26,8 +27,13 @@ qemu_opts += \
 	-drive format=raw,file=fat:rw:$(ESP) \
 	-serial mon:stdio \
 	-m 4G \
-	-device isa-debug-exit \
-	-display none
+	-device isa-debug-exit
+endif
+
+ifeq ($(graphic), on)
+build_args += --features graphic
+else
+qemu_opts += -display none
 endif
 
 run: build justrun

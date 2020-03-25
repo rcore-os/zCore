@@ -9,4 +9,4 @@ description = "Kernel HAL interface definations."
 
 [dependencies]
 bitflags = "1.2"
-trapframe = { git = "https://github.com/rcore-os/trapframe-rs.git", branch = "rdtsc" }
+trapframe = "0.1.4"

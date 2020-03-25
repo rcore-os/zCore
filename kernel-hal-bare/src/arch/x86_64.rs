@@ -3,6 +3,7 @@ use {
     apic::{LocalApic, XApic},
     core::fmt::{Arguments, Write},
     core::time::Duration,
+    rcore_console::{Console, ConsoleOnGraphic, DrawTarget, Pixel, Rgb888, Size},
     spin::Mutex,
     uart_16550::SerialPort,
     x86_64::{
@@ -169,15 +170,51 @@ impl FrameDeallocator<Size4KiB> for FrameAllocatorImpl {
     }
 }
 
+static CONSOLE: Mutex<Option<ConsoleOnGraphic<Framebuffer>>> = Mutex::new(None);
+
+struct Framebuffer {
+    width: u32,
+    height: u32,
+    buf: &'static mut [u32],
+}
+
+impl DrawTarget<Rgb888> for Framebuffer {
+    type Error = core::convert::Infallible;
+
+    fn draw_pixel(&mut self, item: Pixel<Rgb888>) -> Result<(), Self::Error> {
+        let idx = (item.0.x as u32 + item.0.y as u32 * self.width) as usize;
+        self.buf[idx] = unsafe { core::mem::transmute(item.1) };
+        Ok(())
+    }
+
+    fn size(&self) -> Size {
+        Size::new(self.width, self.height)
+    }
+}
+
+/// Initialize console on framebuffer.
+pub fn init_framebuffer(width: u32, height: u32, paddr: PhysAddr) {
+    let fb = Framebuffer {
+        width,
+        height,
+        buf: unsafe { core::slice::from_raw_parts_mut(phys_to_virt(paddr) as *mut u32, (width * height) as usize) }
+    };
+    let console = Console::on_frame_buffer(fb);
+    *CONSOLE.lock() = Some(console);
+}
+
 static COM1: Mutex<SerialPort> = Mutex::new(unsafe { SerialPort::new(0x3F8) });
 
 pub fn putfmt(fmt: Arguments) {
     COM1.lock().write_fmt(fmt).unwrap();
+    if let Some(console) = CONSOLE.lock().as_mut() {
+        console.write_fmt(fmt).unwrap();
+    }
 }
 
 #[export_name = "hal_serial_write"]
 pub fn serial_write(s: &str) {
-    COM1.lock().write_str(s).unwrap();
+    putfmt(format_args!("{}", s));
 }
 
 #[export_name = "hal_timer_now"]

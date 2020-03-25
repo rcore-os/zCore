@@ -28,6 +28,8 @@ pub extern "C" fn _start(boot_info: &BootInfo) -> ! {
     logging::init(get_log_level(boot_info.cmdline));
     memory::init_heap();
     memory::init_frame_allocator(boot_info);
+    #[cfg(feature = "graphic")]
+    init_framebuffer(boot_info);
     info!("{:#x?}", boot_info);
     kernel_hal_bare::init();
     interrupt::init();
@@ -65,4 +67,11 @@ fn get_log_level(cmdline: &str) -> &str {
         }
     }
     ""
+}
+
+#[cfg(feature = "graphic")]
+fn init_framebuffer(boot_info: &BootInfo) {
+    let (width, height) = boot_info.graphic_info.mode.resolution();
+    let fb_addr = boot_info.graphic_info.fb_addr as usize;
+    kernel_hal_bare::init_framebuffer(width as u32, height as u32, fb_addr);
 }
