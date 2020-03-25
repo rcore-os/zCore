@@ -2,7 +2,12 @@ use super::*;
 use crate::object::*;
 use alloc::boxed::Box;
 use alloc::sync::Arc;
-use core::time::Duration;
+use core::{
+    time::Duration,
+    future::Future,
+    pin::Pin,
+    task::{Context, Poll, Waker},
+};
 use spin::Mutex;
 
 const SLACK_CENTER: u32 = 0;
@@ -73,6 +78,86 @@ impl Timer {
             }
         }
     }
+}
+
+#[derive(Default)]
+pub struct YieldFutureImpl {
+    flag: bool,
+}
+
+impl Future for YieldFutureImpl {
+    type Output = ();
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        if self.flag {
+            Poll::Ready(())
+        } else {
+            self.flag = true;
+            cx.waker().clone().wake();
+            Poll::Pending
+        }
+    }
+}
+
+pub struct SleepState {
+    timer: Arc<Timer>,
+    inner: Mutex<SleepStateInner>,
+}
+
+impl SleepState {
+    pub fn new() -> Arc<Self>{
+        Arc::new(SleepState {
+            timer: Timer::create(0).unwrap(),
+            inner: Mutex::new(SleepStateInner::default()),
+        })
+    }
+
+    pub fn set_deadline(self: &Arc<SleepState>, deadline: Duration) {
+        self.timer.set(deadline, Duration::from_nanos(0));
+        let weak_self = Arc::downgrade(self);
+        self.timer.add_signal_callback(Box::new(move |signal| {
+            if let Some(real_self) = weak_self.upgrade() {
+                assert!(!(signal & Signal::SIGNALED).is_empty());
+                let mut inner = real_self.inner.lock();
+                inner.woken = true;
+                inner.waker.as_ref().unwrap().wake_by_ref();
+                true
+            } else {
+                true
+            }
+        }));
+    }
+
+    fn is_woken(&self) -> bool {
+        self.inner.lock().woken
+    }
+    
+    fn renew_waker(&self, new_waker: Waker) {
+        self.inner.lock().waker.replace(new_waker);
+    }
+}
+
+pub struct SleepFutureImpl {
+    pub state: Arc<SleepState>
+}
+
+impl Future for SleepFutureImpl {
+    type Output = ();
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        if self.state.is_woken() {
+            Poll::Ready(())
+        } else {
+            self.state.renew_waker(cx.waker().clone());
+            Poll::Pending
+        }
+    }
+}
+
+#[derive(Default)]
+struct SleepStateInner {
+    waker: Option<Waker>,
+    woken: bool,
 }
 
 #[cfg(test)]

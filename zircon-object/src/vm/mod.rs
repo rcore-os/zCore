@@ -4,7 +4,7 @@ pub mod vdso;
 mod vmar;
 mod vmo;
 
-pub use self::{vmar::*, vmo::*};
+pub use self::{vmar::*, vmo::*, vdso::*};
 pub use kernel_hal::MMUFlags;
 
 /// Physical Address

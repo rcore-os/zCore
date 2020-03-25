@@ -1,10 +1,6 @@
 use {
     super::*,
-    core::{
-        future::Future,
-        pin::Pin,
-        task::{Context, Poll},
-    },
+    core::time::Duration,
     zircon_object::{signal::*, task::PolicyCondition},
 };
 
@@ -103,29 +99,14 @@ impl Syscall<'_> {
     pub async fn sys_nanosleep(&self, deadline: i64) -> ZxResult<usize> {
         if deadline <= 0 {
             // just yield current thread
-            let yield_future = YieldFutureImpl { flag: false };
+            let yield_future = YieldFutureImpl::default();
             yield_future.await;
         } else {
-            unimplemented!()
+            let state = SleepState::new();
+            state.set_deadline(Duration::from_nanos(deadline as u64));
+            SleepFutureImpl { state }.await;
         }
         Ok(0)
     }
 }
 
-struct YieldFutureImpl {
-    flag: bool,
-}
-
-impl Future for YieldFutureImpl {
-    type Output = ();
-
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        if self.flag {
-            Poll::Ready(())
-        } else {
-            self.flag = true;
-            cx.waker().clone().wake();
-            Poll::Pending
-        }
-    }
-}

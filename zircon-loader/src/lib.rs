@@ -150,6 +150,8 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
     handles[K_ROOTRESOURCE] = Handle::new(resource, Rights::DEFAULT_RESOURCE);
     handles[K_ZBI] = Handle::new(zbi_vmo, Rights::DEFAULT_VMO);
     // set up handles[K_FIRSTVDSO..K_LASTVDSO + 1]
+    let (base_addr, constants) = generate_constants();
+    vdso_vmo.write(base_addr, &constants);
     vdso_vmo.set_name("vdso/full");
     let vdso_test1 = VmObject::new(vdso_vmo.create_clone(0, vdso_vmo.len()));
     vdso_test1.set_name("vdso/test1");
