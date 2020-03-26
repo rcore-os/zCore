@@ -1,4 +1,5 @@
 use super::*;
+use crate::vdso::VdsoConstants;
 use alloc::boxed::Box;
 use core::future::Future;
 use core::ops::FnOnce;
@@ -188,5 +189,11 @@ pub fn timer_tick() {
 #[linkage = "weak"]
 #[export_name = "hal_irq_ack"]
 pub fn irq_ack(_irq: u8) {
+    unimplemented!()
+}
+
+#[linkage = "weak"]
+#[export_name = "hal_vdso_constants"]
+pub fn vdso_constants() -> VdsoConstants {
     unimplemented!()
 }

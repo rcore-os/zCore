@@ -147,6 +147,9 @@ impl<T, P: Write> UserPtr<T, P> {
     }
 
     pub fn write_array(&mut self, values: &[T]) -> Result<()> {
+        if values.is_empty() {
+            return Ok(());
+        }
         unsafe {
             self.ptr
                 .copy_from_nonoverlapping(values.as_ptr(), values.len());

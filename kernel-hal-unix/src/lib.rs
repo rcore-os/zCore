@@ -22,6 +22,7 @@ use {
 
 pub use self::trap::syscall_entry;
 pub use kernel_hal::defs::*;
+use kernel_hal::vdso::*;
 pub use kernel_hal::*;
 
 #[cfg(target_os = "macos")]
@@ -297,6 +298,26 @@ pub fn timer_set(deadline: Duration, callback: Box<dyn FnOnce(Duration) + Send +
         std::thread::sleep(deadline - timer_now());
         callback(timer_now());
     });
+}
+
+#[export_name = "hal_vdso_constants"]
+pub fn vdso_constants() -> VdsoConstants {
+    let tsc_frequency = 3000u16;
+    VdsoConstants {
+        max_num_cpus: 1,
+        features: Features {
+            cpu: 0,
+            hw_breakpoint_count: 0,
+            hw_watchpoint_count: 0,
+        },
+        dcache_line_size: 0,
+        icache_line_size: 0,
+        ticks_per_second: tsc_frequency as u64 * 1000_000,
+        ticks_to_mono_numerator: 1000,
+        ticks_to_mono_denominator: tsc_frequency as u32,
+        physmem: PMEM_SIZE as u64,
+        buildid: Default::default(),
+    }
 }
 
 /// Initialize the HAL.

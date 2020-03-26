@@ -10,3 +10,4 @@ description = "Kernel HAL interface definations."
 [dependencies]
 bitflags = "1.2"
 trapframe = "0.1.4"
+git-version = "0.3"

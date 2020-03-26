@@ -109,4 +109,3 @@ impl Syscall<'_> {
         Ok(0)
     }
 }
-

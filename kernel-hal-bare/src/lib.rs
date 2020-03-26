@@ -34,6 +34,7 @@ use core::{
     task::{Context, Poll},
 };
 use kernel_hal::defs::*;
+use kernel_hal::vdso::*;
 use kernel_hal::UserContext;
 use naive_timer::Timer;
 use spin::Mutex;
@@ -155,7 +156,6 @@ lazy_static! {
 
 #[export_name = "hal_timer_set"]
 pub fn timer_set(deadline: Duration, callback: Box<dyn FnOnce(Duration) + Send + Sync>) {
-    warn!("deadlne: {:#x?}", deadline);
     NAIVE_TIMER.lock().add(deadline, callback);
 }
 

@@ -26,6 +26,7 @@ pub mod defs {
 
 mod dummy;
 pub mod user;
+pub mod vdso;
 
 pub use self::defs::*;
 pub use self::dummy::*;

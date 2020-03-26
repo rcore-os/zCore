@@ -217,14 +217,17 @@ pub fn serial_write(s: &str) {
     putfmt(format_args!("{}", s));
 }
 
+fn tsc_frequency() -> u16 {
+    match raw_cpuid::CpuId::new().get_processor_frequency_info() {
+        Some(info) => info.processor_base_frequency(),
+        None => 3000, // QEMU
+    }
+}
+
 #[export_name = "hal_timer_now"]
 pub fn timer_now() -> Duration {
     let tsc = unsafe { core::arch::x86_64::_rdtsc() };
-    let tsc_frequency = match raw_cpuid::CpuId::new().get_processor_frequency_info() {
-        Some(info) => info.processor_base_frequency(),
-        None => 3000, // QEMU
-    };
-    Duration::from_nanos(tsc * 1000 / tsc_frequency as u64)
+    Duration::from_nanos(tsc * 1000 / tsc_frequency() as u64)
 }
 
 fn timer_init() {
@@ -239,6 +242,26 @@ pub fn irq_ack(_irq: u8) {
 }
 
 const LAPIC_ADDR: usize = 0xfee0_0000;
+
+#[export_name = "hal_vdso_constants"]
+fn vdso_constants() -> VdsoConstants {
+    let tsc_frequency = tsc_frequency();
+    VdsoConstants {
+        max_num_cpus: 1,
+        features: Features {
+            cpu: 0,
+            hw_breakpoint_count: 0,
+            hw_watchpoint_count: 0
+        },
+        dcache_line_size: 0,
+        icache_line_size: 0,
+        ticks_per_second: tsc_frequency as u64 * 1000_000,
+        ticks_to_mono_numerator: 1000,
+        ticks_to_mono_denominator: tsc_frequency as u32,
+        physmem: 0,
+        buildid: Default::default(),
+    }
+}
 
 /// Initialize the HAL.
 pub fn init() {

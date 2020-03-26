@@ -17,7 +17,7 @@ impl_kobject!(Event);
 
 impl Event {
     pub fn new() -> Arc<Self> {
-        Arc::new(Event{
+        Arc::new(Event {
             base: KObjectBase::default().set_allowed_signals(Signal::SIGNALED),
         })
     }

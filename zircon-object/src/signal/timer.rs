@@ -3,10 +3,10 @@ use crate::object::*;
 use alloc::boxed::Box;
 use alloc::sync::Arc;
 use core::{
-    time::Duration,
     future::Future,
     pin::Pin,
     task::{Context, Poll, Waker},
+    time::Duration,
 };
 use spin::Mutex;
 
@@ -105,7 +105,7 @@ pub struct SleepState {
 }
 
 impl SleepState {
-    pub fn new() -> Arc<Self>{
+    pub fn new() -> Arc<Self> {
         Arc::new(SleepState {
             timer: Timer::create(0).unwrap(),
             inner: Mutex::new(SleepStateInner::default()),
@@ -131,14 +131,14 @@ impl SleepState {
     fn is_woken(&self) -> bool {
         self.inner.lock().woken
     }
-    
+
     fn renew_waker(&self, new_waker: Waker) {
         self.inner.lock().waker.replace(new_waker);
     }
 }
 
 pub struct SleepFutureImpl {
-    pub state: Arc<SleepState>
+    pub state: Arc<SleepState>,
 }
 
 impl Future for SleepFutureImpl {
