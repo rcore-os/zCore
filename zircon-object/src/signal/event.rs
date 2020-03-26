@@ -9,7 +9,19 @@ use alloc::sync::{Arc, Weak};
 /// Events are user-signalable objects. The 8 signal bits reserved for
 /// userspace (`ZX_USER_SIGNAL_0` through `ZX_USER_SIGNAL_7`) may be set,
 /// cleared, and waited upon.
-pub type Event = DummyObject;
+pub struct Event {
+    base: KObjectBase,
+}
+
+impl_kobject!(Event);
+
+impl Event {
+    pub fn new() -> Arc<Self> {
+        Arc::new(Event{
+            base: KObjectBase::default().set_allowed_signals(Signal::SIGNALED),
+        })
+    }
+}
 
 /// Mutually signalable pair of events for concurrent programming
 ///
@@ -31,11 +43,11 @@ impl EventPair {
     #[allow(unsafe_code)]
     pub fn create() -> (Arc<Self>, Arc<Self>) {
         let mut event0 = Arc::new(EventPair {
-            base: KObjectBase::default(),
+            base: KObjectBase::default().set_allowed_signals(Signal::SIGCHLD),
             peer: Weak::default(),
         });
         let event1 = Arc::new(EventPair {
-            base: KObjectBase::default(),
+            base: KObjectBase::default().set_allowed_signals(Signal::SIGCHLD),
             peer: Arc::downgrade(&event0),
         });
         // no other reference of `channel0`

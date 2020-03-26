@@ -168,6 +168,7 @@ impl Syscall<'_> {
                 a5 as _,
                 a6.into(),
             ),
+            Sys::OBJECT_SIGNAL => self.sys_object_signal(a0 as _, a1 as _, a2 as _),
             _ => {
                 warn!("syscall unimplemented: {:?}", sys_type);
                 Err(ZxError::NOT_SUPPORTED)

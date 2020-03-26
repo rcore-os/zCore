@@ -48,8 +48,8 @@ bitflags! {
 }
 
 impl Signal {
-    pub fn verify_user_signal(number: u32) -> ZxResult<Signal> {
-        if (number & !Signal::USER_ALL.bits()) != 0 {
+    pub fn verify_user_signal(allowed_signals: Signal, number: u32) -> ZxResult<Signal> {
+        if (number & !allowed_signals.bits()) != 0 {
             Err(ZxError::INVALID_ARGS)
         } else {
             Ok(Signal::from_bits(number).ok_or(ZxError::INVALID_ARGS)?)

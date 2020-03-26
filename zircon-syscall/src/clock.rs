@@ -16,11 +16,11 @@ impl Syscall<'_> {
         info!("clock.get: id={}", clock_id);
         match clock_id {
             ZX_CLOCK_MONOTONIC => {
-                time.write(timer_now().as_secs())?;
+                time.write(timer_now().as_nanos() as u64)?;
                 Ok(0)
             }
             ZX_CLOCK_UTC => {
-                time.write(timer_now().as_secs() + UTC_OFFSET.load(Ordering::Relaxed))?;
+                time.write(timer_now().as_nanos() as u64 + UTC_OFFSET.load(Ordering::Relaxed))?;
                 Ok(0)
             }
             ZX_CLOCK_THREAD => unimplemented!(),

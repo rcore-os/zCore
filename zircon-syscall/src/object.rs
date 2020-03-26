@@ -138,7 +138,7 @@ impl Syscall<'_> {
         );
         let proc = self.thread.proc();
         let object = proc.get_dyn_object_with_rights(handle, Rights::WAIT)?;
-        observed.write(object.wait_signal_async(signals).await)?;
+        observed.write_if_not_null(object.wait_signal_async(signals).await)?;
         Ok(0)
     }
 
@@ -191,8 +191,9 @@ impl Syscall<'_> {
         );
         let proc = self.thread.proc();
         let object = proc.get_dyn_object_with_rights(handle_value, Rights::SIGNAL_PEER)?;
-        let clear_signal = Signal::verify_user_signal(clear_mask)?;
-        let set_signal = Signal::verify_user_signal(set_mask)?;
+        let allowed_signals = object.allowed_signals();
+        let clear_signal = Signal::verify_user_signal(allowed_signals, clear_mask)?;
+        let set_signal = Signal::verify_user_signal(allowed_signals, set_mask)?;
         object.user_signal_peer(clear_signal, set_signal)?;
         Ok(0)
     }
@@ -218,6 +219,26 @@ impl Syscall<'_> {
         let object = proc.get_dyn_object_with_rights(handle_value, Rights::WAIT)?;
         let port = proc.get_object_with_rights::<Port>(port_handle_value, Rights::WRITE)?;
         object.send_signal_to_port_async(signals, &port, key);
+        Ok(0)
+    }
+
+    pub fn sys_object_signal(
+        &self,
+        handle_value: HandleValue,
+        clear_mask: u32,
+        set_mask: u32,
+    ) -> ZxResult<usize> {
+        info!(
+            "object.signal: handle_value={:#x}, clear_mask={:#x}, set_mask={:#x}",
+            handle_value, clear_mask, set_mask
+        );
+        let proc = self.thread.proc();
+        let object = proc.get_dyn_object_with_rights(handle_value, Rights::SIGNAL)?;
+        let allowed_signals = object.allowed_signals();
+        info!("{:?} allowed: {:?}", object.obj_type(), allowed_signals);
+        let clear_signal = Signal::verify_user_signal(allowed_signals, clear_mask)?;
+        let set_signal = Signal::verify_user_signal(allowed_signals, set_mask)?;
+        object.signal_change(clear_signal, set_signal);
         Ok(0)
     }
 }

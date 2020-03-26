@@ -126,6 +126,8 @@ pub trait KernelObject: DowncastSync + Debug {
     fn set_name(&self, name: &str);
     fn signal(&self) -> Signal;
     fn signal_set(&self, signal: Signal);
+    fn signal_change(&self, clear: Signal, set: Signal);
+    fn allowed_signals(&self) -> Signal;
     fn add_signal_callback(&self, callback: SignalHandler);
     fn get_child(&self, _id: KoID) -> ZxResult<Arc<dyn KernelObject>> {
         Err(ZxError::WRONG_TYPE)
@@ -148,6 +150,7 @@ impl_downcast!(sync KernelObject);
 /// The base struct of a kernel object.
 pub struct KObjectBase {
     pub id: KoID,
+    pub allowed_signals: Signal,
     inner: Mutex<KObjectBaseInner>,
 }
 
@@ -178,6 +181,7 @@ impl Default for KObjectBase {
     fn default() -> Self {
         KObjectBase {
             id: Self::new_koid(),
+            allowed_signals: Signal::USER_ALL,
             inner: Default::default(),
         }
     }
@@ -193,6 +197,7 @@ impl KObjectBase {
     pub fn with_signal(signal: Signal) -> Self {
         KObjectBase {
             id: Self::new_koid(),
+            allowed_signals: Signal::USER_ALL,
             inner: Mutex::new(KObjectBaseInner {
                 signal,
                 ..Default::default()
@@ -204,11 +209,17 @@ impl KObjectBase {
     pub fn with_name(name: &str) -> Self {
         KObjectBase {
             id: Self::new_koid(),
+            allowed_signals: Signal::USER_ALL,
             inner: Mutex::new(KObjectBaseInner {
                 name: String::from(name),
                 ..Default::default()
             }),
         }
+    }
+
+    pub fn set_allowed_signals(mut self, extra_signal: Signal) -> Self {
+        self.allowed_signals = Signal::USER_ALL | extra_signal;
+        self
     }
 
     /// Generate a new KoID.
@@ -435,6 +446,12 @@ macro_rules! impl_kobject {
             }
             fn signal_set(&self, signal: Signal) {
                 self.base.signal_set(signal);
+            }
+            fn signal_change(&self, clear: Signal, set: Signal) {
+                self.base.signal_change(clear, set);
+            }
+            fn allowed_signals(&self) -> Signal {
+                self.base.allowed_signals
             }
             fn add_signal_callback(&self, callback: SignalHandler) {
                 self.base.add_signal_callback(callback);
