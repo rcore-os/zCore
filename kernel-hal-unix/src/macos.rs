@@ -10,18 +10,18 @@ unsafe fn register_sigsegv_handler() {
     libc::sigaction(libc::SIGSEGV, &sa, core::ptr::null_mut());
 
     #[repr(C)]
-    struct ucontext {
+    struct Ucontext {
         uc_onstack: i32,
         uc_sigmask: u32,
         uc_stack: [u32; 5],
         uc_link: usize,
         uc_mcsize: usize,
-        uc_mcontext: *const mcontext,
+        uc_mcontext: *const Mcontext,
     }
 
     #[repr(C)]
     #[derive(Debug)]
-    struct mcontext {
+    struct Mcontext {
         trapno: u16,
         cpu: u16,
         err: u32,
@@ -55,12 +55,14 @@ unsafe fn register_sigsegv_handler() {
     unsafe extern "C" fn handler(
         _sig: libc::c_int,
         _si: *const libc::siginfo_t,
-        uc: *const ucontext,
+        uc: *const Ucontext,
     ) {
-        let rip = (*(*uc).uc_mcontext).rip as *mut u8;
-        let rip_value = rip.read();
-        trace!("catch SIGSEGV: rip={:?}, opcode={:#x}", rip, rip_value);
-        match rip_value {
+        let mut rip = (*(*uc).uc_mcontext).rip as *mut u8;
+        // skip data16 prefix
+        while rip.read() == 0x66 {
+            rip = rip.add(1);
+        }
+        match rip.read() {
             // Instruction starts with 0x64, meaning it tries to access %fs. By
             // changing the first byte to 0x65, it uses %gs instead.
             0x64 => rip.write(0x65),
@@ -73,12 +75,13 @@ unsafe fn register_sigsegv_handler() {
             // access %fs. Reset the handler to its default action, so that the
             // segmentation violation is rethrown.
             _ => {
-                let sa = libc::sigaction {
-                    sa_sigaction: libc::SIG_DFL,
-                    sa_flags: 0,
-                    sa_mask: 0,
-                };
-                libc::sigaction(libc::SIGSEGV, &sa, core::ptr::null_mut());
+                // switch back to kernel gs
+                asm!("
+                    mov rdi, gs:48
+                    mov eax, 0x3000003
+                    syscall
+                    " ::: "rdi", "rax", "rcx", "r11": "intel" "volatile");
+                panic!("catch SIGSEGV: {:#x?}", *(*uc).uc_mcontext);
             }
         }
     }
