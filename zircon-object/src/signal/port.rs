@@ -78,14 +78,17 @@ impl Port {
 
     /// Asynchronous wait until at least one packet is available, then take out all packets.
     pub async fn wait_async(self: &Arc<Self>) -> PortPacket {
-        (self.clone() as Arc<dyn KernelObject>)
-            .wait_signal_async(Signal::READABLE)
-            .await;
-        let mut inner = self.inner.lock();
-        if inner.queue.len() == 1 {
-            self.base.signal_clear(Signal::READABLE);
+        let object = self.clone() as Arc<dyn KernelObject>;
+        loop {
+            object.wait_signal(Signal::READABLE).await;
+            let mut inner = self.inner.lock();
+            if let Some(packet) = inner.queue.pop_front() {
+                if inner.queue.is_empty() {
+                    self.base.signal_clear(Signal::READABLE);
+                }
+                return packet;
+            }
         }
-        inner.queue.pop_front().unwrap()
     }
 
     /// Get the number of packets in queue.
