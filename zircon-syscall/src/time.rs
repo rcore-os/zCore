@@ -59,11 +59,8 @@ impl Syscall<'_> {
         if deadline <= 0 {
             yield_now().await;
         } else {
-            let timer = Timer::create(0).unwrap();
-            let deadline = Duration::from_nanos(deadline as u64);
-            let slack = Duration::default();
-            timer.set(deadline, slack);
-            let timer: Arc<dyn KernelObject> = timer;
+            let timer: Arc<dyn KernelObject> =
+                Timer::one_shot(Duration::from_nanos(deadline as u64));
             timer.wait_signal(Signal::SIGNALED).await;
         }
         Ok(0)

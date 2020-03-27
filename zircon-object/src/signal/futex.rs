@@ -104,7 +104,7 @@ impl Futex {
     ) -> impl Future<Output = ZxResult<()>> {
         let waiter = Arc::new(Waiter {
             thread,
-            timer: Timer::create(0).unwrap(),
+            timer: Timer::new(),
             inner: Mutex::new(WaiterInner {
                 waker: None,
                 woken: false,

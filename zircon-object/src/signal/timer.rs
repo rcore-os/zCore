@@ -5,10 +5,6 @@ use alloc::sync::Arc;
 use core::time::Duration;
 use spin::Mutex;
 
-const SLACK_CENTER: u32 = 0;
-const SLACK_EARLY: u32 = 1;
-const SLACK_LATE: u32 = 2;
-
 /// An object that may be signaled at some point in the future
 ///
 /// ## SYNOPSIS
@@ -18,7 +14,7 @@ const SLACK_LATE: u32 = 2;
 pub struct Timer {
     base: KObjectBase,
     #[allow(dead_code)]
-    flags: u32,
+    slack: Slack,
     inner: Mutex<TimerInner>,
 }
 
@@ -29,17 +25,33 @@ struct TimerInner {
     deadline: Option<Duration>,
 }
 
+#[derive(Debug)]
+pub enum Slack {
+    Center,
+    Early,
+    Late,
+}
+
 impl Timer {
     /// Create a new `Timer`.
-    pub fn create(flags: u32) -> ZxResult<Arc<Self>> {
-        match flags {
-            SLACK_LATE | SLACK_EARLY | SLACK_CENTER => Ok(Arc::new(Timer {
-                base: KObjectBase::default(),
-                flags,
-                inner: Mutex::default(),
-            })),
-            _ => Err(ZxError::INVALID_ARGS),
-        }
+    pub fn new() -> Arc<Self> {
+        Self::with_slack(Slack::Center)
+    }
+
+    /// Create a new `Timer` with slack.
+    pub fn with_slack(slack: Slack) -> Arc<Self> {
+        Arc::new(Timer {
+            base: KObjectBase::default(),
+            slack,
+            inner: Mutex::default(),
+        })
+    }
+
+    /// Create a one-shot timer.
+    pub fn one_shot(deadline: Duration) -> Arc<Self> {
+        let timer = Timer::new();
+        timer.set(deadline, Duration::default());
+        timer
     }
 
     /// Starts a one-shot timer that will fire when `deadline` passes.
