@@ -262,6 +262,7 @@ impl KObjectBase {
 impl dyn KernelObject {
     /// Asynchronous wait for one of `signal`.
     pub fn wait_signal(self: &Arc<Self>, signal: Signal) -> impl Future<Output = Signal> {
+        #[must_use = "wait_signal does nothing unless polled/`await`-ed"]
         struct SignalFuture {
             object: Arc<dyn KernelObject>,
             signal: Signal,
@@ -352,6 +353,7 @@ impl dyn KernelObject {
 pub fn wait_signal_many(
     targets: &[(Arc<dyn KernelObject>, Signal)],
 ) -> impl Future<Output = Vec<Signal>> {
+    #[must_use = "wait_signal_many does nothing unless polled/`await`-ed"]
     struct SignalManyFuture {
         targets: Vec<(Arc<dyn KernelObject>, Signal)>,
         first: bool,

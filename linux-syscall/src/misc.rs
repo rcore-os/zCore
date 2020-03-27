@@ -54,7 +54,7 @@ impl Syscall<'_> {
             0 => {
                 // FIXME: support timeout
                 let _timeout = timeout.read_if_not_null()?;
-                match futex.wait_async(val).await {
+                match futex.wait(val).await {
                     Ok(_) => Ok(0),
                     Err(ZxError::BAD_STATE) => Err(LxError::EAGAIN),
                     Err(e) => Err(e.into()),

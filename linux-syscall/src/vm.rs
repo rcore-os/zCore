@@ -31,11 +31,11 @@ impl Syscall<'_> {
             if flags.contains(MmapFlags::SHARED) {
                 return Err(LxError::EINVAL);
             }
-            let vmo = VMObjectPaged::new(pages(len));
+            let vmo = VmObject::new(VMObjectPaged::new(pages(len)));
             let addr = vmar.map(vmar_offset, vmo.clone(), 0, vmo.len(), prot.to_flags())?;
             Ok(addr)
         } else {
-            let vmo = VMObjectPaged::new(pages(len));
+            let vmo = VmObject::new(VMObjectPaged::new(pages(len)));
             let addr = vmar.map(vmar_offset, vmo.clone(), 0, vmo.len(), prot.to_flags())?;
             let file = self.lock_linux_process().get_file(fd)?;
             let mut buf = vec![0; len];

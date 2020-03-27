@@ -1,4 +1,7 @@
-use {super::*, core::sync::atomic::*};
+use {
+    super::*,
+    core::{sync::atomic::*, time::Duration},
+};
 
 impl Syscall<'_> {
     pub async fn sys_futex_wait(
@@ -6,16 +9,13 @@ impl Syscall<'_> {
         value_ptr: UserInPtr<AtomicI32>,
         current_value: i32,
         new_futex_owner: HandleValue,
-        deadline: u64,
+        deadline: i64,
     ) -> ZxResult<usize> {
         info!(
             "futex.wait: value_ptr={:?}, current_value={:#x}, new_futex_owner={:#x}, deadline={:#x}",
             value_ptr, current_value, new_futex_owner, deadline
         );
         let value = value_ptr.as_ref()?;
-        if value.load(Ordering::SeqCst) != current_value {
-            return Err(ZxError::BAD_STATE);
-        }
         let proc = self.thread.proc();
         let futex = proc.get_futex(value);
         let new_owner = if new_futex_owner == INVALID_HANDLE {
@@ -23,9 +23,18 @@ impl Syscall<'_> {
         } else {
             Some(proc.get_object::<Thread>(new_futex_owner)?)
         };
-        futex.set_owner(new_owner)?;
+        let deadline = if deadline == i64::max_value() {
+            None
+        } else {
+            Some(Duration::from_nanos(deadline.max(0) as u64))
+        };
         futex
-            .wait_async(current_value, self.thread.clone(), deadline)
+            .wait_with_owner(
+                current_value,
+                Some(self.thread.clone()),
+                new_owner,
+                deadline,
+            )
             .await?;
         Ok(0)
     }
@@ -40,28 +49,29 @@ impl Syscall<'_> {
         new_requeue_owner: HandleValue,
     ) -> ZxResult<usize> {
         info!(
-            "futex.requeue: value_ptr={:#x}, wake_count={:#x}, current_value={:#x}, requeue_ptr={:#x}, requeue_count={:#x}, new_requeue_owner={:#x}",
-            value_ptr.as_ptr() as usize, wake_count, current_value, requeue_ptr.as_ptr() as usize, requeue_count, new_requeue_owner
+            "futex.requeue: value_ptr={:?}, wake_count={:#x}, current_value={:#x}, requeue_ptr={:?}, requeue_count={:#x}, new_requeue_owner={:?}",
+            value_ptr, wake_count, current_value, requeue_ptr, requeue_count, new_requeue_owner
         );
         let value = value_ptr.as_ref()?;
         let requeue = requeue_ptr.as_ref()?;
         if value_ptr.as_ptr() == requeue_ptr.as_ptr() {
             return Err(ZxError::INVALID_ARGS);
         }
-        if value.load(Ordering::SeqCst) != current_value {
-            return Err(ZxError::BAD_STATE);
-        }
         let proc = self.thread.proc();
-        let new_owner = if new_requeue_owner == INVALID_HANDLE {
+        let new_requeue_owner = if new_requeue_owner == INVALID_HANDLE {
             None
         } else {
             Some(proc.get_object::<Thread>(new_requeue_owner)?)
         };
         let wake_futex = proc.get_futex(value);
         let requeue_futex = proc.get_futex(requeue);
-        wake_futex.set_owner(None)?;
-        requeue_futex.set_owner(new_owner)?;
-        wake_futex.wake_and_requeue(wake_count as usize, requeue_futex, requeue_count as usize)?;
+        wake_futex.requeue(
+            current_value,
+            wake_count as usize,
+            requeue_count as usize,
+            &requeue_futex,
+            new_requeue_owner,
+        )?;
         Ok(0)
     }
 
@@ -71,7 +81,6 @@ impl Syscall<'_> {
         let proc = self.thread.proc();
         let futex = proc.get_futex(value);
         futex.wake(count as usize);
-        futex.set_owner(None)?;
         Ok(0)
     }
 
