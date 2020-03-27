@@ -19,7 +19,7 @@ pub struct Port {
 
 impl_kobject!(Port);
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 struct PortInner {
     queue: VecDeque<PortPacket>,
 }
@@ -82,7 +82,9 @@ impl Port {
             .wait_signal_async(Signal::READABLE)
             .await;
         let mut inner = self.inner.lock();
-        self.base.signal_clear(Signal::READABLE);
+        if inner.queue.len() == 1 {
+            self.base.signal_clear(Signal::READABLE);
+        }
         inner.queue.pop_front().unwrap()
     }
 
