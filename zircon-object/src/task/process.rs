@@ -396,10 +396,9 @@ impl ProcessInner {
     fn add_handle(&mut self, handle: Handle) -> HandleValue {
         // FIXME: handle value from ptr
         let key = (self.max_handle_id << 2) | 0x3u32;
-        let type_ = handle.object.obj_type();
+        info!("add handle: {}, {:?}", key, handle.object);
         self.max_handle_id += 1;
         self.handles.insert(key, handle);
-        info!("add handle: {}, type={:?}", key, type_);
         key
     }
 

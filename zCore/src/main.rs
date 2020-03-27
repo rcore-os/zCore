@@ -16,7 +16,6 @@ mod logging;
 mod interrupt;
 mod lang;
 mod memory;
-mod process;
 
 use rboot::BootInfo;
 
@@ -33,7 +32,6 @@ pub extern "C" fn _start(boot_info: &BootInfo) -> ! {
     info!("{:#x?}", boot_info);
     kernel_hal_bare::init();
     interrupt::init();
-    process::init();
 
     let zbi_data = unsafe {
         core::slice::from_raw_parts(

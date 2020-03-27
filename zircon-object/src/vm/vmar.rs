@@ -369,8 +369,7 @@ impl VmAddressRegion {
         let guard = self.inner.lock();
         let inner = guard.as_ref().unwrap();
         for map in inner.mappings.iter() {
-            if map.vmo.name().starts_with("vdso") && map.vmo_offset == 0x7000 && map.size == 0x1000
-            {
+            if map.vmo.name().starts_with("vdso") && map.vmo_offset == 0x7000 {
                 return Some(map.addr);
             }
         }

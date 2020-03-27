@@ -155,26 +155,11 @@ pub struct KObjectBase {
 }
 
 /// The mutable part of `KObjectBase`.
+#[derive(Default)]
 struct KObjectBaseInner {
     name: String,
     signal: Signal,
     signal_callbacks: Vec<SignalHandler>,
-}
-
-impl Default for KObjectBaseInner {
-    fn default() -> Self {
-        KObjectBaseInner {
-            name: {
-                let mut s = String::with_capacity(32);
-                for _ in 0..32 {
-                    s.push('\0');
-                }
-                s
-            },
-            signal: Signal::default(),
-            signal_callbacks: Vec::default(),
-        }
-    }
 }
 
 impl Default for KObjectBase {
@@ -235,10 +220,7 @@ impl KObjectBase {
 
     /// Set object's name.
     pub fn set_name(&self, name: &str) {
-        let s = &mut self.inner.lock().name;
-        s.clear();
-        assert!(name.len() <= 32, "name is too long for object");
-        s.push_str(name);
+        self.inner.lock().name = String::from(name);
     }
 
     /// Get the signal status.
@@ -463,7 +445,7 @@ macro_rules! impl_kobject {
                 &self,
                 f: &mut core::fmt::Formatter<'_>,
             ) -> core::result::Result<(), core::fmt::Error> {
-                f.debug_tuple("KObject")
+                f.debug_tuple(&stringify!($class))
                     .field(&self.id())
                     .field(&self.name())
                     .finish()
