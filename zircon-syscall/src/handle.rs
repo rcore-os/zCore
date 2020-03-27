@@ -8,7 +8,7 @@ impl Syscall<'_> {
         mut new_handle_value: UserOutPtr<HandleValue>,
     ) -> ZxResult<usize> {
         let rights = Rights::try_from(rights)?;
-        info!("handle.dup: handle={:?}, rights={:?}", handle_value, rights);
+        info!("handle.dup: handle={:#x?}, rights={:?}", handle_value, rights);
         let proc = self.thread.proc();
         let new_value = proc.dup_handle_operating_rights(handle_value, |handle_rights| {
             if !handle_rights.contains(Rights::DUPLICATE) {
@@ -29,7 +29,7 @@ impl Syscall<'_> {
     }
 
     pub fn sys_handle_close(&self, handle: HandleValue) -> ZxResult<usize> {
-        info!("handle.close: handle={:?}", handle);
+        info!("handle.close: handle={:#x?}", handle);
         if handle == INVALID_HANDLE {
             return Ok(0);
         }
@@ -44,7 +44,7 @@ impl Syscall<'_> {
         num_handles: usize,
     ) -> ZxResult<usize> {
         info!(
-            "handle.close_many: handles=({:?}; {:?})",
+            "handle.close_many: handles=({:#x?}; {:#x?})",
             handles, num_handles,
         );
         let proc = self.thread.proc();
@@ -66,7 +66,7 @@ impl Syscall<'_> {
     ) -> ZxResult<usize> {
         let rights = Rights::try_from(rights)?;
         info!(
-            "handle.replace: handle={:?}, rights={:?}",
+            "handle.replace: handle={:#x?}, rights={:?}",
             handle_value, rights
         );
         let proc = self.thread.proc();

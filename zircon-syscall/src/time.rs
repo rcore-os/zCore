@@ -16,7 +16,7 @@ const ZX_CLOCK_THREAD: u32 = 2;
 
 impl Syscall<'_> {
     pub fn sys_clock_get(&self, clock_id: u32, mut time: UserOutPtr<u64>) -> ZxResult<usize> {
-        info!("clock.get: id={}", clock_id);
+        info!("clock.get: id={:#x}", clock_id);
         match clock_id {
             ZX_CLOCK_MONOTONIC => {
                 time.write(timer_now().as_nanos() as u64)?;
@@ -38,7 +38,7 @@ impl Syscall<'_> {
         offset: u64,
     ) -> ZxResult<usize> {
         info!(
-            "clock.adjust: hrsrc={:?}, id={}, offset={:#x}",
+            "clock.adjust: hrsrc={:#x?}, id={:#x}, offset={:#x}",
             hrsrc, clock_id, offset
         );
         self.thread

@@ -13,7 +13,7 @@ impl Syscall<'_> {
         mut target: UserOutPtr<HandleValue>,
     ) -> ZxResult<usize> {
         info!(
-            "debuglog.create: resource_handle={:?}, options={:?}",
+            "debuglog.create: resource_handle={:#x?}, options={:#x?}",
             rsrc, options,
         );
         let proc = self.thread.proc();
@@ -39,7 +39,7 @@ impl Syscall<'_> {
         len: usize,
     ) -> ZxResult<usize> {
         info!(
-            "debuglog.write: handle={:?}, flags={:?}, buf=({:?}; {:?})",
+            "debuglog.write: handle={:#x?}, flags={:#x?}, buf=({:#x?}; {:#x?})",
             handle_value, flags, buf, len,
         );
         let datalen = len.min(224);

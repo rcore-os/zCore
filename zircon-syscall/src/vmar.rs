@@ -21,7 +21,7 @@ impl Syscall<'_> {
     ) -> ZxResult<usize> {
         let vm_options = VmOptions::from_bits(options).ok_or(ZxError::INVALID_ARGS)?;
         info!(
-            "vmar.allocate: parent={:?}, options={:#x?}, offset={:#x?}, size={:#x?}",
+            "vmar.allocate: parent={:#x?}, options={:#x?}, offset={:#x?}, size={:#x?}",
             parent_vmar, options, offset, size,
         );
         // try to get parent_vmar
@@ -81,7 +81,7 @@ impl Syscall<'_> {
     ) -> ZxResult<usize> {
         let options = VmOptions::from_bits(options).ok_or(ZxError::INVALID_ARGS)?;
         info!(
-            "vmar.map: vmar_handle={:?}, options={:?}, vmar_offset={:#x?}, vmo_handle={:?}, vmo_offset={:#x?}, len={:#x?}",
+            "vmar.map: vmar_handle={:#x?}, options={:?}, vmar_offset={:#x?}, vmo_handle={:#x?}, vmo_offset={:#x?}, len={:#x?}",
             vmar_handle, options, vmar_offset, vmo_handle, vmo_offset, len
         );
         let proc = self.thread.proc();
@@ -134,7 +134,7 @@ impl Syscall<'_> {
     }
 
     pub fn sys_vmar_destroy(&self, handle_value: HandleValue) -> ZxResult<usize> {
-        info!("vmar.destroy: handle={:?}", handle_value);
+        info!("vmar.destroy: handle={:#x?}", handle_value);
         let proc = self.thread.proc();
         let vmar = proc.get_object::<VmAddressRegion>(handle_value)?;
         vmar.destroy()?;
@@ -151,7 +151,7 @@ impl Syscall<'_> {
         let options = VmOptions::from_bits(options).ok_or(ZxError::INVALID_ARGS)?;
         let rights = options.to_rights();
         info!(
-            "vmar.protect: handle={}, options={:#x}, addr={:#x}, len={:#x}",
+            "vmar.protect: handle={:#x}, options={:#x}, addr={:#x}, len={:#x}",
             handle_value, options, addr, len
         );
         let proc = self.thread.proc();
@@ -171,7 +171,7 @@ impl Syscall<'_> {
         len: usize,
     ) -> ZxResult<usize> {
         info!(
-            "vmar.unmap: handle_value={}, addr={:#x}, len={:#x}",
+            "vmar.unmap: handle_value={:#x}, addr={:#x}, len={:#x}",
             handle_value, addr, len
         );
         let proc = self.thread.proc();

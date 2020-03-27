@@ -15,7 +15,7 @@ impl Syscall<'_> {
     ) -> ZxResult<usize> {
         let property = Property::try_from(property).map_err(|_| ZxError::INVALID_ARGS)?;
         info!(
-            "object.get_property: handle={:?}, property={:?}, buffer=({:#x}; {:?})",
+            "object.get_property: handle={:#x?}, property={:?}, buffer=({:#x}; {:#x?})",
             handle_value, property, ptr, buffer_size
         );
         let proc = self.thread.proc();
@@ -77,7 +77,7 @@ impl Syscall<'_> {
     ) -> ZxResult<usize> {
         let property = Property::try_from(property).map_err(|_| ZxError::INVALID_ARGS)?;
         info!(
-            "object.set_property: handle={:?}, property={:?}, buffer=({:#x}; {:?})",
+            "object.set_property: handle={:#x?}, property={:?}, buffer=({:#x}; {:#x?})",
             handle_value, property, ptr, buffer_size
         );
         let proc = self.thread.proc();
@@ -135,7 +135,7 @@ impl Syscall<'_> {
     ) -> ZxResult<usize> {
         let signals = Signal::from_bits(signals).ok_or(ZxError::INVALID_ARGS)?;
         info!(
-            "object.wait_one: handle={:?}, signals={:?}, deadline={:#x?}, observed={:#x?}",
+            "object.wait_one: handle={:#x?}, signals={:?}, deadline={:#x?}, observed={:#x?}",
             handle, signals, deadline, observed
         );
         let proc = self.thread.proc();
@@ -155,7 +155,7 @@ impl Syscall<'_> {
     ) -> ZxResult<usize> {
         let topic = Topic::try_from(topic).map_err(|_| ZxError::INVALID_ARGS)?;
         info!(
-            "object.get_info: handle={:?}, topic={:?}, buffer=({:#x}; {:#x})",
+            "object.get_info: handle={:#x?}, topic={:?}, buffer=({:#x}; {:#x})",
             handle, topic, buffer, buffer_size,
         );
         let proc = self.thread.proc();
@@ -188,7 +188,7 @@ impl Syscall<'_> {
         set_mask: u32,
     ) -> ZxResult<usize> {
         info!(
-            "object.signal_peer: handle_value = {}, clear_mask = {:#x}, set_mask = {:#x}",
+            "object.signal_peer: handle_value = {:#x}, clear_mask = {:#x}, set_mask = {:#x}",
             handle_value, clear_mask, set_mask
         );
         let proc = self.thread.proc();
@@ -210,7 +210,7 @@ impl Syscall<'_> {
     ) -> ZxResult<usize> {
         let signals = Signal::from_bits(signals).ok_or(ZxError::INVALID_ARGS)?;
         info!(
-            "object.wait_async: handle={}, port={}, key={:#x}, signal={:?}, options={:#X}",
+            "object.wait_async: handle={:#x}, port={:#x}, key={:#x}, signal={:?}, options={:#X}",
             handle_value, port_handle_value, key, signals, options
         );
         if options != 0 {

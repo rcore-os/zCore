@@ -18,7 +18,7 @@ impl Syscall<'_> {
         mut actual_handles: UserOutPtr<u32>,
     ) -> ZxResult<usize> {
         info!(
-            "channel.read: handle={:?}, options={:?}, bytes=({:?}; {:?}), handles=({:?}; {:?})",
+            "channel.read: handle={:#x?}, options={:?}, bytes=({:#x?}; {:#x?}), handles=({:#x?}; {:#x?})",
             handle_value, options, bytes, num_bytes, handles, num_handles,
         );
         let proc = self.thread.proc();
@@ -65,7 +65,7 @@ impl Syscall<'_> {
             return Err(ZxError::INVALID_ARGS);
         }
         info!(
-            "channel.write: handle_value={}, num_bytes={:#x}, num_handles={:#x}",
+            "channel.write: handle_value={:#x}, num_bytes={:#x}, num_handles={:#x}",
             handle_value, num_bytes, num_handles,
         );
         let proc = self.thread.proc();
@@ -116,7 +116,7 @@ impl Syscall<'_> {
         }
         let mut args = user_args.read()?;
         info!(
-            "channel.call_noretry: handle={}, args={:#x?}",
+            "channel.call_noretry: handle={:#x}, args={:#x?}",
             handle_value, args
         );
         let proc = self.thread.proc();

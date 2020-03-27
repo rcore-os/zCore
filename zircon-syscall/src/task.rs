@@ -13,7 +13,7 @@ impl Syscall<'_> {
     ) -> ZxResult<usize> {
         let name = name.read_string(name_size)?;
         info!(
-            "proc.create: job={:?}, name={:?}, options={:?}",
+            "proc.create: job={:#x?}, name={:?}, options={:#x?}",
             job, name, options,
         );
         let proc = self.thread.proc();
@@ -31,7 +31,7 @@ impl Syscall<'_> {
     }
 
     pub fn sys_process_exit(&mut self, code: i64) -> ZxResult<usize> {
-        info!("proc.exit: code={:?}", code);
+        info!("proc.exit: code={:#x?}", code);
         let proc = self.thread.proc();
         proc.exit(code);
         self.exit = true;
@@ -48,7 +48,7 @@ impl Syscall<'_> {
     ) -> ZxResult<usize> {
         let name = name.read_string(name_size)?;
         info!(
-            "thread.create: proc={:?}, name={:?}, options={:?}",
+            "thread.create: proc={:#x?}, name={:?}, options={:#x?}",
             proc_handle, name, options,
         );
         assert_eq!(options, 0);
@@ -69,7 +69,7 @@ impl Syscall<'_> {
         arg1_handle: HandleValue,
         arg2: usize,
     ) -> ZxResult<usize> {
-        info!("process.start: proc_handle={:?}, thread_handle={:?}, entry={:?}, stack={:?}, arg1_handle={:?}, arg2={:?}",
+        info!("process.start: proc_handle={:#x?}, thread_handle={:#x?}, entry={:#x?}, stack={:#x?}, arg1_handle={:#x?}, arg2={:#x?}",
             proc_handle, thread_handle, entry, stack, arg1_handle, arg2
         );
         let proc = self.thread.proc();
@@ -105,7 +105,7 @@ impl Syscall<'_> {
     ) -> ZxResult<usize> {
         let kind = ThreadStateKind::try_from(kind).map_err(|_| ZxError::INVALID_ARGS)?;
         info!(
-            "thread.write_state: handle={:?}, kind={:?}, buf=({:?}; {:?})",
+            "thread.write_state: handle={:#x?}, kind={:#x?}, buf=({:#x?}; {:#x?})",
             handle, kind, buffer, buffer_size,
         );
         let proc = self.thread.proc();
@@ -122,7 +122,7 @@ impl Syscall<'_> {
         process_handle: HandleValue,
     ) -> ZxResult<usize> {
         info!(
-            "job.set_critical: job={:?}, options={}, process={:?}",
+            "job.set_critical: job={:#x?}, options={:#x}, process={:#x?}",
             job_handle, options, process_handle,
         );
         let retcode_nonzero = if options == 1 {
@@ -148,7 +148,7 @@ impl Syscall<'_> {
         arg2: usize,
     ) -> ZxResult<usize> {
         info!(
-            "thread.start: handle={:?}, entry={:#x}, stack={:#x}, arg1={:#x} arg2={:#x}",
+            "thread.start: handle={:#x?}, entry={:#x}, stack={:#x}, arg1={:#x} arg2={:#x}",
             handle_value, entry, stack, arg1, arg2
         );
         let thread = self
@@ -170,7 +170,7 @@ impl Syscall<'_> {
         handle: HandleValue,
         mut token: UserOutPtr<HandleValue>,
     ) -> ZxResult<usize> {
-        info!("task.suspend_token: handle={:?}, token={:?}", handle, token);
+        info!("task.suspend_token: handle={:#x?}, token={:#x?}", handle, token);
         let proc = self.thread.proc();
         if let Ok(thread) = proc.get_object_with_rights::<Thread>(handle, Rights::WRITE) {
             if Arc::ptr_eq(&thread, &self.thread) {

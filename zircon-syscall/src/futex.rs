@@ -12,7 +12,7 @@ impl Syscall<'_> {
         deadline: i64,
     ) -> ZxResult<usize> {
         info!(
-            "futex.wait: value_ptr={:?}, current_value={:#x}, new_futex_owner={:#x}, deadline={:#x}",
+            "futex.wait: value_ptr={:#x?}, current_value={:#x}, new_futex_owner={:#x}, deadline={:#x}",
             value_ptr, current_value, new_futex_owner, deadline
         );
         let value = value_ptr.as_ref()?;
@@ -76,7 +76,7 @@ impl Syscall<'_> {
     }
 
     pub fn sys_futex_wake(&self, value_ptr: UserInPtr<AtomicI32>, count: u32) -> ZxResult<usize> {
-        info!("futex.wake: value_ptr={:?}, count={:#x}", value_ptr, count);
+        info!("futex.wake: value_ptr={:#x?}, count={:#x}", value_ptr, count);
         let value = value_ptr.as_ref()?;
         let proc = self.thread.proc();
         let futex = proc.get_futex(value);
@@ -85,7 +85,7 @@ impl Syscall<'_> {
     }
 
     pub fn sys_futex_wake_single_owner(&self, value_ptr: UserInPtr<AtomicI32>) -> ZxResult<usize> {
-        info!("futex.wake_single_owner: value_ptr={:?}", value_ptr);
+        info!("futex.wake_single_owner: value_ptr={:#x?}", value_ptr);
         let value = value_ptr.as_ref()?;
         let proc = self.thread.proc();
         proc.get_futex(value).wake_single_owner();

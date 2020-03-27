@@ -12,7 +12,7 @@ impl Syscall<'_> {
         mut out: UserOutPtr<HandleValue>,
     ) -> ZxResult<usize> {
         info!(
-            "vmo.create: size={:?}, options={:?}, out={:?}",
+            "vmo.create: size={:#x?}, options={:#x?}, out={:#x?}",
             size, options, out
         );
         // TODO: options
@@ -31,7 +31,7 @@ impl Syscall<'_> {
         buf_size: usize,
     ) -> ZxResult<usize> {
         info!(
-            "vmo.read: handle={:?}, offset={:?}, buf=({:?}; {:?})",
+            "vmo.read: handle={:#x?}, offset={:#x?}, buf=({:#x?}; {:#x?})",
             handle_value, offset, buf, buf_size,
         );
         let proc = self.thread.proc();
@@ -51,7 +51,7 @@ impl Syscall<'_> {
         buf_size: usize,
     ) -> ZxResult<usize> {
         info!(
-            "vmo.write: handle={:?}, offset={:?}, buf=({:?}; {:?})",
+            "vmo.write: handle={:#x?}, offset={:#x?}, buf=({:#x?}; {:#x?})",
             handle_value, offset, buf, buf_size,
         );
         let proc = self.thread.proc();
@@ -67,7 +67,7 @@ impl Syscall<'_> {
         mut out: UserOutPtr<HandleValue>,
     ) -> ZxResult<usize> {
         info!(
-            "vmo.replace_as_executable: handle={:?}, vmex={:?}",
+            "vmo.replace_as_executable: handle={:#x?}, vmex={:#x?}",
             handle, vmex
         );
         let proc = self.thread.proc();
@@ -89,7 +89,7 @@ impl Syscall<'_> {
         handle: HandleValue,
         mut size: UserOutPtr<usize>,
     ) -> ZxResult<usize> {
-        info!("vmo.get_size: handle={:?}", handle);
+        info!("vmo.get_size: handle={:#x?}", handle);
         let proc = self.thread.proc();
         let vmo = proc.get_object::<VmObject>(handle)?;
         size.write(vmo.len())?;
@@ -106,7 +106,7 @@ impl Syscall<'_> {
     ) -> ZxResult<usize> {
         let options = VmoCloneFlags::from_bits(options).ok_or(ZxError::INVALID_ARGS)?;
         info!(
-            "vmo_create_child: handle={}, options={:?}, offset={:#x}, size={:#x}",
+            "vmo_create_child: handle={:#x}, options={:?}, offset={:#x}, size={:#x}",
             handle_value, options, offset, size
         );
         if !options.contains(VmoCloneFlags::SNAPSHOT_AT_LEAST_ON_WRITE) {
@@ -144,7 +144,7 @@ impl Syscall<'_> {
         let proc = self.thread.proc();
         let vmo = proc.get_object_with_rights::<VmObject>(handle_value, Rights::WRITE)?;
         info!(
-            "vmo.set_size: handle={}, size={:#x}, current_size={:#x}",
+            "vmo.set_size: handle={:#x}, size={:#x}, current_size={:#x}",
             handle_value,
             size,
             vmo.len(),
@@ -163,7 +163,7 @@ impl Syscall<'_> {
         _buffer_size: usize,
     ) -> ZxResult<usize> {
         info!(
-            "vmo.op_range: handle={}, op={:#X}, offset={:#x}, len={:#x}, buffer_size={:#x}",
+            "vmo.op_range: handle={:#x}, op={:#X}, offset={:#x}, len={:#x}, buffer_size={:#x}",
             handle_value, op, offset, len, _buffer_size,
         );
         let proc = self.thread.proc();

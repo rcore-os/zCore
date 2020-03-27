@@ -13,7 +13,7 @@ impl Syscall<'_> {
         mut out: UserOutPtr<HandleValue>,
     ) -> ZxResult<usize> {
         info!(
-            "resource.create: parent={}, options={:#x}, base={:#X}, size={:#x}",
+            "resource.create: parent={:#x}, options={:#x}, base={:#X}, size={:#x}",
             parent_rsrc, options, base, size
         );
         let name = name.read_string(name_size as usize)?;
