@@ -135,11 +135,6 @@ pub trait KernelObject: DowncastSync + Debug {
     fn related_koid(&self) -> KoID {
         0u64
     }
-    fn get_info(&self, h_info: &mut HandleBasicInfo) {
-        h_info.koid = self.id();
-        h_info.obj_type = self.obj_type() as u32;
-        h_info.related_koid = self.related_koid();
-    }
     fn user_signal_peer(&self, _clear: Signal, _set: Signal) -> ZxResult<()> {
         Err(ZxError::NOT_SUPPORTED)
     }
@@ -266,7 +261,7 @@ impl KObjectBase {
 
 impl dyn KernelObject {
     /// Asynchronous wait for one of `signal`.
-    pub fn wait_signal_async(self: &Arc<Self>, signal: Signal) -> impl Future<Output = Signal> {
+    pub fn wait_signal(self: &Arc<Self>, signal: Signal) -> impl Future<Output = Signal> {
         struct SignalFuture {
             object: Arc<dyn KernelObject>,
             signal: Signal,
@@ -354,7 +349,7 @@ impl dyn KernelObject {
 }
 
 /// Asynchronous wait signal for multiple objects.
-pub fn wait_signal_many_async(
+pub fn wait_signal_many(
     targets: &[(Arc<dyn KernelObject>, Signal)],
 ) -> impl Future<Output = Vec<Signal>> {
     struct SignalManyFuture {
@@ -546,11 +541,11 @@ mod tests {
         let object: Arc<dyn KernelObject> = object;
         assert_eq!(flag.load(Ordering::SeqCst), 0);
 
-        let signal = object.wait_signal_async(Signal::READABLE).await;
+        let signal = object.wait_signal(Signal::READABLE).await;
         assert_eq!(signal, Signal::READABLE);
         assert_eq!(flag.load(Ordering::SeqCst), 1);
 
-        let signal = object.wait_signal_async(Signal::WRITABLE).await;
+        let signal = object.wait_signal(Signal::WRITABLE).await;
         assert_eq!(signal, Signal::READABLE | Signal::WRITABLE);
         assert_eq!(flag.load(Ordering::SeqCst), 2);
     }
@@ -576,7 +571,7 @@ mod tests {
         let obj1: Arc<dyn KernelObject> = objs[1].clone();
         assert_eq!(flag.load(Ordering::SeqCst), 0);
 
-        let signals = wait_signal_many_async(&[
+        let signals = wait_signal_many(&[
             (obj0.clone(), Signal::READABLE),
             (obj1.clone(), Signal::READABLE),
         ])
@@ -584,7 +579,7 @@ mod tests {
         assert_eq!(signals, [Signal::READABLE, Signal::empty()]);
         assert_eq!(flag.load(Ordering::SeqCst), 1);
 
-        let signals = wait_signal_many_async(&[
+        let signals = wait_signal_many(&[
             (obj0.clone(), Signal::WRITABLE),
             (obj1.clone(), Signal::WRITABLE),
         ])

@@ -1,8 +1,11 @@
 use {
     super::*,
-    core::sync::atomic::{AtomicU64, Ordering},
-    kernel_hal::timer_now,
-    zircon_object::resource::*,
+    core::{
+        sync::atomic::{AtomicU64, Ordering},
+        time::Duration,
+    },
+    kernel_hal::{timer_now, yield_now},
+    zircon_object::{resource::*, signal::Timer},
 };
 
 static UTC_OFFSET: AtomicU64 = AtomicU64::new(0);
@@ -49,5 +52,20 @@ impl Syscall<'_> {
             }
             _ => Err(ZxError::INVALID_ARGS),
         }
+    }
+
+    pub async fn sys_nanosleep(&self, deadline: i64) -> ZxResult<usize> {
+        info!("nanosleep: deadline={}", deadline);
+        if deadline <= 0 {
+            yield_now().await;
+        } else {
+            let timer = Timer::create(0).unwrap();
+            let deadline = Duration::from_nanos(deadline as u64);
+            let slack = Duration::default();
+            timer.set(deadline, slack);
+            let timer: Arc<dyn KernelObject> = timer;
+            timer.wait_signal(Signal::SIGNALED).await;
+        }
+        Ok(0)
     }
 }

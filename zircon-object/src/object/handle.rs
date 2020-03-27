@@ -19,27 +19,28 @@ impl Handle {
     }
 
     pub fn get_info(&self) -> HandleBasicInfo {
-        let mut ret = HandleBasicInfo {
+        HandleBasicInfo {
+            koid: self.object.id(),
             rights: self.rights.bits(),
+            obj_type: self.object.obj_type() as u32,
+            related_koid: self.object.related_koid(),
             props: if self.rights.contains(Rights::WAIT) {
                 1
             } else {
                 0
             },
-            ..Default::default()
-        };
-        self.object.get_info(&mut ret);
-        ret
+            padding: 0,
+        }
     }
 }
 
 #[repr(C)]
 #[derive(Default, Debug)]
 pub struct HandleBasicInfo {
-    pub koid: u64,
+    koid: u64,
     rights: u32,
-    pub obj_type: u32,
-    pub related_koid: u64,
+    obj_type: u32,
+    related_koid: u64,
     props: u32,
-    padding: [u8; 4],
+    padding: u32,
 }

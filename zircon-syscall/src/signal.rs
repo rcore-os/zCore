@@ -1,6 +1,5 @@
 use {
     super::*,
-    core::time::Duration,
     zircon_object::{signal::*, task::PolicyCondition},
 };
 
@@ -93,19 +92,6 @@ impl Syscall<'_> {
             handle_value, packet
         );
         port.push(packet);
-        Ok(0)
-    }
-
-    pub async fn sys_nanosleep(&self, deadline: i64) -> ZxResult<usize> {
-        if deadline <= 0 {
-            // just yield current thread
-            let yield_future = YieldFutureImpl::default();
-            yield_future.await;
-        } else {
-            let state = SleepState::new();
-            state.set_deadline(Duration::from_nanos(deadline as u64));
-            SleepFutureImpl { state }.await;
-        }
         Ok(0)
     }
 }

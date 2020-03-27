@@ -19,7 +19,6 @@ use {
 };
 
 mod channel;
-mod clock;
 mod consts;
 mod cprng;
 mod debug;
@@ -30,6 +29,7 @@ mod object;
 mod resource;
 mod signal;
 mod task;
+mod time;
 mod vmar;
 mod vmo;
 

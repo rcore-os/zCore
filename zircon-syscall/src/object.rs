@@ -140,7 +140,7 @@ impl Syscall<'_> {
         );
         let proc = self.thread.proc();
         let object = proc.get_dyn_object_with_rights(handle, Rights::WAIT)?;
-        observed.write_if_not_null(object.wait_signal_async(signals).await)?;
+        observed.write_if_not_null(object.wait_signal(signals).await)?;
         Ok(0)
     }
 

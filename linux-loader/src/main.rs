@@ -20,7 +20,7 @@ async fn main() {
     let exec_path = args[0].clone();
     let hostfs = HostFS::new("rootfs");
     let proc: Arc<dyn KernelObject> = run(&exec_path, args, envs, hostfs);
-    proc.wait_signal_async(Signal::PROCESS_TERMINATED).await;
+    proc.wait_signal(Signal::PROCESS_TERMINATED).await;
 }
 
 fn init_logger() {
@@ -57,7 +57,7 @@ mod tests {
         let hostfs = HostFS::new("../rootfs");
         let proc = run(&exec_path, args, envs, hostfs);
         let proc: Arc<dyn KernelObject> = proc;
-        proc.wait_signal_async(Signal::PROCESS_TERMINATED).await;
+        proc.wait_signal(Signal::PROCESS_TERMINATED).await;
     }
 
     #[async_std::test]

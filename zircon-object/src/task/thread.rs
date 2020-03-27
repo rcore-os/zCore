@@ -72,7 +72,7 @@ mod thread_state;
 /// [`THREAD_TERMINATED`] is asserted.
 ///
 /// Note that signals are OR'd into the state maintained by the
-/// `KernelObject::wait_signal_async()` family of functions thus
+/// `KernelObject::wait_signal()` family of functions thus
 /// you may see any combination of requested signals when they return.
 ///
 /// [`Thread::create()`]: Thread::create

@@ -4,6 +4,7 @@ use alloc::boxed::Box;
 use core::future::Future;
 use core::ops::FnOnce;
 use core::pin::Pin;
+use core::task::{Context, Poll};
 use core::time::Duration;
 
 type ThreadId = usize;
@@ -196,4 +197,29 @@ pub fn irq_ack(_irq: u8) {
 #[export_name = "hal_vdso_constants"]
 pub fn vdso_constants() -> VdsoConstants {
     unimplemented!()
+}
+
+/// Yields execution back to the async runtime.
+pub fn yield_now() -> impl Future<Output = ()> {
+    YieldFuture::default()
+}
+
+#[must_use = "yield_now does nothing unless polled/`await`-ed"]
+#[derive(Default)]
+struct YieldFuture {
+    flag: bool,
+}
+
+impl Future for YieldFuture {
+    type Output = ();
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        if self.flag {
+            Poll::Ready(())
+        } else {
+            self.flag = true;
+            cx.waker().clone().wake();
+            Poll::Pending
+        }
+    }
 }

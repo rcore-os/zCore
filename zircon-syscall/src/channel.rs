@@ -135,7 +135,7 @@ impl Syscall<'_> {
             },
         };
         channel.write(wr_msg)?;
-        kobject.wait_signal_async(Signal::READABLE).await;
+        kobject.wait_signal(Signal::READABLE).await;
         let recv_msg = channel.read()?;
         actual_bytes.write_if_not_null(recv_msg.data.len() as u32)?;
         actual_handles.write_if_not_null(recv_msg.handles.len() as u32)?;
