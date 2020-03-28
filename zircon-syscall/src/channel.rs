@@ -43,12 +43,7 @@ impl Syscall<'_> {
         actual_bytes.write_if_not_null(msg.data.len() as u32)?;
         actual_handles.write_if_not_null(msg.handles.len() as u32)?;
         bytes.write_array(msg.data.as_slice())?;
-        let handle_values: Vec<_> = msg
-            .handles
-            .into_iter()
-            .map(|handle| proc.add_handle(handle))
-            .collect();
-        handles.write_array(handle_values.as_slice())?;
+        handles.write_array(&proc.add_handles(msg.handles))?;
         Ok(())
     }
 
@@ -72,21 +67,16 @@ impl Syscall<'_> {
             return Err(ZxError::OUT_OF_RANGE);
         }
         let proc = self.thread.proc();
-        let user_handles = user_handles.read_array(num_handles as usize)?;
-        info!("handles: {:#x?}", user_handles);
-        let mut handles = Vec::new();
-        for handle in user_handles {
-            let handle = proc.remove_handle(handle)?;
+        let data = user_bytes.read_array(num_bytes as usize)?;
+        let handles = user_handles.read_array(num_handles as usize)?;
+        let handles = proc.remove_handles(&handles)?;
+        for handle in handles.iter() {
             if !handle.rights.contains(Rights::TRANSFER) {
                 return Err(ZxError::ACCESS_DENIED);
             }
-            handles.push(handle);
         }
         let channel = proc.get_object_with_rights::<Channel>(handle_value, Rights::WRITE)?;
-        channel.write(MessagePacket {
-            data: user_bytes.read_array(num_bytes as usize)?,
-            handles,
-        })?;
+        channel.write(MessagePacket { data, handles })?;
         Ok(())
     }
 
@@ -118,30 +108,31 @@ impl Syscall<'_> {
         mut actual_bytes: UserOutPtr<u32>,
         mut actual_handles: UserOutPtr<u32>,
     ) -> ZxResult {
-        if options != 0 {
-            return Err(ZxError::INVALID_ARGS);
-        }
         let mut args = user_args.read()?;
         info!(
             "channel.call_noretry: handle={:#x}, deadline={:#x}, args={:#x?}",
             handle_value, deadline, args
         );
+        if options != 0 {
+            return Err(ZxError::INVALID_ARGS);
+        }
+        if args.rd_num_bytes < 4 || args.wr_num_bytes < 4 {
+            return Err(ZxError::INVALID_ARGS);
+        }
         let proc = self.thread.proc();
         let channel =
             proc.get_object_with_rights::<Channel>(handle_value, Rights::READ | Rights::WRITE)?;
         let wr_msg = MessagePacket {
             data: args.wr_bytes.read_array(args.wr_num_bytes as usize)?,
             handles: {
-                let mut res = Vec::new();
                 let handles = args.wr_handles.read_array(args.wr_num_handles as usize)?;
-                for handle in handles {
-                    let handle = proc.remove_handle(handle)?;
+                let handles = proc.remove_handles(&handles)?;
+                for handle in handles.iter() {
                     if !handle.rights.contains(Rights::TRANSFER) {
                         return Err(ZxError::ACCESS_DENIED);
                     }
-                    res.push(handle);
                 }
-                res
+                handles
             },
         };
 
@@ -150,12 +141,8 @@ impl Syscall<'_> {
         actual_bytes.write_if_not_null(rd_msg.data.len() as u32)?;
         actual_handles.write_if_not_null(rd_msg.handles.len() as u32)?;
         args.rd_bytes.write_array(rd_msg.data.as_slice())?;
-        let handles: Vec<_> = rd_msg
-            .handles
-            .into_iter()
-            .map(|handle| proc.add_handle(handle))
-            .collect();
-        args.rd_handles.write_array(handles.as_slice())?;
+        args.rd_handles
+            .write_array(&proc.add_handles(rd_msg.handles))?;
         Ok(())
     }
 }

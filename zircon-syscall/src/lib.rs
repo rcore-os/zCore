@@ -11,7 +11,6 @@ extern crate log;
 
 use {
     alloc::sync::Arc,
-    alloc::vec::Vec,
     core::convert::TryFrom,
     kernel_hal::{user::*, GeneralRegs},
     zircon_object::object::*,

@@ -204,12 +204,31 @@ impl Process {
         self.inner.lock().add_handle(handle)
     }
 
+    /// Add all handles to the process
+    pub fn add_handles(&self, handles: Vec<Handle>) -> Vec<HandleValue> {
+        let mut inner = self.inner.lock();
+        handles.into_iter().map(|h| inner.add_handle(h)).collect()
+    }
+
     /// Remove a handle from the process
     pub fn remove_handle(&self, handle_value: HandleValue) -> ZxResult<Handle> {
-        match self.inner.lock().handles.remove(&handle_value) {
-            Some(handle) => Ok(handle),
-            None => Err(ZxError::BAD_HANDLE),
-        }
+        self.inner
+            .lock()
+            .handles
+            .remove(&handle_value)
+            .ok_or(ZxError::BAD_HANDLE)
+    }
+
+    /// Remove all handles from the process.
+    ///
+    /// If one or more error happens, return one of them.
+    /// All handles are discarded on success or failure.
+    pub fn remove_handles(&self, handle_values: &[HandleValue]) -> ZxResult<Vec<Handle>> {
+        let mut inner = self.inner.lock();
+        handle_values
+            .iter()
+            .map(|h| inner.handles.remove(h).ok_or(ZxError::BAD_HANDLE))
+            .collect()
     }
 
     /// Get a handle from the process
