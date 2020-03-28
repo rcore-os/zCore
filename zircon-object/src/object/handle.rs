@@ -22,7 +22,7 @@ impl Handle {
         HandleBasicInfo {
             koid: self.object.id(),
             rights: self.rights.bits(),
-            obj_type: self.object.obj_type() as u32,
+            obj_type: obj_type(&self.object),
             related_koid: self.object.related_koid(),
             props: if self.rights.contains(Rights::WAIT) {
                 1
@@ -43,4 +43,37 @@ pub struct HandleBasicInfo {
     related_koid: u64,
     props: u32,
     padding: u32,
+}
+
+fn obj_type(object: &Arc<dyn KernelObject>) -> u32 {
+    match object.type_name() {
+        "Process" => 1,
+        "Thread" => 2,
+        "VmObject" => 3,
+        "Channel" => 4,
+        "Event" => 5,
+        "Port" => 6,
+        "Interrupt" => 9,
+        "PciDevice" => 11,
+        "Log" | "DebugLog" => 12,
+        "Socket" => 14,
+        "Resource" => 15,
+        "EventPair" => 16,
+        "Job" => 17,
+        "VmAddressRegion" => 18,
+        "Fifo" => 19,
+        "Guest" => 20,
+        "VCpu" => 21,
+        "Timer" => 22,
+        "Iommu" => 23,
+        "Bti" => 24,
+        "Profile" => 25,
+        "Pmt" => 26,
+        "SuspendToken" => 27,
+        "Pager" => 28,
+        "Exception" => 29,
+        "Clock" => 30,
+        "Stream" => 31,
+        _ => unimplemented!("unknown type"),
+    }
 }

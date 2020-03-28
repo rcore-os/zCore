@@ -80,7 +80,7 @@ impl_kobject!(VmObject);
 mod tests {
     use super::*;
 
-    pub fn read_write<T: VMObject>(vmo: &T) {
+    pub fn read_write(vmo: &VmObject) {
         let mut buf = [0u8; 4];
         vmo.write(0, &[0, 1, 2, 3]);
         vmo.read(0, &mut buf);

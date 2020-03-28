@@ -295,7 +295,10 @@ pub fn timer_now() -> Duration {
 #[export_name = "hal_timer_set"]
 pub fn timer_set(deadline: Duration, callback: Box<dyn FnOnce(Duration) + Send + Sync>) {
     std::thread::spawn(move || {
-        std::thread::sleep(deadline - timer_now());
+        let now = timer_now();
+        if deadline > now {
+            std::thread::sleep(deadline - now);
+        }
         callback(timer_now());
     });
 }

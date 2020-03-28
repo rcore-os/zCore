@@ -61,6 +61,9 @@ impl_kobject!(Process
         let thread = inner.threads.iter().find(|o| o.id() == id).ok_or(ZxError::NOT_FOUND)?;
         Ok(thread.clone())
     }
+    fn related_koid(&self) -> KoID {
+        self.job.id()
+    }
 );
 
 #[derive(Default)]

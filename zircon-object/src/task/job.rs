@@ -25,7 +25,6 @@ use {
 /// controlled as a single entity.
 pub struct Job {
     base: KObjectBase,
-    #[allow(dead_code)]
     parent: Option<Arc<Job>>,
     parent_policy: JobPolicy,
     inner: Mutex<JobInner>,
@@ -41,6 +40,9 @@ impl_kobject!(Job
             return Ok(proc.clone());
         }
         Err(ZxError::NOT_FOUND)
+    }
+    fn related_koid(&self) -> KoID {
+        self.parent.as_ref().map(|p| p.id()).unwrap_or(0)
     }
 );
 

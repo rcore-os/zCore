@@ -121,22 +121,24 @@ mod signal;
 /// [`impl_kobject`]: impl_kobject
 pub trait KernelObject: DowncastSync + Debug {
     fn id(&self) -> KoID;
-    fn obj_type(&self) -> ObjectType;
+    fn type_name(&self) -> &str;
     fn name(&self) -> alloc::string::String;
     fn set_name(&self, name: &str);
     fn signal(&self) -> Signal;
     fn signal_set(&self, signal: Signal);
     fn signal_change(&self, clear: Signal, set: Signal);
-    fn allowed_signals(&self) -> Signal;
     fn add_signal_callback(&self, callback: SignalHandler);
     fn get_child(&self, _id: KoID) -> ZxResult<Arc<dyn KernelObject>> {
         Err(ZxError::WRONG_TYPE)
     }
-    fn related_koid(&self) -> KoID {
-        0u64
-    }
-    fn user_signal_peer(&self, _clear: Signal, _set: Signal) -> ZxResult<()> {
+    fn peer(&self) -> ZxResult<Arc<dyn KernelObject>> {
         Err(ZxError::NOT_SUPPORTED)
+    }
+    fn related_koid(&self) -> KoID {
+        0
+    }
+    fn allowed_signals(&self) -> Signal {
+        Signal::USER_ALL
     }
 }
 
@@ -145,7 +147,6 @@ impl_downcast!(sync KernelObject);
 /// The base struct of a kernel object.
 pub struct KObjectBase {
     pub id: KoID,
-    pub allowed_signals: Signal,
     inner: Mutex<KObjectBaseInner>,
 }
 
@@ -161,7 +162,6 @@ impl Default for KObjectBase {
     fn default() -> Self {
         KObjectBase {
             id: Self::new_koid(),
-            allowed_signals: Signal::USER_ALL,
             inner: Default::default(),
         }
     }
@@ -177,7 +177,6 @@ impl KObjectBase {
     pub fn with_signal(signal: Signal) -> Self {
         KObjectBase {
             id: Self::new_koid(),
-            allowed_signals: Signal::USER_ALL,
             inner: Mutex::new(KObjectBaseInner {
                 signal,
                 ..Default::default()
@@ -189,17 +188,11 @@ impl KObjectBase {
     pub fn with_name(name: &str) -> Self {
         KObjectBase {
             id: Self::new_koid(),
-            allowed_signals: Signal::USER_ALL,
             inner: Mutex::new(KObjectBaseInner {
                 name: String::from(name),
                 ..Default::default()
             }),
         }
-    }
-
-    pub fn set_allowed_signals(mut self, extra_signal: Signal) -> Self {
-        self.allowed_signals = Signal::USER_ALL | extra_signal;
-        self
     }
 
     /// Generate a new KoID.
@@ -405,8 +398,8 @@ macro_rules! impl_kobject {
             fn id(&self) -> KoID {
                 self.base.id
             }
-            fn obj_type(&self) -> $crate::object::ObjectType {
-                ObjectType::$class
+            fn type_name(&self) -> &str {
+                stringify!($class)
             }
             fn name(&self) -> alloc::string::String {
                 self.base.name()
@@ -422,9 +415,6 @@ macro_rules! impl_kobject {
             }
             fn signal_change(&self, clear: Signal, set: Signal) {
                 self.base.signal_change(clear, set);
-            }
-            fn allowed_signals(&self) -> Signal {
-                self.base.allowed_signals
             }
             fn add_signal_callback(&self, callback: SignalHandler) {
                 self.base.add_signal_callback(callback);
@@ -447,52 +437,6 @@ macro_rules! impl_kobject {
 
 /// The type of kernel object ID.
 pub type KoID = u64;
-
-/// The object type
-#[repr(u32)]
-#[derive(Debug)]
-pub enum ObjectType {
-    None = 0,
-    Process = 1,
-    Thread = 2,
-    Vmo = 3,
-    Channel = 4,
-    Event = 5,
-    Port = 6,
-    Interrupt = 9,
-    PciDevice = 11,
-    Log = 12,
-    Socket = 14,
-    Resource = 15,
-    EventPair = 16,
-    Job = 17,
-    Vmar = 18,
-    Fifo = 19,
-    Guest = 20,
-    VCpu = 21,
-    Timer = 22,
-    Iommu = 23,
-    Bti = 24,
-    Profile = 25,
-    Pmt = 26,
-    SuspendToken = 27,
-    Pager = 28,
-    Exception = 29,
-    Clock = 30,
-    Stream = 31,
-}
-
-#[allow(non_upper_case_globals)]
-impl ObjectType {
-    pub const DummyObject: ObjectType = ObjectType::None;
-    pub const DebugLog: ObjectType = ObjectType::Log;
-    pub const Futex: ObjectType = ObjectType::None; // TODO
-    pub const VmAddressRegion: ObjectType = ObjectType::Vmar;
-    pub const VmObject: ObjectType = ObjectType::Vmo;
-
-    // workaround for objects on linux
-    pub const File: ObjectType = ObjectType::None;
-}
 
 /// The type of kernel object signal handler.
 pub type SignalHandler = Box<dyn Fn(Signal) -> bool + Send>;

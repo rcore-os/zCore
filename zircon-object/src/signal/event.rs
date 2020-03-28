@@ -13,12 +13,16 @@ pub struct Event {
     base: KObjectBase,
 }
 
-impl_kobject!(Event);
+impl_kobject!(Event
+    fn allowed_signals(&self) -> Signal {
+        Signal::USER_ALL | Signal::SIGNALED
+    }
+);
 
 impl Event {
     pub fn new() -> Arc<Self> {
         Arc::new(Event {
-            base: KObjectBase::default().set_allowed_signals(Signal::SIGNALED),
+            base: KObjectBase::default(),
         })
     }
 }
@@ -36,18 +40,26 @@ pub struct EventPair {
     peer: Weak<EventPair>,
 }
 
-impl_kobject!(EventPair);
+impl_kobject!(EventPair
+    fn allowed_signals(&self) -> Signal {
+        Signal::USER_ALL | Signal::SIGNALED
+    }
+    fn peer(&self) -> ZxResult<Arc<dyn KernelObject>> {
+        let peer = self.peer.upgrade().ok_or(ZxError::PEER_CLOSED)?;
+        Ok(peer)
+    }
+);
 
 impl EventPair {
     /// Create a pair of event.
     #[allow(unsafe_code)]
     pub fn create() -> (Arc<Self>, Arc<Self>) {
         let mut event0 = Arc::new(EventPair {
-            base: KObjectBase::default().set_allowed_signals(Signal::SIGCHLD),
+            base: KObjectBase::default(),
             peer: Weak::default(),
         });
         let event1 = Arc::new(EventPair {
-            base: KObjectBase::default().set_allowed_signals(Signal::SIGCHLD),
+            base: KObjectBase::default(),
             peer: Arc::downgrade(&event0),
         });
         // no other reference of `channel0`

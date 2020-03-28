@@ -253,13 +253,13 @@ mod tests {
 
     #[test]
     fn read_write() {
-        let vmo = VMObjectPaged::new(2);
+        let vmo = VmObject::new(VMObjectPaged::new(2));
         super::super::tests::read_write(&*vmo);
     }
 
     #[test]
     fn create_child() {
-        let vmo = VMObjectPaged::new(10);
+        let vmo = VmObject::new(VMObjectPaged::new(10));
         vmo.write(0, &[1, 2, 3, 4]);
         let mut buf = [0u8; 4];
         vmo.read(0, &mut buf);

@@ -196,7 +196,7 @@ impl Syscall<'_> {
         let allowed_signals = object.allowed_signals();
         let clear_signal = Signal::verify_user_signal(allowed_signals, clear_mask)?;
         let set_signal = Signal::verify_user_signal(allowed_signals, set_mask)?;
-        object.user_signal_peer(clear_signal, set_signal)?;
+        object.peer()?.signal_change(clear_signal, set_signal);
         Ok(0)
     }
 
@@ -237,7 +237,7 @@ impl Syscall<'_> {
         let proc = self.thread.proc();
         let object = proc.get_dyn_object_with_rights(handle_value, Rights::SIGNAL)?;
         let allowed_signals = object.allowed_signals();
-        info!("{:?} allowed: {:?}", object.obj_type(), allowed_signals);
+        info!("{:?} allowed: {:?}", object, allowed_signals);
         let clear_signal = Signal::verify_user_signal(allowed_signals, clear_mask)?;
         let set_signal = Signal::verify_user_signal(allowed_signals, set_mask)?;
         object.signal_change(clear_signal, set_signal);

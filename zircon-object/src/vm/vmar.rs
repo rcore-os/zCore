@@ -571,7 +571,7 @@ mod tests {
     #[allow(unsafe_code)]
     fn map() {
         let vmar = VmAddressRegion::new_root();
-        let vmo = VMObjectPaged::new(4);
+        let vmo = VmObject::new(VMObjectPaged::new(4));
         let flags = MMUFlags::READ | MMUFlags::WRITE;
 
         // invalid argument
@@ -690,7 +690,7 @@ mod tests {
         // 4          [xxxxxxxx]
         let vmar = VmAddressRegion::new_root();
         let base = vmar.addr();
-        let vmo = VMObjectPaged::new(5);
+        let vmo = VmObject::new(VMObjectPaged::new(5));
         let flags = MMUFlags::READ | MMUFlags::WRITE;
         vmar.map_at(0, vmo, 0, 0x5000, flags).unwrap();
         assert_eq!(vmar.count(), 1);

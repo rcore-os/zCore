@@ -85,7 +85,7 @@ mod tests {
 
     #[test]
     fn read_write() {
-        let vmo = unsafe { VMObjectPhysical::new(0x1000, 2) };
-        super::super::tests::read_write(&*vmo);
+        let vmo = unsafe { VmObject::new(VMObjectPhysical::new(0x1000, 2)) };
+        super::super::tests::read_write(&vmo);
     }
 }

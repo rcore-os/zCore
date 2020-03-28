@@ -182,7 +182,12 @@ impl Syscall<'_> {
                 Err(ZxError::NOT_SUPPORTED)
             }
         };
-        info!("{} {:?} <= {:?}", thread_name, sys_type, ret);
+        let level = if ret.is_ok() {
+            log::Level::Info
+        } else {
+            log::Level::Warn
+        };
+        log!(level, "{} {:?} <= {:?}", thread_name, sys_type, ret);
         match ret {
             Ok(_) => 0,
             Err(err) => err as isize,
