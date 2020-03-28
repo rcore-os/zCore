@@ -1,19 +1,25 @@
 use {
     crate::object::*,
-    alloc::collections::VecDeque,
+    crate::util::async_complete::{self, Sender},
+    alloc::collections::{BTreeMap, VecDeque},
     alloc::sync::{Arc, Weak},
     alloc::vec::Vec,
+    core::convert::TryInto,
+    core::sync::atomic::{AtomicU32, Ordering},
     spin::Mutex,
 };
 
-pub type Channel = Channel_<MessagePacket>;
-
 /// Bidirectional interprocess communication
-pub struct Channel_<T> {
+pub struct Channel {
     base: KObjectBase,
-    peer: Weak<Channel_<T>>,
-    recv_queue: Arc<Mutex<VecDeque<T>>>,
+    peer: Weak<Channel>,
+    recv_queue: Mutex<VecDeque<T>>,
+    call_reply: Mutex<BTreeMap<TxID, Sender<T>>>,
+    next_txid: AtomicU32,
 }
+
+type T = MessagePacket;
+type TxID = u32;
 
 impl_kobject!(Channel
     fn peer(&self) -> ZxResult<Arc<dyn KernelObject>> {
@@ -22,19 +28,23 @@ impl_kobject!(Channel
     }
 );
 
-impl<T> Channel_<T> {
+impl Channel {
     /// Create a channel and return a pair of its endpoints
     #[allow(unsafe_code)]
     pub fn create() -> (Arc<Self>, Arc<Self>) {
-        let mut channel0 = Arc::new(Channel_ {
+        let mut channel0 = Arc::new(Channel {
             base: KObjectBase::with_signal(Signal::WRITABLE),
             peer: Weak::default(),
             recv_queue: Default::default(),
+            call_reply: Default::default(),
+            next_txid: AtomicU32::new(0x8000_0000),
         });
-        let channel1 = Arc::new(Channel_ {
+        let channel1 = Arc::new(Channel {
             base: KObjectBase::with_signal(Signal::WRITABLE),
             peer: Arc::downgrade(&channel0),
             recv_queue: Default::default(),
+            call_reply: Default::default(),
+            next_txid: AtomicU32::new(0x8000_0000),
         });
         // no other reference of `channel0`
         unsafe {
@@ -63,29 +73,47 @@ impl<T> Channel_<T> {
 
     /// Read a packet from the channel
     pub fn read(&self) -> ZxResult<T> {
-        let mut recv_queue = self.recv_queue.lock();
-        if let Some(msg) = recv_queue.pop_front() {
-            if recv_queue.is_empty() {
-                self.base.signal_clear(Signal::READABLE);
-            }
-            return Ok(msg);
-        }
-        if self.peer_closed() {
-            Err(ZxError::PEER_CLOSED)
-        } else {
-            Err(ZxError::SHOULD_WAIT)
-        }
+        self.check_and_read(|_| Ok(()))
     }
 
     /// Write a packet to the channel
     pub fn write(&self, msg: T) -> ZxResult {
         let peer = self.peer.upgrade().ok_or(ZxError::PEER_CLOSED)?;
-        let mut send_queue = peer.recv_queue.lock();
+        if msg.data.len() >= 4 {
+            // check first 4 bytes: whether it is a call reply?
+            let txid = TxID::from_ne_bytes(msg.data[..4].try_into().unwrap());
+            if let Some(sender) = peer.call_reply.lock().remove(&txid) {
+                sender.push(msg);
+                return Ok(());
+            }
+        }
+        peer.push_general(msg);
+        Ok(())
+    }
+
+    /// Send a message to a channel and await a reply.
+    pub async fn call(self: &Arc<Self>, mut msg: T) -> ZxResult<T> {
+        let peer = self.peer.upgrade().ok_or(ZxError::PEER_CLOSED)?;
+        let txid = self.new_txid();
+        msg.data[..4].copy_from_slice(&txid.to_ne_bytes());
+        peer.push_general(msg);
+        let (sender, receiver) = async_complete::create();
+        self.call_reply.lock().insert(txid, sender);
+        Ok(receiver.await)
+    }
+
+    /// Push a message to general queue, called from peer.
+    fn push_general(&self, msg: T) {
+        let mut send_queue = self.recv_queue.lock();
         send_queue.push_back(msg);
         if send_queue.len() == 1 {
-            peer.base.signal_set(Signal::READABLE);
+            self.base.signal_set(Signal::READABLE);
         }
-        Ok(())
+    }
+
+    /// Generate a new transaction ID for `call`.
+    fn new_txid(&self) -> TxID {
+        self.next_txid.fetch_add(1, Ordering::SeqCst)
     }
 
     /// Is peer channel closed?
@@ -94,7 +122,7 @@ impl<T> Channel_<T> {
     }
 }
 
-impl<T> Drop for Channel_<T> {
+impl Drop for Channel {
     fn drop(&mut self) {
         if let Some(peer) = self.peer.upgrade() {
             peer.base.signal_set(Signal::PEER_CLOSED);
