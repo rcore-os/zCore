@@ -462,7 +462,7 @@ mod tests {
     use std::time::Duration;
 
     #[async_std::test]
-    async fn wait_async() {
+    async fn wait() {
         let object = DummyObject::new();
         let flag = Arc::new(AtomicU8::new(0));
 
@@ -491,7 +491,7 @@ mod tests {
     }
 
     #[async_std::test]
-    async fn wait_many_async() {
+    async fn wait_many() {
         let objs = [DummyObject::new(), DummyObject::new()];
         let flag = Arc::new(AtomicU8::new(0));
 
@@ -501,7 +501,7 @@ mod tests {
             async move {
                 flag.store(1, Ordering::SeqCst);
                 objs[0].base.signal_set(Signal::READABLE);
-                async_std::task::sleep(Duration::from_millis(1)).await;
+                async_std::task::sleep(Duration::from_millis(10)).await;
 
                 flag.store(2, Ordering::SeqCst);
                 objs[1].base.signal_set(Signal::WRITABLE);
