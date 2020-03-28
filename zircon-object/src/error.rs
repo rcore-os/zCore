@@ -1,5 +1,5 @@
 /// The type returned by kernel objects methods.
-pub type ZxResult<T> = Result<T, ZxError>;
+pub type ZxResult<T = ()> = Result<T, ZxError>;
 
 /// Zircon statuses are signed 32 bit integers. The space of values is
 /// divided as follows:

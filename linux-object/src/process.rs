@@ -211,7 +211,7 @@ impl LinuxProcess {
     }
 
     /// Close file descriptor `fd`.
-    pub fn close_file(&mut self, fd: FileDesc) -> LxResult<()> {
+    pub fn close_file(&mut self, fd: FileDesc) -> LxResult {
         self.files.remove(&fd).map(|_| ()).ok_or(LxError::EBADF)
     }
 

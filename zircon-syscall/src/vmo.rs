@@ -10,7 +10,7 @@ impl Syscall<'_> {
         size: u64,
         options: u32,
         mut out: UserOutPtr<HandleValue>,
-    ) -> ZxResult<usize> {
+    ) -> ZxResult {
         info!(
             "vmo.create: size={:#x?}, options={:#x?}, out={:#x?}",
             size, options, out
@@ -20,7 +20,7 @@ impl Syscall<'_> {
         let vmo = VmObject::new_paged(pages(size as usize));
         let handle_value = proc.add_handle(Handle::new(vmo, Rights::DEFAULT_VMO));
         out.write(handle_value)?;
-        Ok(0)
+        Ok(())
     }
 
     pub fn sys_vmo_read(
@@ -29,7 +29,7 @@ impl Syscall<'_> {
         mut buf: UserOutPtr<u8>,
         offset: u64,
         buf_size: usize,
-    ) -> ZxResult<usize> {
+    ) -> ZxResult {
         info!(
             "vmo.read: handle={:#x?}, offset={:#x?}, buf=({:#x?}; {:#x?})",
             handle_value, offset, buf, buf_size,
@@ -40,7 +40,7 @@ impl Syscall<'_> {
         let mut buffer = vec![0u8; buf_size];
         vmo.read(offset as usize, &mut buffer);
         buf.write_array(&buffer)?;
-        Ok(0)
+        Ok(())
     }
 
     pub fn sys_vmo_write(
@@ -49,7 +49,7 @@ impl Syscall<'_> {
         buf: UserInPtr<u8>,
         offset: u64,
         buf_size: usize,
-    ) -> ZxResult<usize> {
+    ) -> ZxResult {
         info!(
             "vmo.write: handle={:#x?}, offset={:#x?}, buf=({:#x?}; {:#x?})",
             handle_value, offset, buf, buf_size,
@@ -57,7 +57,7 @@ impl Syscall<'_> {
         let proc = self.thread.proc();
         let vmo = proc.get_object_with_rights::<VmObject>(handle_value, Rights::WRITE)?;
         vmo.write(offset as usize, &buf.read_array(buf_size)?);
-        Ok(0)
+        Ok(())
     }
 
     pub fn sys_vmo_replace_as_executable(
@@ -65,7 +65,7 @@ impl Syscall<'_> {
         handle: HandleValue,
         vmex: HandleValue,
         mut out: UserOutPtr<HandleValue>,
-    ) -> ZxResult<usize> {
+    ) -> ZxResult {
         info!(
             "vmo.replace_as_executable: handle={:#x?}, vmex={:#x?}",
             handle, vmex
@@ -81,19 +81,15 @@ impl Syscall<'_> {
             Ok(handle_rights | Rights::EXECUTE)
         })?;
         out.write(new_handle)?;
-        Ok(0)
+        Ok(())
     }
 
-    pub fn sys_vmo_get_size(
-        &self,
-        handle: HandleValue,
-        mut size: UserOutPtr<usize>,
-    ) -> ZxResult<usize> {
-        info!("vmo.get_size: handle={:#x?}", handle);
+    pub fn sys_vmo_get_size(&self, handle: HandleValue, mut size: UserOutPtr<usize>) -> ZxResult {
+        info!("vmo.get_size: handle={:?}", handle);
         let proc = self.thread.proc();
         let vmo = proc.get_object::<VmObject>(handle)?;
         size.write(vmo.len())?;
-        Ok(0)
+        Ok(())
     }
 
     pub fn sys_vmo_create_child(
@@ -103,7 +99,7 @@ impl Syscall<'_> {
         offset: usize,
         size: usize,
         mut out: UserOutPtr<HandleValue>,
-    ) -> ZxResult<usize> {
+    ) -> ZxResult {
         let options = VmoCloneFlags::from_bits(options).ok_or(ZxError::INVALID_ARGS)?;
         info!(
             "vmo_create_child: handle={:#x}, options={:?}, offset={:#x}, size={:#x}",
@@ -137,10 +133,10 @@ impl Syscall<'_> {
         info!("size of child vmo: {:#x}", child_size);
         let child_vmo = vmo.create_clone(offset as usize, child_size);
         out.write(proc.add_handle(Handle::new(child_vmo, child_rights)))?;
-        Ok(0)
+        Ok(())
     }
 
-    pub fn sys_vmo_set_size(&self, handle_value: HandleValue, size: usize) -> ZxResult<usize> {
+    pub fn sys_vmo_set_size(&self, handle_value: HandleValue, size: usize) -> ZxResult {
         let proc = self.thread.proc();
         let vmo = proc.get_object_with_rights::<VmObject>(handle_value, Rights::WRITE)?;
         info!(
@@ -150,7 +146,7 @@ impl Syscall<'_> {
             vmo.len(),
         );
         vmo.set_len(size);
-        Ok(0)
+        Ok(())
     }
 
     pub fn sys_vmo_op_range(
@@ -161,7 +157,7 @@ impl Syscall<'_> {
         len: usize,
         _buffer: UserOutPtr<u8>,
         _buffer_size: usize,
-    ) -> ZxResult<usize> {
+    ) -> ZxResult {
         info!(
             "vmo.op_range: handle={:#x}, op={:#X}, offset={:#x}, len={:#x}, buffer_size={:#x}",
             handle_value, op, offset, len, _buffer_size,
@@ -177,14 +173,14 @@ impl Syscall<'_> {
                     return Err(ZxError::ACCESS_DENIED);
                 }
                 vmo.commit(offset, len);
-                Ok(0)
+                Ok(())
             }
             VMO_OP_DECOMMIT => {
                 if !rights.contains(Rights::WRITE) {
                     return Err(ZxError::ACCESS_DENIED);
                 }
                 vmo.decommit(offset, len);
-                Ok(0)
+                Ok(())
             }
             _ => unimplemented!(),
         }

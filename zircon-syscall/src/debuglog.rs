@@ -11,7 +11,7 @@ impl Syscall<'_> {
         rsrc: HandleValue,
         options: u32,
         mut target: UserOutPtr<HandleValue>,
-    ) -> ZxResult<usize> {
+    ) -> ZxResult {
         info!(
             "debuglog.create: resource_handle={:#x?}, options={:#x?}",
             rsrc, options,
@@ -28,7 +28,7 @@ impl Syscall<'_> {
         };
         let dlog_handle = proc.add_handle(Handle::new(dlog, dlog_right));
         target.write(dlog_handle)?;
-        Ok(0)
+        Ok(())
     }
 
     pub fn sys_debuglog_write(
@@ -37,7 +37,7 @@ impl Syscall<'_> {
         flags: u32,
         buf: UserInPtr<u8>,
         len: usize,
-    ) -> ZxResult<usize> {
+    ) -> ZxResult {
         info!(
             "debuglog.write: handle={:#x?}, flags={:#x?}, buf=({:#x?}; {:#x?})",
             handle_value, flags, buf, len,
@@ -49,6 +49,7 @@ impl Syscall<'_> {
         let tid = thread.id();
         let pid = proc.id();
         proc.get_object_with_rights::<DebugLog>(handle_value, Rights::WRITE)?
-            .write(flags, &data, tid, pid)
+            .write(flags, &data, tid, pid)?;
+        Ok(())
     }
 }

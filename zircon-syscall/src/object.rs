@@ -12,7 +12,7 @@ impl Syscall<'_> {
         property: u32,
         ptr: usize,
         buffer_size: u32,
-    ) -> ZxResult<usize> {
+    ) -> ZxResult {
         let property = Property::try_from(property).map_err(|_| ZxError::INVALID_ARGS)?;
         info!(
             "object.get_property: handle={:#x?}, property={:?}, buffer=({:#x}; {:#x?})",
@@ -30,7 +30,7 @@ impl Syscall<'_> {
                 UserOutPtr::<u8>::from(ptr)
                     .write_cstring(s.as_str())
                     .expect("failed to write cstring");
-                Ok(0)
+                Ok(())
             }
             Property::ProcessDebugAddr => {
                 if buffer_size < 8 {
@@ -40,7 +40,7 @@ impl Syscall<'_> {
                     .get_object_with_rights::<Process>(handle_value, Rights::GET_PROPERTY)?
                     .get_debug_addr();
                 UserOutPtr::<usize>::from(ptr).write(debug_addr)?;
-                Ok(0)
+                Ok(())
             }
             Property::ProcessVdsoBaseAddress => {
                 if buffer_size < 8 {
@@ -49,7 +49,7 @@ impl Syscall<'_> {
                 let vdso_base = proc.vmar().vdso_base_addr().unwrap_or(0);
                 info!("vdso_base_addr={:#X}", vdso_base);
                 UserOutPtr::<usize>::from(ptr).write(vdso_base)?;
-                Ok(0)
+                Ok(())
             }
             Property::ProcessBreakOnLoad => {
                 if buffer_size < 8 {
@@ -59,7 +59,7 @@ impl Syscall<'_> {
                     .get_object_with_rights::<Process>(handle_value, Rights::GET_PROPERTY)?
                     .get_dyn_break_on_load();
                 UserOutPtr::<usize>::from(ptr).write(break_on_load)?;
-                Ok(0)
+                Ok(())
             }
             _ => {
                 warn!("unknown property");
@@ -74,7 +74,7 @@ impl Syscall<'_> {
         property: u32,
         ptr: usize,
         buffer_size: u32,
-    ) -> ZxResult<usize> {
+    ) -> ZxResult {
         let property = Property::try_from(property).map_err(|_| ZxError::INVALID_ARGS)?;
         info!(
             "object.set_property: handle={:#x?}, property={:?}, buffer=({:#x}; {:#x?})",
@@ -88,7 +88,7 @@ impl Syscall<'_> {
                 let s = UserInPtr::<u8>::from(ptr).read_string(length)?;
                 info!("set name={:?}", s);
                 object.set_name(&s);
-                Ok(0)
+                Ok(())
             }
             Property::ProcessDebugAddr => {
                 if buffer_size < 8 {
@@ -97,7 +97,7 @@ impl Syscall<'_> {
                 let addr = UserInPtr::<usize>::from(ptr).read()?;
                 proc.get_object_with_rights::<Process>(handle_value, Rights::SET_PROPERTY)?
                     .set_debug_addr(addr);
-                Ok(0)
+                Ok(())
             }
             Property::RegisterFs => {
                 if buffer_size < 8 {
@@ -108,7 +108,7 @@ impl Syscall<'_> {
                 let fsbase = UserInPtr::<u64>::from(ptr).read()?;
                 info!("set fsbase = {:#x}", fsbase);
                 self.regs.fsbase = fsbase as usize;
-                Ok(0)
+                Ok(())
             }
             Property::ProcessBreakOnLoad => {
                 if buffer_size < 8 {
@@ -117,7 +117,7 @@ impl Syscall<'_> {
                 let addr = UserInPtr::<usize>::from(ptr).read()?;
                 proc.get_object_with_rights::<Process>(handle_value, Rights::SET_PROPERTY)?
                     .set_dyn_break_on_load(addr);
-                Ok(0)
+                Ok(())
             }
             _ => {
                 warn!("unknown property");
@@ -132,7 +132,7 @@ impl Syscall<'_> {
         signals: u32,
         deadline: u64,
         mut observed: UserOutPtr<Signal>,
-    ) -> ZxResult<usize> {
+    ) -> ZxResult {
         let signals = Signal::from_bits(signals).ok_or(ZxError::INVALID_ARGS)?;
         info!(
             "object.wait_one: handle={:#x?}, signals={:?}, deadline={:#x?}, observed={:#x?}",
@@ -141,7 +141,7 @@ impl Syscall<'_> {
         let proc = self.thread.proc();
         let object = proc.get_dyn_object_with_rights(handle, Rights::WAIT)?;
         observed.write_if_not_null(object.wait_signal(signals).await)?;
-        Ok(0)
+        Ok(())
     }
 
     pub fn sys_object_get_info(
@@ -152,7 +152,7 @@ impl Syscall<'_> {
         buffer_size: usize,
         _actual: UserOutPtr<usize>,
         _avail: UserOutPtr<usize>,
-    ) -> ZxResult<usize> {
+    ) -> ZxResult {
         let topic = Topic::try_from(topic).map_err(|_| ZxError::INVALID_ARGS)?;
         info!(
             "object.get_info: handle={:#x?}, topic={:?}, buffer=({:#x}; {:#x})",
@@ -178,7 +178,7 @@ impl Syscall<'_> {
                 return Err(ZxError::NOT_SUPPORTED);
             }
         }
-        Ok(0)
+        Ok(())
     }
 
     pub fn sys_object_signal_peer(
@@ -186,7 +186,7 @@ impl Syscall<'_> {
         handle_value: HandleValue,
         clear_mask: u32,
         set_mask: u32,
-    ) -> ZxResult<usize> {
+    ) -> ZxResult {
         info!(
             "object.signal_peer: handle_value = {:#x}, clear_mask = {:#x}, set_mask = {:#x}",
             handle_value, clear_mask, set_mask
@@ -197,7 +197,7 @@ impl Syscall<'_> {
         let clear_signal = Signal::verify_user_signal(allowed_signals, clear_mask)?;
         let set_signal = Signal::verify_user_signal(allowed_signals, set_mask)?;
         object.peer()?.signal_change(clear_signal, set_signal);
-        Ok(0)
+        Ok(())
     }
 
     pub fn sys_object_wait_async(
@@ -207,7 +207,7 @@ impl Syscall<'_> {
         key: u64,
         signals: u32,
         options: u32,
-    ) -> ZxResult<usize> {
+    ) -> ZxResult {
         let signals = Signal::from_bits(signals).ok_or(ZxError::INVALID_ARGS)?;
         info!(
             "object.wait_async: handle={:#x}, port={:#x}, key={:#x}, signal={:?}, options={:#X}",
@@ -221,7 +221,7 @@ impl Syscall<'_> {
         let object = proc.get_dyn_object_with_rights(handle_value, Rights::WAIT)?;
         let port = proc.get_object_with_rights::<Port>(port_handle_value, Rights::WRITE)?;
         object.send_signal_to_port_async(signals, &port, key);
-        Ok(0)
+        Ok(())
     }
 
     pub fn sys_object_signal(
@@ -229,7 +229,7 @@ impl Syscall<'_> {
         handle_value: HandleValue,
         clear_mask: u32,
         set_mask: u32,
-    ) -> ZxResult<usize> {
+    ) -> ZxResult {
         info!(
             "object.signal: handle_value={:#x}, clear_mask={:#x}, set_mask={:#x}",
             handle_value, clear_mask, set_mask
@@ -241,7 +241,7 @@ impl Syscall<'_> {
         let clear_signal = Signal::verify_user_signal(allowed_signals, clear_mask)?;
         let set_signal = Signal::verify_user_signal(allowed_signals, set_mask)?;
         object.signal_change(clear_signal, set_signal);
-        Ok(0)
+        Ok(())
     }
 }
 

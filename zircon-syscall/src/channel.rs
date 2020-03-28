@@ -16,7 +16,7 @@ impl Syscall<'_> {
         num_handles: u32,
         mut actual_bytes: UserOutPtr<u32>,
         mut actual_handles: UserOutPtr<u32>,
-    ) -> ZxResult<usize> {
+    ) -> ZxResult {
         info!(
             "channel.read: handle={:#x?}, options={:?}, bytes=({:#x?}; {:#x?}), handles=({:#x?}; {:#x?})",
             handle_value, options, bytes, num_bytes, handles, num_handles,
@@ -49,7 +49,7 @@ impl Syscall<'_> {
             .map(|handle| proc.add_handle(handle))
             .collect();
         handles.write_array(handle_values.as_slice())?;
-        Ok(0)
+        Ok(())
     }
 
     pub fn sys_channel_write(
@@ -60,7 +60,7 @@ impl Syscall<'_> {
         num_bytes: u32,
         user_handles: UserInPtr<HandleValue>,
         num_handles: u32,
-    ) -> ZxResult<usize> {
+    ) -> ZxResult {
         if options != 0 {
             return Err(ZxError::INVALID_ARGS);
         }
@@ -80,7 +80,7 @@ impl Syscall<'_> {
             data: user_bytes.read_array(num_bytes as usize)?,
             handles,
         })?;
-        Ok(0)
+        Ok(())
     }
 
     pub fn sys_channel_create(
@@ -88,7 +88,7 @@ impl Syscall<'_> {
         options: u32,
         mut out0: UserOutPtr<HandleValue>,
         mut out1: UserOutPtr<HandleValue>,
-    ) -> ZxResult<usize> {
+    ) -> ZxResult {
         info!("channel.create: options={:#x}", options);
         if options != 0u32 {
             return Err(ZxError::INVALID_ARGS);
@@ -99,7 +99,7 @@ impl Syscall<'_> {
         let handle1 = proc.add_handle(Handle::new(end1, Rights::DEFAULT_CHANNEL));
         out0.write(handle0)?;
         out1.write(handle1)?;
-        Ok(0)
+        Ok(())
     }
 
     pub async fn sys_channel_call_noretry(
@@ -110,7 +110,7 @@ impl Syscall<'_> {
         user_args: UserInPtr<ChannelCallArgs>,
         mut actual_bytes: UserOutPtr<u32>,
         mut actual_handles: UserOutPtr<u32>,
-    ) -> ZxResult<usize> {
+    ) -> ZxResult {
         if options != 0 {
             return Err(ZxError::INVALID_ARGS);
         }
@@ -146,7 +146,7 @@ impl Syscall<'_> {
             .map(|handle| proc.add_handle(handle))
             .collect();
         args.rd_handles.write_array(handles.as_slice())?;
-        Ok(0)
+        Ok(())
     }
 }
 

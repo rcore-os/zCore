@@ -283,14 +283,14 @@ impl ElfExt for ElfFile<'_> {
 }
 
 pub trait VmarExt {
-    fn load_from_elf(&self, elf: &ElfFile) -> ZxResult<()>;
-    fn map_from_elf(&self, elf: &ElfFile, vmo: Arc<VmObject>) -> ZxResult<()>;
+    fn load_from_elf(&self, elf: &ElfFile) -> ZxResult;
+    fn map_from_elf(&self, elf: &ElfFile, vmo: Arc<VmObject>) -> ZxResult;
 }
 
 impl VmarExt for VmAddressRegion {
     /// Create `VMObject` from all LOAD segments of `elf` and map them to this VMAR.
     /// Return the first `VMObject`.
-    fn load_from_elf(&self, elf: &ElfFile) -> ZxResult<()> {
+    fn load_from_elf(&self, elf: &ElfFile) -> ZxResult {
         for ph in elf.program_iter() {
             if ph.get_type().unwrap() != Type::Load {
                 continue;
@@ -303,7 +303,7 @@ impl VmarExt for VmAddressRegion {
         Ok(())
     }
 
-    fn map_from_elf(&self, elf: &ElfFile, vmo: Arc<VmObject>) -> ZxResult<()> {
+    fn map_from_elf(&self, elf: &ElfFile, vmo: Arc<VmObject>) -> ZxResult {
         for ph in elf.program_iter() {
             if ph.get_type().unwrap() != Type::Load {
                 continue;

@@ -11,7 +11,7 @@ impl Syscall<'_> {
         name: UserInPtr<u8>,
         name_size: u64,
         mut out: UserOutPtr<HandleValue>,
-    ) -> ZxResult<usize> {
+    ) -> ZxResult {
         info!(
             "resource.create: parent={:#x}, options={:#x}, base={:#X}, size={:#x}",
             parent_rsrc, options, base, size
@@ -27,6 +27,6 @@ impl Syscall<'_> {
         let rsrc = Resource::create(&name, kind, base as usize, size as usize, flags);
         let handle = proc.add_handle(Handle::new(rsrc, Rights::DEFAULT_RESOURCE));
         out.write(handle)?;
-        Ok(0)
+        Ok(())
     }
 }

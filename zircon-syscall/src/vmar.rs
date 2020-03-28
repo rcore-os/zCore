@@ -18,7 +18,7 @@ impl Syscall<'_> {
         size: u64,
         mut out_child_vmar: UserOutPtr<HandleValue>,
         mut out_child_addr: UserOutPtr<usize>,
-    ) -> ZxResult<usize> {
+    ) -> ZxResult {
         let vm_options = VmOptions::from_bits(options).ok_or(ZxError::INVALID_ARGS)?;
         info!(
             "vmar.allocate: parent={:#x?}, options={:#x?}, offset={:#x?}, size={:#x?}",
@@ -65,7 +65,7 @@ impl Syscall<'_> {
         info!("vmar.allocate: at {:#x?}", child_addr);
         out_child_vmar.write(child_handle)?;
         out_child_addr.write(child_addr)?;
-        Ok(0)
+        Ok(())
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -78,7 +78,7 @@ impl Syscall<'_> {
         vmo_offset: usize,
         len: usize,
         mut mapped_addr: UserOutPtr<VirtAddr>,
-    ) -> ZxResult<usize> {
+    ) -> ZxResult {
         let options = VmOptions::from_bits(options).ok_or(ZxError::INVALID_ARGS)?;
         info!(
             "vmar.map: vmar_handle={:#x?}, options={:?}, vmar_offset={:#x?}, vmo_handle={:#x?}, vmo_offset={:#x?}, len={:#x?}",
@@ -130,15 +130,15 @@ impl Syscall<'_> {
         };
         info!("vmar.map: at {:#x?}", vaddr);
         mapped_addr.write(vaddr)?;
-        Ok(0)
+        Ok(())
     }
 
-    pub fn sys_vmar_destroy(&self, handle_value: HandleValue) -> ZxResult<usize> {
-        info!("vmar.destroy: handle={:#x?}", handle_value);
+    pub fn sys_vmar_destroy(&self, handle_value: HandleValue) -> ZxResult {
+        info!("vmar.destroy: handle={:?}", handle_value);
         let proc = self.thread.proc();
         let vmar = proc.get_object::<VmAddressRegion>(handle_value)?;
         vmar.destroy()?;
-        Ok(0)
+        Ok(())
     }
 
     pub fn sys_vmar_protect(
@@ -147,7 +147,7 @@ impl Syscall<'_> {
         options: u32,
         addr: u64,
         len: u64,
-    ) -> ZxResult<usize> {
+    ) -> ZxResult {
         let options = VmOptions::from_bits(options).ok_or(ZxError::INVALID_ARGS)?;
         let rights = options.to_rights();
         info!(
@@ -161,15 +161,10 @@ impl Syscall<'_> {
         mapping_flags.set(MMUFlags::WRITE, options.contains(VmOptions::PERM_WRITE));
         mapping_flags.set(MMUFlags::EXECUTE, options.contains(VmOptions::PERM_EXECUTE));
         vmar.protect(addr as usize, len as usize, mapping_flags)?;
-        Ok(0)
+        Ok(())
     }
 
-    pub fn sys_vmar_unmap(
-        &self,
-        handle_value: HandleValue,
-        addr: usize,
-        len: usize,
-    ) -> ZxResult<usize> {
+    pub fn sys_vmar_unmap(&self, handle_value: HandleValue, addr: usize, len: usize) -> ZxResult {
         info!(
             "vmar.unmap: handle_value={:#x}, addr={:#x}, len={:#x}",
             handle_value, addr, len
@@ -177,7 +172,7 @@ impl Syscall<'_> {
         let proc = self.thread.proc();
         let vmar = proc.get_object::<VmAddressRegion>(handle_value)?;
         vmar.unmap(addr, pages(len) * PAGE_SIZE)?;
-        Ok(0)
+        Ok(())
     }
 }
 

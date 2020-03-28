@@ -20,7 +20,7 @@ numeric_enum! {
 
 pub trait ContextExt {
     fn read_state(&self, kind: ThreadStateKind, buf: &mut [u8]) -> ZxResult<usize>;
-    fn write_state(&mut self, kind: ThreadStateKind, buf: &[u8]) -> ZxResult<()>;
+    fn write_state(&mut self, kind: ThreadStateKind, buf: &[u8]) -> ZxResult;
 }
 
 impl ContextExt for UserContext {
@@ -35,7 +35,7 @@ impl ContextExt for UserContext {
         }
     }
 
-    fn write_state(&mut self, kind: ThreadStateKind, buf: &[u8]) -> ZxResult<()> {
+    fn write_state(&mut self, kind: ThreadStateKind, buf: &[u8]) -> ZxResult {
         match kind {
             ThreadStateKind::General => self.general = buf.read_struct()?,
             #[cfg(target_arch = "x86_64")]

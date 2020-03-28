@@ -6,7 +6,7 @@ impl Syscall<'_> {
         handle_value: HandleValue,
         rights: u32,
         mut new_handle_value: UserOutPtr<HandleValue>,
-    ) -> ZxResult<usize> {
+    ) -> ZxResult {
         let rights = Rights::try_from(rights)?;
         info!("handle.dup: handle={:#x?}, rights={:?}", handle_value, rights);
         let proc = self.thread.proc();
@@ -25,24 +25,24 @@ impl Syscall<'_> {
             }
         })?;
         new_handle_value.write(new_value)?;
-        Ok(0)
+        Ok(())
     }
 
-    pub fn sys_handle_close(&self, handle: HandleValue) -> ZxResult<usize> {
-        info!("handle.close: handle={:#x?}", handle);
+    pub fn sys_handle_close(&self, handle: HandleValue) -> ZxResult {
+        info!("handle.close: handle={:?}", handle);
         if handle == INVALID_HANDLE {
-            return Ok(0);
+            return Ok(());
         }
         let proc = self.thread.proc();
         proc.remove_handle(handle)?;
-        Ok(0)
+        Ok(())
     }
 
     pub fn sys_handle_close_many(
         &self,
         handles: UserInPtr<HandleValue>,
         num_handles: usize,
-    ) -> ZxResult<usize> {
+    ) -> ZxResult {
         info!(
             "handle.close_many: handles=({:#x?}; {:#x?})",
             handles, num_handles,
@@ -55,7 +55,7 @@ impl Syscall<'_> {
             }
             proc.remove_handle(handle)?;
         }
-        Ok(0)
+        Ok(())
     }
 
     pub fn sys_handle_replace(
@@ -63,7 +63,7 @@ impl Syscall<'_> {
         handle_value: HandleValue,
         rights: u32,
         mut out: UserOutPtr<HandleValue>,
-    ) -> ZxResult<usize> {
+    ) -> ZxResult {
         let rights = Rights::try_from(rights)?;
         info!(
             "handle.replace: handle={:#x?}, rights={:?}",
@@ -81,6 +81,6 @@ impl Syscall<'_> {
         })?;
         proc.remove_handle(handle_value)?;
         out.write(new_value)?;
-        Ok(0)
+        Ok(())
     }
 }

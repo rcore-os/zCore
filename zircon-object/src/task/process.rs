@@ -132,7 +132,7 @@ impl Process {
         stack: usize,
         arg1: Handle,
         arg2: usize,
-    ) -> ZxResult<()> {
+    ) -> ZxResult {
         let handle_value;
         {
             let mut inner = self.inner.lock();
@@ -167,7 +167,7 @@ impl Process {
     }
 
     /// Check whether `condition` is allowed in the parent job's policy.
-    pub fn check_policy(&self, condition: PolicyCondition) -> ZxResult<()> {
+    pub fn check_policy(&self, condition: PolicyCondition) -> ZxResult {
         match self
             .policy
             .get_action(condition)
@@ -309,7 +309,7 @@ impl Process {
     }
 
     /// Try to get Resource and validate it
-    pub fn validate_resource(&self, handle_value: HandleValue, kind: ResourceKind) -> ZxResult<()> {
+    pub fn validate_resource(&self, handle_value: HandleValue, kind: ResourceKind) -> ZxResult {
         let handle = self.get_handle(handle_value)?;
         let object = handle
             .object
@@ -383,7 +383,7 @@ impl Process {
         self.inner.lock().dyn_break_on_load
     }
 
-    pub fn set_critical_job(&self, job: Arc<Job>, retcode_nonzero: bool) -> ZxResult<()> {
+    pub fn set_critical_job(&self, job: Arc<Job>, retcode_nonzero: bool) -> ZxResult {
         let mut inner = self.inner.lock();
         if inner.critical_job.is_none() {
             inner.critical_job = Some((job, retcode_nonzero));

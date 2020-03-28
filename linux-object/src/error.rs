@@ -2,7 +2,7 @@ use core::fmt;
 use rcore_fs::vfs::FsError;
 use zircon_object::ZxError;
 
-pub type LxResult<T> = Result<T, LxError>;
+pub type LxResult<T = ()> = Result<T, LxError>;
 pub type SysResult = LxResult<usize>;
 
 #[allow(dead_code)]

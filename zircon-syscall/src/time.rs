@@ -15,28 +15,23 @@ const ZX_CLOCK_UTC: u32 = 1;
 const ZX_CLOCK_THREAD: u32 = 2;
 
 impl Syscall<'_> {
-    pub fn sys_clock_get(&self, clock_id: u32, mut time: UserOutPtr<u64>) -> ZxResult<usize> {
-        info!("clock.get: id={:#x}", clock_id);
+    pub fn sys_clock_get(&self, clock_id: u32, mut time: UserOutPtr<u64>) -> ZxResult {
+        info!("clock.get: id={}", clock_id);
         match clock_id {
             ZX_CLOCK_MONOTONIC => {
                 time.write(timer_now().as_nanos() as u64)?;
-                Ok(0)
+                Ok(())
             }
             ZX_CLOCK_UTC => {
                 time.write(timer_now().as_nanos() as u64 + UTC_OFFSET.load(Ordering::Relaxed))?;
-                Ok(0)
+                Ok(())
             }
             ZX_CLOCK_THREAD => unimplemented!(),
             _ => Err(ZxError::NOT_SUPPORTED),
         }
     }
 
-    pub fn sys_clock_adjust(
-        &self,
-        hrsrc: HandleValue,
-        clock_id: u32,
-        offset: u64,
-    ) -> ZxResult<usize> {
+    pub fn sys_clock_adjust(&self, hrsrc: HandleValue, clock_id: u32, offset: u64) -> ZxResult {
         info!(
             "clock.adjust: hrsrc={:#x?}, id={:#x}, offset={:#x}",
             hrsrc, clock_id, offset
@@ -48,13 +43,13 @@ impl Syscall<'_> {
             ZX_CLOCK_MONOTONIC => Err(ZxError::ACCESS_DENIED),
             ZX_CLOCK_UTC => {
                 UTC_OFFSET.store(offset, Ordering::Relaxed);
-                Ok(0)
+                Ok(())
             }
             _ => Err(ZxError::INVALID_ARGS),
         }
     }
 
-    pub async fn sys_nanosleep(&self, deadline: i64) -> ZxResult<usize> {
+    pub async fn sys_nanosleep(&self, deadline: i64) -> ZxResult {
         info!("nanosleep: deadline={}", deadline);
         if deadline <= 0 {
             yield_now().await;
@@ -63,6 +58,6 @@ impl Syscall<'_> {
                 Timer::one_shot(Duration::from_nanos(deadline as u64));
             timer.wait_signal(Signal::SIGNALED).await;
         }
-        Ok(0)
+        Ok(())
     }
 }

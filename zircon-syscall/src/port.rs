@@ -1,11 +1,7 @@
 use {super::*, zircon_object::signal::*};
 
 impl Syscall<'_> {
-    pub fn sys_port_create(
-        &self,
-        options: u32,
-        mut out: UserOutPtr<HandleValue>,
-    ) -> ZxResult<usize> {
+    pub fn sys_port_create(&self, options: u32, mut out: UserOutPtr<HandleValue>) -> ZxResult {
         info!("port.create: options={:#x}", options);
         if options != 0 {
             unimplemented!()
@@ -13,7 +9,7 @@ impl Syscall<'_> {
         let port_handle = Handle::new(Port::new(), Rights::DEFAULT_PORT);
         let handle_value = self.thread.proc().add_handle(port_handle);
         out.write(handle_value)?;
-        Ok(0)
+        Ok(())
     }
 
     pub async fn sys_port_wait(
@@ -21,7 +17,7 @@ impl Syscall<'_> {
         handle_value: HandleValue,
         deadline: u64,
         mut packet_res: UserOutPtr<PortPacket>,
-    ) -> ZxResult<usize> {
+    ) -> ZxResult {
         info!(
             "port.wait: handle={}, deadline={:#x}",
             handle_value, deadline
@@ -32,14 +28,14 @@ impl Syscall<'_> {
         let packet = port.wait().await;
         debug!("port.wait: packet={:#x?}", packet);
         packet_res.write(packet)?;
-        Ok(0)
+        Ok(())
     }
 
     pub fn sys_port_queue(
         &self,
         handle_value: HandleValue,
         packcet_in: UserInPtr<PortPacket>,
-    ) -> ZxResult<usize> {
+    ) -> ZxResult {
         // TODO when to return ZX_ERR_SHOULD_WAIT
         let proc = self.thread.proc();
         let port = proc.get_object_with_rights::<Port>(handle_value, Rights::WRITE)?;
@@ -49,6 +45,6 @@ impl Syscall<'_> {
             handle_value, packet
         );
         port.push(packet);
-        Ok(0)
+        Ok(())
     }
 }

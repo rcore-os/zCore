@@ -10,7 +10,7 @@ impl Syscall<'_> {
         options: u32,
         mut proc_handle: UserOutPtr<HandleValue>,
         mut vmar_handle: UserOutPtr<HandleValue>,
-    ) -> ZxResult<usize> {
+    ) -> ZxResult {
         let name = name.read_string(name_size)?;
         info!(
             "proc.create: job={:#x?}, name={:?}, options={:#x?}",
@@ -27,15 +27,15 @@ impl Syscall<'_> {
         ));
         proc_handle.write(proc_handle_value)?;
         vmar_handle.write(vmar_handle_value)?;
-        Ok(0)
+        Ok(())
     }
 
-    pub fn sys_process_exit(&mut self, code: i64) -> ZxResult<usize> {
-        info!("proc.exit: code={:#x?}", code);
+    pub fn sys_process_exit(&mut self, code: i64) -> ZxResult {
+        info!("proc.exit: code={:?}", code);
         let proc = self.thread.proc();
         proc.exit(code);
         self.exit = true;
-        Ok(0)
+        Ok(())
     }
 
     pub fn sys_thread_create(
@@ -45,7 +45,7 @@ impl Syscall<'_> {
         name_size: usize,
         options: u32,
         mut thread_handle: UserOutPtr<HandleValue>,
-    ) -> ZxResult<usize> {
+    ) -> ZxResult {
         let name = name.read_string(name_size)?;
         info!(
             "thread.create: proc={:#x?}, name={:?}, options={:#x?}",
@@ -57,7 +57,7 @@ impl Syscall<'_> {
         let thread = Thread::create(&process, &name, options)?;
         let handle = proc.add_handle(Handle::new(thread, Rights::DEFAULT_THREAD));
         thread_handle.write(handle)?;
-        Ok(0)
+        Ok(())
     }
 
     pub fn sys_process_start(
@@ -68,8 +68,8 @@ impl Syscall<'_> {
         stack: usize,
         arg1_handle: HandleValue,
         arg2: usize,
-    ) -> ZxResult<usize> {
-        info!("process.start: proc_handle={:#x?}, thread_handle={:#x?}, entry={:#x?}, stack={:#x?}, arg1_handle={:#x?}, arg2={:#x?}",
+    ) -> ZxResult {
+        info!("process.start: proc_handle={:?}, thread_handle={:?}, entry={:?}, stack={:?}, arg1_handle={:?}, arg2={:?}",
             proc_handle, thread_handle, entry, stack, arg1_handle, arg2
         );
         let proc = self.thread.proc();
@@ -88,7 +88,7 @@ impl Syscall<'_> {
             arg1_handle
         };
         match thread.start(entry, stack, arg1 as usize, arg2) {
-            Ok(()) => Ok(0),
+            Ok(()) => Ok(()),
             Err(e) => {
                 process.remove_handle(arg1)?;
                 Err(e)
@@ -102,7 +102,7 @@ impl Syscall<'_> {
         kind: u32,
         buffer: UserInPtr<u8>,
         buffer_size: usize,
-    ) -> ZxResult<usize> {
+    ) -> ZxResult {
         let kind = ThreadStateKind::try_from(kind).map_err(|_| ZxError::INVALID_ARGS)?;
         info!(
             "thread.write_state: handle={:#x?}, kind={:#x?}, buf=({:#x?}; {:#x?})",
@@ -112,7 +112,7 @@ impl Syscall<'_> {
         let thread = proc.get_object_with_rights::<Thread>(handle, Rights::WRITE)?;
         let buf = buffer.read_array(buffer_size)?;
         thread.write_state(kind, &buf)?;
-        Ok(0)
+        Ok(())
     }
 
     pub fn sys_job_set_critical(
@@ -120,7 +120,7 @@ impl Syscall<'_> {
         job_handle: HandleValue,
         options: u32,
         process_handle: HandleValue,
-    ) -> ZxResult<usize> {
+    ) -> ZxResult {
         info!(
             "job.set_critical: job={:#x?}, options={:#x}, process={:#x?}",
             job_handle, options, process_handle,
@@ -136,7 +136,7 @@ impl Syscall<'_> {
         let job = proc.get_object_with_rights::<Job>(job_handle, Rights::DESTROY)?;
         let process = proc.get_object_with_rights::<Process>(process_handle, Rights::WAIT)?;
         process.set_critical_job(job, retcode_nonzero)?;
-        Ok(0)
+        Ok(())
     }
 
     pub fn sys_thread_start(
@@ -146,7 +146,7 @@ impl Syscall<'_> {
         stack: usize,
         arg1: usize,
         arg2: usize,
-    ) -> ZxResult<usize> {
+    ) -> ZxResult {
         info!(
             "thread.start: handle={:#x?}, entry={:#x}, stack={:#x}, arg1={:#x} arg2={:#x}",
             handle_value, entry, stack, arg1, arg2
@@ -156,21 +156,21 @@ impl Syscall<'_> {
             .proc()
             .get_object_with_rights::<Thread>(handle_value, Rights::MANAGE_THREAD)?;
         thread.start(entry, stack, arg1, arg2)?;
-        Ok(0)
+        Ok(())
     }
 
-    pub fn sys_thread_exit(&mut self) -> ZxResult<usize> {
+    pub fn sys_thread_exit(&mut self) -> ZxResult {
         self.thread.exit();
         self.exit = true;
-        Ok(0)
+        Ok(())
     }
 
     pub fn sys_task_suspend_token(
         &self,
         handle: HandleValue,
         mut token: UserOutPtr<HandleValue>,
-    ) -> ZxResult<usize> {
-        info!("task.suspend_token: handle={:#x?}, token={:#x?}", handle, token);
+    ) -> ZxResult {
+        info!("task.suspend_token: handle={:?}, token={:?}", handle, token);
         let proc = self.thread.proc();
         if let Ok(thread) = proc.get_object_with_rights::<Thread>(handle, Rights::WRITE) {
             if Arc::ptr_eq(&thread, &self.thread) {
@@ -179,7 +179,7 @@ impl Syscall<'_> {
             let token_handle =
                 Handle::new(SuspendToken::create(&thread), Rights::DEFAULT_SUSPEND_TOKEN);
             token.write(proc.add_handle(token_handle))?;
-            return Ok(0);
+            return Ok(());
         }
         if let Ok(process) = proc.get_object_with_rights::<Process>(handle, Rights::WRITE) {
             if Arc::ptr_eq(&process, &proc) {
@@ -187,6 +187,6 @@ impl Syscall<'_> {
             }
             unimplemented!()
         }
-        Ok(0)
+        Ok(())
     }
 }

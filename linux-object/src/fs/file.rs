@@ -110,7 +110,7 @@ impl File {
         Ok(inner.offset)
     }
 
-    pub fn set_len(&self, len: u64) -> LxResult<()> {
+    pub fn set_len(&self, len: u64) -> LxResult {
         if !self.options.write {
             return Err(LxError::EBADF);
         }
@@ -118,12 +118,12 @@ impl File {
         Ok(())
     }
 
-    pub fn sync_all(&self) -> LxResult<()> {
+    pub fn sync_all(&self) -> LxResult {
         self.inode.sync_all()?;
         Ok(())
     }
 
-    pub fn sync_data(&self) -> LxResult<()> {
+    pub fn sync_data(&self) -> LxResult {
         self.inode.sync_data()?;
         Ok(())
     }

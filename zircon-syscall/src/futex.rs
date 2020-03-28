@@ -10,7 +10,7 @@ impl Syscall<'_> {
         current_value: i32,
         new_futex_owner: HandleValue,
         deadline: i64,
-    ) -> ZxResult<usize> {
+    ) -> ZxResult {
         info!(
             "futex.wait: value_ptr={:#x?}, current_value={:#x}, new_futex_owner={:#x}, deadline={:#x}",
             value_ptr, current_value, new_futex_owner, deadline
@@ -36,7 +36,7 @@ impl Syscall<'_> {
                 deadline,
             )
             .await?;
-        Ok(0)
+        Ok(())
     }
 
     pub fn sys_futex_requeue(
@@ -47,7 +47,7 @@ impl Syscall<'_> {
         requeue_ptr: UserInPtr<AtomicI32>,
         requeue_count: u32,
         new_requeue_owner: HandleValue,
-    ) -> ZxResult<usize> {
+    ) -> ZxResult {
         info!(
             "futex.requeue: value_ptr={:?}, wake_count={:#x}, current_value={:#x}, requeue_ptr={:?}, requeue_count={:#x}, new_requeue_owner={:?}",
             value_ptr, wake_count, current_value, requeue_ptr, requeue_count, new_requeue_owner
@@ -72,23 +72,23 @@ impl Syscall<'_> {
             &requeue_futex,
             new_requeue_owner,
         )?;
-        Ok(0)
+        Ok(())
     }
 
-    pub fn sys_futex_wake(&self, value_ptr: UserInPtr<AtomicI32>, count: u32) -> ZxResult<usize> {
-        info!("futex.wake: value_ptr={:#x?}, count={:#x}", value_ptr, count);
+    pub fn sys_futex_wake(&self, value_ptr: UserInPtr<AtomicI32>, count: u32) -> ZxResult {
+        info!("futex.wake: value_ptr={:?}, count={:#x}", value_ptr, count);
         let value = value_ptr.as_ref()?;
         let proc = self.thread.proc();
         let futex = proc.get_futex(value);
         futex.wake(count as usize);
-        Ok(0)
+        Ok(())
     }
 
-    pub fn sys_futex_wake_single_owner(&self, value_ptr: UserInPtr<AtomicI32>) -> ZxResult<usize> {
-        info!("futex.wake_single_owner: value_ptr={:#x?}", value_ptr);
+    pub fn sys_futex_wake_single_owner(&self, value_ptr: UserInPtr<AtomicI32>) -> ZxResult {
+        info!("futex.wake_single_owner: value_ptr={:?}", value_ptr);
         let value = value_ptr.as_ref()?;
         let proc = self.thread.proc();
         proc.get_futex(value).wake_single_owner();
-        Ok(0)
+        Ok(())
     }
 }

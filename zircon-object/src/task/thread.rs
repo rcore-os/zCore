@@ -152,7 +152,7 @@ impl Thread {
         stack: usize,
         arg1: usize,
         arg2: usize,
-    ) -> ZxResult<()> {
+    ) -> ZxResult {
         {
             let mut inner = self.inner.lock();
             let context = inner.context.as_mut().ok_or(ZxError::BAD_STATE)?;
@@ -168,7 +168,7 @@ impl Thread {
     }
 
     /// Start execution with given registers.
-    pub fn start_with_regs(self: &Arc<Self>, regs: GeneralRegs) -> ZxResult<()> {
+    pub fn start_with_regs(self: &Arc<Self>, regs: GeneralRegs) -> ZxResult {
         {
             let mut inner = self.inner.lock();
             let context = inner.context.as_mut().ok_or(ZxError::BAD_STATE)?;
@@ -195,7 +195,7 @@ impl Thread {
     }
 
     /// Write one aspect of thread state.
-    pub fn write_state(&self, kind: ThreadStateKind, buf: &[u8]) -> ZxResult<()> {
+    pub fn write_state(&self, kind: ThreadStateKind, buf: &[u8]) -> ZxResult {
         let mut inner = self.inner.lock();
         let context = inner.context.as_mut().ok_or(ZxError::BAD_STATE)?;
         context.write_state(kind, buf)

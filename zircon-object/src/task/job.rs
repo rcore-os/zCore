@@ -90,11 +90,7 @@ impl Job {
     ///
     /// After this call succeeds any new child process or child job will have
     /// the new effective policy applied to it.
-    pub fn set_policy_basic(
-        &self,
-        options: SetPolicyOptions,
-        policys: &[BasicPolicy],
-    ) -> ZxResult<()> {
+    pub fn set_policy_basic(&self, options: SetPolicyOptions, policys: &[BasicPolicy]) -> ZxResult {
         let mut inner = self.inner.lock();
         if !inner.is_empty() {
             return Err(ZxError::BAD_STATE);

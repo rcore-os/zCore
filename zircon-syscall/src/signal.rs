@@ -9,7 +9,7 @@ impl Syscall<'_> {
         options: u32,
         clock_id: u32,
         mut out: UserOutPtr<HandleValue>,
-    ) -> ZxResult<usize> {
+    ) -> ZxResult {
         info!(
             "timer.create: options={:#x}, clock_id={:#x}",
             options, clock_id
@@ -27,14 +27,10 @@ impl Syscall<'_> {
         };
         let handle = Handle::new(Timer::with_slack(slack), Rights::DEFAULT_TIMER);
         out.write(proc.add_handle(handle))?;
-        Ok(0)
+        Ok(())
     }
 
-    pub fn sys_event_create(
-        &self,
-        options: u32,
-        mut out: UserOutPtr<HandleValue>,
-    ) -> ZxResult<usize> {
+    pub fn sys_event_create(&self, options: u32, mut out: UserOutPtr<HandleValue>) -> ZxResult {
         info!("event.create: options = {:#x}", options);
         if options != 0 {
             return Err(ZxError::INVALID_ARGS);
@@ -43,6 +39,6 @@ impl Syscall<'_> {
         proc.check_policy(PolicyCondition::NewEvent)?;
         let handle = Handle::new(Event::new(), Rights::DEFAULT_EVENT);
         out.write(proc.add_handle(handle))?;
-        Ok(0)
+        Ok(())
     }
 }

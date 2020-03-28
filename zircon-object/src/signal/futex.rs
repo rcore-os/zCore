@@ -52,7 +52,7 @@ impl Futex {
     ///
     /// [`wait_with_owner`]: Futex::wait_with_owner
     /// [`wake`]: Futex::wake
-    pub fn wait(self: &Arc<Self>, current_value: i32) -> impl Future<Output = ZxResult<()>> {
+    pub fn wait(self: &Arc<Self>, current_value: i32) -> impl Future<Output = ZxResult> {
         self.wait_with_owner(current_value, None, None, None)
     }
 
@@ -113,7 +113,7 @@ impl Futex {
         thread: Option<Arc<Thread>>,
         new_owner: Option<Arc<Thread>>,
         deadline: Option<Duration>,
-    ) -> impl Future<Output = ZxResult<()>> {
+    ) -> impl Future<Output = ZxResult> {
         #[must_use = "wait does nothing unless polled/`await`-ed"]
         struct FutexFuture {
             waiter: Arc<Waiter>,
@@ -122,7 +122,7 @@ impl Futex {
             deadline: Option<Duration>,
         }
         impl Future for FutexFuture {
-            type Output = ZxResult<()>;
+            type Output = ZxResult;
 
             fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
                 // check timeout
@@ -216,7 +216,7 @@ impl Futex {
         requeue_count: usize,
         requeue_futex: &Arc<Futex>,
         new_requeue_owner: Option<Arc<Thread>>,
-    ) -> ZxResult<()> {
+    ) -> ZxResult {
         let mut inner = self.inner.lock();
         // check value
         if self.value.load(Ordering::SeqCst) != current_value {

@@ -57,7 +57,7 @@ impl Resource {
         })
     }
 
-    pub fn validate(&self, kind: ResourceKind) -> ZxResult<()> {
+    pub fn validate(&self, kind: ResourceKind) -> ZxResult {
         if self.kind == kind || self.kind == ResourceKind::ROOT {
             Ok(())
         } else {
@@ -70,7 +70,7 @@ impl Resource {
         kind: ResourceKind,
         addr: usize,
         len: usize,
-    ) -> ZxResult<()> {
+    ) -> ZxResult {
         self.validate(kind)?;
         if self.kind == ResourceKind::MMIO {
             unimplemented!()
@@ -82,7 +82,7 @@ impl Resource {
         }
     }
 
-    pub fn check_exclusive(&self, flags: ResourceFlags) -> ZxResult<()> {
+    pub fn check_exclusive(&self, flags: ResourceFlags) -> ZxResult {
         if self.kind != ResourceKind::ROOT
             && (self.flags.contains(ResourceFlags::EXCLUSIVE)
                 || flags.contains(ResourceFlags::EXCLUSIVE))

@@ -44,7 +44,7 @@ impl<T> Channel_<T> {
     }
 
     /// Read a packet from the channel if check is ok, otherwise the msg will keep.
-    pub fn check_and_read(&self, checker: impl FnOnce(&T) -> ZxResult<()>) -> ZxResult<T> {
+    pub fn check_and_read(&self, checker: impl FnOnce(&T) -> ZxResult) -> ZxResult<T> {
         let mut recv_queue = self.recv_queue.lock();
         if let Some(msg) = recv_queue.front() {
             checker(msg)?;
@@ -78,7 +78,7 @@ impl<T> Channel_<T> {
     }
 
     /// Write a packet to the channel
-    pub fn write(&self, msg: T) -> ZxResult<()> {
+    pub fn write(&self, msg: T) -> ZxResult {
         let peer = self.peer.upgrade().ok_or(ZxError::PEER_CLOSED)?;
         let mut send_queue = peer.recv_queue.lock();
         send_queue.push_back(msg);

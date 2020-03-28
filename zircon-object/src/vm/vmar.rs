@@ -142,7 +142,7 @@ impl VmAddressRegion {
     /// (i.e. partial overlaps are an error).
     /// If a mapping is only partially in the range, the mapping is split and the requested
     /// portion is unmapped.
-    pub fn unmap(&self, addr: VirtAddr, len: usize) -> ZxResult<()> {
+    pub fn unmap(&self, addr: VirtAddr, len: usize) -> ZxResult {
         if !page_aligned(addr) || !page_aligned(len) || len == 0 {
             return Err(ZxError::INVALID_ARGS);
         }
@@ -171,7 +171,7 @@ impl VmAddressRegion {
         Ok(())
     }
 
-    pub fn protect(&self, addr: usize, len: usize, flags: MMUFlags) -> ZxResult<()> {
+    pub fn protect(&self, addr: usize, len: usize, flags: MMUFlags) -> ZxResult {
         let mut guard = self.inner.lock();
         let inner = guard.as_mut().ok_or(ZxError::BAD_STATE)?;
         let end_addr = addr + len;
@@ -209,7 +209,7 @@ impl VmAddressRegion {
     }
 
     /// Unmap all mappings within the VMAR, and destroy all sub-regions of the region.
-    pub fn destroy(self: &Arc<Self>) -> ZxResult<()> {
+    pub fn destroy(self: &Arc<Self>) -> ZxResult {
         self.destroy_internal()?;
         // remove from parent
         if let Some(parent) = &self.parent {
@@ -221,7 +221,7 @@ impl VmAddressRegion {
     }
 
     /// Destroy but do not remove self from parent.
-    fn destroy_internal(&self) -> ZxResult<()> {
+    fn destroy_internal(&self) -> ZxResult {
         let mut guard = self.inner.lock();
         let inner = guard.as_mut().ok_or(ZxError::BAD_STATE)?;
         for vmar in inner.children.iter() {
@@ -232,7 +232,7 @@ impl VmAddressRegion {
     }
 
     /// Unmap all mappings and destroy all sub-regions of VMAR.
-    pub fn clear(&self) -> ZxResult<()> {
+    pub fn clear(&self) -> ZxResult {
         let mut guard = self.inner.lock();
         let inner = guard.as_mut().ok_or(ZxError::BAD_STATE)?;
         for vmar in inner.children.drain(..) {
