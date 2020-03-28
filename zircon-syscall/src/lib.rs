@@ -26,6 +26,7 @@ mod debuglog;
 mod futex;
 mod handle;
 mod object;
+mod port;
 mod resource;
 mod signal;
 mod task;

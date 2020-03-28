@@ -309,18 +309,15 @@ impl dyn KernelObject {
     pub fn send_signal_to_port_async(self: &Arc<Self>, signal: Signal, port: &Arc<Port>, key: u64) {
         let current_signal = self.signal();
         if !(current_signal & signal).is_empty() {
-            let packet_payload = PortPacketSignal {
-                trigger: signal,
-                observed: current_signal,
-                count: 1u64,
-                timestamp: 0u64,
-                reserved1: 0u64,
-            };
-            port.push(PortPacket {
+            port.push(PortPacketRepr {
                 key,
-                _type: PortPacketType::SignalOne,
                 status: ZxError::OK,
-                data: unsafe { core::mem::transmute(packet_payload) },
+                data: PayloadRepr::Signal(PacketSignal {
+                    trigger: signal,
+                    observed: current_signal,
+                    count: 1,
+                    timestamp: 0,
+                }),
             });
             return;
         }
@@ -330,18 +327,15 @@ impl dyn KernelObject {
                 if (s & signal).is_empty() {
                     return false;
                 }
-                let packet_payload = PortPacketSignal {
-                    trigger: signal,
-                    observed: s,
-                    count: 1u64,
-                    timestamp: 0u64,
-                    reserved1: 0u64,
-                };
-                port.push(PortPacket {
+                port.push(PortPacketRepr {
                     key,
-                    _type: PortPacketType::SignalOne,
                     status: ZxError::OK,
-                    data: unsafe { core::mem::transmute(packet_payload) },
+                    data: PayloadRepr::Signal(PacketSignal {
+                        trigger: signal,
+                        observed: s,
+                        count: 1,
+                        timestamp: 0,
+                    }),
                 });
                 true
             }

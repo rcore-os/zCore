@@ -1,8 +1,12 @@
+pub use self::port_packet::*;
 use super::*;
 use crate::object::*;
 use alloc::collections::vec_deque::VecDeque;
 use alloc::sync::Arc;
 use spin::Mutex;
+
+#[path = "port_packet.rs"]
+mod port_packet;
 
 /// Signaling and mailbox primitive
 ///
@@ -24,41 +28,6 @@ struct PortInner {
     queue: VecDeque<PortPacket>,
 }
 
-#[repr(C)]
-#[derive(Debug, Eq, PartialEq)]
-pub struct PortPacket {
-    pub key: u64,
-    pub _type: PortPacketType,
-    pub status: ZxError,
-    pub data: [u8; 32],
-}
-
-#[repr(C)]
-#[derive(Debug, Eq, PartialEq)]
-pub struct PortPacketSignal {
-    pub trigger: Signal,
-    pub observed: Signal,
-    pub count: u64,
-    pub timestamp: u64,
-    pub reserved1: u64,
-}
-
-// reference: zircon/system/public/zircon/syscalls/port.h ZX_PKT_TYPE_*
-#[repr(u32)]
-#[derive(Debug, Eq, PartialEq)]
-pub enum PortPacketType {
-    User = 0u32,
-    SignalOne = 1u32,
-    SignalRep = 2u32,
-    GuestBell = 3u32,
-    GuestMem = 4u32,
-    GuestIo = 5u32,
-    GuestVcpu = 6u32,
-    Interrupt = 7u32,
-    Exception = 8u32, // TODO should be Exception(n) = 0x8 | ((0xFF & n) << 8)
-    PageRequest = 9u32,
-}
-
 impl Port {
     /// Create a new `Port`.
     pub fn new() -> Arc<Self> {
@@ -69,15 +38,15 @@ impl Port {
     }
 
     /// Push a `packet` into the port.
-    pub fn push(&self, packet: PortPacket) {
+    pub fn push(&self, packet: impl Into<PortPacket>) {
         let mut inner = self.inner.lock();
-        inner.queue.push_back(packet);
+        inner.queue.push_back(packet.into());
         drop(inner);
         self.base.signal_set(Signal::READABLE);
     }
 
     /// Asynchronous wait until at least one packet is available, then take out all packets.
-    pub async fn wait_async(self: &Arc<Self>) -> PortPacket {
+    pub async fn wait(self: &Arc<Self>) -> PortPacket {
         let object = self.clone() as Arc<dyn KernelObject>;
         loop {
             object.wait_signal(Signal::READABLE).await;
@@ -104,44 +73,48 @@ mod tests {
     use std::time::Duration;
 
     #[async_std::test]
-    async fn wait_async() {
+    async fn wait() {
         let port = Port::new();
         let object = DummyObject::new() as Arc<dyn KernelObject>;
         object.send_signal_to_port_async(Signal::READABLE, &port, 1);
 
+        let packet2 = PortPacketRepr {
+            key: 2,
+            status: ZxError::OK,
+            data: PayloadRepr::Signal(PacketSignal {
+                trigger: Signal::WRITABLE,
+                observed: Signal::WRITABLE,
+                count: 1,
+                timestamp: 0,
+            }),
+        };
         async_std::task::spawn({
             let port = port.clone();
             let object = object.clone();
+            let packet2 = packet2.clone();
             async move {
                 object.signal_set(Signal::READABLE);
                 async_std::task::sleep(Duration::from_millis(1)).await;
-
-                port.push(PortPacket {
-                    key: 2,
-                    status: ZxError::OK,
-                    data: PortPacketPayload::Signal(Signal::WRITABLE),
-                });
+                port.push(packet2);
             }
         });
 
-        let packets = port.wait_async().await;
+        let packet = port.wait().await;
         assert_eq!(
-            packets,
-            [PortPacket {
+            PortPacketRepr::from(&packet),
+            PortPacketRepr {
                 key: 1,
                 status: ZxError::OK,
-                data: PortPacketPayload::Signal(Signal::READABLE),
-            }]
+                data: PayloadRepr::Signal(PacketSignal {
+                    trigger: Signal::READABLE,
+                    observed: Signal::READABLE,
+                    count: 1,
+                    timestamp: 0,
+                }),
+            }
         );
 
-        let packets = port.wait_async().await;
-        assert_eq!(
-            packets,
-            [PortPacket {
-                key: 2,
-                status: ZxError::OK,
-                data: PortPacketPayload::Signal(Signal::WRITABLE),
-            }]
-        );
+        let packet = port.wait().await;
+        assert_eq!(PortPacketRepr::from(&packet), packet2);
     }
 }
