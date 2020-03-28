@@ -71,7 +71,7 @@ impl Syscall<'_> {
         let proc = self.thread.proc();
         let mut handles = Vec::new();
         let user_handles = user_handles.read_array(num_handles as usize)?;
-        info!("handles: {:?}", user_handles);
+        info!("handles: {:#x?}", user_handles);
         for handle in user_handles {
             handles.push(proc.remove_handle(handle)?);
         }
