@@ -81,6 +81,62 @@ mod thread_state;
 /// [`THREAD_TERMINATED`]: crate::object::Signal::THREAD_TERMINATED
 /// [`THREAD_SUSPENDED`]: crate::object::Signal::THREAD_SUSPENDED
 /// [`THREAD_RUNNING`]: crate::object::Signal::THREAD_RUNNING
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[repr(u32)]
+pub enum ThreadState {
+    NEW = 0,
+    RUNNING = 1,
+    SUSPENDED = 2,
+    BLOCKED = 3,
+    DYING = 4,
+    DEAD = 5,
+    BlockedException = 0x0103,
+    BlockedSleeping = 0x203,
+    BlockedFutex = 0x303,
+    BlockedPort = 0x403,
+    BlockedChannel = 0x503,
+    BlockedWaitOne = 0x603,
+    BlockedWaitMany = 0x703,
+    BlockedInterrupt = 0x803,
+    BlockedPager = 0x903,
+}
+
+impl Into<u32> for ThreadState {
+    fn into(self) -> u32 {
+        match self {
+            ThreadState::NEW => 0,
+            ThreadState::RUNNING => 1,
+            ThreadState::SUSPENDED => 2,
+            ThreadState::BLOCKED => 3,
+            ThreadState::DYING => 4,
+            ThreadState::DEAD => 5,
+            ThreadState::BlockedException => 0x0103,
+            ThreadState::BlockedSleeping => 0x203,
+            ThreadState::BlockedFutex => 0x303,
+            ThreadState::BlockedPort => 0x403,
+            ThreadState::BlockedChannel => 0x503,
+            ThreadState::BlockedWaitOne => 0x603,
+            ThreadState::BlockedWaitMany => 0x703,
+            ThreadState::BlockedInterrupt => 0x803,
+            ThreadState::BlockedPager => 0x903,
+        }
+    }
+}
+
+impl Default for ThreadState {
+    fn default() -> Self {
+        ThreadState::NEW
+    }
+}
+
+#[repr(C)]
+pub struct ThreadInfo {
+    state: u32,
+    wait_exception_type: u32,
+    cpu_affnity_mask: [u64; 8],
+}
+
 pub struct Thread {
     base: KObjectBase,
     proc: Arc<Process>,
@@ -107,6 +163,7 @@ struct ThreadInner {
 
     suspend_count: usize,
     waker: Option<Waker>,
+    state: ThreadState,
 }
 
 impl Thread {
@@ -161,6 +218,7 @@ impl Thread {
             context.general.rdi = arg1;
             context.general.rsi = arg2;
             context.general.rflags |= 0x202;
+            inner.state = ThreadState::RUNNING;
         }
         run_task(self.clone());
         self.base.signal_set(Signal::THREAD_RUNNING);
@@ -171,6 +229,7 @@ impl Thread {
     pub fn start_with_regs(self: &Arc<Self>, regs: GeneralRegs) -> ZxResult {
         {
             let mut inner = self.inner.lock();
+            inner.state = ThreadState::RUNNING;
             let context = inner.context.as_mut().ok_or(ZxError::BAD_STATE)?;
             context.general = regs;
             context.general.rflags |= 0x202;
@@ -204,6 +263,7 @@ impl Thread {
     pub(super) fn suspend(&self) {
         let mut inner = self.inner.lock();
         inner.suspend_count += 1;
+        inner.state = ThreadState::SUSPENDED;
         self.base.signal_set(Signal::THREAD_SUSPENDED);
         info!(
             "thread {:?} suspend: count={}",
@@ -217,6 +277,7 @@ impl Thread {
         assert_ne!(inner.suspend_count, 0);
         inner.suspend_count -= 1;
         if inner.suspend_count == 0 {
+            inner.state = ThreadState::RUNNING;
             if let Some(waker) = inner.waker.take() {
                 waker.wake();
             }
@@ -232,7 +293,7 @@ impl Thread {
 
             fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
                 let mut inner = self.thread.inner.lock();
-                if inner.suspend_count == 0 {
+                if inner.state == ThreadState::RUNNING {
                     // resume:  return the context token from thread object
                     Poll::Ready(inner.context.take().unwrap())
                 } else {
@@ -249,6 +310,33 @@ impl Thread {
 
     pub fn end_running(&self, context: Box<UserContext>) {
         self.inner.lock().context = Some(context);
+    }
+
+    pub fn get_thread_info(&self) -> ThreadInfo {
+        let inner = self.inner.lock();
+        ThreadInfo {
+            state: inner.state.into(),
+            wait_exception_type: 0,
+            cpu_affnity_mask: [0u64; 8],
+        }
+    }
+
+    pub fn change_thread_state(&self, state: ThreadState) -> ThreadState{
+        let mut inner = self.inner.lock();
+        let ret = inner.state;
+        inner.state = state;
+        ret
+    }
+
+    pub fn restore_thread_state(&self, check: ThreadState, new: ThreadState) {
+        let mut inner = self.inner.lock();
+        if inner.state == check {
+            inner.state = new;
+        }
+    }
+
+    pub fn get_thread_state(&self) -> ThreadState {
+        self.inner.lock().state
     }
 }
 

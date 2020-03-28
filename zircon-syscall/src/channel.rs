@@ -1,6 +1,6 @@
 use {
     super::*,
-    zircon_object::ipc::{Channel, MessagePacket},
+    zircon_object::{ipc::{Channel, MessagePacket}, task::ThreadState},
 };
 
 impl Syscall<'_> {
@@ -108,6 +108,7 @@ impl Syscall<'_> {
         mut actual_bytes: UserOutPtr<u32>,
         mut actual_handles: UserOutPtr<u32>,
     ) -> ZxResult {
+        assert_eq!(deadline, 0x7fffffffffffffff);
         let mut args = user_args.read()?;
         info!(
             "channel.call_noretry: handle={:#x}, deadline={:#x}, args={:#x?}",
@@ -136,7 +137,9 @@ impl Syscall<'_> {
             },
         };
 
+        let old_state = self.thread.change_thread_state(ThreadState::BlockedChannel);
         let rd_msg = channel.call(wr_msg).await?;
+        self.thread.restore_thread_state(ThreadState::BlockedChannel, old_state);
 
         actual_bytes.write_if_not_null(rd_msg.data.len() as u32)?;
         actual_handles.write_if_not_null(rd_msg.handles.len() as u32)?;
@@ -144,6 +147,26 @@ impl Syscall<'_> {
         args.rd_handles
             .write_array(&proc.add_handles(rd_msg.handles))?;
         Ok(())
+    }
+
+    pub fn sys_channel_call_finish(
+        &self,
+        deadline: u64,
+        user_args: UserInPtr<ChannelCallArgs>,
+        _actual_bytes: UserOutPtr<u32>,
+        _actual_handles: UserOutPtr<u32>,
+    ) -> ZxResult {
+        let args = user_args.read()?;
+        info!(
+            "channel.call_finish: deadline={:#x}, args={:#x?}",
+            deadline, args
+        );
+        let thread_state = self.thread.get_thread_state();
+        if thread_state == ThreadState::BlockedChannel {
+            unimplemented!();
+        } else {
+            Err(ZxError::BAD_STATE)
+        }
     }
 }
 

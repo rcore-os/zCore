@@ -173,6 +173,10 @@ impl Syscall<'_> {
                 let info = proc.get_handle_info(handle)?;
                 UserOutPtr::<HandleBasicInfo>::from(buffer).write(info)?;
             }
+            Topic::Thread => {
+                let info = proc.get_object_with_rights::<Thread>(handle, Rights::INSPECT)?.get_thread_info();
+                UserOutPtr::<ThreadInfo>::from(buffer).write(info)?;
+            }
             _ => {
                 warn!("not supported info topic: {:?}", topic);
                 return Err(ZxError::NOT_SUPPORTED);
