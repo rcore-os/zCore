@@ -51,6 +51,7 @@ impl Futex {
     /// See [`wait_with_owner`] for advanced usage and more details.
     ///
     /// [`wait_with_owner`]: Futex::wait_with_owner
+    /// [`wake`]: Futex::wake
     pub fn wait(self: &Arc<Self>, current_value: i32) -> impl Future<Output = ZxResult<()>> {
         self.wait_with_owner(current_value, None, None, None)
     }

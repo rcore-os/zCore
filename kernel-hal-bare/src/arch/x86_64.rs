@@ -255,7 +255,7 @@ fn vdso_constants() -> VdsoConstants {
         },
         dcache_line_size: 0,
         icache_line_size: 0,
-        ticks_per_second: tsc_frequency as u64 * 1000_000,
+        ticks_per_second: tsc_frequency as u64 * 1_000_000,
         ticks_to_mono_numerator: 1000,
         ticks_to_mono_denominator: tsc_frequency as u32,
         physmem: 0,

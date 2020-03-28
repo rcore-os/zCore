@@ -180,7 +180,7 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
     handles[K_FISTINSTRUMENTATIONDATA + 1] =
         Handle::new(instrumentation_data_vmo.clone(), Rights::DEFAULT_VMO);
     handles[K_FISTINSTRUMENTATIONDATA + 2] =
-        Handle::new(instrumentation_data_vmo.clone(), Rights::DEFAULT_VMO);
+        Handle::new(instrumentation_data_vmo, Rights::DEFAULT_VMO);
 
     // check: handle to root proc should be only
 
