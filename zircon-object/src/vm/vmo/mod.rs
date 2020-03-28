@@ -3,7 +3,7 @@ use {super::*, crate::object::*, alloc::sync::Arc, kernel_hal::PageTable};
 mod paged;
 mod physical;
 
-pub use self::{paged::*, physical::*};
+use self::{paged::*, physical::*};
 use core::ops::Deref;
 
 /// Virtual Memory Objects
@@ -58,10 +58,31 @@ pub struct VmObject {
 }
 
 impl VmObject {
-    pub fn new(inner: Arc<dyn VMObjectTrait>) -> Arc<Self> {
+    /// Create a new VMO backing on physical memory allocated in pages.
+    pub fn new_paged(pages: usize) -> Arc<Self> {
         Arc::new(VmObject {
             base: KObjectBase::default(),
-            inner,
+            inner: VMObjectPaged::new(pages),
+        })
+    }
+
+    /// Create a new VMO representing a piece of contiguous physical memory.
+    ///
+    /// # Safety
+    ///
+    /// You must ensure nobody has the ownership of this piece of memory yet.
+    #[allow(unsafe_code)]
+    pub unsafe fn new_physical(paddr: PhysAddr, pages: usize) -> Arc<Self> {
+        Arc::new(VmObject {
+            base: KObjectBase::default(),
+            inner: VMObjectPhysical::new(paddr, pages),
+        })
+    }
+
+    pub fn create_clone(&self, offset: usize, len: usize) -> Arc<Self> {
+        Arc::new(VmObject {
+            base: KObjectBase::default(),
+            inner: self.inner.create_clone(offset, len),
         })
     }
 }

@@ -54,7 +54,7 @@ impl LinuxElfLoader {
 
         elf.relocate(base).map_err(|_| ZxError::INVALID_ARGS)?;
 
-        let stack_vmo = VmObject::new(VMObjectPaged::new(self.stack_pages));
+        let stack_vmo = VmObject::new_paged(self.stack_pages);
         let flags = MMUFlags::READ | MMUFlags::WRITE;
         let stack_bottom = vmar.map(None, stack_vmo.clone(), 0, stack_vmo.len(), flags)?;
         let mut sp = stack_bottom + stack_vmo.len();
@@ -127,7 +127,7 @@ fn make_vmo(elf: &ElfFile, ph: ProgramHeader) -> ZxResult<Arc<VmObject>> {
     assert_eq!(ph.get_type().unwrap(), Type::Load);
     let page_offset = ph.virtual_addr() as usize % PAGE_SIZE;
     let pages = pages(ph.mem_size() as usize + page_offset);
-    let vmo = VmObject::new(VMObjectPaged::new(pages));
+    let vmo = VmObject::new_paged(pages);
     let data = match ph.get_data(&elf).unwrap() {
         SegmentData::Undefined(data) => data,
         _ => return Err(ZxError::INVALID_ARGS),

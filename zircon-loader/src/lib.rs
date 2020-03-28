@@ -81,9 +81,7 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
     // vdso
     let vdso_vmo = {
         let elf = ElfFile::new(images.vdso.as_ref()).unwrap();
-        let vdso_vmo = VmObject::new(VMObjectPaged::new(
-            images.vdso.as_ref().len() / PAGE_SIZE + 1,
-        ));
+        let vdso_vmo = VmObject::new_paged(images.vdso.as_ref().len() / PAGE_SIZE + 1);
         vdso_vmo.write(0, images.vdso.as_ref());
         let size = elf.load_segment_size();
         let vmar = vmar
@@ -111,9 +109,8 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
 
     // zbi
     let zbi_vmo = {
-        let vmo = VMObjectPaged::new(images.zbi.as_ref().len() / PAGE_SIZE + 1);
+        let vmo = VmObject::new_paged(images.zbi.as_ref().len() / PAGE_SIZE + 1);
         vmo.write(0, images.zbi.as_ref());
-        let vmo = VmObject::new(vmo);
         vmo.set_name("zbi");
         vmo
     };
@@ -122,16 +119,15 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
     let decompressor_vmo = {
         let elf = ElfFile::new(images.decompressor.as_ref()).unwrap();
         let size = elf.load_segment_size();
-        let vmo = VMObjectPaged::new(size / PAGE_SIZE);
+        let vmo = VmObject::new_paged(size / PAGE_SIZE);
         vmo.write(0, images.decompressor.as_ref());
-        let vmo = VmObject::new(vmo);
         vmo.set_name("lib/hermetic/decompress-zbi.so");
         vmo
     };
 
     // stack
     const STACK_PAGES: usize = 8;
-    let stack_vmo = VmObject::new(VMObjectPaged::new(STACK_PAGES));
+    let stack_vmo = VmObject::new_paged(STACK_PAGES);
     let flags = MMUFlags::READ | MMUFlags::WRITE | MMUFlags::USER;
     let stack_bottom = vmar
         .map(None, stack_vmo.clone(), 0, stack_vmo.len(), flags)
@@ -154,9 +150,9 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
     let constants: [u8; 112] = unsafe { core::mem::transmute(kernel_hal::vdso_constants()) };
     vdso_vmo.write(VDSO_CONSTANT_BASE, &constants);
     vdso_vmo.set_name("vdso/full");
-    let vdso_test1 = VmObject::new(vdso_vmo.create_clone(0, vdso_vmo.len()));
+    let vdso_test1 = vdso_vmo.create_clone(0, vdso_vmo.len());
     vdso_test1.set_name("vdso/test1");
-    let vdso_test2 = VmObject::new(vdso_vmo.create_clone(0, vdso_vmo.len()));
+    let vdso_test2 = vdso_vmo.create_clone(0, vdso_vmo.len());
     vdso_test2.set_name("vdso/test2");
     handles[K_FIRSTVDSO] = Handle::new(vdso_vmo, Rights::DEFAULT_VMO | Rights::EXECUTE);
     handles[K_FIRSTVDSO + 1] = Handle::new(vdso_test1, Rights::DEFAULT_VMO | Rights::EXECUTE);
@@ -165,19 +161,19 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
     handles[K_USERBOOT_DECOMPRESSOR] =
         Handle::new(decompressor_vmo, Rights::DEFAULT_VMO | Rights::EXECUTE);
     // TODO to use correct CrashLogVmo handle
-    let crash_log_vmo = VmObject::new(VMObjectPaged::new(1));
+    let crash_log_vmo = VmObject::new_paged(1);
     crash_log_vmo.set_name("crashlog");
     handles[K_CRASHLOG] = Handle::new(crash_log_vmo, Rights::DEFAULT_VMO);
     // TODO to use correct CounterName handle
-    let counter_name_vmo = VmObject::new(VMObjectPaged::new(1));
+    let counter_name_vmo = VmObject::new_paged(1);
     counter_name_vmo.set_name("counters/desc");
     handles[K_COUNTERNAMES] = Handle::new(counter_name_vmo, Rights::DEFAULT_VMO);
     // TODO to use correct CounterName handle
-    let kcounters_vmo = VmObject::new(VMObjectPaged::new(1));
+    let kcounters_vmo = VmObject::new_paged(1);
     kcounters_vmo.set_name("counters/arena");
     handles[K_COUNTERS] = Handle::new(kcounters_vmo, Rights::DEFAULT_VMO);
     // TODO to use correct Instrumentation data handle
-    let instrumentation_data_vmo = VmObject::new(VMObjectPaged::new(0));
+    let instrumentation_data_vmo = VmObject::new_paged(0);
     instrumentation_data_vmo.set_name("UNIMPLEMENTED_VMO");
     handles[K_FISTINSTRUMENTATIONDATA] =
         Handle::new(instrumentation_data_vmo.clone(), Rights::DEFAULT_VMO);
@@ -350,7 +346,7 @@ impl FlagsExt for Flags {
 fn make_vmo(elf: &ElfFile, ph: ProgramHeader) -> ZxResult<Arc<VmObject>> {
     assert_eq!(ph.get_type().unwrap(), Type::Load);
     let pages = pages(ph.mem_size() as usize);
-    let vmo = VmObject::new(VMObjectPaged::new(pages));
+    let vmo = VmObject::new_paged(pages);
     let data = match ph.get_data(&elf).unwrap() {
         SegmentData::Undefined(data) => data,
         _ => return Err(ZxError::INVALID_ARGS),

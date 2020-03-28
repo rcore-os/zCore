@@ -17,7 +17,7 @@ impl Syscall<'_> {
         );
         // TODO: options
         let proc = self.thread.proc();
-        let vmo = VmObject::new(VMObjectPaged::new(pages(size as usize)));
+        let vmo = VmObject::new_paged(pages(size as usize));
         let handle_value = proc.add_handle(Handle::new(vmo, Rights::DEFAULT_VMO));
         out.write(handle_value)?;
         Ok(0)
@@ -136,7 +136,7 @@ impl Syscall<'_> {
         let child_size = roundup_pages(size);
         info!("size of child vmo: {:#x}", child_size);
         let child_vmo = vmo.create_clone(offset as usize, child_size);
-        out.write(proc.add_handle(Handle::new(VmObject::new(child_vmo), child_rights)))?;
+        out.write(proc.add_handle(Handle::new(child_vmo, child_rights)))?;
         Ok(0)
     }
 
