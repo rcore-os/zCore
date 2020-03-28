@@ -278,7 +278,7 @@ impl FlagsExt for MMUFlags {
 /// Output a char to console.
 #[export_name = "hal_serial_write"]
 pub fn serial_write(s: &str) {
-    eprint!("{}\n", s);
+    eprint!("{}", s);
 }
 
 /// Get current time.
