@@ -22,6 +22,7 @@ mod consts;
 mod cprng;
 mod debug;
 mod debuglog;
+mod fifo;
 mod futex;
 mod handle;
 mod object;
@@ -178,6 +179,7 @@ impl Syscall<'_> {
             Sys::OBJECT_SIGNAL => self.sys_object_signal(a0 as _, a1 as _, a2 as _),
             Sys::CHANNEL_CALL_FINISH => self.sys_channel_call_finish(a0 as _, a1.into(), a2.into(), a3.into()),
             Sys::OBJECT_WAIT_MANY => self.sys_object_wait_many(a0.into(), a1 as _, a2 as _).await,
+            Sys::FIFO_CREATE => self.sys_fifo_create(a0 as _, a1 as _, a2 as _, a3.into(), a4.into()),
             _ => {
                 warn!("syscall unimplemented: {:?}", sys_type);
                 Err(ZxError::NOT_SUPPORTED)
