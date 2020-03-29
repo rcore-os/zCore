@@ -177,6 +177,7 @@ impl Syscall<'_> {
             ),
             Sys::OBJECT_SIGNAL => self.sys_object_signal(a0 as _, a1 as _, a2 as _),
             Sys::CHANNEL_CALL_FINISH => self.sys_channel_call_finish(a0 as _, a1.into(), a2.into(), a3.into()),
+            Sys::OBJECT_WAIT_MANY => self.sys_object_wait_many(a0.into(), a1 as _, a2 as _).await,
             _ => {
                 warn!("syscall unimplemented: {:?}", sys_type);
                 Err(ZxError::NOT_SUPPORTED)

@@ -3,6 +3,7 @@ use {
     core::convert::TryFrom,
     numeric_enum_macro::numeric_enum,
     zircon_object::{signal::Port, task::*, vm::*},
+    alloc::vec::Vec,
 };
 
 impl Syscall<'_> {
@@ -130,18 +131,36 @@ impl Syscall<'_> {
         &self,
         handle: HandleValue,
         signals: u32,
-        deadline: u64,
+        deadline: i64,
         mut observed: UserOutPtr<Signal>,
     ) -> ZxResult {
-        let signals = Signal::from_bits(signals).ok_or(ZxError::INVALID_ARGS)?;
         info!(
-            "object.wait_one: handle={:#x?}, signals={:?}, deadline={:#x?}, observed={:#x?}",
+            "object.wait_one: handle={:#x?}, signals={:#x?}, deadline={:#x?}, observed={:#x?}",
             handle, signals, deadline, observed
         );
         let proc = self.thread.proc();
         let object = proc.get_dyn_object_with_rights(handle, Rights::WAIT)?;
-        observed.write_if_not_null(object.wait_signal(signals).await)?;
-        Ok(())
+        if deadline <= 0 {
+            if let Some(signals) = Signal::from_bits(signals) {
+                let res = object.signal();
+                observed.write_if_not_null(res)?;
+                if (signals & res).is_empty() {
+                    Err(ZxError::TIMED_OUT)
+                } else {
+                    Ok(())
+                }
+            } else {
+                Err(ZxError::TIMED_OUT)
+            }
+        } else {
+            let signals = Signal::from_bits(signals).ok_or(ZxError::INVALID_ARGS)?;
+            if deadline == i64::max_value() {
+                observed.write_if_not_null(object.wait_signal(signals).await)?;
+                Ok(())
+            } else {
+                unimplemented!()
+            }
+        }
     }
 
     pub fn sys_object_get_info(
@@ -247,6 +266,31 @@ impl Syscall<'_> {
         object.signal_change(clear_signal, set_signal);
         Ok(())
     }
+
+    pub async fn sys_object_wait_many(
+        &self,
+        mut user_items: UserInOutPtr<UserWaitItem>,
+        count: u32,
+        deadline: u64
+    ) -> ZxResult {
+        if count > MAX_WAIT_MANY_ITEMS {
+            return Err(ZxError::OUT_OF_RANGE);
+        }
+        let mut items = user_items.read_array(count as usize)?;
+        info!("user_items: {:#x?}, deadline: {:#x}", user_items, deadline);
+        let proc = self.thread.proc();
+        let mut waiters = Vec::new();
+        for item in items.iter() {
+            let object = proc.get_dyn_object_with_rights(item.handle, Rights::WAIT)?;
+            waiters.push((object, item.wait_for));
+        }
+        let res = wait_signal_many(&waiters).await;
+        for (i, item) in items.iter_mut().enumerate() {
+            item.observed = res[i];
+        }
+        user_items.write_array(&items)?;
+        Ok(())
+    }
 }
 
 numeric_enum! {
@@ -294,3 +338,12 @@ numeric_enum! {
 }
 
 const MAX_NAME_LEN: u32 = 32;
+const MAX_WAIT_MANY_ITEMS: u32 = 32;
+
+#[derive(Debug)]
+#[repr(C)]
+pub struct UserWaitItem {
+    handle: HandleValue,
+    wait_for: Signal,
+    observed: Signal,
+}

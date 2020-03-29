@@ -132,7 +132,7 @@ impl Channel {
 impl Drop for Channel {
     fn drop(&mut self) {
         if let Some(peer) = self.peer.upgrade() {
-            peer.base.signal_set(Signal::PEER_CLOSED);
+            peer.base.signal_change(Signal::WRITABLE, Signal::PEER_CLOSED);
         }
     }
 }
