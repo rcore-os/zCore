@@ -244,6 +244,12 @@ impl Thread {
     pub fn exit(&self) {
         self.proc().remove_thread(self.base.id);
         self.base.signal_set(Signal::THREAD_TERMINATED);
+        self.inner.lock().state = ThreadState::DYING;   // FIXME dying or dead ?
+    }
+
+    pub(super) fn internal_exit(&self) {
+        self.base.signal_set(Signal::THREAD_TERMINATED);
+        self.inner.lock().state = ThreadState::DEAD;   // FIXME dying or dead ?
     }
 
     /// Read one aspect of thread state.

@@ -120,6 +120,10 @@ impl Job {
     pub(super) fn add_process(&self, process: Arc<Process>) {
         self.inner.lock().processes.push(process);
     }
+
+    pub(super) fn remove_process(&self, id: KoID) {
+        self.inner.lock().processes.retain(|proc| proc.id() != id);
+    }
 }
 
 impl JobInner {

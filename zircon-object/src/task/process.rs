@@ -155,6 +155,9 @@ impl Process {
         inner.status = Status::Exited(retcode);
         // TODO: exit all threads
         self.base.signal_set(Signal::PROCESS_TERMINATED);
+        inner.threads.iter().for_each(|thread| thread.internal_exit());
+        inner.threads.clear();
+        inner.handles.clear();
         if let Some((_job, retcode_nonzero)) = &inner.critical_job {
             if *retcode_nonzero {
                 if retcode != 0 {
@@ -164,6 +167,7 @@ impl Process {
                 unimplemented!()
             }
         }
+        self.job.remove_process(self.base.id);
     }
 
     /// Check whether `condition` is allowed in the parent job's policy.
