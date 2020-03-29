@@ -42,8 +42,23 @@ impl Syscall<'_> {
         };
         actual_bytes.write_if_not_null(msg.data.len() as u32)?;
         actual_handles.write_if_not_null(msg.handles.len() as u32)?;
-        bytes.write_array(msg.data.as_slice())?;
-        handles.write_array(&proc.add_handles(msg.handles))?;
+        if num_bytes < msg.data.len() as u32 || num_handles < msg.handles.len() as u32 {
+            return Err(ZxError::BUFFER_TOO_SMALL);
+        }
+        if num_bytes != 0 {
+            if bytes.is_null() {
+                return Err(ZxError::INVALID_ARGS);
+            } else {
+                bytes.write_array(msg.data.as_slice())?;
+            }
+        }
+        if num_handles != 0 {
+            if handles.is_null() {
+                return Err(ZxError::INVALID_ARGS);
+            } else {
+                handles.write_array(&proc.add_handles(msg.handles))?;
+            }
+        }
         Ok(())
     }
 
@@ -146,9 +161,14 @@ impl Syscall<'_> {
 
         actual_bytes.write_if_not_null(rd_msg.data.len() as u32)?;
         actual_handles.write_if_not_null(rd_msg.handles.len() as u32)?;
+        if args.rd_num_bytes < rd_msg.data.len() as u32 || args.rd_num_handles < rd_msg.handles.len() as u32 {
+            return Err(ZxError::BUFFER_TOO_SMALL);
+        }
+        if actual_bytes.is_null() || actual_handles.is_null() {
+            return Err(ZxError::INVALID_ARGS);
+        }
         args.rd_bytes.write_array(rd_msg.data.as_slice())?;
-        args.rd_handles
-            .write_array(&proc.add_handles(rd_msg.handles))?;
+        args.rd_handles.write_array(&proc.add_handles(rd_msg.handles))?;
         Ok(())
     }
 
