@@ -63,13 +63,16 @@ impl Syscall<'_> {
         if options != 0 {
             return Err(ZxError::INVALID_ARGS);
         }
-        if num_bytes > 65536 || num_handles > 64 {
+        if num_bytes > 65536 {
             return Err(ZxError::OUT_OF_RANGE);
         }
         let proc = self.thread.proc();
         let data = user_bytes.read_array(num_bytes as usize)?;
         let handles = user_handles.read_array(num_handles as usize)?;
         let handles = proc.remove_handles(&handles)?;
+        if handles.len() > 64 {
+            return Err(ZxError::OUT_OF_RANGE);
+        }
         for handle in handles.iter() {
             if !handle.rights.contains(Rights::TRANSFER) {
                 return Err(ZxError::ACCESS_DENIED);

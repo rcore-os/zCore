@@ -26,6 +26,13 @@ impl_kobject!(Channel
         let peer = self.peer.upgrade().ok_or(ZxError::PEER_CLOSED)?;
         Ok(peer)
     }
+    fn related_koid(&self) -> KoID {
+        if let Some(peer) = self.peer.upgrade() {
+            peer.id()
+        } else {
+            0
+        }
+    }
 );
 
 impl Channel {
