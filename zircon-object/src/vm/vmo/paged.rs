@@ -105,12 +105,19 @@ impl VMObjectTrait for VMObjectPaged {
         let old_pages = inner.frames.len();
         let new_pages = len / PAGE_SIZE;
         if old_pages < new_pages {
-            inner.frames.resize_with(len, Default::default);
+            inner.frames.resize_with(new_pages, Default::default);
             (old_pages..new_pages).for_each(|idx| {
                 inner.commit(idx);
             });
         } else {
-            unimplemented!()
+            if inner.parent.is_none() {
+                inner.frames.resize_with(new_pages, Default::default);
+                (old_pages..new_pages).for_each(|idx| {
+                    inner.get_page(idx, true);
+                });
+            } else {
+                unimplemented!()
+            }
         }
     }
 
