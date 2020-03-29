@@ -196,6 +196,10 @@ impl Syscall<'_> {
                 let info = proc.get_object_with_rights::<Thread>(handle, Rights::INSPECT)?.get_thread_info();
                 UserOutPtr::<ThreadInfo>::from(buffer).write(info)?;
             }
+            Topic::HandleCount => {
+                let object = proc.get_dyn_object_with_rights(handle, Rights::INSPECT)?;
+                UserOutPtr::<u32>::from(buffer).write(Arc::strong_count(&object) as u32 - 1)?;
+            }
             _ => {
                 warn!("not supported info topic: {:?}", topic);
                 return Err(ZxError::NOT_SUPPORTED);

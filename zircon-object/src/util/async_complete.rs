@@ -31,7 +31,7 @@ struct Inner<T> {
 }
 
 impl<T> Sender<T> {
-    pub fn push(self, value: T) {
+    pub fn push(&self, value: T) {
         let mut inner = self.inner.lock();
         inner.value = Some(value);
         if let Some(waker) = inner.waker.take() {

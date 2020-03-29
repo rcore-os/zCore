@@ -14,7 +14,7 @@ pub struct Channel {
     base: KObjectBase,
     peer: Weak<Channel>,
     recv_queue: Mutex<VecDeque<T>>,
-    call_reply: Mutex<BTreeMap<TxID, Sender<T>>>,
+    call_reply: Mutex<BTreeMap<TxID, Sender<ZxResult<T>>>>,
     next_txid: AtomicU32,
 }
 
@@ -90,7 +90,7 @@ impl Channel {
             // check first 4 bytes: whether it is a call reply?
             let txid = TxID::from_ne_bytes(msg.data[..4].try_into().unwrap());
             if let Some(sender) = peer.call_reply.lock().remove(&txid) {
-                sender.push(msg);
+                sender.push(Ok(msg));
                 return Ok(());
             }
         }
@@ -106,7 +106,8 @@ impl Channel {
         peer.push_general(msg);
         let (sender, receiver) = async_complete::create();
         self.call_reply.lock().insert(txid, sender);
-        Ok(receiver.await)
+        drop(peer);
+        receiver.await
     }
 
     /// Push a message to general queue, called from peer.
@@ -133,6 +134,9 @@ impl Drop for Channel {
     fn drop(&mut self) {
         if let Some(peer) = self.peer.upgrade() {
             peer.base.signal_change(Signal::WRITABLE, Signal::PEER_CLOSED);
+            peer.call_reply.lock().values().for_each(|sender| {
+                sender.push(Err(ZxError::PEER_CLOSED));
+            });
         }
     }
 }

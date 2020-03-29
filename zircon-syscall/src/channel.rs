@@ -84,7 +84,11 @@ impl Syscall<'_> {
         let proc = self.thread.proc();
         let data = user_bytes.read_array(num_bytes as usize)?;
         let handles = user_handles.read_array(num_handles as usize)?;
+        let transfer_self = handles.iter().any(|&handle| handle == handle_value);
         let handles = proc.remove_handles(&handles)?;
+        if transfer_self {
+            return Err(ZxError::NOT_SUPPORTED);
+        }
         if handles.len() > 64 {
             return Err(ZxError::OUT_OF_RANGE);
         }
@@ -126,7 +130,6 @@ impl Syscall<'_> {
         mut actual_bytes: UserOutPtr<u32>,
         mut actual_handles: UserOutPtr<u32>,
     ) -> ZxResult {
-        assert_eq!(deadline, 0x7fffffffffffffff);
         let mut args = user_args.read()?;
         info!(
             "channel.call_noretry: handle={:#x}, deadline={:#x}, args={:#x?}",
@@ -155,21 +158,31 @@ impl Syscall<'_> {
             },
         };
 
-        let old_state = self.thread.change_thread_state(ThreadState::BlockedChannel);
-        let rd_msg = channel.call(wr_msg).await?;
-        self.thread.restore_thread_state(ThreadState::BlockedChannel, old_state);
+        if deadline <= 0 {
+            channel.write(wr_msg)?;
+            Err(ZxError::TIMED_OUT)
+        } else if deadline == i64::max_value() {
+            let old_state = self.thread.change_thread_state(ThreadState::BlockedChannel);
+            let rd_msg = channel.call(wr_msg).await.or_else(|e|{
+                self.thread.restore_thread_state(ThreadState::BlockedChannel, old_state);
+                Err(e)
+            })?;
+            self.thread.restore_thread_state(ThreadState::BlockedChannel, old_state);
 
-        actual_bytes.write_if_not_null(rd_msg.data.len() as u32)?;
-        actual_handles.write_if_not_null(rd_msg.handles.len() as u32)?;
-        if args.rd_num_bytes < rd_msg.data.len() as u32 || args.rd_num_handles < rd_msg.handles.len() as u32 {
-            return Err(ZxError::BUFFER_TOO_SMALL);
+            actual_bytes.write_if_not_null(rd_msg.data.len() as u32)?;
+            actual_handles.write_if_not_null(rd_msg.handles.len() as u32)?;
+            if args.rd_num_bytes < rd_msg.data.len() as u32 || args.rd_num_handles < rd_msg.handles.len() as u32 {
+                return Err(ZxError::BUFFER_TOO_SMALL);
+            }
+            if actual_bytes.is_null() || actual_handles.is_null() {
+                return Err(ZxError::INVALID_ARGS);
+            }
+            args.rd_bytes.write_array(rd_msg.data.as_slice())?;
+            args.rd_handles.write_array(&proc.add_handles(rd_msg.handles))?;
+            Ok(())
+        } else {
+            unimplemented!()
         }
-        if actual_bytes.is_null() || actual_handles.is_null() {
-            return Err(ZxError::INVALID_ARGS);
-        }
-        args.rd_bytes.write_array(rd_msg.data.as_slice())?;
-        args.rd_handles.write_array(&proc.add_handles(rd_msg.handles))?;
-        Ok(())
     }
 
     pub fn sys_channel_call_finish(
