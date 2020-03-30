@@ -1,6 +1,7 @@
 use {
     super::*,
     core::{sync::atomic::*, time::Duration},
+    zircon_object::task::ThreadState,
 };
 
 impl Syscall<'_> {
@@ -15,6 +16,9 @@ impl Syscall<'_> {
             "futex.wait: value_ptr={:#x?}, current_value={:#x}, new_futex_owner={:#x}, deadline={:#x}",
             value_ptr, current_value, new_futex_owner, deadline
         );
+        if value_ptr.is_null() || value_ptr.as_ptr() as usize % 4 != 0 {
+            return Err(ZxError::INVALID_ARGS);
+        }
         let value = value_ptr.as_ref()?;
         let proc = self.thread.proc();
         let futex = proc.get_futex(value);
@@ -28,6 +32,7 @@ impl Syscall<'_> {
         } else {
             Some(Duration::from_nanos(deadline.max(0) as u64))
         };
+        let old_state = self.thread.change_thread_state(ThreadState::BlockedFutex);
         futex
             .wait_with_owner(
                 current_value,
@@ -35,7 +40,12 @@ impl Syscall<'_> {
                 new_owner,
                 deadline,
             )
-            .await?;
+            .await
+            .or_else(|e|{
+                self.thread.restore_thread_state(ThreadState::BlockedFutex, old_state);
+                Err(e)
+            })?;
+        self.thread.restore_thread_state(ThreadState::BlockedFutex, old_state);
         Ok(())
     }
 

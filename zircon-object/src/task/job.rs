@@ -65,13 +65,13 @@ impl Job {
     }
 
     /// Create a new child job object.
-    pub fn create_child(parent: &Arc<Self>, _options: u32) -> ZxResult<Arc<Self>> {
+    pub fn create_child(self: &Arc<Self>, _options: u32) -> ZxResult<Arc<Self>> {
         // TODO: options
-        let mut inner = parent.inner.lock();
+        let mut inner = self.inner.lock();
         let child = Arc::new(Job {
             base: KObjectBase::new(),
-            parent: Some(parent.clone()),
-            parent_policy: inner.policy.merge(&parent.parent_policy),
+            parent: Some(self.clone()),
+            parent_policy: inner.policy.merge(&self.parent_policy),
             inner: Mutex::new(JobInner::default()),
         });
         inner.children.push(child.clone());
@@ -110,8 +110,7 @@ impl Job {
 
     pub fn set_policy_timer_slack(
         &self,
-        _options: SetPolicyOptions,
-        _policys: &[TimerSlackPolicy],
+        _policys: TimerSlackPolicy,
     ) {
         unimplemented!()
     }

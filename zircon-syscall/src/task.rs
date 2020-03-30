@@ -189,4 +189,70 @@ impl Syscall<'_> {
         }
         Ok(())
     }
+
+    pub fn sys_job_create(
+        &self,
+        parent: HandleValue,
+        options: u32,
+        mut out: UserOutPtr<HandleValue>,
+    ) -> ZxResult {
+        info!(
+            "job.create: parent={:#x}, options={:#x}, out={:#x?}",
+            parent, options, out
+        );
+        if options != 0 {
+            Err(ZxError::INVALID_ARGS)
+        } else {
+            let proc = self.thread.proc();
+            let parent_job = self
+                .thread
+                .proc()
+                .get_object_with_rights::<Job>(parent, Rights::MANAGE_JOB)
+                .or(proc.get_object_with_rights::<Job>(parent, Rights::WRITE))?;
+            let child = parent_job.create_child(options)?;
+            out.write(proc.add_handle(Handle::new(child, Rights::DEFAULT_JOB)))?;
+            Ok(())
+        }
+    }
+
+    pub fn sys_job_set_policy(
+        &self,
+        handle: HandleValue,
+        options: u32,
+        topic: u32,
+        policy: usize,
+        count: u32,
+    ) -> ZxResult {
+        info!(
+            "job.set_policy: handle={:#x}, options={:#x}, topic={:#x}, policy={:#x?}, count={:#x}",
+            handle, options, topic,policy, count
+        );
+        let job = self.thread.proc().get_object_with_rights::<Job>(handle, Rights::SET_POLICY)?;
+        match topic {
+            JOB_POL_BASE_V1 => {
+                unimplemented!()
+            },
+            JOB_POL_BASE_V2 => {
+                unimplemented!()
+            }
+            JOB_POL_TIMER_SLACK => {
+                if options != JOB_POL_RELATIVE {
+                    return Err(ZxError::INVALID_ARGS);
+                }
+                if count != 1 {
+                    return Err(ZxError::INVALID_ARGS);
+                }
+                let timer_policy = UserInPtr::<TimerSlackPolicy>::from(policy).read()?;
+                job.set_policy_timer_slack(timer_policy);
+                Ok(())
+            }
+            _ => Err(ZxError::INVALID_ARGS)
+        }
+    }
 }
+
+const JOB_POL_BASE_V1: u32 = 0;
+const JOB_POL_BASE_V2: u32 = 0x0100_0000;
+const JOB_POL_TIMER_SLACK: u32 = 1;
+
+const JOB_POL_RELATIVE: u32 = 0;

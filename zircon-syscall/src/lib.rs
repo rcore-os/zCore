@@ -192,6 +192,8 @@ impl Syscall<'_> {
             Sys::CHANNEL_CALL_FINISH => self.sys_channel_call_finish(a0 as _, a1.into(), a2.into(), a3.into()),
             Sys::OBJECT_WAIT_MANY => self.sys_object_wait_many(a0.into(), a1 as _, a2 as _).await,
             Sys::FIFO_CREATE => self.sys_fifo_create(a0 as _, a1 as _, a2 as _, a3.into(), a4.into()),
+            Sys::JOB_CREATE => self.sys_job_create(a0 as _, a1 as _, a2.into()),
+            Sys::JOB_SET_POLICY => self.sys_job_set_policy(a0 as _, a1 as _, a2 as _, a3.into(), a4 as _),
             _ => {
                 warn!("syscall unimplemented: {:?}", sys_type);
                 Err(ZxError::NOT_SUPPORTED)
