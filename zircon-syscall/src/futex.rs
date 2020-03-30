@@ -32,7 +32,7 @@ impl Syscall<'_> {
         } else {
             Some(Duration::from_nanos(deadline.max(0) as u64))
         };
-        let old_state = self.thread.change_thread_state(ThreadState::BlockedFutex);
+        let old_state = self.thread.change_state(ThreadState::BlockedFutex);
         futex
             .wait_with_owner(
                 current_value,
@@ -41,11 +41,13 @@ impl Syscall<'_> {
                 deadline,
             )
             .await
-            .or_else(|e|{
-                self.thread.restore_thread_state(ThreadState::BlockedFutex, old_state);
+            .or_else(|e| {
+                self.thread
+                    .restore_state(ThreadState::BlockedFutex, old_state);
                 Err(e)
             })?;
-        self.thread.restore_thread_state(ThreadState::BlockedFutex, old_state);
+        self.thread
+            .restore_state(ThreadState::BlockedFutex, old_state);
         Ok(())
     }
 

@@ -68,11 +68,13 @@ impl Syscall<'_> {
             Sys::OBJECT_SET_PROPERTY => {
                 self.sys_object_set_property(a0 as _, a1 as _, a2 as _, a3 as _)
             }
+            Sys::OBJECT_SIGNAL => self.sys_object_signal(a0 as _, a1 as _, a2 as _),
             Sys::OBJECT_SIGNAL_PEER => self.sys_object_signal_peer(a0 as _, a1 as _, a2 as _),
             Sys::OBJECT_WAIT_ONE => {
                 self.sys_object_wait_one(a0 as _, a1 as _, a2 as _, a3.into())
                     .await
             }
+            Sys::OBJECT_WAIT_MANY => self.sys_object_wait_many(a0.into(), a1 as _, a2 as _).await,
             Sys::OBJECT_WAIT_ASYNC => {
                 self.sys_object_wait_async(a0 as _, a1 as _, a2 as _, a3 as _, a4 as _)
             }
@@ -91,6 +93,10 @@ impl Syscall<'_> {
                 self.sys_process_start(a0 as _, a1 as _, a2 as _, a3 as _, a4 as _, a5 as _)
             }
             Sys::PROCESS_EXIT => self.sys_process_exit(a0 as _),
+            Sys::JOB_CREATE => self.sys_job_create(a0 as _, a1 as _, a2.into()),
+            Sys::JOB_SET_POLICY => {
+                self.sys_job_set_policy(a0 as _, a1 as _, a2 as _, a3.into(), a4 as _)
+            }
             Sys::JOB_SET_CRITICAL => self.sys_job_set_critical(a0 as _, a1 as _, a2 as _),
             Sys::TASK_SUSPEND_TOKEN => self.sys_task_suspend_token(a0 as _, a1.into()),
             Sys::CHANNEL_CREATE => self.sys_channel_create(a0 as _, a1.into(), a2.into()),
@@ -129,6 +135,12 @@ impl Syscall<'_> {
                     a5.into(),
                 )
                 .await
+            }
+            Sys::CHANNEL_CALL_FINISH => {
+                self.sys_channel_call_finish(a0 as _, a1.into(), a2.into(), a3.into())
+            }
+            Sys::FIFO_CREATE => {
+                self.sys_fifo_create(a0 as _, a1 as _, a2 as _, a3.into(), a4.into())
             }
             Sys::EVENT_CREATE => self.sys_event_create(a0 as _, a1.into()),
             Sys::PORT_CREATE => self.sys_port_create(a0 as _, a1.into()),
@@ -188,12 +200,6 @@ impl Syscall<'_> {
                 a5 as _,
                 a6.into(),
             ),
-            Sys::OBJECT_SIGNAL => self.sys_object_signal(a0 as _, a1 as _, a2 as _),
-            Sys::CHANNEL_CALL_FINISH => self.sys_channel_call_finish(a0 as _, a1.into(), a2.into(), a3.into()),
-            Sys::OBJECT_WAIT_MANY => self.sys_object_wait_many(a0.into(), a1 as _, a2 as _).await,
-            Sys::FIFO_CREATE => self.sys_fifo_create(a0 as _, a1 as _, a2 as _, a3.into(), a4.into()),
-            Sys::JOB_CREATE => self.sys_job_create(a0 as _, a1 as _, a2.into()),
-            Sys::JOB_SET_POLICY => self.sys_job_set_policy(a0 as _, a1 as _, a2 as _, a3.into(), a4 as _),
             _ => {
                 warn!("syscall unimplemented: {:?}", sys_type);
                 Err(ZxError::NOT_SUPPORTED)

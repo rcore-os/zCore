@@ -1,9 +1,9 @@
 use {
     super::*,
+    alloc::vec::Vec,
     core::convert::TryFrom,
     numeric_enum_macro::numeric_enum,
     zircon_object::{signal::Port, task::*, vm::*},
-    alloc::vec::Vec,
 };
 
 impl Syscall<'_> {
@@ -193,11 +193,12 @@ impl Syscall<'_> {
                 UserOutPtr::<HandleBasicInfo>::from(buffer).write(info)?;
             }
             Topic::Thread => {
-                let info = proc.get_object_with_rights::<Thread>(handle, Rights::INSPECT)?.get_thread_info();
-                UserOutPtr::<ThreadInfo>::from(buffer).write(info)?;
+                let thread = proc.get_object_with_rights::<Thread>(handle, Rights::INSPECT)?;
+                UserOutPtr::<ThreadInfo>::from(buffer).write(thread.get_thread_info())?;
             }
             Topic::HandleCount => {
                 let object = proc.get_dyn_object_with_rights(handle, Rights::INSPECT)?;
+                // FIXME: count Handle instead of Arc
                 UserOutPtr::<u32>::from(buffer).write(Arc::strong_count(&object) as u32 - 1)?;
             }
             _ => {
@@ -275,7 +276,7 @@ impl Syscall<'_> {
         &self,
         mut user_items: UserInOutPtr<UserWaitItem>,
         count: u32,
-        deadline: u64
+        deadline: i64,
     ) -> ZxResult {
         if count > MAX_WAIT_MANY_ITEMS {
             return Err(ZxError::OUT_OF_RANGE);

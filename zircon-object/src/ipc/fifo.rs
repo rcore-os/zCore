@@ -14,11 +14,7 @@ impl_kobject!(Fifo
         Ok(peer)
     }
     fn related_koid(&self) -> KoID {
-        if let Some(peer) = self.peer.upgrade() {
-            peer.id()
-        } else {
-            0
-        }
+        self.peer.upgrade().map(|p| p.id()).unwrap_or(0)
     }
 );
 

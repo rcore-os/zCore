@@ -151,15 +151,14 @@ impl Syscall<'_> {
             "thread.start: handle={:#x?}, entry={:#x}, stack={:#x}, arg1={:#x} arg2={:#x}",
             handle_value, entry, stack, arg1, arg2
         );
-        let thread = self
-            .thread
-            .proc()
-            .get_object_with_rights::<Thread>(handle_value, Rights::MANAGE_THREAD)?;
+        let proc = self.thread.proc();
+        let thread = proc.get_object_with_rights::<Thread>(handle_value, Rights::MANAGE_THREAD)?;
         thread.start(entry, stack, arg1, arg2)?;
         Ok(())
     }
 
     pub fn sys_thread_exit(&mut self) -> ZxResult {
+        info!("thread.exit:");
         self.thread.exit();
         self.exit = true;
         Ok(())
@@ -204,10 +203,7 @@ impl Syscall<'_> {
             Err(ZxError::INVALID_ARGS)
         } else {
             let proc = self.thread.proc();
-            let parent_job = self
-                .thread
-                .proc()
-                .get_object_with_rights::<Job>(parent, Rights::MANAGE_JOB)
+            let parent_job = proc.get_object_with_rights::<Job>(parent, Rights::MANAGE_JOB)
                 .or(proc.get_object_with_rights::<Job>(parent, Rights::WRITE))?;
             let child = parent_job.create_child(options)?;
             out.write(proc.add_handle(Handle::new(child, Rights::DEFAULT_JOB)))?;
@@ -225,16 +221,13 @@ impl Syscall<'_> {
     ) -> ZxResult {
         info!(
             "job.set_policy: handle={:#x}, options={:#x}, topic={:#x}, policy={:#x?}, count={:#x}",
-            handle, options, topic,policy, count
+            handle, options, topic, policy, count,
         );
-        let job = self.thread.proc().get_object_with_rights::<Job>(handle, Rights::SET_POLICY)?;
+        let proc = self.thread.proc();
+        let job = proc.get_object_with_rights::<Job>(handle, Rights::SET_POLICY)?;
         match topic {
-            JOB_POL_BASE_V1 => {
-                unimplemented!()
-            },
-            JOB_POL_BASE_V2 => {
-                unimplemented!()
-            }
+            JOB_POL_BASE_V1 => unimplemented!(),
+            JOB_POL_BASE_V2 => unimplemented!(),
             JOB_POL_TIMER_SLACK => {
                 if options != JOB_POL_RELATIVE {
                     return Err(ZxError::INVALID_ARGS);
@@ -246,7 +239,7 @@ impl Syscall<'_> {
                 job.set_policy_timer_slack(timer_policy);
                 Ok(())
             }
-            _ => Err(ZxError::INVALID_ARGS)
+            _ => Err(ZxError::INVALID_ARGS),
         }
     }
 }

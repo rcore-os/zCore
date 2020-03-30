@@ -71,6 +71,13 @@ impl<T, P: Policy> UserPtr<T, P> {
     pub fn as_ptr(&self) -> *mut T {
         self.ptr
     }
+
+    pub fn check(&self) -> Result<()> {
+        if self.ptr.is_null() {
+            return Err(Error::InvalidPointer);
+        }
+        Ok(())
+    }
 }
 
 impl<T, P: Read> UserPtr<T, P> {
@@ -80,6 +87,7 @@ impl<T, P: Read> UserPtr<T, P> {
 
     pub fn read(&self) -> Result<T> {
         // TODO: check ptr and return err
+        self.check()?;
         Ok(unsafe { self.ptr.read() })
     }
 
@@ -95,6 +103,7 @@ impl<T, P: Read> UserPtr<T, P> {
         if len == 0 {
             return Ok(Vec::default());
         }
+        self.check()?;
         let mut ret = Vec::<T>::with_capacity(len);
         unsafe {
             ret.set_len(len);
@@ -106,12 +115,14 @@ impl<T, P: Read> UserPtr<T, P> {
 
 impl<P: Read> UserPtr<u8, P> {
     pub fn read_string(&self, len: usize) -> Result<String> {
+        self.check()?;
         let src = unsafe { core::slice::from_raw_parts(self.ptr, len) };
         let s = core::str::from_utf8(src).map_err(|_| Error::InvalidUtf8)?;
         Ok(String::from(s))
     }
 
     pub fn read_cstring(&self) -> Result<String> {
+        self.check()?;
         let len = unsafe { (0usize..).find(|&i| *self.ptr.add(i) == 0).unwrap() };
         self.read_string(len)
     }
@@ -119,6 +130,7 @@ impl<P: Read> UserPtr<u8, P> {
 
 impl<P: Read> UserPtr<UserPtr<u8, P>, P> {
     pub fn read_cstring_array(&self) -> Result<Vec<String>> {
+        self.check()?;
         let len = unsafe {
             (0usize..)
                 .find(|&i| self.ptr.add(i).read().is_null())
@@ -133,6 +145,7 @@ impl<P: Read> UserPtr<UserPtr<u8, P>, P> {
 
 impl<T, P: Write> UserPtr<T, P> {
     pub fn write(&mut self, value: T) -> Result<()> {
+        self.check()?;
         unsafe {
             self.ptr.write(value);
         }
@@ -150,6 +163,7 @@ impl<T, P: Write> UserPtr<T, P> {
         if values.is_empty() {
             return Ok(());
         }
+        self.check()?;
         unsafe {
             self.ptr
                 .copy_from_nonoverlapping(values.as_ptr(), values.len());

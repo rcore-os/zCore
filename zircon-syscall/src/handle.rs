@@ -8,7 +8,10 @@ impl Syscall<'_> {
         mut new_handle_value: UserOutPtr<HandleValue>,
     ) -> ZxResult {
         let rights = Rights::try_from(rights)?;
-        info!("handle.dup: handle={:#x?}, rights={:?}", handle_value, rights);
+        info!(
+            "handle.dup: handle={:#x?}, rights={:?}",
+            handle_value, rights
+        );
         let proc = self.thread.proc();
         let new_value = proc.dup_handle_operating_rights(handle_value, |handle_rights| {
             if !handle_rights.contains(Rights::DUPLICATE) {

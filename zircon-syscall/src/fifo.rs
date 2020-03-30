@@ -1,7 +1,4 @@
-use {
-    super::*,
-    zircon_object::ipc::Fifo,
-};
+use {super::*, zircon_object::ipc::Fifo};
 
 impl Syscall<'_> {
     pub fn sys_fifo_create(

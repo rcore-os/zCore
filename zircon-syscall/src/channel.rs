@@ -1,7 +1,11 @@
 use {
     super::*,
     alloc::vec::Vec,
-    zircon_object::{ipc::{Channel, MessagePacket}, task::ThreadState, object::HandleInfo},
+    zircon_object::{
+        ipc::{Channel, MessagePacket},
+        object::HandleInfo,
+        task::ThreadState,
+    },
 };
 
 impl Syscall<'_> {
@@ -47,28 +51,21 @@ impl Syscall<'_> {
         if num_bytes < msg.data.len() as u32 || num_handles < msg.handles.len() as u32 {
             return Err(ZxError::BUFFER_TOO_SMALL);
         }
-        if num_bytes != 0 {
-            if bytes.is_null() {
-                return Err(ZxError::INVALID_ARGS);
-            } else {
-                bytes.write_array(msg.data.as_slice())?;
+        bytes.write_array(msg.data.as_slice())?;
+        if is_etc {
+            let mut handle_infos: Vec<HandleInfo> = msg
+                .handles
+                .iter()
+                .map(|handle| handle.get_handle_info())
+                .collect();
+            let values = proc.add_handles(msg.handles);
+            for (i, value) in values.iter().enumerate() {
+                handle_infos[i].handle = *value;
             }
-        }
-        if num_handles != 0 {
-            if handles == 0 {
-                return Err(ZxError::INVALID_ARGS);
-            } else {
-                if is_etc {
-                    let mut handle_infos: Vec<HandleInfo> = msg.handles.iter().map(|handle| handle.get_handle_info()).collect();
-                    let values = proc.add_handles(msg.handles);
-                    for (i, value) in values.iter().enumerate() {
-                        handle_infos[i].handle = *value;
-                    }
-                    UserOutPtr::<HandleInfo>::from(handles).write_array(&handle_infos)?;
-                } else {
-                    UserOutPtr::<HandleValue>::from(handles).write_array(&proc.add_handles(msg.handles))?;
-                }
-            }
+            UserOutPtr::<HandleInfo>::from(handles).write_array(&handle_infos)?;
+        } else {
+            let values = proc.add_handles(msg.handles);
+            UserOutPtr::<HandleValue>::from(handles).write_array(&values)?;
         }
         Ok(())
     }
@@ -171,34 +168,36 @@ impl Syscall<'_> {
 
         if deadline <= 0 {
             channel.write(wr_msg)?;
-            Err(ZxError::TIMED_OUT)
-        } else if deadline == i64::max_value() {
-            let old_state = self.thread.change_thread_state(ThreadState::BlockedChannel);
-            let rd_msg = channel.call(wr_msg).await.or_else(|e|{
-                self.thread.restore_thread_state(ThreadState::BlockedChannel, old_state);
-                Err(e)
-            })?;
-            self.thread.restore_thread_state(ThreadState::BlockedChannel, old_state);
-
-            actual_bytes.write_if_not_null(rd_msg.data.len() as u32)?;
-            actual_handles.write_if_not_null(rd_msg.handles.len() as u32)?;
-            if args.rd_num_bytes < rd_msg.data.len() as u32 || args.rd_num_handles < rd_msg.handles.len() as u32 {
-                return Err(ZxError::BUFFER_TOO_SMALL);
-            }
-            if actual_bytes.is_null() || actual_handles.is_null() {
-                return Err(ZxError::INVALID_ARGS);
-            }
-            args.rd_bytes.write_array(rd_msg.data.as_slice())?;
-            args.rd_handles.write_array(&proc.add_handles(rd_msg.handles))?;
-            Ok(())
-        } else {
+            return Err(ZxError::TIMED_OUT);
+        }
+        if deadline != i64::max_value() {
             unimplemented!()
         }
+        let old_state = self.thread.change_state(ThreadState::BlockedChannel);
+        let rd_msg = channel.call(wr_msg).await.or_else(|e| {
+            self.thread
+                .restore_state(ThreadState::BlockedChannel, old_state);
+            Err(e)
+        })?;
+        self.thread
+            .restore_state(ThreadState::BlockedChannel, old_state);
+
+        actual_bytes.write(rd_msg.data.len() as u32)?;
+        actual_handles.write(rd_msg.handles.len() as u32)?;
+        if args.rd_num_bytes < rd_msg.data.len() as u32
+            || args.rd_num_handles < rd_msg.handles.len() as u32
+        {
+            return Err(ZxError::BUFFER_TOO_SMALL);
+        }
+        args.rd_bytes.write_array(rd_msg.data.as_slice())?;
+        args.rd_handles
+            .write_array(&proc.add_handles(rd_msg.handles))?;
+        Ok(())
     }
 
     pub fn sys_channel_call_finish(
         &self,
-        deadline: u64,
+        deadline: i64,
         user_args: UserInPtr<ChannelCallArgs>,
         _actual_bytes: UserOutPtr<u32>,
         _actual_handles: UserOutPtr<u32>,
@@ -208,7 +207,7 @@ impl Syscall<'_> {
             "channel.call_finish: deadline={:#x}, args={:#x?}",
             deadline, args
         );
-        let thread_state = self.thread.get_thread_state();
+        let thread_state = self.thread.get_state();
         if thread_state == ThreadState::BlockedChannel {
             unimplemented!();
         } else {
