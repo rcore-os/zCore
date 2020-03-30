@@ -51,6 +51,7 @@ struct JobInner {
     policy: JobPolicy,
     children: Vec<Arc<Job>>,
     processes: Vec<Arc<Process>>,
+    critical_proc: Option<(KoID, bool)>,
 }
 
 impl Job {
@@ -108,11 +109,31 @@ impl Job {
         Ok(())
     }
 
-    pub fn set_policy_timer_slack(
-        &self,
-        _policys: TimerSlackPolicy,
-    ) {
+    pub fn set_policy_timer_slack(&self, _policys: TimerSlackPolicy) {
         unimplemented!()
+    }
+
+    /// Set a process as critical to the job.
+    ///
+    /// When process terminates, job will be terminated as if `task_kill()` was
+    /// called on it. The return code used will be `ZX_TASK_RETCODE_CRITICAL_PROCESS_KILL`.
+    ///
+    /// The job specified must be the parent of process, or an ancestor.
+    ///
+    /// If `retcode_nonzero` is true, then job will only be terminated if process
+    /// has a non-zero return code.
+    pub fn set_critical(&self, proc: &Arc<Process>, retcode_nonzero: bool) -> ZxResult {
+        let mut inner = self.inner.lock();
+        if let &Some((pid, _)) = &inner.critical_proc {
+            if proc.id() == pid {
+                return Err(ZxError::ALREADY_BOUND);
+            }
+        }
+        if !inner.processes.iter().any(|p| proc.id() == p.id()) {
+            return Err(ZxError::INVALID_ARGS);
+        }
+        inner.critical_proc = Some((proc.id(), retcode_nonzero));
+        Ok(())
     }
 
     /// Add a process to the job.
@@ -120,8 +141,14 @@ impl Job {
         self.inner.lock().processes.push(process);
     }
 
-    pub(super) fn remove_process(&self, id: KoID) {
-        self.inner.lock().processes.retain(|proc| proc.id() != id);
+    pub(super) fn process_exit(&self, id: KoID, retcode: i64) {
+        let mut inner = self.inner.lock();
+        inner.processes.retain(|proc| proc.id() != id);
+        if let &Some((pid, retcode_nonzero)) = &inner.critical_proc {
+            if pid == id && !(retcode_nonzero && retcode == 0) {
+                unimplemented!("kill the job")
+            }
+        }
     }
 }
 

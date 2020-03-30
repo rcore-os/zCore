@@ -135,7 +135,7 @@ impl Syscall<'_> {
         let proc = self.thread.proc();
         let job = proc.get_object_with_rights::<Job>(job_handle, Rights::DESTROY)?;
         let process = proc.get_object_with_rights::<Process>(process_handle, Rights::WAIT)?;
-        process.set_critical_job(job, retcode_nonzero)?;
+        job.set_critical(&process, retcode_nonzero)?;
         Ok(())
     }
 
