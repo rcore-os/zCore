@@ -5,7 +5,7 @@ use core::task::Waker;
 use core::task::{Context, Poll};
 use spin::Mutex;
 
-/// Creates a new complete channel, returning the sender/receiver halves.
+/// Creates a new oneshot channel, returning the sender/receiver halves.
 pub fn create<T>() -> (Sender<T>, Receiver<T>) {
     let inner = Arc::new(Mutex::new(Inner {
         waker: None,
@@ -18,14 +18,14 @@ pub fn create<T>() -> (Sender<T>, Receiver<T>) {
     (sender, receiver)
 }
 
-/// The receiving half of complete.
+/// The receiving half of oneshot.
 ///
 /// Messages sent to the channel can be retrieved using `.await`.
 pub struct Receiver<T> {
     inner: Arc<Mutex<Inner<T>>>,
 }
 
-/// The sending-half of complete.
+/// The sending-half of oneshot.
 pub struct Sender<T> {
     inner: Arc<Mutex<Inner<T>>>,
 }

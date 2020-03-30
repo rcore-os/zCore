@@ -1,6 +1,6 @@
 use {
     crate::object::*,
-    crate::util::async_complete::{self, Sender},
+    crate::util::oneshot::{self, Sender},
     alloc::collections::{BTreeMap, VecDeque},
     alloc::sync::{Arc, Weak},
     alloc::vec::Vec,
@@ -100,7 +100,7 @@ impl Channel {
         let txid = self.new_txid();
         msg.data[..4].copy_from_slice(&txid.to_ne_bytes());
         peer.push_general(msg);
-        let (sender, receiver) = async_complete::create();
+        let (sender, receiver) = oneshot::create();
         self.call_reply.lock().insert(txid, sender);
         drop(peer);
         receiver.await
