@@ -133,10 +133,11 @@ impl Channel {
 impl Drop for Channel {
     fn drop(&mut self) {
         if let Some(peer) = self.peer.upgrade() {
-            peer.base.signal_change(Signal::WRITABLE, Signal::PEER_CLOSED);
-            peer.call_reply.lock().values().for_each(|sender| {
+            peer.base
+                .signal_change(Signal::WRITABLE, Signal::PEER_CLOSED);
+            for (_, sender) in core::mem::take(&mut *peer.call_reply.lock()).into_iter() {
                 sender.push(Err(ZxError::PEER_CLOSED));
-            });
+            }
         }
     }
 }
