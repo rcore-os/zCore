@@ -25,9 +25,11 @@ pub mod defs {
 }
 
 mod dummy;
+mod future;
 pub mod user;
 pub mod vdso;
 
 pub use self::defs::*;
 pub use self::dummy::*;
+pub use self::future::*;
 pub use trapframe::{GeneralRegs, UserContext, VectorRegs};

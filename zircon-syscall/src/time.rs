@@ -4,8 +4,8 @@ use {
         sync::atomic::{AtomicU64, Ordering},
         time::Duration,
     },
-    kernel_hal::{timer_now, yield_now},
-    zircon_object::{resource::*, signal::Timer},
+    kernel_hal::{sleep_until, timer_now, yield_now},
+    zircon_object::resource::*,
 };
 
 static UTC_OFFSET: AtomicU64 = AtomicU64::new(0);
@@ -54,9 +54,7 @@ impl Syscall<'_> {
         if deadline <= 0 {
             yield_now().await;
         } else {
-            let timer: Arc<dyn KernelObject> =
-                Timer::one_shot(Duration::from_nanos(deadline as u64));
-            timer.wait_signal(Signal::SIGNALED).await;
+            sleep_until(Duration::from_nanos(deadline as u64)).await;
         }
         Ok(())
     }
