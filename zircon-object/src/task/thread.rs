@@ -273,18 +273,16 @@ impl Thread {
         }
     }
 
-    pub fn change_state(&self, state: ThreadState) -> ThreadState {
-        let mut inner = self.inner.lock();
-        let ret = inner.state;
-        inner.state = state;
-        ret
-    }
+    /// Run async future and change state while blocking.
+    pub async fn blocking_run<F: Future>(&self, future: F, state: ThreadState) -> F::Output {
+        let old_state = core::mem::replace(&mut self.inner.lock().state, state);
 
-    pub fn restore_state(&self, check: ThreadState, new: ThreadState) {
+        let ret = future.await;
+
         let mut inner = self.inner.lock();
-        if inner.state == check {
-            inner.state = new;
-        }
+        assert_eq!(inner.state, state);
+        inner.state = old_state;
+        ret
     }
 
     pub fn get_state(&self) -> ThreadState {

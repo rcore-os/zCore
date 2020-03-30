@@ -203,7 +203,8 @@ impl Syscall<'_> {
             Err(ZxError::INVALID_ARGS)
         } else {
             let proc = self.thread.proc();
-            let parent_job = proc.get_object_with_rights::<Job>(parent, Rights::MANAGE_JOB)
+            let parent_job = proc
+                .get_object_with_rights::<Job>(parent, Rights::MANAGE_JOB)
                 .or(proc.get_object_with_rights::<Job>(parent, Rights::WRITE))?;
             let child = parent_job.create_child(options)?;
             out.write(proc.add_handle(Handle::new(child, Rights::DEFAULT_JOB)))?;

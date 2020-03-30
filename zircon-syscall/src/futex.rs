@@ -32,22 +32,15 @@ impl Syscall<'_> {
         } else {
             Some(Duration::from_nanos(deadline.max(0) as u64))
         };
-        let old_state = self.thread.change_state(ThreadState::BlockedFutex);
-        futex
-            .wait_with_owner(
-                current_value,
-                Some(self.thread.clone()),
-                new_owner,
-                deadline,
-            )
-            .await
-            .or_else(|e| {
-                self.thread
-                    .restore_state(ThreadState::BlockedFutex, old_state);
-                Err(e)
-            })?;
+        let future = futex.wait_with_owner(
+            current_value,
+            Some(self.thread.clone()),
+            new_owner,
+            deadline,
+        );
         self.thread
-            .restore_state(ThreadState::BlockedFutex, old_state);
+            .blocking_run(future, ThreadState::BlockedFutex)
+            .await?;
         Ok(())
     }
 

@@ -173,14 +173,12 @@ impl Syscall<'_> {
         if deadline != i64::max_value() {
             unimplemented!()
         }
-        let old_state = self.thread.change_state(ThreadState::BlockedChannel);
-        let rd_msg = channel.call(wr_msg).await.or_else(|e| {
-            self.thread
-                .restore_state(ThreadState::BlockedChannel, old_state);
-            Err(e)
-        })?;
-        self.thread
-            .restore_state(ThreadState::BlockedChannel, old_state);
+
+        let future = channel.call(wr_msg);
+        let rd_msg = self
+            .thread
+            .blocking_run(future, ThreadState::BlockedChannel)
+            .await?;
 
         actual_bytes.write(rd_msg.data.len() as u32)?;
         actual_handles.write(rd_msg.handles.len() as u32)?;
