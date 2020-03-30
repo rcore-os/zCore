@@ -1,6 +1,7 @@
 use {
     super::*,
-    zircon_object::{ipc::{Channel, MessagePacket}, task::ThreadState},
+    alloc::vec::Vec,
+    zircon_object::{ipc::{Channel, MessagePacket}, task::ThreadState, object::HandleInfo},
 };
 
 impl Syscall<'_> {
@@ -11,11 +12,12 @@ impl Syscall<'_> {
         handle_value: HandleValue,
         options: u32,
         mut bytes: UserOutPtr<u8>,
-        mut handles: UserOutPtr<HandleValue>,
+        handles: usize,
         num_bytes: u32,
         num_handles: u32,
         mut actual_bytes: UserOutPtr<u32>,
         mut actual_handles: UserOutPtr<u32>,
+        is_etc: bool,
     ) -> ZxResult {
         info!(
             "channel.read: handle={:#x?}, options={:?}, bytes=({:#x?}; {:#x?}), handles=({:#x?}; {:#x?})",
@@ -53,10 +55,19 @@ impl Syscall<'_> {
             }
         }
         if num_handles != 0 {
-            if handles.is_null() {
+            if handles == 0 {
                 return Err(ZxError::INVALID_ARGS);
             } else {
-                handles.write_array(&proc.add_handles(msg.handles))?;
+                if is_etc {
+                    let mut handle_infos: Vec<HandleInfo> = msg.handles.iter().map(|handle| handle.get_handle_info()).collect();
+                    let values = proc.add_handles(msg.handles);
+                    for (i, value) in values.iter().enumerate() {
+                        handle_infos[i].handle = *value;
+                    }
+                    UserOutPtr::<HandleInfo>::from(handles).write_array(&handle_infos)?;
+                } else {
+                    UserOutPtr::<HandleValue>::from(handles).write_array(&proc.add_handles(msg.handles))?;
+                }
             }
         }
         Ok(())

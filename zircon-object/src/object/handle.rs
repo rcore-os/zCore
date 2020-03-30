@@ -32,6 +32,14 @@ impl Handle {
             padding: 0,
         }
     }
+
+    pub fn get_handle_info(&self) -> HandleInfo {
+        HandleInfo {
+            obj_type: obj_type(&self.object),
+            rights: self.rights.bits(),
+            ..Default::default()
+        }
+    }
 }
 
 #[repr(C)]
@@ -76,4 +84,13 @@ fn obj_type(object: &Arc<dyn KernelObject>) -> u32 {
         "Stream" => 31,
         _ => unimplemented!("unknown type"),
     }
+}
+
+#[repr(C)]
+#[derive(Default, Debug)]
+pub struct HandleInfo {
+    pub handle: HandleValue,
+    obj_type: u32,
+    rights: u32,
+    unused: u32,
 }
