@@ -10,9 +10,11 @@ extern crate alloc;
 extern crate log;
 
 use {
+    self::time::Deadline,
     alloc::sync::Arc,
     core::convert::TryFrom,
     kernel_hal::{user::*, GeneralRegs},
+    pin_utils::pin_mut,
     zircon_object::object::*,
     zircon_object::task::Thread,
 };
@@ -71,10 +73,13 @@ impl Syscall<'_> {
             Sys::OBJECT_SIGNAL => self.sys_object_signal(a0 as _, a1 as _, a2 as _),
             Sys::OBJECT_SIGNAL_PEER => self.sys_object_signal_peer(a0 as _, a1 as _, a2 as _),
             Sys::OBJECT_WAIT_ONE => {
-                self.sys_object_wait_one(a0 as _, a1 as _, a2 as _, a3.into())
+                self.sys_object_wait_one(a0 as _, a1 as _, a2.into(), a3.into())
                     .await
             }
-            Sys::OBJECT_WAIT_MANY => self.sys_object_wait_many(a0.into(), a1 as _, a2 as _).await,
+            Sys::OBJECT_WAIT_MANY => {
+                self.sys_object_wait_many(a0.into(), a1 as _, a2.into())
+                    .await
+            }
             Sys::OBJECT_WAIT_ASYNC => {
                 self.sys_object_wait_async(a0 as _, a1 as _, a2 as _, a3 as _, a4 as _)
             }
@@ -129,7 +134,7 @@ impl Syscall<'_> {
                 self.sys_channel_call_noretry(
                     a0 as _,
                     a1 as _,
-                    a2 as _,
+                    a2.into(),
                     a3.into(),
                     a4.into(),
                     a5.into(),
@@ -137,17 +142,17 @@ impl Syscall<'_> {
                 .await
             }
             Sys::CHANNEL_CALL_FINISH => {
-                self.sys_channel_call_finish(a0 as _, a1.into(), a2.into(), a3.into())
+                self.sys_channel_call_finish(a0.into(), a1.into(), a2.into(), a3.into())
             }
             Sys::FIFO_CREATE => {
                 self.sys_fifo_create(a0 as _, a1 as _, a2 as _, a3.into(), a4.into())
             }
             Sys::EVENT_CREATE => self.sys_event_create(a0 as _, a1.into()),
             Sys::PORT_CREATE => self.sys_port_create(a0 as _, a1.into()),
-            Sys::PORT_WAIT => self.sys_port_wait(a0 as _, a1 as _, a2.into()).await,
+            Sys::PORT_WAIT => self.sys_port_wait(a0 as _, a1.into(), a2.into()).await,
             Sys::PORT_QUEUE => self.sys_port_queue(a0 as _, a1.into()),
             Sys::FUTEX_WAIT => {
-                self.sys_futex_wait(a0.into(), a1 as _, a2 as _, a3 as _)
+                self.sys_futex_wait(a0.into(), a1 as _, a2 as _, a3.into())
                     .await
             }
             Sys::FUTEX_WAKE => self.sys_futex_wake(a0.into(), a1 as _),
@@ -185,7 +190,7 @@ impl Syscall<'_> {
             Sys::VMAR_PROTECT => self.sys_vmar_protect(a0 as _, a1 as _, a2 as _, a3 as _),
             Sys::VMAR_DESTROY => self.sys_vmar_destroy(a0 as _),
             Sys::CPRNG_DRAW_ONCE => self.sys_cprng_draw_once(a0 as _, a1 as _),
-            Sys::NANOSLEEP => self.sys_nanosleep(a0 as _).await,
+            Sys::NANOSLEEP => self.sys_nanosleep(a0.into()).await,
             Sys::CLOCK_GET => self.sys_clock_get(a0 as _, a1.into()),
             Sys::TIMER_CREATE => self.sys_timer_create(a0 as _, a1 as _, a2.into()),
             Sys::DEBUG_WRITE => self.sys_debug_write(a0.into(), a1 as _),

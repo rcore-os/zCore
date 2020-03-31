@@ -1,13 +1,11 @@
 use super::*;
 use crate::{object::*, task::Thread};
 use alloc::collections::VecDeque;
-use alloc::{boxed::Box, sync::Arc};
+use alloc::sync::Arc;
 use core::future::Future;
 use core::pin::Pin;
 use core::sync::atomic::*;
 use core::task::{Context, Poll, Waker};
-use core::time::Duration;
-use kernel_hal::timer_now;
 use spin::Mutex;
 
 /// A primitive for creating userspace synchronization tools.
@@ -53,7 +51,7 @@ impl Futex {
     /// [`wait_with_owner`]: Futex::wait_with_owner
     /// [`wake`]: Futex::wake
     pub fn wait(self: &Arc<Self>, current_value: i32) -> impl Future<Output = ZxResult> {
-        self.wait_with_owner(current_value, None, None, None)
+        self.wait_with_owner(current_value, None, None)
     }
 
     /// Wake some number of threads waiting on a futex.
@@ -112,25 +110,17 @@ impl Futex {
         current_value: i32,
         thread: Option<Arc<Thread>>,
         new_owner: Option<Arc<Thread>>,
-        deadline: Option<Duration>,
     ) -> impl Future<Output = ZxResult> {
         #[must_use = "wait does nothing unless polled/`await`-ed"]
         struct FutexFuture {
             waiter: Arc<Waiter>,
             current_value: i32,
             new_owner: Option<Arc<Thread>>,
-            deadline: Option<Duration>,
         }
         impl Future for FutexFuture {
             type Output = ZxResult;
 
             fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-                // check timeout
-                if let Some(deadline) = self.deadline {
-                    if timer_now() >= deadline {
-                        return Poll::Ready(Err(ZxError::TIMED_OUT));
-                    }
-                }
                 let mut inner = self.waiter.inner.lock();
                 // check wakeup
                 if inner.woken {
@@ -152,10 +142,6 @@ impl Futex {
                     }
                     futex.waiter_queue.push_back(self.waiter.clone());
                     drop(futex);
-                    // set timer
-                    if let Some(deadline) = self.deadline {
-                        self.waiter.set_timer(deadline);
-                    }
                     inner.waker.replace(cx.waker().clone());
                 }
                 Poll::Pending
@@ -173,7 +159,6 @@ impl Futex {
             }),
             current_value,
             new_owner,
-            deadline,
         }
     }
 
@@ -289,19 +274,6 @@ impl Waiter {
     /// Reset futex on requeue.
     fn reset_futex(&self, futex: Arc<Futex>) {
         self.inner.lock().futex = futex;
-    }
-
-    fn set_timer(self: &Arc<Self>, deadline: Duration) {
-        let me = Arc::downgrade(self);
-        kernel_hal::timer_set(
-            deadline,
-            Box::new(move |_now| {
-                if let Some(me) = me.upgrade() {
-                    let inner = me.inner.lock();
-                    inner.waker.as_ref().unwrap().wake_by_ref();
-                }
-            }),
-        );
     }
 }
 

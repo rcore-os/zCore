@@ -5,7 +5,7 @@ use {
         time::Duration,
     },
     kernel_hal::{sleep_until, timer_now, yield_now},
-    zircon_object::resource::*,
+    zircon_object::{resource::*, task::*},
 };
 
 static UTC_OFFSET: AtomicU64 = AtomicU64::new(0);
@@ -49,13 +49,36 @@ impl Syscall<'_> {
         }
     }
 
-    pub async fn sys_nanosleep(&self, deadline: i64) -> ZxResult {
-        info!("nanosleep: deadline={}", deadline);
-        if deadline <= 0 {
+    pub async fn sys_nanosleep(&self, deadline: Deadline) -> ZxResult {
+        info!("nanosleep: deadline={:?}", deadline);
+        if deadline.0 <= 0 {
             yield_now().await;
         } else {
-            sleep_until(Duration::from_nanos(deadline as u64)).await;
+            self.thread
+                .blocking_run(
+                    sleep_until(deadline.into()),
+                    ThreadState::BlockedSleeping,
+                    Duration::from_nanos(u64::max_value()),
+                )
+                .await
+                .unwrap();
         }
         Ok(())
+    }
+}
+
+#[repr(transparent)]
+#[derive(Debug)]
+pub struct Deadline(i64);
+
+impl From<usize> for Deadline {
+    fn from(x: usize) -> Self {
+        Deadline(x as i64)
+    }
+}
+
+impl From<Deadline> for Duration {
+    fn from(deadline: Deadline) -> Self {
+        Duration::from_nanos(deadline.0.max(0) as u64)
     }
 }

@@ -133,14 +133,14 @@ impl Syscall<'_> {
         &self,
         handle_value: HandleValue,
         options: u32,
-        deadline: i64,
+        deadline: Deadline,
         user_args: UserInPtr<ChannelCallArgs>,
         mut actual_bytes: UserOutPtr<u32>,
         mut actual_handles: UserOutPtr<u32>,
     ) -> ZxResult {
         let mut args = user_args.read()?;
         info!(
-            "channel.call_noretry: handle={:#x}, deadline={:#x}, args={:#x?}",
+            "channel.call_noretry: handle={:#x}, deadline={:?}, args={:#x?}",
             handle_value, deadline, args
         );
         if options != 0 {
@@ -166,18 +166,11 @@ impl Syscall<'_> {
             },
         };
 
-        if deadline <= 0 {
-            channel.write(wr_msg)?;
-            return Err(ZxError::TIMED_OUT);
-        }
-        if deadline != i64::max_value() {
-            unimplemented!()
-        }
-
         let future = channel.call(wr_msg);
-        let rd_msg = self
+        pin_mut!(future);
+        let rd_msg: MessagePacket = self
             .thread
-            .blocking_run(future, ThreadState::BlockedChannel)
+            .blocking_run(future, ThreadState::BlockedChannel, deadline.into())
             .await?;
 
         actual_bytes.write(rd_msg.data.len() as u32)?;
@@ -195,14 +188,14 @@ impl Syscall<'_> {
 
     pub fn sys_channel_call_finish(
         &self,
-        deadline: i64,
+        deadline: Deadline,
         user_args: UserInPtr<ChannelCallArgs>,
         _actual_bytes: UserOutPtr<u32>,
         _actual_handles: UserOutPtr<u32>,
     ) -> ZxResult {
         let args = user_args.read()?;
         info!(
-            "channel.call_finish: deadline={:#x}, args={:#x?}",
+            "channel.call_finish: deadline={:?}, args={:#x?}",
             deadline, args
         );
         let thread_state = self.thread.get_state();

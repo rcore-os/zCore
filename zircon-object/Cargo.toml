@@ -14,6 +14,7 @@ log = "0.4"
 downcast-rs = { git = "https://github.com/rcore-os/downcast-rs" }
 kernel-hal = { path = "../kernel-hal" }
 numeric-enum-macro = "0.2"
+futures = { version = "0.3", default-features = false }
 
 [dev-dependencies]
 kernel-hal-unix = { path = "../kernel-hal-unix" }

@@ -1,8 +1,7 @@
+use crate::timer_now;
 use alloc::boxed::Box;
-use alloc::sync::Arc;
 use core::future::Future;
 use core::pin::Pin;
-use core::sync::atomic::{AtomicBool, Ordering};
 use core::task::{Context, Poll};
 use core::time::Duration;
 
@@ -34,36 +33,28 @@ impl Future for YieldFuture {
 /// Sleeps until the specified of time.
 pub fn sleep_until(deadline: Duration) -> impl Future {
     SleepFuture {
-        woken: Arc::new(Default::default()),
-        deadline: Some(deadline),
+        deadline,
+        set: false,
     }
 }
 
 #[must_use = "sleep does nothing unless polled/`await`-ed"]
 pub struct SleepFuture {
-    woken: Arc<AtomicBool>,
-    deadline: Option<Duration>,
+    deadline: Duration,
+    set: bool,
 }
 
 impl Future for SleepFuture {
     type Output = ();
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        if self.woken.load(Ordering::Acquire) {
+        if timer_now() >= self.deadline {
             return Poll::Ready(());
         }
-        if let Some(deadline) = self.deadline.take() {
-            let woken = Arc::downgrade(&self.woken);
+        if !self.set && self.deadline.as_nanos() < i64::max_value() as u128 {
             let waker = cx.waker().clone();
-            crate::timer_set(
-                deadline,
-                Box::new(move |_| {
-                    if let Some(woken) = woken.upgrade() {
-                        woken.store(true, Ordering::Release);
-                        waker.wake();
-                    }
-                }),
-            );
+            crate::timer_set(self.deadline, Box::new(move |_| waker.wake()));
+            self.set = true;
         }
         Poll::Pending
     }

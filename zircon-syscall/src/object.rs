@@ -131,36 +131,23 @@ impl Syscall<'_> {
         &self,
         handle: HandleValue,
         signals: u32,
-        deadline: i64,
+        deadline: Deadline,
         mut observed: UserOutPtr<Signal>,
     ) -> ZxResult {
         info!(
             "object.wait_one: handle={:#x?}, signals={:#x?}, deadline={:#x?}, observed={:#x?}",
             handle, signals, deadline, observed
         );
+        let signals = Signal::from_bits(signals).ok_or(ZxError::INVALID_ARGS)?;
         let proc = self.thread.proc();
         let object = proc.get_dyn_object_with_rights(handle, Rights::WAIT)?;
-        if deadline <= 0 {
-            if let Some(signals) = Signal::from_bits(signals) {
-                let res = object.signal();
-                observed.write_if_not_null(res)?;
-                if (signals & res).is_empty() {
-                    Err(ZxError::TIMED_OUT)
-                } else {
-                    Ok(())
-                }
-            } else {
-                Err(ZxError::TIMED_OUT)
-            }
-        } else {
-            let signals = Signal::from_bits(signals).ok_or(ZxError::INVALID_ARGS)?;
-            if deadline == i64::max_value() {
-                observed.write_if_not_null(object.wait_signal(signals).await)?;
-                Ok(())
-            } else {
-                unimplemented!()
-            }
-        }
+        let future = object.wait_signal(signals);
+        let signal = self
+            .thread
+            .blocking_run(future, ThreadState::BlockedWaitOne, deadline.into())
+            .await?;
+        observed.write_if_not_null(signal)?;
+        Ok(())
     }
 
     pub fn sys_object_get_info(
@@ -276,20 +263,24 @@ impl Syscall<'_> {
         &self,
         mut user_items: UserInOutPtr<UserWaitItem>,
         count: u32,
-        deadline: i64,
+        deadline: Deadline,
     ) -> ZxResult {
         if count > MAX_WAIT_MANY_ITEMS {
             return Err(ZxError::OUT_OF_RANGE);
         }
         let mut items = user_items.read_array(count as usize)?;
-        info!("user_items: {:#x?}, deadline: {:#x}", user_items, deadline);
+        info!("user_items: {:#x?}, deadline: {:?}", user_items, deadline);
         let proc = self.thread.proc();
-        let mut waiters = Vec::new();
+        let mut waiters = Vec::with_capacity(count as usize);
         for item in items.iter() {
             let object = proc.get_dyn_object_with_rights(item.handle, Rights::WAIT)?;
             waiters.push((object, item.wait_for));
         }
-        let res = wait_signal_many(&waiters).await;
+        let future = wait_signal_many(&waiters);
+        let res = self
+            .thread
+            .blocking_run(future, ThreadState::BlockedWaitMany, deadline.into())
+            .await?;
         for (i, item) in items.iter_mut().enumerate() {
             item.observed = res[i];
         }

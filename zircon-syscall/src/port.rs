@@ -1,4 +1,7 @@
-use {super::*, zircon_object::signal::*};
+use {
+    super::*,
+    zircon_object::{signal::*, task::*},
+};
 
 impl Syscall<'_> {
     pub fn sys_port_create(&self, options: u32, mut out: UserOutPtr<HandleValue>) -> ZxResult {
@@ -15,18 +18,22 @@ impl Syscall<'_> {
     pub async fn sys_port_wait(
         &self,
         handle_value: HandleValue,
-        deadline: u64,
+        deadline: Deadline,
         mut packet_res: UserOutPtr<PortPacket>,
     ) -> ZxResult {
         info!(
-            "port.wait: handle={}, deadline={:#x}",
+            "port.wait: handle={}, deadline={:?}",
             handle_value, deadline
         );
         assert_eq!(core::mem::size_of::<PortPacket>(), 48);
         let proc = self.thread.proc();
         let port = proc.get_object_with_rights::<Port>(handle_value, Rights::READ)?;
-        let packet = port.wait().await;
-        debug!("port.wait: packet={:#x?}", packet);
+        let future = port.wait();
+        pin_mut!(future);
+        let packet = self
+            .thread
+            .blocking_run(future, ThreadState::BlockedPort, deadline.into())
+            .await?;
         packet_res.write(packet)?;
         Ok(())
     }

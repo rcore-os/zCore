@@ -1,8 +1,4 @@
-use {
-    super::*,
-    core::{sync::atomic::*, time::Duration},
-    zircon_object::task::ThreadState,
-};
+use {super::*, core::sync::atomic::*, zircon_object::task::ThreadState};
 
 impl Syscall<'_> {
     pub async fn sys_futex_wait(
@@ -10,10 +6,10 @@ impl Syscall<'_> {
         value_ptr: UserInPtr<AtomicI32>,
         current_value: i32,
         new_futex_owner: HandleValue,
-        deadline: i64,
+        deadline: Deadline,
     ) -> ZxResult {
         info!(
-            "futex.wait: value_ptr={:#x?}, current_value={:#x}, new_futex_owner={:#x}, deadline={:#x}",
+            "futex.wait: value_ptr={:#x?}, current_value={:#x}, new_futex_owner={:#x}, deadline={:?}",
             value_ptr, current_value, new_futex_owner, deadline
         );
         if value_ptr.is_null() || value_ptr.as_ptr() as usize % 4 != 0 {
@@ -27,19 +23,9 @@ impl Syscall<'_> {
         } else {
             Some(proc.get_object::<Thread>(new_futex_owner)?)
         };
-        let deadline = if deadline == i64::max_value() {
-            None
-        } else {
-            Some(Duration::from_nanos(deadline.max(0) as u64))
-        };
-        let future = futex.wait_with_owner(
-            current_value,
-            Some(self.thread.clone()),
-            new_owner,
-            deadline,
-        );
+        let future = futex.wait_with_owner(current_value, Some(self.thread.clone()), new_owner);
         self.thread
-            .blocking_run(future, ThreadState::BlockedFutex)
+            .blocking_run(future, ThreadState::BlockedFutex, deadline.into())
             .await?;
         Ok(())
     }

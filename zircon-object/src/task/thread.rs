@@ -8,8 +8,10 @@ use {
         future::Future,
         pin::Pin,
         task::{Context, Poll, Waker},
+        time::Duration,
     },
-    kernel_hal::{GeneralRegs, UserContext},
+    futures::future::{select, Either},
+    kernel_hal::{sleep_until, GeneralRegs, UserContext},
     numeric_enum_macro::numeric_enum,
     spin::Mutex,
 };
@@ -274,11 +276,21 @@ impl Thread {
     }
 
     /// Run async future and change state while blocking.
-    pub async fn blocking_run<F: Future>(&self, future: F, state: ThreadState) -> F::Output {
+    pub async fn blocking_run<F, T, FT>(
+        &self,
+        future: F,
+        state: ThreadState,
+        deadline: Duration,
+    ) -> ZxResult<T>
+    where
+        F: Future<Output = FT> + Unpin,
+        FT: IntoResult<T>,
+    {
         let old_state = core::mem::replace(&mut self.inner.lock().state, state);
-
-        let ret = future.await;
-
+        let ret = match select(future, sleep_until(deadline)).await {
+            Either::Left((ret, _)) => ret.into_result(),
+            Either::Right(_) => Err(ZxError::TIMED_OUT),
+        };
         let mut inner = self.inner.lock();
         assert_eq!(inner.state, state);
         inner.state = old_state;
@@ -287,6 +299,22 @@ impl Thread {
 
     pub fn get_state(&self) -> ThreadState {
         self.inner.lock().state
+    }
+}
+
+pub trait IntoResult<T> {
+    fn into_result(self) -> ZxResult<T>;
+}
+
+impl<T> IntoResult<T> for T {
+    fn into_result(self) -> ZxResult<T> {
+        Ok(self)
+    }
+}
+
+impl<T> IntoResult<T> for ZxResult<T> {
+    fn into_result(self) -> ZxResult<T> {
+        self
     }
 }
 
