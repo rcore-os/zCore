@@ -214,6 +214,7 @@ pub fn run_task(thread: Arc<Thread>) {
                 0x20 => {
                     kernel_hal::irq_ack(0);
                     kernel_hal::timer_tick();
+                    kernel_hal::yield_now().await;
                 }
                 _ => panic!("not supported interrupt from user mode. {:#x?}", cx),
             }

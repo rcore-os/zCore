@@ -77,6 +77,12 @@ impl From<usize> for Deadline {
     }
 }
 
+impl Deadline {
+    pub fn is_positive(&self) -> bool {
+        self.0.is_positive()
+    }
+}
+
 impl From<Deadline> for Duration {
     fn from(deadline: Deadline) -> Self {
         Duration::from_nanos(deadline.0.max(0) as u64)

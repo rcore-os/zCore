@@ -138,14 +138,26 @@ impl Syscall<'_> {
             "object.wait_one: handle={:#x?}, signals={:#x?}, deadline={:#x?}, observed={:#x?}",
             handle, signals, deadline, observed
         );
-        let signals = Signal::from_bits(signals).ok_or(ZxError::INVALID_ARGS)?;
+        let signals = Signal::from_bits(signals).ok_or_else(||{
+            if !deadline.is_positive() {
+                ZxError::TIMED_OUT
+            } else {
+                ZxError::INVALID_ARGS
+            }
+        })?;
         let proc = self.thread.proc();
         let object = proc.get_dyn_object_with_rights(handle, Rights::WAIT)?;
         let future = object.wait_signal(signals);
         let signal = self
             .thread
             .blocking_run(future, ThreadState::BlockedWaitOne, deadline.into())
-            .await?;
+            .await
+            .or_else(|e|{
+                if e == ZxError::TIMED_OUT {
+                    observed.write_if_not_null(object.signal())?;
+                }
+                Err(e)
+            })?;
         observed.write_if_not_null(signal)?;
         Ok(())
     }

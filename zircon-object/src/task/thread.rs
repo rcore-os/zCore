@@ -165,10 +165,12 @@ impl Thread {
             context.general.rdi = arg1;
             context.general.rsi = arg2;
             context.general.rflags |= 0x202;
-            inner.state = ThreadState::Running;
+            if inner.state == ThreadState::New {
+                inner.state = ThreadState::Running;
+                self.base.signal_set(Signal::THREAD_RUNNING);
+            }
         }
         run_task(self.clone());
-        self.base.signal_set(Signal::THREAD_RUNNING);
         Ok(())
     }
 
@@ -176,13 +178,15 @@ impl Thread {
     pub fn start_with_regs(self: &Arc<Self>, regs: GeneralRegs) -> ZxResult {
         {
             let mut inner = self.inner.lock();
-            inner.state = ThreadState::Running;
+            if inner.state == ThreadState::New {
+                inner.state = ThreadState::Running;
+                self.base.signal_set(Signal::THREAD_RUNNING);
+            }
             let context = inner.context.as_mut().ok_or(ZxError::BAD_STATE)?;
             context.general = regs;
             context.general.rflags |= 0x202;
         }
         run_task(self.clone());
-        self.base.signal_set(Signal::THREAD_RUNNING);
         Ok(())
     }
 
@@ -231,6 +235,7 @@ impl Thread {
         inner.suspend_count -= 1;
         if inner.suspend_count == 0 {
             inner.state = ThreadState::Running;
+            self.base.signal_set(Signal::THREAD_RUNNING);
             if let Some(waker) = inner.waker.take() {
                 waker.wake();
             }
