@@ -31,6 +31,7 @@ mod object;
 mod port;
 mod resource;
 mod signal;
+mod socket;
 mod task;
 mod time;
 mod vmar;
@@ -144,6 +145,7 @@ impl Syscall<'_> {
             Sys::CHANNEL_CALL_FINISH => {
                 self.sys_channel_call_finish(a0.into(), a1.into(), a2.into(), a3.into())
             }
+            Sys::SOCKET_CREATE => self.sys_socket_create(a0 as _, a1.into(), a2.into()),
             Sys::FIFO_CREATE => {
                 self.sys_fifo_create(a0 as _, a1 as _, a2 as _, a3.into(), a4.into())
             }
