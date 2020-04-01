@@ -13,4 +13,4 @@ bitflags = "1.2"
 numeric-enum-macro = "0.2"
 zircon-object = { path = "../zircon-object" }
 kernel-hal = { path = "../kernel-hal" }
-pin-utils = "0.1.0-alpha.4"
+futures = { version = "0.3", default-features = false, features = ["alloc", "async-await"] }

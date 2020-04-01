@@ -110,7 +110,7 @@ impl Job {
         Ok(())
     }
 
-    pub fn set_policy_timer_slack(&self, policy: TimerSlackPolicy) -> ZxResult{
+    pub fn set_policy_timer_slack(&self, policy: TimerSlackPolicy) -> ZxResult {
         let mut inner = self.inner.lock();
         if !inner.is_empty() {
             return Err(ZxError::BAD_STATE);

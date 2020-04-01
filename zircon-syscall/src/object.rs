@@ -151,7 +151,12 @@ impl Syscall<'_> {
         let future = object.wait_signal(signals);
         let signal = self
             .thread
-            .cancelable_blocking_run(future, ThreadState::BlockedWaitOne, deadline.into(), cancel_token)
+            .cancelable_blocking_run(
+                future,
+                ThreadState::BlockedWaitOne,
+                deadline.into(),
+                cancel_token,
+            )
             .await
             .or_else(|e| {
                 if e == ZxError::TIMED_OUT {

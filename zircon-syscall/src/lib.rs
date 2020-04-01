@@ -13,8 +13,8 @@ use {
     self::time::Deadline,
     alloc::sync::Arc,
     core::convert::TryFrom,
+    futures::pin_mut,
     kernel_hal::{user::*, GeneralRegs},
-    pin_utils::pin_mut,
     zircon_object::object::*,
     zircon_object::task::Thread,
 };

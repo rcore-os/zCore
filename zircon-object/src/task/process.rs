@@ -1,8 +1,9 @@
 use {
     super::{job::Job, job_policy::*, resource::*, thread::Thread, *},
-    crate::{object::*, signal::Futex, vm::*, util::oneshot::*, util::oneshot},
+    crate::{object::*, signal::Futex, vm::*},
     alloc::{boxed::Box, collections::BTreeMap, sync::Arc, vec::Vec},
     core::{any::Any, sync::atomic::AtomicI32},
+    futures::channel::oneshot::{self, Receiver, Sender},
     spin::Mutex,
 };
 
@@ -208,9 +209,7 @@ impl Process {
 
     /// Remove a handle from the process
     pub fn remove_handle(&self, handle_value: HandleValue) -> ZxResult<Handle> {
-        self.inner
-            .lock()
-            .remove_handle(handle_value)
+        self.inner.lock().remove_handle(handle_value)
     }
 
     /// Remove all handles from the process.
@@ -418,14 +417,17 @@ impl ProcessInner {
             .remove(&handle_value)
             .ok_or(ZxError::BAD_HANDLE)?;
         for sender in queue {
-            sender.push(());
+            let _ = sender.send(());
         }
         Ok(handle)
     }
 
     fn get_cancel_token(&mut self, handle_value: HandleValue) -> ZxResult<Receiver<()>> {
-        let (_, queue) = self.handles.get_mut(&handle_value).ok_or(ZxError::BAD_STATE)?;
-        let (sender, receiver) = oneshot::create::<()>();
+        let (_, queue) = self
+            .handles
+            .get_mut(&handle_value)
+            .ok_or(ZxError::BAD_HANDLE)?;
+        let (sender, receiver) = oneshot::channel();
         queue.push(sender);
         Ok(receiver)
     }

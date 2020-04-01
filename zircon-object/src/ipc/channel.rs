@@ -1,11 +1,11 @@
 use {
     crate::object::*,
-    crate::util::oneshot::{self, Sender},
     alloc::collections::{BTreeMap, VecDeque},
     alloc::sync::{Arc, Weak},
     alloc::vec::Vec,
     core::convert::TryInto,
     core::sync::atomic::{AtomicU32, Ordering},
+    futures::channel::oneshot::{self, Sender},
     spin::Mutex,
 };
 
@@ -86,7 +86,7 @@ impl Channel {
             // check first 4 bytes: whether it is a call reply?
             let txid = TxID::from_ne_bytes(msg.data[..4].try_into().unwrap());
             if let Some(sender) = peer.call_reply.lock().remove(&txid) {
-                sender.push(Ok(msg));
+                let _ = sender.send(Ok(msg));
                 return Ok(());
             }
         }
@@ -100,10 +100,10 @@ impl Channel {
         let txid = self.new_txid();
         msg.data[..4].copy_from_slice(&txid.to_ne_bytes());
         peer.push_general(msg);
-        let (sender, receiver) = oneshot::create();
+        let (sender, receiver) = oneshot::channel();
         self.call_reply.lock().insert(txid, sender);
         drop(peer);
-        receiver.await
+        receiver.await.unwrap()
     }
 
     /// Push a message to general queue, called from peer.
@@ -132,7 +132,7 @@ impl Drop for Channel {
             peer.base
                 .signal_change(Signal::WRITABLE, Signal::PEER_CLOSED);
             for (_, sender) in core::mem::take(&mut *peer.call_reply.lock()).into_iter() {
-                sender.push(Err(ZxError::PEER_CLOSED));
+                let _ = sender.send(Err(ZxError::PEER_CLOSED));
             }
         }
     }

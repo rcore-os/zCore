@@ -1,6 +1,4 @@
-use {
-    crate::error::*,
-};
+use crate::error::*;
 
 #[derive(Default, Copy, Clone)]
 pub struct JobPolicy {
