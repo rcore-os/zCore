@@ -48,6 +48,9 @@ impl_kobject!(EventPair
         let peer = self.peer.upgrade().ok_or(ZxError::PEER_CLOSED)?;
         Ok(peer)
     }
+    fn related_koid(&self) -> KoID {
+        self.peer.upgrade().map(|p| p.id()).unwrap_or(0)
+    }
 );
 
 impl EventPair {

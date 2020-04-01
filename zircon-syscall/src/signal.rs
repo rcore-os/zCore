@@ -31,7 +31,7 @@ impl Syscall<'_> {
     }
 
     pub fn sys_event_create(&self, options: u32, mut out: UserOutPtr<HandleValue>) -> ZxResult {
-        info!("event.create: options = {:#x}", options);
+        info!("event.create: options={:#x}", options);
         if options != 0 {
             return Err(ZxError::INVALID_ARGS);
         }
@@ -39,6 +39,26 @@ impl Syscall<'_> {
         proc.check_policy(PolicyCondition::NewEvent)?;
         let handle = Handle::new(Event::new(), Rights::DEFAULT_EVENT);
         out.write(proc.add_handle(handle))?;
+        Ok(())
+    }
+
+    pub fn sys_eventpair_create(
+        &self,
+        options: u32,
+        mut out0: UserOutPtr<HandleValue>,
+        mut out1: UserOutPtr<HandleValue>,
+    ) -> ZxResult {
+        info!("eventpair.create: options={:#x}", options);
+        if options != 0 {
+            return Err(ZxError::NOT_SUPPORTED);
+        }
+        let proc = self.thread.proc();
+        proc.check_policy(PolicyCondition::NewEvent)?;
+        let (event0, event1) = EventPair::create();
+        let handle0 = Handle::new(event0, Rights::DEFAULT_EVENTPAIR);
+        let handle1 = Handle::new(event1, Rights::DEFAULT_EVENTPAIR);
+        out0.write(proc.add_handle(handle0))?;
+        out1.write(proc.add_handle(handle1))?;
         Ok(())
     }
 }

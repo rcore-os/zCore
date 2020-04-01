@@ -150,6 +150,7 @@ impl Syscall<'_> {
                 self.sys_fifo_create(a0 as _, a1 as _, a2 as _, a3.into(), a4.into())
             }
             Sys::EVENT_CREATE => self.sys_event_create(a0 as _, a1.into()),
+            Sys::EVENTPAIR_CREATE => self.sys_eventpair_create(a0 as _, a1.into(), a2.into()),
             Sys::PORT_CREATE => self.sys_port_create(a0 as _, a1.into()),
             Sys::PORT_WAIT => self.sys_port_wait(a0 as _, a1.into(), a2.into()).await,
             Sys::PORT_QUEUE => self.sys_port_queue(a0 as _, a1.into()),
