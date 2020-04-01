@@ -52,6 +52,7 @@ struct JobInner {
     children: Vec<Arc<Job>>,
     processes: Vec<Arc<Process>>,
     critical_proc: Option<(KoID, bool)>,
+    timer_policy: TimerSlack,
 }
 
 impl Job {
@@ -109,8 +110,14 @@ impl Job {
         Ok(())
     }
 
-    pub fn set_policy_timer_slack(&self, _policys: TimerSlackPolicy) {
-        unimplemented!()
+    pub fn set_policy_timer_slack(&self, policy: TimerSlackPolicy) -> ZxResult{
+        let mut inner = self.inner.lock();
+        if !inner.is_empty() {
+            return Err(ZxError::BAD_STATE);
+        }
+        check_timer_policy(&policy)?;
+        inner.timer_policy = inner.timer_policy.generate_new(policy);
+        Ok(())
     }
 
     /// Set a process as critical to the job.

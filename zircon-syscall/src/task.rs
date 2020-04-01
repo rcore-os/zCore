@@ -237,7 +237,7 @@ impl Syscall<'_> {
                     return Err(ZxError::INVALID_ARGS);
                 }
                 let timer_policy = UserInPtr::<TimerSlackPolicy>::from(policy).read()?;
-                job.set_policy_timer_slack(timer_policy);
+                job.set_policy_timer_slack(timer_policy)?;
                 Ok(())
             }
             _ => Err(ZxError::INVALID_ARGS),

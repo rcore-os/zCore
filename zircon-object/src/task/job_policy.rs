@@ -1,3 +1,7 @@
+use {
+    crate::error::*,
+};
+
 #[derive(Default, Copy, Clone)]
 pub struct JobPolicy {
     // TODO: use bitset
@@ -112,4 +116,39 @@ pub enum TimerSlackDefaultMode {
     Center = 0,
     Early = 1,
     Late = 2,
+}
+
+pub fn check_timer_policy(policy: &TimerSlackPolicy) -> ZxResult {
+    if policy.min_slack.is_negative() {
+        return Err(ZxError::INVALID_ARGS);
+    }
+    Ok(())
+    //match policy.default_mode {
+        //TimerSlackDefaultMode::Center | TimerSlackDefaultMode::Early | TimerSlackDefaultMode::Late => Ok(()),
+        //_ => Err(ZxError::INVALID_ARGS),
+    //}
+}
+
+#[repr(C)]
+pub struct TimerSlack {
+    amount: i64,
+    mode: TimerSlackDefaultMode,
+}
+
+impl TimerSlack {
+    pub fn generate_new(&self, policy: TimerSlackPolicy) -> TimerSlack {
+        TimerSlack {
+            amount: self.amount.max(policy.min_slack),
+            mode: policy.default_mode,
+        }
+    }
+}
+
+impl Default for TimerSlack {
+    fn default() -> Self {
+        TimerSlack {
+            amount: 0,
+            mode: TimerSlackDefaultMode::Center,
+        }
+    }
 }
