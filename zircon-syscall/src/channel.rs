@@ -198,7 +198,7 @@ impl Syscall<'_> {
             "channel.call_finish: deadline={:?}, args={:#x?}",
             deadline, args
         );
-        let thread_state = self.thread.get_state();
+        let thread_state = self.thread.state();
         if thread_state == ThreadState::BlockedChannel {
             unimplemented!();
         } else {

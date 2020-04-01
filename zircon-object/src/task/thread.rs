@@ -12,7 +12,6 @@ use {
     },
     futures::future::{select, Either},
     kernel_hal::{sleep_until, GeneralRegs, UserContext},
-    numeric_enum_macro::numeric_enum,
     spin::Mutex,
 };
 
@@ -105,11 +104,19 @@ fn run_task(_thread: Arc<Thread>) {
 
 #[derive(Default)]
 struct ThreadInner {
-    /// Thread state
+    /// Thread context
+    ///
+    /// It will be taken away when running this thread.
     context: Option<Box<UserContext>>,
 
+    /// The number of existing `SuspendToken`.
     suspend_count: usize,
+    /// The waker of task when suspending.
     waker: Option<Waker>,
+    /// Thread state
+    ///
+    /// NOTE: This variable will never be `Suspended`. On suspended, the
+    /// `suspend_count` is non-zero, and this represents the state before suspended.
     state: ThreadState,
 }
 
@@ -165,10 +172,8 @@ impl Thread {
             context.general.rdi = arg1;
             context.general.rsi = arg2;
             context.general.rflags |= 0x202;
-            if inner.state == ThreadState::New {
-                inner.state = ThreadState::Running;
-                self.base.signal_set(Signal::THREAD_RUNNING);
-            }
+            inner.state = ThreadState::Running;
+            self.base.signal_set(Signal::THREAD_RUNNING);
         }
         run_task(self.clone());
         Ok(())
@@ -178,13 +183,11 @@ impl Thread {
     pub fn start_with_regs(self: &Arc<Self>, regs: GeneralRegs) -> ZxResult {
         {
             let mut inner = self.inner.lock();
-            if inner.state == ThreadState::New {
-                inner.state = ThreadState::Running;
-                self.base.signal_set(Signal::THREAD_RUNNING);
-            }
             let context = inner.context.as_mut().ok_or(ZxError::BAD_STATE)?;
             context.general = regs;
             context.general.rflags |= 0x202;
+            inner.state = ThreadState::Running;
+            self.base.signal_set(Signal::THREAD_RUNNING);
         }
         run_task(self.clone());
         Ok(())
@@ -194,13 +197,12 @@ impl Thread {
     /// TODO: move to CurrentThread
     pub fn exit(&self) {
         self.proc().remove_thread(self.base.id);
-        self.base.signal_set(Signal::THREAD_TERMINATED);
-        self.inner.lock().state = ThreadState::Dying; // FIXME dying or dead ?
+        self.internal_exit();
     }
 
     pub(super) fn internal_exit(&self) {
         self.base.signal_set(Signal::THREAD_TERMINATED);
-        self.inner.lock().state = ThreadState::Dead; // FIXME dying or dead ?
+        self.inner.lock().state = ThreadState::Dead;
     }
 
     /// Read one aspect of thread state.
@@ -220,7 +222,6 @@ impl Thread {
     pub(super) fn suspend(&self) {
         let mut inner = self.inner.lock();
         inner.suspend_count += 1;
-        inner.state = ThreadState::Suspended;
         self.base.signal_set(Signal::THREAD_SUSPENDED);
         info!(
             "thread {:?} suspend: count={}",
@@ -234,7 +235,6 @@ impl Thread {
         assert_ne!(inner.suspend_count, 0);
         inner.suspend_count -= 1;
         if inner.suspend_count == 0 {
-            inner.state = ThreadState::Running;
             self.base.signal_set(Signal::THREAD_RUNNING);
             if let Some(waker) = inner.waker.take() {
                 waker.wake();
@@ -252,7 +252,7 @@ impl Thread {
 
             fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
                 let mut inner = self.thread.inner.lock();
-                if inner.state == ThreadState::Running {
+                if inner.suspend_count == 0 {
                     // resume:  return the context token from thread object
                     Poll::Ready(inner.context.take().unwrap())
                 } else {
@@ -274,7 +274,7 @@ impl Thread {
     pub fn get_thread_info(&self) -> ThreadInfo {
         let inner = self.inner.lock();
         ThreadInfo {
-            state: inner.state.into(),
+            state: inner.state as u32,
             wait_exception_type: 0,
             cpu_affnity_mask: [0u64; 8],
         }
@@ -302,8 +302,13 @@ impl Thread {
         ret
     }
 
-    pub fn get_state(&self) -> ThreadState {
-        self.inner.lock().state
+    pub fn state(&self) -> ThreadState {
+        let inner = self.inner.lock();
+        if inner.suspend_count == 0 {
+            inner.state
+        } else {
+            ThreadState::Suspended
+        }
     }
 }
 
@@ -323,26 +328,38 @@ impl<T> IntoResult<T> for ZxResult<T> {
     }
 }
 
-numeric_enum! {
-    #[repr(u32)]
-    #[derive(Debug, Clone, Copy, Eq, PartialEq)]
-    pub enum ThreadState {
-        New = 0,
-        Running = 1,
-        Suspended = 2,
-        Blocked = 3,
-        Dying = 4,
-        Dead = 5,
-        BlockedException = 0x103,
-        BlockedSleeping = 0x203,
-        BlockedFutex = 0x303,
-        BlockedPort = 0x403,
-        BlockedChannel = 0x503,
-        BlockedWaitOne = 0x603,
-        BlockedWaitMany = 0x703,
-        BlockedInterrupt = 0x803,
-        BlockedPager = 0x903,
-    }
+/// The thread state.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum ThreadState {
+    /// The thread has been created but it has not started running yet.
+    New = 0,
+    /// The thread is running user code normally.
+    Running = 1,
+    /// Stopped due to `zx_task_suspend()`.
+    Suspended = 2,
+    /// In a syscall or handling an exception.
+    Blocked = 3,
+    /// The thread is in the process of being terminated, but it has not been stopped yet.
+    Dying = 4,
+    /// The thread has stopped running.
+    Dead = 5,
+    /// The thread is stopped in an exception.
+    BlockedException = 0x103,
+    /// The thread is stopped in `zx_nanosleep()`.
+    BlockedSleeping = 0x203,
+    /// The thread is stopped in `zx_futex_wait()`.
+    BlockedFutex = 0x303,
+    /// The thread is stopped in `zx_port_wait()`.
+    BlockedPort = 0x403,
+    /// The thread is stopped in `zx_channel_call()`.
+    BlockedChannel = 0x503,
+    /// The thread is stopped in `zx_object_wait_one()`.
+    BlockedWaitOne = 0x603,
+    /// The thread is stopped in `zx_object_wait_many()`.
+    BlockedWaitMany = 0x703,
+    /// The thread is stopped in `zx_interrupt_wait()`.
+    BlockedInterrupt = 0x803,
+    BlockedPager = 0x903,
 }
 
 impl Default for ThreadState {

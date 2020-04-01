@@ -217,6 +217,7 @@ impl Futex {
         }
         // requeue
         let mut new_inner = requeue_futex.inner.lock();
+        let requeue_count = requeue_count.min(inner.waiter_queue.len());
         for waiter in inner.waiter_queue.drain(..requeue_count) {
             waiter.reset_futex(requeue_futex.clone());
             new_inner.waiter_queue.push_back(waiter);

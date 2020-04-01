@@ -138,7 +138,7 @@ impl Syscall<'_> {
             "object.wait_one: handle={:#x?}, signals={:#x?}, deadline={:#x?}, observed={:#x?}",
             handle, signals, deadline, observed
         );
-        let signals = Signal::from_bits(signals).ok_or_else(||{
+        let signals = Signal::from_bits(signals).ok_or_else(|| {
             if !deadline.is_positive() {
                 ZxError::TIMED_OUT
             } else {
@@ -152,7 +152,7 @@ impl Syscall<'_> {
             .thread
             .blocking_run(future, ThreadState::BlockedWaitOne, deadline.into())
             .await
-            .or_else(|e|{
+            .or_else(|e| {
                 if e == ZxError::TIMED_OUT {
                     observed.write_if_not_null(object.signal())?;
                 }

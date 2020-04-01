@@ -14,12 +14,10 @@ impl_kobject!(SuspendToken);
 
 impl SuspendToken {
     pub fn create(thread: &Arc<Thread>) -> Arc<Self> {
+        thread.suspend();
         Arc::new(SuspendToken {
             base: KObjectBase::new(),
-            thread: {
-                thread.suspend();
-                Arc::downgrade(thread)
-            },
+            thread: Arc::downgrade(thread),
         })
     }
 }
