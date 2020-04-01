@@ -147,10 +147,11 @@ impl Syscall<'_> {
         })?;
         let proc = self.thread.proc();
         let object = proc.get_dyn_object_with_rights(handle, Rights::WAIT)?;
+        let cancel_token = proc.get_cancel_token(handle)?;
         let future = object.wait_signal(signals);
         let signal = self
             .thread
-            .blocking_run(future, ThreadState::BlockedWaitOne, deadline.into())
+            .cancelable_blocking_run(future, ThreadState::BlockedWaitOne, deadline.into(), cancel_token)
             .await
             .or_else(|e| {
                 if e == ZxError::TIMED_OUT {

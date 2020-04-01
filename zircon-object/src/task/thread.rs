@@ -13,6 +13,7 @@ use {
     futures::future::{select, Either},
     kernel_hal::{sleep_until, GeneralRegs, UserContext},
     spin::Mutex,
+    pin_utils::pin_mut,
 };
 
 pub use self::thread_state::*;
@@ -292,9 +293,48 @@ impl Thread {
         FT: IntoResult<T>,
     {
         let old_state = core::mem::replace(&mut self.inner.lock().state, state);
-        let ret = match select(future, sleep_until(deadline)).await {
+        let ret = self.internal_blocking_run(future, deadline).await;
+        let mut inner = self.inner.lock();
+        assert_eq!(inner.state, state);
+        inner.state = old_state;
+        ret
+    }
+
+    /// Run a asyn future, blocking until deadline
+    async fn internal_blocking_run<F, FT, T>(
+        &self,
+        future: F,
+        deadline: Duration,
+    ) -> ZxResult<T>
+    where
+        F: Future<Output = FT> + Unpin,
+        FT: IntoResult<T>,
+    {
+        match select(future, sleep_until(deadline)).await {
             Either::Left((ret, _)) => ret.into_result(),
             Either::Right(_) => Err(ZxError::TIMED_OUT),
+        }
+    }
+
+    /// Run a cannelable async future and change state while blocking.
+    pub async fn cancelable_blocking_run<F, T, FT, FF>(
+        &self,
+        future: F,
+        state: ThreadState,
+        deadline: Duration,
+        cancel_token: FF,
+    ) -> ZxResult<T>
+    where
+        F: Future<Output = FT> + Unpin,
+        FF: Future<Output = ()> + Unpin,
+        FT: IntoResult<T>,
+    {
+        let old_state = core::mem::replace(&mut self.inner.lock().state, state);
+        let future = self.internal_blocking_run(future, deadline);
+        pin_mut!(future);
+        let ret = match select(cancel_token, future).await {
+            Either::Left(_) => Err(ZxError::CANCELED),
+            Either::Right((ret, _)) => ret.into_result(),
         };
         let mut inner = self.inner.lock();
         assert_eq!(inner.state, state);

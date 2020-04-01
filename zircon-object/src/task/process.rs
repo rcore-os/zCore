@@ -1,6 +1,6 @@
 use {
     super::{job::Job, job_policy::*, resource::*, thread::Thread, *},
-    crate::{object::*, signal::Futex, vm::*},
+    crate::{object::*, signal::Futex, vm::*, util::oneshot::*, util::oneshot},
     alloc::{boxed::Box, collections::BTreeMap, sync::Arc, vec::Vec},
     core::{any::Any, sync::atomic::AtomicI32},
     spin::Mutex,
@@ -70,7 +70,7 @@ impl_kobject!(Process
 struct ProcessInner {
     status: Status,
     max_handle_id: u32,
-    handles: BTreeMap<HandleValue, Handle>,
+    handles: BTreeMap<HandleValue, (Handle, Vec<Sender<()>>)>,
     futexes: BTreeMap<usize, Arc<Futex>>,
     threads: Vec<Arc<Thread>>,
 
@@ -210,9 +210,7 @@ impl Process {
     pub fn remove_handle(&self, handle_value: HandleValue) -> ZxResult<Handle> {
         self.inner
             .lock()
-            .handles
-            .remove(&handle_value)
-            .ok_or(ZxError::BAD_HANDLE)
+            .remove_handle(handle_value)
     }
 
     /// Remove all handles from the process.
@@ -223,18 +221,13 @@ impl Process {
         let mut inner = self.inner.lock();
         handle_values
             .iter()
-            .map(|h| inner.handles.remove(h).ok_or(ZxError::BAD_HANDLE))
+            .map(|h| inner.remove_handle(*h))
             .collect()
     }
 
     /// Get a handle from the process
     fn get_handle(&self, handle_value: HandleValue) -> ZxResult<Handle> {
-        self.inner
-            .lock()
-            .handles
-            .get(&handle_value)
-            .cloned()
-            .ok_or(ZxError::BAD_HANDLE)
+        self.inner.lock().get_handle(&handle_value)
     }
 
     /// Get a futex from the process
@@ -260,7 +253,7 @@ impl Process {
     ) -> ZxResult<HandleValue> {
         let mut inner = self.inner.lock();
         let mut handle = match inner.handles.get(&handle_value) {
-            Some(h) => h.clone(),
+            Some((h, _)) => h.clone(),
             None => return Err(ZxError::BAD_HANDLE),
         };
         handle.rights = operation(handle.rights)?;
@@ -397,6 +390,10 @@ impl Process {
     pub fn get_dyn_break_on_load(&self) -> usize {
         self.inner.lock().dyn_break_on_load
     }
+
+    pub fn get_cancel_token(&self, handle_value: HandleValue) -> ZxResult<Receiver<()>> {
+        self.inner.lock().get_cancel_token(handle_value)
+    }
 }
 
 impl ProcessInner {
@@ -406,13 +403,36 @@ impl ProcessInner {
         let key = (self.max_handle_id << 2) | 0x3u32;
         info!("add handle: {:#x}, {:?}", key, handle.object);
         self.max_handle_id += 1;
-        self.handles.insert(key, handle);
+        self.handles.insert(key, (handle, Vec::new()));
         key
     }
 
     /// Whether `thread` is in this process.
     fn contains_thread(&self, thread: &Arc<Thread>) -> bool {
         self.threads.iter().any(|t| Arc::ptr_eq(t, thread))
+    }
+
+    fn remove_handle(&mut self, handle_value: HandleValue) -> ZxResult<Handle> {
+        let (handle, queue) = self
+            .handles
+            .remove(&handle_value)
+            .ok_or(ZxError::BAD_HANDLE)?;
+        for sender in queue {
+            sender.push(());
+        }
+        Ok(handle)
+    }
+
+    fn get_cancel_token(&mut self, handle_value: HandleValue) -> ZxResult<Receiver<()>> {
+        let (_, queue) = self.handles.get_mut(&handle_value).ok_or(ZxError::BAD_STATE)?;
+        let (sender, receiver) = oneshot::create::<()>();
+        queue.push(sender);
+        Ok(receiver)
+    }
+
+    fn get_handle(&mut self, handle_value: &HandleValue) -> ZxResult<Handle> {
+        let (handle, _) = self.handles.get(handle_value).ok_or(ZxError::BAD_STATE)?;
+        Ok(handle.clone())
     }
 }
 

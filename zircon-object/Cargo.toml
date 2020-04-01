@@ -15,6 +15,7 @@ downcast-rs = { git = "https://github.com/rcore-os/downcast-rs" }
 kernel-hal = { path = "../kernel-hal" }
 numeric-enum-macro = "0.2"
 futures = { version = "0.3", default-features = false }
+pin-utils = "0.1.0-alpha.4"
 
 [dev-dependencies]
 kernel-hal-unix = { path = "../kernel-hal-unix" }
