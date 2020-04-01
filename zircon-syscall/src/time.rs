@@ -1,6 +1,7 @@
 use {
     super::*,
     core::{
+        fmt::{Debug, Formatter, Result},
         sync::atomic::{AtomicU64, Ordering},
         time::Duration,
     },
@@ -68,7 +69,6 @@ impl Syscall<'_> {
 }
 
 #[repr(transparent)]
-#[derive(Debug)]
 pub struct Deadline(i64);
 
 impl From<usize> for Deadline {
@@ -86,5 +86,17 @@ impl Deadline {
 impl From<Deadline> for Duration {
     fn from(deadline: Deadline) -> Self {
         Duration::from_nanos(deadline.0.max(0) as u64)
+    }
+}
+
+impl Debug for Deadline {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        if self.0 <= 0 {
+            write!(f, "NoWait")
+        } else if self.0 == i64::max_value() {
+            write!(f, "Forever")
+        } else {
+            write!(f, "At({:?})", Duration::from_nanos(self.0 as u64))
+        }
     }
 }
