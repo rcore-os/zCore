@@ -227,8 +227,16 @@ impl Syscall<'_> {
         let proc = self.thread.proc();
         let job = proc.get_object_with_rights::<Job>(handle, Rights::SET_POLICY)?;
         match topic {
-            JOB_POL_BASE_V1 => unimplemented!(),
-            JOB_POL_BASE_V2 => unimplemented!(),
+            JOB_POL_BASE_V1 | JOB_POL_BASE_V2 => {
+                let policy_option = match options {
+                    JOB_POL_RELATIVE => SetPolicyOptions::Relative,
+                    JOB_POL_ABSOLUTE => SetPolicyOptions::Absolute,
+                    _ => return Err(ZxError::INVALID_ARGS),
+                };
+                let all_policy = UserInPtr::<BasicPolicy>::from(policy).read_array(count as usize)?;
+                job.set_policy_basic(policy_option, &all_policy)
+            },
+            //JOB_POL_BASE_V2 => unimplemented!(),
             JOB_POL_TIMER_SLACK => {
                 if options != JOB_POL_RELATIVE {
                     return Err(ZxError::INVALID_ARGS);
@@ -237,8 +245,7 @@ impl Syscall<'_> {
                     return Err(ZxError::INVALID_ARGS);
                 }
                 let timer_policy = UserInPtr::<TimerSlackPolicy>::from(policy).read()?;
-                job.set_policy_timer_slack(timer_policy)?;
-                Ok(())
+                job.set_policy_timer_slack(timer_policy)
             }
             _ => Err(ZxError::INVALID_ARGS),
         }
@@ -250,3 +257,4 @@ const JOB_POL_BASE_V2: u32 = 0x0100_0000;
 const JOB_POL_TIMER_SLACK: u32 = 1;
 
 const JOB_POL_RELATIVE: u32 = 0;
+const JOB_POL_ABSOLUTE: u32 = 1;

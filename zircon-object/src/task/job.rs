@@ -161,6 +161,14 @@ impl Job {
     pub fn get_info(&self) -> JobInfo {
         JobInfo::default()
     }
+
+    pub fn check_root_job(&self) -> ZxResult {
+        if self.parent.is_some() {
+            Err(ZxError::ACCESS_DENIED)
+        } else {
+            Ok(())
+        }
+    }
 }
 
 impl JobInner {

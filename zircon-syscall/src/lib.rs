@@ -32,6 +32,7 @@ mod port;
 mod resource;
 mod signal;
 mod socket;
+mod system;
 mod task;
 mod time;
 mod vmar;
@@ -208,6 +209,7 @@ impl Syscall<'_> {
                 a5 as _,
                 a6.into(),
             ),
+            Sys::SYSTEM_GET_EVENT => self.sys_system_get_event(a0 as _, a1 as _, a2.into()),
             _ => {
                 warn!("syscall unimplemented: {:?}", sys_type);
                 Err(ZxError::NOT_SUPPORTED)
