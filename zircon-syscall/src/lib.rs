@@ -49,6 +49,7 @@ pub struct Syscall<'a> {
 impl Syscall<'_> {
     pub async fn syscall(&mut self, num: u32, args: [usize; 8]) -> isize {
         let thread_name = self.thread.name();
+        let proc_name = self.thread.proc().name();
         let sys_type = match Sys::try_from(num) {
             Ok(t) => t,
             Err(_) => {
@@ -56,7 +57,7 @@ impl Syscall<'_> {
                 return ZxError::INVALID_ARGS as _;
             }
         };
-        debug!("{} {:?} => args={:x?}", thread_name, sys_type, args);
+        debug!("{}|{} {:?} => args={:x?}", proc_name, thread_name, sys_type, args);
         let [a0, a1, a2, a3, a4, a5, a6, a7] = args;
         let ret = match sys_type {
             Sys::HANDLE_CLOSE => self.sys_handle_close(a0 as _),
@@ -213,7 +214,7 @@ impl Syscall<'_> {
             Sys::TIMER_SET => self.sys_timer_set(a0 as _, a1.into(), a2 as _),
             Sys::DEBUG_READ => self.sys_debug_read(a0 as _, a1.into(), a2 as _, a3.into()),
             _ => {
-                error!("syscall unimplemented: {:?}", sys_type);
+                warn!("syscall unimplemented: {:?}", sys_type);
                 Err(ZxError::NOT_SUPPORTED)
             }
         };
@@ -222,7 +223,7 @@ impl Syscall<'_> {
         } else {
             log::Level::Warn
         };
-        log!(level, "{} {:?} <= {:?}", thread_name, sys_type, ret);
+        log!(level, "{}|{} {:?} <= {:?}", proc_name, thread_name, sys_type, ret);
         match ret {
             Ok(_) => 0,
             Err(ZxError::INVALID_ARGS) => unimplemented!(),
