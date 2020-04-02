@@ -123,10 +123,6 @@ pub fn check_timer_policy(policy: &TimerSlackPolicy) -> ZxResult {
         return Err(ZxError::INVALID_ARGS);
     }
     Ok(())
-    //match policy.default_mode {
-        //TimerSlackDefaultMode::Center | TimerSlackDefaultMode::Early | TimerSlackDefaultMode::Late => Ok(()),
-        //_ => Err(ZxError::INVALID_ARGS),
-    //}
 }
 
 #[repr(C)]

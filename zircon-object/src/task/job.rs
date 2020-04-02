@@ -157,12 +157,26 @@ impl Job {
             }
         }
     }
+
+    pub fn get_info(&self) -> JobInfo {
+        JobInfo::default()
+    }
 }
 
 impl JobInner {
     fn is_empty(&self) -> bool {
         self.processes.is_empty() && self.children.is_empty()
     }
+}
+
+#[repr(C)]
+#[derive(Default)]
+pub struct JobInfo {
+    return_code: i64,
+    exited: bool,
+    kill_on_oom: bool,
+    debugger_attached: bool,
+    padding: [u8; 5],
 }
 
 #[cfg(test)]

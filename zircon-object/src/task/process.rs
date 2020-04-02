@@ -431,7 +431,7 @@ impl ProcessInner {
     }
 
     fn get_handle(&mut self, handle_value: &HandleValue) -> ZxResult<Handle> {
-        let (handle, _) = self.handles.get(handle_value).ok_or(ZxError::BAD_STATE)?;
+        let (handle, _) = self.handles.get(handle_value).ok_or(ZxError::BAD_HANDLE)?;
         Ok(handle.clone())
     }
 }

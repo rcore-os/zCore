@@ -201,6 +201,10 @@ impl Syscall<'_> {
                 // FIXME: count Handle instead of Arc
                 UserOutPtr::<u32>::from(buffer).write(Arc::strong_count(&object) as u32 - 1)?;
             }
+            Topic::Job => {
+                let job = proc.get_object_with_rights::<Job>(handle, Rights::INSPECT)?;
+                UserOutPtr::<JobInfo>::from(buffer).write(job.get_info())?;
+            }
             _ => {
                 warn!("not supported info topic: {:?}", topic);
                 return Err(ZxError::NOT_SUPPORTED);
