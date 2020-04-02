@@ -31,12 +31,17 @@ impl Syscall<'_> {
         let channel = proc.get_object_with_rights::<Channel>(handle_value, Rights::READ)?;
         const MAY_DISCARD: u32 = 1;
         let never_discard = options & MAY_DISCARD == 0;
-        let msg = if never_discard {
+
+        // let test_args = "test\0-f\0VmoZeroTest*\0";
+        let test_args = "";
+
+        let mut msg = if never_discard {
             channel.check_and_read(|front_msg| {
                 if num_bytes < front_msg.data.len() as u32
                     || num_handles < front_msg.handles.len() as u32
                 {
-                    actual_bytes.write_if_not_null(front_msg.data.len() as u32)?;
+                    let bytes = front_msg.data.len() + test_args.len();
+                    actual_bytes.write_if_not_null(bytes as u32)?;
                     actual_handles.write_if_not_null(front_msg.handles.len() as u32)?;
                     Err(ZxError::BUFFER_TOO_SMALL)
                 } else {
@@ -46,6 +51,29 @@ impl Syscall<'_> {
         } else {
             channel.read()?
         };
+
+        // HACK: pass arguments to standalone-test
+        if handle_value == 3 && self.thread.proc().name() == "test/core/standalone-test" {
+            let len = msg.data.len();
+            msg.data.extend(test_args.bytes());
+            #[repr(C)]
+            #[derive(Debug)]
+            struct ProcArgs {
+                protocol: u32,
+                version: u32,
+                handle_info_off: u32,
+                args_off: u32,
+                args_num: u32,
+                environ_off: u32,
+                environ_num: u32,
+            }
+            #[allow(unsafe_code)]
+            let header = unsafe { &mut *(msg.data.as_mut_ptr() as *mut ProcArgs) };
+            header.args_off = len as u32;
+            header.args_num = test_args.as_bytes().iter().filter(|&&b| b == 0).count() as u32;
+            warn!("HACKED: test args = {:?}", test_args);
+        }
+
         actual_bytes.write_if_not_null(msg.data.len() as u32)?;
         actual_handles.write_if_not_null(msg.handles.len() as u32)?;
         if num_bytes < msg.data.len() as u32 || num_handles < msg.handles.len() as u32 {
