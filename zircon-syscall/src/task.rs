@@ -17,7 +17,9 @@ impl Syscall<'_> {
             job, name, options,
         );
         let proc = self.thread.proc();
-        let job = proc.get_object_with_rights::<Job>(job, Rights::MANAGE_PROCESS)?;
+        let job = proc.get_object_with_rights::<Job>(job, Rights::MANAGE_PROCESS).or_else(|_|{
+            proc.get_object_with_rights::<Job>(job, Rights::WRITE)
+        })?;
         let new_proc = Process::create(&job, &name, options)?;
         let new_vmar = new_proc.vmar();
         let proc_handle_value = proc.add_handle(Handle::new(new_proc, Rights::DEFAULT_PROCESS));
