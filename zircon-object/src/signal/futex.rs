@@ -281,9 +281,10 @@ impl Waiter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use core::time::Duration;
 
     #[async_std::test]
-    async fn wait_async() {
+    async fn wait() {
         static VALUE: AtomicI32 = AtomicI32::new(1);
         let futex = Futex::new(&VALUE);
 
@@ -294,6 +295,7 @@ mod tests {
         {
             let futex = futex.clone();
             async_std::task::spawn(async move {
+                async_std::task::sleep(Duration::from_millis(10)).await;
                 VALUE.store(2, Ordering::SeqCst);
                 let count = futex.wake(1);
                 assert_eq!(count, 1);
