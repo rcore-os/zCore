@@ -87,7 +87,7 @@
 //! let concrete = object.downcast_arc::<DummyObject>().unwrap();
 //! ```
 //!
-//! [`Channel`]: crate::ipc::Channel_
+//! [`Channel`]: crate::ipc::Channel
 //! [`KObjectBase`]: KObjectBase
 //! [`KernelObject`]: KernelObject
 //! [`impl_kobject`]: impl_kobject
