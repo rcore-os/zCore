@@ -69,6 +69,22 @@
 <span id="69">69</span>
 <span id="70">70</span>
 <span id="71">71</span>
+<span id="72">72</span>
+<span id="73">73</span>
+<span id="74">74</span>
+<span id="75">75</span>
+<span id="76">76</span>
+<span id="77">77</span>
+<span id="78">78</span>
+<span id="79">79</span>
+<span id="80">80</span>
+<span id="81">81</span>
+<span id="82">82</span>
+<span id="83">83</span>
+<span id="84">84</span>
+<span id="85">85</span>
+<span id="86">86</span>
+<span id="87">87</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="attribute">#![<span class="ident">no_std</span>]</span>
 <span class="attribute">#![<span class="ident">feature</span>(<span class="ident">asm</span>)]</span>
@@ -81,9 +97,7 @@
 
 <span class="kw">use</span> {
     <span class="ident">alloc</span>::{<span class="ident">boxed</span>::<span class="ident">Box</span>, <span class="ident">string</span>::<span class="ident">String</span>, <span class="ident">sync</span>::<span class="ident">Arc</span>, <span class="ident">vec</span>::<span class="ident">Vec</span>},
-    <span class="ident">core</span>::{<span class="ident">future</span>::<span class="ident">Future</span>, <span class="ident">pin</span>::<span class="ident">Pin</span>},
-    <span class="comment">// TODO: remove dependence of kernel-hal-unix</span>
-    <span class="ident">kernel_hal_unix</span>::{<span class="ident">syscall_entry</span>, <span class="ident">GeneralRegs</span>},
+    <span class="ident">kernel_hal</span>::<span class="ident">GeneralRegs</span>,
     <span class="ident">linux_object</span>::{
         <span class="ident">fs</span>::{<span class="ident">vfs</span>::<span class="ident">FileSystem</span>, <span class="ident">INodeExt</span>},
         <span class="ident">loader</span>::<span class="ident">LinuxElfLoader</span>,
@@ -104,7 +118,10 @@
     <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="ident">Process</span>::<span class="ident">create_linux</span>(<span class="kw-2">&amp;</span><span class="ident">job</span>, <span class="ident">rootfs</span>.<span class="ident">clone</span>()).<span class="ident">unwrap</span>();
     <span class="kw">let</span> <span class="ident">thread</span> <span class="op">=</span> <span class="ident">Thread</span>::<span class="ident">create_linux</span>(<span class="kw-2">&amp;</span><span class="ident">proc</span>).<span class="ident">unwrap</span>();
     <span class="kw">let</span> <span class="ident">loader</span> <span class="op">=</span> <span class="ident">LinuxElfLoader</span> {
-        <span class="ident">syscall_entry</span>: <span class="ident">syscall_entry</span> <span class="kw">as</span> <span class="ident">usize</span>,
+        <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;std&quot;</span>)]</span>
+        <span class="ident">syscall_entry</span>: <span class="ident">kernel_hal_unix</span>::<span class="ident">syscall_entry</span> <span class="kw">as</span> <span class="ident">usize</span>,
+        <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">not</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;std&quot;</span>))]</span>
+        <span class="ident">syscall_entry</span>: <span class="number">0</span>,
         <span class="ident">stack_pages</span>: <span class="number">8</span>,
         <span class="ident">root_inode</span>: <span class="ident">rootfs</span>.<span class="ident">root_inode</span>(),
     };
@@ -119,20 +136,35 @@
 }
 
 <span class="attribute">#[<span class="ident">no_mangle</span>]</span>
-<span class="kw">extern</span> <span class="string">&quot;C&quot;</span> <span class="kw">fn</span> <span class="ident">handle_syscall</span>(
-    <span class="ident">thread</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;static</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Thread</span><span class="op">&gt;</span>,
-    <span class="ident">regs</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;static</span> <span class="kw-2">mut</span> <span class="ident">GeneralRegs</span>,
-) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Pin</span><span class="op">&lt;</span><span class="ident">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">Future</span><span class="op">&lt;</span><span class="ident">Output</span> <span class="op">=</span> <span class="ident">bool</span><span class="op">&gt;</span> <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span><span class="op">&gt;</span><span class="op">&gt;</span> {
-    <span class="ident">Box</span>::<span class="ident">pin</span>(<span class="ident">handle_syscall_async</span>(<span class="ident">thread</span>, <span class="ident">regs</span>))
+<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">run_task</span>(<span class="ident">thread</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Thread</span><span class="op">&gt;</span>) {
+    <span class="kw">let</span> <span class="ident">vmtoken</span> <span class="op">=</span> <span class="ident">thread</span>.<span class="ident">proc</span>().<span class="ident">vmar</span>().<span class="ident">table_phys</span>();
+    <span class="kw">let</span> <span class="ident">future</span> <span class="op">=</span> <span class="kw">async</span> <span class="kw">move</span> {
+        <span class="kw">loop</span> {
+            <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">cx</span> <span class="op">=</span> <span class="ident">thread</span>.<span class="ident">wait_for_run</span>().<span class="kw">await</span>;
+            <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;go to user: {:#x?}&quot;</span>, <span class="ident">cx</span>);
+            <span class="ident">kernel_hal</span>::<span class="ident">context_run</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">cx</span>);
+            <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;back from user: {:#x?}&quot;</span>, <span class="ident">cx</span>);
+            <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">cx</span>.<span class="ident">trap_num</span>, <span class="number">0x100</span>, <span class="string">&quot;user interrupt still no support&quot;</span>);
+            <span class="kw">let</span> <span class="ident">exit</span> <span class="op">=</span> <span class="ident">handle_syscall</span>(<span class="kw-2">&amp;</span><span class="ident">thread</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">cx</span>.<span class="ident">general</span>).<span class="kw">await</span>;
+            <span class="ident">thread</span>.<span class="ident">end_running</span>(<span class="ident">cx</span>);
+            <span class="kw">if</span> <span class="ident">exit</span> {
+                <span class="kw">break</span>;
+            }
+        }
+    };
+    <span class="ident">kernel_hal</span>::<span class="ident">Thread</span>::<span class="ident">spawn</span>(<span class="ident">Box</span>::<span class="ident">pin</span>(<span class="ident">future</span>), <span class="ident">vmtoken</span>);
 }
 
-<span class="kw">async</span> <span class="kw">fn</span> <span class="ident">handle_syscall_async</span>(<span class="ident">thread</span>: <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Thread</span><span class="op">&gt;</span>, <span class="ident">regs</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">GeneralRegs</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+<span class="kw">async</span> <span class="kw">fn</span> <span class="ident">handle_syscall</span>(<span class="ident">thread</span>: <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Thread</span><span class="op">&gt;</span>, <span class="ident">regs</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">GeneralRegs</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
     <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;syscall: {:#x?}&quot;</span>, <span class="ident">regs</span>);
     <span class="kw">let</span> <span class="ident">num</span> <span class="op">=</span> <span class="ident">regs</span>.<span class="ident">rax</span> <span class="kw">as</span> <span class="ident">u32</span>;
     <span class="kw">let</span> <span class="ident">args</span> <span class="op">=</span> [<span class="ident">regs</span>.<span class="ident">rdi</span>, <span class="ident">regs</span>.<span class="ident">rsi</span>, <span class="ident">regs</span>.<span class="ident">rdx</span>, <span class="ident">regs</span>.<span class="ident">r10</span>, <span class="ident">regs</span>.<span class="ident">r8</span>, <span class="ident">regs</span>.<span class="ident">r9</span>];
     <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">syscall</span> <span class="op">=</span> <span class="ident">Syscall</span> {
         <span class="ident">thread</span>,
-        <span class="ident">syscall_entry</span>: <span class="ident">syscall_entry</span> <span class="kw">as</span> <span class="ident">usize</span>,
+        <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;std&quot;</span>)]</span>
+        <span class="ident">syscall_entry</span>: <span class="ident">kernel_hal_unix</span>::<span class="ident">syscall_entry</span> <span class="kw">as</span> <span class="ident">usize</span>,
+        <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">not</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;std&quot;</span>))]</span>
+        <span class="ident">syscall_entry</span>: <span class="number">0</span>,
         <span class="ident">regs</span>,
         <span class="ident">exit</span>: <span class="bool-val">false</span>,
     };

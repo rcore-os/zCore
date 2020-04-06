@@ -1,0 +1,1 @@
+initSidebarItems({"fn":[["init","Initialize the HAL."],["init_framebuffer","Initialize console on framebuffer."],["irq_ack",""],["putfmt",""],["serial_write",""],["set_page_table",""],["timer_now",""]],"struct":[["PageTableImpl","Page Table"]]});

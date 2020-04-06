@@ -237,6 +237,63 @@
 <span id="237">237</span>
 <span id="238">238</span>
 <span id="239">239</span>
+<span id="240">240</span>
+<span id="241">241</span>
+<span id="242">242</span>
+<span id="243">243</span>
+<span id="244">244</span>
+<span id="245">245</span>
+<span id="246">246</span>
+<span id="247">247</span>
+<span id="248">248</span>
+<span id="249">249</span>
+<span id="250">250</span>
+<span id="251">251</span>
+<span id="252">252</span>
+<span id="253">253</span>
+<span id="254">254</span>
+<span id="255">255</span>
+<span id="256">256</span>
+<span id="257">257</span>
+<span id="258">258</span>
+<span id="259">259</span>
+<span id="260">260</span>
+<span id="261">261</span>
+<span id="262">262</span>
+<span id="263">263</span>
+<span id="264">264</span>
+<span id="265">265</span>
+<span id="266">266</span>
+<span id="267">267</span>
+<span id="268">268</span>
+<span id="269">269</span>
+<span id="270">270</span>
+<span id="271">271</span>
+<span id="272">272</span>
+<span id="273">273</span>
+<span id="274">274</span>
+<span id="275">275</span>
+<span id="276">276</span>
+<span id="277">277</span>
+<span id="278">278</span>
+<span id="279">279</span>
+<span id="280">280</span>
+<span id="281">281</span>
+<span id="282">282</span>
+<span id="283">283</span>
+<span id="284">284</span>
+<span id="285">285</span>
+<span id="286">286</span>
+<span id="287">287</span>
+<span id="288">288</span>
+<span id="289">289</span>
+<span id="290">290</span>
+<span id="291">291</span>
+<span id="292">292</span>
+<span id="293">293</span>
+<span id="294">294</span>
+<span id="295">295</span>
+<span id="296">296</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> {
     <span class="kw">super</span>::<span class="ident">job_policy</span>::<span class="kw-2">*</span>, <span class="kw">super</span>::<span class="ident">process</span>::<span class="ident">Process</span>, <span class="kw">crate</span>::<span class="ident">object</span>::<span class="kw-2">*</span>, <span class="ident">alloc</span>::<span class="ident">sync</span>::<span class="ident">Arc</span>,
@@ -265,7 +322,6 @@
 <span class="doccomment">/// controlled as a single entity.</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Job</span> {
     <span class="ident">base</span>: <span class="ident">KObjectBase</span>,
-    <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
     <span class="ident">parent</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Job</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     <span class="ident">parent_policy</span>: <span class="ident">JobPolicy</span>,
     <span class="ident">inner</span>: <span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">JobInner</span><span class="op">&gt;</span>,
@@ -282,6 +338,9 @@
         }
         <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">NOT_FOUND</span>)
     }
+    <span class="kw">fn</span> <span class="ident">related_koid</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">KoID</span> {
+        <span class="self">self</span>.<span class="ident">parent</span>.<span class="ident">as_ref</span>().<span class="ident">map</span>(<span class="op">|</span><span class="ident">p</span><span class="op">|</span> <span class="ident">p</span>.<span class="ident">id</span>()).<span class="ident">unwrap_or</span>(<span class="number">0</span>)
+    }
 );
 
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Default</span>)]</span>
@@ -289,6 +348,8 @@
     <span class="ident">policy</span>: <span class="ident">JobPolicy</span>,
     <span class="ident">children</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Job</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     <span class="ident">processes</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Process</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+    <span class="ident">critical_proc</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span>(<span class="ident">KoID</span>, <span class="ident">bool</span>)<span class="op">&gt;</span>,
+    <span class="ident">timer_policy</span>: <span class="ident">TimerSlack</span>,
 }
 
 <span class="kw">impl</span> <span class="ident">Job</span> {
@@ -303,13 +364,13 @@
     }
 
     <span class="doccomment">/// Create a new child job object.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">create_child</span>(<span class="ident">parent</span>: <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span>, <span class="ident">_options</span>: <span class="ident">u32</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">create_child</span>(<span class="self">self</span>: <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span>, <span class="ident">_options</span>: <span class="ident">u32</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="comment">// TODO: options</span>
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="ident">parent</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="kw">let</span> <span class="ident">child</span> <span class="op">=</span> <span class="ident">Arc</span>::<span class="ident">new</span>(<span class="ident">Job</span> {
             <span class="ident">base</span>: <span class="ident">KObjectBase</span>::<span class="ident">new</span>(),
-            <span class="ident">parent</span>: <span class="prelude-val">Some</span>(<span class="ident">parent</span>.<span class="ident">clone</span>()),
-            <span class="ident">parent_policy</span>: <span class="ident">inner</span>.<span class="ident">policy</span>.<span class="ident">merge</span>(<span class="kw-2">&amp;</span><span class="ident">parent</span>.<span class="ident">parent_policy</span>),
+            <span class="ident">parent</span>: <span class="prelude-val">Some</span>(<span class="self">self</span>.<span class="ident">clone</span>()),
+            <span class="ident">parent_policy</span>: <span class="ident">inner</span>.<span class="ident">policy</span>.<span class="ident">merge</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">parent_policy</span>),
             <span class="ident">inner</span>: <span class="ident">Mutex</span>::<span class="ident">new</span>(<span class="ident">JobInner</span>::<span class="ident">default</span>()),
         });
         <span class="ident">inner</span>.<span class="ident">children</span>.<span class="ident">push</span>(<span class="ident">child</span>.<span class="ident">clone</span>());
@@ -328,11 +389,7 @@
     <span class="doccomment">///</span>
     <span class="doccomment">/// After this call succeeds any new child process or child job will have</span>
     <span class="doccomment">/// the new effective policy applied to it.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">set_policy_basic</span>(
-        <span class="kw-2">&amp;</span><span class="self">self</span>,
-        <span class="ident">options</span>: <span class="ident">SetPolicyOptions</span>,
-        <span class="ident">policys</span>: <span class="kw-2">&amp;</span>[<span class="ident">BasicPolicy</span>],
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">set_policy_basic</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">options</span>: <span class="ident">SetPolicyOptions</span>, <span class="ident">policys</span>: <span class="kw-2">&amp;</span>[<span class="ident">BasicPolicy</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="kw">if</span> <span class="op">!</span><span class="ident">inner</span>.<span class="ident">is_empty</span>() {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">BAD_STATE</span>);
@@ -350,17 +407,64 @@
         <span class="prelude-val">Ok</span>(())
     }
 
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">set_policy_timer_slack</span>(
-        <span class="kw-2">&amp;</span><span class="self">self</span>,
-        <span class="ident">_options</span>: <span class="ident">SetPolicyOptions</span>,
-        <span class="ident">_policys</span>: <span class="kw-2">&amp;</span>[<span class="ident">TimerSlackPolicy</span>],
-    ) {
-        <span class="macro">unimplemented</span><span class="macro">!</span>()
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">set_policy_timer_slack</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">policy</span>: <span class="ident">TimerSlackPolicy</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
+        <span class="kw">if</span> <span class="op">!</span><span class="ident">inner</span>.<span class="ident">is_empty</span>() {
+            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">BAD_STATE</span>);
+        }
+        <span class="ident">check_timer_policy</span>(<span class="kw-2">&amp;</span><span class="ident">policy</span>)<span class="question-mark">?</span>;
+        <span class="ident">inner</span>.<span class="ident">timer_policy</span> <span class="op">=</span> <span class="ident">inner</span>.<span class="ident">timer_policy</span>.<span class="ident">generate_new</span>(<span class="ident">policy</span>);
+        <span class="prelude-val">Ok</span>(())
+    }
+
+    <span class="doccomment">/// Set a process as critical to the job.</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// When process terminates, job will be terminated as if `task_kill()` was</span>
+    <span class="doccomment">/// called on it. The return code used will be `ZX_TASK_RETCODE_CRITICAL_PROCESS_KILL`.</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// The job specified must be the parent of process, or an ancestor.</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// If `retcode_nonzero` is true, then job will only be terminated if process</span>
+    <span class="doccomment">/// has a non-zero return code.</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">set_critical</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">proc</span>: <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Process</span><span class="op">&gt;</span>, <span class="ident">retcode_nonzero</span>: <span class="ident">bool</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
+        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>((<span class="ident">pid</span>, <span class="kw">_</span>)) <span class="op">=</span> <span class="ident">inner</span>.<span class="ident">critical_proc</span> {
+            <span class="kw">if</span> <span class="ident">proc</span>.<span class="ident">id</span>() <span class="op">=</span><span class="op">=</span> <span class="ident">pid</span> {
+                <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">ALREADY_BOUND</span>);
+            }
+        }
+        <span class="kw">if</span> <span class="op">!</span><span class="ident">inner</span>.<span class="ident">processes</span>.<span class="ident">iter</span>().<span class="ident">any</span>(<span class="op">|</span><span class="ident">p</span><span class="op">|</span> <span class="ident">proc</span>.<span class="ident">id</span>() <span class="op">=</span><span class="op">=</span> <span class="ident">p</span>.<span class="ident">id</span>()) {
+            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">INVALID_ARGS</span>);
+        }
+        <span class="ident">inner</span>.<span class="ident">critical_proc</span> <span class="op">=</span> <span class="prelude-val">Some</span>((<span class="ident">proc</span>.<span class="ident">id</span>(), <span class="ident">retcode_nonzero</span>));
+        <span class="prelude-val">Ok</span>(())
     }
 
     <span class="doccomment">/// Add a process to the job.</span>
     <span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn</span> <span class="ident">add_process</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">process</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Process</span><span class="op">&gt;</span>) {
         <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">processes</span>.<span class="ident">push</span>(<span class="ident">process</span>);
+    }
+
+    <span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn</span> <span class="ident">process_exit</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">id</span>: <span class="ident">KoID</span>, <span class="ident">retcode</span>: <span class="ident">i64</span>) {
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
+        <span class="ident">inner</span>.<span class="ident">processes</span>.<span class="ident">retain</span>(<span class="op">|</span><span class="ident">proc</span><span class="op">|</span> <span class="ident">proc</span>.<span class="ident">id</span>() <span class="op">!</span><span class="op">=</span> <span class="ident">id</span>);
+        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>((<span class="ident">pid</span>, <span class="ident">retcode_nonzero</span>)) <span class="op">=</span> <span class="ident">inner</span>.<span class="ident">critical_proc</span> {
+            <span class="kw">if</span> <span class="ident">pid</span> <span class="op">=</span><span class="op">=</span> <span class="ident">id</span> <span class="kw-2">&amp;</span><span class="op">&amp;</span> <span class="op">!</span>(<span class="ident">retcode_nonzero</span> <span class="kw-2">&amp;</span><span class="op">&amp;</span> <span class="ident">retcode</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span>) {
+                <span class="macro">unimplemented</span><span class="macro">!</span>(<span class="string">&quot;kill the job&quot;</span>)
+            }
+        }
+    }
+
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_info</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">JobInfo</span> {
+        <span class="ident">JobInfo</span>::<span class="ident">default</span>()
+    }
+
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">check_root_job</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+        <span class="kw">if</span> <span class="self">self</span>.<span class="ident">parent</span>.<span class="ident">is_some</span>() {
+            <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">ACCESS_DENIED</span>)
+        } <span class="kw">else</span> {
+            <span class="prelude-val">Ok</span>(())
+        }
     }
 }
 
@@ -368,6 +472,16 @@
     <span class="kw">fn</span> <span class="ident">is_empty</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
         <span class="self">self</span>.<span class="ident">processes</span>.<span class="ident">is_empty</span>() <span class="kw-2">&amp;</span><span class="op">&amp;</span> <span class="self">self</span>.<span class="ident">children</span>.<span class="ident">is_empty</span>()
     }
+}
+
+<span class="attribute">#[<span class="ident">repr</span>(<span class="ident">C</span>)]</span>
+<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Default</span>)]</span>
+<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">JobInfo</span> {
+    <span class="ident">return_code</span>: <span class="ident">i64</span>,
+    <span class="ident">exited</span>: <span class="ident">bool</span>,
+    <span class="ident">kill_on_oom</span>: <span class="ident">bool</span>,
+    <span class="ident">debugger_attached</span>: <span class="ident">bool</span>,
+    <span class="ident">padding</span>: [<span class="ident">u8</span>; <span class="number">5</span>],
 }
 
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">test</span>)]</span>

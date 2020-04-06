@@ -313,7 +313,7 @@
         <span class="prelude-val">Ok</span>(<span class="ident">inner</span>.<span class="ident">offset</span>)
     }
 
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">set_len</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">len</span>: <span class="ident">u64</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">LxResult</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">set_len</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">len</span>: <span class="ident">u64</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">LxResult</span> {
         <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">options</span>.<span class="ident">write</span> {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">LxError</span>::<span class="ident">EBADF</span>);
         }
@@ -321,12 +321,12 @@
         <span class="prelude-val">Ok</span>(())
     }
 
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sync_all</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">LxResult</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sync_all</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">LxResult</span> {
         <span class="self">self</span>.<span class="ident">inode</span>.<span class="ident">sync_all</span>()<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(())
     }
 
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sync_data</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">LxResult</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sync_data</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">LxResult</span> {
         <span class="self">self</span>.<span class="ident">inode</span>.<span class="ident">sync_data</span>()<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(())
     }

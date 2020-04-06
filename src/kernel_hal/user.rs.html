@@ -158,6 +158,30 @@
 <span id="158">158</span>
 <span id="159">159</span>
 <span id="160">160</span>
+<span id="161">161</span>
+<span id="162">162</span>
+<span id="163">163</span>
+<span id="164">164</span>
+<span id="165">165</span>
+<span id="166">166</span>
+<span id="167">167</span>
+<span id="168">168</span>
+<span id="169">169</span>
+<span id="170">170</span>
+<span id="171">171</span>
+<span id="172">172</span>
+<span id="173">173</span>
+<span id="174">174</span>
+<span id="175">175</span>
+<span id="176">176</span>
+<span id="177">177</span>
+<span id="178">178</span>
+<span id="179">179</span>
+<span id="180">180</span>
+<span id="181">181</span>
+<span id="182">182</span>
+<span id="183">183</span>
+<span id="184">184</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> <span class="ident">alloc</span>::<span class="ident">string</span>::<span class="ident">String</span>;
 <span class="kw">use</span> <span class="ident">alloc</span>::<span class="ident">vec</span>::<span class="ident">Vec</span>;
@@ -232,11 +256,23 @@
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">as_ptr</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">*</span><span class="kw-2">mut</span> <span class="ident">T</span> {
         <span class="self">self</span>.<span class="ident">ptr</span>
     }
+
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">check</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
+        <span class="kw">if</span> <span class="self">self</span>.<span class="ident">ptr</span>.<span class="ident">is_null</span>() {
+            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">InvalidPointer</span>);
+        }
+        <span class="prelude-val">Ok</span>(())
+    }
 }
 
 <span class="kw">impl</span><span class="op">&lt;</span><span class="ident">T</span>, <span class="ident">P</span>: <span class="ident">Read</span><span class="op">&gt;</span> <span class="ident">UserPtr</span><span class="op">&lt;</span><span class="ident">T</span>, <span class="ident">P</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">as_ref</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="lifetime">&#39;static</span> <span class="ident">T</span><span class="op">&gt;</span> {
+        <span class="prelude-val">Ok</span>(<span class="kw">unsafe</span> { <span class="kw-2">&amp;</span><span class="kw-2">*</span><span class="self">self</span>.<span class="ident">ptr</span> })
+    }
+
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">read</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> {
         <span class="comment">// TODO: check ptr and return err</span>
+        <span class="self">self</span>.<span class="ident">check</span>()<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(<span class="kw">unsafe</span> { <span class="self">self</span>.<span class="ident">ptr</span>.<span class="ident">read</span>() })
     }
 
@@ -249,6 +285,10 @@
     }
 
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">read_array</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">len</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+        <span class="kw">if</span> <span class="ident">len</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span> {
+            <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">Vec</span>::<span class="ident">default</span>());
+        }
+        <span class="self">self</span>.<span class="ident">check</span>()<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">ret</span> <span class="op">=</span> <span class="ident">Vec</span>::<span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span>::<span class="ident">with_capacity</span>(<span class="ident">len</span>);
         <span class="kw">unsafe</span> {
             <span class="ident">ret</span>.<span class="ident">set_len</span>(<span class="ident">len</span>);
@@ -260,12 +300,14 @@
 
 <span class="kw">impl</span><span class="op">&lt;</span><span class="ident">P</span>: <span class="ident">Read</span><span class="op">&gt;</span> <span class="ident">UserPtr</span><span class="op">&lt;</span><span class="ident">u8</span>, <span class="ident">P</span><span class="op">&gt;</span> {
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">read_string</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">len</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">String</span><span class="op">&gt;</span> {
+        <span class="self">self</span>.<span class="ident">check</span>()<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">src</span> <span class="op">=</span> <span class="kw">unsafe</span> { <span class="ident">core</span>::<span class="ident">slice</span>::<span class="ident">from_raw_parts</span>(<span class="self">self</span>.<span class="ident">ptr</span>, <span class="ident">len</span>) };
         <span class="kw">let</span> <span class="ident">s</span> <span class="op">=</span> <span class="ident">core</span>::<span class="ident">str</span>::<span class="ident">from_utf8</span>(<span class="ident">src</span>).<span class="ident">map_err</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">Error</span>::<span class="ident">InvalidUtf8</span>)<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(<span class="ident">String</span>::<span class="ident">from</span>(<span class="ident">s</span>))
     }
 
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">read_cstring</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">String</span><span class="op">&gt;</span> {
+        <span class="self">self</span>.<span class="ident">check</span>()<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">len</span> <span class="op">=</span> <span class="kw">unsafe</span> { (<span class="number">0usize</span>..).<span class="ident">find</span>(<span class="op">|</span><span class="kw-2">&amp;</span><span class="ident">i</span><span class="op">|</span> <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">ptr</span>.<span class="ident">add</span>(<span class="ident">i</span>) <span class="op">=</span><span class="op">=</span> <span class="number">0</span>).<span class="ident">unwrap</span>() };
         <span class="self">self</span>.<span class="ident">read_string</span>(<span class="ident">len</span>)
     }
@@ -273,6 +315,7 @@
 
 <span class="kw">impl</span><span class="op">&lt;</span><span class="ident">P</span>: <span class="ident">Read</span><span class="op">&gt;</span> <span class="ident">UserPtr</span><span class="op">&lt;</span><span class="ident">UserPtr</span><span class="op">&lt;</span><span class="ident">u8</span>, <span class="ident">P</span><span class="op">&gt;</span>, <span class="ident">P</span><span class="op">&gt;</span> {
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">read_cstring_array</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">String</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+        <span class="self">self</span>.<span class="ident">check</span>()<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">len</span> <span class="op">=</span> <span class="kw">unsafe</span> {
             (<span class="number">0usize</span>..)
                 .<span class="ident">find</span>(<span class="op">|</span><span class="kw-2">&amp;</span><span class="ident">i</span><span class="op">|</span> <span class="self">self</span>.<span class="ident">ptr</span>.<span class="ident">add</span>(<span class="ident">i</span>).<span class="ident">read</span>().<span class="ident">is_null</span>())
@@ -287,6 +330,7 @@
 
 <span class="kw">impl</span><span class="op">&lt;</span><span class="ident">T</span>, <span class="ident">P</span>: <span class="ident">Write</span><span class="op">&gt;</span> <span class="ident">UserPtr</span><span class="op">&lt;</span><span class="ident">T</span>, <span class="ident">P</span><span class="op">&gt;</span> {
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">write</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">value</span>: <span class="ident">T</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
+        <span class="self">self</span>.<span class="ident">check</span>()<span class="question-mark">?</span>;
         <span class="kw">unsafe</span> {
             <span class="self">self</span>.<span class="ident">ptr</span>.<span class="ident">write</span>(<span class="ident">value</span>);
         }
@@ -301,6 +345,10 @@
     }
 
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">write_array</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">values</span>: <span class="kw-2">&amp;</span>[<span class="ident">T</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
+        <span class="kw">if</span> <span class="ident">values</span>.<span class="ident">is_empty</span>() {
+            <span class="kw">return</span> <span class="prelude-val">Ok</span>(());
+        }
+        <span class="self">self</span>.<span class="ident">check</span>()<span class="question-mark">?</span>;
         <span class="kw">unsafe</span> {
             <span class="self">self</span>.<span class="ident">ptr</span>
                 .<span class="ident">copy_from_nonoverlapping</span>(<span class="ident">values</span>.<span class="ident">as_ptr</span>(), <span class="ident">values</span>.<span class="ident">len</span>());

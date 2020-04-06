@@ -83,7 +83,7 @@
         <span class="kw">match</span> <span class="ident">code</span> {
             <span class="ident">ARCH_SET_FS</span> <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;sys_arch_prctl: set FSBASE to {:#x}&quot;</span>, <span class="ident">addr</span>);
-                <span class="self">self</span>.<span class="ident">regs</span>.<span class="ident">fs_base</span> <span class="op">=</span> <span class="ident">addr</span>;
+                <span class="self">self</span>.<span class="ident">regs</span>.<span class="ident">fsbase</span> <span class="op">=</span> <span class="ident">addr</span>;
                 <span class="prelude-val">Ok</span>(<span class="number">0</span>)
             }
             <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Err</span>(<span class="ident">LxError</span>::<span class="ident">EINVAL</span>),
@@ -128,7 +128,7 @@
             <span class="number">0</span> <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="comment">// FIXME: support timeout</span>
                 <span class="kw">let</span> <span class="ident">_timeout</span> <span class="op">=</span> <span class="ident">timeout</span>.<span class="ident">read_if_not_null</span>()<span class="question-mark">?</span>;
-                <span class="kw">match</span> <span class="ident">futex</span>.<span class="ident">wait_async</span>(<span class="ident">val</span>).<span class="kw">await</span> {
+                <span class="kw">match</span> <span class="ident">futex</span>.<span class="ident">wait</span>(<span class="ident">val</span>).<span class="kw">await</span> {
                     <span class="prelude-val">Ok</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Ok</span>(<span class="number">0</span>),
                     <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">BAD_STATE</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Err</span>(<span class="ident">LxError</span>::<span class="ident">EAGAIN</span>),
                     <span class="prelude-val">Err</span>(<span class="ident">e</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Err</span>(<span class="ident">e</span>.<span class="ident">into</span>()),

@@ -196,6 +196,53 @@
 <span id="196">196</span>
 <span id="197">197</span>
 <span id="198">198</span>
+<span id="199">199</span>
+<span id="200">200</span>
+<span id="201">201</span>
+<span id="202">202</span>
+<span id="203">203</span>
+<span id="204">204</span>
+<span id="205">205</span>
+<span id="206">206</span>
+<span id="207">207</span>
+<span id="208">208</span>
+<span id="209">209</span>
+<span id="210">210</span>
+<span id="211">211</span>
+<span id="212">212</span>
+<span id="213">213</span>
+<span id="214">214</span>
+<span id="215">215</span>
+<span id="216">216</span>
+<span id="217">217</span>
+<span id="218">218</span>
+<span id="219">219</span>
+<span id="220">220</span>
+<span id="221">221</span>
+<span id="222">222</span>
+<span id="223">223</span>
+<span id="224">224</span>
+<span id="225">225</span>
+<span id="226">226</span>
+<span id="227">227</span>
+<span id="228">228</span>
+<span id="229">229</span>
+<span id="230">230</span>
+<span id="231">231</span>
+<span id="232">232</span>
+<span id="233">233</span>
+<span id="234">234</span>
+<span id="235">235</span>
+<span id="236">236</span>
+<span id="237">237</span>
+<span id="238">238</span>
+<span id="239">239</span>
+<span id="240">240</span>
+<span id="241">241</span>
+<span id="242">242</span>
+<span id="243">243</span>
+<span id="244">244</span>
+<span id="245">245</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> {<span class="kw">super</span>::<span class="kw-2">*</span>, <span class="ident">bitflags</span>::<span class="ident">bitflags</span>, <span class="ident">zircon_object</span>::<span class="ident">vm</span>::<span class="kw-2">*</span>};
 
@@ -208,7 +255,7 @@
     }
 }
 
-<span class="kw">impl</span> <span class="ident">Syscall</span> {
+<span class="kw">impl</span> <span class="ident">Syscall</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span> {
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_vmar_allocate</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">parent_vmar</span>: <span class="ident">HandleValue</span>,
@@ -217,10 +264,10 @@
         <span class="ident">size</span>: <span class="ident">u64</span>,
         <span class="kw-2">mut</span> <span class="ident">out_child_vmar</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">HandleValue</span><span class="op">&gt;</span>,
         <span class="kw-2">mut</span> <span class="ident">out_child_addr</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
         <span class="kw">let</span> <span class="ident">vm_options</span> <span class="op">=</span> <span class="ident">VmOptions</span>::<span class="ident">from_bits</span>(<span class="ident">options</span>).<span class="ident">ok_or</span>(<span class="ident">ZxError</span>::<span class="ident">INVALID_ARGS</span>)<span class="question-mark">?</span>;
         <span class="macro">info</span><span class="macro">!</span>(
-            <span class="string">&quot;vmar.allocate: parent={:?}, options={:?}, offset={:#x?}, size={:#x?}&quot;</span>,
+            <span class="string">&quot;vmar.allocate: parent={:#x?}, options={:#x?}, offset={:#x?}, size={:#x?}&quot;</span>,
             <span class="ident">parent_vmar</span>, <span class="ident">options</span>, <span class="ident">offset</span>, <span class="ident">size</span>,
         );
         <span class="comment">// try to get parent_vmar</span>
@@ -264,7 +311,7 @@
         <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;vmar.allocate: at {:#x?}&quot;</span>, <span class="ident">child_addr</span>);
         <span class="ident">out_child_vmar</span>.<span class="ident">write</span>(<span class="ident">child_handle</span>)<span class="question-mark">?</span>;
         <span class="ident">out_child_addr</span>.<span class="ident">write</span>(<span class="ident">child_addr</span>)<span class="question-mark">?</span>;
-        <span class="prelude-val">Ok</span>(<span class="number">0</span>)
+        <span class="prelude-val">Ok</span>(())
     }
 
     <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy</span>::<span class="ident">too_many_arguments</span>)]</span>
@@ -277,15 +324,15 @@
         <span class="ident">vmo_offset</span>: <span class="ident">usize</span>,
         <span class="ident">len</span>: <span class="ident">usize</span>,
         <span class="kw-2">mut</span> <span class="ident">mapped_addr</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">VirtAddr</span><span class="op">&gt;</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
         <span class="kw">let</span> <span class="ident">options</span> <span class="op">=</span> <span class="ident">VmOptions</span>::<span class="ident">from_bits</span>(<span class="ident">options</span>).<span class="ident">ok_or</span>(<span class="ident">ZxError</span>::<span class="ident">INVALID_ARGS</span>)<span class="question-mark">?</span>;
         <span class="macro">info</span><span class="macro">!</span>(
-            <span class="string">&quot;vmar.map: vmar_handle={:?}, options={:?}, vmar_offset={:#x?}, vmo_handle={:?}, vmo_offset={:#x?}, len={:#x?}&quot;</span>,
+            <span class="string">&quot;vmar.map: vmar_handle={:#x?}, options={:?}, vmar_offset={:#x?}, vmo_handle={:#x?}, vmo_offset={:#x?}, len={:#x?}&quot;</span>,
             <span class="ident">vmar_handle</span>, <span class="ident">options</span>, <span class="ident">vmar_offset</span>, <span class="ident">vmo_handle</span>, <span class="ident">vmo_offset</span>, <span class="ident">len</span>
         );
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>();
         <span class="kw">let</span> (<span class="ident">vmar</span>, <span class="ident">vmar_rights</span>) <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_object_and_rights</span>::<span class="op">&lt;</span><span class="ident">VmAddressRegion</span><span class="op">&gt;</span>(<span class="ident">vmar_handle</span>)<span class="question-mark">?</span>;
-        <span class="kw">let</span> (<span class="ident">vmo</span>, <span class="ident">vmo_rights</span>) <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_vmo_and_rights</span>(<span class="ident">vmo_handle</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> (<span class="ident">vmo</span>, <span class="ident">vmo_rights</span>) <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_object_and_rights</span>::<span class="op">&lt;</span><span class="ident">VmObject</span><span class="op">&gt;</span>(<span class="ident">vmo_handle</span>)<span class="question-mark">?</span>;
         <span class="kw">if</span> <span class="op">!</span><span class="ident">vmo_rights</span>.<span class="ident">contains</span>(<span class="ident">Rights</span>::<span class="ident">MAP</span>) {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">ACCESS_DENIED</span>);
         };
@@ -317,6 +364,11 @@
             <span class="ident">MMUFlags</span>::<span class="ident">EXECUTE</span>,
             <span class="ident">vmar_rights</span>.<span class="ident">contains</span>(<span class="ident">Rights</span>::<span class="ident">EXECUTE</span>) <span class="kw-2">&amp;</span><span class="op">&amp;</span> <span class="ident">vmo_rights</span>.<span class="ident">contains</span>(<span class="ident">Rights</span>::<span class="ident">EXECUTE</span>),
         );
+        <span class="macro">info</span><span class="macro">!</span>(
+            <span class="string">&quot;mmuflags: {:?}, is_specific {:?}&quot;</span>,
+            <span class="ident">mapping_flags</span>, <span class="ident">is_specific</span>
+        );
+        <span class="kw">let</span> <span class="ident">len</span> <span class="op">=</span> <span class="ident">pages</span>(<span class="ident">len</span>) <span class="op">*</span> <span class="ident">PAGE_SIZE</span>;
         <span class="kw">let</span> <span class="ident">vaddr</span> <span class="op">=</span> <span class="kw">if</span> <span class="ident">is_specific</span> {
             <span class="ident">vmar</span>.<span class="ident">map_at</span>(<span class="ident">vmar_offset</span>, <span class="ident">vmo</span>, <span class="ident">vmo_offset</span>, <span class="ident">len</span>, <span class="ident">mapping_flags</span>)<span class="question-mark">?</span>
         } <span class="kw">else</span> {
@@ -324,7 +376,49 @@
         };
         <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;vmar.map: at {:#x?}&quot;</span>, <span class="ident">vaddr</span>);
         <span class="ident">mapped_addr</span>.<span class="ident">write</span>(<span class="ident">vaddr</span>)<span class="question-mark">?</span>;
-        <span class="prelude-val">Ok</span>(<span class="number">0</span>)
+        <span class="prelude-val">Ok</span>(())
+    }
+
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_vmar_destroy</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">handle_value</span>: <span class="ident">HandleValue</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+        <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;vmar.destroy: handle={:?}&quot;</span>, <span class="ident">handle_value</span>);
+        <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>();
+        <span class="kw">let</span> <span class="ident">vmar</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_object</span>::<span class="op">&lt;</span><span class="ident">VmAddressRegion</span><span class="op">&gt;</span>(<span class="ident">handle_value</span>)<span class="question-mark">?</span>;
+        <span class="ident">vmar</span>.<span class="ident">destroy</span>()<span class="question-mark">?</span>;
+        <span class="prelude-val">Ok</span>(())
+    }
+
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_vmar_protect</span>(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        <span class="ident">handle_value</span>: <span class="ident">HandleValue</span>,
+        <span class="ident">options</span>: <span class="ident">u32</span>,
+        <span class="ident">addr</span>: <span class="ident">u64</span>,
+        <span class="ident">len</span>: <span class="ident">u64</span>,
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+        <span class="kw">let</span> <span class="ident">options</span> <span class="op">=</span> <span class="ident">VmOptions</span>::<span class="ident">from_bits</span>(<span class="ident">options</span>).<span class="ident">ok_or</span>(<span class="ident">ZxError</span>::<span class="ident">INVALID_ARGS</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">rights</span> <span class="op">=</span> <span class="ident">options</span>.<span class="ident">to_rights</span>();
+        <span class="macro">info</span><span class="macro">!</span>(
+            <span class="string">&quot;vmar.protect: handle={:#x}, options={:#x}, addr={:#x}, len={:#x}&quot;</span>,
+            <span class="ident">handle_value</span>, <span class="ident">options</span>, <span class="ident">addr</span>, <span class="ident">len</span>
+        );
+        <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>();
+        <span class="kw">let</span> <span class="ident">vmar</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">VmAddressRegion</span><span class="op">&gt;</span>(<span class="ident">handle_value</span>, <span class="ident">rights</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">mapping_flags</span> <span class="op">=</span> <span class="ident">MMUFlags</span>::<span class="ident">empty</span>();
+        <span class="ident">mapping_flags</span>.<span class="ident">set</span>(<span class="ident">MMUFlags</span>::<span class="ident">READ</span>, <span class="ident">options</span>.<span class="ident">contains</span>(<span class="ident">VmOptions</span>::<span class="ident">PERM_READ</span>));
+        <span class="ident">mapping_flags</span>.<span class="ident">set</span>(<span class="ident">MMUFlags</span>::<span class="ident">WRITE</span>, <span class="ident">options</span>.<span class="ident">contains</span>(<span class="ident">VmOptions</span>::<span class="ident">PERM_WRITE</span>));
+        <span class="ident">mapping_flags</span>.<span class="ident">set</span>(<span class="ident">MMUFlags</span>::<span class="ident">EXECUTE</span>, <span class="ident">options</span>.<span class="ident">contains</span>(<span class="ident">VmOptions</span>::<span class="ident">PERM_EXECUTE</span>));
+        <span class="ident">vmar</span>.<span class="ident">protect</span>(<span class="ident">addr</span> <span class="kw">as</span> <span class="ident">usize</span>, <span class="ident">len</span> <span class="kw">as</span> <span class="ident">usize</span>, <span class="ident">mapping_flags</span>)<span class="question-mark">?</span>;
+        <span class="prelude-val">Ok</span>(())
+    }
+
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_vmar_unmap</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">handle_value</span>: <span class="ident">HandleValue</span>, <span class="ident">addr</span>: <span class="ident">usize</span>, <span class="ident">len</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+        <span class="macro">info</span><span class="macro">!</span>(
+            <span class="string">&quot;vmar.unmap: handle_value={:#x}, addr={:#x}, len={:#x}&quot;</span>,
+            <span class="ident">handle_value</span>, <span class="ident">addr</span>, <span class="ident">len</span>
+        );
+        <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>();
+        <span class="kw">let</span> <span class="ident">vmar</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_object</span>::<span class="op">&lt;</span><span class="ident">VmAddressRegion</span><span class="op">&gt;</span>(<span class="ident">handle_value</span>)<span class="question-mark">?</span>;
+        <span class="ident">vmar</span>.<span class="ident">unmap</span>(<span class="ident">addr</span>, <span class="ident">pages</span>(<span class="ident">len</span>) <span class="op">*</span> <span class="ident">PAGE_SIZE</span>)<span class="question-mark">?</span>;
+        <span class="prelude-val">Ok</span>(())
     }
 }
 

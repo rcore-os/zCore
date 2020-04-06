@@ -192,6 +192,7 @@
 <span id="192">192</span>
 <span id="193">193</span>
 <span id="194">194</span>
+<span id="195">195</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> <span class="kw">super</span>::<span class="ident">GeneralRegs</span>;
 
@@ -236,7 +237,7 @@
     mov fs:48, rdx          # user_fs:48 = kernel fsbase
 .endm
 
-.global syscall_entry
+.global unix_syscall_entry
 .global run_user
 &quot;#</span>
 );
@@ -288,9 +289,9 @@
     mov gs:48, rsi          # user_gs:48 = kernel gsbase
 .endm
 
-.global _syscall_entry
+.global _unix_syscall_entry
 .global _run_user
-.set _syscall_entry, syscall_entry
+.set _unix_syscall_entry, unix_syscall_entry
 .set _run_user, run_user
 &quot;#</span>
 );
@@ -298,7 +299,7 @@
 <span class="macro">global_asm</span><span class="macro">!</span>(
     <span class="string">r#&quot;
 .intel_syntax noprefix
-syscall_entry:
+unix_syscall_entry:
     # save rsp
     lea r11, [rsp + 8]      # save rsp to r11 (clobber)
 
@@ -384,6 +385,7 @@ run_user:
 );
 
 <span class="kw">extern</span> <span class="string">&quot;C&quot;</span> {
+    <span class="attribute">#[<span class="ident">link_name</span> <span class="op">=</span> <span class="string">&quot;unix_syscall_entry&quot;</span>]</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">syscall_entry</span>();
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">run_user</span>(<span class="ident">regs</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">GeneralRegs</span>);
 }

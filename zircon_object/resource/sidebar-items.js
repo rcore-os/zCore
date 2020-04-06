@@ -1,1 +1,1 @@
-initSidebarItems({"enum":[["ResourceKind","ResourceKind definition from fuchsia/zircon/system/public/zircon/syscalls/resource.h"]],"struct":[["Resource","Address space rights and accounting."]]});
+initSidebarItems({"enum":[["ResourceKind","ResourceKind definition from fuchsia/zircon/system/public/zircon/syscalls/resource.h"]],"struct":[["Resource","Address space rights and accounting."],["ResourceFlags",""]]});

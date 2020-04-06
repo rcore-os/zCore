@@ -146,6 +146,139 @@
 <span id="146">146</span>
 <span id="147">147</span>
 <span id="148">148</span>
+<span id="149">149</span>
+<span id="150">150</span>
+<span id="151">151</span>
+<span id="152">152</span>
+<span id="153">153</span>
+<span id="154">154</span>
+<span id="155">155</span>
+<span id="156">156</span>
+<span id="157">157</span>
+<span id="158">158</span>
+<span id="159">159</span>
+<span id="160">160</span>
+<span id="161">161</span>
+<span id="162">162</span>
+<span id="163">163</span>
+<span id="164">164</span>
+<span id="165">165</span>
+<span id="166">166</span>
+<span id="167">167</span>
+<span id="168">168</span>
+<span id="169">169</span>
+<span id="170">170</span>
+<span id="171">171</span>
+<span id="172">172</span>
+<span id="173">173</span>
+<span id="174">174</span>
+<span id="175">175</span>
+<span id="176">176</span>
+<span id="177">177</span>
+<span id="178">178</span>
+<span id="179">179</span>
+<span id="180">180</span>
+<span id="181">181</span>
+<span id="182">182</span>
+<span id="183">183</span>
+<span id="184">184</span>
+<span id="185">185</span>
+<span id="186">186</span>
+<span id="187">187</span>
+<span id="188">188</span>
+<span id="189">189</span>
+<span id="190">190</span>
+<span id="191">191</span>
+<span id="192">192</span>
+<span id="193">193</span>
+<span id="194">194</span>
+<span id="195">195</span>
+<span id="196">196</span>
+<span id="197">197</span>
+<span id="198">198</span>
+<span id="199">199</span>
+<span id="200">200</span>
+<span id="201">201</span>
+<span id="202">202</span>
+<span id="203">203</span>
+<span id="204">204</span>
+<span id="205">205</span>
+<span id="206">206</span>
+<span id="207">207</span>
+<span id="208">208</span>
+<span id="209">209</span>
+<span id="210">210</span>
+<span id="211">211</span>
+<span id="212">212</span>
+<span id="213">213</span>
+<span id="214">214</span>
+<span id="215">215</span>
+<span id="216">216</span>
+<span id="217">217</span>
+<span id="218">218</span>
+<span id="219">219</span>
+<span id="220">220</span>
+<span id="221">221</span>
+<span id="222">222</span>
+<span id="223">223</span>
+<span id="224">224</span>
+<span id="225">225</span>
+<span id="226">226</span>
+<span id="227">227</span>
+<span id="228">228</span>
+<span id="229">229</span>
+<span id="230">230</span>
+<span id="231">231</span>
+<span id="232">232</span>
+<span id="233">233</span>
+<span id="234">234</span>
+<span id="235">235</span>
+<span id="236">236</span>
+<span id="237">237</span>
+<span id="238">238</span>
+<span id="239">239</span>
+<span id="240">240</span>
+<span id="241">241</span>
+<span id="242">242</span>
+<span id="243">243</span>
+<span id="244">244</span>
+<span id="245">245</span>
+<span id="246">246</span>
+<span id="247">247</span>
+<span id="248">248</span>
+<span id="249">249</span>
+<span id="250">250</span>
+<span id="251">251</span>
+<span id="252">252</span>
+<span id="253">253</span>
+<span id="254">254</span>
+<span id="255">255</span>
+<span id="256">256</span>
+<span id="257">257</span>
+<span id="258">258</span>
+<span id="259">259</span>
+<span id="260">260</span>
+<span id="261">261</span>
+<span id="262">262</span>
+<span id="263">263</span>
+<span id="264">264</span>
+<span id="265">265</span>
+<span id="266">266</span>
+<span id="267">267</span>
+<span id="268">268</span>
+<span id="269">269</span>
+<span id="270">270</span>
+<span id="271">271</span>
+<span id="272">272</span>
+<span id="273">273</span>
+<span id="274">274</span>
+<span id="275">275</span>
+<span id="276">276</span>
+<span id="277">277</span>
+<span id="278">278</span>
+<span id="279">279</span>
+<span id="280">280</span>
+<span id="281">281</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> {
     <span class="kw">super</span>::<span class="kw-2">*</span>,
@@ -159,16 +292,15 @@
 
 <span class="doccomment">/// The main VM object type, holding a list of pages.</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">VMObjectPaged</span> {
-    <span class="ident">base</span>: <span class="ident">KObjectBase</span>,
     <span class="ident">inner</span>: <span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">VMObjectPagedInner</span><span class="op">&gt;</span>,
 }
 
 <span class="doccomment">/// The mutable part of `VMObjectPaged`.</span>
 <span class="kw">struct</span> <span class="ident">VMObjectPagedInner</span> {
+    <span class="ident">parent</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">VMObjectPaged</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+    <span class="ident">parent_offset</span>: <span class="ident">usize</span>,
     <span class="ident">frames</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">PhysFrame</span><span class="op">&gt;</span><span class="op">&gt;</span>,
 }
-
-<span class="macro">impl_kobject</span><span class="macro">!</span>(<span class="ident">VMObjectPaged</span>);
 
 <span class="kw">impl</span> <span class="ident">VMObjectPaged</span> {
     <span class="doccomment">/// Create a new VMO backing on physical memory allocated in pages.</span>
@@ -177,67 +309,14 @@
         <span class="ident">frames</span>.<span class="ident">resize_with</span>(<span class="ident">pages</span>, <span class="ident">Default</span>::<span class="ident">default</span>);
 
         <span class="ident">Arc</span>::<span class="ident">new</span>(<span class="ident">VMObjectPaged</span> {
-            <span class="ident">base</span>: <span class="ident">KObjectBase</span>::<span class="ident">default</span>(),
-            <span class="ident">inner</span>: <span class="ident">Mutex</span>::<span class="ident">new</span>(<span class="ident">VMObjectPagedInner</span> { <span class="ident">frames</span> }),
+            <span class="ident">inner</span>: <span class="ident">Mutex</span>::<span class="ident">new</span>(<span class="ident">VMObjectPagedInner</span> {
+                <span class="ident">parent</span>: <span class="prelude-val">None</span>,
+                <span class="ident">parent_offset</span>: <span class="number">0usize</span>,
+                <span class="ident">frames</span>,
+            }),
         })
     }
-}
 
-<span class="kw">impl</span> <span class="ident">VMObject</span> <span class="kw">for</span> <span class="ident">VMObjectPaged</span> {
-    <span class="kw">fn</span> <span class="ident">read</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">offset</span>: <span class="ident">usize</span>, <span class="ident">buf</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> [<span class="ident">u8</span>]) {
-        <span class="self">self</span>.<span class="ident">inner</span>
-            .<span class="ident">lock</span>()
-            .<span class="ident">for_each_page</span>(<span class="ident">offset</span>, <span class="ident">buf</span>.<span class="ident">len</span>(), <span class="op">|</span><span class="ident">paddr</span>, <span class="ident">buf_range</span><span class="op">|</span> {
-                <span class="ident">kernel_hal</span>::<span class="ident">pmem_read</span>(<span class="ident">paddr</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">buf</span>[<span class="ident">buf_range</span>]);
-            });
-    }
-
-    <span class="kw">fn</span> <span class="ident">write</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">offset</span>: <span class="ident">usize</span>, <span class="ident">buf</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]) {
-        <span class="self">self</span>.<span class="ident">inner</span>
-            .<span class="ident">lock</span>()
-            .<span class="ident">for_each_page</span>(<span class="ident">offset</span>, <span class="ident">buf</span>.<span class="ident">len</span>(), <span class="op">|</span><span class="ident">paddr</span>, <span class="ident">buf_range</span><span class="op">|</span> {
-                <span class="ident">kernel_hal</span>::<span class="ident">pmem_write</span>(<span class="ident">paddr</span>, <span class="kw-2">&amp;</span><span class="ident">buf</span>[<span class="ident">buf_range</span>]);
-            });
-    }
-
-    <span class="kw">fn</span> <span class="ident">len</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
-        <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">frames</span>.<span class="ident">len</span>() <span class="op">*</span> <span class="ident">PAGE_SIZE</span>
-    }
-
-    <span class="kw">fn</span> <span class="ident">set_len</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">_len</span>: <span class="ident">usize</span>) {
-        <span class="macro">unimplemented</span><span class="macro">!</span>()
-    }
-
-    <span class="kw">fn</span> <span class="ident">map_to</span>(
-        <span class="kw-2">&amp;</span><span class="self">self</span>,
-        <span class="ident">page_table</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">PageTable</span>,
-        <span class="ident">vaddr</span>: <span class="ident">usize</span>,
-        <span class="ident">offset</span>: <span class="ident">usize</span>,
-        <span class="ident">len</span>: <span class="ident">usize</span>,
-        <span class="ident">flags</span>: <span class="ident">MMUFlags</span>,
-    ) {
-        <span class="kw">let</span> <span class="ident">start_page</span> <span class="op">=</span> <span class="ident">offset</span> <span class="op">/</span> <span class="ident">PAGE_SIZE</span>;
-        <span class="kw">let</span> <span class="ident">pages</span> <span class="op">=</span> <span class="ident">len</span> <span class="op">/</span> <span class="ident">PAGE_SIZE</span>;
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
-        <span class="kw">for</span> <span class="ident">i</span> <span class="kw">in</span> <span class="number">0</span>..<span class="ident">pages</span> {
-            <span class="kw">let</span> <span class="ident">frame</span> <span class="op">=</span> <span class="ident">inner</span>.<span class="ident">commit</span>(<span class="ident">start_page</span> <span class="op">+</span> <span class="ident">i</span>);
-            <span class="ident">page_table</span>
-                .<span class="ident">map</span>(<span class="ident">vaddr</span> <span class="op">+</span> <span class="ident">i</span> <span class="op">*</span> <span class="ident">PAGE_SIZE</span>, <span class="ident">frame</span>.<span class="ident">addr</span>(), <span class="ident">flags</span>)
-                .<span class="ident">expect</span>(<span class="string">&quot;failed to map&quot;</span>);
-        }
-    }
-
-    <span class="kw">fn</span> <span class="ident">commit</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">offset</span>: <span class="ident">usize</span>, <span class="ident">len</span>: <span class="ident">usize</span>) {
-        <span class="kw">let</span> <span class="ident">start_page</span> <span class="op">=</span> <span class="ident">offset</span> <span class="op">/</span> <span class="ident">PAGE_SIZE</span>;
-        <span class="kw">let</span> <span class="ident">pages</span> <span class="op">=</span> <span class="ident">len</span> <span class="op">/</span> <span class="ident">PAGE_SIZE</span>;
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
-        <span class="kw">for</span> <span class="ident">i</span> <span class="kw">in</span> <span class="number">0</span>..<span class="ident">pages</span> {
-            <span class="ident">inner</span>.<span class="ident">commit</span>(<span class="ident">start_page</span> <span class="op">+</span> <span class="ident">i</span>);
-        }
-    }
-}
-
-<span class="kw">impl</span> <span class="ident">VMObjectPagedInner</span> {
     <span class="doccomment">/// Helper function to split range into sub-ranges within pages.</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// All covered pages will be committed implicitly.</span>
@@ -261,9 +340,10 @@
     <span class="doccomment">/// * `paddr`: the start physical address of the in-page range.</span>
     <span class="doccomment">/// * `buf_range`: the range in view of the input buffer.</span>
     <span class="kw">fn</span> <span class="ident">for_each_page</span>(
-        <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">offset</span>: <span class="ident">usize</span>,
         <span class="ident">buf_len</span>: <span class="ident">usize</span>,
+        <span class="ident">for_write</span>: <span class="ident">bool</span>,
         <span class="kw-2">mut</span> <span class="ident">f</span>: <span class="kw">impl</span> <span class="ident">FnMut</span>(<span class="ident">PhysAddr</span>, <span class="ident">Range</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>),
     ) {
         <span class="kw">let</span> <span class="ident">iter</span> <span class="op">=</span> <span class="ident">BlockIter</span> {
@@ -272,16 +352,185 @@
             <span class="ident">block_size_log2</span>: <span class="number">12</span>,
         };
         <span class="kw">for</span> <span class="ident">block</span> <span class="kw">in</span> <span class="ident">iter</span> {
-            <span class="self">self</span>.<span class="ident">commit</span>(<span class="ident">block</span>.<span class="ident">block</span>);
-            <span class="kw">let</span> <span class="ident">paddr</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">frames</span>[<span class="ident">block</span>.<span class="ident">block</span>].<span class="ident">as_ref</span>().<span class="ident">unwrap</span>().<span class="ident">addr</span>();
+            <span class="kw">let</span> <span class="ident">paddr</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">get_page</span>(<span class="ident">block</span>.<span class="ident">block</span>, <span class="ident">for_write</span>);
             <span class="kw">let</span> <span class="ident">buf_range</span> <span class="op">=</span> <span class="ident">block</span>.<span class="ident">origin_begin</span>() <span class="op">-</span> <span class="ident">offset</span>..<span class="ident">block</span>.<span class="ident">origin_end</span>() <span class="op">-</span> <span class="ident">offset</span>;
             <span class="ident">f</span>(<span class="ident">paddr</span> <span class="op">+</span> <span class="ident">block</span>.<span class="ident">begin</span>, <span class="ident">buf_range</span>);
         }
     }
 
+    <span class="kw">fn</span> <span class="ident">get_page</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">page_idx</span>: <span class="ident">usize</span>, <span class="ident">for_write</span>: <span class="ident">bool</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">PhysAddr</span> {
+        <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">get_page</span>(<span class="ident">page_idx</span>, <span class="ident">for_write</span>)
+    }
+}
+
+<span class="kw">impl</span> <span class="ident">VMObjectTrait</span> <span class="kw">for</span> <span class="ident">VMObjectPaged</span> {
+    <span class="kw">fn</span> <span class="ident">read</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">offset</span>: <span class="ident">usize</span>, <span class="ident">buf</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> [<span class="ident">u8</span>]) {
+        <span class="self">self</span>.<span class="ident">for_each_page</span>(<span class="ident">offset</span>, <span class="ident">buf</span>.<span class="ident">len</span>(), <span class="bool-val">false</span>, <span class="op">|</span><span class="ident">paddr</span>, <span class="ident">buf_range</span><span class="op">|</span> {
+            <span class="ident">kernel_hal</span>::<span class="ident">pmem_read</span>(<span class="ident">paddr</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">buf</span>[<span class="ident">buf_range</span>]);
+        });
+    }
+
+    <span class="kw">fn</span> <span class="ident">write</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">offset</span>: <span class="ident">usize</span>, <span class="ident">buf</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]) {
+        <span class="self">self</span>.<span class="ident">for_each_page</span>(<span class="ident">offset</span>, <span class="ident">buf</span>.<span class="ident">len</span>(), <span class="bool-val">true</span>, <span class="op">|</span><span class="ident">paddr</span>, <span class="ident">buf_range</span><span class="op">|</span> {
+            <span class="ident">kernel_hal</span>::<span class="ident">pmem_write</span>(<span class="ident">paddr</span>, <span class="kw-2">&amp;</span><span class="ident">buf</span>[<span class="ident">buf_range</span>]);
+        });
+    }
+
+    <span class="kw">fn</span> <span class="ident">len</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
+        <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">frames</span>.<span class="ident">len</span>() <span class="op">*</span> <span class="ident">PAGE_SIZE</span>
+    }
+
+    <span class="kw">fn</span> <span class="ident">set_len</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">len</span>: <span class="ident">usize</span>) {
+        <span class="macro">assert</span><span class="macro">!</span>(<span class="ident">page_aligned</span>(<span class="ident">len</span>));
+        <span class="comment">// FIXME parent and children? len &lt; old_len?</span>
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
+        <span class="kw">let</span> <span class="ident">old_pages</span> <span class="op">=</span> <span class="ident">inner</span>.<span class="ident">frames</span>.<span class="ident">len</span>();
+        <span class="kw">let</span> <span class="ident">new_pages</span> <span class="op">=</span> <span class="ident">len</span> <span class="op">/</span> <span class="ident">PAGE_SIZE</span>;
+        <span class="kw">if</span> <span class="ident">old_pages</span> <span class="op">&lt;</span> <span class="ident">new_pages</span> {
+            <span class="ident">inner</span>.<span class="ident">frames</span>.<span class="ident">resize_with</span>(<span class="ident">new_pages</span>, <span class="ident">Default</span>::<span class="ident">default</span>);
+            (<span class="ident">old_pages</span>..<span class="ident">new_pages</span>).<span class="ident">for_each</span>(<span class="op">|</span><span class="ident">idx</span><span class="op">|</span> {
+                <span class="ident">inner</span>.<span class="ident">commit</span>(<span class="ident">idx</span>);
+            });
+        } <span class="kw">else</span> <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">parent</span>.<span class="ident">is_none</span>() {
+            <span class="ident">inner</span>.<span class="ident">frames</span>.<span class="ident">resize_with</span>(<span class="ident">new_pages</span>, <span class="ident">Default</span>::<span class="ident">default</span>);
+            (<span class="ident">old_pages</span>..<span class="ident">new_pages</span>).<span class="ident">for_each</span>(<span class="op">|</span><span class="ident">idx</span><span class="op">|</span> {
+                <span class="ident">inner</span>.<span class="ident">get_page</span>(<span class="ident">idx</span>, <span class="bool-val">true</span>);
+            });
+        } <span class="kw">else</span> {
+            <span class="macro">unimplemented</span><span class="macro">!</span>()
+        }
+    }
+
+    <span class="kw">fn</span> <span class="ident">map_to</span>(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        <span class="ident">page_table</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">PageTable</span>,
+        <span class="ident">vaddr</span>: <span class="ident">usize</span>,
+        <span class="ident">offset</span>: <span class="ident">usize</span>,
+        <span class="ident">len</span>: <span class="ident">usize</span>,
+        <span class="ident">flags</span>: <span class="ident">MMUFlags</span>,
+    ) {
+        <span class="kw">let</span> <span class="ident">start_page</span> <span class="op">=</span> <span class="ident">offset</span> <span class="op">/</span> <span class="ident">PAGE_SIZE</span>;
+        <span class="kw">let</span> <span class="ident">pages</span> <span class="op">=</span> <span class="ident">len</span> <span class="op">/</span> <span class="ident">PAGE_SIZE</span>;
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
+        <span class="kw">for</span> <span class="ident">i</span> <span class="kw">in</span> <span class="number">0</span>..<span class="ident">pages</span> {
+            <span class="kw">let</span> <span class="ident">paddr</span> <span class="op">=</span> <span class="ident">inner</span>.<span class="ident">get_page</span>(<span class="ident">start_page</span> <span class="op">+</span> <span class="ident">i</span>, <span class="bool-val">true</span>);
+            <span class="ident">page_table</span>
+                .<span class="ident">map</span>(<span class="ident">vaddr</span> <span class="op">+</span> <span class="ident">i</span> <span class="op">*</span> <span class="ident">PAGE_SIZE</span>, <span class="ident">paddr</span>, <span class="ident">flags</span>)
+                .<span class="ident">expect</span>(<span class="string">&quot;failed to map&quot;</span>);
+        }
+    }
+
+    <span class="kw">fn</span> <span class="ident">commit</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">offset</span>: <span class="ident">usize</span>, <span class="ident">len</span>: <span class="ident">usize</span>) {
+        <span class="kw">let</span> <span class="ident">start_page</span> <span class="op">=</span> <span class="ident">offset</span> <span class="op">/</span> <span class="ident">PAGE_SIZE</span>;
+        <span class="kw">let</span> <span class="ident">pages</span> <span class="op">=</span> <span class="ident">len</span> <span class="op">/</span> <span class="ident">PAGE_SIZE</span>;
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
+        <span class="kw">for</span> <span class="ident">i</span> <span class="kw">in</span> <span class="number">0</span>..<span class="ident">pages</span> {
+            <span class="ident">inner</span>.<span class="ident">commit</span>(<span class="ident">start_page</span> <span class="op">+</span> <span class="ident">i</span>);
+        }
+    }
+
+    <span class="kw">fn</span> <span class="ident">decommit</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">offset</span>: <span class="ident">usize</span>, <span class="ident">len</span>: <span class="ident">usize</span>) {
+        <span class="kw">let</span> <span class="ident">start_page</span> <span class="op">=</span> <span class="ident">offset</span> <span class="op">/</span> <span class="ident">PAGE_SIZE</span>;
+        <span class="kw">let</span> <span class="ident">pages</span> <span class="op">=</span> <span class="ident">len</span> <span class="op">/</span> <span class="ident">PAGE_SIZE</span>;
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
+        <span class="kw">for</span> <span class="ident">i</span> <span class="kw">in</span> <span class="number">0</span>..<span class="ident">pages</span> {
+            <span class="ident">inner</span>.<span class="ident">decommit</span>(<span class="ident">start_page</span> <span class="op">+</span> <span class="ident">i</span>);
+        }
+    }
+
+    <span class="kw">fn</span> <span class="ident">create_child</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">offset</span>: <span class="ident">usize</span>, <span class="ident">len</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">VMObjectTrait</span><span class="op">&gt;</span> {
+        <span class="macro">assert</span><span class="macro">!</span>(<span class="ident">page_aligned</span>(<span class="ident">offset</span>));
+        <span class="macro">assert</span><span class="macro">!</span>(<span class="ident">page_aligned</span>(<span class="ident">len</span>));
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">frames</span> <span class="op">=</span> <span class="ident">Vec</span>::<span class="ident">new</span>();
+        <span class="kw">let</span> <span class="ident">pages</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">len</span>() <span class="op">/</span> <span class="ident">PAGE_SIZE</span>;
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
+        <span class="ident">frames</span>.<span class="ident">append</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">inner</span>.<span class="ident">frames</span>);
+        <span class="kw">let</span> <span class="ident">old_parent</span> <span class="op">=</span> <span class="ident">inner</span>.<span class="ident">parent</span>.<span class="ident">take</span>();
+
+        <span class="comment">// construct hidden_vmo as shared parent</span>
+        <span class="kw">let</span> <span class="ident">hidden_vmo</span> <span class="op">=</span> <span class="ident">Arc</span>::<span class="ident">new</span>(<span class="ident">VMObjectPaged</span> {
+            <span class="ident">inner</span>: <span class="ident">Mutex</span>::<span class="ident">new</span>(<span class="ident">VMObjectPagedInner</span> {
+                <span class="ident">parent</span>: <span class="ident">old_parent</span>,
+                <span class="ident">parent_offset</span>: <span class="number">0usize</span>,
+                <span class="ident">frames</span>,
+            }),
+        });
+
+        <span class="comment">// change current vmo&#39;s parent</span>
+        <span class="ident">inner</span>.<span class="ident">parent</span> <span class="op">=</span> <span class="prelude-val">Some</span>(<span class="ident">hidden_vmo</span>.<span class="ident">clone</span>());
+        <span class="ident">inner</span>.<span class="ident">frames</span>.<span class="ident">resize_with</span>(<span class="ident">pages</span>, <span class="ident">Default</span>::<span class="ident">default</span>);
+
+        <span class="comment">// create hidden_vmo&#39;s another child as result</span>
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">child_frames</span> <span class="op">=</span> <span class="ident">Vec</span>::<span class="ident">new</span>();
+        <span class="ident">child_frames</span>.<span class="ident">resize_with</span>(<span class="ident">len</span> <span class="op">/</span> <span class="ident">PAGE_SIZE</span>, <span class="ident">Default</span>::<span class="ident">default</span>);
+        <span class="ident">Arc</span>::<span class="ident">new</span>(<span class="ident">VMObjectPaged</span> {
+            <span class="ident">inner</span>: <span class="ident">Mutex</span>::<span class="ident">new</span>(<span class="ident">VMObjectPagedInner</span> {
+                <span class="ident">parent</span>: <span class="prelude-val">Some</span>(<span class="ident">hidden_vmo</span>),
+                <span class="ident">parent_offset</span>: <span class="ident">offset</span>,
+                <span class="ident">frames</span>: <span class="ident">child_frames</span>,
+            }),
+        })
+    }
+
+    <span class="kw">fn</span> <span class="ident">create_clone</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">offset</span>: <span class="ident">usize</span>, <span class="ident">len</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">VMObjectTrait</span><span class="op">&gt;</span> {
+        <span class="macro">assert</span><span class="macro">!</span>(<span class="ident">page_aligned</span>(<span class="ident">offset</span>));
+        <span class="macro">assert</span><span class="macro">!</span>(<span class="ident">page_aligned</span>(<span class="ident">len</span>));
+        <span class="kw">let</span> <span class="ident">frames_offset</span> <span class="op">=</span> <span class="ident">pages</span>(<span class="ident">offset</span>);
+        <span class="kw">let</span> <span class="ident">clone_size</span> <span class="op">=</span> <span class="ident">pages</span>(<span class="ident">len</span>);
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">frames</span> <span class="op">=</span> <span class="ident">Vec</span>::<span class="ident">new</span>();
+        <span class="ident">frames</span>.<span class="ident">resize_with</span>(<span class="ident">clone_size</span>, <span class="op">|</span><span class="op">|</span> {
+            <span class="prelude-val">Some</span>(<span class="ident">PhysFrame</span>::<span class="ident">alloc</span>().<span class="ident">expect</span>(<span class="string">&quot;faild to alloc frame&quot;</span>))
+        });
+        <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
+        <span class="comment">// copy physical memory</span>
+        <span class="kw">for</span> (<span class="ident">i</span>, <span class="ident">new_frame</span>) <span class="kw">in</span> <span class="ident">frames</span>.<span class="ident">iter</span>().<span class="ident">enumerate</span>() {
+            <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">frame</span>) <span class="op">=</span> <span class="kw-2">&amp;</span><span class="ident">inner</span>.<span class="ident">frames</span>[<span class="ident">frames_offset</span> <span class="op">+</span> <span class="ident">i</span>] {
+                <span class="ident">kernel_hal</span>::<span class="ident">frame_copy</span>(<span class="ident">frame</span>.<span class="ident">addr</span>(), <span class="ident">new_frame</span>.<span class="ident">as_ref</span>().<span class="ident">unwrap</span>().<span class="ident">addr</span>());
+            }
+        }
+        <span class="ident">Arc</span>::<span class="ident">new</span>(<span class="ident">VMObjectPaged</span> {
+            <span class="ident">inner</span>: <span class="ident">Mutex</span>::<span class="ident">new</span>(<span class="ident">VMObjectPagedInner</span> {
+                <span class="ident">parent</span>: <span class="prelude-val">None</span>,
+                <span class="ident">parent_offset</span>: <span class="ident">offset</span>,
+                <span class="ident">frames</span>,
+            }),
+        })
+    }
+}
+
+<span class="kw">impl</span> <span class="ident">VMObjectPagedInner</span> {
     <span class="kw">fn</span> <span class="ident">commit</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">page_idx</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="ident">PhysFrame</span> {
         <span class="self">self</span>.<span class="ident">frames</span>[<span class="ident">page_idx</span>]
             .<span class="ident">get_or_insert_with</span>(<span class="op">|</span><span class="op">|</span> <span class="ident">PhysFrame</span>::<span class="ident">alloc</span>().<span class="ident">expect</span>(<span class="string">&quot;failed to alloc frame&quot;</span>))
+    }
+
+    <span class="kw">fn</span> <span class="ident">decommit</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">page_idx</span>: <span class="ident">usize</span>) {
+        <span class="self">self</span>.<span class="ident">frames</span>[<span class="ident">page_idx</span>] <span class="op">=</span> <span class="prelude-val">None</span>;
+    }
+
+    <span class="kw">fn</span> <span class="ident">get_page</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">page_idx</span>: <span class="ident">usize</span>, <span class="ident">for_write</span>: <span class="ident">bool</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">PhysAddr</span> {
+        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">frame</span>) <span class="op">=</span> <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">frames</span>[<span class="ident">page_idx</span>] {
+            <span class="kw">return</span> <span class="ident">frame</span>.<span class="ident">addr</span>();
+        }
+        <span class="kw">let</span> <span class="ident">parent_idx_offset</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">parent_offset</span> <span class="op">/</span> <span class="ident">PAGE_SIZE</span>;
+        <span class="kw">if</span> <span class="ident">for_write</span> {
+            <span class="kw">let</span> <span class="ident">target_addr</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">commit</span>(<span class="ident">page_idx</span>).<span class="ident">addr</span>();
+            <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">parent</span>) <span class="op">=</span> <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">parent</span> {
+                <span class="comment">// copy on write</span>
+                <span class="ident">kernel_hal</span>::<span class="ident">frame_copy</span>(
+                    <span class="ident">parent</span>.<span class="ident">get_page</span>(<span class="ident">parent_idx_offset</span> <span class="op">+</span> <span class="ident">page_idx</span>, <span class="bool-val">false</span>),
+                    <span class="ident">target_addr</span>,
+                );
+            } <span class="kw">else</span> {
+                <span class="comment">// zero the page</span>
+                <span class="ident">kernel_hal</span>::<span class="ident">pmem_write</span>(<span class="ident">target_addr</span>, <span class="kw-2">&amp;</span>[<span class="number">0u8</span>; <span class="ident">PAGE_SIZE</span>]);
+            }
+            <span class="ident">target_addr</span>
+        } <span class="kw">else</span> <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">parent</span>) <span class="op">=</span> <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">parent</span> {
+            <span class="ident">parent</span>.<span class="ident">get_page</span>(<span class="ident">parent_idx_offset</span> <span class="op">+</span> <span class="ident">page_idx</span>, <span class="bool-val">false</span>)
+        } <span class="kw">else</span> {
+            <span class="self">self</span>.<span class="ident">commit</span>(<span class="ident">page_idx</span>).<span class="ident">addr</span>()
+        }
     }
 }
 
@@ -291,8 +540,25 @@
 
     <span class="attribute">#[<span class="ident">test</span>]</span>
     <span class="kw">fn</span> <span class="ident">read_write</span>() {
-        <span class="kw">let</span> <span class="ident">vmo</span> <span class="op">=</span> <span class="ident">VMObjectPaged</span>::<span class="ident">new</span>(<span class="number">2</span>);
+        <span class="kw">let</span> <span class="ident">vmo</span> <span class="op">=</span> <span class="ident">VmObject</span>::<span class="ident">new_paged</span>(<span class="number">2</span>);
         <span class="kw">super</span>::<span class="kw">super</span>::<span class="ident">tests</span>::<span class="ident">read_write</span>(<span class="kw-2">&amp;</span><span class="kw-2">*</span><span class="ident">vmo</span>);
+    }
+
+    <span class="attribute">#[<span class="ident">test</span>]</span>
+    <span class="kw">fn</span> <span class="ident">create_child</span>() {
+        <span class="kw">let</span> <span class="ident">vmo</span> <span class="op">=</span> <span class="ident">VmObject</span>::<span class="ident">new_paged</span>(<span class="number">10</span>);
+        <span class="ident">vmo</span>.<span class="ident">write</span>(<span class="number">0</span>, <span class="kw-2">&amp;</span>[<span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>, <span class="number">4</span>]);
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">buf</span> <span class="op">=</span> [<span class="number">0u8</span>; <span class="number">4</span>];
+        <span class="ident">vmo</span>.<span class="ident">read</span>(<span class="number">0</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">buf</span>);
+        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="kw-2">&amp;</span><span class="ident">buf</span>, <span class="kw-2">&amp;</span>[<span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>, <span class="number">4</span>]);
+        <span class="kw">let</span> <span class="ident">child_vmo</span> <span class="op">=</span> <span class="ident">vmo</span>.<span class="ident">create_child</span>(<span class="number">0</span>, <span class="number">4</span> <span class="op">*</span> <span class="number">4096</span>);
+        <span class="ident">child_vmo</span>.<span class="ident">read</span>(<span class="number">0</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">buf</span>);
+        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="kw-2">&amp;</span><span class="ident">buf</span>, <span class="kw-2">&amp;</span>[<span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>, <span class="number">4</span>]);
+        <span class="ident">child_vmo</span>.<span class="ident">write</span>(<span class="number">0</span>, <span class="kw-2">&amp;</span>[<span class="number">6</span>, <span class="number">7</span>, <span class="number">8</span>, <span class="number">9</span>]);
+        <span class="ident">vmo</span>.<span class="ident">read</span>(<span class="number">0</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">buf</span>);
+        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="kw-2">&amp;</span><span class="ident">buf</span>, <span class="kw-2">&amp;</span>[<span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>, <span class="number">4</span>]);
+        <span class="ident">child_vmo</span>.<span class="ident">read</span>(<span class="number">0</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">buf</span>);
+        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="kw-2">&amp;</span><span class="ident">buf</span>, <span class="kw-2">&amp;</span>[<span class="number">6</span>, <span class="number">7</span>, <span class="number">8</span>, <span class="number">9</span>]);
     }
 }
 </pre></div>

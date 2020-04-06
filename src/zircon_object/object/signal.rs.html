@@ -36,8 +36,28 @@
 <span id="36">36</span>
 <span id="37">37</span>
 <span id="38">38</span>
+<span id="39">39</span>
+<span id="40">40</span>
+<span id="41">41</span>
+<span id="42">42</span>
+<span id="43">43</span>
+<span id="44">44</span>
+<span id="45">45</span>
+<span id="46">46</span>
+<span id="47">47</span>
+<span id="48">48</span>
+<span id="49">49</span>
+<span id="50">50</span>
+<span id="51">51</span>
+<span id="52">52</span>
+<span id="53">53</span>
+<span id="54">54</span>
+<span id="55">55</span>
+<span id="56">56</span>
+<span id="57">57</span>
+<span id="58">58</span>
 </pre><div class="example-wrap"><pre class="rust ">
-<span class="kw">use</span> <span class="ident">bitflags</span>::<span class="ident">bitflags</span>;
+<span class="kw">use</span> {<span class="kw">super</span>::<span class="kw-2">*</span>, <span class="ident">bitflags</span>::<span class="ident">bitflags</span>};
 
 <span class="macro">bitflags</span><span class="macro">!</span> {
     <span class="doccomment">/// Signals that waitable kernel objects expose to applications.</span>
@@ -73,6 +93,26 @@
 
         <span class="comment">// for Linux</span>
         <span class="kw">const</span> <span class="ident">SIGCHLD</span>                       <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">6</span>;
+
+        <span class="comment">// for user</span>
+        <span class="kw">const</span> <span class="ident">USER_SIGNAL_0</span>                 <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">24</span>;
+        <span class="kw">const</span> <span class="ident">USER_SIGNAL_1</span>                 <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">25</span>;
+        <span class="kw">const</span> <span class="ident">USER_SIGNAL_2</span>                 <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">26</span>;
+        <span class="kw">const</span> <span class="ident">USER_SIGNAL_3</span>                 <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">27</span>;
+        <span class="kw">const</span> <span class="ident">USER_SIGNAL_4</span>                 <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">28</span>;
+        <span class="kw">const</span> <span class="ident">USER_SIGNAL_5</span>                 <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">29</span>;
+        <span class="kw">const</span> <span class="ident">USER_SIGNAL_6</span>                 <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">30</span>;
+        <span class="kw">const</span> <span class="ident">USER_SIGNAL_7</span>                 <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">31</span>;
+    }
+}
+
+<span class="kw">impl</span> <span class="ident">Signal</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">verify_user_signal</span>(<span class="ident">allowed_signals</span>: <span class="ident">Signal</span>, <span class="ident">number</span>: <span class="ident">u32</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Signal</span><span class="op">&gt;</span> {
+        <span class="kw">if</span> (<span class="ident">number</span> <span class="op">&amp;</span> <span class="op">!</span><span class="ident">allowed_signals</span>.<span class="ident">bits</span>()) <span class="op">!</span><span class="op">=</span> <span class="number">0</span> {
+            <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">INVALID_ARGS</span>)
+        } <span class="kw">else</span> {
+            <span class="prelude-val">Ok</span>(<span class="ident">Signal</span>::<span class="ident">from_bits</span>(<span class="ident">number</span>).<span class="ident">ok_or</span>(<span class="ident">ZxError</span>::<span class="ident">INVALID_ARGS</span>)<span class="question-mark">?</span>)
+        }
     }
 }
 </pre></div>
