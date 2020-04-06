@@ -1,7 +1,7 @@
 use {
     super::*,
-    zircon_object::{signal::*, task::PolicyCondition},
     core::time::Duration,
+    zircon_object::{signal::*, task::PolicyCondition},
 };
 
 impl Syscall<'_> {
@@ -63,12 +63,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    pub fn sys_timer_set(
-        &self,
-        handle: HandleValue,
-        deadline: Deadline,
-        slack: i64,
-    ) -> ZxResult {
+    pub fn sys_timer_set(&self, handle: HandleValue, deadline: Deadline, slack: i64) -> ZxResult {
         info!(
             "timer.set: handle={:#x}, deadline={:#x?}, slack={:#x}",
             handle, deadline, slack
@@ -76,7 +71,8 @@ impl Syscall<'_> {
         if slack.is_negative() {
             return Err(ZxError::OUT_OF_RANGE);
         }
-        let timer = self.thread.proc().get_object_with_rights::<Timer>(handle, Rights::WRITE)?;
+        let proc = self.thread.proc();
+        let timer = proc.get_object_with_rights::<Timer>(handle, Rights::WRITE)?;
         timer.set(Duration::from(deadline), Duration::from_nanos(slack as u64));
         Ok(())
     }

@@ -57,7 +57,10 @@ impl Syscall<'_> {
                 return ZxError::INVALID_ARGS as _;
             }
         };
-        debug!("{}|{} {:?} => args={:x?}", proc_name, thread_name, sys_type, args);
+        debug!(
+            "{}|{} {:?} => args={:x?}",
+            proc_name, thread_name, sys_type, args
+        );
         let [a0, a1, a2, a3, a4, a5, a6, a7] = args;
         let ret = match sys_type {
             Sys::HANDLE_CLOSE => self.sys_handle_close(a0 as _),
@@ -102,9 +105,7 @@ impl Syscall<'_> {
             }
             Sys::PROCESS_EXIT => self.sys_process_exit(a0 as _),
             Sys::JOB_CREATE => self.sys_job_create(a0 as _, a1 as _, a2.into()),
-            Sys::JOB_SET_POLICY => {
-                self.sys_job_set_policy(a0 as _, a1 as _, a2 as _, a3.into(), a4 as _)
-            }
+            Sys::JOB_SET_POLICY => self.sys_job_set_policy(a0 as _, a1 as _, a2 as _, a3, a4 as _),
             Sys::JOB_SET_CRITICAL => self.sys_job_set_critical(a0 as _, a1 as _, a2 as _),
             Sys::TASK_SUSPEND_TOKEN => self.sys_task_suspend_token(a0 as _, a1.into()),
             Sys::CHANNEL_CREATE => self.sys_channel_create(a0 as _, a1.into(), a2.into()),
@@ -223,7 +224,14 @@ impl Syscall<'_> {
         } else {
             log::Level::Warn
         };
-        log!(level, "{}|{} {:?} <= {:?}", proc_name, thread_name, sys_type, ret);
+        log!(
+            level,
+            "{}|{} {:?} <= {:?}",
+            proc_name,
+            thread_name,
+            sys_type,
+            ret
+        );
         match ret {
             Ok(_) => 0,
             Err(ZxError::INVALID_ARGS) => unimplemented!(),

@@ -73,10 +73,10 @@ impl Syscall<'_> {
         );
         let proc = self.thread.proc();
         let new_value = proc.dup_handle_operating_rights(handle_value, |handle_rights| {
-            if !rights.contains(Rights::SAME_RIGHTS) {
-                if (handle_rights & rights).bits() != rights.bits() {
-                    return Err(ZxError::INVALID_ARGS);
-                }
+            if !rights.contains(Rights::SAME_RIGHTS)
+                && (handle_rights & rights).bits() != rights.bits()
+            {
+                return Err(ZxError::INVALID_ARGS);
             }
             Ok(rights)
         })?;

@@ -109,15 +109,13 @@ impl VMObjectTrait for VMObjectPaged {
             (old_pages..new_pages).for_each(|idx| {
                 inner.commit(idx);
             });
+        } else if inner.parent.is_none() {
+            inner.frames.resize_with(new_pages, Default::default);
+            (old_pages..new_pages).for_each(|idx| {
+                inner.get_page(idx, true);
+            });
         } else {
-            if inner.parent.is_none() {
-                inner.frames.resize_with(new_pages, Default::default);
-                (old_pages..new_pages).for_each(|idx| {
-                    inner.get_page(idx, true);
-                });
-            } else {
-                unimplemented!()
-            }
+            unimplemented!()
         }
     }
 

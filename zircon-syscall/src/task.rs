@@ -17,9 +17,9 @@ impl Syscall<'_> {
             job, name, options,
         );
         let proc = self.thread.proc();
-        let job = proc.get_object_with_rights::<Job>(job, Rights::MANAGE_PROCESS).or_else(|_|{
-            proc.get_object_with_rights::<Job>(job, Rights::WRITE)
-        })?;
+        let job = proc
+            .get_object_with_rights::<Job>(job, Rights::MANAGE_PROCESS)
+            .or_else(|_| proc.get_object_with_rights::<Job>(job, Rights::WRITE))?;
         let new_proc = Process::create(&job, &name, options)?;
         let new_vmar = new_proc.vmar();
         let proc_handle_value = proc.add_handle(Handle::new(new_proc, Rights::DEFAULT_PROCESS));
@@ -207,7 +207,7 @@ impl Syscall<'_> {
             let proc = self.thread.proc();
             let parent_job = proc
                 .get_object_with_rights::<Job>(parent, Rights::MANAGE_JOB)
-                .or(proc.get_object_with_rights::<Job>(parent, Rights::WRITE))?;
+                .or_else(|_| proc.get_object_with_rights::<Job>(parent, Rights::WRITE))?;
             let child = parent_job.create_child(options)?;
             out.write(proc.add_handle(Handle::new(child, Rights::DEFAULT_JOB)))?;
             Ok(())
@@ -235,9 +235,10 @@ impl Syscall<'_> {
                     JOB_POL_ABSOLUTE => SetPolicyOptions::Absolute,
                     _ => return Err(ZxError::INVALID_ARGS),
                 };
-                let all_policy = UserInPtr::<BasicPolicy>::from(policy).read_array(count as usize)?;
+                let all_policy =
+                    UserInPtr::<BasicPolicy>::from(policy).read_array(count as usize)?;
                 job.set_policy_basic(policy_option, &all_policy)
-            },
+            }
             //JOB_POL_BASE_V2 => unimplemented!(),
             JOB_POL_TIMER_SLACK => {
                 if options != JOB_POL_RELATIVE {

@@ -3,6 +3,7 @@ mode ?= debug
 LOG ?=
 zbi_file ?= fuchsia
 graphic ?=
+accel ?=
 
 build_args := -Z build-std=core,alloc --target $(arch).json
 build_path := target/$(arch)/$(mode)
@@ -22,12 +23,20 @@ qemu_opts := \
 
 ifeq ($(arch), x86_64)
 qemu_opts += \
-    -cpu qemu64,fsgsbase,rdrand \
+    -cpu qemu64,rdrand \
 	-bios $(OVMF) \
 	-drive format=raw,file=fat:rw:$(ESP) \
 	-serial mon:stdio \
 	-m 4G \
 	-device isa-debug-exit
+endif
+
+ifeq ($(accel), 1)
+ifeq ($(shell uname), Darwin)
+qemu_opts += -accel hax
+else
+qemu_opts += -accel kvm
+endif
 endif
 
 ifeq ($(graphic), on)

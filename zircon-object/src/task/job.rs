@@ -131,7 +131,7 @@ impl Job {
     /// has a non-zero return code.
     pub fn set_critical(&self, proc: &Arc<Process>, retcode_nonzero: bool) -> ZxResult {
         let mut inner = self.inner.lock();
-        if let &Some((pid, _)) = &inner.critical_proc {
+        if let Some((pid, _)) = inner.critical_proc {
             if proc.id() == pid {
                 return Err(ZxError::ALREADY_BOUND);
             }
@@ -151,7 +151,7 @@ impl Job {
     pub(super) fn process_exit(&self, id: KoID, retcode: i64) {
         let mut inner = self.inner.lock();
         inner.processes.retain(|proc| proc.id() != id);
-        if let &Some((pid, retcode_nonzero)) = &inner.critical_proc {
+        if let Some((pid, retcode_nonzero)) = inner.critical_proc {
             if pid == id && !(retcode_nonzero && retcode == 0) {
                 unimplemented!("kill the job")
             }

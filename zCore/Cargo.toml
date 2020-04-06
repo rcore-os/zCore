@@ -12,13 +12,13 @@ graphic = []
 [dependencies]
 log = "0.4"
 spin = "0.5"
-buddy_system_allocator = "0.3.8"
+buddy_system_allocator = "0.3.9"
 rlibc = "1.0"
 rboot = { path = "../rboot", default-features = false }
 kernel-hal-bare = { path = "../kernel-hal-bare" }
 lazy_static = { version = "1.4", features = ["spin_no_std" ] }
 bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator" }
-trapframe = "0.1.4"
+trapframe = "0.1.6"
 executor = { git = "https://github.com/PanQL/executor.git", rev="c86db90" }
 zircon-loader = { path = "../zircon-loader", default-features = false }
 

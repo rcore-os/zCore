@@ -7,11 +7,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v2
-    - run: rm rust-toolchain
     - uses: actions-rs/toolchain@v1
       with:
         profile: minimal
-        toolchain: nightly
+        toolchain: nightly-2020-04-06
         override: true
         components: rustfmt, clippy
     - name: Check code format
@@ -40,7 +39,7 @@ jobs:
     - uses: actions-rs/toolchain@v1
       with:
         profile: minimal
-        toolchain: nightly-2020-03-23
+        toolchain: nightly-2020-04-06
         components: rust-src
     - name: Setup Rust toolchain
       run: |
@@ -72,7 +71,7 @@ jobs:
       uses: actions-rs/cargo@v1
       with:
         command: test
-        args: --all-features --no-fail-fast  # Customize args for your own needs
+        args: --all-features --no-fail-fast --workspace --exclude zircon-loader
       env:
         CARGO_INCREMENTAL: '0'
         RUSTFLAGS: '-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Coverflow-checks=off -Zno-landing-pads'

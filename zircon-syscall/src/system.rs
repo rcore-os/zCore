@@ -1,8 +1,8 @@
 #![allow(dead_code)]
 use {
     super::*,
-    zircon_object::{signal::Event, task::Job},
     alloc::boxed::Box,
+    zircon_object::{signal::Event, task::Job},
 };
 
 impl Syscall<'_> {
@@ -12,12 +12,14 @@ impl Syscall<'_> {
         kind: u32,
         mut out: UserOutPtr<HandleValue>,
     ) -> ZxResult {
-        info!("root_job={:#x}, kind={:#x}, out_ptr={:#x?}", root_job, kind, out);
+        info!(
+            "system.get_event: root_job={:#x}, kind={:#x}, out_ptr={:#x?}",
+            root_job, kind, out
+        );
         match kind {
             EVENT_OUT_OF_MEMORY => {
                 let proc = self.thread.proc();
-                proc
-                    .get_object_with_rights::<Job>(root_job, Rights::MANAGE_PROCESS)?
+                proc.get_object_with_rights::<Job>(root_job, Rights::MANAGE_PROCESS)?
                     .check_root_job()?;
                 let event = Event::new();
                 event.add_signal_callback(Box::new(|_| {
@@ -26,8 +28,8 @@ impl Syscall<'_> {
                 let event_handle = proc.add_handle(Handle::new(event, Rights::DEFAULT_EVENT));
                 out.write(event_handle)?;
                 Ok(())
-            },
-            _ => unimplemented!()
+            }
+            _ => unimplemented!(),
         }
     }
 }

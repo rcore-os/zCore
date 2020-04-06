@@ -127,7 +127,7 @@ impl Debug for PhysFrame {
 
 lazy_static! {
     static ref AVAILABLE_FRAMES: Mutex<VecDeque<usize>> =
-        Mutex::new({ (0..PMEM_SIZE).step_by(PAGE_SIZE).collect() });
+        Mutex::new((0..PMEM_SIZE).step_by(PAGE_SIZE).collect());
 }
 
 impl PhysFrame {

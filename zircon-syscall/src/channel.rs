@@ -53,6 +53,7 @@ impl Syscall<'_> {
         };
 
         // HACK: pass arguments to standalone-test
+        #[allow(clippy::naive_bytecount)]
         if handle_value == 3 && self.thread.proc().name() == "test/core/standalone-test" {
             let len = msg.data.len();
             msg.data.extend(test_args.bytes());
@@ -68,6 +69,7 @@ impl Syscall<'_> {
                 environ_num: u32,
             }
             #[allow(unsafe_code)]
+            #[allow(clippy::cast_ptr_alignment)]
             let header = unsafe { &mut *(msg.data.as_mut_ptr() as *mut ProcArgs) };
             header.args_off = len as u32;
             header.args_num = test_args.as_bytes().iter().filter(|&&b| b == 0).count() as u32;

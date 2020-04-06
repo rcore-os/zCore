@@ -226,7 +226,7 @@ impl Process {
 
     /// Get a handle from the process
     fn get_handle(&self, handle_value: HandleValue) -> ZxResult<Handle> {
-        self.inner.lock().get_handle(&handle_value)
+        self.inner.lock().get_handle(handle_value)
     }
 
     /// Get a futex from the process
@@ -432,8 +432,8 @@ impl ProcessInner {
         Ok(receiver)
     }
 
-    fn get_handle(&mut self, handle_value: &HandleValue) -> ZxResult<Handle> {
-        let (handle, _) = self.handles.get(handle_value).ok_or(ZxError::BAD_HANDLE)?;
+    fn get_handle(&mut self, handle_value: HandleValue) -> ZxResult<Handle> {
+        let (handle, _) = self.handles.get(&handle_value).ok_or(ZxError::BAD_HANDLE)?;
         Ok(handle.clone())
     }
 }
