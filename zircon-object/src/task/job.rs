@@ -1,6 +1,6 @@
 use {
     super::job_policy::*, super::process::Process, crate::object::*, alloc::sync::Arc,
-    alloc::vec::Vec, spin::Mutex,
+    alloc::vec::Vec, spin::Mutex, super::exception::*,
 };
 
 /// Control a group of processes
@@ -23,10 +23,13 @@ use {
 ///
 /// Jobs control "applications" that are composed of more than one process to be
 /// controlled as a single entity.
+#[allow(dead_code)]
 pub struct Job {
     base: KObjectBase,
     parent: Option<Arc<Job>>,
     parent_policy: JobPolicy,
+    exceptionate: Arc<Exceptionate>,
+    debug_exceptionate: Arc<Exceptionate>,
     inner: Mutex<JobInner>,
 }
 
@@ -62,6 +65,8 @@ impl Job {
             base: KObjectBase::new(),
             parent: None,
             parent_policy: JobPolicy::default(),
+            exceptionate: Exceptionate::new(ZxExceptionChannelType::Job),
+            debug_exceptionate: Exceptionate::new(ZxExceptionChannelType::JobDebugger),
             inner: Mutex::new(JobInner::default()),
         })
     }
@@ -74,6 +79,8 @@ impl Job {
             base: KObjectBase::new(),
             parent: Some(self.clone()),
             parent_policy: inner.policy.merge(&self.parent_policy),
+            exceptionate: Exceptionate::new(ZxExceptionChannelType::Job),
+            debug_exceptionate: Exceptionate::new(ZxExceptionChannelType::JobDebugger),
             inner: Mutex::new(JobInner::default()),
         });
         inner.children.push(child.clone());
@@ -168,6 +175,10 @@ impl Job {
         } else {
             Ok(())
         }
+    }
+
+    pub fn get_exceptionate(&self) -> Arc<Exceptionate> {
+        self.exceptionate.clone()
     }
 }
 

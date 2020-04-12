@@ -26,5 +26,6 @@ pub mod signal;
 pub mod task;
 mod util;
 pub mod vm;
+pub mod exception;
 
 pub use self::error::*;
