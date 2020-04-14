@@ -1,6 +1,6 @@
 use {
-    super::job_policy::*, super::process::Process, crate::object::*, alloc::sync::Arc,
-    alloc::vec::Vec, spin::Mutex, super::exception::*,
+    super::exception::*, super::job_policy::*, super::process::Process, crate::object::*,
+    alloc::sync::Arc, alloc::vec::Vec, spin::Mutex,
 };
 
 /// Control a group of processes

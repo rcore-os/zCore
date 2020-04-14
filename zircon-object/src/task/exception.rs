@@ -1,6 +1,4 @@
-use {
-    super::*, crate::ipc::Channel, crate::object::*, spin::Mutex, alloc::sync::Arc,
-};
+use {super::*, crate::ipc::Channel, crate::object::*, alloc::sync::Arc, spin::Mutex};
 
 #[allow(dead_code)]
 pub struct Exceptionate {
