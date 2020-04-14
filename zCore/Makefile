@@ -74,6 +74,11 @@ bootloader:
 clean:
 	cargo clean
 
+image:
+	# for macOS only
+	hdiutil create -fs fat32 -ov -volname EFI -format UDTO -srcfolder $(ESP) $(build_path)/zcore.cdr
+	qemu-img convert -f raw $(build_path)/zcore.cdr -O qcow2 $(build_path)/zcore.qcow2
+
 header:
 	$(OBJDUMP) -x $(kernel) | less
 
