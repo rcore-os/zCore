@@ -227,10 +227,13 @@ pub fn serial_write(s: &str) {
 }
 
 fn tsc_frequency() -> u16 {
-    match raw_cpuid::CpuId::new().get_processor_frequency_info() {
-        Some(info) => info.processor_base_frequency(),
-        None => 3000, // QEMU
+    const DEFAULT: u16 = 3000;
+    if let Some(info) = raw_cpuid::CpuId::new().get_processor_frequency_info() {
+        let f = info.processor_base_frequency();
+        return if f == 0 { DEFAULT } else { f };
     }
+    // FIXME: QEMU, AMD, VirtualBox
+    DEFAULT
 }
 
 #[export_name = "hal_timer_now"]
