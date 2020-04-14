@@ -7,7 +7,7 @@ use {
     spin::Mutex,
     uart_16550::SerialPort,
     x86_64::{
-        registers::control::{Cr3, Cr3Flags},
+        registers::control::{Cr3, Cr3Flags, Cr4, Cr4Flags},
         structures::paging::{PageTableFlags as PTF, *},
     },
 };
@@ -114,12 +114,16 @@ impl PageTableImpl {
     }
 }
 
-#[allow(clippy::missing_safety_doc)]
+/// Set page table.
+///
+/// # Safety
+/// This function will set CR3 to `vmtoken`.
 pub unsafe fn set_page_table(vmtoken: usize) {
-    Cr3::write(
-        PhysFrame::containing_address(x86_64::PhysAddr::new(vmtoken as _)),
-        Cr3Flags::empty(),
-    );
+    let frame = PhysFrame::containing_address(x86_64::PhysAddr::new(vmtoken as _));
+    if Cr3::read().0 == frame {
+        return;
+    }
+    Cr3::write(frame, Cr3Flags::empty());
 }
 
 fn frame_to_page_table(frame: PhysFrame) -> *mut PageTable {
@@ -197,7 +201,12 @@ pub fn init_framebuffer(width: u32, height: u32, paddr: PhysAddr) {
     let fb = Framebuffer {
         width,
         height,
-        buf: unsafe { core::slice::from_raw_parts_mut(phys_to_virt(paddr) as *mut u32, (width * height) as usize) }
+        buf: unsafe {
+            core::slice::from_raw_parts_mut(
+                phys_to_virt(paddr) as *mut u32,
+                (width * height) as usize,
+            )
+        },
     };
     let console = Console::on_frame_buffer(fb);
     *CONSOLE.lock() = Some(console);
@@ -251,7 +260,7 @@ fn vdso_constants() -> VdsoConstants {
         features: Features {
             cpu: 0,
             hw_breakpoint_count: 0,
-            hw_watchpoint_count: 0
+            hw_watchpoint_count: 0,
         },
         dcache_line_size: 0,
         icache_line_size: 0,
@@ -266,4 +275,8 @@ fn vdso_constants() -> VdsoConstants {
 /// Initialize the HAL.
 pub fn init() {
     timer_init();
+    unsafe {
+        // enable global page
+        Cr4::update(|f| f.insert(Cr4Flags::PAGE_GLOBAL));
+    }
 }
