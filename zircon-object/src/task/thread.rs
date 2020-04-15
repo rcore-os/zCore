@@ -85,6 +85,7 @@ mod thread_state;
 /// [`THREAD_RUNNING`]: crate::object::Signal::THREAD_RUNNING
 pub struct Thread {
     base: KObjectBase,
+    _counter: CountHelper,
     proc: Arc<Process>,
     ext: Box<dyn Any + Send + Sync>,
     inner: Mutex<ThreadInner>,
@@ -95,6 +96,7 @@ impl_kobject!(Thread
         self.proc.id()
     }
 );
+define_count_helper!(Thread);
 
 #[linkage = "weak"]
 #[export_name = "run_task"]
@@ -135,6 +137,7 @@ impl Thread {
         // TODO: options
         let thread = Arc::new(Thread {
             base: KObjectBase::with_name(name),
+            _counter: CountHelper::new(),
             proc: proc.clone(),
             ext: Box::new(ext),
             inner: Mutex::new(ThreadInner {

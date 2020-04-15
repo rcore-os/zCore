@@ -12,6 +12,7 @@ use {
 /// Bidirectional interprocess communication
 pub struct Channel {
     base: KObjectBase,
+    _counter: CountHelper,
     peer: Weak<Channel>,
     recv_queue: Mutex<VecDeque<T>>,
     call_reply: Mutex<BTreeMap<TxID, Sender<ZxResult<T>>>>,
@@ -30,6 +31,7 @@ impl_kobject!(Channel
         self.peer.upgrade().map(|p| p.id()).unwrap_or(0)
     }
 );
+define_count_helper!(Channel);
 
 impl Channel {
     /// Create a channel and return a pair of its endpoints
@@ -37,6 +39,7 @@ impl Channel {
     pub fn create() -> (Arc<Self>, Arc<Self>) {
         let mut channel0 = Arc::new(Channel {
             base: KObjectBase::with_signal(Signal::WRITABLE),
+            _counter: CountHelper::new(),
             peer: Weak::default(),
             recv_queue: Default::default(),
             call_reply: Default::default(),
@@ -44,6 +47,7 @@ impl Channel {
         });
         let channel1 = Arc::new(Channel {
             base: KObjectBase::with_signal(Signal::WRITABLE),
+            _counter: CountHelper::new(),
             peer: Arc::downgrade(&channel0),
             recv_queue: Default::default(),
             call_reply: Default::default(),

@@ -49,6 +49,7 @@ use {
 #[allow(dead_code)]
 pub struct Process {
     base: KObjectBase,
+    _counter: CountHelper,
     job: Arc<Job>,
     policy: JobPolicy,
     vmar: Arc<VmAddressRegion>,
@@ -66,6 +67,7 @@ impl_kobject!(Process
         self.job.id()
     }
 );
+define_count_helper!(Process);
 
 #[derive(Default)]
 struct ProcessInner {
@@ -108,6 +110,7 @@ impl Process {
         // TODO: _options -> options
         let proc = Arc::new(Process {
             base: KObjectBase::with_name(name),
+            _counter: CountHelper::new(),
             job: job.clone(),
             policy: job.policy(),
             vmar: VmAddressRegion::new_root(),

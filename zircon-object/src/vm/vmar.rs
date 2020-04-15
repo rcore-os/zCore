@@ -25,6 +25,7 @@ bitflags! {
 pub struct VmAddressRegion {
     flags: VmarFlags,
     base: KObjectBase,
+    _counter: CountHelper,
     addr: VirtAddr,
     size: usize,
     parent: Option<Arc<VmAddressRegion>>,
@@ -34,6 +35,7 @@ pub struct VmAddressRegion {
 }
 
 impl_kobject!(VmAddressRegion);
+define_count_helper!(VmAddressRegion);
 
 /// The mutable part of `VmAddressRegion`.
 #[derive(Default)]
@@ -52,6 +54,7 @@ impl VmAddressRegion {
         Arc::new(VmAddressRegion {
             flags: VmarFlags::ROOT_FLAGS,
             base: KObjectBase::new(),
+            _counter: CountHelper::new(),
             addr,
             size: 0x100_00000000,
             parent: None,
@@ -85,6 +88,7 @@ impl VmAddressRegion {
         let child = Arc::new(VmAddressRegion {
             flags,
             base: KObjectBase::new(),
+            _counter: CountHelper::new(),
             addr: self.addr + offset,
             size: len,
             parent: Some(self.clone()),

@@ -435,6 +435,28 @@ macro_rules! impl_kobject {
     };
 }
 
+/// Define a pair of kcounter (create, destroy),
+/// and a helper struct `CountHelper` which increases the counter on construction and drop.
+#[macro_export]
+macro_rules! define_count_helper {
+    ($class:ident) => {
+        struct CountHelper(());
+        impl CountHelper {
+            fn new() -> Self {
+                kcounter!(CREATE_COUNT, concat!(stringify!($class), ".create"));
+                CREATE_COUNT.add(1);
+                CountHelper(())
+            }
+        }
+        impl Drop for CountHelper {
+            fn drop(&mut self) {
+                kcounter!(DESTROY_COUNT, concat!(stringify!($class), ".destroy"));
+                DESTROY_COUNT.add(1);
+            }
+        }
+    };
+}
+
 /// The type of kernel object ID.
 pub type KoID = u64;
 

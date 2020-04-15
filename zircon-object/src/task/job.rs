@@ -26,6 +26,7 @@ use {
 #[allow(dead_code)]
 pub struct Job {
     base: KObjectBase,
+    _counter: CountHelper,
     parent: Option<Arc<Job>>,
     parent_policy: JobPolicy,
     exceptionate: Arc<Exceptionate>,
@@ -48,6 +49,7 @@ impl_kobject!(Job
         self.parent.as_ref().map(|p| p.id()).unwrap_or(0)
     }
 );
+define_count_helper!(Job);
 
 #[derive(Default)]
 struct JobInner {
@@ -63,6 +65,7 @@ impl Job {
     pub fn root() -> Arc<Self> {
         Arc::new(Job {
             base: KObjectBase::new(),
+            _counter: CountHelper::new(),
             parent: None,
             parent_policy: JobPolicy::default(),
             exceptionate: Exceptionate::new(ZxExceptionChannelType::Job),
@@ -77,6 +80,7 @@ impl Job {
         let mut inner = self.inner.lock();
         let child = Arc::new(Job {
             base: KObjectBase::new(),
+            _counter: CountHelper::new(),
             parent: Some(self.clone()),
             parent_policy: inner.policy.merge(&self.parent_policy),
             exceptionate: Exceptionate::new(ZxExceptionChannelType::Job),

@@ -13,12 +13,14 @@ use spin::Mutex;
 /// or the timer has been canceled.
 pub struct Timer {
     base: KObjectBase,
+    _counter: CountHelper,
     #[allow(dead_code)]
     slack: Slack,
     inner: Mutex<TimerInner>,
 }
 
 impl_kobject!(Timer);
+define_count_helper!(Timer);
 
 #[derive(Default)]
 struct TimerInner {
@@ -42,6 +44,7 @@ impl Timer {
     pub fn with_slack(slack: Slack) -> Arc<Self> {
         Arc::new(Timer {
             base: KObjectBase::default(),
+            _counter: CountHelper::new(),
             slack,
             inner: Mutex::default(),
         })

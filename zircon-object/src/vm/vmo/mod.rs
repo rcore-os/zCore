@@ -54,14 +54,19 @@ pub trait VMObjectTrait: Sync + Send {
 
 pub struct VmObject {
     base: KObjectBase,
+    _counter: CountHelper,
     inner: Arc<dyn VMObjectTrait>,
 }
+
+impl_kobject!(VmObject);
+define_count_helper!(VmObject);
 
 impl VmObject {
     /// Create a new VMO backing on physical memory allocated in pages.
     pub fn new_paged(pages: usize) -> Arc<Self> {
         Arc::new(VmObject {
             base: KObjectBase::default(),
+            _counter: CountHelper::new(),
             inner: VMObjectPaged::new(pages),
         })
     }
@@ -75,6 +80,7 @@ impl VmObject {
     pub unsafe fn new_physical(paddr: PhysAddr, pages: usize) -> Arc<Self> {
         Arc::new(VmObject {
             base: KObjectBase::default(),
+            _counter: CountHelper::new(),
             inner: VMObjectPhysical::new(paddr, pages),
         })
     }
@@ -82,6 +88,7 @@ impl VmObject {
     pub fn create_clone(&self, offset: usize, len: usize) -> Arc<Self> {
         Arc::new(VmObject {
             base: KObjectBase::default(),
+            _counter: CountHelper::new(),
             inner: self.inner.create_clone(offset, len),
         })
     }
@@ -94,8 +101,6 @@ impl Deref for VmObject {
         &self.inner
     }
 }
-
-impl_kobject!(VmObject);
 
 #[cfg(test)]
 mod tests {
