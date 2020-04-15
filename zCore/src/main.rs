@@ -82,8 +82,6 @@ impl KCounterDescs {
         extern "C" {
             fn _kcounter_desc_start();
             fn _kcounter_desc_end();
-            fn _kcounter_start();
-            fn _kcounter_end();
         }
         let start = _kcounter_desc_start as usize as *const KCounterDesc;
         let end = _kcounter_desc_end as usize as *const KCounterDesc;
@@ -100,3 +98,7 @@ impl Debug for KCounterDescs {
             .finish()
     }
 }
+
+#[used]
+#[link_section = ".kcounter.desc.header"]
+pub static VMO_HEADER: [u64; 2] = [1547273975, 1];

@@ -31,7 +31,7 @@ macro_rules! kcounter {
         #[cfg_attr(target_os = "none", link_section = ".bss.kcounter")]
         static $var: $crate::util::kcounter::KCounter = {
             #[used]
-            #[cfg_attr(target_os = "none", link_section = ".data.kcounterdesc")]
+            #[cfg_attr(target_os = "none", link_section = ".kcountdesc.desc")]
             static DESC: $crate::util::kcounter::KCounterDesc =
                 $crate::util::kcounter::KCounterDesc {
                     name: $name,
