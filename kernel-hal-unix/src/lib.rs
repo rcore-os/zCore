@@ -9,7 +9,8 @@ extern crate alloc;
 
 use {
     alloc::collections::VecDeque,
-    core::{future::Future, pin::Pin},
+    async_std::task_local,
+    core::{cell::Cell, future::Future, pin::Pin},
     lazy_static::lazy_static,
     std::fmt::{Debug, Formatter},
     std::fs::{File, OpenOptions},
@@ -44,6 +45,22 @@ impl Thread {
         async_std::task::spawn(future);
         Thread { thread: 0 }
     }
+
+    #[export_name = "hal_thread_set_tid"]
+    pub fn set_tid(tid: u64, pid: u64) {
+        TID.with(|x| x.set(tid));
+        PID.with(|x| x.set(pid));
+    }
+
+    #[export_name = "hal_thread_get_tid"]
+    pub fn get_tid() -> (u64, u64) {
+        (TID.with(|x| x.get()), PID.with(|x| x.get()))
+    }
+}
+
+task_local! {
+    static TID: Cell<u64> = Cell::new(0);
+    static PID: Cell<u64> = Cell::new(0);
 }
 
 #[export_name = "hal_context_run"]

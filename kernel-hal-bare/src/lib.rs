@@ -83,6 +83,14 @@ impl Thread {
         });
         Thread { thread: 0 }
     }
+
+    #[export_name = "hal_thread_set_tid"]
+    pub fn set_tid(_tid: u64, _pid: u64) {}
+
+    #[export_name = "hal_thread_get_tid"]
+    pub fn get_tid() -> (u64, u64) {
+        (0, 0)
+    }
 }
 
 #[export_name = "hal_context_run"]

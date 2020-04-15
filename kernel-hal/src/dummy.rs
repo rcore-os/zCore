@@ -23,6 +23,20 @@ impl Thread {
     ) -> Self {
         unimplemented!()
     }
+
+    /// Set tid and pid of current task.
+    #[linkage = "weak"]
+    #[export_name = "hal_thread_set_tid"]
+    pub fn set_tid(_tid: u64, _pid: u64) {
+        unimplemented!()
+    }
+
+    /// Get tid and pid of current task.
+    #[linkage = "weak"]
+    #[export_name = "hal_thread_get_tid"]
+    pub fn get_tid() -> (u64, u64) {
+        unimplemented!()
+    }
 }
 
 #[linkage = "weak"]

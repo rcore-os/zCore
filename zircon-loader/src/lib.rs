@@ -203,6 +203,7 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
 pub fn run_task(thread: Arc<Thread>) {
     let vmtoken = thread.proc().vmar().table_phys();
     let future = async move {
+        kernel_hal::Thread::set_tid(thread.id(), thread.proc().id());
         loop {
             let mut cx = thread.wait_for_run().await;
             trace!("go to user: {:#x?}", cx);

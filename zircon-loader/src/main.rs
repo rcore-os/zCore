@@ -45,7 +45,7 @@ fn init_logger() {
             use log::Level;
             use std::io::Write;
 
-            let tid = async_std::task::current().id();
+            let (tid, pid) = kernel_hal::Thread::get_tid();
             let mut style = buf.style();
             match record.level() {
                 Level::Trace => style.set_color(Color::Black).set_intense(true),
@@ -56,7 +56,8 @@ fn init_logger() {
             };
             let now = kernel_hal_unix::timer_now();
             let level = style.value(record.level());
-            writeln!(buf, "[{:?} {:>5} {}] {}", now, level, tid, record.args())
+            let args = record.args();
+            writeln!(buf, "[{:?} {:>5} {}:{}] {}", now, level, pid, tid, args)
         })
         .init();
 }
