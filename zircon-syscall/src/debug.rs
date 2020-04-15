@@ -12,16 +12,17 @@ impl Syscall<'_> {
     pub fn sys_debug_read(
         &self,
         handle: HandleValue,
-        mut buf: UserOutPtr<u8>,
+        buf: UserOutPtr<u8>,
         buf_size: u32,
         mut actual: UserOutPtr<u32>,
     ) -> ZxResult {
+        // FIXME this read operation should bind to serial-read
+        // now just returen nothing read
         info!(
             "debug.read: handle={:#x}, buf=({:?}; {:#x})",
             handle, buf, buf_size
         );
-        buf.write_cstring("HelloWorld\n")?;
-        actual.write(11)?;
+        actual.write(0)?;
         Ok(())
     }
 }

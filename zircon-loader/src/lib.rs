@@ -206,6 +206,7 @@ pub fn run_task(thread: Arc<Thread>) {
         loop {
             let mut cx = thread.wait_for_run().await;
             trace!("go to user: {:#x?}", cx);
+            debug!("switch to {}|{}", thread.proc().name(), thread.name());
             kernel_hal::context_run(&mut cx);
             trace!("back from user: {:#x?}", cx);
             let mut exit = false;

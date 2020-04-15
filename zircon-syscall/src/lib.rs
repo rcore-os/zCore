@@ -38,6 +38,7 @@ mod task;
 mod time;
 mod vmar;
 mod vmo;
+mod ddk;
 
 use consts::SyscallType as Sys;
 
@@ -215,7 +216,10 @@ impl Syscall<'_> {
             Sys::SYSTEM_GET_EVENT => self.sys_system_get_event(a0 as _, a1 as _, a2.into()),
             Sys::TIMER_SET => self.sys_timer_set(a0 as _, a1.into(), a2 as _),
             Sys::DEBUG_READ => self.sys_debug_read(a0 as _, a1.into(), a2 as _, a3.into()),
-            Sys::TASK_CREATE_EXCEPTION_CHANNEL => self.sys_create_exception_channel(a0 as _, a1 as _, a2.into()),
+            Sys::TASK_CREATE_EXCEPTION_CHANNEL => {
+                self.sys_create_exception_channel(a0 as _, a1 as _, a2.into())
+            }
+            Sys::IOMMU_CREATE => self.sys_iommu_create(a0 as _, a1 as _, a2.into(), a3 as _, a4.into()),
             _ => {
                 error!("syscall unimplemented: {:?}", sys_type);
                 Err(ZxError::NOT_SUPPORTED)
@@ -236,7 +240,6 @@ impl Syscall<'_> {
         );
         match ret {
             Ok(_) => 0,
-            Err(ZxError::INVALID_ARGS) => unimplemented!(),
             Err(err) => err as isize,
         }
     }

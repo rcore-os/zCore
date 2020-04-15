@@ -184,6 +184,9 @@ impl Syscall<'_> {
         );
         let proc = self.thread.proc();
         match topic {
+            Topic::HandleValid => {
+                let _ = proc.get_dyn_object_with_rights(handle, Rights::empty())?;
+            }
             Topic::Process => {
                 let proc = proc.get_object_with_rights::<Process>(handle, Rights::INSPECT)?;
                 UserOutPtr::<ProcessInfo>::from(buffer).write(proc.get_info())?;

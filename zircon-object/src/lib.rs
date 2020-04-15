@@ -19,6 +19,7 @@ extern crate std;
 
 pub mod debuglog;
 mod error;
+pub mod exception;
 pub mod ipc;
 pub mod object;
 pub mod resource;
@@ -26,6 +27,5 @@ pub mod signal;
 pub mod task;
 mod util;
 pub mod vm;
-pub mod exception;
 
 pub use self::error::*;
