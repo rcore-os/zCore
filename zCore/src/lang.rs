@@ -8,7 +8,7 @@ use log::*;
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     error!("\n\n{}", info);
-    super::dump_kcounter();
+    error!("{:#?}", super::KCounterDescs::get());
     loop {
         spin_loop_hint();
     }

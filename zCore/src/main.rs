@@ -20,6 +20,7 @@ mod memory;
 
 use rboot::BootInfo;
 
+use core::fmt::{Debug, Error, Formatter};
 pub use memory::{hal_frame_alloc, hal_frame_dealloc, hal_pt_map_kernel};
 use zircon_loader::{run_userboot, Images};
 use zircon_object::util::kcounter::KCounterDesc;
@@ -76,18 +77,28 @@ fn init_framebuffer(boot_info: &BootInfo) {
     kernel_hal_bare::init_framebuffer(width as u32, height as u32, fb_addr);
 }
 
-fn dump_kcounter() {
-    extern "C" {
-        fn _kcounter_desc_start();
-        fn _kcounter_desc_end();
-        fn _kcounter_start();
-        fn _kcounter_end();
+struct KCounterDescs(&'static [KCounterDesc]);
+
+impl KCounterDescs {
+    fn get() -> Self {
+        extern "C" {
+            fn _kcounter_desc_start();
+            fn _kcounter_desc_end();
+            fn _kcounter_start();
+            fn _kcounter_end();
+        }
+        let start = _kcounter_desc_start as usize as *const KCounterDesc;
+        let end = _kcounter_desc_end as usize as *const KCounterDesc;
+        let descs = unsafe { core::slice::from_raw_parts(start, end.offset_from(start) as usize) };
+        KCounterDescs(descs)
     }
-    let start = _kcounter_desc_start as usize as *const KCounterDesc;
-    let end = _kcounter_desc_end as usize as *const KCounterDesc;
-    let descs = unsafe { core::slice::from_raw_parts(start, end.offset_from(start) as usize) };
-    error!("kcounter:");
-    for desc in descs {
-        error!("{}: {}", desc.name, desc.kcounter.get());
+}
+
+impl Debug for KCounterDescs {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        f.write_str("KCounters ")?;
+        f.debug_map()
+            .entries(self.0.iter().map(|desc| (desc.name, desc.kcounter.get())))
+            .finish()
     }
 }
