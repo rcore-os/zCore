@@ -3,6 +3,7 @@
 #![feature(lang_items)]
 #![feature(asm)]
 #![feature(panic_info_message)]
+#![feature(ptr_offset_from)]
 #![deny(unused_must_use)]
 #![deny(warnings)] // comment this on develop
 
@@ -21,6 +22,7 @@ use rboot::BootInfo;
 
 pub use memory::{hal_frame_alloc, hal_frame_dealloc, hal_pt_map_kernel};
 use zircon_loader::{run_userboot, Images};
+use zircon_object::util::kcounter::KCounterDesc;
 
 #[no_mangle]
 pub extern "C" fn _start(boot_info: &BootInfo) -> ! {
@@ -72,4 +74,20 @@ fn init_framebuffer(boot_info: &BootInfo) {
     let (width, height) = boot_info.graphic_info.mode.resolution();
     let fb_addr = boot_info.graphic_info.fb_addr as usize;
     kernel_hal_bare::init_framebuffer(width as u32, height as u32, fb_addr);
+}
+
+fn dump_kcounter() {
+    extern "C" {
+        fn _kcounter_desc_start();
+        fn _kcounter_desc_end();
+        fn _kcounter_start();
+        fn _kcounter_end();
+    }
+    let start = _kcounter_desc_start as usize as *const KCounterDesc;
+    let end = _kcounter_desc_end as usize as *const KCounterDesc;
+    let descs = unsafe { core::slice::from_raw_parts(start, end.offset_from(start) as usize) };
+    error!("kcounter:");
+    for desc in descs {
+        error!("{}: {}", desc.name, desc.kcounter.get());
+    }
 }

@@ -19,6 +19,7 @@ use {
     },
     zircon_object::{
         ipc::*,
+        kcounter,
         object::*,
         resource::{Resource, ResourceFlags, ResourceKind},
         task::*,
@@ -199,6 +200,9 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
     proc
 }
 
+kcounter!(EXCEPTIONS_USER, "exceptions.user");
+kcounter!(EXCEPTIONS_TIMER, "exceptions.timer");
+
 #[export_name = "run_task"]
 pub fn run_task(thread: Arc<Thread>) {
     let vmtoken = thread.proc().vmar().table_phys();
@@ -210,10 +214,12 @@ pub fn run_task(thread: Arc<Thread>) {
             debug!("switch to {}|{}", thread.proc().name(), thread.name());
             kernel_hal::context_run(&mut cx);
             trace!("back from user: {:#x?}", cx);
+            EXCEPTIONS_USER.add(1);
             let mut exit = false;
             match cx.trap_num {
                 0x100 => exit = handle_syscall(&thread, &mut cx.general).await,
                 0x20 => {
+                    EXCEPTIONS_TIMER.add(1);
                     kernel_hal::irq_ack(0);
                     kernel_hal::timer_tick();
                     kernel_hal::yield_now().await;

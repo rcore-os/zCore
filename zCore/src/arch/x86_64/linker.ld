@@ -23,6 +23,10 @@ SECTIONS {
 
   .data ALIGN(4K):
   {
+    _kcounter_desc_start = .;
+    KEEP(*(.data.kcounterdesc))
+    _kcounter_desc_end = .;
+
     *(.data .data.*)
   }
 
@@ -33,6 +37,10 @@ SECTIONS {
 
   .bss ALIGN(4K):
   {
+    _kcounter_start = .;
+    *(.bss.kcounter)
+    _kcounter_end = .;
+
     *(.bss .bss.*)
   }
 }

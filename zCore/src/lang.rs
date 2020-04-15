@@ -8,6 +8,7 @@ use log::*;
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     error!("\n\n{}", info);
+    super::dump_kcounter();
     loop {
         spin_loop_hint();
     }

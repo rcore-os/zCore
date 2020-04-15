@@ -21,6 +21,7 @@ bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator" }
 trapframe = "0.1.6"
 executor = { git = "https://github.com/PanQL/executor.git", rev="c86db90" }
 zircon-loader = { path = "../zircon-loader", default-features = false }
+zircon-object = { path = "../zircon-object" }
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 x86_64 = "0.9"

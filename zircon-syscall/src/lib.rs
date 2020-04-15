@@ -22,6 +22,7 @@ use {
 mod channel;
 mod consts;
 mod cprng;
+mod ddk;
 mod debug;
 mod debuglog;
 mod exception;
@@ -38,7 +39,6 @@ mod task;
 mod time;
 mod vmar;
 mod vmo;
-mod ddk;
 
 use consts::SyscallType as Sys;
 
@@ -219,7 +219,9 @@ impl Syscall<'_> {
             Sys::TASK_CREATE_EXCEPTION_CHANNEL => {
                 self.sys_create_exception_channel(a0 as _, a1 as _, a2.into())
             }
-            Sys::IOMMU_CREATE => self.sys_iommu_create(a0 as _, a1 as _, a2.into(), a3 as _, a4.into()),
+            Sys::IOMMU_CREATE => {
+                self.sys_iommu_create(a0 as _, a1 as _, a2.into(), a3 as _, a4.into())
+            }
             _ => {
                 error!("syscall unimplemented: {:?}", sys_type);
                 Err(ZxError::NOT_SUPPORTED)
