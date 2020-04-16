@@ -9,7 +9,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    pub fn sys_debug_read(
+    pub async fn sys_debug_read(
         &self,
         handle: HandleValue,
         mut buf: UserOutPtr<u8>,
@@ -22,10 +22,15 @@ impl Syscall<'_> {
         );
         let proc = self.thread.proc();
         proc.validate_resource(handle, ResourceKind::ROOT)?;
-        let mut vec = vec![0u8; buf_size as usize];
-        let len = kernel_hal::serial_read(&mut vec);
-        buf.write_array(&vec[..len])?;
-        actual.write(len as u32)?;
+        // FIXME: To make 'console' work, now debug_read is a blocking call.
+        //        But it should be non-blocking.
+        // let mut vec = vec![0u8; buf_size as usize];
+        // let len = kernel_hal::serial_read(&mut vec);
+        // buf.write_array(&vec[..len])?;
+        // actual.write(len as u32)?;
+        let c = kernel_hal::serial_getchar().await;
+        buf.write_array(&[c])?;
+        actual.write(1)?;
         Ok(())
     }
 }

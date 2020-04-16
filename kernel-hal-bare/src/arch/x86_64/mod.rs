@@ -1,6 +1,6 @@
 use {
     super::super::*,
-    alloc::collections::VecDeque,
+    alloc::{collections::VecDeque, vec::Vec},
     apic::{IoApic, LocalApic, XApic},
     core::fmt::{Arguments, Write},
     core::time::Duration,
@@ -241,7 +241,21 @@ pub fn putfmt(fmt: Arguments) {
 }
 
 lazy_static! {
-    pub static ref STDIN: Mutex<VecDeque<u8>> = Mutex::new(VecDeque::new());
+    static ref STDIN: Mutex<VecDeque<u8>> = Mutex::new(VecDeque::new());
+    static ref STDIN_CALLBACK: Mutex<Vec<Box<dyn FnOnce() + Send + Sync>>> = Mutex::new(Vec::new());
+}
+
+/// Put a char by serial interrupt handler.
+fn serial_put(x: u8) {
+    STDIN.lock().push_back(x);
+    for callback in STDIN_CALLBACK.lock().drain(..) {
+        callback();
+    }
+}
+
+#[export_name = "hal_serial_set_callback"]
+pub fn serial_set_callback(callback: Box<dyn FnOnce() + Send + Sync>) {
+    STDIN_CALLBACK.lock().push(callback);
 }
 
 #[export_name = "hal_serial_read"]

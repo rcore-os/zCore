@@ -52,14 +52,14 @@ fn timer() {
 fn com1() {
     error!("INTERRUPT: COM1");
     let c = super::COM1.lock().receive();
-    super::STDIN.lock().push_back(c);
+    super::serial_put(c);
 }
 
 fn keyboard() {
     use pc_keyboard::{DecodedKey, KeyCode};
     if let Some(key) = super::keyboard::receive() {
         match key {
-            DecodedKey::Unicode(c) => super::STDIN.lock().push_back(c as u8),
+            DecodedKey::Unicode(c) => super::serial_put(c as u8),
             DecodedKey::RawKey(code) => {
                 let s = match code {
                     KeyCode::ArrowUp => "\u{1b}[A",
@@ -68,9 +68,8 @@ fn keyboard() {
                     KeyCode::ArrowLeft => "\u{1b}[D",
                     _ => "",
                 };
-                let mut stdin = super::STDIN.lock();
                 for c in s.bytes() {
-                    stdin.push_back(c);
+                    super::serial_put(c);
                 }
             }
         }

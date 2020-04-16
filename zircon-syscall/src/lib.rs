@@ -215,11 +215,16 @@ impl Syscall<'_> {
             ),
             Sys::SYSTEM_GET_EVENT => self.sys_system_get_event(a0 as _, a1 as _, a2.into()),
             Sys::TIMER_SET => self.sys_timer_set(a0 as _, a1.into(), a2 as _),
-            Sys::DEBUG_READ => self.sys_debug_read(a0 as _, a1.into(), a2 as _, a3.into()),
+            Sys::DEBUG_READ => {
+                self.sys_debug_read(a0 as _, a1.into(), a2 as _, a3.into())
+                    .await
+            }
             Sys::TASK_CREATE_EXCEPTION_CHANNEL => {
                 self.sys_create_exception_channel(a0 as _, a1 as _, a2.into())
             }
             Sys::IOMMU_CREATE => {
+                warn!("IOMMU_CREATE is unimplemented. now sleep forever");
+                kernel_hal::sleep_until(core::time::Duration::from_secs(100000)).await;
                 self.sys_iommu_create(a0 as _, a1 as _, a2.into(), a3 as _, a4.into())
             }
             _ => {

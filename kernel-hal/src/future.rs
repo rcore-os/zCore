@@ -32,30 +32,47 @@ impl Future for YieldFuture {
 
 /// Sleeps until the specified of time.
 pub fn sleep_until(deadline: Duration) -> impl Future {
-    SleepFuture {
-        deadline,
-        set: false,
-    }
+    SleepFuture { deadline }
 }
 
 #[must_use = "sleep does nothing unless polled/`await`-ed"]
 pub struct SleepFuture {
     deadline: Duration,
-    set: bool,
 }
 
 impl Future for SleepFuture {
     type Output = ();
 
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         if timer_now() >= self.deadline {
             return Poll::Ready(());
         }
-        if !self.set && self.deadline.as_nanos() < i64::max_value() as u128 {
+        if self.deadline.as_nanos() < i64::max_value() as u128 {
             let waker = cx.waker().clone();
             crate::timer_set(self.deadline, Box::new(move |_| waker.wake()));
-            self.set = true;
         }
+        Poll::Pending
+    }
+}
+
+/// Get a char from serial.
+pub fn serial_getchar() -> impl Future<Output = u8> {
+    SerialFuture
+}
+
+#[must_use = "serial_getchar does nothing unless polled/`await`-ed"]
+pub struct SerialFuture;
+
+impl Future for SerialFuture {
+    type Output = u8;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let mut buf = [0u8];
+        if crate::serial_read(&mut buf) != 0 {
+            return Poll::Ready(buf[0]);
+        }
+        let waker = cx.waker().clone();
+        crate::serial_set_callback(Box::new(move || waker.wake()));
         Poll::Pending
     }
 }
