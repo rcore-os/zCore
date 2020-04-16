@@ -14,7 +14,6 @@ extern crate rlibc;
 
 #[macro_use]
 mod logging;
-mod interrupt;
 mod lang;
 mod memory;
 
@@ -34,7 +33,6 @@ pub extern "C" fn _start(boot_info: &BootInfo) -> ! {
     init_framebuffer(boot_info);
     info!("{:#x?}", boot_info);
     kernel_hal_bare::init();
-    interrupt::init();
 
     let zbi_data = unsafe {
         core::slice::from_raw_parts(

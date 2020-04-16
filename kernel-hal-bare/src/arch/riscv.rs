@@ -1,6 +1,6 @@
 use super::*;
-use riscv::paging::{*, PageTableFlags as PTF};
 use riscv::addr::Page;
+use riscv::paging::{PageTableFlags as PTF, *};
 use riscv::register::satp;
 
 /// Page Table
@@ -18,10 +18,13 @@ impl PageTableImpl {
         let root_vaddr = phys_to_virt(root_frame.paddr);
         let root = unsafe { &mut *(root_vaddr as *mut PageTable) };
         root.zero();
-        let current = phys_to_virt(satp::read().frame().start_address().as_usize()) as *const PageTable;
+        let current =
+            phys_to_virt(satp::read().frame().start_address().as_usize()) as *const PageTable;
         map_kernel(root_vaddr as _, current as _);
         trace!("create page table @ {:#x}", root_frame.paddr);
-        PageTableImpl { root_paddr: root_frame.paddr }
+        PageTableImpl {
+            root_paddr: root_frame.paddr,
+        }
     }
 
     /// Map the page of `vaddr` to the frame of `paddr` with `flags`.
@@ -71,7 +74,7 @@ impl PageTableImpl {
         trace!("query: {:x?} => {:x?}", vaddr, res);
         match res {
             Ok(entry) => Ok(entry.addr()),
-            Err(_) => Err(())
+            Err(_) => Err(()),
         }
     }
 

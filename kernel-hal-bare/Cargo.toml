@@ -20,6 +20,7 @@ lazy_static = { version = "1.4", features = ["spin_no_std" ] }
 x86_64 = "0.9"
 uart_16550 = "0.2"
 raw-cpuid = "7.0"
+pc-keyboard = "0.5"
 apic = { git = "https://github.com/rcore-os/apic-rs" }
 rcore-console = { git = "https://github.com/rcore-os/rcore-console", default-features = false, rev = "a980897b" }
 

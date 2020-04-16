@@ -1,16 +1,21 @@
 use {
-    super::*,
-    apic::{LocalApic, XApic},
+    super::super::*,
+    alloc::collections::VecDeque,
+    apic::{IoApic, LocalApic, XApic},
     core::fmt::{Arguments, Write},
     core::time::Duration,
     rcore_console::{Console, ConsoleOnGraphic, DrawTarget, Pixel, Rgb888, Size},
     spin::Mutex,
     uart_16550::SerialPort,
     x86_64::{
+        instructions::port::Port,
         registers::control::{Cr3, Cr3Flags, Cr4, Cr4Flags},
         structures::paging::{PageTableFlags as PTF, *},
     },
 };
+
+mod interrupt;
+mod keyboard;
 
 /// Page Table
 #[repr(C)]
@@ -214,11 +219,39 @@ pub fn init_framebuffer(width: u32, height: u32, paddr: PhysAddr) {
 
 static COM1: Mutex<SerialPort> = Mutex::new(unsafe { SerialPort::new(0x3F8) });
 
+pub trait SerialRead {
+    fn receive(&mut self) -> u8;
+}
+
+impl SerialRead for SerialPort {
+    fn receive(&mut self) -> u8 {
+        unsafe {
+            let ports = self as *mut _ as *mut [Port<u8>; 6];
+            let data = &mut (*ports)[0];
+            data.read()
+        }
+    }
+}
+
 pub fn putfmt(fmt: Arguments) {
     COM1.lock().write_fmt(fmt).unwrap();
     if let Some(console) = CONSOLE.lock().as_mut() {
         console.write_fmt(fmt).unwrap();
     }
+}
+
+lazy_static! {
+    pub static ref STDIN: Mutex<VecDeque<u8>> = Mutex::new(VecDeque::new());
+}
+
+#[export_name = "hal_serial_read"]
+pub fn serial_read(buf: &mut [u8]) -> usize {
+    let mut stdin = STDIN.lock();
+    let len = stdin.len().min(buf.len());
+    for i in 0..len {
+        buf[i] = stdin.pop_front().unwrap();
+    }
+    len
 }
 
 #[export_name = "hal_serial_write"]
@@ -247,13 +280,14 @@ fn timer_init() {
     lapic.cpu_init();
 }
 
-#[export_name = "hal_irq_ack"]
-pub fn irq_ack(_irq: u8) {
-    let mut lapic = unsafe { XApic::new(phys_to_virt(LAPIC_ADDR)) };
-    lapic.eoi();
+#[inline(always)]
+pub fn irq_enable(irq: u8) {
+    let mut ioapic = unsafe { IoApic::new(phys_to_virt(IOAPIC_ADDR)) };
+    ioapic.enable(irq, 0);
 }
 
 const LAPIC_ADDR: usize = 0xfee0_0000;
+const IOAPIC_ADDR: usize = 0xfec0_0000;
 
 #[export_name = "hal_vdso_constants"]
 fn vdso_constants() -> VdsoConstants {
@@ -278,6 +312,7 @@ fn vdso_constants() -> VdsoConstants {
 /// Initialize the HAL.
 pub fn init() {
     timer_init();
+    interrupt::init();
     unsafe {
         // enable global page
         Cr4::update(|f| f.insert(Cr4Flags::PAGE_GLOBAL));

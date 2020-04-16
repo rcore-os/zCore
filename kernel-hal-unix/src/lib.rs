@@ -25,6 +25,7 @@ pub use self::trap::syscall_entry;
 pub use kernel_hal::defs::*;
 use kernel_hal::vdso::*;
 pub use kernel_hal::*;
+use std::io::Read;
 
 #[cfg(target_os = "macos")]
 include!("macos.rs");
@@ -290,6 +291,12 @@ impl FlagsExt for MMUFlags {
         }
         flags
     }
+}
+
+/// Read a string from console.
+#[export_name = "hal_serial_read"]
+pub fn serial_read(buf: &mut [u8]) -> usize {
+    std::io::stdin().read(buf).unwrap()
 }
 
 /// Output a char to console.

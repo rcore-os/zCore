@@ -218,11 +218,12 @@ pub fn run_task(thread: Arc<Thread>) {
             let mut exit = false;
             match cx.trap_num {
                 0x100 => exit = handle_syscall(&thread, &mut cx.general).await,
-                0x20 => {
-                    EXCEPTIONS_TIMER.add(1);
-                    kernel_hal::irq_ack(0);
-                    kernel_hal::timer_tick();
-                    kernel_hal::yield_now().await;
+                0x20..=0x3f => {
+                    kernel_hal::irq_handle(cx.trap_num as u8 - 0x20);
+                    if cx.trap_num == 0x20 {
+                        EXCEPTIONS_TIMER.add(1);
+                        kernel_hal::yield_now().await;
+                    }
                 }
                 _ => panic!("not supported interrupt from user mode. {:#x?}", cx),
             }

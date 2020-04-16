@@ -172,7 +172,14 @@ pub fn frame_copy(_src: PhysAddr, _target: PhysAddr) {
     unimplemented!()
 }
 
-/// Output a char to console.
+/// Read a string from console.
+#[linkage = "weak"]
+#[export_name = "hal_serial_read"]
+pub fn serial_read(_buf: &mut [u8]) -> usize {
+    unimplemented!()
+}
+
+/// Output a string to console.
 #[linkage = "weak"]
 #[export_name = "hal_serial_write"]
 pub fn serial_write(_s: &str) {
@@ -193,7 +200,7 @@ pub fn timer_set(_deadline: Duration, _callback: Box<dyn FnOnce(Duration) + Send
     unimplemented!()
 }
 
-/// check timers, call when timer interrupt happend
+/// check timers, call when timer interrupt happened
 #[linkage = "weak"]
 #[export_name = "hal_timer_tick"]
 pub fn timer_tick() {
@@ -201,8 +208,8 @@ pub fn timer_tick() {
 }
 
 #[linkage = "weak"]
-#[export_name = "hal_irq_ack"]
-pub fn irq_ack(_irq: u8) {
+#[export_name = "hal_irq_handle"]
+pub fn irq_handle(_irq: u8) {
     unimplemented!()
 }
 
