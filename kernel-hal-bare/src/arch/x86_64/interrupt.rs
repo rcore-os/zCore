@@ -50,7 +50,6 @@ fn timer() {
 }
 
 fn com1() {
-    error!("INTERRUPT: COM1");
     let c = super::COM1.lock().receive();
     super::serial_put(c);
 }

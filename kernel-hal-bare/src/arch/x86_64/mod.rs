@@ -246,7 +246,10 @@ lazy_static! {
 }
 
 /// Put a char by serial interrupt handler.
-fn serial_put(x: u8) {
+fn serial_put(mut x: u8) {
+    if x == b'\r' {
+        x = b'\n';
+    }
     STDIN.lock().push_back(x);
     for callback in STDIN_CALLBACK.lock().drain(..) {
         callback();
@@ -327,6 +330,7 @@ fn vdso_constants() -> VdsoConstants {
 pub fn init() {
     timer_init();
     interrupt::init();
+    COM1.lock().init();
     unsafe {
         // enable global page
         Cr4::update(|f| f.insert(Cr4Flags::PAGE_GLOBAL));
