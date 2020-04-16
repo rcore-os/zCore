@@ -126,6 +126,12 @@ impl PageTable {
     }
 }
 
+#[linkage = "weak"]
+#[export_name = "virt_to_phys"]
+pub extern "C" fn virt_to_phys(_: VirtAddr) -> PhysAddr {
+    unimplemented!()
+}
+
 #[repr(C)]
 pub struct PhysFrame {
     paddr: PhysAddr,
@@ -140,6 +146,12 @@ impl PhysFrame {
 
     pub fn addr(&self) -> PhysAddr {
         self.paddr
+    }
+
+    pub fn new_with_paddr(paddr: PhysAddr) -> Self {
+        PhysFrame {
+            paddr
+        }
     }
 }
 

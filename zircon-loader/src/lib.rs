@@ -27,6 +27,7 @@ use {
         ZxError, ZxResult,
     },
     zircon_syscall::Syscall,
+    kernel_hal::PhysFrame,
 };
 
 #[allow(dead_code)]
@@ -165,14 +166,33 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
     let crash_log_vmo = VmObject::new_paged(1);
     crash_log_vmo.set_name("crashlog");
     handles[K_CRASHLOG] = Handle::new(crash_log_vmo, Rights::DEFAULT_VMO);
-    // TODO to use correct CounterName handle
-    let counter_name_vmo = VmObject::new_paged(1);
+
+    extern "C" {
+        fn k_counter_desc_vmo_begin();
+        fn k_counter_desc_vmo_end();
+    }
+    let counter_desc_frames = (k_counter_desc_vmo_begin as usize/PAGE_SIZE..k_counter_desc_vmo_end as usize/PAGE_SIZE)
+        .map(|vaddr| {
+            error!("a page");
+            Some(PhysFrame::new_with_paddr(kernel_hal::virt_to_phys(vaddr*PAGE_SIZE)))
+        }).collect();
+    let counter_name_vmo = VmObject::create_paged_with_frames(counter_desc_frames);
     counter_name_vmo.set_name("counters/desc");
     handles[K_COUNTERNAMES] = Handle::new(counter_name_vmo, Rights::DEFAULT_VMO);
-    // TODO to use correct CounterName handle
-    let kcounters_vmo = VmObject::new_paged(1);
+
+    extern "C" {
+        fn kcounters_arena_start();
+        fn kcounters_arena_page_end();
+    }
+    let counter_frames = (kcounters_arena_start as usize/PAGE_SIZE..kcounters_arena_page_end as usize/PAGE_SIZE)
+        .map(|vaddr| {
+            error!("one page");
+            Some(PhysFrame::new_with_paddr(kernel_hal::virt_to_phys(vaddr*PAGE_SIZE)))
+        }).collect();
+    let kcounters_vmo = VmObject::create_paged_with_frames(counter_frames);
     kcounters_vmo.set_name("counters/arena");
     handles[K_COUNTERS] = Handle::new(kcounters_vmo, Rights::DEFAULT_VMO);
+
     // TODO to use correct Instrumentation data handle
     let instrumentation_data_vmo = VmObject::new_paged(0);
     instrumentation_data_vmo.set_name("UNIMPLEMENTED_VMO");
