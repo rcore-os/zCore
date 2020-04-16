@@ -22,6 +22,9 @@ impl BlockRange {
     pub fn is_full(&self) -> bool {
         self.len() == (1usize << self.block_size_log2)
     }
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
     pub fn origin_begin(&self) -> usize {
         (self.block << self.block_size_log2) + self.begin
     }

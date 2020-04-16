@@ -265,8 +265,8 @@ pub fn serial_set_callback(callback: Box<dyn FnOnce() + Send + Sync>) {
 pub fn serial_read(buf: &mut [u8]) -> usize {
     let mut stdin = STDIN.lock();
     let len = stdin.len().min(buf.len());
-    for i in 0..len {
-        buf[i] = stdin.pop_front().unwrap();
+    for c in &mut buf[..len] {
+        *c = stdin.pop_front().unwrap();
     }
     len
 }

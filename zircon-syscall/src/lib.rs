@@ -224,7 +224,7 @@ impl Syscall<'_> {
             }
             Sys::IOMMU_CREATE => {
                 warn!("IOMMU_CREATE is unimplemented. now sleep forever");
-                kernel_hal::sleep_until(core::time::Duration::from_secs(100000)).await;
+                kernel_hal::sleep_until(core::time::Duration::from_secs(100_000)).await;
                 self.sys_iommu_create(a0 as _, a1 as _, a2.into(), a3 as _, a4.into())
             }
             _ => {

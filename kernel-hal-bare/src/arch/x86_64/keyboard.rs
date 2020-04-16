@@ -17,7 +17,7 @@ pub fn receive() -> Option<DecodedKey> {
     let mut status_port = Port::<u8>::new(0x64);
 
     // Output buffer status = 1
-    if unsafe { status_port.read() } & (1 << 0) != 0 {
+    if unsafe { status_port.read() } & 1 != 0 {
         let scancode = unsafe { data_port.read() };
         if let Ok(Some(key_event)) = keyboard.add_byte(scancode) {
             return keyboard.process_keyevent(key_event);
