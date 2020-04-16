@@ -18,24 +18,44 @@ impl KCounter {
     }
 }
 
+pub const K_SUM: u64 = 1;
+
 #[repr(C)]
-#[derive(Debug)]
 pub struct KCounterDesc {
+    pub name: [u8; 56],
+    pub type_: u64,
+}
+
+impl KCounterDescriptor {
+    pub fn gen_desc(&self) -> KCounterDesc{
+        let mut name = [0u8; 56];
+        let length = self.name.len().min(56);
+        name[..length].copy_from_slice(&self.name.as_bytes()[..length]);
+        KCounterDesc {
+            name,
+            type_: K_SUM,
+        }
+    }
+}
+
+#[repr(C)]
+pub struct KCounterDescriptor {
+    pub counter: &'static KCounter,
     pub name: &'static str,
-    pub kcounter: &'static KCounter,
 }
 
 #[macro_export]
 macro_rules! kcounter {
     ($var:ident, $name:expr) => {
-        #[cfg_attr(target_os = "none", link_section = ".bss.kcounter")]
+        #[used]
+        #[cfg_attr(target_os = "none", link_section = ".bss.kcounter.items")]
         static $var: $crate::util::kcounter::KCounter = {
             #[used]
-            #[cfg_attr(target_os = "none", link_section = ".kcountdesc.desc")]
-            static DESC: $crate::util::kcounter::KCounterDesc =
-                $crate::util::kcounter::KCounterDesc {
+            #[cfg_attr(target_os = "none", link_section = ".kcounter.descriptor.header")]
+            static DESCRIPTOR: $crate::util::kcounter::KCounterDescriptor =
+                $crate::util::kcounter::KCounterDescriptor {
+                    counter: &$var,
                     name: $name,
-                    kcounter: &$var,
                 };
             $crate::util::kcounter::KCounter::new()
         };

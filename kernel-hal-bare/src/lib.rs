@@ -132,16 +132,13 @@ fn phys_to_virt(paddr: PhysAddr) -> VirtAddr {
 #[export_name = "virt_to_phys"]
 pub fn virt_to_phys(vaddr: VirtAddr) -> PhysAddr {
     extern "C" {
-        fn k_counter_desc_vmo_begin();
-        fn k_counter_desc_vmo_end();
         fn kcounters_arena_start();
         fn kcounters_arena_page_end();
     }
     unsafe {
         assert!(vaddr > PMEM_BASE);
     }
-    assert!((vaddr >= k_counter_desc_vmo_begin as usize && vaddr <= k_counter_desc_vmo_end as usize) ||
-            (vaddr >= kcounters_arena_start as usize && vaddr <= kcounters_arena_page_end as usize));
+    assert!(vaddr >= kcounters_arena_start as usize && vaddr < kcounters_arena_page_end as usize);
     unsafe { vaddr - PMEM_BASE }
 }
 

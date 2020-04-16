@@ -1,5 +1,6 @@
 #![no_std]
 #![feature(asm)]
+#![feature(ptr_offset_from)]
 #![feature(global_asm)]
 #![deny(warnings, unused_must_use)]
 
@@ -10,6 +11,7 @@ extern crate log;
 
 use {
     alloc::{boxed::Box, sync::Arc, vec::Vec},
+    core::mem::size_of,
     kernel_hal::GeneralRegs,
     xmas_elf::{
         program::{Flags, ProgramHeader, SegmentData, Type},
@@ -19,7 +21,7 @@ use {
     },
     zircon_object::{
         ipc::*,
-        kcounter,
+        util::kcounter::*,
         object::*,
         resource::{Resource, ResourceFlags, ResourceKind},
         task::*,
@@ -167,30 +169,8 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
     crash_log_vmo.set_name("crashlog");
     handles[K_CRASHLOG] = Handle::new(crash_log_vmo, Rights::DEFAULT_VMO);
 
-    extern "C" {
-        fn k_counter_desc_vmo_begin();
-        fn k_counter_desc_vmo_end();
-    }
-    let counter_desc_frames = (k_counter_desc_vmo_begin as usize/PAGE_SIZE..k_counter_desc_vmo_end as usize/PAGE_SIZE)
-        .map(|vaddr| {
-            error!("a page");
-            Some(PhysFrame::new_with_paddr(kernel_hal::virt_to_phys(vaddr*PAGE_SIZE)))
-        }).collect();
-    let counter_name_vmo = VmObject::create_paged_with_frames(counter_desc_frames);
-    counter_name_vmo.set_name("counters/desc");
+    let (counter_name_vmo, kcounters_vmo) = kcounter_vmo_init();
     handles[K_COUNTERNAMES] = Handle::new(counter_name_vmo, Rights::DEFAULT_VMO);
-
-    extern "C" {
-        fn kcounters_arena_start();
-        fn kcounters_arena_page_end();
-    }
-    let counter_frames = (kcounters_arena_start as usize/PAGE_SIZE..kcounters_arena_page_end as usize/PAGE_SIZE)
-        .map(|vaddr| {
-            error!("one page");
-            Some(PhysFrame::new_with_paddr(kernel_hal::virt_to_phys(vaddr*PAGE_SIZE)))
-        }).collect();
-    let kcounters_vmo = VmObject::create_paged_with_frames(counter_frames);
-    kcounters_vmo.set_name("counters/arena");
     handles[K_COUNTERS] = Handle::new(kcounters_vmo, Rights::DEFAULT_VMO);
 
     // TODO to use correct Instrumentation data handle
@@ -212,6 +192,55 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
     proc.start(&thread, entry, sp, handle, 0)
         .expect("failed to start main thread");
     proc
+}
+
+const KCOUNTER_MAGIC: u64 = 1547273975u64;
+#[repr(C)]
+struct kcounter_vmo_header {
+    magic: u64,
+    max_cpu: u64,
+    counter_table_size: usize,
+}
+
+fn kcounter_vmo_init() -> (Arc<VmObject>, Arc<VmObject>) {
+    extern "C" {
+        fn kcounter_descriptor_begin();
+        fn kcounter_descriptor_end();
+        fn kcounters_arena_start();
+        fn kcounters_arena_page_end();
+    }
+    const DESC_SIZE: usize = size_of::<KCounterDesc>();
+    let counter_name_vmo = {
+        let counter_table_size = kcounter_descriptor_end as usize - kcounter_descriptor_begin as usize;
+        let counter_page_size = pages(counter_table_size / size_of::<KCounterDescriptor>() * DESC_SIZE + 24);
+        let counter_name_vmo = VmObject::new_paged(counter_page_size);
+        let header = kcounter_vmo_header {
+            magic: KCOUNTER_MAGIC,
+            max_cpu: 1u64,
+            counter_table_size,
+        };
+        let serde_header: [u8; size_of::<kcounter_vmo_header>()] = unsafe{ core::mem::transmute(header) };
+        counter_name_vmo.write(0, &serde_header);
+        counter_name_vmo
+    };
+    let start = kcounter_descriptor_begin as usize as *const KCounterDescriptor;
+    let end = kcounter_descriptor_end as usize as *const KCounterDescriptor;
+    let descs = unsafe { core::slice::from_raw_parts(start, end.offset_from(start) as usize) };
+    for (i, descriptor) in descs.iter().enumerate() {
+        let serde_counter: [u8; DESC_SIZE] =
+            unsafe { core::mem::transmute(descriptor.gen_desc()) };
+        counter_name_vmo.write(24 + i * DESC_SIZE, &serde_counter);
+    }
+    counter_name_vmo.set_name("counters/desc");
+
+    let counter_frames = (kcounters_arena_start as usize/PAGE_SIZE..kcounters_arena_page_end as usize/PAGE_SIZE)
+        .map(|vaddr| {
+            Some(PhysFrame::new_with_paddr(kernel_hal::virt_to_phys(vaddr*PAGE_SIZE)))
+        }).collect();
+    let kcounters_vmo = VmObject::create_paged_with_frames(counter_frames);
+    kcounters_vmo.set_name("counters/arena");
+    (counter_name_vmo, kcounters_vmo)
+
 }
 
 kcounter!(EXCEPTIONS_USER, "exceptions.user");
