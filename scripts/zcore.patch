@@ -1,0 +1,44 @@
+diff --git a/src/lib/process_builder/src/lib.rs b/src/lib/process_builder/src/lib.rs
+index 0d49b5bf37a..7929530fe6e 100644
+--- a/src/lib/process_builder/src/lib.rs
++++ b/src/lib/process_builder/src/lib.rs
+@@ -834,7 +834,7 @@ impl ReservationVmar {
+         // (base+len) represents the full address space, assuming this is used with a root VMAR and
+         // length extends to the end of the address space, including a region the kernel reserves
+         // at the start of the space.
+-        let reserve_size = util::page_end((info.base + info.len) / 2) - info.base;
++        let reserve_size = util::page_end(info.len / 2);
+         let (reserve_vmar, reserve_base) =
+             vmar.allocate(0, reserve_size, zx::VmarFlags::SPECIFIC).map_err(|s| {
+                 ProcessBuilderError::GenericStatus("Failed to allocate reservation VMAR", s)
+diff --git a/zircon/kernel/lib/userabi/userboot/start.cc b/zircon/kernel/lib/userabi/userboot/start.cc
+index 70188140fe1..777eccb1403 100644
+--- a/zircon/kernel/lib/userabi/userboot/start.cc
++++ b/zircon/kernel/lib/userabi/userboot/start.cc
+@@ -81,9 +81,9 @@ zx_handle_t reserve_low_address_space(zx_handle_t log, zx_handle_t root_vmar) {
+         "zx_object_get_info failed on child root VMAR handle");
+   zx_handle_t vmar;
+   uintptr_t addr;
+-  size_t reserve_size = (((info.base + info.len) / 2) + PAGE_SIZE - 1) & -PAGE_SIZE;
++  size_t reserve_size = (info.len / 2 + PAGE_SIZE - 1) & -PAGE_SIZE;
+   zx_status_t status =
+-      zx_vmar_allocate(root_vmar, ZX_VM_SPECIFIC, 0, reserve_size - info.base, &vmar, &addr);
++      zx_vmar_allocate(root_vmar, ZX_VM_SPECIFIC, 0, reserve_size, &vmar, &addr);
+   check(log, status, "zx_vmar_allocate failed for low address space reservation");
+   if (addr != info.base)
+     fail(log, "zx_vmar_allocate gave wrong address?!?");
+diff --git a/zircon/system/ulib/launchpad/launchpad.c b/zircon/system/ulib/launchpad/launchpad.c
+index 1a538fadc53..c465e6ae5c4 100644
+--- a/zircon/system/ulib/launchpad/launchpad.c
++++ b/zircon/system/ulib/launchpad/launchpad.c
+@@ -468,8 +468,8 @@ static zx_status_t reserve_low_address_space(launchpad_t* lp) {
+   }
+ 
+   uintptr_t addr;
+-  size_t reserve_size = (((info.base + info.len) / 2) + PAGE_SIZE - 1) & -PAGE_SIZE;
+-  status = zx_vmar_allocate(lp_vmar(lp), ZX_VM_SPECIFIC, 0, reserve_size - info.base,
++  size_t reserve_size = (info.len / 2 + PAGE_SIZE - 1) & -PAGE_SIZE;
++  status = zx_vmar_allocate(lp_vmar(lp), ZX_VM_SPECIFIC, 0, reserve_size,
+                             &lp->reserve_vmar, &addr);
+   if (status != ZX_OK) {
+     return lp_error(lp, status, "zx_vmar_allocate failed for low address space reservation");
