@@ -129,19 +129,6 @@ fn phys_to_virt(paddr: PhysAddr) -> VirtAddr {
     unsafe { PMEM_BASE + paddr }
 }
 
-#[export_name = "virt_to_phys"]
-pub fn virt_to_phys(vaddr: VirtAddr) -> PhysAddr {
-    extern "C" {
-        fn kcounters_arena_start();
-        fn kcounters_arena_page_end();
-    }
-    unsafe {
-        assert!(vaddr > PMEM_BASE);
-    }
-    assert!(vaddr >= kcounters_arena_start as usize && vaddr < kcounters_arena_page_end as usize);
-    unsafe { vaddr - PMEM_BASE }
-}
-
 /// Read physical memory from `paddr` to `buf`.
 #[export_name = "hal_pmem_read"]
 pub fn pmem_read(paddr: PhysAddr, buf: &mut [u8]) {

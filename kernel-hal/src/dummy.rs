@@ -52,6 +52,13 @@ pub struct PageTable {
 }
 
 impl PageTable {
+    /// Get current page table
+    #[linkage = "weak"]
+    #[export_name = "hal_pt_current"]
+    pub fn current() -> Self {
+        unimplemented!()
+    }
+
     /// Create a new `PageTable`.
     #[allow(clippy::new_without_default)]
     #[linkage = "weak"]
@@ -124,12 +131,6 @@ impl PageTable {
         }
         Ok(())
     }
-}
-
-#[linkage = "weak"]
-#[export_name = "virt_to_phys"]
-pub extern "C" fn virt_to_phys(_: VirtAddr) -> PhysAddr {
-    unimplemented!()
 }
 
 #[repr(C)]

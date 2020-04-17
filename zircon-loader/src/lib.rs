@@ -211,13 +211,12 @@ fn kcounter_vmo_init() -> (Arc<VmObject>, Arc<VmObject>) {
     }
     const DESC_SIZE: usize = size_of::<KCounterDesc>();
     let counter_name_vmo = {
-        let counter_table_size = kcounter_descriptor_end as usize - kcounter_descriptor_begin as usize;
-        let counter_page_size = pages(counter_table_size / size_of::<KCounterDescriptor>() * DESC_SIZE + 24);
-        let counter_name_vmo = VmObject::new_paged(counter_page_size);
+        let counter_table_size = (kcounter_descriptor_end as usize - kcounter_descriptor_begin as usize) / size_of::<KCounterDescriptor>() * DESC_SIZE;
+        let counter_name_vmo = VmObject::new_paged(pages(counter_table_size + size_of::<kcounter_vmo_header>()));
         let header = kcounter_vmo_header {
             magic: KCOUNTER_MAGIC,
             max_cpu: 1u64,
-            counter_table_size,
+            counter_table_size: counter_table_size,
         };
         let serde_header: [u8; size_of::<kcounter_vmo_header>()] = unsafe{ core::mem::transmute(header) };
         counter_name_vmo.write(0, &serde_header);
@@ -233,10 +232,14 @@ fn kcounter_vmo_init() -> (Arc<VmObject>, Arc<VmObject>) {
     }
     counter_name_vmo.set_name("counters/desc");
 
-    let counter_frames = (kcounters_arena_start as usize/PAGE_SIZE..kcounters_arena_page_end as usize/PAGE_SIZE)
-        .map(|vaddr| {
-            Some(PhysFrame::new_with_paddr(kernel_hal::virt_to_phys(vaddr*PAGE_SIZE)))
-        }).collect();
+    let mut pgtable = kernel_hal::PageTable::current();
+    let counter_frames = {
+        let mut frames = Vec::new();
+        for addr in (kcounters_arena_start as usize..kcounters_arena_page_end as usize).step_by(PAGE_SIZE) {
+            frames.push(Some(PhysFrame::new_with_paddr(pgtable.query(addr).unwrap())));
+        }
+        frames
+    };
     let kcounters_vmo = VmObject::create_paged_with_frames(counter_frames);
     kcounters_vmo.set_name("counters/arena");
     (counter_name_vmo, kcounters_vmo)

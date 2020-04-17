@@ -24,6 +24,13 @@ pub struct PageTableImpl {
 }
 
 impl PageTableImpl {
+    #[export_name = "hal_pt_current"]
+    pub fn current() -> Self {
+        PageTableImpl {
+            root_paddr: Cr3::read().0.start_address().as_u64() as _,
+        }
+    }
+
     /// Create a new `PageTable`.
     #[allow(clippy::new_without_default)]
     #[export_name = "hal_pt_new"]
