@@ -219,7 +219,7 @@ fn page_aligned(x: VirtAddr) -> bool {
     x % PAGE_SIZE == 0
 }
 
-const PMEM_SIZE: usize = 0x100_00000; // 256MiB
+const PMEM_SIZE: usize = 0x400_00000; // 1GiB
 
 lazy_static! {
     static ref FRAME_FILE: File = create_pmem_file();

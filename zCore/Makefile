@@ -1,7 +1,7 @@
 arch ?= x86_64
 mode ?= debug
 LOG ?=
-zbi_file ?= fuchsia
+zbi_file ?= bringup
 graphic ?=
 accel ?=
 

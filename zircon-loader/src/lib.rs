@@ -185,13 +185,7 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
 
     // check: handle to root proc should be only
 
-    let mut data = Vec::from(cmdline);
-    data.iter_mut().for_each(|ch| {
-        if *ch == 0x3A {
-            *ch = 0
-        }
-    });
-    data.push(0);
+    let data = Vec::from(cmdline.replace(':', "\0") + "\0console.shell=true\0");
     let msg = MessagePacket { data, handles };
     kernel_channel.write(msg).unwrap();
 

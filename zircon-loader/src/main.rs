@@ -34,7 +34,7 @@ fn open_images(path: &PathBuf) -> std::io::Result<Images<Vec<u8>>> {
         userboot: std::fs::read(path.join("userboot-libos.so"))?,
         vdso: std::fs::read(path.join("libzircon-libos.so"))?,
         decompressor: std::fs::read(path.join("decompress-zstd.so"))?,
-        zbi: std::fs::read(path.join("fuchsia.zbi"))?,
+        zbi: std::fs::read(path.join("bringup.zbi"))?,
     })
 }
 
