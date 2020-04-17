@@ -721,6 +721,10 @@
 <span id="721">721</span>
 <span id="722">722</span>
 <span id="723">723</span>
+<span id="724">724</span>
+<span id="725">725</span>
+<span id="726">726</span>
+<span id="727">727</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> <span class="ident">core</span>::<span class="ident">sync</span>::<span class="ident">atomic</span>::<span class="kw-2">*</span>;
 <span class="kw">use</span> {
@@ -749,6 +753,7 @@
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">VmAddressRegion</span> {
     <span class="ident">flags</span>: <span class="ident">VmarFlags</span>,
     <span class="ident">base</span>: <span class="ident">KObjectBase</span>,
+    <span class="ident">_counter</span>: <span class="ident">CountHelper</span>,
     <span class="ident">addr</span>: <span class="ident">VirtAddr</span>,
     <span class="ident">size</span>: <span class="ident">usize</span>,
     <span class="ident">parent</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">VmAddressRegion</span><span class="op">&gt;</span><span class="op">&gt;</span>,
@@ -758,6 +763,7 @@
 }
 
 <span class="macro">impl_kobject</span><span class="macro">!</span>(<span class="ident">VmAddressRegion</span>);
+<span class="macro">define_count_helper</span><span class="macro">!</span>(<span class="ident">VmAddressRegion</span>);
 
 <span class="doccomment">/// The mutable part of `VmAddressRegion`.</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Default</span>)]</span>
@@ -776,6 +782,7 @@
         <span class="ident">Arc</span>::<span class="ident">new</span>(<span class="ident">VmAddressRegion</span> {
             <span class="ident">flags</span>: <span class="ident">VmarFlags</span>::<span class="ident">ROOT_FLAGS</span>,
             <span class="ident">base</span>: <span class="ident">KObjectBase</span>::<span class="ident">new</span>(),
+            <span class="ident">_counter</span>: <span class="ident">CountHelper</span>::<span class="ident">new</span>(),
             <span class="ident">addr</span>,
             <span class="ident">size</span>: <span class="number">0x100_00000000</span>,
             <span class="ident">parent</span>: <span class="prelude-val">None</span>,
@@ -809,6 +816,7 @@
         <span class="kw">let</span> <span class="ident">child</span> <span class="op">=</span> <span class="ident">Arc</span>::<span class="ident">new</span>(<span class="ident">VmAddressRegion</span> {
             <span class="ident">flags</span>,
             <span class="ident">base</span>: <span class="ident">KObjectBase</span>::<span class="ident">new</span>(),
+            <span class="ident">_counter</span>: <span class="ident">CountHelper</span>::<span class="ident">new</span>(),
             <span class="ident">addr</span>: <span class="self">self</span>.<span class="ident">addr</span> <span class="op">+</span> <span class="ident">offset</span>,
             <span class="ident">size</span>: <span class="ident">len</span>,
             <span class="ident">parent</span>: <span class="prelude-val">Some</span>(<span class="self">self</span>.<span class="ident">clone</span>()),

@@ -195,6 +195,14 @@
 <span id="195">195</span>
 <span id="196">196</span>
 <span id="197">197</span>
+<span id="198">198</span>
+<span id="199">199</span>
+<span id="200">200</span>
+<span id="201">201</span>
+<span id="202">202</span>
+<span id="203">203</span>
+<span id="204">204</span>
+<span id="205">205</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Zircon HAL implementation for bare metal environment.</span>
 <span class="doccomment">//!</span>
@@ -280,6 +288,14 @@
             <span class="ident">vmtoken</span>,
         });
         <span class="ident">Thread</span> { <span class="ident">thread</span>: <span class="number">0</span> }
+    }
+
+    <span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_thread_set_tid&quot;</span>]</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">set_tid</span>(<span class="ident">_tid</span>: <span class="ident">u64</span>, <span class="ident">_pid</span>: <span class="ident">u64</span>) {}
+
+    <span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_thread_get_tid&quot;</span>]</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_tid</span>() <span class="op">-</span><span class="op">&gt;</span> (<span class="ident">u64</span>, <span class="ident">u64</span>) {
+        (<span class="number">0</span>, <span class="number">0</span>)
     }
 }
 

@@ -548,6 +548,9 @@
 <span id="548">548</span>
 <span id="549">549</span>
 <span id="550">550</span>
+<span id="551">551</span>
+<span id="552">552</span>
+<span id="553">553</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> {
     <span class="kw">super</span>::{<span class="ident">job</span>::<span class="ident">Job</span>, <span class="ident">job_policy</span>::<span class="kw-2">*</span>, <span class="ident">resource</span>::<span class="kw-2">*</span>, <span class="ident">thread</span>::<span class="ident">Thread</span>, <span class="kw-2">*</span>},
@@ -600,6 +603,7 @@
 <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Process</span> {
     <span class="ident">base</span>: <span class="ident">KObjectBase</span>,
+    <span class="ident">_counter</span>: <span class="ident">CountHelper</span>,
     <span class="ident">job</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Job</span><span class="op">&gt;</span>,
     <span class="ident">policy</span>: <span class="ident">JobPolicy</span>,
     <span class="ident">vmar</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">VmAddressRegion</span><span class="op">&gt;</span>,
@@ -617,6 +621,7 @@
         <span class="self">self</span>.<span class="ident">job</span>.<span class="ident">id</span>()
     }
 );
+<span class="macro">define_count_helper</span><span class="macro">!</span>(<span class="ident">Process</span>);
 
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Default</span>)]</span>
 <span class="kw">struct</span> <span class="ident">ProcessInner</span> {
@@ -659,6 +664,7 @@
         <span class="comment">// TODO: _options -&gt; options</span>
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="ident">Arc</span>::<span class="ident">new</span>(<span class="ident">Process</span> {
             <span class="ident">base</span>: <span class="ident">KObjectBase</span>::<span class="ident">with_name</span>(<span class="ident">name</span>),
+            <span class="ident">_counter</span>: <span class="ident">CountHelper</span>::<span class="ident">new</span>(),
             <span class="ident">job</span>: <span class="ident">job</span>.<span class="ident">clone</span>(),
             <span class="ident">policy</span>: <span class="ident">job</span>.<span class="ident">policy</span>(),
             <span class="ident">vmar</span>: <span class="ident">VmAddressRegion</span>::<span class="ident">new_root</span>(),

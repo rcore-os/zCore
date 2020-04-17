@@ -365,6 +365,9 @@
 <span id="365">365</span>
 <span id="366">366</span>
 <span id="367">367</span>
+<span id="368">368</span>
+<span id="369">369</span>
+<span id="370">370</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> {
     <span class="kw">super</span>::<span class="kw-2">*</span>,
@@ -552,6 +555,9 @@
         );
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>();
         <span class="kw">match</span> <span class="ident">topic</span> {
+            <span class="ident">Topic</span>::<span class="ident">HandleValid</span> <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_dyn_object_with_rights</span>(<span class="ident">handle</span>, <span class="ident">Rights</span>::<span class="ident">empty</span>())<span class="question-mark">?</span>;
+            }
             <span class="ident">Topic</span>::<span class="ident">Process</span> <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">Process</span><span class="op">&gt;</span>(<span class="ident">handle</span>, <span class="ident">Rights</span>::<span class="ident">INSPECT</span>)<span class="question-mark">?</span>;
                 <span class="ident">UserOutPtr</span>::<span class="op">&lt;</span><span class="ident">ProcessInfo</span><span class="op">&gt;</span>::<span class="ident">from</span>(<span class="ident">buffer</span>).<span class="ident">write</span>(<span class="ident">proc</span>.<span class="ident">get_info</span>())<span class="question-mark">?</span>;

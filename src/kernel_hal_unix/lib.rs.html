@@ -357,6 +357,30 @@
 <span id="357">357</span>
 <span id="358">358</span>
 <span id="359">359</span>
+<span id="360">360</span>
+<span id="361">361</span>
+<span id="362">362</span>
+<span id="363">363</span>
+<span id="364">364</span>
+<span id="365">365</span>
+<span id="366">366</span>
+<span id="367">367</span>
+<span id="368">368</span>
+<span id="369">369</span>
+<span id="370">370</span>
+<span id="371">371</span>
+<span id="372">372</span>
+<span id="373">373</span>
+<span id="374">374</span>
+<span id="375">375</span>
+<span id="376">376</span>
+<span id="377">377</span>
+<span id="378">378</span>
+<span id="379">379</span>
+<span id="380">380</span>
+<span id="381">381</span>
+<span id="382">382</span>
+<span id="383">383</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="attribute">#![<span class="ident">feature</span>(<span class="ident">asm</span>, <span class="ident">global_asm</span>)]</span>
 <span class="attribute">#![<span class="ident">feature</span>(<span class="ident">linkage</span>)]</span>
@@ -369,7 +393,8 @@
 
 <span class="kw">use</span> {
     <span class="ident">alloc</span>::<span class="ident">collections</span>::<span class="ident">VecDeque</span>,
-    <span class="ident">core</span>::{<span class="ident">future</span>::<span class="ident">Future</span>, <span class="ident">pin</span>::<span class="ident">Pin</span>},
+    <span class="ident">async_std</span>::<span class="ident">task_local</span>,
+    <span class="ident">core</span>::{<span class="ident">cell</span>::<span class="ident">Cell</span>, <span class="ident">future</span>::<span class="ident">Future</span>, <span class="ident">pin</span>::<span class="ident">Pin</span>},
     <span class="ident">lazy_static</span>::<span class="ident">lazy_static</span>,
     <span class="ident">std</span>::<span class="ident">fmt</span>::{<span class="ident">Debug</span>, <span class="ident">Formatter</span>},
     <span class="ident">std</span>::<span class="ident">fs</span>::{<span class="ident">File</span>, <span class="ident">OpenOptions</span>},
@@ -384,6 +409,7 @@
 <span class="kw">pub</span> <span class="kw">use</span> <span class="ident">kernel_hal</span>::<span class="ident">defs</span>::<span class="kw-2">*</span>;
 <span class="kw">use</span> <span class="ident">kernel_hal</span>::<span class="ident">vdso</span>::<span class="kw-2">*</span>;
 <span class="kw">pub</span> <span class="kw">use</span> <span class="ident">kernel_hal</span>::<span class="kw-2">*</span>;
+<span class="kw">use</span> <span class="ident">std</span>::<span class="ident">io</span>::<span class="ident">Read</span>;
 
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_os</span> <span class="op">=</span> <span class="string">&quot;macos&quot;</span>)]</span>
 <span class="macro">include</span><span class="macro">!</span>(<span class="string">&quot;macos.rs&quot;</span>);
@@ -404,6 +430,22 @@
         <span class="ident">async_std</span>::<span class="ident">task</span>::<span class="ident">spawn</span>(<span class="ident">future</span>);
         <span class="ident">Thread</span> { <span class="ident">thread</span>: <span class="number">0</span> }
     }
+
+    <span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_thread_set_tid&quot;</span>]</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">set_tid</span>(<span class="ident">tid</span>: <span class="ident">u64</span>, <span class="ident">pid</span>: <span class="ident">u64</span>) {
+        <span class="ident">TID</span>.<span class="ident">with</span>(<span class="op">|</span><span class="ident">x</span><span class="op">|</span> <span class="ident">x</span>.<span class="ident">set</span>(<span class="ident">tid</span>));
+        <span class="ident">PID</span>.<span class="ident">with</span>(<span class="op">|</span><span class="ident">x</span><span class="op">|</span> <span class="ident">x</span>.<span class="ident">set</span>(<span class="ident">pid</span>));
+    }
+
+    <span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_thread_get_tid&quot;</span>]</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_tid</span>() <span class="op">-</span><span class="op">&gt;</span> (<span class="ident">u64</span>, <span class="ident">u64</span>) {
+        (<span class="ident">TID</span>.<span class="ident">with</span>(<span class="op">|</span><span class="ident">x</span><span class="op">|</span> <span class="ident">x</span>.<span class="ident">get</span>()), <span class="ident">PID</span>.<span class="ident">with</span>(<span class="op">|</span><span class="ident">x</span><span class="op">|</span> <span class="ident">x</span>.<span class="ident">get</span>()))
+    }
+}
+
+<span class="macro">task_local</span><span class="macro">!</span> {
+    <span class="kw">static</span> <span class="ident">TID</span>: <span class="ident">Cell</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">Cell</span>::<span class="ident">new</span>(<span class="number">0</span>);
+    <span class="kw">static</span> <span class="ident">PID</span>: <span class="ident">Cell</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">Cell</span>::<span class="ident">new</span>(<span class="number">0</span>);
 }
 
 <span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_context_run&quot;</span>]</span>
@@ -633,6 +675,12 @@
         }
         <span class="ident">flags</span>
     }
+}
+
+<span class="doccomment">/// Read a string from console.</span>
+<span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_serial_read&quot;</span>]</span>
+<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">serial_read</span>(<span class="ident">buf</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> [<span class="ident">u8</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
+    <span class="ident">std</span>::<span class="ident">io</span>::<span class="ident">stdin</span>().<span class="ident">read</span>(<span class="ident">buf</span>).<span class="ident">unwrap</span>()
 }
 
 <span class="doccomment">/// Output a char to console.</span>

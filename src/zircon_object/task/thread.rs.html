@@ -467,6 +467,9 @@
 <span id="467">467</span>
 <span id="468">468</span>
 <span id="469">469</span>
+<span id="470">470</span>
+<span id="471">471</span>
+<span id="472">472</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> {
     <span class="kw">super</span>::<span class="ident">process</span>::<span class="ident">Process</span>,
@@ -555,6 +558,7 @@
 <span class="doccomment">/// [`THREAD_RUNNING`]: crate::object::Signal::THREAD_RUNNING</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Thread</span> {
     <span class="ident">base</span>: <span class="ident">KObjectBase</span>,
+    <span class="ident">_counter</span>: <span class="ident">CountHelper</span>,
     <span class="ident">proc</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Process</span><span class="op">&gt;</span>,
     <span class="ident">ext</span>: <span class="ident">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">Any</span> <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span><span class="op">&gt;</span>,
     <span class="ident">inner</span>: <span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">ThreadInner</span><span class="op">&gt;</span>,
@@ -565,6 +569,7 @@
         <span class="self">self</span>.<span class="ident">proc</span>.<span class="ident">id</span>()
     }
 );
+<span class="macro">define_count_helper</span><span class="macro">!</span>(<span class="ident">Thread</span>);
 
 <span class="attribute">#[<span class="ident">linkage</span> <span class="op">=</span> <span class="string">&quot;weak&quot;</span>]</span>
 <span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;run_task&quot;</span>]</span>
@@ -605,6 +610,7 @@
         <span class="comment">// TODO: options</span>
         <span class="kw">let</span> <span class="ident">thread</span> <span class="op">=</span> <span class="ident">Arc</span>::<span class="ident">new</span>(<span class="ident">Thread</span> {
             <span class="ident">base</span>: <span class="ident">KObjectBase</span>::<span class="ident">with_name</span>(<span class="ident">name</span>),
+            <span class="ident">_counter</span>: <span class="ident">CountHelper</span>::<span class="ident">new</span>(),
             <span class="ident">proc</span>: <span class="ident">proc</span>.<span class="ident">clone</span>(),
             <span class="ident">ext</span>: <span class="ident">Box</span>::<span class="ident">new</span>(<span class="ident">ext</span>),
             <span class="ident">inner</span>: <span class="ident">Mutex</span>::<span class="ident">new</span>(<span class="ident">ThreadInner</span> {

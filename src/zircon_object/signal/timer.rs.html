@@ -120,6 +120,9 @@
 <span id="120">120</span>
 <span id="121">121</span>
 <span id="122">122</span>
+<span id="123">123</span>
+<span id="124">124</span>
+<span id="125">125</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
 <span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">object</span>::<span class="kw-2">*</span>;
@@ -136,12 +139,14 @@
 <span class="doccomment">/// or the timer has been canceled.</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Timer</span> {
     <span class="ident">base</span>: <span class="ident">KObjectBase</span>,
+    <span class="ident">_counter</span>: <span class="ident">CountHelper</span>,
     <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
     <span class="ident">slack</span>: <span class="ident">Slack</span>,
     <span class="ident">inner</span>: <span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">TimerInner</span><span class="op">&gt;</span>,
 }
 
 <span class="macro">impl_kobject</span><span class="macro">!</span>(<span class="ident">Timer</span>);
+<span class="macro">define_count_helper</span><span class="macro">!</span>(<span class="ident">Timer</span>);
 
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Default</span>)]</span>
 <span class="kw">struct</span> <span class="ident">TimerInner</span> {
@@ -165,6 +170,7 @@
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">with_slack</span>(<span class="ident">slack</span>: <span class="ident">Slack</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
         <span class="ident">Arc</span>::<span class="ident">new</span>(<span class="ident">Timer</span> {
             <span class="ident">base</span>: <span class="ident">KObjectBase</span>::<span class="ident">default</span>(),
+            <span class="ident">_counter</span>: <span class="ident">CountHelper</span>::<span class="ident">new</span>(),
             <span class="ident">slack</span>,
             <span class="ident">inner</span>: <span class="ident">Mutex</span>::<span class="ident">default</span>(),
         })

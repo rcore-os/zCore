@@ -294,10 +294,25 @@
 <span id="294">294</span>
 <span id="295">295</span>
 <span id="296">296</span>
+<span id="297">297</span>
+<span id="298">298</span>
+<span id="299">299</span>
+<span id="300">300</span>
+<span id="301">301</span>
+<span id="302">302</span>
+<span id="303">303</span>
+<span id="304">304</span>
+<span id="305">305</span>
+<span id="306">306</span>
+<span id="307">307</span>
+<span id="308">308</span>
+<span id="309">309</span>
+<span id="310">310</span>
+<span id="311">311</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> {
-    <span class="kw">super</span>::<span class="ident">job_policy</span>::<span class="kw-2">*</span>, <span class="kw">super</span>::<span class="ident">process</span>::<span class="ident">Process</span>, <span class="kw">crate</span>::<span class="ident">object</span>::<span class="kw-2">*</span>, <span class="ident">alloc</span>::<span class="ident">sync</span>::<span class="ident">Arc</span>,
-    <span class="ident">alloc</span>::<span class="ident">vec</span>::<span class="ident">Vec</span>, <span class="ident">spin</span>::<span class="ident">Mutex</span>,
+    <span class="kw">super</span>::<span class="ident">exception</span>::<span class="kw-2">*</span>, <span class="kw">super</span>::<span class="ident">job_policy</span>::<span class="kw-2">*</span>, <span class="kw">super</span>::<span class="ident">process</span>::<span class="ident">Process</span>, <span class="kw">crate</span>::<span class="ident">object</span>::<span class="kw-2">*</span>,
+    <span class="ident">alloc</span>::<span class="ident">sync</span>::<span class="ident">Arc</span>, <span class="ident">alloc</span>::<span class="ident">vec</span>::<span class="ident">Vec</span>, <span class="ident">spin</span>::<span class="ident">Mutex</span>,
 };
 
 <span class="doccomment">/// Control a group of processes</span>
@@ -320,10 +335,14 @@
 <span class="doccomment">///</span>
 <span class="doccomment">/// Jobs control &quot;applications&quot; that are composed of more than one process to be</span>
 <span class="doccomment">/// controlled as a single entity.</span>
+<span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Job</span> {
     <span class="ident">base</span>: <span class="ident">KObjectBase</span>,
+    <span class="ident">_counter</span>: <span class="ident">CountHelper</span>,
     <span class="ident">parent</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Job</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     <span class="ident">parent_policy</span>: <span class="ident">JobPolicy</span>,
+    <span class="ident">exceptionate</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Exceptionate</span><span class="op">&gt;</span>,
+    <span class="ident">debug_exceptionate</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Exceptionate</span><span class="op">&gt;</span>,
     <span class="ident">inner</span>: <span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">JobInner</span><span class="op">&gt;</span>,
 }
 
@@ -342,6 +361,7 @@
         <span class="self">self</span>.<span class="ident">parent</span>.<span class="ident">as_ref</span>().<span class="ident">map</span>(<span class="op">|</span><span class="ident">p</span><span class="op">|</span> <span class="ident">p</span>.<span class="ident">id</span>()).<span class="ident">unwrap_or</span>(<span class="number">0</span>)
     }
 );
+<span class="macro">define_count_helper</span><span class="macro">!</span>(<span class="ident">Job</span>);
 
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Default</span>)]</span>
 <span class="kw">struct</span> <span class="ident">JobInner</span> {
@@ -357,8 +377,11 @@
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">root</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
         <span class="ident">Arc</span>::<span class="ident">new</span>(<span class="ident">Job</span> {
             <span class="ident">base</span>: <span class="ident">KObjectBase</span>::<span class="ident">new</span>(),
+            <span class="ident">_counter</span>: <span class="ident">CountHelper</span>::<span class="ident">new</span>(),
             <span class="ident">parent</span>: <span class="prelude-val">None</span>,
             <span class="ident">parent_policy</span>: <span class="ident">JobPolicy</span>::<span class="ident">default</span>(),
+            <span class="ident">exceptionate</span>: <span class="ident">Exceptionate</span>::<span class="ident">new</span>(<span class="ident">ZxExceptionChannelType</span>::<span class="ident">Job</span>),
+            <span class="ident">debug_exceptionate</span>: <span class="ident">Exceptionate</span>::<span class="ident">new</span>(<span class="ident">ZxExceptionChannelType</span>::<span class="ident">JobDebugger</span>),
             <span class="ident">inner</span>: <span class="ident">Mutex</span>::<span class="ident">new</span>(<span class="ident">JobInner</span>::<span class="ident">default</span>()),
         })
     }
@@ -369,8 +392,11 @@
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="kw">let</span> <span class="ident">child</span> <span class="op">=</span> <span class="ident">Arc</span>::<span class="ident">new</span>(<span class="ident">Job</span> {
             <span class="ident">base</span>: <span class="ident">KObjectBase</span>::<span class="ident">new</span>(),
+            <span class="ident">_counter</span>: <span class="ident">CountHelper</span>::<span class="ident">new</span>(),
             <span class="ident">parent</span>: <span class="prelude-val">Some</span>(<span class="self">self</span>.<span class="ident">clone</span>()),
             <span class="ident">parent_policy</span>: <span class="ident">inner</span>.<span class="ident">policy</span>.<span class="ident">merge</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">parent_policy</span>),
+            <span class="ident">exceptionate</span>: <span class="ident">Exceptionate</span>::<span class="ident">new</span>(<span class="ident">ZxExceptionChannelType</span>::<span class="ident">Job</span>),
+            <span class="ident">debug_exceptionate</span>: <span class="ident">Exceptionate</span>::<span class="ident">new</span>(<span class="ident">ZxExceptionChannelType</span>::<span class="ident">JobDebugger</span>),
             <span class="ident">inner</span>: <span class="ident">Mutex</span>::<span class="ident">new</span>(<span class="ident">JobInner</span>::<span class="ident">default</span>()),
         });
         <span class="ident">inner</span>.<span class="ident">children</span>.<span class="ident">push</span>(<span class="ident">child</span>.<span class="ident">clone</span>());
@@ -465,6 +491,10 @@
         } <span class="kw">else</span> {
             <span class="prelude-val">Ok</span>(())
         }
+    }
+
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_exceptionate</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Exceptionate</span><span class="op">&gt;</span> {
+        <span class="self">self</span>.<span class="ident">exceptionate</span>.<span class="ident">clone</span>()
     }
 }
 

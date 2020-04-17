@@ -239,6 +239,18 @@
 <span id="239">239</span>
 <span id="240">240</span>
 <span id="241">241</span>
+<span id="242">242</span>
+<span id="243">243</span>
+<span id="244">244</span>
+<span id="245">245</span>
+<span id="246">246</span>
+<span id="247">247</span>
+<span id="248">248</span>
+<span id="249">249</span>
+<span id="250">250</span>
+<span id="251">251</span>
+<span id="252">252</span>
+<span id="253">253</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Zircon syscall implementations</span>
 
@@ -264,8 +276,10 @@
 <span class="kw">mod</span> <span class="ident">channel</span>;
 <span class="kw">mod</span> <span class="ident">consts</span>;
 <span class="kw">mod</span> <span class="ident">cprng</span>;
+<span class="kw">mod</span> <span class="ident">ddk</span>;
 <span class="kw">mod</span> <span class="ident">debug</span>;
 <span class="kw">mod</span> <span class="ident">debuglog</span>;
+<span class="kw">mod</span> <span class="ident">exception</span>;
 <span class="kw">mod</span> <span class="ident">fifo</span>;
 <span class="kw">mod</span> <span class="ident">futex</span>;
 <span class="kw">mod</span> <span class="ident">handle</span>;
@@ -455,9 +469,20 @@
             ),
             <span class="ident">Sys</span>::<span class="ident">SYSTEM_GET_EVENT</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_system_get_event</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a2</span>.<span class="ident">into</span>()),
             <span class="ident">Sys</span>::<span class="ident">TIMER_SET</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_timer_set</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span>.<span class="ident">into</span>(), <span class="ident">a2</span> <span class="kw">as</span> <span class="kw">_</span>),
-            <span class="ident">Sys</span>::<span class="ident">DEBUG_READ</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_debug_read</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span>.<span class="ident">into</span>(), <span class="ident">a2</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a3</span>.<span class="ident">into</span>()),
+            <span class="ident">Sys</span>::<span class="ident">DEBUG_READ</span> <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="self">self</span>.<span class="ident">sys_debug_read</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span>.<span class="ident">into</span>(), <span class="ident">a2</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a3</span>.<span class="ident">into</span>())
+                    .<span class="kw">await</span>
+            }
+            <span class="ident">Sys</span>::<span class="ident">TASK_CREATE_EXCEPTION_CHANNEL</span> <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="self">self</span>.<span class="ident">sys_create_exception_channel</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a2</span>.<span class="ident">into</span>())
+            }
+            <span class="ident">Sys</span>::<span class="ident">IOMMU_CREATE</span> <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="macro">warn</span><span class="macro">!</span>(<span class="string">&quot;IOMMU_CREATE is unimplemented. now sleep forever&quot;</span>);
+                <span class="ident">kernel_hal</span>::<span class="ident">sleep_until</span>(<span class="ident">core</span>::<span class="ident">time</span>::<span class="ident">Duration</span>::<span class="ident">from_secs</span>(<span class="number">100_000</span>)).<span class="kw">await</span>;
+                <span class="self">self</span>.<span class="ident">sys_iommu_create</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a2</span>.<span class="ident">into</span>(), <span class="ident">a3</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a4</span>.<span class="ident">into</span>())
+            }
             <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="macro">warn</span><span class="macro">!</span>(<span class="string">&quot;syscall unimplemented: {:?}&quot;</span>, <span class="ident">sys_type</span>);
+                <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;syscall unimplemented: {:?}&quot;</span>, <span class="ident">sys_type</span>);
                 <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">NOT_SUPPORTED</span>)
             }
         };
@@ -476,7 +501,6 @@
         );
         <span class="kw">match</span> <span class="ident">ret</span> {
             <span class="prelude-val">Ok</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="number">0</span>,
-            <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">INVALID_ARGS</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="macro">unimplemented</span><span class="macro">!</span>(),
             <span class="prelude-val">Err</span>(<span class="ident">err</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">err</span> <span class="kw">as</span> <span class="ident">isize</span>,
         }
     }
