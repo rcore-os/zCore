@@ -175,6 +175,7 @@ impl Thread {
             context.general.rdi = arg1;
             context.general.rsi = arg2;
             context.general.rflags |= 0x202;
+            context.vector.fcw = 0x37f;
             inner.state = ThreadState::Running;
             self.base.signal_set(Signal::THREAD_RUNNING);
         }
@@ -189,6 +190,7 @@ impl Thread {
             let context = inner.context.as_mut().ok_or(ZxError::BAD_STATE)?;
             context.general = regs;
             context.general.rflags |= 0x202;
+            context.vector.fcw = 0x37f;
             inner.state = ThreadState::Running;
             self.base.signal_set(Signal::THREAD_RUNNING);
         }
