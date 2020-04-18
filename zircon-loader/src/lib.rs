@@ -90,11 +90,11 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
             let syscall_entry_offset =
                 elf.get_symbol_address("zcore_syscall_entry")
                     .expect("failed to locate syscall entry") as usize;
-            // fill syscall entry
-            vdso_vmo.write(
-                syscall_entry_offset,
-                &(kernel_hal_unix::syscall_entry as usize).to_ne_bytes(),
-            );
+            let syscall_entry = &(kernel_hal_unix::syscall_entry as usize).to_ne_bytes();
+            // fill syscall entry x3
+            vdso_vmo.write(syscall_entry_offset, syscall_entry);
+            vdso_vmo.write(syscall_entry_offset + 8, syscall_entry);
+            vdso_vmo.write(syscall_entry_offset + 16, syscall_entry);
         }
         vdso_vmo
     };

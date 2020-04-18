@@ -91,3 +91,97 @@ index fa6652d0b47..f197ba7b067 100644
 +.popsection
 +
  #include "syscalls-stubs.S"
+diff --git a/zircon/system/ulib/zircon/zx_futex_wake_handle_close_thread_exit-x86.S b/zircon/system/ulib/zircon/zx_futex_wake_handle_close_thread_exit-x86.S
+index e3b017cdf22..1a3436a6ad1 100644
+--- a/zircon/system/ulib/zircon/zx_futex_wake_handle_close_thread_exit-x86.S
++++ b/zircon/system/ulib/zircon/zx_futex_wake_handle_close_thread_exit-x86.S
+@@ -12,36 +12,16 @@
+
+ // (value_ptr: %rdi, wake_count: %esi, new_value: %edx, handle: %ecx)
+ syscall_entry_begin zx_futex_wake_handle_close_thread_exit
+-
+-    // Store the value into the futex, which should signal that the stack is no longer in use.
+-    // atomic_store_explicit(value_ptr, new_value, memory_order_release)
+-    mov %edx, (%rdi)
+-
+-    // Now the stack might be gone and we can never return!
+-
+-    // Save the handle argument in a callee-saves register (%rbx).
+-    // Since this function cannot return, do not bother preserving the old contents.
+-    mov %ecx, %ebx
+-
+-    zircon_syscall ZX_SYS_futex_wake, zx_futex_wake, zx_futex_wake_handle_close_thread_exit
+-    test %eax, %eax
+-    jnz .Lfutex_wake_fail
+-
+-    mov %ebx, %edi
+-    zircon_syscall ZX_SYS_handle_close, zx_handle_close, zx_futex_wake_handle_close_thread_exit
+-    test %eax, %eax
+-    jnz .Lhandle_close_fail
+-
+-    zircon_syscall ZX_SYS_thread_exit, zx_thread_exit, zx_futex_wake_handle_close_thread_exit
++    mov $164, %eax
++    jmpq *zcore_syscall_entry(%rip)
+
+     // It should be impossible to get here.
+ .Lthread_exit_returned:
+     ud2
+
+-    // We can't recover in these cases, since our stack may have been freed.
+-.Lfutex_wake_fail:
+-    ud2
+-.Lhandle_close_fail:
+-    ud2
+-
+ syscall_entry_end zx_futex_wake_handle_close_thread_exit
++
++.pushsection .rodata
++zcore_syscall_entry:
++    .quad 0xdeadbeaf
++.popsection
+diff --git a/zircon/system/ulib/zircon/zx_vmar_unmap_handle_close_thread_exit-x86.S b/zircon/system/ulib/zircon/zx_vmar_unmap_handle_close_thread_exit-x86.S
+index 7baa69755e0..18cdb981f0c 100644
+--- a/zircon/system/ulib/zircon/zx_vmar_unmap_handle_close_thread_exit-x86.S
++++ b/zircon/system/ulib/zircon/zx_vmar_unmap_handle_close_thread_exit-x86.S
+@@ -12,34 +12,16 @@
+
+ // (vmar_handle: %rdi, addr: %rsi, len: %rdx, handle: %ecx)
+ syscall_entry_begin zx_vmar_unmap_handle_close_thread_exit
+-
+-    // Save the handle argument in a callee-saves register (%rbx).
+-    // Callee-save that register so we can unwind in the error case.
+-    push_reg %rbx
+-    mov %ecx, %ebx
+-
+-    zircon_syscall ZX_SYS_vmar_unmap, zx_vmar_unmap, zx_vmar_unmap_handle_close_thread_exit
+-    test %eax, %eax
+-    jnz .Lvmar_unmap_fail
+-
+-    // Now the stack is gone and we can never return!
+-
+-    mov %ebx, %edi
+-    zircon_syscall ZX_SYS_handle_close, zx_handle_close, zx_vmar_unmap_handle_close_thread_exit
+-    test %eax, %eax
+-    jnz .Lhandle_close_fail
+-
+-    zircon_syscall ZX_SYS_thread_exit, zx_thread_exit, zx_vmar_unmap_handle_close_thread_exit
++    mov $165, %eax
++    jmpq *zcore_syscall_entry(%rip)
+
+     // It should be impossible to get here.
+ .Lthread_exit_returned:
+     ud2
+
+-.Lvmar_unmap_fail:
+-    pop_reg %rbx
+-    ret
+-
+-.Lhandle_close_fail:
+-    ud2
+-
+ syscall_entry_end zx_vmar_unmap_handle_close_thread_exit
++
++.pushsection .rodata
++zcore_syscall_entry:
++    .quad 0xdeadbeaf
++.popsection

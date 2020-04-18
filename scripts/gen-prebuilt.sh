@@ -10,7 +10,7 @@ mkdir -p ${OUTDIR}
 patch -p1 < zircon-libos.patch
 ./scripts/fx build default.zircon
 patch -p1 -R < zircon-libos.patch
-cp out/default.zircon/userboot-x64-clang/obj/kernel/lib/userabi/userboot/userboot.so ${OUTDIR}/userboot-libos.os
+cp out/default.zircon/userboot-x64-clang/obj/kernel/lib/userabi/userboot/userboot.so ${OUTDIR}/userboot-libos.so
 cp out/default.zircon/user.vdso-x64-clang.shlib/obj/system/ulib/zircon/libzircon.so.debug ${OUTDIR}/libzircon-libos.so
 
 # apply zcore.patch and build again

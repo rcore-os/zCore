@@ -227,6 +227,12 @@ impl Syscall<'_> {
                 kernel_hal::sleep_until(core::time::Duration::from_secs(100_000)).await;
                 self.sys_iommu_create(a0 as _, a1 as _, a2.into(), a3 as _, a4.into())
             }
+            Sys::VMAR_UNMAP_HANDLE_CLOSE_THREAD_EXIT => self
+                .sys_vmar_unmap(a0 as _, a1 as _, a2 as _)
+                .and_then(|_| {
+                    let _ = self.sys_handle_close(a3 as _);
+                    self.sys_thread_exit()
+                }),
             _ => {
                 error!("syscall unimplemented: {:?}", sys_type);
                 Err(ZxError::NOT_SUPPORTED)

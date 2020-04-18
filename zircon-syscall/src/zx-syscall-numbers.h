@@ -168,4 +168,6 @@
 #define ZX_SYS_vmo_replace_as_executable 161
 #define ZX_SYS_vmo_create_contiguous 162
 #define ZX_SYS_vmo_create_physical 163
-#define ZX_SYS_COUNT 164
+#define ZX_SYS_futex_wake_handle_close_thread_exit 164
+#define ZX_SYS_vmar_unmap_handle_close_thread_exit 165
+#define ZX_SYS_COUNT 166
