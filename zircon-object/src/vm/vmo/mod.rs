@@ -1,4 +1,4 @@
-use {super::*, crate::object::*, alloc::sync::Arc, kernel_hal::{PageTable, PhysFrame}, alloc::vec::Vec};
+use {super::*, crate::object::*, alloc::sync::Arc, kernel_hal::PageTable};
 
 mod paged;
 mod physical;
@@ -50,7 +50,6 @@ pub trait VMObjectTrait: Sync + Send {
     fn create_child(&self, offset: usize, len: usize) -> Arc<dyn VMObjectTrait>;
 
     fn create_clone(&self, offset: usize, len: usize) -> Arc<dyn VMObjectTrait>;
-
 }
 
 pub struct VmObject {
@@ -63,14 +62,6 @@ impl_kobject!(VmObject);
 define_count_helper!(VmObject);
 
 impl VmObject {
-    pub fn create_paged_with_frames(frames: Vec<Option<PhysFrame>>) -> Arc<Self> {
-        Arc::new(VmObject {
-            base: KObjectBase::default(),
-            _counter: CountHelper::new(),
-            inner: VMObjectPaged::create_with_frames(frames),
-        })
-    }
-
     /// Create a new VMO backing on physical memory allocated in pages.
     pub fn new_paged(pages: usize) -> Arc<Self> {
         Arc::new(VmObject {

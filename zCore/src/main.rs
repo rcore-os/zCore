@@ -3,7 +3,6 @@
 #![feature(lang_items)]
 #![feature(asm)]
 #![feature(panic_info_message)]
-#![feature(ptr_offset_from)]
 #![deny(unused_must_use)]
 #![deny(warnings)] // comment this on develop
 
@@ -19,10 +18,8 @@ mod memory;
 
 use rboot::BootInfo;
 
-use core::fmt::{Debug, Error, Formatter};
 pub use memory::{hal_frame_alloc, hal_frame_dealloc, hal_pt_map_kernel};
 use zircon_loader::{run_userboot, Images};
-use zircon_object::util::kcounter::KCounterDescriptor;
 
 #[no_mangle]
 pub extern "C" fn _start(boot_info: &BootInfo) -> ! {
@@ -74,28 +71,3 @@ fn init_framebuffer(boot_info: &BootInfo) {
     let fb_addr = boot_info.graphic_info.fb_addr as usize;
     kernel_hal_bare::init_framebuffer(width as u32, height as u32, fb_addr);
 }
-
-struct KCounterDescs(&'static [KCounterDescriptor]);
-
-impl KCounterDescs {
-    fn get() -> Self {
-        extern "C" {
-            fn kcounter_descriptor_begin();
-            fn kcounter_descriptor_end();
-        }
-        let start = kcounter_descriptor_begin as usize as *const KCounterDescriptor;
-        let end = kcounter_descriptor_end as usize as *const KCounterDescriptor;
-        let descs = unsafe { core::slice::from_raw_parts(start, end.offset_from(start) as usize) };
-        KCounterDescs(descs)
-    }
-}
-
-impl Debug for KCounterDescs {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
-        f.write_str("KCounters ")?;
-        f.debug_map()
-            .entries(self.0.iter().map(|desc| (desc.name, desc.counter.get())))
-            .finish()
-    }
-}
-

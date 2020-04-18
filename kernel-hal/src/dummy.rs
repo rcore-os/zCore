@@ -148,12 +148,6 @@ impl PhysFrame {
     pub fn addr(&self) -> PhysAddr {
         self.paddr
     }
-
-    pub fn new_with_paddr(paddr: PhysAddr) -> Self {
-        PhysFrame {
-            paddr
-        }
-    }
 }
 
 impl Drop for PhysFrame {

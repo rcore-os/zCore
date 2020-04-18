@@ -23,13 +23,11 @@ SECTIONS {
 
   .data ALIGN(4K):
   {
-    *(.data .data.*)
-  }
+    PROVIDE_HIDDEN(kcounter_descriptor_begin = .);
+    KEEP(*(.kcounter.descriptor))
+    PROVIDE_HIDDEN(kcounter_descriptor_end = .);
 
-  .kcounter.descriptor : ALIGN(4096) {
-      PROVIDE_HIDDEN(kcounter_descriptor_begin = .);
-      KEEP(*(.kcounter.descriptor.header))
-      PROVIDE_HIDDEN(kcounter_descriptor_end = .);
+    *(.data .data.*)
   }
 
   .got ALIGN(4K):
@@ -41,10 +39,9 @@ SECTIONS {
   {
 	. = ALIGN(4096);
 	PROVIDE_HIDDEN(kcounters_arena_start = .);
-	KEEP(*(SORT_BY_NAME(.bss.kcounter.*)))
+	KEEP(*(SORT_BY_NAME(.kcounter.items.*)))
 	PROVIDE_HIDDEN(kcounters_arena_end = .);
 	. = ALIGN(4096);
-	PROVIDE_HIDDEN(kcounters_arena_page_end = .);
 
     *(.bss .bss.*)
   }

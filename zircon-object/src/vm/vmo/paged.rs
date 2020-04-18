@@ -79,16 +79,6 @@ impl VMObjectPaged {
     fn get_page(&self, page_idx: usize, for_write: bool) -> PhysAddr {
         self.inner.lock().get_page(page_idx, for_write)
     }
-
-    pub fn create_with_frames(frames: Vec<Option<PhysFrame>>) -> Arc<Self> {
-        Arc::new(VMObjectPaged {
-          inner: Mutex::new(VMObjectPagedInner {
-                parent: None,
-                parent_offset: 0usize,
-                frames,
-          }),
-        })
-    }
 }
 
 impl VMObjectTrait for VMObjectPaged {
@@ -224,7 +214,6 @@ impl VMObjectTrait for VMObjectPaged {
             }),
         })
     }
-
 }
 
 impl VMObjectPagedInner {

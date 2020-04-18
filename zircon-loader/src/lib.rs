@@ -1,6 +1,5 @@
 #![no_std]
 #![feature(asm)]
-#![feature(ptr_offset_from)]
 #![feature(global_asm)]
 #![deny(warnings, unused_must_use)]
 
@@ -11,7 +10,6 @@ extern crate log;
 
 use {
     alloc::{boxed::Box, sync::Arc, vec::Vec},
-    core::mem::size_of,
     kernel_hal::GeneralRegs,
     xmas_elf::{
         program::{Flags, ProgramHeader, SegmentData, Type},
@@ -21,7 +19,6 @@ use {
     },
     zircon_object::{
         ipc::*,
-        util::kcounter::*,
         object::*,
         resource::{Resource, ResourceFlags, ResourceKind},
         task::*,
@@ -29,10 +26,10 @@ use {
         ZxError, ZxResult,
     },
     zircon_syscall::Syscall,
-    kernel_hal::PhysFrame,
 };
 
-#[allow(dead_code)]
+mod kcounter;
+
 // These describe userboot itself
 const K_PROC_SELF: usize = 0;
 const K_VMARROOT_SELF: usize = 1;
@@ -45,13 +42,9 @@ const K_FIRSTVDSO: usize = 5;
 const K_USERBOOT_DECOMPRESSOR: usize = 8;
 #[allow(dead_code)]
 const K_FIRSTKERNELFILE: usize = K_USERBOOT_DECOMPRESSOR;
-#[allow(dead_code)]
 const K_CRASHLOG: usize = 9;
-#[allow(dead_code)]
 const K_COUNTERNAMES: usize = 10;
-#[allow(dead_code)]
 const K_COUNTERS: usize = 11;
-#[allow(dead_code)]
 const K_FISTINSTRUMENTATIONDATA: usize = 12;
 #[allow(dead_code)]
 const K_HANDLECOUNT: usize = K_FISTINSTRUMENTATIONDATA + 3;
@@ -145,6 +138,7 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
 
     // FIXME: pass correct handles
     let mut handles = vec![Handle::new(proc.clone(), Rights::DUPLICATE); 15];
+    handles[K_PROC_SELF] = Handle::new(proc.clone(), Rights::DEFAULT_PROCESS);
     handles[K_VMARROOT_SELF] = Handle::new(proc.vmar(), Rights::DEFAULT_VMAR | Rights::IO);
     handles[K_ROOTJOB] = Handle::new(job, Rights::DEFAULT_JOB);
     handles[K_ROOTRESOURCE] = Handle::new(resource, Rights::DEFAULT_RESOURCE);
@@ -168,11 +162,9 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
     let crash_log_vmo = VmObject::new_paged(1);
     crash_log_vmo.set_name("crashlog");
     handles[K_CRASHLOG] = Handle::new(crash_log_vmo, Rights::DEFAULT_VMO);
-
-    let (counter_name_vmo, kcounters_vmo) = kcounter_vmo_init();
+    let (counter_name_vmo, kcounters_vmo) = kcounter::create_kcounter_vmo();
     handles[K_COUNTERNAMES] = Handle::new(counter_name_vmo, Rights::DEFAULT_VMO);
     handles[K_COUNTERS] = Handle::new(kcounters_vmo, Rights::DEFAULT_VMO);
-
     // TODO to use correct Instrumentation data handle
     let instrumentation_data_vmo = VmObject::new_paged(0);
     instrumentation_data_vmo.set_name("UNIMPLEMENTED_VMO");
@@ -192,58 +184,6 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
     proc.start(&thread, entry, sp, handle, 0)
         .expect("failed to start main thread");
     proc
-}
-
-const KCOUNTER_MAGIC: u64 = 1547273975u64;
-#[repr(C)]
-struct kcounter_vmo_header {
-    magic: u64,
-    max_cpu: u64,
-    counter_table_size: usize,
-}
-
-fn kcounter_vmo_init() -> (Arc<VmObject>, Arc<VmObject>) {
-    extern "C" {
-        fn kcounter_descriptor_begin();
-        fn kcounter_descriptor_end();
-        fn kcounters_arena_start();
-        fn kcounters_arena_page_end();
-    }
-    const DESC_SIZE: usize = size_of::<KCounterDesc>();
-    let counter_name_vmo = {
-        let counter_table_size = (kcounter_descriptor_end as usize - kcounter_descriptor_begin as usize) / size_of::<KCounterDescriptor>() * DESC_SIZE;
-        let counter_name_vmo = VmObject::new_paged(pages(counter_table_size + size_of::<kcounter_vmo_header>()));
-        let header = kcounter_vmo_header {
-            magic: KCOUNTER_MAGIC,
-            max_cpu: 1u64,
-            counter_table_size: counter_table_size,
-        };
-        let serde_header: [u8; size_of::<kcounter_vmo_header>()] = unsafe{ core::mem::transmute(header) };
-        counter_name_vmo.write(0, &serde_header);
-        counter_name_vmo
-    };
-    let start = kcounter_descriptor_begin as usize as *const KCounterDescriptor;
-    let end = kcounter_descriptor_end as usize as *const KCounterDescriptor;
-    let descs = unsafe { core::slice::from_raw_parts(start, end.offset_from(start) as usize) };
-    for (i, descriptor) in descs.iter().enumerate() {
-        let serde_counter: [u8; DESC_SIZE] =
-            unsafe { core::mem::transmute(descriptor.gen_desc()) };
-        counter_name_vmo.write(24 + i * DESC_SIZE, &serde_counter);
-    }
-    counter_name_vmo.set_name("counters/desc");
-
-    let mut pgtable = kernel_hal::PageTable::current();
-    let counter_frames = {
-        let mut frames = Vec::new();
-        for addr in (kcounters_arena_start as usize..kcounters_arena_page_end as usize).step_by(PAGE_SIZE) {
-            frames.push(Some(PhysFrame::new_with_paddr(pgtable.query(addr).unwrap())));
-        }
-        frames
-    };
-    let kcounters_vmo = VmObject::create_paged_with_frames(counter_frames);
-    kcounters_vmo.set_name("counters/arena");
-    (counter_name_vmo, kcounters_vmo)
-
 }
 
 kcounter!(EXCEPTIONS_USER, "exceptions.user");
