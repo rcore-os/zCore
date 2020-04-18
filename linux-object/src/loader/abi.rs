@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+#![allow(dead_code, unsafe_code)]
 
 use alloc::collections::btree_map::BTreeMap;
 use alloc::string::String;

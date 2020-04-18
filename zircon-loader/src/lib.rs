@@ -11,19 +11,14 @@ extern crate log;
 use {
     alloc::{boxed::Box, sync::Arc, vec::Vec},
     kernel_hal::GeneralRegs,
-    xmas_elf::{
-        program::{Flags, ProgramHeader, SegmentData, Type},
-        sections::SectionData,
-        symbol_table::Entry,
-        ElfFile,
-    },
+    xmas_elf::ElfFile,
     zircon_object::{
         ipc::*,
         object::*,
         resource::{Resource, ResourceFlags, ResourceKind},
         task::*,
+        util::elf_loader::*,
         vm::*,
-        ZxError, ZxResult,
     },
     zircon_syscall::Syscall,
 };
@@ -245,108 +240,4 @@ async fn handle_syscall(thread: &Arc<Thread>, regs: &mut GeneralRegs) -> bool {
     };
     syscall.regs.rax = syscall.syscall(num, args).await as usize;
     syscall.exit
-}
-
-pub trait ElfExt {
-    fn load_segment_size(&self) -> usize;
-    fn get_symbol_address(&self, symbol: &str) -> Option<u64>;
-}
-
-impl ElfExt for ElfFile<'_> {
-    /// Get total size of all LOAD segments.
-    fn load_segment_size(&self) -> usize {
-        let pages = self
-            .program_iter()
-            .filter(|ph| ph.get_type().unwrap() == Type::Load)
-            .map(|ph| pages(ph.mem_size() as usize))
-            .sum::<usize>();
-        pages * PAGE_SIZE
-    }
-
-    /// Get address of the given `symbol`.
-    fn get_symbol_address(&self, symbol: &str) -> Option<u64> {
-        for section in self.section_iter() {
-            if let SectionData::SymbolTable64(entries) = section.get_data(self).unwrap() {
-                for e in entries {
-                    if e.get_name(self).unwrap() == symbol {
-                        return Some(e.value());
-                    }
-                }
-            }
-        }
-        None
-    }
-}
-
-pub trait VmarExt {
-    fn load_from_elf(&self, elf: &ElfFile) -> ZxResult;
-    fn map_from_elf(&self, elf: &ElfFile, vmo: Arc<VmObject>) -> ZxResult;
-}
-
-impl VmarExt for VmAddressRegion {
-    /// Create `VMObject` from all LOAD segments of `elf` and map them to this VMAR.
-    /// Return the first `VMObject`.
-    fn load_from_elf(&self, elf: &ElfFile) -> ZxResult {
-        for ph in elf.program_iter() {
-            if ph.get_type().unwrap() != Type::Load {
-                continue;
-            }
-            let vmo = make_vmo(&elf, ph)?;
-            let len = vmo.len();
-            let flags = ph.flags().to_mmu_flags();
-            self.map_at(ph.virtual_addr() as usize, vmo.clone(), 0, len, flags)?;
-        }
-        Ok(())
-    }
-
-    fn map_from_elf(&self, elf: &ElfFile, vmo: Arc<VmObject>) -> ZxResult {
-        for ph in elf.program_iter() {
-            if ph.get_type().unwrap() != Type::Load {
-                continue;
-            }
-            let flags = ph.flags().to_mmu_flags();
-            let vmo_offset = pages(ph.physical_addr() as usize) * PAGE_SIZE;
-            let len = pages(ph.mem_size() as usize) * PAGE_SIZE;
-            self.map_at(
-                ph.virtual_addr() as usize,
-                vmo.clone(),
-                vmo_offset,
-                len,
-                flags,
-            )?;
-        }
-        Ok(())
-    }
-}
-
-trait FlagsExt {
-    fn to_mmu_flags(&self) -> MMUFlags;
-}
-
-impl FlagsExt for Flags {
-    fn to_mmu_flags(&self) -> MMUFlags {
-        let mut flags = MMUFlags::USER;
-        if self.is_read() {
-            flags.insert(MMUFlags::READ);
-        }
-        if self.is_write() {
-            flags.insert(MMUFlags::WRITE);
-        }
-        if self.is_execute() {
-            flags.insert(MMUFlags::EXECUTE);
-        }
-        flags
-    }
-}
-
-fn make_vmo(elf: &ElfFile, ph: ProgramHeader) -> ZxResult<Arc<VmObject>> {
-    assert_eq!(ph.get_type().unwrap(), Type::Load);
-    let pages = pages(ph.mem_size() as usize);
-    let vmo = VmObject::new_paged(pages);
-    let data = match ph.get_data(&elf).unwrap() {
-        SegmentData::Undefined(data) => data,
-        _ => return Err(ZxError::INVALID_ARGS),
-    };
-    vmo.write(0, data);
-    Ok(vmo)
 }
