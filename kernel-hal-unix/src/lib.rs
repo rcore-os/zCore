@@ -293,10 +293,32 @@ impl FlagsExt for MMUFlags {
     }
 }
 
-/// Read a string from console.
+lazy_static! {
+    static ref STDIN: Mutex<VecDeque<u8>> = Mutex::new(VecDeque::new());
+    static ref STDIN_CALLBACK: Mutex<Vec<Box<dyn FnOnce() + Send + Sync>>> = Mutex::new(Vec::new());
+}
+
+/// Put a char by serial interrupt handler.
+fn serial_put(x: u8) {
+    STDIN.lock().unwrap().push_back(x);
+    for callback in STDIN_CALLBACK.lock().unwrap().drain(..) {
+        callback();
+    }
+}
+
+#[export_name = "hal_serial_set_callback"]
+pub fn serial_set_callback(callback: Box<dyn FnOnce() + Send + Sync>) {
+    STDIN_CALLBACK.lock().unwrap().push(callback);
+}
+
 #[export_name = "hal_serial_read"]
 pub fn serial_read(buf: &mut [u8]) -> usize {
-    std::io::stdin().read(buf).unwrap()
+    let mut stdin = STDIN.lock().unwrap();
+    let len = stdin.len().min(buf.len());
+    for c in &mut buf[..len] {
+        *c = stdin.pop_front().unwrap();
+    }
+    len
 }
 
 /// Output a char to console.
@@ -355,6 +377,13 @@ pub fn init() {
     unsafe {
         register_sigsegv_handler();
     }
+    // spawn a thread to read stdin
+    // TODO: raw mode
+    std::thread::spawn(|| {
+        for i in std::io::stdin().bytes() {
+            serial_put(i.unwrap());
+        }
+    });
 }
 
 #[cfg(test)]
