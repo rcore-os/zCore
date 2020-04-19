@@ -92,6 +92,14 @@ impl VmObject {
             inner: self.inner.create_clone(offset, len),
         })
     }
+
+    pub fn create_child(&self, offset: usize, len: usize) -> Arc<Self> {
+        Arc::new(VmObject {
+            base: KObjectBase::default(),
+            _counter: CountHelper::new(),
+            inner: self.inner.create_child(offset, len),
+        })
+    }
 }
 
 impl Deref for VmObject {

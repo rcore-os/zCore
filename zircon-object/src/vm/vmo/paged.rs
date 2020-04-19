@@ -13,11 +13,13 @@ pub struct VMObjectPaged {
     inner: Mutex<VMObjectPagedInner>,
 }
 
+#[allow(dead_code)]
 /// The mutable part of `VMObjectPaged`.
 struct VMObjectPagedInner {
     parent: Option<Arc<VMObjectPaged>>,
     parent_offset: usize,
     frames: Vec<Option<PhysFrame>>,
+    mappings: Vec<Arc<VmMapping>>,
 }
 
 impl VMObjectPaged {
@@ -31,6 +33,7 @@ impl VMObjectPaged {
                 parent: None,
                 parent_offset: 0usize,
                 frames,
+                mappings: Vec::new(),
             }),
         })
     }
@@ -169,13 +172,15 @@ impl VMObjectTrait for VMObjectPaged {
         let hidden_vmo = Arc::new(VMObjectPaged {
             inner: Mutex::new(VMObjectPagedInner {
                 parent: old_parent,
-                parent_offset: 0usize,
+                parent_offset: inner.parent_offset,
                 frames,
+                mappings: Vec::new(),
             }),
         });
 
         // change current vmo's parent
         inner.parent = Some(hidden_vmo.clone());
+        inner.parent_offset = 0usize;
         inner.frames.resize_with(pages, Default::default);
 
         // create hidden_vmo's another child as result
@@ -186,6 +191,7 @@ impl VMObjectTrait for VMObjectPaged {
                 parent: Some(hidden_vmo),
                 parent_offset: offset,
                 frames: child_frames,
+                mappings: Vec::new(),
             }),
         })
     }
@@ -211,6 +217,7 @@ impl VMObjectTrait for VMObjectPaged {
                 parent: None,
                 parent_offset: offset,
                 frames,
+                mappings: Vec::new(),
             }),
         })
     }

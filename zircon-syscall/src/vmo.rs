@@ -131,7 +131,7 @@ impl Syscall<'_> {
 
         let child_size = roundup_pages(size);
         info!("size of child vmo: {:#x}", child_size);
-        let child_vmo = vmo.create_clone(offset as usize, child_size);
+        let child_vmo = vmo.create_child(offset as usize, child_size);
         out.write(proc.add_handle(Handle::new(child_vmo, child_rights)))?;
         Ok(())
     }

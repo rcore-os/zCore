@@ -41,7 +41,7 @@ define_count_helper!(VmAddressRegion);
 #[derive(Default)]
 struct VmarInner {
     children: Vec<Arc<VmAddressRegion>>,
-    mappings: Vec<VmMapping>,
+    mappings: Vec<Arc<VmMapping>>,
 }
 
 impl VmAddressRegion {
@@ -127,14 +127,16 @@ impl VmAddressRegion {
         let inner = guard.as_mut().ok_or(ZxError::BAD_STATE)?;
         let offset = self.determine_offset(inner, vmar_offset, len, PAGE_SIZE)?;
         let addr = self.addr + offset;
-        let mapping = VmMapping {
-            addr,
-            size: len,
+        let mapping = Arc::new(VmMapping {
+            inner: Arc::new(Mutex::new(VmMappingInner {
+                addr,
+                size: len,
+                vmo_offset,
+            })),
             flags,
             vmo,
-            vmo_offset,
             page_table: self.page_table.clone(),
-        };
+        });
         mapping.map();
         inner.mappings.push(mapping);
         Ok(addr)
@@ -166,7 +168,7 @@ impl VmAddressRegion {
             if let Some(new) = map.cut(begin, end) {
                 new_maps.push(new);
             }
-            map.size == 0
+            map.size() == 0
         });
         inner.mappings.extend(new_maps);
         for vmar in inner.children.drain_filter(|vmar| vmar.within(begin, end)) {
@@ -183,8 +185,8 @@ impl VmAddressRegion {
             .mappings
             .iter()
             .filter_map(|map| {
-                if map.addr >= addr && map.end_addr() <= end_addr {
-                    Some(map.size)
+                if map.addr() >= addr && map.end_addr() <= end_addr {
+                    Some(map.size())
                 } else {
                     None
                 }
@@ -196,7 +198,7 @@ impl VmAddressRegion {
         if inner
             .mappings
             .iter()
-            .filter(|map| map.addr >= addr && map.end_addr() <= addr) // get mappings in range: [addr, end_addr]
+            .filter(|map| map.addr() >= addr && map.end_addr() <= addr) // get mappings in range: [addr, end_addr]
             .any(|map| !map.is_valid_mapping_flags(flags))
         // check if protect flags is valid
         {
@@ -205,7 +207,7 @@ impl VmAddressRegion {
         inner
             .mappings
             .iter()
-            .filter(|map| map.addr >= addr && map.end_addr() <= addr)
+            .filter(|map| map.addr() >= addr && map.end_addr() <= addr)
             .for_each(|map| {
                 map.protect(flags);
             });
@@ -373,8 +375,8 @@ impl VmAddressRegion {
         let guard = self.inner.lock();
         let inner = guard.as_ref().unwrap();
         for map in inner.mappings.iter() {
-            if map.vmo.name().starts_with("vdso") && map.vmo_offset == 0x7000 {
-                return Some(map.addr);
+            if map.vmo.name().starts_with("vdso") && map.inner.lock().vmo_offset == 0x7000 {
+                return Some(map.addr());
             }
         }
         for vmar in inner.children.iter() {
@@ -396,7 +398,7 @@ impl VmAddressRegion {
     fn used_size(&self) -> usize {
         let mut guard = self.inner.lock();
         let inner = guard.as_mut().unwrap();
-        let map_size: usize = inner.mappings.iter().map(|map| map.size).sum();
+        let map_size: usize = inner.mappings.iter().map(|map| map.size()).sum();
         let vmar_size: usize = inner.children.iter().map(|vmar| vmar.size).sum();
         map_size + vmar_size
     }
@@ -411,95 +413,101 @@ pub struct VmarInfo {
 
 /// Virtual Memory Mapping
 pub struct VmMapping {
-    addr: VirtAddr,
-    size: usize,
     flags: MMUFlags,
     vmo: Arc<VmObject>,
-    vmo_offset: usize,
     page_table: Arc<Mutex<PageTable>>,
+    inner: Arc<Mutex<VmMappingInner>>,
+}
+
+struct VmMappingInner {
+    addr: VirtAddr,
+    size: usize,
+    vmo_offset: usize,
 }
 
 impl core::fmt::Debug for VmMapping {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "addr: {:#x}, size: {:#x}", self.addr, self.size)
+        write!(f, "addr: {:#x}, size: {:#x}", self.addr(), self.size())
     }
 }
 
 impl VmMapping {
     fn map(&self) {
         let mut page_table = self.page_table.lock();
+        let inner = self.inner.lock();
         self.vmo.map_to(
             &mut page_table,
-            self.addr,
-            self.vmo_offset,
-            self.size,
+            inner.addr,
+            inner.vmo_offset,
+            inner.size,
             self.flags,
         );
     }
 
     fn unmap(&self) {
         let mut page_table = self.page_table.lock();
+        let inner = self.inner.lock();
         self.vmo
-            .unmap_from(&mut page_table, self.addr, self.vmo_offset, self.size);
+            .unmap_from(&mut page_table, inner.addr, inner.vmo_offset, inner.size);
     }
 
     /// Cut and unmap regions in `[begin, end)`.
     ///
     /// If it will be split, return another one.
-    fn cut(&mut self, begin: VirtAddr, end: VirtAddr) -> Option<Self> {
+    fn cut(&self, begin: VirtAddr, end: VirtAddr) -> Option<Arc<Self>> {
         if !self.overlap(begin, end) {
             return None;
         }
-        if self.addr >= begin && self.end_addr() <= end {
+        let mut inner = self.inner.lock();
+        if inner.addr >= begin && inner.end_addr() <= end {
             // subset: [xxxxxxxxxx]
             self.unmap();
-            self.size = 0;
+            inner.size = 0;
             None
-        } else if self.addr >= begin && self.addr < end {
+        } else if inner.addr >= begin && inner.addr < end {
             // prefix: [xxxx------]
-            let cut_len = end - self.addr;
+            let cut_len = end - inner.addr;
             let mut page_table = self.page_table.lock();
             self.vmo
-                .unmap_from(&mut page_table, self.addr, self.vmo_offset, cut_len);
-            self.addr = end;
-            self.size -= cut_len;
-            self.vmo_offset += cut_len;
+                .unmap_from(&mut page_table, inner.addr, inner.vmo_offset, cut_len);
+            inner.addr = end;
+            inner.size -= cut_len;
+            inner.vmo_offset += cut_len;
             None
-        } else if self.end_addr() <= end && self.end_addr() > begin {
+        } else if inner.end_addr() <= end && inner.end_addr() > begin {
             // postfix: [------xxxx]
-            let cut_len = self.end_addr() - begin;
-            let new_len = begin - self.addr;
+            let cut_len = inner.end_addr() - begin;
+            let new_len = begin - inner.addr;
             let mut page_table = self.page_table.lock();
             self.vmo
-                .unmap_from(&mut page_table, begin, self.vmo_offset + new_len, cut_len);
-            self.size = new_len;
+                .unmap_from(&mut page_table, begin, inner.vmo_offset + new_len, cut_len);
+            inner.size = new_len;
             None
         } else {
             // superset: [---xxxx---]
             let cut_len = end - begin;
-            let new_len1 = begin - self.addr;
-            let new_len2 = self.end_addr() - end;
+            let new_len1 = begin - inner.addr;
+            let new_len2 = inner.end_addr() - end;
             let mut page_table = self.page_table.lock();
             self.vmo
-                .unmap_from(&mut page_table, begin, self.vmo_offset + new_len1, cut_len);
-            self.size = new_len1;
-            Some(VmMapping {
-                addr: end,
-                size: new_len2,
+                .unmap_from(&mut page_table, begin, inner.vmo_offset + new_len1, cut_len);
+            inner.size = new_len1;
+            Some(Arc::new( VmMapping {
+                inner: Arc::new(Mutex::new(VmMappingInner {
+                    addr: end,
+                    size: new_len2,
+                    vmo_offset: inner.vmo_offset + (end - inner.addr),
+                })),
                 flags: self.flags,
                 vmo: self.vmo.clone(),
-                vmo_offset: self.vmo_offset + (end - self.addr),
                 page_table: self.page_table.clone(),
-            })
+            }))
         }
     }
 
     fn overlap(&self, begin: VirtAddr, end: VirtAddr) -> bool {
-        !(self.addr >= end || self.end_addr() <= begin)
-    }
-
-    fn end_addr(&self) -> VirtAddr {
-        self.addr + self.size
+        let inner = self.inner.lock();
+        !(inner.addr >= end || inner.end_addr() <= begin)
     }
 
     pub fn is_valid_mapping_flags(&self, flags: MMUFlags) -> bool {
@@ -517,9 +525,28 @@ impl VmMapping {
 
     pub fn protect(&self, flags: MMUFlags) {
         let mut pg_table = self.page_table.lock();
-        for i in 0..self.size {
-            pg_table.protect(self.addr + i * PAGE_SIZE, flags).unwrap();
+        let inner = self.inner.lock();
+        for i in 0..inner.size {
+            pg_table.protect(inner.addr + i * PAGE_SIZE, flags).unwrap();
         }
+    }
+
+    fn size(&self) -> usize {
+        self.inner.lock().size
+    }
+
+    fn addr(&self) -> VirtAddr {
+        self.inner.lock().addr
+    }
+
+    fn end_addr(&self) -> VirtAddr {
+        self.inner.lock().end_addr()
+    }
+}
+
+impl VmMappingInner {
+    fn end_addr(&self) -> VirtAddr {
+        self.addr + self.size
     }
 }
 
