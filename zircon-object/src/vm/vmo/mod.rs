@@ -24,7 +24,7 @@ pub trait VMObjectTrait: Sync + Send {
     /// Map physical memory to `page_table`.
     fn map_to(
         &self,
-        page_table: &mut PageTable,
+        mapping: Arc<VmMapping>,
         vaddr: VirtAddr,
         offset: usize,
         len: usize,
@@ -50,6 +50,8 @@ pub trait VMObjectTrait: Sync + Send {
     fn create_child(&self, offset: usize, len: usize) -> Arc<dyn VMObjectTrait>;
 
     fn create_clone(&self, offset: usize, len: usize) -> Arc<dyn VMObjectTrait>;
+
+    fn append_mapping(&self, mapping: Arc<VmMapping>);
 }
 
 pub struct VmObject {

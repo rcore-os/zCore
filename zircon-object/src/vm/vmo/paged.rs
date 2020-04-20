@@ -4,7 +4,7 @@ use {
     alloc::sync::Arc,
     alloc::vec::Vec,
     core::ops::Range,
-    kernel_hal::{PageTable, PhysFrame},
+    kernel_hal::PhysFrame,
     spin::Mutex,
 };
 
@@ -124,7 +124,7 @@ impl VMObjectTrait for VMObjectPaged {
 
     fn map_to(
         &self,
-        page_table: &mut PageTable,
+        mapping: Arc<VmMapping>,
         vaddr: usize,
         offset: usize,
         len: usize,
@@ -133,12 +133,15 @@ impl VMObjectTrait for VMObjectPaged {
         let start_page = offset / PAGE_SIZE;
         let pages = len / PAGE_SIZE;
         let mut inner = self.inner.lock();
-        for i in 0..pages {
-            let paddr = inner.get_page(start_page + i, true);
-            page_table
-                .map(vaddr + i * PAGE_SIZE, paddr, flags)
-                .expect("failed to map");
-        }
+        mapping.do_with_pgtable(|page_table| {
+            for i in 0..pages {
+                let paddr = inner.get_page(start_page + i, true);
+                page_table
+                    .map(vaddr + i * PAGE_SIZE, paddr, flags)
+                    .expect("failed to map");
+            }
+        });
+        inner.mappings.push(mapping);
     }
 
     fn commit(&self, offset: usize, len: usize) {
@@ -163,7 +166,7 @@ impl VMObjectTrait for VMObjectPaged {
         assert!(page_aligned(offset));
         assert!(page_aligned(len));
         let mut frames = Vec::new();
-        let pages = self.len() / PAGE_SIZE;
+        let page_num = self.len() / PAGE_SIZE;
         let mut inner = self.inner.lock();
         frames.append(&mut inner.frames);
         let old_parent = inner.parent.take();
@@ -181,7 +184,9 @@ impl VMObjectTrait for VMObjectPaged {
         // change current vmo's parent
         inner.parent = Some(hidden_vmo.clone());
         inner.parent_offset = 0usize;
-        inner.frames.resize_with(pages, Default::default);
+        inner.frames.resize_with(page_num, Default::default);
+
+        inner.mappings.iter().for_each(|map| map.remove_write_flag(pages(offset), pages(len)));
 
         // create hidden_vmo's another child as result
         let mut child_frames = Vec::new();
@@ -220,6 +225,10 @@ impl VMObjectTrait for VMObjectPaged {
                 mappings: Vec::new(),
             }),
         })
+    }
+
+    fn append_mapping(&self, mapping: Arc<VmMapping>) {
+        self.inner.lock().mappings.push(mapping);
     }
 }
 

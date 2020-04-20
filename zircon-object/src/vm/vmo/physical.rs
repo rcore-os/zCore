@@ -48,16 +48,18 @@ impl VMObjectTrait for VMObjectPhysical {
 
     fn map_to(
         &self,
-        page_table: &mut PageTable,
+        mapping: Arc<VmMapping>,
         vaddr: usize,
         offset: usize,
         len: usize,
         flags: MMUFlags,
     ) {
         let pages = len / PAGE_SIZE;
-        page_table
-            .map_cont(vaddr, self.paddr + offset, pages, flags)
-            .expect("failed to map")
+        mapping.do_with_pgtable(|page_table| {
+            page_table
+                .map_cont(vaddr, self.paddr + offset, pages, flags)
+                .expect("failed to map");
+        });
     }
 
     // TODO empty function should be denied
@@ -74,6 +76,10 @@ impl VMObjectTrait for VMObjectPhysical {
     }
 
     fn create_clone(&self, _offset: usize, _len: usize) -> Arc<dyn VMObjectTrait> {
+        unimplemented!()
+    }
+
+    fn append_mapping(&self, _mapping: Arc<VmMapping>) {
         unimplemented!()
     }
 }

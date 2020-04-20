@@ -166,7 +166,8 @@ impl VmAddressRegion {
         let mut new_maps = Vec::new();
         inner.mappings.drain_filter(|map| {
             if let Some(new) = map.cut(begin, end) {
-                new_maps.push(new);
+                new_maps.push(new.clone());
+                map.vmo.append_mapping(new);
             }
             map.size() == 0
         });
@@ -432,11 +433,10 @@ impl core::fmt::Debug for VmMapping {
 }
 
 impl VmMapping {
-    fn map(&self) {
-        let mut page_table = self.page_table.lock();
+    fn map(self: &Arc<Self>) {
         let inner = self.inner.lock();
         self.vmo.map_to(
-            &mut page_table,
+            self.clone(),
             inner.addr,
             inner.vmo_offset,
             inner.size,
@@ -459,17 +459,20 @@ impl VmMapping {
             return None;
         }
         let mut inner = self.inner.lock();
+        let mut page_table = self.page_table.lock();
         if inner.addr >= begin && inner.end_addr() <= end {
             // subset: [xxxxxxxxxx]
-            self.unmap();
+            page_table
+                .unmap_cont(inner.addr, pages(inner.size))
+                .expect("failed to unmap");
             inner.size = 0;
             None
         } else if inner.addr >= begin && inner.addr < end {
             // prefix: [xxxx------]
             let cut_len = end - inner.addr;
-            let mut page_table = self.page_table.lock();
-            self.vmo
-                .unmap_from(&mut page_table, inner.addr, inner.vmo_offset, cut_len);
+            page_table
+                .unmap_cont(inner.addr, pages(cut_len))
+                .expect("failed to unmap");
             inner.addr = end;
             inner.size -= cut_len;
             inner.vmo_offset += cut_len;
@@ -478,9 +481,9 @@ impl VmMapping {
             // postfix: [------xxxx]
             let cut_len = inner.end_addr() - begin;
             let new_len = begin - inner.addr;
-            let mut page_table = self.page_table.lock();
-            self.vmo
-                .unmap_from(&mut page_table, begin, inner.vmo_offset + new_len, cut_len);
+            page_table
+                .unmap_cont(begin, pages(cut_len))
+                .expect("failed to unmap");
             inner.size = new_len;
             None
         } else {
@@ -488,9 +491,9 @@ impl VmMapping {
             let cut_len = end - begin;
             let new_len1 = begin - inner.addr;
             let new_len2 = inner.end_addr() - end;
-            let mut page_table = self.page_table.lock();
-            self.vmo
-                .unmap_from(&mut page_table, begin, inner.vmo_offset + new_len1, cut_len);
+            page_table
+                .unmap_cont(begin, pages(cut_len))
+                .expect("failed to unmap");
             inner.size = new_len1;
             Some(Arc::new( VmMapping {
                 inner: Arc::new(Mutex::new(VmMappingInner {
@@ -541,6 +544,28 @@ impl VmMapping {
 
     fn end_addr(&self) -> VirtAddr {
         self.inner.lock().end_addr()
+    }
+
+    pub fn do_with_pgtable(&self, f: impl FnOnce(&mut PageTable)) {
+        let mut page_table = self.page_table.lock();
+        f(&mut page_table);
+    }
+
+    pub fn remove_write_flag(&self, offset: usize, len: usize) {
+        let mut new_flag = self.flags;
+        new_flag.set(MMUFlags::WRITE, false);
+        let inner = self.inner.lock();
+        let start = offset.max(inner.vmo_offset);
+        let end = (inner.vmo_offset + inner.size / PAGE_SIZE).min(offset + len);
+        error!("begin remove write");
+        if !(start..end).is_empty() {
+            let mut pg_table = self.page_table.lock();
+            for i in (start - inner.vmo_offset)..(end - inner.vmo_offset) {
+                pg_table.protect(inner.addr + i*PAGE_SIZE, new_flag).unwrap();
+            }
+        }
+        error!("remove write over");
+
     }
 }
 

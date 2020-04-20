@@ -80,11 +80,11 @@ pub extern "C" fn hal_pt_map_kernel(pt: &mut PageTable, current: &PageTable) {
 }
 
 fn enlarge_heap(heap: &mut Heap) {
-    info!("Enlarging heap to avoid oom");
+    error!("Enlarging heap to avoid oom");
 
     let mut addrs = [(0, 0); 32];
     let mut addr_len = 0;
-    let va_offset = MEMORY_OFFSET;
+    let va_offset = PMEM_BASE;
     for _ in 0..16384 {
         let page = hal_frame_alloc().unwrap();
         let va = va_offset + page;
