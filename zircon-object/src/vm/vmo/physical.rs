@@ -46,20 +46,8 @@ impl VMObjectTrait for VMObjectPhysical {
         unimplemented!()
     }
 
-    fn map_to(
-        &self,
-        mapping: Arc<VmMapping>,
-        vaddr: usize,
-        offset: usize,
-        len: usize,
-        flags: MMUFlags,
-    ) {
-        let pages = len / PAGE_SIZE;
-        mapping.do_with_pgtable(|page_table| {
-            page_table
-                .map_cont(vaddr, self.paddr + offset, pages, flags)
-                .expect("failed to map");
-        });
+    fn get_page(&self, page_idx: usize, _flags: MMUFlags) -> PhysAddr {
+        self.paddr + page_idx * PAGE_SIZE
     }
 
     // TODO empty function should be denied

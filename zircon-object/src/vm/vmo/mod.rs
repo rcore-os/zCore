@@ -21,15 +21,7 @@ pub trait VMObjectTrait: Sync + Send {
     /// Set the length of VMO.
     fn set_len(&self, len: usize);
 
-    /// Map physical memory to `page_table`.
-    fn map_to(
-        &self,
-        mapping: Arc<VmMapping>,
-        vaddr: VirtAddr,
-        offset: usize,
-        len: usize,
-        flags: MMUFlags,
-    );
+    fn get_page(&self, page_idx: usize, flags: MMUFlags) -> PhysAddr;
 
     /// Unmap physical memory from `page_table`.
     fn unmap_from(&self, page_table: &mut PageTable, vaddr: VirtAddr, _offset: usize, len: usize) {

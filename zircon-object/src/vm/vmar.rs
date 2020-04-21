@@ -435,13 +435,16 @@ impl core::fmt::Debug for VmMapping {
 impl VmMapping {
     fn map(self: &Arc<Self>) {
         let inner = self.inner.lock();
-        self.vmo.map_to(
-            self.clone(),
-            inner.addr,
-            inner.vmo_offset,
-            inner.size,
-            self.flags,
-        );
+        let mut page_table = self.page_table.lock();
+        let page_num = inner.size / PAGE_SIZE;
+        let vmo_offset = inner.vmo_offset / PAGE_SIZE;
+        let flags = self.flags;
+        for i in 0..page_num {
+            let pa = self.vmo.get_page(vmo_offset + i, flags);
+            page_table
+                .map(inner.addr + i * PAGE_SIZE, pa, flags)
+                .expect("failed to map");
+        }
     }
 
     fn unmap(&self) {
@@ -557,15 +560,12 @@ impl VmMapping {
         let inner = self.inner.lock();
         let start = offset.max(inner.vmo_offset);
         let end = (inner.vmo_offset + inner.size / PAGE_SIZE).min(offset + len);
-        error!("begin remove write");
         if !(start..end).is_empty() {
             let mut pg_table = self.page_table.lock();
             for i in (start - inner.vmo_offset)..(end - inner.vmo_offset) {
                 pg_table.protect(inner.addr + i*PAGE_SIZE, new_flag).unwrap();
             }
         }
-        error!("remove write over");
-
     }
 }
 

@@ -10,13 +10,13 @@ use {
 
 /// The main VM object type, holding a list of pages.
 pub struct VMObjectPaged {
-    inner: Mutex<VMObjectPagedInner>,
+    inner: Arc<Mutex<VMObjectPagedInner>>,
 }
 
 #[allow(dead_code)]
 /// The mutable part of `VMObjectPaged`.
 struct VMObjectPagedInner {
-    parent: Option<Arc<VMObjectPaged>>,
+    parent: Option<Arc<Mutex<VMObjectPagedInner>>>,
     parent_offset: usize,
     frames: Vec<Option<PhysFrame>>,
     mappings: Vec<Arc<VmMapping>>,
@@ -29,12 +29,12 @@ impl VMObjectPaged {
         frames.resize_with(pages, Default::default);
 
         Arc::new(VMObjectPaged {
-            inner: Mutex::new(VMObjectPagedInner {
+            inner: Arc::new(Mutex::new(VMObjectPagedInner {
                 parent: None,
                 parent_offset: 0usize,
                 frames,
                 mappings: Vec::new(),
-            }),
+            })),
         })
     }
 
@@ -64,7 +64,7 @@ impl VMObjectPaged {
         &self,
         offset: usize,
         buf_len: usize,
-        for_write: bool,
+        flags: MMUFlags,
         mut f: impl FnMut(PhysAddr, Range<usize>),
     ) {
         let iter = BlockIter {
@@ -73,26 +73,22 @@ impl VMObjectPaged {
             block_size_log2: 12,
         };
         for block in iter {
-            let paddr = self.inner.lock().get_page(block.block, for_write);
+            let paddr = self.inner.lock().get_page(block.block, flags);
             let buf_range = block.origin_begin() - offset..block.origin_end() - offset;
             f(paddr + block.begin, buf_range);
         }
-    }
-
-    fn get_page(&self, page_idx: usize, for_write: bool) -> PhysAddr {
-        self.inner.lock().get_page(page_idx, for_write)
     }
 }
 
 impl VMObjectTrait for VMObjectPaged {
     fn read(&self, offset: usize, buf: &mut [u8]) {
-        self.for_each_page(offset, buf.len(), false, |paddr, buf_range| {
+        self.for_each_page(offset, buf.len(), MMUFlags::READ, |paddr, buf_range| {
             kernel_hal::pmem_read(paddr, &mut buf[buf_range]);
         });
     }
 
     fn write(&self, offset: usize, buf: &[u8]) {
-        self.for_each_page(offset, buf.len(), true, |paddr, buf_range| {
+        self.for_each_page(offset, buf.len(), MMUFlags::WRITE, |paddr, buf_range| {
             kernel_hal::pmem_write(paddr, &buf[buf_range]);
         });
     }
@@ -115,33 +111,15 @@ impl VMObjectTrait for VMObjectPaged {
         } else if inner.parent.is_none() {
             inner.frames.resize_with(new_pages, Default::default);
             (old_pages..new_pages).for_each(|idx| {
-                inner.get_page(idx, true);
+                inner.get_page(idx, MMUFlags::WRITE);
             });
         } else {
             unimplemented!()
         }
     }
 
-    fn map_to(
-        &self,
-        mapping: Arc<VmMapping>,
-        vaddr: usize,
-        offset: usize,
-        len: usize,
-        flags: MMUFlags,
-    ) {
-        let start_page = offset / PAGE_SIZE;
-        let pages = len / PAGE_SIZE;
-        let mut inner = self.inner.lock();
-        mapping.do_with_pgtable(|page_table| {
-            for i in 0..pages {
-                let paddr = inner.get_page(start_page + i, true);
-                page_table
-                    .map(vaddr + i * PAGE_SIZE, paddr, flags)
-                    .expect("failed to map");
-            }
-        });
-        inner.mappings.push(mapping);
+    fn get_page(&self, page_idx: usize, flags: MMUFlags) -> PhysAddr {
+        self.inner.lock().get_page(page_idx, flags)
     }
 
     fn commit(&self, offset: usize, len: usize) {
@@ -173,16 +151,16 @@ impl VMObjectTrait for VMObjectPaged {
 
         // construct hidden_vmo as shared parent
         let hidden_vmo = Arc::new(VMObjectPaged {
-            inner: Mutex::new(VMObjectPagedInner {
+            inner: Arc::new(Mutex::new(VMObjectPagedInner {
                 parent: old_parent,
                 parent_offset: inner.parent_offset,
                 frames,
                 mappings: Vec::new(),
-            }),
+            })),
         });
 
         // change current vmo's parent
-        inner.parent = Some(hidden_vmo.clone());
+        inner.parent = Some(hidden_vmo.inner.clone());
         inner.parent_offset = 0usize;
         inner.frames.resize_with(page_num, Default::default);
 
@@ -192,12 +170,12 @@ impl VMObjectTrait for VMObjectPaged {
         let mut child_frames = Vec::new();
         child_frames.resize_with(len / PAGE_SIZE, Default::default);
         Arc::new(VMObjectPaged {
-            inner: Mutex::new(VMObjectPagedInner {
-                parent: Some(hidden_vmo),
+            inner: Arc::new(Mutex::new(VMObjectPagedInner {
+                parent: Some(hidden_vmo.inner.clone()),
                 parent_offset: offset,
                 frames: child_frames,
                 mappings: Vec::new(),
-            }),
+            })),
         })
     }
 
@@ -218,12 +196,12 @@ impl VMObjectTrait for VMObjectPaged {
             }
         }
         Arc::new(VMObjectPaged {
-            inner: Mutex::new(VMObjectPagedInner {
+            inner: Arc::new(Mutex::new(VMObjectPagedInner {
                 parent: None,
                 parent_offset: offset,
                 frames,
                 mappings: Vec::new(),
-            }),
+            })),
         })
     }
 
@@ -242,29 +220,38 @@ impl VMObjectPagedInner {
         self.frames[page_idx] = None;
     }
 
-    fn get_page(&mut self, page_idx: usize, for_write: bool) -> PhysAddr {
+    fn get_page(&mut self, page_idx: usize, flags: MMUFlags) -> PhysAddr {
+        // check if it is in current frames list
+        let mut res: PhysAddr = 0;
         if let Some(frame) = &self.frames[page_idx] {
-            return frame.addr();
-        }
-        let parent_idx_offset = self.parent_offset / PAGE_SIZE;
-        if for_write {
-            let target_addr = self.commit(page_idx).addr();
-            if let Some(parent) = &self.parent {
-                // copy on write
-                kernel_hal::frame_copy(
-                    parent.get_page(parent_idx_offset + page_idx, false),
-                    target_addr,
-                );
-            } else {
-                // zero the page
-                kernel_hal::pmem_write(target_addr, &[0u8; PAGE_SIZE]);
-            }
-            target_addr
-        } else if let Some(parent) = &self.parent {
-            parent.get_page(parent_idx_offset + page_idx, false)
+            res = frame.addr();
+        } else if self.parent.is_none() {
+            // reach top of the tree
+            let target_frame = PhysFrame::alloc().unwrap();
+            res = target_frame.addr();
+            kernel_hal::pmem_write(target_frame.addr(), &[0u8; PAGE_SIZE]);
+            self.frames[page_idx] = Some(target_frame);
         } else {
-            self.commit(page_idx).addr()
+            let mut current = self.parent.as_ref().cloned();
+            let mut current_idx = page_idx + self.parent_offset / PAGE_SIZE;
+            while let Some(locked_) = current {
+                let locked_cur = locked_.lock();
+                if let Some(frame) = &locked_cur.frames[current_idx] { // find it !
+                    if !flags.contains(MMUFlags::WRITE) { // read-only
+                        res = frame.addr();
+                    } else {
+                        let target_frame = PhysFrame::alloc().unwrap();
+                        res = target_frame.addr();
+                        kernel_hal::frame_copy(frame.addr(), target_frame.addr());
+                        self.frames[page_idx] = Some(target_frame);
+                    }
+                    break;
+                }
+                current_idx += locked_cur.parent_offset / PAGE_SIZE;
+                current = locked_cur.parent.as_ref().cloned();
+            }
         }
+        res
     }
 }
 
