@@ -388,6 +388,18 @@ impl VmAddressRegion {
         None
     }
 
+    pub fn do_pg_fault(&self, vaddr: VirtAddr, flags: MMUFlags) -> ZxResult {
+        if let Some(inner) = self.inner.lock().as_ref() {
+            if let Some(child) = inner.children.iter().find(|ch| ch.addr <= vaddr && vaddr <= ch.addr + ch.size) {
+                return child.do_pg_fault(vaddr, flags);
+            }
+            if let Some(mapping) = inner.mappings.iter().find(|map| map.overlap(vaddr, vaddr)) {
+                return mapping.do_pg_fault(vaddr, flags);
+            }
+        }
+        Err(ZxError::NOT_FOUND)
+    }
+
     #[cfg(test)]
     fn count(&self) -> usize {
         let mut guard = self.inner.lock();
@@ -565,6 +577,15 @@ impl VmMapping {
             for i in (start - inner.vmo_offset)..(end - inner.vmo_offset) {
                 pg_table.protect(inner.addr + i*PAGE_SIZE, new_flag).unwrap();
             }
+        }
+    }
+
+    fn do_pg_fault(&self, vaddr: VirtAddr, flags: MMUFlags) -> ZxResult {
+        if self.is_valid_mapping_flags(flags) {
+            self.page_table.lock().protect(vaddr, self.flags | flags).or(Err(ZxError::ACCESS_DENIED))?;
+            Ok(())
+        } else {
+            Err(ZxError::ACCESS_DENIED)
         }
     }
 }

@@ -232,3 +232,9 @@ pub fn irq_handle(_irq: u8) {
 pub fn vdso_constants() -> VdsoConstants {
     unimplemented!()
 }
+
+#[linkage = "weak"]
+#[export_name = "fetch_fault_vaddr"]
+pub fn fetch_fault_vaddr() -> VirtAddr {
+    unimplemented!()
+}

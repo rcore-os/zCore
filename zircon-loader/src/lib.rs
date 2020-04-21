@@ -206,6 +206,17 @@ pub fn run_task(thread: Arc<Thread>) {
                         kernel_hal::yield_now().await;
                     }
                 }
+                0xe => {
+                    let flags = if cx.error_code & 0x2 == 0 {
+                        MMUFlags::READ
+                    } else {
+                        MMUFlags::WRITE
+                    };
+                    error!("page fualt from user mode {:#x} {:#x?}", kernel_hal::fetch_fault_vaddr(), flags);
+                    if !thread.proc().vmar().do_pg_fault(kernel_hal::fetch_fault_vaddr(), flags).is_ok() {
+                        panic!("Page Fault from user mode {:#x?}", cx);
+                    }
+                }
                 _ => panic!("not supported interrupt from user mode. {:#x?}", cx),
             }
             thread.end_running(cx);

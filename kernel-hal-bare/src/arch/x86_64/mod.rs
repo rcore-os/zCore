@@ -9,7 +9,7 @@ use {
     uart_16550::SerialPort,
     x86_64::{
         instructions::port::Port,
-        registers::control::{Cr3, Cr3Flags, Cr4, Cr4Flags},
+        registers::control::{Cr3, Cr3Flags, Cr4, Cr4Flags, Cr2},
         structures::paging::{PageTableFlags as PTF, *},
     },
 };
@@ -342,4 +342,9 @@ pub fn init() {
         // enable global page
         Cr4::update(|f| f.insert(Cr4Flags::PAGE_GLOBAL));
     }
+}
+
+#[export_name = "fetch_fault_vaddr"]
+pub fn fetch_fault_vaddr() -> VirtAddr {
+    Cr2::read().as_u64() as _
 }

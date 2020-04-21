@@ -6,6 +6,7 @@ use {
     core::ops::Range,
     kernel_hal::PhysFrame,
     spin::Mutex,
+    alloc::collections::BTreeMap,
 };
 
 /// The main VM object type, holding a list of pages.
@@ -18,20 +19,27 @@ pub struct VMObjectPaged {
 struct VMObjectPagedInner {
     parent: Option<Arc<Mutex<VMObjectPagedInner>>>,
     parent_offset: usize,
-    frames: Vec<Option<PhysFrame>>,
+    parent_limit: usize,
+    size: usize,
+    frames: BTreeMap<usize, Option<PhysFrame>>,
     mappings: Vec<Arc<VmMapping>>,
 }
 
 impl VMObjectPaged {
     /// Create a new VMO backing on physical memory allocated in pages.
     pub fn new(pages: usize) -> Arc<Self> {
-        let mut frames = Vec::new();
-        frames.resize_with(pages, Default::default);
+        let mut frames = BTreeMap::new();
+        //        frames.resize_with(pages, Default::default);
+        for i in 0..pages {
+            frames.insert(i, None);
+        }
 
         Arc::new(VMObjectPaged {
             inner: Arc::new(Mutex::new(VMObjectPagedInner {
                 parent: None,
                 parent_offset: 0usize,
+                parent_limit: 0usize,
+                size: pages,
                 frames,
                 mappings: Vec::new(),
             })),
@@ -80,6 +88,7 @@ impl VMObjectPaged {
     }
 }
 
+
 impl VMObjectTrait for VMObjectPaged {
     fn read(&self, offset: usize, buf: &mut [u8]) {
         self.for_each_page(offset, buf.len(), MMUFlags::READ, |paddr, buf_range| {
@@ -94,28 +103,15 @@ impl VMObjectTrait for VMObjectPaged {
     }
 
     fn len(&self) -> usize {
-        self.inner.lock().frames.len() * PAGE_SIZE
+        self.inner.lock().size * PAGE_SIZE
     }
 
     fn set_len(&self, len: usize) {
         assert!(page_aligned(len));
         // FIXME parent and children? len < old_len?
         let mut inner = self.inner.lock();
-        let old_pages = inner.frames.len();
         let new_pages = len / PAGE_SIZE;
-        if old_pages < new_pages {
-            inner.frames.resize_with(new_pages, Default::default);
-            (old_pages..new_pages).for_each(|idx| {
-                inner.commit(idx);
-            });
-        } else if inner.parent.is_none() {
-            inner.frames.resize_with(new_pages, Default::default);
-            (old_pages..new_pages).for_each(|idx| {
-                inner.get_page(idx, MMUFlags::WRITE);
-            });
-        } else {
-            unimplemented!()
-        }
+        inner.size = new_pages;
     }
 
     fn get_page(&self, page_idx: usize, flags: MMUFlags) -> PhysAddr {
@@ -143,10 +139,8 @@ impl VMObjectTrait for VMObjectPaged {
     fn create_child(&self, offset: usize, len: usize) -> Arc<dyn VMObjectTrait> {
         assert!(page_aligned(offset));
         assert!(page_aligned(len));
-        let mut frames = Vec::new();
-        let page_num = self.len() / PAGE_SIZE;
         let mut inner = self.inner.lock();
-        frames.append(&mut inner.frames);
+        let frames = core::mem::take(&mut inner.frames);
         let old_parent = inner.parent.take();
 
         // construct hidden_vmo as shared parent
@@ -154,6 +148,8 @@ impl VMObjectTrait for VMObjectPaged {
             inner: Arc::new(Mutex::new(VMObjectPagedInner {
                 parent: old_parent,
                 parent_offset: inner.parent_offset,
+                parent_limit: inner.parent_limit,
+                size: inner.size,
                 frames,
                 mappings: Vec::new(),
             })),
@@ -162,17 +158,18 @@ impl VMObjectTrait for VMObjectPaged {
         // change current vmo's parent
         inner.parent = Some(hidden_vmo.inner.clone());
         inner.parent_offset = 0usize;
-        inner.frames.resize_with(page_num, Default::default);
+        inner.parent_limit = inner.size;
 
         inner.mappings.iter().for_each(|map| map.remove_write_flag(pages(offset), pages(len)));
 
         // create hidden_vmo's another child as result
-        let mut child_frames = Vec::new();
-        child_frames.resize_with(len / PAGE_SIZE, Default::default);
+        let child_frames = BTreeMap::new();
         Arc::new(VMObjectPaged {
             inner: Arc::new(Mutex::new(VMObjectPagedInner {
                 parent: Some(hidden_vmo.inner.clone()),
                 parent_offset: offset,
+                parent_limit: offset + len,
+                size: pages(len),
                 frames: child_frames,
                 mappings: Vec::new(),
             })),
@@ -182,23 +179,25 @@ impl VMObjectTrait for VMObjectPaged {
     fn create_clone(&self, offset: usize, len: usize) -> Arc<dyn VMObjectTrait> {
         assert!(page_aligned(offset));
         assert!(page_aligned(len));
-        let frames_offset = pages(offset);
-        let clone_size = pages(len);
-        let mut frames = Vec::new();
-        frames.resize_with(clone_size, || {
-            Some(PhysFrame::alloc().expect("faild to alloc frame"))
-        });
+        let mut frames = BTreeMap::new();
         let inner = self.inner.lock();
         // copy physical memory
-        for (i, new_frame) in frames.iter().enumerate() {
-            if let Some(frame) = &inner.frames[frames_offset + i] {
-                kernel_hal::frame_copy(frame.addr(), new_frame.as_ref().unwrap().addr());
-            }
+        for (i, frame) in inner.frames.iter() {
+            let value = if let Some(frame) = frame {
+                let new_frame = PhysFrame::alloc().expect("failed to alloc frame");
+                kernel_hal::frame_copy(frame.addr(), new_frame.addr());
+                Some(new_frame)
+            } else {
+                None
+            };
+            frames.insert(i.clone(), value);
         }
         Arc::new(VMObjectPaged {
             inner: Arc::new(Mutex::new(VMObjectPagedInner {
                 parent: None,
                 parent_offset: offset,
+                parent_limit: offset + len,
+                size: pages(len),
                 frames,
                 mappings: Vec::new(),
             })),
@@ -212,45 +211,56 @@ impl VMObjectTrait for VMObjectPaged {
 
 impl VMObjectPagedInner {
     fn commit(&mut self, page_idx: usize) -> &PhysFrame {
-        self.frames[page_idx]
-            .get_or_insert_with(|| PhysFrame::alloc().expect("failed to alloc frame"))
+        if let Some(value) = self.frames.get_mut(&page_idx) {
+            value.get_or_insert_with(|| PhysFrame::alloc().expect("failed to alloc frame"))
+        } else {
+            unimplemented!()
+        }
     }
 
     fn decommit(&mut self, page_idx: usize) {
-        self.frames[page_idx] = None;
+        if let Some(value) = self.frames.get_mut(&page_idx) {
+            *value = None;
+        } else {
+            unimplemented!()
+        }
     }
 
     fn get_page(&mut self, page_idx: usize, flags: MMUFlags) -> PhysAddr {
         // check if it is in current frames list
         let mut res: PhysAddr = 0;
-        if let Some(frame) = &self.frames[page_idx] {
-            res = frame.addr();
-        } else if self.parent.is_none() {
-            // reach top of the tree
-            let target_frame = PhysFrame::alloc().unwrap();
-            res = target_frame.addr();
-            kernel_hal::pmem_write(target_frame.addr(), &[0u8; PAGE_SIZE]);
-            self.frames[page_idx] = Some(target_frame);
-        } else {
-            let mut current = self.parent.as_ref().cloned();
-            let mut current_idx = page_idx + self.parent_offset / PAGE_SIZE;
-            while let Some(locked_) = current {
-                let locked_cur = locked_.lock();
-                if let Some(frame) = &locked_cur.frames[current_idx] { // find it !
+        if let Some(_frame) = self.frames.get(&page_idx) {
+            if let Some(frame) = _frame {
+                return frame.addr();
+            }
+        }
+        let mut current = self.parent.as_ref().cloned();
+        let mut current_idx = page_idx + self.parent_offset / PAGE_SIZE;
+        while let Some(locked_) = current {
+            let locked_cur = locked_.lock();
+            if let Some(_frame) = locked_cur.frames.get(&current_idx) {
+                if let Some(frame) = _frame {
                     if !flags.contains(MMUFlags::WRITE) { // read-only
                         res = frame.addr();
                     } else {
                         let target_frame = PhysFrame::alloc().unwrap();
                         res = target_frame.addr();
                         kernel_hal::frame_copy(frame.addr(), target_frame.addr());
-                        self.frames[page_idx] = Some(target_frame);
+                        self.frames.insert(page_idx, Some(target_frame));
                     }
                     break;
                 }
-                current_idx += locked_cur.parent_offset / PAGE_SIZE;
-                current = locked_cur.parent.as_ref().cloned();
             }
+            current_idx += locked_cur.parent_offset / PAGE_SIZE;
+            current = locked_cur.parent.as_ref().cloned();
         }
+        if res == 0 {
+            let target_frame = PhysFrame::alloc().unwrap();
+            res = target_frame.addr();
+            kernel_hal::pmem_write(target_frame.addr(), &[0u8; PAGE_SIZE]);
+            self.frames.insert(page_idx, Some(target_frame));
+        }
+        assert_ne!(res, 0);
         res
     }
 }
