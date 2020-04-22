@@ -9,6 +9,7 @@
 #![feature(naked_functions)]
 #![feature(ptr_offset_from)]
 #![feature(range_is_empty)]
+#![feature(new_uninit)]
 
 extern crate alloc;
 
