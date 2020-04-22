@@ -36,7 +36,7 @@ pub trait VMObjectTrait: Sync + Send {
     fn commit(&self, offset: usize, len: usize);
 
     /// Decommit allocated physical memory.
-    fn decommit(&self, offset: usize, len: usize);
+    fn decommit(&self, offset: usize, len: usize) -> ZxResult;
 
     /// Create a child vmo
     fn create_child(&self, offset: usize, len: usize) -> Arc<dyn VMObjectTrait>;
@@ -49,6 +49,7 @@ pub trait VMObjectTrait: Sync + Send {
 pub struct VmObject {
     base: KObjectBase,
     _counter: CountHelper,
+    resizable: bool,
     inner: Arc<dyn VMObjectTrait>,
 }
 
@@ -60,6 +61,7 @@ impl VmObject {
     pub fn new_paged(pages: usize) -> Arc<Self> {
         Arc::new(VmObject {
             base: KObjectBase::default(),
+            resizable: true,
             _counter: CountHelper::new(),
             inner: VMObjectPaged::new(pages),
         })
@@ -74,6 +76,7 @@ impl VmObject {
     pub unsafe fn new_physical(paddr: PhysAddr, pages: usize) -> Arc<Self> {
         Arc::new(VmObject {
             base: KObjectBase::default(),
+            resizable: true,
             _counter: CountHelper::new(),
             inner: VMObjectPhysical::new(paddr, pages),
         })
@@ -82,17 +85,28 @@ impl VmObject {
     pub fn create_clone(&self, offset: usize, len: usize) -> Arc<Self> {
         Arc::new(VmObject {
             base: KObjectBase::default(),
+            resizable: true,
             _counter: CountHelper::new(),
             inner: self.inner.create_clone(offset, len),
         })
     }
 
-    pub fn create_child(&self, offset: usize, len: usize) -> Arc<Self> {
+    pub fn create_child(&self, resizable: bool, offset: usize, len: usize) -> Arc<Self> {
         Arc::new(VmObject {
-            base: KObjectBase::default(),
+            base: KObjectBase::with_name(&self.base.name()),
+            resizable,
             _counter: CountHelper::new(),
             inner: self.inner.create_child(offset, len),
         })
+    }
+
+    pub fn set_len(&self, len: usize) -> ZxResult {
+        if self.resizable {
+            self.inner.set_len(len);
+            Ok(())
+        } else {
+            Err(ZxError::UNAVAILABLE)
+        }
     }
 }
 

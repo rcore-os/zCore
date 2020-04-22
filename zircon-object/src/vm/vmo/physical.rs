@@ -55,7 +55,7 @@ impl VMObjectTrait for VMObjectPhysical {
         unimplemented!()
     }
 
-    fn decommit(&self, _offset: usize, _len: usize) {
+    fn decommit(&self, _offset: usize, _len: usize) -> ZxResult{
         unimplemented!()
     }
 

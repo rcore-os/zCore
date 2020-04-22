@@ -128,10 +128,11 @@ impl Syscall<'_> {
             "parent_rights: {:?} child_rights: {:?}",
             parent_rights, child_rights
         );
+        let resizable = options.contains(VmoCloneFlags::RESIZABLE);
 
         let child_size = roundup_pages(size);
         info!("size of child vmo: {:#x}", child_size);
-        let child_vmo = vmo.create_child(offset as usize, child_size);
+        let child_vmo = vmo.create_child(resizable, offset as usize, child_size);
         out.write(proc.add_handle(Handle::new(child_vmo, child_rights)))?;
         Ok(())
     }
@@ -145,8 +146,7 @@ impl Syscall<'_> {
             size,
             vmo.len(),
         );
-        vmo.set_len(size);
-        Ok(())
+        vmo.set_len(size)
     }
 
     pub fn sys_vmo_op_range(
@@ -179,8 +179,7 @@ impl Syscall<'_> {
                 if !rights.contains(Rights::WRITE) {
                     return Err(ZxError::ACCESS_DENIED);
                 }
-                vmo.decommit(offset, len);
-                Ok(())
+                vmo.decommit(offset, len)
             }
             _ => unimplemented!(),
         }

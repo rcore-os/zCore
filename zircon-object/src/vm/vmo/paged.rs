@@ -153,15 +153,21 @@ impl VMObjectTrait for VMObjectPaged {
         drop(guard);
     }
 
-    fn decommit(&self, offset: usize, len: usize) {
+    fn decommit(&self, offset: usize, len: usize) -> ZxResult {
         let guard = self.global_mtx.lock();
         let start_page = offset / PAGE_SIZE;
         let pages = len / PAGE_SIZE;
         let mut inner = self.inner.lock();
-        for i in 0..pages {
-            inner.decommit(start_page + i);
+        if !inner.children.is_empty() || inner.parent.is_some() {
+            drop(guard);
+            Err(ZxError::NOT_SUPPORTED)
+        } else {
+            for i in 0..pages {
+                inner.decommit(start_page + i);
+            }
+            drop(guard);
+            Ok(())
         }
-        drop(guard);
     }
 
     fn create_child(&self, offset: usize, len: usize) -> Arc<dyn VMObjectTrait> {
