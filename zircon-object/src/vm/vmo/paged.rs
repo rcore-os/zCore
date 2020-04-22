@@ -222,6 +222,11 @@ impl VMObjectTrait for VMObjectPaged {
         self.inner.lock().mappings.push(mapping);
         drop(guard);
     }
+
+    fn complete_info(&self, info: &mut ZxInfoVmo) {
+        info.flags |= VmoInfoFlags::TYPE_PAGED.bits();
+        self.inner.lock().complete_info(info);
+    }
 }
 
 impl VMObjectPagedInner {
@@ -338,9 +343,6 @@ impl VMObjectPagedInner {
         self.parent = Some(hidden_vmo.clone());
         self.parent_offset = 0usize;
         self.parent_limit = self.size;
-        if self._type == VMOType::Origin {
-            self._type = VMOType::Snapshot;
-        }
 
         self.mappings.iter().for_each(|map| map.remove_write_flag(pages(offset), pages(len)));
 
@@ -363,12 +365,26 @@ impl VMObjectPagedInner {
     fn destroy(&mut self, myself: &Weak<Mutex<Self>>) {
         assert_ne!(self._type, VMOType::Hidden);
         assert_eq!(self.children.len(), 0);
-        if self._type == VMOType::Snapshot {
-            if let Some(parent) = self.parent.as_ref() {
-                let mut p = parent.lock();
-                p.remove_child(myself);
+        match self._type {
+            VMOType::Snapshot | VMOType::Origin => {
+                if let Some(parent) = self.parent.as_ref() {
+                    let mut p = parent.lock();
+                    p.remove_child(myself);
+                }
             }
+            _ => {}
         }
+    }
+
+    fn complete_info(&self, info: &mut ZxInfoVmo) {
+        if self._type == VMOType::Snapshot {
+            info.flags |= VmoInfoFlags::IS_COW_CLONE.bits();
+        }
+        info.num_children = self.children.len() as u64;
+        info.num_mappings = self.mappings.len() as u64;
+        info.share_count  = self.mappings.len() as u64; // FIXME share_count should be the count of unique aspace
+        info.commited_bytes = self.frames.values().map(|item| if item.is_some() { 1u64 } else { 0u64 }).sum();
+        // TODO cache_policy should be set up.
     }
 }
 

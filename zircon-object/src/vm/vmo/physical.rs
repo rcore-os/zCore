@@ -70,6 +70,10 @@ impl VMObjectTrait for VMObjectPhysical {
     fn append_mapping(&self, _mapping: Arc<VmMapping>) {
         unimplemented!()
     }
+
+    fn complete_info(&self, _info: &mut ZxInfoVmo) {
+        unimplemented!()
+    }
 }
 
 #[cfg(test)]

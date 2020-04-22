@@ -15,9 +15,10 @@ impl Syscall<'_> {
             "vmo.create: size={:#x?}, options={:#x?}, out={:#x?}",
             size, options, out
         );
-        // TODO: options
+        if options & !2u32 != 0 { return Err(ZxError::INVALID_ARGS); }
+        let resizable = if options == 0 { false } else { true };
         let proc = self.thread.proc();
-        let vmo = VmObject::new_paged(pages(size as usize));
+        let vmo = VmObject::new_paged_with_resizable(resizable, pages(size as usize));
         let handle_value = proc.add_handle(Handle::new(vmo, Rights::DEFAULT_VMO));
         out.write(handle_value)?;
         Ok(())

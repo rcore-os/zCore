@@ -213,6 +213,13 @@ impl Syscall<'_> {
                 let job = proc.get_object_with_rights::<Job>(handle, Rights::INSPECT)?;
                 UserOutPtr::<JobInfo>::from(buffer).write(job.get_info())?;
             }
+            Topic::Vmo => {
+                let (vmo, rights) = proc.get_object_and_rights::<VmObject>(handle)?;
+                let mut info = vmo.get_info();
+                info.flags |= VmoInfoFlags::VIA_HANDLE.bits();
+                info.rights |= rights.bits();
+                UserOutPtr::<ZxInfoVmo>::from(buffer).write(info)?;
+            }
             _ => {
                 warn!("not supported info topic: {:?}", topic);
                 return Err(ZxError::NOT_SUPPORTED);

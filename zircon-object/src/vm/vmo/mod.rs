@@ -1,4 +1,4 @@
-use {super::*, crate::object::*, alloc::sync::Arc, kernel_hal::PageTable};
+use {super::*, crate::object::*, alloc::sync::Arc, kernel_hal::PageTable, bitflags::bitflags};
 
 mod paged;
 mod physical;
@@ -44,10 +44,13 @@ pub trait VMObjectTrait: Sync + Send {
     fn create_clone(&self, offset: usize, len: usize) -> Arc<dyn VMObjectTrait>;
 
     fn append_mapping(&self, mapping: Arc<VmMapping>);
+
+    fn complete_info(&self, info: &mut ZxInfoVmo);
 }
 
 pub struct VmObject {
     base: KObjectBase,
+    parent_koid: KoID,
     _counter: CountHelper,
     resizable: bool,
     inner: Arc<dyn VMObjectTrait>,
@@ -61,7 +64,18 @@ impl VmObject {
     pub fn new_paged(pages: usize) -> Arc<Self> {
         Arc::new(VmObject {
             base: KObjectBase::default(),
+            parent_koid: 0,
             resizable: true,
+            _counter: CountHelper::new(),
+            inner: VMObjectPaged::new(pages),
+        })
+    }
+
+    pub fn new_paged_with_resizable(resizable: bool, pages: usize) -> Arc<Self> {
+        Arc::new(VmObject {
+            base: KObjectBase::default(),
+            parent_koid: 0,
+            resizable,
             _counter: CountHelper::new(),
             inner: VMObjectPaged::new(pages),
         })
@@ -76,6 +90,7 @@ impl VmObject {
     pub unsafe fn new_physical(paddr: PhysAddr, pages: usize) -> Arc<Self> {
         Arc::new(VmObject {
             base: KObjectBase::default(),
+            parent_koid: 0,
             resizable: true,
             _counter: CountHelper::new(),
             inner: VMObjectPhysical::new(paddr, pages),
@@ -85,6 +100,7 @@ impl VmObject {
     pub fn create_clone(&self, offset: usize, len: usize) -> Arc<Self> {
         Arc::new(VmObject {
             base: KObjectBase::default(),
+            parent_koid: self.base.id,
             resizable: true,
             _counter: CountHelper::new(),
             inner: self.inner.create_clone(offset, len),
@@ -94,6 +110,7 @@ impl VmObject {
     pub fn create_child(&self, resizable: bool, offset: usize, len: usize) -> Arc<Self> {
         Arc::new(VmObject {
             base: KObjectBase::with_name(&self.base.name()),
+            parent_koid: self.base.id,
             resizable,
             _counter: CountHelper::new(),
             inner: self.inner.create_child(offset, len),
@@ -108,6 +125,25 @@ impl VmObject {
             Err(ZxError::UNAVAILABLE)
         }
     }
+
+    pub fn get_info(&self) -> ZxInfoVmo {
+        let mut ret = ZxInfoVmo {
+            koid: self.base.id,
+            name: {
+                let mut arr = [0u8; 32];
+                let name = self.base.name();
+                let length = name.len().min(32);
+                arr[..length].copy_from_slice(&name.as_bytes()[..length]);
+                arr
+            },
+            size: self.inner.len() as u64,
+            parent_koid: self.parent_koid,
+            flags: if self.resizable { VmoInfoFlags::RESIZABLE.bits() } else { 0 },
+            ..Default::default()
+        };
+        self.inner.complete_info(&mut ret);
+        ret
+    }
 }
 
 impl Deref for VmObject {
@@ -117,6 +153,37 @@ impl Deref for VmObject {
         &self.inner
     }
 }
+
+#[repr(C)]
+#[derive(Default)]
+pub struct ZxInfoVmo {
+    koid: KoID,
+    name: [u8; 32],
+    size: u64,
+    parent_koid: KoID,
+    num_children: u64,
+    num_mappings: u64,
+    share_count: u64,  // the number of unique address space we're mapped into
+    pub flags: u32,
+    padding1: [u8; 4],
+    commited_bytes: u64,
+    pub rights: u32,
+    cache_policy: u32,
+}
+
+bitflags! {
+    pub struct VmoInfoFlags: u32 {
+        #[allow(clippy::identity_op)]
+        const TYPE_PAGED  = 1 << 0;
+        const TYPE_PHYSICAL = 0;
+        const RESIZABLE = 1 << 1;
+        const IS_COW_CLONE = 1 << 2;
+        const VIA_HANDLE   = 1 << 3;
+        const VIA_MAPPING  = 1 << 4;
+        const PAGER_BACKED = 1 << 5;
+        const CONTIGUOUS   = 1 << 6;
+    }
+}   
 
 #[cfg(test)]
 mod tests {
