@@ -406,15 +406,7 @@ impl VMObjectPagedInner {
     }
 
     fn create_child(&mut self, myself: &Arc<Mutex<VMObjectPagedInner>>, offset: usize, len: usize) -> Arc<Mutex<VMObjectPagedInner>> {
-        let mut frames = BTreeMap::new();
-        for (&key, value) in self.frames.iter_mut() {
-            frames.insert(
-                key,
-                PageOrMarker {
-                    inner: value.inner.take(),
-                    state: PageOrMarkerState::Init,
-            });
-        }
+        let frames = core::mem::take(&mut self.frames);
         let old_parent = self.parent.take();
 
         // construct hidden_vmo as shared parent
