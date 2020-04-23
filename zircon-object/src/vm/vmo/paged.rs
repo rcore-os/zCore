@@ -1,12 +1,12 @@
 use {
     super::*,
     crate::util::block_range::BlockIter,
+    alloc::collections::BTreeMap,
     alloc::sync::{Arc, Weak},
     alloc::vec::Vec,
     core::ops::Range,
     kernel_hal::PhysFrame,
     spin::Mutex,
-    alloc::collections::BTreeMap,
 };
 
 #[derive(PartialEq, Eq, Debug)]
@@ -26,7 +26,7 @@ enum PageOrMarkerState {
 
 struct PageOrMarker {
     pub inner: Option<PhysFrame>,
-    state: PageOrMarkerState
+    state: PageOrMarkerState,
 }
 
 #[allow(dead_code)]
@@ -47,11 +47,11 @@ impl PageOrMarker {
     }
 }
 
-impl Default for PageOrMarker{
+impl Default for PageOrMarker {
     fn default() -> Self {
         PageOrMarker {
             inner: None,
-            state: PageOrMarkerState::Init
+            state: PageOrMarkerState::Init,
         }
     }
 }
@@ -139,7 +139,6 @@ impl VMObjectPaged {
         }
     }
 }
-
 
 impl VMObjectTrait for VMObjectPaged {
     fn read(&self, offset: usize, buf: &mut [u8]) {
@@ -233,7 +232,7 @@ impl VMObjectTrait for VMObjectPaged {
             let value = if frame.is_page() {
                 let new_frame = PhysFrame::alloc().expect("failed to alloc frame");
                 kernel_hal::frame_copy(frame.inner.as_ref().unwrap().addr(), new_frame.addr());
-                PageOrMarker{
+                PageOrMarker {
                     inner: Some(new_frame),
                     state: PageOrMarkerState::Init,
                 }
@@ -274,7 +273,9 @@ impl VMObjectTrait for VMObjectPaged {
 impl VMObjectPagedInner {
     fn commit(&mut self, page_idx: usize) -> &PhysFrame {
         if let Some(value) = self.frames.get_mut(&page_idx) {
-            value.inner.get_or_insert_with(|| PhysFrame::alloc().expect("failed to alloc frame"))
+            value
+                .inner
+                .get_or_insert_with(|| PhysFrame::alloc().expect("failed to alloc frame"))
         } else {
             unimplemented!()
         }
@@ -300,7 +301,8 @@ impl VMObjectPagedInner {
             let mut locked_cur = locked_.lock();
             if let Some(_frame) = locked_cur.frames.get_mut(&current_idx) {
                 if let Some(frame) = &_frame.inner {
-                    if !flags.contains(MMUFlags::WRITE) { // read-only
+                    if !flags.contains(MMUFlags::WRITE) {
+                        // read-only
                         res = frame.addr();
                     } else {
                         _frame.state = PageOrMarkerState::LeftSplit;
@@ -309,10 +311,11 @@ impl VMObjectPagedInner {
                         kernel_hal::frame_copy(frame.addr(), target_frame.addr());
                         self.frames.insert(
                             page_idx,
-                            PageOrMarker{
+                            PageOrMarker {
                                 inner: Some(target_frame),
-                                state: PageOrMarkerState::Init
-                        });
+                                state: PageOrMarkerState::Init,
+                            },
+                        );
                     }
                     break;
                 }
@@ -329,7 +332,8 @@ impl VMObjectPagedInner {
                 PageOrMarker {
                     inner: Some(target_frame),
                     state: PageOrMarkerState::Init,
-            });
+                },
+            );
         }
         assert_ne!(res, 0);
         res
@@ -337,7 +341,7 @@ impl VMObjectPagedInner {
 
     fn attributed_pages(&self) -> u64 {
         let mut count: u64 = 0;
-        for i in 0..self.size/PAGE_SIZE {
+        for i in 0..self.size / PAGE_SIZE {
             if self.frames.contains_key(&i) {
                 count += 1;
             } else {
@@ -366,10 +370,18 @@ impl VMObjectPagedInner {
     }
 
     fn remove_child(&mut self, to_remove: &Weak<Mutex<Self>>) {
-        self.children.retain(|child| child.strong_count() != 0 && !child.ptr_eq(to_remove));
+        self.children
+            .retain(|child| child.strong_count() != 0 && !child.ptr_eq(to_remove));
         if self._type == VMOType::Hidden {
-            assert!(self.children.len() == 1, "children num {:#x}", self.children.len());
-            if self.children.is_empty() { self.frames.clear();return; }
+            assert!(
+                self.children.len() == 1,
+                "children num {:#x}",
+                self.children.len()
+            );
+            if self.children.is_empty() {
+                self.frames.clear();
+                return;
+            }
             let weak_child = self.children.remove(0);
             let locked_child = weak_child.upgrade().unwrap();
             let mut child = locked_child.lock();
@@ -390,7 +402,7 @@ impl VMObjectPagedInner {
                         PageOrMarker {
                             inner: value.inner.take(),
                             state: PageOrMarkerState::Init,
-                        }
+                        },
                     );
                 }
             }
@@ -405,20 +417,25 @@ impl VMObjectPagedInner {
         }
     }
 
-    fn create_child(&mut self, myself: &Arc<Mutex<VMObjectPagedInner>>, offset: usize, len: usize) -> Arc<Mutex<VMObjectPagedInner>> {
+    fn create_child(
+        &mut self,
+        myself: &Arc<Mutex<VMObjectPagedInner>>,
+        offset: usize,
+        len: usize,
+    ) -> Arc<Mutex<VMObjectPagedInner>> {
         let frames = core::mem::take(&mut self.frames);
         let old_parent = self.parent.take();
 
         // construct hidden_vmo as shared parent
         let hidden_vmo = Arc::new(Mutex::new(VMObjectPagedInner {
-                _type: VMOType::Hidden,
-                parent: old_parent.as_ref().cloned(),
-                children: [Arc::downgrade(myself), Weak::new()].to_vec(),  // one of they will be changed below
-                parent_offset: self.parent_offset,
-                parent_limit: self.parent_limit,
-                size: self.size,
-                frames,
-                mappings: Vec::new(),
+            _type: VMOType::Hidden,
+            parent: old_parent.as_ref().cloned(),
+            children: [Arc::downgrade(myself), Weak::new()].to_vec(), // one of they will be changed below
+            parent_offset: self.parent_offset,
+            parent_limit: self.parent_limit,
+            size: self.size,
+            frames,
+            mappings: Vec::new(),
         }));
 
         let weak_myself = Arc::downgrade(myself);
@@ -435,20 +452,22 @@ impl VMObjectPagedInner {
         self.parent_offset = 0usize;
         self.parent_limit = self.size;
 
-        self.mappings.iter().for_each(|map| map.remove_write_flag(pages(offset), pages(len)));
+        self.mappings
+            .iter()
+            .for_each(|map| map.remove_write_flag(pages(offset), pages(len)));
 
         // create hidden_vmo's another child as result
         let child_frames = BTreeMap::new();
         let child = Arc::new(Mutex::new(VMObjectPagedInner {
-                _type: VMOType::Snapshot,
-                parent: Some(hidden_vmo.clone()),
-                children: Vec::new(),
-                parent_offset: offset,
-                parent_limit: offset + len,
-                size: len,
-                frames: child_frames,
-                mappings: Vec::new(),
-            }));
+            _type: VMOType::Snapshot,
+            parent: Some(hidden_vmo.clone()),
+            children: Vec::new(),
+            parent_offset: offset,
+            parent_limit: offset + len,
+            size: len,
+            frames: child_frames,
+            mappings: Vec::new(),
+        }));
         hidden_vmo.lock().children[1] = Arc::downgrade(&child);
         child
     }
@@ -473,7 +492,7 @@ impl VMObjectPagedInner {
         }
         info.num_children = self.children.len() as u64;
         info.num_mappings = self.mappings.len() as u64;
-        info.share_count  = self.mappings.len() as u64; // FIXME share_count should be the count of unique aspace
+        info.share_count = self.mappings.len() as u64; // FIXME share_count should be the count of unique aspace
         info.commited_bytes = self.attributed_pages() * PAGE_SIZE as u64;
         // TODO cache_policy should be set up.
     }

@@ -9,7 +9,7 @@ use {
     uart_16550::SerialPort,
     x86_64::{
         instructions::port::Port,
-        registers::control::{Cr3, Cr3Flags, Cr4, Cr4Flags, Cr2},
+        registers::control::{Cr2, Cr3, Cr3Flags, Cr4, Cr4Flags},
         structures::paging::{PageTableFlags as PTF, *},
     },
 };

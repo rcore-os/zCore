@@ -1,4 +1,4 @@
-use {super::*, crate::object::*, alloc::sync::Arc, kernel_hal::PageTable, bitflags::bitflags};
+use {super::*, crate::object::*, alloc::sync::Arc, bitflags::bitflags, kernel_hal::PageTable};
 
 mod paged;
 mod physical;
@@ -138,7 +138,11 @@ impl VmObject {
             },
             size: self.inner.len() as u64,
             parent_koid: self.parent_koid,
-            flags: if self.resizable { VmoInfoFlags::RESIZABLE.bits() } else { 0 },
+            flags: if self.resizable {
+                VmoInfoFlags::RESIZABLE.bits()
+            } else {
+                0
+            },
             ..Default::default()
         };
         self.inner.complete_info(&mut ret);
@@ -163,7 +167,7 @@ pub struct ZxInfoVmo {
     parent_koid: KoID,
     num_children: u64,
     num_mappings: u64,
-    share_count: u64,  // the number of unique address space we're mapped into
+    share_count: u64, // the number of unique address space we're mapped into
     pub flags: u32,
     padding1: [u8; 4],
     commited_bytes: u64,
@@ -183,7 +187,7 @@ bitflags! {
         const PAGER_BACKED = 1 << 5;
         const CONTIGUOUS   = 1 << 6;
     }
-}   
+}
 
 #[cfg(test)]
 mod tests {

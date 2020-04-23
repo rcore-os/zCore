@@ -361,8 +361,7 @@ impl VmAddressRegion {
 
     // TODO print mappings
     pub fn dump(&self) {
-        self
-            .inner
+        self.inner
             .lock()
             .as_ref()
             .unwrap()
@@ -373,8 +372,7 @@ impl VmAddressRegion {
                 map.dump();
                 debug!("DUMP CHILD VMO END");
             });
-        self
-            .inner
+        self.inner
             .lock()
             .as_ref()
             .unwrap()
@@ -404,7 +402,11 @@ impl VmAddressRegion {
     pub fn do_pg_fault(&self, vaddr: VirtAddr, flags: MMUFlags) -> ZxResult {
         self.dump();
         if let Some(inner) = self.inner.lock().as_ref() {
-            if let Some(child) = inner.children.iter().find(|ch| ch.addr <= vaddr && vaddr <= ch.addr + ch.size) {
+            if let Some(child) = inner
+                .children
+                .iter()
+                .find(|ch| ch.addr <= vaddr && vaddr <= ch.addr + ch.size)
+            {
                 return child.do_pg_fault(vaddr, flags);
             }
             if let Some(mapping) = inner.mappings.iter().find(|map| map.in_range(vaddr)) {
@@ -524,7 +526,7 @@ impl VmMapping {
                 .unmap_cont(begin, pages(cut_len))
                 .expect("failed to unmap");
             inner.size = new_len1;
-            Some(Arc::new( VmMapping {
+            Some(Arc::new(VmMapping {
                 inner: Arc::new(Mutex::new(VmMappingInner {
                     addr: end,
                     size: new_len2,
@@ -594,7 +596,9 @@ impl VmMapping {
         if !(start..end).is_empty() {
             let mut pg_table = self.page_table.lock();
             for i in (start - inner.vmo_offset)..(end - inner.vmo_offset) {
-                pg_table.protect(inner.addr + i*PAGE_SIZE, new_flag).unwrap();
+                pg_table
+                    .protect(inner.addr + i * PAGE_SIZE, new_flag)
+                    .unwrap();
             }
         }
     }
@@ -613,7 +617,9 @@ impl VmMapping {
             debug!("paddr {:#x}, new_flags {:?}", paddr, new_flags);
             let mut pg_table = self.page_table.lock();
             pg_table.unmap(vaddr).unwrap();
-            pg_table.map(vaddr, paddr, new_flags).or(Err(ZxError::ACCESS_DENIED))?;
+            pg_table
+                .map(vaddr, paddr, new_flags)
+                .or(Err(ZxError::ACCESS_DENIED))?;
             Ok(())
         } else {
             Err(ZxError::ACCESS_DENIED)
