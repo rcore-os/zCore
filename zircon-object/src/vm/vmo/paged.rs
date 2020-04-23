@@ -9,6 +9,11 @@ use {
     alloc::collections::BTreeMap,
 };
 
+fn vmo_frame_alloc() -> PhysFrame {
+    VMO_PAGE_ALLOC.add(1);
+    PhysFrame::alloc().expect("vmo alloc page failed")
+}
+
 #[derive(PartialEq, Eq, Debug)]
 enum VMOType {
     Hidden,
@@ -27,6 +32,14 @@ enum PageOrMarkerState {
 struct PageOrMarker {
     pub inner: Option<PhysFrame>,
     state: PageOrMarkerState
+}
+
+impl Drop for PageOrMarker {
+    fn drop(&mut self) {
+        if self.inner.is_some() {
+            VMO_PAGE_DEALLOC.add(1);
+        }
+    }
 }
 
 #[allow(dead_code)]
@@ -233,7 +246,7 @@ impl VMObjectTrait for VMObjectPaged {
         // copy physical memory
         for (i, frame) in inner.frames.iter() {
             let value = if frame.is_page() {
-                let new_frame = PhysFrame::alloc().expect("failed to alloc frame");
+                let new_frame = vmo_frame_alloc();
                 kernel_hal::frame_copy(frame.inner.as_ref().unwrap().addr(), new_frame.addr());
                 PageOrMarker{
                     inner: Some(new_frame),
@@ -281,7 +294,7 @@ impl VMObjectTrait for VMObjectPaged {
 impl VMObjectPagedInner {
     fn commit(&mut self, page_idx: usize) -> &PhysFrame {
         if let Some(value) = self.frames.get_mut(&page_idx) {
-            value.inner.get_or_insert_with(|| PhysFrame::alloc().expect("failed to alloc frame"))
+            value.inner.get_or_insert_with(|| vmo_frame_alloc())
         } else {
             unimplemented!()
         }
@@ -311,7 +324,7 @@ impl VMObjectPagedInner {
                         res = frame.addr();
                     } else {
                         _frame.state = PageOrMarkerState::LeftSplit;
-                        let target_frame = PhysFrame::alloc().unwrap();
+                        let target_frame = vmo_frame_alloc();
                         res = target_frame.addr();
                         kernel_hal::frame_copy(frame.addr(), target_frame.addr());
                         self.frames.insert(
@@ -328,7 +341,7 @@ impl VMObjectPagedInner {
             current = locked_cur.parent.as_ref().cloned();
         }
         if res == 0 {
-            let target_frame = PhysFrame::alloc().unwrap();
+            let target_frame = vmo_frame_alloc();
             res = target_frame.addr();
             kernel_hal::pmem_write(target_frame.addr(), &[0u8; PAGE_SIZE]);
             self.frames.insert(
