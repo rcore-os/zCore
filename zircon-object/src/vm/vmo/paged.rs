@@ -66,6 +66,7 @@ pub struct VMObjectPaged {
 /// The mutable part of `VMObjectPaged`.
 struct VMObjectPagedInner {
     _type: VMOType,
+    page_attribution_user_id: KoID,
     parent: Option<Arc<Mutex<VMObjectPagedInner>>>,
     children: Vec<Weak<Mutex<VMObjectPagedInner>>>,
     parent_offset: usize,
@@ -77,7 +78,7 @@ struct VMObjectPagedInner {
 
 impl VMObjectPaged {
     /// Create a new VMO backing on physical memory allocated in pages.
-    pub fn new(pages: usize) -> Arc<Self> {
+    pub fn new(pages: usize, user_id: KoID) -> Arc<Self> {
         let mut frames = BTreeMap::new();
         for i in 0..pages {
             frames.insert(i, PageOrMarker::default());
@@ -87,6 +88,7 @@ impl VMObjectPaged {
             global_mtx: Arc::new(Mutex::new(())),
             inner: Arc::new(Mutex::new(VMObjectPagedInner {
                 _type: VMOType::Origin,
+                page_attribution_user_id: user_id,
                 parent: None,
                 children: Vec::new(),
                 parent_offset: 0usize,
@@ -246,6 +248,7 @@ impl VMObjectTrait for VMObjectPaged {
             global_mtx: self.global_mtx.clone(),
             inner: Arc::new(Mutex::new(VMObjectPagedInner {
                 _type: VMOType::Snapshot,
+                page_attribution_user_id: 0,
                 parent: None,
                 children: Vec::new(),
                 parent_offset: offset,
@@ -268,6 +271,10 @@ impl VMObjectTrait for VMObjectPaged {
     fn complete_info(&self, info: &mut ZxInfoVmo) {
         info.flags |= VmoInfoFlags::TYPE_PAGED.bits();
         self.inner.lock().complete_info(info);
+    }
+
+    fn set_user_id(&self, user_id: KoID) {
+        self.inner.lock().page_attribution_user_id = user_id;
     }
 }
 
@@ -349,7 +356,8 @@ impl VMObjectPagedInner {
                 while let Some(locked_) = current {
                     let locked_cur = locked_.lock();
                     if let Some(frame) = locked_cur.frames.get(&current_idx) {
-                        if frame.is_splited() {
+                        if frame.is_splited() ||
+                            locked_cur.page_attribution_user_id == self.page_attribution_user_id {
                             count += 1;
                             break;
                         }
@@ -411,14 +419,15 @@ impl VMObjectPagedInner {
 
         // construct hidden_vmo as shared parent
         let hidden_vmo = Arc::new(Mutex::new(VMObjectPagedInner {
-                _type: VMOType::Hidden,
-                parent: old_parent.as_ref().cloned(),
-                children: [Arc::downgrade(myself), Weak::new()].to_vec(),  // one of they will be changed below
-                parent_offset: self.parent_offset,
-                parent_limit: self.parent_limit,
-                size: self.size,
-                frames,
-                mappings: Vec::new(),
+            _type: VMOType::Hidden,
+            page_attribution_user_id: self.page_attribution_user_id,
+            parent: old_parent.as_ref().cloned(),
+            children: [Arc::downgrade(myself), Weak::new()].to_vec(),  // one of they will be changed below
+            parent_offset: self.parent_offset,
+            parent_limit: self.parent_limit,
+            size: self.size,
+            frames,
+            mappings: Vec::new(),
         }));
 
         let weak_myself = Arc::downgrade(myself);
@@ -440,14 +449,15 @@ impl VMObjectPagedInner {
         // create hidden_vmo's another child as result
         let child_frames = BTreeMap::new();
         let child = Arc::new(Mutex::new(VMObjectPagedInner {
-                _type: VMOType::Snapshot,
-                parent: Some(hidden_vmo.clone()),
-                children: Vec::new(),
-                parent_offset: offset,
-                parent_limit: offset + len,
-                size: len,
-                frames: child_frames,
-                mappings: Vec::new(),
+            _type: VMOType::Snapshot,
+            page_attribution_user_id: 0,
+            parent: Some(hidden_vmo.clone()),
+            children: Vec::new(),
+            parent_offset: offset,
+            parent_limit: offset + len,
+            size: len,
+            frames: child_frames,
+            mappings: Vec::new(),
             }));
         hidden_vmo.lock().children[1] = Arc::downgrade(&child);
         child
