@@ -143,9 +143,9 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
     let constants: [u8; 112] = unsafe { core::mem::transmute(kernel_hal::vdso_constants()) };
     vdso_vmo.write(VDSO_CONSTANT_BASE, &constants);
     vdso_vmo.set_name("vdso/full");
-    let vdso_test1 = vdso_vmo.create_clone(0, vdso_vmo.len());
+    let vdso_test1 = vdso_vmo.create_child(false, 0, vdso_vmo.len());
     vdso_test1.set_name("vdso/test1");
-    let vdso_test2 = vdso_vmo.create_clone(0, vdso_vmo.len());
+    let vdso_test2 = vdso_vmo.create_child(false, 0, vdso_vmo.len());
     vdso_test2.set_name("vdso/test2");
     handles[K_FIRSTVDSO] = Handle::new(vdso_vmo, Rights::DEFAULT_VMO | Rights::EXECUTE);
     handles[K_FIRSTVDSO + 1] = Handle::new(vdso_test1, Rights::DEFAULT_VMO | Rights::EXECUTE);

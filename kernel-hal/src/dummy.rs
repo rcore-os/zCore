@@ -214,25 +214,28 @@ pub fn timer_set(_deadline: Duration, _callback: Box<dyn FnOnce(Duration) + Send
     unimplemented!()
 }
 
-/// check timers, call when timer interrupt happened
+/// Check timers, call when timer interrupt happened.
 #[linkage = "weak"]
 #[export_name = "hal_timer_tick"]
 pub fn timer_tick() {
     unimplemented!()
 }
 
+/// Handle IRQ.
 #[linkage = "weak"]
 #[export_name = "hal_irq_handle"]
 pub fn irq_handle(_irq: u8) {
     unimplemented!()
 }
 
+/// Get platform specific information.
 #[linkage = "weak"]
 #[export_name = "hal_vdso_constants"]
 pub fn vdso_constants() -> VdsoConstants {
     unimplemented!()
 }
 
+/// Get fault address of the last page fault.
 #[linkage = "weak"]
 #[export_name = "fetch_fault_vaddr"]
 pub fn fetch_fault_vaddr() -> VirtAddr {

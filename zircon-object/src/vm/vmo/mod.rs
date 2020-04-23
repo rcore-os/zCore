@@ -38,10 +38,8 @@ pub trait VMObjectTrait: Sync + Send {
     /// Decommit allocated physical memory.
     fn decommit(&self, offset: usize, len: usize) -> ZxResult;
 
-    /// Create a child vmo
+    /// Create a child VMO.
     fn create_child(&self, offset: usize, len: usize) -> Arc<dyn VMObjectTrait>;
-
-    fn create_clone(&self, offset: usize, len: usize) -> Arc<dyn VMObjectTrait>;
 
     fn append_mapping(&self, mapping: Arc<VmMapping>);
 
@@ -94,16 +92,6 @@ impl VmObject {
             resizable: true,
             _counter: CountHelper::new(),
             inner: VMObjectPhysical::new(paddr, pages),
-        })
-    }
-
-    pub fn create_clone(&self, offset: usize, len: usize) -> Arc<Self> {
-        Arc::new(VmObject {
-            base: KObjectBase::default(),
-            parent_koid: self.base.id,
-            resizable: true,
-            _counter: CountHelper::new(),
-            inner: self.inner.create_clone(offset, len),
         })
     }
 

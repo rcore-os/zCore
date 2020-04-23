@@ -50,20 +50,16 @@ impl VMObjectTrait for VMObjectPhysical {
         self.paddr + page_idx * PAGE_SIZE
     }
 
-    // TODO empty function should be denied
     fn commit(&self, _offset: usize, _len: usize) {
-        unimplemented!()
+        // do nothing
     }
 
     fn decommit(&self, _offset: usize, _len: usize) -> ZxResult {
-        unimplemented!()
+        // do nothing
+        Ok(())
     }
 
     fn create_child(&self, _offset: usize, _len: usize) -> Arc<dyn VMObjectTrait> {
-        unimplemented!()
-    }
-
-    fn create_clone(&self, _offset: usize, _len: usize) -> Arc<dyn VMObjectTrait> {
         unimplemented!()
     }
 

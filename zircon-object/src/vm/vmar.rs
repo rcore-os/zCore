@@ -128,11 +128,11 @@ impl VmAddressRegion {
         let offset = self.determine_offset(inner, vmar_offset, len, PAGE_SIZE)?;
         let addr = self.addr + offset;
         let mapping = Arc::new(VmMapping {
-            inner: Arc::new(Mutex::new(VmMappingInner {
+            inner: Mutex::new(VmMappingInner {
                 addr,
                 size: len,
                 vmo_offset,
-            })),
+            }),
             flags,
             vmo: vmo.clone(),
             page_table: self.page_table.clone(),
@@ -351,40 +351,26 @@ impl VmAddressRegion {
     }
 
     pub fn get_info(&self) -> VmarInfo {
-        let ret = VmarInfo {
+        VmarInfo {
             base: self.addr(),
             len: self.size,
-        };
-        info!("vmar info: {:#x?}", ret);
-        ret
+        }
     }
 
     pub fn get_flags(&self) -> VmarFlags {
         self.flags
     }
 
-    // TODO print mappings
+    /// Dump all mappings recursively.
     pub fn dump(&self) {
-        self.inner
-            .lock()
-            .as_ref()
-            .unwrap()
-            .children
-            .iter()
-            .for_each(|map| {
-                debug!("BEGIN DUMP CHILD VMO");
-                map.dump();
-                debug!("DUMP CHILD VMO END");
-            });
-        self.inner
-            .lock()
-            .as_ref()
-            .unwrap()
-            .mappings
-            .iter()
-            .for_each(|map| {
-                debug!("MAPPING: {:#x} {:#x}", map.addr(), map.size());
-            });
+        let mut guard = self.inner.lock();
+        let inner = guard.as_mut().unwrap();
+        for map in inner.mappings.iter() {
+            debug!("{:x?}", map);
+        }
+        for child in inner.children.iter() {
+            child.dump();
+        }
     }
 
     pub fn vdso_base_addr(&self) -> Option<usize> {
@@ -447,7 +433,7 @@ pub struct VmMapping {
     flags: MMUFlags,
     vmo: Arc<VmObject>,
     page_table: Arc<Mutex<PageTable>>,
-    inner: Arc<Mutex<VmMappingInner>>,
+    inner: Mutex<VmMappingInner>,
 }
 
 struct VmMappingInner {
@@ -458,7 +444,14 @@ struct VmMappingInner {
 
 impl core::fmt::Debug for VmMapping {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "addr: {:#x}, size: {:#x}", self.addr(), self.size())
+        let inner = self.inner.lock();
+        f.debug_struct("VmMapping")
+            .field("addr", &inner.addr)
+            .field("size", &inner.size)
+            .field("flags", &self.flags)
+            .field("vmo_id", &self.vmo.id())
+            .field("vmo_offset", &inner.vmo_offset)
+            .finish()
     }
 }
 
@@ -529,11 +522,11 @@ impl VmMapping {
                 .expect("failed to unmap");
             inner.size = new_len1;
             Some(Arc::new(VmMapping {
-                inner: Arc::new(Mutex::new(VmMappingInner {
+                inner: Mutex::new(VmMappingInner {
                     addr: end,
                     size: new_len2,
                     vmo_offset: inner.vmo_offset + (end - inner.addr),
-                })),
+                }),
                 flags: self.flags,
                 vmo: self.vmo.clone(),
                 page_table: self.page_table.clone(),
@@ -584,9 +577,9 @@ impl VmMapping {
         self.inner.lock().end_addr()
     }
 
-    pub fn remove_write_flag(&self, offset: usize, len: usize) {
+    pub(super) fn remove_write_flag(&self, offset: usize, len: usize) {
         let mut new_flag = self.flags;
-        new_flag.set(MMUFlags::WRITE, false);
+        new_flag.remove(MMUFlags::WRITE);
         let inner = self.inner.lock();
         let start = offset.max(inner.vmo_offset);
         let end = (inner.vmo_offset + inner.size / PAGE_SIZE).min(offset + len);
