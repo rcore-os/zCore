@@ -68,7 +68,8 @@ impl VMObjectTrait for VMObjectPhysical {
     }
 
     fn append_mapping(&self, _mapping: Arc<VmMapping>) {
-        unimplemented!()
+        //        unimplemented!()
+        // TODO this function is only used when physical-vmo supports create_child
     }
 
     fn complete_info(&self, _info: &mut ZxInfoVmo) {

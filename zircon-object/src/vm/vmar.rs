@@ -134,9 +134,10 @@ impl VmAddressRegion {
                 vmo_offset,
             })),
             flags,
-            vmo,
+            vmo: vmo.clone(),
             page_table: self.page_table.clone(),
         });
+        vmo.append_mapping(mapping.clone());
         mapping.map();
         inner.mappings.push(mapping);
         Ok(addr)
@@ -360,15 +361,27 @@ impl VmAddressRegion {
 
     // TODO print mappings
     pub fn dump(&self) {
-        info!("addr: {:#x}, size:{:#x}", self.addr, self.size);
-        self.inner
+        self
+            .inner
             .lock()
             .as_ref()
             .unwrap()
             .children
             .iter()
             .for_each(|map| {
+                debug!("BEGIN DUMP CHILD VMO");
                 map.dump();
+                debug!("DUMP CHILD VMO END");
+            });
+        self
+            .inner
+            .lock()
+            .as_ref()
+            .unwrap()
+            .mappings
+            .iter()
+            .for_each(|map| {
+                debug!("MAPPING: {:#x} {:#x}", map.addr(), map.size());
             });
     }
 
@@ -389,11 +402,12 @@ impl VmAddressRegion {
     }
 
     pub fn do_pg_fault(&self, vaddr: VirtAddr, flags: MMUFlags) -> ZxResult {
+        self.dump();
         if let Some(inner) = self.inner.lock().as_ref() {
             if let Some(child) = inner.children.iter().find(|ch| ch.addr <= vaddr && vaddr <= ch.addr + ch.size) {
                 return child.do_pg_fault(vaddr, flags);
             }
-            if let Some(mapping) = inner.mappings.iter().find(|map| map.overlap(vaddr, vaddr)) {
+            if let Some(mapping) = inner.mappings.iter().find(|map| map.in_range(vaddr)) {
                 return mapping.do_pg_fault(vaddr, flags);
             }
         }
@@ -528,6 +542,11 @@ impl VmMapping {
         !(inner.addr >= end || inner.end_addr() <= begin)
     }
 
+    fn in_range(&self, vaddr: VirtAddr) -> bool {
+        let inner = self.inner.lock();
+        inner.addr <= vaddr && vaddr < inner.end_addr()
+    }
+
     pub fn is_valid_mapping_flags(&self, flags: MMUFlags) -> bool {
         if !flags.contains(MMUFlags::READ) && self.flags.contains(MMUFlags::READ) {
             return false;
@@ -581,8 +600,20 @@ impl VmMapping {
     }
 
     fn do_pg_fault(&self, vaddr: VirtAddr, flags: MMUFlags) -> ZxResult {
-        if self.is_valid_mapping_flags(flags) {
-            self.page_table.lock().protect(vaddr, self.flags | flags).or(Err(ZxError::ACCESS_DENIED))?;
+        debug!("flags {:?} self.flags {:?}", flags, self.flags);
+        if self.flags.contains(flags) {
+            let vaddr = pages(vaddr) * PAGE_SIZE;
+            let page_idx = (vaddr - self.addr()) / PAGE_SIZE;
+            let paddr = self.vmo.get_page(page_idx, flags);
+            let new_flags = if !self.flags.contains(MMUFlags::WRITE) {
+                self.flags & !MMUFlags::WRITE
+            } else {
+                self.flags
+            };
+            debug!("paddr {:#x}, new_flags {:?}", paddr, new_flags);
+            let mut pg_table = self.page_table.lock();
+            pg_table.unmap(vaddr).unwrap();
+            pg_table.map(vaddr, paddr, new_flags).or(Err(ZxError::ACCESS_DENIED))?;
             Ok(())
         } else {
             Err(ZxError::ACCESS_DENIED)

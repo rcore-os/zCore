@@ -213,8 +213,12 @@ pub fn run_task(thread: Arc<Thread>) {
                         MMUFlags::WRITE
                     };
                     error!("page fualt from user mode {:#x} {:#x?}", kernel_hal::fetch_fault_vaddr(), flags);
-                    if !thread.proc().vmar().do_pg_fault(kernel_hal::fetch_fault_vaddr(), flags).is_ok() {
-                        panic!("Page Fault from user mode {:#x?}", cx);
+                    match thread.proc().vmar().do_pg_fault(kernel_hal::fetch_fault_vaddr(), flags) {
+                        Ok(()) => {},
+                        Err(e) => {
+                            error!("{:?}", e);
+                            panic!("Page Fault from user mode {:#x?}", cx);
+                        }
                     }
                 }
                 _ => panic!("not supported interrupt from user mode. {:#x?}", cx),
