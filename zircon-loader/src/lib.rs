@@ -183,6 +183,7 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
 
 kcounter!(EXCEPTIONS_USER, "exceptions.user");
 kcounter!(EXCEPTIONS_TIMER, "exceptions.timer");
+kcounter!(EXCEPTIONS_PGFAULT, "exceptions.pgfault");
 
 #[export_name = "run_task"]
 pub fn run_task(thread: Arc<Thread>) {
@@ -207,6 +208,7 @@ pub fn run_task(thread: Arc<Thread>) {
                     }
                 }
                 0xe => {
+                    EXCEPTIONS_PGFAULT.add(1);
                     let flags = if cx.error_code & 0x2 == 0 {
                         MMUFlags::READ
                     } else {
@@ -220,7 +222,7 @@ pub fn run_task(thread: Arc<Thread>) {
                     match thread
                         .proc()
                         .vmar()
-                        .do_pg_fault(kernel_hal::fetch_fault_vaddr(), flags)
+                        .handle_page_fault(kernel_hal::fetch_fault_vaddr(), flags)
                     {
                         Ok(()) => {}
                         Err(e) => {

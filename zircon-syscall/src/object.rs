@@ -216,8 +216,8 @@ impl Syscall<'_> {
             Topic::Vmo => {
                 let (vmo, rights) = proc.get_object_and_rights::<VmObject>(handle)?;
                 let mut info = vmo.get_info();
-                info.flags |= VmoInfoFlags::VIA_HANDLE.bits();
-                info.rights |= rights.bits();
+                info.flags |= VmoInfoFlags::VIA_HANDLE;
+                info.rights |= rights;
                 UserOutPtr::<ZxInfoVmo>::from(buffer).write(info)?;
             }
             _ => {

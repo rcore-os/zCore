@@ -346,6 +346,10 @@ impl VmAddressRegion {
         self.overlap(begin, end) && !self.within(begin, end)
     }
 
+    fn contains(&self, vaddr: VirtAddr) -> bool {
+        self.addr <= vaddr && vaddr < self.end_addr()
+    }
+
     pub fn get_info(&self) -> VmarInfo {
         let ret = VmarInfo {
             base: self.addr(),
@@ -399,19 +403,17 @@ impl VmAddressRegion {
         None
     }
 
-    pub fn do_pg_fault(&self, vaddr: VirtAddr, flags: MMUFlags) -> ZxResult {
-        self.dump();
-        if let Some(inner) = self.inner.lock().as_ref() {
-            if let Some(child) = inner
-                .children
-                .iter()
-                .find(|ch| ch.addr <= vaddr && vaddr <= ch.addr + ch.size)
-            {
-                return child.do_pg_fault(vaddr, flags);
-            }
-            if let Some(mapping) = inner.mappings.iter().find(|map| map.in_range(vaddr)) {
-                return mapping.do_pg_fault(vaddr, flags);
-            }
+    /// Handle page fault happened on this VMAR.
+    ///
+    /// The fault virtual address is `vaddr` and the reason is in `flags`.
+    pub fn handle_page_fault(&self, vaddr: VirtAddr, flags: MMUFlags) -> ZxResult {
+        let guard = self.inner.lock();
+        let inner = guard.as_ref().unwrap();
+        if let Some(child) = inner.children.iter().find(|ch| ch.contains(vaddr)) {
+            return child.handle_page_fault(vaddr, flags);
+        }
+        if let Some(mapping) = inner.mappings.iter().find(|map| map.contains(vaddr)) {
+            return mapping.handle_page_fault(vaddr, flags);
         }
         Err(ZxError::NOT_FOUND)
     }
@@ -544,12 +546,12 @@ impl VmMapping {
         !(inner.addr >= end || inner.end_addr() <= begin)
     }
 
-    fn in_range(&self, vaddr: VirtAddr) -> bool {
+    fn contains(&self, vaddr: VirtAddr) -> bool {
         let inner = self.inner.lock();
         inner.addr <= vaddr && vaddr < inner.end_addr()
     }
 
-    pub fn is_valid_mapping_flags(&self, flags: MMUFlags) -> bool {
+    fn is_valid_mapping_flags(&self, flags: MMUFlags) -> bool {
         if !flags.contains(MMUFlags::READ) && self.flags.contains(MMUFlags::READ) {
             return false;
         }
@@ -562,7 +564,7 @@ impl VmMapping {
         true
     }
 
-    pub fn protect(&self, flags: MMUFlags) {
+    fn protect(&self, flags: MMUFlags) {
         let mut pg_table = self.page_table.lock();
         let inner = self.inner.lock();
         for i in 0..inner.size {
@@ -582,11 +584,6 @@ impl VmMapping {
         self.inner.lock().end_addr()
     }
 
-    pub fn do_with_pgtable(&self, f: impl FnOnce(&mut PageTable)) {
-        let mut page_table = self.page_table.lock();
-        f(&mut page_table);
-    }
-
     pub fn remove_write_flag(&self, offset: usize, len: usize) {
         let mut new_flag = self.flags;
         new_flag.set(MMUFlags::WRITE, false);
@@ -603,7 +600,7 @@ impl VmMapping {
         }
     }
 
-    fn do_pg_fault(&self, vaddr: VirtAddr, flags: MMUFlags) -> ZxResult {
+    fn handle_page_fault(&self, vaddr: VirtAddr, flags: MMUFlags) -> ZxResult {
         debug!("flags {:?} self.flags {:?}", flags, self.flags);
         if self.flags.contains(flags) {
             let vaddr = pages(vaddr) * PAGE_SIZE;

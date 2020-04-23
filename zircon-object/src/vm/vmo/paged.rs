@@ -11,9 +11,19 @@ use {
 
 #[derive(PartialEq, Eq, Debug)]
 enum VMOType {
-    Hidden,
-    Snapshot,
+    /// The original node.
     Origin,
+    /// A snapshot of the parent node.
+    Snapshot,
+    /// Internal non-leaf node for snapshot.
+    ///
+    /// ```text
+    ///    v---create_child
+    ///    O       H <--- hidden node
+    ///   /   =>  / \
+    ///  S       O   S
+    /// ```
+    Hidden,
 }
 
 #[allow(dead_code)]
@@ -24,6 +34,12 @@ enum PageOrMarkerState {
     LeftSplit,
 }
 
+/// Page state in VMO.
+///
+/// It has 3 states:
+/// - Zero:      The page will be lazily allocated.
+/// - Allocated: The page is allocated to one frame.
+/// - Parent:    The page is equal to parent.
 struct PageOrMarker {
     pub inner: Option<PhysFrame>,
     state: PageOrMarkerState,
@@ -41,7 +57,7 @@ impl PageOrMarker {
         self.inner.is_some()
     }
 
-    /// This cow page has been forked, now we can see it as commited
+    /// This cow page has been forked, now we can see it as committed
     fn is_splited(&self) -> bool {
         self.state != PageOrMarkerState::Init
     }
@@ -65,13 +81,16 @@ pub struct VMObjectPaged {
 #[allow(dead_code)]
 /// The mutable part of `VMObjectPaged`.
 struct VMObjectPagedInner {
-    _type: VMOType,
+    type_: VMOType,
     parent: Option<Arc<Mutex<VMObjectPagedInner>>>,
     children: Vec<Weak<Mutex<VMObjectPagedInner>>>,
+    /// The offset from parent.
     parent_offset: usize,
-    parent_limit: usize,
+    /// The size in bytes.
     size: usize,
+    /// Physical frames of this VMO.
     frames: BTreeMap<usize, PageOrMarker>,
+    /// All mappings to this VMO.
     mappings: Vec<Arc<VmMapping>>,
 }
 
@@ -86,11 +105,10 @@ impl VMObjectPaged {
         Arc::new(VMObjectPaged {
             global_mtx: Arc::new(Mutex::new(())),
             inner: Arc::new(Mutex::new(VMObjectPagedInner {
-                _type: VMOType::Origin,
+                type_: VMOType::Origin,
                 parent: None,
                 children: Vec::new(),
                 parent_offset: 0usize,
-                parent_limit: 0usize,
                 size: pages * PAGE_SIZE,
                 frames,
                 mappings: Vec::new(),
@@ -142,87 +160,74 @@ impl VMObjectPaged {
 
 impl VMObjectTrait for VMObjectPaged {
     fn read(&self, offset: usize, buf: &mut [u8]) {
-        let guard = self.global_mtx.lock();
+        let _guard = self.global_mtx.lock();
         self.for_each_page(offset, buf.len(), MMUFlags::READ, |paddr, buf_range| {
             kernel_hal::pmem_read(paddr, &mut buf[buf_range]);
         });
-        drop(guard);
     }
 
     fn write(&self, offset: usize, buf: &[u8]) {
-        let guard = self.global_mtx.lock();
+        let _guard = self.global_mtx.lock();
         self.for_each_page(offset, buf.len(), MMUFlags::WRITE, |paddr, buf_range| {
             kernel_hal::pmem_write(paddr, &buf[buf_range]);
         });
-        drop(guard);
     }
 
     fn len(&self) -> usize {
-        let guard = self.global_mtx.lock();
-        let ret = self.inner.lock().size;
-        drop(guard);
-        ret
+        let _guard = self.global_mtx.lock();
+        self.inner.lock().size
     }
 
     fn set_len(&self, len: usize) {
         assert!(page_aligned(len));
-        let guard = self.global_mtx.lock();
+        let _guard = self.global_mtx.lock();
         // FIXME parent and children? len < old_len?
         let mut inner = self.inner.lock();
         inner.size = len;
-        drop(guard);
     }
 
     fn get_page(&self, page_idx: usize, flags: MMUFlags) -> PhysAddr {
-        let guard = self.global_mtx.lock();
-        let ret = self.inner.lock().get_page(page_idx, flags);
-        drop(guard);
-        ret
+        let _guard = self.global_mtx.lock();
+        self.inner.lock().get_page(page_idx, flags)
     }
 
     fn commit(&self, offset: usize, len: usize) {
-        let guard = self.global_mtx.lock();
+        let _guard = self.global_mtx.lock();
         let start_page = offset / PAGE_SIZE;
         let pages = len / PAGE_SIZE;
         let mut inner = self.inner.lock();
         for i in 0..pages {
             inner.commit(start_page + i);
         }
-        drop(guard);
     }
 
     fn decommit(&self, offset: usize, len: usize) -> ZxResult {
-        let guard = self.global_mtx.lock();
+        let _guard = self.global_mtx.lock();
         let start_page = offset / PAGE_SIZE;
         let pages = len / PAGE_SIZE;
         let mut inner = self.inner.lock();
         if !inner.children.is_empty() || inner.parent.is_some() {
-            drop(guard);
-            Err(ZxError::NOT_SUPPORTED)
-        } else {
-            for i in 0..pages {
-                inner.decommit(start_page + i);
-            }
-            drop(guard);
-            Ok(())
+            return Err(ZxError::NOT_SUPPORTED);
         }
+        for i in 0..pages {
+            inner.decommit(start_page + i);
+        }
+        Ok(())
     }
 
     fn create_child(&self, offset: usize, len: usize) -> Arc<dyn VMObjectTrait> {
-        let guard = self.global_mtx.lock();
+        let _guard = self.global_mtx.lock();
         assert!(page_aligned(offset));
         assert!(page_aligned(len));
         let child_inner = self.inner.lock().create_child(&self.inner, offset, len);
-        let ret = Arc::new(VMObjectPaged {
+        Arc::new(VMObjectPaged {
             global_mtx: self.global_mtx.clone(),
             inner: child_inner,
-        });
-        drop(guard);
-        ret
+        })
     }
 
     fn create_clone(&self, offset: usize, len: usize) -> Arc<dyn VMObjectTrait> {
-        let guard = self.global_mtx.lock();
+        let _guard = self.global_mtx.lock();
         assert!(page_aligned(offset));
         assert!(page_aligned(len));
         let mut frames = BTreeMap::new();
@@ -241,31 +246,27 @@ impl VMObjectTrait for VMObjectPaged {
             };
             frames.insert(i.clone(), value);
         }
-        let ret = Arc::new(VMObjectPaged {
+        Arc::new(VMObjectPaged {
             global_mtx: self.global_mtx.clone(),
             inner: Arc::new(Mutex::new(VMObjectPagedInner {
-                _type: VMOType::Snapshot,
+                type_: VMOType::Snapshot,
                 parent: None,
                 children: Vec::new(),
                 parent_offset: offset,
-                parent_limit: offset + len,
                 size: len,
                 frames,
                 mappings: Vec::new(),
             })),
-        });
-        drop(guard);
-        ret
+        })
     }
 
     fn append_mapping(&self, mapping: Arc<VmMapping>) {
-        let guard = self.global_mtx.lock();
+        let _guard = self.global_mtx.lock();
         self.inner.lock().mappings.push(mapping);
-        drop(guard);
     }
 
     fn complete_info(&self, info: &mut ZxInfoVmo) {
-        info.flags |= VmoInfoFlags::TYPE_PAGED.bits();
+        info.flags |= VmoInfoFlags::TYPE_PAGED;
         self.inner.lock().complete_info(info);
     }
 }
@@ -290,8 +291,8 @@ impl VMObjectPagedInner {
     fn get_page(&mut self, page_idx: usize, flags: MMUFlags) -> PhysAddr {
         // check if it is in current frames list
         let mut res: PhysAddr = 0;
-        if let Some(_frame) = self.frames.get(&page_idx) {
-            if let Some(frame) = &_frame.inner {
+        if let Some(frame) = self.frames.get(&page_idx) {
+            if let Some(frame) = &frame.inner {
                 return frame.addr();
             }
         }
@@ -345,7 +346,7 @@ impl VMObjectPagedInner {
             if self.frames.contains_key(&i) {
                 count += 1;
             } else {
-                if self.parent_limit <= i * PAGE_SIZE {
+                if self.parent_limit() <= i * PAGE_SIZE {
                     continue;
                 }
                 let mut current = self.parent.as_ref().cloned();
@@ -359,7 +360,7 @@ impl VMObjectPagedInner {
                         }
                     }
                     current_idx += locked_cur.parent_offset / PAGE_SIZE;
-                    if current_idx >= locked_cur.parent_limit / PAGE_SIZE {
+                    if current_idx >= locked_cur.parent_limit() / PAGE_SIZE {
                         break;
                     }
                     current = locked_cur.parent.as_ref().cloned();
@@ -372,12 +373,8 @@ impl VMObjectPagedInner {
     fn remove_child(&mut self, to_remove: &Weak<Mutex<Self>>) {
         self.children
             .retain(|child| child.strong_count() != 0 && !child.ptr_eq(to_remove));
-        if self._type == VMOType::Hidden {
-            assert!(
-                self.children.len() == 1,
-                "children num {:#x}",
-                self.children.len()
-            );
+        if self.type_ == VMOType::Hidden {
+            assert_eq!(self.children.len(), 1);
             if self.children.is_empty() {
                 self.frames.clear();
                 return;
@@ -386,7 +383,7 @@ impl VMObjectPagedInner {
             let locked_child = weak_child.upgrade().unwrap();
             let mut child = locked_child.lock();
             let start = child.parent_offset / PAGE_SIZE;
-            let end = child.parent_limit / PAGE_SIZE;
+            let end = child.parent_limit() / PAGE_SIZE;
             debug!("from {:#x} to {:#x}", start, end);
             for (&key, value) in self.frames.range_mut(start..end) {
                 let idx = key - start;
@@ -413,10 +410,12 @@ impl VMObjectPagedInner {
             }
             child.parent = option_parent;
             child.parent_offset += self.parent_offset;
-            child.parent_limit += self.parent_offset;
         }
     }
 
+    /// Create a snapshot child VMO.
+    ///
+    /// TODO: explain hidden
     fn create_child(
         &mut self,
         myself: &Arc<Mutex<VMObjectPagedInner>>,
@@ -428,11 +427,10 @@ impl VMObjectPagedInner {
 
         // construct hidden_vmo as shared parent
         let hidden_vmo = Arc::new(Mutex::new(VMObjectPagedInner {
-            _type: VMOType::Hidden,
+            type_: VMOType::Hidden,
             parent: old_parent.as_ref().cloned(),
-            children: [Arc::downgrade(myself), Weak::new()].to_vec(), // one of they will be changed below
+            children: [Arc::downgrade(myself), Weak::new()].to_vec(), // one of them will be changed below
             parent_offset: self.parent_offset,
-            parent_limit: self.parent_limit,
             size: self.size,
             frames,
             mappings: Vec::new(),
@@ -449,8 +447,7 @@ impl VMObjectPagedInner {
 
         // change current vmo's parent
         self.parent = Some(hidden_vmo.clone());
-        self.parent_offset = 0usize;
-        self.parent_limit = self.size;
+        self.parent_offset = 0;
 
         self.mappings
             .iter()
@@ -459,11 +456,10 @@ impl VMObjectPagedInner {
         // create hidden_vmo's another child as result
         let child_frames = BTreeMap::new();
         let child = Arc::new(Mutex::new(VMObjectPagedInner {
-            _type: VMOType::Snapshot,
+            type_: VMOType::Snapshot,
             parent: Some(hidden_vmo.clone()),
             children: Vec::new(),
             parent_offset: offset,
-            parent_limit: offset + len,
             size: len,
             frames: child_frames,
             mappings: Vec::new(),
@@ -473,9 +469,9 @@ impl VMObjectPagedInner {
     }
 
     fn destroy(&mut self, myself: &Weak<Mutex<Self>>) {
-        assert_ne!(self._type, VMOType::Hidden);
+        assert_ne!(self.type_, VMOType::Hidden);
         assert_eq!(self.children.len(), 0);
-        match self._type {
+        match self.type_ {
             VMOType::Snapshot | VMOType::Origin => {
                 if let Some(parent) = self.parent.as_ref() {
                     let mut p = parent.lock();
@@ -487,20 +483,24 @@ impl VMObjectPagedInner {
     }
 
     fn complete_info(&self, info: &mut ZxInfoVmo) {
-        if self._type == VMOType::Snapshot {
-            info.flags |= VmoInfoFlags::IS_COW_CLONE.bits();
+        if self.type_ == VMOType::Snapshot {
+            info.flags |= VmoInfoFlags::IS_COW_CLONE;
         }
         info.num_children = self.children.len() as u64;
         info.num_mappings = self.mappings.len() as u64;
         info.share_count = self.mappings.len() as u64; // FIXME share_count should be the count of unique aspace
-        info.commited_bytes = self.attributed_pages() * PAGE_SIZE as u64;
+        info.committed_bytes = self.attributed_pages() * PAGE_SIZE as u64;
         // TODO cache_policy should be set up.
+    }
+
+    fn parent_limit(&self) -> usize {
+        self.parent_offset + self.size
     }
 }
 
 impl Drop for VMObjectPagedInner {
     fn drop(&mut self) {
-        match self._type {
+        match self.type_ {
             VMOType::Hidden => {
                 assert_eq!(self.children.len(), 0);
                 assert_eq!(self.frames.len(), 0);
@@ -514,11 +514,10 @@ impl Drop for VMObjectPagedInner {
 
 impl Drop for VMObjectPaged {
     fn drop(&mut self) {
-        let guard = self.global_mtx.lock();
+        let _guard = self.global_mtx.lock();
         if Arc::strong_count(&self.inner) == 1 {
             self.inner.lock().destroy(&Arc::downgrade(&self.inner));
         }
-        drop(guard);
     }
 }
 

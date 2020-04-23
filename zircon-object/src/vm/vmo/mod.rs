@@ -139,9 +139,9 @@ impl VmObject {
             size: self.inner.len() as u64,
             parent_koid: self.parent_koid,
             flags: if self.resizable {
-                VmoInfoFlags::RESIZABLE.bits()
+                VmoInfoFlags::RESIZABLE
             } else {
-                0
+                VmoInfoFlags::empty()
             },
             ..Default::default()
         };
@@ -158,34 +158,52 @@ impl Deref for VmObject {
     }
 }
 
+/// Describes a VMO.
 #[repr(C)]
 #[derive(Default)]
 pub struct ZxInfoVmo {
+    /// The koid of this VMO.
     koid: KoID,
+    /// The name of this VMO.
     name: [u8; 32],
+    /// The size of this VMO; i.e., the amount of virtual address space it
+    /// would consume if mapped.
     size: u64,
+    /// If this VMO is a clone, the koid of its parent. Otherwise, zero.
     parent_koid: KoID,
+    /// The number of clones of this VMO, if any.
     num_children: u64,
+    /// The number of times this VMO is currently mapped into VMARs.
     num_mappings: u64,
-    share_count: u64, // the number of unique address space we're mapped into
-    pub flags: u32,
+    /// The number of unique address space we're mapped into.
+    share_count: u64,
+    /// Flags.
+    pub flags: VmoInfoFlags,
+    /// Padding.
     padding1: [u8; 4],
-    commited_bytes: u64,
-    pub rights: u32,
+    /// If the type is `PAGED`, the amount of
+    /// memory currently allocated to this VMO; i.e., the amount of physical
+    /// memory it consumes. Undefined otherwise.
+    committed_bytes: u64,
+    /// If `flags & ZX_INFO_VMO_VIA_HANDLE`, the handle rights.
+    /// Undefined otherwise.
+    pub rights: Rights,
+    /// VMO mapping cache policy.
     cache_policy: u32,
 }
 
 bitflags! {
+    #[derive(Default)]
     pub struct VmoInfoFlags: u32 {
-        #[allow(clippy::identity_op)]
-        const TYPE_PAGED  = 1 << 0;
         const TYPE_PHYSICAL = 0;
-        const RESIZABLE = 1 << 1;
-        const IS_COW_CLONE = 1 << 2;
-        const VIA_HANDLE   = 1 << 3;
-        const VIA_MAPPING  = 1 << 4;
-        const PAGER_BACKED = 1 << 5;
-        const CONTIGUOUS   = 1 << 6;
+        #[allow(clippy::identity_op)]
+        const TYPE_PAGED    = 1 << 0;
+        const RESIZABLE     = 1 << 1;
+        const IS_COW_CLONE  = 1 << 2;
+        const VIA_HANDLE    = 1 << 3;
+        const VIA_MAPPING   = 1 << 4;
+        const PAGER_BACKED  = 1 << 5;
+        const CONTIGUOUS    = 1 << 6;
     }
 }
 
