@@ -52,8 +52,6 @@ pub trait VMObjectTrait: Sync + Send {
     fn append_mapping(&self, mapping: Arc<VmMapping>);
 
     fn complete_info(&self, info: &mut ZxInfoVmo);
-
-    fn set_user_id(&self, user_id: KoID);
 }
 
 pub struct VmObject {
@@ -110,7 +108,6 @@ impl VmObject {
     }
 
     pub fn create_child(&self, resizable: bool, offset: usize, len: usize) -> Arc<Self> {
-        // error!("create_child: offset={:#x}, len={:#x}", offset, len);
         Arc::new(VmObject {
             base: KObjectBase::with_name(&self.base.name()),
             parent_koid: self.base.id,

@@ -75,7 +75,9 @@ pub struct VMObjectPaged {
 /// The mutable part of `VMObjectPaged`.
 struct VMObjectPagedInner {
     type_: VMOType,
-    page_attribution_user_id: KoID,
+    /// The owner of all shared pages in the hidden node.
+    page_owner: KoID,
+    /// Parent node.
     parent: Option<Arc<VMObjectPaged>>,
     /// The offset from parent.
     parent_offset: usize,
@@ -114,7 +116,7 @@ impl VMObjectPaged {
     pub fn new(pages: usize, user_id: KoID) -> Arc<Self> {
         VMObjectPaged::wrap(VMObjectPagedInner {
             type_: VMOType::Origin,
-            page_attribution_user_id: user_id,
+            page_owner: user_id,
             parent: None,
             parent_offset: 0usize,
             size: pages * PAGE_SIZE,
@@ -248,10 +250,6 @@ impl VMObjectTrait for VMObjectPaged {
         info.flags |= VmoInfoFlags::TYPE_PAGED;
         self.inner.lock().complete_info(info);
     }
-
-    fn set_user_id(&self, user_id: KoID) {
-        self.inner.lock().page_attribution_user_id = user_id;
-    }
 }
 
 enum CommitResult {
@@ -280,12 +278,9 @@ impl VMObjectPaged {
             // lazy allocate zero frame
             let target_frame = vmo_frame_alloc()?;
             kernel_hal::frame_zero(target_frame.addr());
-            let paddr = target_frame.addr();
             inner.frames.insert(page_idx, PageState::new(target_frame));
-            return Ok(CommitResult::Ok(paddr));
-        }
-        // if page miss on this VMO, recursively commit to parent
-        if no_frame {
+        } else if no_frame {
+            // if page miss on this VMO, recursively commit to parent
             let parent = inner.parent.as_ref().unwrap();
             let parent_idx = page_idx + inner.parent_offset / PAGE_SIZE;
             match parent.commit_page_internal(parent_idx, flags, &self.self_ref)? {
@@ -298,10 +293,11 @@ impl VMObjectPaged {
         // now the page must hit on this VMO
         let (child_tag, _other_child) = inner.type_.get_tag_and_other(child);
         let frame = inner.frames.get_mut(&page_idx).unwrap();
-        if flags.contains(MMUFlags::WRITE)
-            && child_tag != PageStateTag::Init
-            && frame.tag == PageStateTag::Init
-        {
+        if frame.tag != PageStateTag::Init {
+            // has splitted, take out
+            let target_frame = inner.frames.remove(&page_idx).unwrap().frame;
+            return Ok(CommitResult::CopyOnWrite(target_frame));
+        } else if flags.contains(MMUFlags::WRITE) && child_tag != PageStateTag::Init {
             // copy-on-write
             let target_frame = vmo_frame_alloc()?;
             kernel_hal::frame_copy(frame.frame.addr(), target_frame.addr());
@@ -338,7 +334,7 @@ impl VMObjectPagedInner {
         }
     }
 
-    /// Count committed pages in the VMO and its ancestors.
+    /// Count committed pages of the VMO.
     fn committed_pages(&self) -> usize {
         let mut count = 0;
         for i in 0..self.size / PAGE_SIZE {
@@ -351,12 +347,10 @@ impl VMObjectPagedInner {
             }
             let mut current = self.parent.clone();
             let mut current_idx = i + self.parent_offset / PAGE_SIZE;
-            while let Some(locked_) = current {
-                let locked_cur = locked_.inner.lock();
+            while let Some(locked) = current {
+                let locked_cur = locked.inner.lock();
                 if let Some(frame) = locked_cur.frames.get(&current_idx) {
-                    if frame.tag != PageStateTag::Init
-                        || locked_cur.page_attribution_user_id == self.page_attribution_user_id
-                    {
+                    if frame.tag != PageStateTag::Init || locked_cur.page_owner == self.page_owner {
                         count += 1;
                         break;
                     }
@@ -405,8 +399,6 @@ impl VMObjectPagedInner {
     }
 
     /// Create a snapshot child VMO.
-    ///
-    /// TODO: explain hidden
     fn create_child(
         &mut self,
         myself: &Weak<VMObjectPaged>,
@@ -416,7 +408,7 @@ impl VMObjectPagedInner {
         // create child VMO
         let child = VMObjectPaged::wrap(VMObjectPagedInner {
             type_: VMOType::Snapshot,
-            page_attribution_user_id: 0,
+            page_owner: 0,
             parent: None, // set later
             parent_offset: offset,
             size: len,
@@ -429,7 +421,7 @@ impl VMObjectPagedInner {
                 left: myself.clone(),
                 right: Arc::downgrade(&child),
             },
-            page_attribution_user_id: self.page_attribution_user_id,
+            page_owner: self.page_owner,
             parent: self.parent.clone(),
             parent_offset: self.parent_offset,
             size: self.size,
@@ -498,18 +490,72 @@ mod tests {
 
     #[test]
     fn create_child() {
-        let vmo = VmObject::new_paged(10);
-        vmo.write(0, &[1, 2, 3, 4]).unwrap();
-        let mut buf = [0u8; 4];
-        vmo.read(0, &mut buf).unwrap();
-        assert_eq!(&buf, &[1, 2, 3, 4]);
-        let child_vmo = vmo.create_child(true, 0, 4 * 4096);
-        child_vmo.read(0, &mut buf).unwrap();
-        assert_eq!(&buf, &[1, 2, 3, 4]);
-        child_vmo.write(0, &[6, 7, 8, 9]).unwrap();
-        vmo.read(0, &mut buf).unwrap();
-        assert_eq!(&buf, &[1, 2, 3, 4]);
-        child_vmo.read(0, &mut buf).unwrap();
-        assert_eq!(&buf, &[6, 7, 8, 9]);
+        let vmo = VmObject::new_paged(1);
+        let child_vmo = vmo.create_child(false, 0, PAGE_SIZE);
+
+        // write to parent and make sure clone doesn't see it
+        vmo.test_write(0, 1);
+        assert_eq!(vmo.test_read(0), 1);
+        assert_eq!(child_vmo.test_read(0), 0);
+
+        // write to clone and make sure parent doesn't see it
+        child_vmo.test_write(0, 2);
+        assert_eq!(vmo.test_read(0), 1);
+        assert_eq!(child_vmo.test_read(0), 2);
+    }
+
+    #[test]
+    fn committed_pages() {
+        let vmo = VmObject::new_paged(1);
+        let child_vmo = vmo.create_child(false, 0, PAGE_SIZE);
+
+        // no committed pages
+        assert_eq!(vmo.get_info().committed_bytes, 0);
+        assert_eq!(child_vmo.get_info().committed_bytes, 0);
+
+        // copy-on-write
+        vmo.test_write(0, 1);
+        assert_eq!(vmo.get_info().committed_bytes, 0x1000);
+        assert_eq!(child_vmo.get_info().committed_bytes, 0x1000);
+    }
+
+    #[test]
+    #[ignore] // FIXME
+    fn zero_page_write() {
+        let vmo0 = VmObject::new_paged(1);
+        let vmo1 = vmo0.create_child(false, 0, PAGE_SIZE);
+        let vmo2 = vmo0.create_child(false, 0, PAGE_SIZE);
+        let vmos = [vmo0, vmo1, vmo2];
+        let origin = vmo_page_bytes();
+
+        // no committed pages
+        for vmo in &vmos {
+            assert_eq!(vmo.get_info().committed_bytes, 0);
+        }
+
+        // copy-on-write
+        for i in 0..3 {
+            vmos[i].test_write(0, i as u8);
+            for j in 0..3 {
+                assert_eq!(vmos[j].test_read(0), if j <= i { j as u8 } else { 0 });
+                assert_eq!(
+                    vmos[j].get_info().committed_bytes as usize,
+                    if j <= i { PAGE_SIZE } else { 0 }
+                );
+            }
+            assert_eq!(vmo_page_bytes() - origin, (i + 1) * PAGE_SIZE);
+        }
+    }
+
+    impl VmObject {
+        fn test_write(&self, page: usize, value: u8) {
+            self.write(page * PAGE_SIZE, &[value]).unwrap();
+        }
+
+        fn test_read(&self, page: usize) -> u8 {
+            let mut buf = [0; 1];
+            self.read(page * PAGE_SIZE, &mut buf).unwrap();
+            buf[0]
+        }
     }
 }

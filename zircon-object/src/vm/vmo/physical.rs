@@ -74,10 +74,6 @@ impl VMObjectTrait for VMObjectPhysical {
     fn complete_info(&self, _info: &mut ZxInfoVmo) {
         unimplemented!()
     }
-
-    fn set_user_id(&self, _user_id: KoID) {
-        //unimplemented!()
-    }
 }
 
 #[cfg(test)]
