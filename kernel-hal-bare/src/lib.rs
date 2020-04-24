@@ -56,9 +56,7 @@ const ZERO_PAGE: [u8; PAGE_SIZE] = [0u8; PAGE_SIZE];
 
 #[export_name = "zero_frame_paddr"]
 pub fn zero_frame_addr() -> PhysAddr {
-    unsafe {
-        ZERO_PAGE.as_ptr() as usize - PMEM_BASE
-    }
+    unsafe { ZERO_PAGE.as_ptr() as usize - PMEM_BASE }
 }
 
 #[repr(C)]

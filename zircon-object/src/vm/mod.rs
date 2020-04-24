@@ -37,9 +37,5 @@ pub fn roundup_pages(size: usize) -> usize {
 }
 
 pub fn round_down_pages(size: usize) -> usize {
-    if page_aligned(size) {
-        size
-    } else {
-        (size / PAGE_SIZE) * PAGE_SIZE
-    }
+    size / PAGE_SIZE * PAGE_SIZE
 }
