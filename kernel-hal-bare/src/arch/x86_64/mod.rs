@@ -73,7 +73,10 @@ impl PageTableImpl {
     pub fn unmap(&mut self, vaddr: x86_64::VirtAddr) -> Result<(), ()> {
         let mut pt = self.get();
         let page = Page::<Size4KiB>::from_start_address(vaddr).unwrap();
-        pt.unmap(page).unwrap().1.flush();
+        if let Ok(pte) = pt.unmap(page) {
+            pte.1.flush();
+        }
+        //pt.unmap(page).unwrap().1.flush();
         trace!("unmap: {:x?}", vaddr);
         Ok(())
     }
@@ -83,11 +86,12 @@ impl PageTableImpl {
     pub fn protect(&mut self, vaddr: x86_64::VirtAddr, flags: MMUFlags) -> Result<(), ()> {
         let mut pt = self.get();
         let page = Page::<Size4KiB>::from_start_address(vaddr).unwrap();
-        let flush = pt.update_flags(page, flags.to_ptf()).unwrap();
-        if flags.contains(MMUFlags::USER) {
-            self.allow_user_access(vaddr);
+        if let Ok(flush) = pt.update_flags(page, flags.to_ptf()) {
+            if flags.contains(MMUFlags::USER) {
+                self.allow_user_access(vaddr);
+            }
+            flush.flush();
         }
-        flush.flush();
         trace!("protect: {:x?}, flags={:?}", vaddr, flags);
         Ok(())
     }

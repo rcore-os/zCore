@@ -6,6 +6,13 @@ mod physical;
 use self::{paged::*, physical::*};
 use core::ops::Deref;
 
+kcounter!(VMO_PAGE_ALLOC, "vmo.page_alloc");
+kcounter!(VMO_PAGE_DEALLOC, "vmo.page_dealloc");
+
+pub fn vmo_page_bytes() -> usize {
+    (VMO_PAGE_ALLOC.get() - VMO_PAGE_DEALLOC.get()) * PAGE_SIZE
+}
+
 /// Virtual Memory Objects
 #[allow(clippy::len_without_is_empty)]
 pub trait VMObjectTrait: Sync + Send {
@@ -45,6 +52,8 @@ pub trait VMObjectTrait: Sync + Send {
     fn append_mapping(&self, mapping: Arc<VmMapping>);
 
     fn complete_info(&self, info: &mut ZxInfoVmo);
+
+    fn set_user_id(&self, user_id: KoID);
 }
 
 pub struct VmObject {
@@ -61,22 +70,26 @@ define_count_helper!(VmObject);
 impl VmObject {
     /// Create a new VMO backing on physical memory allocated in pages.
     pub fn new_paged(pages: usize) -> Arc<Self> {
+        let base = KObjectBase::default();
+        let user_id = base.id;
         Arc::new(VmObject {
-            base: KObjectBase::default(),
+            base,
             parent_koid: 0,
             resizable: true,
             _counter: CountHelper::new(),
-            inner: VMObjectPaged::new(pages),
+            inner: VMObjectPaged::new(pages, user_id),
         })
     }
 
     pub fn new_paged_with_resizable(resizable: bool, pages: usize) -> Arc<Self> {
+        let base = KObjectBase::default();
+        let user_id = base.id;
         Arc::new(VmObject {
-            base: KObjectBase::default(),
+            base,
             parent_koid: 0,
             resizable,
             _counter: CountHelper::new(),
-            inner: VMObjectPaged::new(pages),
+            inner: VMObjectPaged::new(pages, user_id),
         })
     }
 
@@ -195,6 +208,12 @@ bitflags! {
         const PAGER_BACKED  = 1 << 5;
         const CONTIGUOUS    = 1 << 6;
     }
+}
+
+#[derive(PartialEq, Eq, Clone, Copy)]
+pub enum RangeChangeOp {
+    Unmap,
+    RemoveWrite,
 }
 
 #[cfg(test)]

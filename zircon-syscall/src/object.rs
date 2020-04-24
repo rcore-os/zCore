@@ -220,6 +220,11 @@ impl Syscall<'_> {
                 info.rights |= rights;
                 UserOutPtr::<ZxInfoVmo>::from(buffer).write(info)?;
             }
+            Topic::KmemStats => {
+                let mut kmem = ZxInfoKmem::default();
+                kmem.vmo_bytes = vmo_page_bytes() as u64;
+                UserOutPtr::<ZxInfoKmem>::from(buffer).write(kmem)?;
+            }
             _ => {
                 warn!("not supported info topic: {:?}", topic);
                 return Err(ZxError::NOT_SUPPORTED);
@@ -374,4 +379,18 @@ pub struct UserWaitItem {
     handle: HandleValue,
     wait_for: Signal,
     observed: Signal,
+}
+
+#[repr(C)]
+#[derive(Default)]
+struct ZxInfoKmem {
+    total_bytes: u64,
+    free_bytes: u64,
+    wired_bytes: u64,
+    total_heap_bytes: u64,
+    free_heap_bytes: u64,
+    vmo_bytes: u64,
+    mmu_overhead_bytes: u64,
+    ipc_bytes: u64,
+    other_bytes: u64,
 }
