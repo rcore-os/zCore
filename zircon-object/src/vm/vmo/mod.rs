@@ -203,8 +203,8 @@ mod tests {
 
     pub fn read_write(vmo: &VmObject) {
         let mut buf = [0u8; 4];
-        vmo.write(0, &[0, 1, 2, 3]);
-        vmo.read(0, &mut buf);
+        vmo.write(0, &[0, 1, 2, 3]).unwrap();
+        vmo.read(0, &mut buf).unwrap();
         assert_eq!(&buf, &[0, 1, 2, 3]);
     }
 }

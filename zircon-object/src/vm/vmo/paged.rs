@@ -408,17 +408,17 @@ mod tests {
     #[test]
     fn create_child() {
         let vmo = VmObject::new_paged(10);
-        vmo.write(0, &[1, 2, 3, 4]);
+        vmo.write(0, &[1, 2, 3, 4]).unwrap();
         let mut buf = [0u8; 4];
-        vmo.read(0, &mut buf);
+        vmo.read(0, &mut buf).unwrap();
         assert_eq!(&buf, &[1, 2, 3, 4]);
         let child_vmo = vmo.create_child(true, 0, 4 * 4096);
-        child_vmo.read(0, &mut buf);
+        child_vmo.read(0, &mut buf).unwrap();
         assert_eq!(&buf, &[1, 2, 3, 4]);
-        child_vmo.write(0, &[6, 7, 8, 9]);
-        vmo.read(0, &mut buf);
+        child_vmo.write(0, &[6, 7, 8, 9]).unwrap();
+        vmo.read(0, &mut buf).unwrap();
         assert_eq!(&buf, &[1, 2, 3, 4]);
-        child_vmo.read(0, &mut buf);
+        child_vmo.read(0, &mut buf).unwrap();
         assert_eq!(&buf, &[6, 7, 8, 9]);
     }
 }
