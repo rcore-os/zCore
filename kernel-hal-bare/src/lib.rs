@@ -154,7 +154,16 @@ pub fn frame_copy(src: PhysAddr, target: PhysAddr) {
     trace!("frame_copy: {:#x} <- {:#x}", target, src);
     unsafe {
         let buf = phys_to_virt(src) as *const u8;
-        buf.copy_to_nonoverlapping(phys_to_virt(target) as _, 4096);
+        buf.copy_to_nonoverlapping(phys_to_virt(target) as _, PAGE_SIZE);
+    }
+}
+
+/// Zero `target` frame.
+#[export_name = "hal_frame_zero"]
+pub fn frame_zero(target: PhysAddr) {
+    trace!("frame_zero: {:#x}", target);
+    unsafe {
+        core::ptr::write_bytes(phys_to_virt(target) as *mut u8, 0, PAGE_SIZE);
     }
 }
 

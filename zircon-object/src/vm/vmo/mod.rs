@@ -10,18 +10,16 @@ use core::ops::Deref;
 #[allow(clippy::len_without_is_empty)]
 pub trait VMObjectTrait: Sync + Send {
     /// Read memory to `buf` from VMO at `offset`.
-    fn read(&self, offset: usize, buf: &mut [u8]);
+    fn read(&self, offset: usize, buf: &mut [u8]) -> ZxResult;
 
     /// Write memory from `buf` to VMO at `offset`.
-    fn write(&self, offset: usize, buf: &[u8]);
+    fn write(&self, offset: usize, buf: &[u8]) -> ZxResult;
 
     /// Get the length of VMO.
     fn len(&self) -> usize;
 
     /// Set the length of VMO.
     fn set_len(&self, len: usize);
-
-    fn get_page(&self, page_idx: usize, flags: MMUFlags) -> PhysAddr;
 
     /// Unmap physical memory from `page_table`.
     fn unmap_from(&self, page_table: &mut PageTable, vaddr: VirtAddr, _offset: usize, len: usize) {
@@ -32,8 +30,11 @@ pub trait VMObjectTrait: Sync + Send {
             .expect("failed to unmap")
     }
 
+    /// Commit a page.
+    fn commit_page(&self, page_idx: usize, flags: MMUFlags) -> ZxResult<PhysAddr>;
+
     /// Commit allocating physical memory.
-    fn commit(&self, offset: usize, len: usize);
+    fn commit(&self, offset: usize, len: usize) -> ZxResult;
 
     /// Decommit allocated physical memory.
     fn decommit(&self, offset: usize, len: usize) -> ZxResult;
@@ -96,6 +97,7 @@ impl VmObject {
     }
 
     pub fn create_child(&self, resizable: bool, offset: usize, len: usize) -> Arc<Self> {
+        // error!("create_child: offset={:#x}, len={:#x}", offset, len);
         Arc::new(VmObject {
             base: KObjectBase::with_name(&self.base.name()),
             parent_koid: self.base.id,

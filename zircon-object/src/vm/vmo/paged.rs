@@ -27,52 +27,6 @@ enum VMOType {
     Hidden,
 }
 
-#[allow(dead_code)]
-#[derive(PartialEq, Eq, Debug)]
-enum PageOrMarkerState {
-    Init,
-    RightSplit,
-    LeftSplit,
-}
-
-/// Page state in VMO.
-///
-/// It has 3 states:
-/// - Zero:      The page will be lazily allocated.
-/// - Allocated: The page is allocated to one frame.
-/// - Parent:    The page is equal to parent.
-struct PageOrMarker {
-    pub inner: Option<PhysFrame>,
-    state: PageOrMarkerState,
-}
-
-#[allow(dead_code)]
-impl PageOrMarker {
-    /// This page is provided by current vmo, but its not concrete
-    fn is_marker(&self) -> bool {
-        self.inner.is_none()
-    }
-
-    /// This page is provided by current vmo, a concrete page
-    fn is_page(&self) -> bool {
-        self.inner.is_some()
-    }
-
-    /// This cow page has been forked, now we can see it as committed
-    fn is_splited(&self) -> bool {
-        self.state != PageOrMarkerState::Init
-    }
-}
-
-impl Default for PageOrMarker {
-    fn default() -> Self {
-        PageOrMarker {
-            inner: None,
-            state: PageOrMarkerState::Init,
-        }
-    }
-}
-
 /// The main VM object type, holding a list of pages.
 pub struct VMObjectPaged {
     inner: Mutex<VMObjectPagedInner>,
@@ -80,7 +34,6 @@ pub struct VMObjectPaged {
     self_ref: Weak<VMObjectPaged>,
 }
 
-#[allow(dead_code)]
 /// The mutable part of `VMObjectPaged`.
 struct VMObjectPagedInner {
     type_: VMOType,
@@ -91,25 +44,36 @@ struct VMObjectPagedInner {
     /// The size in bytes.
     size: usize,
     /// Physical frames of this VMO.
-    frames: BTreeMap<usize, PageOrMarker>,
+    frames: BTreeMap<usize, PageState>,
     /// All mappings to this VMO.
     mappings: Vec<Arc<VmMapping>>,
+}
+
+/// Page state in VMO.
+struct PageState {
+    frame: PhysFrame,
+    forked: bool,
+}
+
+impl PageState {
+    fn new(frame: PhysFrame) -> Self {
+        PageState {
+            frame,
+            forked: false,
+        }
+    }
 }
 
 impl VMObjectPaged {
     /// Create a new VMO backing on physical memory allocated in pages.
     pub fn new(pages: usize) -> Arc<Self> {
-        let mut frames = BTreeMap::new();
-        for i in 0..pages {
-            frames.insert(i, PageOrMarker::default());
-        }
         VMObjectPaged::wrap(VMObjectPagedInner {
             type_: VMOType::Origin,
             parent: None,
             children: Vec::new(),
             parent_offset: 0usize,
             size: pages * PAGE_SIZE,
-            frames,
+            frames: BTreeMap::new(),
             mappings: Vec::new(),
         })
     }
@@ -155,31 +119,32 @@ impl VMObjectPaged {
         buf_len: usize,
         flags: MMUFlags,
         mut f: impl FnMut(PhysAddr, Range<usize>),
-    ) {
+    ) -> ZxResult {
         let iter = BlockIter {
             begin: offset,
             end: offset + buf_len,
             block_size_log2: 12,
         };
         for block in iter {
-            let paddr = self.inner.lock().get_page(block.block, flags);
+            let paddr = self.inner.lock().commit_page(block.block, flags)?;
             let buf_range = block.origin_begin() - offset..block.origin_end() - offset;
             f(paddr + block.begin, buf_range);
         }
+        Ok(())
     }
 }
 
 impl VMObjectTrait for VMObjectPaged {
-    fn read(&self, offset: usize, buf: &mut [u8]) {
+    fn read(&self, offset: usize, buf: &mut [u8]) -> ZxResult {
         self.for_each_page(offset, buf.len(), MMUFlags::READ, |paddr, buf_range| {
             kernel_hal::pmem_read(paddr, &mut buf[buf_range]);
-        });
+        })
     }
 
-    fn write(&self, offset: usize, buf: &[u8]) {
+    fn write(&self, offset: usize, buf: &[u8]) -> ZxResult {
         self.for_each_page(offset, buf.len(), MMUFlags::WRITE, |paddr, buf_range| {
             kernel_hal::pmem_write(paddr, &buf[buf_range]);
-        });
+        })
     }
 
     fn len(&self) -> usize {
@@ -191,28 +156,32 @@ impl VMObjectTrait for VMObjectPaged {
         // FIXME parent and children? len < old_len?
         let mut inner = self.inner.lock();
         inner.size = len;
+        inner.frames.split_off(&(len / PAGE_SIZE));
     }
 
-    fn get_page(&self, page_idx: usize, flags: MMUFlags) -> PhysAddr {
-        self.inner.lock().get_page(page_idx, flags)
+    fn commit_page(&self, page_idx: usize, flags: MMUFlags) -> ZxResult<PhysAddr> {
+        self.inner.lock().commit_page(page_idx, flags)
     }
 
-    fn commit(&self, offset: usize, len: usize) {
+    fn commit(&self, offset: usize, len: usize) -> ZxResult {
         let start_page = offset / PAGE_SIZE;
         let pages = len / PAGE_SIZE;
         let mut inner = self.inner.lock();
         for i in 0..pages {
-            inner.commit(start_page + i);
+            inner.commit_page(start_page + i, MMUFlags::WRITE)?;
         }
+        Ok(())
     }
 
     fn decommit(&self, offset: usize, len: usize) -> ZxResult {
-        let start_page = offset / PAGE_SIZE;
-        let pages = len / PAGE_SIZE;
         let mut inner = self.inner.lock();
-        if !inner.children.is_empty() || inner.parent.is_some() {
+        // non-slice child VMOs do not support decommit.
+        assert_ne!(inner.type_, VMOType::Hidden);
+        if inner.parent.is_some() {
             return Err(ZxError::NOT_SUPPORTED);
         }
+        let start_page = offset / PAGE_SIZE;
+        let pages = len / PAGE_SIZE;
         for i in 0..pages {
             inner.decommit(start_page + i);
         }
@@ -237,142 +206,116 @@ impl VMObjectTrait for VMObjectPaged {
 }
 
 impl VMObjectPagedInner {
-    fn commit(&mut self, page_idx: usize) -> &PhysFrame {
-        if let Some(value) = self.frames.get_mut(&page_idx) {
-            value
-                .inner
-                .get_or_insert_with(|| PhysFrame::alloc().expect("failed to alloc frame"))
-        } else {
-            unimplemented!()
-        }
-    }
-
-    fn decommit(&mut self, page_idx: usize) {
-        if let Some(value) = self.frames.get_mut(&page_idx) {
-            value.inner = None;
-        }
-    }
-
-    fn get_page(&mut self, page_idx: usize, flags: MMUFlags) -> PhysAddr {
+    /// Commit a page recursively.
+    fn commit_page(&mut self, page_idx: usize, flags: MMUFlags) -> ZxResult<PhysAddr> {
         // check if it is in current frames list
-        let mut res: PhysAddr = 0;
         if let Some(frame) = self.frames.get(&page_idx) {
-            if let Some(frame) = &frame.inner {
-                return frame.addr();
-            }
+            return Ok(frame.frame.addr());
         }
         let mut current = self.parent.clone();
         let mut current_idx = page_idx + self.parent_offset / PAGE_SIZE;
         while let Some(locked_) = current {
             let mut locked_cur = locked_.inner.lock();
-            if let Some(_frame) = locked_cur.frames.get_mut(&current_idx) {
-                if let Some(frame) = &_frame.inner {
-                    if !flags.contains(MMUFlags::WRITE) {
-                        // read-only
-                        res = frame.addr();
-                    } else {
-                        _frame.state = PageOrMarkerState::LeftSplit;
-                        let target_frame = PhysFrame::alloc().unwrap();
-                        res = target_frame.addr();
-                        kernel_hal::frame_copy(frame.addr(), target_frame.addr());
-                        self.frames.insert(
-                            page_idx,
-                            PageOrMarker {
-                                inner: Some(target_frame),
-                                state: PageOrMarkerState::Init,
-                            },
-                        );
-                    }
-                    break;
+            if let Some(frame) = locked_cur.frames.get_mut(&current_idx) {
+                if !flags.contains(MMUFlags::WRITE) {
+                    // read-only
+                    return Ok(frame.frame.addr());
                 }
+                let target_frame = PhysFrame::alloc().ok_or(ZxError::NO_MEMORY)?;
+                let paddr = target_frame.addr();
+                kernel_hal::frame_copy(frame.frame.addr(), paddr);
+                frame.forked = true;
+                self.frames.insert(page_idx, PageState::new(target_frame));
+                return Ok(paddr);
             }
             current_idx += locked_cur.parent_offset / PAGE_SIZE;
             current = locked_cur.parent.clone();
         }
-        if res == 0 {
-            let target_frame = PhysFrame::alloc().unwrap();
-            res = target_frame.addr();
-            kernel_hal::pmem_write(target_frame.addr(), &[0u8; PAGE_SIZE]);
-            self.frames.insert(
-                page_idx,
-                PageOrMarker {
-                    inner: Some(target_frame),
-                    state: PageOrMarkerState::Init,
-                },
-            );
-        }
-        assert_ne!(res, 0);
-        res
+        let target_frame = PhysFrame::alloc().ok_or(ZxError::NO_MEMORY)?;
+        let paddr = target_frame.addr();
+        kernel_hal::frame_zero(paddr);
+        self.frames.insert(page_idx, PageState::new(target_frame));
+        Ok(paddr)
     }
 
-    fn attributed_pages(&self) -> u64 {
-        let mut count: u64 = 0;
+    fn decommit(&mut self, page_idx: usize) {
+        self.frames.remove(&page_idx);
+    }
+
+    /// Count committed pages in the VMO and its ancestors.
+    fn committed_pages(&self) -> usize {
+        let mut count = 0;
         for i in 0..self.size / PAGE_SIZE {
             if self.frames.contains_key(&i) {
                 count += 1;
-            } else {
-                if self.parent_limit() <= i * PAGE_SIZE {
-                    continue;
-                }
-                let mut current = self.parent.clone();
-                let mut current_idx = i + self.parent_offset / PAGE_SIZE;
-                while let Some(locked_) = current {
-                    let locked_cur = locked_.inner.lock();
-                    if let Some(frame) = locked_cur.frames.get(&current_idx) {
-                        if frame.is_splited() {
-                            count += 1;
-                            break;
-                        }
-                    }
-                    current_idx += locked_cur.parent_offset / PAGE_SIZE;
-                    if current_idx >= locked_cur.parent_limit() / PAGE_SIZE {
+                continue;
+            }
+            if self.parent_limit() <= i * PAGE_SIZE {
+                continue;
+            }
+            let mut current = self.parent.clone();
+            let mut current_idx = i + self.parent_offset / PAGE_SIZE;
+            while let Some(locked_) = current {
+                let locked_cur = locked_.inner.lock();
+                if let Some(frame) = locked_cur.frames.get(&current_idx) {
+                    if frame.forked {
+                        count += 1;
                         break;
                     }
-                    current = locked_cur.parent.as_ref().cloned();
                 }
+                current_idx += locked_cur.parent_offset / PAGE_SIZE;
+                if current_idx >= locked_cur.parent_limit() / PAGE_SIZE {
+                    break;
+                }
+                current = locked_cur.parent.clone();
             }
         }
         count
     }
 
-    fn remove_child(&mut self, to_remove: &Weak<VMObjectPaged>) {
+    fn remove_child(&mut self, child: &Weak<VMObjectPaged>) {
         self.children
-            .retain(|child| child.strong_count() != 0 && !child.ptr_eq(to_remove));
-        // shrink hidden node
+            .retain(|c| c.strong_count() != 0 && !c.ptr_eq(child));
         if self.type_ == VMOType::Hidden {
-            assert_eq!(self.children.len(), 1);
-            let weak_child = self.children.remove(0);
-            let locked_child = weak_child.upgrade().unwrap();
-            let mut child = locked_child.inner.lock();
-            let start = child.parent_offset / PAGE_SIZE;
-            let end = child.parent_limit() / PAGE_SIZE;
-            debug!("from {:#x} to {:#x}", start, end);
-            for (&key, value) in self.frames.range_mut(start..end) {
-                let idx = key - start;
-                debug!("merge idx {:#x} from {:#x} {:#x}", idx, key, start);
-                if let Some(frame) = child.frames.get_mut(&idx) {
-                    if frame.inner.is_some() {
-                        continue;
-                    }
-                    frame.inner = value.inner.take();
-                } else {
-                    child.frames.insert(
-                        idx,
-                        PageOrMarker {
-                            inner: value.inner.take(),
-                            state: PageOrMarkerState::Init,
-                        },
-                    );
-                }
-            }
-            self.frames.clear();
-            let option_parent = self.parent.take();
-            if let Some(parent) = &option_parent {
-                parent.inner.lock().children.push(weak_child);
-            }
-            child.parent = option_parent;
-            child.parent_offset += self.parent_offset;
+            self.contract_hidden();
         }
+    }
+
+    /// Contract hidden node which has only 1 child.
+    ///
+    /// This is an optimization and is not necessary for functionality.
+    ///
+    /// ```text
+    ///   |      |
+    ///   H      |
+    ///   |  =>  |
+    ///   S      S
+    /// ```
+    fn contract_hidden(&mut self) {
+        assert_eq!(self.type_, VMOType::Hidden);
+        assert_eq!(self.children.len(), 1);
+
+        let weak_child = self.children.remove(0);
+        let locked_child = weak_child.upgrade().unwrap();
+        let mut child = locked_child.inner.lock();
+        let start = child.parent_offset / PAGE_SIZE;
+        let end = child.parent_limit() / PAGE_SIZE;
+        // merge nodes to the child
+        for (key, value) in self.frames.split_off(&start) {
+            if key >= end {
+                break;
+            }
+            let idx = key - start;
+            if !child.frames.contains_key(&idx) {
+                child.frames.insert(idx, value);
+            }
+        }
+        // connect child to my parent
+        if let Some(parent) = &self.parent {
+            parent.inner.lock().children.push(weak_child);
+        }
+        child.parent = self.parent.take();
+        child.parent_offset += self.parent_offset;
     }
 
     /// Create a snapshot child VMO.
@@ -434,7 +377,7 @@ impl VMObjectPagedInner {
         info.num_children = self.children.len() as u64;
         info.num_mappings = self.mappings.len() as u64;
         info.share_count = self.mappings.len() as u64; // FIXME share_count should be the count of unique aspace
-        info.committed_bytes = self.attributed_pages() * PAGE_SIZE as u64;
+        info.committed_bytes = (self.committed_pages() * PAGE_SIZE) as u64;
         // TODO cache_policy should be set up.
     }
 

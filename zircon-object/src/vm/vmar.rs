@@ -138,7 +138,7 @@ impl VmAddressRegion {
             page_table: self.page_table.clone(),
         });
         vmo.append_mapping(mapping.clone());
-        mapping.map();
+        mapping.map()?;
         inner.mappings.push(mapping);
         Ok(addr)
     }
@@ -456,18 +456,18 @@ impl core::fmt::Debug for VmMapping {
 }
 
 impl VmMapping {
-    fn map(self: &Arc<Self>) {
+    fn map(self: &Arc<Self>) -> ZxResult {
         let inner = self.inner.lock();
         let mut page_table = self.page_table.lock();
         let page_num = inner.size / PAGE_SIZE;
         let vmo_offset = inner.vmo_offset / PAGE_SIZE;
-        let flags = self.flags;
         for i in 0..page_num {
-            let pa = self.vmo.get_page(vmo_offset + i, flags);
+            let paddr = self.vmo.commit_page(vmo_offset + i, self.flags)?;
             page_table
-                .map(inner.addr + i * PAGE_SIZE, pa, flags)
+                .map(inner.addr + i * PAGE_SIZE, paddr, self.flags)
                 .expect("failed to map");
         }
+        Ok(())
     }
 
     fn unmap(&self) {
@@ -577,6 +577,7 @@ impl VmMapping {
         self.inner.lock().end_addr()
     }
 
+    /// Remove WRITE flag from the mappings for Copy-on-Write.
     pub(super) fn remove_write_flag(&self, offset: usize, len: usize) {
         let mut new_flag = self.flags;
         new_flag.remove(MMUFlags::WRITE);
@@ -594,26 +595,18 @@ impl VmMapping {
     }
 
     fn handle_page_fault(&self, vaddr: VirtAddr, flags: MMUFlags) -> ZxResult {
-        debug!("flags {:?} self.flags {:?}", flags, self.flags);
-        if self.flags.contains(flags) {
-            let vaddr = pages(vaddr) * PAGE_SIZE;
-            let page_idx = (vaddr - self.addr()) / PAGE_SIZE;
-            let paddr = self.vmo.get_page(page_idx, flags);
-            let new_flags = if !self.flags.contains(MMUFlags::WRITE) {
-                self.flags & !MMUFlags::WRITE
-            } else {
-                self.flags
-            };
-            debug!("paddr {:#x}, new_flags {:?}", paddr, new_flags);
-            let mut pg_table = self.page_table.lock();
-            pg_table.unmap(vaddr).unwrap();
-            pg_table
-                .map(vaddr, paddr, new_flags)
-                .or(Err(ZxError::ACCESS_DENIED))?;
-            Ok(())
-        } else {
-            Err(ZxError::ACCESS_DENIED)
+        if !self.flags.contains(flags) {
+            return Err(ZxError::ACCESS_DENIED);
         }
+        let vaddr = pages(vaddr) * PAGE_SIZE;
+        let page_idx = (vaddr - self.addr()) / PAGE_SIZE;
+        let paddr = self.vmo.commit_page(page_idx, flags)?;
+        let mut pg_table = self.page_table.lock();
+        pg_table.unmap(vaddr).unwrap();
+        pg_table
+            .map(vaddr, paddr, self.flags)
+            .map_err(|_| ZxError::ACCESS_DENIED)?;
+        Ok(())
     }
 }
 

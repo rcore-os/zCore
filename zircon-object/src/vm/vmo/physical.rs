@@ -26,16 +26,18 @@ impl VMObjectPhysical {
 }
 
 impl VMObjectTrait for VMObjectPhysical {
-    fn read(&self, offset: usize, buf: &mut [u8]) {
+    fn read(&self, offset: usize, buf: &mut [u8]) -> ZxResult {
         let _ = self.data_lock.lock();
         assert!(offset + buf.len() <= self.len());
         kernel_hal::pmem_read(self.paddr + offset, buf);
+        Ok(())
     }
 
-    fn write(&self, offset: usize, buf: &[u8]) {
+    fn write(&self, offset: usize, buf: &[u8]) -> ZxResult {
         let _ = self.data_lock.lock();
         assert!(offset + buf.len() <= self.len());
         kernel_hal::pmem_write(self.paddr + offset, buf);
+        Ok(())
     }
 
     fn len(&self) -> usize {
@@ -46,12 +48,13 @@ impl VMObjectTrait for VMObjectPhysical {
         unimplemented!()
     }
 
-    fn get_page(&self, page_idx: usize, _flags: MMUFlags) -> PhysAddr {
-        self.paddr + page_idx * PAGE_SIZE
+    fn commit_page(&self, page_idx: usize, _flags: MMUFlags) -> ZxResult<PhysAddr> {
+        Ok(self.paddr + page_idx * PAGE_SIZE)
     }
 
-    fn commit(&self, _offset: usize, _len: usize) {
+    fn commit(&self, _offset: usize, _len: usize) -> ZxResult {
         // do nothing
+        Ok(())
     }
 
     fn decommit(&self, _offset: usize, _len: usize) -> ZxResult {

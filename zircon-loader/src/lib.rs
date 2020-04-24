@@ -74,7 +74,7 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
     let vdso_vmo = {
         let elf = ElfFile::new(images.vdso.as_ref()).unwrap();
         let vdso_vmo = VmObject::new_paged(images.vdso.as_ref().len() / PAGE_SIZE + 1);
-        vdso_vmo.write(0, images.vdso.as_ref());
+        vdso_vmo.write(0, images.vdso.as_ref()).unwrap();
         let size = elf.load_segment_size();
         let vmar = vmar
             .allocate_at(
@@ -87,14 +87,14 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
         vmar.map_from_elf(&elf, vdso_vmo.clone()).unwrap();
         #[cfg(feature = "std")]
         {
-            let syscall_entry_offset =
-                elf.get_symbol_address("zcore_syscall_entry")
-                    .expect("failed to locate syscall entry") as usize;
+            let offset = elf
+                .get_symbol_address("zcore_syscall_entry")
+                .expect("failed to locate syscall entry") as usize;
             let syscall_entry = &(kernel_hal_unix::syscall_entry as usize).to_ne_bytes();
             // fill syscall entry x3
-            vdso_vmo.write(syscall_entry_offset, syscall_entry);
-            vdso_vmo.write(syscall_entry_offset + 8, syscall_entry);
-            vdso_vmo.write(syscall_entry_offset + 16, syscall_entry);
+            vdso_vmo.write(offset, syscall_entry).unwrap();
+            vdso_vmo.write(offset + 8, syscall_entry).unwrap();
+            vdso_vmo.write(offset + 16, syscall_entry).unwrap();
         }
         vdso_vmo
     };
@@ -102,7 +102,7 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
     // zbi
     let zbi_vmo = {
         let vmo = VmObject::new_paged(images.zbi.as_ref().len() / PAGE_SIZE + 1);
-        vmo.write(0, images.zbi.as_ref());
+        vmo.write(0, images.zbi.as_ref()).unwrap();
         vmo.set_name("zbi");
         vmo
     };
@@ -112,7 +112,7 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
         let elf = ElfFile::new(images.decompressor.as_ref()).unwrap();
         let size = elf.load_segment_size();
         let vmo = VmObject::new_paged(size / PAGE_SIZE);
-        vmo.write(0, images.decompressor.as_ref());
+        vmo.write(0, images.decompressor.as_ref()).unwrap();
         vmo.set_name("lib/hermetic/decompress-zbi.so");
         vmo
     };
@@ -141,7 +141,7 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
     // set up handles[K_FIRSTVDSO..K_LASTVDSO + 1]
     const VDSO_CONSTANT_BASE: usize = 0x4940;
     let constants: [u8; 112] = unsafe { core::mem::transmute(kernel_hal::vdso_constants()) };
-    vdso_vmo.write(VDSO_CONSTANT_BASE, &constants);
+    vdso_vmo.write(VDSO_CONSTANT_BASE, &constants).unwrap();
     vdso_vmo.set_name("vdso/full");
     let vdso_test1 = vdso_vmo.create_child(false, 0, vdso_vmo.len());
     vdso_test1.set_name("vdso/test1");

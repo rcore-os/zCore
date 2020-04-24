@@ -19,11 +19,13 @@ pub fn create_kcounter_vmo() -> (Arc<VmObject>, Arc<VmObject>) {
         counter_table_size,
     };
     let serde_header: [u8; HEADER_SIZE] = unsafe { core::mem::transmute(header) };
-    counter_name_vmo.write(0, &serde_header);
+    counter_name_vmo.write(0, &serde_header).unwrap();
     for (i, descriptor) in descriptors.0.iter().enumerate() {
         let serde_counter: [u8; DESC_SIZE] =
             unsafe { core::mem::transmute(KCounterDescItem::from(descriptor)) };
-        counter_name_vmo.write(HEADER_SIZE + i * DESC_SIZE, &serde_counter);
+        counter_name_vmo
+            .write(HEADER_SIZE + i * DESC_SIZE, &serde_counter)
+            .unwrap();
     }
     counter_name_vmo.set_name("counters/desc");
 
@@ -57,7 +59,7 @@ pub fn create_kcounter_vmo() -> (Arc<VmObject>, Arc<VmObject>) {
         counter_table_size: 0,
     };
     let serde_header: [u8; HEADER_SIZE] = unsafe { core::mem::transmute(header) };
-    counter_name_vmo.write(0, &serde_header);
+    counter_name_vmo.write(0, &serde_header).unwrap();
     counter_name_vmo.set_name("counters/desc");
 
     let kcounters_vmo = VmObject::new_paged(1);

@@ -176,17 +176,11 @@ fn phys_to_virt(paddr: PhysAddr) -> VirtAddr {
     PMEM_BASE + paddr
 }
 
-/// Ensure physical memory are mmapped and accessible.
-fn ensure_mmap_pmem() {
-    FRAME_FILE.as_raw_fd();
-}
-
 /// Read physical memory from `paddr` to `buf`.
 #[export_name = "hal_pmem_read"]
 pub fn pmem_read(paddr: PhysAddr, buf: &mut [u8]) {
     trace!("pmem read: paddr={:#x}, len={:#x}", paddr, buf.len());
-    ensure_mmap_pmem();
-    assert!(paddr < PMEM_SIZE);
+    assert!(paddr + buf.len() <= PMEM_SIZE);
     unsafe {
         (phys_to_virt(paddr) as *const u8).copy_to_nonoverlapping(buf.as_mut_ptr(), buf.len());
     }
@@ -196,8 +190,7 @@ pub fn pmem_read(paddr: PhysAddr, buf: &mut [u8]) {
 #[export_name = "hal_pmem_write"]
 pub fn pmem_write(paddr: PhysAddr, buf: &[u8]) {
     trace!("pmem write: paddr={:#x}, len={:#x}", paddr, buf.len());
-    ensure_mmap_pmem();
-    assert!(paddr < PMEM_SIZE);
+    assert!(paddr + buf.len() <= PMEM_SIZE);
     unsafe {
         buf.as_ptr()
             .copy_to_nonoverlapping(phys_to_virt(paddr) as _, buf.len());
@@ -207,9 +200,21 @@ pub fn pmem_write(paddr: PhysAddr, buf: &[u8]) {
 /// Copy content of `src` frame to `target` frame
 #[export_name = "hal_frame_copy"]
 pub fn frame_copy(src: PhysAddr, target: PhysAddr) {
+    trace!("frame_copy: {:#x} <- {:#x}", target, src);
+    assert!(src + PAGE_SIZE <= PMEM_SIZE && target + PAGE_SIZE <= PMEM_SIZE);
     unsafe {
         let buf = phys_to_virt(src) as *const u8;
-        buf.copy_to_nonoverlapping(phys_to_virt(target) as _, 4096);
+        buf.copy_to_nonoverlapping(phys_to_virt(target) as _, PAGE_SIZE);
+    }
+}
+
+/// Zero `target` frame.
+#[export_name = "hal_frame_zero"]
+pub fn frame_zero(target: PhysAddr) {
+    trace!("frame_zero: {:#x}", target);
+    assert!(target + PAGE_SIZE < PMEM_SIZE);
+    unsafe {
+        core::ptr::write_bytes(phys_to_virt(target) as *mut u8, 0, PAGE_SIZE);
     }
 }
 
@@ -377,6 +382,8 @@ pub fn init() {
     unsafe {
         register_sigsegv_handler();
     }
+    // ensure physical memory are mmapped and accessible
+    FRAME_FILE.as_raw_fd();
     // spawn a thread to read stdin
     // TODO: raw mode
     std::thread::spawn(|| {

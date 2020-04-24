@@ -40,7 +40,7 @@ impl Syscall<'_> {
             let file = self.lock_linux_process().get_file(fd)?;
             let mut buf = vec![0; len];
             let len = file.read_at(offset, &mut buf)?;
-            vmo.write(0, &buf[..len]);
+            vmo.write(0, &buf[..len])?;
             Ok(addr)
         }
     }

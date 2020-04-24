@@ -41,7 +41,7 @@ impl Syscall<'_> {
         let vmo = proc.get_object_with_rights::<VmObject>(handle_value, Rights::READ)?;
         // TODO: optimize
         let mut buffer = vec![0u8; buf_size];
-        vmo.read(offset as usize, &mut buffer);
+        vmo.read(offset as usize, &mut buffer)?;
         buf.write_array(&buffer)?;
         Ok(())
     }
@@ -59,7 +59,7 @@ impl Syscall<'_> {
         );
         let proc = self.thread.proc();
         let vmo = proc.get_object_with_rights::<VmObject>(handle_value, Rights::WRITE)?;
-        vmo.write(offset as usize, &buf.read_array(buf_size)?);
+        vmo.write(offset as usize, &buf.read_array(buf_size)?)?;
         Ok(())
     }
 
@@ -175,7 +175,7 @@ impl Syscall<'_> {
                 if !rights.contains(Rights::WRITE) {
                     return Err(ZxError::ACCESS_DENIED);
                 }
-                vmo.commit(offset, len);
+                vmo.commit(offset, len)?;
                 Ok(())
             }
             VMO_OP_DECOMMIT => {

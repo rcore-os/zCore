@@ -74,7 +74,7 @@ fn make_vmo(elf: &ElfFile, ph: ProgramHeader) -> ZxResult<Arc<VmObject>> {
         SegmentData::Undefined(data) => data,
         _ => return Err(ZxError::INVALID_ARGS),
     };
-    vmo.write(page_offset, data);
+    vmo.write(page_offset, data)?;
     Ok(vmo)
 }
 

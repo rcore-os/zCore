@@ -41,7 +41,7 @@ impl LinuxElfLoader {
 
         // fill syscall entry
         if let Some(offset) = elf.get_symbol_address("rcore_syscall_entry") {
-            vmo.write(offset as usize, &self.syscall_entry.to_ne_bytes());
+            vmo.write(offset as usize, &self.syscall_entry.to_ne_bytes())?;
         }
 
         elf.relocate(base).map_err(|_| ZxError::INVALID_ARGS)?;
