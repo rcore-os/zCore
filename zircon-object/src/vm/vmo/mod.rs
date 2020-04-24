@@ -196,7 +196,13 @@ bitflags! {
         const PAGER_BACKED = 1 << 5;
         const CONTIGUOUS   = 1 << 6;
     }
-}   
+}
+
+#[derive(PartialEq, Eq, Clone, Copy)]
+pub enum RangeChangeOp {
+    Unmap,
+    RemoveWrite,
+}
 
 #[cfg(test)]
 mod tests {

@@ -35,3 +35,11 @@ pub fn roundup_pages(size: usize) -> usize {
         pages(size) * PAGE_SIZE
     }
 }
+
+pub fn round_down_pages(size: usize) -> usize {
+    if page_aligned(size) {
+        size
+    } else {
+        (size / PAGE_SIZE) * PAGE_SIZE
+    }
+}

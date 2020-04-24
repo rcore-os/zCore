@@ -14,6 +14,20 @@ fn vmo_frame_alloc() -> PhysFrame {
     PhysFrame::alloc().expect("vmo alloc page failed")
 }
 
+fn vmo_alloc_copy_frame(paddr: PhysAddr) -> PhysFrame {
+    VMO_PAGE_ALLOC.add(1);
+    let target = PhysFrame::alloc().expect("vmo alloc page failed");
+    kernel_hal::frame_copy(paddr, target.addr());
+    target
+}
+
+fn vmo_alloc_zero_frame() -> PhysFrame {
+    VMO_PAGE_ALLOC.add(1);
+    let target = PhysFrame::alloc().expect("vmo alloc page failed");
+    kernel_hal::pmem_write(target.addr(), &[0u8; PAGE_SIZE]);
+    target
+}
+
 #[derive(PartialEq, Eq, Debug)]
 enum VMOType {
     Hidden,
@@ -44,6 +58,13 @@ impl Drop for PageOrMarker {
 
 #[allow(dead_code)]
 impl PageOrMarker {
+    pub fn new() -> Self {
+        PageOrMarker {
+            inner: Some(vmo_alloc_zero_frame()),
+            state: PageOrMarkerState::Init,
+        }
+    }
+
     /// This page is provided by current vmo, but its not concrete
     fn is_marker(&self) -> bool {
         self.inner.is_none()
@@ -57,6 +78,11 @@ impl PageOrMarker {
     /// This cow page has been forked, now we can see it as commited
     fn is_splited(&self) -> bool {
         self.state != PageOrMarkerState::Init
+    }
+
+    /// Get paddr of inner frame
+    fn addr(&self) -> PhysAddr {
+        self.inner.as_ref().unwrap().addr()
     }
 }
 
@@ -308,51 +334,175 @@ impl VMObjectPagedInner {
 
     fn get_page(&mut self, page_idx: usize, flags: MMUFlags) -> PhysAddr {
         // check if it is in current frames list
-        let mut res: PhysAddr = 0;
         if let Some(_frame) = self.frames.get(&page_idx) {
-            if let Some(frame) = &_frame.inner {
-                return frame.addr();
-            }
+            return if let Some(frame) = &_frame.inner {
+                frame.addr()
+            } else {
+                if flags.contains(MMUFlags::WRITE) {
+                    let new_frame = PageOrMarker::new();
+                    let ret = new_frame.addr();
+                    self.frames.insert(page_idx, new_frame);
+                    ret
+                } else {
+                    unimplemented!()
+                }
+            };
         }
+        if self.parent_offset + page_idx * PAGE_SIZE >= self.parent_limit {
+            let new_frame = PageOrMarker::new();
+            let ret = new_frame.addr();
+            self.frames.insert(page_idx, new_frame);
+            return ret;
+        }
+        assert!(self.parent.is_some());
+        let mut frame_owner: Arc<Mutex<VMObjectPagedInner>>;
         let mut current = self.parent.as_ref().cloned();
         let mut current_idx = page_idx + self.parent_offset / PAGE_SIZE;
-        while let Some(locked_) = current {
-            let mut locked_cur = locked_.lock();
-            if let Some(_frame) = locked_cur.frames.get_mut(&current_idx) {
-                if let Some(frame) = &_frame.inner {
-                    if !flags.contains(MMUFlags::WRITE) { // read-only
-                        res = frame.addr();
-                    } else {
-                        _frame.state = PageOrMarkerState::LeftSplit;
-                        let target_frame = vmo_frame_alloc();
-                        res = target_frame.addr();
-                        kernel_hal::frame_copy(frame.addr(), target_frame.addr());
-                        self.frames.insert(
-                            page_idx,
-                            PageOrMarker{
-                                inner: Some(target_frame),
-                                state: PageOrMarkerState::Init
-                        });
-                    }
-                    break;
-                }
+        let mut dir_stack = Vec::<usize>::new();
+        let mut is_marker = false;
+        // 向上，寻找拥有对应frame的vmo。记录沿途的方向。
+        loop {
+            frame_owner = current.unwrap();
+            let locked_cur = frame_owner.lock();
+            if let Some(frame) = locked_cur.frames.get(&current_idx) {
+                is_marker = frame.is_marker();
+                break;
             }
             current_idx += locked_cur.parent_offset / PAGE_SIZE;
+            assert!(current_idx < locked_cur.parent_limit / PAGE_SIZE);
             current = locked_cur.parent.as_ref().cloned();
+            if let Some(parent) = current.as_ref() {
+                let locked_parent = parent.lock();
+                let item = if Arc::ptr_eq(
+                    &locked_parent.children[0].upgrade().unwrap(),
+                    &frame_owner) {
+                    0
+                } else {
+                    1
+                };
+                dir_stack.push(item);
+            } else {
+                unimplemented!() // should never be here
+            }
+            if current.is_none() { break; }
         }
-        if res == 0 {
-            let target_frame = vmo_frame_alloc();
-            res = target_frame.addr();
-            kernel_hal::pmem_write(target_frame.addr(), &[0u8; PAGE_SIZE]);
-            self.frames.insert(
-                page_idx,
-                PageOrMarker {
-                    inner: Some(target_frame),
+
+        let res: PhysAddr;
+        let current = frame_owner;
+
+        // if we just need a read-only page
+        if !flags.contains(MMUFlags::WRITE) {
+            let owner = current.lock();
+            let frame = owner.frames.get(&current_idx).unwrap();
+            if !is_marker {
+                return frame.inner.as_ref().unwrap().addr();
+            } else {
+                // return zero page
+                return PhysFrame::zero_frame_addr();
+            }
+        }
+        if is_marker {
+            let target = vmo_alloc_zero_frame();
+            let ret = target.addr();
+            let new_frame = PageOrMarker {
+                inner: Some(target),
+                state: PageOrMarkerState::Init,
+            };
+            self.frames.insert(page_idx, new_frame);
+            return ret;
+        }
+
+        // 向下，逐层查看对应frame是否全局可见，如不可见则进行复制，然后向下分发。
+        let mut parent = current.clone();
+        let mut parent_idx = current_idx;
+        let mut cur;
+        let mut cur_idx = current_idx;
+        while let Some(pos) = dir_stack.pop() {
+            let mut locked_parent = parent.lock();
+            cur = locked_parent.children[pos].upgrade().unwrap();
+            let mut locked_child = cur.lock();
+            cur_idx -= locked_child.parent_offset / PAGE_SIZE;
+            let frame = locked_parent.frames.get_mut(&parent_idx).unwrap();
+            if frame.is_splited() {
+                let item = PageOrMarker {
+                    inner: frame.inner.take(),
                     state: PageOrMarkerState::Init,
-            });
+                };
+                locked_child.frames.insert(cur_idx, item);
+            } else {
+                // copy a page from `frame`
+                let paddr = frame.addr();
+                let new_frame = PageOrMarker {
+                    inner: Some(vmo_alloc_copy_frame(paddr)),
+                    state: PageOrMarkerState::Init,
+                };
+                // set `frame` as splited
+                frame.state = if pos == 0 { PageOrMarkerState::LeftSplit } else { PageOrMarkerState::RightSplit };
+                // insert the new page into locked_cur.frames
+                locked_child.frames.insert(cur_idx, new_frame);
+                // range_change on the other sub-tree
+                let parent_offset = parent_idx * PAGE_SIZE;
+                locked_parent
+                    .children[(pos + 1) % 2]
+                    .upgrade()
+                    .unwrap()
+                    .lock()
+                    .range_change(parent_offset, parent_offset + PAGE_SIZE, RangeChangeOp::Unmap);
+            }
+            drop(locked_child);
+            drop(locked_parent);
+            parent = cur;
+            parent_idx = cur_idx;
         }
+
+        // 最终，当前vmo的父vmo必定持有对应的frame，从父vmo处拷贝或移动。
+        let locked_parent = self.parent.as_ref().unwrap();
+        let mut parent = locked_parent.lock();
+        let idx = page_idx + self.parent_offset / PAGE_SIZE;
+        assert!(parent.frames.contains_key(&idx));
+        let frame = parent.frames.get_mut(&idx).unwrap();
+        let mut new_frame = if frame.is_splited() {
+            PageOrMarker {
+                inner: frame.inner.take(),
+                state: PageOrMarkerState::Init,
+            }
+        } else {
+            if frame.is_page() {
+                frame.state = PageOrMarkerState::LeftSplit;
+                // copy a page from frame
+                PageOrMarker {
+                    inner: Some(vmo_alloc_copy_frame(frame.addr())),
+                    state: PageOrMarkerState::Init,
+                }
+            } else {
+                // copy zero page
+                PageOrMarker {
+                    inner: Some(vmo_alloc_zero_frame()),
+                    state: PageOrMarkerState::Init,
+                }
+            }
+        };
+        res = new_frame.addr();
+        new_frame.state = PageOrMarkerState::Init;
+        self.frames.insert(page_idx, new_frame);
         assert_ne!(res, 0);
         res
+    }
+
+    fn range_change(&self, parent_offset: usize, parent_limit: usize, op: RangeChangeOp) {
+        let mut start = self.parent_offset.max(parent_offset);
+        let mut end = self.parent_limit.min(parent_limit);
+        debug!("range_change: {:#x} {:#x} {:#x} {:#x}", self.parent_offset, self.parent_limit, start, end);
+        if start >= end {
+            return;
+        } else {
+            debug!("begin change range");
+            start -= self.parent_offset;
+            end -= self.parent_offset;
+            self.mappings.iter().for_each(|map| map.range_change(pages(start), pages(end), op));
+            self.children.iter().for_each(|child| child.upgrade().unwrap().lock().range_change(start, end, op));
+        }
+        debug!("range changed");
     }
 
     fn attributed_pages(&self) -> u64 {
@@ -386,7 +536,7 @@ impl VMObjectPagedInner {
         count
     }
 
-    fn remove_child(&mut self, to_remove: &Weak<Mutex<Self>>) {
+    fn remove_child(&mut self, myself: &Arc<Mutex<Self>>, to_remove: &Weak<Mutex<Self>>) {
         self.children.retain(|child| child.strong_count() != 0 && !child.ptr_eq(to_remove));
         if self._type == VMOType::Hidden {
             assert!(self.children.len() == 1, "children num {:#x}", self.children.len());
@@ -396,16 +546,9 @@ impl VMObjectPagedInner {
             let mut child = locked_child.lock();
             let start = child.parent_offset / PAGE_SIZE;
             let end = child.parent_limit / PAGE_SIZE;
-            debug!("from {:#x} to {:#x}", start, end);
             for (&key, value) in self.frames.range_mut(start..end) {
                 let idx = key - start;
-                debug!("merge idx {:#x} from {:#x} {:#x}", idx, key, start);
-                if let Some(frame) = child.frames.get_mut(&idx) {
-                    if frame.inner.is_some() {
-                        continue;
-                    }
-                    frame.inner = value.inner.take();
-                } else {
+                if !child.frames.contains_key(&idx) {
                     child.frames.insert(
                         idx,
                         PageOrMarker {
@@ -418,7 +561,12 @@ impl VMObjectPagedInner {
             self.frames.clear();
             let option_parent = self.parent.take();
             if let Some(parent) = &option_parent {
-                parent.lock().children.push(weak_child);
+                parent.lock().children.iter_mut().for_each(|child|{
+                    if Weak::ptr_eq(child, &Arc::downgrade(myself)) {
+                        *child = weak_child.clone();
+                    }
+                });
+                assert_eq!(2, parent.lock().children.len());
             }
             child.parent = option_parent;
             child.parent_offset += self.parent_offset;
@@ -457,7 +605,7 @@ impl VMObjectPagedInner {
         self.parent_offset = 0usize;
         self.parent_limit = self.size;
 
-        self.mappings.iter().for_each(|map| map.remove_write_flag(pages(offset), pages(len)));
+        self.mappings.iter().for_each(|map| map.range_change(pages(offset), pages(len), RangeChangeOp::RemoveWrite));
 
         // create hidden_vmo's another child as result
         let child_frames = BTreeMap::new();
@@ -483,7 +631,7 @@ impl VMObjectPagedInner {
             VMOType::Snapshot | VMOType::Origin => {
                 if let Some(parent) = self.parent.as_ref() {
                     let mut p = parent.lock();
-                    p.remove_child(myself);
+                    p.remove_child(parent, myself);
                 }
             }
             _ => {}

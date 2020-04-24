@@ -585,24 +585,27 @@ impl VmMapping {
         f(&mut page_table);
     }
 
-    pub fn remove_write_flag(&self, offset: usize, len: usize) {
-        let mut new_flag = self.flags;
-        new_flag.set(MMUFlags::WRITE, false);
+    pub fn range_change(&self, offset: usize, len: usize, op: RangeChangeOp) {
         let inner = self.inner.lock();
         let start = offset.max(inner.vmo_offset);
         let end = (inner.vmo_offset + inner.size / PAGE_SIZE).min(offset + len);
+        let mut new_flag = self.flags;
+        new_flag.set(MMUFlags::WRITE, false);
         if !(start..end).is_empty() {
             let mut pg_table = self.page_table.lock();
             for i in (start - inner.vmo_offset)..(end - inner.vmo_offset) {
-                pg_table.protect(inner.addr + i*PAGE_SIZE, new_flag).unwrap();
+                match op {
+                    RangeChangeOp::RemoveWrite => pg_table.protect(inner.addr + i*PAGE_SIZE, new_flag).unwrap(),
+                    RangeChangeOp::Unmap => pg_table.unmap(inner.addr + i*PAGE_SIZE).unwrap(),
+                }
             }
-        }
+         }
     }
 
     fn do_pg_fault(&self, vaddr: VirtAddr, flags: MMUFlags) -> ZxResult {
         debug!("flags {:?} self.flags {:?}", flags, self.flags);
         if self.flags.contains(flags) {
-            let vaddr = pages(vaddr) * PAGE_SIZE;
+            let vaddr = round_down_pages(vaddr);
             let page_idx = (vaddr - self.addr()) / PAGE_SIZE;
             let paddr = self.vmo.get_page(page_idx, flags);
             let new_flags = if !self.flags.contains(MMUFlags::WRITE) {

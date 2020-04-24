@@ -148,6 +148,12 @@ impl PhysFrame {
     pub fn addr(&self) -> PhysAddr {
         self.paddr
     }
+
+    #[linkage = "weak"]
+    #[export_name = "zero_frame_paddr"]
+    pub fn zero_frame_addr() -> PhysAddr {
+        unimplemented!()
+    }
 }
 
 impl Drop for PhysFrame {
