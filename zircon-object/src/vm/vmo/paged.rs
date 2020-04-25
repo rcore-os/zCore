@@ -292,40 +292,47 @@ impl VMObjectPaged {
     ) -> ZxResult<CommitResult> {
         let mut inner = self.inner.lock();
         // special case
-        let out_of_range = if inner.parent.is_some() {
-            (inner.parent_offset + page_idx * PAGE_SIZE) >= inner.parent_limit
-        } else {
-            page_idx >= inner.size / PAGE_SIZE
-        };
-        let no_frame = !inner.frames.contains_key(&page_idx);
         let no_parent = inner.parent.is_none();
-        if out_of_range || no_frame && no_parent {
-            if !flags.contains(MMUFlags::WRITE) {
-                // read-only, just return zero frame
-                return Ok(CommitResult::Ref(PhysFrame::zero_frame_addr()));
-            }
-            // lazy allocate zero frame
-            let target_frame = PhysFrame::alloc().ok_or(ZxError::NO_MEMORY)?;
-            kernel_hal::frame_zero(target_frame.addr());
-            if inner.type_.is_hidden() {
-                assert!(!out_of_range);
-                return Ok(CommitResult::NewPage(target_frame));
-            }
-            inner.frames.insert(page_idx, PageState::new(target_frame));
-        } else if no_frame {
-            // if page miss on this VMO, recursively commit to parent
-            let parent = inner.parent.as_ref().unwrap();
-            let parent_idx = page_idx + inner.parent_offset / PAGE_SIZE;
-            match parent.commit_page_internal(parent_idx, flags, &inner.self_ref)? {
-                CommitResult::NewPage(frame) if !inner.type_.is_hidden() => {
-                    inner.frames.insert(page_idx, PageState::new(frame));
+        let no_frame = !inner.frames.contains_key(&page_idx);
+        let out_of_range = if inner.type_.is_hidden() || inner.parent.is_none() {
+            page_idx >= inner.size / PAGE_SIZE
+        } else {
+            (inner.parent_offset + page_idx * PAGE_SIZE) >= inner.parent_limit
+        };
+        if no_frame {
+            // if out_of_range
+            if out_of_range || no_parent {
+                if !flags.contains(MMUFlags::WRITE) {
+                    // read-only, just return zero frame
+                    return Ok(CommitResult::Ref(PhysFrame::zero_frame_addr()));
                 }
-                CommitResult::CopyOnWrite(frame) => {
-                    inner.frames.insert(page_idx, PageState::new(frame));
+                // lazy allocate zero frame
+                let target_frame = PhysFrame::alloc().ok_or(ZxError::NO_MEMORY)?;
+                kernel_hal::frame_zero(target_frame.addr());
+                if out_of_range {
+                    // can never be a hidden vmo
+                    assert!(!inner.type_.is_hidden());
                 }
-                r => return Ok(r),
+                if inner.type_.is_hidden() {
+                    return Ok(CommitResult::NewPage(target_frame));
+                }
+                inner.frames.insert(page_idx, PageState::new(target_frame));
+            } else {
+                // recursively find a frame in parent
+                let parent = inner.parent.as_ref().unwrap();
+                let parent_idx = page_idx + inner.parent_offset / PAGE_SIZE;
+                match parent.commit_page_internal(parent_idx, flags, &inner.self_ref)? {
+                    CommitResult::NewPage(frame) if !inner.type_.is_hidden() => {
+                        inner.frames.insert(page_idx, PageState::new(frame));
+                    }
+                    CommitResult::CopyOnWrite(frame) => {
+                        inner.frames.insert(page_idx, PageState::new(frame));
+                    }
+                    r => return Ok(r),
+                }
             }
         }
+
         // now the page must hit on this VMO
         let (child_tag, other_child) = inner.type_.get_tag_and_other(child);
         if inner.type_.is_hidden() {
@@ -358,8 +365,30 @@ impl VMObjectPaged {
     }
 
     /// Replace a child of the hidden node.
-    fn replace_child(&self, old: &WeakRef, new: WeakRef) {
-        match &mut self.inner.lock().type_ {
+    /// `new_start` and `new_end` are in bytes
+    fn replace_child(&self, old: &WeakRef, new: WeakRef, new_range: Option<(usize, usize)>) {
+        let mut inner = self.inner.lock();
+        if let Some((new_start, new_end)) = new_range {
+            let (tag, other) = inner.type_.get_tag_and_other(old);
+            let arc_other_child = other.upgrade().unwrap();
+            let other_child = arc_other_child.inner.lock();
+            let other_start = other_child.parent_offset;
+            let other_end = other_child.parent_limit;
+            let start = new_start.min(other_start) / PAGE_SIZE;
+            let end = new_end.max(other_end) / PAGE_SIZE;
+            for i in 0..inner.size / PAGE_SIZE {
+                if start <= i && end > i {
+                    if let Some(frame) = inner.frames.get(&i) {
+                        if frame.tag != tag.negate() {
+                            continue;
+                        }
+                    }
+                }
+                inner.frames.remove(&i);
+            }
+        }
+        // judge direction
+        match &mut inner.type_ {
             VMOType::Hidden { left, right, .. } => {
                 if left.ptr_eq(old) {
                     *left = new;
@@ -458,11 +487,16 @@ impl VMObjectPagedInner {
             }
         }
         // connect child to my parent
+        child.parent_offset += self.parent_offset;
+        child.parent_limit += self.parent_offset;
         if let Some(parent) = &self.parent {
-            parent.replace_child(&self.self_ref, other_child);
+            parent.replace_child(
+                &self.self_ref,
+                other_child,
+                Some((child.parent_offset, child.parent_limit))
+            );
         }
         child.parent = self.parent.take();
-        child.parent_offset += self.parent_offset;
     }
 
     /// Create a snapshot child VMO.
@@ -496,7 +530,11 @@ impl VMObjectPagedInner {
         });
         // update parent's child
         if let Some(parent) = self.parent.take() {
-            parent.replace_child(&self.self_ref, Arc::downgrade(&hidden));
+            parent.replace_child(
+                &self.self_ref,
+                Arc::downgrade(&hidden),
+                None
+            );
         }
         // update children's parent
         self.parent = Some(hidden.clone());
