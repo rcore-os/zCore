@@ -74,7 +74,7 @@ struct VMObjectPagedInner {
     /// Physical frames of this VMO.
     frames: BTreeMap<usize, PageState>,
     /// All mappings to this VMO.
-    mappings: Vec<Arc<VmMapping>>,
+    mappings: Vec<Weak<VmMapping>>,
     /// A weak reference to myself.
     self_ref: WeakRef,
 }
@@ -260,7 +260,7 @@ impl VMObjectTrait for VMObjectPaged {
         self.inner.lock().create_child(offset, len)
     }
 
-    fn append_mapping(&self, mapping: Arc<VmMapping>) {
+    fn append_mapping(&self, mapping: Weak<VmMapping>) {
         self.inner.lock().mappings.push(mapping);
     }
 
@@ -368,7 +368,9 @@ impl VMObjectPagedInner {
         start -= self.parent_offset;
         end -= self.parent_offset;
         for map in self.mappings.iter() {
-            map.range_change(pages(start), pages(end), op);
+            if let Some(map) = map.upgrade() {
+                map.range_change(pages(start), pages(end), op);
+            }
         }
         if let VMOType::Hidden { left, right, .. } = &self.type_ {
             for child in &[left, right] {
@@ -479,7 +481,9 @@ impl VMObjectPagedInner {
         child.inner.lock().parent = Some(hidden.clone());
         // update mappings
         for map in self.mappings.iter() {
-            map.range_change(pages(offset), pages(len), RangeChangeOp::RemoveWrite);
+            if let Some(map) = map.upgrade() {
+                map.range_change(pages(offset), pages(len), RangeChangeOp::RemoveWrite);
+            }
         }
         child
     }
@@ -489,7 +493,7 @@ impl VMObjectPagedInner {
             info.flags |= VmoInfoFlags::IS_COW_CLONE;
         }
         info.num_children = if self.type_.is_hidden() { 2 } else { 0 };
-        info.num_mappings = self.mappings.len() as u64;
+        info.num_mappings = self.mappings.len() as u64; // FIXME remove weak ptr
         info.share_count = self.mappings.len() as u64; // FIXME share_count should be the count of unique aspace
         info.committed_bytes = (self.committed_pages() * PAGE_SIZE) as u64;
         // TODO cache_policy should be set up.

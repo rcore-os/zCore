@@ -98,10 +98,15 @@ impl_kobject!(Thread
 );
 define_count_helper!(Thread);
 
-#[linkage = "weak"]
-#[export_name = "run_task"]
-fn run_task(_thread: Arc<Thread>) {
-    unimplemented!()
+fn run_task(thread: Arc<Thread>) {
+    #[allow(improper_ctypes)]
+    extern "C" {
+        fn run_task(_thread: Arc<Thread>);
+    }
+    #[allow(unsafe_code)]
+    unsafe {
+        run_task(thread);
+    }
 }
 
 #[derive(Default)]

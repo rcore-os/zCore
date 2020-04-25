@@ -1,10 +1,19 @@
-use {super::*, crate::object::*, alloc::sync::Arc, bitflags::bitflags, kernel_hal::PageTable};
+use {
+    self::{paged::*, physical::*},
+    super::*,
+    crate::object::*,
+    alloc::{
+        sync::{Arc, Weak},
+        vec::Vec,
+    },
+    bitflags::bitflags,
+    core::ops::Deref,
+    kernel_hal::PageTable,
+    spin::Mutex,
+};
 
 mod paged;
 mod physical;
-
-use self::{paged::*, physical::*};
-use core::ops::Deref;
 
 kcounter!(VMO_PAGE_ALLOC, "vmo.page_alloc");
 kcounter!(VMO_PAGE_DEALLOC, "vmo.page_dealloc");
@@ -13,7 +22,7 @@ pub fn vmo_page_bytes() -> usize {
     (VMO_PAGE_ALLOC.get() - VMO_PAGE_DEALLOC.get()) * PAGE_SIZE
 }
 
-/// Virtual Memory Objects
+/// Virtual Memory Object Trait
 #[allow(clippy::len_without_is_empty)]
 pub trait VMObjectTrait: Sync + Send {
     /// Read memory to `buf` from VMO at `offset`.
@@ -49,14 +58,15 @@ pub trait VMObjectTrait: Sync + Send {
     /// Create a child VMO.
     fn create_child(&self, offset: usize, len: usize) -> Arc<dyn VMObjectTrait>;
 
-    fn append_mapping(&self, mapping: Arc<VmMapping>);
+    fn append_mapping(&self, mapping: Weak<VmMapping>);
 
     fn complete_info(&self, info: &mut ZxInfoVmo);
 }
 
 pub struct VmObject {
     base: KObjectBase,
-    parent_koid: KoID,
+    parent: Weak<VmObject>,
+    children: Mutex<Vec<Weak<VmObject>>>,
     _counter: CountHelper,
     resizable: bool,
     inner: Arc<dyn VMObjectTrait>,
@@ -68,19 +78,14 @@ define_count_helper!(VmObject);
 impl VmObject {
     /// Create a new VMO backing on physical memory allocated in pages.
     pub fn new_paged(pages: usize) -> Arc<Self> {
-        Arc::new(VmObject {
-            base: KObjectBase::default(),
-            parent_koid: 0,
-            resizable: true,
-            _counter: CountHelper::new(),
-            inner: VMObjectPaged::new(pages),
-        })
+        Self::new_paged_with_resizable(false, pages)
     }
 
     pub fn new_paged_with_resizable(resizable: bool, pages: usize) -> Arc<Self> {
         Arc::new(VmObject {
-            base: KObjectBase::default(),
-            parent_koid: 0,
+            base: KObjectBase::with_signal(Signal::VMO_ZERO_CHILDREN),
+            parent: Default::default(),
+            children: Mutex::new(Vec::new()),
             resizable,
             _counter: CountHelper::new(),
             inner: VMObjectPaged::new(pages),
@@ -95,24 +100,33 @@ impl VmObject {
     #[allow(unsafe_code)]
     pub unsafe fn new_physical(paddr: PhysAddr, pages: usize) -> Arc<Self> {
         Arc::new(VmObject {
-            base: KObjectBase::default(),
-            parent_koid: 0,
+            base: KObjectBase::with_signal(Signal::VMO_ZERO_CHILDREN),
+            parent: Default::default(),
+            children: Mutex::new(Vec::new()),
             resizable: true,
             _counter: CountHelper::new(),
             inner: VMObjectPhysical::new(paddr, pages),
         })
     }
 
-    pub fn create_child(&self, resizable: bool, offset: usize, len: usize) -> Arc<Self> {
-        Arc::new(VmObject {
-            base: KObjectBase::with_name(&self.base.name()),
-            parent_koid: self.base.id,
+    /// Create a child VMO.
+    pub fn create_child(self: &Arc<Self>, resizable: bool, offset: usize, len: usize) -> Arc<Self> {
+        let base = KObjectBase::with_signal(Signal::VMO_ZERO_CHILDREN);
+        base.set_name(&self.base.name());
+        let child = Arc::new(VmObject {
+            base,
+            parent: Arc::downgrade(self),
+            children: Mutex::new(Vec::new()),
             resizable,
             _counter: CountHelper::new(),
             inner: self.inner.create_child(offset, len),
-        })
+        });
+        self.children.lock().push(Arc::downgrade(&child));
+        self.base.signal_clear(Signal::VMO_ZERO_CHILDREN);
+        child
     }
 
+    /// Set the length of this VMO if resizable.
     pub fn set_len(&self, len: usize) -> ZxResult {
         if self.resizable {
             self.inner.set_len(len);
@@ -122,6 +136,7 @@ impl VmObject {
         }
     }
 
+    /// Get information of this VMO.
     pub fn get_info(&self) -> ZxInfoVmo {
         let mut ret = ZxInfoVmo {
             koid: self.base.id,
@@ -133,7 +148,7 @@ impl VmObject {
                 arr
             },
             size: self.inner.len() as u64,
-            parent_koid: self.parent_koid,
+            parent_koid: self.parent.upgrade().map(|p| p.id()).unwrap_or(0),
             flags: if self.resizable {
                 VmoInfoFlags::RESIZABLE
             } else {
@@ -151,6 +166,18 @@ impl Deref for VmObject {
 
     fn deref(&self) -> &Self::Target {
         &self.inner
+    }
+}
+
+impl Drop for VmObject {
+    fn drop(&mut self) {
+        if let Some(parent) = self.parent.upgrade() {
+            let mut children = parent.children.lock();
+            children.retain(|c| c.strong_count() != 0);
+            if children.is_empty() {
+                parent.base.signal_set(Signal::VMO_ZERO_CHILDREN);
+            }
+        }
     }
 }
 

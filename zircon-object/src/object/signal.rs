@@ -32,6 +32,8 @@ bitflags! {
         const THREAD_RUNNING                = 1 << 4;
         const THREAD_SUSPENDED              = 1 << 5;
 
+        const VMO_ZERO_CHILDREN             = Self::SIGNALED.bits;
+
         // for Linux
         const SIGCHLD                       = 1 << 6;
 

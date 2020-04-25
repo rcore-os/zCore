@@ -137,7 +137,7 @@ impl VmAddressRegion {
             vmo: vmo.clone(),
             page_table: self.page_table.clone(),
         });
-        vmo.append_mapping(mapping.clone());
+        vmo.append_mapping(Arc::downgrade(&mapping));
         mapping.map()?;
         inner.mappings.push(mapping);
         Ok(addr)
@@ -167,8 +167,8 @@ impl VmAddressRegion {
         let mut new_maps = Vec::new();
         inner.mappings.drain_filter(|map| {
             if let Some(new) = map.cut(begin, end) {
-                new_maps.push(new.clone());
-                map.vmo.append_mapping(new);
+                map.vmo.append_mapping(Arc::downgrade(&new));
+                new_maps.push(new);
             }
             map.size() == 0
         });
