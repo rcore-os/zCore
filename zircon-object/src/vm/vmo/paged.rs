@@ -57,18 +57,15 @@ impl VMOType {
                 } else if right.ptr_eq(child) {
                     (PageStateTag::RightSplit, left.clone())
                 } else {
-                    (PageStateTag::Init, Weak::new())
+                    (PageStateTag::Owned, Weak::new())
                 }
             }
-            _ => (PageStateTag::Init, Weak::new()),
+            _ => (PageStateTag::Owned, Weak::new()),
         }
     }
 
     fn is_hidden(&self) -> bool {
-        match self {
-            VMOType::Hidden{..} => true,
-            _ => false,
-        }
+        matches!(self, VMOType::Hidden { .. })
     }
 }
 
@@ -102,20 +99,28 @@ struct PageState {
     tag: PageStateTag,
 }
 
-#[derive(PartialEq, Eq, Debug)]
+/// The owner tag of pages in the node.
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
 enum PageStateTag {
-    Init,
-    RightSplit,
+    /// If the node is hidden, the page is shared by its 2 children.
+    /// Otherwise, the page is owned by the node.
+    Owned,
+    /// The page is split to the left child and now owned by the right child.
     LeftSplit,
+    /// The page is split to the right child and now owned by the left child.
+    RightSplit,
 }
 
 impl PageStateTag {
-    fn negate(&self) -> Self {
+    fn negate(self) -> Self {
         match self {
             PageStateTag::LeftSplit => PageStateTag::RightSplit,
             PageStateTag::RightSplit => PageStateTag::LeftSplit,
-            PageStateTag::Init => unreachable!()
+            PageStateTag::Owned => unreachable!(),
         }
+    }
+    fn is_split(self) -> bool {
+        self != PageStateTag::Owned
     }
 }
 
@@ -123,7 +128,7 @@ impl PageState {
     fn new(frame: PhysFrame) -> Self {
         PageState {
             frame,
-            tag: PageStateTag::Init,
+            tag: PageStateTag::Owned,
         }
     }
 }
@@ -225,7 +230,7 @@ impl VMObjectTrait for VMObjectPaged {
 
     fn commit_page(&self, page_idx: usize, flags: MMUFlags) -> ZxResult<PhysAddr> {
         match self.commit_page_internal(page_idx, flags, &Weak::new())? {
-            CommitResult::Ok(paddr) => Ok(paddr),
+            CommitResult::Ref(paddr) => Ok(paddr),
             _ => unreachable!(),
         }
     }
@@ -270,9 +275,12 @@ impl VMObjectTrait for VMObjectPaged {
 }
 
 enum CommitResult {
-    Ok(PhysAddr),
+    /// A reference to existing page.
+    Ref(PhysAddr),
+    /// A new page copied-on-write.
     CopyOnWrite(PhysFrame),
-    Marker(PhysFrame),
+    /// A new zero page.
+    NewPage(PhysFrame),
 }
 
 impl VMObjectPaged {
@@ -291,47 +299,37 @@ impl VMObjectPaged {
         if out_of_range || no_frame && no_parent {
             if !flags.contains(MMUFlags::WRITE) {
                 // read-only, just return zero frame
-                return Ok(CommitResult::Ok(PhysFrame::zero_frame_addr()));
+                return Ok(CommitResult::Ref(PhysFrame::zero_frame_addr()));
             }
             // lazy allocate zero frame
             let target_frame = vmo_frame_alloc()?;
             kernel_hal::frame_zero(target_frame.addr());
             if inner.type_.is_hidden() {
-                return Ok(CommitResult::Marker(target_frame));
-            } else {
-                inner.frames.insert(page_idx, PageState::new(target_frame));
+                return Ok(CommitResult::NewPage(target_frame));
             }
+            inner.frames.insert(page_idx, PageState::new(target_frame));
         } else if no_frame {
             // if page miss on this VMO, recursively commit to parent
             let parent = inner.parent.as_ref().unwrap();
             let parent_idx = page_idx + inner.parent_offset / PAGE_SIZE;
             match parent.commit_page_internal(parent_idx, flags, &self.self_ref)? {
-                r @ CommitResult::Ok(_) => return Ok(r),
+                CommitResult::NewPage(frame) if !inner.type_.is_hidden() => {
+                    inner.frames.insert(page_idx, PageState::new(frame));
+                }
                 CommitResult::CopyOnWrite(frame) => {
                     inner.frames.insert(page_idx, PageState::new(frame));
                 }
-                r @ CommitResult::Marker(_) => {
-                    if inner.type_.is_hidden() {
-                        return Ok(r);
-                    } else {
-                        match r {
-                            CommitResult::Marker(frame) => {
-                                inner.frames.insert(page_idx, PageState::new(frame));
-                            }
-                            _ => unreachable!()
-                        }
-                    }
-                }
+                r => return Ok(r),
             }
         }
         // now the page must hit on this VMO
         let (child_tag, _other_child) = inner.type_.get_tag_and_other(child);
         let frame = inner.frames.get_mut(&page_idx).unwrap();
-        if frame.tag != PageStateTag::Init {
-            // has splitted, take out
+        if frame.tag.is_split() {
+            // has split, take out
             let target_frame = inner.frames.remove(&page_idx).unwrap().frame;
             return Ok(CommitResult::CopyOnWrite(target_frame));
-        } else if flags.contains(MMUFlags::WRITE) && child_tag != PageStateTag::Init {
+        } else if flags.contains(MMUFlags::WRITE) && child_tag.is_split() {
             // copy-on-write
             let target_frame = vmo_frame_alloc()?;
             kernel_hal::frame_copy(frame.frame.addr(), target_frame.addr());
@@ -339,7 +337,7 @@ impl VMObjectPaged {
             return Ok(CommitResult::CopyOnWrite(target_frame));
         }
         // otherwise already committed
-        return Ok(CommitResult::Ok(frame.frame.addr()));
+        return Ok(CommitResult::Ref(frame.frame.addr()));
     }
 }
 
@@ -384,7 +382,7 @@ impl VMObjectPagedInner {
             while let Some(locked) = current {
                 let locked_cur = locked.inner.lock();
                 if let Some(frame) = locked_cur.frames.get(&current_idx) {
-                    if frame.tag != PageStateTag::Init || locked_cur.page_owner == self.page_owner {
+                    if frame.tag.is_split() || locked_cur.page_owner == self.page_owner {
                         count += 1;
                         break;
                     }
@@ -420,9 +418,7 @@ impl VMObjectPagedInner {
                 break;
             }
             let idx = key - start;
-            if value.tag == tag {
-                child.frames.insert(idx, value);
-            } else if !child.frames.contains_key(&idx) && value.tag != tag.negate() {
+            if !child.frames.contains_key(&idx) && value.tag != tag.negate() {
                 child.frames.insert(idx, value);
             }
         }
@@ -487,10 +483,7 @@ impl VMObjectPagedInner {
         if let VMOType::Snapshot = self.type_ {
             info.flags |= VmoInfoFlags::IS_COW_CLONE;
         }
-        info.num_children = match self.type_ {
-            VMOType::Hidden { .. } => 2,
-            _ => 0,
-        };
+        info.num_children = if self.type_.is_hidden() { 2 } else { 0 };
         info.num_mappings = self.mappings.len() as u64;
         info.share_count = self.mappings.len() as u64; // FIXME share_count should be the count of unique aspace
         info.committed_bytes = (self.committed_pages() * PAGE_SIZE) as u64;
@@ -556,7 +549,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // FIXME
+    // #[ignore] // FIXME
     fn zero_page_write() {
         let vmo0 = VmObject::new_paged(1);
         let vmo1 = vmo0.create_child(false, 0, PAGE_SIZE);
