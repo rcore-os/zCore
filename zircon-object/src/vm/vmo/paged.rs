@@ -63,6 +63,13 @@ impl VMOType {
             _ => (PageStateTag::Init, Weak::new()),
         }
     }
+
+    fn is_hidden(&self) -> bool {
+        match self {
+            VMOType::Hidden{..} => true,
+            _ => false,
+        }
+    }
 }
 
 /// The main VM object type, holding a list of pages.
@@ -100,6 +107,16 @@ enum PageStateTag {
     Init,
     RightSplit,
     LeftSplit,
+}
+
+impl PageStateTag {
+    fn negate(&self) -> Self {
+        match self {
+            PageStateTag::LeftSplit => PageStateTag::RightSplit,
+            PageStateTag::RightSplit => PageStateTag::LeftSplit,
+            PageStateTag::Init => unreachable!()
+        }
+    }
 }
 
 impl PageState {
@@ -255,6 +272,7 @@ impl VMObjectTrait for VMObjectPaged {
 enum CommitResult {
     Ok(PhysAddr),
     CopyOnWrite(PhysFrame),
+    Marker(PhysFrame),
 }
 
 impl VMObjectPaged {
@@ -278,7 +296,11 @@ impl VMObjectPaged {
             // lazy allocate zero frame
             let target_frame = vmo_frame_alloc()?;
             kernel_hal::frame_zero(target_frame.addr());
-            inner.frames.insert(page_idx, PageState::new(target_frame));
+            if inner.type_.is_hidden() {
+                return Ok(CommitResult::Marker(target_frame));
+            } else {
+                inner.frames.insert(page_idx, PageState::new(target_frame));
+            }
         } else if no_frame {
             // if page miss on this VMO, recursively commit to parent
             let parent = inner.parent.as_ref().unwrap();
@@ -287,6 +309,18 @@ impl VMObjectPaged {
                 r @ CommitResult::Ok(_) => return Ok(r),
                 CommitResult::CopyOnWrite(frame) => {
                     inner.frames.insert(page_idx, PageState::new(frame));
+                }
+                r @ CommitResult::Marker(_) => {
+                    if inner.type_.is_hidden() {
+                        return Ok(r);
+                    } else {
+                        match r {
+                            CommitResult::Marker(frame) => {
+                                inner.frames.insert(page_idx, PageState::new(frame));
+                            }
+                            _ => unreachable!()
+                        }
+                    }
                 }
             }
         }
@@ -386,7 +420,9 @@ impl VMObjectPagedInner {
                 break;
             }
             let idx = key - start;
-            if !child.frames.contains_key(&idx) && value.tag == tag {
+            if value.tag == tag {
+                child.frames.insert(idx, value);
+            } else if !child.frames.contains_key(&idx) && value.tag != tag.negate() {
                 child.frames.insert(idx, value);
             }
         }
