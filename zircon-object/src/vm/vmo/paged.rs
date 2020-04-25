@@ -69,6 +69,8 @@ struct VMObjectPagedInner {
     parent: Option<Arc<VMObjectPaged>>,
     /// The offset from parent.
     parent_offset: usize,
+    /// The range limit from parent.
+    parent_limit: usize,
     /// The size in bytes.
     size: usize,
     /// Physical frames of this VMO.
@@ -140,6 +142,7 @@ impl VMObjectPaged {
             type_: VMOType::Origin,
             parent: None,
             parent_offset: 0usize,
+            parent_limit: 0usize,
             size: pages * PAGE_SIZE,
             frames: BTreeMap::new(),
             mappings: Vec::new(),
@@ -289,7 +292,11 @@ impl VMObjectPaged {
     ) -> ZxResult<CommitResult> {
         let mut inner = self.inner.lock();
         // special case
-        let out_of_range = page_idx >= inner.size / PAGE_SIZE;
+        let out_of_range = if inner.parent.is_some() {
+            (inner.parent_offset + page_idx * PAGE_SIZE) >= inner.parent_limit
+        } else {
+            page_idx >= inner.size / PAGE_SIZE
+        };
         let no_frame = !inner.frames.contains_key(&page_idx);
         let no_parent = inner.parent.is_none();
         if out_of_range || no_frame && no_parent {
@@ -301,6 +308,7 @@ impl VMObjectPaged {
             let target_frame = PhysFrame::alloc().ok_or(ZxError::NO_MEMORY)?;
             kernel_hal::frame_zero(target_frame.addr());
             if inner.type_.is_hidden() {
+                assert!(!out_of_range);
                 return Ok(CommitResult::NewPage(target_frame));
             }
             inner.frames.insert(page_idx, PageState::new(target_frame));
@@ -325,8 +333,7 @@ impl VMObjectPaged {
             let locked_other = arc_other.inner.lock();
             let in_range = {
                 let start = locked_other.parent_offset / PAGE_SIZE;
-                let end = (locked_other.parent_offset + locked_other.size) / PAGE_SIZE;
-                error!("{} {} {}", page_idx, start, end);
+                let end = locked_other.parent_limit / PAGE_SIZE;
                 page_idx >= start && page_idx < end
             };
             if !in_range {
@@ -375,7 +382,7 @@ impl VMObjectPagedInner {
     #[allow(dead_code)]
     fn range_change(&self, parent_offset: usize, parent_limit: usize, op: RangeChangeOp) {
         let mut start = self.parent_offset.max(parent_offset);
-        let mut end = self.parent_limit().min(parent_limit);
+        let mut end = self.parent_limit.min(parent_limit);
         if start >= end {
             return;
         }
@@ -402,7 +409,7 @@ impl VMObjectPagedInner {
                 count += 1;
                 continue;
             }
-            if self.parent_limit() <= i * PAGE_SIZE {
+            if self.parent_limit <= i * PAGE_SIZE {
                 continue;
             }
             let mut current = self.parent.clone();
@@ -416,7 +423,7 @@ impl VMObjectPagedInner {
                     }
                 }
                 current_idx += inner.parent_offset / PAGE_SIZE;
-                if current_idx >= inner.parent_limit() / PAGE_SIZE {
+                if current_idx >= inner.parent_limit / PAGE_SIZE {
                     break;
                 }
                 current = inner.parent.clone();
@@ -439,7 +446,7 @@ impl VMObjectPagedInner {
         let arc_child = other_child.upgrade().unwrap();
         let mut child = arc_child.inner.lock();
         let start = child.parent_offset / PAGE_SIZE;
-        let end = child.parent_limit() / PAGE_SIZE;
+        let end = child.parent_limit / PAGE_SIZE;
         // merge nodes to the child
         for (key, value) in self.frames.split_off(&start) {
             if key >= end {
@@ -465,6 +472,7 @@ impl VMObjectPagedInner {
             type_: VMOType::Snapshot,
             parent: None, // set later
             parent_offset: offset,
+            parent_limit: (offset + len).min(self.size),
             size: len,
             frames: BTreeMap::new(),
             mappings: Vec::new(),
@@ -480,6 +488,7 @@ impl VMObjectPagedInner {
             },
             parent: self.parent.clone(),
             parent_offset: self.parent_offset,
+            parent_limit: self.parent_limit,
             size: self.size,
             frames: core::mem::take(&mut self.frames),
             mappings: Vec::new(),
@@ -492,6 +501,7 @@ impl VMObjectPagedInner {
         // update children's parent
         self.parent = Some(hidden.clone());
         self.parent_offset = 0;
+        self.parent_limit = self.size;
         child.inner.lock().parent = Some(hidden.clone());
         // update mappings
         for map in self.mappings.iter() {
@@ -511,10 +521,6 @@ impl VMObjectPagedInner {
         info.share_count = self.mappings.len() as u64; // FIXME share_count should be the count of unique aspace
         info.committed_bytes = (self.committed_pages() * PAGE_SIZE) as u64;
         // TODO cache_policy should be set up.
-    }
-
-    fn parent_limit(&self) -> usize {
-        self.parent_offset + self.size
     }
 
     fn is_owned_by(&self, node: &WeakRef) -> bool {
