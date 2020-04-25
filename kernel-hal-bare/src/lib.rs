@@ -52,13 +52,6 @@ extern "C" {
     static PMEM_BASE: usize;
 }
 
-const ZERO_PAGE: [u8; PAGE_SIZE] = [0u8; PAGE_SIZE];
-
-#[export_name = "zero_frame_paddr"]
-pub fn zero_frame_addr() -> PhysAddr {
-    unsafe { ZERO_PAGE.as_ptr() as usize - PMEM_BASE }
-}
-
 #[repr(C)]
 pub struct Thread {
     thread: usize,
@@ -129,6 +122,14 @@ impl Frame {
         unsafe {
             hal_frame_dealloc(&self.paddr);
         }
+    }
+
+    #[export_name = "hal_zero_frame_paddr"]
+    pub fn zero_frame_addr() -> PhysAddr {
+        #[repr(align(0x1000))]
+        struct Page([u8; PAGE_SIZE]);
+        static ZERO_PAGE: Page = Page([0u8; PAGE_SIZE]);
+        unsafe { ZERO_PAGE.0.as_ptr() as usize - PMEM_BASE }
     }
 }
 

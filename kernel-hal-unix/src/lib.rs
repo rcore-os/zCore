@@ -145,7 +145,7 @@ impl Debug for PhysFrame {
 
 lazy_static! {
     static ref AVAILABLE_FRAMES: Mutex<VecDeque<usize>> =
-        Mutex::new((0..PMEM_SIZE).step_by(PAGE_SIZE).collect());
+        Mutex::new((PAGE_SIZE..PMEM_SIZE).step_by(PAGE_SIZE).collect());
 }
 
 impl PhysFrame {
@@ -158,6 +158,10 @@ impl PhysFrame {
             .map(|paddr| PhysFrame { paddr });
         trace!("frame alloc: {:?}", ret);
         ret
+    }
+    #[export_name = "hal_zero_frame_paddr"]
+    pub fn zero_frame_addr() -> PhysAddr {
+        0
     }
 }
 

@@ -150,7 +150,7 @@ impl PhysFrame {
     }
 
     #[linkage = "weak"]
-    #[export_name = "zero_frame_paddr"]
+    #[export_name = "hal_zero_frame_paddr"]
     pub fn zero_frame_addr() -> PhysAddr {
         unimplemented!()
     }

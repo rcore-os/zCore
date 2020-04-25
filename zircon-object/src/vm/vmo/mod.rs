@@ -68,26 +68,22 @@ define_count_helper!(VmObject);
 impl VmObject {
     /// Create a new VMO backing on physical memory allocated in pages.
     pub fn new_paged(pages: usize) -> Arc<Self> {
-        let base = KObjectBase::default();
-        let user_id = base.id;
         Arc::new(VmObject {
-            base,
+            base: KObjectBase::default(),
             parent_koid: 0,
             resizable: true,
             _counter: CountHelper::new(),
-            inner: VMObjectPaged::new(pages, user_id),
+            inner: VMObjectPaged::new(pages),
         })
     }
 
     pub fn new_paged_with_resizable(resizable: bool, pages: usize) -> Arc<Self> {
-        let base = KObjectBase::default();
-        let user_id = base.id;
         Arc::new(VmObject {
-            base,
+            base: KObjectBase::default(),
             parent_koid: 0,
             resizable,
             _counter: CountHelper::new(),
-            inner: VMObjectPaged::new(pages, user_id),
+            inner: VMObjectPaged::new(pages),
         })
     }
 

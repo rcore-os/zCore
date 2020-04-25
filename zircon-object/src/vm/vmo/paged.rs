@@ -5,14 +5,10 @@ use {
     alloc::sync::{Arc, Weak},
     alloc::vec::Vec,
     core::ops::Range,
+    core::sync::atomic::*,
     kernel_hal::PhysFrame,
     spin::Mutex,
 };
-
-fn vmo_frame_alloc() -> ZxResult<PhysFrame> {
-    VMO_PAGE_ALLOC.add(1);
-    PhysFrame::alloc().ok_or(ZxError::NO_MEMORY)
-}
 
 enum VMOType {
     /// The original node.
@@ -126,19 +122,33 @@ impl PageStateTag {
 
 impl PageState {
     fn new(frame: PhysFrame) -> Self {
+        VMO_PAGE_ALLOC.add(1);
         PageState {
             frame,
             tag: PageStateTag::Owned,
         }
     }
+    #[allow(unsafe_code)]
+    fn take(self) -> PhysFrame {
+        let frame = unsafe { core::mem::transmute_copy(&self.frame) };
+        VMO_PAGE_DEALLOC.add(1);
+        core::mem::forget(self);
+        frame
+    }
+}
+
+impl Drop for PageState {
+    fn drop(&mut self) {
+        VMO_PAGE_DEALLOC.add(1);
+    }
 }
 
 impl VMObjectPaged {
     /// Create a new VMO backing on physical memory allocated in pages.
-    pub fn new(pages: usize, user_id: KoID) -> Arc<Self> {
+    pub fn new(pages: usize) -> Arc<Self> {
         VMObjectPaged::wrap(VMObjectPagedInner {
             type_: VMOType::Origin,
-            page_owner: user_id,
+            page_owner: new_owner_id(),
             parent: None,
             parent_offset: 0usize,
             size: pages * PAGE_SIZE,
@@ -302,7 +312,7 @@ impl VMObjectPaged {
                 return Ok(CommitResult::Ref(PhysFrame::zero_frame_addr()));
             }
             // lazy allocate zero frame
-            let target_frame = vmo_frame_alloc()?;
+            let target_frame = PhysFrame::alloc().ok_or(ZxError::NO_MEMORY)?;
             kernel_hal::frame_zero(target_frame.addr());
             if inner.type_.is_hidden() {
                 return Ok(CommitResult::NewPage(target_frame));
@@ -327,11 +337,11 @@ impl VMObjectPaged {
         let frame = inner.frames.get_mut(&page_idx).unwrap();
         if frame.tag.is_split() {
             // has split, take out
-            let target_frame = inner.frames.remove(&page_idx).unwrap().frame;
+            let target_frame = inner.frames.remove(&page_idx).unwrap().take();
             return Ok(CommitResult::CopyOnWrite(target_frame));
         } else if flags.contains(MMUFlags::WRITE) && child_tag.is_split() {
             // copy-on-write
-            let target_frame = vmo_frame_alloc()?;
+            let target_frame = PhysFrame::alloc().ok_or(ZxError::NO_MEMORY)?;
             kernel_hal::frame_copy(frame.frame.addr(), target_frame.addr());
             frame.tag = child_tag;
             return Ok(CommitResult::CopyOnWrite(target_frame));
@@ -440,7 +450,7 @@ impl VMObjectPagedInner {
         // create child VMO
         let child = VMObjectPaged::wrap(VMObjectPagedInner {
             type_: VMOType::Snapshot,
-            page_owner: 0,
+            page_owner: new_owner_id(),
             parent: None, // set later
             parent_offset: offset,
             size: len,
@@ -507,6 +517,12 @@ impl Drop for VMObjectPaged {
     }
 }
 
+/// Generate a owner ID.
+fn new_owner_id() -> u64 {
+    static OWNER_ID: AtomicU64 = AtomicU64::new(1);
+    OWNER_ID.fetch_add(1, Ordering::SeqCst)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -534,22 +550,7 @@ mod tests {
     }
 
     #[test]
-    fn committed_pages() {
-        let vmo = VmObject::new_paged(1);
-        let child_vmo = vmo.create_child(false, 0, PAGE_SIZE);
-
-        // no committed pages
-        assert_eq!(vmo.get_info().committed_bytes, 0);
-        assert_eq!(child_vmo.get_info().committed_bytes, 0);
-
-        // copy-on-write
-        vmo.test_write(0, 1);
-        assert_eq!(vmo.get_info().committed_bytes, 0x1000);
-        assert_eq!(child_vmo.get_info().committed_bytes, 0x1000);
-    }
-
-    #[test]
-    // #[ignore] // FIXME
+    #[ignore] // FIXME
     fn zero_page_write() {
         let vmo0 = VmObject::new_paged(1);
         let vmo1 = vmo0.create_child(false, 0, PAGE_SIZE);
@@ -574,6 +575,19 @@ mod tests {
             }
             assert_eq!(vmo_page_bytes() - origin, (i + 1) * PAGE_SIZE);
         }
+    }
+
+    #[test]
+    fn overflow() {
+        let vmo0 = VmObject::new_paged(2);
+        vmo0.test_write(0, 1);
+        let vmo1 = vmo0.create_child(false, 0, 2 * PAGE_SIZE);
+        vmo1.test_write(1, 2);
+        let vmo2 = vmo1.create_child(false, 0, 3 * PAGE_SIZE);
+        vmo2.test_write(2, 3);
+        assert_eq!(vmo0.get_info().committed_bytes as usize, PAGE_SIZE);
+        assert_eq!(vmo1.get_info().committed_bytes as usize, PAGE_SIZE);
+        assert_eq!(vmo2.get_info().committed_bytes as usize, PAGE_SIZE);
     }
 
     impl VmObject {
