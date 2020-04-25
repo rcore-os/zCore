@@ -319,7 +319,21 @@ impl VMObjectPaged {
             }
         }
         // now the page must hit on this VMO
-        let (child_tag, _other_child) = inner.type_.get_tag_and_other(child);
+        let (child_tag, other_child) = inner.type_.get_tag_and_other(child);
+        if inner.type_.is_hidden() {
+            let arc_other = other_child.upgrade().unwrap();
+            let locked_other = arc_other.inner.lock();
+            let in_range = {
+                let start = locked_other.parent_offset / PAGE_SIZE;
+                let end = (locked_other.parent_offset + locked_other.size) / PAGE_SIZE;
+                error!("{} {} {}", page_idx, start, end);
+                page_idx >= start && page_idx < end
+            };
+            if !in_range {
+                let frame = inner.frames.remove(&page_idx).unwrap().take();
+                return Ok(CommitResult::CopyOnWrite(frame));
+            }
+        }
         let frame = inner.frames.get_mut(&page_idx).unwrap();
         if frame.tag.is_split() {
             // has split, take out
