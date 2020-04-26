@@ -21,6 +21,7 @@ extern crate log;
 extern crate std;
 
 pub mod debuglog;
+pub mod dev;
 mod error;
 pub mod exception;
 pub mod ipc;

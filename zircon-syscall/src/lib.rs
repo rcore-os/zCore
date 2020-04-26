@@ -223,10 +223,9 @@ impl Syscall<'_> {
                 self.sys_create_exception_channel(a0 as _, a1 as _, a2.into())
             }
             Sys::IOMMU_CREATE => {
-                warn!("IOMMU_CREATE is unimplemented. now sleep forever");
-                kernel_hal::sleep_until(core::time::Duration::from_secs(u64::max_value())).await;
                 self.sys_iommu_create(a0 as _, a1 as _, a2.into(), a3 as _, a4.into())
             }
+            Sys::BTI_CREATE => self.sys_bti_create(a0 as _, a1 as _, a2 as _, a3.into()),
             Sys::VMAR_UNMAP_HANDLE_CLOSE_THREAD_EXIT => self
                 .sys_vmar_unmap(a0 as _, a1 as _, a2 as _)
                 .and_then(|_| {
