@@ -34,15 +34,35 @@ impl Syscall<'_> {
         elem_size : usize,
         user_bytes: UserInPtr<u8>,
         count : usize,
-        mut actual_count: UserOutPtr<usize>s
+        mut actual_count: UserOutPtr<usize>
     ) -> ZxResult {
         let proc = self.thread.proc();
         let fifo = proc.get_object_with_rights::<Fifo>(handle_value, Rights::WRITE)?;
-        if(elem_size != fifo.elem_size || count == 0) {
-            return Err(ZxError::INVALID_ARGS);
+        if count == 0 {
+            return Err(ZxError::OUT_OF_RANGE);
         }
         let data = user_bytes.read_array(num_bytes * elem_size)?;
-        
+        let mut actual : usize = 0;
+        fifo.write(elem_size, data, count, &actual)?;
+        actual_count.write_if_not_null(actual / elem_size)?;
+    }
+
+    pub fn sys_fifo_read(
+        &self,
+        handle_value: HandleValue,
+        elem_size : usize,
+        mut user_bytes: UserOutPtr<u8>,
+        count : usize,
+        mut actual_count: UserOutPtr<usize>
+    ) -> ZxResult {
+        let proc = self.thread.proc();
+        let fifo = proc.get_object_with_rights::<Fifo>(handle_value, Rights::WRITE)?;
+        if count == 0 {
+            return Err(ZxError::OUT_OF_RANGE);
+        }
+        let mut actual : usize = 0;
+        fifo.read(elem_size, mut user_bytes, count, &actual)?;
+        actual_count.write_if_not_null(actual / elem_size)?
     }
     
 }

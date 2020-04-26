@@ -48,5 +48,35 @@ impl Fifo {
         (end0, end1)
     }
 
-    pub fn check_and_write()
+    pub fn write(elem_size : usize, data : Vec<u8>, count : usize, mut &actual : usize) {
+        if elem_size != self.elem_size {
+           return Err(ZxError::OUT_OF_RANGE);
+        }
+        let count_size = count * elem_size;
+        let rest_capacity = item_count * item_size - recv_queue.len();
+        if rest_capacity > count_size {
+            *actual = rest_capacity - count_size;
+        } else {
+            *actual = count_size - rest_capacity;
+        }
+        data.truncate(*actual);
+        let mut append_queue : VecDeque<u8> = data.into_iter().collect();
+        recv_queue.append(&mut append_queue);
+        OK()
+    }
+
+    pub fn read(elem_size : usize, data : UserOutPtr<u8>, count : usize, mut &actual : usize) {
+        if elem_size != self.elem_size {
+           return Err(ZxError::OUT_OF_RANGE);
+        }
+        let count_size = count * elem_size;
+        let rest_size = recv_queue.len();
+        if rest_size > count_size {
+            *actual = count_size;
+        } else {
+            *actual = rest_size;
+        }
+        let item_vec: Vec<u8> = recv_queue.drain(..*actual).collect();
+        data.write_array(item_vec.as_slice())?
+    }
 }
