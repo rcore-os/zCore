@@ -3,6 +3,7 @@ use {
     crate::util::block_range::BlockIter,
     alloc::collections::BTreeMap,
     alloc::sync::{Arc, Weak},
+    alloc::collections::VecDeque,
     alloc::vec::Vec,
     core::ops::Range,
     kernel_hal::PhysFrame,
@@ -27,10 +28,6 @@ enum VMOType {
         left: WeakRef,
         /// The right child.
         right: WeakRef,
-        /// The owner of all shared pages.
-        owner: WeakRef,
-        /// The next owner of all shared pages.
-        owner1: WeakRef,
     },
 }
 
@@ -64,6 +61,8 @@ type WeakRef = Weak<VMObjectPaged>;
 
 /// The mutable part of `VMObjectPaged`.
 struct VMObjectPagedInner {
+    /// Id of this vmo object
+    user_id: KoID,
     type_: VMOType,
     /// Parent node.
     parent: Option<Arc<VMObjectPaged>>,
@@ -137,8 +136,9 @@ impl Drop for PageState {
 
 impl VMObjectPaged {
     /// Create a new VMO backing on physical memory allocated in pages.
-    pub fn new(pages: usize) -> Arc<Self> {
+    pub fn new(id: KoID, pages: usize) -> Arc<Self> {
         VMObjectPaged::wrap(VMObjectPagedInner {
+            user_id: id,
             type_: VMOType::Origin,
             parent: None,
             parent_offset: 0usize,
@@ -221,10 +221,8 @@ impl VMObjectTrait for VMObjectPaged {
 
     fn set_len(&self, len: usize) {
         assert!(page_aligned(len));
-        // FIXME parent and children? len < old_len?
         let mut inner = self.inner.lock();
-        inner.size = len;
-        inner.frames.split_off(&(len / PAGE_SIZE));
+        inner.resize(len);
     }
 
     fn commit_page(&self, page_idx: usize, flags: MMUFlags) -> ZxResult<PhysAddr> {
@@ -257,10 +255,10 @@ impl VMObjectTrait for VMObjectPaged {
         Ok(())
     }
 
-    fn create_child(&self, offset: usize, len: usize) -> Arc<dyn VMObjectTrait> {
+    fn create_child(&self, offset: usize, len: usize, user_id: KoID) -> Arc<dyn VMObjectTrait> {
         assert!(page_aligned(offset));
         assert!(page_aligned(len));
-        self.inner.lock().create_child(offset, len)
+        self.inner.lock().create_child(offset, len, user_id)
     }
 
     fn append_mapping(&self, mapping: Weak<VmMapping>) {
@@ -366,28 +364,72 @@ impl VMObjectPaged {
 
     /// Replace a child of the hidden node.
     /// `new_start` and `new_end` are in bytes
-    fn replace_child(&self, old: &WeakRef, new: WeakRef, new_range: Option<(usize, usize)>) {
+    fn replace_child(&self, old: &WeakRef, old_id: KoID, new: WeakRef, new_range: Option<(usize, usize)>) {
         let mut inner = self.inner.lock();
+        let (tag, other) = inner.type_.get_tag_and_other(old);
+        let arc_other_child = other.upgrade().unwrap();
+        let mut other_child = arc_other_child.inner.lock();
+        let mut unwanted = VecDeque::<usize>::new();
         if let Some((new_start, new_end)) = new_range {
-            let (tag, other) = inner.type_.get_tag_and_other(old);
-            let arc_other_child = other.upgrade().unwrap();
-            let other_child = arc_other_child.inner.lock();
-            let other_start = other_child.parent_offset;
-            let other_end = other_child.parent_limit;
-            let start = new_start.min(other_start) / PAGE_SIZE;
-            let end = new_end.max(other_end) / PAGE_SIZE;
+            let other_start = other_child.parent_offset / PAGE_SIZE;
+            let other_end = other_child.parent_limit / PAGE_SIZE;
+            let start = new_start / PAGE_SIZE;
+            let end = new_end / PAGE_SIZE;
             for i in 0..inner.size / PAGE_SIZE {
-                if start <= i && end > i {
+                let not_in_range = !((start <= i && end > i) || (other_start <= i && other_end > i));
+                if not_in_range {  // if not in this node's range
+                    if inner.frames.contains_key(&i) { // if the frame is in our, remove it
+                        assert!(inner.frames.remove(&i).is_some());
+                    } else { // or it is in our ancestor, tell them we do not need it.
+                        unwanted.push_back(i + inner.parent_offset / PAGE_SIZE);
+                    }
+                } else {
+                    // if in this node's range, check if it can be moved
                     if let Some(frame) = inner.frames.get(&i) {
-                        if frame.tag != tag.negate() {
-                            continue;
+                        if frame.tag.is_split() {
+                            let mut new_frame = inner.frames.remove(&i).unwrap();
+                            if new_frame.tag == tag && other_start <= i && other_end > i{
+                                new_frame.tag = PageStateTag::Owned;
+                                let new_key = i - other_child.parent_offset / PAGE_SIZE;
+                                other_child.frames.insert(
+                                    new_key,
+                                    new_frame
+                                );
+                            }
                         }
                     }
                 }
-                inner.frames.remove(&i);
             }
         }
-        // judge direction
+
+        inner.release_unwanted_pages(unwanted);
+
+        if old_id == inner.user_id {
+            let mut option_parent = inner.parent.clone();
+            let mut child = inner.self_ref.clone();
+            let mut skip_user_id = old_id;
+            while let Some(parent) = option_parent {
+                let mut locked_parent = parent.inner.lock();
+                if locked_parent.user_id == old_id {
+                    let (_, other) = locked_parent.type_.get_tag_and_other(&child);
+                    let new_user_id = other
+                        .upgrade()
+                        .unwrap()
+                        .inner
+                        .lock()
+                        .user_id;
+                    child = locked_parent.self_ref.clone();
+                    assert_ne!(new_user_id, skip_user_id);
+                    locked_parent.user_id = new_user_id;
+                    skip_user_id = new_user_id;
+                    option_parent = locked_parent.parent.clone();
+                } else {
+                    break;
+                }
+            }
+        }
+
+        inner.user_id = other_child.user_id;
         match &mut inner.type_ {
             VMOType::Hidden { left, right, .. } => {
                 if left.ptr_eq(old) {
@@ -446,7 +488,7 @@ impl VMObjectPagedInner {
             while let Some(locked) = current {
                 let inner = locked.inner.lock();
                 if let Some(frame) = inner.frames.get(&current_idx) {
-                    if frame.tag.is_split() || inner.is_owned_by(&self.self_ref) {
+                    if frame.tag.is_split() || inner.user_id == self.user_id {
                         count += 1;
                         break;
                     }
@@ -492,6 +534,7 @@ impl VMObjectPagedInner {
         if let Some(parent) = &self.parent {
             parent.replace_child(
                 &self.self_ref,
+                self.user_id,
                 other_child,
                 Some((child.parent_offset, child.parent_limit))
             );
@@ -500,9 +543,10 @@ impl VMObjectPagedInner {
     }
 
     /// Create a snapshot child VMO.
-    fn create_child(&mut self, offset: usize, len: usize) -> Arc<VMObjectPaged> {
+    fn create_child(&mut self, offset: usize, len: usize, user_id: KoID) -> Arc<VMObjectPaged> {
         // create child VMO
         let child = VMObjectPaged::wrap(VMObjectPagedInner {
+            user_id,
             type_: VMOType::Snapshot,
             parent: None, // set later
             parent_offset: offset,
@@ -514,11 +558,10 @@ impl VMObjectPagedInner {
         });
         // construct a hidden VMO as shared parent
         let hidden = VMObjectPaged::wrap(VMObjectPagedInner {
+            user_id: self.user_id,
             type_: VMOType::Hidden {
                 left: self.self_ref.clone(),
                 right: Arc::downgrade(&child),
-                owner: self.self_ref.clone(),
-                owner1: Arc::downgrade(&child),
             },
             parent: self.parent.clone(),
             parent_offset: self.parent_offset,
@@ -530,11 +573,18 @@ impl VMObjectPagedInner {
         });
         // update parent's child
         if let Some(parent) = self.parent.take() {
-            parent.replace_child(
-                &self.self_ref,
-                Arc::downgrade(&hidden),
-                None
-            );
+            match &mut parent.inner.lock().type_ {
+                VMOType::Hidden { left, right, .. } => {
+                    if left.ptr_eq(&self.self_ref) {
+                        *left = Arc::downgrade(&hidden);
+                    } else if right.ptr_eq(&self.self_ref) {
+                        *right = Arc::downgrade(&hidden);
+                    } else {
+                        panic!();
+                    }
+                }
+                _ => panic!(),
+            }
         }
         // update children's parent
         self.parent = Some(hidden.clone());
@@ -561,17 +611,57 @@ impl VMObjectPagedInner {
         // TODO cache_policy should be set up.
     }
 
-    fn is_owned_by(&self, node: &WeakRef) -> bool {
-        match &self.type_ {
-            VMOType::Hidden { owner, owner1, .. } => {
-                if owner.strong_count() == 0 {
-                    owner1.ptr_eq(node)
-                } else {
-                    owner.ptr_eq(node)
+    fn release_unwanted_pages(&mut self, mut unwanted: VecDeque<usize>) {
+        let mut option_parent = self.parent.clone();
+        let mut child = self.self_ref.clone();
+        while let Some(parent) = option_parent {
+            let mut locked_parent = parent.inner.lock();
+            if locked_parent.user_id == self.user_id {
+                let (tag, other) = locked_parent.type_.get_tag_and_other(&child);
+                let arc_other = other.upgrade().unwrap();
+                let mut locked_other = arc_other.inner.lock();
+                let start = locked_other.parent_offset / PAGE_SIZE;
+                let end = locked_other.parent_limit / PAGE_SIZE;
+                for _ in 0..unwanted.len() {
+                    let idx = unwanted.pop_front().unwrap();
+                    // if the frame is in locked_other's range, check if it can be move to locked_other
+                    if start <= idx && idx < end {
+                        if locked_parent.frames.contains_key(&idx) {
+                            let mut to_insert = locked_parent.frames.remove(&idx).unwrap();
+                            if to_insert.tag != tag.negate() {
+                                to_insert.tag = PageStateTag::Owned;
+                                locked_other.frames.insert(idx - start, to_insert);
+                            }
+                        }
+                    } else { // otherwise, if it exists in our frames, remove it; if not, push_back it again
+                        if locked_parent.frames.contains_key(&idx) {
+                            locked_parent.frames.remove(&idx);
+                        } else {
+                            unwanted.push_back(idx + locked_parent.parent_offset / PAGE_SIZE);
+                        }
+                    }
+                }
+                child = locked_parent.self_ref.clone();
+                option_parent = locked_parent.parent.clone();
+                drop(locked_parent);
+            } else {
+                break;
+            }
+        }
+    }
+
+    fn resize(&mut self, new_size: usize) {
+        if new_size < self.size {
+            let mut unwanted = VecDeque::<usize>::new();
+            let parent_end = (self.parent_limit - self.parent_offset) / PAGE_SIZE;
+            for i in new_size/PAGE_SIZE..self.size/PAGE_SIZE {
+                if self.frames.remove(&i).is_none() && parent_end > i {
+                    unwanted.push_back(i);
                 }
             }
-            _ => panic!(),
+            self.release_unwanted_pages(unwanted);
         }
+        self.size = new_size;
     }
 }
 

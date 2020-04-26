@@ -62,7 +62,7 @@ impl VMObjectTrait for VMObjectPhysical {
         Ok(())
     }
 
-    fn create_child(&self, _offset: usize, _len: usize) -> Arc<dyn VMObjectTrait> {
+    fn create_child(&self, _offset: usize, _len: usize, _user_id: KoID) -> Arc<dyn VMObjectTrait> {
         unimplemented!()
     }
 
