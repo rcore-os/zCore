@@ -27,4 +27,22 @@ impl Syscall<'_> {
         out1.write(handle1)?;
         Ok(())
     }
+
+    pub fn sys_fifo_write(
+        &self,
+        handle_value: HandleValue,
+        elem_size : usize,
+        user_bytes: UserInPtr<u8>,
+        count : usize,
+        mut actual_count: UserOutPtr<usize>s
+    ) -> ZxResult {
+        let proc = self.thread.proc();
+        let fifo = proc.get_object_with_rights::<Fifo>(handle_value, Rights::WRITE)?;
+        if(elem_size != fifo.elem_size || count == 0) {
+            return Err(ZxError::INVALID_ARGS);
+        }
+        let data = user_bytes.read_array(num_bytes * elem_size)?;
+        
+    }
+    
 }
