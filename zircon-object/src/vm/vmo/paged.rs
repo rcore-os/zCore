@@ -5,8 +5,10 @@ use {
     alloc::collections::VecDeque,
     alloc::sync::{Arc, Weak},
     alloc::vec::Vec,
+    core::arch::x86_64::{__cpuid, _mm_clflush, _mm_mfence},
     core::ops::Range,
-    kernel_hal::PhysFrame,
+    core::sync::atomic::*,
+    kernel_hal::{PhysFrame, PAGE_SIZE, PHYSMAP_BASE, PHYSMAP_BASE_PHYS},
     spin::Mutex,
 };
 
@@ -76,6 +78,8 @@ struct VMObjectPagedInner {
     frames: BTreeMap<usize, PageState>,
     /// All mappings to this VMO.
     mappings: Vec<Weak<VmMapping>>,
+    /// Cache Policy
+    cache_policy: CachePolicy,
     /// A weak reference to myself.
     self_ref: WeakRef,
 }
@@ -146,6 +150,7 @@ impl VMObjectPaged {
             size: pages * PAGE_SIZE,
             frames: BTreeMap::new(),
             mappings: Vec::new(),
+            cache_policy: CachePolicy::Cached,
             self_ref: Default::default(),
         })
     }
@@ -265,10 +270,55 @@ impl VMObjectTrait for VMObjectPaged {
         self.inner.lock().mappings.push(mapping);
     }
 
+    fn remove_mapping(&self, mapping: Weak<VmMapping>) {
+        let mut inner = self.inner.lock();
+        inner
+            .mappings
+            .drain_filter(|x| x.strong_count() == 0 || Weak::ptr_eq(x, &mapping));
+    }
+
     fn complete_info(&self, info: &mut ZxInfoVmo) {
         info.flags |= VmoInfoFlags::TYPE_PAGED;
         self.inner.lock().complete_info(info);
     }
+    fn get_cache_policy(&self) -> CachePolicy {
+        let inner = self.inner.lock();
+        inner.cache_policy
+    }
+
+    fn set_cache_policy(&self, policy: CachePolicy) -> ZxResult {
+        // conditions for allowing the cache policy to be set:
+        // 1) vmo either has no pages committed currently or is transitioning from being cached
+        // 2) vmo has no pinned pages
+        // 3) vmo has no mappings
+        // 4) vmo has no children
+        // 5) vmo is not a child
+        let mut inner = self.inner.lock();
+        if !inner.frames.is_empty() && inner.cache_policy == CachePolicy::Cached {
+            return Err(ZxError::BAD_STATE);
+        }
+        inner.clear_invalild_mappings();
+        if !inner.mappings.is_empty() {
+            return Err(ZxError::BAD_STATE);
+        }
+        if let Some(_) = inner.parent {
+            return Err(ZxError::BAD_STATE);
+        }
+        if inner.cache_policy == CachePolicy::Cached && policy != CachePolicy::Cached {
+            for (_, value) in inner.frames.iter() {
+                let addr = value.frame.addr();
+                let physmap_addr = addr - PHYSMAP_BASE_PHYS as usize + PHYSMAP_BASE as usize;
+                clean_invalid_cache(physmap_addr, PAGE_SIZE);
+            }
+        }
+        inner.cache_policy = policy;
+        Ok(())
+    }
+
+    // TODO: for vmo_create_contiguous
+    // fn is_contiguous(&self) -> bool {
+    //     false
+    // }
 }
 
 enum CommitResult {
@@ -556,6 +606,7 @@ impl VMObjectPagedInner {
             size: len,
             frames: BTreeMap::new(),
             mappings: Vec::new(),
+            cache_policy: CachePolicy::Cached,
             self_ref: Default::default(),
         });
         // construct a hidden VMO as shared parent
@@ -571,6 +622,7 @@ impl VMObjectPagedInner {
             size: self.size,
             frames: core::mem::take(&mut self.frames),
             mappings: Vec::new(),
+            cache_policy: CachePolicy::Cached,
             self_ref: Default::default(),
         });
         // update parent's child
@@ -666,6 +718,10 @@ impl VMObjectPagedInner {
         }
         self.size = new_size;
     }
+
+    fn clear_invalild_mappings(&mut self) {
+        self.mappings.drain_filter(|x| x.strong_count() == 0);
+    }
 }
 
 impl Drop for VMObjectPaged {
@@ -676,6 +732,37 @@ impl Drop for VMObjectPaged {
             parent.inner.lock().remove_child(&inner.self_ref);
         }
     }
+}
+
+// sse2
+#[cfg(target_arch = "x86_64")]
+#[allow(unsafe_code)]
+pub fn clean_invalid_cache(addr: usize, len: usize) {
+    let clsize = unsafe { get_cacheline_flush_size() };
+    let end = addr + len;
+    let mut start = addr & !(clsize - 1);
+    while start < end {
+        unsafe {
+            _mm_clflush(start as *const u8);
+        }
+        start = start + PAGE_SIZE;
+    }
+    unsafe {
+        _mm_mfence();
+    }
+}
+
+#[allow(unsafe_code)]
+unsafe fn get_cacheline_flush_size() -> usize {
+    let leaf = __cpuid(1).ebx;
+    (((leaf >> 8) & 0xff) << 3) as usize
+}
+
+#[allow(dead_code)]
+/// Generate a owner ID.
+fn new_owner_id() -> u64 {
+    static OWNER_ID: AtomicU64 = AtomicU64::new(1);
+    OWNER_ID.fetch_add(1, Ordering::SeqCst)
 }
 
 #[cfg(test)]

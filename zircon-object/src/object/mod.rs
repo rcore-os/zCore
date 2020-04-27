@@ -195,6 +195,18 @@ impl KObjectBase {
         }
     }
 
+    /// Create a kernel object base with both signal and name
+    pub fn with(name: &str, signal: Signal) -> Self {
+        KObjectBase {
+            id: Self::new_koid(),
+            inner: Mutex::new(KObjectBaseInner {
+                name: String::from(name),
+                signal,
+                ..Default::default()
+            }),
+        }
+    }
+
     /// Generate a new KoID.
     fn new_koid() -> KoID {
         static KOID: AtomicU64 = AtomicU64::new(1024);

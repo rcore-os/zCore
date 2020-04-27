@@ -1,4 +1,5 @@
 use {
+    super::exception::*,
     super::process::Process,
     super::*,
     crate::object::*,
@@ -89,6 +90,7 @@ pub struct Thread {
     proc: Arc<Process>,
     ext: Box<dyn Any + Send + Sync>,
     inner: Mutex<ThreadInner>,
+    exceptionate: Arc<Exceptionate>,
 }
 
 impl_kobject!(Thread
@@ -145,6 +147,7 @@ impl Thread {
             _counter: CountHelper::new(),
             proc: proc.clone(),
             ext: Box::new(ext),
+            exceptionate: Exceptionate::new(ZxExceptionChannelType::Thread),
             inner: Mutex::new(ThreadInner {
                 context: Some(Box::new(UserContext::default())),
                 ..Default::default()
@@ -343,6 +346,10 @@ impl Thread {
         } else {
             ThreadState::Suspended
         }
+    }
+
+    pub fn get_exceptionate(&self) -> Arc<Exceptionate> {
+        self.exceptionate.clone()
     }
 }
 

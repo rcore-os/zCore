@@ -2,6 +2,7 @@ use {
     super::super::*,
     alloc::{collections::VecDeque, vec::Vec},
     apic::{IoApic, LocalApic, XApic},
+    core::convert::TryFrom,
     core::fmt::{Arguments, Write},
     core::time::Duration,
     rcore_console::{Console, ConsoleOnGraphic, DrawTarget, Pixel, Rgb888, Size},
@@ -165,6 +166,23 @@ impl FlagsExt for MMUFlags {
         }
         if self.contains(MMUFlags::USER) {
             flags |= PTF::USER_ACCESSIBLE;
+        }
+        let cache_policy = (self.bits() & 3) as u32; // 最低三位用于储存缓存策略
+        match CachePolicy::try_from(cache_policy) {
+            Ok(CachePolicy::Cached) => {
+                flags.remove(PTF::WRITE_THROUGH);
+            }
+            Ok(CachePolicy::Uncached) | Ok(CachePolicy::UncachedDevice) => {
+                flags |= PTF::NO_CACHE | PTF::WRITE_THROUGH;
+            }
+            Ok(CachePolicy::WriteCombining) => {
+                flags |= PTF::HUGE_PAGE | PTF::NO_CACHE | PTF::WRITE_THROUGH;
+                // 当位于level=1时，页面更大，在1<<12位上（0x100）为1
+                // 但是bitflags里面没有这一位。由页表自行管理标记位去吧
+            }
+            Err(_) => {
+                // error
+            }
         }
         flags
     }

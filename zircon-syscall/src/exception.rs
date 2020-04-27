@@ -15,11 +15,23 @@ impl Syscall<'_> {
             task, option, out
         );
         let proc = self.thread.proc();
-        let task = proc.get_object_with_rights::<Job>(
+        let task = proc.get_dyn_object_with_rights(
             task,
             Rights::INSPECT | Rights::DUPLICATE | Rights::TRANSFER | Rights::MANAGE_THREAD,
         )?;
-        let exceptionate = task.get_exceptionate();
+        let exceptionate = task
+            .clone()
+            .downcast_arc::<Job>()
+            .map(|x| x.get_exceptionate())
+            .or(task
+                .clone()
+                .downcast_arc::<Process>()
+                .map(|x| x.get_exceptionate()))
+            .or(task
+                .clone()
+                .downcast_arc::<Thread>()
+                .map(|x| x.get_exceptionate()))
+            .or(Err(ZxError::WRONG_TYPE))?;
         let (end0, end1) = Channel::create();
         exceptionate.set_channel(end0);
         let user_end = proc.add_handle(Handle::new(end1, Rights::DEFAULT_CHANNEL));

@@ -8,7 +8,7 @@ use {
     },
     bitflags::bitflags,
     core::ops::Deref,
-    kernel_hal::PageTable,
+    kernel_hal::{CachePolicy, PageTable},
     spin::Mutex,
 };
 
@@ -60,7 +60,13 @@ pub trait VMObjectTrait: Sync + Send {
 
     fn append_mapping(&self, mapping: Weak<VmMapping>);
 
+    fn remove_mapping(&self, mapping: Weak<VmMapping>);
+
     fn complete_info(&self, info: &mut ZxInfoVmo);
+
+    fn get_cache_policy(&self) -> CachePolicy;
+
+    fn set_cache_policy(&self, policy: CachePolicy) -> ZxResult;
 }
 
 pub struct VmObject {
@@ -129,8 +135,12 @@ impl VmObject {
 
     /// Set the length of this VMO if resizable.
     pub fn set_len(&self, len: usize) -> ZxResult {
+        let size = roundup_pages(len);
+        if size < len {
+            return Err(ZxError::OUT_OF_RANGE);
+        }
         if self.resizable {
-            self.inner.set_len(len);
+            self.inner.set_len(size);
             Ok(())
         } else {
             Err(ZxError::UNAVAILABLE)
@@ -159,6 +169,14 @@ impl VmObject {
         };
         self.inner.complete_info(&mut ret);
         ret
+    }
+
+    pub fn set_cache_policy(&self, policy: CachePolicy) -> ZxResult {
+        self.inner.set_cache_policy(policy)
+    }
+
+    pub fn is_resizable(&self) -> bool {
+        self.resizable
     }
 }
 

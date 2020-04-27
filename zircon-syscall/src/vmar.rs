@@ -99,6 +99,9 @@ impl Syscall<'_> {
         if options.contains(VmOptions::CAN_MAP_RXW) {
             return Err(ZxError::INVALID_ARGS);
         }
+        if options.contains(VmOptions::REQUIRE_NON_RESIZABLE) && vmo.is_resizable() {
+            return Err(ZxError::NOT_SUPPORTED);
+        }
         // check SPECIFIC options with offset
         let is_specific = options.contains(VmOptions::SPECIFIC)
             || options.contains(VmOptions::SPECIFIC_OVERWRITE);
@@ -123,10 +126,28 @@ impl Syscall<'_> {
             mapping_flags, is_specific
         );
         let len = pages(len) * PAGE_SIZE;
+        let overwrite = options.contains(VmOptions::SPECIFIC_OVERWRITE);
+        let map_range = options.contains(VmOptions::MAP_RANGE);
         let vaddr = if is_specific {
-            vmar.map_at(vmar_offset, vmo, vmo_offset, len, mapping_flags)?
+            vmar.map_at_with_flags(
+                vmar_offset,
+                vmo,
+                vmo_offset,
+                len,
+                mapping_flags,
+                overwrite,
+                map_range,
+            )?
         } else {
-            vmar.map(None, vmo, vmo_offset, len, mapping_flags)?
+            vmar.map_with_flags(
+                None,
+                vmo,
+                vmo_offset,
+                len,
+                mapping_flags,
+                overwrite,
+                map_range,
+            )?
         };
         info!("vmar.map: at {:#x?}", vaddr);
         mapped_addr.write(vaddr)?;

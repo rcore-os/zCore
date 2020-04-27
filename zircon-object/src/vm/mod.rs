@@ -24,8 +24,9 @@ pub fn check_aligned(x: usize, align: usize) -> bool {
 }
 
 /// How many pages the `size` needs.
+/// To avoid overflow and pass more unit tests, use wrapping add
 pub fn pages(size: usize) -> usize {
-    (size + PAGE_SIZE - 1) / PAGE_SIZE
+    size.wrapping_add(PAGE_SIZE - 1) / PAGE_SIZE
 }
 
 pub fn roundup_pages(size: usize) -> usize {
@@ -38,4 +39,19 @@ pub fn roundup_pages(size: usize) -> usize {
 
 pub fn round_down_pages(size: usize) -> usize {
     size / PAGE_SIZE * PAGE_SIZE
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    #[test]
+    fn test_round_pages() {
+        assert_eq!(roundup_pages(0), 0);
+        assert_eq!(roundup_pages(core::usize::MAX), 0);
+        assert_eq!(
+            roundup_pages(core::usize::MAX - PAGE_SIZE + 1),
+            core::usize::MAX - PAGE_SIZE + 1
+        );
+        assert_eq!(roundup_pages(PAGE_SIZE * 3 - 1), PAGE_SIZE * 3);
+    }
 }

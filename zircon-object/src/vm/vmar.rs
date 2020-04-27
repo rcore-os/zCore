@@ -45,6 +45,23 @@ struct VmarInner {
 }
 
 impl VmAddressRegion {
+    pub fn new(
+        parent: Option<Arc<VmAddressRegion>>,
+        base: VirtAddr,
+        size: usize,
+        flags: VmarFlags,
+    ) -> Arc<Self> {
+        Arc::new(VmAddressRegion {
+            flags,
+            base: KObjectBase::new(),
+            _counter: CountHelper::new(),
+            addr: base,
+            size,
+            parent,
+            inner: Mutex::new(Some(VmarInner::default())),
+            page_table: Arc::new(Mutex::new(kernel_hal::PageTable::new())),
+        })
+    }
     /// Create a new root VMAR.
     pub fn new_root() -> Arc<Self> {
         // FIXME: workaround for unix
@@ -99,7 +116,6 @@ impl VmAddressRegion {
         Ok(child)
     }
 
-    /// Map the `vmo` into this VMAR at given `offset`.
     pub fn map_at(
         &self,
         vmar_offset: usize,
@@ -108,10 +124,31 @@ impl VmAddressRegion {
         len: usize,
         flags: MMUFlags,
     ) -> ZxResult<VirtAddr> {
-        self.map(Some(vmar_offset), vmo, vmo_offset, len, flags)
+        self.map_at_with_flags(vmar_offset, vmo, vmo_offset, len, flags, false, true)
     }
 
-    /// Map the `vmo` into this VMAR.
+    /// Map the `vmo` into this VMAR at given `offset`.
+    pub fn map_at_with_flags(
+        &self,
+        vmar_offset: usize,
+        vmo: Arc<VmObject>,
+        vmo_offset: usize,
+        len: usize,
+        flags: MMUFlags,
+        overwrite: bool,
+        map_range: bool,
+    ) -> ZxResult<VirtAddr> {
+        self.map_with_flags(
+            Some(vmar_offset),
+            vmo,
+            vmo_offset,
+            len,
+            flags,
+            overwrite,
+            map_range,
+        )
+    }
+
     pub fn map(
         &self,
         vmar_offset: Option<usize>,
@@ -120,25 +157,56 @@ impl VmAddressRegion {
         len: usize,
         flags: MMUFlags,
     ) -> ZxResult<VirtAddr> {
-        if !page_aligned(vmo_offset) || !page_aligned(len) || vmo_offset + len > vmo.len() {
+        self.map_with_flags(vmar_offset, vmo, vmo_offset, len, flags, false, true)
+    }
+
+    /// Map the `vmo` into this VMAR.
+    pub fn map_with_flags(
+        &self,
+        vmar_offset: Option<usize>,
+        vmo: Arc<VmObject>,
+        vmo_offset: usize,
+        len: usize,
+        flags: MMUFlags,
+        overwrite: bool,
+        _map_range: bool,
+    ) -> ZxResult<VirtAddr> {
+        if !page_aligned(vmo_offset) || !page_aligned(len) || vmo_offset + len < vmo_offset {
+            return Err(ZxError::INVALID_ARGS);
+        }
+        // TODO: allow the mapping extends past the end of vmo
+        if vmo_offset > vmo.len() || len > vmo.len() - vmo_offset {
             return Err(ZxError::INVALID_ARGS);
         }
         let mut guard = self.inner.lock();
         let inner = guard.as_mut().ok_or(ZxError::BAD_STATE)?;
         let offset = self.determine_offset(inner, vmar_offset, len, PAGE_SIZE)?;
         let addr = self.addr + offset;
-        let mapping = Arc::new(VmMapping {
-            inner: Mutex::new(VmMappingInner {
-                addr,
-                size: len,
-                vmo_offset,
-            }),
+        let mut flags = flags;
+        // if vmo != 0
+        {
+            flags |= MMUFlags::from_bits_truncate(vmo.get_cache_policy() as u32 as usize);
+        }
+        // align = 1K? 2K? 4K? 8K? ...
+        if !self.test_map(inner, offset, len, PAGE_SIZE) {
+            if overwrite {
+                self.unmap(addr, len)?;
+            } else {
+                return Err(ZxError::NO_MEMORY);
+            }
+        }
+        let mapping = VmMapping::new(
+            addr,
+            len,
+            vmo.clone(),
+            vmo_offset,
             flags,
-            vmo: vmo.clone(),
-            page_table: self.page_table.clone(),
-        });
-        vmo.append_mapping(Arc::downgrade(&mapping));
-        mapping.map()?;
+            self.page_table.clone(),
+        );
+        let map_range = true;
+        if map_range {
+            mapping.map()?;
+        }
         inner.mappings.push(mapping);
         Ok(addr)
     }
@@ -167,7 +235,6 @@ impl VmAddressRegion {
         let mut new_maps = Vec::new();
         inner.mappings.drain_filter(|map| {
             if let Some(new) = map.cut(begin, end) {
-                map.vmo.append_mapping(Arc::downgrade(&new));
                 new_maps.push(new);
             }
             map.size() == 0
@@ -456,6 +523,32 @@ impl core::fmt::Debug for VmMapping {
 }
 
 impl VmMapping {
+    fn new(
+        addr: VirtAddr,
+        size: usize,
+        vmo: Arc<VmObject>,
+        vmo_offset: usize,
+        flags: MMUFlags,
+        page_table: Arc<Mutex<PageTable>>,
+    ) -> Arc<Self> {
+        let mapping = Arc::new(VmMapping {
+            inner: Mutex::new(VmMappingInner {
+                addr,
+                size,
+                vmo_offset,
+            }),
+            flags,
+            page_table,
+            vmo: vmo.clone(),
+        });
+        vmo.append_mapping(Arc::downgrade(&mapping));
+        mapping
+    }
+
+    /// Map range and commit.
+    /// Commit pages to vmo, and map those to frames in page_table.
+    /// Temporarily used for development. A standard procedure for
+    /// vmo is: create_vmo, op_range(commit), map
     fn map(self: &Arc<Self>) -> ZxResult {
         let inner = self.inner.lock();
         let mut page_table = self.page_table.lock();
@@ -521,16 +614,14 @@ impl VmMapping {
                 .unmap_cont(begin, pages(cut_len))
                 .expect("failed to unmap");
             inner.size = new_len1;
-            Some(Arc::new(VmMapping {
-                inner: Mutex::new(VmMappingInner {
-                    addr: end,
-                    size: new_len2,
-                    vmo_offset: inner.vmo_offset + (end - inner.addr),
-                }),
-                flags: self.flags,
-                vmo: self.vmo.clone(),
-                page_table: self.page_table.clone(),
-            }))
+            Some(VmMapping::new(
+                end,
+                new_len2,
+                self.vmo.clone(),
+                inner.vmo_offset + (end - inner.addr),
+                self.flags,
+                self.page_table.clone(),
+            ))
         }
     }
 

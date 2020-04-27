@@ -1,5 +1,5 @@
 use {
-    super::{job::Job, job_policy::*, resource::*, thread::Thread, *},
+    super::{exception::*, job::Job, job_policy::*, resource::*, thread::Thread, *},
     crate::{object::*, signal::Futex, vm::*},
     alloc::{boxed::Box, collections::BTreeMap, sync::Arc, vec::Vec},
     core::{any::Any, sync::atomic::AtomicI32},
@@ -54,6 +54,7 @@ pub struct Process {
     policy: JobPolicy,
     vmar: Arc<VmAddressRegion>,
     ext: Box<dyn Any + Send + Sync>,
+    exceptionate: Arc<Exceptionate>,
     inner: Mutex<ProcessInner>,
 }
 
@@ -115,6 +116,7 @@ impl Process {
             policy: job.policy(),
             vmar: VmAddressRegion::new_root(),
             ext: Box::new(ext),
+            exceptionate: Exceptionate::new(ZxExceptionChannelType::Process),
             inner: Mutex::new(ProcessInner::default()),
         });
         job.add_process(proc.clone());
@@ -395,6 +397,10 @@ impl Process {
 
     pub fn get_cancel_token(&self, handle_value: HandleValue) -> ZxResult<Receiver<()>> {
         self.inner.lock().get_cancel_token(handle_value)
+    }
+
+    pub fn get_exceptionate(&self) -> Arc<Exceptionate> {
+        self.exceptionate.clone()
     }
 }
 
