@@ -2,8 +2,8 @@ use {
     super::*,
     crate::util::block_range::BlockIter,
     alloc::collections::BTreeMap,
-    alloc::sync::{Arc, Weak},
     alloc::collections::VecDeque,
+    alloc::sync::{Arc, Weak},
     alloc::vec::Vec,
     core::ops::Range,
     kernel_hal::PhysFrame,
@@ -364,7 +364,13 @@ impl VMObjectPaged {
 
     /// Replace a child of the hidden node.
     /// `new_start` and `new_end` are in bytes
-    fn replace_child(&self, old: &WeakRef, old_id: KoID, new: WeakRef, new_range: Option<(usize, usize)>) {
+    fn replace_child(
+        &self,
+        old: &WeakRef,
+        old_id: KoID,
+        new: WeakRef,
+        new_range: Option<(usize, usize)>,
+    ) {
         let mut inner = self.inner.lock();
         let (tag, other) = inner.type_.get_tag_and_other(old);
         let arc_other_child = other.upgrade().unwrap();
@@ -376,11 +382,15 @@ impl VMObjectPaged {
             let start = new_start / PAGE_SIZE;
             let end = new_end / PAGE_SIZE;
             for i in 0..inner.size / PAGE_SIZE {
-                let not_in_range = !((start <= i && end > i) || (other_start <= i && other_end > i));
-                if not_in_range {  // if not in this node's range
-                    if inner.frames.contains_key(&i) { // if the frame is in our, remove it
+                let not_in_range =
+                    !((start <= i && end > i) || (other_start <= i && other_end > i));
+                if not_in_range {
+                    // if not in this node's range
+                    if inner.frames.contains_key(&i) {
+                        // if the frame is in our, remove it
                         assert!(inner.frames.remove(&i).is_some());
-                    } else { // or it is in our ancestor, tell them we do not need it.
+                    } else {
+                        // or it is in our ancestor, tell them we do not need it.
                         unwanted.push_back(i + inner.parent_offset / PAGE_SIZE);
                     }
                 } else {
@@ -388,13 +398,10 @@ impl VMObjectPaged {
                     if let Some(frame) = inner.frames.get(&i) {
                         if frame.tag.is_split() {
                             let mut new_frame = inner.frames.remove(&i).unwrap();
-                            if new_frame.tag == tag && other_start <= i && other_end > i{
+                            if new_frame.tag == tag && other_start <= i && other_end > i {
                                 new_frame.tag = PageStateTag::Owned;
                                 let new_key = i - other_child.parent_offset / PAGE_SIZE;
-                                other_child.frames.insert(
-                                    new_key,
-                                    new_frame
-                                );
+                                other_child.frames.insert(new_key, new_frame);
                             }
                         }
                     }
@@ -412,12 +419,7 @@ impl VMObjectPaged {
                 let mut locked_parent = parent.inner.lock();
                 if locked_parent.user_id == old_id {
                     let (_, other) = locked_parent.type_.get_tag_and_other(&child);
-                    let new_user_id = other
-                        .upgrade()
-                        .unwrap()
-                        .inner
-                        .lock()
-                        .user_id;
+                    let new_user_id = other.upgrade().unwrap().inner.lock().user_id;
                     child = locked_parent.self_ref.clone();
                     assert_ne!(new_user_id, skip_user_id);
                     locked_parent.user_id = new_user_id;
@@ -536,7 +538,7 @@ impl VMObjectPagedInner {
                 &self.self_ref,
                 self.user_id,
                 other_child,
-                Some((child.parent_offset, child.parent_limit))
+                Some((child.parent_offset, child.parent_limit)),
             );
         }
         child.parent = self.parent.take();
@@ -633,7 +635,8 @@ impl VMObjectPagedInner {
                                 locked_other.frames.insert(idx - start, to_insert);
                             }
                         }
-                    } else { // otherwise, if it exists in our frames, remove it; if not, push_back it again
+                    } else {
+                        // otherwise, if it exists in our frames, remove it; if not, push_back it again
                         if locked_parent.frames.contains_key(&idx) {
                             locked_parent.frames.remove(&idx);
                         } else {
@@ -654,7 +657,7 @@ impl VMObjectPagedInner {
         if new_size < self.size {
             let mut unwanted = VecDeque::<usize>::new();
             let parent_end = (self.parent_limit - self.parent_offset) / PAGE_SIZE;
-            for i in new_size/PAGE_SIZE..self.size/PAGE_SIZE {
+            for i in new_size / PAGE_SIZE..self.size / PAGE_SIZE {
                 if self.frames.remove(&i).is_none() && parent_end > i {
                     unwanted.push_back(i);
                 }

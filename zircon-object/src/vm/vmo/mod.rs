@@ -82,7 +82,7 @@ impl VmObject {
     }
 
     pub fn new_paged_with_resizable(resizable: bool, pages: usize) -> Arc<Self> {
-        let base =  KObjectBase::with_signal(Signal::VMO_ZERO_CHILDREN);
+        let base = KObjectBase::with_signal(Signal::VMO_ZERO_CHILDREN);
         Arc::new(VmObject {
             parent: Default::default(),
             children: Mutex::new(Vec::new()),
