@@ -37,11 +37,12 @@ impl Syscall<'_> {
         count: usize,
         mut actual_count: UserOutPtr<usize>,
     ) -> ZxResult {
-        let proc = self.thread.proc();
-        let fifo = proc.get_object_with_rights::<Fifo>(handle_value, Rights::WRITE)?;
+        error!("fifo.write esize = {} count = {:#x}", elem_size, count);
         if count == 0 {
             return Err(ZxError::OUT_OF_RANGE);
         }
+        let proc = self.thread.proc();
+        let fifo = proc.get_object_with_rights::<Fifo>(handle_value, Rights::WRITE)?;
         let data = user_bytes.read_array(count * elem_size)?;
         let mut actual: usize = 0;
         fifo.write(elem_size, data, count, &mut actual)?;
@@ -57,11 +58,12 @@ impl Syscall<'_> {
         count: usize,
         mut actual_count: UserOutPtr<usize>,
     ) -> ZxResult {
-        let proc = self.thread.proc();
-        let fifo = proc.get_object_with_rights::<Fifo>(handle_value, Rights::WRITE)?;
+        error!("fifo.read esize = {} count = {:#x}", elem_size, count);
         if count == 0 {
             return Err(ZxError::OUT_OF_RANGE);
         }
+        let proc = self.thread.proc();
+        let fifo = proc.get_object_with_rights::<Fifo>(handle_value, Rights::READ)?;
         let mut actual: usize = 0;
         let elem_vec: Vec<u8> = fifo.read(elem_size, count, &mut actual)?;
         actual_count.write_if_not_null(actual / elem_size)?;

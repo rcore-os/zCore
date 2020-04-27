@@ -59,15 +59,32 @@ impl Fifo {
             return Err(ZxError::OUT_OF_RANGE);
         }
         let count_size = count * elem_size;
-        let rest_capacity = self.elem_count * elem_size - self.recv_queue.lock().len();
+        let peer = self.peer.upgrade().ok_or(ZxError::PEER_CLOSED)?;
+        let rest_capacity = peer.elem_count * elem_size - peer.recv_queue.lock().len();
+        // error!("write rest = {}", rest_capacity);
+        if rest_capacity == 0 {
+            return Err(ZxError::SHOULD_WAIT);
+        }
         if rest_capacity > count_size {
-            *actual = rest_capacity - count_size;
+            *actual = count_size;
         } else {
-            *actual = count_size - rest_capacity;
+            *actual = rest_capacity;
         }
         data.truncate(*actual);
         let mut append_queue: VecDeque<u8> = data.into_iter().collect();
-        self.recv_queue.lock().append(&mut append_queue);
+        // error!("append len = {}", append_queue.len());
+        peer.recv_queue.lock().append(&mut append_queue);
+        // error!("after append len = {}", self.recv_queue.lock().len());
+        if rest_capacity == peer.elem_count * elem_size {
+            peer.base.signal_set(Signal::READABLE);
+        }
+        if rest_capacity == *actual {
+            self.base.signal_clear(Signal::WRITABLE);
+        }
+        // error!(
+        //     "after write rest = {}",
+        //     self.elem_count * elem_size - self.recv_queue.lock().len()
+        // );
         Ok(())
     }
 
@@ -76,15 +93,35 @@ impl Fifo {
             return Err(ZxError::OUT_OF_RANGE);
         }
         let count_size = count * elem_size;
-        let rest_size = self.recv_queue.lock().len();
-        if rest_size == 0 {
+        let peer = self.peer.upgrade().ok_or(ZxError::PEER_CLOSED)?;
+        let used_capacity = self.recv_queue.lock().len();
+        //error!("write uesd = {}", used_capacity);
+        if used_capacity == 0 {
             return Err(ZxError::SHOULD_WAIT);
         }
-        if rest_size > count_size {
+        if used_capacity > count_size {
             *actual = count_size;
         } else {
-            *actual = rest_size;
+            *actual = used_capacity;
         }
-        Ok(self.recv_queue.lock().drain(..*actual).collect::<Vec<u8>>())
+        if used_capacity == self.elem_count * elem_size {
+            peer.base.signal_set(Signal::WRITABLE);
+        }
+        if used_capacity == *actual {
+            self.base.signal_clear(Signal::READABLE);
+        }
+        let vec = self.recv_queue.lock().drain(..*actual).collect::<Vec<u8>>();
+        // error!("write after uesd = {}", self.recv_queue.lock().len());
+        // error!("ret len = {}", vec.len());
+        Ok(vec)
+    }
+}
+
+impl Drop for Fifo {
+    fn drop(&mut self) {
+        if let Some(peer) = self.peer.upgrade() {
+            peer.base
+                .signal_change(Signal::WRITABLE, Signal::PEER_CLOSED);
+        }
     }
 }
