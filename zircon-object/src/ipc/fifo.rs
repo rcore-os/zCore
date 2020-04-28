@@ -2,10 +2,14 @@ use {
     crate::object::*,
     alloc::collections::VecDeque,
     alloc::sync::{Arc, Weak},
-    alloc::vec::Vec,
     spin::Mutex,
 };
 
+/// First-In First-Out inter-process queue.
+///
+/// FIFOs are intended to be the control plane for shared memory transports.
+/// Their read and write operations are more efficient than sockets or channels,
+/// but there are severe restrictions on the size of elements and buffers.
 pub struct Fifo {
     base: KObjectBase,
     peer: Weak<Fifo>,
@@ -25,21 +29,22 @@ impl_kobject!(Fifo
 );
 
 impl Fifo {
+    /// Create a FIFO.
     #[allow(unsafe_code)]
-    pub fn create(_elem_count: usize, _elem_size: usize) -> (Arc<Self>, Arc<Self>) {
+    pub fn create(elem_count: usize, elem_size: usize) -> (Arc<Self>, Arc<Self>) {
         let mut end0 = Arc::new(Fifo {
             base: KObjectBase::with_signal(Signal::WRITABLE),
             peer: Weak::default(),
-            elem_count: _elem_count,
-            elem_size: _elem_size,
-            recv_queue: Mutex::new(VecDeque::with_capacity(_elem_count * _elem_size)),
+            elem_count,
+            elem_size,
+            recv_queue: Mutex::new(VecDeque::with_capacity(elem_count * elem_size)),
         });
         let end1 = Arc::new(Fifo {
             base: KObjectBase::with_signal(Signal::WRITABLE),
             peer: Arc::downgrade(&end0),
-            elem_count: _elem_count,
-            elem_size: _elem_size,
-            recv_queue: Mutex::new(VecDeque::with_capacity(_elem_count * _elem_size)),
+            elem_count,
+            elem_size,
+            recv_queue: Mutex::new(VecDeque::with_capacity(elem_count * elem_size)),
         });
         // no other reference of `end0`
         unsafe {
@@ -48,72 +53,78 @@ impl Fifo {
         (end0, end1)
     }
 
-    pub fn write(
-        &self,
-        elem_size: usize,
-        mut data: Vec<u8>,
-        count: usize,
-        actual: &mut usize,
-    ) -> ZxResult {
+    /// Write data to the FIFO.
+    ///
+    /// This attempts to write up to `count` elements (`count * elem_size` bytes)
+    /// from `data` to the fifo.
+    ///
+    /// Fewer elements may be written than requested if there is insufficient room
+    /// in the fifo to contain all of them.
+    ///
+    /// The number of elements actually written is returned.
+    pub fn write(&self, elem_size: usize, data: &[u8], count: usize) -> ZxResult<usize> {
         if elem_size != self.elem_size {
             return Err(ZxError::OUT_OF_RANGE);
         }
         let count_size = count * elem_size;
+        assert_eq!(data.len(), count_size);
+
         let peer = self.peer.upgrade().ok_or(ZxError::PEER_CLOSED)?;
-        let rest_capacity = peer.elem_count * elem_size - peer.recv_queue.lock().len();
-        // error!("write rest = {}", rest_capacity);
+        let mut recv_queue = peer.recv_queue.lock();
+        let rest_capacity = self.capacity() - recv_queue.len();
         if rest_capacity == 0 {
             return Err(ZxError::SHOULD_WAIT);
         }
-        if rest_capacity > count_size {
-            *actual = count_size;
-        } else {
-            *actual = rest_capacity;
-        }
-        data.truncate(*actual);
-        let mut append_queue: VecDeque<u8> = data.into_iter().collect();
-        // error!("append len = {}", append_queue.len());
-        peer.recv_queue.lock().append(&mut append_queue);
-        // error!("after append len = {}", self.recv_queue.lock().len());
-        if rest_capacity == peer.elem_count * elem_size {
+        if recv_queue.is_empty() {
             peer.base.signal_set(Signal::READABLE);
         }
-        if rest_capacity == *actual {
+        let write_len = count_size.min(rest_capacity);
+        recv_queue.extend(&data[..write_len]);
+        if recv_queue.len() == self.capacity() {
             self.base.signal_clear(Signal::WRITABLE);
         }
-        // error!(
-        //     "after write rest = {}",
-        //     self.elem_count * elem_size - self.recv_queue.lock().len()
-        // );
-        Ok(())
+        Ok(write_len / elem_size)
     }
 
-    pub fn read(&self, elem_size: usize, count: usize, actual: &mut usize) -> ZxResult<Vec<u8>> {
+    /// Read data from the FIFO.
+    ///
+    /// This attempts to read up to `count` elements from the fifo into `data`.
+    ///
+    /// Fewer elements may be read than requested if there are insufficient elements
+    /// in the fifo to fulfill the entire request.
+    /// The number of elements actually read is returned.
+    ///
+    /// The `elem_size` must match the element size that was passed into `Fifo::create()`.
+    ///
+    /// `data` must have a size of `count * elem_size` bytes.
+    pub fn read(&self, elem_size: usize, count: usize, data: &mut [u8]) -> ZxResult<usize> {
         if elem_size != self.elem_size {
             return Err(ZxError::OUT_OF_RANGE);
         }
         let count_size = count * elem_size;
+        assert_eq!(data.len(), count_size);
+
         let peer = self.peer.upgrade().ok_or(ZxError::PEER_CLOSED)?;
-        let used_capacity = self.recv_queue.lock().len();
-        //error!("write uesd = {}", used_capacity);
-        if used_capacity == 0 {
+        let mut recv_queue = self.recv_queue.lock();
+        if recv_queue.is_empty() {
             return Err(ZxError::SHOULD_WAIT);
         }
-        if used_capacity > count_size {
-            *actual = count_size;
-        } else {
-            *actual = used_capacity;
-        }
-        if used_capacity == self.elem_count * elem_size {
+        let read_size = count_size.min(recv_queue.len());
+        if recv_queue.len() == self.capacity() {
             peer.base.signal_set(Signal::WRITABLE);
         }
-        if used_capacity == *actual {
+        for (i, x) in recv_queue.drain(..read_size).enumerate() {
+            data[i] = x;
+        }
+        if recv_queue.is_empty() {
             self.base.signal_clear(Signal::READABLE);
         }
-        let vec = self.recv_queue.lock().drain(..*actual).collect::<Vec<u8>>();
-        // error!("write after uesd = {}", self.recv_queue.lock().len());
-        // error!("ret len = {}", vec.len());
-        Ok(vec)
+        Ok(read_size / elem_size)
+    }
+
+    /// Get capacity in bytes.
+    fn capacity(&self) -> usize {
+        self.elem_size * self.elem_count
     }
 }
 
