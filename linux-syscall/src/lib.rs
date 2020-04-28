@@ -31,6 +31,7 @@ pub struct Syscall<'a> {
     pub thread: &'a Arc<Thread>,
     pub syscall_entry: VirtAddr,
     pub regs: &'a mut GeneralRegs,
+    pub spawn_fn: fn(thread: Arc<Thread>),
     /// Set `true` to exit current task.
     pub exit: bool,
 }

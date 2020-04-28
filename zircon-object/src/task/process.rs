@@ -137,6 +137,7 @@ impl Process {
         stack: usize,
         arg1: Handle,
         arg2: usize,
+        spawn_fn: fn(thread: Arc<Thread>),
     ) -> ZxResult {
         let handle_value;
         {
@@ -150,7 +151,7 @@ impl Process {
             }
             inner.status = Status::Running;
         }
-        thread.start(entry, stack, handle_value as usize, arg2)?;
+        thread.start(entry, stack, handle_value as usize, arg2, spawn_fn)?;
         Ok(())
     }
 

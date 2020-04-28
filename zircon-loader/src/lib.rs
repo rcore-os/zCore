@@ -176,7 +176,7 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
     let msg = MessagePacket { data, handles };
     kernel_channel.write(msg).unwrap();
 
-    proc.start(&thread, entry, sp, handle, 0)
+    proc.start(&thread, entry, sp, handle, 0, spawn)
         .expect("failed to start main thread");
     proc
 }
@@ -185,8 +185,7 @@ kcounter!(EXCEPTIONS_USER, "exceptions.user");
 kcounter!(EXCEPTIONS_TIMER, "exceptions.timer");
 kcounter!(EXCEPTIONS_PGFAULT, "exceptions.pgfault");
 
-#[export_name = "run_task"]
-pub fn run_task(thread: Arc<Thread>) {
+fn spawn(thread: Arc<Thread>) {
     let vmtoken = thread.proc().vmar().table_phys();
     let future = async move {
         kernel_hal::Thread::set_tid(thread.id(), thread.proc().id());
@@ -261,6 +260,7 @@ async fn handle_syscall(thread: &Arc<Thread>, regs: &mut GeneralRegs) -> bool {
     let mut syscall = Syscall {
         regs,
         thread: thread.clone(),
+        spawn_fn: spawn,
         exit: false,
     };
     syscall.regs.rax = syscall.syscall(num, args).await as usize;

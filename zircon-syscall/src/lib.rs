@@ -45,6 +45,7 @@ use consts::SyscallType as Sys;
 pub struct Syscall<'a> {
     pub regs: &'a mut GeneralRegs,
     pub thread: Arc<Thread>,
+    pub spawn_fn: fn(thread: Arc<Thread>),
     pub exit: bool,
 }
 
