@@ -1,6 +1,5 @@
 #![allow(dead_code)]
 #![allow(non_upper_case_globals)]
-use crate::SerialRead;
 use trapframe::TrapFrame;
 
 pub fn init() {
