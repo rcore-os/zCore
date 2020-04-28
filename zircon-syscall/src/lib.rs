@@ -154,6 +154,8 @@ impl Syscall<'_> {
             Sys::FIFO_CREATE => {
                 self.sys_fifo_create(a0 as _, a1 as _, a2 as _, a3.into(), a4.into())
             }
+            Sys::FIFO_READ => self.sys_fifo_read(a0 as _, a1 as _, a2.into(), a3 as _, a4.into()),
+            Sys::FIFO_WRITE => self.sys_fifo_write(a0 as _, a1 as _, a2.into(), a3 as _, a4.into()),
             Sys::EVENT_CREATE => self.sys_event_create(a0 as _, a1.into()),
             Sys::EVENTPAIR_CREATE => self.sys_eventpair_create(a0 as _, a1.into(), a2.into()),
             Sys::PORT_CREATE => self.sys_port_create(a0 as _, a1.into()),
