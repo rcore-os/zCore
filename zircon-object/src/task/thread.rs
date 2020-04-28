@@ -100,6 +100,7 @@ impl_kobject!(Thread
 );
 define_count_helper!(Thread);
 
+#[cfg(not(test))]
 fn run_task(thread: Arc<Thread>) {
     #[allow(improper_ctypes)]
     extern "C" {
@@ -109,6 +110,11 @@ fn run_task(thread: Arc<Thread>) {
     unsafe {
         run_task(thread);
     }
+}
+
+#[cfg(test)]
+fn run_task(_thread: Arc<Thread>) {
+    unimplemented!()
 }
 
 #[derive(Default)]
