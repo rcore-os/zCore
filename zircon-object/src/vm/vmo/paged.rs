@@ -316,6 +316,16 @@ impl VMObjectTrait for VMObjectPaged {
     // fn is_contiguous(&self) -> bool {
     //     false
     // }
+
+    fn committed_pages_in_range(&self, start_idx: usize, end_idx: usize) -> usize {
+        self.inner
+            .lock()
+            .committed_pages_in_range(start_idx, end_idx)
+    }
+
+    fn share_count(&self) -> usize {
+        self.inner.lock().mappings.len()
+    }
 }
 
 enum CommitResult {
@@ -522,9 +532,21 @@ impl VMObjectPagedInner {
     }
 
     /// Count committed pages of the VMO.
-    fn committed_pages(&self) -> usize {
+    fn committed_pages_in_range(&self, start_idx: usize, end_idx: usize) -> usize {
+        assert!(
+            start_idx < self.size / PAGE_SIZE,
+            "start_idx {:#x}, self.size {:#x}",
+            start_idx,
+            self.size
+        );
+        assert!(
+            end_idx <= self.size / PAGE_SIZE,
+            "end_idx {:#x}, self.size {:#x}",
+            end_idx,
+            self.size
+        );
         let mut count = 0;
-        for i in 0..self.size / PAGE_SIZE {
+        for i in start_idx..end_idx {
             if self.frames.contains_key(&i) {
                 count += 1;
                 continue;
@@ -658,7 +680,8 @@ impl VMObjectPagedInner {
         info.num_children = if self.type_.is_hidden() { 2 } else { 0 };
         info.num_mappings = self.mappings.len() as u64; // FIXME remove weak ptr
         info.share_count = self.mappings.len() as u64; // FIXME share_count should be the count of unique aspace
-        info.committed_bytes = (self.committed_pages() * PAGE_SIZE) as u64;
+        info.committed_bytes =
+            (self.committed_pages_in_range(0, self.size / PAGE_SIZE) * PAGE_SIZE) as u64;
         // TODO cache_policy should be set up.
     }
 

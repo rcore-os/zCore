@@ -120,6 +120,14 @@ impl VMObjectTrait for VMObjectPhysical {
             Ok(())
         }
     }
+
+    fn share_count(&self) -> usize {
+        unimplemented!()
+    }
+
+    fn committed_pages_in_range(&self, _start_idx: usize, _end_idx: usize) -> usize {
+        unimplemented!()
+    }
 }
 
 #[cfg(test)]

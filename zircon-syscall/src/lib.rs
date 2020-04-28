@@ -236,6 +236,9 @@ impl Syscall<'_> {
                     let _ = self.sys_handle_close(a3 as _);
                     self.sys_thread_exit()
                 }),
+            Sys::OBJECT_GET_CHILD => {
+                self.sys_object_get_child(a0 as _, a1 as _, a2 as _, a3.into())
+            }
             _ => {
                 error!("syscall unimplemented: {:?}", sys_type);
                 Err(ZxError::NOT_SUPPORTED)

@@ -310,6 +310,14 @@ impl Process {
         Ok(handle.object)
     }
 
+    pub fn get_dyn_object_and_rights(
+        &self,
+        handle_value: HandleValue,
+    ) -> ZxResult<(Arc<dyn KernelObject>, Rights)> {
+        let handle = self.get_handle(handle_value)?;
+        Ok((handle.object, handle.rights))
+    }
+
     /// Get the kernel object corresponding to this `handle_value`
     pub fn get_object<T: KernelObject>(&self, handle_value: HandleValue) -> ZxResult<Arc<T>> {
         let handle = self.get_handle(handle_value)?;
@@ -401,6 +409,14 @@ impl Process {
 
     pub fn get_exceptionate(&self) -> Arc<Exceptionate> {
         self.exceptionate.clone()
+    }
+
+    pub fn enumerate_thread(&self, mut f: impl FnMut(KoID) -> bool) {
+        self.inner
+            .lock()
+            .threads
+            .iter()
+            .find(|child| !f(child.id()));
     }
 }
 

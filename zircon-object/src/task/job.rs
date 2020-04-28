@@ -184,6 +184,22 @@ impl Job {
     pub fn get_exceptionate(&self) -> Arc<Exceptionate> {
         self.exceptionate.clone()
     }
+
+    pub fn enumerate_process(&self, mut f: impl FnMut(KoID) -> bool) {
+        self.inner
+            .lock()
+            .processes
+            .iter()
+            .find(|child| !f(child.id()));
+    }
+
+    pub fn enumerate_children(&self, mut f: impl FnMut(KoID) -> bool) {
+        self.inner
+            .lock()
+            .children
+            .iter()
+            .find(|child| !f(child.id()));
+    }
 }
 
 impl JobInner {
