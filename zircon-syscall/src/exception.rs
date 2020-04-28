@@ -23,15 +23,17 @@ impl Syscall<'_> {
             .clone()
             .downcast_arc::<Job>()
             .map(|x| x.get_exceptionate())
-            .or(task
-                .clone()
-                .downcast_arc::<Process>()
-                .map(|x| x.get_exceptionate()))
-            .or(task
-                .clone()
-                .downcast_arc::<Thread>()
-                .map(|x| x.get_exceptionate()))
-            .or(Err(ZxError::WRONG_TYPE))?;
+            .or_else(|_| {
+                task.clone()
+                    .downcast_arc::<Process>()
+                    .map(|x| x.get_exceptionate())
+            })
+            .or_else(|_| {
+                task.clone()
+                    .downcast_arc::<Thread>()
+                    .map(|x| x.get_exceptionate())
+            })
+            .map_err(|_| ZxError::WRONG_TYPE)?;
         let (end0, end1) = Channel::create();
         exceptionate.set_channel(end0);
         let user_end = proc.add_handle(Handle::new(end1, Rights::DEFAULT_CHANNEL));

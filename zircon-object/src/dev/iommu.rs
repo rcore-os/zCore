@@ -24,6 +24,6 @@ impl Iommu {
     }
 
     pub fn is_valid_bus_txn_id(&self) -> bool {
-        return true;
+        true
     }
 }

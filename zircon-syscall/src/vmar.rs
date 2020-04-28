@@ -129,7 +129,7 @@ impl Syscall<'_> {
         let overwrite = options.contains(VmOptions::SPECIFIC_OVERWRITE);
         let map_range = options.contains(VmOptions::MAP_RANGE);
         let vaddr = if is_specific {
-            vmar.map_at_with_flags(
+            vmar.map_at_ext(
                 vmar_offset,
                 vmo,
                 vmo_offset,
@@ -139,7 +139,7 @@ impl Syscall<'_> {
                 map_range,
             )?
         } else {
-            vmar.map_with_flags(
+            vmar.map_ext(
                 None,
                 vmo,
                 vmo_offset,

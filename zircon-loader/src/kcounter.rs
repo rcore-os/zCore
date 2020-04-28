@@ -97,4 +97,4 @@ struct KCounterVmoHeader {
     counter_table_size: usize,
 }
 
-const KCOUNTER_MAGIC: u64 = 1547273975u64;
+const KCOUNTER_MAGIC: u64 = 1_547_273_975;

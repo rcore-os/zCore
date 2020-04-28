@@ -45,23 +45,6 @@ struct VmarInner {
 }
 
 impl VmAddressRegion {
-    pub fn new(
-        parent: Option<Arc<VmAddressRegion>>,
-        base: VirtAddr,
-        size: usize,
-        flags: VmarFlags,
-    ) -> Arc<Self> {
-        Arc::new(VmAddressRegion {
-            flags,
-            base: KObjectBase::new(),
-            _counter: CountHelper::new(),
-            addr: base,
-            size,
-            parent,
-            inner: Mutex::new(Some(VmarInner::default())),
-            page_table: Arc::new(Mutex::new(kernel_hal::PageTable::new())),
-        })
-    }
     /// Create a new root VMAR.
     pub fn new_root() -> Arc<Self> {
         // FIXME: workaround for unix
@@ -124,11 +107,12 @@ impl VmAddressRegion {
         len: usize,
         flags: MMUFlags,
     ) -> ZxResult<VirtAddr> {
-        self.map_at_with_flags(vmar_offset, vmo, vmo_offset, len, flags, false, true)
+        self.map_at_ext(vmar_offset, vmo, vmo_offset, len, flags, false, true)
     }
 
     /// Map the `vmo` into this VMAR at given `offset`.
-    pub fn map_at_with_flags(
+    #[allow(clippy::too_many_arguments)]
+    pub fn map_at_ext(
         &self,
         vmar_offset: usize,
         vmo: Arc<VmObject>,
@@ -138,7 +122,7 @@ impl VmAddressRegion {
         overwrite: bool,
         map_range: bool,
     ) -> ZxResult<VirtAddr> {
-        self.map_with_flags(
+        self.map_ext(
             Some(vmar_offset),
             vmo,
             vmo_offset,
@@ -157,11 +141,12 @@ impl VmAddressRegion {
         len: usize,
         flags: MMUFlags,
     ) -> ZxResult<VirtAddr> {
-        self.map_with_flags(vmar_offset, vmo, vmo_offset, len, flags, false, true)
+        self.map_ext(vmar_offset, vmo, vmo_offset, len, flags, false, true)
     }
 
     /// Map the `vmo` into this VMAR.
-    pub fn map_with_flags(
+    #[allow(clippy::too_many_arguments)]
+    pub fn map_ext(
         &self,
         vmar_offset: Option<usize>,
         vmo: Arc<VmObject>,
@@ -171,7 +156,7 @@ impl VmAddressRegion {
         overwrite: bool,
         _map_range: bool,
     ) -> ZxResult<VirtAddr> {
-        if !page_aligned(vmo_offset) || !page_aligned(len) || vmo_offset + len < vmo_offset {
+        if !page_aligned(vmo_offset) || !page_aligned(len) {
             return Err(ZxError::INVALID_ARGS);
         }
         // TODO: allow the mapping extends past the end of vmo
@@ -195,14 +180,7 @@ impl VmAddressRegion {
                 return Err(ZxError::NO_MEMORY);
             }
         }
-        let mapping = VmMapping::new(
-            addr,
-            len,
-            vmo.clone(),
-            vmo_offset,
-            flags,
-            self.page_table.clone(),
-        );
+        let mapping = VmMapping::new(addr, len, vmo, vmo_offset, flags, self.page_table.clone());
         let map_range = true;
         if map_range {
             mapping.map()?;

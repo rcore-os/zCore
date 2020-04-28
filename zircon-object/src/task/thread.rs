@@ -147,7 +147,7 @@ impl Thread {
             _counter: CountHelper::new(),
             proc: proc.clone(),
             ext: Box::new(ext),
-            exceptionate: Exceptionate::new(ZxExceptionChannelType::Thread),
+            exceptionate: Exceptionate::new(ExceptionChannelType::Thread),
             inner: Mutex::new(ThreadInner {
                 context: Some(Box::new(UserContext::default())),
                 ..Default::default()

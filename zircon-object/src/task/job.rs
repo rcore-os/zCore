@@ -68,8 +68,8 @@ impl Job {
             _counter: CountHelper::new(),
             parent: None,
             parent_policy: JobPolicy::default(),
-            exceptionate: Exceptionate::new(ZxExceptionChannelType::Job),
-            debug_exceptionate: Exceptionate::new(ZxExceptionChannelType::JobDebugger),
+            exceptionate: Exceptionate::new(ExceptionChannelType::Job),
+            debug_exceptionate: Exceptionate::new(ExceptionChannelType::JobDebugger),
             inner: Mutex::new(JobInner::default()),
         })
     }
@@ -83,8 +83,8 @@ impl Job {
             _counter: CountHelper::new(),
             parent: Some(self.clone()),
             parent_policy: inner.policy.merge(&self.parent_policy),
-            exceptionate: Exceptionate::new(ZxExceptionChannelType::Job),
-            debug_exceptionate: Exceptionate::new(ZxExceptionChannelType::JobDebugger),
+            exceptionate: Exceptionate::new(ExceptionChannelType::Job),
+            debug_exceptionate: Exceptionate::new(ExceptionChannelType::JobDebugger),
             inner: Mutex::new(JobInner::default()),
         });
         inner.children.push(child.clone());

@@ -116,7 +116,7 @@ impl Process {
             policy: job.policy(),
             vmar: VmAddressRegion::new_root(),
             ext: Box::new(ext),
-            exceptionate: Exceptionate::new(ZxExceptionChannelType::Process),
+            exceptionate: Exceptionate::new(ExceptionChannelType::Process),
             inner: Mutex::new(ProcessInner::default()),
         });
         job.add_process(proc.clone());

@@ -300,7 +300,7 @@ impl VMObjectTrait for VMObjectPaged {
         if !inner.mappings.is_empty() {
             return Err(ZxError::BAD_STATE);
         }
-        if let Some(_) = inner.parent {
+        if inner.parent.is_some() {
             return Err(ZxError::BAD_STATE);
         }
         if inner.cache_policy == CachePolicy::Cached && policy != CachePolicy::Cached {
@@ -641,7 +641,7 @@ impl VMObjectPagedInner {
         self.parent = Some(hidden.clone());
         self.parent_offset = 0;
         self.parent_limit = self.size;
-        child.inner.lock().parent = Some(hidden.clone());
+        child.inner.lock().parent = Some(hidden);
         // update mappings
         for map in self.mappings.iter() {
             if let Some(map) = map.upgrade() {
