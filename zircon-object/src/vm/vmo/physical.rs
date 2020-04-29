@@ -145,7 +145,7 @@ mod tests {
 
     #[test]
     fn read_write() {
-        let vmo = unsafe { VmObject::new_physical(0x1000, 2) };
+        let vmo = VmObject::new_physical(0x1000, 2);
         let vmphy = vmo.inner.clone();
         assert_eq!(vmphy.get_cache_policy(), CachePolicy::Uncached);
         super::super::tests::read_write(&vmo);
