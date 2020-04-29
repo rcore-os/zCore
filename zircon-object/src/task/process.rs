@@ -116,7 +116,7 @@ impl Process {
             policy: job.policy(),
             vmar: VmAddressRegion::new_root(),
             ext: Box::new(ext),
-            exceptionate: Exceptionate::new(ZxExceptionChannelType::Process),
+            exceptionate: Exceptionate::new(ExceptionChannelType::Process),
             inner: Mutex::new(ProcessInner::default()),
         });
         job.add_process(proc.clone());
@@ -137,6 +137,7 @@ impl Process {
         stack: usize,
         arg1: Handle,
         arg2: usize,
+        spawn_fn: fn(thread: Arc<Thread>),
     ) -> ZxResult {
         let handle_value;
         {
@@ -150,7 +151,7 @@ impl Process {
             }
             inner.status = Status::Running;
         }
-        thread.start(entry, stack, handle_value as usize, arg2)?;
+        thread.start(entry, stack, handle_value as usize, arg2, spawn_fn)?;
         Ok(())
     }
 
@@ -310,6 +311,14 @@ impl Process {
         Ok(handle.object)
     }
 
+    pub fn get_dyn_object_and_rights(
+        &self,
+        handle_value: HandleValue,
+    ) -> ZxResult<(Arc<dyn KernelObject>, Rights)> {
+        let handle = self.get_handle(handle_value)?;
+        Ok((handle.object, handle.rights))
+    }
+
     /// Get the kernel object corresponding to this `handle_value`
     pub fn get_object<T: KernelObject>(&self, handle_value: HandleValue) -> ZxResult<Arc<T>> {
         let handle = self.get_handle(handle_value)?;
@@ -401,6 +410,14 @@ impl Process {
 
     pub fn get_exceptionate(&self) -> Arc<Exceptionate> {
         self.exceptionate.clone()
+    }
+
+    pub fn enumerate_thread(&self, mut f: impl FnMut(KoID) -> bool) {
+        self.inner
+            .lock()
+            .threads
+            .iter()
+            .find(|child| !f(child.id()));
     }
 }
 

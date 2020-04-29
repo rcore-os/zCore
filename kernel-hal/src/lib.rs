@@ -38,13 +38,11 @@ pub mod defs {
     pub const PAGE_SIZE: usize = 0x1000;
 }
 
-pub mod consts;
 mod dummy;
 mod future;
 pub mod user;
 pub mod vdso;
 
-pub use self::consts::*;
 pub use self::defs::*;
 pub use self::dummy::*;
 pub use self::future::*;

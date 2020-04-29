@@ -192,6 +192,13 @@ pub fn frame_zero(_target: PhysAddr) {
     unimplemented!()
 }
 
+/// Flush the physical frame.
+#[linkage = "weak"]
+#[export_name = "hal_frame_flush"]
+pub fn frame_flush(_target: PhysAddr) {
+    unimplemented!()
+}
+
 /// Register a callback of serial readable event.
 #[linkage = "weak"]
 #[export_name = "hal_serial_set_callback"]

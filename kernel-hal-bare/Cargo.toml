@@ -17,8 +17,8 @@ naive-timer= { git = "https://github.com/rcore-os/naive-timer.git", rev="cd44f4c
 lazy_static = { version = "1.4", features = ["spin_no_std" ] }
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
-x86_64 = "0.9"
-uart_16550 = "0.2"
+x86_64 = "0.10"
+uart_16550 = "0.2.5"
 raw-cpuid = "7.0"
 pc-keyboard = "0.5"
 apic = { git = "https://github.com/rcore-os/apic-rs" }

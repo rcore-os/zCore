@@ -42,13 +42,12 @@ pub fn run(
     let (entry, sp) = loader.load(&proc.vmar(), &data, args, envs).unwrap();
 
     thread
-        .start(entry, sp, 0, 0)
+        .start(entry, sp, 0, 0, spawn)
         .expect("failed to start main thread");
     proc
 }
 
-#[no_mangle]
-pub fn run_task(thread: Arc<Thread>) {
+fn spawn(thread: Arc<Thread>) {
     let vmtoken = thread.proc().vmar().table_phys();
     let future = async move {
         loop {
@@ -77,6 +76,7 @@ async fn handle_syscall(thread: &Arc<Thread>, regs: &mut GeneralRegs) -> bool {
         syscall_entry: kernel_hal_unix::syscall_entry as usize,
         #[cfg(not(feature = "std"))]
         syscall_entry: 0,
+        spawn_fn: spawn,
         regs,
         exit: false,
     };

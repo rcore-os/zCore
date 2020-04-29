@@ -1,27 +1,28 @@
+#![allow(dead_code)]
+
 use {
     super::*, crate::ipc::Channel, crate::object::*, alloc::sync::Arc, alloc::vec::Vec,
-    core::mem::size_of, core::slice::from_raw_parts, spin::Mutex,
+    core::mem::size_of, spin::Mutex,
 };
 
-#[allow(dead_code)]
+/// Kernel-owned exception channel endpoint.
 pub struct Exceptionate {
-    type_: ZxExceptionChannelType,
+    type_: ExceptionChannelType,
     inner: Mutex<ExceptionateInner>,
 }
 
-#[allow(dead_code)]
 struct ExceptionateInner {
-    channel_handle: Option<Arc<Channel>>,
+    channel: Option<Arc<Channel>>,
     thread_rights: Rights,
     process_rights: Rights,
 }
 
 impl Exceptionate {
-    pub fn new(type_: ZxExceptionChannelType) -> Arc<Self> {
+    pub fn new(type_: ExceptionChannelType) -> Arc<Self> {
         Arc::new(Exceptionate {
             type_,
             inner: Mutex::new(ExceptionateInner {
-                channel_handle: None,
+                channel: None,
                 thread_rights: Rights::empty(),
                 process_rights: Rights::empty(),
             }),
@@ -30,44 +31,37 @@ impl Exceptionate {
 
     pub fn set_channel(&self, channel: Arc<Channel>) {
         let mut inner = self.inner.lock();
-        inner.channel_handle.replace(channel);
+        inner.channel.replace(channel);
     }
 
-    pub fn get_channel_handle(&self) -> Option<Arc<Channel>> {
+    pub fn get_channel(&self) -> Option<Arc<Channel>> {
         let inner = self.inner.lock();
-        inner.channel_handle.clone()
-    }
-
-    pub fn packup_exception(&self, tid: KoID, pid: KoID, excp_type: u32) -> Vec<u8> {
-        #[repr(C)]
-        pub struct ExceptionInfo {
-            tid: KoID,
-            pid: KoID,
-            type_: u32,
-            padding1: [u8; 4],
-        }
-        let msg = ExceptionInfo {
-            tid,
-            pid,
-            type_: excp_type,
-            padding1: [0u8; 4],
-        };
-        #[allow(unsafe_code)]
-        unsafe {
-            from_raw_parts(
-                (&msg as *const ExceptionInfo) as *const u8,
-                size_of::<ExceptionInfo>(),
-            )
-        }
-        .to_vec()
+        inner.channel.clone()
     }
 }
 
-pub enum ZxExceptionChannelType {
-    None,
-    Debugger,
-    Thread,
-    Process,
-    Job,
-    JobDebugger,
+#[repr(C)]
+pub struct ExceptionInfo {
+    pub tid: KoID,
+    pub pid: KoID,
+    pub type_: ExceptionChannelType,
+    pub padding: u32,
+}
+
+#[repr(u32)]
+pub enum ExceptionChannelType {
+    None = 0,
+    Debugger = 1,
+    Thread = 2,
+    Process = 3,
+    Job = 4,
+    JobDebugger = 5,
+}
+
+impl ExceptionInfo {
+    #[allow(unsafe_code)]
+    pub fn pack(&self) -> Vec<u8> {
+        let buf: [u8; size_of::<ExceptionInfo>()] = unsafe { core::mem::transmute_copy(self) };
+        Vec::from(buf)
+    }
 }

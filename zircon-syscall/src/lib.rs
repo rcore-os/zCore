@@ -45,6 +45,7 @@ use consts::SyscallType as Sys;
 pub struct Syscall<'a> {
     pub regs: &'a mut GeneralRegs,
     pub thread: Arc<Thread>,
+    pub spawn_fn: fn(thread: Arc<Thread>),
     pub exit: bool,
 }
 
@@ -154,6 +155,8 @@ impl Syscall<'_> {
             Sys::FIFO_CREATE => {
                 self.sys_fifo_create(a0 as _, a1 as _, a2 as _, a3.into(), a4.into())
             }
+            Sys::FIFO_READ => self.sys_fifo_read(a0 as _, a1 as _, a2.into(), a3 as _, a4.into()),
+            Sys::FIFO_WRITE => self.sys_fifo_write(a0 as _, a1 as _, a2.into(), a3 as _, a4.into()),
             Sys::EVENT_CREATE => self.sys_event_create(a0 as _, a1.into()),
             Sys::EVENTPAIR_CREATE => self.sys_eventpair_create(a0 as _, a1.into(), a2.into()),
             Sys::PORT_CREATE => self.sys_port_create(a0 as _, a1.into()),
@@ -236,6 +239,9 @@ impl Syscall<'_> {
                     let _ = self.sys_handle_close(a3 as _);
                     self.sys_thread_exit()
                 }),
+            Sys::OBJECT_GET_CHILD => {
+                self.sys_object_get_child(a0 as _, a1 as _, a2 as _, a3.into())
+            }
             _ => {
                 error!("syscall unimplemented: {:?}", sys_type);
                 Err(ZxError::NOT_SUPPORTED)

@@ -168,14 +168,15 @@ impl Syscall<'_> {
         Ok(())
     }
 
+    #[allow(unsafe_code)]
     pub fn sys_object_get_info(
         &self,
         handle: HandleValue,
         topic: u32,
         buffer: usize,
         buffer_size: usize,
-        _actual: UserOutPtr<usize>,
-        _avail: UserOutPtr<usize>,
+        mut actual: UserOutPtr<usize>,
+        mut avail: UserOutPtr<usize>,
     ) -> ZxResult {
         let topic = Topic::try_from(topic).map_err(|_| ZxError::INVALID_ARGS)?;
         info!(
@@ -225,8 +226,71 @@ impl Syscall<'_> {
                 kmem.vmo_bytes = vmo_page_bytes() as u64;
                 UserOutPtr::<ZxInfoKmem>::from(buffer).write(kmem)?;
             }
+            Topic::JobProcess => {
+                let job = proc.get_object_with_rights::<Job>(handle, Rights::ENUMERATE)?;
+                let (mut count, mut avail_count) = (0usize, 0usize);
+                let ptr = UserOutPtr::<KoID>::from(buffer).as_ptr();
+                let item_size = core::mem::size_of::<KoID>();
+                job.enumerate_process(|id| {
+                    if count < buffer_size / item_size {
+                        unsafe {
+                            ptr.add(count).write(id);
+                        }
+                        count += 1;
+                    }
+                    avail_count += 1;
+                    true
+                });
+                actual.write(count)?;
+                avail.write(avail_count)?;
+            }
+            Topic::TaskStats => {
+                assert_eq!(core::mem::size_of::<ZxInfoTaskStats>(), buffer_size);
+                let vmar = proc
+                    .get_object_with_rights::<Process>(handle, Rights::INSPECT)?
+                    .vmar();
+                //let mut task_stats = ZxInfoTaskStats::default();
+                let task_stats = vmar.get_task_stats();
+                UserOutPtr::<ZxInfoTaskStats>::from(buffer).write(task_stats)?;
+            }
+            Topic::ProcessThreads => {
+                let (mut count, mut avail_count) = (0usize, 0usize);
+                let ptr = UserOutPtr::<KoID>::from(buffer).as_ptr();
+                let item_size = core::mem::size_of::<KoID>();
+                proc.get_object_with_rights::<Process>(handle, Rights::ENUMERATE)?
+                    .enumerate_thread(|id| {
+                        if count < buffer_size / item_size {
+                            unsafe {
+                                ptr.add(count).write(id);
+                            }
+                            count += 1;
+                        }
+                        avail_count += 1;
+                        true
+                    });
+                actual.write(count)?;
+                avail.write(avail_count)?;
+            }
+            Topic::JobChildren => {
+                let (mut count, mut avail_count) = (0usize, 0usize);
+                let ptr = UserOutPtr::<KoID>::from(buffer).as_ptr();
+                let item_size = core::mem::size_of::<KoID>();
+                proc.get_object_with_rights::<Job>(handle, Rights::ENUMERATE)?
+                    .enumerate_children(|id| {
+                        if count < buffer_size / item_size {
+                            unsafe {
+                                ptr.add(count).write(id);
+                            }
+                            count += 1;
+                        }
+                        avail_count += 1;
+                        true
+                    });
+                actual.write(count)?;
+                avail.write(avail_count)?;
+            }
             _ => {
-                warn!("not supported info topic: {:?}", topic);
+                error!("not supported info topic: {:?}", topic);
                 return Err(ZxError::NOT_SUPPORTED);
             }
         }
@@ -322,6 +386,34 @@ impl Syscall<'_> {
             item.observed = res[i];
         }
         user_items.write_array(&items)?;
+        Ok(())
+    }
+
+    pub fn sys_object_get_child(
+        &self,
+        handle: HandleValue,
+        koid: KoID,
+        rights: u32,
+        mut out: UserOutPtr<HandleValue>,
+    ) -> ZxResult {
+        info!(
+            "object.get_child: handle={:#x}, koid={:#x}, rights={:#x}",
+            handle, koid, rights
+        );
+        let mut rights = Rights::from_bits(rights).ok_or(ZxError::INVALID_ARGS)?;
+        let proc = self.thread.proc();
+        let (task, parent_rights) = proc.get_dyn_object_and_rights(handle)?;
+        if !parent_rights.contains(Rights::ENUMERATE) {
+            return Err(ZxError::ACCESS_DENIED);
+        }
+        if rights == Rights::SAME_RIGHTS {
+            rights = parent_rights;
+        } else if (rights & parent_rights) != rights {
+            return Err(ZxError::ACCESS_DENIED);
+        }
+        let child = task.get_child(koid)?;
+        let child_handle = proc.add_handle(Handle::new(child, rights));
+        out.write(child_handle)?;
         Ok(())
     }
 }

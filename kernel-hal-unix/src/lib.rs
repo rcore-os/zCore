@@ -231,6 +231,12 @@ pub fn frame_zero(target: PhysAddr) {
     }
 }
 
+/// Flush the physical frame.
+#[export_name = "hal_frame_flush"]
+pub fn frame_flush(_target: PhysAddr) {
+    // do nothing
+}
+
 const PAGE_SIZE: usize = 0x1000;
 
 fn page_aligned(x: VirtAddr) -> bool {

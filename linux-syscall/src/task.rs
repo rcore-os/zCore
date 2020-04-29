@@ -17,7 +17,7 @@ impl Syscall<'_> {
         info!("vfork:");
         let new_proc = Process::vfork_from(self.zircon_process())?;
         let new_thread = Thread::create_linux(&new_proc)?;
-        new_thread.start_with_regs(GeneralRegs::new_fork(self.regs))?;
+        new_thread.start_with_regs(GeneralRegs::new_fork(self.regs), self.spawn_fn)?;
 
         let new_proc: Arc<dyn KernelObject> = new_proc;
         info!("vfork: {} -> {}", self.zircon_process().id(), new_proc.id());
@@ -56,7 +56,7 @@ impl Syscall<'_> {
         }
         let new_thread = Thread::create_linux(self.zircon_process())?;
         let regs = GeneralRegs::new_clone(self.regs, newsp, newtls);
-        new_thread.start_with_regs(regs)?;
+        new_thread.start_with_regs(regs, self.spawn_fn)?;
 
         let tid = new_thread.id();
         info!("clone: {} -> {}", self.thread.id(), tid);

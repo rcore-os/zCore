@@ -100,17 +100,6 @@ impl_kobject!(Thread
 );
 define_count_helper!(Thread);
 
-fn run_task(thread: Arc<Thread>) {
-    #[allow(improper_ctypes)]
-    extern "C" {
-        fn run_task(_thread: Arc<Thread>);
-    }
-    #[allow(unsafe_code)]
-    unsafe {
-        run_task(thread);
-    }
-}
-
 #[derive(Default)]
 struct ThreadInner {
     /// Thread context
@@ -147,7 +136,7 @@ impl Thread {
             _counter: CountHelper::new(),
             proc: proc.clone(),
             ext: Box::new(ext),
-            exceptionate: Exceptionate::new(ZxExceptionChannelType::Thread),
+            exceptionate: Exceptionate::new(ExceptionChannelType::Thread),
             inner: Mutex::new(ThreadInner {
                 context: Some(Box::new(UserContext::default())),
                 ..Default::default()
@@ -174,6 +163,7 @@ impl Thread {
         stack: usize,
         arg1: usize,
         arg2: usize,
+        spawn_fn: fn(thread: Arc<Thread>),
     ) -> ZxResult {
         {
             let mut inner = self.inner.lock();
@@ -187,12 +177,16 @@ impl Thread {
             inner.state = ThreadState::Running;
             self.base.signal_set(Signal::THREAD_RUNNING);
         }
-        run_task(self.clone());
+        spawn_fn(self.clone());
         Ok(())
     }
 
     /// Start execution with given registers.
-    pub fn start_with_regs(self: &Arc<Self>, regs: GeneralRegs) -> ZxResult {
+    pub fn start_with_regs(
+        self: &Arc<Self>,
+        regs: GeneralRegs,
+        spawn_fn: fn(thread: Arc<Thread>),
+    ) -> ZxResult {
         {
             let mut inner = self.inner.lock();
             let context = inner.context.as_mut().ok_or(ZxError::BAD_STATE)?;
@@ -202,7 +196,7 @@ impl Thread {
             inner.state = ThreadState::Running;
             self.base.signal_set(Signal::THREAD_RUNNING);
         }
-        run_task(self.clone());
+        spawn_fn(self.clone());
         Ok(())
     }
 
@@ -454,11 +448,16 @@ mod tests {
             kernel_hal_unix::syscall_entry();
             unreachable!();
         }
+        let entry = entry as usize;
+
+        fn spawn(_thread: Arc<Thread>) {
+            unimplemented!()
+        }
 
         // start a new thread
         let thread_ref_count = Arc::strong_count(&thread);
         let handle = Handle::new(proc.clone(), Rights::DEFAULT_PROCESS);
-        proc.start(&thread, entry as usize, stack_top, handle.clone(), 2)
+        proc.start(&thread, entry, stack_top, handle.clone(), 2, spawn)
             .expect("failed to start thread");
 
         // wait 100ms for the new thread to exit
@@ -473,13 +472,13 @@ mod tests {
 
         // start again should fail
         assert_eq!(
-            proc.start(&thread, entry as usize, stack_top, handle.clone(), 2),
+            proc.start(&thread, entry, stack_top, handle.clone(), 2, spawn),
             Err(ZxError::BAD_STATE)
         );
 
         // start another thread should fail
         assert_eq!(
-            proc.start(&thread1, entry as usize, stack_top, handle.clone(), 2),
+            proc.start(&thread1, entry, stack_top, handle.clone(), 2, spawn),
             Err(ZxError::BAD_STATE)
         );
     }

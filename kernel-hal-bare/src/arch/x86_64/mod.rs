@@ -9,7 +9,6 @@ use {
     spin::Mutex,
     uart_16550::SerialPort,
     x86_64::{
-        instructions::port::Port,
         registers::control::{Cr2, Cr3, Cr3Flags, Cr4, Cr4Flags},
         structures::paging::{PageTableFlags as PTF, *},
     },
@@ -57,10 +56,11 @@ impl PageTableImpl {
     ) -> Result<(), ()> {
         let mut pt = self.get();
         let page = Page::<Size4KiB>::from_start_address(vaddr).unwrap();
-        let frame = unsafe { UnusedPhysFrame::new(PhysFrame::from_start_address(paddr).unwrap()) };
-        let flush = pt
-            .map_to(page, frame, flags.to_ptf(), &mut FrameAllocatorImpl)
-            .unwrap();
+        let frame = PhysFrame::from_start_address(paddr).unwrap();
+        let flush = unsafe {
+            pt.map_to(page, frame, flags.to_ptf(), &mut FrameAllocatorImpl)
+                .unwrap()
+        };
         if flags.contains(MMUFlags::USER) {
             self.allow_user_access(vaddr);
         }
@@ -87,7 +87,7 @@ impl PageTableImpl {
     pub fn protect(&mut self, vaddr: x86_64::VirtAddr, flags: MMUFlags) -> Result<(), ()> {
         let mut pt = self.get();
         let page = Page::<Size4KiB>::from_start_address(vaddr).unwrap();
-        if let Ok(flush) = pt.update_flags(page, flags.to_ptf()) {
+        if let Ok(flush) = unsafe { pt.update_flags(page, flags.to_ptf()) } {
             if flags.contains(MMUFlags::USER) {
                 self.allow_user_access(vaddr);
             }
@@ -180,9 +180,7 @@ impl FlagsExt for MMUFlags {
                 // 当位于level=1时，页面更大，在1<<12位上（0x100）为1
                 // 但是bitflags里面没有这一位。由页表自行管理标记位去吧
             }
-            Err(_) => {
-                // error
-            }
+            Err(_) => unreachable!("invalid cache policy"),
         }
         flags
     }
@@ -191,18 +189,18 @@ impl FlagsExt for MMUFlags {
 struct FrameAllocatorImpl;
 
 unsafe impl FrameAllocator<Size4KiB> for FrameAllocatorImpl {
-    fn allocate_frame(&mut self) -> Option<UnusedPhysFrame> {
-        Frame::alloc().map(|f| unsafe {
+    fn allocate_frame(&mut self) -> Option<PhysFrame> {
+        Frame::alloc().map(|f| {
             let paddr = x86_64::PhysAddr::new(f.paddr as u64);
-            UnusedPhysFrame::new(PhysFrame::from_start_address(paddr).unwrap())
+            PhysFrame::from_start_address(paddr).unwrap()
         })
     }
 }
 
 impl FrameDeallocator<Size4KiB> for FrameAllocatorImpl {
-    fn deallocate_frame(&mut self, frame: UnusedPhysFrame) {
+    unsafe fn deallocate_frame(&mut self, frame: PhysFrame) {
         Frame {
-            paddr: frame.frame().start_address().as_u64() as usize,
+            paddr: frame.start_address().as_u64() as usize,
         }
         .dealloc()
     }
@@ -247,20 +245,6 @@ pub fn init_framebuffer(width: u32, height: u32, paddr: PhysAddr) {
 }
 
 static COM1: Mutex<SerialPort> = Mutex::new(unsafe { SerialPort::new(0x3F8) });
-
-pub trait SerialRead {
-    fn receive(&mut self) -> u8;
-}
-
-impl SerialRead for SerialPort {
-    fn receive(&mut self) -> u8 {
-        unsafe {
-            let ports = self as *mut _ as *mut [Port<u8>; 6];
-            let data = &mut (*ports)[0];
-            data.read()
-        }
-    }
-}
 
 pub fn putfmt(fmt: Arguments) {
     COM1.lock().write_fmt(fmt).unwrap();

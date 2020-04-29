@@ -89,7 +89,7 @@ impl Syscall<'_> {
         } else {
             arg1_handle
         };
-        match thread.start(entry, stack, arg1 as usize, arg2) {
+        match thread.start(entry, stack, arg1 as usize, arg2, self.spawn_fn) {
             Ok(()) => Ok(()),
             Err(e) => {
                 process.remove_handle(arg1)?;
@@ -155,7 +155,7 @@ impl Syscall<'_> {
         );
         let proc = self.thread.proc();
         let thread = proc.get_object_with_rights::<Thread>(handle_value, Rights::MANAGE_THREAD)?;
-        thread.start(entry, stack, arg1, arg2)?;
+        thread.start(entry, stack, arg1, arg2, self.spawn_fn)?;
         Ok(())
     }
 

@@ -1,7 +1,7 @@
 use core::sync::atomic::*;
 use {
-    super::*, crate::object::*, alloc::sync::Arc, alloc::vec::Vec, bitflags::bitflags,
-    kernel_hal::PageTable, spin::Mutex,
+    super::*, crate::object::*, alloc::collections::VecDeque, alloc::sync::Arc, alloc::vec::Vec,
+    bitflags::bitflags, kernel_hal::PageTable, spin::Mutex,
 };
 
 bitflags! {
@@ -45,23 +45,6 @@ struct VmarInner {
 }
 
 impl VmAddressRegion {
-    pub fn new(
-        parent: Option<Arc<VmAddressRegion>>,
-        base: VirtAddr,
-        size: usize,
-        flags: VmarFlags,
-    ) -> Arc<Self> {
-        Arc::new(VmAddressRegion {
-            flags,
-            base: KObjectBase::new(),
-            _counter: CountHelper::new(),
-            addr: base,
-            size,
-            parent,
-            inner: Mutex::new(Some(VmarInner::default())),
-            page_table: Arc::new(Mutex::new(kernel_hal::PageTable::new())),
-        })
-    }
     /// Create a new root VMAR.
     pub fn new_root() -> Arc<Self> {
         // FIXME: workaround for unix
@@ -124,11 +107,12 @@ impl VmAddressRegion {
         len: usize,
         flags: MMUFlags,
     ) -> ZxResult<VirtAddr> {
-        self.map_at_with_flags(vmar_offset, vmo, vmo_offset, len, flags, false, true)
+        self.map_at_ext(vmar_offset, vmo, vmo_offset, len, flags, false, true)
     }
 
     /// Map the `vmo` into this VMAR at given `offset`.
-    pub fn map_at_with_flags(
+    #[allow(clippy::too_many_arguments)]
+    pub fn map_at_ext(
         &self,
         vmar_offset: usize,
         vmo: Arc<VmObject>,
@@ -138,7 +122,7 @@ impl VmAddressRegion {
         overwrite: bool,
         map_range: bool,
     ) -> ZxResult<VirtAddr> {
-        self.map_with_flags(
+        self.map_ext(
             Some(vmar_offset),
             vmo,
             vmo_offset,
@@ -157,11 +141,12 @@ impl VmAddressRegion {
         len: usize,
         flags: MMUFlags,
     ) -> ZxResult<VirtAddr> {
-        self.map_with_flags(vmar_offset, vmo, vmo_offset, len, flags, false, true)
+        self.map_ext(vmar_offset, vmo, vmo_offset, len, flags, false, true)
     }
 
     /// Map the `vmo` into this VMAR.
-    pub fn map_with_flags(
+    #[allow(clippy::too_many_arguments)]
+    pub fn map_ext(
         &self,
         vmar_offset: Option<usize>,
         vmo: Arc<VmObject>,
@@ -195,14 +180,7 @@ impl VmAddressRegion {
                 return Err(ZxError::NO_MEMORY);
             }
         }
-        let mapping = VmMapping::new(
-            addr,
-            len,
-            vmo.clone(),
-            vmo_offset,
-            flags,
-            self.page_table.clone(),
-        );
+        let mapping = VmMapping::new(addr, len, vmo, vmo_offset, flags, self.page_table.clone());
         let map_range = true;
         if map_range {
             mapping.map()?;
@@ -471,6 +449,31 @@ impl VmAddressRegion {
         Err(ZxError::NOT_FOUND)
     }
 
+    pub fn get_task_stats(&self) -> ZxInfoTaskStats {
+        let mut task_stats = ZxInfoTaskStats::default();
+        let mut list = VecDeque::new();
+        self.inner
+            .lock()
+            .as_ref()
+            .unwrap()
+            .children
+            .iter()
+            .for_each(|child| {
+                list.push_back(child.clone());
+            });
+        while let Some(vmar) = list.pop_front() {
+            let vmar_inner = vmar.inner.lock();
+            let inner = vmar_inner.as_ref().unwrap();
+            inner.children.iter().for_each(|child| {
+                list.push_back(child.clone());
+            });
+            inner.mappings.iter().for_each(|map| {
+                map.fill_in_task_status(&mut task_stats);
+            });
+        }
+        task_stats
+    }
+
     #[cfg(test)]
     fn count(&self) -> usize {
         let mut guard = self.inner.lock();
@@ -507,6 +510,15 @@ struct VmMappingInner {
     addr: VirtAddr,
     size: usize,
     vmo_offset: usize,
+}
+
+#[repr(C)]
+#[derive(Default)]
+pub struct ZxInfoTaskStats {
+    mapped_bytes: u64,
+    private_bytes: u64,
+    shared_bytes: u64,
+    scaled_shared_bytes: u64,
 }
 
 impl core::fmt::Debug for VmMapping {
@@ -568,6 +580,21 @@ impl VmMapping {
         let inner = self.inner.lock();
         self.vmo
             .unmap_from(&mut page_table, inner.addr, inner.vmo_offset, inner.size);
+    }
+
+    fn fill_in_task_status(&self, task_stats: &mut ZxInfoTaskStats) {
+        let inner = self.inner.lock();
+        let start_idx = inner.vmo_offset / PAGE_SIZE;
+        let end_idx = start_idx + inner.size / PAGE_SIZE;
+        task_stats.mapped_bytes += self.vmo.len() as u64;
+        let committed_pages = self.vmo.committed_pages_in_range(start_idx, end_idx);
+        let share_count = self.vmo.share_count();
+        if share_count == 1 {
+            task_stats.private_bytes += (committed_pages * PAGE_SIZE) as u64;
+        } else {
+            task_stats.shared_bytes += (committed_pages * PAGE_SIZE) as u64;
+            task_stats.scaled_shared_bytes += (committed_pages * PAGE_SIZE / share_count) as u64;
+        }
     }
 
     /// Cut and unmap regions in `[begin, end)`.

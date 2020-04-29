@@ -5,10 +5,9 @@ use {
     alloc::collections::VecDeque,
     alloc::sync::{Arc, Weak},
     alloc::vec::Vec,
-    core::arch::x86_64::{__cpuid, _mm_clflush, _mm_mfence},
     core::ops::Range,
     core::sync::atomic::*,
-    kernel_hal::{PhysFrame, PAGE_SIZE, PHYSMAP_BASE, PHYSMAP_BASE_PHYS},
+    kernel_hal::{frame_flush, PhysFrame, PAGE_SIZE},
     spin::Mutex,
 };
 
@@ -313,14 +312,12 @@ impl VMObjectTrait for VMObjectPaged {
         if !inner.mappings.is_empty() {
             return Err(ZxError::BAD_STATE);
         }
-        if let Some(_) = inner.parent {
+        if inner.parent.is_some() {
             return Err(ZxError::BAD_STATE);
         }
         if inner.cache_policy == CachePolicy::Cached && policy != CachePolicy::Cached {
             for (_, value) in inner.frames.iter() {
-                let addr = value.frame.addr();
-                let physmap_addr = addr - PHYSMAP_BASE_PHYS as usize + PHYSMAP_BASE as usize;
-                clean_invalid_cache(physmap_addr, PAGE_SIZE);
+                frame_flush(value.frame.addr());
             }
         }
         inner.cache_policy = policy;
@@ -331,6 +328,16 @@ impl VMObjectTrait for VMObjectPaged {
     // fn is_contiguous(&self) -> bool {
     //     false
     // }
+
+    fn committed_pages_in_range(&self, start_idx: usize, end_idx: usize) -> usize {
+        self.inner
+            .lock()
+            .committed_pages_in_range(start_idx, end_idx)
+    }
+
+    fn share_count(&self) -> usize {
+        self.inner.lock().mappings.len()
+    }
 }
 
 enum CommitResult {
@@ -421,7 +428,7 @@ impl VMObjectPaged {
             return Ok(CommitResult::CopyOnWrite(target_frame));
         }
         // otherwise already committed
-        return Ok(CommitResult::Ref(frame.frame.addr()));
+        Ok(CommitResult::Ref(frame.frame.addr()))
     }
 
     /// Replace a child of the hidden node.
@@ -537,9 +544,21 @@ impl VMObjectPagedInner {
     }
 
     /// Count committed pages of the VMO.
-    fn committed_pages(&self) -> usize {
+    fn committed_pages_in_range(&self, start_idx: usize, end_idx: usize) -> usize {
+        assert!(
+            start_idx < self.size / PAGE_SIZE,
+            "start_idx {:#x}, self.size {:#x}",
+            start_idx,
+            self.size
+        );
+        assert!(
+            end_idx <= self.size / PAGE_SIZE,
+            "end_idx {:#x}, self.size {:#x}",
+            end_idx,
+            self.size
+        );
         let mut count = 0;
-        for i in 0..self.size / PAGE_SIZE {
+        for i in start_idx..end_idx {
             if self.frames.contains_key(&i) {
                 count += 1;
                 continue;
@@ -664,7 +683,7 @@ impl VMObjectPagedInner {
         self.parent = Some(hidden.clone());
         self.parent_offset = 0;
         self.parent_limit = self.size;
-        child.inner.lock().parent = Some(hidden.clone());
+        child.inner.lock().parent = Some(hidden);
         // update mappings
         for map in self.mappings.iter() {
             if let Some(map) = map.upgrade() {
@@ -681,7 +700,8 @@ impl VMObjectPagedInner {
         info.num_children = if self.type_.is_hidden() { 2 } else { 0 };
         info.num_mappings = self.mappings.len() as u64; // FIXME remove weak ptr
         info.share_count = self.mappings.len() as u64; // FIXME share_count should be the count of unique aspace
-        info.committed_bytes = (self.committed_pages() * PAGE_SIZE) as u64;
+        info.committed_bytes =
+            (self.committed_pages_in_range(0, self.size / PAGE_SIZE) * PAGE_SIZE) as u64;
         // TODO cache_policy should be set up.
     }
 
@@ -752,30 +772,6 @@ impl Drop for VMObjectPaged {
             parent.inner.lock().remove_child(&inner.self_ref);
         }
     }
-}
-
-// sse2
-#[cfg(target_arch = "x86_64")]
-#[allow(unsafe_code)]
-pub fn clean_invalid_cache(addr: usize, len: usize) {
-    let clsize = unsafe { get_cacheline_flush_size() };
-    let end = addr + len;
-    let mut start = addr & !(clsize - 1);
-    while start < end {
-        unsafe {
-            _mm_clflush(start as *const u8);
-        }
-        start = start + PAGE_SIZE;
-    }
-    unsafe {
-        _mm_mfence();
-    }
-}
-
-#[allow(unsafe_code)]
-unsafe fn get_cacheline_flush_size() -> usize {
-    let leaf = __cpuid(1).ebx;
-    (((leaf >> 8) & 0xff) << 3) as usize
 }
 
 #[allow(dead_code)]
