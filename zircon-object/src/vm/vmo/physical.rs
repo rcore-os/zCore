@@ -131,6 +131,10 @@ impl VMObjectTrait for VMObjectPhysical {
     fn committed_pages_in_range(&self, _start_idx: usize, _end_idx: usize) -> usize {
         unimplemented!()
     }
+
+    fn zero(&self, _offset: usize, _len: usize) -> ZxResult{
+        unimplemented!()
+    }
 }
 
 #[cfg(test)]

@@ -188,7 +188,7 @@ pub fn frame_copy(_src: PhysAddr, _target: PhysAddr) {
 /// Zero `target` frame.
 #[linkage = "weak"]
 #[export_name = "hal_frame_zero"]
-pub fn frame_zero(_target: PhysAddr) {
+pub fn frame_zero_in_range(_target: PhysAddr, _start: usize, _end: usize) {
     unimplemented!()
 }
 

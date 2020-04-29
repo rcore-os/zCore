@@ -219,6 +219,31 @@ impl VMObjectTrait for VMObjectPaged {
         })
     }
 
+    fn zero(&self, offset: usize, len: usize) -> ZxResult {
+        if offset + len > self.inner.lock().size {
+            return Err(ZxError::OUT_OF_RANGE);
+        }
+        let iter = BlockIter {
+            begin: offset,
+            end: offset + len,
+            block_size_log2: 12,
+        };
+        let mut unwanted = VecDeque::new();
+        for block in iter {
+            //let paddr = self.commit_page(block.block, MMUFlags::READ)?;
+            if block.len() == PAGE_SIZE {
+                let _ = self.commit_page(block.block, MMUFlags::WRITE)?;
+                unwanted.push_back(block.block);
+                self.inner.lock().frames.remove(&block.block);
+            }else if self.committed_pages_in_range(block.block, block.block + 1) != 0 { // check whether this page is initialized, otherwise nothing should be done
+                let paddr = self.commit_page(block.block, MMUFlags::WRITE)?;
+                kernel_hal::frame_zero_in_range(paddr, block.begin, block.end);
+            }
+        }
+        self.inner.lock().release_unwanted_pages(unwanted);
+        Ok(())
+    }
+
     fn len(&self) -> usize {
         self.inner.lock().size
     }
@@ -363,7 +388,7 @@ impl VMObjectPaged {
                 }
                 // lazy allocate zero frame
                 let target_frame = PhysFrame::alloc().ok_or(ZxError::NO_MEMORY)?;
-                kernel_hal::frame_zero(target_frame.addr());
+                kernel_hal::frame_zero_in_range(target_frame.addr(), 0, PAGE_SIZE);
                 if out_of_range {
                     // can never be a hidden vmo
                     assert!(!inner.type_.is_hidden());
@@ -690,38 +715,35 @@ impl VMObjectPagedInner {
         let mut child = self.self_ref.clone();
         while let Some(parent) = option_parent {
             let mut locked_parent = parent.inner.lock();
-            if locked_parent.user_id == self.user_id {
-                let (tag, other) = locked_parent.type_.get_tag_and_other(&child);
-                let arc_other = other.upgrade().unwrap();
-                let mut locked_other = arc_other.inner.lock();
-                let start = locked_other.parent_offset / PAGE_SIZE;
-                let end = locked_other.parent_limit / PAGE_SIZE;
-                for _ in 0..unwanted.len() {
-                    let idx = unwanted.pop_front().unwrap();
-                    // if the frame is in locked_other's range, check if it can be move to locked_other
-                    if start <= idx && idx < end {
-                        if locked_parent.frames.contains_key(&idx) {
-                            let mut to_insert = locked_parent.frames.remove(&idx).unwrap();
-                            if to_insert.tag != tag.negate() {
-                                to_insert.tag = PageStateTag::Owned;
-                                locked_other.frames.insert(idx - start, to_insert);
-                            }
+            let (tag, other) = locked_parent.type_.get_tag_and_other(&child);
+            let arc_other = other.upgrade().unwrap();
+            let mut locked_other = arc_other.inner.lock();
+            let start = locked_other.parent_offset / PAGE_SIZE;
+            let end = locked_other.parent_limit / PAGE_SIZE;
+            for _ in 0..unwanted.len() {
+                let idx = unwanted.pop_front().unwrap();
+                // if the frame is in locked_other's range, check if it can be move to locked_other
+                if start <= idx && idx < end {
+                    if locked_parent.frames.contains_key(&idx) {
+                        let mut to_insert = locked_parent.frames.remove(&idx).unwrap();
+                        if to_insert.tag != tag.negate() {
+                            to_insert.tag = PageStateTag::Owned;
+                            locked_other.frames.insert(idx - start, to_insert);
                         }
+                        unwanted.push_back(idx + locked_parent.parent_offset / PAGE_SIZE);
+                    }
+                } else {
+                    // otherwise, if it exists in our frames, remove it; if not, push_back it again
+                    if locked_parent.frames.contains_key(&idx) {
+                        locked_parent.frames.remove(&idx);
                     } else {
-                        // otherwise, if it exists in our frames, remove it; if not, push_back it again
-                        if locked_parent.frames.contains_key(&idx) {
-                            locked_parent.frames.remove(&idx);
-                        } else {
-                            unwanted.push_back(idx + locked_parent.parent_offset / PAGE_SIZE);
-                        }
+                        unwanted.push_back(idx + locked_parent.parent_offset / PAGE_SIZE);
                     }
                 }
-                child = locked_parent.self_ref.clone();
-                option_parent = locked_parent.parent.clone();
-                drop(locked_parent);
-            } else {
-                break;
             }
+            child = locked_parent.self_ref.clone();
+            option_parent = locked_parent.parent.clone();
+            drop(locked_parent);
         }
     }
 

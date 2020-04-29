@@ -71,6 +71,8 @@ pub trait VMObjectTrait: Sync + Send {
     fn share_count(&self) -> usize;
 
     fn committed_pages_in_range(&self, start_idx: usize, end_idx: usize) -> usize;
+
+    fn zero(&self, offset: usize, len: usize) -> ZxResult;
 }
 
 pub struct VmObject {
