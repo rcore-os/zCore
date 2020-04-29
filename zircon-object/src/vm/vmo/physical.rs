@@ -132,7 +132,7 @@ impl VMObjectTrait for VMObjectPhysical {
         unimplemented!()
     }
 
-    fn zero(&self, _offset: usize, _len: usize) -> ZxResult{
+    fn zero(&self, _offset: usize, _len: usize) -> ZxResult {
         unimplemented!()
     }
 }

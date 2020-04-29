@@ -235,7 +235,8 @@ impl VMObjectTrait for VMObjectPaged {
                 let _ = self.commit_page(block.block, MMUFlags::WRITE)?;
                 unwanted.push_back(block.block);
                 self.inner.lock().frames.remove(&block.block);
-            }else if self.committed_pages_in_range(block.block, block.block + 1) != 0 { // check whether this page is initialized, otherwise nothing should be done
+            } else if self.committed_pages_in_range(block.block, block.block + 1) != 0 {
+                // check whether this page is initialized, otherwise nothing should be done
                 let paddr = self.commit_page(block.block, MMUFlags::WRITE)?;
                 kernel_hal::frame_zero_in_range(paddr, block.begin, block.end);
             }
