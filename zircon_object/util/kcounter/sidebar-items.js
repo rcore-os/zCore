@@ -1,1 +1,1 @@
-initSidebarItems({"struct":[["KCounter",""],["KCounterDesc",""]]});
+initSidebarItems({"struct":[["KCounter","Kernel counter."],["KCounterDescriptor",""],["KCounterDescriptorArray",""]]});

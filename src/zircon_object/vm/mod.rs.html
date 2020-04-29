@@ -35,6 +35,26 @@
 <span id="35">35</span>
 <span id="36">36</span>
 <span id="37">37</span>
+<span id="38">38</span>
+<span id="39">39</span>
+<span id="40">40</span>
+<span id="41">41</span>
+<span id="42">42</span>
+<span id="43">43</span>
+<span id="44">44</span>
+<span id="45">45</span>
+<span id="46">46</span>
+<span id="47">47</span>
+<span id="48">48</span>
+<span id="49">49</span>
+<span id="50">50</span>
+<span id="51">51</span>
+<span id="52">52</span>
+<span id="53">53</span>
+<span id="54">54</span>
+<span id="55">55</span>
+<span id="56">56</span>
+<span id="57">57</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Objects for Virtual Memory Management.</span>
 
@@ -62,8 +82,9 @@
 }
 
 <span class="doccomment">/// How many pages the `size` needs.</span>
+<span class="doccomment">/// To avoid overflow and pass more unit tests, use wrapping add</span>
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">pages</span>(<span class="ident">size</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
-    (<span class="ident">size</span> <span class="op">+</span> <span class="ident">PAGE_SIZE</span> <span class="op">-</span> <span class="number">1</span>) <span class="op">/</span> <span class="ident">PAGE_SIZE</span>
+    <span class="ident">size</span>.<span class="ident">wrapping_add</span>(<span class="ident">PAGE_SIZE</span> <span class="op">-</span> <span class="number">1</span>) <span class="op">/</span> <span class="ident">PAGE_SIZE</span>
 }
 
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">roundup_pages</span>(<span class="ident">size</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
@@ -71,6 +92,25 @@
         <span class="ident">size</span>
     } <span class="kw">else</span> {
         <span class="ident">pages</span>(<span class="ident">size</span>) <span class="op">*</span> <span class="ident">PAGE_SIZE</span>
+    }
+}
+
+<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">round_down_pages</span>(<span class="ident">size</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
+    <span class="ident">size</span> <span class="op">/</span> <span class="ident">PAGE_SIZE</span> <span class="op">*</span> <span class="ident">PAGE_SIZE</span>
+}
+
+<span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">test</span>)]</span>
+<span class="kw">mod</span> <span class="ident">test</span> {
+    <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
+    <span class="attribute">#[<span class="ident">test</span>]</span>
+    <span class="kw">fn</span> <span class="ident">test_round_pages</span>() {
+        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">roundup_pages</span>(<span class="number">0</span>), <span class="number">0</span>);
+        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">roundup_pages</span>(<span class="ident">core</span>::<span class="ident">usize</span>::<span class="ident">MAX</span>), <span class="number">0</span>);
+        <span class="macro">assert_eq</span><span class="macro">!</span>(
+            <span class="ident">roundup_pages</span>(<span class="ident">core</span>::<span class="ident">usize</span>::<span class="ident">MAX</span> <span class="op">-</span> <span class="ident">PAGE_SIZE</span> <span class="op">+</span> <span class="number">1</span>),
+            <span class="ident">core</span>::<span class="ident">usize</span>::<span class="ident">MAX</span> <span class="op">-</span> <span class="ident">PAGE_SIZE</span> <span class="op">+</span> <span class="number">1</span>
+        );
+        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">roundup_pages</span>(<span class="ident">PAGE_SIZE</span> <span class="op">*</span> <span class="number">3</span> <span class="op">-</span> <span class="number">1</span>), <span class="ident">PAGE_SIZE</span> <span class="op">*</span> <span class="number">3</span>);
     }
 }
 </pre></div>

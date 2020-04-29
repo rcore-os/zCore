@@ -1,1 +1,1 @@
-initSidebarItems({"mod":[["block_range",""],["kcounter",""]]});
+initSidebarItems({"mod":[["block_range",""],["elf_loader",""],["kcounter",""]]});

@@ -1,1 +1,1 @@
-initSidebarItems({"fn":[["run_task",""],["run_userboot",""]],"struct":[["Images","Program images to run."]],"trait":[["ElfExt",""],["VmarExt",""]]});
+initSidebarItems({"fn":[["run_userboot",""]],"struct":[["Images","Program images to run."]]});

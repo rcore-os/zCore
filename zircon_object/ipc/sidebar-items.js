@@ -1,1 +1,1 @@
-initSidebarItems({"struct":[["Channel","Bidirectional interprocess communication"],["Fifo",""],["MessagePacket",""],["Socket",""]]});
+initSidebarItems({"struct":[["Channel","Bidirectional interprocess communication"],["Fifo","First-In First-Out inter-process queue."],["MessagePacket",""],["Socket",""]]});

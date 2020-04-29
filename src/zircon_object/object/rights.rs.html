@@ -103,6 +103,8 @@
 <span id="103">103</span>
 <span id="104">104</span>
 <span id="105">105</span>
+<span id="106">106</span>
+<span id="107">107</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> {
     <span class="kw">crate</span>::{<span class="ident">ZxError</span>, <span class="ident">ZxResult</span>},
@@ -113,6 +115,7 @@
 <span class="macro">bitflags</span><span class="macro">!</span> {
     <span class="doccomment">/// Rights are associated with handles and convey privileges to perform actions on</span>
     <span class="doccomment">/// either the associated handle or the object associated with the handle.</span>
+    <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Default</span>)]</span>
     <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Rights</span>: <span class="ident">u32</span> {
         <span class="doccomment">/// Allows handle duplication via `zx_handle_duplicate()`.</span>
         <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy</span>::<span class="ident">identity_op</span>)]</span>
@@ -199,7 +202,8 @@
         <span class="kw">const</span> <span class="ident">DEFAULT_EVENTPAIR</span> <span class="op">=</span> <span class="self">Self</span>::<span class="ident">BASIC</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">SIGNAL</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">SIGNAL_PEER</span>.<span class="ident">bits</span>;
         <span class="kw">const</span> <span class="ident">DEFAULT_FIFO</span> <span class="op">=</span> <span class="self">Self</span>::<span class="ident">BASIC</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">IO</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">SIGNAL</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">SIGNAL_PEER</span>.<span class="ident">bits</span>;
         <span class="kw">const</span> <span class="ident">DEFAULT_SOCKET</span> <span class="op">=</span> <span class="self">Self</span>::<span class="ident">BASIC</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">IO</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">PROPERTY</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">SIGNAL</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">SIGNAL_PEER</span>.<span class="ident">bits</span>;
-   }
+        <span class="kw">const</span> <span class="ident">DEFAULT_BTI</span> <span class="op">=</span> (<span class="self">Self</span>::<span class="ident">BASIC</span>.<span class="ident">bits</span> <span class="op">&amp;</span> <span class="op">!</span><span class="self">Self</span>::<span class="ident">WAIT</span>.<span class="ident">bits</span>) <span class="op">|</span> <span class="self">Self</span>::<span class="ident">IO</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">MAP</span>.<span class="ident">bits</span>;
+    }
 }
 
 <span class="kw">impl</span> <span class="ident">TryFrom</span><span class="op">&lt;</span><span class="ident">u32</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">Rights</span> {

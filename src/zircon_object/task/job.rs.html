@@ -309,6 +309,22 @@
 <span id="309">309</span>
 <span id="310">310</span>
 <span id="311">311</span>
+<span id="312">312</span>
+<span id="313">313</span>
+<span id="314">314</span>
+<span id="315">315</span>
+<span id="316">316</span>
+<span id="317">317</span>
+<span id="318">318</span>
+<span id="319">319</span>
+<span id="320">320</span>
+<span id="321">321</span>
+<span id="322">322</span>
+<span id="323">323</span>
+<span id="324">324</span>
+<span id="325">325</span>
+<span id="326">326</span>
+<span id="327">327</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> {
     <span class="kw">super</span>::<span class="ident">exception</span>::<span class="kw-2">*</span>, <span class="kw">super</span>::<span class="ident">job_policy</span>::<span class="kw-2">*</span>, <span class="kw">super</span>::<span class="ident">process</span>::<span class="ident">Process</span>, <span class="kw">crate</span>::<span class="ident">object</span>::<span class="kw-2">*</span>,
@@ -380,8 +396,8 @@
             <span class="ident">_counter</span>: <span class="ident">CountHelper</span>::<span class="ident">new</span>(),
             <span class="ident">parent</span>: <span class="prelude-val">None</span>,
             <span class="ident">parent_policy</span>: <span class="ident">JobPolicy</span>::<span class="ident">default</span>(),
-            <span class="ident">exceptionate</span>: <span class="ident">Exceptionate</span>::<span class="ident">new</span>(<span class="ident">ZxExceptionChannelType</span>::<span class="ident">Job</span>),
-            <span class="ident">debug_exceptionate</span>: <span class="ident">Exceptionate</span>::<span class="ident">new</span>(<span class="ident">ZxExceptionChannelType</span>::<span class="ident">JobDebugger</span>),
+            <span class="ident">exceptionate</span>: <span class="ident">Exceptionate</span>::<span class="ident">new</span>(<span class="ident">ExceptionChannelType</span>::<span class="ident">Job</span>),
+            <span class="ident">debug_exceptionate</span>: <span class="ident">Exceptionate</span>::<span class="ident">new</span>(<span class="ident">ExceptionChannelType</span>::<span class="ident">JobDebugger</span>),
             <span class="ident">inner</span>: <span class="ident">Mutex</span>::<span class="ident">new</span>(<span class="ident">JobInner</span>::<span class="ident">default</span>()),
         })
     }
@@ -395,8 +411,8 @@
             <span class="ident">_counter</span>: <span class="ident">CountHelper</span>::<span class="ident">new</span>(),
             <span class="ident">parent</span>: <span class="prelude-val">Some</span>(<span class="self">self</span>.<span class="ident">clone</span>()),
             <span class="ident">parent_policy</span>: <span class="ident">inner</span>.<span class="ident">policy</span>.<span class="ident">merge</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">parent_policy</span>),
-            <span class="ident">exceptionate</span>: <span class="ident">Exceptionate</span>::<span class="ident">new</span>(<span class="ident">ZxExceptionChannelType</span>::<span class="ident">Job</span>),
-            <span class="ident">debug_exceptionate</span>: <span class="ident">Exceptionate</span>::<span class="ident">new</span>(<span class="ident">ZxExceptionChannelType</span>::<span class="ident">JobDebugger</span>),
+            <span class="ident">exceptionate</span>: <span class="ident">Exceptionate</span>::<span class="ident">new</span>(<span class="ident">ExceptionChannelType</span>::<span class="ident">Job</span>),
+            <span class="ident">debug_exceptionate</span>: <span class="ident">Exceptionate</span>::<span class="ident">new</span>(<span class="ident">ExceptionChannelType</span>::<span class="ident">JobDebugger</span>),
             <span class="ident">inner</span>: <span class="ident">Mutex</span>::<span class="ident">new</span>(<span class="ident">JobInner</span>::<span class="ident">default</span>()),
         });
         <span class="ident">inner</span>.<span class="ident">children</span>.<span class="ident">push</span>(<span class="ident">child</span>.<span class="ident">clone</span>());
@@ -495,6 +511,22 @@
 
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_exceptionate</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Exceptionate</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">exceptionate</span>.<span class="ident">clone</span>()
+    }
+
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">enumerate_process</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="kw-2">mut</span> <span class="ident">f</span>: <span class="kw">impl</span> <span class="ident">FnMut</span>(<span class="ident">KoID</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span>) {
+        <span class="self">self</span>.<span class="ident">inner</span>
+            .<span class="ident">lock</span>()
+            .<span class="ident">processes</span>
+            .<span class="ident">iter</span>()
+            .<span class="ident">find</span>(<span class="op">|</span><span class="ident">child</span><span class="op">|</span> <span class="op">!</span><span class="ident">f</span>(<span class="ident">child</span>.<span class="ident">id</span>()));
+    }
+
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">enumerate_children</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="kw-2">mut</span> <span class="ident">f</span>: <span class="kw">impl</span> <span class="ident">FnMut</span>(<span class="ident">KoID</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span>) {
+        <span class="self">self</span>.<span class="ident">inner</span>
+            .<span class="ident">lock</span>()
+            .<span class="ident">children</span>
+            .<span class="ident">iter</span>()
+            .<span class="ident">find</span>(<span class="op">|</span><span class="ident">child</span><span class="op">|</span> <span class="op">!</span><span class="ident">f</span>(<span class="ident">child</span>.<span class="ident">id</span>()));
     }
 }
 

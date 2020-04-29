@@ -39,28 +39,58 @@
 <span id="39">39</span>
 <span id="40">40</span>
 <span id="41">41</span>
+<span id="42">42</span>
+<span id="43">43</span>
+<span id="44">44</span>
+<span id="45">45</span>
+<span id="46">46</span>
+<span id="47">47</span>
+<span id="48">48</span>
+<span id="49">49</span>
+<span id="50">50</span>
+<span id="51">51</span>
+<span id="52">52</span>
+<span id="53">53</span>
+<span id="54">54</span>
+<span id="55">55</span>
+<span id="56">56</span>
+<span id="57">57</span>
+<span id="58">58</span>
+<span id="59">59</span>
+<span id="60">60</span>
+<span id="61">61</span>
+<span id="62">62</span>
+<span id="63">63</span>
+<span id="64">64</span>
+<span id="65">65</span>
+<span id="66">66</span>
+<span id="67">67</span>
 </pre><div class="example-wrap"><pre class="rust ">
-<span class="kw">use</span> {<span class="kw">super</span>::<span class="kw-2">*</span>, <span class="kw">crate</span>::<span class="ident">ipc</span>::<span class="ident">Channel</span>, <span class="kw">crate</span>::<span class="ident">object</span>::<span class="kw-2">*</span>, <span class="ident">alloc</span>::<span class="ident">sync</span>::<span class="ident">Arc</span>, <span class="ident">spin</span>::<span class="ident">Mutex</span>};
+<span class="attribute">#![<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
 
-<span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
+<span class="kw">use</span> {
+    <span class="kw">super</span>::<span class="kw-2">*</span>, <span class="kw">crate</span>::<span class="ident">ipc</span>::<span class="ident">Channel</span>, <span class="kw">crate</span>::<span class="ident">object</span>::<span class="kw-2">*</span>, <span class="ident">alloc</span>::<span class="ident">sync</span>::<span class="ident">Arc</span>, <span class="ident">alloc</span>::<span class="ident">vec</span>::<span class="ident">Vec</span>,
+    <span class="ident">core</span>::<span class="ident">mem</span>::<span class="ident">size_of</span>, <span class="ident">spin</span>::<span class="ident">Mutex</span>,
+};
+
+<span class="doccomment">/// Kernel-owned exception channel endpoint.</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Exceptionate</span> {
-    <span class="ident">type_</span>: <span class="ident">ZxExceptionChannelType</span>,
+    <span class="ident">type_</span>: <span class="ident">ExceptionChannelType</span>,
     <span class="ident">inner</span>: <span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">ExceptionateInner</span><span class="op">&gt;</span>,
 }
 
-<span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
 <span class="kw">struct</span> <span class="ident">ExceptionateInner</span> {
-    <span class="ident">channel_handle</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Channel</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+    <span class="ident">channel</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Channel</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     <span class="ident">thread_rights</span>: <span class="ident">Rights</span>,
     <span class="ident">process_rights</span>: <span class="ident">Rights</span>,
 }
 
 <span class="kw">impl</span> <span class="ident">Exceptionate</span> {
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">type_</span>: <span class="ident">ZxExceptionChannelType</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">type_</span>: <span class="ident">ExceptionChannelType</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
         <span class="ident">Arc</span>::<span class="ident">new</span>(<span class="ident">Exceptionate</span> {
             <span class="ident">type_</span>,
             <span class="ident">inner</span>: <span class="ident">Mutex</span>::<span class="ident">new</span>(<span class="ident">ExceptionateInner</span> {
-                <span class="ident">channel_handle</span>: <span class="prelude-val">None</span>,
+                <span class="ident">channel</span>: <span class="prelude-val">None</span>,
                 <span class="ident">thread_rights</span>: <span class="ident">Rights</span>::<span class="ident">empty</span>(),
                 <span class="ident">process_rights</span>: <span class="ident">Rights</span>::<span class="ident">empty</span>(),
             }),
@@ -69,17 +99,39 @@
 
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">set_channel</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">channel</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Channel</span><span class="op">&gt;</span>) {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
-        <span class="ident">inner</span>.<span class="ident">channel_handle</span>.<span class="ident">replace</span>(<span class="ident">channel</span>);
+        <span class="ident">inner</span>.<span class="ident">channel</span>.<span class="ident">replace</span>(<span class="ident">channel</span>);
+    }
+
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_channel</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Channel</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+        <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
+        <span class="ident">inner</span>.<span class="ident">channel</span>.<span class="ident">clone</span>()
     }
 }
 
-<span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">ZxExceptionChannelType</span> {
-    <span class="prelude-val">None</span>,
-    <span class="ident">Debugger</span>,
-    <span class="ident">Thread</span>,
-    <span class="ident">Process</span>,
-    <span class="ident">Job</span>,
-    <span class="ident">JobDebugger</span>,
+<span class="attribute">#[<span class="ident">repr</span>(<span class="ident">C</span>)]</span>
+<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">ExceptionInfo</span> {
+    <span class="kw">pub</span> <span class="ident">tid</span>: <span class="ident">KoID</span>,
+    <span class="kw">pub</span> <span class="ident">pid</span>: <span class="ident">KoID</span>,
+    <span class="kw">pub</span> <span class="ident">type_</span>: <span class="ident">ExceptionChannelType</span>,
+    <span class="kw">pub</span> <span class="ident">padding</span>: <span class="ident">u32</span>,
+}
+
+<span class="attribute">#[<span class="ident">repr</span>(<span class="ident">u32</span>)]</span>
+<span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">ExceptionChannelType</span> {
+    <span class="prelude-val">None</span> <span class="op">=</span> <span class="number">0</span>,
+    <span class="ident">Debugger</span> <span class="op">=</span> <span class="number">1</span>,
+    <span class="ident">Thread</span> <span class="op">=</span> <span class="number">2</span>,
+    <span class="ident">Process</span> <span class="op">=</span> <span class="number">3</span>,
+    <span class="ident">Job</span> <span class="op">=</span> <span class="number">4</span>,
+    <span class="ident">JobDebugger</span> <span class="op">=</span> <span class="number">5</span>,
+}
+
+<span class="kw">impl</span> <span class="ident">ExceptionInfo</span> {
+    <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">unsafe_code</span>)]</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">pack</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span> {
+        <span class="kw">let</span> <span class="ident">buf</span>: [<span class="ident">u8</span>; <span class="ident">size_of</span>::<span class="op">&lt;</span><span class="ident">ExceptionInfo</span><span class="op">&gt;</span>()] <span class="op">=</span> <span class="kw">unsafe</span> { <span class="ident">core</span>::<span class="ident">mem</span>::<span class="ident">transmute_copy</span>(<span class="self">self</span>) };
+        <span class="ident">Vec</span>::<span class="ident">from</span>(<span class="ident">buf</span>)
+    }
 }
 </pre></div>
 </section><section id="search" class="content hidden"></section><section class="footer"></section><script>window.rootPath = "../../../";window.currentCrate = "zircon_object";</script><script src="../../../aliases.js"></script><script src="../../../main.js"></script><script src="../../../source-script.js"></script><script src="../../../source-files.js"></script><script defer src="../../../search-index.js"></script></body></html>

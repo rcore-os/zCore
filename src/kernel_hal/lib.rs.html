@@ -33,6 +33,20 @@
 <span id="33">33</span>
 <span id="34">34</span>
 <span id="35">35</span>
+<span id="36">36</span>
+<span id="37">37</span>
+<span id="38">38</span>
+<span id="39">39</span>
+<span id="40">40</span>
+<span id="41">41</span>
+<span id="42">42</span>
+<span id="43">43</span>
+<span id="44">44</span>
+<span id="45">45</span>
+<span id="46">46</span>
+<span id="47">47</span>
+<span id="48">48</span>
+<span id="49">49</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Hardware Abstraction Layer</span>
 
@@ -44,16 +58,30 @@
 
 <span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">defs</span> {
     <span class="kw">use</span> <span class="ident">bitflags</span>::<span class="ident">bitflags</span>;
+    <span class="kw">use</span> <span class="ident">numeric_enum_macro</span>::<span class="ident">numeric_enum</span>;
 
     <span class="macro">bitflags</span><span class="macro">!</span> {
         <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">MMUFlags</span>: <span class="ident">usize</span> {
             <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy</span>::<span class="ident">identity_op</span>)]</span>
-            <span class="kw">const</span> <span class="ident">READ</span>      <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">0</span>;
-            <span class="kw">const</span> <span class="ident">WRITE</span>     <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">1</span>;
-            <span class="kw">const</span> <span class="ident">EXECUTE</span>   <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">2</span>;
-            <span class="kw">const</span> <span class="ident">USER</span>      <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">3</span>;
+            <span class="kw">const</span> <span class="ident">CACHE_1</span>   <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">0</span>;
+            <span class="kw">const</span> <span class="ident">CACHE_2</span>   <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">1</span>;
+            <span class="kw">const</span> <span class="ident">READ</span>      <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">2</span>;
+            <span class="kw">const</span> <span class="ident">WRITE</span>     <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">3</span>;
+            <span class="kw">const</span> <span class="ident">EXECUTE</span>   <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">4</span>;
+            <span class="kw">const</span> <span class="ident">USER</span>      <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">5</span>;
         }
     }
+    <span class="macro">numeric_enum</span><span class="macro">!</span> {
+        <span class="attribute">#[<span class="ident">repr</span>(<span class="ident">u32</span>)]</span>
+        <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>, <span class="ident">PartialEq</span>, <span class="ident">Clone</span>, <span class="ident">Copy</span>)]</span>
+        <span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">CachePolicy</span> {
+            <span class="ident">Cached</span> <span class="op">=</span> <span class="number">0</span>,
+            <span class="ident">Uncached</span> <span class="op">=</span> <span class="number">1</span>,
+            <span class="ident">UncachedDevice</span> <span class="op">=</span> <span class="number">2</span>,
+            <span class="ident">WriteCombining</span> <span class="op">=</span> <span class="number">3</span>,
+        }
+    }
+    <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">CACHE_POLICY_MASK</span>: <span class="ident">u32</span> <span class="op">=</span> <span class="number">3</span>;
 
     <span class="kw">pub</span> <span class="kw">type</span> <span class="ident">PhysAddr</span> <span class="op">=</span> <span class="ident">usize</span>;
     <span class="kw">pub</span> <span class="kw">type</span> <span class="ident">VirtAddr</span> <span class="op">=</span> <span class="ident">usize</span>;

@@ -551,9 +551,32 @@
 <span id="551">551</span>
 <span id="552">552</span>
 <span id="553">553</span>
+<span id="554">554</span>
+<span id="555">555</span>
+<span id="556">556</span>
+<span id="557">557</span>
+<span id="558">558</span>
+<span id="559">559</span>
+<span id="560">560</span>
+<span id="561">561</span>
+<span id="562">562</span>
+<span id="563">563</span>
+<span id="564">564</span>
+<span id="565">565</span>
+<span id="566">566</span>
+<span id="567">567</span>
+<span id="568">568</span>
+<span id="569">569</span>
+<span id="570">570</span>
+<span id="571">571</span>
+<span id="572">572</span>
+<span id="573">573</span>
+<span id="574">574</span>
+<span id="575">575</span>
+<span id="576">576</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> {
-    <span class="kw">super</span>::{<span class="ident">job</span>::<span class="ident">Job</span>, <span class="ident">job_policy</span>::<span class="kw-2">*</span>, <span class="ident">resource</span>::<span class="kw-2">*</span>, <span class="ident">thread</span>::<span class="ident">Thread</span>, <span class="kw-2">*</span>},
+    <span class="kw">super</span>::{<span class="ident">exception</span>::<span class="kw-2">*</span>, <span class="ident">job</span>::<span class="ident">Job</span>, <span class="ident">job_policy</span>::<span class="kw-2">*</span>, <span class="ident">resource</span>::<span class="kw-2">*</span>, <span class="ident">thread</span>::<span class="ident">Thread</span>, <span class="kw-2">*</span>},
     <span class="kw">crate</span>::{<span class="ident">object</span>::<span class="kw-2">*</span>, <span class="ident">signal</span>::<span class="ident">Futex</span>, <span class="ident">vm</span>::<span class="kw-2">*</span>},
     <span class="ident">alloc</span>::{<span class="ident">boxed</span>::<span class="ident">Box</span>, <span class="ident">collections</span>::<span class="ident">BTreeMap</span>, <span class="ident">sync</span>::<span class="ident">Arc</span>, <span class="ident">vec</span>::<span class="ident">Vec</span>},
     <span class="ident">core</span>::{<span class="ident">any</span>::<span class="ident">Any</span>, <span class="ident">sync</span>::<span class="ident">atomic</span>::<span class="ident">AtomicI32</span>},
@@ -608,6 +631,7 @@
     <span class="ident">policy</span>: <span class="ident">JobPolicy</span>,
     <span class="ident">vmar</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">VmAddressRegion</span><span class="op">&gt;</span>,
     <span class="ident">ext</span>: <span class="ident">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">Any</span> <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span><span class="op">&gt;</span>,
+    <span class="ident">exceptionate</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Exceptionate</span><span class="op">&gt;</span>,
     <span class="ident">inner</span>: <span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">ProcessInner</span><span class="op">&gt;</span>,
 }
 
@@ -669,6 +693,7 @@
             <span class="ident">policy</span>: <span class="ident">job</span>.<span class="ident">policy</span>(),
             <span class="ident">vmar</span>: <span class="ident">VmAddressRegion</span>::<span class="ident">new_root</span>(),
             <span class="ident">ext</span>: <span class="ident">Box</span>::<span class="ident">new</span>(<span class="ident">ext</span>),
+            <span class="ident">exceptionate</span>: <span class="ident">Exceptionate</span>::<span class="ident">new</span>(<span class="ident">ExceptionChannelType</span>::<span class="ident">Process</span>),
             <span class="ident">inner</span>: <span class="ident">Mutex</span>::<span class="ident">new</span>(<span class="ident">ProcessInner</span>::<span class="ident">default</span>()),
         });
         <span class="ident">job</span>.<span class="ident">add_process</span>(<span class="ident">proc</span>.<span class="ident">clone</span>());
@@ -689,6 +714,7 @@
         <span class="ident">stack</span>: <span class="ident">usize</span>,
         <span class="ident">arg1</span>: <span class="ident">Handle</span>,
         <span class="ident">arg2</span>: <span class="ident">usize</span>,
+        <span class="ident">spawn_fn</span>: <span class="kw">fn</span>(<span class="ident">thread</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Thread</span><span class="op">&gt;</span>),
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
         <span class="kw">let</span> <span class="ident">handle_value</span>;
         {
@@ -702,7 +728,7 @@
             }
             <span class="ident">inner</span>.<span class="ident">status</span> <span class="op">=</span> <span class="ident">Status</span>::<span class="ident">Running</span>;
         }
-        <span class="ident">thread</span>.<span class="ident">start</span>(<span class="ident">entry</span>, <span class="ident">stack</span>, <span class="ident">handle_value</span> <span class="kw">as</span> <span class="ident">usize</span>, <span class="ident">arg2</span>)<span class="question-mark">?</span>;
+        <span class="ident">thread</span>.<span class="ident">start</span>(<span class="ident">entry</span>, <span class="ident">stack</span>, <span class="ident">handle_value</span> <span class="kw">as</span> <span class="ident">usize</span>, <span class="ident">arg2</span>, <span class="ident">spawn_fn</span>)<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(())
     }
 
@@ -862,6 +888,14 @@
         <span class="prelude-val">Ok</span>(<span class="ident">handle</span>.<span class="ident">object</span>)
     }
 
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_dyn_object_and_rights</span>(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        <span class="ident">handle_value</span>: <span class="ident">HandleValue</span>,
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span>(<span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">KernelObject</span><span class="op">&gt;</span>, <span class="ident">Rights</span>)<span class="op">&gt;</span> {
+        <span class="kw">let</span> <span class="ident">handle</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">get_handle</span>(<span class="ident">handle_value</span>)<span class="question-mark">?</span>;
+        <span class="prelude-val">Ok</span>((<span class="ident">handle</span>.<span class="ident">object</span>, <span class="ident">handle</span>.<span class="ident">rights</span>))
+    }
+
     <span class="doccomment">/// Get the kernel object corresponding to this `handle_value`</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_object</span><span class="op">&lt;</span><span class="ident">T</span>: <span class="ident">KernelObject</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">handle_value</span>: <span class="ident">HandleValue</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">handle</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">get_handle</span>(<span class="ident">handle_value</span>)<span class="question-mark">?</span>;
@@ -949,6 +983,18 @@
 
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_cancel_token</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">handle_value</span>: <span class="ident">HandleValue</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Receiver</span><span class="op">&lt;</span>()<span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">get_cancel_token</span>(<span class="ident">handle_value</span>)
+    }
+
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_exceptionate</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Exceptionate</span><span class="op">&gt;</span> {
+        <span class="self">self</span>.<span class="ident">exceptionate</span>.<span class="ident">clone</span>()
+    }
+
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">enumerate_thread</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="kw-2">mut</span> <span class="ident">f</span>: <span class="kw">impl</span> <span class="ident">FnMut</span>(<span class="ident">KoID</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span>) {
+        <span class="self">self</span>.<span class="ident">inner</span>
+            .<span class="ident">lock</span>()
+            .<span class="ident">threads</span>
+            .<span class="ident">iter</span>()
+            .<span class="ident">find</span>(<span class="op">|</span><span class="ident">child</span><span class="op">|</span> <span class="op">!</span><span class="ident">f</span>(<span class="ident">child</span>.<span class="ident">id</span>()));
     }
 }
 

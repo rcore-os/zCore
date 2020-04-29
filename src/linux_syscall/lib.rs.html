@@ -249,6 +249,7 @@
 <span id="249">249</span>
 <span id="250">250</span>
 <span id="251">251</span>
+<span id="252">252</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Linux syscall implementations</span>
 
@@ -283,6 +284,7 @@
     <span class="kw">pub</span> <span class="ident">thread</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Thread</span><span class="op">&gt;</span>,
     <span class="kw">pub</span> <span class="ident">syscall_entry</span>: <span class="ident">VirtAddr</span>,
     <span class="kw">pub</span> <span class="ident">regs</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="kw-2">mut</span> <span class="ident">GeneralRegs</span>,
+    <span class="kw">pub</span> <span class="ident">spawn_fn</span>: <span class="kw">fn</span>(<span class="ident">thread</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Thread</span><span class="op">&gt;</span>),
     <span class="doccomment">/// Set `true` to exit current task.</span>
     <span class="kw">pub</span> <span class="ident">exit</span>: <span class="ident">bool</span>,
 }
