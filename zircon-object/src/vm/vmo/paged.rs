@@ -534,7 +534,7 @@ impl VMObjectPagedInner {
     /// Count committed pages of the VMO.
     fn committed_pages_in_range(&self, start_idx: usize, end_idx: usize) -> usize {
         assert!(
-            start_idx < self.size / PAGE_SIZE,
+            start_idx < self.size / PAGE_SIZE || start_idx == 0,
             "start_idx {:#x}, self.size {:#x}",
             start_idx,
             self.size

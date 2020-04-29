@@ -41,7 +41,7 @@ pub fn create_kcounter_vmo() -> (Arc<VmObject>, Arc<VmObject>) {
             kcounters_arena_end as usize / PAGE_SIZE,
             "all kcounters must in the same page"
         );
-        unsafe { VmObject::new_physical(paddr, 1) }
+        VmObject::new_physical(paddr, 1)
     };
     kcounters_vmo.set_name("counters/arena");
     (counter_name_vmo, kcounters_vmo)

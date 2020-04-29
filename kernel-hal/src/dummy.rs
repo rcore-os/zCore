@@ -261,3 +261,15 @@ pub fn vdso_constants() -> VdsoConstants {
 pub fn fetch_fault_vaddr() -> VirtAddr {
     unimplemented!()
 }
+
+#[linkage = "weak"]
+#[export_name = "dma_range_check"]
+pub fn dma_check(_paddr: PhysAddr, _pages: usize) -> bool {
+    unimplemented!()
+}
+
+#[linkage = "weak"]
+#[export_name = "dma_range_recycle"]
+pub fn dma_recycle(_paddr: PhysAddr, _pages: usize) {
+    unimplemented!()
+}

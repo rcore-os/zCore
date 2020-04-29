@@ -148,7 +148,6 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    #[allow(unsafe_code)]
     pub fn sys_vmo_create_physical(
         &self,
         rsrc: HandleValue,
@@ -170,7 +169,7 @@ impl Syscall<'_> {
         if paddr.overflowing_add(size).1 {
             return Err(ZxError::INVALID_ARGS);
         }
-        let vmo = unsafe { VmObject::new_physical(paddr, size / PAGE_SIZE) };
+        let vmo = VmObject::new_physical(paddr, size / PAGE_SIZE);
         let handle_value = proc.add_handle(Handle::new(vmo, Rights::DEFAULT_VMO | Rights::EXECUTE));
         out.write(handle_value)?;
         Ok(())

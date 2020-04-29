@@ -354,3 +354,28 @@ pub fn init() {
 pub fn fetch_fault_vaddr() -> VirtAddr {
     Cr2::read().as_u64() as _
 }
+
+lazy_static! {
+    static ref RANGECHECKER: Mutex<Vec<(usize, usize)>> = Mutex::new(Vec::default());
+}
+
+#[export_name = "dma_range_check"]
+pub fn dma_check(paddr: PhysAddr, pages: usize) -> bool {
+    let mut checker = RANGECHECKER.lock();
+    let paddr_end = paddr + pages * PAGE_SIZE;
+    let conflict = checker.iter().any(|range| {
+        range.0 <= paddr && range.1 > paddr || range.0 <= paddr_end && paddr_end < range.1
+    });
+    if !conflict {
+        checker.push((paddr, paddr_end));
+    }
+    !conflict
+}
+
+#[export_name = "dma_range_recycle"]
+pub fn dma_recycle(paddr: PhysAddr, pages: usize) {
+    let paddr_end = paddr + pages * PAGE_SIZE;
+    RANGECHECKER
+        .lock()
+        .retain(|range| !(range.0 == paddr && range.1 == paddr_end));
+}

@@ -104,12 +104,8 @@ impl VmObject {
     }
 
     /// Create a new VMO representing a piece of contiguous physical memory.
-    ///
-    /// # Safety
-    ///
     /// You must ensure nobody has the ownership of this piece of memory yet.
-    #[allow(unsafe_code)]
-    pub unsafe fn new_physical(paddr: PhysAddr, pages: usize) -> Arc<Self> {
+    pub fn new_physical(paddr: PhysAddr, pages: usize) -> Arc<Self> {
         Arc::new(VmObject {
             base: KObjectBase::with_signal(Signal::VMO_ZERO_CHILDREN),
             parent: Default::default(),

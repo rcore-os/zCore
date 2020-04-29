@@ -27,15 +27,18 @@ impl VMObjectPhysicalInner {
     }
 }
 
+impl Drop for VMObjectPhysical {
+    fn drop(&mut self) {
+        kernel_hal::dma_recycle(self.paddr, self.pages);
+    }
+}
+
 impl VMObjectPhysical {
     /// Create a new VMO representing a piece of contiguous physical memory.
-    ///
-    /// # Safety
-    ///
     /// You must ensure nobody has the ownership of this piece of memory yet.
-    #[allow(unsafe_code)]
-    pub unsafe fn new(paddr: PhysAddr, pages: usize) -> Arc<Self> {
+    pub fn new(paddr: PhysAddr, pages: usize) -> Arc<Self> {
         assert!(page_aligned(paddr));
+        assert!(kernel_hal::dma_check(paddr, pages));
         Arc::new(VMObjectPhysical {
             paddr,
             pages,
