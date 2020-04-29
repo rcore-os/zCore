@@ -324,7 +324,7 @@ impl VMObjectTrait for VMObjectPaged {
             .drain_filter(|x| x.strong_count() == 0 || Weak::ptr_eq(x, &mapping));
     }
 
-    fn complete_info(&self, info: &mut ZxInfoVmo) {
+    fn complete_info(&self, info: &mut VmoInfo) {
         info.flags |= VmoInfoFlags::TYPE_PAGED;
         self.inner.lock().complete_info(info);
     }
@@ -780,7 +780,7 @@ impl VMObjectPagedInner {
         child
     }
 
-    fn complete_info(&self, info: &mut ZxInfoVmo) {
+    fn complete_info(&self, info: &mut VmoInfo) {
         if let VMOType::Snapshot = self.type_ {
             info.flags |= VmoInfoFlags::IS_COW_CLONE;
         }

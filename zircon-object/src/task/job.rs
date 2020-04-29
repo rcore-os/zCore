@@ -185,20 +185,14 @@ impl Job {
         self.exceptionate.clone()
     }
 
-    pub fn enumerate_process(&self, mut f: impl FnMut(KoID) -> bool) {
-        self.inner
-            .lock()
-            .processes
-            .iter()
-            .find(|child| !f(child.id()));
+    /// Get KoIDs of Processes.
+    pub fn process_ids(&self) -> Vec<KoID> {
+        self.inner.lock().processes.iter().map(|p| p.id()).collect()
     }
 
-    pub fn enumerate_children(&self, mut f: impl FnMut(KoID) -> bool) {
-        self.inner
-            .lock()
-            .children
-            .iter()
-            .find(|child| !f(child.id()));
+    /// Get KoIDs of children Jobs.
+    pub fn children_ids(&self) -> Vec<KoID> {
+        self.inner.lock().children.iter().map(|j| j.id()).collect()
     }
 }
 

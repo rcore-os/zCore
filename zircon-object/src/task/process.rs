@@ -412,12 +412,9 @@ impl Process {
         self.exceptionate.clone()
     }
 
-    pub fn enumerate_thread(&self, mut f: impl FnMut(KoID) -> bool) {
-        self.inner
-            .lock()
-            .threads
-            .iter()
-            .find(|child| !f(child.id()));
+    /// Get KoIDs of Threads.
+    pub fn thread_ids(&self) -> Vec<KoID> {
+        self.inner.lock().threads.iter().map(|t| t.id()).collect()
     }
 }
 

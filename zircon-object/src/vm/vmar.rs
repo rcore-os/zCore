@@ -1,7 +1,7 @@
 use core::sync::atomic::*;
 use {
-    super::*, crate::object::*, alloc::collections::VecDeque, alloc::sync::Arc, alloc::vec::Vec,
-    bitflags::bitflags, kernel_hal::PageTable, spin::Mutex,
+    super::*, crate::object::*, alloc::sync::Arc, alloc::vec::Vec, bitflags::bitflags,
+    kernel_hal::PageTable, spin::Mutex,
 };
 
 bitflags! {
@@ -449,28 +449,20 @@ impl VmAddressRegion {
         Err(ZxError::NOT_FOUND)
     }
 
-    pub fn get_task_stats(&self) -> ZxInfoTaskStats {
-        let mut task_stats = ZxInfoTaskStats::default();
-        let mut list = VecDeque::new();
-        self.inner
-            .lock()
-            .as_ref()
-            .unwrap()
-            .children
-            .iter()
-            .for_each(|child| {
-                list.push_back(child.clone());
-            });
-        while let Some(vmar) = list.pop_front() {
-            let vmar_inner = vmar.inner.lock();
-            let inner = vmar_inner.as_ref().unwrap();
-            inner.children.iter().for_each(|child| {
-                list.push_back(child.clone());
-            });
-            inner.mappings.iter().for_each(|map| {
-                map.fill_in_task_status(&mut task_stats);
-            });
+    fn for_each_mapping(&self, f: &mut impl FnMut(&Arc<VmMapping>)) {
+        let guard = self.inner.lock();
+        let inner = guard.as_ref().unwrap();
+        for map in inner.mappings.iter() {
+            f(map);
         }
+        for child in inner.children.iter() {
+            child.for_each_mapping(f);
+        }
+    }
+
+    pub fn get_task_stats(&self) -> TaskStatsInfo {
+        let mut task_stats = TaskStatsInfo::default();
+        self.for_each_mapping(&mut |map| map.fill_in_task_status(&mut task_stats));
         task_stats
     }
 
@@ -514,7 +506,7 @@ struct VmMappingInner {
 
 #[repr(C)]
 #[derive(Default)]
-pub struct ZxInfoTaskStats {
+pub struct TaskStatsInfo {
     mapped_bytes: u64,
     private_bytes: u64,
     shared_bytes: u64,
@@ -582,7 +574,7 @@ impl VmMapping {
             .unmap_from(&mut page_table, inner.addr, inner.vmo_offset, inner.size);
     }
 
-    fn fill_in_task_status(&self, task_stats: &mut ZxInfoTaskStats) {
+    fn fill_in_task_status(&self, task_stats: &mut TaskStatsInfo) {
         let inner = self.inner.lock();
         let start_idx = inner.vmo_offset / PAGE_SIZE;
         let end_idx = start_idx + inner.size / PAGE_SIZE;
