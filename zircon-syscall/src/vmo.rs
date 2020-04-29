@@ -116,6 +116,10 @@ impl Syscall<'_> {
             "vmo_create_child: handle={:#x}, options={:?}, offset={:#x}, size={:#x}",
             handle_value, options, offset, size
         );
+        if options.contains(VmoCloneFlags::SLICE) {
+            // out.write();
+            // return Ok(());
+        }
         if !options.contains(VmoCloneFlags::SNAPSHOT_AT_LEAST_ON_WRITE) {
             return Err(ZxError::NOT_SUPPORTED);
         }
@@ -143,7 +147,7 @@ impl Syscall<'_> {
 
         let child_size = roundup_pages(size);
         info!("size of child vmo: {:#x}", child_size);
-        let child_vmo = vmo.create_child(resizable, offset as usize, child_size);
+        let child_vmo = vmo.create_child(resizable, offset as usize, child_size)?;
         out.write(proc.add_handle(Handle::new(child_vmo, child_rights)))?;
         Ok(())
     }
