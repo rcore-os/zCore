@@ -82,8 +82,13 @@ impl VMObjectTrait for VMObjectPhysical {
         Ok(())
     }
 
-    fn create_child(&self, _offset: usize, _len: usize, _user_id: KoID) -> Arc<dyn VMObjectTrait> {
-        unimplemented!()
+    fn create_child(
+        &self,
+        _offset: usize,
+        _len: usize,
+        _user_id: KoID,
+    ) -> ZxResult<Arc<dyn VMObjectTrait>> {
+        Err(ZxError::NOT_SUPPORTED)
     }
 
     fn append_mapping(&self, _mapping: Weak<VmMapping>) {

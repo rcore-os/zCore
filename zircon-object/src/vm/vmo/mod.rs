@@ -56,7 +56,12 @@ pub trait VMObjectTrait: Sync + Send {
     fn decommit(&self, offset: usize, len: usize) -> ZxResult;
 
     /// Create a child VMO.
-    fn create_child(&self, offset: usize, len: usize, user_id: KoID) -> Arc<dyn VMObjectTrait>;
+    fn create_child(
+        &self,
+        offset: usize,
+        len: usize,
+        user_id: KoID,
+    ) -> ZxResult<Arc<dyn VMObjectTrait>>;
 
     fn append_mapping(&self, mapping: Weak<VmMapping>);
 
@@ -117,20 +122,26 @@ impl VmObject {
     }
 
     /// Create a child VMO.
-    pub fn create_child(self: &Arc<Self>, resizable: bool, offset: usize, len: usize) -> Arc<Self> {
+    pub fn create_child(
+        self: &Arc<Self>,
+        resizable: bool,
+        offset: usize,
+        len: usize,
+    ) -> ZxResult<Arc<Self>> {
         let base = KObjectBase::with_signal(Signal::VMO_ZERO_CHILDREN);
         base.set_name(&self.base.name());
+        let inner = self.inner.create_child(offset, len, base.id)?;
         let child = Arc::new(VmObject {
             parent: Arc::downgrade(self),
             children: Mutex::new(Vec::new()),
             resizable,
             _counter: CountHelper::new(),
-            inner: self.inner.create_child(offset, len, base.id),
+            inner: inner,
             base,
         });
         self.children.lock().push(Arc::downgrade(&child));
         self.base.signal_clear(Signal::VMO_ZERO_CHILDREN);
-        child
+        Ok(child)
     }
 
     /// Set the length of this VMO if resizable.

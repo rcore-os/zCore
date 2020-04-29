@@ -171,7 +171,7 @@ impl VmAddressRegion {
         overwrite: bool,
         _map_range: bool,
     ) -> ZxResult<VirtAddr> {
-        if !page_aligned(vmo_offset) || !page_aligned(len) || vmo_offset + len < vmo_offset {
+        if !page_aligned(vmo_offset) || !page_aligned(len) || vmo_offset.overflowing_add(len).1 {
             return Err(ZxError::INVALID_ARGS);
         }
         // TODO: allow the mapping extends past the end of vmo

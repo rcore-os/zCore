@@ -209,12 +209,18 @@ impl VMObjectPaged {
 
 impl VMObjectTrait for VMObjectPaged {
     fn read(&self, offset: usize, buf: &mut [u8]) -> ZxResult {
+        if self.get_cache_policy() != CachePolicy::Cached {
+            return Err(ZxError::BAD_STATE);
+        }
         self.for_each_page(offset, buf.len(), MMUFlags::READ, |paddr, buf_range| {
             kernel_hal::pmem_read(paddr, &mut buf[buf_range]);
         })
     }
 
     fn write(&self, offset: usize, buf: &[u8]) -> ZxResult {
+        if self.get_cache_policy() != CachePolicy::Cached {
+            return Err(ZxError::BAD_STATE);
+        }
         self.for_each_page(offset, buf.len(), MMUFlags::WRITE, |paddr, buf_range| {
             kernel_hal::pmem_write(paddr, &buf[buf_range]);
         })
@@ -260,10 +266,16 @@ impl VMObjectTrait for VMObjectPaged {
         Ok(())
     }
 
-    fn create_child(&self, offset: usize, len: usize, user_id: KoID) -> Arc<dyn VMObjectTrait> {
+    fn create_child(
+        &self,
+        offset: usize,
+        len: usize,
+        user_id: KoID,
+    ) -> ZxResult<Arc<dyn VMObjectTrait>> {
         assert!(page_aligned(offset));
         assert!(page_aligned(len));
-        self.inner.lock().create_child(offset, len, user_id)
+        let child = self.inner.lock().create_child(offset, len, user_id)?;
+        Ok(child)
     }
 
     fn append_mapping(&self, mapping: Weak<VmMapping>) {
@@ -595,7 +607,15 @@ impl VMObjectPagedInner {
     }
 
     /// Create a snapshot child VMO.
-    fn create_child(&mut self, offset: usize, len: usize, user_id: KoID) -> Arc<VMObjectPaged> {
+    fn create_child(
+        &mut self,
+        offset: usize,
+        len: usize,
+        user_id: KoID,
+    ) -> ZxResult<Arc<VMObjectPaged>> {
+        if self.cache_policy != CachePolicy::Cached {
+            return Err(ZxError::BAD_STATE);
+        }
         // create child VMO
         let child = VMObjectPaged::wrap(VMObjectPagedInner {
             user_id,
@@ -651,7 +671,7 @@ impl VMObjectPagedInner {
                 map.range_change(pages(offset), pages(len), RangeChangeOp::RemoveWrite);
             }
         }
-        child
+        Ok(child)
     }
 
     fn complete_info(&self, info: &mut ZxInfoVmo) {
@@ -778,7 +798,7 @@ mod tests {
     #[test]
     fn create_child() {
         let vmo = VmObject::new_paged(1);
-        let child_vmo = vmo.create_child(false, 0, PAGE_SIZE);
+        let child_vmo = vmo.create_child(false, 0, PAGE_SIZE).unwrap();
 
         // write to parent and make sure clone doesn't see it
         vmo.test_write(0, 1);
@@ -795,8 +815,8 @@ mod tests {
     #[ignore] // FIXME
     fn zero_page_write() {
         let vmo0 = VmObject::new_paged(1);
-        let vmo1 = vmo0.create_child(false, 0, PAGE_SIZE);
-        let vmo2 = vmo0.create_child(false, 0, PAGE_SIZE);
+        let vmo1 = vmo0.create_child(false, 0, PAGE_SIZE).unwrap();
+        let vmo2 = vmo0.create_child(false, 0, PAGE_SIZE).unwrap();
         let vmos = [vmo0, vmo1, vmo2];
         let origin = vmo_page_bytes();
 
@@ -823,9 +843,9 @@ mod tests {
     fn overflow() {
         let vmo0 = VmObject::new_paged(2);
         vmo0.test_write(0, 1);
-        let vmo1 = vmo0.create_child(false, 0, 2 * PAGE_SIZE);
+        let vmo1 = vmo0.create_child(false, 0, 2 * PAGE_SIZE).unwrap();
         vmo1.test_write(1, 2);
-        let vmo2 = vmo1.create_child(false, 0, 3 * PAGE_SIZE);
+        let vmo2 = vmo1.create_child(false, 0, 3 * PAGE_SIZE).unwrap();
         vmo2.test_write(2, 3);
         assert_eq!(vmo0.get_info().committed_bytes as usize, PAGE_SIZE);
         assert_eq!(vmo1.get_info().committed_bytes as usize, PAGE_SIZE);
