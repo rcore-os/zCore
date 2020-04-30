@@ -277,6 +277,32 @@ impl VMObjectTrait for VMObjectPaged {
         Ok(child)
     }
 
+    fn create_slice(
+        self: Arc<Self>,
+        id: KoID,
+        offset: usize,
+        len: usize,
+    ) -> ZxResult<Arc<dyn VMObjectTrait>> {
+        let inner = self.inner.lock();
+        let my_cache_policy = inner.cache_policy;
+        if my_cache_policy != CachePolicy::Cached && !inner.is_contiguous() {
+            return Err(ZxError::BAD_STATE);
+        }
+        let obj = VMObjectPaged::wrap(VMObjectPagedInner {
+            user_id: id,
+            type_: VMOType::Origin,
+            parent: Some(self.clone()),
+            parent_offset: offset,
+            parent_limit: len,
+            size: len,
+            frames: BTreeMap::new(),
+            mappings: Vec::new(),
+            cache_policy: my_cache_policy,
+            self_ref: Default::default(),
+        });
+        Ok(obj)
+    }
+
     fn append_mapping(&self, mapping: Weak<VmMapping>) {
         self.inner.lock().mappings.push(mapping);
     }
@@ -323,11 +349,6 @@ impl VMObjectTrait for VMObjectPaged {
         inner.cache_policy = policy;
         Ok(())
     }
-
-    // TODO: for vmo_create_contiguous
-    // fn is_contiguous(&self) -> bool {
-    //     false
-    // }
 
     fn committed_pages_in_range(&self, start_idx: usize, end_idx: usize) -> usize {
         self.inner
@@ -757,6 +778,11 @@ impl VMObjectPagedInner {
             self.release_unwanted_pages(unwanted);
         }
         self.size = new_size;
+    }
+
+    // TODO: for vmo_create_contiguous
+    fn is_contiguous(&self) -> bool {
+        false
     }
 
     fn clear_invalild_mappings(&mut self) {

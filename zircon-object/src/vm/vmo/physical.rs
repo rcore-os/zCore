@@ -91,6 +91,18 @@ impl VMObjectTrait for VMObjectPhysical {
         Err(ZxError::NOT_SUPPORTED)
     }
 
+    #[allow(unsafe_code)]
+    fn create_slice(
+        self: Arc<Self>,
+        _id: KoID,
+        offset: usize,
+        len: usize,
+    ) -> ZxResult<Arc<dyn VMObjectTrait>> {
+        let obj = unsafe { VMObjectPhysical::new(self.paddr + offset, len / PAGE_SIZE) };
+        obj.inner.lock().cache_policy = self.inner.lock().cache_policy;
+        Ok(obj)
+    }
+
     fn append_mapping(&self, _mapping: Weak<VmMapping>) {
         //        unimplemented!()
         // TODO this function is only used when physical-vmo supports create_child

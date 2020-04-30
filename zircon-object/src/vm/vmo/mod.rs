@@ -63,6 +63,13 @@ pub trait VMObjectTrait: Sync + Send {
         user_id: KoID,
     ) -> ZxResult<Arc<dyn VMObjectTrait>>;
 
+    fn create_slice(
+        self: Arc<Self>,
+        id: KoID,
+        offset: usize,
+        len: usize,
+    ) -> ZxResult<Arc<dyn VMObjectTrait>>;
+
     fn append_mapping(&self, mapping: Weak<VmMapping>);
 
     fn remove_mapping(&self, mapping: Weak<VmMapping>);
@@ -143,9 +150,49 @@ impl VmObject {
             inner: inner,
             base,
         });
-        self.children.lock().push(Arc::downgrade(&child));
-        self.base.signal_clear(Signal::VMO_ZERO_CHILDREN);
+        self.add_child(&child);
         Ok(child)
+    }
+
+    /// Create a child slice as an VMO
+    pub fn create_slice(self: &Arc<Self>, offset: usize, p_size: usize) -> ZxResult<Arc<Self>> {
+        if !page_aligned(offset) {
+            return Err(ZxError::INVALID_ARGS);
+        }
+        let size = roundup_pages(p_size);
+        if size < p_size {
+            return Err(ZxError::OUT_OF_RANGE);
+        }
+        // child slice must be wholly contained
+        let parrent_size = self.inner.len();
+        if offset > parrent_size || size > parrent_size - offset {
+            return Err(ZxError::INVALID_ARGS);
+        }
+        if self.resizable {
+            return Err(ZxError::NOT_SUPPORTED);
+        }
+        let base = KObjectBase::with(&self.base.name(), Signal::VMO_ZERO_CHILDREN);
+        let inner = self.inner.clone().create_slice(base.id, offset, size)?;
+        let child = Arc::new(VmObject {
+            parent: Arc::downgrade(self),
+            children: Mutex::new(Vec::new()),
+            resizable: false,
+            _counter: CountHelper::new(),
+            inner,
+            base,
+        });
+        self.add_child(&child);
+        Ok(child)
+    }
+
+    /// Add child to the list and signal if ZeroChildren signal is active.
+    /// If the number of children turns 0 to 1, signal it
+    pub fn add_child(&self, child: &Arc<VmObject>) {
+        let mut children = self.children.lock();
+        children.push(Arc::downgrade(child));
+        if children.len() == 1 {
+            self.base.signal_clear(Signal::VMO_ZERO_CHILDREN);
+        }
     }
 
     /// Set the length of this VMO if resizable.

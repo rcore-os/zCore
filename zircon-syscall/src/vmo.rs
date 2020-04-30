@@ -111,27 +111,43 @@ impl Syscall<'_> {
         size: usize,
         mut out: UserOutPtr<HandleValue>,
     ) -> ZxResult {
-        let options = VmoCloneFlags::from_bits(options).ok_or(ZxError::INVALID_ARGS)?;
+        let mut options = VmoCloneFlags::from_bits(options).ok_or(ZxError::INVALID_ARGS)?;
         info!(
             "vmo_create_child: handle={:#x}, options={:?}, offset={:#x}, size={:#x}",
             handle_value, options, offset, size
         );
-        if options.contains(VmoCloneFlags::SLICE) {
-            // out.write();
-            // return Ok(());
+        // check options given
+        let no_write = options.contains(VmoCloneFlags::NO_WRITE);
+        if no_write {
+            options.remove(VmoCloneFlags::NO_WRITE);
         }
-        if !options.contains(VmoCloneFlags::SNAPSHOT_AT_LEAST_ON_WRITE) {
-            return Err(ZxError::NOT_SUPPORTED);
-        }
-        let proc = self.thread.proc();
 
+        let resizable = options.contains(VmoCloneFlags::RESIZABLE);
+        let child_size = roundup_pages(size);
+        info!("size of child vmo: {:#x}", child_size);
+
+        let proc = self.thread.proc();
         let (vmo, parent_rights) = proc.get_object_and_rights::<VmObject>(handle_value)?;
         if !parent_rights.contains(Rights::DUPLICATE | Rights::READ) {
             return Err(ZxError::ACCESS_DENIED);
         }
+        let child_vmo = if options.contains(VmoCloneFlags::SLICE) {
+            if options != VmoCloneFlags::SLICE {
+                Err(ZxError::INVALID_ARGS)
+            } else {
+                vmo.create_slice(offset, child_size)
+            }
+        } else {
+            // TODO: SLICE + SNAPSHIT_AT_LEAST_ON_WRITE have been implemented. What's next?
+            if !options.contains(VmoCloneFlags::SNAPSHOT_AT_LEAST_ON_WRITE) {
+                return Err(ZxError::NOT_SUPPORTED);
+            }
+            vmo.create_child(resizable, offset as usize, child_size)
+        }?;
+        // generate rights
         let mut child_rights = parent_rights;
         child_rights.insert(Rights::GET_PROPERTY | Rights::SET_PROPERTY);
-        if options.contains(VmoCloneFlags::NO_WRITE) {
+        if no_write {
             child_rights.remove(Rights::WRITE);
         } else if options.contains(VmoCloneFlags::SNAPSHOT)
             || options.contains(VmoCloneFlags::SNAPSHOT_AT_LEAST_ON_WRITE)
@@ -143,11 +159,6 @@ impl Syscall<'_> {
             "parent_rights: {:?} child_rights: {:?}",
             parent_rights, child_rights
         );
-        let resizable = options.contains(VmoCloneFlags::RESIZABLE);
-
-        let child_size = roundup_pages(size);
-        info!("size of child vmo: {:#x}", child_size);
-        let child_vmo = vmo.create_child(resizable, offset as usize, child_size)?;
         out.write(proc.add_handle(Handle::new(child_vmo, child_rights)))?;
         Ok(())
     }
