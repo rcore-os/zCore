@@ -6,6 +6,23 @@ use {
     zircon_object::{resource::*, task::PolicyCondition, vm::*},
 };
 
+fn check_child_size(size: usize) -> ZxResult<usize> {
+    let new_size = if !page_aligned(size) {
+        if let Some(res) = size.checked_add(PAGE_SIZE) {
+            round_down_pages(res)
+        } else {
+            return Err(ZxError::OUT_OF_RANGE);
+        }
+    } else {
+        size
+    };
+    if new_size > 0xffff_ffff_fffe_0000 {
+        Err(ZxError::OUT_OF_RANGE)
+    } else {
+        Ok(new_size)
+    }
+}
+
 impl Syscall<'_> {
     pub fn sys_vmo_create(
         &self,
@@ -117,9 +134,7 @@ impl Syscall<'_> {
             "vmo_create_child: handle={:#x}, options={:?}, offset={:#x}, size={:#x}",
             handle_value, options, offset, size
         );
-        if !options.contains(VmoCloneFlags::SNAPSHOT_AT_LEAST_ON_WRITE) {
-            return Err(ZxError::NOT_SUPPORTED);
-        }
+        let is_slice = options.contains(VmoCloneFlags::SLICE);
         let proc = self.thread.proc();
 
         let (vmo, parent_rights) = proc.get_object_and_rights::<VmObject>(handle_value)?;
@@ -140,11 +155,31 @@ impl Syscall<'_> {
             "parent_rights: {:?} child_rights: {:?}",
             parent_rights, child_rights
         );
-        let resizable = options.contains(VmoCloneFlags::RESIZABLE);
+        let resizable = if !is_slice {
+            options.contains(VmoCloneFlags::RESIZABLE)
+        } else if options.contains(VmoCloneFlags::RESIZABLE) {
+            return Err(ZxError::INVALID_ARGS);
+        } else {
+            false
+        };
 
-        let child_size = roundup_pages(size);
+        let child_size = check_child_size(size)?;
+        let parent_size = vmo.len();
         info!("size of child vmo: {:#x}", child_size);
-        let child_vmo = vmo.create_child(resizable, offset as usize, child_size);
+        if is_slice {
+            let check = if let Some(limit) = offset.checked_add(size) {
+                limit <= parent_size && offset < parent_size
+            } else {
+                false
+            };
+            if !check && size != 0 {
+                return Err(ZxError::INVALID_ARGS);
+            }
+            if vmo.is_resizable() {
+                return Err(ZxError::NOT_SUPPORTED);
+            }
+        }
+        let child_vmo = vmo.create_child(is_slice, resizable, offset, child_size);
         out.write(proc.add_handle(Handle::new(child_vmo, child_rights)))?;
         Ok(())
     }

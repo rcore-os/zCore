@@ -30,6 +30,7 @@ enum VMOType {
         /// The right child.
         right: WeakRef,
     },
+    Slice,
 }
 
 impl VMOType {
@@ -50,6 +51,10 @@ impl VMOType {
 
     fn is_hidden(&self) -> bool {
         matches!(self, VMOType::Hidden { .. })
+    }
+
+    fn is_slice(&self) -> bool {
+        matches!(self, VMOType::Slice)
     }
 }
 
@@ -81,6 +86,8 @@ struct VMObjectPagedInner {
     cache_policy: CachePolicy,
     /// A weak reference to myself.
     self_ref: WeakRef,
+    /// Children created by create_slice
+    children: Vec<WeakRef>,
 }
 
 /// Page state in VMO.
@@ -151,6 +158,7 @@ impl VMObjectPaged {
             mappings: Vec::new(),
             cache_policy: CachePolicy::Cached,
             self_ref: Default::default(),
+            children: Vec::new(),
         })
     }
 
@@ -273,10 +281,6 @@ impl VMObjectTrait for VMObjectPaged {
 
     fn decommit(&self, offset: usize, len: usize) -> ZxResult {
         let mut inner = self.inner.lock();
-        // non-slice child VMOs do not support decommit.
-        if inner.parent.is_some() {
-            return Err(ZxError::NOT_SUPPORTED);
-        }
         let start_page = offset / PAGE_SIZE;
         let pages = len / PAGE_SIZE;
         for i in 0..pages {
@@ -285,10 +289,20 @@ impl VMObjectTrait for VMObjectPaged {
         Ok(())
     }
 
-    fn create_child(&self, offset: usize, len: usize, user_id: KoID) -> Arc<dyn VMObjectTrait> {
+    fn create_child(
+        &self,
+        is_slice: bool,
+        offset: usize,
+        len: usize,
+        user_id: KoID,
+    ) -> Arc<dyn VMObjectTrait> {
         assert!(page_aligned(offset));
         assert!(page_aligned(len));
-        self.inner.lock().create_child(offset, len, user_id)
+        if !is_slice {
+            self.inner.lock().create_child(offset, len, user_id)
+        } else {
+            self.inner.lock().create_slice(offset, len, user_id)
+        }
     }
 
     fn append_mapping(&self, mapping: Weak<VmMapping>) {
@@ -372,6 +386,15 @@ impl VMObjectPaged {
         child: &WeakRef,
     ) -> ZxResult<CommitResult> {
         let mut inner = self.inner.lock();
+        if inner.type_.is_slice() {
+            assert!((inner.parent_limit - inner.parent_offset) / PAGE_SIZE > page_idx);
+            let parent_idx = page_idx + inner.parent_offset / PAGE_SIZE;
+            return inner.parent.as_ref().unwrap().commit_page_internal(
+                parent_idx,
+                flags,
+                &inner.self_ref,
+            );
+        }
         // special case
         let no_parent = inner.parent.is_none();
         let no_frame = !inner.frames.contains_key(&page_idx);
@@ -533,6 +556,16 @@ impl VMObjectPaged {
 impl VMObjectPagedInner {
     fn decommit(&mut self, page_idx: usize) {
         self.frames.remove(&page_idx);
+        if self.type_.is_slice() {
+            let parent_idx = page_idx + self.parent_offset / PAGE_SIZE;
+            assert!(parent_idx < self.parent_limit / PAGE_SIZE);
+            self.parent
+                .as_ref()
+                .unwrap()
+                .inner
+                .lock()
+                .decommit(parent_idx);
+        }
     }
 
     #[allow(dead_code)]
@@ -610,6 +643,10 @@ impl VMObjectPagedInner {
     ///  ^remove
     /// ```
     fn remove_child(&mut self, child: &WeakRef) {
+        if !self.type_.is_hidden() {
+            self.children.retain(|ch| !child.ptr_eq(ch));
+            return;
+        }
         let (tag, other_child) = self.type_.get_tag_and_other(child);
         let arc_child = other_child.upgrade().unwrap();
         let mut child = arc_child.inner.lock();
@@ -639,6 +676,29 @@ impl VMObjectPagedInner {
         child.parent = self.parent.take();
     }
 
+    /// Create a slice child VMO
+    fn create_slice(&mut self, offset: usize, len: usize, user_id: KoID) -> Arc<VMObjectPaged> {
+        let child = VMObjectPaged::wrap(VMObjectPagedInner {
+            user_id,
+            type_: VMOType::Slice,
+            parent: None, // set later
+            parent_offset: offset,
+            parent_limit: (offset + len).min(self.size),
+            size: len,
+            frames: BTreeMap::new(),
+            mappings: Vec::new(),
+            cache_policy: CachePolicy::Cached,
+            self_ref: Default::default(),
+            children: Vec::new(),
+        });
+        let mut inner = child.inner.lock();
+        inner.parent = Some(self.self_ref.upgrade().unwrap());
+        inner.self_ref = Arc::downgrade(&child);
+        self.children.push(inner.self_ref.clone());
+        drop(inner);
+        child
+    }
+
     /// Create a snapshot child VMO.
     fn create_child(&mut self, offset: usize, len: usize, user_id: KoID) -> Arc<VMObjectPaged> {
         // create child VMO
@@ -653,6 +713,7 @@ impl VMObjectPagedInner {
             mappings: Vec::new(),
             cache_policy: CachePolicy::Cached,
             self_ref: Default::default(),
+            children: Vec::new(),
         });
         // construct a hidden VMO as shared parent
         let hidden = VMObjectPaged::wrap(VMObjectPagedInner {
@@ -669,6 +730,7 @@ impl VMObjectPagedInner {
             mappings: Vec::new(),
             cache_policy: CachePolicy::Cached,
             self_ref: Default::default(),
+            children: Vec::new(),
         });
         // update parent's child
         if let Some(parent) = self.parent.take() {
@@ -797,7 +859,7 @@ mod tests {
     #[test]
     fn create_child() {
         let vmo = VmObject::new_paged(1);
-        let child_vmo = vmo.create_child(false, 0, PAGE_SIZE);
+        let child_vmo = vmo.create_child(false, false, 0, PAGE_SIZE);
 
         // write to parent and make sure clone doesn't see it
         vmo.test_write(0, 1);
@@ -814,8 +876,8 @@ mod tests {
     #[ignore] // FIXME
     fn zero_page_write() {
         let vmo0 = VmObject::new_paged(1);
-        let vmo1 = vmo0.create_child(false, 0, PAGE_SIZE);
-        let vmo2 = vmo0.create_child(false, 0, PAGE_SIZE);
+        let vmo1 = vmo0.create_child(false, false, 0, PAGE_SIZE);
+        let vmo2 = vmo0.create_child(false, false, 0, PAGE_SIZE);
         let vmos = [vmo0, vmo1, vmo2];
         let origin = vmo_page_bytes();
 
@@ -842,9 +904,9 @@ mod tests {
     fn overflow() {
         let vmo0 = VmObject::new_paged(2);
         vmo0.test_write(0, 1);
-        let vmo1 = vmo0.create_child(false, 0, 2 * PAGE_SIZE);
+        let vmo1 = vmo0.create_child(false, false, 0, 2 * PAGE_SIZE);
         vmo1.test_write(1, 2);
-        let vmo2 = vmo1.create_child(false, 0, 3 * PAGE_SIZE);
+        let vmo2 = vmo1.create_child(false, false, 0, 3 * PAGE_SIZE);
         vmo2.test_write(2, 3);
         assert_eq!(vmo0.get_info().committed_bytes as usize, PAGE_SIZE);
         assert_eq!(vmo1.get_info().committed_bytes as usize, PAGE_SIZE);
