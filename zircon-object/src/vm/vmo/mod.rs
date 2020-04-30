@@ -87,6 +87,7 @@ pub struct VmObject {
     children: Mutex<Vec<Weak<VmObject>>>,
     _counter: CountHelper,
     resizable: bool,
+    is_slice: bool,
     inner: Arc<dyn VMObjectTrait>,
 }
 
@@ -105,6 +106,7 @@ impl VmObject {
             parent: Default::default(),
             children: Mutex::new(Vec::new()),
             resizable,
+            is_slice: false,
             _counter: CountHelper::new(),
             inner: VMObjectPaged::new(base.id, pages),
             base,
@@ -119,6 +121,7 @@ impl VmObject {
             parent: Default::default(),
             children: Mutex::new(Vec::new()),
             resizable: true,
+            is_slice: false,
             _counter: CountHelper::new(),
             inner: VMObjectPhysical::new(paddr, pages),
         })
@@ -133,17 +136,30 @@ impl VmObject {
         len: usize,
     ) -> Arc<Self> {
         assert!(!(is_slice && resizable));
+        if self.is_slice {
+            assert!(is_slice, "create a not-slice child for a slice parent!!!");
+        }
         let base = KObjectBase::with_signal(Signal::VMO_ZERO_CHILDREN);
         base.set_name(&self.base.name());
         let child = Arc::new(VmObject {
-            parent: Arc::downgrade(self),
+            parent: if is_slice && self.is_slice {
+                self.parent.clone()
+            } else {
+                Arc::downgrade(self)
+            },
             children: Mutex::new(Vec::new()),
             resizable,
+            is_slice,
             _counter: CountHelper::new(),
             inner: self.inner.create_child(is_slice, offset, len, base.id),
             base,
         });
-        self.children.lock().push(Arc::downgrade(&child));
+        if self.is_slice {
+            let arc_parent = self.parent.upgrade().unwrap();
+            arc_parent.children.lock().push(Arc::downgrade(&child));
+        } else {
+            self.children.lock().push(Arc::downgrade(&child));
+        }
         self.base.signal_clear(Signal::VMO_ZERO_CHILDREN);
         child
     }
@@ -193,6 +209,10 @@ impl VmObject {
     pub fn is_resizable(&self) -> bool {
         self.resizable
     }
+
+    pub fn is_slice(&self) -> bool {
+        self.is_slice
+    }
 }
 
 impl Deref for VmObject {
@@ -208,6 +228,14 @@ impl Drop for VmObject {
         if let Some(parent) = self.parent.upgrade() {
             let mut children = parent.children.lock();
             children.retain(|c| c.strong_count() != 0);
+            children.iter().for_each(|child| {
+                let arc_child = child.upgrade().unwrap();
+                let mut locked_children = arc_child.children.lock();
+                locked_children.retain(|c| c.strong_count() != 0);
+                if locked_children.is_empty() {
+                    arc_child.base.signal_set(Signal::VMO_ZERO_CHILDREN);
+                }
+            });
             if children.is_empty() {
                 parent.base.signal_set(Signal::VMO_ZERO_CHILDREN);
             }

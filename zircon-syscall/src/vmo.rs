@@ -178,6 +178,8 @@ impl Syscall<'_> {
             if vmo.is_resizable() {
                 return Err(ZxError::NOT_SUPPORTED);
             }
+        } else if vmo.is_slice() {
+            return Err(ZxError::NOT_SUPPORTED);
         }
         let child_vmo = vmo.create_child(is_slice, resizable, offset, child_size);
         out.write(proc.add_handle(Handle::new(child_vmo, child_rights)))?;

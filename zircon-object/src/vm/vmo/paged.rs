@@ -678,12 +678,25 @@ impl VMObjectPagedInner {
 
     /// Create a slice child VMO
     fn create_slice(&mut self, offset: usize, len: usize, user_id: KoID) -> Arc<VMObjectPaged> {
+        let (parent, parent_offset, parent_limit) = if self.type_.is_slice() {
+            (
+                self.parent.clone(),
+                offset + self.parent_offset,
+                (offset + len).min(self.size) + self.parent_offset,
+            )
+        } else {
+            (
+                Some(self.self_ref.upgrade().unwrap()),
+                offset,
+                (offset + len).min(self.size),
+            )
+        };
         let child = VMObjectPaged::wrap(VMObjectPagedInner {
             user_id,
             type_: VMOType::Slice,
-            parent: None, // set later
-            parent_offset: offset,
-            parent_limit: (offset + len).min(self.size),
+            parent,
+            parent_offset,
+            parent_limit,
             size: len,
             frames: BTreeMap::new(),
             mappings: Vec::new(),
@@ -692,9 +705,14 @@ impl VMObjectPagedInner {
             children: Vec::new(),
         });
         let mut inner = child.inner.lock();
-        inner.parent = Some(self.self_ref.upgrade().unwrap());
         inner.self_ref = Arc::downgrade(&child);
-        self.children.push(inner.self_ref.clone());
+        if self.type_.is_slice() {
+            let parent = self.parent.as_ref().unwrap();
+            let mut locked_parent = parent.inner.lock();
+            locked_parent.children.push(inner.self_ref.clone());
+        } else {
+            self.children.push(inner.self_ref.clone());
+        }
         drop(inner);
         child
     }
