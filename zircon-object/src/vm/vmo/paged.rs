@@ -281,6 +281,14 @@ impl VMObjectTrait for VMObjectPaged {
 
     fn decommit(&self, offset: usize, len: usize) -> ZxResult {
         let mut inner = self.inner.lock();
+        if inner.type_.is_slice() {
+            let parent_offset = offset + inner.parent_offset;
+            return inner.parent.as_ref().unwrap().decommit(parent_offset, len);
+        }
+        let check = inner.parent.is_none();
+        if !check {
+            return Err(ZxError::NOT_SUPPORTED);
+        }
         let start_page = offset / PAGE_SIZE;
         let pages = len / PAGE_SIZE;
         for i in 0..pages {
@@ -556,16 +564,6 @@ impl VMObjectPaged {
 impl VMObjectPagedInner {
     fn decommit(&mut self, page_idx: usize) {
         self.frames.remove(&page_idx);
-        if self.type_.is_slice() {
-            let parent_idx = page_idx + self.parent_offset / PAGE_SIZE;
-            assert!(parent_idx < self.parent_limit / PAGE_SIZE);
-            self.parent
-                .as_ref()
-                .unwrap()
-                .inner
-                .lock()
-                .decommit(parent_idx);
-        }
     }
 
     #[allow(dead_code)]
@@ -622,6 +620,9 @@ impl VMObjectPagedInner {
                         count += 1;
                         break;
                     }
+                }
+                if inner.user_id != self.user_id {
+                    break;
                 }
                 current_idx += inner.parent_offset / PAGE_SIZE;
                 if current_idx >= inner.parent_limit / PAGE_SIZE {
@@ -829,11 +830,17 @@ impl VMObjectPagedInner {
     }
 
     fn resize(&mut self, new_size: usize) {
-        if new_size < self.size {
+        if new_size == 0 && new_size < self.size {
+            self.frames.clear();
+            if let Some(parent) = self.parent.as_ref() {
+                parent.inner.lock().remove_child(&self.self_ref);
+                self.parent = None;
+            }
+        } else if new_size < self.size {
             let mut unwanted = VecDeque::<usize>::new();
             let parent_end = (self.parent_limit - self.parent_offset) / PAGE_SIZE;
             for i in new_size / PAGE_SIZE..self.size / PAGE_SIZE {
-                if self.frames.remove(&i).is_none() && parent_end > i {
+                if parent_end > i {
                     unwanted.push_back(i);
                 }
             }
