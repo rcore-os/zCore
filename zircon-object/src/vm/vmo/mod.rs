@@ -79,6 +79,7 @@ pub struct VmObject {
     children: Mutex<Vec<Weak<VmObject>>>,
     _counter: CountHelper,
     resizable: bool,
+    contiguous: bool,
     inner: Arc<dyn VMObjectTrait>,
 }
 
@@ -97,6 +98,7 @@ impl VmObject {
             parent: Default::default(),
             children: Mutex::new(Vec::new()),
             resizable,
+            contiguous: false,
             _counter: CountHelper::new(),
             inner: VMObjectPaged::new(base.id, pages),
             base,
@@ -115,6 +117,7 @@ impl VmObject {
             parent: Default::default(),
             children: Mutex::new(Vec::new()),
             resizable: true,
+            contiguous: true,
             _counter: CountHelper::new(),
             inner: VMObjectPhysical::new(paddr, pages),
         })
@@ -128,6 +131,7 @@ impl VmObject {
             parent: Arc::downgrade(self),
             children: Mutex::new(Vec::new()),
             resizable,
+            contiguous: self.contiguous, // WARNING: I'm not sure ...
             _counter: CountHelper::new(),
             inner: self.inner.create_child(offset, len, base.id),
             base,
@@ -181,6 +185,10 @@ impl VmObject {
 
     pub fn is_resizable(&self) -> bool {
         self.resizable
+    }
+
+    pub fn is_contiguous(&self) -> bool {
+        self.contiguous
     }
 }
 
