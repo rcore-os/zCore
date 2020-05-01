@@ -219,7 +219,7 @@ impl VMObjectPaged {
         if inner.type_.is_slice() {
             // deal with slice seperately
             // A slice definitely has a parent.
-            if inner.parent.is_some() && offset < inner.parent_limit {
+            if inner.parent.is_some() && offset < inner.parent_limit - inner.parent_offset {
                 Some(f(&inner))
             } else {
                 Some(Err(ZxError::OUT_OF_RANGE))
@@ -325,6 +325,15 @@ impl VMObjectTrait for VMObjectPaged {
     ) -> ZxResult<Arc<dyn VMObjectTrait>> {
         assert!(page_aligned(offset));
         assert!(page_aligned(len));
+        if let Some(res) = self.if_slice_do(offset, |inner| {
+            inner
+                .parent
+                .as_ref()
+                .unwrap()
+                .create_child(offset + inner.parent_offset, len, user_id)
+        }) {
+            return res;
+        }
         let child = self.inner.lock().create_child(offset, len, user_id)?;
         Ok(child)
     }
@@ -335,6 +344,15 @@ impl VMObjectTrait for VMObjectPaged {
         offset: usize,
         len: usize,
     ) -> ZxResult<Arc<dyn VMObjectTrait>> {
+        if let Some(res) = self.if_slice_do(offset, |inner| {
+            inner
+                .parent
+                .clone()
+                .unwrap()
+                .create_slice(id, offset + inner.parent_offset, len)
+        }) {
+            return res;
+        }
         let inner = self.inner.lock();
         let my_cache_policy = inner.cache_policy;
         if my_cache_policy != CachePolicy::Cached && !inner.is_contiguous() {
@@ -345,7 +363,7 @@ impl VMObjectTrait for VMObjectPaged {
             type_: VMOType::Slice,
             parent: Some(self.clone()),
             parent_offset: offset,
-            parent_limit: len,
+            parent_limit: offset + len,
             size: len,
             frames: BTreeMap::new(),
             mappings: Vec::new(),
@@ -531,6 +549,11 @@ impl VMObjectPaged {
         new_range: Option<(usize, usize)>,
     ) {
         let mut inner = self.inner.lock();
+        if inner.type_.is_slice() {
+            // Just do nothing?
+            // - no frames to release? True, at least now
+            return;
+        }
         let (tag, other) = inner.type_.get_tag_and_other(old);
         let arc_other_child = other.upgrade().unwrap();
         let mut other_child = arc_other_child.inner.lock();
@@ -770,7 +793,8 @@ impl VMObjectPagedInner {
                         panic!();
                     }
                 }
-                _ => panic!(),
+                // child slice vmo has no hidden VMO as parent
+                _ => {}
             }
         }
         // update children's parent

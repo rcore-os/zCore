@@ -124,6 +124,9 @@ impl Syscall<'_> {
 
         let resizable = options.contains(VmoCloneFlags::RESIZABLE);
         let child_size = roundup_pages(size);
+        if child_size < size {
+            return Err(ZxError::OUT_OF_RANGE);
+        }
         info!("size of child vmo: {:#x}", child_size);
 
         let proc = self.thread.proc();
@@ -131,6 +134,7 @@ impl Syscall<'_> {
         if !parent_rights.contains(Rights::DUPLICATE | Rights::READ) {
             return Err(ZxError::ACCESS_DENIED);
         }
+        // TODO: SLICE + SNAPSHIT_AT_LEAST_ON_WRITE have been implemented. What's next?
         let child_vmo = if options.contains(VmoCloneFlags::SLICE) {
             if options != VmoCloneFlags::SLICE {
                 Err(ZxError::INVALID_ARGS)
@@ -138,7 +142,6 @@ impl Syscall<'_> {
                 vmo.create_slice(offset, child_size)
             }
         } else {
-            // TODO: SLICE + SNAPSHIT_AT_LEAST_ON_WRITE have been implemented. What's next?
             if !options.contains(VmoCloneFlags::SNAPSHOT_AT_LEAST_ON_WRITE) {
                 return Err(ZxError::NOT_SUPPORTED);
             }
