@@ -16,8 +16,8 @@ Reimplement [Zircon][zircon] microkernel in safe Rust as a userspace program!
 
 ```sh
 git clone https://github.com/rcore-os/zCore
-git lfs pull
 cd zCore
+git lfs pull
 ```
 
 Prepare Alpine Linux rootfs:
