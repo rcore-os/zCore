@@ -113,8 +113,10 @@ impl Fifo {
             return Err(ZxError::SHOULD_WAIT);
         }
         let read_size = count_size.min(recv_queue.len());
-        if recv_queue.len() == self.capacity() && peer.is_some() {
-            peer.unwrap().base.signal_set(Signal::WRITABLE);
+        if recv_queue.len() == self.capacity() {
+            if let Some(peer) = peer {
+                peer.base.signal_set(Signal::WRITABLE);
+            }
         }
         for (i, x) in recv_queue.drain(..read_size).enumerate() {
             data[i] = x;
