@@ -82,8 +82,25 @@ impl VMObjectTrait for VMObjectPhysical {
         Ok(())
     }
 
-    fn create_child(&self, _offset: usize, _len: usize, _user_id: KoID) -> Arc<dyn VMObjectTrait> {
-        unimplemented!()
+    fn create_child(
+        &self,
+        _offset: usize,
+        _len: usize,
+        _user_id: KoID,
+    ) -> ZxResult<Arc<dyn VMObjectTrait>> {
+        Err(ZxError::NOT_SUPPORTED)
+    }
+
+    #[allow(unsafe_code)]
+    fn create_slice(
+        self: Arc<Self>,
+        _id: KoID,
+        offset: usize,
+        len: usize,
+    ) -> ZxResult<Arc<dyn VMObjectTrait>> {
+        let obj = unsafe { VMObjectPhysical::new(self.paddr + offset, len / PAGE_SIZE) };
+        obj.inner.lock().cache_policy = self.inner.lock().cache_policy;
+        Ok(obj)
     }
 
     fn append_mapping(&self, _mapping: Weak<VmMapping>) {
