@@ -3,7 +3,7 @@
 use {
     super::*,
     zircon_object::{
-        dev::{Bti, Iommu},
+        dev::*,
         resource::*,
     },
     bitflags::bitflags,
@@ -72,7 +72,7 @@ impl Syscall<'_> {
         vmo: HandleValue,
         offset: usize,
         size: usize,
-        addrs: UserOutPtr<PhysAddr>,
+        mut addrs: UserOutPtr<DevVAddr>,
         addrs_count: usize,
         mut out: UserOutPtr<HandleValue>,
     ) -> ZxResult {
@@ -90,23 +90,21 @@ impl Syscall<'_> {
             return Err(ZxError::ACCESS_DENIED);
         }
 
-        let mut iommu_perms = IommuOptions::empty();
-        let mut compress_results = false;
-        let mut contiguous = false;
+        let mut iommu_perms = IommuPerms::empty();
         let options = BtiOptions::from_bits_truncate(options);
-
+        
         if options.contains(BtiOptions::PERM_READ) {
             if !rights.contains(Rights::READ) {
                 return Err(ZxError::ACCESS_DENIED);
             }
-            iommu_perms.insert(IommuOptions::PERM_READ)
+            iommu_perms.insert(IommuPerms::PERM_READ)
         }
 
         if options.contains(BtiOptions::PERM_WRITE) {
             if !rights.contains(Rights::WRITE) {
                 return Err(ZxError::ACCESS_DENIED);
             }
-            iommu_perms.insert(IommuOptions::PERM_WRITE);
+            iommu_perms.insert(IommuPerms::PERM_WRITE);
         }
 
         if options.contains(BtiOptions::PERM_EXECUTE) {
@@ -116,25 +114,24 @@ impl Syscall<'_> {
             if !rights.contains(Rights::READ) {
                 return Err(ZxError::ACCESS_DENIED);
             }
-            iommu_perms.insert(IommuOptions::PERM_EXECUTE);
+            iommu_perms.insert(IommuPerms::PERM_EXECUTE);
         }
-
+        
         if options.contains(BtiOptions::CONTIGUOUS) && options.contains(BtiOptions::COMPRESS) {
             return Err(ZxError::INVALID_ARGS);
         }
-
-        if options.contains(BtiOptions::COMPRESS) {
-            compress_results = true;
+        if options.contains(BtiOptions::CONTIGUOUS) && !vmo.is_contiguous() {
+            return Err(ZxError::INVALID_ARGS)
         }
-
-        if options.contains(BtiOptions::CONTIGUOUS) {
-            if !vmo.is_contiguous() {
-                return Err(ZxError::INVALID_ARGS);
-            }
-            contiguous = true;
-        }
+        let compress_results = options.contains(BtiOptions::COMPRESS);
+        let contiguous = options.contains(BtiOptions::CONTIGUOUS);
         
-        Err(ZxError::NOT_SUPPORTED)
+        let pmt = bti.pin(vmo, offset, size, iommu_perms)?;
+        addrs.write_array(&pmt.as_ref().encode_addrs(compress_results, contiguous, addrs_count)?)?;
+
+        let handle = proc.add_handle(Handle::new(pmt, Rights::INSPECT));
+        out.write(handle)?;
+        Ok(())
     }
 }
 
@@ -151,10 +148,3 @@ bitflags! {
     }
 }
 
-bitflags! {
-    struct IommuOptions: u32 {
-        const PERM_READ             = 1 << 0;
-        const PERM_WRITE            = 1 << 1;
-        const PERM_EXECUTE          = 1 << 2;
-    }
-}

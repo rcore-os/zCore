@@ -458,7 +458,7 @@ impl VMObjectTrait for VMObjectPaged {
             return res;
         }
         let start_page = offset / PAGE_SIZE;
-        let end_page = (start_page + len - 1) / PAGE_SIZE + 1;
+        let end_page = pages(offset + len);
         for i in start_page .. end_page {
             let frame = inner.frames.get(&i).unwrap();
             if frame.pin_count == VM_PAGE_OBJECT_MAX_PIN_COUNT {
@@ -490,7 +490,7 @@ impl VMObjectTrait for VMObjectPaged {
         }
     
         let start_page = offset / PAGE_SIZE;
-        let end_page = (start_page + len - 1) / PAGE_SIZE + 1;
+        let end_page = pages(offset + len);
         for i in start_page..end_page {
             let frame = inner.frames.get(&i).unwrap();
             if frame.pin_count == 0 {
@@ -503,11 +503,9 @@ impl VMObjectTrait for VMObjectPaged {
         Ok(())
     }
 
-    // TODO: for vmo_create_contiguous
-    fn is_contiguous(&self) -> bool {
-        false
+    fn is_paged(&self) -> bool {
+        return true;
     }
-
 }
 
 enum CommitResult {

@@ -92,7 +92,13 @@ pub trait VMObjectTrait: Sync + Send {
         Err(ZxError::NOT_SUPPORTED)
     }
 
-    fn is_contiguous(&self) -> bool;
+    fn is_contiguous(&self) -> bool {
+        return false;
+    }
+
+    fn is_paged(&self) -> bool {
+        return false;
+    }
 }
 
 pub struct VmObject {

@@ -5,22 +5,23 @@ use {
         sync::Arc,
         vec::Vec,
     },
+    spin::Mutex,
     dev::Iommu,
-    kernel_hal::PAGE_SIZE,
+    crate::vm::*,
 };
 
-// Iommu refers to DummyIommu in fuchsia
+// BusTransactionInitiator
 #[allow(dead_code)]
 pub struct Bti {
     base: KObjectBase,
     iommu: Arc<Iommu>,
     bti_id: u64,
-    pinned_memory: Vec<Pinned>,
-    quarantine: Vec<Quarantined>
+    inner: Mutex<BtiInner>,
 }
 
-struct Pinned {
-
+struct BtiInner {
+    pmts: Vec<Arc<Pmt>>,
+    quarantine: Vec<Quarantined>
 }
 
 struct Quarantined {
@@ -35,18 +36,42 @@ impl Bti {
             base: KObjectBase::new(),
             iommu,
             bti_id,
-            pinned_memory: Vec::new(),
-            quarantine: Vec::new(),
+            inner: Mutex::new(BtiInner{
+                pmts: Vec::new(),
+                quarantine: Vec::new(),
+            })
         })
     }
 
     pub fn get_info(&self) -> ZxInfoBti {
+        let inner = self.inner.lock();
         ZxInfoBti {
-            minimum_contiguity: PAGE_SIZE as u64,
-            aspace_size: 0xffffffffffffffff,
-            pmo_count: self.pinned_memory.len() as u64, // need lock
-            quarantine_count: self.quarantine.len() as u64, // need lock
+            minimum_contiguity: self.minimum_contiguity() as u64,
+            aspace_size: self.aspace_size() as u64,
+            pmo_count: inner.pmts.len() as u64,
+            quarantine_count: inner.quarantine.len() as u64,
         }
+    }
+
+    pub fn pin(&self,
+               vmo: Arc<VmObject>,
+               offset: usize,
+               size: usize,
+               perms: IommuPerms) -> ZxResult<Arc<Pmt>> {
+        if size == 0 {
+            return Err(ZxError::INVALID_ARGS);
+        }
+        let pmt = Pmt::create(self, vmo, perms, offset, size)?;
+        self.inner.lock().pmts.push(pmt.clone()); // I'm not sure...
+        Ok(pmt)
+    }
+
+    pub fn minimum_contiguity(&self) -> usize {
+        self.iommu.minimum_contiguity()
+    }
+
+    pub fn aspace_size(&self) -> usize {
+        self.iommu.aspace_size()
     }
 }
 
