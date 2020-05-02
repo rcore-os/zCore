@@ -139,7 +139,7 @@ impl Syscall<'_> {
             handle, signals, deadline, observed
         );
         let signals = match signals{
-            0xFFFFFFFF => Signal::all(),
+            0xFFFF_FFFF => Signal::all(),
             _ => 
             Signal::from_bits(signals).ok_or_else(|| {
                 if !deadline.is_positive() {
