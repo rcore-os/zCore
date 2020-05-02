@@ -131,7 +131,7 @@ impl VmObject {
             parent: Arc::downgrade(self),
             children: Mutex::new(Vec::new()),
             resizable,
-            contiguous: self.contiguous, // WARNING: I'm not sure ...
+            contiguous: false,
             _counter: CountHelper::new(),
             inner: self.inner.create_child(offset, len, base.id),
             base,
