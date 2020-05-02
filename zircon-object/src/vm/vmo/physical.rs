@@ -145,6 +145,10 @@ impl VMObjectTrait for VMObjectPhysical {
     fn committed_pages_in_range(&self, _start_idx: usize, _end_idx: usize) -> usize {
         unimplemented!()
     }
+
+    fn is_contiguous(&self) -> bool {
+        true
+    }
 }
 
 #[cfg(test)]

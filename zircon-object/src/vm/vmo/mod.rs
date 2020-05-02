@@ -83,6 +83,16 @@ pub trait VMObjectTrait: Sync + Send {
     fn share_count(&self) -> usize;
 
     fn committed_pages_in_range(&self, start_idx: usize, end_idx: usize) -> usize;
+
+    fn pin(&self, _offset: usize, _len: usize) -> ZxResult {
+        Err(ZxError::NOT_SUPPORTED)
+    }
+
+    fn unpin(&self, _offset: usize, _len:usize) -> ZxResult {
+        Err(ZxError::NOT_SUPPORTED)
+    }
+
+    fn is_contiguous(&self) -> bool;
 }
 
 pub struct VmObject {
@@ -91,7 +101,6 @@ pub struct VmObject {
     children: Mutex<Vec<Weak<VmObject>>>,
     _counter: CountHelper,
     resizable: bool,
-    contiguous: bool,
     inner: Arc<dyn VMObjectTrait>,
 }
 
@@ -110,7 +119,6 @@ impl VmObject {
             parent: Mutex::new(Default::default()),
             children: Mutex::new(Vec::new()),
             resizable,
-            contiguous: false,
             _counter: CountHelper::new(),
             inner: VMObjectPaged::new(base.id, pages),
             base,
@@ -129,7 +137,6 @@ impl VmObject {
             parent: Mutex::new(Default::default()),
             children: Mutex::new(Vec::new()),
             resizable: true,
-            contiguous: true,
             _counter: CountHelper::new(),
             inner: VMObjectPhysical::new(paddr, pages),
         })
@@ -149,7 +156,6 @@ impl VmObject {
             parent: Mutex::new(Arc::downgrade(self)),
             children: Mutex::new(Vec::new()),
             resizable,
-            contiguous: false,
             _counter: CountHelper::new(),
             inner: inner,
             base,
@@ -247,7 +253,7 @@ impl VmObject {
     }
 
     pub fn is_contiguous(&self) -> bool {
-        self.contiguous
+        self.inner.is_contiguous()
     }
 }
 

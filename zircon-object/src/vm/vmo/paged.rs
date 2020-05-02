@@ -93,6 +93,7 @@ struct VMObjectPagedInner {
 struct PageState {
     frame: PhysFrame,
     tag: PageStateTag,
+    pin_count: u8,
 }
 
 /// The owner tag of pages in the node.
@@ -126,6 +127,7 @@ impl PageState {
         PageState {
             frame,
             tag: PageStateTag::Owned,
+            pin_count: 0,
         }
     }
     #[allow(unsafe_code)]
@@ -355,7 +357,7 @@ impl VMObjectTrait for VMObjectPaged {
         }
         let inner = self.inner.lock();
         let my_cache_policy = inner.cache_policy;
-        if my_cache_policy != CachePolicy::Cached && !inner.is_contiguous() {
+        if my_cache_policy != CachePolicy::Cached && !self.is_contiguous() {
             return Err(ZxError::BAD_STATE);
         }
         let obj = VMObjectPaged::wrap(VMObjectPagedInner {
@@ -437,6 +439,75 @@ impl VMObjectTrait for VMObjectPaged {
     fn share_count(&self) -> usize {
         self.inner.lock().mappings.len()
     }
+
+    fn pin(&self, offset: usize, len: usize) -> ZxResult {
+        let mut inner = self.inner.lock();
+        if offset as usize > inner.size || len > inner.size - (offset as usize) {
+            return Err(ZxError::OUT_OF_RANGE);
+        }
+        if len == 0 {
+            return Ok(())
+        }
+        if let Some(res) = self.if_slice_do(offset, |inner| {
+            inner
+                .parent
+                .as_ref()
+                .unwrap()
+                .pin(offset + inner.parent_offset, len)
+        }) {
+            return res;
+        }
+        let start_page = offset / PAGE_SIZE;
+        let end_page = (start_page + len - 1) / PAGE_SIZE + 1;
+        for i in start_page .. end_page {
+            let frame = inner.frames.get(&i).unwrap();
+            if frame.pin_count == VM_PAGE_OBJECT_MAX_PIN_COUNT {
+                return Err(ZxError::UNAVAILABLE);
+            }
+        }
+        for i in start_page .. end_page {
+            inner.frames.get_mut(&i).unwrap().pin_count += 1;
+        }
+        Ok(())
+    }
+
+    fn unpin(&self, offset: usize, len: usize) -> ZxResult {
+        let mut inner = self.inner.lock();
+        if offset as usize > inner.size || len > inner.size - (offset as usize) {
+            return Err(ZxError::OUT_OF_RANGE);
+        }
+        if len == 0 {
+            return Ok(())
+        }
+        if let Some(res) = self.if_slice_do(offset, |inner| {
+            inner
+                .parent
+                .as_ref()
+                .unwrap()
+                .pin(offset + inner.parent_offset, len)
+        }) {
+            return res;
+        }
+    
+        let start_page = offset / PAGE_SIZE;
+        let end_page = (start_page + len - 1) / PAGE_SIZE + 1;
+        for i in start_page..end_page {
+            let frame = inner.frames.get(&i).unwrap();
+            if frame.pin_count == 0 {
+                return Err(ZxError::UNAVAILABLE);
+            }
+        }
+        for i in start_page..end_page {
+            inner.frames.get_mut(&i).unwrap().pin_count -= 1;
+        }
+        Ok(())
+    }
+
+    // TODO: for vmo_create_contiguous
+    fn is_contiguous(&self) -> bool {
+        false
+    }
+
 }
 
 enum CommitResult {
@@ -877,10 +948,6 @@ impl VMObjectPagedInner {
         self.size = new_size;
     }
 
-    // TODO: for vmo_create_contiguous
-    fn is_contiguous(&self) -> bool {
-        false
-    }
 
     fn clear_invalild_mappings(&mut self) {
         self.mappings.drain_filter(|x| x.strong_count() == 0);
@@ -894,6 +961,9 @@ impl Drop for VMObjectPaged {
         if let Some(parent) = &inner.parent {
             parent.inner.lock().remove_child(&inner.self_ref);
         }
+        for frame in inner.frames.iter() {
+            assert_eq!(frame.1.pin_count, 0);
+        }
     }
 }
 
@@ -903,6 +973,8 @@ fn new_owner_id() -> u64 {
     static OWNER_ID: AtomicU64 = AtomicU64::new(1);
     OWNER_ID.fetch_add(1, Ordering::SeqCst)
 }
+
+const VM_PAGE_OBJECT_MAX_PIN_COUNT: u8 = 31;
 
 #[cfg(test)]
 mod tests {
