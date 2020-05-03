@@ -1,6 +1,6 @@
 # zCore
 
-[![Actions Status](https://github.com/rcore-os/zCore/workflows/CI/badge.svg)](https://github.com/rcore-os/zCore/actions)
+[![CI](https://github.com/rcore-os/zCore/workflows/CI/badge.svg?branch=master)](https://github.com/rcore-os/zCore/actions)
 [![Docs](https://img.shields.io/badge/docs-alpha-blue)](https://rcore-os.github.io/zCore/zircon_object/)
 [![Coverage Status](https://coveralls.io/repos/github/rcore-os/zCore/badge.svg?branch=master)](https://coveralls.io/github/rcore-os/zCore?branch=master)
 
@@ -14,8 +14,16 @@ Reimplement [Zircon][zircon] microkernel in safe Rust as a userspace program!
 
 ## Getting started
 
+Environments：
+
+* [Rust toolchain](http://rustup.rs)
+* [QEMU](https://www.qemu.org)
+* [Git LFS](https://git-lfs.github.com)
+
+Clone repo and pull prebuilt fuchsia images:
+
 ```sh
-git clone https://github.com/rcore-os/zCore
+git clone https://github.com/rcore-os/zCore --recursive
 cd zCore
 git lfs pull
 ```
@@ -32,7 +40,7 @@ Run native Linux program (Busybox):
 cargo run --release -p linux-loader /bin/busybox [args]
 ```
 
-Run native Zircon program (userboot):
+Run native Zircon program (shell):
 
 ```sh
 cargo run --release -p zircon-loader prebuilt/zircon
