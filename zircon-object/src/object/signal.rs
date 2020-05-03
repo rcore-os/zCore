@@ -11,6 +11,7 @@ bitflags! {
         const SIGNALED                      = 1 << 3;
         const HANDLE_CLOSED                 = 1 << 23;
 
+        const KERNEL_ALL                    = 0xff_ffff;
         const USER_ALL                      = 0xff << 24;
 
         const CLOCK_STARTED                 = 1 << 4;
