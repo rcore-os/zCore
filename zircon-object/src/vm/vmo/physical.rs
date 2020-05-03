@@ -64,7 +64,7 @@ impl VMObjectTrait for VMObjectPhysical {
         self.pages * PAGE_SIZE
     }
 
-    fn set_len(&self, _len: usize) {
+    fn set_len(&self, _len: usize) -> ZxResult {
         unimplemented!()
     }
 

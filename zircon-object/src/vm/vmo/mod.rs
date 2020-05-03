@@ -35,7 +35,7 @@ pub trait VMObjectTrait: Sync + Send {
     fn len(&self) -> usize;
 
     /// Set the length of VMO.
-    fn set_len(&self, len: usize);
+    fn set_len(&self, len: usize) -> ZxResult;
 
     /// Unmap physical memory from `page_table`.
     fn unmap_from(&self, page_table: &mut PageTable, vaddr: VirtAddr, _offset: usize, len: usize) {
@@ -219,8 +219,7 @@ impl VmObject {
             return Err(ZxError::OUT_OF_RANGE);
         }
         if self.resizable {
-            self.inner.set_len(size);
-            Ok(())
+            self.inner.set_len(size)
         } else {
             Err(ZxError::UNAVAILABLE)
         }

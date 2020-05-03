@@ -87,6 +87,8 @@ struct VMObjectPagedInner {
     cache_policy: CachePolicy,
     /// A weak reference to myself.
     self_ref: WeakRef,
+    /// Sum of pin_count
+    pin_count: usize,
 }
 
 /// Page state in VMO.
@@ -159,6 +161,7 @@ impl VMObjectPaged {
             mappings: Vec::new(),
             cache_policy: CachePolicy::Cached,
             self_ref: Default::default(),
+            pin_count: 0,
         })
     }
 
@@ -274,10 +277,14 @@ impl VMObjectTrait for VMObjectPaged {
         self.inner.lock().size
     }
 
-    fn set_len(&self, len: usize) {
+    fn set_len(&self, len: usize) -> ZxResult {
         assert!(page_aligned(len));
         let mut inner = self.inner.lock();
+        if inner.pin_count > 0 {
+            return Err(ZxError::BAD_STATE);
+        }
         inner.resize(len);
+        Ok(())
     }
 
     fn commit_page(&self, page_idx: usize, flags: MMUFlags) -> ZxResult<PhysAddr> {
@@ -371,6 +378,7 @@ impl VMObjectTrait for VMObjectPaged {
             mappings: Vec::new(),
             cache_policy: my_cache_policy,
             self_ref: Default::default(),
+            pin_count: 0,
         });
         Ok(obj)
     }
@@ -470,6 +478,7 @@ impl VMObjectTrait for VMObjectPaged {
         }
         for i in start_page .. end_page {
             inner.frames.get_mut(&i).unwrap().pin_count += 1;
+            inner.pin_count += 1;
         }
         Ok(())
     }
@@ -477,7 +486,7 @@ impl VMObjectTrait for VMObjectPaged {
     fn unpin(&self, offset: usize, len: usize) -> ZxResult {
         {
             let inner = self.inner.lock();
-            if offset as usize > inner.size || len > inner.size - (offset as usize) {
+            if !in_range(offset, len, inner.size) {
                 return Err(ZxError::OUT_OF_RANGE);
             }
             if len == 0 {
@@ -503,6 +512,7 @@ impl VMObjectTrait for VMObjectPaged {
                 return Err(ZxError::UNAVAILABLE);
             }
         }
+        assert_ne!(inner.pin_count, 0);
         for i in start_page..end_page {
             inner.frames.get_mut(&i).unwrap().pin_count -= 1;
         }
@@ -838,6 +848,7 @@ impl VMObjectPagedInner {
             mappings: Vec::new(),
             cache_policy: CachePolicy::Cached,
             self_ref: Default::default(),
+            pin_count: 0,
         });
         // construct a hidden VMO as shared parent
         let hidden = VMObjectPaged::wrap(VMObjectPagedInner {
@@ -854,6 +865,7 @@ impl VMObjectPagedInner {
             mappings: Vec::new(),
             cache_policy: CachePolicy::Cached,
             self_ref: Default::default(),
+            pin_count: 0,
         });
         // update parent's child
         if let Some(parent) = self.parent.take() {
