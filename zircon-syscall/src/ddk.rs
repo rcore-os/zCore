@@ -76,7 +76,7 @@ impl Syscall<'_> {
         addrs_count: usize,
         mut out: UserOutPtr<HandleValue>,
     ) -> ZxResult {
-        info!(
+        warn!(
             "bti.pin: bti={:#x}, options={:?}, vmo={:#x}, offset={:#x}, size={:#x}, addrs: {:#x?}, addrs_count: {:#x}",
             bti, options, vmo, offset, size, addrs, addrs_count
         );
@@ -125,12 +125,11 @@ impl Syscall<'_> {
         }
         let compress_results = options.contains(BtiOptions::COMPRESS);
         let contiguous = options.contains(BtiOptions::CONTIGUOUS);
-        
         let pmt = bti.pin(vmo, offset, size, iommu_perms)?;
         addrs.write_array(&pmt.as_ref().encode_addrs(compress_results, contiguous, addrs_count)?)?;
-
         let handle = proc.add_handle(Handle::new(pmt, Rights::INSPECT));
         out.write(handle)?;
+        warn!("bti_pin end");
         Ok(())
     }
 }

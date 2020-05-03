@@ -441,12 +441,15 @@ impl VMObjectTrait for VMObjectPaged {
     }
 
     fn pin(&self, offset: usize, len: usize) -> ZxResult {
-        let mut inner = self.inner.lock();
-        if offset as usize > inner.size || len > inner.size - (offset as usize) {
-            return Err(ZxError::OUT_OF_RANGE);
-        }
-        if len == 0 {
-            return Ok(())
+        warn!("start paged pin offset {} len {}", offset, len);
+        { // if_slice_do needs inner.lock, so we should release it after pre-check
+            let inner = self.inner.lock();
+            if offset as usize > inner.size || len > inner.size - (offset as usize) {
+                return Err(ZxError::OUT_OF_RANGE);
+            }
+            if len == 0 {
+                return Ok(())
+            }
         }
         if let Some(res) = self.if_slice_do(offset, |inner| {
             inner
@@ -457,6 +460,7 @@ impl VMObjectTrait for VMObjectPaged {
         }) {
             return res;
         }
+        let mut inner = self.inner.lock();
         let start_page = offset / PAGE_SIZE;
         let end_page = pages(offset + len);
         for i in start_page .. end_page {
@@ -472,12 +476,15 @@ impl VMObjectTrait for VMObjectPaged {
     }
 
     fn unpin(&self, offset: usize, len: usize) -> ZxResult {
-        let mut inner = self.inner.lock();
-        if offset as usize > inner.size || len > inner.size - (offset as usize) {
-            return Err(ZxError::OUT_OF_RANGE);
-        }
-        if len == 0 {
-            return Ok(())
+        warn!("start paged unpin offset {} len {}", offset, len);
+        {
+            let inner = self.inner.lock();
+            if offset as usize > inner.size || len > inner.size - (offset as usize) {
+                return Err(ZxError::OUT_OF_RANGE);
+            }
+            if len == 0 {
+                return Ok(())
+            }
         }
         if let Some(res) = self.if_slice_do(offset, |inner| {
             inner
@@ -488,7 +495,8 @@ impl VMObjectTrait for VMObjectPaged {
         }) {
             return res;
         }
-    
+
+        let mut inner = self.inner.lock();
         let start_page = offset / PAGE_SIZE;
         let end_page = pages(offset + len);
         for i in start_page..end_page {

@@ -11,7 +11,6 @@ use {
 };
 
 // PinnedMemoryToken
-#[allow(dead_code)]
 pub struct Pmt {
     base: KObjectBase,
     vmo: Arc<VmObject>,
@@ -24,7 +23,9 @@ impl_kobject!(Pmt);
 
 impl Drop for Pmt {
     fn drop(&mut self) {
-        // TODO: unpin pages
+        if self.vmo.is_paged() {
+            self.vmo.unpin(self.offset, self.size).unwrap();
+        }
     }
 }
 
@@ -57,8 +58,11 @@ impl Pmt {
         }))
     }
 
-    pub fn mapped_into_iommu(_num_addrs: usize) -> ZxResult<Vec<DevVAddr>> {
-        Err(ZxError::NOT_SUPPORTED)
+    pub fn mapped_into_iommu(num_addrs: usize) -> ZxResult<Vec<DevVAddr>> {
+        // TODO
+        let mut ret:Vec<DevVAddr> = Vec::new();
+        ret.resize(num_addrs, 0 as DevVAddr);
+        Ok(ret)
     }
 
     pub fn encode_addrs(

@@ -62,7 +62,7 @@ impl Bti {
             return Err(ZxError::INVALID_ARGS);
         }
         let pmt = Pmt::create(self, vmo, perms, offset, size)?;
-        self.inner.lock().pmts.push(pmt.clone()); // I'm not sure...
+        self.inner.lock().pmts.push(pmt.clone());
         Ok(pmt)
     }
 
