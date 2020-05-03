@@ -2,8 +2,26 @@ use {
     super::*,
     bitflags::bitflags,
     kernel_hal::CachePolicy,
+    numeric_enum_macro::numeric_enum,
     zircon_object::{resource::*, task::PolicyCondition, vm::*},
 };
+
+fn check_child_size(size: usize) -> ZxResult<usize> {
+    let new_size = if !page_aligned(size) {
+        if let Some(res) = size.checked_add(PAGE_SIZE) {
+            round_down_pages(res)
+        } else {
+            return Err(ZxError::OUT_OF_RANGE);
+        }
+    } else {
+        size
+    };
+    if new_size > 0xffff_ffff_fffe_0000 {
+        Err(ZxError::OUT_OF_RANGE)
+    } else {
+        Ok(new_size)
+    }
+}
 
 impl Syscall<'_> {
     pub fn sys_vmo_create(
@@ -116,9 +134,7 @@ impl Syscall<'_> {
             "vmo_create_child: handle={:#x}, options={:?}, offset={:#x}, size={:#x}",
             handle_value, options, offset, size
         );
-        if !options.contains(VmoCloneFlags::SNAPSHOT_AT_LEAST_ON_WRITE) {
-            return Err(ZxError::NOT_SUPPORTED);
-        }
+        let is_slice = options.contains(VmoCloneFlags::SLICE);
         let proc = self.thread.proc();
 
         let (vmo, parent_rights) = proc.get_object_and_rights::<VmObject>(handle_value)?;
@@ -139,16 +155,37 @@ impl Syscall<'_> {
             "parent_rights: {:?} child_rights: {:?}",
             parent_rights, child_rights
         );
-        let resizable = options.contains(VmoCloneFlags::RESIZABLE);
+        let resizable = if !is_slice {
+            options.contains(VmoCloneFlags::RESIZABLE)
+        } else if options.contains(VmoCloneFlags::RESIZABLE) {
+            return Err(ZxError::INVALID_ARGS);
+        } else {
+            false
+        };
 
-        let child_size = roundup_pages(size);
+        let child_size = check_child_size(size)?;
+        let parent_size = vmo.len();
         info!("size of child vmo: {:#x}", child_size);
-        let child_vmo = vmo.create_child(resizable, offset as usize, child_size);
+        if is_slice {
+            let check = if let Some(limit) = offset.checked_add(size) {
+                limit <= parent_size && offset < parent_size
+            } else {
+                false
+            };
+            if !check && size != 0 {
+                return Err(ZxError::INVALID_ARGS);
+            }
+            if vmo.is_resizable() {
+                return Err(ZxError::NOT_SUPPORTED);
+            }
+        } else if vmo.is_slice() {
+            return Err(ZxError::NOT_SUPPORTED);
+        }
+        let child_vmo = vmo.create_child(is_slice, resizable, offset, child_size);
         out.write(proc.add_handle(Handle::new(child_vmo, child_rights)))?;
         Ok(())
     }
 
-    #[allow(unsafe_code)]
     pub fn sys_vmo_create_physical(
         &self,
         rsrc: HandleValue,
@@ -170,7 +207,7 @@ impl Syscall<'_> {
         if paddr.overflowing_add(size).1 {
             return Err(ZxError::INVALID_ARGS);
         }
-        let vmo = unsafe { VmObject::new_physical(paddr, size / PAGE_SIZE) };
+        let vmo = VmObject::new_physical(paddr, size / PAGE_SIZE);
         let handle_value = proc.add_handle(Handle::new(vmo, Rights::DEFAULT_VMO | Rights::EXECUTE));
         out.write(handle_value)?;
         Ok(())
@@ -201,24 +238,34 @@ impl Syscall<'_> {
             "vmo.op_range: handle={:#x}, op={:#X}, offset={:#x}, len={:#x}, buffer_size={:#x}",
             handle_value, op, offset, len, _buffer_size,
         );
+        let op = VmoOpType::try_from(op).or(Err(ZxError::INVALID_ARGS))?;
         let proc = self.thread.proc();
         let (vmo, rights) = proc.get_object_and_rights::<VmObject>(handle_value)?;
-        if !page_aligned(offset) || !page_aligned(len) {
-            return Err(ZxError::INVALID_ARGS);
-        }
         match op {
-            VMO_OP_COMMIT => {
+            VmoOpType::Commit => {
                 if !rights.contains(Rights::WRITE) {
                     return Err(ZxError::ACCESS_DENIED);
+                }
+                if !page_aligned(offset) || !page_aligned(len) {
+                    return Err(ZxError::INVALID_ARGS);
                 }
                 vmo.commit(offset, len)?;
                 Ok(())
             }
-            VMO_OP_DECOMMIT => {
+            VmoOpType::Decommit => {
                 if !rights.contains(Rights::WRITE) {
                     return Err(ZxError::ACCESS_DENIED);
                 }
+                if !page_aligned(offset) || !page_aligned(len) {
+                    return Err(ZxError::INVALID_ARGS);
+                }
                 vmo.decommit(offset, len)
+            }
+            VmoOpType::Zero => {
+                if !rights.contains(Rights::WRITE) {
+                    return Err(ZxError::ACCESS_DENIED);
+                }
+                vmo.zero(offset, len)
             }
             _ => unimplemented!(),
         }
@@ -243,6 +290,18 @@ bitflags! {
     }
 }
 
-/// VMO Opcodes (for vmo_op_range)
-const VMO_OP_COMMIT: u32 = 1;
-const VMO_OP_DECOMMIT: u32 = 2;
+numeric_enum! {
+    #[repr(u32)]
+    /// VMO Opcodes (for vmo_op_range)
+    pub enum VmoOpType {
+        Commit = 1,
+        Decommit = 2,
+        Lock = 3,
+        Unlock = 4,
+        CacheSync = 6,
+        CacheInvalidate = 7,
+        CacheClean = 8,
+        CacheCleanInvalidate = 9,
+        Zero = 10,
+    }
+}

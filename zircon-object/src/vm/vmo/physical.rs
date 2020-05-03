@@ -27,15 +27,18 @@ impl VMObjectPhysicalInner {
     }
 }
 
+impl Drop for VMObjectPhysical {
+    fn drop(&mut self) {
+        kernel_hal::dma_recycle(self.paddr, self.pages);
+    }
+}
+
 impl VMObjectPhysical {
     /// Create a new VMO representing a piece of contiguous physical memory.
-    ///
-    /// # Safety
-    ///
     /// You must ensure nobody has the ownership of this piece of memory yet.
-    #[allow(unsafe_code)]
-    pub unsafe fn new(paddr: PhysAddr, pages: usize) -> Arc<Self> {
+    pub fn new(paddr: PhysAddr, pages: usize) -> Arc<Self> {
         assert!(page_aligned(paddr));
+        assert!(kernel_hal::dma_check(paddr, pages));
         Arc::new(VMObjectPhysical {
             paddr,
             pages,
@@ -82,7 +85,13 @@ impl VMObjectTrait for VMObjectPhysical {
         Ok(())
     }
 
-    fn create_child(&self, _offset: usize, _len: usize, _user_id: KoID) -> Arc<dyn VMObjectTrait> {
+    fn create_child(
+        &self,
+        _is_slice: bool,
+        _offset: usize,
+        _len: usize,
+        _user_id: KoID,
+    ) -> Arc<dyn VMObjectTrait> {
         unimplemented!()
     }
 
@@ -128,6 +137,10 @@ impl VMObjectTrait for VMObjectPhysical {
     fn committed_pages_in_range(&self, _start_idx: usize, _end_idx: usize) -> usize {
         unimplemented!()
     }
+
+    fn zero(&self, _offset: usize, _len: usize) -> ZxResult {
+        unimplemented!()
+    }
 }
 
 #[cfg(test)]
@@ -138,7 +151,7 @@ mod tests {
 
     #[test]
     fn read_write() {
-        let vmo = unsafe { VmObject::new_physical(0x1000, 2) };
+        let vmo = VmObject::new_physical(0x1000, 2);
         let vmphy = vmo.inner.clone();
         assert_eq!(vmphy.get_cache_policy(), CachePolicy::Uncached);
         super::super::tests::read_write(&vmo);

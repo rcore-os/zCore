@@ -188,7 +188,7 @@ pub fn frame_copy(_src: PhysAddr, _target: PhysAddr) {
 /// Zero `target` frame.
 #[linkage = "weak"]
 #[export_name = "hal_frame_zero"]
-pub fn frame_zero(_target: PhysAddr) {
+pub fn frame_zero_in_range(_target: PhysAddr, _start: usize, _end: usize) {
     unimplemented!()
 }
 
@@ -259,5 +259,17 @@ pub fn vdso_constants() -> VdsoConstants {
 #[linkage = "weak"]
 #[export_name = "fetch_fault_vaddr"]
 pub fn fetch_fault_vaddr() -> VirtAddr {
+    unimplemented!()
+}
+
+#[linkage = "weak"]
+#[export_name = "dma_range_check"]
+pub fn dma_check(_paddr: PhysAddr, _pages: usize) -> bool {
+    unimplemented!()
+}
+
+#[linkage = "weak"]
+#[export_name = "dma_range_recycle"]
+pub fn dma_recycle(_paddr: PhysAddr, _pages: usize) {
     unimplemented!()
 }

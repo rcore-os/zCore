@@ -56,7 +56,13 @@ pub trait VMObjectTrait: Sync + Send {
     fn decommit(&self, offset: usize, len: usize) -> ZxResult;
 
     /// Create a child VMO.
-    fn create_child(&self, offset: usize, len: usize, user_id: KoID) -> Arc<dyn VMObjectTrait>;
+    fn create_child(
+        &self,
+        is_slice: bool,
+        offset: usize,
+        len: usize,
+        user_id: KoID,
+    ) -> Arc<dyn VMObjectTrait>;
 
     fn append_mapping(&self, mapping: Weak<VmMapping>);
 
@@ -71,6 +77,8 @@ pub trait VMObjectTrait: Sync + Send {
     fn share_count(&self) -> usize;
 
     fn committed_pages_in_range(&self, start_idx: usize, end_idx: usize) -> usize;
+
+    fn zero(&self, offset: usize, len: usize) -> ZxResult;
 }
 
 pub struct VmObject {
@@ -79,6 +87,7 @@ pub struct VmObject {
     children: Mutex<Vec<Weak<VmObject>>>,
     _counter: CountHelper,
     resizable: bool,
+    is_slice: bool,
     inner: Arc<dyn VMObjectTrait>,
 }
 
@@ -97,6 +106,7 @@ impl VmObject {
             parent: Default::default(),
             children: Mutex::new(Vec::new()),
             resizable,
+            is_slice: false,
             _counter: CountHelper::new(),
             inner: VMObjectPaged::new(base.id, pages),
             base,
@@ -104,35 +114,52 @@ impl VmObject {
     }
 
     /// Create a new VMO representing a piece of contiguous physical memory.
-    ///
-    /// # Safety
-    ///
     /// You must ensure nobody has the ownership of this piece of memory yet.
-    #[allow(unsafe_code)]
-    pub unsafe fn new_physical(paddr: PhysAddr, pages: usize) -> Arc<Self> {
+    pub fn new_physical(paddr: PhysAddr, pages: usize) -> Arc<Self> {
         Arc::new(VmObject {
             base: KObjectBase::with_signal(Signal::VMO_ZERO_CHILDREN),
             parent: Default::default(),
             children: Mutex::new(Vec::new()),
             resizable: true,
+            is_slice: false,
             _counter: CountHelper::new(),
             inner: VMObjectPhysical::new(paddr, pages),
         })
     }
 
     /// Create a child VMO.
-    pub fn create_child(self: &Arc<Self>, resizable: bool, offset: usize, len: usize) -> Arc<Self> {
+    pub fn create_child(
+        self: &Arc<Self>,
+        is_slice: bool,
+        resizable: bool,
+        offset: usize,
+        len: usize,
+    ) -> Arc<Self> {
+        assert!(!(is_slice && resizable));
+        if self.is_slice {
+            assert!(is_slice, "create a not-slice child for a slice parent!!!");
+        }
         let base = KObjectBase::with_signal(Signal::VMO_ZERO_CHILDREN);
         base.set_name(&self.base.name());
         let child = Arc::new(VmObject {
-            parent: Arc::downgrade(self),
+            parent: if is_slice && self.is_slice {
+                self.parent.clone()
+            } else {
+                Arc::downgrade(self)
+            },
             children: Mutex::new(Vec::new()),
             resizable,
+            is_slice,
             _counter: CountHelper::new(),
-            inner: self.inner.create_child(offset, len, base.id),
+            inner: self.inner.create_child(is_slice, offset, len, base.id),
             base,
         });
-        self.children.lock().push(Arc::downgrade(&child));
+        if self.is_slice {
+            let arc_parent = self.parent.upgrade().unwrap();
+            arc_parent.children.lock().push(Arc::downgrade(&child));
+        } else {
+            self.children.lock().push(Arc::downgrade(&child));
+        }
         self.base.signal_clear(Signal::VMO_ZERO_CHILDREN);
         child
     }
@@ -182,6 +209,10 @@ impl VmObject {
     pub fn is_resizable(&self) -> bool {
         self.resizable
     }
+
+    pub fn is_slice(&self) -> bool {
+        self.is_slice
+    }
 }
 
 impl Deref for VmObject {
@@ -197,6 +228,14 @@ impl Drop for VmObject {
         if let Some(parent) = self.parent.upgrade() {
             let mut children = parent.children.lock();
             children.retain(|c| c.strong_count() != 0);
+            children.iter().for_each(|child| {
+                let arc_child = child.upgrade().unwrap();
+                let mut locked_children = arc_child.children.lock();
+                locked_children.retain(|c| c.strong_count() != 0);
+                if locked_children.is_empty() {
+                    arc_child.base.signal_set(Signal::VMO_ZERO_CHILDREN);
+                }
+            });
             if children.is_empty() {
                 parent.base.signal_set(Signal::VMO_ZERO_CHILDREN);
             }
