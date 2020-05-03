@@ -49,6 +49,8 @@ extern "C" {
     fn hal_pt_map_kernel(pt: *mut u8, current: *const u8);
     fn hal_frame_alloc() -> Option<PhysAddr>;
     fn hal_frame_dealloc(paddr: &PhysAddr);
+    #[allow(dead_code)]
+    fn hal_frame_alloc_contiguous(size: usize, align_log2: usize) -> Option<PhysAddr>;
     #[link_name = "hal_pmem_base"]
     static PMEM_BASE: usize;
 }

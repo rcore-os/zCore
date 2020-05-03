@@ -2,7 +2,7 @@ use {
     super::*,
     bitflags::bitflags,
     kernel_hal::CachePolicy,
-    zircon_object::{resource::*, task::PolicyCondition, vm::*},
+    zircon_object::{dev::*, resource::*, task::PolicyCondition, vm::*},
 };
 
 impl Syscall<'_> {
@@ -175,7 +175,7 @@ impl Syscall<'_> {
         mut out: UserOutPtr<HandleValue>,
     ) -> ZxResult {
         info!(
-            "vmo.create: handle={:#x?}, paddr={:#x?}, size={:#x}, out={:#x?}",
+            "vmo.create_physical: handle={:#x?}, paddr={:#x?}, size={:#x}, out={:#x?}",
             size, paddr, size, out
         );
         let proc = self.thread.proc();
@@ -190,6 +190,37 @@ impl Syscall<'_> {
         }
         let vmo = unsafe { VmObject::new_physical(paddr, size / PAGE_SIZE) };
         let handle_value = proc.add_handle(Handle::new(vmo, Rights::DEFAULT_VMO | Rights::EXECUTE));
+        out.write(handle_value)?;
+        Ok(())
+    }
+
+    pub fn sys_vmo_create_contiguous(
+        &self,
+        bti: HandleValue,
+        size: usize,
+        align_log2: u32,
+        mut out: UserOutPtr<HandleValue>,
+    ) -> ZxResult {
+        info!(
+            "vmo.create_contiguous: handle={:#x?}, size={:x?}, size={}, out={:#x?}",
+            bti, size, align_log2, out
+        );
+        if size == 0 {
+            return Err(ZxError::INVALID_ARGS);
+        }
+        let align_log2 = if align_log2 == 0 {
+            PAGE_SIZE_LOG2
+        } else {
+            align_log2 as usize
+        };
+        if align_log2 < PAGE_SIZE_LOG2 || align_log2 >= 8 * core::mem::size_of::<usize>() {
+            return Err(ZxError::INVALID_ARGS);
+        }
+        let proc = self.thread.proc();
+        proc.check_policy(PolicyCondition::NewVMO)?;
+        let _bti = proc.get_object_with_rights::<Bti>(bti, Rights::MAP)?;
+        let vmo = VmObject::new_contiguous(size, align_log2)?;
+        let handle_value = proc.add_handle(Handle::new(vmo, Rights::DEFAULT_VMO));
         out.write(handle_value)?;
         Ok(())
     }

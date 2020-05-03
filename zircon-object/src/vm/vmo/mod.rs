@@ -132,6 +132,27 @@ impl VmObject {
         })
     }
 
+    pub fn new_contiguous(p_size: usize, align_log2: usize) -> ZxResult<Arc<Self>> {
+        assert!(align_log2 < 8 * core::mem::size_of::<usize>());
+        let size = roundup_pages(p_size);
+        if size < p_size {
+            return Err(ZxError::INVALID_ARGS);
+        }
+        let base = KObjectBase::with_signal(Signal::VMO_ZERO_CHILDREN);
+        let size_page = pages(size);
+        let inner = VMObjectPaged::new(base.id, size_page);
+        inner.create_contiguous(size, align_log2)?;
+        let vmo = Arc::new(VmObject {
+            base: base,
+            parent: Mutex::new(Default::default()),
+            children: Mutex::new(Vec::new()),
+            resizable: false,
+            _counter: CountHelper::new(),
+            inner: inner,
+        });
+        Ok(vmo)
+    }
+
     /// Create a child VMO.
     pub fn create_child(
         self: &Arc<Self>,

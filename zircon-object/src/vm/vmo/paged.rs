@@ -627,6 +627,21 @@ impl VMObjectPaged {
             _ => panic!(),
         }
     }
+
+    /// Create a list of contiguous pages
+    pub fn create_contiguous(&self, size: usize, align_log2: usize) -> ZxResult {
+        assert!(page_aligned(size));
+        let size_page = pages(size);
+        let base = PhysFrame::alloc_contiguous(size_page, align_log2).ok_or(ZxError::NO_MEMORY)?;
+        let mut inner = self.inner.lock();
+        for i in 0..size_page {
+            let frame = PhysFrame::wrap(base.addr() + i * PAGE_SIZE);
+            kernel_hal::frame_zero(frame.addr());
+            inner.frames.insert(i, PageState::new(frame));
+            // TODO: make pinned
+        }
+        Ok(())
+    }
 }
 
 impl VMObjectPagedInner {

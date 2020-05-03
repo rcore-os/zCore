@@ -145,6 +145,12 @@ impl PhysFrame {
         unimplemented!()
     }
 
+    #[linkage = "weak"]
+    #[export_name = "hal_frame_alloc_contiguous"]
+    pub extern "C" fn alloc_contiguous(_size: usize, _align_log2: usize) -> Option<Self> {
+        unimplemented!()
+    }
+
     pub fn addr(&self) -> PhysAddr {
         self.paddr
     }
@@ -153,6 +159,10 @@ impl PhysFrame {
     #[export_name = "hal_zero_frame_paddr"]
     pub fn zero_frame_addr() -> PhysAddr {
         unimplemented!()
+    }
+
+    pub fn wrap(addr: PhysAddr) -> Self {
+        PhysFrame { paddr: addr }
     }
 }
 

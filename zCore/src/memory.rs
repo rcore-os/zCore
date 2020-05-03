@@ -64,6 +64,17 @@ pub extern "C" fn hal_frame_alloc() -> Option<usize> {
 }
 
 #[no_mangle]
+pub extern "C" fn hal_frame_alloc_contiguous(size: usize, align_log2: usize) -> Option<usize> {
+    let page = (size + PAGE_SIZE - 1) / PAGE_SIZE;
+    let ret = FRAME_ALLOCATOR
+        .lock()
+        .alloc_contiguous(page, align_log2)
+        .map(|id| id * PAGE_SIZE + MEMORY_OFFSET);
+    trace!("Allocate contiguous frames: {:x?} ~ {:x?}", ret, ret.map(|x| x + size));
+    ret
+}
+
+#[no_mangle]
 pub extern "C" fn hal_frame_dealloc(target: &usize) {
     trace!("Deallocate frame: {:x}", *target);
     FRAME_ALLOCATOR
