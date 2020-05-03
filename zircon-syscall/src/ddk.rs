@@ -121,12 +121,18 @@ impl Syscall<'_> {
             return Err(ZxError::INVALID_ARGS);
         }
         if options.contains(BtiOptions::CONTIGUOUS) && !vmo.is_contiguous() {
-            return Err(ZxError::INVALID_ARGS)
+            return Err(ZxError::INVALID_ARGS);
         }
         let compress_results = options.contains(BtiOptions::COMPRESS);
         let contiguous = options.contains(BtiOptions::CONTIGUOUS);
         let pmt = bti.pin(vmo, offset, size, iommu_perms)?;
-        addrs.write_array(&pmt.as_ref().encode_addrs(compress_results, contiguous, addrs_count)?)?;
+        let encoded_addrs = pmt.as_ref().encode_addrs(compress_results, contiguous)?;
+        if encoded_addrs.len() != addrs_count {
+            warn!("bti.pin addrs_count = {}, but encoded_addrs.len = {}",
+                addrs_count, encoded_addrs.len());
+            return Err(ZxError::INVALID_ARGS);
+        }
+        addrs.write_array(&encoded_addrs)?;
         let handle = proc.add_handle(Handle::new(pmt, Rights::INSPECT));
         out.write(handle)?;
         warn!("bti_pin end");

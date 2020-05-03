@@ -1,11 +1,12 @@
 use {
     crate::object::*,
-    crate::vm::PAGE_SIZE,
+    crate::vm::*,
     alloc::{sync::Arc, vec::Vec},
     bitflags::bitflags,
 };
 
-// Iommu refers to DummyIommu in fuchsia
+// Iommu refers to DummyIommu in zircon
+// A dummy implementation, do not take it serious
 
 pub struct Iommu {
     base: KObjectBase,
@@ -35,6 +36,48 @@ impl Iommu {
 
     pub fn aspace_size(&self) -> usize {
         -1 as isize as usize
+    }
+
+    pub fn map(
+        &self,
+        vmo: Arc<VmObject>,
+        offset: usize,
+        size: usize,
+        perms: IommuPerms,
+    ) -> ZxResult<(DevVAddr, usize)> {
+        if perms == IommuPerms::empty() {
+            return Err(ZxError::INVALID_ARGS);
+        }
+        if !in_range(offset, size, vmo.len()) {
+            return Err(ZxError::INVALID_ARGS);
+        }
+        let p_addr = vmo.commit_page(offset, MMUFlags::empty())?;
+        if vmo.is_paged() {
+            Ok((p_addr, PAGE_SIZE))
+        } else {
+            Ok((p_addr, pages(size)))
+        }
+    }
+
+    pub fn map_contiguous(
+        &self,
+        vmo: Arc<VmObject>,
+        offset: usize,
+        size: usize,
+        perms: IommuPerms,
+    ) -> ZxResult<(DevVAddr, usize)> {
+        if perms == IommuPerms::empty() {
+            return Err(ZxError::INVALID_ARGS);
+        }
+        if !in_range(offset, size, vmo.len()) {
+            return Err(ZxError::INVALID_ARGS);
+        }
+        let p_addr = vmo.commit_page(offset, MMUFlags::empty())?;
+        if vmo.is_paged() {
+            Ok((p_addr, PAGE_SIZE))
+        } else {
+            Ok((p_addr, pages(size) * PAGE_SIZE))
+        }
     }
 }
 

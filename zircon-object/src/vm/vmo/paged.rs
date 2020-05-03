@@ -584,7 +584,6 @@ impl VMObjectPaged {
                 }
             }
         }
-
         // now the page must hit on this VMO
         let (child_tag, other_child) = inner.type_.get_tag_and_other(child);
         if inner.type_.is_hidden() {

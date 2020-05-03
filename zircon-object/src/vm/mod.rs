@@ -32,7 +32,7 @@ pub fn pages(size: usize) -> usize {
     size.wrapping_add(PAGE_SIZE - 1) / PAGE_SIZE
 }
 
-pub fn roundup(x: usize, align: usize) -> usize {
+pub fn ceil(x: usize, align: usize) -> usize {
     x.wrapping_add(align - 1) / align
 }
 
@@ -46,6 +46,11 @@ pub fn roundup_pages(size: usize) -> usize {
 
 pub fn round_down_pages(size: usize) -> usize {
     size / PAGE_SIZE * PAGE_SIZE
+}
+
+// [offset, offset + size) is subset of [0, len)
+pub fn in_range(offset: usize, size: usize, len: usize) -> bool {
+    offset <= len && size <= len - offset
 }
 
 #[cfg(test)]

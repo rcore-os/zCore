@@ -53,15 +53,17 @@ impl Bti {
         }
     }
 
-    pub fn pin(&self,
-               vmo: Arc<VmObject>,
-               offset: usize,
-               size: usize,
-               perms: IommuPerms) -> ZxResult<Arc<Pmt>> {
+    pub fn pin(
+        &self,
+        vmo: Arc<VmObject>,
+        offset: usize,
+        size: usize,
+        perms: IommuPerms
+    ) -> ZxResult<Arc<Pmt>> {
         if size == 0 {
             return Err(ZxError::INVALID_ARGS);
         }
-        let pmt = Pmt::create(self, vmo, perms, offset, size)?;
+        let pmt = Pmt::create(self.iommu.clone(), vmo, perms, offset, size)?;
         self.inner.lock().pmts.push(pmt.clone());
         Ok(pmt)
     }
@@ -72,6 +74,10 @@ impl Bti {
 
     pub fn aspace_size(&self) -> usize {
         self.iommu.aspace_size()
+    }
+
+    pub fn get_iommu(&self) -> Arc<Iommu> {
+        self.iommu.clone()
     }
 }
 
