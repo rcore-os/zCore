@@ -134,17 +134,11 @@ impl Syscall<'_> {
         deadline: Deadline,
         mut observed: UserOutPtr<Signal>,
     ) -> ZxResult {
+        let signals = Signal::from_bits_truncate(signals);
         info!(
             "object.wait_one: handle={:#x?}, signals={:#x?}, deadline={:#x?}, observed={:#x?}",
             handle, signals, deadline, observed
         );
-        let signals = Signal::from_bits(signals).ok_or_else(|| {
-            if !deadline.is_positive() {
-                ZxError::TIMED_OUT
-            } else {
-                ZxError::INVALID_ARGS
-            }
-        })?;
         let proc = self.thread.proc();
         let object = proc.get_dyn_object_with_rights(handle, Rights::WAIT)?;
         let cancel_token = proc.get_cancel_token(handle)?;
@@ -324,7 +318,7 @@ impl Syscall<'_> {
         signals: u32,
         options: u32,
     ) -> ZxResult {
-        let signals = Signal::from_bits(signals).ok_or(ZxError::INVALID_ARGS)?;
+        let signals = Signal::from_bits_truncate(signals);
         info!(
             "object.wait_async: handle={:#x}, port={:#x}, key={:#x}, signal={:?}, options={:#X}",
             handle_value, port_handle_value, key, signals, options
