@@ -441,7 +441,6 @@ impl VMObjectTrait for VMObjectPaged {
     }
 
     fn pin(&self, offset: usize, len: usize) -> ZxResult {
-        warn!("start paged pin offset {} len {}", offset, len);
         { // if_slice_do needs inner.lock, so we should release it after pre-check
             let inner = self.inner.lock();
             if offset as usize > inner.size || len > inner.size - (offset as usize) {
@@ -476,7 +475,6 @@ impl VMObjectTrait for VMObjectPaged {
     }
 
     fn unpin(&self, offset: usize, len: usize) -> ZxResult {
-        warn!("start paged unpin offset {} len {}", offset, len);
         {
             let inner = self.inner.lock();
             if offset as usize > inner.size || len > inner.size - (offset as usize) {

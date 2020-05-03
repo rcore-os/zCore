@@ -76,7 +76,7 @@ impl Syscall<'_> {
         addrs_count: usize,
         mut out: UserOutPtr<HandleValue>,
     ) -> ZxResult {
-        warn!(
+        info!(
             "bti.pin: bti={:#x}, options={:?}, vmo={:#x}, offset={:#x}, size={:#x}, addrs: {:#x?}, addrs_count: {:#x}",
             bti, options, vmo, offset, size, addrs, addrs_count
         );
@@ -135,8 +135,18 @@ impl Syscall<'_> {
         addrs.write_array(&encoded_addrs)?;
         let handle = proc.add_handle(Handle::new(pmt, Rights::INSPECT));
         out.write(handle)?;
-        warn!("bti_pin end");
         Ok(())
+    }
+
+    pub fn sys_pmt_unpin(
+        &self,
+        pmt: HandleValue,
+    ) -> ZxResult {
+        info!(
+            "pmt.unpin: pmt={:#x}", pmt);
+        let proc = self.thread.proc();
+        let pmt = proc.remove_object::<Pmt>(pmt)?;
+        pmt.as_ref().unpin()
     }
 }
 

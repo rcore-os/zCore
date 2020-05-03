@@ -7,7 +7,8 @@ use {
     alloc::{
         sync::{Arc, Weak},
         vec::Vec,
-    }
+    },
+    spin::Mutex,
 };
 
 // PinnedMemoryToken
@@ -18,14 +19,19 @@ pub struct Pmt {
     offset: usize,
     size: usize,
     mapped_addrs: Vec<DevVAddr>,
+    inner: Mutex<PmtInner>
+}
+
+struct PmtInner {
+    unpinned: bool,
 }
 
 impl_kobject!(Pmt);
 
 impl Drop for Pmt {
     fn drop(&mut self) {
-        if self.vmo.is_paged() {
-            self.vmo.unpin(self.offset, self.size).unwrap();
+        if !self.inner.lock().unpinned {
+            self.unpin().unwrap();
         }
     }
 }
@@ -51,6 +57,9 @@ impl Pmt {
             offset,
             size,
             mapped_addrs,
+            inner: Mutex::new(PmtInner{
+                unpinned: false,
+            }),
         }))
     }
 
@@ -128,5 +137,14 @@ impl Pmt {
                 Ok(encoded_addrs)
             }
         }
+    }
+
+    pub fn unpin(&self) -> ZxResult {
+        let mut inner = self.inner.lock();
+        if !inner.unpinned && self.vmo.is_paged() {
+            self.vmo.unpin(self.offset, self.size)?;
+        }
+        inner.unpinned = true;
+        Ok(())
     }
 }
