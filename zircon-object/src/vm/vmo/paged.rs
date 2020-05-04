@@ -1006,12 +1006,16 @@ impl VMObjectPagedInner {
 
 impl Drop for VMObjectPaged {
     fn drop(&mut self) {
-        let inner = self.inner.lock();
+        let mut inner = self.inner.lock();
         // remove self from parent
         if let Some(parent) = &inner.parent {
             parent.inner.lock().remove_child(&inner.self_ref);
         }
-        for frame in inner.frames.iter() {
+        let is_conti = inner.is_contiguous();
+        for frame in inner.frames.iter_mut() {
+            if is_conti {
+                frame.1.pin_count -= 1;
+            }
             assert_eq!(frame.1.pin_count, 0);
         }
     }
