@@ -3,7 +3,7 @@
 
 use {
     bitmap_allocator::BitAlloc,
-    buddy_system_allocator::{Heap, LockedHeapWithRescue},
+    buddy_system_allocator::LockedHeap,
     rboot::{BootInfo, MemoryType},
     spin::Mutex,
     x86_64::structures::paging::page_table::{PageTable, PageTableFlags as EF},
@@ -17,7 +17,7 @@ static FRAME_ALLOCATOR: Mutex<FrameAlloc> = Mutex::new(FrameAlloc::DEFAULT);
 const MEMORY_OFFSET: usize = 0;
 const KERNEL_OFFSET: usize = 0xffffff00_00000000;
 const PHYSICAL_MEMORY_OFFSET: usize = 0xffff8000_00000000;
-const KERNEL_HEAP_SIZE: usize = 8 * 1024 * 1024; // 8 MB
+const KERNEL_HEAP_SIZE: usize = 16 * 1024 * 1024; // 16 MB
 
 const KERNEL_PM4: usize = (KERNEL_OFFSET >> 39) & 0o777;
 const PHYSICAL_MEMORY_PM4: usize = (PHYSICAL_MEMORY_OFFSET >> 39) & 0o777;
@@ -79,36 +79,8 @@ pub extern "C" fn hal_pt_map_kernel(pt: &mut PageTable, current: &PageTable) {
     pt[PHYSICAL_MEMORY_PM4].set_addr(ephysical.addr(), ephysical.flags() | EF::GLOBAL);
 }
 
-fn enlarge_heap(heap: &mut Heap) {
-    error!("Enlarging heap to avoid oom");
-
-    let mut addrs = [(0, 0); 32];
-    let mut addr_len = 0;
-    let va_offset = PMEM_BASE;
-    for _ in 0..16384 {
-        let page = hal_frame_alloc().unwrap();
-        let va = va_offset + page;
-        if addr_len > 0 {
-            let (ref mut addr, ref mut len) = addrs[addr_len - 1];
-            if *addr - PAGE_SIZE == va {
-                *len += PAGE_SIZE;
-                *addr -= PAGE_SIZE;
-                continue;
-            }
-        }
-        addrs[addr_len] = (va, PAGE_SIZE);
-        addr_len += 1;
-    }
-    for (addr, len) in addrs[..addr_len].iter() {
-        info!("Adding {:#X} {:#X} to heap", addr, len);
-        unsafe {
-            heap.init(*addr, *len);
-        }
-    }
-}
-
 /// Global heap allocator
 ///
 /// Available after `memory::init_heap()`.
 #[global_allocator]
-static HEAP_ALLOCATOR: LockedHeapWithRescue = LockedHeapWithRescue::new(enlarge_heap);
+static HEAP_ALLOCATOR: LockedHeap = LockedHeap::new();

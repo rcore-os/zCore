@@ -9,6 +9,6 @@ description = "Kernel HAL interface definations."
 
 [dependencies]
 bitflags = "1.2"
-trapframe = "0.1.6"
+trapframe = "0.1.7"
 git-version = "0.3"
 numeric-enum-macro = "0.2"
