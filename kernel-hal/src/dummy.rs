@@ -273,3 +273,10 @@ pub fn dma_check(_paddr: PhysAddr, _pages: usize) -> bool {
 pub fn dma_recycle(_paddr: PhysAddr, _pages: usize) {
     unimplemented!()
 }
+
+/// Get physical address of `acpi_rsdp` and `smbios` on x86_64.
+#[linkage = "weak"]
+#[export_name = "hal_pc_firmware_tables"]
+pub fn pc_firmware_tables() -> (u64, u64) {
+    unimplemented!()
+}

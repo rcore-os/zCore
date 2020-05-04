@@ -59,6 +59,21 @@ impl Syscall<'_> {
         out.write(handle)?;
         Ok(())
     }
+
+    pub fn sys_pc_firmware_tables(
+        &self,
+        resource: HandleValue,
+        mut acpi_rsdp_ptr: UserOutPtr<u64>,
+        mut smbios_ptr: UserOutPtr<u64>,
+    ) -> ZxResult {
+        info!("pc_firmware_tables: handle={:?}", resource);
+        let proc = self.thread.proc();
+        proc.validate_resource(resource, ResourceKind::ROOT)?;
+        let (acpi_rsdp, smbios) = kernel_hal::pc_firmware_tables();
+        acpi_rsdp_ptr.write(acpi_rsdp)?;
+        smbios_ptr.write(smbios)?;
+        Ok(())
+    }
 }
 
 const IOMMU_MAX_DESC_LEN: usize = 4096;

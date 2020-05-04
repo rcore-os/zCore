@@ -210,11 +210,11 @@ pub fn timer_tick() {
 }
 
 /// Initialize the HAL.
-pub fn init() {
+pub fn init(config: Config) {
     unsafe {
         trapframe::init();
     }
-    arch::init();
+    arch::init(config);
 }
 
 #[cfg(test)]

@@ -340,14 +340,22 @@ fn vdso_constants() -> VdsoConstants {
 }
 
 /// Initialize the HAL.
-pub fn init() {
+pub fn init(config: Config) {
     timer_init();
     interrupt::init();
     COM1.lock().init();
     unsafe {
         // enable global page
         Cr4::update(|f| f.insert(Cr4Flags::PAGE_GLOBAL));
+        // store config
+        CONFIG = config;
     }
+}
+
+/// Configuration of HAL.
+pub struct Config {
+    pub acpi_rsdp: u64,
+    pub smbios: u64,
 }
 
 #[export_name = "fetch_fault_vaddr"]
@@ -379,3 +387,14 @@ pub fn dma_recycle(paddr: PhysAddr, pages: usize) {
         .lock()
         .retain(|range| !(range.0 == paddr && range.1 == paddr_end));
 }
+
+/// Get physical address of `acpi_rsdp` and `smbios` on x86_64.
+#[export_name = "hal_pc_firmware_tables"]
+pub fn pc_firmware_tables() -> (u64, u64) {
+    unsafe { (CONFIG.acpi_rsdp, CONFIG.smbios) }
+}
+
+static mut CONFIG: Config = Config {
+    acpi_rsdp: 0,
+    smbios: 0,
+};
