@@ -83,6 +83,7 @@ impl Iommu {
 
 bitflags! {
     pub struct IommuPerms: u32 {
+        #[allow(clippy::identity_op)]
         const PERM_READ             = 1 << 0;
         const PERM_WRITE            = 1 << 1;
         const PERM_EXECUTE          = 1 << 2;

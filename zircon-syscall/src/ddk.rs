@@ -1,5 +1,3 @@
-#![allow(warnings)]
-
 use {
     super::*,
     zircon_object::{
@@ -7,7 +5,7 @@ use {
         resource::*,
     },
     bitflags::bitflags,
-    kernel_hal::{PhysAddr, VirtAddr, DevVAddr},
+    kernel_hal::DevVAddr,
     zircon_object::vm::{page_aligned, VmObject},
 };
 
@@ -65,6 +63,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn sys_bti_pin(
         &self,
         bti: HandleValue,
@@ -142,11 +141,21 @@ impl Syscall<'_> {
         &self,
         pmt: HandleValue,
     ) -> ZxResult {
-        info!(
-            "pmt.unpin: pmt={:#x}", pmt);
+        info!("pmt.unpin: pmt={:#x}", pmt);
         let proc = self.thread.proc();
         let pmt = proc.remove_object::<Pmt>(pmt)?;
-        pmt.as_ref().unpin()
+        pmt.as_ref().unpin_and_remove()
+    }
+
+    pub fn sys_bti_release_quarantine(
+        &self,
+        bti: HandleValue,
+    ) -> ZxResult {
+        info!("bti.release_quarantine: bti = {:#x}", bti);
+        let proc = self.thread.proc();
+        let bti = proc.get_object_with_rights::<Bti>(bti, Rights::WRITE)?;
+        bti.release_quarantine();
+        Ok(())
     }
 }
 
@@ -155,6 +164,7 @@ const IOMMU_DESC_SIZE: usize = 1;
 
 bitflags! {
     struct BtiOptions: u32 {
+        #[allow(clippy::identity_op)]
         const PERM_READ             = 1 << 0;
         const PERM_WRITE            = 1 << 1;
         const PERM_EXECUTE          = 1 << 2;

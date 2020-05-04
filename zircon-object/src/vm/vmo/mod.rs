@@ -93,11 +93,11 @@ pub trait VMObjectTrait: Sync + Send {
     }
 
     fn is_contiguous(&self) -> bool {
-        return false;
+        false
     }
 
     fn is_paged(&self) -> bool {
-        return false;
+        false
     }
 }
 
@@ -163,7 +163,7 @@ impl VmObject {
             children: Mutex::new(Vec::new()),
             resizable,
             _counter: CountHelper::new(),
-            inner: inner,
+            inner,
             base,
         });
         self.add_child(&child);

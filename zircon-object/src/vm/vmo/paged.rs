@@ -520,7 +520,7 @@ impl VMObjectTrait for VMObjectPaged {
     }
 
     fn is_paged(&self) -> bool {
-        return true;
+        true
     }
 }
 
@@ -869,18 +869,14 @@ impl VMObjectPagedInner {
         });
         // update parent's child
         if let Some(parent) = self.parent.take() {
-            match &mut parent.inner.lock().type_ {
-                VMOType::Hidden { left, right, .. } => {
-                    if left.ptr_eq(&self.self_ref) {
-                        *left = Arc::downgrade(&hidden);
-                    } else if right.ptr_eq(&self.self_ref) {
-                        *right = Arc::downgrade(&hidden);
-                    } else {
-                        panic!();
-                    }
+            if let VMOType::Hidden { left, right, .. } = &mut parent.inner.lock().type_ {
+                if left.ptr_eq(&self.self_ref) {
+                    *left = Arc::downgrade(&hidden);
+                } else if right.ptr_eq(&self.self_ref) {
+                    *right = Arc::downgrade(&hidden);
+                } else {
+                    panic!();
                 }
-                // child slice vmo has no hidden VMO as parent
-                _ => {}
             }
         }
         // update children's parent

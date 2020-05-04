@@ -235,6 +235,7 @@ impl Syscall<'_> {
             Sys::BTI_CREATE => self.sys_bti_create(a0 as _, a1 as _, a2 as _, a3.into()),
             Sys::BTI_PIN => self.sys_bti_pin(a0 as _, a1 as _, a2 as _, a3 as _, a4 as _, a5.into(), a6 as _, a7.into()),
             Sys::PMT_UNPIN => self.sys_pmt_unpin(a0 as _),
+            Sys::BTI_RELEASE_QUARANTINE => self.sys_bti_release_quarantine(a0 as _),
             Sys::VMAR_UNMAP_HANDLE_CLOSE_THREAD_EXIT => self
                 .sys_vmar_unmap(a0 as _, a1 as _, a2 as _)
                 .and_then(|_| {
