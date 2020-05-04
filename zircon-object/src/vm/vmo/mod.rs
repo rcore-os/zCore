@@ -249,6 +249,7 @@ impl VmObject {
             } else {
                 VmoInfoFlags::empty()
             },
+            cache_policy: self.inner.get_cache_policy() as u32,
             ..Default::default()
         };
         self.inner.complete_info(&mut ret);

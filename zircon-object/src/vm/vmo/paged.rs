@@ -85,6 +85,8 @@ struct VMObjectPagedInner {
     mappings: Vec<Weak<VmMapping>>,
     /// Cache Policy
     cache_policy: CachePolicy,
+    /// Is contiguous
+    contiguous: bool,
     /// A weak reference to myself.
     self_ref: WeakRef,
 }
@@ -156,6 +158,7 @@ impl VMObjectPaged {
             frames: BTreeMap::new(),
             mappings: Vec::new(),
             cache_policy: CachePolicy::Cached,
+            contiguous: false,
             self_ref: Default::default(),
         })
     }
@@ -368,6 +371,7 @@ impl VMObjectTrait for VMObjectPaged {
             frames: BTreeMap::new(),
             mappings: Vec::new(),
             cache_policy: my_cache_policy,
+            contiguous: false,
             self_ref: Default::default(),
         });
         Ok(obj)
@@ -632,12 +636,15 @@ impl VMObjectPaged {
     pub fn create_contiguous(&self, size: usize, align_log2: usize) -> ZxResult {
         assert!(page_aligned(size));
         let size_page = pages(size);
-        let base = PhysFrame::alloc_contiguous(size_page, align_log2).ok_or(ZxError::NO_MEMORY)?;
+        let mut frames = PhysFrame::alloc_contiguous(size_page, align_log2 - PAGE_SIZE_LOG2);
+        if frames.len() == 0 {
+            return Err(ZxError::NO_MEMORY);
+        }
         let mut inner = self.inner.lock();
-        for i in 0..size_page {
-            let frame = PhysFrame::wrap(base.addr() + i * PAGE_SIZE);
-            kernel_hal::frame_zero(frame.addr());
-            inner.frames.insert(i, PageState::new(frame));
+        inner.contiguous = true;
+        for (i, f) in frames.drain(0..).enumerate() {
+            kernel_hal::frame_zero(f.addr());
+            inner.frames.insert(i, PageState::new(f));
             // TODO: make pinned
         }
         Ok(())
@@ -778,6 +785,7 @@ impl VMObjectPagedInner {
             frames: BTreeMap::new(),
             mappings: Vec::new(),
             cache_policy: CachePolicy::Cached,
+            contiguous: false,
             self_ref: Default::default(),
         });
         // construct a hidden VMO as shared parent
@@ -794,6 +802,7 @@ impl VMObjectPagedInner {
             frames: core::mem::take(&mut self.frames),
             mappings: Vec::new(),
             cache_policy: CachePolicy::Cached,
+            contiguous: false,
             self_ref: Default::default(),
         });
         // update parent's child
@@ -829,6 +838,9 @@ impl VMObjectPagedInner {
     fn complete_info(&self, info: &mut ZxInfoVmo) {
         if let VMOType::Snapshot = self.type_ {
             info.flags |= VmoInfoFlags::IS_COW_CLONE;
+        }
+        if self.is_contiguous() {
+            info.flags |= VmoInfoFlags::CONTIGUOUS;
         }
         info.num_children = if self.type_.is_hidden() { 2 } else { 0 };
         info.num_mappings = self.mappings.len() as u64; // FIXME remove weak ptr
@@ -894,7 +906,7 @@ impl VMObjectPagedInner {
 
     // TODO: for vmo_create_contiguous
     fn is_contiguous(&self) -> bool {
-        false
+        self.contiguous
     }
 
     fn clear_invalild_mappings(&mut self) {

@@ -202,7 +202,7 @@ impl Syscall<'_> {
         mut out: UserOutPtr<HandleValue>,
     ) -> ZxResult {
         info!(
-            "vmo.create_contiguous: handle={:#x?}, size={:x?}, size={}, out={:#x?}",
+            "vmo.create_contiguous: handle={:#x?}, size={:#x?}, align={}, out={:#x?}",
             bti, size, align_log2, out
         );
         if size == 0 {

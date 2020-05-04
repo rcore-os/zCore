@@ -1,6 +1,7 @@
 use super::*;
 use crate::vdso::VdsoConstants;
 use alloc::boxed::Box;
+use alloc::vec::Vec;
 use core::future::Future;
 use core::ops::FnOnce;
 use core::pin::Pin;
@@ -147,8 +148,18 @@ impl PhysFrame {
 
     #[linkage = "weak"]
     #[export_name = "hal_frame_alloc_contiguous"]
-    pub extern "C" fn alloc_contiguous(_size: usize, _align_log2: usize) -> Option<Self> {
+    pub extern "C" fn alloc_contiguous_base(_size: usize, _align_log2: usize) -> Option<PhysAddr> {
         unimplemented!()
+    }
+
+    pub fn alloc_contiguous(size: usize, align_log2: usize) -> Vec<Self> {
+        PhysFrame::alloc_contiguous_base(size, align_log2).map_or(Vec::new(), |base| {
+            (0..size)
+                .map(|i| PhysFrame {
+                    paddr: base + i * PAGE_SIZE,
+                })
+                .collect()
+        })
     }
 
     pub fn addr(&self) -> PhysAddr {

@@ -188,6 +188,9 @@ impl Syscall<'_> {
             Sys::VMO_CREATE_PHYSICAL => {
                 self.sys_vmo_create_physical(a0 as _, a1 as _, a2 as _, a3.into())
             }
+            Sys::VMO_CREATE_CONTIGUOUS => {
+                self.sys_vmo_create_contiguous(a0 as _, a1 as _, a2 as _, a3.into())
+            }
             Sys::VMO_SET_CACHE_POLICY => self.sys_vmo_cache_policy(a0 as _, a1 as _),
             Sys::VMAR_MAP => self.sys_vmar_map(
                 a0 as _,
