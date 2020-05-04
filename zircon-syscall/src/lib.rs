@@ -242,6 +242,9 @@ impl Syscall<'_> {
             Sys::OBJECT_GET_CHILD => {
                 self.sys_object_get_child(a0 as _, a1 as _, a2 as _, a3.into())
             }
+            Sys::CHANNEL_WRITE_ETC => {
+                self.sys_channel_write_etc(a0 as _, a1 as _, a2.into(), a3 as _, a4.into(), a5 as _)
+            }
             _ => {
                 error!("syscall unimplemented: {:?}", sys_type);
                 Err(ZxError::NOT_SUPPORTED)
