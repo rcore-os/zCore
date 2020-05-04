@@ -142,7 +142,9 @@ impl Pmt {
 
     pub fn unpin_and_remove(&self) -> ZxResult {
         self.unpin()?;
-        self.bti.upgrade().unwrap().release_pmt(self.base.id);
+        if let Some(bti) = self.bti.upgrade() {
+            bti.release_pmt(self.base.id);
+        }
         Ok(())
     }
 
