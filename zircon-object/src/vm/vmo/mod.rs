@@ -35,7 +35,7 @@ pub trait VMObjectTrait: Sync + Send {
     fn len(&self) -> usize;
 
     /// Set the length of VMO.
-    fn set_len(&self, len: usize);
+    fn set_len(&self, len: usize) -> ZxResult;
 
     /// Unmap physical memory from `page_table`.
     fn unmap_from(&self, page_table: &mut PageTable, vaddr: VirtAddr, _offset: usize, len: usize) {
@@ -83,6 +83,22 @@ pub trait VMObjectTrait: Sync + Send {
     fn share_count(&self) -> usize;
 
     fn committed_pages_in_range(&self, start_idx: usize, end_idx: usize) -> usize;
+
+    fn pin(&self, _offset: usize, _len: usize) -> ZxResult {
+        Err(ZxError::NOT_SUPPORTED)
+    }
+
+    fn unpin(&self, _offset: usize, _len:usize) -> ZxResult {
+        Err(ZxError::NOT_SUPPORTED)
+    }
+
+    fn is_contiguous(&self) -> bool {
+        false
+    }
+
+    fn is_paged(&self) -> bool {
+        false
+    }
 }
 
 pub struct VmObject {
@@ -168,7 +184,7 @@ impl VmObject {
             children: Mutex::new(Vec::new()),
             resizable,
             _counter: CountHelper::new(),
-            inner: inner,
+            inner,
             base,
         });
         self.add_child(&child);
@@ -224,8 +240,7 @@ impl VmObject {
             return Err(ZxError::OUT_OF_RANGE);
         }
         if self.resizable {
-            self.inner.set_len(size);
-            Ok(())
+            self.inner.set_len(size)
         } else {
             Err(ZxError::UNAVAILABLE)
         }
@@ -262,6 +277,10 @@ impl VmObject {
 
     pub fn is_resizable(&self) -> bool {
         self.resizable
+    }
+
+    pub fn is_contiguous(&self) -> bool {
+        self.inner.is_contiguous()
     }
 }
 

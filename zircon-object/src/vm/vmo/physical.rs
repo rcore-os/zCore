@@ -64,7 +64,7 @@ impl VMObjectTrait for VMObjectPhysical {
         self.pages * PAGE_SIZE
     }
 
-    fn set_len(&self, _len: usize) {
+    fn set_len(&self, _len: usize) -> ZxResult {
         unimplemented!()
     }
 
@@ -144,6 +144,10 @@ impl VMObjectTrait for VMObjectPhysical {
 
     fn committed_pages_in_range(&self, _start_idx: usize, _end_idx: usize) -> usize {
         unimplemented!()
+    }
+
+    fn is_contiguous(&self) -> bool {
+        true
     }
 }
 

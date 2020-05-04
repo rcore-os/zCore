@@ -12,6 +12,9 @@ pub type PhysAddr = usize;
 /// Virtual Address
 pub type VirtAddr = usize;
 
+// Device Address
+pub type DevVAddr = usize;
+
 /// Size of a page
 pub const PAGE_SIZE: usize = 0x1000;
 pub const PAGE_SIZE_LOG2: usize = 12;
@@ -30,6 +33,10 @@ pub fn pages(size: usize) -> usize {
     size.wrapping_add(PAGE_SIZE - 1) / PAGE_SIZE
 }
 
+pub fn ceil(x: usize, align: usize) -> usize {
+    x.wrapping_add(align - 1) / align
+}
+
 pub fn roundup_pages(size: usize) -> usize {
     if page_aligned(size) {
         size
@@ -40,6 +47,11 @@ pub fn roundup_pages(size: usize) -> usize {
 
 pub fn round_down_pages(size: usize) -> usize {
     size / PAGE_SIZE * PAGE_SIZE
+}
+
+// [offset, offset + size) is subset of [0, len)
+pub fn in_range(offset: usize, size: usize, len: usize) -> bool {
+    offset <= len && size <= len - offset
 }
 
 #[cfg(test)]

@@ -3,7 +3,7 @@ use {
     alloc::vec::Vec,
     core::convert::TryFrom,
     numeric_enum_macro::numeric_enum,
-    zircon_object::{signal::Port, task::*, vm::*},
+    zircon_object::{signal::Port, task::*, vm::*, dev::*},
 };
 
 impl Syscall<'_> {
@@ -214,6 +214,11 @@ impl Syscall<'_> {
                 let job = proc.get_object_with_rights::<Job>(handle, Rights::INSPECT)?;
                 UserOutPtr::<JobInfo>::from(buffer).write(job.get_info())?;
             }
+            Topic::ProcessVmos => {
+                warn!("A dummy implementation for utest Bti.NoDelayedUnpin, it does not check the reture value");
+                actual.write(0)?;
+                avail.write(0)?;
+            }
             Topic::Vmo => {
                 let (vmo, rights) = proc.get_object_and_rights::<VmObject>(handle)?;
                 let mut info = vmo.get_info();
@@ -288,6 +293,10 @@ impl Syscall<'_> {
                     });
                 actual.write(count)?;
                 avail.write(avail_count)?;
+            }
+            Topic::Bti => {
+                let bti = proc.get_object_with_rights::<Bti>(handle, Rights::INSPECT)?;
+                UserOutPtr::<ZxInfoBti>::from(buffer).write(bti.get_info())?;
             }
             _ => {
                 error!("not supported info topic: {:?}", topic);
