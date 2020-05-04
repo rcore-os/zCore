@@ -12,14 +12,7 @@ use {
     alloc::{boxed::Box, sync::Arc, vec::Vec},
     kernel_hal::GeneralRegs,
     xmas_elf::ElfFile,
-    zircon_object::{
-        ipc::*,
-        object::*,
-        resource::{Resource, ResourceFlags, ResourceKind},
-        task::*,
-        util::elf_loader::*,
-        vm::*,
-    },
+    zircon_object::{dev::*, ipc::*, object::*, task::*, util::elf_loader::*, vm::*},
     zircon_syscall::Syscall,
 };
 

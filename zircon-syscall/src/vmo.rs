@@ -3,7 +3,7 @@ use {
     bitflags::bitflags,
     kernel_hal::CachePolicy,
     numeric_enum_macro::numeric_enum,
-    zircon_object::{resource::*, task::PolicyCondition, vm::*},
+    zircon_object::{dev::*, task::PolicyCondition, vm::*},
 };
 
 fn check_child_size(size: usize) -> ZxResult<usize> {

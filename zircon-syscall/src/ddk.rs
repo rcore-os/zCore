@@ -1,10 +1,4 @@
-use {
-    super::*,
-    zircon_object::{
-        dev::{Bti, Iommu},
-        resource::*,
-    },
-};
+use {super::*, zircon_object::dev::*};
 
 impl Syscall<'_> {
     pub fn sys_iommu_create(
