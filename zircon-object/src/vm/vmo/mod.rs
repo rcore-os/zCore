@@ -272,6 +272,9 @@ impl VmObject {
     }
 
     pub fn set_cache_policy(&self, policy: CachePolicy) -> ZxResult {
+        if self.children.lock().len() != 0 {
+            return Err(ZxError::BAD_STATE);
+        }
         self.inner.set_cache_policy(policy)
     }
 

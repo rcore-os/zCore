@@ -380,7 +380,7 @@ impl VMObjectTrait for VMObjectPaged {
             frames: BTreeMap::new(),
             mappings: Vec::new(),
             cache_policy: my_cache_policy,
-            contiguous: false,
+            contiguous: inner.is_contiguous(),
             self_ref: Default::default(),
             pin_count: 0,
         });
@@ -410,12 +410,12 @@ impl VMObjectTrait for VMObjectPaged {
     fn set_cache_policy(&self, policy: CachePolicy) -> ZxResult {
         // conditions for allowing the cache policy to be set:
         // 1) vmo either has no pages committed currently or is transitioning from being cached
-        // 2) vmo has no pinned pages (TODO)
+        // 2) vmo has no pinned pages
         // 3) vmo has no mappings
         // 4) vmo has no children (TODO)
         // 5) vmo is not a child
         let mut inner = self.inner.lock();
-        if !inner.frames.is_empty() && inner.cache_policy == CachePolicy::Cached {
+        if !inner.frames.is_empty() && inner.cache_policy != CachePolicy::Cached {
             return Err(ZxError::BAD_STATE);
         }
         inner.clear_invalild_mappings();
@@ -423,6 +423,9 @@ impl VMObjectTrait for VMObjectPaged {
             return Err(ZxError::BAD_STATE);
         }
         if inner.parent.is_some() {
+            return Err(ZxError::BAD_STATE);
+        }
+        if inner.pin_count != 0 {
             return Err(ZxError::BAD_STATE);
         }
         if inner.cache_policy == CachePolicy::Cached && policy != CachePolicy::Cached {
@@ -736,8 +739,6 @@ impl VMObjectPaged {
             let mut state = PageState::new(f);
             state.pin_count += 1;
             inner.frames.insert(i, state);
-            // TODO: make pinned
-            inner.pin_count += 1;
         }
         Ok(())
     }
@@ -863,7 +864,7 @@ impl VMObjectPagedInner {
         len: usize,
         user_id: KoID,
     ) -> ZxResult<Arc<VMObjectPaged>> {
-        if self.cache_policy != CachePolicy::Cached {
+        if self.cache_policy != CachePolicy::Cached || self.pin_count != 0 {
             return Err(ZxError::BAD_STATE);
         }
         // create child VMO
@@ -895,9 +896,9 @@ impl VMObjectPagedInner {
             frames: core::mem::take(&mut self.frames),
             mappings: Vec::new(),
             cache_policy: CachePolicy::Cached,
-            contiguous: false,
+            contiguous: self.contiguous,
             self_ref: Default::default(),
-            pin_count: 0,
+            pin_count: self.pin_count,
         });
         // update parent's child
         if let Some(parent) = self.parent.take() {
@@ -1014,7 +1015,12 @@ impl Drop for VMObjectPaged {
         let is_conti = inner.is_contiguous();
         for frame in inner.frames.iter_mut() {
             if is_conti {
-                frame.1.pin_count -= 1;
+                // WARN: In fact we do not need this `if`.
+                // If this vmo is a child of a contiguous vmo,
+                // its pages should also be pinned.
+                if frame.1.pin_count >= 1 {
+                    frame.1.pin_count -= 1;
+                }
             }
             assert_eq!(frame.1.pin_count, 0);
         }
