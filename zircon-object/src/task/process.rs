@@ -1,5 +1,5 @@
 use {
-    super::{exception::*, job::Job, job_policy::*, resource::*, thread::Thread, *},
+    super::{exception::*, job::Job, job_policy::*, thread::Thread, *},
     crate::{object::*, signal::Futex, vm::*},
     alloc::{boxed::Box, collections::BTreeMap, sync::Arc, vec::Vec},
     core::{any::Any, sync::atomic::AtomicI32},
@@ -327,16 +327,6 @@ impl Process {
             .downcast_arc::<T>()
             .map_err(|_| ZxError::WRONG_TYPE)?;
         Ok(object)
-    }
-
-    /// Try to get Resource and validate it
-    pub fn validate_resource(&self, handle_value: HandleValue, kind: ResourceKind) -> ZxResult {
-        let handle = self.get_handle(handle_value)?;
-        let object = handle
-            .object
-            .downcast_arc::<Resource>()
-            .map_err(|_| ZxError::WRONG_TYPE)?;
-        object.validate(kind)
     }
 
     pub fn get_handle_info(&self, handle_value: HandleValue) -> ZxResult<HandleBasicInfo> {

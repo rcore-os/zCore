@@ -45,11 +45,7 @@ impl Resource {
         flags: ResourceFlags,
     ) -> Arc<Self> {
         Arc::new(Resource {
-            base: {
-                let base = KObjectBase::new();
-                base.set_name(name);
-                base
-            },
+            base: KObjectBase::with_name(name),
             kind,
             addr,
             len,
@@ -72,9 +68,6 @@ impl Resource {
         len: usize,
     ) -> ZxResult {
         self.validate(kind)?;
-        if self.kind == ResourceKind::MMIO {
-            unimplemented!()
-        }
         if addr >= self.addr && (addr + len) <= (self.addr + self.len) {
             Ok(())
         } else {

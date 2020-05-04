@@ -1,5 +1,5 @@
 use super::*;
-use zircon_object::resource::ResourceKind;
+use zircon_object::resource::*;
 
 impl Syscall<'_> {
     pub fn sys_debug_write(&self, buf: UserInPtr<u8>, len: usize) -> ZxResult {
@@ -21,7 +21,8 @@ impl Syscall<'_> {
             handle, buf, buf_size
         );
         let proc = self.thread.proc();
-        proc.validate_resource(handle, ResourceKind::ROOT)?;
+        proc.get_object::<Resource>(handle)?
+            .validate(ResourceKind::ROOT)?;
         // FIXME: To make 'console' work, now debug_read is a blocking call.
         //        But it should be non-blocking.
         // let mut vec = vec![0u8; buf_size as usize];

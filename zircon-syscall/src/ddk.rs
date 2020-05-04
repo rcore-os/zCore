@@ -20,7 +20,8 @@ impl Syscall<'_> {
             resource, type_, desc, desc_size, out
         );
         let proc = self.thread.proc();
-        proc.validate_resource(resource, ResourceKind::ROOT)?;
+        proc.get_object::<Resource>(resource)?
+            .validate(ResourceKind::ROOT)?;
         if desc_size > IOMMU_MAX_DESC_LEN {
             return Err(ZxError::INVALID_ARGS);
         }
@@ -68,7 +69,8 @@ impl Syscall<'_> {
     ) -> ZxResult {
         info!("pc_firmware_tables: handle={:?}", resource);
         let proc = self.thread.proc();
-        proc.validate_resource(resource, ResourceKind::ROOT)?;
+        proc.get_object::<Resource>(resource)?
+            .validate(ResourceKind::ROOT)?;
         let (acpi_rsdp, smbios) = kernel_hal::pc_firmware_tables();
         acpi_rsdp_ptr.write(acpi_rsdp)?;
         smbios_ptr.write(smbios)?;

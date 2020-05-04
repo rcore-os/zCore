@@ -262,18 +262,6 @@ pub fn fetch_fault_vaddr() -> VirtAddr {
     unimplemented!()
 }
 
-#[linkage = "weak"]
-#[export_name = "dma_range_check"]
-pub fn dma_check(_paddr: PhysAddr, _pages: usize) -> bool {
-    unimplemented!()
-}
-
-#[linkage = "weak"]
-#[export_name = "dma_range_recycle"]
-pub fn dma_recycle(_paddr: PhysAddr, _pages: usize) {
-    unimplemented!()
-}
-
 /// Get physical address of `acpi_rsdp` and `smbios` on x86_64.
 #[linkage = "weak"]
 #[export_name = "hal_pc_firmware_tables"]
