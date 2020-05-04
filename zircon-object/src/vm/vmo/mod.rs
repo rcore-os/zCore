@@ -88,7 +88,7 @@ pub trait VMObjectTrait: Sync + Send {
         Err(ZxError::NOT_SUPPORTED)
     }
 
-    fn unpin(&self, _offset: usize, _len:usize) -> ZxResult {
+    fn unpin(&self, _offset: usize, _len: usize) -> ZxResult {
         Err(ZxError::NOT_SUPPORTED)
     }
 
@@ -142,7 +142,7 @@ impl VmObject {
             base: KObjectBase::with_signal(Signal::VMO_ZERO_CHILDREN),
             parent: Mutex::new(Default::default()),
             children: Mutex::new(Vec::new()),
-            resizable: true,
+            resizable: false,
             _counter: CountHelper::new(),
             inner: VMObjectPhysical::new(paddr, pages),
         })

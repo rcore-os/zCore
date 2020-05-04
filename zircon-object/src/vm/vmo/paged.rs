@@ -524,6 +524,10 @@ impl VMObjectTrait for VMObjectPaged {
         Ok(())
     }
 
+    fn is_contiguous(&self) -> bool {
+        self.inner.lock().is_contiguous()
+    }
+
     fn is_paged(&self) -> bool {
         true
     }
@@ -729,8 +733,11 @@ impl VMObjectPaged {
         inner.contiguous = true;
         for (i, f) in frames.drain(0..).enumerate() {
             kernel_hal::frame_zero(f.addr());
-            inner.frames.insert(i, PageState::new(f));
+            let mut state = PageState::new(f);
+            state.pin_count += 1;
+            inner.frames.insert(i, state);
             // TODO: make pinned
+            inner.pin_count += 1;
         }
         Ok(())
     }

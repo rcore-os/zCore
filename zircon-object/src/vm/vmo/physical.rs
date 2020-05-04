@@ -98,6 +98,7 @@ impl VMObjectTrait for VMObjectPhysical {
         offset: usize,
         len: usize,
     ) -> ZxResult<Arc<dyn VMObjectTrait>> {
+        assert!(page_aligned(offset) && page_aligned(len));
         let obj = unsafe { VMObjectPhysical::new(self.paddr + offset, len / PAGE_SIZE) };
         obj.inner.lock().cache_policy = self.inner.lock().cache_policy;
         Ok(obj)
