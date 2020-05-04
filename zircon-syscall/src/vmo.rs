@@ -3,7 +3,7 @@ use {
     bitflags::bitflags,
     kernel_hal::CachePolicy,
     numeric_enum_macro::numeric_enum,
-    zircon_object::{resource::*, task::PolicyCondition, vm::*},
+    zircon_object::{dev::*, task::PolicyCondition, vm::*},
 };
 
 fn check_child_size(size: usize) -> ZxResult<usize> {
@@ -101,7 +101,8 @@ impl Syscall<'_> {
         );
         let proc = self.thread.proc();
         if vmex != INVALID_HANDLE {
-            proc.validate_resource(vmex, ResourceKind::VMEX)?;
+            proc.get_object::<Resource>(vmex)?
+                .validate(ResourceKind::VMEX)?;
         } else {
             proc.check_policy(PolicyCondition::AmbientMarkVMOExec)?;
         }
@@ -188,18 +189,19 @@ impl Syscall<'_> {
 
     pub fn sys_vmo_create_physical(
         &self,
-        rsrc: HandleValue,
+        resource: HandleValue,
         paddr: PhysAddr,
         size: usize,
         mut out: UserOutPtr<HandleValue>,
     ) -> ZxResult {
         info!(
-            "vmo.create: handle={:#x?}, paddr={:#x?}, size={:#x}, out={:#x?}",
-            size, paddr, size, out
+            "vmo.create_physical: handle={:#x?}, paddr={:#x?}, size={:#x}, out={:#x?}",
+            resource, paddr, size, out
         );
         let proc = self.thread.proc();
         proc.check_policy(PolicyCondition::NewVMO)?;
-        proc.validate_resource(rsrc, ResourceKind::MMIO)?;
+        proc.get_object::<Resource>(resource)?
+            .validate_ranged_resource(ResourceKind::MMIO, paddr, size)?;
         let size = roundup_pages(size);
         if size == 0 || !page_aligned(paddr) {
             return Err(ZxError::INVALID_ARGS);

@@ -1,5 +1,5 @@
 use {
-    super::{exception::*, job::Job, job_policy::*, resource::*, thread::Thread, *},
+    super::{exception::*, job::Job, job_policy::*, thread::Thread, *},
     crate::{object::*, signal::Futex, vm::*},
     alloc::{boxed::Box, collections::BTreeMap, sync::Arc, vec::Vec},
     core::{any::Any, sync::atomic::AtomicI32},
@@ -329,16 +329,6 @@ impl Process {
         Ok(object)
     }
 
-    /// Try to get Resource and validate it
-    pub fn validate_resource(&self, handle_value: HandleValue, kind: ResourceKind) -> ZxResult {
-        let handle = self.get_handle(handle_value)?;
-        let object = handle
-            .object
-            .downcast_arc::<Resource>()
-            .map_err(|_| ZxError::WRONG_TYPE)?;
-        object.validate(kind)
-    }
-
     pub fn get_handle_info(&self, handle_value: HandleValue) -> ZxResult<HandleBasicInfo> {
         let handle = self.get_handle(handle_value)?;
         Ok(handle.get_info())
@@ -412,12 +402,9 @@ impl Process {
         self.exceptionate.clone()
     }
 
-    pub fn enumerate_thread(&self, mut f: impl FnMut(KoID) -> bool) {
-        self.inner
-            .lock()
-            .threads
-            .iter()
-            .find(|child| !f(child.id()));
+    /// Get KoIDs of Threads.
+    pub fn thread_ids(&self) -> Vec<KoID> {
+        self.inner.lock().threads.iter().map(|t| t.id()).collect()
     }
 }
 

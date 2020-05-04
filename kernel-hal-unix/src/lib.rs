@@ -410,14 +410,6 @@ pub fn init() {
     });
 }
 
-#[export_name = "dma_range_check"]
-pub fn dma_check(_paddr: PhysAddr, _pages: usize) -> bool {
-    true
-}
-
-#[export_name = "dma_range_recycle"]
-pub fn dma_recycle(_paddr: PhysAddr, _pages: usize) {}
-
 #[cfg(test)]
 mod tests {
     use super::*;

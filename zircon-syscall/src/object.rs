@@ -162,7 +162,6 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    #[allow(unsafe_code)]
     pub fn sys_object_get_info(
         &self,
         handle: HandleValue,
@@ -213,75 +212,39 @@ impl Syscall<'_> {
                 let mut info = vmo.get_info();
                 info.flags |= VmoInfoFlags::VIA_HANDLE;
                 info.rights |= rights;
-                UserOutPtr::<ZxInfoVmo>::from(buffer).write(info)?;
+                UserOutPtr::<VmoInfo>::from(buffer).write(info)?;
             }
             Topic::KmemStats => {
-                let mut kmem = ZxInfoKmem::default();
+                let mut kmem = KmemInfo::default();
                 kmem.vmo_bytes = vmo_page_bytes() as u64;
-                UserOutPtr::<ZxInfoKmem>::from(buffer).write(kmem)?;
-            }
-            Topic::JobProcess => {
-                let job = proc.get_object_with_rights::<Job>(handle, Rights::ENUMERATE)?;
-                let (mut count, mut avail_count) = (0usize, 0usize);
-                let ptr = UserOutPtr::<KoID>::from(buffer).as_ptr();
-                let item_size = core::mem::size_of::<KoID>();
-                job.enumerate_process(|id| {
-                    if count < buffer_size / item_size {
-                        unsafe {
-                            ptr.add(count).write(id);
-                        }
-                        count += 1;
-                    }
-                    avail_count += 1;
-                    true
-                });
-                actual.write(count)?;
-                avail.write(avail_count)?;
+                UserOutPtr::<KmemInfo>::from(buffer).write(kmem)?;
             }
             Topic::TaskStats => {
-                assert_eq!(core::mem::size_of::<ZxInfoTaskStats>(), buffer_size);
+                assert_eq!(core::mem::size_of::<TaskStatsInfo>(), buffer_size);
                 let vmar = proc
                     .get_object_with_rights::<Process>(handle, Rights::INSPECT)?
                     .vmar();
                 //let mut task_stats = ZxInfoTaskStats::default();
                 let task_stats = vmar.get_task_stats();
-                UserOutPtr::<ZxInfoTaskStats>::from(buffer).write(task_stats)?;
+                UserOutPtr::<TaskStatsInfo>::from(buffer).write(task_stats)?;
             }
-            Topic::ProcessThreads => {
-                let (mut count, mut avail_count) = (0usize, 0usize);
-                let ptr = UserOutPtr::<KoID>::from(buffer).as_ptr();
-                let item_size = core::mem::size_of::<KoID>();
-                proc.get_object_with_rights::<Process>(handle, Rights::ENUMERATE)?
-                    .enumerate_thread(|id| {
-                        if count < buffer_size / item_size {
-                            unsafe {
-                                ptr.add(count).write(id);
-                            }
-                            count += 1;
-                        }
-                        avail_count += 1;
-                        true
-                    });
+            Topic::JobChildren | Topic::JobProcess | Topic::ProcessThreads => {
+                let ids = match topic {
+                    Topic::JobChildren => proc
+                        .get_object_with_rights::<Job>(handle, Rights::ENUMERATE)?
+                        .children_ids(),
+                    Topic::JobProcess => proc
+                        .get_object_with_rights::<Job>(handle, Rights::ENUMERATE)?
+                        .process_ids(),
+                    Topic::ProcessThreads => proc
+                        .get_object_with_rights::<Process>(handle, Rights::ENUMERATE)?
+                        .thread_ids(),
+                    _ => unreachable!(),
+                };
+                let count = (buffer_size / core::mem::size_of::<KoID>()).min(ids.len());
+                UserOutPtr::<KoID>::from(buffer).write_array(&ids[..count])?;
                 actual.write(count)?;
-                avail.write(avail_count)?;
-            }
-            Topic::JobChildren => {
-                let (mut count, mut avail_count) = (0usize, 0usize);
-                let ptr = UserOutPtr::<KoID>::from(buffer).as_ptr();
-                let item_size = core::mem::size_of::<KoID>();
-                proc.get_object_with_rights::<Job>(handle, Rights::ENUMERATE)?
-                    .enumerate_children(|id| {
-                        if count < buffer_size / item_size {
-                            unsafe {
-                                ptr.add(count).write(id);
-                            }
-                            count += 1;
-                        }
-                        avail_count += 1;
-                        true
-                    });
-                actual.write(count)?;
-                avail.write(avail_count)?;
+                avail.write(ids.len())?;
             }
             _ => {
                 error!("not supported info topic: {:?}", topic);
@@ -469,7 +432,7 @@ pub struct UserWaitItem {
 
 #[repr(C)]
 #[derive(Default)]
-struct ZxInfoKmem {
+struct KmemInfo {
     total_bytes: u64,
     free_bytes: u64,
     wired_bytes: u64,

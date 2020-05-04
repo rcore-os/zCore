@@ -26,7 +26,6 @@ mod error;
 pub mod exception;
 pub mod ipc;
 pub mod object;
-pub mod resource;
 pub mod signal;
 pub mod task;
 pub mod util;
