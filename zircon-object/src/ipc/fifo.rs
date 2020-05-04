@@ -104,14 +104,19 @@ impl Fifo {
         let count_size = count * elem_size;
         assert_eq!(data.len(), count_size);
 
-        let peer = self.peer.upgrade().ok_or(ZxError::PEER_CLOSED)?;
+        let peer = self.peer.upgrade();
         let mut recv_queue = self.recv_queue.lock();
         if recv_queue.is_empty() {
+            if peer.is_none() {
+                return Err(ZxError::PEER_CLOSED);
+            }
             return Err(ZxError::SHOULD_WAIT);
         }
         let read_size = count_size.min(recv_queue.len());
         if recv_queue.len() == self.capacity() {
-            peer.base.signal_set(Signal::WRITABLE);
+            if let Some(peer) = peer {
+                peer.base.signal_set(Signal::WRITABLE);
+            }
         }
         for (i, x) in recv_queue.drain(..read_size).enumerate() {
             data[i] = x;

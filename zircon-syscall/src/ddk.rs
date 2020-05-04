@@ -1,12 +1,9 @@
 use {
     super::*,
-    zircon_object::{
-        dev::*,
-        resource::*,
-    },
     bitflags::bitflags,
     kernel_hal::DevVAddr,
     zircon_object::vm::{page_aligned, VmObject},
+    zircon_object::{dev::*, resource::*},
 };
 
 impl Syscall<'_> {
@@ -23,7 +20,8 @@ impl Syscall<'_> {
             resource, type_, desc, desc_size, out
         );
         let proc = self.thread.proc();
-        proc.validate_resource(resource, ResourceKind::ROOT)?;
+        proc.get_object::<Resource>(resource)?
+            .validate(ResourceKind::ROOT)?;
         if desc_size > IOMMU_MAX_DESC_LEN {
             return Err(ZxError::INVALID_ARGS);
         }
@@ -91,7 +89,6 @@ impl Syscall<'_> {
 
         let mut iommu_perms = IommuPerms::empty();
         let options = BtiOptions::from_bits_truncate(options);
-        
         if options.contains(BtiOptions::PERM_READ) {
             if !rights.contains(Rights::READ) {
                 return Err(ZxError::ACCESS_DENIED);
@@ -107,15 +104,14 @@ impl Syscall<'_> {
         }
 
         if options.contains(BtiOptions::PERM_EXECUTE) {
-            // NOTE: Check Rights::READ instead of Rights::EXECUTE, 
-            // because Rights::EXECUTE applies to the execution permission of the host CPU, 
+            // NOTE: Check Rights::READ instead of Rights::EXECUTE,
+            // because Rights::EXECUTE applies to the execution permission of the host CPU,
             // but ZX_BTI_PERM_EXECUTE applies to transactions initiated by the bus device.
             if !rights.contains(Rights::READ) {
                 return Err(ZxError::ACCESS_DENIED);
             }
             iommu_perms.insert(IommuPerms::PERM_EXECUTE);
         }
-        
         if options.contains(BtiOptions::CONTIGUOUS) && options.contains(BtiOptions::COMPRESS) {
             return Err(ZxError::INVALID_ARGS);
         }
@@ -127,8 +123,11 @@ impl Syscall<'_> {
         let pmt = bti.pin(vmo, offset, size, iommu_perms)?;
         let encoded_addrs = pmt.as_ref().encode_addrs(compress_results, contiguous)?;
         if encoded_addrs.len() != addrs_count {
-            warn!("bti.pin addrs_count = {}, but encoded_addrs.len = {}",
-                addrs_count, encoded_addrs.len());
+            warn!(
+                "bti.pin addrs_count = {}, but encoded_addrs.len = {}",
+                addrs_count,
+                encoded_addrs.len()
+            );
             return Err(ZxError::INVALID_ARGS);
         }
         addrs.write_array(&encoded_addrs)?;
@@ -137,24 +136,33 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    pub fn sys_pmt_unpin(
-        &self,
-        pmt: HandleValue,
-    ) -> ZxResult {
+    pub fn sys_pmt_unpin(&self, pmt: HandleValue) -> ZxResult {
         info!("pmt.unpin: pmt={:#x}", pmt);
         let proc = self.thread.proc();
         let pmt = proc.remove_object::<Pmt>(pmt)?;
         pmt.as_ref().unpin_and_remove()
     }
 
-    pub fn sys_bti_release_quarantine(
-        &self,
-        bti: HandleValue,
-    ) -> ZxResult {
+    pub fn sys_bti_release_quarantine(&self, bti: HandleValue) -> ZxResult {
         info!("bti.release_quarantine: bti = {:#x}", bti);
         let proc = self.thread.proc();
         let bti = proc.get_object_with_rights::<Bti>(bti, Rights::WRITE)?;
         bti.release_quarantine();
+        Ok(())
+    }
+    pub fn sys_pc_firmware_tables(
+        &self,
+        resource: HandleValue,
+        mut acpi_rsdp_ptr: UserOutPtr<u64>,
+        mut smbios_ptr: UserOutPtr<u64>,
+    ) -> ZxResult {
+        info!("pc_firmware_tables: handle={:?}", resource);
+        let proc = self.thread.proc();
+        proc.get_object::<Resource>(resource)?
+            .validate(ResourceKind::ROOT)?;
+        let (acpi_rsdp, smbios) = kernel_hal::pc_firmware_tables();
+        acpi_rsdp_ptr.write(acpi_rsdp)?;
+        smbios_ptr.write(smbios)?;
         Ok(())
     }
 }
@@ -172,4 +180,3 @@ bitflags! {
         const CONTIGUOUS            = 1 << 4;
     }
 }
-

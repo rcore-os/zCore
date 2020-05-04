@@ -2,6 +2,7 @@ use {
     super::*,
     bitflags::bitflags,
     kernel_hal::CachePolicy,
+    numeric_enum_macro::numeric_enum,
     zircon_object::{dev::*, resource::*, task::PolicyCondition, vm::*},
 };
 
@@ -83,7 +84,8 @@ impl Syscall<'_> {
         );
         let proc = self.thread.proc();
         if vmex != INVALID_HANDLE {
-            proc.validate_resource(vmex, ResourceKind::VMEX)?;
+            proc.get_object::<Resource>(vmex)?
+                .validate(ResourceKind::VMEX)?;
         } else {
             proc.check_policy(PolicyCondition::AmbientMarkVMOExec)?;
         }
@@ -166,21 +168,21 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    #[allow(unsafe_code)]
     pub fn sys_vmo_create_physical(
         &self,
-        rsrc: HandleValue,
+        resource: HandleValue,
         paddr: PhysAddr,
         size: usize,
         mut out: UserOutPtr<HandleValue>,
     ) -> ZxResult {
         info!(
             "vmo.create_physical: handle={:#x?}, paddr={:#x?}, size={:#x}, out={:#x?}",
-            size, paddr, size, out
+            resource, paddr, size, out
         );
         let proc = self.thread.proc();
         proc.check_policy(PolicyCondition::NewVMO)?;
-        proc.validate_resource(rsrc, ResourceKind::MMIO)?;
+        proc.get_object::<Resource>(resource)?
+            .validate_ranged_resource(ResourceKind::MMIO, paddr, size)?;
         let size = roundup_pages(size);
         if size == 0 || !page_aligned(paddr) {
             return Err(ZxError::INVALID_ARGS);
@@ -188,7 +190,7 @@ impl Syscall<'_> {
         if paddr.overflowing_add(size).1 {
             return Err(ZxError::INVALID_ARGS);
         }
-        let vmo = unsafe { VmObject::new_physical(paddr, size / PAGE_SIZE) };
+        let vmo = VmObject::new_physical(paddr, size / PAGE_SIZE);
         let handle_value = proc.add_handle(Handle::new(vmo, Rights::DEFAULT_VMO | Rights::EXECUTE));
         out.write(handle_value)?;
         Ok(())
@@ -250,24 +252,34 @@ impl Syscall<'_> {
             "vmo.op_range: handle={:#x}, op={:#X}, offset={:#x}, len={:#x}, buffer_size={:#x}",
             handle_value, op, offset, len, _buffer_size,
         );
+        let op = VmoOpType::try_from(op).or(Err(ZxError::INVALID_ARGS))?;
         let proc = self.thread.proc();
         let (vmo, rights) = proc.get_object_and_rights::<VmObject>(handle_value)?;
-        if !page_aligned(offset) || !page_aligned(len) {
-            return Err(ZxError::INVALID_ARGS);
-        }
         match op {
-            VMO_OP_COMMIT => {
+            VmoOpType::Commit => {
                 if !rights.contains(Rights::WRITE) {
                     return Err(ZxError::ACCESS_DENIED);
+                }
+                if !page_aligned(offset) || !page_aligned(len) {
+                    return Err(ZxError::INVALID_ARGS);
                 }
                 vmo.commit(offset, len)?;
                 Ok(())
             }
-            VMO_OP_DECOMMIT => {
+            VmoOpType::Decommit => {
                 if !rights.contains(Rights::WRITE) {
                     return Err(ZxError::ACCESS_DENIED);
                 }
+                if !page_aligned(offset) || !page_aligned(len) {
+                    return Err(ZxError::INVALID_ARGS);
+                }
                 vmo.decommit(offset, len)
+            }
+            VmoOpType::Zero => {
+                if !rights.contains(Rights::WRITE) {
+                    return Err(ZxError::ACCESS_DENIED);
+                }
+                vmo.zero(offset, len)
             }
             _ => unimplemented!(),
         }
@@ -292,6 +304,18 @@ bitflags! {
     }
 }
 
-/// VMO Opcodes (for vmo_op_range)
-const VMO_OP_COMMIT: u32 = 1;
-const VMO_OP_DECOMMIT: u32 = 2;
+numeric_enum! {
+    #[repr(u32)]
+    /// VMO Opcodes (for vmo_op_range)
+    pub enum VmoOpType {
+        Commit = 1,
+        Decommit = 2,
+        Lock = 3,
+        Unlock = 4,
+        CacheSync = 6,
+        CacheInvalidate = 7,
+        CacheClean = 8,
+        CacheCleanInvalidate = 9,
+        Zero = 10,
+    }
+}

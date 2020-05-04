@@ -1,6 +1,6 @@
 use {
     super::*,
-    zircon_object::{debuglog::DebugLog, resource::ResourceKind},
+    zircon_object::{debuglog::DebugLog, resource::*},
 };
 
 const FLAG_READABLE: u32 = 0x4000_0000u32;
@@ -18,7 +18,8 @@ impl Syscall<'_> {
         );
         let proc = self.thread.proc();
         if rsrc != 0 {
-            proc.validate_resource(rsrc, ResourceKind::ROOT)?;
+            proc.get_object::<Resource>(rsrc)?
+                .validate(ResourceKind::ROOT)?;
         }
         let dlog = DebugLog::create(options);
         let dlog_right = if options & FLAG_READABLE == 0 {

@@ -248,6 +248,7 @@ impl Syscall<'_> {
             Sys::OBJECT_GET_CHILD => {
                 self.sys_object_get_child(a0 as _, a1 as _, a2 as _, a3.into())
             }
+            Sys::PC_FIRMWARE_TABLES => self.sys_pc_firmware_tables(a0 as _, a1.into(), a2.into()),
             _ => {
                 error!("syscall unimplemented: {:?}", sys_type);
                 Err(ZxError::NOT_SUPPORTED)

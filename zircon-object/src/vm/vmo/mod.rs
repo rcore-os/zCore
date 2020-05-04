@@ -74,7 +74,7 @@ pub trait VMObjectTrait: Sync + Send {
 
     fn remove_mapping(&self, mapping: Weak<VmMapping>);
 
-    fn complete_info(&self, info: &mut ZxInfoVmo);
+    fn complete_info(&self, info: &mut VmoInfo);
 
     fn get_cache_policy(&self) -> CachePolicy;
 
@@ -99,6 +99,7 @@ pub trait VMObjectTrait: Sync + Send {
     fn is_paged(&self) -> bool {
         false
     }
+    fn zero(&self, offset: usize, len: usize) -> ZxResult;
 }
 
 pub struct VmObject {
@@ -132,12 +133,8 @@ impl VmObject {
     }
 
     /// Create a new VMO representing a piece of contiguous physical memory.
-    ///
-    /// # Safety
-    ///
     /// You must ensure nobody has the ownership of this piece of memory yet.
-    #[allow(unsafe_code)]
-    pub unsafe fn new_physical(paddr: PhysAddr, pages: usize) -> Arc<Self> {
+    pub fn new_physical(paddr: PhysAddr, pages: usize) -> Arc<Self> {
         Arc::new(VmObject {
             base: KObjectBase::with_signal(Signal::VMO_ZERO_CHILDREN),
             parent: Mutex::new(Default::default()),
@@ -247,8 +244,8 @@ impl VmObject {
     }
 
     /// Get information of this VMO.
-    pub fn get_info(&self) -> ZxInfoVmo {
-        let mut ret = ZxInfoVmo {
+    pub fn get_info(&self) -> VmoInfo {
+        let mut ret = VmoInfo {
             koid: self.base.id,
             name: {
                 let mut arr = [0u8; 32];
@@ -313,6 +310,14 @@ impl Drop for VmObject {
             let mut children = parent.children.lock();
             children.append(&mut my_children);
             children.retain(|c| c.strong_count() != 0);
+            children.iter().for_each(|child| {
+                let arc_child = child.upgrade().unwrap();
+                let mut locked_children = arc_child.children.lock();
+                locked_children.retain(|c| c.strong_count() != 0);
+                if locked_children.is_empty() {
+                    arc_child.base.signal_set(Signal::VMO_ZERO_CHILDREN);
+                }
+            });
             // Non-zero to zero?
             if children.is_empty() {
                 parent.base.signal_set(Signal::VMO_ZERO_CHILDREN);
@@ -324,7 +329,7 @@ impl Drop for VmObject {
 /// Describes a VMO.
 #[repr(C)]
 #[derive(Default)]
-pub struct ZxInfoVmo {
+pub struct VmoInfo {
     /// The koid of this VMO.
     koid: KoID,
     /// The name of this VMO.

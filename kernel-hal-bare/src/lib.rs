@@ -171,10 +171,11 @@ pub fn frame_copy(src: PhysAddr, target: PhysAddr) {
 
 /// Zero `target` frame.
 #[export_name = "hal_frame_zero"]
-pub fn frame_zero(target: PhysAddr) {
+pub fn frame_zero_in_range(target: PhysAddr, start: usize, end: usize) {
+    assert!(start < PAGE_SIZE && end <= PAGE_SIZE);
     trace!("frame_zero: {:#x}", target);
     unsafe {
-        core::ptr::write_bytes(phys_to_virt(target) as *mut u8, 0, PAGE_SIZE);
+        core::ptr::write_bytes(phys_to_virt(target + start) as *mut u8, 0, end - start);
     }
 }
 
@@ -211,11 +212,11 @@ pub fn timer_tick() {
 }
 
 /// Initialize the HAL.
-pub fn init() {
+pub fn init(config: Config) {
     unsafe {
         trapframe::init();
     }
-    arch::init();
+    arch::init(config);
 }
 
 #[cfg(test)]

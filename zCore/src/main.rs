@@ -29,7 +29,10 @@ pub extern "C" fn _start(boot_info: &BootInfo) -> ! {
     #[cfg(feature = "graphic")]
     init_framebuffer(boot_info);
     info!("{:#x?}", boot_info);
-    kernel_hal_bare::init();
+    kernel_hal_bare::init(kernel_hal_bare::Config {
+        acpi_rsdp: boot_info.acpi2_rsdp_addr,
+        smbios: boot_info.smbios_addr,
+    });
 
     let zbi_data = unsafe {
         core::slice::from_raw_parts(

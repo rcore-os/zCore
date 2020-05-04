@@ -29,12 +29,8 @@ impl VMObjectPhysicalInner {
 
 impl VMObjectPhysical {
     /// Create a new VMO representing a piece of contiguous physical memory.
-    ///
-    /// # Safety
-    ///
     /// You must ensure nobody has the ownership of this piece of memory yet.
-    #[allow(unsafe_code)]
-    pub unsafe fn new(paddr: PhysAddr, pages: usize) -> Arc<Self> {
+    pub fn new(paddr: PhysAddr, pages: usize) -> Arc<Self> {
         assert!(page_aligned(paddr));
         Arc::new(VMObjectPhysical {
             paddr,
@@ -91,7 +87,6 @@ impl VMObjectTrait for VMObjectPhysical {
         Err(ZxError::NOT_SUPPORTED)
     }
 
-    #[allow(unsafe_code)]
     fn create_slice(
         self: Arc<Self>,
         _id: KoID,
@@ -99,7 +94,7 @@ impl VMObjectTrait for VMObjectPhysical {
         len: usize,
     ) -> ZxResult<Arc<dyn VMObjectTrait>> {
         assert!(page_aligned(offset) && page_aligned(len));
-        let obj = unsafe { VMObjectPhysical::new(self.paddr + offset, len / PAGE_SIZE) };
+        let obj = VMObjectPhysical::new(self.paddr + offset, len / PAGE_SIZE);
         obj.inner.lock().cache_policy = self.inner.lock().cache_policy;
         Ok(obj)
     }
@@ -116,8 +111,8 @@ impl VMObjectTrait for VMObjectPhysical {
         inner.mapping_count -= 1;
     }
 
-    fn complete_info(&self, _info: &mut ZxInfoVmo) {
-        unimplemented!()
+    fn complete_info(&self, _info: &mut VmoInfo) {
+        warn!("VmoInfo for physical is unimplemented");
     }
 
     fn get_cache_policy(&self) -> CachePolicy {
@@ -140,10 +135,14 @@ impl VMObjectTrait for VMObjectPhysical {
     }
 
     fn share_count(&self) -> usize {
-        unimplemented!()
+        self.inner.lock().mapping_count as usize
     }
 
     fn committed_pages_in_range(&self, _start_idx: usize, _end_idx: usize) -> usize {
+        0
+    }
+
+    fn zero(&self, _offset: usize, _len: usize) -> ZxResult {
         unimplemented!()
     }
 
@@ -160,7 +159,7 @@ mod tests {
 
     #[test]
     fn read_write() {
-        let vmo = unsafe { VmObject::new_physical(0x1000, 2) };
+        let vmo = VmObject::new_physical(0x1000, 2);
         let vmphy = vmo.inner.clone();
         assert_eq!(vmphy.get_cache_policy(), CachePolicy::Uncached);
         super::super::tests::read_write(&vmo);
