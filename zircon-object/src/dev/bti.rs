@@ -21,7 +21,7 @@ pub struct Bti {
 
 struct BtiInner {
     pmts: Vec<Arc<Pmt>>,
-    quarantine: Vec<Quarantined>
+    quarantine: Vec<Quarantined>,
 }
 
 struct Quarantined {
@@ -65,6 +65,7 @@ impl Bti {
         }
         let pmt = Pmt::create(self.iommu.clone(), vmo, perms, offset, size)?;
         self.inner.lock().pmts.push(pmt.clone());
+        warn!("bti.pin {}", self.inner.lock().pmts.len());
         Ok(pmt)
     }
 

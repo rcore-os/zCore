@@ -214,6 +214,11 @@ impl Syscall<'_> {
                 let job = proc.get_object_with_rights::<Job>(handle, Rights::INSPECT)?;
                 UserOutPtr::<JobInfo>::from(buffer).write(job.get_info())?;
             }
+            Topic::ProcessVmos => {
+                warn!("A dummy implementation for utest Bti.NoDelayedUnpin, it does not check the reture value");
+                actual.write(0)?;
+                avail.write(0)?;
+            }
             Topic::Vmo => {
                 let (vmo, rights) = proc.get_object_and_rights::<VmObject>(handle)?;
                 let mut info = vmo.get_info();
