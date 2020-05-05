@@ -768,7 +768,7 @@ impl VMObjectPaged {
         assert!(page_aligned(size));
         let size_page = pages(size);
         let mut frames = PhysFrame::alloc_contiguous(size_page, align_log2 - PAGE_SIZE_LOG2);
-        if frames.len() == 0 {
+        if frames.is_empty() {
             return Err(ZxError::NO_MEMORY);
         }
         let mut inner = self.inner.lock();

@@ -3,7 +3,7 @@ use {
     alloc::vec::Vec,
     core::convert::TryFrom,
     numeric_enum_macro::numeric_enum,
-    zircon_object::{signal::Port, task::*, vm::*, dev::*},
+    zircon_object::{dev::*, signal::Port, task::*, vm::*},
 };
 
 impl Syscall<'_> {

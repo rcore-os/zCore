@@ -156,12 +156,12 @@ impl VmObject {
         let inner = VMObjectPaged::new(base.id, size_page);
         inner.create_contiguous(size, align_log2)?;
         let vmo = Arc::new(VmObject {
-            base: base,
+            base,
             parent: Mutex::new(Default::default()),
             children: Mutex::new(Vec::new()),
             resizable: false,
             _counter: CountHelper::new(),
-            inner: inner,
+            inner,
         });
         Ok(vmo)
     }

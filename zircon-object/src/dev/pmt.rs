@@ -1,8 +1,8 @@
 use {
     super::*,
     crate::object::*,
-    crate::vm::{DevVAddr, ceil},
     crate::vm::*,
+    crate::vm::{ceil, DevVAddr},
     alloc::{
         sync::{Arc, Weak},
         vec::Vec,
@@ -18,7 +18,7 @@ pub struct Pmt {
     offset: usize,
     size: usize,
     mapped_addrs: Vec<DevVAddr>,
-    inner: Mutex<PmtInner>
+    inner: Mutex<PmtInner>,
 }
 
 struct PmtInner {
@@ -59,9 +59,7 @@ impl Pmt {
             offset,
             size,
             mapped_addrs,
-            inner: Mutex::new(PmtInner{
-                unpinned: false,
-            }),
+            inner: Mutex::new(PmtInner { unpinned: false }),
         }))
     }
 
@@ -70,23 +68,24 @@ impl Pmt {
         vmo: Arc<VmObject>,
         offset: usize,
         size: usize,
-        perms: IommuPerms
+        perms: IommuPerms,
     ) -> ZxResult<Vec<DevVAddr>> {
         if vmo.is_contiguous() {
             let (vaddr, _mapped_len) = iommu.map_contiguous(vmo, offset, size, perms)?;
             // vec! is better, but compile error occurs.
-            let mut mapped_addrs: Vec<DevVAddr> = Vec::new(); 
+            let mut mapped_addrs: Vec<DevVAddr> = Vec::new();
             mapped_addrs.push(vaddr);
             Ok(mapped_addrs)
         } else {
             assert_eq!(size % iommu.minimum_contiguity(), 0);
-            let mut mapped_addrs: Vec<DevVAddr> = Vec::new(); 
+            let mut mapped_addrs: Vec<DevVAddr> = Vec::new();
             let mut remaining = size;
             let mut cur_offset = offset;
             while remaining > 0 {
-                let (mut vaddr, mapped_len) = iommu.map(vmo.clone(), cur_offset, remaining, perms)?;
+                let (mut vaddr, mapped_len) =
+                    iommu.map(vmo.clone(), cur_offset, remaining, perms)?;
                 assert_eq!(mapped_len % iommu.minimum_contiguity(), 0);
-                for _ in 0 .. mapped_len / iommu.minimum_contiguity() {
+                for _ in 0..mapped_len / iommu.minimum_contiguity() {
                     mapped_addrs.push(vaddr);
                     vaddr += iommu.minimum_contiguity();
                 }
@@ -100,7 +99,7 @@ impl Pmt {
     pub fn encode_addrs(
         &self,
         compress_results: bool,
-        contiguous: bool
+        contiguous: bool,
     ) -> ZxResult<Vec<DevVAddr>> {
         let iommu = self.bti.upgrade().unwrap().get_iommu();
         if compress_results {
@@ -108,9 +107,7 @@ impl Pmt {
                 let num_addrs = ceil(self.size, iommu.minimum_contiguity());
                 let min_contig = iommu.minimum_contiguity();
                 let base = self.mapped_addrs[0];
-                Ok((0..num_addrs)
-                    .map(|i| base + min_contig * i)
-                    .collect())
+                Ok((0..num_addrs).map(|i| base + min_contig * i).collect())
             } else {
                 Ok(self.mapped_addrs.clone())
             }
@@ -124,9 +121,11 @@ impl Pmt {
                 Ok(encoded_addrs)
             }
         } else {
-            let min_contig = 
-                if self.vmo.is_contiguous() { self.size } 
-                else { iommu.minimum_contiguity()};
+            let min_contig = if self.vmo.is_contiguous() {
+                self.size
+            } else {
+                iommu.minimum_contiguity()
+            };
             let num_pages = self.size / PAGE_SIZE;
             let mut encoded_addrs: Vec<DevVAddr> = Vec::new();
             for base in &self.mapped_addrs {

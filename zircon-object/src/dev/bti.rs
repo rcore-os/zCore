@@ -1,14 +1,14 @@
 use {
     super::*,
     crate::object::*,
+    crate::vm::*,
     alloc::{
+        collections::BTreeMap,
         sync::{Arc, Weak},
         vec::Vec,
-        collections::BTreeMap,
     },
-    spin::Mutex,
     dev::Iommu,
-    crate::vm::*,
+    spin::Mutex,
 };
 
 // BusTransactionInitiator
@@ -33,10 +33,10 @@ impl Bti {
             base: KObjectBase::new(),
             iommu,
             bti_id,
-            inner: Mutex::new(BtiInner{
+            inner: Mutex::new(BtiInner {
                 pmts: Default::default(),
                 self_ref: Default::default(),
-            })
+            }),
         });
         bti.inner.lock().self_ref = Arc::downgrade(&bti);
         bti
@@ -56,7 +56,7 @@ impl Bti {
         vmo: Arc<VmObject>,
         offset: usize,
         size: usize,
-        perms: IommuPerms
+        perms: IommuPerms,
     ) -> ZxResult<Arc<Pmt>> {
         if size == 0 {
             return Err(ZxError::INVALID_ARGS);
@@ -103,14 +103,14 @@ impl Bti {
     pub fn get_quarantine_count(&self) -> usize {
         let mut cnt = 0;
         for (_id, pmt) in self.inner.lock().pmts.iter() {
-            if Arc::strong_count(&pmt) == 1 { // no handle, the only arc is from self.pmts
+            if Arc::strong_count(&pmt) == 1 {
+                // no handle, the only arc is from self.pmts
                 cnt += 1;
             }
         }
         cnt
     }
 }
-
 
 #[repr(C)]
 #[derive(Default)]

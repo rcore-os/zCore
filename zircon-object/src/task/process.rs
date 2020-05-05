@@ -230,10 +230,7 @@ impl Process {
             .collect()
     }
 
-    pub fn remove_object<T: KernelObject>(
-        &self,
-        handle_value: HandleValue
-    ) -> ZxResult<Arc<T>> {
+    pub fn remove_object<T: KernelObject>(&self, handle_value: HandleValue) -> ZxResult<Arc<T>> {
         let handle = self.remove_handle(handle_value)?;
         let object = handle
             .object
