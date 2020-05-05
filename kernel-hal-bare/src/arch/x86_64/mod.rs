@@ -340,14 +340,22 @@ fn vdso_constants() -> VdsoConstants {
 }
 
 /// Initialize the HAL.
-pub fn init() {
+pub fn init(config: Config) {
     timer_init();
     interrupt::init();
     COM1.lock().init();
     unsafe {
         // enable global page
         Cr4::update(|f| f.insert(Cr4Flags::PAGE_GLOBAL));
+        // store config
+        CONFIG = config;
     }
+}
+
+/// Configuration of HAL.
+pub struct Config {
+    pub acpi_rsdp: u64,
+    pub smbios: u64,
 }
 
 #[export_name = "fetch_fault_vaddr"]
@@ -355,27 +363,13 @@ pub fn fetch_fault_vaddr() -> VirtAddr {
     Cr2::read().as_u64() as _
 }
 
-lazy_static! {
-    static ref RANGECHECKER: Mutex<Vec<(usize, usize)>> = Mutex::new(Vec::default());
+/// Get physical address of `acpi_rsdp` and `smbios` on x86_64.
+#[export_name = "hal_pc_firmware_tables"]
+pub fn pc_firmware_tables() -> (u64, u64) {
+    unsafe { (CONFIG.acpi_rsdp, CONFIG.smbios) }
 }
 
-#[export_name = "dma_range_check"]
-pub fn dma_check(paddr: PhysAddr, pages: usize) -> bool {
-    let mut checker = RANGECHECKER.lock();
-    let paddr_end = paddr + pages * PAGE_SIZE;
-    let conflict = checker.iter().any(|range| {
-        range.0 <= paddr && range.1 > paddr || range.0 <= paddr_end && paddr_end < range.1
-    });
-    if !conflict {
-        checker.push((paddr, paddr_end));
-    }
-    !conflict
-}
-
-#[export_name = "dma_range_recycle"]
-pub fn dma_recycle(paddr: PhysAddr, pages: usize) {
-    let paddr_end = paddr + pages * PAGE_SIZE;
-    RANGECHECKER
-        .lock()
-        .retain(|range| !(range.0 == paddr && range.1 == paddr_end));
-}
+static mut CONFIG: Config = Config {
+    acpi_rsdp: 0,
+    smbios: 0,
+};

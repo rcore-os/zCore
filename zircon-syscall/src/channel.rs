@@ -3,7 +3,7 @@ use {
     alloc::vec::Vec,
     zircon_object::{
         ipc::{Channel, MessagePacket},
-        object::{HandleInfo, obj_type},
+        object::{obj_type, HandleInfo},
         task::ThreadState,
     },
 };
@@ -263,7 +263,7 @@ impl Syscall<'_> {
                             ret = Err(e);
                         }
                     }
-                    Ok(()) => ()
+                    Ok(()) => (),
                 };
                 let new_rights = if disposition.rights != Rights::SAME_RIGHTS.bits() {
                     Rights::from_bits(disposition.rights).unwrap()
@@ -284,10 +284,7 @@ impl Syscall<'_> {
         if options != 0 {
             return Err(ZxError::INVALID_ARGS);
         }
-        if num_handles > 64 {
-            return Err(ZxError::OUT_OF_RANGE);
-        }
-        if num_bytes > 65536 {
+        if num_handles > 64 || num_bytes > 65536 {
             return Err(ZxError::OUT_OF_RANGE);
         }
         ret?;
@@ -301,7 +298,7 @@ fn handle_check(
     disposition: &HandleDisposition,
     object: &Arc<dyn KernelObject>,
     src_rights: Rights,
-    handle_value: HandleValue
+    handle_value: HandleValue,
 ) -> ZxResult {
     if !src_rights.contains(Rights::TRANSFER) {
         Err(ZxError::ACCESS_DENIED)
@@ -309,13 +306,14 @@ fn handle_check(
         Err(ZxError::NOT_SUPPORTED)
     } else if disposition.type_ != 0 && disposition.type_ != obj_type(&object) {
         Err(ZxError::WRONG_TYPE)
-    } else if disposition.op != ZX_HANDLE_OP_MOVE && disposition.op != ZX_HANDLE_OP_DUP {
+    } else if disposition.op != ZX_HANDLE_OP_MOVE && disposition.op != ZX_HANDLE_OP_DUP
+        || disposition.rights != Rights::SAME_RIGHTS.bits()
+            && (!src_rights.bits() & disposition.rights) != 0
+    {
         Err(ZxError::INVALID_ARGS)
-    } else if disposition.rights != Rights::SAME_RIGHTS.bits() && (!src_rights.bits() & disposition.rights) != 0 {
-        Err(ZxError::INVALID_ARGS)
-    } else if disposition.op == ZX_HANDLE_OP_DUP && !src_rights.contains(Rights::DUPLICATE){
+    } else if disposition.op == ZX_HANDLE_OP_DUP && !src_rights.contains(Rights::DUPLICATE) {
         Err(ZxError::ACCESS_DENIED)
-    }else {
+    } else {
         Ok(())
     }
 }

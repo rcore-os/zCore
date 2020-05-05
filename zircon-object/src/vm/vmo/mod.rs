@@ -68,7 +68,7 @@ pub trait VMObjectTrait: Sync + Send {
 
     fn remove_mapping(&self, mapping: Weak<VmMapping>);
 
-    fn complete_info(&self, info: &mut ZxInfoVmo);
+    fn complete_info(&self, info: &mut VmoInfo);
 
     fn get_cache_policy(&self) -> CachePolicy;
 
@@ -179,8 +179,8 @@ impl VmObject {
     }
 
     /// Get information of this VMO.
-    pub fn get_info(&self) -> ZxInfoVmo {
-        let mut ret = ZxInfoVmo {
+    pub fn get_info(&self) -> VmoInfo {
+        let mut ret = VmoInfo {
             koid: self.base.id,
             name: {
                 let mut arr = [0u8; 32];
@@ -246,7 +246,7 @@ impl Drop for VmObject {
 /// Describes a VMO.
 #[repr(C)]
 #[derive(Default)]
-pub struct ZxInfoVmo {
+pub struct VmoInfo {
     /// The koid of this VMO.
     koid: KoID,
     /// The name of this VMO.

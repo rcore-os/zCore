@@ -1,10 +1,4 @@
-use {
-    super::*,
-    zircon_object::{
-        dev::{Bti, Iommu},
-        resource::*,
-    },
-};
+use {super::*, zircon_object::dev::*};
 
 impl Syscall<'_> {
     pub fn sys_iommu_create(
@@ -20,7 +14,8 @@ impl Syscall<'_> {
             resource, type_, desc, desc_size, out
         );
         let proc = self.thread.proc();
-        proc.validate_resource(resource, ResourceKind::ROOT)?;
+        proc.get_object::<Resource>(resource)?
+            .validate(ResourceKind::ROOT)?;
         if desc_size > IOMMU_MAX_DESC_LEN {
             return Err(ZxError::INVALID_ARGS);
         }
@@ -57,6 +52,22 @@ impl Syscall<'_> {
         let bti = Bti::create(iommu, bti_id);
         let handle = proc.add_handle(Handle::new(bti, Rights::DEFAULT_BTI));
         out.write(handle)?;
+        Ok(())
+    }
+
+    pub fn sys_pc_firmware_tables(
+        &self,
+        resource: HandleValue,
+        mut acpi_rsdp_ptr: UserOutPtr<u64>,
+        mut smbios_ptr: UserOutPtr<u64>,
+    ) -> ZxResult {
+        info!("pc_firmware_tables: handle={:?}", resource);
+        let proc = self.thread.proc();
+        proc.get_object::<Resource>(resource)?
+            .validate(ResourceKind::ROOT)?;
+        let (acpi_rsdp, smbios) = kernel_hal::pc_firmware_tables();
+        acpi_rsdp_ptr.write(acpi_rsdp)?;
+        smbios_ptr.write(smbios)?;
         Ok(())
     }
 }

@@ -27,18 +27,11 @@ impl VMObjectPhysicalInner {
     }
 }
 
-impl Drop for VMObjectPhysical {
-    fn drop(&mut self) {
-        kernel_hal::dma_recycle(self.paddr, self.pages);
-    }
-}
-
 impl VMObjectPhysical {
     /// Create a new VMO representing a piece of contiguous physical memory.
     /// You must ensure nobody has the ownership of this piece of memory yet.
     pub fn new(paddr: PhysAddr, pages: usize) -> Arc<Self> {
         assert!(page_aligned(paddr));
-        assert!(kernel_hal::dma_check(paddr, pages));
         Arc::new(VMObjectPhysical {
             paddr,
             pages,
@@ -107,8 +100,8 @@ impl VMObjectTrait for VMObjectPhysical {
         inner.mapping_count -= 1;
     }
 
-    fn complete_info(&self, _info: &mut ZxInfoVmo) {
-        unimplemented!()
+    fn complete_info(&self, _info: &mut VmoInfo) {
+        warn!("VmoInfo for physical is unimplemented");
     }
 
     fn get_cache_policy(&self) -> CachePolicy {
@@ -131,11 +124,11 @@ impl VMObjectTrait for VMObjectPhysical {
     }
 
     fn share_count(&self) -> usize {
-        unimplemented!()
+        self.inner.lock().mapping_count as usize
     }
 
     fn committed_pages_in_range(&self, _start_idx: usize, _end_idx: usize) -> usize {
-        unimplemented!()
+        0
     }
 
     fn zero(&self, _offset: usize, _len: usize) -> ZxResult {

@@ -137,6 +137,9 @@ impl Syscall<'_> {
             Sys::CHANNEL_WRITE => {
                 self.sys_channel_write(a0 as _, a1 as _, a2.into(), a3 as _, a4.into(), a5 as _)
             }
+            Sys::CHANNEL_WRITE_ETC => {
+                self.sys_channel_write_etc(a0 as _, a1 as _, a2.into(), a3 as _, a4.into(), a5 as _)
+            }
             Sys::CHANNEL_CALL_NORETRY => {
                 self.sys_channel_call_noretry(
                     a0 as _,
@@ -242,9 +245,7 @@ impl Syscall<'_> {
             Sys::OBJECT_GET_CHILD => {
                 self.sys_object_get_child(a0 as _, a1 as _, a2 as _, a3.into())
             }
-            Sys::CHANNEL_WRITE_ETC => {
-                self.sys_channel_write_etc(a0 as _, a1 as _, a2.into(), a3 as _, a4.into(), a5 as _)
-            }
+            Sys::PC_FIRMWARE_TABLES => self.sys_pc_firmware_tables(a0 as _, a1.into(), a2.into()),
             _ => {
                 error!("syscall unimplemented: {:?}", sys_type);
                 Err(ZxError::NOT_SUPPORTED)

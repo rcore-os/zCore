@@ -6,7 +6,7 @@ use {
         time::Duration,
     },
     kernel_hal::{sleep_until, timer_now, yield_now},
-    zircon_object::{resource::*, task::*},
+    zircon_object::{dev::*, task::*},
 };
 
 static UTC_OFFSET: AtomicU64 = AtomicU64::new(0);
@@ -32,14 +32,14 @@ impl Syscall<'_> {
         }
     }
 
-    pub fn sys_clock_adjust(&self, hrsrc: HandleValue, clock_id: u32, offset: u64) -> ZxResult {
+    pub fn sys_clock_adjust(&self, resource: HandleValue, clock_id: u32, offset: u64) -> ZxResult {
         info!(
-            "clock.adjust: hrsrc={:#x?}, id={:#x}, offset={:#x}",
-            hrsrc, clock_id, offset
+            "clock.adjust: resource={:#x?}, id={:#x}, offset={:#x}",
+            resource, clock_id, offset
         );
-        self.thread
-            .proc()
-            .validate_resource(hrsrc, ResourceKind::ROOT)?;
+        let proc = self.thread.proc();
+        proc.get_object::<Resource>(resource)?
+            .validate(ResourceKind::ROOT)?;
         match clock_id {
             ZX_CLOCK_MONOTONIC => Err(ZxError::ACCESS_DENIED),
             ZX_CLOCK_UTC => {

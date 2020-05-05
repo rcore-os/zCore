@@ -12,14 +12,7 @@ use {
     alloc::{boxed::Box, sync::Arc, vec::Vec},
     kernel_hal::GeneralRegs,
     xmas_elf::ElfFile,
-    zircon_object::{
-        ipc::*,
-        object::*,
-        resource::{Resource, ResourceFlags, ResourceKind},
-        task::*,
-        util::elf_loader::*,
-        vm::*,
-    },
+    zircon_object::{dev::*, ipc::*, object::*, task::*, util::elf_loader::*, vm::*},
     zircon_syscall::Syscall,
 };
 
@@ -56,7 +49,13 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
     let job = Job::root();
     let proc = Process::create(&job, "proc", 0).unwrap();
     let thread = Thread::create(&proc, "thread", 0).unwrap();
-    let resource = Resource::create("root", ResourceKind::ROOT, 0, 0, ResourceFlags::empty());
+    let resource = Resource::create(
+        "root",
+        ResourceKind::ROOT,
+        0,
+        0x1_0000_0000,
+        ResourceFlags::empty(),
+    );
     let vmar = proc.vmar();
 
     // userboot

@@ -1,4 +1,4 @@
-use {super::*, core::convert::TryFrom, zircon_object::resource::*};
+use {super::*, core::convert::TryFrom, zircon_object::dev::*};
 
 impl Syscall<'_> {
     #[allow(clippy::too_many_arguments)]
