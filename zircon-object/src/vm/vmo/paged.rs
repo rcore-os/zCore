@@ -876,7 +876,17 @@ impl VMObjectPagedInner {
         let start = child.parent_offset / PAGE_SIZE;
         let end = child.parent_limit / PAGE_SIZE;
         // merge nodes to the child
-        for (key, value) in self.frames.split_off(&start) {
+        let mut child_frames = self.frames.split_off(&start);
+        for (key, value) in child_frames.iter_mut() {
+            if *key >= end {
+                break;
+            }
+            if self.contiguous {
+                assert!(value.pin_count <= 1);
+                value.pin_count = 0;
+            }
+        }
+        for (key, value) in child_frames {
             if key >= end {
                 break;
             }
@@ -975,12 +985,11 @@ impl VMObjectPagedInner {
         if self.is_contiguous() {
             info.flags |= VmoInfoFlags::CONTIGUOUS;
         }
-        info.num_children = if self.type_.is_hidden() { 2 } else { 0 };
+        // info.num_children = if self.type_.is_hidden() { 2 } else { 0 };
         info.num_mappings = self.mappings.len() as u64; // FIXME remove weak ptr
         info.share_count = self.mappings.len() as u64; // FIXME share_count should be the count of unique aspace
         info.committed_bytes =
             (self.committed_pages_in_range(0, self.size / PAGE_SIZE) * PAGE_SIZE) as u64;
-        // TODO cache_policy should be set up.
     }
 
     fn release_unwanted_pages(&mut self, mut unwanted: VecDeque<usize>) {

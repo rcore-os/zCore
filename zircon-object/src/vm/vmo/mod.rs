@@ -256,6 +256,7 @@ impl VmObject {
             },
             size: self.inner.len() as u64,
             parent_koid: self.parent.lock().upgrade().map(|p| p.id()).unwrap_or(0),
+            num_children: self.children.lock().len() as u64,
             flags: if self.resizable {
                 VmoInfoFlags::RESIZABLE
             } else {
