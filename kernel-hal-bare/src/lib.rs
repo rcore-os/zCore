@@ -184,7 +184,7 @@ pub fn frame_zero_in_range(target: PhysAddr, start: usize, end: usize) {
 pub fn frame_flush(target: PhysAddr) {
     unsafe {
         for paddr in (target..target + PAGE_SIZE).step_by(cacheline_size()) {
-            _mm_clflush(paddr as *const u8);
+            _mm_clflush(phys_to_virt(paddr) as *const u8);
         }
         _mm_mfence();
     }
