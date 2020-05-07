@@ -715,6 +715,11 @@ impl VMObjectPaged {
                     if let Some(frame) = inner.frames.get(&i) {
                         if frame.tag.is_split() {
                             let mut new_frame = inner.frames.remove(&i).unwrap();
+                            if inner.contiguous && !other_child.contiguous {
+                                if new_frame.pin_count >= 1 {
+                                    new_frame.pin_count -= 1;
+                                }
+                            }
                             if new_frame.tag == tag && other_start <= i && other_end > i {
                                 new_frame.tag = PageStateTag::Owned;
                                 let new_key = i - other_child.parent_offset / PAGE_SIZE;
@@ -881,9 +886,10 @@ impl VMObjectPagedInner {
             if *key >= end {
                 break;
             }
-            if self.contiguous {
-                assert!(value.pin_count <= 1);
-                value.pin_count = 0;
+            if self.contiguous && !child.contiguous {
+                if value.pin_count >= 1 {
+                    value.pin_count -= 1;
+                }
             }
         }
         for (key, value) in child_frames {
@@ -1049,7 +1055,6 @@ impl VMObjectPagedInner {
         self.size = new_size;
     }
 
-    // TODO: for vmo_create_contiguous
     fn is_contiguous(&self) -> bool {
         self.contiguous
     }
