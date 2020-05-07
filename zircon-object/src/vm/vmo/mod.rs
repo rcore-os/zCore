@@ -191,7 +191,8 @@ impl VmObject {
     /// Create a child slice as an VMO
     pub fn create_slice(self: &Arc<Self>, offset: usize, p_size: usize) -> ZxResult<Arc<Self>> {
         let size = roundup_pages(p_size);
-        if size < p_size {
+        // why 32 * PAGE_SIZE? Refered to zircon source codes
+        if size < p_size || size > usize::MAX & !(32 * PAGE_SIZE) {
             return Err(ZxError::OUT_OF_RANGE);
         }
         // child slice must be wholly contained
