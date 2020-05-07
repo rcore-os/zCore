@@ -288,7 +288,7 @@ impl VMObjectTrait for VMObjectPaged {
         let mut unwanted = VecDeque::new();
         for block in iter {
             //let paddr = self.commit_page(block.block, MMUFlags::READ)?;
-            if block.len() == PAGE_SIZE {
+            if block.len() == PAGE_SIZE && !self.is_contiguous() {
                 let _ = self.commit_page(block.block, MMUFlags::WRITE)?;
                 unwanted.push_back(block.block);
                 self.inner.lock().frames.remove(&block.block);
@@ -593,15 +593,6 @@ impl VMObjectPaged {
             return res;
         }
         let mut inner = self.inner.lock();
-        if inner.type_.is_slice() {
-            assert!((inner.parent_limit - inner.parent_offset) / PAGE_SIZE > page_idx);
-            let parent_idx = page_idx + inner.parent_offset / PAGE_SIZE;
-            return inner.parent.as_ref().unwrap().commit_page_internal(
-                parent_idx,
-                flags,
-                &inner.self_ref,
-            );
-        }
         // special case
         let no_parent = inner.parent.is_none();
         let no_frame = !inner.frames.contains_key(&page_idx);
