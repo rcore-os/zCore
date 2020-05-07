@@ -1014,6 +1014,11 @@ impl VMObjectPagedInner {
                 if start <= idx && idx < end {
                     if locked_parent.frames.contains_key(&idx) {
                         let mut to_insert = locked_parent.frames.remove(&idx).unwrap();
+                        if locked_parent.contiguous && !locked_other.contiguous {
+                            if to_insert.pin_count >= 1 {
+                                to_insert.pin_count -= 1;
+                            }
+                        }
                         if to_insert.tag != tag.negate() {
                             to_insert.tag = PageStateTag::Owned;
                             locked_other.frames.insert(idx - start, to_insert);
