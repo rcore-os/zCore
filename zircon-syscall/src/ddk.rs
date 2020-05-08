@@ -3,7 +3,7 @@ use {
     bitflags::bitflags,
     kernel_hal::DevVAddr,
     zircon_object::vm::{page_aligned, VmObject},
-    zircon_object::{dev::*, resource::*},
+    zircon_object::{dev::*, resource::*, signal::*},
 };
 
 impl Syscall<'_> {
@@ -150,6 +150,7 @@ impl Syscall<'_> {
         bti.release_quarantine();
         Ok(())
     }
+
     pub fn sys_pc_firmware_tables(
         &self,
         resource: HandleValue,
@@ -165,6 +166,50 @@ impl Syscall<'_> {
         smbios_ptr.write(smbios)?;
         Ok(())
     }
+
+    pub fn interrupt_create(
+        &self,
+        resource: HandleValue,
+        _src_num: u32,
+        options: u32,
+        mut out: UserOutPtr<HandleValue>
+    ) -> ZxResult {
+        info!("interrupt_create: handle={:?} options={:?}", resource, options);
+        let proc = self.thread.proc();
+        let options = InterruptOptions::from_bits_truncate(options);
+        if !options.contains(InterruptOptions::VIRTUAL) {
+            // let resource = proc.get_object::<Resource>(resource)?;
+            unimplemented!()
+        } else {
+            let interrupt = Interrupt::create();
+            let handle = proc.add_handle(Handle::new(interrupt, Rights::DEFAULT_INTERRUPT));
+            out.write(handle)?;
+        }
+        Ok(())
+    }
+
+    pub fn interrupt_bind(
+        &self,
+        interrupt: HandleValue,
+        port: HandleValue,
+        key: u64,
+        options: u32,
+    ) -> ZxResult {
+        info!("interrupt_bind: interrupt={:?} port={:?} key={:?} options={:?}", interrupt, port, key, options);
+        let proc = self.thread.proc();
+        let interrupt = proc.get_object_with_rights::<Interrupt>(interrupt, Rights::READ)?;
+        let port = proc.get_object_with_rights::<Port>(port, Rights::WRITE)?;
+        if !port.can_bind_to_interrupt() {
+            return Err(ZxError::WRONG_TYPE);
+        }
+        if options == InterruptOp::Bind as _ {
+            interrupt.bind(port, key)
+        } else if options == InterruptOp::Unbind as _ {
+            interrupt.unbind(port)
+        } else {
+            Err(ZxError::INVALID_ARGS)
+        }
+    }
 }
 
 const IOMMU_MAX_DESC_LEN: usize = 4096;
@@ -179,4 +224,15 @@ bitflags! {
         const COMPRESS              = 1 << 3;
         const CONTIGUOUS            = 1 << 4;
     }
+}
+
+bitflags! {
+    struct InterruptOptions: u32 {
+        const VIRTUAL = 0x10;
+    }
+}
+
+enum InterruptOp {
+    Bind = 0,
+    Unbind = 1,
 }

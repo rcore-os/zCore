@@ -258,6 +258,8 @@ impl Syscall<'_> {
                 self.sys_object_get_child(a0 as _, a1 as _, a2 as _, a3.into())
             }
             Sys::PC_FIRMWARE_TABLES => self.sys_pc_firmware_tables(a0 as _, a1.into(), a2.into()),
+            Sys::INTERRUPT_CREATE => self.interrupt_create(a0 as _, a1 as _, a2 as _, a3.into()),
+            Sys::INTERRUPT_BIND => self.interrupt_bind(a0 as _, a1 as _, a2 as _, a3 as _),
             _ => {
                 error!("syscall unimplemented: {:?}", sys_type);
                 Err(ZxError::NOT_SUPPORTED)

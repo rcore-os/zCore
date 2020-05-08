@@ -4,6 +4,7 @@ use crate::object::*;
 use alloc::collections::vec_deque::VecDeque;
 use alloc::sync::Arc;
 use spin::Mutex;
+use bitflags::bitflags;
 
 #[path = "port_packet.rs"]
 mod port_packet;
@@ -18,6 +19,7 @@ mod port_packet;
 /// asynchronous message delivery from IPC transports.
 pub struct Port {
     base: KObjectBase,
+    options: PortOptions,
     inner: Mutex<PortInner>,
 }
 
@@ -30,9 +32,10 @@ struct PortInner {
 
 impl Port {
     /// Create a new `Port`.
-    pub fn new() -> Arc<Self> {
+    pub fn new(options: u32) -> Arc<Self> {
         Arc::new(Port {
             base: KObjectBase::default(),
+            options: PortOptions::from_bits_truncate(options),
             inner: Mutex::default(),
         })
     }
@@ -64,6 +67,17 @@ impl Port {
     #[allow(dead_code)]
     fn len(&self) -> usize {
         self.inner.lock().queue.len()
+    }
+
+    pub fn can_bind_to_interrupt(&self) -> bool {
+        self.options.contains(PortOptions::BIND_TO_INTERUPT)
+    }
+}
+
+bitflags! {
+    pub struct PortOptions: u32 {
+        #[allow(clippy::identity_op)]
+        const BIND_TO_INTERUPT         = 1 << 0;
     }
 }
 
