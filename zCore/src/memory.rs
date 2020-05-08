@@ -69,7 +69,11 @@ pub extern "C" fn hal_frame_alloc_contiguous(page_num: usize, align_log2: usize)
         .lock()
         .alloc_contiguous(page_num, align_log2)
         .map(|id| id * PAGE_SIZE + MEMORY_OFFSET);
-    trace!("Allocate contiguous frames: {:x?} ~ {:x?}", ret, ret.map(|x| x + page_num));
+    trace!(
+        "Allocate contiguous frames: {:x?} ~ {:x?}",
+        ret,
+        ret.map(|x| x + page_num)
+    );
     ret
 }
 
