@@ -706,10 +706,11 @@ impl VMObjectPaged {
                     if let Some(frame) = inner.frames.get(&i) {
                         if frame.tag.is_split() {
                             let mut new_frame = inner.frames.remove(&i).unwrap();
-                            if inner.contiguous && !other_child.contiguous {
-                                if new_frame.pin_count >= 1 {
-                                    new_frame.pin_count -= 1;
-                                }
+                            if inner.contiguous
+                                && !other_child.contiguous
+                                && new_frame.pin_count >= 1
+                            {
+                                new_frame.pin_count -= 1;
                             }
                             if new_frame.tag == tag && other_start <= i && other_end > i {
                                 new_frame.tag = PageStateTag::Owned;
@@ -877,10 +878,8 @@ impl VMObjectPagedInner {
             if *key >= end {
                 break;
             }
-            if self.contiguous && !child.contiguous {
-                if value.pin_count >= 1 {
-                    value.pin_count -= 1;
-                }
+            if self.contiguous && !child.contiguous && value.pin_count >= 1 {
+                value.pin_count -= 1;
             }
         }
         for (key, value) in child_frames {
@@ -1005,10 +1004,11 @@ impl VMObjectPagedInner {
                 if start <= idx && idx < end {
                     if locked_parent.frames.contains_key(&idx) {
                         let mut to_insert = locked_parent.frames.remove(&idx).unwrap();
-                        if locked_parent.contiguous && !locked_other.contiguous {
-                            if to_insert.pin_count >= 1 {
-                                to_insert.pin_count -= 1;
-                            }
+                        if locked_parent.contiguous
+                            && !locked_other.contiguous
+                            && to_insert.pin_count >= 1
+                        {
+                            to_insert.pin_count -= 1;
                         }
                         if to_insert.tag != tag.negate() {
                             to_insert.tag = PageStateTag::Owned;
