@@ -373,3 +373,10 @@ static mut CONFIG: Config = Config {
     acpi_rsdp: 0,
     smbios: 0,
 };
+
+#[export_name = "hal_read_tsc"]
+pub fn read_tsc() -> u64 {
+    unsafe {
+        core::arch::x86_64::_rdtsc()
+    }
+}
