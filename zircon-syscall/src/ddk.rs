@@ -30,7 +30,7 @@ impl Syscall<'_> {
         if type_ != IOMMU_TYPE_DUMMY {
             unimplemented!("IOMMU {} is not implemented", type_);
         }
-        let _copied_desc = desc.read_array(desc_size)?;
+        let _copied_desc = desc.copy_array(desc_size)?;
         let iommu = Iommu::create();
         let handle = proc.add_handle(Handle::new(iommu, Rights::DEFAULT_CHANNEL));
         info!("iommu handle value {:#x}", handle);

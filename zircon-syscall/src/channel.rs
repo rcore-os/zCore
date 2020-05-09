@@ -120,8 +120,8 @@ impl Syscall<'_> {
             return Err(ZxError::OUT_OF_RANGE);
         }
         let proc = self.thread.proc();
-        let data = user_bytes.read_array(num_bytes as usize)?;
-        let handles = user_handles.read_array(num_handles as usize)?;
+        let data = user_bytes.copy_array(num_bytes as usize)?;
+        let handles = user_handles.copy_array(num_handles as usize)?;
         let transfer_self = handles.iter().any(|&handle| handle == handle_value);
         let handles = proc.remove_handles(&handles)?;
         if transfer_self {
@@ -183,9 +183,9 @@ impl Syscall<'_> {
         let channel =
             proc.get_object_with_rights::<Channel>(handle_value, Rights::READ | Rights::WRITE)?;
         let wr_msg = MessagePacket {
-            data: args.wr_bytes.read_array(args.wr_num_bytes as usize)?,
+            data: args.wr_bytes.copy_array(args.wr_num_bytes as usize)?,
             handles: {
-                let handles = args.wr_handles.read_array(args.wr_num_handles as usize)?;
+                let handles = args.wr_handles.copy_array(args.wr_num_handles as usize)?;
                 let handles = proc.remove_handles(&handles)?;
                 for handle in handles.iter() {
                     if !handle.rights.contains(Rights::TRANSFER) {
@@ -250,8 +250,8 @@ impl Syscall<'_> {
             handle, options, user_bytes, num_bytes, user_handles, num_handles
         );
         let proc = self.thread.proc();
-        let data = user_bytes.read_array(num_bytes as usize)?;
-        let mut dispositions = user_handles.read_array(num_handles as usize)?;
+        let data = user_bytes.copy_array(num_bytes as usize)?;
+        let mut dispositions = user_handles.copy_array(num_handles as usize)?;
         let mut handles: Vec<Handle> = Vec::new();
         let mut ret: ZxResult = Ok(());
         for disposition in dispositions.iter_mut() {

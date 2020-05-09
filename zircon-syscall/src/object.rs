@@ -410,14 +410,14 @@ impl Syscall<'_> {
 
     pub async fn sys_object_wait_many(
         &self,
-        mut user_items: UserInOutPtr<UserWaitItem>,
+        user_items: UserInOutPtr<UserWaitItem>,
         count: u32,
         deadline: Deadline,
     ) -> ZxResult {
         if count > MAX_WAIT_MANY_ITEMS {
             return Err(ZxError::OUT_OF_RANGE);
         }
-        let mut items = user_items.read_array(count as usize)?;
+        let items = user_items.mut_slice(count as usize)?;
         info!("user_items: {:#x?}, deadline: {:?}", user_items, deadline);
         let proc = self.thread.proc();
         let mut waiters = Vec::with_capacity(count as usize);
@@ -433,7 +433,6 @@ impl Syscall<'_> {
         for (i, item) in items.iter_mut().enumerate() {
             item.observed = res[i];
         }
-        user_items.write_array(&items)?;
         Ok(())
     }
 

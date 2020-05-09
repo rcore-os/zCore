@@ -80,7 +80,7 @@ impl<T, P: Policy> UserPtr<T, P> {
     }
 }
 
-impl<T, P: Read> UserPtr<T, P> {
+impl<'a, T, P: Read> UserPtr<T, P> {
     pub fn as_ref(&self) -> Result<&'static T> {
         Ok(unsafe { &*self.ptr })
     }
@@ -99,7 +99,8 @@ impl<T, P: Read> UserPtr<T, P> {
         Ok(Some(value))
     }
 
-    pub fn read_array(&self, len: usize) -> Result<Vec<T>> {
+    /// Copy content of this array to a new one, and return new array
+    pub fn copy_array(&self, len: usize) -> Result<Vec<T>> {
         if len == 0 {
             return Ok(Vec::default());
         }
@@ -110,6 +111,13 @@ impl<T, P: Read> UserPtr<T, P> {
             ret.as_mut_ptr().copy_from_nonoverlapping(self.ptr, len);
         }
         Ok(ret)
+    }
+
+    /// Return a slice belongs to this array
+    pub fn slice(&self, len: usize) -> Result<&'a [T]> {
+        self.check()?;
+        let arr = unsafe { core::slice::from_raw_parts(self.ptr, len) };
+        Ok(arr)
     }
 }
 
@@ -136,14 +144,14 @@ impl<P: Read> UserPtr<UserPtr<u8, P>, P> {
                 .find(|&i| self.ptr.add(i).read().is_null())
                 .unwrap()
         };
-        self.read_array(len)?
+        self.copy_array(len)?
             .into_iter()
             .map(|ptr| ptr.read_cstring())
             .collect()
     }
 }
 
-impl<T, P: Write> UserPtr<T, P> {
+impl<'a, T, P: Write> UserPtr<T, P> {
     pub fn write(&mut self, value: T) -> Result<()> {
         self.check()?;
         unsafe {
@@ -169,6 +177,12 @@ impl<T, P: Write> UserPtr<T, P> {
                 .copy_from_nonoverlapping(values.as_ptr(), values.len());
         }
         Ok(())
+    }
+
+    pub fn mut_slice(&self, len: usize) -> Result<&'a mut [T]> {
+        self.check()?;
+        let arr = unsafe { core::slice::from_raw_parts_mut(self.ptr, len) };
+        Ok(arr)
     }
 }
 

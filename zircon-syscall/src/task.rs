@@ -59,6 +59,7 @@ impl Syscall<'_> {
         let thread = Thread::create(&process, &name, options)?;
         let handle = proc.add_handle(Handle::new(thread, Rights::DEFAULT_THREAD));
         thread_handle.write(handle)?;
+        info!("over");
         Ok(())
     }
 
@@ -112,8 +113,8 @@ impl Syscall<'_> {
         );
         let proc = self.thread.proc();
         let thread = proc.get_object_with_rights::<Thread>(handle, Rights::WRITE)?;
-        let buf = buffer.read_array(buffer_size)?;
-        thread.write_state(kind, &buf)?;
+        let buf = buffer.slice(buffer_size)?;
+        thread.write_state(kind, buf)?;
         Ok(())
     }
 
@@ -235,9 +236,8 @@ impl Syscall<'_> {
                     JOB_POL_ABSOLUTE => SetPolicyOptions::Absolute,
                     _ => return Err(ZxError::INVALID_ARGS),
                 };
-                let all_policy =
-                    UserInPtr::<BasicPolicy>::from(policy).read_array(count as usize)?;
-                job.set_policy_basic(policy_option, &all_policy)
+                let all_policy = UserInPtr::<BasicPolicy>::from(policy).slice(count as usize)?;
+                job.set_policy_basic(policy_option, all_policy)
             }
             //JOB_POL_BASE_V2 => unimplemented!(),
             JOB_POL_TIMER_SLACK => {

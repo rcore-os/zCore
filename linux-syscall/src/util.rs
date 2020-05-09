@@ -20,7 +20,7 @@ pub struct IoVecs<P: Policy> {
 impl<P: Policy> IoVecs<P> {
     pub fn new(ptr: UserInPtr<IoVec<P>>, count: usize) -> LxResult<Self> {
         Ok(IoVecs {
-            vec: ptr.read_array(count)?,
+            vec: ptr.copy_array(count)?,
         })
     }
 
@@ -33,7 +33,7 @@ impl<P: Read> IoVecs<P> {
     pub fn read_to_vec(&self) -> LxResult<Vec<u8>> {
         let mut buf = Vec::new();
         for vec in self.vec.iter() {
-            buf.extend(vec.base.read_array(vec.len)?);
+            buf.extend(vec.base.slice(vec.len)?);
         }
         Ok(buf)
     }

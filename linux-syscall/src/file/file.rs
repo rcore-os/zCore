@@ -25,9 +25,9 @@ impl Syscall<'_> {
     pub fn sys_write(&self, fd: FileDesc, base: UserInPtr<u8>, len: usize) -> SysResult {
         info!("write: fd={:?}, base={:?}, len={:#x}", fd, base, len);
         let proc = self.lock_linux_process();
-        let buf = base.read_array(len)?;
+        let buf = base.slice(len)?;
         let file_like = proc.get_file_like(fd)?;
-        let len = file_like.write(&buf)?;
+        let len = file_like.write(buf)?;
         Ok(len)
     }
 
@@ -62,9 +62,9 @@ impl Syscall<'_> {
             fd, base, len, offset
         );
         let proc = self.lock_linux_process();
-        let buf = base.read_array(len)?;
+        let buf = base.slice(len)?;
         let file_like = proc.get_file_like(fd)?;
-        let len = file_like.write_at(offset, &buf)?;
+        let len = file_like.write_at(offset, buf)?;
         Ok(len)
     }
 

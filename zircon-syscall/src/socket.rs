@@ -38,8 +38,8 @@ impl Syscall<'_> {
         }
         let proc = self.thread.proc();
         let socket = proc.get_object_with_rights::<Socket>(handle_value, Rights::WRITE)?;
-        let data = user_bytes.read_array(count)?;
-        let actual_count = socket.write(options, &data)?;
+        let data = user_bytes.slice(count)?;
+        let actual_count = socket.write(options, data)?;
         actual_count_ptr.write_if_not_null(actual_count)?;
         Ok(())
     }
