@@ -210,6 +210,24 @@ impl Syscall<'_> {
             Err(ZxError::INVALID_ARGS)
         }
     }
+
+    pub fn interrupt_trigger(&self, interrupt: HandleValue, options: u32, timestamp: i64) -> ZxResult {
+        info!("interrupt_trigger: interrupt={:?} options={:?} timestamp={:?}", interrupt, options, timestamp);
+        let interrupt = self.thread.proc().get_object_with_rights::<Interrupt>(interrupt, Rights::SIGNAL)?;
+        interrupt.trigger(timestamp)
+    }
+
+    pub fn interrupt_ack(&self, interrupt: HandleValue) -> ZxResult {
+        info!("interupt_ack: interrupt={:?}", interrupt);
+        let interrupt = self.thread.proc().get_object_with_rights::<Interrupt>(interrupt, Rights::WRITE)?;
+        interrupt.ack()
+    }
+
+    pub fn interrupt_destroy(&self, interrupt: HandleValue) -> ZxResult {
+        info!("interupt_ack: interrupt={:?}", interrupt);
+        let interrupt = self.thread.proc().get_object::<Interrupt>(interrupt)?;
+        interrupt.destroy()
+    }
 }
 
 const IOMMU_MAX_DESC_LEN: usize = 4096;

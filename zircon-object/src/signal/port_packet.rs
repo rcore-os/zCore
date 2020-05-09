@@ -20,7 +20,7 @@ pub struct PortPacket {
 #[repr(u8)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 #[allow(dead_code)]
-enum PacketType {
+pub enum PacketType {
     User = 0,
     SignalOne = 1,
     SignalRep = 2,
@@ -37,6 +37,7 @@ enum PacketType {
 union Payload {
     signal: PacketSignal,
     exception: PacketException,
+    interrupt: PacketInterrupt,
     user: [u8; 32],
 }
 
@@ -57,6 +58,15 @@ pub struct PacketException {
     pub num: u8,
 }
 
+#[repr(C)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub struct PacketInterrupt {
+    pub timestamp: i64,
+    pub reserved0: u64,
+    pub reserved1: u64,
+    pub reserved2: u64, 
+}
+
 // Rust struct: for internal constructing and debugging
 
 /// A high-level representation of a packet sent through a port.
@@ -72,6 +82,7 @@ pub struct PortPacketRepr {
 pub enum PayloadRepr {
     Signal(PacketSignal),
     Exception(PacketException),
+    Interrupt(PacketInterrupt),
     User([u8; 32]),
 }
 
@@ -87,12 +98,14 @@ impl PayloadRepr {
             PayloadRepr::User(_) => PacketType::User,
             PayloadRepr::Signal(_) => PacketType::SignalOne,
             PayloadRepr::Exception(_) => PacketType::Exception,
+            PayloadRepr::Interrupt(_) => PacketType::Interrupt,
         }
     }
     fn encode(&self) -> Payload {
         match *self {
             PayloadRepr::Signal(signal) => Payload { signal },
             PayloadRepr::Exception(exception) => Payload { exception },
+            PayloadRepr::Interrupt(interrupt) => Payload { interrupt },
             PayloadRepr::User(user) => Payload { user },
         }
     }
@@ -107,6 +120,7 @@ impl PayloadRepr {
                     num: exception_num,
                     ..data.exception
                 }),
+                PacketType::Interrupt => PayloadRepr::Interrupt(data.interrupt),
                 _ => unimplemented!(),
             }
         }

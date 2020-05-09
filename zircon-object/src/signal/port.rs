@@ -2,6 +2,7 @@ pub use self::port_packet::*;
 use super::*;
 use crate::object::*;
 use alloc::collections::vec_deque::VecDeque;
+use alloc::collections::btree_map::BTreeMap;
 use alloc::sync::Arc;
 use spin::Mutex;
 use bitflags::bitflags;
@@ -28,6 +29,27 @@ impl_kobject!(Port);
 #[derive(Default, Debug)]
 struct PortInner {
     queue: VecDeque<PortPacket>,
+    interrupt_queue: VecDeque<PortInterruptPacket>,
+    interrupt_grave: BTreeMap<u64, bool>,
+    interrupt_pid: u64,
+}
+
+#[derive(Default, Debug)]
+pub struct PortInterruptPacket {
+    timestamp: i64,
+    key: u64,
+    pid: u64,
+}
+
+impl From<PortInterruptPacket> for PacketInterrupt {
+    fn from(packet: PortInterruptPacket) -> Self {
+        PacketInterrupt {
+            timestamp: packet.timestamp,
+            reserved0: 0,
+            reserved1: 0,
+            reserved2: 0,
+        }
+    }
 }
 
 impl Port {
@@ -48,14 +70,56 @@ impl Port {
         self.base.signal_set(Signal::READABLE);
     }
 
+    // Push an `InterruptPacket` into the port.
+    pub fn push_interrupt(&self, timestamp: i64, key: u64) -> u64 {
+        let mut inner = self.inner.lock();
+        inner.interrupt_pid += 1;
+        let pid = inner.interrupt_pid;
+        inner.interrupt_queue.push_back(PortInterruptPacket{timestamp, key, pid});
+        inner.interrupt_grave.insert(pid, true);
+        drop(inner);
+        self.base.signal_set(Signal::READABLE);
+        pid
+    }
+
+    // Remove an `InterruptPacket` from the port.
+    // Return whether the packet is in the port
+    pub fn remove_interrupt(&self, pid: u64) -> bool {
+        let mut inner = self.inner.lock();
+        match inner.interrupt_grave.get(&pid) {
+            Some(in_queue) => {
+                let in_queue = *in_queue;
+                inner.interrupt_grave.insert(pid, false);
+                in_queue
+            }
+            None => false
+        }
+    }
+
     /// Asynchronous wait until at least one packet is available, then take out all packets.
     pub async fn wait(self: &Arc<Self>) -> PortPacket {
         let object = self.clone() as Arc<dyn KernelObject>;
         loop {
             object.wait_signal(Signal::READABLE).await;
             let mut inner = self.inner.lock();
+            if self.can_bind_to_interrupt() {
+                while let Some(packet) = inner.interrupt_queue.pop_front() {
+                    let in_queue = inner.interrupt_grave.remove(&packet.pid).unwrap();
+                    if !in_queue {
+                        continue;
+                    }
+                    if inner.queue.is_empty() && (inner.interrupt_queue.is_empty() || !self.can_bind_to_interrupt()) {
+                        self.base.signal_clear(Signal::READABLE);
+                    }
+                    return PortPacketRepr {
+                        key: packet.key,
+                        status: ZxError::OK,
+                        data: PayloadRepr::Interrupt(packet.into())
+                    }.into();
+                }
+            }
             if let Some(packet) = inner.queue.pop_front() {
-                if inner.queue.is_empty() {
+                if inner.queue.is_empty() && (inner.interrupt_queue.is_empty() || !self.can_bind_to_interrupt()) {
                     self.base.signal_clear(Signal::READABLE);
                 }
                 return packet;
@@ -88,7 +152,7 @@ mod tests {
 
     #[async_std::test]
     async fn wait() {
-        let port = Port::new();
+        let port = Port::new(0);
         let object = DummyObject::new() as Arc<dyn KernelObject>;
         object.send_signal_to_port_async(Signal::READABLE, &port, 1);
 
