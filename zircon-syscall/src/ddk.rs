@@ -179,7 +179,8 @@ impl Syscall<'_> {
         let options = InterruptOptions::from_bits_truncate(options);
         if !options.contains(InterruptOptions::VIRTUAL) {
             // let resource = proc.get_object::<Resource>(resource)?;
-            unimplemented!()
+            error!("unimplemented: interrupt_create: handle={:?} options={:?}", resource, options);
+            return Err(ZxError::NOT_SUPPORTED);
         } else {
             let interrupt = Interrupt::create();
             let handle = proc.add_handle(Handle::new(interrupt, Rights::DEFAULT_INTERRUPT));
