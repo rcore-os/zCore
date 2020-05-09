@@ -141,6 +141,10 @@ impl PageState {
         core::mem::forget(self);
         frame
     }
+    fn swap(&mut self, t: &mut Self) {
+        core::mem::swap(&mut self.frame, &mut t.frame);
+        core::mem::swap(&mut self.pin_count, &mut t.pin_count);
+    }
 }
 
 impl Drop for PageState {
@@ -317,10 +321,13 @@ impl VMObjectTrait for VMObjectPaged {
     }
 
     fn commit_page(&self, page_idx: usize, flags: MMUFlags) -> ZxResult<PhysAddr> {
-        match self.commit_page_internal(page_idx, flags, &Weak::new())? {
+        let ret = match self.commit_page_internal(page_idx, flags, &Weak::new())? {
             CommitResult::Ref(paddr) => Ok(paddr),
             _ => unreachable!(),
-        }
+        };
+        // force check conntiguous on each leaf node
+        assert!(self.check_contig());
+        ret
     }
 
     fn commit(&self, offset: usize, len: usize) -> ZxResult {
@@ -628,7 +635,17 @@ impl VMObjectPaged {
                         inner.frames.insert(page_idx, PageState::new(frame));
                     }
                     CommitResult::CopyOnWrite(frame) => {
-                        inner.frames.insert(page_idx, PageState::new(frame));
+                        let mut new_frame = PageState::new(frame);
+                        // Cloning a contiguous vmo: original frames are stored in hidden parent nodes.
+                        // In order to make sure original vmo (now is a child of hidden parent)
+                        // owns physically contiguous frames, swap the new frame with the original
+                        if inner.contiguous {
+                            let mut parent_inner = parent.inner.lock();
+                            if let Some(par_frame) = parent_inner.frames.get_mut(&parent_idx) {
+                                par_frame.swap(&mut new_frame);
+                            }
+                        }
+                        inner.frames.insert(page_idx, new_frame);
                     }
                     r => return Ok(r),
                 }
@@ -777,6 +794,24 @@ impl VMObjectPaged {
             inner.frames.insert(i, state);
         }
         Ok(())
+    }
+
+    /// Check whether it is not physically contiguous when it should be
+    fn check_contig(&self) -> bool {
+        let inner = self.inner.lock();
+        if !inner.contiguous {
+            return true;
+        }
+        let mut base = 0;
+        for (key, ps) in inner.frames.iter() {
+            let new_base = ps.frame.addr() - key * PAGE_SIZE;
+            if base == 0 || new_base == base {
+                base = new_base;
+            } else {
+                return false;
+            }
+        }
+        true
     }
 }
 
