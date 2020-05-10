@@ -81,6 +81,10 @@ impl Deadline {
     pub fn is_positive(&self) -> bool {
         self.0.is_positive()
     }
+
+    pub fn forever() -> Self {
+        Deadline(i64::max_value())
+    }
 }
 
 impl From<Deadline> for Duration {

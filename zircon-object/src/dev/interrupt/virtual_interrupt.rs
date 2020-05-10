@@ -1,7 +1,6 @@
 use {
     super::*,
     alloc::sync::Arc,
-    spin::Mutex,
 };
 
 #[derive(Default)]

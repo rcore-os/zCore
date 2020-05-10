@@ -263,6 +263,7 @@ impl Syscall<'_> {
             Sys::INTERRUPT_TRIGGER => self.sys_interrupt_trigger(a0 as _, a1 as _, a2 as _),
             Sys::INTERRUPT_ACK => self.sys_interrupt_ack(a0 as _),
             Sys::INTERRUPT_DESTROY => self.sys_interrupt_destroy(a0 as _),
+            Sys::INTERRUPT_WAIT => self.sys_interrupt_wait(a0 as _, a1.into()).await,
             _ => {
                 error!("syscall unimplemented: {:?}", sys_type);
                 Err(ZxError::NOT_SUPPORTED)
