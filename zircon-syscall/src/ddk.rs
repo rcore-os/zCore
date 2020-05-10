@@ -2,8 +2,8 @@ use {
     super::*,
     bitflags::bitflags,
     kernel_hal::DevVAddr,
+    zircon_object::dev::*,
     zircon_object::vm::{page_aligned, VmObject},
-    zircon_object::{dev::*, resource::*},
 };
 
 impl Syscall<'_> {
