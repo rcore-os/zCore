@@ -167,14 +167,14 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    pub fn interrupt_create(
+    pub fn sys_interrupt_create(
         &self,
         resource: HandleValue,
         _src_num: u32,
         options: u32,
         mut out: UserOutPtr<HandleValue>
     ) -> ZxResult {
-        info!("interrupt_create: handle={:?} options={:?}", resource, options);
+        error!("interrupt_create: handle={:?} options={:?}", resource, options);
         let proc = self.thread.proc();
         let options = InterruptOptions::from_bits_truncate(options);
         if !options.contains(InterruptOptions::VIRTUAL) {
@@ -189,14 +189,14 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    pub fn interrupt_bind(
+    pub fn sys_interrupt_bind(
         &self,
         interrupt: HandleValue,
         port: HandleValue,
         key: u64,
         options: u32,
     ) -> ZxResult {
-        info!("interrupt_bind: interrupt={:?} port={:?} key={:?} options={:?}", interrupt, port, key, options);
+        error!("interrupt_bind: interrupt={:?} port={:?} key={:?} options={:?}", interrupt, port, key, options);
         let proc = self.thread.proc();
         let interrupt = proc.get_object_with_rights::<Interrupt>(interrupt, Rights::READ)?;
         let port = proc.get_object_with_rights::<Port>(port, Rights::WRITE)?;
@@ -212,20 +212,20 @@ impl Syscall<'_> {
         }
     }
 
-    pub fn interrupt_trigger(&self, interrupt: HandleValue, options: u32, timestamp: i64) -> ZxResult {
-        info!("interrupt_trigger: interrupt={:?} options={:?} timestamp={:?}", interrupt, options, timestamp);
+    pub fn sys_interrupt_trigger(&self, interrupt: HandleValue, options: u32, timestamp: i64) -> ZxResult {
+        error!("interrupt_trigger: interrupt={:?} options={:?} timestamp={:?}", interrupt, options, timestamp);
         let interrupt = self.thread.proc().get_object_with_rights::<Interrupt>(interrupt, Rights::SIGNAL)?;
         interrupt.trigger(timestamp)
     }
 
-    pub fn interrupt_ack(&self, interrupt: HandleValue) -> ZxResult {
-        info!("interupt_ack: interrupt={:?}", interrupt);
+    pub fn sys_interrupt_ack(&self, interrupt: HandleValue) -> ZxResult {
+        error!("interupt_ack: interrupt={:?}", interrupt);
         let interrupt = self.thread.proc().get_object_with_rights::<Interrupt>(interrupt, Rights::WRITE)?;
         interrupt.ack()
     }
 
-    pub fn interrupt_destroy(&self, interrupt: HandleValue) -> ZxResult {
-        info!("interupt_ack: interrupt={:?}", interrupt);
+    pub fn sys_interrupt_destroy(&self, interrupt: HandleValue) -> ZxResult {
+        error!("interupt_ack: interrupt={:?}", interrupt);
         let interrupt = self.thread.proc().get_object::<Interrupt>(interrupt)?;
         interrupt.destroy()
     }

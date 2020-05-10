@@ -68,11 +68,22 @@ impl Interrupt {
             inner.packet_id = port.as_ref().push_interrupt(inner.timestamp, inner.key);
             inner.state = InterruptState::NEEDACK;
         }
+        warn!("bind end");
         Ok(())
     }
 
     pub fn unbind(&self, port: Arc<Port>) -> ZxResult {
-        unimplemented!();
+        let mut inner = self.inner.lock();
+        if inner.port.is_none() || inner.port.as_ref().unwrap().id() != port.id() {
+            return Err(ZxError::NOT_FOUND);
+        }
+        if inner.state == InterruptState::DESTORY {
+            return Err(ZxError::CANCELED);
+        }
+        port.remove_interrupt(inner.packet_id);
+        inner.port = None;
+        inner.key = 0;
+        warn!("unbind end");
         Ok(())
     }
 
@@ -99,7 +110,7 @@ impl Interrupt {
             inner.state = InterruptState::NEEDACK;
         } else {
             inner.state = InterruptState::TRIGGERED;
-            unimplemented!(); // Signal() in zircon
+            // Signal() in zircon
         }
         Ok(())
     }

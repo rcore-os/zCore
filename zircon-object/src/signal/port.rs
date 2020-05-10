@@ -105,11 +105,11 @@ impl Port {
             if self.can_bind_to_interrupt() {
                 while let Some(packet) = inner.interrupt_queue.pop_front() {
                     let in_queue = inner.interrupt_grave.remove(&packet.pid).unwrap();
-                    if !in_queue {
-                        continue;
-                    }
                     if inner.queue.is_empty() && (inner.interrupt_queue.is_empty() || !self.can_bind_to_interrupt()) {
                         self.base.signal_clear(Signal::READABLE);
+                    }
+                    if !in_queue {
+                        continue;
                     }
                     return PortPacketRepr {
                         key: packet.key,
