@@ -1,5 +1,7 @@
+use super::*;
+
 mod bti;
 mod iommu;
-mod resource;
+mod pmt;
 
-pub use self::{bti::*, iommu::*, resource::*};
+pub use self::{bti::*, iommu::*, pmt::*};

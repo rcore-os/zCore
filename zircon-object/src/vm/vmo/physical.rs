@@ -60,7 +60,7 @@ impl VMObjectTrait for VMObjectPhysical {
         self.pages * PAGE_SIZE
     }
 
-    fn set_len(&self, _len: usize) {
+    fn set_len(&self, _len: usize) -> ZxResult {
         unimplemented!()
     }
 
@@ -80,12 +80,23 @@ impl VMObjectTrait for VMObjectPhysical {
 
     fn create_child(
         &self,
-        _is_slice: bool,
         _offset: usize,
         _len: usize,
         _user_id: KoID,
-    ) -> Arc<dyn VMObjectTrait> {
-        unimplemented!()
+    ) -> ZxResult<Arc<dyn VMObjectTrait>> {
+        Err(ZxError::NOT_SUPPORTED)
+    }
+
+    fn create_slice(
+        self: Arc<Self>,
+        _id: KoID,
+        offset: usize,
+        len: usize,
+    ) -> ZxResult<Arc<dyn VMObjectTrait>> {
+        assert!(page_aligned(offset) && page_aligned(len));
+        let obj = VMObjectPhysical::new(self.paddr + offset, len / PAGE_SIZE);
+        obj.inner.lock().cache_policy = self.inner.lock().cache_policy;
+        Ok(obj)
     }
 
     fn append_mapping(&self, _mapping: Weak<VmMapping>) {
@@ -133,6 +144,10 @@ impl VMObjectTrait for VMObjectPhysical {
 
     fn zero(&self, _offset: usize, _len: usize) -> ZxResult {
         unimplemented!()
+    }
+
+    fn is_contiguous(&self) -> bool {
+        true
     }
 }
 

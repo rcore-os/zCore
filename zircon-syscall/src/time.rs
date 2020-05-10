@@ -6,7 +6,7 @@ use {
         time::Duration,
     },
     kernel_hal::{sleep_until, timer_now, yield_now},
-    zircon_object::{dev::*, task::*},
+    zircon_object::{resource::*, task::*},
 };
 
 static UTC_OFFSET: AtomicU64 = AtomicU64::new(0);

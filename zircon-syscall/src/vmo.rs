@@ -3,25 +3,8 @@ use {
     bitflags::bitflags,
     kernel_hal::CachePolicy,
     numeric_enum_macro::numeric_enum,
-    zircon_object::{dev::*, task::PolicyCondition, vm::*},
+    zircon_object::{dev::*, resource::*, task::PolicyCondition, vm::*},
 };
-
-fn check_child_size(size: usize) -> ZxResult<usize> {
-    let new_size = if !page_aligned(size) {
-        if let Some(res) = size.checked_add(PAGE_SIZE) {
-            round_down_pages(res)
-        } else {
-            return Err(ZxError::OUT_OF_RANGE);
-        }
-    } else {
-        size
-    };
-    if new_size > 0xffff_ffff_fffe_0000 {
-        Err(ZxError::OUT_OF_RANGE)
-    } else {
-        Ok(new_size)
-    }
-}
 
 impl Syscall<'_> {
     pub fn sys_vmo_create(
@@ -130,21 +113,46 @@ impl Syscall<'_> {
         size: usize,
         mut out: UserOutPtr<HandleValue>,
     ) -> ZxResult {
-        let options = VmoCloneFlags::from_bits(options).ok_or(ZxError::INVALID_ARGS)?;
+        let mut options = VmoCloneFlags::from_bits(options).ok_or(ZxError::INVALID_ARGS)?;
         info!(
             "vmo_create_child: handle={:#x}, options={:?}, offset={:#x}, size={:#x}",
             handle_value, options, offset, size
         );
-        let is_slice = options.contains(VmoCloneFlags::SLICE);
-        let proc = self.thread.proc();
+        // check options given
+        let no_write = options.contains(VmoCloneFlags::NO_WRITE);
+        if no_write {
+            options.remove(VmoCloneFlags::NO_WRITE);
+        }
 
+        let resizable = options.contains(VmoCloneFlags::RESIZABLE);
+        let child_size = roundup_pages(size);
+        if child_size < size {
+            return Err(ZxError::OUT_OF_RANGE);
+        }
+        info!("size of child vmo: {:#x}", child_size);
+
+        let proc = self.thread.proc();
         let (vmo, parent_rights) = proc.get_object_and_rights::<VmObject>(handle_value)?;
         if !parent_rights.contains(Rights::DUPLICATE | Rights::READ) {
             return Err(ZxError::ACCESS_DENIED);
         }
+        // TODO: SLICE + SNAPSHIT_AT_LEAST_ON_WRITE have been implemented. What's next?
+        let child_vmo = if options.contains(VmoCloneFlags::SLICE) {
+            if options != VmoCloneFlags::SLICE {
+                Err(ZxError::INVALID_ARGS)
+            } else {
+                vmo.create_slice(offset, child_size)
+            }
+        } else {
+            if !options.contains(VmoCloneFlags::SNAPSHOT_AT_LEAST_ON_WRITE) {
+                return Err(ZxError::NOT_SUPPORTED);
+            }
+            vmo.create_child(resizable, offset as usize, child_size)
+        }?;
+        // generate rights
         let mut child_rights = parent_rights;
         child_rights.insert(Rights::GET_PROPERTY | Rights::SET_PROPERTY);
-        if options.contains(VmoCloneFlags::NO_WRITE) {
+        if no_write {
             child_rights.remove(Rights::WRITE);
         } else if options.contains(VmoCloneFlags::SNAPSHOT)
             || options.contains(VmoCloneFlags::SNAPSHOT_AT_LEAST_ON_WRITE)
@@ -156,33 +164,6 @@ impl Syscall<'_> {
             "parent_rights: {:?} child_rights: {:?}",
             parent_rights, child_rights
         );
-        let resizable = if !is_slice {
-            options.contains(VmoCloneFlags::RESIZABLE)
-        } else if options.contains(VmoCloneFlags::RESIZABLE) {
-            return Err(ZxError::INVALID_ARGS);
-        } else {
-            false
-        };
-
-        let child_size = check_child_size(size)?;
-        let parent_size = vmo.len();
-        info!("size of child vmo: {:#x}", child_size);
-        if is_slice {
-            let check = if let Some(limit) = offset.checked_add(size) {
-                limit <= parent_size && offset < parent_size
-            } else {
-                false
-            };
-            if !check && size != 0 {
-                return Err(ZxError::INVALID_ARGS);
-            }
-            if vmo.is_resizable() {
-                return Err(ZxError::NOT_SUPPORTED);
-            }
-        } else if vmo.is_slice() {
-            return Err(ZxError::NOT_SUPPORTED);
-        }
-        let child_vmo = vmo.create_child(is_slice, resizable, offset, child_size);
         out.write(proc.add_handle(Handle::new(child_vmo, child_rights)))?;
         Ok(())
     }
@@ -211,6 +192,37 @@ impl Syscall<'_> {
         }
         let vmo = VmObject::new_physical(paddr, size / PAGE_SIZE);
         let handle_value = proc.add_handle(Handle::new(vmo, Rights::DEFAULT_VMO | Rights::EXECUTE));
+        out.write(handle_value)?;
+        Ok(())
+    }
+
+    pub fn sys_vmo_create_contiguous(
+        &self,
+        bti: HandleValue,
+        size: usize,
+        align_log2: u32,
+        mut out: UserOutPtr<HandleValue>,
+    ) -> ZxResult {
+        info!(
+            "vmo.create_contiguous: handle={:#x?}, size={:#x?}, align={}, out={:#x?}",
+            bti, size, align_log2, out
+        );
+        if size == 0 {
+            return Err(ZxError::INVALID_ARGS);
+        }
+        let align_log2 = if align_log2 == 0 {
+            PAGE_SIZE_LOG2
+        } else {
+            align_log2 as usize
+        };
+        if align_log2 < PAGE_SIZE_LOG2 || align_log2 >= 8 * core::mem::size_of::<usize>() {
+            return Err(ZxError::INVALID_ARGS);
+        }
+        let proc = self.thread.proc();
+        proc.check_policy(PolicyCondition::NewVMO)?;
+        let _bti = proc.get_object_with_rights::<Bti>(bti, Rights::MAP)?;
+        let vmo = VmObject::new_contiguous(size, align_log2)?;
+        let handle_value = proc.add_handle(Handle::new(vmo, Rights::DEFAULT_VMO));
         out.write(handle_value)?;
         Ok(())
     }

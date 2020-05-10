@@ -176,7 +176,7 @@ impl FlagsExt for MMUFlags {
                 flags |= PTF::NO_CACHE | PTF::WRITE_THROUGH;
             }
             Ok(CachePolicy::WriteCombining) => {
-                flags |= PTF::HUGE_PAGE | PTF::NO_CACHE | PTF::WRITE_THROUGH;
+                flags |= PTF::NO_CACHE | PTF::WRITE_THROUGH;
                 // 当位于level=1时，页面更大，在1<<12位上（0x100）为1
                 // 但是bitflags里面没有这一位。由页表自行管理标记位去吧
             }
