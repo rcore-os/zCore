@@ -5,19 +5,26 @@ use {
     spin::Mutex,
     bitflags::bitflags,
     crate::signal::*,
+    self::virtual_interrupt::*,
 };
+
+mod virtual_interrupt;
+
+pub trait InterruptTrait: Sync + Send {
+    fn mask_interrupt_locked(&self);
+    fn unmask_interrupt_locked(&self);
+    fn unregister_interrupt_handler(&self); 
+}
+
+impl_kobject!(Interrupt);
 
 // Interrupt refers to virtual_interrupt in zircon
 pub struct Interrupt {
     base: KObjectBase,
     hasvcpu: bool,
     inner: Mutex<InterruptInner>,
+    trait_: Arc<dyn InterruptTrait>,
 }
-
-pub trait InterruptTrait {
-    fn mask_interrupt(&self);
-}
-
 
 struct InterruptInner {
     state: InterruptState,
@@ -29,10 +36,8 @@ struct InterruptInner {
     flags: InterruptFlags,
 }
 
-impl_kobject!(Interrupt);
-
 impl Interrupt {
-    pub fn create() -> Arc<Self> {
+    pub fn new_virtual() -> Arc<Self> {
         // virtual_interrupt, should be rewriten to trait later
         Arc::new(Interrupt {
             base: KObjectBase::new(),
@@ -45,7 +50,8 @@ impl Interrupt {
                 defer_unmask: false,
                 packet_id: 0,
                 flags: InterruptFlags::VIRTUAL,
-            })
+            }),
+            trait_: VirtualInterrupt::new(),
         })
     }
 
@@ -104,7 +110,7 @@ impl Interrupt {
         if let Some(port) = &inner.port {
             inner.packet_id = port.as_ref().push_interrupt(timestamp, inner.key);
             if inner.flags.contains(InterruptFlags::MASK_POSTWAIT) {
-                self.mask_interrupt_locked();
+                self.trait_.mask_interrupt_locked();
             }
             inner.timestamp = 0;
             inner.state = InterruptState::NEEDACK;
@@ -125,7 +131,7 @@ impl Interrupt {
         }
         if inner.state == InterruptState::NEEDACK {
             if inner.flags.contains(InterruptFlags::UNMASK_PREWAIT) {
-                self.unmask_interrupt_locked();
+                self.trait_.unmask_interrupt_locked();
             } else if inner.flags.contains(InterruptFlags::UNMASK_PREWAIT_UNLOCKED) {
                 inner.defer_unmask = true;
             }
@@ -133,7 +139,7 @@ impl Interrupt {
                 // TODO: use a function to send the package
                 inner.packet_id = inner.port.as_ref().unwrap().as_ref().push_interrupt(inner.timestamp, inner.key);
                 if inner.flags.contains(InterruptFlags::MASK_POSTWAIT) {
-                    self.mask_interrupt_locked();
+                    self.trait_.mask_interrupt_locked();
                 }
                 inner.timestamp = 0;
             } else {
@@ -141,15 +147,15 @@ impl Interrupt {
             }
         }
         if inner.defer_unmask {
-            self.unmask_interrupt_locked();
+            self.trait_.unmask_interrupt_locked();
         }
         Ok(())
     }
 
     pub fn destroy(&self) -> ZxResult {
         // WARNING: a simplified version, the packet should be removed from port.
-        self.mask_interrupt_locked();
-        self.unregister_interrupt_handler();
+        self.trait_.mask_interrupt_locked();
+        self.trait_.unregister_interrupt_handler();
         let mut inner = self.inner.lock();
         if let Some(port) = &inner.port {
             let in_queue = port.remove_interrupt(inner.packet_id);
@@ -173,12 +179,6 @@ impl Interrupt {
             Ok(())
         }
     }
-
-    // empty function in VirtualInterruptDispatcher of zircon
-    // should be rewritten to trait later
-    pub fn mask_interrupt_locked(&self) {}
-    pub fn unmask_interrupt_locked(&self) {}
-    pub fn unregister_interrupt_handler(&self) {} 
 }
 
 #[derive(PartialEq, Debug)]

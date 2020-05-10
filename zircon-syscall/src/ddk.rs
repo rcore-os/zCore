@@ -182,7 +182,7 @@ impl Syscall<'_> {
             error!("unimplemented: interrupt_create: handle={:?} options={:?}", resource, options);
             return Err(ZxError::NOT_SUPPORTED);
         } else {
-            let interrupt = Interrupt::create();
+            let interrupt = Interrupt::new_virtual();
             let handle = proc.add_handle(Handle::new(interrupt, Rights::DEFAULT_INTERRUPT));
             out.write(handle)?;
         }
