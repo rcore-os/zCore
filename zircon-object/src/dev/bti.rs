@@ -2,119 +2,102 @@ use {
     super::*,
     crate::object::*,
     crate::vm::*,
-    alloc::{
-        collections::BTreeMap,
-        sync::{Arc, Weak},
-        vec::Vec,
-    },
+    alloc::{sync::Arc, vec::Vec},
     dev::Iommu,
     spin::Mutex,
 };
 
-// BusTransactionInitiator
-#[allow(dead_code)]
-pub struct Bti {
+/// Bus Transaction Initiator.
+///
+/// Bus Transaction Initiators (BTIs) represent the bus mastering/DMA capability
+/// of a device, and can be used for granting a device access to memory.
+pub struct BusTransactionInitiator {
     base: KObjectBase,
     iommu: Arc<Iommu>,
+    #[allow(dead_code)]
     bti_id: u64,
     inner: Mutex<BtiInner>,
 }
 
+#[derive(Default)]
 struct BtiInner {
-    pmts: BTreeMap<KoID, Arc<Pmt>>,
-    self_ref: Weak<Bti>,
+    /// A BTI manages a list of quarantined PMTs.
+    pmts: Vec<Arc<PinnedMemoryToken>>,
 }
 
-impl_kobject!(Bti);
+impl_kobject!(BusTransactionInitiator);
 
-impl Bti {
+impl BusTransactionInitiator {
+    /// Create a new bus transaction initiator.
     pub fn create(iommu: Arc<Iommu>, bti_id: u64) -> Arc<Self> {
-        let bti = Arc::new(Bti {
+        Arc::new(BusTransactionInitiator {
             base: KObjectBase::new(),
             iommu,
             bti_id,
-            inner: Mutex::new(BtiInner {
-                pmts: Default::default(),
-                self_ref: Default::default(),
-            }),
-        });
-        bti.inner.lock().self_ref = Arc::downgrade(&bti);
-        bti
+            inner: Mutex::new(BtiInner::default()),
+        })
     }
 
-    pub fn get_info(&self) -> ZxInfoBti {
-        ZxInfoBti {
-            minimum_contiguity: self.minimum_contiguity() as u64,
-            aspace_size: self.aspace_size() as u64,
-            pmo_count: self.get_pmo_count() as u64,
-            quarantine_count: self.get_quarantine_count() as u64,
+    /// Get information of BTI.
+    pub fn get_info(&self) -> BtiInfo {
+        BtiInfo {
+            minimum_contiguity: self.iommu.minimum_contiguity() as u64,
+            aspace_size: self.iommu.aspace_size() as u64,
+            pmo_count: self.pmo_count() as u64,
+            quarantine_count: self.quarantine_count() as u64,
         }
     }
 
+    /// Pin memory and grant access to it to the BTI.
     pub fn pin(
-        &self,
+        self: &Arc<Self>,
         vmo: Arc<VmObject>,
         offset: usize,
         size: usize,
         perms: IommuPerms,
-    ) -> ZxResult<Arc<Pmt>> {
+    ) -> ZxResult<Arc<PinnedMemoryToken>> {
         if size == 0 {
             return Err(ZxError::INVALID_ARGS);
         }
-        let pmt = Pmt::create(self.inner.lock().self_ref.clone(), vmo, perms, offset, size)?;
-        self.inner.lock().pmts.insert(pmt.id(), pmt.clone());
+        let pmt = PinnedMemoryToken::create(self, vmo, perms, offset, size)?;
+        self.inner.lock().pmts.push(pmt.clone());
         Ok(pmt)
     }
 
-    pub fn minimum_contiguity(&self) -> usize {
-        self.iommu.minimum_contiguity()
+    /// Releases all quarantined PMTs.
+    pub fn release_quarantine(&self) {
+        let mut inner = self.inner.lock();
+        // remove no handle, the only Arc is from self.pmts
+        inner.pmts.retain(|pmt| Arc::strong_count(pmt) > 1);
     }
 
-    pub fn aspace_size(&self) -> usize {
-        self.iommu.aspace_size()
+    /// Release a PMT by KoID.
+    pub(super) fn release_pmt(&self, id: KoID) {
+        let mut inner = self.inner.lock();
+        inner.pmts.retain(|pmt| pmt.id() != id);
     }
 
-    pub fn get_iommu(&self) -> Arc<Iommu> {
+    pub(super) fn iommu(&self) -> Arc<Iommu> {
         self.iommu.clone()
     }
 
-    pub fn release_pmt(&self, id: KoID) {
-        self.inner.lock().pmts.remove(&id).unwrap();
-    }
-
-    pub fn release_quarantine(&self) {
-        let mut inner = self.inner.lock();
-        let mut to_release: Vec<KoID> = Vec::new();
-        for (id, pmt) in inner.pmts.iter() {
-            // no handle, the only arc is from self.pmts
-            if Arc::strong_count(&pmt) == 1 {
-                to_release.push(*id);
-            }
-        }
-        for id in to_release {
-            inner.pmts.remove(&id).unwrap();
-        }
-    }
-
-    pub fn get_pmo_count(&self) -> usize {
+    fn pmo_count(&self) -> usize {
         self.inner.lock().pmts.len()
     }
 
-    pub fn get_quarantine_count(&self) -> usize {
-        let mut cnt = 0;
-        for (_id, pmt) in self.inner.lock().pmts.iter() {
-            if Arc::strong_count(&pmt) == 1 {
-                // no handle, the only arc is from self.pmts
-                cnt += 1;
-            }
-        }
-        cnt
+    fn quarantine_count(&self) -> usize {
+        self.inner
+            .lock()
+            .pmts
+            .iter()
+            .filter(|pmt| Arc::strong_count(pmt) == 1)
+            .count()
     }
 }
 
 #[repr(C)]
 #[derive(Default)]
-pub struct ZxInfoBti {
+pub struct BtiInfo {
     minimum_contiguity: u64,
     aspace_size: u64,
     pmo_count: u64,

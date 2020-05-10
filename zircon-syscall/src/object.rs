@@ -252,8 +252,9 @@ impl Syscall<'_> {
                 avail.write(ids.len())?;
             }
             Topic::Bti => {
-                let bti = proc.get_object_with_rights::<Bti>(handle, Rights::INSPECT)?;
-                UserOutPtr::<ZxInfoBti>::from(buffer).write(bti.get_info())?;
+                let bti = proc
+                    .get_object_with_rights::<BusTransactionInitiator>(handle, Rights::INSPECT)?;
+                UserOutPtr::<BtiInfo>::from(buffer).write(bti.get_info())?;
             }
             _ => {
                 error!("not supported info topic: {:?}", topic);

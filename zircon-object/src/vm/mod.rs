@@ -12,7 +12,7 @@ pub type PhysAddr = usize;
 /// Virtual Address
 pub type VirtAddr = usize;
 
-// Device Address
+/// Device Address
 pub type DevVAddr = usize;
 
 /// Size of a page
@@ -47,11 +47,6 @@ pub fn roundup_pages(size: usize) -> usize {
 
 pub fn round_down_pages(size: usize) -> usize {
     size / PAGE_SIZE * PAGE_SIZE
-}
-
-// [offset, offset + size) is subset of [0, len)
-pub fn in_range(offset: usize, size: usize, len: usize) -> bool {
-    offset <= len && size <= len - offset
 }
 
 #[cfg(test)]

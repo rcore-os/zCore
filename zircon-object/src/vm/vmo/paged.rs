@@ -531,7 +531,7 @@ impl VMObjectTrait for VMObjectPaged {
     fn unpin(&self, offset: usize, len: usize) -> ZxResult {
         {
             let inner = self.inner.lock();
-            if !in_range(offset, len, inner.size) {
+            if offset + len > inner.size {
                 return Err(ZxError::OUT_OF_RANGE);
             }
             if len == 0 {
