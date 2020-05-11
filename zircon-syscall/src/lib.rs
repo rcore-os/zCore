@@ -33,6 +33,7 @@ mod fifo;
 mod futex;
 mod handle;
 mod object;
+mod pci;
 mod port;
 mod resource;
 mod signal;
@@ -287,6 +288,9 @@ impl Syscall<'_> {
                 self.sys_object_get_child(a0 as _, a1 as _, a2 as _, a3.into())
             }
             Sys::PC_FIRMWARE_TABLES => self.sys_pc_firmware_tables(a0 as _, a1.into(), a2.into()),
+            Sys::PCI_ADD_SUBTRACT_IO_RANGE => {
+                self.sys_pci_add_subtract_io_range(a0 as _, a1 != 0, a2 as _, a3 as _, a4 != 0)
+            }
             Sys::INTERRUPT_CREATE => {
                 self.sys_interrupt_create(a0 as _, a1 as _, a2 as _, a3.into())
             }
