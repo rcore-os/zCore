@@ -414,6 +414,7 @@ impl VMObjectTrait for VMObjectPaged {
         assert_ne!(inner.pin_count, 0);
         for i in start_page..end_page {
             inner.frames.get_mut(&i).unwrap().pin_count -= 1;
+            inner.pin_count -= 1;
         }
         Ok(())
     }
