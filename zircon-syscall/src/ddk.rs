@@ -170,15 +170,16 @@ impl Syscall<'_> {
     pub fn sys_interrupt_create(
         &self,
         resource: HandleValue,
-        _src_num: u32,
+        src_num: usize,
         options: u32,
         mut out: UserOutPtr<HandleValue>
     ) -> ZxResult {
-        info!("interrupt.create: handle={:?} options={:?}", resource, options);
+        error!("interrupt.create: handle={:?} options={:?}", resource, options);
         let proc = self.thread.proc();
         if (options & INTERRUPT_VIRTUAL) == 0 {
-            // let resource = proc.get_object::<Resource>(resource)?;
-            error!("unimplemented: interrupt_create: handle={:?} options={:?}", resource, options);
+            let resource = proc.get_object::<Resource>(resource)?;
+            resource.validate_ranged_resource(ResourceKind::IRQ, src_num, 1)?;
+            // let interrupt = Interrupt::new_event(src_num, options)?;
             return Err(ZxError::NOT_SUPPORTED);
         } else {
             let interrupt = Interrupt::new_virtual(options)?;

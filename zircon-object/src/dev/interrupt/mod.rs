@@ -55,6 +55,10 @@ impl Interrupt {
         }))
     }
 
+    pub fn new_event(_src_num: usize, _options: u32) -> ZxResult<Arc<Self>> {
+        Err(ZxError::NOT_SUPPORTED)
+    }
+
     pub fn bind(&self, port: Arc<Port>, key: u64) -> ZxResult {
         let mut inner = self.inner.lock();
         match inner.state {
