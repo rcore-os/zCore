@@ -1,8 +1,5 @@
 use super::*;
-use zircon_object::{
-    dev::{PCIeBusDriver, PciAddrSpace},
-    resource::{Resource, ResourceKind},
-};
+use zircon_object::dev::{PCIeBusDriver, PciAddrSpace, Resource, ResourceKind};
 
 impl Syscall<'_> {
     pub fn sys_pci_add_subtract_io_range(
