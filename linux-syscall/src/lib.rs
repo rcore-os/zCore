@@ -145,7 +145,7 @@ impl Syscall<'_> {
             //            SYS_NANOSLEEP => self.sys_nanosleep(a0.into()),
             SYS_SETITIMER => self.unimplemented("setitimer", Ok(0)),
             //            SYS_GETTIMEOFDAY => self.sys_gettimeofday(a0.into(), a1.into()),
-            //            SYS_CLOCK_GETTIME => self.sys_clock_gettime(a0, a1.into()),
+            SYS_CLOCK_GETTIME => self.sys_clock_gettime(a0, a1.into()),
 
             // sem
             //            #[cfg(not(target_arch = "mips"))]
