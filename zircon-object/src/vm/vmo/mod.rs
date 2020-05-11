@@ -1,5 +1,5 @@
 use {
-    self::{paged::*, physical::*},
+    self::{paged::*, physical::*, slice::*},
     super::*,
     crate::object::*,
     alloc::{
@@ -14,6 +14,7 @@ use {
 
 mod paged;
 mod physical;
+mod slice;
 
 kcounter!(VMO_PAGE_ALLOC, "vmo.page_alloc");
 kcounter!(VMO_PAGE_DEALLOC, "vmo.page_dealloc");
@@ -63,20 +64,13 @@ pub trait VMObjectTrait: Sync + Send {
         user_id: KoID,
     ) -> ZxResult<Arc<dyn VMObjectTrait>>;
 
-    fn create_slice(
-        self: Arc<Self>,
-        id: KoID,
-        offset: usize,
-        len: usize,
-    ) -> ZxResult<Arc<dyn VMObjectTrait>>;
-
     fn append_mapping(&self, mapping: Weak<VmMapping>);
 
     fn remove_mapping(&self, mapping: Weak<VmMapping>);
 
     fn complete_info(&self, info: &mut VmoInfo);
 
-    fn get_cache_policy(&self) -> CachePolicy;
+    fn cache_policy(&self) -> CachePolicy;
 
     fn set_cache_policy(&self, policy: CachePolicy) -> ZxResult;
 
@@ -133,7 +127,6 @@ impl VmObject {
     }
 
     /// Create a new VMO representing a piece of contiguous physical memory.
-    /// You must ensure nobody has the ownership of this piece of memory yet.
     pub fn new_physical(paddr: PhysAddr, pages: usize) -> Arc<Self> {
         Arc::new(VmObject {
             base: KObjectBase::with_signal(Signal::VMO_ZERO_CHILDREN),
@@ -196,25 +189,26 @@ impl VmObject {
             return Err(ZxError::OUT_OF_RANGE);
         }
         // child slice must be wholly contained
-        let parrent_size = self.inner.len();
+        let parent_size = self.inner.len();
         if !page_aligned(offset) {
             return Err(ZxError::INVALID_ARGS);
         }
-        if offset > parrent_size || size > parrent_size - offset {
+        if offset > parent_size || size > parent_size - offset {
             return Err(ZxError::INVALID_ARGS);
         }
         if self.resizable {
             return Err(ZxError::NOT_SUPPORTED);
         }
-        let base = KObjectBase::with(&self.base.name(), Signal::VMO_ZERO_CHILDREN);
-        let inner = self.inner.clone().create_slice(base.id, offset, size)?;
+        if self.inner.cache_policy() != CachePolicy::Cached && !self.inner.is_contiguous() {
+            return Err(ZxError::BAD_STATE);
+        }
         let child = Arc::new(VmObject {
+            base: KObjectBase::with(&self.base.name(), Signal::VMO_ZERO_CHILDREN),
             parent: Mutex::new(Arc::downgrade(self)),
             children: Mutex::new(Vec::new()),
             resizable: false,
             _counter: CountHelper::new(),
-            inner,
-            base,
+            inner: VMObjectSlice::new(self.inner.clone(), offset, size),
         });
         self.add_child(&child);
         Ok(child)
@@ -222,7 +216,7 @@ impl VmObject {
 
     /// Add child to the list and signal if ZeroChildren signal is active.
     /// If the number of children turns 0 to 1, signal it
-    pub fn add_child(&self, child: &Arc<VmObject>) {
+    fn add_child(&self, child: &Arc<VmObject>) {
         let mut children = self.children.lock();
         children.retain(|x| x.strong_count() != 0);
         children.push(Arc::downgrade(child));
@@ -263,7 +257,7 @@ impl VmObject {
             } else {
                 VmoInfoFlags::empty()
             },
-            cache_policy: self.inner.get_cache_policy() as u32,
+            cache_policy: self.inner.cache_policy() as u32,
             ..Default::default()
         };
         self.inner.complete_info(&mut ret);
@@ -299,15 +293,13 @@ impl Drop for VmObject {
         if let Some(parent) = self.parent.lock().upgrade() {
             let mut my_children = {
                 let mut my_children = self.children.lock();
-                for ch in &mut (*my_children) {
+                for ch in my_children.iter_mut() {
                     if let Some(ch) = ch.upgrade() {
                         let mut ch_parent = ch.parent.lock();
                         *ch_parent = Arc::downgrade(&parent);
                     }
                 }
-                let mut res: Vec<Weak<VmObject>> = Vec::new();
-                res.append(&mut (*my_children));
-                res
+                my_children.clone()
             };
             let mut children = parent.children.lock();
             children.append(&mut my_children);

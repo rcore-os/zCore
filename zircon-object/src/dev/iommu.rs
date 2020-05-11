@@ -1,26 +1,17 @@
-use {
-    crate::object::*,
-    crate::vm::*,
-    alloc::{sync::Arc, vec::Vec},
-    bitflags::bitflags,
-};
+use {crate::object::*, crate::vm::*, alloc::sync::Arc, bitflags::bitflags};
 
-// Iommu refers to DummyIommu in zircon
-// A dummy implementation, do not take it serious
-
+/// Iommu refers to DummyIommu in zircon.
+///
+/// A dummy implementation, do not take it serious.
 pub struct Iommu {
     base: KObjectBase,
 }
 
-const IOMMU_TYPE_DUMMY: u32 = 0;
-
 impl_kobject!(Iommu);
 
 impl Iommu {
-    pub fn create(type_: u32, _desc: Vec<u8>, _desc_size: usize) -> Arc<Self> {
-        if type_ != IOMMU_TYPE_DUMMY {
-            panic!("IOMMU {} is not implemented", type_);
-        }
+    /// Create a new `IOMMU`.
+    pub fn create() -> Arc<Self> {
         Arc::new(Iommu {
             base: KObjectBase::new(),
         })
@@ -35,7 +26,7 @@ impl Iommu {
     }
 
     pub fn aspace_size(&self) -> usize {
-        -1 as isize as usize
+        usize::MAX
     }
 
     pub fn map(
@@ -48,7 +39,7 @@ impl Iommu {
         if perms == IommuPerms::empty() {
             return Err(ZxError::INVALID_ARGS);
         }
-        if !in_range(offset, size, vmo.len()) {
+        if offset + size > vmo.len() {
             return Err(ZxError::INVALID_ARGS);
         }
         let p_addr = vmo.commit_page(offset, MMUFlags::empty())?;
@@ -69,7 +60,7 @@ impl Iommu {
         if perms == IommuPerms::empty() {
             return Err(ZxError::INVALID_ARGS);
         }
-        if !in_range(offset, size, vmo.len()) {
+        if offset + size > vmo.len() {
             return Err(ZxError::INVALID_ARGS);
         }
         let p_addr = vmo.commit_page(offset, MMUFlags::empty())?;

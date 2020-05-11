@@ -2,69 +2,61 @@ use {
     super::*,
     crate::object::*,
     crate::vm::*,
-    crate::vm::{ceil, DevVAddr},
     alloc::{
         sync::{Arc, Weak},
+        vec,
         vec::Vec,
     },
-    spin::Mutex,
 };
 
-// PinnedMemoryToken
-pub struct Pmt {
+/// Pinned Memory Token.
+///
+/// It will pin memory on construction and unpin on drop.
+pub struct PinnedMemoryToken {
     base: KObjectBase,
-    bti: Weak<Bti>,
+    bti: Weak<BusTransactionInitiator>,
     vmo: Arc<VmObject>,
     offset: usize,
     size: usize,
     mapped_addrs: Vec<DevVAddr>,
-    inner: Mutex<PmtInner>,
 }
 
-struct PmtInner {
-    unpinned: bool,
-}
+impl_kobject!(PinnedMemoryToken);
 
-impl_kobject!(Pmt);
-
-impl Drop for Pmt {
+impl Drop for PinnedMemoryToken {
     fn drop(&mut self) {
-        if !self.inner.lock().unpinned {
-            self.unpin().unwrap();
+        if self.vmo.is_paged() {
+            self.vmo.unpin(self.offset, self.size).unwrap();
         }
     }
 }
 
-impl Pmt {
-    pub fn create(
-        bti: Weak<Bti>,
+impl PinnedMemoryToken {
+    /// Create a `PinnedMemoryToken` by `BusTransactionInitiator`.
+    pub(crate) fn create(
+        bti: &Arc<BusTransactionInitiator>,
         vmo: Arc<VmObject>,
         perms: IommuPerms,
         offset: usize,
         size: usize,
     ) -> ZxResult<Arc<Self>> {
-        let iommu = bti.upgrade().unwrap().get_iommu();
-
         if vmo.is_paged() {
             vmo.commit(offset, size)?;
             vmo.pin(offset, size)?;
         }
-
-        let mapped_addrs = Pmt::map_into_iommu(iommu, vmo.clone(), offset, size, perms)?;
-
-        Ok(Arc::new(Pmt {
+        let mapped_addrs = Self::map_into_iommu(&bti.iommu(), vmo.clone(), offset, size, perms)?;
+        Ok(Arc::new(PinnedMemoryToken {
             base: KObjectBase::new(),
-            bti,
+            bti: Arc::downgrade(bti),
             vmo,
             offset,
             size,
             mapped_addrs,
-            inner: Mutex::new(PmtInner { unpinned: false }),
         }))
     }
 
-    pub fn map_into_iommu(
-        iommu: Arc<Iommu>,
+    fn map_into_iommu(
+        iommu: &Arc<Iommu>,
         vmo: Arc<VmObject>,
         offset: usize,
         size: usize,
@@ -72,10 +64,7 @@ impl Pmt {
     ) -> ZxResult<Vec<DevVAddr>> {
         if vmo.is_contiguous() {
             let (vaddr, _mapped_len) = iommu.map_contiguous(vmo, offset, size, perms)?;
-            // vec! is better, but compile error occurs.
-            let mut mapped_addrs: Vec<DevVAddr> = Vec::new();
-            mapped_addrs.push(vaddr);
-            Ok(mapped_addrs)
+            Ok(vec![vaddr])
         } else {
             assert_eq!(size % iommu.minimum_contiguity(), 0);
             let mut mapped_addrs: Vec<DevVAddr> = Vec::new();
@@ -101,7 +90,7 @@ impl Pmt {
         compress_results: bool,
         contiguous: bool,
     ) -> ZxResult<Vec<DevVAddr>> {
-        let iommu = self.bti.upgrade().unwrap().get_iommu();
+        let iommu = self.bti.upgrade().unwrap().iommu();
         if compress_results {
             if self.vmo.is_contiguous() {
                 let num_addrs = ceil(self.size, iommu.minimum_contiguity());
@@ -115,10 +104,7 @@ impl Pmt {
             if !self.vmo.is_contiguous() {
                 Err(ZxError::INVALID_ARGS)
             } else {
-                // vec! is better, but compile error occurs.
-                let mut encoded_addrs: Vec<DevVAddr> = Vec::new();
-                encoded_addrs.push(self.mapped_addrs[0]);
-                Ok(encoded_addrs)
+                Ok(vec![self.mapped_addrs[0]])
             }
         } else {
             let min_contig = if self.vmo.is_contiguous() {
@@ -139,20 +125,10 @@ impl Pmt {
         }
     }
 
-    pub fn unpin_and_remove(&self) -> ZxResult {
-        self.unpin()?;
+    /// Unpin pages and revoke device access to them.
+    pub fn unpin(&self) {
         if let Some(bti) = self.bti.upgrade() {
             bti.release_pmt(self.base.id);
         }
-        Ok(())
-    }
-
-    fn unpin(&self) -> ZxResult {
-        let mut inner = self.inner.lock();
-        if !inner.unpinned && self.vmo.is_paged() {
-            self.vmo.unpin(self.offset, self.size)?;
-        }
-        inner.unpinned = true;
-        Ok(())
     }
 }

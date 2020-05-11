@@ -1,6 +1,6 @@
 use {
     super::*,
-    zircon_object::{debuglog::DebugLog, resource::*},
+    zircon_object::{debuglog::DebugLog, dev::*},
 };
 
 const FLAG_READABLE: u32 = 0x4000_0000u32;

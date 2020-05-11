@@ -1,5 +1,5 @@
 use super::*;
-use zircon_object::resource::*;
+use zircon_object::dev::*;
 
 impl Syscall<'_> {
     pub fn sys_debug_write(&self, buf: UserInPtr<u8>, len: usize) -> ZxResult {
