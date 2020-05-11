@@ -32,6 +32,13 @@ impl Syscall<'_> {
         }
     }
 
+    pub fn sys_clock_read(&self, handle: HandleValue, mut now: UserOutPtr<u64>) -> ZxResult {
+        info!("clock.read: handle={:#x?}", handle);
+        warn!("ignore clock handle");
+        now.write(timer_now().as_nanos() as u64)?;
+        Ok(())
+    }
+
     pub fn sys_clock_adjust(&self, resource: HandleValue, clock_id: u32, offset: u64) -> ZxResult {
         info!(
             "clock.adjust: resource={:#x?}, id={:#x}, offset={:#x}",
