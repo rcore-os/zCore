@@ -1,7 +1,9 @@
 // use super::*;
 mod bus;
+mod pio;
 
 pub use bus::*;
+pub use pio::*;
 
 #[derive(PartialEq)]
 pub enum PciAddrSpace {

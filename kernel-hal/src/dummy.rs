@@ -313,3 +313,16 @@ pub fn fetch_fault_vaddr() -> VirtAddr {
 pub fn pc_firmware_tables() -> (u64, u64) {
     unimplemented!()
 }
+
+/// IO Ports access on x86 platform
+#[linkage = "weak"]
+#[export_name = "hal_outpd"]
+pub fn outpd(_port: u16, _value: u32) {
+    unimplemented!()
+}
+
+#[linkage = "weak"]
+#[export_name = "hal_inpd"]
+pub fn inpd(_port: u16) -> u32 {
+    unimplemented!()
+}
