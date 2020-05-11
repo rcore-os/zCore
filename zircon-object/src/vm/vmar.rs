@@ -156,7 +156,7 @@ impl VmAddressRegion {
         overwrite: bool,
         _map_range: bool,
     ) -> ZxResult<VirtAddr> {
-        if !page_aligned(vmo_offset) || !page_aligned(len) {
+        if !page_aligned(vmo_offset) || !page_aligned(len) || vmo_offset.overflowing_add(len).1 {
             return Err(ZxError::INVALID_ARGS);
         }
         // TODO: allow the mapping extends past the end of vmo
@@ -170,7 +170,7 @@ impl VmAddressRegion {
         let mut flags = flags;
         // if vmo != 0
         {
-            flags |= MMUFlags::from_bits_truncate(vmo.get_cache_policy() as u32 as usize);
+            flags |= MMUFlags::from_bits_truncate(vmo.cache_policy() as u32 as usize);
         }
         // align = 1K? 2K? 4K? 8K? ...
         if !self.test_map(inner, offset, len, PAGE_SIZE) {

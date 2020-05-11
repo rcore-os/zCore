@@ -32,7 +32,7 @@ impl Syscall<'_> {
         const MAY_DISCARD: u32 = 1;
         let never_discard = options & MAY_DISCARD == 0;
 
-        // let test_args = "test\0-f\0VmoZeroTest*\0";
+        // let test_args = "test\0-f\0VmoClone2TestCase.ContiguousVmoPartialClone\0";
         let test_args = "";
 
         let mut msg = if never_discard {

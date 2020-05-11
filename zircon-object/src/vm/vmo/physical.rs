@@ -60,7 +60,7 @@ impl VMObjectTrait for VMObjectPhysical {
         self.pages * PAGE_SIZE
     }
 
-    fn set_len(&self, _len: usize) {
+    fn set_len(&self, _len: usize) -> ZxResult {
         unimplemented!()
     }
 
@@ -80,16 +80,14 @@ impl VMObjectTrait for VMObjectPhysical {
 
     fn create_child(
         &self,
-        _is_slice: bool,
         _offset: usize,
         _len: usize,
         _user_id: KoID,
-    ) -> Arc<dyn VMObjectTrait> {
-        unimplemented!()
+    ) -> ZxResult<Arc<dyn VMObjectTrait>> {
+        Err(ZxError::NOT_SUPPORTED)
     }
 
     fn append_mapping(&self, _mapping: Weak<VmMapping>) {
-        //        unimplemented!()
         // TODO this function is only used when physical-vmo supports create_child
         let mut inner = self.inner.lock();
         inner.mapping_count += 1;
@@ -104,7 +102,7 @@ impl VMObjectTrait for VMObjectPhysical {
         warn!("VmoInfo for physical is unimplemented");
     }
 
-    fn get_cache_policy(&self) -> CachePolicy {
+    fn cache_policy(&self) -> CachePolicy {
         let inner = self.inner.lock();
         inner.cache_policy
     }
@@ -134,6 +132,10 @@ impl VMObjectTrait for VMObjectPhysical {
     fn zero(&self, _offset: usize, _len: usize) -> ZxResult {
         unimplemented!()
     }
+
+    fn is_contiguous(&self) -> bool {
+        true
+    }
 }
 
 #[cfg(test)]
@@ -146,7 +148,7 @@ mod tests {
     fn read_write() {
         let vmo = VmObject::new_physical(0x1000, 2);
         let vmphy = vmo.inner.clone();
-        assert_eq!(vmphy.get_cache_policy(), CachePolicy::Uncached);
+        assert_eq!(vmphy.cache_policy(), CachePolicy::Uncached);
         super::super::tests::read_write(&vmo);
     }
 }

@@ -35,6 +35,7 @@ pub mod defs {
 
     pub type PhysAddr = usize;
     pub type VirtAddr = usize;
+    pub type DevVAddr = usize;
     pub const PAGE_SIZE: usize = 0x1000;
 }
 

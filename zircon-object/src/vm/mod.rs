@@ -12,8 +12,12 @@ pub type PhysAddr = usize;
 /// Virtual Address
 pub type VirtAddr = usize;
 
+/// Device Address
+pub type DevVAddr = usize;
+
 /// Size of a page
 pub const PAGE_SIZE: usize = 0x1000;
+pub const PAGE_SIZE_LOG2: usize = 12;
 
 pub fn page_aligned(x: usize) -> bool {
     x % PAGE_SIZE == 0
@@ -27,6 +31,10 @@ pub fn check_aligned(x: usize, align: usize) -> bool {
 /// To avoid overflow and pass more unit tests, use wrapping add
 pub fn pages(size: usize) -> usize {
     size.wrapping_add(PAGE_SIZE - 1) / PAGE_SIZE
+}
+
+pub fn ceil(x: usize, align: usize) -> usize {
+    x.wrapping_add(align - 1) / align
 }
 
 pub fn roundup_pages(size: usize) -> usize {

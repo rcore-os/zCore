@@ -230,6 +230,15 @@ impl Process {
             .collect()
     }
 
+    pub fn remove_object<T: KernelObject>(&self, handle_value: HandleValue) -> ZxResult<Arc<T>> {
+        let handle = self.remove_handle(handle_value)?;
+        let object = handle
+            .object
+            .downcast_arc::<T>()
+            .map_err(|_| ZxError::WRONG_TYPE)?;
+        Ok(object)
+    }
+
     /// Get a handle from the process
     fn get_handle(&self, handle_value: HandleValue) -> ZxResult<Handle> {
         self.inner.lock().get_handle(handle_value)
