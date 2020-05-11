@@ -269,6 +269,20 @@ pub fn irq_handle(_irq: u8) {
     unimplemented!()
 }
 
+/// Enable IRQ.
+#[linkage = "weak"]
+#[export_name = "hal_irq_enable"]
+pub fn irq_enable(_irq: u8) {
+    unimplemented!()
+}
+
+/// Disable IRQ.
+#[linkage = "weak"]
+#[export_name = "hal_irq_disable"]
+pub fn irq_disable(_irq: u8) {
+    unimplemented!()
+}
+
 /// Get platform specific information.
 #[linkage = "weak"]
 #[export_name = "hal_vdso_constants"]

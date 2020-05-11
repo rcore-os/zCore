@@ -174,18 +174,21 @@ impl Syscall<'_> {
         options: u32,
         mut out: UserOutPtr<HandleValue>
     ) -> ZxResult {
-        error!("interrupt.create: handle={:?} options={:?}", resource, options);
+        error!("interrupt.create: handle={:?} src_num={:?} options={:?}", resource, src_num, options);
         let proc = self.thread.proc();
-        if (options & INTERRUPT_VIRTUAL) == 0 {
-            let resource = proc.get_object::<Resource>(resource)?;
-            resource.validate_ranged_resource(ResourceKind::IRQ, src_num, 1)?;
-            // let interrupt = Interrupt::new_event(src_num, options)?;
-            return Err(ZxError::NOT_SUPPORTED);
-        } else {
+        let options = InterruptOptions::from_bits_truncate(options);
+        if options.contains(InterruptOptions::VIRTUAL) {
             let interrupt = Interrupt::new_virtual(options)?;
             let handle = proc.add_handle(Handle::new(interrupt, Rights::DEFAULT_INTERRUPT));
             out.write(handle)?;
+        } else {
+            let resource = proc.get_object::<Resource>(resource)?;
+            resource.validate_ranged_resource(ResourceKind::IRQ, src_num, 1)?;
+            let interrupt = Interrupt::new_event(src_num, options)?;
+            let handle = proc.add_handle(Handle::new(interrupt, Rights::DEFAULT_INTERRUPT));
+            out.write(handle)?;
         }
+        // redundant add_handle & out.write, how to merge it?
         Ok(())
     }
 

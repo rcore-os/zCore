@@ -16,5 +16,6 @@ impl VirtualInterrupt {
 impl InterruptTrait for VirtualInterrupt {
     fn mask_interrupt_locked(&self) {}
     fn unmask_interrupt_locked(&self) {}
+    fn register_interrupt_handler(&self) {}
     fn unregister_interrupt_handler(&self) {} 
 }

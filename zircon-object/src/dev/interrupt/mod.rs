@@ -5,13 +5,16 @@ use {
     bitflags::bitflags,
     crate::signal::*,
     self::virtual_interrupt::*,
+    self::event_interrupt::*,
 };
 
 mod virtual_interrupt;
+mod event_interrupt;
 
 pub trait InterruptTrait: Sync + Send {
     fn mask_interrupt_locked(&self);
     fn unmask_interrupt_locked(&self);
+    fn register_interrupt_handler(&self);
     fn unregister_interrupt_handler(&self); 
 }
 
@@ -34,29 +37,47 @@ struct InterruptInner {
     flags: InterruptFlags,
 }
 
+impl InterruptInner {
+    fn new(flags: InterruptFlags) -> Self {
+        InterruptInner {
+            state: InterruptState::IDLE,
+            port: Option::None,
+            key: 0,
+            timestamp: 0,
+            defer_unmask: false,
+            packet_id: 0,
+            flags,
+        }
+    }
+}
+
 impl Interrupt {
-    pub fn new_virtual(options: u32) -> ZxResult<Arc<Self>> {
-        if options != INTERRUPT_VIRTUAL {
+    pub fn new_virtual(options: InterruptOptions) -> ZxResult<Arc<Self>> {
+        if options != InterruptOptions::VIRTUAL {
             return Err(ZxError::INVALID_ARGS);
         }
         Ok(Arc::new(Interrupt {
             base: KObjectBase::new(),
             hasvcpu: false,
-            inner: Mutex::new(InterruptInner {
-                state: InterruptState::IDLE,
-                port: Option::None,
-                key: 0,
-                timestamp: 0,
-                defer_unmask: false,
-                packet_id: 0,
-                flags: InterruptFlags::VIRTUAL,
-            }),
+            inner: Mutex::new(InterruptInner::new(InterruptFlags::VIRTUAL) ),
             trait_: VirtualInterrupt::new(),
         }))
     }
 
-    pub fn new_event(_src_num: usize, _options: u32) -> ZxResult<Arc<Self>> {
-        Err(ZxError::NOT_SUPPORTED)
+    pub fn new_event(vector: usize, options: InterruptOptions) -> ZxResult<Arc<Self>> {
+        if !options.to_mode().is_empty() {
+            unimplemented!();
+        }
+        // I don't know how to remap a vector
+        // if options.contains(InterruptOptions::REMAP_IRQ) {
+        //     vector = EventInterrupt::remap(vector);
+        // }
+        Ok(Arc::new(Interrupt {
+            base: KObjectBase::new(),
+            hasvcpu: false,
+            inner: Mutex::new(InterruptInner::new(InterruptFlags::empty())),
+            trait_: EventInterrupt::new(vector),
+        }))
     }
 
     pub fn bind(&self, port: Arc<Port>, key: u64) -> ZxResult {
@@ -238,4 +259,22 @@ bitflags! {
     }
 }
 
-pub const INTERRUPT_VIRTUAL: u32 = 0x10;
+bitflags! {
+    pub struct InterruptOptions: u32 {
+        #[allow(clippy::identity_op)]
+        const REMAP_IRQ = 0x1;
+        const MODE_DEFAULT = 0 << 1;
+        const MODE_EDGE_LOW = 1 << 1;
+        const MODE_EDGE_HIGH = 2 << 1;
+        const MODE_LEVEL_LOW = 3 << 1;
+        const MODE_LEVEL_HIGH = 4 << 1;
+        const MODE_EDGE_BOTH = 5 << 1;
+        const VIRTUAL = 0x10;
+    }
+}
+
+impl InterruptOptions {
+    pub fn to_mode(&self)-> Self {
+        InterruptOptions::from_bits_truncate(0xe) & *self
+    }
+}
