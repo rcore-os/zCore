@@ -39,7 +39,7 @@ SECTIONS {
   {
 	. = ALIGN(4096);
 	PROVIDE_HIDDEN(kcounters_arena_start = .);
-	KEEP(*(SORT_BY_NAME(.kcounter.items.*)))
+	KEEP(*(.kcounter.items))
 	PROVIDE_HIDDEN(kcounters_arena_end = .);
 	. = ALIGN(4096);
 
