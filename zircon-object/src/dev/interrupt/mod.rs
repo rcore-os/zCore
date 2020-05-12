@@ -65,7 +65,8 @@ impl Interrupt {
     }
 
     pub fn new_event(vector: usize, options: InterruptOptions) -> ZxResult<Arc<Self>> {
-        if !options.to_mode().is_empty() {
+        let mode = options.to_mode();
+        if mode != InterruptOptions::MODE_DEFAULT && mode != InterruptOptions::MODE_EDGE_HIGH {
             unimplemented!();
         }
         // I don't know how to remap a vector

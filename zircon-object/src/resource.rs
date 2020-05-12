@@ -85,4 +85,28 @@ impl Resource {
             Ok(())
         }
     }
+
+    pub fn get_info(&self) -> ResourceInfo {
+        let name = self.base.name();
+        let name = name.as_bytes();
+        let mut name_vec = [0 as u8; 32];
+        name_vec[..name.len()].clone_from_slice(name);
+        ResourceInfo {
+            kind: self.kind as _,
+            flags: self.flags.bits,
+            base: self.addr as _,
+            size: self.len as _,
+            name: name_vec,
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Default)]
+pub struct ResourceInfo {
+    kind: u32,
+    flags: u32,
+    base: u32,
+    size: u64,
+    name: [u8; 32], // should be [char; 32], but I cannot compile it
 }
