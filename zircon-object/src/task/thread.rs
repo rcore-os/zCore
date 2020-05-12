@@ -117,7 +117,7 @@ struct ThreadInner {
     /// `suspend_count` is non-zero, and this represents the state before suspended.
     state: ThreadState,
     /// The time this thread has run on cpu
-    time: u64,
+    time: u128,
 }
 
 impl Thread {
@@ -348,12 +348,12 @@ impl Thread {
         self.exceptionate.clone()
     }
 
-    pub fn time_add(&self, time: u64) {
+    pub fn time_add(&self, time: u128) {
         self.inner.lock().time += time;
     }
 
     pub fn get_time(&self) -> u64 {
-        self.inner.lock().time
+        self.inner.lock().time as u64
     }
 }
 

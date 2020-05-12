@@ -285,10 +285,3 @@ pub fn fetch_fault_vaddr() -> VirtAddr {
 pub fn pc_firmware_tables() -> (u64, u64) {
     unimplemented!()
 }
-
-/// Read tsc register to get current time
-#[linkage = "weak"]
-#[export_name = "hal_read_tsc"]
-pub fn read_tsc() -> u64 {
-    unimplemented!()
-}
