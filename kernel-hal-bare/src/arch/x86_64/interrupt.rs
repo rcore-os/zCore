@@ -6,9 +6,9 @@ use spin::Mutex;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-
+pub type InterruptHandle = Arc<dyn Fn() + Send + Sync>;
 lazy_static! {
-    static ref IRQ_TABLE: Mutex<Vec<Option<Arc<dyn Fn() + Send + Sync>>>> = Default::default();
+    static ref IRQ_TABLE: Mutex<Vec<Option<InterruptHandle>>> = Default::default();
 }
 
 pub fn init() {
@@ -52,15 +52,15 @@ pub fn irq_handle(irq: u8) {
 }
 
 #[export_name = "hal_irq_add_handle"]
-pub fn irq_add_handle(irq: u8, handle: Arc<dyn Fn() + Send + Sync>) -> bool {
+pub fn irq_add_handle(irq: u8, handle: InterruptHandle) -> bool {
     info!("IRQ add handle {}", irq);
     let irq = irq as usize;
     let mut table = IRQ_TABLE.lock();
     match table[irq] {
-        Some(_) => return false,
+        Some(_) => false,
         None => {
             table[irq] = Some(handle);
-            return true;
+            true
         }
     }
 }

@@ -65,7 +65,7 @@ impl Interrupt {
         }
         // I don't know the real mapping, +16 only to avoid conflict
         if options.contains(InterruptOptions::REMAP_IRQ) {
-            vector = vector + 16;
+            vector += 16;
             // vector = EventInterrupt::remap(vector);
         }
         let event_interrupt = Arc::new(Interrupt {
@@ -308,7 +308,7 @@ bitflags! {
 }
 
 impl InterruptOptions {
-    pub fn to_mode(&self)-> Self {
-        InterruptOptions::from_bits_truncate(0xe) & *self
+    pub fn to_mode(self)-> Self {
+        InterruptOptions::from_bits_truncate(0xe) & self
     }
 }
