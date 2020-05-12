@@ -174,7 +174,7 @@ impl Syscall<'_> {
         options: u32,
         mut out: UserOutPtr<HandleValue>
     ) -> ZxResult {
-        error!("interrupt.create: handle={:?} src_num={:?} options={:?}", resource, src_num, options);
+        info!("interrupt.create: handle={:?} src_num={:?} options={:?}", resource, src_num, options);
         let proc = self.thread.proc();
         let options = InterruptOptions::from_bits_truncate(options);
         if options.contains(InterruptOptions::VIRTUAL) {

@@ -264,6 +264,10 @@ impl Syscall<'_> {
             Sys::INTERRUPT_ACK => self.sys_interrupt_ack(a0 as _),
             Sys::INTERRUPT_DESTROY => self.sys_interrupt_destroy(a0 as _),
             Sys::INTERRUPT_WAIT => self.sys_interrupt_wait(a0 as _, a1.into()).await,
+            Sys::IOPORTS_REQUEST => {
+                error!("Skip IOPORTS_REQUEST");
+                Ok(())
+            }
             _ => {
                 error!("syscall unimplemented: {:?}", sys_type);
                 Err(ZxError::NOT_SUPPORTED)
