@@ -1,14 +1,30 @@
 #![allow(dead_code)]
 #![allow(non_upper_case_globals)]
+
 use trapframe::TrapFrame;
 use spin::Mutex;
+use alloc::sync::Arc;
+use alloc::vec::Vec;
+
+
+lazy_static! {
+    static ref IRQ_TABLE: Mutex<Vec<Option<Arc<dyn Fn() + Send + Sync>>>> = Default::default();
+}
 
 pub fn init() {
-    irq_add_handle(Timer, timer);
-    irq_add_handle(COM1, com1);
-    irq_add_handle(Keyboard, keyboard);
+    init_irq_table();
+    irq_add_handle(Timer, Arc::new(timer));
+    irq_add_handle(COM1, Arc::new(com1));
+    irq_add_handle(Keyboard, Arc::new(keyboard));
     super::irq_enable(Keyboard);
     super::irq_enable(COM1);
+}
+
+fn init_irq_table() {
+    let mut table = IRQ_TABLE.lock();
+    for _ in 0..64 {
+        table.push(None);
+    }
 }
 
 #[no_mangle]
@@ -23,24 +39,20 @@ pub extern "C" fn trap_handler(tf: &mut TrapFrame) {
     }
 }
 
-lazy_static! {
-    static ref IRQ_TABLE: Mutex<[Option<fn()>; 64]> = Mutex::new([None as Option<fn()>; 64]);
-}
-
 #[export_name = "hal_irq_handle"]
 pub fn irq_handle(irq: u8) {
     use super::{phys_to_virt, LocalApic, XApic, LAPIC_ADDR};
     let mut lapic = unsafe { XApic::new(phys_to_virt(LAPIC_ADDR)) };
     lapic.eoi();
     let table = IRQ_TABLE.lock();
-    match table[irq as usize] {
+    match &table[irq as usize] {
         Some(f) => f(),
         None => panic!("unhandled external IRQ number: {}", irq),
     }
 }
 
 #[export_name = "hal_irq_add_handle"]
-pub fn irq_add_handle(irq: u8, handle: fn()) -> bool {
+pub fn irq_add_handle(irq: u8, handle: Arc<dyn Fn() + Send + Sync>) -> bool {
     let irq = irq as usize;
     let mut table = IRQ_TABLE.lock();
     match table[irq] {
