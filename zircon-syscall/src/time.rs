@@ -27,7 +27,10 @@ impl Syscall<'_> {
                 time.write(timer_now().as_nanos() as u64 + UTC_OFFSET.load(Ordering::Relaxed))?;
                 Ok(())
             }
-            ZX_CLOCK_THREAD => unimplemented!(),
+            ZX_CLOCK_THREAD => {
+                time.write(self.thread.get_time())?;
+                Ok(())
+            }
             _ => Err(ZxError::NOT_SUPPORTED),
         }
     }

@@ -116,6 +116,8 @@ struct ThreadInner {
     /// NOTE: This variable will never be `Suspended`. On suspended, the
     /// `suspend_count` is non-zero, and this represents the state before suspended.
     state: ThreadState,
+    /// The time this thread has run on cpu
+    time: u128,
 }
 
 impl Thread {
@@ -344,6 +346,14 @@ impl Thread {
 
     pub fn get_exceptionate(&self) -> Arc<Exceptionate> {
         self.exceptionate.clone()
+    }
+
+    pub fn time_add(&self, time: u128) {
+        self.inner.lock().time += time;
+    }
+
+    pub fn get_time(&self) -> u64 {
+        self.inner.lock().time as u64
     }
 }
 

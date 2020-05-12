@@ -192,7 +192,10 @@ fn spawn(thread: Arc<Thread>) {
             let mut cx = thread.wait_for_run().await;
             trace!("go to user: {:#x?}", cx);
             debug!("switch to {}|{}", thread.proc().name(), thread.name());
+            let tmp_time = kernel_hal::timer_now().as_nanos();
             kernel_hal::context_run(&mut cx);
+            let time = kernel_hal::timer_now().as_nanos() - tmp_time;
+            thread.time_add(time);
             trace!("back from user: {:#x?}", cx);
             EXCEPTIONS_USER.add(1);
             let mut exit = false;
