@@ -53,6 +53,7 @@ pub fn irq_handle(irq: u8) {
 
 #[export_name = "hal_irq_add_handle"]
 pub fn irq_add_handle(irq: u8, handle: Arc<dyn Fn() + Send + Sync>) -> bool {
+    info!("IRQ add handle {}", irq);
     let irq = irq as usize;
     let mut table = IRQ_TABLE.lock();
     match table[irq] {
@@ -66,6 +67,7 @@ pub fn irq_add_handle(irq: u8, handle: Arc<dyn Fn() + Send + Sync>) -> bool {
 
 #[export_name = "hal_irq_remove_handle"]
 pub fn irq_remove_handle(irq: u8) -> bool {
+    info!("IRQ remove handle {}", irq);
     let irq = irq as usize;
     let mut table = IRQ_TABLE.lock();
     match table[irq] {

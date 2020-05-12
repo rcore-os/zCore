@@ -58,15 +58,16 @@ impl Interrupt {
         }))
     }
 
-    pub fn new_event(vector: usize, options: InterruptOptions) -> ZxResult<Arc<Self>> {
+    pub fn new_event(mut vector: usize, options: InterruptOptions) -> ZxResult<Arc<Self>> {
         let mode = options.to_mode();
         if mode != InterruptOptions::MODE_DEFAULT && mode != InterruptOptions::MODE_EDGE_HIGH {
             unimplemented!();
         }
-        // I don't know how to remap a vector
-        // if options.contains(InterruptOptions::REMAP_IRQ) {
-        //     vector = EventInterrupt::remap(vector);
-        // }
+        // I don't know the real mapping, +16 only to avoid conflict
+        if options.contains(InterruptOptions::REMAP_IRQ) {
+            vector = vector + 16;
+            // vector = EventInterrupt::remap(vector);
+        }
         let event_interrupt = Arc::new(Interrupt {
             base: KObjectBase::new(),
             hasvcpu: false,

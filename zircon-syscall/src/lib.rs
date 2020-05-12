@@ -210,6 +210,7 @@ impl Syscall<'_> {
             Sys::CPRNG_DRAW_ONCE => self.sys_cprng_draw_once(a0 as _, a1 as _),
             Sys::NANOSLEEP => self.sys_nanosleep(a0.into()).await,
             Sys::CLOCK_GET => self.sys_clock_get(a0 as _, a1.into()),
+            Sys::CLOCK_ADJUST => self.sys_clock_adjust(a0 as _, a1 as _, a2 as _),
             Sys::TIMER_CREATE => self.sys_timer_create(a0 as _, a1 as _, a2.into()),
             Sys::DEBUG_WRITE => self.sys_debug_write(a0.into(), a1 as _),
             Sys::DEBUGLOG_CREATE => self.sys_debuglog_create(a0 as _, a1 as _, a2.into()),
