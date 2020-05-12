@@ -278,7 +278,7 @@ enum InterruptState {
 }
 
 impl Default for InterruptState {
-    fn default() -> Self { InterruptState::WAITING }
+    fn default() -> Self { InterruptState::IDLE }
 }
 
 bitflags! {
