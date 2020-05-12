@@ -5,23 +5,34 @@ use {
 
 #[derive(Default)]
 pub struct EventInterrupt{
-    vector: usize,
+    vector: u8,
 }
 
 impl EventInterrupt {
-    pub fn new(vector: usize) -> Arc<Self> {
-        let event_interrupt =  EventInterrupt{ vector };
-        event_interrupt.register_interrupt_handler();
+    pub fn new(vector: usize, f: fn()) -> Arc<Self> {
+        // TODO check vector is a vaild IRQ number
+        let event_interrupt =  EventInterrupt{ vector: vector as u8 };
+        event_interrupt.register_interrupt_handler(f);
         event_interrupt.unmask_interrupt_locked();
         Arc::new(event_interrupt)
     }
-
-    pub fn register_int_handle(_vector: usize) {}
 }
 
 impl InterruptTrait for EventInterrupt {
     fn mask_interrupt_locked(&self) { kernel_hal::irq_disable(self.vector as u8); }
     fn unmask_interrupt_locked(&self) { kernel_hal::irq_enable(self.vector as u8); }
-    fn register_interrupt_handler(&self) { Self::register_int_handle(self.vector); }
-    fn unregister_interrupt_handler(&self) { Self::register_int_handle(self.vector); } 
+    fn register_interrupt_handler(&self, handle: fn()) -> ZxResult {
+        let result = kernel_hal::irq_add_handle(self.vector, handle);
+        match result {
+            true => Ok(()),
+            false => Err(ZxError::ALREADY_BOUND),
+        }
+    }
+    fn unregister_interrupt_handler(&self) -> ZxResult {
+        let result = kernel_hal::irq_remove_handle(self.vector);
+        match result {
+            true => Ok(()),
+            false => Err(ZxError::ALREADY_BOUND), // maybe a better error code? 
+        }
+    }
 }

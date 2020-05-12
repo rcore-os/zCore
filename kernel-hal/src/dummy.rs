@@ -269,6 +269,20 @@ pub fn irq_handle(_irq: u8) {
     unimplemented!()
 }
 
+/// Add an interrupt handle to an irq
+#[linkage = "weak"]
+#[export_name = "hal_irq_add_handle"]
+pub fn irq_add_handle(_irq: u8, _handle: fn()) -> bool {
+    unimplemented!()
+}
+
+/// Remove the interrupt handle of an irq
+#[linkage = "weak"]
+#[export_name = "hal_irq_remove_handle"]
+pub fn irq_remove_handle(_irq: u8) -> bool {
+    unimplemented!()
+}    
+
 /// Enable IRQ.
 #[linkage = "weak"]
 #[export_name = "hal_irq_enable"]

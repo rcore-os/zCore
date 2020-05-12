@@ -14,8 +14,8 @@ mod event_interrupt;
 pub trait InterruptTrait: Sync + Send {
     fn mask_interrupt_locked(&self);
     fn unmask_interrupt_locked(&self);
-    fn register_interrupt_handler(&self);
-    fn unregister_interrupt_handler(&self); 
+    fn register_interrupt_handler(&self, handle: fn()) -> ZxResult;
+    fn unregister_interrupt_handler(&self) -> ZxResult;
 }
 
 impl_kobject!(Interrupt);
@@ -132,6 +132,7 @@ impl Interrupt {
             return Ok(());
         }
         if let Some(port) = &inner.port {
+            // TODO: use a function to send the package
             inner.packet_id = port.as_ref().push_interrupt(timestamp, inner.key);
             if inner.flags.contains(InterruptFlags::MASK_POSTWAIT) {
                 self.trait_.mask_interrupt_locked();
@@ -177,7 +178,6 @@ impl Interrupt {
     }
 
     pub fn destroy(&self) -> ZxResult {
-        // WARNING: a simplified version, the packet should be removed from port.
         self.trait_.mask_interrupt_locked();
         self.trait_.unregister_interrupt_handler();
         let mut inner = self.inner.lock();
@@ -237,6 +237,35 @@ impl Interrupt {
                 self.trait_.unmask_interrupt_locked();
             }
             object.wait_signal(Signal::INTERRUPT_SIGNAL).await;
+        }
+    }
+
+    pub fn interrupt_handle(&self) {
+        let mut inner = self.inner.lock();
+        if self.inner.flags.contains(InterruptFlags::MASK_POSTWAIT) {
+            self.trait_.mask_interrupt_locked();
+        }
+        if inner.timestamp == 0 {
+            // Not sure ZX_CLOCK_MONOTONIC or ZX_CLOCK_UTC
+            inner.timestamp = kernel_hal::timer_now().as_nanos() as i64;
+        }
+        match inner.port {
+            Some(port) => {
+                if inner.state != InterruptState::NEEDACK {
+                    // TODO: use a function to send the package
+                    inner.packet_id = inner.port.as_ref().unwrap().as_ref().push_interrupt(inner.timestamp, inner.key);
+                    if inner.flags.contains(InterruptFlags::MASK_POSTWAIT) {
+                        self.trait_.mask_interrupt_locked();
+                    }
+                    inner.timestamp = 0;
+                
+                    inner.state = InterruptState::NEEDACK;
+                }
+            }
+            None => {
+                self.base.signal_set(Signal::INTERRUPT_SIGNAL);
+                inner.state = InterruptState::TRIGGERED;
+            }
         }
     }
 }
