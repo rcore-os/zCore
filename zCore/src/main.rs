@@ -9,7 +9,7 @@
 extern crate alloc;
 #[macro_use]
 extern crate log;
-extern crate rlibc;
+extern crate rlibc_opt;
 
 #[macro_use]
 mod logging;

@@ -53,7 +53,7 @@ pub struct HandleBasicInfo {
     padding: u32,
 }
 
-fn obj_type(object: &Arc<dyn KernelObject>) -> u32 {
+pub fn obj_type(object: &Arc<dyn KernelObject>) -> u32 {
     match object.type_name() {
         "Process" => 1,
         "Thread" => 2,

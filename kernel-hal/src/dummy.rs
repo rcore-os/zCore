@@ -172,10 +172,6 @@ impl PhysFrame {
     pub fn zero_frame_addr() -> PhysAddr {
         unimplemented!()
     }
-
-    pub fn wrap(addr: PhysAddr) -> Self {
-        PhysFrame { paddr: addr }
-    }
 }
 
 impl Drop for PhysFrame {

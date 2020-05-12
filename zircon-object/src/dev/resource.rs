@@ -24,7 +24,6 @@ bitflags! {
 }
 
 /// Address space rights and accounting.
-#[allow(dead_code)]
 pub struct Resource {
     base: KObjectBase,
     kind: ResourceKind,

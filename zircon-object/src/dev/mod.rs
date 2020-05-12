@@ -4,5 +4,6 @@ mod bti;
 mod iommu;
 mod pmt;
 mod interrupt;
+mod resource;
 
-pub use self::{bti::*, iommu::*, pmt::*, interrupt::*};
+pub use self::{bti::*, iommu::*, pmt::*, interrupt::*, resource::*};

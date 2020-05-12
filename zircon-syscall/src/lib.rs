@@ -12,7 +12,10 @@ extern crate log;
 use {
     self::time::Deadline,
     alloc::sync::Arc,
-    core::convert::TryFrom,
+    core::{
+        convert::TryFrom,
+        sync::atomic::{AtomicI32, Ordering},
+    },
     futures::pin_mut,
     kernel_hal::{user::*, GeneralRegs},
     zircon_object::object::*,
@@ -137,6 +140,9 @@ impl Syscall<'_> {
             Sys::CHANNEL_WRITE => {
                 self.sys_channel_write(a0 as _, a1 as _, a2.into(), a3 as _, a4.into(), a5 as _)
             }
+            Sys::CHANNEL_WRITE_ETC => {
+                self.sys_channel_write_etc(a0 as _, a1 as _, a2.into(), a3 as _, a4.into(), a5 as _)
+            }
             Sys::CHANNEL_CALL_NORETRY => {
                 self.sys_channel_call_noretry(
                     a0 as _,
@@ -210,6 +216,7 @@ impl Syscall<'_> {
             Sys::CPRNG_DRAW_ONCE => self.sys_cprng_draw_once(a0 as _, a1 as _),
             Sys::NANOSLEEP => self.sys_nanosleep(a0.into()).await,
             Sys::CLOCK_GET => self.sys_clock_get(a0 as _, a1.into()),
+            Sys::CLOCK_READ => self.sys_clock_read(a0 as _, a1.into()),
             Sys::CLOCK_ADJUST => self.sys_clock_adjust(a0 as _, a1 as _, a2 as _),
             Sys::TIMER_CREATE => self.sys_timer_create(a0 as _, a1 as _, a2.into()),
             Sys::DEBUG_WRITE => self.sys_debug_write(a0.into(), a1 as _),
@@ -255,6 +262,16 @@ impl Syscall<'_> {
                     let _ = self.sys_handle_close(a3 as _);
                     self.sys_thread_exit()
                 }),
+            Sys::FUTEX_WAKE_HANDLE_CLOSE_THREAD_EXIT => {
+                // atomic_store_explicit(value_ptr, new_value, memory_order_release)
+                UserInPtr::<AtomicI32>::from(a0)
+                    .as_ref()
+                    .unwrap()
+                    .store(a2 as i32, Ordering::Release);
+                let _ = self.sys_futex_wake(a0.into(), a1 as _);
+                let _ = self.sys_handle_close(a3 as _);
+                self.sys_thread_exit()
+            }
             Sys::OBJECT_GET_CHILD => {
                 self.sys_object_get_child(a0 as _, a1 as _, a2 as _, a3.into())
             }

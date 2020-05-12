@@ -1,4 +1,4 @@
-use {super::*, core::sync::atomic::*, zircon_object::task::ThreadState};
+use {super::*, zircon_object::task::ThreadState};
 
 impl Syscall<'_> {
     pub async fn sys_futex_wait(

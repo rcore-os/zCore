@@ -87,20 +87,7 @@ impl VMObjectTrait for VMObjectPhysical {
         Err(ZxError::NOT_SUPPORTED)
     }
 
-    fn create_slice(
-        self: Arc<Self>,
-        _id: KoID,
-        offset: usize,
-        len: usize,
-    ) -> ZxResult<Arc<dyn VMObjectTrait>> {
-        assert!(page_aligned(offset) && page_aligned(len));
-        let obj = VMObjectPhysical::new(self.paddr + offset, len / PAGE_SIZE);
-        obj.inner.lock().cache_policy = self.inner.lock().cache_policy;
-        Ok(obj)
-    }
-
     fn append_mapping(&self, _mapping: Weak<VmMapping>) {
-        //        unimplemented!()
         // TODO this function is only used when physical-vmo supports create_child
         let mut inner = self.inner.lock();
         inner.mapping_count += 1;
@@ -115,7 +102,7 @@ impl VMObjectTrait for VMObjectPhysical {
         warn!("VmoInfo for physical is unimplemented");
     }
 
-    fn get_cache_policy(&self) -> CachePolicy {
+    fn cache_policy(&self) -> CachePolicy {
         let inner = self.inner.lock();
         inner.cache_policy
     }
@@ -161,7 +148,7 @@ mod tests {
     fn read_write() {
         let vmo = VmObject::new_physical(0x1000, 2);
         let vmphy = vmo.inner.clone();
-        assert_eq!(vmphy.get_cache_policy(), CachePolicy::Uncached);
+        assert_eq!(vmphy.cache_policy(), CachePolicy::Uncached);
         super::super::tests::read_write(&vmo);
     }
 }

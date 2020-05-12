@@ -6,7 +6,7 @@ use {
         time::Duration,
     },
     kernel_hal::{sleep_until, timer_now, yield_now},
-    zircon_object::{resource::*, task::*},
+    zircon_object::{dev::*, task::*},
 };
 
 static UTC_OFFSET: AtomicU64 = AtomicU64::new(0);
@@ -27,9 +27,19 @@ impl Syscall<'_> {
                 time.write(timer_now().as_nanos() as u64 + UTC_OFFSET.load(Ordering::Relaxed))?;
                 Ok(())
             }
-            ZX_CLOCK_THREAD => unimplemented!(),
+            ZX_CLOCK_THREAD => {
+                time.write(self.thread.get_time())?;
+                Ok(())
+            }
             _ => Err(ZxError::NOT_SUPPORTED),
         }
+    }
+
+    pub fn sys_clock_read(&self, handle: HandleValue, mut now: UserOutPtr<u64>) -> ZxResult {
+        info!("clock.read: handle={:#x?}", handle);
+        warn!("ignore clock handle");
+        now.write(timer_now().as_nanos() as u64)?;
+        Ok(())
     }
 
     pub fn sys_clock_adjust(&self, resource: HandleValue, clock_id: u32, offset: u64) -> ZxResult {

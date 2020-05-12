@@ -3,7 +3,7 @@ use {
     alloc::vec::Vec,
     zircon_object::{
         ipc::{Channel, MessagePacket},
-        object::HandleInfo,
+        object::{obj_type, HandleInfo},
         task::ThreadState,
     },
 };
@@ -235,7 +235,91 @@ impl Syscall<'_> {
             Err(ZxError::BAD_STATE)
         }
     }
+
+    pub fn sys_channel_write_etc(
+        &self,
+        handle: HandleValue,
+        options: u32,
+        user_bytes: UserInPtr<u8>,
+        num_bytes: u32,
+        mut user_handles: UserInOutPtr<HandleDisposition>,
+        num_handles: u32,
+    ) -> ZxResult {
+        info!(
+            "channel.write_etc: handle={:#x}, options={:#x}, user_bytes={:#x?}, num_bytes={:#x}, user_handles={:#x?}, num_handles={:#x}",
+            handle, options, user_bytes, num_bytes, user_handles, num_handles
+        );
+        let proc = self.thread.proc();
+        let data = user_bytes.read_array(num_bytes as usize)?;
+        let mut dispositions = user_handles.read_array(num_handles as usize)?;
+        let mut handles: Vec<Handle> = Vec::new();
+        let mut ret: ZxResult = Ok(());
+        for disposition in dispositions.iter_mut() {
+            if let Ok((object, src_rights)) = proc.get_dyn_object_and_rights(disposition.handle) {
+                match handle_check(disposition, &object, src_rights, handle) {
+                    Err(e) => {
+                        disposition.result = e as _;
+                        if ret.is_ok() {
+                            ret = Err(e);
+                        }
+                    }
+                    Ok(()) => (),
+                };
+                let new_rights = if disposition.rights != Rights::SAME_RIGHTS.bits() {
+                    Rights::from_bits(disposition.rights).unwrap()
+                } else {
+                    src_rights
+                };
+                let new_handle = Handle::new(object, new_rights);
+                if disposition.op != ZX_HANDLE_OP_DUP {
+                    proc.remove_handle(disposition.handle).unwrap();
+                }
+                handles.push(new_handle);
+            } else {
+                disposition.result = ZxError::BAD_HANDLE as _;
+                ret = Err(ZxError::BAD_HANDLE);
+            }
+        }
+        user_handles.write_array(&dispositions)?;
+        if options != 0 {
+            return Err(ZxError::INVALID_ARGS);
+        }
+        if num_handles > 64 || num_bytes > 65536 {
+            return Err(ZxError::OUT_OF_RANGE);
+        }
+        ret?;
+        let channel = proc.get_object_with_rights::<Channel>(handle, Rights::WRITE)?;
+        channel.write(MessagePacket { data, handles })?;
+        Ok(())
+    }
 }
+
+fn handle_check(
+    disposition: &HandleDisposition,
+    object: &Arc<dyn KernelObject>,
+    src_rights: Rights,
+    handle_value: HandleValue,
+) -> ZxResult {
+    if !src_rights.contains(Rights::TRANSFER) {
+        Err(ZxError::ACCESS_DENIED)
+    } else if disposition.handle == handle_value {
+        Err(ZxError::NOT_SUPPORTED)
+    } else if disposition.type_ != 0 && disposition.type_ != obj_type(&object) {
+        Err(ZxError::WRONG_TYPE)
+    } else if disposition.op != ZX_HANDLE_OP_MOVE && disposition.op != ZX_HANDLE_OP_DUP
+        || disposition.rights != Rights::SAME_RIGHTS.bits()
+            && (!src_rights.bits() & disposition.rights) != 0
+    {
+        Err(ZxError::INVALID_ARGS)
+    } else if disposition.op == ZX_HANDLE_OP_DUP && !src_rights.contains(Rights::DUPLICATE) {
+        Err(ZxError::ACCESS_DENIED)
+    } else {
+        Ok(())
+    }
+}
+
+const ZX_HANDLE_OP_MOVE: u32 = 0;
+const ZX_HANDLE_OP_DUP: u32 = 1;
 
 #[repr(C)]
 #[derive(Debug)]
@@ -248,4 +332,14 @@ pub struct ChannelCallArgs {
     wr_num_handles: u32,
     rd_num_bytes: u32,
     rd_num_handles: u32,
+}
+
+#[repr(C)]
+#[derive(Debug)]
+pub struct HandleDisposition {
+    op: u32,
+    handle: HandleValue,
+    type_: u32,
+    rights: u32,
+    result: i32,
 }
