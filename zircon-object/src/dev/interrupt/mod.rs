@@ -67,16 +67,17 @@ impl Interrupt {
         // if options.contains(InterruptOptions::REMAP_IRQ) {
         //     vector = EventInterrupt::remap(vector);
         // }
-        let event_interrupt = Interrupt {
+        let event_interrupt = Arc::new(Interrupt {
             base: KObjectBase::new(),
             hasvcpu: false,
             flags: InterruptFlags::empty(),
             inner: Default::default(),
             trait_: EventInterrupt::new(vector),
-        };
-        // event_interrupt.trait_.register_interrupt_handler(Arc::new(|| { event_interrupt.interrupt_handle()} ))?;
+        });
+        let event_interrupt_clone = event_interrupt.clone();
+        event_interrupt.trait_.register_interrupt_handler(Arc::new(move || { event_interrupt_clone.interrupt_handle()} ))?;
         event_interrupt.trait_.unmask_interrupt_locked();
-        return Ok(Arc::new(event_interrupt))
+        Ok(event_interrupt)
     }
 
     pub fn bind(&self, port: Arc<Port>, key: u64) -> ZxResult {
