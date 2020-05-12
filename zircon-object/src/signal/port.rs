@@ -1,11 +1,11 @@
 pub use self::port_packet::*;
 use super::*;
 use crate::object::*;
-use alloc::collections::vec_deque::VecDeque;
 use alloc::collections::btree_map::BTreeMap;
+use alloc::collections::vec_deque::VecDeque;
 use alloc::sync::Arc;
-use spin::Mutex;
 use bitflags::bitflags;
+use spin::Mutex;
 
 #[path = "port_packet.rs"]
 mod port_packet;
@@ -75,7 +75,11 @@ impl Port {
         let mut inner = self.inner.lock();
         inner.interrupt_pid += 1;
         let pid = inner.interrupt_pid;
-        inner.interrupt_queue.push_back(PortInterruptPacket{timestamp, key, pid});
+        inner.interrupt_queue.push_back(PortInterruptPacket {
+            timestamp,
+            key,
+            pid,
+        });
         inner.interrupt_grave.insert(pid, true);
         drop(inner);
         self.base.signal_set(Signal::READABLE);
@@ -92,7 +96,7 @@ impl Port {
                 inner.interrupt_grave.insert(pid, false);
                 in_queue
             }
-            None => false
+            None => false,
         }
     }
 
@@ -105,7 +109,9 @@ impl Port {
             if self.can_bind_to_interrupt() {
                 while let Some(packet) = inner.interrupt_queue.pop_front() {
                     let in_queue = inner.interrupt_grave.remove(&packet.pid).unwrap();
-                    if inner.queue.is_empty() && (inner.interrupt_queue.is_empty() || !self.can_bind_to_interrupt()) {
+                    if inner.queue.is_empty()
+                        && (inner.interrupt_queue.is_empty() || !self.can_bind_to_interrupt())
+                    {
                         self.base.signal_clear(Signal::READABLE);
                     }
                     if !in_queue {
@@ -114,12 +120,15 @@ impl Port {
                     return PortPacketRepr {
                         key: packet.key,
                         status: ZxError::OK,
-                        data: PayloadRepr::Interrupt(packet.into())
-                    }.into();
+                        data: PayloadRepr::Interrupt(packet.into()),
+                    }
+                    .into();
                 }
             }
             if let Some(packet) = inner.queue.pop_front() {
-                if inner.queue.is_empty() && (inner.interrupt_queue.is_empty() || !self.can_bind_to_interrupt()) {
+                if inner.queue.is_empty()
+                    && (inner.interrupt_queue.is_empty() || !self.can_bind_to_interrupt())
+                {
                     self.base.signal_clear(Signal::READABLE);
                 }
                 return packet;

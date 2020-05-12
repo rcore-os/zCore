@@ -1,10 +1,10 @@
 #![allow(dead_code)]
 #![allow(non_upper_case_globals)]
 
-use trapframe::TrapFrame;
-use spin::Mutex;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+use spin::Mutex;
+use trapframe::TrapFrame;
 
 pub type InterruptHandle = Arc<dyn Fn() + Send + Sync>;
 lazy_static! {
@@ -75,7 +75,7 @@ pub fn irq_remove_handle(irq: u8) -> bool {
             table[irq] = None;
             false
         }
-        None => true
+        None => true,
     }
 }
 

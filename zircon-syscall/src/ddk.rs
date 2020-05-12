@@ -2,7 +2,7 @@ use {
     super::*,
     bitflags::bitflags,
     kernel_hal::DevVAddr,
-    zircon_object::{vm::*, dev::*, signal::*, task::*},
+    zircon_object::{dev::*, signal::*, task::*, vm::*},
 };
 
 impl Syscall<'_> {
@@ -144,9 +144,12 @@ impl Syscall<'_> {
         resource: HandleValue,
         src_num: usize,
         options: u32,
-        mut out: UserOutPtr<HandleValue>
+        mut out: UserOutPtr<HandleValue>,
     ) -> ZxResult {
-        info!("interrupt.create: handle={:?} src_num={:?} options={:?}", resource, src_num, options);
+        info!(
+            "interrupt.create: handle={:?} src_num={:?} options={:?}",
+            resource, src_num, options
+        );
         let proc = self.thread.proc();
         let options = InterruptOptions::from_bits_truncate(options);
         if options.contains(InterruptOptions::VIRTUAL) {
@@ -171,7 +174,10 @@ impl Syscall<'_> {
         key: u64,
         options: u32,
     ) -> ZxResult {
-        info!("interrupt.bind: interrupt={:?} port={:?} key={:?} options={:?}", interrupt, port, key, options);
+        info!(
+            "interrupt.bind: interrupt={:?} port={:?} key={:?} options={:?}",
+            interrupt, port, key, options
+        );
         let proc = self.thread.proc();
         let interrupt = proc.get_object_with_rights::<Interrupt>(interrupt, Rights::READ)?;
         let port = proc.get_object_with_rights::<Port>(port, Rights::WRITE)?;
@@ -187,15 +193,29 @@ impl Syscall<'_> {
         }
     }
 
-    pub fn sys_interrupt_trigger(&self, interrupt: HandleValue, options: u32, timestamp: i64) -> ZxResult {
-        info!("interrupt.trigger: interrupt={:?} options={:?} timestamp={:?}", interrupt, options, timestamp);
-        let interrupt = self.thread.proc().get_object_with_rights::<Interrupt>(interrupt, Rights::SIGNAL)?;
+    pub fn sys_interrupt_trigger(
+        &self,
+        interrupt: HandleValue,
+        options: u32,
+        timestamp: i64,
+    ) -> ZxResult {
+        info!(
+            "interrupt.trigger: interrupt={:?} options={:?} timestamp={:?}",
+            interrupt, options, timestamp
+        );
+        let interrupt = self
+            .thread
+            .proc()
+            .get_object_with_rights::<Interrupt>(interrupt, Rights::SIGNAL)?;
         interrupt.trigger(timestamp)
     }
 
     pub fn sys_interrupt_ack(&self, interrupt: HandleValue) -> ZxResult {
         info!("interupt.ack: interrupt={:?}", interrupt);
-        let interrupt = self.thread.proc().get_object_with_rights::<Interrupt>(interrupt, Rights::WRITE)?;
+        let interrupt = self
+            .thread
+            .proc()
+            .get_object_with_rights::<Interrupt>(interrupt, Rights::WRITE)?;
         interrupt.ack()
     }
 
@@ -205,7 +225,11 @@ impl Syscall<'_> {
         interrupt.destroy()
     }
 
-    pub async fn sys_interrupt_wait(&self, interrupt: HandleValue, mut out: UserOutPtr<i64>) -> ZxResult {
+    pub async fn sys_interrupt_wait(
+        &self,
+        interrupt: HandleValue,
+        mut out: UserOutPtr<i64>,
+    ) -> ZxResult {
         info!("interrupt.wait: handle={:?}", interrupt);
         assert_eq!(core::mem::size_of::<PortPacket>(), 48);
         let proc = self.thread.proc();
@@ -214,7 +238,11 @@ impl Syscall<'_> {
         pin_mut!(future);
         let timestamp = self
             .thread
-            .blocking_run(future, ThreadState::BlockedInterrupt, Deadline::forever().into())
+            .blocking_run(
+                future,
+                ThreadState::BlockedInterrupt,
+                Deadline::forever().into(),
+            )
             .await?;
         out.write_if_not_null(timestamp)?;
         Ok(())

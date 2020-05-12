@@ -278,7 +278,7 @@ pub fn irq_add_handle(_irq: u8, _handle: Arc<dyn Fn() + Send + Sync>) -> bool {
 #[export_name = "hal_irq_remove_handle"]
 pub fn irq_remove_handle(_irq: u8) -> bool {
     unimplemented!()
-}    
+}
 
 /// Enable IRQ.
 #[linkage = "weak"]

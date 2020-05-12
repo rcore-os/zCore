@@ -130,7 +130,6 @@ impl ThreadInner {
     }
 }
 
-
 impl Thread {
     /// Create a new thread.
     pub fn create(proc: &Arc<Process>, name: &str, _options: u32) -> ZxResult<Arc<Self>> {

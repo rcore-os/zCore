@@ -64,7 +64,7 @@ pub struct PacketInterrupt {
     pub timestamp: i64,
     pub reserved0: u64,
     pub reserved1: u64,
-    pub reserved2: u64, 
+    pub reserved2: u64,
 }
 
 // Rust struct: for internal constructing and debugging
