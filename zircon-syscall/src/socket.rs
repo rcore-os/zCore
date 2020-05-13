@@ -1,4 +1,4 @@
-use {super::*, zircon_object::ipc::Socket};
+use {super::*, zircon_object::ipc::*};
 
 impl Syscall<'_> {
     pub fn sys_socket_create(
@@ -7,9 +7,10 @@ impl Syscall<'_> {
         mut out0: UserOutPtr<HandleValue>,
         mut out1: UserOutPtr<HandleValue>,
     ) -> ZxResult {
-        error!("socket.create: options={:#x?}", options);
+        info!("socket.create: options={:#x?}", options);
         if options != 0 {
-            unimplemented!();
+            error!("socket.create: only implemented options=0");
+            return Err(ZxError::NOT_SUPPORTED);
         }
         let (end0, end1) = Socket::create();
         let proc = self.thread.proc();
@@ -28,14 +29,17 @@ impl Syscall<'_> {
         size: usize,
         mut actual_size: UserOutPtr<usize>,
     ) -> ZxResult {
-        error!(
+        info!(
             "socket.write: socket={:#x?} options={:#x?} buffer={:#x?} size={:#x?}",
             socket, options, buffer, size,
         );
+        if options != 0 {
+            unimplemented!();
+        }
         let socket = self.thread.proc().get_object_with_rights::<Socket>(socket, Rights::WRITE)?;
         let buffer = buffer.read_array(size)?;
         let size = socket.write(buffer)?;
-        actual_size.write(size)?;
+        actual_size.write_if_not_null(size)?;
         Ok(())
     }
 
@@ -47,21 +51,21 @@ impl Syscall<'_> {
         size: usize,
         mut actual_size: UserOutPtr<usize>,
     ) -> ZxResult {
-        error!(
+        info!(
             "socket.read: socket={:#x?} options={:#x?} buffer={:#x?} size={:#x?}",
             socket, options, buffer, size,
         );
         let socket = self.thread.proc().get_object_with_rights::<Socket>(socket, Rights::READ)?;
-        let result = socket.read(size)?;
-        actual_size.write(result.len())?;
+        let result = socket.read(size, SocketOptions::from_bits_truncate(options))?;
+        actual_size.write_if_not_null(result.len())?;
         buffer.write_array(&result)?;
         Ok(())
     }
 
     pub fn sys_socket_shutdown(&self, socket: HandleValue, options: u32) -> ZxResult {
-        error!("socket.shutdown: socket={:#x?} options={:#x?}", socket, options);
+        info!("socket.shutdown: socket={:#x?} options={:#x?}", socket, options);
         let socket = self.thread.proc().get_object_with_rights::<Socket>(socket, Rights::WRITE)?;
-        socket.shutdown(options)?;
+        socket.shutdown(SocketOptions::from_bits_truncate(options))?;
         Ok(())
     }
 }
