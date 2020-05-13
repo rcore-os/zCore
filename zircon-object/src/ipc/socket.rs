@@ -81,12 +81,6 @@ impl Socket {
         if inner.read_threshold > 0 && inner.data.len() < inner.read_threshold {
             clear |= Signal::SOCKET_READ_THRESHOLD;
         }
-        error!(
-            "inner size {} {} {:?}",
-            inner.data.len(),
-            inner.data.is_empty(),
-            self.signal()
-        );
         if inner.data.is_empty() {
             clear |= Signal::READABLE;
         }
