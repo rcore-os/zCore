@@ -1,6 +1,7 @@
 use {
     crate::object::*,
     alloc::sync::{Arc, Weak},
+    alloc::vec::Vec,
 };
 
 pub struct Socket {
@@ -34,5 +35,17 @@ impl Socket {
             Arc::get_mut_unchecked(&mut end0).peer = Arc::downgrade(&end1);
         }
         (end0, end1)
+    }
+
+    pub fn read(&self, _size: usize) -> ZxResult<Vec<u8>> {
+        Err(ZxError::NOT_SUPPORTED)
+    }
+
+    pub fn write(&self, buffer: Vec<u8>) -> ZxResult<usize> {
+        Ok(buffer.len())
+    }
+    
+    pub fn shutdown(&self, _options: u32) -> ZxResult {
+        Err(ZxError::NOT_SUPPORTED)
     }
 }
