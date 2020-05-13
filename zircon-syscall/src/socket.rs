@@ -36,7 +36,10 @@ impl Syscall<'_> {
         if options != 0 {
             unimplemented!();
         }
-        let socket = self.thread.proc().get_object_with_rights::<Socket>(socket, Rights::WRITE)?;
+        let socket = self
+            .thread
+            .proc()
+            .get_object_with_rights::<Socket>(socket, Rights::WRITE)?;
         let buffer = buffer.read_array(size)?;
         let size = socket.write(buffer)?;
         actual_size.write_if_not_null(size)?;
@@ -55,7 +58,10 @@ impl Syscall<'_> {
             "socket.read: socket={:#x?} options={:#x?} buffer={:#x?} size={:#x?}",
             socket, options, buffer, size,
         );
-        let socket = self.thread.proc().get_object_with_rights::<Socket>(socket, Rights::READ)?;
+        let socket = self
+            .thread
+            .proc()
+            .get_object_with_rights::<Socket>(socket, Rights::READ)?;
         let result = socket.read(size, SocketOptions::from_bits_truncate(options))?;
         actual_size.write_if_not_null(result.len())?;
         buffer.write_array(&result)?;
@@ -63,8 +69,14 @@ impl Syscall<'_> {
     }
 
     pub fn sys_socket_shutdown(&self, socket: HandleValue, options: u32) -> ZxResult {
-        info!("socket.shutdown: socket={:#x?} options={:#x?}", socket, options);
-        let socket = self.thread.proc().get_object_with_rights::<Socket>(socket, Rights::WRITE)?;
+        info!(
+            "socket.shutdown: socket={:#x?} options={:#x?}",
+            socket, options
+        );
+        let socket = self
+            .thread
+            .proc()
+            .get_object_with_rights::<Socket>(socket, Rights::WRITE)?;
         socket.shutdown(SocketOptions::from_bits_truncate(options))?;
         Ok(())
     }

@@ -158,8 +158,12 @@ impl Syscall<'_> {
                 self.sys_channel_call_finish(a0.into(), a1.into(), a2.into(), a3.into())
             }
             Sys::SOCKET_CREATE => self.sys_socket_create(a0 as _, a1.into(), a2.into()),
-            Sys::SOCKET_WRITE => self.sys_socket_write(a0 as _, a1 as _, a2.into(), a3 as _, a4.into()),
-            Sys::SOCKET_READ => self.sys_socket_read(a0 as _, a1 as _, a2.into(), a3 as _, a4.into()),
+            Sys::SOCKET_WRITE => {
+                self.sys_socket_write(a0 as _, a1 as _, a2.into(), a3 as _, a4.into())
+            }
+            Sys::SOCKET_READ => {
+                self.sys_socket_read(a0 as _, a1 as _, a2.into(), a3 as _, a4.into())
+            }
             Sys::SOCKET_SHUTDOWN => self.sys_socket_shutdown(a0 as _, a1 as _),
             Sys::FIFO_CREATE => {
                 self.sys_fifo_create(a0 as _, a1 as _, a2 as _, a3.into(), a4.into())

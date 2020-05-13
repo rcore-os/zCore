@@ -2,10 +2,10 @@ use {
     crate::object::*,
     alloc::sync::{Arc, Weak},
     alloc::vec::Vec,
+    bitflags::bitflags,
     core::cmp::min,
     core::iter::FromIterator,
     spin::Mutex,
-    bitflags::bitflags,
 };
 
 pub struct Socket {
@@ -48,7 +48,7 @@ impl Socket {
         let end1 = Arc::new(Socket {
             base: KObjectBase::with_signal(Signal::WRITABLE),
             peer: Arc::downgrade(&end0),
-            lock: lock,
+            lock,
             inner: Default::default(),
         });
         // no other reference of `end0`
@@ -81,13 +81,17 @@ impl Socket {
         if inner.read_threshold > 0 && inner.data.len() < inner.read_threshold {
             clear |= Signal::SOCKET_READ_THRESHOLD;
         }
-        error!("inner size {} {} {:?}", inner.data.len(), inner.data.is_empty(), self.signal());
+        error!(
+            "inner size {} {} {:?}",
+            inner.data.len(),
+            inner.data.is_empty(),
+            self.signal()
+        );
         if inner.data.is_empty() {
             clear |= Signal::READABLE;
         }
         self.signal_change(clear, Signal::empty());
         Ok(data)
-        
     }
 
     pub fn write(&self, mut buffer: Vec<u8>) -> ZxResult<usize> {
@@ -100,7 +104,7 @@ impl Socket {
         if self.signal().contains(Signal::SOCKET_WRITE_DISABLED) {
             return Err(ZxError::BAD_STATE);
         }
-        if buffer.len() == 0 {
+        if buffer.is_empty() {
             return Ok(0);
         }
         let buffer_len = buffer.len();
@@ -124,7 +128,7 @@ impl Socket {
             Some(peer) => peer.inner.lock().data.len(),
             None => 0,
         };
-        return SocketInfo {
+        SocketInfo {
             options: 0,
             padding1: 0,
             rx_buf_max: u64::MAX,
@@ -134,12 +138,14 @@ impl Socket {
             tx_buf_size: peer_size as _,
         }
     }
-    
+
     pub fn shutdown(&self, options: SocketOptions) -> ZxResult {
         let _ = self.lock.lock();
         self.shutdown_self(options)?;
         if let Some(peer) = self.peer.upgrade() {
-            peer.shutdown_self(options ^ SocketOptions::SHUTDOWN_READ ^ SocketOptions::SHUTDOWN_WRITE)?;
+            peer.shutdown_self(
+                options ^ SocketOptions::SHUTDOWN_READ ^ SocketOptions::SHUTDOWN_WRITE,
+            )?;
         }
         Ok(())
     }
@@ -166,12 +172,10 @@ impl Socket {
         inner.read_threshold = threshold;
         if threshold == 0 {
             self.signal_change(Signal::SOCKET_READ_THRESHOLD, Signal::empty());
+        } else if inner.data.len() >= threshold {
+            self.signal_change(Signal::empty(), Signal::SOCKET_READ_THRESHOLD);
         } else {
-            if inner.data.len() >= threshold {
-                self.signal_change(Signal::empty(), Signal::SOCKET_READ_THRESHOLD);
-            } else {
-                self.signal_change(Signal::SOCKET_READ_THRESHOLD, Signal::empty());
-            }
+            self.signal_change(Signal::SOCKET_READ_THRESHOLD, Signal::empty());
         }
         Ok(())
     }
@@ -188,7 +192,7 @@ impl Socket {
 
     pub fn get_rx_tx_threshold(&self) -> (usize, usize) {
         let inner = self.inner.lock();
-        return (inner.read_threshold, inner.write_threshold)
+        (inner.read_threshold, inner.write_threshold)
     }
 }
 
@@ -218,6 +222,7 @@ bitflags! {
         #[allow(clippy::identity_op)]
         const SHUTDOWN_WRITE = 1 << 0;
         const SHUTDOWN_READ = 1 << 1;
+        #[allow(clippy::identity_op)]
         const DATAGRAM = 1 << 0;
         const PEEK = 1 << 3;
     }

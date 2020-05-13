@@ -3,7 +3,7 @@ use {
     alloc::vec::Vec,
     core::convert::TryFrom,
     numeric_enum_macro::numeric_enum,
-    zircon_object::{dev::*, signal::Port, task::*, vm::*, ipc::*},
+    zircon_object::{dev::*, ipc::*, signal::Port, task::*, vm::*},
 };
 
 impl Syscall<'_> {
@@ -66,8 +66,10 @@ impl Syscall<'_> {
                 if buffer_size < 8 {
                     return Err(ZxError::BUFFER_TOO_SMALL);
                 }
-                let rx = proc.get_object_with_rights::<Socket>(handle_value, Rights::GET_PROPERTY)?
-                    .get_rx_tx_threshold().0;
+                let rx = proc
+                    .get_object_with_rights::<Socket>(handle_value, Rights::GET_PROPERTY)?
+                    .get_rx_tx_threshold()
+                    .0;
                 UserOutPtr::<usize>::from(ptr).write(rx)?;
                 Ok(())
             }
@@ -75,8 +77,10 @@ impl Syscall<'_> {
                 if buffer_size < 8 {
                     return Err(ZxError::BUFFER_TOO_SMALL);
                 }
-                let tx = proc.get_object_with_rights::<Socket>(handle_value, Rights::GET_PROPERTY)?
-                    .get_rx_tx_threshold().1;
+                let tx = proc
+                    .get_object_with_rights::<Socket>(handle_value, Rights::GET_PROPERTY)?
+                    .get_rx_tx_threshold()
+                    .1;
                 UserOutPtr::<usize>::from(ptr).write(tx)?;
                 Ok(())
             }
@@ -143,14 +147,16 @@ impl Syscall<'_> {
                     return Err(ZxError::BUFFER_TOO_SMALL);
                 }
                 let threshold = UserInPtr::<usize>::from(ptr).read()?;
-                proc.get_object::<Socket>(handle_value)?.set_read_threshold(threshold)
+                proc.get_object::<Socket>(handle_value)?
+                    .set_read_threshold(threshold)
             }
             Property::SocketTxThreshold => {
                 if buffer_size < 8 {
                     return Err(ZxError::BUFFER_TOO_SMALL);
                 }
                 let threshold = UserInPtr::<usize>::from(ptr).read()?;
-                proc.get_object::<Socket>(handle_value)?.set_write_threshold(threshold)
+                proc.get_object::<Socket>(handle_value)?
+                    .set_write_threshold(threshold)
             }
             _ => {
                 warn!("unknown property");
