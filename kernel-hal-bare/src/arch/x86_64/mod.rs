@@ -310,10 +310,16 @@ fn timer_init() {
     lapic.cpu_init();
 }
 
-#[inline(always)]
+#[export_name = "hal_irq_enable"]
 pub fn irq_enable(irq: u8) {
     let mut ioapic = unsafe { IoApic::new(phys_to_virt(IOAPIC_ADDR)) };
     ioapic.enable(irq, 0);
+}
+
+#[export_name = "hal_irq_disable"]
+pub fn irq_disable(irq: u8) {
+    let mut ioapic = unsafe { IoApic::new(phys_to_virt(IOAPIC_ADDR)) };
+    ioapic.disable(irq);
 }
 
 const LAPIC_ADDR: usize = 0xfee0_0000;

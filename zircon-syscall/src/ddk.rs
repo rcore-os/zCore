@@ -2,8 +2,7 @@ use {
     super::*,
     bitflags::bitflags,
     kernel_hal::DevVAddr,
-    zircon_object::dev::*,
-    zircon_object::vm::{page_aligned, VmObject},
+    zircon_object::{dev::*, signal::*, task::*, vm::*},
 };
 
 impl Syscall<'_> {
@@ -139,6 +138,115 @@ impl Syscall<'_> {
         smbios_ptr.write(smbios)?;
         Ok(())
     }
+
+    pub fn sys_interrupt_create(
+        &self,
+        resource: HandleValue,
+        src_num: usize,
+        options: u32,
+        mut out: UserOutPtr<HandleValue>,
+    ) -> ZxResult {
+        info!(
+            "interrupt.create: handle={:?} src_num={:?} options={:?}",
+            resource, src_num, options
+        );
+        let proc = self.thread.proc();
+        let options = InterruptOptions::from_bits_truncate(options);
+        if options.contains(InterruptOptions::VIRTUAL) {
+            let interrupt = Interrupt::new_virtual(options)?;
+            let handle = proc.add_handle(Handle::new(interrupt, Rights::DEFAULT_INTERRUPT));
+            out.write(handle)?;
+        } else {
+            let resource = proc.get_object::<Resource>(resource)?;
+            resource.validate_ranged_resource(ResourceKind::IRQ, src_num, 1)?;
+            let interrupt = Interrupt::new_event(src_num, options)?;
+            let handle = proc.add_handle(Handle::new(interrupt, Rights::DEFAULT_INTERRUPT));
+            out.write(handle)?;
+        }
+        // redundant add_handle & out.write, how to merge it?
+        Ok(())
+    }
+
+    pub fn sys_interrupt_bind(
+        &self,
+        interrupt: HandleValue,
+        port: HandleValue,
+        key: u64,
+        options: u32,
+    ) -> ZxResult {
+        info!(
+            "interrupt.bind: interrupt={:?} port={:?} key={:?} options={:?}",
+            interrupt, port, key, options
+        );
+        let proc = self.thread.proc();
+        let interrupt = proc.get_object_with_rights::<Interrupt>(interrupt, Rights::READ)?;
+        let port = proc.get_object_with_rights::<Port>(port, Rights::WRITE)?;
+        if !port.can_bind_to_interrupt() {
+            return Err(ZxError::WRONG_TYPE);
+        }
+        if options == InterruptOp::Bind as _ {
+            interrupt.bind(port, key)
+        } else if options == InterruptOp::Unbind as _ {
+            interrupt.unbind(port)
+        } else {
+            Err(ZxError::INVALID_ARGS)
+        }
+    }
+
+    pub fn sys_interrupt_trigger(
+        &self,
+        interrupt: HandleValue,
+        options: u32,
+        timestamp: i64,
+    ) -> ZxResult {
+        info!(
+            "interrupt.trigger: interrupt={:?} options={:?} timestamp={:?}",
+            interrupt, options, timestamp
+        );
+        let interrupt = self
+            .thread
+            .proc()
+            .get_object_with_rights::<Interrupt>(interrupt, Rights::SIGNAL)?;
+        interrupt.trigger(timestamp)
+    }
+
+    pub fn sys_interrupt_ack(&self, interrupt: HandleValue) -> ZxResult {
+        info!("interupt.ack: interrupt={:?}", interrupt);
+        let interrupt = self
+            .thread
+            .proc()
+            .get_object_with_rights::<Interrupt>(interrupt, Rights::WRITE)?;
+        interrupt.ack()
+    }
+
+    pub fn sys_interrupt_destroy(&self, interrupt: HandleValue) -> ZxResult {
+        info!("interupt.destory: interrupt={:?}", interrupt);
+        let interrupt = self.thread.proc().get_object::<Interrupt>(interrupt)?;
+        interrupt.destroy()
+    }
+
+    pub async fn sys_interrupt_wait(
+        &self,
+        interrupt: HandleValue,
+        mut out: UserOutPtr<i64>,
+    ) -> ZxResult {
+        info!("interrupt.wait: handle={:?}", interrupt);
+        assert_eq!(core::mem::size_of::<PortPacket>(), 48);
+        let proc = self.thread.proc();
+        let interrupt = proc.get_object_with_rights::<Interrupt>(interrupt, Rights::WAIT)?;
+        let future = interrupt.wait();
+        pin_mut!(future);
+        let timestamp = self
+            .thread
+            .blocking_run(
+                future,
+                ThreadState::BlockedInterrupt,
+                Deadline::forever().into(),
+            )
+            .await?;
+        out.write_if_not_null(timestamp)?;
+        Ok(())
+    }
 }
 
 const IOMMU_TYPE_DUMMY: u32 = 0;
@@ -154,6 +262,11 @@ bitflags! {
         const COMPRESS              = 1 << 3;
         const CONTIGUOUS            = 1 << 4;
     }
+}
+
+enum InterruptOp {
+    Bind = 0,
+    Unbind = 1,
 }
 
 impl BtiOptions {

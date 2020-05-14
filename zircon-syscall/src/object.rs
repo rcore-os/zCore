@@ -208,7 +208,7 @@ impl Syscall<'_> {
                 UserOutPtr::<JobInfo>::from(buffer).write(job.get_info())?;
             }
             Topic::ProcessVmos => {
-                warn!("A dummy implementation for utest Bti.NoDelayedUnpin, it does not check the reture value");
+                error!("A dummy implementation for utest Bti.NoDelayedUnpin, it does not check the reture value");
                 actual.write(0)?;
                 avail.write(0)?;
             }
@@ -255,6 +255,10 @@ impl Syscall<'_> {
                 let bti = proc
                     .get_object_with_rights::<BusTransactionInitiator>(handle, Rights::INSPECT)?;
                 UserOutPtr::<BtiInfo>::from(buffer).write(bti.get_info())?;
+            }
+            Topic::Resource => {
+                let resource = proc.get_object_with_rights::<Resource>(handle, Rights::INSPECT)?;
+                UserOutPtr::<ResourceInfo>::from(buffer).write(resource.get_info())?;
             }
             _ => {
                 error!("not supported info topic: {:?}", topic);

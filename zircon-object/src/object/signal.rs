@@ -35,6 +35,8 @@ bitflags! {
 
         const VMO_ZERO_CHILDREN             = Self::SIGNALED.bits;
 
+        const INTERRUPT_SIGNAL              = 1 << 4;
+
         // for Linux
         const SIGCHLD                       = 1 << 6;
 
