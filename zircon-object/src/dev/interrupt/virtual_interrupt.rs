@@ -1,21 +1,21 @@
-use {super::*, alloc::sync::Arc};
+use super::*;
 
 #[derive(Default)]
 pub struct VirtualInterrupt {}
 
 impl VirtualInterrupt {
-    pub fn new() -> Arc<Self> {
+    pub fn new() -> Box<Self> {
         Default::default()
     }
 }
 
 impl InterruptTrait for VirtualInterrupt {
-    fn mask_interrupt_locked(&self) {}
-    fn unmask_interrupt_locked(&self) {}
-    fn register_interrupt_handler(&self, _handle: Arc<dyn Fn() + Send + Sync>) -> ZxResult {
+    fn mask(&self) {}
+    fn unmask(&self) {}
+    fn register_handler(&self, _handle: Box<dyn Fn() + Send + Sync>) -> ZxResult {
         Ok(())
     }
-    fn unregister_interrupt_handler(&self) -> ZxResult {
+    fn unregister_handler(&self) -> ZxResult {
         Ok(())
     }
 }

@@ -152,18 +152,18 @@ impl Syscall<'_> {
         );
         let proc = self.thread.proc();
         let options = InterruptOptions::from_bits_truncate(options);
-        if options.contains(InterruptOptions::VIRTUAL) {
-            let interrupt = Interrupt::new_virtual(options)?;
-            let handle = proc.add_handle(Handle::new(interrupt, Rights::DEFAULT_INTERRUPT));
-            out.write(handle)?;
+        let interrupt = if options.contains(InterruptOptions::VIRTUAL) {
+            if options != InterruptOptions::VIRTUAL {
+                return Err(ZxError::INVALID_ARGS);
+            }
+            Interrupt::new_virtual()
         } else {
             let resource = proc.get_object::<Resource>(resource)?;
             resource.validate_ranged_resource(ResourceKind::IRQ, src_num, 1)?;
-            let interrupt = Interrupt::new_event(src_num, options)?;
-            let handle = proc.add_handle(Handle::new(interrupt, Rights::DEFAULT_INTERRUPT));
-            out.write(handle)?;
-        }
-        // redundant add_handle & out.write, how to merge it?
+            Interrupt::new_physical(src_num, options)?
+        };
+        let handle = proc.add_handle(Handle::new(interrupt, Rights::DEFAULT_INTERRUPT));
+        out.write(handle)?;
         Ok(())
     }
 
@@ -185,9 +185,9 @@ impl Syscall<'_> {
             return Err(ZxError::WRONG_TYPE);
         }
         if options == InterruptOp::Bind as _ {
-            interrupt.bind(port, key)
+            interrupt.bind(&port, key)
         } else if options == InterruptOp::Unbind as _ {
-            interrupt.unbind(port)
+            interrupt.unbind(&port)
         } else {
             Err(ZxError::INVALID_ARGS)
         }
