@@ -231,7 +231,7 @@ impl Interrupt {
                 match inner.state {
                     InterruptState::Destroy => return Err(ZxError::CANCELED),
                     InterruptState::Triggered => {
-                        inner.state = InterruptState::Triggered;
+                        inner.state = InterruptState::NeedAck;
                         let timestamp = inner.timestamp;
                         inner.timestamp = 0;
                         self.base.signal_clear(Signal::INTERRUPT_SIGNAL);
