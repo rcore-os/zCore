@@ -158,6 +158,13 @@ impl Syscall<'_> {
                 self.sys_channel_call_finish(a0.into(), a1.into(), a2.into(), a3.into())
             }
             Sys::SOCKET_CREATE => self.sys_socket_create(a0 as _, a1.into(), a2.into()),
+            Sys::SOCKET_WRITE => {
+                self.sys_socket_write(a0 as _, a1 as _, a2.into(), a3 as _, a4.into())
+            }
+            Sys::SOCKET_READ => {
+                self.sys_socket_read(a0 as _, a1 as _, a2.into(), a3 as _, a4.into())
+            }
+            Sys::SOCKET_SHUTDOWN => self.sys_socket_shutdown(a0 as _, a1 as _),
             Sys::FIFO_CREATE => {
                 self.sys_fifo_create(a0 as _, a1 as _, a2 as _, a3.into(), a4.into())
             }
@@ -168,6 +175,10 @@ impl Syscall<'_> {
             Sys::PORT_CREATE => self.sys_port_create(a0 as _, a1.into()),
             Sys::PORT_WAIT => self.sys_port_wait(a0 as _, a1.into(), a2.into()).await,
             Sys::PORT_QUEUE => self.sys_port_queue(a0 as _, a1.into()),
+            Sys::PORT_CANCEL => {
+                error!("Skip PORT_CANCEL");
+                Ok(())
+            }
             Sys::FUTEX_WAIT => {
                 self.sys_futex_wait(a0.into(), a1 as _, a2 as _, a3.into())
                     .await
