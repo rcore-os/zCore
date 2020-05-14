@@ -1,26 +1,31 @@
 use {
-    self::event_interrupt::*, self::virtual_interrupt::*, crate::object::*, crate::signal::*,
-    alloc::sync::Arc, bitflags::bitflags, spin::Mutex,
+    self::event_interrupt::*,
+    self::virtual_interrupt::*,
+    crate::object::*,
+    crate::signal::*,
+    alloc::{boxed::Box, sync::Arc},
+    bitflags::bitflags,
+    spin::Mutex,
 };
 
 mod event_interrupt;
 mod virtual_interrupt;
 
-pub trait InterruptTrait: Sync + Send {
-    fn mask_interrupt_locked(&self);
-    fn unmask_interrupt_locked(&self);
-    fn register_interrupt_handler(&self, handle: Arc<dyn Fn() + Send + Sync>) -> ZxResult;
-    fn unregister_interrupt_handler(&self) -> ZxResult;
+trait InterruptTrait: Sync + Send {
+    fn mask(&self);
+    fn unmask(&self);
+    fn register_handler(&self, handler: Box<dyn Fn() + Send + Sync>) -> ZxResult;
+    fn unregister_handler(&self) -> ZxResult;
 }
 
 impl_kobject!(Interrupt);
 
 pub struct Interrupt {
     base: KObjectBase,
-    hasvcpu: bool,
+    has_vcpu: bool,
     flags: InterruptFlags,
     inner: Mutex<InterruptInner>,
-    trait_: Arc<dyn InterruptTrait>,
+    trait_: Box<dyn InterruptTrait>,
 }
 
 #[derive(Default)]
@@ -40,20 +45,19 @@ impl Drop for Interrupt {
 }
 
 impl Interrupt {
-    pub fn new_virtual(options: InterruptOptions) -> ZxResult<Arc<Self>> {
-        if options != InterruptOptions::VIRTUAL {
-            return Err(ZxError::INVALID_ARGS);
-        }
-        Ok(Arc::new(Interrupt {
+    /// Create a new virtual interrupt.
+    pub fn new_virtual() -> Arc<Self> {
+        Arc::new(Interrupt {
             base: KObjectBase::new(),
-            hasvcpu: false,
+            has_vcpu: false,
             flags: InterruptFlags::VIRTUAL,
             inner: Default::default(),
             trait_: VirtualInterrupt::new(),
-        }))
+        })
     }
 
-    pub fn new_event(mut vector: usize, options: InterruptOptions) -> ZxResult<Arc<Self>> {
+    /// Create a new physical interrupt.
+    pub fn new_physical(mut vector: usize, options: InterruptOptions) -> ZxResult<Arc<Self>> {
         let mode = options.to_mode();
         if mode != InterruptOptions::MODE_DEFAULT && mode != InterruptOptions::MODE_EDGE_HIGH {
             unimplemented!();
@@ -63,31 +67,30 @@ impl Interrupt {
             vector += 16;
             // vector = EventInterrupt::remap(vector);
         }
-        let event_interrupt = Arc::new(Interrupt {
+        let interrupt = Arc::new(Interrupt {
             base: KObjectBase::new(),
-            hasvcpu: false,
+            has_vcpu: false,
             flags: InterruptFlags::empty(),
             inner: Default::default(),
             trait_: EventInterrupt::new(vector),
         });
-        let event_interrupt_clone = event_interrupt.clone();
-        event_interrupt
+        let interrupt_clone = interrupt.clone();
+        interrupt
             .trait_
-            .register_interrupt_handler(Arc::new(move || {
-                event_interrupt_clone.interrupt_handle()
-            }))?;
-        event_interrupt.trait_.unmask_interrupt_locked();
-        Ok(event_interrupt)
+            .register_handler(Box::new(move || interrupt_clone.handle_interrupt()))?;
+        interrupt.trait_.unmask();
+        Ok(interrupt)
     }
 
-    pub fn bind(&self, port: Arc<Port>, key: u64) -> ZxResult {
+    /// Bind the interrupt object to a port.
+    pub fn bind(&self, port: &Arc<Port>, key: u64) -> ZxResult {
         let mut inner = self.inner.lock();
         match inner.state {
-            InterruptState::DESTORY => return Err(ZxError::CANCELED),
-            InterruptState::WAITING => return Err(ZxError::BAD_STATE),
+            InterruptState::Destroy => return Err(ZxError::CANCELED),
+            InterruptState::Waiting => return Err(ZxError::BAD_STATE),
             _ => (),
         }
-        if inner.port.is_some() || self.hasvcpu {
+        if inner.port.is_some() || self.has_vcpu {
             return Err(ZxError::ALREADY_BOUND);
         }
         if self
@@ -98,19 +101,22 @@ impl Interrupt {
         }
         inner.port = Some(port.clone());
         inner.key = key;
-        if inner.state == InterruptState::TRIGGERED {
+        if inner.state == InterruptState::Triggered {
             inner.packet_id = port.as_ref().push_interrupt(inner.timestamp, inner.key);
-            inner.state = InterruptState::NEEDACK;
+            inner.state = InterruptState::NeedAck;
         }
         Ok(())
     }
 
-    pub fn unbind(&self, port: Arc<Port>) -> ZxResult {
+    /// Unbind the interrupt object from a port.
+    ///
+    /// Unbinding the port removes previously queued packets to the port.
+    pub fn unbind(&self, port: &Arc<Port>) -> ZxResult {
         let mut inner = self.inner.lock();
         if inner.port.is_none() || inner.port.as_ref().unwrap().id() != port.id() {
             return Err(ZxError::NOT_FOUND);
         }
-        if inner.state == InterruptState::DESTORY {
+        if inner.state == InterruptState::Destroy {
             return Err(ZxError::CANCELED);
         }
         port.remove_interrupt(inner.packet_id);
@@ -119,6 +125,7 @@ impl Interrupt {
         Ok(())
     }
 
+    /// Triggers a virtual interrupt object.
     pub fn trigger(&self, timestamp: i64) -> ZxResult {
         if !self.flags.contains(InterruptFlags::VIRTUAL) {
             return Err(ZxError::BAD_STATE);
@@ -127,22 +134,22 @@ impl Interrupt {
         if inner.timestamp == 0 {
             inner.timestamp = timestamp;
         }
-        if inner.state == InterruptState::DESTORY {
+        if inner.state == InterruptState::Destroy {
             return Err(ZxError::CANCELED);
         }
-        if inner.state == InterruptState::NEEDACK && inner.port.is_some() {
+        if inner.state == InterruptState::NeedAck && inner.port.is_some() {
             return Ok(());
         }
         if let Some(port) = &inner.port {
             // TODO: use a function to send the package
-            inner.packet_id = port.as_ref().push_interrupt(timestamp, inner.key);
+            inner.packet_id = port.push_interrupt(timestamp, inner.key);
             if self.flags.contains(InterruptFlags::MASK_POSTWAIT) {
-                self.trait_.mask_interrupt_locked();
+                self.trait_.mask();
             }
             inner.timestamp = 0;
-            inner.state = InterruptState::NEEDACK;
+            inner.state = InterruptState::NeedAck;
         } else {
-            inner.state = InterruptState::TRIGGERED;
+            inner.state = InterruptState::Triggered;
             self.base.signal_set(Signal::INTERRUPT_SIGNAL);
         }
         Ok(())
@@ -153,12 +160,12 @@ impl Interrupt {
         if inner.port.is_none() {
             return Err(ZxError::BAD_STATE);
         }
-        if inner.state == InterruptState::DESTORY {
+        if inner.state == InterruptState::Destroy {
             return Err(ZxError::CANCELED);
         }
-        if inner.state == InterruptState::NEEDACK {
+        if inner.state == InterruptState::NeedAck {
             if self.flags.contains(InterruptFlags::UNMASK_PREWAIT) {
-                self.trait_.unmask_interrupt_locked();
+                self.trait_.unmask();
             } else if self.flags.contains(InterruptFlags::UNMASK_PREWAIT_UNLOCKED) {
                 inner.defer_unmask = true;
             }
@@ -171,44 +178,42 @@ impl Interrupt {
                     .as_ref()
                     .push_interrupt(inner.timestamp, inner.key);
                 if self.flags.contains(InterruptFlags::MASK_POSTWAIT) {
-                    self.trait_.mask_interrupt_locked();
+                    self.trait_.mask();
                 }
                 inner.timestamp = 0;
             } else {
-                inner.state = InterruptState::IDLE;
+                inner.state = InterruptState::Idle;
             }
         }
         if inner.defer_unmask {
-            self.trait_.unmask_interrupt_locked();
+            self.trait_.unmask();
         }
         Ok(())
     }
 
     pub fn destroy(&self) -> ZxResult {
-        self.trait_.mask_interrupt_locked();
-        self.trait_.unregister_interrupt_handler()?;
+        self.trait_.mask();
+        self.trait_.unregister_handler()?;
         let mut inner = self.inner.lock();
         if let Some(port) = &inner.port {
             let in_queue = port.remove_interrupt(inner.packet_id);
             match inner.state {
-                InterruptState::NEEDACK => {
-                    inner.state = InterruptState::DESTORY;
+                InterruptState::NeedAck => {
+                    inner.state = InterruptState::Destroy;
                     if !in_queue {
                         Err(ZxError::NOT_FOUND)
                     } else {
                         Ok(())
                     }
                 }
-
-                InterruptState::IDLE => {
-                    inner.state = InterruptState::DESTORY;
+                InterruptState::Idle => {
+                    inner.state = InterruptState::Destroy;
                     Ok(())
                 }
-
                 _ => Ok(()),
             }
         } else {
-            inner.state = InterruptState::DESTORY;
+            inner.state = InterruptState::Destroy;
             self.base.signal_set(Signal::INTERRUPT_SIGNAL);
             Ok(())
         }
@@ -220,41 +225,41 @@ impl Interrupt {
         loop {
             {
                 let mut inner = self.inner.lock();
-                if inner.port.is_some() || self.hasvcpu {
+                if inner.port.is_some() || self.has_vcpu {
                     return Err(ZxError::BAD_STATE);
                 }
                 match inner.state {
-                    InterruptState::DESTORY => return Err(ZxError::CANCELED),
-                    InterruptState::TRIGGERED => {
-                        inner.state = InterruptState::TRIGGERED;
+                    InterruptState::Destroy => return Err(ZxError::CANCELED),
+                    InterruptState::Triggered => {
+                        inner.state = InterruptState::Triggered;
                         let timestamp = inner.timestamp;
                         inner.timestamp = 0;
                         self.base.signal_clear(Signal::INTERRUPT_SIGNAL);
                         return Ok(timestamp);
                     }
-                    InterruptState::NEEDACK => {
+                    InterruptState::NeedAck => {
                         if self.flags.contains(InterruptFlags::UNMASK_PREWAIT) {
-                            self.trait_.unmask_interrupt_locked();
+                            self.trait_.unmask();
                         } else if self.flags.contains(InterruptFlags::UNMASK_PREWAIT_UNLOCKED) {
                             defer_unmask = true;
                         }
                     }
-                    InterruptState::IDLE => (),
+                    InterruptState::Idle => (),
                     _ => return Err(ZxError::BAD_STATE),
                 }
-                inner.state = InterruptState::WAITING;
+                inner.state = InterruptState::Waiting;
             }
             if defer_unmask {
-                self.trait_.unmask_interrupt_locked();
+                self.trait_.unmask();
             }
             object.wait_signal(Signal::INTERRUPT_SIGNAL).await;
         }
     }
 
-    pub fn interrupt_handle(&self) {
+    fn handle_interrupt(&self) {
         let mut inner = self.inner.lock();
         if self.flags.contains(InterruptFlags::MASK_POSTWAIT) {
-            self.trait_.mask_interrupt_locked();
+            self.trait_.mask();
         }
         if inner.timestamp == 0 {
             // Not sure ZX_CLOCK_MONOTONIC or ZX_CLOCK_UTC
@@ -262,20 +267,20 @@ impl Interrupt {
         }
         match &inner.port {
             Some(port) => {
-                if inner.state != InterruptState::NEEDACK {
+                if inner.state != InterruptState::NeedAck {
                     // TODO: use a function to send the package
                     inner.packet_id = port.as_ref().push_interrupt(inner.timestamp, inner.key);
                     if self.flags.contains(InterruptFlags::MASK_POSTWAIT) {
-                        self.trait_.mask_interrupt_locked();
+                        self.trait_.mask();
                     }
                     inner.timestamp = 0;
 
-                    inner.state = InterruptState::NEEDACK;
+                    inner.state = InterruptState::NeedAck;
                 }
             }
             None => {
                 self.base.signal_set(Signal::INTERRUPT_SIGNAL);
-                inner.state = InterruptState::TRIGGERED;
+                inner.state = InterruptState::Triggered;
             }
         }
     }
@@ -283,16 +288,16 @@ impl Interrupt {
 
 #[derive(PartialEq, Debug)]
 enum InterruptState {
-    WAITING = 0,
-    DESTORY = 1,
-    TRIGGERED = 2,
-    NEEDACK = 3,
-    IDLE = 4,
+    Waiting = 0,
+    Destroy = 1,
+    Triggered = 2,
+    NeedAck = 3,
+    Idle = 4,
 }
 
 impl Default for InterruptState {
     fn default() -> Self {
-        InterruptState::IDLE
+        InterruptState::Idle
     }
 }
 

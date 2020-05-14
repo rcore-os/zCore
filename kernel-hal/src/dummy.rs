@@ -1,7 +1,6 @@
 use super::*;
 use crate::vdso::VdsoConstants;
 use alloc::boxed::Box;
-use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::future::Future;
 use core::ops::FnOnce;
@@ -269,7 +268,7 @@ pub fn irq_handle(_irq: u8) {
 /// Add an interrupt handle to an irq
 #[linkage = "weak"]
 #[export_name = "hal_irq_add_handle"]
-pub fn irq_add_handle(_irq: u8, _handle: Arc<dyn Fn() + Send + Sync>) -> bool {
+pub fn irq_add_handle(_irq: u8, _handle: Box<dyn Fn() + Send + Sync>) -> bool {
     unimplemented!()
 }
 

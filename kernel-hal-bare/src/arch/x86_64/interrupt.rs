@@ -1,21 +1,21 @@
 #![allow(dead_code)]
 #![allow(non_upper_case_globals)]
 
-use alloc::sync::Arc;
+use alloc::boxed::Box;
 use alloc::vec::Vec;
 use spin::Mutex;
 use trapframe::TrapFrame;
 
-pub type InterruptHandle = Arc<dyn Fn() + Send + Sync>;
+pub type InterruptHandle = Box<dyn Fn() + Send + Sync>;
 lazy_static! {
     static ref IRQ_TABLE: Mutex<Vec<Option<InterruptHandle>>> = Default::default();
 }
 
 pub fn init() {
     init_irq_table();
-    irq_add_handle(Timer, Arc::new(timer));
-    irq_add_handle(COM1, Arc::new(com1));
-    irq_add_handle(Keyboard, Arc::new(keyboard));
+    irq_add_handle(Timer, Box::new(timer));
+    irq_add_handle(COM1, Box::new(com1));
+    irq_add_handle(Keyboard, Box::new(keyboard));
     super::irq_enable(Keyboard);
     super::irq_enable(COM1);
 }

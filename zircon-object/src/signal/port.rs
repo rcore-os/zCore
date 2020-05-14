@@ -1,8 +1,7 @@
 pub use self::port_packet::*;
 use super::*;
 use crate::object::*;
-use alloc::collections::btree_map::BTreeMap;
-use alloc::collections::vec_deque::VecDeque;
+use alloc::collections::{BTreeSet, VecDeque};
 use alloc::sync::Arc;
 use bitflags::bitflags;
 use spin::Mutex;
@@ -30,12 +29,12 @@ impl_kobject!(Port);
 struct PortInner {
     queue: VecDeque<PortPacket>,
     interrupt_queue: VecDeque<PortInterruptPacket>,
-    interrupt_grave: BTreeMap<u64, bool>,
+    interrupt_grave: BTreeSet<u64>,
     interrupt_pid: u64,
 }
 
 #[derive(Default, Debug)]
-pub struct PortInterruptPacket {
+struct PortInterruptPacket {
     timestamp: i64,
     key: u64,
     pid: u64,
@@ -70,8 +69,8 @@ impl Port {
         self.base.signal_set(Signal::READABLE);
     }
 
-    // Push an `InterruptPacket` into the port.
-    pub fn push_interrupt(&self, timestamp: i64, key: u64) -> u64 {
+    /// Push an `InterruptPacket` into the port.
+    pub(crate) fn push_interrupt(&self, timestamp: i64, key: u64) -> u64 {
         let mut inner = self.inner.lock();
         inner.interrupt_pid += 1;
         let pid = inner.interrupt_pid;
@@ -80,24 +79,17 @@ impl Port {
             key,
             pid,
         });
-        inner.interrupt_grave.insert(pid, true);
+        inner.interrupt_grave.insert(pid);
         drop(inner);
         self.base.signal_set(Signal::READABLE);
         pid
     }
 
-    // Remove an `InterruptPacket` from the port.
-    // Return whether the packet is in the port
-    pub fn remove_interrupt(&self, pid: u64) -> bool {
+    /// Remove an `InterruptPacket` from the port.
+    /// Return whether the packet is in the port
+    pub(crate) fn remove_interrupt(&self, pid: u64) -> bool {
         let mut inner = self.inner.lock();
-        match inner.interrupt_grave.get(&pid) {
-            Some(in_queue) => {
-                let in_queue = *in_queue;
-                inner.interrupt_grave.insert(pid, false);
-                in_queue
-            }
-            None => false,
-        }
+        inner.interrupt_grave.remove(&pid)
     }
 
     /// Asynchronous wait until at least one packet is available, then take out all packets.
@@ -108,10 +100,8 @@ impl Port {
             let mut inner = self.inner.lock();
             if self.can_bind_to_interrupt() {
                 while let Some(packet) = inner.interrupt_queue.pop_front() {
-                    let in_queue = inner.interrupt_grave.remove(&packet.pid).unwrap();
-                    if inner.queue.is_empty()
-                        && (inner.interrupt_queue.is_empty() || !self.can_bind_to_interrupt())
-                    {
+                    let in_queue = inner.interrupt_grave.remove(&packet.pid);
+                    if inner.queue.is_empty() && inner.interrupt_queue.is_empty() {
                         self.base.signal_clear(Signal::READABLE);
                     }
                     if !in_queue {
