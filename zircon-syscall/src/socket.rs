@@ -1,4 +1,4 @@
-use {super::*, zircon_object::ipc::*};
+use {super::*, bitflags::bitflags, zircon_object::ipc::*};
 
 impl Syscall<'_> {
     pub fn sys_socket_create(
@@ -30,18 +30,16 @@ impl Syscall<'_> {
         mut actual_size: UserOutPtr<usize>,
     ) -> ZxResult {
         info!(
-            "socket.write: socket={:#x?} options={:#x?} buffer={:#x?} size={:#x?}",
+            "socket.write: socket={:#x?}, options={:#x?}, buffer={:#x?}, size={:#x?}",
             socket, options, buffer, size,
         );
         if options != 0 {
             unimplemented!();
         }
-        let socket = self
-            .thread
-            .proc()
-            .get_object_with_rights::<Socket>(socket, Rights::WRITE)?;
+        let proc = self.thread.proc();
+        let socket = proc.get_object_with_rights::<Socket>(socket, Rights::WRITE)?;
         let buffer = buffer.read_array(size)?;
-        let size = socket.write(buffer)?;
+        let size = socket.write(&buffer)?;
         actual_size.write_if_not_null(size)?;
         Ok(())
     }
@@ -54,30 +52,43 @@ impl Syscall<'_> {
         size: usize,
         mut actual_size: UserOutPtr<usize>,
     ) -> ZxResult {
+        let options = SocketOptions::from_bits_truncate(options);
         info!(
-            "socket.read: socket={:#x?} options={:#x?} buffer={:#x?} size={:#x?}",
+            "socket.read: socket={:#x?}, options={:#x?}, buffer={:#x?}, size={:#x?}",
             socket, options, buffer, size,
         );
-        let socket = self
-            .thread
-            .proc()
-            .get_object_with_rights::<Socket>(socket, Rights::READ)?;
-        let result = socket.read(size, SocketOptions::from_bits_truncate(options))?;
+        let proc = self.thread.proc();
+        let socket = proc.get_object_with_rights::<Socket>(socket, Rights::READ)?;
+        let peek = options.contains(SocketOptions::PEEK);
+        let result = socket.read(size, peek)?;
         actual_size.write_if_not_null(result.len())?;
         buffer.write_array(&result)?;
         Ok(())
     }
 
     pub fn sys_socket_shutdown(&self, socket: HandleValue, options: u32) -> ZxResult {
+        let options = SocketOptions::from_bits_truncate(options);
         info!(
-            "socket.shutdown: socket={:#x?} options={:#x?}",
+            "socket.shutdown: socket={:#x?}, options={:#x?}",
             socket, options
         );
-        let socket = self
-            .thread
-            .proc()
-            .get_object_with_rights::<Socket>(socket, Rights::WRITE)?;
-        socket.shutdown(SocketOptions::from_bits_truncate(options))?;
+        let proc = self.thread.proc();
+        let socket = proc.get_object_with_rights::<Socket>(socket, Rights::WRITE)?;
+        let read = options.contains(SocketOptions::SHUTDOWN_READ);
+        let write = options.contains(SocketOptions::SHUTDOWN_WRITE);
+        socket.shutdown(read, write)?;
         Ok(())
+    }
+}
+
+bitflags! {
+    #[derive(Default)]
+    struct SocketOptions: u32 {
+        #[allow(clippy::identity_op)]
+        const SHUTDOWN_WRITE = 1 << 0;
+        const SHUTDOWN_READ = 1 << 1;
+        #[allow(clippy::identity_op)]
+        const DATAGRAM = 1 << 0;
+        const PEEK = 1 << 3;
     }
 }
