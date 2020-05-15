@@ -1,9 +1,11 @@
 use {
     super::super::*,
+    acpi::{parse_rsdp, Acpi, AcpiHandler, PhysicalMapping},
     alloc::{collections::VecDeque, vec::Vec},
     apic::{IoApic, LocalApic, XApic},
     core::convert::TryFrom,
     core::fmt::{Arguments, Write},
+    core::ptr::NonNull,
     core::time::Duration,
     rcore_console::{Console, ConsoleOnGraphic, DrawTarget, Pixel, Rgb888, Size},
     spin::Mutex,
@@ -306,6 +308,25 @@ pub fn irq_disable(irq: u8) {
     ioapic.disable(irq);
 }
 
+#[export_name = "hal_irq_configure"]
+pub fn irq_configure(paddr: usize, irq: u8, dest: u8, level_trig: bool, active_high: bool) {
+    let mut ioapic = unsafe { IoApic::new(phys_to_virt(paddr)) };
+    ioapic.config(
+        irq,
+        dest,
+        level_trig,
+        active_high,
+        false, /* physical */
+        true,  /* mask */
+    );
+}
+
+#[export_name = "hal_ioapic_maxinstr"]
+pub fn ioapic_maxinstr(paddr: usize) -> u8 {
+    let mut ioapic = unsafe { IoApic::new(phys_to_virt(paddr)) };
+    ioapic.maxintr()
+}
+
 const LAPIC_ADDR: usize = 0xfee0_0000;
 const IOAPIC_ADDR: usize = 0xfec0_0000;
 
@@ -368,6 +389,72 @@ static mut CONFIG: Config = Config {
 
 static mut TSC_FREQUENCY: u16 = 2600;
 
+/// Build ACPI Table
+struct AcpiHelper {}
+impl AcpiHandler for AcpiHelper {
+    unsafe fn map_physical_region<T>(
+        &mut self,
+        physical_address: usize,
+        size: usize,
+    ) -> PhysicalMapping<T> {
+        #[allow(non_snake_case)]
+        let OFFSET = 0;
+        let page_start = physical_address / PAGE_SIZE;
+        let page_end = (physical_address + size + PAGE_SIZE - 1) / PAGE_SIZE;
+        /*
+        let mut page_table = PageTableImpl::current();
+        for i in page_start..page_end {
+            let virt_addr = phys_to_virt(i * PAGE_SIZE + OFFSET);
+            page_table
+                .map(
+                    x86_64::VirtAddr::new(virt_addr as u64),
+                    x86_64::PhysAddr::new((i * PAGE_SIZE) as u64),
+                    MMUFlags::READ | MMUFlags::WRITE,
+                )
+                .unwrap();
+        }*/
+        PhysicalMapping::<T> {
+            physical_start: physical_address,
+            virtual_start: NonNull::new_unchecked(phys_to_virt(physical_address + OFFSET) as *mut T),
+            mapped_length: size,
+            region_length: PAGE_SIZE * (page_end - page_start),
+        }
+    }
+    fn unmap_physical_region<T>(&mut self, _region: PhysicalMapping<T>) {
+        /*
+        #[allow(non_snake_case)]
+        let OFFSET = 0;
+        let page_start = region.physical_start / PAGE_SIZE;
+        let page_end = page_start + region.region_length / PAGE_SIZE;
+        let mut page_table = PageTableImpl::current();
+        for i in page_start..page_end {
+            let virt_addr = phys_to_virt(i * PAGE_SIZE + OFFSET);
+            page_table
+                .unmap(x86_64::VirtAddr::new(virt_addr as u64))
+                .expect("AcpiHandle Unmap failure");
+        }
+        */
+    }
+}
+
+#[export_name = "hal_acpi_table"]
+pub fn get_acpi_table() -> Option<Acpi> {
+    #[cfg(target_arch = "x86_64")]
+    {
+        let mut handler = AcpiHelper {};
+        match unsafe { parse_rsdp(&mut handler, pc_firmware_tables().0 as usize) } {
+            Ok(table) => Some(table),
+            Err(info) => {
+                warn!("get_acpi_table error: {:#x?}", info);
+                None
+            }
+        }
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    None
+}
+
+/// IO Port in/out instruction
 #[export_name = "hal_outpd"]
 pub fn outpd(port: u16, value: u32) {
     unsafe {

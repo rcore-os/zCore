@@ -1,5 +1,6 @@
 use super::*;
 use crate::vdso::VdsoConstants;
+use acpi::Acpi;
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::future::Future;
@@ -311,6 +312,26 @@ pub fn fetch_fault_vaddr() -> VirtAddr {
 #[linkage = "weak"]
 #[export_name = "hal_pc_firmware_tables"]
 pub fn pc_firmware_tables() -> (u64, u64) {
+    unimplemented!()
+}
+
+/// Get ACPI Table
+#[linkage = "weak"]
+#[export_name = "hal_acpi_table"]
+pub fn get_acpi_table() -> Option<Acpi> {
+    unimplemented!()
+}
+
+/// Get IO APIC maxinstr
+#[linkage = "weak"]
+#[export_name = "hal_ioapic_maxinstr"]
+pub fn ioapic_maxinstr(_paddr: usize) -> u8 {
+    unimplemented!()
+}
+
+#[linkage = "weak"]
+#[export_name = "hal_irq_configure"]
+pub fn irq_configure(_paddr: usize, _irq: u8, _dest: u8, _level_trig: bool, _active_high: bool) {
     unimplemented!()
 }
 

@@ -42,6 +42,7 @@ pub mod defs {
 mod context;
 mod dummy;
 mod future;
+pub mod pci;
 pub mod user;
 pub mod vdso;
 
