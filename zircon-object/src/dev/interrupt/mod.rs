@@ -57,15 +57,13 @@ impl Interrupt {
     }
 
     /// Create a new physical interrupt.
-    pub fn new_physical(mut vector: usize, options: InterruptOptions) -> ZxResult<Arc<Self>> {
+    pub fn new_physical(vector: usize, options: InterruptOptions) -> ZxResult<Arc<Self>> {
         let mode = options.to_mode();
         if mode != InterruptOptions::MODE_DEFAULT && mode != InterruptOptions::MODE_EDGE_HIGH {
             unimplemented!();
         }
-        // I don't know the real mapping, +16 only to avoid conflict
         if options.contains(InterruptOptions::REMAP_IRQ) {
-            vector += 16;
-            // vector = EventInterrupt::remap(vector);
+            warn!("Skip Interrupt.Remap");
         }
         let interrupt = Arc::new(Interrupt {
             base: KObjectBase::new(),

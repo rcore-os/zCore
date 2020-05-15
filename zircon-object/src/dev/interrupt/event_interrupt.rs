@@ -22,11 +22,17 @@ impl EventInterrupt {
 
 impl InterruptTrait for EventInterrupt {
     fn mask(&self) {
-        kernel_hal::irq_disable(self.vector as u8);
+        let inner = self.inner.lock();
+        if inner.register {
+            kernel_hal::irq_disable(self.vector as u8);
+        }
     }
 
     fn unmask(&self) {
-        kernel_hal::irq_enable(self.vector as u8);
+        let inner = self.inner.lock();
+        if inner.register {
+            kernel_hal::irq_enable(self.vector as u8);
+        }
     }
 
     fn register_handler(&self, handle: Box<dyn Fn() + Send + Sync>) -> ZxResult {
