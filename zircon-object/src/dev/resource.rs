@@ -105,7 +105,7 @@ impl Resource {
 pub struct ResourceInfo {
     kind: u32,
     flags: u32,
-    base: u32,
+    base: u64,
     size: u64,
     name: [u8; 32], // should be [char; 32], but I cannot compile it
 }
