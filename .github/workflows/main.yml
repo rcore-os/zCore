@@ -63,8 +63,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v2
-      with:
-        lfs: true
+    - name: Pull prebuilt images
+      run: git lfs pull -X prebuilt/zircon/bringup.zbi
     - name: Prepare rootfs
       run: make rootfs
     - name: Test
@@ -88,7 +88,12 @@ jobs:
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
         path-to-lcov: ${{ steps.coverage.outputs.report }}
-    - name: Run benchmarks
-      uses: actions-rs/cargo@v1
-      with:
-        command: bench
+
+  bench:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Run benchmarks
+        uses: actions-rs/cargo@v1
+        with:
+          command: bench
