@@ -144,6 +144,14 @@
 <span id="144">144</span>
 <span id="145">145</span>
 <span id="146">146</span>
+<span id="147">147</span>
+<span id="148">148</span>
+<span id="149">149</span>
+<span id="150">150</span>
+<span id="151">151</span>
+<span id="152">152</span>
+<span id="153">153</span>
+<span id="154">154</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> {
     <span class="kw">super</span>::<span class="kw-2">*</span>,
@@ -176,12 +184,8 @@
 
 <span class="kw">impl</span> <span class="ident">VMObjectPhysical</span> {
     <span class="doccomment">/// Create a new VMO representing a piece of contiguous physical memory.</span>
-    <span class="doccomment">///</span>
-    <span class="doccomment">/// # Safety</span>
-    <span class="doccomment">///</span>
     <span class="doccomment">/// You must ensure nobody has the ownership of this piece of memory yet.</span>
-    <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">unsafe_code</span>)]</span>
-    <span class="kw">pub</span> <span class="kw">unsafe</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">paddr</span>: <span class="ident">PhysAddr</span>, <span class="ident">pages</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">paddr</span>: <span class="ident">PhysAddr</span>, <span class="ident">pages</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
         <span class="macro">assert</span><span class="macro">!</span>(<span class="ident">page_aligned</span>(<span class="ident">paddr</span>));
         <span class="ident">Arc</span>::<span class="ident">new</span>(<span class="ident">VMObjectPhysical</span> {
             <span class="ident">paddr</span>,
@@ -211,7 +215,7 @@
         <span class="self">self</span>.<span class="ident">pages</span> <span class="op">*</span> <span class="ident">PAGE_SIZE</span>
     }
 
-    <span class="kw">fn</span> <span class="ident">set_len</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">_len</span>: <span class="ident">usize</span>) {
+    <span class="kw">fn</span> <span class="ident">set_len</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">_len</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
         <span class="macro">unimplemented</span><span class="macro">!</span>()
     }
 
@@ -229,12 +233,16 @@
         <span class="prelude-val">Ok</span>(())
     }
 
-    <span class="kw">fn</span> <span class="ident">create_child</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">_offset</span>: <span class="ident">usize</span>, <span class="ident">_len</span>: <span class="ident">usize</span>, <span class="ident">_user_id</span>: <span class="ident">KoID</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">VMObjectTrait</span><span class="op">&gt;</span> {
-        <span class="macro">unimplemented</span><span class="macro">!</span>()
+    <span class="kw">fn</span> <span class="ident">create_child</span>(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        <span class="ident">_offset</span>: <span class="ident">usize</span>,
+        <span class="ident">_len</span>: <span class="ident">usize</span>,
+        <span class="ident">_user_id</span>: <span class="ident">KoID</span>,
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">VMObjectTrait</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+        <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">NOT_SUPPORTED</span>)
     }
 
     <span class="kw">fn</span> <span class="ident">append_mapping</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">_mapping</span>: <span class="ident">Weak</span><span class="op">&lt;</span><span class="ident">VmMapping</span><span class="op">&gt;</span>) {
-        <span class="comment">//        unimplemented!()</span>
         <span class="comment">// TODO this function is only used when physical-vmo supports create_child</span>
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="ident">inner</span>.<span class="ident">mapping_count</span> <span class="op">+</span><span class="op">=</span> <span class="number">1</span>;
@@ -245,11 +253,11 @@
         <span class="ident">inner</span>.<span class="ident">mapping_count</span> <span class="op">-</span><span class="op">=</span> <span class="number">1</span>;
     }
 
-    <span class="kw">fn</span> <span class="ident">complete_info</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">_info</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">ZxInfoVmo</span>) {
-        <span class="macro">unimplemented</span><span class="macro">!</span>()
+    <span class="kw">fn</span> <span class="ident">complete_info</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">_info</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">VmoInfo</span>) {
+        <span class="macro">warn</span><span class="macro">!</span>(<span class="string">&quot;VmoInfo for physical is unimplemented&quot;</span>);
     }
 
-    <span class="kw">fn</span> <span class="ident">get_cache_policy</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">CachePolicy</span> {
+    <span class="kw">fn</span> <span class="ident">cache_policy</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">CachePolicy</span> {
         <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="ident">inner</span>.<span class="ident">cache_policy</span>
     }
@@ -269,11 +277,19 @@
     }
 
     <span class="kw">fn</span> <span class="ident">share_count</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
-        <span class="macro">unimplemented</span><span class="macro">!</span>()
+        <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">mapping_count</span> <span class="kw">as</span> <span class="ident">usize</span>
     }
 
     <span class="kw">fn</span> <span class="ident">committed_pages_in_range</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">_start_idx</span>: <span class="ident">usize</span>, <span class="ident">_end_idx</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
+        <span class="number">0</span>
+    }
+
+    <span class="kw">fn</span> <span class="ident">zero</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">_offset</span>: <span class="ident">usize</span>, <span class="ident">_len</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
         <span class="macro">unimplemented</span><span class="macro">!</span>()
+    }
+
+    <span class="kw">fn</span> <span class="ident">is_contiguous</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+        <span class="bool-val">true</span>
     }
 }
 
@@ -285,9 +301,9 @@
 
     <span class="attribute">#[<span class="ident">test</span>]</span>
     <span class="kw">fn</span> <span class="ident">read_write</span>() {
-        <span class="kw">let</span> <span class="ident">vmo</span> <span class="op">=</span> <span class="kw">unsafe</span> { <span class="ident">VmObject</span>::<span class="ident">new_physical</span>(<span class="number">0x1000</span>, <span class="number">2</span>) };
+        <span class="kw">let</span> <span class="ident">vmo</span> <span class="op">=</span> <span class="ident">VmObject</span>::<span class="ident">new_physical</span>(<span class="number">0x1000</span>, <span class="number">2</span>);
         <span class="kw">let</span> <span class="ident">vmphy</span> <span class="op">=</span> <span class="ident">vmo</span>.<span class="ident">inner</span>.<span class="ident">clone</span>();
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">vmphy</span>.<span class="ident">get_cache_policy</span>(), <span class="ident">CachePolicy</span>::<span class="ident">Uncached</span>);
+        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">vmphy</span>.<span class="ident">cache_policy</span>(), <span class="ident">CachePolicy</span>::<span class="ident">Uncached</span>);
         <span class="kw">super</span>::<span class="kw">super</span>::<span class="ident">tests</span>::<span class="ident">read_write</span>(<span class="kw-2">&amp;</span><span class="ident">vmo</span>);
     }
 }

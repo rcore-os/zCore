@@ -58,6 +58,9 @@
 <span id="58">58</span>
 <span id="59">59</span>
 <span id="60">60</span>
+<span id="61">61</span>
+<span id="62">62</span>
+<span id="63">63</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> {<span class="kw">super</span>::<span class="kw-2">*</span>, <span class="ident">bitflags</span>::<span class="ident">bitflags</span>};
 
@@ -72,6 +75,7 @@
         <span class="kw">const</span> <span class="ident">SIGNALED</span>                      <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">3</span>;
         <span class="kw">const</span> <span class="ident">HANDLE_CLOSED</span>                 <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">23</span>;
 
+        <span class="kw">const</span> <span class="ident">KERNEL_ALL</span>                    <span class="op">=</span> <span class="number">0xff_ffff</span>;
         <span class="kw">const</span> <span class="ident">USER_ALL</span>                      <span class="op">=</span> <span class="number">0xff</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">24</span>;
 
         <span class="kw">const</span> <span class="ident">CLOCK_STARTED</span>                 <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">4</span>;
@@ -94,6 +98,8 @@
         <span class="kw">const</span> <span class="ident">THREAD_SUSPENDED</span>              <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">5</span>;
 
         <span class="kw">const</span> <span class="ident">VMO_ZERO_CHILDREN</span>             <span class="op">=</span> <span class="self">Self</span>::<span class="ident">SIGNALED</span>.<span class="ident">bits</span>;
+
+        <span class="kw">const</span> <span class="ident">INTERRUPT_SIGNAL</span>              <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">4</span>;
 
         <span class="comment">// for Linux</span>
         <span class="kw">const</span> <span class="ident">SIGCHLD</span>                       <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">6</span>;

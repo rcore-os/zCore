@@ -142,7 +142,7 @@
             <span class="ident">kcounters_arena_end</span> <span class="kw">as</span> <span class="ident">usize</span> <span class="op">/</span> <span class="ident">PAGE_SIZE</span>,
             <span class="string">&quot;all kcounters must in the same page&quot;</span>
         );
-        <span class="kw">unsafe</span> { <span class="ident">VmObject</span>::<span class="ident">new_physical</span>(<span class="ident">paddr</span>, <span class="number">1</span>) }
+        <span class="ident">VmObject</span>::<span class="ident">new_physical</span>(<span class="ident">paddr</span>, <span class="number">1</span>)
     };
     <span class="ident">kcounters_vmo</span>.<span class="ident">set_name</span>(<span class="string">&quot;counters/arena&quot;</span>);
     (<span class="ident">counter_name_vmo</span>, <span class="ident">kcounters_vmo</span>)

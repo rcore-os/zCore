@@ -319,12 +319,6 @@
 <span id="319">319</span>
 <span id="320">320</span>
 <span id="321">321</span>
-<span id="322">322</span>
-<span id="323">323</span>
-<span id="324">324</span>
-<span id="325">325</span>
-<span id="326">326</span>
-<span id="327">327</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> {
     <span class="kw">super</span>::<span class="ident">exception</span>::<span class="kw-2">*</span>, <span class="kw">super</span>::<span class="ident">job_policy</span>::<span class="kw-2">*</span>, <span class="kw">super</span>::<span class="ident">process</span>::<span class="ident">Process</span>, <span class="kw">crate</span>::<span class="ident">object</span>::<span class="kw-2">*</span>,
@@ -513,20 +507,14 @@
         <span class="self">self</span>.<span class="ident">exceptionate</span>.<span class="ident">clone</span>()
     }
 
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">enumerate_process</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="kw-2">mut</span> <span class="ident">f</span>: <span class="kw">impl</span> <span class="ident">FnMut</span>(<span class="ident">KoID</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span>) {
-        <span class="self">self</span>.<span class="ident">inner</span>
-            .<span class="ident">lock</span>()
-            .<span class="ident">processes</span>
-            .<span class="ident">iter</span>()
-            .<span class="ident">find</span>(<span class="op">|</span><span class="ident">child</span><span class="op">|</span> <span class="op">!</span><span class="ident">f</span>(<span class="ident">child</span>.<span class="ident">id</span>()));
+    <span class="doccomment">/// Get KoIDs of Processes.</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">process_ids</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">KoID</span><span class="op">&gt;</span> {
+        <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">processes</span>.<span class="ident">iter</span>().<span class="ident">map</span>(<span class="op">|</span><span class="ident">p</span><span class="op">|</span> <span class="ident">p</span>.<span class="ident">id</span>()).<span class="ident">collect</span>()
     }
 
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">enumerate_children</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="kw-2">mut</span> <span class="ident">f</span>: <span class="kw">impl</span> <span class="ident">FnMut</span>(<span class="ident">KoID</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span>) {
-        <span class="self">self</span>.<span class="ident">inner</span>
-            .<span class="ident">lock</span>()
-            .<span class="ident">children</span>
-            .<span class="ident">iter</span>()
-            .<span class="ident">find</span>(<span class="op">|</span><span class="ident">child</span><span class="op">|</span> <span class="op">!</span><span class="ident">f</span>(<span class="ident">child</span>.<span class="ident">id</span>()));
+    <span class="doccomment">/// Get KoIDs of children Jobs.</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">children_ids</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">KoID</span><span class="op">&gt;</span> {
+        <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">children</span>.<span class="ident">iter</span>().<span class="ident">map</span>(<span class="op">|</span><span class="ident">j</span><span class="op">|</span> <span class="ident">j</span>.<span class="ident">id</span>()).<span class="ident">collect</span>()
     }
 }
 

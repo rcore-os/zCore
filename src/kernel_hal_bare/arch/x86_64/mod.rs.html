@@ -354,6 +354,11 @@
 <span id="354">354</span>
 <span id="355">355</span>
 <span id="356">356</span>
+<span id="357">357</span>
+<span id="358">358</span>
+<span id="359">359</span>
+<span id="360">360</span>
+<span id="361">361</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> {
     <span class="kw">super</span>::<span class="kw">super</span>::<span class="kw-2">*</span>,
@@ -412,16 +417,17 @@
         <span class="ident">flags</span>: <span class="ident">MMUFlags</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), ()<span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">pt</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">get</span>();
-        <span class="kw">let</span> <span class="ident">page</span> <span class="op">=</span> <span class="ident">Page</span>::<span class="op">&lt;</span><span class="ident">Size4KiB</span><span class="op">&gt;</span>::<span class="ident">from_start_address</span>(<span class="ident">vaddr</span>).<span class="ident">unwrap</span>();
-        <span class="kw">let</span> <span class="ident">frame</span> <span class="op">=</span> <span class="ident">PhysFrame</span>::<span class="ident">from_start_address</span>(<span class="ident">paddr</span>).<span class="ident">unwrap</span>();
-        <span class="kw">let</span> <span class="ident">flush</span> <span class="op">=</span> <span class="kw">unsafe</span> {
-            <span class="ident">pt</span>.<span class="ident">map_to</span>(<span class="ident">page</span>, <span class="ident">frame</span>, <span class="ident">flags</span>.<span class="ident">to_ptf</span>(), <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">FrameAllocatorImpl</span>)
-                .<span class="ident">unwrap</span>()
+        <span class="kw">unsafe</span> {
+            <span class="ident">pt</span>.<span class="ident">map_to_with_table_flags</span>(
+                <span class="ident">Page</span>::<span class="op">&lt;</span><span class="ident">Size4KiB</span><span class="op">&gt;</span>::<span class="ident">from_start_address</span>(<span class="ident">vaddr</span>).<span class="ident">unwrap</span>(),
+                <span class="ident">PhysFrame</span>::<span class="ident">from_start_address</span>(<span class="ident">paddr</span>).<span class="ident">unwrap</span>(),
+                <span class="ident">flags</span>.<span class="ident">to_ptf</span>(),
+                <span class="ident">PTF</span>::<span class="ident">PRESENT</span> <span class="op">|</span> <span class="ident">PTF</span>::<span class="ident">WRITABLE</span> <span class="op">|</span> <span class="ident">PTF</span>::<span class="ident">USER_ACCESSIBLE</span>,
+                <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">FrameAllocatorImpl</span>,
+            )
+            .<span class="ident">unwrap</span>()
+            .<span class="ident">flush</span>();
         };
-        <span class="kw">if</span> <span class="ident">flags</span>.<span class="ident">contains</span>(<span class="ident">MMUFlags</span>::<span class="ident">USER</span>) {
-            <span class="self">self</span>.<span class="ident">allow_user_access</span>(<span class="ident">vaddr</span>);
-        }
-        <span class="ident">flush</span>.<span class="ident">flush</span>();
         <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;map: {:x?} -&gt; {:x?}, flags={:?}&quot;</span>, <span class="ident">vaddr</span>, <span class="ident">paddr</span>, <span class="ident">flags</span>);
         <span class="prelude-val">Ok</span>(())
     }
@@ -431,10 +437,9 @@
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">unmap</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">vaddr</span>: <span class="ident">x86_64</span>::<span class="ident">VirtAddr</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), ()<span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">pt</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">get</span>();
         <span class="kw">let</span> <span class="ident">page</span> <span class="op">=</span> <span class="ident">Page</span>::<span class="op">&lt;</span><span class="ident">Size4KiB</span><span class="op">&gt;</span>::<span class="ident">from_start_address</span>(<span class="ident">vaddr</span>).<span class="ident">unwrap</span>();
-        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Ok</span>(<span class="ident">pte</span>) <span class="op">=</span> <span class="ident">pt</span>.<span class="ident">unmap</span>(<span class="ident">page</span>) {
-            <span class="ident">pte</span>.<span class="number">1</span>.<span class="ident">flush</span>();
+        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Ok</span>((<span class="kw">_</span>, <span class="ident">flush</span>)) <span class="op">=</span> <span class="ident">pt</span>.<span class="ident">unmap</span>(<span class="ident">page</span>) {
+            <span class="ident">flush</span>.<span class="ident">flush</span>();
         }
-        <span class="comment">//pt.unmap(page).unwrap().1.flush();</span>
         <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;unmap: {:x?}&quot;</span>, <span class="ident">vaddr</span>);
         <span class="prelude-val">Ok</span>(())
     }
@@ -445,9 +450,6 @@
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">pt</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">get</span>();
         <span class="kw">let</span> <span class="ident">page</span> <span class="op">=</span> <span class="ident">Page</span>::<span class="op">&lt;</span><span class="ident">Size4KiB</span><span class="op">&gt;</span>::<span class="ident">from_start_address</span>(<span class="ident">vaddr</span>).<span class="ident">unwrap</span>();
         <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Ok</span>(<span class="ident">flush</span>) <span class="op">=</span> <span class="kw">unsafe</span> { <span class="ident">pt</span>.<span class="ident">update_flags</span>(<span class="ident">page</span>, <span class="ident">flags</span>.<span class="ident">to_ptf</span>()) } {
-            <span class="kw">if</span> <span class="ident">flags</span>.<span class="ident">contains</span>(<span class="ident">MMUFlags</span>::<span class="ident">USER</span>) {
-                <span class="self">self</span>.<span class="ident">allow_user_access</span>(<span class="ident">vaddr</span>);
-            }
             <span class="ident">flush</span>.<span class="ident">flush</span>();
         }
         <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;protect: {:x?}, flags={:?}&quot;</span>, <span class="ident">vaddr</span>, <span class="ident">flags</span>);
@@ -468,23 +470,6 @@
         <span class="kw">let</span> <span class="ident">root</span> <span class="op">=</span> <span class="kw">unsafe</span> { <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="kw-2">*</span>(<span class="ident">root_vaddr</span> <span class="kw">as</span> <span class="kw-2">*</span><span class="kw-2">mut</span> <span class="ident">PageTable</span>) };
         <span class="kw">let</span> <span class="ident">offset</span> <span class="op">=</span> <span class="ident">x86_64</span>::<span class="ident">VirtAddr</span>::<span class="ident">new</span>(<span class="ident">phys_to_virt</span>(<span class="number">0</span>) <span class="kw">as</span> <span class="ident">u64</span>);
         <span class="kw">unsafe</span> { <span class="ident">OffsetPageTable</span>::<span class="ident">new</span>(<span class="ident">root</span>, <span class="ident">offset</span>) }
-    }
-
-    <span class="doccomment">/// Set user bit for 4-level PDEs of the page of `vaddr`.</span>
-    <span class="doccomment">///</span>
-    <span class="doccomment">/// This is a workaround since `x86_64` crate does not set user bit for PDEs.</span>
-    <span class="kw">fn</span> <span class="ident">allow_user_access</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">vaddr</span>: <span class="ident">x86_64</span>::<span class="ident">VirtAddr</span>) {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">page_table</span> <span class="op">=</span> <span class="ident">phys_to_virt</span>(<span class="self">self</span>.<span class="ident">root_paddr</span>) <span class="kw">as</span> <span class="kw-2">*</span><span class="kw-2">mut</span> <span class="ident">PageTable</span>;
-        <span class="kw">for</span> <span class="ident">level</span> <span class="kw">in</span> <span class="number">0</span>..<span class="number">4</span> {
-            <span class="kw">let</span> <span class="ident">index</span> <span class="op">=</span> (<span class="ident">vaddr</span>.<span class="ident">as_u64</span>() <span class="kw">as</span> <span class="ident">usize</span> <span class="op">&gt;</span><span class="op">&gt;</span> (<span class="number">12</span> <span class="op">+</span> (<span class="number">3</span> <span class="op">-</span> <span class="ident">level</span>) <span class="op">*</span> <span class="number">9</span>)) <span class="op">&amp;</span> <span class="number">0o777</span>;
-            <span class="kw">let</span> <span class="ident">entry</span> <span class="op">=</span> <span class="kw">unsafe</span> { <span class="kw-2">&amp;</span><span class="kw-2">mut</span> (<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="kw-2">*</span><span class="ident">page_table</span>)[<span class="ident">index</span>] };
-            <span class="kw">let</span> <span class="ident">flags</span> <span class="op">=</span> <span class="ident">entry</span>.<span class="ident">flags</span>();
-            <span class="ident">entry</span>.<span class="ident">set_flags</span>(<span class="ident">flags</span> <span class="op">|</span> <span class="ident">PTF</span>::<span class="ident">USER_ACCESSIBLE</span>);
-            <span class="kw">if</span> <span class="ident">level</span> <span class="op">=</span><span class="op">=</span> <span class="number">3</span> <span class="op">|</span><span class="op">|</span> <span class="ident">flags</span>.<span class="ident">contains</span>(<span class="ident">PTF</span>::<span class="ident">HUGE_PAGE</span>) {
-                <span class="kw">return</span>;
-            }
-            <span class="ident">page_table</span> <span class="op">=</span> <span class="ident">frame_to_page_table</span>(<span class="ident">entry</span>.<span class="ident">frame</span>().<span class="ident">unwrap</span>());
-        }
     }
 }
 
@@ -533,7 +518,7 @@
                 <span class="ident">flags</span> <span class="op">|</span><span class="op">=</span> <span class="ident">PTF</span>::<span class="ident">NO_CACHE</span> <span class="op">|</span> <span class="ident">PTF</span>::<span class="ident">WRITE_THROUGH</span>;
             }
             <span class="prelude-val">Ok</span>(<span class="ident">CachePolicy</span>::<span class="ident">WriteCombining</span>) <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="ident">flags</span> <span class="op">|</span><span class="op">=</span> <span class="ident">PTF</span>::<span class="ident">HUGE_PAGE</span> <span class="op">|</span> <span class="ident">PTF</span>::<span class="ident">NO_CACHE</span> <span class="op">|</span> <span class="ident">PTF</span>::<span class="ident">WRITE_THROUGH</span>;
+                <span class="ident">flags</span> <span class="op">|</span><span class="op">=</span> <span class="ident">PTF</span>::<span class="ident">NO_CACHE</span> <span class="op">|</span> <span class="ident">PTF</span>::<span class="ident">WRITE_THROUGH</span>;
                 <span class="comment">// 当位于level=1时，页面更大，在1&lt;&lt;12位上（0x100）为1</span>
                 <span class="comment">// 但是bitflags里面没有这一位。由页表自行管理标记位去吧</span>
             }
@@ -667,10 +652,16 @@
     <span class="ident">lapic</span>.<span class="ident">cpu_init</span>();
 }
 
-<span class="attribute">#[<span class="ident">inline</span>(<span class="ident">always</span>)]</span>
+<span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_irq_enable&quot;</span>]</span>
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">irq_enable</span>(<span class="ident">irq</span>: <span class="ident">u8</span>) {
     <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">ioapic</span> <span class="op">=</span> <span class="kw">unsafe</span> { <span class="ident">IoApic</span>::<span class="ident">new</span>(<span class="ident">phys_to_virt</span>(<span class="ident">IOAPIC_ADDR</span>)) };
     <span class="ident">ioapic</span>.<span class="ident">enable</span>(<span class="ident">irq</span>, <span class="number">0</span>);
+}
+
+<span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_irq_disable&quot;</span>]</span>
+<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">irq_disable</span>(<span class="ident">irq</span>: <span class="ident">u8</span>) {
+    <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">ioapic</span> <span class="op">=</span> <span class="kw">unsafe</span> { <span class="ident">IoApic</span>::<span class="ident">new</span>(<span class="ident">phys_to_virt</span>(<span class="ident">IOAPIC_ADDR</span>)) };
+    <span class="ident">ioapic</span>.<span class="ident">disable</span>(<span class="ident">irq</span>);
 }
 
 <span class="kw">const</span> <span class="ident">LAPIC_ADDR</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">0xfee0_0000</span>;
@@ -697,19 +688,38 @@
 }
 
 <span class="doccomment">/// Initialize the HAL.</span>
-<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">init</span>() {
+<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">init</span>(<span class="ident">config</span>: <span class="ident">Config</span>) {
     <span class="ident">timer_init</span>();
     <span class="ident">interrupt</span>::<span class="ident">init</span>();
     <span class="ident">COM1</span>.<span class="ident">lock</span>().<span class="ident">init</span>();
     <span class="kw">unsafe</span> {
         <span class="comment">// enable global page</span>
         <span class="ident">Cr4</span>::<span class="ident">update</span>(<span class="op">|</span><span class="ident">f</span><span class="op">|</span> <span class="ident">f</span>.<span class="ident">insert</span>(<span class="ident">Cr4Flags</span>::<span class="ident">PAGE_GLOBAL</span>));
+        <span class="comment">// store config</span>
+        <span class="ident">CONFIG</span> <span class="op">=</span> <span class="ident">config</span>;
     }
+}
+
+<span class="doccomment">/// Configuration of HAL.</span>
+<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Config</span> {
+    <span class="kw">pub</span> <span class="ident">acpi_rsdp</span>: <span class="ident">u64</span>,
+    <span class="kw">pub</span> <span class="ident">smbios</span>: <span class="ident">u64</span>,
 }
 
 <span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;fetch_fault_vaddr&quot;</span>]</span>
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">fetch_fault_vaddr</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="ident">VirtAddr</span> {
     <span class="ident">Cr2</span>::<span class="ident">read</span>().<span class="ident">as_u64</span>() <span class="kw">as</span> <span class="kw">_</span>
 }
+
+<span class="doccomment">/// Get physical address of `acpi_rsdp` and `smbios` on x86_64.</span>
+<span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_pc_firmware_tables&quot;</span>]</span>
+<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">pc_firmware_tables</span>() <span class="op">-</span><span class="op">&gt;</span> (<span class="ident">u64</span>, <span class="ident">u64</span>) {
+    <span class="kw">unsafe</span> { (<span class="ident">CONFIG</span>.<span class="ident">acpi_rsdp</span>, <span class="ident">CONFIG</span>.<span class="ident">smbios</span>) }
+}
+
+<span class="kw">static</span> <span class="kw-2">mut</span> <span class="ident">CONFIG</span>: <span class="ident">Config</span> <span class="op">=</span> <span class="ident">Config</span> {
+    <span class="ident">acpi_rsdp</span>: <span class="number">0</span>,
+    <span class="ident">smbios</span>: <span class="number">0</span>,
+};
 </pre></div>
 </section><section id="search" class="content hidden"></section><section class="footer"></section><script>window.rootPath = "../../../../";window.currentCrate = "kernel_hal_bare";</script><script src="../../../../aliases.js"></script><script src="../../../../main.js"></script><script src="../../../../source-script.js"></script><script src="../../../../source-files.js"></script><script defer src="../../../../search-index.js"></script></body></html>

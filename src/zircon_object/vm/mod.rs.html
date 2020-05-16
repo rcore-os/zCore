@@ -55,6 +55,14 @@
 <span id="55">55</span>
 <span id="56">56</span>
 <span id="57">57</span>
+<span id="58">58</span>
+<span id="59">59</span>
+<span id="60">60</span>
+<span id="61">61</span>
+<span id="62">62</span>
+<span id="63">63</span>
+<span id="64">64</span>
+<span id="65">65</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Objects for Virtual Memory Management.</span>
 
@@ -70,8 +78,12 @@
 <span class="doccomment">/// Virtual Address</span>
 <span class="kw">pub</span> <span class="kw">type</span> <span class="ident">VirtAddr</span> <span class="op">=</span> <span class="ident">usize</span>;
 
+<span class="doccomment">/// Device Address</span>
+<span class="kw">pub</span> <span class="kw">type</span> <span class="ident">DevVAddr</span> <span class="op">=</span> <span class="ident">usize</span>;
+
 <span class="doccomment">/// Size of a page</span>
 <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">PAGE_SIZE</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">0x1000</span>;
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">PAGE_SIZE_LOG2</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">12</span>;
 
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">page_aligned</span>(<span class="ident">x</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
     <span class="ident">x</span> <span class="op">%</span> <span class="ident">PAGE_SIZE</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span>
@@ -85,6 +97,10 @@
 <span class="doccomment">/// To avoid overflow and pass more unit tests, use wrapping add</span>
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">pages</span>(<span class="ident">size</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
     <span class="ident">size</span>.<span class="ident">wrapping_add</span>(<span class="ident">PAGE_SIZE</span> <span class="op">-</span> <span class="number">1</span>) <span class="op">/</span> <span class="ident">PAGE_SIZE</span>
+}
+
+<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">ceil</span>(<span class="ident">x</span>: <span class="ident">usize</span>, <span class="ident">align</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
+    <span class="ident">x</span>.<span class="ident">wrapping_add</span>(<span class="ident">align</span> <span class="op">-</span> <span class="number">1</span>) <span class="op">/</span> <span class="ident">align</span>
 }
 
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">roundup_pages</span>(<span class="ident">size</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {

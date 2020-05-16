@@ -136,6 +136,11 @@
 <span id="136">136</span>
 <span id="137">137</span>
 <span id="138">138</span>
+<span id="139">139</span>
+<span id="140">140</span>
+<span id="141">141</span>
+<span id="142">142</span>
+<span id="143">143</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> {
     <span class="kw">crate</span>::<span class="ident">object</span>::<span class="kw-2">*</span>,
@@ -243,14 +248,19 @@
         <span class="kw">let</span> <span class="ident">count_size</span> <span class="op">=</span> <span class="ident">count</span> <span class="op">*</span> <span class="ident">elem_size</span>;
         <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">data</span>.<span class="ident">len</span>(), <span class="ident">count_size</span>);
 
-        <span class="kw">let</span> <span class="ident">peer</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">peer</span>.<span class="ident">upgrade</span>().<span class="ident">ok_or</span>(<span class="ident">ZxError</span>::<span class="ident">PEER_CLOSED</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">peer</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">peer</span>.<span class="ident">upgrade</span>();
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">recv_queue</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">recv_queue</span>.<span class="ident">lock</span>();
         <span class="kw">if</span> <span class="ident">recv_queue</span>.<span class="ident">is_empty</span>() {
+            <span class="kw">if</span> <span class="ident">peer</span>.<span class="ident">is_none</span>() {
+                <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">PEER_CLOSED</span>);
+            }
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">SHOULD_WAIT</span>);
         }
         <span class="kw">let</span> <span class="ident">read_size</span> <span class="op">=</span> <span class="ident">count_size</span>.<span class="ident">min</span>(<span class="ident">recv_queue</span>.<span class="ident">len</span>());
         <span class="kw">if</span> <span class="ident">recv_queue</span>.<span class="ident">len</span>() <span class="op">=</span><span class="op">=</span> <span class="self">self</span>.<span class="ident">capacity</span>() {
-            <span class="ident">peer</span>.<span class="ident">base</span>.<span class="ident">signal_set</span>(<span class="ident">Signal</span>::<span class="ident">WRITABLE</span>);
+            <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">peer</span>) <span class="op">=</span> <span class="ident">peer</span> {
+                <span class="ident">peer</span>.<span class="ident">base</span>.<span class="ident">signal_set</span>(<span class="ident">Signal</span>::<span class="ident">WRITABLE</span>);
+            }
         }
         <span class="kw">for</span> (<span class="ident">i</span>, <span class="ident">x</span>) <span class="kw">in</span> <span class="ident">recv_queue</span>.<span class="ident">drain</span>(..<span class="ident">read_size</span>).<span class="ident">enumerate</span>() {
             <span class="ident">data</span>[<span class="ident">i</span>] <span class="op">=</span> <span class="ident">x</span>;

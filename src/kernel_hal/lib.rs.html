@@ -47,6 +47,7 @@
 <span id="47">47</span>
 <span id="48">48</span>
 <span id="49">49</span>
+<span id="50">50</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Hardware Abstraction Layer</span>
 
@@ -85,6 +86,7 @@
 
     <span class="kw">pub</span> <span class="kw">type</span> <span class="ident">PhysAddr</span> <span class="op">=</span> <span class="ident">usize</span>;
     <span class="kw">pub</span> <span class="kw">type</span> <span class="ident">VirtAddr</span> <span class="op">=</span> <span class="ident">usize</span>;
+    <span class="kw">pub</span> <span class="kw">type</span> <span class="ident">DevVAddr</span> <span class="op">=</span> <span class="ident">usize</span>;
     <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">PAGE_SIZE</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">0x1000</span>;
 }
 

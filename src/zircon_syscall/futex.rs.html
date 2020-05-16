@@ -84,7 +84,7 @@
 <span id="84">84</span>
 <span id="85">85</span>
 </pre><div class="example-wrap"><pre class="rust ">
-<span class="kw">use</span> {<span class="kw">super</span>::<span class="kw-2">*</span>, <span class="ident">core</span>::<span class="ident">sync</span>::<span class="ident">atomic</span>::<span class="kw-2">*</span>, <span class="ident">zircon_object</span>::<span class="ident">task</span>::<span class="ident">ThreadState</span>};
+<span class="kw">use</span> {<span class="kw">super</span>::<span class="kw-2">*</span>, <span class="ident">zircon_object</span>::<span class="ident">task</span>::<span class="ident">ThreadState</span>};
 
 <span class="kw">impl</span> <span class="ident">Syscall</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span> {
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">sys_futex_wait</span>(

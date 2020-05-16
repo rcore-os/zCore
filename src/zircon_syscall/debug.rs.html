@@ -34,9 +34,10 @@
 <span id="34">34</span>
 <span id="35">35</span>
 <span id="36">36</span>
+<span id="37">37</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
-<span class="kw">use</span> <span class="ident">zircon_object</span>::<span class="ident">resource</span>::<span class="ident">ResourceKind</span>;
+<span class="kw">use</span> <span class="ident">zircon_object</span>::<span class="ident">dev</span>::<span class="kw-2">*</span>;
 
 <span class="kw">impl</span> <span class="ident">Syscall</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span> {
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_debug_write</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">buf</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>, <span class="ident">len</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
@@ -58,7 +59,8 @@
             <span class="ident">handle</span>, <span class="ident">buf</span>, <span class="ident">buf_size</span>
         );
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>();
-        <span class="ident">proc</span>.<span class="ident">validate_resource</span>(<span class="ident">handle</span>, <span class="ident">ResourceKind</span>::<span class="ident">ROOT</span>)<span class="question-mark">?</span>;
+        <span class="ident">proc</span>.<span class="ident">get_object</span>::<span class="op">&lt;</span><span class="ident">Resource</span><span class="op">&gt;</span>(<span class="ident">handle</span>)<span class="question-mark">?</span>
+            .<span class="ident">validate</span>(<span class="ident">ResourceKind</span>::<span class="ident">ROOT</span>)<span class="question-mark">?</span>;
         <span class="comment">// FIXME: To make &#39;console&#39; work, now debug_read is a blocking call.</span>
         <span class="comment">//        But it should be non-blocking.</span>
         <span class="comment">// let mut vec = vec![0u8; buf_size as usize];</span>

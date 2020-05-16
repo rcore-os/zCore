@@ -266,6 +266,63 @@
 <span id="266">266</span>
 <span id="267">267</span>
 <span id="268">268</span>
+<span id="269">269</span>
+<span id="270">270</span>
+<span id="271">271</span>
+<span id="272">272</span>
+<span id="273">273</span>
+<span id="274">274</span>
+<span id="275">275</span>
+<span id="276">276</span>
+<span id="277">277</span>
+<span id="278">278</span>
+<span id="279">279</span>
+<span id="280">280</span>
+<span id="281">281</span>
+<span id="282">282</span>
+<span id="283">283</span>
+<span id="284">284</span>
+<span id="285">285</span>
+<span id="286">286</span>
+<span id="287">287</span>
+<span id="288">288</span>
+<span id="289">289</span>
+<span id="290">290</span>
+<span id="291">291</span>
+<span id="292">292</span>
+<span id="293">293</span>
+<span id="294">294</span>
+<span id="295">295</span>
+<span id="296">296</span>
+<span id="297">297</span>
+<span id="298">298</span>
+<span id="299">299</span>
+<span id="300">300</span>
+<span id="301">301</span>
+<span id="302">302</span>
+<span id="303">303</span>
+<span id="304">304</span>
+<span id="305">305</span>
+<span id="306">306</span>
+<span id="307">307</span>
+<span id="308">308</span>
+<span id="309">309</span>
+<span id="310">310</span>
+<span id="311">311</span>
+<span id="312">312</span>
+<span id="313">313</span>
+<span id="314">314</span>
+<span id="315">315</span>
+<span id="316">316</span>
+<span id="317">317</span>
+<span id="318">318</span>
+<span id="319">319</span>
+<span id="320">320</span>
+<span id="321">321</span>
+<span id="322">322</span>
+<span id="323">323</span>
+<span id="324">324</span>
+<span id="325">325</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Zircon syscall implementations</span>
 
@@ -281,7 +338,10 @@
 <span class="kw">use</span> {
     <span class="self">self</span>::<span class="ident">time</span>::<span class="ident">Deadline</span>,
     <span class="ident">alloc</span>::<span class="ident">sync</span>::<span class="ident">Arc</span>,
-    <span class="ident">core</span>::<span class="ident">convert</span>::<span class="ident">TryFrom</span>,
+    <span class="ident">core</span>::{
+        <span class="ident">convert</span>::<span class="ident">TryFrom</span>,
+        <span class="ident">sync</span>::<span class="ident">atomic</span>::{<span class="ident">AtomicI32</span>, <span class="ident">Ordering</span>},
+    },
     <span class="ident">futures</span>::<span class="ident">pin_mut</span>,
     <span class="ident">kernel_hal</span>::{<span class="ident">user</span>::<span class="kw-2">*</span>, <span class="ident">GeneralRegs</span>},
     <span class="ident">zircon_object</span>::<span class="ident">object</span>::<span class="kw-2">*</span>,
@@ -406,6 +466,9 @@
             <span class="ident">Sys</span>::<span class="ident">CHANNEL_WRITE</span> <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="self">self</span>.<span class="ident">sys_channel_write</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a2</span>.<span class="ident">into</span>(), <span class="ident">a3</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a4</span>.<span class="ident">into</span>(), <span class="ident">a5</span> <span class="kw">as</span> <span class="kw">_</span>)
             }
+            <span class="ident">Sys</span>::<span class="ident">CHANNEL_WRITE_ETC</span> <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="self">self</span>.<span class="ident">sys_channel_write_etc</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a2</span>.<span class="ident">into</span>(), <span class="ident">a3</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a4</span>.<span class="ident">into</span>(), <span class="ident">a5</span> <span class="kw">as</span> <span class="kw">_</span>)
+            }
             <span class="ident">Sys</span>::<span class="ident">CHANNEL_CALL_NORETRY</span> <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="self">self</span>.<span class="ident">sys_channel_call_noretry</span>(
                     <span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>,
@@ -421,6 +484,13 @@
                 <span class="self">self</span>.<span class="ident">sys_channel_call_finish</span>(<span class="ident">a0</span>.<span class="ident">into</span>(), <span class="ident">a1</span>.<span class="ident">into</span>(), <span class="ident">a2</span>.<span class="ident">into</span>(), <span class="ident">a3</span>.<span class="ident">into</span>())
             }
             <span class="ident">Sys</span>::<span class="ident">SOCKET_CREATE</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_socket_create</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span>.<span class="ident">into</span>(), <span class="ident">a2</span>.<span class="ident">into</span>()),
+            <span class="ident">Sys</span>::<span class="ident">SOCKET_WRITE</span> <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="self">self</span>.<span class="ident">sys_socket_write</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a2</span>.<span class="ident">into</span>(), <span class="ident">a3</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a4</span>.<span class="ident">into</span>())
+            }
+            <span class="ident">Sys</span>::<span class="ident">SOCKET_READ</span> <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="self">self</span>.<span class="ident">sys_socket_read</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a2</span>.<span class="ident">into</span>(), <span class="ident">a3</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a4</span>.<span class="ident">into</span>())
+            }
+            <span class="ident">Sys</span>::<span class="ident">SOCKET_SHUTDOWN</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_socket_shutdown</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>),
             <span class="ident">Sys</span>::<span class="ident">FIFO_CREATE</span> <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="self">self</span>.<span class="ident">sys_fifo_create</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a2</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a3</span>.<span class="ident">into</span>(), <span class="ident">a4</span>.<span class="ident">into</span>())
             }
@@ -431,6 +501,10 @@
             <span class="ident">Sys</span>::<span class="ident">PORT_CREATE</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_port_create</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span>.<span class="ident">into</span>()),
             <span class="ident">Sys</span>::<span class="ident">PORT_WAIT</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_port_wait</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span>.<span class="ident">into</span>(), <span class="ident">a2</span>.<span class="ident">into</span>()).<span class="kw">await</span>,
             <span class="ident">Sys</span>::<span class="ident">PORT_QUEUE</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_port_queue</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span>.<span class="ident">into</span>()),
+            <span class="ident">Sys</span>::<span class="ident">PORT_CANCEL</span> <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;Skip PORT_CANCEL&quot;</span>);
+                <span class="prelude-val">Ok</span>(())
+            }
             <span class="ident">Sys</span>::<span class="ident">FUTEX_WAIT</span> <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="self">self</span>.<span class="ident">sys_futex_wait</span>(<span class="ident">a0</span>.<span class="ident">into</span>(), <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a2</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a3</span>.<span class="ident">into</span>())
                     .<span class="kw">await</span>
@@ -457,6 +531,9 @@
             <span class="ident">Sys</span>::<span class="ident">VMO_CREATE_PHYSICAL</span> <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="self">self</span>.<span class="ident">sys_vmo_create_physical</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a2</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a3</span>.<span class="ident">into</span>())
             }
+            <span class="ident">Sys</span>::<span class="ident">VMO_CREATE_CONTIGUOUS</span> <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="self">self</span>.<span class="ident">sys_vmo_create_contiguous</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a2</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a3</span>.<span class="ident">into</span>())
+            }
             <span class="ident">Sys</span>::<span class="ident">VMO_SET_CACHE_POLICY</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_vmo_cache_policy</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>),
             <span class="ident">Sys</span>::<span class="ident">VMAR_MAP</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_vmar_map</span>(
                 <span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>,
@@ -476,6 +553,8 @@
             <span class="ident">Sys</span>::<span class="ident">CPRNG_DRAW_ONCE</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_cprng_draw_once</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>),
             <span class="ident">Sys</span>::<span class="ident">NANOSLEEP</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_nanosleep</span>(<span class="ident">a0</span>.<span class="ident">into</span>()).<span class="kw">await</span>,
             <span class="ident">Sys</span>::<span class="ident">CLOCK_GET</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_clock_get</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span>.<span class="ident">into</span>()),
+            <span class="ident">Sys</span>::<span class="ident">CLOCK_READ</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_clock_read</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span>.<span class="ident">into</span>()),
+            <span class="ident">Sys</span>::<span class="ident">CLOCK_ADJUST</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_clock_adjust</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a2</span> <span class="kw">as</span> <span class="kw">_</span>),
             <span class="ident">Sys</span>::<span class="ident">TIMER_CREATE</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_timer_create</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a2</span>.<span class="ident">into</span>()),
             <span class="ident">Sys</span>::<span class="ident">DEBUG_WRITE</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_debug_write</span>(<span class="ident">a0</span>.<span class="ident">into</span>(), <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>),
             <span class="ident">Sys</span>::<span class="ident">DEBUGLOG_CREATE</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_debuglog_create</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a2</span>.<span class="ident">into</span>()),
@@ -502,14 +581,49 @@
                 <span class="self">self</span>.<span class="ident">sys_iommu_create</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a2</span>.<span class="ident">into</span>(), <span class="ident">a3</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a4</span>.<span class="ident">into</span>())
             }
             <span class="ident">Sys</span>::<span class="ident">BTI_CREATE</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_bti_create</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a2</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a3</span>.<span class="ident">into</span>()),
+            <span class="ident">Sys</span>::<span class="ident">BTI_PIN</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_bti_pin</span>(
+                <span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>,
+                <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>,
+                <span class="ident">a2</span> <span class="kw">as</span> <span class="kw">_</span>,
+                <span class="ident">a3</span> <span class="kw">as</span> <span class="kw">_</span>,
+                <span class="ident">a4</span> <span class="kw">as</span> <span class="kw">_</span>,
+                <span class="ident">a5</span>.<span class="ident">into</span>(),
+                <span class="ident">a6</span> <span class="kw">as</span> <span class="kw">_</span>,
+                <span class="ident">a7</span>.<span class="ident">into</span>(),
+            ),
+            <span class="ident">Sys</span>::<span class="ident">PMT_UNPIN</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_pmt_unpin</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>),
+            <span class="ident">Sys</span>::<span class="ident">BTI_RELEASE_QUARANTINE</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_bti_release_quarantine</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>),
             <span class="ident">Sys</span>::<span class="ident">VMAR_UNMAP_HANDLE_CLOSE_THREAD_EXIT</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>
                 .<span class="ident">sys_vmar_unmap</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a2</span> <span class="kw">as</span> <span class="kw">_</span>)
                 .<span class="ident">and_then</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> {
                     <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">sys_handle_close</span>(<span class="ident">a3</span> <span class="kw">as</span> <span class="kw">_</span>);
                     <span class="self">self</span>.<span class="ident">sys_thread_exit</span>()
                 }),
+            <span class="ident">Sys</span>::<span class="ident">FUTEX_WAKE_HANDLE_CLOSE_THREAD_EXIT</span> <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="comment">// atomic_store_explicit(value_ptr, new_value, memory_order_release)</span>
+                <span class="ident">UserInPtr</span>::<span class="op">&lt;</span><span class="ident">AtomicI32</span><span class="op">&gt;</span>::<span class="ident">from</span>(<span class="ident">a0</span>)
+                    .<span class="ident">as_ref</span>()
+                    .<span class="ident">unwrap</span>()
+                    .<span class="ident">store</span>(<span class="ident">a2</span> <span class="kw">as</span> <span class="ident">i32</span>, <span class="ident">Ordering</span>::<span class="ident">Release</span>);
+                <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">sys_futex_wake</span>(<span class="ident">a0</span>.<span class="ident">into</span>(), <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>);
+                <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">sys_handle_close</span>(<span class="ident">a3</span> <span class="kw">as</span> <span class="kw">_</span>);
+                <span class="self">self</span>.<span class="ident">sys_thread_exit</span>()
+            }
             <span class="ident">Sys</span>::<span class="ident">OBJECT_GET_CHILD</span> <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="self">self</span>.<span class="ident">sys_object_get_child</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a2</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a3</span>.<span class="ident">into</span>())
+            }
+            <span class="ident">Sys</span>::<span class="ident">PC_FIRMWARE_TABLES</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_pc_firmware_tables</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span>.<span class="ident">into</span>(), <span class="ident">a2</span>.<span class="ident">into</span>()),
+            <span class="ident">Sys</span>::<span class="ident">INTERRUPT_CREATE</span> <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="self">self</span>.<span class="ident">sys_interrupt_create</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a2</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a3</span>.<span class="ident">into</span>())
+            }
+            <span class="ident">Sys</span>::<span class="ident">INTERRUPT_BIND</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_interrupt_bind</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a2</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a3</span> <span class="kw">as</span> <span class="kw">_</span>),
+            <span class="ident">Sys</span>::<span class="ident">INTERRUPT_TRIGGER</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_interrupt_trigger</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a2</span> <span class="kw">as</span> <span class="kw">_</span>),
+            <span class="ident">Sys</span>::<span class="ident">INTERRUPT_ACK</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_interrupt_ack</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>),
+            <span class="ident">Sys</span>::<span class="ident">INTERRUPT_DESTROY</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_interrupt_destroy</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>),
+            <span class="ident">Sys</span>::<span class="ident">INTERRUPT_WAIT</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_interrupt_wait</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span>.<span class="ident">into</span>()).<span class="kw">await</span>,
+            <span class="ident">Sys</span>::<span class="ident">IOPORTS_REQUEST</span> <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;Skip IOPORTS_REQUEST&quot;</span>);
+                <span class="prelude-val">Ok</span>(())
             }
             <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;syscall unimplemented: {:?}&quot;</span>, <span class="ident">sys_type</span>);

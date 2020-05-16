@@ -570,13 +570,9 @@
 <span id="570">570</span>
 <span id="571">571</span>
 <span id="572">572</span>
-<span id="573">573</span>
-<span id="574">574</span>
-<span id="575">575</span>
-<span id="576">576</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> {
-    <span class="kw">super</span>::{<span class="ident">exception</span>::<span class="kw-2">*</span>, <span class="ident">job</span>::<span class="ident">Job</span>, <span class="ident">job_policy</span>::<span class="kw-2">*</span>, <span class="ident">resource</span>::<span class="kw-2">*</span>, <span class="ident">thread</span>::<span class="ident">Thread</span>, <span class="kw-2">*</span>},
+    <span class="kw">super</span>::{<span class="ident">exception</span>::<span class="kw-2">*</span>, <span class="ident">job</span>::<span class="ident">Job</span>, <span class="ident">job_policy</span>::<span class="kw-2">*</span>, <span class="ident">thread</span>::<span class="ident">Thread</span>, <span class="kw-2">*</span>},
     <span class="kw">crate</span>::{<span class="ident">object</span>::<span class="kw-2">*</span>, <span class="ident">signal</span>::<span class="ident">Futex</span>, <span class="ident">vm</span>::<span class="kw-2">*</span>},
     <span class="ident">alloc</span>::{<span class="ident">boxed</span>::<span class="ident">Box</span>, <span class="ident">collections</span>::<span class="ident">BTreeMap</span>, <span class="ident">sync</span>::<span class="ident">Arc</span>, <span class="ident">vec</span>::<span class="ident">Vec</span>},
     <span class="ident">core</span>::{<span class="ident">any</span>::<span class="ident">Any</span>, <span class="ident">sync</span>::<span class="ident">atomic</span>::<span class="ident">AtomicI32</span>},
@@ -807,6 +803,15 @@
             .<span class="ident">collect</span>()
     }
 
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">remove_object</span><span class="op">&lt;</span><span class="ident">T</span>: <span class="ident">KernelObject</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">handle_value</span>: <span class="ident">HandleValue</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+        <span class="kw">let</span> <span class="ident">handle</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">remove_handle</span>(<span class="ident">handle_value</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">object</span> <span class="op">=</span> <span class="ident">handle</span>
+            .<span class="ident">object</span>
+            .<span class="ident">downcast_arc</span>::<span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span>()
+            .<span class="ident">map_err</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">ZxError</span>::<span class="ident">WRONG_TYPE</span>)<span class="question-mark">?</span>;
+        <span class="prelude-val">Ok</span>(<span class="ident">object</span>)
+    }
+
     <span class="doccomment">/// Get a handle from the process</span>
     <span class="kw">fn</span> <span class="ident">get_handle</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">handle_value</span>: <span class="ident">HandleValue</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Handle</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">get_handle</span>(<span class="ident">handle_value</span>)
@@ -906,16 +911,6 @@
         <span class="prelude-val">Ok</span>(<span class="ident">object</span>)
     }
 
-    <span class="doccomment">/// Try to get Resource and validate it</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">validate_resource</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">handle_value</span>: <span class="ident">HandleValue</span>, <span class="ident">kind</span>: <span class="ident">ResourceKind</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
-        <span class="kw">let</span> <span class="ident">handle</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">get_handle</span>(<span class="ident">handle_value</span>)<span class="question-mark">?</span>;
-        <span class="kw">let</span> <span class="ident">object</span> <span class="op">=</span> <span class="ident">handle</span>
-            .<span class="ident">object</span>
-            .<span class="ident">downcast_arc</span>::<span class="op">&lt;</span><span class="ident">Resource</span><span class="op">&gt;</span>()
-            .<span class="ident">map_err</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">ZxError</span>::<span class="ident">WRONG_TYPE</span>)<span class="question-mark">?</span>;
-        <span class="ident">object</span>.<span class="ident">validate</span>(<span class="ident">kind</span>)
-    }
-
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_handle_info</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">handle_value</span>: <span class="ident">HandleValue</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">HandleBasicInfo</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">handle</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">get_handle</span>(<span class="ident">handle_value</span>)<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(<span class="ident">handle</span>.<span class="ident">get_info</span>())
@@ -989,12 +984,9 @@
         <span class="self">self</span>.<span class="ident">exceptionate</span>.<span class="ident">clone</span>()
     }
 
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">enumerate_thread</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="kw-2">mut</span> <span class="ident">f</span>: <span class="kw">impl</span> <span class="ident">FnMut</span>(<span class="ident">KoID</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span>) {
-        <span class="self">self</span>.<span class="ident">inner</span>
-            .<span class="ident">lock</span>()
-            .<span class="ident">threads</span>
-            .<span class="ident">iter</span>()
-            .<span class="ident">find</span>(<span class="op">|</span><span class="ident">child</span><span class="op">|</span> <span class="op">!</span><span class="ident">f</span>(<span class="ident">child</span>.<span class="ident">id</span>()));
+    <span class="doccomment">/// Get KoIDs of Threads.</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">thread_ids</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">KoID</span><span class="op">&gt;</span> {
+        <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">threads</span>.<span class="ident">iter</span>().<span class="ident">map</span>(<span class="op">|</span><span class="ident">t</span><span class="op">|</span> <span class="ident">t</span>.<span class="ident">id</span>()).<span class="ident">collect</span>()
     }
 }
 

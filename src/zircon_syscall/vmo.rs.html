@@ -246,12 +246,86 @@
 <span id="246">246</span>
 <span id="247">247</span>
 <span id="248">248</span>
+<span id="249">249</span>
+<span id="250">250</span>
+<span id="251">251</span>
+<span id="252">252</span>
+<span id="253">253</span>
+<span id="254">254</span>
+<span id="255">255</span>
+<span id="256">256</span>
+<span id="257">257</span>
+<span id="258">258</span>
+<span id="259">259</span>
+<span id="260">260</span>
+<span id="261">261</span>
+<span id="262">262</span>
+<span id="263">263</span>
+<span id="264">264</span>
+<span id="265">265</span>
+<span id="266">266</span>
+<span id="267">267</span>
+<span id="268">268</span>
+<span id="269">269</span>
+<span id="270">270</span>
+<span id="271">271</span>
+<span id="272">272</span>
+<span id="273">273</span>
+<span id="274">274</span>
+<span id="275">275</span>
+<span id="276">276</span>
+<span id="277">277</span>
+<span id="278">278</span>
+<span id="279">279</span>
+<span id="280">280</span>
+<span id="281">281</span>
+<span id="282">282</span>
+<span id="283">283</span>
+<span id="284">284</span>
+<span id="285">285</span>
+<span id="286">286</span>
+<span id="287">287</span>
+<span id="288">288</span>
+<span id="289">289</span>
+<span id="290">290</span>
+<span id="291">291</span>
+<span id="292">292</span>
+<span id="293">293</span>
+<span id="294">294</span>
+<span id="295">295</span>
+<span id="296">296</span>
+<span id="297">297</span>
+<span id="298">298</span>
+<span id="299">299</span>
+<span id="300">300</span>
+<span id="301">301</span>
+<span id="302">302</span>
+<span id="303">303</span>
+<span id="304">304</span>
+<span id="305">305</span>
+<span id="306">306</span>
+<span id="307">307</span>
+<span id="308">308</span>
+<span id="309">309</span>
+<span id="310">310</span>
+<span id="311">311</span>
+<span id="312">312</span>
+<span id="313">313</span>
+<span id="314">314</span>
+<span id="315">315</span>
+<span id="316">316</span>
+<span id="317">317</span>
+<span id="318">318</span>
+<span id="319">319</span>
+<span id="320">320</span>
+<span id="321">321</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> {
     <span class="kw">super</span>::<span class="kw-2">*</span>,
     <span class="ident">bitflags</span>::<span class="ident">bitflags</span>,
     <span class="ident">kernel_hal</span>::<span class="ident">CachePolicy</span>,
-    <span class="ident">zircon_object</span>::{<span class="ident">resource</span>::<span class="kw-2">*</span>, <span class="ident">task</span>::<span class="ident">PolicyCondition</span>, <span class="ident">vm</span>::<span class="kw-2">*</span>},
+    <span class="ident">numeric_enum_macro</span>::<span class="ident">numeric_enum</span>,
+    <span class="ident">zircon_object</span>::{<span class="ident">dev</span>::<span class="kw-2">*</span>, <span class="ident">task</span>::<span class="ident">PolicyCondition</span>, <span class="ident">vm</span>::<span class="kw-2">*</span>},
 };
 
 <span class="kw">impl</span> <span class="ident">Syscall</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span> {
@@ -332,7 +406,8 @@
         );
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>();
         <span class="kw">if</span> <span class="ident">vmex</span> <span class="op">!</span><span class="op">=</span> <span class="ident">INVALID_HANDLE</span> {
-            <span class="ident">proc</span>.<span class="ident">validate_resource</span>(<span class="ident">vmex</span>, <span class="ident">ResourceKind</span>::<span class="ident">VMEX</span>)<span class="question-mark">?</span>;
+            <span class="ident">proc</span>.<span class="ident">get_object</span>::<span class="op">&lt;</span><span class="ident">Resource</span><span class="op">&gt;</span>(<span class="ident">vmex</span>)<span class="question-mark">?</span>
+                .<span class="ident">validate</span>(<span class="ident">ResourceKind</span>::<span class="ident">VMEX</span>)<span class="question-mark">?</span>;
         } <span class="kw">else</span> {
             <span class="ident">proc</span>.<span class="ident">check_policy</span>(<span class="ident">PolicyCondition</span>::<span class="ident">AmbientMarkVMOExec</span>)<span class="question-mark">?</span>;
         }
@@ -360,23 +435,46 @@
         <span class="ident">size</span>: <span class="ident">usize</span>,
         <span class="kw-2">mut</span> <span class="ident">out</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">HandleValue</span><span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
-        <span class="kw">let</span> <span class="ident">options</span> <span class="op">=</span> <span class="ident">VmoCloneFlags</span>::<span class="ident">from_bits</span>(<span class="ident">options</span>).<span class="ident">ok_or</span>(<span class="ident">ZxError</span>::<span class="ident">INVALID_ARGS</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">options</span> <span class="op">=</span> <span class="ident">VmoCloneFlags</span>::<span class="ident">from_bits</span>(<span class="ident">options</span>).<span class="ident">ok_or</span>(<span class="ident">ZxError</span>::<span class="ident">INVALID_ARGS</span>)<span class="question-mark">?</span>;
         <span class="macro">info</span><span class="macro">!</span>(
             <span class="string">&quot;vmo_create_child: handle={:#x}, options={:?}, offset={:#x}, size={:#x}&quot;</span>,
             <span class="ident">handle_value</span>, <span class="ident">options</span>, <span class="ident">offset</span>, <span class="ident">size</span>
         );
-        <span class="kw">if</span> <span class="op">!</span><span class="ident">options</span>.<span class="ident">contains</span>(<span class="ident">VmoCloneFlags</span>::<span class="ident">SNAPSHOT_AT_LEAST_ON_WRITE</span>) {
-            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">NOT_SUPPORTED</span>);
+        <span class="comment">// check options given</span>
+        <span class="kw">let</span> <span class="ident">no_write</span> <span class="op">=</span> <span class="ident">options</span>.<span class="ident">contains</span>(<span class="ident">VmoCloneFlags</span>::<span class="ident">NO_WRITE</span>);
+        <span class="kw">if</span> <span class="ident">no_write</span> {
+            <span class="ident">options</span>.<span class="ident">remove</span>(<span class="ident">VmoCloneFlags</span>::<span class="ident">NO_WRITE</span>);
         }
-        <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>();
 
+        <span class="kw">let</span> <span class="ident">resizable</span> <span class="op">=</span> <span class="ident">options</span>.<span class="ident">contains</span>(<span class="ident">VmoCloneFlags</span>::<span class="ident">RESIZABLE</span>);
+        <span class="kw">let</span> <span class="ident">child_size</span> <span class="op">=</span> <span class="ident">roundup_pages</span>(<span class="ident">size</span>);
+        <span class="kw">if</span> <span class="ident">child_size</span> <span class="op">&lt;</span> <span class="ident">size</span> {
+            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">OUT_OF_RANGE</span>);
+        }
+        <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;size of child vmo: {:#x}&quot;</span>, <span class="ident">child_size</span>);
+
+        <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>();
         <span class="kw">let</span> (<span class="ident">vmo</span>, <span class="ident">parent_rights</span>) <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_object_and_rights</span>::<span class="op">&lt;</span><span class="ident">VmObject</span><span class="op">&gt;</span>(<span class="ident">handle_value</span>)<span class="question-mark">?</span>;
         <span class="kw">if</span> <span class="op">!</span><span class="ident">parent_rights</span>.<span class="ident">contains</span>(<span class="ident">Rights</span>::<span class="ident">DUPLICATE</span> <span class="op">|</span> <span class="ident">Rights</span>::<span class="ident">READ</span>) {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">ACCESS_DENIED</span>);
         }
+        <span class="comment">// TODO: SLICE + SNAPSHIT_AT_LEAST_ON_WRITE have been implemented. What&#39;s next?</span>
+        <span class="kw">let</span> <span class="ident">child_vmo</span> <span class="op">=</span> <span class="kw">if</span> <span class="ident">options</span>.<span class="ident">contains</span>(<span class="ident">VmoCloneFlags</span>::<span class="ident">SLICE</span>) {
+            <span class="kw">if</span> <span class="ident">options</span> <span class="op">!</span><span class="op">=</span> <span class="ident">VmoCloneFlags</span>::<span class="ident">SLICE</span> {
+                <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">INVALID_ARGS</span>)
+            } <span class="kw">else</span> {
+                <span class="ident">vmo</span>.<span class="ident">create_slice</span>(<span class="ident">offset</span>, <span class="ident">child_size</span>)
+            }
+        } <span class="kw">else</span> {
+            <span class="kw">if</span> <span class="op">!</span><span class="ident">options</span>.<span class="ident">contains</span>(<span class="ident">VmoCloneFlags</span>::<span class="ident">SNAPSHOT_AT_LEAST_ON_WRITE</span>) {
+                <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">NOT_SUPPORTED</span>);
+            }
+            <span class="ident">vmo</span>.<span class="ident">create_child</span>(<span class="ident">resizable</span>, <span class="ident">offset</span> <span class="kw">as</span> <span class="ident">usize</span>, <span class="ident">child_size</span>)
+        }<span class="question-mark">?</span>;
+        <span class="comment">// generate rights</span>
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">child_rights</span> <span class="op">=</span> <span class="ident">parent_rights</span>;
         <span class="ident">child_rights</span>.<span class="ident">insert</span>(<span class="ident">Rights</span>::<span class="ident">GET_PROPERTY</span> <span class="op">|</span> <span class="ident">Rights</span>::<span class="ident">SET_PROPERTY</span>);
-        <span class="kw">if</span> <span class="ident">options</span>.<span class="ident">contains</span>(<span class="ident">VmoCloneFlags</span>::<span class="ident">NO_WRITE</span>) {
+        <span class="kw">if</span> <span class="ident">no_write</span> {
             <span class="ident">child_rights</span>.<span class="ident">remove</span>(<span class="ident">Rights</span>::<span class="ident">WRITE</span>);
         } <span class="kw">else</span> <span class="kw">if</span> <span class="ident">options</span>.<span class="ident">contains</span>(<span class="ident">VmoCloneFlags</span>::<span class="ident">SNAPSHOT</span>)
             <span class="op">|</span><span class="op">|</span> <span class="ident">options</span>.<span class="ident">contains</span>(<span class="ident">VmoCloneFlags</span>::<span class="ident">SNAPSHOT_AT_LEAST_ON_WRITE</span>)
@@ -388,30 +486,25 @@
             <span class="string">&quot;parent_rights: {:?} child_rights: {:?}&quot;</span>,
             <span class="ident">parent_rights</span>, <span class="ident">child_rights</span>
         );
-        <span class="kw">let</span> <span class="ident">resizable</span> <span class="op">=</span> <span class="ident">options</span>.<span class="ident">contains</span>(<span class="ident">VmoCloneFlags</span>::<span class="ident">RESIZABLE</span>);
-
-        <span class="kw">let</span> <span class="ident">child_size</span> <span class="op">=</span> <span class="ident">roundup_pages</span>(<span class="ident">size</span>);
-        <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;size of child vmo: {:#x}&quot;</span>, <span class="ident">child_size</span>);
-        <span class="kw">let</span> <span class="ident">child_vmo</span> <span class="op">=</span> <span class="ident">vmo</span>.<span class="ident">create_child</span>(<span class="ident">resizable</span>, <span class="ident">offset</span> <span class="kw">as</span> <span class="ident">usize</span>, <span class="ident">child_size</span>);
         <span class="ident">out</span>.<span class="ident">write</span>(<span class="ident">proc</span>.<span class="ident">add_handle</span>(<span class="ident">Handle</span>::<span class="ident">new</span>(<span class="ident">child_vmo</span>, <span class="ident">child_rights</span>)))<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(())
     }
 
-    <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">unsafe_code</span>)]</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_vmo_create_physical</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
-        <span class="ident">rsrc</span>: <span class="ident">HandleValue</span>,
+        <span class="ident">resource</span>: <span class="ident">HandleValue</span>,
         <span class="ident">paddr</span>: <span class="ident">PhysAddr</span>,
         <span class="ident">size</span>: <span class="ident">usize</span>,
         <span class="kw-2">mut</span> <span class="ident">out</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">HandleValue</span><span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
         <span class="macro">info</span><span class="macro">!</span>(
-            <span class="string">&quot;vmo.create: handle={:#x?}, paddr={:#x?}, size={:#x}, out={:#x?}&quot;</span>,
-            <span class="ident">size</span>, <span class="ident">paddr</span>, <span class="ident">size</span>, <span class="ident">out</span>
+            <span class="string">&quot;vmo.create_physical: handle={:#x?}, paddr={:#x?}, size={:#x}, out={:#x?}&quot;</span>,
+            <span class="ident">resource</span>, <span class="ident">paddr</span>, <span class="ident">size</span>, <span class="ident">out</span>
         );
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>();
         <span class="ident">proc</span>.<span class="ident">check_policy</span>(<span class="ident">PolicyCondition</span>::<span class="ident">NewVMO</span>)<span class="question-mark">?</span>;
-        <span class="ident">proc</span>.<span class="ident">validate_resource</span>(<span class="ident">rsrc</span>, <span class="ident">ResourceKind</span>::<span class="ident">MMIO</span>)<span class="question-mark">?</span>;
+        <span class="ident">proc</span>.<span class="ident">get_object</span>::<span class="op">&lt;</span><span class="ident">Resource</span><span class="op">&gt;</span>(<span class="ident">resource</span>)<span class="question-mark">?</span>
+            .<span class="ident">validate_ranged_resource</span>(<span class="ident">ResourceKind</span>::<span class="ident">MMIO</span>, <span class="ident">paddr</span>, <span class="ident">size</span>)<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">size</span> <span class="op">=</span> <span class="ident">roundup_pages</span>(<span class="ident">size</span>);
         <span class="kw">if</span> <span class="ident">size</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span> <span class="op">|</span><span class="op">|</span> <span class="op">!</span><span class="ident">page_aligned</span>(<span class="ident">paddr</span>) {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">INVALID_ARGS</span>);
@@ -419,8 +512,39 @@
         <span class="kw">if</span> <span class="ident">paddr</span>.<span class="ident">overflowing_add</span>(<span class="ident">size</span>).<span class="number">1</span> {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">INVALID_ARGS</span>);
         }
-        <span class="kw">let</span> <span class="ident">vmo</span> <span class="op">=</span> <span class="kw">unsafe</span> { <span class="ident">VmObject</span>::<span class="ident">new_physical</span>(<span class="ident">paddr</span>, <span class="ident">size</span> <span class="op">/</span> <span class="ident">PAGE_SIZE</span>) };
+        <span class="kw">let</span> <span class="ident">vmo</span> <span class="op">=</span> <span class="ident">VmObject</span>::<span class="ident">new_physical</span>(<span class="ident">paddr</span>, <span class="ident">size</span> <span class="op">/</span> <span class="ident">PAGE_SIZE</span>);
         <span class="kw">let</span> <span class="ident">handle_value</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">add_handle</span>(<span class="ident">Handle</span>::<span class="ident">new</span>(<span class="ident">vmo</span>, <span class="ident">Rights</span>::<span class="ident">DEFAULT_VMO</span> <span class="op">|</span> <span class="ident">Rights</span>::<span class="ident">EXECUTE</span>));
+        <span class="ident">out</span>.<span class="ident">write</span>(<span class="ident">handle_value</span>)<span class="question-mark">?</span>;
+        <span class="prelude-val">Ok</span>(())
+    }
+
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_vmo_create_contiguous</span>(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        <span class="ident">bti</span>: <span class="ident">HandleValue</span>,
+        <span class="ident">size</span>: <span class="ident">usize</span>,
+        <span class="ident">align_log2</span>: <span class="ident">u32</span>,
+        <span class="kw-2">mut</span> <span class="ident">out</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">HandleValue</span><span class="op">&gt;</span>,
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+        <span class="macro">info</span><span class="macro">!</span>(
+            <span class="string">&quot;vmo.create_contiguous: handle={:#x?}, size={:#x?}, align={}, out={:#x?}&quot;</span>,
+            <span class="ident">bti</span>, <span class="ident">size</span>, <span class="ident">align_log2</span>, <span class="ident">out</span>
+        );
+        <span class="kw">if</span> <span class="ident">size</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span> {
+            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">INVALID_ARGS</span>);
+        }
+        <span class="kw">let</span> <span class="ident">align_log2</span> <span class="op">=</span> <span class="kw">if</span> <span class="ident">align_log2</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span> {
+            <span class="ident">PAGE_SIZE_LOG2</span>
+        } <span class="kw">else</span> {
+            <span class="ident">align_log2</span> <span class="kw">as</span> <span class="ident">usize</span>
+        };
+        <span class="kw">if</span> <span class="ident">align_log2</span> <span class="op">&lt;</span> <span class="ident">PAGE_SIZE_LOG2</span> <span class="op">|</span><span class="op">|</span> <span class="ident">align_log2</span> <span class="op">&gt;</span><span class="op">=</span> <span class="number">8</span> <span class="op">*</span> <span class="ident">core</span>::<span class="ident">mem</span>::<span class="ident">size_of</span>::<span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>() {
+            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">INVALID_ARGS</span>);
+        }
+        <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>();
+        <span class="ident">proc</span>.<span class="ident">check_policy</span>(<span class="ident">PolicyCondition</span>::<span class="ident">NewVMO</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">_bti</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">BusTransactionInitiator</span><span class="op">&gt;</span>(<span class="ident">bti</span>, <span class="ident">Rights</span>::<span class="ident">MAP</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">vmo</span> <span class="op">=</span> <span class="ident">VmObject</span>::<span class="ident">new_contiguous</span>(<span class="ident">size</span>, <span class="ident">align_log2</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">handle_value</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">add_handle</span>(<span class="ident">Handle</span>::<span class="ident">new</span>(<span class="ident">vmo</span>, <span class="ident">Rights</span>::<span class="ident">DEFAULT_VMO</span>));
         <span class="ident">out</span>.<span class="ident">write</span>(<span class="ident">handle_value</span>)<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(())
     }
@@ -450,24 +574,34 @@
             <span class="string">&quot;vmo.op_range: handle={:#x}, op={:#X}, offset={:#x}, len={:#x}, buffer_size={:#x}&quot;</span>,
             <span class="ident">handle_value</span>, <span class="ident">op</span>, <span class="ident">offset</span>, <span class="ident">len</span>, <span class="ident">_buffer_size</span>,
         );
+        <span class="kw">let</span> <span class="ident">op</span> <span class="op">=</span> <span class="ident">VmoOpType</span>::<span class="ident">try_from</span>(<span class="ident">op</span>).<span class="ident">or</span>(<span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">INVALID_ARGS</span>))<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>();
         <span class="kw">let</span> (<span class="ident">vmo</span>, <span class="ident">rights</span>) <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_object_and_rights</span>::<span class="op">&lt;</span><span class="ident">VmObject</span><span class="op">&gt;</span>(<span class="ident">handle_value</span>)<span class="question-mark">?</span>;
-        <span class="kw">if</span> <span class="op">!</span><span class="ident">page_aligned</span>(<span class="ident">offset</span>) <span class="op">|</span><span class="op">|</span> <span class="op">!</span><span class="ident">page_aligned</span>(<span class="ident">len</span>) {
-            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">INVALID_ARGS</span>);
-        }
         <span class="kw">match</span> <span class="ident">op</span> {
-            <span class="ident">VMO_OP_COMMIT</span> <span class="op">=</span><span class="op">&gt;</span> {
+            <span class="ident">VmoOpType</span>::<span class="ident">Commit</span> <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">if</span> <span class="op">!</span><span class="ident">rights</span>.<span class="ident">contains</span>(<span class="ident">Rights</span>::<span class="ident">WRITE</span>) {
                     <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">ACCESS_DENIED</span>);
+                }
+                <span class="kw">if</span> <span class="op">!</span><span class="ident">page_aligned</span>(<span class="ident">offset</span>) <span class="op">|</span><span class="op">|</span> <span class="op">!</span><span class="ident">page_aligned</span>(<span class="ident">len</span>) {
+                    <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">INVALID_ARGS</span>);
                 }
                 <span class="ident">vmo</span>.<span class="ident">commit</span>(<span class="ident">offset</span>, <span class="ident">len</span>)<span class="question-mark">?</span>;
                 <span class="prelude-val">Ok</span>(())
             }
-            <span class="ident">VMO_OP_DECOMMIT</span> <span class="op">=</span><span class="op">&gt;</span> {
+            <span class="ident">VmoOpType</span>::<span class="ident">Decommit</span> <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">if</span> <span class="op">!</span><span class="ident">rights</span>.<span class="ident">contains</span>(<span class="ident">Rights</span>::<span class="ident">WRITE</span>) {
                     <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">ACCESS_DENIED</span>);
                 }
+                <span class="kw">if</span> <span class="op">!</span><span class="ident">page_aligned</span>(<span class="ident">offset</span>) <span class="op">|</span><span class="op">|</span> <span class="op">!</span><span class="ident">page_aligned</span>(<span class="ident">len</span>) {
+                    <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">INVALID_ARGS</span>);
+                }
                 <span class="ident">vmo</span>.<span class="ident">decommit</span>(<span class="ident">offset</span>, <span class="ident">len</span>)
+            }
+            <span class="ident">VmoOpType</span>::<span class="ident">Zero</span> <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="kw">if</span> <span class="op">!</span><span class="ident">rights</span>.<span class="ident">contains</span>(<span class="ident">Rights</span>::<span class="ident">WRITE</span>) {
+                    <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">ACCESS_DENIED</span>);
+                }
+                <span class="ident">vmo</span>.<span class="ident">zero</span>(<span class="ident">offset</span>, <span class="ident">len</span>)
             }
             <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="macro">unimplemented</span><span class="macro">!</span>(),
         }
@@ -492,8 +626,20 @@
     }
 }
 
-<span class="doccomment">/// VMO Opcodes (for vmo_op_range)</span>
-<span class="kw">const</span> <span class="ident">VMO_OP_COMMIT</span>: <span class="ident">u32</span> <span class="op">=</span> <span class="number">1</span>;
-<span class="kw">const</span> <span class="ident">VMO_OP_DECOMMIT</span>: <span class="ident">u32</span> <span class="op">=</span> <span class="number">2</span>;
+<span class="macro">numeric_enum</span><span class="macro">!</span> {
+    <span class="attribute">#[<span class="ident">repr</span>(<span class="ident">u32</span>)]</span>
+    <span class="doccomment">/// VMO Opcodes (for vmo_op_range)</span>
+    <span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">VmoOpType</span> {
+        <span class="ident">Commit</span> <span class="op">=</span> <span class="number">1</span>,
+        <span class="ident">Decommit</span> <span class="op">=</span> <span class="number">2</span>,
+        <span class="ident">Lock</span> <span class="op">=</span> <span class="number">3</span>,
+        <span class="ident">Unlock</span> <span class="op">=</span> <span class="number">4</span>,
+        <span class="ident">CacheSync</span> <span class="op">=</span> <span class="number">6</span>,
+        <span class="ident">CacheInvalidate</span> <span class="op">=</span> <span class="number">7</span>,
+        <span class="ident">CacheClean</span> <span class="op">=</span> <span class="number">8</span>,
+        <span class="ident">CacheCleanInvalidate</span> <span class="op">=</span> <span class="number">9</span>,
+        <span class="ident">Zero</span> <span class="op">=</span> <span class="number">10</span>,
+    }
+}
 </pre></div>
 </section><section id="search" class="content hidden"></section><section class="footer"></section><script>window.rootPath = "../../";window.currentCrate = "zircon_syscall";</script><script src="../../aliases.js"></script><script src="../../main.js"></script><script src="../../source-script.js"></script><script src="../../source-files.js"></script><script defer src="../../search-index.js"></script></body></html>
