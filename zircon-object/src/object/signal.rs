@@ -18,8 +18,13 @@ bitflags! {
 
         const SOCKET_PEER_WRITE_DISABLED    = 1 << 4;
         const SOCKET_WRITE_DISABLED         = 1 << 5;
+        const SOCKET_CONTROL_READABLE       = 1 << 6;
+        const SOCKET_CONTROL_WRITABLE       = 1 << 7;
+        const SCOEKT_ACCEPT                 = 1 << 8;
+        const SOCKET_SHARE                  = 1 << 9;
         const SOCKET_READ_THRESHOLD         = 1 << 10;
         const SOCKET_WRITE_THRESHOLD        = 1 << 11;
+
 
         const TASK_TERMINATED               = Self::SIGNALED.bits;
 
