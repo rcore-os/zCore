@@ -85,13 +85,13 @@ impl Socket {
         let mut end0 = Arc::new(Socket {
             base: KObjectBase::with_signal(starting_signals),
             peer: Weak::default(),
-            flags: flags,
+            flags,
             inner: Default::default(),
         });
         let end1 = Arc::new(Socket {
             base: KObjectBase::with_signal(starting_signals),
             peer: Arc::downgrade(&end0),
-            flags: flags,
+            flags,
             inner: Default::default(),
         });
         // no other reference of `end0`
@@ -102,19 +102,19 @@ impl Socket {
     }
 
     /// Write data to the socket.
-    pub fn write(&self, options: SocketFlags, data: &[u8], count: usize) -> ZxResult<usize> {
+    pub fn write(&self, options: SocketFlags, data: &[u8]) -> ZxResult<usize> {
         if options.contains(SocketFlags::SOCKET_CONTROL) {
             if !self.flags.contains(SocketFlags::HAS_CONTROL) {
                 return Err(ZxError::BAD_STATE);
             }
-            if count == 0 {
+            if data.is_empty() {
                 return Err(ZxError::INVALID_ARGS);
             }
-            if count > 1024 {
+            if data.len() > 1024 {
                 return Err(ZxError::OUT_OF_RANGE);
             }
             let peer = self.peer.upgrade().ok_or(ZxError::PEER_CLOSED)?;
-            let actual_count = peer.write_control(data, count)?;
+            let actual_count = peer.write_control(data)?;
             self.base.signal_clear(Signal::SOCKET_CONTROL_WRITABLE);
             Ok(actual_count)
         } else {
@@ -122,7 +122,7 @@ impl Socket {
                 return Err(ZxError::BAD_STATE);
             }
             let peer = self.peer.upgrade().ok_or(ZxError::PEER_CLOSED)?;
-            let actual_count = peer.write_data(data, count)?;
+            let actual_count = peer.write_data(data)?;
             if actual_count > 0 {
                 let mut clear = Signal::empty();
                 let peer_inner = peer.inner.lock();
@@ -140,31 +140,32 @@ impl Socket {
         }
     }
 
-    pub fn write_control(&self, data: &[u8], count: usize) -> ZxResult<usize> {
+    fn write_control(&self, data: &[u8]) -> ZxResult<usize> {
         let mut inner = self.inner.lock();
         if !inner.control_msg.is_empty() {
             return Err(ZxError::SHOULD_WAIT);
         }
+        let actual_count = data.len();
         inner.control_msg.extend_from_slice(data);
         self.base.signal_set(Signal::SOCKET_CONTROL_READABLE);
-        Ok(count)
+        Ok(actual_count)
     }
 
-    pub fn write_data(&self, data: &[u8], count: usize) -> ZxResult<usize> {
+    fn write_data(&self, data: &[u8]) -> ZxResult<usize> {
         let data_len = self.inner.lock().data.len();
         let was_empty = data_len == 0;
         let rest_size = SOCKET_SIZE - data_len;
         if rest_size == 0 {
             return Err(ZxError::SHOULD_WAIT);
         }
-        let write_size = count.min(rest_size);
+        let write_size = data.len().min(rest_size);
         let actual_count = if self.flags.contains(SocketFlags::DATAGRAM) {
-            if count > SOCKET_SIZE {
+            if data.len() > SOCKET_SIZE {
                 return Err(ZxError::OUT_OF_RANGE);
             }
-            self.write_datagram(&data[..write_size], write_size)?
+            self.write_datagram(&data[..write_size])?
         } else {
-            self.write_stream(&data[..write_size], write_size)?
+            self.write_stream(&data[..write_size])?
         };
         if actual_count > 0 {
             let mut set = Signal::empty();
@@ -180,45 +181,42 @@ impl Socket {
         Ok(actual_count)
     }
 
-    pub fn write_datagram(&self, data: &[u8], count: usize) -> ZxResult<usize> {
-        if count == 0 {
+    fn write_datagram(&self, data: &[u8]) -> ZxResult<usize> {
+        if data.is_empty() {
             return Err(ZxError::INVALID_ARGS);
         }
         let mut inner = self.inner.lock();
+        let actual_count = data.len();
         inner.data.extend(&data[..]);
-        inner.datagram_len.push_back(count);
-        Ok(count)
+        inner.datagram_len.push_back(actual_count);
+        Ok(actual_count)
     }
 
-    pub fn write_stream(&self, data: &[u8], count: usize) -> ZxResult<usize> {
+    fn write_stream(&self, data: &[u8]) -> ZxResult<usize> {
+        let actual_count = data.len();
         let mut inner = self.inner.lock();
-        inner.data.extend(&data[..count]);
-        Ok(count)
+        inner.data.extend(&data[..]);
+        Ok(actual_count)
     }
 
     /// Read data from the socket.
-    pub fn read(&self, options: SocketFlags, data: &mut [u8], count: usize) -> ZxResult<usize> {
+    pub fn read(&self, options: SocketFlags, data: &mut [u8]) -> ZxResult<usize> {
         if options.contains(SocketFlags::SOCKET_CONTROL) {
             if !self.flags.contains(SocketFlags::HAS_CONTROL) {
                 return Err(ZxError::BAD_STATE);
             }
-            self.read_control(options, data, count)
+            self.read_control(options, data)
         } else {
-            self.read_data(options, data, count)
+            self.read_data(options, data)
         }
     }
 
-    pub fn read_control(
-        &self,
-        options: SocketFlags,
-        data: &mut [u8],
-        count: usize,
-    ) -> ZxResult<usize> {
+    fn read_control(&self, options: SocketFlags, data: &mut [u8]) -> ZxResult<usize> {
         let mut inner = self.inner.lock();
         if inner.control_msg.is_empty() {
             return Err(ZxError::SHOULD_WAIT);
         }
-        let read_size = count.min(inner.control_msg.len());
+        let read_size = data.len().min(inner.control_msg.len());
         if options.contains(SocketFlags::SOCKET_PEEK) {
             for (i, x) in inner.control_msg.iter().take(read_size).enumerate() {
                 data[i] = *x;
@@ -235,12 +233,7 @@ impl Socket {
         Ok(read_size)
     }
 
-    pub fn read_data(
-        &self,
-        options: SocketFlags,
-        data: &mut [u8],
-        count: usize,
-    ) -> ZxResult<usize> {
+    fn read_data(&self, options: SocketFlags, data: &mut [u8]) -> ZxResult<usize> {
         let data_len = self.inner.lock().data.len();
         if data_len == 0 {
             let _peer = self.peer.upgrade().ok_or(ZxError::PEER_CLOSED)?;
@@ -253,9 +246,9 @@ impl Socket {
         let was_full = data_len == SOCKET_SIZE;
         let peek = options.contains(SocketFlags::SOCKET_PEEK);
         let actual_count = if self.flags.contains(SocketFlags::DATAGRAM) {
-            self.read_datagram(options, data, count, peek)?
+            self.read_datagram(options, data, peek)?
         } else {
-            self.read_stream(options, data, count, peek)?
+            self.read_stream(options, data, peek)?
         };
         if !peek && actual_count > 0 {
             let inner = self.inner.lock();
@@ -284,14 +277,8 @@ impl Socket {
         Ok(actual_count)
     }
 
-    pub fn read_datagram(
-        &self,
-        _options: SocketFlags,
-        data: &mut [u8],
-        count: usize,
-        peek: bool,
-    ) -> ZxResult<usize> {
-        if count == 0 {
+    fn read_datagram(&self, _options: SocketFlags, data: &mut [u8], peek: bool) -> ZxResult<usize> {
+        if data.is_empty() {
             return Ok(0);
         }
         let mut inner = self.inner.lock();
@@ -300,7 +287,7 @@ impl Socket {
         } else {
             inner.datagram_len.pop_front().unwrap()
         };
-        let read_size = count.min(datagram_len);
+        let read_size = data.len().min(datagram_len);
         if peek {
             for (i, x) in inner.data.iter().take(read_size).enumerate() {
                 data[i] = *x;
@@ -313,15 +300,9 @@ impl Socket {
         Ok(read_size)
     }
 
-    pub fn read_stream(
-        &self,
-        _options: SocketFlags,
-        data: &mut [u8],
-        count: usize,
-        peek: bool,
-    ) -> ZxResult<usize> {
+    fn read_stream(&self, _options: SocketFlags, data: &mut [u8], peek: bool) -> ZxResult<usize> {
         let mut inner = self.inner.lock();
-        let read_size = count.min(inner.data.len());
+        let read_size = data.len().min(inner.data.len());
         if peek {
             for (i, x) in inner.data.iter().take(read_size).enumerate() {
                 data[i] = *x;
