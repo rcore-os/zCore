@@ -1,4 +1,3 @@
-
 use {super::*, zircon_object::ipc::Socket, zircon_object::ipc::SocketFlags};
 
 impl Syscall<'_> {
