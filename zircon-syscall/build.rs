@@ -13,7 +13,7 @@ fn main() {
     writeln!(fout, "pub enum SyscallType {{").unwrap();
 
     let data = std::fs::read_to_string("src/zx-syscall-numbers.h").unwrap();
-    for line in data.split('\n') {
+    for line in data.lines() {
         if !line.starts_with("#define") {
             continue;
         }
