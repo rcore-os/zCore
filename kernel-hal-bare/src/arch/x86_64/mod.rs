@@ -269,8 +269,11 @@ pub fn serial_write(s: &str) {
     putfmt(format_args!("{}", s));
 }
 
+/// Get TSC frequency.
+///
+/// WARN: This will be very slow on virtual machine since it uses CPUID instruction.
 fn tsc_frequency() -> u16 {
-    const DEFAULT: u16 = 3000;
+    const DEFAULT: u16 = 2600;
     if let Some(info) = raw_cpuid::CpuId::new().get_processor_frequency_info() {
         let f = info.processor_base_frequency();
         return if f == 0 { DEFAULT } else { f };
@@ -282,7 +285,7 @@ fn tsc_frequency() -> u16 {
 #[export_name = "hal_timer_now"]
 pub fn timer_now() -> Duration {
     let tsc = unsafe { core::arch::x86_64::_rdtsc() };
-    Duration::from_nanos(tsc * 1000 / tsc_frequency() as u64)
+    Duration::from_nanos(tsc * 1000 / unsafe { TSC_FREQUENCY } as u64)
 }
 
 fn timer_init() {
@@ -307,7 +310,7 @@ const IOAPIC_ADDR: usize = 0xfec0_0000;
 
 #[export_name = "hal_vdso_constants"]
 fn vdso_constants() -> VdsoConstants {
-    let tsc_frequency = tsc_frequency();
+    let tsc_frequency = unsafe { TSC_FREQUENCY };
     VdsoConstants {
         max_num_cpus: 1,
         features: Features {
@@ -335,6 +338,8 @@ pub fn init(config: Config) {
         Cr4::update(|f| f.insert(Cr4Flags::PAGE_GLOBAL));
         // store config
         CONFIG = config;
+        // get tsc frequency
+        TSC_FREQUENCY = tsc_frequency();
     }
 }
 
@@ -359,3 +364,5 @@ static mut CONFIG: Config = Config {
     acpi_rsdp: 0,
     smbios: 0,
 };
+
+static mut TSC_FREQUENCY: u16 = 2600;
