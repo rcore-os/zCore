@@ -2,19 +2,23 @@
 
 use crate::error::*;
 use crate::fs::*;
-use alloc::boxed::Box;
-use alloc::collections::BTreeMap;
-use alloc::string::String;
-use alloc::sync::{Arc, Weak};
+use alloc::{
+    boxed::Box,
+    string::String,
+    sync::{Arc, Weak},
+};
 use core::mem::drop;
 use core::sync::atomic::AtomicI32;
+use hashbrown::HashMap;
 use kernel_hal::VirtAddr;
 use rcore_fs::vfs::{FileSystem, INode};
 use spin::{Mutex, MutexGuard};
-use zircon_object::object::{KernelObject, KoID, Signal};
-use zircon_object::signal::Futex;
-use zircon_object::task::{Job, Process, Status};
-use zircon_object::ZxResult;
+use zircon_object::{
+    object::{KernelObject, KoID, Signal},
+    signal::Futex,
+    task::{Job, Process, Status},
+    ZxResult,
+};
 
 pub trait ProcessExt {
     fn create_linux(job: &Arc<Job>, rootfs: Arc<dyn FileSystem>) -> ZxResult<Arc<Self>>;
@@ -44,10 +48,10 @@ impl ProcessExt for Process {
             cwd: linux_parent.cwd.clone(),
             exec_path: linux_parent.exec_path.clone(),
             files: linux_parent.files.clone(),
-            futexes: BTreeMap::new(),
+            futexes: HashMap::new(),
             root_inode: linux_parent.root_inode.clone(),
             parent: Arc::downgrade(parent),
-            children: BTreeMap::new(),
+            children: HashMap::new(),
         });
         let new_proc = Process::create_with_ext(&parent.job(), "", new_linux_proc)?;
         linux_parent
@@ -119,15 +123,15 @@ pub struct LinuxProcess {
     /// Execute path
     pub exec_path: String,
     /// Opened files
-    files: BTreeMap<FileDesc, Arc<dyn FileLike>>,
+    files: HashMap<FileDesc, Arc<dyn FileLike>>,
     /// Futexes
-    futexes: BTreeMap<VirtAddr, Arc<Futex>>,
+    futexes: HashMap<VirtAddr, Arc<Futex>>,
     /// The root INode of file system
     root_inode: Arc<dyn INode>,
     /// Parent process
     parent: Weak<Process>,
     /// Child processes
-    children: BTreeMap<KoID, Arc<Process>>,
+    children: HashMap<KoID, Arc<Process>>,
 }
 
 pub type ExitCode = i32;
@@ -155,7 +159,7 @@ impl LinuxProcess {
             },
             String::from("/dev/stdout"),
         ) as Arc<dyn FileLike>;
-        let mut files = BTreeMap::new();
+        let mut files = HashMap::new();
         files.insert(0.into(), stdin);
         files.insert(1.into(), stdout.clone());
         files.insert(2.into(), stdout);
@@ -167,7 +171,7 @@ impl LinuxProcess {
             futexes: Default::default(),
             root_inode: create_root_fs(rootfs),
             parent: Weak::default(),
-            children: BTreeMap::new(),
+            children: HashMap::new(),
         }
     }
 

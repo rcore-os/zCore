@@ -1,11 +1,12 @@
 use {
     crate::object::*,
-    alloc::collections::{BTreeMap, VecDeque},
+    alloc::collections::VecDeque,
     alloc::sync::{Arc, Weak},
     alloc::vec::Vec,
     core::convert::TryInto,
     core::sync::atomic::{AtomicU32, Ordering},
     futures::channel::oneshot::{self, Sender},
+    hashbrown::HashMap,
     spin::Mutex,
 };
 
@@ -15,7 +16,7 @@ pub struct Channel {
     _counter: CountHelper,
     peer: Weak<Channel>,
     recv_queue: Mutex<VecDeque<T>>,
-    call_reply: Mutex<BTreeMap<TxID, Sender<ZxResult<T>>>>,
+    call_reply: Mutex<HashMap<TxID, Sender<ZxResult<T>>>>,
     next_txid: AtomicU32,
 }
 
