@@ -165,6 +165,7 @@ impl From<Error> for LxError {
         match e {
             Error::InvalidUtf8 => LxError::EINVAL,
             Error::InvalidPointer => LxError::EFAULT,
+            Error::BufferTooSmall => LxError::ENOBUFS,
         }
     }
 }
