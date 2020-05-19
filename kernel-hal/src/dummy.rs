@@ -265,6 +265,34 @@ pub fn irq_handle(_irq: u8) {
     unimplemented!()
 }
 
+/// Add an interrupt handle to an irq
+#[linkage = "weak"]
+#[export_name = "hal_irq_add_handle"]
+pub fn irq_add_handle(_irq: u8, _handle: Box<dyn Fn() + Send + Sync>) -> bool {
+    unimplemented!()
+}
+
+/// Remove the interrupt handle of an irq
+#[linkage = "weak"]
+#[export_name = "hal_irq_remove_handle"]
+pub fn irq_remove_handle(_irq: u8) -> bool {
+    unimplemented!()
+}
+
+/// Enable IRQ.
+#[linkage = "weak"]
+#[export_name = "hal_irq_enable"]
+pub fn irq_enable(_irq: u8) {
+    unimplemented!()
+}
+
+/// Disable IRQ.
+#[linkage = "weak"]
+#[export_name = "hal_irq_disable"]
+pub fn irq_disable(_irq: u8) {
+    unimplemented!()
+}
+
 /// Get platform specific information.
 #[linkage = "weak"]
 #[export_name = "hal_vdso_constants"]

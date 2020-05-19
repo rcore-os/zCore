@@ -66,9 +66,7 @@ task_local! {
 
 #[export_name = "hal_context_run"]
 unsafe fn context_run(context: &mut UserContext) {
-    core::arch::x86_64::_fxrstor64(&context.vector as *const VectorRegs as _);
     trap::run_user(&mut context.general);
-    core::arch::x86_64::_fxsave64(&mut context.vector as *mut VectorRegs as _);
     // cause: syscall
     context.trap_num = 0x100;
 }

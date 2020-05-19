@@ -11,6 +11,7 @@ description = "Linux kernel objects"
 log = "0.4"
 spin = "0.5"
 xmas-elf = "0.7"
+hashbrown = "0.7"
 zircon-object = { path = "../zircon-object", features = ["elf"] }
 kernel-hal = { path = "../kernel-hal" }
 downcast-rs = { git = "https://github.com/rcore-os/downcast-rs" }

@@ -1,12 +1,12 @@
 use {
     super::*,
     crate::util::block_range::BlockIter,
-    alloc::collections::BTreeMap,
     alloc::collections::VecDeque,
     alloc::sync::{Arc, Weak},
     alloc::vec::Vec,
     core::ops::Range,
     core::sync::atomic::*,
+    hashbrown::HashMap,
     kernel_hal::{frame_flush, PhysFrame, PAGE_SIZE},
     spin::Mutex,
 };
@@ -74,7 +74,7 @@ struct VMObjectPagedInner {
     /// The size in bytes.
     size: usize,
     /// Physical frames of this VMO.
-    frames: BTreeMap<usize, PageState>,
+    frames: HashMap<usize, PageState>,
     /// All mappings to this VMO.
     mappings: Vec<Weak<VmMapping>>,
     /// Cache Policy
@@ -157,7 +157,7 @@ impl VMObjectPaged {
             parent_offset: 0usize,
             parent_limit: 0usize,
             size: pages * PAGE_SIZE,
-            frames: BTreeMap::new(),
+            frames: HashMap::new(),
             mappings: Vec::new(),
             cache_policy: CachePolicy::Cached,
             contiguous: false,
@@ -757,18 +757,12 @@ impl VMObjectPagedInner {
         let start = child.parent_offset / PAGE_SIZE;
         let end = child.parent_limit / PAGE_SIZE;
         // merge nodes to the child
-        let mut child_frames = self.frames.split_off(&start);
-        for (key, value) in child_frames.iter_mut() {
-            if *key >= end {
-                break;
+        for (key, mut value) in core::mem::take(&mut self.frames) {
+            if key < start || key >= end {
+                continue;
             }
             if self.contiguous && !child.contiguous && value.pin_count >= 1 {
                 value.pin_count -= 1;
-            }
-        }
-        for (key, value) in child_frames {
-            if key >= end {
-                break;
             }
             let idx = key - start;
             if !child.frames.contains_key(&idx) && value.tag != tag.negate() {
@@ -807,7 +801,7 @@ impl VMObjectPagedInner {
             parent_offset: offset,
             parent_limit: (offset + len).min(self.size),
             size: len,
-            frames: BTreeMap::new(),
+            frames: HashMap::new(),
             mappings: Vec::new(),
             cache_policy: CachePolicy::Cached,
             contiguous: false,

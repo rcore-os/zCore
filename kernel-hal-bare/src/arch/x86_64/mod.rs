@@ -55,16 +55,17 @@ impl PageTableImpl {
         flags: MMUFlags,
     ) -> Result<(), ()> {
         let mut pt = self.get();
-        let page = Page::<Size4KiB>::from_start_address(vaddr).unwrap();
-        let frame = PhysFrame::from_start_address(paddr).unwrap();
-        let flush = unsafe {
-            pt.map_to(page, frame, flags.to_ptf(), &mut FrameAllocatorImpl)
-                .unwrap()
+        unsafe {
+            pt.map_to_with_table_flags(
+                Page::<Size4KiB>::from_start_address(vaddr).unwrap(),
+                PhysFrame::from_start_address(paddr).unwrap(),
+                flags.to_ptf(),
+                PTF::PRESENT | PTF::WRITABLE | PTF::USER_ACCESSIBLE,
+                &mut FrameAllocatorImpl,
+            )
+            .unwrap()
+            .flush();
         };
-        if flags.contains(MMUFlags::USER) {
-            self.allow_user_access(vaddr);
-        }
-        flush.flush();
         trace!("map: {:x?} -> {:x?}, flags={:?}", vaddr, paddr, flags);
         Ok(())
     }
@@ -74,10 +75,9 @@ impl PageTableImpl {
     pub fn unmap(&mut self, vaddr: x86_64::VirtAddr) -> Result<(), ()> {
         let mut pt = self.get();
         let page = Page::<Size4KiB>::from_start_address(vaddr).unwrap();
-        if let Ok(pte) = pt.unmap(page) {
-            pte.1.flush();
+        if let Ok((_, flush)) = pt.unmap(page) {
+            flush.flush();
         }
-        //pt.unmap(page).unwrap().1.flush();
         trace!("unmap: {:x?}", vaddr);
         Ok(())
     }
@@ -88,9 +88,6 @@ impl PageTableImpl {
         let mut pt = self.get();
         let page = Page::<Size4KiB>::from_start_address(vaddr).unwrap();
         if let Ok(flush) = unsafe { pt.update_flags(page, flags.to_ptf()) } {
-            if flags.contains(MMUFlags::USER) {
-                self.allow_user_access(vaddr);
-            }
             flush.flush();
         }
         trace!("protect: {:x?}, flags={:?}", vaddr, flags);
@@ -111,23 +108,6 @@ impl PageTableImpl {
         let root = unsafe { &mut *(root_vaddr as *mut PageTable) };
         let offset = x86_64::VirtAddr::new(phys_to_virt(0) as u64);
         unsafe { OffsetPageTable::new(root, offset) }
-    }
-
-    /// Set user bit for 4-level PDEs of the page of `vaddr`.
-    ///
-    /// This is a workaround since `x86_64` crate does not set user bit for PDEs.
-    fn allow_user_access(&mut self, vaddr: x86_64::VirtAddr) {
-        let mut page_table = phys_to_virt(self.root_paddr) as *mut PageTable;
-        for level in 0..4 {
-            let index = (vaddr.as_u64() as usize >> (12 + (3 - level) * 9)) & 0o777;
-            let entry = unsafe { &mut (&mut *page_table)[index] };
-            let flags = entry.flags();
-            entry.set_flags(flags | PTF::USER_ACCESSIBLE);
-            if level == 3 || flags.contains(PTF::HUGE_PAGE) {
-                return;
-            }
-            page_table = frame_to_page_table(entry.frame().unwrap());
-        }
     }
 }
 
@@ -289,8 +269,11 @@ pub fn serial_write(s: &str) {
     putfmt(format_args!("{}", s));
 }
 
+/// Get TSC frequency.
+///
+/// WARN: This will be very slow on virtual machine since it uses CPUID instruction.
 fn tsc_frequency() -> u16 {
-    const DEFAULT: u16 = 3000;
+    const DEFAULT: u16 = 2600;
     if let Some(info) = raw_cpuid::CpuId::new().get_processor_frequency_info() {
         let f = info.processor_base_frequency();
         return if f == 0 { DEFAULT } else { f };
@@ -302,7 +285,7 @@ fn tsc_frequency() -> u16 {
 #[export_name = "hal_timer_now"]
 pub fn timer_now() -> Duration {
     let tsc = unsafe { core::arch::x86_64::_rdtsc() };
-    Duration::from_nanos(tsc * 1000 / tsc_frequency() as u64)
+    Duration::from_nanos(tsc * 1000 / unsafe { TSC_FREQUENCY } as u64)
 }
 
 fn timer_init() {
@@ -310,10 +293,16 @@ fn timer_init() {
     lapic.cpu_init();
 }
 
-#[inline(always)]
+#[export_name = "hal_irq_enable"]
 pub fn irq_enable(irq: u8) {
     let mut ioapic = unsafe { IoApic::new(phys_to_virt(IOAPIC_ADDR)) };
     ioapic.enable(irq, 0);
+}
+
+#[export_name = "hal_irq_disable"]
+pub fn irq_disable(irq: u8) {
+    let mut ioapic = unsafe { IoApic::new(phys_to_virt(IOAPIC_ADDR)) };
+    ioapic.disable(irq);
 }
 
 const LAPIC_ADDR: usize = 0xfee0_0000;
@@ -321,7 +310,7 @@ const IOAPIC_ADDR: usize = 0xfec0_0000;
 
 #[export_name = "hal_vdso_constants"]
 fn vdso_constants() -> VdsoConstants {
-    let tsc_frequency = tsc_frequency();
+    let tsc_frequency = unsafe { TSC_FREQUENCY };
     VdsoConstants {
         max_num_cpus: 1,
         features: Features {
@@ -349,6 +338,8 @@ pub fn init(config: Config) {
         Cr4::update(|f| f.insert(Cr4Flags::PAGE_GLOBAL));
         // store config
         CONFIG = config;
+        // get tsc frequency
+        TSC_FREQUENCY = tsc_frequency();
     }
 }
 
@@ -373,3 +364,5 @@ static mut CONFIG: Config = Config {
     acpi_rsdp: 0,
     smbios: 0,
 };
+
+static mut TSC_FREQUENCY: u16 = 2600;

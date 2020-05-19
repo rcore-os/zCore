@@ -120,6 +120,16 @@ struct ThreadInner {
     time: u128,
 }
 
+impl ThreadInner {
+    pub fn get_state(&self) -> ThreadState {
+        if self.suspend_count == 0 {
+            self.state
+        } else {
+            ThreadState::Suspended
+        }
+    }
+}
+
 impl Thread {
     /// Create a new thread.
     pub fn create(proc: &Arc<Process>, name: &str, _options: u32) -> ZxResult<Arc<Self>> {
@@ -175,7 +185,6 @@ impl Thread {
             context.general.rdi = arg1;
             context.general.rsi = arg2;
             context.general.rflags |= 0x3202;
-            context.vector.fcw = 0x37f;
             inner.state = ThreadState::Running;
             self.base.signal_set(Signal::THREAD_RUNNING);
         }
@@ -194,7 +203,6 @@ impl Thread {
             let context = inner.context.as_mut().ok_or(ZxError::BAD_STATE)?;
             context.general = regs;
             context.general.rflags |= 0x3202;
-            context.vector.fcw = 0x37f;
             inner.state = ThreadState::Running;
             self.base.signal_set(Signal::THREAD_RUNNING);
         }
@@ -283,7 +291,7 @@ impl Thread {
     pub fn get_thread_info(&self) -> ThreadInfo {
         let inner = self.inner.lock();
         ThreadInfo {
-            state: inner.state as u32,
+            state: inner.get_state() as u32,
             wait_exception_type: 0,
             cpu_affnity_mask: [0u64; 8],
         }
@@ -336,12 +344,7 @@ impl Thread {
     }
 
     pub fn state(&self) -> ThreadState {
-        let inner = self.inner.lock();
-        if inner.suspend_count == 0 {
-            inner.state
-        } else {
-            ThreadState::Suspended
-        }
+        self.inner.lock().get_state()
     }
 
     pub fn get_exceptionate(&self) -> Arc<Exceptionate> {

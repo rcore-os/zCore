@@ -1,9 +1,10 @@
 use {
     super::{exception::*, job::Job, job_policy::*, thread::Thread, *},
     crate::{object::*, signal::Futex, vm::*},
-    alloc::{boxed::Box, collections::BTreeMap, sync::Arc, vec::Vec},
+    alloc::{boxed::Box, sync::Arc, vec::Vec},
     core::{any::Any, sync::atomic::AtomicI32},
     futures::channel::oneshot::{self, Receiver, Sender},
+    hashbrown::HashMap,
     spin::Mutex,
 };
 
@@ -74,8 +75,8 @@ define_count_helper!(Process);
 struct ProcessInner {
     status: Status,
     max_handle_id: u32,
-    handles: BTreeMap<HandleValue, (Handle, Vec<Sender<()>>)>,
-    futexes: BTreeMap<usize, Arc<Futex>>,
+    handles: HashMap<HandleValue, (Handle, Vec<Sender<()>>)>,
+    futexes: HashMap<usize, Arc<Futex>>,
     threads: Vec<Arc<Thread>>,
 
     // special info

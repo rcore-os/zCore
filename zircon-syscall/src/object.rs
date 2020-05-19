@@ -3,7 +3,7 @@ use {
     alloc::vec::Vec,
     core::convert::TryFrom,
     numeric_enum_macro::numeric_enum,
-    zircon_object::{dev::*, signal::Port, task::*, vm::*},
+    zircon_object::{dev::*, ipc::*, signal::Port, task::*, vm::*},
 };
 
 impl Syscall<'_> {
@@ -62,8 +62,30 @@ impl Syscall<'_> {
                 UserOutPtr::<usize>::from(ptr).write(break_on_load)?;
                 Ok(())
             }
+            Property::SocketRxThreshold => {
+                if buffer_size < 8 {
+                    return Err(ZxError::BUFFER_TOO_SMALL);
+                }
+                let rx = proc
+                    .get_object_with_rights::<Socket>(handle_value, Rights::GET_PROPERTY)?
+                    .get_rx_tx_threshold()
+                    .0;
+                UserOutPtr::<usize>::from(ptr).write(rx)?;
+                Ok(())
+            }
+            Property::SocketTxThreshold => {
+                if buffer_size < 8 {
+                    return Err(ZxError::BUFFER_TOO_SMALL);
+                }
+                let tx = proc
+                    .get_object_with_rights::<Socket>(handle_value, Rights::GET_PROPERTY)?
+                    .get_rx_tx_threshold()
+                    .1;
+                UserOutPtr::<usize>::from(ptr).write(tx)?;
+                Ok(())
+            }
             _ => {
-                warn!("unknown property");
+                warn!("unknown property {:?}", property);
                 Err(ZxError::INVALID_ARGS)
             }
         }
@@ -119,6 +141,22 @@ impl Syscall<'_> {
                 proc.get_object_with_rights::<Process>(handle_value, Rights::SET_PROPERTY)?
                     .set_dyn_break_on_load(addr);
                 Ok(())
+            }
+            Property::SocketRxThreshold => {
+                if buffer_size < 8 {
+                    return Err(ZxError::BUFFER_TOO_SMALL);
+                }
+                let threshold = UserInPtr::<usize>::from(ptr).read()?;
+                proc.get_object::<Socket>(handle_value)?
+                    .set_read_threshold(threshold)
+            }
+            Property::SocketTxThreshold => {
+                if buffer_size < 8 {
+                    return Err(ZxError::BUFFER_TOO_SMALL);
+                }
+                let threshold = UserInPtr::<usize>::from(ptr).read()?;
+                proc.get_object::<Socket>(handle_value)?
+                    .set_write_threshold(threshold)
             }
             _ => {
                 warn!("unknown property");
@@ -182,37 +220,58 @@ impl Syscall<'_> {
                 let _ = proc.get_dyn_object_with_rights(handle, Rights::empty())?;
             }
             Topic::Process => {
+                if buffer_size < core::mem::size_of::<ProcessInfo>() {
+                    return Err(ZxError::BUFFER_TOO_SMALL);
+                }
                 let proc = proc.get_object_with_rights::<Process>(handle, Rights::INSPECT)?;
                 UserOutPtr::<ProcessInfo>::from(buffer).write(proc.get_info())?;
             }
             Topic::Vmar => {
+                if buffer_size < core::mem::size_of::<VmarInfo>() {
+                    return Err(ZxError::BUFFER_TOO_SMALL);
+                }
                 let vmar =
                     proc.get_object_with_rights::<VmAddressRegion>(handle, Rights::INSPECT)?;
                 UserOutPtr::<VmarInfo>::from(buffer).write(vmar.get_info())?;
             }
             Topic::HandleBasic => {
+                if buffer_size < core::mem::size_of::<HandleBasicInfo>() {
+                    return Err(ZxError::BUFFER_TOO_SMALL);
+                }
                 let info = proc.get_handle_info(handle)?;
                 UserOutPtr::<HandleBasicInfo>::from(buffer).write(info)?;
             }
             Topic::Thread => {
+                if buffer_size < core::mem::size_of::<ThreadInfo>() {
+                    return Err(ZxError::BUFFER_TOO_SMALL);
+                }
                 let thread = proc.get_object_with_rights::<Thread>(handle, Rights::INSPECT)?;
                 UserOutPtr::<ThreadInfo>::from(buffer).write(thread.get_thread_info())?;
             }
             Topic::HandleCount => {
+                if buffer_size < core::mem::size_of::<u32>() {
+                    return Err(ZxError::BUFFER_TOO_SMALL);
+                }
                 let object = proc.get_dyn_object_with_rights(handle, Rights::INSPECT)?;
                 // FIXME: count Handle instead of Arc
                 UserOutPtr::<u32>::from(buffer).write(Arc::strong_count(&object) as u32 - 1)?;
             }
             Topic::Job => {
+                if buffer_size < core::mem::size_of::<JobInfo>() {
+                    return Err(ZxError::BUFFER_TOO_SMALL);
+                }
                 let job = proc.get_object_with_rights::<Job>(handle, Rights::INSPECT)?;
                 UserOutPtr::<JobInfo>::from(buffer).write(job.get_info())?;
             }
             Topic::ProcessVmos => {
-                warn!("A dummy implementation for utest Bti.NoDelayedUnpin, it does not check the reture value");
+                error!("A dummy implementation for utest Bti.NoDelayedUnpin, it does not check the reture value");
                 actual.write(0)?;
                 avail.write(0)?;
             }
             Topic::Vmo => {
+                if buffer_size < core::mem::size_of::<VmoInfo>() {
+                    return Err(ZxError::BUFFER_TOO_SMALL);
+                }
                 let (vmo, rights) = proc.get_object_and_rights::<VmObject>(handle)?;
                 let mut info = vmo.get_info();
                 info.flags |= VmoInfoFlags::VIA_HANDLE;
@@ -220,12 +279,17 @@ impl Syscall<'_> {
                 UserOutPtr::<VmoInfo>::from(buffer).write(info)?;
             }
             Topic::KmemStats => {
+                if buffer_size < core::mem::size_of::<KmemInfo>() {
+                    return Err(ZxError::BUFFER_TOO_SMALL);
+                }
                 let mut kmem = KmemInfo::default();
                 kmem.vmo_bytes = vmo_page_bytes() as u64;
                 UserOutPtr::<KmemInfo>::from(buffer).write(kmem)?;
             }
             Topic::TaskStats => {
-                assert_eq!(core::mem::size_of::<TaskStatsInfo>(), buffer_size);
+                if buffer_size < core::mem::size_of::<TaskStatsInfo>() {
+                    return Err(ZxError::BUFFER_TOO_SMALL);
+                }
                 let vmar = proc
                     .get_object_with_rights::<Process>(handle, Rights::INSPECT)?
                     .vmar();
@@ -252,9 +316,26 @@ impl Syscall<'_> {
                 avail.write(ids.len())?;
             }
             Topic::Bti => {
+                if buffer_size < core::mem::size_of::<BtiInfo>() {
+                    return Err(ZxError::BUFFER_TOO_SMALL);
+                }
                 let bti = proc
                     .get_object_with_rights::<BusTransactionInitiator>(handle, Rights::INSPECT)?;
                 UserOutPtr::<BtiInfo>::from(buffer).write(bti.get_info())?;
+            }
+            Topic::Resource => {
+                if buffer_size < core::mem::size_of::<ResourceInfo>() {
+                    return Err(ZxError::BUFFER_TOO_SMALL);
+                }
+                let resource = proc.get_object_with_rights::<Resource>(handle, Rights::INSPECT)?;
+                UserOutPtr::<ResourceInfo>::from(buffer).write(resource.get_info())?;
+            }
+            Topic::Socket => {
+                if buffer_size < core::mem::size_of::<SocketInfo>() {
+                    return Err(ZxError::BUFFER_TOO_SMALL);
+                }
+                let socket = proc.get_object_with_rights::<Socket>(handle, Rights::INSPECT)?;
+                UserOutPtr::<SocketInfo>::from(buffer).write(socket.get_info())?;
             }
             _ => {
                 error!("not supported info topic: {:?}", topic);
@@ -426,6 +507,8 @@ numeric_enum! {
         ProcessDebugAddr = 5,
         ProcessVdsoBaseAddress = 6,
         ProcessBreakOnLoad = 7,
+        SocketRxThreshold = 12,
+        SocketTxThreshold = 13,
     }
 }
 
