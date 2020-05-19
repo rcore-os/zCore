@@ -41,7 +41,7 @@ pub trait FileLike: KernelObject {
 
 impl_downcast!(sync FileLike);
 
-#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub struct FileDesc(i32);
 
 impl FileDesc {
