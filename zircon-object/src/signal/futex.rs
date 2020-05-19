@@ -147,7 +147,23 @@ impl Futex {
                 Poll::Pending
             }
         }
-
+        // The FutexFuture will be dropped when the thread is no longer waiting
+        // if we wake without be woken, remove myself from the waiter_queue
+        impl Drop for FutexFuture{
+            fn drop(&mut self) {
+                let inner = self.waiter.inner.lock();
+                if !inner.woken {
+                    if let Some(thread) = &self.waiter.thread{
+                        let futex=thread.proc().get_futex(inner.futex.value);
+                        let queue=&mut futex.inner.lock().waiter_queue;
+                        if let Some(pos)=queue.iter().position(|x|Arc::ptr_eq(&x,&self.waiter)){
+                            // Nobody cares about the order of queue, so just remove faster
+                            queue.swap_remove_back(pos);
+                        }
+                    }
+                }
+            }
+        }
         FutexFuture {
             waiter: Arc::new(Waiter {
                 thread,
