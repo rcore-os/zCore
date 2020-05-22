@@ -85,17 +85,12 @@ impl Syscall<'_> {
             if !arg1.rights.contains(Rights::TRANSFER) {
                 return Err(ZxError::ACCESS_DENIED);
             }
-            process.add_handle(arg1)
+            Some(arg1)
         } else {
-            arg1_handle
+            None
         };
-        match thread.start(entry, stack, arg1 as usize, arg2, self.spawn_fn) {
-            Ok(()) => Ok(()),
-            Err(e) => {
-                process.remove_handle(arg1)?;
-                Err(e)
-            }
-        }
+        process.start(&thread, entry, stack, arg1, arg2, self.spawn_fn)?;
+        Ok(())
     }
 
     pub fn sys_thread_write_state(
@@ -155,6 +150,9 @@ impl Syscall<'_> {
         );
         let proc = self.thread.proc();
         let thread = proc.get_object_with_rights::<Thread>(handle_value, Rights::MANAGE_THREAD)?;
+        if thread.proc().status() != Status::Running {
+            return Err(ZxError::BAD_STATE);
+        }
         thread.start(entry, stack, arg1, arg2, self.spawn_fn)?;
         Ok(())
     }
