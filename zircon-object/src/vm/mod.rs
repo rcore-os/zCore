@@ -4,7 +4,10 @@ mod vmar;
 mod vmo;
 
 pub use self::{vmar::*, vmo::*};
-pub use kernel_hal::MMUFlags;
+use super::{ZxError, ZxResult};
+use alloc::sync::Arc;
+pub use kernel_hal::{CachePolicy, MMUFlags};
+use lazy_static::*;
 
 /// Physical Address
 pub type PhysAddr = usize;
@@ -47,6 +50,26 @@ pub fn roundup_pages(size: usize) -> usize {
 
 pub fn round_down_pages(size: usize) -> usize {
     size / PAGE_SIZE * PAGE_SIZE
+}
+
+lazy_static! {
+    pub static ref KERNEL_ASPACE: Arc<VmAddressRegion> = VmAddressRegion::new_kernel();
+}
+
+pub fn kernel_allocate_physical(
+    size: usize,
+    paddr: PhysAddr,
+    mmu_flags: MMUFlags,
+    cache_policy: CachePolicy,
+) -> ZxResult<VirtAddr> {
+    if !page_aligned(paddr) {
+        return Err(ZxError::INVALID_ARGS);
+    }
+    let size = roundup_pages(size);
+    let vmo = VmObject::new_physical(paddr, pages(size));
+    vmo.set_cache_policy(cache_policy)?;
+    let flags = mmu_flags - MMUFlags::CACHE_1 - MMUFlags::CACHE_2;
+    KERNEL_ASPACE.map(None, vmo, 0, size, flags)
 }
 
 #[cfg(test)]

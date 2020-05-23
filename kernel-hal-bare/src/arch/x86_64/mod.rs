@@ -296,6 +296,12 @@ fn timer_init() {
     lapic.cpu_init();
 }
 
+#[export_name = "hal_apic_local_id"]
+pub fn apic_local_id() -> u8 {
+    let lapic = unsafe { XApic::new(phys_to_virt(LAPIC_ADDR)) };
+    lapic.id() as u8
+}
+
 #[export_name = "hal_irq_enable"]
 pub fn irq_enable(irq: u8) {
     let mut ioapic = unsafe { IoApic::new(phys_to_virt(IOAPIC_ADDR)) };

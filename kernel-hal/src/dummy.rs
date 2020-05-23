@@ -347,3 +347,10 @@ pub fn outpd(_port: u16, _value: u32) {
 pub fn inpd(_port: u16) -> u32 {
     unimplemented!()
 }
+
+/// Get local APIC ID
+#[linkage = "weak"]
+#[export_name = "hal_apic_local_id"]
+pub fn apic_local_id() -> u8 {
+    unimplemented!()
+}

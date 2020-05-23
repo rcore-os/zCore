@@ -14,18 +14,11 @@ pub fn pci_bdf_raw_addr(bus: u8, dev: u8, func: u8, offset: u8) -> u32 {
         | (offset as u32 & 0xff) // bits 7-2 reg, with bottom 2 bits as well
 }
 
-pub fn pio_config_read(
-    bus: u8,
-    dev: u8,
-    func: u8,
-    offset: u8,
-    val: &mut u32,
-    width: usize,
-) -> ZxResult {
-    pio_config_read_addr(pci_bdf_raw_addr(bus, dev, func, offset), val, width)
+pub fn pio_config_read(bus: u8, dev: u8, func: u8, offset: u8, width: usize) -> ZxResult<u32> {
+    pio_config_read_addr(pci_bdf_raw_addr(bus, dev, func, offset), width)
 }
 
-pub fn pio_config_read_addr(addr: u32, val: &mut u32, width: usize) -> ZxResult {
+pub fn pio_config_read_addr(addr: u32, width: usize) -> ZxResult<u32> {
     let _lock = PIO_LOCK.lock();
     let shift = ((addr & 0x3) << 3) as usize;
     if shift + width > 32 {
@@ -33,8 +26,7 @@ pub fn pio_config_read_addr(addr: u32, val: &mut u32, width: usize) -> ZxResult 
     }
     outpd(PCI_CONFIG_ADDR, (addr & !0x3) | PCI_CONFIG_ENABLE);
     let tmp_val = u32::from_le(inpd(PCI_CONFIG_DATA));
-    *val = (tmp_val >> shift) & (((1u64 << width) - 1) as u32);
-    Ok(())
+    Ok((tmp_val >> shift) & (((1u64 << width) - 1) as u32))
 }
 pub fn pio_config_write(
     bus: u8,

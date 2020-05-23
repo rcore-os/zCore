@@ -56,8 +56,7 @@ impl Syscall<'_> {
                 let tmp = val.read()?;
                 pio_config_write(bus, dev, func, offset, tmp, width)?;
             } else {
-                let mut tmp = 0;
-                pio_config_read(bus, dev, func, offset, &mut tmp, width)?;
+                let mut tmp = pio_config_read(bus, dev, func, offset, width)?;
                 val.write(tmp)?;
             }
             Ok(())
@@ -117,37 +116,36 @@ impl Syscall<'_> {
                     ((end - addr_win.base) & (PCIE_ECAM_BYTES_PER_BUS as u64 - 1)) as usize;
                 let new_bus_end: usize =
                     addr_win.size / PCIE_ECAM_BYTES_PER_BUS + addr_win.bus_start as usize - 1;
-                if new_bus_end as usize >= PCI_MAX_BUSSES {
+                if new_bus_end as usize >= PCIE_MAX_BUSSES {
                     return Err(ZxError::INVALID_ARGS);
                 }
                 addr_win.bus_end = new_bus_end as u8;
             }
         }
-        /*
         if addr_win.cfg_space_type == PCI_CFG_SPACE_TYPE_MMIO {
             if addr_win.size < PCIE_ECAM_BYTES_PER_BUS
-                || addr_win.size / PCIE_ECAM_BYTES_PER_BUS > PCIE_MAX_BUSSES - addr_win.bus_start
+                || addr_win.size / PCIE_ECAM_BYTES_PER_BUS
+                    > PCIE_MAX_BUSSES - addr_win.bus_start as usize
             {
                 return Err(ZxError::INVALID_ARGS);
             }
-            let addr_provider = MmioPcieAddressProvider::new();
+            let addr_provider = Arc::new(MmioPcieAddressProvider::new());
             addr_provider.add_ecam(PciEcamRegion {
                 phys_base: addr_win.base,
                 size: addr_win.size,
                 bus_start: addr_win.bus_start,
                 bus_end: addr_win.bus_end,
             })?;
-            set_addr_provider(addr_provider)?;
+            PCIeBusDriver::set_address_translation_provider(addr_provider)?;
         } else if addr_win.cfg_space_type == PCI_CFG_SPACE_TYPE_PIO {
-            let addr_provider = PioPcieAddressProvider::new();
-            set_addr_provider(addr_provider)?;
+            let addr_provider = Arc::new(PioPcieAddressProvider::new());
+            PCIeBusDriver::set_address_translation_provider(addr_provider)?;
         } else {
             return Err(ZxError::INVALID_ARGS);
         }
         let root = PcieRootLUTSwizzle::new(pcie, 0, arg_header.dev_pin_to_global_irq);
-        pcie_add_root(root)?;
-        pcie_start_bus_driver()?;
-        */
+        PCIeBusDriver::add_root(root)?;
+        PCIeBusDriver::start_bus_driver()?;
         Ok(())
     }
 }

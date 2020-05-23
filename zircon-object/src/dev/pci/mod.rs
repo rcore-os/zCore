@@ -1,9 +1,11 @@
 // use super::*;
 mod acpi_table;
 mod bus;
+mod nodes;
 mod pio;
 
 pub use bus::*;
+pub use nodes::*;
 pub use pio::*;
 
 #[derive(PartialEq)]
@@ -31,15 +33,17 @@ pub struct PciInitArgsIrqs {
     pub padding1: [u8; 2],
 }
 
-const PCI_MAX_DEVICES_PER_BUS: usize = 32;
-const PCI_MAX_FUNCTIONS_PER_DEVICE: usize = 8;
-const PCI_MAX_LEGACY_IRQ_PINS: usize = 4;
-const PCI_MAX_IRQS: usize = 224;
-const PCI_INIT_ARG_MAX_ECAM_WINDOWS: usize = 2;
+pub const PCI_MAX_DEVICES_PER_BUS: usize = 32;
+pub const PCI_MAX_FUNCTIONS_PER_DEVICE: usize = 8;
+pub const PCI_MAX_LEGACY_IRQ_PINS: usize = 4;
+pub const PCI_MAX_FUNCTIONS_PER_BUS: usize = PCI_MAX_FUNCTIONS_PER_DEVICE * PCI_MAX_DEVICES_PER_BUS;
+pub const PCI_MAX_IRQS: usize = 224;
+pub const PCI_INIT_ARG_MAX_ECAM_WINDOWS: usize = 2;
 
 #[repr(transparent)]
+#[derive(Clone)]
 pub struct PciIrqSwizzleLut(
-    [[[u32; PCI_MAX_DEVICES_PER_BUS]; PCI_MAX_FUNCTIONS_PER_DEVICE]; PCI_MAX_LEGACY_IRQ_PINS],
+    [[[u32; PCI_MAX_LEGACY_IRQ_PINS]; PCI_MAX_FUNCTIONS_PER_DEVICE]; PCI_MAX_DEVICES_PER_BUS],
 );
 
 #[repr(C)]
@@ -50,16 +54,34 @@ pub struct PciInitArgsHeader {
     pub addr_window_count: u32,
 }
 
+pub struct PciEcamRegion {
+    pub phys_base: u64,
+    pub size: usize,
+    pub bus_start: u8,
+    pub bus_end: u8,
+}
+
+pub struct MappedEcamRegion {
+    pub ecam: PciEcamRegion,
+    pub vaddr: u64,
+}
+
 pub const PCI_INIT_ARG_MAX_SIZE: usize = core::mem::size_of::<PciInitArgsAddrWindows>()
     * PCI_INIT_ARG_MAX_ECAM_WINDOWS
     + core::mem::size_of::<PciInitArgsHeader>();
 pub const PCI_NO_IRQ_MAPPING: u32 = u32::MAX;
 pub const PCIE_PIO_ADDR_SPACE_MASK: u64 = 0xFFFFFFFF; // (1 << 32) - 1
-pub const PCI_MAX_BUSSES: usize = 256;
+pub const PCIE_MAX_BUSSES: usize = 256;
 pub const PCIE_ECAM_BYTES_PER_BUS: usize =
     4096 * PCI_MAX_DEVICES_PER_BUS * PCI_MAX_FUNCTIONS_PER_DEVICE;
+pub const PCIE_INVALID_VENDOR_ID: usize = 0xFFFF;
+
+pub const PCI_CFG_SPACE_TYPE_PIO: u8 = 0;
+pub const PCI_CFG_SPACE_TYPE_MMIO: u8 = 1;
 const IO_APIC_NUM_REDIRECTIONS: u8 = 120;
 use super::*;
+use alloc::sync::*;
+
 pub fn pci_configure_interrupt(arg_header: &mut PciInitArgsHeader) -> ZxResult {
     for i in 0..arg_header.num_irqs as usize {
         let irq = &mut arg_header.irqs[i];
@@ -98,7 +120,8 @@ fn is_valid_interrupt(irq: u32) -> bool {
 
 fn irq_configure(irq: u32, level_trigger: bool, active_high: bool) -> ZxResult {
     let irq_obj = get_irq(irq).ok_or(ZxError::INVALID_ARGS)?;
-    let dest = 123;
+    // In fuchsia source code, 'BSP' stands for bootstrap processor
+    let dest = kernel_hal::apic_local_id();
     kernel_hal::irq_configure(
         irq_obj.address as usize,
         (irq - irq_obj.global_system_interrupt_base) as u8,
@@ -107,6 +130,43 @@ fn irq_configure(irq: u32, level_trigger: bool, active_high: bool) -> ZxResult {
         active_high,
     );
     Ok(())
+}
+
+pub struct PcieRootLUTSwizzle(PciIrqSwizzleLut);
+
+pub trait PcieRootSwizzle {
+    fn swizzle(&self, dev_id: usize, func_id: usize, pin: usize) -> ZxResult<usize>;
+}
+
+impl PcieRootLUTSwizzle {
+    pub fn new(
+        pcie: Weak<PCIeBusDriver>,
+        managed_bus_id: usize,
+        lut: &PciIrqSwizzleLut,
+    ) -> PcieRoot {
+        PcieRoot {
+            device: pcie,
+            managed_bus_id,
+            inner: Arc::new(PcieRootLUTSwizzle(lut.clone())),
+        }
+    }
+}
+
+impl PcieRootSwizzle for PcieRootLUTSwizzle {
+    fn swizzle(&self, dev_id: usize, func_id: usize, pin: usize) -> ZxResult<usize> {
+        if dev_id >= PCI_MAX_DEVICES_PER_BUS
+            || func_id >= PCI_MAX_FUNCTIONS_PER_DEVICE
+            || pin >= PCI_MAX_LEGACY_IRQ_PINS
+        {
+            return Err(ZxError::INVALID_ARGS);
+        }
+        let irq = (self.0).0[dev_id][func_id][pin];
+        if irq == PCI_NO_IRQ_MAPPING {
+            Err(ZxError::NOT_FOUND)
+        } else {
+            Ok(irq as usize)
+        }
+    }
 }
 
 fn pci_irq_swizzle_lut_remove_irq(lut: &mut PciIrqSwizzleLut, irq: u32) {
