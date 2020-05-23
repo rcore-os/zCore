@@ -12,7 +12,7 @@ kernel_img := $(build_path)/zcore.img
 ESP := $(build_path)/esp
 OVMF := ../rboot/OVMF.fd
 TOOLS_PATH := ../prebuilt/tools
-qemu := /media/dflasher/Large/fuchsia/prebuilt/third_party/qemu/linux-x64/bin/qemu-system-x86_64
+qemu := qemu-system-x86_64
 OBJDUMP := rust-objdump
 VMDISK := $(build_path)/boot.vdi
 
@@ -45,7 +45,11 @@ endif
 ifeq ($(graphic), on)
 build_args += --features graphic
 else
+ifeq ($(MAKECMDGOALS), vbox)
+build_args += --features graphic
+else
 qemu_opts += -display none -nographic
+endif
 endif
 
 run: build justrun
@@ -89,7 +93,7 @@ header:
 asm:
 	$(OBJDUMP) -d $(kernel) | less
 
-vbox:
+vbox: build
 ifneq "$(VMDISK)" "$(wildcard $(VMDISK))"
 	vboxmanage createvm --name zCoreVM --basefolder $(build_path) --register
 	cp ../prebuilt/zircon/empty.vdi $(VMDISK)
