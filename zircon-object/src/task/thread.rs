@@ -470,7 +470,7 @@ mod tests {
         // start a new thread
         let thread_ref_count = Arc::strong_count(&thread);
         let handle = Handle::new(proc.clone(), Rights::DEFAULT_PROCESS);
-        proc.start(&thread, entry, stack_top, handle.clone(), 2, spawn)
+        proc.start(&thread, entry, stack_top, Some(handle.clone()), 2, spawn)
             .expect("failed to start thread");
 
         // wait 100ms for the new thread to exit
@@ -485,13 +485,13 @@ mod tests {
 
         // start again should fail
         assert_eq!(
-            proc.start(&thread, entry, stack_top, handle.clone(), 2, spawn),
+            proc.start(&thread, entry, stack_top, Some(handle.clone()), 2, spawn),
             Err(ZxError::BAD_STATE)
         );
 
         // start another thread should fail
         assert_eq!(
-            proc.start(&thread1, entry, stack_top, handle.clone(), 2, spawn),
+            proc.start(&thread1, entry, stack_top, Some(handle.clone()), 2, spawn),
             Err(ZxError::BAD_STATE)
         );
     }
