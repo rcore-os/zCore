@@ -1,15 +1,32 @@
 use super::*;
+// use ::pci::*;
 use alloc::sync::*;
+use alloc::vec::Vec;
 use spin::{Mutex, MutexGuard};
 
 pub struct PcieUpstream {
     pub driver: Weak<PCIeBusDriver>,
     pub managed_bus_id: usize,
-    downstream: [Arc<PcieDevice>; PCI_MAX_FUNCTIONS_PER_BUS],
+    downstream: [Option<Arc<PcieDevice>>; PCI_MAX_FUNCTIONS_PER_BUS],
     weak_self: Weak<Self>,
+    weak_super: Weak<dyn IPciNode + Send + Sync>,
 }
 
 impl PcieUpstream {
+    pub fn driver(&self) -> Weak<PCIeBusDriver> {
+        self.driver.clone()
+    }
+    pub fn create(driver: Weak<PCIeBusDriver>, managed_bus_id: usize) -> Arc<Self> {
+        let ret = Arc::new(PcieUpstream {
+            driver,
+            managed_bus_id,
+            downstream: [None; PCI_MAX_FUNCTIONS_PER_BUS],
+            weak_self: Weak::new(),
+            weak_super: Weak::<PciRoot>::new(),
+        });
+        ret.weak_self = Arc::downgrade(&ret);
+        ret
+    }
     pub fn scan_downstream(&mut self) {
         for dev_id in 0..PCI_MAX_DEVICES_PER_BUS {
             for func_id in 0..PCI_MAX_FUNCTIONS_PER_DEVICE {
@@ -35,12 +52,15 @@ impl PcieUpstream {
                     let downstream_device = self.get_downstream(ndx);
                     match downstream_device {
                         Some(dev) => {
-                            if dev.is_bridge() {
-                                dev.scan_downstream();
-                            }
+                            // *************TODO:
+                            // if dev.is_bridge() {
+                            //     dev.scan_downstream();
+                            // }
                         }
                         None => {
-                            if let None = self.scan_device(cfg, dev_id, func_id, Some(vendor_id)) {
+                            if let None =
+                                self.scan_device(cfg.as_ref(), dev_id, func_id, Some(vendor_id))
+                            {
                                 info!(
                                     "failed to initialize device {:#x?}:{:#x?}.{:#x?}\n",
                                     self.managed_bus_id, dev_id, func_id
@@ -67,46 +87,25 @@ impl PcieUpstream {
         cfg: &PciConfig,
         dev_id: usize,
         func_id: usize,
-        vendor_id: Option<usize>,
-    ) -> Option<PcieDevice> {
-        let vendor_id = vendor_id
-            .or(Some(cfg.read16(PciReg16::VendorId) as usize))
-            .unwrap();
-        if vendor_id == PCIE_INVALID_VENDOR_ID {
+        vendor_id: Option<u16>,
+    ) -> Option<Arc<dyn IPciNode + Send + Sync>> {
+        let vendor_id = vendor_id.or(Some(cfg.read16(PciReg16::VendorId))).unwrap();
+        if vendor_id == PCIE_INVALID_VENDOR_ID as u16 {
             return None;
         }
         let header_type = cfg.read8(PciReg8::HeaderType) & 0x7f;
         if header_type == PCI_HEADER_TYPE_PCI_BRIDGE {
             let secondary_id = cfg.read8(PciReg8::SecondaryBusId);
-            Some(PcieBridge::create(
-                self.weak_self.clone(),
-                dev_id,
-                func_id,
-                secondary_id,
-            ))
+            PciBridge::new(self.weak_super, dev_id, func_id, secondary_id as usize).map(|x| x as _)
         } else {
-            PcieDevice::create(self.weak_self.clone(), dev_id, func_id)
+            PciDeviceNode::new(self.weak_super.clone(), dev_id, func_id).map(|x| x as _)
         }
     }
     fn get_downstream(&self, index: usize) -> Option<Arc<PcieDevice>> {
         if index >= PCI_MAX_FUNCTIONS_PER_BUS {
             return None;
         }
-        Some(self.downstream[index].clone())
-    }
-}
-
-pub struct PcieRoot {
-    base: Arc<PcieUpstream>,
-    inner: Arc<dyn PcieRootSwizzle>,
-}
-
-impl PcieRoot {
-    pub fn swizzle(&self, dev_id: usize, func_id: usize, pin: usize) -> ZxResult<usize> {
-        self.inner.swizzle(dev_id, func_id, pin)
-    }
-    pub fn managed_bus_id(&self) -> usize {
-        self.base.managed_bus_id
+        self.downstream[index].clone()
     }
 }
 
@@ -120,6 +119,14 @@ struct PcieBarInfo {
     bus_addr: u64,
 }
 #[derive(Default)]
+struct SharedLegacyIrqHandler {}
+#[derive(Default)]
+struct PcieLegacyIrqState {
+    pub pin: u8,
+    pub id: usize,
+    pub shared_handler: SharedLegacyIrqHandler,
+}
+// #[derive(Default)]
 pub struct PcieDevice {
     driver: Weak<PCIeBusDriver>,
     managed_bus_id: usize,
@@ -131,7 +138,12 @@ pub struct PcieDevice {
     cfg: Option<Arc<PciConfig>>,
     cfg_phys: usize,
     bars: [PcieBarInfo; 6],
+    caps: Vec<PciCapacity>,
+    irq: PcieLegacyIrqState,
     dev_lock: Mutex<()>,
+    weak_self: Weak<Self>,
+    weak_super: Weak<(dyn IPciNode + Send + Sync)>,
+    upstream: Weak<(dyn IPciNode + Send + Sync)>,
     vendor_id: u16,
     device_id: u16,
     class_id: u8,
@@ -151,11 +163,15 @@ pub struct PcieDevice {
 
 impl PcieDevice {
     pub fn create(
-        upstream: Weak<PcieUpstream>,
+        upstream: Weak<dyn IPciNode + Send + Sync>,
         dev_id: usize,
         func_id: usize,
     ) -> Option<Arc<Self>> {
-        let ups = upstream.upgrade().unwrap();
+        let ups = upstream.upgrade().unwrap().upstream();
+        if let None = ups {
+            return None;
+        }
+        let ups = ups.unwrap();
         let result = ups
             .driver
             .upgrade()
@@ -176,14 +192,27 @@ impl PcieDevice {
             bar_count: 6, // PCIE BAR regs per device
             cfg: Some(cfg),
             cfg_phys: paddr,
-            ..Self::default()
+            bars: [PcieBarInfo::default(); 6],
+            caps: Vec::new(),
+            irq: PcieLegacyIrqState::default(),
+            dev_lock: Mutex::default(),
+            weak_super: Weak::<PciRoot>::new(),
+            upstream: Weak::<PciRoot>::new(),
+            weak_self: Weak::new(),
+            vendor_id: 0,
+            device_id: 0,
+            class_id: 0,
+            subclass_id: 0,
+            prog_if: 0,
+            rev_id: 0,
         });
+        inst.weak_self = Arc::downgrade(&inst);
         inst.init(upstream);
         Some(inst)
     }
-    fn init(self: Arc<Self>, upstream: Weak<PcieUpstream>) -> ZxResult {
+    fn init(self: Arc<Self>, upstream: Weak<dyn IPciNode + Send + Sync>) -> ZxResult {
         let guard = self.dev_lock.lock();
-        self.init_config(&guard)?;
+        self.init_config(&guard, &upstream)?;
         self.plugged_in = true;
         self.driver
             .upgrade()
@@ -191,7 +220,11 @@ impl PcieDevice {
             .link_device_to_upstream(Arc::downgrade(&self), upstream);
         Ok(())
     }
-    fn init_config(&mut self, lock: &MutexGuard<()>) -> ZxResult {
+    fn init_config(
+        &mut self,
+        lock: &MutexGuard<()>,
+        upstream: &Weak<dyn IPciNode + Send + Sync>,
+    ) -> ZxResult {
         let cfg = self.cfg.as_ref().unwrap();
         self.vendor_id = cfg.read16(PciReg16::VendorId);
         self.device_id = cfg.read16(PciReg16::DeviceId);
@@ -200,6 +233,8 @@ impl PcieDevice {
         self.prog_if = cfg.read8(PciReg8::ProgramInterface);
         self.rev_id = cfg.read8(PciReg8::RevisionId);
         self.init_probe_bars(lock);
+        self.init_capabilities(lock);
+        self.init_legacy_irq(lock, upstream);
         Ok(())
     }
     fn init_probe_bars(&mut self, lock: &MutexGuard<()>) -> ZxResult {
@@ -283,6 +318,242 @@ impl PcieDevice {
             }
         }
         Ok(())
+    }
+    fn init_capabilities(&mut self, lock: &MutexGuard<()>) -> ZxResult {
+        let cfg = self.cfg.as_ref().unwrap();
+        let mut cap_offset = cfg.read8(PciReg8::CapabilitiesPtr);
+        let mut found_num = 0;
+        while cap_offset != 0 && found_num < (256 - 64) / 4 {
+            if cap_offset == 0xff || cap_offset < 64 || cap_offset > 256 - 4 {
+                return Err(ZxError::INVALID_ARGS);
+            }
+            let id = cfg.read8_offset(cap_offset as usize);
+            let cap = match id {
+                0x5 => PciCapacity::Msi(cap_offset, id),
+                0x10 => PciCapacity::Pcie(cap_offset, id),
+                0x13 => PciCapacity::AdvFeatures(cap_offset, id),
+                _ => PciCapacity::Std(cap_offset, id),
+            };
+            self.caps.push(cap);
+            cap_offset = cfg.read8_offset(cap_offset as usize + 1) & 0xFC;
+            found_num += 1;
+        }
+        Ok(())
+    }
+    fn init_legacy_irq(
+        &mut self,
+        lock: &MutexGuard<()>,
+        upstream: &Weak<dyn IPciNode + Send + Sync>,
+    ) -> ZxResult {
+        self.modify_cmd(0, PCIE_CFG_COMMAND_INT_DISABLE);
+        let cfg = self.cfg.as_ref().unwrap();
+        let pin = cfg.read8(PciReg8::InterruptPin);
+        self.irq.pin = pin;
+        if pin != 0 {
+            self.map_pin_to_irq(lock, upstream)?;
+            self.irq.shared_handler = self.find_legacy_orq_handler(self.irq.id)?;
+        }
+        Ok(())
+    }
+    fn map_pin_to_irq(
+        &mut self,
+        lock: &MutexGuard<()>,
+        upstream: &Weak<(dyn IPciNode + Send + Sync)>,
+    ) -> ZxResult {
+        if self.irq.pin == 0 || self.irq.pin > 4 {
+            return Err(ZxError::BAD_STATE);
+        }
+        let pin = self.irq.pin - 1;
+        let mut dev = self.weak_self.upgrade().unwrap();
+        let mut upstream = upstream.clone();
+        while let Some(up) = upstream.upgrade() {
+            if let PciNodeType::Bridge = up.node_type() {
+                let bups = up.upstream().unwrap();
+                match bups.get_pcie_device_type() {
+                    Unknown | SwitchUpstreamPort | PcieToPciBridge | PciToPcieBridge => {
+                        pin = (pin + dev.dev_id as u8) % 4;
+                    }
+                    _ => (),
+                }
+                dev = up.device().unwrap();
+                upstream = dev.upstream();
+            } else {
+                break;
+            }
+        }
+        let upstream = upstream.upgrade();
+        if let Some(up_ptr) = upstream {
+            if let Some(up) = up_ptr.to_root() {
+                return Ok(up.swizzle(dev.dev_id, dev.func_id, pin));
+            }
+        }
+        Err(ZxError::BAD_STATE)
+    }
+    pub fn upstream(&self) -> Weak<dyn IPciNode + Send + Sync> {
+        self.upstream.clone()
+    }
+}
+
+pub enum PciNodeType {
+    Root,
+    Bridge,
+    Device,
+}
+
+pub trait IPciNode {
+    fn node_type(&self) -> PciNodeType;
+    fn device(&mut self) -> Option<Arc<PcieDevice>>;
+    fn upstream(&mut self) -> Option<Arc<PcieUpstream>>;
+    fn to_root(&mut self) -> Option<&mut PciRoot>;
+    fn to_device(&mut self) -> Option<&mut PciDeviceNode>;
+    fn to_bridge(&mut self) -> Option<&mut PciBridge>;
+}
+
+pub enum PciCapacity {
+    Msi(u8, u8),
+    Pcie(u8, u8),
+    AdvFeatures(u8, u8),
+    Std(u8, u8),
+}
+
+pub struct PciRoot {
+    base_upstream: Arc<PcieUpstream>,
+    lut: Arc<dyn PcieRootSwizzle + Send + Sync>,
+}
+
+impl PciRoot {
+    pub fn new(
+        driver: Weak<PCIeBusDriver>,
+        bus_id: usize,
+        lut: Arc<PcieRootLUTSwizzle>,
+    ) -> Arc<Self> {
+        let inner_ups = PcieUpstream::create(driver, bus_id);
+        let node = Arc::new(PciRoot {
+            base_upstream: inner_ups,
+            lut,
+        });
+        node.base_upstream.weak_super = Arc::downgrade(&(node as _));
+        node
+    }
+    pub fn swizzle(&self, dev_id: usize, func_id: usize, pin: usize) -> ZxResult<usize> {
+        self.lut.swizzle(dev_id, func_id, pin)
+    }
+    pub fn managed_bus_id(&self) -> usize {
+        self.base_upstream.managed_bus_id
+    }
+}
+
+impl IPciNode for PciRoot {
+    fn node_type(&self) -> PciNodeType {
+        PciNodeType::Root
+    }
+    fn device(&mut self) -> Option<Arc<PcieDevice>> {
+        None
+    }
+    fn upstream(&mut self) -> Option<Arc<PcieUpstream>> {
+        Some(self.base_upstream.clone())
+    }
+    fn to_root(&mut self) -> Option<&mut PciRoot> {
+        Some(self)
+    }
+    fn to_device(&mut self) -> Option<&mut PciDeviceNode> {
+        None
+    }
+    fn to_bridge(&mut self) -> Option<&mut PciBridge> {
+        None
+    }
+}
+
+pub struct PciDeviceNode {
+    base_device: Arc<PcieDevice>,
+}
+
+impl PciDeviceNode {
+    pub fn new(
+        upstream: Weak<dyn IPciNode + Send + Sync>,
+        dev_id: usize,
+        func_id: usize,
+    ) -> Option<Arc<Self>> {
+        PcieDevice::create(upstream, dev_id, func_id).map(|x| {
+            let node = Arc::new(PciDeviceNode { base_device: x });
+            node.base_device.weak_super = Arc::downgrade(&(node as _));
+            test_interface(node);
+            node
+        })
+    }
+}
+
+fn test_interface(t: Arc<(dyn IPciNode + Send + Sync)>) {}
+
+impl IPciNode for PciDeviceNode {
+    fn node_type(&self) -> PciNodeType {
+        PciNodeType::Device
+    }
+    fn device(&mut self) -> Option<Arc<PcieDevice>> {
+        Some(self.base_device.clone())
+    }
+    fn upstream(&mut self) -> Option<Arc<PcieUpstream>> {
+        None
+    }
+    fn to_root(&mut self) -> Option<&mut PciRoot> {
+        None
+    }
+    fn to_device(&mut self) -> Option<&mut PciDeviceNode> {
+        Some(self)
+    }
+    fn to_bridge(&mut self) -> Option<&mut PciBridge> {
+        None
+    }
+}
+
+pub struct PciBridge {
+    base_device: Arc<PcieDevice>,
+    base_upstream: Arc<PcieUpstream>,
+}
+
+impl PciBridge {
+    pub fn new(
+        upstream: Weak<dyn IPciNode + Send + Sync>,
+        dev_id: usize,
+        func_id: usize,
+        managed_bus_id: usize,
+    ) -> Option<Arc<Self>> {
+        let fa_ups = upstream.upgrade().and_then(|x| x.upstream());
+        if fa_ups.is_none() {
+            return None;
+        }
+        let inner_ups = PcieUpstream::create(fa_ups.unwrap().driver(), managed_bus_id);
+        let inner_dev = PcieDevice::create(upstream, dev_id, func_id);
+        inner_dev.map(move |x| {
+            let node = Arc::new(PciBridge {
+                base_device: x,
+                base_upstream: inner_ups,
+            });
+            node.base_device.weak_super = Arc::downgrade(&(node as _));
+            node.base_upstream.weak_super = Arc::downgrade(&(node as _));
+            node
+        })
+    }
+}
+
+impl IPciNode for PciBridge {
+    fn node_type(&self) -> PciNodeType {
+        PciNodeType::Bridge
+    }
+    fn device(&mut self) -> Option<Arc<PcieDevice>> {
+        Some(self.base_device.clone())
+    }
+    fn upstream(&mut self) -> Option<Arc<PcieUpstream>> {
+        Some(self.base_upstream.clone())
+    }
+    fn to_root(&mut self) -> Option<&mut PciRoot> {
+        None
+    }
+    fn to_device(&mut self) -> Option<&mut PciDeviceNode> {
+        None
+    }
+    fn to_bridge(&mut self) -> Option<&mut PciBridge> {
+        Some(self)
     }
 }
 

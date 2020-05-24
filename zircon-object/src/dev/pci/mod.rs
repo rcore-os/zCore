@@ -143,12 +143,12 @@ impl PcieRootLUTSwizzle {
         pcie: Weak<PCIeBusDriver>,
         managed_bus_id: usize,
         lut: &PciIrqSwizzleLut,
-    ) -> PcieRoot {
-        PcieRoot {
-            device: pcie,
+    ) -> Arc<PciRoot> {
+        PciRoot::new(
+            pcie.clone(),
             managed_bus_id,
-            inner: Arc::new(PcieRootLUTSwizzle(lut.clone())),
-        }
+            Arc::new(PcieRootLUTSwizzle(lut.clone())),
+        )
     }
 }
 

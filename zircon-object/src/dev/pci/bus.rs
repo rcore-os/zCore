@@ -14,7 +14,7 @@ pub struct PCIeBusDriver {
     mmio_hi: RegionAllocator,
     pio_region: RegionAllocator,
     address_provider: Option<Arc<dyn PCIeAddressProvider + Sync + Send>>,
-    roots: BTreeMap<usize, PcieRoot>,
+    roots: BTreeMap<usize, PciRoot>,
     state: PCIeBusDriverState,
     bus_topology: Mutex<()>,
     configs: Vec<Arc<PciConfig>>,
@@ -47,7 +47,7 @@ impl PCIeBusDriver {
             .lock()
             .set_address_translation_provider_inner(provider)
     }
-    pub fn add_root(root: PcieRoot) -> ZxResult {
+    pub fn add_root(root: PciRoot) -> ZxResult {
         _INSTANCE.lock().add_root_inner(root)
     }
     pub fn start_bus_driver() -> ZxResult {
@@ -84,7 +84,7 @@ impl PCIeBusDriver {
         self.address_provider = Some(provider);
         Ok(())
     }
-    pub fn add_root_inner(&mut self, root: PcieRoot) -> ZxResult {
+    pub fn add_root_inner(&mut self, root: PciRoot) -> ZxResult {
         if self.is_started(false) {
             return Err(ZxError::BAD_STATE);
         }
@@ -143,7 +143,7 @@ impl PCIeBusDriver {
         )?;
         self.foreach_root(
             |&root, _c| {
-                root.scan_downstream();
+                // root.scan_downstream();
                 true
             },
             (),
@@ -154,19 +154,19 @@ impl PCIeBusDriver {
         )?;
         self.foreach_device(
             |&root, _c, _level| {
-                PCIeBusDriver::run_quirks(Some(root));
+                // PCIeBusDriver::run_quirks(Some(root));
                 true
             },
             (),
         );
-        PCIeBusDriver::run_quirks(None);
+        // PCIeBusDriver::run_quirks(None);
         self.transfer_state(
             PCIeBusDriverState::StartingRunningQuirks,
             PCIeBusDriverState::StartingResourceAllocation,
         )?;
         self.foreach_root(
             |&root, _c| {
-                root.allocate_downstream_bar();
+                // root.allocate_downstream_bar();
                 true
             },
             (),
@@ -179,7 +179,7 @@ impl PCIeBusDriver {
     }
     fn foreach_root<T, C>(&mut self, callback: T, context: C)
     where
-        T: Fn(&PcieRoot, &mut C) -> bool,
+        T: Fn(&PciRoot, &mut C) -> bool,
     {
         let mut bus_top_guard = self.bus_topology.lock();
         for (_key, root) in self.roots.iter() {
@@ -193,7 +193,7 @@ impl PCIeBusDriver {
     }
     fn foreach_device<T, C>(&mut self, callback: T, context: C)
     where
-        T: Fn(&PcieRoot, &mut C, usize) -> bool,
+        T: Fn(&PciRoot, &mut C, usize) -> bool,
     {
         self.foreach_root(
             |&root, ctx| {
@@ -205,20 +205,21 @@ impl PCIeBusDriver {
     }
     fn foreach_downstream<T, C>(
         &mut self,
-        upstream: &PcieRoot,
+        upstream: &PciRoot,
         level: usize,
         callback: T,
         context: &mut C,
     ) where
-        T: Fn(&PcieRoot, &mut C, usize) -> bool,
+        T: Fn(&PciRoot, &mut C, usize) -> bool,
     {
+        /*
         for device in upstream.downstreams.iter() {
             if callback(upstream, context, level) {
                 if level < 256 && device.is_bridge() {
                     self.foreach_downstream(&device, level + 1, callback, context);
                 }
             }
-        }
+        }*/
     }
     fn transfer_state(
         &mut self,
@@ -382,13 +383,14 @@ pub struct PciConfig {
 
 #[allow(unsafe_code)]
 impl PciConfig {
-    pub fn read8(&self, addr: PciReg8) -> u8 {
+    pub fn read8_offset(&self, offset: usize) -> u8 {
         match self.addr_space {
-            MMIO => unsafe { u8::from_le(*((self.base + addr as usize) as *const u8)) },
-            PIO => {
-                pio_config_read_addr((self.base + addr as usize) as u32, 8).unwrap() as u8 & 0xff
-            }
+            MMIO => unsafe { u8::from_le(*(offset as *const u8)) },
+            PIO => pio_config_read_addr(offset as u32, 8).unwrap() as u8 & 0xff,
         }
+    }
+    pub fn read8(&self, addr: PciReg8) -> u8 {
+        self.read8_offset(self.base + addr as usize)
     }
     pub fn read16(&self, addr: PciReg16) -> u16 {
         match self.addr_space {
@@ -459,6 +461,9 @@ numeric_enum! {
         SecondaryLatencyTimer = 0x1B,
         IoBase = 0x1C,
         IoLimit = 0x1D,
+        CapabilitiesPtr = 0x34,
+        InterruptLine = 0x3C,
+        InterruptPin = 0x3D,
     }
 }
 numeric_enum! {
