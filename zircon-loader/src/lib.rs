@@ -175,7 +175,7 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
     let msg = MessagePacket { data, handles };
     kernel_channel.write(msg).unwrap();
 
-    proc.start(&thread, entry, sp, handle, 0, spawn)
+    proc.start(&thread, entry, sp, Some(handle), 0, spawn)
         .expect("failed to start main thread");
     proc
 }

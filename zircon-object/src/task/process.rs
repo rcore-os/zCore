@@ -136,7 +136,7 @@ impl Process {
         thread: &Arc<Thread>,
         entry: usize,
         stack: usize,
-        arg1: Handle,
+        arg1: Option<Handle>,
         arg2: usize,
         spawn_fn: fn(thread: Arc<Thread>),
     ) -> ZxResult {
@@ -146,14 +146,22 @@ impl Process {
             if !inner.contains_thread(thread) {
                 return Err(ZxError::ACCESS_DENIED);
             }
-            handle_value = inner.add_handle(arg1);
             if inner.status != Status::Init {
                 return Err(ZxError::BAD_STATE);
             }
             inner.status = Status::Running;
+            handle_value = arg1.map_or(INVALID_HANDLE, |handle| inner.add_handle(handle));
         }
-        thread.start(entry, stack, handle_value as usize, arg2, spawn_fn)?;
-        Ok(())
+        match thread.start(entry, stack, handle_value as usize, arg2, spawn_fn) {
+            Ok(_) => Ok(()),
+            Err(err) => {
+                let mut inner = self.inner.lock();
+                if handle_value != INVALID_HANDLE {
+                    inner.remove_handle(handle_value).ok();
+                }
+                Err(err)
+            }
+        }
     }
 
     /// Exit current process with `retcode`.
