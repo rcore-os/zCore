@@ -407,18 +407,6 @@ impl AcpiHandler for AcpiHelper {
         let OFFSET = 0;
         let page_start = physical_address / PAGE_SIZE;
         let page_end = (physical_address + size + PAGE_SIZE - 1) / PAGE_SIZE;
-        /*
-        let mut page_table = PageTableImpl::current();
-        for i in page_start..page_end {
-            let virt_addr = phys_to_virt(i * PAGE_SIZE + OFFSET);
-            page_table
-                .map(
-                    x86_64::VirtAddr::new(virt_addr as u64),
-                    x86_64::PhysAddr::new((i * PAGE_SIZE) as u64),
-                    MMUFlags::READ | MMUFlags::WRITE,
-                )
-                .unwrap();
-        }*/
         PhysicalMapping::<T> {
             physical_start: physical_address,
             virtual_start: NonNull::new_unchecked(phys_to_virt(physical_address + OFFSET) as *mut T),
@@ -426,21 +414,7 @@ impl AcpiHandler for AcpiHelper {
             region_length: PAGE_SIZE * (page_end - page_start),
         }
     }
-    fn unmap_physical_region<T>(&mut self, _region: PhysicalMapping<T>) {
-        /*
-        #[allow(non_snake_case)]
-        let OFFSET = 0;
-        let page_start = region.physical_start / PAGE_SIZE;
-        let page_end = page_start + region.region_length / PAGE_SIZE;
-        let mut page_table = PageTableImpl::current();
-        for i in page_start..page_end {
-            let virt_addr = phys_to_virt(i * PAGE_SIZE + OFFSET);
-            page_table
-                .unmap(x86_64::VirtAddr::new(virt_addr as u64))
-                .expect("AcpiHandle Unmap failure");
-        }
-        */
-    }
+    fn unmap_physical_region<T>(&mut self, _region: PhysicalMapping<T>) {}
 }
 
 #[export_name = "hal_acpi_table"]

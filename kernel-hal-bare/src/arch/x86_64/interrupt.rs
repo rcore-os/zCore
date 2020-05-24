@@ -1,8 +1,11 @@
 #![allow(dead_code)]
 #![allow(non_upper_case_globals)]
 
+use super::{get_acpi_table, phys_to_virt};
+use acpi::InterruptModel;
 use alloc::boxed::Box;
 use alloc::vec::Vec;
+use apic::IoApic;
 use spin::Mutex;
 use trapframe::TrapFrame;
 
@@ -18,12 +21,29 @@ pub fn init() {
     irq_add_handle(Keyboard, Box::new(keyboard));
     super::irq_enable(Keyboard);
     super::irq_enable(COM1);
+    unsafe {
+        init_ioapic();
+    }
 }
 
 fn init_irq_table() {
     let mut table = IRQ_TABLE.lock();
     for _ in 0..64 {
         table.push(None);
+    }
+}
+
+unsafe fn init_ioapic() {
+    if let Some(acpi) = get_acpi_table() {
+        if let InterruptModel::Apic(apic) = acpi.interrupt_model.as_ref().unwrap() {
+            for ioapic in apic.io_apics.iter() {
+                let ip = IoApic::new(phys_to_virt(ioapic.address as usize));
+                let max_redirect_entires = core::cmp::min((ip.version() >> 16) & 0xff, 120 - 1);
+                for i in 0..max_redirect_entires {
+                    ip.disable(i);
+                }
+            }
+        }
     }
 }
 
