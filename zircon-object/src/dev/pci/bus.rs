@@ -411,6 +411,35 @@ impl PciConfig {
     pub fn readBAR(&self, bar: usize) -> u32 {
         self.read32_inner(self.base + PciReg32::BARBase as usize + bar)
     }
+
+    pub fn write8(&self, addr: PciReg8, val: u8) {
+        match self.addr_space {
+            MMIO => unsafe { *((self.base + addr as usize) as *const u8) = val },
+            PIO => {
+                pio_config_write_addr((self.base + addr as usize) as u32, val as u32, 8).unwrap()
+            }
+        }
+    }
+    pub fn write16(&self, addr: PciReg16, val: u16) {
+        match self.addr_space {
+            MMIO => unsafe { *((self.base + addr as usize) as *const u16) = val },
+            PIO => {
+                pio_config_write_addr((self.base + addr as usize) as u32, val as u32, 16).unwrap()
+            }
+        }
+    }
+    pub fn write32(&self, addr: PciReg32, val: u32) {
+        self.write32_inner(self.base + addr as usize, val)
+    }
+    pub fn writeBAR(&self, bar: usize, val: u32) {
+        self.write32_inner(self.base + PciReg32::BARBase as usize + bar, val)
+    }
+    fn write32_inner(&self, addr: usize, val: u32) {
+        match self.addr_space {
+            MMIO => unsafe { *(addr as *const u32) = val },
+            PIO => pio_config_write_addr(addr as u32, val as u32, 32).unwrap(),
+        }
+    }
 }
 
 numeric_enum! {
