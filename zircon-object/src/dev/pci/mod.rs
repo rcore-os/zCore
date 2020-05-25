@@ -1,6 +1,8 @@
 // use super::*;
 mod acpi_table;
 mod bus;
+mod caps;
+mod config;
 mod nodes;
 mod pio;
 

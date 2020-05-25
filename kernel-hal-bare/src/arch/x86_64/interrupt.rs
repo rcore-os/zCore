@@ -37,8 +37,8 @@ unsafe fn init_ioapic() {
     if let Some(acpi) = get_acpi_table() {
         if let InterruptModel::Apic(apic) = acpi.interrupt_model.as_ref().unwrap() {
             for ioapic in apic.io_apics.iter() {
-                let ip = IoApic::new(phys_to_virt(ioapic.address as usize));
-                let max_redirect_entires = core::cmp::min((ip.version() >> 16) & 0xff, 120 - 1);
+                let mut ip = IoApic::new(phys_to_virt(ioapic.address as usize));
+                let max_redirect_entires = core::cmp::min(ip.maxintr(), 120 - 1);
                 for i in 0..max_redirect_entires {
                     ip.disable(i);
                 }
@@ -61,7 +61,7 @@ pub extern "C" fn trap_handler(tf: &mut TrapFrame) {
 
 #[export_name = "hal_irq_handle"]
 pub fn irq_handle(irq: u8) {
-    use super::{phys_to_virt, LocalApic, XApic, LAPIC_ADDR};
+    use super::{LocalApic, XApic, LAPIC_ADDR};
     let mut lapic = unsafe { XApic::new(phys_to_virt(LAPIC_ADDR)) };
     lapic.eoi();
     let table = IRQ_TABLE.lock();

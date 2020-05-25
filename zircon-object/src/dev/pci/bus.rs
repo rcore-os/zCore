@@ -1,11 +1,11 @@
 use super::super::*;
+use super::config::*;
 use super::*;
 use crate::vm::{kernel_allocate_physical, CachePolicy, MMUFlags, PhysAddr, VirtAddr};
 use alloc::{collections::BTreeMap, sync::Arc, vec::Vec};
 use core::cmp::min;
 use core::marker::{Send, Sync};
 use lazy_static::*;
-use numeric_enum_macro::*;
 use region_alloc::RegionAllocator;
 use spin::Mutex;
 
@@ -17,7 +17,8 @@ pub struct PCIeBusDriver {
     roots: BTreeMap<usize, PciRoot>,
     state: PCIeBusDriverState,
     bus_topology: Mutex<()>,
-    configs: Vec<Arc<PciConfig>>,
+    configs: Mutex<Vec<Arc<PciConfig>>>,
+    legacy_irq_list: Mutex<Vec<Arc<SharedLegacyIrqHandler>>>,
 }
 
 #[derive(PartialEq)]
@@ -65,7 +66,8 @@ impl PCIeBusDriver {
             roots: BTreeMap::new(),
             state: PCIeBusDriverState::NotStarted,
             bus_topology: Mutex::default(),
-            configs: Vec::new(),
+            legacy_irq_list: Mutex::new(Vec::new()),
+            configs: Mutex::new(Vec::new()),
         }
     }
     pub fn add_bus_region_inner(&mut self, base: u64, size: u64, aspace: PciAddrSpace) -> ZxResult {
@@ -142,8 +144,8 @@ impl PCIeBusDriver {
             PCIeBusDriverState::StartingScanning,
         )?;
         self.foreach_root(
-            |&root, _c| {
-                // root.scan_downstream();
+            |root, _c| {
+                root.base_upstream.scan_downstream();
                 true
             },
             (),
@@ -153,7 +155,7 @@ impl PCIeBusDriver {
             PCIeBusDriverState::StartingRunningQuirks,
         )?;
         self.foreach_device(
-            |&root, _c, _level| {
+            &|_root, _c, _level| {
                 // PCIeBusDriver::run_quirks(Some(root));
                 true
             },
@@ -165,7 +167,7 @@ impl PCIeBusDriver {
             PCIeBusDriverState::StartingResourceAllocation,
         )?;
         self.foreach_root(
-            |&root, _c| {
+            |_root, _c| {
                 // root.allocate_downstream_bar();
                 true
             },
@@ -177,11 +179,12 @@ impl PCIeBusDriver {
         )?;
         Ok(())
     }
-    fn foreach_root<T, C>(&mut self, callback: T, context: C)
+    fn foreach_root<T, C>(&self, callback: T, context: C)
     where
         T: Fn(&PciRoot, &mut C) -> bool,
     {
         let mut bus_top_guard = self.bus_topology.lock();
+        let mut context = context;
         for (_key, root) in self.roots.iter() {
             drop(bus_top_guard);
             if !callback(root, &mut context) {
@@ -191,35 +194,40 @@ impl PCIeBusDriver {
         }
         drop(bus_top_guard);
     }
-    fn foreach_device<T, C>(&mut self, callback: T, context: C)
+    fn foreach_device<T, C>(&self, callback: &T, context: C)
     where
-        T: Fn(&PciRoot, &mut C, usize) -> bool,
+        T: Fn(&(dyn IPciNode + Send + Sync), &mut C, usize) -> bool,
     {
         self.foreach_root(
-            |&root, ctx| {
-                self.foreach_downstream(&root, 0 /*level*/, callback, &mut (ctx.0));
+            |root, ctx| {
+                self.foreach_downstream(root, 0 /*level*/, callback, &mut (ctx.0));
                 true
             },
             (context, &self),
         )
     }
     fn foreach_downstream<T, C>(
-        &mut self,
-        upstream: &PciRoot,
+        &self,
+        upstream: &(dyn IPciNode + Send + Sync),
         level: usize,
-        callback: T,
+        callback: &T,
         context: &mut C,
     ) where
-        T: Fn(&PciRoot, &mut C, usize) -> bool,
+        T: Fn(&(dyn IPciNode + Send + Sync), &mut C, usize) -> bool,
     {
-        /*
-        for device in upstream.downstreams.iter() {
-            if callback(upstream, context, level) {
-                if level < 256 && device.is_bridge() {
-                    self.foreach_downstream(&device, level + 1, callback, context);
+        if level > 256 || upstream.upstream().is_none() {
+            return;
+        }
+        for device in upstream.upstream().unwrap().downstream.iter() {
+            if !callback(upstream, context, level) {
+                continue;
+            }
+            if let Some(dev) = device {
+                if let PciNodeType::Bridge = dev.node_type() {
+                    self.foreach_downstream(dev.as_ref(), level + 1, callback, context);
                 }
             }
-        }*/
+        }
     }
     fn transfer_state(
         &mut self,
@@ -237,7 +245,7 @@ impl PCIeBusDriver {
     }
 
     pub fn get_config(
-        &mut self,
+        &self,
         bus_id: usize,
         dev_id: usize,
         func_id: usize,
@@ -247,6 +255,7 @@ impl PCIeBusDriver {
         }
         let result = self
             .address_provider
+            .clone()
             .unwrap()
             .translate(bus_id as u8, dev_id as u8, func_id as u8)
             .ok();
@@ -254,13 +263,49 @@ impl PCIeBusDriver {
             return None;
         }
         let (paddr, vaddr) = result.unwrap();
-        let cfg = self.configs.iter().find(|x| x.base == vaddr);
+        let mut config = self.configs.lock();
+        let cfg = config.iter().find(|x| x.base == vaddr);
         if let Some(x) = cfg {
             return Some((x.clone(), paddr));
         }
-        let cfg = self.address_provider.unwrap().create_config(vaddr as u64);
-        self.configs.push(cfg.clone());
+        let cfg = self
+            .address_provider
+            .clone()
+            .unwrap()
+            .create_config(vaddr as u64);
+        config.push(cfg.clone());
         Some((cfg, paddr))
+    }
+
+    pub fn link_device_to_upstream(
+        &mut self,
+        down: Arc<dyn IPciNode + Send + Sync>,
+        up: Weak<dyn IPciNode + Send + Sync>,
+    ) {
+        let _guard = self.bus_topology.lock();
+        let dev_down = down.device();
+        let dev = dev_down.as_ref().unwrap();
+        dev.set_upstream(up.clone());
+        let up = up.upgrade().unwrap().upstream().unwrap();
+        up.set_downstream(
+            dev.dev_id() * PCI_MAX_FUNCTIONS_PER_DEVICE + dev.func_id(),
+            Some(down.clone()),
+        );
+    }
+
+    pub fn find_legacy_irq_handler(&self, irq_id: u32) -> ZxResult<Arc<SharedLegacyIrqHandler>> {
+        let mut list = self.legacy_irq_list.lock();
+        for i in list.iter() {
+            if irq_id == i.irq_id {
+                return Ok(i.clone());
+            }
+        }
+        SharedLegacyIrqHandler::create(irq_id)
+            .map(|x| {
+                list.push(x.clone());
+                x
+            })
+            .ok_or(ZxError::NO_RESOURCES)
     }
 }
 
@@ -373,115 +418,5 @@ impl PCIeAddressProvider for PioPcieAddressProvider {
     ) -> ZxResult<(PhysAddr, VirtAddr)> {
         let virt = pci_bdf_raw_addr(bus_id, device_id, function_id, 0);
         Ok((0, virt as VirtAddr))
-    }
-}
-
-pub struct PciConfig {
-    pub addr_space: PciAddrSpace,
-    pub base: usize,
-}
-
-#[allow(unsafe_code)]
-impl PciConfig {
-    pub fn read8_offset(&self, offset: usize) -> u8 {
-        match self.addr_space {
-            MMIO => unsafe { u8::from_le(*(offset as *const u8)) },
-            PIO => pio_config_read_addr(offset as u32, 8).unwrap() as u8 & 0xff,
-        }
-    }
-    pub fn read8(&self, addr: PciReg8) -> u8 {
-        self.read8_offset(self.base + addr as usize)
-    }
-    pub fn read16(&self, addr: PciReg16) -> u16 {
-        match self.addr_space {
-            MMIO => unsafe { u16::from_le(*((self.base + addr as usize) as *const u16)) },
-            PIO => {
-                pio_config_read_addr((self.base + addr as usize) as u32, 16).unwrap() as u16
-                    & 0xffff
-            }
-        }
-    }
-    fn read32_inner(&self, addr: usize) -> u32 {
-        match self.addr_space {
-            MMIO => unsafe { u32::from_le(*(addr as *const u32)) },
-            PIO => pio_config_read_addr(addr as u32, 32).unwrap(),
-        }
-    }
-    pub fn read32(&self, addr: PciReg32) -> u32 {
-        self.read32_inner(self.base + addr as usize)
-    }
-    pub fn readBAR(&self, bar: usize) -> u32 {
-        self.read32_inner(self.base + PciReg32::BARBase as usize + bar)
-    }
-
-    pub fn write8(&self, addr: PciReg8, val: u8) {
-        match self.addr_space {
-            MMIO => unsafe { *((self.base + addr as usize) as *const u8) = val },
-            PIO => {
-                pio_config_write_addr((self.base + addr as usize) as u32, val as u32, 8).unwrap()
-            }
-        }
-    }
-    pub fn write16(&self, addr: PciReg16, val: u16) {
-        match self.addr_space {
-            MMIO => unsafe { *((self.base + addr as usize) as *const u16) = val },
-            PIO => {
-                pio_config_write_addr((self.base + addr as usize) as u32, val as u32, 16).unwrap()
-            }
-        }
-    }
-    pub fn write32(&self, addr: PciReg32, val: u32) {
-        self.write32_inner(self.base + addr as usize, val)
-    }
-    pub fn writeBAR(&self, bar: usize, val: u32) {
-        self.write32_inner(self.base + PciReg32::BARBase as usize + bar, val)
-    }
-    fn write32_inner(&self, addr: usize, val: u32) {
-        match self.addr_space {
-            MMIO => unsafe { *(addr as *const u32) = val },
-            PIO => pio_config_write_addr(addr as u32, val as u32, 32).unwrap(),
-        }
-    }
-}
-
-numeric_enum! {
-    #[repr(usize)]
-    pub enum PciReg8 {
-        RevisionId = 0x8,
-        ProgramInterface = 0x9,
-        SubClass = 0xA,
-        BaseClass = 0xB,
-        CacheLineSize = 0xC,
-        LatencyTimer = 0xD,
-        HeaderType = 0xE,
-        Bist = 0xF,
-        PrimaryBusId = 0x18,
-        SecondaryBusId = 0x19,
-        SubordinateBusId = 0x1A,
-        SecondaryLatencyTimer = 0x1B,
-        IoBase = 0x1C,
-        IoLimit = 0x1D,
-        CapabilitiesPtr = 0x34,
-        InterruptLine = 0x3C,
-        InterruptPin = 0x3D,
-    }
-}
-numeric_enum! {
-    #[repr(usize)]
-    pub enum PciReg16 {
-        VendorId = 0x0,
-        DeviceId = 0x2,
-        Command = 0x4,
-        Status = 0x6,
-        SecondaryStatus = 0x1E,
-        MemoryBase = 0x20,
-        MemoryLimit = 0x22,
-    }
-}
-numeric_enum! {
-    #[repr(usize)]
-    pub enum PciReg32 {
-        BARBase = 0x10,
-        CardbusCisPtr = 0x28,
     }
 }
