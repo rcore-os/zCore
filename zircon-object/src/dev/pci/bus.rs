@@ -14,7 +14,7 @@ pub struct PCIeBusDriver {
     mmio_hi: RegionAllocator,
     pio_region: RegionAllocator,
     address_provider: Option<Arc<dyn PCIeAddressProvider + Sync + Send>>,
-    roots: BTreeMap<usize, PciRoot>,
+    roots: BTreeMap<usize, Arc<PciRoot>>,
     state: PCIeBusDriverState,
     bus_topology: Mutex<()>,
     configs: Mutex<Vec<Arc<PciConfig>>>,
@@ -48,8 +48,10 @@ impl PCIeBusDriver {
             .lock()
             .set_address_translation_provider_inner(provider)
     }
-    pub fn add_root(root: PciRoot) -> ZxResult {
-        _INSTANCE.lock().add_root_inner(root)
+    pub fn add_root(bus_id: usize, lut: PciIrqSwizzleLut) -> ZxResult {
+        let mut bus = _INSTANCE.lock();
+        let root = PciRoot::new(bus_id, lut);
+        bus.add_root_inner(root)
     }
     pub fn start_bus_driver() -> ZxResult {
         _INSTANCE.lock().start_bus_driver_inner()
@@ -86,7 +88,7 @@ impl PCIeBusDriver {
         self.address_provider = Some(provider);
         Ok(())
     }
-    pub fn add_root_inner(&mut self, root: PciRoot) -> ZxResult {
+    pub fn add_root_inner(&mut self, root: Arc<PciRoot>) -> ZxResult {
         if self.is_started(false) {
             return Err(ZxError::BAD_STATE);
         }
@@ -145,7 +147,7 @@ impl PCIeBusDriver {
         )?;
         self.foreach_root(
             |root, _c| {
-                root.base_upstream.scan_downstream();
+                root.base_upstream.scan_downstream(&self);
                 true
             },
             (),
@@ -207,7 +209,6 @@ impl PCIeBusDriver {
             (context, &self),
         )
     }
-    
     fn foreach_downstream<T, C>(
         &self,
         upstream: &(dyn IPciNode + Send + Sync),
@@ -233,7 +234,6 @@ impl PCIeBusDriver {
             }
         }
     }
-    
     fn transfer_state(
         &mut self,
         expected: PCIeBusDriverState,

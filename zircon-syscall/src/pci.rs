@@ -143,8 +143,7 @@ impl Syscall<'_> {
         } else {
             return Err(ZxError::INVALID_ARGS);
         }
-        let root = PcieRootLUTSwizzle::new(pcie, 0, arg_header.dev_pin_to_global_irq);
-        PCIeBusDriver::add_root(root)?;
+        PCIeBusDriver::add_root(0, arg_header.dev_pin_to_global_irq)?;
         PCIeBusDriver::start_bus_driver()?;
         Ok(())
     }

@@ -43,7 +43,7 @@ pub const PCI_MAX_IRQS: usize = 224;
 pub const PCI_INIT_ARG_MAX_ECAM_WINDOWS: usize = 2;
 
 #[repr(transparent)]
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct PciIrqSwizzleLut(
     [[[u32; PCI_MAX_LEGACY_IRQ_PINS]; PCI_MAX_FUNCTIONS_PER_DEVICE]; PCI_MAX_DEVICES_PER_BUS],
 );
@@ -134,27 +134,7 @@ fn irq_configure(irq: u32, level_trigger: bool, active_high: bool) -> ZxResult {
     Ok(())
 }
 
-pub struct PcieRootLUTSwizzle(PciIrqSwizzleLut);
-
-pub trait PcieRootSwizzle {
-    fn swizzle(&self, dev_id: usize, func_id: usize, pin: usize) -> ZxResult<usize>;
-}
-
-impl PcieRootLUTSwizzle {
-    pub fn new(
-        pcie: Weak<PCIeBusDriver>,
-        managed_bus_id: usize,
-        lut: &PciIrqSwizzleLut,
-    ) -> Arc<PciRoot> {
-        PciRoot::new(
-            pcie.clone(),
-            managed_bus_id,
-            Arc::new(PcieRootLUTSwizzle(lut.clone())),
-        )
-    }
-}
-
-impl PcieRootSwizzle for PcieRootLUTSwizzle {
+impl PciIrqSwizzleLut {
     fn swizzle(&self, dev_id: usize, func_id: usize, pin: usize) -> ZxResult<usize> {
         if dev_id >= PCI_MAX_DEVICES_PER_BUS
             || func_id >= PCI_MAX_FUNCTIONS_PER_DEVICE
@@ -162,7 +142,7 @@ impl PcieRootSwizzle for PcieRootLUTSwizzle {
         {
             return Err(ZxError::INVALID_ARGS);
         }
-        let irq = (self.0).0[dev_id][func_id][pin];
+        let irq = self.0[dev_id][func_id][pin];
         if irq == PCI_NO_IRQ_MAPPING {
             Err(ZxError::NOT_FOUND)
         } else {
