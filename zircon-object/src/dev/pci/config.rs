@@ -34,7 +34,7 @@ impl PciConfig {
     pub fn read32(&self, addr: PciReg32) -> u32 {
         self.read32_offset(self.base + addr as usize)
     }
-    pub fn readBAR(&self, bar: usize) -> u32 {
+    pub fn read_bar(&self, bar: usize) -> u32 {
         self.read32_offset(self.base + PciReg32::BARBase as usize + bar)
     }
 
@@ -65,7 +65,7 @@ impl PciConfig {
     pub fn write32(&self, addr: PciReg32, val: u32) {
         self.write32_offset(self.base + addr as usize, val)
     }
-    pub fn writeBAR(&self, bar: usize, val: u32) {
+    pub fn write_bar(&self, bar: usize, val: u32) {
         self.write32_offset(self.base + PciReg32::BARBase as usize + bar, val)
     }
 }

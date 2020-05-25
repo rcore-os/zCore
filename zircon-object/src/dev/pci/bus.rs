@@ -194,6 +194,7 @@ impl PCIeBusDriver {
         }
         drop(bus_top_guard);
     }
+
     fn foreach_device<T, C>(&self, callback: &T, context: C)
     where
         T: Fn(&(dyn IPciNode + Send + Sync), &mut C, usize) -> bool,
@@ -206,6 +207,7 @@ impl PCIeBusDriver {
             (context, &self),
         )
     }
+    
     fn foreach_downstream<T, C>(
         &self,
         upstream: &(dyn IPciNode + Send + Sync),
@@ -215,20 +217,23 @@ impl PCIeBusDriver {
     ) where
         T: Fn(&(dyn IPciNode + Send + Sync), &mut C, usize) -> bool,
     {
-        if level > 256 || upstream.upstream().is_none() {
+        if level > 256 || upstream.as_upstream().is_none() {
             return;
         }
-        for device in upstream.upstream().unwrap().downstream.iter() {
-            if !callback(upstream, context, level) {
-                continue;
-            }
+        let upstream = upstream.as_upstream().unwrap();
+        for i in 0..PCI_MAX_FUNCTIONS_PER_BUS {
+            let device = upstream.get_downstream(i);
             if let Some(dev) = device {
+                if !callback(dev.as_ref(), context, level) {
+                    continue;
+                }
                 if let PciNodeType::Bridge = dev.node_type() {
                     self.foreach_downstream(dev.as_ref(), level + 1, callback, context);
                 }
             }
         }
     }
+    
     fn transfer_state(
         &mut self,
         expected: PCIeBusDriverState,
@@ -278,7 +283,7 @@ impl PCIeBusDriver {
     }
 
     pub fn link_device_to_upstream(
-        &mut self,
+        &self,
         down: Arc<dyn IPciNode + Send + Sync>,
         up: Weak<dyn IPciNode + Send + Sync>,
     ) {
@@ -286,7 +291,7 @@ impl PCIeBusDriver {
         let dev_down = down.device();
         let dev = dev_down.as_ref().unwrap();
         dev.set_upstream(up.clone());
-        let up = up.upgrade().unwrap().upstream().unwrap();
+        let up = up.upgrade().unwrap().as_upstream().unwrap();
         up.set_downstream(
             dev.dev_id() * PCI_MAX_FUNCTIONS_PER_DEVICE + dev.func_id(),
             Some(down.clone()),
