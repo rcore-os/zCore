@@ -1,10 +1,11 @@
 #![allow(dead_code)]
 
-use super::{caps::*, config::*, *};
+use super::{caps::*, config::*, *, region::*};
 use alloc::{boxed::Box, sync::*, vec, vec::Vec};
 use kernel_hal::{irq_add_handle, irq_disable};
 use numeric_enum_macro::*;
 use spin::Mutex;
+use crate::vm::PAGE_SIZE;
 
 numeric_enum! {
     #[repr(u8)]
@@ -99,6 +100,19 @@ impl PcieUpstream {
         }
     }
 
+    pub fn allocate_downstream_bars(&self) {
+        for dev_id in 0..PCI_MAX_DEVICES_PER_BUS {
+            let dev = self.get_downstream(dev_id);
+            if dev.is_none() {
+                continue
+            }
+            let dev = dev.unwrap();
+            if dev.allocate_bars().is_err() {
+                dev.disable();
+            }
+        }
+    }
+
     fn scan_device(
         &self,
         cfg: &PciConfig,
@@ -148,7 +162,7 @@ impl PcieUpstream {
     }
 }
 
-#[derive(Default, Copy, Clone)]
+#[derive(Default)]
 struct PcieBarInfo {
     is_mmio: bool,
     is_64bit: bool,
@@ -156,6 +170,7 @@ struct PcieBarInfo {
     first_bar_reg: usize,
     size: u64,
     bus_addr: u64,
+    allocation: Option<Region>,
 }
 #[derive(Default)]
 pub struct SharedLegacyIrqHandler {
@@ -358,10 +373,12 @@ impl PcieDevice {
                 first_bar_reg: i,
                 size,
                 bus_addr,
+                allocation: None,
             };
+            let bar_info_size = bar_info.size;
             self.inner.lock().bars[i] = bar_info;
             i += 1;
-            if is_64bit && bar_info.size > 0 {
+            if is_64bit && bar_info_size > 0 {
                 i += 1;
                 if i >= self.bar_count {
                     return Err(ZxError::BAD_STATE);
@@ -458,6 +475,75 @@ impl PcieDevice {
         }
         Err(ZxError::BAD_STATE)
     }
+
+    pub fn allocate_bars(&self) -> ZxResult {
+        let mut inner = self.inner.lock();
+        assert_eq!(inner.plugged_in, true);
+        for i in 0..self.bar_count {
+            let mut bar_info = &mut inner.bars[i];
+            if bar_info.size == 0 || bar_info.allocation.is_some() {
+                continue;
+            }
+            let upstream = self.upstream().upgrade().ok_or(ZxError::UNAVAILABLE)?;
+            if bar_info.bus_addr != 0 {
+                let allocator = if upstream.node_type() == PciNodeType::Bridge && bar_info.is_prefetchable {
+                    Some(upstream.pf_mmio_regions())
+                } else if bar_info.is_mmio {
+                    let inclusive_end = bar_info.bus_addr + bar_info.size - 1;
+                    if inclusive_end <= u32::MAX.into() {
+                        Some(upstream.mmio_lo_regions())
+                    } else if bar_info.bus_addr > u32::MAX.into() {
+                        Some(upstream.mmio_hi_regions())
+                    } else {
+                        None
+                    }
+                } else {
+                    Some(upstream.pio_regions())
+                };
+                if allocator.is_some() {
+                    if let Ok(a) = allocator.unwrap().as_ref().get_region(bar_info.bus_addr, bar_info.size) {
+                        bar_info.allocation = Some(a);
+                        continue;
+                    }
+                }
+                error!("Failed to preserve device window");
+                bar_info.bus_addr = 0;
+            }
+            self.assign_cmd(PCIE_CFG_COMMAND_INT_DISABLE);
+            let allocator = if bar_info.is_mmio {
+                if bar_info.is_64bit {upstream.mmio_hi_regions()} else {upstream.mmio_lo_regions()}
+            } else {
+                upstream.pio_regions()
+            };
+            let addr_mask: u32 = if bar_info.is_mmio {PCI_BAR_MMIO_ADDR_MASK} else {PCI_BAR_PIO_ADDR_MASK};
+            let is_io_space = PCIE_HAS_IO_ADDR_SPACE && bar_info.is_mmio;
+            let align_size = if bar_info.size as usize >= PAGE_SIZE || is_io_space { bar_info.size } else { PAGE_SIZE as u64};
+            match allocator.get_region(align_size, align_size) {
+                Ok(a) => bar_info.allocation = Some(a),
+                Err(e) => {
+                    if e == ZxError::NOT_FOUND && bar_info.is_mmio && bar_info.is_64bit {
+                        bar_info.allocation = Some(upstream.mmio_lo_regions().as_ref().get_region(align_size, align_size)?);
+                    } else {
+                        return Err(e);
+                    }
+                }
+            }
+            let bar_reg = bar_info.first_bar_reg;
+            bar_info.bus_addr = bar_info.allocation.as_ref().unwrap().base;
+            let cfg = self.cfg.as_ref().unwrap();
+            let bar_val = cfg.read_bar(bar_reg) & !addr_mask;
+            cfg.write_bar(bar_reg, (bar_info.bus_addr & 0xFFFF_FFFF) as u32 | bar_val);
+            if bar_info.is_64bit {
+                cfg.write_bar(bar_reg + 1, (bar_info.bus_addr >> 32) as u32);
+            }
+        }
+        Ok(())
+    }
+
+    fn assign_cmd(&self, value: u16) {
+        self.modify_cmd(0xffff, value)
+    }
+
     fn modify_cmd(&self, clr: u16, set: u16) {
         let _cmd_lock = self.command_lock.lock();
         let cfg = self.cfg.as_ref().unwrap();
@@ -492,6 +578,7 @@ impl PcieDevice {
     }
 }
 
+#[derive(PartialEq, Eq)]
 pub enum PciNodeType {
     Root,
     Bridge,
@@ -505,6 +592,12 @@ pub trait IPciNode {
     fn to_root(&self) -> Option<&PciRoot>;
     fn to_device(&mut self) -> Option<&mut PciDeviceNode>;
     fn to_bridge(&mut self) -> Option<&mut PciBridge>;
+    fn allocate_bars(&self) -> ZxResult {unimplemented!("IPciNode.allocate_bars")}
+    fn disable(&self) { unimplemented!("IPciNode.disable");}
+    fn pf_mmio_regions(&self) -> Arc<RegionAllocator> { unimplemented!("IPciNode.pf_mmio_regions");}
+    fn mmio_lo_regions(&self) -> Arc<RegionAllocator> { unimplemented!("IPciNode.mmio_lo_regions");}
+    fn mmio_hi_regions(&self) -> Arc<RegionAllocator> { unimplemented!("IPciNode.mmio_hi_regions");}
+    fn pio_regions(&self) -> Arc<RegionAllocator> { unimplemented!("IPciNode.pio_regions");}
 }
 
 pub struct PciRoot {
@@ -550,6 +643,9 @@ impl IPciNode for PciRoot {
     fn to_bridge(&mut self) -> Option<&mut PciBridge> {
         None
     }
+    fn allocate_bars(&self) -> ZxResult {
+        unimplemented!();
+    }
 }
 
 pub struct PciDeviceNode {
@@ -594,6 +690,9 @@ impl IPciNode for PciDeviceNode {
     }
     fn to_bridge(&mut self) -> Option<&mut PciBridge> {
         None
+    }
+    fn allocate_bars(&self) -> ZxResult {
+        self.base_device.allocate_bars()
     }
 }
 
@@ -669,3 +768,11 @@ const PCI_BAR_MMIO_PREFETCH_MASK: u32 = 0x8;
 
 const PCI_COMMAND_IO_EN: u16 = 0x0001;
 const PCI_COMMAND_MEM_EN: u16 = 0x0002;
+
+const PCIE_CFG_COMMAND_INT_DISABLE: u16 = 1 << 10;
+const PCIE_CFG_STATUS_INT_SYS: u16 = 1 << 3;
+
+#[cfg(target_arch = "x86_64")]
+const PCIE_HAS_IO_ADDR_SPACE: bool = true;
+#[cfg(not(target_arch = "x86_64"))]
+const PCIE_HAS_IO_ADDR_SPACE: bool = false;

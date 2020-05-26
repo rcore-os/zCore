@@ -156,21 +156,14 @@ impl PCIeBusDriver {
             PCIeBusDriverState::StartingScanning,
             PCIeBusDriverState::StartingRunningQuirks,
         )?;
-        self.foreach_device(
-            &|_root, _c, _level| {
-                // PCIeBusDriver::run_quirks(Some(root));
-                true
-            },
-            (),
-        );
-        // PCIeBusDriver::run_quirks(None);
+        error!("WARNING: Skip quirks");
         self.transfer_state(
             PCIeBusDriverState::StartingRunningQuirks,
             PCIeBusDriverState::StartingResourceAllocation,
         )?;
         self.foreach_root(
-            |_root, _c| {
-                // root.allocate_downstream_bar();
+            |root, _| {
+                root.base_upstream.allocate_downstream_bars();
                 true
             },
             (),
@@ -197,6 +190,8 @@ impl PCIeBusDriver {
         drop(bus_top_guard);
     }
 
+
+    #[allow(dead_code)]
     fn foreach_device<T, C>(&self, callback: &T, context: C)
     where
         T: Fn(&(dyn IPciNode + Send + Sync), &mut C, usize) -> bool,
@@ -209,6 +204,8 @@ impl PCIeBusDriver {
             (context, &self),
         )
     }
+
+    #[allow(dead_code)]
     fn foreach_downstream<T, C>(
         &self,
         upstream: &(dyn IPciNode + Send + Sync),
