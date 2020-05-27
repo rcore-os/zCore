@@ -22,7 +22,7 @@ futures = { version = "0.3", default-features = false, features = ["alloc", "asy
 xmas-elf = { version = "0.7", optional = true }
 region-alloc = { git = "https://github.com/rzswh/region-allocator", rev = "122c7a71" }
 lazy_static = { version = "1.4", features = ["spin_no_std" ] }
-apic = { git = "https://github.com/rcore-os/apic-rs" }
+apic = { git = "https://github.com/rzswh/apic-rs" }
 acpi = "1.0.0"
 pci = { git = "https://github.com/rcore-os/pci-rs" }
 

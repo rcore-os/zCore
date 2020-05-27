@@ -22,8 +22,8 @@ pub fn init() {
     irq_add_handle(Timer + IRQ0, Box::new(timer));
     irq_add_handle(COM1 + IRQ0, Box::new(com1));
     irq_add_handle(Keyboard + IRQ0, Box::new(keyboard));
-    irq_enable_raw(Keyboard + IRQ0, Keyboard);
-    irq_enable_raw(COM1 + IRQ0, COM1);
+    irq_enable_raw(Keyboard, Keyboard + IRQ0);
+    irq_enable_raw(COM1, COM1 + IRQ0);
 }
 
 fn init_irq_table() {
@@ -170,6 +170,7 @@ pub fn irq_enable(irq: u32) {
 }
 
 fn irq_enable_raw(irq: u8, vector: u8) {
+    warn!("irq_enable_raw: irq={:#x?}, vector={:#x?}", irq, vector);
     let mut ioapic = unsafe { IoApic::new(phys_to_virt(super::IOAPIC_ADDR)) };
     ioapic.set_irq_vector(irq, vector);
     ioapic.enable(irq, 0)
@@ -192,7 +193,10 @@ pub fn irq_configure(
     level_trig: bool,
     active_high: bool,
 ) -> bool {
-    info!("irq_configure");
+    warn!(
+        "irq_configure: irq={:#x?}, vector={:#x?}, dest={:#x?}, level_trig={:#x?}, active_high={:#x?}",
+        global_irq, vector, dest, level_trig, active_high
+    );
     get_ioapic(global_irq)
         .map(|x| {
             let mut ioapic = ioapic_controller(&x);
