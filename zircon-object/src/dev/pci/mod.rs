@@ -5,12 +5,10 @@ mod caps;
 mod config;
 mod nodes;
 mod pio;
-mod region;
 
 pub use bus::*;
 pub use nodes::*;
 pub use pio::*;
-pub use region::*;
 
 #[derive(PartialEq)]
 pub enum PciAddrSpace {
