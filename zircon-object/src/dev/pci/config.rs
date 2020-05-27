@@ -73,6 +73,7 @@ impl PciConfig {
 numeric_enum! {
     #[repr(usize)]
     pub enum PciReg8 {
+        // standard
         RevisionId = 0x8,
         ProgramInterface = 0x9,
         SubClass = 0xA,
@@ -81,6 +82,8 @@ numeric_enum! {
         LatencyTimer = 0xD,
         HeaderType = 0xE,
         Bist = 0xF,
+        
+        // bridge
         PrimaryBusId = 0x18,
         SecondaryBusId = 0x19,
         SubordinateBusId = 0x1A,
@@ -90,24 +93,39 @@ numeric_enum! {
         CapabilitiesPtr = 0x34,
         InterruptLine = 0x3C,
         InterruptPin = 0x3D,
+        MinGrant = 0x3E,
+        MaxLatency = 0x3F,
     }
 }
 numeric_enum! {
     #[repr(usize)]
     pub enum PciReg16 {
+        // standard
         VendorId = 0x0,
         DeviceId = 0x2,
         Command = 0x4,
         Status = 0x6,
+        
+        // bridge
         SecondaryStatus = 0x1E,
         MemoryBase = 0x20,
         MemoryLimit = 0x22,
+        PrefetchableMemoryBase = 0x24,
+        PrefetchableMemoryLimit = 0x26,
+        IoBaseUpper = 0x30,
+        IoLimitUpper = 0x32,
+        BridgeControl = 0x3E,
     }
 }
 numeric_enum! {
     #[repr(usize)]
     pub enum PciReg32 {
+        // standard
         BARBase = 0x10,
-        CardbusCisPtr = 0x28,
+
+        // bridge
+        PrefetchableMemoryBaseUpper = 0x28,
+        PrefetchableMemoryLimitUpper = 0x2C,
+        BridgeExpansionRomAddress = 0x38,
     }
 }

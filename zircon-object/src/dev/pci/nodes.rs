@@ -211,7 +211,7 @@ struct PcieLegacyIrqState {
 }
 
 pub struct PcieDevice {
-    pub managed_bus_id: usize,
+    pub bus_id: usize,
     pub dev_id: usize,
     pub func_id: usize,
     pub is_bridge: bool,
@@ -270,7 +270,7 @@ impl PcieDevice {
         }
         let (cfg, paddr) = result.unwrap();
         let inst = Arc::new(PcieDevice {
-            managed_bus_id: ups.managed_bus_id,
+            bus_id: ups.managed_bus_id,
             dev_id,
             func_id,
             is_bridge: false,
@@ -642,8 +642,8 @@ pub struct PciRoot {
 }
 
 impl PciRoot {
-    pub fn new(bus_id: usize, lut: PciIrqSwizzleLut, bus: &PCIeBusDriver) -> Arc<Self> {
-        let inner_ups = PcieUpstream::create(bus_id);
+    pub fn new(managed_bus_id: usize, lut: PciIrqSwizzleLut, bus: &PCIeBusDriver) -> Arc<Self> {
+        let inner_ups = PcieUpstream::create(managed_bus_id);
         let node = Arc::new(PciRoot {
             base_upstream: inner_ups,
             lut,
@@ -762,6 +762,7 @@ struct PciBridgeInner {
     mem_limit: u32,
     io_base: u32,
     io_limit: u32,
+    supports_32bit_pio: bool,
 }
 
 impl PciBridge {
@@ -792,8 +793,49 @@ impl PciBridge {
                 .set_super(Arc::downgrade(&(node.clone() as _)));
             node.base_upstream
                 .set_super(Arc::downgrade(&(node.clone() as _)));
+            node.init(&driver);
             node
         })
+    }
+
+    fn init(&self, driver: &PCIeBusDriver) {
+        let device = self.base_device.clone();
+        let as_upstream = self.base_upstream.clone();
+        let cfg = device.cfg.as_ref().unwrap();
+        let primary_id = cfg.read8(PciReg8::PrimaryBusId) as usize;
+        let secondary_id = cfg.read8(PciReg8::SecondaryBusId) as usize;
+        assert_ne!(primary_id, secondary_id);
+        assert_eq!(primary_id, device.bus_id);
+        assert_eq!(secondary_id, as_upstream.managed_bus_id);
+
+        let base:u32 = cfg.read8(PciReg8::IoBase) as _;
+        let limit:u32 = cfg.read8(PciReg8::IoLimit) as _;
+        let mut inner = self.inner.lock();
+        inner.supports_32bit_pio = ((base & 0xF) == 0x1) && ((base & 0xF) == (limit & 0xF));
+        inner.io_base = (base & !0xF) << 8;
+        inner.io_limit = limit << 8 | 0xFFF;
+        if inner.supports_32bit_pio {
+            inner.io_base |= (cfg.read16(PciReg16::IoBaseUpper) as u32) << 16;
+            inner.io_limit |= (cfg.read16(PciReg16::IoLimitUpper) as u32) << 16;
+        }
+        inner.mem_base = (cfg.read16(PciReg16::MemoryBase) as u32) << 16 & !0xFFFFF;
+        inner.mem_limit = (cfg.read16(PciReg16::MemoryLimit) as u32) << 16 | 0xFFFFF;
+
+        let base:u64 = cfg.read16(PciReg16::PrefetchableMemoryBase ) as _;
+        let limit:u64 = cfg.read16(PciReg16::PrefetchableMemoryLimit) as _;
+        let supports_64bit_pf_mem = ((base & 0xF) == 0x1) && ((base & 0xF) == (limit & 0xF));
+        inner.pf_mem_base = (base & !0xF) << 16;
+        inner.pf_mem_limit = (limit << 16) | 0xFFFFF;
+        if supports_64bit_pf_mem {
+            inner.pf_mem_base |= (cfg.read32(PciReg32::PrefetchableMemoryBaseUpper) as u64) << 32;
+            inner.pf_mem_limit |= (cfg.read32(PciReg32::PrefetchableMemoryLimitUpper) as u64) << 32;
+        }
+
+        device.inner.lock().plugged_in = true;
+        let sup = device.inner.lock().weak_super.upgrade().unwrap();
+        let upstream = device.upstream();
+        driver.link_device_to_upstream(sup, upstream);
+        as_upstream.scan_downstream(driver);
     }
 }
 
