@@ -10,9 +10,9 @@ use region_alloc::RegionAllocator;
 use spin::Mutex;
 
 pub struct PCIeBusDriver {
-    mmio_lo: RegionAllocator,
-    mmio_hi: RegionAllocator,
-    pio_region: RegionAllocator,
+    pub(crate) mmio_lo: Arc<Mutex<RegionAllocator>>,
+    pub(crate) mmio_hi: Arc<Mutex<RegionAllocator>>,
+    pub(crate) pio_region: Arc<Mutex<RegionAllocator>>,
     address_provider: Option<Arc<dyn PCIeAddressProvider + Sync + Send>>,
     roots: BTreeMap<usize, Arc<PciRoot>>,
     state: PCIeBusDriverState,
@@ -50,7 +50,7 @@ impl PCIeBusDriver {
     }
     pub fn add_root(bus_id: usize, lut: PciIrqSwizzleLut) -> ZxResult {
         let mut bus = _INSTANCE.lock();
-        let root = PciRoot::new(bus_id, lut);
+        let root = PciRoot::new(bus_id, lut, &bus);
         bus.add_root_inner(root)
     }
     pub fn start_bus_driver() -> ZxResult {
@@ -61,9 +61,9 @@ impl PCIeBusDriver {
 impl PCIeBusDriver {
     fn new() -> Self {
         PCIeBusDriver {
-            mmio_lo: RegionAllocator::new(),
-            mmio_hi: RegionAllocator::new(),
-            pio_region: RegionAllocator::new(),
+            mmio_lo: Default::default(),
+            mmio_hi: Default::default(),
+            pio_region: Default::default(),
             address_provider: None,
             roots: BTreeMap::new(),
             state: PCIeBusDriverState::NotStarted,
@@ -117,27 +117,20 @@ impl PCIeBusDriver {
             let end = base + size;
             if base <= u32_max {
                 let lo_size = min(u32_max + 1 - base, size);
-                Self::add_sub_region_helper(is_add, &mut self.mmio_lo, base, lo_size);
+                self.mmio_lo.lock().add_or_subtract(base as usize, lo_size as usize, is_add);
             }
             if end > u32_max + 1 {
                 let hi_size = min(end - (u32_max + 1), size);
-                Self::add_sub_region_helper(is_add, &mut self.mmio_hi, end - hi_size, end);
+                self.mmio_hi.lock().add_or_subtract((end - hi_size) as usize, end as usize, is_add);
             }
         } else if aspace == PciAddrSpace::PIO {
             let end = base + size - 1;
             if ((base | end) & !PCIE_PIO_ADDR_SPACE_MASK) != 0 {
                 return Err(ZxError::INVALID_ARGS);
             }
-            Self::add_sub_region_helper(is_add, &mut self.pio_region, base, size);
+            self.pio_region.lock().add_or_subtract(base as usize, size as usize, is_add);
         }
         Ok(())
-    }
-    fn add_sub_region_helper(is_add: bool, region: &mut RegionAllocator, base: u64, size: u64) {
-        if is_add {
-            region.add(base as usize, size as usize)
-        } else {
-            region.subtract(base as usize, size as usize)
-        }
     }
 
     pub fn start_bus_driver_inner(&mut self) -> ZxResult {

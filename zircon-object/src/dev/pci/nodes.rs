@@ -109,6 +109,7 @@ impl PcieUpstream {
             }
             let dev = dev.unwrap();
             if dev.allocate_bars().is_err() {
+                error!("Allocate Bar Fail");
                 dev.disable();
             }
         }
@@ -160,19 +161,6 @@ impl PcieUpstream {
 
     pub fn set_super(&self, weak_super: Weak<dyn IPciNode + Send + Sync>) {
         self.inner.lock().weak_super = weak_super;
-    }
-
-    fn pf_mmio_regions(&self) -> Arc<Mutex<RegionAllocator>> {
-        unimplemented!("IPciNode.pf_mmio_regions");
-    }
-    fn mmio_lo_regions(&self) -> Arc<Mutex<RegionAllocator>> {
-        unimplemented!("IPciNode.mmio_lo_regions");
-    }
-    fn mmio_hi_regions(&self) -> Arc<Mutex<RegionAllocator>> {
-        unimplemented!("IPciNode.mmio_hi_regions");
-    }
-    fn pio_regions(&self) -> Arc<Mutex<RegionAllocator>> {
-        unimplemented!("IPciNode.pio_regions");
     }
 }
 
@@ -498,25 +486,23 @@ impl PcieDevice {
             if bar_info.size == 0 || bar_info.allocation.is_some() {
                 continue;
             }
-            let upstream_node = self.upstream().upgrade().ok_or(ZxError::UNAVAILABLE)?;
-            let upstream = upstream_node.as_upstream().unwrap();
+            let upstream = self.upstream().upgrade().ok_or(ZxError::UNAVAILABLE)?;
             if bar_info.bus_addr != 0 {
-                let allocator = if upstream_node.node_type() == PciNodeType::Bridge
-                    && bar_info.is_prefetchable
-                {
-                    Some(upstream.pf_mmio_regions())
-                } else if bar_info.is_mmio {
-                    let inclusive_end = bar_info.bus_addr + bar_info.size - 1;
-                    if inclusive_end <= u32::MAX.into() {
-                        Some(upstream.mmio_lo_regions())
-                    } else if bar_info.bus_addr > u32::MAX.into() {
-                        Some(upstream.mmio_hi_regions())
+                let allocator =
+                    if upstream.node_type() == PciNodeType::Bridge && bar_info.is_prefetchable {
+                        Some(upstream.pf_mmio_regions())
+                    } else if bar_info.is_mmio {
+                        let inclusive_end = bar_info.bus_addr + bar_info.size - 1;
+                        if inclusive_end <= u32::MAX.into() {
+                            Some(upstream.mmio_lo_regions())
+                        } else if bar_info.bus_addr > u32::MAX.into() {
+                            Some(upstream.mmio_hi_regions())
+                        } else {
+                            None
+                        }
                     } else {
-                        None
-                    }
-                } else {
-                    Some(upstream.pio_regions())
-                };
+                        Some(upstream.pio_regions())
+                    };
                 if allocator.is_some() {
                     let base: usize = bar_info.bus_addr as _;
                     let size: usize = bar_info.size as _;
@@ -633,19 +619,37 @@ pub trait IPciNode {
     fn disable(&self) {
         unimplemented!("IPciNode.disable");
     }
+    fn pf_mmio_regions(&self) -> Arc<Mutex<RegionAllocator>> {
+        unimplemented!("IPciNode.pf_mmio_regions");
+    }
+    fn mmio_lo_regions(&self) -> Arc<Mutex<RegionAllocator>> {
+        unimplemented!("IPciNode.mmio_lo_regions");
+    }
+    fn mmio_hi_regions(&self) -> Arc<Mutex<RegionAllocator>> {
+        unimplemented!("IPciNode.mmio_hi_regions");
+    }
+    fn pio_regions(&self) -> Arc<Mutex<RegionAllocator>> {
+        unimplemented!("IPciNode.pio_regions");
+    }
 }
 
 pub struct PciRoot {
     pub base_upstream: Arc<PcieUpstream>,
     lut: PciIrqSwizzleLut,
+    mmio_hi: Arc<Mutex<RegionAllocator>>,
+    mmio_lo: Arc<Mutex<RegionAllocator>>,
+    pio_region: Arc<Mutex<RegionAllocator>>,
 }
 
 impl PciRoot {
-    pub fn new(bus_id: usize, lut: PciIrqSwizzleLut) -> Arc<Self> {
+    pub fn new(bus_id: usize, lut: PciIrqSwizzleLut, bus: &PCIeBusDriver) -> Arc<Self> {
         let inner_ups = PcieUpstream::create(bus_id);
         let node = Arc::new(PciRoot {
             base_upstream: inner_ups,
             lut,
+            mmio_hi: bus.mmio_hi.clone(),
+            mmio_lo: bus.mmio_lo.clone(),
+            pio_region: bus.pio_region.clone(),
         });
         node.base_upstream
             .set_super(Arc::downgrade(&(node.clone() as _)));
@@ -680,6 +684,15 @@ impl IPciNode for PciRoot {
     }
     fn allocate_bars(&self) -> ZxResult {
         unimplemented!();
+    }
+    fn mmio_lo_regions(&self) -> Arc<Mutex<RegionAllocator>> {
+        self.mmio_lo.clone()
+    }
+    fn mmio_hi_regions(&self) -> Arc<Mutex<RegionAllocator>> {
+        self.mmio_hi.clone()
+    }
+    fn pio_regions(&self) -> Arc<Mutex<RegionAllocator>> {
+        self.pio_region.clone()
     }
 }
 
@@ -734,6 +747,21 @@ impl IPciNode for PciDeviceNode {
 pub struct PciBridge {
     base_device: Arc<PcieDevice>,
     base_upstream: Arc<PcieUpstream>,
+    mmio_lo: Arc<Mutex<RegionAllocator>>,
+    mmio_hi: Arc<Mutex<RegionAllocator>>,
+    pio_region: Arc<Mutex<RegionAllocator>>,
+    pf_mmio: Arc<Mutex<RegionAllocator>>,
+    inner: Mutex<PciBridgeInner>,
+}
+
+#[derive(Default)]
+struct PciBridgeInner {
+    pf_mem_base: u64,
+    pf_mem_limit: u64,
+    mem_base: u32,
+    mem_limit: u32,
+    io_base: u32,
+    io_limit: u32,
 }
 
 impl PciBridge {
@@ -754,6 +782,11 @@ impl PciBridge {
             let node = Arc::new(PciBridge {
                 base_device: x,
                 base_upstream: inner_ups,
+                mmio_hi: Default::default(),
+                mmio_lo: Default::default(),
+                pf_mmio: Default::default(),
+                pio_region: Default::default(),
+                inner: Default::default(),
             });
             node.base_device
                 .set_super(Arc::downgrade(&(node.clone() as _)));
@@ -782,6 +815,82 @@ impl IPciNode for PciBridge {
     }
     fn to_bridge(&mut self) -> Option<&mut PciBridge> {
         Some(self)
+    }
+    fn pf_mmio_regions(&self) -> Arc<Mutex<RegionAllocator>> {
+        self.pf_mmio.clone()
+    }
+    fn mmio_lo_regions(&self) -> Arc<Mutex<RegionAllocator>> {
+        self.mmio_lo.clone()
+    }
+    fn mmio_hi_regions(&self) -> Arc<Mutex<RegionAllocator>> {
+        self.mmio_hi.clone()
+    }
+    fn pio_regions(&self) -> Arc<Mutex<RegionAllocator>> {
+        self.pio_region.clone()
+    }
+    fn allocate_bars(&self) -> ZxResult {
+        let inner = self.inner.lock();
+        let upstream = self.base_device.upstream().upgrade().unwrap();
+        if inner.io_base <= inner.io_limit {
+            let size = (inner.io_limit - inner.io_base + 1) as usize;
+            if !upstream
+                .pio_regions()
+                .lock()
+                .allocate_by_addr(inner.io_base as usize, size)
+            {
+                return Err(ZxError::NO_MEMORY);
+            }
+            self.pio_regions().lock().add(inner.io_base as usize, size);
+        }
+        if inner.mem_base <= inner.mem_limit {
+            let size = (inner.mem_limit - inner.mem_base + 1) as usize;
+            if !upstream
+                .mmio_lo_regions()
+                .lock()
+                .allocate_by_addr(inner.mem_base as usize, size)
+            {
+                return Err(ZxError::NO_MEMORY);
+            }
+            self.mmio_lo_regions()
+                .lock()
+                .add(inner.mem_base as usize, size);
+        }
+        if inner.pf_mem_base <= inner.pf_mem_limit {
+            let size = (inner.pf_mem_limit - inner.pf_mem_base + 1) as usize;
+            match upstream.node_type() {
+                PciNodeType::Root => {
+                    if !upstream
+                        .mmio_lo_regions()
+                        .lock()
+                        .allocate_by_addr(inner.pf_mem_base as usize, size)
+                        && !upstream
+                            .mmio_hi_regions()
+                            .lock()
+                            .allocate_by_addr(inner.pf_mem_base as usize, size)
+                    {
+                        return Err(ZxError::NO_MEMORY);
+                    }
+                }
+                PciNodeType::Bridge => {
+                    if !upstream
+                        .pf_mmio_regions()
+                        .lock()
+                        .allocate_by_addr(inner.pf_mem_base as usize, size)
+                    {
+                        return Err(ZxError::NO_MEMORY);
+                    }
+                }
+                _ => {
+                    unreachable!("Upstream node must be root or bridge");
+                }
+            }
+            self.pf_mmio_regions()
+                .lock()
+                .add(inner.pf_mem_base as usize, size);
+        }
+        self.base_device.allocate_bars()?;
+        upstream.as_upstream().unwrap().allocate_downstream_bars();
+        Ok(())
     }
 }
 
