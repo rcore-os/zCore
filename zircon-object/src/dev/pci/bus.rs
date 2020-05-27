@@ -494,4 +494,8 @@ impl PcieDeviceKObject {
             device,
         }
     }
+    pub fn get_bar(&self, bar_num: u32) -> ZxResult<PcieBarInfo> {
+        let device = self.device.device().unwrap();
+        device.get_bar(bar_num as usize).ok_or(ZxError::NOT_FOUND)
+    }
 }

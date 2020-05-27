@@ -1,6 +1,9 @@
 use super::*;
 use alloc::vec::Vec;
-use zircon_object::dev::*;
+use zircon_object::{
+    dev::*,
+    vm::{pages, VmObject},
+};
 
 impl Syscall<'_> {
     pub fn sys_pci_add_subtract_io_range(
@@ -167,4 +170,45 @@ impl Syscall<'_> {
         out_handle.write(handle)?;
         Ok(())
     }
+    pub fn sys_pci_get_bar(
+        &self,
+        handle: HandleValue,
+        bar_num: u32,
+        mut out_bar: UserOutPtr<PciBar>,
+        mut out_handle: UserOutPtr<HandleValue>,
+    ) -> ZxResult {
+        info!(
+            "pci.get_bar: handle_value={:#x}, bar_num={:#x}",
+            handle, bar_num,
+        );
+        let proc = self.thread.proc();
+        let devobj =
+            proc.get_object_with_rights::<PcieDeviceKObject>(handle, Rights::READ | Rights::WRITE)?;
+        let info = devobj.get_bar(bar_num)?;
+        let mut bar = PciBar {
+            id: 0,
+            size: info.size as usize,
+            bar_type: if info.is_mmio { 1 } else { 2 },
+            addr: 0,
+        };
+        if info.is_mmio {
+            let vmo = VmObject::new_physical(info.bus_addr as usize, pages(info.size as usize));
+            let handle = proc.add_handle(Handle::new(vmo, Rights::DEFAULT_VMO));
+            out_handle.write(handle)?;
+            devobj.device.device().unwrap().enable_mmio(true)?;
+        } else {
+            bar.addr = info.bus_addr;
+            devobj.device.device().unwrap().enable_pio(true)?;
+        }
+        out_bar.write(bar)?;
+        Ok(())
+    }
+}
+
+#[repr(C)]
+pub struct PciBar {
+    pub id: u32,
+    pub bar_type: u32,
+    pub size: usize,
+    pub addr: u64,
 }

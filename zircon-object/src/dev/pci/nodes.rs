@@ -156,13 +156,13 @@ impl PcieUpstream {
 }
 
 #[derive(Default, Copy, Clone)]
-struct PcieBarInfo {
-    is_mmio: bool,
-    is_64bit: bool,
-    is_prefetchable: bool,
-    first_bar_reg: usize,
-    size: u64,
-    bus_addr: u64,
+pub struct PcieBarInfo {
+    pub is_mmio: bool,
+    pub is_64bit: bool,
+    pub is_prefetchable: bool,
+    pub first_bar_reg: usize,
+    pub size: u64,
+    pub bus_addr: u64,
     allocation: Option<(usize, usize)>,
 }
 #[derive(Default)]
@@ -571,6 +571,14 @@ impl PcieDevice {
         let oldval = cfg.read16(PciReg16::Command);
         cfg.write16(PciReg16::Command, oldval & !clr | set)
     }
+    fn modify_cmd_adv(&self, clr: u16, set: u16) -> ZxResult {
+        if !self.inner.lock().plugged_in {
+            return Err(ZxError::UNAVAILABLE);
+        }
+        let _guard = self.dev_lock.lock();
+        self.modify_cmd(clr & !(1 << 10), set & !(1 << 10));
+        Ok(())
+    }
     pub fn upstream(&self) -> Weak<dyn IPciNode + Send + Sync> {
         self.inner.lock().upstream.clone()
     }
@@ -596,6 +604,25 @@ impl PcieDevice {
     }
     pub fn config(&self) -> Option<Arc<PciConfig>> {
         self.cfg.clone()
+    }
+    pub fn enable_mmio(&self, enable: bool) -> ZxResult {
+        self.modify_cmd_adv(
+            if enable { 0 } else { PCI_COMMAND_MEM_EN },
+            if enable { PCI_COMMAND_MEM_EN } else { 0 },
+        )
+    }
+    pub fn enable_pio(&self, enable: bool) -> ZxResult {
+        self.modify_cmd_adv(
+            if enable { 0 } else { PCI_COMMAND_IO_EN },
+            if enable { PCI_COMMAND_IO_EN } else { 0 },
+        )
+    }
+    pub fn get_bar(&self, bar_num: usize) -> Option<PcieBarInfo> {
+        if bar_num >= self.bar_count {
+            None
+        } else {
+            Some(self.inner.lock().bars[bar_num])
+        }
     }
 }
 
