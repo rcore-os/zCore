@@ -8,18 +8,21 @@ pub struct PciConfig {
 #[allow(unsafe_code)]
 impl PciConfig {
     pub fn read8_offset(&self, offset: usize) -> u8 {
+        trace!("read8 @ {:#x?}", offset);
         match self.addr_space {
             PciAddrSpace::MMIO => unsafe { u8::from_le(*(offset as *const u8)) },
             PciAddrSpace::PIO => pio_config_read_addr(offset as u32, 8).unwrap() as u8 & 0xff,
         }
     }
     pub fn read16_offset(&self, addr: usize) -> u16 {
+        trace!("read16 @ {:#x?}", addr);
         match self.addr_space {
             PciAddrSpace::MMIO => unsafe { u16::from_le(*(addr as *const u16)) },
             PciAddrSpace::PIO => pio_config_read_addr(addr as u32, 16).unwrap() as u16 & 0xffff,
         }
     }
     pub fn read32_offset(&self, addr: usize) -> u32 {
+        trace!("read32 @ {:#x?}", addr);
         match self.addr_space {
             PciAddrSpace::MMIO => unsafe { u32::from_le(*(addr as *const u32)) },
             PciAddrSpace::PIO => pio_config_read_addr(addr as u32, 32).unwrap(),
@@ -35,7 +38,7 @@ impl PciConfig {
         self.read32_offset(self.base + addr as usize)
     }
     pub fn read_bar(&self, bar: usize) -> u32 {
-        self.read32_offset(self.base + PciReg32::BARBase as usize + bar)
+        self.read32_offset(self.base + PciReg32::BARBase as usize + bar * 4)
     }
 
     pub fn write8_offset(&self, addr: usize, val: u8) {
@@ -45,6 +48,11 @@ impl PciConfig {
         }
     }
     pub fn write16_offset(&self, addr: usize, val: u16) {
+        trace!(
+            "write16 @ {:#x?}, addr_space = {:#x?}",
+            addr,
+            self.addr_space
+        );
         match self.addr_space {
             PciAddrSpace::MMIO => unsafe { *(addr as *mut u16) = val },
             PciAddrSpace::PIO => pio_config_write_addr(addr as u32, val as u32, 16).unwrap(),
@@ -66,7 +74,7 @@ impl PciConfig {
         self.write32_offset(self.base + addr as usize, val)
     }
     pub fn write_bar(&self, bar: usize, val: u32) {
-        self.write32_offset(self.base + PciReg32::BARBase as usize + bar, val)
+        self.write32_offset(self.base + PciReg32::BARBase as usize + bar * 4, val)
     }
 }
 

@@ -1,5 +1,4 @@
 // use super::*;
-mod acpi_table;
 mod bus;
 mod caps;
 mod config;
@@ -10,7 +9,7 @@ pub use bus::*;
 pub use nodes::*;
 pub use pio::*;
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 pub enum PciAddrSpace {
     MMIO,
     PIO,
@@ -80,9 +79,9 @@ pub const PCIE_INVALID_VENDOR_ID: usize = 0xFFFF;
 
 pub const PCI_CFG_SPACE_TYPE_PIO: u8 = 0;
 pub const PCI_CFG_SPACE_TYPE_MMIO: u8 = 1;
-const IO_APIC_NUM_REDIRECTIONS: u8 = 120;
 use super::*;
 use alloc::sync::*;
+use kernel_hal::InterruptManager;
 
 pub fn pci_configure_interrupt(arg_header: &mut PciInitArgsHeader) -> ZxResult {
     for i in 0..arg_header.num_irqs as usize {
@@ -101,37 +100,25 @@ pub fn pci_configure_interrupt(arg_header: &mut PciInitArgsHeader) -> ZxResult {
     }
     Ok(())
 }
-fn get_irq(irq: u32) -> Option<acpi::interrupt::IoApic> {
-    for i in acpi_table::AcpiTable::get_ioapic() {
-        let num_instr = core::cmp::min(
-            kernel_hal::ioapic_maxinstr(i.address as usize),
-            IO_APIC_NUM_REDIRECTIONS - 1,
-        );
-        if i.global_system_interrupt_base <= irq
-            && irq <= i.global_system_interrupt_base + num_instr as u32
-        {
-            return Some(i);
-        }
-    }
-    None
-}
 
 fn is_valid_interrupt(irq: u32) -> bool {
-    get_irq(irq).is_some()
+    InterruptManager::is_valid(irq)
 }
 
 fn irq_configure(irq: u32, level_trigger: bool, active_high: bool) -> ZxResult {
-    let irq_obj = get_irq(irq).ok_or(ZxError::INVALID_ARGS)?;
     // In fuchsia source code, 'BSP' stands for bootstrap processor
     let dest = kernel_hal::apic_local_id();
-    kernel_hal::irq_configure(
-        irq_obj.address as usize,
-        (irq - irq_obj.global_system_interrupt_base) as u8,
+    if InterruptManager::configure(
+        irq,
+        0, // vector
         dest,
         level_trigger,
         active_high,
-    );
-    Ok(())
+    ) {
+        Ok(())
+    } else {
+        Err(ZxError::INVALID_ARGS)
+    }
 }
 
 impl PciIrqSwizzleLut {

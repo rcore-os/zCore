@@ -1,10 +1,10 @@
 #![allow(dead_code)]
+use crate::get_acpi_table;
 pub use acpi::{
     interrupt::{InterruptModel, InterruptSourceOverride, IoApic, Polarity, TriggerMode},
     Acpi,
 };
 use alloc::vec::Vec;
-use kernel_hal::get_acpi_table;
 use lazy_static::*;
 use spin::Mutex;
 pub struct AcpiTable {

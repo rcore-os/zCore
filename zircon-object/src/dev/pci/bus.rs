@@ -21,7 +21,7 @@ pub struct PCIeBusDriver {
     legacy_irq_list: Mutex<Vec<Arc<SharedLegacyIrqHandler>>>,
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 enum PCIeBusDriverState {
     NotStarted,
     StartingScanning,
@@ -229,7 +229,8 @@ impl PCIeBusDriver {
         expected: PCIeBusDriverState,
         target: PCIeBusDriverState,
     ) -> ZxResult {
-        if self.state == expected {
+        trace!("transfer state from {:#x?} to {:#x?}", expected, target);
+        if self.state != expected {
             return Err(ZxError::BAD_STATE);
         }
         self.state = target;

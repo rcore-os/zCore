@@ -259,39 +259,78 @@ pub fn timer_tick() {
     unimplemented!()
 }
 
-/// Handle IRQ.
-#[linkage = "weak"]
-#[export_name = "hal_irq_handle"]
-pub fn irq_handle(_irq: u8) {
-    unimplemented!()
+pub struct InterruptManager {}
+impl InterruptManager {
+    /// Handle IRQ.
+    #[linkage = "weak"]
+    #[export_name = "hal_irq_handle"]
+    pub fn handle(_irq: u8) {
+        unimplemented!()
+    }
+    ///
+    #[linkage = "weak"]
+    #[export_name = "hal_ioapic_set_handle"]
+    pub fn set_ioapic_handle(_global_irq: u32, _handle: Box<dyn Fn() + Send + Sync>) -> Option<u8> {
+        unimplemented!()
+    }
+    /// Add an interrupt handle to an irq
+    #[linkage = "weak"]
+    #[export_name = "hal_irq_add_handle"]
+    pub fn add_handle(_global_irq: u8, _handle: Box<dyn Fn() + Send + Sync>) -> Option<u8> {
+        unimplemented!()
+    }
+    ///
+    #[linkage = "weak"]
+    #[export_name = "hal_ioapic_reset_handle"]
+    pub fn reset_ioapic_handle(_global_irq: u32) -> bool {
+        unimplemented!()
+    }
+    /// Remove the interrupt handle of an irq
+    #[linkage = "weak"]
+    #[export_name = "hal_irq_remove_handle"]
+    pub fn remove_handle(_irq: u8) -> bool {
+        unimplemented!()
+    }
+
+    /// Enable IRQ.
+    #[linkage = "weak"]
+    #[export_name = "hal_irq_enable"]
+    pub fn enable(_global_irq: u32) {
+        unimplemented!()
+    }
+
+    /// Disable IRQ.
+    #[linkage = "weak"]
+    #[export_name = "hal_irq_disable"]
+    pub fn disable(_global_irq: u32) {
+        unimplemented!()
+    }
+    /// Get IO APIC maxinstr
+    #[linkage = "weak"]
+    #[export_name = "hal_irq_maxinstr"]
+    pub fn maxinstr(_irq: u32) -> Option<u8> {
+        unimplemented!()
+    }
+    #[linkage = "weak"]
+    #[export_name = "hal_irq_configure"]
+    pub fn configure(
+        _irq: u32,
+        _vector: u8,
+        _dest: u8,
+        _level_trig: bool,
+        _active_high: bool,
+    ) -> bool {
+        unimplemented!()
+    }
+    #[linkage = "weak"]
+    #[export_name = "hal_irq_isvalid"]
+    pub fn is_valid(_irq: u32) -> bool {
+        unimplemented!()
+    }
 }
 
-/// Add an interrupt handle to an irq
-#[linkage = "weak"]
-#[export_name = "hal_irq_add_handle"]
-pub fn irq_add_handle(_irq: u8, _handle: Box<dyn Fn() + Send + Sync>) -> bool {
-    unimplemented!()
-}
-
-/// Remove the interrupt handle of an irq
-#[linkage = "weak"]
-#[export_name = "hal_irq_remove_handle"]
-pub fn irq_remove_handle(_irq: u8) -> bool {
-    unimplemented!()
-}
-
-/// Enable IRQ.
-#[linkage = "weak"]
-#[export_name = "hal_irq_enable"]
-pub fn irq_enable(_irq: u8) {
-    unimplemented!()
-}
-
-/// Disable IRQ.
-#[linkage = "weak"]
-#[export_name = "hal_irq_disable"]
-pub fn irq_disable(_irq: u8) {
-    unimplemented!()
+pub fn irq_handle(irq: u8) {
+    InterruptManager::handle(irq)
 }
 
 /// Get platform specific information.
@@ -319,19 +358,6 @@ pub fn pc_firmware_tables() -> (u64, u64) {
 #[linkage = "weak"]
 #[export_name = "hal_acpi_table"]
 pub fn get_acpi_table() -> Option<Acpi> {
-    unimplemented!()
-}
-
-/// Get IO APIC maxinstr
-#[linkage = "weak"]
-#[export_name = "hal_ioapic_maxinstr"]
-pub fn ioapic_maxinstr(_paddr: usize) -> u8 {
-    unimplemented!()
-}
-
-#[linkage = "weak"]
-#[export_name = "hal_irq_configure"]
-pub fn irq_configure(_paddr: usize, _irq: u8, _dest: u8, _level_trig: bool, _active_high: bool) {
     unimplemented!()
 }
 

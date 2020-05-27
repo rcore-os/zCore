@@ -3,7 +3,7 @@
 use super::{caps::*, config::*, *};
 use crate::vm::PAGE_SIZE;
 use alloc::{boxed::Box, sync::*, vec, vec::Vec};
-use kernel_hal::{irq_add_handle, irq_disable};
+use kernel_hal::InterruptManager;
 use numeric_enum_macro::*;
 use region_alloc::RegionAllocator;
 use spin::Mutex;
@@ -51,7 +51,7 @@ impl PcieUpstream {
             for func_id in 0..PCI_MAX_FUNCTIONS_PER_DEVICE {
                 let cfg = driver.get_config(self.managed_bus_id, dev_id, func_id);
                 if cfg.is_none() {
-                    warn!("bus being scanned is outside ecam region!\n");
+                    warn!("bus being scanned is outside ecam region!");
                     return;
                 }
                 let (cfg, _paddr) = cfg.unwrap();
@@ -60,7 +60,7 @@ impl PcieUpstream {
                 if good_device {
                     let device_id = cfg.read16(PciReg16::DeviceId);
                     info!(
-                        "Found device {:#x?}:{:#x?} at {:#x?}:{:#x?}.{:#x?}\n",
+                        "Found device {:#x?}:{:#x?} at {:#x?}:{:#x?}.{:#x?}",
                         vendor_id, device_id, self.managed_bus_id, dev_id, func_id
                     );
                     let ndx = dev_id * PCI_MAX_FUNCTIONS_PER_DEVICE + func_id;
@@ -80,13 +80,14 @@ impl PcieUpstream {
                                 driver,
                             ) {
                                 info!(
-                                    "failed to initialize device {:#x?}:{:#x?}.{:#x?}\n",
+                                    "failed to initialize device {:#x?}:{:#x?}.{:#x?}",
                                     self.managed_bus_id, dev_id, func_id
                                 );
                                 good_device = false;
                             }
                         }
                     }
+                    info!("a device is discovered");
                 }
                 // At the point of function #0, if either there is no device, or cfg's
                 // header indicates that it is not a multi-function device, just move on to
@@ -128,24 +129,13 @@ impl PcieUpstream {
             return None;
         }
         let header_type = cfg.read8(PciReg8::HeaderType) & 0x7f;
+        let weak_super = self.inner.lock().weak_super.clone();
         if header_type == PCI_HEADER_TYPE_PCI_BRIDGE {
             let secondary_id = cfg.read8(PciReg8::SecondaryBusId);
-            PciBridge::new(
-                self.inner.lock().weak_super.clone(),
-                dev_id,
-                func_id,
-                secondary_id as usize,
-                driver,
-            )
-            .map(|x| x as _)
+            PciBridge::new(weak_super, dev_id, func_id, secondary_id as usize, driver)
+                .map(|x| x as _)
         } else {
-            PciDeviceNode::new(
-                self.inner.lock().weak_super.clone(),
-                dev_id,
-                func_id,
-                driver,
-            )
-            .map(|x| x as _)
+            PciDeviceNode::new(weak_super, dev_id, func_id, driver).map(|x| x as _)
         }
     }
 
@@ -156,6 +146,7 @@ impl PcieUpstream {
         self.inner.lock().downstream[index].clone()
     }
     pub fn set_downstream(&self, ind: usize, down: Option<Arc<dyn IPciNode + Send + Sync>>) {
+        assert!(self.inner.try_lock().is_some());
         self.inner.lock().downstream[ind] = down;
     }
 
@@ -182,19 +173,24 @@ pub struct SharedLegacyIrqHandler {
 
 impl SharedLegacyIrqHandler {
     pub fn create(irq_id: u32) -> Option<Arc<SharedLegacyIrqHandler>> {
-        irq_disable(irq_id as u8);
+        info!("SharedLegacyIrqHandler created for {:#x?}", irq_id);
+        InterruptManager::disable(irq_id);
         let handler = Arc::new(SharedLegacyIrqHandler {
             irq_id,
             device_handler: Vec::new(),
         });
         let handler_copy = handler.clone();
-        let status = irq_add_handle(irq_id as u8, Box::new(move || handler_copy.handle()));
-        assert!(status);
-        Some(handler)
+        if let Some(_) =
+            InterruptManager::set_ioapic_handle(irq_id, Box::new(move || handler_copy.handle()))
+        {
+            Some(handler)
+        } else {
+            None
+        }
     }
     pub fn handle(&self) {
         if self.device_handler.is_empty() {
-            irq_disable(self.irq_id as u8);
+            InterruptManager::disable(self.irq_id);
             return;
         }
         // TODO: with device handler not empty...
@@ -203,6 +199,7 @@ impl SharedLegacyIrqHandler {
         // TODO:
     }
 }
+
 #[derive(Default)]
 struct PcieLegacyIrqState {
     pub pin: u8,
@@ -291,18 +288,20 @@ impl PcieDevice {
         Some(inst)
     }
     fn init(&self, upstream: Weak<dyn IPciNode + Send + Sync>, driver: &PCIeBusDriver) -> ZxResult {
+        info!("init PciDevice");
         self.init_probe_bars()?;
         self.init_capabilities()?;
         self.init_legacy_irq(&upstream, driver)?;
         let mut inner = self.inner.lock();
         inner.plugged_in = true;
-        let sup = inner.weak_super.upgrade().unwrap().clone();
+        // let sup = inner.weak_super.upgrade().unwrap().clone();
         drop(inner);
-        driver.link_device_to_upstream(sup, upstream);
+        // driver.link_device_to_upstream(sup, upstream);
         Ok(())
     }
 
     fn init_probe_bars(&self) -> ZxResult {
+        info!("init PciDevice probe bars");
         // probe bars
         let mut i = 0;
         let cfg = self.cfg.as_ref().unwrap();
@@ -313,7 +312,7 @@ impl PcieDevice {
             if is_64bit {
                 if i + 1 >= self.bar_count {
                     warn!(
-                        "Illegal 64-bit MMIO BAR position {}/{} while fetching BAR info\n",
+                        "Illegal 64-bit MMIO BAR position {}/{} while fetching BAR info",
                         i, self.bar_count
                     );
                     return Err(ZxError::BAD_STATE);
@@ -321,26 +320,24 @@ impl PcieDevice {
             } else {
                 if is_mmio && ((bar_val & PCI_BAR_MMIO_TYPE_MASK) != PCI_BAR_MMIO_TYPE_32BIT) {
                     warn!(
-                        "Unrecognized MMIO BAR type (BAR[{}] == {:#x?}) while fetching BAR info\n",
+                        "Unrecognized MMIO BAR type (BAR[{}] == {:#x?}) while fetching BAR info",
                         i, bar_val
                     );
                     return Err(ZxError::BAD_STATE);
                 }
             }
             // Disable either MMIO or PIO (depending on the BAR type) access while we perform the probe.
-            {
-                // let _cmd_lock = self.command_lock.lock(); lock is useless during init
-                let backup = cfg.read16(PciReg16::Command);
-                cfg.write16(
-                    PciReg16::Command,
-                    backup
-                        & !(if is_mmio {
-                            PCI_COMMAND_MEM_EN
-                        } else {
-                            PCI_COMMAND_IO_EN
-                        }),
-                );
-            }
+            // let _cmd_lock = self.command_lock.lock(); lock is useless during init
+            let backup = cfg.read16(PciReg16::Command);
+            cfg.write16(
+                PciReg16::Command,
+                backup
+                    & !(if is_mmio {
+                        PCI_COMMAND_MEM_EN
+                    } else {
+                        PCI_COMMAND_IO_EN
+                    }),
+            );
             // Figure out the size of this BAR region by writing 1's to the address bits
             let addr_mask = if is_mmio {
                 PCI_BAR_MMIO_ADDR_MASK
@@ -358,6 +355,7 @@ impl PcieDevice {
                 size_mask |= (!cfg.read_bar(bar_id) as u64) << 32;
                 cfg.write_bar(bar_id, bar_val);
             }
+            cfg.write16(PciReg16::Command, backup);
             let size = if is_mmio {
                 size_mask + 1
             } else {
@@ -390,6 +388,7 @@ impl PcieDevice {
         Ok(())
     }
     fn init_capabilities(&self) -> ZxResult {
+        info!("init PciDevice caps");
         let cfg = self.cfg.as_ref().unwrap();
         let mut cap_offset = cfg.read8(PciReg8::CapabilitiesPtr);
         let mut found_num = 0;
@@ -424,6 +423,7 @@ impl PcieDevice {
         upstream: &Weak<dyn IPciNode + Send + Sync>,
         driver: &PCIeBusDriver,
     ) -> ZxResult {
+        info!("init PciDevice legacy irq");
         self.modify_cmd(0, 1 << 10);
         let cfg = self.cfg.as_ref().unwrap();
         let pin = cfg.read8(PciReg8::InterruptPin);
@@ -707,12 +707,15 @@ impl PciDeviceNode {
         func_id: usize,
         driver: &PCIeBusDriver,
     ) -> Option<Arc<Self>> {
-        PcieDevice::create(upstream, dev_id, func_id, driver).map(|x| {
+        info!("Create PciDeviceNode");
+        let up_to_move = upstream.clone();
+        PcieDevice::create(upstream, dev_id, func_id, driver).map(move |x| {
             let node = Arc::new(PciDeviceNode { base_device: x });
             node.base_device
                 .as_ref()
                 .set_super(Arc::downgrade(&(node.clone() as _)));
-            test_interface(node.clone() as _);
+            // test_interface(node.clone() as _);
+            driver.link_device_to_upstream(node.clone(), up_to_move.clone());
             node
         })
     }
@@ -773,6 +776,7 @@ impl PciBridge {
         managed_bus_id: usize,
         driver: &PCIeBusDriver,
     ) -> Option<Arc<Self>> {
+        info!("Create Pci Bridge");
         let father = upstream.upgrade().and_then(|x| x.as_upstream());
         if father.is_none() {
             return None;
@@ -808,8 +812,8 @@ impl PciBridge {
         assert_eq!(primary_id, device.bus_id);
         assert_eq!(secondary_id, as_upstream.managed_bus_id);
 
-        let base:u32 = cfg.read8(PciReg8::IoBase) as _;
-        let limit:u32 = cfg.read8(PciReg8::IoLimit) as _;
+        let base: u32 = cfg.read8(PciReg8::IoBase) as _;
+        let limit: u32 = cfg.read8(PciReg8::IoLimit) as _;
         let mut inner = self.inner.lock();
         inner.supports_32bit_pio = ((base & 0xF) == 0x1) && ((base & 0xF) == (limit & 0xF));
         inner.io_base = (base & !0xF) << 8;
@@ -821,8 +825,8 @@ impl PciBridge {
         inner.mem_base = (cfg.read16(PciReg16::MemoryBase) as u32) << 16 & !0xFFFFF;
         inner.mem_limit = (cfg.read16(PciReg16::MemoryLimit) as u32) << 16 | 0xFFFFF;
 
-        let base:u64 = cfg.read16(PciReg16::PrefetchableMemoryBase ) as _;
-        let limit:u64 = cfg.read16(PciReg16::PrefetchableMemoryLimit) as _;
+        let base: u64 = cfg.read16(PciReg16::PrefetchableMemoryBase) as _;
+        let limit: u64 = cfg.read16(PciReg16::PrefetchableMemoryLimit) as _;
         let supports_64bit_pf_mem = ((base & 0xF) == 0x1) && ((base & 0xF) == (limit & 0xF));
         inner.pf_mem_base = (base & !0xF) << 16;
         inner.pf_mem_limit = (limit << 16) | 0xFFFFF;

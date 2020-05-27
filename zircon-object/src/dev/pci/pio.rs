@@ -46,11 +46,13 @@ pub fn pio_config_write_addr(addr: u32, val: u32, width: usize) -> ZxResult {
         return Err(ZxError::INVALID_ARGS);
     }
     outpd(PCI_CONFIG_ADDR, (addr & !0x3) | PCI_CONFIG_ENABLE);
-    let mut tmp_val = u32::from_le(inpd(PCI_CONFIG_DATA));
     let width_mask = ((1u64 << width) - 1) as u32;
     let val = val & width_mask;
-    tmp_val &= !(width_mask << shift);
-    tmp_val |= val << shift;
+    let tmp_val = if width < 32 {
+        (u32::from_le(inpd(PCI_CONFIG_DATA)) & !(width_mask << shift)) | (val << shift)
+    } else {
+        val
+    };
     outpd(PCI_CONFIG_DATA, u32::to_le(tmp_val));
     Ok(())
 }

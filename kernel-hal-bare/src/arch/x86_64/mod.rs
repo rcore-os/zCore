@@ -2,7 +2,7 @@ use {
     super::super::*,
     acpi::{parse_rsdp, Acpi, AcpiHandler, PhysicalMapping},
     alloc::{collections::VecDeque, vec::Vec},
-    apic::{IoApic, LocalApic, XApic},
+    apic::{LocalApic, XApic},
     core::convert::TryFrom,
     core::fmt::{Arguments, Write},
     core::ptr::NonNull,
@@ -17,6 +17,7 @@ use {
     },
 };
 
+mod acpi_table;
 mod interrupt;
 mod keyboard;
 
@@ -300,37 +301,6 @@ fn timer_init() {
 pub fn apic_local_id() -> u8 {
     let lapic = unsafe { XApic::new(phys_to_virt(LAPIC_ADDR)) };
     lapic.id() as u8
-}
-
-#[export_name = "hal_irq_enable"]
-pub fn irq_enable(irq: u8) {
-    let mut ioapic = unsafe { IoApic::new(phys_to_virt(IOAPIC_ADDR)) };
-    ioapic.enable(irq, 0);
-}
-
-#[export_name = "hal_irq_disable"]
-pub fn irq_disable(irq: u8) {
-    let mut ioapic = unsafe { IoApic::new(phys_to_virt(IOAPIC_ADDR)) };
-    ioapic.disable(irq);
-}
-
-#[export_name = "hal_irq_configure"]
-pub fn irq_configure(paddr: usize, irq: u8, dest: u8, level_trig: bool, active_high: bool) {
-    let mut ioapic = unsafe { IoApic::new(phys_to_virt(paddr)) };
-    ioapic.config(
-        irq,
-        dest,
-        level_trig,
-        active_high,
-        false, /* physical */
-        true,  /* mask */
-    );
-}
-
-#[export_name = "hal_ioapic_maxinstr"]
-pub fn ioapic_maxinstr(paddr: usize) -> u8 {
-    let mut ioapic = unsafe { IoApic::new(phys_to_virt(paddr)) };
-    ioapic.maxintr()
 }
 
 const LAPIC_ADDR: usize = 0xfee0_0000;
