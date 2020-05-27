@@ -82,6 +82,7 @@ pub fn obj_type(object: &Arc<dyn KernelObject>) -> u32 {
         "Exception" => 29,
         "Clock" => 30,
         "Stream" => 31,
+        "PcieDeviceKObject" => 32,
         _ => unimplemented!("unknown type"),
     }
 }

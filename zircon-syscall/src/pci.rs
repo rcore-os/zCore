@@ -147,4 +147,24 @@ impl Syscall<'_> {
         PCIeBusDriver::start_bus_driver()?;
         Ok(())
     }
+    pub fn sys_pci_get_nth_device(
+        &self,
+        handle: HandleValue,
+        index: u32,
+        mut out_info: UserOutPtr<PcieDeviceInfo>,
+        mut out_handle: UserOutPtr<HandleValue>,
+    ) -> ZxResult {
+        info!(
+            "pci.get_nth_device: handle_value={:#x}, index={:#x}",
+            handle, index,
+        );
+        let proc = self.thread.proc();
+        proc.get_object::<Resource>(handle)?
+            .validate(ResourceKind::ROOT)?;
+        let (info, kobject) = PCIeBusDriver::get_nth_device(index as usize)?;
+        out_info.write(info)?;
+        let handle = proc.add_handle(Handle::new(Arc::new(kobject), Rights::DEFAULT_DEVICE));
+        out_handle.write(handle)?;
+        Ok(())
+    }
 }
