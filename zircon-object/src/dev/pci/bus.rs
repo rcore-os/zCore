@@ -70,7 +70,7 @@ impl PCIeBusDriver {
             sub_class: device.subclass_id,
             program_interface: device.prog_if,
             revision_id: device.rev_id,
-            bus_id: device.managed_bus_id as u8,
+            bus_id: device.bus_id as u8,
             dev_id: device.dev_id as u8,
             func_id: device.func_id as u8,
             _padding1: 0,

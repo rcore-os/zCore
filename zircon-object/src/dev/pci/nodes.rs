@@ -146,7 +146,6 @@ impl PcieUpstream {
         self.inner.lock().downstream[index].clone()
     }
     pub fn set_downstream(&self, ind: usize, down: Option<Arc<dyn IPciNode + Send + Sync>>) {
-        assert!(self.inner.try_lock().is_some());
         self.inner.lock().downstream[ind] = down;
     }
 
