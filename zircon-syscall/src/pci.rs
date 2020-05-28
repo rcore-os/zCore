@@ -150,6 +150,15 @@ impl Syscall<'_> {
         PCIeBusDriver::start_bus_driver()?;
         Ok(())
     }
+    pub fn sys_pci_map_interrupt(&self, dev: HandleValue, irq: i32, mut out_handle: UserOutPtr<HandleValue>) -> ZxResult {
+        info!("pci.map_interrupt: handle_value={:#x}, irq={:#x}", dev, irq);
+        let proc = self.thread.proc();
+        let dev = proc.get_object_with_rights::<PcieDeviceKObject>(dev, Rights::READ)?;
+        let interrupt = dev.map_interrupt(irq)?;
+        let handle = proc.add_handle(Handle::new(interrupt, Rights::DEFAULT_PCI_INTERRUPT));
+        out_handle.write(handle)?;
+        Ok(())
+    }
     pub fn sys_pci_get_nth_device(
         &self,
         handle: HandleValue,

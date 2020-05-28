@@ -258,11 +258,34 @@ impl SharedLegacyIrqHandler {
     }
 }
 
+#[derive(PartialEq, Copy, Clone)]
+pub enum PcieIrqMode {
+    Disabled = 0,
+    Legacy = 1,
+    Msi = 2,
+    MsiX = 3,
+    Count = 4,
+}
+
+impl Default for PcieIrqMode {
+    fn default() -> Self {
+        PcieIrqMode::Disabled
+    }
+}
+
+struct PcieIrqHandle {
+    handle: Option<Box<dyn Fn() + Send + Sync>>,
+    enabled: bool,
+}
+
 #[derive(Default)]
 pub struct PcieLegacyIrqState {
     pub pin: u8,
     pub id: usize,
     pub shared_handler: Arc<SharedLegacyIrqHandler>,
+    pub handlers: Vec<PcieIrqHandle>, // WARNING
+    pub mode: PcieIrqMode,            // WANRING
+    pub msi: Option<PciCapacityMsi>,
 }
 
 pub struct PcieIrqState {
@@ -325,6 +348,7 @@ pub struct PcieDeviceInner {
     pub plugged_in: bool,
     pub upstream: Weak<(dyn IPciNode + Send + Sync)>,
     pub weak_super: Weak<(dyn IPciNode + Send + Sync)>,
+    pub disabled: bool,
 }
 
 impl Default for PcieDeviceInner {
@@ -336,6 +360,7 @@ impl Default for PcieDeviceInner {
             plugged_in: false,
             upstream: Weak::<PciRoot>::new(),
             weak_super: Weak::<PciRoot>::new(),
+            disabled: false,
         }
     }
 }
@@ -511,11 +536,16 @@ impl PcieDevice {
             }
             let id = cfg.read8_offset(cap_offset as usize);
             let std = PciCapacityStd::create(cap_offset as u16, id);
+            let mut inner = self.inner.lock();
             let cap = match id {
-                0x5 => PciCapacity::Msi(
-                    std,
-                    PciCapacityMsi::create(cfg.as_ref(), cap_offset as u16, id),
-                ),
+                0x5 => {
+                    inner.irq.msi = Some(PciCapacityMsi::create(
+                        cfg.as_ref(),
+                        cap_offset as usize,
+                        id,
+                    ));
+                    PciCapacity::Msi(std, inner.irq.msi.unwrap())
+                }
                 0x10 => {
                     PciCapacity::Pcie(std, PciCapPcie::create(cfg.as_ref(), cap_offset as u16, id))
                 }
@@ -525,8 +555,7 @@ impl PcieDevice {
                 ),
                 _ => PciCapacity::Std(std),
             };
-            // warn!("Found capacity: {:#x?}", cap);
-            self.inner.lock().caps.push(cap);
+            inner.caps.push(cap);
             cap_offset = cfg.read8_offset(cap_offset as usize + 1) & 0xFC;
             found_num += 1;
         }
@@ -746,6 +775,72 @@ impl PcieDevice {
             Ok(())
         }
     }
+    pub fn enable_irq(&self, irq_id: usize, enable: bool) {
+        let _dev_lcok = self.dev_lock.lock();
+        let mut inner = self.inner.lock();
+        assert!(inner.plugged_in);
+        assert!(irq_id < inner.irq.handlers.len());
+        if enable {
+            assert!(!inner.disabled);
+            assert!(inner.irq.handlers[irq_id].handle.is_some());
+        }
+        match inner.irq.mode {
+            PcieIrqMode::Legacy => {
+                if enable {
+                    self.modify_cmd(PCIE_CFG_COMMAND_INT_DISABLE, 0);
+                } else {
+                    self.modify_cmd(0, PCIE_CFG_COMMAND_INT_DISABLE);
+                }
+            }
+            PcieIrqMode::Msi => {
+                let msi = inner.irq.msi.unwrap();
+                if msi.has_pvm {
+                    let mut val = self
+                        .cfg
+                        .as_ref()
+                        .unwrap()
+                        .read32_offset(msi.mask_bits_offset);
+                    if enable {
+                        val &= !(1 >> irq_id);
+                    } else {
+                        val |= 1 << irq_id;
+                    }
+                    self.cfg
+                        .as_ref()
+                        .unwrap()
+                        .write32_offset(msi.mask_bits_offset, val);
+                }
+                // x86_64 does not support msi masking
+                #[cfg(not(target_arch = "x86_64"))]
+                error!("If the platform supports msi masking, do so");
+            }
+            _ => {
+                unreachable!();
+            }
+        }
+        inner.irq.handlers[irq_id].enabled = enable;
+    }
+
+    pub fn register_irq_handle(&self, irq_id: usize, handle: Box<dyn Fn() + Send + Sync>) {
+        let _dev_lcok = self.dev_lock.lock();
+        let mut inner = self.inner.lock();
+        assert!(!inner.disabled);
+        assert!(inner.plugged_in);
+        assert!(inner.irq.mode != PcieIrqMode::Disabled);
+        assert!(irq_id < inner.irq.handlers.len());
+        inner.irq.handlers[irq_id].handle = Some(handle);
+    }
+
+    pub fn unregister_irq_handle(&self, irq_id: usize) {
+        let _dev_lcok = self.dev_lock.lock();
+        let mut inner = self.inner.lock();
+        assert!(!inner.disabled);
+        assert!(inner.plugged_in);
+        assert!(inner.irq.mode != PcieIrqMode::Disabled);
+        assert!(irq_id < inner.irq.handlers.len());
+        inner.irq.handlers[irq_id].handle = None;
+    }
+
     pub fn get_bar(&self, bar_num: usize) -> Option<PcieBarInfo> {
         if bar_num >= self.bar_count {
             None
@@ -1046,6 +1141,18 @@ pub trait IPciNode {
     }
     fn enable_bus_master(&self, _enable: bool) -> ZxResult {
         unimplemented!("IPciNode.enable_bus_master");
+    }
+    fn enable_irq(&self, irq_id: usize) {
+        self.device().unwrap().enable_irq(irq_id, true);
+    }
+    fn disable_irq(&self, irq_id: usize) {
+        self.device().unwrap().enable_irq(irq_id, false);
+    }
+    fn register_irq_handle(&self, irq_id: usize, handle: Box<dyn Fn() + Send + Sync>) {
+        self.device().unwrap().register_irq_handle(irq_id, handle);
+    }
+    fn unregister_irq_handle(&self, irq_id: usize) {
+        self.device().unwrap().unregister_irq_handle(irq_id);
     }
 }
 

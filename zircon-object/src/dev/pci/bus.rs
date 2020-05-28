@@ -483,6 +483,8 @@ pub struct PcieDeviceInfo {
 pub struct PcieDeviceKObject {
     base: KObjectBase,
     pub device: Arc<dyn IPciNode + Send + Sync>,
+    pub irqs_avail_cnt: u32, // WARNING
+    pub irqs_maskable: bool, // WARNING
 }
 
 impl_kobject!(PcieDeviceKObject);
@@ -492,10 +494,19 @@ impl PcieDeviceKObject {
         PcieDeviceKObject {
             base: KObjectBase::new(),
             device,
+            irqs_avail_cnt: 10, // WARNING
+            irqs_maskable: true, // WARNING
         }
     }
     pub fn get_bar(&self, bar_num: u32) -> ZxResult<PcieBarInfo> {
         let device = self.device.device().unwrap();
         device.get_bar(bar_num as usize).ok_or(ZxError::NOT_FOUND)
+    }
+
+    pub fn map_interrupt(&self, irq: i32) -> ZxResult<Arc<Interrupt>> {
+        if irq < 0 || irq as u32 >= self.irqs_avail_cnt {
+            return Err(ZxError::INVALID_ARGS);
+        }
+        Interrupt::new_pci(self.device.clone(), irq as u32, self.irqs_maskable)
     }
 }
