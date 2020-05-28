@@ -209,6 +209,28 @@ impl Syscall<'_> {
         let devobj = proc.get_object_with_rights::<PcieDeviceKObject>(handle, Rights::WRITE)?;
         devobj.device.device().unwrap().enable_master(enable)
     }
+    pub fn sys_pci_query_irq_mode(
+        &self,
+        handle: HandleValue,
+        mode: u32,
+        mut out_max_irqs: UserOutPtr<u32>,
+    ) -> ZxResult {
+        info!("pci.: handle_value={:#x}, mode={:#x}", handle, mode);
+        let proc = self.thread.proc();
+        let devobj = proc.get_object_with_rights::<PcieDeviceKObject>(handle, Rights::READ)?;
+        match devobj
+            .device
+            .device()
+            .unwrap()
+            .get_irq_mode_capabilities(mode)
+        {
+            Ok(x) => {
+                out_max_irqs.write(x.max_irqs)?;
+                Ok(())
+            }
+            Err(err) => Err(err),
+        }
+    }
 }
 
 #[repr(C)]

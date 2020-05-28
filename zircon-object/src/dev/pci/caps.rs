@@ -2,6 +2,7 @@ use super::config::PciConfig;
 use super::nodes::PcieDeviceType;
 use core::convert::TryFrom;
 
+#[derive(Debug)]
 pub enum PciCapacity {
     Msi(PciCapacityStd, PciCapacityMsi),
     Pcie(PciCapacityStd, PciCapPcie),
@@ -9,6 +10,7 @@ pub enum PciCapacity {
     Std(PciCapacityStd),
 }
 
+#[derive(Debug)]
 pub struct PciCapacityStd {
     pub id: u8,
     pub base: u16,
@@ -18,9 +20,12 @@ impl PciCapacityStd {
     pub fn create(base: u16, id: u8) -> PciCapacityStd {
         PciCapacityStd { id, base }
     }
+    pub fn is_valid(&self) -> bool {
+        true
+    }
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct PciMsiBlock {
     pub target_addr: u64,
     pub allocated: bool,
@@ -29,6 +34,7 @@ pub struct PciMsiBlock {
     pub target_data: u32,
 }
 
+#[derive(Debug)]
 pub struct PciCapacityMsi {
     pub msi_size: u16,
     pub has_pvm: bool,
@@ -66,6 +72,7 @@ impl PciCapacityMsi {
     }
 }
 
+#[derive(Debug)]
 pub struct PciCapPcie {
     pub version: u8,
     pub dev_type: PcieDeviceType,
@@ -85,6 +92,7 @@ impl PciCapPcie {
     }
 }
 
+#[derive(Debug)]
 pub struct PciCapAdvFeatures {
     pub has_flr: bool,
     pub has_tp: bool,

@@ -3,6 +3,7 @@
 use super::{caps::*, config::*, *};
 use crate::vm::PAGE_SIZE;
 use alloc::{boxed::Box, sync::*, vec, vec::Vec};
+use core::convert::TryFrom;
 use kernel_hal::InterruptManager;
 use numeric_enum_macro::*;
 use region_alloc::RegionAllocator;
@@ -10,7 +11,7 @@ use spin::Mutex;
 
 numeric_enum! {
     #[repr(u8)]
-    #[derive(PartialEq, Copy, Clone)]
+    #[derive(PartialEq, Copy, Clone, Debug)]
     pub enum PcieDeviceType {
         Unknown = 0xFF,
         PcieEndpoint = 0x0,
@@ -416,6 +417,7 @@ impl PcieDevice {
                 ),
                 _ => PciCapacity::Std(std),
             };
+            // warn!("Found capacity: {:#x?}", cap);
             self.inner.lock().caps.push(cap);
             cap_offset = cfg.read8_offset(cap_offset as usize + 1) & 0xFC;
             found_num += 1;
@@ -640,6 +642,45 @@ impl PcieDevice {
             None
         } else {
             Some(self.inner.lock().bars[bar_num])
+        }
+    }
+    pub fn get_irq_mode_capabilities(&self, irq: u32) -> ZxResult<PcieIrqModeCaps> {
+        let inner = self.inner.lock();
+        let irq = PcieIrqMode::try_from(irq).or(Err(ZxError::INVALID_ARGS))?;
+        if inner.plugged_in {
+            match irq {
+                PcieIrqMode::Disabled => Ok(PcieIrqModeCaps::default()),
+                PcieIrqMode::Legacy => {
+                    if inner.irq.pin != 0 {
+                        Ok(PcieIrqModeCaps {
+                            max_irqs: 1,
+                            per_vector_masking_supported: true,
+                        })
+                    } else {
+                        warn!("get_irq_mode_capabilities: Legacy pin == 0");
+                        Err(ZxError::NOT_SUPPORTED)
+                    }
+                }
+                PcieIrqMode::Msi => {
+                    for c in inner.caps.iter() {
+                        if let PciCapacity::Msi(std, msi) = c {
+                            if !std.is_valid() {
+                                continue;
+                            }
+                            return Ok(PcieIrqModeCaps {
+                                max_irqs: msi.max_irq,
+                                per_vector_masking_supported: msi.has_pvm,
+                            });
+                        }
+                    }
+                    warn!("get_irq_mode_capabilities: MSI not found");
+                    Err(ZxError::NOT_SUPPORTED)
+                }
+                PcieIrqMode::MsiX => Err(ZxError::NOT_SUPPORTED),
+                _ => Err(ZxError::INVALID_ARGS),
+            }
+        } else {
+            Err(ZxError::BAD_STATE)
         }
     }
 }
@@ -1047,3 +1088,24 @@ const PCIE_CFG_STATUS_INT_SYS: u16 = 1 << 3;
 const PCIE_HAS_IO_ADDR_SPACE: bool = true;
 #[cfg(not(target_arch = "x86_64"))]
 const PCIE_HAS_IO_ADDR_SPACE: bool = false;
+
+numeric_enum! {
+    #[repr(u32)]
+    #[derive(Clone, Debug, PartialEq)]
+    pub enum PcieIrqMode {
+        Disabled = 0,
+        Legacy = 1,
+        Msi = 2,
+        MsiX = 3,
+        Count = 4,
+    }
+}
+
+#[derive(Default)]
+pub struct PcieIrqModeCaps {
+    /// The maximum number of IRQ supported by the selected mode
+    pub max_irqs: u32,
+    /// For MSI or MSI-X, indicates whether or not per-vector-masking has been
+    /// implemented by the hardware.
+    pub per_vector_masking_supported: bool,
+}
