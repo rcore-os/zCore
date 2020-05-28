@@ -203,6 +203,12 @@ impl Syscall<'_> {
         out_bar.write(bar)?;
         Ok(())
     }
+    pub fn sys_pci_enable_bus_master(&self, handle: HandleValue, enable: bool) -> ZxResult {
+        info!("pci.get_bar: handle_value={:#x}, enable={}", handle, enable,);
+        let proc = self.thread.proc();
+        let devobj = proc.get_object_with_rights::<PcieDeviceKObject>(handle, Rights::WRITE)?;
+        devobj.device.device().unwrap().enable_master(enable)
+    }
 }
 
 #[repr(C)]

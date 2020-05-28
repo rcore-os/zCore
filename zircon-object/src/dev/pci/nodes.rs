@@ -624,6 +624,17 @@ impl PcieDevice {
             if enable { PCI_COMMAND_IO_EN } else { 0 },
         )
     }
+    pub fn enable_master(&self, enable: bool) -> ZxResult {
+        self.modify_cmd_adv(
+            if enable { 0 } else { PCI_COMMAND_BUS_MASTER_EN },
+            if enable { PCI_COMMAND_BUS_MASTER_EN } else { 0 },
+        )?;
+        if let Some(up) = self.upstream().upgrade() {
+            up.enable_bus_master(enable)
+        } else {
+            Ok(())
+        }
+    }
     pub fn get_bar(&self, bar_num: usize) -> Option<PcieBarInfo> {
         if bar_num >= self.bar_count {
             None
@@ -664,6 +675,9 @@ pub trait IPciNode {
     }
     fn pio_regions(&self) -> Arc<Mutex<RegionAllocator>> {
         unimplemented!("IPciNode.pio_regions");
+    }
+    fn enable_bus_master(&self, _enable: bool) -> ZxResult {
+        unimplemented!("IPciNode.enable_bus_master");
     }
 }
 
@@ -728,6 +742,9 @@ impl IPciNode for PciRoot {
     fn pio_regions(&self) -> Arc<Mutex<RegionAllocator>> {
         self.pio_region.clone()
     }
+    fn enable_bus_master(&self, _enable: bool) -> ZxResult {
+        Ok(())
+    }
 }
 
 pub struct PciDeviceNode {
@@ -779,6 +796,9 @@ impl IPciNode for PciDeviceNode {
     fn allocate_bars(&self) -> ZxResult {
         self.base_device.allocate_bars()
     }
+    fn enable_bus_master(&self, enable: bool) -> ZxResult {
+        self.base_device.enable_master(enable)
+    }
 }
 
 pub struct PciBridge {
@@ -789,6 +809,7 @@ pub struct PciBridge {
     pio_region: Arc<Mutex<RegionAllocator>>,
     pf_mmio: Arc<Mutex<RegionAllocator>>,
     inner: Mutex<PciBridgeInner>,
+    downstream_bus_mastering_cnt: Mutex<usize>,
 }
 
 #[derive(Default)]
@@ -826,6 +847,7 @@ impl PciBridge {
                 pf_mmio: Default::default(),
                 pio_region: Default::default(),
                 inner: Default::default(),
+                downstream_bus_mastering_cnt: Mutex::new(0),
             });
             node.base_device
                 .set_super(Arc::downgrade(&(node.clone() as _)));
@@ -974,6 +996,28 @@ impl IPciNode for PciBridge {
         upstream.as_upstream().unwrap().allocate_downstream_bars();
         Ok(())
     }
+    fn enable_bus_master(&self, enable: bool) -> ZxResult {
+        let count = {
+            let mut count = self.downstream_bus_mastering_cnt.lock();
+            if enable {
+                *count += 1;
+            } else {
+                if *count == 0 {
+                    return Err(ZxError::BAD_STATE);
+                } else {
+                    *count -= 1;
+                }
+            }
+            *count
+        };
+        if count > 0 {
+            self.base_device.enable_master(false)?;
+        }
+        if count == 1 && enable {
+            self.base_device.enable_master(true)?;
+        }
+        Ok(())
+    }
 }
 
 const PCI_HEADER_TYPE_MULTI_FN: u8 = 0x80;
@@ -994,6 +1038,7 @@ const PCI_BAR_MMIO_PREFETCH_MASK: u32 = 0x8;
 
 const PCI_COMMAND_IO_EN: u16 = 0x0001;
 const PCI_COMMAND_MEM_EN: u16 = 0x0002;
+const PCI_COMMAND_BUS_MASTER_EN: u16 = 0x0004;
 
 const PCIE_CFG_COMMAND_INT_DISABLE: u16 = 1 << 10;
 const PCIE_CFG_STATUS_INT_SYS: u16 = 1 << 3;
