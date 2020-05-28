@@ -374,7 +374,7 @@ impl VMObjectTrait for VMObjectPaged {
 
     fn pin(&self, offset: usize, len: usize) -> ZxResult {
         let (_guard, mut inner) = self.get_inner_mut();
-        if offset + len >= inner.size {
+        if offset + len > inner.size {
             return Err(ZxError::OUT_OF_RANGE);
         }
         if len == 0 {
@@ -397,7 +397,7 @@ impl VMObjectTrait for VMObjectPaged {
 
     fn unpin(&self, offset: usize, len: usize) -> ZxResult {
         let (_guard, mut inner) = self.get_inner_mut();
-        if offset + len >= inner.size {
+        if offset + len > inner.size {
             return Err(ZxError::OUT_OF_RANGE);
         }
         if len == 0 {
