@@ -355,10 +355,15 @@ impl PcieDevice {
                 cfg.write_bar(bar_id, bar_val);
             }
             cfg.write16(PciReg16::Command, backup);
-            let size = if is_mmio {
+            let size = if is_64bit {
                 size_mask + 1
             } else {
-                (size_mask + 1) & PCIE_PIO_ADDR_SPACE_MASK
+                (size_mask + 1) as u32 as u64
+            };
+            let size = if is_mmio {
+                size
+            } else {
+                size & PCIE_PIO_ADDR_SPACE_MASK
             };
             let bus_addr = if is_mmio && is_64bit {
                 (addr_lo as u64) | ((bar_val as u64) << 32)
@@ -481,11 +486,12 @@ impl PcieDevice {
         let mut inner = self.inner.lock();
         assert_eq!(inner.plugged_in, true);
         for i in 0..self.bar_count {
-            let mut bar_info = &mut inner.bars[i];
+            let bar_info = &inner.bars[i];
             if bar_info.size == 0 || bar_info.allocation.is_some() {
                 continue;
             }
-            let upstream = self.upstream().upgrade().ok_or(ZxError::UNAVAILABLE)?;
+            let upstream = inner.upstream.upgrade().ok_or(ZxError::UNAVAILABLE)?;
+            let mut bar_info = &mut inner.bars[i];
             if bar_info.bus_addr != 0 {
                 let allocator =
                     if upstream.node_type() == PciNodeType::Bridge && bar_info.is_prefetchable {
@@ -513,6 +519,7 @@ impl PcieDevice {
                 error!("Failed to preserve device window");
                 bar_info.bus_addr = 0;
             }
+            warn!("No bar addr for {}...", i);
             self.assign_cmd(PCIE_CFG_COMMAND_INT_DISABLE);
             let allocator = if bar_info.is_mmio {
                 if bar_info.is_64bit {
@@ -534,7 +541,8 @@ impl PcieDevice {
             } else {
                 PAGE_SIZE
             };
-            match allocator.lock().allocate_by_size(align_size, align_size) {
+            let alloc1 = allocator.lock().allocate_by_size(align_size, align_size);
+            match alloc1 {
                 Some(a) => bar_info.allocation = Some(a),
                 None => {
                     if bar_info.is_mmio && bar_info.is_64bit {
@@ -802,7 +810,7 @@ impl PciBridge {
         managed_bus_id: usize,
         driver: &PCIeBusDriver,
     ) -> Option<Arc<Self>> {
-        info!("Create Pci Bridge");
+        warn!("Create Pci Bridge");
         let father = upstream.upgrade().and_then(|x| x.as_upstream());
         if father.is_none() {
             return None;
@@ -901,6 +909,7 @@ impl IPciNode for PciBridge {
         self.pio_region.clone()
     }
     fn allocate_bars(&self) -> ZxResult {
+        warn!("Allocate bars for bridge");
         let inner = self.inner.lock();
         let upstream = self.base_device.upstream().upgrade().unwrap();
         if inner.io_base <= inner.io_limit {
@@ -961,6 +970,7 @@ impl IPciNode for PciBridge {
                 .add(inner.pf_mem_base as usize, size);
         }
         self.base_device.allocate_bars()?;
+        warn!("Allocate finish");
         upstream.as_upstream().unwrap().allocate_downstream_bars();
         Ok(())
     }

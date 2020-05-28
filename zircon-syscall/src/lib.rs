@@ -305,6 +305,7 @@ impl Syscall<'_> {
             Sys::PCI_GET_NTH_DEVICE => {
                 self.sys_pci_get_nth_device(a0 as _, a1 as _, a2.into(), a3.into())
             }
+            Sys::PCI_GET_BAR => self.sys_pci_get_bar(a0 as _, a1 as _, a2.into(), a3.into()),
             Sys::INTERRUPT_CREATE => {
                 self.sys_interrupt_create(a0 as _, a1 as _, a2 as _, a3.into())
             }
