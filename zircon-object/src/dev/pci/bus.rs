@@ -219,8 +219,7 @@ impl PCIeBusDriver {
     {
         self.foreach_root(
             |root, ctx| {
-                self.foreach_downstream(root.clone(), 0 /*level*/, callback, &mut (ctx.0));
-                true
+                self.foreach_downstream(root.clone(), 0 /*level*/, callback, &mut (ctx.0))
             },
             (context, &self),
         )
@@ -234,24 +233,28 @@ impl PCIeBusDriver {
         level: usize,
         callback: &T,
         context: &mut C,
-    ) where
+    ) -> bool
+    where
         T: Fn(Arc<dyn IPciNode + Send + Sync>, &mut C, usize) -> bool,
     {
         if level > 256 || upstream.as_upstream().is_none() {
-            return;
+            return true;
         }
         let upstream = upstream.as_upstream().unwrap();
         for i in 0..PCI_MAX_FUNCTIONS_PER_BUS {
             let device = upstream.get_downstream(i);
             if let Some(dev) = device {
                 if !callback(dev.clone(), context, level) {
-                    continue;
+                    return false;
                 }
                 if let PciNodeType::Bridge = dev.node_type() {
-                    self.foreach_downstream(dev, level + 1, callback, context);
+                    if !self.foreach_downstream(dev, level + 1, callback, context) {
+                        return false;
+                    }
                 }
             }
         }
+        true
     }
     fn transfer_state(
         &mut self,
@@ -494,7 +497,7 @@ impl PcieDeviceKObject {
         PcieDeviceKObject {
             base: KObjectBase::new(),
             device,
-            irqs_avail_cnt: 10, // WARNING
+            irqs_avail_cnt: 10,  // WARNING
             irqs_maskable: true, // WARNING
         }
     }
