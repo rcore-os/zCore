@@ -291,6 +291,22 @@ impl InterruptManager {
     pub fn remove_handle(_irq: u8) -> bool {
         unimplemented!()
     }
+    /// Allocate contiguous positions for irq
+    #[linkage = "weak"]
+    #[export_name = "hal_irq_allocate_block"]
+    pub fn allocate_block(_irq_num: u32) -> Option<(usize, usize)> {
+        unimplemented!()
+    }
+    #[linkage = "weak"]
+    #[export_name = "hal_irq_free_block"]
+    pub fn free_block(_irq_start: u32, _irq_num: u32) {
+        unimplemented!()
+    }
+    #[linkage = "weak"]
+    #[export_name = "hal_irq_overwrite_handler"]
+    pub fn overwrite_handler(_msi_id: u32, _handle: Box<dyn Fn() + Send + Sync>) -> bool {
+        unimplemented!()
+    }
 
     /// Enable IRQ.
     #[linkage = "weak"]

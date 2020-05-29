@@ -1,6 +1,10 @@
+use super::super::{ZxError, ZxResult};
 use super::config::PciConfig;
 use super::nodes::PcieDeviceType;
+use alloc::boxed::Box;
 use core::convert::TryFrom;
+use kernel_hal::InterruptManager;
+use spin::*;
 
 #[derive(Debug)]
 pub enum PciCapacity {
@@ -34,13 +38,41 @@ pub struct PciMsiBlock {
     pub target_data: u32,
 }
 
+impl PciMsiBlock {
+    pub fn allocate_msi_block(irq_num: u32) -> ZxResult<Self> {
+        if irq_num == 0 || irq_num > 32 {
+            return Err(ZxError::INVALID_ARGS);
+        }
+        if let Some((start, size)) = InterruptManager::allocate_block(irq_num) {
+            Ok(PciMsiBlock {
+                target_addr: (0xFEE00000 | 0x08) & !0x4,
+                target_data: start as u32,
+                base_irq: start as u32,
+                num_irq: size as u32,
+                allocated: true,
+            })
+        } else {
+            Err(ZxError::NO_RESOURCES)
+        }
+    }
+    pub fn free_msi_block(&self) {
+        InterruptManager::free_block(self.base_irq, self.num_irq)
+    }
+    pub fn register_handler(&self, msi_id: u32, handle: Box<dyn Fn() + Send + Sync>) {
+        assert!(self.allocated);
+        assert!(msi_id < self.num_irq);
+        InterruptManager::overwrite_handler(self.base_irq + msi_id, handle);
+    }
+}
+
+// @see PCI Local Bus Specification 3.0 Section 6.8.1
 #[derive(Debug)]
 pub struct PciCapacityMsi {
     pub msi_size: u16,
     pub has_pvm: bool,
     pub is_64bit: bool,
     pub max_irq: u32,
-    pub irq_block: PciMsiBlock,
+    pub irq_block: Mutex<PciMsiBlock>,
 }
 
 impl PciCapacityMsi {
@@ -50,6 +82,10 @@ impl PciCapacityMsi {
         let has_pvm = (ctrl & 0x100) != 0;
         let is_64bit = (ctrl & 0x80) != 0;
         cfg.write16_offset(base as usize + 0x2, ctrl & !0x71);
+        let mask_bits = Self::mask_bits_offset(is_64bit) + base as usize;
+        if has_pvm {
+            cfg.write32_offset(mask_bits, 0xffffffff);
+        }
         PciCapacityMsi {
             msi_size: if has_pvm {
                 if is_64bit {
@@ -67,7 +103,24 @@ impl PciCapacityMsi {
             has_pvm,
             is_64bit,
             max_irq: 0x1 << ((ctrl >> 1) & 0x7),
-            irq_block: PciMsiBlock::default(),
+            irq_block: Mutex::new(PciMsiBlock::default()),
+        }
+    }
+    pub fn ctrl_offset() -> usize {
+        0x2
+    }
+    pub fn mask_bits_offset(is_64bit: bool) -> usize {
+        if is_64bit {
+            0x10
+        } else {
+            0x0c
+        }
+    }
+    pub fn addr_offset(is_64bit: bool) -> usize {
+        if is_64bit {
+            0xC
+        } else {
+            0x8
         }
     }
 }

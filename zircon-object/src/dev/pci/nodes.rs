@@ -7,7 +7,7 @@ use core::convert::TryFrom;
 use kernel_hal::InterruptManager;
 use numeric_enum_macro::*;
 use region_alloc::RegionAllocator;
-use spin::Mutex;
+use spin::*;
 
 numeric_enum! {
     #[repr(u8)]
@@ -168,7 +168,7 @@ pub struct PcieBarInfo {
 #[derive(Default)]
 pub struct SharedLegacyIrqHandler {
     pub irq_id: u32,
-    device_handler: Vec<Arc<PcieDevice>>,
+    device_handler: Mutex<Vec<Arc<PcieDevice>>>,
 }
 
 impl SharedLegacyIrqHandler {
@@ -177,7 +177,7 @@ impl SharedLegacyIrqHandler {
         InterruptManager::disable(irq_id);
         let handler = Arc::new(SharedLegacyIrqHandler {
             irq_id,
-            device_handler: Vec::new(),
+            device_handler: Mutex::new(Vec::new()),
         });
         let handler_copy = handler.clone();
         if let Some(_) =
@@ -189,22 +189,114 @@ impl SharedLegacyIrqHandler {
         }
     }
     pub fn handle(&self) {
-        if self.device_handler.is_empty() {
+        let device_handler = self.device_handler.lock();
+        if device_handler.is_empty() {
             InterruptManager::disable(self.irq_id);
             return;
         }
-        // TODO: with device handler not empty...
+        for dev in device_handler.iter() {
+            let cfg = dev.config().unwrap();
+            let command = cfg.read16(PciReg16::Command);
+            let status = cfg.read16(PciReg16::Status);
+            if (status & PCIE_CFG_STATUS_INT_SYS) == 0
+                || (command & PCIE_CFG_COMMAND_INT_DISABLE) != 0
+            {
+                continue;
+            }
+            let inner = dev.inner.lock();
+            let handler = if inner.irq.handlers.is_empty() {
+                None
+            } else {
+                let handler = &inner.irq.handlers[0];
+                if handler.get_masked() {
+                    handler.handler.clone()
+                } else {
+                    None
+                }
+            };
+            let ret = if let Some(h) = handler {
+                let code = h();
+                if (code & PCIE_IRQRET_MASK) != 0 {
+                    inner.irq.handlers[0].set_masked(true);
+                }
+                code
+            } else {
+                PCIE_IRQRET_MASK
+            };
+            if (ret & PCIE_IRQRET_MASK) != 0 {
+                cfg.write16(
+                    PciReg16::Command,
+                    cfg.read16(PciReg16::Command) | PCIE_CFG_COMMAND_INT_DISABLE,
+                );
+            }
+        }
     }
-    pub fn add_device(&mut self, _device: Arc<PcieDevice>) {
-        // TODO:
+    pub fn add_device(&self, device: Arc<PcieDevice>) {
+        let cfg = device.config().unwrap();
+        cfg.write16(
+            PciReg16::Command,
+            cfg.read16(PciReg16::Command) | PCIE_CFG_COMMAND_INT_DISABLE,
+        );
+        let mut device_handler = self.device_handler.lock();
+        let is_first = device_handler.is_empty();
+        device_handler.push(device);
+        if is_first {
+            InterruptManager::enable(self.irq_id);
+        }
+    }
+    pub fn remove_device(&self, device: Arc<PcieDevice>) {
+        let cfg = device.config().unwrap();
+        cfg.write16(
+            PciReg16::Command,
+            cfg.read16(PciReg16::Command) | PCIE_CFG_COMMAND_INT_DISABLE,
+        );
+        let mut device_handler = self.device_handler.lock();
+        device_handler.retain(|h| Arc::ptr_eq(h, &device));
+        if device_handler.is_empty() {
+            InterruptManager::disable(self.irq_id);
+        }
     }
 }
 
 #[derive(Default)]
-struct PcieLegacyIrqState {
+pub struct PcieLegacyIrqState {
     pub pin: u8,
     pub id: usize,
     pub shared_handler: Arc<SharedLegacyIrqHandler>,
+}
+
+pub struct PcieIrqState {
+    pub legacy: PcieLegacyIrqState,
+    pub mode: PcieIrqMode,
+    pub handlers: Vec<Arc<PcieIrqHandlerState>>,
+    pub registered_handler_count: usize,
+}
+
+impl Default for PcieIrqState {
+    fn default() -> Self {
+        Self {
+            legacy: Default::default(),
+            mode: PcieIrqMode::Disabled,
+            handlers: Vec::default(),
+            registered_handler_count: 0,
+        }
+    }
+}
+
+#[derive(Default)]
+pub struct PcieIrqHandlerState {
+    irq_id: u32,
+    masked: Mutex<bool>,
+    handler: Option<Arc<dyn Fn() -> u32 + Send + Sync>>,
+}
+
+impl PcieIrqHandlerState {
+    pub fn set_masked(&self, masked: bool) {
+        *self.masked.lock() = masked;
+    }
+    pub fn get_masked(&self) -> bool {
+        *self.masked.lock()
+    }
 }
 
 pub struct PcieDevice {
@@ -223,11 +315,11 @@ pub struct PcieDevice {
     pub subclass_id: u8,
     pub prog_if: u8,
     pub rev_id: u8,
-    inner: Mutex<PcieDeviceInner>,
+    pub inner: Mutex<PcieDeviceInner>,
 }
 
-struct PcieDeviceInner {
-    pub irq: PcieLegacyIrqState,
+pub struct PcieDeviceInner {
+    pub irq: PcieIrqState,
     pub bars: [PcieBarInfo; 6],
     pub caps: Vec<PciCapacity>,
     pub plugged_in: bool,
@@ -245,6 +337,22 @@ impl Default for PcieDeviceInner {
             upstream: Weak::<PciRoot>::new(),
             weak_super: Weak::<PciRoot>::new(),
         }
+    }
+}
+
+impl PcieDeviceInner {
+    pub fn arc_self(&self) -> Option<Arc<PcieDevice>> {
+        self.weak_super.upgrade().and_then(|x| x.device())
+    }
+    pub fn msi(&self) -> Option<(&PciCapacityStd, &PciCapacityMsi)> {
+        for c in self.caps.iter() {
+            if let PciCapacity::Msi(std, msi) = c {
+                if std.is_valid() {
+                    return Some((&std, &msi));
+                }
+            }
+        }
+        None
     }
 }
 
@@ -434,10 +542,11 @@ impl PcieDevice {
         let cfg = self.cfg.as_ref().unwrap();
         let pin = cfg.read8(PciReg8::InterruptPin);
         let mut inner = self.inner.lock();
-        inner.irq.pin = pin;
+        inner.irq.legacy.pin = pin;
         if pin != 0 {
-            inner.irq.pin = self.map_pin_to_irq_locked(upstream, pin)? as u8;
-            inner.irq.shared_handler = driver.find_legacy_irq_handler(inner.irq.id as u32)?;
+            inner.irq.legacy.pin = self.map_pin_to_irq_locked(upstream, pin)? as u8;
+            inner.irq.legacy.shared_handler =
+                driver.find_legacy_irq_handler(inner.irq.legacy.id as u32)?;
         }
         Ok(())
     }
@@ -644,14 +753,14 @@ impl PcieDevice {
             Some(self.inner.lock().bars[bar_num])
         }
     }
-    pub fn get_irq_mode_capabilities(&self, irq: u32) -> ZxResult<PcieIrqModeCaps> {
+    pub fn get_irq_mode_capabilities(&self, mode: u32) -> ZxResult<PcieIrqModeCaps> {
         let inner = self.inner.lock();
-        let irq = PcieIrqMode::try_from(irq).or(Err(ZxError::INVALID_ARGS))?;
+        let mode = PcieIrqMode::try_from(mode).or(Err(ZxError::INVALID_ARGS))?;
         if inner.plugged_in {
-            match irq {
+            match mode {
                 PcieIrqMode::Disabled => Ok(PcieIrqModeCaps::default()),
                 PcieIrqMode::Legacy => {
-                    if inner.irq.pin != 0 {
+                    if inner.irq.legacy.pin != 0 {
                         Ok(PcieIrqModeCaps {
                             max_irqs: 1,
                             per_vector_masking_supported: true,
@@ -662,16 +771,11 @@ impl PcieDevice {
                     }
                 }
                 PcieIrqMode::Msi => {
-                    for c in inner.caps.iter() {
-                        if let PciCapacity::Msi(std, msi) = c {
-                            if !std.is_valid() {
-                                continue;
-                            }
-                            return Ok(PcieIrqModeCaps {
-                                max_irqs: msi.max_irq,
-                                per_vector_masking_supported: msi.has_pvm,
-                            });
-                        }
+                    if let Some((_std, msi)) = inner.msi() {
+                        return Ok(PcieIrqModeCaps {
+                            max_irqs: msi.max_irq,
+                            per_vector_masking_supported: msi.has_pvm,
+                        });
                     }
                     warn!("get_irq_mode_capabilities: MSI not found");
                     Err(ZxError::NOT_SUPPORTED)
@@ -681,6 +785,229 @@ impl PcieDevice {
             }
         } else {
             Err(ZxError::BAD_STATE)
+        }
+    }
+    fn mask_legacy_irq(&self, inner: &MutexGuard<PcieDeviceInner>, mask: bool) -> ZxResult {
+        if (**inner).irq.handlers.is_empty() {
+            return Err(ZxError::INVALID_ARGS);
+        }
+        if mask {
+            self.modify_cmd(0, PCIE_CFG_COMMAND_INT_DISABLE);
+        } else {
+            self.modify_cmd(PCIE_CFG_COMMAND_INT_DISABLE, 0);
+        }
+        (**inner).irq.handlers[0].set_masked(mask);
+        Ok(())
+    }
+    fn reset_irq_bookkeeping(&self, inner: &mut MutexGuard<PcieDeviceInner>) {
+        inner.irq.handlers.clear();
+        inner.irq.mode = PcieIrqMode::Disabled;
+        inner.irq.registered_handler_count = 0;
+    }
+    fn allocate_irq_handler(
+        &self,
+        inner: &mut MutexGuard<PcieDeviceInner>,
+        irq_count: u32,
+        masked: bool,
+    ) {
+        assert!(inner.irq.handlers.is_empty());
+        for i in 0..irq_count {
+            inner.irq.handlers.push(Arc::new(PcieIrqHandlerState {
+                irq_id: i,
+                masked: Mutex::new(masked),
+                handler: None,
+            }))
+        }
+    }
+    fn enable_msi_irq_mode(&self, inner: &mut MutexGuard<PcieDeviceInner>, irq: u32) -> ZxResult {
+        let (_std, msi) = inner.msi().ok_or(ZxError::NOT_SUPPORTED)?;
+        let initially_masked = if msi.has_pvm {
+            self.cfg
+                .as_ref()
+                .unwrap()
+                .write32_offset(PciCapacityMsi::mask_bits_offset(msi.is_64bit), u32::MAX);
+            true
+        } else {
+            false
+        };
+        match PciMsiBlock::allocate_msi_block(irq) {
+            Ok(block) => *msi.irq_block.lock() = block,
+            Err(ex) => {
+                self.leave_msi_irq_mode(inner);
+                return Err(ex);
+            }
+        };
+        self.allocate_irq_handler(inner, irq, initially_masked);
+        inner.irq.mode = PcieIrqMode::Msi;
+        let (_std, msi) = inner.msi().ok_or(ZxError::NOT_SUPPORTED)?;
+        let block = msi.irq_block.lock();
+        let (target_addr, target_data) = (block.target_addr, block.target_data);
+        self.set_msi_target(inner, target_addr, target_data);
+        self.set_msi_multi_message_enb(inner, irq);
+        for (i, e) in inner.irq.handlers.iter().enumerate() {
+            let arc_self = inner.arc_self().clone().unwrap();
+            let handler_copy = e.clone();
+            block.register_handler(
+                i as u32,
+                Box::new(move || Self::msi_irq_handler(arc_self.clone(), handler_copy.clone())),
+            );
+        }
+        self.set_msi_enb(inner, true);
+        Ok(())
+    }
+    fn leave_msi_irq_mode(&self, inner: &mut MutexGuard<PcieDeviceInner>) {
+        self.set_msi_target(inner, 0x0, 0x0);
+        // free msi blocks
+        {
+            let (_std, msi) = inner.msi().unwrap();
+            let block = msi.irq_block.lock();
+            if block.allocated {
+                for i in 0..block.num_irq {
+                    block.register_handler(i, Box::new(|| {}));
+                }
+                block.free_msi_block();
+            }
+        }
+        self.reset_irq_bookkeeping(inner);
+    }
+    fn set_msi_target(
+        &self,
+        inner: &MutexGuard<PcieDeviceInner>,
+        target_addr: u64,
+        target_data: u32,
+    ) {
+        let (std, msi) = inner.msi().unwrap();
+        assert!(msi.is_64bit || (target_addr >> 32) == 0);
+        assert!((target_data >> 16) == 0);
+        self.set_msi_enb(inner, false);
+        self.mask_all_msi_vectors(inner);
+        let cfg = self.cfg.as_ref().unwrap();
+        let addr_reg = std.base + 0x4;
+        let addr_reg_upper = std.base + 0x8;
+        let data_reg = std.base + PciCapacityMsi::addr_offset(msi.is_64bit) as u16;
+        cfg.write32_offset(addr_reg as usize, target_addr as u32);
+        if msi.is_64bit {
+            cfg.write32_offset(addr_reg_upper as usize, (target_addr >> 32) as u32);
+        }
+        cfg.write16_offset(data_reg as usize, target_data as u16);
+    }
+    fn set_msi_multi_message_enb(&self, inner: &MutexGuard<PcieDeviceInner>, irq_num: u32) {
+        assert!(1 <= irq_num && irq_num <= PCIE_MAX_MSI_IRQS);
+        let log2 = u32::next_power_of_two(irq_num).trailing_zeros();
+        assert!(log2 <= 5);
+        let cfg = self.cfg.as_ref().unwrap();
+        let (std, msi) = inner.msi().unwrap();
+        let data_reg = std.base as usize + PciCapacityMsi::addr_offset(msi.is_64bit);
+        let mut val = cfg.read32_offset(data_reg as usize);
+        val = (val & !0x70) | ((log2 & 0x7) << 4);
+        cfg.write32_offset(data_reg, val);
+    }
+    fn set_msi_enb(&self, inner: &MutexGuard<PcieDeviceInner>, enable: bool) {
+        let cfg = self.cfg.as_ref().unwrap();
+        let (std, _msi) = inner.msi().unwrap();
+        let ctrl_addr = std.base as usize + PciCapacityMsi::ctrl_offset();
+        let val = cfg.read16_offset(ctrl_addr);
+        cfg.write16_offset(ctrl_addr, (val & !0x1) | (enable as u16));
+    }
+    fn mask_all_msi_vectors(&self, inner: &MutexGuard<PcieDeviceInner>) {
+        for i in 0..inner.irq.handlers.len() {
+            self.mask_msi_irq(inner, i as u32, true);
+        }
+        // just to be careful
+        let cfg = self.cfg.as_ref().unwrap();
+        let (_std, msi) = inner.msi().unwrap();
+        if msi.has_pvm {
+            cfg.write32_offset(PciCapacityMsi::mask_bits_offset(msi.is_64bit), u32::MAX);
+        }
+    }
+    fn mask_msi_irq(&self, inner: &MutexGuard<PcieDeviceInner>, irq: u32, mask: bool) -> bool {
+        assert!(!inner.irq.handlers.is_empty());
+        let cfg = self.cfg.as_ref().unwrap();
+        let (_std, msi) = inner.msi().unwrap();
+        if mask && !msi.has_pvm {
+            return false;
+        }
+        if msi.has_pvm {
+            assert!(irq < PCIE_MAX_MSI_IRQS);
+            let addr = PciCapacityMsi::mask_bits_offset(msi.is_64bit);
+            let mut val = cfg.read32_offset(addr);
+            if mask {
+                val |= 1 << irq;
+            } else {
+                val &= !(1 << irq);
+            }
+            cfg.write32_offset(addr, val);
+        }
+        let ret = inner.irq.handlers[0].get_masked();
+        inner.irq.handlers[0].set_masked(mask);
+        return ret;
+    }
+    fn msi_irq_handler(dev: Arc<PcieDevice>, state: Arc<PcieIrqHandlerState>) {
+        // Perhaps dead lock?
+        let inner = dev.inner.lock();
+        let (_std, msi) = inner.msi().unwrap();
+        if msi.has_pvm {
+            if dev.mask_msi_irq(&inner, state.irq_id, true) {
+                return;
+            }
+        }
+        if let Some(h) = &state.handler {
+            let ret = h();
+            if (ret & PCIE_IRQRET_MASK) == 0 {
+                dev.mask_msi_irq(&inner, state.irq_id, false);
+            }
+        }
+    }
+    pub fn set_irq_mode(&self, mode: u32, mut irq_count: u32) -> ZxResult {
+        let mode = PcieIrqMode::try_from(mode).or(Err(ZxError::INVALID_ARGS))?;
+        let mut inner = self.inner.lock();
+        if let PcieIrqMode::Disabled = mode {
+            irq_count = 0;
+        } else if !inner.plugged_in {
+            return Err(ZxError::BAD_STATE);
+        } else if irq_count < 1 {
+            return Err(ZxError::INVALID_ARGS);
+        }
+        match inner.irq.mode {
+            PcieIrqMode::Legacy => {
+                self.mask_legacy_irq(&inner, true)?;
+                inner
+                    .irq
+                    .legacy
+                    .shared_handler
+                    .remove_device(inner.arc_self().unwrap());
+                self.reset_irq_bookkeeping(&mut inner);
+            }
+            PcieIrqMode::Msi => {
+                self.leave_msi_irq_mode(&mut inner);
+            }
+            PcieIrqMode::MsiX => {
+                return Err(ZxError::NOT_SUPPORTED);
+            }
+            PcieIrqMode::Disabled => {}
+            _ => {
+                return Err(ZxError::INVALID_ARGS);
+            }
+        }
+        match mode {
+            PcieIrqMode::Disabled => Ok(()),
+            PcieIrqMode::Legacy => {
+                if inner.irq.legacy.pin == 0 || irq_count > 1 {
+                    return Err(ZxError::NOT_SUPPORTED);
+                }
+                self.modify_cmd(0, PCIE_CFG_COMMAND_INT_DISABLE);
+                self.allocate_irq_handler(&mut inner, irq_count, true);
+                inner.irq.mode = PcieIrqMode::Legacy;
+                inner
+                    .irq
+                    .legacy
+                    .shared_handler
+                    .add_device(inner.arc_self().unwrap());
+                Ok(())
+            }
+            PcieIrqMode::Msi => self.enable_msi_irq_mode(&mut inner, irq_count),
+            PcieIrqMode::MsiX => Err(ZxError::NOT_SUPPORTED),
+            _ => Err(ZxError::INVALID_ARGS),
         }
     }
 }
@@ -1088,18 +1415,6 @@ const PCIE_CFG_STATUS_INT_SYS: u16 = 1 << 3;
 const PCIE_HAS_IO_ADDR_SPACE: bool = true;
 #[cfg(not(target_arch = "x86_64"))]
 const PCIE_HAS_IO_ADDR_SPACE: bool = false;
-
-numeric_enum! {
-    #[repr(u32)]
-    #[derive(Clone, Debug, PartialEq)]
-    pub enum PcieIrqMode {
-        Disabled = 0,
-        Legacy = 1,
-        Msi = 2,
-        MsiX = 3,
-        Count = 4,
-    }
-}
 
 #[derive(Default)]
 pub struct PcieIrqModeCaps {

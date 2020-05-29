@@ -67,6 +67,19 @@ pub struct MappedEcamRegion {
     pub vaddr: u64,
 }
 
+use numeric_enum_macro::*;
+numeric_enum! {
+    #[repr(u32)]
+    #[derive(Clone, Debug, PartialEq)]
+    pub enum PcieIrqMode {
+        Disabled = 0,
+        Legacy = 1,
+        Msi = 2,
+        MsiX = 3,
+        Count = 4,
+    }
+}
+
 pub const PCI_INIT_ARG_MAX_SIZE: usize = core::mem::size_of::<PciInitArgsAddrWindows>()
     * PCI_INIT_ARG_MAX_ECAM_WINDOWS
     + core::mem::size_of::<PciInitArgsHeader>();
@@ -79,6 +92,9 @@ pub const PCIE_INVALID_VENDOR_ID: usize = 0xFFFF;
 
 pub const PCI_CFG_SPACE_TYPE_PIO: u8 = 0;
 pub const PCI_CFG_SPACE_TYPE_MMIO: u8 = 1;
+pub const PCIE_IRQRET_MASK: u32 = 0x1;
+pub const PCIE_MAX_MSI_IRQS: u32 = 32;
+
 use super::*;
 use alloc::sync::*;
 use kernel_hal::InterruptManager;

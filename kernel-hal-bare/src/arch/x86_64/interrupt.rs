@@ -9,6 +9,7 @@ use spin::Mutex;
 use trapframe::TrapFrame;
 
 const IO_APIC_NUM_REDIRECTIONS: u8 = 120;
+const TABLE_SIZE: usize = 255;
 pub type InterruptHandle = Box<dyn Fn() + Send + Sync>;
 lazy_static! {
     static ref IRQ_TABLE: Mutex<Vec<Option<InterruptHandle>>> = Default::default();
@@ -28,7 +29,7 @@ pub fn init() {
 
 fn init_irq_table() {
     let mut table = IRQ_TABLE.lock();
-    for _ in 0..255 {
+    for _ in 0..TABLE_SIZE {
         table.push(None);
     }
 }
@@ -160,6 +161,43 @@ pub fn irq_remove_handle(irq: u8) -> bool {
         None => true,
     }
 }
+
+#[export_name = "hal_irq_allocate_block"]
+pub fn allocate_block(irq_num: u32) -> Option<usize> {
+    let irq_num = u32::next_power_of_two(irq_num) as usize;
+    let mut irq_start = 0x20;
+    let mut irq_cur = irq_start;
+    let mut table = IRQ_TABLE.lock();
+    while irq_cur < TABLE_SIZE && irq_cur < irq_start + irq_num {
+        if let None = table[irq_cur] {
+            irq_cur += 1;
+        } else {
+            irq_start = (irq_cur & (irq_num - 1)) + irq_num;
+            irq_cur = irq_start
+        }
+    }
+    for i in irq_start..irq_start + irq_num {
+        table[i] = Some(Box::new(|| {}));
+    }
+    Some(irq_start)
+}
+
+#[export_name = "hal_irq_free_block"]
+pub fn free_block(irq_start: u32, irq_num: u32) {
+    let mut table = IRQ_TABLE.lock();
+    for i in irq_start..irq_start + irq_num {
+        table[i as usize] = None;
+    }
+}
+
+#[export_name = "hal_irq_overwrite_handler"]
+pub fn overwrite_handler(msi_id: u32, handle: Box<dyn Fn() + Send + Sync>) -> bool {
+    let mut table = IRQ_TABLE.lock();
+    let set = table[msi_id as usize].is_none();
+    table[msi_id as usize] = Some(handle);
+    set
+}
+
 #[export_name = "hal_irq_enable"]
 pub fn irq_enable(irq: u32) {
     info!("irq_enable irq={:#x?}", irq);

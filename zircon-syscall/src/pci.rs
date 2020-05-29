@@ -215,7 +215,10 @@ impl Syscall<'_> {
         mode: u32,
         mut out_max_irqs: UserOutPtr<u32>,
     ) -> ZxResult {
-        info!("pci.: handle_value={:#x}, mode={:#x}", handle, mode);
+        info!(
+            "pci.query_irq_mode: handle_value={:#x}, mode={:#x}",
+            handle, mode
+        );
         let proc = self.thread.proc();
         let devobj = proc.get_object_with_rights::<PcieDeviceKObject>(handle, Rights::READ)?;
         match devobj
@@ -230,6 +233,24 @@ impl Syscall<'_> {
             }
             Err(err) => Err(err),
         }
+    }
+    pub fn sys_pci_set_irq_mode(
+        &self,
+        handle: HandleValue,
+        mode: u32,
+        requested_irq_count: u32,
+    ) -> ZxResult {
+        info!(
+            "pci.set_irq_mode: handle_value={:#x}, mode={:#x}, requested_irq_count={:#x}",
+            handle, mode, requested_irq_count
+        );
+        let proc = self.thread.proc();
+        let devobj = proc.get_object_with_rights::<PcieDeviceKObject>(handle, Rights::WRITE)?;
+        devobj
+            .device
+            .device()
+            .unwrap()
+            .set_irq_mode(mode, requested_irq_count)
     }
 }
 
