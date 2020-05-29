@@ -286,6 +286,7 @@ pub struct PcieLegacyIrqState {
     pub handlers: Vec<PcieIrqHandle>, // WARNING
     pub mode: PcieIrqMode,            // WANRING
     pub msi: Option<PciCapacityMsi>,
+    pub pcie: Option<PciCapPcie>,
 }
 
 pub struct PcieIrqState {
@@ -547,7 +548,8 @@ impl PcieDevice {
                     PciCapacity::Msi(std, inner.irq.msi.unwrap())
                 }
                 0x10 => {
-                    PciCapacity::Pcie(std, PciCapPcie::create(cfg.as_ref(), cap_offset as u16, id))
+                    inner.irq.pcie = Some(PciCapPcie::create(cfg.as_ref(), cap_offset as u16, id));
+                    PciCapacity::Pcie(std, inner.irq.pcie.unwrap())
                 }
                 0x13 => PciCapacity::AdvFeatures(
                     std,
@@ -1104,6 +1106,51 @@ impl PcieDevice {
             PcieIrqMode::MsiX => Err(ZxError::NOT_SUPPORTED),
             _ => Err(ZxError::INVALID_ARGS),
         }
+    }
+
+    pub fn config_read(&self, offset: usize, width: usize) -> ZxResult<u32> {
+        let inner = self.inner.lock();
+        let cfg_size: usize = if inner.irq.pcie.is_some() {
+            PCIE_BASE_CONFIG_SIZE
+        } else {
+            PCIE_EXTENDED_CONFIG_SIZE
+        };
+        if offset + width > cfg_size {
+            return Err(ZxError::INVALID_ARGS);
+        }
+        match width {
+            1 => Ok(self.cfg.as_ref().unwrap().read8_offset(offset) as u32),
+            2 => Ok(self.cfg.as_ref().unwrap().read16_offset(offset) as u32),
+            4 => Ok(self.cfg.as_ref().unwrap().read32_offset(offset) as u32),
+            _ => Err(ZxError::INVALID_ARGS),
+        }
+    }
+
+    pub fn config_write(&self, offset: usize, width: usize, val: u32) -> ZxResult {
+        let inner = self.inner.lock();
+        let cfg_size: usize = if inner.irq.pcie.is_some() {
+            PCIE_BASE_CONFIG_SIZE
+        } else {
+            PCIE_EXTENDED_CONFIG_SIZE
+        };
+        if offset + width > cfg_size {
+            return Err(ZxError::INVALID_ARGS);
+        }
+        match width {
+            1 => self.cfg.as_ref().unwrap().write8_offset(offset, val as u8),
+            2 => self
+                .cfg
+                .as_ref()
+                .unwrap()
+                .write16_offset(offset, val as u16),
+            4 => self
+                .cfg
+                .as_ref()
+                .unwrap()
+                .write32_offset(offset, val as u32),
+            _ => return Err(ZxError::INVALID_ARGS),
+        };
+        Ok(())
     }
 }
 

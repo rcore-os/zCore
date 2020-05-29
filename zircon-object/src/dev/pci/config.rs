@@ -137,3 +137,6 @@ numeric_enum! {
         BridgeExpansionRomAddress = 0x38,
     }
 }
+
+pub const PCIE_BASE_CONFIG_SIZE: usize = 256;
+pub const PCIE_EXTENDED_CONFIG_SIZE: usize = 4096;

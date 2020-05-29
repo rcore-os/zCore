@@ -150,7 +150,12 @@ impl Syscall<'_> {
         PCIeBusDriver::start_bus_driver()?;
         Ok(())
     }
-    pub fn sys_pci_map_interrupt(&self, dev: HandleValue, irq: i32, mut out_handle: UserOutPtr<HandleValue>) -> ZxResult {
+    pub fn sys_pci_map_interrupt(
+        &self,
+        dev: HandleValue,
+        irq: i32,
+        mut out_handle: UserOutPtr<HandleValue>,
+    ) -> ZxResult {
         info!("pci.map_interrupt: handle_value={:#x}, irq={:#x}", dev, irq);
         let proc = self.thread.proc();
         let dev = proc.get_object_with_rights::<PcieDeviceKObject>(dev, Rights::READ)?;
@@ -260,6 +265,47 @@ impl Syscall<'_> {
             .device()
             .unwrap()
             .set_irq_mode(mode, requested_irq_count)
+    }
+
+    pub fn sys_pci_config_read(
+        &self,
+        handle: HandleValue,
+        offset: usize,
+        width: usize,
+        mut out_val: UserOutPtr<u32>,
+    ) -> ZxResult {
+        info!(
+            "pci.config_read: handle={:#x}, offset={:x}, width={:x}",
+            handle, offset, width
+        );
+        let proc = self.thread.proc();
+        let devobj =
+            proc.get_object_with_rights::<PcieDeviceKObject>(handle, Rights::READ | Rights::WRITE)?;
+        let val = devobj.device.device().unwrap().config_read(offset, width)?;
+        out_val.write(val)?;
+        Ok(())
+    }
+
+    pub fn sys_pci_config_write(
+        &self,
+        handle: HandleValue,
+        offset: usize,
+        width: usize,
+        val: u32,
+    ) -> ZxResult {
+        info!(
+            "pci.config_write: handle={:#x}, offset={:x}, width={:x}",
+            handle, offset, width
+        );
+        let proc = self.thread.proc();
+        let devobj =
+            proc.get_object_with_rights::<PcieDeviceKObject>(handle, Rights::READ | Rights::WRITE)?;
+        devobj
+            .device
+            .device()
+            .unwrap()
+            .config_write(offset, width, val)?;
+        Ok(())
     }
 }
 
