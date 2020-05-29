@@ -204,12 +204,13 @@ impl SharedLegacyIrqHandler {
                 continue;
             }
             let inner = dev.inner.lock();
+            let handler_lock = inner.irq.handlers[0].handler.lock();
             let handler = if inner.irq.handlers.is_empty() {
                 None
             } else {
                 let handler = &inner.irq.handlers[0];
                 if handler.get_masked() {
-                    handler.handler.clone()
+                    handler_lock.as_ref()
                 } else {
                     None
                 }
@@ -258,13 +259,16 @@ impl SharedLegacyIrqHandler {
     }
 }
 
-#[derive(PartialEq, Copy, Clone)]
-pub enum PcieIrqMode {
-    Disabled = 0,
-    Legacy = 1,
-    Msi = 2,
-    MsiX = 3,
-    Count = 4,
+numeric_enum! {
+    #[repr(u32)]
+    #[derive(PartialEq, Copy, Clone)]
+    pub enum PcieIrqMode {
+        Disabled = 0,
+        Legacy = 1,
+        Msi = 2,
+        MsiX = 3,
+        Count = 4,
+    }
 }
 
 impl Default for PcieIrqMode {
@@ -273,7 +277,7 @@ impl Default for PcieIrqMode {
     }
 }
 
-struct PcieIrqHandle {
+pub struct PcieIrqHandle {
     handle: Option<Box<dyn Fn() + Send + Sync>>,
     enabled: bool,
 }
@@ -311,7 +315,8 @@ impl Default for PcieIrqState {
 pub struct PcieIrqHandlerState {
     irq_id: u32,
     masked: Mutex<bool>,
-    handler: Option<Arc<dyn Fn() -> u32 + Send + Sync>>,
+    enabled: Mutex<bool>,
+    handler: Mutex<Option<Box<dyn Fn() -> u32 + Send + Sync>>>,
 }
 
 impl PcieIrqHandlerState {
@@ -320,6 +325,15 @@ impl PcieIrqHandlerState {
     }
     pub fn get_masked(&self) -> bool {
         *self.masked.lock()
+    }
+    pub fn set_handler(&self, h: Option<Box<dyn Fn() -> u32 + Send + Sync>>) {
+        *self.handler.lock() = h;
+    }
+    pub fn has_handler(&self) -> bool {
+        self.handler.lock().is_some()
+    }
+    pub fn enable(&self, e: bool) {
+        *self.enabled.lock() = e;
     }
 }
 
@@ -375,6 +389,16 @@ impl PcieDeviceInner {
             if let PciCapacity::Msi(std, msi) = c {
                 if std.is_valid() {
                     return Some((&std, &msi));
+                }
+            }
+        }
+        None
+    }
+    pub fn pcie(&self) -> Option<(&PciCapacityStd, &PciCapPcie)> {
+        for c in self.caps.iter() {
+            if let PciCapacity::Pcie(std, pcie) = c {
+                if std.is_valid() {
+                    return Some((&std, &pcie));
                 }
             }
         }
@@ -539,17 +563,12 @@ impl PcieDevice {
             let std = PciCapacityStd::create(cap_offset as u16, id);
             let mut inner = self.inner.lock();
             let cap = match id {
-                0x5 => {
-                    inner.irq.msi = Some(PciCapacityMsi::create(
-                        cfg.as_ref(),
-                        cap_offset as usize,
-                        id,
-                    ));
-                    PciCapacity::Msi(std, inner.irq.msi.unwrap())
-                }
+                0x5 => PciCapacity::Msi(
+                    std,
+                    PciCapacityMsi::create(cfg.as_ref(), cap_offset as usize, id),
+                ),
                 0x10 => {
-                    inner.irq.pcie = Some(PciCapPcie::create(cfg.as_ref(), cap_offset as u16, id));
-                    PciCapacity::Pcie(std, inner.irq.pcie.unwrap())
+                    PciCapacity::Pcie(std, PciCapPcie::create(cfg.as_ref(), cap_offset as u16, id))
                 }
                 0x13 => PciCapacity::AdvFeatures(
                     std,
@@ -779,12 +798,12 @@ impl PcieDevice {
     }
     pub fn enable_irq(&self, irq_id: usize, enable: bool) {
         let _dev_lcok = self.dev_lock.lock();
-        let mut inner = self.inner.lock();
+        let inner = self.inner.lock();
         assert!(inner.plugged_in);
         assert!(irq_id < inner.irq.handlers.len());
         if enable {
             assert!(!inner.disabled);
-            assert!(inner.irq.handlers[irq_id].handle.is_some());
+            assert!(inner.irq.handlers[irq_id].has_handler());
         }
         match inner.irq.mode {
             PcieIrqMode::Legacy => {
@@ -795,7 +814,7 @@ impl PcieDevice {
                 }
             }
             PcieIrqMode::Msi => {
-                let msi = inner.irq.msi.unwrap();
+                let (_std, msi) = inner.msi().unwrap();
                 if msi.has_pvm {
                     let mut val = self
                         .cfg
@@ -820,27 +839,27 @@ impl PcieDevice {
                 unreachable!();
             }
         }
-        inner.irq.handlers[irq_id].enabled = enable;
+        inner.irq.handlers[irq_id].enable(enable);
     }
 
-    pub fn register_irq_handle(&self, irq_id: usize, handle: Box<dyn Fn() + Send + Sync>) {
+    pub fn register_irq_handle(&self, irq_id: usize, handle: Box<dyn Fn() -> u32 + Send + Sync>) {
         let _dev_lcok = self.dev_lock.lock();
-        let mut inner = self.inner.lock();
+        let inner = self.inner.lock();
         assert!(!inner.disabled);
         assert!(inner.plugged_in);
         assert!(inner.irq.mode != PcieIrqMode::Disabled);
         assert!(irq_id < inner.irq.handlers.len());
-        inner.irq.handlers[irq_id].handle = Some(handle);
+        inner.irq.handlers[irq_id].set_handler(Some(handle));
     }
 
     pub fn unregister_irq_handle(&self, irq_id: usize) {
         let _dev_lcok = self.dev_lock.lock();
-        let mut inner = self.inner.lock();
+        let inner = self.inner.lock();
         assert!(!inner.disabled);
         assert!(inner.plugged_in);
         assert!(inner.irq.mode != PcieIrqMode::Disabled);
         assert!(irq_id < inner.irq.handlers.len());
-        inner.irq.handlers[irq_id].handle = None;
+        inner.irq.handlers[irq_id].set_handler(None);
     }
 
     pub fn get_bar(&self, bar_num: usize) -> Option<PcieBarInfo> {
@@ -911,8 +930,9 @@ impl PcieDevice {
         for i in 0..irq_count {
             inner.irq.handlers.push(Arc::new(PcieIrqHandlerState {
                 irq_id: i,
+                enabled: Mutex::new(false),
                 masked: Mutex::new(masked),
-                handler: None,
+                handler: Mutex::new(None),
             }))
         }
     }
@@ -922,7 +942,7 @@ impl PcieDevice {
             self.cfg
                 .as_ref()
                 .unwrap()
-                .write32_offset(PciCapacityMsi::mask_bits_offset(msi.is_64bit), u32::MAX);
+                .write32_offset(msi.mask_bits_offset, u32::MAX);
             true
         } else {
             false
@@ -1014,7 +1034,7 @@ impl PcieDevice {
         let cfg = self.cfg.as_ref().unwrap();
         let (_std, msi) = inner.msi().unwrap();
         if msi.has_pvm {
-            cfg.write32_offset(PciCapacityMsi::mask_bits_offset(msi.is_64bit), u32::MAX);
+            cfg.write32_offset(msi.mask_bits_offset, u32::MAX);
         }
     }
     fn mask_msi_irq(&self, inner: &MutexGuard<PcieDeviceInner>, irq: u32, mask: bool) -> bool {
@@ -1026,7 +1046,7 @@ impl PcieDevice {
         }
         if msi.has_pvm {
             assert!(irq < PCIE_MAX_MSI_IRQS);
-            let addr = PciCapacityMsi::mask_bits_offset(msi.is_64bit);
+            let addr = msi.mask_bits_offset;
             let mut val = cfg.read32_offset(addr);
             if mask {
                 val |= 1 << irq;
@@ -1048,7 +1068,7 @@ impl PcieDevice {
                 return;
             }
         }
-        if let Some(h) = &state.handler {
+        if let Some(h) = &*state.handler.lock() {
             let ret = h();
             if (ret & PCIE_IRQRET_MASK) == 0 {
                 dev.mask_msi_irq(&inner, state.irq_id, false);
@@ -1110,7 +1130,7 @@ impl PcieDevice {
 
     pub fn config_read(&self, offset: usize, width: usize) -> ZxResult<u32> {
         let inner = self.inner.lock();
-        let cfg_size: usize = if inner.irq.pcie.is_some() {
+        let cfg_size: usize = if inner.pcie().is_some() {
             PCIE_BASE_CONFIG_SIZE
         } else {
             PCIE_EXTENDED_CONFIG_SIZE
@@ -1128,7 +1148,7 @@ impl PcieDevice {
 
     pub fn config_write(&self, offset: usize, width: usize, val: u32) -> ZxResult {
         let inner = self.inner.lock();
-        let cfg_size: usize = if inner.irq.pcie.is_some() {
+        let cfg_size: usize = if inner.pcie().is_some() {
             PCIE_BASE_CONFIG_SIZE
         } else {
             PCIE_EXTENDED_CONFIG_SIZE
@@ -1195,7 +1215,7 @@ pub trait IPciNode {
     fn disable_irq(&self, irq_id: usize) {
         self.device().unwrap().enable_irq(irq_id, false);
     }
-    fn register_irq_handle(&self, irq_id: usize, handle: Box<dyn Fn() + Send + Sync>) {
+    fn register_irq_handle(&self, irq_id: usize, handle: Box<dyn Fn() -> u32 + Send + Sync>) {
         self.device().unwrap().register_irq_handle(irq_id, handle);
     }
     fn unregister_irq_handle(&self, irq_id: usize) {

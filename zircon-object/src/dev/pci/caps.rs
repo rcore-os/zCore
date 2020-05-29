@@ -29,7 +29,7 @@ impl PciCapacityStd {
     }
 }
 
-#[derive(Default, Clone, Copy)]
+#[derive(Default, Clone, Copy, Debug)]
 pub struct PciMsiBlock {
     pub target_addr: u64,
     pub allocated: bool,
@@ -66,7 +66,7 @@ impl PciMsiBlock {
 }
 
 // @see PCI Local Bus Specification 3.0 Section 6.8.1
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 pub struct PciCapacityMsi {
     pub msi_size: u16,
     pub has_pvm: bool,
@@ -86,7 +86,7 @@ impl PciCapacityMsi {
         let has_pvm = (ctrl & 0x100) != 0;
         let is_64bit = (ctrl & 0x80) != 0;
         cfg.write16_offset(base as usize + 0x2, ctrl & !0x71);
-        let mask_bits = Self::mask_bits_offset(is_64bit) + base as usize;
+        let mask_bits = base + if is_64bit { 0x10 } else { 0xC };
         if has_pvm {
             cfg.write32_offset(mask_bits, 0xffffffff);
         }

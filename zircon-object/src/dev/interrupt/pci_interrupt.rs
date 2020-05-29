@@ -1,4 +1,4 @@
-use {super::*, spin::Mutex, super::super::IPciNode};
+use {super::super::pci::PCIE_IRQRET_MASK, super::super::IPciNode, super::*, spin::Mutex};
 
 pub struct PciInterrupt {
     device: Arc<dyn IPciNode + Send + Sync>,
@@ -44,7 +44,13 @@ impl InterruptTrait for PciInterrupt {
         if inner.register {
             return Err(ZxError::ALREADY_BOUND);
         }
-        self.device.register_irq_handle(self.irq_id, handle);
+        self.device.register_irq_handle(
+            self.irq_id,
+            Box::new(move || {
+                handle();
+                PCIE_IRQRET_MASK
+            }),
+        );
         inner.register = true;
         Ok(())
     }
