@@ -245,6 +245,7 @@ impl Syscall<'_> {
             ),
             Sys::SYSTEM_GET_EVENT => self.sys_system_get_event(a0 as _, a1 as _, a2.into()),
             Sys::TIMER_SET => self.sys_timer_set(a0 as _, a1.into(), a2 as _),
+            Sys::TIMER_CANCEL => self.sys_timer_cancel(a0 as _),
             Sys::DEBUG_READ => {
                 self.sys_debug_read(a0 as _, a1.into(), a2 as _, a3.into())
                     .await
