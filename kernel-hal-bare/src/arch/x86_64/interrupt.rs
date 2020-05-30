@@ -9,7 +9,7 @@ use spin::Mutex;
 use trapframe::TrapFrame;
 
 const IO_APIC_NUM_REDIRECTIONS: u8 = 120;
-const TABLE_SIZE: usize = 255;
+const TABLE_SIZE: usize = 256;
 pub type InterruptHandle = Box<dyn Fn() + Send + Sync>;
 lazy_static! {
     static ref IRQ_TABLE: Mutex<Vec<Option<InterruptHandle>>> = Default::default();
@@ -22,8 +22,6 @@ pub fn init() {
     init_irq_table();
     irq_add_handle(Timer + IRQ0, Box::new(timer));
     irq_add_handle(COM1 + IRQ0, Box::new(com1));
-    irq_add_handle(Keyboard + IRQ0, Box::new(keyboard));
-    irq_enable_raw(Keyboard, Keyboard + IRQ0);
     irq_enable_raw(COM1, COM1 + IRQ0);
 }
 
@@ -90,6 +88,10 @@ pub fn irq_handle(irq: u8) {
 #[export_name = "hal_ioapic_set_handle"]
 pub fn set_handle(global_irq: u32, handle: InterruptHandle) -> Option<u8> {
     info!("set_handle irq={:#x?}", global_irq);
+    if global_irq == 1 {
+        irq_add_handle(global_irq as u8 + IRQ0, handle);
+        return Some(global_irq as u8 + IRQ0);
+    }
     let ioapic_info = if let Some(x) = get_ioapic(global_irq) {
         x
     } else {
@@ -201,6 +203,10 @@ pub fn overwrite_handler(msi_id: u32, handle: Box<dyn Fn() + Send + Sync>) -> bo
 #[export_name = "hal_irq_enable"]
 pub fn irq_enable(irq: u32) {
     info!("irq_enable irq={:#x?}", irq);
+    if irq == 1 {
+        irq_enable_raw(irq as u8, irq as u8  + IRQ0);
+        return;
+    }
     if let Some(x) = get_ioapic(irq) {
         let mut ioapic = ioapic_controller(&x);
         ioapic.enable((irq - x.global_system_interrupt_base) as u8, 0);
