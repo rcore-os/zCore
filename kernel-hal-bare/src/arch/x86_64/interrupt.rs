@@ -21,10 +21,9 @@ pub fn init() {
     }
     init_irq_table();
     irq_add_handle(Timer + IRQ0, Box::new(timer));
-    irq_add_handle(COM1 + IRQ0, Box::new(com1));
-    // irq_add_handle(Keyboard + IRQ0, Box::new(keyboard));
     // irq_enable_raw(Keyboard, Keyboard + IRQ0);
-    irq_enable_raw(COM1, COM1 + IRQ0);
+    // irq_add_handle(COM1 + IRQ0, Box::new(com1));
+    // irq_enable_raw(COM1, COM1 + IRQ0);
 }
 
 fn init_irq_table() {
@@ -102,7 +101,16 @@ pub fn set_handle(global_irq: u32, handle: InterruptHandle) -> Option<u8> {
     let mut ioapic = ioapic_controller(&ioapic_info);
     let offset = (global_irq - ioapic_info.global_system_interrupt_base) as u8;
     let irq = ioapic.irq_vector(offset);
-    irq_add_handle(irq, handle).map(|x| {
+    let new_handle = if global_irq == 0x1 {
+        Box::new(move || {
+            handle();
+            keyboard();
+        })
+    } else {
+        handle
+    };
+    irq_add_handle(irq, new_handle).map(|x| {
+        warn!("mapping from {:#x?} to {:#x?}", global_irq, x);
         ioapic.set_irq_vector(offset, x);
         x
     })
