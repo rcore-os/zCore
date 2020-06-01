@@ -594,7 +594,7 @@ impl PcieDevice {
         let mut inner = self.inner.lock();
         inner.irq.legacy.pin = pin;
         if pin != 0 {
-            inner.irq.legacy.pin = self.map_pin_to_irq_locked(upstream, pin)? as u8;
+            inner.irq.legacy.id = self.map_pin_to_irq_locked(upstream, pin)?;
             inner.irq.legacy.shared_handler =
                 driver.find_legacy_irq_handler(inner.irq.legacy.id as u32)?;
         }
