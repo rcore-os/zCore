@@ -68,6 +68,13 @@ impl VMObjectTrait for VMObjectPhysical {
         Ok(self.paddr + page_idx * PAGE_SIZE)
     }
 
+    fn commit_pages_with(
+        &self,
+        f: &mut dyn FnMut(&mut dyn FnMut(usize, MMUFlags) -> ZxResult<PhysAddr>) -> ZxResult,
+    ) -> ZxResult {
+        f(&mut |page_idx, _flags| Ok(self.paddr + page_idx * PAGE_SIZE))
+    }
+
     fn commit(&self, _offset: usize, _len: usize) -> ZxResult {
         // do nothing
         Ok(())

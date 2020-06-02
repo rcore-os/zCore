@@ -554,17 +554,19 @@ impl VmMapping {
     /// Temporarily used for development. A standard procedure for
     /// vmo is: create_vmo, op_range(commit), map
     fn map(self: &Arc<Self>) -> ZxResult {
-        let inner = self.inner.lock();
-        let mut page_table = self.page_table.lock();
-        let page_num = inner.size / PAGE_SIZE;
-        let vmo_offset = inner.vmo_offset / PAGE_SIZE;
-        for i in 0..page_num {
-            let paddr = self.vmo.commit_page(vmo_offset + i, self.flags)?;
-            page_table
-                .map(inner.addr + i * PAGE_SIZE, paddr, self.flags)
-                .expect("failed to map");
-        }
-        Ok(())
+        self.vmo.commit_pages_with(&mut |commit| {
+            let inner = self.inner.lock();
+            let mut page_table = self.page_table.lock();
+            let page_num = inner.size / PAGE_SIZE;
+            let vmo_offset = inner.vmo_offset / PAGE_SIZE;
+            for i in 0..page_num {
+                let paddr = commit(vmo_offset + i, self.flags)?;
+                page_table
+                    .map(inner.addr + i * PAGE_SIZE, paddr, self.flags)
+                    .expect("failed to map");
+            }
+            Ok(())
+        })
     }
 
     fn unmap(&self) {
@@ -575,9 +577,11 @@ impl VmMapping {
     }
 
     fn fill_in_task_status(&self, task_stats: &mut TaskStatsInfo) {
-        let inner = self.inner.lock();
-        let start_idx = inner.vmo_offset / PAGE_SIZE;
-        let end_idx = start_idx + inner.size / PAGE_SIZE;
+        let (start_idx, end_idx) = {
+            let inner = self.inner.lock();
+            let start_idx = inner.vmo_offset / PAGE_SIZE;
+            (start_idx, start_idx + inner.size / PAGE_SIZE)
+        };
         task_stats.mapped_bytes += self.vmo.len() as u64;
         let committed_pages = self.vmo.committed_pages_in_range(start_idx, end_idx);
         let share_count = self.vmo.share_count();

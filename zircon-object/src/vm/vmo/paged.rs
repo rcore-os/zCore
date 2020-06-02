@@ -264,6 +264,14 @@ impl VMObjectTrait for VMObjectPaged {
         self.get_inner_mut().1.commit_page(page_idx, flags)
     }
 
+    fn commit_pages_with(
+        &self,
+        f: &mut dyn FnMut(&mut dyn FnMut(usize, MMUFlags) -> ZxResult<PhysAddr>) -> ZxResult,
+    ) -> ZxResult {
+        let (_guard, mut inner) = self.get_inner_mut();
+        f(&mut |page_idx, flags| inner.commit_page(page_idx, flags))
+    }
+
     fn commit(&self, offset: usize, len: usize) -> ZxResult {
         let (_guard, mut inner) = self.get_inner_mut();
         let start_page = offset / PAGE_SIZE;
