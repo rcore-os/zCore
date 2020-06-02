@@ -57,7 +57,7 @@ impl VMOType {
 /// The main VM object type, holding a list of pages.
 pub struct VMObjectPaged {
     /// The lock that protected the `inner`
-    /// This lock is shared between objects in the same clone trees to avoid deadlock
+    /// This lock is shared between objects in the same clone tree to avoid deadlock
     lock: Arc<Mutex<()>>,
     inner: RefCell<VMObjectPagedInner>,
 }
