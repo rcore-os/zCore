@@ -52,7 +52,7 @@ impl Iommu {
         if perms.contains(IommuPerms::PERM_EXECUTE) {
             flags |= MMUFlags::EXECUTE;
         }
-        let p_addr = vmo.commit_page(offset, flags)?;
+        let p_addr = vmo.commit_page(offset / PAGE_SIZE, flags)?;
         if vmo.is_paged() {
             Ok((p_addr, PAGE_SIZE))
         } else {
