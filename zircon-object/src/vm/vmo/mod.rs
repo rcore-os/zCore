@@ -50,6 +50,14 @@ pub trait VMObjectTrait: Sync + Send {
     /// Commit a page.
     fn commit_page(&self, page_idx: usize, flags: MMUFlags) -> ZxResult<PhysAddr>;
 
+    /// Commit pages with an external function f.
+    /// the vmo is internally locked before it calls f,
+    /// allowing `VmMapping` to avoid deadlock
+    fn commit_pages_with(
+        &self,
+        f: &mut dyn FnMut(&mut dyn FnMut(usize, MMUFlags) -> ZxResult<PhysAddr>) -> ZxResult,
+    ) -> ZxResult;
+
     /// Commit allocating physical memory.
     fn commit(&self, offset: usize, len: usize) -> ZxResult;
 
