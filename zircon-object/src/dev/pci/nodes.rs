@@ -196,11 +196,11 @@ impl SharedLegacyIrqHandler {
         }
         for dev in device_handler.iter() {
             let cfg = dev.config().unwrap();
-            let command = cfg.read16(PciReg16::Command);
+            let _command = cfg.read16(PciReg16::Command);
             // let status = cfg.read16(PciReg16::Status);
-            if (command & PCIE_CFG_COMMAND_INT_DISABLE) != 0 {
-                continue;
-            }
+            // if (command & PCIE_CFG_COMMAND_INT_DISABLE) != 0 {
+            //     continue;
+            // }
             let inner = dev.inner.lock();
             let handler_lock = inner.irq.handlers[0].handler.lock();
             let handler = if inner.irq.handlers.is_empty() {
