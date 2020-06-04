@@ -252,11 +252,14 @@ impl VMObjectTrait for VMObjectPaged {
 
     fn set_len(&self, len: usize) -> ZxResult {
         assert!(page_aligned(len));
-        let (_guard, mut inner) = self.get_inner_mut();
-        if inner.pin_count > 0 {
-            return Err(ZxError::BAD_STATE);
-        }
-        inner.resize(len);
+        let old_parent = {
+            let (_guard, mut inner) = self.get_inner_mut();
+            if inner.pin_count > 0 {
+                return Err(ZxError::BAD_STATE);
+            }
+            inner.resize(len)
+        };
+        drop(old_parent);
         Ok(())
     }
 
@@ -940,13 +943,16 @@ impl VMObjectPagedInner {
         }
     }
 
-    fn resize(&mut self, new_size: usize) {
+    fn resize(&mut self, new_size: usize) -> Option<Arc<VMObjectPaged>> {
+        let mut old_parent = None;
         if new_size == 0 && new_size < self.size {
             self.frames.clear();
             if let Some(parent) = self.parent.as_ref() {
                 parent.inner.borrow_mut().remove_child(&self.self_ref);
-                self.parent = None;
             }
+            // We cannot drop the parent Arc here since we are holding the lock
+            // pass it to caller who can drop it after unlocking the lock
+            old_parent = self.parent.take();
         } else if new_size < self.size {
             let mut unwanted = VecDeque::<usize>::new();
             let parent_end = (self.parent_limit - self.parent_offset) / PAGE_SIZE;
@@ -958,6 +964,7 @@ impl VMObjectPagedInner {
             self.release_unwanted_pages(unwanted);
         }
         self.size = new_size;
+        old_parent
     }
 
     fn is_contiguous(&self) -> bool {
