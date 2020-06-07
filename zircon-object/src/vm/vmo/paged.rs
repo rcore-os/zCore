@@ -953,15 +953,21 @@ impl VMObjectPagedInner {
             // We cannot drop the parent Arc here since we are holding the lock
             // pass it to caller who can drop it after unlocking the lock
             old_parent = self.parent.take();
+            self.parent_offset = 0;
+            self.parent_limit = 0;
         } else if new_size < self.size {
             let mut unwanted = VecDeque::<usize>::new();
             let parent_end = (self.parent_limit - self.parent_offset) / PAGE_SIZE;
             for i in new_size / PAGE_SIZE..self.size / PAGE_SIZE {
+                self.decommit(i);
                 if parent_end > i {
                     unwanted.push_back(i);
                 }
             }
             self.release_unwanted_pages(unwanted);
+            if new_size < self.parent_limit - self.parent_offset {
+                self.parent_limit = self.parent_offset + new_size;
+            }
         }
         self.size = new_size;
         old_parent
