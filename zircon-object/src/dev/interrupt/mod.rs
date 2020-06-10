@@ -83,11 +83,7 @@ impl Interrupt {
         Ok(interrupt)
     }
 
-    pub fn new_pci(
-        device: Arc<dyn IPciNode + Send + Sync>,
-        vector: u32,
-        maskable: bool,
-    ) -> ZxResult<Arc<Self>> {
+    pub fn new_pci(device: Arc<dyn IPciNode>, vector: u32, maskable: bool) -> ZxResult<Arc<Self>> {
         let interrupt = Arc::new(Interrupt {
             base: KObjectBase::new(),
             has_vcpu: false,
