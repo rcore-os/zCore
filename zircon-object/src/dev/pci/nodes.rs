@@ -543,7 +543,7 @@ impl PcieDevice {
             if cap_offset == 0xff || cap_offset < 64 || cap_offset > 252 {
                 return Err(ZxError::INVALID_ARGS);
             }
-            let id = cfg.read8_offset(cap_offset as usize);
+            let id = cfg.read8_(cap_offset as usize);
             let std = PciCapacityStd::create(cap_offset as u16, id);
             let mut inner = self.inner.lock();
             let cap = match id {
@@ -561,7 +561,7 @@ impl PcieDevice {
                 _ => PciCapacity::Std(std),
             };
             inner.caps.push(cap);
-            cap_offset = cfg.read8_offset(cap_offset as usize + 1) & 0xFC;
+            cap_offset = cfg.read8_(cap_offset as usize + 1) & 0xFC;
             found_num += 1;
         }
         Ok(())
@@ -986,11 +986,11 @@ impl PcieDevice {
         let addr_reg = std.base + 0x4;
         let addr_reg_upper = std.base + 0x8;
         let data_reg = std.base + PciCapacityMsi::addr_offset(msi.is_64bit) as u16;
-        cfg.write32_offset(addr_reg as usize, target_addr as u32);
+        cfg.write32_(addr_reg as usize, target_addr as u32);
         if msi.is_64bit {
-            cfg.write32_offset(addr_reg_upper as usize, (target_addr >> 32) as u32);
+            cfg.write32_(addr_reg_upper as usize, (target_addr >> 32) as u32);
         }
-        cfg.write16_offset(data_reg as usize, target_data as u16);
+        cfg.write16_(data_reg as usize, target_data as u16);
     }
     fn set_msi_multi_message_enb(&self, inner: &MutexGuard<PcieDeviceInner>, irq_num: u32) {
         assert!(1 <= irq_num && irq_num <= PCIE_MAX_MSI_IRQS);
@@ -999,16 +999,16 @@ impl PcieDevice {
         let cfg = self.cfg.as_ref().unwrap();
         let (std, msi) = inner.msi().unwrap();
         let data_reg = std.base as usize + PciCapacityMsi::addr_offset(msi.is_64bit);
-        let mut val = cfg.read32_offset(data_reg as usize);
+        let mut val = cfg.read32_(data_reg as usize);
         val = (val & !0x70) | ((log2 & 0x7) << 4);
-        cfg.write32_offset(data_reg, val);
+        cfg.write32_(data_reg, val);
     }
     fn set_msi_enb(&self, inner: &MutexGuard<PcieDeviceInner>, enable: bool) {
         let cfg = self.cfg.as_ref().unwrap();
         let (std, _msi) = inner.msi().unwrap();
         let ctrl_addr = std.base as usize + PciCapacityMsi::ctrl_offset();
-        let val = cfg.read16_offset(ctrl_addr);
-        cfg.write16_offset(ctrl_addr, (val & !0x1) | (enable as u16));
+        let val = cfg.read16_(ctrl_addr);
+        cfg.write16_(ctrl_addr, (val & !0x1) | (enable as u16));
     }
     fn mask_all_msi_vectors(&self, inner: &MutexGuard<PcieDeviceInner>) {
         for i in 0..inner.irq.handlers.len() {

@@ -240,6 +240,8 @@ impl Syscall<'_> {
                 }
                 let info = proc.get_handle_info(handle)?;
                 UserOutPtr::<HandleBasicInfo>::from(buffer).write(info)?;
+                actual.write_if_not_null(1)?;
+                avail.write_if_not_null(1)?;
             }
             Topic::Thread => {
                 if buffer_size < core::mem::size_of::<ThreadInfo>() {

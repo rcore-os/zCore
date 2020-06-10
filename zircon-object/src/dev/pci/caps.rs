@@ -82,10 +82,10 @@ pub struct PciCapacityMsi {
 impl PciCapacityMsi {
     pub fn create(cfg: &PciConfig, base: usize, id: u8) -> PciCapacityMsi {
         assert_eq!(id, 0x5); // PCIE_CAP_ID_MSI
-        let ctrl = cfg.read16_offset(base + 0x2);
+        let ctrl = cfg.read16_(base + 0x2);
         let has_pvm = (ctrl & 0x100) != 0;
         let is_64bit = (ctrl & 0x80) != 0;
-        cfg.write16_offset(base as usize + 0x2, ctrl & !0x71);
+        cfg.write16_(base + 0x2, ctrl & !0x71);
         let mask_bits = base + if is_64bit { 0x10 } else { 0xC };
         if has_pvm {
             cfg.write32_offset(mask_bits, 0xffff_ffff);
@@ -140,8 +140,8 @@ pub struct PciCapPcie {
 impl PciCapPcie {
     pub fn create(cfg: &PciConfig, base: u16, id: u8) -> PciCapPcie {
         assert_eq!(id, 0x10); // PCIE_CAP_ID_PCI_EXPRESS
-        let caps = cfg.read8_offset(base as usize + 0x2);
-        let device_caps = cfg.read32_offset(base as usize + 0x4);
+        let caps = cfg.read8_(base as usize + 0x2);
+        let device_caps = cfg.read32_(base as usize + 0x4);
         PciCapPcie {
             version: caps & 0xF,
             dev_type: PcieDeviceType::try_from(((caps >> 4) & 0xF) as u8).unwrap(),
@@ -159,7 +159,7 @@ pub struct PciCapAdvFeatures {
 impl PciCapAdvFeatures {
     pub fn create(cfg: &PciConfig, base: u16, id: u8) -> PciCapAdvFeatures {
         assert_eq!(id, 0x13); // PCIE_CAP_ID_ADVANCED_FEATURES
-        let caps = cfg.read8_offset(base as usize + 0x3);
+        let caps = cfg.read8_(base as usize + 0x3);
         PciCapAdvFeatures {
             has_flr: ((caps >> 1) & 0x1) != 0,
             has_tp: (caps & 0x1) != 0,
