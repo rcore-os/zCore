@@ -21,9 +21,10 @@ pub fn init() {
     }
     init_irq_table();
     irq_add_handle(Timer + IRQ0, Box::new(timer));
-    // irq_enable_raw(Keyboard, Keyboard + IRQ0);
-    // irq_add_handle(COM1 + IRQ0, Box::new(com1));
-    // irq_enable_raw(COM1, COM1 + IRQ0);
+    irq_add_handle(Keyboard + IRQ0, Box::new(keyboard));
+    irq_add_handle(COM1 + IRQ0, Box::new(com1));
+    irq_enable_raw(Keyboard, Keyboard + IRQ0);
+    irq_enable_raw(COM1, COM1 + IRQ0);
 }
 
 fn init_irq_table() {

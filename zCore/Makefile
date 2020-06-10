@@ -11,23 +11,27 @@ kernel := $(build_path)/zcore
 kernel_img := $(build_path)/zcore.img
 ESP := $(build_path)/esp
 OVMF := ../rboot/OVMF.fd
-TOOLS_PATH := ../prebuilt/tools
 qemu := qemu-system-x86_64
 OBJDUMP := rust-objdump
 VMDISK := $(build_path)/boot.vdi
+QEMU_DISK := $(build_path)/disk.qcow2
 
 ifeq ($(mode), release)
 	build_args += --release
 endif
 
 qemu_opts := \
-	-smp 4,threads=2
+	-smp cores=1
 
 ifeq ($(arch), x86_64)
 qemu_opts += \
+	-machine q35 \
 	-cpu Haswell,+smap,-check,-fsgsbase \
 	-bios $(OVMF) \
 	-drive format=raw,file=fat:rw:$(ESP) \
+	-drive format=qcow2,file=$(QEMU_DISK),id=disk,if=none \
+	-device ich9-ahci,id=ahci \
+	-device ide-drive,drive=disk,bus=ahci.0 \
 	-serial mon:stdio \
 	-m 4G \
 	-nic none \
@@ -56,10 +60,10 @@ run: build justrun
 
 debug: build debugrun
 
-debugrun:
+debugrun: $(QEMU_DISK)
 	$(qemu) $(qemu_opts) -s -S
 
-justrun:
+justrun: $(QEMU_DISK)
 	$(qemu) $(qemu_opts)
 
 build: $(kernel_img)
@@ -70,7 +74,7 @@ $(kernel_img): kernel bootloader
 	cp rboot.conf $(ESP)/EFI/boot/rboot.conf
 	cp ../prebuilt/zircon/$(zbi_file).zbi $(ESP)/EFI/zCore/fuchsia.zbi
 	cp $(kernel) $(ESP)/EFI/zCore/zcore.elf
-	echo \EFI\boot\bootx64.efi > $(ESP)/startup.nsh
+	echo '\\EFI\\boot\\bootx64.efi' > $(ESP)/startup.nsh
 
 kernel:
 	echo Building zCore kenel
@@ -110,3 +114,6 @@ endif
 	# -a $(VMDISK) $(build_path)/esp.tar /
 	rm $(build_path)/esp.tar
 	vboxmanage startvm zCoreVM 
+
+$(QEMU_DISK):
+	qemu-img create -f qcow2 $@ 100M
