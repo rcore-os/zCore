@@ -87,8 +87,7 @@ impl Syscall<'_> {
         }
         let mut addr_windows = UserInPtr::<PciInitArgsAddrWindows>::from(init_buf + HEADER_SIZE)
             .read_array(arg_header.addr_window_count as usize)?;
-        // Configure interrupts
-        pci_configure_interrupt(&mut arg_header)?;
+        arg_header.configure_interrupt()?;
         if arg_header.addr_window_count != 1 {
             return Err(ZxError::INVALID_ARGS); // for non DesignWare Controller
         }

@@ -2,7 +2,7 @@
 
 use super::{caps::*, config::*, *};
 use crate::vm::PAGE_SIZE;
-use alloc::{boxed::Box, sync::*, vec, vec::Vec};
+use alloc::{boxed::Box, sync::*, vec::Vec};
 use core::convert::TryFrom;
 use kernel_hal::InterruptManager;
 use numeric_enum_macro::*;
@@ -28,13 +28,13 @@ numeric_enum! {
 }
 
 pub struct PcieUpstream {
-    pub managed_bus_id: usize,
-    pub inner: Mutex<PcieUpstreamInner>,
+    managed_bus_id: usize,
+    inner: Mutex<PcieUpstreamInner>,
 }
 
-pub struct PcieUpstreamInner {
-    pub weak_super: Weak<dyn IPciNode>,
-    pub downstream: Vec<Option<Arc<dyn IPciNode>>>,
+struct PcieUpstreamInner {
+    weak_super: Weak<dyn IPciNode>,
+    downstream: [Option<Arc<dyn IPciNode>>; PCI_MAX_FUNCTIONS_PER_BUS],
 }
 
 impl PcieUpstream {
@@ -43,10 +43,11 @@ impl PcieUpstream {
             managed_bus_id,
             inner: Mutex::new(PcieUpstreamInner {
                 weak_super: Weak::<PciRoot>::new(),
-                downstream: vec![None; PCI_MAX_FUNCTIONS_PER_BUS],
+                downstream: [None; PCI_MAX_FUNCTIONS_PER_BUS],
             }),
         })
     }
+
     pub fn scan_downstream(&self, driver: &PCIeBusDriver) {
         for dev_id in 0..PCI_MAX_DEVICES_PER_BUS {
             for func_id in 0..PCI_MAX_FUNCTIONS_PER_DEVICE {
@@ -616,7 +617,7 @@ impl PcieDevice {
         }
         let upstream = upstream.upgrade();
         if let Some(up_ptr) = upstream {
-            if let Some(up) = up_ptr.to_root() {
+            if let Some(up) = up_ptr.as_root() {
                 return up.swizzle(dev_id, func_id, pin as usize);
             }
         }
@@ -927,7 +928,7 @@ impl PcieDevice {
         } else {
             false
         };
-        match PciMsiBlock::allocate_msi_block(irq) {
+        match PciMsiBlock::allocate(irq) {
             Ok(block) => *msi.irq_block.lock() = block,
             Err(ex) => {
                 self.leave_msi_irq_mode(inner);
@@ -962,7 +963,7 @@ impl PcieDevice {
                 for i in 0..block.num_irq {
                     block.register_handler(i, Box::new(|| {}));
                 }
-                block.free_msi_block();
+                block.free();
             }
         }
         self.reset_irq_bookkeeping(inner);
@@ -1159,9 +1160,9 @@ pub trait IPciNode: Send + Sync {
     fn node_type(&self) -> PciNodeType;
     fn device(&self) -> Arc<PcieDevice>;
     fn as_upstream(&self) -> Option<Arc<PcieUpstream>>;
-    fn to_root(&self) -> Option<&PciRoot>;
-    fn to_device(&mut self) -> Option<&mut PciDeviceNode>;
-    fn to_bridge(&mut self) -> Option<&mut PciBridge>;
+    fn as_root(&self) -> Option<&PciRoot> {
+        None
+    }
     fn allocate_bars(&self) -> ZxResult {
         unimplemented!("IPciNode.allocate_bars")
     }
@@ -1237,14 +1238,8 @@ impl IPciNode for PciRoot {
     fn as_upstream(&self) -> Option<Arc<PcieUpstream>> {
         Some(self.base_upstream.clone())
     }
-    fn to_root(&self) -> Option<&PciRoot> {
+    fn as_root(&self) -> Option<&PciRoot> {
         Some(self)
-    }
-    fn to_device(&mut self) -> Option<&mut PciDeviceNode> {
-        None
-    }
-    fn to_bridge(&mut self) -> Option<&mut PciBridge> {
-        None
     }
     fn allocate_bars(&self) -> ZxResult {
         unimplemented!();
@@ -1296,15 +1291,6 @@ impl IPciNode for PciDeviceNode {
         self.base_device.clone()
     }
     fn as_upstream(&self) -> Option<Arc<PcieUpstream>> {
-        None
-    }
-    fn to_root(&self) -> Option<&PciRoot> {
-        None
-    }
-    fn to_device(&mut self) -> Option<&mut PciDeviceNode> {
-        Some(self)
-    }
-    fn to_bridge(&mut self) -> Option<&mut PciBridge> {
         None
     }
     fn allocate_bars(&self) -> ZxResult {
@@ -1420,15 +1406,6 @@ impl IPciNode for PciBridge {
     }
     fn as_upstream(&self) -> Option<Arc<PcieUpstream>> {
         Some(self.base_upstream.clone())
-    }
-    fn to_root(&self) -> Option<&PciRoot> {
-        None
-    }
-    fn to_device(&mut self) -> Option<&mut PciDeviceNode> {
-        None
-    }
-    fn to_bridge(&mut self) -> Option<&mut PciBridge> {
-        Some(self)
     }
     fn pf_mmio_regions(&self) -> Arc<Mutex<RegionAllocator>> {
         self.pf_mmio.clone()

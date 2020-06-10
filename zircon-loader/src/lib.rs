@@ -203,7 +203,7 @@ fn spawn(thread: Arc<Thread>) {
             match cx.trap_num {
                 0x100 => exit = handle_syscall(&thread, &mut cx.general).await,
                 0x20..=0x3f => {
-                    kernel_hal::irq_handle(cx.trap_num as u8);
+                    kernel_hal::InterruptManager::handle(cx.trap_num as u8);
                     if cx.trap_num == 0x20 {
                         EXCEPTIONS_TIMER.add(1);
                         kernel_hal::yield_now().await;

@@ -73,19 +73,6 @@ pub struct MappedEcamRegion {
     pub vaddr: u64,
 }
 
-use numeric_enum_macro::*;
-numeric_enum! {
-    #[repr(u32)]
-    #[derive(Clone, Debug, PartialEq)]
-    pub enum PcieIrqMode {
-        Disabled = 0,
-        Legacy = 1,
-        Msi = 2,
-        MsiX = 3,
-        Count = 4,
-    }
-}
-
 pub const PCI_INIT_ARG_MAX_SIZE: usize = core::mem::size_of::<PciInitArgsAddrWindows>()
     * PCI_INIT_ARG_MAX_ECAM_WINDOWS
     + core::mem::size_of::<PciInitArgsHeader>();
@@ -105,22 +92,24 @@ use super::*;
 use alloc::sync::*;
 use kernel_hal::InterruptManager;
 
-pub fn pci_configure_interrupt(arg_header: &mut PciInitArgsHeader) -> ZxResult {
-    for i in 0..arg_header.num_irqs as usize {
-        let irq = &mut arg_header.irqs[i];
-        let global_irq = irq.global_irq;
-        if !is_valid_interrupt(global_irq) {
-            irq.global_irq = PCI_NO_IRQ_MAPPING;
-            pci_irq_swizzle_lut_remove_irq(&mut arg_header.dev_pin_to_global_irq, global_irq);
-        } else {
-            irq_configure(
-                global_irq,
-                irq.level_triggered, /* Trigger mode */
-                irq.active_high,     /* Polarity */
-            )?;
+impl PciInitArgsHeader {
+    pub fn configure_interrupt(&mut self) -> ZxResult {
+        for i in 0..self.num_irqs as usize {
+            let irq = &mut self.irqs[i];
+            let global_irq = irq.global_irq;
+            if !is_valid_interrupt(global_irq) {
+                irq.global_irq = PCI_NO_IRQ_MAPPING;
+                self.dev_pin_to_global_irq.remove_irq(global_irq);
+            } else {
+                irq_configure(
+                    global_irq,
+                    irq.level_triggered, /* Trigger mode */
+                    irq.active_high,     /* Polarity */
+                )?;
+            }
         }
+        Ok(())
     }
-    Ok(())
 }
 
 fn is_valid_interrupt(irq: u32) -> bool {
@@ -158,14 +147,14 @@ impl PciIrqSwizzleLut {
             Ok(irq as usize)
         }
     }
-}
 
-fn pci_irq_swizzle_lut_remove_irq(lut: &mut PciIrqSwizzleLut, irq: u32) {
-    for dev in lut.0.iter_mut() {
-        for func in dev.iter_mut() {
-            for pin in func.iter_mut() {
-                if *pin == irq {
-                    *pin = PCI_NO_IRQ_MAPPING;
+    fn remove_irq(&mut self, irq: u32) {
+        for dev in self.0.iter_mut() {
+            for func in dev.iter_mut() {
+                for pin in func.iter_mut() {
+                    if *pin == irq {
+                        *pin = PCI_NO_IRQ_MAPPING;
+                    }
                 }
             }
         }

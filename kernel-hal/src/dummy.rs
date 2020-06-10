@@ -345,10 +345,6 @@ impl InterruptManager {
     }
 }
 
-pub fn irq_handle(irq: u8) {
-    InterruptManager::handle(irq)
-}
-
 /// Get platform specific information.
 #[linkage = "weak"]
 #[export_name = "hal_vdso_constants"]
