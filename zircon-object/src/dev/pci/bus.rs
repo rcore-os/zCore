@@ -14,7 +14,7 @@ pub struct PCIeBusDriver {
     pub(crate) mmio_lo: Arc<Mutex<RegionAllocator>>,
     pub(crate) mmio_hi: Arc<Mutex<RegionAllocator>>,
     pub(crate) pio_region: Arc<Mutex<RegionAllocator>>,
-    address_provider: Option<Arc<dyn PCIeAddressProvider + Sync + Send>>,
+    address_provider: Option<Arc<dyn PCIeAddressProvider>>,
     roots: BTreeMap<usize, Arc<PciRoot>>,
     state: PCIeBusDriverState,
     bus_topology: Mutex<()>,
@@ -42,9 +42,7 @@ impl PCIeBusDriver {
     pub fn sub_bus_region(base: u64, size: u64, aspace: PciAddrSpace) -> ZxResult {
         _INSTANCE.lock().sub_bus_region_inner(base, size, aspace)
     }
-    pub fn set_address_translation_provider(
-        provider: Arc<dyn PCIeAddressProvider + Sync + Send>,
-    ) -> ZxResult {
+    pub fn set_address_translation_provider(provider: Arc<dyn PCIeAddressProvider>) -> ZxResult {
         _INSTANCE
             .lock()
             .set_address_translation_provider_inner(provider)
@@ -102,7 +100,7 @@ impl PCIeBusDriver {
     }
     pub fn set_address_translation_provider_inner(
         &mut self,
-        provider: Arc<dyn PCIeAddressProvider + Sync + Send>,
+        provider: Arc<dyn PCIeAddressProvider>,
     ) -> ZxResult {
         if self.is_started(false) {
             return Err(ZxError::BAD_STATE);
@@ -345,17 +343,13 @@ impl PCIeBusDriver {
     }
 }
 
-pub trait PCIeAddressProvider {
-    // Creates a config that corresponds to the type of the PcieAddressProvider.
+pub trait PCIeAddressProvider: Send + Sync {
+    /// Creates a config that corresponds to the type of the PcieAddressProvider.
     fn create_config(&self, addr: u64) -> Arc<PciConfig>;
+
     /// Accepts a PCI BDF triple and returns ZX_OK if it is able to translate it
     /// into an ECAM address.
-    fn translate(
-        &self,
-        bus_id: u8,
-        device_id: u8,
-        function_id: u8,
-    ) -> ZxResult<(PhysAddr, VirtAddr)>;
+    fn translate(&self, bus_id: u8, dev_id: u8, func_id: u8) -> ZxResult<(PhysAddr, VirtAddr)>;
 }
 
 #[derive(Default)]

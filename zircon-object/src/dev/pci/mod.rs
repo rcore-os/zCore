@@ -5,9 +5,14 @@ mod config;
 mod nodes;
 mod pio;
 
-pub use bus::*;
-pub use nodes::*;
-pub use pio::*;
+pub(crate) use nodes::*;
+use pio::*;
+
+pub use self::bus::{
+    MmioPcieAddressProvider, PCIeBusDriver, PcieDeviceInfo, PcieDeviceKObject,
+    PioPcieAddressProvider,
+};
+pub use self::pio::{pio_config_read, pio_config_write};
 
 #[derive(PartialEq, Debug)]
 pub enum PciAddrSpace {

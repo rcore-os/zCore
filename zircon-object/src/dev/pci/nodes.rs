@@ -1288,8 +1288,6 @@ impl PciDeviceNode {
     }
 }
 
-fn test_interface(_t: Arc<(dyn IPciNode)>) {}
-
 impl IPciNode for PciDeviceNode {
     fn node_type(&self) -> PciNodeType {
         PciNodeType::Device

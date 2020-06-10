@@ -2,7 +2,7 @@ use super::super::*;
 use kernel_hal::{inpd, outpd};
 use spin::Mutex;
 
-static PIO_LOCK: Mutex<u8> = Mutex::new(0);
+static PIO_LOCK: Mutex<()> = Mutex::new(());
 const PCI_CONFIG_ADDR: u16 = 0xcf8;
 const PCI_CONFIG_DATA: u16 = 0xcfc;
 const PCI_CONFIG_ENABLE: u32 = 1 << 31;
@@ -28,6 +28,7 @@ pub fn pio_config_read_addr(addr: u32, width: usize) -> ZxResult<u32> {
     let tmp_val = u32::from_le(inpd(PCI_CONFIG_DATA));
     Ok((tmp_val >> shift) & (((1u64 << width) - 1) as u32))
 }
+
 pub fn pio_config_write(
     bus: u8,
     dev: u8,
