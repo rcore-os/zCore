@@ -1,18 +1,18 @@
 use {
     self::event_interrupt::*,
-    self::virtual_interrupt::*,
     self::pci_interrupt::*,
+    self::virtual_interrupt::*,
+    super::IPciNode,
     crate::object::*,
     crate::signal::*,
     alloc::{boxed::Box, sync::Arc},
     bitflags::bitflags,
     spin::Mutex,
-    super::IPciNode,
 };
 
 mod event_interrupt;
-mod virtual_interrupt;
 mod pci_interrupt;
+mod virtual_interrupt;
 
 trait InterruptTrait: Sync + Send {
     fn mask(&self);
@@ -83,7 +83,11 @@ impl Interrupt {
         Ok(interrupt)
     }
 
-    pub fn new_pci(device: Arc<dyn IPciNode + Send + Sync>, vector: u32, maskable: bool) -> ZxResult<Arc<Self>> {
+    pub fn new_pci(
+        device: Arc<dyn IPciNode + Send + Sync>,
+        vector: u32,
+        maskable: bool,
+    ) -> ZxResult<Arc<Self>> {
         let interrupt = Arc::new(Interrupt {
             base: KObjectBase::new(),
             has_vcpu: false,
@@ -92,10 +96,11 @@ impl Interrupt {
             trait_: PciInterrupt::new(device, vector, maskable),
         });
         let interrupt_clone = interrupt.clone();
-        interrupt.trait_.register_handler(Box::new(move || interrupt_clone.handle_interrupt()))?;
+        interrupt
+            .trait_
+            .register_handler(Box::new(move || interrupt_clone.handle_interrupt()))?;
         interrupt.trait_.unmask();
         Ok(interrupt)
-
     }
 
     /// Bind the interrupt object to a port.

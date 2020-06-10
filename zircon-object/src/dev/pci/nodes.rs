@@ -73,13 +73,10 @@ impl PcieUpstream {
                             }
                         }
                         None => {
-                            if let None = self.scan_device(
-                                cfg.as_ref(),
-                                dev_id,
-                                func_id,
-                                Some(vendor_id),
-                                driver,
-                            ) {
+                            if self
+                                .scan_device(cfg.as_ref(), dev_id, func_id, Some(vendor_id), driver)
+                                .is_none()
+                            {
                                 info!(
                                     "failed to initialize device {:#x?}:{:#x?}.{:#x?}",
                                     self.managed_bus_id, dev_id, func_id
@@ -125,7 +122,7 @@ impl PcieUpstream {
         vendor_id: Option<u16>,
         driver: &PCIeBusDriver,
     ) -> Option<Arc<dyn IPciNode + Send + Sync>> {
-        let vendor_id = vendor_id.or(Some(cfg.read16(PciReg16::VendorId))).unwrap();
+        let vendor_id = vendor_id.unwrap_or_else(|| cfg.read16(PciReg16::VendorId));
         if vendor_id == PCIE_INVALID_VENDOR_ID as u16 {
             return None;
         }
@@ -180,8 +177,8 @@ impl SharedLegacyIrqHandler {
             device_handler: Mutex::new(Vec::new()),
         });
         let handler_copy = handler.clone();
-        if let Some(_) =
-            InterruptManager::set_ioapic_handle(irq_id, Box::new(move || handler_copy.handle()))
+        if InterruptManager::set_ioapic_handle(irq_id, Box::new(move || handler_copy.handle()))
+            .is_some()
         {
             Some(handler)
         } else {
@@ -411,17 +408,8 @@ impl PcieDevice {
         func_id: usize,
         driver: &PCIeBusDriver,
     ) -> Option<Arc<Self>> {
-        let ups = upstream.upgrade().unwrap().as_upstream();
-        if let None = ups {
-            return None;
-        }
-        let ups = ups.unwrap();
-        let result = driver.get_config(ups.managed_bus_id, dev_id, func_id);
-        if let None = result {
-            warn!("Failed to fetch config for device ");
-            return None;
-        }
-        let (cfg, paddr) = result.unwrap();
+        let ups = upstream.upgrade().unwrap().as_upstream()?;
+        let (cfg, paddr) = driver.get_config(ups.managed_bus_id, dev_id, func_id)?;
         let inst = Arc::new(PcieDevice {
             bus_id: ups.managed_bus_id,
             dev_id,
@@ -473,14 +461,12 @@ impl PcieDevice {
                     );
                     return Err(ZxError::BAD_STATE);
                 }
-            } else {
-                if is_mmio && ((bar_val & PCI_BAR_MMIO_TYPE_MASK) != PCI_BAR_MMIO_TYPE_32BIT) {
-                    warn!(
-                        "Unrecognized MMIO BAR type (BAR[{}] == {:#x?}) while fetching BAR info",
-                        i, bar_val
-                    );
-                    return Err(ZxError::BAD_STATE);
-                }
+            } else if is_mmio && ((bar_val & PCI_BAR_MMIO_TYPE_MASK) != PCI_BAR_MMIO_TYPE_32BIT) {
+                warn!(
+                    "Unrecognized MMIO BAR type (BAR[{}] == {:#x?}) while fetching BAR info",
+                    i, bar_val
+                );
+                return Err(ZxError::BAD_STATE);
             }
             // Disable either MMIO or PIO (depending on the BAR type) access while we perform the probe.
             // let _cmd_lock = self.command_lock.lock(); lock is useless during init
@@ -667,10 +653,10 @@ impl PcieDevice {
                     } else {
                         Some(upstream.pio_regions())
                     };
-                if allocator.is_some() {
+                if let Some(allocator) = allocator {
                     let base: usize = bar_info.bus_addr as _;
                     let size: usize = bar_info.size as _;
-                    if allocator.unwrap().lock().allocate_by_addr(base, size) {
+                    if allocator.lock().allocate_by_addr(base, size) {
                         bar_info.allocation = Some((base, size));
                         continue;
                     }
@@ -1055,16 +1041,14 @@ impl PcieDevice {
         }
         let ret = inner.irq.handlers[0].get_masked();
         inner.irq.handlers[0].set_masked(mask);
-        return ret;
+        ret
     }
     fn msi_irq_handler(dev: Arc<PcieDevice>, state: Arc<PcieIrqHandlerState>) {
         // Perhaps dead lock?
         let inner = dev.inner.lock();
         let (_std, msi) = inner.msi().unwrap();
-        if msi.has_pvm {
-            if dev.mask_msi_irq(&inner, state.irq_id, true) {
-                return;
-            }
+        if msi.has_pvm && dev.mask_msi_irq(&inner, state.irq_id, true) {
+            return;
         }
         if let Some(h) = &*state.handler.lock() {
             let ret = h();
@@ -1373,9 +1357,7 @@ impl PciBridge {
     ) -> Option<Arc<Self>> {
         warn!("Create Pci Bridge");
         let father = upstream.upgrade().and_then(|x| x.as_upstream());
-        if father.is_none() {
-            return None;
-        }
+        father.as_ref()?;
         let inner_ups = PcieUpstream::create(managed_bus_id);
         let inner_dev = PcieDevice::create(upstream, dev_id, func_id, driver);
         inner_dev.map(move |x| {
@@ -1541,12 +1523,10 @@ impl IPciNode for PciBridge {
             let mut count = self.downstream_bus_mastering_cnt.lock();
             if enable {
                 *count += 1;
+            } else if *count == 0 {
+                return Err(ZxError::BAD_STATE);
             } else {
-                if *count == 0 {
-                    return Err(ZxError::BAD_STATE);
-                } else {
-                    *count -= 1;
-                }
+                *count -= 1;
             }
             *count
         };

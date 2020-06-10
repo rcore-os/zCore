@@ -84,7 +84,7 @@ pub const PCI_INIT_ARG_MAX_SIZE: usize = core::mem::size_of::<PciInitArgsAddrWin
     * PCI_INIT_ARG_MAX_ECAM_WINDOWS
     + core::mem::size_of::<PciInitArgsHeader>();
 pub const PCI_NO_IRQ_MAPPING: u32 = u32::MAX;
-pub const PCIE_PIO_ADDR_SPACE_MASK: u64 = 0xFFFFFFFF; // (1 << 32) - 1
+pub const PCIE_PIO_ADDR_SPACE_MASK: u64 = 0xFFFF_FFFF;
 pub const PCIE_MAX_BUSSES: usize = 256;
 pub const PCIE_ECAM_BYTES_PER_BUS: usize =
     4096 * PCI_MAX_DEVICES_PER_BUS * PCI_MAX_FUNCTIONS_PER_DEVICE;

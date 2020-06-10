@@ -33,6 +33,7 @@ impl Syscall<'_> {
         }
     }
     #[allow(unreachable_code, unused_variables, unused_mut)]
+    #[allow(clippy::too_many_arguments)]
     pub fn sys_pci_cfg_pio_rw(
         &self,
         handle: HandleValue,
@@ -109,7 +110,7 @@ impl Syscall<'_> {
         {
             let num_buses: u8 = addr_win.bus_end - addr_win.bus_start + 1;
             let mut end: u64 = addr_win.base + num_buses as u64 * PCIE_ECAM_BYTES_PER_BUS as u64;
-            let high_limit: u64 = 0xfec00000;
+            let high_limit: u64 = 0xfec0_0000;
             if end > high_limit {
                 end = high_limit;
                 if end < addr_win.base {
@@ -132,7 +133,7 @@ impl Syscall<'_> {
             {
                 return Err(ZxError::INVALID_ARGS);
             }
-            let addr_provider = Arc::new(MmioPcieAddressProvider::new());
+            let addr_provider = Arc::new(MmioPcieAddressProvider::default());
             addr_provider.add_ecam(PciEcamRegion {
                 phys_base: addr_win.base,
                 size: addr_win.size,
@@ -141,7 +142,7 @@ impl Syscall<'_> {
             })?;
             PCIeBusDriver::set_address_translation_provider(addr_provider)?;
         } else if addr_win.cfg_space_type == PCI_CFG_SPACE_TYPE_PIO {
-            let addr_provider = Arc::new(PioPcieAddressProvider::new());
+            let addr_provider = Arc::new(PioPcieAddressProvider::default());
             PCIeBusDriver::set_address_translation_provider(addr_provider)?;
         } else {
             return Err(ZxError::INVALID_ARGS);
@@ -199,7 +200,7 @@ impl Syscall<'_> {
         let devobj =
             proc.get_object_with_rights::<PcieDeviceKObject>(handle, Rights::READ | Rights::WRITE)?;
         let info = devobj.get_bar(bar_num)?;
-        let mut bar = PciBar {
+        let mut bar_ = PciBar {
             id: 0,
             size: info.size as usize,
             bar_type: if info.is_mmio { 1 } else { 2 },
@@ -211,10 +212,10 @@ impl Syscall<'_> {
             out_handle.write(handle)?;
             devobj.device.device().unwrap().enable_mmio(true)?;
         } else {
-            bar.addr = info.bus_addr;
+            bar_.addr = info.bus_addr;
             devobj.device.device().unwrap().enable_pio(true)?;
         }
-        out_bar.write(bar)?;
+        out_bar.write(bar_)?;
         Ok(())
     }
     pub fn sys_pci_enable_bus_master(&self, handle: HandleValue, enable: bool) -> ZxResult {

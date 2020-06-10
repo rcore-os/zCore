@@ -11,14 +11,14 @@ impl PciConfig {
         trace!("read8 @ {:#x?}", offset);
         match self.addr_space {
             PciAddrSpace::MMIO => unsafe { u8::from_le(*(offset as *const u8)) },
-            PciAddrSpace::PIO => pio_config_read_addr(offset as u32, 8).unwrap() as u8 & 0xff,
+            PciAddrSpace::PIO => pio_config_read_addr(offset as u32, 8).unwrap() as u8,
         }
     }
     pub fn read16_offset(&self, addr: usize) -> u16 {
         trace!("read16 @ {:#x?}", addr);
         match self.addr_space {
             PciAddrSpace::MMIO => unsafe { u16::from_le(*(addr as *const u16)) },
-            PciAddrSpace::PIO => pio_config_read_addr(addr as u32, 16).unwrap() as u16 & 0xffff,
+            PciAddrSpace::PIO => pio_config_read_addr(addr as u32, 16).unwrap() as u16,
         }
     }
     pub fn read32_offset(&self, addr: usize) -> u32 {
@@ -37,8 +37,8 @@ impl PciConfig {
     pub fn read32(&self, addr: PciReg32) -> u32 {
         self.read32_offset(self.base + addr as usize)
     }
-    pub fn read_bar(&self, bar: usize) -> u32 {
-        self.read32_offset(self.base + PciReg32::BARBase as usize + bar * 4)
+    pub fn read_bar(&self, bar_: usize) -> u32 {
+        self.read32_offset(self.base + PciReg32::BARBase as usize + bar_ * 4)
     }
 
     pub fn write8_offset(&self, addr: usize, val: u8) {
@@ -73,8 +73,8 @@ impl PciConfig {
     pub fn write32(&self, addr: PciReg32, val: u32) {
         self.write32_offset(self.base + addr as usize, val)
     }
-    pub fn write_bar(&self, bar: usize, val: u32) {
-        self.write32_offset(self.base + PciReg32::BARBase as usize + bar * 4, val)
+    pub fn write_bar(&self, bar_: usize, val: u32) {
+        self.write32_offset(self.base + PciReg32::BARBase as usize + bar_ * 4, val)
     }
 }
 
@@ -90,7 +90,7 @@ numeric_enum! {
         LatencyTimer = 0xD,
         HeaderType = 0xE,
         Bist = 0xF,
-        
+
         // bridge
         PrimaryBusId = 0x18,
         SecondaryBusId = 0x19,
@@ -113,7 +113,7 @@ numeric_enum! {
         DeviceId = 0x2,
         Command = 0x4,
         Status = 0x6,
-        
+
         // bridge
         SecondaryStatus = 0x1E,
         MemoryBase = 0x20,

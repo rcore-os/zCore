@@ -64,8 +64,8 @@ impl VmAddressRegion {
     }
     /// Create a kernel root VMAR.
     pub fn new_kernel() -> Arc<Self> {
-        let kernel_vmar_base = 0xffffff0200000000; // Sorry i hard code because i'm lazy
-        let kernel_vmar_size = 0x800000000;
+        let kernel_vmar_base = 0xffff_ff02_0000_0000; // Sorry i hard code because i'm lazy
+        let kernel_vmar_size = 0x8000_00000;
         Arc::new(VmAddressRegion {
             flags: VmarFlags::ROOT_FLAGS,
             base: KObjectBase::new(),

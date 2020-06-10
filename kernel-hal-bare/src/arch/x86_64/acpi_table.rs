@@ -20,7 +20,7 @@ impl AcpiTable {
         #[cfg(target_arch = "x86_64")]
         {
             let mut table = ACPI_TABLE.lock();
-            if let None = *table {
+            if table.is_none() {
                 *table = get_acpi_table().map(|x| AcpiTable { inner: x });
             }
         }

@@ -93,11 +93,7 @@ pub fn set_handle(global_irq: u32, handle: InterruptHandle) -> Option<u8> {
     //     irq_add_handle(global_irq as u8 + IRQ0, handle);
     //     return Some(global_irq as u8 + IRQ0);
     // }
-    let ioapic_info = if let Some(x) = get_ioapic(global_irq) {
-        x
-    } else {
-        return None;
-    };
+    let ioapic_info = get_ioapic(global_irq)?;
     let mut ioapic = ioapic_controller(&ioapic_info);
     let offset = (global_irq - ioapic_info.global_system_interrupt_base) as u8;
     let irq = ioapic.irq_vector(offset);
@@ -144,7 +140,7 @@ pub fn irq_add_handle(irq: u8, handle: InterruptHandle) -> Option<u8> {
     if irq == 0 {
         let mut id = 0x20;
         while id < table.len() {
-            if let None = table[id] {
+            if table[id].is_none() {
                 table[id] = Some(handle);
                 return Some(id as u8);
             }
@@ -183,7 +179,7 @@ pub fn allocate_block(irq_num: u32) -> Option<usize> {
     let mut irq_cur = irq_start;
     let mut table = IRQ_TABLE.lock();
     while irq_cur < TABLE_SIZE && irq_cur < irq_start + irq_num {
-        if let None = table[irq_cur] {
+        if table[irq_cur].is_none() {
             irq_cur += 1;
         } else {
             irq_start = (irq_cur & (irq_num - 1)) + irq_num;

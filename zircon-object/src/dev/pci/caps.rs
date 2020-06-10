@@ -45,7 +45,7 @@ impl PciMsiBlock {
         }
         if let Some((start, size)) = InterruptManager::allocate_block(irq_num) {
             Ok(PciMsiBlock {
-                target_addr: (0xFEE00000 | 0x08) & !0x4,
+                target_addr: (0xFEE0_0000 | 0x08) & !0x4,
                 target_data: start as u32,
                 base_irq: start as u32,
                 num_irq: size as u32,
@@ -88,21 +88,14 @@ impl PciCapacityMsi {
         cfg.write16_offset(base as usize + 0x2, ctrl & !0x71);
         let mask_bits = base + if is_64bit { 0x10 } else { 0xC };
         if has_pvm {
-            cfg.write32_offset(mask_bits, 0xffffffff);
+            cfg.write32_offset(mask_bits, 0xffff_ffff);
         }
         PciCapacityMsi {
-            msi_size: if has_pvm {
-                if is_64bit {
-                    20
-                } else {
-                    16
-                }
-            } else {
-                if is_64bit {
-                    14
-                } else {
-                    10
-                }
+            msi_size: match (has_pvm, is_64bit) {
+                (true, true) => 20,
+                (true, false) => 16,
+                (false, true) => 14,
+                (false, false) => 10,
             },
             has_pvm,
             is_64bit,
@@ -150,7 +143,7 @@ impl PciCapPcie {
         let caps = cfg.read8_offset(base as usize + 0x2);
         let device_caps = cfg.read32_offset(base as usize + 0x4);
         PciCapPcie {
-            version: ((caps >> 0) & 0xF) as u8,
+            version: caps & 0xF,
             dev_type: PcieDeviceType::try_from(((caps >> 4) & 0xF) as u8).unwrap(),
             has_flr: ((device_caps >> 28) & 0x1) != 0,
         }
@@ -169,7 +162,7 @@ impl PciCapAdvFeatures {
         let caps = cfg.read8_offset(base as usize + 0x3);
         PciCapAdvFeatures {
             has_flr: ((caps >> 1) & 0x1) != 0,
-            has_tp: ((caps >> 0) & 0x1) != 0,
+            has_tp: (caps & 0x1) != 0,
         }
     }
 }

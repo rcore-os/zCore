@@ -219,7 +219,7 @@ impl PCIeBusDriver {
     {
         self.foreach_root(
             |root, ctx| {
-                self.foreach_downstream(root.clone(), 0 /*level*/, callback, &mut (ctx.0))
+                self.foreach_downstream(root, 0 /*level*/, callback, &mut (ctx.0))
             },
             (context, &self),
         )
@@ -281,19 +281,13 @@ impl PCIeBusDriver {
         dev_id: usize,
         func_id: usize,
     ) -> Option<(Arc<PciConfig>, PhysAddr)> {
-        if self.address_provider.is_none() {
-            return None;
-        }
-        let result = self
+        self.address_provider.as_ref()?;
+        let (paddr, vaddr) = self
             .address_provider
             .clone()
             .unwrap()
             .translate(bus_id as u8, dev_id as u8, func_id as u8)
-            .ok();
-        if result.is_none() {
-            return None;
-        }
-        let (paddr, vaddr) = result.unwrap();
+            .ok()?;
         let mut config = self.configs.lock();
         let cfg = config.iter().find(|x| x.base == vaddr);
         if let Some(x) = cfg {
@@ -369,16 +363,12 @@ pub trait PCIeAddressProvider {
     ) -> ZxResult<(PhysAddr, VirtAddr)>;
 }
 
+#[derive(Default)]
 pub struct MmioPcieAddressProvider {
     ecam_regions: Mutex<BTreeMap<u8, MappedEcamRegion>>,
 }
 
 impl MmioPcieAddressProvider {
-    pub fn new() -> Self {
-        MmioPcieAddressProvider {
-            ecam_regions: Mutex::new(BTreeMap::new()),
-        }
-    }
     pub fn add_ecam(&self, ecam: PciEcamRegion) -> ZxResult {
         if ecam.bus_start > ecam.bus_end {
             return Err(ZxError::INVALID_ARGS);
@@ -442,13 +432,8 @@ impl PCIeAddressProvider for MmioPcieAddressProvider {
     }
 }
 
-pub struct PioPcieAddressProvider {}
-
-impl PioPcieAddressProvider {
-    pub fn new() -> Self {
-        PioPcieAddressProvider {}
-    }
-}
+#[derive(Default)]
+pub struct PioPcieAddressProvider;
 
 impl PCIeAddressProvider for PioPcieAddressProvider {
     fn create_config(&self, addr: u64) -> Arc<PciConfig> {
