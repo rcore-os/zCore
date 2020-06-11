@@ -1,4 +1,5 @@
 use super::*;
+use core::convert::TryFrom;
 use zircon_object::{
     dev::*,
     vm::{pages, VmObject},
@@ -223,7 +224,8 @@ impl Syscall<'_> {
         mode: u32,
         mut out_max_irqs: UserOutPtr<u32>,
     ) -> ZxResult {
-        info!("pci.query_irq_mode: handle={:#x}, mode={:#x}", handle, mode);
+        let mode = PcieIrqMode::try_from(mode).map_err(|_| ZxError::INVALID_ARGS)?;
+        info!("pci.query_irq_mode: handle={:#x}, mode={:?}", handle, mode);
         let proc = self.thread.proc();
         let device = proc.get_object_with_rights::<PcieDeviceKObject>(handle, Rights::READ)?;
         let caps = device.get_irq_mode_capabilities(mode)?;
@@ -237,8 +239,9 @@ impl Syscall<'_> {
         mode: u32,
         requested_irq_count: u32,
     ) -> ZxResult {
+        let mode = PcieIrqMode::try_from(mode).map_err(|_| ZxError::INVALID_ARGS)?;
         info!(
-            "pci.set_irq_mode: handle={:#x}, mode={:#x}, requested_irq_count={:#x}",
+            "pci.set_irq_mode: handle={:#x}, mode={:?}, requested_irq_count={:#x}",
             handle, mode, requested_irq_count
         );
         let proc = self.thread.proc();

@@ -3,7 +3,6 @@
 use super::{caps::*, config::*, *};
 use crate::vm::PAGE_SIZE;
 use alloc::{boxed::Box, sync::*, vec::Vec};
-use core::convert::TryFrom;
 use kernel_hal::InterruptManager;
 use numeric_enum_macro::*;
 use region_alloc::RegionAllocator;
@@ -257,7 +256,7 @@ impl SharedLegacyIrqHandler {
 
 numeric_enum! {
     #[repr(u32)]
-    #[derive(PartialEq, Copy, Clone)]
+    #[derive(Debug, PartialEq, Eq, Copy, Clone)]
     pub enum PcieIrqMode {
         Disabled = 0,
         Legacy = 1,
@@ -850,9 +849,8 @@ impl PcieDevice {
             Some(self.inner.lock().bars[bar_num])
         }
     }
-    pub fn get_irq_mode_capabilities(&self, mode: u32) -> ZxResult<PcieIrqModeCaps> {
+    pub fn get_irq_mode_capabilities(&self, mode: PcieIrqMode) -> ZxResult<PcieIrqModeCaps> {
         let inner = self.inner.lock();
-        let mode = PcieIrqMode::try_from(mode).or(Err(ZxError::INVALID_ARGS))?;
         if inner.plugged_in {
             match mode {
                 PcieIrqMode::Disabled => Ok(PcieIrqModeCaps::default()),
@@ -1054,8 +1052,7 @@ impl PcieDevice {
             }
         }
     }
-    pub fn set_irq_mode(&self, mode: u32, mut irq_count: u32) -> ZxResult {
-        let mode = PcieIrqMode::try_from(mode).or(Err(ZxError::INVALID_ARGS))?;
+    pub fn set_irq_mode(&self, mode: PcieIrqMode, mut irq_count: u32) -> ZxResult {
         let mut inner = self.inner.lock();
         if let PcieIrqMode::Disabled = mode {
             irq_count = 0;

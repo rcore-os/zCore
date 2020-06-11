@@ -500,11 +500,11 @@ impl PcieDeviceKObject {
         self.device.device().enable_master(enable)
     }
 
-    pub fn get_irq_mode_capabilities(&self, mode: u32) -> ZxResult<PcieIrqModeCaps> {
+    pub fn get_irq_mode_capabilities(&self, mode: PcieIrqMode) -> ZxResult<PcieIrqModeCaps> {
         self.device.device().get_irq_mode_capabilities(mode)
     }
 
-    pub fn set_irq_mode(&self, mode: u32, irq_count: u32) -> ZxResult {
+    pub fn set_irq_mode(&self, mode: PcieIrqMode, irq_count: u32) -> ZxResult {
         self.device.device().set_irq_mode(mode, irq_count)
     }
 
