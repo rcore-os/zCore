@@ -106,6 +106,8 @@
 <span id="106">106</span>
 <span id="107">107</span>
 <span id="108">108</span>
+<span id="109">109</span>
+<span id="110">110</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> {
     <span class="kw">crate</span>::{<span class="ident">ZxError</span>, <span class="ident">ZxResult</span>},
@@ -205,6 +207,8 @@
         <span class="kw">const</span> <span class="ident">DEFAULT_SOCKET</span> <span class="op">=</span> <span class="self">Self</span>::<span class="ident">BASIC</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">IO</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">PROPERTY</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">SIGNAL</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">SIGNAL_PEER</span>.<span class="ident">bits</span>;
         <span class="kw">const</span> <span class="ident">DEFAULT_BTI</span> <span class="op">=</span> (<span class="self">Self</span>::<span class="ident">BASIC</span>.<span class="ident">bits</span> <span class="op">&amp;</span> <span class="op">!</span><span class="self">Self</span>::<span class="ident">WAIT</span>.<span class="ident">bits</span>) <span class="op">|</span> <span class="self">Self</span>::<span class="ident">IO</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">MAP</span>.<span class="ident">bits</span>;
         <span class="kw">const</span> <span class="ident">DEFAULT_INTERRUPT</span> <span class="op">=</span> <span class="self">Self</span>::<span class="ident">BASIC</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">IO</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">SIGNAL</span>.<span class="ident">bits</span>;
+        <span class="kw">const</span> <span class="ident">DEFAULT_DEVICE</span> <span class="op">=</span> <span class="self">Self</span>::<span class="ident">BASIC</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">IO</span>.<span class="ident">bits</span>;
+        <span class="kw">const</span> <span class="ident">DEFAULT_PCI_INTERRUPT</span> <span class="op">=</span> <span class="self">Self</span>::<span class="ident">BASIC</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">IO</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">SIGNAL</span>.<span class="ident">bits</span>;
     }
 }
 

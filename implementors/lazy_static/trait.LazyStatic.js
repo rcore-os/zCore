@@ -1,3 +1,4 @@
 (function() {var implementors = {};
 implementors["kernel_hal_bare"] = [{"text":"impl <a class=\"trait\" href=\"https://docs.rs/lazy_static/1.4.0/lazy_static/trait.LazyStatic.html\" title=\"trait lazy_static::LazyStatic\">LazyStatic</a> for <a class=\"struct\" href=\"kernel_hal_bare/struct.NAIVE_TIMER.html\" title=\"struct kernel_hal_bare::NAIVE_TIMER\">NAIVE_TIMER</a>","synthetic":false,"types":["kernel_hal_bare::NAIVE_TIMER"]}];
+implementors["zircon_object"] = [{"text":"impl <a class=\"trait\" href=\"https://docs.rs/lazy_static/1.4.0/lazy_static/trait.LazyStatic.html\" title=\"trait lazy_static::LazyStatic\">LazyStatic</a> for <a class=\"struct\" href=\"zircon_object/vm/struct.KERNEL_ASPACE.html\" title=\"struct zircon_object::vm::KERNEL_ASPACE\">KERNEL_ASPACE</a>","synthetic":false,"types":["zircon_object::vm::KERNEL_ASPACE"]}];
 if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()

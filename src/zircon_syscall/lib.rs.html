@@ -323,6 +323,32 @@
 <span id="323">323</span>
 <span id="324">324</span>
 <span id="325">325</span>
+<span id="326">326</span>
+<span id="327">327</span>
+<span id="328">328</span>
+<span id="329">329</span>
+<span id="330">330</span>
+<span id="331">331</span>
+<span id="332">332</span>
+<span id="333">333</span>
+<span id="334">334</span>
+<span id="335">335</span>
+<span id="336">336</span>
+<span id="337">337</span>
+<span id="338">338</span>
+<span id="339">339</span>
+<span id="340">340</span>
+<span id="341">341</span>
+<span id="342">342</span>
+<span id="343">343</span>
+<span id="344">344</span>
+<span id="345">345</span>
+<span id="346">346</span>
+<span id="347">347</span>
+<span id="348">348</span>
+<span id="349">349</span>
+<span id="350">350</span>
+<span id="351">351</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Zircon syscall implementations</span>
 
@@ -359,6 +385,7 @@
 <span class="kw">mod</span> <span class="ident">futex</span>;
 <span class="kw">mod</span> <span class="ident">handle</span>;
 <span class="kw">mod</span> <span class="ident">object</span>;
+<span class="kw">mod</span> <span class="ident">pci</span>;
 <span class="kw">mod</span> <span class="ident">port</span>;
 <span class="kw">mod</span> <span class="ident">resource</span>;
 <span class="kw">mod</span> <span class="ident">signal</span>;
@@ -570,6 +597,7 @@
             ),
             <span class="ident">Sys</span>::<span class="ident">SYSTEM_GET_EVENT</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_system_get_event</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a2</span>.<span class="ident">into</span>()),
             <span class="ident">Sys</span>::<span class="ident">TIMER_SET</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_timer_set</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span>.<span class="ident">into</span>(), <span class="ident">a2</span> <span class="kw">as</span> <span class="kw">_</span>),
+            <span class="ident">Sys</span>::<span class="ident">TIMER_CANCEL</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_timer_cancel</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>),
             <span class="ident">Sys</span>::<span class="ident">DEBUG_READ</span> <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="self">self</span>.<span class="ident">sys_debug_read</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span>.<span class="ident">into</span>(), <span class="ident">a2</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a3</span>.<span class="ident">into</span>())
                     .<span class="kw">await</span>
@@ -613,6 +641,30 @@
                 <span class="self">self</span>.<span class="ident">sys_object_get_child</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a2</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a3</span>.<span class="ident">into</span>())
             }
             <span class="ident">Sys</span>::<span class="ident">PC_FIRMWARE_TABLES</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_pc_firmware_tables</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span>.<span class="ident">into</span>(), <span class="ident">a2</span>.<span class="ident">into</span>()),
+            <span class="ident">Sys</span>::<span class="ident">PCI_ADD_SUBTRACT_IO_RANGE</span> <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="self">self</span>.<span class="ident">sys_pci_add_subtract_io_range</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span> <span class="op">!</span><span class="op">=</span> <span class="number">0</span>, <span class="ident">a2</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a3</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a4</span> <span class="op">!</span><span class="op">=</span> <span class="number">0</span>)
+            }
+            <span class="ident">Sys</span>::<span class="ident">PCI_CFG_PIO_RW</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_pci_cfg_pio_rw</span>(
+                <span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>,
+                <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>,
+                <span class="ident">a2</span> <span class="kw">as</span> <span class="kw">_</span>,
+                <span class="ident">a3</span> <span class="kw">as</span> <span class="kw">_</span>,
+                <span class="ident">a4</span> <span class="kw">as</span> <span class="kw">_</span>,
+                <span class="ident">a5</span>.<span class="ident">into</span>(),
+                <span class="ident">a6</span> <span class="kw">as</span> <span class="kw">_</span>,
+                <span class="ident">a7</span> <span class="op">!</span><span class="op">=</span> <span class="number">0</span>,
+            ),
+            <span class="ident">Sys</span>::<span class="ident">PCI_INIT</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_pci_init</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a2</span> <span class="kw">as</span> <span class="kw">_</span>),
+            <span class="ident">Sys</span>::<span class="ident">PCI_GET_NTH_DEVICE</span> <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="self">self</span>.<span class="ident">sys_pci_get_nth_device</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a2</span>.<span class="ident">into</span>(), <span class="ident">a3</span>.<span class="ident">into</span>())
+            }
+            <span class="ident">Sys</span>::<span class="ident">PCI_MAP_INTERRUPT</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_pci_map_interrupt</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a2</span>.<span class="ident">into</span>()),
+            <span class="ident">Sys</span>::<span class="ident">PCI_GET_BAR</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_pci_get_bar</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a2</span>.<span class="ident">into</span>(), <span class="ident">a3</span>.<span class="ident">into</span>()),
+            <span class="ident">Sys</span>::<span class="ident">PCI_ENABLE_BUS_MASTER</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_pci_enable_bus_master</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span> <span class="op">!</span><span class="op">=</span> <span class="number">0</span>),
+            <span class="ident">Sys</span>::<span class="ident">PCI_QUERY_IRQ_MODE</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_pci_query_irq_mode</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a2</span>.<span class="ident">into</span>()),
+            <span class="ident">Sys</span>::<span class="ident">PCI_SET_IRQ_MODE</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_pci_set_irq_mode</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a2</span> <span class="kw">as</span> <span class="kw">_</span>),
+            <span class="ident">Sys</span>::<span class="ident">PCI_CONFIG_READ</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_pci_config_read</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a2</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a3</span>.<span class="ident">into</span>()),
+            <span class="ident">Sys</span>::<span class="ident">PCI_CONFIG_WRITE</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_pci_config_write</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a2</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a3</span> <span class="kw">as</span> <span class="kw">_</span>),
             <span class="ident">Sys</span>::<span class="ident">INTERRUPT_CREATE</span> <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="self">self</span>.<span class="ident">sys_interrupt_create</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a2</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a3</span>.<span class="ident">into</span>())
             }

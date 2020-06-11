@@ -432,8 +432,6 @@
 <span id="432">432</span>
 <span id="433">433</span>
 <span id="434">434</span>
-<span id="435">435</span>
-<span id="436">436</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="attribute">#![<span class="ident">feature</span>(<span class="ident">asm</span>, <span class="ident">global_asm</span>)]</span>
 <span class="attribute">#![<span class="ident">feature</span>(<span class="ident">linkage</span>)]</span>
@@ -503,9 +501,7 @@
 
 <span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_context_run&quot;</span>]</span>
 <span class="kw">unsafe</span> <span class="kw">fn</span> <span class="ident">context_run</span>(<span class="ident">context</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">UserContext</span>) {
-    <span class="ident">core</span>::<span class="ident">arch</span>::<span class="ident">x86_64</span>::<span class="ident">_fxrstor64</span>(<span class="kw-2">&amp;</span><span class="ident">context</span>.<span class="ident">vector</span> <span class="kw">as</span> <span class="kw-2">*</span><span class="kw">const</span> <span class="ident">VectorRegs</span> <span class="kw">as</span> <span class="kw">_</span>);
     <span class="ident">trap</span>::<span class="ident">run_user</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">context</span>.<span class="ident">general</span>);
-    <span class="ident">core</span>::<span class="ident">arch</span>::<span class="ident">x86_64</span>::<span class="ident">_fxsave64</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">context</span>.<span class="ident">vector</span> <span class="kw">as</span> <span class="kw-2">*</span><span class="kw-2">mut</span> <span class="ident">VectorRegs</span> <span class="kw">as</span> <span class="kw">_</span>);
     <span class="comment">// cause: syscall</span>
     <span class="ident">context</span>.<span class="ident">trap_num</span> <span class="op">=</span> <span class="number">0x100</span>;
 }

@@ -306,6 +306,23 @@
 <span id="306">306</span>
 <span id="307">307</span>
 <span id="308">308</span>
+<span id="309">309</span>
+<span id="310">310</span>
+<span id="311">311</span>
+<span id="312">312</span>
+<span id="313">313</span>
+<span id="314">314</span>
+<span id="315">315</span>
+<span id="316">316</span>
+<span id="317">317</span>
+<span id="318">318</span>
+<span id="319">319</span>
+<span id="320">320</span>
+<span id="321">321</span>
+<span id="322">322</span>
+<span id="323">323</span>
+<span id="324">324</span>
+<span id="325">325</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
 <span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">object</span>::<span class="kw-2">*</span>, <span class="ident">task</span>::<span class="ident">Thread</span>};
@@ -456,7 +473,24 @@
                 <span class="ident">Poll</span>::<span class="ident">Pending</span>
             }
         }
-
+        <span class="comment">// The FutexFuture will be dropped when the thread is no longer waiting</span>
+        <span class="comment">// if we wake without be woken, remove myself from the waiter_queue</span>
+        <span class="kw">impl</span> <span class="ident">Drop</span> <span class="kw">for</span> <span class="ident">FutexFuture</span> {
+            <span class="kw">fn</span> <span class="ident">drop</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) {
+                <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">waiter</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
+                <span class="kw">if</span> <span class="op">!</span><span class="ident">inner</span>.<span class="ident">woken</span> {
+                    <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">thread</span>) <span class="op">=</span> <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">waiter</span>.<span class="ident">thread</span> {
+                        <span class="kw">let</span> <span class="ident">futex</span> <span class="op">=</span> <span class="ident">thread</span>.<span class="ident">proc</span>().<span class="ident">get_futex</span>(<span class="ident">inner</span>.<span class="ident">futex</span>.<span class="ident">value</span>);
+                        <span class="kw">let</span> <span class="ident">queue</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">futex</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">waiter_queue</span>;
+                        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">pos</span>) <span class="op">=</span> <span class="ident">queue</span>.<span class="ident">iter</span>().<span class="ident">position</span>(<span class="op">|</span><span class="ident">x</span><span class="op">|</span> <span class="ident">Arc</span>::<span class="ident">ptr_eq</span>(<span class="kw-2">&amp;</span><span class="ident">x</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">waiter</span>))
+                        {
+                            <span class="comment">// Nobody cares about the order of queue, so just remove faster</span>
+                            <span class="ident">queue</span>.<span class="ident">swap_remove_back</span>(<span class="ident">pos</span>);
+                        }
+                    }
+                }
+            }
+        }
         <span class="ident">FutexFuture</span> {
             <span class="ident">waiter</span>: <span class="ident">Arc</span>::<span class="ident">new</span>(<span class="ident">Waiter</span> {
                 <span class="ident">thread</span>,

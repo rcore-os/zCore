@@ -239,15 +239,17 @@
 <span id="239">239</span>
 <span id="240">240</span>
 <span id="241">241</span>
+<span id="242">242</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> {
     <span class="kw">crate</span>::<span class="ident">object</span>::<span class="kw-2">*</span>,
-    <span class="ident">alloc</span>::<span class="ident">collections</span>::{<span class="ident">BTreeMap</span>, <span class="ident">VecDeque</span>},
+    <span class="ident">alloc</span>::<span class="ident">collections</span>::<span class="ident">VecDeque</span>,
     <span class="ident">alloc</span>::<span class="ident">sync</span>::{<span class="ident">Arc</span>, <span class="ident">Weak</span>},
     <span class="ident">alloc</span>::<span class="ident">vec</span>::<span class="ident">Vec</span>,
     <span class="ident">core</span>::<span class="ident">convert</span>::<span class="ident">TryInto</span>,
     <span class="ident">core</span>::<span class="ident">sync</span>::<span class="ident">atomic</span>::{<span class="ident">AtomicU32</span>, <span class="ident">Ordering</span>},
     <span class="ident">futures</span>::<span class="ident">channel</span>::<span class="ident">oneshot</span>::{<span class="self">self</span>, <span class="ident">Sender</span>},
+    <span class="ident">hashbrown</span>::<span class="ident">HashMap</span>,
     <span class="ident">spin</span>::<span class="ident">Mutex</span>,
 };
 
@@ -257,7 +259,7 @@
     <span class="ident">_counter</span>: <span class="ident">CountHelper</span>,
     <span class="ident">peer</span>: <span class="ident">Weak</span><span class="op">&lt;</span><span class="ident">Channel</span><span class="op">&gt;</span>,
     <span class="ident">recv_queue</span>: <span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">VecDeque</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span><span class="op">&gt;</span>,
-    <span class="ident">call_reply</span>: <span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">BTreeMap</span><span class="op">&lt;</span><span class="ident">TxID</span>, <span class="ident">Sender</span><span class="op">&lt;</span><span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+    <span class="ident">call_reply</span>: <span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">HashMap</span><span class="op">&lt;</span><span class="ident">TxID</span>, <span class="ident">Sender</span><span class="op">&lt;</span><span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     <span class="ident">next_txid</span>: <span class="ident">AtomicU32</span>,
 }
 

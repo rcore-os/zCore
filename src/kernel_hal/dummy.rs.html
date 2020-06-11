@@ -313,9 +313,93 @@
 <span id="313">313</span>
 <span id="314">314</span>
 <span id="315">315</span>
+<span id="316">316</span>
+<span id="317">317</span>
+<span id="318">318</span>
+<span id="319">319</span>
+<span id="320">320</span>
+<span id="321">321</span>
+<span id="322">322</span>
+<span id="323">323</span>
+<span id="324">324</span>
+<span id="325">325</span>
+<span id="326">326</span>
+<span id="327">327</span>
+<span id="328">328</span>
+<span id="329">329</span>
+<span id="330">330</span>
+<span id="331">331</span>
+<span id="332">332</span>
+<span id="333">333</span>
+<span id="334">334</span>
+<span id="335">335</span>
+<span id="336">336</span>
+<span id="337">337</span>
+<span id="338">338</span>
+<span id="339">339</span>
+<span id="340">340</span>
+<span id="341">341</span>
+<span id="342">342</span>
+<span id="343">343</span>
+<span id="344">344</span>
+<span id="345">345</span>
+<span id="346">346</span>
+<span id="347">347</span>
+<span id="348">348</span>
+<span id="349">349</span>
+<span id="350">350</span>
+<span id="351">351</span>
+<span id="352">352</span>
+<span id="353">353</span>
+<span id="354">354</span>
+<span id="355">355</span>
+<span id="356">356</span>
+<span id="357">357</span>
+<span id="358">358</span>
+<span id="359">359</span>
+<span id="360">360</span>
+<span id="361">361</span>
+<span id="362">362</span>
+<span id="363">363</span>
+<span id="364">364</span>
+<span id="365">365</span>
+<span id="366">366</span>
+<span id="367">367</span>
+<span id="368">368</span>
+<span id="369">369</span>
+<span id="370">370</span>
+<span id="371">371</span>
+<span id="372">372</span>
+<span id="373">373</span>
+<span id="374">374</span>
+<span id="375">375</span>
+<span id="376">376</span>
+<span id="377">377</span>
+<span id="378">378</span>
+<span id="379">379</span>
+<span id="380">380</span>
+<span id="381">381</span>
+<span id="382">382</span>
+<span id="383">383</span>
+<span id="384">384</span>
+<span id="385">385</span>
+<span id="386">386</span>
+<span id="387">387</span>
+<span id="388">388</span>
+<span id="389">389</span>
+<span id="390">390</span>
+<span id="391">391</span>
+<span id="392">392</span>
+<span id="393">393</span>
+<span id="394">394</span>
+<span id="395">395</span>
+<span id="396">396</span>
+<span id="397">397</span>
+<span id="398">398</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
 <span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">vdso</span>::<span class="ident">VdsoConstants</span>;
+<span class="kw">use</span> <span class="ident">acpi</span>::<span class="ident">Acpi</span>;
 <span class="kw">use</span> <span class="ident">alloc</span>::<span class="ident">boxed</span>::<span class="ident">Box</span>;
 <span class="kw">use</span> <span class="ident">alloc</span>::<span class="ident">vec</span>::<span class="ident">Vec</span>;
 <span class="kw">use</span> <span class="ident">core</span>::<span class="ident">future</span>::<span class="ident">Future</span>;
@@ -574,39 +658,94 @@
     <span class="macro">unimplemented</span><span class="macro">!</span>()
 }
 
-<span class="doccomment">/// Handle IRQ.</span>
-<span class="attribute">#[<span class="ident">linkage</span> <span class="op">=</span> <span class="string">&quot;weak&quot;</span>]</span>
-<span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_irq_handle&quot;</span>]</span>
-<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">irq_handle</span>(<span class="ident">_irq</span>: <span class="ident">u8</span>) {
-    <span class="macro">unimplemented</span><span class="macro">!</span>()
+<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">InterruptManager</span> {}
+<span class="kw">impl</span> <span class="ident">InterruptManager</span> {
+    <span class="doccomment">/// Handle IRQ.</span>
+    <span class="attribute">#[<span class="ident">linkage</span> <span class="op">=</span> <span class="string">&quot;weak&quot;</span>]</span>
+    <span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_irq_handle&quot;</span>]</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">handle</span>(<span class="ident">_irq</span>: <span class="ident">u8</span>) {
+        <span class="macro">unimplemented</span><span class="macro">!</span>()
+    }
+    <span class="doccomment">///</span>
+    <span class="attribute">#[<span class="ident">linkage</span> <span class="op">=</span> <span class="string">&quot;weak&quot;</span>]</span>
+    <span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_ioapic_set_handle&quot;</span>]</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">set_ioapic_handle</span>(<span class="ident">_global_irq</span>: <span class="ident">u32</span>, <span class="ident">_handle</span>: <span class="ident">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">Fn</span>() <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span> {
+        <span class="macro">unimplemented</span><span class="macro">!</span>()
+    }
+    <span class="doccomment">/// Add an interrupt handle to an irq</span>
+    <span class="attribute">#[<span class="ident">linkage</span> <span class="op">=</span> <span class="string">&quot;weak&quot;</span>]</span>
+    <span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_irq_add_handle&quot;</span>]</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">add_handle</span>(<span class="ident">_global_irq</span>: <span class="ident">u8</span>, <span class="ident">_handle</span>: <span class="ident">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">Fn</span>() <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span> {
+        <span class="macro">unimplemented</span><span class="macro">!</span>()
+    }
+    <span class="doccomment">///</span>
+    <span class="attribute">#[<span class="ident">linkage</span> <span class="op">=</span> <span class="string">&quot;weak&quot;</span>]</span>
+    <span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_ioapic_reset_handle&quot;</span>]</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">reset_ioapic_handle</span>(<span class="ident">_global_irq</span>: <span class="ident">u32</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+        <span class="macro">unimplemented</span><span class="macro">!</span>()
+    }
+    <span class="doccomment">/// Remove the interrupt handle of an irq</span>
+    <span class="attribute">#[<span class="ident">linkage</span> <span class="op">=</span> <span class="string">&quot;weak&quot;</span>]</span>
+    <span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_irq_remove_handle&quot;</span>]</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">remove_handle</span>(<span class="ident">_irq</span>: <span class="ident">u8</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+        <span class="macro">unimplemented</span><span class="macro">!</span>()
+    }
+    <span class="doccomment">/// Allocate contiguous positions for irq</span>
+    <span class="attribute">#[<span class="ident">linkage</span> <span class="op">=</span> <span class="string">&quot;weak&quot;</span>]</span>
+    <span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_irq_allocate_block&quot;</span>]</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">allocate_block</span>(<span class="ident">_irq_num</span>: <span class="ident">u32</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span>(<span class="ident">usize</span>, <span class="ident">usize</span>)<span class="op">&gt;</span> {
+        <span class="macro">unimplemented</span><span class="macro">!</span>()
+    }
+    <span class="attribute">#[<span class="ident">linkage</span> <span class="op">=</span> <span class="string">&quot;weak&quot;</span>]</span>
+    <span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_irq_free_block&quot;</span>]</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">free_block</span>(<span class="ident">_irq_start</span>: <span class="ident">u32</span>, <span class="ident">_irq_num</span>: <span class="ident">u32</span>) {
+        <span class="macro">unimplemented</span><span class="macro">!</span>()
+    }
+    <span class="attribute">#[<span class="ident">linkage</span> <span class="op">=</span> <span class="string">&quot;weak&quot;</span>]</span>
+    <span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_irq_overwrite_handler&quot;</span>]</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">overwrite_handler</span>(<span class="ident">_msi_id</span>: <span class="ident">u32</span>, <span class="ident">_handle</span>: <span class="ident">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">Fn</span>() <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+        <span class="macro">unimplemented</span><span class="macro">!</span>()
+    }
+
+    <span class="doccomment">/// Enable IRQ.</span>
+    <span class="attribute">#[<span class="ident">linkage</span> <span class="op">=</span> <span class="string">&quot;weak&quot;</span>]</span>
+    <span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_irq_enable&quot;</span>]</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">enable</span>(<span class="ident">_global_irq</span>: <span class="ident">u32</span>) {
+        <span class="macro">unimplemented</span><span class="macro">!</span>()
+    }
+
+    <span class="doccomment">/// Disable IRQ.</span>
+    <span class="attribute">#[<span class="ident">linkage</span> <span class="op">=</span> <span class="string">&quot;weak&quot;</span>]</span>
+    <span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_irq_disable&quot;</span>]</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">disable</span>(<span class="ident">_global_irq</span>: <span class="ident">u32</span>) {
+        <span class="macro">unimplemented</span><span class="macro">!</span>()
+    }
+    <span class="doccomment">/// Get IO APIC maxinstr</span>
+    <span class="attribute">#[<span class="ident">linkage</span> <span class="op">=</span> <span class="string">&quot;weak&quot;</span>]</span>
+    <span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_irq_maxinstr&quot;</span>]</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">maxinstr</span>(<span class="ident">_irq</span>: <span class="ident">u32</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span> {
+        <span class="macro">unimplemented</span><span class="macro">!</span>()
+    }
+    <span class="attribute">#[<span class="ident">linkage</span> <span class="op">=</span> <span class="string">&quot;weak&quot;</span>]</span>
+    <span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_irq_configure&quot;</span>]</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">configure</span>(
+        <span class="ident">_irq</span>: <span class="ident">u32</span>,
+        <span class="ident">_vector</span>: <span class="ident">u8</span>,
+        <span class="ident">_dest</span>: <span class="ident">u8</span>,
+        <span class="ident">_level_trig</span>: <span class="ident">bool</span>,
+        <span class="ident">_active_high</span>: <span class="ident">bool</span>,
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+        <span class="macro">unimplemented</span><span class="macro">!</span>()
+    }
+    <span class="attribute">#[<span class="ident">linkage</span> <span class="op">=</span> <span class="string">&quot;weak&quot;</span>]</span>
+    <span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_irq_isvalid&quot;</span>]</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">is_valid</span>(<span class="ident">_irq</span>: <span class="ident">u32</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+        <span class="macro">unimplemented</span><span class="macro">!</span>()
+    }
 }
 
-<span class="doccomment">/// Add an interrupt handle to an irq</span>
-<span class="attribute">#[<span class="ident">linkage</span> <span class="op">=</span> <span class="string">&quot;weak&quot;</span>]</span>
-<span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_irq_add_handle&quot;</span>]</span>
-<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">irq_add_handle</span>(<span class="ident">_irq</span>: <span class="ident">u8</span>, <span class="ident">_handle</span>: <span class="ident">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">Fn</span>() <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
-    <span class="macro">unimplemented</span><span class="macro">!</span>()
-}
-
-<span class="doccomment">/// Remove the interrupt handle of an irq</span>
-<span class="attribute">#[<span class="ident">linkage</span> <span class="op">=</span> <span class="string">&quot;weak&quot;</span>]</span>
-<span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_irq_remove_handle&quot;</span>]</span>
-<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">irq_remove_handle</span>(<span class="ident">_irq</span>: <span class="ident">u8</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
-    <span class="macro">unimplemented</span><span class="macro">!</span>()
-}
-
-<span class="doccomment">/// Enable IRQ.</span>
-<span class="attribute">#[<span class="ident">linkage</span> <span class="op">=</span> <span class="string">&quot;weak&quot;</span>]</span>
-<span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_irq_enable&quot;</span>]</span>
-<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">irq_enable</span>(<span class="ident">_irq</span>: <span class="ident">u8</span>) {
-    <span class="macro">unimplemented</span><span class="macro">!</span>()
-}
-
-<span class="doccomment">/// Disable IRQ.</span>
-<span class="attribute">#[<span class="ident">linkage</span> <span class="op">=</span> <span class="string">&quot;weak&quot;</span>]</span>
-<span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_irq_disable&quot;</span>]</span>
-<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">irq_disable</span>(<span class="ident">_irq</span>: <span class="ident">u8</span>) {
-    <span class="macro">unimplemented</span><span class="macro">!</span>()
+<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">irq_handle</span>(<span class="ident">irq</span>: <span class="ident">u8</span>) {
+    <span class="ident">InterruptManager</span>::<span class="ident">handle</span>(<span class="ident">irq</span>)
 }
 
 <span class="doccomment">/// Get platform specific information.</span>
@@ -627,6 +766,33 @@
 <span class="attribute">#[<span class="ident">linkage</span> <span class="op">=</span> <span class="string">&quot;weak&quot;</span>]</span>
 <span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_pc_firmware_tables&quot;</span>]</span>
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">pc_firmware_tables</span>() <span class="op">-</span><span class="op">&gt;</span> (<span class="ident">u64</span>, <span class="ident">u64</span>) {
+    <span class="macro">unimplemented</span><span class="macro">!</span>()
+}
+
+<span class="doccomment">/// Get ACPI Table</span>
+<span class="attribute">#[<span class="ident">linkage</span> <span class="op">=</span> <span class="string">&quot;weak&quot;</span>]</span>
+<span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_acpi_table&quot;</span>]</span>
+<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_acpi_table</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Acpi</span><span class="op">&gt;</span> {
+    <span class="macro">unimplemented</span><span class="macro">!</span>()
+}
+
+<span class="doccomment">/// IO Ports access on x86 platform</span>
+<span class="attribute">#[<span class="ident">linkage</span> <span class="op">=</span> <span class="string">&quot;weak&quot;</span>]</span>
+<span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_outpd&quot;</span>]</span>
+<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">outpd</span>(<span class="ident">_port</span>: <span class="ident">u16</span>, <span class="ident">_value</span>: <span class="ident">u32</span>) {
+    <span class="macro">unimplemented</span><span class="macro">!</span>()
+}
+
+<span class="attribute">#[<span class="ident">linkage</span> <span class="op">=</span> <span class="string">&quot;weak&quot;</span>]</span>
+<span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_inpd&quot;</span>]</span>
+<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">inpd</span>(<span class="ident">_port</span>: <span class="ident">u16</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u32</span> {
+    <span class="macro">unimplemented</span><span class="macro">!</span>()
+}
+
+<span class="doccomment">/// Get local APIC ID</span>
+<span class="attribute">#[<span class="ident">linkage</span> <span class="op">=</span> <span class="string">&quot;weak&quot;</span>]</span>
+<span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_apic_local_id&quot;</span>]</span>
+<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">apic_local_id</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u8</span> {
     <span class="macro">unimplemented</span><span class="macro">!</span>()
 }
 </pre></div>

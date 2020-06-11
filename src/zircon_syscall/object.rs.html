@@ -501,6 +501,41 @@
 <span id="501">501</span>
 <span id="502">502</span>
 <span id="503">503</span>
+<span id="504">504</span>
+<span id="505">505</span>
+<span id="506">506</span>
+<span id="507">507</span>
+<span id="508">508</span>
+<span id="509">509</span>
+<span id="510">510</span>
+<span id="511">511</span>
+<span id="512">512</span>
+<span id="513">513</span>
+<span id="514">514</span>
+<span id="515">515</span>
+<span id="516">516</span>
+<span id="517">517</span>
+<span id="518">518</span>
+<span id="519">519</span>
+<span id="520">520</span>
+<span id="521">521</span>
+<span id="522">522</span>
+<span id="523">523</span>
+<span id="524">524</span>
+<span id="525">525</span>
+<span id="526">526</span>
+<span id="527">527</span>
+<span id="528">528</span>
+<span id="529">529</span>
+<span id="530">530</span>
+<span id="531">531</span>
+<span id="532">532</span>
+<span id="533">533</span>
+<span id="534">534</span>
+<span id="535">535</span>
+<span id="536">536</span>
+<span id="537">537</span>
+<span id="538">538</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> {
     <span class="kw">super</span>::<span class="kw-2">*</span>,
@@ -724,28 +759,46 @@
                 <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_dyn_object_with_rights</span>(<span class="ident">handle</span>, <span class="ident">Rights</span>::<span class="ident">empty</span>())<span class="question-mark">?</span>;
             }
             <span class="ident">Topic</span>::<span class="ident">Process</span> <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="kw">if</span> <span class="ident">buffer_size</span> <span class="op">&lt;</span> <span class="ident">core</span>::<span class="ident">mem</span>::<span class="ident">size_of</span>::<span class="op">&lt;</span><span class="ident">ProcessInfo</span><span class="op">&gt;</span>() {
+                    <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">BUFFER_TOO_SMALL</span>);
+                }
                 <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">Process</span><span class="op">&gt;</span>(<span class="ident">handle</span>, <span class="ident">Rights</span>::<span class="ident">INSPECT</span>)<span class="question-mark">?</span>;
                 <span class="ident">UserOutPtr</span>::<span class="op">&lt;</span><span class="ident">ProcessInfo</span><span class="op">&gt;</span>::<span class="ident">from</span>(<span class="ident">buffer</span>).<span class="ident">write</span>(<span class="ident">proc</span>.<span class="ident">get_info</span>())<span class="question-mark">?</span>;
             }
             <span class="ident">Topic</span>::<span class="ident">Vmar</span> <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="kw">if</span> <span class="ident">buffer_size</span> <span class="op">&lt;</span> <span class="ident">core</span>::<span class="ident">mem</span>::<span class="ident">size_of</span>::<span class="op">&lt;</span><span class="ident">VmarInfo</span><span class="op">&gt;</span>() {
+                    <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">BUFFER_TOO_SMALL</span>);
+                }
                 <span class="kw">let</span> <span class="ident">vmar</span> <span class="op">=</span>
                     <span class="ident">proc</span>.<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">VmAddressRegion</span><span class="op">&gt;</span>(<span class="ident">handle</span>, <span class="ident">Rights</span>::<span class="ident">INSPECT</span>)<span class="question-mark">?</span>;
                 <span class="ident">UserOutPtr</span>::<span class="op">&lt;</span><span class="ident">VmarInfo</span><span class="op">&gt;</span>::<span class="ident">from</span>(<span class="ident">buffer</span>).<span class="ident">write</span>(<span class="ident">vmar</span>.<span class="ident">get_info</span>())<span class="question-mark">?</span>;
             }
             <span class="ident">Topic</span>::<span class="ident">HandleBasic</span> <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="kw">if</span> <span class="ident">buffer_size</span> <span class="op">&lt;</span> <span class="ident">core</span>::<span class="ident">mem</span>::<span class="ident">size_of</span>::<span class="op">&lt;</span><span class="ident">HandleBasicInfo</span><span class="op">&gt;</span>() {
+                    <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">BUFFER_TOO_SMALL</span>);
+                }
                 <span class="kw">let</span> <span class="ident">info</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_handle_info</span>(<span class="ident">handle</span>)<span class="question-mark">?</span>;
                 <span class="ident">UserOutPtr</span>::<span class="op">&lt;</span><span class="ident">HandleBasicInfo</span><span class="op">&gt;</span>::<span class="ident">from</span>(<span class="ident">buffer</span>).<span class="ident">write</span>(<span class="ident">info</span>)<span class="question-mark">?</span>;
             }
             <span class="ident">Topic</span>::<span class="ident">Thread</span> <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="kw">if</span> <span class="ident">buffer_size</span> <span class="op">&lt;</span> <span class="ident">core</span>::<span class="ident">mem</span>::<span class="ident">size_of</span>::<span class="op">&lt;</span><span class="ident">ThreadInfo</span><span class="op">&gt;</span>() {
+                    <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">BUFFER_TOO_SMALL</span>);
+                }
                 <span class="kw">let</span> <span class="ident">thread</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">Thread</span><span class="op">&gt;</span>(<span class="ident">handle</span>, <span class="ident">Rights</span>::<span class="ident">INSPECT</span>)<span class="question-mark">?</span>;
                 <span class="ident">UserOutPtr</span>::<span class="op">&lt;</span><span class="ident">ThreadInfo</span><span class="op">&gt;</span>::<span class="ident">from</span>(<span class="ident">buffer</span>).<span class="ident">write</span>(<span class="ident">thread</span>.<span class="ident">get_thread_info</span>())<span class="question-mark">?</span>;
             }
             <span class="ident">Topic</span>::<span class="ident">HandleCount</span> <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="kw">if</span> <span class="ident">buffer_size</span> <span class="op">&lt;</span> <span class="ident">core</span>::<span class="ident">mem</span>::<span class="ident">size_of</span>::<span class="op">&lt;</span><span class="ident">u32</span><span class="op">&gt;</span>() {
+                    <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">BUFFER_TOO_SMALL</span>);
+                }
                 <span class="kw">let</span> <span class="ident">object</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_dyn_object_with_rights</span>(<span class="ident">handle</span>, <span class="ident">Rights</span>::<span class="ident">INSPECT</span>)<span class="question-mark">?</span>;
                 <span class="comment">// FIXME: count Handle instead of Arc</span>
                 <span class="ident">UserOutPtr</span>::<span class="op">&lt;</span><span class="ident">u32</span><span class="op">&gt;</span>::<span class="ident">from</span>(<span class="ident">buffer</span>).<span class="ident">write</span>(<span class="ident">Arc</span>::<span class="ident">strong_count</span>(<span class="kw-2">&amp;</span><span class="ident">object</span>) <span class="kw">as</span> <span class="ident">u32</span> <span class="op">-</span> <span class="number">1</span>)<span class="question-mark">?</span>;
             }
             <span class="ident">Topic</span>::<span class="ident">Job</span> <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="kw">if</span> <span class="ident">buffer_size</span> <span class="op">&lt;</span> <span class="ident">core</span>::<span class="ident">mem</span>::<span class="ident">size_of</span>::<span class="op">&lt;</span><span class="ident">JobInfo</span><span class="op">&gt;</span>() {
+                    <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">BUFFER_TOO_SMALL</span>);
+                }
                 <span class="kw">let</span> <span class="ident">job</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">Job</span><span class="op">&gt;</span>(<span class="ident">handle</span>, <span class="ident">Rights</span>::<span class="ident">INSPECT</span>)<span class="question-mark">?</span>;
                 <span class="ident">UserOutPtr</span>::<span class="op">&lt;</span><span class="ident">JobInfo</span><span class="op">&gt;</span>::<span class="ident">from</span>(<span class="ident">buffer</span>).<span class="ident">write</span>(<span class="ident">job</span>.<span class="ident">get_info</span>())<span class="question-mark">?</span>;
             }
@@ -755,6 +808,9 @@
                 <span class="ident">avail</span>.<span class="ident">write</span>(<span class="number">0</span>)<span class="question-mark">?</span>;
             }
             <span class="ident">Topic</span>::<span class="ident">Vmo</span> <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="kw">if</span> <span class="ident">buffer_size</span> <span class="op">&lt;</span> <span class="ident">core</span>::<span class="ident">mem</span>::<span class="ident">size_of</span>::<span class="op">&lt;</span><span class="ident">VmoInfo</span><span class="op">&gt;</span>() {
+                    <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">BUFFER_TOO_SMALL</span>);
+                }
                 <span class="kw">let</span> (<span class="ident">vmo</span>, <span class="ident">rights</span>) <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_object_and_rights</span>::<span class="op">&lt;</span><span class="ident">VmObject</span><span class="op">&gt;</span>(<span class="ident">handle</span>)<span class="question-mark">?</span>;
                 <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">info</span> <span class="op">=</span> <span class="ident">vmo</span>.<span class="ident">get_info</span>();
                 <span class="ident">info</span>.<span class="ident">flags</span> <span class="op">|</span><span class="op">=</span> <span class="ident">VmoInfoFlags</span>::<span class="ident">VIA_HANDLE</span>;
@@ -762,12 +818,17 @@
                 <span class="ident">UserOutPtr</span>::<span class="op">&lt;</span><span class="ident">VmoInfo</span><span class="op">&gt;</span>::<span class="ident">from</span>(<span class="ident">buffer</span>).<span class="ident">write</span>(<span class="ident">info</span>)<span class="question-mark">?</span>;
             }
             <span class="ident">Topic</span>::<span class="ident">KmemStats</span> <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="kw">if</span> <span class="ident">buffer_size</span> <span class="op">&lt;</span> <span class="ident">core</span>::<span class="ident">mem</span>::<span class="ident">size_of</span>::<span class="op">&lt;</span><span class="ident">KmemInfo</span><span class="op">&gt;</span>() {
+                    <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">BUFFER_TOO_SMALL</span>);
+                }
                 <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">kmem</span> <span class="op">=</span> <span class="ident">KmemInfo</span>::<span class="ident">default</span>();
                 <span class="ident">kmem</span>.<span class="ident">vmo_bytes</span> <span class="op">=</span> <span class="ident">vmo_page_bytes</span>() <span class="kw">as</span> <span class="ident">u64</span>;
                 <span class="ident">UserOutPtr</span>::<span class="op">&lt;</span><span class="ident">KmemInfo</span><span class="op">&gt;</span>::<span class="ident">from</span>(<span class="ident">buffer</span>).<span class="ident">write</span>(<span class="ident">kmem</span>)<span class="question-mark">?</span>;
             }
             <span class="ident">Topic</span>::<span class="ident">TaskStats</span> <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">core</span>::<span class="ident">mem</span>::<span class="ident">size_of</span>::<span class="op">&lt;</span><span class="ident">TaskStatsInfo</span><span class="op">&gt;</span>(), <span class="ident">buffer_size</span>);
+                <span class="kw">if</span> <span class="ident">buffer_size</span> <span class="op">&lt;</span> <span class="ident">core</span>::<span class="ident">mem</span>::<span class="ident">size_of</span>::<span class="op">&lt;</span><span class="ident">TaskStatsInfo</span><span class="op">&gt;</span>() {
+                    <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">BUFFER_TOO_SMALL</span>);
+                }
                 <span class="kw">let</span> <span class="ident">vmar</span> <span class="op">=</span> <span class="ident">proc</span>
                     .<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">Process</span><span class="op">&gt;</span>(<span class="ident">handle</span>, <span class="ident">Rights</span>::<span class="ident">INSPECT</span>)<span class="question-mark">?</span>
                     .<span class="ident">vmar</span>();
@@ -794,15 +855,24 @@
                 <span class="ident">avail</span>.<span class="ident">write</span>(<span class="ident">ids</span>.<span class="ident">len</span>())<span class="question-mark">?</span>;
             }
             <span class="ident">Topic</span>::<span class="ident">Bti</span> <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="kw">if</span> <span class="ident">buffer_size</span> <span class="op">&lt;</span> <span class="ident">core</span>::<span class="ident">mem</span>::<span class="ident">size_of</span>::<span class="op">&lt;</span><span class="ident">BtiInfo</span><span class="op">&gt;</span>() {
+                    <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">BUFFER_TOO_SMALL</span>);
+                }
                 <span class="kw">let</span> <span class="ident">bti</span> <span class="op">=</span> <span class="ident">proc</span>
                     .<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">BusTransactionInitiator</span><span class="op">&gt;</span>(<span class="ident">handle</span>, <span class="ident">Rights</span>::<span class="ident">INSPECT</span>)<span class="question-mark">?</span>;
                 <span class="ident">UserOutPtr</span>::<span class="op">&lt;</span><span class="ident">BtiInfo</span><span class="op">&gt;</span>::<span class="ident">from</span>(<span class="ident">buffer</span>).<span class="ident">write</span>(<span class="ident">bti</span>.<span class="ident">get_info</span>())<span class="question-mark">?</span>;
             }
             <span class="ident">Topic</span>::<span class="ident">Resource</span> <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="kw">if</span> <span class="ident">buffer_size</span> <span class="op">&lt;</span> <span class="ident">core</span>::<span class="ident">mem</span>::<span class="ident">size_of</span>::<span class="op">&lt;</span><span class="ident">ResourceInfo</span><span class="op">&gt;</span>() {
+                    <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">BUFFER_TOO_SMALL</span>);
+                }
                 <span class="kw">let</span> <span class="ident">resource</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">Resource</span><span class="op">&gt;</span>(<span class="ident">handle</span>, <span class="ident">Rights</span>::<span class="ident">INSPECT</span>)<span class="question-mark">?</span>;
                 <span class="ident">UserOutPtr</span>::<span class="op">&lt;</span><span class="ident">ResourceInfo</span><span class="op">&gt;</span>::<span class="ident">from</span>(<span class="ident">buffer</span>).<span class="ident">write</span>(<span class="ident">resource</span>.<span class="ident">get_info</span>())<span class="question-mark">?</span>;
             }
             <span class="ident">Topic</span>::<span class="ident">Socket</span> <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="kw">if</span> <span class="ident">buffer_size</span> <span class="op">&lt;</span> <span class="ident">core</span>::<span class="ident">mem</span>::<span class="ident">size_of</span>::<span class="op">&lt;</span><span class="ident">SocketInfo</span><span class="op">&gt;</span>() {
+                    <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">BUFFER_TOO_SMALL</span>);
+                }
                 <span class="kw">let</span> <span class="ident">socket</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">Socket</span><span class="op">&gt;</span>(<span class="ident">handle</span>, <span class="ident">Rights</span>::<span class="ident">INSPECT</span>)<span class="question-mark">?</span>;
                 <span class="ident">UserOutPtr</span>::<span class="op">&lt;</span><span class="ident">SocketInfo</span><span class="op">&gt;</span>::<span class="ident">from</span>(<span class="ident">buffer</span>).<span class="ident">write</span>(<span class="ident">socket</span>.<span class="ident">get_info</span>())<span class="question-mark">?</span>;
             }
