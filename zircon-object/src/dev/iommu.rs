@@ -42,7 +42,17 @@ impl Iommu {
         if offset + size > vmo.len() {
             return Err(ZxError::INVALID_ARGS);
         }
-        let p_addr = vmo.commit_page(offset, MMUFlags::empty())?;
+        let mut flags = MMUFlags::empty();
+        if perms.contains(IommuPerms::PERM_READ) {
+            flags |= MMUFlags::READ;
+        }
+        if perms.contains(IommuPerms::PERM_WRITE) {
+            flags |= MMUFlags::WRITE;
+        }
+        if perms.contains(IommuPerms::PERM_EXECUTE) {
+            flags |= MMUFlags::EXECUTE;
+        }
+        let p_addr = vmo.commit_page(offset / PAGE_SIZE, flags)?;
         if vmo.is_paged() {
             Ok((p_addr, PAGE_SIZE))
         } else {

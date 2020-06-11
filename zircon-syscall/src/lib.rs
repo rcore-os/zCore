@@ -33,6 +33,7 @@ mod fifo;
 mod futex;
 mod handle;
 mod object;
+mod pci;
 mod port;
 mod resource;
 mod signal;
@@ -244,6 +245,7 @@ impl Syscall<'_> {
             ),
             Sys::SYSTEM_GET_EVENT => self.sys_system_get_event(a0 as _, a1 as _, a2.into()),
             Sys::TIMER_SET => self.sys_timer_set(a0 as _, a1.into(), a2 as _),
+            Sys::TIMER_CANCEL => self.sys_timer_cancel(a0 as _),
             Sys::DEBUG_READ => {
                 self.sys_debug_read(a0 as _, a1.into(), a2 as _, a3.into())
                     .await
@@ -287,6 +289,30 @@ impl Syscall<'_> {
                 self.sys_object_get_child(a0 as _, a1 as _, a2 as _, a3.into())
             }
             Sys::PC_FIRMWARE_TABLES => self.sys_pc_firmware_tables(a0 as _, a1.into(), a2.into()),
+            Sys::PCI_ADD_SUBTRACT_IO_RANGE => {
+                self.sys_pci_add_subtract_io_range(a0 as _, a1 != 0, a2 as _, a3 as _, a4 != 0)
+            }
+            Sys::PCI_CFG_PIO_RW => self.sys_pci_cfg_pio_rw(
+                a0 as _,
+                a1 as _,
+                a2 as _,
+                a3 as _,
+                a4 as _,
+                a5.into(),
+                a6 as _,
+                a7 != 0,
+            ),
+            Sys::PCI_INIT => self.sys_pci_init(a0 as _, a1 as _, a2 as _),
+            Sys::PCI_GET_NTH_DEVICE => {
+                self.sys_pci_get_nth_device(a0 as _, a1 as _, a2.into(), a3.into())
+            }
+            Sys::PCI_MAP_INTERRUPT => self.sys_pci_map_interrupt(a0 as _, a1 as _, a2.into()),
+            Sys::PCI_GET_BAR => self.sys_pci_get_bar(a0 as _, a1 as _, a2.into(), a3.into()),
+            Sys::PCI_ENABLE_BUS_MASTER => self.sys_pci_enable_bus_master(a0 as _, a1 != 0),
+            Sys::PCI_QUERY_IRQ_MODE => self.sys_pci_query_irq_mode(a0 as _, a1 as _, a2.into()),
+            Sys::PCI_SET_IRQ_MODE => self.sys_pci_set_irq_mode(a0 as _, a1 as _, a2 as _),
+            Sys::PCI_CONFIG_READ => self.sys_pci_config_read(a0 as _, a1 as _, a2 as _, a3.into()),
+            Sys::PCI_CONFIG_WRITE => self.sys_pci_config_write(a0 as _, a1 as _, a2 as _, a3 as _),
             Sys::INTERRUPT_CREATE => {
                 self.sys_interrupt_create(a0 as _, a1 as _, a2 as _, a3.into())
             }

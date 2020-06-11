@@ -62,6 +62,21 @@ impl VmAddressRegion {
             inner: Mutex::new(Some(VmarInner::default())),
         })
     }
+    /// Create a kernel root VMAR.
+    pub fn new_kernel() -> Arc<Self> {
+        let kernel_vmar_base = 0xffff_ff02_0000_0000; // Sorry i hard code because i'm lazy
+        let kernel_vmar_size = 0x8000_00000;
+        Arc::new(VmAddressRegion {
+            flags: VmarFlags::ROOT_FLAGS,
+            base: KObjectBase::new(),
+            _counter: CountHelper::new(),
+            addr: kernel_vmar_base,
+            size: kernel_vmar_size,
+            parent: None,
+            page_table: Arc::new(Mutex::new(kernel_hal::PageTable::new())),
+            inner: Mutex::new(Some(VmarInner::default())),
+        })
+    }
 
     /// Create a child VMAR at the `offset`.
     pub fn allocate_at(

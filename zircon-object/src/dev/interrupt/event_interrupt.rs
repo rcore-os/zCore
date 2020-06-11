@@ -1,7 +1,8 @@
+use kernel_hal::InterruptManager;
 use {super::*, spin::Mutex};
 
 pub struct EventInterrupt {
-    vector: u8,
+    vector: u32,
     inner: Mutex<EventInterruptInner>,
 }
 
@@ -14,7 +15,7 @@ impl EventInterrupt {
     pub fn new(vector: usize) -> Box<Self> {
         // TODO check vector is a vaild IRQ number
         Box::new(EventInterrupt {
-            vector: vector as u8,
+            vector: vector as u32,
             inner: Default::default(),
         })
     }
@@ -24,14 +25,14 @@ impl InterruptTrait for EventInterrupt {
     fn mask(&self) {
         let inner = self.inner.lock();
         if inner.register {
-            kernel_hal::irq_disable(self.vector as u8);
+            InterruptManager::disable(self.vector as u32);
         }
     }
 
     fn unmask(&self) {
         let inner = self.inner.lock();
         if inner.register {
-            kernel_hal::irq_enable(self.vector as u8);
+            InterruptManager::enable(self.vector as u32);
         }
     }
 
@@ -40,7 +41,7 @@ impl InterruptTrait for EventInterrupt {
         if inner.register {
             return Err(ZxError::ALREADY_BOUND);
         }
-        if kernel_hal::irq_add_handle(self.vector, handle) {
+        if InterruptManager::set_ioapic_handle(self.vector, handle).is_some() {
             inner.register = true;
             Ok(())
         } else {
@@ -53,7 +54,7 @@ impl InterruptTrait for EventInterrupt {
         if !inner.register {
             return Ok(());
         }
-        if kernel_hal::irq_remove_handle(self.vector) {
+        if InterruptManager::reset_ioapic_handle(self.vector) {
             inner.register = false;
             Ok(())
         } else {

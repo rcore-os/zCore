@@ -21,8 +21,9 @@ x86_64 = "0.11"
 uart_16550 = "0.2.6"
 raw-cpuid = "7.0"
 pc-keyboard = "0.5"
-apic = { git = "https://github.com/rcore-os/apic-rs", rev = "01cf01a" }
+apic = { git = "https://github.com/rcore-os/apic-rs", rev = "fb86bd7" }
 rcore-console = { git = "https://github.com/rcore-os/rcore-console", default-features = false, rev = "a980897b" }
+acpi = "1.0.0"
 
 [target.'cfg(any(target_arch = "riscv32", target_arch = "riscv64"))'.dependencies]
 riscv = { git = "https://github.com/rcore-os/riscv", features = ["inline-asm"], rev = "c62af46" }

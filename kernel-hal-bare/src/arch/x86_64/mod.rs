@@ -1,19 +1,23 @@
 use {
     super::super::*,
+    acpi::{parse_rsdp, Acpi, AcpiHandler, PhysicalMapping},
     alloc::{collections::VecDeque, vec::Vec},
-    apic::{IoApic, LocalApic, XApic},
+    apic::{LocalApic, XApic},
     core::convert::TryFrom,
     core::fmt::{Arguments, Write},
+    core::ptr::NonNull,
     core::time::Duration,
     rcore_console::{Console, ConsoleOnGraphic, DrawTarget, Pixel, Rgb888, Size},
     spin::Mutex,
     uart_16550::SerialPort,
     x86_64::{
+        instructions::port::Port,
         registers::control::{Cr2, Cr3, Cr3Flags, Cr4, Cr4Flags},
         structures::paging::{PageTableFlags as PTF, *},
     },
 };
 
+mod acpi_table;
 mod interrupt;
 mod keyboard;
 
@@ -293,16 +297,10 @@ fn timer_init() {
     lapic.cpu_init();
 }
 
-#[export_name = "hal_irq_enable"]
-pub fn irq_enable(irq: u8) {
-    let mut ioapic = unsafe { IoApic::new(phys_to_virt(IOAPIC_ADDR)) };
-    ioapic.enable(irq, 0);
-}
-
-#[export_name = "hal_irq_disable"]
-pub fn irq_disable(irq: u8) {
-    let mut ioapic = unsafe { IoApic::new(phys_to_virt(IOAPIC_ADDR)) };
-    ioapic.disable(irq);
+#[export_name = "hal_apic_local_id"]
+pub fn apic_local_id() -> u8 {
+    let lapic = unsafe { XApic::new(phys_to_virt(LAPIC_ADDR)) };
+    lapic.id() as u8
 }
 
 const LAPIC_ADDR: usize = 0xfee0_0000;
@@ -366,3 +364,55 @@ static mut CONFIG: Config = Config {
 };
 
 static mut TSC_FREQUENCY: u16 = 2600;
+
+/// Build ACPI Table
+struct AcpiHelper {}
+impl AcpiHandler for AcpiHelper {
+    unsafe fn map_physical_region<T>(
+        &mut self,
+        physical_address: usize,
+        size: usize,
+    ) -> PhysicalMapping<T> {
+        #[allow(non_snake_case)]
+        let OFFSET = 0;
+        let page_start = physical_address / PAGE_SIZE;
+        let page_end = (physical_address + size + PAGE_SIZE - 1) / PAGE_SIZE;
+        PhysicalMapping::<T> {
+            physical_start: physical_address,
+            virtual_start: NonNull::new_unchecked(phys_to_virt(physical_address + OFFSET) as *mut T),
+            mapped_length: size,
+            region_length: PAGE_SIZE * (page_end - page_start),
+        }
+    }
+    fn unmap_physical_region<T>(&mut self, _region: PhysicalMapping<T>) {}
+}
+
+#[export_name = "hal_acpi_table"]
+pub fn get_acpi_table() -> Option<Acpi> {
+    #[cfg(target_arch = "x86_64")]
+    {
+        let mut handler = AcpiHelper {};
+        match unsafe { parse_rsdp(&mut handler, pc_firmware_tables().0 as usize) } {
+            Ok(table) => Some(table),
+            Err(info) => {
+                warn!("get_acpi_table error: {:#x?}", info);
+                None
+            }
+        }
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    None
+}
+
+/// IO Port in/out instruction
+#[export_name = "hal_outpd"]
+pub fn outpd(port: u16, value: u32) {
+    unsafe {
+        Port::new(port).write(value);
+    }
+}
+
+#[export_name = "hal_inpd"]
+pub fn inpd(port: u16) -> u32 {
+    unsafe { Port::new(port).read() }
+}

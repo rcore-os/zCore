@@ -76,4 +76,12 @@ impl Syscall<'_> {
         timer.set(Duration::from(deadline), Duration::from_nanos(slack as u64));
         Ok(())
     }
+
+    pub fn sys_timer_cancel(&self, handle: HandleValue) -> ZxResult {
+        info!("timer.cancel: handle={:#x}", handle);
+        let proc = self.thread.proc();
+        let timer = proc.get_object_with_rights::<Timer>(handle, Rights::WRITE)?;
+        timer.cancel();
+        Ok(())
+    }
 }

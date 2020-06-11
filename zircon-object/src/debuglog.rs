@@ -112,8 +112,10 @@ impl DlogBuffer {
         let end = start + data.len();
         assert!(start < DLOG_SIZE);
         assert!(end <= DLOG_SIZE);
-        assert!(start < end);
-        self.buf[start..end].copy_from_slice(data);
+        assert!(start <= end);
+        if start < end {
+            self.buf[start..end].copy_from_slice(data);
+        }
     }
 
     #[cfg(test)]

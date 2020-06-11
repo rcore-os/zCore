@@ -1,6 +1,8 @@
 use {
     self::event_interrupt::*,
+    self::pci_interrupt::*,
     self::virtual_interrupt::*,
+    super::IPciNode,
     crate::object::*,
     crate::signal::*,
     alloc::{boxed::Box, sync::Arc},
@@ -9,6 +11,7 @@ use {
 };
 
 mod event_interrupt;
+mod pci_interrupt;
 mod virtual_interrupt;
 
 trait InterruptTrait: Sync + Send {
@@ -71,6 +74,26 @@ impl Interrupt {
             flags: InterruptFlags::empty(),
             inner: Default::default(),
             trait_: EventInterrupt::new(vector),
+        });
+        let interrupt_clone = interrupt.clone();
+        interrupt
+            .trait_
+            .register_handler(Box::new(move || interrupt_clone.handle_interrupt()))?;
+        interrupt.trait_.unmask();
+        Ok(interrupt)
+    }
+
+    pub fn new_pci(
+        device: Arc<dyn IPciNode + Send + Sync>,
+        vector: u32,
+        maskable: bool,
+    ) -> ZxResult<Arc<Self>> {
+        let interrupt = Arc::new(Interrupt {
+            base: KObjectBase::new(),
+            has_vcpu: false,
+            flags: InterruptFlags::UNMASK_PREWAIT_UNLOCKED,
+            inner: Default::default(),
+            trait_: PciInterrupt::new(device, vector, maskable),
         });
         let interrupt_clone = interrupt.clone();
         interrupt

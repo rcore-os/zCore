@@ -1,5 +1,6 @@
 use super::*;
 use crate::vdso::VdsoConstants;
+use acpi::Acpi;
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::future::Future;
@@ -258,39 +259,94 @@ pub fn timer_tick() {
     unimplemented!()
 }
 
-/// Handle IRQ.
-#[linkage = "weak"]
-#[export_name = "hal_irq_handle"]
-pub fn irq_handle(_irq: u8) {
-    unimplemented!()
+pub struct InterruptManager {}
+impl InterruptManager {
+    /// Handle IRQ.
+    #[linkage = "weak"]
+    #[export_name = "hal_irq_handle"]
+    pub fn handle(_irq: u8) {
+        unimplemented!()
+    }
+    ///
+    #[linkage = "weak"]
+    #[export_name = "hal_ioapic_set_handle"]
+    pub fn set_ioapic_handle(_global_irq: u32, _handle: Box<dyn Fn() + Send + Sync>) -> Option<u8> {
+        unimplemented!()
+    }
+    /// Add an interrupt handle to an irq
+    #[linkage = "weak"]
+    #[export_name = "hal_irq_add_handle"]
+    pub fn add_handle(_global_irq: u8, _handle: Box<dyn Fn() + Send + Sync>) -> Option<u8> {
+        unimplemented!()
+    }
+    ///
+    #[linkage = "weak"]
+    #[export_name = "hal_ioapic_reset_handle"]
+    pub fn reset_ioapic_handle(_global_irq: u32) -> bool {
+        unimplemented!()
+    }
+    /// Remove the interrupt handle of an irq
+    #[linkage = "weak"]
+    #[export_name = "hal_irq_remove_handle"]
+    pub fn remove_handle(_irq: u8) -> bool {
+        unimplemented!()
+    }
+    /// Allocate contiguous positions for irq
+    #[linkage = "weak"]
+    #[export_name = "hal_irq_allocate_block"]
+    pub fn allocate_block(_irq_num: u32) -> Option<(usize, usize)> {
+        unimplemented!()
+    }
+    #[linkage = "weak"]
+    #[export_name = "hal_irq_free_block"]
+    pub fn free_block(_irq_start: u32, _irq_num: u32) {
+        unimplemented!()
+    }
+    #[linkage = "weak"]
+    #[export_name = "hal_irq_overwrite_handler"]
+    pub fn overwrite_handler(_msi_id: u32, _handle: Box<dyn Fn() + Send + Sync>) -> bool {
+        unimplemented!()
+    }
+
+    /// Enable IRQ.
+    #[linkage = "weak"]
+    #[export_name = "hal_irq_enable"]
+    pub fn enable(_global_irq: u32) {
+        unimplemented!()
+    }
+
+    /// Disable IRQ.
+    #[linkage = "weak"]
+    #[export_name = "hal_irq_disable"]
+    pub fn disable(_global_irq: u32) {
+        unimplemented!()
+    }
+    /// Get IO APIC maxinstr
+    #[linkage = "weak"]
+    #[export_name = "hal_irq_maxinstr"]
+    pub fn maxinstr(_irq: u32) -> Option<u8> {
+        unimplemented!()
+    }
+    #[linkage = "weak"]
+    #[export_name = "hal_irq_configure"]
+    pub fn configure(
+        _irq: u32,
+        _vector: u8,
+        _dest: u8,
+        _level_trig: bool,
+        _active_high: bool,
+    ) -> bool {
+        unimplemented!()
+    }
+    #[linkage = "weak"]
+    #[export_name = "hal_irq_isvalid"]
+    pub fn is_valid(_irq: u32) -> bool {
+        unimplemented!()
+    }
 }
 
-/// Add an interrupt handle to an irq
-#[linkage = "weak"]
-#[export_name = "hal_irq_add_handle"]
-pub fn irq_add_handle(_irq: u8, _handle: Box<dyn Fn() + Send + Sync>) -> bool {
-    unimplemented!()
-}
-
-/// Remove the interrupt handle of an irq
-#[linkage = "weak"]
-#[export_name = "hal_irq_remove_handle"]
-pub fn irq_remove_handle(_irq: u8) -> bool {
-    unimplemented!()
-}
-
-/// Enable IRQ.
-#[linkage = "weak"]
-#[export_name = "hal_irq_enable"]
-pub fn irq_enable(_irq: u8) {
-    unimplemented!()
-}
-
-/// Disable IRQ.
-#[linkage = "weak"]
-#[export_name = "hal_irq_disable"]
-pub fn irq_disable(_irq: u8) {
-    unimplemented!()
+pub fn irq_handle(irq: u8) {
+    InterruptManager::handle(irq)
 }
 
 /// Get platform specific information.
@@ -311,5 +367,32 @@ pub fn fetch_fault_vaddr() -> VirtAddr {
 #[linkage = "weak"]
 #[export_name = "hal_pc_firmware_tables"]
 pub fn pc_firmware_tables() -> (u64, u64) {
+    unimplemented!()
+}
+
+/// Get ACPI Table
+#[linkage = "weak"]
+#[export_name = "hal_acpi_table"]
+pub fn get_acpi_table() -> Option<Acpi> {
+    unimplemented!()
+}
+
+/// IO Ports access on x86 platform
+#[linkage = "weak"]
+#[export_name = "hal_outpd"]
+pub fn outpd(_port: u16, _value: u32) {
+    unimplemented!()
+}
+
+#[linkage = "weak"]
+#[export_name = "hal_inpd"]
+pub fn inpd(_port: u16) -> u32 {
+    unimplemented!()
+}
+
+/// Get local APIC ID
+#[linkage = "weak"]
+#[export_name = "hal_apic_local_id"]
+pub fn apic_local_id() -> u8 {
     unimplemented!()
 }
