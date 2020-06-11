@@ -175,7 +175,7 @@ impl PCIeBusDriver {
             PCIeBusDriverState::StartingScanning,
             PCIeBusDriverState::StartingRunningQuirks,
         )?;
-        error!("WARNING: Skip quirks");
+        warn!("pci: skip quirks");
         self.transfer_state(
             PCIeBusDriverState::StartingRunningQuirks,
             PCIeBusDriverState::StartingResourceAllocation,
