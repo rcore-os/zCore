@@ -10,7 +10,7 @@ jobs:
     - uses: actions-rs/toolchain@v1
       with:
         profile: minimal
-        toolchain: nightly-2020-04-06
+        toolchain: nightly-2020-06-04
         override: true
         components: rustfmt, clippy
     - name: Check code format
@@ -39,12 +39,8 @@ jobs:
     - uses: actions-rs/toolchain@v1
       with:
         profile: minimal
-        toolchain: nightly-2020-04-06
+        toolchain: nightly-2020-06-04
         components: rust-src
-    - name: Setup Rust toolchain
-      run: |
-        rustup target add riscv32imac-unknown-none-elf
-        rustup target add riscv64imac-unknown-none-elf
     - name: Build
       uses: actions-rs/cargo@v1
       with:
@@ -74,7 +70,7 @@ jobs:
         args: --all-features --no-fail-fast --workspace --exclude zircon-loader
       env:
         CARGO_INCREMENTAL: '0'
-        RUSTFLAGS: '-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Coverflow-checks=off -Zno-landing-pads'
+        RUSTFLAGS: '-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Coverflow-checks=off'
     - name: Cache grcov
       uses: actions/cache@v1
       with:

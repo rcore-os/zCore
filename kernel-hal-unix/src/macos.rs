@@ -76,11 +76,16 @@ unsafe fn register_sigsegv_handler() {
             // segmentation violation is rethrown.
             _ => {
                 // switch back to kernel gs
-                asm!("
+                asm!(
+                    "
                     mov rdi, gs:48
-                    mov eax, 0x3000003
                     syscall
-                    " ::: "rdi", "rax", "rcx", "r11": "intel" "volatile");
+                    ",
+                    in("eax") 0x3000003,
+                    out("rdi") _,
+                    out("rcx") _,
+                    out("r11") _,
+                );
                 panic!("catch SIGSEGV: {:#x?}", *(*uc).uc_mcontext);
             }
         }
