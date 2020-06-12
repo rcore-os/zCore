@@ -24,7 +24,6 @@ region-alloc = { git = "https://github.com/rzswh/region-allocator", rev = "122c7
 lazy_static = { version = "1.4", features = ["spin_no_std" ] }
 apic = { git = "https://github.com/rcore-os/apic-rs", rev = "fb86bd7" }
 acpi = "1.0.0"
-pci = { git = "https://github.com/rcore-os/pci-rs" }
 
 [dev-dependencies]
 kernel-hal-unix = { path = "../kernel-hal-unix" }

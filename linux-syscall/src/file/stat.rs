@@ -189,7 +189,7 @@ pub struct Stat {
 }
 
 impl From<Metadata> for Stat {
-    #[allow(clippy::identity_conversion)]
+    #[allow(clippy::useless_conversion)]
     fn from(info: Metadata) -> Self {
         Stat {
             dev: info.dev as u64,
