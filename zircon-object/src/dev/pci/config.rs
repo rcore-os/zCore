@@ -1,5 +1,7 @@
 use super::*;
 use numeric_enum_macro::*;
+
+#[derive(Debug)]
 pub struct PciConfig {
     pub addr_space: PciAddrSpace,
     pub base: usize,
@@ -31,11 +33,20 @@ impl PciConfig {
     pub fn read8(&self, addr: PciReg8) -> u8 {
         self.read8_offset(self.base + addr as usize)
     }
+    pub fn read8_(&self, addr: usize) -> u8 {
+        self.read8_offset(self.base + addr)
+    }
     pub fn read16(&self, addr: PciReg16) -> u16 {
         self.read16_offset(self.base + addr as usize)
     }
+    pub fn read16_(&self, addr: usize) -> u16 {
+        self.read16_offset(self.base + addr)
+    }
     pub fn read32(&self, addr: PciReg32) -> u32 {
         self.read32_offset(self.base + addr as usize)
+    }
+    pub fn read32_(&self, addr: usize) -> u32 {
+        self.read32_offset(self.base + addr)
     }
     pub fn read_bar(&self, bar_: usize) -> u32 {
         self.read32_offset(self.base + PciReg32::BARBase as usize + bar_ * 4)
@@ -70,8 +81,14 @@ impl PciConfig {
     pub fn write16(&self, addr: PciReg16, val: u16) {
         self.write16_offset(self.base + addr as usize, val)
     }
+    pub fn write16_(&self, addr: usize, val: u16) {
+        self.write16_offset(self.base + addr, val)
+    }
     pub fn write32(&self, addr: PciReg32, val: u32) {
         self.write32_offset(self.base + addr as usize, val)
+    }
+    pub fn write32_(&self, addr: usize, val: u32) {
+        self.write32_offset(self.base + addr, val)
     }
     pub fn write_bar(&self, bar_: usize, val: u32) {
         self.write32_offset(self.base + PciReg32::BARBase as usize + bar_ * 4, val)

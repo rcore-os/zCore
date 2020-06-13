@@ -373,8 +373,8 @@ impl MmioPcieAddressProvider {
         if ecam.bus_start > ecam.bus_end {
             return Err(ZxError::INVALID_ARGS);
         }
-        let bus_count = ecam.bus_end + 1 - ecam.bus_start;
-        if ecam.size != bus_count as usize * PCIE_ECAM_BYTES_PER_BUS {
+        let bus_count = (ecam.bus_end - ecam.bus_start) as usize + 1;
+        if ecam.size != bus_count * PCIE_ECAM_BYTES_PER_BUS {
             return Err(ZxError::INVALID_ARGS);
         }
         let mut inner = self.ecam_regions.lock();
