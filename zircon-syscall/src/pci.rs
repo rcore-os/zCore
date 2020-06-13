@@ -108,8 +108,8 @@ impl Syscall<'_> {
         // that collide with architectural registers.
         #[cfg(target_arch = "x86_64")]
         {
-            let num_buses: u8 = addr_win.bus_end - addr_win.bus_start + 1;
-            let mut end: u64 = addr_win.base + num_buses as u64 * PCIE_ECAM_BYTES_PER_BUS as u64;
+            let num_buses = (addr_win.bus_end - addr_win.bus_start) as u64 + 1;
+            let mut end: u64 = addr_win.base + num_buses * PCIE_ECAM_BYTES_PER_BUS as u64;
             let high_limit: u64 = 0xfec0_0000;
             if end > high_limit {
                 end = high_limit;

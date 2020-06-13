@@ -997,11 +997,11 @@ impl PcieDevice {
         let log2 = u32::next_power_of_two(irq_num).trailing_zeros();
         assert!(log2 <= 5);
         let cfg = self.cfg.as_ref().unwrap();
-        let (std, msi) = inner.msi().unwrap();
-        let data_reg = std.base as usize + PciCapacityMsi::addr_offset(msi.is_64bit);
-        let mut val = cfg.read32_(data_reg as usize);
-        val = (val & !0x70) | ((log2 & 0x7) << 4);
-        cfg.write32_(data_reg, val);
+        let (std, _msi) = inner.msi().unwrap();
+        let ctrl_addr = std.base as usize + PciCapacityMsi::ctrl_offset();
+        let mut val = cfg.read16_(ctrl_addr);
+        val = (val & !0x70) | ((log2 as u16 & 0x7) << 4);
+        cfg.write16_(ctrl_addr, val);
     }
     fn set_msi_enb(&self, inner: &MutexGuard<PcieDeviceInner>, enable: bool) {
         let cfg = self.cfg.as_ref().unwrap();

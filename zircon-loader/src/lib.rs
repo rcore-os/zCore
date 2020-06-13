@@ -227,7 +227,7 @@ fn spawn(thread: Arc<Thread>) {
                     {
                         Ok(()) => {}
                         Err(e) => {
-                            error!("{:?}", e);
+                            error!("proc={:?} thread={:?} err={:?}", thread.proc().name(), thread.name(), e);
                             panic!("Page Fault from user mode {:#x?}", cx);
                         }
                     }

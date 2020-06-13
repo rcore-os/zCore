@@ -175,6 +175,7 @@ pub fn irq_remove_handle(irq: u8) -> bool {
 
 #[export_name = "hal_irq_allocate_block"]
 pub fn allocate_block(irq_num: u32) -> Option<(usize, usize)> {
+    info!("hal_irq_allocate_block: count={:#x?}",irq_num);
     let irq_num = u32::next_power_of_two(irq_num) as usize;
     let mut irq_start = 0x20;
     let mut irq_cur = irq_start;
@@ -183,13 +184,14 @@ pub fn allocate_block(irq_num: u32) -> Option<(usize, usize)> {
         if table[irq_cur].is_none() {
             irq_cur += 1;
         } else {
-            irq_start = (irq_cur & (irq_num - 1)) + irq_num;
+            irq_start = (irq_cur - irq_cur % irq_num) + irq_num;
             irq_cur = irq_start;
         }
     }
     for i in irq_start..irq_start + irq_num {
         table[i] = Some(Box::new(|| {}));
     }
+    info!("hal_irq_allocate_block: start={:#x?} num={:#x?}",irq_start, irq_num);
     Some((irq_start, irq_num))
 }
 
@@ -203,6 +205,7 @@ pub fn free_block(irq_start: u32, irq_num: u32) {
 
 #[export_name = "hal_irq_overwrite_handler"]
 pub fn overwrite_handler(msi_id: u32, handle: Box<dyn Fn() + Send + Sync>) -> bool {
+    info!("IRQ overwrite handle {:#x?}", msi_id);
     let mut table = IRQ_TABLE.lock();
     let set = table[msi_id as usize].is_none();
     table[msi_id as usize] = Some(handle);
