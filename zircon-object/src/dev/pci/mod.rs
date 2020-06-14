@@ -16,6 +16,7 @@ pub enum PciAddrSpace {
 }
 
 #[repr(C)]
+#[derive(Debug)]
 pub struct PciInitArgsAddrWindows {
     pub base: u64,
     pub size: usize,
