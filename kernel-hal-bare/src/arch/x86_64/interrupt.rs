@@ -175,7 +175,7 @@ pub fn irq_remove_handle(irq: u8) -> bool {
 
 #[export_name = "hal_irq_allocate_block"]
 pub fn allocate_block(irq_num: u32) -> Option<(usize, usize)> {
-    info!("hal_irq_allocate_block: count={:#x?}",irq_num);
+    info!("hal_irq_allocate_block: count={:#x?}", irq_num);
     let irq_num = u32::next_power_of_two(irq_num) as usize;
     let mut irq_start = 0x20;
     let mut irq_cur = irq_start;
@@ -191,7 +191,10 @@ pub fn allocate_block(irq_num: u32) -> Option<(usize, usize)> {
     for i in irq_start..irq_start + irq_num {
         table[i] = Some(Box::new(|| {}));
     }
-    info!("hal_irq_allocate_block: start={:#x?} num={:#x?}",irq_start, irq_num);
+    info!(
+        "hal_irq_allocate_block: start={:#x?} num={:#x?}",
+        irq_start, irq_num
+    );
     Some((irq_start, irq_num))
 }
 
