@@ -2,17 +2,17 @@
 
 use crate::error::*;
 use crate::fs::*;
+use alloc::vec::Vec;
 use alloc::{
     boxed::Box,
     string::String,
     sync::{Arc, Weak},
 };
-use core::mem::drop;
 use core::sync::atomic::AtomicI32;
 use hashbrown::HashMap;
 use kernel_hal::VirtAddr;
 use rcore_fs::vfs::{FileSystem, INode};
-use spin::{Mutex, MutexGuard};
+use spin::Mutex;
 use zircon_object::{
     object::{KernelObject, KoID, Signal},
     signal::Futex,
@@ -22,39 +22,38 @@ use zircon_object::{
 
 pub trait ProcessExt {
     fn create_linux(job: &Arc<Job>, rootfs: Arc<dyn FileSystem>) -> ZxResult<Arc<Self>>;
-    fn lock_linux(&self) -> MutexGuard<'_, LinuxProcess>;
+    fn linux(&self) -> &LinuxProcess;
     fn vfork_from(parent: &Arc<Self>) -> ZxResult<Arc<Self>>;
 }
 
 impl ProcessExt for Process {
     fn create_linux(job: &Arc<Job>, rootfs: Arc<dyn FileSystem>) -> ZxResult<Arc<Self>> {
-        let linux_proc = Mutex::new(LinuxProcess::new(rootfs));
+        let linux_proc = LinuxProcess::new(rootfs);
         Process::create_with_ext(job, "root", linux_proc)
     }
 
-    fn lock_linux(&self) -> MutexGuard<'_, LinuxProcess> {
-        self.ext()
-            .downcast_ref::<Mutex<LinuxProcess>>()
-            .unwrap()
-            .lock()
+    fn linux(&self) -> &LinuxProcess {
+        self.ext().downcast_ref::<LinuxProcess>().unwrap()
     }
 
     /// [Vfork] the process.
     ///
     /// [Vfork]: http://man7.org/linux/man-pages/man2/vfork.2.html
     fn vfork_from(parent: &Arc<Self>) -> ZxResult<Arc<Self>> {
-        let mut linux_parent = parent.lock_linux();
-        let new_linux_proc = Mutex::new(LinuxProcess {
-            cwd: linux_parent.cwd.clone(),
-            exec_path: linux_parent.exec_path.clone(),
-            files: linux_parent.files.clone(),
-            futexes: HashMap::new(),
+        let linux_parent = parent.linux();
+        let mut linux_parent_inner = linux_parent.inner.lock();
+        let new_linux_proc = LinuxProcess {
             root_inode: linux_parent.root_inode.clone(),
             parent: Arc::downgrade(parent),
-            children: HashMap::new(),
-        });
+            inner: Mutex::new(LinuxProcessInner {
+                execute_path: linux_parent_inner.execute_path.clone(),
+                current_working_directory: linux_parent_inner.current_working_directory.clone(),
+                files: linux_parent_inner.files.clone(),
+                ..Default::default()
+            }),
+        };
         let new_proc = Process::create_with_ext(&parent.job(), "", new_linux_proc)?;
-        linux_parent
+        linux_parent_inner
             .children
             .insert(new_proc.id(), new_proc.clone());
 
@@ -79,17 +78,17 @@ impl ProcessExt for Process {
 /// - the child was resumed by a signal. TODO
 pub async fn wait_child(proc: &Arc<Process>, pid: KoID, nonblock: bool) -> LxResult<ExitCode> {
     loop {
-        let mut linux_proc = proc.lock_linux();
-        let child = linux_proc.children.get(&pid).ok_or(LxError::ECHILD)?;
+        let mut inner = proc.linux().inner.lock();
+        let child = inner.children.get(&pid).ok_or(LxError::ECHILD)?;
         if let Status::Exited(code) = child.status() {
-            linux_proc.children.remove(&pid);
+            inner.children.remove(&pid);
             return Ok(code as ExitCode);
         }
         if nonblock {
             return Err(LxError::EAGAIN);
         }
         let child: Arc<dyn KernelObject> = child.clone();
-        drop(linux_proc);
+        drop(inner);
         child.wait_signal(Signal::PROCESS_TERMINATED).await;
     }
 }
@@ -97,17 +96,17 @@ pub async fn wait_child(proc: &Arc<Process>, pid: KoID, nonblock: bool) -> LxRes
 /// Wait for state changes in a child of the calling process.
 pub async fn wait_child_any(proc: &Arc<Process>, nonblock: bool) -> LxResult<(KoID, ExitCode)> {
     loop {
-        let mut linux_proc = proc.lock_linux();
-        if linux_proc.children.is_empty() {
+        let mut inner = proc.linux().inner.lock();
+        if inner.children.is_empty() {
             return Err(LxError::ECHILD);
         }
-        for (&pid, child) in linux_proc.children.iter() {
+        for (&pid, child) in inner.children.iter() {
             if let Status::Exited(code) = child.status() {
-                linux_proc.children.remove(&pid);
+                inner.children.remove(&pid);
                 return Ok((pid, code as ExitCode));
             }
         }
-        drop(linux_proc);
+        drop(inner);
         if nonblock {
             return Err(LxError::EAGAIN);
         }
@@ -118,18 +117,26 @@ pub async fn wait_child_any(proc: &Arc<Process>, nonblock: bool) -> LxResult<(Ko
 
 /// Linux specific process information.
 pub struct LinuxProcess {
-    /// Current Working Directory
-    pub cwd: String,
-    /// Execute path
-    pub exec_path: String,
-    /// Opened files
-    files: HashMap<FileDesc, Arc<dyn FileLike>>,
-    /// Futexes
-    futexes: HashMap<VirtAddr, Arc<Futex>>,
     /// The root INode of file system
     root_inode: Arc<dyn INode>,
     /// Parent process
     parent: Weak<Process>,
+    /// Inner
+    inner: Mutex<LinuxProcessInner>,
+}
+
+#[derive(Default)]
+struct LinuxProcessInner {
+    /// Execute path
+    execute_path: String,
+    /// Current Working Directory
+    ///
+    /// Omit leading '/'.
+    current_working_directory: String,
+    /// Opened files
+    files: HashMap<FileDesc, Arc<dyn FileLike>>,
+    /// Futexes
+    futexes: HashMap<VirtAddr, Arc<Futex>>,
     /// Child processes
     children: HashMap<KoID, Arc<Process>>,
 }
@@ -165,20 +172,21 @@ impl LinuxProcess {
         files.insert(2.into(), stdout);
 
         LinuxProcess {
-            cwd: String::from("/"),
-            exec_path: String::new(),
-            files,
-            futexes: Default::default(),
             root_inode: create_root_fs(rootfs),
             parent: Weak::default(),
-            children: HashMap::new(),
+            inner: Mutex::new(LinuxProcessInner {
+                files,
+                ..Default::default()
+            }),
         }
     }
 
     /// Get futex object.
     #[allow(unsafe_code)]
-    pub fn get_futex(&mut self, uaddr: VirtAddr) -> Arc<Futex> {
-        self.futexes
+    pub fn get_futex(&self, uaddr: VirtAddr) -> Arc<Futex> {
+        let mut inner = self.inner.lock();
+        inner
+            .futexes
             .entry(uaddr)
             .or_insert_with(|| {
                 // FIXME: check address
@@ -189,15 +197,17 @@ impl LinuxProcess {
     }
 
     /// Add a file to the file descriptor table.
-    pub fn add_file(&mut self, file: Arc<dyn FileLike>) -> LxResult<FileDesc> {
-        let fd = self.get_free_fd();
-        self.files.insert(fd, file);
+    pub fn add_file(&self, file: Arc<dyn FileLike>) -> LxResult<FileDesc> {
+        let mut inner = self.inner.lock();
+        let fd = inner.get_free_fd();
+        inner.files.insert(fd, file);
         Ok(fd)
     }
 
     /// Add a file to the file descriptor table at given `fd`.
-    pub fn add_file_at(&mut self, fd: FileDesc, file: Arc<dyn FileLike>) {
-        self.files.insert(fd, file);
+    pub fn add_file_at(&self, fd: FileDesc, file: Arc<dyn FileLike>) {
+        let mut inner = self.inner.lock();
+        inner.files.insert(fd, file);
     }
 
     /// Get the `File` with given `fd`.
@@ -211,19 +221,14 @@ impl LinuxProcess {
 
     /// Get the `FileLike` with given `fd`.
     pub fn get_file_like(&self, fd: FileDesc) -> LxResult<Arc<dyn FileLike>> {
-        self.files.get(&fd).cloned().ok_or(LxError::EBADF)
+        let inner = self.inner.lock();
+        inner.files.get(&fd).cloned().ok_or(LxError::EBADF)
     }
 
     /// Close file descriptor `fd`.
-    pub fn close_file(&mut self, fd: FileDesc) -> LxResult {
-        self.files.remove(&fd).map(|_| ()).ok_or(LxError::EBADF)
-    }
-
-    fn get_free_fd(&self) -> FileDesc {
-        (0usize..)
-            .map(|i| i.into())
-            .find(|fd| !self.files.contains_key(fd))
-            .unwrap()
+    pub fn close_file(&self, fd: FileDesc) -> LxResult {
+        let mut inner = self.inner.lock();
+        inner.files.remove(&fd).map(|_| ()).ok_or(LxError::EBADF)
     }
 
     /// Get root INode of the process.
@@ -234,5 +239,52 @@ impl LinuxProcess {
     /// Get parent process.
     pub fn parent(&self) -> Option<Arc<Process>> {
         self.parent.upgrade()
+    }
+
+    /// Get current working directory.
+    pub fn current_working_directory(&self) -> String {
+        String::from("/") + &self.inner.lock().current_working_directory
+    }
+
+    /// Change working directory.
+    pub fn change_directory(&self, path: &str) {
+        if path.is_empty() {
+            return;
+        }
+        let mut inner = self.inner.lock();
+        let cwd = match path.as_bytes()[0] {
+            b'/' => String::new(),
+            _ => inner.current_working_directory.clone(),
+        };
+        let mut cwd_vec: Vec<_> = cwd.split('/').filter(|x| !x.is_empty()).collect();
+        for seg in path.split('/') {
+            match seg {
+                ".." => {
+                    cwd_vec.pop();
+                }
+                "." | "" => {} // nothing to do here.
+                _ => cwd_vec.push(seg),
+            }
+        }
+        inner.current_working_directory = cwd_vec.join("/");
+    }
+
+    /// Get execute path.
+    pub fn execute_path(&self) -> String {
+        self.inner.lock().execute_path.clone()
+    }
+
+    /// Set execute path.
+    pub fn set_execute_path(&self, path: &str) {
+        self.inner.lock().execute_path = String::from(path);
+    }
+}
+
+impl LinuxProcessInner {
+    fn get_free_fd(&self) -> FileDesc {
+        (0usize..)
+            .map(|i| i.into())
+            .find(|fd| !self.files.contains_key(fd))
+            .unwrap()
     }
 }

@@ -11,7 +11,6 @@
 //! - readlink(at)
 
 use super::*;
-use alloc::vec::Vec;
 use bitflags::bitflags;
 use kernel_hal::user::UserOutPtr;
 use linux_object::fs::vfs::FileType;
@@ -19,11 +18,12 @@ use linux_object::fs::vfs::FileType;
 impl Syscall<'_> {
     pub fn sys_getcwd(&self, mut buf: UserOutPtr<u8>, len: usize) -> SysResult {
         info!("getcwd: buf={:?}, len={:#x}", buf, len);
-        let proc = self.lock_linux_process();
-        if proc.cwd.len() + 1 > len {
+        let proc = self.linux_process();
+        let cwd = proc.current_working_directory();
+        if cwd.len() + 1 > len {
             return Err(LxError::ERANGE);
         }
-        buf.write_cstring(&proc.cwd)?;
+        buf.write_cstring(&cwd)?;
         Ok(buf.as_ptr() as usize)
     }
 
@@ -31,39 +31,13 @@ impl Syscall<'_> {
         let path = path.read_cstring()?;
         info!("chdir: path={:?}", path);
 
-        let mut proc = self.lock_linux_process();
+        let proc = self.linux_process();
         let inode = proc.lookup_inode(&path)?;
         let info = inode.metadata()?;
         if info.type_ != FileType::Dir {
             return Err(LxError::ENOTDIR);
         }
-
-        // BUGFIX: '..' and '.'
-        if !path.is_empty() {
-            let cwd = match path.as_bytes()[0] {
-                b'/' => String::from("/"),
-                _ => proc.cwd.clone(),
-            };
-            let mut cwd_vec: Vec<_> = cwd.split('/').filter(|&x| x != "").collect();
-            let path_split = path.split('/').filter(|&x| x != "");
-            for seg in path_split {
-                if seg == ".." {
-                    cwd_vec.pop();
-                } else if seg == "." {
-                    // nothing to do here.
-                } else {
-                    cwd_vec.push(seg);
-                }
-            }
-            proc.cwd = String::from("");
-            for seg in cwd_vec {
-                proc.cwd.push_str("/");
-                proc.cwd.push_str(seg);
-            }
-            if proc.cwd == "" {
-                proc.cwd = String::from("/");
-            }
-        }
+        proc.change_directory(&path);
         Ok(0)
     }
 
@@ -80,7 +54,7 @@ impl Syscall<'_> {
         );
 
         let (dir_path, file_name) = split_path(&path);
-        let proc = self.lock_linux_process();
+        let proc = self.linux_process();
         let inode = proc.lookup_inode_at(dirfd, dir_path, true)?;
         if inode.find(file_name).is_ok() {
             return Err(LxError::EEXIST);
@@ -94,7 +68,7 @@ impl Syscall<'_> {
         info!("rmdir: path={:?}", path);
 
         let (dir_path, file_name) = split_path(&path);
-        let proc = self.lock_linux_process();
+        let proc = self.linux_process();
         let dir_inode = proc.lookup_inode(dir_path)?;
         let file_inode = dir_inode.find(file_name)?;
         if file_inode.metadata()?.type_ != FileType::Dir {
@@ -114,7 +88,7 @@ impl Syscall<'_> {
             "getdents64: fd={:?}, ptr={:?}, buf_size={}",
             fd, buf, buf_size
         );
-        let proc = self.lock_linux_process();
+        let proc = self.linux_process();
         let file = proc.get_file(fd)?;
         let info = file.metadata()?;
         if info.type_ != FileType::Dir {
@@ -157,7 +131,7 @@ impl Syscall<'_> {
             olddirfd, oldpath, newdirfd, newpath, flags
         );
 
-        let proc = self.lock_linux_process();
+        let proc = self.linux_process();
         let (new_dir_path, new_file_name) = split_path(&newpath);
         let inode = proc.lookup_inode_at(olddirfd, &oldpath, true)?;
         let new_dir_inode = proc.lookup_inode_at(newdirfd, new_dir_path, true)?;
@@ -177,7 +151,7 @@ impl Syscall<'_> {
             dirfd, path, flags
         );
 
-        let proc = self.lock_linux_process();
+        let proc = self.linux_process();
         let (dir_path, file_name) = split_path(&path);
         let dir_inode = proc.lookup_inode_at(dirfd, dir_path, true)?;
         let file_inode = dir_inode.find(file_name)?;
@@ -206,7 +180,7 @@ impl Syscall<'_> {
             olddirfd, oldpath, newdirfd, newpath
         );
 
-        let proc = self.lock_linux_process();
+        let proc = self.linux_process();
         let (old_dir_path, old_file_name) = split_path(&oldpath);
         let (new_dir_path, new_file_name) = split_path(&newpath);
         let old_dir_inode = proc.lookup_inode_at(olddirfd, old_dir_path, false)?;
@@ -232,7 +206,7 @@ impl Syscall<'_> {
             dirfd, path, base, len
         );
 
-        let proc = self.lock_linux_process();
+        let proc = self.linux_process();
         let inode = proc.lookup_inode_at(dirfd, &path, false)?;
         if inode.metadata()?.type_ != FileType::SymLink {
             return Err(LxError::EINVAL);

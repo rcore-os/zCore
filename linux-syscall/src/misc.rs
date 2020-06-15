@@ -49,7 +49,7 @@ impl Syscall<'_> {
         if op.contains(FutexFlags::PRIVATE) {
             warn!("process-shared futex is unimplemented");
         }
-        let futex = self.lock_linux_process().get_futex(uaddr);
+        let futex = self.linux_process().get_futex(uaddr);
         match op.bits & 0xf {
             0 => {
                 // FIXME: support timeout

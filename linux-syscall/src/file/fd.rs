@@ -19,7 +19,7 @@ impl Syscall<'_> {
         flags: usize,
         mode: usize,
     ) -> SysResult {
-        let mut proc = self.lock_linux_process();
+        let proc = self.linux_process();
         let path = path.read_cstring()?;
         let flags = OpenFlags::from_bits_truncate(flags);
         info!(
@@ -54,14 +54,14 @@ impl Syscall<'_> {
 
     pub fn sys_close(&self, fd: FileDesc) -> SysResult {
         info!("close: fd={:?}", fd);
-        let mut proc = self.lock_linux_process();
+        let proc = self.linux_process();
         proc.close_file(fd)?;
         Ok(0)
     }
 
     pub fn sys_dup2(&self, fd1: FileDesc, fd2: FileDesc) -> SysResult {
         info!("dup2: from {:?} to {:?}", fd1, fd2);
-        let mut proc = self.lock_linux_process();
+        let proc = self.linux_process();
         // close fd2 first if it is opened
         let _ = proc.close_file(fd2);
         let file_like = proc.get_file_like(fd1)?;

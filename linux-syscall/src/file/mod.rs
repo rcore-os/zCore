@@ -1,5 +1,4 @@
 use super::*;
-use alloc::string::String;
 use bitflags::bitflags;
 use linux_object::fs::vfs::{FileType, FsError};
 use linux_object::fs::*;

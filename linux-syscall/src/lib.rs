@@ -15,7 +15,6 @@ use {
     alloc::sync::Arc,
     kernel_hal::{user::*, GeneralRegs},
     linux_object::{error::*, fs::FileDesc, process::*},
-    spin::MutexGuard,
     zircon_object::{object::*, task::*, vm::VirtAddr},
 };
 
@@ -246,7 +245,7 @@ impl Syscall<'_> {
         self.thread.proc()
     }
 
-    fn lock_linux_process(&self) -> MutexGuard<'_, LinuxProcess> {
-        self.zircon_process().lock_linux()
+    fn linux_process(&self) -> &LinuxProcess {
+        self.zircon_process().linux()
     }
 }

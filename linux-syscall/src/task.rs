@@ -145,7 +145,7 @@ impl Syscall<'_> {
         // TODO: check and kill other threads
 
         // Read program file
-        let mut proc = self.lock_linux_process();
+        let proc = self.linux_process();
         let inode = proc.lookup_inode(&path)?;
         let data = inode.read_as_vec()?;
 
@@ -159,8 +159,7 @@ impl Syscall<'_> {
         let (entry, sp) = loader.load(&vmar, &data, args, envs)?;
 
         // Modify exec path
-        proc.exec_path = path.clone();
-        drop(proc);
+        proc.set_execute_path(&path);
 
         // TODO: use right signal
         self.zircon_process().signal_set(Signal::SIGNALED);
@@ -215,7 +214,7 @@ impl Syscall<'_> {
     /// Get the parent process ID.
     pub fn sys_getppid(&self) -> SysResult {
         info!("getppid:");
-        let proc = self.lock_linux_process();
+        let proc = self.linux_process();
         let ppid = proc.parent().map(|p| p.id()).unwrap_or(0);
         Ok(ppid as usize)
     }
