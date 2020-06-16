@@ -45,7 +45,7 @@ impl Syscall<'_> {
                     let mut bytes = front_msg.data.len();
                     #[allow(unsafe_code)]
                     unsafe {
-                        bytes = bytes + GLOBALTEST.len();
+                        bytes += GLOBALTEST.len();
                     }
                     actual_bytes.write_if_not_null(bytes as u32)?;
                     actual_handles.write_if_not_null(front_msg.handles.len() as u32)?;
