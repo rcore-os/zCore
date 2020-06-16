@@ -54,6 +54,10 @@ cd zCore && make run mode=release [graphic=on] [accel=1]
 
 To debug, set `RUST_LOG` environment variable to one of `error`, `warn`, `info`, `debug`, `trace`.
 
+## Auto test
+
+Auto test [README.md](auto-test/README.md)
+
 ## Components
 
 ### Overview
