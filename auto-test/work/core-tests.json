@@ -1,0 +1,29 @@
+{
+    "CoreTests":[
+        {
+            "TestCaseName":"BadAccessTest",
+            "TestArray": [
+                "InvalidMappedAddressFails",
+                "KernelMappedAddressChannelWriteFails",
+                "NormalMappedAddressChannelWriteSucceeds",
+                "SyscallNumTest",
+                "PciCfgPioRw",
+                "ChannelReadHandle"
+            ]
+        },
+        {
+            "TestCaseName":"Bti",
+            "TestArray": [
+                "Create",
+                "Pin",
+                "PinContiguous",
+                "PinContigFlag",
+                "Resize",
+                "Clone",
+                "GetInfoTest",
+                "NoDelayedUnpin",
+                "DecommitRace"
+            ]
+        }
+    ]
+}

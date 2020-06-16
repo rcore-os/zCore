@@ -172,7 +172,7 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
     // check: handle to root proc should be only
 
     let data =
-        Vec::from(cmdline.replace(':', "\0") + "\0console.shell=true\0virtcon.disable=true\0");
+        Vec::from(cmdline.replace(':', "\0")); // 目前看来都要追加在cmdline、就直接写在conf文件里了、
     let msg = MessagePacket { data, handles };
     kernel_channel.write(msg).unwrap();
 

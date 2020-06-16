@@ -1,0 +1,24 @@
+{
+    "CoreTests":[
+        {
+            "TestCaseName":"BadAccessTest",
+            "TestArray": [
+                "InvalidMappedAddressFails",
+                "KernelMappedAddressChannelWriteFails"
+            ]
+        },
+        {
+            "TestCaseName":"FutexTest",
+            "TestArray": [
+                "WaitValueMismatch",
+                "WaitTimeout",
+                "WaitTimeoutElapsed",
+                "WaitBadAddress",
+                "Wakeup",
+                "WakeupLimit",
+                "WakeupAddress",
+                "RequeueValueMismatch"
+            ]
+        }
+    ]
+}
