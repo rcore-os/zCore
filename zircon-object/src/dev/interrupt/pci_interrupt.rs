@@ -1,7 +1,7 @@
 use {super::super::pci::PCIE_IRQRET_MASK, super::super::IPciNode, super::*, spin::Mutex};
 
 pub struct PciInterrupt {
-    device: Arc<dyn IPciNode + Send + Sync>,
+    device: Arc<dyn IPciNode>,
     irq_id: usize,
     maskable: bool,
     inner: Mutex<PciInterruptInner>,
@@ -13,7 +13,7 @@ struct PciInterruptInner {
 }
 
 impl PciInterrupt {
-    pub fn new(device: Arc<dyn IPciNode + Send + Sync>, vector: u32, maskable: bool) -> Box<Self> {
+    pub fn new(device: Arc<dyn IPciNode>, vector: u32, maskable: bool) -> Box<Self> {
         // TODO check vector is a vaild IRQ number
         Box::new(PciInterrupt {
             device,

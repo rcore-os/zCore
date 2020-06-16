@@ -39,23 +39,21 @@ pub struct PciMsiBlock {
 }
 
 impl PciMsiBlock {
-    pub fn allocate_msi_block(irq_num: u32) -> ZxResult<Self> {
+    pub fn allocate(irq_num: u32) -> ZxResult<Self> {
         if irq_num == 0 || irq_num > 32 {
             return Err(ZxError::INVALID_ARGS);
         }
-        if let Some((start, size)) = InterruptManager::allocate_block(irq_num) {
-            Ok(PciMsiBlock {
-                target_addr: (0xFEE0_0000 | 0x08) & !0x4,
-                target_data: start as u32,
-                base_irq: start as u32,
-                num_irq: size as u32,
-                allocated: true,
-            })
-        } else {
-            Err(ZxError::NO_RESOURCES)
-        }
+        let (start, size) =
+            InterruptManager::allocate_block(irq_num).ok_or(ZxError::NO_RESOURCES)?;
+        Ok(PciMsiBlock {
+            target_addr: (0xFEE0_0000 | 0x08) & !0x4,
+            target_data: start as u32,
+            base_irq: start as u32,
+            num_irq: size as u32,
+            allocated: true,
+        })
     }
-    pub fn free_msi_block(&self) {
+    pub fn free(&self) {
         InterruptManager::free_block(self.base_irq, self.num_irq)
     }
     pub fn register_handler(&self, msi_id: u32, handle: Box<dyn Fn() + Send + Sync>) {

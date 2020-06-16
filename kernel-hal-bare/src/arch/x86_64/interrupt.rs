@@ -107,7 +107,10 @@ pub fn set_handle(global_irq: u32, handle: InterruptHandle) -> Option<u8> {
         handle
     };
     irq_add_handle(irq, new_handle).map(|x| {
-        warn!("mapping from {:#x?} to {:#x?}", global_irq, x);
+        info!(
+            "irq_set_handle: mapping from {:#x?} to {:#x?}",
+            global_irq, x
+        );
         ioapic.set_irq_vector(offset, x);
         x
     })
@@ -229,7 +232,7 @@ pub fn irq_enable(irq: u32) {
 }
 
 fn irq_enable_raw(irq: u8, vector: u8) {
-    warn!("irq_enable_raw: irq={:#x?}, vector={:#x?}", irq, vector);
+    info!("irq_enable_raw: irq={:#x?}, vector={:#x?}", irq, vector);
     let mut ioapic = unsafe { IoApic::new(phys_to_virt(super::IOAPIC_ADDR)) };
     ioapic.set_irq_vector(irq, vector);
     ioapic.enable(irq, 0)
@@ -252,7 +255,7 @@ pub fn irq_configure(
     level_trig: bool,
     active_high: bool,
 ) -> bool {
-    warn!(
+    info!(
         "irq_configure: irq={:#x?}, vector={:#x?}, dest={:#x?}, level_trig={:#x?}, active_high={:#x?}",
         global_irq, vector, dest, level_trig, active_high
     );

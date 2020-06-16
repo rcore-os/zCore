@@ -35,6 +35,7 @@ type Result<T> = core::result::Result<T, Error>;
 pub enum Error {
     InvalidUtf8,
     InvalidPointer,
+    BufferTooSmall,
 }
 
 impl<T, P: Policy> Debug for UserPtr<T, P> {
@@ -57,6 +58,13 @@ impl<T, P: Policy> From<usize> for UserPtr<T, P> {
 }
 
 impl<T, P: Policy> UserPtr<T, P> {
+    pub fn from_addr_size(addr: usize, size: usize) -> Result<Self> {
+        if size < core::mem::size_of::<T>() {
+            return Err(Error::BufferTooSmall);
+        }
+        Ok(Self::from(addr))
+    }
+
     pub fn is_null(&self) -> bool {
         self.ptr.is_null()
     }

@@ -14,7 +14,7 @@ pub struct PCIeBusDriver {
     pub(crate) mmio_lo: Arc<Mutex<RegionAllocator>>,
     pub(crate) mmio_hi: Arc<Mutex<RegionAllocator>>,
     pub(crate) pio_region: Arc<Mutex<RegionAllocator>>,
-    address_provider: Option<Arc<dyn PCIeAddressProvider + Sync + Send>>,
+    address_provider: Option<Arc<dyn PCIeAddressProvider>>,
     roots: BTreeMap<usize, Arc<PciRoot>>,
     state: PCIeBusDriverState,
     bus_topology: Mutex<()>,
@@ -42,9 +42,7 @@ impl PCIeBusDriver {
     pub fn sub_bus_region(base: u64, size: u64, aspace: PciAddrSpace) -> ZxResult {
         _INSTANCE.lock().sub_bus_region_inner(base, size, aspace)
     }
-    pub fn set_address_translation_provider(
-        provider: Arc<dyn PCIeAddressProvider + Sync + Send>,
-    ) -> ZxResult {
+    pub fn set_address_translation_provider(provider: Arc<dyn PCIeAddressProvider>) -> ZxResult {
         _INSTANCE
             .lock()
             .set_address_translation_provider_inner(provider)
@@ -57,12 +55,12 @@ impl PCIeBusDriver {
     pub fn start_bus_driver() -> ZxResult {
         _INSTANCE.lock().start_bus_driver_inner()
     }
-    pub fn get_nth_device(n: usize) -> ZxResult<(PcieDeviceInfo, PcieDeviceKObject)> {
+    pub fn get_nth_device(n: usize) -> ZxResult<(PcieDeviceInfo, Arc<PcieDeviceKObject>)> {
         let device_node = _INSTANCE
             .lock()
             .get_nth_device_inner(n)
             .ok_or(ZxError::OUT_OF_RANGE)?;
-        let device = device_node.device().unwrap();
+        let device = device_node.device();
         let info = PcieDeviceInfo {
             vendor_id: device.vendor_id,
             device_id: device.device_id,
@@ -102,7 +100,7 @@ impl PCIeBusDriver {
     }
     pub fn set_address_translation_provider_inner(
         &mut self,
-        provider: Arc<dyn PCIeAddressProvider + Sync + Send>,
+        provider: Arc<dyn PCIeAddressProvider>,
     ) -> ZxResult {
         if self.is_started(false) {
             return Err(ZxError::BAD_STATE);
@@ -177,7 +175,7 @@ impl PCIeBusDriver {
             PCIeBusDriverState::StartingScanning,
             PCIeBusDriverState::StartingRunningQuirks,
         )?;
-        error!("WARNING: Skip quirks");
+        warn!("pci: skip quirks");
         self.transfer_state(
             PCIeBusDriverState::StartingRunningQuirks,
             PCIeBusDriverState::StartingResourceAllocation,
@@ -215,7 +213,7 @@ impl PCIeBusDriver {
     #[allow(dead_code)]
     fn foreach_device<T, C>(&self, callback: &T, context: C) -> C
     where
-        T: Fn(Arc<dyn IPciNode + Send + Sync>, &mut C, usize) -> bool,
+        T: Fn(Arc<dyn IPciNode>, &mut C, usize) -> bool,
     {
         self.foreach_root(
             |root, ctx| {
@@ -229,13 +227,13 @@ impl PCIeBusDriver {
     #[allow(dead_code)]
     fn foreach_downstream<T, C>(
         &self,
-        upstream: Arc<dyn IPciNode + Send + Sync>,
+        upstream: Arc<dyn IPciNode>,
         level: usize,
         callback: &T,
         context: &mut C,
     ) -> bool
     where
-        T: Fn(Arc<dyn IPciNode + Send + Sync>, &mut C, usize) -> bool,
+        T: Fn(Arc<dyn IPciNode>, &mut C, usize) -> bool,
     {
         if level > 256 || upstream.as_upstream().is_none() {
             return true;
@@ -302,14 +300,9 @@ impl PCIeBusDriver {
         Some((cfg, paddr))
     }
 
-    pub fn link_device_to_upstream(
-        &self,
-        down: Arc<dyn IPciNode + Send + Sync>,
-        up: Weak<dyn IPciNode + Send + Sync>,
-    ) {
+    pub fn link_device_to_upstream(&self, down: Arc<dyn IPciNode>, up: Weak<dyn IPciNode>) {
         let _guard = self.bus_topology.lock();
-        let dev_down = down.device();
-        let dev = dev_down.as_ref().unwrap();
+        let dev = down.device();
         dev.set_upstream(up.clone());
         let up = up.upgrade().unwrap().as_upstream().unwrap();
         up.set_downstream(
@@ -333,7 +326,7 @@ impl PCIeBusDriver {
             .ok_or(ZxError::NO_RESOURCES)
     }
 
-    pub fn get_nth_device_inner(&self, n: usize) -> Option<Arc<dyn IPciNode + Send + Sync>> {
+    pub fn get_nth_device_inner(&self, n: usize) -> Option<Arc<dyn IPciNode>> {
         self.foreach_device(
             &|device, context: &mut (usize, Option<Arc<_>>), _level| {
                 if context.0 == 0 {
@@ -350,17 +343,13 @@ impl PCIeBusDriver {
     }
 }
 
-pub trait PCIeAddressProvider {
-    // Creates a config that corresponds to the type of the PcieAddressProvider.
+pub trait PCIeAddressProvider: Send + Sync {
+    /// Creates a config that corresponds to the type of the PcieAddressProvider.
     fn create_config(&self, addr: u64) -> Arc<PciConfig>;
+
     /// Accepts a PCI BDF triple and returns ZX_OK if it is able to translate it
     /// into an ECAM address.
-    fn translate(
-        &self,
-        bus_id: u8,
-        device_id: u8,
-        function_id: u8,
-    ) -> ZxResult<(PhysAddr, VirtAddr)>;
+    fn translate(&self, bus_id: u8, dev_id: u8, func_id: u8) -> ZxResult<(PhysAddr, VirtAddr)>;
 }
 
 #[derive(Default)]
@@ -470,24 +459,25 @@ pub struct PcieDeviceInfo {
 
 pub struct PcieDeviceKObject {
     base: KObjectBase,
-    pub device: Arc<dyn IPciNode + Send + Sync>,
-    pub irqs_avail_cnt: u32, // WARNING
-    pub irqs_maskable: bool, // WARNING
+    device: Arc<dyn IPciNode>,
+    irqs_avail_cnt: u32, // WARNING
+    irqs_maskable: bool, // WARNING
 }
 
 impl_kobject!(PcieDeviceKObject);
 
 impl PcieDeviceKObject {
-    pub fn new(device: Arc<dyn IPciNode + Send + Sync>) -> PcieDeviceKObject {
-        PcieDeviceKObject {
+    pub fn new(device: Arc<dyn IPciNode>) -> Arc<PcieDeviceKObject> {
+        Arc::new(PcieDeviceKObject {
             base: KObjectBase::new(),
             device,
             irqs_avail_cnt: 10,  // WARNING
             irqs_maskable: true, // WARNING
-        }
+        })
     }
+
     pub fn get_bar(&self, bar_num: u32) -> ZxResult<PcieBarInfo> {
-        let device = self.device.device().unwrap();
+        let device = self.device.device();
         device.get_bar(bar_num as usize).ok_or(ZxError::NOT_FOUND)
     }
 
@@ -496,5 +486,33 @@ impl PcieDeviceKObject {
             return Err(ZxError::INVALID_ARGS);
         }
         Interrupt::new_pci(self.device.clone(), irq as u32, self.irqs_maskable)
+    }
+
+    pub fn enable_mmio(&self) -> ZxResult {
+        self.device.device().enable_mmio(true)
+    }
+
+    pub fn enable_pio(&self) -> ZxResult {
+        self.device.device().enable_pio(true)
+    }
+
+    pub fn enable_master(&self, enable: bool) -> ZxResult {
+        self.device.device().enable_master(enable)
+    }
+
+    pub fn get_irq_mode_capabilities(&self, mode: PcieIrqMode) -> ZxResult<PcieIrqModeCaps> {
+        self.device.device().get_irq_mode_capabilities(mode)
+    }
+
+    pub fn set_irq_mode(&self, mode: PcieIrqMode, irq_count: u32) -> ZxResult {
+        self.device.device().set_irq_mode(mode, irq_count)
+    }
+
+    pub fn config_read(&self, offset: usize, width: usize) -> ZxResult<u32> {
+        self.device.device().config_read(offset, width)
+    }
+
+    pub fn config_write(&self, offset: usize, width: usize, val: u32) -> ZxResult {
+        self.device.device().config_write(offset, width, val)
     }
 }
