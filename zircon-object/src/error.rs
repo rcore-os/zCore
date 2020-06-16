@@ -234,6 +234,7 @@ impl From<Error> for ZxError {
         match e {
             Error::InvalidUtf8 => ZxError::INVALID_ARGS,
             Error::InvalidPointer => ZxError::INVALID_ARGS,
+            Error::BufferTooSmall => ZxError::BUFFER_TOO_SMALL,
         }
     }
 }

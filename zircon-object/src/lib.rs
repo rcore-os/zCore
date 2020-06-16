@@ -10,6 +10,7 @@
 #![feature(ptr_offset_from)]
 #![feature(range_is_empty)]
 #![feature(new_uninit)]
+#![feature(const_in_array_repeat_expressions)]
 
 extern crate alloc;
 

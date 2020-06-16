@@ -322,7 +322,7 @@ impl Syscall<'_> {
             Sys::INTERRUPT_DESTROY => self.sys_interrupt_destroy(a0 as _),
             Sys::INTERRUPT_WAIT => self.sys_interrupt_wait(a0 as _, a1.into()).await,
             Sys::IOPORTS_REQUEST => {
-                error!("Skip IOPORTS_REQUEST");
+                warn!("ioports.request: skip");
                 Ok(())
             }
             _ => {
@@ -330,19 +330,7 @@ impl Syscall<'_> {
                 Err(ZxError::NOT_SUPPORTED)
             }
         };
-        let level = if ret.is_ok() {
-            log::Level::Info
-        } else {
-            log::Level::Warn
-        };
-        log!(
-            level,
-            "{}|{} {:?} <= {:?}",
-            proc_name,
-            thread_name,
-            sys_type,
-            ret
-        );
+        info!("{}|{} {:?} <= {:?}", proc_name, thread_name, sys_type, ret);
         match ret {
             Ok(_) => 0,
             Err(err) => err as isize,
