@@ -8,12 +8,11 @@ use {
     },
 };
 
-static mut GLOBALTEST: Vec<u8> = Vec::new(); // mutex 需要 引入 spin 而整个库就这一处 static 好像 有些不划算 觉得 可以 不用？ 
-static mut OPEN:bool = false;                 // 这个在 不走 测试 时 要置false
+static mut GLOBALTEST: Vec<u8> = Vec::new(); // mutex 需要 引入 spin 而整个库就这一处 static 好像 有些不划算 觉得 可以 不用？
+static mut OPEN: bool = false; // 这个在 不走 测试 时 要置false
 impl Syscall<'_> {
     /// Read a message from a channel.
     #[allow(clippy::too_many_arguments)]
-    #[allow(unsafe_code)]
     pub fn sys_channel_read(
         &self,
         handle_value: HandleValue,
@@ -44,7 +43,10 @@ impl Syscall<'_> {
                     || num_handles < front_msg.handles.len() as u32
                 {
                     let mut bytes = front_msg.data.len();
-                    unsafe{bytes = bytes + GLOBALTEST.len();}
+                    #[allow(unsafe_code)]
+                    unsafe {
+                        bytes = bytes + GLOBALTEST.len();
+                    }
                     actual_bytes.write_if_not_null(bytes as u32)?;
                     actual_handles.write_if_not_null(front_msg.handles.len() as u32)?;
                     Err(ZxError::BUFFER_TOO_SMALL)
@@ -56,20 +58,19 @@ impl Syscall<'_> {
             channel.read()?
         };
 
+        #[allow(unsafe_code)]
         unsafe {
             // 固定的逻辑 基本 没有什么自由度
             if GLOBALTEST.is_empty() && OPEN {
-                let mut num = 3; // dummy number 指的是 
-                let mut temp_rev:Vec<u8> = Vec::new();
-                let mut temp:Vec<u8> = Vec::new();
+                let mut num = 3; // dummy number
+                let mut temp_rev: Vec<u8> = Vec::new();
+                let mut temp: Vec<u8> = Vec::new();
                 for &b in msg.data.iter().rev() {
-                    if b==0 
-                    {
-                        if num==0
-                        {
+                    if b == 0 {
+                        if num == 0 {
                             break;
                         }
-                        num-=1;
+                        num -= 1;
                     }
                     temp_rev.push(b);
                 }
@@ -84,7 +85,10 @@ impl Syscall<'_> {
         #[allow(clippy::naive_bytecount)]
         if handle_value == 3 && self.thread.proc().name() == "test/core/standalone-test" {
             let len = msg.data.len();
-            unsafe{msg.data.extend(GLOBALTEST.clone());}
+            #[allow(unsafe_code)]
+            unsafe {
+                msg.data.extend(GLOBALTEST.clone());
+            }
             #[repr(C)]
             #[derive(Debug)]
             struct ProcArgs {
@@ -101,8 +105,8 @@ impl Syscall<'_> {
             let header = unsafe { &mut *(msg.data.as_mut_ptr() as *mut ProcArgs) };
             header.args_off = len as u32;
             header.args_num = 3; // 因为 根据 目前 使用 方式 这里 总是 3、就直接 写死了
-            // 每次 调用 GLOBALTEST 都需要 unsafe 能省则省 就不打印了
-            //warn!("HACKED: test args = {:?}", test_args);
+                                 // 每次 调用 GLOBALTEST 都需要 unsafe 能省则省 就不打印了
+                                 // warn!("HACKED: test args = {:?}", test_args);
         }
 
         actual_bytes.write_if_not_null(msg.data.len() as u32)?;
