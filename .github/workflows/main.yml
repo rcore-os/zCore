@@ -60,7 +60,7 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - name: Pull prebuilt images
-      run: git lfs pull -X prebuilt/zircon/bringup.zbi
+      run: git lfs pull -X prebuilt/zircon/bringup.zbi prebuilt/zircon/core-tests.zbi
     - name: Prepare rootfs
       run: make rootfs
     - name: Test
