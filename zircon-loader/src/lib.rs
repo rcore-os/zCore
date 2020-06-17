@@ -47,8 +47,8 @@ pub struct Images<T: AsRef<[u8]>> {
 
 pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Process> {
     let job = Job::root();
-    let proc = Process::create(&job, "proc", 0).unwrap();
-    let thread = Thread::create(&proc, "thread", 0).unwrap();
+    let proc = Process::create(&job, "userboot", 0).unwrap();
+    let thread = Thread::create(&proc, "userboot", 0).unwrap();
     let resource = Resource::create(
         "root",
         ResourceKind::ROOT,
@@ -171,8 +171,7 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
 
     // check: handle to root proc should be only
 
-    let data =
-        Vec::from(cmdline.replace(':', "\0") + "\0console.shell=true\0virtcon.disable=true\0");
+    let data = Vec::from(cmdline.replace(':', "\0") + "\0");
     let msg = MessagePacket { data, handles };
     kernel_channel.write(msg).unwrap();
 
