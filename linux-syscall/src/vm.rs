@@ -97,7 +97,7 @@ bitflags! {
 
 impl MmapProt {
     fn to_flags(self) -> MMUFlags {
-        let mut flags = MMUFlags::empty();
+        let mut flags = MMUFlags::USER;
         if self.contains(MmapProt::READ) {
             flags |= MMUFlags::READ;
         }
@@ -108,7 +108,7 @@ impl MmapProt {
             flags |= MMUFlags::EXECUTE;
         }
         // FIXME: hack for unimplemented mprotect
-        if flags == MMUFlags::empty() {
+        if self.is_empty() {
             flags = MMUFlags::READ | MMUFlags::WRITE;
         }
         flags

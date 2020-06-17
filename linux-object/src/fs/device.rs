@@ -1,16 +1,13 @@
 //! Implement Device
 
-#![allow(dead_code)]
-
-use alloc::vec::Vec;
 use rcore_fs::dev::*;
 use spin::RwLock;
 
-pub struct MemBuf(RwLock<Vec<u8>>);
+pub struct MemBuf(RwLock<&'static mut [u8]>);
 
 impl MemBuf {
-    pub fn new(v: Vec<u8>) -> Self {
-        MemBuf(RwLock::new(v))
+    pub fn new(buf: &'static mut [u8]) -> Self {
+        MemBuf(RwLock::new(buf))
     }
 }
 
