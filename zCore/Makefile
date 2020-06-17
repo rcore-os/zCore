@@ -69,7 +69,7 @@ justrun: $(QEMU_DISK)
 
 build-test: build
 	cp ../prebuilt/zircon/core-tests.zbi $(ESP)/EFI/zCore/fuchsia.zbi
-	echo 'cmdline=LOG=warn:userboot=test/core/standalone-test:userboot.shutdown:core-tests=$(test_filter)' >> $(ESP)/EFI/boot/rboot.conf
+	echo 'cmdline=LOG=warn:userboot=test/core/standalone-test:userboot.shutdown:core-tests=$(test_filter)' >> $(ESP)/EFI/Boot/rboot.conf
 
 build: $(kernel_img)
 

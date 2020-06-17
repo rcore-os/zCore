@@ -1,5 +1,7 @@
 import pexpect
+import sys
 
+TIMEOUT = 300
 ZCORE_PATH = '../zCore'
 OUTPUT_FILE = 'test-output.txt'
 RESULT_FILE = 'test-result.txt'
@@ -11,8 +13,9 @@ with open(TEST_CASE_FILE, "r") as f:
     negative = [line[1:] for line in lines if line.startswith('-')]
     test_filter = (','.join(positive) + '-' + ','.join(negative)).replace('\n', '')
 
-child = pexpect.spawn("make -C %s test mode=release accel=1 test_filter='%s'" % (ZCORE_PATH, test_filter), timeout=120)
-child.logfile = open(OUTPUT_FILE, "wb")
+child = pexpect.spawn("make -C %s test mode=release test_filter='%s'" % (ZCORE_PATH, test_filter),
+                      timeout=TIMEOUT, encoding='utf-8')
+child.logfile = sys.stdout
 
 index = child.expect(['finished!', 'panicked', pexpect.EOF, pexpect.TIMEOUT])
 result = ['FINISHED', 'PANICKED', 'EOF', 'TIMEOUT'][index]
