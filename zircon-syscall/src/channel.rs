@@ -1,6 +1,6 @@
 use {
     super::*,
-    alloc::vec::Vec,
+    alloc::{string::String, vec::Vec},
     zircon_object::{
         ipc::{Channel, MessagePacket},
         object::{obj_type, HandleInfo},
@@ -8,8 +8,6 @@ use {
     },
 };
 
-static mut GLOBALTEST: Vec<u8> = Vec::new(); // mutex 需要 引入 spin 而整个库就这一处 static 好像 有些不划算 觉得 可以 不用？
-static mut OPEN: bool = false; // 这个在 不走 测试 时 要置false
 impl Syscall<'_> {
     /// Read a message from a channel.
     #[allow(clippy::too_many_arguments)]
@@ -34,19 +32,12 @@ impl Syscall<'_> {
         const MAY_DISCARD: u32 = 1;
         let never_discard = options & MAY_DISCARD == 0;
 
-        // let test_args = "test\0-f\0VmoClone2TestCase.ContiguousVmoPartialClone\0";
-        // let test_args = "";
-
         let mut msg = if never_discard {
             channel.check_and_read(|front_msg| {
                 if num_bytes < front_msg.data.len() as u32
                     || num_handles < front_msg.handles.len() as u32
                 {
-                    let mut bytes = front_msg.data.len();
-                    #[allow(unsafe_code)]
-                    unsafe {
-                        bytes += GLOBALTEST.len();
-                    }
+                    let bytes = front_msg.data.len() + TESTS_ARGS.lock().len();
                     actual_bytes.write_if_not_null(bytes as u32)?;
                     actual_handles.write_if_not_null(front_msg.handles.len() as u32)?;
                     Err(ZxError::BUFFER_TOO_SMALL)
@@ -58,56 +49,7 @@ impl Syscall<'_> {
             channel.read()?
         };
 
-        #[allow(unsafe_code)]
-        unsafe {
-            // 固定的逻辑 基本 没有什么自由度
-            if GLOBALTEST.is_empty() && OPEN {
-                let mut num = 3; // dummy number
-                let mut temp_rev: Vec<u8> = Vec::new();
-                let mut temp: Vec<u8> = Vec::new();
-                for &b in msg.data.iter().rev() {
-                    if b == 0 {
-                        if num == 0 {
-                            break;
-                        }
-                        num -= 1;
-                    }
-                    temp_rev.push(b);
-                }
-                for &b in temp_rev.iter().rev() {
-                    temp.push(b);
-                }
-                GLOBALTEST.extend_from_slice(temp.as_slice());
-            }
-        }
-
-        // HACK: pass arguments to standalone-test
-        #[allow(clippy::naive_bytecount)]
-        if handle_value == 3 && self.thread.proc().name() == "test/core/standalone-test" {
-            let len = msg.data.len();
-            #[allow(unsafe_code)]
-            unsafe {
-                msg.data.extend(GLOBALTEST.clone());
-            }
-            #[repr(C)]
-            #[derive(Debug)]
-            struct ProcArgs {
-                protocol: u32,
-                version: u32,
-                handle_info_off: u32,
-                args_off: u32,
-                args_num: u32,
-                environ_off: u32,
-                environ_num: u32,
-            }
-            #[allow(unsafe_code)]
-            #[allow(clippy::cast_ptr_alignment)]
-            let header = unsafe { &mut *(msg.data.as_mut_ptr() as *mut ProcArgs) };
-            header.args_off = len as u32;
-            header.args_num = 3; // 因为 根据 目前 使用 方式 这里 总是 3、就直接 写死了
-                                 // 每次 调用 GLOBALTEST 都需要 unsafe 能省则省 就不打印了
-                                 // warn!("HACKED: test args = {:?}", test_args);
-        }
+        hack_core_tests(handle_value, &self.thread.proc().name(), &mut msg.data);
 
         actual_bytes.write_if_not_null(msg.data.len() as u32)?;
         actual_handles.write_if_not_null(msg.handles.len() as u32)?;
@@ -375,4 +317,40 @@ pub struct HandleDisposition {
     type_: u32,
     rights: u32,
     result: i32,
+}
+
+static TESTS_ARGS: spin::Mutex<String> = spin::Mutex::new(String::new());
+
+/// HACK: pass arguments to standalone-test
+#[allow(clippy::naive_bytecount)]
+fn hack_core_tests(handle: HandleValue, thread_name: &str, data: &mut Vec<u8>) {
+    if handle == 3 && thread_name == "userboot" {
+        let cmdline = core::str::from_utf8(&data).unwrap();
+        for kv in cmdline.split('\0') {
+            if kv.starts_with("core-tests=") {
+                *TESTS_ARGS.lock() = format!("test\0-f\0{}\0", &kv[11..]);
+            }
+        }
+    } else if handle == 3 && thread_name == "test/core/standalone-test" {
+        let test_args = &*TESTS_ARGS.lock();
+        let len = data.len();
+        data.extend(test_args.bytes());
+        #[repr(C)]
+        #[derive(Debug)]
+        struct ProcArgs {
+            protocol: u32,
+            version: u32,
+            handle_info_off: u32,
+            args_off: u32,
+            args_num: u32,
+            environ_off: u32,
+            environ_num: u32,
+        }
+        #[allow(unsafe_code)]
+        #[allow(clippy::cast_ptr_alignment)]
+        let header = unsafe { &mut *(data.as_mut_ptr() as *mut ProcArgs) };
+        header.args_off = len as u32;
+        header.args_num = test_args.as_bytes().iter().filter(|&&b| b == 0).count() as u32;
+        warn!("HACKED: test args = {:?}", test_args);
+    }
 }

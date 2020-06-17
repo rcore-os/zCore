@@ -4,6 +4,7 @@ LOG ?=
 zbi_file ?= bringup
 graphic ?=
 accel ?=
+test_filter ?= *.*
 
 build_args := -Z build-std=core,alloc --target $(arch).json
 build_path := target/$(arch)/$(mode)
@@ -57,7 +58,7 @@ endif
 endif
 
 run: build justrun
-
+test: build-test justrun
 debug: build debugrun
 
 debugrun: $(QEMU_DISK)
@@ -66,15 +67,18 @@ debugrun: $(QEMU_DISK)
 justrun: $(QEMU_DISK)
 	$(qemu) $(qemu_opts)
 
+build-test: build
+	cp ../prebuilt/zircon/core-tests.zbi $(ESP)/EFI/zCore/fuchsia.zbi
+	echo 'cmdline=LOG=warn:userboot=test/core/standalone-test:userboot.shutdown:core-tests=$(test_filter)' >> $(ESP)/EFI/boot/rboot.conf
+
 build: $(kernel_img)
 
 $(kernel_img): kernel bootloader
-	mkdir -p $(ESP)/EFI/zCore $(ESP)/EFI/boot
-	cp ../rboot/target/x86_64-unknown-uefi/release/rboot.efi $(ESP)/EFI/boot/bootx64.efi
-	cp rboot.conf $(ESP)/EFI/boot/rboot.conf
+	mkdir -p $(ESP)/EFI/zCore $(ESP)/EFI/Boot
+	cp ../rboot/target/x86_64-unknown-uefi/release/rboot.efi $(ESP)/EFI/Boot/BootX64.efi
+	cp rboot.conf $(ESP)/EFI/Boot/rboot.conf
 	cp ../prebuilt/zircon/$(zbi_file).zbi $(ESP)/EFI/zCore/fuchsia.zbi
 	cp $(kernel) $(ESP)/EFI/zCore/zcore.elf
-	echo '\\EFI\\boot\\bootx64.efi' > $(ESP)/startup.nsh
 
 kernel:
 	echo Building zCore kenel

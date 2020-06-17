@@ -9,6 +9,7 @@ description = "Zircon syscalls implementation"
 
 [dependencies]
 log = "0.4"
+spin = "0.5"
 bitflags = "1.2"
 numeric-enum-macro = "0.2"
 zircon-object = { path = "../zircon-object" }
