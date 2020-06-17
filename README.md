@@ -54,9 +54,22 @@ cd zCore && make run mode=release [graphic=on] [accel=1]
 
 To debug, set `RUST_LOG` environment variable to one of `error`, `warn`, `info`, `debug`, `trace`.
 
-## Auto test
+## Testing
 
-Auto test [README.md](auto-test/README.md)
+Run Zircon official core-tests:
+
+```sh
+cd zCore && make test mode=release [accel=1] test_filter='Channel.*'
+```
+
+Run all (non-panicked) core-tests for CI:
+
+```sh
+pip3 install pexpect
+cd script && python3 core-tests.py
+```
+
+Check `test-result.txt` for results.
 
 ## Components
 
