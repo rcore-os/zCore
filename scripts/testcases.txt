@@ -20,15 +20,7 @@
 -Threads.Reading*State
 -Threads.WriteReadDebugRegisterState
 -Threads.DebugRegistersValidation
--Vmar.DestroyedVmarTest
--Vmar.InvalidArgsTest
--Vmar.NestedRegionPermsTest
--Vmar.ProtectOverDemandPagedTest
--Vmar.ProtectLargeUncomittedTest
--Vmar.UnmapLargeUncommittedTest
--Vmar.MapSpecificOverwriteTest
--Vmar.MapOverDestroyedTest
--Vmar.RangeOpCommitVmoPages
+-Vmar.*
 -VmoClone2TestCase.PinClonePages
 -VmoClone2TestCase.ContiguousVmo*
 -VmoCloneResizeTests.ContiguousVmoResize*

@@ -123,4 +123,3 @@ jobs:
           cd scripts
           pip3 install pexpect
           python3 core-tests.py
-          cat test-result.txt
