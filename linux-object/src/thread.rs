@@ -45,7 +45,7 @@ impl ThreadExt for Thread {
             info!("exit: do futex {:?} wake 1", clear_child_tid);
             clear_child_tid.write(0).unwrap();
             let uaddr = clear_child_tid.as_ptr() as VirtAddr;
-            let futex = self.proc().lock_linux().get_futex(uaddr);
+            let futex = self.proc().linux().get_futex(uaddr);
             futex.wake(1);
         }
         self.exit();

@@ -19,7 +19,7 @@ impl Syscall<'_> {
 
     pub fn sys_fstat(&self, fd: FileDesc, mut stat_ptr: UserOutPtr<Stat>) -> SysResult {
         info!("fstat: fd={:?}, stat_ptr={:?}", fd, stat_ptr);
-        let proc = self.lock_linux_process();
+        let proc = self.linux_process();
         let file = proc.get_file(fd)?;
         let stat = Stat::from(file.metadata()?);
         stat_ptr.write(stat)?;
@@ -40,7 +40,7 @@ impl Syscall<'_> {
             dirfd, path, stat_ptr, flags
         );
 
-        let proc = self.lock_linux_process();
+        let proc = self.linux_process();
         let follow = !flags.contains(AtFlags::SYMLINK_NOFOLLOW);
         let inode = proc.lookup_inode_at(dirfd, &path, follow)?;
         let stat = Stat::from(inode.metadata()?);

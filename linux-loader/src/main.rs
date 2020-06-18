@@ -17,9 +17,8 @@ async fn main() {
     let args: Vec<_> = std::env::args().skip(1).collect();
     let envs = vec!["PATH=/usr/sbin:/usr/bin:/sbin:/bin:/usr/x86_64-alpine-linux-musl/bin".into()];
 
-    let exec_path = args[0].clone();
     let hostfs = HostFS::new("rootfs");
-    let proc: Arc<dyn KernelObject> = run(&exec_path, args, envs, hostfs);
+    let proc: Arc<dyn KernelObject> = run(args, envs, hostfs);
     proc.wait_signal(Signal::PROCESS_TERMINATED).await;
 }
 
@@ -53,9 +52,8 @@ mod tests {
 
         let args: Vec<String> = cmdline.split(' ').map(|s| s.into()).collect();
         let envs = vec![]; // TODO
-        let exec_path = args[0].clone();
         let hostfs = HostFS::new("../rootfs");
-        let proc = run(&exec_path, args, envs, hostfs);
+        let proc = run(args, envs, hostfs);
         let proc: Arc<dyn KernelObject> = proc;
         proc.wait_signal(Signal::PROCESS_TERMINATED).await;
     }

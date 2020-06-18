@@ -5,6 +5,7 @@ use rcore_fs_devfs::{special::*, DevFS};
 use rcore_fs_mountfs::MountFS;
 use rcore_fs_ramfs::RamFS;
 
+pub use self::device::*;
 pub use self::file::*;
 pub use self::pseudo::*;
 pub use self::random::*;
@@ -143,11 +144,17 @@ impl LinuxProcess {
     ) -> LxResult<Arc<dyn INode>> {
         debug!(
             "lookup_inode_at: dirfd: {:?}, cwd: {:?}, path: {:?}, follow: {:?}",
-            dirfd, self.cwd, path, follow
+            dirfd,
+            self.current_working_directory(),
+            path,
+            follow
         );
         // hard code special path
         if path == "/proc/self/exe" {
-            return Ok(Arc::new(Pseudo::new(&self.exec_path, FileType::SymLink)));
+            return Ok(Arc::new(Pseudo::new(
+                &self.execute_path(),
+                FileType::SymLink,
+            )));
         }
         let (fd_dir_path, fd_name) = split_path(&path);
         if fd_dir_path == "/proc/self/fd" {
@@ -160,7 +167,7 @@ impl LinuxProcess {
         if dirfd == FileDesc::CWD {
             Ok(self
                 .root_inode()
-                .lookup(&self.cwd)?
+                .lookup(&self.current_working_directory())?
                 .lookup_follow(path, follow_max_depth)?)
         } else {
             let file = self.get_file(dirfd)?;

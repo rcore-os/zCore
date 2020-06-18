@@ -19,7 +19,6 @@ mod memory;
 use rboot::BootInfo;
 
 pub use memory::{hal_frame_alloc, hal_frame_dealloc, hal_pt_map_kernel};
-use zircon_loader::{run_userboot, Images};
 
 #[no_mangle]
 pub extern "C" fn _start(boot_info: &BootInfo) -> ! {
@@ -34,24 +33,41 @@ pub extern "C" fn _start(boot_info: &BootInfo) -> ! {
         smbios: boot_info.smbios_addr,
     });
 
-    let zbi_data = unsafe {
-        core::slice::from_raw_parts(
-            (boot_info.initramfs_addr + boot_info.physical_memory_offset) as *const u8,
+    let ramfs_data = unsafe {
+        core::slice::from_raw_parts_mut(
+            (boot_info.initramfs_addr + boot_info.physical_memory_offset) as *mut u8,
             boot_info.initramfs_size as usize,
         )
     };
-    main(zbi_data, boot_info.cmdline);
+    main(ramfs_data, boot_info.cmdline);
     unreachable!();
 }
 
-fn main(zbi_data: &[u8], cmdline: &str) {
+#[cfg(feature = "zircon")]
+fn main(ramfs_data: &[u8], cmdline: &str) {
+    use zircon_loader::{run_userboot, Images};
     let images = Images::<&[u8]> {
         userboot: include_bytes!("../../prebuilt/zircon/userboot.so"),
         vdso: include_bytes!("../../prebuilt/zircon/libzircon.so"),
         decompressor: include_bytes!("../../prebuilt/zircon/decompress-zstd.so"),
-        zbi: zbi_data,
+        zbi: ramfs_data,
     };
     let _proc = run_userboot(&images, cmdline);
+    executor::run();
+}
+
+#[cfg(feature = "linux")]
+fn main(ramfs_data: &'static mut [u8], _cmdline: &str) {
+    use alloc::sync::Arc;
+    use alloc::vec;
+    use linux_object::fs::MemBuf;
+
+    let args = vec!["/bin/busybox".into()];
+    let envs = vec!["PATH=/usr/sbin:/usr/bin:/sbin:/bin:/usr/x86_64-alpine-linux-musl/bin".into()];
+
+    let device = Arc::new(MemBuf::new(ramfs_data));
+    let rootfs = rcore_fs_sfs::SimpleFileSystem::open(device).unwrap();
+    let _proc = linux_loader::run(args, envs, rootfs);
     executor::run();
 }
 

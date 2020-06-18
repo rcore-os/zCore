@@ -9,7 +9,7 @@ extern crate log;
 
 use {
     alloc::{boxed::Box, string::String, sync::Arc, vec::Vec},
-    kernel_hal::GeneralRegs,
+    kernel_hal::{GeneralRegs, MMUFlags},
     linux_object::{
         fs::{vfs::FileSystem, INodeExt},
         loader::LinuxElfLoader,
@@ -20,12 +20,7 @@ use {
     zircon_object::task::*,
 };
 
-pub fn run(
-    exec_path: &str,
-    args: Vec<String>,
-    envs: Vec<String>,
-    rootfs: Arc<dyn FileSystem>,
-) -> Arc<Process> {
+pub fn run(args: Vec<String>, envs: Vec<String>, rootfs: Arc<dyn FileSystem>) -> Arc<Process> {
     let job = Job::root();
     let proc = Process::create_linux(&job, rootfs.clone()).unwrap();
     let thread = Thread::create_linux(&proc).unwrap();
@@ -37,7 +32,7 @@ pub fn run(
         stack_pages: 8,
         root_inode: rootfs.root_inode(),
     };
-    let inode = rootfs.root_inode().lookup(&exec_path).unwrap();
+    let inode = rootfs.root_inode().lookup(&args[0]).unwrap();
     let data = inode.read_as_vec().unwrap();
     let (entry, sp) = loader.load(&proc.vmar(), &data, args, envs).unwrap();
 
@@ -55,8 +50,30 @@ fn spawn(thread: Arc<Thread>) {
             trace!("go to user: {:#x?}", cx);
             kernel_hal::context_run(&mut cx);
             trace!("back from user: {:#x?}", cx);
-            assert_eq!(cx.trap_num, 0x100, "user interrupt still no support");
-            let exit = handle_syscall(&thread, &mut cx.general).await;
+            let mut exit = false;
+            match cx.trap_num {
+                0x100 => exit = handle_syscall(&thread, &mut cx.general).await,
+                0x20..=0x3f => {
+                    kernel_hal::InterruptManager::handle(cx.trap_num as u8);
+                    if cx.trap_num == 0x20 {
+                        kernel_hal::yield_now().await;
+                    }
+                }
+                0xe => {
+                    let flags = if cx.error_code & 0x2 == 0 {
+                        MMUFlags::READ
+                    } else {
+                        MMUFlags::WRITE
+                    };
+                    panic!(
+                        "Page Fault from user mode {:#x} {:#x?}\n{:#x?}",
+                        kernel_hal::fetch_fault_vaddr(),
+                        flags,
+                        cx
+                    );
+                }
+                _ => panic!("not supported interrupt from user mode. {:#x?}", cx),
+            }
             thread.end_running(cx);
             if exit {
                 break;

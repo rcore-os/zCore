@@ -8,6 +8,8 @@ edition = "2018"
 
 [features]
 graphic = []
+zircon = ["zircon-loader"]
+linux = ["linux-loader", "linux-object", "rcore-fs-sfs"]
 
 [profile.release]
 lto = true
@@ -23,8 +25,11 @@ lazy_static = { version = "1.4", features = ["spin_no_std" ] }
 bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator", rev = "03bd9909" }
 trapframe = "0.3.0"
 executor = { git = "https://github.com/rcore-os/executor.git", rev = "e8ffcfb" }
-zircon-loader = { path = "../zircon-loader", default-features = false }
 zircon-object = { path = "../zircon-object" }
+zircon-loader = { path = "../zircon-loader", default-features = false, optional = true }
+linux-loader = { path = "../linux-loader", default-features = false, optional = true }
+linux-object = { path = "../linux-object", default-features = false, optional = true }
+rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "e17b27b", optional = true }
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 x86_64 = "0.11"

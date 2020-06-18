@@ -1,8 +1,10 @@
-#![allow(dead_code, unsafe_code)]
+#![allow(unsafe_code)]
 
 use alloc::collections::btree_map::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
+use core::mem::{align_of, size_of};
+use core::ops::Deref;
 use core::ptr::null;
 
 pub struct ProcInitInfo {
@@ -12,8 +14,8 @@ pub struct ProcInitInfo {
 }
 
 impl ProcInitInfo {
-    pub unsafe fn push_at(&self, stack_top: usize) -> usize {
-        let mut writer = StackWriter { sp: stack_top };
+    pub fn push_at(&self, stack_top: usize) -> Stack {
+        let mut writer = Stack::new(stack_top);
         // from stack_top:
         // program name
         writer.push_str(&self.args[0]);
@@ -48,27 +50,50 @@ impl ProcInitInfo {
         writer.push_slice(argv.as_slice());
         // argc
         writer.push_slice(&[argv.len()]);
-        writer.sp
+        writer
     }
 }
 
-struct StackWriter {
+pub struct Stack {
     sp: usize,
+    stack_top: usize,
+    data: Vec<u8>,
 }
 
-impl StackWriter {
+impl Stack {
+    fn new(sp: usize) -> Self {
+        let mut data = Vec::with_capacity(0x4000);
+        unsafe {
+            data.set_len(0x4000);
+        }
+        Stack {
+            sp,
+            stack_top: sp,
+            data,
+        }
+    }
     fn push_slice<T: Copy>(&mut self, vs: &[T]) {
-        use core::{
-            mem::{align_of, size_of},
-            slice,
-        };
         self.sp -= vs.len() * size_of::<T>();
         self.sp -= self.sp % align_of::<T>();
-        unsafe { slice::from_raw_parts_mut(self.sp as *mut T, vs.len()) }.copy_from_slice(vs);
+        assert!(self.stack_top - self.sp <= self.data.len());
+        let offset = self.data.len() - (self.stack_top - self.sp);
+        unsafe {
+            core::slice::from_raw_parts_mut(self.data.as_mut_ptr().add(offset) as *mut T, vs.len())
+        }
+        .copy_from_slice(vs);
     }
     fn push_str(&mut self, s: &str) {
         self.push_slice(&[b'\0']);
         self.push_slice(s.as_bytes());
+    }
+}
+
+impl Deref for Stack {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        let offset = self.data.len() - (self.stack_top - self.sp);
+        &self.data[offset..]
     }
 }
 

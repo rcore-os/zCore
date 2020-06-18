@@ -35,7 +35,7 @@ impl Syscall<'_> {
             let addr = vmar.map(vmar_offset, vmo.clone(), 0, vmo.len(), prot.to_flags())?;
             Ok(addr)
         } else {
-            let file = self.lock_linux_process().get_file(fd)?;
+            let file = self.linux_process().get_file(fd)?;
             let mut buf = vec![0; len];
             let len = file.read_at(offset, &mut buf)?;
             let vmo = VmObject::new_paged(pages(len));
@@ -97,7 +97,7 @@ bitflags! {
 
 impl MmapProt {
     fn to_flags(self) -> MMUFlags {
-        let mut flags = MMUFlags::empty();
+        let mut flags = MMUFlags::USER;
         if self.contains(MmapProt::READ) {
             flags |= MMUFlags::READ;
         }
@@ -108,7 +108,7 @@ impl MmapProt {
             flags |= MMUFlags::EXECUTE;
         }
         // FIXME: hack for unimplemented mprotect
-        if flags == MMUFlags::empty() {
+        if self.is_empty() {
             flags = MMUFlags::READ | MMUFlags::WRITE;
         }
         flags

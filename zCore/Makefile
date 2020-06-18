@@ -1,9 +1,9 @@
 arch ?= x86_64
 mode ?= debug
-LOG ?=
 zbi_file ?= bringup
 graphic ?=
 accel ?=
+linux ?=
 test_filter ?= *.*
 
 build_args := -Z build-std=core,alloc --target $(arch).json
@@ -19,6 +19,12 @@ QEMU_DISK := $(build_path)/disk.qcow2
 
 ifeq ($(mode), release)
 	build_args += --release
+endif
+
+ifeq ($(linux), 1)
+	build_args += --features linux
+else
+	build_args += --features zircon
 endif
 
 qemu_opts := \
@@ -77,7 +83,11 @@ $(kernel_img): kernel bootloader
 	mkdir -p $(ESP)/EFI/zCore $(ESP)/EFI/Boot
 	cp ../rboot/target/x86_64-unknown-uefi/release/rboot.efi $(ESP)/EFI/Boot/BootX64.efi
 	cp rboot.conf $(ESP)/EFI/Boot/rboot.conf
+ifeq ($(linux), 1)
+	cp x86_64.img $(ESP)/EFI/zCore/fuchsia.zbi
+else
 	cp ../prebuilt/zircon/$(zbi_file).zbi $(ESP)/EFI/zCore/fuchsia.zbi
+endif
 	cp $(kernel) $(ESP)/EFI/zCore/zcore.elf
 
 kernel:

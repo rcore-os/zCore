@@ -14,7 +14,7 @@ use super::*;
 impl Syscall<'_> {
     pub fn sys_read(&self, fd: FileDesc, mut base: UserOutPtr<u8>, len: usize) -> SysResult {
         info!("read: fd={:?}, base={:?}, len={:#x}", fd, base, len);
-        let proc = self.lock_linux_process();
+        let proc = self.linux_process();
         let file_like = proc.get_file_like(fd)?;
         let mut buf = vec![0u8; len];
         let len = file_like.read(&mut buf)?;
@@ -24,7 +24,7 @@ impl Syscall<'_> {
 
     pub fn sys_write(&self, fd: FileDesc, base: UserInPtr<u8>, len: usize) -> SysResult {
         info!("write: fd={:?}, base={:?}, len={:#x}", fd, base, len);
-        let proc = self.lock_linux_process();
+        let proc = self.linux_process();
         let buf = base.read_array(len)?;
         let file_like = proc.get_file_like(fd)?;
         let len = file_like.write(&buf)?;
@@ -42,7 +42,7 @@ impl Syscall<'_> {
             "pread: fd={:?}, base={:?}, len={}, offset={}",
             fd, base, len, offset
         );
-        let proc = self.lock_linux_process();
+        let proc = self.linux_process();
         let file_like = proc.get_file_like(fd)?;
         let mut buf = vec![0u8; len];
         let len = file_like.read_at(offset, &mut buf)?;
@@ -61,7 +61,7 @@ impl Syscall<'_> {
             "pwrite: fd={:?}, base={:?}, len={}, offset={}",
             fd, base, len, offset
         );
-        let proc = self.lock_linux_process();
+        let proc = self.linux_process();
         let buf = base.read_array(len)?;
         let file_like = proc.get_file_like(fd)?;
         let len = file_like.write_at(offset, &buf)?;
@@ -76,7 +76,7 @@ impl Syscall<'_> {
     ) -> SysResult {
         info!("readv: fd={:?}, iov={:?}, count={}", fd, iov_ptr, iov_count);
         let mut iovs = IoVecs::new(iov_ptr, iov_count)?;
-        let proc = self.lock_linux_process();
+        let proc = self.linux_process();
         let file_like = proc.get_file_like(fd)?;
         let mut buf = vec![0u8; iovs.total_len()];
         let len = file_like.read(&mut buf)?;
@@ -96,7 +96,7 @@ impl Syscall<'_> {
         );
         let iovs = IoVecs::new(iov_ptr, iov_count)?;
         let buf = iovs.read_to_vec()?;
-        let proc = self.lock_linux_process();
+        let proc = self.linux_process();
         let file_like = proc.get_file_like(fd)?;
         let len = file_like.write(&buf)?;
         Ok(len)
@@ -115,7 +115,7 @@ impl Syscall<'_> {
         };
         info!("lseek: fd={:?}, pos={:?}", fd, pos);
 
-        let proc = self.lock_linux_process();
+        let proc = self.linux_process();
         let file = proc.get_file(fd)?;
         let offset = file.seek(pos)?;
         Ok(offset as usize)
@@ -124,14 +124,14 @@ impl Syscall<'_> {
     pub fn sys_truncate(&self, path: UserInPtr<u8>, len: usize) -> SysResult {
         let path = path.read_cstring()?;
         info!("truncate: path={:?}, len={}", path, len);
-        let proc = self.lock_linux_process();
+        let proc = self.linux_process();
         proc.lookup_inode(&path)?.resize(len)?;
         Ok(0)
     }
 
     pub fn sys_ftruncate(&self, fd: FileDesc, len: usize) -> SysResult {
         info!("ftruncate: fd={:?}, len={}", fd, len);
-        let proc = self.lock_linux_process();
+        let proc = self.linux_process();
         proc.get_file(fd)?.set_len(len as u64)?;
         Ok(0)
     }
@@ -159,7 +159,7 @@ impl Syscall<'_> {
             "copy_file_range: in={:?}, out={:?}, in_offset={:?}, out_offset={:?}, count={}, flags={}",
             in_fd, out_fd, in_offset, out_offset, count, flags
         );
-        let proc = self.lock_linux_process();
+        let proc = self.linux_process();
         let in_file = proc.get_file(in_fd)?;
         let out_file = proc.get_file(out_fd)?;
         let mut buffer = [0u8; 1024];
@@ -225,21 +225,21 @@ impl Syscall<'_> {
 
     pub fn sys_sync(&self) -> SysResult {
         info!("sync:");
-        let proc = self.lock_linux_process();
+        let proc = self.linux_process();
         proc.root_inode().fs().sync()?;
         Ok(0)
     }
 
     pub fn sys_fsync(&self, fd: FileDesc) -> SysResult {
         info!("fsync: fd={:?}", fd);
-        let proc = self.lock_linux_process();
+        let proc = self.linux_process();
         proc.get_file(fd)?.sync_all()?;
         Ok(0)
     }
 
     pub fn sys_fdatasync(&self, fd: FileDesc) -> SysResult {
         info!("fdatasync: fd={:?}", fd);
-        let proc = self.lock_linux_process();
+        let proc = self.linux_process();
         proc.get_file(fd)?.sync_data()?;
         Ok(0)
     }
@@ -255,14 +255,14 @@ impl Syscall<'_> {
             "ioctl: fd={:?}, request={:#x}, args=[{:#x}, {:#x}, {:#x}]",
             fd, request, arg1, arg2, arg3
         );
-        let proc = self.lock_linux_process();
+        let proc = self.linux_process();
         let file_like = proc.get_file_like(fd)?;
         file_like.ioctl(request, arg1, arg2, arg3)
     }
 
     pub fn sys_fcntl(&self, fd: FileDesc, cmd: usize, arg: usize) -> SysResult {
         info!("fcntl: fd={:?}, cmd={:x}, arg={}", fd, cmd, arg);
-        let proc = self.lock_linux_process();
+        let proc = self.linux_process();
         let file_like = proc.get_file_like(fd)?;
         file_like.fcntl(cmd, arg)
     }
@@ -285,7 +285,7 @@ impl Syscall<'_> {
             "faccessat: dirfd={:?}, path={:?}, mode={:#o}, flags={:?}",
             dirfd, path, mode, flags
         );
-        let proc = self.lock_linux_process();
+        let proc = self.linux_process();
         let follow = !flags.contains(AtFlags::SYMLINK_NOFOLLOW);
         let _inode = proc.lookup_inode_at(dirfd, &path, follow)?;
         Ok(0)
