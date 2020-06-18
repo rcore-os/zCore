@@ -21,9 +21,6 @@
 -Threads.WriteReadDebugRegisterState
 -Threads.DebugRegistersValidation
 -Vmar.*
--VmoClone2TestCase.PinClonePages
--VmoClone2TestCase.ContiguousVmo*
--VmoCloneResizeTests.ContiguousVmoResize*
 -VmoTestCase.ReadOnlyMap
 -VmoTestCase.NoPermMap
 -VmoTestCase.NoPermProtect
