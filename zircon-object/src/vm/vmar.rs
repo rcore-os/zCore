@@ -475,6 +475,29 @@ impl VmAddressRegion {
         }
     }
 
+    pub fn clone_map(&self, root: Arc<Self>) -> ZxResult {
+        // let root = Self::new_root();
+        let mut guard = self.inner.lock();
+        let inner = guard.as_mut().unwrap();
+
+        root.allocate_at(0, self.size, self.flags, PAGE_SIZE)?;
+
+        let mut tmp_mappings: Vec<Arc<VmMapping>> = Vec::new();
+        
+        for map in inner.mappings.iter() {
+            let addr = map.inner.lock().addr;
+            let size = map.inner.lock().size;
+            let vmo = map.vmo.clone();
+            let vmo_offset = map.inner.lock().vmo_offset;
+            let flags = map.flags;
+            let mapping = VmMapping::new(addr, size, vmo, vmo_offset, flags, root.page_table.clone());
+            mapping.map()?;
+            tmp_mappings.push(mapping);
+        }
+        inner.mappings.extend(tmp_mappings);
+        Ok(())
+    }
+
     pub fn get_task_stats(&self) -> TaskStatsInfo {
         let mut task_stats = TaskStatsInfo::default();
         self.for_each_mapping(&mut |map| map.fill_in_task_status(&mut task_stats));

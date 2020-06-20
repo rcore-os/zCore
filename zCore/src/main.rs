@@ -61,7 +61,10 @@ fn main(ramfs_data: &'static mut [u8], _cmdline: &str) {
     use alloc::vec;
     use linux_object::fs::MemBuf;
 
-    let args = vec!["/bin/busybox".into()];
+    let args = ["/bin/busybox", "sh", "-c", "/bin/busybox ls"]
+        .iter()
+        .map(|&s| s.into())
+        .collect();
     let envs = vec!["PATH=/usr/sbin:/usr/bin:/sbin:/bin:/usr/x86_64-alpine-linux-musl/bin".into()];
 
     let device = Arc::new(MemBuf::new(ramfs_data));

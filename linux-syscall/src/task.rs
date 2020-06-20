@@ -9,8 +9,15 @@ use linux_object::thread::ThreadExt;
 impl Syscall<'_> {
     /// Fork the current process. Return the child's PID.
     pub async fn sys_fork(&self) -> SysResult {
-        warn!("fork: not supported! go to vfork");
-        self.sys_vfork().await
+        info!("fork:");
+        let new_proc = Process::fork_from(self.zircon_process())?;
+        let new_thread = Thread::create_linux(&new_proc)?;
+        new_thread.start_with_regs(GeneralRegs::new_fork(self.regs), self.spawn_fn)?;
+
+        let new_proc: Arc<dyn KernelObject> = new_proc;
+        info!("fork: {} -> {}", self.zircon_process().id(), new_proc.id());
+        new_proc.wait_signal(Signal::SIGNALED).await; // wait for execve
+        Ok(new_proc.id() as usize)
     }
 
     pub async fn sys_vfork(&self) -> SysResult {
