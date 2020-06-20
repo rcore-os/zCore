@@ -234,7 +234,7 @@ impl VMObjectTrait for VMObjectPaged {
             //let paddr = self.commit_page(block.block, MMUFlags::READ)?;
             if block.len() == PAGE_SIZE && !inner.is_contiguous() {
                 let _ = inner.commit_page(block.block, MMUFlags::WRITE)?;
-                unwanted.push_back(block.block);
+                unwanted.push_back(block.block + inner.parent_offset / PAGE_SIZE);
                 inner.frames.remove(&block.block);
             } else if inner.committed_pages_in_range(block.block, block.block + 1) != 0 {
                 // check whether this page is initialized, otherwise nothing should be done
@@ -242,7 +242,7 @@ impl VMObjectTrait for VMObjectPaged {
                 kernel_hal::frame_zero_in_range(paddr, block.begin, block.end);
             }
         }
-        inner.release_unwanted_pages(unwanted);
+        inner.release_unwanted_pages_in_parent(unwanted);
         Ok(())
     }
 
@@ -546,13 +546,9 @@ impl VMObjectPagedInner {
                 self.frames.insert(page_idx, PageState::new(target_frame));
             } else {
                 // recursively find a frame in parent
-                let parent = self.parent.as_ref().unwrap();
+                let mut parent = self.parent.as_ref().unwrap().inner.borrow_mut();
                 let parent_idx = page_idx + self.parent_offset / PAGE_SIZE;
-                match parent.inner.borrow_mut().commit_page_internal(
-                    parent_idx,
-                    flags,
-                    &self.self_ref,
-                )? {
+                match parent.commit_page_internal(parent_idx, flags, &self.self_ref)? {
                     CommitResult::NewPage(frame) if !self.type_.is_hidden() => {
                         self.frames.insert(page_idx, PageState::new(frame));
                     }
@@ -562,7 +558,7 @@ impl VMObjectPagedInner {
                         // In order to make sure original vmo (now is a child of hidden parent)
                         // owns physically contiguous frames, swap the new frame with the original
                         if self.contiguous {
-                            let mut parent_inner = parent.inner.borrow_mut();
+                            let mut parent_inner = parent;
                             if let Some(par_frame) = parent_inner.frames.get_mut(&parent_idx) {
                                 par_frame.swap(&mut new_frame);
                             }
@@ -705,6 +701,7 @@ impl VMObjectPagedInner {
             }
             let idx = key - start;
             if !child.frames.contains_key(&idx) && value.tag != tag.negate() {
+                value.tag = PageStateTag::Owned;
                 child.frames.insert(idx, value);
             }
         }
@@ -850,7 +847,7 @@ impl VMObjectPagedInner {
             }
         }
 
-        self.release_unwanted_pages(unwanted);
+        self.release_unwanted_pages_in_parent(unwanted);
 
         if old_id == self.user_id {
             let mut option_parent = self.parent.clone();
@@ -901,7 +898,7 @@ impl VMObjectPagedInner {
             (self.committed_pages_in_range(0, self.size / PAGE_SIZE) * PAGE_SIZE) as u64;
     }
 
-    fn release_unwanted_pages(&mut self, mut unwanted: VecDeque<usize>) {
+    fn release_unwanted_pages_in_parent(&mut self, mut unwanted: VecDeque<usize>) {
         let mut option_parent = self.parent.clone();
         let mut child = self.self_ref.clone();
         while let Some(parent) = option_parent {
@@ -962,10 +959,10 @@ impl VMObjectPagedInner {
             for i in new_size / PAGE_SIZE..self.size / PAGE_SIZE {
                 self.decommit(i);
                 if parent_end > i {
-                    unwanted.push_back(i);
+                    unwanted.push_back(i + self.parent_offset / PAGE_SIZE);
                 }
             }
-            self.release_unwanted_pages(unwanted);
+            self.release_unwanted_pages_in_parent(unwanted);
             if new_size < self.parent_limit - self.parent_offset {
                 self.parent_limit = self.parent_offset + new_size;
             }
