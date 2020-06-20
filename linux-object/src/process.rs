@@ -23,8 +23,7 @@ use zircon_object::{
 pub trait ProcessExt {
     fn create_linux(job: &Arc<Job>, rootfs: Arc<dyn FileSystem>) -> ZxResult<Arc<Self>>;
     fn linux(&self) -> &LinuxProcess;
-    fn fork_from(parent: &Arc<Self>) -> ZxResult<Arc<Self>>;
-    fn vfork_from(parent: &Arc<Self>) -> ZxResult<Arc<Self>>;
+    fn fork_from(parent: &Arc<Self>, vfork: bool) -> ZxResult<Arc<Self>>;
 }
 
 impl ProcessExt for Process {
@@ -37,44 +36,10 @@ impl ProcessExt for Process {
         self.ext().downcast_ref::<LinuxProcess>().unwrap()
     }
 
-    /// [fork] the process.
+    /// [Fork] the process.
     ///
-    /// [fork]: http://man7.org/linux/man-pages/man2/fork.2.html
-    fn fork_from(parent: &Arc<Self>) -> ZxResult<Arc<Self>> {
-        let linux_parent = parent.linux();
-        let mut linux_parent_inner = linux_parent.inner.lock();
-        let new_linux_proc = LinuxProcess {
-            root_inode: linux_parent.root_inode.clone(),
-            parent: Arc::downgrade(parent),
-            inner: Mutex::new(LinuxProcessInner {
-                execute_path: linux_parent_inner.execute_path.clone(),
-                current_working_directory: linux_parent_inner.current_working_directory.clone(),
-                files: linux_parent_inner.files.clone(),
-                ..Default::default()
-            }),
-        };
-        let new_proc = Process::create_with_ext(&parent.job().create_child(0)?, "", new_linux_proc)?;
-        parent.vmar().clone_map(new_proc.vmar())?;
-
-        linux_parent_inner
-            .children
-            .insert(new_proc.id(), new_proc.clone());
-
-        // notify parent on terminated
-        let parent = parent.clone();
-        new_proc.add_signal_callback(Box::new(move |signal| {
-            if signal.contains(Signal::PROCESS_TERMINATED) {
-                parent.signal_set(Signal::SIGCHLD);
-            }
-            false
-        }));
-        Ok(new_proc)
-    }
-
-    /// [Vfork] the process.
-    ///
-    /// [Vfork]: http://man7.org/linux/man-pages/man2/vfork.2.html
-    fn vfork_from(parent: &Arc<Self>) -> ZxResult<Arc<Self>> {
+    /// [Fork]: http://man7.org/linux/man-pages/man2/fork.2.html
+    fn fork_from(parent: &Arc<Self>, vfork: bool) -> ZxResult<Arc<Self>> {
         let linux_parent = parent.linux();
         let mut linux_parent_inner = linux_parent.inner.lock();
         let new_linux_proc = LinuxProcess {
@@ -91,6 +56,9 @@ impl ProcessExt for Process {
         linux_parent_inner
             .children
             .insert(new_proc.id(), new_proc.clone());
+        if !vfork {
+            new_proc.vmar().fork_from(&parent.vmar())?;
+        }
 
         // notify parent on terminated
         let parent = parent.clone();

@@ -475,27 +475,11 @@ impl VmAddressRegion {
         }
     }
 
-    pub fn clone_map(&self, root: Arc<Self>) -> ZxResult {
-        // let root = Self::new_root();
+    /// Clone the entire address space and VMOs from source VMAR. (For Linux fork)
+    pub fn fork_from(&self, src: &Arc<Self>) -> ZxResult {
         let mut guard = self.inner.lock();
         let inner = guard.as_mut().unwrap();
-
-        root.allocate_at(0, self.size, self.flags, PAGE_SIZE)?;
-
-        let mut tmp_mappings: Vec<Arc<VmMapping>> = Vec::new();
-        
-        for map in inner.mappings.iter() {
-            let addr = map.inner.lock().addr;
-            let size = map.inner.lock().size;
-            let vmo = map.vmo.clone();
-            let vmo_offset = map.inner.lock().vmo_offset;
-            let flags = map.flags;
-            let mapping = VmMapping::new(addr, size, vmo, vmo_offset, flags, root.page_table.clone());
-            mapping.map()?;
-            tmp_mappings.push(mapping);
-        }
-        inner.mappings.extend(tmp_mappings);
-        Ok(())
+        inner.fork_from(src, &self.page_table)
     }
 
     pub fn get_task_stats(&self) -> TaskStatsInfo {
@@ -521,6 +505,27 @@ impl VmAddressRegion {
     }
 }
 
+impl VmarInner {
+    /// Clone the entire address space and VMOs from source VMAR. (For Linux fork)
+    fn fork_from(
+        &mut self,
+        src: &Arc<VmAddressRegion>,
+        page_table: &Arc<Mutex<PageTable>>,
+    ) -> ZxResult {
+        let src_guard = src.inner.lock();
+        let src_inner = src_guard.as_ref().unwrap();
+        for child in src_inner.children.iter() {
+            self.fork_from(child, page_table)?;
+        }
+        for map in src_inner.mappings.iter() {
+            let mapping = map.clone_map(page_table.clone())?;
+            mapping.map()?;
+            self.mappings.push(mapping);
+        }
+        Ok(())
+    }
+}
+
 #[repr(C)]
 #[derive(Debug)]
 pub struct VmarInfo {
@@ -536,6 +541,7 @@ pub struct VmMapping {
     inner: Mutex<VmMappingInner>,
 }
 
+#[derive(Debug, Clone)]
 struct VmMappingInner {
     addr: VirtAddr,
     size: usize,
@@ -762,6 +768,19 @@ impl VmMapping {
             .map(vaddr, paddr, self.flags)
             .map_err(|_| ZxError::ACCESS_DENIED)?;
         Ok(())
+    }
+
+    /// Clone VMO and map it to a new page table. (For Linux)
+    fn clone_map(&self, page_table: Arc<Mutex<PageTable>>) -> ZxResult<Arc<Self>> {
+        let new_vmo = self.vmo.create_child(false, 0, self.vmo.len())?;
+        let mapping = Arc::new(VmMapping {
+            inner: Mutex::new(self.inner.lock().clone()),
+            flags: self.flags,
+            page_table,
+            vmo: new_vmo.clone(),
+        });
+        new_vmo.append_mapping(Arc::downgrade(&mapping));
+        Ok(mapping)
     }
 }
 

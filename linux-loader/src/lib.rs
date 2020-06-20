@@ -60,17 +60,20 @@ fn spawn(thread: Arc<Thread>) {
                     }
                 }
                 0xe => {
+                    let vaddr = kernel_hal::fetch_fault_vaddr();
                     let flags = if cx.error_code & 0x2 == 0 {
                         MMUFlags::READ
                     } else {
                         MMUFlags::WRITE
                     };
-                    panic!(
-                        "Page Fault from user mode {:#x} {:#x?}\n{:#x?}",
-                        kernel_hal::fetch_fault_vaddr(),
-                        flags,
-                        cx
-                    );
+                    error!("page fualt from user mode {:#x} {:#x?}", vaddr, flags);
+                    let vmar = thread.proc().vmar();
+                    match vmar.handle_page_fault(vaddr, flags) {
+                        Ok(()) => {}
+                        Err(_) => {
+                            panic!("Page Fault from user mode {:#x?}", cx);
+                        }
+                    }
                 }
                 _ => panic!("not supported interrupt from user mode. {:#x?}", cx),
             }
