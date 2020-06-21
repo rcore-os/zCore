@@ -1,5 +1,6 @@
 *
 -Bti.NoDelayedUnpin
+-Bti.DecommitRace
 -ProcessDebugTest.*
 -ProcessDebugVDSO.*
 -HandleCloseTest.ManyDuplicateTest*
@@ -20,6 +21,7 @@
 -Threads.Reading*State
 -Threads.WriteReadDebugRegisterState
 -Threads.DebugRegistersValidation
+-Threads.NoncanonicalRipAddressIRETQ
 -Vmar.*
 -VmoTestCase.ReadOnlyMap
 -VmoTestCase.NoPermMap

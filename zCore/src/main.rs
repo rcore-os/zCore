@@ -49,7 +49,6 @@ fn main(ramfs_data: &[u8], cmdline: &str) {
     let images = Images::<&[u8]> {
         userboot: include_bytes!("../../prebuilt/zircon/userboot.so"),
         vdso: include_bytes!("../../prebuilt/zircon/libzircon.so"),
-        decompressor: include_bytes!("../../prebuilt/zircon/decompress-zstd.so"),
         zbi: ramfs_data,
     };
     let _proc = run_userboot(&images, cmdline);

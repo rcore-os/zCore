@@ -7,6 +7,7 @@ use {
     core::fmt::{Arguments, Write},
     core::ptr::NonNull,
     core::time::Duration,
+    git_version::git_version,
     rcore_console::{Console, ConsoleOnGraphic, DrawTarget, Pixel, Rgb888, Size},
     spin::Mutex,
     uart_16550::SerialPort,
@@ -309,7 +310,7 @@ const IOAPIC_ADDR: usize = 0xfec0_0000;
 #[export_name = "hal_vdso_constants"]
 fn vdso_constants() -> VdsoConstants {
     let tsc_frequency = unsafe { TSC_FREQUENCY };
-    VdsoConstants {
+    let mut constants = VdsoConstants {
         max_num_cpus: 1,
         features: Features {
             cpu: 0,
@@ -322,8 +323,14 @@ fn vdso_constants() -> VdsoConstants {
         ticks_to_mono_numerator: 1000,
         ticks_to_mono_denominator: tsc_frequency as u32,
         physmem: 0,
-        buildid: Default::default(),
-    }
+        version_string_len: 0,
+        version_string: Default::default(),
+    };
+    constants.set_version_string(git_version!(
+        prefix = "git-",
+        args = ["--always", "--abbrev=40", "--dirty=-dirty"]
+    ));
+    constants
 }
 
 /// Initialize the HAL.

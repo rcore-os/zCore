@@ -15,3 +15,4 @@ bitflags = "1.2"
 lazy_static = "1.4"
 kernel-hal = { path = "../kernel-hal" }
 async-std = "1.5"
+git-version = "0.3"

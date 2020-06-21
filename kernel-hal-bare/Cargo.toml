@@ -10,6 +10,7 @@ description = "Kernel HAL implementation for bare metal environment."
 [dependencies]
 log = "0.4"
 spin = "0.5"
+git-version = "0.3"
 executor = { git = "https://github.com/rcore-os/executor.git", rev = "e8ffcfb" }
 trapframe = "0.3.0"
 kernel-hal = { path = "../kernel-hal" }

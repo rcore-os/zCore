@@ -27,21 +27,16 @@ const K_ROOTRESOURCE: usize = 3;
 // Essential VMO handles
 const K_ZBI: usize = 4;
 const K_FIRSTVDSO: usize = 5;
-const K_USERBOOT_DECOMPRESSOR: usize = 8;
-#[allow(dead_code)]
-const K_FIRSTKERNELFILE: usize = K_USERBOOT_DECOMPRESSOR;
-const K_CRASHLOG: usize = 9;
-const K_COUNTERNAMES: usize = 10;
-const K_COUNTERS: usize = 11;
-const K_FISTINSTRUMENTATIONDATA: usize = 12;
-#[allow(dead_code)]
-const K_HANDLECOUNT: usize = K_FISTINSTRUMENTATIONDATA + 3;
+const K_CRASHLOG: usize = 8;
+const K_COUNTERNAMES: usize = 9;
+const K_COUNTERS: usize = 10;
+const K_FISTINSTRUMENTATIONDATA: usize = 11;
+const K_HANDLECOUNT: usize = 15;
 
 /// Program images to run.
 pub struct Images<T: AsRef<[u8]>> {
     pub userboot: T,
     pub vdso: T,
-    pub decompressor: T,
     pub zbi: T,
 }
 
@@ -106,16 +101,6 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
         vmo
     };
 
-    // decompressor
-    let decompressor_vmo = {
-        let elf = ElfFile::new(images.decompressor.as_ref()).unwrap();
-        let size = elf.load_segment_size();
-        let vmo = VmObject::new_paged(size / PAGE_SIZE);
-        vmo.write(0, images.decompressor.as_ref()).unwrap();
-        vmo.set_name("lib/hermetic/decompress-zbi.so");
-        vmo
-    };
-
     // stack
     const STACK_PAGES: usize = 8;
     let stack_vmo = VmObject::new_paged(STACK_PAGES);
@@ -130,17 +115,18 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
     let (user_channel, kernel_channel) = Channel::create();
     let handle = Handle::new(user_channel, Rights::DEFAULT_CHANNEL);
 
-    // FIXME: pass correct handles
-    let mut handles = vec![Handle::new(proc.clone(), Rights::DUPLICATE); 15];
+    let mut handles = vec![Handle::new(proc.clone(), Rights::empty()); K_HANDLECOUNT];
     handles[K_PROC_SELF] = Handle::new(proc.clone(), Rights::DEFAULT_PROCESS);
     handles[K_VMARROOT_SELF] = Handle::new(proc.vmar(), Rights::DEFAULT_VMAR | Rights::IO);
     handles[K_ROOTJOB] = Handle::new(job, Rights::DEFAULT_JOB);
     handles[K_ROOTRESOURCE] = Handle::new(resource, Rights::DEFAULT_RESOURCE);
     handles[K_ZBI] = Handle::new(zbi_vmo, Rights::DEFAULT_VMO);
     // set up handles[K_FIRSTVDSO..K_LASTVDSO + 1]
-    const VDSO_CONSTANT_BASE: usize = 0x4940;
-    let constants: [u8; 112] = unsafe { core::mem::transmute(kernel_hal::vdso_constants()) };
-    vdso_vmo.write(VDSO_CONSTANT_BASE, &constants).unwrap();
+    const VDSO_DATA_CONSTANTS: usize = 0x4a50;
+    const VDSO_DATA_CONSTANTS_SIZE: usize = 0x78;
+    let constants: [u8; VDSO_DATA_CONSTANTS_SIZE] =
+        unsafe { core::mem::transmute(kernel_hal::vdso_constants()) };
+    vdso_vmo.write(VDSO_DATA_CONSTANTS, &constants).unwrap();
     vdso_vmo.set_name("vdso/full");
     let vdso_test1 = vdso_vmo.create_child(false, 0, vdso_vmo.len()).unwrap();
     vdso_test1.set_name("vdso/test1");
@@ -149,17 +135,14 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
     handles[K_FIRSTVDSO] = Handle::new(vdso_vmo, Rights::DEFAULT_VMO | Rights::EXECUTE);
     handles[K_FIRSTVDSO + 1] = Handle::new(vdso_test1, Rights::DEFAULT_VMO | Rights::EXECUTE);
     handles[K_FIRSTVDSO + 2] = Handle::new(vdso_test2, Rights::DEFAULT_VMO | Rights::EXECUTE);
-    // FIXME correct rights for decompressor engine
-    handles[K_USERBOOT_DECOMPRESSOR] =
-        Handle::new(decompressor_vmo, Rights::DEFAULT_VMO | Rights::EXECUTE);
-    // TODO to use correct CrashLogVmo handle
+    // TODO: use correct CrashLogVmo handle
     let crash_log_vmo = VmObject::new_paged(1);
     crash_log_vmo.set_name("crashlog");
     handles[K_CRASHLOG] = Handle::new(crash_log_vmo, Rights::DEFAULT_VMO);
     let (counter_name_vmo, kcounters_vmo) = kcounter::create_kcounter_vmo();
     handles[K_COUNTERNAMES] = Handle::new(counter_name_vmo, Rights::DEFAULT_VMO);
     handles[K_COUNTERS] = Handle::new(kcounters_vmo, Rights::DEFAULT_VMO);
-    // TODO to use correct Instrumentation data handle
+    // TODO: use correct Instrumentation data handle
     let instrumentation_data_vmo = VmObject::new_paged(0);
     instrumentation_data_vmo.set_name("UNIMPLEMENTED_VMO");
     handles[K_FISTINSTRUMENTATIONDATA] =
@@ -167,6 +150,8 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
     handles[K_FISTINSTRUMENTATIONDATA + 1] =
         Handle::new(instrumentation_data_vmo.clone(), Rights::DEFAULT_VMO);
     handles[K_FISTINSTRUMENTATIONDATA + 2] =
+        Handle::new(instrumentation_data_vmo.clone(), Rights::DEFAULT_VMO);
+    handles[K_FISTINSTRUMENTATIONDATA + 3] =
         Handle::new(instrumentation_data_vmo, Rights::DEFAULT_VMO);
 
     // check: handle to root proc should be only

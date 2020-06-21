@@ -12,6 +12,7 @@ C11ThreadTest.CreateAndVerifyThreadHandle
 C11ThreadTest.DetachedThreadKeepsRunning
 C11ThreadTest.LongNameSucceeds
 C11ThreadTest.SelfDetachAndFree
+CppThreadTest.CreateAndVerifyThreadHandle
 ChannelInternalTest.CallFinishWithoutPreviouslyCallingCallReturnsBadState
 ChannelInternalTest.TransferChannelWithPendingCallInSourceProcess
 ChannelTest.CreateIsOkAndEndpointsAreRelated
@@ -92,6 +93,7 @@ ExecutableTlsTest.StructureInitializerInThread
 ExecutableTlsTest.StructureInitalizierInMain
 ExecutableTlsTest.AlignmentInitializerInThread
 ExecutableTlsTest.AlignmentInitializierInMain
+ExecutableTlsTest.ArrayInitializerSpamThread
 ExecutableTlsTest.ArrayInitializierSpamMain
 EventPairTest.HandlesNotInvalid
 EventPairTest.HandleRightsAreCorrect
@@ -205,6 +207,7 @@ TaskGetInfoTest.InfoTaskStatsBadActualgIsInvalidArg
 TaskGetInfoTest.InfoTaskStatsBadAvailIsInvalidArg
 TaskGetInfoTest.InfoTaskStatsJobHandleIsBadHandle
 TaskGetInfoTest.InfoTaskStatsThreadHandleIsBadHandle
+TaskGetInfoTest.InfoTaskRuntimeWrongType
 ThreadGetInfoTest.InfoHandleBasicOnSelfSuceeds
 ThreadGetInfoTest.InfoHandleBasicInvalidHandleFails
 ThreadGetInfoTest.InfoHandleBasicNullAvailSucceeds
@@ -268,6 +271,7 @@ PortTest.AsyncWaitChannel
 PortTest.AsyncWaitCloseOrder
 PortTest.AsyncWaitEventRepeat
 PortTest.AsyncWaitEventManyAllProcessed
+PortTest.ChannelAsyncWaitOnExistingStateIsNotified
 PortTest.ThreadEvents
 PortTest.CloseQueueRace
 ProcessTest.LongNameSucceeds
@@ -349,7 +353,6 @@ VmoClone2TestCase.CloneVmarWrite
 VmoClone2TestCase.CloseOriginal
 VmoClone2TestCase.CloseClone
 VmoClone2TestCase.ObjMemAccounting
-VmoClone2TestCase.KmemAccounting
 VmoClone2TestCase.ZeroPageWrite
 VmoClone2TestCase.SplitPageClosure
 VmoClone2TestCase.Offset
@@ -371,18 +374,14 @@ VmoClone2TestCase.ManyChildren
 VmoClone2TestCase.ManyChildrenRevClose
 VmoClone2TestCase.ManyCloneMapping
 VmoClone2TestCase.ManyCloneOffset
-VmoClone2TestCase.ContiguousVmo
-VmoClone2TestCase.ContiguousVmoCloseChild
-VmoClone2TestCase.ContiguousVmoCloseOriginal
-VmoClone2TestCase.ContiguousVmoPartialClone
+VmoClone2TestCase.PinBeforeCreateFailure
 VmoClone2TestCase.NoPhysical
 VmoClone2TestCase.Uncached
+VmoClone2TestCase.ParentStartLimitRegression
 VmoCloneDisjointClonesTests.DisjointCloneEarlyClose
 VmoCloneDisjointClonesTests.DisjointCloneLateClose
 VmoCloneResizeTests.ResizeChild
 VmoCloneResizeTests.ResizeOriginal
-VmoCloneResizeTests.ContiguousVmoResizeChild
-VmoCloneResizeTests.ContiguousVmoResizeOriginal
 ProgressiveCloneDiscardTests.ProgressiveCloneClose
 ProgressiveCloneDiscardTests.ProgressiveCloneTruncate
 VmoSignalTestCase.SignalSanity
@@ -408,6 +407,7 @@ VmoZeroTestCase.UnalignedCommitted
 VmoZeroTestCase.UnalignedUnCommitted
 VmoZeroTestCase.DecommitMiddle
 VmoZeroTestCase.Contiguous
+VmoZeroTestCase.ContentInParentAndChild
 VmoZeroTestCase.EmptyCowChildren
 VmoZeroTestCase.MergeZeroChildren
 VmoZeroTestCase.AllocateAfterMerge
@@ -415,9 +415,9 @@ VmoZeroTestCase.AllocateAfterMergeHiddenChild
 VmoZeroTestCase.WriteCowParent
 VmoZeroTestCase.ChildZeroThenWrite
 VmoZeroTestCase.Nested
+VmoZeroTestCase.ZeroLengths
 VmoTestCase.Create
 VmoTestCase.ReadWriteBadLen
-VmoTestCase.ReadWrite
 VmoTestCase.ReadWriteRange
 VmoTestCase.Map
 VmoTestCase.MapRead
@@ -441,3 +441,4 @@ InterruptTest.UnBindPort
 InterruptTest.VirtualInterrupts
 InterruptTest.UnableToBindVirtualInterruptToVcpu
 InterruptTest.NullOutputTimestamp
+MsiTest.AllocationAndCreation
