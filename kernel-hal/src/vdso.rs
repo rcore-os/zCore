@@ -1,5 +1,4 @@
 use core::fmt::{Debug, Error, Formatter};
-use git_version::git_version;
 
 /// This struct contains constants that are initialized by the kernel
 /// once at boot time.  From the vDSO code's perspective, they are
@@ -26,9 +25,10 @@ pub struct VdsoConstants {
     pub ticks_to_mono_denominator: u32,
     /// Total amount of physical memory in the system, in bytes.
     pub physmem: u64,
-    /// A build id of the system. Currently a non-null terminated ascii
-    /// representation of a git SHA.
-    pub buildid: BuildID,
+    /// Actual length of `version_string`, not including the NUL terminator.
+    pub version_string_len: u64,
+    /// A NUL-terminated UTF-8 string returned by `zx_system_get_version_string`.
+    pub version_string: VersionString,
 }
 
 /// Bit map indicating features.
@@ -43,23 +43,25 @@ pub struct Features {
     pub hw_watchpoint_count: u32,
 }
 
-#[repr(C)]
-pub struct BuildID([u8; 64]);
-
-impl Default for BuildID {
-    fn default() -> Self {
-        let s = git_version!(
-            prefix = "git-",
-            args = ["--always", "--abbrev=40", "--dirty=-dirty"]
-        );
+impl VdsoConstants {
+    /// Set version string.
+    pub fn set_version_string(&mut self, s: &str) {
         let len = s.len().min(64);
-        let mut bytes = [0; 64];
-        bytes[..len].copy_from_slice(s.as_bytes());
-        BuildID(bytes)
+        self.version_string_len = len as u64;
+        self.version_string.0[..len].copy_from_slice(s.as_bytes());
     }
 }
 
-impl Debug for BuildID {
+#[repr(C)]
+pub struct VersionString([u8; 64]);
+
+impl Default for VersionString {
+    fn default() -> Self {
+        VersionString([0; 64])
+    }
+}
+
+impl Debug for VersionString {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         for &c in self.0.iter().take_while(|&&c| c != 0) {
             write!(f, "{}", c as char)?;

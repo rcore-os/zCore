@@ -120,7 +120,7 @@ index e3b017cdf22..1a3436a6ad1 100644
 -    jnz .Lhandle_close_fail
 -
 -    zircon_syscall ZX_SYS_thread_exit, zx_thread_exit, zx_futex_wake_handle_close_thread_exit
-+    mov $164, %eax
++    mov $200, %eax
 +    jmpq *zcore_syscall_entry(%rip)
 
      // It should be impossible to get here.
@@ -165,7 +165,7 @@ index 7baa69755e0..18cdb981f0c 100644
 -    jnz .Lhandle_close_fail
 -
 -    zircon_syscall ZX_SYS_thread_exit, zx_thread_exit, zx_vmar_unmap_handle_close_thread_exit
-+    mov $165, %eax
++    mov $201, %eax
 +    jmpq *zcore_syscall_entry(%rip)
 
      // It should be impossible to get here.
