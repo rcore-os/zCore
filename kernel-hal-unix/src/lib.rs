@@ -387,7 +387,7 @@ pub fn vdso_constants() -> VdsoConstants {
         ticks_to_mono_numerator: 1000,
         ticks_to_mono_denominator: tsc_frequency as u32,
         physmem: PMEM_SIZE as u64,
-        buildid: Default::default(),
+        version_string: Default::default(),
     }
 }
 

@@ -122,9 +122,11 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
     handles[K_ROOTRESOURCE] = Handle::new(resource, Rights::DEFAULT_RESOURCE);
     handles[K_ZBI] = Handle::new(zbi_vmo, Rights::DEFAULT_VMO);
     // set up handles[K_FIRSTVDSO..K_LASTVDSO + 1]
-    const VDSO_CONSTANT_BASE: usize = 0x4940;
-    let constants: [u8; 112] = unsafe { core::mem::transmute(kernel_hal::vdso_constants()) };
-    vdso_vmo.write(VDSO_CONSTANT_BASE, &constants).unwrap();
+    const VDSO_DATA_CONSTANTS: usize = 0x4a50;
+    const VDSO_DATA_CONSTANTS_SIZE: usize = 0x78;
+    let constants: [u8; VDSO_DATA_CONSTANTS_SIZE] =
+        unsafe { core::mem::transmute(kernel_hal::vdso_constants()) };
+    vdso_vmo.write(VDSO_DATA_CONSTANTS, &constants).unwrap();
     vdso_vmo.set_name("vdso/full");
     let vdso_test1 = vdso_vmo.create_child(false, 0, vdso_vmo.len()).unwrap();
     vdso_test1.set_name("vdso/test1");

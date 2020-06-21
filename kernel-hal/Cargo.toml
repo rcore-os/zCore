@@ -10,6 +10,5 @@ description = "Kernel HAL interface definations."
 [dependencies]
 bitflags = "1.2"
 trapframe = "0.3.0"
-git-version = "0.3"
 numeric-enum-macro = "0.2"
 acpi = "1.0.0"
