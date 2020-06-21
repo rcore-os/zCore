@@ -340,6 +340,14 @@ Threads.SuspendChannelCall
 Threads.SuspendPortCall
 Threads.WritingArmFlagsRegister
 TicksTest.ElapsedTimeUsingTicks
+Vmar.DestroyTest
+Vmar.BasicAllocateTest
+Vmar.MapInCompactTest
+Vmar.AllocateOobTest
+Vmar.ObjectInfoTest
+Vmar.UnmapBaseNotMappedTest
+Vmar.AllowFaultsTest
+Vmar.ConcurrentUnmapReadMemory
 VmoCloneTestCase.SizeAlign
 VmoCloneTestCase.NameProperty
 VmoCloneTestCase.Decommit
