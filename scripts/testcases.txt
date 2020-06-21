@@ -20,7 +20,9 @@
 -Threads.Reading*State
 -Threads.WriteReadDebugRegisterState
 -Threads.DebugRegistersValidation
--Vmar.*
+-Vmar.ProtectOverDemandPagedTest
+-Vmar.ProtectLargeUncomittedTest
+-Vmar.UnmapLargeUncommittedTest
 -VmoTestCase.ReadOnlyMap
 -VmoTestCase.NoPermMap
 -VmoTestCase.NoPermProtect

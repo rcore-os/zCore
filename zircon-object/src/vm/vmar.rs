@@ -292,8 +292,11 @@ impl VmAddressRegion {
     fn destroy_internal(&self) -> ZxResult {
         let mut guard = self.inner.lock();
         let inner = guard.as_mut().ok_or(ZxError::BAD_STATE)?;
-        for vmar in inner.children.iter() {
+        for vmar in inner.children.drain(..) {
             vmar.destroy_internal()?;
+        }
+        for mapping in inner.mappings.drain(..) {
+            drop(mapping);
         }
         *guard = None;
         Ok(())
