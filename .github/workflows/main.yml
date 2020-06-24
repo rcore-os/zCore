@@ -195,3 +195,4 @@ jobs:
           pip3 install pexpect
           cargo build --release -p linux-loader
           python3 libc-tests.py
+          cat scripts/linux/test-result.txt
