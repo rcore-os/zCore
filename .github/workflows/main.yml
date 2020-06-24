@@ -173,26 +173,18 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v2
-        with:
-          submodules: 'recursive'
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
           toolchain: nightly-2020-06-04
           components: rust-src
-      - name: Prepare rootfs
-        run: make rootfs
-      - name: Prepare Requirement
-        run: |
-          sudo apt-get install musl-tools musl-dev -y
-      - name: Add libc-test
-        run: |
-          cd scripts/linux
-          sh add-libctest.sh
-          cd ../../
+      - name: Install musl toolchain
+        run: sudo apt-get install musl-tools musl-dev -y
+      - name: Prepare rootfs and libc-test
+        run: make rootfs && make libc-test
       - name: Run libc-tests
         run: |
-          pip3 install pexpect
+          cd scripts
           cargo build --release -p linux-loader
           python3 libc-tests.py
-          cat scripts/linux/test-result.txt
+          cat linux/test-result.txt
