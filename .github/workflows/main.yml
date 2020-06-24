@@ -168,3 +168,27 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BRANCH: gh-pages
           FOLDER: target/doc
+
+  libc-test:
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: 'recursive'
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly-2020-06-04
+          components: rust-src
+      - name: Prepare rootfs
+        run: make rootfs
+      - name: Add libc-test
+        run: |
+          cd scripts/linux
+          sh add-libctest.sh
+          cd ../../
+      - name: Run libc-tests
+        run: |
+          pip3 install pexpect
+          cargo build --release -p linux-loader
+          python3 libc-tests.py

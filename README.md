@@ -88,6 +88,30 @@ cd script && python3 core-tests.py
 
 Check `test-result.txt` for results.
 
+------------------------------------
+
+Run Linux musl libc-test:
+
+Requirement:  
+git  
+musl-gcc
+
+Only once at init
+```sh
+make rootfs
+cd script/linux && sh add-libc.sh
+pip3 install pexpect
+```
+
+Run test 
+```sh
+// 在项目根目录下 (临时)
+cargo build --release -p linux-loader
+python3 libc-tests.py
+```
+
+Check `test-result.txt` for results.
+
 ## Components
 
 ### Overview
