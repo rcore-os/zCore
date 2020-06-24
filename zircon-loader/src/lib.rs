@@ -174,6 +174,10 @@ fn spawn(thread: Arc<Thread>) {
     let future = async move {
         kernel_hal::Thread::set_tid(thread.id(), thread.proc().id());
         loop {
+            if thread.is_killed() {
+                thread.internal_exit();
+                break;
+            }
             let mut cx = thread.wait_for_run().await;
             trace!("go to user: {:#x?}", cx);
             debug!("switch to {}|{}", thread.proc().name(), thread.name());

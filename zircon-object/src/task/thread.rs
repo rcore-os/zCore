@@ -118,6 +118,8 @@ struct ThreadInner {
     state: ThreadState,
     /// The time this thread has run on cpu
     time: u128,
+    /// kill by other thread
+    dying: bool,
 }
 
 impl ThreadInner {
@@ -217,9 +219,18 @@ impl Thread {
         self.internal_exit();
     }
 
-    pub(super) fn internal_exit(&self) {
+    pub fn internal_exit(&self) {
         self.base.signal_set(Signal::THREAD_TERMINATED);
         self.inner.lock().state = ThreadState::Dead;
+    }
+
+    pub fn kill(&self) {
+        // self.inner.lock().state = ThreadState::Dying;
+        self.inner.lock().dying = true;
+    }
+
+    pub fn is_killed(&self) -> bool {
+        self.inner.lock().dying
     }
 
     /// Read one aspect of thread state.

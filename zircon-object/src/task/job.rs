@@ -194,6 +194,24 @@ impl Job {
     pub fn children_ids(&self) -> Vec<KoID> {
         self.inner.lock().children.iter().map(|j| j.id()).collect()
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.inner.lock().is_empty()
+    }
+
+    pub fn kill(&self) {
+        let mut inner = self.inner.lock();
+        for child in inner.children.iter() {
+            if !child.is_empty() {
+                child.kill();
+            }
+        }
+        inner.children.clear();
+        for proc in inner.processes.iter() {
+            proc.kill();
+        }
+        inner.processes.clear();
+    }
 }
 
 impl JobInner {

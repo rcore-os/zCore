@@ -178,6 +178,20 @@ impl Process {
         self.job.process_exit(self.base.id, retcode);
     }
 
+    pub fn kill(&self) {
+        let retcode = -1024;
+        let mut inner = self.inner.lock();
+        inner.status = Status::Exited(retcode);
+        // TODO: exit all threads
+        self.base.signal_set(Signal::PROCESS_TERMINATED);
+        for thread in inner.threads.iter() {
+            thread.kill();
+        }
+        inner.threads.clear();
+        inner.handles.clear();
+        self.job.process_exit(self.base.id, retcode);
+    }
+
     /// Check whether `condition` is allowed in the parent job's policy.
     pub fn check_policy(&self, condition: PolicyCondition) -> ZxResult {
         match self

@@ -103,6 +103,7 @@ impl Syscall<'_> {
             Sys::THREAD_WRITE_STATE => {
                 self.sys_thread_write_state(a0 as _, a1 as _, a2.into(), a3 as _)
             }
+            Sys::TASK_KILL => self.sys_task_kill(a0 as _),
             Sys::THREAD_EXIT => self.sys_thread_exit(),
             Sys::PROCESS_CREATE => {
                 self.sys_process_create(a0 as _, a1.into(), a2 as _, a3 as _, a4.into(), a5.into())

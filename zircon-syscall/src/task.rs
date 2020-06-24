@@ -189,6 +189,26 @@ impl Syscall<'_> {
         Ok(())
     }
 
+    pub fn sys_task_kill(&self, handle: HandleValue) -> ZxResult {
+        info!("task.kill: handle={:?}", handle);
+        let proc = self.thread.proc();
+
+        if let Ok(_job) = proc.get_object_with_rights::<Job>(handle, Rights::DESTROY) {
+            // job.kill();
+            return Err(ZxError::WRONG_TYPE);
+        } else if let Ok(proc) = proc.get_object_with_rights::<Process>(handle, Rights::DESTROY) {
+            proc.kill();
+        } else if let Ok(thread) = proc.get_object_with_rights::<Thread>(handle, Rights::DESTROY) {
+            match thread.state() {
+                ThreadState::Running | ThreadState::Suspended => thread.kill(),
+                _ => {}
+            }
+        } else {
+            return Err(ZxError::WRONG_TYPE);
+        }
+        return Ok(());
+    }
+
     pub fn sys_job_create(
         &self,
         parent: HandleValue,
