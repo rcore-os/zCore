@@ -52,7 +52,7 @@ fn main(ramfs_data: &[u8], cmdline: &str) {
         zbi: ramfs_data,
     };
     let _proc = run_userboot(&images, cmdline);
-    executor::run();
+    run();
 }
 
 #[cfg(feature = "linux")]
@@ -67,7 +67,15 @@ fn main(ramfs_data: &'static mut [u8], _cmdline: &str) {
     let device = Arc::new(MemBuf::new(ramfs_data));
     let rootfs = rcore_fs_sfs::SimpleFileSystem::open(device).unwrap();
     let _proc = linux_loader::run(args, envs, rootfs);
-    executor::run();
+    run();
+}
+
+fn run() -> ! {
+    loop {
+        executor::run_until_idle();
+        x86_64::instructions::interrupts::enable_interrupts_and_hlt();
+        x86_64::instructions::interrupts::disable();
+    }
 }
 
 fn get_log_level(cmdline: &str) -> &str {

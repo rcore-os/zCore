@@ -1,5 +1,5 @@
-ROOTFS_TAR := alpine-minirootfs-3.11.3-x86_64.tar.gz
-ROOTFS_URL := http://dl-cdn.alpinelinux.org/alpine/v3.11/releases/x86_64/$(ROOTFS_TAR)
+ROOTFS_TAR := alpine-minirootfs-3.12.0-x86_64.tar.gz
+ROOTFS_URL := http://dl-cdn.alpinelinux.org/alpine/v3.12/releases/x86_64/$(ROOTFS_TAR)
 
 .PHONY: rootfs
 
