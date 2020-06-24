@@ -182,6 +182,9 @@ jobs:
           components: rust-src
       - name: Prepare rootfs
         run: make rootfs
+      - name: Prepare Requirement
+        run: |
+          sudo apt-get install musl-tools musl-dev -y
       - name: Add libc-test
         run: |
           cd scripts/linux
