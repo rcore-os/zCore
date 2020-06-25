@@ -24,7 +24,7 @@ kernel-hal-bare = { path = "../kernel-hal-bare" }
 lazy_static = { version = "1.4", features = ["spin_no_std" ] }
 bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator", rev = "03bd9909" }
 trapframe = "0.3.0"
-executor = { git = "https://github.com/rcore-os/executor.git", rev = "e8ffcfb" }
+executor = { git = "https://github.com/rcore-os/executor.git", rev = "a2d02ee9" }
 zircon-object = { path = "../zircon-object" }
 zircon-loader = { path = "../zircon-loader", default-features = false, optional = true }
 linux-loader = { path = "../linux-loader", default-features = false, optional = true }
