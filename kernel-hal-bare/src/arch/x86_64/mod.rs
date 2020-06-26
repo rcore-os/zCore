@@ -3,6 +3,7 @@ use {
     acpi::{parse_rsdp, Acpi, AcpiHandler, PhysicalMapping},
     alloc::{collections::VecDeque, vec::Vec},
     apic::{LocalApic, XApic},
+    core::arch::x86_64::{__cpuid, _mm_clflush, _mm_mfence},
     core::convert::TryFrom,
     core::fmt::{Arguments, Write},
     core::ptr::NonNull,
@@ -443,4 +444,21 @@ pub fn outpd(port: u16, value: u32) {
 #[export_name = "hal_inpd"]
 pub fn inpd(port: u16) -> u32 {
     unsafe { Port::new(port).read() }
+}
+
+/// Flush the physical frame.
+#[export_name = "hal_frame_flush"]
+pub fn frame_flush(target: PhysAddr) {
+    unsafe {
+        for paddr in (target..target + PAGE_SIZE).step_by(cacheline_size()) {
+            _mm_clflush(phys_to_virt(paddr) as *const u8);
+        }
+        _mm_mfence();
+    }
+}
+
+/// Get cache line size in bytes.
+fn cacheline_size() -> usize {
+    let leaf = unsafe { __cpuid(1).ebx };
+    (((leaf >> 8) & 0xff) << 3) as usize
 }

@@ -34,6 +34,7 @@ impl Syscall<'_> {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[cfg(target_arch = "x86_64")]
     pub fn sys_pci_cfg_pio_rw(
         &self,
         handle: HandleValue,
@@ -45,26 +46,21 @@ impl Syscall<'_> {
         width: usize,
         write: bool,
     ) -> ZxResult {
-        #[cfg(not(target_arch = "x86_64"))]
-        return Err(ZxError::NOT_SUPPORTED);
-        #[cfg(target_arch = "x86_64")]
-        {
-            info!(
+        info!(
                 "pci.cfg_pio_rw: handle={:#x}, addr={:x}:{:x}:{:x}, offset={:#x}, width={:#x}, write={:#}",
                 handle, bus, dev, func, offset, width, write
             );
-            let proc = self.thread.proc();
-            proc.get_object::<Resource>(handle)?
-                .validate(ResourceKind::ROOT)?;
-            if write {
-                let value = value_ptr.read()?;
-                pio_config_write(bus, dev, func, offset, value, width)?;
-            } else {
-                let value = pio_config_read(bus, dev, func, offset, width)?;
-                value_ptr.write(value)?;
-            }
-            Ok(())
+        let proc = self.thread.proc();
+        proc.get_object::<Resource>(handle)?
+            .validate(ResourceKind::ROOT)?;
+        if write {
+            let value = value_ptr.read()?;
+            pio_config_write(bus, dev, func, offset, value, width)?;
+        } else {
+            let value = pio_config_read(bus, dev, func, offset, width)?;
+            value_ptr.write(value)?;
         }
+        Ok(())
     }
 
     // TODO: review

@@ -29,7 +29,6 @@ extern crate lazy_static;
 use alloc::boxed::Box;
 use core::time::Duration;
 use core::{
-    arch::x86_64::{__cpuid, _mm_clflush, _mm_mfence},
     future::Future,
     pin::Pin,
     task::{Context, Poll},
@@ -175,23 +174,6 @@ pub fn frame_zero_in_range(target: PhysAddr, start: usize, end: usize) {
     unsafe {
         core::ptr::write_bytes(phys_to_virt(target + start) as *mut u8, 0, end - start);
     }
-}
-
-/// Flush the physical frame.
-#[export_name = "hal_frame_flush"]
-pub fn frame_flush(target: PhysAddr) {
-    unsafe {
-        for paddr in (target..target + PAGE_SIZE).step_by(cacheline_size()) {
-            _mm_clflush(phys_to_virt(paddr) as *const u8);
-        }
-        _mm_mfence();
-    }
-}
-
-/// Get cache line size in bytes.
-fn cacheline_size() -> usize {
-    let leaf = unsafe { __cpuid(1).ebx };
-    (((leaf >> 8) & 0xff) << 3) as usize
 }
 
 lazy_static! {

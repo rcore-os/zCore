@@ -74,7 +74,7 @@ justrun: $(QEMU_DISK)
 	$(qemu) $(qemu_opts)
 
 build-test: build
-	cp ../prebuilt/zircon/core-tests.zbi $(ESP)/EFI/zCore/fuchsia.zbi
+	cp ../prebuilt/zircon/x64/core-tests.zbi $(ESP)/EFI/zCore/fuchsia.zbi
 	echo 'cmdline=LOG=warn:userboot=test/core/standalone-test:userboot.shutdown:core-tests=$(test_filter)' >> $(ESP)/EFI/Boot/rboot.conf
 
 build: $(kernel_img)
@@ -86,7 +86,7 @@ $(kernel_img): kernel bootloader
 ifeq ($(linux), 1)
 	cp x86_64.img $(ESP)/EFI/zCore/fuchsia.zbi
 else
-	cp ../prebuilt/zircon/$(zbi_file).zbi $(ESP)/EFI/zCore/fuchsia.zbi
+	cp ../prebuilt/zircon/x64/$(zbi_file).zbi $(ESP)/EFI/zCore/fuchsia.zbi
 endif
 	cp $(kernel) $(ESP)/EFI/zCore/zcore.elf
 
