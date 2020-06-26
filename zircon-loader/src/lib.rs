@@ -108,8 +108,11 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
     let stack_bottom = vmar
         .map(None, stack_vmo.clone(), 0, stack_vmo.len(), flags)
         .unwrap();
+    #[cfg(target_arch = "x86_64")]
     // WARN: align stack to 16B, then emulate a 'call' (push rip)
     let sp = stack_bottom + stack_vmo.len() - 8;
+    #[cfg(target_arch = "aarch64")]
+    let sp = stack_bottom + stack_vmo.len();
 
     // channel
     let (user_channel, kernel_channel) = Channel::create();
@@ -183,7 +186,16 @@ fn spawn(thread: Arc<Thread>) {
             thread.time_add(time);
             trace!("back from user: {:#x?}", cx);
             EXCEPTIONS_USER.add(1);
+            #[cfg(target_arch = "aarch64")]
+            let exit;
+            #[cfg(target_arch = "aarch64")]
+            match cx.trap_num {
+                0 => exit = handle_syscall(&thread, &mut cx.general).await,
+                _ => unimplemented!(),
+            }
+            #[cfg(target_arch = "x86_64")]
             let mut exit = false;
+            #[cfg(target_arch = "x86_64")]
             match cx.trap_num {
                 0x100 => exit = handle_syscall(&thread, &mut cx.general).await,
                 0x20..=0x3f => {
