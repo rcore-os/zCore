@@ -11,9 +11,7 @@ numeric_enum! {
         Vector = 2,
         Debug = 4,
         SingleStep = 5,
-        #[cfg(target_arch = "x86_64")]
         FS = 6,
-        #[cfg(target_arch = "x86_64")]
         GS = 7,
     }
 }

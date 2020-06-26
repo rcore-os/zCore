@@ -22,16 +22,14 @@ use {
     tempfile::tempdir,
 };
 
-pub use self::trap::syscall_entry;
 pub use kernel_hal::defs::*;
 use kernel_hal::vdso::*;
 pub use kernel_hal::*;
 use std::io::Read;
+pub use trapframe::syscall_fn_entry as syscall_entry;
 
 #[cfg(target_os = "macos")]
 include!("macos.rs");
-
-mod trap;
 
 #[repr(C)]
 pub struct Thread {
@@ -67,9 +65,7 @@ task_local! {
 
 #[export_name = "hal_context_run"]
 unsafe fn context_run(context: &mut UserContext) {
-    trap::run_user(&mut context.general);
-    // cause: syscall
-    context.trap_num = 0x100;
+    context.run_fncall();
 }
 
 /// Page Table

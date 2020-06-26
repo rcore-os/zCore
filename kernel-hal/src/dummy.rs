@@ -392,3 +392,21 @@ pub fn inpd(_port: u16) -> u32 {
 pub fn apic_local_id() -> u8 {
     unimplemented!()
 }
+
+/// Fill random bytes to the buffer
+#[cfg(target_arch = "x86_64")]
+pub fn fill_random(buf: &mut [u8]) {
+    // TODO: optimize
+    for x in buf.iter_mut() {
+        let mut r = 0;
+        unsafe {
+            core::arch::x86_64::_rdrand16_step(&mut r);
+        }
+        *x = r as _;
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+pub fn fill_random(_buf: &mut [u8]) {
+    // TODO
+}

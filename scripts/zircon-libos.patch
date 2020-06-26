@@ -185,3 +185,29 @@ index 7baa69755e0..18cdb981f0c 100644
 +zcore_syscall_entry:
 +    .quad 0xdeadbeaf
 +.popsection
+diff --git a/zircon/system/ulib/zircon/zircon-syscall-arm64.S b/zircon/system/ulib/zircon/zircon-syscall-arm64.S
+index 50598676cb2..fc69f203ed0 100644
+--- a/zircon/system/ulib/zircon/zircon-syscall-arm64.S
++++ b/zircon/system/ulib/zircon/zircon-syscall-arm64.S
+@@ -6,7 +6,11 @@
+
+ .macro zircon_syscall num, name, caller
+     mov x16, #\num
+-    svc #0x0
++    push_regpair x29, x30
++    adr x29, zcore_syscall_entry
++    ldr x29, [x29]
++    blr x29
++    pop_regpair x29, x30
+ // This symbol at the return address identifies this as an approved call site.
+     .hidden CODE_SYSRET_\name\()_VIA_\caller
+ CODE_SYSRET_\name\()_VIA_\caller\():
+@@ -46,3 +50,8 @@ CODE_SYSRET_\name\()_VIA_\caller\():
+     .cfi_same_value \reg0
+     .cfi_same_value \reg1
+ .endm
++
++.pushsection .rodata
++zcore_syscall_entry:
++    .quad 0xdeadbeaf
++.popsection

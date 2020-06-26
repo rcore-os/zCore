@@ -105,6 +105,7 @@ impl Syscall<'_> {
                     .set_debug_addr(addr);
                 Ok(())
             }
+            #[cfg(target_arch = "x86_64")]
             Property::RegisterFs => {
                 let thread = proc.get_object::<Thread>(handle_value)?;
                 assert!(Arc::ptr_eq(&thread, &self.thread));

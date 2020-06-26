@@ -108,8 +108,11 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
     let stack_bottom = vmar
         .map(None, stack_vmo.clone(), 0, stack_vmo.len(), flags)
         .unwrap();
+    #[cfg(target_arch = "x86_64")]
     // WARN: align stack to 16B, then emulate a 'call' (push rip)
     let sp = stack_bottom + stack_vmo.len() - 8;
+    #[cfg(target_arch = "aarch64")]
+    let sp = stack_bottom + stack_vmo.len();
 
     // channel
     let (user_channel, kernel_channel) = Channel::create();
@@ -183,7 +186,16 @@ fn spawn(thread: Arc<Thread>) {
             thread.time_add(time);
             trace!("back from user: {:#x?}", cx);
             EXCEPTIONS_USER.add(1);
+            #[cfg(target_arch = "aarch64")]
+            let exit;
+            #[cfg(target_arch = "aarch64")]
+            match cx.trap_num {
+                0 => exit = handle_syscall(&thread, &mut cx.general).await,
+                _ => unimplemented!(),
+            }
+            #[cfg(target_arch = "x86_64")]
             let mut exit = false;
+            #[cfg(target_arch = "x86_64")]
             match cx.trap_num {
                 0x100 => exit = handle_syscall(&thread, &mut cx.general).await,
                 0x20..=0x3f => {
@@ -195,11 +207,15 @@ fn spawn(thread: Arc<Thread>) {
                 }
                 0xe => {
                     EXCEPTIONS_PGFAULT.add(1);
+                    #[cfg(target_arch = "x86_64")]
                     let flags = if cx.error_code & 0x2 == 0 {
                         MMUFlags::READ
                     } else {
                         MMUFlags::WRITE
                     };
+                    // FIXME:
+                    #[cfg(target_arch = "aarch64")]
+                    let flags = MMUFlags::WRITE;
                     error!(
                         "page fualt from user mode {:#x} {:#x?}",
                         kernel_hal::fetch_fault_vaddr(),
@@ -234,9 +250,13 @@ fn spawn(thread: Arc<Thread>) {
 }
 
 async fn handle_syscall(thread: &Arc<Thread>, regs: &mut GeneralRegs) -> bool {
+    #[cfg(target_arch = "x86_64")]
     let num = regs.rax as u32;
+    #[cfg(target_arch = "aarch64")]
+    let num = regs.x16 as u32;
     // LibOS: Function call ABI
     #[cfg(feature = "std")]
+    #[cfg(target_arch = "x86_64")]
     let args = unsafe {
         let a6 = (regs.rsp as *const usize).read();
         let a7 = (regs.rsp as *const usize).add(1).read();
@@ -246,8 +266,14 @@ async fn handle_syscall(thread: &Arc<Thread>, regs: &mut GeneralRegs) -> bool {
     };
     // RealOS: Zircon syscall ABI
     #[cfg(not(feature = "std"))]
+    #[cfg(target_arch = "x86_64")]
     let args = [
         regs.rdi, regs.rsi, regs.rdx, regs.r10, regs.r8, regs.r9, regs.r12, regs.r13,
+    ];
+    // ARM64
+    #[cfg(target_arch = "aarch64")]
+    let args = [
+        regs.x0, regs.x1, regs.x2, regs.x3, regs.x4, regs.x5, regs.x6, regs.x7,
     ];
     let mut syscall = Syscall {
         regs,
@@ -255,6 +281,14 @@ async fn handle_syscall(thread: &Arc<Thread>, regs: &mut GeneralRegs) -> bool {
         spawn_fn: spawn,
         exit: false,
     };
-    syscall.regs.rax = syscall.syscall(num, args).await as usize;
+    let ret = syscall.syscall(num, args).await as usize;
+    #[cfg(target_arch = "x86_64")]
+    {
+        syscall.regs.rax = ret;
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        syscall.regs.x0 = ret;
+    }
     syscall.exit
 }
