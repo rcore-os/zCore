@@ -347,7 +347,6 @@ Vmar.AllocateOobTest
 Vmar.ObjectInfoTest
 Vmar.UnmapBaseNotMappedTest
 Vmar.AllowFaultsTest
-Vmar.ConcurrentUnmapReadMemory
 VmoCloneTestCase.SizeAlign
 VmoCloneTestCase.NameProperty
 VmoCloneTestCase.Decommit

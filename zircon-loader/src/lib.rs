@@ -234,11 +234,21 @@ fn spawn(thread: Arc<Thread>) {
                                 thread.name(),
                                 e
                             );
-                            panic!("Page Fault from user mode {:#x?}", cx);
+                            error!("Page Fault from user mode {:#x?}", cx);
+                            //TODO: implement exception channel
+                            if !thread.handle_exception().await {
+                                exit = true;
+                            }
                         }
                     }
                 }
-                _ => panic!("not supported interrupt from user mode. {:#x?}", cx),
+                _ => {
+                    error!("not supported interrupt from user mode. {:#x?}", cx);
+                    //TODO: implement exception channel
+                    if !thread.handle_exception().await {
+                        exit = true;
+                    }
+                }
             }
             thread.end_running(cx);
             if exit {

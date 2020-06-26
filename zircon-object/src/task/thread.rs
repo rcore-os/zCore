@@ -371,6 +371,19 @@ impl Thread {
     pub fn get_time(&self) -> u64 {
         self.inner.lock().time as u64
     }
+
+    pub fn handle_exception(&self) -> impl Future<Output = bool> {
+        //TODO: implement exception channel
+        self.exit();
+        struct ExceptionFuture;
+        impl Future for ExceptionFuture {
+            type Output = bool;
+            fn poll(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Self::Output> {
+                Poll::Ready(false)
+            }
+        }
+        ExceptionFuture
+    }
 }
 
 pub trait IntoResult<T> {
