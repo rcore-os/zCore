@@ -14,12 +14,15 @@ pub use {
 };
 
 /// Task (Thread, Process, or Job)
-pub trait Task {
+pub trait Task: Sync + Send {
     /// Kill the task.
-    fn kill(&mut self) -> ZxResult;
+    fn kill(&self);
 
     /// Suspend the task. Currently only thread or process handles may be suspended.
-    fn suspend(&mut self) -> ZxResult;
+    fn suspend(&self);
+
+    /// Resume the task
+    fn resume(&self);
 
     /// Create an exception channel on the task.
     fn create_exception_channel(&mut self, options: u32) -> ZxResult<Channel>;

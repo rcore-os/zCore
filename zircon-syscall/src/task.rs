@@ -175,16 +175,22 @@ impl Syscall<'_> {
             if Arc::ptr_eq(&thread, &self.thread) {
                 return Err(ZxError::NOT_SUPPORTED);
             }
+            let thread: Arc<dyn Task> = thread;
             let token_handle =
                 Handle::new(SuspendToken::create(&thread), Rights::DEFAULT_SUSPEND_TOKEN);
             token.write(proc.add_handle(token_handle))?;
             return Ok(());
         }
-        if let Ok(process) = proc.get_object_with_rights::<Process>(handle, Rights::WRITE) {
-            if Arc::ptr_eq(&process, &proc) {
-                return Err(ZxError::NOT_SUPPORTED);
-            }
-            unimplemented!()
+        if let Ok(_process) = proc.get_object_with_rights::<Process>(handle, Rights::WRITE) {
+            return Err(ZxError::WRONG_TYPE);
+            // if Arc::ptr_eq(&process, &proc) {
+            //     return Err(ZxError::NOT_SUPPORTED);
+            // }
+            // let proc_: Arc<dyn Task> = proc;
+            // let token_handle =
+            //     Handle::new(SuspendToken::create(&proc_), Rights::DEFAULT_SUSPEND_TOKEN);
+            // token.write(proc.add_handle(token_handle))?;
+            // return Ok(());
         }
         Ok(())
     }
@@ -200,8 +206,15 @@ impl Syscall<'_> {
             proc.kill();
         } else if let Ok(thread) = proc.get_object_with_rights::<Thread>(handle, Rights::DESTROY) {
             match thread.state() {
-                ThreadState::Running | ThreadState::Suspended => thread.kill(),
-                _ => {}
+                ThreadState::Running | ThreadState::Suspended => {
+                    if !Arc::ptr_eq(&thread, &self.thread) {
+                        error!("{:?}", thread.state());
+                        thread.kill();
+                    }
+                }
+                _ => {
+                    error!("{:?}", thread.state());
+                }
             }
         } else {
             return Err(ZxError::WRONG_TYPE);

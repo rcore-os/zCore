@@ -1,5 +1,5 @@
 use {
-    super::thread::Thread,
+    // super::thread::Thread,
     super::*,
     crate::object::*,
     alloc::sync::{Arc, Weak},
@@ -7,25 +7,25 @@ use {
 
 pub struct SuspendToken {
     base: KObjectBase,
-    thread: Weak<Thread>,
+    task: Weak<dyn Task>,
 }
 
 impl_kobject!(SuspendToken);
 
 impl SuspendToken {
-    pub fn create(thread: &Arc<Thread>) -> Arc<Self> {
-        thread.suspend();
+    pub fn create(task: &Arc<dyn Task>) -> Arc<Self> {
+        task.suspend();
         Arc::new(SuspendToken {
             base: KObjectBase::new(),
-            thread: Arc::downgrade(thread),
+            task: Arc::downgrade(task),
         })
     }
 }
 
 impl Drop for SuspendToken {
     fn drop(&mut self) {
-        if let Some(thread) = self.thread.upgrade() {
-            thread.resume();
+        if let Some(task) = self.task.upgrade() {
+            task.resume();
         }
     }
 }

@@ -178,20 +178,6 @@ impl Process {
         self.job.process_exit(self.base.id, retcode);
     }
 
-    pub fn kill(&self) {
-        let retcode = -1024;
-        let mut inner = self.inner.lock();
-        inner.status = Status::Exited(retcode);
-        // TODO: exit all threads
-        self.base.signal_set(Signal::PROCESS_TERMINATED);
-        for thread in inner.threads.iter() {
-            thread.kill();
-        }
-        inner.threads.clear();
-        inner.handles.clear();
-        self.job.process_exit(self.base.id, retcode);
-    }
-
     /// Check whether `condition` is allowed in the parent job's policy.
     pub fn check_policy(&self, condition: PolicyCondition) -> ZxResult {
         match self
@@ -437,6 +423,43 @@ impl Process {
     /// Get KoIDs of Threads.
     pub fn thread_ids(&self) -> Vec<KoID> {
         self.inner.lock().threads.iter().map(|t| t.id()).collect()
+    }
+}
+
+impl Task for Process {
+    fn kill(&self) {
+        let retcode = -1024;
+        let mut inner = self.inner.lock();
+        inner.status = Status::Exited(retcode);
+        self.base.signal_set(Signal::PROCESS_TERMINATED);
+        for thread in inner.threads.iter() {
+            thread.kill();
+        }
+        inner.threads.clear();
+        inner.handles.clear();
+        self.job.process_exit(self.base.id, retcode);
+    }
+
+    fn suspend(&self) {
+        let inner = self.inner.lock();
+        for thread in inner.threads.iter() {
+            thread.suspend();
+        }
+    }
+
+    fn resume(&self) {
+        let inner = self.inner.lock();
+        for thread in inner.threads.iter() {
+            thread.resume();
+        }
+    }
+
+    fn create_exception_channel(&mut self, _options: u32) -> ZxResult<Channel> {
+        unimplemented!();
+    }
+
+    fn resume_from_exception(&mut self, _port: &Port, _options: u32) -> ZxResult {
+        unimplemented!();
     }
 }
 

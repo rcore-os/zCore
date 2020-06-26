@@ -224,11 +224,6 @@ impl Thread {
         self.inner.lock().state = ThreadState::Dead;
     }
 
-    pub fn kill(&self) {
-        // self.inner.lock().state = ThreadState::Dying;
-        self.inner.lock().dying = true;
-    }
-
     pub fn is_killed(&self) -> bool {
         self.inner.lock().dying
     }
@@ -245,29 +240,6 @@ impl Thread {
         let mut inner = self.inner.lock();
         let context = inner.context.as_mut().ok_or(ZxError::BAD_STATE)?;
         context.write_state(kind, buf)
-    }
-
-    pub(super) fn suspend(&self) {
-        let mut inner = self.inner.lock();
-        inner.suspend_count += 1;
-        self.base.signal_set(Signal::THREAD_SUSPENDED);
-        info!(
-            "thread {:?} suspend: count={}",
-            self.base.name(),
-            inner.suspend_count
-        );
-    }
-
-    pub(super) fn resume(&self) {
-        let mut inner = self.inner.lock();
-        assert_ne!(inner.suspend_count, 0);
-        inner.suspend_count -= 1;
-        if inner.suspend_count == 0 {
-            self.base.signal_set(Signal::THREAD_RUNNING);
-            if let Some(waker) = inner.waker.take() {
-                waker.wake();
-            }
-        }
     }
 
     pub fn wait_for_run(self: &Arc<Thread>) -> impl Future<Output = Box<UserContext>> {
@@ -368,6 +340,57 @@ impl Thread {
 
     pub fn get_time(&self) -> u64 {
         self.inner.lock().time as u64
+    }
+}
+
+impl Task for Thread {
+    fn kill(&self) {
+        error!("kill");
+        let mut inner = self.inner.lock();
+        inner.dying = true;
+        if inner.suspend_count == 0 {
+            error!("0");
+            return;
+        }
+        if let Some(waker) = inner.waker.take() {
+            error!("wake");
+            waker.wake();
+        }
+        error!("？？？");
+    }
+
+    fn suspend(&self) {
+        let mut inner = self.inner.lock();
+        inner.suspend_count += 1;
+        self.base.signal_set(Signal::THREAD_SUSPENDED);
+        info!(
+            "thread {:?} suspend: count={}",
+            self.base.name(),
+            inner.suspend_count
+        );
+    }
+
+    fn resume(&self) {
+        let mut inner = self.inner.lock();
+        // assert_ne!(inner.suspend_count, 0);
+        if inner.suspend_count == 0 {
+            return;
+        }
+        inner.suspend_count -= 1;
+        if inner.suspend_count == 0 {
+            self.base.signal_set(Signal::THREAD_RUNNING);
+            if let Some(waker) = inner.waker.take() {
+                waker.wake();
+            }
+        }
+    }
+
+    fn create_exception_channel(&mut self, _options: u32) -> ZxResult<Channel> {
+        unimplemented!();
+    }
+
+    fn resume_from_exception(&mut self, _port: &Port, _options: u32) -> ZxResult {
+        unimplemented!();
     }
 }
 
