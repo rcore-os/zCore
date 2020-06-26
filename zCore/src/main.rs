@@ -47,8 +47,8 @@ pub extern "C" fn _start(boot_info: &BootInfo) -> ! {
 fn main(ramfs_data: &[u8], cmdline: &str) {
     use zircon_loader::{run_userboot, Images};
     let images = Images::<&[u8]> {
-        userboot: include_bytes!("../../prebuilt/zircon/userboot.so"),
-        vdso: include_bytes!("../../prebuilt/zircon/libzircon.so"),
+        userboot: include_bytes!("../../prebuilt/zircon/x64/userboot.so"),
+        vdso: include_bytes!("../../prebuilt/zircon/x64/libzircon.so"),
         zbi: ramfs_data,
     };
     let _proc = run_userboot(&images, cmdline);

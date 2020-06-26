@@ -70,7 +70,10 @@ mod tests {
         kernel_hal_unix::init();
 
         let opt = Opt {
-            prebuilt_path: PathBuf::from("../prebuilt/zircon"),
+            #[cfg(target_arch = "x86_64")]
+            prebuilt_path: PathBuf::from("../prebuilt/zircon/x64"),
+            #[cfg(target_arch = "aarch64")]
+            prebuilt_path: PathBuf::from("../prebuilt/zircon/arm64"),
             cmdline: String::from(""),
         };
         let images = open_images(&opt.prebuilt_path).expect("failed to read file");
