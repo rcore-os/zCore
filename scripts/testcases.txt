@@ -1,7 +1,6 @@
 *
 -Bti.NoDelayedUnpin
 -Bti.DecommitRace
--ProcessDebugTest.*
 -ProcessDebugVDSO.*
 -HandleCloseTest.ManyDuplicateTest*
 -JobTest.*

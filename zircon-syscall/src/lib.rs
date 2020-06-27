@@ -110,6 +110,12 @@ impl Syscall<'_> {
             Sys::PROCESS_START => {
                 self.sys_process_start(a0 as _, a1 as _, a2 as _, a3 as _, a4 as _, a5 as _)
             }
+            Sys::PROCESS_READ_MEMORY => {
+                self.sys_process_read_memory(a0 as _, a1 as _, a2.into(), a3 as _, a4.into())
+            }
+            Sys::PROCESS_WRITE_MEMORY => {
+                self.sys_process_write_memory(a0 as _, a1 as _, a2.into(), a3 as _, a4.into())
+            }
             Sys::PROCESS_EXIT => self.sys_process_exit(a0 as _),
             Sys::JOB_CREATE => self.sys_job_create(a0 as _, a1 as _, a2.into()),
             Sys::JOB_SET_POLICY => self.sys_job_set_policy(a0 as _, a1 as _, a2 as _, a3, a4 as _),
