@@ -491,6 +491,18 @@ impl VmAddressRegion {
         task_stats
     }
 
+    pub fn find_region(&self, vaddr: usize) -> Option<Arc<VmMapping>> {
+        let guard = self.inner.lock();
+        let inner = guard.as_ref().unwrap();
+        if let Some(mapping) = inner.mappings.iter().find(|map| map.contains(vaddr)) {
+            return Some(mapping.clone());
+        }
+        if let Some(child) = inner.children.iter().find(|ch| ch.contains(vaddr)) {
+            return child.find_region(vaddr);
+        }
+        None
+    }
+
     #[cfg(test)]
     fn count(&self) -> usize {
         let mut guard = self.inner.lock();
@@ -784,6 +796,15 @@ impl VmMapping {
         });
         new_vmo.append_mapping(Arc::downgrade(&mapping));
         Ok(mapping)
+    }
+
+    pub fn vmo(&self) -> Arc<VmObject> {
+        self.vmo.clone()
+    }
+
+    pub fn inner_info(&self) -> (usize, usize, usize) {
+        let inner = self.inner.lock();
+        (inner.addr, inner.size, inner.vmo_offset)
     }
 }
 
