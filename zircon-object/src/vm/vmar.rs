@@ -491,14 +491,39 @@ impl VmAddressRegion {
         task_stats
     }
 
-    pub fn find_region(&self, vaddr: usize) -> Option<Arc<VmMapping>> {
+    /// Read from address space.
+    ///
+    /// Return the actual number of bytes read.
+    pub fn read_memory(&self, vaddr: usize, buf: &mut [u8]) -> ZxResult<usize> {
+        // TODO: support multiple VMOs
+        let map = self.find_mapping(vaddr).ok_or(ZxError::NO_MEMORY)?;
+        let map_inner = map.inner.lock();
+        let vmo_offset = vaddr - map_inner.addr + map_inner.vmo_offset;
+        map.vmo.read(vmo_offset, buf)?;
+        Ok(buf.len())
+    }
+
+    /// Write to address space.
+    ///
+    /// Return the actual number of bytes written.
+    pub fn write_memory(&self, vaddr: usize, buf: &[u8]) -> ZxResult<usize> {
+        // TODO: support multiple VMOs
+        let map = self.find_mapping(vaddr).ok_or(ZxError::NO_MEMORY)?;
+        let map_inner = map.inner.lock();
+        let vmo_offset = vaddr - map_inner.addr + map_inner.vmo_offset;
+        map.vmo.write(vmo_offset, buf)?;
+        Ok(buf.len())
+    }
+
+    /// Find mapping of vaddr
+    fn find_mapping(&self, vaddr: usize) -> Option<Arc<VmMapping>> {
         let guard = self.inner.lock();
         let inner = guard.as_ref().unwrap();
         if let Some(mapping) = inner.mappings.iter().find(|map| map.contains(vaddr)) {
             return Some(mapping.clone());
         }
         if let Some(child) = inner.children.iter().find(|ch| ch.contains(vaddr)) {
-            return child.find_region(vaddr);
+            return child.find_mapping(vaddr);
         }
         None
     }
@@ -796,15 +821,6 @@ impl VmMapping {
         });
         new_vmo.append_mapping(Arc::downgrade(&mapping));
         Ok(mapping)
-    }
-
-    pub fn vmo(&self) -> Arc<VmObject> {
-        self.vmo.clone()
-    }
-
-    pub fn inner_info(&self) -> (usize, usize, usize) {
-        let inner = self.inner.lock();
-        (inner.addr, inner.size, inner.vmo_offset)
     }
 }
 

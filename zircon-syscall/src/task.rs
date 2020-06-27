@@ -1,8 +1,6 @@
 use core::convert::TryFrom;
 use {super::*, zircon_object::task::*};
 
-const MAXBLOCK: usize = 64 * 1024 * 1024; //64M
-
 impl Syscall<'_> {
     pub fn sys_process_create(
         &self,
@@ -262,32 +260,16 @@ impl Syscall<'_> {
         buffer_size: usize,
         mut actual: UserOutPtr<u32>,
     ) -> ZxResult {
-        if buffer.is_null() {
+        if buffer.is_null() || buffer_size == 0 || buffer_size > MAX_BLOCK {
             return Err(ZxError::INVALID_ARGS);
         }
-        if buffer_size == 0 || buffer_size > MAXBLOCK {
-            return Err(ZxError::INVALID_ARGS);
-        }
-
         let proc = self.thread.proc();
         let process =
             proc.get_object_with_rights::<Process>(handle_value, Rights::READ | Rights::WRITE)?;
-        let vmar = process.vmar();
-        let vm_mapping_op = vmar.find_region(vaddr);
-        if vm_mapping_op.is_none() {
-            return Err(ZxError::NO_MEMORY);
-        }
-        let vm_mapping = vm_mapping_op.unwrap();
-        let vmo = vm_mapping.vmo();
-        let (mp_start, _, mp_vmo_offset) = vm_mapping.inner_info();
-        let offset = vaddr - mp_start + mp_vmo_offset;
-
         let mut data = vec![0u8; buffer_size];
-        vmo.read(offset, &mut data)?;
-
-        buffer.write_array(&data)?;
-        actual.write_if_not_null(data.len() as u32)?;
-
+        let len = process.vmar().read_memory(vaddr, &mut data)?;
+        buffer.write_array(&data[..len])?;
+        actual.write_if_not_null(len as u32)?;
         Ok(())
     }
 
@@ -299,55 +281,15 @@ impl Syscall<'_> {
         buffer_size: usize,
         mut actual: UserOutPtr<u32>,
     ) -> ZxResult {
-        // 通过 给的 handle value 找到 handle
-        // adder 是 要写入 的 目的地址
-        // buffer 是 用户给的 数据地址
-        // size 是 大小
-
-        // check valid
-        if buffer.is_null() {
+        if buffer.is_null() || buffer_size == 0 || buffer_size > MAX_BLOCK {
             return Err(ZxError::INVALID_ARGS);
         }
-        if buffer_size == 0 || buffer_size > MAXBLOCK {
-            return Err(ZxError::INVALID_ARGS);
-        }
-
-        // 获取 当前 进程
         let proc = self.thread.proc();
-
-        // 获取 object
         let process =
             proc.get_object_with_rights::<Process>(handle_value, Rights::READ | Rights::WRITE)?;
-
-        // 通过 process 找到 所在 vmar
-        let vmar = process.vmar();
-
-        // 在 vmar 通过 vadder  找到 vm_mapping
-        let vm_mapping_op = vmar.find_region(vaddr);
-
-        // 验证 mapping 合法
-        if vm_mapping_op.is_none() {
-            return Err(ZxError::NO_MEMORY);
-        }
-
-        // 获得 vm_mapping
-        let vm_mapping = vm_mapping_op.unwrap();
-
-        // 获取 vmo
-        let vmo = vm_mapping.vmo();
-
-        // 获得 mapping inner 信息
-        let (mp_start, _, mp_vmo_offset) = vm_mapping.inner_info();
-
-        // 求一个 offset ？
-        let offset = vaddr - mp_start + mp_vmo_offset;
-
-        // vmo 写入 用户 的数据
-        vmo.write(offset, &buffer.read_array(buffer_size)?)?;
-
-        // 写回 具体字节数
-        actual.write_if_not_null(buffer.read_array(buffer_size)?.len() as u32)?;
-
+        let data = buffer.read_array(buffer_size)?;
+        let len = process.vmar().write_memory(vaddr, &data)?;
+        actual.write_if_not_null(len as u32)?;
         Ok(())
     }
 }
@@ -358,3 +300,5 @@ const JOB_POL_TIMER_SLACK: u32 = 1;
 
 const JOB_POL_RELATIVE: u32 = 0;
 const JOB_POL_ABSOLUTE: u32 = 1;
+
+const MAX_BLOCK: usize = 64 * 1024 * 1024; //64M
