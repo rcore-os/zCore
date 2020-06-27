@@ -7,6 +7,6 @@ prebuilt/linux/$(ROOTFS_TAR):
 	wget $(ROOTFS_URL) -O $@
 
 rootfs: prebuilt/linux/$(ROOTFS_TAR)
-	mkdir -p rootfs
+	rm -rf rootfs && mkdir -p rootfs
 	tar xf $< -C rootfs
 	cp prebuilt/linux/libc-libos.so rootfs/lib/ld-musl-x86_64.so.1
