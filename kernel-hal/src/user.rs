@@ -84,6 +84,9 @@ impl<T, P: Policy> UserPtr<T, P> {
         if self.ptr.is_null() {
             return Err(Error::InvalidPointer);
         }
+        if (self.ptr as usize) % core::mem::align_of::<T>() != 0 {
+            return Err(Error::InvalidPointer);
+        }
         Ok(())
     }
 }

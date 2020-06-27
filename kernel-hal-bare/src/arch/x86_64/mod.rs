@@ -72,7 +72,13 @@ impl PageTableImpl {
             .unwrap()
             .flush();
         };
-        trace!("map: {:x?} -> {:x?}, flags={:?}", vaddr, paddr, flags);
+        trace!(
+            "map: {:x?} -> {:x?}, flags={:?} in {:#x?}",
+            vaddr,
+            paddr,
+            flags,
+            self.root_paddr
+        );
         Ok(())
     }
 
@@ -81,10 +87,25 @@ impl PageTableImpl {
     pub fn unmap(&mut self, vaddr: x86_64::VirtAddr) -> Result<(), ()> {
         let mut pt = self.get();
         let page = Page::<Size4KiB>::from_start_address(vaddr).unwrap();
-        if let Ok((_, flush)) = pt.unmap(page) {
-            flush.flush();
+        // This is a workaround to an issue in the x86-64 crate
+        // A page without PRESENT bit is not unmappable AND mapable
+        // So we add PRESENT bit here
+        unsafe {
+            pt.update_flags(page, PTF::PRESENT | PTF::NO_EXECUTE).ok();
         }
-        trace!("unmap: {:x?}", vaddr);
+        match pt.unmap(page) {
+            Ok((_, flush)) => {
+                flush.flush();
+                trace!("unmap: {:x?} in {:#x?}", vaddr, self.root_paddr);
+            }
+            Err(err) => {
+                debug!(
+                    "unmap failed: {:x?} err={:x?} in {:#x?}",
+                    vaddr, err, self.root_paddr
+                );
+                return Err(());
+            }
+        }
         Ok(())
     }
 

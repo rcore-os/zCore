@@ -1,8 +1,11 @@
 use {super::*, bitflags::bitflags, zircon_object::vm::*};
 
 fn amount_of_alignments(options: u32) -> ZxResult<usize> {
-    let align_pow2 = (options >> 24) as usize;
-    if (align_pow2 < 10 && align_pow2 != 0) || (align_pow2 > 32) {
+    let mut align_pow2 = (options >> 24) as usize;
+    if align_pow2 == 0 {
+        align_pow2 = PAGE_SIZE_LOG2;
+    }
+    if (align_pow2 < PAGE_SIZE_LOG2) || (align_pow2 > 32) {
         Err(ZxError::INVALID_ARGS)
     } else {
         Ok(1 << align_pow2)
@@ -55,11 +58,12 @@ impl Syscall<'_> {
             None
         };
 
+        let size = roundup_pages(size as usize);
         // check `size`
-        if size == 0u64 {
+        if size == 0usize {
             return Err(ZxError::INVALID_ARGS);
         }
-        let child = parent.allocate(offset, size as usize, vmar_flags, align)?;
+        let child = parent.allocate(offset, size, vmar_flags, align)?;
         let child_addr = child.addr();
         let child_handle = proc.add_handle(Handle::new(child, Rights::DEFAULT_VMAR | perm_rights));
         info!("vmar.allocate: at {:#x?}", child_addr);
@@ -181,7 +185,12 @@ impl Syscall<'_> {
         mapping_flags.set(MMUFlags::READ, options.contains(VmOptions::PERM_READ));
         mapping_flags.set(MMUFlags::WRITE, options.contains(VmOptions::PERM_WRITE));
         mapping_flags.set(MMUFlags::EXECUTE, options.contains(VmOptions::PERM_EXECUTE));
-        vmar.protect(addr as usize, len as usize, mapping_flags)?;
+
+        let len = roundup_pages(len as usize);
+        if len == 0usize {
+            return Err(ZxError::INVALID_ARGS);
+        }
+        vmar.protect(addr as usize, len, mapping_flags)?;
         Ok(())
     }
 
