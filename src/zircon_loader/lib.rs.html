@@ -268,6 +268,40 @@
 <span id="268">268</span>
 <span id="269">269</span>
 <span id="270">270</span>
+<span id="271">271</span>
+<span id="272">272</span>
+<span id="273">273</span>
+<span id="274">274</span>
+<span id="275">275</span>
+<span id="276">276</span>
+<span id="277">277</span>
+<span id="278">278</span>
+<span id="279">279</span>
+<span id="280">280</span>
+<span id="281">281</span>
+<span id="282">282</span>
+<span id="283">283</span>
+<span id="284">284</span>
+<span id="285">285</span>
+<span id="286">286</span>
+<span id="287">287</span>
+<span id="288">288</span>
+<span id="289">289</span>
+<span id="290">290</span>
+<span id="291">291</span>
+<span id="292">292</span>
+<span id="293">293</span>
+<span id="294">294</span>
+<span id="295">295</span>
+<span id="296">296</span>
+<span id="297">297</span>
+<span id="298">298</span>
+<span id="299">299</span>
+<span id="300">300</span>
+<span id="301">301</span>
+<span id="302">302</span>
+<span id="303">303</span>
+<span id="304">304</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="attribute">#![<span class="ident">no_std</span>]</span>
 <span class="attribute">#![<span class="ident">feature</span>(<span class="ident">asm</span>)]</span>
@@ -298,28 +332,23 @@
 <span class="comment">// Essential VMO handles</span>
 <span class="kw">const</span> <span class="ident">K_ZBI</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">4</span>;
 <span class="kw">const</span> <span class="ident">K_FIRSTVDSO</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">5</span>;
-<span class="kw">const</span> <span class="ident">K_USERBOOT_DECOMPRESSOR</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">8</span>;
-<span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
-<span class="kw">const</span> <span class="ident">K_FIRSTKERNELFILE</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="ident">K_USERBOOT_DECOMPRESSOR</span>;
-<span class="kw">const</span> <span class="ident">K_CRASHLOG</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">9</span>;
-<span class="kw">const</span> <span class="ident">K_COUNTERNAMES</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">10</span>;
-<span class="kw">const</span> <span class="ident">K_COUNTERS</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">11</span>;
-<span class="kw">const</span> <span class="ident">K_FISTINSTRUMENTATIONDATA</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">12</span>;
-<span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
-<span class="kw">const</span> <span class="ident">K_HANDLECOUNT</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="ident">K_FISTINSTRUMENTATIONDATA</span> <span class="op">+</span> <span class="number">3</span>;
+<span class="kw">const</span> <span class="ident">K_CRASHLOG</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">8</span>;
+<span class="kw">const</span> <span class="ident">K_COUNTERNAMES</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">9</span>;
+<span class="kw">const</span> <span class="ident">K_COUNTERS</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">10</span>;
+<span class="kw">const</span> <span class="ident">K_FISTINSTRUMENTATIONDATA</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">11</span>;
+<span class="kw">const</span> <span class="ident">K_HANDLECOUNT</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">15</span>;
 
 <span class="doccomment">/// Program images to run.</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Images</span><span class="op">&lt;</span><span class="ident">T</span>: <span class="ident">AsRef</span><span class="op">&lt;</span>[<span class="ident">u8</span>]<span class="op">&gt;</span><span class="op">&gt;</span> {
     <span class="kw">pub</span> <span class="ident">userboot</span>: <span class="ident">T</span>,
     <span class="kw">pub</span> <span class="ident">vdso</span>: <span class="ident">T</span>,
-    <span class="kw">pub</span> <span class="ident">decompressor</span>: <span class="ident">T</span>,
     <span class="kw">pub</span> <span class="ident">zbi</span>: <span class="ident">T</span>,
 }
 
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">run_userboot</span>(<span class="ident">images</span>: <span class="kw-2">&amp;</span><span class="ident">Images</span><span class="op">&lt;</span><span class="kw">impl</span> <span class="ident">AsRef</span><span class="op">&lt;</span>[<span class="ident">u8</span>]<span class="op">&gt;</span><span class="op">&gt;</span>, <span class="ident">cmdline</span>: <span class="kw-2">&amp;</span><span class="ident">str</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Process</span><span class="op">&gt;</span> {
     <span class="kw">let</span> <span class="ident">job</span> <span class="op">=</span> <span class="ident">Job</span>::<span class="ident">root</span>();
-    <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="ident">Process</span>::<span class="ident">create</span>(<span class="kw-2">&amp;</span><span class="ident">job</span>, <span class="string">&quot;proc&quot;</span>, <span class="number">0</span>).<span class="ident">unwrap</span>();
-    <span class="kw">let</span> <span class="ident">thread</span> <span class="op">=</span> <span class="ident">Thread</span>::<span class="ident">create</span>(<span class="kw-2">&amp;</span><span class="ident">proc</span>, <span class="string">&quot;thread&quot;</span>, <span class="number">0</span>).<span class="ident">unwrap</span>();
+    <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="ident">Process</span>::<span class="ident">create</span>(<span class="kw-2">&amp;</span><span class="ident">job</span>, <span class="string">&quot;userboot&quot;</span>, <span class="number">0</span>).<span class="ident">unwrap</span>();
+    <span class="kw">let</span> <span class="ident">thread</span> <span class="op">=</span> <span class="ident">Thread</span>::<span class="ident">create</span>(<span class="kw-2">&amp;</span><span class="ident">proc</span>, <span class="string">&quot;userboot&quot;</span>, <span class="number">0</span>).<span class="ident">unwrap</span>();
     <span class="kw">let</span> <span class="ident">resource</span> <span class="op">=</span> <span class="ident">Resource</span>::<span class="ident">create</span>(
         <span class="string">&quot;root&quot;</span>,
         <span class="ident">ResourceKind</span>::<span class="ident">ROOT</span>,
@@ -377,16 +406,6 @@
         <span class="ident">vmo</span>
     };
 
-    <span class="comment">// decompressor</span>
-    <span class="kw">let</span> <span class="ident">decompressor_vmo</span> <span class="op">=</span> {
-        <span class="kw">let</span> <span class="ident">elf</span> <span class="op">=</span> <span class="ident">ElfFile</span>::<span class="ident">new</span>(<span class="ident">images</span>.<span class="ident">decompressor</span>.<span class="ident">as_ref</span>()).<span class="ident">unwrap</span>();
-        <span class="kw">let</span> <span class="ident">size</span> <span class="op">=</span> <span class="ident">elf</span>.<span class="ident">load_segment_size</span>();
-        <span class="kw">let</span> <span class="ident">vmo</span> <span class="op">=</span> <span class="ident">VmObject</span>::<span class="ident">new_paged</span>(<span class="ident">size</span> <span class="op">/</span> <span class="ident">PAGE_SIZE</span>);
-        <span class="ident">vmo</span>.<span class="ident">write</span>(<span class="number">0</span>, <span class="ident">images</span>.<span class="ident">decompressor</span>.<span class="ident">as_ref</span>()).<span class="ident">unwrap</span>();
-        <span class="ident">vmo</span>.<span class="ident">set_name</span>(<span class="string">&quot;lib/hermetic/decompress-zbi.so&quot;</span>);
-        <span class="ident">vmo</span>
-    };
-
     <span class="comment">// stack</span>
     <span class="kw">const</span> <span class="ident">STACK_PAGES</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">8</span>;
     <span class="kw">let</span> <span class="ident">stack_vmo</span> <span class="op">=</span> <span class="ident">VmObject</span>::<span class="ident">new_paged</span>(<span class="ident">STACK_PAGES</span>);
@@ -394,24 +413,28 @@
     <span class="kw">let</span> <span class="ident">stack_bottom</span> <span class="op">=</span> <span class="ident">vmar</span>
         .<span class="ident">map</span>(<span class="prelude-val">None</span>, <span class="ident">stack_vmo</span>.<span class="ident">clone</span>(), <span class="number">0</span>, <span class="ident">stack_vmo</span>.<span class="ident">len</span>(), <span class="ident">flags</span>)
         .<span class="ident">unwrap</span>();
+    <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>)]</span>
     <span class="comment">// WARN: align stack to 16B, then emulate a &#39;call&#39; (push rip)</span>
     <span class="kw">let</span> <span class="ident">sp</span> <span class="op">=</span> <span class="ident">stack_bottom</span> <span class="op">+</span> <span class="ident">stack_vmo</span>.<span class="ident">len</span>() <span class="op">-</span> <span class="number">8</span>;
+    <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;aarch64&quot;</span>)]</span>
+    <span class="kw">let</span> <span class="ident">sp</span> <span class="op">=</span> <span class="ident">stack_bottom</span> <span class="op">+</span> <span class="ident">stack_vmo</span>.<span class="ident">len</span>();
 
     <span class="comment">// channel</span>
     <span class="kw">let</span> (<span class="ident">user_channel</span>, <span class="ident">kernel_channel</span>) <span class="op">=</span> <span class="ident">Channel</span>::<span class="ident">create</span>();
     <span class="kw">let</span> <span class="ident">handle</span> <span class="op">=</span> <span class="ident">Handle</span>::<span class="ident">new</span>(<span class="ident">user_channel</span>, <span class="ident">Rights</span>::<span class="ident">DEFAULT_CHANNEL</span>);
 
-    <span class="comment">// FIXME: pass correct handles</span>
-    <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">handles</span> <span class="op">=</span> <span class="macro">vec</span><span class="macro">!</span>[<span class="ident">Handle</span>::<span class="ident">new</span>(<span class="ident">proc</span>.<span class="ident">clone</span>(), <span class="ident">Rights</span>::<span class="ident">DUPLICATE</span>); <span class="number">15</span>];
+    <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">handles</span> <span class="op">=</span> <span class="macro">vec</span><span class="macro">!</span>[<span class="ident">Handle</span>::<span class="ident">new</span>(<span class="ident">proc</span>.<span class="ident">clone</span>(), <span class="ident">Rights</span>::<span class="ident">empty</span>()); <span class="ident">K_HANDLECOUNT</span>];
     <span class="ident">handles</span>[<span class="ident">K_PROC_SELF</span>] <span class="op">=</span> <span class="ident">Handle</span>::<span class="ident">new</span>(<span class="ident">proc</span>.<span class="ident">clone</span>(), <span class="ident">Rights</span>::<span class="ident">DEFAULT_PROCESS</span>);
     <span class="ident">handles</span>[<span class="ident">K_VMARROOT_SELF</span>] <span class="op">=</span> <span class="ident">Handle</span>::<span class="ident">new</span>(<span class="ident">proc</span>.<span class="ident">vmar</span>(), <span class="ident">Rights</span>::<span class="ident">DEFAULT_VMAR</span> <span class="op">|</span> <span class="ident">Rights</span>::<span class="ident">IO</span>);
     <span class="ident">handles</span>[<span class="ident">K_ROOTJOB</span>] <span class="op">=</span> <span class="ident">Handle</span>::<span class="ident">new</span>(<span class="ident">job</span>, <span class="ident">Rights</span>::<span class="ident">DEFAULT_JOB</span>);
     <span class="ident">handles</span>[<span class="ident">K_ROOTRESOURCE</span>] <span class="op">=</span> <span class="ident">Handle</span>::<span class="ident">new</span>(<span class="ident">resource</span>, <span class="ident">Rights</span>::<span class="ident">DEFAULT_RESOURCE</span>);
     <span class="ident">handles</span>[<span class="ident">K_ZBI</span>] <span class="op">=</span> <span class="ident">Handle</span>::<span class="ident">new</span>(<span class="ident">zbi_vmo</span>, <span class="ident">Rights</span>::<span class="ident">DEFAULT_VMO</span>);
     <span class="comment">// set up handles[K_FIRSTVDSO..K_LASTVDSO + 1]</span>
-    <span class="kw">const</span> <span class="ident">VDSO_CONSTANT_BASE</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">0x4940</span>;
-    <span class="kw">let</span> <span class="ident">constants</span>: [<span class="ident">u8</span>; <span class="number">112</span>] <span class="op">=</span> <span class="kw">unsafe</span> { <span class="ident">core</span>::<span class="ident">mem</span>::<span class="ident">transmute</span>(<span class="ident">kernel_hal</span>::<span class="ident">vdso_constants</span>()) };
-    <span class="ident">vdso_vmo</span>.<span class="ident">write</span>(<span class="ident">VDSO_CONSTANT_BASE</span>, <span class="kw-2">&amp;</span><span class="ident">constants</span>).<span class="ident">unwrap</span>();
+    <span class="kw">const</span> <span class="ident">VDSO_DATA_CONSTANTS</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">0x4a50</span>;
+    <span class="kw">const</span> <span class="ident">VDSO_DATA_CONSTANTS_SIZE</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">0x78</span>;
+    <span class="kw">let</span> <span class="ident">constants</span>: [<span class="ident">u8</span>; <span class="ident">VDSO_DATA_CONSTANTS_SIZE</span>] <span class="op">=</span>
+        <span class="kw">unsafe</span> { <span class="ident">core</span>::<span class="ident">mem</span>::<span class="ident">transmute</span>(<span class="ident">kernel_hal</span>::<span class="ident">vdso_constants</span>()) };
+    <span class="ident">vdso_vmo</span>.<span class="ident">write</span>(<span class="ident">VDSO_DATA_CONSTANTS</span>, <span class="kw-2">&amp;</span><span class="ident">constants</span>).<span class="ident">unwrap</span>();
     <span class="ident">vdso_vmo</span>.<span class="ident">set_name</span>(<span class="string">&quot;vdso/full&quot;</span>);
     <span class="kw">let</span> <span class="ident">vdso_test1</span> <span class="op">=</span> <span class="ident">vdso_vmo</span>.<span class="ident">create_child</span>(<span class="bool-val">false</span>, <span class="number">0</span>, <span class="ident">vdso_vmo</span>.<span class="ident">len</span>()).<span class="ident">unwrap</span>();
     <span class="ident">vdso_test1</span>.<span class="ident">set_name</span>(<span class="string">&quot;vdso/test1&quot;</span>);
@@ -420,17 +443,14 @@
     <span class="ident">handles</span>[<span class="ident">K_FIRSTVDSO</span>] <span class="op">=</span> <span class="ident">Handle</span>::<span class="ident">new</span>(<span class="ident">vdso_vmo</span>, <span class="ident">Rights</span>::<span class="ident">DEFAULT_VMO</span> <span class="op">|</span> <span class="ident">Rights</span>::<span class="ident">EXECUTE</span>);
     <span class="ident">handles</span>[<span class="ident">K_FIRSTVDSO</span> <span class="op">+</span> <span class="number">1</span>] <span class="op">=</span> <span class="ident">Handle</span>::<span class="ident">new</span>(<span class="ident">vdso_test1</span>, <span class="ident">Rights</span>::<span class="ident">DEFAULT_VMO</span> <span class="op">|</span> <span class="ident">Rights</span>::<span class="ident">EXECUTE</span>);
     <span class="ident">handles</span>[<span class="ident">K_FIRSTVDSO</span> <span class="op">+</span> <span class="number">2</span>] <span class="op">=</span> <span class="ident">Handle</span>::<span class="ident">new</span>(<span class="ident">vdso_test2</span>, <span class="ident">Rights</span>::<span class="ident">DEFAULT_VMO</span> <span class="op">|</span> <span class="ident">Rights</span>::<span class="ident">EXECUTE</span>);
-    <span class="comment">// FIXME correct rights for decompressor engine</span>
-    <span class="ident">handles</span>[<span class="ident">K_USERBOOT_DECOMPRESSOR</span>] <span class="op">=</span>
-        <span class="ident">Handle</span>::<span class="ident">new</span>(<span class="ident">decompressor_vmo</span>, <span class="ident">Rights</span>::<span class="ident">DEFAULT_VMO</span> <span class="op">|</span> <span class="ident">Rights</span>::<span class="ident">EXECUTE</span>);
-    <span class="comment">// TODO to use correct CrashLogVmo handle</span>
+    <span class="comment">// TODO: use correct CrashLogVmo handle</span>
     <span class="kw">let</span> <span class="ident">crash_log_vmo</span> <span class="op">=</span> <span class="ident">VmObject</span>::<span class="ident">new_paged</span>(<span class="number">1</span>);
     <span class="ident">crash_log_vmo</span>.<span class="ident">set_name</span>(<span class="string">&quot;crashlog&quot;</span>);
     <span class="ident">handles</span>[<span class="ident">K_CRASHLOG</span>] <span class="op">=</span> <span class="ident">Handle</span>::<span class="ident">new</span>(<span class="ident">crash_log_vmo</span>, <span class="ident">Rights</span>::<span class="ident">DEFAULT_VMO</span>);
     <span class="kw">let</span> (<span class="ident">counter_name_vmo</span>, <span class="ident">kcounters_vmo</span>) <span class="op">=</span> <span class="ident">kcounter</span>::<span class="ident">create_kcounter_vmo</span>();
     <span class="ident">handles</span>[<span class="ident">K_COUNTERNAMES</span>] <span class="op">=</span> <span class="ident">Handle</span>::<span class="ident">new</span>(<span class="ident">counter_name_vmo</span>, <span class="ident">Rights</span>::<span class="ident">DEFAULT_VMO</span>);
     <span class="ident">handles</span>[<span class="ident">K_COUNTERS</span>] <span class="op">=</span> <span class="ident">Handle</span>::<span class="ident">new</span>(<span class="ident">kcounters_vmo</span>, <span class="ident">Rights</span>::<span class="ident">DEFAULT_VMO</span>);
-    <span class="comment">// TODO to use correct Instrumentation data handle</span>
+    <span class="comment">// TODO: use correct Instrumentation data handle</span>
     <span class="kw">let</span> <span class="ident">instrumentation_data_vmo</span> <span class="op">=</span> <span class="ident">VmObject</span>::<span class="ident">new_paged</span>(<span class="number">0</span>);
     <span class="ident">instrumentation_data_vmo</span>.<span class="ident">set_name</span>(<span class="string">&quot;UNIMPLEMENTED_VMO&quot;</span>);
     <span class="ident">handles</span>[<span class="ident">K_FISTINSTRUMENTATIONDATA</span>] <span class="op">=</span>
@@ -438,11 +458,13 @@
     <span class="ident">handles</span>[<span class="ident">K_FISTINSTRUMENTATIONDATA</span> <span class="op">+</span> <span class="number">1</span>] <span class="op">=</span>
         <span class="ident">Handle</span>::<span class="ident">new</span>(<span class="ident">instrumentation_data_vmo</span>.<span class="ident">clone</span>(), <span class="ident">Rights</span>::<span class="ident">DEFAULT_VMO</span>);
     <span class="ident">handles</span>[<span class="ident">K_FISTINSTRUMENTATIONDATA</span> <span class="op">+</span> <span class="number">2</span>] <span class="op">=</span>
+        <span class="ident">Handle</span>::<span class="ident">new</span>(<span class="ident">instrumentation_data_vmo</span>.<span class="ident">clone</span>(), <span class="ident">Rights</span>::<span class="ident">DEFAULT_VMO</span>);
+    <span class="ident">handles</span>[<span class="ident">K_FISTINSTRUMENTATIONDATA</span> <span class="op">+</span> <span class="number">3</span>] <span class="op">=</span>
         <span class="ident">Handle</span>::<span class="ident">new</span>(<span class="ident">instrumentation_data_vmo</span>, <span class="ident">Rights</span>::<span class="ident">DEFAULT_VMO</span>);
 
     <span class="comment">// check: handle to root proc should be only</span>
 
-    <span class="kw">let</span> <span class="ident">data</span> <span class="op">=</span> <span class="ident">Vec</span>::<span class="ident">from</span>(<span class="ident">cmdline</span>.<span class="ident">replace</span>(<span class="string">&#39;:&#39;</span>, <span class="string">&quot;\0&quot;</span>) <span class="op">+</span> <span class="string">&quot;\0console.shell=true\0&quot;</span>);
+    <span class="kw">let</span> <span class="ident">data</span> <span class="op">=</span> <span class="ident">Vec</span>::<span class="ident">from</span>(<span class="ident">cmdline</span>.<span class="ident">replace</span>(<span class="string">&#39;:&#39;</span>, <span class="string">&quot;\0&quot;</span>) <span class="op">+</span> <span class="string">&quot;\0&quot;</span>);
     <span class="kw">let</span> <span class="ident">msg</span> <span class="op">=</span> <span class="ident">MessagePacket</span> { <span class="ident">data</span>, <span class="ident">handles</span> };
     <span class="ident">kernel_channel</span>.<span class="ident">write</span>(<span class="ident">msg</span>).<span class="ident">unwrap</span>();
 
@@ -469,11 +491,20 @@
             <span class="ident">thread</span>.<span class="ident">time_add</span>(<span class="ident">time</span>);
             <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;back from user: {:#x?}&quot;</span>, <span class="ident">cx</span>);
             <span class="ident">EXCEPTIONS_USER</span>.<span class="ident">add</span>(<span class="number">1</span>);
+            <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;aarch64&quot;</span>)]</span>
+            <span class="kw">let</span> <span class="ident">exit</span>;
+            <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;aarch64&quot;</span>)]</span>
+            <span class="kw">match</span> <span class="ident">cx</span>.<span class="ident">trap_num</span> {
+                <span class="number">0</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">exit</span> <span class="op">=</span> <span class="ident">handle_syscall</span>(<span class="kw-2">&amp;</span><span class="ident">thread</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">cx</span>.<span class="ident">general</span>).<span class="kw">await</span>,
+                <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="macro">unimplemented</span><span class="macro">!</span>(),
+            }
+            <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>)]</span>
             <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">exit</span> <span class="op">=</span> <span class="bool-val">false</span>;
+            <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>)]</span>
             <span class="kw">match</span> <span class="ident">cx</span>.<span class="ident">trap_num</span> {
                 <span class="number">0x100</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">exit</span> <span class="op">=</span> <span class="ident">handle_syscall</span>(<span class="kw-2">&amp;</span><span class="ident">thread</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">cx</span>.<span class="ident">general</span>).<span class="kw">await</span>,
                 <span class="number">0x20</span>..<span class="op">=</span><span class="number">0x3f</span> <span class="op">=</span><span class="op">&gt;</span> {
-                    <span class="ident">kernel_hal</span>::<span class="ident">irq_handle</span>(<span class="ident">cx</span>.<span class="ident">trap_num</span> <span class="kw">as</span> <span class="ident">u8</span>);
+                    <span class="ident">kernel_hal</span>::<span class="ident">InterruptManager</span>::<span class="ident">handle</span>(<span class="ident">cx</span>.<span class="ident">trap_num</span> <span class="kw">as</span> <span class="ident">u8</span>);
                     <span class="kw">if</span> <span class="ident">cx</span>.<span class="ident">trap_num</span> <span class="op">=</span><span class="op">=</span> <span class="number">0x20</span> {
                         <span class="ident">EXCEPTIONS_TIMER</span>.<span class="ident">add</span>(<span class="number">1</span>);
                         <span class="ident">kernel_hal</span>::<span class="ident">yield_now</span>().<span class="kw">await</span>;
@@ -481,11 +512,15 @@
                 }
                 <span class="number">0xe</span> <span class="op">=</span><span class="op">&gt;</span> {
                     <span class="ident">EXCEPTIONS_PGFAULT</span>.<span class="ident">add</span>(<span class="number">1</span>);
+                    <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>)]</span>
                     <span class="kw">let</span> <span class="ident">flags</span> <span class="op">=</span> <span class="kw">if</span> <span class="ident">cx</span>.<span class="ident">error_code</span> <span class="op">&amp;</span> <span class="number">0x2</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span> {
                         <span class="ident">MMUFlags</span>::<span class="ident">READ</span>
                     } <span class="kw">else</span> {
                         <span class="ident">MMUFlags</span>::<span class="ident">WRITE</span>
                     };
+                    <span class="comment">// FIXME:</span>
+                    <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;aarch64&quot;</span>)]</span>
+                    <span class="kw">let</span> <span class="ident">flags</span> <span class="op">=</span> <span class="ident">MMUFlags</span>::<span class="ident">WRITE</span>;
                     <span class="macro">error</span><span class="macro">!</span>(
                         <span class="string">&quot;page fualt from user mode {:#x} {:#x?}&quot;</span>,
                         <span class="ident">kernel_hal</span>::<span class="ident">fetch_fault_vaddr</span>(),
@@ -498,12 +533,27 @@
                     {
                         <span class="prelude-val">Ok</span>(()) <span class="op">=</span><span class="op">&gt;</span> {}
                         <span class="prelude-val">Err</span>(<span class="ident">e</span>) <span class="op">=</span><span class="op">&gt;</span> {
-                            <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;{:?}&quot;</span>, <span class="ident">e</span>);
-                            <span class="macro">panic</span><span class="macro">!</span>(<span class="string">&quot;Page Fault from user mode {:#x?}&quot;</span>, <span class="ident">cx</span>);
+                            <span class="macro">error</span><span class="macro">!</span>(
+                                <span class="string">&quot;proc={:?} thread={:?} err={:?}&quot;</span>,
+                                <span class="ident">thread</span>.<span class="ident">proc</span>().<span class="ident">name</span>(),
+                                <span class="ident">thread</span>.<span class="ident">name</span>(),
+                                <span class="ident">e</span>
+                            );
+                            <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;Page Fault from user mode {:#x?}&quot;</span>, <span class="ident">cx</span>);
+                            <span class="comment">//TODO: implement exception channel</span>
+                            <span class="kw">if</span> <span class="op">!</span><span class="ident">thread</span>.<span class="ident">handle_exception</span>().<span class="kw">await</span> {
+                                <span class="ident">exit</span> <span class="op">=</span> <span class="bool-val">true</span>;
+                            }
                         }
                     }
                 }
-                <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="macro">panic</span><span class="macro">!</span>(<span class="string">&quot;not supported interrupt from user mode. {:#x?}&quot;</span>, <span class="ident">cx</span>),
+                <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> {
+                    <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;not supported interrupt from user mode. {:#x?}&quot;</span>, <span class="ident">cx</span>);
+                    <span class="comment">//TODO: implement exception channel</span>
+                    <span class="kw">if</span> <span class="op">!</span><span class="ident">thread</span>.<span class="ident">handle_exception</span>().<span class="kw">await</span> {
+                        <span class="ident">exit</span> <span class="op">=</span> <span class="bool-val">true</span>;
+                    }
+                }
             }
             <span class="ident">thread</span>.<span class="ident">end_running</span>(<span class="ident">cx</span>);
             <span class="kw">if</span> <span class="ident">exit</span> {
@@ -515,9 +565,13 @@
 }
 
 <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">handle_syscall</span>(<span class="ident">thread</span>: <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Thread</span><span class="op">&gt;</span>, <span class="ident">regs</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">GeneralRegs</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+    <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>)]</span>
     <span class="kw">let</span> <span class="ident">num</span> <span class="op">=</span> <span class="ident">regs</span>.<span class="ident">rax</span> <span class="kw">as</span> <span class="ident">u32</span>;
+    <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;aarch64&quot;</span>)]</span>
+    <span class="kw">let</span> <span class="ident">num</span> <span class="op">=</span> <span class="ident">regs</span>.<span class="ident">x16</span> <span class="kw">as</span> <span class="ident">u32</span>;
     <span class="comment">// LibOS: Function call ABI</span>
     <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;std&quot;</span>)]</span>
+    <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>)]</span>
     <span class="kw">let</span> <span class="ident">args</span> <span class="op">=</span> <span class="kw">unsafe</span> {
         <span class="kw">let</span> <span class="ident">a6</span> <span class="op">=</span> (<span class="ident">regs</span>.<span class="ident">rsp</span> <span class="kw">as</span> <span class="kw-2">*</span><span class="kw">const</span> <span class="ident">usize</span>).<span class="ident">read</span>();
         <span class="kw">let</span> <span class="ident">a7</span> <span class="op">=</span> (<span class="ident">regs</span>.<span class="ident">rsp</span> <span class="kw">as</span> <span class="kw-2">*</span><span class="kw">const</span> <span class="ident">usize</span>).<span class="ident">add</span>(<span class="number">1</span>).<span class="ident">read</span>();
@@ -527,8 +581,14 @@
     };
     <span class="comment">// RealOS: Zircon syscall ABI</span>
     <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">not</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;std&quot;</span>))]</span>
+    <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>)]</span>
     <span class="kw">let</span> <span class="ident">args</span> <span class="op">=</span> [
         <span class="ident">regs</span>.<span class="ident">rdi</span>, <span class="ident">regs</span>.<span class="ident">rsi</span>, <span class="ident">regs</span>.<span class="ident">rdx</span>, <span class="ident">regs</span>.<span class="ident">r10</span>, <span class="ident">regs</span>.<span class="ident">r8</span>, <span class="ident">regs</span>.<span class="ident">r9</span>, <span class="ident">regs</span>.<span class="ident">r12</span>, <span class="ident">regs</span>.<span class="ident">r13</span>,
+    ];
+    <span class="comment">// ARM64</span>
+    <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;aarch64&quot;</span>)]</span>
+    <span class="kw">let</span> <span class="ident">args</span> <span class="op">=</span> [
+        <span class="ident">regs</span>.<span class="ident">x0</span>, <span class="ident">regs</span>.<span class="ident">x1</span>, <span class="ident">regs</span>.<span class="ident">x2</span>, <span class="ident">regs</span>.<span class="ident">x3</span>, <span class="ident">regs</span>.<span class="ident">x4</span>, <span class="ident">regs</span>.<span class="ident">x5</span>, <span class="ident">regs</span>.<span class="ident">x6</span>, <span class="ident">regs</span>.<span class="ident">x7</span>,
     ];
     <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">syscall</span> <span class="op">=</span> <span class="ident">Syscall</span> {
         <span class="ident">regs</span>,
@@ -536,8 +596,16 @@
         <span class="ident">spawn_fn</span>: <span class="ident">spawn</span>,
         <span class="ident">exit</span>: <span class="bool-val">false</span>,
     };
-    <span class="ident">syscall</span>.<span class="ident">regs</span>.<span class="ident">rax</span> <span class="op">=</span> <span class="ident">syscall</span>.<span class="ident">syscall</span>(<span class="ident">num</span>, <span class="ident">args</span>).<span class="kw">await</span> <span class="kw">as</span> <span class="ident">usize</span>;
+    <span class="kw">let</span> <span class="ident">ret</span> <span class="op">=</span> <span class="ident">syscall</span>.<span class="ident">syscall</span>(<span class="ident">num</span>, <span class="ident">args</span>).<span class="kw">await</span> <span class="kw">as</span> <span class="ident">usize</span>;
+    <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>)]</span>
+    {
+        <span class="ident">syscall</span>.<span class="ident">regs</span>.<span class="ident">rax</span> <span class="op">=</span> <span class="ident">ret</span>;
+    }
+    <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;aarch64&quot;</span>)]</span>
+    {
+        <span class="ident">syscall</span>.<span class="ident">regs</span>.<span class="ident">x0</span> <span class="op">=</span> <span class="ident">ret</span>;
+    }
     <span class="ident">syscall</span>.<span class="ident">exit</span>
 }
 </pre></div>
-</section><section id="search" class="content hidden"></section><section class="footer"></section><script>window.rootPath = "../../";window.currentCrate = "zircon_loader";</script><script src="../../aliases.js"></script><script src="../../main.js"></script><script src="../../source-script.js"></script><script src="../../source-files.js"></script><script defer src="../../search-index.js"></script></body></html>
+</section><section id="search" class="content hidden"></section><section class="footer"></section><script>window.rootPath = "../../";window.currentCrate = "zircon_loader";</script><script src="../../main.js"></script><script src="../../source-script.js"></script><script src="../../source-files.js"></script><script defer src="../../search-index.js"></script></body></html>

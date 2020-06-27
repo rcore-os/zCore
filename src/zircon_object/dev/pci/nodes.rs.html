@@ -1540,49 +1540,12 @@
 <span id="1540">1540</span>
 <span id="1541">1541</span>
 <span id="1542">1542</span>
-<span id="1543">1543</span>
-<span id="1544">1544</span>
-<span id="1545">1545</span>
-<span id="1546">1546</span>
-<span id="1547">1547</span>
-<span id="1548">1548</span>
-<span id="1549">1549</span>
-<span id="1550">1550</span>
-<span id="1551">1551</span>
-<span id="1552">1552</span>
-<span id="1553">1553</span>
-<span id="1554">1554</span>
-<span id="1555">1555</span>
-<span id="1556">1556</span>
-<span id="1557">1557</span>
-<span id="1558">1558</span>
-<span id="1559">1559</span>
-<span id="1560">1560</span>
-<span id="1561">1561</span>
-<span id="1562">1562</span>
-<span id="1563">1563</span>
-<span id="1564">1564</span>
-<span id="1565">1565</span>
-<span id="1566">1566</span>
-<span id="1567">1567</span>
-<span id="1568">1568</span>
-<span id="1569">1569</span>
-<span id="1570">1570</span>
-<span id="1571">1571</span>
-<span id="1572">1572</span>
-<span id="1573">1573</span>
-<span id="1574">1574</span>
-<span id="1575">1575</span>
-<span id="1576">1576</span>
-<span id="1577">1577</span>
-<span id="1578">1578</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="attribute">#![<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
 
 <span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">caps</span>::<span class="kw-2">*</span>, <span class="ident">config</span>::<span class="kw-2">*</span>, <span class="kw-2">*</span>};
 <span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">vm</span>::<span class="ident">PAGE_SIZE</span>;
-<span class="kw">use</span> <span class="ident">alloc</span>::{<span class="ident">boxed</span>::<span class="ident">Box</span>, <span class="ident">sync</span>::<span class="kw-2">*</span>, <span class="ident">vec</span>, <span class="ident">vec</span>::<span class="ident">Vec</span>};
-<span class="kw">use</span> <span class="ident">core</span>::<span class="ident">convert</span>::<span class="ident">TryFrom</span>;
+<span class="kw">use</span> <span class="ident">alloc</span>::{<span class="ident">boxed</span>::<span class="ident">Box</span>, <span class="ident">sync</span>::<span class="kw-2">*</span>, <span class="ident">vec</span>::<span class="ident">Vec</span>};
 <span class="kw">use</span> <span class="ident">kernel_hal</span>::<span class="ident">InterruptManager</span>;
 <span class="kw">use</span> <span class="ident">numeric_enum_macro</span>::<span class="kw-2">*</span>;
 <span class="kw">use</span> <span class="ident">region_alloc</span>::<span class="ident">RegionAllocator</span>;
@@ -1607,13 +1570,13 @@
 }
 
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">PcieUpstream</span> {
-    <span class="kw">pub</span> <span class="ident">managed_bus_id</span>: <span class="ident">usize</span>,
-    <span class="kw">pub</span> <span class="ident">inner</span>: <span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">PcieUpstreamInner</span><span class="op">&gt;</span>,
+    <span class="ident">managed_bus_id</span>: <span class="ident">usize</span>,
+    <span class="ident">inner</span>: <span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">PcieUpstreamInner</span><span class="op">&gt;</span>,
 }
 
-<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">PcieUpstreamInner</span> {
-    <span class="kw">pub</span> <span class="ident">weak_super</span>: <span class="ident">Weak</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">IPciNode</span> <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span><span class="op">&gt;</span>,
-    <span class="kw">pub</span> <span class="ident">downstream</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">IPciNode</span> <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+<span class="kw">struct</span> <span class="ident">PcieUpstreamInner</span> {
+    <span class="ident">weak_super</span>: <span class="ident">Weak</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">IPciNode</span><span class="op">&gt;</span>,
+    <span class="ident">downstream</span>: [<span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">IPciNode</span><span class="op">&gt;</span><span class="op">&gt;</span>; <span class="ident">PCI_MAX_FUNCTIONS_PER_BUS</span>],
 }
 
 <span class="kw">impl</span> <span class="ident">PcieUpstream</span> {
@@ -1622,10 +1585,11 @@
             <span class="ident">managed_bus_id</span>,
             <span class="ident">inner</span>: <span class="ident">Mutex</span>::<span class="ident">new</span>(<span class="ident">PcieUpstreamInner</span> {
                 <span class="ident">weak_super</span>: <span class="ident">Weak</span>::<span class="op">&lt;</span><span class="ident">PciRoot</span><span class="op">&gt;</span>::<span class="ident">new</span>(),
-                <span class="ident">downstream</span>: <span class="macro">vec</span><span class="macro">!</span>[<span class="prelude-val">None</span>; <span class="ident">PCI_MAX_FUNCTIONS_PER_BUS</span>],
+                <span class="ident">downstream</span>: [<span class="prelude-val">None</span>; <span class="ident">PCI_MAX_FUNCTIONS_PER_BUS</span>],
             }),
         })
     }
+
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">scan_downstream</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">driver</span>: <span class="kw-2">&amp;</span><span class="ident">PCIeBusDriver</span>) {
         <span class="kw">for</span> <span class="ident">dev_id</span> <span class="kw">in</span> <span class="number">0</span>..<span class="ident">PCI_MAX_DEVICES_PER_BUS</span> {
             <span class="kw">for</span> <span class="ident">func_id</span> <span class="kw">in</span> <span class="number">0</span>..<span class="ident">PCI_MAX_FUNCTIONS_PER_DEVICE</span> {
@@ -1700,7 +1664,7 @@
         <span class="ident">func_id</span>: <span class="ident">usize</span>,
         <span class="ident">vendor_id</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">u16</span><span class="op">&gt;</span>,
         <span class="ident">driver</span>: <span class="kw-2">&amp;</span><span class="ident">PCIeBusDriver</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">IPciNode</span> <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">IPciNode</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">vendor_id</span> <span class="op">=</span> <span class="ident">vendor_id</span>.<span class="ident">unwrap_or_else</span>(<span class="op">|</span><span class="op">|</span> <span class="ident">cfg</span>.<span class="ident">read16</span>(<span class="ident">PciReg16</span>::<span class="ident">VendorId</span>));
         <span class="kw">if</span> <span class="ident">vendor_id</span> <span class="op">=</span><span class="op">=</span> <span class="ident">PCIE_INVALID_VENDOR_ID</span> <span class="kw">as</span> <span class="ident">u16</span> {
             <span class="kw">return</span> <span class="prelude-val">None</span>;
@@ -1716,17 +1680,17 @@
         }
     }
 
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_downstream</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">index</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">IPciNode</span> <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_downstream</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">index</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">IPciNode</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">if</span> <span class="ident">index</span> <span class="op">&gt;</span><span class="op">=</span> <span class="ident">PCI_MAX_FUNCTIONS_PER_BUS</span> {
             <span class="kw">return</span> <span class="prelude-val">None</span>;
         }
         <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">downstream</span>[<span class="ident">index</span>].<span class="ident">clone</span>()
     }
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">set_downstream</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">ind</span>: <span class="ident">usize</span>, <span class="ident">down</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">IPciNode</span> <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span><span class="op">&gt;</span><span class="op">&gt;</span>) {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">set_downstream</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">ind</span>: <span class="ident">usize</span>, <span class="ident">down</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">IPciNode</span><span class="op">&gt;</span><span class="op">&gt;</span>) {
         <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">downstream</span>[<span class="ident">ind</span>] <span class="op">=</span> <span class="ident">down</span>;
     }
 
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">set_super</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">weak_super</span>: <span class="ident">Weak</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">IPciNode</span> <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span><span class="op">&gt;</span>) {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">set_super</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">weak_super</span>: <span class="ident">Weak</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">IPciNode</span><span class="op">&gt;</span>) {
         <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">weak_super</span> <span class="op">=</span> <span class="ident">weak_super</span>;
     }
 }
@@ -1835,7 +1799,7 @@
 
 <span class="macro">numeric_enum</span><span class="macro">!</span> {
     <span class="attribute">#[<span class="ident">repr</span>(<span class="ident">u32</span>)]</span>
-    <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">PartialEq</span>, <span class="ident">Copy</span>, <span class="ident">Clone</span>)]</span>
+    <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>, <span class="ident">PartialEq</span>, <span class="ident">Eq</span>, <span class="ident">Copy</span>, <span class="ident">Clone</span>)]</span>
     <span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">PcieIrqMode</span> {
         <span class="ident">Disabled</span> <span class="op">=</span> <span class="number">0</span>,
         <span class="ident">Legacy</span> <span class="op">=</span> <span class="number">1</span>,
@@ -1935,8 +1899,8 @@
     <span class="kw">pub</span> <span class="ident">bars</span>: [<span class="ident">PcieBarInfo</span>; <span class="number">6</span>],
     <span class="kw">pub</span> <span class="ident">caps</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">PciCapacity</span><span class="op">&gt;</span>,
     <span class="kw">pub</span> <span class="ident">plugged_in</span>: <span class="ident">bool</span>,
-    <span class="kw">pub</span> <span class="ident">upstream</span>: <span class="ident">Weak</span><span class="op">&lt;</span>(<span class="kw">dyn</span> <span class="ident">IPciNode</span> <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span>)<span class="op">&gt;</span>,
-    <span class="kw">pub</span> <span class="ident">weak_super</span>: <span class="ident">Weak</span><span class="op">&lt;</span>(<span class="kw">dyn</span> <span class="ident">IPciNode</span> <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span>)<span class="op">&gt;</span>,
+    <span class="kw">pub</span> <span class="ident">upstream</span>: <span class="ident">Weak</span><span class="op">&lt;</span>(<span class="kw">dyn</span> <span class="ident">IPciNode</span>)<span class="op">&gt;</span>,
+    <span class="kw">pub</span> <span class="ident">weak_super</span>: <span class="ident">Weak</span><span class="op">&lt;</span>(<span class="kw">dyn</span> <span class="ident">IPciNode</span>)<span class="op">&gt;</span>,
     <span class="kw">pub</span> <span class="ident">disabled</span>: <span class="ident">bool</span>,
 }
 
@@ -1955,8 +1919,8 @@
 }
 
 <span class="kw">impl</span> <span class="ident">PcieDeviceInner</span> {
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">arc_self</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">PcieDevice</span><span class="op">&gt;</span><span class="op">&gt;</span> {
-        <span class="self">self</span>.<span class="ident">weak_super</span>.<span class="ident">upgrade</span>().<span class="ident">and_then</span>(<span class="op">|</span><span class="ident">x</span><span class="op">|</span> <span class="ident">x</span>.<span class="ident">device</span>())
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">arc_self</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">PcieDevice</span><span class="op">&gt;</span> {
+        <span class="self">self</span>.<span class="ident">weak_super</span>.<span class="ident">upgrade</span>().<span class="ident">unwrap</span>().<span class="ident">device</span>()
     }
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">msi</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span>(<span class="kw-2">&amp;</span><span class="ident">PciCapacityStd</span>, <span class="kw-2">&amp;</span><span class="ident">PciCapacityMsi</span>)<span class="op">&gt;</span> {
         <span class="kw">for</span> <span class="ident">c</span> <span class="kw">in</span> <span class="self">self</span>.<span class="ident">caps</span>.<span class="ident">iter</span>() {
@@ -1982,7 +1946,7 @@
 
 <span class="kw">impl</span> <span class="ident">PcieDevice</span> {
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">create</span>(
-        <span class="ident">upstream</span>: <span class="ident">Weak</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">IPciNode</span> <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span><span class="op">&gt;</span>,
+        <span class="ident">upstream</span>: <span class="ident">Weak</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">IPciNode</span><span class="op">&gt;</span>,
         <span class="ident">dev_id</span>: <span class="ident">usize</span>,
         <span class="ident">func_id</span>: <span class="ident">usize</span>,
         <span class="ident">driver</span>: <span class="kw-2">&amp;</span><span class="ident">PCIeBusDriver</span>,
@@ -2010,7 +1974,7 @@
         <span class="ident">inst</span>.<span class="ident">init</span>(<span class="ident">upstream</span>, <span class="ident">driver</span>).<span class="ident">unwrap</span>();
         <span class="prelude-val">Some</span>(<span class="ident">inst</span>)
     }
-    <span class="kw">fn</span> <span class="ident">init</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">upstream</span>: <span class="ident">Weak</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">IPciNode</span> <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span><span class="op">&gt;</span>, <span class="ident">driver</span>: <span class="kw-2">&amp;</span><span class="ident">PCIeBusDriver</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    <span class="kw">fn</span> <span class="ident">init</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">upstream</span>: <span class="ident">Weak</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">IPciNode</span><span class="op">&gt;</span>, <span class="ident">driver</span>: <span class="kw-2">&amp;</span><span class="ident">PCIeBusDriver</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
         <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;init PciDevice&quot;</span>);
         <span class="self">self</span>.<span class="ident">init_probe_bars</span>()<span class="question-mark">?</span>;
         <span class="self">self</span>.<span class="ident">init_capabilities</span>()<span class="question-mark">?</span>;
@@ -2122,7 +2086,7 @@
             <span class="kw">if</span> <span class="ident">cap_offset</span> <span class="op">=</span><span class="op">=</span> <span class="number">0xff</span> <span class="op">|</span><span class="op">|</span> <span class="ident">cap_offset</span> <span class="op">&lt;</span> <span class="number">64</span> <span class="op">|</span><span class="op">|</span> <span class="ident">cap_offset</span> <span class="op">&gt;</span> <span class="number">252</span> {
                 <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">INVALID_ARGS</span>);
             }
-            <span class="kw">let</span> <span class="ident">id</span> <span class="op">=</span> <span class="ident">cfg</span>.<span class="ident">read8_offset</span>(<span class="ident">cap_offset</span> <span class="kw">as</span> <span class="ident">usize</span>);
+            <span class="kw">let</span> <span class="ident">id</span> <span class="op">=</span> <span class="ident">cfg</span>.<span class="ident">read8_</span>(<span class="ident">cap_offset</span> <span class="kw">as</span> <span class="ident">usize</span>);
             <span class="kw">let</span> <span class="ident">std</span> <span class="op">=</span> <span class="ident">PciCapacityStd</span>::<span class="ident">create</span>(<span class="ident">cap_offset</span> <span class="kw">as</span> <span class="ident">u16</span>, <span class="ident">id</span>);
             <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
             <span class="kw">let</span> <span class="ident">cap</span> <span class="op">=</span> <span class="kw">match</span> <span class="ident">id</span> {
@@ -2140,16 +2104,12 @@
                 <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">PciCapacity</span>::<span class="ident">Std</span>(<span class="ident">std</span>),
             };
             <span class="ident">inner</span>.<span class="ident">caps</span>.<span class="ident">push</span>(<span class="ident">cap</span>);
-            <span class="ident">cap_offset</span> <span class="op">=</span> <span class="ident">cfg</span>.<span class="ident">read8_offset</span>(<span class="ident">cap_offset</span> <span class="kw">as</span> <span class="ident">usize</span> <span class="op">+</span> <span class="number">1</span>) <span class="op">&amp;</span> <span class="number">0xFC</span>;
+            <span class="ident">cap_offset</span> <span class="op">=</span> <span class="ident">cfg</span>.<span class="ident">read8_</span>(<span class="ident">cap_offset</span> <span class="kw">as</span> <span class="ident">usize</span> <span class="op">+</span> <span class="number">1</span>) <span class="op">&amp;</span> <span class="number">0xFC</span>;
             <span class="ident">found_num</span> <span class="op">+</span><span class="op">=</span> <span class="number">1</span>;
         }
         <span class="prelude-val">Ok</span>(())
     }
-    <span class="kw">fn</span> <span class="ident">init_legacy_irq</span>(
-        <span class="kw-2">&amp;</span><span class="self">self</span>,
-        <span class="ident">upstream</span>: <span class="kw-2">&amp;</span><span class="ident">Weak</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">IPciNode</span> <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span><span class="op">&gt;</span>,
-        <span class="ident">driver</span>: <span class="kw-2">&amp;</span><span class="ident">PCIeBusDriver</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    <span class="kw">fn</span> <span class="ident">init_legacy_irq</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">upstream</span>: <span class="kw-2">&amp;</span><span class="ident">Weak</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">IPciNode</span><span class="op">&gt;</span>, <span class="ident">driver</span>: <span class="kw-2">&amp;</span><span class="ident">PCIeBusDriver</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
         <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;init PciDevice legacy irq&quot;</span>);
         <span class="self">self</span>.<span class="ident">modify_cmd</span>(<span class="number">0</span>, <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">10</span>);
         <span class="kw">let</span> <span class="ident">cfg</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">cfg</span>.<span class="ident">as_ref</span>().<span class="ident">unwrap</span>();
@@ -2166,7 +2126,7 @@
     <span class="kw">fn</span> <span class="ident">map_pin_to_irq_locked</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="comment">// _lock: &amp;MutexGuard&lt;()&gt;, lock is useless during init</span>
-        <span class="ident">upstream</span>: <span class="kw-2">&amp;</span><span class="ident">Weak</span><span class="op">&lt;</span>(<span class="kw">dyn</span> <span class="ident">IPciNode</span> <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span>)<span class="op">&gt;</span>,
+        <span class="ident">upstream</span>: <span class="kw-2">&amp;</span><span class="ident">Weak</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">IPciNode</span><span class="op">&gt;</span>,
         <span class="kw-2">mut</span> <span class="ident">pin</span>: <span class="ident">u8</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
         <span class="comment">// Don&#39;t use self.inner.lock() in this function !!!</span>
@@ -2179,7 +2139,7 @@
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">upstream</span> <span class="op">=</span> <span class="ident">upstream</span>.<span class="ident">clone</span>();
         <span class="kw">while</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">up</span>) <span class="op">=</span> <span class="ident">upstream</span>.<span class="ident">upgrade</span>() {
             <span class="kw">if</span> <span class="kw">let</span> <span class="ident">PciNodeType</span>::<span class="ident">Bridge</span> <span class="op">=</span> <span class="ident">up</span>.<span class="ident">node_type</span>() {
-                <span class="kw">let</span> <span class="ident">bdev</span> <span class="op">=</span> <span class="ident">up</span>.<span class="ident">device</span>().<span class="ident">unwrap</span>();
+                <span class="kw">let</span> <span class="ident">bdev</span> <span class="op">=</span> <span class="ident">up</span>.<span class="ident">device</span>();
                 <span class="kw">match</span> <span class="ident">bdev</span>.<span class="ident">pcie_device_type</span>() {
                     <span class="ident">PcieDeviceType</span>::<span class="ident">Unknown</span>
                     <span class="op">|</span> <span class="ident">PcieDeviceType</span>::<span class="ident">SwitchUpstreamPort</span>
@@ -2189,7 +2149,7 @@
                     }
                     <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> (),
                 }
-                <span class="kw">let</span> <span class="ident">dev</span> <span class="op">=</span> <span class="ident">up</span>.<span class="ident">device</span>().<span class="ident">unwrap</span>();
+                <span class="kw">let</span> <span class="ident">dev</span> <span class="op">=</span> <span class="ident">up</span>.<span class="ident">device</span>();
                 <span class="ident">dev_id</span> <span class="op">=</span> <span class="ident">dev</span>.<span class="ident">dev_id</span>;
                 <span class="ident">func_id</span> <span class="op">=</span> <span class="ident">dev</span>.<span class="ident">func_id</span>;
                 <span class="ident">upstream</span> <span class="op">=</span> <span class="ident">dev</span>.<span class="ident">upstream</span>();
@@ -2199,7 +2159,7 @@
         }
         <span class="kw">let</span> <span class="ident">upstream</span> <span class="op">=</span> <span class="ident">upstream</span>.<span class="ident">upgrade</span>();
         <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">up_ptr</span>) <span class="op">=</span> <span class="ident">upstream</span> {
-            <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">up</span>) <span class="op">=</span> <span class="ident">up_ptr</span>.<span class="ident">to_root</span>() {
+            <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">up</span>) <span class="op">=</span> <span class="ident">up_ptr</span>.<span class="ident">as_root</span>() {
                 <span class="kw">return</span> <span class="ident">up</span>.<span class="ident">swizzle</span>(<span class="ident">dev_id</span>, <span class="ident">func_id</span>, <span class="ident">pin</span> <span class="kw">as</span> <span class="ident">usize</span>);
             }
         }
@@ -2310,7 +2270,7 @@
         <span class="self">self</span>.<span class="ident">modify_cmd</span>(<span class="ident">clr</span> <span class="op">&amp;</span> <span class="op">!</span>(<span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">10</span>), <span class="ident">set</span> <span class="op">&amp;</span> <span class="op">!</span>(<span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">10</span>));
         <span class="prelude-val">Ok</span>(())
     }
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">upstream</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Weak</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">IPciNode</span> <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">upstream</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Weak</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">IPciNode</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">upstream</span>.<span class="ident">clone</span>()
     }
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">dev_id</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
@@ -2319,10 +2279,10 @@
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">func_id</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
         <span class="self">self</span>.<span class="ident">func_id</span>
     }
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">set_upstream</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">up</span>: <span class="ident">Weak</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">IPciNode</span> <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span><span class="op">&gt;</span>) {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">set_upstream</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">up</span>: <span class="ident">Weak</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">IPciNode</span><span class="op">&gt;</span>) {
         <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">upstream</span> <span class="op">=</span> <span class="ident">up</span>;
     }
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">set_super</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">sup</span>: <span class="ident">Weak</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">IPciNode</span> <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span><span class="op">&gt;</span>) {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">set_super</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">sup</span>: <span class="ident">Weak</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">IPciNode</span><span class="op">&gt;</span>) {
         <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">weak_super</span> <span class="op">=</span> <span class="ident">sup</span>;
     }
     <span class="kw">fn</span> <span class="ident">pcie_device_type</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">PcieDeviceType</span> {
@@ -2432,9 +2392,8 @@
             <span class="prelude-val">Some</span>(<span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">bars</span>[<span class="ident">bar_num</span>])
         }
     }
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_irq_mode_capabilities</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">mode</span>: <span class="ident">u32</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">PcieIrqModeCaps</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_irq_mode_capabilities</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">mode</span>: <span class="ident">PcieIrqMode</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">PcieIrqModeCaps</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
-        <span class="kw">let</span> <span class="ident">mode</span> <span class="op">=</span> <span class="ident">PcieIrqMode</span>::<span class="ident">try_from</span>(<span class="ident">mode</span>).<span class="ident">or</span>(<span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">INVALID_ARGS</span>))<span class="question-mark">?</span>;
         <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">plugged_in</span> {
             <span class="kw">match</span> <span class="ident">mode</span> {
                 <span class="ident">PcieIrqMode</span>::<span class="ident">Disabled</span> <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Ok</span>(<span class="ident">PcieIrqModeCaps</span>::<span class="ident">default</span>()),
@@ -2510,7 +2469,7 @@
         } <span class="kw">else</span> {
             <span class="bool-val">false</span>
         };
-        <span class="kw">match</span> <span class="ident">PciMsiBlock</span>::<span class="ident">allocate_msi_block</span>(<span class="ident">irq</span>) {
+        <span class="kw">match</span> <span class="ident">PciMsiBlock</span>::<span class="ident">allocate</span>(<span class="ident">irq</span>) {
             <span class="prelude-val">Ok</span>(<span class="ident">block</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="kw-2">*</span><span class="ident">msi</span>.<span class="ident">irq_block</span>.<span class="ident">lock</span>() <span class="op">=</span> <span class="ident">block</span>,
             <span class="prelude-val">Err</span>(<span class="ident">ex</span>) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="self">self</span>.<span class="ident">leave_msi_irq_mode</span>(<span class="ident">inner</span>);
@@ -2525,7 +2484,7 @@
         <span class="self">self</span>.<span class="ident">set_msi_target</span>(<span class="ident">inner</span>, <span class="ident">target_addr</span>, <span class="ident">target_data</span>);
         <span class="self">self</span>.<span class="ident">set_msi_multi_message_enb</span>(<span class="ident">inner</span>, <span class="ident">irq</span>);
         <span class="kw">for</span> (<span class="ident">i</span>, <span class="ident">e</span>) <span class="kw">in</span> <span class="ident">inner</span>.<span class="ident">irq</span>.<span class="ident">handlers</span>.<span class="ident">iter</span>().<span class="ident">enumerate</span>() {
-            <span class="kw">let</span> <span class="ident">arc_self</span> <span class="op">=</span> <span class="ident">inner</span>.<span class="ident">arc_self</span>().<span class="ident">clone</span>().<span class="ident">unwrap</span>();
+            <span class="kw">let</span> <span class="ident">arc_self</span> <span class="op">=</span> <span class="ident">inner</span>.<span class="ident">arc_self</span>();
             <span class="kw">let</span> <span class="ident">handler_copy</span> <span class="op">=</span> <span class="ident">e</span>.<span class="ident">clone</span>();
             <span class="ident">block</span>.<span class="ident">register_handler</span>(
                 <span class="ident">i</span> <span class="kw">as</span> <span class="ident">u32</span>,
@@ -2545,7 +2504,7 @@
                 <span class="kw">for</span> <span class="ident">i</span> <span class="kw">in</span> <span class="number">0</span>..<span class="ident">block</span>.<span class="ident">num_irq</span> {
                     <span class="ident">block</span>.<span class="ident">register_handler</span>(<span class="ident">i</span>, <span class="ident">Box</span>::<span class="ident">new</span>(<span class="op">|</span><span class="op">|</span> {}));
                 }
-                <span class="ident">block</span>.<span class="ident">free_msi_block</span>();
+                <span class="ident">block</span>.<span class="ident">free</span>();
             }
         }
         <span class="self">self</span>.<span class="ident">reset_irq_bookkeeping</span>(<span class="ident">inner</span>);
@@ -2565,29 +2524,29 @@
         <span class="kw">let</span> <span class="ident">addr_reg</span> <span class="op">=</span> <span class="ident">std</span>.<span class="ident">base</span> <span class="op">+</span> <span class="number">0x4</span>;
         <span class="kw">let</span> <span class="ident">addr_reg_upper</span> <span class="op">=</span> <span class="ident">std</span>.<span class="ident">base</span> <span class="op">+</span> <span class="number">0x8</span>;
         <span class="kw">let</span> <span class="ident">data_reg</span> <span class="op">=</span> <span class="ident">std</span>.<span class="ident">base</span> <span class="op">+</span> <span class="ident">PciCapacityMsi</span>::<span class="ident">addr_offset</span>(<span class="ident">msi</span>.<span class="ident">is_64bit</span>) <span class="kw">as</span> <span class="ident">u16</span>;
-        <span class="ident">cfg</span>.<span class="ident">write32_offset</span>(<span class="ident">addr_reg</span> <span class="kw">as</span> <span class="ident">usize</span>, <span class="ident">target_addr</span> <span class="kw">as</span> <span class="ident">u32</span>);
+        <span class="ident">cfg</span>.<span class="ident">write32_</span>(<span class="ident">addr_reg</span> <span class="kw">as</span> <span class="ident">usize</span>, <span class="ident">target_addr</span> <span class="kw">as</span> <span class="ident">u32</span>);
         <span class="kw">if</span> <span class="ident">msi</span>.<span class="ident">is_64bit</span> {
-            <span class="ident">cfg</span>.<span class="ident">write32_offset</span>(<span class="ident">addr_reg_upper</span> <span class="kw">as</span> <span class="ident">usize</span>, (<span class="ident">target_addr</span> <span class="op">&gt;</span><span class="op">&gt;</span> <span class="number">32</span>) <span class="kw">as</span> <span class="ident">u32</span>);
+            <span class="ident">cfg</span>.<span class="ident">write32_</span>(<span class="ident">addr_reg_upper</span> <span class="kw">as</span> <span class="ident">usize</span>, (<span class="ident">target_addr</span> <span class="op">&gt;</span><span class="op">&gt;</span> <span class="number">32</span>) <span class="kw">as</span> <span class="ident">u32</span>);
         }
-        <span class="ident">cfg</span>.<span class="ident">write16_offset</span>(<span class="ident">data_reg</span> <span class="kw">as</span> <span class="ident">usize</span>, <span class="ident">target_data</span> <span class="kw">as</span> <span class="ident">u16</span>);
+        <span class="ident">cfg</span>.<span class="ident">write16_</span>(<span class="ident">data_reg</span> <span class="kw">as</span> <span class="ident">usize</span>, <span class="ident">target_data</span> <span class="kw">as</span> <span class="ident">u16</span>);
     }
     <span class="kw">fn</span> <span class="ident">set_msi_multi_message_enb</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">inner</span>: <span class="kw-2">&amp;</span><span class="ident">MutexGuard</span><span class="op">&lt;</span><span class="ident">PcieDeviceInner</span><span class="op">&gt;</span>, <span class="ident">irq_num</span>: <span class="ident">u32</span>) {
         <span class="macro">assert</span><span class="macro">!</span>(<span class="number">1</span> <span class="op">&lt;</span><span class="op">=</span> <span class="ident">irq_num</span> <span class="kw-2">&amp;</span><span class="op">&amp;</span> <span class="ident">irq_num</span> <span class="op">&lt;</span><span class="op">=</span> <span class="ident">PCIE_MAX_MSI_IRQS</span>);
         <span class="kw">let</span> <span class="ident">log2</span> <span class="op">=</span> <span class="ident">u32</span>::<span class="ident">next_power_of_two</span>(<span class="ident">irq_num</span>).<span class="ident">trailing_zeros</span>();
         <span class="macro">assert</span><span class="macro">!</span>(<span class="ident">log2</span> <span class="op">&lt;</span><span class="op">=</span> <span class="number">5</span>);
         <span class="kw">let</span> <span class="ident">cfg</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">cfg</span>.<span class="ident">as_ref</span>().<span class="ident">unwrap</span>();
-        <span class="kw">let</span> (<span class="ident">std</span>, <span class="ident">msi</span>) <span class="op">=</span> <span class="ident">inner</span>.<span class="ident">msi</span>().<span class="ident">unwrap</span>();
-        <span class="kw">let</span> <span class="ident">data_reg</span> <span class="op">=</span> <span class="ident">std</span>.<span class="ident">base</span> <span class="kw">as</span> <span class="ident">usize</span> <span class="op">+</span> <span class="ident">PciCapacityMsi</span>::<span class="ident">addr_offset</span>(<span class="ident">msi</span>.<span class="ident">is_64bit</span>);
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">val</span> <span class="op">=</span> <span class="ident">cfg</span>.<span class="ident">read32_offset</span>(<span class="ident">data_reg</span> <span class="kw">as</span> <span class="ident">usize</span>);
-        <span class="ident">val</span> <span class="op">=</span> (<span class="ident">val</span> <span class="op">&amp;</span> <span class="op">!</span><span class="number">0x70</span>) <span class="op">|</span> ((<span class="ident">log2</span> <span class="op">&amp;</span> <span class="number">0x7</span>) <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">4</span>);
-        <span class="ident">cfg</span>.<span class="ident">write32_offset</span>(<span class="ident">data_reg</span>, <span class="ident">val</span>);
+        <span class="kw">let</span> (<span class="ident">std</span>, <span class="ident">_msi</span>) <span class="op">=</span> <span class="ident">inner</span>.<span class="ident">msi</span>().<span class="ident">unwrap</span>();
+        <span class="kw">let</span> <span class="ident">ctrl_addr</span> <span class="op">=</span> <span class="ident">std</span>.<span class="ident">base</span> <span class="kw">as</span> <span class="ident">usize</span> <span class="op">+</span> <span class="ident">PciCapacityMsi</span>::<span class="ident">ctrl_offset</span>();
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">val</span> <span class="op">=</span> <span class="ident">cfg</span>.<span class="ident">read16_</span>(<span class="ident">ctrl_addr</span>);
+        <span class="ident">val</span> <span class="op">=</span> (<span class="ident">val</span> <span class="op">&amp;</span> <span class="op">!</span><span class="number">0x70</span>) <span class="op">|</span> ((<span class="ident">log2</span> <span class="kw">as</span> <span class="ident">u16</span> <span class="op">&amp;</span> <span class="number">0x7</span>) <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">4</span>);
+        <span class="ident">cfg</span>.<span class="ident">write16_</span>(<span class="ident">ctrl_addr</span>, <span class="ident">val</span>);
     }
     <span class="kw">fn</span> <span class="ident">set_msi_enb</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">inner</span>: <span class="kw-2">&amp;</span><span class="ident">MutexGuard</span><span class="op">&lt;</span><span class="ident">PcieDeviceInner</span><span class="op">&gt;</span>, <span class="ident">enable</span>: <span class="ident">bool</span>) {
         <span class="kw">let</span> <span class="ident">cfg</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">cfg</span>.<span class="ident">as_ref</span>().<span class="ident">unwrap</span>();
         <span class="kw">let</span> (<span class="ident">std</span>, <span class="ident">_msi</span>) <span class="op">=</span> <span class="ident">inner</span>.<span class="ident">msi</span>().<span class="ident">unwrap</span>();
         <span class="kw">let</span> <span class="ident">ctrl_addr</span> <span class="op">=</span> <span class="ident">std</span>.<span class="ident">base</span> <span class="kw">as</span> <span class="ident">usize</span> <span class="op">+</span> <span class="ident">PciCapacityMsi</span>::<span class="ident">ctrl_offset</span>();
-        <span class="kw">let</span> <span class="ident">val</span> <span class="op">=</span> <span class="ident">cfg</span>.<span class="ident">read16_offset</span>(<span class="ident">ctrl_addr</span>);
-        <span class="ident">cfg</span>.<span class="ident">write16_offset</span>(<span class="ident">ctrl_addr</span>, (<span class="ident">val</span> <span class="op">&amp;</span> <span class="op">!</span><span class="number">0x1</span>) <span class="op">|</span> (<span class="ident">enable</span> <span class="kw">as</span> <span class="ident">u16</span>));
+        <span class="kw">let</span> <span class="ident">val</span> <span class="op">=</span> <span class="ident">cfg</span>.<span class="ident">read16_</span>(<span class="ident">ctrl_addr</span>);
+        <span class="ident">cfg</span>.<span class="ident">write16_</span>(<span class="ident">ctrl_addr</span>, (<span class="ident">val</span> <span class="op">&amp;</span> <span class="op">!</span><span class="number">0x1</span>) <span class="op">|</span> (<span class="ident">enable</span> <span class="kw">as</span> <span class="ident">u16</span>));
     }
     <span class="kw">fn</span> <span class="ident">mask_all_msi_vectors</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">inner</span>: <span class="kw-2">&amp;</span><span class="ident">MutexGuard</span><span class="op">&lt;</span><span class="ident">PcieDeviceInner</span><span class="op">&gt;</span>) {
         <span class="kw">for</span> <span class="ident">i</span> <span class="kw">in</span> <span class="number">0</span>..<span class="ident">inner</span>.<span class="ident">irq</span>.<span class="ident">handlers</span>.<span class="ident">len</span>() {
@@ -2636,8 +2595,7 @@
             }
         }
     }
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">set_irq_mode</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">mode</span>: <span class="ident">u32</span>, <span class="kw-2">mut</span> <span class="ident">irq_count</span>: <span class="ident">u32</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
-        <span class="kw">let</span> <span class="ident">mode</span> <span class="op">=</span> <span class="ident">PcieIrqMode</span>::<span class="ident">try_from</span>(<span class="ident">mode</span>).<span class="ident">or</span>(<span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">INVALID_ARGS</span>))<span class="question-mark">?</span>;
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">set_irq_mode</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">mode</span>: <span class="ident">PcieIrqMode</span>, <span class="kw-2">mut</span> <span class="ident">irq_count</span>: <span class="ident">u32</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="kw">if</span> <span class="kw">let</span> <span class="ident">PcieIrqMode</span>::<span class="ident">Disabled</span> <span class="op">=</span> <span class="ident">mode</span> {
             <span class="ident">irq_count</span> <span class="op">=</span> <span class="number">0</span>;
@@ -2653,7 +2611,7 @@
                     .<span class="ident">irq</span>
                     .<span class="ident">legacy</span>
                     .<span class="ident">shared_handler</span>
-                    .<span class="ident">remove_device</span>(<span class="ident">inner</span>.<span class="ident">arc_self</span>().<span class="ident">unwrap</span>());
+                    .<span class="ident">remove_device</span>(<span class="ident">inner</span>.<span class="ident">arc_self</span>());
                 <span class="self">self</span>.<span class="ident">reset_irq_bookkeeping</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">inner</span>);
             }
             <span class="ident">PcieIrqMode</span>::<span class="ident">Msi</span> <span class="op">=</span><span class="op">&gt;</span> {
@@ -2676,11 +2634,7 @@
                 <span class="self">self</span>.<span class="ident">modify_cmd</span>(<span class="number">0</span>, <span class="ident">PCIE_CFG_COMMAND_INT_DISABLE</span>);
                 <span class="self">self</span>.<span class="ident">allocate_irq_handler</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">inner</span>, <span class="ident">irq_count</span>, <span class="bool-val">true</span>);
                 <span class="ident">inner</span>.<span class="ident">irq</span>.<span class="ident">mode</span> <span class="op">=</span> <span class="ident">PcieIrqMode</span>::<span class="ident">Legacy</span>;
-                <span class="ident">inner</span>
-                    .<span class="ident">irq</span>
-                    .<span class="ident">legacy</span>
-                    .<span class="ident">shared_handler</span>
-                    .<span class="ident">add_device</span>(<span class="ident">inner</span>.<span class="ident">arc_self</span>().<span class="ident">unwrap</span>());
+                <span class="ident">inner</span>.<span class="ident">irq</span>.<span class="ident">legacy</span>.<span class="ident">shared_handler</span>.<span class="ident">add_device</span>(<span class="ident">inner</span>.<span class="ident">arc_self</span>());
                 <span class="prelude-val">Ok</span>(())
             }
             <span class="ident">PcieIrqMode</span>::<span class="ident">Msi</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">enable_msi_irq_mode</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">inner</span>, <span class="ident">irq_count</span>),
@@ -2742,13 +2696,13 @@
     <span class="ident">Device</span>,
 }
 
-<span class="kw">pub</span> <span class="kw">trait</span> <span class="ident">IPciNode</span> {
+<span class="kw">pub</span> <span class="kw">trait</span> <span class="ident">IPciNode</span>: <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span> {
     <span class="kw">fn</span> <span class="ident">node_type</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">PciNodeType</span>;
-    <span class="kw">fn</span> <span class="ident">device</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">PcieDevice</span><span class="op">&gt;</span><span class="op">&gt;</span>;
+    <span class="kw">fn</span> <span class="ident">device</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">PcieDevice</span><span class="op">&gt;</span>;
     <span class="kw">fn</span> <span class="ident">as_upstream</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">PcieUpstream</span><span class="op">&gt;</span><span class="op">&gt;</span>;
-    <span class="kw">fn</span> <span class="ident">to_root</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">PciRoot</span><span class="op">&gt;</span>;
-    <span class="kw">fn</span> <span class="ident">to_device</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">PciDeviceNode</span><span class="op">&gt;</span>;
-    <span class="kw">fn</span> <span class="ident">to_bridge</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">PciBridge</span><span class="op">&gt;</span>;
+    <span class="kw">fn</span> <span class="ident">as_root</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">PciRoot</span><span class="op">&gt;</span> {
+        <span class="prelude-val">None</span>
+    }
     <span class="kw">fn</span> <span class="ident">allocate_bars</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
         <span class="macro">unimplemented</span><span class="macro">!</span>(<span class="string">&quot;IPciNode.allocate_bars&quot;</span>)
     }
@@ -2771,16 +2725,16 @@
         <span class="macro">unimplemented</span><span class="macro">!</span>(<span class="string">&quot;IPciNode.enable_bus_master&quot;</span>);
     }
     <span class="kw">fn</span> <span class="ident">enable_irq</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">irq_id</span>: <span class="ident">usize</span>) {
-        <span class="self">self</span>.<span class="ident">device</span>().<span class="ident">unwrap</span>().<span class="ident">enable_irq</span>(<span class="ident">irq_id</span>, <span class="bool-val">true</span>);
+        <span class="self">self</span>.<span class="ident">device</span>().<span class="ident">enable_irq</span>(<span class="ident">irq_id</span>, <span class="bool-val">true</span>);
     }
     <span class="kw">fn</span> <span class="ident">disable_irq</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">irq_id</span>: <span class="ident">usize</span>) {
-        <span class="self">self</span>.<span class="ident">device</span>().<span class="ident">unwrap</span>().<span class="ident">enable_irq</span>(<span class="ident">irq_id</span>, <span class="bool-val">false</span>);
+        <span class="self">self</span>.<span class="ident">device</span>().<span class="ident">enable_irq</span>(<span class="ident">irq_id</span>, <span class="bool-val">false</span>);
     }
     <span class="kw">fn</span> <span class="ident">register_irq_handle</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">irq_id</span>: <span class="ident">usize</span>, <span class="ident">handle</span>: <span class="ident">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">Fn</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u32</span> <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span><span class="op">&gt;</span>) {
-        <span class="self">self</span>.<span class="ident">device</span>().<span class="ident">unwrap</span>().<span class="ident">register_irq_handle</span>(<span class="ident">irq_id</span>, <span class="ident">handle</span>);
+        <span class="self">self</span>.<span class="ident">device</span>().<span class="ident">register_irq_handle</span>(<span class="ident">irq_id</span>, <span class="ident">handle</span>);
     }
     <span class="kw">fn</span> <span class="ident">unregister_irq_handle</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">irq_id</span>: <span class="ident">usize</span>) {
-        <span class="self">self</span>.<span class="ident">device</span>().<span class="ident">unwrap</span>().<span class="ident">unregister_irq_handle</span>(<span class="ident">irq_id</span>);
+        <span class="self">self</span>.<span class="ident">device</span>().<span class="ident">unregister_irq_handle</span>(<span class="ident">irq_id</span>);
     }
 }
 
@@ -2818,20 +2772,14 @@
     <span class="kw">fn</span> <span class="ident">node_type</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">PciNodeType</span> {
         <span class="ident">PciNodeType</span>::<span class="ident">Root</span>
     }
-    <span class="kw">fn</span> <span class="ident">device</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">PcieDevice</span><span class="op">&gt;</span><span class="op">&gt;</span> {
-        <span class="prelude-val">None</span>
+    <span class="kw">fn</span> <span class="ident">device</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">PcieDevice</span><span class="op">&gt;</span> {
+        <span class="macro">unimplemented</span><span class="macro">!</span>()
     }
     <span class="kw">fn</span> <span class="ident">as_upstream</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">PcieUpstream</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="prelude-val">Some</span>(<span class="self">self</span>.<span class="ident">base_upstream</span>.<span class="ident">clone</span>())
     }
-    <span class="kw">fn</span> <span class="ident">to_root</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">PciRoot</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">as_root</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">PciRoot</span><span class="op">&gt;</span> {
         <span class="prelude-val">Some</span>(<span class="self">self</span>)
-    }
-    <span class="kw">fn</span> <span class="ident">to_device</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">PciDeviceNode</span><span class="op">&gt;</span> {
-        <span class="prelude-val">None</span>
-    }
-    <span class="kw">fn</span> <span class="ident">to_bridge</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">PciBridge</span><span class="op">&gt;</span> {
-        <span class="prelude-val">None</span>
     }
     <span class="kw">fn</span> <span class="ident">allocate_bars</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
         <span class="macro">unimplemented</span><span class="macro">!</span>();
@@ -2856,7 +2804,7 @@
 
 <span class="kw">impl</span> <span class="ident">PciDeviceNode</span> {
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>(
-        <span class="ident">upstream</span>: <span class="ident">Weak</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">IPciNode</span> <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span><span class="op">&gt;</span>,
+        <span class="ident">upstream</span>: <span class="ident">Weak</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">IPciNode</span><span class="op">&gt;</span>,
         <span class="ident">dev_id</span>: <span class="ident">usize</span>,
         <span class="ident">func_id</span>: <span class="ident">usize</span>,
         <span class="ident">driver</span>: <span class="kw-2">&amp;</span><span class="ident">PCIeBusDriver</span>,
@@ -2875,25 +2823,14 @@
     }
 }
 
-<span class="kw">fn</span> <span class="ident">test_interface</span>(<span class="ident">_t</span>: <span class="ident">Arc</span><span class="op">&lt;</span>(<span class="kw">dyn</span> <span class="ident">IPciNode</span> <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span>)<span class="op">&gt;</span>) {}
-
 <span class="kw">impl</span> <span class="ident">IPciNode</span> <span class="kw">for</span> <span class="ident">PciDeviceNode</span> {
     <span class="kw">fn</span> <span class="ident">node_type</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">PciNodeType</span> {
         <span class="ident">PciNodeType</span>::<span class="ident">Device</span>
     }
-    <span class="kw">fn</span> <span class="ident">device</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">PcieDevice</span><span class="op">&gt;</span><span class="op">&gt;</span> {
-        <span class="prelude-val">Some</span>(<span class="self">self</span>.<span class="ident">base_device</span>.<span class="ident">clone</span>())
+    <span class="kw">fn</span> <span class="ident">device</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">PcieDevice</span><span class="op">&gt;</span> {
+        <span class="self">self</span>.<span class="ident">base_device</span>.<span class="ident">clone</span>()
     }
     <span class="kw">fn</span> <span class="ident">as_upstream</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">PcieUpstream</span><span class="op">&gt;</span><span class="op">&gt;</span> {
-        <span class="prelude-val">None</span>
-    }
-    <span class="kw">fn</span> <span class="ident">to_root</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">PciRoot</span><span class="op">&gt;</span> {
-        <span class="prelude-val">None</span>
-    }
-    <span class="kw">fn</span> <span class="ident">to_device</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">PciDeviceNode</span><span class="op">&gt;</span> {
-        <span class="prelude-val">Some</span>(<span class="self">self</span>)
-    }
-    <span class="kw">fn</span> <span class="ident">to_bridge</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">PciBridge</span><span class="op">&gt;</span> {
         <span class="prelude-val">None</span>
     }
     <span class="kw">fn</span> <span class="ident">allocate_bars</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
@@ -2928,7 +2865,7 @@
 
 <span class="kw">impl</span> <span class="ident">PciBridge</span> {
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>(
-        <span class="ident">upstream</span>: <span class="ident">Weak</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">IPciNode</span> <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span><span class="op">&gt;</span>,
+        <span class="ident">upstream</span>: <span class="ident">Weak</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">IPciNode</span><span class="op">&gt;</span>,
         <span class="ident">dev_id</span>: <span class="ident">usize</span>,
         <span class="ident">func_id</span>: <span class="ident">usize</span>,
         <span class="ident">managed_bus_id</span>: <span class="ident">usize</span>,
@@ -3004,20 +2941,11 @@
     <span class="kw">fn</span> <span class="ident">node_type</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">PciNodeType</span> {
         <span class="ident">PciNodeType</span>::<span class="ident">Bridge</span>
     }
-    <span class="kw">fn</span> <span class="ident">device</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">PcieDevice</span><span class="op">&gt;</span><span class="op">&gt;</span> {
-        <span class="prelude-val">Some</span>(<span class="self">self</span>.<span class="ident">base_device</span>.<span class="ident">clone</span>())
+    <span class="kw">fn</span> <span class="ident">device</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">PcieDevice</span><span class="op">&gt;</span> {
+        <span class="self">self</span>.<span class="ident">base_device</span>.<span class="ident">clone</span>()
     }
     <span class="kw">fn</span> <span class="ident">as_upstream</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">PcieUpstream</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="prelude-val">Some</span>(<span class="self">self</span>.<span class="ident">base_upstream</span>.<span class="ident">clone</span>())
-    }
-    <span class="kw">fn</span> <span class="ident">to_root</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">PciRoot</span><span class="op">&gt;</span> {
-        <span class="prelude-val">None</span>
-    }
-    <span class="kw">fn</span> <span class="ident">to_device</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">PciDeviceNode</span><span class="op">&gt;</span> {
-        <span class="prelude-val">None</span>
-    }
-    <span class="kw">fn</span> <span class="ident">to_bridge</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">PciBridge</span><span class="op">&gt;</span> {
-        <span class="prelude-val">Some</span>(<span class="self">self</span>)
     }
     <span class="kw">fn</span> <span class="ident">pf_mmio_regions</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">RegionAllocator</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">pf_mmio</span>.<span class="ident">clone</span>()
@@ -3156,4 +3084,4 @@
     <span class="kw">pub</span> <span class="ident">per_vector_masking_supported</span>: <span class="ident">bool</span>,
 }
 </pre></div>
-</section><section id="search" class="content hidden"></section><section class="footer"></section><script>window.rootPath = "../../../../";window.currentCrate = "zircon_object";</script><script src="../../../../aliases.js"></script><script src="../../../../main.js"></script><script src="../../../../source-script.js"></script><script src="../../../../source-files.js"></script><script defer src="../../../../search-index.js"></script></body></html>
+</section><section id="search" class="content hidden"></section><section class="footer"></section><script>window.rootPath = "../../../../";window.currentCrate = "zircon_object";</script><script src="../../../../main.js"></script><script src="../../../../source-script.js"></script><script src="../../../../source-files.js"></script><script defer src="../../../../search-index.js"></script></body></html>

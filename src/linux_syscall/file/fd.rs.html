@@ -166,7 +166,7 @@
         <span class="ident">flags</span>: <span class="ident">usize</span>,
         <span class="ident">mode</span>: <span class="ident">usize</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">lock_linux_process</span>();
+        <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>();
         <span class="kw">let</span> <span class="ident">path</span> <span class="op">=</span> <span class="ident">path</span>.<span class="ident">read_cstring</span>()<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">flags</span> <span class="op">=</span> <span class="ident">OpenFlags</span>::<span class="ident">from_bits_truncate</span>(<span class="ident">flags</span>);
         <span class="macro">info</span><span class="macro">!</span>(
@@ -201,14 +201,14 @@
 
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_close</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">fd</span>: <span class="ident">FileDesc</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
         <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;close: fd={:?}&quot;</span>, <span class="ident">fd</span>);
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">lock_linux_process</span>();
+        <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>();
         <span class="ident">proc</span>.<span class="ident">close_file</span>(<span class="ident">fd</span>)<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(<span class="number">0</span>)
     }
 
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_dup2</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">fd1</span>: <span class="ident">FileDesc</span>, <span class="ident">fd2</span>: <span class="ident">FileDesc</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
         <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;dup2: from {:?} to {:?}&quot;</span>, <span class="ident">fd1</span>, <span class="ident">fd2</span>);
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">lock_linux_process</span>();
+        <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>();
         <span class="comment">// close fd2 first if it is opened</span>
         <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">close_file</span>(<span class="ident">fd2</span>);
         <span class="kw">let</span> <span class="ident">file_like</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_file_like</span>(<span class="ident">fd1</span>)<span class="question-mark">?</span>;
@@ -292,4 +292,4 @@
     }
 }
 </pre></div>
-</section><section id="search" class="content hidden"></section><section class="footer"></section><script>window.rootPath = "../../../";window.currentCrate = "linux_syscall";</script><script src="../../../aliases.js"></script><script src="../../../main.js"></script><script src="../../../source-script.js"></script><script src="../../../source-files.js"></script><script defer src="../../../search-index.js"></script></body></html>
+</section><section id="search" class="content hidden"></section><section class="footer"></section><script>window.rootPath = "../../../";window.currentCrate = "linux_syscall";</script><script src="../../../main.js"></script><script src="../../../source-script.js"></script><script src="../../../source-files.js"></script><script defer src="../../../search-index.js"></script></body></html>

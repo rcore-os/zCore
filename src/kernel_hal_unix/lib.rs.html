@@ -432,6 +432,9 @@
 <span id="432">432</span>
 <span id="433">433</span>
 <span id="434">434</span>
+<span id="435">435</span>
+<span id="436">436</span>
+<span id="437">437</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="attribute">#![<span class="ident">feature</span>(<span class="ident">asm</span>, <span class="ident">global_asm</span>)]</span>
 <span class="attribute">#![<span class="ident">feature</span>(<span class="ident">linkage</span>)]</span>
@@ -446,6 +449,7 @@
     <span class="ident">alloc</span>::<span class="ident">collections</span>::<span class="ident">VecDeque</span>,
     <span class="ident">async_std</span>::<span class="ident">task_local</span>,
     <span class="ident">core</span>::{<span class="ident">cell</span>::<span class="ident">Cell</span>, <span class="ident">future</span>::<span class="ident">Future</span>, <span class="ident">pin</span>::<span class="ident">Pin</span>},
+    <span class="ident">git_version</span>::<span class="ident">git_version</span>,
     <span class="ident">lazy_static</span>::<span class="ident">lazy_static</span>,
     <span class="ident">std</span>::<span class="ident">fmt</span>::{<span class="ident">Debug</span>, <span class="ident">Formatter</span>},
     <span class="ident">std</span>::<span class="ident">fs</span>::{<span class="ident">File</span>, <span class="ident">OpenOptions</span>},
@@ -456,16 +460,14 @@
     <span class="ident">tempfile</span>::<span class="ident">tempdir</span>,
 };
 
-<span class="kw">pub</span> <span class="kw">use</span> <span class="self">self</span>::<span class="ident">trap</span>::<span class="ident">syscall_entry</span>;
 <span class="kw">pub</span> <span class="kw">use</span> <span class="ident">kernel_hal</span>::<span class="ident">defs</span>::<span class="kw-2">*</span>;
 <span class="kw">use</span> <span class="ident">kernel_hal</span>::<span class="ident">vdso</span>::<span class="kw-2">*</span>;
 <span class="kw">pub</span> <span class="kw">use</span> <span class="ident">kernel_hal</span>::<span class="kw-2">*</span>;
 <span class="kw">use</span> <span class="ident">std</span>::<span class="ident">io</span>::<span class="ident">Read</span>;
+<span class="kw">pub</span> <span class="kw">use</span> <span class="ident">trapframe</span>::<span class="ident">syscall_fn_entry</span> <span class="kw">as</span> <span class="ident">syscall_entry</span>;
 
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_os</span> <span class="op">=</span> <span class="string">&quot;macos&quot;</span>)]</span>
 <span class="macro">include</span><span class="macro">!</span>(<span class="string">&quot;macos.rs&quot;</span>);
-
-<span class="kw">mod</span> <span class="ident">trap</span>;
 
 <span class="attribute">#[<span class="ident">repr</span>(<span class="ident">C</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Thread</span> {
@@ -501,9 +503,7 @@
 
 <span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_context_run&quot;</span>]</span>
 <span class="kw">unsafe</span> <span class="kw">fn</span> <span class="ident">context_run</span>(<span class="ident">context</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">UserContext</span>) {
-    <span class="ident">trap</span>::<span class="ident">run_user</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">context</span>.<span class="ident">general</span>);
-    <span class="comment">// cause: syscall</span>
-    <span class="ident">context</span>.<span class="ident">trap_num</span> <span class="op">=</span> <span class="number">0x100</span>;
+    <span class="ident">context</span>.<span class="ident">run_fncall</span>();
 }
 
 <span class="doccomment">/// Page Table</span>
@@ -809,7 +809,7 @@
 <span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_vdso_constants&quot;</span>]</span>
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">vdso_constants</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="ident">VdsoConstants</span> {
     <span class="kw">let</span> <span class="ident">tsc_frequency</span> <span class="op">=</span> <span class="number">3000u16</span>;
-    <span class="ident">VdsoConstants</span> {
+    <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">constants</span> <span class="op">=</span> <span class="ident">VdsoConstants</span> {
         <span class="ident">max_num_cpus</span>: <span class="number">1</span>,
         <span class="ident">features</span>: <span class="ident">Features</span> {
             <span class="ident">cpu</span>: <span class="number">0</span>,
@@ -822,8 +822,14 @@
         <span class="ident">ticks_to_mono_numerator</span>: <span class="number">1000</span>,
         <span class="ident">ticks_to_mono_denominator</span>: <span class="ident">tsc_frequency</span> <span class="kw">as</span> <span class="ident">u32</span>,
         <span class="ident">physmem</span>: <span class="ident">PMEM_SIZE</span> <span class="kw">as</span> <span class="ident">u64</span>,
-        <span class="ident">buildid</span>: <span class="ident">Default</span>::<span class="ident">default</span>(),
-    }
+        <span class="ident">version_string_len</span>: <span class="number">0</span>,
+        <span class="ident">version_string</span>: <span class="ident">Default</span>::<span class="ident">default</span>(),
+    };
+    <span class="ident">constants</span>.<span class="ident">set_version_string</span>(<span class="macro">git_version</span><span class="macro">!</span>(
+        <span class="ident">prefix</span> <span class="op">=</span> <span class="string">&quot;git-&quot;</span>,
+        <span class="ident">args</span> <span class="op">=</span> [<span class="string">&quot;--always&quot;</span>, <span class="string">&quot;--abbrev=40&quot;</span>, <span class="string">&quot;--dirty=-dirty&quot;</span>]
+    ));
+    <span class="ident">constants</span>
 }
 
 <span class="doccomment">/// Initialize the HAL.</span>
@@ -868,4 +874,4 @@
     }
 }
 </pre></div>
-</section><section id="search" class="content hidden"></section><section class="footer"></section><script>window.rootPath = "../../";window.currentCrate = "kernel_hal_unix";</script><script src="../../aliases.js"></script><script src="../../main.js"></script><script src="../../source-script.js"></script><script src="../../source-files.js"></script><script defer src="../../search-index.js"></script></body></html>
+</section><section id="search" class="content hidden"></section><section class="footer"></section><script>window.rootPath = "../../";window.currentCrate = "kernel_hal_unix";</script><script src="../../main.js"></script><script src="../../source-script.js"></script><script src="../../source-files.js"></script><script defer src="../../search-index.js"></script></body></html>

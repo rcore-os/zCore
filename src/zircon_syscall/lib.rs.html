@@ -344,11 +344,6 @@
 <span id="344">344</span>
 <span id="345">345</span>
 <span id="346">346</span>
-<span id="347">347</span>
-<span id="348">348</span>
-<span id="349">349</span>
-<span id="350">350</span>
-<span id="351">351</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Zircon syscall implementations</span>
 
@@ -461,6 +456,12 @@
             }
             <span class="ident">Sys</span>::<span class="ident">PROCESS_START</span> <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="self">self</span>.<span class="ident">sys_process_start</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a2</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a3</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a4</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a5</span> <span class="kw">as</span> <span class="kw">_</span>)
+            }
+            <span class="ident">Sys</span>::<span class="ident">PROCESS_READ_MEMORY</span> <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="self">self</span>.<span class="ident">sys_process_read_memory</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a2</span>.<span class="ident">into</span>(), <span class="ident">a3</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a4</span>.<span class="ident">into</span>())
+            }
+            <span class="ident">Sys</span>::<span class="ident">PROCESS_WRITE_MEMORY</span> <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="self">self</span>.<span class="ident">sys_process_write_memory</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a2</span>.<span class="ident">into</span>(), <span class="ident">a3</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a4</span>.<span class="ident">into</span>())
             }
             <span class="ident">Sys</span>::<span class="ident">PROCESS_EXIT</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_process_exit</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>),
             <span class="ident">Sys</span>::<span class="ident">JOB_CREATE</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_job_create</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a2</span>.<span class="ident">into</span>()),
@@ -577,7 +578,7 @@
             }
             <span class="ident">Sys</span>::<span class="ident">VMAR_PROTECT</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_vmar_protect</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a2</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a3</span> <span class="kw">as</span> <span class="kw">_</span>),
             <span class="ident">Sys</span>::<span class="ident">VMAR_DESTROY</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_vmar_destroy</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>),
-            <span class="ident">Sys</span>::<span class="ident">CPRNG_DRAW_ONCE</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_cprng_draw_once</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>),
+            <span class="ident">Sys</span>::<span class="ident">CPRNG_DRAW_ONCE</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_cprng_draw_once</span>(<span class="ident">a0</span>.<span class="ident">into</span>(), <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>),
             <span class="ident">Sys</span>::<span class="ident">NANOSLEEP</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_nanosleep</span>(<span class="ident">a0</span>.<span class="ident">into</span>()).<span class="kw">await</span>,
             <span class="ident">Sys</span>::<span class="ident">CLOCK_GET</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_clock_get</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span>.<span class="ident">into</span>()),
             <span class="ident">Sys</span>::<span class="ident">CLOCK_READ</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_clock_read</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span>.<span class="ident">into</span>()),
@@ -644,6 +645,7 @@
             <span class="ident">Sys</span>::<span class="ident">PCI_ADD_SUBTRACT_IO_RANGE</span> <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="self">self</span>.<span class="ident">sys_pci_add_subtract_io_range</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span> <span class="op">!</span><span class="op">=</span> <span class="number">0</span>, <span class="ident">a2</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a3</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a4</span> <span class="op">!</span><span class="op">=</span> <span class="number">0</span>)
             }
+            <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>)]</span>
             <span class="ident">Sys</span>::<span class="ident">PCI_CFG_PIO_RW</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_pci_cfg_pio_rw</span>(
                 <span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>,
                 <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>,
@@ -674,7 +676,7 @@
             <span class="ident">Sys</span>::<span class="ident">INTERRUPT_DESTROY</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_interrupt_destroy</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>),
             <span class="ident">Sys</span>::<span class="ident">INTERRUPT_WAIT</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_interrupt_wait</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span>.<span class="ident">into</span>()).<span class="kw">await</span>,
             <span class="ident">Sys</span>::<span class="ident">IOPORTS_REQUEST</span> <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;Skip IOPORTS_REQUEST&quot;</span>);
+                <span class="macro">warn</span><span class="macro">!</span>(<span class="string">&quot;ioports.request: skip&quot;</span>);
                 <span class="prelude-val">Ok</span>(())
             }
             <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> {
@@ -682,19 +684,7 @@
                 <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">NOT_SUPPORTED</span>)
             }
         };
-        <span class="kw">let</span> <span class="ident">level</span> <span class="op">=</span> <span class="kw">if</span> <span class="ident">ret</span>.<span class="ident">is_ok</span>() {
-            <span class="ident">log</span>::<span class="ident">Level</span>::<span class="ident">Info</span>
-        } <span class="kw">else</span> {
-            <span class="ident">log</span>::<span class="ident">Level</span>::<span class="ident">Warn</span>
-        };
-        <span class="macro">log</span><span class="macro">!</span>(
-            <span class="ident">level</span>,
-            <span class="string">&quot;{}|{} {:?} &lt;= {:?}&quot;</span>,
-            <span class="ident">proc_name</span>,
-            <span class="ident">thread_name</span>,
-            <span class="ident">sys_type</span>,
-            <span class="ident">ret</span>
-        );
+        <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;{}|{} {:?} &lt;= {:?}&quot;</span>, <span class="ident">proc_name</span>, <span class="ident">thread_name</span>, <span class="ident">sys_type</span>, <span class="ident">ret</span>);
         <span class="kw">match</span> <span class="ident">ret</span> {
             <span class="prelude-val">Ok</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="number">0</span>,
             <span class="prelude-val">Err</span>(<span class="ident">err</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">err</span> <span class="kw">as</span> <span class="ident">isize</span>,
@@ -702,4 +692,4 @@
     }
 }
 </pre></div>
-</section><section id="search" class="content hidden"></section><section class="footer"></section><script>window.rootPath = "../../";window.currentCrate = "zircon_syscall";</script><script src="../../aliases.js"></script><script src="../../main.js"></script><script src="../../source-script.js"></script><script src="../../source-files.js"></script><script defer src="../../search-index.js"></script></body></html>
+</section><section id="search" class="content hidden"></section><section class="footer"></section><script>window.rootPath = "../../";window.currentCrate = "zircon_syscall";</script><script src="../../main.js"></script><script src="../../source-script.js"></script><script src="../../source-files.js"></script><script defer src="../../search-index.js"></script></body></html>

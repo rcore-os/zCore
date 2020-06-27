@@ -152,7 +152,7 @@
             <span class="kw">let</span> <span class="ident">addr</span> <span class="op">=</span> <span class="ident">vmar</span>.<span class="ident">map</span>(<span class="ident">vmar_offset</span>, <span class="ident">vmo</span>.<span class="ident">clone</span>(), <span class="number">0</span>, <span class="ident">vmo</span>.<span class="ident">len</span>(), <span class="ident">prot</span>.<span class="ident">to_flags</span>())<span class="question-mark">?</span>;
             <span class="prelude-val">Ok</span>(<span class="ident">addr</span>)
         } <span class="kw">else</span> {
-            <span class="kw">let</span> <span class="ident">file</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">lock_linux_process</span>().<span class="ident">get_file</span>(<span class="ident">fd</span>)<span class="question-mark">?</span>;
+            <span class="kw">let</span> <span class="ident">file</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>().<span class="ident">get_file</span>(<span class="ident">fd</span>)<span class="question-mark">?</span>;
             <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">buf</span> <span class="op">=</span> <span class="macro">vec</span><span class="macro">!</span>[<span class="number">0</span>; <span class="ident">len</span>];
             <span class="kw">let</span> <span class="ident">len</span> <span class="op">=</span> <span class="ident">file</span>.<span class="ident">read_at</span>(<span class="ident">offset</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">buf</span>)<span class="question-mark">?</span>;
             <span class="kw">let</span> <span class="ident">vmo</span> <span class="op">=</span> <span class="ident">VmObject</span>::<span class="ident">new_paged</span>(<span class="ident">pages</span>(<span class="ident">len</span>));
@@ -214,7 +214,7 @@
 
 <span class="kw">impl</span> <span class="ident">MmapProt</span> {
     <span class="kw">fn</span> <span class="ident">to_flags</span>(<span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">MMUFlags</span> {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">flags</span> <span class="op">=</span> <span class="ident">MMUFlags</span>::<span class="ident">empty</span>();
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">flags</span> <span class="op">=</span> <span class="ident">MMUFlags</span>::<span class="ident">USER</span>;
         <span class="kw">if</span> <span class="self">self</span>.<span class="ident">contains</span>(<span class="ident">MmapProt</span>::<span class="ident">READ</span>) {
             <span class="ident">flags</span> <span class="op">|</span><span class="op">=</span> <span class="ident">MMUFlags</span>::<span class="ident">READ</span>;
         }
@@ -225,11 +225,11 @@
             <span class="ident">flags</span> <span class="op">|</span><span class="op">=</span> <span class="ident">MMUFlags</span>::<span class="ident">EXECUTE</span>;
         }
         <span class="comment">// FIXME: hack for unimplemented mprotect</span>
-        <span class="kw">if</span> <span class="ident">flags</span> <span class="op">=</span><span class="op">=</span> <span class="ident">MMUFlags</span>::<span class="ident">empty</span>() {
+        <span class="kw">if</span> <span class="self">self</span>.<span class="ident">is_empty</span>() {
             <span class="ident">flags</span> <span class="op">=</span> <span class="ident">MMUFlags</span>::<span class="ident">READ</span> <span class="op">|</span> <span class="ident">MMUFlags</span>::<span class="ident">WRITE</span>;
         }
         <span class="ident">flags</span>
     }
 }
 </pre></div>
-</section><section id="search" class="content hidden"></section><section class="footer"></section><script>window.rootPath = "../../";window.currentCrate = "linux_syscall";</script><script src="../../aliases.js"></script><script src="../../main.js"></script><script src="../../source-script.js"></script><script src="../../source-files.js"></script><script defer src="../../search-index.js"></script></body></html>
+</section><section id="search" class="content hidden"></section><section class="footer"></section><script>window.rootPath = "../../";window.currentCrate = "linux_syscall";</script><script src="../../main.js"></script><script src="../../source-script.js"></script><script src="../../source-files.js"></script><script defer src="../../search-index.js"></script></body></html>

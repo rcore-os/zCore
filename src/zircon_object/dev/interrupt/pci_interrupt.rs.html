@@ -69,7 +69,7 @@
 <span class="kw">use</span> {<span class="kw">super</span>::<span class="kw">super</span>::<span class="ident">pci</span>::<span class="ident">PCIE_IRQRET_MASK</span>, <span class="kw">super</span>::<span class="kw">super</span>::<span class="ident">IPciNode</span>, <span class="kw">super</span>::<span class="kw-2">*</span>, <span class="ident">spin</span>::<span class="ident">Mutex</span>};
 
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">PciInterrupt</span> {
-    <span class="ident">device</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">IPciNode</span> <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span><span class="op">&gt;</span>,
+    <span class="ident">device</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">IPciNode</span><span class="op">&gt;</span>,
     <span class="ident">irq_id</span>: <span class="ident">usize</span>,
     <span class="ident">maskable</span>: <span class="ident">bool</span>,
     <span class="ident">inner</span>: <span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">PciInterruptInner</span><span class="op">&gt;</span>,
@@ -81,7 +81,7 @@
 }
 
 <span class="kw">impl</span> <span class="ident">PciInterrupt</span> {
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">device</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">IPciNode</span> <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span><span class="op">&gt;</span>, <span class="ident">vector</span>: <span class="ident">u32</span>, <span class="ident">maskable</span>: <span class="ident">bool</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Box</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">device</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">IPciNode</span><span class="op">&gt;</span>, <span class="ident">vector</span>: <span class="ident">u32</span>, <span class="ident">maskable</span>: <span class="ident">bool</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Box</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
         <span class="comment">// TODO check vector is a vaild IRQ number</span>
         <span class="ident">Box</span>::<span class="ident">new</span>(<span class="ident">PciInterrupt</span> {
             <span class="ident">device</span>,
@@ -134,4 +134,4 @@
     }
 }
 </pre></div>
-</section><section id="search" class="content hidden"></section><section class="footer"></section><script>window.rootPath = "../../../../";window.currentCrate = "zircon_object";</script><script src="../../../../aliases.js"></script><script src="../../../../main.js"></script><script src="../../../../source-script.js"></script><script src="../../../../source-files.js"></script><script defer src="../../../../search-index.js"></script></body></html>
+</section><section id="search" class="content hidden"></section><section class="footer"></section><script>window.rootPath = "../../../../";window.currentCrate = "zircon_object";</script><script src="../../../../main.js"></script><script src="../../../../source-script.js"></script><script src="../../../../source-files.js"></script><script defer src="../../../../search-index.js"></script></body></html>

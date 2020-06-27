@@ -140,9 +140,28 @@
 <span id="140">140</span>
 <span id="141">141</span>
 <span id="142">142</span>
+<span id="143">143</span>
+<span id="144">144</span>
+<span id="145">145</span>
+<span id="146">146</span>
+<span id="147">147</span>
+<span id="148">148</span>
+<span id="149">149</span>
+<span id="150">150</span>
+<span id="151">151</span>
+<span id="152">152</span>
+<span id="153">153</span>
+<span id="154">154</span>
+<span id="155">155</span>
+<span id="156">156</span>
+<span id="157">157</span>
+<span id="158">158</span>
+<span id="159">159</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
 <span class="kw">use</span> <span class="ident">numeric_enum_macro</span>::<span class="kw-2">*</span>;
+
+<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">PciConfig</span> {
     <span class="kw">pub</span> <span class="ident">addr_space</span>: <span class="ident">PciAddrSpace</span>,
     <span class="kw">pub</span> <span class="ident">base</span>: <span class="ident">usize</span>,
@@ -174,11 +193,20 @@
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">read8</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">addr</span>: <span class="ident">PciReg8</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u8</span> {
         <span class="self">self</span>.<span class="ident">read8_offset</span>(<span class="self">self</span>.<span class="ident">base</span> <span class="op">+</span> <span class="ident">addr</span> <span class="kw">as</span> <span class="ident">usize</span>)
     }
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">read8_</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">addr</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u8</span> {
+        <span class="self">self</span>.<span class="ident">read8_offset</span>(<span class="self">self</span>.<span class="ident">base</span> <span class="op">+</span> <span class="ident">addr</span>)
+    }
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">read16</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">addr</span>: <span class="ident">PciReg16</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u16</span> {
         <span class="self">self</span>.<span class="ident">read16_offset</span>(<span class="self">self</span>.<span class="ident">base</span> <span class="op">+</span> <span class="ident">addr</span> <span class="kw">as</span> <span class="ident">usize</span>)
     }
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">read16_</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">addr</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u16</span> {
+        <span class="self">self</span>.<span class="ident">read16_offset</span>(<span class="self">self</span>.<span class="ident">base</span> <span class="op">+</span> <span class="ident">addr</span>)
+    }
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">read32</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">addr</span>: <span class="ident">PciReg32</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u32</span> {
         <span class="self">self</span>.<span class="ident">read32_offset</span>(<span class="self">self</span>.<span class="ident">base</span> <span class="op">+</span> <span class="ident">addr</span> <span class="kw">as</span> <span class="ident">usize</span>)
+    }
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">read32_</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">addr</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u32</span> {
+        <span class="self">self</span>.<span class="ident">read32_offset</span>(<span class="self">self</span>.<span class="ident">base</span> <span class="op">+</span> <span class="ident">addr</span>)
     }
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">read_bar</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">bar_</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u32</span> {
         <span class="self">self</span>.<span class="ident">read32_offset</span>(<span class="self">self</span>.<span class="ident">base</span> <span class="op">+</span> <span class="ident">PciReg32</span>::<span class="ident">BARBase</span> <span class="kw">as</span> <span class="ident">usize</span> <span class="op">+</span> <span class="ident">bar_</span> <span class="op">*</span> <span class="number">4</span>)
@@ -213,8 +241,14 @@
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">write16</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">addr</span>: <span class="ident">PciReg16</span>, <span class="ident">val</span>: <span class="ident">u16</span>) {
         <span class="self">self</span>.<span class="ident">write16_offset</span>(<span class="self">self</span>.<span class="ident">base</span> <span class="op">+</span> <span class="ident">addr</span> <span class="kw">as</span> <span class="ident">usize</span>, <span class="ident">val</span>)
     }
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">write16_</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">addr</span>: <span class="ident">usize</span>, <span class="ident">val</span>: <span class="ident">u16</span>) {
+        <span class="self">self</span>.<span class="ident">write16_offset</span>(<span class="self">self</span>.<span class="ident">base</span> <span class="op">+</span> <span class="ident">addr</span>, <span class="ident">val</span>)
+    }
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">write32</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">addr</span>: <span class="ident">PciReg32</span>, <span class="ident">val</span>: <span class="ident">u32</span>) {
         <span class="self">self</span>.<span class="ident">write32_offset</span>(<span class="self">self</span>.<span class="ident">base</span> <span class="op">+</span> <span class="ident">addr</span> <span class="kw">as</span> <span class="ident">usize</span>, <span class="ident">val</span>)
+    }
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">write32_</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">addr</span>: <span class="ident">usize</span>, <span class="ident">val</span>: <span class="ident">u32</span>) {
+        <span class="self">self</span>.<span class="ident">write32_offset</span>(<span class="self">self</span>.<span class="ident">base</span> <span class="op">+</span> <span class="ident">addr</span>, <span class="ident">val</span>)
     }
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">write_bar</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">bar_</span>: <span class="ident">usize</span>, <span class="ident">val</span>: <span class="ident">u32</span>) {
         <span class="self">self</span>.<span class="ident">write32_offset</span>(<span class="self">self</span>.<span class="ident">base</span> <span class="op">+</span> <span class="ident">PciReg32</span>::<span class="ident">BARBase</span> <span class="kw">as</span> <span class="ident">usize</span> <span class="op">+</span> <span class="ident">bar_</span> <span class="op">*</span> <span class="number">4</span>, <span class="ident">val</span>)
@@ -284,4 +318,4 @@
 <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">PCIE_BASE_CONFIG_SIZE</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">256</span>;
 <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">PCIE_EXTENDED_CONFIG_SIZE</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">4096</span>;
 </pre></div>
-</section><section id="search" class="content hidden"></section><section class="footer"></section><script>window.rootPath = "../../../../";window.currentCrate = "zircon_object";</script><script src="../../../../aliases.js"></script><script src="../../../../main.js"></script><script src="../../../../source-script.js"></script><script src="../../../../source-files.js"></script><script defer src="../../../../search-index.js"></script></body></html>
+</section><section id="search" class="content hidden"></section><section class="footer"></section><script>window.rootPath = "../../../../";window.currentCrate = "zircon_object";</script><script src="../../../../main.js"></script><script src="../../../../source-script.js"></script><script src="../../../../source-files.js"></script><script defer src="../../../../search-index.js"></script></body></html>

@@ -168,6 +168,7 @@
 <span id="168">168</span>
 <span id="169">169</span>
 <span id="170">170</span>
+<span id="171">171</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> <span class="ident">core</span>::<span class="ident">fmt</span>;
 <span class="kw">use</span> <span class="ident">rcore_fs</span>::<span class="ident">vfs</span>::<span class="ident">FsError</span>;
@@ -336,8 +337,9 @@
         <span class="kw">match</span> <span class="ident">e</span> {
             <span class="ident">Error</span>::<span class="ident">InvalidUtf8</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError</span>::<span class="ident">EINVAL</span>,
             <span class="ident">Error</span>::<span class="ident">InvalidPointer</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError</span>::<span class="ident">EFAULT</span>,
+            <span class="ident">Error</span>::<span class="ident">BufferTooSmall</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError</span>::<span class="ident">ENOBUFS</span>,
         }
     }
 }
 </pre></div>
-</section><section id="search" class="content hidden"></section><section class="footer"></section><script>window.rootPath = "../../";window.currentCrate = "linux_object";</script><script src="../../aliases.js"></script><script src="../../main.js"></script><script src="../../source-script.js"></script><script src="../../source-files.js"></script><script defer src="../../search-index.js"></script></body></html>
+</section><section id="search" class="content hidden"></section><section class="footer"></section><script>window.rootPath = "../../";window.currentCrate = "linux_object";</script><script src="../../main.js"></script><script src="../../source-script.js"></script><script src="../../source-files.js"></script><script defer src="../../search-index.js"></script></body></html>

@@ -1,7 +1,6 @@
 var N = null;var sourcesIndex = {};
 sourcesIndex["kernel_hal"] = {"name":"","files":["context.rs","dummy.rs","future.rs","lib.rs","user.rs","vdso.rs"]};
-sourcesIndex["kernel_hal_bare"] = {"name":"","dirs":[{"name":"arch","dirs":[{"name":"x86_64","files":["acpi_table.rs","interrupt.rs","keyboard.rs","mod.rs"]}],"files":["mod.rs"]}],"files":["lib.rs"]};
-sourcesIndex["kernel_hal_unix"] = {"name":"","files":["lib.rs","trap.rs"]};
+sourcesIndex["kernel_hal_unix"] = {"name":"","files":["lib.rs"]};
 sourcesIndex["linux_loader"] = {"name":"","files":["lib.rs"]};
 sourcesIndex["linux_object"] = {"name":"","dirs":[{"name":"fs","files":["device.rs","file.rs","ioctl.rs","mod.rs","pseudo.rs","random.rs","stdio.rs"]},{"name":"loader","files":["abi.rs","mod.rs"]}],"files":["error.rs","lib.rs","process.rs","thread.rs"]};
 sourcesIndex["linux_syscall"] = {"name":"","dirs":[{"name":"file","files":["dir.rs","fd.rs","file.rs","mod.rs","poll.rs","stat.rs"]}],"files":["consts.rs","lib.rs","misc.rs","task.rs","time.rs","util.rs","vm.rs"]};

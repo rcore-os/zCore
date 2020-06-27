@@ -123,7 +123,7 @@
         <span class="kw">if</span> <span class="ident">op</span>.<span class="ident">contains</span>(<span class="ident">FutexFlags</span>::<span class="ident">PRIVATE</span>) {
             <span class="macro">warn</span><span class="macro">!</span>(<span class="string">&quot;process-shared futex is unimplemented&quot;</span>);
         }
-        <span class="kw">let</span> <span class="ident">futex</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">lock_linux_process</span>().<span class="ident">get_futex</span>(<span class="ident">uaddr</span>);
+        <span class="kw">let</span> <span class="ident">futex</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>().<span class="ident">get_futex</span>(<span class="ident">uaddr</span>);
         <span class="kw">match</span> <span class="ident">op</span>.<span class="ident">bits</span> <span class="op">&amp;</span> <span class="number">0xf</span> {
             <span class="number">0</span> <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="comment">// FIXME: support timeout</span>
@@ -146,4 +146,4 @@
     }
 }
 </pre></div>
-</section><section id="search" class="content hidden"></section><section class="footer"></section><script>window.rootPath = "../../";window.currentCrate = "linux_syscall";</script><script src="../../aliases.js"></script><script src="../../main.js"></script><script src="../../source-script.js"></script><script src="../../source-files.js"></script><script defer src="../../search-index.js"></script></body></html>
+</section><section id="search" class="content hidden"></section><section class="footer"></section><script>window.rootPath = "../../";window.currentCrate = "linux_syscall";</script><script src="../../main.js"></script><script src="../../source-script.js"></script><script src="../../source-files.js"></script><script defer src="../../search-index.js"></script></body></html>

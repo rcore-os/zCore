@@ -237,6 +237,7 @@
 <span id="237">237</span>
 <span id="238">238</span>
 <span id="239">239</span>
+<span id="240">240</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">/// The type returned by kernel objects methods.</span>
 <span class="kw">pub</span> <span class="kw">type</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">T</span> <span class="op">=</span> ()<span class="op">&gt;</span> <span class="op">=</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">T</span>, <span class="ident">ZxError</span><span class="op">&gt;</span>;
@@ -474,8 +475,9 @@
         <span class="kw">match</span> <span class="ident">e</span> {
             <span class="ident">Error</span>::<span class="ident">InvalidUtf8</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">ZxError</span>::<span class="ident">INVALID_ARGS</span>,
             <span class="ident">Error</span>::<span class="ident">InvalidPointer</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">ZxError</span>::<span class="ident">INVALID_ARGS</span>,
+            <span class="ident">Error</span>::<span class="ident">BufferTooSmall</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">ZxError</span>::<span class="ident">BUFFER_TOO_SMALL</span>,
         }
     }
 }
 </pre></div>
-</section><section id="search" class="content hidden"></section><section class="footer"></section><script>window.rootPath = "../../";window.currentCrate = "zircon_object";</script><script src="../../aliases.js"></script><script src="../../main.js"></script><script src="../../source-script.js"></script><script src="../../source-files.js"></script><script defer src="../../search-index.js"></script></body></html>
+</section><section id="search" class="content hidden"></section><section class="footer"></section><script>window.rootPath = "../../";window.currentCrate = "zircon_object";</script><script src="../../main.js"></script><script src="../../source-script.js"></script><script src="../../source-files.js"></script><script defer src="../../search-index.js"></script></body></html>

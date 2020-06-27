@@ -161,10 +161,6 @@
 <span id="161">161</span>
 <span id="162">162</span>
 <span id="163">163</span>
-<span id="164">164</span>
-<span id="165">165</span>
-<span id="166">166</span>
-<span id="167">167</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="comment">// use super::*;</span>
 <span class="kw">mod</span> <span class="ident">bus</span>;
@@ -173,9 +169,15 @@
 <span class="kw">mod</span> <span class="ident">nodes</span>;
 <span class="kw">mod</span> <span class="ident">pio</span>;
 
-<span class="kw">pub</span> <span class="kw">use</span> <span class="ident">bus</span>::<span class="kw-2">*</span>;
-<span class="kw">pub</span> <span class="kw">use</span> <span class="ident">nodes</span>::<span class="kw-2">*</span>;
-<span class="kw">pub</span> <span class="kw">use</span> <span class="ident">pio</span>::<span class="kw-2">*</span>;
+<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">use</span> <span class="ident">nodes</span>::<span class="kw-2">*</span>;
+<span class="kw">use</span> <span class="ident">pio</span>::<span class="kw-2">*</span>;
+
+<span class="kw">pub</span> <span class="kw">use</span> <span class="self">self</span>::<span class="ident">bus</span>::{
+    <span class="ident">MmioPcieAddressProvider</span>, <span class="ident">PCIeBusDriver</span>, <span class="ident">PcieDeviceInfo</span>, <span class="ident">PcieDeviceKObject</span>,
+    <span class="ident">PioPcieAddressProvider</span>,
+};
+<span class="kw">pub</span> <span class="kw">use</span> <span class="self">self</span>::<span class="ident">nodes</span>::<span class="ident">PcieIrqMode</span>;
+<span class="kw">pub</span> <span class="kw">use</span> <span class="self">self</span>::<span class="ident">pio</span>::{<span class="ident">pio_config_read</span>, <span class="ident">pio_config_write</span>};
 
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">PartialEq</span>, <span class="ident">Debug</span>)]</span>
 <span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">PciAddrSpace</span> {
@@ -184,6 +186,7 @@
 }
 
 <span class="attribute">#[<span class="ident">repr</span>(<span class="ident">C</span>)]</span>
+<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">PciInitArgsAddrWindows</span> {
     <span class="kw">pub</span> <span class="ident">base</span>: <span class="ident">u64</span>,
     <span class="kw">pub</span> <span class="ident">size</span>: <span class="ident">usize</span>,
@@ -235,19 +238,6 @@
     <span class="kw">pub</span> <span class="ident">vaddr</span>: <span class="ident">u64</span>,
 }
 
-<span class="kw">use</span> <span class="ident">numeric_enum_macro</span>::<span class="kw-2">*</span>;
-<span class="macro">numeric_enum</span><span class="macro">!</span> {
-    <span class="attribute">#[<span class="ident">repr</span>(<span class="ident">u32</span>)]</span>
-    <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Debug</span>, <span class="ident">PartialEq</span>)]</span>
-    <span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">PcieIrqMode</span> {
-        <span class="ident">Disabled</span> <span class="op">=</span> <span class="number">0</span>,
-        <span class="ident">Legacy</span> <span class="op">=</span> <span class="number">1</span>,
-        <span class="ident">Msi</span> <span class="op">=</span> <span class="number">2</span>,
-        <span class="ident">MsiX</span> <span class="op">=</span> <span class="number">3</span>,
-        <span class="ident">Count</span> <span class="op">=</span> <span class="number">4</span>,
-    }
-}
-
 <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">PCI_INIT_ARG_MAX_SIZE</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="ident">core</span>::<span class="ident">mem</span>::<span class="ident">size_of</span>::<span class="op">&lt;</span><span class="ident">PciInitArgsAddrWindows</span><span class="op">&gt;</span>()
     <span class="op">*</span> <span class="ident">PCI_INIT_ARG_MAX_ECAM_WINDOWS</span>
     <span class="op">+</span> <span class="ident">core</span>::<span class="ident">mem</span>::<span class="ident">size_of</span>::<span class="op">&lt;</span><span class="ident">PciInitArgsHeader</span><span class="op">&gt;</span>();
@@ -267,22 +257,24 @@
 <span class="kw">use</span> <span class="ident">alloc</span>::<span class="ident">sync</span>::<span class="kw-2">*</span>;
 <span class="kw">use</span> <span class="ident">kernel_hal</span>::<span class="ident">InterruptManager</span>;
 
-<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">pci_configure_interrupt</span>(<span class="ident">arg_header</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">PciInitArgsHeader</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
-    <span class="kw">for</span> <span class="ident">i</span> <span class="kw">in</span> <span class="number">0</span>..<span class="ident">arg_header</span>.<span class="ident">num_irqs</span> <span class="kw">as</span> <span class="ident">usize</span> {
-        <span class="kw">let</span> <span class="ident">irq</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">arg_header</span>.<span class="ident">irqs</span>[<span class="ident">i</span>];
-        <span class="kw">let</span> <span class="ident">global_irq</span> <span class="op">=</span> <span class="ident">irq</span>.<span class="ident">global_irq</span>;
-        <span class="kw">if</span> <span class="op">!</span><span class="ident">is_valid_interrupt</span>(<span class="ident">global_irq</span>) {
-            <span class="ident">irq</span>.<span class="ident">global_irq</span> <span class="op">=</span> <span class="ident">PCI_NO_IRQ_MAPPING</span>;
-            <span class="ident">pci_irq_swizzle_lut_remove_irq</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">arg_header</span>.<span class="ident">dev_pin_to_global_irq</span>, <span class="ident">global_irq</span>);
-        } <span class="kw">else</span> {
-            <span class="ident">irq_configure</span>(
-                <span class="ident">global_irq</span>,
-                <span class="ident">irq</span>.<span class="ident">level_triggered</span>, <span class="comment">/* Trigger mode */</span>
-                <span class="ident">irq</span>.<span class="ident">active_high</span>,     <span class="comment">/* Polarity */</span>
-            )<span class="question-mark">?</span>;
+<span class="kw">impl</span> <span class="ident">PciInitArgsHeader</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">configure_interrupt</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+        <span class="kw">for</span> <span class="ident">i</span> <span class="kw">in</span> <span class="number">0</span>..<span class="self">self</span>.<span class="ident">num_irqs</span> <span class="kw">as</span> <span class="ident">usize</span> {
+            <span class="kw">let</span> <span class="ident">irq</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>.<span class="ident">irqs</span>[<span class="ident">i</span>];
+            <span class="kw">let</span> <span class="ident">global_irq</span> <span class="op">=</span> <span class="ident">irq</span>.<span class="ident">global_irq</span>;
+            <span class="kw">if</span> <span class="op">!</span><span class="ident">is_valid_interrupt</span>(<span class="ident">global_irq</span>) {
+                <span class="ident">irq</span>.<span class="ident">global_irq</span> <span class="op">=</span> <span class="ident">PCI_NO_IRQ_MAPPING</span>;
+                <span class="self">self</span>.<span class="ident">dev_pin_to_global_irq</span>.<span class="ident">remove_irq</span>(<span class="ident">global_irq</span>);
+            } <span class="kw">else</span> {
+                <span class="ident">irq_configure</span>(
+                    <span class="ident">global_irq</span>,
+                    <span class="ident">irq</span>.<span class="ident">level_triggered</span>, <span class="comment">/* Trigger mode */</span>
+                    <span class="ident">irq</span>.<span class="ident">active_high</span>,     <span class="comment">/* Polarity */</span>
+                )<span class="question-mark">?</span>;
+            }
         }
+        <span class="prelude-val">Ok</span>(())
     }
-    <span class="prelude-val">Ok</span>(())
 }
 
 <span class="kw">fn</span> <span class="ident">is_valid_interrupt</span>(<span class="ident">irq</span>: <span class="ident">u32</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
@@ -320,18 +312,18 @@
             <span class="prelude-val">Ok</span>(<span class="ident">irq</span> <span class="kw">as</span> <span class="ident">usize</span>)
         }
     }
-}
 
-<span class="kw">fn</span> <span class="ident">pci_irq_swizzle_lut_remove_irq</span>(<span class="ident">lut</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">PciIrqSwizzleLut</span>, <span class="ident">irq</span>: <span class="ident">u32</span>) {
-    <span class="kw">for</span> <span class="ident">dev</span> <span class="kw">in</span> <span class="ident">lut</span>.<span class="number">0</span>.<span class="ident">iter_mut</span>() {
-        <span class="kw">for</span> <span class="ident">func</span> <span class="kw">in</span> <span class="ident">dev</span>.<span class="ident">iter_mut</span>() {
-            <span class="kw">for</span> <span class="ident">pin</span> <span class="kw">in</span> <span class="ident">func</span>.<span class="ident">iter_mut</span>() {
-                <span class="kw">if</span> <span class="kw-2">*</span><span class="ident">pin</span> <span class="op">=</span><span class="op">=</span> <span class="ident">irq</span> {
-                    <span class="kw-2">*</span><span class="ident">pin</span> <span class="op">=</span> <span class="ident">PCI_NO_IRQ_MAPPING</span>;
+    <span class="kw">fn</span> <span class="ident">remove_irq</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">irq</span>: <span class="ident">u32</span>) {
+        <span class="kw">for</span> <span class="ident">dev</span> <span class="kw">in</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">iter_mut</span>() {
+            <span class="kw">for</span> <span class="ident">func</span> <span class="kw">in</span> <span class="ident">dev</span>.<span class="ident">iter_mut</span>() {
+                <span class="kw">for</span> <span class="ident">pin</span> <span class="kw">in</span> <span class="ident">func</span>.<span class="ident">iter_mut</span>() {
+                    <span class="kw">if</span> <span class="kw-2">*</span><span class="ident">pin</span> <span class="op">=</span><span class="op">=</span> <span class="ident">irq</span> {
+                        <span class="kw-2">*</span><span class="ident">pin</span> <span class="op">=</span> <span class="ident">PCI_NO_IRQ_MAPPING</span>;
+                    }
                 }
             }
         }
     }
 }
 </pre></div>
-</section><section id="search" class="content hidden"></section><section class="footer"></section><script>window.rootPath = "../../../../";window.currentCrate = "zircon_object";</script><script src="../../../../aliases.js"></script><script src="../../../../main.js"></script><script src="../../../../source-script.js"></script><script src="../../../../source-files.js"></script><script defer src="../../../../search-index.js"></script></body></html>
+</section><section id="search" class="content hidden"></section><section class="footer"></section><script>window.rootPath = "../../../../";window.currentCrate = "zircon_object";</script><script src="../../../../main.js"></script><script src="../../../../source-script.js"></script><script src="../../../../source-files.js"></script><script defer src="../../../../search-index.js"></script></body></html>
