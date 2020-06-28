@@ -190,7 +190,7 @@ impl VmAddressRegion {
         // align = 1K? 2K? 4K? 8K? ...
         if !self.test_map(inner, offset, len, PAGE_SIZE) {
             if overwrite {
-                self.unmap(addr, len)?;
+                self.unmap_inner(addr, len, inner)?;
             } else {
                 return Err(ZxError::NO_MEMORY);
             }
@@ -216,6 +216,14 @@ impl VmAddressRegion {
         }
         let mut guard = self.inner.lock();
         let inner = guard.as_mut().ok_or(ZxError::BAD_STATE)?;
+        self.unmap_inner(addr, len, inner)
+    }
+
+    /// Must hold self.inner.lock() before calling.
+    fn unmap_inner(&self, addr: VirtAddr, len: usize, inner: &mut VmarInner) -> ZxResult {
+        if !page_aligned(addr) || !page_aligned(len) || len == 0 {
+            return Err(ZxError::INVALID_ARGS);
+        }
 
         let begin = addr;
         let end = addr + len;
@@ -654,8 +662,8 @@ impl VmMapping {
     }
 
     fn unmap(&self) {
-        let mut page_table = self.page_table.lock();
         let inner = self.inner.lock();
+        let mut page_table = self.page_table.lock();
         self.vmo
             .unmap_from(&mut page_table, inner.addr, inner.vmo_offset, inner.size);
     }
@@ -756,8 +764,8 @@ impl VmMapping {
     }
 
     fn protect(&self, flags: MMUFlags) {
-        let mut pg_table = self.page_table.lock();
         let inner = self.inner.lock();
+        let mut pg_table = self.page_table.lock();
         for i in 0..inner.size {
             pg_table.protect(inner.addr + i * PAGE_SIZE, flags).unwrap();
         }
