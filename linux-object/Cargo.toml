@@ -14,7 +14,7 @@ xmas-elf = "0.7"
 hashbrown = "0.7"
 zircon-object = { path = "../zircon-object", features = ["elf"] }
 kernel-hal = { path = "../kernel-hal" }
-downcast-rs = { git = "https://github.com/rcore-os/downcast-rs" }
+downcast-rs = { git = "https://github.com/rcore-os/downcast-rs", rev = "a632ce1", default-features = false }
 rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "e17b27b" }
 rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "e17b27b" }
 rcore-fs-ramfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "e17b27b" }
