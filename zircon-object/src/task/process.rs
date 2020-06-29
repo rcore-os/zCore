@@ -82,6 +82,7 @@ struct ProcessInner {
     // special info
     debug_addr: usize,
     dyn_break_on_load: usize,
+    critical_to_job: Option<(Arc<Job>, bool)>,
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -175,7 +176,13 @@ impl Process {
         }
         inner.threads.clear();
         inner.handles.clear();
-        self.job.process_exit(self.base.id, retcode);
+
+        // If we are critical to a job, we need to take action.
+        if let Some((_job, retcode_nonzero)) = &inner.critical_to_job {
+            if !retcode_nonzero || retcode != 0 {
+                unimplemented!("kill the job")
+            }
+        }
     }
 
     /// Check whether `condition` is allowed in the parent job's policy.
@@ -189,6 +196,40 @@ impl Process {
             PolicyAction::Deny => Err(ZxError::ACCESS_DENIED),
             _ => unimplemented!(),
         }
+    }
+
+    /// Set a process as critical to the job.
+    ///
+    /// When process terminates, job will be terminated as if `task_kill()` was
+    /// called on it. The return code used will be `ZX_TASK_RETCODE_CRITICAL_PROCESS_KILL`.
+    ///
+    /// The job specified must be the parent of process, or an ancestor.
+    ///
+    /// If `retcode_nonzero` is true, then job will only be terminated if process
+    /// has a non-zero return code.
+    pub fn set_critical_at_job(
+        &self,
+        critical_to_job: &Arc<Job>,
+        retcode_nonzero: bool,
+    ) -> ZxResult {
+        let mut inner = self.inner.lock();
+        if inner.critical_to_job.is_some() {
+            return Err(ZxError::ALREADY_BOUND);
+        }
+
+        let mut job = self.job.clone();
+        loop {
+            if job.id() == critical_to_job.id() {
+                inner.critical_to_job = Some((job, retcode_nonzero));
+                return Ok(());
+            }
+            if let Some(p) = job.parent() {
+                job = p;
+            } else {
+                break;
+            }
+        }
+        Err(ZxError::INVALID_ARGS)
     }
 
     /// Get process status.
