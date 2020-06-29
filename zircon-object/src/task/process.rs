@@ -207,7 +207,11 @@ impl Process {
     ///
     /// If `retcode_nonzero` is true, then job will only be terminated if process
     /// has a non-zero return code.
-    pub fn set_critical_at_job(&self, critical_to_job: &Arc<Job>, retcode_nonzero: bool) -> ZxResult {
+    pub fn set_critical_at_job(
+        &self,
+        critical_to_job: &Arc<Job>,
+        retcode_nonzero: bool,
+    ) -> ZxResult {
         let mut inner = self.inner.lock();
         if inner.critical_to_job.is_some() {
             return Err(ZxError::ALREADY_BOUND);
