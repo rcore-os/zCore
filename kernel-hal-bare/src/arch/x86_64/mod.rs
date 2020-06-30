@@ -367,6 +367,27 @@ pub fn init(config: Config) {
         CONFIG = config;
         // get tsc frequency
         TSC_FREQUENCY = tsc_frequency();
+
+        // start multi-processors
+        fn ap_main() {
+            info!("processor {} started", apic_local_id());
+            unsafe {
+                trapframe::init();
+            }
+            timer_init();
+            let ap_fn = unsafe { CONFIG.ap_fn };
+            ap_fn()
+        }
+        fn stack_fn(pid: usize) -> usize {
+            // split and reuse the current stack
+            unsafe {
+                let mut stack: usize;
+                asm!("mov {}, rsp", out(reg) stack);
+                stack -= 0x4000 * pid;
+                stack
+            }
+        }
+        x86_smpboot::start_application_processors(ap_main, stack_fn, phys_to_virt);
     }
 }
 
@@ -374,6 +395,7 @@ pub fn init(config: Config) {
 pub struct Config {
     pub acpi_rsdp: u64,
     pub smbios: u64,
+    pub ap_fn: fn() -> !,
 }
 
 #[export_name = "fetch_fault_vaddr"]
@@ -390,6 +412,7 @@ pub fn pc_firmware_tables() -> (u64, u64) {
 static mut CONFIG: Config = Config {
     acpi_rsdp: 0,
     smbios: 0,
+    ap_fn: || unreachable!(),
 };
 
 static mut TSC_FREQUENCY: u16 = 2600;

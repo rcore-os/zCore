@@ -4,6 +4,7 @@ zbi_file ?= bringup
 graphic ?=
 accel ?=
 linux ?=
+smp ?= 1
 test_filter ?= *.*
 
 build_args := -Z build-std=core,alloc --target $(arch).json
@@ -28,13 +29,13 @@ else
 endif
 
 qemu_opts := \
-	-smp cores=1
+	-smp $(smp)
 
 ifeq ($(arch), x86_64)
 qemu_opts += \
 	-machine q35 \
 	-cpu Haswell,+smap,-check,-fsgsbase \
-	-bios $(OVMF) \
+	-drive if=pflash,format=raw,readonly,file=$(OVMF) \
 	-drive format=raw,file=fat:rw:$(ESP) \
 	-drive format=qcow2,file=$(QEMU_DISK),id=disk,if=none \
 	-device ich9-ahci,id=ahci \
@@ -47,7 +48,7 @@ endif
 
 ifeq ($(accel), 1)
 ifeq ($(shell uname), Darwin)
-qemu_opts += -accel hax
+qemu_opts += -accel hvf
 else
 qemu_opts += -accel kvm -cpu host,migratable=no,+invtsc
 endif
