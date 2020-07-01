@@ -76,7 +76,7 @@ justrun: $(QEMU_DISK)
 
 build-test: build
 	cp ../prebuilt/zircon/x64/core-tests.zbi $(ESP)/EFI/zCore/fuchsia.zbi
-	echo 'cmdline=LOG=warn:userboot=test/core/standalone-test:userboot.shutdown:core-tests=$(test_filter)' >> $(ESP)/EFI/Boot/rboot.conf
+	echo 'cmdline=LOG=warn:userboot=test/core-standalone-test:userboot.shutdown:core-tests=$(test_filter)' >> $(ESP)/EFI/Boot/rboot.conf
 
 build: $(kernel_img)
 
@@ -116,7 +116,7 @@ vbox: build
 ifneq "$(VMDISK)" "$(wildcard $(VMDISK))"
 	vboxmanage createvm --name zCoreVM --basefolder $(build_path) --register
 	cp ../prebuilt/zircon/empty.vdi $(VMDISK)
-	vboxmanage storagectl zCoreVM --name DiskCtrlr --controller IntelAhci --add sata 
+	vboxmanage storagectl zCoreVM --name DiskCtrlr --controller IntelAhci --add sata
 	vboxmanage storageattach zCoreVM --storagectl DiskCtrlr --port 0 --type hdd --medium $(VMDISK)
 	vboxmanage modifyvm zCoreVM --memory 1024 --firmware efi
 	tar -cvf $(build_path)/esp.tar -C $(build_path)/esp EFI
@@ -128,7 +128,7 @@ endif
 	# sudo LIBGUESTFS_DEBUG=1 guestfish -a $(VMDISK) -m /dev/sda1 tar-in $(build_path)/esp.tar / : quit
 	# -a $(VMDISK) $(build_path)/esp.tar /
 	rm $(build_path)/esp.tar
-	vboxmanage startvm zCoreVM 
+	vboxmanage startvm zCoreVM
 
 $(QEMU_DISK):
 	qemu-img create -f qcow2 $@ 100M
