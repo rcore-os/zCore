@@ -371,18 +371,15 @@ impl Thread {
 
 impl Task for Thread {
     fn kill(&self) {
-        error!("kill");
         let mut inner = self.inner.lock();
         inner.dying = true;
         if inner.suspend_count == 0 {
-            error!("0");
             return;
         }
+        inner.suspend_count = 0;
         if let Some(waker) = inner.waker.take() {
-            error!("wake");
             waker.wake();
         }
-        error!("？？？");
     }
 
     fn suspend(&self) {

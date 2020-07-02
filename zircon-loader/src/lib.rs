@@ -179,6 +179,11 @@ fn spawn(thread: Arc<Thread>) {
         loop {
             let mut cx = thread.wait_for_run().await;
             if thread.is_killed() {
+                info!(
+                    "proc={:?} thread={:?} was killed",
+                    thread.proc().name(),
+                    thread.name()
+                );
                 thread.internal_exit();
                 break;
             }
@@ -256,6 +261,11 @@ fn spawn(thread: Arc<Thread>) {
             }
             thread.end_running(cx);
             if exit {
+                warn!(
+                    "proc={:?} thread={:?} exited",
+                    thread.proc().name(),
+                    thread.name()
+                );
                 break;
             }
         }

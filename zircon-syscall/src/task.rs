@@ -205,10 +205,10 @@ impl Syscall<'_> {
         } else if let Ok(proc) = proc.get_object_with_rights::<Process>(handle, Rights::DESTROY) {
             proc.kill();
         } else if let Ok(thread) = proc.get_object_with_rights::<Thread>(handle, Rights::DESTROY) {
+            info!("killing thread: proc={:?} thread={:?}",thread.proc().name(),thread.name());
             match thread.state() {
                 ThreadState::Running | ThreadState::Suspended => {
                     if !Arc::ptr_eq(&thread, &self.thread) {
-                        error!("{:?}", thread.state());
                         thread.kill();
                     }
                 }
