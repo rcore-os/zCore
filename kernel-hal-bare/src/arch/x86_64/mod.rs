@@ -3,6 +3,7 @@ use {
     acpi::{parse_rsdp, Acpi, AcpiHandler, PhysicalMapping},
     alloc::{collections::VecDeque, vec::Vec},
     apic::{LocalApic, XApic},
+    core::arch::x86_64::{__cpuid, _mm_clflush, _mm_mfence},
     core::convert::TryFrom,
     core::fmt::{Arguments, Write},
     core::ptr::NonNull,
@@ -71,7 +72,13 @@ impl PageTableImpl {
             .unwrap()
             .flush();
         };
-        trace!("map: {:x?} -> {:x?}, flags={:?}", vaddr, paddr, flags);
+        trace!(
+            "map: {:x?} -> {:x?}, flags={:?} in {:#x?}",
+            vaddr,
+            paddr,
+            flags,
+            self.root_paddr
+        );
         Ok(())
     }
 
@@ -80,10 +87,25 @@ impl PageTableImpl {
     pub fn unmap(&mut self, vaddr: x86_64::VirtAddr) -> Result<(), ()> {
         let mut pt = self.get();
         let page = Page::<Size4KiB>::from_start_address(vaddr).unwrap();
-        if let Ok((_, flush)) = pt.unmap(page) {
-            flush.flush();
+        // This is a workaround to an issue in the x86-64 crate
+        // A page without PRESENT bit is not unmappable AND mapable
+        // So we add PRESENT bit here
+        unsafe {
+            pt.update_flags(page, PTF::PRESENT | PTF::NO_EXECUTE).ok();
         }
-        trace!("unmap: {:x?}", vaddr);
+        match pt.unmap(page) {
+            Ok((_, flush)) => {
+                flush.flush();
+                trace!("unmap: {:x?} in {:#x?}", vaddr, self.root_paddr);
+            }
+            Err(err) => {
+                debug!(
+                    "unmap failed: {:x?} err={:x?} in {:#x?}",
+                    vaddr, err, self.root_paddr
+                );
+                return Err(());
+            }
+        }
         Ok(())
     }
 
@@ -422,4 +444,21 @@ pub fn outpd(port: u16, value: u32) {
 #[export_name = "hal_inpd"]
 pub fn inpd(port: u16) -> u32 {
     unsafe { Port::new(port).read() }
+}
+
+/// Flush the physical frame.
+#[export_name = "hal_frame_flush"]
+pub fn frame_flush(target: PhysAddr) {
+    unsafe {
+        for paddr in (target..target + PAGE_SIZE).step_by(cacheline_size()) {
+            _mm_clflush(phys_to_virt(paddr) as *const u8);
+        }
+        _mm_mfence();
+    }
+}
+
+/// Get cache line size in bytes.
+fn cacheline_size() -> usize {
+    let leaf = unsafe { __cpuid(1).ebx };
+    (((leaf >> 8) & 0xff) << 3) as usize
 }

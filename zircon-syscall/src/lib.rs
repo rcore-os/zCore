@@ -111,6 +111,12 @@ impl Syscall<'_> {
             Sys::PROCESS_START => {
                 self.sys_process_start(a0 as _, a1 as _, a2 as _, a3 as _, a4 as _, a5 as _)
             }
+            Sys::PROCESS_READ_MEMORY => {
+                self.sys_process_read_memory(a0 as _, a1 as _, a2.into(), a3 as _, a4.into())
+            }
+            Sys::PROCESS_WRITE_MEMORY => {
+                self.sys_process_write_memory(a0 as _, a1 as _, a2.into(), a3 as _, a4.into())
+            }
             Sys::PROCESS_EXIT => self.sys_process_exit(a0 as _),
             Sys::JOB_CREATE => self.sys_job_create(a0 as _, a1 as _, a2.into()),
             Sys::JOB_SET_POLICY => self.sys_job_set_policy(a0 as _, a1 as _, a2 as _, a3, a4 as _),
@@ -226,7 +232,7 @@ impl Syscall<'_> {
             }
             Sys::VMAR_PROTECT => self.sys_vmar_protect(a0 as _, a1 as _, a2 as _, a3 as _),
             Sys::VMAR_DESTROY => self.sys_vmar_destroy(a0 as _),
-            Sys::CPRNG_DRAW_ONCE => self.sys_cprng_draw_once(a0 as _, a1 as _),
+            Sys::CPRNG_DRAW_ONCE => self.sys_cprng_draw_once(a0.into(), a1 as _),
             Sys::NANOSLEEP => self.sys_nanosleep(a0.into()).await,
             Sys::CLOCK_GET => self.sys_clock_get(a0 as _, a1.into()),
             Sys::CLOCK_READ => self.sys_clock_read(a0 as _, a1.into()),
@@ -293,6 +299,7 @@ impl Syscall<'_> {
             Sys::PCI_ADD_SUBTRACT_IO_RANGE => {
                 self.sys_pci_add_subtract_io_range(a0 as _, a1 != 0, a2 as _, a3 as _, a4 != 0)
             }
+            #[cfg(target_arch = "x86_64")]
             Sys::PCI_CFG_PIO_RW => self.sys_pci_cfg_pio_rw(
                 a0 as _,
                 a1 as _,

@@ -55,12 +55,28 @@ jobs:
       with:
         command: doc
 
+  build-aarch64:
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly-2020-06-04
+          override: true
+          target: aarch64-unknown-linux-gnu
+      - uses: actions-rs/cargo@v1
+        with:
+          command: build
+          use-cross: true
+          args: -p zircon-loader --all-features --target aarch64-unknown-linux-gnu
+
   test:
     runs-on: ubuntu-20.04
     steps:
     - uses: actions/checkout@v2
     - name: Pull prebuilt images
-      run: git lfs pull -X prebuilt/zircon/bringup.zbi prebuilt/zircon/core-tests.zbi
+      run: git lfs pull -X prebuilt/zircon/x64/bringup.zbi prebuilt/zircon/x64/core-tests.zbi prebuilt/zircon/arm64
     - name: Prepare rootfs
       run: make rootfs
     - name: Test
@@ -99,7 +115,7 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: Pull prebuilt images
-        run: git lfs pull -X prebuilt/zircon/bringup.zbi
+        run: git lfs pull -X prebuilt/zircon/x64/bringup.zbi prebuilt/zircon/arm64
       - name: Checkout submodules
         shell: bash
         run: |

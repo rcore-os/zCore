@@ -727,6 +727,11 @@ impl VMObjectPagedInner {
         user_id: KoID,
         lock_ref: &Arc<Mutex<()>>,
     ) -> ZxResult<Arc<VMObjectPaged>> {
+        // clone contiguous vmo is no longer permitted
+        // https://fuchsia.googlesource.com/fuchsia/+/e6b4c6751bbdc9ed2795e81b8211ea294f139a45
+        if self.is_contiguous() {
+            return Err(ZxError::INVALID_ARGS);
+        }
         if self.cache_policy != CachePolicy::Cached || self.pin_count != 0 {
             return Err(ZxError::BAD_STATE);
         }

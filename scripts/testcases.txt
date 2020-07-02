@@ -1,7 +1,6 @@
 *
 -Bti.NoDelayedUnpin
 -Bti.DecommitRace
--ProcessDebugTest.*
 -ProcessDebugVDSO.*
 -HandleCloseTest.ManyDuplicateTest*
 -JobTest.*
@@ -22,7 +21,12 @@
 -Threads.WriteReadDebugRegisterState
 -Threads.DebugRegistersValidation
 -Threads.NoncanonicalRipAddressIRETQ
--Vmar.*
+-Vmar.ProtectOverDemandPagedTest
+-Vmar.ProtectLargeUncomittedTest
+-Vmar.UnmapLargeUncommittedTest
+-Vmar.NestedRegionPermsTest
+-Vmar.MapSpecificOverwriteTest
+-Vmar.MapOverDestroyedTest
 -VmoTestCase.ReadOnlyMap
 -VmoTestCase.NoPermMap
 -VmoTestCase.NoPermProtect
@@ -30,6 +34,7 @@
 -VmoTestCase.CacheOp
 -VmoTestCase.ResizeHazard
 -VmoTestCase.Cache*
+-VmoClone2TestCase.PinClonePages
 -VersionTest.*
 -BadAccessTest.*
 -DefaultExceptionHandlerTest.*

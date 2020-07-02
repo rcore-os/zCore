@@ -83,6 +83,10 @@ ChannelWriteEtcTest.HandleWithoutDuplicateRightsMoveOpSucceedsDuplicateOpFails
 ClockTest.ClockMonotonic
 ClockTest.DeadlineAfter
 ProcessDebugUtilsTest.XorShiftIsOk
+ProcessDebugTest.ReadMemoryAtOffsetIsOk
+ProcessDebugTest.WriteMemoryAtOffsetIsOk
+ProcessDebugTest.ReadMemoryAtInvalidOffsetReturnsErrorNoMemory
+ProcessDebugTest.WriteAtInvalidOffsetReturnsErrorNoMemory
 ExecutableTlsTest.BasicInitalizersInThread
 ExecutableTlsTest.BasicInitalizersInMain
 ExecutableTlsTest.ArrayInitializerInThread
@@ -340,6 +344,13 @@ Threads.SuspendChannelCall
 Threads.SuspendPortCall
 Threads.WritingArmFlagsRegister
 TicksTest.ElapsedTimeUsingTicks
+Vmar.DestroyTest
+Vmar.BasicAllocateTest
+Vmar.MapInCompactTest
+Vmar.AllocateOobTest
+Vmar.ObjectInfoTest
+Vmar.UnmapBaseNotMappedTest
+Vmar.AllowFaultsTest
 VmoCloneTestCase.SizeAlign
 VmoCloneTestCase.NameProperty
 VmoCloneTestCase.Decommit
@@ -374,6 +385,7 @@ VmoClone2TestCase.ManyChildren
 VmoClone2TestCase.ManyChildrenRevClose
 VmoClone2TestCase.ManyCloneMapping
 VmoClone2TestCase.ManyCloneOffset
+VmoClone2TestCase.ForbidContiguousVmo
 VmoClone2TestCase.PinBeforeCreateFailure
 VmoClone2TestCase.NoPhysical
 VmoClone2TestCase.Uncached

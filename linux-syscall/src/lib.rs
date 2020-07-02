@@ -218,7 +218,7 @@ impl Syscall<'_> {
             //            Sys::SELECT => self.sys_select(a0, a1.into(), a2.into(), a3.into(), a4.into()),
             Sys::DUP2 => self.sys_dup2(a0.into(), a1.into()),
             //            Sys::ALARM => self.unimplemented("alarm", Ok(0)),
-            Sys::FORK => self.sys_fork().await,
+            Sys::FORK => self.sys_fork(),
             Sys::VFORK => self.sys_vfork().await,
             Sys::RENAME => self.sys_rename(a0.into(), a1.into()),
             Sys::MKDIR => self.sys_mkdir(a0.into(), a1),

@@ -23,7 +23,7 @@ use zircon_object::{
 pub trait ProcessExt {
     fn create_linux(job: &Arc<Job>, rootfs: Arc<dyn FileSystem>) -> ZxResult<Arc<Self>>;
     fn linux(&self) -> &LinuxProcess;
-    fn vfork_from(parent: &Arc<Self>) -> ZxResult<Arc<Self>>;
+    fn fork_from(parent: &Arc<Self>, vfork: bool) -> ZxResult<Arc<Self>>;
 }
 
 impl ProcessExt for Process {
@@ -36,10 +36,10 @@ impl ProcessExt for Process {
         self.ext().downcast_ref::<LinuxProcess>().unwrap()
     }
 
-    /// [Vfork] the process.
+    /// [Fork] the process.
     ///
-    /// [Vfork]: http://man7.org/linux/man-pages/man2/vfork.2.html
-    fn vfork_from(parent: &Arc<Self>) -> ZxResult<Arc<Self>> {
+    /// [Fork]: http://man7.org/linux/man-pages/man2/fork.2.html
+    fn fork_from(parent: &Arc<Self>, vfork: bool) -> ZxResult<Arc<Self>> {
         let linux_parent = parent.linux();
         let mut linux_parent_inner = linux_parent.inner.lock();
         let new_linux_proc = LinuxProcess {
@@ -56,6 +56,9 @@ impl ProcessExt for Process {
         linux_parent_inner
             .children
             .insert(new_proc.id(), new_proc.clone());
+        if !vfork {
+            new_proc.vmar().fork_from(&parent.vmar())?;
+        }
 
         // notify parent on terminated
         let parent = parent.clone();

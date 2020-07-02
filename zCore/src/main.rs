@@ -47,12 +47,12 @@ pub extern "C" fn _start(boot_info: &BootInfo) -> ! {
 fn main(ramfs_data: &[u8], cmdline: &str) {
     use zircon_loader::{run_userboot, Images};
     let images = Images::<&[u8]> {
-        userboot: include_bytes!("../../prebuilt/zircon/userboot.so"),
-        vdso: include_bytes!("../../prebuilt/zircon/libzircon.so"),
+        userboot: include_bytes!("../../prebuilt/zircon/x64/userboot.so"),
+        vdso: include_bytes!("../../prebuilt/zircon/x64/libzircon.so"),
         zbi: ramfs_data,
     };
     let _proc = run_userboot(&images, cmdline);
-    executor::run();
+    run();
 }
 
 #[cfg(feature = "linux")]
@@ -67,7 +67,15 @@ fn main(ramfs_data: &'static mut [u8], _cmdline: &str) {
     let device = Arc::new(MemBuf::new(ramfs_data));
     let rootfs = rcore_fs_sfs::SimpleFileSystem::open(device).unwrap();
     let _proc = linux_loader::run(args, envs, rootfs);
-    executor::run();
+    run();
+}
+
+fn run() -> ! {
+    loop {
+        executor::run_until_idle();
+        x86_64::instructions::interrupts::enable_interrupts_and_hlt();
+        x86_64::instructions::interrupts::disable();
+    }
 }
 
 fn get_log_level(cmdline: &str) -> &str {

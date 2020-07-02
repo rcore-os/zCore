@@ -43,7 +43,7 @@ cargo run --release -p linux-loader /bin/busybox [args]
 Run native Zircon program (shell):
 
 ```sh
-cargo run --release -p zircon-loader prebuilt/zircon
+cargo run --release -p zircon-loader prebuilt/zircon/x64
 ```
 
 Run Zircon on bare-metal (zCore):

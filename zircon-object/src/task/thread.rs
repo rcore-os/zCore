@@ -182,11 +182,21 @@ impl Thread {
         {
             let mut inner = self.inner.lock();
             let context = inner.context.as_mut().ok_or(ZxError::BAD_STATE)?;
-            context.general.rip = entry;
-            context.general.rsp = stack;
-            context.general.rdi = arg1;
-            context.general.rsi = arg2;
-            context.general.rflags |= 0x3202;
+            #[cfg(target_arch = "x86_64")]
+            {
+                context.general.rip = entry;
+                context.general.rsp = stack;
+                context.general.rdi = arg1;
+                context.general.rsi = arg2;
+                context.general.rflags |= 0x3202;
+            }
+            #[cfg(target_arch = "aarch64")]
+            {
+                context.elr = entry;
+                context.sp = stack;
+                context.general.x0 = arg1;
+                context.general.x1 = arg2;
+            }
             inner.state = ThreadState::Running;
             self.base.signal_set(Signal::THREAD_RUNNING);
         }
@@ -204,7 +214,10 @@ impl Thread {
             let mut inner = self.inner.lock();
             let context = inner.context.as_mut().ok_or(ZxError::BAD_STATE)?;
             context.general = regs;
-            context.general.rflags |= 0x3202;
+            #[cfg(target_arch = "x86_64")]
+            {
+                context.general.rflags |= 0x3202;
+            }
             inner.state = ThreadState::Running;
             self.base.signal_set(Signal::THREAD_RUNNING);
         }
@@ -340,6 +353,19 @@ impl Thread {
 
     pub fn get_time(&self) -> u64 {
         self.inner.lock().time as u64
+    }
+
+    pub fn handle_exception(&self) -> impl Future<Output = bool> {
+        //TODO: implement exception channel
+        self.exit();
+        struct ExceptionFuture;
+        impl Future for ExceptionFuture {
+            type Output = bool;
+            fn poll(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Self::Output> {
+                Poll::Ready(false)
+            }
+        }
+        ExceptionFuture
     }
 }
 

@@ -284,6 +284,47 @@ impl Syscall<'_> {
             _ => Err(ZxError::INVALID_ARGS),
         }
     }
+
+    pub fn sys_process_read_memory(
+        &self,
+        handle_value: HandleValue,
+        vaddr: usize,
+        mut buffer: UserOutPtr<u8>,
+        buffer_size: usize,
+        mut actual: UserOutPtr<u32>,
+    ) -> ZxResult {
+        if buffer.is_null() || buffer_size == 0 || buffer_size > MAX_BLOCK {
+            return Err(ZxError::INVALID_ARGS);
+        }
+        let proc = self.thread.proc();
+        let process =
+            proc.get_object_with_rights::<Process>(handle_value, Rights::READ | Rights::WRITE)?;
+        let mut data = vec![0u8; buffer_size];
+        let len = process.vmar().read_memory(vaddr, &mut data)?;
+        buffer.write_array(&data[..len])?;
+        actual.write_if_not_null(len as u32)?;
+        Ok(())
+    }
+
+    pub fn sys_process_write_memory(
+        &self,
+        handle_value: HandleValue,
+        vaddr: usize,
+        buffer: UserInPtr<u8>,
+        buffer_size: usize,
+        mut actual: UserOutPtr<u32>,
+    ) -> ZxResult {
+        if buffer.is_null() || buffer_size == 0 || buffer_size > MAX_BLOCK {
+            return Err(ZxError::INVALID_ARGS);
+        }
+        let proc = self.thread.proc();
+        let process =
+            proc.get_object_with_rights::<Process>(handle_value, Rights::READ | Rights::WRITE)?;
+        let data = buffer.read_array(buffer_size)?;
+        let len = process.vmar().write_memory(vaddr, &data)?;
+        actual.write_if_not_null(len as u32)?;
+        Ok(())
+    }
 }
 
 const JOB_POL_BASE_V1: u32 = 0;
@@ -292,3 +333,5 @@ const JOB_POL_TIMER_SLACK: u32 = 1;
 
 const JOB_POL_RELATIVE: u32 = 0;
 const JOB_POL_ABSOLUTE: u32 = 1;
+
+const MAX_BLOCK: usize = 64 * 1024 * 1024; //64M

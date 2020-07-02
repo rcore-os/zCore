@@ -190,7 +190,7 @@ impl VmAddressRegion {
         // align = 1K? 2K? 4K? 8K? ...
         if !self.test_map(inner, offset, len, PAGE_SIZE) {
             if overwrite {
-                self.unmap(addr, len)?;
+                self.unmap_inner(addr, len, inner)?;
             } else {
                 return Err(ZxError::NO_MEMORY);
             }
@@ -216,6 +216,14 @@ impl VmAddressRegion {
         }
         let mut guard = self.inner.lock();
         let inner = guard.as_mut().ok_or(ZxError::BAD_STATE)?;
+        self.unmap_inner(addr, len, inner)
+    }
+
+    /// Must hold self.inner.lock() before calling.
+    fn unmap_inner(&self, addr: VirtAddr, len: usize, inner: &mut VmarInner) -> ZxResult {
+        if !page_aligned(addr) || !page_aligned(len) || len == 0 {
+            return Err(ZxError::INVALID_ARGS);
+        }
 
         let begin = addr;
         let end = addr + len;
@@ -292,8 +300,11 @@ impl VmAddressRegion {
     fn destroy_internal(&self) -> ZxResult {
         let mut guard = self.inner.lock();
         let inner = guard.as_mut().ok_or(ZxError::BAD_STATE)?;
-        for vmar in inner.children.iter() {
+        for vmar in inner.children.drain(..) {
             vmar.destroy_internal()?;
+        }
+        for mapping in inner.mappings.drain(..) {
+            drop(mapping);
         }
         *guard = None;
         Ok(())
@@ -475,10 +486,54 @@ impl VmAddressRegion {
         }
     }
 
+    /// Clone the entire address space and VMOs from source VMAR. (For Linux fork)
+    pub fn fork_from(&self, src: &Arc<Self>) -> ZxResult {
+        let mut guard = self.inner.lock();
+        let inner = guard.as_mut().unwrap();
+        inner.fork_from(src, &self.page_table)
+    }
+
     pub fn get_task_stats(&self) -> TaskStatsInfo {
         let mut task_stats = TaskStatsInfo::default();
         self.for_each_mapping(&mut |map| map.fill_in_task_status(&mut task_stats));
         task_stats
+    }
+
+    /// Read from address space.
+    ///
+    /// Return the actual number of bytes read.
+    pub fn read_memory(&self, vaddr: usize, buf: &mut [u8]) -> ZxResult<usize> {
+        // TODO: support multiple VMOs
+        let map = self.find_mapping(vaddr).ok_or(ZxError::NO_MEMORY)?;
+        let map_inner = map.inner.lock();
+        let vmo_offset = vaddr - map_inner.addr + map_inner.vmo_offset;
+        map.vmo.read(vmo_offset, buf)?;
+        Ok(buf.len())
+    }
+
+    /// Write to address space.
+    ///
+    /// Return the actual number of bytes written.
+    pub fn write_memory(&self, vaddr: usize, buf: &[u8]) -> ZxResult<usize> {
+        // TODO: support multiple VMOs
+        let map = self.find_mapping(vaddr).ok_or(ZxError::NO_MEMORY)?;
+        let map_inner = map.inner.lock();
+        let vmo_offset = vaddr - map_inner.addr + map_inner.vmo_offset;
+        map.vmo.write(vmo_offset, buf)?;
+        Ok(buf.len())
+    }
+
+    /// Find mapping of vaddr
+    fn find_mapping(&self, vaddr: usize) -> Option<Arc<VmMapping>> {
+        let guard = self.inner.lock();
+        let inner = guard.as_ref().unwrap();
+        if let Some(mapping) = inner.mappings.iter().find(|map| map.contains(vaddr)) {
+            return Some(mapping.clone());
+        }
+        if let Some(child) = inner.children.iter().find(|ch| ch.contains(vaddr)) {
+            return child.find_mapping(vaddr);
+        }
+        None
     }
 
     #[cfg(test)]
@@ -498,6 +553,27 @@ impl VmAddressRegion {
     }
 }
 
+impl VmarInner {
+    /// Clone the entire address space and VMOs from source VMAR. (For Linux fork)
+    fn fork_from(
+        &mut self,
+        src: &Arc<VmAddressRegion>,
+        page_table: &Arc<Mutex<PageTable>>,
+    ) -> ZxResult {
+        let src_guard = src.inner.lock();
+        let src_inner = src_guard.as_ref().unwrap();
+        for child in src_inner.children.iter() {
+            self.fork_from(child, page_table)?;
+        }
+        for map in src_inner.mappings.iter() {
+            let mapping = map.clone_map(page_table.clone())?;
+            mapping.map()?;
+            self.mappings.push(mapping);
+        }
+        Ok(())
+    }
+}
+
 #[repr(C)]
 #[derive(Debug)]
 pub struct VmarInfo {
@@ -513,6 +589,7 @@ pub struct VmMapping {
     inner: Mutex<VmMappingInner>,
 }
 
+#[derive(Debug, Clone)]
 struct VmMappingInner {
     addr: VirtAddr,
     size: usize,
@@ -585,8 +662,8 @@ impl VmMapping {
     }
 
     fn unmap(&self) {
-        let mut page_table = self.page_table.lock();
         let inner = self.inner.lock();
+        let mut page_table = self.page_table.lock();
         self.vmo
             .unmap_from(&mut page_table, inner.addr, inner.vmo_offset, inner.size);
     }
@@ -687,8 +764,8 @@ impl VmMapping {
     }
 
     fn protect(&self, flags: MMUFlags) {
-        let mut pg_table = self.page_table.lock();
         let inner = self.inner.lock();
+        let mut pg_table = self.page_table.lock();
         for i in 0..inner.size {
             pg_table.protect(inner.addr + i * PAGE_SIZE, flags).unwrap();
         }
@@ -739,6 +816,19 @@ impl VmMapping {
             .map(vaddr, paddr, self.flags)
             .map_err(|_| ZxError::ACCESS_DENIED)?;
         Ok(())
+    }
+
+    /// Clone VMO and map it to a new page table. (For Linux)
+    fn clone_map(&self, page_table: Arc<Mutex<PageTable>>) -> ZxResult<Arc<Self>> {
+        let new_vmo = self.vmo.create_child(false, 0, self.vmo.len())?;
+        let mapping = Arc::new(VmMapping {
+            inner: Mutex::new(self.inner.lock().clone()),
+            flags: self.flags,
+            page_table,
+            vmo: new_vmo.clone(),
+        });
+        new_vmo.append_mapping(Arc::downgrade(&mapping));
+        Ok(mapping)
     }
 }
 
