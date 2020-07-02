@@ -178,7 +178,7 @@ fn spawn(thread: Arc<Thread>) {
         kernel_hal::Thread::set_tid(thread.id(), thread.proc().id());
         loop {
             let mut cx = thread.wait_for_run().await;
-            if thread.is_killed() {
+            if thread.state() == ThreadState::Dying {
                 info!(
                     "proc={:?} thread={:?} was killed",
                     thread.proc().name(),

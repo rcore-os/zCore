@@ -470,7 +470,7 @@ impl Process {
 
 impl Task for Process {
     fn kill(&self) {
-        let retcode = -1024;
+        let retcode = TASK_RETCODE_SYSCALL_KILL;
         self.exit(retcode);
     }
 

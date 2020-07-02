@@ -121,7 +121,9 @@ impl Syscall<'_> {
             Sys::JOB_CREATE => self.sys_job_create(a0 as _, a1 as _, a2.into()),
             Sys::JOB_SET_POLICY => self.sys_job_set_policy(a0 as _, a1 as _, a2 as _, a3, a4 as _),
             Sys::JOB_SET_CRITICAL => self.sys_job_set_critical(a0 as _, a1 as _, a2 as _),
-            Sys::TASK_SUSPEND | Sys::TASK_SUSPEND_TOKEN => self.sys_task_suspend_token(a0 as _, a1.into()),
+            Sys::TASK_SUSPEND | Sys::TASK_SUSPEND_TOKEN => {
+                self.sys_task_suspend_token(a0 as _, a1.into())
+            }
             Sys::CHANNEL_CREATE => self.sys_channel_create(a0 as _, a1.into(), a2.into()),
             Sys::CHANNEL_READ => self.sys_channel_read(
                 a0 as _,
