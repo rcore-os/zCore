@@ -182,43 +182,38 @@ impl Syscall<'_> {
             return Ok(());
         }
         if let Ok(_process) = proc.get_object_with_rights::<Process>(handle, Rights::WRITE) {
-            return Err(ZxError::WRONG_TYPE);
-            // if Arc::ptr_eq(&process, &proc) {
-            //     return Err(ZxError::NOT_SUPPORTED);
-            // }
-            // let proc_: Arc<dyn Task> = proc;
-            // let token_handle =
-            //     Handle::new(SuspendToken::create(&proc_), Rights::DEFAULT_SUSPEND_TOKEN);
-            // token.write(proc.add_handle(token_handle))?;
-            // return Ok(());
+            return Err(ZxError::NOT_SUPPORTED);
         }
         Ok(())
     }
 
-    pub fn sys_task_kill(&self, handle: HandleValue) -> ZxResult {
+    pub fn sys_task_kill(&mut self, handle: HandleValue) -> ZxResult {
         info!("task.kill: handle={:?}", handle);
         let proc = self.thread.proc();
 
         if let Ok(_job) = proc.get_object_with_rights::<Job>(handle, Rights::DESTROY) {
             // job.kill();
             return Err(ZxError::WRONG_TYPE);
-        } else if let Ok(proc) = proc.get_object_with_rights::<Process>(handle, Rights::DESTROY) {
-            proc.kill();
+        } else if let Ok(process) = proc.get_object_with_rights::<Process>(handle, Rights::DESTROY) {
+            if Arc::ptr_eq(&process, &proc) {
+                //self kill, exit
+                proc.exit(TASK_RETCODE_SYSCALL_KILL);
+                self.exit = true;
+            }else{
+                process.kill();
+            }
         } else if let Ok(thread) = proc.get_object_with_rights::<Thread>(handle, Rights::DESTROY) {
             info!(
                 "killing thread: proc={:?} thread={:?}",
                 thread.proc().name(),
                 thread.name()
             );
-            match thread.state() {
-                ThreadState::Running | ThreadState::Suspended => {
-                    if !Arc::ptr_eq(&thread, &self.thread) {
-                        thread.kill();
-                    }
-                }
-                _ => {
-                    error!("{:?}", thread.state());
-                }
+            if Arc::ptr_eq(&thread, &self.thread){
+                //self kill, exit
+                self.thread.exit();
+                self.exit = true;
+            }else{
+                thread.kill();
             }
         } else {
             return Err(ZxError::WRONG_TYPE);

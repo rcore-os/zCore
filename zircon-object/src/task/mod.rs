@@ -31,4 +31,4 @@ pub trait Task: Sync + Send {
     fn resume_from_exception(&mut self, port: &Port, options: u32) -> ZxResult;
 }
 
-const TASK_RETCODE_SYSCALL_KILL: i64 = -1024;
+pub const TASK_RETCODE_SYSCALL_KILL: i64 = -1024;
