@@ -1,5 +1,6 @@
 use {
     super::*,
+    bitflags::bitflags,
     zircon_object::{ipc::Channel, task::*},
 };
 
@@ -39,5 +40,11 @@ impl Syscall<'_> {
         let user_end = proc.add_handle(Handle::new(end1, Rights::DEFAULT_CHANNEL));
         out.write(user_end)?;
         Ok(())
+    }
+}
+
+bitflags! {
+    struct ExceptionChannelOptions: u32 {
+        const DEBUGGER = 1 << 0;
     }
 }
