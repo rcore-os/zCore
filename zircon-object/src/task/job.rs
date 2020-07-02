@@ -1,5 +1,5 @@
 use {
-    super::exception::*, super::job_policy::*, super::process::Process, 
+    super::exception::*, super::job_policy::*, super::process::Process,
     crate::object::*, crate::task::Task,
     alloc::sync::Arc, alloc::vec::Vec, spin::Mutex,
 };
@@ -139,6 +139,11 @@ impl Job {
     /// Add a process to the job.
     pub(super) fn add_process(&self, process: Arc<Process>) {
         self.inner.lock().processes.push(process);
+    }
+
+    pub(super) fn process_exit(&self, id: KoID) {
+        let mut inner = self.inner.lock();
+        inner.processes.retain(|proc| proc.id() != id);
     }
 
     pub fn get_info(&self) -> JobInfo {

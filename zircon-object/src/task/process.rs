@@ -172,11 +172,12 @@ impl Process {
         // TODO: exit all threads
         self.base.signal_set(Signal::PROCESS_TERMINATED);
         for thread in inner.threads.iter() {
-            thread.internal_exit();
+            thread.kill();
         }
         inner.threads.clear();
         inner.handles.clear();
 
+        self.job.process_exit(self.base.id);
         // If we are critical to a job, we need to take action.
         if let Some((_job, retcode_nonzero)) = &inner.critical_to_job {
             if !retcode_nonzero || retcode != 0 {
@@ -466,15 +467,7 @@ impl Process {
 impl Task for Process {
     fn kill(&self) {
         let retcode = -1024;
-        let mut inner = self.inner.lock();
-        inner.status = Status::Exited(retcode);
-        self.base.signal_set(Signal::PROCESS_TERMINATED);
-        for thread in inner.threads.iter() {
-            thread.kill();
-        }
-        inner.threads.clear();
-        inner.handles.clear();
-        self.job.process_exit(self.base.id, retcode);
+        self.exit(retcode);
     }
 
     fn suspend(&self) {
