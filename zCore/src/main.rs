@@ -31,6 +31,7 @@ pub extern "C" fn _start(boot_info: &BootInfo) -> ! {
     kernel_hal_bare::init(kernel_hal_bare::Config {
         acpi_rsdp: boot_info.acpi2_rsdp_addr,
         smbios: boot_info.smbios_addr,
+        ap_fn: run,
     });
 
     let ramfs_data = unsafe {

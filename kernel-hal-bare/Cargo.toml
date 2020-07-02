@@ -20,9 +20,10 @@ lazy_static = { version = "1.4", features = ["spin_no_std" ] }
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 x86_64 = "0.11"
 uart_16550 = "0.2.6"
-raw-cpuid = "7.0"
+raw-cpuid = "8.0"
 pc-keyboard = "0.5"
 apic = { git = "https://github.com/rcore-os/apic-rs", rev = "fb86bd7" }
+x86-smpboot = { git = "https://github.com/rcore-os/x86-smpboot", rev = "257d695" }
 rcore-console = { git = "https://github.com/rcore-os/rcore-console", default-features = false, rev = "a980897b" }
 acpi = "1.0.0"
 

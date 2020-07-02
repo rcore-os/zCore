@@ -387,7 +387,6 @@ VmoClone2TestCase.ManyCloneMapping
 VmoClone2TestCase.ManyCloneOffset
 VmoClone2TestCase.ForbidContiguousVmo
 VmoClone2TestCase.PinBeforeCreateFailure
-VmoClone2TestCase.NoPhysical
 VmoClone2TestCase.Uncached
 VmoClone2TestCase.ParentStartLimitRegression
 VmoCloneDisjointClonesTests.DisjointCloneEarlyClose
@@ -453,4 +452,3 @@ InterruptTest.UnBindPort
 InterruptTest.VirtualInterrupts
 InterruptTest.UnableToBindVirtualInterruptToVcpu
 InterruptTest.NullOutputTimestamp
-MsiTest.AllocationAndCreation

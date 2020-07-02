@@ -331,7 +331,7 @@ fn hack_core_tests(handle: HandleValue, thread_name: &str, data: &mut Vec<u8>) {
                 *TESTS_ARGS.lock() = format!("test\0-f\0{}\0", kv[11..].replace(',', ":"));
             }
         }
-    } else if handle == 3 && thread_name == "test/core/standalone-test" {
+    } else if handle == 3 && thread_name == "test/core-standalone-test" {
         let test_args = &*TESTS_ARGS.lock();
         let len = data.len();
         data.extend(test_args.bytes());

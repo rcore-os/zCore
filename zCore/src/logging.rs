@@ -59,9 +59,10 @@ impl Log for SimpleLogger {
         let (tid, pid) = kernel_hal_bare::Thread::get_tid();
         print_in_color(
             format_args!(
-                "[{:?} {:>5} {}:{}] {}\n",
+                "[{:?} {:>5} {} {}:{}] {}\n",
                 kernel_hal_bare::timer_now(),
                 record.level(),
+                kernel_hal_bare::apic_local_id(),
                 pid,
                 tid,
                 record.args()

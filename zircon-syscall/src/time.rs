@@ -16,6 +16,16 @@ const ZX_CLOCK_UTC: u32 = 1;
 const ZX_CLOCK_THREAD: u32 = 2;
 
 impl Syscall<'_> {
+    pub fn sys_clock_create(
+        &self,
+        _options: u64,
+        _user_args: UserInPtr<u8>,
+        mut _out: UserOutPtr<HandleValue>,
+    ) -> ZxResult {
+        warn!("clock.create: skip");
+        Ok(())
+    }
+
     pub fn sys_clock_get(&self, clock_id: u32, mut time: UserOutPtr<u64>) -> ZxResult {
         info!("clock.get: id={}", clock_id);
         match clock_id {
@@ -58,6 +68,16 @@ impl Syscall<'_> {
             }
             _ => Err(ZxError::INVALID_ARGS),
         }
+    }
+
+    pub fn sys_clock_update(
+        &self,
+        _handle: HandleValue,
+        _options: u64,
+        _user_args: UserInPtr<u8>,
+    ) -> ZxResult {
+        warn!("clock.update: skip");
+        Ok(())
     }
 
     pub async fn sys_nanosleep(&self, deadline: Deadline) -> ZxResult {
