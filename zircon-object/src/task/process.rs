@@ -179,9 +179,9 @@ impl Process {
 
         self.job.process_exit(self.base.id);
         // If we are critical to a job, we need to take action.
-        if let Some((_job, retcode_nonzero)) = &inner.critical_to_job {
+        if let Some((job, retcode_nonzero)) = &inner.critical_to_job {
             if !retcode_nonzero || retcode != 0 {
-                unimplemented!("kill the job")
+                job.kill();
             }
         }
     }
