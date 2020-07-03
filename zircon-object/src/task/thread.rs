@@ -11,7 +11,7 @@ use {
         task::{Context, Poll, Waker},
         time::Duration,
     },
-    futures::{channel::oneshot::Receiver, future::FutureExt, select_biased},
+    futures::{channel::oneshot::*, future::FutureExt, select_biased},
     kernel_hal::{sleep_until, GeneralRegs, UserContext},
     spin::Mutex,
 };
@@ -111,6 +111,8 @@ struct ThreadInner {
     suspend_count: usize,
     /// The waker of task when suspending.
     waker: Option<Waker>,
+    /// A token used to kill blocking thread
+    killer: Option<Sender<()>>,
     /// Thread state
     ///
     /// NOTE: This variable will never be `Suspended`. On suspended, the
@@ -298,12 +300,25 @@ impl Thread {
         F: Future<Output = FT> + Unpin,
         FT: IntoResult<T>,
     {
-        let old_state = core::mem::replace(&mut self.inner.lock().state, state);
+        let (old_state, killed) = {
+            let mut inner = self.inner.lock();
+            if inner.get_state() == ThreadState::Dying {
+                return Err(ZxError::STOP);
+            }
+            let (sender, reciever) = channel::<()>();
+            inner.killer = Some(sender);
+            (core::mem::replace(&mut inner.state, state), reciever)
+        };
         let ret = select_biased! {
             ret = future.fuse() => ret.into_result(),
+            _ = killed.fuse() => Err(ZxError::STOP),
             _ = sleep_until(deadline).fuse() => Err(ZxError::TIMED_OUT),
         };
         let mut inner = self.inner.lock();
+        inner.killer = None;
+        if inner.state == ThreadState::Dying {
+            return ret;
+        }
         assert_eq!(inner.state, state);
         inner.state = old_state;
         ret
@@ -321,13 +336,26 @@ impl Thread {
         F: Future<Output = FT> + Unpin,
         FT: IntoResult<T>,
     {
-        let old_state = core::mem::replace(&mut self.inner.lock().state, state);
+        let (old_state, killed) = {
+            let mut inner = self.inner.lock();
+            if inner.get_state() == ThreadState::Dying {
+                return Err(ZxError::STOP);
+            }
+            let (sender, reciever) = channel::<()>();
+            inner.killer = Some(sender);
+            (core::mem::replace(&mut inner.state, state), reciever)
+        };
         let ret = select_biased! {
             ret = future.fuse() => ret.into_result(),
+            _ = killed.fuse() => Err(ZxError::STOP),
             _ = sleep_until(deadline).fuse() => Err(ZxError::TIMED_OUT),
             _ = cancel_token.fuse() => Err(ZxError::CANCELED),
         };
         let mut inner = self.inner.lock();
+        inner.killer = None;
+        if inner.state == ThreadState::Dying {
+            return ret;
+        }
         assert_eq!(inner.state, state);
         inner.state = old_state;
         ret
@@ -367,12 +395,15 @@ impl Task for Thread {
     fn kill(&self) {
         let mut inner = self.inner.lock();
         inner.state = ThreadState::Dying;
-        if inner.suspend_count == 0 {
-            return;
-        }
+        // For suspended thread, wake it and clear suspend count
         inner.suspend_count = 0;
         if let Some(waker) = inner.waker.take() {
             waker.wake();
+        }
+        // For blocking thread, use the killer
+        if let Some(killer) = inner.killer.take() {
+            // It's ok to ignore the error since the other end could be closed
+            killer.send(()).ok();
         }
     }
 

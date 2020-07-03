@@ -175,6 +175,9 @@ impl Syscall<'_> {
             if Arc::ptr_eq(&thread, &self.thread) {
                 return Err(ZxError::NOT_SUPPORTED);
             }
+            if thread.state() == ThreadState::Dying || thread.state() == ThreadState::Dead {
+                return Err(ZxError::BAD_STATE);
+            }
             let thread: Arc<dyn Task> = thread;
             let token_handle =
                 Handle::new(SuspendToken::create(&thread), Rights::DEFAULT_SUSPEND_TOKEN);
@@ -194,12 +197,13 @@ impl Syscall<'_> {
         if let Ok(_job) = proc.get_object_with_rights::<Job>(handle, Rights::DESTROY) {
             // job.kill();
             return Err(ZxError::WRONG_TYPE);
-        } else if let Ok(process) = proc.get_object_with_rights::<Process>(handle, Rights::DESTROY) {
+        } else if let Ok(process) = proc.get_object_with_rights::<Process>(handle, Rights::DESTROY)
+        {
             if Arc::ptr_eq(&process, &proc) {
                 //self kill, exit
                 proc.exit(TASK_RETCODE_SYSCALL_KILL);
                 self.exit = true;
-            }else{
+            } else {
                 process.kill();
             }
         } else if let Ok(thread) = proc.get_object_with_rights::<Thread>(handle, Rights::DESTROY) {
@@ -208,11 +212,11 @@ impl Syscall<'_> {
                 thread.proc().name(),
                 thread.name()
             );
-            if Arc::ptr_eq(&thread, &self.thread){
+            if Arc::ptr_eq(&thread, &self.thread) {
                 //self kill, exit
                 self.thread.exit();
                 self.exit = true;
-            }else{
+            } else {
                 thread.kill();
             }
         } else {

@@ -331,6 +331,7 @@ SyncCondition.TimeoutTest
 SyncMutex.Mutexes
 SyncMutex.TryMutexes
 SyncMutex.TimeoutElapsed
+Thread.SuspendAfterDeath
 Threads.Basics
 Threads.InvalidRights
 Threads.Detach

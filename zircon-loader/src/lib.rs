@@ -261,7 +261,7 @@ fn spawn(thread: Arc<Thread>) {
             }
             thread.end_running(cx);
             if exit {
-                warn!(
+                info!(
                     "proc={:?} thread={:?} exited",
                     thread.proc().name(),
                     thread.name()
