@@ -180,7 +180,7 @@ impl Process {
         inner.threads.clear();
         inner.handles.clear();
 
-        self.job.process_exit(self.base.id);
+        self.job.remove_process(self.base.id);
         // If we are critical to a job, we need to take action.
         if let Some((job, retcode_nonzero)) = &inner.critical_to_job {
             if !retcode_nonzero || retcode != 0 {

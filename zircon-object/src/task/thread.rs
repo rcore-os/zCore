@@ -305,9 +305,9 @@ impl Thread {
             if inner.get_state() == ThreadState::Dying {
                 return Err(ZxError::STOP);
             }
-            let (sender, reciever) = channel::<()>();
+            let (sender, receiver) = channel::<()>();
             inner.killer = Some(sender);
-            (core::mem::replace(&mut inner.state, state), reciever)
+            (core::mem::replace(&mut inner.state, state), receiver)
         };
         let ret = select_biased! {
             ret = future.fuse() => ret.into_result(),
@@ -341,9 +341,9 @@ impl Thread {
             if inner.get_state() == ThreadState::Dying {
                 return Err(ZxError::STOP);
             }
-            let (sender, reciever) = channel::<()>();
+            let (sender, receiver) = channel::<()>();
             inner.killer = Some(sender);
-            (core::mem::replace(&mut inner.state, state), reciever)
+            (core::mem::replace(&mut inner.state, state), receiver)
         };
         let ret = select_biased! {
             ret = future.fuse() => ret.into_result(),

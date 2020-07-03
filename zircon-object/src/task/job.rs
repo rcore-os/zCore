@@ -150,7 +150,7 @@ impl Job {
         Ok(())
     }
 
-    pub(super) fn process_exit(&self, id: KoID) {
+    pub(super) fn remove_process(&self, id: KoID) {
         let mut inner = self.inner.lock();
         inner.processes.retain(|proc| proc.id() != id);
     }
@@ -193,8 +193,8 @@ impl Job {
             }
             inner.killed = true;
             (
-                inner.children.drain(..).collect::<Vec<_>>(),
-                inner.processes.drain(..).collect::<Vec<_>>(),
+                core::mem::take(&mut inner.children),
+                core::mem::take(&mut inner.processes),
             )
         };
         for child in children {
