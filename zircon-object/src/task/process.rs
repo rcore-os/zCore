@@ -121,7 +121,7 @@ impl Process {
             exceptionate: Exceptionate::new(ExceptionChannelType::Process),
             inner: Mutex::new(ProcessInner::default()),
         });
-        job.add_process(proc.clone());
+        job.add_process(proc.clone())?;
         Ok(proc)
     }
 

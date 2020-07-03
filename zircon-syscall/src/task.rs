@@ -221,7 +221,7 @@ impl Syscall<'_> {
         } else {
             return Err(ZxError::WRONG_TYPE);
         }
-        return Ok(());
+        Ok(())
     }
 
     pub fn sys_job_create(

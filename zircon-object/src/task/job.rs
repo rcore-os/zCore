@@ -56,6 +56,8 @@ struct JobInner {
     policy: JobPolicy,
     children: Vec<Arc<Job>>,
     processes: Vec<Arc<Process>>,
+    // if the job is killed, no more child creation should works
+    killed: bool,
     timer_policy: TimerSlack,
 }
 
@@ -77,6 +79,9 @@ impl Job {
     pub fn create_child(self: &Arc<Self>, _options: u32) -> ZxResult<Arc<Self>> {
         // TODO: options
         let mut inner = self.inner.lock();
+        if inner.killed {
+            return Err(ZxError::BAD_STATE);
+        }
         let child = Arc::new(Job {
             base: KObjectBase::new(),
             _counter: CountHelper::new(),
@@ -136,8 +141,13 @@ impl Job {
     }
 
     /// Add a process to the job.
-    pub(super) fn add_process(&self, process: Arc<Process>) {
-        self.inner.lock().processes.push(process);
+    pub(super) fn add_process(&self, process: Arc<Process>) -> ZxResult {
+        let mut inner = self.inner.lock();
+        if inner.killed {
+            return Err(ZxError::BAD_STATE);
+        }
+        inner.processes.push(process);
+        Ok(())
     }
 
     pub(super) fn process_exit(&self, id: KoID) {
@@ -187,6 +197,8 @@ impl Job {
             proc.kill();
         }
         inner.processes.clear();
+        inner.killed = true;
+        self.base.signal_set(Signal::JOB_TERMINATED);
     }
 }
 

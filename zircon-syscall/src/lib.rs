@@ -343,7 +343,7 @@ impl Syscall<'_> {
             }
         };
         info!("{}|{} {:?} <= {:?}", proc_name, thread_name, sys_type, ret);
-        if ret == Err(ZxError::STOP) && self.exit != true {
+        if ret == Err(ZxError::STOP) && !self.exit {
             // This is an error that only happens when the thread was killed during a blocking syscall
             info!("{}|{}  KILLED WHEN BLOCKING", proc_name, thread_name);
             self.thread.exit();
