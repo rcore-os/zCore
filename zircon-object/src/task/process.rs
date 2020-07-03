@@ -398,12 +398,13 @@ impl Process {
     }
 
     /// Add a thread to the process.
-    pub(super) fn add_thread(&self, thread: Arc<Thread>) {
+    pub(super) fn add_thread(&self, thread: Arc<Thread>) -> ZxResult {
         let mut inner = self.inner.lock();
         if let Status::Exited(_) = inner.status {
-            panic!("can not add thread to exited process");
+            return Err(ZxError::BAD_STATE);
         }
         inner.threads.push(thread);
+        Ok(())
     }
 
     /// Remove a thread to from process.
@@ -411,8 +412,7 @@ impl Process {
     /// If no more threads left, exit the process.
     pub(super) fn remove_thread(&self, tid: KoID) {
         let mut inner = self.inner.lock();
-        let idx = inner.threads.iter().position(|t| t.id() == tid).unwrap();
-        inner.threads.remove(idx);
+        inner.threads.retain(|t| t.id() != tid);
         if inner.threads.is_empty() {
             drop(inner);
             self.exit(0);

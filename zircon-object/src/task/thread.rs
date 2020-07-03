@@ -156,7 +156,7 @@ impl Thread {
                 ..Default::default()
             }),
         });
-        proc.add_thread(thread.clone());
+        proc.add_thread(thread.clone())?;
         Ok(thread)
     }
 
