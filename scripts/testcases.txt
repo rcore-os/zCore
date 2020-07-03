@@ -21,6 +21,8 @@
 -Threads.WriteReadDebugRegisterState
 -Threads.DebugRegistersValidation
 -Threads.NoncanonicalRipAddressIRETQ
+-Threads.KillSuspendedThread
+-Threads.StartSuspendedThread
 -Vmar.ProtectOverDemandPagedTest
 -Vmar.ProtectLargeUncomittedTest
 -Vmar.UnmapLargeUncommittedTest
