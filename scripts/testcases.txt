@@ -10,7 +10,6 @@
 -PortTest.Timestamp
 -PortTest.QueueTooMany
 -PortStressTest.*
--ProcessTest.Kill*
 -ProcessTest.ProcessWaitAsyncCancelSelf
 -Pthread.*
 -PThreadBarrierTest.SingleThreadWinsBarrierObjectResetsBetweenIterations
