@@ -168,6 +168,9 @@ impl Process {
     /// Exit current process with `retcode`.
     pub fn exit(&self, retcode: i64) {
         let mut inner = self.inner.lock();
+        if let Status::Exited(_) = inner.status {
+            return;
+        }
         inner.status = Status::Exited(retcode);
         // TODO: exit all threads
         self.base.signal_set(Signal::PROCESS_TERMINATED);

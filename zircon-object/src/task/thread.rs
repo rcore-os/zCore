@@ -394,6 +394,9 @@ impl Thread {
 impl Task for Thread {
     fn kill(&self) {
         let mut inner = self.inner.lock();
+        if inner.state == ThreadState::Dying || inner.state == ThreadState::Dead {
+            return;
+        }
         inner.state = ThreadState::Dying;
         // For suspended thread, wake it and clear suspend count
         inner.suspend_count = 0;

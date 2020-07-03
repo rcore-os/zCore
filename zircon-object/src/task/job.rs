@@ -188,6 +188,9 @@ impl Job {
     pub fn kill(&self) {
         let (children, processes) = {
             let mut inner = self.inner.lock();
+            if inner.killed {
+                return;
+            }
             inner.killed = true;
             (
                 inner.children.drain(..).collect::<Vec<_>>(),
