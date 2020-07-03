@@ -194,9 +194,8 @@ impl Syscall<'_> {
         info!("task.kill: handle={:?}", handle);
         let proc = self.thread.proc();
 
-        if let Ok(_job) = proc.get_object_with_rights::<Job>(handle, Rights::DESTROY) {
-            // job.kill();
-            return Err(ZxError::WRONG_TYPE);
+        if let Ok(job) = proc.get_object_with_rights::<Job>(handle, Rights::DESTROY) {
+            job.kill();
         } else if let Ok(process) = proc.get_object_with_rights::<Process>(handle, Rights::DESTROY)
         {
             if Arc::ptr_eq(&process, &proc) {
