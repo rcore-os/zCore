@@ -103,6 +103,7 @@ impl Syscall<'_> {
             Sys::THREAD_WRITE_STATE => {
                 self.sys_thread_write_state(a0 as _, a1 as _, a2.into(), a3 as _)
             }
+            Sys::TASK_KILL => self.sys_task_kill(a0 as _),
             Sys::THREAD_EXIT => self.sys_thread_exit(),
             Sys::PROCESS_CREATE => {
                 self.sys_process_create(a0 as _, a1.into(), a2 as _, a3 as _, a4.into(), a5.into())
@@ -120,7 +121,9 @@ impl Syscall<'_> {
             Sys::JOB_CREATE => self.sys_job_create(a0 as _, a1 as _, a2.into()),
             Sys::JOB_SET_POLICY => self.sys_job_set_policy(a0 as _, a1 as _, a2 as _, a3, a4 as _),
             Sys::JOB_SET_CRITICAL => self.sys_job_set_critical(a0 as _, a1 as _, a2 as _),
-            Sys::TASK_SUSPEND_TOKEN => self.sys_task_suspend_token(a0 as _, a1.into()),
+            Sys::TASK_SUSPEND | Sys::TASK_SUSPEND_TOKEN => {
+                self.sys_task_suspend_token(a0 as _, a1.into())
+            }
             Sys::CHANNEL_CREATE => self.sys_channel_create(a0 as _, a1.into(), a2.into()),
             Sys::CHANNEL_READ => self.sys_channel_read(
                 a0 as _,
@@ -340,6 +343,12 @@ impl Syscall<'_> {
             }
         };
         info!("{}|{} {:?} <= {:?}", proc_name, thread_name, sys_type, ret);
+        if ret == Err(ZxError::STOP) && !self.exit {
+            // This is an error that only happens when the thread was killed during a blocking syscall
+            info!("{}|{}  KILLED WHEN BLOCKING", proc_name, thread_name);
+            self.thread.exit();
+            self.exit = true
+        }
         match ret {
             Ok(_) => 0,
             Err(err) => err as isize,

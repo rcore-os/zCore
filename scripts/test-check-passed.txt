@@ -285,6 +285,9 @@ ProcessTest.ProcessStartNoHandle
 ProcessTest.ProcessStartFail
 ProcessTest.ProcessNotKilledViaThreadClose
 ProcessTest.ProcessNotKilledViaProcessClose
+ProcessTest.KillProcessViaThreadKill
+ProcessTest.KillChannelHandleCycle
+ProcessTest.SuspendSelf
 ProcessTest.CreateAndKillJobRaceStress
 PThreadBarrierTest.SingleThreadWinsBarrierObject
 PThreadBarrierTest.InitWithNoThreadsReturnsInval
@@ -337,12 +340,17 @@ Threads.Detach
 Threads.EmptyNameSucceeds
 Threads.LongNameSucceeds
 Threads.ThreadStartOnInitialThread
+Threads.NonstartedThread
 Threads.InfoTaskStatsFails
 Threads.ResumeSuspended
 Threads.SuspendSleeping
 Threads.SuspendChannelCall
 Threads.SuspendPortCall
+Threads.SuspendStopsThread
+Threads.SuspendSelf
+Threads.StartSuspendedAndResumedThread
 Threads.WritingArmFlagsRegister
+Thread.SuspendAfterDeath
 TicksTest.ElapsedTimeUsingTicks
 Vmar.DestroyTest
 Vmar.BasicAllocateTest

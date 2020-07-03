@@ -121,7 +121,7 @@ impl Process {
             exceptionate: Exceptionate::new(ExceptionChannelType::Process),
             inner: Mutex::new(ProcessInner::default()),
         });
-        job.add_process(proc.clone());
+        job.add_process(proc.clone())?;
         Ok(proc)
     }
 
@@ -168,19 +168,23 @@ impl Process {
     /// Exit current process with `retcode`.
     pub fn exit(&self, retcode: i64) {
         let mut inner = self.inner.lock();
+        if let Status::Exited(_) = inner.status {
+            return;
+        }
         inner.status = Status::Exited(retcode);
         // TODO: exit all threads
         self.base.signal_set(Signal::PROCESS_TERMINATED);
         for thread in inner.threads.iter() {
-            thread.internal_exit();
+            thread.kill();
         }
         inner.threads.clear();
         inner.handles.clear();
 
+        self.job.remove_process(self.base.id);
         // If we are critical to a job, we need to take action.
-        if let Some((_job, retcode_nonzero)) = &inner.critical_to_job {
+        if let Some((job, retcode_nonzero)) = &inner.critical_to_job {
             if !retcode_nonzero || retcode != 0 {
-                unimplemented!("kill the job")
+                job.kill();
             }
         }
     }
@@ -394,12 +398,13 @@ impl Process {
     }
 
     /// Add a thread to the process.
-    pub(super) fn add_thread(&self, thread: Arc<Thread>) {
+    pub(super) fn add_thread(&self, thread: Arc<Thread>) -> ZxResult {
         let mut inner = self.inner.lock();
         if let Status::Exited(_) = inner.status {
-            panic!("can not add thread to exited process");
+            return Err(ZxError::BAD_STATE);
         }
         inner.threads.push(thread);
+        Ok(())
     }
 
     /// Remove a thread to from process.
@@ -407,8 +412,7 @@ impl Process {
     /// If no more threads left, exit the process.
     pub(super) fn remove_thread(&self, tid: KoID) {
         let mut inner = self.inner.lock();
-        let idx = inner.threads.iter().position(|t| t.id() == tid).unwrap();
-        inner.threads.remove(idx);
+        inner.threads.retain(|t| t.id() != tid);
         if inner.threads.is_empty() {
             drop(inner);
             self.exit(0);
@@ -464,6 +468,35 @@ impl Process {
     /// Get KoIDs of Threads.
     pub fn thread_ids(&self) -> Vec<KoID> {
         self.inner.lock().threads.iter().map(|t| t.id()).collect()
+    }
+}
+
+impl Task for Process {
+    fn kill(&self) {
+        let retcode = TASK_RETCODE_SYSCALL_KILL;
+        self.exit(retcode);
+    }
+
+    fn suspend(&self) {
+        let inner = self.inner.lock();
+        for thread in inner.threads.iter() {
+            thread.suspend();
+        }
+    }
+
+    fn resume(&self) {
+        let inner = self.inner.lock();
+        for thread in inner.threads.iter() {
+            thread.resume();
+        }
+    }
+
+    fn create_exception_channel(&mut self, _options: u32) -> ZxResult<Channel> {
+        unimplemented!();
+    }
+
+    fn resume_from_exception(&mut self, _port: &Port, _options: u32) -> ZxResult {
+        unimplemented!();
     }
 }
 

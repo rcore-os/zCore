@@ -175,16 +175,51 @@ impl Syscall<'_> {
             if Arc::ptr_eq(&thread, &self.thread) {
                 return Err(ZxError::NOT_SUPPORTED);
             }
+            if thread.state() == ThreadState::Dying || thread.state() == ThreadState::Dead {
+                return Err(ZxError::BAD_STATE);
+            }
+            let thread: Arc<dyn Task> = thread;
             let token_handle =
                 Handle::new(SuspendToken::create(&thread), Rights::DEFAULT_SUSPEND_TOKEN);
             token.write(proc.add_handle(token_handle))?;
             return Ok(());
         }
-        if let Ok(process) = proc.get_object_with_rights::<Process>(handle, Rights::WRITE) {
+        if let Ok(_process) = proc.get_object_with_rights::<Process>(handle, Rights::WRITE) {
+            return Err(ZxError::NOT_SUPPORTED);
+        }
+        Ok(())
+    }
+
+    pub fn sys_task_kill(&mut self, handle: HandleValue) -> ZxResult {
+        info!("task.kill: handle={:?}", handle);
+        let proc = self.thread.proc();
+
+        if let Ok(job) = proc.get_object_with_rights::<Job>(handle, Rights::DESTROY) {
+            job.kill();
+        } else if let Ok(process) = proc.get_object_with_rights::<Process>(handle, Rights::DESTROY)
+        {
             if Arc::ptr_eq(&process, &proc) {
-                return Err(ZxError::NOT_SUPPORTED);
+                //self kill, exit
+                proc.exit(TASK_RETCODE_SYSCALL_KILL);
+                self.exit = true;
+            } else {
+                process.kill();
             }
-            unimplemented!()
+        } else if let Ok(thread) = proc.get_object_with_rights::<Thread>(handle, Rights::DESTROY) {
+            info!(
+                "killing thread: proc={:?} thread={:?}",
+                thread.proc().name(),
+                thread.name()
+            );
+            if Arc::ptr_eq(&thread, &self.thread) {
+                //self kill, exit
+                self.thread.exit();
+                self.exit = true;
+            } else {
+                thread.kill();
+            }
+        } else {
+            return Err(ZxError::WRONG_TYPE);
         }
         Ok(())
     }

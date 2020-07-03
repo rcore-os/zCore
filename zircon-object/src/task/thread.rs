@@ -11,7 +11,7 @@ use {
         task::{Context, Poll, Waker},
         time::Duration,
     },
-    futures::{channel::oneshot::Receiver, future::FutureExt, select_biased},
+    futures::{channel::oneshot::*, future::FutureExt, select_biased},
     kernel_hal::{sleep_until, GeneralRegs, UserContext},
     spin::Mutex,
 };
@@ -111,6 +111,8 @@ struct ThreadInner {
     suspend_count: usize,
     /// The waker of task when suspending.
     waker: Option<Waker>,
+    /// A token used to kill blocking thread
+    killer: Option<Sender<()>>,
     /// Thread state
     ///
     /// NOTE: This variable will never be `Suspended`. On suspended, the
@@ -154,7 +156,7 @@ impl Thread {
                 ..Default::default()
             }),
         });
-        proc.add_thread(thread.clone());
+        proc.add_thread(thread.clone())?;
         Ok(thread)
     }
 
@@ -230,7 +232,7 @@ impl Thread {
         self.internal_exit();
     }
 
-    pub(super) fn internal_exit(&self) {
+    pub fn internal_exit(&self) {
         self.base.signal_set(Signal::THREAD_TERMINATED);
         self.inner.lock().state = ThreadState::Dead;
     }
@@ -247,29 +249,6 @@ impl Thread {
         let mut inner = self.inner.lock();
         let context = inner.context.as_mut().ok_or(ZxError::BAD_STATE)?;
         context.write_state(kind, buf)
-    }
-
-    pub(super) fn suspend(&self) {
-        let mut inner = self.inner.lock();
-        inner.suspend_count += 1;
-        self.base.signal_set(Signal::THREAD_SUSPENDED);
-        info!(
-            "thread {:?} suspend: count={}",
-            self.base.name(),
-            inner.suspend_count
-        );
-    }
-
-    pub(super) fn resume(&self) {
-        let mut inner = self.inner.lock();
-        assert_ne!(inner.suspend_count, 0);
-        inner.suspend_count -= 1;
-        if inner.suspend_count == 0 {
-            self.base.signal_set(Signal::THREAD_RUNNING);
-            if let Some(waker) = inner.waker.take() {
-                waker.wake();
-            }
-        }
     }
 
     pub fn wait_for_run(self: &Arc<Thread>) -> impl Future<Output = Box<UserContext>> {
@@ -321,12 +300,25 @@ impl Thread {
         F: Future<Output = FT> + Unpin,
         FT: IntoResult<T>,
     {
-        let old_state = core::mem::replace(&mut self.inner.lock().state, state);
+        let (old_state, killed) = {
+            let mut inner = self.inner.lock();
+            if inner.get_state() == ThreadState::Dying {
+                return Err(ZxError::STOP);
+            }
+            let (sender, receiver) = channel::<()>();
+            inner.killer = Some(sender);
+            (core::mem::replace(&mut inner.state, state), receiver)
+        };
         let ret = select_biased! {
             ret = future.fuse() => ret.into_result(),
+            _ = killed.fuse() => Err(ZxError::STOP),
             _ = sleep_until(deadline).fuse() => Err(ZxError::TIMED_OUT),
         };
         let mut inner = self.inner.lock();
+        inner.killer = None;
+        if inner.state == ThreadState::Dying {
+            return ret;
+        }
         assert_eq!(inner.state, state);
         inner.state = old_state;
         ret
@@ -344,13 +336,26 @@ impl Thread {
         F: Future<Output = FT> + Unpin,
         FT: IntoResult<T>,
     {
-        let old_state = core::mem::replace(&mut self.inner.lock().state, state);
+        let (old_state, killed) = {
+            let mut inner = self.inner.lock();
+            if inner.get_state() == ThreadState::Dying {
+                return Err(ZxError::STOP);
+            }
+            let (sender, receiver) = channel::<()>();
+            inner.killer = Some(sender);
+            (core::mem::replace(&mut inner.state, state), receiver)
+        };
         let ret = select_biased! {
             ret = future.fuse() => ret.into_result(),
+            _ = killed.fuse() => Err(ZxError::STOP),
             _ = sleep_until(deadline).fuse() => Err(ZxError::TIMED_OUT),
             _ = cancel_token.fuse() => Err(ZxError::CANCELED),
         };
         let mut inner = self.inner.lock();
+        inner.killer = None;
+        if inner.state == ThreadState::Dying {
+            return ret;
+        }
         assert_eq!(inner.state, state);
         inner.state = old_state;
         ret
@@ -383,6 +388,60 @@ impl Thread {
             }
         }
         ExceptionFuture
+    }
+}
+
+impl Task for Thread {
+    fn kill(&self) {
+        let mut inner = self.inner.lock();
+        if inner.state == ThreadState::Dying || inner.state == ThreadState::Dead {
+            return;
+        }
+        inner.state = ThreadState::Dying;
+        // For suspended thread, wake it and clear suspend count
+        inner.suspend_count = 0;
+        if let Some(waker) = inner.waker.take() {
+            waker.wake();
+        }
+        // For blocking thread, use the killer
+        if let Some(killer) = inner.killer.take() {
+            // It's ok to ignore the error since the other end could be closed
+            killer.send(()).ok();
+        }
+    }
+
+    fn suspend(&self) {
+        let mut inner = self.inner.lock();
+        inner.suspend_count += 1;
+        self.base.signal_set(Signal::THREAD_SUSPENDED);
+        info!(
+            "thread {:?} suspend: count={}",
+            self.base.name(),
+            inner.suspend_count
+        );
+    }
+
+    fn resume(&self) {
+        let mut inner = self.inner.lock();
+        // assert_ne!(inner.suspend_count, 0);
+        if inner.suspend_count == 0 {
+            return;
+        }
+        inner.suspend_count -= 1;
+        if inner.suspend_count == 0 {
+            self.base.signal_set(Signal::THREAD_RUNNING);
+            if let Some(waker) = inner.waker.take() {
+                waker.wake();
+            }
+        }
+    }
+
+    fn create_exception_channel(&mut self, _options: u32) -> ZxResult<Channel> {
+        unimplemented!();
+    }
+
+    fn resume_from_exception(&mut self, _port: &Port, _options: u32) -> ZxResult {
+        unimplemented!();
     }
 }
 

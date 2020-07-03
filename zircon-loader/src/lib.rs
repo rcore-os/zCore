@@ -178,6 +178,15 @@ fn spawn(thread: Arc<Thread>) {
         kernel_hal::Thread::set_tid(thread.id(), thread.proc().id());
         loop {
             let mut cx = thread.wait_for_run().await;
+            if thread.state() == ThreadState::Dying {
+                info!(
+                    "proc={:?} thread={:?} was killed",
+                    thread.proc().name(),
+                    thread.name()
+                );
+                thread.internal_exit();
+                break;
+            }
             trace!("go to user: {:#x?}", cx);
             debug!("switch to {}|{}", thread.proc().name(), thread.name());
             let tmp_time = kernel_hal::timer_now().as_nanos();
@@ -252,6 +261,11 @@ fn spawn(thread: Arc<Thread>) {
             }
             thread.end_running(cx);
             if exit {
+                info!(
+                    "proc={:?} thread={:?} exited",
+                    thread.proc().name(),
+                    thread.name()
+                );
                 break;
             }
         }

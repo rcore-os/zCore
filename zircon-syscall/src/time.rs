@@ -91,8 +91,7 @@ impl Syscall<'_> {
                     ThreadState::BlockedSleeping,
                     Duration::from_nanos(u64::max_value()),
                 )
-                .await
-                .unwrap();
+                .await?;
         }
         Ok(())
     }

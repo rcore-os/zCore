@@ -10,7 +10,6 @@
 -PortTest.Timestamp
 -PortTest.QueueTooMany
 -PortStressTest.*
--ProcessTest.Kill*
 -ProcessTest.ProcessWaitAsyncCancelSelf
 -Pthread.*
 -PThreadBarrierTest.SingleThreadWinsBarrierObjectResetsBetweenIterations
@@ -21,6 +20,8 @@
 -Threads.WriteReadDebugRegisterState
 -Threads.DebugRegistersValidation
 -Threads.NoncanonicalRipAddressIRETQ
+-Threads.KillSuspendedThread
+-Threads.StartSuspendedThread
 -Vmar.ProtectOverDemandPagedTest
 -Vmar.ProtectLargeUncomittedTest
 -Vmar.UnmapLargeUncommittedTest
