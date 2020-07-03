@@ -186,18 +186,20 @@ impl Job {
     }
 
     pub fn kill(&self) {
-        let mut inner = self.inner.lock();
-        for child in inner.children.iter() {
-            if !child.is_empty() {
-                child.kill();
-            }
+        let (children, processes) = {
+            let mut inner = self.inner.lock();
+            inner.killed = true;
+            (
+                inner.children.drain(..).collect::<Vec<_>>(),
+                inner.processes.drain(..).collect::<Vec<_>>(),
+            )
+        };
+        for child in children {
+            child.kill();
         }
-        inner.children.clear();
-        for proc in inner.processes.iter() {
+        for proc in processes {
             proc.kill();
         }
-        inner.processes.clear();
-        inner.killed = true;
         self.base.signal_set(Signal::JOB_TERMINATED);
     }
 }
