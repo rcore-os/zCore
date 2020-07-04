@@ -27,6 +27,8 @@ git clone https://github.com/rcore-os/zCore --recursive
 cd zCore
 git lfs pull
 ```
+如果你的clone比较慢、可以尝试替换
+> ~~https://github.com~~ 为 https://github.com.cnpmjs.org
 
 Prepare Alpine Linux rootfs:
 
