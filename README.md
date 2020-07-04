@@ -28,6 +28,12 @@ cd zCore
 git lfs pull
 ```
 
+For users in China, there's a mirror you can try:
+
+```sh
+git clone https://github.com.cnpmjs.org/rcore-os/zCore --recursive
+```
+
 Prepare Alpine Linux rootfs:
 
 ```sh
