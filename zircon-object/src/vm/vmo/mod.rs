@@ -264,12 +264,11 @@ impl VmObject {
             return Ok(content_size);
         }
         let required_len = roundup_pages(size);
-        let new_content_size = 
-            if required_len > len && self.set_len(required_len).is_err() {
-                len
-            } else {
-                size
-            };
+        let new_content_size = if required_len > len && self.set_len(required_len).is_err() {
+            len
+        } else {
+            size
+        };
         self.inner.set_content_size(new_content_size)?;
         let zero_until_offset = zero_until_offset.min(new_content_size);
         if zero_until_offset > content_size {
