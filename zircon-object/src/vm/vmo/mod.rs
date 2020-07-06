@@ -38,6 +38,12 @@ pub trait VMObjectTrait: Sync + Send {
     /// Set the length of VMO.
     fn set_len(&self, len: usize) -> ZxResult;
 
+    /// Get the size of the content stored in the VMO in bytes.
+    fn content_size(&self) -> usize;
+
+    /// Set the size of the content stored in the VMO in bytes.
+    fn set_content_size(&self, size: usize) -> ZxResult;
+
     /// Unmap physical memory from `page_table`.
     fn unmap_from(&self, page_table: &mut PageTable, vaddr: VirtAddr, _offset: usize, len: usize) {
         // TODO _offset unused?
@@ -244,6 +250,33 @@ impl VmObject {
         } else {
             Err(ZxError::UNAVAILABLE)
         }
+    }
+
+    /// Set the size of the content stored in the VMO in bytes, resize vmo if needed
+    pub fn set_content_size_and_resize(
+        &self,
+        size: usize,
+        zero_until_offset: usize,
+    ) -> ZxResult<usize> {
+        let content_size = self.inner.content_size();
+        let len = self.inner.len();
+        if size < content_size {
+            return Ok(content_size);
+        }
+        let required_len = roundup_pages(size);
+        let new_content_size = 
+            if required_len > len && self.set_len(required_len).is_err() {
+                len
+            } else {
+                size
+            };
+        self.inner.set_content_size(new_content_size)?;
+        let zero_until_offset = zero_until_offset.min(new_content_size);
+        if zero_until_offset > content_size {
+            self.inner
+                .zero(content_size, zero_until_offset - content_size)?;
+        }
+        Ok(new_content_size)
     }
 
     /// Get information of this VMO.
