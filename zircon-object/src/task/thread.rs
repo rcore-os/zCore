@@ -188,7 +188,7 @@ impl Thread {
                 context.general.rsp = stack;
                 context.general.rdi = arg1;
                 context.general.rsi = arg2;
-                context.general.rflags |= 0x3202;
+                context.general.rflags |= 0x202;
             }
             #[cfg(target_arch = "aarch64")]
             {
@@ -216,7 +216,7 @@ impl Thread {
             context.general = regs;
             #[cfg(target_arch = "x86_64")]
             {
-                context.general.rflags |= 0x3202;
+                context.general.rflags |= 0x202;
             }
             inner.state = ThreadState::Running;
             self.base.signal_set(Signal::THREAD_RUNNING);
