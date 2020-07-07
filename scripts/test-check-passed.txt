@@ -267,8 +267,10 @@ ObjectWaitManyTest.WaitForEventsSignaled
 ObjectWaitManyTest.WaitForEventsThenSignal
 ObjectWaitManyTest.TransientSignalsNotReturned
 PortTest.QueueNullPtrReturnsInvalidArgs
+PortTest.QueueWaitVerifyUserPacket
 PortTest.PortTimeout
 PortTest.QueueAndClose
+PortTest.QueueTooMany
 PortTest.AsyncWaitChannelTimedOut
 PortTest.AsyncWaitChannel
 PortTest.AsyncWaitCloseOrder
@@ -277,6 +279,7 @@ PortTest.AsyncWaitEventManyAllProcessed
 PortTest.ChannelAsyncWaitOnExistingStateIsNotified
 PortTest.ThreadEvents
 PortTest.CloseQueueRace
+PortStressTest.CloseWaitRace
 ProcessTest.LongNameSucceeds
 ProcessTest.EmptyNameSucceeds
 ProcessTest.MiniProcessSanity

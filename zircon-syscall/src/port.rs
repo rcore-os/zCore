@@ -40,7 +40,6 @@ impl Syscall<'_> {
         handle_value: HandleValue,
         packcet_in: UserInPtr<PortPacket>,
     ) -> ZxResult {
-        // TODO when to return ZX_ERR_SHOULD_WAIT
         let proc = self.thread.proc();
         let port = proc.get_object_with_rights::<Port>(handle_value, Rights::WRITE)?;
         let packet = packcet_in.read()?;
@@ -48,7 +47,7 @@ impl Syscall<'_> {
             "port.queue: handle={:#x}, packet={:?}",
             handle_value, packet
         );
-        port.push(packet);
+        port.push_user(packet)?;
         Ok(())
     }
 }
