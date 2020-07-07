@@ -8,8 +8,8 @@
 -JobGetInfoTest.InfoJobChildrenPartiallyUnmappedBufferIsInvalidArgs
 -PortTest.AsyncWaitInvalidOption
 -PortTest.Timestamp
--PortTest.QueueTooMany
--PortStressTest.*
+-PortStressTest.WaitSignalCancel
+-PortStressTest.SignalCloseWait
 -ProcessTest.ProcessWaitAsyncCancelSelf
 -Pthread.*
 -PThreadBarrierTest.SingleThreadWinsBarrierObjectResetsBetweenIterations

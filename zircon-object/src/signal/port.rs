@@ -9,6 +9,9 @@ use spin::Mutex;
 #[path = "port_packet.rs"]
 mod port_packet;
 
+const MAX_ALLOCATED_PACKET_COUNT: usize = 16 * 1024;
+const MAX_ALLOCATED_PACKET_COUNT_PER_PORT: usize = MAX_ALLOCATED_PACKET_COUNT / 8;
+
 /// Signaling and mailbox primitive
 ///
 /// ## SYNOPSIS
@@ -67,6 +70,17 @@ impl Port {
         inner.queue.push_back(packet.into());
         drop(inner);
         self.base.signal_set(Signal::READABLE);
+    }
+
+    /// Push an `User` type `packet` into the port.
+    pub fn push_user(&self, packet: impl Into<PortPacket>) -> ZxResult<()> {
+        let mut packet = packet.into();
+        packet.type_ = PacketType::User;
+        if self.inner.lock().queue.len() > MAX_ALLOCATED_PACKET_COUNT_PER_PORT {
+            return Err(ZxError::SHOULD_WAIT);
+        }
+        self.push(packet);
+        Ok(())
     }
 
     /// Push an `InterruptPacket` into the port.

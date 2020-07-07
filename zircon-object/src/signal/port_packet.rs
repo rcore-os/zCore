@@ -8,12 +8,12 @@ use core::fmt::{Debug, Formatter};
 /// A packet sent through a port.
 #[repr(C)]
 pub struct PortPacket {
-    key: u64,
-    type_: PacketType,
+    pub key: u64,
+    pub type_: PacketType,
     exception_num: u8,
     _padding: u16,
-    status: ZxError,
-    data: Payload,
+    pub status: ZxError,
+    pub data: Payload,
 }
 
 // reference: zircon/system/public/zircon/syscalls/port.h ZX_PKT_TYPE_*
@@ -34,7 +34,7 @@ pub enum PacketType {
 }
 
 #[repr(C)]
-union Payload {
+pub union Payload {
     signal: PacketSignal,
     exception: PacketException,
     interrupt: PacketInterrupt,
