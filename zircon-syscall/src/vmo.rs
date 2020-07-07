@@ -93,6 +93,7 @@ impl Syscall<'_> {
         let new_handle = proc.dup_handle_operating_rights(handle, |handle_rights| {
             Ok(handle_rights | Rights::EXECUTE)
         })?;
+        proc.remove_handle(handle)?;
         out.write(new_handle)?;
         Ok(())
     }
