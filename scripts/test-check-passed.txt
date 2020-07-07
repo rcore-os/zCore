@@ -97,7 +97,6 @@ ExecutableTlsTest.StructureInitializerInThread
 ExecutableTlsTest.StructureInitalizierInMain
 ExecutableTlsTest.AlignmentInitializerInThread
 ExecutableTlsTest.AlignmentInitializierInMain
-ExecutableTlsTest.ArrayInitializerSpamThread
 ExecutableTlsTest.ArrayInitializierSpamMain
 EventPairTest.HandlesNotInvalid
 EventPairTest.HandleRightsAreCorrect
@@ -460,3 +459,4 @@ InterruptTest.UnBindPort
 InterruptTest.VirtualInterrupts
 InterruptTest.UnableToBindVirtualInterruptToVcpu
 InterruptTest.NullOutputTimestamp
+DebugLogTest.WriteRead
