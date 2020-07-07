@@ -25,7 +25,7 @@ impl Syscall<'_> {
         &self,
         handle_value: HandleValue,
         options: u32,
-        user_bytes: UserInPtr<&[u8]>,
+        user_bytes: UserInPtr<InIoVec<u8>>,
         count: usize,
         mut actual_count_ptr: UserOutPtr<usize>,
     ) -> ZxResult {
@@ -43,20 +43,13 @@ impl Syscall<'_> {
         let proc = self.thread.proc();
         let stream = proc.get_object_with_rights::<Stream>(handle_value, Rights::WRITE)?;
         let data = user_bytes.read_array(count)?;
-        let mut total_count = 0usize;
-        for io_vec in &data {
-            let result = total_count.overflowing_add(io_vec.len());
-            if result.1 {
-                return Err(ZxError::INVALID_ARGS);
-            }
-            total_count = result.0;
-        }
+        check_total_capacity(&data)?;
         let mut actual_count = 0;
         for io_vec in &data {
-            if io_vec.as_ptr().is_null() {
+            if io_vec.is_null() {
                 return Err(ZxError::NOT_FOUND);
             }
-            actual_count += stream.write(options, io_vec)?;
+            actual_count += stream.write(io_vec, options.contains(StreamOptions::STREAM_APPEND))?;
         }
         actual_count_ptr.write_if_not_null(actual_count)?;
         Ok(())
@@ -67,7 +60,7 @@ impl Syscall<'_> {
         handle_value: HandleValue,
         options: u32,
         offset: usize,
-        user_bytes: UserInPtr<&[u8]>,
+        user_bytes: UserInPtr<InIoVec<u8>>,
         count: usize,
         mut actual_count_ptr: UserOutPtr<usize>,
     ) -> ZxResult {
@@ -84,20 +77,15 @@ impl Syscall<'_> {
         let proc = self.thread.proc();
         let stream = proc.get_object_with_rights::<Stream>(handle_value, Rights::WRITE)?;
         let data = user_bytes.read_array(count)?;
-        let mut total_count = 0usize;
-        for io_vec in &data {
-            let result = total_count.overflowing_add(io_vec.len());
-            if result.1 {
-                return Err(ZxError::INVALID_ARGS);
-            }
-            total_count = result.0;
-        }
+        check_total_capacity(&data)?;
         let mut actual_count = 0;
+        let mut off = offset;
         for io_vec in &data {
-            if io_vec.as_ptr().is_null() {
+            if io_vec.is_null() {
                 return Err(ZxError::NOT_FOUND);
             }
-            actual_count += stream.write_at(io_vec, offset)?;
+            actual_count += stream.write_at(io_vec, off)?;
+            off += actual_count;
         }
         actual_count_ptr.write_if_not_null(actual_count)?;
         Ok(())
@@ -107,7 +95,7 @@ impl Syscall<'_> {
         &self,
         handle_value: HandleValue,
         options: u32,
-        user_bytes: UserInOutPtr<&mut [u8]>,
+        user_bytes: UserInOutPtr<OutIoVec<u8>>,
         count: usize,
         mut actual_count_ptr: UserOutPtr<usize>,
     ) -> ZxResult {
@@ -124,17 +112,10 @@ impl Syscall<'_> {
         let mut data = user_bytes.read_array(count)?;
         let proc = self.thread.proc();
         let stream = proc.get_object_with_rights::<Stream>(handle_value, Rights::READ)?;
-        let mut total_count = 0usize;
-        for io_vec in &mut data {
-            let result = total_count.overflowing_add(io_vec.len());
-            if result.1 {
-                return Err(ZxError::INVALID_ARGS);
-            }
-            total_count = result.0;
-        }
+        check_total_capacity(&data)?;
         let mut actual_count = 0usize;
         for io_vec in &mut data {
-            if io_vec.as_mut_ptr().is_null() {
+            if io_vec.is_null() {
                 return Err(ZxError::NOT_FOUND);
             }
             actual_count += stream.read(io_vec)?;
@@ -148,7 +129,7 @@ impl Syscall<'_> {
         handle_value: HandleValue,
         options: u32,
         offset: usize,
-        user_bytes: UserInOutPtr<&mut [u8]>,
+        user_bytes: UserInOutPtr<OutIoVec<u8>>,
         count: usize,
         mut actual_count_ptr: UserOutPtr<usize>,
     ) -> ZxResult {
@@ -165,18 +146,11 @@ impl Syscall<'_> {
         let mut data = user_bytes.read_array(count)?;
         let proc = self.thread.proc();
         let stream = proc.get_object_with_rights::<Stream>(handle_value, Rights::READ)?;
-        let mut total_count = 0usize;
-        for io_vec in &mut data {
-            let result = total_count.overflowing_add(io_vec.len());
-            if result.1 {
-                return Err(ZxError::INVALID_ARGS);
-            }
-            total_count = result.0;
-        }
+        check_total_capacity(&data)?;
         let mut actual_count = 0usize;
         let mut off = offset;
         for io_vec in &mut data {
-            if io_vec.as_mut_ptr().is_null() {
+            if io_vec.is_null() {
                 return Err(ZxError::NOT_FOUND);
             }
             actual_count += stream.read_at(io_vec, off)?;
@@ -202,12 +176,21 @@ impl Syscall<'_> {
         if !rights.contains(Rights::READ) && !rights.contains(Rights::WRITE) {
             return Err(ZxError::ACCESS_DENIED);
         }
-        let seek_origin = SeekOrigin::from(seek_origin);
-        if let SeekOrigin::InvalidValue = seek_origin {
-            return Err(ZxError::INVALID_ARGS);
-        }
+        let seek_origin = SeekOrigin::try_from(seek_origin).or(Err(ZxError::INVALID_ARGS))?;
         let new_seek = stream.seek(seek_origin, offset)?;
         out_seek.write_if_not_null(new_seek)?;
         Ok(())
     }
+}
+
+fn check_total_capacity<T, P: Policy>(data: &[IoVec<T, P>]) -> ZxResult {
+    let mut total_count = 0usize;
+    for io_vec in data {
+        let (result, overflow) = total_count.overflowing_add(io_vec.len());
+        if overflow {
+            return Err(ZxError::INVALID_ARGS);
+        }
+        total_count = result;
+    }
+    Ok(())
 }

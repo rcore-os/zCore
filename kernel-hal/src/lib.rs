@@ -43,6 +43,7 @@ mod context;
 mod dummy;
 mod future;
 pub mod user;
+pub mod user_io_vec;
 pub mod vdso;
 
 pub use self::context::*;

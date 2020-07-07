@@ -238,3 +238,14 @@ impl From<Error> for ZxError {
         }
     }
 }
+
+use kernel_hal::user_io_vec::VecError;
+
+impl From<VecError> for ZxError {
+    fn from(e: VecError) -> Self {
+        match e {
+            VecError::PtrErr(err) => ZxError::from(err),
+            VecError::LengthErr => ZxError::INVALID_ARGS,
+        }
+    }
+}
