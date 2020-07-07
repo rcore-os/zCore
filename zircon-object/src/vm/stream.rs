@@ -78,17 +78,9 @@ impl Stream {
 
     /// Read data from the stream at the current seek offset
     pub fn read(&self, data: &OutIoVec<u8>) -> ZxResult<usize> {
-        let count = data.len();
-        let content_size = self.vmo.content_size();
         let mut seek = self.seek.lock();
-        if *seek >= content_size {
-            return Ok(0);
-        }
-        let offset = *seek;
-        let length = count.min(content_size - offset);
+        let length = self.read_at(data, *seek)?;
         *seek += length;
-        let slice = data.as_mut_slice()?;
-        self.vmo.read(offset, &mut slice[..length])?;
         Ok(length)
     }
 
@@ -107,27 +99,12 @@ impl Stream {
 
     /// write data to the stream at the current seek offset or append data at the end of content
     pub fn write(&self, data: &InIoVec<u8>, append: bool) -> ZxResult<usize> {
-        let count = data.len();
-        let mut content_size = self.vmo.content_size();
         let mut seek = self.seek.lock();
         if append {
-            *seek = content_size;
+            *seek = self.vmo.content_size();
         }
-        let (target_size, overflow) = seek.overflowing_add(count);
-        if overflow {
-            return Err(ZxError::FILE_BIG);
-        }
-        if target_size > content_size {
-            content_size = self.vmo.set_content_size_and_resize(target_size, *seek)?;
-        }
-        if *seek >= content_size {
-            return Err(ZxError::NO_SPACE);
-        }
-        let offset = *seek;
-        let length = count.min(content_size - offset);
+        let length = self.write_at(data, *seek)?;
         *seek += length;
-        let slice = data.as_slice()?;
-        self.vmo.write(offset, &slice[..length])?;
         Ok(length)
     }
 
