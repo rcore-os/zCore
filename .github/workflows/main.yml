@@ -45,7 +45,6 @@ jobs:
       uses: actions-rs/cargo@v1
       with:
         command: build
-        args: --all-features
     - name: Build zCore
       run: |
         cd zCore
@@ -69,7 +68,7 @@ jobs:
         with:
           command: build
           use-cross: true
-          args: -p zircon-loader --all-features --target aarch64-unknown-linux-gnu
+          args: -p zircon-loader --target aarch64-unknown-linux-gnu
 
   test:
     runs-on: ubuntu-20.04

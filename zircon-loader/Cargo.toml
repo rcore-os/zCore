@@ -21,4 +21,3 @@ async-std = { version = "1.5", features = ["attributes"], optional = true }
 [features]
 default = ["std"]
 std = ["env_logger", "structopt", "async-std", "kernel-hal-unix"]
-hypervisor = ["zircon-syscall/hypervisor"]
