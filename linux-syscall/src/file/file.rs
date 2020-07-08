@@ -71,11 +71,11 @@ impl Syscall<'_> {
     pub fn sys_readv(
         &self,
         fd: FileDesc,
-        iov_ptr: UserInPtr<IoVec<Out>>,
+        iov_ptr: UserInPtr<IoVecOut>,
         iov_count: usize,
     ) -> SysResult {
         info!("readv: fd={:?}, iov={:?}, count={}", fd, iov_ptr, iov_count);
-        let mut iovs = IoVecs::new(iov_ptr, iov_count)?;
+        let mut iovs = iov_ptr.read_iovecs(iov_count)?;
         let proc = self.linux_process();
         let file_like = proc.get_file_like(fd)?;
         let mut buf = vec![0u8; iovs.total_len()];
@@ -87,14 +87,14 @@ impl Syscall<'_> {
     pub fn sys_writev(
         &self,
         fd: FileDesc,
-        iov_ptr: UserInPtr<IoVec<In>>,
+        iov_ptr: UserInPtr<IoVecIn>,
         iov_count: usize,
     ) -> SysResult {
         info!(
             "writev: fd={:?}, iov={:?}, count={}",
             fd, iov_ptr, iov_count
         );
-        let iovs = IoVecs::new(iov_ptr, iov_count)?;
+        let iovs = iov_ptr.read_iovecs(iov_count)?;
         let buf = iovs.read_to_vec()?;
         let proc = self.linux_process();
         let file_like = proc.get_file_like(fd)?;
