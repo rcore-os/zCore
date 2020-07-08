@@ -42,20 +42,20 @@ impl Syscall<'_> {
         &self,
         handle_value: HandleValue,
         options: u32,
-        user_bytes: UserInPtr<IoVecIn>,
-        count: usize,
+        vector: UserInPtr<IoVecIn>,
+        vector_size: usize,
         mut actual_count_ptr: UserOutPtr<usize>,
     ) -> ZxResult {
         info!(
-            "stream.write: stream={:#x?}, options={:#x?}, buffer={:#x?}, size={:#x?}",
-            handle_value, options, user_bytes, count,
+            "stream.write: stream={:#x?}, options={:#x?}, vector=({:#x?}; {:#x?})",
+            handle_value, options, vector, vector_size,
         );
         bitflags! {
             struct WriteOptions: u32 {
                 const APPEND = 1;
             }
         }
-        let data = user_bytes.read_iovecs(count)?;
+        let data = vector.read_iovecs(vector_size)?;
         let options = WriteOptions::from_bits(options).ok_or(ZxError::INVALID_ARGS)?;
         let proc = self.thread.proc();
         let stream = proc.get_object_with_rights::<Stream>(handle_value, Rights::WRITE)?;
@@ -72,26 +72,25 @@ impl Syscall<'_> {
         &self,
         handle_value: HandleValue,
         options: u32,
-        offset: usize,
-        user_bytes: UserInPtr<IoVecIn>,
-        count: usize,
+        mut offset: usize,
+        vector: UserInPtr<IoVecIn>,
+        vector_size: usize,
         mut actual_count_ptr: UserOutPtr<usize>,
     ) -> ZxResult {
         info!(
-            "stream.write_at: stream={:#x?}, options={:#x?}, offset={:#x?}, buffer={:#x?}, size={:#x?}",
-            handle_value, options, offset, user_bytes, count,
+            "stream.write_at: stream={:#x?}, options={:#x?}, offset={:#x?}, vector=({:#x?}; {:#x?})",
+            handle_value, options, offset, vector, vector_size,
         );
         if options != 0 {
             return Err(ZxError::INVALID_ARGS);
         }
-        let data = user_bytes.read_iovecs(count)?;
+        let data = vector.read_iovecs(vector_size)?;
         let proc = self.thread.proc();
         let stream = proc.get_object_with_rights::<Stream>(handle_value, Rights::WRITE)?;
         let mut actual_count = 0;
-        let mut off = offset;
         for io_vec in data.iter() {
-            actual_count += stream.write_at(io_vec.as_slice()?, off)?;
-            off += actual_count;
+            actual_count += stream.write_at(io_vec.as_slice()?, offset)?;
+            offset += actual_count;
         }
         actual_count_ptr.write_if_not_null(actual_count)?;
         Ok(())
@@ -101,18 +100,18 @@ impl Syscall<'_> {
         &self,
         handle_value: HandleValue,
         options: u32,
-        user_bytes: UserInPtr<IoVecOut>,
-        count: usize,
+        vector: UserInPtr<IoVecOut>,
+        vector_size: usize,
         mut actual_count_ptr: UserOutPtr<usize>,
     ) -> ZxResult {
         info!(
-            "stream.read: stream={:#x?}, options={:#x?}, buffer={:#x?}, size={:#x?}",
-            handle_value, options, user_bytes, count,
+            "stream.read: stream={:#x?}, options={:#x?}, vector=({:#x?}; {:#x?})",
+            handle_value, options, vector, vector_size,
         );
         if options != 0 {
             return Err(ZxError::INVALID_ARGS);
         }
-        let mut data = user_bytes.read_iovecs(count)?;
+        let mut data = vector.read_iovecs(vector_size)?;
         let proc = self.thread.proc();
         let stream = proc.get_object_with_rights::<Stream>(handle_value, Rights::READ)?;
         let mut actual_count = 0usize;
@@ -127,26 +126,25 @@ impl Syscall<'_> {
         &self,
         handle_value: HandleValue,
         options: u32,
-        offset: usize,
-        user_bytes: UserInPtr<IoVecOut>,
-        count: usize,
+        mut offset: usize,
+        vector: UserInPtr<IoVecOut>,
+        vector_size: usize,
         mut actual_count_ptr: UserOutPtr<usize>,
     ) -> ZxResult {
         info!(
-            "stream.read_at: stream={:#x?}, options={:#x?}, offset={:#x?}, buffer={:#x?}, size={:#x?}",
-            handle_value, options, offset, user_bytes, count,
+            "stream.read_at: stream={:#x?}, options={:#x?}, offset={:#x?}, vector=({:#x?}; {:#x?})",
+            handle_value, options, offset, vector, vector_size,
         );
         if options != 0 {
             return Err(ZxError::INVALID_ARGS);
         }
-        let mut data = user_bytes.read_iovecs(count)?;
+        let mut data = vector.read_iovecs(vector_size)?;
         let proc = self.thread.proc();
         let stream = proc.get_object_with_rights::<Stream>(handle_value, Rights::READ)?;
         let mut actual_count = 0usize;
-        let mut off = offset;
         for io_vec in data.iter_mut() {
-            actual_count += stream.read_at(io_vec.as_mut_slice()?, off)?;
-            off += actual_count;
+            actual_count += stream.read_at(io_vec.as_mut_slice()?, offset)?;
+            offset += actual_count;
         }
         actual_count_ptr.write_if_not_null(actual_count)?;
         Ok(())
@@ -155,21 +153,21 @@ impl Syscall<'_> {
     pub fn sys_stream_seek(
         &self,
         handle_value: HandleValue,
-        seek_origin: usize,
+        whence: usize,
         offset: isize,
         mut out_seek: UserOutPtr<usize>,
     ) -> ZxResult {
         info!(
-            "stream.seek: stream={:#x?}, seek_origin={:#x?}, offset={:#x?}",
-            handle_value, seek_origin, offset,
+            "stream.seek: stream={:#x?}, whence={:#x?}, offset={:#x?}",
+            handle_value, whence, offset,
         );
         let proc = self.thread.proc();
         let (stream, rights) = proc.get_object_and_rights::<Stream>(handle_value)?;
         if !rights.contains(Rights::READ) && !rights.contains(Rights::WRITE) {
             return Err(ZxError::ACCESS_DENIED);
         }
-        let seek_origin = SeekOrigin::try_from(seek_origin).or(Err(ZxError::INVALID_ARGS))?;
-        let new_seek = stream.seek(seek_origin, offset)?;
+        let whence = SeekOrigin::try_from(whence).map_err(|_| ZxError::INVALID_ARGS)?;
+        let new_seek = stream.seek(whence, offset)?;
         out_seek.write_if_not_null(new_seek)?;
         Ok(())
     }

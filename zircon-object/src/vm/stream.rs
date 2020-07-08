@@ -87,9 +87,9 @@ impl Stream {
     }
 
     /// Modify the current seek offset of the stream
-    pub fn seek(&self, seek_origin: SeekOrigin, offset: isize) -> ZxResult<usize> {
+    pub fn seek(&self, whence: SeekOrigin, offset: isize) -> ZxResult<usize> {
         let mut seek = self.seek.lock();
-        let origin: usize = match seek_origin {
+        let origin: usize = match whence {
             SeekOrigin::Start => 0,
             SeekOrigin::Current => *seek,
             SeekOrigin::End => self.vmo.content_size(),
