@@ -9,6 +9,7 @@ description = "Zircon kernel objects"
 
 [features]
 elf = ["xmas-elf"]
+hypervisor = ["rvm"]
 
 [dependencies]
 bitflags = "1.2"
@@ -23,6 +24,7 @@ xmas-elf = { version = "0.7", optional = true }
 region-alloc = { git = "https://github.com/rzswh/region-allocator", rev = "122c7a71" }
 lazy_static = { version = "1.4", features = ["spin_no_std" ] }
 acpi = "1.0.0"
+rvm = { git = "https://github.com/rcore-os/RVM", optional = true }
 
 [dev-dependencies]
 kernel-hal-unix = { path = "../kernel-hal-unix" }

@@ -4,6 +4,7 @@ zbi_file ?= bringup
 graphic ?=
 accel ?=
 linux ?=
+hypervisor ?=
 smp ?= 1
 test_filter ?= *.*
 
@@ -44,6 +45,11 @@ qemu_opts += \
 	-m 4G \
 	-nic none \
 	-device isa-debug-exit,iobase=0xf4,iosize=0x04
+endif
+
+ifeq ($(hypervisor), 1)
+build_args += --features hypervisor
+accel = 1
 endif
 
 ifeq ($(accel), 1)

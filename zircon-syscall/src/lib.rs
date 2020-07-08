@@ -32,6 +32,8 @@ mod exception;
 mod fifo;
 mod futex;
 mod handle;
+#[cfg(feature = "hypervisor")]
+mod hypervisor;
 mod object;
 mod pci;
 mod port;
@@ -353,6 +355,8 @@ impl Syscall<'_> {
                 warn!("ioports.request: skip");
                 Ok(())
             }
+            #[cfg(feature = "hypervisor")]
+            Sys::GUEST_CREATE => self.sys_guest_create(a0 as _, a1 as _, a2.into(), a3.into()),
             _ => {
                 error!("syscall unimplemented: {:?}", sys_type);
                 Err(ZxError::NOT_SUPPORTED)

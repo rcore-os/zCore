@@ -24,6 +24,8 @@ extern crate std;
 pub mod debuglog;
 pub mod dev;
 mod error;
+#[cfg(feature = "hypervisor")]
+pub mod hypervisor;
 pub mod ipc;
 pub mod object;
 pub mod signal;

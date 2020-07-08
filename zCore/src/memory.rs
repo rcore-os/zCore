@@ -93,6 +93,26 @@ pub extern "C" fn hal_pt_map_kernel(pt: &mut PageTable, current: &PageTable) {
     pt[PHYSICAL_MEMORY_PM4].set_addr(ephysical.addr(), ephysical.flags() | EF::GLOBAL);
 }
 
+#[cfg(feature = "hypervisor")]
+mod rvm_extern_fn {
+    use super::*;
+
+    #[rvm::extern_fn(alloc_frame)]
+    fn rvm_alloc_frame() -> Option<usize> {
+        hal_frame_alloc()
+    }
+
+    #[rvm::extern_fn(dealloc_frame)]
+    fn rvm_dealloc_frame(paddr: usize) {
+        hal_frame_dealloc(&paddr)
+    }
+
+    #[rvm::extern_fn(phys_to_virt)]
+    fn rvm_phys_to_virt(paddr: usize) -> usize {
+        paddr + PHYSICAL_MEMORY_OFFSET
+    }
+}
+
 /// Global heap allocator
 ///
 /// Available after `memory::init_heap()`.

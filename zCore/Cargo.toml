@@ -10,6 +10,7 @@ edition = "2018"
 graphic = []
 zircon = ["zircon-loader"]
 linux = ["linux-loader", "linux-object", "rcore-fs-sfs"]
+hypervisor = ["rvm", "zircon", "zircon-loader/hypervisor"]
 
 [profile.release]
 lto = true
@@ -30,6 +31,7 @@ zircon-loader = { path = "../zircon-loader", default-features = false, optional 
 linux-loader = { path = "../linux-loader", default-features = false, optional = true }
 linux-object = { path = "../linux-object", default-features = false, optional = true }
 rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "e17b27b", optional = true }
+rvm = { git = "https://github.com/rcore-os/RVM", optional = true }
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 x86_64 = "0.11"
