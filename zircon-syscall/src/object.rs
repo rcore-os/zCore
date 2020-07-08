@@ -71,6 +71,14 @@ impl Syscall<'_> {
                 info_ptr.write(tx)?;
                 Ok(())
             }
+            Property::VmoContentSize => {
+                let mut info_ptr = UserOutPtr::<usize>::from_addr_size(buffer, buffer_size)?;
+                let content_size = proc
+                    .get_object_with_rights::<VmObject>(handle_value, Rights::GET_PROPERTY)?
+                    .content_size();
+                info_ptr.write(content_size)?;
+                Ok(())
+            }
             _ => {
                 warn!("unknown property {:?}", property);
                 Err(ZxError::INVALID_ARGS)
@@ -128,6 +136,12 @@ impl Syscall<'_> {
                 let threshold = UserInPtr::<usize>::from_addr_size(buffer, buffer_size)?.read()?;
                 proc.get_object::<Socket>(handle_value)?
                     .set_write_threshold(threshold)
+            }
+            Property::VmoContentSize => {
+                let content_size =
+                    UserInPtr::<usize>::from_addr_size(buffer, buffer_size)?.read()?;
+                proc.get_object::<VmObject>(handle_value)?
+                    .set_content_size(content_size)
             }
             _ => {
                 warn!("unknown property");
@@ -288,6 +302,11 @@ impl Syscall<'_> {
                 let socket = proc.get_object_with_rights::<Socket>(handle, Rights::INSPECT)?;
                 info_ptr.write(socket.get_info())?;
             }
+            Topic::Stream => {
+                let mut info_ptr = UserOutPtr::<StreamInfo>::from_addr_size(buffer, buffer_size)?;
+                let stream = proc.get_object_with_rights::<Stream>(handle, Rights::INSPECT)?;
+                info_ptr.write(stream.get_info())?;
+            }
             _ => {
                 error!("not supported info topic: {:?}", topic);
                 return Err(ZxError::NOT_SUPPORTED);
@@ -444,8 +463,8 @@ numeric_enum! {
         Socket = 22,
         Vmo = 23,
         Job = 24,
-        Timer = 26,
-        Stream = 27,
+        Timer = 25,
+        Stream = 26,
     }
 }
 
@@ -460,6 +479,7 @@ numeric_enum! {
         ProcessBreakOnLoad = 7,
         SocketRxThreshold = 12,
         SocketTxThreshold = 13,
+        VmoContentSize = 17,
     }
 }
 

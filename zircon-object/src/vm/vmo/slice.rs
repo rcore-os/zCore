@@ -49,6 +49,14 @@ impl VMObjectTrait for VMObjectSlice {
         unimplemented!()
     }
 
+    fn content_size(&self) -> usize {
+        unimplemented!()
+    }
+
+    fn set_content_size(&self, _size: usize) -> ZxResult {
+        unimplemented!()
+    }
+
     fn commit_page(&self, page_idx: usize, flags: MMUFlags) -> ZxResult<usize> {
         self.parent
             .commit_page(page_idx + self.offset / PAGE_SIZE, flags)

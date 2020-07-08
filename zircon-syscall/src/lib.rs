@@ -17,7 +17,7 @@ use {
         sync::atomic::{AtomicI32, Ordering},
     },
     futures::pin_mut,
-    kernel_hal::{user::*, GeneralRegs},
+    kernel_hal::{user::*, user_io_vec::*, GeneralRegs},
     zircon_object::object::*,
     zircon_object::task::Thread,
 };
@@ -38,6 +38,7 @@ mod port;
 mod resource;
 mod signal;
 mod socket;
+mod stream;
 mod system;
 mod task;
 mod time;
@@ -175,6 +176,20 @@ impl Syscall<'_> {
                 self.sys_socket_read(a0 as _, a1 as _, a2.into(), a3 as _, a4.into())
             }
             Sys::SOCKET_SHUTDOWN => self.sys_socket_shutdown(a0 as _, a1 as _),
+            Sys::STREAM_CREATE => self.sys_stream_create(a0 as _, a1 as _, a2 as _, a3.into()),
+            Sys::STREAM_WRITEV => {
+                self.sys_stream_writev(a0 as _, a1 as _, a2.into(), a3 as _, a4.into())
+            }
+            Sys::STREAM_WRITEV_AT => {
+                self.sys_stream_writev_at(a0 as _, a1 as _, a2 as _, a3.into(), a4 as _, a5.into())
+            }
+            Sys::STREAM_READV => {
+                self.sys_stream_readv(a0 as _, a1 as _, a2.into(), a3 as _, a4.into())
+            }
+            Sys::STREAM_READV_AT => {
+                self.sys_stream_readv_at(a0 as _, a1 as _, a2 as _, a3.into(), a4 as _, a5.into())
+            }
+            Sys::STREAM_SEEK => self.sys_stream_seek(a0 as _, a1 as _, a2 as _, a3.into()),
             Sys::FIFO_CREATE => {
                 self.sys_fifo_create(a0 as _, a1 as _, a2 as _, a3.into(), a4.into())
             }

@@ -1,9 +1,10 @@
 //! Objects for Virtual Memory Management.
 
+mod stream;
 mod vmar;
 mod vmo;
 
-pub use self::{vmar::*, vmo::*};
+pub use self::{stream::*, vmar::*, vmo::*};
 use super::{ZxError, ZxResult};
 use alloc::sync::Arc;
 pub use kernel_hal::{CachePolicy, MMUFlags};

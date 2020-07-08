@@ -16,6 +16,7 @@ pub struct VMObjectPhysical {
 struct VMObjectPhysicalInner {
     mapping_count: u32,
     cache_policy: CachePolicy,
+    content_size: usize,
 }
 
 impl VMObjectPhysicalInner {
@@ -23,6 +24,7 @@ impl VMObjectPhysicalInner {
         VMObjectPhysicalInner {
             mapping_count: 0,
             cache_policy: CachePolicy::Uncached,
+            content_size: 0,
         }
     }
 }
@@ -62,6 +64,17 @@ impl VMObjectTrait for VMObjectPhysical {
 
     fn set_len(&self, _len: usize) -> ZxResult {
         unimplemented!()
+    }
+
+    fn content_size(&self) -> usize {
+        let inner = self.inner.lock();
+        inner.content_size
+    }
+
+    fn set_content_size(&self, size: usize) -> ZxResult {
+        let mut inner = self.inner.lock();
+        inner.content_size = size;
+        Ok(())
     }
 
     fn commit_page(&self, page_idx: usize, _flags: MMUFlags) -> ZxResult<PhysAddr> {
