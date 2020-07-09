@@ -9,6 +9,7 @@ use {
     core::ptr::NonNull,
     core::time::Duration,
     git_version::git_version,
+    kernel_hal::PageTableTrait,
     rcore_console::{Console, ConsoleOnGraphic, DrawTarget, Pixel, Rgb888, Size},
     spin::Mutex,
     uart_16550::SerialPort,
@@ -52,19 +53,23 @@ impl PageTableImpl {
         }
     }
 
+    fn get(&mut self) -> OffsetPageTable<'_> {
+        let root_vaddr = phys_to_virt(self.root_paddr);
+        let root = unsafe { &mut *(root_vaddr as *mut PageTable) };
+        let offset = x86_64::VirtAddr::new(phys_to_virt(0) as u64);
+        unsafe { OffsetPageTable::new(root, offset) }
+    }
+}
+
+impl PageTableTrait for PageTableImpl {
     /// Map the page of `vaddr` to the frame of `paddr` with `flags`.
     #[export_name = "hal_pt_map"]
-    pub fn map(
-        &mut self,
-        vaddr: x86_64::VirtAddr,
-        paddr: x86_64::PhysAddr,
-        flags: MMUFlags,
-    ) -> Result<(), ()> {
+    fn map(&mut self, vaddr: VirtAddr, paddr: PhysAddr, flags: MMUFlags) -> Result<(), ()> {
         let mut pt = self.get();
         unsafe {
             pt.map_to_with_table_flags(
-                Page::<Size4KiB>::from_start_address(vaddr).unwrap(),
-                PhysFrame::from_start_address(paddr).unwrap(),
+                Page::<Size4KiB>::from_start_address(x86_64::VirtAddr::new(vaddr as u64)).unwrap(),
+                PhysFrame::from_start_address(x86_64::PhysAddr::new(paddr as u64)).unwrap(),
                 flags.to_ptf(),
                 PTF::PRESENT | PTF::WRITABLE | PTF::USER_ACCESSIBLE,
                 &mut FrameAllocatorImpl,
@@ -84,9 +89,10 @@ impl PageTableImpl {
 
     /// Unmap the page of `vaddr`.
     #[export_name = "hal_pt_unmap"]
-    pub fn unmap(&mut self, vaddr: x86_64::VirtAddr) -> Result<(), ()> {
+    fn unmap(&mut self, vaddr: VirtAddr) -> Result<(), ()> {
         let mut pt = self.get();
-        let page = Page::<Size4KiB>::from_start_address(vaddr).unwrap();
+        let page =
+            Page::<Size4KiB>::from_start_address(x86_64::VirtAddr::new(vaddr as u64)).unwrap();
         // This is a workaround to an issue in the x86-64 crate
         // A page without PRESENT bit is not unmappable AND mapable
         // So we add PRESENT bit here
@@ -111,9 +117,10 @@ impl PageTableImpl {
 
     /// Change the `flags` of the page of `vaddr`.
     #[export_name = "hal_pt_protect"]
-    pub fn protect(&mut self, vaddr: x86_64::VirtAddr, flags: MMUFlags) -> Result<(), ()> {
+    fn protect(&mut self, vaddr: VirtAddr, flags: MMUFlags) -> Result<(), ()> {
         let mut pt = self.get();
-        let page = Page::<Size4KiB>::from_start_address(vaddr).unwrap();
+        let page =
+            Page::<Size4KiB>::from_start_address(x86_64::VirtAddr::new(vaddr as u64)).unwrap();
         if let Ok(flush) = unsafe { pt.update_flags(page, flags.to_ptf()) } {
             flush.flush();
         }
@@ -123,18 +130,19 @@ impl PageTableImpl {
 
     /// Query the physical address which the page of `vaddr` maps to.
     #[export_name = "hal_pt_query"]
-    pub fn query(&mut self, vaddr: x86_64::VirtAddr) -> Result<x86_64::PhysAddr, ()> {
+    fn query(&mut self, vaddr: VirtAddr) -> Result<PhysAddr, ()> {
         let pt = self.get();
-        let ret = pt.translate_addr(vaddr).ok_or(());
+        let ret = pt
+            .translate_addr(x86_64::VirtAddr::new(vaddr as u64))
+            .map(|addr| addr.as_u64() as PhysAddr).ok_or(());
         trace!("query: {:x?} => {:x?}", vaddr, ret);
         ret
     }
 
-    fn get(&mut self) -> OffsetPageTable<'_> {
-        let root_vaddr = phys_to_virt(self.root_paddr);
-        let root = unsafe { &mut *(root_vaddr as *mut PageTable) };
-        let offset = x86_64::VirtAddr::new(phys_to_virt(0) as u64);
-        unsafe { OffsetPageTable::new(root, offset) }
+    /// Get the physical address of root page table.
+    #[export_name = "hal_pt_table_phys"]
+    fn table_phys(&self) -> PhysAddr {
+        self.root_paddr
     }
 }
 

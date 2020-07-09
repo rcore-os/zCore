@@ -1,7 +1,7 @@
 use core::sync::atomic::*;
 use {
     super::*, crate::object::*, alloc::sync::Arc, alloc::vec::Vec, bitflags::bitflags,
-    kernel_hal::PageTable, spin::Mutex,
+    kernel_hal::PageTableTrait, spin::Mutex,
 };
 
 bitflags! {
@@ -29,7 +29,7 @@ pub struct VmAddressRegion {
     addr: VirtAddr,
     size: usize,
     parent: Option<Arc<VmAddressRegion>>,
-    page_table: Arc<Mutex<PageTable>>,
+    page_table: Arc<Mutex<dyn PageTableTrait>>,
     /// If inner is None, this region is destroyed, all operations are invalid.
     inner: Mutex<Option<VmarInner>>,
 }
@@ -558,7 +558,7 @@ impl VmarInner {
     fn fork_from(
         &mut self,
         src: &Arc<VmAddressRegion>,
-        page_table: &Arc<Mutex<PageTable>>,
+        page_table: &Arc<Mutex<dyn PageTableTrait>>,
     ) -> ZxResult {
         let src_guard = src.inner.lock();
         let src_inner = src_guard.as_ref().unwrap();
@@ -585,7 +585,7 @@ pub struct VmarInfo {
 pub struct VmMapping {
     flags: MMUFlags,
     vmo: Arc<VmObject>,
-    page_table: Arc<Mutex<PageTable>>,
+    page_table: Arc<Mutex<dyn PageTableTrait>>,
     inner: Mutex<VmMappingInner>,
 }
 
@@ -625,7 +625,7 @@ impl VmMapping {
         vmo: Arc<VmObject>,
         vmo_offset: usize,
         flags: MMUFlags,
-        page_table: Arc<Mutex<PageTable>>,
+        page_table: Arc<Mutex<dyn PageTableTrait>>,
     ) -> Arc<Self> {
         let mapping = Arc::new(VmMapping {
             inner: Mutex::new(VmMappingInner {
@@ -663,9 +663,12 @@ impl VmMapping {
 
     fn unmap(&self) {
         let inner = self.inner.lock();
-        let mut page_table = self.page_table.lock();
-        self.vmo
-            .unmap_from(&mut page_table, inner.addr, inner.vmo_offset, inner.size);
+        let pages = inner.size / PAGE_SIZE;
+        // TODO inner.vmo_offset unused?
+        self.page_table
+            .lock()
+            .unmap_cont(inner.addr, pages)
+            .expect("failed to unmap")
     }
 
     fn fill_in_task_status(&self, task_stats: &mut TaskStatsInfo) {
@@ -819,7 +822,7 @@ impl VmMapping {
     }
 
     /// Clone VMO and map it to a new page table. (For Linux)
-    fn clone_map(&self, page_table: Arc<Mutex<PageTable>>) -> ZxResult<Arc<Self>> {
+    fn clone_map(&self, page_table: Arc<Mutex<dyn PageTableTrait>>) -> ZxResult<Arc<Self>> {
         let new_vmo = self.vmo.create_child(false, 0, self.vmo.len())?;
         let mapping = Arc::new(VmMapping {
             inner: Mutex::new(self.inner.lock().clone()),
