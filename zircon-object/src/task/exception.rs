@@ -2,7 +2,7 @@
 
 use {
     super::*, crate::ipc::Channel, crate::object::*, alloc::sync::Arc, alloc::vec::Vec,
-    core::mem::size_of, spin::Mutex,
+    core::mem::size_of, spin::Mutex,kernel_hal::UserContext
 };
 
 /// Kernel-owned exception channel endpoint.
@@ -64,6 +64,7 @@ pub struct ExceptionHeader {
 
 #[cfg(target_arch = "x86_64")]
 #[repr(C)]
+#[derive(Default)]
 pub struct ExceptionContext {
     pub vector: u64,
     pub err_code: u64,
@@ -72,11 +73,27 @@ pub struct ExceptionContext {
 
 #[cfg(target_arch = "aarch64")]
 #[repr(C)]
+#[derive(Default)]
 pub struct ExceptionContext {
     pub esr: u32,
     pub padding1: u32,
     pub far: u64,
     pub padding2: u64,
+}
+
+impl ExceptionContext{
+    #[cfg(target_arch = "x86_64")]
+    fn from_user_context(cx: &UserContext) -> Self{
+        ExceptionContext{
+            vector:cx.trap_num as u64,
+            err_code:cx.error_code as u64,
+            cr2:kernel_hal::fetch_fault_vaddr() as u64,
+        }
+    }
+    #[cfg(target_arch = "aarch64")]
+    fn from_user_context(_cx: &UserContext) -> Self{
+        unimplemented!()
+    }
 }
 
 #[repr(C)]
@@ -85,7 +102,20 @@ pub struct ExceptionReport {
     pub context: ExceptionContext,
 }
 
+impl ExceptionReport{
+    fn new(type_:ExceptionType,cx: Option<&UserContext>) -> Self{
+        ExceptionReport{
+            header: ExceptionHeader{
+                type_,
+                size:core::mem::size_of::<ExceptionReport>() as u32,
+            },
+            context:cx.map(ExceptionContext::from_user_context).unwrap_or_default(),
+        }
+    }
+}
+
 #[repr(u32)]
+#[derive(Copy,Clone)]
 pub enum ExceptionType {
     General = 0x008,
     FatalPageFault = 0x108,
@@ -109,4 +139,42 @@ pub enum ExceptionChannelType {
     Process = 3,
     Job = 4,
     JobDebugger = 5,
+}
+
+/// An Exception represents a single currently-active exception. This
+/// will be transmitted to registered exception handlers in userspace and
+/// provides them with exception state and control functionality.
+pub struct Exception{
+    base: KObjectBase,
+    thread: Arc<Thread>,
+    type_: ExceptionType,
+    report: ExceptionReport,
+    inner: Mutex<ExceptionInner>,
+}
+
+struct ExceptionInner{
+    // Task rights copied from Exceptionate
+    thread_rights: Rights,
+    process_rights: Rights,
+    resume: bool,
+    second_chance: bool,
+}
+
+impl_kobject!(Exception);
+
+impl Exception{
+    pub fn create(thread: Arc<Thread>, type_: ExceptionType, cx: Option<&UserContext>) -> Arc<Self> {
+        Arc::new(Exception{
+            base:KObjectBase::new(),
+            thread,
+            type_,
+            report:ExceptionReport::new(type_, cx),
+            inner:Mutex::new(ExceptionInner{
+                thread_rights:Rights::DEFAULT_THREAD,
+                process_rights:Rights::DEFAULT_PROCESS,
+                resume:false,
+                second_chance:false,
+            })
+        })
+    }
 }

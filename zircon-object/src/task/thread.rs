@@ -377,7 +377,7 @@ impl Thread {
         self.inner.lock().time as u64
     }
 
-    pub fn handle_exception(&self) -> impl Future<Output = bool> {
+    pub fn handle_exception(&self, _exception:Arc<Exception>) -> impl Future<Output = bool> {
         //TODO: implement exception channel
         self.exit();
         struct ExceptionFuture;
