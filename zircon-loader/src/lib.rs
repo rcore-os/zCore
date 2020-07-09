@@ -279,6 +279,9 @@ fn spawn(thread: Arc<Thread>) {
                         exit = true;
                     }
                 }
+                0x8 => {
+                    panic!("Double fault from user mode! {:#x?}", cx);
+                }
                 _ => {
                     error!("not supported interrupt from user mode. {:#x?}", cx);
                     let exception=Exception::create(thread.clone(),ExceptionType::General,Some(&cx));
