@@ -166,6 +166,8 @@ impl From<Error> for LxError {
             Error::InvalidUtf8 => LxError::EINVAL,
             Error::InvalidPointer => LxError::EFAULT,
             Error::BufferTooSmall => LxError::ENOBUFS,
+            Error::InvalidLength => LxError::EINVAL,
+            Error::InvalidVectorAddress => LxError::EINVAL,
         }
     }
 }

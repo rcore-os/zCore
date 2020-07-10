@@ -17,7 +17,7 @@ use {
         sync::atomic::{AtomicI32, Ordering},
     },
     futures::pin_mut,
-    kernel_hal::{user::*, user_io_vec::*, GeneralRegs},
+    kernel_hal::{user::*, GeneralRegs},
     zircon_object::object::*,
     zircon_object::task::Thread,
 };

@@ -235,17 +235,8 @@ impl From<Error> for ZxError {
             Error::InvalidUtf8 => ZxError::INVALID_ARGS,
             Error::InvalidPointer => ZxError::INVALID_ARGS,
             Error::BufferTooSmall => ZxError::BUFFER_TOO_SMALL,
-        }
-    }
-}
-
-use kernel_hal::user_io_vec::VecError;
-
-impl From<VecError> for ZxError {
-    fn from(e: VecError) -> Self {
-        match e {
-            VecError::PtrErr(err) => ZxError::from(err),
-            VecError::LengthErr => ZxError::INVALID_ARGS,
+            Error::InvalidLength => ZxError::INVALID_ARGS,
+            Error::InvalidVectorAddress => ZxError::NOT_FOUND,
         }
     }
 }

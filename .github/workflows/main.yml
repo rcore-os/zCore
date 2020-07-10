@@ -128,7 +128,9 @@ jobs:
           toolchain: nightly-2020-06-04
           components: rust-src
       - name: Install QEMU
-        run: sudo apt install qemu-system-x86
+        run: |
+          sudo apt update
+          sudo apt install qemu-system-x86
       - name: Build zCore
         run: |
           cd zCore
