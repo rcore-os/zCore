@@ -79,6 +79,24 @@ impl Syscall<'_> {
                 info_ptr.write(content_size)?;
                 Ok(())
             }
+            Property::ExceptionState => {
+                let mut info_ptr = UserOutPtr::<u32>::from_addr_size(buffer, buffer_size)?;
+                let state = proc
+                    .get_object_with_rights::<ExceptionObject>(handle_value, Rights::GET_PROPERTY)?
+                    .get_exception()
+                    .get_state();
+                info_ptr.write(state)?;
+                Ok(())
+            }
+            Property::ExceptionStrategy => {
+                let mut info_ptr = UserOutPtr::<u32>::from_addr_size(buffer, buffer_size)?;
+                let state = proc
+                    .get_object_with_rights::<ExceptionObject>(handle_value, Rights::GET_PROPERTY)?
+                    .get_exception()
+                    .get_strategy();
+                info_ptr.write(state)?;
+                Ok(())
+            }
             _ => {
                 warn!("unknown property {:?}", property);
                 Err(ZxError::INVALID_ARGS)
@@ -142,6 +160,20 @@ impl Syscall<'_> {
                     UserInPtr::<usize>::from_addr_size(buffer, buffer_size)?.read()?;
                 proc.get_object::<VmObject>(handle_value)?
                     .set_content_size(content_size)
+            }
+            Property::ExceptionState => {
+                let state = UserInPtr::<u32>::from_addr_size(buffer, buffer_size)?.read()?;
+                proc.get_object_with_rights::<ExceptionObject>(handle_value, Rights::SET_PROPERTY)?
+                    .get_exception()
+                    .set_state(state);
+                Ok(())
+            }
+            Property::ExceptionStrategy => {
+                let state = UserInPtr::<u32>::from_addr_size(buffer, buffer_size)?.read()?;
+                proc.get_object_with_rights::<ExceptionObject>(handle_value, Rights::SET_PROPERTY)?
+                    .get_exception()
+                    .set_strategy(state)?;
+                Ok(())
             }
             _ => {
                 warn!("unknown property");
@@ -229,7 +261,8 @@ impl Syscall<'_> {
                 info_ptr.write(thread.get_thread_info())?;
             }
             Topic::ThreadExceptionReport => {
-                let mut info_ptr = UserOutPtr::<ExceptionReport>::from_addr_size(buffer, buffer_size)?;
+                let mut info_ptr =
+                    UserOutPtr::<ExceptionReport>::from_addr_size(buffer, buffer_size)?;
                 let thread = proc.get_object_with_rights::<Thread>(handle, Rights::INSPECT)?;
                 info_ptr.write(thread.get_thread_exception_info()?)?;
             }
@@ -484,7 +517,9 @@ numeric_enum! {
         ProcessBreakOnLoad = 7,
         SocketRxThreshold = 12,
         SocketTxThreshold = 13,
+        ExceptionState = 16,
         VmoContentSize = 17,
+        ExceptionStrategy = 18,
     }
 }
 

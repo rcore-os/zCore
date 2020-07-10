@@ -92,7 +92,7 @@ pub struct ExceptionHeader {
 
 #[cfg(target_arch = "x86_64")]
 #[repr(C)]
-#[derive(Default,Clone)]
+#[derive(Default, Clone)]
 pub struct ExceptionContext {
     pub vector: u64,
     pub err_code: u64,
@@ -101,7 +101,7 @@ pub struct ExceptionContext {
 
 #[cfg(target_arch = "aarch64")]
 #[repr(C)]
-#[derive(Default,Clone)]
+#[derive(Default, Clone)]
 pub struct ExceptionContext {
     pub esr: u32,
     pub padding1: u32,
@@ -177,7 +177,7 @@ pub enum ExceptionChannelType {
 /// and provides them with exception state and control functionality.
 /// We do not send exception directly since it's hard to figure out
 /// when will the handle close.
-struct ExceptionObject {
+pub struct ExceptionObject {
     base: KObjectBase,
     exception: Arc<Exception>,
     close_signal: Option<oneshot::Sender<()>>,
@@ -192,6 +192,9 @@ impl ExceptionObject {
             exception,
             close_signal: Some(close_signal),
         })
+    }
+    pub fn get_exception(&self) -> &Arc<Exception> {
+        &self.exception
     }
 }
 
@@ -216,7 +219,7 @@ struct ExceptionInner {
     // Task rights copied from Exceptionate
     thread_rights: Rights,
     process_rights: Rights,
-    resume: bool,
+    handled: bool,
     second_chance: bool,
 }
 
@@ -234,7 +237,7 @@ impl Exception {
                 current_channel_type: ExceptionChannelType::None,
                 thread_rights: Rights::DEFAULT_THREAD,
                 process_rights: Rights::DEFAULT_PROCESS,
-                resume: false,
+                handled: false,
                 second_chance: false,
             }),
         })
@@ -285,8 +288,14 @@ impl Exception {
             let closed = result.unwrap();
             // If this error, the sender is dropped, and the handle should also be closed.
             closed.await.ok();
-            self.inner.lock().current_channel_type = ExceptionChannelType::None;
-            //TODO: check exception internal state for result
+            let handled={
+                let mut inner=self.inner.lock();
+                inner.current_channel_type = ExceptionChannelType::None;
+                inner.handled
+            };
+            if handled {
+                return Ok(())
+            }
         }
         Err(ZxError::NEXT)
     }
@@ -297,6 +306,29 @@ impl Exception {
 
     pub fn get_report(&self) -> ExceptionReport {
         self.report.clone()
+    }
+
+    pub fn get_state(&self) -> u32 {
+        self.inner.lock().handled as u32
+    }
+
+    pub fn set_state(&self, state: u32) {
+        self.inner.lock().handled = state == 1;
+    }
+
+    pub fn get_strategy(&self) -> u32 {
+        self.inner.lock().second_chance as u32
+    }
+
+    pub fn set_strategy(&self, strategy: u32) -> ZxResult {
+        let mut inner = self.inner.lock();
+        match inner.current_channel_type {
+            ExceptionChannelType::Debugger | ExceptionChannelType::JobDebugger => {
+                inner.second_chance = strategy == 1;
+                Ok(())
+            }
+            _ => Err(ZxError::BAD_STATE),
+        }
     }
 }
 
