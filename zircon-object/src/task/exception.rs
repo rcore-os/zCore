@@ -308,6 +308,14 @@ impl Exception {
         Err(ZxError::NEXT)
     }
 
+    pub fn get_thread_and_rights(&self) -> (Arc<Thread>, Rights) {
+        (self.thread.clone(), self.inner.lock().thread_rights)
+    }
+
+    pub fn get_process_and_rights(&self) -> (Arc<Process>, Rights) {
+        (self.thread.proc().clone(), self.inner.lock().process_rights)
+    }
+
     pub fn get_current_channel_type(&self) -> ExceptionChannelType {
         self.inner.lock().current_channel_type
     }

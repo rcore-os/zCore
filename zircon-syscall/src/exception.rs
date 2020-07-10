@@ -1,8 +1,4 @@
-use {
-    super::*,
-    numeric_enum_macro::numeric_enum,
-    zircon_object::task::*,
-};
+use {super::*, numeric_enum_macro::numeric_enum, zircon_object::task::*};
 
 impl Syscall<'_> {
     pub fn sys_create_exception_channel(
@@ -52,6 +48,34 @@ impl Syscall<'_> {
             Rights::TRANSFER | Rights::WAIT | Rights::READ,
         ));
         out.write(user_end)?;
+        Ok(())
+    }
+
+    pub fn sys_exception_get_thread(
+        &self,
+        exception: HandleValue,
+        mut out: UserOutPtr<HandleValue>,
+    ) -> ZxResult {
+        let proc = self.thread.proc();
+        let exception =
+            proc.get_object_with_rights::<ExceptionObject>(exception, Rights::default())?;
+        let (object, right) = exception.get_exception().get_thread_and_rights();
+        let handle = proc.add_handle(Handle::new(object, right));
+        out.write(handle)?;
+        Ok(())
+    }
+
+    pub fn sys_exception_get_process(
+        &self,
+        exception: HandleValue,
+        mut out: UserOutPtr<HandleValue>,
+    ) -> ZxResult {
+        let proc = self.thread.proc();
+        let exception =
+            proc.get_object_with_rights::<ExceptionObject>(exception, Rights::default())?;
+        let (object, right) = exception.get_exception().get_process_and_rights();
+        let handle = proc.add_handle(Handle::new(object, right));
+        out.write(handle)?;
         Ok(())
     }
 }
