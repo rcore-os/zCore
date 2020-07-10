@@ -286,7 +286,10 @@ impl Thread {
         let inner = self.inner.lock();
         ThreadInfo {
             state: inner.get_state() as u32,
-            wait_exception_type: 0,
+            wait_exception_channel_type: inner
+                .exception
+                .as_ref()
+                .map_or(0, |exception| exception.get_current_channel_type() as u32),
             cpu_affnity_mask: [0u64; 8],
         }
     }
@@ -378,8 +381,8 @@ impl Thread {
     pub fn get_time(&self) -> u64 {
         self.inner.lock().time as u64
     }
-    pub fn set_exception(&self,exception:Option<Arc<Exception>>){
-        self.inner.lock().exception=exception;
+    pub fn set_exception(&self, exception: Option<Arc<Exception>>) {
+        self.inner.lock().exception = exception;
     }
 }
 
@@ -496,7 +499,7 @@ impl Default for ThreadState {
 #[repr(C)]
 pub struct ThreadInfo {
     state: u32,
-    wait_exception_type: u32,
+    wait_exception_channel_type: u32,
     cpu_affnity_mask: [u64; 8],
 }
 

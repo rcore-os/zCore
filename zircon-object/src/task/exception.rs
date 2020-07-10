@@ -1,8 +1,9 @@
 #![allow(dead_code)]
 
 use {
-    super::*, crate::ipc::*, crate::object::*, alloc::sync::Arc, alloc::vec::Vec,alloc::vec,alloc::boxed::Box,core::time::Duration,
-    core::mem::size_of, spin::Mutex,kernel_hal::UserContext,futures::channel::oneshot
+    super::*, crate::ipc::*, crate::object::*, alloc::boxed::Box, alloc::sync::Arc, alloc::vec,
+    alloc::vec::Vec, core::mem::size_of, core::time::Duration, futures::channel::oneshot,
+    kernel_hal::UserContext, spin::Mutex,
 };
 
 /// Kernel-owned exception channel endpoint.
@@ -34,30 +35,35 @@ impl Exceptionate {
         inner.channel.replace(channel);
     }
 
-    fn send_exception(&self, exception:&Arc<Exception>) -> ZxResult<oneshot::Receiver<()>> {
+    fn send_exception(&self, exception: &Arc<Exception>) -> ZxResult<oneshot::Receiver<()>> {
         let mut inner = self.inner.lock();
-        inner.channel.as_ref().ok_or(ZxError::NEXT).and_then(|channel|{
-            let info=ExceptionInfo{
-                tid:exception.thread.id(),
-                pid:exception.thread.proc().id(),
-                type_:exception.type_,
-                padding:Default::default()
-            };
-            let (sender, receiver) = oneshot::channel::<()>();
-            let object=ExceptionObject::create(exception.clone(), sender);
-            let handle=Handle::new(object,Rights::DEFAULT_EXCEPTION);
-            let msg=MessagePacket{
-                data:info.pack(),
-                handles:vec![handle]
-            };
-            channel.write(msg)?;
-            Ok(receiver)
-        }).map_err(|err|{
-            if err==ZxError::PEER_CLOSED {
-                inner.channel.take();
-            }
-            err
-        })
+        inner
+            .channel
+            .as_ref()
+            .ok_or(ZxError::NEXT)
+            .and_then(|channel| {
+                let info = ExceptionInfo {
+                    tid: exception.thread.id(),
+                    pid: exception.thread.proc().id(),
+                    type_: exception.type_,
+                    padding: Default::default(),
+                };
+                let (sender, receiver) = oneshot::channel::<()>();
+                let object = ExceptionObject::create(exception.clone(), sender);
+                let handle = Handle::new(object, Rights::DEFAULT_EXCEPTION);
+                let msg = MessagePacket {
+                    data: info.pack(),
+                    handles: vec![handle],
+                };
+                channel.write(msg)?;
+                Ok(receiver)
+            })
+            .map_err(|err| {
+                if err == ZxError::PEER_CLOSED {
+                    inner.channel.take();
+                }
+                err
+            })
     }
 }
 
@@ -102,17 +108,17 @@ pub struct ExceptionContext {
     pub padding2: u64,
 }
 
-impl ExceptionContext{
+impl ExceptionContext {
     #[cfg(target_arch = "x86_64")]
-    fn from_user_context(cx: &UserContext) -> Self{
-        ExceptionContext{
-            vector:cx.trap_num as u64,
-            err_code:cx.error_code as u64,
-            cr2:kernel_hal::fetch_fault_vaddr() as u64,
+    fn from_user_context(cx: &UserContext) -> Self {
+        ExceptionContext {
+            vector: cx.trap_num as u64,
+            err_code: cx.error_code as u64,
+            cr2: kernel_hal::fetch_fault_vaddr() as u64,
         }
     }
     #[cfg(target_arch = "aarch64")]
-    fn from_user_context(_cx: &UserContext) -> Self{
+    fn from_user_context(_cx: &UserContext) -> Self {
         unimplemented!()
     }
 }
@@ -123,20 +129,22 @@ pub struct ExceptionReport {
     pub context: ExceptionContext,
 }
 
-impl ExceptionReport{
-    fn new(type_:ExceptionType,cx: Option<&UserContext>) -> Self{
-        ExceptionReport{
-            header: ExceptionHeader{
+impl ExceptionReport {
+    fn new(type_: ExceptionType, cx: Option<&UserContext>) -> Self {
+        ExceptionReport {
+            header: ExceptionHeader {
                 type_,
-                size:core::mem::size_of::<ExceptionReport>() as u32,
+                size: core::mem::size_of::<ExceptionReport>() as u32,
             },
-            context:cx.map(ExceptionContext::from_user_context).unwrap_or_default(),
+            context: cx
+                .map(ExceptionContext::from_user_context)
+                .unwrap_or_default(),
         }
     }
 }
 
 #[repr(u32)]
-#[derive(Copy,Clone)]
+#[derive(Copy, Clone)]
 pub enum ExceptionType {
     General = 0x008,
     FatalPageFault = 0x108,
@@ -153,6 +161,7 @@ pub enum ExceptionType {
 }
 
 #[repr(u32)]
+#[derive(Copy, Clone)]
 pub enum ExceptionChannelType {
     None = 0,
     Debugger = 1,
@@ -162,45 +171,46 @@ pub enum ExceptionChannelType {
     JobDebugger = 5,
 }
 
-
 /// This will be transmitted to registered exception handlers in userspace
 /// and provides them with exception state and control functionality.
 /// We do not send exception directly since it's hard to figure out
 /// when will the handle close.
-struct ExceptionObject{
-    base:KObjectBase,
-    exception:Arc<Exception>,
-    close_signal:Option<oneshot::Sender<()>>,
+struct ExceptionObject {
+    base: KObjectBase,
+    exception: Arc<Exception>,
+    close_signal: Option<oneshot::Sender<()>>,
 }
 
 impl_kobject!(ExceptionObject);
 
-impl ExceptionObject{
-    fn create(exception:Arc<Exception>,close_signal:oneshot::Sender<()>)->Arc<Self>{
-        Arc::new(ExceptionObject{
-            base:KObjectBase::new(),
+impl ExceptionObject {
+    fn create(exception: Arc<Exception>, close_signal: oneshot::Sender<()>) -> Arc<Self> {
+        Arc::new(ExceptionObject {
+            base: KObjectBase::new(),
             exception,
-            close_signal:Some(close_signal)
+            close_signal: Some(close_signal),
         })
     }
 }
 
-impl Drop for ExceptionObject{
+impl Drop for ExceptionObject {
     fn drop(&mut self) {
-        self.close_signal.take().and_then(|signal|signal.send(()).ok());
+        self.close_signal
+            .take()
+            .and_then(|signal| signal.send(()).ok());
     }
 }
 
 /// An Exception represents a single currently-active exception.
-pub struct Exception{
+pub struct Exception {
     thread: Arc<Thread>,
     type_: ExceptionType,
     report: ExceptionReport,
     inner: Mutex<ExceptionInner>,
 }
 
-struct ExceptionInner{
-    current_channel_type:Option<ExceptionChannelType>,
+struct ExceptionInner {
+    current_channel_type: ExceptionChannelType,
     // Task rights copied from Exceptionate
     thread_rights: Rights,
     process_rights: Rights,
@@ -208,62 +218,79 @@ struct ExceptionInner{
     second_chance: bool,
 }
 
-impl Exception{
-    pub fn create(thread: Arc<Thread>, type_: ExceptionType, cx: Option<&UserContext>) -> Arc<Self> {
-        Arc::new(Exception{
+impl Exception {
+    pub fn create(
+        thread: Arc<Thread>,
+        type_: ExceptionType,
+        cx: Option<&UserContext>,
+    ) -> Arc<Self> {
+        Arc::new(Exception {
             thread,
             type_,
-            report:ExceptionReport::new(type_, cx),
-            inner:Mutex::new(ExceptionInner{
-                current_channel_type:None,
-                thread_rights:Rights::DEFAULT_THREAD,
-                process_rights:Rights::DEFAULT_PROCESS,
-                resume:false,
-                second_chance:false,
-            })
+            report: ExceptionReport::new(type_, cx),
+            inner: Mutex::new(ExceptionInner {
+                current_channel_type: ExceptionChannelType::None,
+                thread_rights: Rights::DEFAULT_THREAD,
+                process_rights: Rights::DEFAULT_PROCESS,
+                resume: false,
+                second_chance: false,
+            }),
         })
     }
     /// Handle the exception. The return value indicate if the thread is exited after this.
     /// Note that it's possible that this may returns before exception was send to any exception channel
     /// This happens only when the thread is killed before we send the exception
-    pub async fn handle(self:&Arc<Self>) -> bool {
+    pub async fn handle(self: &Arc<Self>) -> bool {
         self.thread.set_exception(Some(self.clone()));
-        let future=Box::pin(self.handle_internal());
-        let result:ZxResult=self.thread.blocking_run(future, ThreadState::BlockedException, Duration::from_nanos(u64::max_value())).await;
+        let future = Box::pin(self.handle_internal());
+        let result: ZxResult = self
+            .thread
+            .blocking_run(
+                future,
+                ThreadState::BlockedException,
+                Duration::from_nanos(u64::max_value()),
+            )
+            .await;
         self.thread.set_exception(None);
         if let Err(err) = result {
-            if err==ZxError::STOP {
+            if err == ZxError::STOP {
                 // We are killed
                 self.thread.exit();
-                return false
-            }else if err==ZxError::NEXT {
+                return false;
+            } else if err == ZxError::NEXT {
                 // Nobody handled the exception, kill myself
                 self.thread.exit();
                 // In zircon the process is also killed, but for now don't do it
                 // since this may break the core-test
-                return false
+                return false;
             }
         }
         self.thread.exit();
         false
     }
-    async fn handle_internal(self:&Arc<Self>) -> ZxResult {
-        for exceptionate in ExceptionateIterator::new(self){
-            let result=exceptionate.send_exception(self);
-            if let Err(err)=result{
-                if err==ZxError::NEXT {
+    async fn handle_internal(self: &Arc<Self>) -> ZxResult {
+        for exceptionate in ExceptionateIterator::new(self) {
+            let result = exceptionate.send_exception(self);
+            if let Err(err) = result {
+                if err == ZxError::NEXT {
                     // This channel is not available now!
                     continue;
-                }else{
+                } else {
                     return Err(err);
                 }
             }
-            let closed=result.unwrap();
+            self.inner.lock().current_channel_type = exceptionate.type_;
+            let closed = result.unwrap();
             // If this error, the sender is dropped, and the handle should also be closed.
             closed.await.ok();
+            self.inner.lock().current_channel_type = ExceptionChannelType::None;
             //TODO: check exception internal state for result
         }
         Err(ZxError::NEXT)
+    }
+
+    pub fn get_current_channel_type(&self) -> ExceptionChannelType {
+        self.inner.lock().current_channel_type
     }
 }
 
@@ -275,49 +302,52 @@ impl Exception{
 /// - process
 /// - debugger (in dealing with a second-chance exception)
 /// - job (first owning job, then its parent job, and so on up to root job)
-struct ExceptionateIterator<'a>{
-    exception:&'a Exception,
-    state:ExceptionateIteratorState
+struct ExceptionateIterator<'a> {
+    exception: &'a Exception,
+    state: ExceptionateIteratorState,
 }
 
 /// The state used in ExceptionateIterator.
 /// Name of optional is what to consider next
-enum ExceptionateIteratorState{
+enum ExceptionateIteratorState {
     Thread,
     Process,
     Job(Arc<Job>),
-    Finished
+    Finished,
 }
 
-impl<'a> ExceptionateIterator<'a>{
-    fn new(exception:&'a Exception) -> Self{
-        ExceptionateIterator{
+impl<'a> ExceptionateIterator<'a> {
+    fn new(exception: &'a Exception) -> Self {
+        ExceptionateIterator {
             exception,
-            state:ExceptionateIteratorState::Thread
+            state: ExceptionateIteratorState::Thread,
         }
     }
 }
 
-impl<'a> Iterator for ExceptionateIterator<'a>{
+impl<'a> Iterator for ExceptionateIterator<'a> {
     type Item = Arc<Exceptionate>;
     fn next(&mut self) -> Option<Self::Item> {
-        match &self.state{
-            ExceptionateIteratorState::Thread=>{
-                self.state=ExceptionateIteratorState::Process;
-                return Some(self.exception.thread.get_exceptionate())
+        match &self.state {
+            ExceptionateIteratorState::Thread => {
+                self.state = ExceptionateIteratorState::Process;
+                return Some(self.exception.thread.get_exceptionate());
             }
-            ExceptionateIteratorState::Process=>{
-                let proc=self.exception.thread.proc();
-                self.state=ExceptionateIteratorState::Job(proc.job());
+            ExceptionateIteratorState::Process => {
+                let proc = self.exception.thread.proc();
+                self.state = ExceptionateIteratorState::Job(proc.job());
                 return Some(proc.get_exceptionate());
             }
-            ExceptionateIteratorState::Job(job)=>{
-                let parent=job.parent();
-                let result=job.get_exceptionate();
-                self.state=parent.map_or(ExceptionateIteratorState::Finished,ExceptionateIteratorState::Job, );
+            ExceptionateIteratorState::Job(job) => {
+                let parent = job.parent();
+                let result = job.get_exceptionate();
+                self.state = parent.map_or(
+                    ExceptionateIteratorState::Finished,
+                    ExceptionateIteratorState::Job,
+                );
                 return Some(result);
             }
-            ExceptionateIteratorState::Finished=>{
+            ExceptionateIteratorState::Finished => {
                 return None;
             }
         }

@@ -10,7 +10,8 @@ mod suspend_token;
 mod thread;
 
 pub use {
-    self::exception::*,self::job::*, self::job_policy::*, self::process::*, self::suspend_token::*, self::thread::*,
+    self::exception::*, self::job::*, self::job_policy::*, self::process::*,
+    self::suspend_token::*, self::thread::*,
 };
 
 /// Task (Thread, Process, or Job)

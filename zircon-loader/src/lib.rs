@@ -244,7 +244,11 @@ fn spawn(thread: Arc<Thread>) {
                                 e
                             );
                             error!("Page Fault from user mode {:#x?}", cx);
-                            let exception=Exception::create(thread.clone(),ExceptionType::FatalPageFault,Some(&cx));
+                            let exception = Exception::create(
+                                thread.clone(),
+                                ExceptionType::FatalPageFault,
+                                Some(&cx),
+                            );
                             if !exception.handle().await {
                                 exit = true;
                             }
@@ -253,28 +257,44 @@ fn spawn(thread: Arc<Thread>) {
                 }
                 0x1 => {
                     error!("Hardware Breakpoint from user mode. {:#x?}", cx);
-                    let exception=Exception::create(thread.clone(),ExceptionType::HardwareBreakpoint,Some(&cx));
+                    let exception = Exception::create(
+                        thread.clone(),
+                        ExceptionType::HardwareBreakpoint,
+                        Some(&cx),
+                    );
                     if !exception.handle().await {
                         exit = true;
                     }
                 }
                 0x3 => {
                     error!("Software Breakpoint from user mode. {:#x?}", cx);
-                    let exception=Exception::create(thread.clone(),ExceptionType::SoftwareBreakpoint,Some(&cx));
+                    let exception = Exception::create(
+                        thread.clone(),
+                        ExceptionType::SoftwareBreakpoint,
+                        Some(&cx),
+                    );
                     if !exception.handle().await {
                         exit = true;
                     }
                 }
                 0x6 => {
                     error!("Invalid instruction from user mode. {:#x?}", cx);
-                    let exception=Exception::create(thread.clone(),ExceptionType::UndefinedInstruction,Some(&cx));
+                    let exception = Exception::create(
+                        thread.clone(),
+                        ExceptionType::UndefinedInstruction,
+                        Some(&cx),
+                    );
                     if !exception.handle().await {
                         exit = true;
                     }
                 }
                 0x17 => {
                     error!("Unaligned access from user mode. {:#x?}", cx);
-                    let exception=Exception::create(thread.clone(),ExceptionType::UnalignedAccess,Some(&cx));
+                    let exception = Exception::create(
+                        thread.clone(),
+                        ExceptionType::UnalignedAccess,
+                        Some(&cx),
+                    );
                     if !exception.handle().await {
                         exit = true;
                     }
@@ -284,7 +304,8 @@ fn spawn(thread: Arc<Thread>) {
                 }
                 _ => {
                     error!("not supported interrupt from user mode. {:#x?}", cx);
-                    let exception=Exception::create(thread.clone(),ExceptionType::General,Some(&cx));
+                    let exception =
+                        Exception::create(thread.clone(), ExceptionType::General, Some(&cx));
                     if !exception.handle().await {
                         exit = true;
                     }
