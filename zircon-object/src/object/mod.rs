@@ -1,3 +1,4 @@
+#![deny(missing_docs)]
 //! Kernel object basis.
 //!
 //! # Create new kernel object
@@ -164,7 +165,7 @@ pub trait KernelObject: DowncastSync + Debug {
     fn related_koid(&self) -> KoID {
         0
     }
-    /// Get object's allowed signals
+    /// Get object's allowed signals.
     fn allowed_signals(&self) -> Signal {
         Signal::USER_ALL
     }
@@ -174,6 +175,7 @@ impl_downcast!(sync KernelObject);
 
 /// The base struct of a kernel object.
 pub struct KObjectBase {
+    /// The object's KoID.
     pub id: KoID,
     inner: Mutex<KObjectBaseInner>,
 }
@@ -511,6 +513,7 @@ pub struct DummyObject {
 impl_kobject!(DummyObject);
 
 impl DummyObject {
+    /// Create a new `DummyObject`.
     pub fn new() -> Arc<Self> {
         Arc::new(DummyObject {
             base: KObjectBase::new(),
