@@ -342,6 +342,7 @@ Threads.Detach
 Threads.EmptyNameSucceeds
 Threads.LongNameSucceeds
 Threads.ThreadStartOnInitialThread
+Threads.ThreadStartWithZeroInstructionPointer
 Threads.NonstartedThread
 Threads.InfoTaskStatsFails
 Threads.ResumeSuspended
