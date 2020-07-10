@@ -1,3 +1,4 @@
+#![allow(missing_docs)]
 use {super::*, bitflags::bitflags};
 
 bitflags! {
@@ -58,6 +59,7 @@ bitflags! {
 }
 
 impl Signal {
+    /// Verify whether `number` only sets the bits specified in `allowed_signals`.
     pub fn verify_user_signal(allowed_signals: Signal, number: u32) -> ZxResult<Signal> {
         if (number & !allowed_signals.bits()) != 0 {
             Err(ZxError::INVALID_ARGS)
