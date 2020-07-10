@@ -1,6 +1,6 @@
 //! Objects for Task Management.
 
-use {super::*, crate::ipc::Channel, crate::signal::Port};
+use super::*;
 
 mod exception;
 mod job;
@@ -24,12 +24,6 @@ pub trait Task: Sync + Send {
 
     /// Resume the task
     fn resume(&self);
-
-    /// Create an exception channel on the task.
-    fn create_exception_channel(&mut self, options: u32) -> ZxResult<Channel>;
-
-    /// Resume the task from a previously caught exception.
-    fn resume_from_exception(&mut self, port: &Port, options: u32) -> ZxResult;
 }
 
 pub const TASK_RETCODE_SYSCALL_KILL: i64 = -1024;

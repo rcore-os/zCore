@@ -30,9 +30,17 @@ impl Exceptionate {
         })
     }
 
-    pub fn set_channel(&self, channel: Arc<Channel>) {
+    pub fn create_channel(&self) -> ZxResult<Arc<Channel>> {
         let mut inner = self.inner.lock();
-        inner.channel.replace(channel);
+        if let Some(channel) = inner.channel.as_ref() {
+            if channel.peer().is_ok() {
+                // already has a valid channel
+                return Err(ZxError::ALREADY_BOUND);
+            }
+        }
+        let (sender, receiver) = Channel::create();
+        inner.channel.replace(sender);
+        Ok(receiver)
     }
 
     fn send_exception(&self, exception: &Arc<Exception>) -> ZxResult<oneshot::Receiver<()>> {
@@ -288,13 +296,13 @@ impl Exception {
             let closed = result.unwrap();
             // If this error, the sender is dropped, and the handle should also be closed.
             closed.await.ok();
-            let handled={
-                let mut inner=self.inner.lock();
+            let handled = {
+                let mut inner = self.inner.lock();
                 inner.current_channel_type = ExceptionChannelType::None;
                 inner.handled
             };
             if handled {
-                return Ok(())
+                return Ok(());
             }
         }
         Err(ZxError::NEXT)

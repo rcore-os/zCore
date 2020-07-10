@@ -442,14 +442,6 @@ impl Task for Thread {
             }
         }
     }
-
-    fn create_exception_channel(&mut self, _options: u32) -> ZxResult<Channel> {
-        unimplemented!();
-    }
-
-    fn resume_from_exception(&mut self, _port: &Port, _options: u32) -> ZxResult {
-        unimplemented!();
-    }
 }
 
 pub trait IntoResult<T> {
