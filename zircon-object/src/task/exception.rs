@@ -266,6 +266,7 @@ impl Exception {
             .await;
         self.thread.set_exception(None);
         if let Err(err) = result {
+            #[allow(clippy::if_same_then_else)]
             if err == ZxError::STOP {
                 // We are killed
                 self.thread.exit();
@@ -273,7 +274,7 @@ impl Exception {
             } else if err == ZxError::NEXT {
                 // Nobody handled the exception, kill myself
                 self.thread.exit();
-                // In zircon the process is also killed, but for now don't do it
+                // TODO: In zircon the process is also killed, but for now don't do it
                 // since this may break the core-test
                 return false;
             }
@@ -385,12 +386,12 @@ impl<'a> Iterator for ExceptionateIterator<'a> {
         match &self.state {
             ExceptionateIteratorState::Thread => {
                 self.state = ExceptionateIteratorState::Process;
-                return Some(self.exception.thread.get_exceptionate());
+                Some(self.exception.thread.get_exceptionate())
             }
             ExceptionateIteratorState::Process => {
                 let proc = self.exception.thread.proc();
                 self.state = ExceptionateIteratorState::Job(proc.job());
-                return Some(proc.get_exceptionate());
+                Some(proc.get_exceptionate())
             }
             ExceptionateIteratorState::Job(job) => {
                 let parent = job.parent();
@@ -399,11 +400,9 @@ impl<'a> Iterator for ExceptionateIterator<'a> {
                     ExceptionateIteratorState::Finished,
                     ExceptionateIteratorState::Job,
                 );
-                return Some(result);
+                Some(result)
             }
-            ExceptionateIteratorState::Finished => {
-                return None;
-            }
+            ExceptionateIteratorState::Finished => None,
         }
     }
 }
