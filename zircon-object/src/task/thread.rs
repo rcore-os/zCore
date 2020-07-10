@@ -118,6 +118,8 @@ struct ThreadInner {
     /// NOTE: This variable will never be `Suspended`. On suspended, the
     /// `suspend_count` is non-zero, and this represents the state before suspended.
     state: ThreadState,
+    /// The currently processing exception
+    exception: Option<Arc<Exception>>,
     /// The time this thread has run on cpu
     time: u128,
 }
@@ -376,18 +378,8 @@ impl Thread {
     pub fn get_time(&self) -> u64 {
         self.inner.lock().time as u64
     }
-
-    pub fn handle_exception(&self, _exception:Arc<Exception>) -> impl Future<Output = bool> {
-        //TODO: implement exception channel
-        self.exit();
-        struct ExceptionFuture;
-        impl Future for ExceptionFuture {
-            type Output = bool;
-            fn poll(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Self::Output> {
-                Poll::Ready(false)
-            }
-        }
-        ExceptionFuture
+    pub fn set_exception(&self,exception:Option<Arc<Exception>>){
+        self.inner.lock().exception=exception;
     }
 }
 
