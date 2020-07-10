@@ -294,6 +294,18 @@ impl Thread {
         }
     }
 
+    pub fn get_thread_exception_info(&self) -> ZxResult<ExceptionReport> {
+        let inner = self.inner.lock();
+        if inner.get_state() != ThreadState::BlockedException {
+            return Err(ZxError::BAD_STATE);
+        }
+        inner
+            .exception
+            .as_ref()
+            .ok_or(ZxError::BAD_STATE)
+            .map(|exception| exception.get_report())
+    }
+
     /// Run async future and change state while blocking.
     pub async fn blocking_run<F, T, FT>(
         &self,

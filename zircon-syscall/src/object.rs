@@ -228,6 +228,11 @@ impl Syscall<'_> {
                 let thread = proc.get_object_with_rights::<Thread>(handle, Rights::INSPECT)?;
                 info_ptr.write(thread.get_thread_info())?;
             }
+            Topic::ThreadExceptionReport => {
+                let mut info_ptr = UserOutPtr::<ExceptionReport>::from_addr_size(buffer, buffer_size)?;
+                let thread = proc.get_object_with_rights::<Thread>(handle, Rights::INSPECT)?;
+                info_ptr.write(thread.get_thread_exception_info()?)?;
+            }
             Topic::HandleCount => {
                 let mut info_ptr = UserOutPtr::<u32>::from_addr_size(buffer, buffer_size)?;
                 let object = proc.get_dyn_object_with_rights(handle, Rights::INSPECT)?;

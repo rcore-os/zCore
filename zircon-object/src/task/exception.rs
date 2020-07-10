@@ -84,6 +84,7 @@ impl ExceptionInfo {
 }
 
 #[repr(C)]
+#[derive(Clone)]
 pub struct ExceptionHeader {
     pub size: u32,
     pub type_: ExceptionType,
@@ -91,7 +92,7 @@ pub struct ExceptionHeader {
 
 #[cfg(target_arch = "x86_64")]
 #[repr(C)]
-#[derive(Default)]
+#[derive(Default,Clone)]
 pub struct ExceptionContext {
     pub vector: u64,
     pub err_code: u64,
@@ -100,7 +101,7 @@ pub struct ExceptionContext {
 
 #[cfg(target_arch = "aarch64")]
 #[repr(C)]
-#[derive(Default)]
+#[derive(Default,Clone)]
 pub struct ExceptionContext {
     pub esr: u32,
     pub padding1: u32,
@@ -124,6 +125,7 @@ impl ExceptionContext {
 }
 
 #[repr(C)]
+#[derive(Clone)]
 pub struct ExceptionReport {
     pub header: ExceptionHeader,
     pub context: ExceptionContext,
@@ -291,6 +293,10 @@ impl Exception {
 
     pub fn get_current_channel_type(&self) -> ExceptionChannelType {
         self.inner.lock().current_channel_type
+    }
+
+    pub fn get_report(&self) -> ExceptionReport {
+        self.report.clone()
     }
 }
 
