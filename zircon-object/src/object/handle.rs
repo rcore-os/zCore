@@ -88,7 +88,7 @@ pub fn obj_type(object: &Arc<dyn KernelObject>) -> u32 {
         "Pmt" => 26,
         "SuspendToken" => 27,
         "Pager" => 28,
-        "Exception" => 29,
+        "Exception" | "ExceptionObject" => 29,
         "Clock" => 30,
         "Stream" => 31,
         "PcieDeviceKObject" => 32,

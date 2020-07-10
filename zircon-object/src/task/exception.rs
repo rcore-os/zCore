@@ -2,7 +2,7 @@
 
 use {
     super::*, crate::ipc::*, crate::object::*, alloc::sync::Arc, alloc::vec::Vec,alloc::vec,alloc::boxed::Box,core::time::Duration,
-    core::mem::size_of, spin::Mutex,kernel_hal::UserContext
+    core::mem::size_of, spin::Mutex,kernel_hal::UserContext,futures::channel::oneshot
 };
 
 /// Kernel-owned exception channel endpoint.
@@ -34,7 +34,7 @@ impl Exceptionate {
         inner.channel.replace(channel);
     }
 
-    fn send_exception(&self, exception:&Arc<Exception>) -> ZxResult {
+    fn send_exception(&self, exception:&Arc<Exception>) -> ZxResult<oneshot::Receiver<()>> {
         let mut inner = self.inner.lock();
         inner.channel.as_ref().ok_or(ZxError::NEXT).and_then(|channel|{
             let info=ExceptionInfo{
@@ -43,12 +43,15 @@ impl Exceptionate {
                 type_:exception.type_,
                 padding:Default::default()
             };
-            let handle=Handle::new(exception.clone(),Rights::DEFAULT_EXCEPTION);
+            let (sender, receiver) = oneshot::channel::<()>();
+            let object=ExceptionObject::create(exception.clone(), sender);
+            let handle=Handle::new(object,Rights::DEFAULT_EXCEPTION);
             let msg=MessagePacket{
                 data:info.pack(),
                 handles:vec![handle]
             };
-            channel.write(msg)
+            channel.write(msg)?;
+            Ok(receiver)
         }).map_err(|err|{
             if err==ZxError::PEER_CLOSED {
                 inner.channel.take();
@@ -159,11 +162,37 @@ pub enum ExceptionChannelType {
     JobDebugger = 5,
 }
 
-/// An Exception represents a single currently-active exception. This
-/// will be transmitted to registered exception handlers in userspace and
-/// provides them with exception state and control functionality.
+
+/// This will be transmitted to registered exception handlers in userspace
+/// and provides them with exception state and control functionality.
+/// We do not send exception directly since it's hard to figure out
+/// when will the handle close.
+struct ExceptionObject{
+    base:KObjectBase,
+    exception:Arc<Exception>,
+    close_signal:Option<oneshot::Sender<()>>,
+}
+
+impl_kobject!(ExceptionObject);
+
+impl ExceptionObject{
+    fn create(exception:Arc<Exception>,close_signal:oneshot::Sender<()>)->Arc<Self>{
+        Arc::new(ExceptionObject{
+            base:KObjectBase::new(),
+            exception,
+            close_signal:Some(close_signal)
+        })
+    }
+}
+
+impl Drop for ExceptionObject{
+    fn drop(&mut self) {
+        self.close_signal.take().and_then(|signal|signal.send(()).ok());
+    }
+}
+
+/// An Exception represents a single currently-active exception.
 pub struct Exception{
-    base: KObjectBase,
     thread: Arc<Thread>,
     type_: ExceptionType,
     report: ExceptionReport,
@@ -179,12 +208,9 @@ struct ExceptionInner{
     second_chance: bool,
 }
 
-impl_kobject!(Exception);
-
 impl Exception{
     pub fn create(thread: Arc<Thread>, type_: ExceptionType, cx: Option<&UserContext>) -> Arc<Self> {
         Arc::new(Exception{
-            base:KObjectBase::new(),
             thread,
             type_,
             report:ExceptionReport::new(type_, cx),
@@ -229,10 +255,13 @@ impl Exception{
                     // This channel is not available now!
                     continue;
                 }else{
-                    return result
+                    return Err(err);
                 }
             }
-            //TODO: wait for handle close
+            let closed=result.unwrap();
+            // If this error, the sender is dropped, and the handle should also be closed.
+            closed.await.ok();
+            //TODO: check exception internal state for result
         }
         Err(ZxError::NEXT)
     }
