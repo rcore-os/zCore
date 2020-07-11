@@ -62,6 +62,7 @@ impl VmAddressRegion {
             inner: Mutex::new(Some(VmarInner::default())),
         })
     }
+
     /// Create a kernel root VMAR.
     pub fn new_kernel() -> Arc<Self> {
         let kernel_vmar_base = 0xffff_ff02_0000_0000; // Sorry i hard code because i'm lazy
@@ -74,6 +75,23 @@ impl VmAddressRegion {
             size: kernel_vmar_size,
             parent: None,
             page_table: Arc::new(Mutex::new(kernel_hal::PageTable::new())),
+            inner: Mutex::new(Some(VmarInner::default())),
+        })
+    }
+
+    /// Create a VMAR for guest physical memory.
+    #[cfg(feature = "hypervisor")]
+    pub fn new_guest() -> Arc<Self> {
+        let guest_vmar_base = 0;
+        let guest_vmar_size = 1 << 36;
+        Arc::new(VmAddressRegion {
+            flags: VmarFlags::ROOT_FLAGS,
+            base: KObjectBase::new(),
+            _counter: CountHelper::new(),
+            addr: guest_vmar_base,
+            size: guest_vmar_size,
+            parent: None,
+            page_table: Arc::new(Mutex::new(crate::hypervisor::VmmPageTable::new())),
             inner: Mutex::new(Some(VmarInner::default())),
         })
     }
@@ -466,6 +484,9 @@ impl VmAddressRegion {
     pub fn handle_page_fault(&self, vaddr: VirtAddr, flags: MMUFlags) -> ZxResult {
         let guard = self.inner.lock();
         let inner = guard.as_ref().unwrap();
+        if !self.contains(vaddr) {
+            return Err(ZxError::NOT_FOUND);
+        }
         if let Some(child) = inner.children.iter().find(|ch| ch.contains(vaddr)) {
             return child.handle_page_fault(vaddr, flags);
         }
@@ -524,7 +545,7 @@ impl VmAddressRegion {
     }
 
     /// Find mapping of vaddr
-    fn find_mapping(&self, vaddr: usize) -> Option<Arc<VmMapping>> {
+    pub fn find_mapping(&self, vaddr: usize) -> Option<Arc<VmMapping>> {
         let guard = self.inner.lock();
         let inner = guard.as_ref().unwrap();
         if let Some(mapping) = inner.mappings.iter().find(|map| map.contains(vaddr)) {
@@ -786,6 +807,10 @@ impl VmMapping {
         self.inner.lock().end_addr()
     }
 
+    pub fn get_flags(&self) -> MMUFlags {
+        self.flags
+    }
+
     /// Remove WRITE flag from the mappings for Copy-on-Write.
     pub(super) fn range_change(&self, offset: usize, len: usize, op: RangeChangeOp) {
         let inner = self.inner.lock();
@@ -806,7 +831,7 @@ impl VmMapping {
         }
     }
 
-    fn handle_page_fault(&self, vaddr: VirtAddr, flags: MMUFlags) -> ZxResult {
+    pub fn handle_page_fault(&self, vaddr: VirtAddr, flags: MMUFlags) -> ZxResult {
         if !self.flags.contains(flags) {
             return Err(ZxError::ACCESS_DENIED);
         }

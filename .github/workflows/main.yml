@@ -49,6 +49,10 @@ jobs:
       run: |
         cd zCore
         make build
+    - name: Build zCore with hypervisor
+      run: |
+        cd zCore
+        make build hypervisor=1
     - name: Build docs
       uses: actions-rs/cargo@v1
       with:
