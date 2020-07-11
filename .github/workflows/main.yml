@@ -86,7 +86,7 @@ jobs:
         args: --all-features --no-fail-fast --workspace --exclude zircon-loader
       env:
         CARGO_INCREMENTAL: '0'
-        RUSTFLAGS: '-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Coverflow-checks=off'
+        RUSTFLAGS: '-Zprofile -Ccodegen-units=1 -Copt-level=0 -Coverflow-checks=off'
     - name: Cache grcov
       uses: actions/cache@v1
       with:
