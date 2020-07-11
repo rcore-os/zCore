@@ -17,6 +17,7 @@ use {
 };
 
 pub use self::thread_state::*;
+use kernel_hal::{allow_ioport, deny_ioport, allowed_ioport};
 
 mod thread_state;
 
@@ -388,6 +389,18 @@ impl Thread {
             }
         }
         ExceptionFuture
+    }
+
+    pub fn allow_ioport(&self, port: u16) {
+        allow_ioport(port);
+    }
+
+    pub fn deny_ioport(&self, port: u16) {
+        deny_ioport(port);
+    }
+
+    pub fn allowed_ioport(&self, port: u16) -> u64 {
+        allowed_ioport(port);
     }
 }
 

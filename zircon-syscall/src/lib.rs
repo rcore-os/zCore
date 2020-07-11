@@ -333,10 +333,8 @@ impl Syscall<'_> {
             Sys::INTERRUPT_ACK => self.sys_interrupt_ack(a0 as _),
             Sys::INTERRUPT_DESTROY => self.sys_interrupt_destroy(a0 as _),
             Sys::INTERRUPT_WAIT => self.sys_interrupt_wait(a0 as _, a1.into()).await,
-            Sys::IOPORTS_REQUEST => {
-                warn!("ioports.request: skip");
-                Ok(())
-            }
+            Sys::IOPORTS_REQUEST => self.sys_ioports_request(a0 as _, a1 as _, a2 as _),
+            Sys::IOPORTS_RELEASE => self.sys_ioports_release(a0 as _, a1 as _, a2 as _),
             _ => {
                 error!("syscall unimplemented: {:?}", sys_type);
                 Err(ZxError::NOT_SUPPORTED)

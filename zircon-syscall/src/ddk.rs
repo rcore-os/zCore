@@ -247,6 +247,42 @@ impl Syscall<'_> {
         out.write_if_not_null(timestamp)?;
         Ok(())
     }
+
+    pub fn sys_ioports_request(
+        &self,
+        resource: HandleValue,
+        io_addr: u16,
+        len: u32,
+    ) -> ZxResult {
+        info!(
+            "sys_ioports_request: resource={:?} io_addr={:?} len={:?}",
+            resource, io_addr, len
+        );
+        let proc = self.thread.proc();
+        let resource = proc.get_object::<Resource>(resource)?;
+        resource.validate_ranged_resource(ResourceKind::IOPORT, io_addr as usize, len as usize)?;
+        // TODO: mark in proc
+        self.thread.allow_ioport(io_addr);
+        Ok(())
+    }
+
+    pub fn sys_ioports_release(
+        &self,
+        resource: HandleValue,
+        io_addr: u16,
+        len: u32,
+    ) -> ZxResult {
+        info!(
+            "sys_ioports_release: resource={:?} io_addr={:?} len={:?}",
+            resource, io_addr, len
+        );
+        let proc = self.thread.proc();
+        let resource = proc.get_object::<Resource>(resource)?;
+        resource.validate_ranged_resource(ResourceKind::IOPORT, io_addr as usize, len as usize)?;
+        // TODO: mark in proc
+        self.thread.deny_ioport(io_addr);
+        Ok(())
+    }
 }
 
 const IOMMU_TYPE_DUMMY: u32 = 0;

@@ -299,6 +299,21 @@ pub fn irq_is_valid(irq: u32) -> bool {
     get_ioapic(irq).is_some()
 }
 
+#[export_name = "hal_allow_ioport"]
+pub fn allow_ioport(_port: u16) {
+    // TODO
+}
+
+#[export_name = "hal_allow_ioport"]
+pub fn allowed_ioport(_port: u16) -> u64 {
+    // TODO
+}
+
+#[export_name = "hal_deny_ioport"]
+pub fn deny_ioport(_port: u16) {
+    // TODO
+}
+
 fn breakpoint() {
     panic!("\nEXCEPTION: Breakpoint");
 }

@@ -386,6 +386,24 @@ pub fn inpd(_port: u16) -> u32 {
     unimplemented!()
 }
 
+#[linkage = "weak"]
+#[export_name = "hal_allow_ioport"]
+pub fn allow_ioport(_port: u16) {
+    unimplemented!()
+}
+
+#[linkage = "weak"]
+#[export_name = "hal_allowed_ioport"]
+pub fn allowed_ioport(_port: u16) -> u64 {
+    unimplemented!()
+}
+
+#[linkage = "weak"]
+#[export_name = "hal_deny_ioport"]
+pub fn deny_ioport(_port: u16) {
+    unimplemented!()
+}
+
 /// Get local APIC ID
 #[linkage = "weak"]
 #[export_name = "hal_apic_local_id"]
