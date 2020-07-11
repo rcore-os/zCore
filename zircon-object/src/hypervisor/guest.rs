@@ -1,7 +1,7 @@
 use {
-    crate::{object::*, vm::*},
+    crate::{object::*, signal::Port, vm::VmAddressRegion},
     alloc::sync::Arc,
-    rvm::{Guest as GuestInner, RvmError, RvmResult},
+    rvm::{Guest as GuestInner, RvmError, RvmResult, TrapKind},
     rvm::{GuestPhysAddr, GuestPhysMemorySetTrait, HostPhysAddr},
 };
 
@@ -28,6 +28,21 @@ impl Guest {
             inner: GuestInner::new(gpm.clone())?,
             gpm,
         }))
+    }
+
+    pub fn set_trap(
+        &self,
+        kind: u32,
+        addr: usize,
+        size: usize,
+        _port: Option<Arc<Port>>,
+        key: u64,
+    ) -> ZxResult {
+        // TODO: port
+        use core::convert::TryFrom;
+        self.inner
+            .set_trap(TrapKind::try_from(kind)?, addr, size, key)
+            .map_err(From::from)
     }
 
     pub fn vmar(&self) -> Arc<VmAddressRegion> {
@@ -61,7 +76,13 @@ impl GuestPhysMemorySetTrait for GuestPhysMemorySet {
         _size: usize,
         _hpaddr: Option<HostPhysAddr>,
     ) -> RvmResult {
+        // All mappings was created by VMAR, should not call this function.
         Err(RvmError::NotSupported)
+    }
+
+    /// Remove a guest physical memory region, destroy the mapping.
+    fn remove_map(&self, gpaddr: GuestPhysAddr, size: usize) -> RvmResult {
+        self.vmar.unmap(gpaddr, size).map_err(From::from)
     }
 
     /// Called when accessed a non-mapped guest physical adderss `gpaddr`.

@@ -4,7 +4,8 @@ mod guest;
 mod page_table;
 
 pub use guest::Guest;
-pub use page_table::VmmPageTable;
+pub(crate) use page_table::VmmPageTable;
+pub use rvm::TrapKind;
 
 use super::ZxError;
 use rvm::RvmError;

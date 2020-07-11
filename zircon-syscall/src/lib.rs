@@ -357,6 +357,10 @@ impl Syscall<'_> {
             }
             #[cfg(feature = "hypervisor")]
             Sys::GUEST_CREATE => self.sys_guest_create(a0 as _, a1 as _, a2.into(), a3.into()),
+            #[cfg(feature = "hypervisor")]
+            Sys::GUEST_SET_TRAP => {
+                self.sys_guest_set_trap(a0 as _, a1 as _, a2 as _, a3 as _, a4 as _, a5 as _)
+            }
             _ => {
                 error!("syscall unimplemented: {:?}", sys_type);
                 Err(ZxError::NOT_SUPPORTED)

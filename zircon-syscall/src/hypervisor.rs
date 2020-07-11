@@ -3,6 +3,7 @@ use {
     zircon_object::{
         dev::{Resource, ResourceKind},
         hypervisor::Guest,
+        signal::Port,
         vm::VmarFlags,
     },
 };
@@ -45,5 +46,28 @@ impl Syscall<'_> {
         let vmar_handle_value = proc.add_handle(Handle::new(vmar, vmar_rights));
         vmar_handle.write(vmar_handle_value)?;
         Ok(())
+    }
+
+    pub fn sys_guest_set_trap(
+        &self,
+        handle: HandleValue,
+        kind: u32,
+        addr: u64,
+        size: u64,
+        port_handle: HandleValue,
+        key: u64,
+    ) -> ZxResult {
+        info!(
+            "hypervisor.guest_set_trap: handle={:#x?}, kind={:#x?}, addr={:#x?}, size={:#x?}, port_handle={:#x?}, key={:#x?}",
+            handle, kind, addr, size, port_handle, key
+        );
+        let proc = self.thread.proc();
+        let guest = proc.get_object_with_rights::<Guest>(handle, Rights::WRITE)?;
+        let port = if port_handle != INVALID_HANDLE {
+            Some(proc.get_object_with_rights::<Port>(port_handle, Rights::WRITE)?)
+        } else {
+            None
+        };
+        guest.set_trap(kind, addr as usize, size as usize, port, key)
     }
 }
