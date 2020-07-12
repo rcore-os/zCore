@@ -166,12 +166,12 @@
 <span class="doccomment">/// A packet sent through a port.</span>
 <span class="attribute">#[<span class="ident">repr</span>(<span class="ident">C</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">PortPacket</span> {
-    <span class="ident">key</span>: <span class="ident">u64</span>,
-    <span class="ident">type_</span>: <span class="ident">PacketType</span>,
+    <span class="kw">pub</span> <span class="ident">key</span>: <span class="ident">u64</span>,
+    <span class="kw">pub</span> <span class="ident">type_</span>: <span class="ident">PacketType</span>,
     <span class="ident">exception_num</span>: <span class="ident">u8</span>,
     <span class="ident">_padding</span>: <span class="ident">u16</span>,
-    <span class="ident">status</span>: <span class="ident">ZxError</span>,
-    <span class="ident">data</span>: <span class="ident">Payload</span>,
+    <span class="kw">pub</span> <span class="ident">status</span>: <span class="ident">ZxError</span>,
+    <span class="kw">pub</span> <span class="ident">data</span>: <span class="ident">Payload</span>,
 }
 
 <span class="comment">// reference: zircon/system/public/zircon/syscalls/port.h ZX_PKT_TYPE_*</span>
@@ -192,7 +192,7 @@
 }
 
 <span class="attribute">#[<span class="ident">repr</span>(<span class="ident">C</span>)]</span>
-<span class="ident">union</span> <span class="ident">Payload</span> {
+<span class="kw">pub</span> <span class="ident">union</span> <span class="ident">Payload</span> {
     <span class="ident">signal</span>: <span class="ident">PacketSignal</span>,
     <span class="ident">exception</span>: <span class="ident">PacketException</span>,
     <span class="ident">interrupt</span>: <span class="ident">PacketInterrupt</span>,

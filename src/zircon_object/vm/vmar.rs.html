@@ -1032,6 +1032,14 @@
 <span id="1032">1032</span>
 <span id="1033">1033</span>
 <span id="1034">1034</span>
+<span id="1035">1035</span>
+<span id="1036">1036</span>
+<span id="1037">1037</span>
+<span id="1038">1038</span>
+<span id="1039">1039</span>
+<span id="1040">1040</span>
+<span id="1041">1041</span>
+<span id="1042">1042</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> <span class="ident">core</span>::<span class="ident">sync</span>::<span class="ident">atomic</span>::<span class="kw-2">*</span>;
 <span class="kw">use</span> {
@@ -1225,7 +1233,7 @@
         <span class="comment">// align = 1K? 2K? 4K? 8K? ...</span>
         <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">test_map</span>(<span class="ident">inner</span>, <span class="ident">offset</span>, <span class="ident">len</span>, <span class="ident">PAGE_SIZE</span>) {
             <span class="kw">if</span> <span class="ident">overwrite</span> {
-                <span class="self">self</span>.<span class="ident">unmap</span>(<span class="ident">addr</span>, <span class="ident">len</span>)<span class="question-mark">?</span>;
+                <span class="self">self</span>.<span class="ident">unmap_inner</span>(<span class="ident">addr</span>, <span class="ident">len</span>, <span class="ident">inner</span>)<span class="question-mark">?</span>;
             } <span class="kw">else</span> {
                 <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">NO_MEMORY</span>);
             }
@@ -1251,6 +1259,14 @@
         }
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">guard</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="ident">guard</span>.<span class="ident">as_mut</span>().<span class="ident">ok_or</span>(<span class="ident">ZxError</span>::<span class="ident">BAD_STATE</span>)<span class="question-mark">?</span>;
+        <span class="self">self</span>.<span class="ident">unmap_inner</span>(<span class="ident">addr</span>, <span class="ident">len</span>, <span class="ident">inner</span>)
+    }
+
+    <span class="doccomment">/// Must hold self.inner.lock() before calling.</span>
+    <span class="kw">fn</span> <span class="ident">unmap_inner</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">addr</span>: <span class="ident">VirtAddr</span>, <span class="ident">len</span>: <span class="ident">usize</span>, <span class="ident">inner</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">VmarInner</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+        <span class="kw">if</span> <span class="op">!</span><span class="ident">page_aligned</span>(<span class="ident">addr</span>) <span class="op">|</span><span class="op">|</span> <span class="op">!</span><span class="ident">page_aligned</span>(<span class="ident">len</span>) <span class="op">|</span><span class="op">|</span> <span class="ident">len</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span> {
+            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">INVALID_ARGS</span>);
+        }
 
         <span class="kw">let</span> <span class="ident">begin</span> <span class="op">=</span> <span class="ident">addr</span>;
         <span class="kw">let</span> <span class="ident">end</span> <span class="op">=</span> <span class="ident">addr</span> <span class="op">+</span> <span class="ident">len</span>;
@@ -1689,8 +1705,8 @@
     }
 
     <span class="kw">fn</span> <span class="ident">unmap</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">page_table</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">page_table</span>.<span class="ident">lock</span>();
         <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">page_table</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">page_table</span>.<span class="ident">lock</span>();
         <span class="self">self</span>.<span class="ident">vmo</span>
             .<span class="ident">unmap_from</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">page_table</span>, <span class="ident">inner</span>.<span class="ident">addr</span>, <span class="ident">inner</span>.<span class="ident">vmo_offset</span>, <span class="ident">inner</span>.<span class="ident">size</span>);
     }
@@ -1791,8 +1807,8 @@
     }
 
     <span class="kw">fn</span> <span class="ident">protect</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">flags</span>: <span class="ident">MMUFlags</span>) {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">pg_table</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">page_table</span>.<span class="ident">lock</span>();
         <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">pg_table</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">page_table</span>.<span class="ident">lock</span>();
         <span class="kw">for</span> <span class="ident">i</span> <span class="kw">in</span> <span class="number">0</span>..<span class="ident">inner</span>.<span class="ident">size</span> {
             <span class="ident">pg_table</span>.<span class="ident">protect</span>(<span class="ident">inner</span>.<span class="ident">addr</span> <span class="op">+</span> <span class="ident">i</span> <span class="op">*</span> <span class="ident">PAGE_SIZE</span>, <span class="ident">flags</span>).<span class="ident">unwrap</span>();
         }

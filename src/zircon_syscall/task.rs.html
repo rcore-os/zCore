@@ -302,6 +302,41 @@
 <span id="302">302</span>
 <span id="303">303</span>
 <span id="304">304</span>
+<span id="305">305</span>
+<span id="306">306</span>
+<span id="307">307</span>
+<span id="308">308</span>
+<span id="309">309</span>
+<span id="310">310</span>
+<span id="311">311</span>
+<span id="312">312</span>
+<span id="313">313</span>
+<span id="314">314</span>
+<span id="315">315</span>
+<span id="316">316</span>
+<span id="317">317</span>
+<span id="318">318</span>
+<span id="319">319</span>
+<span id="320">320</span>
+<span id="321">321</span>
+<span id="322">322</span>
+<span id="323">323</span>
+<span id="324">324</span>
+<span id="325">325</span>
+<span id="326">326</span>
+<span id="327">327</span>
+<span id="328">328</span>
+<span id="329">329</span>
+<span id="330">330</span>
+<span id="331">331</span>
+<span id="332">332</span>
+<span id="333">333</span>
+<span id="334">334</span>
+<span id="335">335</span>
+<span id="336">336</span>
+<span id="337">337</span>
+<span id="338">338</span>
+<span id="339">339</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> <span class="ident">core</span>::<span class="ident">convert</span>::<span class="ident">TryFrom</span>;
 <span class="kw">use</span> {<span class="kw">super</span>::<span class="kw-2">*</span>, <span class="ident">zircon_object</span>::<span class="ident">task</span>::<span class="kw-2">*</span>};
@@ -437,7 +472,7 @@
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>();
         <span class="kw">let</span> <span class="ident">job</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">Job</span><span class="op">&gt;</span>(<span class="ident">job_handle</span>, <span class="ident">Rights</span>::<span class="ident">DESTROY</span>)<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">process</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">Process</span><span class="op">&gt;</span>(<span class="ident">process_handle</span>, <span class="ident">Rights</span>::<span class="ident">WAIT</span>)<span class="question-mark">?</span>;
-        <span class="ident">job</span>.<span class="ident">set_critical</span>(<span class="kw-2">&amp;</span><span class="ident">process</span>, <span class="ident">retcode_nonzero</span>)<span class="question-mark">?</span>;
+        <span class="ident">process</span>.<span class="ident">set_critical_at_job</span>(<span class="kw-2">&amp;</span><span class="ident">job</span>, <span class="ident">retcode_nonzero</span>)<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(())
     }
 
@@ -480,16 +515,51 @@
             <span class="kw">if</span> <span class="ident">Arc</span>::<span class="ident">ptr_eq</span>(<span class="kw-2">&amp;</span><span class="ident">thread</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">thread</span>) {
                 <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">NOT_SUPPORTED</span>);
             }
+            <span class="kw">if</span> <span class="ident">thread</span>.<span class="ident">state</span>() <span class="op">=</span><span class="op">=</span> <span class="ident">ThreadState</span>::<span class="ident">Dying</span> <span class="op">|</span><span class="op">|</span> <span class="ident">thread</span>.<span class="ident">state</span>() <span class="op">=</span><span class="op">=</span> <span class="ident">ThreadState</span>::<span class="ident">Dead</span> {
+                <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">BAD_STATE</span>);
+            }
+            <span class="kw">let</span> <span class="ident">thread</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">Task</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">thread</span>;
             <span class="kw">let</span> <span class="ident">token_handle</span> <span class="op">=</span>
                 <span class="ident">Handle</span>::<span class="ident">new</span>(<span class="ident">SuspendToken</span>::<span class="ident">create</span>(<span class="kw-2">&amp;</span><span class="ident">thread</span>), <span class="ident">Rights</span>::<span class="ident">DEFAULT_SUSPEND_TOKEN</span>);
             <span class="ident">token</span>.<span class="ident">write</span>(<span class="ident">proc</span>.<span class="ident">add_handle</span>(<span class="ident">token_handle</span>))<span class="question-mark">?</span>;
             <span class="kw">return</span> <span class="prelude-val">Ok</span>(());
         }
-        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Ok</span>(<span class="ident">process</span>) <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">Process</span><span class="op">&gt;</span>(<span class="ident">handle</span>, <span class="ident">Rights</span>::<span class="ident">WRITE</span>) {
+        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Ok</span>(<span class="ident">_process</span>) <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">Process</span><span class="op">&gt;</span>(<span class="ident">handle</span>, <span class="ident">Rights</span>::<span class="ident">WRITE</span>) {
+            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">NOT_SUPPORTED</span>);
+        }
+        <span class="prelude-val">Ok</span>(())
+    }
+
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_task_kill</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">handle</span>: <span class="ident">HandleValue</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+        <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;task.kill: handle={:?}&quot;</span>, <span class="ident">handle</span>);
+        <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>();
+
+        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Ok</span>(<span class="ident">job</span>) <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">Job</span><span class="op">&gt;</span>(<span class="ident">handle</span>, <span class="ident">Rights</span>::<span class="ident">DESTROY</span>) {
+            <span class="ident">job</span>.<span class="ident">kill</span>();
+        } <span class="kw">else</span> <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Ok</span>(<span class="ident">process</span>) <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">Process</span><span class="op">&gt;</span>(<span class="ident">handle</span>, <span class="ident">Rights</span>::<span class="ident">DESTROY</span>)
+        {
             <span class="kw">if</span> <span class="ident">Arc</span>::<span class="ident">ptr_eq</span>(<span class="kw-2">&amp;</span><span class="ident">process</span>, <span class="kw-2">&amp;</span><span class="ident">proc</span>) {
-                <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">NOT_SUPPORTED</span>);
+                <span class="comment">//self kill, exit</span>
+                <span class="ident">proc</span>.<span class="ident">exit</span>(<span class="ident">TASK_RETCODE_SYSCALL_KILL</span>);
+                <span class="self">self</span>.<span class="ident">exit</span> <span class="op">=</span> <span class="bool-val">true</span>;
+            } <span class="kw">else</span> {
+                <span class="ident">process</span>.<span class="ident">kill</span>();
             }
-            <span class="macro">unimplemented</span><span class="macro">!</span>()
+        } <span class="kw">else</span> <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Ok</span>(<span class="ident">thread</span>) <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">Thread</span><span class="op">&gt;</span>(<span class="ident">handle</span>, <span class="ident">Rights</span>::<span class="ident">DESTROY</span>) {
+            <span class="macro">info</span><span class="macro">!</span>(
+                <span class="string">&quot;killing thread: proc={:?} thread={:?}&quot;</span>,
+                <span class="ident">thread</span>.<span class="ident">proc</span>().<span class="ident">name</span>(),
+                <span class="ident">thread</span>.<span class="ident">name</span>()
+            );
+            <span class="kw">if</span> <span class="ident">Arc</span>::<span class="ident">ptr_eq</span>(<span class="kw-2">&amp;</span><span class="ident">thread</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">thread</span>) {
+                <span class="comment">//self kill, exit</span>
+                <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">exit</span>();
+                <span class="self">self</span>.<span class="ident">exit</span> <span class="op">=</span> <span class="bool-val">true</span>;
+            } <span class="kw">else</span> {
+                <span class="ident">thread</span>.<span class="ident">kill</span>();
+            }
+        } <span class="kw">else</span> {
+            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">WRONG_TYPE</span>);
         }
         <span class="prelude-val">Ok</span>(())
     }

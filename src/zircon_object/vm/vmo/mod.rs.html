@@ -394,6 +394,38 @@
 <span id="394">394</span>
 <span id="395">395</span>
 <span id="396">396</span>
+<span id="397">397</span>
+<span id="398">398</span>
+<span id="399">399</span>
+<span id="400">400</span>
+<span id="401">401</span>
+<span id="402">402</span>
+<span id="403">403</span>
+<span id="404">404</span>
+<span id="405">405</span>
+<span id="406">406</span>
+<span id="407">407</span>
+<span id="408">408</span>
+<span id="409">409</span>
+<span id="410">410</span>
+<span id="411">411</span>
+<span id="412">412</span>
+<span id="413">413</span>
+<span id="414">414</span>
+<span id="415">415</span>
+<span id="416">416</span>
+<span id="417">417</span>
+<span id="418">418</span>
+<span id="419">419</span>
+<span id="420">420</span>
+<span id="421">421</span>
+<span id="422">422</span>
+<span id="423">423</span>
+<span id="424">424</span>
+<span id="425">425</span>
+<span id="426">426</span>
+<span id="427">427</span>
+<span id="428">428</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> {
     <span class="self">self</span>::{<span class="ident">paged</span>::<span class="kw-2">*</span>, <span class="ident">physical</span>::<span class="kw-2">*</span>, <span class="ident">slice</span>::<span class="kw-2">*</span>},
@@ -434,6 +466,12 @@
 
     <span class="doccomment">/// Set the length of VMO.</span>
     <span class="kw">fn</span> <span class="ident">set_len</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">len</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span>;
+
+    <span class="doccomment">/// Get the size of the content stored in the VMO in bytes.</span>
+    <span class="kw">fn</span> <span class="ident">content_size</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span>;
+
+    <span class="doccomment">/// Set the size of the content stored in the VMO in bytes.</span>
+    <span class="kw">fn</span> <span class="ident">set_content_size</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">size</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span>;
 
     <span class="doccomment">/// Unmap physical memory from `page_table`.</span>
     <span class="kw">fn</span> <span class="ident">unmap_from</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">page_table</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">PageTable</span>, <span class="ident">vaddr</span>: <span class="ident">VirtAddr</span>, <span class="ident">_offset</span>: <span class="ident">usize</span>, <span class="ident">len</span>: <span class="ident">usize</span>) {
@@ -641,6 +679,32 @@
         } <span class="kw">else</span> {
             <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">UNAVAILABLE</span>)
         }
+    }
+
+    <span class="doccomment">/// Set the size of the content stored in the VMO in bytes, resize vmo if needed</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">set_content_size_and_resize</span>(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        <span class="ident">size</span>: <span class="ident">usize</span>,
+        <span class="ident">zero_until_offset</span>: <span class="ident">usize</span>,
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
+        <span class="kw">let</span> <span class="ident">content_size</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">content_size</span>();
+        <span class="kw">let</span> <span class="ident">len</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">len</span>();
+        <span class="kw">if</span> <span class="ident">size</span> <span class="op">&lt;</span> <span class="ident">content_size</span> {
+            <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">content_size</span>);
+        }
+        <span class="kw">let</span> <span class="ident">required_len</span> <span class="op">=</span> <span class="ident">roundup_pages</span>(<span class="ident">size</span>);
+        <span class="kw">let</span> <span class="ident">new_content_size</span> <span class="op">=</span> <span class="kw">if</span> <span class="ident">required_len</span> <span class="op">&gt;</span> <span class="ident">len</span> <span class="kw-2">&amp;</span><span class="op">&amp;</span> <span class="self">self</span>.<span class="ident">set_len</span>(<span class="ident">required_len</span>).<span class="ident">is_err</span>() {
+            <span class="ident">len</span>
+        } <span class="kw">else</span> {
+            <span class="ident">size</span>
+        };
+        <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">set_content_size</span>(<span class="ident">new_content_size</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">zero_until_offset</span> <span class="op">=</span> <span class="ident">zero_until_offset</span>.<span class="ident">min</span>(<span class="ident">new_content_size</span>);
+        <span class="kw">if</span> <span class="ident">zero_until_offset</span> <span class="op">&gt;</span> <span class="ident">content_size</span> {
+            <span class="self">self</span>.<span class="ident">inner</span>
+                .<span class="ident">zero</span>(<span class="ident">content_size</span>, <span class="ident">zero_until_offset</span> <span class="op">-</span> <span class="ident">content_size</span>)<span class="question-mark">?</span>;
+        }
+        <span class="prelude-val">Ok</span>(<span class="ident">new_content_size</span>)
     }
 
     <span class="doccomment">/// Get information of this VMO.</span>

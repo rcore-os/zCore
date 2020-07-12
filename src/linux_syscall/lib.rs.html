@@ -256,7 +256,6 @@
 <span id="256">256</span>
 <span id="257">257</span>
 <span id="258">258</span>
-<span id="259">259</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Linux syscall implementations</span>
 
@@ -271,7 +270,7 @@
 <span class="kw">extern</span> <span class="kw">crate</span> <span class="ident">log</span>;
 
 <span class="kw">use</span> {
-    <span class="self">self</span>::{<span class="ident">consts</span>::<span class="ident">SyscallType</span> <span class="kw">as</span> <span class="ident">Sys</span>, <span class="ident">util</span>::<span class="kw-2">*</span>},
+    <span class="self">self</span>::<span class="ident">consts</span>::<span class="ident">SyscallType</span> <span class="kw">as</span> <span class="ident">Sys</span>,
     <span class="ident">alloc</span>::<span class="ident">sync</span>::<span class="ident">Arc</span>,
     <span class="ident">core</span>::<span class="ident">convert</span>::<span class="ident">TryFrom</span>,
     <span class="ident">kernel_hal</span>::{<span class="ident">user</span>::<span class="kw-2">*</span>, <span class="ident">GeneralRegs</span>},
@@ -284,7 +283,6 @@
 <span class="kw">mod</span> <span class="ident">misc</span>;
 <span class="kw">mod</span> <span class="ident">task</span>;
 <span class="kw">mod</span> <span class="ident">time</span>;
-<span class="kw">mod</span> <span class="ident">util</span>;
 <span class="kw">mod</span> <span class="ident">vm</span>;
 
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Syscall</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span> {

@@ -169,6 +169,8 @@
 <span id="169">169</span>
 <span id="170">170</span>
 <span id="171">171</span>
+<span id="172">172</span>
+<span id="173">173</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> <span class="ident">core</span>::<span class="ident">fmt</span>;
 <span class="kw">use</span> <span class="ident">rcore_fs</span>::<span class="ident">vfs</span>::<span class="ident">FsError</span>;
@@ -338,6 +340,8 @@
             <span class="ident">Error</span>::<span class="ident">InvalidUtf8</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError</span>::<span class="ident">EINVAL</span>,
             <span class="ident">Error</span>::<span class="ident">InvalidPointer</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError</span>::<span class="ident">EFAULT</span>,
             <span class="ident">Error</span>::<span class="ident">BufferTooSmall</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError</span>::<span class="ident">ENOBUFS</span>,
+            <span class="ident">Error</span>::<span class="ident">InvalidLength</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError</span>::<span class="ident">EINVAL</span>,
+            <span class="ident">Error</span>::<span class="ident">InvalidVectorAddress</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError</span>::<span class="ident">EINVAL</span>,
         }
     }
 }

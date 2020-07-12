@@ -487,6 +487,66 @@
 <span id="487">487</span>
 <span id="488">488</span>
 <span id="489">489</span>
+<span id="490">490</span>
+<span id="491">491</span>
+<span id="492">492</span>
+<span id="493">493</span>
+<span id="494">494</span>
+<span id="495">495</span>
+<span id="496">496</span>
+<span id="497">497</span>
+<span id="498">498</span>
+<span id="499">499</span>
+<span id="500">500</span>
+<span id="501">501</span>
+<span id="502">502</span>
+<span id="503">503</span>
+<span id="504">504</span>
+<span id="505">505</span>
+<span id="506">506</span>
+<span id="507">507</span>
+<span id="508">508</span>
+<span id="509">509</span>
+<span id="510">510</span>
+<span id="511">511</span>
+<span id="512">512</span>
+<span id="513">513</span>
+<span id="514">514</span>
+<span id="515">515</span>
+<span id="516">516</span>
+<span id="517">517</span>
+<span id="518">518</span>
+<span id="519">519</span>
+<span id="520">520</span>
+<span id="521">521</span>
+<span id="522">522</span>
+<span id="523">523</span>
+<span id="524">524</span>
+<span id="525">525</span>
+<span id="526">526</span>
+<span id="527">527</span>
+<span id="528">528</span>
+<span id="529">529</span>
+<span id="530">530</span>
+<span id="531">531</span>
+<span id="532">532</span>
+<span id="533">533</span>
+<span id="534">534</span>
+<span id="535">535</span>
+<span id="536">536</span>
+<span id="537">537</span>
+<span id="538">538</span>
+<span id="539">539</span>
+<span id="540">540</span>
+<span id="541">541</span>
+<span id="542">542</span>
+<span id="543">543</span>
+<span id="544">544</span>
+<span id="545">545</span>
+<span id="546">546</span>
+<span id="547">547</span>
+<span id="548">548</span>
+<span id="549">549</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> {
     <span class="kw">super</span>::<span class="kw-2">*</span>,
@@ -561,6 +621,32 @@
                 <span class="ident">info_ptr</span>.<span class="ident">write</span>(<span class="ident">tx</span>)<span class="question-mark">?</span>;
                 <span class="prelude-val">Ok</span>(())
             }
+            <span class="ident">Property</span>::<span class="ident">VmoContentSize</span> <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">info_ptr</span> <span class="op">=</span> <span class="ident">UserOutPtr</span>::<span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>::<span class="ident">from_addr_size</span>(<span class="ident">buffer</span>, <span class="ident">buffer_size</span>)<span class="question-mark">?</span>;
+                <span class="kw">let</span> <span class="ident">content_size</span> <span class="op">=</span> <span class="ident">proc</span>
+                    .<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">VmObject</span><span class="op">&gt;</span>(<span class="ident">handle_value</span>, <span class="ident">Rights</span>::<span class="ident">GET_PROPERTY</span>)<span class="question-mark">?</span>
+                    .<span class="ident">content_size</span>();
+                <span class="ident">info_ptr</span>.<span class="ident">write</span>(<span class="ident">content_size</span>)<span class="question-mark">?</span>;
+                <span class="prelude-val">Ok</span>(())
+            }
+            <span class="ident">Property</span>::<span class="ident">ExceptionState</span> <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">info_ptr</span> <span class="op">=</span> <span class="ident">UserOutPtr</span>::<span class="op">&lt;</span><span class="ident">u32</span><span class="op">&gt;</span>::<span class="ident">from_addr_size</span>(<span class="ident">buffer</span>, <span class="ident">buffer_size</span>)<span class="question-mark">?</span>;
+                <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="ident">proc</span>
+                    .<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">ExceptionObject</span><span class="op">&gt;</span>(<span class="ident">handle_value</span>, <span class="ident">Rights</span>::<span class="ident">GET_PROPERTY</span>)<span class="question-mark">?</span>
+                    .<span class="ident">get_exception</span>()
+                    .<span class="ident">get_state</span>();
+                <span class="ident">info_ptr</span>.<span class="ident">write</span>(<span class="ident">state</span>)<span class="question-mark">?</span>;
+                <span class="prelude-val">Ok</span>(())
+            }
+            <span class="ident">Property</span>::<span class="ident">ExceptionStrategy</span> <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">info_ptr</span> <span class="op">=</span> <span class="ident">UserOutPtr</span>::<span class="op">&lt;</span><span class="ident">u32</span><span class="op">&gt;</span>::<span class="ident">from_addr_size</span>(<span class="ident">buffer</span>, <span class="ident">buffer_size</span>)<span class="question-mark">?</span>;
+                <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="ident">proc</span>
+                    .<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">ExceptionObject</span><span class="op">&gt;</span>(<span class="ident">handle_value</span>, <span class="ident">Rights</span>::<span class="ident">GET_PROPERTY</span>)<span class="question-mark">?</span>
+                    .<span class="ident">get_exception</span>()
+                    .<span class="ident">get_strategy</span>();
+                <span class="ident">info_ptr</span>.<span class="ident">write</span>(<span class="ident">state</span>)<span class="question-mark">?</span>;
+                <span class="prelude-val">Ok</span>(())
+            }
             <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="macro">warn</span><span class="macro">!</span>(<span class="string">&quot;unknown property {:?}&quot;</span>, <span class="ident">property</span>);
                 <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">INVALID_ARGS</span>)
@@ -618,6 +704,26 @@
                 <span class="kw">let</span> <span class="ident">threshold</span> <span class="op">=</span> <span class="ident">UserInPtr</span>::<span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>::<span class="ident">from_addr_size</span>(<span class="ident">buffer</span>, <span class="ident">buffer_size</span>)<span class="question-mark">?</span>.<span class="ident">read</span>()<span class="question-mark">?</span>;
                 <span class="ident">proc</span>.<span class="ident">get_object</span>::<span class="op">&lt;</span><span class="ident">Socket</span><span class="op">&gt;</span>(<span class="ident">handle_value</span>)<span class="question-mark">?</span>
                     .<span class="ident">set_write_threshold</span>(<span class="ident">threshold</span>)
+            }
+            <span class="ident">Property</span>::<span class="ident">VmoContentSize</span> <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="kw">let</span> <span class="ident">content_size</span> <span class="op">=</span>
+                    <span class="ident">UserInPtr</span>::<span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>::<span class="ident">from_addr_size</span>(<span class="ident">buffer</span>, <span class="ident">buffer_size</span>)<span class="question-mark">?</span>.<span class="ident">read</span>()<span class="question-mark">?</span>;
+                <span class="ident">proc</span>.<span class="ident">get_object</span>::<span class="op">&lt;</span><span class="ident">VmObject</span><span class="op">&gt;</span>(<span class="ident">handle_value</span>)<span class="question-mark">?</span>
+                    .<span class="ident">set_content_size</span>(<span class="ident">content_size</span>)
+            }
+            <span class="ident">Property</span>::<span class="ident">ExceptionState</span> <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="ident">UserInPtr</span>::<span class="op">&lt;</span><span class="ident">u32</span><span class="op">&gt;</span>::<span class="ident">from_addr_size</span>(<span class="ident">buffer</span>, <span class="ident">buffer_size</span>)<span class="question-mark">?</span>.<span class="ident">read</span>()<span class="question-mark">?</span>;
+                <span class="ident">proc</span>.<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">ExceptionObject</span><span class="op">&gt;</span>(<span class="ident">handle_value</span>, <span class="ident">Rights</span>::<span class="ident">SET_PROPERTY</span>)<span class="question-mark">?</span>
+                    .<span class="ident">get_exception</span>()
+                    .<span class="ident">set_state</span>(<span class="ident">state</span>);
+                <span class="prelude-val">Ok</span>(())
+            }
+            <span class="ident">Property</span>::<span class="ident">ExceptionStrategy</span> <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="ident">UserInPtr</span>::<span class="op">&lt;</span><span class="ident">u32</span><span class="op">&gt;</span>::<span class="ident">from_addr_size</span>(<span class="ident">buffer</span>, <span class="ident">buffer_size</span>)<span class="question-mark">?</span>.<span class="ident">read</span>()<span class="question-mark">?</span>;
+                <span class="ident">proc</span>.<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">ExceptionObject</span><span class="op">&gt;</span>(<span class="ident">handle_value</span>, <span class="ident">Rights</span>::<span class="ident">SET_PROPERTY</span>)<span class="question-mark">?</span>
+                    .<span class="ident">get_exception</span>()
+                    .<span class="ident">set_strategy</span>(<span class="ident">state</span>)<span class="question-mark">?</span>;
+                <span class="prelude-val">Ok</span>(())
             }
             <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="macro">warn</span><span class="macro">!</span>(<span class="string">&quot;unknown property&quot;</span>);
@@ -704,6 +810,12 @@
                 <span class="kw">let</span> <span class="ident">thread</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">Thread</span><span class="op">&gt;</span>(<span class="ident">handle</span>, <span class="ident">Rights</span>::<span class="ident">INSPECT</span>)<span class="question-mark">?</span>;
                 <span class="ident">info_ptr</span>.<span class="ident">write</span>(<span class="ident">thread</span>.<span class="ident">get_thread_info</span>())<span class="question-mark">?</span>;
             }
+            <span class="ident">Topic</span>::<span class="ident">ThreadExceptionReport</span> <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">info_ptr</span> <span class="op">=</span>
+                    <span class="ident">UserOutPtr</span>::<span class="op">&lt;</span><span class="ident">ExceptionReport</span><span class="op">&gt;</span>::<span class="ident">from_addr_size</span>(<span class="ident">buffer</span>, <span class="ident">buffer_size</span>)<span class="question-mark">?</span>;
+                <span class="kw">let</span> <span class="ident">thread</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">Thread</span><span class="op">&gt;</span>(<span class="ident">handle</span>, <span class="ident">Rights</span>::<span class="ident">INSPECT</span>)<span class="question-mark">?</span>;
+                <span class="ident">info_ptr</span>.<span class="ident">write</span>(<span class="ident">thread</span>.<span class="ident">get_thread_exception_info</span>()<span class="question-mark">?</span>)<span class="question-mark">?</span>;
+            }
             <span class="ident">Topic</span>::<span class="ident">HandleCount</span> <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">info_ptr</span> <span class="op">=</span> <span class="ident">UserOutPtr</span>::<span class="op">&lt;</span><span class="ident">u32</span><span class="op">&gt;</span>::<span class="ident">from_addr_size</span>(<span class="ident">buffer</span>, <span class="ident">buffer_size</span>)<span class="question-mark">?</span>;
                 <span class="kw">let</span> <span class="ident">object</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_dyn_object_with_rights</span>(<span class="ident">handle</span>, <span class="ident">Rights</span>::<span class="ident">INSPECT</span>)<span class="question-mark">?</span>;
@@ -777,6 +889,11 @@
                 <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">info_ptr</span> <span class="op">=</span> <span class="ident">UserOutPtr</span>::<span class="op">&lt;</span><span class="ident">SocketInfo</span><span class="op">&gt;</span>::<span class="ident">from_addr_size</span>(<span class="ident">buffer</span>, <span class="ident">buffer_size</span>)<span class="question-mark">?</span>;
                 <span class="kw">let</span> <span class="ident">socket</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">Socket</span><span class="op">&gt;</span>(<span class="ident">handle</span>, <span class="ident">Rights</span>::<span class="ident">INSPECT</span>)<span class="question-mark">?</span>;
                 <span class="ident">info_ptr</span>.<span class="ident">write</span>(<span class="ident">socket</span>.<span class="ident">get_info</span>())<span class="question-mark">?</span>;
+            }
+            <span class="ident">Topic</span>::<span class="ident">Stream</span> <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">info_ptr</span> <span class="op">=</span> <span class="ident">UserOutPtr</span>::<span class="op">&lt;</span><span class="ident">StreamInfo</span><span class="op">&gt;</span>::<span class="ident">from_addr_size</span>(<span class="ident">buffer</span>, <span class="ident">buffer_size</span>)<span class="question-mark">?</span>;
+                <span class="kw">let</span> <span class="ident">stream</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">Stream</span><span class="op">&gt;</span>(<span class="ident">handle</span>, <span class="ident">Rights</span>::<span class="ident">INSPECT</span>)<span class="question-mark">?</span>;
+                <span class="ident">info_ptr</span>.<span class="ident">write</span>(<span class="ident">stream</span>.<span class="ident">get_info</span>())<span class="question-mark">?</span>;
             }
             <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;not supported info topic: {:?}&quot;</span>, <span class="ident">topic</span>);
@@ -934,8 +1051,8 @@
         <span class="ident">Socket</span> <span class="op">=</span> <span class="number">22</span>,
         <span class="ident">Vmo</span> <span class="op">=</span> <span class="number">23</span>,
         <span class="ident">Job</span> <span class="op">=</span> <span class="number">24</span>,
-        <span class="ident">Timer</span> <span class="op">=</span> <span class="number">26</span>,
-        <span class="ident">Stream</span> <span class="op">=</span> <span class="number">27</span>,
+        <span class="ident">Timer</span> <span class="op">=</span> <span class="number">25</span>,
+        <span class="ident">Stream</span> <span class="op">=</span> <span class="number">26</span>,
     }
 }
 
@@ -950,6 +1067,9 @@
         <span class="ident">ProcessBreakOnLoad</span> <span class="op">=</span> <span class="number">7</span>,
         <span class="ident">SocketRxThreshold</span> <span class="op">=</span> <span class="number">12</span>,
         <span class="ident">SocketTxThreshold</span> <span class="op">=</span> <span class="number">13</span>,
+        <span class="ident">ExceptionState</span> <span class="op">=</span> <span class="number">16</span>,
+        <span class="ident">VmoContentSize</span> <span class="op">=</span> <span class="number">17</span>,
+        <span class="ident">ExceptionStrategy</span> <span class="op">=</span> <span class="number">18</span>,
     }
 }
 

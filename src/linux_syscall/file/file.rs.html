@@ -365,11 +365,11 @@
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_readv</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">fd</span>: <span class="ident">FileDesc</span>,
-        <span class="ident">iov_ptr</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">IoVec</span><span class="op">&lt;</span><span class="ident">Out</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+        <span class="ident">iov_ptr</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">IoVecOut</span><span class="op">&gt;</span>,
         <span class="ident">iov_count</span>: <span class="ident">usize</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
         <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;readv: fd={:?}, iov={:?}, count={}&quot;</span>, <span class="ident">fd</span>, <span class="ident">iov_ptr</span>, <span class="ident">iov_count</span>);
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">iovs</span> <span class="op">=</span> <span class="ident">IoVecs</span>::<span class="ident">new</span>(<span class="ident">iov_ptr</span>, <span class="ident">iov_count</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">iovs</span> <span class="op">=</span> <span class="ident">iov_ptr</span>.<span class="ident">read_iovecs</span>(<span class="ident">iov_count</span>)<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>();
         <span class="kw">let</span> <span class="ident">file_like</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_file_like</span>(<span class="ident">fd</span>)<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">buf</span> <span class="op">=</span> <span class="macro">vec</span><span class="macro">!</span>[<span class="number">0u8</span>; <span class="ident">iovs</span>.<span class="ident">total_len</span>()];
@@ -381,14 +381,14 @@
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_writev</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">fd</span>: <span class="ident">FileDesc</span>,
-        <span class="ident">iov_ptr</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">IoVec</span><span class="op">&lt;</span><span class="ident">In</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+        <span class="ident">iov_ptr</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">IoVecIn</span><span class="op">&gt;</span>,
         <span class="ident">iov_count</span>: <span class="ident">usize</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
         <span class="macro">info</span><span class="macro">!</span>(
             <span class="string">&quot;writev: fd={:?}, iov={:?}, count={}&quot;</span>,
             <span class="ident">fd</span>, <span class="ident">iov_ptr</span>, <span class="ident">iov_count</span>
         );
-        <span class="kw">let</span> <span class="ident">iovs</span> <span class="op">=</span> <span class="ident">IoVecs</span>::<span class="ident">new</span>(<span class="ident">iov_ptr</span>, <span class="ident">iov_count</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">iovs</span> <span class="op">=</span> <span class="ident">iov_ptr</span>.<span class="ident">read_iovecs</span>(<span class="ident">iov_count</span>)<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">buf</span> <span class="op">=</span> <span class="ident">iovs</span>.<span class="ident">read_to_vec</span>()<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>();
         <span class="kw">let</span> <span class="ident">file_like</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_file_like</span>(<span class="ident">fd</span>)<span class="question-mark">?</span>;

@@ -319,10 +319,25 @@
 <span id="319">319</span>
 <span id="320">320</span>
 <span id="321">321</span>
+<span id="322">322</span>
+<span id="323">323</span>
+<span id="324">324</span>
+<span id="325">325</span>
+<span id="326">326</span>
+<span id="327">327</span>
+<span id="328">328</span>
+<span id="329">329</span>
+<span id="330">330</span>
+<span id="331">331</span>
+<span id="332">332</span>
+<span id="333">333</span>
+<span id="334">334</span>
+<span id="335">335</span>
+<span id="336">336</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> {
     <span class="kw">super</span>::<span class="ident">exception</span>::<span class="kw-2">*</span>, <span class="kw">super</span>::<span class="ident">job_policy</span>::<span class="kw-2">*</span>, <span class="kw">super</span>::<span class="ident">process</span>::<span class="ident">Process</span>, <span class="kw">crate</span>::<span class="ident">object</span>::<span class="kw-2">*</span>,
-    <span class="ident">alloc</span>::<span class="ident">sync</span>::<span class="ident">Arc</span>, <span class="ident">alloc</span>::<span class="ident">vec</span>::<span class="ident">Vec</span>, <span class="ident">spin</span>::<span class="ident">Mutex</span>,
+    <span class="kw">crate</span>::<span class="ident">task</span>::<span class="ident">Task</span>, <span class="ident">alloc</span>::<span class="ident">sync</span>::<span class="ident">Arc</span>, <span class="ident">alloc</span>::<span class="ident">vec</span>::<span class="ident">Vec</span>, <span class="ident">spin</span>::<span class="ident">Mutex</span>,
 };
 
 <span class="doccomment">/// Control a group of processes</span>
@@ -378,7 +393,8 @@
     <span class="ident">policy</span>: <span class="ident">JobPolicy</span>,
     <span class="ident">children</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Job</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     <span class="ident">processes</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Process</span><span class="op">&gt;</span><span class="op">&gt;</span>,
-    <span class="ident">critical_proc</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span>(<span class="ident">KoID</span>, <span class="ident">bool</span>)<span class="op">&gt;</span>,
+    <span class="comment">// if the job is killed, no more child creation should works</span>
+    <span class="ident">killed</span>: <span class="ident">bool</span>,
     <span class="ident">timer_policy</span>: <span class="ident">TimerSlack</span>,
 }
 
@@ -400,6 +416,9 @@
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">create_child</span>(<span class="self">self</span>: <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span>, <span class="ident">_options</span>: <span class="ident">u32</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="comment">// TODO: options</span>
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
+        <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">killed</span> {
+            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">BAD_STATE</span>);
+        }
         <span class="kw">let</span> <span class="ident">child</span> <span class="op">=</span> <span class="ident">Arc</span>::<span class="ident">new</span>(<span class="ident">Job</span> {
             <span class="ident">base</span>: <span class="ident">KObjectBase</span>::<span class="ident">new</span>(),
             <span class="ident">_counter</span>: <span class="ident">CountHelper</span>::<span class="ident">new</span>(),
@@ -416,6 +435,11 @@
     <span class="doccomment">/// Get the policy of the job.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">policy</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">JobPolicy</span> {
         <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">policy</span>.<span class="ident">merge</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">parent_policy</span>)
+    }
+
+    <span class="doccomment">/// Get the parent job.</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">parent</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+        <span class="self">self</span>.<span class="ident">parent</span>.<span class="ident">clone</span>()
     }
 
     <span class="doccomment">/// Sets one or more security and/or resource policies to an empty job.</span>
@@ -453,42 +477,19 @@
         <span class="prelude-val">Ok</span>(())
     }
 
-    <span class="doccomment">/// Set a process as critical to the job.</span>
-    <span class="doccomment">///</span>
-    <span class="doccomment">/// When process terminates, job will be terminated as if `task_kill()` was</span>
-    <span class="doccomment">/// called on it. The return code used will be `ZX_TASK_RETCODE_CRITICAL_PROCESS_KILL`.</span>
-    <span class="doccomment">///</span>
-    <span class="doccomment">/// The job specified must be the parent of process, or an ancestor.</span>
-    <span class="doccomment">///</span>
-    <span class="doccomment">/// If `retcode_nonzero` is true, then job will only be terminated if process</span>
-    <span class="doccomment">/// has a non-zero return code.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">set_critical</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">proc</span>: <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Process</span><span class="op">&gt;</span>, <span class="ident">retcode_nonzero</span>: <span class="ident">bool</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    <span class="doccomment">/// Add a process to the job.</span>
+    <span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn</span> <span class="ident">add_process</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">process</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Process</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
-        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>((<span class="ident">pid</span>, <span class="kw">_</span>)) <span class="op">=</span> <span class="ident">inner</span>.<span class="ident">critical_proc</span> {
-            <span class="kw">if</span> <span class="ident">proc</span>.<span class="ident">id</span>() <span class="op">=</span><span class="op">=</span> <span class="ident">pid</span> {
-                <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">ALREADY_BOUND</span>);
-            }
+        <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">killed</span> {
+            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">BAD_STATE</span>);
         }
-        <span class="kw">if</span> <span class="op">!</span><span class="ident">inner</span>.<span class="ident">processes</span>.<span class="ident">iter</span>().<span class="ident">any</span>(<span class="op">|</span><span class="ident">p</span><span class="op">|</span> <span class="ident">proc</span>.<span class="ident">id</span>() <span class="op">=</span><span class="op">=</span> <span class="ident">p</span>.<span class="ident">id</span>()) {
-            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">INVALID_ARGS</span>);
-        }
-        <span class="ident">inner</span>.<span class="ident">critical_proc</span> <span class="op">=</span> <span class="prelude-val">Some</span>((<span class="ident">proc</span>.<span class="ident">id</span>(), <span class="ident">retcode_nonzero</span>));
+        <span class="ident">inner</span>.<span class="ident">processes</span>.<span class="ident">push</span>(<span class="ident">process</span>);
         <span class="prelude-val">Ok</span>(())
     }
 
-    <span class="doccomment">/// Add a process to the job.</span>
-    <span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn</span> <span class="ident">add_process</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">process</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Process</span><span class="op">&gt;</span>) {
-        <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">processes</span>.<span class="ident">push</span>(<span class="ident">process</span>);
-    }
-
-    <span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn</span> <span class="ident">process_exit</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">id</span>: <span class="ident">KoID</span>, <span class="ident">retcode</span>: <span class="ident">i64</span>) {
+    <span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn</span> <span class="ident">remove_process</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">id</span>: <span class="ident">KoID</span>) {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="ident">inner</span>.<span class="ident">processes</span>.<span class="ident">retain</span>(<span class="op">|</span><span class="ident">proc</span><span class="op">|</span> <span class="ident">proc</span>.<span class="ident">id</span>() <span class="op">!</span><span class="op">=</span> <span class="ident">id</span>);
-        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>((<span class="ident">pid</span>, <span class="ident">retcode_nonzero</span>)) <span class="op">=</span> <span class="ident">inner</span>.<span class="ident">critical_proc</span> {
-            <span class="kw">if</span> <span class="ident">pid</span> <span class="op">=</span><span class="op">=</span> <span class="ident">id</span> <span class="kw-2">&amp;</span><span class="op">&amp;</span> <span class="op">!</span>(<span class="ident">retcode_nonzero</span> <span class="kw-2">&amp;</span><span class="op">&amp;</span> <span class="ident">retcode</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span>) {
-                <span class="macro">unimplemented</span><span class="macro">!</span>(<span class="string">&quot;kill the job&quot;</span>)
-            }
-        }
     }
 
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_info</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">JobInfo</span> {
@@ -507,6 +508,10 @@
         <span class="self">self</span>.<span class="ident">exceptionate</span>.<span class="ident">clone</span>()
     }
 
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_debug_exceptionate</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Exceptionate</span><span class="op">&gt;</span> {
+        <span class="self">self</span>.<span class="ident">debug_exceptionate</span>.<span class="ident">clone</span>()
+    }
+
     <span class="doccomment">/// Get KoIDs of Processes.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">process_ids</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">KoID</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">processes</span>.<span class="ident">iter</span>().<span class="ident">map</span>(<span class="op">|</span><span class="ident">p</span><span class="op">|</span> <span class="ident">p</span>.<span class="ident">id</span>()).<span class="ident">collect</span>()
@@ -515,6 +520,31 @@
     <span class="doccomment">/// Get KoIDs of children Jobs.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">children_ids</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">KoID</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">children</span>.<span class="ident">iter</span>().<span class="ident">map</span>(<span class="op">|</span><span class="ident">j</span><span class="op">|</span> <span class="ident">j</span>.<span class="ident">id</span>()).<span class="ident">collect</span>()
+    }
+
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">is_empty</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+        <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">is_empty</span>()
+    }
+
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">kill</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) {
+        <span class="kw">let</span> (<span class="ident">children</span>, <span class="ident">processes</span>) <span class="op">=</span> {
+            <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
+            <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">killed</span> {
+                <span class="kw">return</span>;
+            }
+            <span class="ident">inner</span>.<span class="ident">killed</span> <span class="op">=</span> <span class="bool-val">true</span>;
+            (
+                <span class="ident">core</span>::<span class="ident">mem</span>::<span class="ident">take</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">inner</span>.<span class="ident">children</span>),
+                <span class="ident">core</span>::<span class="ident">mem</span>::<span class="ident">take</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">inner</span>.<span class="ident">processes</span>),
+            )
+        };
+        <span class="kw">for</span> <span class="ident">child</span> <span class="kw">in</span> <span class="ident">children</span> {
+            <span class="ident">child</span>.<span class="ident">kill</span>();
+        }
+        <span class="kw">for</span> <span class="ident">proc</span> <span class="kw">in</span> <span class="ident">processes</span> {
+            <span class="ident">proc</span>.<span class="ident">kill</span>();
+        }
+        <span class="self">self</span>.<span class="ident">base</span>.<span class="ident">signal_set</span>(<span class="ident">Signal</span>::<span class="ident">JOB_TERMINATED</span>);
     }
 }
 

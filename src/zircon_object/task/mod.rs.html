@@ -30,7 +30,7 @@
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Objects for Task Management.</span>
 
-<span class="kw">use</span> {<span class="kw">super</span>::<span class="kw-2">*</span>, <span class="kw">crate</span>::<span class="ident">ipc</span>::<span class="ident">Channel</span>, <span class="kw">crate</span>::<span class="ident">signal</span>::<span class="ident">Port</span>};
+<span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
 
 <span class="kw">mod</span> <span class="ident">exception</span>;
 <span class="kw">mod</span> <span class="ident">job</span>;
@@ -40,22 +40,22 @@
 <span class="kw">mod</span> <span class="ident">thread</span>;
 
 <span class="kw">pub</span> <span class="kw">use</span> {
-    <span class="self">self</span>::<span class="ident">job</span>::<span class="kw-2">*</span>, <span class="self">self</span>::<span class="ident">job_policy</span>::<span class="kw-2">*</span>, <span class="self">self</span>::<span class="ident">process</span>::<span class="kw-2">*</span>, <span class="self">self</span>::<span class="ident">suspend_token</span>::<span class="kw-2">*</span>, <span class="self">self</span>::<span class="ident">thread</span>::<span class="kw-2">*</span>,
+    <span class="self">self</span>::<span class="ident">exception</span>::<span class="kw-2">*</span>, <span class="self">self</span>::<span class="ident">job</span>::<span class="kw-2">*</span>, <span class="self">self</span>::<span class="ident">job_policy</span>::<span class="kw-2">*</span>, <span class="self">self</span>::<span class="ident">process</span>::<span class="kw-2">*</span>,
+    <span class="self">self</span>::<span class="ident">suspend_token</span>::<span class="kw-2">*</span>, <span class="self">self</span>::<span class="ident">thread</span>::<span class="kw-2">*</span>,
 };
 
 <span class="doccomment">/// Task (Thread, Process, or Job)</span>
-<span class="kw">pub</span> <span class="kw">trait</span> <span class="ident">Task</span> {
+<span class="kw">pub</span> <span class="kw">trait</span> <span class="ident">Task</span>: <span class="ident">Sync</span> <span class="op">+</span> <span class="ident">Send</span> {
     <span class="doccomment">/// Kill the task.</span>
-    <span class="kw">fn</span> <span class="ident">kill</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span>;
+    <span class="kw">fn</span> <span class="ident">kill</span>(<span class="kw-2">&amp;</span><span class="self">self</span>);
 
     <span class="doccomment">/// Suspend the task. Currently only thread or process handles may be suspended.</span>
-    <span class="kw">fn</span> <span class="ident">suspend</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span>;
+    <span class="kw">fn</span> <span class="ident">suspend</span>(<span class="kw-2">&amp;</span><span class="self">self</span>);
 
-    <span class="doccomment">/// Create an exception channel on the task.</span>
-    <span class="kw">fn</span> <span class="ident">create_exception_channel</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">options</span>: <span class="ident">u32</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Channel</span><span class="op">&gt;</span>;
-
-    <span class="doccomment">/// Resume the task from a previously caught exception.</span>
-    <span class="kw">fn</span> <span class="ident">resume_from_exception</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">port</span>: <span class="kw-2">&amp;</span><span class="ident">Port</span>, <span class="ident">options</span>: <span class="ident">u32</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span>;
+    <span class="doccomment">/// Resume the task</span>
+    <span class="kw">fn</span> <span class="ident">resume</span>(<span class="kw-2">&amp;</span><span class="self">self</span>);
 }
+
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">TASK_RETCODE_SYSCALL_KILL</span>: <span class="ident">i64</span> <span class="op">=</span> <span class="op">-</span><span class="number">1024</span>;
 </pre></div>
 </section><section id="search" class="content hidden"></section><section class="footer"></section><script>window.rootPath = "../../../";window.currentCrate = "zircon_object";</script><script src="../../../main.js"></script><script src="../../../source-script.js"></script><script src="../../../source-files.js"></script><script defer src="../../../search-index.js"></script></body></html>

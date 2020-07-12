@@ -238,6 +238,8 @@
 <span id="238">238</span>
 <span id="239">239</span>
 <span id="240">240</span>
+<span id="241">241</span>
+<span id="242">242</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">/// The type returned by kernel objects methods.</span>
 <span class="kw">pub</span> <span class="kw">type</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">T</span> <span class="op">=</span> ()<span class="op">&gt;</span> <span class="op">=</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">T</span>, <span class="ident">ZxError</span><span class="op">&gt;</span>;
@@ -476,6 +478,8 @@
             <span class="ident">Error</span>::<span class="ident">InvalidUtf8</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">ZxError</span>::<span class="ident">INVALID_ARGS</span>,
             <span class="ident">Error</span>::<span class="ident">InvalidPointer</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">ZxError</span>::<span class="ident">INVALID_ARGS</span>,
             <span class="ident">Error</span>::<span class="ident">BufferTooSmall</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">ZxError</span>::<span class="ident">BUFFER_TOO_SMALL</span>,
+            <span class="ident">Error</span>::<span class="ident">InvalidLength</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">ZxError</span>::<span class="ident">INVALID_ARGS</span>,
+            <span class="ident">Error</span>::<span class="ident">InvalidVectorAddress</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">ZxError</span>::<span class="ident">NOT_FOUND</span>,
         }
     }
 }

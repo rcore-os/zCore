@@ -108,6 +108,60 @@
 <span id="108">108</span>
 <span id="109">109</span>
 <span id="110">110</span>
+<span id="111">111</span>
+<span id="112">112</span>
+<span id="113">113</span>
+<span id="114">114</span>
+<span id="115">115</span>
+<span id="116">116</span>
+<span id="117">117</span>
+<span id="118">118</span>
+<span id="119">119</span>
+<span id="120">120</span>
+<span id="121">121</span>
+<span id="122">122</span>
+<span id="123">123</span>
+<span id="124">124</span>
+<span id="125">125</span>
+<span id="126">126</span>
+<span id="127">127</span>
+<span id="128">128</span>
+<span id="129">129</span>
+<span id="130">130</span>
+<span id="131">131</span>
+<span id="132">132</span>
+<span id="133">133</span>
+<span id="134">134</span>
+<span id="135">135</span>
+<span id="136">136</span>
+<span id="137">137</span>
+<span id="138">138</span>
+<span id="139">139</span>
+<span id="140">140</span>
+<span id="141">141</span>
+<span id="142">142</span>
+<span id="143">143</span>
+<span id="144">144</span>
+<span id="145">145</span>
+<span id="146">146</span>
+<span id="147">147</span>
+<span id="148">148</span>
+<span id="149">149</span>
+<span id="150">150</span>
+<span id="151">151</span>
+<span id="152">152</span>
+<span id="153">153</span>
+<span id="154">154</span>
+<span id="155">155</span>
+<span id="156">156</span>
+<span id="157">157</span>
+<span id="158">158</span>
+<span id="159">159</span>
+<span id="160">160</span>
+<span id="161">161</span>
+<span id="162">162</span>
+<span id="163">163</span>
+<span id="164">164</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> {
     <span class="kw">crate</span>::{<span class="ident">ZxError</span>, <span class="ident">ZxResult</span>},
@@ -180,35 +234,89 @@
         <span class="doccomment">/// Allows suspending/resuming threads, etc.</span>
         <span class="kw">const</span> <span class="ident">MANAGE_THREAD</span> <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">18</span>;
 
+        <span class="doccomment">/// Not used.</span>
         <span class="kw">const</span> <span class="ident">APPLY_PROFILE</span> <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">19</span>;
+
+        <span class="doccomment">/// Used to duplicate a handle with the same rights.</span>
         <span class="kw">const</span> <span class="ident">SAME_RIGHTS</span> <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">31</span>;
 
+
+        <span class="doccomment">/// TRANSFER | DUPLICATE | WAIT | INSPECT</span>
         <span class="kw">const</span> <span class="ident">BASIC</span> <span class="op">=</span> <span class="self">Self</span>::<span class="ident">TRANSFER</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">DUPLICATE</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">WAIT</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">INSPECT</span>.<span class="ident">bits</span>;
+
+        <span class="doccomment">/// READ ｜ WRITE</span>
         <span class="kw">const</span> <span class="ident">IO</span> <span class="op">=</span> <span class="self">Self</span>::<span class="ident">READ</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">WRITE</span>.<span class="ident">bits</span>;
+
+        <span class="doccomment">/// GET_PROPERTY ｜ SET_PROPERTY</span>
         <span class="kw">const</span> <span class="ident">PROPERTY</span> <span class="op">=</span> <span class="self">Self</span>::<span class="ident">GET_PROPERTY</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">SET_PROPERTY</span>.<span class="ident">bits</span>;
+
+        <span class="doccomment">/// GET_POLICY ｜ SET_POLICY</span>
         <span class="kw">const</span> <span class="ident">POLICY</span> <span class="op">=</span> <span class="self">Self</span>::<span class="ident">GET_POLICY</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">SET_POLICY</span>.<span class="ident">bits</span>;
 
+        <span class="doccomment">/// BASIC &amp; !Self::DUPLICATE | IO | SIGNAL | SIGNAL_PEER</span>
         <span class="kw">const</span> <span class="ident">DEFAULT_CHANNEL</span> <span class="op">=</span> <span class="self">Self</span>::<span class="ident">BASIC</span>.<span class="ident">bits</span> <span class="op">&amp;</span> <span class="op">!</span><span class="self">Self</span>::<span class="ident">DUPLICATE</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">IO</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">SIGNAL</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">SIGNAL_PEER</span>.<span class="ident">bits</span>;
+
+        <span class="doccomment">/// BASIC | IO | PROPERTY | ENUMERATE | DESTROY | SIGNAL | MANAGE_PROCESS | MANAGE_THREAD</span>
         <span class="kw">const</span> <span class="ident">DEFAULT_PROCESS</span> <span class="op">=</span> <span class="self">Self</span>::<span class="ident">BASIC</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">IO</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">PROPERTY</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">ENUMERATE</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">DESTROY</span>.<span class="ident">bits</span>
             <span class="op">|</span> <span class="self">Self</span>::<span class="ident">SIGNAL</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">MANAGE_PROCESS</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">MANAGE_THREAD</span>.<span class="ident">bits</span>;
+
+        <span class="doccomment">/// BASIC | IO | PROPERTY | DESTROY | SIGNAL | MANAGE_THREAD</span>
         <span class="kw">const</span> <span class="ident">DEFAULT_THREAD</span> <span class="op">=</span> <span class="self">Self</span>::<span class="ident">BASIC</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">IO</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">PROPERTY</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">DESTROY</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">SIGNAL</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">MANAGE_THREAD</span>.<span class="ident">bits</span>;
+
+        <span class="doccomment">/// BASIC | IO | PROPERTY | MAP | SIGNAL</span>
         <span class="kw">const</span> <span class="ident">DEFAULT_VMO</span> <span class="op">=</span> <span class="self">Self</span>::<span class="ident">BASIC</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">IO</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">PROPERTY</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">MAP</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">SIGNAL</span>.<span class="ident">bits</span>;
+
+        <span class="doccomment">/// BASIC | WAIT</span>
         <span class="kw">const</span> <span class="ident">DEFAULT_VMAR</span> <span class="op">=</span> <span class="self">Self</span>::<span class="ident">BASIC</span>.<span class="ident">bits</span> <span class="op">&amp;</span> <span class="op">!</span><span class="self">Self</span>::<span class="ident">WAIT</span>.<span class="ident">bits</span>;
+
+        <span class="doccomment">/// BASIC | IO | PROPERTY | POLICY | ENUMERATE | DESTROY | SIGNAL | MANAGE_JOB | MANAGE_PROCESS | MANAGE_THREAD</span>
         <span class="kw">const</span> <span class="ident">DEFAULT_JOB</span> <span class="op">=</span> <span class="self">Self</span>::<span class="ident">BASIC</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">IO</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">PROPERTY</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">POLICY</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">ENUMERATE</span>.<span class="ident">bits</span>
             <span class="op">|</span> <span class="self">Self</span>::<span class="ident">DESTROY</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">SIGNAL</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">MANAGE_JOB</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">MANAGE_PROCESS</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">MANAGE_THREAD</span>.<span class="ident">bits</span>;
+
+        <span class="doccomment">/// TRANSFER | DUPLICATE | WRITE | INSPECT</span>
         <span class="kw">const</span> <span class="ident">DEFAULT_RESOURCE</span> <span class="op">=</span> <span class="self">Self</span>::<span class="ident">TRANSFER</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">DUPLICATE</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">WRITE</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">INSPECT</span>.<span class="ident">bits</span>;
+
+        <span class="doccomment">/// BASIC | WRITE | SIGNAL</span>
         <span class="kw">const</span> <span class="ident">DEFAULT_DEBUGLOG</span> <span class="op">=</span> <span class="self">Self</span>::<span class="ident">BASIC</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">WRITE</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">SIGNAL</span>.<span class="ident">bits</span>;
+
+        <span class="doccomment">/// TRANSFER | INSPECT</span>
         <span class="kw">const</span> <span class="ident">DEFAULT_SUSPEND_TOKEN</span> <span class="op">=</span> <span class="self">Self</span>::<span class="ident">TRANSFER</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">INSPECT</span>.<span class="ident">bits</span>;
+
+        <span class="doccomment">/// (BASIC &amp; !WAIT) | IO</span>
         <span class="kw">const</span> <span class="ident">DEFAULT_PORT</span> <span class="op">=</span> (<span class="self">Self</span>::<span class="ident">BASIC</span>.<span class="ident">bits</span> <span class="op">&amp;</span> <span class="op">!</span><span class="self">Self</span>::<span class="ident">WAIT</span>.<span class="ident">bits</span>) <span class="op">|</span> <span class="self">Self</span>::<span class="ident">IO</span>.<span class="ident">bits</span>;
+
+        <span class="doccomment">/// BASIC | WRITE | SIGNAL</span>
         <span class="kw">const</span> <span class="ident">DEFAULT_TIMER</span> <span class="op">=</span> <span class="self">Self</span>::<span class="ident">BASIC</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">WRITE</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">SIGNAL</span>.<span class="ident">bits</span>;
+
+        <span class="doccomment">/// BASIC | SIGNAL</span>
         <span class="kw">const</span> <span class="ident">DEFAULT_EVENT</span> <span class="op">=</span> <span class="self">Self</span>::<span class="ident">BASIC</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">SIGNAL</span>.<span class="ident">bits</span>;
+
+        <span class="doccomment">/// BASIC | SIGNAL ｜ SIGNAL_PEER</span>
         <span class="kw">const</span> <span class="ident">DEFAULT_EVENTPAIR</span> <span class="op">=</span> <span class="self">Self</span>::<span class="ident">BASIC</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">SIGNAL</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">SIGNAL_PEER</span>.<span class="ident">bits</span>;
+
+        <span class="doccomment">/// BASIC | IO | SIGNAL | SIGNAL_PEER</span>
         <span class="kw">const</span> <span class="ident">DEFAULT_FIFO</span> <span class="op">=</span> <span class="self">Self</span>::<span class="ident">BASIC</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">IO</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">SIGNAL</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">SIGNAL_PEER</span>.<span class="ident">bits</span>;
+
+        <span class="doccomment">/// BASIC | IO | PROPERTY | SIGNAL | SIGNAL_PEER</span>
         <span class="kw">const</span> <span class="ident">DEFAULT_SOCKET</span> <span class="op">=</span> <span class="self">Self</span>::<span class="ident">BASIC</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">IO</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">PROPERTY</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">SIGNAL</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">SIGNAL_PEER</span>.<span class="ident">bits</span>;
+
+        <span class="doccomment">/// BASIC | PROPERTY | SIGNAL</span>
+        <span class="kw">const</span> <span class="ident">DEFAULT_STREAM</span> <span class="op">=</span> <span class="self">Self</span>::<span class="ident">BASIC</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">PROPERTY</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">SIGNAL</span>.<span class="ident">bits</span>;
+
+        <span class="doccomment">/// (BASIC &amp; !WAIT) | IO | MAP</span>
         <span class="kw">const</span> <span class="ident">DEFAULT_BTI</span> <span class="op">=</span> (<span class="self">Self</span>::<span class="ident">BASIC</span>.<span class="ident">bits</span> <span class="op">&amp;</span> <span class="op">!</span><span class="self">Self</span>::<span class="ident">WAIT</span>.<span class="ident">bits</span>) <span class="op">|</span> <span class="self">Self</span>::<span class="ident">IO</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">MAP</span>.<span class="ident">bits</span>;
+
+        <span class="doccomment">/// BASIC | IO | SIGNAL</span>
         <span class="kw">const</span> <span class="ident">DEFAULT_INTERRUPT</span> <span class="op">=</span> <span class="self">Self</span>::<span class="ident">BASIC</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">IO</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">SIGNAL</span>.<span class="ident">bits</span>;
+
+        <span class="doccomment">/// BASIC | IO</span>
         <span class="kw">const</span> <span class="ident">DEFAULT_DEVICE</span> <span class="op">=</span> <span class="self">Self</span>::<span class="ident">BASIC</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">IO</span>.<span class="ident">bits</span>;
+
+        <span class="doccomment">/// BASIC | IO | SIGNAL</span>
         <span class="kw">const</span> <span class="ident">DEFAULT_PCI_INTERRUPT</span> <span class="op">=</span> <span class="self">Self</span>::<span class="ident">BASIC</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">IO</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">SIGNAL</span>.<span class="ident">bits</span>;
+
+        <span class="doccomment">/// TRANSFER | PROPERTY | INSPECT</span>
+        <span class="kw">const</span> <span class="ident">DEFAULT_EXCEPTION</span> <span class="op">=</span> <span class="self">Self</span>::<span class="ident">TRANSFER</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">PROPERTY</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">INSPECT</span>.<span class="ident">bits</span>;
     }
 }
 

@@ -1,1 +1,1 @@
-initSidebarItems({"struct":[["DebugLog",""]]});
+initSidebarItems({"constant":[["DLOG_MAX_LEN",""]],"enum":[["Severity",""]],"struct":[["DebugLog",""]]});

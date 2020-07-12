@@ -66,7 +66,10 @@
 <span id="66">66</span>
 <span id="67">67</span>
 <span id="68">68</span>
+<span id="69">69</span>
+<span id="70">70</span>
 </pre><div class="example-wrap"><pre class="rust ">
+<span class="attribute">#![<span class="ident">allow</span>(<span class="ident">missing_docs</span>)]</span>
 <span class="kw">use</span> {<span class="kw">super</span>::<span class="kw-2">*</span>, <span class="ident">bitflags</span>::<span class="ident">bitflags</span>};
 
 <span class="macro">bitflags</span><span class="macro">!</span> {
@@ -127,6 +130,7 @@
 }
 
 <span class="kw">impl</span> <span class="ident">Signal</span> {
+    <span class="doccomment">/// Verify whether `number` only sets the bits specified in `allowed_signals`.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">verify_user_signal</span>(<span class="ident">allowed_signals</span>: <span class="ident">Signal</span>, <span class="ident">number</span>: <span class="ident">u32</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Signal</span><span class="op">&gt;</span> {
         <span class="kw">if</span> (<span class="ident">number</span> <span class="op">&amp;</span> <span class="op">!</span><span class="ident">allowed_signals</span>.<span class="ident">bits</span>()) <span class="op">!</span><span class="op">=</span> <span class="number">0</span> {
             <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">INVALID_ARGS</span>)
