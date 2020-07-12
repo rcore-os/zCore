@@ -1,8 +1,8 @@
 #![allow(dead_code)]
 
 use {
-    super::*, crate::ipc::*, crate::object::*, alloc::boxed::Box, alloc::sync::Arc, alloc::vec,
-    alloc::vec::Vec, core::mem::size_of, core::time::Duration, futures::channel::oneshot,
+    super::*, crate::ipc::*, crate::object::*, alloc::sync::Arc, alloc::vec, alloc::vec::Vec,
+    core::mem::size_of, core::time::Duration, futures::channel::oneshot, futures::pin_mut,
     kernel_hal::UserContext, spin::Mutex,
 };
 
@@ -45,33 +45,28 @@ impl Exceptionate {
 
     fn send_exception(&self, exception: &Arc<Exception>) -> ZxResult<oneshot::Receiver<()>> {
         let mut inner = self.inner.lock();
-        inner
-            .channel
-            .as_ref()
-            .ok_or(ZxError::NEXT)
-            .and_then(|channel| {
-                let info = ExceptionInfo {
-                    tid: exception.thread.id(),
-                    pid: exception.thread.proc().id(),
-                    type_: exception.type_,
-                    padding: Default::default(),
-                };
-                let (sender, receiver) = oneshot::channel::<()>();
-                let object = ExceptionObject::create(exception.clone(), sender);
-                let handle = Handle::new(object, Rights::DEFAULT_EXCEPTION);
-                let msg = MessagePacket {
-                    data: info.pack(),
-                    handles: vec![handle],
-                };
-                channel.write(msg)?;
-                Ok(receiver)
-            })
-            .map_err(|err| {
-                if err == ZxError::PEER_CLOSED {
-                    inner.channel.take();
-                }
-                err
-            })
+        let channel = inner.channel.as_ref().ok_or(ZxError::NEXT)?;
+        let info = ExceptionInfo {
+            tid: exception.thread.id(),
+            pid: exception.thread.proc().id(),
+            type_: exception.type_,
+            padding: Default::default(),
+        };
+        let (sender, receiver) = oneshot::channel::<()>();
+        let object = ExceptionObject::create(exception.clone(), sender);
+        let handle = Handle::new(object, Rights::DEFAULT_EXCEPTION);
+        let msg = MessagePacket {
+            data: info.pack(),
+            handles: vec![handle],
+        };
+        channel.write(msg).map_err(|err| {
+            if err == ZxError::PEER_CLOSED {
+                inner.channel.take();
+                return ZxError::NEXT;
+            }
+            err
+        })?;
+        Ok(receiver)
     }
 }
 
@@ -154,7 +149,7 @@ impl ExceptionReport {
 }
 
 #[repr(u32)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum ExceptionType {
     General = 0x008,
     FatalPageFault = 0x108,
@@ -255,7 +250,8 @@ impl Exception {
     /// This happens only when the thread is killed before we send the exception
     pub async fn handle(self: &Arc<Self>) -> bool {
         self.thread.set_exception(Some(self.clone()));
-        let future = Box::pin(self.handle_internal());
+        let future = self.handle_internal();
+        pin_mut!(future);
         let result: ZxResult = self
             .thread
             .blocking_run(
@@ -284,17 +280,13 @@ impl Exception {
     }
     async fn handle_internal(self: &Arc<Self>) -> ZxResult {
         for exceptionate in ExceptionateIterator::new(self) {
-            let result = exceptionate.send_exception(self);
-            if let Err(err) = result {
-                if err == ZxError::NEXT {
-                    // This channel is not available now!
-                    continue;
-                } else {
-                    return Err(err);
-                }
-            }
+            let closed = match exceptionate.send_exception(self) {
+                Ok(receiver) => receiver,
+                // This channel is not available now!
+                Err(ZxError::NEXT) => continue,
+                Err(err) => return Err(err),
+            };
             self.inner.lock().current_channel_type = exceptionate.type_;
-            let closed = result.unwrap();
             // If this error, the sender is dropped, and the handle should also be closed.
             closed.await.ok();
             let handled = {
