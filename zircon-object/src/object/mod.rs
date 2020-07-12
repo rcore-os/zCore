@@ -594,4 +594,26 @@ mod tests {
         assert_eq!(signals, [Signal::READABLE, Signal::WRITABLE]);
         assert_eq!(flag.load(Ordering::SeqCst), 2);
     }
+
+    #[test]
+    fn test_trait_with_dummy() {
+        let dummy = DummyObject::new();
+        assert_eq!(dummy.name(), String::from(""));
+        dummy.set_name("test");
+        assert_eq!(dummy.name(), String::from("test"));
+        dummy.signal_set(Signal::WRITABLE);
+        assert_eq!(dummy.signal(), Signal::WRITABLE);
+        dummy.signal_change(Signal::WRITABLE, Signal::READABLE);
+        assert_eq!(dummy.signal(), Signal::READABLE);
+
+        assert_eq!(dummy.get_child(0).unwrap_err(), ZxError::WRONG_TYPE);
+        assert_eq!(dummy.peer().unwrap_err(), ZxError::NOT_SUPPORTED);
+        assert_eq!(dummy.related_koid(), 0);
+        assert_eq!(dummy.allowed_signals(), Signal::USER_ALL);
+
+        assert_eq!(
+            format!("{:?}", dummy),
+            format!("DummyObject({}, \"test\")", dummy.id())
+        );
+    }
 }

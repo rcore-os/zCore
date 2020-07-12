@@ -168,3 +168,14 @@ impl TryFrom<u32> for Rights {
         Self::from_bits(x).ok_or(ZxError::INVALID_ARGS)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_try_from() {
+        assert_eq!(Err(ZxError::INVALID_ARGS), Rights::try_from(0xffff_ffff));
+        assert_eq!(Ok(Rights::SAME_RIGHTS), Rights::try_from(1 << 31));
+    }
+}
