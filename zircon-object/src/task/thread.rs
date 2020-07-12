@@ -118,6 +118,8 @@ struct ThreadInner {
     /// NOTE: This variable will never be `Suspended`. On suspended, the
     /// `suspend_count` is non-zero, and this represents the state before suspended.
     state: ThreadState,
+    /// The currently processing exception
+    exception: Option<Arc<Exception>>,
     /// The time this thread has run on cpu
     time: u128,
 }
@@ -284,9 +286,24 @@ impl Thread {
         let inner = self.inner.lock();
         ThreadInfo {
             state: inner.get_state() as u32,
-            wait_exception_type: 0,
+            wait_exception_channel_type: inner
+                .exception
+                .as_ref()
+                .map_or(0, |exception| exception.get_current_channel_type() as u32),
             cpu_affnity_mask: [0u64; 8],
         }
+    }
+
+    pub fn get_thread_exception_info(&self) -> ZxResult<ExceptionReport> {
+        let inner = self.inner.lock();
+        if inner.get_state() != ThreadState::BlockedException {
+            return Err(ZxError::BAD_STATE);
+        }
+        inner
+            .exception
+            .as_ref()
+            .ok_or(ZxError::BAD_STATE)
+            .map(|exception| exception.get_report())
     }
 
     /// Run async future and change state while blocking.
@@ -376,18 +393,8 @@ impl Thread {
     pub fn get_time(&self) -> u64 {
         self.inner.lock().time as u64
     }
-
-    pub fn handle_exception(&self) -> impl Future<Output = bool> {
-        //TODO: implement exception channel
-        self.exit();
-        struct ExceptionFuture;
-        impl Future for ExceptionFuture {
-            type Output = bool;
-            fn poll(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Self::Output> {
-                Poll::Ready(false)
-            }
-        }
-        ExceptionFuture
+    pub fn set_exception(&self, exception: Option<Arc<Exception>>) {
+        self.inner.lock().exception = exception;
     }
 }
 
@@ -434,14 +441,6 @@ impl Task for Thread {
                 waker.wake();
             }
         }
-    }
-
-    fn create_exception_channel(&mut self, _options: u32) -> ZxResult<Channel> {
-        unimplemented!();
-    }
-
-    fn resume_from_exception(&mut self, _port: &Port, _options: u32) -> ZxResult {
-        unimplemented!();
     }
 }
 
@@ -504,7 +503,7 @@ impl Default for ThreadState {
 #[repr(C)]
 pub struct ThreadInfo {
     state: u32,
-    wait_exception_type: u32,
+    wait_exception_channel_type: u32,
     cpu_affnity_mask: [u64; 8],
 }
 

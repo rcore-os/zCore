@@ -56,6 +56,7 @@ pub struct Process {
     vmar: Arc<VmAddressRegion>,
     ext: Box<dyn Any + Send + Sync>,
     exceptionate: Arc<Exceptionate>,
+    debug_exceptionate: Arc<Exceptionate>,
     inner: Mutex<ProcessInner>,
 }
 
@@ -119,6 +120,7 @@ impl Process {
             vmar: VmAddressRegion::new_root(),
             ext: Box::new(ext),
             exceptionate: Exceptionate::new(ExceptionChannelType::Process),
+            debug_exceptionate: Exceptionate::new(ExceptionChannelType::Debugger),
             inner: Mutex::new(ProcessInner::default()),
         });
         job.add_process(proc.clone())?;
@@ -465,6 +467,10 @@ impl Process {
         self.exceptionate.clone()
     }
 
+    pub fn get_debug_exceptionate(&self) -> Arc<Exceptionate> {
+        self.debug_exceptionate.clone()
+    }
+
     /// Get KoIDs of Threads.
     pub fn thread_ids(&self) -> Vec<KoID> {
         self.inner.lock().threads.iter().map(|t| t.id()).collect()
@@ -489,14 +495,6 @@ impl Task for Process {
         for thread in inner.threads.iter() {
             thread.resume();
         }
-    }
-
-    fn create_exception_channel(&mut self, _options: u32) -> ZxResult<Channel> {
-        unimplemented!();
-    }
-
-    fn resume_from_exception(&mut self, _port: &Port, _options: u32) -> ZxResult {
-        unimplemented!();
     }
 }
 

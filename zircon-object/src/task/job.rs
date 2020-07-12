@@ -171,6 +171,10 @@ impl Job {
         self.exceptionate.clone()
     }
 
+    pub fn get_debug_exceptionate(&self) -> Arc<Exceptionate> {
+        self.debug_exceptionate.clone()
+    }
+
     /// Get KoIDs of Processes.
     pub fn process_ids(&self) -> Vec<KoID> {
         self.inner.lock().processes.iter().map(|p| p.id()).collect()

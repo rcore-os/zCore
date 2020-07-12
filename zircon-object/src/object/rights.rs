@@ -149,6 +149,9 @@ bitflags! {
 
         /// BASIC | IO | SIGNAL
         const DEFAULT_PCI_INTERRUPT = Self::BASIC.bits | Self::IO.bits | Self::SIGNAL.bits;
+
+        /// TRANSFER | PROPERTY | INSPECT
+        const DEFAULT_EXCEPTION = Self::TRANSFER.bits | Self::PROPERTY.bits | Self::INSPECT.bits;
     }
 }
 
