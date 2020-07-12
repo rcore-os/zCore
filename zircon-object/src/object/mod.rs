@@ -205,24 +205,12 @@ impl KObjectBase {
 
     /// Create a kernel object base with initial `signal`.
     pub fn with_signal(signal: Signal) -> Self {
-        KObjectBase {
-            id: Self::new_koid(),
-            inner: Mutex::new(KObjectBaseInner {
-                signal,
-                ..Default::default()
-            }),
-        }
+        KObjectBase::with(Default::default(), signal)
     }
 
     /// Create a kernel object base with `name`.
     pub fn with_name(name: &str) -> Self {
-        KObjectBase {
-            id: Self::new_koid(),
-            inner: Mutex::new(KObjectBaseInner {
-                name: String::from(name),
-                ..Default::default()
-            }),
-        }
+        KObjectBase::with(name, Default::default())
     }
 
     /// Create a kernel object base with both signal and name
