@@ -1,14 +1,15 @@
 //! Objects for Virtual Machine Monitor (hypervisor).
 
 mod guest;
-mod page_table;
 
 pub use guest::Guest;
-pub(crate) use page_table::VmmPageTable;
 pub use rvm::TrapKind;
 
 use super::ZxError;
-use rvm::RvmError;
+use kernel_hal::{MMUFlags, PageTableTrait};
+use rvm::{
+    ArchRvmPageTable, GuestPhysAddr, HostPhysAddr, IntoRvmPageTableFlags, RvmError, RvmPageTable,
+};
 
 impl From<RvmError> for ZxError {
     fn from(e: RvmError) -> Self {
@@ -36,5 +37,63 @@ impl From<ZxError> for RvmError {
             ZxError::NOT_FOUND => Self::NotFound,
             _ => Self::BadState,
         }
+    }
+}
+
+pub struct VmmPageTable {
+    rvm_page_table: ArchRvmPageTable,
+}
+
+#[derive(Debug)]
+struct VmmPageTableFlags(MMUFlags);
+
+impl VmmPageTable {
+    pub fn new() -> Self {
+        Self {
+            rvm_page_table: ArchRvmPageTable::new(),
+        }
+    }
+}
+
+impl PageTableTrait for VmmPageTable {
+    fn map(
+        &mut self,
+        gpaddr: GuestPhysAddr,
+        hpaddr: HostPhysAddr,
+        flags: MMUFlags,
+    ) -> Result<(), ()> {
+        self.rvm_page_table
+            .map(gpaddr, hpaddr, VmmPageTableFlags(flags))
+            .map_err(|_| ())
+    }
+
+    fn unmap(&mut self, gpaddr: GuestPhysAddr) -> Result<(), ()> {
+        self.rvm_page_table.unmap(gpaddr).map_err(|_| ())
+    }
+
+    fn protect(&mut self, gpaddr: GuestPhysAddr, flags: MMUFlags) -> Result<(), ()> {
+        self.rvm_page_table
+            .protect(gpaddr, VmmPageTableFlags(flags))
+            .map_err(|_| ())
+    }
+
+    fn query(&mut self, gpaddr: GuestPhysAddr) -> Result<HostPhysAddr, ()> {
+        self.rvm_page_table.query(gpaddr).map_err(|_| ())
+    }
+
+    fn table_phys(&self) -> HostPhysAddr {
+        self.rvm_page_table.table_phys()
+    }
+}
+
+impl IntoRvmPageTableFlags for VmmPageTableFlags {
+    fn is_read(&self) -> bool {
+        self.0.contains(MMUFlags::READ)
+    }
+    fn is_write(&self) -> bool {
+        self.0.contains(MMUFlags::WRITE)
+    }
+    fn is_execute(&self) -> bool {
+        self.0.contains(MMUFlags::EXECUTE)
     }
 }
