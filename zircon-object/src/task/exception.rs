@@ -166,7 +166,7 @@ pub enum ExceptionType {
 }
 
 #[repr(u32)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone,PartialEq)]
 pub enum ExceptionChannelType {
     None = 0,
     Debugger = 1,
