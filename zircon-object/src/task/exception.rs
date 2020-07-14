@@ -30,7 +30,7 @@ impl Exceptionate {
         })
     }
 
-    pub fn create_channel(&self) -> ZxResult<Arc<Channel>> {
+    pub fn create_channel(&self,thread_rights:Rights,process_rights:Rights) -> ZxResult<Arc<Channel>> {
         let mut inner = self.inner.lock();
         if let Some(channel) = inner.channel.as_ref() {
             if channel.peer().is_ok() {
@@ -40,6 +40,8 @@ impl Exceptionate {
         }
         let (sender, receiver) = Channel::create();
         inner.channel.replace(sender);
+        inner.process_rights=process_rights;
+        inner.thread_rights=thread_rights;
         Ok(receiver)
     }
 
@@ -59,6 +61,7 @@ impl Exceptionate {
             data: info.pack(),
             handles: vec![handle],
         };
+        exception.set_rights(inner.thread_rights,inner.process_rights);
         channel.write(msg).map_err(|err| {
             if err == ZxError::PEER_CLOSED {
                 inner.channel.take();
@@ -338,6 +341,12 @@ impl Exception {
             }
             _ => Err(ZxError::BAD_STATE),
         }
+    }
+
+    fn set_rights(&self,thread_rights:Rights,process_rights:Rights){
+        let mut inner = self.inner.lock();
+        inner.thread_rights=thread_rights;
+        inner.process_rights=process_rights;
     }
 }
 

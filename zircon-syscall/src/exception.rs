@@ -44,7 +44,7 @@ impl Syscall<'_> {
             return Err(ZxError::WRONG_TYPE);
         };
         let user_end = proc.add_handle(Handle::new(
-            exceptionate.create_channel()?,
+            exceptionate.create_channel(rights & Rights::DEFAULT_THREAD,rights & Rights::DEFAULT_PROCESS)?,
             Rights::TRANSFER | Rights::WAIT | Rights::READ,
         ));
         out.write(user_end)?;
