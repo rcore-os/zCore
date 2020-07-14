@@ -5,6 +5,9 @@ use {
     rvm::{GuestPhysAddr, GuestPhysMemorySetTrait, HostPhysAddr},
 };
 
+pub const GUEST_PHYSICAL_ASPACE_BASE: u64 = 0;
+pub const GUEST_PHYSICAL_ASPACE_SIZE: u64 = 1 << 36;
+
 pub struct Guest {
     base: KObjectBase,
     _counter: CountHelper,
@@ -68,6 +71,11 @@ impl GuestPhysMemorySet {
 }
 
 impl GuestPhysMemorySetTrait for GuestPhysMemorySet {
+    /// Physical address space size.
+    fn size(&self) -> u64 {
+        GUEST_PHYSICAL_ASPACE_SIZE
+    }
+
     /// Add a contiguous guest physical memory region and create mapping,
     /// with the target host physical address `hpaddr` (optional).
     fn add_map(

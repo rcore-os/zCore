@@ -82,8 +82,8 @@ impl VmAddressRegion {
     /// Create a VMAR for guest physical memory.
     #[cfg(feature = "hypervisor")]
     pub fn new_guest() -> Arc<Self> {
-        let guest_vmar_base = 0;
-        let guest_vmar_size = 1 << 36;
+        let guest_vmar_base = crate::hypervisor::GUEST_PHYSICAL_ASPACE_BASE as usize;
+        let guest_vmar_size = crate::hypervisor::GUEST_PHYSICAL_ASPACE_SIZE as usize;
         Arc::new(VmAddressRegion {
             flags: VmarFlags::ROOT_FLAGS,
             base: KObjectBase::new(),

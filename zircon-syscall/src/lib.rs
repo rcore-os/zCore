@@ -361,6 +361,10 @@ impl Syscall<'_> {
             Sys::GUEST_SET_TRAP => {
                 self.sys_guest_set_trap(a0 as _, a1 as _, a2 as _, a3 as _, a4 as _, a5 as _)
             }
+            #[cfg(feature = "hypervisor")]
+            Sys::VCPU_CREATE => self.sys_vcpu_create(a0 as _, a1 as _, a2 as _, a3.into()),
+            #[cfg(feature = "hypervisor")]
+            Sys::VCPU_INTERRUPT => self.sys_vcpu_interrupt(a0 as _, a1 as _),
             _ => {
                 error!("syscall unimplemented: {:?}", sys_type);
                 Err(ZxError::NOT_SUPPORTED)

@@ -1,9 +1,11 @@
 //! Objects for Virtual Machine Monitor (hypervisor).
 
 mod guest;
+mod vcpu;
 
-pub use guest::Guest;
+pub use guest::{Guest, GUEST_PHYSICAL_ASPACE_BASE, GUEST_PHYSICAL_ASPACE_SIZE};
 pub use rvm::TrapKind;
+pub use vcpu::Vcpu;
 
 use super::ZxError;
 use kernel_hal::{MMUFlags, PageTableTrait};

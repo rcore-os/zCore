@@ -2,7 +2,7 @@ use {
     super::*,
     zircon_object::{
         dev::{Resource, ResourceKind},
-        hypervisor::Guest,
+        hypervisor::{Guest, Vcpu},
         signal::Port,
         vm::VmarFlags,
     },
@@ -69,5 +69,38 @@ impl Syscall<'_> {
             None
         };
         guest.set_trap(kind, addr as usize, size as usize, port, key)
+    }
+
+    pub fn sys_vcpu_create(
+        &self,
+        guest_handle: HandleValue,
+        options: u32,
+        entry: u64,
+        mut out: UserOutPtr<HandleValue>,
+    ) -> ZxResult {
+        info!(
+            "hypervisor.vcpu_create: guest_handle={:#x?}, options={:?}, entry={:#x?}",
+            guest_handle, options, entry
+        );
+        if options != 0 {
+            return Err(ZxError::INVALID_ARGS);
+        }
+        let proc = self.thread.proc();
+        let guest = proc.get_object_with_rights::<Guest>(guest_handle, Rights::MANAGE_PROCESS)?;
+        let vcpu = Vcpu::new(guest, entry)?;
+        let handle_value = proc.add_handle(Handle::new(vcpu, Rights::DEFAULT_VCPU));
+        out.write(handle_value)?;
+        Ok(())
+    }
+
+    pub fn sys_vcpu_interrupt(&self, handle: HandleValue, vector: u32) -> ZxResult {
+        error!(
+            "hypervisor.vcpu_interrupt: handle={:#x?}, vector={:?}",
+            handle, vector
+        );
+        let proc = self.thread.proc();
+        let vcpu = proc.get_object_with_rights::<Vcpu>(handle, Rights::SIGNAL)?;
+        vcpu.virtual_interrupt(vector)?;
+        Ok(())
     }
 }
