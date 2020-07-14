@@ -1,4 +1,4 @@
-use {super::*, zircon_object::ipc::Socket, zircon_object::ipc::SocketFlags};
+use {super::*, zircon_object::ipc::Socket, zircon_object::ipc::SocketFlags, kernel_hal::MMUFlags};
 
 impl Syscall<'_> {
     pub fn sys_socket_create(
@@ -37,6 +37,12 @@ impl Syscall<'_> {
             return Err(ZxError::INVALID_ARGS);
         }
         let proc = self.thread.proc();
+        if !proc
+            .vmar()
+            .check_rights(user_bytes.as_ptr() as usize, MMUFlags::READ)
+        {
+            return Err(ZxError::INVALID_ARGS);
+        }
         let socket = proc.get_object_with_rights::<Socket>(handle_value, Rights::WRITE)?;
         let data = user_bytes.read_array(count)?;
         let actual_count = socket.write(options, &data)?;
@@ -64,6 +70,12 @@ impl Syscall<'_> {
             return Err(ZxError::INVALID_ARGS);
         }
         let proc = self.thread.proc();
+        if !proc
+            .vmar()
+            .check_rights(user_bytes.as_ptr() as usize, MMUFlags::WRITE)
+        {
+            return Err(ZxError::INVALID_ARGS);
+        }
         let socket = proc.get_object_with_rights::<Socket>(handle_value, Rights::READ)?;
         let mut data = vec![0; count];
         let actual_count = socket.read(options, &mut data)?;

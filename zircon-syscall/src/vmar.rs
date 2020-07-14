@@ -94,12 +94,12 @@ impl Syscall<'_> {
         if !vmo_rights.contains(Rights::MAP) {
             return Err(ZxError::ACCESS_DENIED);
         };
-        if !options.contains(VmOptions::PERM_READ)
-            && (!options.contains(VmOptions::PERM_WRITE)
-                || options.contains(VmOptions::PERM_EXECUTE))
-        {
-            return Err(ZxError::INVALID_ARGS);
-        }
+        // if !options.contains(VmOptions::PERM_READ)
+        //     && (!options.contains(VmOptions::PERM_WRITE)
+        //         || options.contains(VmOptions::PERM_EXECUTE))
+        // {
+        //     return Err(ZxError::INVALID_ARGS);
+        // }
         if options.contains(VmOptions::CAN_MAP_RXW) {
             return Err(ZxError::INVALID_ARGS);
         }
@@ -115,15 +115,15 @@ impl Syscall<'_> {
         let mut mapping_flags = MMUFlags::USER;
         mapping_flags.set(
             MMUFlags::READ,
-            vmar_rights.contains(Rights::READ) && vmo_rights.contains(Rights::READ),
+            vmar_rights.contains(Rights::READ) && vmo_rights.contains(Rights::READ) && options.contains(VmOptions::PERM_READ),
         );
         mapping_flags.set(
             MMUFlags::WRITE,
-            vmar_rights.contains(Rights::WRITE) && vmo_rights.contains(Rights::WRITE),
+            vmar_rights.contains(Rights::WRITE) && vmo_rights.contains(Rights::WRITE) && options.contains(VmOptions::PERM_WRITE),
         );
         mapping_flags.set(
             MMUFlags::EXECUTE,
-            vmar_rights.contains(Rights::EXECUTE) && vmo_rights.contains(Rights::EXECUTE),
+            vmar_rights.contains(Rights::EXECUTE) && vmo_rights.contains(Rights::EXECUTE) && options.contains(VmOptions::PERM_EXECUTE),
         );
         info!(
             "mmuflags: {:?}, is_specific {:?}",

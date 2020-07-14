@@ -499,6 +499,13 @@ impl VmAddressRegion {
         task_stats
     }
 
+    pub fn check_rights(&self, vaddr: usize, flags: MMUFlags) -> bool {
+        match self.find_mapping(vaddr) {
+            Some(map) => map.flags.contains(flags),
+            None => false,
+        }
+    }
+
     /// Read from address space.
     ///
     /// Return the actual number of bytes read.

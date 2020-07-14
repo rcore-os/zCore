@@ -103,6 +103,10 @@ impl Socket {
 
     /// Write data to the socket.
     pub fn write(&self, options: SocketFlags, data: &[u8]) -> ZxResult<usize> {
+        if self.base.signal().contains(Signal::SOCKET_WRITE_DISABLED) {
+            return Err(ZxError::BAD_STATE);
+        }
+        let peer = self.peer.upgrade().ok_or(ZxError::PEER_CLOSED)?;
         if options.contains(SocketFlags::SOCKET_CONTROL) {
             if !self.flags.contains(SocketFlags::HAS_CONTROL) {
                 return Err(ZxError::BAD_STATE);
@@ -113,7 +117,6 @@ impl Socket {
             if data.len() > 1024 {
                 return Err(ZxError::OUT_OF_RANGE);
             }
-            let peer = self.peer.upgrade().ok_or(ZxError::PEER_CLOSED)?;
             let actual_count = peer.write_control(data)?;
             self.base.signal_clear(Signal::SOCKET_CONTROL_WRITABLE);
             Ok(actual_count)
@@ -121,7 +124,6 @@ impl Socket {
             if self.base.signal().contains(Signal::SOCKET_WRITE_DISABLED) {
                 return Err(ZxError::BAD_STATE);
             }
-            let peer = self.peer.upgrade().ok_or(ZxError::PEER_CLOSED)?;
             let actual_count = peer.write_data(data)?;
             if actual_count > 0 {
                 let mut clear = Signal::empty();
@@ -158,14 +160,16 @@ impl Socket {
         if rest_size == 0 {
             return Err(ZxError::SHOULD_WAIT);
         }
-        let write_size = data.len().min(rest_size);
         let actual_count = if self.flags.contains(SocketFlags::DATAGRAM) {
             if data.len() > SOCKET_SIZE {
                 return Err(ZxError::OUT_OF_RANGE);
             }
-            self.write_datagram(&data[..write_size])?
+            if data.is_empty() {
+                return Err(ZxError::INVALID_ARGS);
+            }
+            self.write_datagram(&data)?
         } else {
-            self.write_stream(&data[..write_size])?
+            self.write_stream(&data[..data.len().min(rest_size)])?
         };
         if actual_count > 0 {
             let mut set = Signal::empty();
@@ -182,9 +186,6 @@ impl Socket {
     }
 
     fn write_datagram(&self, data: &[u8]) -> ZxResult<usize> {
-        if data.is_empty() {
-            return Err(ZxError::INVALID_ARGS);
-        }
         let mut inner = self.inner.lock();
         let actual_count = data.len();
         inner.data.extend(&data[..]);
