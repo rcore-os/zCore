@@ -47,9 +47,9 @@ impl From<PortInterruptPacket> for PacketInterrupt {
     fn from(packet: PortInterruptPacket) -> Self {
         PacketInterrupt {
             timestamp: packet.timestamp,
-            reserved0: 0,
-            reserved1: 0,
-            reserved2: 0,
+            _reserved0: 0,
+            _reserved1: 0,
+            _reserved2: 0,
         }
     }
 }
@@ -177,6 +177,7 @@ mod tests {
                 observed: Signal::WRITABLE,
                 count: 1,
                 timestamp: 0,
+                _reserved1: 0,
             }),
         };
         async_std::task::spawn({
@@ -201,6 +202,7 @@ mod tests {
                     observed: Signal::READABLE,
                     count: 1,
                     timestamp: 0,
+                    _reserved1: 0,
                 }),
             }
         );

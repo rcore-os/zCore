@@ -93,6 +93,16 @@ impl GuestPhysMemorySetTrait for GuestPhysMemorySet {
         self.vmar.unmap(gpaddr, size).map_err(From::from)
     }
 
+    /// Read from guest address space.
+    fn read_memory(&self, gpaddr: GuestPhysAddr, buf: &mut [u8]) -> RvmResult<usize> {
+        self.vmar.read_memory(gpaddr, buf).map_err(From::from)
+    }
+
+    /// Write to guest address space.
+    fn write_memory(&self, gpaddr: GuestPhysAddr, buf: &[u8]) -> RvmResult<usize> {
+        self.vmar.write_memory(gpaddr, buf).map_err(From::from)
+    }
+
     /// Called when accessed a non-mapped guest physical adderss `gpaddr`.
     fn handle_page_fault(&self, gpaddr: GuestPhysAddr) -> RvmResult {
         if let Some(mapping) = self.vmar.find_mapping(gpaddr) {

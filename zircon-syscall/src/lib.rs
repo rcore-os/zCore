@@ -364,6 +364,8 @@ impl Syscall<'_> {
             #[cfg(feature = "hypervisor")]
             Sys::VCPU_CREATE => self.sys_vcpu_create(a0 as _, a1 as _, a2 as _, a3.into()),
             #[cfg(feature = "hypervisor")]
+            Sys::VCPU_RESUME => self.sys_vcpu_resume(a0 as _, a1.into()),
+            #[cfg(feature = "hypervisor")]
             Sys::VCPU_INTERRUPT => self.sys_vcpu_interrupt(a0 as _, a1 as _),
             _ => {
                 error!("syscall unimplemented: {:?}", sys_type);

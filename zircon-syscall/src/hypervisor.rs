@@ -3,7 +3,7 @@ use {
     zircon_object::{
         dev::{Resource, ResourceKind},
         hypervisor::{Guest, Vcpu},
-        signal::Port,
+        signal::{Port, PortPacket},
         vm::VmarFlags,
     },
 };
@@ -93,8 +93,21 @@ impl Syscall<'_> {
         Ok(())
     }
 
+    pub fn sys_vcpu_resume(
+        &self,
+        handle: HandleValue,
+        mut user_packet: UserOutPtr<PortPacket>,
+    ) -> ZxResult {
+        error!("hypervisor.vcpu_resume: handle={:#x?}", handle);
+        let proc = self.thread.proc();
+        let vcpu = proc.get_object_with_rights::<Vcpu>(handle, Rights::EXECUTE)?;
+        let packet = vcpu.resume()?;
+        user_packet.write(packet)?;
+        Ok(())
+    }
+
     pub fn sys_vcpu_interrupt(&self, handle: HandleValue, vector: u32) -> ZxResult {
-        error!(
+        info!(
             "hypervisor.vcpu_interrupt: handle={:#x?}, vector={:?}",
             handle, vector
         );
