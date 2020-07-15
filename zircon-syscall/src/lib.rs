@@ -367,6 +367,10 @@ impl Syscall<'_> {
             Sys::VCPU_RESUME => self.sys_vcpu_resume(a0 as _, a1.into()),
             #[cfg(feature = "hypervisor")]
             Sys::VCPU_INTERRUPT => self.sys_vcpu_interrupt(a0 as _, a1 as _),
+            #[cfg(feature = "hypervisor")]
+            Sys::VCPU_READ_STATE => self.sys_vcpu_read_state(a0 as _, a1 as _, a2.into(), a3 as _),
+            #[cfg(feature = "hypervisor")]
+            Sys::VCPU_WRITE_STATE => self.sys_vcpu_write_state(a0 as _, a1 as _, a2, a3 as _),
             _ => {
                 error!("syscall unimplemented: {:?}", sys_type);
                 Err(ZxError::NOT_SUPPORTED)

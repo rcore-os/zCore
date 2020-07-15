@@ -1,8 +1,9 @@
 use {
     super::*,
+    core::mem::size_of,
     zircon_object::{
         dev::{Resource, ResourceKind},
-        hypervisor::{Guest, Vcpu},
+        hypervisor::{Guest, Vcpu, VcpuIo, VcpuReadWriteKind, VcpuState},
         signal::{Port, PortPacket},
         vm::VmarFlags,
     },
@@ -98,7 +99,7 @@ impl Syscall<'_> {
         handle: HandleValue,
         mut user_packet: UserOutPtr<PortPacket>,
     ) -> ZxResult {
-        error!("hypervisor.vcpu_resume: handle={:#x?}", handle);
+        info!("hypervisor.vcpu_resume: handle={:#x?}", handle);
         let proc = self.thread.proc();
         let vcpu = proc.get_object_with_rights::<Vcpu>(handle, Rights::EXECUTE)?;
         let packet = vcpu.resume()?;
@@ -114,6 +115,61 @@ impl Syscall<'_> {
         let proc = self.thread.proc();
         let vcpu = proc.get_object_with_rights::<Vcpu>(handle, Rights::SIGNAL)?;
         vcpu.virtual_interrupt(vector)?;
+        Ok(())
+    }
+
+    pub fn sys_vcpu_read_state(
+        &self,
+        handle: HandleValue,
+        kind: u32,
+        mut user_buffer: UserOutPtr<VcpuState>,
+        buffer_size: usize,
+    ) -> ZxResult {
+        info!(
+            "hypervisor.vcpu_read_state: handle={:#x?}, kind={:?}, buffer_size={:?}",
+            handle, kind, buffer_size
+        );
+        if kind != VcpuReadWriteKind::VcpuState as u32 || buffer_size != size_of::<VcpuState>() {
+            return Err(ZxError::INVALID_ARGS);
+        }
+        let proc = self.thread.proc();
+        let vcpu = proc.get_object_with_rights::<Vcpu>(handle, Rights::READ)?;
+        let state = vcpu.read_state()?;
+        user_buffer.write(state)?;
+        Ok(())
+    }
+
+    pub fn sys_vcpu_write_state(
+        &self,
+        handle: HandleValue,
+        kind: u32,
+        user_buffer: usize,
+        buffer_size: usize,
+    ) -> ZxResult {
+        info!(
+            "hypervisor.vcpu_write_state: handle={:#x?}, kind={:?}, user_buffer={:#x?}, buffer_size={:?}",
+            handle, kind, user_buffer, buffer_size
+        );
+        let proc = self.thread.proc();
+        let vcpu = proc.get_object_with_rights::<Vcpu>(handle, Rights::WRITE)?;
+
+        match VcpuReadWriteKind::try_from(kind) {
+            Ok(VcpuReadWriteKind::VcpuState) => {
+                if buffer_size != size_of::<VcpuState>() {
+                    return Err(ZxError::INVALID_ARGS);
+                }
+                let state: UserInPtr<VcpuState> = user_buffer.into();
+                vcpu.write_state(&state.read()?)?;
+            }
+            Ok(VcpuReadWriteKind::VcpuIo) => {
+                if buffer_size != size_of::<VcpuIo>() {
+                    return Err(ZxError::INVALID_ARGS);
+                }
+                let state: UserInPtr<VcpuIo> = user_buffer.into();
+                vcpu.write_io_state(&state.read()?)?;
+            }
+            Err(_) => return Err(ZxError::INVALID_ARGS),
+        }
         Ok(())
     }
 }

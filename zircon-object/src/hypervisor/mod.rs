@@ -3,15 +3,15 @@
 mod guest;
 mod vcpu;
 
-pub use guest::{Guest, GUEST_PHYSICAL_ASPACE_BASE, GUEST_PHYSICAL_ASPACE_SIZE};
-pub use rvm::TrapKind;
-pub use vcpu::Vcpu;
-
 use super::ZxError;
 use kernel_hal::{MMUFlags, PageTableTrait};
 use rvm::{
     ArchRvmPageTable, GuestPhysAddr, HostPhysAddr, IntoRvmPageTableFlags, RvmError, RvmPageTable,
 };
+
+pub use guest::{Guest, GUEST_PHYSICAL_ASPACE_BASE, GUEST_PHYSICAL_ASPACE_SIZE};
+pub use rvm::{TrapKind, VcpuIo, VcpuReadWriteKind, VcpuState};
+pub use vcpu::Vcpu;
 
 impl From<RvmError> for ZxError {
     fn from(e: RvmError) -> Self {

@@ -1,5 +1,9 @@
 use {
-    crate::{hypervisor::Guest, object::*, signal::*},
+    crate::{
+        hypervisor::{Guest, VcpuIo, VcpuState},
+        object::*,
+        signal::*,
+    },
     alloc::sync::Arc,
     core::convert::TryInto,
     rvm::{self, Vcpu as VcpuInner},
@@ -17,6 +21,7 @@ define_count_helper!(Vcpu);
 
 impl Vcpu {
     pub fn new(guest: Arc<Guest>, entry: u64) -> ZxResult<Arc<Self>> {
+        // TODO: check thread
         Ok(Arc::new(Vcpu {
             base: KObjectBase::new(),
             _counter: CountHelper::new(),
@@ -32,7 +37,23 @@ impl Vcpu {
     }
 
     pub fn resume(&self) -> ZxResult<PortPacket> {
+        // TODO: check thread
         self.inner.lock().resume()?.try_into()
+    }
+
+    pub fn read_state(&self) -> ZxResult<VcpuState> {
+        // TODO: check thread
+        self.inner.lock().read_state().map_err(From::from)
+    }
+
+    pub fn write_state(&self, state: &VcpuState) -> ZxResult {
+        // TODO: check thread
+        self.inner.lock().write_state(state).map_err(From::from)
+    }
+
+    pub fn write_io_state(&self, state: &VcpuIo) -> ZxResult {
+        // TODO: check thread
+        self.inner.lock().write_io_state(state).map_err(From::from)
     }
 }
 
