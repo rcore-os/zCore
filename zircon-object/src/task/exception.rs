@@ -251,12 +251,12 @@ impl Exception {
     /// Handle the exception. The return value indicate if the thread is exited after this.
     /// Note that it's possible that this may returns before exception was send to any exception channel
     /// This happens only when the thread is killed before we send the exception
-    pub async fn handle(self: &Arc<Self>) -> bool {
-        self.handle_with_exceptionates(ExceptionateIterator::new(self)).await
+    pub async fn handle(self: &Arc<Self>,fatal:bool) -> bool {
+        self.handle_with_exceptionates(fatal,ExceptionateIterator::new(self)).await
     }
 
     /// Same as handle, but use a customed iterator
-    pub async fn handle_with_exceptionates(self: &Arc<Self>,exceptionates:impl IntoIterator<Item=Arc<Exceptionate>>) -> bool {
+    pub async fn handle_with_exceptionates(self: &Arc<Self>,fatal:bool,exceptionates:impl IntoIterator<Item=Arc<Exceptionate>>) -> bool {
         self.thread.set_exception(Some(self.clone()));
         let future = self.handle_internal(exceptionates);
         pin_mut!(future);
@@ -276,15 +276,16 @@ impl Exception {
                 self.thread.exit();
                 return false;
             } else if err == ZxError::NEXT {
-                // Nobody handled the exception, kill myself
-                self.thread.exit();
-                // TODO: In zircon the process is also killed, but for now don't do it
-                // since this may break the core-test
-                return false;
+                if fatal {
+                    // Nobody handled the exception, kill myself
+                    self.thread.exit();
+                    // TODO: In zircon the process is also killed, but for now don't do it
+                    // since this may break the core-test
+                    return false;
+                }
             }
         }
-        self.thread.exit();
-        false
+        true
     }
 
     async fn handle_internal(self: &Arc<Self>,exceptionates:impl IntoIterator<Item=Arc<Exceptionate>>) -> ZxResult {

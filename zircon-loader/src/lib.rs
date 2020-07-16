@@ -176,6 +176,10 @@ fn spawn(thread: Arc<Thread>) {
     let vmtoken = thread.proc().vmar().table_phys();
     let future = async move {
         kernel_hal::Thread::set_tid(thread.id(), thread.proc().id());
+        let exception=Exception::create(thread.clone(), ExceptionType::ThreadStarting,None);
+        if !exception.handle_with_exceptionates(false,Some(thread.proc().get_debug_exceptionate())).await {
+            return;
+        }
         loop {
             let mut cx = thread.wait_for_run().await;
             if thread.state() == ThreadState::Dying {
@@ -249,7 +253,7 @@ fn spawn(thread: Arc<Thread>) {
                                 ExceptionType::FatalPageFault,
                                 Some(&cx),
                             );
-                            if !exception.handle().await {
+                            if !exception.handle(true).await {
                                 exit = true;
                             }
                         }
@@ -268,7 +272,7 @@ fn spawn(thread: Arc<Thread>) {
                     };
                     error!("User mode exception:{:?} {:#x?}", type_, cx);
                     let exception = Exception::create(thread.clone(), type_, Some(&cx));
-                    if !exception.handle().await {
+                    if !exception.handle(true).await {
                         exit = true;
                     }
                 }
