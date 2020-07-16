@@ -351,6 +351,7 @@ Threads.SuspendChannelCall
 Threads.SuspendPortCall
 Threads.SuspendStopsThread
 Threads.SuspendSelf
+Threads.KillSuspendedThread
 Threads.StartSuspendedAndResumedThread
 Threads.WritingArmFlagsRegister
 Thread.SuspendAfterDeath

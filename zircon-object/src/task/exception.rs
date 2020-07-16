@@ -35,13 +35,17 @@ impl Exceptionate {
     pub fn shutdown(&self) {
         let mut inner = self.inner.lock();
         inner.channel.take();
-        inner.shutdowned=true;
+        inner.shutdowned = true;
     }
 
-    pub fn create_channel(&self,thread_rights:Rights,process_rights:Rights) -> ZxResult<Arc<Channel>> {
+    pub fn create_channel(
+        &self,
+        thread_rights: Rights,
+        process_rights: Rights,
+    ) -> ZxResult<Arc<Channel>> {
         let mut inner = self.inner.lock();
         if inner.shutdowned {
-            return Err(ZxError::BAD_STATE)
+            return Err(ZxError::BAD_STATE);
         }
         if let Some(channel) = inner.channel.as_ref() {
             if channel.peer().is_ok() {
@@ -51,8 +55,8 @@ impl Exceptionate {
         }
         let (sender, receiver) = Channel::create();
         inner.channel.replace(sender);
-        inner.process_rights=process_rights;
-        inner.thread_rights=thread_rights;
+        inner.process_rights = process_rights;
+        inner.thread_rights = thread_rights;
         Ok(receiver)
     }
 
@@ -72,7 +76,7 @@ impl Exceptionate {
             data: info.pack(),
             handles: vec![handle],
         };
-        exception.set_rights(inner.thread_rights,inner.process_rights);
+        exception.set_rights(inner.thread_rights, inner.process_rights);
         channel.write(msg).map_err(|err| {
             if err == ZxError::PEER_CLOSED {
                 inner.channel.take();
@@ -180,7 +184,7 @@ pub enum ExceptionType {
 }
 
 #[repr(u32)]
-#[derive(Copy, Clone,PartialEq)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum ExceptionChannelType {
     None = 0,
     Debugger = 1,
@@ -262,16 +266,22 @@ impl Exception {
     /// Handle the exception. The return value indicate if the thread is exited after this.
     /// Note that it's possible that this may returns before exception was send to any exception channel
     /// This happens only when the thread is killed before we send the exception
-    pub async fn handle(self: &Arc<Self>,fatal:bool) -> bool {
-        self.handle_with_exceptionates(fatal,ExceptionateIterator::new(self),false).await
+    pub async fn handle(self: &Arc<Self>, fatal: bool) -> bool {
+        self.handle_with_exceptionates(fatal, ExceptionateIterator::new(self), false)
+            .await
     }
 
     /// Same as handle, but use a customed iterator
     /// If first_only is true, this will only send exception to the first one that recieved the exception
     /// even when the exception is not handled
-    pub async fn handle_with_exceptionates(self: &Arc<Self>,fatal:bool,exceptionates:impl IntoIterator<Item=Arc<Exceptionate>>,first_only:bool) -> bool {
+    pub async fn handle_with_exceptionates(
+        self: &Arc<Self>,
+        fatal: bool,
+        exceptionates: impl IntoIterator<Item = Arc<Exceptionate>>,
+        first_only: bool,
+    ) -> bool {
         self.thread.set_exception(Some(self.clone()));
-        let future = self.handle_internal(exceptionates,first_only);
+        let future = self.handle_internal(exceptionates, first_only);
         pin_mut!(future);
         let result: ZxResult = self
             .thread
@@ -283,25 +293,24 @@ impl Exception {
             .await;
         self.thread.set_exception(None);
         if let Err(err) = result {
-            #[allow(clippy::if_same_then_else)]
             if err == ZxError::STOP {
                 // We are killed
                 self.thread.exit();
                 return false;
-            } else if err == ZxError::NEXT {
-                if fatal {
-                    // Nobody handled the exception, kill myself
-                    self.thread.exit();
-                    // TODO: In zircon the process is also killed, but for now don't do it
-                    // since this may break the core-test
-                    return false;
-                }
+            } else if err == ZxError::NEXT && fatal {
+                // Nobody handled the exception, kill myself
+                self.thread.proc().exit(TASK_RETCODE_SYSCALL_KILL);
+                return false;
             }
         }
         true
     }
 
-    async fn handle_internal(self: &Arc<Self>,exceptionates:impl IntoIterator<Item=Arc<Exceptionate>>,first_only:bool) -> ZxResult {
+    async fn handle_internal(
+        self: &Arc<Self>,
+        exceptionates: impl IntoIterator<Item = Arc<Exceptionate>>,
+        first_only: bool,
+    ) -> ZxResult {
         for exceptionate in exceptionates.into_iter() {
             let closed = match exceptionate.send_exception(self) {
                 Ok(receiver) => receiver,
@@ -363,10 +372,10 @@ impl Exception {
         }
     }
 
-    fn set_rights(&self,thread_rights:Rights,process_rights:Rights){
+    fn set_rights(&self, thread_rights: Rights, process_rights: Rights) {
         let mut inner = self.inner.lock();
-        inner.thread_rights=thread_rights;
-        inner.process_rights=process_rights;
+        inner.thread_rights = thread_rights;
+        inner.process_rights = process_rights;
     }
 }
 
@@ -406,29 +415,30 @@ impl<'a> ExceptionateIterator<'a> {
 impl<'a> Iterator for ExceptionateIterator<'a> {
     type Item = Arc<Exceptionate>;
     fn next(&mut self) -> Option<Self::Item> {
-        loop{
+        loop {
             match &self.state {
-                ExceptionateIteratorState::Debug(second_chance)=>{
-                    if *second_chance && !self.exception.inner.lock().second_chance{
-                        self.state=ExceptionateIteratorState::Job(self.exception.thread.proc().job());
+                ExceptionateIteratorState::Debug(second_chance) => {
+                    if *second_chance && !self.exception.inner.lock().second_chance {
+                        self.state =
+                            ExceptionateIteratorState::Job(self.exception.thread.proc().job());
                         continue;
                     }
                     let proc = self.exception.thread.proc();
-                    self.state=if *second_chance {
+                    self.state = if *second_chance {
                         ExceptionateIteratorState::Job(self.exception.thread.proc().job())
-                    }else{
+                    } else {
                         ExceptionateIteratorState::Thread
                     };
                     return Some(proc.get_debug_exceptionate());
                 }
                 ExceptionateIteratorState::Thread => {
                     self.state = ExceptionateIteratorState::Process;
-                    return Some(self.exception.thread.get_exceptionate())
+                    return Some(self.exception.thread.get_exceptionate());
                 }
                 ExceptionateIteratorState::Process => {
                     let proc = self.exception.thread.proc();
                     self.state = ExceptionateIteratorState::Debug(true);
-                    return Some(proc.get_exceptionate())
+                    return Some(proc.get_exceptionate());
                 }
                 ExceptionateIteratorState::Job(job) => {
                     let parent = job.parent();
@@ -437,7 +447,7 @@ impl<'a> Iterator for ExceptionateIterator<'a> {
                         ExceptionateIteratorState::Finished,
                         ExceptionateIteratorState::Job,
                     );
-                    return Some(result)
+                    return Some(result);
                 }
                 ExceptionateIteratorState::Finished => return None,
             }
@@ -447,20 +457,20 @@ impl<'a> Iterator for ExceptionateIterator<'a> {
 
 /// This is only used by ProcessStarting exceptions
 pub struct JobDebuggerIterator {
-    job: Option<Arc<Job>>
+    job: Option<Arc<Job>>,
 }
 
 impl JobDebuggerIterator {
-    pub fn new(job: Arc<Job>)->Self {
-        JobDebuggerIterator{job:Some(job)}
+    pub fn new(job: Arc<Job>) -> Self {
+        JobDebuggerIterator { job: Some(job) }
     }
 }
 
 impl Iterator for JobDebuggerIterator {
     type Item = Arc<Exceptionate>;
     fn next(&mut self) -> Option<Self::Item> {
-        let result=self.job.as_ref().map(|job|job.get_debug_exceptionate());
-        self.job=self.job.as_ref().and_then(|job|job.parent());
+        let result = self.job.as_ref().map(|job| job.get_debug_exceptionate());
+        self.job = self.job.as_ref().and_then(|job| job.parent());
         result
     }
 }

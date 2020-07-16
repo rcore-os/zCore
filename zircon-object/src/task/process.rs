@@ -141,7 +141,7 @@ impl Process {
         stack: usize,
         arg1: Option<Handle>,
         arg2: usize,
-        spawn_fn: fn(thread: Arc<Thread>,bool),
+        spawn_fn: fn(thread: Arc<Thread>, bool),
     ) -> ZxResult {
         let handle_value;
         {
@@ -155,7 +155,7 @@ impl Process {
             inner.status = Status::Running;
             handle_value = arg1.map_or(INVALID_HANDLE, |handle| inner.add_handle(handle));
         }
-        match thread.start(entry, stack, handle_value as usize, arg2, spawn_fn,true) {
+        match thread.start(entry, stack, handle_value as usize, arg2, spawn_fn, true) {
             Ok(_) => Ok(()),
             Err(err) => {
                 let mut inner = self.inner.lock();

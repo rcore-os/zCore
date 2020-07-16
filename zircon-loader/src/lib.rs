@@ -172,20 +172,32 @@ kcounter!(EXCEPTIONS_USER, "exceptions.user");
 kcounter!(EXCEPTIONS_TIMER, "exceptions.timer");
 kcounter!(EXCEPTIONS_PGFAULT, "exceptions.pgfault");
 
-fn spawn(thread: Arc<Thread>,first_thread:bool) {
+fn spawn(thread: Arc<Thread>, first_thread: bool) {
     let vmtoken = thread.proc().vmar().table_phys();
     let future = async move {
         kernel_hal::Thread::set_tid(thread.id(), thread.proc().id());
-        let mut exit=false;
+        let mut exit = false;
         if first_thread {
-            let proc_start_exception=Exception::create(thread.clone(), ExceptionType::ProcessStarting,None);
-            if !proc_start_exception.handle_with_exceptionates(false,JobDebuggerIterator::new(thread.proc().job()),true).await{
-                exit=true;
+            let proc_start_exception =
+                Exception::create(thread.clone(), ExceptionType::ProcessStarting, None);
+            if !proc_start_exception
+                .handle_with_exceptionates(
+                    false,
+                    JobDebuggerIterator::new(thread.proc().job()),
+                    true,
+                )
+                .await
+            {
+                exit = true;
             }
         };
-        let start_exception=Exception::create(thread.clone(), ExceptionType::ThreadStarting,None);
-        if !start_exception.handle_with_exceptionates(false,Some(thread.proc().get_debug_exceptionate()),false).await {
-            exit=true;
+        let start_exception =
+            Exception::create(thread.clone(), ExceptionType::ThreadStarting, None);
+        if !start_exception
+            .handle_with_exceptionates(false, Some(thread.proc().get_debug_exceptionate()), false)
+            .await
+        {
+            exit = true;
         }
         while !exit {
             let mut cx = thread.wait_for_run().await;
@@ -290,9 +302,13 @@ fn spawn(thread: Arc<Thread>,first_thread:bool) {
                 break;
             }
         }
-        let end_exception=Exception::create(thread.clone(), ExceptionType::ThreadExiting,None);
+        let end_exception = Exception::create(thread.clone(), ExceptionType::ThreadExiting, None);
         // here we send thr exception without waiting for it handled since we are already exited
-        thread.proc().get_debug_exceptionate().send_exception(&end_exception).ok();
+        thread
+            .proc()
+            .get_debug_exceptionate()
+            .send_exception(&end_exception)
+            .ok();
     };
     kernel_hal::Thread::spawn(Box::pin(future), vmtoken);
 }
