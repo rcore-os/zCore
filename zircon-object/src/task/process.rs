@@ -182,6 +182,9 @@ impl Process {
         inner.threads.clear();
         inner.handles.clear();
 
+        self.exceptionate.shutdown();
+        self.debug_exceptionate.shutdown();
+
         self.job.remove_process(self.base.id);
         // If we are critical to a job, we need to take action.
         if let Some((job, retcode_nonzero)) = &inner.critical_to_job {

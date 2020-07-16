@@ -195,7 +195,7 @@ fn spawn(thread: Arc<Thread>,first_thread:bool) {
                     thread.proc().name(),
                     thread.name()
                 );
-                thread.internal_exit();
+                thread.exit();
                 break;
             }
             trace!("go to user: {:#x?}", cx);

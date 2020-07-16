@@ -16,6 +16,7 @@ struct ExceptionateInner {
     channel: Option<Arc<Channel>>,
     thread_rights: Rights,
     process_rights: Rights,
+    shutdowned: bool,
 }
 
 impl Exceptionate {
@@ -26,12 +27,22 @@ impl Exceptionate {
                 channel: None,
                 thread_rights: Rights::empty(),
                 process_rights: Rights::empty(),
+                shutdowned: false,
             }),
         })
     }
 
+    pub fn shutdown(&self) {
+        let mut inner = self.inner.lock();
+        inner.channel.take();
+        inner.shutdowned=true;
+    }
+
     pub fn create_channel(&self,thread_rights:Rights,process_rights:Rights) -> ZxResult<Arc<Channel>> {
         let mut inner = self.inner.lock();
+        if inner.shutdowned {
+            return Err(ZxError::BAD_STATE)
+        }
         if let Some(channel) = inner.channel.as_ref() {
             if channel.peer().is_ok() {
                 // already has a valid channel

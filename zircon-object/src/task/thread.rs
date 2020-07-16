@@ -236,6 +236,7 @@ impl Thread {
     }
 
     pub fn internal_exit(&self) {
+        self.exceptionate.shutdown();
         self.base.signal_set(Signal::THREAD_TERMINATED);
         self.inner.lock().state = ThreadState::Dead;
     }

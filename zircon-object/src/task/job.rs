@@ -207,6 +207,8 @@ impl Job {
         for proc in processes {
             proc.kill();
         }
+        self.exceptionate.shutdown();
+        self.debug_exceptionate.shutdown();
         self.base.signal_set(Signal::JOB_TERMINATED);
     }
 }
