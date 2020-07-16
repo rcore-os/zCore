@@ -179,7 +179,8 @@ impl Thread {
         stack: usize,
         arg1: usize,
         arg2: usize,
-        spawn_fn: fn(thread: Arc<Thread>),
+        spawn_fn: fn(thread: Arc<Thread>,bool),
+        first_thread: bool
     ) -> ZxResult {
         {
             let mut inner = self.inner.lock();
@@ -202,7 +203,7 @@ impl Thread {
             inner.state = ThreadState::Running;
             self.base.signal_set(Signal::THREAD_RUNNING);
         }
-        spawn_fn(self.clone());
+        spawn_fn(self.clone(),first_thread);
         Ok(())
     }
 

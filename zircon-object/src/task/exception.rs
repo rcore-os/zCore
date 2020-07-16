@@ -252,13 +252,15 @@ impl Exception {
     /// Note that it's possible that this may returns before exception was send to any exception channel
     /// This happens only when the thread is killed before we send the exception
     pub async fn handle(self: &Arc<Self>,fatal:bool) -> bool {
-        self.handle_with_exceptionates(fatal,ExceptionateIterator::new(self)).await
+        self.handle_with_exceptionates(fatal,ExceptionateIterator::new(self),false).await
     }
 
     /// Same as handle, but use a customed iterator
-    pub async fn handle_with_exceptionates(self: &Arc<Self>,fatal:bool,exceptionates:impl IntoIterator<Item=Arc<Exceptionate>>) -> bool {
+    /// If first_only is true, this will only send exception to the first one that recieved the exception
+    /// even when the exception is not handled
+    pub async fn handle_with_exceptionates(self: &Arc<Self>,fatal:bool,exceptionates:impl IntoIterator<Item=Arc<Exceptionate>>,first_only:bool) -> bool {
         self.thread.set_exception(Some(self.clone()));
-        let future = self.handle_internal(exceptionates);
+        let future = self.handle_internal(exceptionates,first_only);
         pin_mut!(future);
         let result: ZxResult = self
             .thread
@@ -288,7 +290,7 @@ impl Exception {
         true
     }
 
-    async fn handle_internal(self: &Arc<Self>,exceptionates:impl IntoIterator<Item=Arc<Exceptionate>>) -> ZxResult {
+    async fn handle_internal(self: &Arc<Self>,exceptionates:impl IntoIterator<Item=Arc<Exceptionate>>,first_only:bool) -> ZxResult {
         for exceptionate in exceptionates.into_iter() {
             let closed = match exceptionate.send_exception(self) {
                 Ok(receiver) => receiver,
@@ -304,7 +306,7 @@ impl Exception {
                 inner.current_channel_type = ExceptionChannelType::None;
                 inner.handled
             };
-            if handled {
+            if handled | first_only {
                 return Ok(());
             }
         }
@@ -429,5 +431,25 @@ impl<'a> Iterator for ExceptionateIterator<'a> {
                 ExceptionateIteratorState::Finished => return None,
             }
         }
+    }
+}
+
+/// This is only used by ProcessStarting exceptions
+pub struct JobDebuggerIterator {
+    job: Option<Arc<Job>>
+}
+
+impl JobDebuggerIterator {
+    pub fn new(job: Arc<Job>)->Self {
+        JobDebuggerIterator{job:Some(job)}
+    }
+}
+
+impl Iterator for JobDebuggerIterator {
+    type Item = Arc<Exceptionate>;
+    fn next(&mut self) -> Option<Self::Item> {
+        let result=self.job.as_ref().map(|job|job.get_debug_exceptionate());
+        self.job=self.job.as_ref().and_then(|job|job.parent());
+        result
     }
 }
