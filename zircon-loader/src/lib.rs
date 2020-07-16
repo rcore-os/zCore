@@ -172,12 +172,12 @@ kcounter!(EXCEPTIONS_USER, "exceptions.user");
 kcounter!(EXCEPTIONS_TIMER, "exceptions.timer");
 kcounter!(EXCEPTIONS_PGFAULT, "exceptions.pgfault");
 
-fn spawn(thread: Arc<Thread>, first_thread: bool) {
+fn spawn(thread: Arc<Thread>) {
     let vmtoken = thread.proc().vmar().table_phys();
     let future = async move {
         kernel_hal::Thread::set_tid(thread.id(), thread.proc().id());
         let mut exit = false;
-        if first_thread {
+        if thread.get_first_thread() {
             let proc_start_exception =
                 Exception::create(thread.clone(), ExceptionType::ProcessStarting, None);
             if !proc_start_exception

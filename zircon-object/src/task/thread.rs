@@ -120,6 +120,8 @@ struct ThreadInner {
     state: ThreadState,
     /// The currently processing exception
     exception: Option<Arc<Exception>>,
+    /// Should The ProcessStarting exception generated at start of this thread
+    first_thread: bool,
     /// The time this thread has run on cpu
     time: u128,
 }
@@ -179,8 +181,7 @@ impl Thread {
         stack: usize,
         arg1: usize,
         arg2: usize,
-        spawn_fn: fn(thread: Arc<Thread>, bool),
-        first_thread: bool,
+        spawn_fn: fn(thread: Arc<Thread>),
     ) -> ZxResult {
         {
             let mut inner = self.inner.lock();
@@ -203,7 +204,7 @@ impl Thread {
             inner.state = ThreadState::Running;
             self.base.signal_set(Signal::THREAD_RUNNING);
         }
-        spawn_fn(self.clone(), first_thread);
+        spawn_fn(self.clone());
         Ok(())
     }
 
@@ -211,7 +212,7 @@ impl Thread {
     pub fn start_with_regs(
         self: &Arc<Self>,
         regs: GeneralRegs,
-        spawn_fn: fn(thread: Arc<Thread>,_first_thread: bool),
+        spawn_fn: fn(thread: Arc<Thread>),
     ) -> ZxResult {
         {
             let mut inner = self.inner.lock();
@@ -224,7 +225,7 @@ impl Thread {
             inner.state = ThreadState::Running;
             self.base.signal_set(Signal::THREAD_RUNNING);
         }
-        spawn_fn(self.clone(),false);
+        spawn_fn(self.clone());
         Ok(())
     }
 
@@ -397,6 +398,14 @@ impl Thread {
     }
     pub fn set_exception(&self, exception: Option<Arc<Exception>>) {
         self.inner.lock().exception = exception;
+    }
+
+    pub fn set_first_thread(&self, first_thread: bool) {
+        self.inner.lock().first_thread = first_thread;
+    }
+
+    pub fn get_first_thread(&self) -> bool {
+        self.inner.lock().first_thread
     }
 }
 
