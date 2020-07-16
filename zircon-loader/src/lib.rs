@@ -176,11 +176,12 @@ fn spawn(thread: Arc<Thread>) {
     let vmtoken = thread.proc().vmar().table_phys();
     let future = async move {
         kernel_hal::Thread::set_tid(thread.id(), thread.proc().id());
-        let exception=Exception::create(thread.clone(), ExceptionType::ThreadStarting,None);
-        if !exception.handle_with_exceptionates(false,Some(thread.proc().get_debug_exceptionate())).await {
-            return;
+        let mut exit=false;
+        let start_exception=Exception::create(thread.clone(), ExceptionType::ThreadStarting,None);
+        if !start_exception.handle_with_exceptionates(false,Some(thread.proc().get_debug_exceptionate())).await {
+            exit=true;
         }
-        loop {
+        while !exit {
             let mut cx = thread.wait_for_run().await;
             if thread.state() == ThreadState::Dying {
                 info!(
@@ -200,14 +201,10 @@ fn spawn(thread: Arc<Thread>) {
             trace!("back from user: {:#x?}", cx);
             EXCEPTIONS_USER.add(1);
             #[cfg(target_arch = "aarch64")]
-            let exit;
-            #[cfg(target_arch = "aarch64")]
             match cx.trap_num {
                 0 => exit = handle_syscall(&thread, &mut cx.general).await,
                 _ => unimplemented!(),
             }
-            #[cfg(target_arch = "x86_64")]
-            let mut exit = false;
             #[cfg(target_arch = "x86_64")]
             match cx.trap_num {
                 0x100 => exit = handle_syscall(&thread, &mut cx.general).await,
@@ -287,6 +284,9 @@ fn spawn(thread: Arc<Thread>) {
                 break;
             }
         }
+        let end_exception=Exception::create(thread.clone(), ExceptionType::ThreadExiting,None);
+        // here we send thr exception without waiting for it handled since we are already exited
+        thread.proc().get_debug_exceptionate().send_exception(&end_exception).ok();
     };
     kernel_hal::Thread::spawn(Box::pin(future), vmtoken);
 }

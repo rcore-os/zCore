@@ -45,12 +45,12 @@ impl Exceptionate {
         Ok(receiver)
     }
 
-    fn send_exception(&self, exception: &Arc<Exception>) -> ZxResult<oneshot::Receiver<()>> {
+    pub fn send_exception(&self, exception: &Arc<Exception>) -> ZxResult<oneshot::Receiver<()>> {
         let mut inner = self.inner.lock();
         let channel = inner.channel.as_ref().ok_or(ZxError::NEXT)?;
         let info = ExceptionInfo {
-            tid: exception.thread.id(),
             pid: exception.thread.proc().id(),
+            tid: exception.thread.id(),
             type_: exception.type_,
             padding: Default::default(),
         };
@@ -75,8 +75,8 @@ impl Exceptionate {
 
 #[repr(C)]
 pub struct ExceptionInfo {
-    pub tid: KoID,
     pub pid: KoID,
+    pub tid: KoID,
     pub type_: ExceptionType,
     pub padding: u32,
 }
