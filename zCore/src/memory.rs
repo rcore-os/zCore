@@ -111,6 +111,15 @@ mod rvm_extern_fn {
     fn rvm_phys_to_virt(paddr: usize) -> usize {
         paddr + PHYSICAL_MEMORY_OFFSET
     }
+
+    #[cfg(target_arch = "x86_64")]
+    #[rvm::extern_fn(x86_all_traps_handler_addr)]
+    unsafe fn rvm_x86_all_traps_handler_addr() -> usize {
+        extern "C" {
+            fn __alltraps();
+        }
+        __alltraps as usize
+    }
 }
 
 /// Global heap allocator
