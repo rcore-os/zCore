@@ -42,18 +42,14 @@ impl From<ZxError> for RvmError {
     }
 }
 
-pub struct VmmPageTable {
-    rvm_page_table: ArchRvmPageTable,
-}
+pub struct VmmPageTable(ArchRvmPageTable);
 
 #[derive(Debug)]
 struct VmmPageTableFlags(MMUFlags);
 
 impl VmmPageTable {
     pub fn new() -> Self {
-        Self {
-            rvm_page_table: ArchRvmPageTable::new(),
-        }
+        Self(ArchRvmPageTable::new())
     }
 }
 
@@ -64,27 +60,27 @@ impl PageTableTrait for VmmPageTable {
         hpaddr: HostPhysAddr,
         flags: MMUFlags,
     ) -> Result<(), ()> {
-        self.rvm_page_table
+        self.0
             .map(gpaddr, hpaddr, VmmPageTableFlags(flags))
             .map_err(|_| ())
     }
 
     fn unmap(&mut self, gpaddr: GuestPhysAddr) -> Result<(), ()> {
-        self.rvm_page_table.unmap(gpaddr).map_err(|_| ())
+        self.0.unmap(gpaddr).map_err(|_| ())
     }
 
     fn protect(&mut self, gpaddr: GuestPhysAddr, flags: MMUFlags) -> Result<(), ()> {
-        self.rvm_page_table
+        self.0
             .protect(gpaddr, VmmPageTableFlags(flags))
             .map_err(|_| ())
     }
 
     fn query(&mut self, gpaddr: GuestPhysAddr) -> Result<HostPhysAddr, ()> {
-        self.rvm_page_table.query(gpaddr).map_err(|_| ())
+        self.0.query(gpaddr).map_err(|_| ())
     }
 
     fn table_phys(&self) -> HostPhysAddr {
-        self.rvm_page_table.table_phys()
+        self.0.table_phys()
     }
 }
 

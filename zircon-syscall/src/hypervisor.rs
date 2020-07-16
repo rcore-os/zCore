@@ -65,7 +65,10 @@ impl Syscall<'_> {
         let proc = self.thread.proc();
         let guest = proc.get_object_with_rights::<Guest>(handle, Rights::WRITE)?;
         let port = if port_handle != INVALID_HANDLE {
-            Some(proc.get_object_with_rights::<Port>(port_handle, Rights::WRITE)?)
+            Some(Arc::downgrade(&proc.get_object_with_rights::<Port>(
+                port_handle,
+                Rights::WRITE,
+            )?))
         } else {
             None
         };

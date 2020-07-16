@@ -57,6 +57,15 @@ impl Vcpu {
     }
 }
 
+impl From<rvm::BellPacket> for PacketGuestBell {
+    fn from(bell: rvm::BellPacket) -> Self {
+        Self {
+            addr: bell.addr,
+            ..Default::default()
+        }
+    }
+}
+
 impl From<rvm::IoPacket> for PacketGuestIo {
     fn from(io: rvm::IoPacket) -> Self {
         Self {
@@ -88,20 +97,21 @@ impl TryInto<PortPacket> for rvm::RvmExitPacket {
     #[allow(unsafe_code)]
     fn try_into(self) -> ZxResult<PortPacket> {
         use rvm::RvmExitPacketKind;
-        match self.kind {
-            RvmExitPacketKind::GuestIo => Ok(PortPacketRepr {
-                key: self.key,
-                status: ZxError::OK,
-                data: PayloadRepr::GuestIo(unsafe { self.inner.io.into() }),
+        let data = match self.kind {
+            RvmExitPacketKind::GuestBell => {
+                PayloadRepr::GuestBell(unsafe { self.inner.bell.into() })
             }
-            .into()),
-            RvmExitPacketKind::GuestMmio => Ok(PortPacketRepr {
-                key: self.key,
-                status: ZxError::OK,
-                data: PayloadRepr::GuestMem(unsafe { self.inner.mmio.into() }),
+            RvmExitPacketKind::GuestIo => PayloadRepr::GuestIo(unsafe { self.inner.io.into() }),
+            RvmExitPacketKind::GuestMmio => {
+                PayloadRepr::GuestMem(unsafe { self.inner.mmio.into() })
             }
-            .into()),
-            _ => Err(ZxError::NOT_SUPPORTED),
+            _ => return Err(ZxError::NOT_SUPPORTED),
+        };
+        Ok(PortPacketRepr {
+            key: self.key,
+            status: ZxError::OK,
+            data,
         }
+        .into())
     }
 }

@@ -1,7 +1,12 @@
 use {
-    crate::{object::*, signal::Port, vm::VmAddressRegion},
-    alloc::sync::Arc,
-    rvm::{Guest as GuestInner, RvmError, RvmResult, TrapKind},
+    crate::{
+        object::*,
+        signal::{Port, PortPacket},
+        vm::VmAddressRegion,
+    },
+    alloc::sync::{Arc, Weak},
+    core::convert::{TryFrom, TryInto},
+    rvm::{Guest as GuestInner, RvmError, RvmExitPacket, RvmPort, RvmResult, TrapKind},
     rvm::{GuestPhysAddr, GuestPhysMemorySetTrait, HostPhysAddr},
 };
 
@@ -38,13 +43,12 @@ impl Guest {
         kind: u32,
         addr: usize,
         size: usize,
-        _port: Option<Arc<Port>>,
+        port: Option<Weak<Port>>,
         key: u64,
     ) -> ZxResult {
-        // TODO: port
-        use core::convert::TryFrom;
+        let rvm_port = port.map(|p| -> Arc<dyn RvmPort> { Arc::new(GuestPort(p)) });
         self.inner
-            .set_trap(TrapKind::try_from(kind)?, addr, size, key)
+            .set_trap(TrapKind::try_from(kind)?, addr, size, rvm_port, key)
             .map_err(From::from)
     }
 
@@ -78,7 +82,7 @@ impl GuestPhysMemorySetTrait for GuestPhysMemorySet {
 
     /// Add a contiguous guest physical memory region and create mapping,
     /// with the target host physical address `hpaddr` (optional).
-    fn add_map(
+    fn map(
         &self,
         _gpaddr: GuestPhysAddr,
         _size: usize,
@@ -89,7 +93,7 @@ impl GuestPhysMemorySetTrait for GuestPhysMemorySet {
     }
 
     /// Remove a guest physical memory region, destroy the mapping.
-    fn remove_map(&self, gpaddr: GuestPhysAddr, size: usize) -> RvmResult {
+    fn unmap(&self, gpaddr: GuestPhysAddr, size: usize) -> RvmResult {
         self.vmar.unmap(gpaddr, size).map_err(From::from)
     }
 
@@ -117,5 +121,20 @@ impl GuestPhysMemorySetTrait for GuestPhysMemorySet {
     /// Page table base address.
     fn table_phys(&self) -> HostPhysAddr {
         self.vmar.table_phys()
+    }
+}
+
+#[derive(Debug)]
+struct GuestPort(Weak<Port>);
+
+impl RvmPort for GuestPort {
+    fn send(&self, packet: RvmExitPacket) -> RvmResult {
+        let packet: PortPacket = packet.try_into()?;
+        if let Some(port) = self.0.upgrade() {
+            port.push(packet);
+            Ok(())
+        } else {
+            Err(RvmError::BadState)
+        }
     }
 }

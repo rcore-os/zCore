@@ -72,7 +72,7 @@ impl Port {
         self.base.signal_set(Signal::READABLE);
     }
 
-    /// Push an `User` type `packet` into the port.
+    /// Push a `User` type `packet` into the port.
     pub fn push_user(&self, packet: impl Into<PortPacket>) -> ZxResult<()> {
         let mut packet = packet.into();
         packet.type_ = PacketType::User;
