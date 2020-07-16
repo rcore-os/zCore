@@ -252,8 +252,13 @@ impl Exception {
     /// Note that it's possible that this may returns before exception was send to any exception channel
     /// This happens only when the thread is killed before we send the exception
     pub async fn handle(self: &Arc<Self>) -> bool {
+        self.handle_with_exceptionates(ExceptionateIterator::new(self)).await
+    }
+
+    /// Same as handle, but use a customed iterator
+    pub async fn handle_with_exceptionates(self: &Arc<Self>,exceptionates:impl IntoIterator<Item=Arc<Exceptionate>>) -> bool {
         self.thread.set_exception(Some(self.clone()));
-        let future = self.handle_internal();
+        let future = self.handle_internal(exceptionates);
         pin_mut!(future);
         let result: ZxResult = self
             .thread
@@ -281,8 +286,9 @@ impl Exception {
         self.thread.exit();
         false
     }
-    async fn handle_internal(self: &Arc<Self>) -> ZxResult {
-        for exceptionate in ExceptionateIterator::new(self) {
+
+    async fn handle_internal(self: &Arc<Self>,exceptionates:impl IntoIterator<Item=Arc<Exceptionate>>) -> ZxResult {
+        for exceptionate in exceptionates.into_iter() {
             let closed = match exceptionate.send_exception(self) {
                 Ok(receiver) => receiver,
                 // This channel is not available now!
