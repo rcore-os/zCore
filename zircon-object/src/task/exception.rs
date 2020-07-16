@@ -351,12 +351,13 @@ impl Exception {
 }
 
 /// An iterator used to find Exceptionates used while handling the exception
+/// This is only used to handle normal exceptions (Architectural & Policy)
 /// We can use rust generator instead here but that is somehow not stable
 /// Exception handlers are tried in the following order:
-/// - debugger (first process, then job, then its parent job, and so on)
+/// - process debugger
 /// - thread
 /// - process
-/// - debugger (in dealing with a second-chance exception)
+/// - process debugger (in dealing with a second-chance exception)
 /// - job (first owning job, then its parent job, and so on up to root job)
 struct ExceptionateIterator<'a> {
     exception: &'a Exception,
@@ -364,8 +365,9 @@ struct ExceptionateIterator<'a> {
 }
 
 /// The state used in ExceptionateIterator.
-/// Name of optional is what to consider next
+/// Name of options is what to consider next
 enum ExceptionateIteratorState {
+    Debug(bool),
     Thread,
     Process,
     Job(Arc<Job>),
@@ -376,7 +378,7 @@ impl<'a> ExceptionateIterator<'a> {
     fn new(exception: &'a Exception) -> Self {
         ExceptionateIterator {
             exception,
-            state: ExceptionateIteratorState::Thread,
+            state: ExceptionateIteratorState::Debug(false),
         }
     }
 }
@@ -384,26 +386,41 @@ impl<'a> ExceptionateIterator<'a> {
 impl<'a> Iterator for ExceptionateIterator<'a> {
     type Item = Arc<Exceptionate>;
     fn next(&mut self) -> Option<Self::Item> {
-        match &self.state {
-            ExceptionateIteratorState::Thread => {
-                self.state = ExceptionateIteratorState::Process;
-                Some(self.exception.thread.get_exceptionate())
+        loop{
+            match &self.state {
+                ExceptionateIteratorState::Debug(second_chance)=>{
+                    if *second_chance && !self.exception.inner.lock().second_chance{
+                        self.state=ExceptionateIteratorState::Job(self.exception.thread.proc().job());
+                        continue;
+                    }
+                    let proc = self.exception.thread.proc();
+                    self.state=if *second_chance {
+                        ExceptionateIteratorState::Job(self.exception.thread.proc().job())
+                    }else{
+                        ExceptionateIteratorState::Thread
+                    };
+                    return Some(proc.get_debug_exceptionate());
+                }
+                ExceptionateIteratorState::Thread => {
+                    self.state = ExceptionateIteratorState::Process;
+                    return Some(self.exception.thread.get_exceptionate())
+                }
+                ExceptionateIteratorState::Process => {
+                    let proc = self.exception.thread.proc();
+                    self.state = ExceptionateIteratorState::Debug(true);
+                    return Some(proc.get_exceptionate())
+                }
+                ExceptionateIteratorState::Job(job) => {
+                    let parent = job.parent();
+                    let result = job.get_exceptionate();
+                    self.state = parent.map_or(
+                        ExceptionateIteratorState::Finished,
+                        ExceptionateIteratorState::Job,
+                    );
+                    return Some(result)
+                }
+                ExceptionateIteratorState::Finished => return None,
             }
-            ExceptionateIteratorState::Process => {
-                let proc = self.exception.thread.proc();
-                self.state = ExceptionateIteratorState::Job(proc.job());
-                Some(proc.get_exceptionate())
-            }
-            ExceptionateIteratorState::Job(job) => {
-                let parent = job.parent();
-                let result = job.get_exceptionate();
-                self.state = parent.map_or(
-                    ExceptionateIteratorState::Finished,
-                    ExceptionateIteratorState::Job,
-                );
-                Some(result)
-            }
-            ExceptionateIteratorState::Finished => None,
         }
     }
 }
