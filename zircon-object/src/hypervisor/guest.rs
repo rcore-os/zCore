@@ -56,7 +56,7 @@ impl Guest {
         self.gpm.vmar.clone()
     }
 
-    pub fn rvm_geust(&self) -> Arc<GuestInner> {
+    pub fn rvm_guest(&self) -> Arc<GuestInner> {
         self.inner.clone()
     }
 }

@@ -26,7 +26,7 @@ impl Vcpu {
         if thread.get_flags().contains(ThreadFlag::VCPU) {
             return Err(ZxError::BAD_STATE);
         }
-        let inner = Mutex::new(VcpuInner::new(entry, guest.rvm_geust())?);
+        let inner = Mutex::new(VcpuInner::new(entry, guest.rvm_guest())?);
         thread.update_flags(|flags| flags.insert(ThreadFlag::VCPU));
         Ok(Arc::new(Vcpu {
             base: KObjectBase::new(),
