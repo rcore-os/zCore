@@ -431,6 +431,7 @@ impl Task for Thread {
     fn suspend(&self) {
         let mut inner = self.inner.lock();
         inner.suspend_count += 1;
+        self.base.signal_clear(Signal::THREAD_RUNNING);
         self.base.signal_set(Signal::THREAD_SUSPENDED);
         info!(
             "thread {:?} suspend: count={}",
@@ -447,6 +448,7 @@ impl Task for Thread {
         }
         inner.suspend_count -= 1;
         if inner.suspend_count == 0 {
+            self.base.signal_clear(Signal::THREAD_SUSPENDED);
             self.base.signal_set(Signal::THREAD_RUNNING);
             if let Some(waker) = inner.waker.take() {
                 waker.wake();
