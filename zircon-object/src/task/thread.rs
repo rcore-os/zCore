@@ -128,10 +128,29 @@ struct ThreadInner {
 
 impl ThreadInner {
     pub fn get_state(&self) -> ThreadState {
-        if self.suspend_count == 0 {
+        if self.suspend_count == 0 || self.state == ThreadState::BlockedException {
             self.state
         } else {
             ThreadState::Suspended
+        }
+    }
+    fn update_signal(&self, base: &KObjectBase) {
+        if self.state == ThreadState::Dead {
+            base.signal_clear(Signal::THREAD_RUNNING);
+            base.signal_clear(Signal::THREAD_SUSPENDED);
+            base.signal_set(Signal::THREAD_TERMINATED)
+        } else if self.state == ThreadState::New || self.state == ThreadState::Dying {
+            base.signal_clear(Signal::THREAD_RUNNING);
+            base.signal_clear(Signal::THREAD_SUSPENDED);
+            base.signal_clear(Signal::THREAD_TERMINATED)
+        } else if self.suspend_count == 0 || self.state == ThreadState::BlockedException {
+            base.signal_set(Signal::THREAD_RUNNING);
+            base.signal_clear(Signal::THREAD_SUSPENDED);
+            base.signal_clear(Signal::THREAD_TERMINATED)
+        } else {
+            base.signal_clear(Signal::THREAD_RUNNING);
+            base.signal_set(Signal::THREAD_SUSPENDED);
+            base.signal_clear(Signal::THREAD_TERMINATED)
         }
     }
 }
@@ -202,7 +221,7 @@ impl Thread {
                 context.general.x1 = arg2;
             }
             inner.state = ThreadState::Running;
-            self.base.signal_set(Signal::THREAD_RUNNING);
+            inner.update_signal(&self.base);
         }
         spawn_fn(self.clone());
         Ok(())
@@ -223,6 +242,7 @@ impl Thread {
                 context.general.rflags |= 0x3202;
             }
             inner.state = ThreadState::Running;
+            inner.update_signal(&self.base);
             self.base.signal_set(Signal::THREAD_RUNNING);
         }
         spawn_fn(self.clone());
@@ -327,7 +347,9 @@ impl Thread {
             }
             let (sender, receiver) = channel::<()>();
             inner.killer = Some(sender);
-            (core::mem::replace(&mut inner.state, state), receiver)
+            let old_state = core::mem::replace(&mut inner.state, state);
+            inner.update_signal(&self.base);
+            (old_state, receiver)
         };
         let ret = select_biased! {
             ret = future.fuse() => ret.into_result(),
@@ -341,6 +363,7 @@ impl Thread {
         }
         assert_eq!(inner.state, state);
         inner.state = old_state;
+        inner.update_signal(&self.base);
         ret
     }
 
@@ -363,7 +386,9 @@ impl Thread {
             }
             let (sender, receiver) = channel::<()>();
             inner.killer = Some(sender);
-            (core::mem::replace(&mut inner.state, state), receiver)
+            let old_state = core::mem::replace(&mut inner.state, state);
+            inner.update_signal(&self.base);
+            (old_state, receiver)
         };
         let ret = select_biased! {
             ret = future.fuse() => ret.into_result(),
@@ -378,6 +403,7 @@ impl Thread {
         }
         assert_eq!(inner.state, state);
         inner.state = old_state;
+        inner.update_signal(&self.base);
         ret
     }
 
@@ -418,6 +444,7 @@ impl Task for Thread {
         inner.state = ThreadState::Dying;
         // For suspended thread, wake it and clear suspend count
         inner.suspend_count = 0;
+        inner.update_signal(&self.base);
         if let Some(waker) = inner.waker.take() {
             waker.wake();
         }
@@ -431,8 +458,7 @@ impl Task for Thread {
     fn suspend(&self) {
         let mut inner = self.inner.lock();
         inner.suspend_count += 1;
-        self.base.signal_clear(Signal::THREAD_RUNNING);
-        self.base.signal_set(Signal::THREAD_SUSPENDED);
+        inner.update_signal(&self.base);
         info!(
             "thread {:?} suspend: count={}",
             self.base.name(),
@@ -448,8 +474,7 @@ impl Task for Thread {
         }
         inner.suspend_count -= 1;
         if inner.suspend_count == 0 {
-            self.base.signal_clear(Signal::THREAD_SUSPENDED);
-            self.base.signal_set(Signal::THREAD_RUNNING);
+            inner.update_signal(&self.base);
             if let Some(waker) = inner.waker.take() {
                 waker.wake();
             }
