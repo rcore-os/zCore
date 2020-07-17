@@ -3,6 +3,7 @@ use {
         hypervisor::{Guest, VcpuIo, VcpuState},
         object::*,
         signal::*,
+        task::{Thread, ThreadFlag},
     },
     alloc::sync::Arc,
     core::convert::TryInto,
@@ -13,6 +14,7 @@ use {
 pub struct Vcpu {
     base: KObjectBase,
     _counter: CountHelper,
+    thread: Arc<Thread>,
     inner: Mutex<VcpuInner>,
 }
 
@@ -20,13 +22,22 @@ impl_kobject!(Vcpu);
 define_count_helper!(Vcpu);
 
 impl Vcpu {
-    pub fn new(guest: Arc<Guest>, entry: u64) -> ZxResult<Arc<Self>> {
-        // TODO: check thread
+    pub fn new(guest: Arc<Guest>, entry: u64, thread: Arc<Thread>) -> ZxResult<Arc<Self>> {
+        if thread.get_flags().contains(ThreadFlag::VCPU) {
+            return Err(ZxError::BAD_STATE);
+        }
+        let inner = Mutex::new(VcpuInner::new(entry, guest.rvm_geust())?);
+        thread.update_flags(|flags| flags.insert(ThreadFlag::VCPU));
         Ok(Arc::new(Vcpu {
             base: KObjectBase::new(),
             _counter: CountHelper::new(),
-            inner: Mutex::new(VcpuInner::new(entry, guest.rvm_geust())?),
+            thread,
+            inner,
         }))
+    }
+
+    pub fn same_thread(&self, current_thread: &Arc<Thread>) -> bool {
+        Arc::ptr_eq(&self.thread, current_thread)
     }
 
     pub fn virtual_interrupt(&self, vector: u32) -> ZxResult {
@@ -37,23 +48,26 @@ impl Vcpu {
     }
 
     pub fn resume(&self) -> ZxResult<PortPacket> {
-        // TODO: check thread
         self.inner.lock().resume()?.try_into()
     }
 
     pub fn read_state(&self) -> ZxResult<VcpuState> {
-        // TODO: check thread
         self.inner.lock().read_state().map_err(From::from)
     }
 
     pub fn write_state(&self, state: &VcpuState) -> ZxResult {
-        // TODO: check thread
         self.inner.lock().write_state(state).map_err(From::from)
     }
 
     pub fn write_io_state(&self, state: &VcpuIo) -> ZxResult {
-        // TODO: check thread
         self.inner.lock().write_io_state(state).map_err(From::from)
+    }
+}
+
+impl Drop for Vcpu {
+    fn drop(&mut self) {
+        self.thread
+            .update_flags(|flags| flags.remove(ThreadFlag::VCPU));
     }
 }
 

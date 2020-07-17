@@ -91,7 +91,7 @@ impl Syscall<'_> {
         }
         let proc = self.thread.proc();
         let guest = proc.get_object_with_rights::<Guest>(guest_handle, Rights::MANAGE_PROCESS)?;
-        let vcpu = Vcpu::new(guest, entry)?;
+        let vcpu = Vcpu::new(guest, entry, self.thread.clone())?;
         let handle_value = proc.add_handle(Handle::new(vcpu, Rights::DEFAULT_VCPU));
         out.write(handle_value)?;
         Ok(())
@@ -105,6 +105,9 @@ impl Syscall<'_> {
         info!("hypervisor.vcpu_resume: handle={:#x?}", handle);
         let proc = self.thread.proc();
         let vcpu = proc.get_object_with_rights::<Vcpu>(handle, Rights::EXECUTE)?;
+        if !vcpu.same_thread(&self.thread) {
+            return Err(ZxError::BAD_STATE);
+        }
         let packet = vcpu.resume()?;
         user_packet.write(packet)?;
         Ok(())
@@ -137,6 +140,9 @@ impl Syscall<'_> {
         }
         let proc = self.thread.proc();
         let vcpu = proc.get_object_with_rights::<Vcpu>(handle, Rights::READ)?;
+        if !vcpu.same_thread(&self.thread) {
+            return Err(ZxError::BAD_STATE);
+        }
         let state = vcpu.read_state()?;
         user_buffer.write(state)?;
         Ok(())
@@ -155,6 +161,9 @@ impl Syscall<'_> {
         );
         let proc = self.thread.proc();
         let vcpu = proc.get_object_with_rights::<Vcpu>(handle, Rights::WRITE)?;
+        if !vcpu.same_thread(&self.thread) {
+            return Err(ZxError::BAD_STATE);
+        }
 
         match VcpuReadWriteKind::try_from(kind) {
             Ok(VcpuReadWriteKind::VcpuState) => {

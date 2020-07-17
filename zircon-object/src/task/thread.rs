@@ -4,6 +4,7 @@ use {
     super::*,
     crate::object::*,
     alloc::{boxed::Box, sync::Arc},
+    bitflags::bitflags,
     core::{
         any::Any,
         future::Future,
@@ -120,6 +121,7 @@ struct ThreadInner {
     state: ThreadState,
     /// The time this thread has run on cpu
     time: u128,
+    flags: ThreadFlag,
 }
 
 impl ThreadInner {
@@ -129,6 +131,13 @@ impl ThreadInner {
         } else {
             ThreadState::Suspended
         }
+    }
+}
+
+bitflags! {
+    #[derive(Default)]
+    pub struct ThreadFlag: usize {
+        const VCPU = 1 << 3;
     }
 }
 
@@ -388,6 +397,17 @@ impl Thread {
             }
         }
         ExceptionFuture
+    }
+
+    pub fn get_flags(&self) -> ThreadFlag {
+        self.inner.lock().flags
+    }
+
+    pub fn update_flags<F>(&self, f: F)
+    where
+        F: FnOnce(&mut ThreadFlag),
+    {
+        f(&mut self.inner.lock().flags)
     }
 }
 
