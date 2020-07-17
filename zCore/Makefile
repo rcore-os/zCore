@@ -4,6 +4,7 @@ zbi_file ?= bringup
 graphic ?=
 accel ?=
 linux ?=
+hypervisor ?=
 smp ?= 1
 test_filter ?= *.*
 
@@ -14,7 +15,7 @@ kernel_img := $(build_path)/zcore.img
 ESP := $(build_path)/esp
 OVMF := ../rboot/OVMF.fd
 qemu := qemu-system-x86_64
-OBJDUMP := rust-objdump
+OBJDUMP := rust-objdump -print-imm-hex -x86-asm-syntax=intel
 VMDISK := $(build_path)/boot.vdi
 QEMU_DISK := $(build_path)/disk.qcow2
 
@@ -44,6 +45,11 @@ qemu_opts += \
 	-m 4G \
 	-nic none \
 	-device isa-debug-exit,iobase=0xf4,iosize=0x04
+endif
+
+ifeq ($(hypervisor), 1)
+build_args += --features hypervisor
+accel = 1
 endif
 
 ifeq ($(accel), 1)

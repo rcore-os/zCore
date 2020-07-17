@@ -1,7 +1,7 @@
 use core::sync::atomic::*;
 use {
     super::*, crate::object::*, alloc::sync::Arc, alloc::vec::Vec, bitflags::bitflags,
-    kernel_hal::PageTable, spin::Mutex,
+    kernel_hal::PageTableTrait, spin::Mutex,
 };
 
 bitflags! {
@@ -29,7 +29,7 @@ pub struct VmAddressRegion {
     addr: VirtAddr,
     size: usize,
     parent: Option<Arc<VmAddressRegion>>,
-    page_table: Arc<Mutex<PageTable>>,
+    page_table: Arc<Mutex<dyn PageTableTrait>>,
     /// If inner is None, this region is destroyed, all operations are invalid.
     inner: Mutex<Option<VmarInner>>,
 }
@@ -62,6 +62,7 @@ impl VmAddressRegion {
             inner: Mutex::new(Some(VmarInner::default())),
         })
     }
+
     /// Create a kernel root VMAR.
     pub fn new_kernel() -> Arc<Self> {
         let kernel_vmar_base = 0xffff_ff02_0000_0000; // Sorry i hard code because i'm lazy
@@ -74,6 +75,23 @@ impl VmAddressRegion {
             size: kernel_vmar_size,
             parent: None,
             page_table: Arc::new(Mutex::new(kernel_hal::PageTable::new())),
+            inner: Mutex::new(Some(VmarInner::default())),
+        })
+    }
+
+    /// Create a VMAR for guest physical memory.
+    #[cfg(feature = "hypervisor")]
+    pub fn new_guest() -> Arc<Self> {
+        let guest_vmar_base = crate::hypervisor::GUEST_PHYSICAL_ASPACE_BASE as usize;
+        let guest_vmar_size = crate::hypervisor::GUEST_PHYSICAL_ASPACE_SIZE as usize;
+        Arc::new(VmAddressRegion {
+            flags: VmarFlags::ROOT_FLAGS,
+            base: KObjectBase::new(),
+            _counter: CountHelper::new(),
+            addr: guest_vmar_base,
+            size: guest_vmar_size,
+            parent: None,
+            page_table: Arc::new(Mutex::new(crate::hypervisor::VmmPageTable::new())),
             inner: Mutex::new(Some(VmarInner::default())),
         })
     }
@@ -466,6 +484,9 @@ impl VmAddressRegion {
     pub fn handle_page_fault(&self, vaddr: VirtAddr, flags: MMUFlags) -> ZxResult {
         let guard = self.inner.lock();
         let inner = guard.as_ref().unwrap();
+        if !self.contains(vaddr) {
+            return Err(ZxError::NOT_FOUND);
+        }
         if let Some(child) = inner.children.iter().find(|ch| ch.contains(vaddr)) {
             return child.handle_page_fault(vaddr, flags);
         }
@@ -524,7 +545,7 @@ impl VmAddressRegion {
     }
 
     /// Find mapping of vaddr
-    fn find_mapping(&self, vaddr: usize) -> Option<Arc<VmMapping>> {
+    pub fn find_mapping(&self, vaddr: usize) -> Option<Arc<VmMapping>> {
         let guard = self.inner.lock();
         let inner = guard.as_ref().unwrap();
         if let Some(mapping) = inner.mappings.iter().find(|map| map.contains(vaddr)) {
@@ -558,7 +579,7 @@ impl VmarInner {
     fn fork_from(
         &mut self,
         src: &Arc<VmAddressRegion>,
-        page_table: &Arc<Mutex<PageTable>>,
+        page_table: &Arc<Mutex<dyn PageTableTrait>>,
     ) -> ZxResult {
         let src_guard = src.inner.lock();
         let src_inner = src_guard.as_ref().unwrap();
@@ -585,7 +606,7 @@ pub struct VmarInfo {
 pub struct VmMapping {
     flags: MMUFlags,
     vmo: Arc<VmObject>,
-    page_table: Arc<Mutex<PageTable>>,
+    page_table: Arc<Mutex<dyn PageTableTrait>>,
     inner: Mutex<VmMappingInner>,
 }
 
@@ -625,7 +646,7 @@ impl VmMapping {
         vmo: Arc<VmObject>,
         vmo_offset: usize,
         flags: MMUFlags,
-        page_table: Arc<Mutex<PageTable>>,
+        page_table: Arc<Mutex<dyn PageTableTrait>>,
     ) -> Arc<Self> {
         let mapping = Arc::new(VmMapping {
             inner: Mutex::new(VmMappingInner {
@@ -663,9 +684,12 @@ impl VmMapping {
 
     fn unmap(&self) {
         let inner = self.inner.lock();
-        let mut page_table = self.page_table.lock();
-        self.vmo
-            .unmap_from(&mut page_table, inner.addr, inner.vmo_offset, inner.size);
+        let pages = inner.size / PAGE_SIZE;
+        // TODO inner.vmo_offset unused?
+        self.page_table
+            .lock()
+            .unmap_cont(inner.addr, pages)
+            .expect("failed to unmap")
     }
 
     fn fill_in_task_status(&self, task_stats: &mut TaskStatsInfo) {
@@ -783,6 +807,10 @@ impl VmMapping {
         self.inner.lock().end_addr()
     }
 
+    pub fn get_flags(&self) -> MMUFlags {
+        self.flags
+    }
+
     /// Remove WRITE flag from the mappings for Copy-on-Write.
     pub(super) fn range_change(&self, offset: usize, len: usize, op: RangeChangeOp) {
         let inner = self.inner.lock();
@@ -803,7 +831,7 @@ impl VmMapping {
         }
     }
 
-    fn handle_page_fault(&self, vaddr: VirtAddr, flags: MMUFlags) -> ZxResult {
+    pub fn handle_page_fault(&self, vaddr: VirtAddr, flags: MMUFlags) -> ZxResult {
         if !self.flags.contains(flags) {
             return Err(ZxError::ACCESS_DENIED);
         }
@@ -819,7 +847,7 @@ impl VmMapping {
     }
 
     /// Clone VMO and map it to a new page table. (For Linux)
-    fn clone_map(&self, page_table: Arc<Mutex<PageTable>>) -> ZxResult<Arc<Self>> {
+    fn clone_map(&self, page_table: Arc<Mutex<dyn PageTableTrait>>) -> ZxResult<Arc<Self>> {
         let new_vmo = self.vmo.create_child(false, 0, self.vmo.len())?;
         let mapping = Arc::new(VmMapping {
             inner: Mutex::new(self.inner.lock().clone()),

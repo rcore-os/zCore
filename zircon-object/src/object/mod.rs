@@ -352,6 +352,7 @@ impl dyn KernelObject {
                     observed: current_signal,
                     count: 1,
                     timestamp: 0,
+                    _reserved1: 0,
                 }),
             });
             return;
@@ -370,6 +371,7 @@ impl dyn KernelObject {
                         observed: s,
                         count: 1,
                         timestamp: 0,
+                        _reserved1: 0,
                     }),
                 });
                 true

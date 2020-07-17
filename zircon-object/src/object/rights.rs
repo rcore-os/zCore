@@ -152,6 +152,12 @@ bitflags! {
 
         /// TRANSFER | PROPERTY | INSPECT
         const DEFAULT_EXCEPTION = Self::TRANSFER.bits | Self::PROPERTY.bits | Self::INSPECT.bits;
+
+        /// TRANSFER | DUPLICATE | WRITE | INSPECT | MANAGE_PROCESS
+        const DEFAULT_GUEST = Self::TRANSFER.bits | Self::DUPLICATE.bits | Self::WRITE.bits | Self::INSPECT.bits | Self::MANAGE_PROCESS.bits;
+
+        /// BASIC | IO | EXECUTE | SIGNAL
+        const DEFAULT_VCPU = Self::BASIC.bits | Self::IO.bits | Self::EXECUTE.bits | Self::SIGNAL.bits;
     }
 }
 
