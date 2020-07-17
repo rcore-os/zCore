@@ -15,7 +15,7 @@ kernel_img := $(build_path)/zcore.img
 ESP := $(build_path)/esp
 OVMF := ../rboot/OVMF.fd
 qemu := qemu-system-x86_64
-OBJDUMP := rust-objdump
+OBJDUMP := rust-objdump -print-imm-hex -x86-asm-syntax=intel
 VMDISK := $(build_path)/boot.vdi
 QEMU_DISK := $(build_path)/disk.qcow2
 
