@@ -69,37 +69,94 @@ bitflags! {
         /// Allows suspending/resuming threads, etc.
         const MANAGE_THREAD = 1 << 18;
 
+        /// Not used.
         const APPLY_PROFILE = 1 << 19;
+
+        /// Used to duplicate a handle with the same rights.
         const SAME_RIGHTS = 1 << 31;
 
+
+        /// TRANSFER | DUPLICATE | WAIT | INSPECT
         const BASIC = Self::TRANSFER.bits | Self::DUPLICATE.bits | Self::WAIT.bits | Self::INSPECT.bits;
+
+        /// READ ｜ WRITE
         const IO = Self::READ.bits | Self::WRITE.bits;
+
+        /// GET_PROPERTY ｜ SET_PROPERTY
         const PROPERTY = Self::GET_PROPERTY.bits | Self::SET_PROPERTY.bits;
+
+        /// GET_POLICY ｜ SET_POLICY
         const POLICY = Self::GET_POLICY.bits | Self::SET_POLICY.bits;
 
+        /// BASIC & !Self::DUPLICATE | IO | SIGNAL | SIGNAL_PEER
         const DEFAULT_CHANNEL = Self::BASIC.bits & !Self::DUPLICATE.bits | Self::IO.bits | Self::SIGNAL.bits | Self::SIGNAL_PEER.bits;
+
+        /// BASIC | IO | PROPERTY | ENUMERATE | DESTROY | SIGNAL | MANAGE_PROCESS | MANAGE_THREAD
         const DEFAULT_PROCESS = Self::BASIC.bits | Self::IO.bits | Self::PROPERTY.bits | Self::ENUMERATE.bits | Self::DESTROY.bits
             | Self::SIGNAL.bits | Self::MANAGE_PROCESS.bits | Self::MANAGE_THREAD.bits;
+
+        /// BASIC | IO | PROPERTY | DESTROY | SIGNAL | MANAGE_THREAD
         const DEFAULT_THREAD = Self::BASIC.bits | Self::IO.bits | Self::PROPERTY.bits | Self::DESTROY.bits | Self::SIGNAL.bits | Self::MANAGE_THREAD.bits;
+
+        /// BASIC | IO | PROPERTY | MAP | SIGNAL
         const DEFAULT_VMO = Self::BASIC.bits | Self::IO.bits | Self::PROPERTY.bits | Self::MAP.bits | Self::SIGNAL.bits;
+
+        /// BASIC | WAIT
         const DEFAULT_VMAR = Self::BASIC.bits & !Self::WAIT.bits;
+
+        /// BASIC | IO | PROPERTY | POLICY | ENUMERATE | DESTROY | SIGNAL | MANAGE_JOB | MANAGE_PROCESS | MANAGE_THREAD
         const DEFAULT_JOB = Self::BASIC.bits | Self::IO.bits | Self::PROPERTY.bits | Self::POLICY.bits | Self::ENUMERATE.bits
             | Self::DESTROY.bits | Self::SIGNAL.bits | Self::MANAGE_JOB.bits | Self::MANAGE_PROCESS.bits | Self::MANAGE_THREAD.bits;
+
+        /// TRANSFER | DUPLICATE | WRITE | INSPECT
         const DEFAULT_RESOURCE = Self::TRANSFER.bits | Self::DUPLICATE.bits | Self::WRITE.bits | Self::INSPECT.bits;
+
+        /// BASIC | WRITE | SIGNAL
         const DEFAULT_DEBUGLOG = Self::BASIC.bits | Self::WRITE.bits | Self::SIGNAL.bits;
+
+        /// TRANSFER | INSPECT
         const DEFAULT_SUSPEND_TOKEN = Self::TRANSFER.bits | Self::INSPECT.bits;
+
+        /// (BASIC & !WAIT) | IO
         const DEFAULT_PORT = (Self::BASIC.bits & !Self::WAIT.bits) | Self::IO.bits;
+
+        /// BASIC | WRITE | SIGNAL
         const DEFAULT_TIMER = Self::BASIC.bits | Self::WRITE.bits | Self::SIGNAL.bits;
+
+        /// BASIC | SIGNAL
         const DEFAULT_EVENT = Self::BASIC.bits | Self::SIGNAL.bits;
+
+        /// BASIC | SIGNAL ｜ SIGNAL_PEER
         const DEFAULT_EVENTPAIR = Self::BASIC.bits | Self::SIGNAL.bits | Self::SIGNAL_PEER.bits;
+
+        /// BASIC | IO | SIGNAL | SIGNAL_PEER
         const DEFAULT_FIFO = Self::BASIC.bits | Self::IO.bits | Self::SIGNAL.bits | Self::SIGNAL_PEER.bits;
+
+        /// BASIC | IO | PROPERTY | SIGNAL | SIGNAL_PEER
         const DEFAULT_SOCKET = Self::BASIC.bits | Self::IO.bits | Self::PROPERTY.bits | Self::SIGNAL.bits | Self::SIGNAL_PEER.bits;
+
+        /// BASIC | PROPERTY | SIGNAL
         const DEFAULT_STREAM = Self::BASIC.bits | Self::PROPERTY.bits | Self::SIGNAL.bits;
+
+        /// (BASIC & !WAIT) | IO | MAP
         const DEFAULT_BTI = (Self::BASIC.bits & !Self::WAIT.bits) | Self::IO.bits | Self::MAP.bits;
+
+        /// BASIC | IO | SIGNAL
         const DEFAULT_INTERRUPT = Self::BASIC.bits | Self::IO.bits | Self::SIGNAL.bits;
+
+        /// BASIC | IO
         const DEFAULT_DEVICE = Self::BASIC.bits | Self::IO.bits;
+
+        /// BASIC | IO | SIGNAL
         const DEFAULT_PCI_INTERRUPT = Self::BASIC.bits | Self::IO.bits | Self::SIGNAL.bits;
+
+        /// TRANSFER | PROPERTY | INSPECT
+        const DEFAULT_EXCEPTION = Self::TRANSFER.bits | Self::PROPERTY.bits | Self::INSPECT.bits;
+
+        /// TRANSFER | DUPLICATE | WRITE | INSPECT | MANAGE_PROCESS
         const DEFAULT_GUEST = Self::TRANSFER.bits | Self::DUPLICATE.bits | Self::WRITE.bits | Self::INSPECT.bits | Self::MANAGE_PROCESS.bits;
+
+        /// BASIC | IO | EXECUTE | SIGNAL
         const DEFAULT_VCPU = Self::BASIC.bits | Self::IO.bits | Self::EXECUTE.bits | Self::SIGNAL.bits;
     }
 }

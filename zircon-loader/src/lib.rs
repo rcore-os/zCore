@@ -244,17 +244,31 @@ fn spawn(thread: Arc<Thread>) {
                                 e
                             );
                             error!("Page Fault from user mode {:#x?}", cx);
-                            //TODO: implement exception channel
-                            if !thread.handle_exception().await {
+                            let exception = Exception::create(
+                                thread.clone(),
+                                ExceptionType::FatalPageFault,
+                                Some(&cx),
+                            );
+                            if !exception.handle().await {
                                 exit = true;
                             }
                         }
                     }
                 }
-                _ => {
-                    error!("not supported interrupt from user mode. {:#x?}", cx);
-                    //TODO: implement exception channel
-                    if !thread.handle_exception().await {
+                0x8 => {
+                    panic!("Double fault from user mode! {:#x?}", cx);
+                }
+                num => {
+                    let type_ = match num {
+                        0x1 => ExceptionType::HardwareBreakpoint,
+                        0x3 => ExceptionType::SoftwareBreakpoint,
+                        0x6 => ExceptionType::UndefinedInstruction,
+                        0x17 => ExceptionType::UnalignedAccess,
+                        _ => ExceptionType::General,
+                    };
+                    error!("User mode exception:{:?} {:#x?}", type_, cx);
+                    let exception = Exception::create(thread.clone(), type_, Some(&cx));
+                    if !exception.handle().await {
                         exit = true;
                     }
                 }

@@ -9,15 +9,19 @@ pub const INVALID_HANDLE: HandleValue = 0;
 /// A Handle is how a specific process refers to a specific kernel object.
 #[derive(Debug, Clone)]
 pub struct Handle {
+    /// The object referred to by the handle.
     pub object: Arc<dyn KernelObject>,
+    /// The handle's associated rights.
     pub rights: Rights,
 }
 
 impl Handle {
+    /// Create a new handle referring to the given object with given rights.
     pub fn new(object: Arc<dyn KernelObject>, rights: Rights) -> Self {
         Handle { object, rights }
     }
 
+    /// Get information about the provided handle and the object the handle refers to.
     pub fn get_info(&self) -> HandleBasicInfo {
         HandleBasicInfo {
             koid: self.object.id(),
@@ -33,6 +37,9 @@ impl Handle {
         }
     }
 
+    /// Get information about the handle itself.
+    ///
+    /// The returned `HandleInfo`'s `handle` field should set manually.
     pub fn get_handle_info(&self) -> HandleInfo {
         HandleInfo {
             obj_type: obj_type(&self.object),
@@ -42,6 +49,7 @@ impl Handle {
     }
 }
 
+/// Information about a handle and the object it refers to.
 #[repr(C)]
 #[derive(Default, Debug)]
 pub struct HandleBasicInfo {
@@ -53,6 +61,7 @@ pub struct HandleBasicInfo {
     padding: u32,
 }
 
+/// Get an object's type.
 pub fn obj_type(object: &Arc<dyn KernelObject>) -> u32 {
     match object.type_name() {
         "Process" => 1,
@@ -79,7 +88,7 @@ pub fn obj_type(object: &Arc<dyn KernelObject>) -> u32 {
         "Pmt" => 26,
         "SuspendToken" => 27,
         "Pager" => 28,
-        "Exception" => 29,
+        "Exception" | "ExceptionObject" => 29,
         "Clock" => 30,
         "Stream" => 31,
         "PcieDeviceKObject" => 32,
@@ -87,9 +96,11 @@ pub fn obj_type(object: &Arc<dyn KernelObject>) -> u32 {
     }
 }
 
+/// Information about a handle itself, including its `HandleValue`.
 #[repr(C)]
 #[derive(Default, Debug)]
 pub struct HandleInfo {
+    /// The handle's value in user space.
     pub handle: HandleValue,
     obj_type: u32,
     rights: u32,

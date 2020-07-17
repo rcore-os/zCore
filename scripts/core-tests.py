@@ -1,5 +1,6 @@
 import pexpect
 import sys
+import re
 
 TIMEOUT = 300
 ZCORE_PATH = '../zCore'
@@ -31,7 +32,7 @@ with open(TEST_CASE_FILE, "r") as f:
     lines = f.readlines()
     positive = [line for line in lines if not line.startswith('-')]
     negative = [line[1:] for line in lines if line.startswith('-')]
-    test_filter = (','.join(positive) + '-' + ','.join(negative)).replace('\n', '')
+    test_filter = (','.join(positive) + (('-' + ','.join(negative) if len(negative) > 0 else "") )).replace('\n', '')
 
 child = pexpect.spawn("make -C %s test mode=release test_filter='%s'" % (ZCORE_PATH, test_filter),
                       timeout=TIMEOUT, encoding='utf-8')
@@ -44,8 +45,13 @@ print(result)
 passed = []
 failed = []
 passed_case = set()
+
+# see https://stackoverflow.com/questions/59379174/ignore-ansi-colors-in-pexpect-response
+ansi_escape = re.compile(r"\x1B[@-_][0-?]*[ -/]*[@-~]")
+
 with open(OUTPUT_FILE, "r") as f:
     for line in f.readlines():
+        line=ansi_escape.sub('',line)
         if line.startswith('[       OK ]'):
             passed += line
             passed_case.add(line[13:].split(' ')[0])

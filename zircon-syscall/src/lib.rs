@@ -17,7 +17,7 @@ use {
         sync::atomic::{AtomicI32, Ordering},
     },
     futures::pin_mut,
-    kernel_hal::{user::*, user_io_vec::*, GeneralRegs},
+    kernel_hal::{user::*, GeneralRegs},
     zircon_object::object::*,
     zircon_object::task::Thread,
 };
@@ -351,6 +351,8 @@ impl Syscall<'_> {
             Sys::INTERRUPT_ACK => self.sys_interrupt_ack(a0 as _),
             Sys::INTERRUPT_DESTROY => self.sys_interrupt_destroy(a0 as _),
             Sys::INTERRUPT_WAIT => self.sys_interrupt_wait(a0 as _, a1.into()).await,
+            Sys::EXCEPTION_GET_THREAD => self.sys_exception_get_thread(a0 as _, a1.into()),
+            Sys::EXCEPTION_GET_PROCESS => self.sys_exception_get_process(a0 as _, a1.into()),
             Sys::IOPORTS_REQUEST => {
                 warn!("ioports.request: skip");
                 Ok(())

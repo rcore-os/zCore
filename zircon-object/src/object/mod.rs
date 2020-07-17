@@ -1,3 +1,4 @@
+#![deny(missing_docs)]
 //! Kernel object basis.
 //!
 //! # Create new kernel object
@@ -120,23 +121,51 @@ mod signal;
 ///
 /// [`impl_kobject`]: impl_kobject
 pub trait KernelObject: DowncastSync + Debug {
+    /// Get object's KoID.
     fn id(&self) -> KoID;
+    /// Get the name of the type of the kernel object.
     fn type_name(&self) -> &str;
+    /// Get object's name.
     fn name(&self) -> alloc::string::String;
+    /// Set object's name.
     fn set_name(&self, name: &str);
+    /// Get the signal status.
     fn signal(&self) -> Signal;
+    /// Assert `signal`.
     fn signal_set(&self, signal: Signal);
+    /// Change signal status: first `clear` then `set` indicated bits.
+    ///
+    /// All signal callbacks will be called.
     fn signal_change(&self, clear: Signal, set: Signal);
+    /// Add `callback` for signal status changes.
+    ///
+    /// The `callback` is a function of `Fn(Signal) -> bool`.
+    /// It returns a bool indicating whether the handle process is over.
+    /// If true, the function will never be called again.
     fn add_signal_callback(&self, callback: SignalHandler);
+    /// Attempt to find a child of the object with given KoID.
+    ///
+    /// If the object is a *Process*, the *Threads* it contains may be obtained.
+    ///
+    /// If the object is a *Job*, its (immediate) child *Jobs* and the *Processes*
+    /// it contains may be obtained.
+    ///
+    /// If the object is a *Resource*, its (immediate) child *Resources* may be obtained.
     fn get_child(&self, _id: KoID) -> ZxResult<Arc<dyn KernelObject>> {
         Err(ZxError::WRONG_TYPE)
     }
+    /// Attempt to get the object's peer.
+    ///
+    /// An object peer is the opposite endpoint of a `Channel`, `Socket`, `Fifo`, or `EventPair`.
     fn peer(&self) -> ZxResult<Arc<dyn KernelObject>> {
         Err(ZxError::NOT_SUPPORTED)
     }
+    /// If the object is related to another (such as the other end of a channel, or the parent of
+    /// a job), returns the KoID of that object, otherwise returns zero.
     fn related_koid(&self) -> KoID {
         0
     }
+    /// Get object's allowed signals.
     fn allowed_signals(&self) -> Signal {
         Signal::USER_ALL
     }
@@ -146,6 +175,7 @@ impl_downcast!(sync KernelObject);
 
 /// The base struct of a kernel object.
 pub struct KObjectBase {
+    /// The object's KoID.
     pub id: KoID,
     inner: Mutex<KObjectBaseInner>,
 }
@@ -485,6 +515,7 @@ pub struct DummyObject {
 impl_kobject!(DummyObject);
 
 impl DummyObject {
+    /// Create a new `DummyObject`.
     pub fn new() -> Arc<Self> {
         Arc::new(DummyObject {
             base: KObjectBase::new(),

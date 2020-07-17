@@ -11,7 +11,7 @@ extern crate alloc;
 extern crate log;
 
 use {
-    self::{consts::SyscallType as Sys, util::*},
+    self::consts::SyscallType as Sys,
     alloc::sync::Arc,
     core::convert::TryFrom,
     kernel_hal::{user::*, GeneralRegs},
@@ -24,7 +24,6 @@ mod file;
 mod misc;
 mod task;
 mod time;
-mod util;
 mod vm;
 
 pub struct Syscall<'a> {
