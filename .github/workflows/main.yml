@@ -6,22 +6,22 @@ jobs:
   check:
     runs-on: ubuntu-20.04
     steps:
-    - uses: actions/checkout@v2
-    - uses: actions-rs/toolchain@v1
-      with:
-        profile: minimal
-        toolchain: nightly-2020-06-04
-        override: true
-        components: rustfmt, clippy
-    - name: Check code format
-      uses: actions-rs/cargo@v1
-      with:
-        command: fmt
-        args: --all -- --check
-    - name: Clippy
-      uses: actions-rs/cargo@v1
-      with:
-        command: clippy
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly-2020-06-04
+          override: true
+          components: rustfmt, clippy
+      - name: Check code format
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --all -- --check
+      - name: Clippy
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
 
   build:
     runs-on: ${{ matrix.os }}
@@ -29,34 +29,26 @@ jobs:
       matrix:
         os: [ubuntu-20.04, macos-latest]
     steps:
-    - uses: actions/checkout@v2
-    - name: Checkout submodules
-      shell: bash
-      run: |
-        auth_header="$(git config --local --get http.https://github.com/.extraheader)"
-        git submodule sync --recursive
-        git -c "http.extraheader=$auth_header" -c protocol.version=2 submodule update --init --force --recursive --depth=1
-    - uses: actions-rs/toolchain@v1
-      with:
-        profile: minimal
-        toolchain: nightly-2020-06-04
-        components: rust-src
-    - name: Build
-      uses: actions-rs/cargo@v1
-      with:
-        command: build
-    - name: Build zCore
-      run: |
-        cd zCore
-        make build
-    - name: Build zCore with hypervisor
-      run: |
-        cd zCore
-        make build hypervisor=1
-    - name: Build docs
-      uses: actions-rs/cargo@v1
-      with:
-        command: doc
+      - uses: actions/checkout@v2
+        with:
+          submodules: 'recursive'
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly-2020-06-04
+          components: rust-src
+      - name: Build
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+      - name: Build zCore
+        run: |
+          cd zCore
+          make build
+      - name: Build zCore with hypervisor
+        run: |
+          cd zCore
+          make build hypervisor=1
 
   build-aarch64:
     runs-on: ubuntu-20.04
@@ -77,32 +69,32 @@ jobs:
   test:
     runs-on: ubuntu-20.04
     steps:
-    - uses: actions/checkout@v2
-    - name: Pull prebuilt images
-      run: git lfs pull -X prebuilt/zircon/x64/bringup.zbi prebuilt/zircon/x64/core-tests.zbi prebuilt/zircon/arm64
-    - name: Prepare rootfs
-      run: make rootfs
-    - name: Test
-      uses: actions-rs/cargo@v1
-      with:
-        command: test
-        args: --all-features --no-fail-fast --workspace --exclude zircon-loader
-      env:
-        CARGO_INCREMENTAL: '0'
-        RUSTFLAGS: '-Zprofile -Ccodegen-units=1 -Copt-level=0 -Coverflow-checks=off'
-    - name: Cache grcov
-      uses: actions/cache@v1
-      with:
-        path: ~/.cargo/bin/grcov
-        key: ${{ runner.os }}-grcov
-    - name: Gather coverage data
-      id: coverage
-      uses: actions-rs/grcov@v0.1
-    - name: Coveralls upload
-      uses: coverallsapp/github-action@master
-      with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        path-to-lcov: ${{ steps.coverage.outputs.report }}
+      - uses: actions/checkout@v2
+      - name: Pull prebuilt images
+        run: git lfs pull -I prebuilt/linux/libc-libos.so
+      - name: Prepare rootfs
+        run: make rootfs
+      - name: Test
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --all-features --no-fail-fast --workspace --exclude zircon-loader
+        env:
+          CARGO_INCREMENTAL: '0'
+          RUSTFLAGS: '-Zprofile -Ccodegen-units=1 -Copt-level=0 -Coverflow-checks=off'
+      - name: Cache grcov
+        uses: actions/cache@v1
+        with:
+          path: ~/.cargo/bin/grcov
+          key: ${{ runner.os }}-grcov
+      - name: Gather coverage data
+        id: coverage
+        uses: actions-rs/grcov@v0.1
+      - name: Coveralls upload
+        uses: coverallsapp/github-action@master
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path-to-lcov: ${{ steps.coverage.outputs.report }}
 
   bench:
     runs-on: ubuntu-20.04
@@ -117,14 +109,10 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v2
+        with:
+          submodules: 'recursive'
       - name: Pull prebuilt images
         run: git lfs pull -X prebuilt/zircon/x64/bringup.zbi prebuilt/zircon/arm64
-      - name: Checkout submodules
-        shell: bash
-        run: |
-          auth_header="$(git config --local --get http.https://github.com/.extraheader)"
-          git submodule sync --recursive
-          git -c "http.extraheader=$auth_header" -c protocol.version=2 submodule update --init --force --recursive --depth=1
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
@@ -144,3 +132,20 @@ jobs:
           cd scripts
           pip3 install pexpect
           python3 core-tests.py
+
+  doc:
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v2
+      - name: Build docs
+        uses: actions-rs/cargo@v1
+        with:
+          command: doc
+          args: --no-deps
+      - name: Deploy to Github Pages
+        if: ${{ github.ref == 'refs/heads/master' }}
+        uses: JamesIves/github-pages-deploy-action@releases/v3
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: gh-pages
+          FOLDER: target/doc
