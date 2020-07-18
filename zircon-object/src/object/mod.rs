@@ -133,6 +133,8 @@ pub trait KernelObject: DowncastSync + Debug {
     fn signal(&self) -> Signal;
     /// Assert `signal`.
     fn signal_set(&self, signal: Signal);
+    /// Deassert `signal`.
+    fn signal_clear(&self, signal: Signal);
     /// Change signal status: first `clear` then `set` indicated bits.
     ///
     /// All signal callbacks will be called.
@@ -444,6 +446,9 @@ macro_rules! impl_kobject {
             }
             fn signal_set(&self, signal: Signal) {
                 self.base.signal_set(signal);
+            }
+            fn signal_clear(&self, signal: Signal) {
+                self.base.signal_clear(signal);
             }
             fn signal_change(&self, clear: Signal, set: Signal) {
                 self.base.signal_change(clear, set);
