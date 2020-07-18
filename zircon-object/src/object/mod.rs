@@ -531,6 +531,9 @@ mod tests {
             let flag = flag.clone();
             async move {
                 flag.store(1, Ordering::SeqCst);
+                // Assert an irrelevant signal to test the `false` branch of the callback for `READABLE`.
+                object.base.signal_set(Signal::USER_SIGNAL_0);
+                object.base.signal_clear(Signal::USER_SIGNAL_0);
                 object.base.signal_set(Signal::READABLE);
                 async_std::task::sleep(Duration::from_millis(10)).await;
 
