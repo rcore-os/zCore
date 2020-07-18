@@ -133,6 +133,8 @@ pub trait KernelObject: DowncastSync + Debug {
     fn signal(&self) -> Signal;
     /// Assert `signal`.
     fn signal_set(&self, signal: Signal);
+    /// Deassert `signal`.
+    fn signal_clear(&self, signal: Signal);
     /// Change signal status: first `clear` then `set` indicated bits.
     ///
     /// All signal callbacks will be called.
@@ -205,24 +207,12 @@ impl KObjectBase {
 
     /// Create a kernel object base with initial `signal`.
     pub fn with_signal(signal: Signal) -> Self {
-        KObjectBase {
-            id: Self::new_koid(),
-            inner: Mutex::new(KObjectBaseInner {
-                signal,
-                ..Default::default()
-            }),
-        }
+        KObjectBase::with(Default::default(), signal)
     }
 
     /// Create a kernel object base with `name`.
     pub fn with_name(name: &str) -> Self {
-        KObjectBase {
-            id: Self::new_koid(),
-            inner: Mutex::new(KObjectBaseInner {
-                name: String::from(name),
-                ..Default::default()
-            }),
-        }
+        KObjectBase::with(name, Default::default())
     }
 
     /// Create a kernel object base with both signal and name
@@ -457,6 +447,9 @@ macro_rules! impl_kobject {
             fn signal_set(&self, signal: Signal) {
                 self.base.signal_set(signal);
             }
+            fn signal_clear(&self, signal: Signal) {
+                self.base.signal_clear(signal);
+            }
             fn signal_change(&self, clear: Signal, set: Signal) {
                 self.base.signal_change(clear, set);
             }
@@ -538,11 +531,14 @@ mod tests {
             let flag = flag.clone();
             async move {
                 flag.store(1, Ordering::SeqCst);
-                object.base.signal_set(Signal::READABLE);
+                // Assert an irrelevant signal to test the `false` branch of the callback for `READABLE`.
+                object.signal_set(Signal::USER_SIGNAL_0);
+                object.signal_clear(Signal::USER_SIGNAL_0);
+                object.signal_set(Signal::READABLE);
                 async_std::task::sleep(Duration::from_millis(10)).await;
 
                 flag.store(2, Ordering::SeqCst);
-                object.base.signal_set(Signal::WRITABLE);
+                object.signal_set(Signal::WRITABLE);
             }
         });
         let object: Arc<dyn KernelObject> = object;
@@ -567,11 +563,11 @@ mod tests {
             let flag = flag.clone();
             async move {
                 flag.store(1, Ordering::SeqCst);
-                objs[0].base.signal_set(Signal::READABLE);
+                objs[0].signal_set(Signal::READABLE);
                 async_std::task::sleep(Duration::from_millis(10)).await;
 
                 flag.store(2, Ordering::SeqCst);
-                objs[1].base.signal_set(Signal::WRITABLE);
+                objs[1].signal_set(Signal::WRITABLE);
             }
         });
         let obj0: Arc<dyn KernelObject> = objs[0].clone();
@@ -593,5 +589,27 @@ mod tests {
         .await;
         assert_eq!(signals, [Signal::READABLE, Signal::WRITABLE]);
         assert_eq!(flag.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn test_trait_with_dummy() {
+        let dummy = DummyObject::new();
+        assert_eq!(dummy.name(), String::from(""));
+        dummy.set_name("test");
+        assert_eq!(dummy.name(), String::from("test"));
+        dummy.signal_set(Signal::WRITABLE);
+        assert_eq!(dummy.signal(), Signal::WRITABLE);
+        dummy.signal_change(Signal::WRITABLE, Signal::READABLE);
+        assert_eq!(dummy.signal(), Signal::READABLE);
+
+        assert_eq!(dummy.get_child(0).unwrap_err(), ZxError::WRONG_TYPE);
+        assert_eq!(dummy.peer().unwrap_err(), ZxError::NOT_SUPPORTED);
+        assert_eq!(dummy.related_koid(), 0);
+        assert_eq!(dummy.allowed_signals(), Signal::USER_ALL);
+
+        assert_eq!(
+            format!("{:?}", dummy),
+            format!("DummyObject({}, \"test\")", dummy.id())
+        );
     }
 }
