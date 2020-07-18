@@ -206,14 +206,10 @@ mod tests {
                 _reserved1: 0,
             }),
         };
-        assert_eq!(
-            PortPacketRepr::from(&packet),
-            packet_repr
-        );
+        assert_eq!(PortPacketRepr::from(&packet), packet_repr);
 
         let packet = port.wait().await;
         assert_eq!(PortPacketRepr::from(&packet), packet2);
-
 
         // Test asserting signal before `send_signal_to_port_async`.
         let port = Port::new(0);
@@ -221,9 +217,6 @@ mod tests {
         object.signal_set(Signal::READABLE);
         object.send_signal_to_port_async(Signal::READABLE, &port, 1);
         let packet = port.wait().await;
-        assert_eq!(
-            PortPacketRepr::from(&packet),
-            packet_repr
-        );
+        assert_eq!(PortPacketRepr::from(&packet), packet_repr);
     }
 }
