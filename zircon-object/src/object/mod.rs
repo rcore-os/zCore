@@ -532,13 +532,13 @@ mod tests {
             async move {
                 flag.store(1, Ordering::SeqCst);
                 // Assert an irrelevant signal to test the `false` branch of the callback for `READABLE`.
-                object.base.signal_set(Signal::USER_SIGNAL_0);
-                object.base.signal_clear(Signal::USER_SIGNAL_0);
-                object.base.signal_set(Signal::READABLE);
+                object.signal_set(Signal::USER_SIGNAL_0);
+                object.signal_clear(Signal::USER_SIGNAL_0);
+                object.signal_set(Signal::READABLE);
                 async_std::task::sleep(Duration::from_millis(10)).await;
 
                 flag.store(2, Ordering::SeqCst);
-                object.base.signal_set(Signal::WRITABLE);
+                object.signal_set(Signal::WRITABLE);
             }
         });
         let object: Arc<dyn KernelObject> = object;
@@ -563,11 +563,11 @@ mod tests {
             let flag = flag.clone();
             async move {
                 flag.store(1, Ordering::SeqCst);
-                objs[0].base.signal_set(Signal::READABLE);
+                objs[0].signal_set(Signal::READABLE);
                 async_std::task::sleep(Duration::from_millis(10)).await;
 
                 flag.store(2, Ordering::SeqCst);
-                objs[1].base.signal_set(Signal::WRITABLE);
+                objs[1].signal_set(Signal::WRITABLE);
             }
         });
         let obj0: Arc<dyn KernelObject> = objs[0].clone();
