@@ -417,15 +417,6 @@
 <span id="417">417</span>
 <span id="418">418</span>
 <span id="419">419</span>
-<span id="420">420</span>
-<span id="421">421</span>
-<span id="422">422</span>
-<span id="423">423</span>
-<span id="424">424</span>
-<span id="425">425</span>
-<span id="426">426</span>
-<span id="427">427</span>
-<span id="428">428</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> {
     <span class="self">self</span>::{<span class="ident">paged</span>::<span class="kw-2">*</span>, <span class="ident">physical</span>::<span class="kw-2">*</span>, <span class="ident">slice</span>::<span class="kw-2">*</span>},
@@ -437,7 +428,7 @@
     },
     <span class="ident">bitflags</span>::<span class="ident">bitflags</span>,
     <span class="ident">core</span>::<span class="ident">ops</span>::<span class="ident">Deref</span>,
-    <span class="ident">kernel_hal</span>::{<span class="ident">CachePolicy</span>, <span class="ident">PageTable</span>},
+    <span class="ident">kernel_hal</span>::<span class="ident">CachePolicy</span>,
     <span class="ident">spin</span>::<span class="ident">Mutex</span>,
 };
 
@@ -472,15 +463,6 @@
 
     <span class="doccomment">/// Set the size of the content stored in the VMO in bytes.</span>
     <span class="kw">fn</span> <span class="ident">set_content_size</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">size</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span>;
-
-    <span class="doccomment">/// Unmap physical memory from `page_table`.</span>
-    <span class="kw">fn</span> <span class="ident">unmap_from</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">page_table</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">PageTable</span>, <span class="ident">vaddr</span>: <span class="ident">VirtAddr</span>, <span class="ident">_offset</span>: <span class="ident">usize</span>, <span class="ident">len</span>: <span class="ident">usize</span>) {
-        <span class="comment">// TODO _offset unused?</span>
-        <span class="kw">let</span> <span class="ident">pages</span> <span class="op">=</span> <span class="ident">len</span> <span class="op">/</span> <span class="ident">PAGE_SIZE</span>;
-        <span class="ident">page_table</span>
-            .<span class="ident">unmap_cont</span>(<span class="ident">vaddr</span>, <span class="ident">pages</span>)
-            .<span class="ident">expect</span>(<span class="string">&quot;failed to unmap&quot;</span>)
-    }
 
     <span class="doccomment">/// Commit a page.</span>
     <span class="kw">fn</span> <span class="ident">commit_page</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">page_idx</span>: <span class="ident">usize</span>, <span class="ident">flags</span>: <span class="ident">MMUFlags</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">PhysAddr</span><span class="op">&gt;</span>;

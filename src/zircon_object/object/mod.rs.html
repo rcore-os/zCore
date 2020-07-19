@@ -593,6 +593,26 @@
 <span id="593">593</span>
 <span id="594">594</span>
 <span id="595">595</span>
+<span id="596">596</span>
+<span id="597">597</span>
+<span id="598">598</span>
+<span id="599">599</span>
+<span id="600">600</span>
+<span id="601">601</span>
+<span id="602">602</span>
+<span id="603">603</span>
+<span id="604">604</span>
+<span id="605">605</span>
+<span id="606">606</span>
+<span id="607">607</span>
+<span id="608">608</span>
+<span id="609">609</span>
+<span id="610">610</span>
+<span id="611">611</span>
+<span id="612">612</span>
+<span id="613">613</span>
+<span id="614">614</span>
+<span id="615">615</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="attribute">#![<span class="ident">deny</span>(<span class="ident">missing_docs</span>)]</span>
 <span class="doccomment">//! Kernel object basis.</span>
@@ -729,6 +749,8 @@
     <span class="kw">fn</span> <span class="ident">signal</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Signal</span>;
     <span class="doccomment">/// Assert `signal`.</span>
     <span class="kw">fn</span> <span class="ident">signal_set</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">signal</span>: <span class="ident">Signal</span>);
+    <span class="doccomment">/// Deassert `signal`.</span>
+    <span class="kw">fn</span> <span class="ident">signal_clear</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">signal</span>: <span class="ident">Signal</span>);
     <span class="doccomment">/// Change signal status: first `clear` then `set` indicated bits.</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// All signal callbacks will be called.</span>
@@ -801,24 +823,12 @@
 
     <span class="doccomment">/// Create a kernel object base with initial `signal`.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">with_signal</span>(<span class="ident">signal</span>: <span class="ident">Signal</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
-        <span class="ident">KObjectBase</span> {
-            <span class="ident">id</span>: <span class="self">Self</span>::<span class="ident">new_koid</span>(),
-            <span class="ident">inner</span>: <span class="ident">Mutex</span>::<span class="ident">new</span>(<span class="ident">KObjectBaseInner</span> {
-                <span class="ident">signal</span>,
-                ..<span class="ident">Default</span>::<span class="ident">default</span>()
-            }),
-        }
+        <span class="ident">KObjectBase</span>::<span class="ident">with</span>(<span class="ident">Default</span>::<span class="ident">default</span>(), <span class="ident">signal</span>)
     }
 
     <span class="doccomment">/// Create a kernel object base with `name`.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">with_name</span>(<span class="ident">name</span>: <span class="kw-2">&amp;</span><span class="ident">str</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
-        <span class="ident">KObjectBase</span> {
-            <span class="ident">id</span>: <span class="self">Self</span>::<span class="ident">new_koid</span>(),
-            <span class="ident">inner</span>: <span class="ident">Mutex</span>::<span class="ident">new</span>(<span class="ident">KObjectBaseInner</span> {
-                <span class="ident">name</span>: <span class="ident">String</span>::<span class="ident">from</span>(<span class="ident">name</span>),
-                ..<span class="ident">Default</span>::<span class="ident">default</span>()
-            }),
-        }
+        <span class="ident">KObjectBase</span>::<span class="ident">with</span>(<span class="ident">name</span>, <span class="ident">Default</span>::<span class="ident">default</span>())
     }
 
     <span class="doccomment">/// Create a kernel object base with both signal and name</span>
@@ -948,6 +958,7 @@
                     <span class="ident">observed</span>: <span class="ident">current_signal</span>,
                     <span class="ident">count</span>: <span class="number">1</span>,
                     <span class="ident">timestamp</span>: <span class="number">0</span>,
+                    <span class="ident">_reserved1</span>: <span class="number">0</span>,
                 }),
             });
             <span class="kw">return</span>;
@@ -966,6 +977,7 @@
                         <span class="ident">observed</span>: <span class="ident">s</span>,
                         <span class="ident">count</span>: <span class="number">1</span>,
                         <span class="ident">timestamp</span>: <span class="number">0</span>,
+                        <span class="ident">_reserved1</span>: <span class="number">0</span>,
                     }),
                 });
                 <span class="bool-val">true</span>
@@ -1051,6 +1063,9 @@
             <span class="kw">fn</span> <span class="ident">signal_set</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">signal</span>: <span class="ident">Signal</span>) {
                 <span class="self">self</span>.<span class="ident">base</span>.<span class="ident">signal_set</span>(<span class="ident">signal</span>);
             }
+            <span class="kw">fn</span> <span class="ident">signal_clear</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">signal</span>: <span class="ident">Signal</span>) {
+                <span class="self">self</span>.<span class="ident">base</span>.<span class="ident">signal_clear</span>(<span class="ident">signal</span>);
+            }
             <span class="kw">fn</span> <span class="ident">signal_change</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">clear</span>: <span class="ident">Signal</span>, <span class="ident">set</span>: <span class="ident">Signal</span>) {
                 <span class="self">self</span>.<span class="ident">base</span>.<span class="ident">signal_change</span>(<span class="ident">clear</span>, <span class="ident">set</span>);
             }
@@ -1132,11 +1147,14 @@
             <span class="kw">let</span> <span class="ident">flag</span> <span class="op">=</span> <span class="ident">flag</span>.<span class="ident">clone</span>();
             <span class="kw">async</span> <span class="kw">move</span> {
                 <span class="ident">flag</span>.<span class="ident">store</span>(<span class="number">1</span>, <span class="ident">Ordering</span>::<span class="ident">SeqCst</span>);
-                <span class="ident">object</span>.<span class="ident">base</span>.<span class="ident">signal_set</span>(<span class="ident">Signal</span>::<span class="ident">READABLE</span>);
+                <span class="comment">// Assert an irrelevant signal to test the `false` branch of the callback for `READABLE`.</span>
+                <span class="ident">object</span>.<span class="ident">signal_set</span>(<span class="ident">Signal</span>::<span class="ident">USER_SIGNAL_0</span>);
+                <span class="ident">object</span>.<span class="ident">signal_clear</span>(<span class="ident">Signal</span>::<span class="ident">USER_SIGNAL_0</span>);
+                <span class="ident">object</span>.<span class="ident">signal_set</span>(<span class="ident">Signal</span>::<span class="ident">READABLE</span>);
                 <span class="ident">async_std</span>::<span class="ident">task</span>::<span class="ident">sleep</span>(<span class="ident">Duration</span>::<span class="ident">from_millis</span>(<span class="number">10</span>)).<span class="kw">await</span>;
 
                 <span class="ident">flag</span>.<span class="ident">store</span>(<span class="number">2</span>, <span class="ident">Ordering</span>::<span class="ident">SeqCst</span>);
-                <span class="ident">object</span>.<span class="ident">base</span>.<span class="ident">signal_set</span>(<span class="ident">Signal</span>::<span class="ident">WRITABLE</span>);
+                <span class="ident">object</span>.<span class="ident">signal_set</span>(<span class="ident">Signal</span>::<span class="ident">WRITABLE</span>);
             }
         });
         <span class="kw">let</span> <span class="ident">object</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">KernelObject</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">object</span>;
@@ -1161,11 +1179,11 @@
             <span class="kw">let</span> <span class="ident">flag</span> <span class="op">=</span> <span class="ident">flag</span>.<span class="ident">clone</span>();
             <span class="kw">async</span> <span class="kw">move</span> {
                 <span class="ident">flag</span>.<span class="ident">store</span>(<span class="number">1</span>, <span class="ident">Ordering</span>::<span class="ident">SeqCst</span>);
-                <span class="ident">objs</span>[<span class="number">0</span>].<span class="ident">base</span>.<span class="ident">signal_set</span>(<span class="ident">Signal</span>::<span class="ident">READABLE</span>);
+                <span class="ident">objs</span>[<span class="number">0</span>].<span class="ident">signal_set</span>(<span class="ident">Signal</span>::<span class="ident">READABLE</span>);
                 <span class="ident">async_std</span>::<span class="ident">task</span>::<span class="ident">sleep</span>(<span class="ident">Duration</span>::<span class="ident">from_millis</span>(<span class="number">10</span>)).<span class="kw">await</span>;
 
                 <span class="ident">flag</span>.<span class="ident">store</span>(<span class="number">2</span>, <span class="ident">Ordering</span>::<span class="ident">SeqCst</span>);
-                <span class="ident">objs</span>[<span class="number">1</span>].<span class="ident">base</span>.<span class="ident">signal_set</span>(<span class="ident">Signal</span>::<span class="ident">WRITABLE</span>);
+                <span class="ident">objs</span>[<span class="number">1</span>].<span class="ident">signal_set</span>(<span class="ident">Signal</span>::<span class="ident">WRITABLE</span>);
             }
         });
         <span class="kw">let</span> <span class="ident">obj0</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">KernelObject</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">objs</span>[<span class="number">0</span>].<span class="ident">clone</span>();
@@ -1187,6 +1205,28 @@
         .<span class="kw">await</span>;
         <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">signals</span>, [<span class="ident">Signal</span>::<span class="ident">READABLE</span>, <span class="ident">Signal</span>::<span class="ident">WRITABLE</span>]);
         <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">flag</span>.<span class="ident">load</span>(<span class="ident">Ordering</span>::<span class="ident">SeqCst</span>), <span class="number">2</span>);
+    }
+
+    <span class="attribute">#[<span class="ident">test</span>]</span>
+    <span class="kw">fn</span> <span class="ident">test_trait_with_dummy</span>() {
+        <span class="kw">let</span> <span class="ident">dummy</span> <span class="op">=</span> <span class="ident">DummyObject</span>::<span class="ident">new</span>();
+        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">dummy</span>.<span class="ident">name</span>(), <span class="ident">String</span>::<span class="ident">from</span>(<span class="string">&quot;&quot;</span>));
+        <span class="ident">dummy</span>.<span class="ident">set_name</span>(<span class="string">&quot;test&quot;</span>);
+        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">dummy</span>.<span class="ident">name</span>(), <span class="ident">String</span>::<span class="ident">from</span>(<span class="string">&quot;test&quot;</span>));
+        <span class="ident">dummy</span>.<span class="ident">signal_set</span>(<span class="ident">Signal</span>::<span class="ident">WRITABLE</span>);
+        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">dummy</span>.<span class="ident">signal</span>(), <span class="ident">Signal</span>::<span class="ident">WRITABLE</span>);
+        <span class="ident">dummy</span>.<span class="ident">signal_change</span>(<span class="ident">Signal</span>::<span class="ident">WRITABLE</span>, <span class="ident">Signal</span>::<span class="ident">READABLE</span>);
+        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">dummy</span>.<span class="ident">signal</span>(), <span class="ident">Signal</span>::<span class="ident">READABLE</span>);
+
+        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">dummy</span>.<span class="ident">get_child</span>(<span class="number">0</span>).<span class="ident">unwrap_err</span>(), <span class="ident">ZxError</span>::<span class="ident">WRONG_TYPE</span>);
+        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">dummy</span>.<span class="ident">peer</span>().<span class="ident">unwrap_err</span>(), <span class="ident">ZxError</span>::<span class="ident">NOT_SUPPORTED</span>);
+        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">dummy</span>.<span class="ident">related_koid</span>(), <span class="number">0</span>);
+        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">dummy</span>.<span class="ident">allowed_signals</span>(), <span class="ident">Signal</span>::<span class="ident">USER_ALL</span>);
+
+        <span class="macro">assert_eq</span><span class="macro">!</span>(
+            <span class="macro">format</span><span class="macro">!</span>(<span class="string">&quot;{:?}&quot;</span>, <span class="ident">dummy</span>),
+            <span class="macro">format</span><span class="macro">!</span>(<span class="string">&quot;DummyObject({}, \&quot;test\&quot;)&quot;</span>, <span class="ident">dummy</span>.<span class="ident">id</span>())
+        );
     }
 }
 </pre></div>

@@ -373,6 +373,24 @@
 <span id="373">373</span>
 <span id="374">374</span>
 <span id="375">375</span>
+<span id="376">376</span>
+<span id="377">377</span>
+<span id="378">378</span>
+<span id="379">379</span>
+<span id="380">380</span>
+<span id="381">381</span>
+<span id="382">382</span>
+<span id="383">383</span>
+<span id="384">384</span>
+<span id="385">385</span>
+<span id="386">386</span>
+<span id="387">387</span>
+<span id="388">388</span>
+<span id="389">389</span>
+<span id="390">390</span>
+<span id="391">391</span>
+<span id="392">392</span>
+<span id="393">393</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Zircon syscall implementations</span>
 
@@ -408,6 +426,8 @@
 <span class="kw">mod</span> <span class="ident">fifo</span>;
 <span class="kw">mod</span> <span class="ident">futex</span>;
 <span class="kw">mod</span> <span class="ident">handle</span>;
+<span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;hypervisor&quot;</span>)]</span>
+<span class="kw">mod</span> <span class="ident">hypervisor</span>;
 <span class="kw">mod</span> <span class="ident">object</span>;
 <span class="kw">mod</span> <span class="ident">pci</span>;
 <span class="kw">mod</span> <span class="ident">port</span>;
@@ -731,6 +751,22 @@
                 <span class="macro">warn</span><span class="macro">!</span>(<span class="string">&quot;ioports.request: skip&quot;</span>);
                 <span class="prelude-val">Ok</span>(())
             }
+            <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;hypervisor&quot;</span>)]</span>
+            <span class="ident">Sys</span>::<span class="ident">GUEST_CREATE</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_guest_create</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a2</span>.<span class="ident">into</span>(), <span class="ident">a3</span>.<span class="ident">into</span>()),
+            <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;hypervisor&quot;</span>)]</span>
+            <span class="ident">Sys</span>::<span class="ident">GUEST_SET_TRAP</span> <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="self">self</span>.<span class="ident">sys_guest_set_trap</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a2</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a3</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a4</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a5</span> <span class="kw">as</span> <span class="kw">_</span>)
+            }
+            <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;hypervisor&quot;</span>)]</span>
+            <span class="ident">Sys</span>::<span class="ident">VCPU_CREATE</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_vcpu_create</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a2</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a3</span>.<span class="ident">into</span>()),
+            <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;hypervisor&quot;</span>)]</span>
+            <span class="ident">Sys</span>::<span class="ident">VCPU_RESUME</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_vcpu_resume</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span>.<span class="ident">into</span>()),
+            <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;hypervisor&quot;</span>)]</span>
+            <span class="ident">Sys</span>::<span class="ident">VCPU_INTERRUPT</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_vcpu_interrupt</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>),
+            <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;hypervisor&quot;</span>)]</span>
+            <span class="ident">Sys</span>::<span class="ident">VCPU_READ_STATE</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_vcpu_read_state</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a2</span>.<span class="ident">into</span>(), <span class="ident">a3</span> <span class="kw">as</span> <span class="kw">_</span>),
+            <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;hypervisor&quot;</span>)]</span>
+            <span class="ident">Sys</span>::<span class="ident">VCPU_WRITE_STATE</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_vcpu_write_state</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a2</span>, <span class="ident">a3</span> <span class="kw">as</span> <span class="kw">_</span>),
             <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;syscall unimplemented: {:?}&quot;</span>, <span class="ident">sys_type</span>);
                 <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">NOT_SUPPORTED</span>)

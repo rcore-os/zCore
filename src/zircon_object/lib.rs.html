@@ -32,6 +32,8 @@
 <span id="32">32</span>
 <span id="33">33</span>
 <span id="34">34</span>
+<span id="35">35</span>
+<span id="36">36</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Zircon kernel objects</span>
 
@@ -59,6 +61,8 @@
 <span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">debuglog</span>;
 <span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">dev</span>;
 <span class="kw">mod</span> <span class="ident">error</span>;
+<span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;hypervisor&quot;</span>)]</span>
+<span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">hypervisor</span>;
 <span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">ipc</span>;
 <span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">object</span>;
 <span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">signal</span>;

@@ -410,6 +410,34 @@
 <span id="410">410</span>
 <span id="411">411</span>
 <span id="412">412</span>
+<span id="413">413</span>
+<span id="414">414</span>
+<span id="415">415</span>
+<span id="416">416</span>
+<span id="417">417</span>
+<span id="418">418</span>
+<span id="419">419</span>
+<span id="420">420</span>
+<span id="421">421</span>
+<span id="422">422</span>
+<span id="423">423</span>
+<span id="424">424</span>
+<span id="425">425</span>
+<span id="426">426</span>
+<span id="427">427</span>
+<span id="428">428</span>
+<span id="429">429</span>
+<span id="430">430</span>
+<span id="431">431</span>
+<span id="432">432</span>
+<span id="433">433</span>
+<span id="434">434</span>
+<span id="435">435</span>
+<span id="436">436</span>
+<span id="437">437</span>
+<span id="438">438</span>
+<span id="439">439</span>
+<span id="440">440</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
 <span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">vdso</span>::<span class="ident">VdsoConstants</span>;
@@ -460,6 +488,58 @@
     <span class="macro">unimplemented</span><span class="macro">!</span>()
 }
 
+<span class="kw">pub</span> <span class="kw">trait</span> <span class="ident">PageTableTrait</span>: <span class="ident">Sync</span> <span class="op">+</span> <span class="ident">Send</span> {
+    <span class="doccomment">/// Map the page of `vaddr` to the frame of `paddr` with `flags`.</span>
+    <span class="kw">fn</span> <span class="ident">map</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">_vaddr</span>: <span class="ident">VirtAddr</span>, <span class="ident">_paddr</span>: <span class="ident">PhysAddr</span>, <span class="ident">_flags</span>: <span class="ident">MMUFlags</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), ()<span class="op">&gt;</span>;
+
+    <span class="doccomment">/// Unmap the page of `vaddr`.</span>
+    <span class="kw">fn</span> <span class="ident">unmap</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">_vaddr</span>: <span class="ident">VirtAddr</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), ()<span class="op">&gt;</span>;
+
+    <span class="doccomment">/// Change the `flags` of the page of `vaddr`.</span>
+    <span class="kw">fn</span> <span class="ident">protect</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">_vaddr</span>: <span class="ident">VirtAddr</span>, <span class="ident">_flags</span>: <span class="ident">MMUFlags</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), ()<span class="op">&gt;</span>;
+
+    <span class="doccomment">/// Query the physical address which the page of `vaddr` maps to.</span>
+    <span class="kw">fn</span> <span class="ident">query</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">_vaddr</span>: <span class="ident">VirtAddr</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">PhysAddr</span>, ()<span class="op">&gt;</span>;
+
+    <span class="doccomment">/// Get the physical address of root page table.</span>
+    <span class="kw">fn</span> <span class="ident">table_phys</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">PhysAddr</span>;
+
+    <span class="kw">fn</span> <span class="ident">map_many</span>(
+        <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
+        <span class="kw-2">mut</span> <span class="ident">vaddr</span>: <span class="ident">VirtAddr</span>,
+        <span class="ident">paddrs</span>: <span class="kw-2">&amp;</span>[<span class="ident">PhysAddr</span>],
+        <span class="ident">flags</span>: <span class="ident">MMUFlags</span>,
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), ()<span class="op">&gt;</span> {
+        <span class="kw">for</span> <span class="kw-2">&amp;</span><span class="ident">paddr</span> <span class="kw">in</span> <span class="ident">paddrs</span> {
+            <span class="self">self</span>.<span class="ident">map</span>(<span class="ident">vaddr</span>, <span class="ident">paddr</span>, <span class="ident">flags</span>)<span class="question-mark">?</span>;
+            <span class="ident">vaddr</span> <span class="op">+</span><span class="op">=</span> <span class="ident">PAGE_SIZE</span>;
+        }
+        <span class="prelude-val">Ok</span>(())
+    }
+
+    <span class="kw">fn</span> <span class="ident">map_cont</span>(
+        <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
+        <span class="kw-2">mut</span> <span class="ident">vaddr</span>: <span class="ident">VirtAddr</span>,
+        <span class="ident">paddr</span>: <span class="ident">PhysAddr</span>,
+        <span class="ident">pages</span>: <span class="ident">usize</span>,
+        <span class="ident">flags</span>: <span class="ident">MMUFlags</span>,
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), ()<span class="op">&gt;</span> {
+        <span class="kw">for</span> <span class="ident">i</span> <span class="kw">in</span> <span class="number">0</span>..<span class="ident">pages</span> {
+            <span class="kw">let</span> <span class="ident">paddr</span> <span class="op">=</span> <span class="ident">paddr</span> <span class="op">+</span> <span class="ident">i</span> <span class="op">*</span> <span class="ident">PAGE_SIZE</span>;
+            <span class="self">self</span>.<span class="ident">map</span>(<span class="ident">vaddr</span>, <span class="ident">paddr</span>, <span class="ident">flags</span>)<span class="question-mark">?</span>;
+            <span class="ident">vaddr</span> <span class="op">+</span><span class="op">=</span> <span class="ident">PAGE_SIZE</span>;
+        }
+        <span class="prelude-val">Ok</span>(())
+    }
+
+    <span class="kw">fn</span> <span class="ident">unmap_cont</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">vaddr</span>: <span class="ident">VirtAddr</span>, <span class="ident">pages</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), ()<span class="op">&gt;</span> {
+        <span class="kw">for</span> <span class="ident">i</span> <span class="kw">in</span> <span class="number">0</span>..<span class="ident">pages</span> {
+            <span class="self">self</span>.<span class="ident">unmap</span>(<span class="ident">vaddr</span> <span class="op">+</span> <span class="ident">i</span> <span class="op">*</span> <span class="ident">PAGE_SIZE</span>)<span class="question-mark">?</span>;
+        }
+        <span class="prelude-val">Ok</span>(())
+    }
+}
+
 <span class="doccomment">/// Page Table</span>
 <span class="attribute">#[<span class="ident">repr</span>(<span class="ident">C</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">PageTable</span> {
@@ -481,66 +561,42 @@
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
         <span class="macro">unimplemented</span><span class="macro">!</span>()
     }
+}
+
+<span class="kw">impl</span> <span class="ident">PageTableTrait</span> <span class="kw">for</span> <span class="ident">PageTable</span> {
     <span class="doccomment">/// Map the page of `vaddr` to the frame of `paddr` with `flags`.</span>
     <span class="attribute">#[<span class="ident">linkage</span> <span class="op">=</span> <span class="string">&quot;weak&quot;</span>]</span>
     <span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_pt_map&quot;</span>]</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">map</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">_vaddr</span>: <span class="ident">VirtAddr</span>, <span class="ident">_paddr</span>: <span class="ident">PhysAddr</span>, <span class="ident">_flags</span>: <span class="ident">MMUFlags</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), ()<span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">map</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">_vaddr</span>: <span class="ident">VirtAddr</span>, <span class="ident">_paddr</span>: <span class="ident">PhysAddr</span>, <span class="ident">_flags</span>: <span class="ident">MMUFlags</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), ()<span class="op">&gt;</span> {
         <span class="macro">unimplemented</span><span class="macro">!</span>()
     }
     <span class="doccomment">/// Unmap the page of `vaddr`.</span>
     <span class="attribute">#[<span class="ident">linkage</span> <span class="op">=</span> <span class="string">&quot;weak&quot;</span>]</span>
     <span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_pt_unmap&quot;</span>]</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">unmap</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">_vaddr</span>: <span class="ident">VirtAddr</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), ()<span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">unmap</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">_vaddr</span>: <span class="ident">VirtAddr</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), ()<span class="op">&gt;</span> {
         <span class="macro">unimplemented</span><span class="macro">!</span>()
     }
     <span class="doccomment">/// Change the `flags` of the page of `vaddr`.</span>
     <span class="attribute">#[<span class="ident">linkage</span> <span class="op">=</span> <span class="string">&quot;weak&quot;</span>]</span>
     <span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_pt_protect&quot;</span>]</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">protect</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">_vaddr</span>: <span class="ident">VirtAddr</span>, <span class="ident">_flags</span>: <span class="ident">MMUFlags</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), ()<span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">protect</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">_vaddr</span>: <span class="ident">VirtAddr</span>, <span class="ident">_flags</span>: <span class="ident">MMUFlags</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), ()<span class="op">&gt;</span> {
         <span class="macro">unimplemented</span><span class="macro">!</span>()
     }
     <span class="doccomment">/// Query the physical address which the page of `vaddr` maps to.</span>
     <span class="attribute">#[<span class="ident">linkage</span> <span class="op">=</span> <span class="string">&quot;weak&quot;</span>]</span>
     <span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_pt_query&quot;</span>]</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">query</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">_vaddr</span>: <span class="ident">VirtAddr</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">PhysAddr</span>, ()<span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">query</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">_vaddr</span>: <span class="ident">VirtAddr</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">PhysAddr</span>, ()<span class="op">&gt;</span> {
         <span class="macro">unimplemented</span><span class="macro">!</span>()
     }
     <span class="doccomment">/// Get the physical address of root page table.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">table_phys</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">PhysAddr</span> {
+    <span class="attribute">#[<span class="ident">linkage</span> <span class="op">=</span> <span class="string">&quot;weak&quot;</span>]</span>
+    <span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_pt_table_phys&quot;</span>]</span>
+    <span class="kw">fn</span> <span class="ident">table_phys</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">PhysAddr</span> {
         <span class="self">self</span>.<span class="ident">table_phys</span>
     }
-
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">map_many</span>(
-        <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
-        <span class="kw-2">mut</span> <span class="ident">vaddr</span>: <span class="ident">VirtAddr</span>,
-        <span class="ident">paddrs</span>: <span class="kw-2">&amp;</span>[<span class="ident">PhysAddr</span>],
-        <span class="ident">flags</span>: <span class="ident">MMUFlags</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), ()<span class="op">&gt;</span> {
-        <span class="kw">for</span> <span class="kw-2">&amp;</span><span class="ident">paddr</span> <span class="kw">in</span> <span class="ident">paddrs</span> {
-            <span class="self">self</span>.<span class="ident">map</span>(<span class="ident">vaddr</span>, <span class="ident">paddr</span>, <span class="ident">flags</span>)<span class="question-mark">?</span>;
-            <span class="ident">vaddr</span> <span class="op">+</span><span class="op">=</span> <span class="ident">PAGE_SIZE</span>;
-        }
-        <span class="prelude-val">Ok</span>(())
-    }
-
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">map_cont</span>(
-        <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
-        <span class="kw-2">mut</span> <span class="ident">vaddr</span>: <span class="ident">VirtAddr</span>,
-        <span class="ident">paddr</span>: <span class="ident">PhysAddr</span>,
-        <span class="ident">pages</span>: <span class="ident">usize</span>,
-        <span class="ident">flags</span>: <span class="ident">MMUFlags</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), ()<span class="op">&gt;</span> {
-        <span class="kw">for</span> <span class="ident">i</span> <span class="kw">in</span> <span class="number">0</span>..<span class="ident">pages</span> {
-            <span class="kw">let</span> <span class="ident">paddr</span> <span class="op">=</span> <span class="ident">paddr</span> <span class="op">+</span> <span class="ident">i</span> <span class="op">*</span> <span class="ident">PAGE_SIZE</span>;
-            <span class="self">self</span>.<span class="ident">map</span>(<span class="ident">vaddr</span>, <span class="ident">paddr</span>, <span class="ident">flags</span>)<span class="question-mark">?</span>;
-            <span class="ident">vaddr</span> <span class="op">+</span><span class="op">=</span> <span class="ident">PAGE_SIZE</span>;
-        }
-        <span class="prelude-val">Ok</span>(())
-    }
-
     <span class="attribute">#[<span class="ident">linkage</span> <span class="op">=</span> <span class="string">&quot;weak&quot;</span>]</span>
     <span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_pt_unmap_cont&quot;</span>]</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">unmap_cont</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">vaddr</span>: <span class="ident">VirtAddr</span>, <span class="ident">pages</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), ()<span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">unmap_cont</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">vaddr</span>: <span class="ident">VirtAddr</span>, <span class="ident">pages</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), ()<span class="op">&gt;</span> {
         <span class="kw">for</span> <span class="ident">i</span> <span class="kw">in</span> <span class="number">0</span>..<span class="ident">pages</span> {
             <span class="self">self</span>.<span class="ident">unmap</span>(<span class="ident">vaddr</span> <span class="op">+</span> <span class="ident">i</span> <span class="op">*</span> <span class="ident">PAGE_SIZE</span>)<span class="question-mark">?</span>;
         }

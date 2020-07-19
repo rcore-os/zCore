@@ -580,6 +580,26 @@
 <span id="580">580</span>
 <span id="581">581</span>
 <span id="582">582</span>
+<span id="583">583</span>
+<span id="584">584</span>
+<span id="585">585</span>
+<span id="586">586</span>
+<span id="587">587</span>
+<span id="588">588</span>
+<span id="589">589</span>
+<span id="590">590</span>
+<span id="591">591</span>
+<span id="592">592</span>
+<span id="593">593</span>
+<span id="594">594</span>
+<span id="595">595</span>
+<span id="596">596</span>
+<span id="597">597</span>
+<span id="598">598</span>
+<span id="599">599</span>
+<span id="600">600</span>
+<span id="601">601</span>
+<span id="602">602</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> {
     <span class="kw">super</span>::<span class="ident">exception</span>::<span class="kw-2">*</span>,
@@ -587,6 +607,7 @@
     <span class="kw">super</span>::<span class="kw-2">*</span>,
     <span class="kw">crate</span>::<span class="ident">object</span>::<span class="kw-2">*</span>,
     <span class="ident">alloc</span>::{<span class="ident">boxed</span>::<span class="ident">Box</span>, <span class="ident">sync</span>::<span class="ident">Arc</span>},
+    <span class="ident">bitflags</span>::<span class="ident">bitflags</span>,
     <span class="ident">core</span>::{
         <span class="ident">any</span>::<span class="ident">Any</span>,
         <span class="ident">future</span>::<span class="ident">Future</span>,
@@ -705,6 +726,7 @@
     <span class="ident">exception</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Exception</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     <span class="doccomment">/// The time this thread has run on cpu</span>
     <span class="ident">time</span>: <span class="ident">u128</span>,
+    <span class="ident">flags</span>: <span class="ident">ThreadFlag</span>,
 }
 
 <span class="kw">impl</span> <span class="ident">ThreadInner</span> {
@@ -714,6 +736,13 @@
         } <span class="kw">else</span> {
             <span class="ident">ThreadState</span>::<span class="ident">Suspended</span>
         }
+    }
+}
+
+<span class="macro">bitflags</span><span class="macro">!</span> {
+    <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Default</span>)]</span>
+    <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">ThreadFlag</span>: <span class="ident">usize</span> {
+        <span class="kw">const</span> <span class="ident">VCPU</span> <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">3</span>;
     }
 }
 
@@ -978,6 +1007,17 @@
     }
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">set_exception</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">exception</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Exception</span><span class="op">&gt;</span><span class="op">&gt;</span>) {
         <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">exception</span> <span class="op">=</span> <span class="ident">exception</span>;
+    }
+
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_flags</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ThreadFlag</span> {
+        <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">flags</span>
+    }
+
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">update_flags</span><span class="op">&lt;</span><span class="ident">F</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="ident">F</span>)
+    <span class="kw">where</span>
+        <span class="ident">F</span>: <span class="ident">FnOnce</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">ThreadFlag</span>),
+    {
+        <span class="ident">f</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">flags</span>)
     }
 }
 
