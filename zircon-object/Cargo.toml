@@ -28,4 +28,4 @@ rvm = { git = "https://github.com/rcore-os/RVM", rev = "4b64355", optional = tru
 
 [dev-dependencies]
 kernel-hal-unix = { path = "../kernel-hal-unix" }
-async-std = { version = "1.5", features = ["attributes"] }
+async-std = { version = "1.5", features = ["attributes", "unstable"] }
