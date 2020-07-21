@@ -283,9 +283,7 @@ impl KObjectBase {
         // Check the callback immediately, in case that a signal arrives just before the call of
         // `add_signal_callback` (since lock is acquired inside it) and the callback is not triggered
         // in time.
-        if callback(inner.signal) {
-            return;
-        } else {
+        if !callback(inner.signal) {
             inner.signal_callbacks.push(callback);
         }
     }
