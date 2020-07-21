@@ -165,7 +165,7 @@ impl Syscall<'_> {
                 let state = UserInPtr::<u32>::from_addr_size(buffer, buffer_size)?.read()?;
                 proc.get_object_with_rights::<ExceptionObject>(handle_value, Rights::SET_PROPERTY)?
                     .get_exception()
-                    .set_state(state);
+                    .set_state(state)?;
                 Ok(())
             }
             Property::ExceptionStrategy => {

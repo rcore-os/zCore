@@ -353,8 +353,12 @@ impl Exception {
         self.inner.lock().handled as u32
     }
 
-    pub fn set_state(&self, state: u32) {
+    pub fn set_state(&self, state: u32) -> ZxResult {
+        if state > 1 {
+            return Err(ZxError::INVALID_ARGS);
+        }
         self.inner.lock().handled = state == 1;
+        Ok(())
     }
 
     pub fn get_strategy(&self) -> u32 {
@@ -362,6 +366,9 @@ impl Exception {
     }
 
     pub fn set_strategy(&self, strategy: u32) -> ZxResult {
+        if strategy > 1 {
+            return Err(ZxError::INVALID_ARGS);
+        }
         let mut inner = self.inner.lock();
         match inner.current_channel_type {
             ExceptionChannelType::Debugger | ExceptionChannelType::JobDebugger => {
