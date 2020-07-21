@@ -280,7 +280,14 @@ impl KObjectBase {
     /// If true, the function will never be called again.
     pub fn add_signal_callback(&self, callback: SignalHandler) {
         let mut inner = self.inner.lock();
-        inner.signal_callbacks.push(callback);
+        // Check the callback immediately, in case that a signal arrives just before the call of
+        // `add_signal_callback` (since lock is acquired inside it) and the callback is not triggered
+        // in time.
+        if callback(inner.signal) {
+            return;
+        } else {
+            inner.signal_callbacks.push(callback);
+        }
     }
 }
 
