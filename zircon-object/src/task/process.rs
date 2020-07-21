@@ -427,8 +427,7 @@ impl Process {
 
     pub fn get_info(&self) -> ProcessInfo {
         let mut info = ProcessInfo::default();
-        // TODO correct debugger_attached setting
-        info.debugger_attached = false;
+        info.debugger_attached = self.debug_exceptionate.has_channel();
         match self.inner.lock().status {
             Status::Init => {
                 info.started = false;

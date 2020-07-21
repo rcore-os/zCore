@@ -60,6 +60,18 @@ impl Exceptionate {
         Ok(receiver)
     }
 
+    pub fn has_channel(&self) -> bool {
+        let mut inner = self.inner.lock();
+        if let Some(channel) = inner.channel.as_ref() {
+            if channel.peer().is_ok() {
+                return true;
+            } else {
+                inner.channel.take();
+            }
+        }
+        false
+    }
+
     pub fn send_exception(&self, exception: &Arc<Exception>) -> ZxResult<oneshot::Receiver<()>> {
         let mut inner = self.inner.lock();
         let channel = inner.channel.as_ref().ok_or(ZxError::NEXT)?;
