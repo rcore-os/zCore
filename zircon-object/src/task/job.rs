@@ -95,6 +95,14 @@ impl Job {
         Ok(child)
     }
 
+    fn remove_child(&self, id: u64) {
+        let mut inner = self.inner.lock();
+        inner.children.retain(|child| child.id() != id);
+        if inner.killed && inner.processes.is_empty() && inner.children.is_empty() {
+            self.terminate()
+        }
+    }
+
     /// Get the policy of the job.
     pub fn policy(&self) -> JobPolicy {
         self.inner.lock().policy.merge(&self.parent_policy)
@@ -153,6 +161,9 @@ impl Job {
     pub(super) fn remove_process(&self, id: KoID) {
         let mut inner = self.inner.lock();
         inner.processes.retain(|proc| proc.id() != id);
+        if inner.killed && inner.processes.is_empty() && inner.children.is_empty() {
+            self.terminate()
+        }
     }
 
     pub fn get_info(&self) -> JobInfo {
@@ -196,10 +207,7 @@ impl Job {
                 return;
             }
             inner.killed = true;
-            (
-                core::mem::take(&mut inner.children),
-                core::mem::take(&mut inner.processes),
-            )
+            (inner.children.clone(), inner.processes.clone())
         };
         for child in children {
             child.kill();
@@ -207,9 +215,15 @@ impl Job {
         for proc in processes {
             proc.kill();
         }
+    }
+
+    fn terminate(&self) {
         self.exceptionate.shutdown();
         self.debug_exceptionate.shutdown();
         self.base.signal_set(Signal::JOB_TERMINATED);
+        if let Some(parent) = self.parent.as_ref() {
+            parent.remove_child(self.id())
+        }
     }
 }
 

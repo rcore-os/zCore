@@ -249,17 +249,17 @@ impl Thread {
         Ok(())
     }
 
-    /// Terminate the current running thread.
-    /// TODO: move to CurrentThread
     pub fn exit(&self) {
-        self.proc().remove_thread(self.base.id);
-        self.internal_exit();
+        self.kill();
     }
 
+    /// Terminate the current running thread.
     pub fn internal_exit(&self) {
+        let mut inner = self.inner.lock();
         self.exceptionate.shutdown();
-        self.base.signal_set(Signal::THREAD_TERMINATED);
-        self.inner.lock().state = ThreadState::Dead;
+        inner.state = ThreadState::Dead;
+        inner.update_signal(&self.base);
+        self.proc().remove_thread(self.base.id);
     }
 
     /// Read one aspect of thread state.

@@ -175,14 +175,22 @@ impl Process {
             return;
         }
         inner.status = Status::Exited(retcode);
-        // TODO: exit all threads
-        self.base.signal_set(Signal::PROCESS_TERMINATED);
         for thread in inner.threads.iter() {
             thread.kill();
         }
-        inner.threads.clear();
         inner.handles.clear();
+    }
 
+    fn terminate(&self) {
+        let mut inner = self.inner.lock();
+        let retcode = match inner.status {
+            Status::Exited(retcode) => retcode,
+            _ => {
+                inner.status = Status::Exited(0);
+                0
+            }
+        };
+        self.base.signal_set(Signal::PROCESS_TERMINATED);
         self.exceptionate.shutdown();
         self.debug_exceptionate.shutdown();
 
@@ -421,7 +429,7 @@ impl Process {
         inner.threads.retain(|t| t.id() != tid);
         if inner.threads.is_empty() {
             drop(inner);
-            self.exit(0);
+            self.terminate();
         }
     }
 

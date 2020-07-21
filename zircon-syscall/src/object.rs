@@ -98,7 +98,7 @@ impl Syscall<'_> {
                 Ok(())
             }
             _ => {
-                warn!("unknown property {:?}", property);
+                info!("unknown property {:?}", property);
                 Err(ZxError::INVALID_ARGS)
             }
         }
@@ -176,7 +176,7 @@ impl Syscall<'_> {
                 Ok(())
             }
             _ => {
-                warn!("unknown property");
+                info!("unknown property");
                 Err(ZxError::INVALID_ARGS)
             }
         }

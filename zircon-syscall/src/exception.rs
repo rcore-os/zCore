@@ -59,6 +59,7 @@ impl Syscall<'_> {
         exception: HandleValue,
         mut out: UserOutPtr<HandleValue>,
     ) -> ZxResult {
+        info!("exception_get_thread: exception={:#x}", exception);
         let proc = self.thread.proc();
         let exception =
             proc.get_object_with_rights::<ExceptionObject>(exception, Rights::default())?;
@@ -73,6 +74,7 @@ impl Syscall<'_> {
         exception: HandleValue,
         mut out: UserOutPtr<HandleValue>,
     ) -> ZxResult {
+        info!("exception_get_process: exception={:#x}", exception);
         let proc = self.thread.proc();
         let exception =
             proc.get_object_with_rights::<ExceptionObject>(exception, Rights::default())?;

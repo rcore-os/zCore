@@ -309,6 +309,7 @@ fn spawn(thread: Arc<Thread>) {
             .get_debug_exceptionate()
             .send_exception(&end_exception)
             .ok();
+        thread.internal_exit();
     };
     kernel_hal::Thread::spawn(Box::pin(future), vmtoken);
 }

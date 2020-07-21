@@ -73,6 +73,10 @@ impl Exceptionate {
     }
 
     pub fn send_exception(&self, exception: &Arc<Exception>) -> ZxResult<oneshot::Receiver<()>> {
+        debug!(
+            "Exception: {:?} ,try sned to {:?}",
+            exception.type_, self.type_
+        );
         let mut inner = self.inner.lock();
         let channel = inner.channel.as_ref().ok_or(ZxError::NEXT)?;
         let info = ExceptionInfo {
@@ -196,7 +200,7 @@ pub enum ExceptionType {
 }
 
 #[repr(u32)]
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum ExceptionChannelType {
     None = 0,
     Debugger = 1,
