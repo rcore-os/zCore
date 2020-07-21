@@ -200,11 +200,9 @@ impl Syscall<'_> {
         {
             if Arc::ptr_eq(&process, &proc) {
                 //self kill, exit
-                proc.exit(TASK_RETCODE_SYSCALL_KILL);
                 self.exit = true;
-            } else {
-                process.kill();
             }
+            process.kill();
         } else if let Ok(thread) = proc.get_object_with_rights::<Thread>(handle, Rights::DESTROY) {
             info!(
                 "killing thread: proc={:?} thread={:?}",
@@ -213,11 +211,9 @@ impl Syscall<'_> {
             );
             if Arc::ptr_eq(&thread, &self.thread) {
                 //self kill, exit
-                self.thread.exit();
                 self.exit = true;
-            } else {
-                thread.kill();
             }
+            thread.kill();
         } else {
             return Err(ZxError::WRONG_TYPE);
         }

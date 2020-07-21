@@ -122,6 +122,8 @@ struct ThreadInner {
     exception: Option<Arc<Exception>>,
     /// Should The ProcessStarting exception generated at start of this thread
     first_thread: bool,
+    /// Should The ThreadExiting exception block this thread
+    not_killed: bool,
     /// The time this thread has run on cpu
     time: u128,
 }
@@ -250,11 +252,12 @@ impl Thread {
     }
 
     pub fn exit(&self) {
+        self.inner.lock().not_killed = true;
         self.kill();
     }
 
     /// Terminate the current running thread.
-    pub fn internal_exit(&self) {
+    pub fn terminate(&self) {
         let mut inner = self.inner.lock();
         self.exceptionate.shutdown();
         inner.state = ThreadState::Dead;
@@ -422,6 +425,7 @@ impl Thread {
     pub fn get_time(&self) -> u64 {
         self.inner.lock().time as u64
     }
+
     pub fn set_exception(&self, exception: Option<Arc<Exception>>) {
         self.inner.lock().exception = exception;
     }
@@ -432,6 +436,10 @@ impl Thread {
 
     pub fn get_first_thread(&self) -> bool {
         self.inner.lock().first_thread
+    }
+
+    pub fn get_not_killed(&self) -> bool {
+        self.inner.lock().not_killed
     }
 }
 

@@ -82,7 +82,7 @@ fn spawn(thread: Arc<Thread>) {
                 break;
             }
         }
-        thread.internal_exit();
+        thread.terminate();
     };
     kernel_hal::Thread::spawn(Box::pin(future), vmtoken);
 }

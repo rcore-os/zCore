@@ -207,7 +207,6 @@ fn spawn(thread: Arc<Thread>) {
                     thread.proc().name(),
                     thread.name()
                 );
-                thread.exit();
                 break;
             }
             trace!("go to user: {:#x?}", cx);
@@ -303,13 +302,23 @@ fn spawn(thread: Arc<Thread>) {
             }
         }
         let end_exception = Exception::create(thread.clone(), ExceptionType::ThreadExiting, None);
-        // here we send thr exception without waiting for it handled since we are already exited
-        thread
+        let handled = thread
             .proc()
             .get_debug_exceptionate()
-            .send_exception(&end_exception)
-            .ok();
-        thread.internal_exit();
+            .send_exception(&end_exception);
+        if thread.get_not_killed() {
+            // We only wait for exception handled when we are not killed
+            if let Ok(receiver) = handled {
+                receiver.await.ok();
+            } else {
+                // An error here indicate we do not need to wait for anything
+                handled.ok();
+            }
+        } else {
+            // here we send the exception without waiting for it handled since we are already exited
+            handled.ok();
+        }
+        thread.terminate();
     };
     kernel_hal::Thread::spawn(Box::pin(future), vmtoken);
 }

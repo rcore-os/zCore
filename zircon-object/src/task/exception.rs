@@ -74,7 +74,7 @@ impl Exceptionate {
 
     pub fn send_exception(&self, exception: &Arc<Exception>) -> ZxResult<oneshot::Receiver<()>> {
         debug!(
-            "Exception: {:?} ,try sned to {:?}",
+            "Exception: {:?} ,try send to {:?}",
             exception.type_, self.type_
         );
         let mut inner = self.inner.lock();
@@ -311,7 +311,6 @@ impl Exception {
         if let Err(err) = result {
             if err == ZxError::STOP {
                 // We are killed
-                self.thread.exit();
                 return false;
             } else if err == ZxError::NEXT && fatal {
                 // Nobody handled the exception, kill myself
