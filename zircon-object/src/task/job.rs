@@ -1,6 +1,12 @@
 use {
-    super::exception::*, super::job_policy::*, super::process::Process, crate::object::*,
-    crate::task::Task, alloc::sync::Arc, alloc::vec::Vec, spin::Mutex,
+    super::exception::*,
+    super::job_policy::*,
+    super::process::Process,
+    crate::object::*,
+    crate::task::Task,
+    alloc::sync::{Arc, Weak},
+    alloc::vec::Vec,
+    spin::Mutex,
 };
 
 /// Control a group of processes
@@ -37,8 +43,8 @@ pub struct Job {
 impl_kobject!(Job
     fn get_child(&self, id: KoID) -> ZxResult<Arc<dyn KernelObject>> {
         let inner = self.inner.lock();
-        if let Some(job) = inner.children.iter().find(|o| o.id() == id) {
-            return Ok(job.clone());
+        if let Some(job) = inner.children.iter().filter_map(|o|o.upgrade()).find(|o| o.id() == id) {
+            return Ok(job);
         }
         if let Some(proc) = inner.processes.iter().find(|o| o.id() == id) {
             return Ok(proc.clone());
@@ -54,17 +60,18 @@ define_count_helper!(Job);
 #[derive(Default)]
 struct JobInner {
     policy: JobPolicy,
-    children: Vec<Arc<Job>>,
+    children: Vec<Weak<Job>>,
     processes: Vec<Arc<Process>>,
     // if the job is killed, no more child creation should works
     killed: bool,
     timer_policy: TimerSlack,
+    self_ref: Weak<Job>,
 }
 
 impl Job {
     /// Create the root job.
     pub fn root() -> Arc<Self> {
-        Arc::new(Job {
+        let job = Arc::new(Job {
             base: KObjectBase::new(),
             _counter: CountHelper::new(),
             parent: None,
@@ -72,7 +79,9 @@ impl Job {
             exceptionate: Exceptionate::new(ExceptionChannelType::Job),
             debug_exceptionate: Exceptionate::new(ExceptionChannelType::JobDebugger),
             inner: Mutex::new(JobInner::default()),
-        })
+        });
+        job.inner.lock().self_ref = Arc::downgrade(&job);
+        job
     }
 
     /// Create a new child job object.
@@ -91,14 +100,17 @@ impl Job {
             debug_exceptionate: Exceptionate::new(ExceptionChannelType::JobDebugger),
             inner: Mutex::new(JobInner::default()),
         });
-        inner.children.push(child.clone());
+        let child_weak = Arc::downgrade(&child);
+        child.inner.lock().self_ref = child_weak.clone();
+        inner.children.push(child_weak);
         Ok(child)
     }
 
-    fn remove_child(&self, id: u64) {
+    fn remove_child(&self, to_remove: &Weak<Job>) {
         let mut inner = self.inner.lock();
-        inner.children.retain(|child| child.id() != id);
+        inner.children.retain(|child| !to_remove.ptr_eq(child));
         if inner.killed && inner.processes.is_empty() && inner.children.is_empty() {
+            drop(inner);
             self.terminate()
         }
     }
@@ -162,6 +174,7 @@ impl Job {
         let mut inner = self.inner.lock();
         inner.processes.retain(|proc| proc.id() != id);
         if inner.killed && inner.processes.is_empty() && inner.children.is_empty() {
+            drop(inner);
             self.terminate()
         }
     }
@@ -193,7 +206,13 @@ impl Job {
 
     /// Get KoIDs of children Jobs.
     pub fn children_ids(&self) -> Vec<KoID> {
-        self.inner.lock().children.iter().map(|j| j.id()).collect()
+        self.inner
+            .lock()
+            .children
+            .iter()
+            .filter_map(|j| j.upgrade())
+            .map(|j| j.id())
+            .collect()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -210,7 +229,9 @@ impl Job {
             (inner.children.clone(), inner.processes.clone())
         };
         for child in children {
-            child.kill();
+            if let Some(child) = child.upgrade() {
+                child.kill();
+            }
         }
         for proc in processes {
             proc.kill();
@@ -222,7 +243,7 @@ impl Job {
         self.debug_exceptionate.shutdown();
         self.base.signal_set(Signal::JOB_TERMINATED);
         if let Some(parent) = self.parent.as_ref() {
-            parent.remove_child(self.id())
+            parent.remove_child(&self.inner.lock().self_ref)
         }
     }
 }
@@ -230,6 +251,12 @@ impl Job {
 impl JobInner {
     fn is_empty(&self) -> bool {
         self.processes.is_empty() && self.children.is_empty()
+    }
+}
+
+impl Drop for Job {
+    fn drop(&mut self) {
+        self.terminate();
     }
 }
 
