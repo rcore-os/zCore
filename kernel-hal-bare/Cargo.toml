@@ -29,3 +29,6 @@ acpi = "1.0.0"
 
 [target.'cfg(any(target_arch = "riscv32", target_arch = "riscv64"))'.dependencies]
 riscv = { git = "https://github.com/rcore-os/riscv", features = ["inline-asm"], rev = "c62af46" }
+
+[target.'cfg(target_arch = "mips")'.dependencies]
+mips = { git = "https://github.com/Harry-Chen/rust-mips", rev = "3b828a2" }

@@ -343,6 +343,36 @@ impl InterruptManager {
     pub fn is_valid(_irq: u32) -> bool {
         unimplemented!()
     }
+    #[linkage = "weak"]
+    #[export_name = "hal_wait_for_interrupt"]
+    pub fn wait_for_interrupt() {
+        unimplemented!()
+    }
+    #[linkage = "weak"]
+    #[export_name = "hal_page_fault"]
+    pub fn is_page_fault(_trap: usize) -> bool {
+        unimplemented!()
+    }
+    #[linkage = "weak"]
+    #[export_name = "hal_is_syscall"]
+    pub fn is_syscall(_trap: usize) -> bool {
+        unimplemented!()
+    }
+    #[linkage = "weak"]
+    #[export_name = "hal_is_intr"]
+    pub fn is_intr(_trap: usize) -> bool {
+        unimplemented!()
+    }
+    #[linkage = "weak"]
+    #[export_name = "hal_is_timer_intr"]
+    pub fn is_timer_intr(_trap: usize) -> bool {
+        unimplemented!()
+    }
+    #[linkage = "weak"]
+    #[export_name = "hal_is_reserved_inst"]
+    pub fn is_reserved_inst(_trap: usize) -> bool {
+        unimplemented!()
+    }
 }
 
 /// Get platform specific information.

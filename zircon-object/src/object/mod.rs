@@ -239,8 +239,11 @@ impl KObjectBase {
 
     /// Generate a new KoID.
     fn new_koid() -> KoID {
+        #[cfg(target_arch = "x86_64")]
         static KOID: AtomicU64 = AtomicU64::new(1024);
-        KOID.fetch_add(1, Ordering::SeqCst)
+        #[cfg(target_arch = "mips")]
+        static KOID: AtomicU32 = AtomicU32::new(1024);
+        KOID.fetch_add(1, Ordering::SeqCst) as u64
     }
 
     /// Get object's name.

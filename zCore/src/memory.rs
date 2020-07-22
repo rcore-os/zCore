@@ -1,26 +1,50 @@
 //! Define the FrameAllocator for physical memory
-//! x86_64      --  64GB
 
 use {
     bitmap_allocator::BitAlloc,
     buddy_system_allocator::LockedHeap,
     rboot::{BootInfo, MemoryType},
     spin::Mutex,
-    x86_64::structures::paging::page_table::{PageTable, PageTableFlags as EF},
 };
 
 #[cfg(target_arch = "x86_64")]
+use x86_64::structures::paging::page_table::{PageTable, PageTableFlags as EF};
+
+#[cfg(target_arch = "mips")]
+use mips::paging::PageTable;
+
+// x86_64      --  64GB
+#[cfg(target_arch = "x86_64")]
 type FrameAlloc = bitmap_allocator::BitAlloc16M;
+
+// RISCV, ARM, MIPS has 1G memory
+#[cfg(any(
+    target_arch = "riscv32",
+    target_arch = "riscv64",
+    target_arch = "aarch64",
+    target_arch = "mips"
+))]
+pub type FrameAlloc = bitmap_allocator::BitAlloc1M;
 
 static FRAME_ALLOCATOR: Mutex<FrameAlloc> = Mutex::new(FrameAlloc::DEFAULT);
 
+#[cfg(target_arch = "x86_64")]
 const MEMORY_OFFSET: usize = 0;
+#[cfg(target_arch = "x86_64")]
 const KERNEL_OFFSET: usize = 0xffffff00_00000000;
+#[cfg(target_arch = "x86_64")]
 const PHYSICAL_MEMORY_OFFSET: usize = 0xffff8000_00000000;
-const KERNEL_HEAP_SIZE: usize = 16 * 1024 * 1024; // 16 MB
-
+#[cfg(target_arch = "x86_64")]
 const KERNEL_PM4: usize = (KERNEL_OFFSET >> 39) & 0o777;
-const PHYSICAL_MEMORY_PM4: usize = (PHYSICAL_MEMORY_OFFSET >> 39) & 0o777;
+
+#[cfg(target_arch = "mips")]
+const MEMORY_OFFSET: usize = 0x8000_0000;
+// #[cfg(target_arch = "mips")]
+// const KERNEL_OFFSET: usize = 0x8010_0000;
+#[cfg(target_arch = "mips")]
+const PHYSICAL_MEMORY_OFFSET: usize = 0x8000_0000;
+
+const KERNEL_HEAP_SIZE: usize = 16 * 1024 * 1024; // 16 MB
 
 const PAGE_SIZE: usize = 1 << 12;
 
@@ -85,12 +109,19 @@ pub extern "C" fn hal_frame_dealloc(target: &usize) {
         .dealloc((*target - MEMORY_OFFSET) / PAGE_SIZE);
 }
 
+#[cfg(target_arch = "x86_64")]
 #[no_mangle]
 pub extern "C" fn hal_pt_map_kernel(pt: &mut PageTable, current: &PageTable) {
     let ekernel = current[KERNEL_PM4].clone();
     let ephysical = current[PHYSICAL_MEMORY_PM4].clone();
     pt[KERNEL_PM4].set_addr(ekernel.addr(), ekernel.flags() | EF::GLOBAL);
     pt[PHYSICAL_MEMORY_PM4].set_addr(ephysical.addr(), ephysical.flags() | EF::GLOBAL);
+}
+
+#[cfg(target_arch = "mips")]
+#[no_mangle]
+pub extern "C" fn hal_pt_map_kernel(_pt: &mut PageTable, _current: &PageTable) {
+    // nothing to do
 }
 
 /// Global heap allocator

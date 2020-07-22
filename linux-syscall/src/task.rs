@@ -12,7 +12,7 @@ impl Syscall<'_> {
         info!("fork:");
         let new_proc = Process::fork_from(self.zircon_process(), false)?;
         let new_thread = Thread::create_linux(&new_proc)?;
-        new_thread.start_with_regs(GeneralRegs::new_fork(self.regs), self.spawn_fn)?;
+        new_thread.start_with_context(UserContext::new_fork(self.context), self.spawn_fn)?;
 
         info!("fork: {} -> {}", self.zircon_process().id(), new_proc.id());
         Ok(new_proc.id() as usize)
@@ -22,7 +22,7 @@ impl Syscall<'_> {
         info!("vfork:");
         let new_proc = Process::fork_from(self.zircon_process(), true)?;
         let new_thread = Thread::create_linux(&new_proc)?;
-        new_thread.start_with_regs(GeneralRegs::new_fork(self.regs), self.spawn_fn)?;
+        new_thread.start_with_context(UserContext::new_fork(self.context), self.spawn_fn)?;
 
         let new_proc: Arc<dyn KernelObject> = new_proc;
         info!("vfork: {} -> {}", self.zircon_process().id(), new_proc.id());
@@ -60,8 +60,8 @@ impl Syscall<'_> {
             panic!("unsupported sys_clone flags: {:#x}", flags);
         }
         let new_thread = Thread::create_linux(self.zircon_process())?;
-        let regs = GeneralRegs::new_clone(self.regs, newsp, newtls);
-        new_thread.start_with_regs(regs, self.spawn_fn)?;
+        let context = UserContext::new_clone(self.context, newsp, newtls);
+        new_thread.start_with_context(context, self.spawn_fn)?;
 
         let tid = new_thread.id();
         info!("clone: {} -> {}", self.thread.id(), tid);
@@ -169,7 +169,7 @@ impl Syscall<'_> {
         // TODO: use right signal
         self.zircon_process().signal_set(Signal::SIGNALED);
 
-        *self.regs = GeneralRegs::new_fn(entry, sp, 0, 0);
+        *self.context = UserContext::new_fn(entry, sp, 0, 0);
         Ok(0)
     }
     //
@@ -321,5 +321,33 @@ impl RegExt for GeneralRegs {
 
     fn new_fork(regs: &Self) -> Self {
         GeneralRegs { rax: 0, ..*regs }
+    }
+}
+
+#[cfg(target_arch = "mips")]
+impl RegExt for UserContext {
+    fn new_fn(_entry: usize, _sp: usize, _arg1: usize, _arg2: usize) -> Self {
+        unimplemented!()
+        // UserContext {
+        //     sp: sp,
+        //     a0: arg1,
+        //     a1: arg2,
+        //     ..Default::default()
+        // }
+    }
+
+    fn new_clone(_regs: &Self, _newsp: usize, _newtls: usize) -> Self {
+        // TODO: set tls
+        // UserContext {
+        //     v0: 0,
+        //     sp: newsp,
+        //     ..*regs
+        // }
+        unimplemented!()
+    }
+
+    fn new_fork(_regs: &Self) -> Self {
+        // UserContext { v0: 0, ..*regs }
+        unimplemented!()
     }
 }

@@ -299,6 +299,12 @@ pub fn irq_is_valid(irq: u32) -> bool {
     get_ioapic(irq).is_some()
 }
 
+#[export_name = "hal_wait_for_interrupt"]
+pub fn wait_for_interrupt() {
+    x86_64::instructions::interrupts::enable_interrupts_and_hlt();
+    x86_64::instructions::interrupts::disable();
+}
+
 fn breakpoint() {
     panic!("\nEXCEPTION: Breakpoint");
 }

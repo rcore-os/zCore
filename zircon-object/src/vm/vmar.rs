@@ -50,13 +50,13 @@ impl VmAddressRegion {
         // FIXME: workaround for unix
         static VMAR_ID: AtomicUsize = AtomicUsize::new(0);
         let i = VMAR_ID.fetch_add(1, Ordering::SeqCst);
-        let addr: usize = 0x2_00000000 + 0x100_00000000 * i;
+        let addr: usize = consts::ROOT_VMAR_ADDR + consts::ROOT_VMAR_SIZE * i;
         Arc::new(VmAddressRegion {
             flags: VmarFlags::ROOT_FLAGS,
             base: KObjectBase::new(),
             _counter: CountHelper::new(),
             addr,
-            size: 0x100_00000000,
+            size: consts::ROOT_VMAR_SIZE,
             parent: None,
             page_table: Arc::new(Mutex::new(kernel_hal::PageTable::new())),
             inner: Mutex::new(Some(VmarInner::default())),
@@ -64,8 +64,8 @@ impl VmAddressRegion {
     }
     /// Create a kernel root VMAR.
     pub fn new_kernel() -> Arc<Self> {
-        let kernel_vmar_base = 0xffff_ff02_0000_0000; // Sorry i hard code because i'm lazy
-        let kernel_vmar_size = 0x8000_00000;
+        let kernel_vmar_base = consts::KERNEL_VMAR_BASE; // Sorry i hard code because i'm lazy
+        let kernel_vmar_size = consts::KERNEL_VMAR_SIZE;
         Arc::new(VmAddressRegion {
             flags: VmarFlags::ROOT_FLAGS,
             base: KObjectBase::new(),

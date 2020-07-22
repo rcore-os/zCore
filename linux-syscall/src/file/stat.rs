@@ -65,7 +65,7 @@ pub struct Timespec {
 
 #[cfg(target_arch = "mips")]
 impl From<linux_object::fs::vfs::Timespec> for Timespec {
-    fn from(t: Timespec) -> Self {
+    fn from(t: linux_object::fs::vfs::Timespec) -> Self {
         Timespec {
             sec: t.sec as _,
             nsec: t.nsec,

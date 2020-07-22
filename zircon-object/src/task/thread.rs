@@ -12,7 +12,11 @@ use {
         time::Duration,
     },
     futures::{channel::oneshot::*, future::FutureExt, select_biased},
-    kernel_hal::{sleep_until, GeneralRegs, UserContext},
+    kernel_hal::{
+        sleep_until,
+        // GeneralRegs,
+        UserContext,
+    },
     spin::Mutex,
 };
 
@@ -184,20 +188,23 @@ impl Thread {
         {
             let mut inner = self.inner.lock();
             let context = inner.context.as_mut().ok_or(ZxError::BAD_STATE)?;
+            context.set_ip(entry);
+            context.set_sp(stack);
             #[cfg(target_arch = "x86_64")]
             {
-                context.general.rip = entry;
-                context.general.rsp = stack;
                 context.general.rdi = arg1;
                 context.general.rsi = arg2;
                 context.general.rflags |= 0x3202;
             }
             #[cfg(target_arch = "aarch64")]
             {
-                context.elr = entry;
-                context.sp = stack;
                 context.general.x0 = arg1;
                 context.general.x1 = arg2;
+            }
+            #[cfg(target_arch = "mips")]
+            {
+                context.general.a0 = arg1;
+                context.general.a1 = arg2;
             }
             inner.state = ThreadState::Running;
             self.base.signal_set(Signal::THREAD_RUNNING);
@@ -207,18 +214,23 @@ impl Thread {
     }
 
     /// Start execution with given registers.
-    pub fn start_with_regs(
+    pub fn start_with_context(
         self: &Arc<Self>,
-        regs: GeneralRegs,
+        ctx: UserContext,
         spawn_fn: fn(thread: Arc<Thread>),
     ) -> ZxResult {
         {
             let mut inner = self.inner.lock();
             let context = inner.context.as_mut().ok_or(ZxError::BAD_STATE)?;
-            context.general = regs;
+            context.general = ctx.general;
             #[cfg(target_arch = "x86_64")]
             {
                 context.general.rflags |= 0x3202;
+            }
+            #[cfg(target_arch = "mips")]
+            {
+                context.epc = ctx.epc;
+                context.tls = ctx.tls;
             }
             inner.state = ThreadState::Running;
             self.base.signal_set(Signal::THREAD_RUNNING);

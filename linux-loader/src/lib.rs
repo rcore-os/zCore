@@ -2,6 +2,7 @@
 #![feature(asm)]
 #![feature(global_asm)]
 #![deny(warnings, unused_must_use)]
+#![allow(unused_assignments)]
 
 extern crate alloc;
 #[macro_use]
@@ -9,7 +10,11 @@ extern crate log;
 
 use {
     alloc::{boxed::Box, string::String, sync::Arc, vec::Vec},
-    kernel_hal::{GeneralRegs, MMUFlags},
+    kernel_hal::{
+        InterruptManager,
+        // MMUFlags,
+        UserContext,
+    },
     linux_object::{
         fs::{vfs::FileSystem, INodeExt},
         loader::LinuxElfLoader,
@@ -42,6 +47,7 @@ pub fn run(args: Vec<String>, envs: Vec<String>, rootfs: Arc<dyn FileSystem>) ->
     proc
 }
 
+#[cfg(target_arch = "x86_64")]
 fn spawn(thread: Arc<Thread>) {
     let vmtoken = thread.proc().vmar().table_phys();
     let future = async move {
@@ -86,10 +92,49 @@ fn spawn(thread: Arc<Thread>) {
     kernel_hal::Thread::spawn(Box::pin(future), vmtoken);
 }
 
-async fn handle_syscall(thread: &Arc<Thread>, regs: &mut GeneralRegs) -> bool {
+#[cfg(target_arch = "mips")]
+fn spawn(thread: Arc<Thread>) {
+    let vmtoken = thread.proc().vmar().table_phys();
+    let future = async move {
+        loop {
+            let mut cx = thread.wait_for_run().await;
+            trace!("go to user: {:#x?}", cx);
+            kernel_hal::context_run(&mut cx);
+            trace!("back from user: {:#x?}", cx);
+            let mut exit = false;
+            let trap_num = cx.cause;
+            match trap_num {
+                _ if InterruptManager::is_page_fault(trap_num) => unimplemented!(),
+                _ if InterruptManager::is_syscall(trap_num) => {
+                    exit = handle_syscall(&thread, &mut cx).await
+                }
+                _ => panic!("not supported interrupt from user mode. {:#x?}", cx),
+            }
+            thread.end_running(cx);
+            if exit {
+                break;
+            }
+        }
+    };
+    kernel_hal::Thread::spawn(Box::pin(future), vmtoken);
+}
+
+async fn handle_syscall(thread: &Arc<Thread>, context: &mut UserContext) -> bool {
+    let regs = &context.general;
     trace!("syscall: {:#x?}", regs);
-    let num = regs.rax as u32;
-    let args = [regs.rdi, regs.rsi, regs.rdx, regs.r10, regs.r8, regs.r9];
+    let num = context.get_syscall_num();
+    let args = context.get_syscall_args();
+
+    // add before fork
+    #[cfg(riscv)]
+    {
+        context.sepc = context.sepc + 4;
+    }
+    #[cfg(mipsel)]
+    {
+        context.epc = context.epc + 4;
+    }
+
     let mut syscall = Syscall {
         thread,
         #[cfg(feature = "std")]
@@ -97,11 +142,12 @@ async fn handle_syscall(thread: &Arc<Thread>, regs: &mut GeneralRegs) -> bool {
         #[cfg(not(feature = "std"))]
         syscall_entry: 0,
         spawn_fn: spawn,
-        regs,
+        context,
         exit: false,
     };
-    let ret = syscall.syscall(num, args).await;
+    let ret = syscall.syscall(num as u32, args).await;
     let exit = syscall.exit;
-    regs.rax = ret as usize;
+
+    context.set_syscall_ret(ret as usize);
     exit
 }

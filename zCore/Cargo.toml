@@ -18,7 +18,8 @@ lto = true
 log = "0.4"
 spin = "0.5"
 buddy_system_allocator = "0.4.0"
-rlibc-opt = { git = "https://github.com/rcore-os/rlibc-opt.git", rev = "0ab1d1e" }
+rlibc = "1.0"
+# rlibc-opt = { git = "https://github.com/rcore-os/rlibc-opt.git", rev = "0ab1d1e" }
 rboot = { path = "../rboot", default-features = false }
 kernel-hal-bare = { path = "../kernel-hal-bare" }
 lazy_static = { version = "1.4", features = ["spin_no_std" ] }
@@ -33,3 +34,6 @@ rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "e17b27b", 
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 x86_64 = "0.11"
+
+[target.'cfg(target_arch = "mips")'.dependencies]
+mips = { git = "https://github.com/Harry-Chen/rust-mips", rev = "3b828a2" }

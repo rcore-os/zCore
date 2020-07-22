@@ -14,7 +14,7 @@ use {
     self::consts::SyscallType as Sys,
     alloc::sync::Arc,
     core::convert::TryFrom,
-    kernel_hal::{user::*, GeneralRegs},
+    kernel_hal::{user::*, UserContext},
     linux_object::{error::*, fs::FileDesc, process::*},
     zircon_object::{object::*, task::*, vm::VirtAddr},
 };
@@ -29,7 +29,7 @@ mod vm;
 pub struct Syscall<'a> {
     pub thread: &'a Arc<Thread>,
     pub syscall_entry: VirtAddr,
-    pub regs: &'a mut GeneralRegs,
+    pub context: &'a mut UserContext,
     pub spawn_fn: fn(thread: Arc<Thread>),
     /// Set `true` to exit current task.
     pub exit: bool,
@@ -196,12 +196,20 @@ impl Syscall<'_> {
             //            Sys::DELETE_MODULE => self.sys_delete_module(a0.into(), a1 as u32),
             #[cfg(target_arch = "x86_64")]
             _ => self.x86_64_syscall(sys_type, args).await,
+            #[cfg(target_arch = "mips")]
+            _ => self.mips_syscall(sys_type, args).await,
         };
         info!("<= {:x?}", ret);
         match ret {
             Ok(value) => value as isize,
             Err(err) => -(err as isize),
         }
+    }
+
+    #[cfg(target_arch = "mips")]
+    async fn mips_syscall(&mut self, _sys_type: Sys, _args: [usize; 6]) -> SysResult {
+        // self.unknown_syscall(sys_type);
+        unimplemented!();
     }
 
     #[cfg(target_arch = "x86_64")]
@@ -235,6 +243,7 @@ impl Syscall<'_> {
         }
     }
 
+    #[allow(dead_code)]
     fn unknown_syscall(&mut self, sys_type: Sys) -> SysResult {
         error!("unknown syscall: {:?}. exit...", sys_type);
         let proc = self.zircon_process();

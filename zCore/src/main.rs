@@ -3,23 +3,27 @@
 #![feature(lang_items)]
 #![feature(asm)]
 #![feature(panic_info_message)]
-#![deny(unused_must_use)]
-#![deny(warnings)] // comment this on develop
+#![feature(global_asm)]
+// #![deny(unused_must_use)]
+// #![deny(warnings)] // comment this on develop
 
 extern crate alloc;
 #[macro_use]
 extern crate log;
-extern crate rlibc_opt;
+extern crate rlibc;
+// extern crate rlibc_opt;
 
 #[macro_use]
 mod logging;
 mod lang;
 mod memory;
 
+#[cfg(target_arch = "x86_64")]
 use rboot::BootInfo;
 
 pub use memory::{hal_frame_alloc, hal_frame_dealloc, hal_pt_map_kernel};
 
+#[cfg(target_arch = "x86_64")]
 #[no_mangle]
 pub extern "C" fn _start(boot_info: &BootInfo) -> ! {
     logging::init(get_log_level(boot_info.cmdline));
@@ -41,6 +45,63 @@ pub extern "C" fn _start(boot_info: &BootInfo) -> ! {
         )
     };
     main(ramfs_data, boot_info.cmdline);
+    unreachable!();
+}
+
+#[cfg(target_arch = "mips")]
+global_asm!(include_str!("arch/mipsel/boot/entry.gen.s"));
+
+#[cfg(target_arch = "mips")]
+use mips::registers::cp0;
+
+// #[cfg(target_arch = "mips")]
+// #[cfg(feature = "board_malta")]
+// #[path = "board/malta/mod.rs"]
+// pub mod board;
+
+#[cfg(target_arch = "mips")]
+#[no_mangle]
+pub extern "C" fn rust_main() -> ! {
+    let ebase = cp0::ebase::read_u32();
+    let cpu_id = ebase & 0x3ff;
+    if cpu_id != 0 {
+        // TODO: run others_main on other CPU
+        // while unsafe { !cpu::has_started(hartid) }  { }
+        // others_main();
+        loop {}
+    }
+    // unsafe { cpu::set_cpu_id(hartid); }
+    logging::init("info");
+    kernel_hal_bare::init(kernel_hal_bare::Config {});
+    // loop {}
+    unimplemented!();
+    // let ebase = cp0::ebase::read_u32();
+    // let cpu_id = ebase & 0x3ff;
+    // let dtb_start = board::DTB.as_ptr() as usize;
+    // const BOOT_CPU_ID: u32 = 0;
+
+    // unsafe {
+    //     memory::clear_bss();
+    // }
+
+    // board::early_init();
+    // crate::logging::init();
+
+    // interrupt::init();
+    // memory::init_heap();
+    // memory::init_frame_allocator();
+    // timer::init();
+    // board::init(dtb_start);
+
+    // info!("Hello MIPS 32 from CPU {}, dtb @ {:#x}", cpu_id, dtb_start);
+    info!("Hello MIPS 32");
+
+    //crate::drivers::init(dtb_start);
+    // crate::process::init();
+
+    // TODO: start other CPU
+    // unsafe { cpu::start_others(hart_mask); }
+    // main(ramfs_data, boot_info.cmdline);
     unreachable!();
 }
 
@@ -74,8 +135,9 @@ fn main(ramfs_data: &'static mut [u8], _cmdline: &str) {
 fn run() -> ! {
     loop {
         executor::run_until_idle();
-        x86_64::instructions::interrupts::enable_interrupts_and_hlt();
-        x86_64::instructions::interrupts::disable();
+        kernel_hal_bare::arch::wait_for_interrupt();
+        // x86_64::instructions::interrupts::enable_interrupts_and_hlt();
+        // x86_64::instructions::interrupts::disable();
     }
 }
 

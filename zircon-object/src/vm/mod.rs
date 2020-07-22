@@ -1,5 +1,6 @@
 //! Objects for Virtual Memory Management.
 
+mod consts;
 mod stream;
 mod vmar;
 mod vmo;

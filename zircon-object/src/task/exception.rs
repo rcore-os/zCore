@@ -102,6 +102,14 @@ pub struct ExceptionContext {
     pub cr2: u64,
 }
 
+#[cfg(target_arch = "mips")]
+#[repr(C)]
+#[derive(Default, Clone)]
+pub struct ExceptionContext {
+    pub cause: u64,
+    pub bad_vaddr: u64,
+}
+
 #[cfg(target_arch = "aarch64")]
 #[repr(C)]
 #[derive(Default, Clone)]
@@ -119,6 +127,13 @@ impl ExceptionContext {
             vector: cx.trap_num as u64,
             err_code: cx.error_code as u64,
             cr2: kernel_hal::fetch_fault_vaddr() as u64,
+        }
+    }
+    #[cfg(target_arch = "mips")]
+    fn from_user_context(cx: &UserContext) -> Self {
+        ExceptionContext {
+            cause: cx.cause as u64,
+            bad_vaddr: kernel_hal::fetch_fault_vaddr() as u64,
         }
     }
     #[cfg(target_arch = "aarch64")]
