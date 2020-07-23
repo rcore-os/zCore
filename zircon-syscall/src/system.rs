@@ -1,7 +1,6 @@
 #![allow(dead_code)]
 use {
     super::*,
-    alloc::boxed::Box,
     zircon_object::{signal::Event, task::Job},
 };
 
@@ -21,10 +20,8 @@ impl Syscall<'_> {
                 let proc = self.thread.proc();
                 proc.get_object_with_rights::<Job>(root_job, Rights::MANAGE_PROCESS)?
                     .check_root_job()?;
+                // TODO: out-of-memory event
                 let event = Event::new();
-                event.add_signal_callback(Box::new(|_| {
-                    panic!("Out Of Memory!");
-                }));
                 let event_handle = proc.add_handle(Handle::new(event, Rights::DEFAULT_EVENT));
                 out.write(event_handle)?;
                 Ok(())
