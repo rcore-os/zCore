@@ -1,6 +1,7 @@
 // use super::serial::uart16550;
 // use crate::memory::phys_to_virt;
-use alloc::collections::BTreeMap;
+use super::irq::IntcDriver;
+use alloc::{collections::BTreeMap, sync::Arc};
 use core::slice;
 use device_tree::{DeviceTree, Node};
 use spin::RwLock;
@@ -11,9 +12,9 @@ lazy_static! {
     /// Compatible lookup
     pub static ref DEVICE_TREE_REGISTRY: RwLock<BTreeMap<&'static str, fn(&Node)>> =
         RwLock::new(BTreeMap::new());
-    // /// Interrupt controller lookup
-    // pub static ref DEVICE_TREE_INTC: RwLock<BTreeMap<u32, Arc<dyn IntcDriver>>> =
-    //     RwLock::new(BTreeMap::new());
+    /// Interrupt controller lookup
+    pub static ref DEVICE_TREE_INTC: RwLock<BTreeMap<u32, Arc<dyn IntcDriver>>> =
+        RwLock::new(BTreeMap::new());
 }
 
 fn walk_dt_node(dt: &Node, intc_only: bool) {

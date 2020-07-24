@@ -41,6 +41,7 @@ use spin::Mutex;
 
 pub mod arch;
 pub mod drivers;
+pub mod util;
 
 pub use self::arch::*;
 

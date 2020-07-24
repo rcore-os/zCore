@@ -3,9 +3,11 @@ use core::time::Duration;
 
 mod interrupt;
 mod io;
+mod memory;
 
 pub use interrupt::*;
 pub use io::*;
+pub use memory::*;
 
 pub unsafe fn set_page_table(_vmtoken: usize) {
     unimplemented!();

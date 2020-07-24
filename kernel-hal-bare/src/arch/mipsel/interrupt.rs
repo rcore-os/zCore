@@ -73,3 +73,8 @@ pub fn wait_for_interrupt() {
     cp0::status::enable_interrupt();
     cp0::status::disable_interrupt();
 }
+
+#[export_name = "hal_irq_enable"]
+pub fn irq_enable(_irq: u32) {
+    unimplemented!()
+}

@@ -73,6 +73,7 @@ pub extern "C" fn rust_main() -> ! {
     // unsafe { cpu::set_cpu_id(hartid); }
     logging::init("info");
     kernel_hal_bare::init(kernel_hal_bare::Config {});
+    board::init(dtb_start);
     // loop {}
     // drivers::uart16550::driver_init();
     unimplemented!();
