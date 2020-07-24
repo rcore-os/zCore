@@ -36,15 +36,19 @@ const KERNEL_OFFSET: usize = 0xffffff00_00000000;
 const PHYSICAL_MEMORY_OFFSET: usize = 0xffff8000_00000000;
 #[cfg(target_arch = "x86_64")]
 const KERNEL_PM4: usize = (KERNEL_OFFSET >> 39) & 0o777;
+#[cfg(target_arch = "x86_64")]
+const KERNEL_HEAP_SIZE: usize = 16 * 1024 * 1024; // 16 MB
 
 #[cfg(target_arch = "mips")]
 const MEMORY_OFFSET: usize = 0x8000_0000;
-// #[cfg(target_arch = "mips")]
-// const KERNEL_OFFSET: usize = 0x8010_0000;
+#[cfg(target_arch = "mips")]
+const KERNEL_OFFSET: usize = 0x8010_0000;
 #[cfg(target_arch = "mips")]
 const PHYSICAL_MEMORY_OFFSET: usize = 0x8000_0000;
-
-const KERNEL_HEAP_SIZE: usize = 16 * 1024 * 1024; // 16 MB
+#[cfg(target_arch = "mips")]
+const MEMORY_END: usize = 0x8800_0000;
+#[cfg(target_arch = "mips")]
+const KERNEL_HEAP_SIZE: usize = 0x0200_0000;
 
 const PAGE_SIZE: usize = 1 << 12;
 
@@ -52,6 +56,7 @@ const PAGE_SIZE: usize = 1 << 12;
 #[export_name = "hal_pmem_base"]
 static PMEM_BASE: usize = PHYSICAL_MEMORY_OFFSET;
 
+#[cfg(target_arch = "x86_64")]
 pub fn init_frame_allocator(boot_info: &BootInfo) {
     let mut ba = FRAME_ALLOCATOR.lock();
     for region in boot_info.memory_map.clone().iter {
@@ -62,6 +67,71 @@ pub fn init_frame_allocator(boot_info: &BootInfo) {
         }
     }
     info!("Frame allocator init end");
+}
+
+// Symbols provided by linker script
+#[allow(dead_code)]
+extern "C" {
+    fn stext();
+    fn etext();
+    fn sdata();
+    fn edata();
+    fn srodata();
+    fn erodata();
+    fn sbss();
+    fn ebss();
+    fn start();
+    fn end();
+    fn bootstack();
+    fn bootstacktop();
+}
+
+pub unsafe fn clear_bss() {
+    let start = sbss as usize;
+    let end = ebss as usize;
+    let step = core::mem::size_of::<usize>();
+    for i in (start..end).step_by(step) {
+        (i as *mut usize).write(0);
+    }
+}
+
+#[cfg(target_arch = "mips")]
+pub fn init_frame_allocator() {
+    use bitmap_allocator::BitAlloc;
+    use core::ops::Range;
+    let mut ba = FRAME_ALLOCATOR.lock();
+    let range = to_range(
+        (end as usize) - KERNEL_OFFSET + MEMORY_OFFSET + PAGE_SIZE,
+        MEMORY_END,
+    );
+    ba.insert(range);
+
+    /// Transform memory area `[start, end)` to integer range for `FrameAllocator`
+    fn to_range(start: usize, end: usize) -> Range<usize> {
+        info!("frame allocator: start {:#x} end {:#x}", start, end);
+        let page_start = (start - MEMORY_OFFSET) / PAGE_SIZE;
+        let page_end = (end - MEMORY_OFFSET - 1) / PAGE_SIZE + 1;
+        assert!(page_start < page_end, "illegal range for frame allocator");
+        page_start..page_end
+    }
+    info!("Frame allocator init end");
+
+    // mips::registers::cp0::status::write_u32(KERNEL_OFFSET as u32);
+    // loop {}
+}
+
+#[allow(dead_code)]
+extern "C" {
+    fn _root_page_table_buffer();
+    fn _root_page_table_ptr();
+}
+
+pub fn set_root_page_table_ptr(ptr: usize) {
+    use mips::tlb::TLBEntry;
+    unsafe {
+        TLBEntry::clear_all();
+        *(_root_page_table_ptr as *mut usize) = ptr;
+    }
 }
 
 pub fn init_heap() {

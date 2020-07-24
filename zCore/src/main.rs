@@ -71,11 +71,16 @@ pub extern "C" fn rust_main() -> ! {
         loop {}
     }
     // unsafe { cpu::set_cpu_id(hartid); }
+    unsafe {
+        memory::clear_bss();
+    }
     logging::init("info");
     kernel_hal_bare::init(kernel_hal_bare::Config {});
+    memory::init_heap();
+    memory::init_frame_allocator();
+    memory::set_root_page_table_ptr(0xFFFF_FFFF);
     board::init(dtb_start);
     // loop {}
-    // drivers::uart16550::driver_init();
     unimplemented!();
     // let ebase = cp0::ebase::read_u32();
     // let cpu_id = ebase & 0x3ff;
