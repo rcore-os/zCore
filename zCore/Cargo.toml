@@ -21,6 +21,7 @@ buddy_system_allocator = "0.4.0"
 rlibc = "1.0"
 # rlibc-opt = { git = "https://github.com/rcore-os/rlibc-opt.git", rev = "0ab1d1e" }
 rboot = { path = "../rboot", default-features = false }
+kernel-hal = { path = "../kernel-hal" }
 kernel-hal-bare = { path = "../kernel-hal-bare" }
 lazy_static = { version = "1.4", features = ["spin_no_std" ] }
 bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator", rev = "03bd9909" }
@@ -30,7 +31,9 @@ zircon-object = { path = "../zircon-object" }
 zircon-loader = { path = "../zircon-loader", default-features = false, optional = true }
 linux-loader = { path = "../linux-loader", default-features = false, optional = true }
 linux-object = { path = "../linux-object", default-features = false, optional = true }
+rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "517af47" }
 rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "e17b27b", optional = true }
+device_tree = { git = "https://github.com/rcore-os/device_tree-rs", rev = "eee2c23" }
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 x86_64 = "0.11"

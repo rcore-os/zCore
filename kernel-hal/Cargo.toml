@@ -9,6 +9,6 @@ description = "Kernel HAL interface definations."
 
 [dependencies]
 bitflags = "1.2"
-trapframe = "0.4.1"
+trapframe = { git = "https://github.com/rcore-os/trapframe-rs", rev = "bdfe5aa" }
 numeric-enum-macro = "0.2"
 acpi = "1.0.0"

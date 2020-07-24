@@ -12,7 +12,9 @@ log = "0.4"
 spin = "0.5"
 git-version = "0.3"
 executor = { git = "https://github.com/rcore-os/executor.git", rev = "a2d02ee9" }
-trapframe = "0.4.1"
+# trapframe = "0.4.1"
+trapframe = { git = "https://github.com/rcore-os/trapframe-rs", rev = "bdfe5aa" }
+device_tree = { git = "https://github.com/rcore-os/device_tree-rs", rev = "eee2c23" }
 kernel-hal = { path = "../kernel-hal" }
 naive-timer = "0.1.0"
 lazy_static = { version = "1.4", features = ["spin_no_std" ] }

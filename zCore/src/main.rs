@@ -54,16 +54,16 @@ global_asm!(include_str!("arch/mipsel/boot/entry.gen.s"));
 #[cfg(target_arch = "mips")]
 use mips::registers::cp0;
 
-// #[cfg(target_arch = "mips")]
-// #[cfg(feature = "board_malta")]
-// #[path = "board/malta/mod.rs"]
-// pub mod board;
+#[cfg(target_arch = "mips")]
+#[path = "arch/mipsel/board/malta/mod.rs"]
+pub mod board;
 
 #[cfg(target_arch = "mips")]
 #[no_mangle]
 pub extern "C" fn rust_main() -> ! {
     let ebase = cp0::ebase::read_u32();
     let cpu_id = ebase & 0x3ff;
+    let dtb_start = board::DTB.as_ptr() as usize;
     if cpu_id != 0 {
         // TODO: run others_main on other CPU
         // while unsafe { !cpu::has_started(hartid) }  { }
@@ -74,6 +74,7 @@ pub extern "C" fn rust_main() -> ! {
     logging::init("info");
     kernel_hal_bare::init(kernel_hal_bare::Config {});
     // loop {}
+    // drivers::uart16550::driver_init();
     unimplemented!();
     // let ebase = cp0::ebase::read_u32();
     // let cpu_id = ebase & 0x3ff;
