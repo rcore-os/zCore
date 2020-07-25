@@ -18,6 +18,7 @@ rcore-fs-hostfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "e17b27b
 env_logger = { version = "0.7", optional = true }
 kernel-hal-unix = { path = "../kernel-hal-unix", optional = true }
 async-std = { version = "1.5", features = ["attributes"], optional = true }
+mips = { git = "https://github.com/Harry-Chen/rust-mips", rev = "3b828a2" }
 
 [features]
 default = ["std"]
