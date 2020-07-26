@@ -74,8 +74,8 @@ pub extern "C" fn rust_main() -> ! {
     unsafe {
         memory::clear_bss();
     }
-    logging::init("info");
     kernel_hal_bare::init(kernel_hal_bare::Config {});
+    logging::init("info");
     memory::init_heap();
     memory::init_frame_allocator();
     memory::set_root_page_table_ptr(0xFFFF_FFFF);

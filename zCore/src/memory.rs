@@ -97,7 +97,6 @@ pub unsafe fn clear_bss() {
 
 #[cfg(target_arch = "mips")]
 pub fn init_frame_allocator() {
-    use bitmap_allocator::BitAlloc;
     use core::ops::Range;
     let mut ba = FRAME_ALLOCATOR.lock();
     let range = to_range(

@@ -7,12 +7,12 @@ pub fn intr_init() {
     }
     let mut status = cp0::status::read();
     // Enable IPI
-    status.enable_soft_int0();
-    status.enable_soft_int1();
+    // status.enable_soft_int0();
+    // status.enable_soft_int1();
     // Enable serial interrupt
     status.enable_hard_int2();
     // Enable clock interrupt
-    status.enable_hard_int5();
+    // status.enable_hard_int5();
 
     cp0::status::write(status);
     info!("interrupt: init end");

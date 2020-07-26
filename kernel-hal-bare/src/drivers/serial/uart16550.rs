@@ -56,8 +56,8 @@ impl SerialPort {
         write(self.base + COM_FCR * self.multiplier, 0 as u8);
         // Set speed; requires DLAB latch
         write(self.base + COM_LCR * self.multiplier, COM_LCR_DLAB);
-        //write(self.base + COM_DLL * self.multiplier, (115200 / 9600) as u8);
-        //write(self.base + COM_DLM * self.multiplier, 0 as u8);
+        // write(self.base + COM_DLL * self.multiplier, (115200 / 9600) as u8);
+        // write(self.base + COM_DLM * self.multiplier, 0 as u8);
 
         // 8 data bits, 1 stop bit, parity off; turn off DLAB latch
         write(
@@ -142,6 +142,7 @@ pub fn init_dt(dt: &Node) {
     let base = phys_to_virt(addr);
     info!("Init uart16550 at {:#x}", base);
     let com = Arc::new(SerialPort::new(base, shift));
+    // let com = Arc::new(SerialPort::new(3204450560, shift));
     let mut found = false;
     let irq_opt = dt.prop_u32("interrupts").ok().map(|irq| irq as usize);
     DRIVERS.write().push(com.clone());
