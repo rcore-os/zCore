@@ -66,6 +66,25 @@ jobs:
           use-cross: true
           args: -p zircon-loader --target aarch64-unknown-linux-gnu
 
+  build-user:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-20.04, macos-latest]
+    steps:
+      - uses: actions/checkout@v2
+      - name: Pull prebuilt images
+        run: git lfs pull -I prebuilt/zircon/x64/libc.so,prebuilt/zircon/x64/libfdio.so,prebuilt/zircon/x64/libunwind.so,prebuilt/zircon/x64/libzircon.so,prebuilt/zircon/x64/Scrt1.o
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly-2020-06-04
+          target: x86_64-fuchsia
+      - name: Build Zircon user programs
+        run: |
+          cd zircon-user
+          make build mode=release
+
   test:
     runs-on: ubuntu-20.04
     steps:
@@ -112,7 +131,7 @@ jobs:
         with:
           submodules: 'recursive'
       - name: Pull prebuilt images
-        run: git lfs pull -X prebuilt/zircon/x64/bringup.zbi prebuilt/zircon/arm64
+        run: git lfs pull -I prebuilt/zircon/x64/core-tests.zbi,prebuilt/zircon/x64/libzircon.so,prebuilt/zircon/x64/userboot.so
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
