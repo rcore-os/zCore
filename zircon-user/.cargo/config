@@ -1,0 +1,7 @@
+[build]
+target = "x86_64-fuchsia"
+
+[target.x86_64-fuchsia]
+rustflags = [
+    "-L", "../prebuilt/zircon/x64",
+]

@@ -4,6 +4,7 @@ zbi_file ?= bringup
 graphic ?=
 accel ?=
 linux ?=
+user ?=
 hypervisor ?=
 smp ?= 1
 test_filter ?= *.*
@@ -92,6 +93,9 @@ $(kernel_img): kernel bootloader
 	cp rboot.conf $(ESP)/EFI/Boot/rboot.conf
 ifeq ($(linux), 1)
 	cp x86_64.img $(ESP)/EFI/zCore/fuchsia.zbi
+else ifeq ($(user), 1)
+	make -C ../zircon-user
+	cp ../zircon-user/target/zcore.zbi $(ESP)/EFI/zCore/fuchsia.zbi
 else
 	cp ../prebuilt/zircon/x64/$(zbi_file).zbi $(ESP)/EFI/zCore/fuchsia.zbi
 endif
