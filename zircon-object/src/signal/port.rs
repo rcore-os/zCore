@@ -56,12 +56,12 @@ impl From<PortInterruptPacket> for PacketInterrupt {
 
 impl Port {
     /// Create a new `Port`.
-    pub fn new(options: u32) -> Arc<Self> {
-        Arc::new(Port {
+    pub fn new(options: u32) -> ZxResult<Arc<Self>> {
+        Ok(Arc::new(Port {
             base: KObjectBase::default(),
-            options: PortOptions::from_bits_truncate(options),
+            options: PortOptions::from_bits(options).ok_or(ZxError::INVALID_ARGS)?,
             inner: Mutex::default(),
-        })
+        }))
     }
 
     /// Push a `packet` into the port.
@@ -146,6 +146,7 @@ impl Port {
         self.inner.lock().queue.len()
     }
 
+    /// Check whether the port can be bound to an interrupt.
     pub fn can_bind_to_interrupt(&self) -> bool {
         self.options.contains(PortOptions::BIND_TO_INTERUPT)
     }
@@ -165,7 +166,7 @@ mod tests {
 
     #[async_std::test]
     async fn wait() {
-        let port = Port::new(0);
+        let port = Port::new(0).unwrap();
         let object = DummyObject::new() as Arc<dyn KernelObject>;
         object.send_signal_to_port_async(Signal::READABLE, &port, 1);
 
@@ -212,7 +213,7 @@ mod tests {
         assert_eq!(PortPacketRepr::from(&packet), packet2);
 
         // Test asserting signal before `send_signal_to_port_async`.
-        let port = Port::new(0);
+        let port = Port::new(0).unwrap();
         let object = DummyObject::new() as Arc<dyn KernelObject>;
         object.signal_set(Signal::READABLE);
         object.send_signal_to_port_async(Signal::READABLE, &port, 1);
