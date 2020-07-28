@@ -154,8 +154,11 @@ impl Port {
 }
 
 bitflags! {
+    /// If you need this port to be bound to an interrupt, pass **BIND_TO_INTERRUPT** to *options*,
+    /// otherwise it should be **0**.
     pub struct PortOptions: u32 {
         #[allow(clippy::identity_op)]
+        /// Allow this port to be bound to an interrupt.
         const BIND_TO_INTERUPT         = 1 << 0;
     }
 }

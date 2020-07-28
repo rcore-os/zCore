@@ -1,3 +1,4 @@
+#![allow(missing_docs)]
 //! Port packet data structure definition.
 
 use super::*;
@@ -15,6 +16,7 @@ pub struct PortPacket {
 }
 
 // reference: zircon/system/public/zircon/syscalls/port.h ZX_PKT_TYPE_*
+/// The type of a packet.
 #[repr(u32)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum PacketType {
@@ -30,6 +32,7 @@ pub enum PacketType {
 }
 
 #[repr(C)]
+/// The data carried by a packet
 pub union Payload {
     user: PacketUser,
     signal: PacketSignal,

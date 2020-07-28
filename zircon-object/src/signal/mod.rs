@@ -1,3 +1,4 @@
+#![deny(missing_docs)]
 //! Objects for signaling and waiting.
 
 use super::*;
