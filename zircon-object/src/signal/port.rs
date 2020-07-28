@@ -106,7 +106,8 @@ impl Port {
         inner.interrupt_grave.remove(&pid)
     }
 
-    /// Asynchronous wait until at least one packet is available, then take out all packets.
+    /// Asynchronous wait until at least one packet is available, then take out the earliest
+    /// (in FIFO order) available packet.
     pub async fn wait(self: &Arc<Self>) -> PortPacket {
         let object = self.clone() as Arc<dyn KernelObject>;
         loop {
