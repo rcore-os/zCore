@@ -12,6 +12,7 @@ zircon = ["zircon-loader"]
 linux = ["linux-loader", "linux-object", "rcore-fs-sfs"]
 # for qemu machine
 board_malta = []
+hypervisor = ["rvm", "zircon", "zircon-object/hypervisor", "zircon-syscall/hypervisor"]
 
 [profile.release]
 lto = true
@@ -36,6 +37,8 @@ linux-object = { path = "../linux-object", default-features = false, optional = 
 rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "517af47" }
 rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "e17b27b", optional = true }
 device_tree = { git = "https://github.com/rcore-os/device_tree-rs", rev = "eee2c23" }
+zircon-syscall = { path = "../zircon-syscall", optional = true }
+rvm = { git = "https://github.com/rcore-os/RVM", rev = "4b64355", optional = true }
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 x86_64 = "0.11"

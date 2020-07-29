@@ -47,9 +47,9 @@ impl From<PortInterruptPacket> for PacketInterrupt {
     fn from(packet: PortInterruptPacket) -> Self {
         PacketInterrupt {
             timestamp: packet.timestamp,
-            reserved0: 0,
-            reserved1: 0,
-            reserved2: 0,
+            _reserved0: 0,
+            _reserved1: 0,
+            _reserved2: 0,
         }
     }
 }
@@ -72,7 +72,7 @@ impl Port {
         self.base.signal_set(Signal::READABLE);
     }
 
-    /// Push an `User` type `packet` into the port.
+    /// Push a `User` type `packet` into the port.
     pub fn push_user(&self, packet: impl Into<PortPacket>) -> ZxResult<()> {
         let mut packet = packet.into();
         packet.type_ = PacketType::User;
@@ -177,6 +177,7 @@ mod tests {
                 observed: Signal::WRITABLE,
                 count: 1,
                 timestamp: 0,
+                _reserved1: 0,
             }),
         };
         async_std::task::spawn({
@@ -184,6 +185,9 @@ mod tests {
             let object = object.clone();
             let packet2 = packet2.clone();
             async move {
+                // Assert an irrelevant signal to test the `false` branch of the callback for `READABLE`.
+                object.signal_set(Signal::USER_SIGNAL_0);
+                object.signal_clear(Signal::USER_SIGNAL_0);
                 object.signal_set(Signal::READABLE);
                 async_std::task::sleep(Duration::from_millis(1)).await;
                 port.push(packet2);
@@ -191,21 +195,28 @@ mod tests {
         });
 
         let packet = port.wait().await;
-        assert_eq!(
-            PortPacketRepr::from(&packet),
-            PortPacketRepr {
-                key: 1,
-                status: ZxError::OK,
-                data: PayloadRepr::Signal(PacketSignal {
-                    trigger: Signal::READABLE,
-                    observed: Signal::READABLE,
-                    count: 1,
-                    timestamp: 0,
-                }),
-            }
-        );
+        let packet_repr = PortPacketRepr {
+            key: 1,
+            status: ZxError::OK,
+            data: PayloadRepr::Signal(PacketSignal {
+                trigger: Signal::READABLE,
+                observed: Signal::READABLE,
+                count: 1,
+                timestamp: 0,
+                _reserved1: 0,
+            }),
+        };
+        assert_eq!(PortPacketRepr::from(&packet), packet_repr);
 
         let packet = port.wait().await;
         assert_eq!(PortPacketRepr::from(&packet), packet2);
+
+        // Test asserting signal before `send_signal_to_port_async`.
+        let port = Port::new(0);
+        let object = DummyObject::new() as Arc<dyn KernelObject>;
+        object.signal_set(Signal::READABLE);
+        object.send_signal_to_port_async(Signal::READABLE, &port, 1);
+        let packet = port.wait().await;
+        assert_eq!(PortPacketRepr::from(&packet), packet_repr);
     }
 }

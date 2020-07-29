@@ -4,6 +4,8 @@ zbi_file ?= bringup
 graphic ?=
 accel ?=
 linux ?=
+user ?=
+hypervisor ?=
 smp ?= 1
 test_filter ?= *.*
 
@@ -22,7 +24,7 @@ kernel_img := $(build_path)/zcore.img
 ESP := $(build_path)/esp
 OVMF := ../rboot/OVMF.fd
 qemu := qemu-system-$(arch)
-OBJDUMP := rust-objdump
+OBJDUMP := rust-objdump -print-imm-hex -x86-asm-syntax=intel
 VMDISK := $(build_path)/boot.vdi
 QEMU_DISK := $(build_path)/disk.qcow2
 sysroot := $(shell rustc --print sysroot)
@@ -76,6 +78,11 @@ qemu_opts += \
 endif
 endif
 
+ifeq ($(hypervisor), 1)
+build_args += --features hypervisor
+accel = 1
+endif
+
 ifeq ($(accel), 1)
 ifeq ($(shell uname), Darwin)
 qemu_opts += -accel hvf
@@ -117,6 +124,9 @@ ifeq ($(arch), x86_64)
 	cp rboot.conf $(ESP)/EFI/Boot/rboot.conf
 ifeq ($(linux), 1)
 	cp x86_64.img $(ESP)/EFI/zCore/fuchsia.zbi
+else ifeq ($(user), 1)
+	make -C ../zircon-user
+	cp ../zircon-user/target/zcore.zbi $(ESP)/EFI/zCore/fuchsia.zbi
 else
 	cp ../prebuilt/zircon/x64/$(zbi_file).zbi $(ESP)/EFI/zCore/fuchsia.zbi
 endif
