@@ -87,7 +87,7 @@ build-test: build
 
 build: $(kernel_img)
 
-build-for-parallel-test: build $(QEMU_DISK)
+build-parallel-test: build $(QEMU_DISK)
 	cp ../prebuilt/zircon/x64/core-tests.zbi $(ESP)/EFI/zCore/fuchsia.zbi
 	echo 'cmdline=LOG=warn:userboot=test/core-standalone-test:userboot.shutdown:core-tests=$(test_filter)' >> $(ESP)/EFI/Boot/rboot.conf
 
