@@ -10,7 +10,7 @@ use crate::{
     arch::phys_to_virt,
     util::{read, write},
 };
-use alloc::{fmt::format, string::String, sync::Arc};
+use alloc::{string::String, sync::Arc};
 // use core::fmt::{Arguments, Result, Write};
 use device_tree::Node;
 // use spin::Mutex;
@@ -36,7 +36,7 @@ impl Driver for SerialPort {
     }
 
     fn get_id(&self) -> String {
-        format(format_args!("com_{}", self.base))
+        format!("com_{}", self.base)
     }
 }
 
@@ -142,7 +142,6 @@ pub fn init_dt(dt: &Node) {
     let base = phys_to_virt(addr);
     info!("Init uart16550 at {:#x}", base);
     let com = Arc::new(SerialPort::new(base, shift));
-    // let com = Arc::new(SerialPort::new(3204450560, shift));
     let mut found = false;
     let irq_opt = dt.prop_u32("interrupts").ok().map(|irq| irq as usize);
     DRIVERS.write().push(com.clone());

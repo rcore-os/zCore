@@ -195,11 +195,7 @@ async fn handle_syscall(thread: &Arc<Thread>, context: &mut UserContext) -> bool
     let args = context.get_syscall_args();
 
     // add before fork
-    #[cfg(riscv)]
-    {
-        context.sepc = context.sepc + 4;
-    }
-    #[cfg(mipsel)]
+    #[cfg(target_arch = "mips")]
     {
         context.epc = context.epc + 4;
     }

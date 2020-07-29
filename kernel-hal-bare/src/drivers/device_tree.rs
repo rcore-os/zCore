@@ -1,5 +1,3 @@
-// use super::serial::uart16550;
-// use crate::memory::phys_to_virt;
 use super::irq::IntcDriver;
 use alloc::{collections::BTreeMap, sync::Arc};
 use core::slice;

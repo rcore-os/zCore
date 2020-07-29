@@ -5,3 +5,8 @@ Cargo.lock
 /rootfs
 /prebuilt/linux/alpine*
 .idea
+
+.DS_Store
+/zCore/src/arch/mipsel/boot/linker.ld
+*.gen.s
+*.dtb

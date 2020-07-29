@@ -76,5 +76,6 @@ pub fn wait_for_interrupt() {
 
 #[export_name = "hal_irq_enable"]
 pub fn irq_enable(_irq: u32) {
-    unimplemented!()
+    // unimplemented!()
+    warn!("unimplemented irq_enable");
 }

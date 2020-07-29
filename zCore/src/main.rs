@@ -80,8 +80,9 @@ pub extern "C" fn rust_main() -> ! {
     memory::init_frame_allocator();
     memory::set_root_page_table_ptr(0xFFFF_FFFF);
     board::init(dtb_start);
+    info!("Hello MIPS 32 from CPU {}, dtb @ {:#x}", cpu_id, dtb_start);
     // loop {}
-    unimplemented!();
+    // unimplemented!();
     // let ebase = cp0::ebase::read_u32();
     // let cpu_id = ebase & 0x3ff;
     // let dtb_start = board::DTB.as_ptr() as usize;
@@ -101,7 +102,6 @@ pub extern "C" fn rust_main() -> ! {
     // board::init(dtb_start);
 
     // info!("Hello MIPS 32 from CPU {}, dtb @ {:#x}", cpu_id, dtb_start);
-    info!("Hello MIPS 32");
 
     //crate::drivers::init(dtb_start);
     // crate::process::init();

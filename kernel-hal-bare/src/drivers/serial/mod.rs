@@ -1,5 +1,4 @@
 use super::Driver;
-// use super::SERIAL_DRIVERS;
 
 pub mod uart16550;
 

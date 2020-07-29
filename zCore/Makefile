@@ -7,7 +7,15 @@ linux ?=
 smp ?= 1
 test_filter ?= *.*
 
+FEATURES += board_$(BOARD)
+
+
+
 build_args := -Z build-std=core,alloc --target $(arch).json
+ifeq ($(arch), mipsel)
+build_args += --features "board_malta"
+endif
+
 build_path := target/$(arch)/$(mode)
 kernel := $(build_path)/zcore
 kernel_img := $(build_path)/zcore.img
@@ -42,7 +50,7 @@ else
 endif
 
 qemu_opts := \
-	-smp $(smp)
+	-smp cores=$(smp)
 
 ifeq ($(arch), x86_64)
 qemu_opts += \
@@ -104,16 +112,15 @@ build: $(kernel_img)
 
 $(kernel_img): kernel bootloader
 ifeq ($(arch), x86_64)
-	mkdir -p $(ESP)/EFI/zCore $(ESP)/EFI/Boot
-	cp ../rboot/target/x86_64-unknown-uefi/release/rboot.efi $(ESP)/EFI/Boot/BootX64.efi
-	cp rboot.conf $(ESP)/EFI/Boot/rboot.conf
-	ifeq ($(linux), 1)
-		cp x86_64.img $(ESP)/EFI/zCore/fuchsia.zbi
-	else
-		cp ../prebuilt/zircon/x64/$(zbi_file).zbi $(ESP)/EFI/zCore/fuchsia.zbi
-	endif
-	cp $(kernel) $(ESP)/EFI/zCore/zcore.elf
-	endif
+mkdir -p $(ESP)/EFI/zCore $(ESP)/EFI/Boot
+cp ../rboot/target/x86_64-unknown-uefi/release/rboot.efi $(ESP)/EFI/Boot/BootX64.efi
+cp rboot.conf $(ESP)/EFI/Boot/rboot.conf
+ifeq ($(linux), 1)
+	cp x86_64.img $(ESP)/EFI/zCore/fuchsia.zbi
+else
+	cp ../prebuilt/zircon/x64/$(zbi_file).zbi $(ESP)/EFI/zCore/fuchsia.zbi
+endif
+cp $(kernel) $(ESP)/EFI/zCore/zcore.elf
 else ifeq ($(arch), mipsel)
 # qemu-system-mipsel accepts ELF file only, so objcopy is not needed
 	@$(strip) $(kernel) -o $@
