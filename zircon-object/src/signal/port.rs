@@ -36,7 +36,7 @@ struct PortInner {
     interrupt_pid: u64,
 }
 
-#[derive(Default, Debug)]
+#[derive(Debug)]
 struct PortInterruptPacket {
     timestamp: i64,
     key: u64,
@@ -168,13 +168,20 @@ mod tests {
     use super::*;
     use std::time::Duration;
 
+    #[test]
+    fn new() {
+        assert!(Port::new(0).is_ok());
+        assert!(Port::new(1).is_ok());
+        assert_eq!(Port::new(2).unwrap_err(), ZxError::INVALID_ARGS);
+    }
+
     #[async_std::test]
     async fn wait() {
         let port = Port::new(0).unwrap();
         let object = DummyObject::new() as Arc<dyn KernelObject>;
         object.send_signal_to_port_async(Signal::READABLE, &port, 1);
 
-        let packet2 = PortPacketRepr {
+        let packet_repr2 = PortPacketRepr {
             key: 2,
             status: ZxError::OK,
             data: PayloadRepr::Signal(PacketSignal {
@@ -188,7 +195,7 @@ mod tests {
         async_std::task::spawn({
             let port = port.clone();
             let object = object.clone();
-            let packet2 = packet2.clone();
+            let packet2 = packet_repr2.clone();
             async move {
                 // Assert an irrelevant signal to test the `false` branch of the callback for `READABLE`.
                 object.signal_set(Signal::USER_SIGNAL_0);
@@ -214,7 +221,7 @@ mod tests {
         assert_eq!(PortPacketRepr::from(&packet), packet_repr);
 
         let packet = port.wait().await;
-        assert_eq!(PortPacketRepr::from(&packet), packet2);
+        assert_eq!(PortPacketRepr::from(&packet), packet_repr2);
 
         // Test asserting signal before `send_signal_to_port_async`.
         let port = Port::new(0).unwrap();
