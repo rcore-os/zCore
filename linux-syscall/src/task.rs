@@ -292,62 +292,34 @@ bitflags! {
     }
 }
 
-trait RegExt {
+trait CtxExt {
     fn new_fn(entry: usize, sp: usize, arg1: usize, arg2: usize) -> Self;
     fn new_clone(regs: &Self, newsp: usize, newtls: usize) -> Self;
     fn new_fork(regs: &Self) -> Self;
 }
 
-#[cfg(target_arch = "x86_64")]
-impl RegExt for GeneralRegs {
+impl CtxExt for UserContext {
     fn new_fn(entry: usize, sp: usize, arg1: usize, arg2: usize) -> Self {
-        GeneralRegs {
-            rip: entry,
-            rsp: sp,
-            rdi: arg1,
-            rsi: arg2,
-            ..Default::default()
-        }
+        let mut ctx = UserContext::default();
+        ctx.set_ip(entry);
+        ctx.set_sp(sp);
+        ctx.set_syscall_args([arg1, arg2, 0, 0, 0, 0]);
+        ctx
     }
 
-    fn new_clone(regs: &Self, newsp: usize, newtls: usize) -> Self {
-        GeneralRegs {
-            rax: 0,
-            rsp: newsp,
-            fsbase: newtls,
-            ..*regs
-        }
+    fn new_clone(origin_ctx: &Self, newsp: usize, newtls: usize) -> Self {
+        let mut ctx = UserContext::default();
+        ctx.general = origin_ctx.general;
+        ctx.set_syscall_ret(0);
+        ctx.set_sp(newsp);
+        ctx.set_tls(newtls);
+        ctx
     }
 
-    fn new_fork(regs: &Self) -> Self {
-        GeneralRegs { rax: 0, ..*regs }
-    }
-}
-
-#[cfg(target_arch = "mips")]
-impl RegExt for UserContext {
-    fn new_fn(_entry: usize, _sp: usize, _arg1: usize, _arg2: usize) -> Self {
-        unimplemented!()
-        // UserContext {
-        //     sp: sp,
-        //     a0: arg1,
-        //     a1: arg2,
-        //     ..Default::default()
-        // }
-    }
-
-    fn new_clone(_regs: &Self, _newsp: usize, _newtls: usize) -> Self {
-        // TODO: set tls
-        // UserContext {
-        //     v0: 0,
-        //     sp: newsp,
-        //     ..*regs
-        // }
-        unimplemented!()
-    }
-
-    fn new_fork(_regs: &Self) -> Self {
-        // UserContext { v0: 0, ..*regs }
-        unimplemented!()
+    fn new_fork(origin_ctx: &Self) -> Self {
+        let mut ctx = UserContext::default();
+        ctx.general = origin_ctx.general;
+        ctx.set_syscall_ret(0);
+        ctx
     }
 }

@@ -142,7 +142,7 @@ fn main(ramfs_data: &'static mut [u8], _cmdline: &str) {
 fn run() -> ! {
     loop {
         executor::run_until_idle();
-        kernel_hal_bare::arch::wait_for_interrupt();
+        kernel_hal::InterruptManager::wait_for_interrupt();
         // x86_64::instructions::interrupts::enable_interrupts_and_hlt();
         // x86_64::instructions::interrupts::disable();
     }

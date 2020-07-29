@@ -10,11 +10,7 @@ extern crate log;
 
 use {
     alloc::{boxed::Box, string::String, sync::Arc, vec::Vec},
-    kernel_hal::{
-        InterruptManager,
-        // MMUFlags,
-        UserContext,
-    },
+    kernel_hal::{InterruptManager, MMUFlags, UserContext},
     linux_object::{
         fs::{vfs::FileSystem, INodeExt},
         loader::LinuxElfLoader,
@@ -58,9 +54,9 @@ fn spawn(thread: Arc<Thread>) {
             trace!("back from user: {:#x?}", cx);
             let mut exit = false;
             match cx.trap_num {
-                0x100 => exit = handle_syscall(&thread, &mut cx.general).await,
+                0x100 => exit = handle_syscall(&thread, &mut cx).await,
                 0x20..=0x3f => {
-                    kernel_hal::InterruptManager::handle(cx.trap_num as u8);
+                    InterruptManager::handle(cx.trap_num as u8);
                     if cx.trap_num == 0x20 {
                         kernel_hal::yield_now().await;
                     }
@@ -114,7 +110,6 @@ pub fn handle_user_page_fault(thread: &Arc<Thread>, addr: usize) -> bool {
     let virt_addr = VirtAddr::new(addr);
     let root_table = unsafe { &mut *(get_root_page_table_ptr() as *mut MIPSPageTable) };
     let tlb_result = root_table.lookup(addr);
-    use kernel_hal::MMUFlags;
     let flags = MMUFlags::WRITE;
     match tlb_result {
         Ok(tlb_entry) => {

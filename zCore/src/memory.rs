@@ -37,6 +37,8 @@ const PHYSICAL_MEMORY_OFFSET: usize = 0xffff8000_00000000;
 #[cfg(target_arch = "x86_64")]
 const KERNEL_PM4: usize = (KERNEL_OFFSET >> 39) & 0o777;
 #[cfg(target_arch = "x86_64")]
+const PHYSICAL_MEMORY_PM4: usize = (PHYSICAL_MEMORY_OFFSET >> 39) & 0o777;
+#[cfg(target_arch = "x86_64")]
 const KERNEL_HEAP_SIZE: usize = 16 * 1024 * 1024; // 16 MB
 
 #[cfg(target_arch = "mips")]
@@ -70,6 +72,7 @@ pub fn init_frame_allocator(boot_info: &BootInfo) {
 }
 
 // Symbols provided by linker script
+#[cfg(target_arch = "mips")]
 #[allow(dead_code)]
 extern "C" {
     fn stext();
@@ -86,6 +89,7 @@ extern "C" {
     fn bootstacktop();
 }
 
+#[cfg(target_arch = "mips")]
 pub unsafe fn clear_bss() {
     let start = sbss as usize;
     let end = ebss as usize;
@@ -114,17 +118,16 @@ pub fn init_frame_allocator() {
         page_start..page_end
     }
     info!("Frame allocator init end");
-
-    // mips::registers::cp0::status::write_u32(KERNEL_OFFSET as u32);
-    // loop {}
 }
 
+#[cfg(target_arch = "mips")]
 #[allow(dead_code)]
 extern "C" {
     fn _root_page_table_buffer();
     fn _root_page_table_ptr();
 }
 
+#[cfg(target_arch = "mips")]
 pub fn set_root_page_table_ptr(ptr: usize) {
     use mips::tlb::TLBEntry;
     unsafe {

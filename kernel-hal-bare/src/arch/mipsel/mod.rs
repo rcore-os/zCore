@@ -1,7 +1,7 @@
 use core::time::Duration;
 // use {super::super::*, mips};
 
-mod interrupt;
+pub mod interrupt;
 mod io;
 mod memory;
 

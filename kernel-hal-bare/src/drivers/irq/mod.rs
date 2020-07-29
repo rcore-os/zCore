@@ -1,5 +1,5 @@
 use super::Driver;
-use crate::arch::irq_enable;
+use crate::arch::interrupt::irq_enable;
 use alloc::collections::btree_map::Entry;
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;

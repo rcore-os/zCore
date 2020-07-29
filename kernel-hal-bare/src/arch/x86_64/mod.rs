@@ -19,9 +19,13 @@ use {
     },
 };
 
+use kernel_hal::vdso::{Features, VdsoConstants};
+
 mod acpi_table;
-mod interrupt;
+pub mod interrupt;
 mod keyboard;
+
+pub use super::super::phys_to_virt;
 
 /// Page Table
 #[repr(C)]
