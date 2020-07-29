@@ -30,6 +30,7 @@ QEMU_DISK := $(build_path)/disk.qcow2
 sysroot := $(shell rustc --print sysroot)
 strip := $(shell find $(sysroot) -name llvm-strip)
 hostcc := gcc
+dtc := dtc
 ifeq ($(arch), mipsel)
 BOARD ?= malta
 else
@@ -136,7 +137,14 @@ else ifeq ($(arch), mipsel)
 	@$(strip) $(kernel) -o $@
 endif
 
-kernel:
+%.dtb: %.dts
+ifeq ($(arch), mipsel)
+	@echo Generating device tree file $@
+	@$(dtc) -I dts -O dtb -o $@ $<
+	# @rm -rf src/arch/${arch}/boot/dtb.gen.s
+endif
+
+kernel: $(DTB)
 ifeq ($(arch), mipsel)
 	@for file in entry ; do \
 	    $(hostcc) -Dboard_$(BOARD) -E src/arch/$(arch)/boot/$${file}.S -o src/arch/$(arch)/boot/$${file}.gen.s ; \
