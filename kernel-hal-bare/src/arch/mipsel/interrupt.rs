@@ -11,7 +11,7 @@ pub fn intr_init() {
     // status.enable_soft_int1();
     // Enable serial interrupt
     status.enable_hard_int2();
-    // Enable clock interrupt
+    // Enable clock interrupt in timer::init
     // status.enable_hard_int5();
 
     cp0::status::write(status);

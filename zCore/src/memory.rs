@@ -120,22 +120,6 @@ pub fn init_frame_allocator() {
     info!("Frame allocator init end");
 }
 
-#[cfg(target_arch = "mips")]
-#[allow(dead_code)]
-extern "C" {
-    fn _root_page_table_buffer();
-    fn _root_page_table_ptr();
-}
-
-#[cfg(target_arch = "mips")]
-pub fn set_root_page_table_ptr(ptr: usize) {
-    use mips::tlb::TLBEntry;
-    unsafe {
-        TLBEntry::clear_all();
-        *(_root_page_table_ptr as *mut usize) = ptr;
-    }
-}
-
 pub fn init_heap() {
     const MACHINE_ALIGN: usize = core::mem::size_of::<usize>();
     const HEAP_BLOCK: usize = KERNEL_HEAP_SIZE / MACHINE_ALIGN;

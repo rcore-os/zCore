@@ -15,7 +15,8 @@ FEATURES += board_$(BOARD)
 
 build_args := -Z build-std=core,alloc --target $(arch).json
 ifeq ($(arch), mipsel)
-build_args += --features "board_malta"
+build_args += --features board_malta
+build_args += --features link_user
 endif
 
 build_path := target/$(arch)/$(mode)
@@ -41,6 +42,8 @@ endif
 ifeq ($(arch), mipsel)
 DTB := src/arch/$(arch)/board/$(BOARD)/device.dtb
 endif
+
+export USER_IMG = $(arch).img
 
 ifeq ($(mode), release)
 	build_args += --release

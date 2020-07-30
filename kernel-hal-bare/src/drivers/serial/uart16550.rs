@@ -7,7 +7,7 @@ use crate::drivers::IRQ_MANAGER;
 use crate::drivers::SERIAL_DRIVERS;
 use crate::drivers::{DeviceType, Driver, DRIVERS};
 use crate::{
-    arch::phys_to_virt,
+    phys_to_virt,
     util::{read, write},
 };
 use alloc::{string::String, sync::Arc};

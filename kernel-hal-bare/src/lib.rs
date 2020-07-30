@@ -136,8 +136,20 @@ impl Frame {
     }
 }
 
+#[cfg(not(target_arch = "mips"))]
 pub fn phys_to_virt(paddr: PhysAddr) -> VirtAddr {
     unsafe { PMEM_BASE + paddr }
+}
+
+/// MIPS is special
+#[cfg(target_arch = "mips")]
+pub fn phys_to_virt(paddr: usize) -> usize {
+    const PHYSICAL_MEMORY_OFFSET: usize = 0x8000_0000;
+    if paddr <= PHYSICAL_MEMORY_OFFSET {
+        PHYSICAL_MEMORY_OFFSET + paddr
+    } else {
+        paddr
+    }
 }
 
 /// Read physical memory from `paddr` to `buf`.

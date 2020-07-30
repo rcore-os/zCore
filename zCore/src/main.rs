@@ -44,6 +44,13 @@ pub extern "C" fn _start(boot_info: &BootInfo) -> ! {
             boot_info.initramfs_size as usize,
         )
     };
+    info!(
+        "SFS linked to kernel, from {:08x} to {:08x}",
+        boot_info.initramfs_addr as usize + boot_info.physical_memory_offset as usize,
+        boot_info.initramfs_addr as usize
+            + boot_info.physical_memory_offset as usize
+            + boot_info.initramfs_size as usize
+    );
     main(ramfs_data, boot_info.cmdline);
     unreachable!();
 }
@@ -58,13 +65,29 @@ use mips::registers::cp0;
 #[path = "arch/mipsel/board/malta/mod.rs"]
 pub mod board;
 
+// Hard link user programs
+#[cfg(feature = "link_user")]
+global_asm!(concat!(
+    r#"
+	.section .data.img
+	.global _user_img_start
+	.global _user_img_end
+_user_img_start:
+    .incbin ""#,
+    env!("USER_IMG"),
+    r#""
+_user_img_end:
+"#
+));
+
 #[cfg(target_arch = "mips")]
 #[no_mangle]
 pub extern "C" fn rust_main() -> ! {
     let ebase = cp0::ebase::read_u32();
     let cpu_id = ebase & 0x3ff;
     let dtb_start = board::DTB.as_ptr() as usize;
-    if cpu_id != 0 {
+    const BOOT_CPU_ID: u32 = 0;
+    if cpu_id != BOOT_CPU_ID {
         // TODO: run others_main on other CPU
         // while unsafe { !cpu::has_started(hartid) }  { }
         // others_main();
@@ -74,41 +97,28 @@ pub extern "C" fn rust_main() -> ! {
     unsafe {
         memory::clear_bss();
     }
-    kernel_hal_bare::init(kernel_hal_bare::Config {});
     logging::init("info");
     memory::init_heap();
     memory::init_frame_allocator();
-    memory::set_root_page_table_ptr(0xFFFF_FFFF);
+    kernel_hal_bare::init(kernel_hal_bare::Config {});
     board::init(dtb_start);
     info!("Hello MIPS 32 from CPU {}, dtb @ {:#x}", cpu_id, dtb_start);
-    // loop {}
-    // unimplemented!();
-    // let ebase = cp0::ebase::read_u32();
-    // let cpu_id = ebase & 0x3ff;
-    // let dtb_start = board::DTB.as_ptr() as usize;
-    // const BOOT_CPU_ID: u32 = 0;
-
-    // unsafe {
-    //     memory::clear_bss();
-    // }
-
-    // board::early_init();
-    // crate::logging::init();
-
-    // interrupt::init();
-    // memory::init_heap();
-    // memory::init_frame_allocator();
-    // timer::init();
-    // board::init(dtb_start);
-
-    // info!("Hello MIPS 32 from CPU {}, dtb @ {:#x}", cpu_id, dtb_start);
-
-    //crate::drivers::init(dtb_start);
-    // crate::process::init();
-
-    // TODO: start other CPU
-    // unsafe { cpu::start_others(hart_mask); }
-    // main(ramfs_data, boot_info.cmdline);
+    extern "C" {
+        fn _user_img_start();
+        fn _user_img_end();
+    }
+    use core::slice;
+    let ramfs_data = unsafe {
+        slice::from_raw_parts_mut(
+            _user_img_start as *mut u8,
+            _user_img_end as usize - _user_img_start as usize,
+        )
+    };
+    info!(
+        "SFS linked to kernel, from {:08x} to {:08x}",
+        _user_img_start as usize, _user_img_end as usize
+    );
+    main(ramfs_data, "");
     unreachable!();
 }
 
@@ -130,7 +140,11 @@ fn main(ramfs_data: &'static mut [u8], _cmdline: &str) {
     use alloc::vec;
     use linux_object::fs::MemBuf;
 
+    #[cfg(target_arch = "x86_64")]
     let args = vec!["/bin/busybox".into()];
+    #[cfg(target_arch = "mips")]
+    let args = vec!["busybox".into()];
+
     let envs = vec!["PATH=/usr/sbin:/usr/bin:/sbin:/bin:/usr/x86_64-alpine-linux-musl/bin".into()];
 
     let device = Arc::new(MemBuf::new(ramfs_data));

@@ -12,6 +12,7 @@ zircon = ["zircon-loader"]
 linux = ["linux-loader", "linux-object", "rcore-fs-sfs"]
 # for qemu machine
 board_malta = []
+link_user = []
 hypervisor = ["rvm", "zircon", "zircon-object/hypervisor", "zircon-syscall/hypervisor"]
 
 [profile.release]
