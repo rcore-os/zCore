@@ -7,10 +7,15 @@ use {
     core::cell::{Ref, RefCell, RefMut},
     core::ops::Range,
     core::sync::atomic::*,
-    hashbrown::HashMap,
     kernel_hal::{frame_flush, PhysFrame, PAGE_SIZE},
     spin::{Mutex, MutexGuard},
 };
+
+#[cfg(target_arch = "mips")]
+use alloc::collections::BTreeMap as HashMap;
+
+#[cfg(not(target_arch = "mips"))]
+use hashbrown::HashMap;
 
 enum VMOType {
     /// The original node.
