@@ -69,7 +69,7 @@ impl Futex {
             if let Some(waiter) = inner.waiter_queue.pop_front() {
                 waiter.wake();
             } else {
-                return i + 1;
+                return i;
             }
         }
         wake_count
@@ -304,6 +304,9 @@ mod tests {
     async fn wait() {
         static VALUE: AtomicI32 = AtomicI32::new(1);
         let futex = Futex::new(&VALUE);
+
+        let count = futex.wake(1);
+        assert_eq!(count, 0);
 
         // inconsistent value should fail.
         assert_eq!(futex.wait(0).await, Err(ZxError::BAD_STATE));
