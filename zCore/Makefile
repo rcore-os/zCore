@@ -87,6 +87,10 @@ build-test: build
 
 build: $(kernel_img)
 
+build-parallel-test: build $(QEMU_DISK)
+	cp ../prebuilt/zircon/x64/core-tests.zbi $(ESP)/EFI/zCore/fuchsia.zbi
+	echo 'cmdline=LOG=warn:userboot=test/core-standalone-test:userboot.shutdown:core-tests=$(test_filter)' >> $(ESP)/EFI/Boot/rboot.conf
+
 $(kernel_img): kernel bootloader
 	mkdir -p $(ESP)/EFI/zCore $(ESP)/EFI/Boot
 	cp ../rboot/target/x86_64-unknown-uefi/release/rboot.efi $(ESP)/EFI/Boot/BootX64.efi
