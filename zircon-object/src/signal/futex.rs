@@ -153,14 +153,11 @@ impl Futex {
             fn drop(&mut self) {
                 let inner = self.waiter.inner.lock();
                 if !inner.woken {
-                    if let Some(thread) = &self.waiter.thread {
-                        let futex = thread.proc().get_futex(inner.futex.value);
-                        let queue = &mut futex.inner.lock().waiter_queue;
-                        if let Some(pos) = queue.iter().position(|x| Arc::ptr_eq(&x, &self.waiter))
-                        {
-                            // Nobody cares about the order of queue, so just remove faster
-                            queue.swap_remove_back(pos);
-                        }
+                    let futex = inner.futex.clone();
+                    let queue = &mut futex.inner.lock().waiter_queue;
+                    if let Some(pos) = queue.iter().position(|x| Arc::ptr_eq(&x, &self.waiter)) {
+                        // Nobody cares about the order of queue, so just remove faster
+                        queue.swap_remove_back(pos);
                     }
                 }
             }
