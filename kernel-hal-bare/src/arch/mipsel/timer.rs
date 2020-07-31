@@ -28,5 +28,5 @@ pub fn set_next() {
 pub fn timer_now() -> Duration {
     let mut curr_time = unsafe { TICK * TIMEBASE as u64 };
     curr_time += cp0::count::read_u32() as u64;
-    Duration::from_nanos(curr_time * 100)
+    Duration::from_nanos(curr_time * 10)
 }
