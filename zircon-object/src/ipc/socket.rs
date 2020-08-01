@@ -191,10 +191,8 @@ impl Socket {
     /// If *data* is too small for the datagram, then the read will be
     /// truncated, and any remaining bytes in the datagram will be discarded.
     ///
-    /// Supported *options* are:
-    ///
-    /// * **SOCKET_PEEK** to leave the message in the socket.
-    pub fn read(&self, options: SocketFlags, data: &mut [u8]) -> ZxResult<usize> {
+    /// If `peek` is true, leave the message in the socket.
+    pub fn read(&self, peek: bool, data: &mut [u8]) -> ZxResult<usize> {
         let data_len = self.inner.lock().data.len();
         if data_len == 0 {
             let _peer = self.peer.upgrade().ok_or(ZxError::PEER_CLOSED)?;
@@ -205,11 +203,10 @@ impl Socket {
             return Err(ZxError::SHOULD_WAIT);
         }
         let was_full = data_len == SOCKET_SIZE;
-        let peek = options.contains(SocketFlags::SOCKET_PEEK);
         let actual_count = if self.flags.contains(SocketFlags::DATAGRAM) {
-            self.read_datagram(options, data, peek)?
+            self.read_datagram(data, peek)?
         } else {
-            self.read_stream(options, data, peek)?
+            self.read_stream(data, peek)?
         };
         if !peek && actual_count > 0 {
             let inner = self.inner.lock();
@@ -238,7 +235,7 @@ impl Socket {
         Ok(actual_count)
     }
 
-    fn read_datagram(&self, _options: SocketFlags, data: &mut [u8], peek: bool) -> ZxResult<usize> {
+    fn read_datagram(&self, data: &mut [u8], peek: bool) -> ZxResult<usize> {
         if data.is_empty() {
             return Ok(0);
         }
@@ -261,7 +258,7 @@ impl Socket {
         Ok(read_size)
     }
 
-    fn read_stream(&self, _options: SocketFlags, data: &mut [u8], peek: bool) -> ZxResult<usize> {
+    fn read_stream(&self, data: &mut [u8], peek: bool) -> ZxResult<usize> {
         let mut inner = self.inner.lock();
         let read_size = data.len().min(inner.data.len());
         if peek {

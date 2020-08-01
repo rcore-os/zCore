@@ -65,7 +65,8 @@ impl Syscall<'_> {
         let proc = self.thread.proc();
         let socket = proc.get_object_with_rights::<Socket>(handle_value, Rights::READ)?;
         let mut data = vec![0; count];
-        let actual_count = socket.read(options, &mut data)?;
+        let peek = options.contains(SocketFlags::SOCKET_PEEK);
+        let actual_count = socket.read(peek, &mut data)?;
         user_bytes.write_array(&data)?;
         actual_count_ptr.write_if_not_null(actual_count)?;
         Ok(())
