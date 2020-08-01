@@ -16,6 +16,7 @@
 #![no_std]
 #![feature(asm)]
 #![feature(linkage)]
+#![feature(naked_functions)]
 #![deny(warnings)]
 
 #[macro_use]
@@ -204,6 +205,11 @@ pub fn timer_set(deadline: Duration, callback: Box<dyn FnOnce(Duration) + Send +
 pub fn timer_tick() {
     let now = arch::timer_now();
     NAIVE_TIMER.lock().expire(now);
+}
+
+#[naked]
+pub unsafe extern "C" fn read_user_fixup() -> usize {
+    return 1;
 }
 
 /// Initialize the HAL.

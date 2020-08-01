@@ -1,4 +1,6 @@
 use crate::drivers::IRQ_MANAGER;
+use mips::addr::*;
+use mips::paging::PageTable as MIPSPageTable;
 use mips::registers::cp0;
 use trapframe::TrapFrame;
 
@@ -88,15 +90,15 @@ pub extern "C" fn trap_handler(tf: &mut TrapFrame) {
     let cause = cp0::cause::Cause {
         bits: tf.cause as u32,
     };
-    trace!("Exception @ CPU{}: {:?} ", 0, cause.cause());
+    info!("Exception @ CPU{}: {:?} ", 0, cause.cause());
     match cause.cause() {
         E::Interrupt => interrupt_dispatcher(tf),
         // E::Syscall => syscall(tf),
-        // E::TLBModification => page_fault(tf),
-        // E::TLBLoadMiss => page_fault(tf),
-        // E::TLBStoreMiss => page_fault(tf),
-        _ => {
-            error!("Unhandled Exception @ CPU{}: {:?} ", 0, cause.cause());
+        E::TLBModification => page_fault(tf),
+        E::TLBLoadMiss => page_fault(tf),
+        E::TLBStoreMiss => page_fault(tf),
+        UNKNOWN => {
+            error!("Unhandled Exception @ CPU{}: {:?} ", 0, UNKNOWN);
         }
     }
     trace!("Interrupt end");
@@ -130,4 +132,61 @@ fn ipi() {
 pub fn timer() {
     super::timer::set_next();
     crate::timer_tick();
+}
+
+fn page_fault(tf: &mut TrapFrame) {
+    // TODO: set access/dirty bit
+    let addr = tf.vaddr;
+    // info!("\nEXCEPTION: Page Fault @ {:#x}", addr);
+
+    let virt_addr = VirtAddr::new(addr);
+    error!("{:x}", super::memory::get_page_table());
+    let root_table = unsafe { &mut *(super::memory::get_page_table() as *mut MIPSPageTable) };
+    let tlb_result = root_table.lookup(addr);
+    match tlb_result {
+        Ok(tlb_entry) => {
+            trace!(
+                "PhysAddr = {:x}/{:x}",
+                tlb_entry.entry_lo0.get_pfn() << 12,
+                tlb_entry.entry_lo1.get_pfn() << 12
+            );
+
+            let tlb_valid = if virt_addr.page_number() & 1 == 0 {
+                tlb_entry.entry_lo0.valid()
+            } else {
+                tlb_entry.entry_lo1.valid()
+            };
+
+            if !tlb_valid {
+                panic!("hhh");
+                // if !crate::memory::handle_page_fault(addr) {
+                //     extern "C" {
+                //         fn _copy_user_start();
+                //         fn _copy_user_end();
+                //     }
+                //     if tf.epc >= _copy_user_start as usize && tf.epc < _copy_user_end as usize {
+                //         debug!("fixup for addr {:x?}", addr);
+                //         tf.epc = crate::read_user_fixup as usize;
+                //         return;
+                //     }
+                // }
+            }
+
+            tlb_entry.write_random()
+        }
+        Err(()) => {
+            // if !crate::memory::handle_page_fault(addr) {
+            //     extern "C" {
+            //         fn _copy_user_start();
+            //         fn _copy_user_end();
+            //     }
+            //     if tf.epc >= _copy_user_start as usize && tf.epc < _copy_user_end as usize {
+            //         debug!("fixup for addr {:x?}", addr);
+            //         tf.epc = crate::read_user_fixup as usize;
+            //         return;
+            //     }
+            // }
+            panic!("...");
+        }
+    }
 }
