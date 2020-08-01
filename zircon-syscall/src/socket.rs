@@ -32,14 +32,13 @@ impl Syscall<'_> {
         if count > 0 && user_bytes.is_null() {
             return Err(ZxError::INVALID_ARGS);
         }
-        let options = SocketFlags::from_bits(options).ok_or(ZxError::INVALID_ARGS)?;
-        if !(options - SocketFlags::SOCKET_CONTROL).is_empty() {
+        if options != 0 {
             return Err(ZxError::INVALID_ARGS);
         }
         let proc = self.thread.proc();
         let socket = proc.get_object_with_rights::<Socket>(handle_value, Rights::WRITE)?;
         let data = user_bytes.read_array(count)?;
-        let actual_count = socket.write(options, &data)?;
+        let actual_count = socket.write(&data)?;
         actual_count_ptr.write_if_not_null(actual_count)?;
         Ok(())
     }
@@ -60,7 +59,7 @@ impl Syscall<'_> {
             return Err(ZxError::INVALID_ARGS);
         }
         let options = SocketFlags::from_bits(options).ok_or(ZxError::INVALID_ARGS)?;
-        if !(options - SocketFlags::SOCKET_CONTROL - SocketFlags::SOCKET_PEEK).is_empty() {
+        if !(options - SocketFlags::SOCKET_PEEK).is_empty() {
             return Err(ZxError::INVALID_ARGS);
         }
         let proc = self.thread.proc();
