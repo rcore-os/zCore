@@ -290,7 +290,7 @@ impl Socket {
             self_size
         };
         SocketInfo {
-            options: self.flags.bits(),
+            options: self.flags.bits() as u32,
             padding1: 0,
             rx_buf_max: SOCKET_SIZE as _,
             rx_buf_size: self_size as _,

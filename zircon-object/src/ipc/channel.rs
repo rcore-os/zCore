@@ -11,6 +11,21 @@ use {
 };
 
 /// Bidirectional interprocess communication
+///
+/// # SYNOPSIS
+///
+/// A channel is a bidirectional transport of messages consisting of some
+/// amount of byte data and some number of handles.
+///
+/// # DESCRIPTION
+///
+/// The process of sending a message via a channel has two steps. The first is to
+/// atomically write the data into the channel and move ownership of all handles in
+/// the message into this channel. This operation always consumes the handles: at
+/// the end of the call, all handles either are all in the channel or are all
+/// discarded. The second operation, channel read, is similar: on success
+/// all the handles in the next message are atomically moved into the
+/// receiving process' handle table. On failure, the channel retains ownership.
 pub struct Channel {
     base: KObjectBase,
     _counter: CountHelper,
@@ -143,9 +158,13 @@ impl Drop for Channel {
     }
 }
 
+/// The message transferred in the channel.
+/// See [Channel](struct.Channel.html) for details.
 #[derive(Default)]
 pub struct MessagePacket {
+    /// The data carried by the message packet
     pub data: Vec<u8>,
+    /// See [Channel](struct.Channel.html) for details.
     pub handles: Vec<Handle>,
 }
 
