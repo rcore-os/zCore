@@ -137,9 +137,9 @@ impl Socket {
     }
 
     fn write_data(&self, data: &[u8]) -> ZxResult<usize> {
-        let data_len = self.inner.lock().data.len();
-        let was_empty = data_len == 0;
-        let rest_size = SOCKET_SIZE - data_len;
+        let curr_size = self.inner.lock().data.len();
+        let was_empty = curr_size == 0;
+        let rest_size = SOCKET_SIZE - curr_size;
         if rest_size == 0 {
             return Err(ZxError::SHOULD_WAIT);
         }
@@ -193,8 +193,8 @@ impl Socket {
     ///
     /// If `peek` is true, leave the message in the socket.
     pub fn read(&self, peek: bool, data: &mut [u8]) -> ZxResult<usize> {
-        let data_len = self.inner.lock().data.len();
-        if data_len == 0 {
+        let curr_size = self.inner.lock().data.len();
+        if curr_size == 0 {
             let _peer = self.peer.upgrade().ok_or(ZxError::PEER_CLOSED)?;
             let inner = self.inner.lock();
             if inner.read_disabled {
@@ -202,7 +202,7 @@ impl Socket {
             }
             return Err(ZxError::SHOULD_WAIT);
         }
-        let was_full = data_len == SOCKET_SIZE;
+        let was_full = curr_size == SOCKET_SIZE;
         let actual_count = if self.flags.contains(SocketFlags::DATAGRAM) {
             self.read_datagram(data, peek)?
         } else {
