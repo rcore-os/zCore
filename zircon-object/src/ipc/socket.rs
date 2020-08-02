@@ -191,7 +191,7 @@ impl Socket {
     /// If *data* is too small for the datagram, then the read will be
     /// truncated, and any remaining bytes in the datagram will be discarded.
     ///
-    /// If `peek` is true, leave the message in the socket.
+    /// If `peek` is true, leave the message in the socket. Otherwise consume the message.
     pub fn read(&self, peek: bool, data: &mut [u8]) -> ZxResult<usize> {
         let curr_size = self.inner.lock().data.len();
         if curr_size == 0 {
@@ -277,24 +277,25 @@ impl Socket {
     pub fn get_info(&self) -> SocketInfo {
         let inner = self.inner.lock();
         let self_size = inner.data.len();
-        let peer_size = match self.peer.upgrade() {
-            Some(peer) => peer.inner.lock().data.len(),
-            None => 0,
-        };
         let rx_buf_available = if self.flags.contains(SocketFlags::DATAGRAM) {
             *inner.datagram_len.get(0).unwrap_or(&0)
         } else {
             self_size
         };
-        SocketInfo {
-            options: self.flags.bits() as u32,
+        let mut info = SocketInfo {
+            options: self.flags.bits() as _,
             padding1: 0,
             rx_buf_max: SOCKET_SIZE as _,
             rx_buf_size: self_size as _,
             rx_buf_available: rx_buf_available as _,
-            tx_buf_max: SOCKET_SIZE as _,
-            tx_buf_size: peer_size as _,
-        }
+            tx_buf_max: 0,
+            tx_buf_size: 0,
+        };
+        if let Some(peer) = self.peer.upgrade() {
+            info.tx_buf_size = peer.inner.lock().data.len() as u64;
+            info.tx_buf_max = SOCKET_SIZE as u64;
+        };
+        info
     }
 
     /// Prevent reading or writing.
@@ -383,7 +384,7 @@ impl Drop for Socket {
 
 /// The information of a socket
 #[repr(C)]
-#[derive(Default)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct SocketInfo {
     options: u32,
     padding1: u32,
