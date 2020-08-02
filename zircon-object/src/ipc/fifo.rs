@@ -62,8 +62,10 @@ impl Fifo {
     /// in the fifo to contain all of them.
     ///
     /// The number of elements actually written is returned.
+    ///
+    /// `count` must be nonzero.
     pub fn write(&self, elem_size: usize, data: &[u8], count: usize) -> ZxResult<usize> {
-        if elem_size != self.elem_size {
+        if elem_size != self.elem_size || count == 0 {
             return Err(ZxError::OUT_OF_RANGE);
         }
         let count_size = count * elem_size;
@@ -97,8 +99,10 @@ impl Fifo {
     /// The `elem_size` must match the element size that was passed into `Fifo::create()`.
     ///
     /// `data` must have a size of `count * elem_size` bytes.
-    pub fn read(&self, elem_size: usize, count: usize, data: &mut [u8]) -> ZxResult<usize> {
-        if elem_size != self.elem_size {
+    ///
+    /// `count` must be nonzero.
+    pub fn read(&self, elem_size: usize, data: &mut [u8], count: usize) -> ZxResult<usize> {
+        if elem_size != self.elem_size || count == 0 {
             return Err(ZxError::OUT_OF_RANGE);
         }
         let count_size = count * elem_size;
