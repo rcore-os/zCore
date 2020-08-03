@@ -25,6 +25,7 @@ Clone repo and pull prebuilt fuchsia images:
 ```sh
 git clone https://github.com/rcore-os/zCore --recursive
 cd zCore
+git lfs install
 git lfs pull
 ```
 
