@@ -42,7 +42,7 @@ impl Syscall<'_> {
         flags: usize,
     ) -> SysResult {
         let path = path.read_cstring()?;
-        let flags = AtFlags::from_bits_truncate(flags);
+        let flags = AtFlags::from_bits(flags).ok_or(LxError::EINVAL)?;
         info!(
             "fstatat: dirfd={:?}, path={:?}, stat_ptr={:?}, flags={:?}",
             dirfd, path, stat_ptr, flags
@@ -289,7 +289,7 @@ impl StatMode {
             FileType::Socket => StatMode::SOCKET,
             FileType::NamedPipe => StatMode::FIFO,
         };
-        let mode = StatMode::from_bits_truncate(mode as u32);
+        let mode = StatMode::from_bits(mode as u32).ok_or(LxError::EINVAL)?;
         type_ | mode
     }
 }

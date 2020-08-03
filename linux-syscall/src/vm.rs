@@ -20,8 +20,8 @@ impl Syscall<'_> {
         fd: FileDesc,
         offset: u64,
     ) -> SysResult {
-        let prot = MmapProt::from_bits_truncate(prot);
-        let flags = MmapFlags::from_bits_truncate(flags);
+        let prot = MmapProt::from_bits(prot).ok_or(LxError::EINVAL)?;
+        let flags = MmapFlags::from_bits(flags).ok_or(LxError::EINVAL)?;
         info!(
             "mmap: addr={:#x}, size={:#x}, prot={:?}, flags={:?}, fd={:?}, offset={:#x}",
             addr, len, prot, flags, fd, offset
@@ -57,7 +57,7 @@ impl Syscall<'_> {
     /// containing any part of the address range in the interval [addr, addr+len-1]
     /// TODO: unimplemented
     pub fn sys_mprotect(&self, addr: usize, len: usize, prot: usize) -> SysResult {
-        let prot = MmapProt::from_bits_truncate(prot);
+        let prot = MmapProt::from_bits(prot).ok_or(LxError::EINVAL)?;
         info!(
             "mprotect: addr={:#x}, size={:#x}, prot={:?}",
             addr, len, prot

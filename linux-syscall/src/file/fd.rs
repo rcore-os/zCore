@@ -24,7 +24,7 @@ impl Syscall<'_> {
     ) -> SysResult {
         let proc = self.linux_process();
         let path = path.read_cstring()?;
-        let flags = OpenFlags::from_bits_truncate(flags);
+        let flags = OpenFlags::from_bits(flags).ok_or(LxError::EINVAL)?;
         info!(
             "openat: dir_fd={:?}, path={:?}, flags={:?}, mode={:#o}",
             dir_fd, path, flags, mode

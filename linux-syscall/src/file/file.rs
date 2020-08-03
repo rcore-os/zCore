@@ -321,7 +321,7 @@ impl Syscall<'_> {
     ) -> SysResult {
         // TODO: check permissions based on uid/gid
         let path = path.read_cstring()?;
-        let flags = AtFlags::from_bits_truncate(flags);
+        let flags = AtFlags::from_bits(flags).ok_or(LxError::EINVAL)?;
         info!(
             "faccessat: dirfd={:?}, path={:?}, mode={:#o}, flags={:?}",
             dirfd, path, mode, flags

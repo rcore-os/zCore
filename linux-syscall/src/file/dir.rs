@@ -143,7 +143,7 @@ impl Syscall<'_> {
     ) -> SysResult {
         let oldpath = oldpath.read_cstring()?;
         let newpath = newpath.read_cstring()?;
-        let flags = AtFlags::from_bits_truncate(flags);
+        let flags = AtFlags::from_bits(flags).ok_or(LxError::EINVAL)?;
         info!(
             "linkat: olddirfd={:?}, oldpath={:?}, newdirfd={:?}, newpath={:?}, flags={:?}",
             olddirfd, oldpath, newdirfd, newpath, flags
@@ -169,7 +169,7 @@ impl Syscall<'_> {
     /// The unlinkat() system call operates in exactly the same way as either unlink or rmdir.
     pub fn sys_unlinkat(&self, dirfd: FileDesc, path: UserInPtr<u8>, flags: usize) -> SysResult {
         let path = path.read_cstring()?;
-        let flags = AtFlags::from_bits_truncate(flags);
+        let flags = AtFlags::from_bits(flags).ok_or(LxError::EINVAL)?;
         info!(
             "unlinkat: dirfd={:?}, path={:?}, flags={:?}",
             dirfd, path, flags

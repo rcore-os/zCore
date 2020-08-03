@@ -55,7 +55,7 @@ impl Syscall<'_> {
         mut child_tid: UserOutPtr<i32>,
         newtls: usize,
     ) -> SysResult {
-        let _flags = CloneFlags::from_bits_truncate(flags);
+        let _flags = CloneFlags::from_bits(flags).ok_or(LxError::EINVAL)?;
         info!(
             "clone: flags={:#x}, newsp={:#x}, parent_tid={:?}, child_tid={:?}, newtls={:#x}",
             flags, newsp, parent_tid, child_tid, newtls
@@ -113,7 +113,7 @@ impl Syscall<'_> {
             p if p > 0 => WaitTarget::Pid(p as KoID),
             _ => unimplemented!(),
         };
-        let flags = WaitFlags::from_bits_truncate(options);
+        let flags = WaitFlags::from_bits(options).ok_or(LxError::EINVAL)?;
         let nohang = flags.contains(WaitFlags::NOHANG);
         info!(
             "wait4: target={:?}, wstatus={:?}, options={:?}",
