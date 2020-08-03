@@ -19,7 +19,7 @@ impl Syscall<'_> {
     pub fn sys_uname(&self, buf: UserOutPtr<u8>) -> SysResult {
         info!("uname: buf={:?}", buf);
 
-        let strings = ["rCore", "orz", "0.1.0", "1", "machine", "domain"];
+        let strings = ["zCore", "orz", "0.1.0", "1", "machine", "domain"];
         for (i, &s) in strings.iter().enumerate() {
             const OFFSET: usize = 65;
             buf.add(i * OFFSET).write_cstring(s)?;
