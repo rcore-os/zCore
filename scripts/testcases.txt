@@ -35,7 +35,6 @@
 -VmoClone2TestCase.PinClonePages
 -VersionTest.*
 -BadAccessTest.*
--DefaultExceptionHandlerTest.*
 -InterruptTest.BindTriggeredIrqToPort
 -InterruptTest.WaitThreadFunctionsAfterSuspendResume
 -*Profile*
