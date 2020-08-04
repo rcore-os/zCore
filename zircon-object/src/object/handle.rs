@@ -106,3 +106,35 @@ pub struct HandleInfo {
     rights: u32,
     unused: u32,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[should_panic(expected = "unknown type")]
+    fn test_ojb_type_unknown() {
+        let obj: Arc<dyn KernelObject> = DummyObject::new();
+        assert_eq!(1, obj_type(&obj));
+    }
+
+    #[test]
+    fn test_get_info() {
+        let obj = crate::task::Job::root();
+        let handle1 = Handle::new(obj.clone(), Rights::DEFAULT_JOB);
+        let info1 = handle1.get_info();
+        assert_eq!(info1.obj_type, 17);
+        assert_eq!(info1.props, 1);
+
+        let handle_info = handle1.get_handle_info();
+        assert_eq!(handle_info.obj_type, 17);
+
+        let handle2 = Handle::new(obj, Rights::READ);
+        let info2 = handle2.get_info();
+        assert_eq!(info2.props, 0);
+
+        // Let struct lines counted covered.
+        // See https://github.com/mozilla/grcov/issues/450
+        let _ = HandleBasicInfo::default();
+    }
+}

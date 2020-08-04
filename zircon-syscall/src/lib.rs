@@ -32,6 +32,8 @@ mod exception;
 mod fifo;
 mod futex;
 mod handle;
+#[cfg(feature = "hypervisor")]
+mod hypervisor;
 mod object;
 mod pci;
 mod port;
@@ -355,6 +357,22 @@ impl Syscall<'_> {
                 warn!("ioports.request: skip");
                 Ok(())
             }
+            #[cfg(feature = "hypervisor")]
+            Sys::GUEST_CREATE => self.sys_guest_create(a0 as _, a1 as _, a2.into(), a3.into()),
+            #[cfg(feature = "hypervisor")]
+            Sys::GUEST_SET_TRAP => {
+                self.sys_guest_set_trap(a0 as _, a1 as _, a2 as _, a3 as _, a4 as _, a5 as _)
+            }
+            #[cfg(feature = "hypervisor")]
+            Sys::VCPU_CREATE => self.sys_vcpu_create(a0 as _, a1 as _, a2 as _, a3.into()),
+            #[cfg(feature = "hypervisor")]
+            Sys::VCPU_RESUME => self.sys_vcpu_resume(a0 as _, a1.into()),
+            #[cfg(feature = "hypervisor")]
+            Sys::VCPU_INTERRUPT => self.sys_vcpu_interrupt(a0 as _, a1 as _),
+            #[cfg(feature = "hypervisor")]
+            Sys::VCPU_READ_STATE => self.sys_vcpu_read_state(a0 as _, a1 as _, a2.into(), a3 as _),
+            #[cfg(feature = "hypervisor")]
+            Sys::VCPU_WRITE_STATE => self.sys_vcpu_write_state(a0 as _, a1 as _, a2, a3 as _),
             _ => {
                 error!("syscall unimplemented: {:?}", sys_type);
                 Err(ZxError::NOT_SUPPORTED)

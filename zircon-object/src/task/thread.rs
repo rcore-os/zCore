@@ -4,6 +4,7 @@ use {
     super::*,
     crate::object::*,
     alloc::{boxed::Box, sync::Arc},
+    bitflags::bitflags,
     core::{
         any::Any,
         future::Future,
@@ -126,6 +127,7 @@ struct ThreadInner {
     killed: bool,
     /// The time this thread has run on cpu
     time: u128,
+    flags: ThreadFlag,
 }
 
 impl ThreadInner {
@@ -154,6 +156,13 @@ impl ThreadInner {
             base.signal_set(Signal::THREAD_SUSPENDED);
             base.signal_clear(Signal::THREAD_TERMINATED)
         }
+    }
+}
+
+bitflags! {
+    #[derive(Default)]
+    pub struct ThreadFlag: usize {
+        const VCPU = 1 << 3;
     }
 }
 
@@ -488,6 +497,17 @@ impl Thread {
 
     pub fn get_first_thread(&self) -> bool {
         self.inner.lock().first_thread
+    }
+
+    pub fn get_flags(&self) -> ThreadFlag {
+        self.inner.lock().flags
+    }
+
+    pub fn update_flags<F>(&self, f: F)
+    where
+        F: FnOnce(&mut ThreadFlag),
+    {
+        f(&mut self.inner.lock().flags)
     }
 }
 

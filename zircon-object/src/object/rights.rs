@@ -152,6 +152,12 @@ bitflags! {
 
         /// TRANSFER | PROPERTY | INSPECT
         const DEFAULT_EXCEPTION = Self::TRANSFER.bits | Self::PROPERTY.bits | Self::INSPECT.bits;
+
+        /// TRANSFER | DUPLICATE | WRITE | INSPECT | MANAGE_PROCESS
+        const DEFAULT_GUEST = Self::TRANSFER.bits | Self::DUPLICATE.bits | Self::WRITE.bits | Self::INSPECT.bits | Self::MANAGE_PROCESS.bits;
+
+        /// BASIC | IO | EXECUTE | SIGNAL
+        const DEFAULT_VCPU = Self::BASIC.bits | Self::IO.bits | Self::EXECUTE.bits | Self::SIGNAL.bits;
     }
 }
 
@@ -160,5 +166,16 @@ impl TryFrom<u32> for Rights {
 
     fn try_from(x: u32) -> ZxResult<Self> {
         Self::from_bits(x).ok_or(ZxError::INVALID_ARGS)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_try_from() {
+        assert_eq!(Err(ZxError::INVALID_ARGS), Rights::try_from(0xffff_ffff));
+        assert_eq!(Ok(Rights::SAME_RIGHTS), Rights::try_from(1 << 31));
     }
 }

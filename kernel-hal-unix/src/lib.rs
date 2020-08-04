@@ -12,6 +12,7 @@ use {
     async_std::task_local,
     core::{cell::Cell, future::Future, pin::Pin},
     git_version::git_version,
+    kernel_hal::PageTableTrait,
     lazy_static::lazy_static,
     std::fmt::{Debug, Formatter},
     std::fs::{File, OpenOptions},
@@ -81,10 +82,12 @@ impl PageTable {
     pub fn new() -> Self {
         PageTable { table_phys: 0 }
     }
+}
 
+impl PageTableTrait for PageTable {
     /// Map the page of `vaddr` to the frame of `paddr` with `flags`.
     #[export_name = "hal_pt_map"]
-    pub fn map(&mut self, vaddr: VirtAddr, paddr: PhysAddr, flags: MMUFlags) -> Result<(), ()> {
+    fn map(&mut self, vaddr: VirtAddr, paddr: PhysAddr, flags: MMUFlags) -> Result<(), ()> {
         debug_assert!(page_aligned(vaddr));
         debug_assert!(page_aligned(paddr));
         let prot = flags.to_mmap_prot();
@@ -94,13 +97,13 @@ impl PageTable {
 
     /// Unmap the page of `vaddr`.
     #[export_name = "hal_pt_unmap"]
-    pub fn unmap(&mut self, vaddr: VirtAddr) -> Result<(), ()> {
+    fn unmap(&mut self, vaddr: VirtAddr) -> Result<(), ()> {
         self.unmap_cont(vaddr, 1)
     }
 
     /// Change the `flags` of the page of `vaddr`.
     #[export_name = "hal_pt_protect"]
-    pub fn protect(&mut self, vaddr: VirtAddr, flags: MMUFlags) -> Result<(), ()> {
+    fn protect(&mut self, vaddr: VirtAddr, flags: MMUFlags) -> Result<(), ()> {
         debug_assert!(page_aligned(vaddr));
         let prot = flags.to_mmap_prot();
         let ret = unsafe { libc::mprotect(vaddr as _, PAGE_SIZE, prot) };
@@ -110,13 +113,19 @@ impl PageTable {
 
     /// Query the physical address which the page of `vaddr` maps to.
     #[export_name = "hal_pt_query"]
-    pub fn query(&mut self, vaddr: VirtAddr) -> Result<PhysAddr, ()> {
+    fn query(&mut self, vaddr: VirtAddr) -> Result<PhysAddr, ()> {
         debug_assert!(page_aligned(vaddr));
         unimplemented!()
     }
 
+    /// Get the physical address of root page table.
+    #[export_name = "hal_pt_table_phys"]
+    fn table_phys(&self) -> PhysAddr {
+        self.table_phys
+    }
+
     #[export_name = "hal_pt_unmap_cont"]
-    pub fn unmap_cont(&mut self, vaddr: VirtAddr, pages: usize) -> Result<(), ()> {
+    fn unmap_cont(&mut self, vaddr: VirtAddr, pages: usize) -> Result<(), ()> {
         if pages == 0 {
             return Ok(());
         }

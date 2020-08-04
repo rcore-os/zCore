@@ -4,6 +4,8 @@ zbi_file ?= bringup
 graphic ?=
 accel ?=
 linux ?=
+user ?=
+hypervisor ?=
 smp ?= 1
 test_filter ?= *.*
 
@@ -14,7 +16,7 @@ kernel_img := $(build_path)/zcore.img
 ESP := $(build_path)/esp
 OVMF := ../rboot/OVMF.fd
 qemu := qemu-system-x86_64
-OBJDUMP := rust-objdump
+OBJDUMP := rust-objdump -print-imm-hex -x86-asm-syntax=intel
 VMDISK := $(build_path)/boot.vdi
 QEMU_DISK := $(build_path)/disk.qcow2
 
@@ -44,6 +46,11 @@ qemu_opts += \
 	-m 4G \
 	-nic none \
 	-device isa-debug-exit,iobase=0xf4,iosize=0x04
+endif
+
+ifeq ($(hypervisor), 1)
+build_args += --features hypervisor
+accel = 1
 endif
 
 ifeq ($(accel), 1)
@@ -80,12 +87,19 @@ build-test: build
 
 build: $(kernel_img)
 
+build-parallel-test: build $(QEMU_DISK)
+	cp ../prebuilt/zircon/x64/core-tests.zbi $(ESP)/EFI/zCore/fuchsia.zbi
+	echo 'cmdline=LOG=warn:userboot=test/core-standalone-test:userboot.shutdown:core-tests=$(test_filter)' >> $(ESP)/EFI/Boot/rboot.conf
+
 $(kernel_img): kernel bootloader
 	mkdir -p $(ESP)/EFI/zCore $(ESP)/EFI/Boot
 	cp ../rboot/target/x86_64-unknown-uefi/release/rboot.efi $(ESP)/EFI/Boot/BootX64.efi
 	cp rboot.conf $(ESP)/EFI/Boot/rboot.conf
 ifeq ($(linux), 1)
 	cp x86_64.img $(ESP)/EFI/zCore/fuchsia.zbi
+else ifeq ($(user), 1)
+	make -C ../zircon-user
+	cp ../zircon-user/target/zcore.zbi $(ESP)/EFI/zCore/fuchsia.zbi
 else
 	cp ../prebuilt/zircon/x64/$(zbi_file).zbi $(ESP)/EFI/zCore/fuchsia.zbi
 endif

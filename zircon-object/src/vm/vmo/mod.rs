@@ -8,7 +8,7 @@ use {
     },
     bitflags::bitflags,
     core::ops::Deref,
-    kernel_hal::{CachePolicy, PageTable},
+    kernel_hal::CachePolicy,
     spin::Mutex,
 };
 
@@ -43,15 +43,6 @@ pub trait VMObjectTrait: Sync + Send {
 
     /// Set the size of the content stored in the VMO in bytes.
     fn set_content_size(&self, size: usize) -> ZxResult;
-
-    /// Unmap physical memory from `page_table`.
-    fn unmap_from(&self, page_table: &mut PageTable, vaddr: VirtAddr, _offset: usize, len: usize) {
-        // TODO _offset unused?
-        let pages = len / PAGE_SIZE;
-        page_table
-            .unmap_cont(vaddr, pages)
-            .expect("failed to unmap")
-    }
 
     /// Commit a page.
     fn commit_page(&self, page_idx: usize, flags: MMUFlags) -> ZxResult<PhysAddr>;

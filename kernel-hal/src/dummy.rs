@@ -47,6 +47,58 @@ pub fn context_run(_context: &mut UserContext) {
     unimplemented!()
 }
 
+pub trait PageTableTrait: Sync + Send {
+    /// Map the page of `vaddr` to the frame of `paddr` with `flags`.
+    fn map(&mut self, _vaddr: VirtAddr, _paddr: PhysAddr, _flags: MMUFlags) -> Result<(), ()>;
+
+    /// Unmap the page of `vaddr`.
+    fn unmap(&mut self, _vaddr: VirtAddr) -> Result<(), ()>;
+
+    /// Change the `flags` of the page of `vaddr`.
+    fn protect(&mut self, _vaddr: VirtAddr, _flags: MMUFlags) -> Result<(), ()>;
+
+    /// Query the physical address which the page of `vaddr` maps to.
+    fn query(&mut self, _vaddr: VirtAddr) -> Result<PhysAddr, ()>;
+
+    /// Get the physical address of root page table.
+    fn table_phys(&self) -> PhysAddr;
+
+    fn map_many(
+        &mut self,
+        mut vaddr: VirtAddr,
+        paddrs: &[PhysAddr],
+        flags: MMUFlags,
+    ) -> Result<(), ()> {
+        for &paddr in paddrs {
+            self.map(vaddr, paddr, flags)?;
+            vaddr += PAGE_SIZE;
+        }
+        Ok(())
+    }
+
+    fn map_cont(
+        &mut self,
+        mut vaddr: VirtAddr,
+        paddr: PhysAddr,
+        pages: usize,
+        flags: MMUFlags,
+    ) -> Result<(), ()> {
+        for i in 0..pages {
+            let paddr = paddr + i * PAGE_SIZE;
+            self.map(vaddr, paddr, flags)?;
+            vaddr += PAGE_SIZE;
+        }
+        Ok(())
+    }
+
+    fn unmap_cont(&mut self, vaddr: VirtAddr, pages: usize) -> Result<(), ()> {
+        for i in 0..pages {
+            self.unmap(vaddr + i * PAGE_SIZE)?;
+        }
+        Ok(())
+    }
+}
+
 /// Page Table
 #[repr(C)]
 pub struct PageTable {
@@ -68,66 +120,42 @@ impl PageTable {
     pub fn new() -> Self {
         unimplemented!()
     }
+}
+
+impl PageTableTrait for PageTable {
     /// Map the page of `vaddr` to the frame of `paddr` with `flags`.
     #[linkage = "weak"]
     #[export_name = "hal_pt_map"]
-    pub fn map(&mut self, _vaddr: VirtAddr, _paddr: PhysAddr, _flags: MMUFlags) -> Result<(), ()> {
+    fn map(&mut self, _vaddr: VirtAddr, _paddr: PhysAddr, _flags: MMUFlags) -> Result<(), ()> {
         unimplemented!()
     }
     /// Unmap the page of `vaddr`.
     #[linkage = "weak"]
     #[export_name = "hal_pt_unmap"]
-    pub fn unmap(&mut self, _vaddr: VirtAddr) -> Result<(), ()> {
+    fn unmap(&mut self, _vaddr: VirtAddr) -> Result<(), ()> {
         unimplemented!()
     }
     /// Change the `flags` of the page of `vaddr`.
     #[linkage = "weak"]
     #[export_name = "hal_pt_protect"]
-    pub fn protect(&mut self, _vaddr: VirtAddr, _flags: MMUFlags) -> Result<(), ()> {
+    fn protect(&mut self, _vaddr: VirtAddr, _flags: MMUFlags) -> Result<(), ()> {
         unimplemented!()
     }
     /// Query the physical address which the page of `vaddr` maps to.
     #[linkage = "weak"]
     #[export_name = "hal_pt_query"]
-    pub fn query(&mut self, _vaddr: VirtAddr) -> Result<PhysAddr, ()> {
+    fn query(&mut self, _vaddr: VirtAddr) -> Result<PhysAddr, ()> {
         unimplemented!()
     }
     /// Get the physical address of root page table.
-    pub fn table_phys(&self) -> PhysAddr {
+    #[linkage = "weak"]
+    #[export_name = "hal_pt_table_phys"]
+    fn table_phys(&self) -> PhysAddr {
         self.table_phys
     }
-
-    pub fn map_many(
-        &mut self,
-        mut vaddr: VirtAddr,
-        paddrs: &[PhysAddr],
-        flags: MMUFlags,
-    ) -> Result<(), ()> {
-        for &paddr in paddrs {
-            self.map(vaddr, paddr, flags)?;
-            vaddr += PAGE_SIZE;
-        }
-        Ok(())
-    }
-
-    pub fn map_cont(
-        &mut self,
-        mut vaddr: VirtAddr,
-        paddr: PhysAddr,
-        pages: usize,
-        flags: MMUFlags,
-    ) -> Result<(), ()> {
-        for i in 0..pages {
-            let paddr = paddr + i * PAGE_SIZE;
-            self.map(vaddr, paddr, flags)?;
-            vaddr += PAGE_SIZE;
-        }
-        Ok(())
-    }
-
     #[linkage = "weak"]
     #[export_name = "hal_pt_unmap_cont"]
-    pub fn unmap_cont(&mut self, vaddr: VirtAddr, pages: usize) -> Result<(), ()> {
+    fn unmap_cont(&mut self, vaddr: VirtAddr, pages: usize) -> Result<(), ()> {
         for i in 0..pages {
             self.unmap(vaddr + i * PAGE_SIZE)?;
         }
