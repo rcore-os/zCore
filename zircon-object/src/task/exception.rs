@@ -496,3 +496,103 @@ impl Iterator for JobDebuggerIterator {
         result
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn exceptionate_iterator() {
+        let parent_job = Job::root();
+        let job = parent_job.create_child(0).unwrap();
+        let proc = Process::create(&job, "proc", 0).unwrap();
+        let thread = Thread::create(&proc, "thread", 0).unwrap();
+
+        let exception = Exception::create(thread.clone(), ExceptionType::Synth, None);
+        let mut iterator = ExceptionateIterator::new(&exception);
+
+        assert!(Arc::ptr_eq(
+            &iterator.next().unwrap(),
+            &proc.get_debug_exceptionate()
+        ));
+        assert!(Arc::ptr_eq(
+            &iterator.next().unwrap(),
+            &thread.get_exceptionate()
+        ));
+        assert!(Arc::ptr_eq(
+            &iterator.next().unwrap(),
+            &proc.get_exceptionate()
+        ));
+        assert!(Arc::ptr_eq(
+            &iterator.next().unwrap(),
+            &job.get_exceptionate()
+        ));
+        assert!(Arc::ptr_eq(
+            &iterator.next().unwrap(),
+            &parent_job.get_exceptionate()
+        ));
+        assert!(iterator.next().is_none());
+    }
+
+    #[test]
+    fn exceptionate_iterator_second_chance() {
+        let parent_job = Job::root();
+        let job = parent_job.create_child(0).unwrap();
+        let proc = Process::create(&job, "proc", 0).unwrap();
+        let thread = Thread::create(&proc, "thread", 0).unwrap();
+
+        let exception = Exception::create(thread.clone(), ExceptionType::Synth, None);
+        let mut iterator = ExceptionateIterator::new(&exception);
+
+        assert!(Arc::ptr_eq(
+            &iterator.next().unwrap(),
+            &proc.get_debug_exceptionate()
+        ));
+        exception.inner.lock().second_chance = true;
+        assert!(Arc::ptr_eq(
+            &iterator.next().unwrap(),
+            &thread.get_exceptionate()
+        ));
+        assert!(Arc::ptr_eq(
+            &iterator.next().unwrap(),
+            &proc.get_exceptionate()
+        ));
+        assert!(Arc::ptr_eq(
+            &iterator.next().unwrap(),
+            &proc.get_debug_exceptionate()
+        ));
+        assert!(Arc::ptr_eq(
+            &iterator.next().unwrap(),
+            &job.get_exceptionate()
+        ));
+        assert!(Arc::ptr_eq(
+            &iterator.next().unwrap(),
+            &parent_job.get_exceptionate()
+        ));
+        assert!(iterator.next().is_none());
+    }
+
+    #[test]
+    fn job_debugger_iterator() {
+        let parent_job = Job::root();
+        let job = parent_job.create_child(0).unwrap();
+        let child_job = job.create_child(0).unwrap();
+        let _grandson_job = child_job.create_child(0).unwrap();
+
+        let mut iterator = JobDebuggerIterator::new(child_job.clone());
+
+        assert!(Arc::ptr_eq(
+            &iterator.next().unwrap(),
+            &child_job.get_debug_exceptionate()
+        ));
+        assert!(Arc::ptr_eq(
+            &iterator.next().unwrap(),
+            &job.get_debug_exceptionate()
+        ));
+        assert!(Arc::ptr_eq(
+            &iterator.next().unwrap(),
+            &parent_job.get_debug_exceptionate()
+        ));
+        assert!(iterator.next().is_none());
+    }
+}
