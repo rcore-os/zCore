@@ -122,8 +122,8 @@ struct ThreadInner {
     exception: Option<Arc<Exception>>,
     /// Should The ProcessStarting exception generated at start of this thread
     first_thread: bool,
-    /// Should The ThreadExiting exception block this thread
-    not_killed: bool,
+    /// Should The ThreadExiting exception do not block this thread
+    killed: bool,
     /// The time this thread has run on cpu
     time: u128,
 }
@@ -251,9 +251,39 @@ impl Thread {
         Ok(())
     }
 
+    fn stop(&self, killed: bool) {
+        let mut inner = self.inner.lock();
+        if inner.state == ThreadState::Dead {
+            return;
+        }
+        if killed {
+            inner.killed = true;
+        }
+        if inner.state == ThreadState::Dying {
+            if killed {
+                if let Some(killer) = inner.killer.take() {
+                    // It's ok to ignore the error since the other end could be closed
+                    killer.send(()).ok();
+                }
+            }
+            return;
+        }
+        inner.state = ThreadState::Dying;
+        // For suspended thread, wake it and clear suspend count
+        inner.suspend_count = 0;
+        inner.update_signal(&self.base);
+        if let Some(waker) = inner.waker.take() {
+            waker.wake();
+        }
+        // For blocking thread, use the killer
+        if let Some(killer) = inner.killer.take() {
+            // It's ok to ignore the error since the other end could be closed
+            killer.send(()).ok();
+        }
+    }
+
     pub fn exit(&self) {
-        self.inner.lock().not_killed = true;
-        self.kill();
+        self.stop(false);
     }
 
     /// Terminate the current running thread.
@@ -410,6 +440,28 @@ impl Thread {
         ret
     }
 
+    /// Run a blocking task when the thread is exited itself and dying
+    /// The task will stop running if and once the thread is killed
+    pub async fn dying_run<F, T, FT>(&self, future: F) -> ZxResult<T>
+    where
+        F: Future<Output = FT> + Unpin,
+        FT: IntoResult<T>,
+    {
+        let killed = {
+            let mut inner = self.inner.lock();
+            if inner.get_state() == ThreadState::Dead || inner.killed {
+                return Err(ZxError::STOP);
+            }
+            let (sender, receiver) = channel::<()>();
+            inner.killer = Some(sender);
+            receiver
+        };
+        select_biased! {
+            ret = future.fuse() => ret.into_result(),
+            _ = killed.fuse() => Err(ZxError::STOP),
+        }
+    }
+
     pub fn state(&self) -> ThreadState {
         self.inner.lock().get_state()
     }
@@ -437,30 +489,11 @@ impl Thread {
     pub fn get_first_thread(&self) -> bool {
         self.inner.lock().first_thread
     }
-
-    pub fn get_not_killed(&self) -> bool {
-        self.inner.lock().not_killed
-    }
 }
 
 impl Task for Thread {
     fn kill(&self) {
-        let mut inner = self.inner.lock();
-        if inner.state == ThreadState::Dying || inner.state == ThreadState::Dead {
-            return;
-        }
-        inner.state = ThreadState::Dying;
-        // For suspended thread, wake it and clear suspend count
-        inner.suspend_count = 0;
-        inner.update_signal(&self.base);
-        if let Some(waker) = inner.waker.take() {
-            waker.wake();
-        }
-        // For blocking thread, use the killer
-        if let Some(killer) = inner.killer.take() {
-            // It's ok to ignore the error since the other end could be closed
-            killer.send(()).ok();
-        }
+        self.stop(true)
     }
 
     fn suspend(&self) {

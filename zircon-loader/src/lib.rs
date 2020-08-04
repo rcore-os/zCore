@@ -306,16 +306,9 @@ fn spawn(thread: Arc<Thread>) {
             .proc()
             .get_debug_exceptionate()
             .send_exception(&end_exception);
-        if thread.get_not_killed() {
-            // We only wait for exception handled when we are not killed
-            if let Ok(receiver) = handled {
-                receiver.await.ok();
-            } else {
-                // An error here indicate we do not need to wait for anything
-                handled.ok();
-            }
+        if let Ok(future) = handled {
+            thread.dying_run(future).await.ok();
         } else {
-            // here we send the exception without waiting for it handled since we are already exited
             handled.ok();
         }
         thread.terminate();
