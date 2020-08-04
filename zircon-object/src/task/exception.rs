@@ -288,7 +288,7 @@ impl Exception {
     }
 
     /// Same as handle, but use a customed iterator
-    /// If first_only is true, this will only send exception to the first one that recieved the exception
+    /// If first_only is true, this will only send exception to the first one that received the exception
     /// even when the exception is not handled
     pub async fn handle_with_exceptionates(
         self: &Arc<Self>,
@@ -594,5 +594,82 @@ mod tests {
             &parent_job.get_debug_exceptionate()
         ));
         assert!(iterator.next().is_none());
+    }
+
+    #[async_std::test]
+    async fn exception_handling() {
+        let parent_job = Job::root();
+        let job = parent_job.create_child(0).unwrap();
+        let proc = Process::create(&job, "proc", 0).unwrap();
+        let thread = Thread::create(&proc, "thread", 0).unwrap();
+
+        let exception = Exception::create(thread.clone(), ExceptionType::Synth, None);
+
+        // This is used to verify that exceptions are handled in a specific order
+        let handled_order = Arc::new(Mutex::new(Vec::<usize>::new()));
+
+        let create_handler = |exceptionate: &Arc<Exceptionate>,
+                              should_receive: bool,
+                              should_handle: bool,
+                              order: usize| {
+            let channel = exceptionate
+                .create_channel(Rights::DEFAULT_THREAD, Rights::DEFAULT_PROCESS)
+                .unwrap();
+            let handled_order = handled_order.clone();
+
+            async_std::task::spawn(async move {
+                // wait for the channel is ready
+                let channel_object: Arc<dyn KernelObject> = channel.clone();
+                channel_object
+                    .wait_signal(Signal::READABLE | Signal::PEER_CLOSED)
+                    .await;
+
+                if !should_receive {
+                    // channel should be closed without message
+                    let read_result = channel.read();
+                    if let Err(err) = read_result {
+                        assert_eq!(err, ZxError::PEER_CLOSED);
+                    } else {
+                        unreachable!();
+                    }
+                    return;
+                }
+
+                // we should get the exception here
+                let data = channel.read().unwrap();
+                assert_eq!(data.handles.len(), 1);
+                let exception = data.handles[0]
+                    .object
+                    .clone()
+                    .downcast_arc::<ExceptionObject>()
+                    .unwrap();
+                if should_handle {
+                    exception.get_exception().set_state(1).unwrap();
+                }
+                // record the order of the handler used
+                handled_order.lock().push(order);
+            })
+        };
+
+        // proc debug should get the exception first
+        create_handler(&proc.get_debug_exceptionate(), true, false, 0);
+        // thread should get the exception next
+        create_handler(&thread.get_exceptionate(), true, false, 1);
+        // here we omit proc to test that we can handle the case that there is none handler
+        // job should get the exception and handle it next
+        create_handler(&job.get_exceptionate(), true, true, 3);
+        // since exception is handled we should not get it from parent job
+        create_handler(&parent_job.get_exceptionate(), false, false, 4);
+
+        exception.handle(false).await;
+
+        // terminate handlers by shutdown the related exceptionates
+        thread.get_exceptionate().shutdown();
+        proc.get_debug_exceptionate().shutdown();
+        job.get_exceptionate().shutdown();
+        parent_job.get_exceptionate().shutdown();
+
+        // test for the order: proc debug -> thread -> job
+        assert_eq!(handled_order.lock().clone(), vec![0, 1, 3]);
     }
 }
