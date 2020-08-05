@@ -1,3 +1,4 @@
+#![deny(missing_docs)]
 use super::*;
 use bitflags::bitflags;
 use linux_object::fs::vfs::{FileType, FsError};

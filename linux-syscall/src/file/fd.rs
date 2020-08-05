@@ -8,10 +8,12 @@
 use super::*;
 
 impl Syscall<'_> {
+    /// Opens or creates a file, depending on the flags passed to the call. Returns an integer with the file descriptor.
     pub fn sys_open(&self, path: UserInPtr<u8>, flags: usize, mode: usize) -> SysResult {
         self.sys_openat(FileDesc::CWD, path, flags, mode)
     }
 
+    /// open file relative to directory file descriptor 
     pub fn sys_openat(
         &self,
         dir_fd: FileDesc,
@@ -52,6 +54,7 @@ impl Syscall<'_> {
         Ok(fd.into())
     }
 
+    /// Closes a file descriptor, so that it no longer refers to any file and may be reused.
     pub fn sys_close(&self, fd: FileDesc) -> SysResult {
         info!("close: fd={:?}", fd);
         let proc = self.linux_process();
@@ -59,6 +62,7 @@ impl Syscall<'_> {
         Ok(0)
     }
 
+    /// create a copy of the file descriptor oldfd. 
     pub fn sys_dup2(&self, fd1: FileDesc, fd2: FileDesc) -> SysResult {
         info!("dup2: from {:?} to {:?}", fd1, fd2);
         let proc = self.linux_process();
@@ -127,14 +131,17 @@ bitflags! {
 }
 
 impl OpenFlags {
+    /// check if the OpenFlags is readable
     fn readable(self) -> bool {
         let b = self.bits() & 0b11;
         b == Self::RDONLY.bits() || b == Self::RDWR.bits()
     }
+    /// check if the OpenFlags is writable
     fn writable(self) -> bool {
         let b = self.bits() & 0b11;
         b == Self::WRONLY.bits() || b == Self::RDWR.bits()
     }
+    /// convert OpenFlags to OpenOptions
     fn to_options(self) -> OpenOptions {
         OpenOptions {
             read: self.readable(),

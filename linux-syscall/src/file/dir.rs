@@ -16,6 +16,10 @@ use kernel_hal::user::UserOutPtr;
 use linux_object::fs::vfs::FileType;
 
 impl Syscall<'_> {
+    /// return a null-terminated string containing an absolute pathname 
+    /// that is the current working directory of the calling process.
+    /// `buf` – pointer to buffer to receive path
+    /// `len` – size of buf
     pub fn sys_getcwd(&self, mut buf: UserOutPtr<u8>, len: usize) -> SysResult {
         info!("getcwd: buf={:?}, len={:#x}", buf, len);
         let proc = self.linux_process();
@@ -27,6 +31,8 @@ impl Syscall<'_> {
         Ok(buf.as_ptr() as usize)
     }
 
+    /// Change the current directory.
+    /// - `path` – pointer to string with name of path
     pub fn sys_chdir(&self, path: UserInPtr<u8>) -> SysResult {
         let path = path.read_cstring()?;
         info!("chdir: path={:?}", path);
@@ -41,10 +47,14 @@ impl Syscall<'_> {
         Ok(0)
     }
 
+    /// Make a directory.
+    /// - path – pointer to string with directory name
+    /// - mode – file system permissions mode
     pub fn sys_mkdir(&self, path: UserInPtr<u8>, mode: usize) -> SysResult {
         self.sys_mkdirat(FileDesc::CWD, path, mode)
     }
 
+    /// create directory relative to directory file descriptor 
     pub fn sys_mkdirat(&self, dirfd: FileDesc, path: UserInPtr<u8>, mode: usize) -> SysResult {
         let path = path.read_cstring()?;
         // TODO: check pathname
@@ -62,7 +72,8 @@ impl Syscall<'_> {
         inode.create(file_name, FileType::Dir, mode as u32)?;
         Ok(0)
     }
-
+    /// Remove a directory.
+    /// - path – pointer to string with directory name
     pub fn sys_rmdir(&self, path: UserInPtr<u8>) -> SysResult {
         let path = path.read_cstring()?;
         info!("rmdir: path={:?}", path);
@@ -78,6 +89,9 @@ impl Syscall<'_> {
         Ok(0)
     }
 
+    /// get directory entries 
+    /// TODO: get ino from dirent
+    /// - fd – file describe
     pub fn sys_getdents64(
         &self,
         fd: FileDesc,
@@ -111,10 +125,14 @@ impl Syscall<'_> {
         Ok(writer.written_size)
     }
 
+    /// creates a new link (also known as a hard link) to an existing file. 
     pub fn sys_link(&self, oldpath: UserInPtr<u8>, newpath: UserInPtr<u8>) -> SysResult {
         self.sys_linkat(FileDesc::CWD, oldpath, FileDesc::CWD, newpath, 0)
     }
 
+    /// create file link relative to directory file descriptors 
+    /// If the pathname given in oldpath is relative, 
+    /// then it is interpreted relative to the directory referred to by the file descriptor olddirfd
     pub fn sys_linkat(
         &self,
         olddirfd: FileDesc,
@@ -139,10 +157,16 @@ impl Syscall<'_> {
         Ok(0)
     }
 
+    /// delete name/possibly file it refers to 
+    /// If that name was the last link to a file and no processes have the file open, the file is deleted.
+    /// If the name was the last link to a file but any processes still have the file open,
+    /// the file will remain in existence until the last file descriptor referring to it is closed.
     pub fn sys_unlink(&self, path: UserInPtr<u8>) -> SysResult {
         self.sys_unlinkat(FileDesc::CWD, path, 0)
     }
 
+    /// remove directory entry relative to directory file descriptor 
+    /// The unlinkat() system call operates in exactly the same way as either unlink or rmdir.
     pub fn sys_unlinkat(&self, dirfd: FileDesc, path: UserInPtr<u8>, flags: usize) -> SysResult {
         let path = path.read_cstring()?;
         let flags = AtFlags::from_bits_truncate(flags);
@@ -162,10 +186,12 @@ impl Syscall<'_> {
         Ok(0)
     }
 
+    /// change name/location of file
     pub fn sys_rename(&self, oldpath: UserInPtr<u8>, newpath: UserInPtr<u8>) -> SysResult {
         self.sys_renameat(FileDesc::CWD, oldpath, FileDesc::CWD, newpath)
     }
 
+    /// rename file relative to directory file descriptors 
     pub fn sys_renameat(
         &self,
         olddirfd: FileDesc,
@@ -189,10 +215,14 @@ impl Syscall<'_> {
         Ok(0)
     }
 
+    /// read value of symbolic link 
     pub fn sys_readlink(&self, path: UserInPtr<u8>, base: UserOutPtr<u8>, len: usize) -> SysResult {
         self.sys_readlinkat(FileDesc::CWD, path, base, len)
     }
 
+    /// read value of symbolic link relative to directory file descriptor 
+    /// readlink() places the contents of the symbolic link path in the buffer base, which has size len
+    /// TODO: recursive link resolution and loop detection
     pub fn sys_readlinkat(
         &self,
         dirfd: FileDesc,
@@ -234,6 +264,7 @@ pub struct LinuxDirent64 {
     name: [u8; 0],
 }
 
+/// directory entry buffer writer
 struct DirentBufWriter<'a> {
     buf: &'a mut [u8],
     rest_size: usize,
@@ -241,6 +272,7 @@ struct DirentBufWriter<'a> {
 }
 
 impl<'a> DirentBufWriter<'a> {
+    /// create a buffer writer
     fn new(buf: &'a mut [u8]) -> Self {
         DirentBufWriter {
             rest_size: buf.len(),
@@ -249,6 +281,7 @@ impl<'a> DirentBufWriter<'a> {
         }
     }
 
+    /// write data
     fn try_write(&mut self, inode: u64, type_: u8, name: &str) -> bool {
         let len = core::mem::size_of::<LinuxDirent64>() + name.len() + 1;
         let len = (len + 7) / 8 * 8; // align up
@@ -275,6 +308,7 @@ impl<'a> DirentBufWriter<'a> {
         true
     }
 
+    /// to slice
     fn as_slice(&self) -> &[u8] {
         &self.buf[..self.written_size]
     }
