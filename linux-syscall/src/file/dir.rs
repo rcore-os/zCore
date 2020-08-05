@@ -16,7 +16,7 @@ use kernel_hal::user::UserOutPtr;
 use linux_object::fs::vfs::FileType;
 
 impl Syscall<'_> {
-    /// return a null-terminated string containing an absolute pathname 
+    /// return a null-terminated string containing an absolute pathname
     /// that is the current working directory of the calling process.
     /// `buf` – pointer to buffer to receive path
     /// `len` – size of buf
@@ -54,7 +54,7 @@ impl Syscall<'_> {
         self.sys_mkdirat(FileDesc::CWD, path, mode)
     }
 
-    /// create directory relative to directory file descriptor 
+    /// create directory relative to directory file descriptor
     pub fn sys_mkdirat(&self, dirfd: FileDesc, path: UserInPtr<u8>, mode: usize) -> SysResult {
         let path = path.read_cstring()?;
         // TODO: check pathname
@@ -89,7 +89,7 @@ impl Syscall<'_> {
         Ok(0)
     }
 
-    /// get directory entries 
+    /// get directory entries
     /// TODO: get ino from dirent
     /// - fd – file describe
     pub fn sys_getdents64(
@@ -125,13 +125,13 @@ impl Syscall<'_> {
         Ok(writer.written_size)
     }
 
-    /// creates a new link (also known as a hard link) to an existing file. 
+    /// creates a new link (also known as a hard link) to an existing file.
     pub fn sys_link(&self, oldpath: UserInPtr<u8>, newpath: UserInPtr<u8>) -> SysResult {
         self.sys_linkat(FileDesc::CWD, oldpath, FileDesc::CWD, newpath, 0)
     }
 
-    /// create file link relative to directory file descriptors 
-    /// If the pathname given in oldpath is relative, 
+    /// create file link relative to directory file descriptors
+    /// If the pathname given in oldpath is relative,
     /// then it is interpreted relative to the directory referred to by the file descriptor olddirfd
     pub fn sys_linkat(
         &self,
@@ -157,7 +157,7 @@ impl Syscall<'_> {
         Ok(0)
     }
 
-    /// delete name/possibly file it refers to 
+    /// delete name/possibly file it refers to
     /// If that name was the last link to a file and no processes have the file open, the file is deleted.
     /// If the name was the last link to a file but any processes still have the file open,
     /// the file will remain in existence until the last file descriptor referring to it is closed.
@@ -165,7 +165,7 @@ impl Syscall<'_> {
         self.sys_unlinkat(FileDesc::CWD, path, 0)
     }
 
-    /// remove directory entry relative to directory file descriptor 
+    /// remove directory entry relative to directory file descriptor
     /// The unlinkat() system call operates in exactly the same way as either unlink or rmdir.
     pub fn sys_unlinkat(&self, dirfd: FileDesc, path: UserInPtr<u8>, flags: usize) -> SysResult {
         let path = path.read_cstring()?;
@@ -191,7 +191,7 @@ impl Syscall<'_> {
         self.sys_renameat(FileDesc::CWD, oldpath, FileDesc::CWD, newpath)
     }
 
-    /// rename file relative to directory file descriptors 
+    /// rename file relative to directory file descriptors
     pub fn sys_renameat(
         &self,
         olddirfd: FileDesc,
@@ -215,12 +215,12 @@ impl Syscall<'_> {
         Ok(0)
     }
 
-    /// read value of symbolic link 
+    /// read value of symbolic link
     pub fn sys_readlink(&self, path: UserInPtr<u8>, base: UserOutPtr<u8>, len: usize) -> SysResult {
         self.sys_readlinkat(FileDesc::CWD, path, base, len)
     }
 
-    /// read value of symbolic link relative to directory file descriptor 
+    /// read value of symbolic link relative to directory file descriptor
     /// readlink() places the contents of the symbolic link path in the buffer base, which has size len
     /// TODO: recursive link resolution and loop detection
     pub fn sys_readlinkat(

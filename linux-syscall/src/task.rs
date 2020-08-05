@@ -1,4 +1,13 @@
 //! Syscalls for process
+//!
+//! - fork
+//! - vfork
+//! - clone
+//! - wait4
+//! - execve
+//! - gettid
+//! - getpid
+//! - getppid
 
 use super::*;
 use bitflags::bitflags;
@@ -255,6 +264,8 @@ impl Syscall<'_> {
     //        Ok(0)
     //    }
 
+    /// set pointer to thread ID
+    /// returns the caller's thread ID
     pub fn sys_set_tid_address(&self, tidptr: UserOutPtr<i32>) -> SysResult {
         info!("set_tid_address: {:?}", tidptr);
         self.thread.set_tid_address(tidptr);
@@ -265,29 +276,53 @@ impl Syscall<'_> {
 
 bitflags! {
     pub struct CloneFlags: usize {
+        ///
         const CSIGNAL =         0xff;
+        /// the calling process and the child process run in the same memory space
         const VM =              1 << 8;
+        /// the caller and the child process share the same filesystem information
         const FS =              1 << 9;
+        /// the calling process and the child process share the same file descriptor table
         const FILES =           1 << 10;
+        /// the calling process and the child process share the same table of signal handlers.
         const SIGHAND =         1 << 11;
+        /// the calling process is being traced
         const PTRACE =          1 << 13;
+        /// the execution of the calling process is suspended until the child releases its virtual memory resources
         const VFORK =           1 << 14;
+        /// the parent of the new child will be the same as that of the call‐ing process.
         const PARENT =          1 << 15;
+        /// the child is placed in the same thread group as the calling process.
         const THREAD =          1 << 16;
+        /// cloned child is started in a new mount namespace
         const NEWNS	=           1 << 17;
+        /// the child and the calling process share a single list of System V semaphore adjustment values.
         const SYSVSEM =         1 << 18;
+        /// architecture dependent, The TLS (Thread Local Storage) descriptor is set to tls.
         const SETTLS =          1 << 19;
+        /// Store the child thread ID at the location in the parent's memory.
         const PARENT_SETTID =   1 << 20;
+        /// Clear (zero) the child thread ID
         const CHILD_CLEARTID =  1 << 21;
+        /// the parent not to receive a signal when the child terminated
         const DETACHED =        1 << 22;
+        /// a tracing process cannot force CLONE_PTRACE on this child process.
         const UNTRACED =        1 << 23;
+        /// Store the child thread ID
         const CHILD_SETTID =    1 << 24;
+        /// Create the process in a new cgroup namespace.
         const NEWCGROUP =       1 << 25;
+        /// create the process in a new UTS namespace
         const NEWUTS =          1 << 26;
+        /// create the process in a new IPC namespace.
         const NEWIPC =          1 << 27;
+        /// create the process in a new user namespace
         const NEWUSER =         1 << 28;
+        /// create the process in a new PID namespace
         const NEWPID =          1 << 29;
+        /// create the process in a new net‐work namespace.
         const NEWNET =          1 << 30;
+        /// the new process shares an I/O context with the calling process.
         const IO =              1 << 31;
     }
 }

@@ -1,4 +1,5 @@
-//use super::*;
+//! Syscalls for time
+//! - clock_gettime
 
 use crate::Syscall;
 use kernel_hal::{timer_now, user::UserOutPtr};
@@ -7,7 +8,9 @@ use linux_object::error::SysResult;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct TimeSpec {
+    /// second
     sec: usize,
+    /// nano second
     nsec: usize,
 }
 

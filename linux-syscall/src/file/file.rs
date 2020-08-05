@@ -12,7 +12,7 @@
 use super::*;
 
 impl Syscall<'_> {
-    /// Reads from a specified file using a file descriptor. Before using this call, 
+    /// Reads from a specified file using a file descriptor. Before using this call,
     /// you must first obtain a file descriptor using the opensyscall. Returns bytes read successfully.
     /// - fd – file descriptor
     /// - base – pointer to the buffer to fill with read contents
@@ -27,7 +27,7 @@ impl Syscall<'_> {
         Ok(len)
     }
 
-    /// Writes to a specified file using a file descriptor. Before using this call, 
+    /// Writes to a specified file using a file descriptor. Before using this call,
     /// you must first obtain a file descriptor using the open syscall. Returns bytes written successfully.
     /// - fd – file descriptor
     /// - base – pointer to the buffer write
@@ -41,8 +41,8 @@ impl Syscall<'_> {
         Ok(len)
     }
 
-    /// read from or write to a file descriptor at a given offset 
-    /// reads up to count bytes from file descriptor fd at offset offset 
+    /// read from or write to a file descriptor at a given offset
+    /// reads up to count bytes from file descriptor fd at offset offset
     /// (from the start of the file) into the buffer starting at buf. The file offset is not changed.
     pub fn sys_pread(
         &self,
@@ -63,8 +63,8 @@ impl Syscall<'_> {
         Ok(len)
     }
 
-    /// writes up to count bytes from the buffer 
-    /// starting at buf to the file descriptor fd at offset offset. The file offset is not changed. 
+    /// writes up to count bytes from the buffer
+    /// starting at buf to the file descriptor fd at offset offset. The file offset is not changed.
     pub fn sys_pwrite(
         &self,
         fd: FileDesc,
@@ -83,8 +83,8 @@ impl Syscall<'_> {
         Ok(len)
     }
 
-    /// works just like read except that multiple buffers are filled. 
-    /// reads iov_count buffers from the file 
+    /// works just like read except that multiple buffers are filled.
+    /// reads iov_count buffers from the file
     /// associated with the file descriptor fd into the buffers described by iov ("scatter input")
     pub fn sys_readv(
         &self,
@@ -103,8 +103,8 @@ impl Syscall<'_> {
     }
 
     /// works just like write except that multiple buffers are written out.
-    /// writes iov_count buffers of data described 
-    /// by iov to the file associated with the file descriptor fd ("gather output"). 
+    /// writes iov_count buffers of data described
+    /// by iov to the file associated with the file descriptor fd ("gather output").
     pub fn sys_writev(
         &self,
         fd: FileDesc,
@@ -123,7 +123,7 @@ impl Syscall<'_> {
         Ok(len)
     }
 
-    /// repositions the offset of the open file associated with the file descriptor fd 
+    /// repositions the offset of the open file associated with the file descriptor fd
     /// to the argument offset according to the directive whence
     pub fn sys_lseek(&self, fd: FileDesc, offset: i64, whence: u8) -> SysResult {
         const SEEK_SET: u8 = 0;
@@ -144,7 +144,7 @@ impl Syscall<'_> {
         Ok(offset as usize)
     }
 
-    /// cause the regular file named by path to be truncated to a size of precisely length bytes. 
+    /// cause the regular file named by path to be truncated to a size of precisely length bytes.
     pub fn sys_truncate(&self, path: UserInPtr<u8>, len: usize) -> SysResult {
         let path = path.read_cstring()?;
         info!("truncate: path={:?}, len={}", path, len);
@@ -153,7 +153,7 @@ impl Syscall<'_> {
         Ok(0)
     }
 
-    /// cause the regular file referenced by fd to be truncated to a size of precisely length bytes. 
+    /// cause the regular file referenced by fd to be truncated to a size of precisely length bytes.
     pub fn sys_ftruncate(&self, fd: FileDesc, len: usize) -> SysResult {
         info!("ftruncate: fd={:?}, len={}", fd, len);
         let proc = self.linux_process();
@@ -250,7 +250,7 @@ impl Syscall<'_> {
         Ok(total_written)
     }
 
-    /// causes all buffered modifications to file metadata and data to be written to the underlying file systems. 
+    /// causes all buffered modifications to file metadata and data to be written to the underlying file systems.
     pub fn sys_sync(&self) -> SysResult {
         info!("sync:");
         let proc = self.linux_process();
@@ -258,7 +258,7 @@ impl Syscall<'_> {
         Ok(0)
     }
 
-    /// transfers ("flushes") all modified in-core data of (i.e., modified buffer cache pages for) the file 
+    /// transfers ("flushes") all modified in-core data of (i.e., modified buffer cache pages for) the file
     /// referred to by the file descriptor fd to the disk device
     pub fn sys_fsync(&self, fd: FileDesc) -> SysResult {
         info!("fsync: fd={:?}", fd);
@@ -308,7 +308,7 @@ impl Syscall<'_> {
         self.sys_faccessat(FileDesc::CWD, path, mode, 0)
     }
 
-    /// Check user's permissions of a file relative to a directory file descriptor 
+    /// Check user's permissions of a file relative to a directory file descriptor
     /// TODO: check permissions based on uid/gid
     pub fn sys_faccessat(
         &self,

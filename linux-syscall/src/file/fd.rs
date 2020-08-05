@@ -13,7 +13,7 @@ impl Syscall<'_> {
         self.sys_openat(FileDesc::CWD, path, flags, mode)
     }
 
-    /// open file relative to directory file descriptor 
+    /// open file relative to directory file descriptor
     pub fn sys_openat(
         &self,
         dir_fd: FileDesc,
@@ -62,7 +62,7 @@ impl Syscall<'_> {
         Ok(0)
     }
 
-    /// create a copy of the file descriptor oldfd. 
+    /// create a copy of the file descriptor oldfd.
     pub fn sys_dup2(&self, fd1: FileDesc, fd2: FileDesc) -> SysResult {
         info!("dup2: from {:?} to {:?}", fd1, fd2);
         let proc = self.linux_process();

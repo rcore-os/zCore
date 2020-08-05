@@ -8,7 +8,7 @@ use super::*;
 use linux_object::fs::vfs::{FileType, Metadata};
 
 impl Syscall<'_> {
-    /// Works exactly like the stat syscall, but if the file in question is a symbolic link, 
+    /// Works exactly like the stat syscall, but if the file in question is a symbolic link,
     /// information on the link is returned rather than its target.
     /// - `path` – full path to file
     /// - `stat_ptr` – pointer to stat buffer
@@ -33,7 +33,7 @@ impl Syscall<'_> {
         Ok(0)
     }
 
-    /// get file status relative to a directory file descriptor 
+    /// get file status relative to a directory file descriptor
     pub fn sys_fstatat(
         &self,
         dirfd: FileDesc,
