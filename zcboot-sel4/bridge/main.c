@@ -22,7 +22,8 @@ static char allocator_mem_pool[ALLOCATOR_STATIC_POOL_SIZE];
 
 #define ALLOCATOR_VIRTUAL_POOL_SIZE BIT(28)
 
-#define ZCDAEMON_BADGE_PUTCHAR 0x10
+#define ZCDAEMON_BADGE_GETCAP 0x10
+#define ZCDAEMON_BADGE_PUTCHAR 0x11
 
 void load_zc();
 seL4_Word setup_ipc(sel4utils_process_t *process, const vka_object_t *ep_object, seL4_Word badge);
@@ -90,16 +91,17 @@ void load_zc() {
     error = vka_alloc_endpoint(&vka, &ep_object);
     ZF_LOGF_IFERR(error, "Failed to allocate ep_object.\n");
 
-    // 0. putchar
+    // Caps.
+    seL4_Word child_getcap_cptr = setup_ipc(&new_process, &ep_object, ZCDAEMON_BADGE_GETCAP);
     seL4_Word child_putchar_cptr = setup_ipc(&new_process, &ep_object, ZCDAEMON_BADGE_PUTCHAR);
 
-    const int ARG_MAX_LEN_WITHOUT_TERM = 127;
+    const int ARG_MAX_LEN_WITHOUT_TERM = 31;
 
     // Prepare arguments.
     char *arglist[2];
     arglist[0] = "zc";
     arglist[1] = malloc(ARG_MAX_LEN_WITHOUT_TERM + 1);
-    snprintf(arglist[1], ARG_MAX_LEN_WITHOUT_TERM, "%lu", child_putchar_cptr);
+    snprintf(arglist[1], ARG_MAX_LEN_WITHOUT_TERM, "%lu", child_getcap_cptr);
 
     // Spawn process.
     error = sel4utils_spawn_process_v(&new_process, &vka, &vspace, 2, arglist, 1);
@@ -110,11 +112,39 @@ void load_zc() {
         seL4_Word sender_badge;
         seL4_MessageInfo_t tag = seL4_Recv(ep_object.cptr, &sender_badge);
         switch(sender_badge) {
+            case ZCDAEMON_BADGE_GETCAP: {
+                if(seL4_MessageInfo_get_length(tag) != 4) {
+                    ZF_LOGI("ZCDAEMON_BADGE_GETCAP: Bad tag length");
+                    break;
+                }
+                assert(sizeof(seL4_Word) == 8); // supports 64-bit platforms only
+
+                // Collect name.
+                seL4_Word w0 = seL4_GetMR(0), w1 = seL4_GetMR(1), w2 = seL4_GetMR(2), w3 = seL4_GetMR(3);
+                char name[32];
+                memcpy(name + 0, &w0, 8);
+                memcpy(name + 8, &w1, 8);
+                memcpy(name + 16, &w2, 8);
+                memcpy(name + 24, &w3, 8);
+                name[31] = 0;
+
+                if(strcmp(name, "putchar") == 0) {
+                    seL4_SetMR(0, child_putchar_cptr);
+                } else {
+                    seL4_SetMR(0, 0);
+                }
+                seL4_Reply(seL4_MessageInfo_new(0, 0, 0, 1));
+                break;
+            }
             case ZCDAEMON_BADGE_PUTCHAR: {
+                if(seL4_MessageInfo_get_length(tag) != 1) {
+                    ZF_LOGI("ZCDAEMON_BADGE_PUTCHAR: Bad tag length");
+                    break;
+                }
                 char ch = (char) seL4_GetMR(0);
                 putchar(ch);
                 fflush(stdout);
-                seL4_Reply(tag);
+                seL4_Reply(seL4_MessageInfo_new(0, 0, 0, 0));
                 break;
             }
             default: {

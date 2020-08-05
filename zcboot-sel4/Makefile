@@ -8,7 +8,7 @@ zcore:
 bridge: zcore
 	mkdir bridge/build || true
 	rm bridge/build/zc || true # force relinking Rust lib
-	cd bridge/build && ninja
+	cd bridge/build && cmake -G Ninja .. && ninja
 
 simulate: bridge
 	cd bridge/build && ./simulate
