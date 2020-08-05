@@ -1,11 +1,16 @@
 all: image
 
-image: zcore bridge link
+image: zcore bridge
 
 zcore:
 	cargo build --release
 
-bridge:
-	cd bridge && ninja
+bridge: zcore
+	mkdir bridge/build || true
+	rm bridge/build/zc || true # force relinking Rust lib
+	cd bridge/build && ninja
 
-link:
+simulate: bridge
+	cd bridge/build && ./simulate
+
+.PNONY: zcore bridge simulate

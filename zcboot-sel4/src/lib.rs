@@ -1,10 +1,25 @@
+#![no_std]
+
 extern "C" {
-    fn l4bridge_debug_print(s: *const u8, len: usize);
+    fn l4bridge_putchar(c: u8);
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn rust_start() -> ! {
-    let s = "Hello from zCore!".as_bytes();
-    l4bridge_debug_print(s.as_ptr(), s.len());
+    print_str("Hello from zCore!\n");
+    loop {}
+}
+
+fn print_str(s: &str) {
+    let s = s.as_bytes();
+    for c in s {
+        unsafe {
+            l4bridge_putchar(*c);
+        }
+    }
+}
+
+#[panic_handler]
+fn on_panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
