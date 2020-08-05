@@ -27,6 +27,7 @@ impl Syscall<'_> {
         Ok(new_proc.id() as usize)
     }
 
+    /// creates a child process of the calling process, similar to fork but wait for execve
     pub async fn sys_vfork(&self) -> SysResult {
         info!("vfork:");
         let new_proc = Process::fork_from(self.zircon_process(), true)?;

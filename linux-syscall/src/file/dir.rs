@@ -18,8 +18,8 @@ use linux_object::fs::vfs::FileType;
 impl Syscall<'_> {
     /// return a null-terminated string containing an absolute pathname
     /// that is the current working directory of the calling process.
-    /// `buf` – pointer to buffer to receive path
-    /// `len` – size of buf
+    /// - `buf` – pointer to buffer to receive path
+    /// - `len` – size of buf
     pub fn sys_getcwd(&self, mut buf: UserOutPtr<u8>, len: usize) -> SysResult {
         info!("getcwd: buf={:?}, len={:#x}", buf, len);
         let proc = self.linux_process();

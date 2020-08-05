@@ -1,7 +1,13 @@
 //! Linux syscall implementations
 
 #![no_std]
-#![deny(warnings, unsafe_code, unused_must_use, unreachable_patterns)]
+#![deny(
+    warnings,
+    unsafe_code,
+    unused_must_use,
+    unreachable_patterns,
+    missing_docs
+)]
 #![feature(bool_to_option)]
 
 #[macro_use]
@@ -26,16 +32,38 @@ mod task;
 mod time;
 mod vm;
 
+/// The struct of Syscall which stores the information about making a syscall
+/// the syscall is called like this in the linux-loader:
+/// ```
+/// let num = regs.rax as u32;
+/// let args = [regs.rdi, regs.rsi, regs.rdx, regs.r10, regs.r8, regs.r9];
+/// let mut syscall = Syscall {
+///     thread,
+///     #[cfg(feature = "std")]
+///     syscall_entry: kernel_hal_unix::syscall_entry as usize,
+///     #[cfg(not(feature = "std"))]
+///     syscall_entry: 0,
+///     spawn_fn: spawn,
+///     regs,
+///     exit: false,
+/// };
+/// let ret = syscall.syscall(num, args).await;
+/// ```
 pub struct Syscall<'a> {
+    /// the thread making a syscall
     pub thread: &'a Arc<Thread>,
+    /// the entry of current syscall
     pub syscall_entry: VirtAddr,
+    /// store the regs statues
     pub regs: &'a mut GeneralRegs,
+    /// the spawn function in linux-loader
     pub spawn_fn: fn(thread: Arc<Thread>),
     /// Set `true` to exit current task.
     pub exit: bool,
 }
 
 impl Syscall<'_> {
+    /// syscall entry function
     pub async fn syscall(&mut self, num: u32, args: [usize; 6]) -> isize {
         debug!("syscall: num={}, args={:x?}", num, args);
         let sys_type = match Sys::try_from(num) {
@@ -205,6 +233,7 @@ impl Syscall<'_> {
     }
 
     #[cfg(target_arch = "x86_64")]
+    /// syscall specified for x86_64
     async fn x86_64_syscall(&mut self, sys_type: Sys, args: [usize; 6]) -> SysResult {
         let [a0, a1, a2, _a3, _a4, _a5] = args;
         match sys_type {
@@ -235,6 +264,7 @@ impl Syscall<'_> {
         }
     }
 
+    /// unkown syscalls, currently is similar to unimplemented syscalls but emit an error
     fn unknown_syscall(&mut self, sys_type: Sys) -> SysResult {
         error!("unknown syscall: {:?}. exit...", sys_type);
         let proc = self.zircon_process();
@@ -243,15 +273,18 @@ impl Syscall<'_> {
         Err(LxError::ENOSYS)
     }
 
+    /// unimplemented syscalls
     fn unimplemented(&self, name: &str, ret: SysResult) -> SysResult {
         warn!("{}: unimplemented", name);
         ret
     }
 
+    /// get zircon process
     fn zircon_process(&self) -> &Arc<Process> {
         self.thread.proc()
     }
 
+    /// get linux process
     fn linux_process(&self) -> &LinuxProcess {
         self.zircon_process().linux()
     }

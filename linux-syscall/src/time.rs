@@ -8,13 +8,15 @@ use linux_object::error::SysResult;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct TimeSpec {
-    /// second
+    /// seconds
     sec: usize,
-    /// nano second
+    /// nano seconds
     nsec: usize,
 }
 
 impl Syscall<'_> {
+    /// finds the resolution (precision) of the specified clock clockid, and,
+    /// if buffer is non-NULL, stores it in the struct timespec pointed to by buffer
     pub fn sys_clock_gettime(&self, clock: usize, mut buf: UserOutPtr<TimeSpec>) -> SysResult {
         info!("clock_gettime: id={:?} buf={:?}", clock, buf);
 
