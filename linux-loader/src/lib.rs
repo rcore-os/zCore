@@ -1,4 +1,5 @@
 //! Linux LibOS
+//! - run process and manage trap/interrupt/syscall
 #![no_std]
 #![feature(asm)]
 #![feature(global_asm)]
@@ -44,7 +45,14 @@ pub fn run(args: Vec<String>, envs: Vec<String>, rootfs: Arc<dyn FileSystem>) ->
     proc
 }
 
-/// Handle trap/interrupt/syscall
+/// Run and Manage thread
+///
+/// loop:
+/// - wait for the thread to be ready
+/// - get user thread context
+/// - enter user mode
+/// - handle trap/interrupt/syscall according to the return value
+/// - return the context to the user thread
 fn spawn(thread: Arc<Thread>) {
     let vmtoken = thread.proc().vmar().table_phys();
     let future = async move {
