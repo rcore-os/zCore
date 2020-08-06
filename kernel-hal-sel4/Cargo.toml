@@ -8,12 +8,6 @@ description = "Kernel HAL implementation on seL4."
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-log = "0.4"
-libc = "0.2"
-tempfile = "3"
-bitflags = "1.2"
-lazy_static = "1.4"
+bitflags = { version = "1.2", default-features = false }
 kernel-hal = { path = "../kernel-hal" }
-async-std = "1.5"
-git-version = "0.3"
-trapframe = "0.4.1"
+dlmalloc = { git = "https://github.com/losfair/dlmalloc-rs", branch = "rcore-soc", features = ["global", "external"] }

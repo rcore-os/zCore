@@ -1,0 +1,4 @@
+[target.x86_64-sel4]
+rustflags = [
+    "-C", "link-arg=-Tzc_linker.ld", # Use our own linker script.
+]

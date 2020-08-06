@@ -1,5 +1,4 @@
 all:
 	mkdir build || true
-	rm build/zc || true # force relinking Rust lib
-	make -C zc_core
+	rm build/archive.o || true # force rebuild
 	cd build && cmake -G Ninja .. && ninja

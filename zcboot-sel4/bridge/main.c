@@ -82,7 +82,7 @@ void load_zc() {
 
     // Create process.
     sel4utils_process_t new_process;
-    sel4utils_process_config_t config = process_config_default_simple(&simple, "zc", seL4_MaxPrio);
+    sel4utils_process_config_t config = process_config_default_simple(&simple, "zcboot-sel4", seL4_MaxPrio);
     error = sel4utils_configure_process_custom(&new_process, &vka, &vspace, config);
     ZF_LOGF_IFERR(error, "failed to configure process");
 
@@ -106,6 +106,8 @@ void load_zc() {
     // Spawn process.
     error = sel4utils_spawn_process_v(&new_process, &vka, &vspace, 2, arglist, 1);
     ZF_LOGF_IFERR(error, "failed to spawn process");
+
+    printf("Spawned process.\n");
 
     // Handle IPC.
     while(1) {

@@ -35,7 +35,7 @@ util_libs_import_libraries()
 sel4_libs_import_libraries()
 
 include(cpio)
-MakeCPIO(archive.o "${CMAKE_CURRENT_LIST_DIR}/zc_core/zc")
+MakeCPIO(archive.o "${CMAKE_CURRENT_LIST_DIR}/../target/x86_64-sel4/release/zcboot-sel4")
 
 add_executable(bridge archive.o main.c)
 

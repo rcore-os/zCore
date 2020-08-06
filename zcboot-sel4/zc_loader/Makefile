@@ -1,10 +1,9 @@
-BUILD_DIR := ../build
-SEL4_DIR := ../../../../seL4
+BUILD_DIR := ../bridge/build
+SEL4_DIR := ../../../seL4
 
 all:
-	gcc \
-		-Wl,-T,zc_linker.ld \
-		-o zc \
+	clang \
+		-c \
 		-nostdlib -static -fPIC -O2 \
 		-I$(BUILD_DIR)/kernel/gen_config/ \
 		-I$(BUILD_DIR)/kernel/gen_config/ \
@@ -19,8 +18,9 @@ all:
 		-I$(SEL4_DIR)/libsel4/include/ \
 		-I$(SEL4_DIR)/libsel4/mode_include/64/ \
 		-I$(SEL4_DIR)/libsel4/sel4_plat_include/pc99/ \
-		zc.c \
-		-L../../target/release \
-		-lzcboot_sel4
+		loader.c
+	rust-ar \
+		rc libzc_loader.a \
+		loader.o
 
-
+.PHONY: all

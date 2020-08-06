@@ -2,8 +2,11 @@ all: image
 
 image: zcore bridge
 
-zcore:
-	cargo build --release
+loader:
+	make -C zc_loader
+
+zcore: loader
+	cargo xbuild --release --target x86_64-sel4.json
 
 bridge: zcore
 	make -C bridge
@@ -11,4 +14,4 @@ bridge: zcore
 simulate: bridge
 	cd bridge/build && ./simulate
 
-.PNONY: zcore bridge simulate
+.PNONY: loader zcore bridge simulate

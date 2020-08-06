@@ -21,13 +21,6 @@ SECTIONS {
   .data ALIGN(4K):
   {
     *(.data .data.*)
-
-    /* FIXME: Why do we have to put tbss in .data? */
-    stbss = .;
-    *(.tbss .tbss.*)
-    etbss = .;
-    . += 0x100;
-    ethread = .;
   }
 
   .got ALIGN(4K):
@@ -40,7 +33,13 @@ SECTIONS {
     *(.bss .bss.*)
   }
 
-  /DISCARD/ : {
-    *(.*)
+  .tbss :
+  {
+    /* FIXME: Why do we have to put tbss in .data? */
+    stbss = .;
+    *(.tbss .tbss.*)
+    etbss = .;
+    . += 0x100;
+    ethread = .;
   }
 }

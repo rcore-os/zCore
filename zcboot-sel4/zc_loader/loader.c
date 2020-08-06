@@ -21,7 +21,7 @@ void etbss();
 void ethread();
 
 // Fails if not stripped before linking.
-void static_assert(int x);
+void static_assert();
 
 seL4_CPtr putchar_cptr = 0;
 
@@ -49,6 +49,10 @@ void l4bridge_putchar(char c) {
     seL4_Call(putchar_cptr, tag);
 }
 
+void l4bridge_yield() {
+    seL4_Yield();
+}
+
 void init_master_tls() {
     // reference: https://wiki.osdev.org/Thread_Local_Storage
     * (seL4_Word *) etbss = (seL4_Word) etbss;
@@ -67,7 +71,7 @@ seL4_Word getcap(const char *name) {
     // XXX: Assuming sizeof(seL4_Word) == 8
     seL4_Word buf[4];
     if(sizeof(seL4_Word) != 8) {
-        static_assert(0);
+        static_assert();
     }
 
     write_string_buf((char *) buf, name, 32);
@@ -114,6 +118,14 @@ int bcmp(const void *_s1, const void *_s2, unsigned long n) {
     const char *s2 = _s2;
     for(int i = 0; i < n; i++) if(s1[i] != s2[i]) return 1;
     return 0;
+}
+
+void * memset(void *ptr, int value, unsigned long num) {
+    char *buf = ptr;
+    for(int i = 0; i < num; i++) {
+        buf[i] = value;
+    }
+    return ptr;
 }
 
 void __assert_fail(const char * assertion, const char * file, int line, const char * function) {
