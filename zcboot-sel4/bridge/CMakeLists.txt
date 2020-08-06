@@ -34,18 +34,8 @@ sel4_import_libsel4()
 util_libs_import_libraries()
 sel4_libs_import_libraries()
 
-link_directories(${CMAKE_CURRENT_LIST_DIR}/../target/release/)
-
-add_executable(zc zc.c)
-
-target_link_libraries(zc
-    sel4
-    muslc utils
-    sel4muslcsys sel4platsupport sel4utils sel4debug
-    zcboot_sel4)
-
 include(cpio)
-MakeCPIO(archive.o "$<TARGET_FILE:zc>")
+MakeCPIO(archive.o "${CMAKE_CURRENT_LIST_DIR}/zc_core/zc")
 
 add_executable(bridge archive.o main.c)
 

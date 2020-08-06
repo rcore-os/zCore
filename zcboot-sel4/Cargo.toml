@@ -12,3 +12,4 @@ lto = true
 panic = "abort"
 
 [dependencies]
+kernel-hal-sel4 = { path = "../kernel-hal-sel4" }

@@ -1,0 +1,46 @@
+ENTRY(_start)
+
+IMAGE_BEGIN = 0x400000;
+
+SECTIONS {
+
+  . = IMAGE_BEGIN;
+
+  .rodata ALIGN(4K):
+  {
+    *(.rodata .rodata.*)
+  }
+
+  .text ALIGN(4K):
+  {
+    stext = .;
+    *(.text .text.*)
+    etext = .;
+  }
+
+  .data ALIGN(4K):
+  {
+    *(.data .data.*)
+
+    /* FIXME: Why do we have to put tbss in .data? */
+    stbss = .;
+    *(.tbss .tbss.*)
+    etbss = .;
+    . += 0x100;
+    ethread = .;
+  }
+
+  .got ALIGN(4K):
+  {
+    *(.got .got.*)
+  }
+
+  .bss ALIGN(4K):
+  {
+    *(.bss .bss.*)
+  }
+
+  /DISCARD/ : {
+    *(.*)
+  }
+}

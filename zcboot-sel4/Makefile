@@ -6,9 +6,7 @@ zcore:
 	cargo build --release
 
 bridge: zcore
-	mkdir bridge/build || true
-	rm bridge/build/zc || true # force relinking Rust lib
-	cd bridge/build && cmake -G Ninja .. && ninja
+	make -C bridge
 
 simulate: bridge
 	cd bridge/build && ./simulate
