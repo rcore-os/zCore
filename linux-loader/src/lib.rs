@@ -1,7 +1,8 @@
+//! Linux LibOS
 #![no_std]
 #![feature(asm)]
 #![feature(global_asm)]
-#![deny(warnings, unused_must_use)]
+#![deny(warnings, unused_must_use, missing_docs)]
 
 extern crate alloc;
 #[macro_use]
@@ -20,6 +21,7 @@ use {
     zircon_object::task::*,
 };
 
+/// Create and run main Linux process
 pub fn run(args: Vec<String>, envs: Vec<String>, rootfs: Arc<dyn FileSystem>) -> Arc<Process> {
     let job = Job::root();
     let proc = Process::create_linux(&job, rootfs.clone()).unwrap();
@@ -42,14 +44,18 @@ pub fn run(args: Vec<String>, envs: Vec<String>, rootfs: Arc<dyn FileSystem>) ->
     proc
 }
 
+/// Handle trap/interrupt/syscall
 fn spawn(thread: Arc<Thread>) {
     let vmtoken = thread.proc().vmar().table_phys();
     let future = async move {
         loop {
+            // wait
             let mut cx = thread.wait_for_run().await;
+            // run
             trace!("go to user: {:#x?}", cx);
             kernel_hal::context_run(&mut cx);
             trace!("back from user: {:#x?}", cx);
+            // handle trap/interrupt/syscall
             let mut exit = false;
             match cx.trap_num {
                 0x100 => exit = handle_syscall(&thread, &mut cx.general).await,
@@ -86,6 +92,7 @@ fn spawn(thread: Arc<Thread>) {
     kernel_hal::Thread::spawn(Box::pin(future), vmtoken);
 }
 
+/// syscall handler entry: create a struct `syscall: Syscall`, and call `syscall.syscall()`
 async fn handle_syscall(thread: &Arc<Thread>, regs: &mut GeneralRegs) -> bool {
     trace!("syscall: {:#x?}", regs);
     let num = regs.rax as u32;
