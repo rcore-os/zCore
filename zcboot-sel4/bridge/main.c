@@ -10,6 +10,9 @@
 #include <simple/simple.h>
 #include <simple-default/simple-default.h>
 
+#define ZCDAEMON_IPCBUF_VADDR 0x3000000
+#define FAULT_HANDLER_IPCBUF_VADDR 0x2000000
+
 seL4_BootInfo *boot_info;
 simple_t simple;
 allocman_t *allocman;
@@ -62,6 +65,54 @@ int main(int argc, char *argv[]) {
     return 0;
 }
 
+int map_remote_frame(sel4utils_process_t *process, seL4_Word vaddr, vka_object_t *obj_out) {
+    int error;
+
+    error = vka_alloc_frame(&vka, 12, obj_out); // 4K frame
+    if(error) return error;
+
+    error = seL4_ARCH_Page_Map(
+        obj_out->cptr,
+        process->pd.cptr,
+        vaddr,
+        seL4_AllRights,
+        seL4_ARCH_Default_VMAttributes
+    );
+    if(error) {
+        vka_object_t new_page_table;
+
+        error = vka_alloc_page_table(&vka, &new_page_table);
+        if(error) return error;
+
+        error = seL4_ARCH_PageTable_Map(new_page_table.cptr, process->pd.cptr, vaddr, seL4_ARCH_Default_VMAttributes);
+        if(error) return error;
+
+        error = seL4_ARCH_Page_Map(
+            obj_out->cptr,
+            process->pd.cptr,
+            vaddr,
+            seL4_AllRights,
+            seL4_ARCH_Default_VMAttributes
+        );
+        if(error) return error;
+    }
+
+    return 0;
+}
+
+int prepare_ipc_buffer(sel4utils_process_t *process) {
+    int error;
+    vka_object_t obj;
+
+    error = map_remote_frame(process, ZCDAEMON_IPCBUF_VADDR, &obj);
+    if(error) return error;
+
+    error = seL4_TCB_SetIPCBuffer(process->thread.tcb.cptr, ZCDAEMON_IPCBUF_VADDR, obj.cptr);
+    if(error) return error;
+
+    return 0;
+}
+
 void load_zc() {
     int error;
     void *vaddr;
@@ -85,6 +136,10 @@ void load_zc() {
     sel4utils_process_config_t config = process_config_default_simple(&simple, "zcboot-sel4", seL4_MaxPrio);
     error = sel4utils_configure_process_custom(&new_process, &vka, &vspace, config);
     ZF_LOGF_IFERR(error, "failed to configure process");
+
+    // Prepare IPC frame.
+    error = prepare_ipc_buffer(&new_process);
+    ZF_LOGF_IFERR(error, "failed to prepare ipc buffer");
 
     // Setup IPC.
     vka_object_t ep_object= {0};

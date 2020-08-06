@@ -8,6 +8,8 @@
 
 #define GETCAP_CPTR 8
 
+#define ZCDAEMON_IPCBUF_VADDR 0x3000000
+
 // 1M stack for Rust
 #define MAIN_STACK_SIZE 1048576
 static char MAIN_STACK[MAIN_STACK_SIZE];
@@ -18,7 +20,7 @@ static char MAIN_STACK[MAIN_STACK_SIZE];
 static char TLS[TLS_SIZE];
 
 // IPC buffer
-static seL4_IPCBuffer ipc_buffer = {0};
+static seL4_IPCBuffer *ipc_buffer = (seL4_IPCBuffer *) ZCDAEMON_IPCBUF_VADDR;
 
 extern void rust_start();
 
@@ -102,7 +104,7 @@ seL4_Word getcap(const char *name) {
 
 void _start() {
     init_master_tls();
-    seL4_SetIPCBuffer(&ipc_buffer);
+    seL4_SetIPCBuffer(ipc_buffer);
 
     putchar_cptr = getcap("putchar");
 
