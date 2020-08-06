@@ -2,20 +2,20 @@
 //!
 //! ## Example
 //! the syscall is called like this in the linux-loader:
-//! ```
-//! //   let num = regs.rax as u32;
-//! //   let args = [regs.rdi, regs.rsi, regs.rdx, regs.r10, regs.r8, regs.r9];
-//! //   let mut syscall = Syscall {
-//! //       thread,
-//! //       #[cfg(feature = "std")]
-//! //       syscall_entry: kernel_hal_unix::syscall_entry as usize,
-//! //       #[cfg(not(feature = "std"))]
-//! //       syscall_entry: 0,
-//! //       spawn_fn: spawn,
-//! //       regs,
-//! //      exit: false,
-//! //   };
-//! //   let ret = syscall.syscall(num, args).await;
+//! ```ignore
+//! let num = regs.rax as u32;
+//! let args = [regs.rdi, regs.rsi, regs.rdx, regs.r10, regs.r8, regs.r9];
+//! let mut syscall = Syscall {
+//!     thread,
+//!     #[cfg(feature = "std")]
+//!     syscall_entry: kernel_hal_unix::syscall_entry as usize,
+//!     #[cfg(not(feature = "std"))]
+//!     syscall_entry: 0,
+//!     spawn_fn: spawn,
+//!     regs,
+//!     exit: false,
+//! };
+//! let ret = syscall.syscall(num, args).await;
 //! ```
 //!
 
