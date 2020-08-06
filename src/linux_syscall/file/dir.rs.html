@@ -322,6 +322,40 @@
 <span id="322">322</span>
 <span id="323">323</span>
 <span id="324">324</span>
+<span id="325">325</span>
+<span id="326">326</span>
+<span id="327">327</span>
+<span id="328">328</span>
+<span id="329">329</span>
+<span id="330">330</span>
+<span id="331">331</span>
+<span id="332">332</span>
+<span id="333">333</span>
+<span id="334">334</span>
+<span id="335">335</span>
+<span id="336">336</span>
+<span id="337">337</span>
+<span id="338">338</span>
+<span id="339">339</span>
+<span id="340">340</span>
+<span id="341">341</span>
+<span id="342">342</span>
+<span id="343">343</span>
+<span id="344">344</span>
+<span id="345">345</span>
+<span id="346">346</span>
+<span id="347">347</span>
+<span id="348">348</span>
+<span id="349">349</span>
+<span id="350">350</span>
+<span id="351">351</span>
+<span id="352">352</span>
+<span id="353">353</span>
+<span id="354">354</span>
+<span id="355">355</span>
+<span id="356">356</span>
+<span id="357">357</span>
+<span id="358">358</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Directory operations</span>
 <span class="doccomment">//!</span>
@@ -341,6 +375,10 @@
 <span class="kw">use</span> <span class="ident">linux_object</span>::<span class="ident">fs</span>::<span class="ident">vfs</span>::<span class="ident">FileType</span>;
 
 <span class="kw">impl</span> <span class="ident">Syscall</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span> {
+    <span class="doccomment">/// return a null-terminated string containing an absolute pathname</span>
+    <span class="doccomment">/// that is the current working directory of the calling process.</span>
+    <span class="doccomment">/// - `buf` – pointer to buffer to receive path</span>
+    <span class="doccomment">/// - `len` – size of buf</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_getcwd</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="kw-2">mut</span> <span class="ident">buf</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>, <span class="ident">len</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
         <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;getcwd: buf={:?}, len={:#x}&quot;</span>, <span class="ident">buf</span>, <span class="ident">len</span>);
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>();
@@ -352,6 +390,8 @@
         <span class="prelude-val">Ok</span>(<span class="ident">buf</span>.<span class="ident">as_ptr</span>() <span class="kw">as</span> <span class="ident">usize</span>)
     }
 
+    <span class="doccomment">/// Change the current directory.</span>
+    <span class="doccomment">/// - `path` – pointer to string with name of path</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_chdir</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">path</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
         <span class="kw">let</span> <span class="ident">path</span> <span class="op">=</span> <span class="ident">path</span>.<span class="ident">read_cstring</span>()<span class="question-mark">?</span>;
         <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;chdir: path={:?}&quot;</span>, <span class="ident">path</span>);
@@ -366,10 +406,14 @@
         <span class="prelude-val">Ok</span>(<span class="number">0</span>)
     }
 
+    <span class="doccomment">/// Make a directory.</span>
+    <span class="doccomment">/// - path – pointer to string with directory name</span>
+    <span class="doccomment">/// - mode – file system permissions mode</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_mkdir</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">path</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>, <span class="ident">mode</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
         <span class="self">self</span>.<span class="ident">sys_mkdirat</span>(<span class="ident">FileDesc</span>::<span class="ident">CWD</span>, <span class="ident">path</span>, <span class="ident">mode</span>)
     }
 
+    <span class="doccomment">/// create directory relative to directory file descriptor</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_mkdirat</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">dirfd</span>: <span class="ident">FileDesc</span>, <span class="ident">path</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>, <span class="ident">mode</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
         <span class="kw">let</span> <span class="ident">path</span> <span class="op">=</span> <span class="ident">path</span>.<span class="ident">read_cstring</span>()<span class="question-mark">?</span>;
         <span class="comment">// TODO: check pathname</span>
@@ -387,7 +431,8 @@
         <span class="ident">inode</span>.<span class="ident">create</span>(<span class="ident">file_name</span>, <span class="ident">FileType</span>::<span class="ident">Dir</span>, <span class="ident">mode</span> <span class="kw">as</span> <span class="ident">u32</span>)<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(<span class="number">0</span>)
     }
-
+    <span class="doccomment">/// Remove a directory.</span>
+    <span class="doccomment">/// - path – pointer to string with directory name</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_rmdir</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">path</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
         <span class="kw">let</span> <span class="ident">path</span> <span class="op">=</span> <span class="ident">path</span>.<span class="ident">read_cstring</span>()<span class="question-mark">?</span>;
         <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;rmdir: path={:?}&quot;</span>, <span class="ident">path</span>);
@@ -403,6 +448,9 @@
         <span class="prelude-val">Ok</span>(<span class="number">0</span>)
     }
 
+    <span class="doccomment">/// get directory entries</span>
+    <span class="doccomment">/// TODO: get ino from dirent</span>
+    <span class="doccomment">/// - fd – file describe</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_getdents64</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">fd</span>: <span class="ident">FileDesc</span>,
@@ -436,10 +484,14 @@
         <span class="prelude-val">Ok</span>(<span class="ident">writer</span>.<span class="ident">written_size</span>)
     }
 
+    <span class="doccomment">/// creates a new link (also known as a hard link) to an existing file.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_link</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">oldpath</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>, <span class="ident">newpath</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
         <span class="self">self</span>.<span class="ident">sys_linkat</span>(<span class="ident">FileDesc</span>::<span class="ident">CWD</span>, <span class="ident">oldpath</span>, <span class="ident">FileDesc</span>::<span class="ident">CWD</span>, <span class="ident">newpath</span>, <span class="number">0</span>)
     }
 
+    <span class="doccomment">/// create file link relative to directory file descriptors</span>
+    <span class="doccomment">/// If the pathname given in oldpath is relative,</span>
+    <span class="doccomment">/// then it is interpreted relative to the directory referred to by the file descriptor olddirfd</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_linkat</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">olddirfd</span>: <span class="ident">FileDesc</span>,
@@ -464,10 +516,16 @@
         <span class="prelude-val">Ok</span>(<span class="number">0</span>)
     }
 
+    <span class="doccomment">/// delete name/possibly file it refers to</span>
+    <span class="doccomment">/// If that name was the last link to a file and no processes have the file open, the file is deleted.</span>
+    <span class="doccomment">/// If the name was the last link to a file but any processes still have the file open,</span>
+    <span class="doccomment">/// the file will remain in existence until the last file descriptor referring to it is closed.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_unlink</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">path</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
         <span class="self">self</span>.<span class="ident">sys_unlinkat</span>(<span class="ident">FileDesc</span>::<span class="ident">CWD</span>, <span class="ident">path</span>, <span class="number">0</span>)
     }
 
+    <span class="doccomment">/// remove directory entry relative to directory file descriptor</span>
+    <span class="doccomment">/// The unlinkat() system call operates in exactly the same way as either unlink or rmdir.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_unlinkat</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">dirfd</span>: <span class="ident">FileDesc</span>, <span class="ident">path</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>, <span class="ident">flags</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
         <span class="kw">let</span> <span class="ident">path</span> <span class="op">=</span> <span class="ident">path</span>.<span class="ident">read_cstring</span>()<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">flags</span> <span class="op">=</span> <span class="ident">AtFlags</span>::<span class="ident">from_bits_truncate</span>(<span class="ident">flags</span>);
@@ -487,10 +545,12 @@
         <span class="prelude-val">Ok</span>(<span class="number">0</span>)
     }
 
+    <span class="doccomment">/// change name/location of file</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_rename</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">oldpath</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>, <span class="ident">newpath</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
         <span class="self">self</span>.<span class="ident">sys_renameat</span>(<span class="ident">FileDesc</span>::<span class="ident">CWD</span>, <span class="ident">oldpath</span>, <span class="ident">FileDesc</span>::<span class="ident">CWD</span>, <span class="ident">newpath</span>)
     }
 
+    <span class="doccomment">/// rename file relative to directory file descriptors</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_renameat</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">olddirfd</span>: <span class="ident">FileDesc</span>,
@@ -514,10 +574,14 @@
         <span class="prelude-val">Ok</span>(<span class="number">0</span>)
     }
 
+    <span class="doccomment">/// read value of symbolic link</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_readlink</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">path</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>, <span class="ident">base</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>, <span class="ident">len</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
         <span class="self">self</span>.<span class="ident">sys_readlinkat</span>(<span class="ident">FileDesc</span>::<span class="ident">CWD</span>, <span class="ident">path</span>, <span class="ident">base</span>, <span class="ident">len</span>)
     }
 
+    <span class="doccomment">/// read value of symbolic link relative to directory file descriptor</span>
+    <span class="doccomment">/// readlink() places the contents of the symbolic link path in the buffer base, which has size len</span>
+    <span class="doccomment">/// TODO: recursive link resolution and loop detection</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_readlinkat</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">dirfd</span>: <span class="ident">FileDesc</span>,
@@ -559,6 +623,7 @@
     <span class="ident">name</span>: [<span class="ident">u8</span>; <span class="number">0</span>],
 }
 
+<span class="doccomment">/// directory entry buffer writer</span>
 <span class="kw">struct</span> <span class="ident">DirentBufWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span> {
     <span class="ident">buf</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="kw-2">mut</span> [<span class="ident">u8</span>],
     <span class="ident">rest_size</span>: <span class="ident">usize</span>,
@@ -566,6 +631,7 @@
 }
 
 <span class="kw">impl</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span> <span class="ident">DirentBufWriter</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span> {
+    <span class="doccomment">/// create a buffer writer</span>
     <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">buf</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="kw-2">mut</span> [<span class="ident">u8</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
         <span class="ident">DirentBufWriter</span> {
             <span class="ident">rest_size</span>: <span class="ident">buf</span>.<span class="ident">len</span>(),
@@ -574,6 +640,7 @@
         }
     }
 
+    <span class="doccomment">/// write data</span>
     <span class="kw">fn</span> <span class="ident">try_write</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">inode</span>: <span class="ident">u64</span>, <span class="ident">type_</span>: <span class="ident">u8</span>, <span class="ident">name</span>: <span class="kw-2">&amp;</span><span class="ident">str</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
         <span class="kw">let</span> <span class="ident">len</span> <span class="op">=</span> <span class="ident">core</span>::<span class="ident">mem</span>::<span class="ident">size_of</span>::<span class="op">&lt;</span><span class="ident">LinuxDirent64</span><span class="op">&gt;</span>() <span class="op">+</span> <span class="ident">name</span>.<span class="ident">len</span>() <span class="op">+</span> <span class="number">1</span>;
         <span class="kw">let</span> <span class="ident">len</span> <span class="op">=</span> (<span class="ident">len</span> <span class="op">+</span> <span class="number">7</span>) <span class="op">/</span> <span class="number">8</span> <span class="op">*</span> <span class="number">8</span>; <span class="comment">// align up</span>
@@ -600,6 +667,7 @@
         <span class="bool-val">true</span>
     }
 
+    <span class="doccomment">/// to slice</span>
     <span class="kw">fn</span> <span class="ident">as_slice</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span>[<span class="ident">u8</span>] {
         <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">buf</span>[..<span class="self">self</span>.<span class="ident">written_size</span>]
     }

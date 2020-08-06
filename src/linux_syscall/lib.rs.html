@@ -256,11 +256,72 @@
 <span id="256">256</span>
 <span id="257">257</span>
 <span id="258">258</span>
+<span id="259">259</span>
+<span id="260">260</span>
+<span id="261">261</span>
+<span id="262">262</span>
+<span id="263">263</span>
+<span id="264">264</span>
+<span id="265">265</span>
+<span id="266">266</span>
+<span id="267">267</span>
+<span id="268">268</span>
+<span id="269">269</span>
+<span id="270">270</span>
+<span id="271">271</span>
+<span id="272">272</span>
+<span id="273">273</span>
+<span id="274">274</span>
+<span id="275">275</span>
+<span id="276">276</span>
+<span id="277">277</span>
+<span id="278">278</span>
+<span id="279">279</span>
+<span id="280">280</span>
+<span id="281">281</span>
+<span id="282">282</span>
+<span id="283">283</span>
+<span id="284">284</span>
+<span id="285">285</span>
+<span id="286">286</span>
+<span id="287">287</span>
+<span id="288">288</span>
+<span id="289">289</span>
+<span id="290">290</span>
+<span id="291">291</span>
+<span id="292">292</span>
+<span id="293">293</span>
+<span id="294">294</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Linux syscall implementations</span>
+<span class="doccomment">//!</span>
+<span class="doccomment">//! ## Example</span>
+<span class="doccomment">//! the syscall is called like this in the linux-loader:</span>
+<span class="doccomment">//! ```ignore</span>
+<span class="doccomment">//! let num = regs.rax as u32;</span>
+<span class="doccomment">//! let args = [regs.rdi, regs.rsi, regs.rdx, regs.r10, regs.r8, regs.r9];</span>
+<span class="doccomment">//! let mut syscall = Syscall {</span>
+<span class="doccomment">//!     thread,</span>
+<span class="doccomment">//!     #[cfg(feature = &quot;std&quot;)]</span>
+<span class="doccomment">//!     syscall_entry: kernel_hal_unix::syscall_entry as usize,</span>
+<span class="doccomment">//!     #[cfg(not(feature = &quot;std&quot;))]</span>
+<span class="doccomment">//!     syscall_entry: 0,</span>
+<span class="doccomment">//!     spawn_fn: spawn,</span>
+<span class="doccomment">//!     regs,</span>
+<span class="doccomment">//!     exit: false,</span>
+<span class="doccomment">//! };</span>
+<span class="doccomment">//! let ret = syscall.syscall(num, args).await;</span>
+<span class="doccomment">//! ```</span>
+<span class="doccomment">//!</span>
 
 <span class="attribute">#![<span class="ident">no_std</span>]</span>
-<span class="attribute">#![<span class="ident">deny</span>(<span class="ident">warnings</span>, <span class="ident">unsafe_code</span>, <span class="ident">unused_must_use</span>, <span class="ident">unreachable_patterns</span>)]</span>
+<span class="attribute">#![<span class="ident">deny</span>(
+    <span class="ident">warnings</span>,
+    <span class="ident">unsafe_code</span>,
+    <span class="ident">unused_must_use</span>,
+    <span class="ident">unreachable_patterns</span>,
+    <span class="ident">missing_docs</span>
+)]</span>
 <span class="attribute">#![<span class="ident">feature</span>(<span class="ident">bool_to_option</span>)]</span>
 
 <span class="attribute">#[<span class="ident">macro_use</span>]</span>
@@ -285,16 +346,22 @@
 <span class="kw">mod</span> <span class="ident">time</span>;
 <span class="kw">mod</span> <span class="ident">vm</span>;
 
+<span class="doccomment">/// The struct of Syscall which stores the information about making a syscall</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Syscall</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span> {
+    <span class="doccomment">/// the thread making a syscall</span>
     <span class="kw">pub</span> <span class="ident">thread</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Thread</span><span class="op">&gt;</span>,
+    <span class="doccomment">/// the entry of current syscall</span>
     <span class="kw">pub</span> <span class="ident">syscall_entry</span>: <span class="ident">VirtAddr</span>,
+    <span class="doccomment">/// store the regs statues</span>
     <span class="kw">pub</span> <span class="ident">regs</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="kw-2">mut</span> <span class="ident">GeneralRegs</span>,
+    <span class="doccomment">/// the spawn function in linux-loader</span>
     <span class="kw">pub</span> <span class="ident">spawn_fn</span>: <span class="kw">fn</span>(<span class="ident">thread</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Thread</span><span class="op">&gt;</span>),
     <span class="doccomment">/// Set `true` to exit current task.</span>
     <span class="kw">pub</span> <span class="ident">exit</span>: <span class="ident">bool</span>,
 }
 
 <span class="kw">impl</span> <span class="ident">Syscall</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span> {
+    <span class="doccomment">/// syscall entry function</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">syscall</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">num</span>: <span class="ident">u32</span>, <span class="ident">args</span>: [<span class="ident">usize</span>; <span class="number">6</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">isize</span> {
         <span class="macro">debug</span><span class="macro">!</span>(<span class="string">&quot;syscall: num={}, args={:x?}&quot;</span>, <span class="ident">num</span>, <span class="ident">args</span>);
         <span class="kw">let</span> <span class="ident">sys_type</span> <span class="op">=</span> <span class="kw">match</span> <span class="ident">Sys</span>::<span class="ident">try_from</span>(<span class="ident">num</span>) {
@@ -464,6 +531,7 @@
     }
 
     <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>)]</span>
+    <span class="doccomment">/// syscall specified for x86_64</span>
     <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">x86_64_syscall</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">sys_type</span>: <span class="ident">Sys</span>, <span class="ident">args</span>: [<span class="ident">usize</span>; <span class="number">6</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
         <span class="kw">let</span> [<span class="ident">a0</span>, <span class="ident">a1</span>, <span class="ident">a2</span>, <span class="ident">_a3</span>, <span class="ident">_a4</span>, <span class="ident">_a5</span>] <span class="op">=</span> <span class="ident">args</span>;
         <span class="kw">match</span> <span class="ident">sys_type</span> {
@@ -494,6 +562,7 @@
         }
     }
 
+    <span class="doccomment">/// unkown syscalls, currently is similar to unimplemented syscalls but emit an error</span>
     <span class="kw">fn</span> <span class="ident">unknown_syscall</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">sys_type</span>: <span class="ident">Sys</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
         <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;unknown syscall: {:?}. exit...&quot;</span>, <span class="ident">sys_type</span>);
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">zircon_process</span>();
@@ -502,15 +571,18 @@
         <span class="prelude-val">Err</span>(<span class="ident">LxError</span>::<span class="ident">ENOSYS</span>)
     }
 
+    <span class="doccomment">/// unimplemented syscalls</span>
     <span class="kw">fn</span> <span class="ident">unimplemented</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">name</span>: <span class="kw-2">&amp;</span><span class="ident">str</span>, <span class="ident">ret</span>: <span class="ident">SysResult</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
         <span class="macro">warn</span><span class="macro">!</span>(<span class="string">&quot;{}: unimplemented&quot;</span>, <span class="ident">name</span>);
         <span class="ident">ret</span>
     }
 
+    <span class="doccomment">/// get zircon process</span>
     <span class="kw">fn</span> <span class="ident">zircon_process</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Process</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>()
     }
 
+    <span class="doccomment">/// get linux process</span>
     <span class="kw">fn</span> <span class="ident">linux_process</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="ident">LinuxProcess</span> {
         <span class="self">self</span>.<span class="ident">zircon_process</span>().<span class="ident">linux</span>()
     }

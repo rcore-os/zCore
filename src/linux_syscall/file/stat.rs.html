@@ -282,6 +282,17 @@
 <span id="282">282</span>
 <span id="283">283</span>
 <span id="284">284</span>
+<span id="285">285</span>
+<span id="286">286</span>
+<span id="287">287</span>
+<span id="288">288</span>
+<span id="289">289</span>
+<span id="290">290</span>
+<span id="291">291</span>
+<span id="292">292</span>
+<span id="293">293</span>
+<span id="294">294</span>
+<span id="295">295</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! File status</span>
 <span class="doccomment">//!</span>
@@ -293,6 +304,10 @@
 <span class="kw">use</span> <span class="ident">linux_object</span>::<span class="ident">fs</span>::<span class="ident">vfs</span>::{<span class="ident">FileType</span>, <span class="ident">Metadata</span>};
 
 <span class="kw">impl</span> <span class="ident">Syscall</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span> {
+    <span class="doccomment">/// Works exactly like the stat syscall, but if the file in question is a symbolic link,</span>
+    <span class="doccomment">/// information on the link is returned rather than its target.</span>
+    <span class="doccomment">/// - `path` – full path to file</span>
+    <span class="doccomment">/// - `stat_ptr` – pointer to stat buffer</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_lstat</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">path</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>, <span class="ident">stat_ptr</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">Stat</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
         <span class="self">self</span>.<span class="ident">sys_fstatat</span>(
             <span class="ident">FileDesc</span>::<span class="ident">CWD</span>,
@@ -302,6 +317,9 @@
         )
     }
 
+    <span class="doccomment">/// Works exactly like the stat syscall except a file descriptor (fd) is provided instead of a path.</span>
+    <span class="doccomment">/// - `fd` – file descriptor</span>
+    <span class="doccomment">/// - `stat_ptr` – pointer to stat buffer</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_fstat</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">fd</span>: <span class="ident">FileDesc</span>, <span class="kw-2">mut</span> <span class="ident">stat_ptr</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">Stat</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
         <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;fstat: fd={:?}, stat_ptr={:?}&quot;</span>, <span class="ident">fd</span>, <span class="ident">stat_ptr</span>);
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>();
@@ -311,6 +329,7 @@
         <span class="prelude-val">Ok</span>(<span class="number">0</span>)
     }
 
+    <span class="doccomment">/// get file status relative to a directory file descriptor</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_fstatat</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">dirfd</span>: <span class="ident">FileDesc</span>,
@@ -333,6 +352,9 @@
         <span class="prelude-val">Ok</span>(<span class="number">0</span>)
     }
 
+    <span class="doccomment">/// Returns information about a file in a structure named stat.</span>
+    <span class="doccomment">/// - `path` – pointer to the name of the file</span>
+    <span class="doccomment">/// - `stat_ptr` –  pointer to the structure to receive file information</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_stat</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">path</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>, <span class="ident">stat_ptr</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">Stat</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
         <span class="self">self</span>.<span class="ident">sys_fstatat</span>(<span class="ident">FileDesc</span>::<span class="ident">CWD</span>, <span class="ident">path</span>, <span class="ident">stat_ptr</span>, <span class="number">0</span>)
     }

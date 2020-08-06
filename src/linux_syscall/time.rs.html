@@ -25,8 +25,14 @@
 <span id="25">25</span>
 <span id="26">26</span>
 <span id="27">27</span>
+<span id="28">28</span>
+<span id="29">29</span>
+<span id="30">30</span>
+<span id="31">31</span>
+<span id="32">32</span>
 </pre><div class="example-wrap"><pre class="rust ">
-<span class="comment">//use super::*;</span>
+<span class="doccomment">//! Syscalls for time</span>
+<span class="doccomment">//! - clock_gettime</span>
 
 <span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">Syscall</span>;
 <span class="kw">use</span> <span class="ident">kernel_hal</span>::{<span class="ident">timer_now</span>, <span class="ident">user</span>::<span class="ident">UserOutPtr</span>};
@@ -35,11 +41,15 @@
 <span class="attribute">#[<span class="ident">repr</span>(<span class="ident">C</span>)]</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>, <span class="ident">Copy</span>, <span class="ident">Clone</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">TimeSpec</span> {
+    <span class="doccomment">/// seconds</span>
     <span class="ident">sec</span>: <span class="ident">usize</span>,
+    <span class="doccomment">/// nano seconds</span>
     <span class="ident">nsec</span>: <span class="ident">usize</span>,
 }
 
 <span class="kw">impl</span> <span class="ident">Syscall</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span> {
+    <span class="doccomment">/// finds the resolution (precision) of the specified clock clockid, and,</span>
+    <span class="doccomment">/// if buffer is non-NULL, stores it in the struct timespec pointed to by buffer</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_clock_gettime</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">clock</span>: <span class="ident">usize</span>, <span class="kw-2">mut</span> <span class="ident">buf</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">TimeSpec</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
         <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;clock_gettime: id={:?} buf={:?}&quot;</span>, <span class="ident">clock</span>, <span class="ident">buf</span>);
 

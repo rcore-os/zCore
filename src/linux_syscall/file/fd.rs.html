@@ -144,6 +144,13 @@
 <span id="144">144</span>
 <span id="145">145</span>
 <span id="146">146</span>
+<span id="147">147</span>
+<span id="148">148</span>
+<span id="149">149</span>
+<span id="150">150</span>
+<span id="151">151</span>
+<span id="152">152</span>
+<span id="153">153</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! File descriptor operations</span>
 <span class="doccomment">//!</span>
@@ -155,10 +162,12 @@
 <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
 
 <span class="kw">impl</span> <span class="ident">Syscall</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span> {
+    <span class="doccomment">/// Opens or creates a file, depending on the flags passed to the call. Returns an integer with the file descriptor.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_open</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">path</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>, <span class="ident">flags</span>: <span class="ident">usize</span>, <span class="ident">mode</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
         <span class="self">self</span>.<span class="ident">sys_openat</span>(<span class="ident">FileDesc</span>::<span class="ident">CWD</span>, <span class="ident">path</span>, <span class="ident">flags</span>, <span class="ident">mode</span>)
     }
 
+    <span class="doccomment">/// open file relative to directory file descriptor</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_openat</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">dir_fd</span>: <span class="ident">FileDesc</span>,
@@ -199,6 +208,7 @@
         <span class="prelude-val">Ok</span>(<span class="ident">fd</span>.<span class="ident">into</span>())
     }
 
+    <span class="doccomment">/// Closes a file descriptor, so that it no longer refers to any file and may be reused.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_close</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">fd</span>: <span class="ident">FileDesc</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
         <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;close: fd={:?}&quot;</span>, <span class="ident">fd</span>);
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>();
@@ -206,6 +216,7 @@
         <span class="prelude-val">Ok</span>(<span class="number">0</span>)
     }
 
+    <span class="doccomment">/// create a copy of the file descriptor oldfd.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_dup2</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">fd1</span>: <span class="ident">FileDesc</span>, <span class="ident">fd2</span>: <span class="ident">FileDesc</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
         <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;dup2: from {:?} to {:?}&quot;</span>, <span class="ident">fd1</span>, <span class="ident">fd2</span>);
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>();
@@ -274,14 +285,17 @@
 }
 
 <span class="kw">impl</span> <span class="ident">OpenFlags</span> {
+    <span class="doccomment">/// check if the OpenFlags is readable</span>
     <span class="kw">fn</span> <span class="ident">readable</span>(<span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
         <span class="kw">let</span> <span class="ident">b</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">bits</span>() <span class="op">&amp;</span> <span class="number">0b11</span>;
         <span class="ident">b</span> <span class="op">=</span><span class="op">=</span> <span class="self">Self</span>::<span class="ident">RDONLY</span>.<span class="ident">bits</span>() <span class="op">|</span><span class="op">|</span> <span class="ident">b</span> <span class="op">=</span><span class="op">=</span> <span class="self">Self</span>::<span class="ident">RDWR</span>.<span class="ident">bits</span>()
     }
+    <span class="doccomment">/// check if the OpenFlags is writable</span>
     <span class="kw">fn</span> <span class="ident">writable</span>(<span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
         <span class="kw">let</span> <span class="ident">b</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">bits</span>() <span class="op">&amp;</span> <span class="number">0b11</span>;
         <span class="ident">b</span> <span class="op">=</span><span class="op">=</span> <span class="self">Self</span>::<span class="ident">WRONLY</span>.<span class="ident">bits</span>() <span class="op">|</span><span class="op">|</span> <span class="ident">b</span> <span class="op">=</span><span class="op">=</span> <span class="self">Self</span>::<span class="ident">RDWR</span>.<span class="ident">bits</span>()
     }
+    <span class="doccomment">/// convert OpenFlags to OpenOptions</span>
     <span class="kw">fn</span> <span class="ident">to_options</span>(<span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">OpenOptions</span> {
         <span class="ident">OpenOptions</span> {
             <span class="ident">read</span>: <span class="self">self</span>.<span class="ident">readable</span>(),

@@ -291,6 +291,45 @@
 <span id="291">291</span>
 <span id="292">292</span>
 <span id="293">293</span>
+<span id="294">294</span>
+<span id="295">295</span>
+<span id="296">296</span>
+<span id="297">297</span>
+<span id="298">298</span>
+<span id="299">299</span>
+<span id="300">300</span>
+<span id="301">301</span>
+<span id="302">302</span>
+<span id="303">303</span>
+<span id="304">304</span>
+<span id="305">305</span>
+<span id="306">306</span>
+<span id="307">307</span>
+<span id="308">308</span>
+<span id="309">309</span>
+<span id="310">310</span>
+<span id="311">311</span>
+<span id="312">312</span>
+<span id="313">313</span>
+<span id="314">314</span>
+<span id="315">315</span>
+<span id="316">316</span>
+<span id="317">317</span>
+<span id="318">318</span>
+<span id="319">319</span>
+<span id="320">320</span>
+<span id="321">321</span>
+<span id="322">322</span>
+<span id="323">323</span>
+<span id="324">324</span>
+<span id="325">325</span>
+<span id="326">326</span>
+<span id="327">327</span>
+<span id="328">328</span>
+<span id="329">329</span>
+<span id="330">330</span>
+<span id="331">331</span>
+<span id="332">332</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! File operations</span>
 <span class="doccomment">//!</span>
@@ -306,6 +345,11 @@
 <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
 
 <span class="kw">impl</span> <span class="ident">Syscall</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span> {
+    <span class="doccomment">/// Reads from a specified file using a file descriptor. Before using this call,</span>
+    <span class="doccomment">/// you must first obtain a file descriptor using the opensyscall. Returns bytes read successfully.</span>
+    <span class="doccomment">/// - fd – file descriptor</span>
+    <span class="doccomment">/// - base – pointer to the buffer to fill with read contents</span>
+    <span class="doccomment">/// - len – number of bytes to read</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_read</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">fd</span>: <span class="ident">FileDesc</span>, <span class="kw-2">mut</span> <span class="ident">base</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>, <span class="ident">len</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
         <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;read: fd={:?}, base={:?}, len={:#x}&quot;</span>, <span class="ident">fd</span>, <span class="ident">base</span>, <span class="ident">len</span>);
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>();
@@ -316,6 +360,11 @@
         <span class="prelude-val">Ok</span>(<span class="ident">len</span>)
     }
 
+    <span class="doccomment">/// Writes to a specified file using a file descriptor. Before using this call,</span>
+    <span class="doccomment">/// you must first obtain a file descriptor using the open syscall. Returns bytes written successfully.</span>
+    <span class="doccomment">/// - fd – file descriptor</span>
+    <span class="doccomment">/// - base – pointer to the buffer write</span>
+    <span class="doccomment">/// - len – number of bytes to write</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_write</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">fd</span>: <span class="ident">FileDesc</span>, <span class="ident">base</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>, <span class="ident">len</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
         <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;write: fd={:?}, base={:?}, len={:#x}&quot;</span>, <span class="ident">fd</span>, <span class="ident">base</span>, <span class="ident">len</span>);
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>();
@@ -325,6 +374,9 @@
         <span class="prelude-val">Ok</span>(<span class="ident">len</span>)
     }
 
+    <span class="doccomment">/// read from or write to a file descriptor at a given offset</span>
+    <span class="doccomment">/// reads up to count bytes from file descriptor fd at offset offset</span>
+    <span class="doccomment">/// (from the start of the file) into the buffer starting at buf. The file offset is not changed.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_pread</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">fd</span>: <span class="ident">FileDesc</span>,
@@ -344,6 +396,8 @@
         <span class="prelude-val">Ok</span>(<span class="ident">len</span>)
     }
 
+    <span class="doccomment">/// writes up to count bytes from the buffer</span>
+    <span class="doccomment">/// starting at buf to the file descriptor fd at offset offset. The file offset is not changed.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_pwrite</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">fd</span>: <span class="ident">FileDesc</span>,
@@ -362,6 +416,9 @@
         <span class="prelude-val">Ok</span>(<span class="ident">len</span>)
     }
 
+    <span class="doccomment">/// works just like read except that multiple buffers are filled.</span>
+    <span class="doccomment">/// reads iov_count buffers from the file</span>
+    <span class="doccomment">/// associated with the file descriptor fd into the buffers described by iov (&quot;scatter input&quot;)</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_readv</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">fd</span>: <span class="ident">FileDesc</span>,
@@ -378,6 +435,9 @@
         <span class="prelude-val">Ok</span>(<span class="ident">len</span>)
     }
 
+    <span class="doccomment">/// works just like write except that multiple buffers are written out.</span>
+    <span class="doccomment">/// writes iov_count buffers of data described</span>
+    <span class="doccomment">/// by iov to the file associated with the file descriptor fd (&quot;gather output&quot;).</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_writev</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">fd</span>: <span class="ident">FileDesc</span>,
@@ -396,6 +456,8 @@
         <span class="prelude-val">Ok</span>(<span class="ident">len</span>)
     }
 
+    <span class="doccomment">/// repositions the offset of the open file associated with the file descriptor fd</span>
+    <span class="doccomment">/// to the argument offset according to the directive whence</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_lseek</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">fd</span>: <span class="ident">FileDesc</span>, <span class="ident">offset</span>: <span class="ident">i64</span>, <span class="ident">whence</span>: <span class="ident">u8</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
         <span class="kw">const</span> <span class="ident">SEEK_SET</span>: <span class="ident">u8</span> <span class="op">=</span> <span class="number">0</span>;
         <span class="kw">const</span> <span class="ident">SEEK_CUR</span>: <span class="ident">u8</span> <span class="op">=</span> <span class="number">1</span>;
@@ -415,6 +477,7 @@
         <span class="prelude-val">Ok</span>(<span class="ident">offset</span> <span class="kw">as</span> <span class="ident">usize</span>)
     }
 
+    <span class="doccomment">/// cause the regular file named by path to be truncated to a size of precisely length bytes.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_truncate</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">path</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>, <span class="ident">len</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
         <span class="kw">let</span> <span class="ident">path</span> <span class="op">=</span> <span class="ident">path</span>.<span class="ident">read_cstring</span>()<span class="question-mark">?</span>;
         <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;truncate: path={:?}, len={}&quot;</span>, <span class="ident">path</span>, <span class="ident">len</span>);
@@ -423,6 +486,7 @@
         <span class="prelude-val">Ok</span>(<span class="number">0</span>)
     }
 
+    <span class="doccomment">/// cause the regular file referenced by fd to be truncated to a size of precisely length bytes.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_ftruncate</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">fd</span>: <span class="ident">FileDesc</span>, <span class="ident">len</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
         <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;ftruncate: fd={:?}, len={}&quot;</span>, <span class="ident">fd</span>, <span class="ident">len</span>);
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>();
@@ -430,6 +494,7 @@
         <span class="prelude-val">Ok</span>(<span class="number">0</span>)
     }
 
+    <span class="doccomment">/// copies data between one file descriptor and another.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_sendfile</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">out_fd</span>: <span class="ident">FileDesc</span>,
@@ -440,6 +505,7 @@
         <span class="self">self</span>.<span class="ident">sys_copy_file_range</span>(<span class="ident">in_fd</span>, <span class="ident">offset_ptr</span>, <span class="ident">out_fd</span>, <span class="number">0</span>.<span class="ident">into</span>(), <span class="ident">count</span>, <span class="number">0</span>)
     }
 
+    <span class="doccomment">/// copies data between one file descriptor and anothe, read from specified offset and write new offset back</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_copy_file_range</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">in_fd</span>: <span class="ident">FileDesc</span>,
@@ -517,6 +583,7 @@
         <span class="prelude-val">Ok</span>(<span class="ident">total_written</span>)
     }
 
+    <span class="doccomment">/// causes all buffered modifications to file metadata and data to be written to the underlying file systems.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_sync</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
         <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;sync:&quot;</span>);
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>();
@@ -524,6 +591,8 @@
         <span class="prelude-val">Ok</span>(<span class="number">0</span>)
     }
 
+    <span class="doccomment">/// transfers (&quot;flushes&quot;) all modified in-core data of (i.e., modified buffer cache pages for) the file</span>
+    <span class="doccomment">/// referred to by the file descriptor fd to the disk device</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_fsync</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">fd</span>: <span class="ident">FileDesc</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
         <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;fsync: fd={:?}&quot;</span>, <span class="ident">fd</span>);
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>();
@@ -531,12 +600,15 @@
         <span class="prelude-val">Ok</span>(<span class="number">0</span>)
     }
 
+    <span class="doccomment">/// is similar to fsync(), but does not flush modified metadata unless that metadata is needed</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_fdatasync</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">fd</span>: <span class="ident">FileDesc</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
         <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;fdatasync: fd={:?}&quot;</span>, <span class="ident">fd</span>);
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>();
         <span class="ident">proc</span>.<span class="ident">get_file</span>(<span class="ident">fd</span>)<span class="question-mark">?</span>.<span class="ident">sync_data</span>()<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(<span class="number">0</span>)
     }
+
+    <span class="doccomment">/// Set parameters of device files.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_ioctl</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">fd</span>: <span class="ident">FileDesc</span>,
@@ -554,6 +626,9 @@
         <span class="ident">file_like</span>.<span class="ident">ioctl</span>(<span class="ident">request</span>, <span class="ident">arg1</span>, <span class="ident">arg2</span>, <span class="ident">arg3</span>)
     }
 
+    <span class="doccomment">/// Manipulate a file descriptor.</span>
+    <span class="doccomment">/// - cmd – cmd flag</span>
+    <span class="doccomment">/// - arg – additional parameters based on cmd</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_fcntl</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">fd</span>: <span class="ident">FileDesc</span>, <span class="ident">cmd</span>: <span class="ident">usize</span>, <span class="ident">arg</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
         <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;fcntl: fd={:?}, cmd={:x}, arg={}&quot;</span>, <span class="ident">fd</span>, <span class="ident">cmd</span>, <span class="ident">arg</span>);
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>();
@@ -561,10 +636,13 @@
         <span class="ident">file_like</span>.<span class="ident">fcntl</span>(<span class="ident">cmd</span>, <span class="ident">arg</span>)
     }
 
+    <span class="doccomment">/// Checks whether the calling process can access the file pathname</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_access</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">path</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>, <span class="ident">mode</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
         <span class="self">self</span>.<span class="ident">sys_faccessat</span>(<span class="ident">FileDesc</span>::<span class="ident">CWD</span>, <span class="ident">path</span>, <span class="ident">mode</span>, <span class="number">0</span>)
     }
 
+    <span class="doccomment">/// Check user&#39;s permissions of a file relative to a directory file descriptor</span>
+    <span class="doccomment">/// TODO: check permissions based on uid/gid</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_faccessat</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">dirfd</span>: <span class="ident">FileDesc</span>,

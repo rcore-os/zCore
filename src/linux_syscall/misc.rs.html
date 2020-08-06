@@ -71,6 +71,22 @@
 <span id="71">71</span>
 <span id="72">72</span>
 <span id="73">73</span>
+<span id="74">74</span>
+<span id="75">75</span>
+<span id="76">76</span>
+<span id="77">77</span>
+<span id="78">78</span>
+<span id="79">79</span>
+<span id="80">80</span>
+<span id="81">81</span>
+<span id="82">82</span>
+<span id="83">83</span>
+<span id="84">84</span>
+<span id="85">85</span>
+<span id="86">86</span>
+<span id="87">87</span>
+<span id="88">88</span>
+<span id="89">89</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> <span class="kw">super</span>::<span class="ident">time</span>::<span class="ident">TimeSpec</span>;
 <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
@@ -78,6 +94,8 @@
 
 <span class="kw">impl</span> <span class="ident">Syscall</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span> {
     <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>)]</span>
+    <span class="doccomment">/// set architecture-specific thread state</span>
+    <span class="doccomment">/// for x86_64 currently</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_arch_prctl</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">code</span>: <span class="ident">i32</span>, <span class="ident">addr</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
         <span class="kw">const</span> <span class="ident">ARCH_SET_FS</span>: <span class="ident">i32</span> <span class="op">=</span> <span class="number">0x1002</span>;
         <span class="kw">match</span> <span class="ident">code</span> {
@@ -90,10 +108,11 @@
         }
     }
 
+    <span class="doccomment">/// get name and information about current kernel</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_uname</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">buf</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
         <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;uname: buf={:?}&quot;</span>, <span class="ident">buf</span>);
 
-        <span class="kw">let</span> <span class="ident">strings</span> <span class="op">=</span> [<span class="string">&quot;rCore&quot;</span>, <span class="string">&quot;orz&quot;</span>, <span class="string">&quot;0.1.0&quot;</span>, <span class="string">&quot;1&quot;</span>, <span class="string">&quot;machine&quot;</span>, <span class="string">&quot;domain&quot;</span>];
+        <span class="kw">let</span> <span class="ident">strings</span> <span class="op">=</span> [<span class="string">&quot;Linux&quot;</span>, <span class="string">&quot;orz&quot;</span>, <span class="string">&quot;0.1.0&quot;</span>, <span class="string">&quot;1&quot;</span>, <span class="string">&quot;machine&quot;</span>, <span class="string">&quot;domain&quot;</span>];
         <span class="kw">for</span> (<span class="ident">i</span>, <span class="kw-2">&amp;</span><span class="ident">s</span>) <span class="kw">in</span> <span class="ident">strings</span>.<span class="ident">iter</span>().<span class="ident">enumerate</span>() {
             <span class="kw">const</span> <span class="ident">OFFSET</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">65</span>;
             <span class="ident">buf</span>.<span class="ident">add</span>(<span class="ident">i</span> <span class="op">*</span> <span class="ident">OFFSET</span>).<span class="ident">write_cstring</span>(<span class="ident">s</span>)<span class="question-mark">?</span>;
@@ -101,6 +120,12 @@
         <span class="prelude-val">Ok</span>(<span class="number">0</span>)
     }
 
+    <span class="doccomment">/// provides a method for waiting until a certain condition becomes true.</span>
+    <span class="doccomment">/// - `uaddr` - points to the futex word.</span>
+    <span class="doccomment">/// - `op` -  the operation to perform on the futex</span>
+    <span class="doccomment">/// - `val` -  a value whose meaning and purpose depends on op</span>
+    <span class="doccomment">/// - `timeout` - not support now</span>
+    <span class="doccomment">/// TODO: support timeout</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">sys_futex</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">uaddr</span>: <span class="ident">usize</span>,
@@ -108,13 +133,6 @@
         <span class="ident">val</span>: <span class="ident">i32</span>,
         <span class="ident">timeout</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">TimeSpec</span><span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
-        <span class="macro">bitflags</span><span class="macro">!</span> {
-            <span class="kw">struct</span> <span class="ident">FutexFlags</span>: <span class="ident">u32</span> {
-                <span class="kw">const</span> <span class="ident">WAIT</span>      <span class="op">=</span> <span class="number">0</span>;
-                <span class="kw">const</span> <span class="ident">WAKE</span>      <span class="op">=</span> <span class="number">1</span>;
-                <span class="kw">const</span> <span class="ident">PRIVATE</span>   <span class="op">=</span> <span class="number">0x80</span>;
-            }
-        }
         <span class="kw">let</span> <span class="ident">op</span> <span class="op">=</span> <span class="ident">FutexFlags</span>::<span class="ident">from_bits_truncate</span>(<span class="ident">op</span>);
         <span class="macro">info</span><span class="macro">!</span>(
             <span class="string">&quot;futex: uaddr: {:#x}, op: {:?}, val: {}, timeout_ptr: {:?}&quot;</span>,
@@ -143,6 +161,20 @@
                 <span class="prelude-val">Err</span>(<span class="ident">LxError</span>::<span class="ident">ENOSYS</span>)
             }
         }
+    }
+}
+
+<span class="macro">bitflags</span><span class="macro">!</span> {
+    <span class="doccomment">/// for op argument in futex()</span>
+    <span class="kw">struct</span> <span class="ident">FutexFlags</span>: <span class="ident">u32</span> {
+        <span class="doccomment">/// tests that the value at the futex word pointed</span>
+        <span class="doccomment">/// to by the address uaddr still contains the expected value val,</span>
+        <span class="doccomment">/// and if so, then sleeps waiting for a FUTEX_WAKE operation on the futex word.</span>
+        <span class="kw">const</span> <span class="ident">WAIT</span>      <span class="op">=</span> <span class="number">0</span>;
+        <span class="doccomment">/// wakes at most val of the waiters that are waiting on the futex word at the address uaddr.</span>
+        <span class="kw">const</span> <span class="ident">WAKE</span>      <span class="op">=</span> <span class="number">1</span>;
+        <span class="doccomment">/// can be employed with all futex operations, tells the kernel that the futex is process-private and not shared with another process</span>
+        <span class="kw">const</span> <span class="ident">PRIVATE</span>   <span class="op">=</span> <span class="number">0x80</span>;
     }
 }
 </pre></div>
