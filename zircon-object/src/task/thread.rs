@@ -299,7 +299,7 @@ impl Thread {
                 .exception
                 .as_ref()
                 .map_or(0, |exception| exception.get_current_channel_type() as u32),
-            cpu_affnity_mask: [0u64; 8],
+            cpu_affinity_mask: [0u64; 8],
         }
     }
 
@@ -524,7 +524,7 @@ impl Default for ThreadState {
 pub struct ThreadInfo {
     state: u32,
     wait_exception_channel_type: u32,
-    cpu_affnity_mask: [u64; 8],
+    cpu_affinity_mask: [u64; 8],
 }
 
 #[cfg(test)]
