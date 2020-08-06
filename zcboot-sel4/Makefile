@@ -14,4 +14,7 @@ bridge: zcore
 simulate: bridge
 	cd bridge/build && ./simulate
 
-.PNONY: loader zcore bridge simulate
+simulate-gdb: bridge
+	cd bridge/build && ./simulate --extra-qemu-args="-S -s"
+
+.PNONY: loader zcore bridge simulate simulate-gdb

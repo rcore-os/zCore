@@ -12,13 +12,15 @@
 #define MAIN_STACK_SIZE 1048576
 static char MAIN_STACK[MAIN_STACK_SIZE];
 
+// TLS
+// FIXME: Actually load TLS.
+#define TLS_SIZE 65536
+static char TLS[TLS_SIZE];
+
 // IPC buffer
 static seL4_IPCBuffer ipc_buffer = {0};
 
-void rust_start();
-void stbss();
-void etbss();
-void ethread();
+extern void rust_start();
 
 // Fails if not stripped before linking.
 void static_assert();
@@ -55,8 +57,9 @@ void l4bridge_yield() {
 
 void init_master_tls() {
     // reference: https://wiki.osdev.org/Thread_Local_Storage
-    * (seL4_Word *) etbss = (seL4_Word) etbss;
-    seL4_SetTLSBase((seL4_Word) etbss);
+    seL4_Word thread_area = (seL4_Word) TLS + TLS_SIZE - 0x1000;
+    * (seL4_Word *) thread_area = thread_area;
+    seL4_SetTLSBase(thread_area);
 }
 
 void write_string_buf(char *dst, const char *src, int dst_size) {
@@ -65,6 +68,19 @@ void write_string_buf(char *dst, const char *src, int dst_size) {
         if(src[i] == 0) return;
     }
     dst[dst_size - 1] = 0;
+}
+
+void print_str(const char *s) {
+    while(*s) {
+        l4bridge_putchar(*s);
+        s++;
+    }
+}
+
+void print_word(seL4_Word word) {
+    char buf[18];
+    fmt_word(buf, word);
+    print_str(buf);
 }
 
 seL4_Word getcap(const char *name) {
@@ -84,20 +100,13 @@ seL4_Word getcap(const char *name) {
     return seL4_GetMR(0);
 }
 
-void print_str(const char *s) {
-    while(*s) {
-        l4bridge_putchar(*s);
-        s++;
-    }
-}
-
 void _start() {
     init_master_tls();
     seL4_SetIPCBuffer(&ipc_buffer);
 
     putchar_cptr = getcap("putchar");
-    unsigned long stack_top = (unsigned long) MAIN_STACK + MAIN_STACK_SIZE;
 
+    unsigned long stack_top = (unsigned long) MAIN_STACK + MAIN_STACK_SIZE;
     asm volatile (
         "movq %0, %%rsp\n"
         "call main\n"

@@ -35,11 +35,6 @@ SECTIONS {
 
   .tbss :
   {
-    /* FIXME: Why do we have to put tbss in .data? */
-    stbss = .;
     *(.tbss .tbss.*)
-    etbss = .;
-    . += 0x100;
-    ethread = .;
   }
 }
