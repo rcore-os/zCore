@@ -1,11 +1,13 @@
+#![allow(missing_docs)]
+
 use super::time::TimeSpec;
 use super::*;
 use bitflags::bitflags;
+use kernel_hal::timer_now;
+use core::slice::from_raw_parts_mut;
 
 impl Syscall<'_> {
     #[cfg(target_arch = "x86_64")]
-    /// set architecture-specific thread state
-    /// for x86_64 currently
     pub fn sys_arch_prctl(&mut self, code: i32, addr: usize) -> SysResult {
         const ARCH_SET_FS: i32 = 0x1002;
         match code {
@@ -18,11 +20,10 @@ impl Syscall<'_> {
         }
     }
 
-    /// get name and information about current kernel
     pub fn sys_uname(&self, buf: UserOutPtr<u8>) -> SysResult {
         info!("uname: buf={:?}", buf);
 
-        let strings = ["Linux", "orz", "0.1.0", "1", "machine", "domain"];
+        let strings = ["rCore", "orz", "0.1.0", "1", "machine", "domain"];
         for (i, &s) in strings.iter().enumerate() {
             const OFFSET: usize = 65;
             buf.add(i * OFFSET).write_cstring(s)?;
@@ -30,12 +31,6 @@ impl Syscall<'_> {
         Ok(0)
     }
 
-    /// provides a method for waiting until a certain condition becomes true.
-    /// - `uaddr` - points to the futex word.
-    /// - `op` -  the operation to perform on the futex
-    /// - `val` -  a value whose meaning and purpose depends on op
-    /// - `timeout` - not support now
-    /// TODO: support timeout
     pub async fn sys_futex(
         &self,
         uaddr: usize,
@@ -43,6 +38,13 @@ impl Syscall<'_> {
         val: i32,
         timeout: UserInPtr<TimeSpec>,
     ) -> SysResult {
+        bitflags! {
+            struct FutexFlags: u32 {
+                const WAIT      = 0;
+                const WAKE      = 1;
+                const PRIVATE   = 0x80;
+            }
+        }
         let op = FutexFlags::from_bits_truncate(op);
         info!(
             "futex: uaddr: {:#x}, op: {:?}, val: {}, timeout_ptr: {:?}",
@@ -72,18 +74,20 @@ impl Syscall<'_> {
             }
         }
     }
-}
 
-bitflags! {
-    /// for op argument in futex()
-    struct FutexFlags: u32 {
-        /// tests that the value at the futex word pointed
-        /// to by the address uaddr still contains the expected value val,
-        /// and if so, then sleeps waiting for a FUTEX_WAKE operation on the futex word.
-        const WAIT      = 0;
-        /// wakes at most val of the waiters that are waiting on the futex word at the address uaddr.
-        const WAKE      = 1;
-        /// can be employed with all futex operations, tells the kernel that the futex is process-private and not shared with another process
-        const PRIVATE   = 0x80;
+    #[allow(unsafe_code)]
+    pub fn sys_getrandom(&mut self, buf: *mut u8, len: usize, _flag: u32) -> SysResult {
+        //info!("getrandom: buf: {:?}, len: {:?}, falg {:?}", buf, len,flag);
+        let slice = unsafe { from_raw_parts_mut(buf, len) };
+        let mut i = 0;
+        for elm in slice {
+            // to prevent overflow
+            let time = timer_now();
+            *elm = (i + time.as_nanos() as u8 as u16) as u8;
+            i += 1;
+        }
+
+        Ok(len)
     }
+
 }

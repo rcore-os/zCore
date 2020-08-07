@@ -218,7 +218,7 @@ impl Syscall<'_> {
             Sys::MEMBARRIER => self.unimplemented("membarrier", Ok(0)),
             //            Sys::PRLIMIT64 => self.sys_prlimit64(a0, a1, a2.into(), a3.into()),
             //            Sys::REBOOT => self.sys_reboot(a0 as u32, a1 as u32, a2 as u32, a3.into()),
-            //            Sys::GETRANDOM => self.sys_getrandom(a0.into(), a1 as usize, a2 as u32),
+            Sys::GETRANDOM => self.sys_getrandom(a0 as *mut u8, a1 as usize, a2 as u32),
             Sys::RT_SIGQUEUEINFO => self.unimplemented("rt_sigqueueinfo", Ok(0)),
 
             // kernel module
