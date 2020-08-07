@@ -7,10 +7,10 @@ use rcore_fs_ramfs::RamFS;
 
 pub use self::device::*;
 pub use self::file::*;
+pub use self::pipe::*;
 pub use self::pseudo::*;
 pub use self::random::*;
 pub use self::stdio::*;
-pub use self::pipe::*;
 pub use rcore_fs::vfs;
 
 use crate::error::*;
