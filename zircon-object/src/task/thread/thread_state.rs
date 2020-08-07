@@ -16,7 +16,7 @@ numeric_enum! {
     }
 }
 
-pub trait ContextExt {
+pub(super) trait ContextExt {
     fn read_state(&self, kind: ThreadStateKind, buf: &mut [u8]) -> ZxResult<usize>;
     fn write_state(&mut self, kind: ThreadStateKind, buf: &[u8]) -> ZxResult;
 }
