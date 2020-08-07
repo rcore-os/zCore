@@ -58,6 +58,12 @@ impl From<usize> for FileDesc {
     }
 }
 
+impl From<i32> for FileDesc {
+    fn from(x: i32) -> Self {
+        FileDesc(x)
+    }
+}
+
 impl TryFrom<&str> for FileDesc {
     type Error = LxError;
     fn try_from(name: &str) -> LxResult<Self> {
@@ -69,6 +75,12 @@ impl TryFrom<&str> for FileDesc {
 impl Into<usize> for FileDesc {
     fn into(self) -> usize {
         self.0 as _
+    }
+}
+
+impl Into<i32> for FileDesc {
+    fn into(self) -> i32 {
+        self.0
     }
 }
 

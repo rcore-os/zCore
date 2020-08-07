@@ -48,7 +48,7 @@ impl Pipe {
                 direction: PipeEnd::Read,
             },
             Pipe {
-                data: data.clone(),
+                data,
                 direction: PipeEnd::Write,
             },
         )
@@ -58,7 +58,7 @@ impl Pipe {
         if let PipeEnd::Read = self.direction {
             // true
             let data = self.data.lock();
-            data.buf.len() > 0 || data.end_cnt < 2 // other end closed
+            !data.buf.is_empty() || data.end_cnt < 2 // other end closed
         } else {
             false
         }
@@ -75,17 +75,17 @@ impl Pipe {
 
 impl INode for Pipe {
     fn read_at(&self, _offset: usize, buf: &mut [u8]) -> Result<usize> {
-        if buf.len() == 0 {
+        if buf.is_empty() {
             return Ok(0);
         }
         if let PipeEnd::Read = self.direction {
             let mut data = self.data.lock();
-            if data.buf.len() == 0 && data.end_cnt == 2 {
+            if data.buf.is_empty() && data.end_cnt == 2 {
                 Err(FsError::Again)
             } else {
                 let len = min(buf.len(), data.buf.len());
-                for i in 0..len {
-                    buf[i] = data.buf.pop_front().unwrap();
+                for item in buf.iter_mut().take(len) {
+                    *item = data.buf.pop_front().unwrap();
                 }
                 Ok(len)
             }

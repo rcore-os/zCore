@@ -75,7 +75,7 @@ impl Syscall<'_> {
     }
 
     /// Creates a pipe, a unidirectional data channel that can be used for interprocess communication.
-    pub fn sys_pipe(&self, mut fds: UserOutPtr<(usize, usize)>) -> SysResult {
+    pub fn sys_pipe(&self, mut fds: UserOutPtr<[i32; 2]>) -> SysResult {
         info!("pipe: fds={:?}", fds);
 
         let proc = self.linux_process();
@@ -102,9 +102,12 @@ impl Syscall<'_> {
             },
             String::from("pipe_w:[]"),
         ))?;
-        fds.write((read_fd.into(), write_fd.into()))?;
+        fds.write([read_fd.into(), write_fd.into()])?;
 
-        info!("pipe: created rfd={:?} wfd={:?}", read_fd, write_fd);
+        info!(
+            "pipe: created rfd={:?} wfd={:?} fds={:?}",
+            read_fd, write_fd, fds
+        );
 
         Ok(0)
     }
