@@ -137,8 +137,10 @@ impl ThreadInner {
 }
 
 bitflags! {
+    /// Thread flags.
     #[derive(Default)]
     pub struct ThreadFlag: usize {
+        /// The thread currently has a VCPU.
         const VCPU = 1 << 3;
     }
 }
@@ -243,6 +245,7 @@ impl Thread {
         self.internal_exit();
     }
 
+    /// Terminate the current running thread. Do not remove it from the process.
     pub fn internal_exit(&self) {
         self.base.signal_set(Signal::THREAD_TERMINATED);
         self.inner.lock().state = ThreadState::Dead;
@@ -262,6 +265,8 @@ impl Thread {
         context.write_state(kind, buf)
     }
 
+    /// Wait until the thread is ready to run (not suspended),
+    /// and then take away its context to run the thread.
     pub fn wait_for_run(self: &Arc<Thread>) -> impl Future<Output = Box<UserContext>> {
         #[must_use = "wait_for_run does nothing unless polled/`await`-ed"]
         struct RunnableChecker {
@@ -287,10 +292,12 @@ impl Thread {
         }
     }
 
+    /// The thread ends running and takes back the context.
     pub fn end_running(&self, context: Box<UserContext>) {
         self.inner.lock().context = Some(context);
     }
 
+    /// Get the thread's information.
     pub fn get_thread_info(&self) -> ThreadInfo {
         let inner = self.inner.lock();
         ThreadInfo {
@@ -303,6 +310,7 @@ impl Thread {
         }
     }
 
+    /// Get the thread's exception report.
     pub fn get_thread_exception_info(&self) -> ZxResult<ExceptionReport> {
         let inner = self.inner.lock();
         if inner.get_state() != ThreadState::BlockedException {
@@ -387,29 +395,37 @@ impl Thread {
         ret
     }
 
+    /// Get the thread state.
     pub fn state(&self) -> ThreadState {
         self.inner.lock().get_state()
     }
 
+    /// Get the exceptionate.
     pub fn get_exceptionate(&self) -> Arc<Exceptionate> {
         self.exceptionate.clone()
     }
 
+    /// Add the parameter to the time this thread has run on cpu.
     pub fn time_add(&self, time: u128) {
         self.inner.lock().time += time;
     }
 
+    /// Get the time this thread has run on cpu.
     pub fn get_time(&self) -> u64 {
         self.inner.lock().time as u64
     }
+
+    /// Set
     pub fn set_exception(&self, exception: Option<Arc<Exception>>) {
         self.inner.lock().exception = exception;
     }
 
+    /// Get the thread's flags.
     pub fn get_flags(&self) -> ThreadFlag {
         self.inner.lock().flags
     }
 
+    /// Apply `f` to the thread's flags.
     pub fn update_flags<F>(&self, f: F)
     where
         F: FnOnce(&mut ThreadFlag),
@@ -464,7 +480,13 @@ impl Task for Thread {
     }
 }
 
+/// `into_result` returns `Self` if the type parameter is already a `ZxResult`,
+/// otherwise wraps the value in an `Ok`.
+///
+/// Used to implement `Thread::blocking_run`, which takes a future whose `Output` may
+/// or may not be a `ZxResult`.
 pub trait IntoResult<T> {
+    /// Performs the conversion.
     fn into_result(self) -> ZxResult<T>;
 }
 
@@ -511,6 +533,7 @@ pub enum ThreadState {
     BlockedWaitMany = 0x703,
     /// The thread is stopped in `zx_interrupt_wait()`.
     BlockedInterrupt = 0x803,
+    /// Pager.
     BlockedPager = 0x903,
 }
 
@@ -520,6 +543,7 @@ impl Default for ThreadState {
     }
 }
 
+/// The thread information.
 #[repr(C)]
 pub struct ThreadInfo {
     state: u32,

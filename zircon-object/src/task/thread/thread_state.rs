@@ -4,6 +4,7 @@ use numeric_enum_macro::numeric_enum;
 
 numeric_enum! {
     #[repr(u32)]
+    /// Possible values for "kind" in zx_thread_read_state and zx_thread_write_state.
     #[derive(Debug, Copy, Clone)]
     pub enum ThreadStateKind {
         General = 0,
