@@ -409,7 +409,7 @@ impl Process {
         Ok(())
     }
 
-    /// Remove a thread to from process.
+    /// Remove a thread from the process.
     ///
     /// If no more threads left, exit the process.
     pub(super) fn remove_thread(&self, tid: KoID) {
