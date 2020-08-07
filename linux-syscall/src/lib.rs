@@ -216,7 +216,7 @@ impl Syscall<'_> {
             //            Sys::SETPRIORITY => self.sys_set_priority(a0),
             Sys::PRCTL => self.unimplemented("prctl", Ok(0)),
             Sys::MEMBARRIER => self.unimplemented("membarrier", Ok(0)),
-            //            Sys::PRLIMIT64 => self.sys_prlimit64(a0, a1, a2.into(), a3.into()),
+            Sys::PRLIMIT64 => self.sys_prlimit64(a0, a1, a2.into(), a3.into()),
             //            Sys::REBOOT => self.sys_reboot(a0 as u32, a1 as u32, a2 as u32, a3.into()),
             Sys::GETRANDOM => self.sys_getrandom(a0.into(), a1 as usize, a2 as u32),
             Sys::RT_SIGQUEUEINFO => self.unimplemented("rt_sigqueueinfo", Ok(0)),

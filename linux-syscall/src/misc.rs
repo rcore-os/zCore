@@ -73,6 +73,50 @@ impl Syscall<'_> {
         }
     }
 
+    /// Combines and extends the functionality of setrlimit() and getrlimit()
+    pub fn sys_prlimit64(
+        &mut self,
+        pid: usize,
+        resource: usize,
+        new_limit: UserInPtr<RLimit>,
+        mut old_limit: UserInOutPtr<RLimit>,
+    ) -> SysResult {
+        info!(
+            "prlimit64: pid: {}, resource: {}, new_limit: {:x?}, old_limit: {:x?}",
+            pid, resource, new_limit, old_limit
+        );
+        match resource {
+            RLIMIT_STACK => {
+                if let Ok(_old_limit) = old_limit.read_if_not_null() {
+                    old_limit.write(RLimit {
+                        cur: USER_STACK_SIZE as u64,
+                        max: USER_STACK_SIZE as u64,
+                    })?;
+                }
+                Ok(0)
+            }
+            RLIMIT_NOFILE => {
+                if let Ok(_old_limit) = old_limit.read_if_not_null() {
+                    old_limit.write(RLimit {
+                        cur: 1024,
+                        max: 1024,
+                    })?;
+                }
+                Ok(0)
+            }
+            RLIMIT_RSS | RLIMIT_AS => {
+                if let Ok(_old_limit) = old_limit.read_if_not_null() {
+                    old_limit.write(RLimit {
+                        cur: 1024 * 1024 * 1024,
+                        max: 1024 * 1024 * 1024,
+                    })?;
+                }
+                Ok(0)
+            }
+            _ => Err(LxError::ENOSYS),
+        }
+    }
+
     #[allow(unsafe_code)]
     #[allow(clippy::not_unsafe_ptr_arg_deref)]
     /// fills the buffer pointed to by `buf` with up to `buflen` random bytes.
@@ -103,4 +147,18 @@ bitflags! {
         /// can be employed with all futex operations, tells the kernel that the futex is process-private and not shared with another process
         const PRIVATE   = 0x80;
     }
+}
+
+const USER_STACK_SIZE: usize = 8 * 1024 * 1024; // 8 MB, the default config of Linux
+
+const RLIMIT_STACK: usize = 3;
+const RLIMIT_RSS: usize = 5;
+const RLIMIT_NOFILE: usize = 7;
+const RLIMIT_AS: usize = 9;
+
+#[repr(C)]
+#[derive(Debug, Default)]
+pub struct RLimit {
+    cur: u64, // soft limit
+    max: u64, // hard limit
 }
