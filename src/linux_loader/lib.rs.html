@@ -105,11 +105,28 @@
 <span id="105">105</span>
 <span id="106">106</span>
 <span id="107">107</span>
+<span id="108">108</span>
+<span id="109">109</span>
+<span id="110">110</span>
+<span id="111">111</span>
+<span id="112">112</span>
+<span id="113">113</span>
+<span id="114">114</span>
+<span id="115">115</span>
+<span id="116">116</span>
+<span id="117">117</span>
+<span id="118">118</span>
+<span id="119">119</span>
+<span id="120">120</span>
+<span id="121">121</span>
+<span id="122">122</span>
 </pre><div class="example-wrap"><pre class="rust ">
+<span class="doccomment">//! Linux LibOS</span>
+<span class="doccomment">//! - run process and manage trap/interrupt/syscall</span>
 <span class="attribute">#![<span class="ident">no_std</span>]</span>
 <span class="attribute">#![<span class="ident">feature</span>(<span class="ident">asm</span>)]</span>
 <span class="attribute">#![<span class="ident">feature</span>(<span class="ident">global_asm</span>)]</span>
-<span class="attribute">#![<span class="ident">deny</span>(<span class="ident">warnings</span>, <span class="ident">unused_must_use</span>)]</span>
+<span class="attribute">#![<span class="ident">deny</span>(<span class="ident">warnings</span>, <span class="ident">unused_must_use</span>, <span class="ident">missing_docs</span>)]</span>
 
 <span class="kw">extern</span> <span class="kw">crate</span> <span class="ident">alloc</span>;
 <span class="attribute">#[<span class="ident">macro_use</span>]</span>
@@ -128,6 +145,7 @@
     <span class="ident">zircon_object</span>::<span class="ident">task</span>::<span class="kw-2">*</span>,
 };
 
+<span class="doccomment">/// Create and run main Linux process</span>
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">run</span>(<span class="ident">args</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">String</span><span class="op">&gt;</span>, <span class="ident">envs</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">String</span><span class="op">&gt;</span>, <span class="ident">rootfs</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">FileSystem</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Process</span><span class="op">&gt;</span> {
     <span class="kw">let</span> <span class="ident">job</span> <span class="op">=</span> <span class="ident">Job</span>::<span class="ident">root</span>();
     <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="ident">Process</span>::<span class="ident">create_linux</span>(<span class="kw-2">&amp;</span><span class="ident">job</span>, <span class="ident">rootfs</span>.<span class="ident">clone</span>()).<span class="ident">unwrap</span>();
@@ -150,14 +168,25 @@
     <span class="ident">proc</span>
 }
 
+<span class="doccomment">/// Run and Manage thread</span>
+<span class="doccomment">///</span>
+<span class="doccomment">/// loop:</span>
+<span class="doccomment">/// - wait for the thread to be ready</span>
+<span class="doccomment">/// - get user thread context</span>
+<span class="doccomment">/// - enter user mode</span>
+<span class="doccomment">/// - handle trap/interrupt/syscall according to the return value</span>
+<span class="doccomment">/// - return the context to the user thread</span>
 <span class="kw">fn</span> <span class="ident">spawn</span>(<span class="ident">thread</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Thread</span><span class="op">&gt;</span>) {
     <span class="kw">let</span> <span class="ident">vmtoken</span> <span class="op">=</span> <span class="ident">thread</span>.<span class="ident">proc</span>().<span class="ident">vmar</span>().<span class="ident">table_phys</span>();
     <span class="kw">let</span> <span class="ident">future</span> <span class="op">=</span> <span class="kw">async</span> <span class="kw">move</span> {
         <span class="kw">loop</span> {
+            <span class="comment">// wait</span>
             <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">cx</span> <span class="op">=</span> <span class="ident">thread</span>.<span class="ident">wait_for_run</span>().<span class="kw">await</span>;
+            <span class="comment">// run</span>
             <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;go to user: {:#x?}&quot;</span>, <span class="ident">cx</span>);
             <span class="ident">kernel_hal</span>::<span class="ident">context_run</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">cx</span>);
             <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;back from user: {:#x?}&quot;</span>, <span class="ident">cx</span>);
+            <span class="comment">// handle trap/interrupt/syscall</span>
             <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">exit</span> <span class="op">=</span> <span class="bool-val">false</span>;
             <span class="kw">match</span> <span class="ident">cx</span>.<span class="ident">trap_num</span> {
                 <span class="number">0x100</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">exit</span> <span class="op">=</span> <span class="ident">handle_syscall</span>(<span class="kw-2">&amp;</span><span class="ident">thread</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">cx</span>.<span class="ident">general</span>).<span class="kw">await</span>,
@@ -194,6 +223,7 @@
     <span class="ident">kernel_hal</span>::<span class="ident">Thread</span>::<span class="ident">spawn</span>(<span class="ident">Box</span>::<span class="ident">pin</span>(<span class="ident">future</span>), <span class="ident">vmtoken</span>);
 }
 
+<span class="doccomment">/// syscall handler entry: create a struct `syscall: Syscall`, and call `syscall.syscall()`</span>
 <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">handle_syscall</span>(<span class="ident">thread</span>: <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Thread</span><span class="op">&gt;</span>, <span class="ident">regs</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">GeneralRegs</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
     <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;syscall: {:#x?}&quot;</span>, <span class="ident">regs</span>);
     <span class="kw">let</span> <span class="ident">num</span> <span class="op">=</span> <span class="ident">regs</span>.<span class="ident">rax</span> <span class="kw">as</span> <span class="ident">u32</span>;
