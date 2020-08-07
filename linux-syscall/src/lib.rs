@@ -179,7 +179,7 @@ impl Syscall<'_> {
             Sys::TKILL => self.unimplemented("tkill", Ok(0)),
 
             // time
-            //            Sys::NANOSLEEP => self.sys_nanosleep(a0.into()),
+            Sys::NANOSLEEP => self.sys_nanosleep(a0.into()).await,
             Sys::SETITIMER => self.unimplemented("setitimer", Ok(0)),
             //            Sys::GETTIMEOFDAY => self.sys_gettimeofday(a0.into(), a1.into()),
             Sys::CLOCK_GETTIME => self.sys_clock_gettime(a0, a1.into()),
@@ -218,7 +218,7 @@ impl Syscall<'_> {
             Sys::MEMBARRIER => self.unimplemented("membarrier", Ok(0)),
             //            Sys::PRLIMIT64 => self.sys_prlimit64(a0, a1, a2.into(), a3.into()),
             //            Sys::REBOOT => self.sys_reboot(a0 as u32, a1 as u32, a2 as u32, a3.into()),
-            //            Sys::GETRANDOM => self.sys_getrandom(a0.into(), a1 as usize, a2 as u32),
+            Sys::GETRANDOM => self.sys_getrandom(a0.into(), a1 as usize, a2 as u32),
             Sys::RT_SIGQUEUEINFO => self.unimplemented("rt_sigqueueinfo", Ok(0)),
 
             // kernel module
@@ -243,7 +243,7 @@ impl Syscall<'_> {
             Sys::OPEN => self.sys_open(a0.into(), a1, a2),
             Sys::STAT => self.sys_stat(a0.into(), a1.into()),
             Sys::LSTAT => self.sys_lstat(a0.into(), a1.into()),
-            //            Sys::POLL => self.sys_poll(a0.into(), a1, a2),
+            Sys::POLL => self.sys_poll(a0.into(), a1, a2),
             Sys::ACCESS => self.sys_access(a0.into(), a1),
             //            Sys::PIPE => self.sys_pipe(a0.into()),
             //            Sys::SELECT => self.sys_select(a0, a1.into(), a2.into(), a3.into(), a4.into()),

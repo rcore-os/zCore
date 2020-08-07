@@ -72,6 +72,23 @@ impl Syscall<'_> {
             }
         }
     }
+
+    #[allow(unsafe_code)]
+    #[allow(clippy::not_unsafe_ptr_arg_deref)]
+    /// fills the buffer pointed to by `buf` with up to `buflen` random bytes.
+    /// - `buf` - buffer that needed to fill
+    /// - `buflen` - length of buffer
+    /// - `flag` - a bit mask that can contain zero or more of the following values ORed together:
+    ///   - GRND_RANDOM
+    ///   - GRND_NONBLOCK
+    /// - returns the number of bytes that were copied to the buffer buf.
+    pub fn sys_getrandom(&mut self, mut buf: UserOutPtr<u8>, len: usize, _flag: u32) -> SysResult {
+        // info!("getrandom: buf: {:?}, len: {:?}, falg {:?}", buf, len, flag);
+        let mut buffer = vec![0u8; len];
+        kernel_hal::fill_random(&mut buffer);
+        buf.write_array(&buffer[..len])?;
+        Ok(len)
+    }
 }
 
 bitflags! {
