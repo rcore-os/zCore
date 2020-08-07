@@ -212,7 +212,13 @@ fn spawn(thread: Arc<Thread>) {
             trace!("go to user: {:#x?}", cx);
             debug!("switch to {}|{}", thread.proc().name(), thread.name());
             let tmp_time = kernel_hal::timer_now().as_nanos();
+
+            // 注意 此处 进入 神秘 魔法 地带
+
             kernel_hal::context_run(&mut cx);
+
+            // 注意 此处 离开 神秘 魔法 地带
+
             let time = kernel_hal::timer_now().as_nanos() - tmp_time;
             thread.time_add(time);
             trace!("back from user: {:#x?}", cx);
