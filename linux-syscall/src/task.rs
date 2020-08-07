@@ -260,13 +260,7 @@ impl Syscall<'_> {
         if deadline.0 <= 0 {
             kernel_hal::yield_now().await;
         } else {
-            self.thread
-                .blocking_run(
-                    kernel_hal::sleep_until(deadline.into()),
-                    ThreadState::BlockedSleeping,
-                    Duration::from_nanos(u64::max_value()),
-                )
-                .await?;
+            kernel_hal::sleep_until(deadline.into()).await;
         }
         Ok(0)
     }
