@@ -10,6 +10,7 @@ pub use self::file::*;
 pub use self::pseudo::*;
 pub use self::random::*;
 pub use self::stdio::*;
+pub use self::pipe::*;
 pub use rcore_fs::vfs;
 
 use crate::error::*;
@@ -21,6 +22,7 @@ use zircon_object::object::*;
 mod device;
 mod file;
 mod ioctl;
+mod pipe;
 mod pseudo;
 mod random;
 mod stdio;
