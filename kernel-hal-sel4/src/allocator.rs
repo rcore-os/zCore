@@ -37,7 +37,6 @@ fn on_alloc_error(_: core::alloc::Layout) -> ! {
 
 #[no_mangle]
 extern "C" fn __dlmalloc_alloc(size: usize) -> usize {
-    println!("dlmalloc_alloc {}. HEAP_TOP = {}", size, unsafe { HEAP_TOP });
     let old_top = unsafe { HEAP_TOP };
     match old_top.checked_add(size) {
         Some(x) if x <= heap_end() => {

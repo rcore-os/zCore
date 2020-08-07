@@ -9,6 +9,12 @@ extern crate alloc;
 mod console;
 mod sys;
 mod allocator;
+mod cap;
+mod types;
+mod sync;
+mod thread;
+mod error;
+mod pmem;
 
 pub unsafe fn boot() -> ! {
     println!("Hello from seL4 kernel HAL.");
@@ -26,7 +32,14 @@ pub unsafe fn boot() -> ! {
         result += v[v.len() - 1] as u32;
     }
     println!("result: {}", result);
-    println!("Attempting to map one page.");
+    println!("Attempting to allocate one physical page 100000 times.");
+
+    for i in 0..100000 {
+        core::mem::forget(pmem::Page::allocate().expect("cannot allocate page"));
+        println!("round {}", i);
+    }
+    println!("Mapped and released successfully");
+
     loop {}
 }
 

@@ -12,7 +12,7 @@ bridge: zcore
 	make -C bridge
 
 simulate: bridge
-	cd bridge/build && ./simulate
+	cd bridge/build && ./simulate --extra-qemu-args="-m 512M"
 
 simulate-gdb: bridge
 	cd bridge/build && ./simulate --extra-qemu-args="-S -s"

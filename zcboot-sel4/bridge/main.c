@@ -27,6 +27,7 @@ static char allocator_mem_pool[ALLOCATOR_STATIC_POOL_SIZE];
 
 #define ZCDAEMON_BADGE_GETCAP 0x10
 #define ZCDAEMON_BADGE_PUTCHAR 0x11
+#define ZCDAEMON_BADGE_ALLOC_FRAME 0x12
 
 void load_zc();
 seL4_Word setup_ipc(sel4utils_process_t *process, const vka_object_t *ep_object, seL4_Word badge);
@@ -68,7 +69,7 @@ int main(int argc, char *argv[]) {
 int map_remote_frame(sel4utils_process_t *process, seL4_Word vaddr, vka_object_t *obj_out) {
     int error;
 
-    error = vka_alloc_frame(&vka, 12, obj_out); // 4K frame
+    error = vka_alloc_frame(&vka, seL4_PageBits, obj_out); // 4K frame
     if(error) return error;
 
     error = seL4_ARCH_Page_Map(
@@ -131,9 +132,15 @@ void load_zc() {
         ALLOCATOR_VIRTUAL_POOL_SIZE, simple_get_pd(&simple)
     );
 
+    // Setup IPC.
+    vka_object_t ep_object= {0};
+    error = vka_alloc_endpoint(&vka, &ep_object);
+    ZF_LOGF_IFERR(error, "Failed to allocate ep_object.\n");
+
     // Create process.
     sel4utils_process_t new_process;
     sel4utils_process_config_t config = process_config_default_simple(&simple, "zcboot-sel4", seL4_MaxPrio);
+    config = process_config_create_cnode(config, 12); // 4K entries
     error = sel4utils_configure_process_custom(&new_process, &vka, &vspace, config);
     ZF_LOGF_IFERR(error, "failed to configure process");
 
@@ -141,14 +148,10 @@ void load_zc() {
     error = prepare_ipc_buffer(&new_process);
     ZF_LOGF_IFERR(error, "failed to prepare ipc buffer");
 
-    // Setup IPC.
-    vka_object_t ep_object= {0};
-    error = vka_alloc_endpoint(&vka, &ep_object);
-    ZF_LOGF_IFERR(error, "Failed to allocate ep_object.\n");
-
     // Caps.
     seL4_Word child_getcap_cptr = setup_ipc(&new_process, &ep_object, ZCDAEMON_BADGE_GETCAP);
     seL4_Word child_putchar_cptr = setup_ipc(&new_process, &ep_object, ZCDAEMON_BADGE_PUTCHAR);
+    seL4_Word child_alloc_frame_cptr = setup_ipc(&new_process, &ep_object, ZCDAEMON_BADGE_ALLOC_FRAME);
 
     const int ARG_MAX_LEN_WITHOUT_TERM = 31;
 
@@ -187,7 +190,10 @@ void load_zc() {
 
                 if(strcmp(name, "putchar") == 0) {
                     seL4_SetMR(0, child_putchar_cptr);
+                } else if(strcmp(name, "alloc_frame") == 0) {
+                    seL4_SetMR(0, child_alloc_frame_cptr);
                 } else {
+                    printf("Unknown cap name: %s\n", name);
                     seL4_SetMR(0, 0);
                 }
                 seL4_Reply(seL4_MessageInfo_new(0, 0, 0, 1));
@@ -202,6 +208,30 @@ void load_zc() {
                 putchar(ch);
                 fflush(stdout);
                 seL4_Reply(seL4_MessageInfo_new(0, 0, 0, 0));
+                break;
+            }
+            case ZCDAEMON_BADGE_ALLOC_FRAME: {
+                if(seL4_MessageInfo_get_length(tag) != 0) {
+                    ZF_LOGI("ZCDAEMON_BADGE_ALLOC_FRAME: Bad tag length");
+                    break;
+                }
+                vka_object_t frame;
+                error = vka_alloc_frame(&vka, seL4_PageBits, &frame);
+                if(error) {
+                    seL4_Reply(seL4_MessageInfo_new(1, 0, 0, 0));
+                    break;
+                }
+                seL4_SetCap(0, frame.cptr);
+                seL4_SetMR(0, vka_object_paddr(&vka, &frame));
+                seL4_Reply(seL4_MessageInfo_new(0, 0, 1, 1));
+
+                // We cannot free the underlying memory for the object.
+                // Instead, free the CPtr only.
+                cspacepath_t path;
+                vka_cspace_make_path(&vka, frame.cptr, &path);
+                seL4_CNode_Delete(path.root, path.capPtr, path.capDepth);
+                vka_cspace_free(&vka, frame.cptr);
+
                 break;
             }
             default: {

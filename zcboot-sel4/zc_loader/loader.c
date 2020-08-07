@@ -28,6 +28,7 @@ extern void rust_start();
 void static_assert();
 
 seL4_CPtr putchar_cptr = 0;
+seL4_CPtr alloc_frame_cptr = 0;
 
 char fmt_hex_char(unsigned char v) {
     if(v >= 0 && v <= 9) {
@@ -47,16 +48,6 @@ void fmt_word(char out[18], seL4_Word w) {
     out[17] = 0;
 }
 
-void l4bridge_putchar(char c) {
-    seL4_SetMR(0, c);
-    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 1);
-    seL4_Call(putchar_cptr, tag);
-}
-
-void l4bridge_yield() {
-    seL4_Yield();
-}
-
 void init_master_tls() {
     // reference: https://wiki.osdev.org/Thread_Local_Storage
     seL4_Word thread_area = (seL4_Word) TLS + TLS_SIZE - 0x1000;
@@ -72,6 +63,12 @@ void write_string_buf(char *dst, const char *src, int dst_size) {
     dst[dst_size - 1] = 0;
 }
 
+void l4bridge_putchar(char c) {
+    seL4_SetMR(0, c);
+    seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 1);
+    seL4_Call(putchar_cptr, tag);
+}
+
 void print_str(const char *s) {
     while(*s) {
         l4bridge_putchar(*s);
@@ -83,6 +80,31 @@ void print_word(seL4_Word word) {
     char buf[18];
     fmt_word(buf, word);
     print_str(buf);
+}
+
+void l4bridge_yield() {
+    seL4_Yield();
+}
+
+int l4bridge_alloc_frame(seL4_CPtr slot, seL4_Word *paddr_out) {
+    seL4_SetCapReceivePath(CNODE_SLOT, slot, seL4_WordBits);
+    seL4_MessageInfo_t tag = seL4_Call(alloc_frame_cptr, seL4_MessageInfo_new(0, 0, 0, 0));
+    if(
+        seL4_MessageInfo_get_label(tag) != 0 ||
+        seL4_MessageInfo_get_extraCaps(tag) != 1 ||
+        seL4_MessageInfo_get_length(tag) != 1
+    ) {
+        return 1;
+    }
+    *paddr_out = seL4_GetMR(0);
+    return 0;
+}
+
+void l4bridge_delete_cap(seL4_CPtr slot) {
+    int error = seL4_CNode_Delete(CNODE_SLOT, slot, seL4_WordBits);
+    if(error) {
+        print_str("[loader] l4bridge_delete_cap: cannot delete cap\n");
+    }
 }
 
 seL4_Word getcap(const char *name) {
@@ -107,6 +129,7 @@ void _start() {
     seL4_SetIPCBuffer(ipc_buffer);
 
     putchar_cptr = getcap("putchar");
+    alloc_frame_cptr = getcap("alloc_frame");
 
     unsigned long stack_top = (unsigned long) MAIN_STACK + MAIN_STACK_SIZE;
     asm volatile (
@@ -123,7 +146,7 @@ int main() {
     print_str("rust_start unexpectedly returned\n");
     while(1) {}
 }
-
+/*
 int bcmp(const void *_s1, const void *_s2, unsigned long n) {
     const char *s1 = _s1;
     const char *s2 = _s2;
@@ -137,7 +160,7 @@ void * memset(void *ptr, int value, unsigned long num) {
         buf[i] = value;
     }
     return ptr;
-}
+}*/
 
 void __assert_fail(const char * assertion, const char * file, int line, const char * function) {
     while(1) {}

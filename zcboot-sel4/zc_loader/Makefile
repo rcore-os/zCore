@@ -6,8 +6,6 @@ all:
 		-c \
 		-nostdlib -static -fPIC -O2 \
 		-I$(BUILD_DIR)/kernel/gen_config/ \
-		-I$(BUILD_DIR)/kernel/gen_config/ \
-		-I$(BUILD_DIR)/kernel/gen_config/ \
 		-I$(BUILD_DIR)/libsel4/gen_config/ \
 		-I$(BUILD_DIR)/libsel4/autoconf/ \
 		-I$(BUILD_DIR)/libsel4/sel4_arch_include/x86_64/ \
