@@ -1,7 +1,7 @@
 //! Implement INode for Stdin & Stdout
 #![allow(unsafe_code)]
 
-use super::ioctl::*;
+// use super::ioctl::*;
 use alloc::collections::VecDeque;
 use alloc::sync::Arc;
 use core::any::Any;
@@ -67,6 +67,7 @@ impl INode for Stdin {
             error: false,
         })
     }
+    /*
     fn io_control(&self, cmd: u32, data: usize) -> Result<()> {
         match cmd as usize {
             TCGETS | TIOCGWINSZ | TIOCSPGRP => {
@@ -82,6 +83,7 @@ impl INode for Stdin {
             _ => Err(FsError::NotSupported),
         }
     }
+    */
     fn as_any_ref(&self) -> &dyn Any {
         self
     }
@@ -104,6 +106,7 @@ impl INode for Stdout {
             error: false,
         })
     }
+    /*
     fn io_control(&self, cmd: u32, data: usize) -> Result<()> {
         match cmd as usize {
             TCGETS | TIOCGWINSZ | TIOCSPGRP => {
@@ -119,6 +122,7 @@ impl INode for Stdout {
             _ => Err(FsError::NotSupported),
         }
     }
+    */
     fn as_any_ref(&self) -> &dyn Any {
         self
     }
