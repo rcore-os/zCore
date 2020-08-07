@@ -9,7 +9,7 @@ impl Write for Console {
         for c in s.chars() {
             for code_point in c.encode_utf8(&mut buffer).as_bytes().iter() {
                 unsafe {
-                    sys::l4bridge_putchar(*code_point);
+                    sys::locked(|| sys::l4bridge_putchar(*code_point));
                 }
             }
         }

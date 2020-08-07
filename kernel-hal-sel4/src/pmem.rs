@@ -11,7 +11,7 @@ impl Page {
     pub fn allocate() -> KernelResult<Self> {
         let slot = cap::G.allocate()?;
         let mut paddr: Word = 0;
-        match unsafe { sys::l4bridge_alloc_frame(slot, &mut paddr) } {
+        match sys::locked(|| unsafe { sys::l4bridge_alloc_frame(slot, &mut paddr) }) {
             0 => Ok(Self {
                 inner: slot,
                 paddr,
@@ -27,7 +27,7 @@ impl Page {
 impl Drop for Page {
     fn drop(&mut self) {
         unsafe {
-            sys::l4bridge_delete_cap(self.inner);
+            sys::locked(|| sys::l4bridge_delete_cap(self.inner));
         }
         cap::G.release(self.inner);
     }

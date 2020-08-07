@@ -8,7 +8,20 @@
 
 #define GETCAP_CPTR 8
 
+#define TEMP_CPTR 63
+#define NEW_ROOT_CNODE_CPTR 62
+
 #define ZCDAEMON_IPCBUF_VADDR 0x3000000
+#define TOPLEVEL_CNODE_BITS 12
+#define SECONDLEVEL_CNODE_BITS 12
+
+#ifndef MASK
+#define MASK(n) (BIT(n)-1ul)
+#endif
+
+#ifndef BIT
+#define BIT(n) (1ul<<(n))
+#endif 
 
 // 1M stack for Rust
 #define MAIN_STACK_SIZE 1048576
@@ -29,6 +42,9 @@ void static_assert();
 
 seL4_CPtr putchar_cptr = 0;
 seL4_CPtr alloc_frame_cptr = 0;
+seL4_CPtr alloc_cnode_cptr = 0;
+
+unsigned char toplevel_cnode_slot_allocated[BIT(TOPLEVEL_CNODE_BITS)];
 
 char fmt_hex_char(unsigned char v) {
     if(v >= 0 && v <= 9) {
@@ -76,10 +92,30 @@ void print_str(const char *s) {
     }
 }
 
+void panic_str(const char *s) {
+    print_str(s);
+    print_str("[loader] PANIC.\n");
+    while(1);
+}
+
 void print_word(seL4_Word word) {
     char buf[18];
     fmt_word(buf, word);
     print_str(buf);
+}
+
+static int alloc_cnode(seL4_CPtr slot, int bits) {
+    seL4_SetCapReceivePath(CNODE_SLOT, slot, seL4_WordBits);
+    seL4_SetMR(0, bits);
+    seL4_MessageInfo_t tag = seL4_Call(alloc_cnode_cptr, seL4_MessageInfo_new(0, 0, 0, 1));
+    if(
+        seL4_MessageInfo_get_label(tag) != 0 ||
+        seL4_MessageInfo_get_extraCaps(tag) != 1 ||
+        seL4_MessageInfo_get_length(tag) != 0
+    ) {
+        return 1;
+    }
+    return 0;
 }
 
 void l4bridge_yield() {
@@ -97,6 +133,27 @@ int l4bridge_alloc_frame(seL4_CPtr slot, seL4_Word *paddr_out) {
         return 1;
     }
     *paddr_out = seL4_GetMR(0);
+    return 0;
+}
+
+int l4bridge_ensure_cslot(seL4_CPtr slot) {
+    int index = (slot >> SECONDLEVEL_CNODE_BITS) & MASK(TOPLEVEL_CNODE_BITS);
+    if(toplevel_cnode_slot_allocated[index]) return 0;
+
+    if(alloc_cnode(TEMP_CPTR, 12)) {
+        return 1;
+    }
+
+    // XXX: Seems that the slot index is truncated from the MSB.
+    if(seL4_CNode_Mutate(
+        CNODE_SLOT, index, seL4_WordBits - SECONDLEVEL_CNODE_BITS,
+        CNODE_SLOT, TEMP_CPTR, seL4_WordBits,
+        seL4_CNode_CapData_new(0, 0).words[0]
+    )) {
+        return 1;
+    }
+
+    toplevel_cnode_slot_allocated[index] = 1;
     return 0;
 }
 
@@ -124,12 +181,49 @@ seL4_Word getcap(const char *name) {
     return seL4_GetMR(0);
 }
 
+void setup_twolevel_cspace() {
+    if(alloc_cnode(TEMP_CPTR, TOPLEVEL_CNODE_BITS)) {
+        panic_str("[loader] setup_twolevel_cspace: cannot allocate new root cnode\n");
+    }
+
+    if(seL4_CNode_Mutate(
+        CNODE_SLOT, NEW_ROOT_CNODE_CPTR, seL4_WordBits,
+        CNODE_SLOT, TEMP_CPTR, seL4_WordBits,
+        seL4_CNode_CapData_new(0, seL4_WordBits - TOPLEVEL_CNODE_BITS - SECONDLEVEL_CNODE_BITS).words[0]
+    )) {
+        panic_str("[loader] setup_twolevel_cspace: cannot configure new cnode\n");
+    }
+
+    if(seL4_CNode_Mutate(
+        NEW_ROOT_CNODE_CPTR, 0, seL4_WordBits - SECONDLEVEL_CNODE_BITS,
+        CNODE_SLOT, CNODE_SLOT, seL4_WordBits,
+        seL4_CNode_CapData_new(0, 0).words[0]
+    )) {
+        panic_str("[loader] setup_twolevel_cspace: cannot move old cnode\n");
+    }
+
+    if(seL4_TCB_SetSpace(TCB_SLOT, seL4_CapNull, NEW_ROOT_CNODE_CPTR, 0, PD_SLOT, 0)) {
+        panic_str("[loader] setup_twolevel_cspace: cannot update cspace\n");
+    }
+
+    if(seL4_CNode_Move(
+        NEW_ROOT_CNODE_CPTR, CNODE_SLOT, seL4_WordBits,
+        NEW_ROOT_CNODE_CPTR, NEW_ROOT_CNODE_CPTR, seL4_WordBits
+    )) {
+        panic_str("[loader] setup_twolevel_cspace: cannot write back new cnode\n");
+    }
+
+    // Identity-mapped first slot
+    toplevel_cnode_slot_allocated[0] = 1;
+}
+
 void _start() {
     init_master_tls();
     seL4_SetIPCBuffer(ipc_buffer);
 
     putchar_cptr = getcap("putchar");
     alloc_frame_cptr = getcap("alloc_frame");
+    alloc_cnode_cptr = getcap("alloc_cnode");
 
     unsigned long stack_top = (unsigned long) MAIN_STACK + MAIN_STACK_SIZE;
     asm volatile (
@@ -142,6 +236,8 @@ void _start() {
 
 int main() {
     print_str("Starting zCore.\n");
+    setup_twolevel_cspace();
+    print_str("CSpace reconfigured.\n");
     rust_start();
     print_str("rust_start unexpectedly returned\n");
     while(1) {}
