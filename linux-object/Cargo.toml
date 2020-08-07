@@ -15,6 +15,7 @@ hashbrown = "0.7"
 zircon-object = { path = "../zircon-object", features = ["elf"] }
 kernel-hal = { path = "../kernel-hal" }
 downcast-rs = { git = "https://github.com/rcore-os/downcast-rs", rev = "a632ce1", default-features = false }
+lazy_static = { version = "1.4", features = ["spin_no_std"] }
 rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "e17b27b" }
 rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "e17b27b" }
 rcore-fs-ramfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "e17b27b" }

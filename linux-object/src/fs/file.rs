@@ -69,8 +69,9 @@ impl File {
                 match self.inode.read_at(offset as usize, buf) {
                     Ok(read_len) => return Ok(read_len),
                     Err(FsError::Again) => {
-                        //thread::yield_now();
-                        unimplemented!()
+                        // thread::yield_now();
+                        // unimplemented!()
+                        self.poll()?;
                     }
                     Err(err) => return Err(err.into()),
                 }
