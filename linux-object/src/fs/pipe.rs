@@ -1,4 +1,5 @@
 //! Implement INode for Pipe
+#![deny(missing_docs)]
 
 use alloc::{collections::vec_deque::VecDeque, sync::Arc};
 use core::{any::Any, cmp::min};
@@ -7,11 +8,15 @@ use spin::Mutex;
 
 #[derive(Clone, PartialEq)]
 #[allow(dead_code)]
+/// Pipe end specify
 pub enum PipeEnd {
+    /// read end
     Read,
+    /// write end
     Write,
 }
 
+/// Pipe inner data
 pub struct PipeData {
     /// pipe buffer
     buf: VecDeque<u8>,
@@ -19,6 +24,7 @@ pub struct PipeData {
     end_cnt: i32,
 }
 
+/// pipe struct
 #[derive(Clone)]
 pub struct Pipe {
     data: Arc<Mutex<PipeData>>,
@@ -53,7 +59,7 @@ impl Pipe {
             },
         )
     }
-
+    /// whether the pipe struct is readable
     fn can_read(&self) -> bool {
         if let PipeEnd::Read = self.direction {
             // true
@@ -64,6 +70,7 @@ impl Pipe {
         }
     }
 
+    /// whether the pipe struct is writeable
     fn can_write(&self) -> bool {
         if let PipeEnd::Write = self.direction {
             self.data.lock().end_cnt == 2
@@ -74,6 +81,7 @@ impl Pipe {
 }
 
 impl INode for Pipe {
+    /// read from pipe
     fn read_at(&self, _offset: usize, buf: &mut [u8]) -> Result<usize> {
         if buf.is_empty() {
             return Ok(0);
@@ -94,6 +102,7 @@ impl INode for Pipe {
         }
     }
 
+    /// write to pipe
     fn write_at(&self, _offset: usize, buf: &[u8]) -> Result<usize> {
         if let PipeEnd::Write = self.direction {
             let mut data = self.data.lock();
@@ -106,6 +115,8 @@ impl INode for Pipe {
         }
     }
 
+    /// monitoring events and determine whether the pipe is readable or writeable
+    /// if the write end is not close and the buffer is empty, the read end will be block
     fn poll(&self) -> Result<PollStatus> {
         Ok(PollStatus {
             read: self.can_read(),
@@ -114,6 +125,7 @@ impl INode for Pipe {
         })
     }
 
+    /// return the any ref
     fn as_any_ref(&self) -> &dyn Any {
         self
     }

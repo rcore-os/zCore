@@ -64,7 +64,7 @@ mod tests {
         let proc: Arc<dyn KernelObject> = proc;
         proc.wait_signal(Signal::PROCESS_TERMINATED).await;
     }
-    
+
     // test using busybox
 
     #[async_std::test]
@@ -120,7 +120,7 @@ mod tests {
     // syscall unit test
 
     #[async_std::test]
-    async fn test_pipe(){
+    async fn test_pipe() {
         test("/bin/testpipe1").await;
     }
 }
