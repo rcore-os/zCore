@@ -150,7 +150,7 @@ impl LinuxProcess {
     /// Create a new process.
     pub fn new(rootfs: Arc<dyn FileSystem>) -> Self {
         let stdin = File::new(
-            Arc::new(Stdout), // FIXME: stdin
+            STDIN.clone(), // FIXME: stdin
             OpenOptions {
                 read: true,
                 write: false,
@@ -160,7 +160,7 @@ impl LinuxProcess {
             String::from("/dev/stdin"),
         ) as Arc<dyn FileLike>;
         let stdout = File::new(
-            Arc::new(Stdout), // TODO: open from '/dev/stdout'
+            STDOUT.clone(), // TODO: open from '/dev/stdout'
             OpenOptions {
                 read: false,
                 write: true,
