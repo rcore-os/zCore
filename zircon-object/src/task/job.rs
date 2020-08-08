@@ -130,6 +130,7 @@ impl Job {
         Ok(())
     }
 
+    /// Sets timer slack policy to an empty job.
     pub fn set_policy_timer_slack(&self, policy: TimerSlackPolicy) -> ZxResult {
         let mut inner = self.inner.lock();
         if !inner.is_empty() {
@@ -150,15 +151,18 @@ impl Job {
         Ok(())
     }
 
+    /// Remove a process from the job.
     pub(super) fn remove_process(&self, id: KoID) {
         let mut inner = self.inner.lock();
         inner.processes.retain(|proc| proc.id() != id);
     }
 
+    /// Get information of this job.
     pub fn get_info(&self) -> JobInfo {
         JobInfo::default()
     }
 
+    /// Check whether this job is root job.
     pub fn check_root_job(&self) -> ZxResult {
         if self.parent.is_some() {
             Err(ZxError::ACCESS_DENIED)
@@ -167,10 +171,12 @@ impl Job {
         }
     }
 
+    /// Get the exceptionate of this job.
     pub fn get_exceptionate(&self) -> Arc<Exceptionate> {
         self.exceptionate.clone()
     }
 
+    /// Get the debug exceptionate of this job.
     pub fn get_debug_exceptionate(&self) -> Arc<Exceptionate> {
         self.debug_exceptionate.clone()
     }
@@ -185,10 +191,12 @@ impl Job {
         self.inner.lock().children.iter().map(|j| j.id()).collect()
     }
 
+    /// Return true if this job has no processes and no child jobs.
     pub fn is_empty(&self) -> bool {
         self.inner.lock().is_empty()
     }
 
+    /// Kill the job.
     pub fn kill(&self) {
         let (children, processes) = {
             let mut inner = self.inner.lock();
@@ -217,6 +225,7 @@ impl JobInner {
     }
 }
 
+/// Information of a job.
 #[repr(C)]
 #[derive(Default)]
 pub struct JobInfo {
