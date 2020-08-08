@@ -464,14 +464,15 @@ impl Process {
         self.inner.lock().debug_addr
     }
 
-    /// Get whether the dynamic loader will issue a debug trap on every load of a
-    /// shared library.
+    /// Set the address where the dynamic loader will issue a debug trap on every load of a
+    /// shared library to. Setting this property to
+    /// zero will disable it.
     pub fn set_dyn_break_on_load(&self, addr: usize) {
         self.inner.lock().dyn_break_on_load = addr;
     }
 
-    /// Set whether the dynamic loader will issue a debug trap on every load of a
-    /// shared library
+    /// Get the address where the dynamic loader will issue a debug trap on every load of a
+    /// shared library to.
     pub fn get_dyn_break_on_load(&self) -> usize {
         self.inner.lock().dyn_break_on_load
     }

@@ -415,7 +415,7 @@ impl Thread {
         self.inner.lock().time as u64
     }
 
-    /// Set
+    /// Set the currently processing exception.
     pub fn set_exception(&self, exception: Option<Arc<Exception>>) {
         self.inner.lock().exception = exception;
     }
