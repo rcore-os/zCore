@@ -10,6 +10,8 @@
 
 #define TEMP_CPTR 63
 #define NEW_ROOT_CNODE_CPTR 62
+#define RETYPE_BUF_1_CPTR 61
+#define RETYPE_BUF_0_CPTR 60
 
 #define ZCDAEMON_IPCBUF_VADDR 0x3000000
 #define TOPLEVEL_CNODE_BITS 12
@@ -41,10 +43,10 @@ extern void rust_start();
 void static_assert();
 
 seL4_CPtr putchar_cptr = 0;
-seL4_CPtr alloc_frame_cptr = 0;
+seL4_CPtr alloc_untyped_cptr = 0;
 seL4_CPtr alloc_cnode_cptr = 0;
 
-unsigned char toplevel_cnode_slot_allocated[BIT(TOPLEVEL_CNODE_BITS)];
+seL4_Word L4BRIDGE_CNODE_SLOT_BITS = seL4_SlotBits;
 
 char fmt_hex_char(unsigned char v) {
     if(v >= 0 && v <= 9) {
@@ -108,6 +110,8 @@ static int alloc_cnode(seL4_CPtr slot, int bits) {
     seL4_SetCapReceivePath(CNODE_SLOT, slot, seL4_WordBits);
     seL4_SetMR(0, bits);
     seL4_MessageInfo_t tag = seL4_Call(alloc_cnode_cptr, seL4_MessageInfo_new(0, 0, 0, 1));
+    seL4_SetCapReceivePath(0, 0, 0);
+
     if(
         seL4_MessageInfo_get_label(tag) != 0 ||
         seL4_MessageInfo_get_extraCaps(tag) != 1 ||
@@ -122,9 +126,12 @@ void l4bridge_yield() {
     seL4_Yield();
 }
 
-int l4bridge_alloc_frame(seL4_CPtr slot, seL4_Word *paddr_out) {
+int l4bridge_alloc_untyped(seL4_CPtr slot, int bits, seL4_Word *paddr_out) {
     seL4_SetCapReceivePath(CNODE_SLOT, slot, seL4_WordBits);
-    seL4_MessageInfo_t tag = seL4_Call(alloc_frame_cptr, seL4_MessageInfo_new(0, 0, 0, 0));
+    seL4_SetMR(0, bits);
+    seL4_MessageInfo_t tag = seL4_Call(alloc_untyped_cptr, seL4_MessageInfo_new(0, 0, 0, 1));
+    seL4_SetCapReceivePath(0, 0, 0);
+
     if(
         seL4_MessageInfo_get_label(tag) != 0 ||
         seL4_MessageInfo_get_extraCaps(tag) != 1 ||
@@ -136,24 +143,48 @@ int l4bridge_alloc_frame(seL4_CPtr slot, seL4_Word *paddr_out) {
     return 0;
 }
 
-int l4bridge_ensure_cslot(seL4_CPtr slot) {
-    int index = (slot >> SECONDLEVEL_CNODE_BITS) & MASK(TOPLEVEL_CNODE_BITS);
-    if(toplevel_cnode_slot_allocated[index]) return 0;
+int l4bridge_split_untyped(seL4_CPtr src, int src_bits, seL4_CPtr dst0, seL4_CPtr dst1) {
+    int error;
+    
+    error = seL4_Untyped_Retype(
+        src, seL4_UntypedObject, src_bits - 1,
+        CNODE_SLOT, 0, seL4_WordBits - SECONDLEVEL_CNODE_BITS,
+        RETYPE_BUF_0_CPTR, 2
+    );
+    if(error) return error;
 
-    if(alloc_cnode(TEMP_CPTR, 12)) {
-        return 1;
-    }
+    error = seL4_CNode_Move(
+        CNODE_SLOT, dst0, seL4_WordBits,
+        CNODE_SLOT, RETYPE_BUF_0_CPTR, seL4_WordBits
+    );
+    if(error) return error;
 
-    // XXX: Seems that the slot index is truncated from the MSB.
-    if(seL4_CNode_Mutate(
-        CNODE_SLOT, index, seL4_WordBits - SECONDLEVEL_CNODE_BITS,
-        CNODE_SLOT, TEMP_CPTR, seL4_WordBits,
+    error = seL4_CNode_Move(
+        CNODE_SLOT, dst1, seL4_WordBits,
+        CNODE_SLOT, RETYPE_BUF_1_CPTR, seL4_WordBits
+    );
+    if(error) return error;
+
+    return 0;
+}
+
+int l4bridge_retype_and_mount_cnode(seL4_CPtr slot, int num_slots_bits, seL4_Word target_index) {
+    int error;
+    
+    error = seL4_Untyped_Retype(
+        slot, seL4_CapTableObject, num_slots_bits,
+        CNODE_SLOT, 0, seL4_WordBits - SECONDLEVEL_CNODE_BITS,
+        RETYPE_BUF_0_CPTR, 1
+    );
+    if(error) return error;
+
+    error = seL4_CNode_Mutate(
+        CNODE_SLOT, target_index, seL4_WordBits - SECONDLEVEL_CNODE_BITS,
+        CNODE_SLOT, RETYPE_BUF_0_CPTR, seL4_WordBits,
         seL4_CNode_CapData_new(0, 0).words[0]
-    )) {
-        return 1;
-    }
+    );
+    if(error) return error;
 
-    toplevel_cnode_slot_allocated[index] = 1;
     return 0;
 }
 
@@ -212,9 +243,6 @@ void setup_twolevel_cspace() {
     )) {
         panic_str("[loader] setup_twolevel_cspace: cannot write back new cnode\n");
     }
-
-    // Identity-mapped first slot
-    toplevel_cnode_slot_allocated[0] = 1;
 }
 
 void _start() {
@@ -222,7 +250,7 @@ void _start() {
     seL4_SetIPCBuffer(ipc_buffer);
 
     putchar_cptr = getcap("putchar");
-    alloc_frame_cptr = getcap("alloc_frame");
+    alloc_untyped_cptr = getcap("alloc_untyped");
     alloc_cnode_cptr = getcap("alloc_cnode");
 
     unsigned long stack_top = (unsigned long) MAIN_STACK + MAIN_STACK_SIZE;

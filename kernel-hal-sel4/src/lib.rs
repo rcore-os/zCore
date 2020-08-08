@@ -1,6 +1,6 @@
 #![no_std]
 #![feature(asm, global_asm, alloc_error_handler)]
-#![feature(linkage)]
+#![feature(linkage, const_btree_new)]
 
 #[macro_use]
 extern crate alloc;
@@ -19,6 +19,8 @@ mod pmem;
 pub unsafe fn boot() -> ! {
     println!("Hello from seL4 kernel HAL.");
     allocator::init();
+    pmem::init();
+    cap::init();
 
     println!("Testing allocation.");
     let mut result: u32 = 0;
@@ -35,8 +37,12 @@ pub unsafe fn boot() -> ! {
     println!("Attempting to allocate one physical page 100000 times.");
 
     for i in 0..100000 {
-        core::mem::forget(pmem::Page::allocate().expect("cannot allocate page"));
-        println!("round {}", i);
+        println!("{} begin", i);
+        core::mem::forget(match pmem::Page::allocate() {
+            Ok(x) => x,
+            Err(e) => panic!("allocate failed at round {}: {:?}", i, e)
+        });
+        println!("{} end", i);
     }
     println!("Mapped and released successfully");
 

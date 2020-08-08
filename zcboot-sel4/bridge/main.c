@@ -27,7 +27,7 @@ static char allocator_mem_pool[ALLOCATOR_STATIC_POOL_SIZE];
 
 #define ZCDAEMON_BADGE_GETCAP 0x10
 #define ZCDAEMON_BADGE_PUTCHAR 0x11
-#define ZCDAEMON_BADGE_ALLOC_FRAME 0x12
+#define ZCDAEMON_BADGE_ALLOC_UNTYPED 0x12
 #define ZCDAEMON_BADGE_ALLOC_CNODE 0x13
 
 void load_zc();
@@ -118,7 +118,10 @@ int prepare_ipc_buffer(sel4utils_process_t *process) {
 void free_cptr_for_object(vka_object_t *obj) {
     cspacepath_t path;
     vka_cspace_make_path(&vka, obj->cptr, &path);
-    seL4_CNode_Delete(path.root, path.capPtr, path.capDepth);
+    int error = seL4_CNode_Delete(path.root, path.capPtr, path.capDepth);
+    if(error) {
+        printf("failed to delete cnode\n");
+    }
     vka_cspace_free(&vka, obj->cptr);
 }
 
@@ -159,7 +162,7 @@ void load_zc() {
     // Caps.
     seL4_Word child_getcap_cptr = setup_ipc(&new_process, &ep_object, ZCDAEMON_BADGE_GETCAP);
     seL4_Word child_putchar_cptr = setup_ipc(&new_process, &ep_object, ZCDAEMON_BADGE_PUTCHAR);
-    seL4_Word child_alloc_frame_cptr = setup_ipc(&new_process, &ep_object, ZCDAEMON_BADGE_ALLOC_FRAME);
+    seL4_Word child_alloc_untyped_cptr = setup_ipc(&new_process, &ep_object, ZCDAEMON_BADGE_ALLOC_UNTYPED);
     seL4_Word child_alloc_cnode_cptr = setup_ipc(&new_process, &ep_object, ZCDAEMON_BADGE_ALLOC_CNODE);
 
     const int ARG_MAX_LEN_WITHOUT_TERM = 31;
@@ -199,8 +202,8 @@ void load_zc() {
 
                 if(strcmp(name, "putchar") == 0) {
                     seL4_SetMR(0, child_putchar_cptr);
-                } else if(strcmp(name, "alloc_frame") == 0) {
-                    seL4_SetMR(0, child_alloc_frame_cptr);
+                } else if(strcmp(name, "alloc_untyped") == 0) {
+                    seL4_SetMR(0, child_alloc_untyped_cptr);
                 } else if(strcmp(name, "alloc_cnode") == 0) {
                     seL4_SetMR(0, child_alloc_cnode_cptr);
                 } else {
@@ -221,24 +224,39 @@ void load_zc() {
                 seL4_Reply(seL4_MessageInfo_new(0, 0, 0, 0));
                 break;
             }
-            case ZCDAEMON_BADGE_ALLOC_FRAME: {
-                if(seL4_MessageInfo_get_length(tag) != 0) {
-                    ZF_LOGI("ZCDAEMON_BADGE_ALLOC_FRAME: Bad tag length");
-                    break;
-                }
-                vka_object_t frame;
-                error = vka_alloc_frame(&vka, seL4_PageBits, &frame);
-                if(error) {
+            case ZCDAEMON_BADGE_ALLOC_UNTYPED: {
+                if(seL4_MessageInfo_get_length(tag) != 1) {
+                    ZF_LOGE("ZCDAEMON_BADGE_ALLOC_UNTYPED: Bad tag length");
                     seL4_Reply(seL4_MessageInfo_new(1, 0, 0, 0));
                     break;
                 }
-                seL4_SetCap(0, frame.cptr);
-                seL4_SetMR(0, vka_object_paddr(&vka, &frame));
+
+                uint32_t bits = seL4_GetMR(0);
+
+                seL4_CPtr frame_cptr;
+                cspacepath_t frame_path;
+
+                error = vka_cspace_alloc(&vka, &frame_cptr);
+                if(error) {
+                    ZF_LOGE("ZCDAEMON_BADGE_ALLOC_UNTYPED: vka_cspace_alloc");
+                    seL4_Reply(seL4_MessageInfo_new(1, 0, 0, 0));
+                    break;
+                }
+
+                vka_cspace_make_path(&vka, frame_cptr, &frame_path);
+                seL4_Word cookie = allocman_utspace_alloc(allocman, bits, seL4_UntypedObject, &frame_path, 0, &error);
+                if(error) {
+                    //ZF_LOGE("ZCDAEMON_BADGE_ALLOC_UNTYPED: allocman_utspace_alloc");
+                    seL4_Reply(seL4_MessageInfo_new(1, 0, 0, 0));
+                    break;
+                }
+
+                seL4_SetCap(0, frame_cptr);
+                seL4_SetMR(0, allocman_utspace_paddr(allocman, cookie, bits));
                 seL4_Reply(seL4_MessageInfo_new(0, 0, 1, 1));
 
-                // We cannot free the underlying memory for the object.
-                // Instead, free the CPtr only.
-                free_cptr_for_object(&frame);
+                seL4_CNode_Delete(frame_path.root, frame_path.capPtr, frame_path.capDepth);
+                vka_cspace_free(&vka, frame_cptr);
                 break;
             }
             case ZCDAEMON_BADGE_ALLOC_CNODE: {
