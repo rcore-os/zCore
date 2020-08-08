@@ -243,11 +243,20 @@ pub struct JobInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::task::{Status, TASK_RETCODE_SYSCALL_KILL};
 
     #[test]
     fn create() {
         let root_job = Job::root();
-        let _job = Job::create_child(&root_job, 0).expect("failed to create job");
+        let job: Arc<dyn KernelObject> =
+            Job::create_child(&root_job, 0).expect("failed to create job");
+
+        assert!(Arc::ptr_eq(&root_job.get_child(job.id()).unwrap(), &job));
+        assert_eq!(job.related_koid(), root_job.id());
+        assert_eq!(root_job.related_koid(), 0);
+
+        root_job.kill();
+        assert_eq!(root_job.create_child(0).err(), Some(ZxError::BAD_STATE));
     }
 
     #[test]
@@ -333,17 +342,57 @@ mod tests {
     }
 
     #[test]
-    fn get_child() {
+    fn parent_child() {
         let root_job = Job::root();
         let job = Job::create_child(&root_job, 0).expect("failed to create job");
         let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
 
-        let root_job: Arc<dyn KernelObject> = root_job;
         assert_eq!(root_job.get_child(job.id()).unwrap().id(), job.id());
         assert_eq!(root_job.get_child(proc.id()).unwrap().id(), proc.id());
         assert_eq!(
             root_job.get_child(root_job.id()).err(),
             Some(ZxError::NOT_FOUND)
         );
+        assert!(Arc::ptr_eq(&job.parent().unwrap(), &root_job));
+
+        let job1 = root_job.create_child(0).expect("failed to create job");
+        let proc1 = Process::create(&root_job, "proc1", 0).expect("failed to create process");
+        assert_eq!(root_job.children_ids(), vec![job.id(), job1.id()]);
+        assert_eq!(root_job.process_ids(), vec![proc.id(), proc1.id()]);
+
+        root_job.kill();
+        assert_eq!(root_job.create_child(0).err(), Some(ZxError::BAD_STATE));
+    }
+
+    #[test]
+    fn check() {
+        let root_job = Job::root();
+        assert!(root_job.is_empty());
+        let job = root_job.create_child(0).expect("failed to create job");
+        assert_eq!(root_job.check_root_job(), Ok(()));
+        assert_eq!(job.check_root_job(), Err(ZxError::ACCESS_DENIED));
+
+        assert!(!root_job.is_empty());
+        assert!(job.is_empty());
+
+        let _proc = Process::create(&job, "proc", 0).expect("failed to create process");
+        assert!(!job.is_empty());
+    }
+
+    #[test]
+    fn kill() {
+        let root_job = Job::root();
+        let job = Job::create_child(&root_job, 0).expect("failed to create job");
+        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
+
+        root_job.kill();
+        assert!(root_job.inner.lock().killed);
+        assert!(root_job.signal().contains(Signal::JOB_TERMINATED));
+
+        assert!(job.inner.lock().killed);
+        assert!(job.signal().contains(Signal::JOB_TERMINATED));
+
+        assert_eq!(proc.status(), Status::Exited(TASK_RETCODE_SYSCALL_KILL));
+        assert!(proc.signal().contains(Signal::PROCESS_TERMINATED));
     }
 }
