@@ -448,7 +448,7 @@ impl Process {
             Status::Exited(ret) => {
                 info.return_code = ret;
                 info.has_exited = true;
-                info.started = false;
+                info.started = true;
             }
         }
         info
@@ -581,7 +581,10 @@ mod tests {
     #[test]
     fn create() {
         let root_job = Job::root();
-        let _proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
+        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
+
+        assert_eq!(proc.related_koid(), root_job.id());
+        assert!(Arc::ptr_eq(&root_job, &proc.job()));
     }
 
     #[test]
@@ -669,8 +672,34 @@ mod tests {
         let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
         let thread = Thread::create(&proc, "thread", 0).expect("failed to create thread");
 
-        let proc: Arc<dyn KernelObject> = proc;
         assert_eq!(proc.get_child(thread.id()).unwrap().id(), thread.id());
         assert_eq!(proc.get_child(proc.id()).err(), Some(ZxError::NOT_FOUND));
+
+        let thread1 = Thread::create(&proc, "thread1", 0).expect("failed to create thread");
+        assert_eq!(proc.thread_ids(), vec![thread.id(), thread1.id()]);
+    }
+
+    #[test]
+    fn properties() {
+        let root_job = Job::root();
+        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
+
+        proc.set_debug_addr(123);
+        assert_eq!(proc.get_debug_addr(), 123);
+
+        proc.set_dyn_break_on_load(2);
+        assert_eq!(proc.get_dyn_break_on_load(), 2);
+    }
+
+    #[test]
+    fn info() {
+        let root_job = Job::root();
+        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
+        let info = proc.get_info();
+        assert!(!info.has_exited && !info.started && info.return_code == 0);
+
+        proc.exit(666);
+        let info = proc.get_info();
+        assert!(info.has_exited && info.started && info.return_code == 666);
     }
 }

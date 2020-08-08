@@ -601,6 +601,12 @@ mod tests {
         proc.start(&thread, entry, stack_top, Some(handle.clone()), 2, spawn)
             .expect("failed to start thread");
 
+        // check info and state
+        let info = proc.get_info();
+        assert!(info.started && !info.has_exited && info.return_code==0);
+        assert_eq!(proc.status(), Status::Running);
+        assert_eq!(thread.state(), ThreadState::Running);
+
         // wait 100ms for the new thread to exit
         std::thread::sleep(core::time::Duration::from_millis(100));
 
