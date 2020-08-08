@@ -102,10 +102,10 @@ jobs:
           CARGO_INCREMENTAL: '0'
           RUSTFLAGS: '-Zprofile -Ccodegen-units=1 -Copt-level=0 -Coverflow-checks=off'
       - name: Cache tarpaulin
-          uses: actions/cache@v1
-          with:
-            path: ~/.cargo/bin/tarpaulin
-            key: ${{ runner.os }}-tarpaulin
+        uses: actions/cache@v1
+        with:
+          path: ~/.cargo/bin/tarpaulin
+          key: ${{ runner.os }}-tarpaulin
       - name: Gather coverage data
         run: |
           cargo tarpaulin -v --all-features --out Lcov --output-dir ./coverage
