@@ -1,3 +1,4 @@
+#![deny(missing_docs)]
 //! Objects for Task Management.
 
 use super::*;
@@ -26,4 +27,5 @@ pub trait Task: Sync + Send {
     fn resume(&self);
 }
 
+/// The return code set when a task is killed via zx_task_kill().
 pub const TASK_RETCODE_SYSCALL_KILL: i64 = -1024;

@@ -5,6 +5,7 @@ use {
     alloc::sync::{Arc, Weak},
 };
 
+/// Suspend the given task. Currently only thread or process handles may be suspended.
 pub struct SuspendToken {
     base: KObjectBase,
     task: Weak<dyn Task>,
@@ -13,6 +14,7 @@ pub struct SuspendToken {
 impl_kobject!(SuspendToken);
 
 impl SuspendToken {
+    /// Create a `SuspendToken` which can suspend the given task.
     pub fn create(task: &Arc<dyn Task>) -> Arc<Self> {
         task.suspend();
         Arc::new(SuspendToken {
