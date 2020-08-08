@@ -1,7 +1,7 @@
 //! Implement INode for Stdin & Stdout
 #![allow(unsafe_code)]
 
-// use super::ioctl::*;
+use super::ioctl::*;
 use alloc::collections::VecDeque;
 use alloc::sync::Arc;
 use core::any::Any;
@@ -68,17 +68,17 @@ impl INode for Stdin {
         })
     }
     /*
-    fn io_control(&self, cmd: u32, data: usize) -> Result<()> {
+    fn io_control(&self, cmd: u32, data: usize) -> Result<usize> {
         match cmd as usize {
             TCGETS | TIOCGWINSZ | TIOCSPGRP => {
                 // pretend to be tty
-                Ok(())
+                Ok(0)
             }
             TIOCGPGRP => {
                 // pretend to be have a tty process group
                 // TODO: verify pointer
                 unsafe { *(data as *mut u32) = 0 };
-                Ok(())
+                Ok(0)
             }
             _ => Err(FsError::NotSupported),
         }
@@ -106,23 +106,21 @@ impl INode for Stdout {
             error: false,
         })
     }
-    /*
-    fn io_control(&self, cmd: u32, data: usize) -> Result<()> {
+    fn io_control(&self, cmd: u32, data: usize) -> Result<usize> {
         match cmd as usize {
             TCGETS | TIOCGWINSZ | TIOCSPGRP => {
                 // pretend to be tty
-                Ok(())
+                Ok(0)
             }
             TIOCGPGRP => {
                 // pretend to be have a tty process group
                 // TODO: verify pointer
                 unsafe { *(data as *mut u32) = 0 };
-                Ok(())
+                Ok(0)
             }
             _ => Err(FsError::NotSupported),
         }
     }
-    */
     fn as_any_ref(&self) -> &dyn Any {
         self
     }
