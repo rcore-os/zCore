@@ -1,6 +1,6 @@
 use crate::{types::*, error::*};
 use crate::sys;
-use crate::cap;
+use crate::cap::{self, CriticalBufferUsage};
 use alloc::collections::btree_map::BTreeMap;
 use alloc::vec::Vec;
 use crate::sync::YieldMutex;
@@ -63,29 +63,27 @@ impl PhysicalMemory {
                         }
                         drop(regions);
                         if critical_used {
-                            println!("Begin refill."); // DEADLOCKS HERE (re-entry)
-                            cap::G.refill_critical_buffer().unwrap();
-                            println!("End refill.");
+                            cap::G.refill_critical_buffer().expect("alloc_region: out of memory for critical buffers");
                         }
                         break Ok(subregion);
                     } else {
-                        //println!("case 2");
-                        critical_used = true;
-                        let dst_0 = cap::G.do_allocate(true).expect("alloc_region: cannot allocate cap");
-                        let dst_1 = cap::G.do_allocate(true).expect("alloc_region: cannot allocate cap");
+                        let (dst_0, usage_0) = cap::G.allocate_critical_mt().expect("alloc_region: cannot allocate cap");
+                        let (dst_1, usage_1) = cap::G.allocate_critical_mt().expect("alloc_region: cannot allocate cap");
+                        match (usage_0, usage_1) {
+                            (CriticalBufferUsage::Unused, CriticalBufferUsage::Unused) => {},
+                            _ => {
+                                critical_used = true;
+                            }
+                        }
                         let subregion = subregions.pop().expect("alloc_region: no subregion");
                         if subregions.len() == 0 {
                             regions.remove(&min_bits);
                         }
 
-                        //println!("case 2 - 1");
-
                         let err = sys::locked(|| unsafe { sys::l4bridge_split_untyped(subregion.cap, subregion.size_bits as i32, dst_0, dst_1) });
                         if err != 0 {
                             panic!("alloc_region: cannot split subregion");
                         }
-
-                        //println!("case 2 - 2");
 
                         let mut entry = regions.entry(subregion.size_bits - 1).or_insert(Vec::new());
                         entry.push(PhysicalRegion {

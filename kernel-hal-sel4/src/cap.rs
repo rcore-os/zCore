@@ -4,6 +4,7 @@ use crate::sync::YieldMutex;
 use crate::error::*;
 use crate::sys;
 use crate::pmem::{PhysicalRegion, PMEM};
+use crate::thread::yield_now;
 
 const CAP_BASE: usize = 64;
 const TOPLEVEL_BITS: u8 = 12;
@@ -16,6 +17,12 @@ pub struct CapAlloc {
     slab: YieldMutex<Slab<()>>,
     critical_buffer: YieldMutex<Option<PhysicalRegion>>,
     toplevel_usage: YieldMutex<[bool; TOPLEVEL_SIZE]>
+}
+
+#[derive(Copy, Clone, Debug)]
+pub enum CriticalBufferUsage {
+    Unused,
+    Used,
 }
 
 impl CapAlloc {
@@ -34,21 +41,21 @@ impl CapAlloc {
         PMEM.alloc_region(object_bits)
     }
 
-    fn ensure_cslot(&self, cptr: CPtr, critical: bool) -> KernelResult<()> {
+    fn ensure_cslot(&self, cptr: CPtr, critical: bool) -> KernelResult<CriticalBufferUsage> {
         let index = (cptr.0 >> SECONDLEVEL_BITS) & (TOPLEVEL_SIZE - 1);
-        //println!("ensure_cslot {} {}", critical, index);
         let mut toplevel_usage = self.toplevel_usage.lock();
         if !toplevel_usage[index] {
+            let crit_buf_usage: CriticalBufferUsage;
             let region = if critical {
-                println!("Taking critical region.");
-                self.critical_buffer.lock().take().expect("ensure_cslot: empty critical buffer")
+                crit_buf_usage = CriticalBufferUsage::Used;
+                match self.critical_buffer.lock().take() {
+                    Some(x) => x,
+                    None => return Err(KernelError::Retry)
+                }
             } else {
-                println!("Not taking critical region.");
+                crit_buf_usage = CriticalBufferUsage::Unused;
                 Self::allocate_physical_region()?
             };
-            println!("Got region.");
-
-            //println!("ensure_cslot 1");
             let err = sys::locked(|| unsafe { sys::l4bridge_retype_and_mount_cnode(
                 region.cap,
                 SECONDLEVEL_BITS as i32,
@@ -58,28 +65,40 @@ impl CapAlloc {
                 panic!("ensure_cslot: cannot retype cnode");
             }
             toplevel_usage[index] = true;
-            println!("CNode mounted.");
-
-            //println!("ensure_cslot 2");
-            Ok(())
+            Ok(crit_buf_usage)
         } else {
-
-            //println!("ensure_cslot .");
-            Ok(())
+            Ok(CriticalBufferUsage::Unused)
         }
     }
 
-    pub fn do_allocate(&self, critical: bool) -> KernelResult<CPtr> {
+    fn do_allocate(&self, critical: bool) -> KernelResult<(CPtr, CriticalBufferUsage)> {
         let mut slab = self.slab.lock();
         let index = slab.insert(());
         let cap = CPtr(index + CAP_BASE);
-        drop(slab);
-        self.ensure_cslot(cap, critical)?;
-        Ok(cap)
+        let crit_buf_usage = self.ensure_cslot(cap, critical)?;
+        Ok((cap, crit_buf_usage))
     }
 
     pub fn allocate(&self) -> KernelResult<CPtr> {
-        self.do_allocate(false)
+        self.do_allocate(false).map(|x| x.0)
+    }
+
+    pub fn allocate_critical_mt(&self) -> KernelResult<(CPtr, CriticalBufferUsage)> {
+        // Retry until we successfully allocate a CPtr.
+        //
+        // This is required since when multiple threads call `allocate_critical_mt` really
+        // fast, `refill_critical_buffer` may be needed from multiple threads but only called
+        // on one of them. In that case we need to wait until it is actually called.
+        for _ in 0..10000 {
+            match self.do_allocate(true) {
+                Ok(x) => return Ok(x),
+                Err(KernelError::Retry) => {
+                    yield_now();
+                },
+                Err(e) => return Err(e),
+            }
+        }
+        panic!("allocate_critical_mt failed after many retries");
     }
 
     pub fn refill_critical_buffer(&self) -> KernelResult<()> {
