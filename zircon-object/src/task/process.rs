@@ -86,10 +86,14 @@ struct ProcessInner {
     critical_to_job: Option<(Arc<Job>, bool)>,
 }
 
+/// Status of a process.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum Status {
+    /// Initial state, no thread present in process.
     Init,
+    /// First thread has started and is running.
     Running,
+    /// Process has exited with the code.
     Exited(i64),
 }
 
@@ -286,6 +290,7 @@ impl Process {
             .collect()
     }
 
+    /// Remove a handle referring to a kernel object of the given type from the process.
     pub fn remove_object<T: KernelObject>(&self, handle_value: HandleValue) -> ZxResult<Arc<T>> {
         let handle = self.remove_handle(handle_value)?;
         let object = handle
@@ -350,6 +355,7 @@ impl Process {
         Ok(object)
     }
 
+    /// Get the kernel object corresponding to this `handle_value` and this handle's rights.
     pub fn get_object_and_rights<T: KernelObject>(
         &self,
         handle_value: HandleValue,
@@ -363,6 +369,8 @@ impl Process {
         Ok((object, handle.rights))
     }
 
+    /// Get the kernel object corresponding to this `handle_value`,
+    /// after checking that this handle has the `desired_rights`.
     pub fn get_dyn_object_with_rights(
         &self,
         handle_value: HandleValue,
@@ -376,6 +384,7 @@ impl Process {
         Ok(handle.object)
     }
 
+    /// Get the kernel object corresponding to this `handle_value` and this handle's rights.
     pub fn get_dyn_object_and_rights(
         &self,
         handle_value: HandleValue,
@@ -394,6 +403,7 @@ impl Process {
         Ok(object)
     }
 
+    /// Get the handle's information corresponding to `handle_value`.
     pub fn get_handle_info(&self, handle_value: HandleValue) -> ZxResult<HandleBasicInfo> {
         let handle = self.get_handle(handle_value)?;
         Ok(handle.get_info())
@@ -421,6 +431,7 @@ impl Process {
         }
     }
 
+    /// Get information of this process.
     pub fn get_info(&self) -> ProcessInfo {
         let mut info = ProcessInfo::default();
         // TODO correct debugger_attached setting
@@ -443,30 +454,39 @@ impl Process {
         info
     }
 
+    /// Set the debug address.
     pub fn set_debug_addr(&self, addr: usize) {
         self.inner.lock().debug_addr = addr;
     }
 
+    /// Get the debug address.
     pub fn get_debug_addr(&self) -> usize {
         self.inner.lock().debug_addr
     }
 
+    /// Get whether the dynamic loader will issue a debug trap on every load of a
+    /// shared library.
     pub fn set_dyn_break_on_load(&self, addr: usize) {
         self.inner.lock().dyn_break_on_load = addr;
     }
 
+    /// Set whether the dynamic loader will issue a debug trap on every load of a
+    /// shared library
     pub fn get_dyn_break_on_load(&self) -> usize {
         self.inner.lock().dyn_break_on_load
     }
 
+    /// Get an one-shot `Receiver` for receiving cancel message of the given handle.
     pub fn get_cancel_token(&self, handle_value: HandleValue) -> ZxResult<Receiver<()>> {
         self.inner.lock().get_cancel_token(handle_value)
     }
 
+    /// Get the exceptionate of this process.
     pub fn get_exceptionate(&self) -> Arc<Exceptionate> {
         self.exceptionate.clone()
     }
 
+    /// Get the debug exceptionate of this process.
     pub fn get_debug_exceptionate(&self) -> Arc<Exceptionate> {
         self.debug_exceptionate.clone()
     }
@@ -541,6 +561,8 @@ impl ProcessInner {
     }
 }
 
+/// Information of a process.
+#[allow(missing_docs)]
 #[repr(C)]
 #[derive(Default)]
 pub struct ProcessInfo {
