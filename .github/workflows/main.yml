@@ -101,19 +101,15 @@ jobs:
         env:
           CARGO_INCREMENTAL: '0'
           RUSTFLAGS: '-Zprofile -Ccodegen-units=1 -Copt-level=0 -Coverflow-checks=off'
-      - name: Cache grcov
-        uses: actions/cache@v1
-        with:
-          path: ~/.cargo/bin/grcov
-          key: ${{ runner.os }}-grcov
       - name: Gather coverage data
-        id: coverage
-        uses: actions-rs/grcov@v0.1
+        run: |
+          cargo install cargo-tarpaulin
+          cargo tarpaulin -v --all-features --out Lcov --output-dir ./coverage
+          ls coverage
       - name: Coveralls upload
         uses: coverallsapp/github-action@master
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          path-to-lcov: ${{ steps.coverage.outputs.report }}
 
   bench:
     runs-on: ubuntu-20.04
