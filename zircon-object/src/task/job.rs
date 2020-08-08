@@ -112,12 +112,16 @@ impl Job {
     ///
     /// After this call succeeds any new child process or child job will have
     /// the new effective policy applied to it.
-    pub fn set_policy_basic(&self, options: SetPolicyOptions, policys: &[BasicPolicy]) -> ZxResult {
+    pub fn set_policy_basic(
+        &self,
+        options: SetPolicyOptions,
+        policies: &[BasicPolicy],
+    ) -> ZxResult {
         let mut inner = self.inner.lock();
         if !inner.is_empty() {
             return Err(ZxError::BAD_STATE);
         }
-        for policy in policys {
+        for policy in policies {
             if self.parent_policy.get_action(policy.condition).is_some() {
                 match options {
                     SetPolicyOptions::Absolute => return Err(ZxError::ALREADY_EXISTS),

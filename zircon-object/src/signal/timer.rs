@@ -27,11 +27,12 @@ struct TimerInner {
     deadline: Option<Duration>,
 }
 
-#[derive(Debug)]
+#[repr(u32)]
+#[derive(Debug, Copy, Clone)]
 pub enum Slack {
-    Center,
-    Early,
-    Late,
+    Center = 0,
+    Early = 1,
+    Late = 2,
 }
 
 impl Timer {
