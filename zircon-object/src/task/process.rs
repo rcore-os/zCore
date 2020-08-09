@@ -343,16 +343,8 @@ impl Process {
         handle_value: HandleValue,
         desired_rights: Rights,
     ) -> ZxResult<Arc<T>> {
-        let handle = self.get_handle(handle_value)?;
-        // check type before rights
-        let object = handle
-            .object
-            .downcast_arc::<T>()
-            .map_err(|_| ZxError::WRONG_TYPE)?;
-        if !handle.rights.contains(desired_rights) {
-            return Err(ZxError::ACCESS_DENIED);
-        }
-        Ok(object)
+        self.get_dyn_object_with_rights(handle_value, desired_rights)
+            .and_then(|obj| obj.downcast_arc::<T>().map_err(|_| ZxError::WRONG_TYPE))
     }
 
     /// Get the kernel object corresponding to this `handle_value` and this handle's rights.
@@ -360,13 +352,11 @@ impl Process {
         &self,
         handle_value: HandleValue,
     ) -> ZxResult<(Arc<T>, Rights)> {
-        let handle = self.get_handle(handle_value)?;
-        // check type before rights
-        let object = handle
-            .object
+        let (object, rights) = self.get_dyn_object_and_rights(handle_value)?;
+        let object = object
             .downcast_arc::<T>()
             .map_err(|_| ZxError::WRONG_TYPE)?;
-        Ok((object, handle.rights))
+        Ok((object, rights))
     }
 
     /// Get the kernel object corresponding to this `handle_value`,
@@ -594,12 +584,19 @@ mod tests {
         let handle = Handle::new(proc.clone(), Rights::DEFAULT_PROCESS);
 
         let handle_value = proc.add_handle(handle);
+        let _info = proc.get_handle_info(handle_value).unwrap();
 
         // getting object should success
         let object: Arc<Process> = proc
             .get_object_with_rights(handle_value, Rights::DEFAULT_PROCESS)
             .expect("failed to get object");
         assert!(Arc::ptr_eq(&object, &proc));
+
+        let (object, rights) = proc
+            .get_object_and_rights::<Process>(handle_value)
+            .expect("failed to get object");
+        assert!(Arc::ptr_eq(&object, &proc));
+        assert_eq!(rights, Rights::DEFAULT_PROCESS);
 
         // getting object with an extra rights should fail.
         assert_eq!(
@@ -620,6 +617,22 @@ mod tests {
         // getting object with invalid handle should fail.
         assert_eq!(
             proc.get_object_with_rights::<Process>(handle_value, Rights::DEFAULT_PROCESS)
+                .err(),
+            Some(ZxError::BAD_HANDLE)
+        );
+
+        let handle1 = Handle::new(proc.clone(), Rights::DEFAULT_PROCESS);
+        let handle2 = Handle::new(proc.clone(), Rights::DEFAULT_PROCESS);
+
+        let handle_values = proc.add_handles(vec![handle1, handle2]);
+        let object1: Arc<Process> = proc
+            .get_object_with_rights(handle_values[0], Rights::DEFAULT_PROCESS)
+            .expect("failed to get object");
+        assert!(Arc::ptr_eq(&object1, &proc));
+
+        proc.remove_handles(&handle_values).unwrap();
+        assert_eq!(
+            proc.get_object_with_rights::<Process>(handle_values[0], Rights::DEFAULT_PROCESS)
                 .err(),
             Some(ZxError::BAD_HANDLE)
         );
@@ -692,14 +705,91 @@ mod tests {
     }
 
     #[test]
-    fn info() {
+    fn exit() {
         let root_job = Job::root();
         let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
+        let thread = Thread::create(&proc, "thread", 0).expect("failed to create thread");
+
         let info = proc.get_info();
         assert!(!info.has_exited && !info.started && info.return_code == 0);
 
         proc.exit(666);
         let info = proc.get_info();
         assert!(info.has_exited && info.started && info.return_code == 666);
+        assert_eq!(thread.state(), ThreadState::Dying);
+        // TODO: when is the thread dead?
+
+        assert_eq!(
+            Thread::create(&proc, "thread1", 0).err(),
+            Some(ZxError::BAD_STATE)
+        );
+    }
+
+    #[test]
+    fn contains_thread() {
+        let root_job = Job::root();
+        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
+        let thread = Thread::create(&proc, "thread", 0).expect("failed to create thread");
+
+        let proc1 = Process::create(&root_job, "proc1", 0).expect("failed to create process");
+        let thread1 = Thread::create(&proc1, "thread1", 0).expect("failed to create thread");
+
+        let inner = proc.inner.lock();
+        assert!(inner.contains_thread(&thread) && !inner.contains_thread(&thread1));
+    }
+
+    #[test]
+    fn critical() {
+        let root_job = Job::root();
+        let job = root_job.create_child(0).unwrap();
+        let job1 = root_job.create_child(0).unwrap();
+
+        let proc = Process::create(&job, "proc", 0).expect("failed to create process");
+
+        assert_eq!(
+            proc.set_critical_at_job(&job1, true).err(),
+            Some(ZxError::INVALID_ARGS)
+        );
+        proc.set_critical_at_job(&root_job, true).unwrap();
+        assert_eq!(
+            proc.set_critical_at_job(&job, true).err(),
+            Some(ZxError::ALREADY_BOUND)
+        );
+
+        proc.exit(666);
+        assert!(root_job.signal().contains(Signal::JOB_TERMINATED));
+    }
+
+    #[test]
+    fn check_policy() {
+        let root_job = Job::root();
+        let policy1 = BasicPolicy {
+            condition: PolicyCondition::BadHandle,
+            action: PolicyAction::Allow,
+        };
+        let policy2 = BasicPolicy {
+            condition: PolicyCondition::NewChannel,
+            action: PolicyAction::Deny,
+        };
+
+        assert!(root_job
+            .set_policy_basic(SetPolicyOptions::Absolute, &[policy1, policy2])
+            .is_ok());
+        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
+
+        assert!(proc.check_policy(PolicyCondition::BadHandle).is_ok());
+        assert!(proc.check_policy(PolicyCondition::NewProcess).is_ok());
+        assert_eq!(
+            proc.check_policy(PolicyCondition::NewChannel).err(),
+            Some(ZxError::ACCESS_DENIED)
+        );
+
+        let _job = root_job.create_child(0).unwrap();
+        assert_eq!(
+            root_job
+                .set_policy_basic(SetPolicyOptions::Absolute, &[policy1, policy2])
+                .err(),
+            Some(ZxError::BAD_STATE)
+        );
     }
 }

@@ -555,6 +555,7 @@ pub struct ThreadInfo {
 mod tests {
     use super::job::Job;
     use super::*;
+    use kernel_hal::timer_now;
     use std::sync::atomic::*;
     use std::vec;
 
@@ -603,7 +604,7 @@ mod tests {
 
         // check info and state
         let info = proc.get_info();
-        assert!(info.started && !info.has_exited && info.return_code==0);
+        assert!(info.started && !info.has_exited && info.return_code == 0);
         assert_eq!(proc.status(), Status::Running);
         assert_eq!(thread.state(), ThreadState::Running);
 
@@ -628,5 +629,51 @@ mod tests {
             proc.start(&thread1, entry, stack_top, Some(handle.clone()), 2, spawn),
             Err(ZxError::BAD_STATE)
         );
+    }
+
+    #[async_std::test]
+    async fn cancelable_blocking_run() {
+        let root_job = Job::root();
+        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
+        let thread = Thread::create(&proc, "thread", 0).expect("failed to create thread");
+
+        let handle = Handle::new(proc.clone(), Rights::DEFAULT_PROCESS);
+        let handle_value = proc.add_handle(handle);
+        let object = proc
+            .get_dyn_object_with_rights(handle_value, Rights::WAIT)
+            .unwrap();
+
+        let cancel_token = proc.get_cancel_token(handle_value).unwrap();
+        let future = object.wait_signal(Signal::READABLE);
+        let deadline = timer_now() + Duration::from_millis(20);
+        let result = thread
+            .cancelable_blocking_run(
+                future,
+                ThreadState::BlockedWaitOne,
+                deadline.into(),
+                cancel_token,
+            )
+            .await;
+        assert_eq!(result.err(), Some(ZxError::TIMED_OUT));
+
+        let cancel_token = proc.get_cancel_token(handle_value).unwrap();
+        let future = object.wait_signal(Signal::READABLE);
+        let deadline = timer_now() + Duration::from_millis(20);
+        async_std::task::spawn({
+            let proc = proc.clone();
+            async move {
+                async_std::task::sleep(Duration::from_millis(10)).await;
+                proc.remove_handle(handle_value).unwrap();
+            }
+        });
+        let result = thread
+            .cancelable_blocking_run(
+                future,
+                ThreadState::BlockedWaitOne,
+                deadline.into(),
+                cancel_token,
+            )
+            .await;
+        assert_eq!(result.err(), Some(ZxError::CANCELED));
     }
 }
