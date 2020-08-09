@@ -1,4 +1,4 @@
-static mut HEAP: Heap = Heap([0; 1048576 * 16]);
+static mut HEAP: Heap = Heap([0; 1048576 * 32]);
 static mut HEAP_TOP: usize = 0;
 const PAGE_SIZE: usize = 4096;
 
@@ -6,7 +6,7 @@ const PAGE_SIZE: usize = 4096;
 static ALLOC: dlmalloc::GlobalDlmalloc = dlmalloc::GlobalDlmalloc;
 
 #[repr(align(4096))]
-struct Heap([u8; 1048576 * 16]);
+struct Heap([u8; 1048576 * 32]);
 
 pub fn init() {
     unsafe {

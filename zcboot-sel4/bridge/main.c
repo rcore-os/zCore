@@ -20,7 +20,7 @@ vspace_t vspace;
 vka_t vka;
 static sel4utils_alloc_data_t vspace_data;
 
-#define ALLOCATOR_STATIC_POOL_SIZE BIT(23)
+#define ALLOCATOR_STATIC_POOL_SIZE BIT(21)
 static char allocator_mem_pool[ALLOCATOR_STATIC_POOL_SIZE];
 
 #define ALLOCATOR_VIRTUAL_POOL_SIZE BIT(28)

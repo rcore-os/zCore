@@ -34,17 +34,6 @@ pub unsafe fn boot() -> ! {
         result += v[v.len() - 1] as u32;
     }
     println!("result: {}", result);
-    println!("Attempting to allocate one physical page 100000 times.");
-
-    for i in 0..100000 {
-        println!("{} begin", i);
-        core::mem::forget(match pmem::Page::allocate() {
-            Ok(x) => x,
-            Err(e) => panic!("allocate failed at round {}: {:?}", i, e)
-        });
-        println!("{} end", i);
-    }
-    println!("Mapped and released successfully");
 
     loop {}
 }
