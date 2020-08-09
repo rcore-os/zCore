@@ -563,7 +563,12 @@ mod tests {
     fn create() {
         let root_job = Job::root();
         let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
-        let _thread = Thread::create(&proc, "thread", 0).expect("failed to create thread");
+        let thread = Thread::create(&proc, "thread", 0).expect("failed to create thread");
+        assert_eq!(thread.get_flags(), ThreadFlag::empty());
+
+        let thread: Arc<dyn KernelObject> = thread;
+        assert_eq!(thread.related_koid(), proc.id());
+        assert!(Arc::ptr_eq(&proc.get_child(thread.id()).unwrap(), &thread));
     }
 
     #[test]
@@ -675,5 +680,93 @@ mod tests {
             )
             .await;
         assert_eq!(result.err(), Some(ZxError::CANCELED));
+    }
+
+    #[test]
+    fn info() {
+        let root_job = Job::root();
+        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
+        let thread = Thread::create(&proc, "thread", 0).expect("failed to create thread");
+
+        let info = thread.get_thread_info();
+        assert!(info.state == thread.state() as u32 && info.wait_exception_channel_type == 0);
+        assert_eq!(
+            thread.get_thread_exception_info().err(),
+            Some(ZxError::BAD_STATE)
+        );
+    }
+
+    #[test]
+    fn read_write_state() {
+        let root_job = Job::root();
+        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
+        let thread = Thread::create(&proc, "thread", 0).expect("failed to create thread");
+
+        let mut buf = [0; 10];
+        assert_eq!(
+            thread.read_state(ThreadStateKind::General, &mut buf).err(),
+            Some(ZxError::BUFFER_TOO_SMALL)
+        );
+        assert_eq!(
+            thread.write_state(ThreadStateKind::General, &buf).err(),
+            Some(ZxError::BUFFER_TOO_SMALL)
+        );
+
+        const SIZE: usize = core::mem::size_of::<GeneralRegs>();
+        let mut buf = [0; SIZE];
+        assert!(thread
+            .read_state(ThreadStateKind::General, &mut buf)
+            .is_ok());
+        assert!(thread.write_state(ThreadStateKind::General, &buf).is_ok());
+        // TODO
+    }
+
+    #[test]
+    fn ext() {
+        let root_job = Job::root();
+        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
+        let thread = Thread::create(&proc, "thread", 0).expect("failed to create thread");
+
+        let _ext = thread.ext();
+        // TODO
+    }
+
+    #[async_std::test]
+    async fn wait_for_run() {
+        let root_job = Job::root();
+        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
+        let thread = Thread::create(&proc, "thread", 0).expect("failed to create thread");
+
+        // without suspend
+        let context = thread.wait_for_run().await;
+        thread.end_running(context);
+
+        // with suspend
+        thread.suspend();
+        thread.suspend();
+        assert_eq!(thread.state(), ThreadState::Suspended);
+        async_std::task::spawn({
+            let thread = thread.clone();
+            async move {
+                async_std::task::sleep(Duration::from_millis(10)).await;
+                thread.resume();
+                async_std::task::sleep(Duration::from_millis(10)).await;
+                thread.resume();
+            }
+        });
+        let time = timer_now();
+        let _context = thread.wait_for_run().await;
+        assert!(timer_now() - time >= Duration::from_millis(20));
+    }
+
+    #[test]
+    fn time() {
+        let root_job = Job::root();
+        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
+        let thread = Thread::create(&proc, "thread", 0).expect("failed to create thread");
+
+        assert_eq!(thread.get_time(), 0);
+        thread.time_add(10);
+        assert_eq!(thread.get_time(), 10);
     }
 }

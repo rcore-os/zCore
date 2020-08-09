@@ -433,3 +433,21 @@ impl<'a> Iterator for ExceptionateIterator<'a> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[async_std::test]
+    async fn exception() {
+        let root_job = Job::root();
+        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
+        let thread = Thread::create(&proc, "thread", 0).expect("failed to create thread");
+
+        let _exceptionate = proc.get_exceptionate();
+        let _debug_exceptionate = proc.get_debug_exceptionate();
+
+        let exception = Exception::create(thread.clone(), ExceptionType::General, None);
+        assert!(!exception.handle().await);
+    }
+}
