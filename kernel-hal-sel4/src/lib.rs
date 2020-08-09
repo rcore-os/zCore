@@ -15,6 +15,7 @@ mod sync;
 mod thread;
 mod error;
 mod pmem;
+mod vm;
 
 pub unsafe fn boot() -> ! {
     println!("Hello from seL4 kernel HAL.");
@@ -35,6 +36,29 @@ pub unsafe fn boot() -> ! {
     }
     println!("result: {}", result);
 
+/*
+    println!("Attempting to allocate one physical page 100000 times.");
+
+    for i in 0..100000 {
+        core::mem::forget(match pmem::Page::allocate() {
+            Ok(x) => x,
+            Err(e) => panic!("allocate failed at round {}: {:?}", i, e)
+        });
+    }
+    println!("Mapped and released successfully");
+*/
+
+    for i in 0..100000 {
+        vm::K.lock().allocate_region(0x100ff0000usize..0x100ff2000usize).unwrap();
+        unsafe {
+            assert_eq!(core::ptr::read_volatile(0x100ff1000usize as *mut u32), 0);
+            core::ptr::write_volatile(0x100ff1000usize as *mut u32, 10);
+            assert_eq!(core::ptr::read_volatile(0x100ff1000usize as *mut u32), 10);
+        }
+        vm::K.lock().release_region(0x100ff0000usize);
+
+    }
+    println!("Testing ok.");
     loop {}
 }
 

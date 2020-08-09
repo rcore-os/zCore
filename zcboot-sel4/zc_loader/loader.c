@@ -47,6 +47,13 @@ seL4_CPtr alloc_untyped_cptr = 0;
 seL4_CPtr alloc_cnode_cptr = 0;
 
 seL4_Word L4BRIDGE_CNODE_SLOT_BITS = seL4_SlotBits;
+seL4_Word L4BRIDGE_TCB_BITS = seL4_TCBBits;
+seL4_Word L4BRIDGE_STATIC_CAP_VSPACE = PD_SLOT;
+seL4_Word L4BRIDGE_STATIC_CAP_CSPACE = CNODE_SLOT;
+seL4_Word L4BRIDGE_PDPT_BITS = seL4_PDPTBits;
+seL4_Word L4BRIDGE_PAGEDIR_BITS = seL4_PageDirBits;
+seL4_Word L4BRIDGE_PAGETABLE_BITS = seL4_PageTableBits;
+seL4_Word L4BRIDGE_PAGE_BITS = seL4_PageBits;
 
 char fmt_hex_char(unsigned char v) {
     if(v >= 0 && v <= 9) {
@@ -186,6 +193,135 @@ int l4bridge_retype_and_mount_cnode(seL4_CPtr slot, int num_slots_bits, seL4_Wor
     if(error) return error;
 
     return 0;
+}
+
+int l4bridge_retype_tcb(seL4_CPtr src, seL4_CPtr dst) {
+    int error;
+
+    error = seL4_Untyped_Retype(
+        src, seL4_TCBObject, 0,
+        CNODE_SLOT, 0, seL4_WordBits - SECONDLEVEL_CNODE_BITS,
+        RETYPE_BUF_0_CPTR, 1
+    );
+    if(error) return error;
+
+    error = seL4_CNode_Move(
+        CNODE_SLOT, dst, seL4_WordBits,
+        CNODE_SLOT, RETYPE_BUF_0_CPTR, seL4_WordBits
+    );
+    if(error) return error;
+
+    return 0;
+}
+
+static int _l4bridge_retype_paging_object(
+    seL4_CPtr untyped,
+    seL4_CPtr out,
+    seL4_Word dst_type
+) {
+    int error;
+
+    error = seL4_Untyped_Retype(
+        untyped, dst_type, 0,
+        CNODE_SLOT, 0, seL4_WordBits - SECONDLEVEL_CNODE_BITS,
+        TEMP_CPTR, 1
+    );
+    if(error) return error;
+
+    error = seL4_CNode_Move(
+        CNODE_SLOT, out, seL4_WordBits,
+        CNODE_SLOT, TEMP_CPTR, seL4_WordBits
+    );
+    if(error) return error;
+
+    return 0;
+}
+
+int l4bridge_retype_pdpt(
+    seL4_CPtr untyped,
+    seL4_CPtr out
+) {
+    return _l4bridge_retype_paging_object(untyped, out, seL4_X86_PDPTObject);
+}
+
+int l4bridge_retype_pagedir(
+    seL4_CPtr untyped,
+    seL4_CPtr out
+) {
+    return _l4bridge_retype_paging_object(untyped, out, seL4_X86_PageDirectoryObject);
+}
+
+int l4bridge_retype_pagetable(
+    seL4_CPtr untyped,
+    seL4_CPtr out
+) {
+    return _l4bridge_retype_paging_object(untyped, out, seL4_X86_PageTableObject);
+}
+
+int l4bridge_retype_page(
+    seL4_CPtr untyped,
+    seL4_CPtr out
+) {
+    return _l4bridge_retype_paging_object(untyped, out, seL4_X86_4K);
+}
+
+int l4bridge_map_pdpt(
+    seL4_CPtr slot,
+    seL4_CPtr vspace,
+    seL4_Word vaddr
+) {
+    return seL4_X86_PDPT_Map(
+        slot, vspace, vaddr, seL4_X86_Default_VMAttributes
+    );
+}
+
+int l4bridge_map_pagedir(
+    seL4_CPtr slot,
+    seL4_CPtr vspace,
+    seL4_Word vaddr
+) {
+    return seL4_X86_PageDirectory_Map(
+        slot, vspace, vaddr, seL4_X86_Default_VMAttributes
+    );
+}
+
+int l4bridge_map_pagetable(
+    seL4_CPtr slot,
+    seL4_CPtr vspace,
+    seL4_Word vaddr
+) {
+    return seL4_X86_PageTable_Map(
+        slot, vspace, vaddr, seL4_X86_Default_VMAttributes
+    );
+}
+
+int l4bridge_map_page(
+    seL4_CPtr slot,
+    seL4_CPtr vspace,
+    seL4_Word vaddr,
+    int attributes
+) {
+    return seL4_X86_Page_Map(
+        slot, vspace, vaddr, seL4_AllRights, seL4_X86_Default_VMAttributes
+    );
+}
+
+int l4bridge_create_kthread(
+    seL4_CPtr slot,
+    seL4_Word ipc_buffer_vaddr, seL4_CPtr ipc_buffer_cap,
+    seL4_Word entry, seL4_Word entry_data
+) {
+    int error;
+    
+    error = seL4_TCB_Configure(
+        slot,
+        seL4_CapNull, // TODO: Fault endpoint
+        CNODE_SLOT, 0, PD_SLOT, 0,
+        ipc_buffer_vaddr, ipc_buffer_cap
+    );
+    if(error) return error;
+
+    return 1;
 }
 
 void l4bridge_delete_cap(seL4_CPtr slot) {

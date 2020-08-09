@@ -12,3 +12,4 @@ bitflags = { version = "1.2", default-features = false }
 kernel-hal = { path = "../kernel-hal" }
 dlmalloc = { git = "https://github.com/losfair/dlmalloc-rs", branch = "rcore-soc", features = ["global", "external"] }
 slab = { git = "https://github.com/losfair/slab", branch = "no-std" }
+lazy_static = { version = "1.4", features = ["spin_no_std" ] }

@@ -103,7 +103,7 @@ impl PhysicalMemory {
         }
     }
 
-    fn release_region(&self, region: PhysicalRegion) {
+    pub unsafe fn release_region(&self, region: PhysicalRegion) {
         self.regions.lock().entry(region.size_bits).or_insert(Vec::new()).push(region);
     }
 }
@@ -114,17 +114,61 @@ pub fn init() {
 
 pub struct Page {
     region: PhysicalRegion,
+    frame: CPtr,
 }
 
 impl Page {
+    pub fn bits() -> u8 {
+        unsafe {
+            sys::L4BRIDGE_PAGE_BITS as u8
+        }
+    }
+
+    pub fn check_address_aligned(addr: usize) -> KernelResult<()> {
+        if addr & ((1 << Self::bits()) - 1) != 0 {
+            Err(KernelError::MisalignedAddress)
+        } else {
+            Ok(())
+        }
+    }
+
     pub fn allocate() -> KernelResult<Self> {
-        let region = PMEM.alloc_region(12)?;
-        Ok(Page { region })
+        let region = PMEM.alloc_region(Self::bits())?;
+        let frame = match cap::G.allocate() {
+            Ok(x) => x,
+            Err(e) => {
+                unsafe {
+                    PMEM.release_region(region);
+                }
+                return Err(e);
+            }
+        };
+        if unsafe {
+            sys::l4bridge_retype_page(region.cap, frame)
+        } != 0 {
+            panic!("Page::allocate: failed to retype page");
+        }
+        Ok(Page { region, frame })
+    }
+
+    pub fn region(&self) -> &PhysicalRegion {
+        &self.region
+    }
+
+    pub fn frame(&self) -> CPtr {
+        self.frame
     }
 }
 
 impl Drop for Page {
     fn drop(&mut self) {
-        PMEM.release_region(self.region);
+        unsafe {
+            sys::l4bridge_delete_cap(self.frame);
+
+            // FIXME: When the capability is leaked we get a deadlock. This shouldn't happen.
+            cap::G.release(self.frame);
+
+            PMEM.release_region(self.region);
+        }
     }
 }
