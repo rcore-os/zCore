@@ -93,7 +93,9 @@ impl Syscall<'_> {
     pub fn sys_times(&mut self, mut buf: UserOutPtr<Tms>) -> SysResult {
         info!("times: buf: {:?}", buf);
 
-        let tick = (TimeVal::new().sec * 1_000_000 + TimeVal::new().usec) / USEC_PER_TICK;
+        let tv = TimeVal::new();
+
+        let tick = (tv.sec * 1_000_000 + tv.usec) / USEC_PER_TICK;
 
         let new_buf = Tms {
             tms_utime: 0,

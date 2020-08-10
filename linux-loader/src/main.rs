@@ -51,7 +51,7 @@ fn init_logger() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{fs,io};
+    use std::{fs, io};
 
     /// test with cmd line
     async fn test(cmdline: &str) {
@@ -92,13 +92,13 @@ mod tests {
 
     #[async_std::test]
     async fn test_create_remove_file() {
-        fs::read("../rootfs/test").unwrap_err();
-        test("/bin/busybox touch test").await;
-        fs::read("../rootfs/test").unwrap();
-        test("/bin/busybox touch test").await;
-        fs::read("../rootfs/test").unwrap();
-        test("/bin/busybox rm test").await;
-        fs::read("../rootfs/test").unwrap_err();
+        fs::read("../rootfs/testfile").unwrap_err();
+        test("/bin/busybox touch testfile").await;
+        fs::read("../rootfs/testfile").unwrap();
+        test("/bin/busybox touch testfile").await;
+        fs::read("../rootfs/testfile").unwrap();
+        test("/bin/busybox rm testfile").await;
+        fs::read("../rootfs/testfile").unwrap_err();
     }
 
     #[async_std::test]
@@ -146,5 +146,10 @@ mod tests {
         let str = fs::read_to_string("../rootfs/testpipe.txt").unwrap();
         io::stdout().write(str.as_bytes()).unwrap();
         test("/bin/busybox rm testpipe.txt").await;
+    }
+
+    #[async_std::test]
+    async fn test_time() {
+        test("/bin/testtime").await;
     }
 }
