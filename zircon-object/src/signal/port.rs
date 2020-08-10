@@ -36,7 +36,7 @@ struct PortInner {
     interrupt_pid: u64,
 }
 
-#[derive(Default, Debug)]
+#[derive(Debug)]
 struct PortInterruptPacket {
     timestamp: i64,
     key: u64,
@@ -56,12 +56,12 @@ impl From<PortInterruptPacket> for PacketInterrupt {
 
 impl Port {
     /// Create a new `Port`.
-    pub fn new(options: u32) -> Arc<Self> {
-        Arc::new(Port {
+    pub fn new(options: u32) -> ZxResult<Arc<Self>> {
+        Ok(Arc::new(Port {
             base: KObjectBase::default(),
-            options: PortOptions::from_bits_truncate(options),
+            options: PortOptions::from_bits(options).ok_or(ZxError::INVALID_ARGS)?,
             inner: Mutex::default(),
-        })
+        }))
     }
 
     /// Push a `packet` into the port.
@@ -106,7 +106,8 @@ impl Port {
         inner.interrupt_grave.remove(&pid)
     }
 
-    /// Asynchronous wait until at least one packet is available, then take out all packets.
+    /// Asynchronous wait until at least one packet is available, then take out the earliest
+    /// (in FIFO order) available packet.
     pub async fn wait(self: &Arc<Self>) -> PortPacket {
         let object = self.clone() as Arc<dyn KernelObject>;
         loop {
@@ -146,14 +147,18 @@ impl Port {
         self.inner.lock().queue.len()
     }
 
+    /// Check whether the port can be bound to an interrupt.
     pub fn can_bind_to_interrupt(&self) -> bool {
         self.options.contains(PortOptions::BIND_TO_INTERUPT)
     }
 }
 
 bitflags! {
+    /// If you need this port to be bound to an interrupt, pass **BIND_TO_INTERRUPT** to *options*,
+    /// otherwise it should be **0**.
     pub struct PortOptions: u32 {
         #[allow(clippy::identity_op)]
+        /// Allow this port to be bound to an interrupt.
         const BIND_TO_INTERUPT         = 1 << 0;
     }
 }
@@ -163,13 +168,20 @@ mod tests {
     use super::*;
     use std::time::Duration;
 
+    #[test]
+    fn new() {
+        assert!(Port::new(0).is_ok());
+        assert!(Port::new(1).is_ok());
+        assert_eq!(Port::new(2).unwrap_err(), ZxError::INVALID_ARGS);
+    }
+
     #[async_std::test]
     async fn wait() {
-        let port = Port::new(0);
+        let port = Port::new(0).unwrap();
         let object = DummyObject::new() as Arc<dyn KernelObject>;
         object.send_signal_to_port_async(Signal::READABLE, &port, 1);
 
-        let packet2 = PortPacketRepr {
+        let packet_repr2 = PortPacketRepr {
             key: 2,
             status: ZxError::OK,
             data: PayloadRepr::Signal(PacketSignal {
@@ -183,7 +195,7 @@ mod tests {
         async_std::task::spawn({
             let port = port.clone();
             let object = object.clone();
-            let packet2 = packet2.clone();
+            let packet2 = packet_repr2.clone();
             async move {
                 // Assert an irrelevant signal to test the `false` branch of the callback for `READABLE`.
                 object.signal_set(Signal::USER_SIGNAL_0);
@@ -209,10 +221,10 @@ mod tests {
         assert_eq!(PortPacketRepr::from(&packet), packet_repr);
 
         let packet = port.wait().await;
-        assert_eq!(PortPacketRepr::from(&packet), packet2);
+        assert_eq!(PortPacketRepr::from(&packet), packet_repr2);
 
         // Test asserting signal before `send_signal_to_port_async`.
-        let port = Port::new(0);
+        let port = Port::new(0).unwrap();
         let object = DummyObject::new() as Arc<dyn KernelObject>;
         object.signal_set(Signal::READABLE);
         object.send_signal_to_port_async(Signal::READABLE, &port, 1);
