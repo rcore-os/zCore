@@ -51,7 +51,7 @@ fn init_logger() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{fs, io};
+    use std::fs;
 
     /// test with cmd line
     async fn test(cmdline: &str) {
@@ -92,6 +92,7 @@ mod tests {
 
     #[async_std::test]
     async fn test_create_remove_file() {
+        test("/bin/busybox rm testfile").await; // can't remove
         fs::read("../rootfs/testfile").unwrap_err();
         test("/bin/busybox touch testfile").await;
         fs::read("../rootfs/testfile").unwrap();
@@ -103,6 +104,7 @@ mod tests {
 
     #[async_std::test]
     async fn test_create_remove_dir() {
+        test("/bin/busybox rmdir test").await; // can't remove
         fs::read_dir("../rootfs/test").unwrap_err();
         test("/bin/busybox mkdir test").await;
         fs::read_dir("../rootfs/test").unwrap();
@@ -113,10 +115,12 @@ mod tests {
     #[async_std::test]
     async fn test_readfile() {
         test("/bin/busybox cat /etc/profile").await;
+        test("/bin/busybox cat /etc/profila").await; // can't open
     }
 
     #[async_std::test]
     async fn test_cp_mv() {
+        test("/bin/busybox cp /etc/hostnama /etc/hostname.bak").await; // can't move
         fs::read("../rootfs/etc/hostname.bak").unwrap_err();
         test("/bin/busybox cp /etc/hostname /etc/hostname.bak").await;
         fs::read("../rootfs/etc/hostname.bak").unwrap();
@@ -126,6 +130,7 @@ mod tests {
 
     #[async_std::test]
     async fn test_link() {
+        test("/bin/busybox ln /etc/hostnama /etc/hostname.ln").await; // can't ln
         fs::read("../rootfs/etc/hostname.ln").unwrap_err();
         test("/bin/busybox ln /etc/hostname /etc/hostname.ln").await;
         fs::read("../rootfs/etc/hostname.ln").unwrap();
@@ -143,8 +148,8 @@ mod tests {
     #[async_std::test]
     async fn test_pipe() {
         test("/bin/testpipe1").await;
-        let str = fs::read_to_string("../rootfs/testpipe.txt").unwrap();
-        io::stdout().write(str.as_bytes()).unwrap();
+        let string = fs::read_to_string("../rootfs/testpipe.txt").unwrap();
+        assert_eq!(string, String::from("hello pipe\n"));
         test("/bin/busybox rm testpipe.txt").await;
     }
 
