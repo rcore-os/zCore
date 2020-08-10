@@ -1,7 +1,9 @@
-#include<sys/types.h>
-#include<unistd.h>
-#include<stdio.h>
-#include<string.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <stdio.h>
+#include <string.h>
 #include <stdlib.h>
 
 int main()
@@ -29,10 +31,12 @@ int main()
     else if(pid > 0)
     {	
        close(pipefd[1]);
+       int fd = open("testpipe.txt", O_WRONLY | O_CREAT);
        while (read(pipefd[0], &buf, 1) > 0)
-          write(STDOUT_FILENO, &buf, 1);
-       write(STDOUT_FILENO, "\n", 1);
+          write(fd, &buf, 1);
+       write(fd, "\n", 1);
        close(pipefd[0]);  
+       close(fd);
     }
     return 0;
 }

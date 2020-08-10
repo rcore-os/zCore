@@ -51,6 +51,7 @@ fn init_logger() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{fs,io};
 
     /// test with cmd line
     async fn test(cmdline: &str) {
@@ -91,14 +92,22 @@ mod tests {
 
     #[async_std::test]
     async fn test_create_remove_file() {
+        fs::read("../rootfs/test").unwrap_err();
         test("/bin/busybox touch test").await;
+        fs::read("../rootfs/test").unwrap();
+        test("/bin/busybox touch test").await;
+        fs::read("../rootfs/test").unwrap();
         test("/bin/busybox rm test").await;
+        fs::read("../rootfs/test").unwrap_err();
     }
 
     #[async_std::test]
     async fn test_create_remove_dir() {
+        fs::read_dir("../rootfs/test").unwrap_err();
         test("/bin/busybox mkdir test").await;
+        fs::read_dir("../rootfs/test").unwrap();
         test("/bin/busybox rmdir test").await;
+        fs::read_dir("../rootfs/test").unwrap_err();
     }
 
     #[async_std::test]
@@ -108,14 +117,20 @@ mod tests {
 
     #[async_std::test]
     async fn test_cp_mv() {
+        fs::read("../rootfs/etc/hostname.bak").unwrap_err();
         test("/bin/busybox cp /etc/hostname /etc/hostname.bak").await;
+        fs::read("../rootfs/etc/hostname.bak").unwrap();
         test("/bin/busybox mv /etc/hostname.bak /etc/hostname.mv").await;
+        fs::read("../rootfs/etc/hostname.bak").unwrap_err();
     }
 
     #[async_std::test]
     async fn test_link() {
+        fs::read("../rootfs/etc/hostname.ln").unwrap_err();
         test("/bin/busybox ln /etc/hostname /etc/hostname.ln").await;
+        fs::read("../rootfs/etc/hostname.ln").unwrap();
         test("/bin/busybox unlink /etc/hostname.ln").await;
+        fs::read("../rootfs/etc/hostname.ln").unwrap_err();
     }
 
     #[async_std::test]
@@ -128,5 +143,8 @@ mod tests {
     #[async_std::test]
     async fn test_pipe() {
         test("/bin/testpipe1").await;
+        let str = fs::read_to_string("../rootfs/testpipe.txt").unwrap();
+        io::stdout().write(str.as_bytes()).unwrap();
+        test("/bin/busybox rm testpipe.txt").await;
     }
 }
