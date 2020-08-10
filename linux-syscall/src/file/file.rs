@@ -334,7 +334,7 @@ impl Syscall<'_> {
     /// change file timestamps with nanosecond precision
     pub fn sys_utimensat(
         &mut self,
-        dirfd: usize,
+        dirfd: FileDesc,
         pathname: UserInPtr<u8>,
         times: UserInOutPtr<[TimeSpec; 2]>,
         flags: usize,
@@ -355,8 +355,8 @@ impl Syscall<'_> {
         };
         let inode = if pathname.is_null() {
             let fd = dirfd;
-            info!("futimens: fd: {}, times: {:?}", fd, times);
-            proc.get_file(fd.into())?.inode()
+            info!("futimens: fd: {:?}, times: {:?}", fd, times);
+            proc.get_file(fd)?.inode()
         } else {
             let pathname = pathname.read_cstring()?;
             info!(
@@ -368,7 +368,7 @@ impl Syscall<'_> {
                 AT_SYMLINK_NOFOLLOW => false,
                 _ => return Err(LxError::EINVAL),
             };
-            proc.lookup_inode_at(dirfd.into(), &pathname[..], follow)?
+            proc.lookup_inode_at(dirfd, &pathname[..], follow)?
         };
         let mut metadata = inode.metadata()?;
         if times[0].nsec != UTIME_OMIT {
