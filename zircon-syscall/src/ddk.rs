@@ -6,6 +6,7 @@ use {
 };
 
 impl Syscall<'_> {
+    /// Create a new object in the kernel representing an IOMMU device.
     pub fn sys_iommu_create(
         &self,
         resource: HandleValue,
@@ -22,7 +23,7 @@ impl Syscall<'_> {
         proc.get_object::<Resource>(resource)?
             .validate(ResourceKind::ROOT)?;
         if desc_size > IOMMU_MAX_DESC_LEN {
-            return Err(ZxError::INVALID_ARGS);
+           3 return Err(ZxError::INVALID_ARGS);
         }
         if desc_size != IOMMU_DESC_SIZE {
             return Err(ZxError::INVALID_ARGS);
@@ -37,7 +38,8 @@ impl Syscall<'_> {
         out.write(handle)?;
         Ok(())
     }
-
+    /// Creates a new bus transaction initiator.
+    /// iommu: HandleValue -> a handle to an IOMMU and a hardware transaction identifier for a device downstream of that IOMMU.
     pub fn sys_bti_create(
         &self,
         iommu: HandleValue,
