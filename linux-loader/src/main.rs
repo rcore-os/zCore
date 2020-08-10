@@ -90,6 +90,12 @@ mod tests {
     }
 
     #[async_std::test]
+    async fn test_create_remove_file() {
+        test("/bin/busybox touch test").await;
+        test("/bin/busybox rm test").await;
+    }
+
+    #[async_std::test]
     async fn test_create_remove_dir() {
         test("/bin/busybox mkdir test").await;
         test("/bin/busybox rmdir test").await;

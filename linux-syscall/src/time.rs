@@ -16,9 +16,9 @@ use rcore_fs::vfs::*;
 #[derive(Debug, Copy, Clone)]
 pub struct TimeSpec {
     /// seconds
-    sec: usize,
+    pub sec: usize,
     /// nano seconds
-    nsec: usize,
+    pub nsec: usize,
 }
 
 /// TimeVal struct for gettimeofday
@@ -103,6 +103,8 @@ impl Syscall<'_> {
         };
 
         buf.write(new_buf)?;
+
+        info!("tick: {:?}", tick);
         Ok(tick as usize)
     }
 }

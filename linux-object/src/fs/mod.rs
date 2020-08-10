@@ -6,6 +6,7 @@ use rcore_fs_mountfs::MountFS;
 use rcore_fs_ramfs::RamFS;
 
 pub use self::device::*;
+pub use self::fcntl::*;
 pub use self::file::*;
 pub use self::pipe::*;
 pub use self::pseudo::*;
@@ -20,6 +21,7 @@ use downcast_rs::impl_downcast;
 use zircon_object::object::*;
 
 mod device;
+mod fcntl;
 mod file;
 mod ioctl;
 mod pipe;
