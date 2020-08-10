@@ -112,7 +112,7 @@ impl Syscall<'_> {
             Sys::FCHOWNAT => self.unimplemented("fchownat", Ok(0)),
             Sys::FACCESSAT => self.sys_faccessat(a0.into(), a1.into(), a2, a3),
             Sys::DUP3 => self.sys_dup2(a0.into(), a1.into()), // TODO: handle `flags`
-            //            Sys::PIPE2 => self.sys_pipe(a0.into()),           // TODO: handle `flags`
+            Sys::PIPE2 => self.sys_pipe(a0.into()),           // TODO: handle `flags`
             Sys::UTIMENSAT => self.unimplemented("utimensat", Ok(0)),
             Sys::COPY_FILE_RANGE => {
                 self.sys_copy_file_range(a0.into(), a1.into(), a2.into(), a3.into(), a4, a5)
@@ -245,7 +245,7 @@ impl Syscall<'_> {
             Sys::LSTAT => self.sys_lstat(a0.into(), a1.into()),
             //            Sys::POLL => self.sys_poll(a0.into(), a1, a2),
             Sys::ACCESS => self.sys_access(a0.into(), a1),
-            //            Sys::PIPE => self.sys_pipe(a0.into()),
+            Sys::PIPE => self.sys_pipe(a0.into()),
             //            Sys::SELECT => self.sys_select(a0, a1.into(), a2.into(), a3.into(), a4.into()),
             Sys::DUP2 => self.sys_dup2(a0.into(), a1.into()),
             //            Sys::ALARM => self.unimplemented("alarm", Ok(0)),
