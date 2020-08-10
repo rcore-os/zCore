@@ -151,6 +151,8 @@
 <span id="151">151</span>
 <span id="152">152</span>
 <span id="153">153</span>
+<span id="154">154</span>
+<span id="155">155</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! File descriptor operations</span>
 <span class="doccomment">//!</span>
@@ -160,6 +162,7 @@
 <span class="doccomment">//! - pipe</span>
 
 <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
+<span class="kw">use</span> <span class="ident">alloc</span>::<span class="ident">string</span>::<span class="ident">String</span>;
 
 <span class="kw">impl</span> <span class="ident">Syscall</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span> {
     <span class="doccomment">/// Opens or creates a file, depending on the flags passed to the call. Returns an integer with the file descriptor.</span>
@@ -227,42 +230,43 @@
         <span class="prelude-val">Ok</span>(<span class="ident">fd2</span>.<span class="ident">into</span>())
     }
 
-    <span class="comment">//    pub fn sys_pipe(&amp;self, fds: *mut u32) -&gt; SysResult {</span>
-    <span class="comment">//        info!(&quot;pipe: fds={:?}&quot;, fds);</span>
-    <span class="comment">//</span>
-    <span class="comment">//        let proc = self.process();</span>
-    <span class="comment">//        let fds = unsafe { self.vm().check_write_array(fds, 2)? };</span>
-    <span class="comment">//        let (read, write) = Pipe::create_pair();</span>
-    <span class="comment">//</span>
-    <span class="comment">//        let read_fd = proc.add_file(FileLike::File(File::new(</span>
-    <span class="comment">//            Arc::new(read),</span>
-    <span class="comment">//            OpenOptions {</span>
-    <span class="comment">//                read: true,</span>
-    <span class="comment">//                write: false,</span>
-    <span class="comment">//                append: false,</span>
-    <span class="comment">//                nonblock: false,</span>
-    <span class="comment">//            },</span>
-    <span class="comment">//            String::from(&quot;pipe_r:[]&quot;),</span>
-    <span class="comment">//        )));</span>
-    <span class="comment">//</span>
-    <span class="comment">//        let write_fd = proc.add_file(FileLike::File(File::new(</span>
-    <span class="comment">//            Arc::new(write),</span>
-    <span class="comment">//            OpenOptions {</span>
-    <span class="comment">//                read: false,</span>
-    <span class="comment">//                write: true,</span>
-    <span class="comment">//                append: false,</span>
-    <span class="comment">//                nonblock: false,</span>
-    <span class="comment">//            },</span>
-    <span class="comment">//            String::from(&quot;pipe_w:[]&quot;),</span>
-    <span class="comment">//        )));</span>
-    <span class="comment">//</span>
-    <span class="comment">//        fds[0] = read_fd as u32;</span>
-    <span class="comment">//        fds[1] = write_fd as u32;</span>
-    <span class="comment">//</span>
-    <span class="comment">//        info!(&quot;pipe: created rfd={} wfd={}&quot;, read_fd, write_fd);</span>
-    <span class="comment">//</span>
-    <span class="comment">//        Ok(0)</span>
-    <span class="comment">//    }</span>
+    <span class="doccomment">/// Creates a pipe, a unidirectional data channel that can be used for interprocess communication.</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_pipe</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="kw-2">mut</span> <span class="ident">fds</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span>[<span class="ident">i32</span>; <span class="number">2</span>]<span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
+        <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;pipe: fds={:?}&quot;</span>, <span class="ident">fds</span>);
+
+        <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>();
+        <span class="kw">let</span> (<span class="ident">read</span>, <span class="ident">write</span>) <span class="op">=</span> <span class="ident">Pipe</span>::<span class="ident">create_pair</span>();
+
+        <span class="kw">let</span> <span class="ident">read_fd</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">add_file</span>(<span class="ident">File</span>::<span class="ident">new</span>(
+            <span class="ident">Arc</span>::<span class="ident">new</span>(<span class="ident">read</span>),
+            <span class="ident">OpenOptions</span> {
+                <span class="ident">read</span>: <span class="bool-val">true</span>,
+                <span class="ident">write</span>: <span class="bool-val">false</span>,
+                <span class="ident">append</span>: <span class="bool-val">false</span>,
+                <span class="ident">nonblock</span>: <span class="bool-val">false</span>,
+            },
+            <span class="ident">String</span>::<span class="ident">from</span>(<span class="string">&quot;pipe_r:[]&quot;</span>),
+        ))<span class="question-mark">?</span>;
+
+        <span class="kw">let</span> <span class="ident">write_fd</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">add_file</span>(<span class="ident">File</span>::<span class="ident">new</span>(
+            <span class="ident">Arc</span>::<span class="ident">new</span>(<span class="ident">write</span>),
+            <span class="ident">OpenOptions</span> {
+                <span class="ident">read</span>: <span class="bool-val">false</span>,
+                <span class="ident">write</span>: <span class="bool-val">true</span>,
+                <span class="ident">append</span>: <span class="bool-val">false</span>,
+                <span class="ident">nonblock</span>: <span class="bool-val">false</span>,
+            },
+            <span class="ident">String</span>::<span class="ident">from</span>(<span class="string">&quot;pipe_w:[]&quot;</span>),
+        ))<span class="question-mark">?</span>;
+        <span class="ident">fds</span>.<span class="ident">write</span>([<span class="ident">read_fd</span>.<span class="ident">into</span>(), <span class="ident">write_fd</span>.<span class="ident">into</span>()])<span class="question-mark">?</span>;
+
+        <span class="macro">info</span><span class="macro">!</span>(
+            <span class="string">&quot;pipe: created rfd={:?} wfd={:?} fds={:?}&quot;</span>,
+            <span class="ident">read_fd</span>, <span class="ident">write_fd</span>, <span class="ident">fds</span>
+        );
+
+        <span class="prelude-val">Ok</span>(<span class="number">0</span>)
+    }
 }
 
 <span class="macro">bitflags</span><span class="macro">!</span> {

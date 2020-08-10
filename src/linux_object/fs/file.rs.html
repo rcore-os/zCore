@@ -200,6 +200,7 @@
 <span id="200">200</span>
 <span id="201">201</span>
 <span id="202">202</span>
+<span id="203">203</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! File handle for process</span>
 
@@ -273,7 +274,8 @@
                     <span class="prelude-val">Ok</span>(<span class="ident">read_len</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">read_len</span>),
                     <span class="prelude-val">Err</span>(<span class="ident">FsError</span>::<span class="ident">Again</span>) <span class="op">=</span><span class="op">&gt;</span> {
                         <span class="comment">//thread::yield_now();</span>
-                        <span class="macro">unimplemented</span><span class="macro">!</span>()
+                        <span class="comment">//unimplemented!()</span>
+                        <span class="self">self</span>.<span class="ident">poll</span>()<span class="question-mark">?</span>;
                     }
                     <span class="prelude-val">Err</span>(<span class="ident">err</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">err</span>.<span class="ident">into</span>()),
                 }
