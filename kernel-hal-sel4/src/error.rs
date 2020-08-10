@@ -7,6 +7,10 @@ pub enum KernelError {
     VmRegionOverlap = 4,
     MisalignedAddress = 5,
     MissingPagingParents = 6,
+    RetypeFailed = 7,
+    ResumeFailed = 8,
+    TcbFailure = 9,
+    PriorityFailure = 10,
 }
 
 pub type KernelResult<T> = Result<T, KernelError>;

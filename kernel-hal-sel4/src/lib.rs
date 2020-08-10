@@ -16,6 +16,10 @@ mod thread;
 mod error;
 mod pmem;
 mod vm;
+mod object;
+mod kt;
+
+use alloc::boxed::Box;
 
 pub unsafe fn boot() -> ! {
     println!("Hello from seL4 kernel HAL.");
@@ -40,14 +44,14 @@ pub unsafe fn boot() -> ! {
     println!("Attempting to allocate one physical page 100000 times.");
 
     for i in 0..100000 {
-        core::mem::forget(match pmem::Page::allocate() {
+        core::mem::forget(match pmem::Page::new() {
             Ok(x) => x,
             Err(e) => panic!("allocate failed at round {}: {:?}", i, e)
         });
     }
     println!("Mapped and released successfully");
 */
-
+/*
     for i in 0..100000 {
         vm::K.lock().allocate_region(0x100ff0000usize..0x100ff2000usize).unwrap();
         unsafe {
@@ -59,7 +63,15 @@ pub unsafe fn boot() -> ! {
 
     }
     println!("Testing ok.");
-    loop {}
+*/
+    kt::KernelThread::new(Box::new(|kt| {
+        loop {
+            println!("(thread)");
+        }
+    })).expect("cannot start kernel thread");
+    loop {
+        println!("(boot)");
+    }
 }
 
 #[panic_handler]

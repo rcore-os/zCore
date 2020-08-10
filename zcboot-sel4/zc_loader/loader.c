@@ -50,10 +50,12 @@ seL4_Word L4BRIDGE_CNODE_SLOT_BITS = seL4_SlotBits;
 seL4_Word L4BRIDGE_TCB_BITS = seL4_TCBBits;
 seL4_Word L4BRIDGE_STATIC_CAP_VSPACE = PD_SLOT;
 seL4_Word L4BRIDGE_STATIC_CAP_CSPACE = CNODE_SLOT;
+seL4_Word L4BRIDGE_STATIC_CAP_TCB = TCB_SLOT;
 seL4_Word L4BRIDGE_PDPT_BITS = seL4_PDPTBits;
 seL4_Word L4BRIDGE_PAGEDIR_BITS = seL4_PageDirBits;
 seL4_Word L4BRIDGE_PAGETABLE_BITS = seL4_PageTableBits;
 seL4_Word L4BRIDGE_PAGE_BITS = seL4_PageBits;
+seL4_Word L4BRIDGE_MAX_PRIO = seL4_MaxPrio;
 
 char fmt_hex_char(unsigned char v) {
     if(v >= 0 && v <= 9) {
@@ -92,6 +94,14 @@ void l4bridge_putchar(char c) {
     seL4_SetMR(0, c);
     seL4_MessageInfo_t tag = seL4_MessageInfo_new(0, 0, 0, 1);
     seL4_Call(putchar_cptr, tag);
+}
+
+void l4bridge_setup_tls(seL4_Word tls_addr, seL4_Word tls_size, seL4_Word ipc_buffer) {
+    // reference: https://wiki.osdev.org/Thread_Local_Storage
+    seL4_Word thread_area = (seL4_Word) tls_addr + tls_size - 0x1000;
+    * (seL4_Word *) thread_area = thread_area;
+    seL4_SetTLSBase(thread_area);
+    seL4_SetIPCBuffer((seL4_IPCBuffer *) ipc_buffer);
 }
 
 void print_str(const char *s) {
@@ -195,26 +205,7 @@ int l4bridge_retype_and_mount_cnode(seL4_CPtr slot, int num_slots_bits, seL4_Wor
     return 0;
 }
 
-int l4bridge_retype_tcb(seL4_CPtr src, seL4_CPtr dst) {
-    int error;
-
-    error = seL4_Untyped_Retype(
-        src, seL4_TCBObject, 0,
-        CNODE_SLOT, 0, seL4_WordBits - SECONDLEVEL_CNODE_BITS,
-        RETYPE_BUF_0_CPTR, 1
-    );
-    if(error) return error;
-
-    error = seL4_CNode_Move(
-        CNODE_SLOT, dst, seL4_WordBits,
-        CNODE_SLOT, RETYPE_BUF_0_CPTR, seL4_WordBits
-    );
-    if(error) return error;
-
-    return 0;
-}
-
-static int _l4bridge_retype_paging_object(
+static int _l4bridge_retype_fixed_size_object(
     seL4_CPtr untyped,
     seL4_CPtr out,
     seL4_Word dst_type
@@ -241,28 +232,35 @@ int l4bridge_retype_pdpt(
     seL4_CPtr untyped,
     seL4_CPtr out
 ) {
-    return _l4bridge_retype_paging_object(untyped, out, seL4_X86_PDPTObject);
+    return _l4bridge_retype_fixed_size_object(untyped, out, seL4_X86_PDPTObject);
 }
 
 int l4bridge_retype_pagedir(
     seL4_CPtr untyped,
     seL4_CPtr out
 ) {
-    return _l4bridge_retype_paging_object(untyped, out, seL4_X86_PageDirectoryObject);
+    return _l4bridge_retype_fixed_size_object(untyped, out, seL4_X86_PageDirectoryObject);
 }
 
 int l4bridge_retype_pagetable(
     seL4_CPtr untyped,
     seL4_CPtr out
 ) {
-    return _l4bridge_retype_paging_object(untyped, out, seL4_X86_PageTableObject);
+    return _l4bridge_retype_fixed_size_object(untyped, out, seL4_X86_PageTableObject);
 }
 
 int l4bridge_retype_page(
     seL4_CPtr untyped,
     seL4_CPtr out
 ) {
-    return _l4bridge_retype_paging_object(untyped, out, seL4_X86_4K);
+    return _l4bridge_retype_fixed_size_object(untyped, out, seL4_X86_4K);
+}
+
+int l4bridge_retype_tcb(
+    seL4_CPtr untyped,
+    seL4_CPtr out
+) {
+    return _l4bridge_retype_fixed_size_object(untyped, out, seL4_TCBObject);
 }
 
 int l4bridge_map_pdpt(
@@ -304,6 +302,53 @@ int l4bridge_map_page(
     return seL4_X86_Page_Map(
         slot, vspace, vaddr, seL4_AllRights, seL4_X86_Default_VMAttributes
     );
+}
+
+int l4bridge_configure_tcb(
+    seL4_CPtr tcb,
+    seL4_CPtr fault_ep,
+    seL4_CPtr cspace_root,
+    seL4_CPtr vspace_root,
+    seL4_Word ipc_buffer,
+    seL4_CPtr ipc_buffer_frame
+) {
+    return seL4_TCB_Configure(tcb, fault_ep, cspace_root, 0, vspace_root, 0, ipc_buffer, ipc_buffer_frame);
+}
+
+int l4bridge_set_priority(
+    seL4_CPtr tcb,
+    seL4_CPtr auth_tcb,
+    seL4_Word priority
+) {
+    return seL4_TCB_SetPriority(tcb, auth_tcb, priority);
+}
+
+int l4bridge_set_pc_sp(
+    seL4_CPtr tcb,
+    seL4_Word pc,
+    seL4_Word sp
+) {
+    seL4_UserContext ctx = {0};
+    ctx.rip = pc;
+    ctx.rsp = sp;
+    return seL4_TCB_WriteRegisters(tcb, 0, 0, 2, &ctx);
+}
+
+int l4bridge_get_pc_sp(
+    seL4_CPtr tcb,
+    seL4_Word *pc,
+    seL4_Word *sp
+) {
+    seL4_UserContext ctx = {0};
+    int error = seL4_TCB_ReadRegisters(tcb, 0, 0, 2, &ctx);
+    if(error) return error;
+    *pc = ctx.rip;
+    *sp = ctx.rsp;
+    return 0;
+}
+
+int l4bridge_resume(seL4_CPtr tcb) {
+    return seL4_TCB_Resume(tcb);
 }
 
 int l4bridge_create_kthread(

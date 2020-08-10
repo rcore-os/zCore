@@ -4,6 +4,7 @@ use crate::cap::{self, CriticalBufferUsage};
 use alloc::collections::btree_map::BTreeMap;
 use alloc::vec::Vec;
 use crate::sync::YieldMutex;
+use crate::object::*;
 
 pub static PMEM: PhysicalMemory = PhysicalMemory::new();
 
@@ -112,60 +113,31 @@ pub fn init() {
     PMEM.init_collect_regions();
 }
 
-pub struct Page {
-    region: PhysicalRegion,
-    frame: CPtr,
-}
-
-impl Page {
-    pub fn bits() -> u8 {
+pub struct PageBacking;
+unsafe impl ObjectBacking for PageBacking {
+    fn bits() -> u8 {
         unsafe {
             sys::L4BRIDGE_PAGE_BITS as u8
         }
     }
 
+    unsafe fn retype(untyped: CPtr, out: CPtr) -> KernelResult<()> {
+        if sys::locked(|| sys::l4bridge_retype_page(untyped, out)) != 0 {
+            Err(KernelError::RetypeFailed)
+        } else {
+            Ok(())
+        }
+    }
+}
+
+pub type Page = Object<PageBacking>;
+
+impl Page {
     pub fn check_address_aligned(addr: usize) -> KernelResult<()> {
         if addr & ((1 << Self::bits()) - 1) != 0 {
             Err(KernelError::MisalignedAddress)
         } else {
             Ok(())
-        }
-    }
-
-    pub fn allocate() -> KernelResult<Self> {
-        let region = PMEM.alloc_region(Self::bits())?;
-        let frame = match cap::G.allocate() {
-            Ok(x) => x,
-            Err(e) => {
-                unsafe {
-                    PMEM.release_region(region);
-                }
-                return Err(e);
-            }
-        };
-        if unsafe {
-            sys::l4bridge_retype_page(region.cap, frame)
-        } != 0 {
-            panic!("Page::allocate: failed to retype page");
-        }
-        Ok(Page { region, frame })
-    }
-
-    pub fn region(&self) -> &PhysicalRegion {
-        &self.region
-    }
-
-    pub fn frame(&self) -> CPtr {
-        self.frame
-    }
-}
-
-impl Drop for Page {
-    fn drop(&mut self) {
-        unsafe {
-            sys::l4bridge_delete_cap(self.frame);
-            cap::G.release(self.frame);
-            PMEM.release_region(self.region);
         }
     }
 }

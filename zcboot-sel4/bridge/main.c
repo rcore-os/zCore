@@ -152,6 +152,7 @@ void load_zc() {
     sel4utils_process_t new_process;
     sel4utils_process_config_t config = process_config_default_simple(&simple, "zcboot-sel4", seL4_MaxPrio);
     config = process_config_create_cnode(config, 12); // 4K entries
+    config = process_config_mcp(config, seL4_MaxPrio);
     error = sel4utils_configure_process_custom(&new_process, &vka, &vspace, config);
     ZF_LOGF_IFERR(error, "failed to configure process");
 

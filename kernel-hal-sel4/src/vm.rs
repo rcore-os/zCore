@@ -29,7 +29,7 @@ struct PagingStructure {
 impl Drop for PagingStructure {
     fn drop(&mut self) {
         unsafe {
-            sys::l4bridge_delete_cap(self.object);
+            sys::locked(|| sys::l4bridge_delete_cap(self.object));
             cap::G.release(self.object);
             PMEM.release_region(self.region);
         }
@@ -57,9 +57,9 @@ impl VmAlloc {
         let vspace = self.vspace;
         unsafe {
             map_level(|| {
-                match sys::l4bridge_map_page(
-                    page.frame(), vspace, vaddr, 0
-                ) {
+                match sys::locked(|| sys::l4bridge_map_page(
+                    page.object(), vspace, vaddr, 0
+                )) {
                     0 => Ok(()),
                     _ => Err(KernelError::MissingPagingParents),
                 }
@@ -67,27 +67,27 @@ impl VmAlloc {
                 let level = prepare_level(sys::L4BRIDGE_PAGETABLE_BITS as u8, sys::l4bridge_retype_pagetable)?;
                 let object = level.object;
                 self.paging_structures.push_back(level);
-                map_level(|| match sys::l4bridge_map_pagetable(
+                map_level(|| match sys::locked(|| sys::l4bridge_map_pagetable(
                     object, vspace, vaddr
-                ) {
+                )) {
                     0 => Ok(()),
                     _ => Err(KernelError::MissingPagingParents)
                 }, || {
                     let level = prepare_level(sys::L4BRIDGE_PAGEDIR_BITS as u8, sys::l4bridge_retype_pagedir)?;
                     let object = level.object;
                     self.paging_structures.push_back(level);
-                    map_level(|| match sys::l4bridge_map_pagedir(
+                    map_level(|| match sys::locked(|| sys::l4bridge_map_pagedir(
                         object, vspace, vaddr
-                    ) {
+                    )) {
                         0 => Ok(()),
                         _ => Err(KernelError::MissingPagingParents)
                     }, || {
                         let level = prepare_level(sys::L4BRIDGE_PDPT_BITS as u8, sys::l4bridge_retype_pdpt)?;
                         let object = level.object;
                         self.paging_structures.push_back(level);
-                        match sys::l4bridge_map_pdpt(
+                        match sys::locked(|| sys::l4bridge_map_pdpt(
                             object, vspace, vaddr
-                        ) {
+                        )) {
                             0 => Ok(()),
                             _ => Err(KernelError::MissingPagingParents)
                         }
@@ -107,6 +107,23 @@ impl VmAlloc {
             }
         }
         panic!("VmAlloc::release_region: cannot find region");
+    }
+
+    pub fn page_at(&self, vaddr: usize) -> Option<&Page> {
+        let vaddr = vaddr & (!((1 << Page::bits()) - 1));
+
+        // `+1` to be inclusive
+        let region = self.vm_regions.range((..vaddr + 1)).rev().next();
+
+        if let Some((_, region)) = region {
+            if region.range.end > vaddr {
+                region.pages.get(&vaddr)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
     }
 
     pub fn allocate_region(&mut self, range: Range<usize>) -> KernelResult<()> {
@@ -129,7 +146,7 @@ impl VmAlloc {
         // Try to allocate pages
         let mut pages: BTreeMap<usize, Page> = BTreeMap::new();
         for addr in (range.start..range.end).step_by(1 << Page::bits()) {
-            let page = Page::allocate()?;
+            let page = Page::new()?;
             self.map_page(&page, addr)?;
             pages.insert(addr, page);
         }
