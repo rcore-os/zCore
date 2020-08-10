@@ -70,7 +70,7 @@ impl Syscall<'_> {
         let fifo = proc.get_object_with_rights::<Fifo>(handle_value, Rights::READ)?;
         // TODO: uninit buffer
         let mut data = vec![0; elem_size * count];
-        let actual_count = fifo.read(elem_size, count, &mut data)?;
+        let actual_count = fifo.read(elem_size, &mut data, count)?;
         actual_count_ptr.write_if_not_null(actual_count)?;
         user_bytes.write_array(&data)?;
         Ok(())

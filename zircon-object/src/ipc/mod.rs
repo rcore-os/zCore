@@ -1,3 +1,4 @@
+#![deny(missing_docs)]
 //! Objects for IPC.
 
 mod channel;

@@ -11,6 +11,21 @@ use {
 };
 
 /// Bidirectional interprocess communication
+///
+/// # SYNOPSIS
+///
+/// A channel is a bidirectional transport of messages consisting of some
+/// amount of byte data and some number of handles.
+///
+/// # DESCRIPTION
+///
+/// The process of sending a message via a channel has two steps. The first is to
+/// atomically write the data into the channel and move ownership of all handles in
+/// the message into this channel. This operation always consumes the handles: at
+/// the end of the call, all handles either are all in the channel or are all
+/// discarded. The second operation, channel read, is similar: on success
+/// all the handles in the next message are atomically moved into the
+/// receiving process' handle table. On failure, the channel retains ownership.
 pub struct Channel {
     base: KObjectBase,
     _counter: CountHelper,
@@ -87,9 +102,9 @@ impl Channel {
     /// Write a packet to the channel
     pub fn write(&self, msg: T) -> ZxResult {
         let peer = self.peer.upgrade().ok_or(ZxError::PEER_CLOSED)?;
-        if msg.data.len() >= 4 {
-            // check first 4 bytes: whether it is a call reply?
-            let txid = TxID::from_ne_bytes(msg.data[..4].try_into().unwrap());
+        // check first 4 bytes: whether it is a call reply?
+        let txid = msg.get_txid();
+        if txid != 0 {
             if let Some(sender) = peer.call_reply.lock().remove(&txid) {
                 let _ = sender.send(Ok(msg));
                 return Ok(());
@@ -100,10 +115,17 @@ impl Channel {
     }
 
     /// Send a message to a channel and await a reply.
+    ///
+    /// The first four bytes of the written and read back messages are treated as a
+    /// transaction ID.  The kernel generates a txid for the
+    /// written message, replacing that part of the message as read from userspace.
+    ///
+    /// `msg.data` must have at lease a length of 4 bytes.
     pub async fn call(self: &Arc<Self>, mut msg: T) -> ZxResult<T> {
+        assert!(msg.data.len() >= 4);
         let peer = self.peer.upgrade().ok_or(ZxError::PEER_CLOSED)?;
         let txid = self.new_txid();
-        msg.data[..4].copy_from_slice(&txid.to_ne_bytes());
+        msg.set_txid(txid);
         peer.push_general(msg);
         let (sender, receiver) = oneshot::channel();
         self.call_reply.lock().insert(txid, sender);
@@ -143,10 +165,32 @@ impl Drop for Channel {
     }
 }
 
-#[derive(Default)]
+/// The message transferred in the channel.
+/// See [Channel](struct.Channel.html) for details.
+#[derive(Default, Debug)]
 pub struct MessagePacket {
+    /// The data carried by the message packet
     pub data: Vec<u8>,
+    /// See [Channel](struct.Channel.html) for details.
     pub handles: Vec<Handle>,
+}
+
+impl MessagePacket {
+    /// Set txid (the first 4 bytes)
+    pub fn set_txid(&mut self, txid: TxID) {
+        if self.data.len() >= core::mem::size_of::<TxID>() {
+            self.data[..4].copy_from_slice(&txid.to_ne_bytes());
+        }
+    }
+
+    /// Get txid (the first 4 bytes)
+    pub fn get_txid(&self) -> TxID {
+        if self.data.len() >= core::mem::size_of::<TxID>() {
+            TxID::from_ne_bytes(self.data[..4].try_into().unwrap())
+        } else {
+            0
+        }
+    }
 }
 
 #[cfg(test)]
@@ -154,6 +198,21 @@ mod tests {
     use super::*;
     use alloc::boxed::Box;
     use core::sync::atomic::*;
+    use core::time::Duration;
+
+    #[test]
+    fn test_basics() {
+        let (end0, end1) = Channel::create();
+        assert!(Arc::ptr_eq(
+            &end0.peer().unwrap().downcast_arc().unwrap(),
+            &end1
+        ));
+        assert_eq!(end0.related_koid(), end1.id());
+
+        drop(end1);
+        assert_eq!(end0.peer().unwrap_err(), ZxError::PEER_CLOSED);
+        assert_eq!(end0.related_koid(), 0);
+    }
 
     #[test]
     fn read_write() {
@@ -238,5 +297,69 @@ mod tests {
         assert!(!peer_closed.load(Ordering::SeqCst));
         drop(channel1);
         assert!(peer_closed.load(Ordering::SeqCst));
+    }
+
+    #[async_std::test]
+    async fn call() {
+        let (channel0, channel1) = Channel::create();
+        async_std::task::spawn({
+            let channel1 = channel1.clone();
+            async move {
+                async_std::task::sleep(Duration::from_millis(10)).await;
+                let recv_msg = channel1.read().unwrap();
+                let txid = recv_msg.get_txid();
+                assert_eq!(txid, 0x8000_0000);
+                assert_eq!(txid.to_ne_bytes(), &recv_msg.data[..4]);
+                assert_eq!(&recv_msg.data[4..], b"o 0");
+                // write an irrelevant message
+                channel1
+                    .write(MessagePacket {
+                        data: Vec::from("hello 1"),
+                        handles: Vec::new(),
+                    })
+                    .unwrap();
+                // reply the call
+                let mut data: Vec<u8> = vec![];
+                data.append(&mut txid.to_ne_bytes().to_vec());
+                data.append(&mut Vec::from("hello 2"));
+                channel1
+                    .write(MessagePacket {
+                        data,
+                        handles: Vec::new(),
+                    })
+                    .unwrap();
+            }
+        });
+
+        let recv_msg = channel0
+            .call(MessagePacket {
+                data: Vec::from("hello 0"),
+                handles: Vec::new(),
+            })
+            .await
+            .unwrap();
+        let txid = recv_msg.get_txid();
+        assert_eq!(txid, 0x8000_0000);
+        assert_eq!(txid.to_ne_bytes(), &recv_msg.data[..4]);
+        assert_eq!(&recv_msg.data[4..], b"hello 2");
+
+        // peer dropped when calling
+        let (channel0, channel1) = Channel::create();
+        async_std::task::spawn({
+            async move {
+                async_std::task::sleep(Duration::from_millis(10)).await;
+                let _ = channel1;
+            }
+        });
+        assert_eq!(
+            channel0
+                .call(MessagePacket {
+                    data: Vec::from("hello 0"),
+                    handles: Vec::new(),
+                })
+                .await
+                .unwrap_err(),
+            ZxError::PEER_CLOSED
+        );
     }
 }
