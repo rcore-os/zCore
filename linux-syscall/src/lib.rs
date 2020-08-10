@@ -181,7 +181,7 @@ impl Syscall<'_> {
             // time
             //            Sys::NANOSLEEP => self.sys_nanosleep(a0.into()),
             Sys::SETITIMER => self.unimplemented("setitimer", Ok(0)),
-            //            Sys::GETTIMEOFDAY => self.sys_gettimeofday(a0.into(), a1.into()),
+            Sys::GETTIMEOFDAY => self.sys_gettimeofday(a0.into(), a1.into()),
             Sys::CLOCK_GETTIME => self.sys_clock_gettime(a0, a1.into()),
 
             // sem
@@ -199,9 +199,9 @@ impl Syscall<'_> {
             Sys::UMASK => self.unimplemented("umask", Ok(0o777)),
             //            Sys::GETRLIMIT => self.sys_getrlimit(),
             //            Sys::SETRLIMIT => self.sys_setrlimit(),
-            //            Sys::GETRUSAGE => self.sys_getrusage(a0, a1.into()),
+            Sys::GETRUSAGE => self.sys_getrusage(a0, a1.into()),
             //            Sys::SYSINFO => self.sys_sysinfo(a0.into()),
-            //            Sys::TIMES => self.sys_times(a0.into()),
+            Sys::TIMES => self.sys_times(a0.into()),
             Sys::GETUID => self.unimplemented("getuid", Ok(0)),
             Sys::GETGID => self.unimplemented("getgid", Ok(0)),
             Sys::SETUID => self.unimplemented("setuid", Ok(0)),
@@ -260,7 +260,7 @@ impl Syscall<'_> {
             //            Sys::CHMOD => self.unimplemented("chmod", Ok(0)),
             //            Sys::CHOWN => self.unimplemented("chown", Ok(0)),
             Sys::ARCH_PRCTL => self.sys_arch_prctl(a0 as _, a1),
-            //            Sys::TIME => self.sys_time(a0 as *mut u64),
+            Sys::TIME => self.sys_time(a0.into()),
             //            Sys::EPOLL_CREATE => self.sys_epoll_create(a0),
             //            Sys::EPOLL_WAIT => self.sys_epoll_wait(a0, a1.into(), a2, a3),
             _ => self.unknown_syscall(sys_type),

@@ -1,8 +1,5 @@
 //! Syscalls for time
 //! - clock_gettime
-#![allow(dead_code)]
-#![allow(unused_must_use)]
-#![allow(missing_docs)]
 
 const USEC_PER_TICK: usize = 10000;
 
@@ -14,6 +11,7 @@ use linux_object::error::LxError;
 use linux_object::error::SysResult;
 use rcore_fs::vfs::*;
 
+/// TimeSpec struct for clock_gettime, similar to Timespec
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct TimeSpec {
@@ -21,6 +19,16 @@ pub struct TimeSpec {
     sec: usize,
     /// nano seconds
     nsec: usize,
+}
+
+/// TimeVal struct for gettimeofday
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct TimeVal {
+    /// seconds
+    sec: usize,
+    /// microsecond
+    usec: usize,
 }
 
 impl Syscall<'_> {
@@ -32,9 +40,12 @@ impl Syscall<'_> {
         let ts = TimeSpec::new();
         buf.write(ts)?;
 
+        info!("TimeSpec: {:?}", ts);
+
         Ok(0)
     }
 
+    /// get the time with second and microseconds
     pub fn sys_gettimeofday(
         &mut self,
         mut tv: UserOutPtr<TimeVal>,
@@ -48,16 +59,25 @@ impl Syscall<'_> {
 
         let timeval = TimeVal::new();
         tv.write(timeval)?;
+
+        info!("TimeVal: {:?}", timeval);
+
         Ok(0)
     }
 
+    /// get time in seconds
     #[cfg(target_arch = "x86_64")]
     pub fn sys_time(&mut self, mut time: UserOutPtr<u64>) -> SysResult {
+        info!("time: time: {:?}", time);
         let sec = TimeSpec::new().sec;
         time.write(sec as u64)?;
         Ok(sec)
     }
 
+    /// get resource usage
+    /// currently only support ru_utime and ru_stime:
+    /// - `ru_utime`: user CPU time used
+    /// - `ru_stime`: system CPU time used
     pub fn sys_getrusage(&mut self, who: usize, mut rusage: UserOutPtr<RUsage>) -> SysResult {
         info!("getrusage: who: {}, rusage: {:?}", who, rusage);
 
@@ -65,14 +85,15 @@ impl Syscall<'_> {
             utime: TimeVal::new(),
             stime: TimeVal::new(),
         };
-        rusage.write(new_rusage);
+        rusage.write(new_rusage)?;
         Ok(0)
     }
 
+    /// stores the current process times in the struct tms that buf points to
     pub fn sys_times(&mut self, mut buf: UserOutPtr<Tms>) -> SysResult {
         info!("times: buf: {:?}", buf);
 
-        let tick = 0; // unsafe { crate::trap::TICK as u64 };
+        let tick = (TimeVal::new().sec * 1_000_000 + TimeVal::new().usec) / USEC_PER_TICK;
 
         let new_buf = Tms {
             tms_utime: 0,
@@ -80,39 +101,21 @@ impl Syscall<'_> {
             tms_cutime: 0,
             tms_cstime: 0,
         };
-        // TODO: TICKS
-        buf.write(new_buf);
+
+        buf.write(new_buf)?;
         Ok(tick as usize)
     }
 }
 
-// 1ms msec
-// 1us usec
-// 1ns nsec
-const USEC_PER_SEC: u64 = 1_000_000;
-const MSEC_PER_SEC: u64 = 1_000;
-const USEC_PER_MSEC: u64 = 1_000;
-const NSEC_PER_USEC: u64 = 1_000;
-const NSEC_PER_MSEC: u64 = 1_000_000;
-
-#[repr(C)]
-#[derive(Debug, Copy, Clone)]
-pub struct TimeVal {
-    sec: usize,
-    usec: usize,
-}
-
 impl TimeVal {
+    /// create TimeVal
     pub fn new() -> TimeVal {
         TimeSpec::new().into()
-    }
-
-    pub fn to_msec(&self) -> u64 {
-        (self.sec as u64) * MSEC_PER_SEC + (self.usec as u64) / USEC_PER_MSEC
     }
 }
 
 impl TimeSpec {
+    /// create TimeSpec
     pub fn new() -> TimeSpec {
         let time = timer_now();
         TimeSpec {
@@ -121,11 +124,8 @@ impl TimeSpec {
         }
     }
 
-    pub fn to_msec(&self) -> u64 {
-        (self.sec as u64) * MSEC_PER_SEC + (self.nsec as u64) / NSEC_PER_MSEC
-    }
-
-    // TODO: more precise; update when write
+    /// update TimeSpec for a file inode
+    /// TODO: more precise; update when write
     pub fn update(inode: &Arc<dyn INode>) {
         let now = TimeSpec::new().into();
         if let Ok(mut metadata) = inode.metadata() {
@@ -135,10 +135,6 @@ impl TimeSpec {
             // silently fail for device file
             inode.set_metadata(&metadata).ok();
         }
-    }
-
-    pub fn is_zero(&self) -> bool {
-        self.sec == 0 && self.nsec == 0
     }
 }
 
@@ -161,18 +157,34 @@ impl Into<TimeVal> for TimeSpec {
     fn into(self) -> TimeVal {
         TimeVal {
             sec: self.sec,
-            usec: self.nsec / NSEC_PER_USEC as usize,
+            usec: self.nsec / 1_000 as usize,
         }
     }
 }
 
-// ignore other fields for now
+impl Default for TimeVal {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Default for TimeSpec {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// RUsage for sys_getrusage()
+/// ignore other fields for now
 #[repr(C)]
 pub struct RUsage {
+    /// user CPU time used
     utime: TimeVal,
+    /// system CPU time used
     stime: TimeVal,
 }
 
+/// Tms for times()
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct Tms {
@@ -180,11 +192,4 @@ pub struct Tms {
     tms_stime: u64,  /* system time */
     tms_cutime: u64, /* user time of children */
     tms_cstime: u64, /* system time of children */
-}
-
-#[cfg(test)]
-mod test {
-
-    #[test]
-    fn test_time() {}
 }
