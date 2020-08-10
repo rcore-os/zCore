@@ -358,12 +358,25 @@ mod tests {
             async_std::task::spawn(async move {
                 async_std::task::sleep(Duration::from_millis(10)).await;
                 VALUE.store(2, Ordering::SeqCst);
+
+                let waiters = futex.inner.lock().waiter_queue.clone();
+                assert_eq!(waiters.len(), 2);
+
                 // inconsistent value should fail.
                 assert_eq!(
                     futex.requeue(1, 1, 1, &requeue_futex, None),
                     Err(ZxError::BAD_STATE)
                 );
                 assert!(futex.requeue(2, 1, 1, &requeue_futex, None).is_ok());
+                // 1 waiter waken, 1 waiter moved into `requeue_futex`.
+                assert_eq!(futex.inner.lock().waiter_queue.len(), 0);
+                assert_eq!(requeue_futex.inner.lock().waiter_queue.len(), 1);
+                assert!(Arc::ptr_eq(
+                    &requeue_futex.inner.lock().waiter_queue[0],
+                    &waiters[1]
+                ));
+                // wake the requeued waiter.
+                assert_eq!(requeue_futex.wake(1), 1);
             });
         }
         // wait for wake.
