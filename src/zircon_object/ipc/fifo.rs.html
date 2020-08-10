@@ -141,6 +141,74 @@
 <span id="141">141</span>
 <span id="142">142</span>
 <span id="143">143</span>
+<span id="144">144</span>
+<span id="145">145</span>
+<span id="146">146</span>
+<span id="147">147</span>
+<span id="148">148</span>
+<span id="149">149</span>
+<span id="150">150</span>
+<span id="151">151</span>
+<span id="152">152</span>
+<span id="153">153</span>
+<span id="154">154</span>
+<span id="155">155</span>
+<span id="156">156</span>
+<span id="157">157</span>
+<span id="158">158</span>
+<span id="159">159</span>
+<span id="160">160</span>
+<span id="161">161</span>
+<span id="162">162</span>
+<span id="163">163</span>
+<span id="164">164</span>
+<span id="165">165</span>
+<span id="166">166</span>
+<span id="167">167</span>
+<span id="168">168</span>
+<span id="169">169</span>
+<span id="170">170</span>
+<span id="171">171</span>
+<span id="172">172</span>
+<span id="173">173</span>
+<span id="174">174</span>
+<span id="175">175</span>
+<span id="176">176</span>
+<span id="177">177</span>
+<span id="178">178</span>
+<span id="179">179</span>
+<span id="180">180</span>
+<span id="181">181</span>
+<span id="182">182</span>
+<span id="183">183</span>
+<span id="184">184</span>
+<span id="185">185</span>
+<span id="186">186</span>
+<span id="187">187</span>
+<span id="188">188</span>
+<span id="189">189</span>
+<span id="190">190</span>
+<span id="191">191</span>
+<span id="192">192</span>
+<span id="193">193</span>
+<span id="194">194</span>
+<span id="195">195</span>
+<span id="196">196</span>
+<span id="197">197</span>
+<span id="198">198</span>
+<span id="199">199</span>
+<span id="200">200</span>
+<span id="201">201</span>
+<span id="202">202</span>
+<span id="203">203</span>
+<span id="204">204</span>
+<span id="205">205</span>
+<span id="206">206</span>
+<span id="207">207</span>
+<span id="208">208</span>
+<span id="209">209</span>
+<span id="210">210</span>
+<span id="211">211</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> {
     <span class="kw">crate</span>::<span class="ident">object</span>::<span class="kw-2">*</span>,
@@ -151,9 +219,14 @@
 
 <span class="doccomment">/// First-In First-Out inter-process queue.</span>
 <span class="doccomment">///</span>
+<span class="doccomment">/// # SYNOPSIS</span>
+<span class="doccomment">///</span>
 <span class="doccomment">/// FIFOs are intended to be the control plane for shared memory transports.</span>
-<span class="doccomment">/// Their read and write operations are more efficient than sockets or channels,</span>
+<span class="doccomment">/// Their read and write operations are more efficient than [`sockets`] or [`channels`],</span>
 <span class="doccomment">/// but there are severe restrictions on the size of elements and buffers.</span>
+<span class="doccomment">///</span>
+<span class="doccomment">/// [`sockets`]: ../socket/struct.Socket.html</span>
+<span class="doccomment">/// [`channels`]: ../channel/struct.Channel.html</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Fifo</span> {
     <span class="ident">base</span>: <span class="ident">KObjectBase</span>,
     <span class="ident">peer</span>: <span class="ident">Weak</span><span class="op">&lt;</span><span class="ident">Fifo</span><span class="op">&gt;</span>,
@@ -206,8 +279,10 @@
     <span class="doccomment">/// in the fifo to contain all of them.</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// The number of elements actually written is returned.</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// `count` must be nonzero.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">write</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">elem_size</span>: <span class="ident">usize</span>, <span class="ident">data</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>], <span class="ident">count</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
-        <span class="kw">if</span> <span class="ident">elem_size</span> <span class="op">!</span><span class="op">=</span> <span class="self">self</span>.<span class="ident">elem_size</span> {
+        <span class="kw">if</span> <span class="ident">elem_size</span> <span class="op">!</span><span class="op">=</span> <span class="self">self</span>.<span class="ident">elem_size</span> <span class="op">|</span><span class="op">|</span> <span class="ident">count</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span> {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">OUT_OF_RANGE</span>);
         }
         <span class="kw">let</span> <span class="ident">count_size</span> <span class="op">=</span> <span class="ident">count</span> <span class="op">*</span> <span class="ident">elem_size</span>;
@@ -241,8 +316,10 @@
     <span class="doccomment">/// The `elem_size` must match the element size that was passed into `Fifo::create()`.</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// `data` must have a size of `count * elem_size` bytes.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">read</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">elem_size</span>: <span class="ident">usize</span>, <span class="ident">count</span>: <span class="ident">usize</span>, <span class="ident">data</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> [<span class="ident">u8</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
-        <span class="kw">if</span> <span class="ident">elem_size</span> <span class="op">!</span><span class="op">=</span> <span class="self">self</span>.<span class="ident">elem_size</span> {
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// `count` must be nonzero.</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">read</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">elem_size</span>: <span class="ident">usize</span>, <span class="ident">data</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> [<span class="ident">u8</span>], <span class="ident">count</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
+        <span class="kw">if</span> <span class="ident">elem_size</span> <span class="op">!</span><span class="op">=</span> <span class="self">self</span>.<span class="ident">elem_size</span> <span class="op">|</span><span class="op">|</span> <span class="ident">count</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span> {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">OUT_OF_RANGE</span>);
         }
         <span class="kw">let</span> <span class="ident">count_size</span> <span class="op">=</span> <span class="ident">count</span> <span class="op">*</span> <span class="ident">elem_size</span>;
@@ -283,6 +360,65 @@
             <span class="ident">peer</span>.<span class="ident">base</span>
                 .<span class="ident">signal_change</span>(<span class="ident">Signal</span>::<span class="ident">WRITABLE</span>, <span class="ident">Signal</span>::<span class="ident">PEER_CLOSED</span>);
         }
+    }
+}
+
+<span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">test</span>)]</span>
+<span class="kw">mod</span> <span class="ident">tests</span> {
+    <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
+    <span class="kw">use</span> <span class="ident">alloc</span>::<span class="ident">vec</span>::<span class="ident">Vec</span>;
+
+    <span class="attribute">#[<span class="ident">test</span>]</span>
+    <span class="kw">fn</span> <span class="ident">test_basics</span>() {
+        <span class="kw">let</span> (<span class="ident">end0</span>, <span class="ident">end1</span>) <span class="op">=</span> <span class="ident">Fifo</span>::<span class="ident">create</span>(<span class="number">10</span>, <span class="number">5</span>);
+        <span class="macro">assert</span><span class="macro">!</span>(<span class="ident">Arc</span>::<span class="ident">ptr_eq</span>(
+            <span class="kw-2">&amp;</span><span class="ident">end0</span>.<span class="ident">peer</span>().<span class="ident">unwrap</span>().<span class="ident">downcast_arc</span>().<span class="ident">unwrap</span>(),
+            <span class="kw-2">&amp;</span><span class="ident">end1</span>
+        ));
+        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">end0</span>.<span class="ident">related_koid</span>(), <span class="ident">end1</span>.<span class="ident">id</span>());
+
+        <span class="ident">drop</span>(<span class="ident">end1</span>);
+        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">end0</span>.<span class="ident">peer</span>().<span class="ident">unwrap_err</span>(), <span class="ident">ZxError</span>::<span class="ident">PEER_CLOSED</span>);
+        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">end0</span>.<span class="ident">related_koid</span>(), <span class="number">0</span>);
+    }
+
+    <span class="attribute">#[<span class="ident">test</span>]</span>
+    <span class="kw">fn</span> <span class="ident">read_write</span>() {
+        <span class="kw">let</span> (<span class="ident">end0</span>, <span class="ident">end1</span>) <span class="op">=</span> <span class="ident">Fifo</span>::<span class="ident">create</span>(<span class="number">2</span>, <span class="number">5</span>);
+
+        <span class="macro">assert_eq</span><span class="macro">!</span>(
+            <span class="ident">end0</span>.<span class="ident">write</span>(<span class="number">4</span>, <span class="kw-2">&amp;</span>[<span class="number">0</span>; <span class="number">9</span>], <span class="number">1</span>).<span class="ident">unwrap_err</span>(),
+            <span class="ident">ZxError</span>::<span class="ident">OUT_OF_RANGE</span>
+        );
+        <span class="macro">assert_eq</span><span class="macro">!</span>(
+            <span class="ident">end0</span>.<span class="ident">write</span>(<span class="number">5</span>, <span class="kw-2">&amp;</span>[<span class="number">0</span>; <span class="number">0</span>], <span class="number">0</span>).<span class="ident">unwrap_err</span>(),
+            <span class="ident">ZxError</span>::<span class="ident">OUT_OF_RANGE</span>
+        );
+        <span class="kw">let</span> <span class="ident">data</span> <span class="op">=</span> (<span class="number">0</span>..<span class="number">15</span>).<span class="ident">collect</span>::<span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span><span class="op">&gt;</span>();
+        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">end0</span>.<span class="ident">write</span>(<span class="number">5</span>, <span class="ident">data</span>.<span class="ident">as_slice</span>(), <span class="number">3</span>).<span class="ident">unwrap</span>(), <span class="number">2</span>);
+        <span class="macro">assert_eq</span><span class="macro">!</span>(
+            <span class="ident">end0</span>.<span class="ident">write</span>(<span class="number">5</span>, <span class="ident">data</span>.<span class="ident">as_slice</span>(), <span class="number">3</span>).<span class="ident">unwrap_err</span>(),
+            <span class="ident">ZxError</span>::<span class="ident">SHOULD_WAIT</span>
+        );
+
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">buf</span> <span class="op">=</span> [<span class="number">0</span>; <span class="number">15</span>];
+        <span class="macro">assert_eq</span><span class="macro">!</span>(
+            <span class="ident">end1</span>.<span class="ident">read</span>(<span class="number">4</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> [<span class="number">0</span>; <span class="number">4</span>], <span class="number">1</span>).<span class="ident">unwrap_err</span>(),
+            <span class="ident">ZxError</span>::<span class="ident">OUT_OF_RANGE</span>
+        );
+        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">end1</span>.<span class="ident">read</span>(<span class="number">5</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> [], <span class="number">0</span>).<span class="ident">unwrap_err</span>(), <span class="ident">ZxError</span>::<span class="ident">OUT_OF_RANGE</span>);
+        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">end1</span>.<span class="ident">read</span>(<span class="number">5</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">buf</span>, <span class="number">3</span>).<span class="ident">unwrap</span>(), <span class="number">2</span>);
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">data</span> <span class="op">=</span> (<span class="number">0</span>..<span class="number">10</span>).<span class="ident">collect</span>::<span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span><span class="op">&gt;</span>();
+        <span class="ident">data</span>.<span class="ident">append</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="macro">vec</span><span class="macro">!</span>[<span class="number">0</span>; <span class="number">5</span>]);
+        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">buf</span>, <span class="ident">data</span>.<span class="ident">as_slice</span>());
+        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">end1</span>.<span class="ident">read</span>(<span class="number">5</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">buf</span>, <span class="number">3</span>).<span class="ident">unwrap_err</span>(), <span class="ident">ZxError</span>::<span class="ident">SHOULD_WAIT</span>);
+
+        <span class="ident">drop</span>(<span class="ident">end1</span>);
+        <span class="macro">assert_eq</span><span class="macro">!</span>(
+            <span class="ident">end0</span>.<span class="ident">write</span>(<span class="number">5</span>, <span class="ident">data</span>.<span class="ident">as_slice</span>(), <span class="number">3</span>).<span class="ident">unwrap_err</span>(),
+            <span class="ident">ZxError</span>::<span class="ident">PEER_CLOSED</span>
+        );
+        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">end0</span>.<span class="ident">read</span>(<span class="number">5</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">buf</span>, <span class="number">3</span>).<span class="ident">unwrap_err</span>(), <span class="ident">ZxError</span>::<span class="ident">PEER_CLOSED</span>);
     }
 }
 </pre></div>
