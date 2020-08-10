@@ -41,20 +41,13 @@ impl CapAlloc {
         PMEM.alloc_region(object_bits)
     }
 
-    fn ensure_cslot(&self, cptr: CPtr, critical: bool) -> KernelResult<CriticalBufferUsage> {
+    fn ensure_cslot(&self, cptr: CPtr) -> KernelResult<CriticalBufferUsage> {
         let index = (cptr.0 >> SECONDLEVEL_BITS) & (TOPLEVEL_SIZE - 1);
         let mut toplevel_usage = self.toplevel_usage.lock();
         if !toplevel_usage[index] {
-            let crit_buf_usage: CriticalBufferUsage;
-            let region = if critical {
-                crit_buf_usage = CriticalBufferUsage::Used;
-                match self.critical_buffer.lock().take() {
-                    Some(x) => x,
-                    None => return Err(KernelError::Retry)
-                }
-            } else {
-                crit_buf_usage = CriticalBufferUsage::Unused;
-                Self::allocate_physical_region()?
+            let region = match self.critical_buffer.lock().take() {
+                Some(x) => x,
+                None => return Err(KernelError::Retry)
             };
             let err = sys::locked(|| unsafe { sys::l4bridge_retype_and_mount_cnode(
                 region.cap,
@@ -65,22 +58,29 @@ impl CapAlloc {
                 panic!("ensure_cslot: cannot retype cnode");
             }
             toplevel_usage[index] = true;
-            Ok(crit_buf_usage)
+            Ok(CriticalBufferUsage::Used)
         } else {
             Ok(CriticalBufferUsage::Unused)
         }
     }
 
-    fn do_allocate(&self, critical: bool) -> KernelResult<(CPtr, CriticalBufferUsage)> {
+    fn do_allocate(&self) -> KernelResult<(CPtr, CriticalBufferUsage)> {
         let mut slab = self.slab.lock();
         let index = slab.insert(());
         let cap = CPtr(index + CAP_BASE);
-        let crit_buf_usage = self.ensure_cslot(cap, critical)?;
+        let crit_buf_usage = self.ensure_cslot(cap)?;
         Ok((cap, crit_buf_usage))
     }
 
     pub fn allocate(&self) -> KernelResult<CPtr> {
-        self.do_allocate(false).map(|x| x.0)
+        let (cptr, usage) = self.allocate_critical_mt()?;
+        match usage {
+            CriticalBufferUsage::Used => {
+                self.refill_critical_buffer()?;
+            }
+            CriticalBufferUsage::Unused => {}
+        }
+        Ok(cptr)
     }
 
     pub fn allocate_critical_mt(&self) -> KernelResult<(CPtr, CriticalBufferUsage)> {
@@ -90,7 +90,7 @@ impl CapAlloc {
         // fast, `refill_critical_buffer` may be needed from multiple threads but only called
         // on one of them. In that case we need to wait until it is actually called.
         for _ in 0..10000 {
-            match self.do_allocate(true) {
+            match self.do_allocate() {
                 Ok(x) => return Ok(x),
                 Err(KernelError::Retry) => {
                     yield_now();

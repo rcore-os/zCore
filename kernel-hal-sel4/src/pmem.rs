@@ -164,10 +164,7 @@ impl Drop for Page {
     fn drop(&mut self) {
         unsafe {
             sys::l4bridge_delete_cap(self.frame);
-
-            // FIXME: When the capability is leaked we get a deadlock. This shouldn't happen.
             cap::G.release(self.frame);
-
             PMEM.release_region(self.region);
         }
     }
