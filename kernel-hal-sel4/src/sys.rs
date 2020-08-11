@@ -62,6 +62,13 @@ extern "C" {
     pub fn l4bridge_kipc_call(slot: CPtr, data: Word, result: &mut Word) -> i32;
     pub fn l4bridge_kipc_recv(slot: CPtr, data: &mut Word, sender_badge: &mut Word) -> i32;
     pub fn l4bridge_kipc_reply(result: Word);
+    pub fn l4bridge_kipc_send_ts(slot: CPtr, data: Word);
+
+    pub fn l4bridge_get_time_ts() -> Word;
+    pub fn l4bridge_timer_set_period_ts(new_period: Word) -> i32;
+    pub fn l4bridge_timer_wait_ts() -> Word;
+
+    pub fn l4bridge_save_caller(dst: CPtr) -> i32;
 
     pub static L4BRIDGE_CNODE_SLOT_BITS: Word;
     pub static L4BRIDGE_TCB_BITS: Word;

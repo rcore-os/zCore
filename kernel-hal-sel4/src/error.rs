@@ -17,6 +17,7 @@ pub enum KernelError {
     IpcIgnored = 11,
     IpcFailure = 12,
     Unknown = 13,
+    BadTimerPeriod = 14,
 }
 
 impl KernelError {

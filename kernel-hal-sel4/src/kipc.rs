@@ -4,6 +4,7 @@ use crate::object::*;
 use alloc::sync::Arc;
 use crate::kt::KernelThread;
 use crate::sys;
+use crate::cap;
 use core::marker::PhantomData;
 use core::mem::{self, MaybeUninit};
 use core::ptr;
@@ -95,12 +96,48 @@ impl<'a, T: Send + 'static> ReplyHandle<'a, T> {
     pub fn err(self, e: KernelError) {
         self.send(e as i32 as _);
     }
+
+    pub fn save(self) -> KernelResult<SavedReplyHandle> {
+        let cap = cap::G.allocate()?;
+        if unsafe {
+            sys::l4bridge_save_caller(cap)
+        } != 0 {
+            panic!("ReplyHandle::save: l4bridge_save_caller failed");
+        }
+        mem::forget(self);
+        Ok(SavedReplyHandle {
+            cap,
+        })
+    }
 }
 
 impl<'a, T: Send + 'static> Drop for ReplyHandle<'a, T> {
     fn drop(&mut self) {
         unsafe {
             sys::l4bridge_kipc_reply(KernelError::IpcIgnored as i32 as _);
+        }
+    }
+}
+
+pub struct SavedReplyHandle {
+    cap: CPtr,
+}
+
+impl SavedReplyHandle {
+    pub fn send(self, result: usize) {
+        unsafe {
+            sys::l4bridge_kipc_send_ts(self.cap, result);
+            cap::G.release(self.cap);
+        }
+        mem::forget(self);
+    }
+}
+
+impl Drop for SavedReplyHandle {
+    fn drop(&mut self) {
+        unsafe {
+            sys::locked(|| sys::l4bridge_delete_cap(self.cap));
+            cap::G.release(self.cap);
         }
     }
 }

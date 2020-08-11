@@ -1,6 +1,6 @@
 #![no_std]
 #![feature(asm, global_asm, alloc_error_handler)]
-#![feature(linkage, const_btree_new)]
+#![feature(linkage, const_btree_new, map_first_last)]
 
 #[macro_use]
 extern crate alloc;
@@ -20,11 +20,13 @@ mod object;
 mod kt;
 mod kipc;
 mod control;
+mod timer;
+mod zc;
 
 use alloc::boxed::Box;
 
 pub unsafe fn boot() -> ! {
-    println!("Hello from seL4 kernel HAL.");
+    println!("Initializing seL4 kernel HAL.");
     allocator::init();
     pmem::init();
     cap::init();
@@ -68,6 +70,7 @@ pub unsafe fn boot() -> ! {
     }
     println!("Testing ok.");
 */
+/*
     kt::spawn(move || {
         use core::sync::atomic::{AtomicUsize, Ordering};
         static COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -80,6 +83,10 @@ pub unsafe fn boot() -> ! {
             thread::yield_now();
         }
     }).expect("spawn failed");
+*/
+    kt::spawn(|| {
+        zc::zcore_main();
+    }).expect("cannot spawn zcore_main");
     control::run();
 }
 

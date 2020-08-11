@@ -45,6 +45,9 @@ void static_assert();
 seL4_CPtr putchar_cptr = 0;
 seL4_CPtr alloc_untyped_cptr = 0;
 seL4_CPtr alloc_cnode_cptr = 0;
+seL4_CPtr timer_event_cptr = 0;
+seL4_CPtr set_period_cptr = 0;
+seL4_CPtr get_time_cptr = 0;
 
 seL4_Word L4BRIDGE_CNODE_SLOT_BITS = seL4_SlotBits;
 seL4_Word L4BRIDGE_TCB_BITS = seL4_TCBBits;
@@ -411,9 +414,50 @@ int l4bridge_kipc_recv(seL4_CPtr slot, seL4_Word *data, seL4_Word *sender_badge)
     return 0;
 }
 
+// Thread safe.
+void l4bridge_kipc_send_ts(seL4_CPtr slot, seL4_Word data) {
+    seL4_SetMR(0, data);
+    seL4_Send(slot, seL4_MessageInfo_new(0, 0, 0, 1));
+}
+
+// Thread safe.
 void l4bridge_kipc_reply(seL4_Word result) {
     seL4_SetMR(0, result);
     seL4_Reply(seL4_MessageInfo_new(0, 0, 0, 1));
+}
+
+// Thread safe.
+seL4_Word l4bridge_get_time_ts() {
+    seL4_MessageInfo_t tag = seL4_Call(get_time_cptr, seL4_MessageInfo_new(0, 0, 0, 0));
+    if(seL4_MessageInfo_get_length(tag) != 1) {
+        panic_str("l4bridge_get_time_ts: bad response\n");
+    }
+    return seL4_GetMR(0);
+}
+
+// Thread safe.
+int l4bridge_timer_set_period_ts(seL4_Word new_period) {
+    seL4_SetMR(0, new_period);
+    seL4_MessageInfo_t tag = seL4_Call(set_period_cptr, seL4_MessageInfo_new(0, 0, 0, 1));
+    if(seL4_MessageInfo_get_length(tag) != 1) {
+        panic_str("l4bridge_timer_set_period_ts: bad response\n");
+    }
+    return seL4_GetMR(0);
+}
+
+// Thread safe.
+seL4_Word l4bridge_timer_wait_ts() {
+    seL4_Word sender_badge = 0;
+    seL4_MessageInfo_t tag = seL4_Recv(timer_event_cptr, &sender_badge);
+    if(seL4_MessageInfo_get_length(tag) != 1) {
+        panic_str("l4bridge_timer_wait_ts: bad response\n");
+    }
+    return seL4_GetMR(0);
+}
+
+// Thread safe.
+int l4bridge_save_caller(seL4_CPtr dst) {
+    return seL4_CNode_SaveCaller(CNODE_SLOT, dst, seL4_WordBits);
 }
 
 seL4_Word getcap(const char *name) {
@@ -473,6 +517,9 @@ void _start() {
     putchar_cptr = getcap("putchar");
     alloc_untyped_cptr = getcap("alloc_untyped");
     alloc_cnode_cptr = getcap("alloc_cnode");
+    timer_event_cptr = getcap("timer_event");
+    set_period_cptr = getcap("set_period");
+    get_time_cptr = getcap("get_time");
 
     unsigned long stack_top = (unsigned long) MAIN_STACK + MAIN_STACK_SIZE;
     asm volatile (
