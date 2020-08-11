@@ -125,7 +125,7 @@ pub struct LinuxProcess {
     /// Parent process
     parent: Weak<Process>,
     /// Inner
-    pub inner: Mutex<LinuxProcessInner>,
+    inner: Mutex<LinuxProcessInner>,
 }
 
 #[derive(Default)]

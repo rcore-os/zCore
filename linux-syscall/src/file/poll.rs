@@ -34,7 +34,6 @@ impl Syscall<'_> {
         impl<'a> Future for PollFuture<'a> {
             type Output = SysResult;
 
-            #[allow(clippy::drop_ref)]
             fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
                 use PollEvents as PE;
                 let proc = self.syscall.linux_process();
@@ -43,12 +42,7 @@ impl Syscall<'_> {
                 // iterate each poll to check whether it is ready
                 for poll in self.as_mut().polls.iter_mut() {
                     poll.revents = PE::empty();
-                    if let Some(file_like) = proc
-                        .inner
-                        .lock()
-                        .files
-                        .get(&FileDesc::from(poll.fd as usize))
-                    {
+                    if let Ok(file_like) = proc.get_file_like(poll.fd) {
                         let mut fut = Box::pin(file_like.async_poll());
                         let status = match fut.as_mut().poll(cx) {
                             Poll::Ready(Ok(ret)) => ret,
@@ -72,8 +66,6 @@ impl Syscall<'_> {
                         events += 1;
                     }
                 }
-                drop(proc);
-
                 // some event happens, so evoke the process
                 if events > 0 {
                     return Poll::Ready(Ok(events));
