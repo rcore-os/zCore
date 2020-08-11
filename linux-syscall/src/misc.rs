@@ -87,21 +87,21 @@ impl Syscall<'_> {
         );
         match resource {
             RLIMIT_STACK => {
-                old_limit.write(RLimit {
+                old_limit.write_if_not_null(RLimit {
                     cur: USER_STACK_SIZE as u64,
                     max: USER_STACK_SIZE as u64,
                 })?;
                 Ok(0)
             }
             RLIMIT_NOFILE => {
-                old_limit.write(RLimit {
+                old_limit.write_if_not_null(RLimit {
                     cur: 1024,
                     max: 1024,
                 })?;
                 Ok(0)
             }
             RLIMIT_RSS | RLIMIT_AS => {
-                old_limit.write(RLimit {
+                old_limit.write_if_not_null(RLimit {
                     cur: 1024 * 1024 * 1024,
                     max: 1024 * 1024 * 1024,
                 })?;
@@ -112,7 +112,6 @@ impl Syscall<'_> {
     }
 
     #[allow(unsafe_code)]
-    #[allow(clippy::not_unsafe_ptr_arg_deref)]
     /// fills the buffer pointed to by `buf` with up to `buflen` random bytes.
     /// - `buf` - buffer that needed to fill
     /// - `buflen` - length of buffer
