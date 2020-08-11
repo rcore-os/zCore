@@ -77,7 +77,7 @@ pub unsafe fn boot() -> ! {
         use core::sync::atomic::{AtomicUsize, Ordering};
         static COUNTER: AtomicUsize = AtomicUsize::new(0);
         for i in 0..10000 {
-            println!("spawn {}", i);
+            //println!("spawn {}", i);
             kt::spawn(move || {
                 if COUNTER.fetch_add(1, Ordering::SeqCst) + 1 == 10000 {
                     println!("Got final result.");
