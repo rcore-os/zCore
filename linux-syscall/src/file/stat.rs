@@ -8,6 +8,10 @@ use super::*;
 use linux_object::fs::vfs::{FileType, Metadata};
 
 impl Syscall<'_> {
+    /// Works exactly like the stat syscall, but if the file in question is a symbolic link,
+    /// information on the link is returned rather than its target.
+    /// - `path` – full path to file
+    /// - `stat_ptr` – pointer to stat buffer
     pub fn sys_lstat(&self, path: UserInPtr<u8>, stat_ptr: UserOutPtr<Stat>) -> SysResult {
         self.sys_fstatat(
             FileDesc::CWD,
@@ -17,6 +21,9 @@ impl Syscall<'_> {
         )
     }
 
+    /// Works exactly like the stat syscall except a file descriptor (fd) is provided instead of a path.
+    /// - `fd` – file descriptor
+    /// - `stat_ptr` – pointer to stat buffer
     pub fn sys_fstat(&self, fd: FileDesc, mut stat_ptr: UserOutPtr<Stat>) -> SysResult {
         info!("fstat: fd={:?}, stat_ptr={:?}", fd, stat_ptr);
         let proc = self.linux_process();
@@ -26,6 +33,7 @@ impl Syscall<'_> {
         Ok(0)
     }
 
+    /// get file status relative to a directory file descriptor
     pub fn sys_fstatat(
         &self,
         dirfd: FileDesc,
@@ -48,6 +56,9 @@ impl Syscall<'_> {
         Ok(0)
     }
 
+    /// Returns information about a file in a structure named stat.
+    /// - `path` – pointer to the name of the file
+    /// - `stat_ptr` –  pointer to the structure to receive file information
     pub fn sys_stat(&self, path: UserInPtr<u8>, stat_ptr: UserOutPtr<Stat>) -> SysResult {
         self.sys_fstatat(FileDesc::CWD, path, stat_ptr, 0)
     }

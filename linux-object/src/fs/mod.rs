@@ -6,7 +6,9 @@ use rcore_fs_mountfs::MountFS;
 use rcore_fs_ramfs::RamFS;
 
 pub use self::device::*;
+pub use self::fcntl::*;
 pub use self::file::*;
+pub use self::pipe::*;
 pub use self::pseudo::*;
 pub use self::random::*;
 pub use self::stdio::*;
@@ -19,8 +21,10 @@ use downcast_rs::impl_downcast;
 use zircon_object::object::*;
 
 mod device;
+mod fcntl;
 mod file;
 mod ioctl;
+mod pipe;
 mod pseudo;
 mod random;
 mod stdio;
@@ -56,6 +60,12 @@ impl From<usize> for FileDesc {
     }
 }
 
+impl From<i32> for FileDesc {
+    fn from(x: i32) -> Self {
+        FileDesc(x)
+    }
+}
+
 impl TryFrom<&str> for FileDesc {
     type Error = LxError;
     fn try_from(name: &str) -> LxResult<Self> {
@@ -67,6 +77,12 @@ impl TryFrom<&str> for FileDesc {
 impl Into<usize> for FileDesc {
     fn into(self) -> usize {
         self.0 as _
+    }
+}
+
+impl Into<i32> for FileDesc {
+    fn into(self) -> i32 {
+        self.0
     }
 }
 

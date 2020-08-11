@@ -6,12 +6,15 @@
 //! - pipe
 
 use super::*;
+use alloc::string::String;
 
 impl Syscall<'_> {
+    /// Opens or creates a file, depending on the flags passed to the call. Returns an integer with the file descriptor.
     pub fn sys_open(&self, path: UserInPtr<u8>, flags: usize, mode: usize) -> SysResult {
         self.sys_openat(FileDesc::CWD, path, flags, mode)
     }
 
+    /// open file relative to directory file descriptor
     pub fn sys_openat(
         &self,
         dir_fd: FileDesc,
@@ -52,6 +55,7 @@ impl Syscall<'_> {
         Ok(fd.into())
     }
 
+    /// Closes a file descriptor, so that it no longer refers to any file and may be reused.
     pub fn sys_close(&self, fd: FileDesc) -> SysResult {
         info!("close: fd={:?}", fd);
         let proc = self.linux_process();
@@ -59,6 +63,7 @@ impl Syscall<'_> {
         Ok(0)
     }
 
+    /// create a copy of the file descriptor oldfd.
     pub fn sys_dup2(&self, fd1: FileDesc, fd2: FileDesc) -> SysResult {
         info!("dup2: from {:?} to {:?}", fd1, fd2);
         let proc = self.linux_process();
@@ -69,42 +74,43 @@ impl Syscall<'_> {
         Ok(fd2.into())
     }
 
-    //    pub fn sys_pipe(&self, fds: *mut u32) -> SysResult {
-    //        info!("pipe: fds={:?}", fds);
-    //
-    //        let proc = self.process();
-    //        let fds = unsafe { self.vm().check_write_array(fds, 2)? };
-    //        let (read, write) = Pipe::create_pair();
-    //
-    //        let read_fd = proc.add_file(FileLike::File(File::new(
-    //            Arc::new(read),
-    //            OpenOptions {
-    //                read: true,
-    //                write: false,
-    //                append: false,
-    //                nonblock: false,
-    //            },
-    //            String::from("pipe_r:[]"),
-    //        )));
-    //
-    //        let write_fd = proc.add_file(FileLike::File(File::new(
-    //            Arc::new(write),
-    //            OpenOptions {
-    //                read: false,
-    //                write: true,
-    //                append: false,
-    //                nonblock: false,
-    //            },
-    //            String::from("pipe_w:[]"),
-    //        )));
-    //
-    //        fds[0] = read_fd as u32;
-    //        fds[1] = write_fd as u32;
-    //
-    //        info!("pipe: created rfd={} wfd={}", read_fd, write_fd);
-    //
-    //        Ok(0)
-    //    }
+    /// Creates a pipe, a unidirectional data channel that can be used for interprocess communication.
+    pub fn sys_pipe(&self, mut fds: UserOutPtr<[i32; 2]>) -> SysResult {
+        info!("pipe: fds={:?}", fds);
+
+        let proc = self.linux_process();
+        let (read, write) = Pipe::create_pair();
+
+        let read_fd = proc.add_file(File::new(
+            Arc::new(read),
+            OpenOptions {
+                read: true,
+                write: false,
+                append: false,
+                nonblock: false,
+            },
+            String::from("pipe_r:[]"),
+        ))?;
+
+        let write_fd = proc.add_file(File::new(
+            Arc::new(write),
+            OpenOptions {
+                read: false,
+                write: true,
+                append: false,
+                nonblock: false,
+            },
+            String::from("pipe_w:[]"),
+        ))?;
+        fds.write([read_fd.into(), write_fd.into()])?;
+
+        info!(
+            "pipe: created rfd={:?} wfd={:?} fds={:?}",
+            read_fd, write_fd, fds
+        );
+
+        Ok(0)
+    }
 }
 
 bitflags! {
@@ -127,14 +133,17 @@ bitflags! {
 }
 
 impl OpenFlags {
+    /// check if the OpenFlags is readable
     fn readable(self) -> bool {
         let b = self.bits() & 0b11;
         b == Self::RDONLY.bits() || b == Self::RDWR.bits()
     }
+    /// check if the OpenFlags is writable
     fn writable(self) -> bool {
         let b = self.bits() & 0b11;
         b == Self::WRONLY.bits() || b == Self::RDWR.bits()
     }
+    /// convert OpenFlags to OpenOptions
     fn to_options(self) -> OpenOptions {
         OpenOptions {
             read: self.readable(),

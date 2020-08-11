@@ -1,7 +1,32 @@
 //! Linux syscall implementations
+//!
+//! ## Example
+//! the syscall is called like this in the linux-loader:
+//! ```ignore
+//! let num = regs.rax as u32;
+//! let args = [regs.rdi, regs.rsi, regs.rdx, regs.r10, regs.r8, regs.r9];
+//! let mut syscall = Syscall {
+//!     thread,
+//!     #[cfg(feature = "std")]
+//!     syscall_entry: kernel_hal_unix::syscall_entry as usize,
+//!     #[cfg(not(feature = "std"))]
+//!     syscall_entry: 0,
+//!     spawn_fn: spawn,
+//!     regs,
+//!     exit: false,
+//! };
+//! let ret = syscall.syscall(num, args).await;
+//! ```
+//!
 
 #![no_std]
-#![deny(warnings, unsafe_code, unused_must_use, unreachable_patterns)]
+#![deny(
+    warnings,
+    unsafe_code,
+    unused_must_use,
+    unreachable_patterns,
+    missing_docs
+)]
 #![feature(bool_to_option)]
 
 #[macro_use]
@@ -26,16 +51,22 @@ mod task;
 mod time;
 mod vm;
 
+/// The struct of Syscall which stores the information about making a syscall
 pub struct Syscall<'a> {
+    /// the thread making a syscall
     pub thread: &'a Arc<Thread>,
+    /// the entry of current syscall
     pub syscall_entry: VirtAddr,
+    /// store the regs statues
     pub regs: &'a mut GeneralRegs,
+    /// the spawn function in linux-loader
     pub spawn_fn: fn(thread: Arc<Thread>),
     /// Set `true` to exit current task.
     pub exit: bool,
 }
 
 impl Syscall<'_> {
+    /// syscall entry function
     pub async fn syscall(&mut self, num: u32, args: [usize; 6]) -> isize {
         debug!("syscall: num={}, args={:x?}", num, args);
         let sys_type = match Sys::try_from(num) {
@@ -81,8 +112,8 @@ impl Syscall<'_> {
             Sys::FCHOWNAT => self.unimplemented("fchownat", Ok(0)),
             Sys::FACCESSAT => self.sys_faccessat(a0.into(), a1.into(), a2, a3),
             Sys::DUP3 => self.sys_dup2(a0.into(), a1.into()), // TODO: handle `flags`
-            //            Sys::PIPE2 => self.sys_pipe(a0.into()),           // TODO: handle `flags`
-            Sys::UTIMENSAT => self.unimplemented("utimensat", Ok(0)),
+            Sys::PIPE2 => self.sys_pipe(a0.into()),           // TODO: handle `flags`
+            Sys::UTIMENSAT => self.sys_utimensat(a0.into(), a1.into(), a2.into(), a3),
             Sys::COPY_FILE_RANGE => {
                 self.sys_copy_file_range(a0.into(), a1.into(), a2.into(), a3.into(), a4, a5)
             }
@@ -150,7 +181,7 @@ impl Syscall<'_> {
             // time
             //            Sys::NANOSLEEP => self.sys_nanosleep(a0.into()),
             Sys::SETITIMER => self.unimplemented("setitimer", Ok(0)),
-            //            Sys::GETTIMEOFDAY => self.sys_gettimeofday(a0.into(), a1.into()),
+            Sys::GETTIMEOFDAY => self.sys_gettimeofday(a0.into(), a1.into()),
             Sys::CLOCK_GETTIME => self.sys_clock_gettime(a0, a1.into()),
 
             // sem
@@ -168,9 +199,9 @@ impl Syscall<'_> {
             Sys::UMASK => self.unimplemented("umask", Ok(0o777)),
             //            Sys::GETRLIMIT => self.sys_getrlimit(),
             //            Sys::SETRLIMIT => self.sys_setrlimit(),
-            //            Sys::GETRUSAGE => self.sys_getrusage(a0, a1.into()),
+            Sys::GETRUSAGE => self.sys_getrusage(a0, a1.into()),
             //            Sys::SYSINFO => self.sys_sysinfo(a0.into()),
-            //            Sys::TIMES => self.sys_times(a0.into()),
+            Sys::TIMES => self.sys_times(a0.into()),
             Sys::GETUID => self.unimplemented("getuid", Ok(0)),
             Sys::GETGID => self.unimplemented("getgid", Ok(0)),
             Sys::SETUID => self.unimplemented("setuid", Ok(0)),
@@ -205,6 +236,7 @@ impl Syscall<'_> {
     }
 
     #[cfg(target_arch = "x86_64")]
+    /// syscall specified for x86_64
     async fn x86_64_syscall(&mut self, sys_type: Sys, args: [usize; 6]) -> SysResult {
         let [a0, a1, a2, _a3, _a4, _a5] = args;
         match sys_type {
@@ -213,7 +245,7 @@ impl Syscall<'_> {
             Sys::LSTAT => self.sys_lstat(a0.into(), a1.into()),
             //            Sys::POLL => self.sys_poll(a0.into(), a1, a2),
             Sys::ACCESS => self.sys_access(a0.into(), a1),
-            //            Sys::PIPE => self.sys_pipe(a0.into()),
+            Sys::PIPE => self.sys_pipe(a0.into()),
             //            Sys::SELECT => self.sys_select(a0, a1.into(), a2.into(), a3.into(), a4.into()),
             Sys::DUP2 => self.sys_dup2(a0.into(), a1.into()),
             //            Sys::ALARM => self.unimplemented("alarm", Ok(0)),
@@ -228,13 +260,14 @@ impl Syscall<'_> {
             //            Sys::CHMOD => self.unimplemented("chmod", Ok(0)),
             //            Sys::CHOWN => self.unimplemented("chown", Ok(0)),
             Sys::ARCH_PRCTL => self.sys_arch_prctl(a0 as _, a1),
-            //            Sys::TIME => self.sys_time(a0 as *mut u64),
+            Sys::TIME => self.sys_time(a0.into()),
             //            Sys::EPOLL_CREATE => self.sys_epoll_create(a0),
             //            Sys::EPOLL_WAIT => self.sys_epoll_wait(a0, a1.into(), a2, a3),
             _ => self.unknown_syscall(sys_type),
         }
     }
 
+    /// unkown syscalls, currently is similar to unimplemented syscalls but emit an error
     fn unknown_syscall(&mut self, sys_type: Sys) -> SysResult {
         error!("unknown syscall: {:?}. exit...", sys_type);
         let proc = self.zircon_process();
@@ -243,15 +276,18 @@ impl Syscall<'_> {
         Err(LxError::ENOSYS)
     }
 
+    /// unimplemented syscalls
     fn unimplemented(&self, name: &str, ret: SysResult) -> SysResult {
         warn!("{}: unimplemented", name);
         ret
     }
 
+    /// get zircon process
     fn zircon_process(&self) -> &Arc<Process> {
         self.thread.proc()
     }
 
+    /// get linux process
     fn linux_process(&self) -> &LinuxProcess {
         self.zircon_process().linux()
     }
