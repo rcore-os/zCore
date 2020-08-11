@@ -239,7 +239,7 @@ impl Syscall<'_> {
         interrupt.destroy()
     }
 
-    /// A blocking syscall which causes the caller to wait until an interrupt is triggered. 
+    /// A blocking syscall which causes the caller to wait until an interrupt is triggered.
     pub async fn sys_interrupt_wait(
         &self,
         interrupt: HandleValue,

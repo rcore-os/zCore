@@ -2,9 +2,8 @@ use core::convert::TryFrom;
 use {super::*, zircon_object::task::*};
 
 impl Syscall<'_> {
-
     /// Create a new process.  
-    /// Upon success, handles for the new process and the root of its address space are returned. 
+    /// Upon success, handles for the new process and the root of its address space are returned.
     pub fn sys_process_create(
         &self,
         job: HandleValue,
@@ -45,7 +44,7 @@ impl Syscall<'_> {
     }
 
     /// Creates a thread within the specified process.  
-    /// Upon success a handle for the new thread is returned. 
+    /// Upon success a handle for the new thread is returned.
     pub fn sys_thread_create(
         &self,
         proc_handle: HandleValue,
@@ -123,7 +122,7 @@ impl Syscall<'_> {
     }
 
     /// Sets process as critical to job.   
-    /// When process terminates, job will be terminated as if ```zx_task_kill()``` was called on it. 
+    /// When process terminates, job will be terminated as if ```zx_task_kill()``` was called on it.
     pub fn sys_job_set_critical(
         &self,
         job_handle: HandleValue,
@@ -266,7 +265,7 @@ impl Syscall<'_> {
         }
     }
 
-    /// Sets one or more security and/or resource policies to an empty job. 
+    /// Sets one or more security and/or resource policies to an empty job.
     pub fn sys_job_set_policy(
         &self,
         handle: HandleValue,

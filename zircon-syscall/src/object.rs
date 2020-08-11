@@ -362,7 +362,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    /// Asserts and deasserts the userspace-accessible signal bits on the object's peer. 
+    /// Asserts and deasserts the userspace-accessible signal bits on the object's peer.
     pub fn sys_object_signal_peer(
         &self,
         handle_value: HandleValue,

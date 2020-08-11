@@ -69,7 +69,7 @@ impl Syscall<'_> {
 
     /// Start a timer.  
     /// To fire the timer immediately pass a deadline less than or equal to 0.  
-    /// The slack parameter specifies a range from deadline - slack to deadline + slack during which the timer is allowed to fire. 
+    /// The slack parameter specifies a range from deadline - slack to deadline + slack during which the timer is allowed to fire.
     pub fn sys_timer_set(&self, handle: HandleValue, deadline: Deadline, slack: i64) -> ZxResult {
         info!(
             "timer.set: handle={:#x}, deadline={:#x?}, slack={:#x}",

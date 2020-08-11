@@ -2,7 +2,6 @@ use super::*;
 use zircon_object::dev::*;
 
 impl Syscall<'_> {
-
     /// Write debug info to the serial port  
     /// To use the zx_debug_write() function,   
     /// you must specify ```kernel.enable-serial-syscalls=true``` or ```kernel.enable-serial-syscalls=output-only``` on the kernel command line.   

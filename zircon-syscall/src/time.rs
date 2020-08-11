@@ -57,7 +57,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    /// 
+    ///
     pub fn sys_clock_adjust(&self, resource: HandleValue, clock_id: u32, offset: u64) -> ZxResult {
         info!(
             "clock.adjust: resource={:#x?}, id={:#x}, offset={:#x}",
@@ -88,7 +88,7 @@ impl Syscall<'_> {
     }
 
     /// High resolution sleep.  
-    /// A ```deadline``` value less than or equal to 0 immediately yields the thread. 
+    /// A ```deadline``` value less than or equal to 0 immediately yields the thread.
     pub async fn sys_nanosleep(&self, deadline: Deadline) -> ZxResult {
         info!("nanosleep: deadline={:?}", deadline);
         if deadline.0 <= 0 {
