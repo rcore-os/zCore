@@ -23,7 +23,7 @@ impl Syscall<'_> {
         proc.get_object::<Resource>(resource)?
             .validate(ResourceKind::ROOT)?;
         if desc_size > IOMMU_MAX_DESC_LEN {
-           3 return Err(ZxError::INVALID_ARGS);
+            return Err(ZxError::INVALID_ARGS);
         }
         if desc_size != IOMMU_DESC_SIZE {
             return Err(ZxError::INVALID_ARGS);
