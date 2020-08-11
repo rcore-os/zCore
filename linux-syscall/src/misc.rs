@@ -87,30 +87,24 @@ impl Syscall<'_> {
         );
         match resource {
             RLIMIT_STACK => {
-                if let Ok(_old_limit) = old_limit.read_if_not_null() {
-                    old_limit.write(RLimit {
-                        cur: USER_STACK_SIZE as u64,
-                        max: USER_STACK_SIZE as u64,
-                    })?;
-                }
+                old_limit.write(RLimit {
+                    cur: USER_STACK_SIZE as u64,
+                    max: USER_STACK_SIZE as u64,
+                })?;
                 Ok(0)
             }
             RLIMIT_NOFILE => {
-                if let Ok(_old_limit) = old_limit.read_if_not_null() {
-                    old_limit.write(RLimit {
-                        cur: 1024,
-                        max: 1024,
-                    })?;
-                }
+                old_limit.write(RLimit {
+                    cur: 1024,
+                    max: 1024,
+                })?;
                 Ok(0)
             }
             RLIMIT_RSS | RLIMIT_AS => {
-                if let Ok(_old_limit) = old_limit.read_if_not_null() {
-                    old_limit.write(RLimit {
-                        cur: 1024 * 1024 * 1024,
-                        max: 1024 * 1024 * 1024,
-                    })?;
-                }
+                old_limit.write(RLimit {
+                    cur: 1024 * 1024 * 1024,
+                    max: 1024 * 1024 * 1024,
+                })?;
                 Ok(0)
             }
             _ => Err(LxError::ENOSYS),
