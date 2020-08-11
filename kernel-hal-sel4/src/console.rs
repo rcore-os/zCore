@@ -6,13 +6,15 @@ struct Console;
 impl Write for Console {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         let mut buffer = [0u8; 4];
-        for c in s.chars() {
-            for code_point in c.encode_utf8(&mut buffer).as_bytes().iter() {
-                unsafe {
-                    sys::locked(|| sys::l4bridge_putchar(*code_point));
+        sys::locked(|| {
+            for c in s.chars() {
+                for code_point in c.encode_utf8(&mut buffer).as_bytes().iter() {
+                    unsafe {
+                        sys::l4bridge_putchar(*code_point);
+                    }
                 }
             }
-        }
+        });
         Ok(())
     }
 }

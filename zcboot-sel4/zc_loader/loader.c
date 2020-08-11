@@ -55,6 +55,7 @@ seL4_Word L4BRIDGE_PDPT_BITS = seL4_PDPTBits;
 seL4_Word L4BRIDGE_PAGEDIR_BITS = seL4_PageDirBits;
 seL4_Word L4BRIDGE_PAGETABLE_BITS = seL4_PageTableBits;
 seL4_Word L4BRIDGE_PAGE_BITS = seL4_PageBits;
+seL4_Word L4BRIDGE_ENDPOINT_BITS = seL4_EndpointBits;
 seL4_Word L4BRIDGE_MAX_PRIO = seL4_MaxPrio;
 
 char fmt_hex_char(unsigned char v) {
@@ -263,6 +264,13 @@ int l4bridge_retype_tcb(
     return _l4bridge_retype_fixed_size_object(untyped, out, seL4_TCBObject);
 }
 
+int l4bridge_retype_endpoint(
+    seL4_CPtr untyped,
+    seL4_CPtr out
+) {
+    return _l4bridge_retype_fixed_size_object(untyped, out, seL4_EndpointObject);
+}
+
 int l4bridge_map_pdpt(
     seL4_CPtr slot,
     seL4_CPtr vspace,
@@ -374,6 +382,38 @@ void l4bridge_delete_cap(seL4_CPtr slot) {
     if(error) {
         print_str("[loader] l4bridge_delete_cap: cannot delete cap\n");
     }
+}
+
+int l4bridge_badge_endpoint(seL4_CPtr src, seL4_CPtr dst, seL4_Word badge) {
+    return seL4_CNode_Mint(
+        CNODE_SLOT, dst, seL4_WordBits,
+        CNODE_SLOT, src, seL4_WordBits,
+        seL4_AllRights, badge
+    );
+}
+
+int l4bridge_kipc_call(seL4_CPtr slot, seL4_Word data, seL4_Word *result) {
+    seL4_SetMR(0, data);
+    seL4_MessageInfo_t tag = seL4_Call(slot, seL4_MessageInfo_new(0, 0, 0, 1));
+    if(seL4_MessageInfo_get_length(tag) != 1) {
+        return 1;
+    }
+    *result = seL4_GetMR(0);
+    return 0;
+}
+
+int l4bridge_kipc_recv(seL4_CPtr slot, seL4_Word *data, seL4_Word *sender_badge) {
+    seL4_MessageInfo_t tag = seL4_Recv(slot, sender_badge);
+    if(seL4_MessageInfo_get_length(tag) != 1) {
+        return 1;
+    }
+    *data = seL4_GetMR(0);
+    return 0;
+}
+
+void l4bridge_kipc_reply(seL4_Word result) {
+    seL4_SetMR(0, result);
+    seL4_Reply(seL4_MessageInfo_new(0, 0, 0, 1));
 }
 
 seL4_Word getcap(const char *name) {

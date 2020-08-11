@@ -8,9 +8,9 @@ use crate::sync::YieldMutex;
 use slab::Slab;
 use core::cell::UnsafeCell;
 use alloc::boxed::Box;
-use core::mem;
-use alloc::sync::Arc;
+use core::mem::{self, ManuallyDrop};
 use crate::sys;
+use crate::control;
 
 const KT_VM_START: usize = 0x7fff00000000usize;
 
@@ -64,11 +64,13 @@ impl KtVmRef {
         let next_start = KT_VM_START + KT_VM_ITEM_SIZE * next_index;
 
         // XXX: Keep this in sync with the layout of `KtVm`.
+        // The lock to `vm::K` must be acquired & released within the scope of `kvt`. Otherwise there'll be deadlock.
         let mut kvm = vm::K.lock();
         let alloc_result = 
             kvm.allocate_region(next_start..next_start + KtVm::offset_unused()).and_then(|_| {
                 kvm.allocate_region(next_start + KtVm::offset_stack()..next_start + KtVm::offset_end())
             });
+        drop(kvm);
         match alloc_result {
             Ok(()) =>  {},
             Err(e) => {
@@ -95,6 +97,7 @@ impl Drop for KtVmRef {
         let mut kvm = vm::K.lock();
         kvm.release_region(start);
         kvm.release_region(start + KtVm::offset_stack());
+        drop(kvm);
 
         KVT.lock().slots.remove(index);
     }
@@ -102,12 +105,25 @@ impl Drop for KtVmRef {
 
 
 pub struct KernelThread {
-    tcb: Tcb,
-    vm: KtVmRef,
+    tcb: ManuallyDrop<Tcb>,
+    vm: ManuallyDrop<KtVmRef>,
+}
+
+impl Drop for KernelThread {
+    fn drop(&mut self) {
+        unreachable!("KernelThread::drop");
+    }
 }
 
 impl KernelThread {
-    pub fn new(callback: Box<FnOnce(Arc<KernelThread>)>) -> KernelResult<Arc<KernelThread>> {
+    pub unsafe fn drop_from_control_thread(mut self) {
+        // `tcb` must be dropped before `vm`
+        ManuallyDrop::drop(&mut self.tcb);
+        ManuallyDrop::drop(&mut self.vm);
+        mem::forget(self);
+    }
+
+    fn start(callback: Box<FnOnce() + Send>) -> KernelResult<()> {
         let tcb = Tcb::new()?;
         let vm = KtVmRef::new()?;
 
@@ -120,7 +136,7 @@ impl KernelThread {
         let init_material_place = unsafe {
             let stack = &mut (*vm.get()).stack;
             let stack_len = stack.len();
-            mem::transmute::<&mut u8, &mut *mut KtInitMaterial>(
+            mem::transmute::<&mut u8, &mut Option<Box<KtInitMaterial>>>(
                 &mut stack[stack_len - mem::size_of::<*mut KtInitMaterial>()]
             )
         };
@@ -132,35 +148,38 @@ impl KernelThread {
                 init_material_place as *mut _ as usize,
                 ipc_buffer_addr, ipc_page_cap,
             )?;
-            tcb.set_priority(CPtr(sys::L4BRIDGE_STATIC_CAP_TCB), sys::L4BRIDGE_MAX_PRIO as u8)?;
+            tcb.set_priority(sys::L4BRIDGE_MAX_PRIO as u8)?;
         }
 
         // Now we have the new `KernelThread` ready
-        let kt = Arc::new(KernelThread {
-            tcb,
-            vm,
-        });
+        let kt = KernelThread {
+            tcb: ManuallyDrop::new(tcb),
+            vm: ManuallyDrop::new(vm),
+        };
 
         // Write init material
-        let init_material = Box::into_raw(Box::new(KtInitMaterial {
-            kt: kt.clone(),
+        *init_material_place = Some(Box::new(KtInitMaterial {
+            kt,
             callback,
         }));
-        *init_material_place = init_material;
 
         // Resume. We can't fail here.
-        if kt.tcb.resume().is_err() {
+        if init_material_place.as_mut().unwrap().kt.tcb.resume().is_err() {
             panic!("KernelThread::new: cannot resume new thread");
         }
 
-        Ok(kt)
+        Ok(())
     }
+}
+
+pub fn spawn<F: FnOnce() + Send + 'static>(f: F) -> KernelResult<()> {
+    KernelThread::start(Box::new(f))
 }
 
 #[repr(C)]
 struct KtInitMaterial {
-    kt: Arc<KernelThread>,
-    callback: Box<FnOnce(Arc<KernelThread>)>,
+    kt: KernelThread,
+    callback: Box<FnOnce() + Send>,
 }
 
 #[no_mangle]
@@ -170,8 +189,19 @@ unsafe extern "C" fn _khal_sel4_kt_hl_entry(material: Box<KtInitMaterial>) -> ! 
     let tls_size = vm.tls.len();
     let ipc_buffer_addr = &vm.ipc_buffer as *const _ as usize;
     sys::l4bridge_setup_tls(tls_addr, tls_size, ipc_buffer_addr);
-    (material.callback)(material.kt.clone());
-    panic!("_khal_sel4_kt_hl_entry: callback returned");
+
+    // Ensure that `material` is dropped
+    let callback;
+    let kt;
+
+    {
+        let material = material;
+        callback = material.callback;
+        kt = material.kt;
+    }
+
+    callback();
+    control::exit_thread(kt);
 }
 
 extern "C" {

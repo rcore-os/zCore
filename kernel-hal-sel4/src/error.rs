@@ -1,4 +1,7 @@
-#[derive(Copy, Clone, Debug)]
+use num_enum::TryFromPrimitive;
+use core::convert::TryFrom;
+
+#[derive(Copy, Clone, Debug, TryFromPrimitive)]
 #[repr(i32)]
 pub enum KernelError {
     OutOfCap = 1,
@@ -11,6 +14,18 @@ pub enum KernelError {
     ResumeFailed = 8,
     TcbFailure = 9,
     PriorityFailure = 10,
+    IpcIgnored = 11,
+    IpcFailure = 12,
+    Unknown = 13,
+}
+
+impl KernelError {
+    pub fn from_code(other: i32) -> KernelError {
+        match KernelError::try_from(other) {
+            Ok(x) => x,
+            Err(_) => KernelError::Unknown,
+        }
+    }
 }
 
 pub type KernelResult<T> = Result<T, KernelError>;

@@ -58,9 +58,9 @@ impl Tcb {
         }
     }
 
-    pub fn set_priority(&self, auth_tcb: CPtr, prio: u8) -> KernelResult<()> {
+    pub fn set_priority(&self, prio: u8) -> KernelResult<()> {
         if unsafe {
-            sys::locked(|| sys::l4bridge_set_priority(self.object(), auth_tcb, prio as _))
+            sys::locked(|| sys::l4bridge_set_priority(self.object(), CPtr(sys::L4BRIDGE_STATIC_CAP_TCB), prio as _))
         } != 0 {
             Err(KernelError::PriorityFailure)
         } else {

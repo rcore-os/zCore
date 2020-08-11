@@ -18,6 +18,8 @@ mod pmem;
 mod vm;
 mod object;
 mod kt;
+mod kipc;
+mod control;
 
 use alloc::boxed::Box;
 
@@ -27,6 +29,7 @@ pub unsafe fn boot() -> ! {
     pmem::init();
     cap::init();
 
+/*
     println!("Testing allocation.");
     let mut result: u32 = 0;
     for i in 0..1000 {
@@ -39,6 +42,7 @@ pub unsafe fn boot() -> ! {
         result += v[v.len() - 1] as u32;
     }
     println!("result: {}", result);
+*/
 
 /*
     println!("Attempting to allocate one physical page 100000 times.");
@@ -64,14 +68,19 @@ pub unsafe fn boot() -> ! {
     }
     println!("Testing ok.");
 */
-    kt::KernelThread::new(Box::new(|kt| {
-        loop {
-            println!("(thread)");
+    kt::spawn(move || {
+        use core::sync::atomic::{AtomicUsize, Ordering};
+        static COUNTER: AtomicUsize = AtomicUsize::new(0);
+        for i in 0..10000 {
+            kt::spawn(move || {
+                if COUNTER.fetch_add(1, Ordering::SeqCst) + 1 == 10000 {
+                    println!("Got final result.");
+                }
+            }).expect("spawn failed");
+            thread::yield_now();
         }
-    })).expect("cannot start kernel thread");
-    loop {
-        println!("(boot)");
-    }
+    }).expect("spawn failed");
+    control::run();
 }
 
 #[panic_handler]

@@ -15,6 +15,7 @@ extern "C" {
     pub fn l4bridge_retype_pagetable(untyped: CPtr, out: CPtr) -> i32;
     pub fn l4bridge_retype_page(untyped: CPtr, out: CPtr) -> i32;
     pub fn l4bridge_retype_tcb(untyped: CPtr, out: CPtr) -> i32;
+    pub fn l4bridge_retype_endpoint(untyped: CPtr, out: CPtr) -> i32;
 
     pub fn l4bridge_map_pdpt(slot: CPtr, vspace: CPtr, vaddr: Word) -> i32;
     pub fn l4bridge_map_pagedir(slot: CPtr, vspace: CPtr, vaddr: Word) -> i32;
@@ -56,6 +57,12 @@ extern "C" {
         ipc_buffer: Word,
     );
 
+    pub fn l4bridge_badge_endpoint(src: CPtr, dst: CPtr, badge: Word) -> i32;
+
+    pub fn l4bridge_kipc_call(slot: CPtr, data: Word, result: &mut Word) -> i32;
+    pub fn l4bridge_kipc_recv(slot: CPtr, data: &mut Word, sender_badge: &mut Word) -> i32;
+    pub fn l4bridge_kipc_reply(result: Word);
+
     pub static L4BRIDGE_CNODE_SLOT_BITS: Word;
     pub static L4BRIDGE_TCB_BITS: Word;
     pub static L4BRIDGE_STATIC_CAP_VSPACE: Word;
@@ -66,6 +73,7 @@ extern "C" {
     pub static L4BRIDGE_PAGETABLE_BITS: Word;
     pub static L4BRIDGE_PAGE_BITS: Word;
     pub static L4BRIDGE_MAX_PRIO: Word;
+    pub static L4BRIDGE_ENDPOINT_BITS: Word;
 }
 
 static M: YieldMutex<()> = YieldMutex::new(());
