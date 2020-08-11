@@ -51,9 +51,11 @@ fn init_logger() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use zircon_object::object::task::*;
 
     /// test with cmd line
-    async fn test(cmdline: &str) {
+    async fn test(cmdline: &str) -> i64 {
         kernel_hal_unix::init();
 
         let args: Vec<String> = cmdline.split(' ').map(|s| s.into()).collect();
@@ -61,66 +63,100 @@ mod tests {
             vec!["PATH=/usr/sbin:/usr/bin:/sbin:/bin:/usr/x86_64-alpine-linux-musl/bin".into()]; // TODO
         let hostfs = HostFS::new("../rootfs");
         let proc = run(args, envs, hostfs);
-        let proc: Arc<dyn KernelObject> = proc;
-        proc.wait_signal(Signal::PROCESS_TERMINATED).await;
+        let procobj: Arc<dyn KernelObject> = proc.clone();
+        procobj.wait_signal(Signal::PROCESS_TERMINATED).await;
+        if let Status::Exited(code) = proc.status() {
+            return code;
+        }
+        -1
     }
 
     // test using busybox
 
     #[async_std::test]
     async fn test_busybox() {
-        test("/bin/busybox").await;
+        assert_eq!(test("/bin/busybox").await, 0);
     }
 
     #[async_std::test]
     async fn test_uname() {
-        test("/bin/busybox uname -a").await;
+        assert_eq!(test("/bin/busybox uname -a").await, 0);
     }
 
     #[async_std::test]
     async fn test_date() {
-        test("/bin/busybox date").await;
+        assert_eq!(test("/bin/busybox date").await, 0);
     }
 
     #[async_std::test]
     async fn test_dir() {
-        test("/bin/busybox pwd").await;
-        test("/bin/busybox ls -a").await;
-        test("/bin/busybox dirname /bin/busybox").await;
+        assert_eq!(test("/bin/busybox pwd").await, 0);
+        assert_eq!(test("/bin/busybox ls -a").await, 0);
+        assert_eq!(test("/bin/busybox dirname /bin/busybox").await, 0);
+    }
+
+    #[async_std::test]
+    async fn test_create_remove_file() {
+        test("/bin/busybox rm testfile").await; // can't remove
+        fs::read("../rootfs/testfile").unwrap_err();
+        test("/bin/busybox touch testfile").await;
+        fs::read("../rootfs/testfile").unwrap();
+        test("/bin/busybox touch testfile").await;
+        fs::read("../rootfs/testfile").unwrap();
+        test("/bin/busybox rm testfile").await;
+        fs::read("../rootfs/testfile").unwrap_err();
     }
 
     #[async_std::test]
     async fn test_create_remove_dir() {
+        test("/bin/busybox rmdir test").await; // can't remove
+        fs::read_dir("../rootfs/test").unwrap_err();
         test("/bin/busybox mkdir test").await;
+        fs::read_dir("../rootfs/test").unwrap();
         test("/bin/busybox rmdir test").await;
+        fs::read_dir("../rootfs/test").unwrap_err();
     }
 
     #[async_std::test]
     async fn test_readfile() {
-        test("/bin/busybox cat /etc/profile").await;
+        assert_eq!(test("/bin/busybox cat /etc/profile").await, 0);
+        assert_eq!(test("/bin/busybox cat /etc/profila").await, 1); // can't open
     }
 
     #[async_std::test]
     async fn test_cp_mv() {
+        test("/bin/busybox cp /etc/hostnama /etc/hostname.bak").await; // can't move
+        fs::read("../rootfs/etc/hostname.bak").unwrap_err();
         test("/bin/busybox cp /etc/hostname /etc/hostname.bak").await;
+        fs::read("../rootfs/etc/hostname.bak").unwrap();
         test("/bin/busybox mv /etc/hostname.bak /etc/hostname.mv").await;
+        fs::read("../rootfs/etc/hostname.bak").unwrap_err();
     }
 
     #[async_std::test]
     async fn test_link() {
+        test("/bin/busybox ln /etc/hostnama /etc/hostname.ln").await; // can't ln
+        fs::read("../rootfs/etc/hostname.ln").unwrap_err();
         test("/bin/busybox ln /etc/hostname /etc/hostname.ln").await;
+        fs::read("../rootfs/etc/hostname.ln").unwrap();
         test("/bin/busybox unlink /etc/hostname.ln").await;
+        fs::read("../rootfs/etc/hostname.ln").unwrap_err();
     }
 
     #[async_std::test]
     async fn test_env() {
-        test("/bin/busybox env").await;
+        assert_eq!(test("/bin/busybox env").await, 0);
     }
 
     // syscall unit test
 
     #[async_std::test]
     async fn test_pipe() {
-        test("/bin/testpipe1").await;
+        assert_eq!(test("/bin/testpipe1").await, 0);
+    }
+
+    #[async_std::test]
+    async fn test_time() {
+        assert_eq!(test("/bin/testtime").await, 0);
     }
 }
