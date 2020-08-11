@@ -12,6 +12,7 @@ async-trait = "0.1.36"
 log = "0.4"
 spin = "0.5"
 xmas-elf = "0.7"
+bitflags = "1.2"
 hashbrown = "0.7"
 zircon-object = { path = "../zircon-object", features = ["elf"] }
 kernel-hal = { path = "../kernel-hal" }
