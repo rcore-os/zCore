@@ -72,6 +72,60 @@ impl Syscall<'_> {
             }
         }
     }
+
+    /// Combines and extends the functionality of setrlimit() and getrlimit()
+    pub fn sys_prlimit64(
+        &mut self,
+        pid: usize,
+        resource: usize,
+        new_limit: UserInPtr<RLimit>,
+        mut old_limit: UserOutPtr<RLimit>,
+    ) -> SysResult {
+        info!(
+            "prlimit64: pid: {}, resource: {}, new_limit: {:x?}, old_limit: {:x?}",
+            pid, resource, new_limit, old_limit
+        );
+        match resource {
+            RLIMIT_STACK => {
+                old_limit.write_if_not_null(RLimit {
+                    cur: USER_STACK_SIZE as u64,
+                    max: USER_STACK_SIZE as u64,
+                })?;
+                Ok(0)
+            }
+            RLIMIT_NOFILE => {
+                old_limit.write_if_not_null(RLimit {
+                    cur: 1024,
+                    max: 1024,
+                })?;
+                Ok(0)
+            }
+            RLIMIT_RSS | RLIMIT_AS => {
+                old_limit.write_if_not_null(RLimit {
+                    cur: 1024 * 1024 * 1024,
+                    max: 1024 * 1024 * 1024,
+                })?;
+                Ok(0)
+            }
+            _ => Err(LxError::ENOSYS),
+        }
+    }
+
+    #[allow(unsafe_code)]
+    /// fills the buffer pointed to by `buf` with up to `buflen` random bytes.
+    /// - `buf` - buffer that needed to fill
+    /// - `buflen` - length of buffer
+    /// - `flag` - a bit mask that can contain zero or more of the following values ORed together:
+    ///   - GRND_RANDOM
+    ///   - GRND_NONBLOCK
+    /// - returns the number of bytes that were copied to the buffer buf.
+    pub fn sys_getrandom(&mut self, mut buf: UserOutPtr<u8>, len: usize, flag: u32) -> SysResult {
+        info!("getrandom: buf: {:?}, len: {:?}, flag {:?}", buf, len, flag);
+        let mut buffer = vec![0u8; len];
+        kernel_hal::fill_random(&mut buffer);
+        buf.write_array(&buffer[..len])?;
+        Ok(len)
+    }
 }
 
 bitflags! {
@@ -86,4 +140,18 @@ bitflags! {
         /// can be employed with all futex operations, tells the kernel that the futex is process-private and not shared with another process
         const PRIVATE   = 0x80;
     }
+}
+
+const USER_STACK_SIZE: usize = 8 * 1024 * 1024; // 8 MB, the default config of Linux
+
+const RLIMIT_STACK: usize = 3;
+const RLIMIT_RSS: usize = 5;
+const RLIMIT_NOFILE: usize = 7;
+const RLIMIT_AS: usize = 9;
+
+#[repr(C)]
+#[derive(Debug, Default)]
+pub struct RLimit {
+    cur: u64, // soft limit
+    max: u64, // hard limit
 }

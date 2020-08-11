@@ -31,7 +31,7 @@ zircon-loader = { path = "../zircon-loader", default-features = false, optional 
 linux-loader = { path = "../linux-loader", default-features = false, optional = true }
 linux-object = { path = "../linux-object", default-features = false, optional = true }
 zircon-syscall = { path = "../zircon-syscall", optional = true }
-rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "e17b27b", optional = true }
+rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "517af47", optional = true }
 rvm = { git = "https://github.com/rcore-os/RVM", rev = "4b64355", optional = true }
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]

@@ -2,10 +2,11 @@
 
 #![allow(dead_code)]
 
-use alloc::{string::String, sync::Arc};
+use alloc::{boxed::Box, string::String, sync::Arc};
 
 use super::FileLike;
 use crate::error::{LxError, LxResult};
+use async_trait::async_trait;
 use rcore_fs::vfs::{FsError, INode, Metadata, PollStatus};
 use spin::Mutex;
 use zircon_object::object::*;
@@ -154,6 +155,10 @@ impl File {
         Ok(status)
     }
 
+    pub async fn async_poll(&self) -> LxResult<PollStatus> {
+        Ok(self.inode.async_poll().await?)
+    }
+
     pub fn io_control(&self, cmd: u32, arg: usize) -> LxResult<usize> {
         self.inode.io_control(cmd, arg)?;
         Ok(0)
@@ -172,6 +177,7 @@ impl File {
     }
 }
 
+#[async_trait]
 impl FileLike for File {
     fn read(&self, buf: &mut [u8]) -> LxResult<usize> {
         self.read(buf)
@@ -191,6 +197,10 @@ impl FileLike for File {
 
     fn poll(&self) -> LxResult<PollStatus> {
         self.poll()
+    }
+
+    async fn async_poll(&self) -> LxResult<PollStatus> {
+        self.async_poll().await
     }
 
     fn ioctl(&self, request: usize, arg1: usize, _arg2: usize, _arg3: usize) -> LxResult<usize> {

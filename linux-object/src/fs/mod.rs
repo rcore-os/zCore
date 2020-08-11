@@ -1,4 +1,4 @@
-use alloc::{sync::Arc, vec::Vec};
+use alloc::{boxed::Box, sync::Arc, vec::Vec};
 
 use rcore_fs::vfs::*;
 use rcore_fs_devfs::{special::*, DevFS};
@@ -16,6 +16,7 @@ pub use rcore_fs::vfs;
 
 use crate::error::*;
 use crate::process::LinuxProcess;
+use async_trait::async_trait;
 use core::convert::TryFrom;
 use downcast_rs::impl_downcast;
 use zircon_object::object::*;
@@ -29,6 +30,7 @@ mod pseudo;
 mod random;
 mod stdio;
 
+#[async_trait]
 /// Generic file interface
 ///
 /// - Normal file, Directory
@@ -40,6 +42,7 @@ pub trait FileLike: KernelObject {
     fn read_at(&self, offset: u64, buf: &mut [u8]) -> LxResult<usize>;
     fn write_at(&self, offset: u64, buf: &[u8]) -> LxResult<usize>;
     fn poll(&self) -> LxResult<PollStatus>;
+    async fn async_poll(&self) -> LxResult<PollStatus>;
     fn ioctl(&self, request: usize, arg1: usize, arg2: usize, arg3: usize) -> LxResult<usize>;
     fn fcntl(&self, cmd: usize, arg: usize) -> LxResult<usize>;
 }
