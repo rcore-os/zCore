@@ -92,7 +92,7 @@ impl Syscall<'_> {
 #[repr(C)]
 #[derive(Debug)]
 pub struct PollFd {
-    fd: u32,
+    fd: FileDesc,
     events: PollEvents,
     revents: PollEvents,
 }
