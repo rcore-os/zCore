@@ -99,7 +99,7 @@ impl FSem {
         let new_val = self.count.fetch_add(1, Ordering::Release) + 1;
         if self.waiters.load(Ordering::Relaxed) > 0 {
             ensure_fc_init();
-            FC.call(FutexRequest::Wake(&self.count, new_val as usize)).expect("FutexRequest::Wake failed");
+            FC.call(FutexRequest::Wake(&self.count, 1)).expect("FutexRequest::Wake failed");
         }
     }
 
