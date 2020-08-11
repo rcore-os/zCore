@@ -32,6 +32,8 @@ pub struct KipcChannel<T: Send + 'static> {
     _phantom: PhantomData<T>,
 }
 
+unsafe impl<T: Send + 'static> Sync for KipcChannel<T> {}
+
 impl<T: Send + 'static> KipcChannel<T> {
     pub fn new() -> KernelResult<KipcChannel<T>> {
         Ok(KipcChannel {

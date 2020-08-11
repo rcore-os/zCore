@@ -22,6 +22,7 @@ mod kipc;
 mod control;
 mod timer;
 mod zc;
+mod futex;
 
 use alloc::boxed::Box;
 
@@ -30,6 +31,7 @@ pub unsafe fn boot() -> ! {
     allocator::init();
     pmem::init();
     cap::init();
+    futex::init();
 
 /*
     println!("Testing allocation.");
@@ -70,11 +72,12 @@ pub unsafe fn boot() -> ! {
     }
     println!("Testing ok.");
 */
-/*
+
     kt::spawn(move || {
         use core::sync::atomic::{AtomicUsize, Ordering};
         static COUNTER: AtomicUsize = AtomicUsize::new(0);
         for i in 0..10000 {
+            println!("spawn {}", i);
             kt::spawn(move || {
                 if COUNTER.fetch_add(1, Ordering::SeqCst) + 1 == 10000 {
                     println!("Got final result.");
@@ -83,7 +86,7 @@ pub unsafe fn boot() -> ! {
             thread::yield_now();
         }
     }).expect("spawn failed");
-*/
+
     kt::spawn(|| {
         zc::zcore_main();
     }).expect("cannot spawn zcore_main");

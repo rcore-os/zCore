@@ -4,13 +4,13 @@ use crate::object::*;
 use crate::types::*;
 use crate::error::*;
 use crate::vm;
-use crate::sync::YieldMutex;
 use slab::Slab;
 use core::cell::UnsafeCell;
 use alloc::boxed::Box;
 use core::mem::{self, ManuallyDrop};
 use crate::sys;
 use crate::control;
+use crate::futex::FMutex;
 
 const KT_VM_START: usize = 0x7fff00000000usize;
 
@@ -21,7 +21,7 @@ struct KtVmTracker {
     slots: Slab<()>,
 }
 
-static KVT: YieldMutex<KtVmTracker> = YieldMutex::new(KtVmTracker {
+static KVT: FMutex<KtVmTracker> = FMutex::new(KtVmTracker {
     slots: Slab::new(),
 });
 

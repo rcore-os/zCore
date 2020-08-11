@@ -34,7 +34,7 @@ impl<T> YieldMutex<T> {
         }
     }
 
-    fn unlock(&self) {
+    pub unsafe fn force_unlock(&self) {
         self.lock.store(0, Ordering::Release);
     }
 }
@@ -59,6 +59,8 @@ impl<'a, T> DerefMut for YieldMutexGuard<'a, T> {
 
 impl<'a, T> Drop for YieldMutexGuard<'a, T> {
     fn drop(&mut self) {
-        self.parent.unlock();
+        unsafe {
+            self.parent.force_unlock();
+        }
     }
 }

@@ -1,6 +1,6 @@
 use slab::Slab;
 use crate::types::*;
-use crate::sync::YieldMutex;
+use crate::futex::FMutex;
 use crate::error::*;
 use crate::sys;
 use crate::pmem::{PhysicalRegion, PMEM};
@@ -14,9 +14,9 @@ const TOPLEVEL_SIZE: usize = 1usize << TOPLEVEL_BITS;
 pub static G: CapAlloc = CapAlloc::new();
 
 pub struct CapAlloc {
-    slab: YieldMutex<Slab<()>>,
-    critical_buffer: YieldMutex<Option<PhysicalRegion>>,
-    toplevel_usage: YieldMutex<[bool; TOPLEVEL_SIZE]>
+    slab: FMutex<Slab<()>>,
+    critical_buffer: FMutex<Option<PhysicalRegion>>,
+    toplevel_usage: FMutex<[bool; TOPLEVEL_SIZE]>
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -30,9 +30,9 @@ impl CapAlloc {
         let mut toplevel_usage = [false; TOPLEVEL_SIZE];
         toplevel_usage[0] = true;
         CapAlloc {
-            slab: YieldMutex::new(Slab::new()),
-            critical_buffer: YieldMutex::new(None),
-            toplevel_usage: YieldMutex::new(toplevel_usage),
+            slab: FMutex::new(Slab::new()),
+            critical_buffer: FMutex::new(None),
+            toplevel_usage: FMutex::new(toplevel_usage),
         }
     }
 

@@ -6,11 +6,11 @@ use crate::types::*;
 use crate::error::*;
 use crate::sys;
 use lazy_static::lazy_static;
-use crate::sync::YieldMutex;
+use crate::futex::FMutex;
 use crate::cap;
 
 lazy_static! {
-    pub static ref K: YieldMutex<VmAlloc> = YieldMutex::new(
+    pub static ref K: FMutex<VmAlloc> = FMutex::new(
         unsafe { VmAlloc::with_vspace(CPtr(sys::L4BRIDGE_STATIC_CAP_VSPACE)) }
     );
 }

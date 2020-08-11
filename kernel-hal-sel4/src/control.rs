@@ -5,7 +5,7 @@ use lazy_static::lazy_static;
 use crate::kt::{spawn, KernelThread};
 use alloc::boxed::Box;
 use crate::timer;
-use crate::sync::YieldMutex;
+use crate::futex::FMutex;
 use alloc::collections::btree_map::BTreeMap;
 use alloc::collections::linked_list::LinkedList;
 
@@ -15,8 +15,9 @@ const IDLE_TIMER_PERIOD: u64 = 1000000 * 50; // 50ms
 
 lazy_static! {
     static ref CONTROL: KipcChannel<ControlMessage> = KipcChannel::new().expect("kipc/CONTROL: init failed");
-    static ref SLEEP_QUEUE: YieldMutex<SleepQueue> = YieldMutex::new(SleepQueue::new());
 }
+
+static SLEEP_QUEUE: FMutex<SleepQueue> = FMutex::new(SleepQueue::new());
 
 struct SleepQueue {
     queue: BTreeMap<u64, LinkedList<SavedReplyHandle>>,
@@ -24,7 +25,7 @@ struct SleepQueue {
 }
 
 impl SleepQueue {
-    fn new() -> SleepQueue {
+    const fn new() -> SleepQueue {
         SleepQueue {
             queue: BTreeMap::new(),
             busy_mode: false,

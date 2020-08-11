@@ -1,3 +1,5 @@
+use crate::sync::YieldMutex;
+
 static mut HEAP: Heap = Heap([0; 1048576 * 32]);
 static mut HEAP_TOP: usize = 0;
 const PAGE_SIZE: usize = 4096;
@@ -50,12 +52,18 @@ extern "C" fn __dlmalloc_alloc(size: usize) -> usize {
     }
 }
 
+static GLOBAL_LOCK: YieldMutex<()> = YieldMutex::new(());
+
 #[no_mangle]
 extern "C" fn __dlmalloc_acquire_global_lock() {
+    core::mem::forget(GLOBAL_LOCK.lock());
 }
 
 #[no_mangle]
 extern "C" fn __dlmalloc_release_global_lock() {
+    unsafe {
+        GLOBAL_LOCK.force_unlock();
+    }
 }
 
 #[no_mangle]

@@ -3,13 +3,13 @@ use crate::sys;
 use crate::cap::{self, CriticalBufferUsage};
 use alloc::collections::btree_map::BTreeMap;
 use alloc::vec::Vec;
-use crate::sync::YieldMutex;
+use crate::futex::FMutex;
 use crate::object::*;
 
 pub static PMEM: PhysicalMemory = PhysicalMemory::new();
 
 pub struct PhysicalMemory {
-    regions: YieldMutex<BTreeMap<u8, Vec<PhysicalRegion>>>,
+    regions: FMutex<BTreeMap<u8, Vec<PhysicalRegion>>>,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -22,7 +22,7 @@ pub struct PhysicalRegion {
 impl PhysicalMemory {
     const fn new() -> PhysicalMemory {
         PhysicalMemory {
-            regions: YieldMutex::new(BTreeMap::new()),
+            regions: FMutex::new(BTreeMap::new()),
         }
     }
 
