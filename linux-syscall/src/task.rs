@@ -10,9 +10,9 @@
 //! - getppid
 
 use super::*;
+use crate::time::TimeSpec;
 use bitflags::bitflags;
-use core::fmt::{Debug, Formatter, Result};
-use core::time::Duration;
+use core::fmt::Debug;
 use linux_object::fs::INodeExt;
 use linux_object::loader::LinuxElfLoader;
 use linux_object::thread::ThreadExt;
@@ -255,13 +255,10 @@ impl Syscall<'_> {
 
     /// Allows the calling thread to sleep for
     /// an interval specified with nanosecond precision
-    pub async fn sys_nanosleep(&self, deadline: Deadline) -> SysResult {
-        info!("nanosleep: deadline={:?}", deadline);
-        if deadline.0 <= 0 {
-            kernel_hal::yield_now().await;
-        } else {
-            kernel_hal::sleep_until(deadline.into()).await;
-        }
+    pub async fn sys_nanosleep(&self, req: UserInPtr<TimeSpec>) -> SysResult {
+        info!("nanosleep: deadline={:?}", req);
+        let req = req.read()?;
+        kernel_hal::sleep_until(req.into()).await;
         Ok(0)
     }
 
@@ -363,42 +360,5 @@ impl RegExt for GeneralRegs {
 
     fn new_fork(regs: &Self) -> Self {
         GeneralRegs { rax: 0, ..*regs }
-    }
-}
-
-#[repr(transparent)]
-pub struct Deadline(i64);
-
-impl From<usize> for Deadline {
-    fn from(x: usize) -> Self {
-        Deadline(x as i64)
-    }
-}
-
-impl Deadline {
-    pub fn is_positive(&self) -> bool {
-        self.0.is_positive()
-    }
-
-    pub fn forever() -> Self {
-        Deadline(i64::max_value())
-    }
-}
-
-impl From<Deadline> for Duration {
-    fn from(deadline: Deadline) -> Self {
-        Duration::from_nanos(deadline.0.max(0) as u64)
-    }
-}
-
-impl Debug for Deadline {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        if self.0 <= 0 {
-            write!(f, "NoWait")
-        } else if self.0 == i64::max_value() {
-            write!(f, "Forever")
-        } else {
-            write!(f, "At({:?})", Duration::from_nanos(self.0 as u64))
-        }
     }
 }
