@@ -129,7 +129,7 @@ pub struct LinuxProcess {
 }
 
 #[derive(Default)]
-pub struct LinuxProcessInner {
+struct LinuxProcessInner {
     /// Execute path
     execute_path: String,
     /// Current Working Directory
@@ -137,7 +137,7 @@ pub struct LinuxProcessInner {
     /// Omit leading '/'.
     current_working_directory: String,
     /// Opened files
-    pub files: HashMap<FileDesc, Arc<dyn FileLike>>,
+    files: HashMap<FileDesc, Arc<dyn FileLike>>,
     /// Futexes
     futexes: HashMap<VirtAddr, Arc<Futex>>,
     /// Child processes
