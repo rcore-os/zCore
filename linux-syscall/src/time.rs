@@ -37,7 +37,7 @@ impl Syscall<'_> {
     pub fn sys_clock_gettime(&self, clock: usize, mut buf: UserOutPtr<TimeSpec>) -> SysResult {
         info!("clock_gettime: id={:?} buf={:?}", clock, buf);
         // TODO: handle clock_settime
-        let ts = TimeSpec::new();
+        let ts = TimeSpec::now();
         buf.write(ts)?;
 
         info!("TimeSpec: {:?}", ts);
@@ -57,7 +57,7 @@ impl Syscall<'_> {
             return Err(LxError::EINVAL);
         }
 
-        let timeval = TimeVal::new();
+        let timeval = TimeVal::now();
         tv.write(timeval)?;
 
         info!("TimeVal: {:?}", timeval);
@@ -69,7 +69,7 @@ impl Syscall<'_> {
     #[cfg(target_arch = "x86_64")]
     pub fn sys_time(&mut self, mut time: UserOutPtr<u64>) -> SysResult {
         info!("time: time: {:?}", time);
-        let sec = TimeSpec::new().sec;
+        let sec = TimeSpec::now().sec;
         time.write(sec as u64)?;
         Ok(sec)
     }
@@ -82,8 +82,8 @@ impl Syscall<'_> {
         info!("getrusage: who: {}, rusage: {:?}", who, rusage);
 
         let new_rusage = RUsage {
-            utime: TimeVal::new(),
-            stime: TimeVal::new(),
+            utime: TimeVal::now(),
+            stime: TimeVal::now(),
         };
         rusage.write(new_rusage)?;
         Ok(0)
@@ -93,7 +93,7 @@ impl Syscall<'_> {
     pub fn sys_times(&mut self, mut buf: UserOutPtr<Tms>) -> SysResult {
         info!("times: buf: {:?}", buf);
 
-        let tv = TimeVal::new();
+        let tv = TimeVal::now();
 
         let tick = (tv.sec * 1_000_000 + tv.usec) / USEC_PER_TICK;
 
@@ -113,14 +113,14 @@ impl Syscall<'_> {
 
 impl TimeVal {
     /// create TimeVal
-    pub fn new() -> TimeVal {
-        TimeSpec::new().into()
+    pub fn now() -> TimeVal {
+        TimeSpec::now().into()
     }
 }
 
 impl TimeSpec {
     /// create TimeSpec
-    pub fn new() -> TimeSpec {
+    pub fn now() -> TimeSpec {
         let time = timer_now();
         TimeSpec {
             sec: time.as_secs() as usize,
@@ -131,7 +131,7 @@ impl TimeSpec {
     /// update TimeSpec for a file inode
     /// TODO: more precise; update when write
     pub fn update(inode: &Arc<dyn INode>) {
-        let now = TimeSpec::new().into();
+        let now = TimeSpec::now().into();
         if let Ok(mut metadata) = inode.metadata() {
             metadata.atime = now;
             metadata.mtime = now;
@@ -168,13 +168,13 @@ impl Into<TimeVal> for TimeSpec {
 
 impl Default for TimeVal {
     fn default() -> Self {
-        Self::new()
+        TimeVal { sec: 0, usec: 0 }
     }
 }
 
 impl Default for TimeSpec {
     fn default() -> Self {
-        Self::new()
+        TimeSpec { sec: 0, nsec: 0 }
     }
 }
 
@@ -192,8 +192,12 @@ pub struct RUsage {
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct Tms {
-    tms_utime: u64,  /* user time */
-    tms_stime: u64,  /* system time */
-    tms_cutime: u64, /* user time of children */
-    tms_cstime: u64, /* system time of children */
+    /// user time
+    tms_utime: u64,
+    /// system time
+    tms_stime: u64,
+    /// user time of children
+    tms_cutime: u64,
+    /// system time of children
+    tms_cstime: u64,
 }

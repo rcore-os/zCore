@@ -347,7 +347,7 @@ impl Syscall<'_> {
         const UTIME_OMIT: usize = 0x3ffffffe;
         let proc = self.linux_process();
         let mut times = if times.is_null() {
-            let epoch = TimeSpec::new();
+            let epoch = TimeSpec::now();
             [epoch, epoch]
         } else {
             let times = times.read()?;
@@ -375,7 +375,7 @@ impl Syscall<'_> {
         let mut metadata = inode.metadata()?;
         if times[0].nsec != UTIME_OMIT {
             if times[0].nsec == UTIME_NOW {
-                times[0] = TimeSpec::new();
+                times[0] = TimeSpec::now();
             }
             metadata.atime = rcore_fs::vfs::Timespec {
                 sec: times[0].sec as i64,
@@ -384,7 +384,7 @@ impl Syscall<'_> {
         }
         if times[1].nsec != UTIME_OMIT {
             if times[1].nsec == UTIME_NOW {
-                times[1] = TimeSpec::new();
+                times[1] = TimeSpec::now();
             }
             metadata.mtime = rcore_fs::vfs::Timespec {
                 sec: times[1].sec as i64,
