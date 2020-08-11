@@ -10,7 +10,7 @@ use {
 };
 
 impl Syscall<'_> {
-    /// Creates a guest, which is a virtual machine that can be run within the hypervisor, 
+    /// Creates a guest, which is a virtual machine that can be run within the hypervisor,   
     /// with ```vmar_handle``` used to represent the physical address space of the guest.
     pub fn sys_guest_create(
         &self,
@@ -51,7 +51,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    /// Sets a trap within a guest.
+    /// Sets a trap within a guest.  
     pub fn sys_guest_set_trap(
         &self,
         handle: HandleValue,
@@ -155,7 +155,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    /// Write the state of a VCPU.
+    /// Write the state of a VCPU.  
     /// > It is only valid to write the state of handle when execution has been paused.
     pub fn sys_vcpu_write_state(
         &self,

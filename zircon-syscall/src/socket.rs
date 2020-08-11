@@ -1,7 +1,7 @@
 use {super::*, zircon_object::ipc::Socket, zircon_object::ipc::SocketFlags};
 
 impl Syscall<'_> {
-    /// Create a socket.
+    /// Create a socket.  
     /// Socket, a connected pair of bidirectional stream transports, that can move only data, and that have a maximum capacity.
     pub fn sys_socket_create(
         &self,
@@ -19,7 +19,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    /// Write data to a socket.
+    /// Write data to a socket.  
     /// Attempts to write ```count: usize``` bytes to the socket specified by ```handle_value```.
     pub fn sys_socket_write(
         &self,

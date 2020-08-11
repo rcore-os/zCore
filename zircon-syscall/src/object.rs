@@ -7,9 +7,9 @@ use {
 };
 
 impl Syscall<'_> {
-    /// Ask for various properties of various kernel objects.
-    /// handle_value: HandleValue, indicates the target kernel object.
-    /// property: u32, indicates which property to get/set.
+    /// Ask for various properties of various kernel objects.  
+    /// handle_value: HandleValue, indicates the target kernel object.  
+    /// property: u32, indicates which property to get/set.  
     /// buffer: usize, holds the property value, and must be a pointer to a buffer of value_size bytes.
     pub fn sys_object_get_property(
         &self,
@@ -223,8 +223,8 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    /// Query information about an object.
-    /// topic: u32, indicates what specific information is desired.
+    /// Query information about an object.  
+    /// topic: u32, indicates what specific information is desired.  
     /// buffer: usize, a pointer to a buffer of size buffer_size to return the information.
     pub fn sys_object_get_info(
         &self,
@@ -407,7 +407,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    /// Signal an object.
+    /// Signal an object.  
     /// Asserts and deasserts the userspace-accessible signal bits on an object.
     pub fn sys_object_signal(
         &self,
@@ -459,7 +459,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    /// Given a kernel object with children objects, 
+    /// Given a kernel object with children objects,   
     /// obtain a handle to the child specified by the provided kernel object id.
     pub fn sys_object_get_child(
         &self,

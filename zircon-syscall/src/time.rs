@@ -87,7 +87,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    /// High resolution sleep.
+    /// High resolution sleep.  
     /// A ```deadline``` value less than or equal to 0 immediately yields the thread. 
     pub async fn sys_nanosleep(&self, deadline: Deadline) -> ZxResult {
         info!("nanosleep: deadline={:?}", deadline);

@@ -5,7 +5,7 @@ use {
 };
 
 impl Syscall<'_> {
-    /// Create a timer.
+    /// Create a timer.  
     /// This is an object that can signal when a specified point in time has been reached
     pub fn sys_timer_create(
         &self,
@@ -67,8 +67,8 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    /// Start a timer.
-    /// To fire the timer immediately pass a deadline less than or equal to 0.
+    /// Start a timer.  
+    /// To fire the timer immediately pass a deadline less than or equal to 0.  
     /// The slack parameter specifies a range from deadline - slack to deadline + slack during which the timer is allowed to fire. 
     pub fn sys_timer_set(&self, handle: HandleValue, deadline: Deadline, slack: i64) -> ZxResult {
         info!(

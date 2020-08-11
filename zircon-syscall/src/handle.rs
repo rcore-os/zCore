@@ -1,7 +1,7 @@
 use {super::*, core::convert::TryFrom};
 
 impl Syscall<'_> {
-    /// Creates a duplicate of handle
+    /// Creates a duplicate of handle  
     /// Referring to the same underlying object, with new access rights rights.
     pub fn sys_handle_duplicate(
         &self,
@@ -64,7 +64,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    /// Creates a replacement for handle
+    /// Creates a replacement for handle  
     /// Referring to the same underlying object, with new access rights rights.
     pub fn sys_handle_replace(
         &self,

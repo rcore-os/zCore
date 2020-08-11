@@ -3,7 +3,7 @@ use {super::*, zircon_object::task::*};
 
 impl Syscall<'_> {
 
-    /// Create a new process.
+    /// Create a new process.  
     /// Upon success, handles for the new process and the root of its address space are returned. 
     pub fn sys_process_create(
         &self,
@@ -44,7 +44,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    /// Creates a thread within the specified process.
+    /// Creates a thread within the specified process.  
     /// Upon success a handle for the new thread is returned. 
     pub fn sys_thread_create(
         &self,
@@ -68,7 +68,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    /// Start execution on a process.
+    /// Start execution on a process.  
     /// This system call is similar to ```zx_thread_start()```, but is used for the purpose of starting the first thread in a process.
     pub fn sys_process_start(
         &self,
@@ -101,7 +101,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    /// Write one aspect of thread state.  
+    /// Write one aspect of thread state.    
     /// The thread state may only be written when the thread is halted for an exception or the thread is suspended.
     pub fn sys_thread_write_state(
         &self,
@@ -122,7 +122,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    /// Sets process as critical to job. 
+    /// Sets process as critical to job.   
     /// When process terminates, job will be terminated as if ```zx_task_kill()``` was called on it. 
     pub fn sys_job_set_critical(
         &self,
@@ -170,7 +170,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    /// Terminate the current running thread. 
+    /// Terminate the current running thread.   
     /// Causes the currently running thread to cease running and exit.
     pub fn sys_thread_exit(&mut self) -> ZxResult {
         info!("thread.exit:");
@@ -179,7 +179,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    /// Suspend the given task. 
+    /// Suspend the given task.   
     /// > This function replaces task_suspend. When all callers are updated, ```zx_task_suspend()``` will be deleted and this function will be renamed ```zx_task_suspend()```.
     pub fn sys_task_suspend_token(
         &self,

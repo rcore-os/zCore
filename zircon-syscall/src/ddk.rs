@@ -38,10 +38,10 @@ impl Syscall<'_> {
         out.write(handle)?;
         Ok(())
     }
-    /// Creates a new bus transaction initiator.
-    /// iommu: HandleValue, a handle to an IOMMU 
-    /// options: u32, must be 0 (reserved for future definition of creation flags).
-    /// bti_id: u64, a hardware transaction identifier for a device downstream of that IOMMU.
+    /// Creates a new bus transaction initiator.  
+    /// iommu: HandleValue, a handle to an IOMMU   
+    /// options: u32, must be 0 (reserved for future definition of creation flags).  
+    /// bti_id: u64, a hardware transaction identifier for a device downstream of that IOMMU.  
     pub fn sys_bti_create(
         &self,
         iommu: HandleValue,
@@ -146,7 +146,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    /// Creates an interrupt object which represents a physical or virtual interrupt.
+    /// Creates an interrupt object which represents a physical or virtual interrupt.  
     pub fn sys_interrupt_create(
         &self,
         resource: HandleValue,
@@ -175,7 +175,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    /// Binds or unbinds an interrupt object to a port.
+    /// Binds or unbinds an interrupt object to a port.   
     /// The key used when binding the interrupt will be present in the key field of the ```zx_port_packet_t.```
     pub fn sys_interrupt_bind(
         &self,
@@ -221,7 +221,7 @@ impl Syscall<'_> {
         interrupt.trigger(timestamp)
     }
 
-    /// Acknowledge an interrupt and re-arm it.
+    /// Acknowledge an interrupt and re-arm it.  
     /// causing it to be eligible to trigger again (and delivering a packet to the port it is bound to).
     pub fn sys_interrupt_ack(&self, interrupt: HandleValue) -> ZxResult {
         info!("interupt.ack: interrupt={:?}", interrupt);

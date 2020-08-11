@@ -1,7 +1,7 @@
 use {super::*, bitflags::bitflags, zircon_object::vm::*};
 
 impl Syscall<'_> {
-    /// Create a stream from a VMO. 
+    /// Create a stream from a VMO.   
     /// For reads and writes the data in an underlying VMO.
     pub fn sys_stream_create(
         &self,
@@ -156,7 +156,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    /// Modify the seek offset.
+    /// Modify the seek offset.  
     /// Sets the seek offset of the stream to ```offset``` relative to ```whence```.
     pub fn sys_stream_seek(
         &self,
