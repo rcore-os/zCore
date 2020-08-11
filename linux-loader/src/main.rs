@@ -65,6 +65,8 @@ mod tests {
         proc.wait_signal(Signal::PROCESS_TERMINATED).await;
     }
 
+    // test using busybox
+
     #[async_std::test]
     async fn test_busybox() {
         test("/bin/busybox").await;
@@ -113,5 +115,12 @@ mod tests {
     #[async_std::test]
     async fn test_env() {
         test("/bin/busybox env").await;
+    }
+
+    // syscall unit test
+
+    #[async_std::test]
+    async fn test_pipe() {
+        test("/bin/testpipe1").await;
     }
 }

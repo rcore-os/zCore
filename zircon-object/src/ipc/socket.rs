@@ -2,7 +2,6 @@ use {
     crate::object::*,
     alloc::collections::VecDeque,
     alloc::sync::{Arc, Weak},
-    alloc::vec::Vec,
     bitflags::bitflags,
     spin::Mutex,
 };
@@ -22,7 +21,6 @@ pub struct Socket {
 
 #[derive(Default)]
 struct SocketInner {
-    control_msg: Vec<u8>,
     data: VecDeque<u8>,
     datagram_len: VecDeque<usize>,
     read_threshold: usize,
@@ -48,21 +46,25 @@ bitflags! {
     pub struct SocketFlags: u32 {
         #[allow(clippy::identity_op)]
         // These options can be passed to socket_shutdown().
+        /// Via this option to `socket_shutdown()`, one end of the socket can be closed for writing.
         const SHUTDOWN_WRITE                = 1;
+        /// Via this option to `socket_shutdown()`, one end of the socket can be closed for reading.
         const SHUTDOWN_READ                 = 1 << 1;
+        /// Valid flags of `socket_shutdown()`.
         const SHUTDOWN_MASK                 = Self::SHUTDOWN_WRITE.bits | Self::SHUTDOWN_READ.bits;
 
         // These can be passed to socket_create().
         // const STREAM                     = 0; // Don't use contains
+        /// Create a datagram socket. See [`read`] and [`write`] for details.
+        ///
+        /// [`read`]: struct.Socket.html#method.read
+        /// [`write`]: struct.Socket.html#method.write
         const DATAGRAM                      = 1;
-        const HAS_CONTROL                   = 1 << 1;
-        const HAS_ACCEPT                    = 1 << 2;
-        const CREATE_MASK                   = Self::DATAGRAM.bits | Self::HAS_CONTROL.bits | Self::HAS_ACCEPT.bits;
-
-        // These can be passed to socket_read() and socket_write().
-        const SOCKET_CONTROL                = 1 << 2;
+        /// Valid flags of `socket_create()`.
+        const CREATE_MASK                   = Self::DATAGRAM.bits;
 
         // These can be passed to socket_read().
+        /// Leave the message in the socket.
         const SOCKET_PEEK                   = 1 << 3;
     }
 }
@@ -75,13 +77,7 @@ impl Socket {
         if !(flags - SocketFlags::CREATE_MASK).is_empty() {
             return Err(ZxError::INVALID_ARGS);
         }
-        let mut starting_signals: Signal = Signal::WRITABLE;
-        if flags.contains(SocketFlags::HAS_ACCEPT) {
-            starting_signals |= Signal::SOCKET_SHARE;
-        }
-        if flags.contains(SocketFlags::HAS_CONTROL) {
-            starting_signals |= Signal::SOCKET_CONTROL_WRITABLE;
-        }
+        let starting_signals: Signal = Signal::WRITABLE;
         let mut end0 = Arc::new(Socket {
             base: KObjectBase::with_signal(starting_signals),
             peer: Weak::default(),
@@ -101,60 +97,43 @@ impl Socket {
         Ok((end0, end1))
     }
 
-    /// Write data to the socket.
-    pub fn write(&self, options: SocketFlags, data: &[u8]) -> ZxResult<usize> {
-        if options.contains(SocketFlags::SOCKET_CONTROL) {
-            if !self.flags.contains(SocketFlags::HAS_CONTROL) {
-                return Err(ZxError::BAD_STATE);
-            }
-            if data.is_empty() {
-                return Err(ZxError::INVALID_ARGS);
-            }
-            if data.len() > 1024 {
-                return Err(ZxError::OUT_OF_RANGE);
-            }
-            let peer = self.peer.upgrade().ok_or(ZxError::PEER_CLOSED)?;
-            let actual_count = peer.write_control(data)?;
-            self.base.signal_clear(Signal::SOCKET_CONTROL_WRITABLE);
-            Ok(actual_count)
-        } else {
-            if self.base.signal().contains(Signal::SOCKET_WRITE_DISABLED) {
-                return Err(ZxError::BAD_STATE);
-            }
-            let peer = self.peer.upgrade().ok_or(ZxError::PEER_CLOSED)?;
-            let actual_count = peer.write_data(data)?;
-            if actual_count > 0 {
-                let mut clear = Signal::empty();
-                let peer_inner = peer.inner.lock();
-                let inner = self.inner.lock();
-                let peer_rest_size = SOCKET_SIZE - peer_inner.data.len();
-                if peer_rest_size == 0 {
-                    clear |= Signal::WRITABLE;
-                }
-                if inner.write_threshold > 0 && peer_rest_size < inner.write_threshold {
-                    clear |= Signal::SOCKET_WRITE_THRESHOLD;
-                }
-                self.base.signal_clear(clear);
-            }
-            Ok(actual_count)
+    /// Write data to the socket. If successful, the number of bytes actually written are returned.
+    ///
+    /// A **SOCKET_STREAM**(default) socket write can be short if the socket does not have
+    /// enough space for all of *data*.
+    /// Otherwise, if the socket was already full, the call returns **ZxError::SHOULD_WAIT**.
+    ///
+    ///
+    /// A **SOCKET_DATAGRAM** socket write is never short. If the socket has
+    /// insufficient space for *data*, it writes nothing and returns
+    /// **ZxError::SHOULD_WAIT**. Attempting to write a packet larger than the datagram socket's
+    /// capacity will fail with **ZxError::OUT_OF_RANGE**.
+    pub fn write(&self, data: &[u8]) -> ZxResult<usize> {
+        if self.base.signal().contains(Signal::SOCKET_WRITE_DISABLED) {
+            return Err(ZxError::BAD_STATE);
         }
-    }
-
-    fn write_control(&self, data: &[u8]) -> ZxResult<usize> {
-        let mut inner = self.inner.lock();
-        if !inner.control_msg.is_empty() {
-            return Err(ZxError::SHOULD_WAIT);
+        let peer = self.peer.upgrade().ok_or(ZxError::PEER_CLOSED)?;
+        let actual_count = peer.write_data(data)?;
+        if actual_count > 0 {
+            let mut clear = Signal::empty();
+            let peer_inner = peer.inner.lock();
+            let inner = self.inner.lock();
+            let peer_rest_size = SOCKET_SIZE - peer_inner.data.len();
+            if peer_rest_size == 0 {
+                clear |= Signal::WRITABLE;
+            }
+            if inner.write_threshold > 0 && peer_rest_size < inner.write_threshold {
+                clear |= Signal::SOCKET_WRITE_THRESHOLD;
+            }
+            self.base.signal_clear(clear);
         }
-        let actual_count = data.len();
-        inner.control_msg.extend_from_slice(data);
-        self.base.signal_set(Signal::SOCKET_CONTROL_READABLE);
         Ok(actual_count)
     }
 
     fn write_data(&self, data: &[u8]) -> ZxResult<usize> {
-        let data_len = self.inner.lock().data.len();
-        let was_empty = data_len == 0;
-        let rest_size = SOCKET_SIZE - data_len;
+        let curr_size = self.inner.lock().data.len();
+        let was_empty = curr_size == 0;
+        let rest_size = SOCKET_SIZE - curr_size;
         if rest_size == 0 {
             return Err(ZxError::SHOULD_WAIT);
         }
@@ -199,43 +178,17 @@ impl Socket {
         Ok(actual_count)
     }
 
-    /// Read data from the socket.
-    pub fn read(&self, options: SocketFlags, data: &mut [u8]) -> ZxResult<usize> {
-        if options.contains(SocketFlags::SOCKET_CONTROL) {
-            if !self.flags.contains(SocketFlags::HAS_CONTROL) {
-                return Err(ZxError::BAD_STATE);
-            }
-            self.read_control(options, data)
-        } else {
-            self.read_data(options, data)
-        }
-    }
-
-    fn read_control(&self, options: SocketFlags, data: &mut [u8]) -> ZxResult<usize> {
-        let mut inner = self.inner.lock();
-        if inner.control_msg.is_empty() {
-            return Err(ZxError::SHOULD_WAIT);
-        }
-        let read_size = data.len().min(inner.control_msg.len());
-        if options.contains(SocketFlags::SOCKET_PEEK) {
-            for (i, x) in inner.control_msg.iter().take(read_size).enumerate() {
-                data[i] = *x;
-            }
-        } else {
-            for (i, x) in inner.control_msg.drain(..read_size).enumerate() {
-                data[i] = x;
-            }
-            self.base.signal_clear(Signal::SOCKET_CONTROL_READABLE);
-            if let Some(peer) = self.peer.upgrade() {
-                peer.base.signal_set(Signal::SOCKET_CONTROL_WRITABLE);
-            }
-        }
-        Ok(read_size)
-    }
-
-    fn read_data(&self, options: SocketFlags, data: &mut [u8]) -> ZxResult<usize> {
-        let data_len = self.inner.lock().data.len();
-        if data_len == 0 {
+    /// Read data from the socket. If successful, the number of bytes actually read are returned.
+    ///
+    /// If the socket was created with **SOCKET_DATAGRAM**, this method reads
+    /// only the first available datagram in the socket (if one is present).
+    /// If *data* is too small for the datagram, then the read will be
+    /// truncated, and any remaining bytes in the datagram will be discarded.
+    ///
+    /// If `peek` is true, leave the message in the socket. Otherwise consume the message.
+    pub fn read(&self, peek: bool, data: &mut [u8]) -> ZxResult<usize> {
+        let curr_size = self.inner.lock().data.len();
+        if curr_size == 0 {
             let _peer = self.peer.upgrade().ok_or(ZxError::PEER_CLOSED)?;
             let inner = self.inner.lock();
             if inner.read_disabled {
@@ -243,12 +196,11 @@ impl Socket {
             }
             return Err(ZxError::SHOULD_WAIT);
         }
-        let was_full = data_len == SOCKET_SIZE;
-        let peek = options.contains(SocketFlags::SOCKET_PEEK);
+        let was_full = curr_size == SOCKET_SIZE;
         let actual_count = if self.flags.contains(SocketFlags::DATAGRAM) {
-            self.read_datagram(options, data, peek)?
+            self.read_datagram(data, peek)?
         } else {
-            self.read_stream(options, data, peek)?
+            self.read_stream(data, peek)?
         };
         if !peek && actual_count > 0 {
             let inner = self.inner.lock();
@@ -277,7 +229,7 @@ impl Socket {
         Ok(actual_count)
     }
 
-    fn read_datagram(&self, _options: SocketFlags, data: &mut [u8], peek: bool) -> ZxResult<usize> {
+    fn read_datagram(&self, data: &mut [u8], peek: bool) -> ZxResult<usize> {
         if data.is_empty() {
             return Ok(0);
         }
@@ -300,7 +252,7 @@ impl Socket {
         Ok(read_size)
     }
 
-    fn read_stream(&self, _options: SocketFlags, data: &mut [u8], peek: bool) -> ZxResult<usize> {
+    fn read_stream(&self, data: &mut [u8], peek: bool) -> ZxResult<usize> {
         let mut inner = self.inner.lock();
         let read_size = data.len().min(inner.data.len());
         if peek {
@@ -319,24 +271,25 @@ impl Socket {
     pub fn get_info(&self) -> SocketInfo {
         let inner = self.inner.lock();
         let self_size = inner.data.len();
-        let peer_size = match self.peer.upgrade() {
-            Some(peer) => peer.inner.lock().data.len(),
-            None => 0,
-        };
         let rx_buf_available = if self.flags.contains(SocketFlags::DATAGRAM) {
             *inner.datagram_len.get(0).unwrap_or(&0)
         } else {
             self_size
         };
-        SocketInfo {
-            options: self.flags.bits(),
+        let mut info = SocketInfo {
+            options: self.flags.bits() as _,
             padding1: 0,
             rx_buf_max: SOCKET_SIZE as _,
             rx_buf_size: self_size as _,
             rx_buf_available: rx_buf_available as _,
-            tx_buf_max: SOCKET_SIZE as _,
-            tx_buf_size: peer_size as _,
-        }
+            tx_buf_max: 0,
+            tx_buf_size: 0,
+        };
+        if let Some(peer) = self.peer.upgrade() {
+            info.tx_buf_size = peer.inner.lock().data.len() as u64;
+            info.tx_buf_max = SOCKET_SIZE as u64;
+        };
+        info
     }
 
     /// Prevent reading or writing.
@@ -364,6 +317,12 @@ impl Socket {
         Ok(())
     }
 
+    /// Set the read threshold of the socket.
+    ///
+    /// When the bytes queued on the socket (available for reading) is equal to
+    /// or greater than this value, the **SOCKET_READ_THRESHOLD** signal is asserted.
+    /// Read threshold signalling is disabled by default (and when set, writing
+    /// a value of 0 for this property disables it).
     pub fn set_read_threshold(&self, threshold: usize) -> ZxResult {
         if threshold > SOCKET_SIZE {
             return Err(ZxError::INVALID_ARGS);
@@ -380,6 +339,12 @@ impl Socket {
         Ok(())
     }
 
+    /// Set the write threshold of the socket.
+    ///
+    /// When the space available for writing on the socket is equal to or
+    /// greater than this value, the **SOCKET_WRITE_THRESHOLD** signal is asserted.
+    /// Write threshold signalling is disabled by default (and when set, writing a
+    /// value of 0 for this property disables it).
     pub fn set_write_threshold(&self, threshold: usize) -> ZxResult {
         let peer = self.peer.upgrade().ok_or(ZxError::PEER_CLOSED)?;
         if threshold > SOCKET_SIZE {
@@ -396,6 +361,7 @@ impl Socket {
         Ok(())
     }
 
+    /// Get the read and write thresholds of the socket.
     pub fn get_rx_tx_threshold(&self) -> (usize, usize) {
         let inner = self.inner.lock();
         (inner.read_threshold, inner.write_threshold)
@@ -410,8 +376,9 @@ impl Drop for Socket {
     }
 }
 
+/// The information of a socket
 #[repr(C)]
-#[derive(Default)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct SocketInfo {
     options: u32,
     padding1: u32,
@@ -420,4 +387,255 @@ pub struct SocketInfo {
     rx_buf_available: u64,
     tx_buf_max: u64,
     tx_buf_size: u64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_basics() {
+        assert_eq!(Socket::create(1 << 10).unwrap_err(), ZxError::INVALID_ARGS);
+        assert_eq!(
+            Socket::create(SocketFlags::SOCKET_PEEK.bits).unwrap_err(),
+            ZxError::INVALID_ARGS
+        );
+        let (end0, end1) = Socket::create(1).unwrap();
+        assert!(Arc::ptr_eq(
+            &end0.peer().unwrap().downcast_arc().unwrap(),
+            &end1
+        ));
+        assert_eq!(end0.related_koid(), end1.id());
+
+        drop(end1);
+        assert_eq!(end0.peer().unwrap_err(), ZxError::PEER_CLOSED);
+        assert_eq!(end0.related_koid(), 0);
+    }
+
+    #[test]
+    fn test_stream() {
+        let (end0, end1) = Socket::create(0).unwrap();
+
+        // empty read & write
+        assert_eq!(
+            end0.read(false, &mut [0; 10]).unwrap_err(),
+            ZxError::SHOULD_WAIT
+        );
+        assert_eq!(end0.write(&[]).unwrap(), 0);
+
+        assert_eq!(end0.write(&[1, 2, 3]), Ok(3));
+        let mut buf = [0u8; 4];
+        assert_eq!(end1.read(true, &mut buf).unwrap(), 3);
+        assert_eq!(buf, [1, 2, 3, 0]);
+        buf = [0; 4];
+        // can read again
+        assert_eq!(end1.read(true, &mut buf).unwrap(), 3);
+        assert_eq!(buf, [1, 2, 3, 0]);
+        assert_eq!(
+            end0.get_info(),
+            SocketInfo {
+                options: 0,
+                padding1: 0,
+                rx_buf_max: SOCKET_SIZE as _,
+                rx_buf_size: 0,
+                rx_buf_available: 0,
+                tx_buf_max: SOCKET_SIZE as _,
+                tx_buf_size: 3,
+            }
+        );
+
+        // use a small buffer now
+        let mut buf = [0u8; 2];
+        assert_eq!(end1.read(true, &mut buf).unwrap(), 2);
+        assert_eq!(buf, [1, 2]);
+        // consume
+        assert_eq!(end1.read(false, &mut buf).unwrap(), 2);
+        assert_eq!(buf, [1, 2]);
+        assert_eq!(end1.read(false, &mut buf).unwrap(), 1);
+        assert_eq!(buf, [3, 2]);
+
+        end1.write(&[111, 233, 222]).unwrap();
+        assert_eq!(
+            end0.get_info(),
+            SocketInfo {
+                options: 0,
+                padding1: 0,
+                rx_buf_max: SOCKET_SIZE as _,
+                rx_buf_size: 3,
+                rx_buf_available: 3,
+                tx_buf_max: SOCKET_SIZE as _,
+                tx_buf_size: 0,
+            }
+        );
+
+        // write much data
+        assert_eq!(end0.write(&[0; SOCKET_SIZE * 2]).unwrap(), SOCKET_SIZE);
+        assert_eq!(end0.write(&[0; 1]).unwrap_err(), ZxError::SHOULD_WAIT);
+        assert!(!end0.signal().contains(Signal::WRITABLE));
+        end1.read(false, &mut [0; 1]).unwrap();
+        assert!(end0.signal().contains(Signal::WRITABLE));
+    }
+
+    #[test]
+    fn test_datagram() {
+        let (end0, end1) = Socket::create(1).unwrap();
+
+        // empty read & write
+        assert_eq!(
+            end0.read(false, &mut [0; 10]).unwrap_err(),
+            ZxError::SHOULD_WAIT
+        );
+        assert_eq!(end0.write(&[]).unwrap_err(), ZxError::INVALID_ARGS);
+
+        assert_eq!(end0.write(&[1, 2, 3]), Ok(3));
+        assert_eq!(end0.write(&[4, 5, 6, 7]), Ok(4));
+
+        let mut buf = [0u8; 4];
+        assert_eq!(end1.read(true, &mut []).unwrap(), 0);
+        assert_eq!(end1.read(true, &mut buf).unwrap(), 3);
+        assert_eq!(buf, [1, 2, 3, 0]);
+        buf = [0; 4];
+        // can read again
+        assert_eq!(end1.read(true, &mut buf).unwrap(), 3);
+        assert_eq!(buf, [1, 2, 3, 0]);
+        assert_eq!(
+            end0.get_info(),
+            SocketInfo {
+                options: SocketFlags::DATAGRAM.bits,
+                padding1: 0,
+                rx_buf_max: SOCKET_SIZE as _,
+                rx_buf_size: 0,
+                rx_buf_available: 0,
+                tx_buf_max: SOCKET_SIZE as _,
+                tx_buf_size: 7,
+            }
+        );
+        assert_eq!(
+            end1.get_info(),
+            SocketInfo {
+                options: SocketFlags::DATAGRAM.bits,
+                padding1: 0,
+                rx_buf_max: SOCKET_SIZE as _,
+                rx_buf_size: 7,
+                rx_buf_available: 3,
+                tx_buf_max: SOCKET_SIZE as _,
+                tx_buf_size: 0,
+            }
+        );
+
+        // use a small buffer now
+        let mut buf = [0u8; 2];
+        assert_eq!(end1.read(true, &mut buf).unwrap(), 2);
+        assert_eq!(buf, [1, 2]);
+        // consume
+        assert_eq!(end1.read(false, &mut buf).unwrap(), 2);
+        assert_eq!(buf, [1, 2]);
+        assert_eq!(end1.read(false, &mut buf).unwrap(), 2);
+        assert_eq!(buf, [4, 5]);
+
+        // write much data
+        let (end0, end1) = Socket::create(1).unwrap();
+        assert_eq!(
+            end0.write(&[0; SOCKET_SIZE * 2]).unwrap_err(),
+            ZxError::OUT_OF_RANGE
+        );
+        assert_eq!(end0.write(&[0; SOCKET_SIZE]).unwrap(), SOCKET_SIZE);
+        assert!(!end0.signal().contains(Signal::WRITABLE));
+        end1.read(false, &mut [0; 1]).unwrap();
+        assert!(end0.signal().contains(Signal::WRITABLE));
+    }
+
+    #[test]
+    fn test_threshold() {
+        let (end0, end1) = Socket::create(0).unwrap();
+        assert_eq!(end0.get_rx_tx_threshold(), (0, 0));
+
+        // write
+        assert_eq!(
+            end0.set_write_threshold(SOCKET_SIZE * 2).unwrap_err(),
+            ZxError::INVALID_ARGS
+        );
+        // have space when setting threshold
+        assert!(end0.set_write_threshold(10).is_ok());
+        assert!(end0.signal().contains(Signal::SOCKET_WRITE_THRESHOLD));
+        assert_eq!(end0.get_rx_tx_threshold(), (0, 10));
+        end0.write(&[0; SOCKET_SIZE - 9]).unwrap();
+        assert!(!end0.signal().contains(Signal::SOCKET_WRITE_THRESHOLD));
+        // no space when setting threshold
+        assert!(end0.set_write_threshold(20).is_ok());
+        assert!(!end0.signal().contains(Signal::SOCKET_WRITE_THRESHOLD));
+        end1.read(false, &mut [0; 10]).unwrap();
+        assert!(!end0.signal().contains(Signal::SOCKET_WRITE_THRESHOLD));
+        end1.read(false, &mut [0; 1]).unwrap();
+        assert!(end0.signal().contains(Signal::SOCKET_WRITE_THRESHOLD));
+        // disable threshold
+        assert!(end0.set_write_threshold(0).is_ok());
+        assert!(!end0.signal().contains(Signal::SOCKET_WRITE_THRESHOLD));
+
+        // read
+        assert_eq!(
+            end0.set_read_threshold(SOCKET_SIZE * 2).unwrap_err(),
+            ZxError::INVALID_ARGS
+        );
+        // have data when setting threshold
+        end1.write(&[0; 10]).unwrap();
+        assert!(end0.set_read_threshold(10).is_ok());
+        assert!(end0.signal().contains(Signal::SOCKET_READ_THRESHOLD));
+        assert_eq!(end0.get_rx_tx_threshold(), (10, 0));
+        end0.read(false, &mut [0; 1]).unwrap();
+        assert!(!end0.signal().contains(Signal::SOCKET_READ_THRESHOLD));
+        // no data when setting threshold
+        end0.read(false, &mut [0; 10]).unwrap();
+        assert!(end0.set_read_threshold(20).is_ok());
+        assert!(!end0.signal().contains(Signal::SOCKET_WRITE_THRESHOLD));
+        end1.write(&[0; 10]).unwrap();
+        assert!(!end0.signal().contains(Signal::SOCKET_READ_THRESHOLD));
+        end1.write(&[0; 10]).unwrap();
+        assert!(end0.signal().contains(Signal::SOCKET_READ_THRESHOLD));
+        // disable threshold
+        assert!(end0.set_read_threshold(0).is_ok());
+        assert!(!end0.signal().contains(Signal::SOCKET_READ_THRESHOLD));
+    }
+
+    #[test]
+    fn test_shutdown() {
+        let (end0, end1) = Socket::create(0).unwrap();
+        end0.write(&[0; 10]).unwrap();
+
+        assert!(end1.shutdown(true, false).is_ok());
+        assert_eq!(end0.write(&[0; 1]).unwrap_err(), ZxError::BAD_STATE);
+        assert!(!end0.signal().contains(Signal::WRITABLE));
+        // buffered data can be read
+        assert!(end1.signal().contains(Signal::READABLE));
+        assert_eq!(end1.read(false, &mut [0; 20]).unwrap(), 10);
+        // no more data
+        assert!(!end1.signal().contains(Signal::READABLE));
+        assert_eq!(
+            end1.read(false, &mut [0; 20]).unwrap_err(),
+            ZxError::BAD_STATE
+        );
+        // the opposite direction is still okay
+        assert_eq!(end1.write(&[0; 1]).unwrap(), 1);
+        assert_eq!(end0.read(false, &mut [0; 10]).unwrap(), 1);
+    }
+
+    #[test]
+    fn test_drop() {
+        let (end0, end1) = Socket::create(0).unwrap();
+        end0.write(&[0; 10]).unwrap();
+
+        drop(end0);
+        assert!(!end1.signal().contains(Signal::WRITABLE));
+        assert!(end1.signal().contains(Signal::PEER_CLOSED));
+        assert_eq!(end1.write(&[0; 1]).unwrap_err(), ZxError::PEER_CLOSED);
+        // buffered data can be read
+        assert!(end1.signal().contains(Signal::READABLE));
+        assert_eq!(end1.read(false, &mut [0; 20]).unwrap(), 10);
+        // no more data
+        assert!(!end1.signal().contains(Signal::READABLE));
+        assert_eq!(
+            end1.read(false, &mut [0; 20]).unwrap_err(),
+            ZxError::PEER_CLOSED
+        );
+    }
 }

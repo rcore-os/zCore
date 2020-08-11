@@ -22,10 +22,26 @@ impl_kobject!(Event
 define_count_helper!(Event);
 
 impl Event {
+    /// Create a new `Event`.
     pub fn new() -> Arc<Self> {
         Arc::new(Event {
             base: KObjectBase::default(),
             _counter: CountHelper::new(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_allowed_signals() {
+        let event = Event::new();
+        assert!(Signal::verify_user_signal(
+            event.allowed_signals(),
+            (Signal::USER_SIGNAL_5 | Signal::SIGNALED).bits().into()
+        )
+        .is_ok());
     }
 }
