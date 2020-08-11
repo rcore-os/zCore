@@ -79,7 +79,7 @@ impl Syscall<'_> {
         pid: usize,
         resource: usize,
         new_limit: UserInPtr<RLimit>,
-        mut old_limit: UserInOutPtr<RLimit>,
+        mut old_limit: UserOutPtr<RLimit>,
     ) -> SysResult {
         info!(
             "prlimit64: pid: {}, resource: {}, new_limit: {:x?}, old_limit: {:x?}",
