@@ -126,8 +126,8 @@ impl Syscall<'_> {
     ///   - GRND_RANDOM
     ///   - GRND_NONBLOCK
     /// - returns the number of bytes that were copied to the buffer buf.
-    pub fn sys_getrandom(&mut self, mut buf: UserOutPtr<u8>, len: usize, _flag: u32) -> SysResult {
-        // info!("getrandom: buf: {:?}, len: {:?}, falg {:?}", buf, len, flag);
+    pub fn sys_getrandom(&mut self, mut buf: UserOutPtr<u8>, len: usize, flag: u32) -> SysResult {
+        info!("getrandom: buf: {:?}, len: {:?}, flag {:?}", buf, len, flag);
         let mut buffer = vec![0u8; len];
         kernel_hal::fill_random(&mut buffer);
         buf.write_array(&buffer[..len])?;
