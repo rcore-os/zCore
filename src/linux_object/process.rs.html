@@ -444,7 +444,7 @@
     <span class="doccomment">/// Create a new process.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">rootfs</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">FileSystem</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
         <span class="kw">let</span> <span class="ident">stdin</span> <span class="op">=</span> <span class="ident">File</span>::<span class="ident">new</span>(
-            <span class="ident">Arc</span>::<span class="ident">new</span>(<span class="ident">Stdout</span>), <span class="comment">// FIXME: stdin</span>
+            <span class="ident">STDIN</span>.<span class="ident">clone</span>(), <span class="comment">// FIXME: stdin</span>
             <span class="ident">OpenOptions</span> {
                 <span class="ident">read</span>: <span class="bool-val">true</span>,
                 <span class="ident">write</span>: <span class="bool-val">false</span>,
@@ -454,7 +454,7 @@
             <span class="ident">String</span>::<span class="ident">from</span>(<span class="string">&quot;/dev/stdin&quot;</span>),
         ) <span class="kw">as</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">FileLike</span><span class="op">&gt;</span>;
         <span class="kw">let</span> <span class="ident">stdout</span> <span class="op">=</span> <span class="ident">File</span>::<span class="ident">new</span>(
-            <span class="ident">Arc</span>::<span class="ident">new</span>(<span class="ident">Stdout</span>), <span class="comment">// TODO: open from &#39;/dev/stdout&#39;</span>
+            <span class="ident">STDOUT</span>.<span class="ident">clone</span>(), <span class="comment">// TODO: open from &#39;/dev/stdout&#39;</span>
             <span class="ident">OpenOptions</span> {
                 <span class="ident">read</span>: <span class="bool-val">false</span>,
                 <span class="ident">write</span>: <span class="bool-val">true</span>,

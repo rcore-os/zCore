@@ -171,6 +171,7 @@
 <span id="171">171</span>
 <span id="172">172</span>
 <span id="173">173</span>
+<span id="174">174</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> <span class="ident">core</span>::<span class="ident">fmt</span>;
 <span class="kw">use</span> <span class="ident">rcore_fs</span>::<span class="ident">vfs</span>::<span class="ident">FsError</span>;
@@ -328,6 +329,7 @@
             <span class="ident">FsError</span>::<span class="ident">Again</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError</span>::<span class="ident">EAGAIN</span>,
             <span class="ident">FsError</span>::<span class="ident">SymLoop</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError</span>::<span class="ident">ELOOP</span>,
             <span class="ident">FsError</span>::<span class="ident">Busy</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError</span>::<span class="ident">EBUSY</span>,
+            <span class="ident">FsError</span>::<span class="ident">Interrupted</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError</span>::<span class="ident">EINTR</span>,
         }
     }
 }

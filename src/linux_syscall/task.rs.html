@@ -359,6 +359,9 @@
 <span id="359">359</span>
 <span id="360">360</span>
 <span id="361">361</span>
+<span id="362">362</span>
+<span id="363">363</span>
+<span id="364">364</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Syscalls for process</span>
 <span class="doccomment">//!</span>
@@ -372,7 +375,9 @@
 <span class="doccomment">//! - getppid</span>
 
 <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
+<span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">time</span>::<span class="ident">TimeSpec</span>;
 <span class="kw">use</span> <span class="ident">bitflags</span>::<span class="ident">bitflags</span>;
+<span class="kw">use</span> <span class="ident">core</span>::<span class="ident">fmt</span>::<span class="ident">Debug</span>;
 <span class="kw">use</span> <span class="ident">linux_object</span>::<span class="ident">fs</span>::<span class="ident">INodeExt</span>;
 <span class="kw">use</span> <span class="ident">linux_object</span>::<span class="ident">loader</span>::<span class="ident">LinuxElfLoader</span>;
 <span class="kw">use</span> <span class="ident">linux_object</span>::<span class="ident">thread</span>::<span class="ident">ThreadExt</span>;
@@ -613,14 +618,15 @@
         <span class="prelude-val">Err</span>(<span class="ident">LxError</span>::<span class="ident">ENOSYS</span>)
     }
 
-    <span class="comment">//    pub fn sys_nanosleep(&amp;self, req: *const TimeSpec) -&gt; SysResult {</span>
-    <span class="comment">//        let time = unsafe { *self.vm().check_read_ptr(req)? };</span>
-    <span class="comment">//        info!(&quot;nanosleep: time: {:#?}&quot;, time);</span>
-    <span class="comment">//        // TODO: handle spurious wakeup</span>
-    <span class="comment">//        thread::sleep(time.to_duration());</span>
-    <span class="comment">//        Ok(0)</span>
-    <span class="comment">//    }</span>
-    <span class="comment">//</span>
+    <span class="doccomment">/// Allows the calling thread to sleep for</span>
+    <span class="doccomment">/// an interval specified with nanosecond precision</span>
+    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">sys_nanosleep</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">req</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">TimeSpec</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
+        <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;nanosleep: deadline={:?}&quot;</span>, <span class="ident">req</span>);
+        <span class="kw">let</span> <span class="ident">req</span> <span class="op">=</span> <span class="ident">req</span>.<span class="ident">read</span>()<span class="question-mark">?</span>;
+        <span class="ident">kernel_hal</span>::<span class="ident">sleep_until</span>(<span class="ident">req</span>.<span class="ident">into</span>()).<span class="kw">await</span>;
+        <span class="prelude-val">Ok</span>(<span class="number">0</span>)
+    }
+
     <span class="comment">//    pub fn sys_set_priority(&amp;self, priority: usize) -&gt; SysResult {</span>
     <span class="comment">//        let pid = thread::current().id();</span>
     <span class="comment">//        thread_manager().set_priority(pid, priority as u8);</span>

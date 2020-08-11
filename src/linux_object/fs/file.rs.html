@@ -201,15 +201,26 @@
 <span id="201">201</span>
 <span id="202">202</span>
 <span id="203">203</span>
+<span id="204">204</span>
+<span id="205">205</span>
+<span id="206">206</span>
+<span id="207">207</span>
+<span id="208">208</span>
+<span id="209">209</span>
+<span id="210">210</span>
+<span id="211">211</span>
+<span id="212">212</span>
+<span id="213">213</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! File handle for process</span>
 
 <span class="attribute">#![<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
 
-<span class="kw">use</span> <span class="ident">alloc</span>::{<span class="ident">string</span>::<span class="ident">String</span>, <span class="ident">sync</span>::<span class="ident">Arc</span>};
+<span class="kw">use</span> <span class="ident">alloc</span>::{<span class="ident">boxed</span>::<span class="ident">Box</span>, <span class="ident">string</span>::<span class="ident">String</span>, <span class="ident">sync</span>::<span class="ident">Arc</span>};
 
 <span class="kw">use</span> <span class="kw">super</span>::<span class="ident">FileLike</span>;
 <span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">error</span>::{<span class="ident">LxError</span>, <span class="ident">LxResult</span>};
+<span class="kw">use</span> <span class="ident">async_trait</span>::<span class="ident">async_trait</span>;
 <span class="kw">use</span> <span class="ident">rcore_fs</span>::<span class="ident">vfs</span>::{<span class="ident">FsError</span>, <span class="ident">INode</span>, <span class="ident">Metadata</span>, <span class="ident">PollStatus</span>};
 <span class="kw">use</span> <span class="ident">spin</span>::<span class="ident">Mutex</span>;
 <span class="kw">use</span> <span class="ident">zircon_object</span>::<span class="ident">object</span>::<span class="kw-2">*</span>;
@@ -358,6 +369,10 @@
         <span class="prelude-val">Ok</span>(<span class="ident">status</span>)
     }
 
+    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">async_poll</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">LxResult</span><span class="op">&lt;</span><span class="ident">PollStatus</span><span class="op">&gt;</span> {
+        <span class="prelude-val">Ok</span>(<span class="self">self</span>.<span class="ident">inode</span>.<span class="ident">async_poll</span>().<span class="kw">await</span><span class="question-mark">?</span>)
+    }
+
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">io_control</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">cmd</span>: <span class="ident">u32</span>, <span class="ident">arg</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">LxResult</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">inode</span>.<span class="ident">io_control</span>(<span class="ident">cmd</span>, <span class="ident">arg</span>)<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(<span class="number">0</span>)
@@ -376,6 +391,7 @@
     }
 }
 
+<span class="attribute">#[<span class="ident">async_trait</span>]</span>
 <span class="kw">impl</span> <span class="ident">FileLike</span> <span class="kw">for</span> <span class="ident">File</span> {
     <span class="kw">fn</span> <span class="ident">read</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">buf</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> [<span class="ident">u8</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">LxResult</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">read</span>(<span class="ident">buf</span>)
@@ -395,6 +411,10 @@
 
     <span class="kw">fn</span> <span class="ident">poll</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">LxResult</span><span class="op">&lt;</span><span class="ident">PollStatus</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">poll</span>()
+    }
+
+    <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">async_poll</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">LxResult</span><span class="op">&lt;</span><span class="ident">PollStatus</span><span class="op">&gt;</span> {
+        <span class="self">self</span>.<span class="ident">async_poll</span>().<span class="kw">await</span>
     }
 
     <span class="kw">fn</span> <span class="ident">ioctl</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">request</span>: <span class="ident">usize</span>, <span class="ident">arg1</span>: <span class="ident">usize</span>, <span class="ident">_arg2</span>: <span class="ident">usize</span>, <span class="ident">_arg3</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">LxResult</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
