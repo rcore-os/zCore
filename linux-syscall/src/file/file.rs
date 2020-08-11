@@ -363,10 +363,12 @@ impl Syscall<'_> {
                 "utimensat: dirfd: {:?}, pathname: {:?}, times: {:?}, flags: {:#x}",
                 dirfd, pathname, times, flags
             );
-            let follow = match flags {
-                0 => true,
-                AT_SYMLINK_NOFOLLOW => false,
-                _ => return Err(LxError::EINVAL),
+            let follow = if flags == 0 {
+                true
+            } else if flags == AtFlags::SYMLINK_NOFOLLOW.bits() {
+                false
+            } else {
+                return Err(LxError::EINVAL);
             };
             proc.lookup_inode_at(dirfd, &pathname[..], follow)?
         };
