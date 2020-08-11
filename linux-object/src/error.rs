@@ -1,3 +1,4 @@
+//! Linux error flags
 use core::fmt;
 use rcore_fs::vfs::FsError;
 use zircon_object::ZxError;

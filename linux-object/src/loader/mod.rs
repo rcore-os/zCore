@@ -1,3 +1,4 @@
+//! Linux ELF Program Loader
 use {
     crate::error::LxResult,
     crate::fs::INodeExt,

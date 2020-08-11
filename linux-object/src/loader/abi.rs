@@ -1,3 +1,4 @@
+//! Process init info
 #![allow(unsafe_code)]
 
 use alloc::collections::btree_map::BTreeMap;

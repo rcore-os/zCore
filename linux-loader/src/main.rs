@@ -84,8 +84,9 @@ mod tests {
     }
 
     #[async_std::test]
-    async fn test_date() {
+    async fn test_date_time() {
         assert_eq!(test("/bin/busybox date").await, 0);
+        assert_eq!(test("/bin/busybox uptime").await, 0);
     }
 
     #[async_std::test]
@@ -146,6 +147,11 @@ mod tests {
     #[async_std::test]
     async fn test_env() {
         assert_eq!(test("/bin/busybox env").await, 0);
+    }
+
+    #[async_std::test]
+    async fn test_ps() {
+        assert_eq!(test("/bin/busybox ps").await, 0);
     }
 
     // syscall unit test
