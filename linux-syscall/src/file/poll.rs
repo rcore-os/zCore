@@ -24,7 +24,7 @@ impl Syscall<'_> {
             "poll: ufds: {:?}, nfds: {}, timeout_msecs: {:#x}",
             ufds, nfds, timeout_msecs
         );
-        let polls = ufds.read_array(nfds).unwrap();
+        let polls = ufds.read_array(nfds)?;
         #[must_use = "future does nothing unless polled/`await`-ed"]
         struct PollFuture<'a> {
             polls: Vec<PollFd>,
