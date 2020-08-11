@@ -408,7 +408,7 @@
             <span class="ident">Sys</span>::<span class="ident">FACCESSAT</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_faccessat</span>(<span class="ident">a0</span>.<span class="ident">into</span>(), <span class="ident">a1</span>.<span class="ident">into</span>(), <span class="ident">a2</span>, <span class="ident">a3</span>),
             <span class="ident">Sys</span>::<span class="ident">DUP3</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_dup2</span>(<span class="ident">a0</span>.<span class="ident">into</span>(), <span class="ident">a1</span>.<span class="ident">into</span>()), <span class="comment">// TODO: handle `flags`</span>
             <span class="ident">Sys</span>::<span class="ident">PIPE2</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_pipe</span>(<span class="ident">a0</span>.<span class="ident">into</span>()),           <span class="comment">// TODO: handle `flags`</span>
-            <span class="ident">Sys</span>::<span class="ident">UTIMENSAT</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">unimplemented</span>(<span class="string">&quot;utimensat&quot;</span>, <span class="prelude-val">Ok</span>(<span class="number">0</span>)),
+            <span class="ident">Sys</span>::<span class="ident">UTIMENSAT</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_utimensat</span>(<span class="ident">a0</span>.<span class="ident">into</span>(), <span class="ident">a1</span>.<span class="ident">into</span>(), <span class="ident">a2</span>.<span class="ident">into</span>(), <span class="ident">a3</span>),
             <span class="ident">Sys</span>::<span class="ident">COPY_FILE_RANGE</span> <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="self">self</span>.<span class="ident">sys_copy_file_range</span>(<span class="ident">a0</span>.<span class="ident">into</span>(), <span class="ident">a1</span>.<span class="ident">into</span>(), <span class="ident">a2</span>.<span class="ident">into</span>(), <span class="ident">a3</span>.<span class="ident">into</span>(), <span class="ident">a4</span>, <span class="ident">a5</span>)
             }
@@ -476,7 +476,7 @@
             <span class="comment">// time</span>
             <span class="comment">//            Sys::NANOSLEEP =&gt; self.sys_nanosleep(a0.into()),</span>
             <span class="ident">Sys</span>::<span class="ident">SETITIMER</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">unimplemented</span>(<span class="string">&quot;setitimer&quot;</span>, <span class="prelude-val">Ok</span>(<span class="number">0</span>)),
-            <span class="comment">//            Sys::GETTIMEOFDAY =&gt; self.sys_gettimeofday(a0.into(), a1.into()),</span>
+            <span class="ident">Sys</span>::<span class="ident">GETTIMEOFDAY</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_gettimeofday</span>(<span class="ident">a0</span>.<span class="ident">into</span>(), <span class="ident">a1</span>.<span class="ident">into</span>()),
             <span class="ident">Sys</span>::<span class="ident">CLOCK_GETTIME</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_clock_gettime</span>(<span class="ident">a0</span>, <span class="ident">a1</span>.<span class="ident">into</span>()),
 
             <span class="comment">// sem</span>
@@ -494,9 +494,9 @@
             <span class="ident">Sys</span>::<span class="ident">UMASK</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">unimplemented</span>(<span class="string">&quot;umask&quot;</span>, <span class="prelude-val">Ok</span>(<span class="number">0o777</span>)),
             <span class="comment">//            Sys::GETRLIMIT =&gt; self.sys_getrlimit(),</span>
             <span class="comment">//            Sys::SETRLIMIT =&gt; self.sys_setrlimit(),</span>
-            <span class="comment">//            Sys::GETRUSAGE =&gt; self.sys_getrusage(a0, a1.into()),</span>
+            <span class="ident">Sys</span>::<span class="ident">GETRUSAGE</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_getrusage</span>(<span class="ident">a0</span>, <span class="ident">a1</span>.<span class="ident">into</span>()),
             <span class="comment">//            Sys::SYSINFO =&gt; self.sys_sysinfo(a0.into()),</span>
-            <span class="comment">//            Sys::TIMES =&gt; self.sys_times(a0.into()),</span>
+            <span class="ident">Sys</span>::<span class="ident">TIMES</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_times</span>(<span class="ident">a0</span>.<span class="ident">into</span>()),
             <span class="ident">Sys</span>::<span class="ident">GETUID</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">unimplemented</span>(<span class="string">&quot;getuid&quot;</span>, <span class="prelude-val">Ok</span>(<span class="number">0</span>)),
             <span class="ident">Sys</span>::<span class="ident">GETGID</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">unimplemented</span>(<span class="string">&quot;getgid&quot;</span>, <span class="prelude-val">Ok</span>(<span class="number">0</span>)),
             <span class="ident">Sys</span>::<span class="ident">SETUID</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">unimplemented</span>(<span class="string">&quot;setuid&quot;</span>, <span class="prelude-val">Ok</span>(<span class="number">0</span>)),
@@ -555,7 +555,7 @@
             <span class="comment">//            Sys::CHMOD =&gt; self.unimplemented(&quot;chmod&quot;, Ok(0)),</span>
             <span class="comment">//            Sys::CHOWN =&gt; self.unimplemented(&quot;chown&quot;, Ok(0)),</span>
             <span class="ident">Sys</span>::<span class="ident">ARCH_PRCTL</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_arch_prctl</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span>),
-            <span class="comment">//            Sys::TIME =&gt; self.sys_time(a0 as *mut u64),</span>
+            <span class="ident">Sys</span>::<span class="ident">TIME</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_time</span>(<span class="ident">a0</span>.<span class="ident">into</span>()),
             <span class="comment">//            Sys::EPOLL_CREATE =&gt; self.sys_epoll_create(a0),</span>
             <span class="comment">//            Sys::EPOLL_WAIT =&gt; self.sys_epoll_wait(a0, a1.into(), a2, a3),</span>
             <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">unknown_syscall</span>(<span class="ident">sys_type</span>),

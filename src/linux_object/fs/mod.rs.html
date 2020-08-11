@@ -206,6 +206,8 @@
 <span id="206">206</span>
 <span id="207">207</span>
 <span id="208">208</span>
+<span id="209">209</span>
+<span id="210">210</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> <span class="ident">alloc</span>::{<span class="ident">sync</span>::<span class="ident">Arc</span>, <span class="ident">vec</span>::<span class="ident">Vec</span>};
 
@@ -215,6 +217,7 @@
 <span class="kw">use</span> <span class="ident">rcore_fs_ramfs</span>::<span class="ident">RamFS</span>;
 
 <span class="kw">pub</span> <span class="kw">use</span> <span class="self">self</span>::<span class="ident">device</span>::<span class="kw-2">*</span>;
+<span class="kw">pub</span> <span class="kw">use</span> <span class="self">self</span>::<span class="ident">fcntl</span>::<span class="kw-2">*</span>;
 <span class="kw">pub</span> <span class="kw">use</span> <span class="self">self</span>::<span class="ident">file</span>::<span class="kw-2">*</span>;
 <span class="kw">pub</span> <span class="kw">use</span> <span class="self">self</span>::<span class="ident">pipe</span>::<span class="kw-2">*</span>;
 <span class="kw">pub</span> <span class="kw">use</span> <span class="self">self</span>::<span class="ident">pseudo</span>::<span class="kw-2">*</span>;
@@ -229,6 +232,7 @@
 <span class="kw">use</span> <span class="ident">zircon_object</span>::<span class="ident">object</span>::<span class="kw-2">*</span>;
 
 <span class="kw">mod</span> <span class="ident">device</span>;
+<span class="kw">mod</span> <span class="ident">fcntl</span>;
 <span class="kw">mod</span> <span class="ident">file</span>;
 <span class="kw">mod</span> <span class="ident">ioctl</span>;
 <span class="kw">mod</span> <span class="ident">pipe</span>;
