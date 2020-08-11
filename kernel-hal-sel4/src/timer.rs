@@ -8,18 +8,14 @@ pub fn now() -> u64 {
     }
 }
 
-pub fn set_period(new_period: u64) -> KernelResult<()> {
-    if unsafe {
-        sys::l4bridge_timer_set_period_ts(new_period as _)
-    } != 0 {
+pub unsafe fn set_period(new_period: u64) -> KernelResult<()> {
+    if sys::l4bridge_timer_set_period_ts(new_period as _) != 0 {
         Err(KernelError::BadTimerPeriod)
     } else {
         Ok(())
     }
 }
 
-pub fn wait() -> u64 {
-    unsafe {
-        sys::l4bridge_timer_wait_ts() as u64
-    }
+pub unsafe fn wait() -> u64 {
+    sys::l4bridge_timer_wait_ts() as u64
 }

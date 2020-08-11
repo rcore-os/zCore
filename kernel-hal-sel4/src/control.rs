@@ -44,12 +44,16 @@ impl SleepQueue {
 
         if should_enable && !self.busy_mode {
             self.busy_mode = true;
-            timer::set_period(BUSY_TIMER_PERIOD).expect("failed to set timer period");
+            unsafe {
+                timer::set_period(BUSY_TIMER_PERIOD).expect("failed to set timer period");
+            }
         }
 
         if !should_enable && self.busy_mode {
             self.busy_mode = false;
-            timer::set_period(IDLE_TIMER_PERIOD).expect("failed to set timer period");
+            unsafe {
+                timer::set_period(IDLE_TIMER_PERIOD).expect("failed to set timer period");
+            }
         }
     }
 }
@@ -61,7 +65,9 @@ enum ControlMessage {
 
 pub fn run() -> ! {
     // Init timer
-    timer::set_period(IDLE_TIMER_PERIOD).expect("failed to set initial timer period");
+    unsafe {
+        timer::set_period(IDLE_TIMER_PERIOD).expect("failed to set initial timer period");
+    }
     spawn(|| {
         kt_timerd();
     }).expect("failed to spawn timerd");
@@ -103,7 +109,9 @@ pub fn sleep(ns: u64) {
 
 fn kt_timerd() -> ! {
     loop {
-        let now = timer::wait();
+        let now = unsafe {
+            timer::wait()
+        };
         let mut sleep_queue = SLEEP_QUEUE.lock();
         while let Some(entry) = sleep_queue.queue.first_entry() {
             if *entry.key() <= now {
