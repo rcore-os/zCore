@@ -2,6 +2,11 @@ use super::*;
 use zircon_object::dev::*;
 
 impl Syscall<'_> {
+
+    /// Write debug info to the serial port
+    /// To use the zx_debug_write() function, 
+    /// you must specify ```kernel.enable-serial-syscalls=true``` or ```kernel.enable-serial-syscalls=output-only``` on the kernel command line. 
+    /// Otherwise, the function returns ZX_ERR_NOT_SUPPORTED.
     pub fn sys_debug_write(&self, buf: UserInPtr<u8>, len: usize) -> ZxResult {
         info!("debug.write: buf=({:?}; {:#x})", buf, len);
         let data = buf.read_array(len)?;
@@ -9,6 +14,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
+    /// Read debug info from the serial port
     pub async fn sys_debug_read(
         &self,
         handle: HandleValue,

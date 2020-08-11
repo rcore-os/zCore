@@ -1,6 +1,9 @@
 use {super::*, zircon_object::task::ThreadState};
 
 impl Syscall<'_> {
+    /// Wait on a futex.
+    /// This system call function atomically verifies that ```value_ptr``` still contains the value ```current_value```
+    /// and sleeps until the futex is made available by a call to ```zx_futex_wake```
     pub async fn sys_futex_wait(
         &self,
         value_ptr: UserInPtr<AtomicI32>,
@@ -30,6 +33,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
+    /// Wake some number of threads waiting on a futex, and move more waiters to another wait queue.
     pub fn sys_futex_requeue(
         &self,
         value_ptr: UserInPtr<AtomicI32>,
@@ -69,6 +73,8 @@ impl Syscall<'_> {
         Ok(())
     }
 
+    /// Wake some number of threads waiting on a futex, optionally transferring ownership to the thread which was woken in the process.
+    /// > Waking up zero threads is not an error condition. Passing in an unallocated address for value_ptr is not an error condition.
     pub fn sys_futex_wake(&self, value_ptr: UserInPtr<AtomicI32>, count: u32) -> ZxResult {
         info!("futex.wake: value_ptr={:?}, count={:#x}", value_ptr, count);
         if value_ptr.is_null() || value_ptr.as_ptr() as usize % 4 != 0 {
@@ -81,6 +87,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
+    /// Wake some number of threads waiting on a futex, and move more waiters to another wait queue.
     pub fn sys_futex_wake_single_owner(&self, value_ptr: UserInPtr<AtomicI32>) -> ZxResult {
         info!("futex.wake_single_owner: value_ptr={:?}", value_ptr);
         if value_ptr.is_null() || value_ptr.as_ptr() as usize % 4 != 0 {

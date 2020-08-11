@@ -5,6 +5,8 @@ use {
 };
 
 impl Syscall<'_> {
+    /// Create a timer.
+    /// This is an object that can signal when a specified point in time has been reached
     pub fn sys_timer_create(
         &self,
         options: u32,
@@ -31,6 +33,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
+    /// Create an event.
     pub fn sys_event_create(&self, options: u32, mut out: UserOutPtr<HandleValue>) -> ZxResult {
         info!("event.create: options={:#x}", options);
         if options != 0 {
@@ -43,6 +46,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
+    /// Create an event pair.
     pub fn sys_eventpair_create(
         &self,
         options: u32,
@@ -63,6 +67,9 @@ impl Syscall<'_> {
         Ok(())
     }
 
+    /// Start a timer.
+    /// To fire the timer immediately pass a deadline less than or equal to 0.
+    /// The slack parameter specifies a range from deadline - slack to deadline + slack during which the timer is allowed to fire. 
     pub fn sys_timer_set(&self, handle: HandleValue, deadline: Deadline, slack: i64) -> ZxResult {
         info!(
             "timer.set: handle={:#x}, deadline={:#x?}, slack={:#x}",
@@ -77,6 +84,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
+    /// Cancel a timer.
     pub fn sys_timer_cancel(&self, handle: HandleValue) -> ZxResult {
         info!("timer.cancel: handle={:#x}", handle);
         let proc = self.thread.proc();

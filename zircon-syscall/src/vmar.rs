@@ -13,6 +13,8 @@ fn amount_of_alignments(options: u32) -> ZxResult<usize> {
 }
 
 impl Syscall<'_> {
+    /// Allocate a new subregion.
+    /// Creates a new VMAR within the one specified by ```parent_vmar```.
     pub fn sys_vmar_allocate(
         &self,
         parent_vmar: HandleValue,
@@ -73,6 +75,8 @@ impl Syscall<'_> {
     }
 
     #[allow(clippy::too_many_arguments)]
+    /// Add a memory mapping.
+    /// Maps the given VMO into the given virtual memory address region.
     pub fn sys_vmar_map(
         &self,
         vmar_handle: HandleValue,
@@ -158,6 +162,9 @@ impl Syscall<'_> {
         Ok(())
     }
 
+    /// Destroy a virtual memory address region.
+    /// Unmaps all mappings within the given region, and destroys all sub-regions of the region.
+    /// > This operation is logically recursive.
     pub fn sys_vmar_destroy(&self, handle_value: HandleValue) -> ZxResult {
         info!("vmar.destroy: handle={:?}", handle_value);
         let proc = self.thread.proc();
@@ -166,6 +173,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
+    /// Set protection of virtual memory pages.
     pub fn sys_vmar_protect(
         &self,
         handle_value: HandleValue,
@@ -194,6 +202,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
+    /// Unmap virtual memory pages.
     pub fn sys_vmar_unmap(&self, handle_value: HandleValue, addr: usize, len: usize) -> ZxResult {
         info!(
             "vmar.unmap: handle_value={:#x}, addr={:#x}, len={:#x}",
