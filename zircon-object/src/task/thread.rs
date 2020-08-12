@@ -262,6 +262,10 @@ impl Thread {
         Ok(())
     }
 
+    /// Stop the thread. Internal implementation of `exit` and `kill`.
+    ///
+    /// The thread do not terminate immediately when stopped. It is just made dying.
+    /// It will terminate after some cleanups (when `terminate` are called **explicitly** by upper layer).
     fn stop(&self, killed: bool) {
         let mut inner = self.inner.lock();
         if inner.state == ThreadState::Dead {
@@ -294,11 +298,14 @@ impl Thread {
     }
 
     /// Exit the thread.
+    /// The thread do not terminate immediately when exited. It is just made dying.
+    /// It will terminate after some cleanups (when `terminate` are called **explicitly** by upper layer).
     pub fn exit(&self) {
         self.stop(false);
     }
 
-    /// Terminate the current running thread.
+    /// Terminate the current running thread. This function should be called **explicitly**
+    /// by upper layer after cleanups are finished.
     pub fn terminate(&self) {
         let mut inner = self.inner.lock();
         self.exceptionate.shutdown();

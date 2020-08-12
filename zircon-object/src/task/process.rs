@@ -173,18 +173,27 @@ impl Process {
     }
 
     /// Exit current process with `retcode`.
+    /// The process do not terminate immediately when exited.
+    /// It will terminate after all its child threads are terminated.
     pub fn exit(&self, retcode: i64) {
         let mut inner = self.inner.lock();
         if let Status::Exited(_) = inner.status {
             return;
         }
         inner.status = Status::Exited(retcode);
+        if inner.threads.is_empty() {
+            inner.handles.clear();
+            drop(inner);
+            self.terminate();
+            return;
+        }
         for thread in inner.threads.iter() {
             thread.kill();
         }
         inner.handles.clear();
     }
 
+    /// The process finally terminates.
     fn terminate(&self) {
         let mut inner = self.inner.lock();
         let retcode = match inner.status {
@@ -747,28 +756,6 @@ mod tests {
 
         let inner = proc.inner.lock();
         assert!(inner.contains_thread(&thread) && !inner.contains_thread(&thread1));
-    }
-
-    #[test]
-    fn critical() {
-        let root_job = Job::root();
-        let job = root_job.create_child(0).unwrap();
-        let job1 = root_job.create_child(0).unwrap();
-
-        let proc = Process::create(&job, "proc", 0).expect("failed to create process");
-
-        assert_eq!(
-            proc.set_critical_at_job(&job1, true).err(),
-            Some(ZxError::INVALID_ARGS)
-        );
-        proc.set_critical_at_job(&root_job, true).unwrap();
-        assert_eq!(
-            proc.set_critical_at_job(&job, true).err(),
-            Some(ZxError::ALREADY_BOUND)
-        );
-
-        proc.exit(666);
-        assert!(root_job.signal().contains(Signal::JOB_TERMINATED));
     }
 
     #[test]

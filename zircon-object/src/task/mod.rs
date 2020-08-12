@@ -17,7 +17,8 @@ pub use {
 
 /// Task (Thread, Process, or Job)
 pub trait Task: Sync + Send {
-    /// Kill the task.
+    /// Kill the task. The task do not terminate immediately when killed.
+    /// It will terminate after all its children are terminated or some cleanups are finished.
     fn kill(&self);
 
     /// Suspend the task. Currently only thread or process handles may be suspended.

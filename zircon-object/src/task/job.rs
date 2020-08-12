@@ -230,7 +230,8 @@ impl Job {
         self.inner.lock().is_empty()
     }
 
-    /// Kill the job.
+    /// Kill the job. The job do not terminate immediately when killed.
+    /// It will terminate after all its children and processes are terminated.
     pub fn kill(&self) {
         let (children, processes) = {
             let mut inner = self.inner.lock();
@@ -240,6 +241,10 @@ impl Job {
             inner.killed = true;
             (inner.children.clone(), inner.processes.clone())
         };
+        if children.is_empty() && processes.is_empty() {
+            self.terminate();
+            return;
+        }
         for child in children {
             if let Some(child) = child.upgrade() {
                 child.kill();
@@ -250,6 +255,7 @@ impl Job {
         }
     }
 
+    /// The job finally terminates.
     fn terminate(&self) {
         self.exceptionate.shutdown();
         self.debug_exceptionate.shutdown();
@@ -437,5 +443,28 @@ mod tests {
 
         assert_eq!(proc.status(), Status::Exited(TASK_RETCODE_SYSCALL_KILL));
         assert!(proc.signal().contains(Signal::PROCESS_TERMINATED));
+    }
+
+    #[test]
+    fn critical_process() {
+        let root_job = Job::root();
+        let job = root_job.create_child(0).unwrap();
+        let job1 = root_job.create_child(0).unwrap();
+
+        let proc = Process::create(&job, "proc", 0).expect("failed to create process");
+
+        assert_eq!(
+            proc.set_critical_at_job(&job1, true).err(),
+            Some(ZxError::INVALID_ARGS)
+        );
+        proc.set_critical_at_job(&root_job, true).unwrap();
+        assert_eq!(
+            proc.set_critical_at_job(&job, true).err(),
+            Some(ZxError::ALREADY_BOUND)
+        );
+
+        proc.exit(666);
+        assert!(root_job.inner.lock().killed);
+        assert!(root_job.signal().contains(Signal::JOB_TERMINATED));
     }
 }
