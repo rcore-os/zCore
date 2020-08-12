@@ -292,7 +292,7 @@ pub struct JobInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::task::{Status, TASK_RETCODE_SYSCALL_KILL};
+    use crate::task::{Status, Thread, ThreadState, TASK_RETCODE_SYSCALL_KILL};
 
     #[test]
     fn create() {
@@ -433,15 +433,46 @@ mod tests {
         let root_job = Job::root();
         let job = Job::create_child(&root_job, 0).expect("failed to create job");
         let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
+        let thread = Thread::create(&proc, "thread", 0).expect("failed to create thread");
 
+        root_job.kill();
+        assert!(root_job.inner.lock().killed);
+        assert!(job.inner.lock().killed);
+        assert_eq!(proc.status(), Status::Exited(TASK_RETCODE_SYSCALL_KILL));
+        assert_eq!(thread.state(), ThreadState::Dying);
+        // killed but not terminated, since `thread.terminate()` not called.
+        assert!(!root_job.signal().contains(Signal::JOB_TERMINATED));
+        assert!(job.signal().contains(Signal::JOB_TERMINATED)); // but the lonely job is terminated
+        assert!(!proc.signal().contains(Signal::PROCESS_TERMINATED));
+        assert!(!thread.signal().contains(Signal::THREAD_TERMINATED));
+
+        thread.terminate();
+        assert!(root_job.inner.lock().killed);
+        assert!(job.inner.lock().killed);
+        assert_eq!(proc.status(), Status::Exited(TASK_RETCODE_SYSCALL_KILL));
+        assert_eq!(thread.state(), ThreadState::Dead);
+        // all terminated now
+        assert!(root_job.signal().contains(Signal::JOB_TERMINATED));
+        assert!(job.signal().contains(Signal::JOB_TERMINATED));
+        assert!(proc.signal().contains(Signal::PROCESS_TERMINATED));
+        assert!(thread.signal().contains(Signal::THREAD_TERMINATED));
+
+        // The job has no children.
+        let root_job = Job::root();
         root_job.kill();
         assert!(root_job.inner.lock().killed);
         assert!(root_job.signal().contains(Signal::JOB_TERMINATED));
 
+        // The job's process have no threads.
+        let root_job = Job::root();
+        let job = Job::create_child(&root_job, 0).expect("failed to create job");
+        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
+        root_job.kill();
+        assert!(root_job.inner.lock().killed);
         assert!(job.inner.lock().killed);
-        assert!(job.signal().contains(Signal::JOB_TERMINATED));
-
         assert_eq!(proc.status(), Status::Exited(TASK_RETCODE_SYSCALL_KILL));
+        assert!(root_job.signal().contains(Signal::JOB_TERMINATED));
+        assert!(job.signal().contains(Signal::JOB_TERMINATED));
         assert!(proc.signal().contains(Signal::PROCESS_TERMINATED));
     }
 
