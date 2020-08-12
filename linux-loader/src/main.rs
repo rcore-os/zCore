@@ -154,6 +154,17 @@ mod tests {
         assert_eq!(test("/bin/busybox ps").await, 0);
     }
 
+    #[async_std::test]
+    async fn test_sleep() {
+        assert_eq!(test("/bin/busybox sleep 3s").await, 0);
+    }
+
+    #[async_std::test]
+    async fn test_truncate() {
+        assert_eq!(test("/bin/busybox truncate -s 12 testtruncate").await, 0);
+        fs::read("../rootfs/testtruncate").unwrap();
+    }
+
     // syscall unit test
 
     #[async_std::test]
@@ -164,5 +175,10 @@ mod tests {
     #[async_std::test]
     async fn test_time() {
         assert_eq!(test("/bin/testtime").await, 0);
+    }
+
+    #[async_std::test]
+    async fn test_random() {
+        assert_eq!(test("/bin/testrandom").await, 0);
     }
 }

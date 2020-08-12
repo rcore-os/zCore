@@ -92,7 +92,7 @@ impl Syscall<'_> {
             Sys::WRITEV => self.sys_writev(a0.into(), a1.into(), a2),
             Sys::SENDFILE => self.sys_sendfile(a0.into(), a1.into(), a2.into(), a3),
             Sys::FCNTL => self.sys_fcntl(a0.into(), a1, a2),
-            Sys::FLOCK => self.sys_flock(a0.into(), a1.into()),
+            Sys::FLOCK => self.sys_flock(a0.into(), a1),
             Sys::FSYNC => self.sys_fsync(a0.into()),
             Sys::FDATASYNC => self.sys_fdatasync(a0.into()),
             Sys::TRUNCATE => self.sys_truncate(a0.into(), a1),
