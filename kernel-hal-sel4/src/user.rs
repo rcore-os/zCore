@@ -7,6 +7,8 @@ use crate::asid;
 use crate::cap;
 use core::mem::{self, ManuallyDrop};
 use trapframe::{TrapFrame, UserContext, GeneralRegs};
+use alloc::sync::Arc;
+use alloc::boxed::Box;
 
 const USER_CSPACE_NUM_ENTRIES_BITS: u8 = 1; // 2 entries
 
@@ -23,60 +25,76 @@ pub enum KernelEntryReason {
 
 /// The context of a user process.
 pub struct UserProcess {
-    vspace: ManuallyDrop<UserVspace>,
+    vspace: UserVspace,
+    fault_channel: UserFaultChannel,
+}
+
+/// The context of a user thread.
+pub struct UserThread {
+    process: Arc<UserProcess>,
     cspace: ManuallyDrop<UserCspace>,
-    fault_channel: ManuallyDrop<UserFaultChannel>,
     tcb: ManuallyDrop<Tcb>,
     kernel_entry_reason: KernelEntryReason,
 }
 
 impl UserProcess {
-    pub fn new() -> KernelResult<UserProcess> {
+    pub fn new() -> KernelResult<Arc<UserProcess>> {
         // Check consistency early.
         L4UserContext::check_consistency();
 
         let vspace = UserVspace::new()?;
-        let cspace = UserCspace::new()?;
         let fault_channel = UserFaultChannel::new()?;
-
-        let tcb = Tcb::new()?;
 
         asid::assign(vspace.object())?;
 
-        // No failures allowed from here
+        Ok(Arc::new(UserProcess {
+            vspace,
+            fault_channel,
+        }))
+    }
+
+    pub fn create_thread(self: &Arc<Self>) -> KernelResult<Box<UserThread>> {
+        let cspace = UserCspace::new()?;
+        let tcb = Tcb::new()?;
+        let ut = Box::new(UserThread {
+            process: self.clone(),
+            cspace: ManuallyDrop::new(cspace),
+            tcb: ManuallyDrop::new(tcb),
+            kernel_entry_reason: KernelEntryReason::NotStarted,
+        });
+        let ut_addr = &*ut as *const UserThread as usize;
+
         if unsafe {
             sys::l4bridge_badge_endpoint_to_user_thread_ts(
-                fault_channel.object(),
-                cspace.object(),
+                self.fault_channel.object(),
+                ut.cspace.object(),
                 CPtr(1),
                 USER_CSPACE_NUM_ENTRIES_BITS as _,
-                0
+                ut_addr
             )
         } != 0 {
-            panic!("UserProcess::new: cannot copy fault endpoint");
+            panic!("UserProcess::create_thread: cannot copy fault endpoint");
         }
 
         if unsafe { sys::locked(|| sys::l4bridge_configure_tcb(
-            tcb.object(),
+            ut.tcb.object(),
             CPtr(1 << (64 - USER_CSPACE_NUM_ENTRIES_BITS)),
-            cspace.object(), vspace.object(),
+            ut.cspace.object(), self.vspace.object(),
             0, CPtr(0),
         )) } != 0 {
             // should never fail
-            panic!("UserProcess::new: cannot configure tcb");
+            panic!("UserProcess::create_thread: cannot configure tcb");
         }
-        tcb.set_priority(user_thread_priority()).expect("UserProcess::new: cannot set priority");
-        Ok(UserProcess {
-            vspace: ManuallyDrop::new(vspace),
-            cspace: ManuallyDrop::new(cspace),
-            tcb: ManuallyDrop::new(tcb),
-            fault_channel: ManuallyDrop::new(fault_channel),
-            kernel_entry_reason: KernelEntryReason::NotStarted,
-        })
-    }
+        ut.tcb.set_priority(user_thread_priority()).expect("UserProcess::create_thread: cannot set priority");
 
-    pub fn run(&mut self, uctx: &mut UserContext) -> KernelEntryReason {
+        Ok(ut)
+    }
+}
+
+impl UserThread {
+    pub fn run(self: Box<Self>, uctx: &mut UserContext) -> (KernelEntryReason, Box<Self>) {
         let mut l4uctx = L4UserContext::read_user_context(uctx);
+        let mut sender_badge: usize = 0;
         let fault_num = match self.kernel_entry_reason {
             KernelEntryReason::NotStarted => {
                 if unsafe {
@@ -89,14 +107,15 @@ impl UserProcess {
                     panic!("UserProcess::run: cannot write registers");
                 }
                 unsafe {
-                    sys::l4bridge_fault_ipc_first_return_ts(self.fault_channel.object(), &mut l4uctx)
+                    sys::l4bridge_fault_ipc_first_return_ts(self.process.fault_channel.object(), &mut l4uctx, &mut sender_badge)
                 }
             }
             KernelEntryReason::UnknownSyscall => {
                 unsafe {
                     sys::l4bridge_fault_ipc_return_unknown_syscall_ts(
-                        self.fault_channel.object(),
-                        &mut l4uctx
+                        self.process.fault_channel.object(),
+                        &mut l4uctx,
+                        &mut sender_badge
                     )
                 }
             }
@@ -112,8 +131,9 @@ impl UserProcess {
                 }
                 unsafe {
                     sys::l4bridge_fault_ipc_return_generic_ts(
-                        self.fault_channel.object(),
-                        &mut l4uctx
+                        self.process.fault_channel.object(),
+                        &mut l4uctx,
+                        &mut sender_badge
                     )
                 }
             }
@@ -121,9 +141,17 @@ impl UserProcess {
                 panic!("UserProcess::run: bad entry reason");
             }
         };
+
+        // Now we've got the newly entering thread and the ownership of `self` is "implicitly" passed to
+        // the kernel scheduler. Forget it.
+        mem::forget(self);
+        let mut t: Box<Self> = unsafe {
+            Box::from_raw(sender_badge as *mut Self)
+        };
+
         let fault_num = fault_num as usize;
         let registers_preloaded;
-        self.kernel_entry_reason = if fault_num == unsafe { sys::L4BRIDGE_FAULT_UNKNOWN_SYSCALL } {
+        t.kernel_entry_reason = if fault_num == unsafe { sys::L4BRIDGE_FAULT_UNKNOWN_SYSCALL } {
             registers_preloaded = true;
             KernelEntryReason::UnknownSyscall
         } else if fault_num == unsafe { sys::L4BRIDGE_FAULT_VM } {
@@ -136,7 +164,7 @@ impl UserProcess {
         if !registers_preloaded {
             if unsafe {
                 sys::l4bridge_read_all_registers_ts(
-                    self.tcb.object(),
+                    t.tcb.object(),
                     &mut l4uctx,
                     0
                 )
@@ -145,19 +173,17 @@ impl UserProcess {
             }
         }
         l4uctx.write_user_context(uctx);
-        self.kernel_entry_reason
+        let entry_reason = t.kernel_entry_reason;
+        (entry_reason, t)
     }
 }
 
-impl Drop for UserProcess {
+impl Drop for UserThread {
     fn drop(&mut self) {
         unsafe {
-            // `tcb` uses `vspace` and `cspace` so drop it first
+            // `tcb` uses `cspace` so drop it first
             ManuallyDrop::drop(&mut self.tcb);
-
             ManuallyDrop::drop(&mut self.cspace);
-            ManuallyDrop::drop(&mut self.vspace);
-            ManuallyDrop::drop(&mut self.fault_channel);
         }
     }
 }

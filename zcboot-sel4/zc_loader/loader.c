@@ -425,27 +425,24 @@ static int handle_fault_ipc_reentry_generic(seL4_MessageInfo_t tag, seL4_UserCon
     return seL4_MessageInfo_get_label(tag);
 }
 
-int l4bridge_fault_ipc_first_return_ts(seL4_CPtr endpoint, seL4_UserContext *regs) {
-    seL4_Word sender;
-    seL4_MessageInfo_t tag = seL4_Recv(endpoint, &sender);
+int l4bridge_fault_ipc_first_return_ts(seL4_CPtr endpoint, seL4_UserContext *regs, seL4_Word *sender) {
+    seL4_MessageInfo_t tag = seL4_Recv(endpoint, sender);
     return handle_fault_ipc_reentry_generic(tag, regs);
 }
 
-int l4bridge_fault_ipc_return_unknown_syscall_ts(seL4_CPtr endpoint, seL4_UserContext *regs) {
+int l4bridge_fault_ipc_return_unknown_syscall_ts(seL4_CPtr endpoint, seL4_UserContext *regs, seL4_Word *sender) {
     seL4_Word *regs_raw = (seL4_Word *) regs;
 
     for(int i = 0; i < L4BRIDGE_NUM_REGISTERS; i++) {
         seL4_SetMR(i, regs_raw[i]);
     }
 
-    seL4_Word sender;
-    seL4_MessageInfo_t tag = seL4_ReplyRecv(endpoint, seL4_MessageInfo_new(0, 0, 0, L4BRIDGE_NUM_REGISTERS), &sender);
+    seL4_MessageInfo_t tag = seL4_ReplyRecv(endpoint, seL4_MessageInfo_new(0, 0, 0, L4BRIDGE_NUM_REGISTERS), sender);
     return handle_fault_ipc_reentry_generic(tag, regs);
 }
 
-int l4bridge_fault_ipc_return_generic_ts(seL4_CPtr endpoint, seL4_UserContext *regs) {
-    seL4_Word sender;
-    seL4_MessageInfo_t tag = seL4_ReplyRecv(endpoint, seL4_MessageInfo_new(0, 0, 0, 0), &sender);
+int l4bridge_fault_ipc_return_generic_ts(seL4_CPtr endpoint, seL4_UserContext *regs, seL4_Word *sender) {
+    seL4_MessageInfo_t tag = seL4_ReplyRecv(endpoint, seL4_MessageInfo_new(0, 0, 0, 0), sender);
     return handle_fault_ipc_reentry_generic(tag, regs);
 }
 

@@ -69,17 +69,20 @@ extern "C" {
 
     pub fn l4bridge_fault_ipc_first_return_ts(
         endpoint: CPtr,
-        regs: &mut L4UserContext
+        regs: &mut L4UserContext,
+        sender: &mut Word
     ) -> i32;
 
     pub fn l4bridge_fault_ipc_return_unknown_syscall_ts(
         endpoint: CPtr,
-        regs: &mut L4UserContext
+        regs: &mut L4UserContext,
+        sender: &mut Word
     ) -> i32;
 
     pub fn l4bridge_fault_ipc_return_generic_ts(
         endpoint: CPtr,
-        regs: &mut L4UserContext
+        regs: &mut L4UserContext,
+        sender: &mut Word
     ) -> i32;
 
     pub fn l4bridge_setup_tls(
