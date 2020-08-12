@@ -96,6 +96,7 @@ extern "C" {
     pub fn l4bridge_kipc_recv(slot: CPtr, data: &mut Word, sender_badge: &mut Word) -> i32;
     pub fn l4bridge_kipc_reply(result: Word);
     pub fn l4bridge_kipc_send_ts(slot: CPtr, data: Word);
+    pub fn l4bridge_kipc_reply_recv_ts(slot: CPtr, reslut: Word, data: &mut Word, sender_badge: &mut Word) -> i32;
 
     pub fn l4bridge_get_time_ts() -> Word;
     pub fn l4bridge_timer_set_period_ts(new_period: Word) -> i32;

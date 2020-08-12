@@ -2,7 +2,7 @@ use alloc::collections::btree_map::BTreeMap;
 use alloc::collections::linked_list::LinkedList;
 use crate::types::*;
 use crate::error::*;
-use crate::kipc::{KipcChannel, SavedReplyHandle};
+use crate::kipc::{kipc_loop, KipcLoopOutput, KipcChannel, SavedReplyHandle};
 use crate::kt;
 use lazy_static::lazy_static;
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -50,16 +50,16 @@ fn ensure_fc_init() {
 fn kt_futexd() -> ! {
     let mut tracker = FutexTracker::new();
 
-    loop {
-        let (msg, reply) = FC.recv();
+    kipc_loop(&*FC, |msg, reply| {
         match msg {
             FutexRequest::Wait(addr, old_value) => {
                 let value = unsafe { (*addr).load(Ordering::Relaxed) };
                 if value == old_value {
                     let handle = reply.save().expect("futexd: cannot save reply object");
                     tracker.waiters.entry(addr as usize).or_insert(LinkedList::new()).push_back(handle);
+                    KipcLoopOutput::NoReply
                 } else {
-                    reply.ok();
+                    KipcLoopOutput::Reply(reply, 0)
                 }
             }
             FutexRequest::Wake(addr, num_waiters) => {
@@ -75,10 +75,10 @@ fn kt_futexd() -> ! {
                         tracker.waiters.remove(&(addr as usize));
                     }
                 }
-                reply.ok();
+                KipcLoopOutput::Reply(reply, 0)
             }
         }
-    }
+    })
 }
 
 #[derive(Default)]
@@ -165,4 +165,8 @@ impl<'a, T> Drop for FMutexGuard<'a, T> {
     fn drop(&mut self) {
         self.parent.unlock();
     }
+}
+
+pub fn debug_wake_null() {
+    FC.call(FutexRequest::Wake(core::ptr::null(), 1)).expect("debug_wake_null: FutexRequest::Wake failed");
 }

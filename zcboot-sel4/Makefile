@@ -14,6 +14,9 @@ bridge: zcore
 simulate: bridge
 	cd bridge/build && ./simulate --extra-qemu-args="-m 512M"
 
+simulate-kvm: bridge
+	cd bridge/build && sudo ./simulate --extra-qemu-args="-m 512M --enable-kvm"
+
 simulate-gdb: bridge
 	cd bridge/build && ./simulate --extra-qemu-args="-S -s"
 

@@ -515,6 +515,18 @@ void l4bridge_kipc_reply(seL4_Word result) {
 }
 
 // Thread safe.
+int l4bridge_kipc_reply_recv_ts(seL4_CPtr slot, seL4_Word result, seL4_Word *data, seL4_Word *sender_badge) {
+    seL4_SetMR(0, result);
+    seL4_MessageInfo_t tag = seL4_ReplyRecv(slot, seL4_MessageInfo_new(0, 0, 0, 1), sender_badge);
+
+    if(seL4_MessageInfo_get_length(tag) != 1) {
+        return 1;
+    }
+    *data = seL4_GetMR(0);
+    return 0;
+}
+
+// Thread safe.
 seL4_Word l4bridge_get_time_ts() {
     seL4_MessageInfo_t tag = seL4_Call(get_time_cptr, seL4_MessageInfo_new(0, 0, 0, 0));
     if(seL4_MessageInfo_get_length(tag) != 1) {
