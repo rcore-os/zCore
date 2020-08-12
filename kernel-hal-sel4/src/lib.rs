@@ -1,5 +1,5 @@
 #![no_std]
-#![feature(asm, global_asm, alloc_error_handler)]
+#![feature(global_asm, alloc_error_handler)]
 #![feature(linkage, const_btree_new, map_first_last, negative_impls)]
 
 #[macro_use]

@@ -3,9 +3,16 @@ use core::time::Duration;
 
 fn bench_custom<F: FnOnce(u64)>(name: &str, n: u64, f: F) {
     let start = now();
+    let start_cycle = rdtsc();
     f(n);
     let end = now();
-    println!("benchmark '{}' ({:?}): {:?}", name, Duration::from_nanos(end - start), Duration::from_nanos((end - start) / n));
+    let end_cycle = rdtsc();
+    println!(
+        "benchmark '{}' ({:?}): {:?} ({} cycles)",
+        name, Duration::from_nanos(end - start),
+        Duration::from_nanos((end - start) / n),
+        (end_cycle - start_cycle) / n,
+    );
 }
 
 fn bench<F: FnMut()>(name: &str, n: u64, mut f: F) {
@@ -101,5 +108,11 @@ pub fn run_benchmarks(rounds: u64) {
         //benchmark_kt_spawn();
         benchmark_user_vm_fault();
         benchmark_timer_now();
+    }
+}
+
+fn rdtsc() -> u64 {
+    unsafe {
+        core::arch::x86_64::_rdtsc()
     }
 }
