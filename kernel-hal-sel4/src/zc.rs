@@ -20,13 +20,5 @@ pub fn zcore_main() -> ! {
 }
 
 pub fn first_user_thread() {
-    println!("Entering user mode.");
-    let user_proc = UserProcess::new().expect("cannot create user process");
-    let mut ut = user_proc.create_thread().expect("cannot create user thread");
-    for _ in 0..10000 {
-        let mut uctx = UserContext::default();
-        let (entry_reason, next_ut) = ut.run(&mut uctx);
-        ut = next_ut;
-    }
     println!("end");
 }
