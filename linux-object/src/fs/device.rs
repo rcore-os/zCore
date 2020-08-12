@@ -3,9 +3,11 @@
 use rcore_fs::dev::*;
 use spin::RwLock;
 
+/// memory buffer for device
 pub struct MemBuf(RwLock<&'static mut [u8]>);
 
 impl MemBuf {
+    /// create a MemBuf struct
     pub fn new(buf: &'static mut [u8]) -> Self {
         MemBuf(RwLock::new(buf))
     }

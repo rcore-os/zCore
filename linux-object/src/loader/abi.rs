@@ -1,3 +1,4 @@
+//! Process init info
 #![allow(unsafe_code)]
 
 use alloc::collections::btree_map::BTreeMap;
@@ -7,13 +8,18 @@ use core::mem::{align_of, size_of};
 use core::ops::Deref;
 use core::ptr::null;
 
+/// process init information
 pub struct ProcInitInfo {
+    /// args strings
     pub args: Vec<String>,
+    /// environment strings
     pub envs: Vec<String>,
+    /// auxiliary
     pub auxv: BTreeMap<u8, usize>,
 }
 
 impl ProcInitInfo {
+    /// push process init information into stack
     pub fn push_at(&self, stack_top: usize) -> Stack {
         let mut writer = Stack::new(stack_top);
         // from stack_top:
@@ -54,13 +60,18 @@ impl ProcInitInfo {
     }
 }
 
+/// program stack
 pub struct Stack {
+    /// stack pointer
     sp: usize,
+    /// stack top
     stack_top: usize,
+    /// stack data buffer
     data: Vec<u8>,
 }
 
 impl Stack {
+    /// create a stack
     fn new(sp: usize) -> Self {
         let mut data = Vec::with_capacity(0x4000);
         unsafe {
@@ -72,6 +83,7 @@ impl Stack {
             data,
         }
     }
+    /// push slice into stack
     fn push_slice<T: Copy>(&mut self, vs: &[T]) {
         self.sp -= vs.len() * size_of::<T>();
         self.sp -= self.sp % align_of::<T>();
@@ -82,6 +94,7 @@ impl Stack {
         }
         .copy_from_slice(vs);
     }
+    /// push str into stack
     fn push_str(&mut self, s: &str) {
         self.push_slice(&[b'\0']);
         self.push_slice(s.as_bytes());

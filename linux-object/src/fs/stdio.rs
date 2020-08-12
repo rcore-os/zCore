@@ -10,10 +10,13 @@ use rcore_fs::vfs::*;
 use spin::Mutex;
 
 lazy_static! {
+    /// STDIN global reference
     pub static ref STDIN: Arc<Stdin> = Default::default();
+    /// STDOUT global reference
     pub static ref STDOUT: Arc<Stdout> = Default::default();
 }
 
+/// Stdin struct, for Stdin buffer
 #[derive(Default)]
 pub struct Stdin {
     buf: Mutex<VecDeque<char>>,
@@ -21,10 +24,12 @@ pub struct Stdin {
 }
 
 impl Stdin {
+    /// push a char in Stdin buffer
     pub fn push(&self, c: char) {
         self.buf.lock().push_back(c);
         // self.pushed.notify_one();
     }
+    /// pop a char in Stdin buffer
     pub fn pop(&self) -> char {
         loop {
             let mut buf_lock = self.buf.lock();
@@ -35,11 +40,13 @@ impl Stdin {
             }
         }
     }
+    /// specify whether the Stdin buffer is readable
     pub fn can_read(&self) -> bool {
         self.buf.lock().len() > 0
     }
 }
 
+/// Stdout struct, empty now
 #[derive(Default)]
 pub struct Stdout;
 

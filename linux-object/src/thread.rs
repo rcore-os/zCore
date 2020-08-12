@@ -8,10 +8,15 @@ use spin::{Mutex, MutexGuard};
 use zircon_object::task::{Process, Thread};
 use zircon_object::ZxResult;
 
+/// Thread extension for linux
 pub trait ThreadExt {
+    /// create linux thread
     fn create_linux(proc: &Arc<Process>) -> ZxResult<Arc<Self>>;
+    /// lock and get Linux thread
     fn lock_linux(&self) -> MutexGuard<'_, LinuxThread>;
+    /// Set pointer to thread ID.
     fn set_tid_address(&self, tidptr: UserOutPtr<i32>);
+    /// exit linux thread
     fn exit_linux(&self, exit_code: i32);
 }
 
