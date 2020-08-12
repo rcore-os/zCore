@@ -8,7 +8,7 @@ use crate::cap;
 use core::mem::{self, ManuallyDrop};
 use trapframe::{TrapFrame, UserContext, GeneralRegs};
 
-const USER_CSPACE_NUM_ENTRIES_BITS: u8 = 4; // 16 entries
+const USER_CSPACE_NUM_ENTRIES_BITS: u8 = 1; // 2 entries
 
 type UserVspace = Object<UserVspaceBacking>;
 type UserCspace = Object<UserCspaceBacking>;
@@ -21,7 +21,8 @@ pub enum KernelEntryReason {
     Unknown,
 }
 
-pub struct UserTask {
+/// The context of a user process.
+pub struct UserProcess {
     vspace: ManuallyDrop<UserVspace>,
     cspace: ManuallyDrop<UserCspace>,
     fault_channel: ManuallyDrop<UserFaultChannel>,
@@ -29,8 +30,8 @@ pub struct UserTask {
     kernel_entry_reason: KernelEntryReason,
 }
 
-impl UserTask {
-    pub fn new() -> KernelResult<UserTask> {
+impl UserProcess {
+    pub fn new() -> KernelResult<UserProcess> {
         // Check consistency early.
         L4UserContext::check_consistency();
 
@@ -52,20 +53,20 @@ impl UserTask {
                 0
             )
         } != 0 {
-            panic!("UserTask::new: cannot copy fault endpoint");
+            panic!("UserProcess::new: cannot copy fault endpoint");
         }
 
         if unsafe { sys::locked(|| sys::l4bridge_configure_tcb(
             tcb.object(),
-            CPtr(1 << 60),
+            CPtr(1 << (64 - USER_CSPACE_NUM_ENTRIES_BITS)),
             cspace.object(), vspace.object(),
             0, CPtr(0),
         )) } != 0 {
             // should never fail
-            panic!("UserTask::new: cannot configure tcb");
+            panic!("UserProcess::new: cannot configure tcb");
         }
-        tcb.set_priority(user_thread_priority()).expect("UserTask::new: cannot set priority");
-        Ok(UserTask {
+        tcb.set_priority(user_thread_priority()).expect("UserProcess::new: cannot set priority");
+        Ok(UserProcess {
             vspace: ManuallyDrop::new(vspace),
             cspace: ManuallyDrop::new(cspace),
             tcb: ManuallyDrop::new(tcb),
@@ -85,7 +86,7 @@ impl UserTask {
                         1
                     )
                 } != 0 {
-                    panic!("UserTask::run: cannot write registers");
+                    panic!("UserProcess::run: cannot write registers");
                 }
                 unsafe {
                     sys::l4bridge_fault_ipc_first_return_ts(self.fault_channel.object(), &mut l4uctx)
@@ -107,7 +108,7 @@ impl UserTask {
                         0
                     )
                 } != 0 {
-                    panic!("UserTask::run: cannot write registers");
+                    panic!("UserProcess::run: cannot write registers");
                 }
                 unsafe {
                     sys::l4bridge_fault_ipc_return_generic_ts(
@@ -117,7 +118,7 @@ impl UserTask {
                 }
             }
             KernelEntryReason::Unknown => {
-                panic!("UserTask::run: bad entry reason");
+                panic!("UserProcess::run: bad entry reason");
             }
         };
         let fault_num = fault_num as usize;
@@ -140,7 +141,7 @@ impl UserTask {
                     0
                 )
             } != 0 {
-                panic!("UserTask::run: cannot read registers");
+                panic!("UserProcess::run: cannot read registers");
             }
         }
         l4uctx.write_user_context(uctx);
@@ -148,7 +149,7 @@ impl UserTask {
     }
 }
 
-impl Drop for UserTask {
+impl Drop for UserProcess {
     fn drop(&mut self) {
         unsafe {
             // `tcb` uses `vspace` and `cspace` so drop it first

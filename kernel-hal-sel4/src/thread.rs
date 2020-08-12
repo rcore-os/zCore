@@ -4,7 +4,7 @@ use crate::cap;
 use crate::types::*;
 use crate::error::*;
 use crate::object::*;
-use crate::user::UserTask;
+use crate::user::UserProcess;
 use core::cell::RefCell;
 use alloc::boxed::Box;
 
@@ -74,7 +74,7 @@ impl Tcb {
 
 #[repr(C)]
 pub struct LocalContext {
-    pub user_task: RefCell<Option<UserTask>>,
+    pub user_task: RefCell<Option<UserProcess>>,
 }
 
 impl LocalContext {

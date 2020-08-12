@@ -1,7 +1,7 @@
 use crate::error::*;
 use crate::types::*;
 use crate::control;
-use crate::user::UserTask;
+use crate::user::UserProcess;
 use crate::kt;
 use trapframe::UserContext;
 
@@ -21,7 +21,7 @@ pub fn zcore_main() -> ! {
 
 pub fn first_user_thread() {
     println!("Entering user mode.");
-    let mut ut = UserTask::new().expect("cannot create user context");
+    let mut ut = UserProcess::new().expect("cannot create user context");
     let mut uctx = UserContext::default();
     let entry_reason = ut.run(&mut uctx);
     println!("Entry reason: {:?}", entry_reason);
