@@ -125,6 +125,13 @@
 <span id="125">125</span>
 <span id="126">126</span>
 <span id="127">127</span>
+<span id="128">128</span>
+<span id="129">129</span>
+<span id="130">130</span>
+<span id="131">131</span>
+<span id="132">132</span>
+<span id="133">133</span>
+<span id="134">134</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Implement INode for Stdin &amp; Stdout</span>
 <span class="attribute">#![<span class="ident">allow</span>(<span class="ident">unsafe_code</span>)]</span>
@@ -138,10 +145,13 @@
 <span class="kw">use</span> <span class="ident">spin</span>::<span class="ident">Mutex</span>;
 
 <span class="macro">lazy_static</span><span class="macro">!</span> {
+    <span class="doccomment">/// STDIN global reference</span>
     <span class="kw">pub</span> <span class="kw">static</span> <span class="kw-2">ref</span> <span class="ident">STDIN</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Stdin</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">Default</span>::<span class="ident">default</span>();
+    <span class="doccomment">/// STDOUT global reference</span>
     <span class="kw">pub</span> <span class="kw">static</span> <span class="kw-2">ref</span> <span class="ident">STDOUT</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Stdout</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">Default</span>::<span class="ident">default</span>();
 }
 
+<span class="doccomment">/// Stdin struct, for Stdin buffer</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Default</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Stdin</span> {
     <span class="ident">buf</span>: <span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">VecDeque</span><span class="op">&lt;</span><span class="ident">char</span><span class="op">&gt;</span><span class="op">&gt;</span>,
@@ -149,10 +159,12 @@
 }
 
 <span class="kw">impl</span> <span class="ident">Stdin</span> {
+    <span class="doccomment">/// push a char in Stdin buffer</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">push</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">c</span>: <span class="ident">char</span>) {
         <span class="self">self</span>.<span class="ident">buf</span>.<span class="ident">lock</span>().<span class="ident">push_back</span>(<span class="ident">c</span>);
         <span class="comment">// self.pushed.notify_one();</span>
     }
+    <span class="doccomment">/// pop a char in Stdin buffer</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">pop</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">char</span> {
         <span class="kw">loop</span> {
             <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">buf_lock</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">buf</span>.<span class="ident">lock</span>();
@@ -163,11 +175,13 @@
             }
         }
     }
+    <span class="doccomment">/// specify whether the Stdin buffer is readable</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">can_read</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
         <span class="self">self</span>.<span class="ident">buf</span>.<span class="ident">lock</span>().<span class="ident">len</span>() <span class="op">&gt;</span> <span class="number">0</span>
     }
 }
 
+<span class="doccomment">/// Stdout struct, empty now</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Default</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Stdout</span>;
 

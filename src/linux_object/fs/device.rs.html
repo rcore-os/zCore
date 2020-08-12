@@ -28,15 +28,19 @@
 <span id="28">28</span>
 <span id="29">29</span>
 <span id="30">30</span>
+<span id="31">31</span>
+<span id="32">32</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Implement Device</span>
 
 <span class="kw">use</span> <span class="ident">rcore_fs</span>::<span class="ident">dev</span>::<span class="kw-2">*</span>;
 <span class="kw">use</span> <span class="ident">spin</span>::<span class="ident">RwLock</span>;
 
+<span class="doccomment">/// memory buffer for device</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">MemBuf</span>(<span class="ident">RwLock</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="lifetime">&#39;static</span> <span class="kw-2">mut</span> [<span class="ident">u8</span>]<span class="op">&gt;</span>);
 
 <span class="kw">impl</span> <span class="ident">MemBuf</span> {
+    <span class="doccomment">/// create a MemBuf struct</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">buf</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;static</span> <span class="kw-2">mut</span> [<span class="ident">u8</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
         <span class="ident">MemBuf</span>(<span class="ident">RwLock</span>::<span class="ident">new</span>(<span class="ident">buf</span>))
     }

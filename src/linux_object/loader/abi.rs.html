@@ -103,7 +103,21 @@
 <span id="103">103</span>
 <span id="104">104</span>
 <span id="105">105</span>
+<span id="106">106</span>
+<span id="107">107</span>
+<span id="108">108</span>
+<span id="109">109</span>
+<span id="110">110</span>
+<span id="111">111</span>
+<span id="112">112</span>
+<span id="113">113</span>
+<span id="114">114</span>
+<span id="115">115</span>
+<span id="116">116</span>
+<span id="117">117</span>
+<span id="118">118</span>
 </pre><div class="example-wrap"><pre class="rust ">
+<span class="doccomment">//! Process init info</span>
 <span class="attribute">#![<span class="ident">allow</span>(<span class="ident">unsafe_code</span>)]</span>
 
 <span class="kw">use</span> <span class="ident">alloc</span>::<span class="ident">collections</span>::<span class="ident">btree_map</span>::<span class="ident">BTreeMap</span>;
@@ -113,13 +127,18 @@
 <span class="kw">use</span> <span class="ident">core</span>::<span class="ident">ops</span>::<span class="ident">Deref</span>;
 <span class="kw">use</span> <span class="ident">core</span>::<span class="ident">ptr</span>::<span class="ident">null</span>;
 
+<span class="doccomment">/// process init information</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">ProcInitInfo</span> {
+    <span class="doccomment">/// args strings</span>
     <span class="kw">pub</span> <span class="ident">args</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">String</span><span class="op">&gt;</span>,
+    <span class="doccomment">/// environment strings</span>
     <span class="kw">pub</span> <span class="ident">envs</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">String</span><span class="op">&gt;</span>,
+    <span class="doccomment">/// auxiliary</span>
     <span class="kw">pub</span> <span class="ident">auxv</span>: <span class="ident">BTreeMap</span><span class="op">&lt;</span><span class="ident">u8</span>, <span class="ident">usize</span><span class="op">&gt;</span>,
 }
 
 <span class="kw">impl</span> <span class="ident">ProcInitInfo</span> {
+    <span class="doccomment">/// push process init information into stack</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">push_at</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">stack_top</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Stack</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">writer</span> <span class="op">=</span> <span class="ident">Stack</span>::<span class="ident">new</span>(<span class="ident">stack_top</span>);
         <span class="comment">// from stack_top:</span>
@@ -160,13 +179,18 @@
     }
 }
 
+<span class="doccomment">/// program stack</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Stack</span> {
+    <span class="doccomment">/// stack pointer</span>
     <span class="ident">sp</span>: <span class="ident">usize</span>,
+    <span class="doccomment">/// stack top</span>
     <span class="ident">stack_top</span>: <span class="ident">usize</span>,
+    <span class="doccomment">/// stack data buffer</span>
     <span class="ident">data</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>,
 }
 
 <span class="kw">impl</span> <span class="ident">Stack</span> {
+    <span class="doccomment">/// create a stack</span>
     <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">sp</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">data</span> <span class="op">=</span> <span class="ident">Vec</span>::<span class="ident">with_capacity</span>(<span class="number">0x4000</span>);
         <span class="kw">unsafe</span> {
@@ -178,6 +202,7 @@
             <span class="ident">data</span>,
         }
     }
+    <span class="doccomment">/// push slice into stack</span>
     <span class="kw">fn</span> <span class="ident">push_slice</span><span class="op">&lt;</span><span class="ident">T</span>: <span class="ident">Copy</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">vs</span>: <span class="kw-2">&amp;</span>[<span class="ident">T</span>]) {
         <span class="self">self</span>.<span class="ident">sp</span> <span class="op">-</span><span class="op">=</span> <span class="ident">vs</span>.<span class="ident">len</span>() <span class="op">*</span> <span class="ident">size_of</span>::<span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span>();
         <span class="self">self</span>.<span class="ident">sp</span> <span class="op">-</span><span class="op">=</span> <span class="self">self</span>.<span class="ident">sp</span> <span class="op">%</span> <span class="ident">align_of</span>::<span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span>();
@@ -188,6 +213,7 @@
         }
         .<span class="ident">copy_from_slice</span>(<span class="ident">vs</span>);
     }
+    <span class="doccomment">/// push str into stack</span>
     <span class="kw">fn</span> <span class="ident">push_str</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">s</span>: <span class="kw-2">&amp;</span><span class="ident">str</span>) {
         <span class="self">self</span>.<span class="ident">push_slice</span>(<span class="kw-2">&amp;</span>[<span class="string">b&#39;\0&#39;</span>]);
         <span class="self">self</span>.<span class="ident">push_slice</span>(<span class="ident">s</span>.<span class="ident">as_bytes</span>());

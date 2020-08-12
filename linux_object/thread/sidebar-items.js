@@ -1,1 +1,1 @@
-initSidebarItems({"struct":[["LinuxThread","Linux specific thread information."]],"trait":[["ThreadExt",""]]});
+initSidebarItems({"struct":[["LinuxThread","Linux specific thread information."]],"trait":[["ThreadExt","Thread extension for linux"]]});

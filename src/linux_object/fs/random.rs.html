@@ -73,6 +73,9 @@
 <span id="73">73</span>
 <span id="74">74</span>
 <span id="75">75</span>
+<span id="76">76</span>
+<span id="77">77</span>
+<span id="78">78</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Implement INode for RandomINode</span>
 
@@ -82,10 +85,12 @@
 <span class="kw">use</span> <span class="ident">rcore_fs</span>::<span class="ident">vfs</span>::<span class="kw-2">*</span>;
 <span class="kw">use</span> <span class="ident">spin</span>::<span class="ident">Mutex</span>;
 
+<span class="doccomment">/// random INode data struct</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">RandomINodeData</span> {
     <span class="ident">seed</span>: <span class="ident">u32</span>,
 }
 
+<span class="doccomment">/// random INode struct</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">RandomINode</span> {
     <span class="ident">data</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">RandomINodeData</span><span class="op">&gt;</span><span class="op">&gt;</span>,
@@ -93,8 +98,9 @@
 }
 
 <span class="kw">impl</span> <span class="ident">RandomINode</span> {
-    <span class="comment">// urandom -&gt; secure=true</span>
-    <span class="comment">// random -&gt; secure=false</span>
+    <span class="doccomment">/// create a random INode</span>
+    <span class="doccomment">/// - urandom -&gt; secure = true</span>
+    <span class="doccomment">/// - random -&gt; secure = false</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">secure</span>: <span class="ident">bool</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">RandomINode</span> {
         <span class="ident">RandomINode</span> {
             <span class="ident">secure</span>,

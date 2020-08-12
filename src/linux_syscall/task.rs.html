@@ -512,13 +512,13 @@
         <span class="ident">argv</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span><span class="op">&gt;</span>,
         <span class="ident">envp</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
-        <span class="macro">info</span><span class="macro">!</span>(
-            <span class="string">&quot;execve: path: {:?}, argv: {:?}, envp: {:?}&quot;</span>,
-            <span class="ident">path</span>, <span class="ident">argv</span>, <span class="ident">envp</span>
-        );
         <span class="kw">let</span> <span class="ident">path</span> <span class="op">=</span> <span class="ident">path</span>.<span class="ident">read_cstring</span>()<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">args</span> <span class="op">=</span> <span class="ident">argv</span>.<span class="ident">read_cstring_array</span>()<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">envs</span> <span class="op">=</span> <span class="ident">envp</span>.<span class="ident">read_cstring_array</span>()<span class="question-mark">?</span>;
+        <span class="macro">info</span><span class="macro">!</span>(
+            <span class="string">&quot;execve: path: {:?}, argv: {:?}, envs: {:?}&quot;</span>,
+            <span class="ident">path</span>, <span class="ident">argv</span>, <span class="ident">envs</span>
+        );
         <span class="kw">if</span> <span class="ident">args</span>.<span class="ident">is_empty</span>() {
             <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;execve: args is null&quot;</span>);
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">LxError</span>::<span class="ident">EINVAL</span>);

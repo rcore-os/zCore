@@ -126,11 +126,11 @@
         <span class="ident">nfds</span>: <span class="ident">usize</span>,
         <span class="ident">timeout_msecs</span>: <span class="ident">usize</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
-        <span class="macro">info</span><span class="macro">!</span>(
-            <span class="string">&quot;poll: ufds: {:?}, nfds: {}, timeout_msecs: {:#x}&quot;</span>,
-            <span class="ident">ufds</span>, <span class="ident">nfds</span>, <span class="ident">timeout_msecs</span>
-        );
         <span class="kw">let</span> <span class="ident">polls</span> <span class="op">=</span> <span class="ident">ufds</span>.<span class="ident">read_array</span>(<span class="ident">nfds</span>)<span class="question-mark">?</span>;
+        <span class="macro">info</span><span class="macro">!</span>(
+            <span class="string">&quot;poll: ufds: {:?}, nfds: {:?}, timeout_msecs: {:#x}&quot;</span>,
+            <span class="ident">polls</span>, <span class="ident">nfds</span>, <span class="ident">timeout_msecs</span>
+        );
         <span class="attribute">#[<span class="ident">must_use</span> <span class="op">=</span> <span class="string">&quot;future does nothing unless polled/`await`-ed&quot;</span>]</span>
         <span class="kw">struct</span> <span class="ident">PollFuture</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span> {
             <span class="ident">polls</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">PollFd</span><span class="op">&gt;</span>,

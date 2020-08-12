@@ -42,6 +42,8 @@
 <span id="42">42</span>
 <span id="43">43</span>
 <span id="44">44</span>
+<span id="45">45</span>
+<span id="46">46</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! consts for fctnl</span>
 <span class="doccomment">//! currently support x86_64 only</span>
@@ -53,6 +55,7 @@
 <span class="kw">const</span> <span class="ident">F_LINUX_SPECIFIC_BASE</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">1024</span>;
 
 <span class="macro">bitflags</span><span class="macro">!</span> {
+    <span class="doccomment">/// fcntl flags</span>
     <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">FcntlFlags</span>: <span class="ident">usize</span> {
         <span class="doccomment">/// dup</span>
         <span class="kw">const</span> <span class="ident">F_DUPFD</span> <span class="op">=</span> <span class="number">0</span>;
@@ -78,6 +81,7 @@
 }
 
 <span class="macro">bitflags</span><span class="macro">!</span> {
+    <span class="doccomment">/// file operate flags</span>
     <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">FileFlags</span>: <span class="ident">usize</span> {
         <span class="doccomment">/// not blocking</span>
         <span class="kw">const</span> <span class="ident">O_NONBLOCK</span> <span class="op">=</span> <span class="number">0o4000</span>;

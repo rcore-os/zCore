@@ -19,11 +19,23 @@
 <span id="19">19</span>
 <span id="20">20</span>
 <span id="21">21</span>
+<span id="22">22</span>
+<span id="23">23</span>
+<span id="24">24</span>
+<span id="25">25</span>
+<span id="26">26</span>
+<span id="27">27</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Linux kernel objects</span>
 
 <span class="attribute">#![<span class="ident">no_std</span>]</span>
-<span class="attribute">#![<span class="ident">deny</span>(<span class="ident">warnings</span>, <span class="ident">unsafe_code</span>, <span class="ident">unused_must_use</span>, <span class="ident">unreachable_patterns</span>)]</span>
+<span class="attribute">#![<span class="ident">deny</span>(
+    <span class="ident">warnings</span>,
+    <span class="ident">unsafe_code</span>,
+    <span class="ident">unused_must_use</span>,
+    <span class="ident">unreachable_patterns</span>,
+    <span class="ident">missing_docs</span>
+)]</span>
 <span class="attribute">#![<span class="ident">feature</span>(<span class="ident">bool_to_option</span>)]</span>
 
 <span class="kw">extern</span> <span class="kw">crate</span> <span class="ident">alloc</span>;

@@ -1,1 +1,1 @@
-initSidebarItems({"mod":[["error",""],["fs",""],["loader",""],["process","Linux Process"],["thread","Linux Thread"]]});
+initSidebarItems({"mod":[["error","Linux error codes"],["fs","Linux file objects"],["loader","Linux ELF Program Loader"],["process","Linux Process"],["thread","Linux Thread"]]});
