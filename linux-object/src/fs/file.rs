@@ -49,7 +49,7 @@ pub struct OpenOptions {
 /// file seek type
 #[derive(Debug)]
 pub enum SeekFrom {
-    /// seek from start point 
+    /// seek from start point
     Start(u64),
     /// seek from end
     End(i64),
