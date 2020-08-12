@@ -8,6 +8,7 @@ use crate::sys;
 use lazy_static::lazy_static;
 use crate::futex::FMutex;
 use crate::cap;
+use alloc::sync::Arc;
 
 lazy_static! {
     pub static ref K: FMutex<VmAlloc> = FMutex::new(
@@ -18,6 +19,7 @@ lazy_static! {
 pub struct VmAlloc {
     vspace: CPtr,
     paging_structures: LinkedList<PagingStructure>,
+    pages: BTreeMap<usize, Arc<Page>>,
     vm_regions: BTreeMap<usize, VmRegion>,
 }
 
@@ -38,7 +40,6 @@ impl Drop for PagingStructure {
 
 pub struct VmRegion {
     range: Range<usize>,
-    pages: BTreeMap<usize, Page>,
     readable: bool,
     writable: bool,
     executable: bool,
@@ -49,6 +50,7 @@ impl VmAlloc {
         VmAlloc {
             vspace,
             paging_structures: LinkedList::new(),
+            pages: BTreeMap::new(),
             vm_regions: BTreeMap::new(),
         }
     }
@@ -101,6 +103,11 @@ impl VmAlloc {
         let region = self.vm_regions.range((vaddr..)).next();
         if let Some((index, region)) = region {
             if vaddr < region.range.end {
+                for addr in (region.range.start..region.range.end).step_by(1 << Page::bits()) {
+                    if self.pages.remove(&addr).is_none() {
+                        panic!("VmAlloc::release_region: cannot free page");
+                    }
+                }
                 let index = *index;
                 self.vm_regions.remove(&index);
                 return;
@@ -109,21 +116,19 @@ impl VmAlloc {
         panic!("VmAlloc::release_region: cannot find region");
     }
 
-    pub fn page_at(&self, vaddr: usize) -> Option<&Page> {
+    pub fn page_at(&self, vaddr: usize) -> Option<&Arc<Page>> {
         let vaddr = vaddr & (!((1 << Page::bits()) - 1));
+        self.pages.get(&vaddr)
+    }
 
-        // `+1` to be inclusive
-        let region = self.vm_regions.range((..vaddr + 1)).rev().next();
-
-        if let Some((_, region)) = region {
-            if region.range.end > vaddr {
-                region.pages.get(&vaddr)
-            } else {
-                None
-            }
-        } else {
-            None
+    pub fn insert_page(&mut self, addr: usize, page: Arc<Page>) -> KernelResult<()> {
+        Page::check_address_aligned(addr)?;
+        if self.pages.contains_key(&addr) {
+            return Err(KernelError::VmRegionOverlap);
         }
+        self.map_page(&*page, addr)?;
+        self.pages.insert(addr, page);
+        Ok(())
     }
 
     pub fn allocate_region(&mut self, range: Range<usize>) -> KernelResult<()> {
@@ -131,29 +136,26 @@ impl VmAlloc {
         Page::check_address_aligned(range.start)?;
         Page::check_address_aligned(range.end)?;
 
-        // Requirement 2: No other region should start from within the new range
-        if self.vm_regions.range(range.clone()).next().is_some() {
-            return Err(KernelError::VmRegionOverlap);
-        }
-
-        // Requirement 3: No other region should end within the new range
-        if let Some((_, region)) = self.vm_regions.range((..range.start)).rev().next() {
-            if region.range.end > range.start {
+        // Requirement 2: No overlap
+        for addr in (range.start..range.end).step_by(1 << Page::bits()) {
+            if self.pages.contains_key(&addr) {
                 return Err(KernelError::VmRegionOverlap);
             }
         }
 
         // Try to allocate pages
-        let mut pages: BTreeMap<usize, Page> = BTreeMap::new();
+        let mut pages: LinkedList<(usize, Page)> = LinkedList::new();
         for addr in (range.start..range.end).step_by(1 << Page::bits()) {
             let page = Page::new()?;
             self.map_page(&page, addr)?;
-            pages.insert(addr, page);
+            pages.push_back((addr, page));
+        }
+        for (addr, page) in pages {
+            self.pages.insert(addr, Arc::new(page));
         }
 
         self.vm_regions.insert(range.start, VmRegion {
             range,
-            pages,
             readable: true,
             writable: true,
             executable: true,
