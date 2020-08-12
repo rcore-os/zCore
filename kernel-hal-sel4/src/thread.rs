@@ -4,6 +4,9 @@ use crate::cap;
 use crate::types::*;
 use crate::error::*;
 use crate::object::*;
+use crate::user::UserTask;
+use core::cell::RefCell;
+use alloc::boxed::Box;
 
 pub struct TcbBacking;
 unsafe impl ObjectBacking for TcbBacking {
@@ -65,6 +68,42 @@ impl Tcb {
             Err(KernelError::PriorityFailure)
         } else {
             Ok(())
+        }
+    }
+}
+
+#[repr(C)]
+pub struct LocalContext {
+    pub user_task: RefCell<Option<UserTask>>,
+}
+
+impl LocalContext {
+    pub fn current() -> &'static LocalContext {
+        let p = unsafe { &*sys::l4bridge_get_thread_local_context() };
+        match p {
+            Some(x) => x,
+            None => panic!("LocalContext::current: no current context")
+        }
+    }
+
+    pub unsafe fn init_current() {
+        let p = &mut *sys::l4bridge_get_thread_local_context();
+        if p.is_some() {
+            panic!("LocalContext::init_current: non-empty local context");
+        }
+        let lc = Box::new(LocalContext {
+            user_task: RefCell::new(None),
+        });
+        *p = Some(&*Box::into_raw(lc));
+    }
+
+    pub unsafe fn drop_current() {
+        let p = &mut *sys::l4bridge_get_thread_local_context();
+        match p.take() {
+            Some(x) => {
+                Box::from_raw(x as *const LocalContext as *mut LocalContext);
+            },
+            None => panic!("LocalContext::drop_current: empty local context")
         }
     }
 }

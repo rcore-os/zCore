@@ -14,3 +14,4 @@ dlmalloc = { git = "https://github.com/losfair/dlmalloc-rs", branch = "rcore-soc
 slab = { git = "https://github.com/losfair/slab", branch = "no-std" }
 lazy_static = { version = "1.4", features = ["spin_no_std" ] }
 num_enum = { version = "0.5", default-features = false }
+trapframe = "0.4"

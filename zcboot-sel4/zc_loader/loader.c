@@ -37,6 +37,9 @@ static char TLS[TLS_SIZE];
 // IPC buffer
 static seL4_IPCBuffer *ipc_buffer = (seL4_IPCBuffer *) ZCDAEMON_IPCBUF_VADDR;
 
+// Thread-local context.
+static __thread void *thread_local_context;
+
 extern void rust_start();
 
 // Fails if not stripped before linking.
@@ -48,18 +51,25 @@ seL4_CPtr alloc_cnode_cptr = 0;
 seL4_CPtr timer_event_cptr = 0;
 seL4_CPtr set_period_cptr = 0;
 seL4_CPtr get_time_cptr = 0;
+seL4_CPtr asid_control_cptr = 0;
 
 seL4_Word L4BRIDGE_CNODE_SLOT_BITS = seL4_SlotBits;
 seL4_Word L4BRIDGE_TCB_BITS = seL4_TCBBits;
 seL4_Word L4BRIDGE_STATIC_CAP_VSPACE = PD_SLOT;
 seL4_Word L4BRIDGE_STATIC_CAP_CSPACE = CNODE_SLOT;
 seL4_Word L4BRIDGE_STATIC_CAP_TCB = TCB_SLOT;
+seL4_Word L4BRIDGE_VSPACE_BITS = seL4_PML4Bits;
 seL4_Word L4BRIDGE_PDPT_BITS = seL4_PDPTBits;
 seL4_Word L4BRIDGE_PAGEDIR_BITS = seL4_PageDirBits;
 seL4_Word L4BRIDGE_PAGETABLE_BITS = seL4_PageTableBits;
 seL4_Word L4BRIDGE_PAGE_BITS = seL4_PageBits;
 seL4_Word L4BRIDGE_ENDPOINT_BITS = seL4_EndpointBits;
 seL4_Word L4BRIDGE_MAX_PRIO = seL4_MaxPrio;
+seL4_Word L4BRIDGE_NUM_REGISTERS = sizeof(seL4_UserContext) / sizeof(seL4_Word);
+seL4_Word L4BRIDGE_FAULT_UNKNOWN_SYSCALL = seL4_Fault_UnknownSyscall;
+seL4_Word L4BRIDGE_FAULT_VM = seL4_Fault_VMFault;
+seL4_Word L4BRIDGE_ASID_POOL_BITS = 12; // 4K
+seL4_Word L4BRIDGE_ENTRIES_PER_ASID_POOL = 1024;
 
 char fmt_hex_char(unsigned char v) {
     if(v >= 0 && v <= 9) {
@@ -106,6 +116,10 @@ void l4bridge_setup_tls(seL4_Word tls_addr, seL4_Word tls_size, seL4_Word ipc_bu
     * (seL4_Word *) thread_area = thread_area;
     seL4_SetTLSBase(thread_area);
     seL4_SetIPCBuffer((seL4_IPCBuffer *) ipc_buffer);
+}
+
+void ** l4bridge_get_thread_local_context() {
+    return &thread_local_context;
 }
 
 void print_str(const char *s) {
@@ -209,15 +223,16 @@ int l4bridge_retype_and_mount_cnode(seL4_CPtr slot, int num_slots_bits, seL4_Wor
     return 0;
 }
 
-static int _l4bridge_retype_fixed_size_object(
+static int _l4bridge_retype_object(
     seL4_CPtr untyped,
     seL4_CPtr out,
-    seL4_Word dst_type
+    seL4_Word dst_type,
+    seL4_Word size_bits
 ) {
     int error;
 
     error = seL4_Untyped_Retype(
-        untyped, dst_type, 0,
+        untyped, dst_type, size_bits,
         CNODE_SLOT, 0, seL4_WordBits - SECONDLEVEL_CNODE_BITS,
         TEMP_CPTR, 1
     );
@@ -230,6 +245,21 @@ static int _l4bridge_retype_fixed_size_object(
     if(error) return error;
 
     return 0;
+}
+
+static int _l4bridge_retype_fixed_size_object(
+    seL4_CPtr untyped,
+    seL4_CPtr out,
+    seL4_Word dst_type
+) {
+    return _l4bridge_retype_object(untyped, out, dst_type, 0);
+}
+
+int l4bridge_retype_vspace(
+    seL4_CPtr untyped,
+    seL4_CPtr out
+) {
+    return _l4bridge_retype_fixed_size_object(untyped, out, seL4_X64_PML4Object);
 }
 
 int l4bridge_retype_pdpt(
@@ -272,6 +302,14 @@ int l4bridge_retype_endpoint(
     seL4_CPtr out
 ) {
     return _l4bridge_retype_fixed_size_object(untyped, out, seL4_EndpointObject);
+}
+
+int l4bridge_retype_cnode(
+    seL4_CPtr untyped,
+    seL4_CPtr out,
+    seL4_Word size_bits
+) {
+    return _l4bridge_retype_object(untyped, out, seL4_CapTableObject, size_bits);
 }
 
 int l4bridge_map_pdpt(
@@ -358,26 +396,69 @@ int l4bridge_get_pc_sp(
     return 0;
 }
 
+int l4bridge_write_all_registers_ts(
+    seL4_CPtr tcb,
+    const seL4_UserContext *regs,
+    int resume
+) {
+    return seL4_TCB_WriteRegisters(tcb, resume, 0, L4BRIDGE_NUM_REGISTERS, (seL4_UserContext *) regs);
+}
+
+int l4bridge_read_all_registers_ts(
+    seL4_CPtr tcb,
+    seL4_UserContext *regs,
+    int suspend
+) {
+    return seL4_TCB_ReadRegisters(tcb, suspend, 0, L4BRIDGE_NUM_REGISTERS, regs);
+}
+
+static int handle_fault_ipc_reentry_generic(seL4_MessageInfo_t tag, seL4_UserContext *regs) {
+    seL4_Word *regs_raw = (seL4_Word *) regs;
+    if(seL4_MessageInfo_get_label(tag) == seL4_Fault_UnknownSyscall) {
+        if(seL4_MessageInfo_get_length(tag) != L4BRIDGE_NUM_REGISTERS) {
+            panic_str("handle_fault_ipc_reentry_generic: seL4_Fault_UnknownSyscall: bad payload\n");
+        }
+        for(int i = 0; i < L4BRIDGE_NUM_REGISTERS; i++) {
+            regs_raw[i] = seL4_GetMR(i);
+        }
+    }
+    return seL4_MessageInfo_get_label(tag);
+}
+
+int l4bridge_fault_ipc_first_return_ts(seL4_CPtr endpoint, seL4_UserContext *regs) {
+    seL4_Word sender;
+    seL4_MessageInfo_t tag = seL4_Recv(endpoint, &sender);
+    return handle_fault_ipc_reentry_generic(tag, regs);
+}
+
+int l4bridge_fault_ipc_return_unknown_syscall_ts(seL4_CPtr endpoint, seL4_UserContext *regs) {
+    seL4_Word *regs_raw = (seL4_Word *) regs;
+
+    for(int i = 0; i < L4BRIDGE_NUM_REGISTERS; i++) {
+        seL4_SetMR(i, regs_raw[i]);
+    }
+
+    seL4_Word sender;
+    seL4_MessageInfo_t tag = seL4_ReplyRecv(endpoint, seL4_MessageInfo_new(0, 0, 0, L4BRIDGE_NUM_REGISTERS), &sender);
+    return handle_fault_ipc_reentry_generic(tag, regs);
+}
+
+int l4bridge_fault_ipc_return_generic_ts(seL4_CPtr endpoint, seL4_UserContext *regs) {
+    seL4_Word sender;
+    seL4_MessageInfo_t tag = seL4_ReplyRecv(endpoint, seL4_MessageInfo_new(0, 0, 0, 0), &sender);
+    return handle_fault_ipc_reentry_generic(tag, regs);
+}
+
 int l4bridge_resume(seL4_CPtr tcb) {
     return seL4_TCB_Resume(tcb);
 }
 
-int l4bridge_create_kthread(
-    seL4_CPtr slot,
-    seL4_Word ipc_buffer_vaddr, seL4_CPtr ipc_buffer_cap,
-    seL4_Word entry, seL4_Word entry_data
-) {
-    int error;
-    
-    error = seL4_TCB_Configure(
-        slot,
-        seL4_CapNull, // TODO: Fault endpoint
-        CNODE_SLOT, 0, PD_SLOT, 0,
-        ipc_buffer_vaddr, ipc_buffer_cap
-    );
-    if(error) return error;
+int l4bridge_make_asid_pool_ts(seL4_CPtr untyped, seL4_CPtr out) {
+    return seL4_X86_ASIDControl_MakePool(asid_control_cptr, untyped, CNODE_SLOT, out, seL4_WordBits);
+}
 
-    return 1;
+int l4bridge_assign_asid_ts(seL4_CPtr pool, seL4_CPtr vspace) {
+    return seL4_X86_ASIDPool_Assign(pool, vspace);
 }
 
 void l4bridge_delete_cap(seL4_CPtr slot) {
@@ -387,9 +468,9 @@ void l4bridge_delete_cap(seL4_CPtr slot) {
     }
 }
 
-int l4bridge_badge_endpoint(seL4_CPtr src, seL4_CPtr dst, seL4_Word badge) {
+int l4bridge_badge_endpoint_to_ts(seL4_CPtr src, seL4_CPtr dst_root, seL4_CPtr dst, seL4_Word dst_depth, seL4_Word badge) {
     return seL4_CNode_Mint(
-        CNODE_SLOT, dst, seL4_WordBits,
+        dst_root, dst, dst_depth,
         CNODE_SLOT, src, seL4_WordBits,
         seL4_AllRights, badge
     );
@@ -520,6 +601,7 @@ void _start() {
     timer_event_cptr = getcap("timer_event");
     set_period_cptr = getcap("set_period");
     get_time_cptr = getcap("get_time");
+    asid_control_cptr = getcap("asid_control");
 
     unsigned long stack_top = (unsigned long) MAIN_STACK + MAIN_STACK_SIZE;
     asm volatile (

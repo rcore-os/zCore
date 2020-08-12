@@ -1,6 +1,6 @@
 #![no_std]
 #![feature(asm, global_asm, alloc_error_handler)]
-#![feature(linkage, const_btree_new, map_first_last)]
+#![feature(linkage, const_btree_new, map_first_last, negative_impls)]
 
 #[macro_use]
 extern crate alloc;
@@ -23,6 +23,8 @@ mod control;
 mod timer;
 mod zc;
 mod futex;
+mod user;
+mod asid;
 
 use alloc::boxed::Box;
 
@@ -72,7 +74,7 @@ pub unsafe fn boot() -> ! {
     }
     println!("Testing ok.");
 */
-
+/*
     kt::spawn(move || {
         use core::sync::atomic::{AtomicUsize, Ordering};
         static COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -85,7 +87,7 @@ pub unsafe fn boot() -> ! {
             thread::yield_now();
         }
     }).expect("spawn failed");
-
+*/
     kt::spawn(|| {
         zc::zcore_main();
     }).expect("cannot spawn zcore_main");

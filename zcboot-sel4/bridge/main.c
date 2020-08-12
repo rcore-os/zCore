@@ -38,6 +38,7 @@ static char allocator_mem_pool[ALLOCATOR_STATIC_POOL_SIZE];
 #define ZCDAEMON_BADGE_GET_TIME 0xff15
 
 void load_zc();
+static seL4_Word setup_ipc_with_cptr(sel4utils_process_t *process, seL4_CPtr cptr, seL4_Word badge);
 static seL4_Word setup_ipc(sel4utils_process_t *process, const vka_object_t *ep_object, seL4_Word badge);
 static void setup_timer();
 
@@ -183,6 +184,7 @@ void load_zc() {
     seL4_Word child_set_period_cptr = setup_ipc(&new_process, &ep_object, ZCDAEMON_BADGE_TIMER_SET_PERIOD);
     seL4_Word child_get_time_cptr = setup_ipc(&new_process, &ep_object, ZCDAEMON_BADGE_GET_TIME);
     seL4_Word child_timer_event_cptr = setup_ipc(&new_process, &timer_event_channel, 0);
+    seL4_Word child_asid_control_cptr = setup_ipc_with_cptr(&new_process, seL4_CapASIDControl, 0);
 
     ZF_LOGF_IFERR(error, "Failed to allocate timer event channel.\n");
 
@@ -233,9 +235,10 @@ void load_zc() {
                     seL4_SetMR(0, child_set_period_cptr);
                 } else if(strcmp(name, "get_time") == 0) {
                     seL4_SetMR(0, child_get_time_cptr);
+                } else if(strcmp(name, "asid_control") == 0) {
+                    seL4_SetMR(0, child_asid_control_cptr);
                 } else {
-                    printf("Unknown cap name: %s\n", name);
-                    seL4_SetMR(0, 0);
+                    ZF_LOGF("Unknown cap name: %s", name);
                 }
                 seL4_Reply(seL4_MessageInfo_new(0, 0, 0, 1));
                 break;
@@ -339,15 +342,19 @@ void load_zc() {
     }
 }
 
-static seL4_Word setup_ipc(sel4utils_process_t *process, const vka_object_t *ep_object, seL4_Word badge) {
+static seL4_Word setup_ipc_with_cptr(sel4utils_process_t *process, seL4_CPtr cptr, seL4_Word badge) {
     cspacepath_t ep_cap_path;
-    vka_cspace_make_path(&vka, ep_object->cptr, &ep_cap_path);
+    vka_cspace_make_path(&vka, cptr, &ep_cap_path);
 
     seL4_CPtr new_ep_cap = 0;
     new_ep_cap = sel4utils_mint_cap_to_process(process, ep_cap_path, seL4_AllRights, badge);
     ZF_LOGF_IF(new_ep_cap == 0, "Failed to mint cap to new process.");
 
     return new_ep_cap;
+}
+
+static seL4_Word setup_ipc(sel4utils_process_t *process, const vka_object_t *ep_object, seL4_Word badge) {
+    return setup_ipc_with_cptr(process, ep_object->cptr, badge);
 }
 
 static void setup_timer() {

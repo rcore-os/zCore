@@ -190,6 +190,9 @@ unsafe extern "C" fn _khal_sel4_kt_hl_entry(material: Box<KtInitMaterial>) -> ! 
     let ipc_buffer_addr = &vm.ipc_buffer as *const _ as usize;
     sys::l4bridge_setup_tls(tls_addr, tls_size, ipc_buffer_addr);
 
+    // Initialize local context.
+    crate::thread::LocalContext::init_current();
+
     // Ensure that `material` is dropped
     let callback;
     let kt;
@@ -201,6 +204,8 @@ unsafe extern "C" fn _khal_sel4_kt_hl_entry(material: Box<KtInitMaterial>) -> ! 
     }
 
     callback();
+
+    crate::thread::LocalContext::drop_current();
     control::exit_thread(kt);
 }
 

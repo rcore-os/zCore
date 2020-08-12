@@ -193,7 +193,7 @@ unsafe fn prepare_level(size_bits: u8, retyper: unsafe extern "C" fn (CPtr, CPtr
             return Err(e);
         }
     };
-    if retyper(region.cap, object) != 0 {
+    if sys::locked(|| retyper(region.cap, object)) != 0 {
         panic!("prepare_level: cannot retype object");
     }
     Ok(PagingStructure {
