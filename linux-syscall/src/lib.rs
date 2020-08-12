@@ -113,7 +113,7 @@ impl Syscall<'_> {
             Sys::FACCESSAT => self.sys_faccessat(a0.into(), a1.into(), a2, a3),
             Sys::DUP3 => self.sys_dup2(a0.into(), a1.into()), // TODO: handle `flags`
             Sys::PIPE2 => self.sys_pipe(a0.into()),           // TODO: handle `flags`
-            Sys::UTIMENSAT => self.unimplemented("utimensat", Ok(0)),
+            Sys::UTIMENSAT => self.sys_utimensat(a0.into(), a1.into(), a2.into(), a3),
             Sys::COPY_FILE_RANGE => {
                 self.sys_copy_file_range(a0.into(), a1.into(), a2.into(), a3.into(), a4, a5)
             }
@@ -179,9 +179,9 @@ impl Syscall<'_> {
             Sys::TKILL => self.unimplemented("tkill", Ok(0)),
 
             // time
-            //            Sys::NANOSLEEP => self.sys_nanosleep(a0.into()),
+            Sys::NANOSLEEP => self.sys_nanosleep(a0.into()).await,
             Sys::SETITIMER => self.unimplemented("setitimer", Ok(0)),
-            //            Sys::GETTIMEOFDAY => self.sys_gettimeofday(a0.into(), a1.into()),
+            Sys::GETTIMEOFDAY => self.sys_gettimeofday(a0.into(), a1.into()),
             Sys::CLOCK_GETTIME => self.sys_clock_gettime(a0, a1.into()),
 
             // sem
@@ -199,9 +199,9 @@ impl Syscall<'_> {
             Sys::UMASK => self.unimplemented("umask", Ok(0o777)),
             //            Sys::GETRLIMIT => self.sys_getrlimit(),
             //            Sys::SETRLIMIT => self.sys_setrlimit(),
-            //            Sys::GETRUSAGE => self.sys_getrusage(a0, a1.into()),
+            Sys::GETRUSAGE => self.sys_getrusage(a0, a1.into()),
             //            Sys::SYSINFO => self.sys_sysinfo(a0.into()),
-            //            Sys::TIMES => self.sys_times(a0.into()),
+            Sys::TIMES => self.sys_times(a0.into()),
             Sys::GETUID => self.unimplemented("getuid", Ok(0)),
             Sys::GETGID => self.unimplemented("getgid", Ok(0)),
             Sys::SETUID => self.unimplemented("setuid", Ok(0)),
@@ -216,9 +216,9 @@ impl Syscall<'_> {
             //            Sys::SETPRIORITY => self.sys_set_priority(a0),
             Sys::PRCTL => self.unimplemented("prctl", Ok(0)),
             Sys::MEMBARRIER => self.unimplemented("membarrier", Ok(0)),
-            //            Sys::PRLIMIT64 => self.sys_prlimit64(a0, a1, a2.into(), a3.into()),
+            Sys::PRLIMIT64 => self.sys_prlimit64(a0, a1, a2.into(), a3.into()),
             //            Sys::REBOOT => self.sys_reboot(a0 as u32, a1 as u32, a2 as u32, a3.into()),
-            //            Sys::GETRANDOM => self.sys_getrandom(a0.into(), a1 as usize, a2 as u32),
+            Sys::GETRANDOM => self.sys_getrandom(a0.into(), a1 as usize, a2 as u32),
             Sys::RT_SIGQUEUEINFO => self.unimplemented("rt_sigqueueinfo", Ok(0)),
 
             // kernel module
@@ -243,7 +243,7 @@ impl Syscall<'_> {
             Sys::OPEN => self.sys_open(a0.into(), a1, a2),
             Sys::STAT => self.sys_stat(a0.into(), a1.into()),
             Sys::LSTAT => self.sys_lstat(a0.into(), a1.into()),
-            //            Sys::POLL => self.sys_poll(a0.into(), a1, a2),
+            Sys::POLL => self.sys_poll(a0.into(), a1, a2).await,
             Sys::ACCESS => self.sys_access(a0.into(), a1),
             Sys::PIPE => self.sys_pipe(a0.into()),
             //            Sys::SELECT => self.sys_select(a0, a1.into(), a2.into(), a3.into(), a4.into()),
@@ -260,7 +260,7 @@ impl Syscall<'_> {
             //            Sys::CHMOD => self.unimplemented("chmod", Ok(0)),
             //            Sys::CHOWN => self.unimplemented("chown", Ok(0)),
             Sys::ARCH_PRCTL => self.sys_arch_prctl(a0 as _, a1),
-            //            Sys::TIME => self.sys_time(a0 as *mut u64),
+            Sys::TIME => self.sys_time(a0.into()),
             //            Sys::EPOLL_CREATE => self.sys_epoll_create(a0),
             //            Sys::EPOLL_WAIT => self.sys_epoll_wait(a0, a1.into(), a2, a3),
             _ => self.unknown_syscall(sys_type),

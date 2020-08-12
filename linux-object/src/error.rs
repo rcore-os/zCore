@@ -154,6 +154,7 @@ impl From<FsError> for LxError {
             FsError::Again => LxError::EAGAIN,
             FsError::SymLoop => LxError::ELOOP,
             FsError::Busy => LxError::EBUSY,
+            FsError::Interrupted => LxError::EINTR,
         }
     }
 }

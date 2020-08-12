@@ -82,6 +82,7 @@ ChannelWriteEtcTest.SameHandleRightsFlagShouldSucceed
 ChannelWriteEtcTest.HandleWithoutDuplicateRightsMoveOpSucceedsDuplicateOpFails
 ClockTest.ClockMonotonic
 ClockTest.DeadlineAfter
+DefaultExceptionHandlerTest.UnhandledHardwareException
 ProcessDebugUtilsTest.XorShiftIsOk
 ProcessDebugTest.ReadMemoryAtOffsetIsOk
 ProcessDebugTest.WriteMemoryAtOffsetIsOk
@@ -351,6 +352,8 @@ Threads.SuspendChannelCall
 Threads.SuspendPortCall
 Threads.SuspendStopsThread
 Threads.SuspendSelf
+Threads.SuspendMultiple
+Threads.KillSuspendedThread
 Threads.StartSuspendedAndResumedThread
 Threads.WritingArmFlagsRegister
 Thread.SuspendAfterDeath

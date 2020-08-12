@@ -7,6 +7,11 @@ use {
 };
 
 impl Syscall<'_> {
+    /// Ask for various properties of various kernel objects.  
+    ///
+    /// `handle_value: HandleValue`, indicates the target kernel object.  
+    /// `property: u32`, indicates which property to get/set.  
+    /// `buffer: usize`, holds the property value, and must be a pointer to a buffer of value_size bytes.  
     pub fn sys_object_get_property(
         &self,
         handle_value: HandleValue,
@@ -104,6 +109,7 @@ impl Syscall<'_> {
         }
     }
 
+    /// Set various properties of various kernel objects.  
     pub fn sys_object_set_property(
         &mut self,
         handle_value: HandleValue,
@@ -165,7 +171,7 @@ impl Syscall<'_> {
                 let state = UserInPtr::<u32>::from_addr_size(buffer, buffer_size)?.read()?;
                 proc.get_object_with_rights::<ExceptionObject>(handle_value, Rights::SET_PROPERTY)?
                     .get_exception()
-                    .set_state(state);
+                    .set_state(state)?;
                 Ok(())
             }
             Property::ExceptionStrategy => {
@@ -182,6 +188,7 @@ impl Syscall<'_> {
         }
     }
 
+    /// A blocking syscall waits for signals on an object.
     pub async fn sys_object_wait_one(
         &self,
         handle: HandleValue,
@@ -217,6 +224,10 @@ impl Syscall<'_> {
         Ok(())
     }
 
+    /// Query information about an object.  
+    ///
+    /// `topic: u32`, indicates what specific information is desired.  
+    /// `buffer: usize`, a pointer to a buffer of size buffer_size to return the information.
     pub fn sys_object_get_info(
         &self,
         handle: HandleValue,
@@ -353,6 +364,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
+    /// Asserts and deasserts the userspace-accessible signal bits on the object's peer.  
     pub fn sys_object_signal_peer(
         &self,
         handle_value: HandleValue,
@@ -372,6 +384,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
+    /// A non-blocking syscall subscribes for signals on an object.  
     pub fn sys_object_wait_async(
         &self,
         handle_value: HandleValue,
@@ -396,6 +409,9 @@ impl Syscall<'_> {
         Ok(())
     }
 
+    /// Signal an object.  
+    ///
+    /// Asserts and deasserts the userspace-accessible signal bits on an object.
     pub fn sys_object_signal(
         &self,
         handle_value: HandleValue,
@@ -416,6 +432,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
+    /// Wait for signals on multiple objects.  
     pub async fn sys_object_wait_many(
         &self,
         mut user_items: UserInOutPtr<UserWaitItem>,
@@ -445,6 +462,9 @@ impl Syscall<'_> {
         Ok(())
     }
 
+    /// Find the child of an object by its kid.  
+    ///
+    /// Given a kernel object with children objects, obtain a handle to the child specified by the provided kernel object id.
     pub fn sys_object_get_child(
         &self,
         handle: HandleValue,

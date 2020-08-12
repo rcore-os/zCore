@@ -159,6 +159,7 @@ impl Process {
             inner.status = Status::Running;
             handle_value = arg1.map_or(INVALID_HANDLE, |handle| inner.add_handle(handle));
         }
+        thread.set_first_thread(true);
         match thread.start(entry, stack, handle_value as usize, arg2, spawn_fn) {
             Ok(_) => Ok(()),
             Err(err) => {
@@ -178,13 +179,24 @@ impl Process {
             return;
         }
         inner.status = Status::Exited(retcode);
-        // TODO: exit all threads
-        self.base.signal_set(Signal::PROCESS_TERMINATED);
         for thread in inner.threads.iter() {
             thread.kill();
         }
-        inner.threads.clear();
         inner.handles.clear();
+    }
+
+    fn terminate(&self) {
+        let mut inner = self.inner.lock();
+        let retcode = match inner.status {
+            Status::Exited(retcode) => retcode,
+            _ => {
+                inner.status = Status::Exited(0);
+                0
+            }
+        };
+        self.base.signal_set(Signal::PROCESS_TERMINATED);
+        self.exceptionate.shutdown();
+        self.debug_exceptionate.shutdown();
 
         self.job.remove_process(self.base.id);
         // If we are critical to a job, we need to take action.
@@ -417,15 +429,14 @@ impl Process {
         inner.threads.retain(|t| t.id() != tid);
         if inner.threads.is_empty() {
             drop(inner);
-            self.exit(0);
+            self.terminate();
         }
     }
 
     /// Get information of this process.
     pub fn get_info(&self) -> ProcessInfo {
         let mut info = ProcessInfo::default();
-        // TODO correct debugger_attached setting
-        info.debugger_attached = false;
+        info.debugger_attached = self.debug_exceptionate.has_channel();
         match self.inner.lock().status {
             Status::Init => {
                 info.started = false;

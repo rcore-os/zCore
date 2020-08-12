@@ -1,6 +1,9 @@
 use {super::*, core::convert::TryFrom};
 
 impl Syscall<'_> {
+    /// Creates a duplicate of handle.   
+    ///
+    /// Referring to the same underlying object, with new access rights rights.  
     pub fn sys_handle_duplicate(
         &self,
         handle_value: HandleValue,
@@ -30,6 +33,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
+    /// Close a handle and reclaim the underlying object if no other handles to it exist.  
     pub fn sys_handle_close(&self, handle: HandleValue) -> ZxResult {
         info!("handle.close: handle={:?}", handle);
         if handle == INVALID_HANDLE {
@@ -40,6 +44,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
+    /// Close a number of handles.  
     pub fn sys_handle_close_many(
         &self,
         handles: UserInPtr<HandleValue>,
@@ -60,6 +65,9 @@ impl Syscall<'_> {
         Ok(())
     }
 
+    /// Creates a replacement for handle.  
+    ///
+    /// Referring to the same underlying object, with new access rights rights.  
     pub fn sys_handle_replace(
         &self,
         handle_value: HandleValue,

@@ -15,3 +15,6 @@ numeric-enum-macro = "0.2"
 zircon-object = { path = "../zircon-object" }
 linux-object = { path = "../linux-object" }
 kernel-hal = { path = "../kernel-hal" }
+rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "517af47" }
+lazy_static = { version = "1.4", features = ["spin_no_std"] }
+

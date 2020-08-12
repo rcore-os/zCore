@@ -10,6 +10,7 @@
 //! - access, faccessat
 
 use super::*;
+use crate::time::*;
 
 impl Syscall<'_> {
     /// Reads from a specified file using a file descriptor. Before using this call,
@@ -327,6 +328,70 @@ impl Syscall<'_> {
         let proc = self.linux_process();
         let follow = !flags.contains(AtFlags::SYMLINK_NOFOLLOW);
         let _inode = proc.lookup_inode_at(dirfd, &path, follow)?;
+        Ok(0)
+    }
+
+    /// change file timestamps with nanosecond precision
+    pub fn sys_utimensat(
+        &mut self,
+        dirfd: FileDesc,
+        pathname: UserInPtr<u8>,
+        times: UserInOutPtr<[TimeSpec; 2]>,
+        flags: usize,
+    ) -> SysResult {
+        info!(
+            "utimensat(raw): dirfd: {:?}, pathname: {:?}, times: {:?}, flags: {:#x}",
+            dirfd, pathname, times, flags
+        );
+        const UTIME_NOW: usize = 0x3fffffff;
+        const UTIME_OMIT: usize = 0x3ffffffe;
+        let proc = self.linux_process();
+        let mut times = if times.is_null() {
+            let epoch = TimeSpec::now();
+            [epoch, epoch]
+        } else {
+            let times = times.read()?;
+            [times[0], times[1]]
+        };
+        let inode = if pathname.is_null() {
+            let fd = dirfd;
+            info!("futimens: fd: {:?}, times: {:?}", fd, times);
+            proc.get_file(fd)?.inode()
+        } else {
+            let pathname = pathname.read_cstring()?;
+            info!(
+                "utimensat: dirfd: {:?}, pathname: {:?}, times: {:?}, flags: {:#x}",
+                dirfd, pathname, times, flags
+            );
+            let follow = if flags == 0 {
+                true
+            } else if flags == AtFlags::SYMLINK_NOFOLLOW.bits() {
+                false
+            } else {
+                return Err(LxError::EINVAL);
+            };
+            proc.lookup_inode_at(dirfd, &pathname[..], follow)?
+        };
+        let mut metadata = inode.metadata()?;
+        if times[0].nsec != UTIME_OMIT {
+            if times[0].nsec == UTIME_NOW {
+                times[0] = TimeSpec::now();
+            }
+            metadata.atime = rcore_fs::vfs::Timespec {
+                sec: times[0].sec as i64,
+                nsec: times[0].nsec as i32,
+            };
+        }
+        if times[1].nsec != UTIME_OMIT {
+            if times[1].nsec == UTIME_NOW {
+                times[1] = TimeSpec::now();
+            }
+            metadata.mtime = rcore_fs::vfs::Timespec {
+                sec: times[1].sec as i64,
+                nsec: times[1].nsec as i32,
+            };
+        }
+        inode.set_metadata(&metadata)?;
         Ok(0)
     }
 }

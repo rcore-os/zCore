@@ -176,7 +176,30 @@ fn spawn(thread: Arc<Thread>) {
     let vmtoken = thread.proc().vmar().table_phys();
     let future = async move {
         kernel_hal::Thread::set_tid(thread.id(), thread.proc().id());
-        loop {
+        let mut exit = false;
+        if thread.get_first_thread() {
+            let proc_start_exception =
+                Exception::create(thread.clone(), ExceptionType::ProcessStarting, None);
+            if !proc_start_exception
+                .handle_with_exceptionates(
+                    false,
+                    JobDebuggerIterator::new(thread.proc().job()),
+                    true,
+                )
+                .await
+            {
+                exit = true;
+            }
+        };
+        let start_exception =
+            Exception::create(thread.clone(), ExceptionType::ThreadStarting, None);
+        if !start_exception
+            .handle_with_exceptionates(false, Some(thread.proc().get_debug_exceptionate()), false)
+            .await
+        {
+            exit = true;
+        }
+        while !exit {
             let mut cx = thread.wait_for_run().await;
             if thread.state() == ThreadState::Dying {
                 info!(
@@ -184,7 +207,6 @@ fn spawn(thread: Arc<Thread>) {
                     thread.proc().name(),
                     thread.name()
                 );
-                thread.internal_exit();
                 break;
             }
             trace!("go to user: {:#x?}", cx);
@@ -196,14 +218,10 @@ fn spawn(thread: Arc<Thread>) {
             trace!("back from user: {:#x?}", cx);
             EXCEPTIONS_USER.add(1);
             #[cfg(target_arch = "aarch64")]
-            let exit;
-            #[cfg(target_arch = "aarch64")]
             match cx.trap_num {
                 0 => exit = handle_syscall(&thread, &mut cx.general).await,
                 _ => unimplemented!(),
             }
-            #[cfg(target_arch = "x86_64")]
-            let mut exit = false;
             #[cfg(target_arch = "x86_64")]
             match cx.trap_num {
                 0x100 => exit = handle_syscall(&thread, &mut cx.general).await,
@@ -249,7 +267,7 @@ fn spawn(thread: Arc<Thread>) {
                                 ExceptionType::FatalPageFault,
                                 Some(&cx),
                             );
-                            if !exception.handle().await {
+                            if !exception.handle(true).await {
                                 exit = true;
                             }
                         }
@@ -268,7 +286,7 @@ fn spawn(thread: Arc<Thread>) {
                     };
                     error!("User mode exception:{:?} {:#x?}", type_, cx);
                     let exception = Exception::create(thread.clone(), type_, Some(&cx));
-                    if !exception.handle().await {
+                    if !exception.handle(true).await {
                         exit = true;
                     }
                 }
@@ -283,6 +301,17 @@ fn spawn(thread: Arc<Thread>) {
                 break;
             }
         }
+        let end_exception = Exception::create(thread.clone(), ExceptionType::ThreadExiting, None);
+        let handled = thread
+            .proc()
+            .get_debug_exceptionate()
+            .send_exception(&end_exception);
+        if let Ok(future) = handled {
+            thread.dying_run(future).await.ok();
+        } else {
+            handled.ok();
+        }
+        thread.terminate();
     };
     kernel_hal::Thread::spawn(Box::pin(future), vmtoken);
 }

@@ -10,7 +10,9 @@
 //! - getppid
 
 use super::*;
+use crate::time::TimeSpec;
 use bitflags::bitflags;
+use core::fmt::Debug;
 use linux_object::fs::INodeExt;
 use linux_object::loader::LinuxElfLoader;
 use linux_object::thread::ThreadExt;
@@ -251,14 +253,15 @@ impl Syscall<'_> {
         Err(LxError::ENOSYS)
     }
 
-    //    pub fn sys_nanosleep(&self, req: *const TimeSpec) -> SysResult {
-    //        let time = unsafe { *self.vm().check_read_ptr(req)? };
-    //        info!("nanosleep: time: {:#?}", time);
-    //        // TODO: handle spurious wakeup
-    //        thread::sleep(time.to_duration());
-    //        Ok(0)
-    //    }
-    //
+    /// Allows the calling thread to sleep for
+    /// an interval specified with nanosecond precision
+    pub async fn sys_nanosleep(&self, req: UserInPtr<TimeSpec>) -> SysResult {
+        info!("nanosleep: deadline={:?}", req);
+        let req = req.read()?;
+        kernel_hal::sleep_until(req.into()).await;
+        Ok(0)
+    }
+
     //    pub fn sys_set_priority(&self, priority: usize) -> SysResult {
     //        let pid = thread::current().id();
     //        thread_manager().set_priority(pid, priority as u8);

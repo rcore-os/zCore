@@ -28,4 +28,4 @@ pub trait Task: Sync + Send {
 }
 
 /// The return code set when a task is killed via zx_task_kill().
-pub const TASK_RETCODE_SYSCALL_KILL: i64 = -1024;
+pub const TASK_RETCODE_SYSCALL_KILL: i64 = -1028;
