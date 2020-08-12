@@ -138,6 +138,8 @@
 <span id="138">138</span>
 <span id="139">139</span>
 <span id="140">140</span>
+<span id="141">141</span>
+<span id="142">142</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
 <span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">object</span>::<span class="kw-2">*</span>;
@@ -171,13 +173,15 @@
 <span class="doccomment">/// Slack specifies how much a timer or event is allowed to deviate from its deadline.</span>
 <span class="doccomment">///</span>
 <span class="doccomment">/// **Not supported: Now slack has no effect on the timer.**</span>
+<span class="attribute">#[<span class="ident">repr</span>(<span class="ident">u32</span>)]</span>
+<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>, <span class="ident">Copy</span>, <span class="ident">Clone</span>)]</span>
 <span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">Slack</span> {
     <span class="doccomment">/// slack is centered around deadline</span>
-    <span class="ident">Center</span>,
+    <span class="ident">Center</span> <span class="op">=</span> <span class="number">0</span>,
     <span class="doccomment">/// slack interval is (deadline - slack, deadline]</span>
-    <span class="ident">Early</span>,
+    <span class="ident">Early</span> <span class="op">=</span> <span class="number">1</span>,
     <span class="doccomment">/// slack interval is [deadline, deadline + slack)</span>
-    <span class="ident">Late</span>,
+    <span class="ident">Late</span> <span class="op">=</span> <span class="number">2</span>,
 }
 
 <span class="kw">impl</span> <span class="ident">Timer</span> {

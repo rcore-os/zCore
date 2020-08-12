@@ -662,6 +662,135 @@
 <span id="662">662</span>
 <span id="663">663</span>
 <span id="664">664</span>
+<span id="665">665</span>
+<span id="666">666</span>
+<span id="667">667</span>
+<span id="668">668</span>
+<span id="669">669</span>
+<span id="670">670</span>
+<span id="671">671</span>
+<span id="672">672</span>
+<span id="673">673</span>
+<span id="674">674</span>
+<span id="675">675</span>
+<span id="676">676</span>
+<span id="677">677</span>
+<span id="678">678</span>
+<span id="679">679</span>
+<span id="680">680</span>
+<span id="681">681</span>
+<span id="682">682</span>
+<span id="683">683</span>
+<span id="684">684</span>
+<span id="685">685</span>
+<span id="686">686</span>
+<span id="687">687</span>
+<span id="688">688</span>
+<span id="689">689</span>
+<span id="690">690</span>
+<span id="691">691</span>
+<span id="692">692</span>
+<span id="693">693</span>
+<span id="694">694</span>
+<span id="695">695</span>
+<span id="696">696</span>
+<span id="697">697</span>
+<span id="698">698</span>
+<span id="699">699</span>
+<span id="700">700</span>
+<span id="701">701</span>
+<span id="702">702</span>
+<span id="703">703</span>
+<span id="704">704</span>
+<span id="705">705</span>
+<span id="706">706</span>
+<span id="707">707</span>
+<span id="708">708</span>
+<span id="709">709</span>
+<span id="710">710</span>
+<span id="711">711</span>
+<span id="712">712</span>
+<span id="713">713</span>
+<span id="714">714</span>
+<span id="715">715</span>
+<span id="716">716</span>
+<span id="717">717</span>
+<span id="718">718</span>
+<span id="719">719</span>
+<span id="720">720</span>
+<span id="721">721</span>
+<span id="722">722</span>
+<span id="723">723</span>
+<span id="724">724</span>
+<span id="725">725</span>
+<span id="726">726</span>
+<span id="727">727</span>
+<span id="728">728</span>
+<span id="729">729</span>
+<span id="730">730</span>
+<span id="731">731</span>
+<span id="732">732</span>
+<span id="733">733</span>
+<span id="734">734</span>
+<span id="735">735</span>
+<span id="736">736</span>
+<span id="737">737</span>
+<span id="738">738</span>
+<span id="739">739</span>
+<span id="740">740</span>
+<span id="741">741</span>
+<span id="742">742</span>
+<span id="743">743</span>
+<span id="744">744</span>
+<span id="745">745</span>
+<span id="746">746</span>
+<span id="747">747</span>
+<span id="748">748</span>
+<span id="749">749</span>
+<span id="750">750</span>
+<span id="751">751</span>
+<span id="752">752</span>
+<span id="753">753</span>
+<span id="754">754</span>
+<span id="755">755</span>
+<span id="756">756</span>
+<span id="757">757</span>
+<span id="758">758</span>
+<span id="759">759</span>
+<span id="760">760</span>
+<span id="761">761</span>
+<span id="762">762</span>
+<span id="763">763</span>
+<span id="764">764</span>
+<span id="765">765</span>
+<span id="766">766</span>
+<span id="767">767</span>
+<span id="768">768</span>
+<span id="769">769</span>
+<span id="770">770</span>
+<span id="771">771</span>
+<span id="772">772</span>
+<span id="773">773</span>
+<span id="774">774</span>
+<span id="775">775</span>
+<span id="776">776</span>
+<span id="777">777</span>
+<span id="778">778</span>
+<span id="779">779</span>
+<span id="780">780</span>
+<span id="781">781</span>
+<span id="782">782</span>
+<span id="783">783</span>
+<span id="784">784</span>
+<span id="785">785</span>
+<span id="786">786</span>
+<span id="787">787</span>
+<span id="788">788</span>
+<span id="789">789</span>
+<span id="790">790</span>
+<span id="791">791</span>
+<span id="792">792</span>
+<span id="793">793</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> {
     <span class="kw">super</span>::{<span class="ident">exception</span>::<span class="kw-2">*</span>, <span class="ident">job</span>::<span class="ident">Job</span>, <span class="ident">job_policy</span>::<span class="kw-2">*</span>, <span class="ident">thread</span>::<span class="ident">Thread</span>, <span class="kw-2">*</span>},
@@ -751,10 +880,14 @@
     <span class="ident">critical_to_job</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span>(<span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Job</span><span class="op">&gt;</span>, <span class="ident">bool</span>)<span class="op">&gt;</span>,
 }
 
+<span class="doccomment">/// Status of a process.</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>, <span class="ident">Copy</span>, <span class="ident">Clone</span>, <span class="ident">Eq</span>, <span class="ident">PartialEq</span>)]</span>
 <span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">Status</span> {
+    <span class="doccomment">/// Initial state, no thread present in process.</span>
     <span class="ident">Init</span>,
+    <span class="doccomment">/// First thread has started and is running.</span>
     <span class="ident">Running</span>,
+    <span class="doccomment">/// Process has exited with the code.</span>
     <span class="ident">Exited</span>(<span class="ident">i64</span>),
 }
 
@@ -834,18 +967,27 @@
     }
 
     <span class="doccomment">/// Exit current process with `retcode`.</span>
+    <span class="doccomment">/// The process do not terminate immediately when exited.</span>
+    <span class="doccomment">/// It will terminate after all its child threads are terminated.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">exit</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">retcode</span>: <span class="ident">i64</span>) {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="kw">if</span> <span class="kw">let</span> <span class="ident">Status</span>::<span class="ident">Exited</span>(<span class="kw">_</span>) <span class="op">=</span> <span class="ident">inner</span>.<span class="ident">status</span> {
             <span class="kw">return</span>;
         }
         <span class="ident">inner</span>.<span class="ident">status</span> <span class="op">=</span> <span class="ident">Status</span>::<span class="ident">Exited</span>(<span class="ident">retcode</span>);
+        <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">threads</span>.<span class="ident">is_empty</span>() {
+            <span class="ident">inner</span>.<span class="ident">handles</span>.<span class="ident">clear</span>();
+            <span class="ident">drop</span>(<span class="ident">inner</span>);
+            <span class="self">self</span>.<span class="ident">terminate</span>();
+            <span class="kw">return</span>;
+        }
         <span class="kw">for</span> <span class="ident">thread</span> <span class="kw">in</span> <span class="ident">inner</span>.<span class="ident">threads</span>.<span class="ident">iter</span>() {
             <span class="ident">thread</span>.<span class="ident">kill</span>();
         }
         <span class="ident">inner</span>.<span class="ident">handles</span>.<span class="ident">clear</span>();
     }
 
+    <span class="doccomment">/// The process finally terminates.</span>
     <span class="kw">fn</span> <span class="ident">terminate</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="kw">let</span> <span class="ident">retcode</span> <span class="op">=</span> <span class="kw">match</span> <span class="ident">inner</span>.<span class="ident">status</span> {
@@ -963,6 +1105,7 @@
             .<span class="ident">collect</span>()
     }
 
+    <span class="doccomment">/// Remove a handle referring to a kernel object of the given type from the process.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">remove_object</span><span class="op">&lt;</span><span class="ident">T</span>: <span class="ident">KernelObject</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">handle_value</span>: <span class="ident">HandleValue</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">handle</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">remove_handle</span>(<span class="ident">handle_value</span>)<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">object</span> <span class="op">=</span> <span class="ident">handle</span>
@@ -1015,31 +1158,24 @@
         <span class="ident">handle_value</span>: <span class="ident">HandleValue</span>,
         <span class="ident">desired_rights</span>: <span class="ident">Rights</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="ident">handle</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">get_handle</span>(<span class="ident">handle_value</span>)<span class="question-mark">?</span>;
-        <span class="comment">// check type before rights</span>
-        <span class="kw">let</span> <span class="ident">object</span> <span class="op">=</span> <span class="ident">handle</span>
-            .<span class="ident">object</span>
-            .<span class="ident">downcast_arc</span>::<span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span>()
-            .<span class="ident">map_err</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">ZxError</span>::<span class="ident">WRONG_TYPE</span>)<span class="question-mark">?</span>;
-        <span class="kw">if</span> <span class="op">!</span><span class="ident">handle</span>.<span class="ident">rights</span>.<span class="ident">contains</span>(<span class="ident">desired_rights</span>) {
-            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">ACCESS_DENIED</span>);
-        }
-        <span class="prelude-val">Ok</span>(<span class="ident">object</span>)
+        <span class="self">self</span>.<span class="ident">get_dyn_object_with_rights</span>(<span class="ident">handle_value</span>, <span class="ident">desired_rights</span>)
+            .<span class="ident">and_then</span>(<span class="op">|</span><span class="ident">obj</span><span class="op">|</span> <span class="ident">obj</span>.<span class="ident">downcast_arc</span>::<span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span>().<span class="ident">map_err</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">ZxError</span>::<span class="ident">WRONG_TYPE</span>))
     }
 
+    <span class="doccomment">/// Get the kernel object corresponding to this `handle_value` and this handle&#39;s rights.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_object_and_rights</span><span class="op">&lt;</span><span class="ident">T</span>: <span class="ident">KernelObject</span><span class="op">&gt;</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">handle_value</span>: <span class="ident">HandleValue</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span>(<span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span>, <span class="ident">Rights</span>)<span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="ident">handle</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">get_handle</span>(<span class="ident">handle_value</span>)<span class="question-mark">?</span>;
-        <span class="comment">// check type before rights</span>
-        <span class="kw">let</span> <span class="ident">object</span> <span class="op">=</span> <span class="ident">handle</span>
-            .<span class="ident">object</span>
+        <span class="kw">let</span> (<span class="ident">object</span>, <span class="ident">rights</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">get_dyn_object_and_rights</span>(<span class="ident">handle_value</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">object</span> <span class="op">=</span> <span class="ident">object</span>
             .<span class="ident">downcast_arc</span>::<span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span>()
             .<span class="ident">map_err</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">ZxError</span>::<span class="ident">WRONG_TYPE</span>)<span class="question-mark">?</span>;
-        <span class="prelude-val">Ok</span>((<span class="ident">object</span>, <span class="ident">handle</span>.<span class="ident">rights</span>))
+        <span class="prelude-val">Ok</span>((<span class="ident">object</span>, <span class="ident">rights</span>))
     }
 
+    <span class="doccomment">/// Get the kernel object corresponding to this `handle_value`,</span>
+    <span class="doccomment">/// after checking that this handle has the `desired_rights`.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_dyn_object_with_rights</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">handle_value</span>: <span class="ident">HandleValue</span>,
@@ -1053,6 +1189,7 @@
         <span class="prelude-val">Ok</span>(<span class="ident">handle</span>.<span class="ident">object</span>)
     }
 
+    <span class="doccomment">/// Get the kernel object corresponding to this `handle_value` and this handle&#39;s rights.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_dyn_object_and_rights</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">handle_value</span>: <span class="ident">HandleValue</span>,
@@ -1071,6 +1208,7 @@
         <span class="prelude-val">Ok</span>(<span class="ident">object</span>)
     }
 
+    <span class="doccomment">/// Get the handle&#39;s information corresponding to `handle_value`.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_handle_info</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">handle_value</span>: <span class="ident">HandleValue</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">HandleBasicInfo</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">handle</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">get_handle</span>(<span class="ident">handle_value</span>)<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(<span class="ident">handle</span>.<span class="ident">get_info</span>())
@@ -1086,7 +1224,7 @@
         <span class="prelude-val">Ok</span>(())
     }
 
-    <span class="doccomment">/// Remove a thread to from process.</span>
+    <span class="doccomment">/// Remove a thread from the process.</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// If no more threads left, exit the process.</span>
     <span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn</span> <span class="ident">remove_thread</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">tid</span>: <span class="ident">KoID</span>) {
@@ -1098,6 +1236,7 @@
         }
     }
 
+    <span class="doccomment">/// Get information of this process.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_info</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ProcessInfo</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">info</span> <span class="op">=</span> <span class="ident">ProcessInfo</span>::<span class="ident">default</span>();
         <span class="ident">info</span>.<span class="ident">debugger_attached</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">debug_exceptionate</span>.<span class="ident">has_channel</span>();
@@ -1113,36 +1252,46 @@
             <span class="ident">Status</span>::<span class="ident">Exited</span>(<span class="ident">ret</span>) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="ident">info</span>.<span class="ident">return_code</span> <span class="op">=</span> <span class="ident">ret</span>;
                 <span class="ident">info</span>.<span class="ident">has_exited</span> <span class="op">=</span> <span class="bool-val">true</span>;
-                <span class="ident">info</span>.<span class="ident">started</span> <span class="op">=</span> <span class="bool-val">false</span>;
+                <span class="ident">info</span>.<span class="ident">started</span> <span class="op">=</span> <span class="bool-val">true</span>;
             }
         }
         <span class="ident">info</span>
     }
 
+    <span class="doccomment">/// Set the debug address.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">set_debug_addr</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">addr</span>: <span class="ident">usize</span>) {
         <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">debug_addr</span> <span class="op">=</span> <span class="ident">addr</span>;
     }
 
+    <span class="doccomment">/// Get the debug address.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_debug_addr</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
         <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">debug_addr</span>
     }
 
+    <span class="doccomment">/// Set the address where the dynamic loader will issue a debug trap on every load of a</span>
+    <span class="doccomment">/// shared library to. Setting this property to</span>
+    <span class="doccomment">/// zero will disable it.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">set_dyn_break_on_load</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">addr</span>: <span class="ident">usize</span>) {
         <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">dyn_break_on_load</span> <span class="op">=</span> <span class="ident">addr</span>;
     }
 
+    <span class="doccomment">/// Get the address where the dynamic loader will issue a debug trap on every load of a</span>
+    <span class="doccomment">/// shared library to.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_dyn_break_on_load</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
         <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">dyn_break_on_load</span>
     }
 
+    <span class="doccomment">/// Get an one-shot `Receiver` for receiving cancel message of the given handle.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_cancel_token</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">handle_value</span>: <span class="ident">HandleValue</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Receiver</span><span class="op">&lt;</span>()<span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">get_cancel_token</span>(<span class="ident">handle_value</span>)
     }
 
+    <span class="doccomment">/// Get the exceptionate of this process.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_exceptionate</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Exceptionate</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">exceptionate</span>.<span class="ident">clone</span>()
     }
 
+    <span class="doccomment">/// Get the debug exceptionate of this process.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_debug_exceptionate</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Exceptionate</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">debug_exceptionate</span>.<span class="ident">clone</span>()
     }
@@ -1217,6 +1366,8 @@
     }
 }
 
+<span class="doccomment">/// Information of a process.</span>
+<span class="attribute">#[<span class="ident">allow</span>(<span class="ident">missing_docs</span>)]</span>
 <span class="attribute">#[<span class="ident">repr</span>(<span class="ident">C</span>)]</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Default</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">ProcessInfo</span> {
@@ -1234,7 +1385,10 @@
     <span class="attribute">#[<span class="ident">test</span>]</span>
     <span class="kw">fn</span> <span class="ident">create</span>() {
         <span class="kw">let</span> <span class="ident">root_job</span> <span class="op">=</span> <span class="ident">Job</span>::<span class="ident">root</span>();
-        <span class="kw">let</span> <span class="ident">_proc</span> <span class="op">=</span> <span class="ident">Process</span>::<span class="ident">create</span>(<span class="kw-2">&amp;</span><span class="ident">root_job</span>, <span class="string">&quot;proc&quot;</span>, <span class="number">0</span>).<span class="ident">expect</span>(<span class="string">&quot;failed to create process&quot;</span>);
+        <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="ident">Process</span>::<span class="ident">create</span>(<span class="kw-2">&amp;</span><span class="ident">root_job</span>, <span class="string">&quot;proc&quot;</span>, <span class="number">0</span>).<span class="ident">expect</span>(<span class="string">&quot;failed to create process&quot;</span>);
+
+        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">proc</span>.<span class="ident">related_koid</span>(), <span class="ident">root_job</span>.<span class="ident">id</span>());
+        <span class="macro">assert</span><span class="macro">!</span>(<span class="ident">Arc</span>::<span class="ident">ptr_eq</span>(<span class="kw-2">&amp;</span><span class="ident">root_job</span>, <span class="kw-2">&amp;</span><span class="ident">proc</span>.<span class="ident">job</span>()));
     }
 
     <span class="attribute">#[<span class="ident">test</span>]</span>
@@ -1244,12 +1398,19 @@
         <span class="kw">let</span> <span class="ident">handle</span> <span class="op">=</span> <span class="ident">Handle</span>::<span class="ident">new</span>(<span class="ident">proc</span>.<span class="ident">clone</span>(), <span class="ident">Rights</span>::<span class="ident">DEFAULT_PROCESS</span>);
 
         <span class="kw">let</span> <span class="ident">handle_value</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">add_handle</span>(<span class="ident">handle</span>);
+        <span class="kw">let</span> <span class="ident">_info</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_handle_info</span>(<span class="ident">handle_value</span>).<span class="ident">unwrap</span>();
 
         <span class="comment">// getting object should success</span>
         <span class="kw">let</span> <span class="ident">object</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Process</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">proc</span>
             .<span class="ident">get_object_with_rights</span>(<span class="ident">handle_value</span>, <span class="ident">Rights</span>::<span class="ident">DEFAULT_PROCESS</span>)
             .<span class="ident">expect</span>(<span class="string">&quot;failed to get object&quot;</span>);
         <span class="macro">assert</span><span class="macro">!</span>(<span class="ident">Arc</span>::<span class="ident">ptr_eq</span>(<span class="kw-2">&amp;</span><span class="ident">object</span>, <span class="kw-2">&amp;</span><span class="ident">proc</span>));
+
+        <span class="kw">let</span> (<span class="ident">object</span>, <span class="ident">rights</span>) <span class="op">=</span> <span class="ident">proc</span>
+            .<span class="ident">get_object_and_rights</span>::<span class="op">&lt;</span><span class="ident">Process</span><span class="op">&gt;</span>(<span class="ident">handle_value</span>)
+            .<span class="ident">expect</span>(<span class="string">&quot;failed to get object&quot;</span>);
+        <span class="macro">assert</span><span class="macro">!</span>(<span class="ident">Arc</span>::<span class="ident">ptr_eq</span>(<span class="kw-2">&amp;</span><span class="ident">object</span>, <span class="kw-2">&amp;</span><span class="ident">proc</span>));
+        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">rights</span>, <span class="ident">Rights</span>::<span class="ident">DEFAULT_PROCESS</span>);
 
         <span class="comment">// getting object with an extra rights should fail.</span>
         <span class="macro">assert_eq</span><span class="macro">!</span>(
@@ -1270,6 +1431,22 @@
         <span class="comment">// getting object with invalid handle should fail.</span>
         <span class="macro">assert_eq</span><span class="macro">!</span>(
             <span class="ident">proc</span>.<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">Process</span><span class="op">&gt;</span>(<span class="ident">handle_value</span>, <span class="ident">Rights</span>::<span class="ident">DEFAULT_PROCESS</span>)
+                .<span class="ident">err</span>(),
+            <span class="prelude-val">Some</span>(<span class="ident">ZxError</span>::<span class="ident">BAD_HANDLE</span>)
+        );
+
+        <span class="kw">let</span> <span class="ident">handle1</span> <span class="op">=</span> <span class="ident">Handle</span>::<span class="ident">new</span>(<span class="ident">proc</span>.<span class="ident">clone</span>(), <span class="ident">Rights</span>::<span class="ident">DEFAULT_PROCESS</span>);
+        <span class="kw">let</span> <span class="ident">handle2</span> <span class="op">=</span> <span class="ident">Handle</span>::<span class="ident">new</span>(<span class="ident">proc</span>.<span class="ident">clone</span>(), <span class="ident">Rights</span>::<span class="ident">DEFAULT_PROCESS</span>);
+
+        <span class="kw">let</span> <span class="ident">handle_values</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">add_handles</span>(<span class="macro">vec</span><span class="macro">!</span>[<span class="ident">handle1</span>, <span class="ident">handle2</span>]);
+        <span class="kw">let</span> <span class="ident">object1</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Process</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">proc</span>
+            .<span class="ident">get_object_with_rights</span>(<span class="ident">handle_values</span>[<span class="number">0</span>], <span class="ident">Rights</span>::<span class="ident">DEFAULT_PROCESS</span>)
+            .<span class="ident">expect</span>(<span class="string">&quot;failed to get object&quot;</span>);
+        <span class="macro">assert</span><span class="macro">!</span>(<span class="ident">Arc</span>::<span class="ident">ptr_eq</span>(<span class="kw-2">&amp;</span><span class="ident">object1</span>, <span class="kw-2">&amp;</span><span class="ident">proc</span>));
+
+        <span class="ident">proc</span>.<span class="ident">remove_handles</span>(<span class="kw-2">&amp;</span><span class="ident">handle_values</span>).<span class="ident">unwrap</span>();
+        <span class="macro">assert_eq</span><span class="macro">!</span>(
+            <span class="ident">proc</span>.<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">Process</span><span class="op">&gt;</span>(<span class="ident">handle_values</span>[<span class="number">0</span>], <span class="ident">Rights</span>::<span class="ident">DEFAULT_PROCESS</span>)
                 .<span class="ident">err</span>(),
             <span class="prelude-val">Some</span>(<span class="ident">ZxError</span>::<span class="ident">BAD_HANDLE</span>)
         );
@@ -1322,9 +1499,90 @@
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="ident">Process</span>::<span class="ident">create</span>(<span class="kw-2">&amp;</span><span class="ident">root_job</span>, <span class="string">&quot;proc&quot;</span>, <span class="number">0</span>).<span class="ident">expect</span>(<span class="string">&quot;failed to create process&quot;</span>);
         <span class="kw">let</span> <span class="ident">thread</span> <span class="op">=</span> <span class="ident">Thread</span>::<span class="ident">create</span>(<span class="kw-2">&amp;</span><span class="ident">proc</span>, <span class="string">&quot;thread&quot;</span>, <span class="number">0</span>).<span class="ident">expect</span>(<span class="string">&quot;failed to create thread&quot;</span>);
 
-        <span class="kw">let</span> <span class="ident">proc</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">KernelObject</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">proc</span>;
         <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">proc</span>.<span class="ident">get_child</span>(<span class="ident">thread</span>.<span class="ident">id</span>()).<span class="ident">unwrap</span>().<span class="ident">id</span>(), <span class="ident">thread</span>.<span class="ident">id</span>());
         <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">proc</span>.<span class="ident">get_child</span>(<span class="ident">proc</span>.<span class="ident">id</span>()).<span class="ident">err</span>(), <span class="prelude-val">Some</span>(<span class="ident">ZxError</span>::<span class="ident">NOT_FOUND</span>));
+
+        <span class="kw">let</span> <span class="ident">thread1</span> <span class="op">=</span> <span class="ident">Thread</span>::<span class="ident">create</span>(<span class="kw-2">&amp;</span><span class="ident">proc</span>, <span class="string">&quot;thread1&quot;</span>, <span class="number">0</span>).<span class="ident">expect</span>(<span class="string">&quot;failed to create thread&quot;</span>);
+        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">proc</span>.<span class="ident">thread_ids</span>(), <span class="macro">vec</span><span class="macro">!</span>[<span class="ident">thread</span>.<span class="ident">id</span>(), <span class="ident">thread1</span>.<span class="ident">id</span>()]);
+    }
+
+    <span class="attribute">#[<span class="ident">test</span>]</span>
+    <span class="kw">fn</span> <span class="ident">properties</span>() {
+        <span class="kw">let</span> <span class="ident">root_job</span> <span class="op">=</span> <span class="ident">Job</span>::<span class="ident">root</span>();
+        <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="ident">Process</span>::<span class="ident">create</span>(<span class="kw-2">&amp;</span><span class="ident">root_job</span>, <span class="string">&quot;proc&quot;</span>, <span class="number">0</span>).<span class="ident">expect</span>(<span class="string">&quot;failed to create process&quot;</span>);
+
+        <span class="ident">proc</span>.<span class="ident">set_debug_addr</span>(<span class="number">123</span>);
+        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">proc</span>.<span class="ident">get_debug_addr</span>(), <span class="number">123</span>);
+
+        <span class="ident">proc</span>.<span class="ident">set_dyn_break_on_load</span>(<span class="number">2</span>);
+        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">proc</span>.<span class="ident">get_dyn_break_on_load</span>(), <span class="number">2</span>);
+    }
+
+    <span class="attribute">#[<span class="ident">test</span>]</span>
+    <span class="kw">fn</span> <span class="ident">exit</span>() {
+        <span class="kw">let</span> <span class="ident">root_job</span> <span class="op">=</span> <span class="ident">Job</span>::<span class="ident">root</span>();
+        <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="ident">Process</span>::<span class="ident">create</span>(<span class="kw-2">&amp;</span><span class="ident">root_job</span>, <span class="string">&quot;proc&quot;</span>, <span class="number">0</span>).<span class="ident">expect</span>(<span class="string">&quot;failed to create process&quot;</span>);
+        <span class="kw">let</span> <span class="ident">thread</span> <span class="op">=</span> <span class="ident">Thread</span>::<span class="ident">create</span>(<span class="kw-2">&amp;</span><span class="ident">proc</span>, <span class="string">&quot;thread&quot;</span>, <span class="number">0</span>).<span class="ident">expect</span>(<span class="string">&quot;failed to create thread&quot;</span>);
+
+        <span class="kw">let</span> <span class="ident">info</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_info</span>();
+        <span class="macro">assert</span><span class="macro">!</span>(<span class="op">!</span><span class="ident">info</span>.<span class="ident">has_exited</span> <span class="kw-2">&amp;</span><span class="op">&amp;</span> <span class="op">!</span><span class="ident">info</span>.<span class="ident">started</span> <span class="kw-2">&amp;</span><span class="op">&amp;</span> <span class="ident">info</span>.<span class="ident">return_code</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span>);
+
+        <span class="ident">proc</span>.<span class="ident">exit</span>(<span class="number">666</span>);
+        <span class="kw">let</span> <span class="ident">info</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_info</span>();
+        <span class="macro">assert</span><span class="macro">!</span>(<span class="ident">info</span>.<span class="ident">has_exited</span> <span class="kw-2">&amp;</span><span class="op">&amp;</span> <span class="ident">info</span>.<span class="ident">started</span> <span class="kw-2">&amp;</span><span class="op">&amp;</span> <span class="ident">info</span>.<span class="ident">return_code</span> <span class="op">=</span><span class="op">=</span> <span class="number">666</span>);
+        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">thread</span>.<span class="ident">state</span>(), <span class="ident">ThreadState</span>::<span class="ident">Dying</span>);
+        <span class="comment">// TODO: when is the thread dead?</span>
+
+        <span class="macro">assert_eq</span><span class="macro">!</span>(
+            <span class="ident">Thread</span>::<span class="ident">create</span>(<span class="kw-2">&amp;</span><span class="ident">proc</span>, <span class="string">&quot;thread1&quot;</span>, <span class="number">0</span>).<span class="ident">err</span>(),
+            <span class="prelude-val">Some</span>(<span class="ident">ZxError</span>::<span class="ident">BAD_STATE</span>)
+        );
+    }
+
+    <span class="attribute">#[<span class="ident">test</span>]</span>
+    <span class="kw">fn</span> <span class="ident">contains_thread</span>() {
+        <span class="kw">let</span> <span class="ident">root_job</span> <span class="op">=</span> <span class="ident">Job</span>::<span class="ident">root</span>();
+        <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="ident">Process</span>::<span class="ident">create</span>(<span class="kw-2">&amp;</span><span class="ident">root_job</span>, <span class="string">&quot;proc&quot;</span>, <span class="number">0</span>).<span class="ident">expect</span>(<span class="string">&quot;failed to create process&quot;</span>);
+        <span class="kw">let</span> <span class="ident">thread</span> <span class="op">=</span> <span class="ident">Thread</span>::<span class="ident">create</span>(<span class="kw-2">&amp;</span><span class="ident">proc</span>, <span class="string">&quot;thread&quot;</span>, <span class="number">0</span>).<span class="ident">expect</span>(<span class="string">&quot;failed to create thread&quot;</span>);
+
+        <span class="kw">let</span> <span class="ident">proc1</span> <span class="op">=</span> <span class="ident">Process</span>::<span class="ident">create</span>(<span class="kw-2">&amp;</span><span class="ident">root_job</span>, <span class="string">&quot;proc1&quot;</span>, <span class="number">0</span>).<span class="ident">expect</span>(<span class="string">&quot;failed to create process&quot;</span>);
+        <span class="kw">let</span> <span class="ident">thread1</span> <span class="op">=</span> <span class="ident">Thread</span>::<span class="ident">create</span>(<span class="kw-2">&amp;</span><span class="ident">proc1</span>, <span class="string">&quot;thread1&quot;</span>, <span class="number">0</span>).<span class="ident">expect</span>(<span class="string">&quot;failed to create thread&quot;</span>);
+
+        <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
+        <span class="macro">assert</span><span class="macro">!</span>(<span class="ident">inner</span>.<span class="ident">contains_thread</span>(<span class="kw-2">&amp;</span><span class="ident">thread</span>) <span class="kw-2">&amp;</span><span class="op">&amp;</span> <span class="op">!</span><span class="ident">inner</span>.<span class="ident">contains_thread</span>(<span class="kw-2">&amp;</span><span class="ident">thread1</span>));
+    }
+
+    <span class="attribute">#[<span class="ident">test</span>]</span>
+    <span class="kw">fn</span> <span class="ident">check_policy</span>() {
+        <span class="kw">let</span> <span class="ident">root_job</span> <span class="op">=</span> <span class="ident">Job</span>::<span class="ident">root</span>();
+        <span class="kw">let</span> <span class="ident">policy1</span> <span class="op">=</span> <span class="ident">BasicPolicy</span> {
+            <span class="ident">condition</span>: <span class="ident">PolicyCondition</span>::<span class="ident">BadHandle</span>,
+            <span class="ident">action</span>: <span class="ident">PolicyAction</span>::<span class="ident">Allow</span>,
+        };
+        <span class="kw">let</span> <span class="ident">policy2</span> <span class="op">=</span> <span class="ident">BasicPolicy</span> {
+            <span class="ident">condition</span>: <span class="ident">PolicyCondition</span>::<span class="ident">NewChannel</span>,
+            <span class="ident">action</span>: <span class="ident">PolicyAction</span>::<span class="ident">Deny</span>,
+        };
+
+        <span class="macro">assert</span><span class="macro">!</span>(<span class="ident">root_job</span>
+            .<span class="ident">set_policy_basic</span>(<span class="ident">SetPolicyOptions</span>::<span class="ident">Absolute</span>, <span class="kw-2">&amp;</span>[<span class="ident">policy1</span>, <span class="ident">policy2</span>])
+            .<span class="ident">is_ok</span>());
+        <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="ident">Process</span>::<span class="ident">create</span>(<span class="kw-2">&amp;</span><span class="ident">root_job</span>, <span class="string">&quot;proc&quot;</span>, <span class="number">0</span>).<span class="ident">expect</span>(<span class="string">&quot;failed to create process&quot;</span>);
+
+        <span class="macro">assert</span><span class="macro">!</span>(<span class="ident">proc</span>.<span class="ident">check_policy</span>(<span class="ident">PolicyCondition</span>::<span class="ident">BadHandle</span>).<span class="ident">is_ok</span>());
+        <span class="macro">assert</span><span class="macro">!</span>(<span class="ident">proc</span>.<span class="ident">check_policy</span>(<span class="ident">PolicyCondition</span>::<span class="ident">NewProcess</span>).<span class="ident">is_ok</span>());
+        <span class="macro">assert_eq</span><span class="macro">!</span>(
+            <span class="ident">proc</span>.<span class="ident">check_policy</span>(<span class="ident">PolicyCondition</span>::<span class="ident">NewChannel</span>).<span class="ident">err</span>(),
+            <span class="prelude-val">Some</span>(<span class="ident">ZxError</span>::<span class="ident">ACCESS_DENIED</span>)
+        );
+
+        <span class="kw">let</span> <span class="ident">_job</span> <span class="op">=</span> <span class="ident">root_job</span>.<span class="ident">create_child</span>(<span class="number">0</span>).<span class="ident">unwrap</span>();
+        <span class="macro">assert_eq</span><span class="macro">!</span>(
+            <span class="ident">root_job</span>
+                .<span class="ident">set_policy_basic</span>(<span class="ident">SetPolicyOptions</span>::<span class="ident">Absolute</span>, <span class="kw-2">&amp;</span>[<span class="ident">policy1</span>, <span class="ident">policy2</span>])
+                .<span class="ident">err</span>(),
+            <span class="prelude-val">Some</span>(<span class="ident">ZxError</span>::<span class="ident">BAD_STATE</span>)
+        );
     }
 }
 </pre></div>

@@ -27,7 +27,11 @@
 <span id="27">27</span>
 <span id="28">28</span>
 <span id="29">29</span>
+<span id="30">30</span>
+<span id="31">31</span>
+<span id="32">32</span>
 </pre><div class="example-wrap"><pre class="rust ">
+<span class="attribute">#![<span class="ident">deny</span>(<span class="ident">missing_docs</span>)]</span>
 <span class="doccomment">//! Objects for Task Management.</span>
 
 <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
@@ -46,7 +50,8 @@
 
 <span class="doccomment">/// Task (Thread, Process, or Job)</span>
 <span class="kw">pub</span> <span class="kw">trait</span> <span class="ident">Task</span>: <span class="ident">Sync</span> <span class="op">+</span> <span class="ident">Send</span> {
-    <span class="doccomment">/// Kill the task.</span>
+    <span class="doccomment">/// Kill the task. The task do not terminate immediately when killed.</span>
+    <span class="doccomment">/// It will terminate after all its children are terminated or some cleanups are finished.</span>
     <span class="kw">fn</span> <span class="ident">kill</span>(<span class="kw-2">&amp;</span><span class="self">self</span>);
 
     <span class="doccomment">/// Suspend the task. Currently only thread or process handles may be suspended.</span>
@@ -56,6 +61,7 @@
     <span class="kw">fn</span> <span class="ident">resume</span>(<span class="kw-2">&amp;</span><span class="self">self</span>);
 }
 
+<span class="doccomment">/// The return code set when a task is killed via zx_task_kill().</span>
 <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">TASK_RETCODE_SYSCALL_KILL</span>: <span class="ident">i64</span> <span class="op">=</span> <span class="op">-</span><span class="number">1028</span>;
 </pre></div>
 </section><section id="search" class="content hidden"></section><section class="footer"></section><script>window.rootPath = "../../../";window.currentCrate = "zircon_object";</script><script src="../../../main.js"></script><script src="../../../source-script.js"></script><script src="../../../source-files.js"></script><script defer src="../../../search-index.js"></script></body></html>

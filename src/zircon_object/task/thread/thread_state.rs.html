@@ -70,6 +70,8 @@
 <span id="70">70</span>
 <span id="71">71</span>
 <span id="72">72</span>
+<span id="73">73</span>
+<span id="74">74</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">ZxError</span>, <span class="ident">ZxResult</span>};
 <span class="kw">use</span> <span class="ident">kernel_hal</span>::<span class="ident">UserContext</span>;
@@ -77,6 +79,8 @@
 
 <span class="macro">numeric_enum</span><span class="macro">!</span> {
     <span class="attribute">#[<span class="ident">repr</span>(<span class="ident">u32</span>)]</span>
+    <span class="doccomment">/// Possible values for &quot;kind&quot; in zx_thread_read_state and zx_thread_write_state.</span>
+    <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">missing_docs</span>)]</span>
     <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>, <span class="ident">Copy</span>, <span class="ident">Clone</span>)]</span>
     <span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">ThreadStateKind</span> {
         <span class="ident">General</span> <span class="op">=</span> <span class="number">0</span>,
@@ -89,7 +93,7 @@
     }
 }
 
-<span class="kw">pub</span> <span class="kw">trait</span> <span class="ident">ContextExt</span> {
+<span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">trait</span> <span class="ident">ContextExt</span> {
     <span class="kw">fn</span> <span class="ident">read_state</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">kind</span>: <span class="ident">ThreadStateKind</span>, <span class="ident">buf</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> [<span class="ident">u8</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>;
     <span class="kw">fn</span> <span class="ident">write_state</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">kind</span>: <span class="ident">ThreadStateKind</span>, <span class="ident">buf</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span>;
 }
