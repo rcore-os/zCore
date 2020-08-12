@@ -86,10 +86,14 @@ struct ProcessInner {
     critical_to_job: Option<(Arc<Job>, bool)>,
 }
 
+/// Status of a process.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum Status {
+    /// Initial state, no thread present in process.
     Init,
+    /// First thread has started and is running.
     Running,
+    /// Process has exited with the code.
     Exited(i64),
 }
 
@@ -169,18 +173,27 @@ impl Process {
     }
 
     /// Exit current process with `retcode`.
+    /// The process do not terminate immediately when exited.
+    /// It will terminate after all its child threads are terminated.
     pub fn exit(&self, retcode: i64) {
         let mut inner = self.inner.lock();
         if let Status::Exited(_) = inner.status {
             return;
         }
         inner.status = Status::Exited(retcode);
+        if inner.threads.is_empty() {
+            inner.handles.clear();
+            drop(inner);
+            self.terminate();
+            return;
+        }
         for thread in inner.threads.iter() {
             thread.kill();
         }
         inner.handles.clear();
     }
 
+    /// The process finally terminates.
     fn terminate(&self) {
         let mut inner = self.inner.lock();
         let retcode = match inner.status {
@@ -298,6 +311,7 @@ impl Process {
             .collect()
     }
 
+    /// Remove a handle referring to a kernel object of the given type from the process.
     pub fn remove_object<T: KernelObject>(&self, handle_value: HandleValue) -> ZxResult<Arc<T>> {
         let handle = self.remove_handle(handle_value)?;
         let object = handle
@@ -350,31 +364,24 @@ impl Process {
         handle_value: HandleValue,
         desired_rights: Rights,
     ) -> ZxResult<Arc<T>> {
-        let handle = self.get_handle(handle_value)?;
-        // check type before rights
-        let object = handle
-            .object
-            .downcast_arc::<T>()
-            .map_err(|_| ZxError::WRONG_TYPE)?;
-        if !handle.rights.contains(desired_rights) {
-            return Err(ZxError::ACCESS_DENIED);
-        }
-        Ok(object)
+        self.get_dyn_object_with_rights(handle_value, desired_rights)
+            .and_then(|obj| obj.downcast_arc::<T>().map_err(|_| ZxError::WRONG_TYPE))
     }
 
+    /// Get the kernel object corresponding to this `handle_value` and this handle's rights.
     pub fn get_object_and_rights<T: KernelObject>(
         &self,
         handle_value: HandleValue,
     ) -> ZxResult<(Arc<T>, Rights)> {
-        let handle = self.get_handle(handle_value)?;
-        // check type before rights
-        let object = handle
-            .object
+        let (object, rights) = self.get_dyn_object_and_rights(handle_value)?;
+        let object = object
             .downcast_arc::<T>()
             .map_err(|_| ZxError::WRONG_TYPE)?;
-        Ok((object, handle.rights))
+        Ok((object, rights))
     }
 
+    /// Get the kernel object corresponding to this `handle_value`,
+    /// after checking that this handle has the `desired_rights`.
     pub fn get_dyn_object_with_rights(
         &self,
         handle_value: HandleValue,
@@ -388,6 +395,7 @@ impl Process {
         Ok(handle.object)
     }
 
+    /// Get the kernel object corresponding to this `handle_value` and this handle's rights.
     pub fn get_dyn_object_and_rights(
         &self,
         handle_value: HandleValue,
@@ -406,6 +414,7 @@ impl Process {
         Ok(object)
     }
 
+    /// Get the handle's information corresponding to `handle_value`.
     pub fn get_handle_info(&self, handle_value: HandleValue) -> ZxResult<HandleBasicInfo> {
         let handle = self.get_handle(handle_value)?;
         Ok(handle.get_info())
@@ -421,7 +430,7 @@ impl Process {
         Ok(())
     }
 
-    /// Remove a thread to from process.
+    /// Remove a thread from the process.
     ///
     /// If no more threads left, exit the process.
     pub(super) fn remove_thread(&self, tid: KoID) {
@@ -433,6 +442,7 @@ impl Process {
         }
     }
 
+    /// Get information of this process.
     pub fn get_info(&self) -> ProcessInfo {
         let mut info = ProcessInfo::default();
         info.debugger_attached = self.debug_exceptionate.has_channel();
@@ -448,36 +458,46 @@ impl Process {
             Status::Exited(ret) => {
                 info.return_code = ret;
                 info.has_exited = true;
-                info.started = false;
+                info.started = true;
             }
         }
         info
     }
 
+    /// Set the debug address.
     pub fn set_debug_addr(&self, addr: usize) {
         self.inner.lock().debug_addr = addr;
     }
 
+    /// Get the debug address.
     pub fn get_debug_addr(&self) -> usize {
         self.inner.lock().debug_addr
     }
 
+    /// Set the address where the dynamic loader will issue a debug trap on every load of a
+    /// shared library to. Setting this property to
+    /// zero will disable it.
     pub fn set_dyn_break_on_load(&self, addr: usize) {
         self.inner.lock().dyn_break_on_load = addr;
     }
 
+    /// Get the address where the dynamic loader will issue a debug trap on every load of a
+    /// shared library to.
     pub fn get_dyn_break_on_load(&self) -> usize {
         self.inner.lock().dyn_break_on_load
     }
 
+    /// Get an one-shot `Receiver` for receiving cancel message of the given handle.
     pub fn get_cancel_token(&self, handle_value: HandleValue) -> ZxResult<Receiver<()>> {
         self.inner.lock().get_cancel_token(handle_value)
     }
 
+    /// Get the exceptionate of this process.
     pub fn get_exceptionate(&self) -> Arc<Exceptionate> {
         self.exceptionate.clone()
     }
 
+    /// Get the debug exceptionate of this process.
     pub fn get_debug_exceptionate(&self) -> Arc<Exceptionate> {
         self.debug_exceptionate.clone()
     }
@@ -552,6 +572,8 @@ impl ProcessInner {
     }
 }
 
+/// Information of a process.
+#[allow(missing_docs)]
 #[repr(C)]
 #[derive(Default)]
 pub struct ProcessInfo {
@@ -569,7 +591,10 @@ mod tests {
     #[test]
     fn create() {
         let root_job = Job::root();
-        let _proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
+        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
+
+        assert_eq!(proc.related_koid(), root_job.id());
+        assert!(Arc::ptr_eq(&root_job, &proc.job()));
     }
 
     #[test]
@@ -579,12 +604,19 @@ mod tests {
         let handle = Handle::new(proc.clone(), Rights::DEFAULT_PROCESS);
 
         let handle_value = proc.add_handle(handle);
+        let _info = proc.get_handle_info(handle_value).unwrap();
 
         // getting object should success
         let object: Arc<Process> = proc
             .get_object_with_rights(handle_value, Rights::DEFAULT_PROCESS)
             .expect("failed to get object");
         assert!(Arc::ptr_eq(&object, &proc));
+
+        let (object, rights) = proc
+            .get_object_and_rights::<Process>(handle_value)
+            .expect("failed to get object");
+        assert!(Arc::ptr_eq(&object, &proc));
+        assert_eq!(rights, Rights::DEFAULT_PROCESS);
 
         // getting object with an extra rights should fail.
         assert_eq!(
@@ -605,6 +637,22 @@ mod tests {
         // getting object with invalid handle should fail.
         assert_eq!(
             proc.get_object_with_rights::<Process>(handle_value, Rights::DEFAULT_PROCESS)
+                .err(),
+            Some(ZxError::BAD_HANDLE)
+        );
+
+        let handle1 = Handle::new(proc.clone(), Rights::DEFAULT_PROCESS);
+        let handle2 = Handle::new(proc.clone(), Rights::DEFAULT_PROCESS);
+
+        let handle_values = proc.add_handles(vec![handle1, handle2]);
+        let object1: Arc<Process> = proc
+            .get_object_with_rights(handle_values[0], Rights::DEFAULT_PROCESS)
+            .expect("failed to get object");
+        assert!(Arc::ptr_eq(&object1, &proc));
+
+        proc.remove_handles(&handle_values).unwrap();
+        assert_eq!(
+            proc.get_object_with_rights::<Process>(handle_values[0], Rights::DEFAULT_PROCESS)
                 .err(),
             Some(ZxError::BAD_HANDLE)
         );
@@ -657,8 +705,89 @@ mod tests {
         let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
         let thread = Thread::create(&proc, "thread", 0).expect("failed to create thread");
 
-        let proc: Arc<dyn KernelObject> = proc;
         assert_eq!(proc.get_child(thread.id()).unwrap().id(), thread.id());
         assert_eq!(proc.get_child(proc.id()).err(), Some(ZxError::NOT_FOUND));
+
+        let thread1 = Thread::create(&proc, "thread1", 0).expect("failed to create thread");
+        assert_eq!(proc.thread_ids(), vec![thread.id(), thread1.id()]);
+    }
+
+    #[test]
+    fn properties() {
+        let root_job = Job::root();
+        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
+
+        proc.set_debug_addr(123);
+        assert_eq!(proc.get_debug_addr(), 123);
+
+        proc.set_dyn_break_on_load(2);
+        assert_eq!(proc.get_dyn_break_on_load(), 2);
+    }
+
+    #[test]
+    fn exit() {
+        let root_job = Job::root();
+        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
+        let thread = Thread::create(&proc, "thread", 0).expect("failed to create thread");
+
+        let info = proc.get_info();
+        assert!(!info.has_exited && !info.started && info.return_code == 0);
+
+        proc.exit(666);
+        let info = proc.get_info();
+        assert!(info.has_exited && info.started && info.return_code == 666);
+        assert_eq!(thread.state(), ThreadState::Dying);
+        // TODO: when is the thread dead?
+
+        assert_eq!(
+            Thread::create(&proc, "thread1", 0).err(),
+            Some(ZxError::BAD_STATE)
+        );
+    }
+
+    #[test]
+    fn contains_thread() {
+        let root_job = Job::root();
+        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
+        let thread = Thread::create(&proc, "thread", 0).expect("failed to create thread");
+
+        let proc1 = Process::create(&root_job, "proc1", 0).expect("failed to create process");
+        let thread1 = Thread::create(&proc1, "thread1", 0).expect("failed to create thread");
+
+        let inner = proc.inner.lock();
+        assert!(inner.contains_thread(&thread) && !inner.contains_thread(&thread1));
+    }
+
+    #[test]
+    fn check_policy() {
+        let root_job = Job::root();
+        let policy1 = BasicPolicy {
+            condition: PolicyCondition::BadHandle,
+            action: PolicyAction::Allow,
+        };
+        let policy2 = BasicPolicy {
+            condition: PolicyCondition::NewChannel,
+            action: PolicyAction::Deny,
+        };
+
+        assert!(root_job
+            .set_policy_basic(SetPolicyOptions::Absolute, &[policy1, policy2])
+            .is_ok());
+        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
+
+        assert!(proc.check_policy(PolicyCondition::BadHandle).is_ok());
+        assert!(proc.check_policy(PolicyCondition::NewProcess).is_ok());
+        assert_eq!(
+            proc.check_policy(PolicyCondition::NewChannel).err(),
+            Some(ZxError::ACCESS_DENIED)
+        );
+
+        let _job = root_job.create_child(0).unwrap();
+        assert_eq!(
+            root_job
+                .set_policy_basic(SetPolicyOptions::Absolute, &[policy1, policy2])
+                .err(),
+            Some(ZxError::BAD_STATE)
+        );
     }
 }

@@ -30,13 +30,15 @@ struct TimerInner {
 /// Slack specifies how much a timer or event is allowed to deviate from its deadline.
 ///
 /// **Not supported: Now slack has no effect on the timer.**
+#[repr(u32)]
+#[derive(Debug, Copy, Clone)]
 pub enum Slack {
     /// slack is centered around deadline
-    Center,
+    Center = 0,
     /// slack interval is (deadline - slack, deadline]
-    Early,
+    Early = 1,
     /// slack interval is [deadline, deadline + slack)
-    Late,
+    Late = 2,
 }
 
 impl Timer {

@@ -20,6 +20,7 @@ struct ExceptionateInner {
 }
 
 impl Exceptionate {
+    /// Create an `Exceptionate`.
     pub fn new(type_: ExceptionChannelType) -> Arc<Self> {
         Arc::new(Exceptionate {
             type_,
@@ -32,12 +33,14 @@ impl Exceptionate {
         })
     }
 
+    /// Shutdown the exceptionate.
     pub fn shutdown(&self) {
         let mut inner = self.inner.lock();
         inner.channel.take();
         inner.shutdowned = true;
     }
 
+    /// Create an exception channel endpoint for user.
     pub fn create_channel(
         &self,
         thread_rights: Rights,
@@ -60,7 +63,7 @@ impl Exceptionate {
         Ok(receiver)
     }
 
-    pub fn has_channel(&self) -> bool {
+    pub(super) fn has_channel(&self) -> bool {
         let mut inner = self.inner.lock();
         if let Some(channel) = inner.channel.as_ref() {
             if channel.peer().is_ok() {
@@ -72,6 +75,7 @@ impl Exceptionate {
         false
     }
 
+    /// Send exception to the user-owned endpoint.
     pub fn send_exception(&self, exception: &Arc<Exception>) -> ZxResult<oneshot::Receiver<()>> {
         debug!(
             "Exception: {:?} ,try send to {:?}",
@@ -105,11 +109,11 @@ impl Exceptionate {
 }
 
 #[repr(C)]
-pub struct ExceptionInfo {
-    pub pid: KoID,
-    pub tid: KoID,
-    pub type_: ExceptionType,
-    pub padding: u32,
+struct ExceptionInfo {
+    pid: KoID,
+    tid: KoID,
+    type_: ExceptionType,
+    padding: u32,
 }
 
 impl ExceptionInfo {
@@ -120,13 +124,20 @@ impl ExceptionInfo {
     }
 }
 
+/// The common header of all exception reports.
 #[repr(C)]
 #[derive(Clone)]
 pub struct ExceptionHeader {
+    /// The actual size, in bytes, of the report (including this field).
     pub size: u32,
+    /// The type of the exception.
     pub type_: ExceptionType,
 }
 
+/// Data associated with an exception (siginfo in linux parlance)
+/// Things available from regsets (e.g., pc) are not included here.
+/// For an example list of things one might add, see linux siginfo.
+#[allow(missing_docs)]
 #[cfg(target_arch = "x86_64")]
 #[repr(C)]
 #[derive(Default, Clone)]
@@ -136,6 +147,10 @@ pub struct ExceptionContext {
     pub cr2: u64,
 }
 
+/// Data associated with an exception (siginfo in linux parlance)
+/// Things available from regsets (e.g., pc) are not included here.
+/// For an example list of things one might add, see linux siginfo.
+#[allow(missing_docs)]
 #[cfg(target_arch = "aarch64")]
 #[repr(C)]
 #[derive(Default, Clone)]
@@ -161,10 +176,13 @@ impl ExceptionContext {
     }
 }
 
+/// Data reported to an exception handler for most exceptions.
 #[repr(C)]
 #[derive(Clone)]
 pub struct ExceptionReport {
+    /// The common header of all exception reports.
     pub header: ExceptionHeader,
+    /// Exception-specific data.
     pub context: ExceptionContext,
 }
 
@@ -182,6 +200,8 @@ impl ExceptionReport {
     }
 }
 
+/// Type of exception
+#[allow(missing_docs)]
 #[repr(u32)]
 #[derive(Copy, Clone, Debug)]
 pub enum ExceptionType {
@@ -199,6 +219,8 @@ pub enum ExceptionType {
     ProcessStarting = 0x8308,
 }
 
+/// Type of the exception channel
+#[allow(missing_docs)]
 #[repr(u32)]
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum ExceptionChannelType {
@@ -223,6 +245,7 @@ pub struct ExceptionObject {
 impl_kobject!(ExceptionObject);
 
 impl ExceptionObject {
+    /// Create an `ExceptionObject`.
     fn create(exception: Arc<Exception>, close_signal: oneshot::Sender<()>) -> Arc<Self> {
         Arc::new(ExceptionObject {
             base: KObjectBase::new(),
@@ -230,6 +253,7 @@ impl ExceptionObject {
             close_signal: Some(close_signal),
         })
     }
+    /// Get the exception.
     pub fn get_exception(&self) -> &Arc<Exception> {
         &self.exception
     }
@@ -261,6 +285,7 @@ struct ExceptionInner {
 }
 
 impl Exception {
+    /// Create an `Exception`.
     pub fn create(
         thread: Arc<Thread>,
         type_: ExceptionType,
@@ -348,26 +373,34 @@ impl Exception {
         Err(ZxError::NEXT)
     }
 
+    /// Get the exception's thread and thread rights.
     pub fn get_thread_and_rights(&self) -> (Arc<Thread>, Rights) {
         (self.thread.clone(), self.inner.lock().thread_rights)
     }
 
+    /// Get the exception's process and process rights.
     pub fn get_process_and_rights(&self) -> (Arc<Process>, Rights) {
         (self.thread.proc().clone(), self.inner.lock().process_rights)
     }
 
+    /// Get the exception's channel type.
     pub fn get_current_channel_type(&self) -> ExceptionChannelType {
         self.inner.lock().current_channel_type
     }
 
+    /// Get a report of the exception.
     pub fn get_report(&self) -> ExceptionReport {
         self.report.clone()
     }
 
+    /// Get whether closing the exception handle will
+    /// finish exception processing and resume the underlying thread.
     pub fn get_state(&self) -> u32 {
         self.inner.lock().handled as u32
     }
 
+    /// Set whether closing the exception handle will
+    /// finish exception processing and resume the underlying thread.
     pub fn set_state(&self, state: u32) -> ZxResult {
         if state > 1 {
             return Err(ZxError::INVALID_ARGS);
@@ -376,10 +409,14 @@ impl Exception {
         Ok(())
     }
 
+    /// Get whether the debugger gets a 'second chance' at handling the exception
+    /// if the process-level handler fails to do so.
     pub fn get_strategy(&self) -> u32 {
         self.inner.lock().second_chance as u32
     }
 
+    /// Set whether the debugger gets a 'second chance' at handling the exception
+    /// if the process-level handler fails to do so.
     pub fn set_strategy(&self, strategy: u32) -> ZxResult {
         if strategy > 1 {
             return Err(ZxError::INVALID_ARGS);
@@ -483,6 +520,7 @@ pub struct JobDebuggerIterator {
 }
 
 impl JobDebuggerIterator {
+    /// Create a new JobDebuggerIterator
     pub fn new(job: Arc<Job>) -> Self {
         JobDebuggerIterator { job: Some(job) }
     }

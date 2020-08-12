@@ -1,5 +1,7 @@
 use crate::error::*;
+use crate::signal::Slack;
 
+/// Security and resource policies of a job.
 #[derive(Default, Copy, Clone)]
 pub struct JobPolicy {
     // TODO: use bitset
@@ -29,6 +31,8 @@ impl JobPolicy {
     }
 }
 
+/// Control the effect in the case of conflict between
+/// the existing policies and the new policies when setting new policies.
 #[derive(Debug, Copy, Clone)]
 pub enum SetPolicyOptions {
     /// Policy is applied for all conditions in policy or the call fails.
@@ -37,13 +41,17 @@ pub enum SetPolicyOptions {
     Relative,
 }
 
+/// The policy type.
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct BasicPolicy {
+    /// Condition when the policy is applied.
     pub condition: PolicyCondition,
+    ///
     pub action: PolicyAction,
 }
 
+/// The condition when a policy is applied.
 #[repr(u32)]
 #[derive(Debug, Copy, Clone)]
 pub enum PolicyCondition {
@@ -85,6 +93,7 @@ pub enum PolicyCondition {
     AmbientMarkVMOExec = 14,
 }
 
+/// The action taken when the condition happens specified by a policy.
 #[repr(u32)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum PolicyAction {
@@ -101,21 +110,17 @@ pub enum PolicyAction {
     Kill = 4,
 }
 
+/// Timer slack policy.
+///
+/// See [timer slack](../../signal/timer/enum.Slack.html) for more information.
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct TimerSlackPolicy {
     min_slack: i64,
-    default_mode: TimerSlackDefaultMode,
+    default_mode: Slack,
 }
 
-#[repr(u32)]
-#[derive(Debug, Copy, Clone)]
-pub enum TimerSlackDefaultMode {
-    Center = 0,
-    Early = 1,
-    Late = 2,
-}
-
+/// Check whether the policy is valid.
 pub fn check_timer_policy(policy: &TimerSlackPolicy) -> ZxResult {
     if policy.min_slack.is_negative() {
         return Err(ZxError::INVALID_ARGS);
@@ -124,13 +129,13 @@ pub fn check_timer_policy(policy: &TimerSlackPolicy) -> ZxResult {
 }
 
 #[repr(C)]
-pub struct TimerSlack {
+pub(super) struct TimerSlack {
     amount: i64,
-    mode: TimerSlackDefaultMode,
+    mode: Slack,
 }
 
 impl TimerSlack {
-    pub fn generate_new(&self, policy: TimerSlackPolicy) -> TimerSlack {
+    pub(super) fn generate_new(&self, policy: TimerSlackPolicy) -> TimerSlack {
         TimerSlack {
             amount: self.amount.max(policy.min_slack),
             mode: policy.default_mode,
@@ -142,7 +147,7 @@ impl Default for TimerSlack {
     fn default() -> Self {
         TimerSlack {
             amount: 0,
-            mode: TimerSlackDefaultMode::Center,
+            mode: Slack::Center,
         }
     }
 }
