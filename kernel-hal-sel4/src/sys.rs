@@ -10,7 +10,7 @@ extern "C" {
     pub fn l4bridge_alloc_untyped(slot: CPtr, bits: i32, paddr_out: &mut Word) -> i32;
     pub fn l4bridge_split_untyped(src: CPtr, src_bits: i32, dst0: CPtr, dst1: CPtr) -> i32;
     pub fn l4bridge_retype_and_mount_cnode(slot: CPtr, num_slots_bits: i32, target_index: Word) -> i32;
-    pub fn l4bridge_delete_cap(slot: CPtr);
+    pub fn l4bridge_delete_cap_ts(slot: CPtr);
 
     pub fn l4bridge_retype_vspace(untyped: CPtr, out: CPtr) -> i32;
     pub fn l4bridge_retype_pdpt(untyped: CPtr, out: CPtr) -> i32;

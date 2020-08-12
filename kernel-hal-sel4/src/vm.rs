@@ -29,7 +29,7 @@ struct PagingStructure {
 impl Drop for PagingStructure {
     fn drop(&mut self) {
         unsafe {
-            sys::locked(|| sys::l4bridge_delete_cap(self.object));
+            sys::l4bridge_delete_cap_ts(self.object);
             cap::G.release(self.object);
             PMEM.release_region(self.region);
         }

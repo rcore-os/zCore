@@ -461,10 +461,10 @@ int l4bridge_assign_asid_ts(seL4_CPtr pool, seL4_CPtr vspace) {
     return seL4_X86_ASIDPool_Assign(pool, vspace);
 }
 
-void l4bridge_delete_cap(seL4_CPtr slot) {
+void l4bridge_delete_cap_ts(seL4_CPtr slot) {
     int error = seL4_CNode_Delete(CNODE_SLOT, slot, seL4_WordBits);
     if(error) {
-        print_str("[loader] l4bridge_delete_cap: cannot delete cap\n");
+        panic_str("[loader] l4bridge_delete_cap_ts: cannot delete cap\n");
     }
 }
 

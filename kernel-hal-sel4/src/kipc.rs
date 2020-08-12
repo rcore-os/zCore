@@ -138,7 +138,7 @@ impl SavedReplyHandle {
 impl Drop for SavedReplyHandle {
     fn drop(&mut self) {
         unsafe {
-            sys::locked(|| sys::l4bridge_delete_cap(self.cap));
+            sys::l4bridge_delete_cap_ts(self.cap);
             cap::G.release(self.cap);
         }
     }
