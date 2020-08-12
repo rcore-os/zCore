@@ -76,10 +76,14 @@
 <span id="76">76</span>
 <span id="77">77</span>
 <span id="78">78</span>
+<span id="79">79</span>
+<span id="80">80</span>
+<span id="81">81</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> {<span class="kw">super</span>::<span class="kw-2">*</span>, <span class="ident">zircon_object</span>::<span class="ident">ipc</span>::<span class="ident">Fifo</span>};
 
 <span class="kw">impl</span> <span class="ident">Syscall</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span> {
+    <span class="doccomment">/// Creates a fifo, which is actually a pair of fifos of `elem_count` entries of `elem_size` bytes.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_fifo_create</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">elem_count</span>: <span class="ident">usize</span>,
@@ -107,6 +111,7 @@
         <span class="prelude-val">Ok</span>(())
     }
 
+    <span class="doccomment">/// Write data to a fifo.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_fifo_write</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">handle_value</span>: <span class="ident">HandleValue</span>,
@@ -130,6 +135,7 @@
         <span class="prelude-val">Ok</span>(())
     }
 
+    <span class="doccomment">/// Read data from a fifo.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_fifo_read</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">handle_value</span>: <span class="ident">HandleValue</span>,

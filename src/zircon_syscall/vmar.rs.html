@@ -273,6 +273,18 @@
 <span id="273">273</span>
 <span id="274">274</span>
 <span id="275">275</span>
+<span id="276">276</span>
+<span id="277">277</span>
+<span id="278">278</span>
+<span id="279">279</span>
+<span id="280">280</span>
+<span id="281">281</span>
+<span id="282">282</span>
+<span id="283">283</span>
+<span id="284">284</span>
+<span id="285">285</span>
+<span id="286">286</span>
+<span id="287">287</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> {<span class="kw">super</span>::<span class="kw-2">*</span>, <span class="ident">bitflags</span>::<span class="ident">bitflags</span>, <span class="ident">zircon_object</span>::<span class="ident">vm</span>::<span class="kw-2">*</span>};
 
@@ -289,6 +301,9 @@
 }
 
 <span class="kw">impl</span> <span class="ident">Syscall</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span> {
+    <span class="doccomment">/// Allocate a new subregion.  </span>
+    <span class="doccomment">///   </span>
+    <span class="doccomment">/// Creates a new VMAR within the one specified by `parent_vmar`.  </span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_vmar_allocate</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">parent_vmar</span>: <span class="ident">HandleValue</span>,
@@ -349,6 +364,9 @@
     }
 
     <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy</span>::<span class="ident">too_many_arguments</span>)]</span>
+    <span class="doccomment">/// Add a memory mapping.   </span>
+    <span class="doccomment">///   </span>
+    <span class="doccomment">/// Maps the given VMO into the given virtual memory address region.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_vmar_map</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">vmar_handle</span>: <span class="ident">HandleValue</span>,
@@ -434,6 +452,10 @@
         <span class="prelude-val">Ok</span>(())
     }
 
+    <span class="doccomment">/// Destroy a virtual memory address region.   </span>
+    <span class="doccomment">///   </span>
+    <span class="doccomment">/// Unmaps all mappings within the given region, and destroys all sub-regions of the region.   </span>
+    <span class="doccomment">/// &gt; This operation is logically recursive.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_vmar_destroy</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">handle_value</span>: <span class="ident">HandleValue</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
         <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;vmar.destroy: handle={:?}&quot;</span>, <span class="ident">handle_value</span>);
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>();
@@ -442,6 +464,7 @@
         <span class="prelude-val">Ok</span>(())
     }
 
+    <span class="doccomment">/// Set protection of virtual memory pages.  </span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_vmar_protect</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">handle_value</span>: <span class="ident">HandleValue</span>,
@@ -470,6 +493,7 @@
         <span class="prelude-val">Ok</span>(())
     }
 
+    <span class="doccomment">/// Unmap virtual memory pages.  </span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_vmar_unmap</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">handle_value</span>: <span class="ident">HandleValue</span>, <span class="ident">addr</span>: <span class="ident">usize</span>, <span class="ident">len</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
         <span class="macro">info</span><span class="macro">!</span>(
             <span class="string">&quot;vmar.unmap: handle_value={:#x}, addr={:#x}, len={:#x}&quot;</span>,

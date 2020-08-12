@@ -547,6 +547,26 @@
 <span id="547">547</span>
 <span id="548">548</span>
 <span id="549">549</span>
+<span id="550">550</span>
+<span id="551">551</span>
+<span id="552">552</span>
+<span id="553">553</span>
+<span id="554">554</span>
+<span id="555">555</span>
+<span id="556">556</span>
+<span id="557">557</span>
+<span id="558">558</span>
+<span id="559">559</span>
+<span id="560">560</span>
+<span id="561">561</span>
+<span id="562">562</span>
+<span id="563">563</span>
+<span id="564">564</span>
+<span id="565">565</span>
+<span id="566">566</span>
+<span id="567">567</span>
+<span id="568">568</span>
+<span id="569">569</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> {
     <span class="kw">super</span>::<span class="kw-2">*</span>,
@@ -557,6 +577,11 @@
 };
 
 <span class="kw">impl</span> <span class="ident">Syscall</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span> {
+    <span class="doccomment">/// Ask for various properties of various kernel objects.  </span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// `handle_value: HandleValue`, indicates the target kernel object.  </span>
+    <span class="doccomment">/// `property: u32`, indicates which property to get/set.  </span>
+    <span class="doccomment">/// `buffer: usize`, holds the property value, and must be a pointer to a buffer of value_size bytes.  </span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_object_get_property</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">handle_value</span>: <span class="ident">HandleValue</span>,
@@ -654,6 +679,7 @@
         }
     }
 
+    <span class="doccomment">/// Set various properties of various kernel objects.  </span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_object_set_property</span>(
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">handle_value</span>: <span class="ident">HandleValue</span>,
@@ -732,6 +758,7 @@
         }
     }
 
+    <span class="doccomment">/// A blocking syscall waits for signals on an object.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">sys_object_wait_one</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">handle</span>: <span class="ident">HandleValue</span>,
@@ -767,6 +794,10 @@
         <span class="prelude-val">Ok</span>(())
     }
 
+    <span class="doccomment">/// Query information about an object.  </span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// `topic: u32`, indicates what specific information is desired.  </span>
+    <span class="doccomment">/// `buffer: usize`, a pointer to a buffer of size buffer_size to return the information.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_object_get_info</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">handle</span>: <span class="ident">HandleValue</span>,
@@ -903,6 +934,7 @@
         <span class="prelude-val">Ok</span>(())
     }
 
+    <span class="doccomment">/// Asserts and deasserts the userspace-accessible signal bits on the object&#39;s peer.  </span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_object_signal_peer</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">handle_value</span>: <span class="ident">HandleValue</span>,
@@ -922,6 +954,7 @@
         <span class="prelude-val">Ok</span>(())
     }
 
+    <span class="doccomment">/// A non-blocking syscall subscribes for signals on an object.  </span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_object_wait_async</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">handle_value</span>: <span class="ident">HandleValue</span>,
@@ -946,6 +979,9 @@
         <span class="prelude-val">Ok</span>(())
     }
 
+    <span class="doccomment">/// Signal an object.  </span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// Asserts and deasserts the userspace-accessible signal bits on an object.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_object_signal</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">handle_value</span>: <span class="ident">HandleValue</span>,
@@ -966,6 +1002,7 @@
         <span class="prelude-val">Ok</span>(())
     }
 
+    <span class="doccomment">/// Wait for signals on multiple objects.  </span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">sys_object_wait_many</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="kw-2">mut</span> <span class="ident">user_items</span>: <span class="ident">UserInOutPtr</span><span class="op">&lt;</span><span class="ident">UserWaitItem</span><span class="op">&gt;</span>,
@@ -995,6 +1032,9 @@
         <span class="prelude-val">Ok</span>(())
     }
 
+    <span class="doccomment">/// Find the child of an object by its kid.  </span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// Given a kernel object with children objects, obtain a handle to the child specified by the provided kernel object id.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_object_get_child</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">handle</span>: <span class="ident">HandleValue</span>,

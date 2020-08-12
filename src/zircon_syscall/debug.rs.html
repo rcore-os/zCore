@@ -35,11 +35,14 @@
 <span id="35">35</span>
 <span id="36">36</span>
 <span id="37">37</span>
+<span id="38">38</span>
+<span id="39">39</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
 <span class="kw">use</span> <span class="ident">zircon_object</span>::<span class="ident">dev</span>::<span class="kw-2">*</span>;
 
 <span class="kw">impl</span> <span class="ident">Syscall</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span> {
+    <span class="doccomment">/// Write debug info to the serial port.  </span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_debug_write</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">buf</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>, <span class="ident">len</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
         <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;debug.write: buf=({:?}; {:#x})&quot;</span>, <span class="ident">buf</span>, <span class="ident">len</span>);
         <span class="kw">let</span> <span class="ident">data</span> <span class="op">=</span> <span class="ident">buf</span>.<span class="ident">read_array</span>(<span class="ident">len</span>)<span class="question-mark">?</span>;
@@ -47,6 +50,7 @@
         <span class="prelude-val">Ok</span>(())
     }
 
+    <span class="doccomment">/// Read debug info from the serial port.  </span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">sys_debug_read</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">handle</span>: <span class="ident">HandleValue</span>,

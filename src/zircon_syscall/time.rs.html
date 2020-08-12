@@ -133,6 +133,17 @@
 <span id="133">133</span>
 <span id="134">134</span>
 <span id="135">135</span>
+<span id="136">136</span>
+<span id="137">137</span>
+<span id="138">138</span>
+<span id="139">139</span>
+<span id="140">140</span>
+<span id="141">141</span>
+<span id="142">142</span>
+<span id="143">143</span>
+<span id="144">144</span>
+<span id="145">145</span>
+<span id="146">146</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> {
     <span class="kw">super</span>::<span class="kw-2">*</span>,
@@ -152,6 +163,7 @@
 <span class="kw">const</span> <span class="ident">ZX_CLOCK_THREAD</span>: <span class="ident">u32</span> <span class="op">=</span> <span class="number">2</span>;
 
 <span class="kw">impl</span> <span class="ident">Syscall</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span> {
+    <span class="doccomment">/// Create a new clock object.  </span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_clock_create</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">_options</span>: <span class="ident">u64</span>,
@@ -162,6 +174,10 @@
         <span class="prelude-val">Ok</span>(())
     }
 
+    <span class="doccomment">/// Acquire the current time.  </span>
+    <span class="doccomment">///   </span>
+    <span class="doccomment">/// + Returns the current time of clock_id via `time`.  </span>
+    <span class="doccomment">/// + Returns whether `clock_id` was valid.  </span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_clock_get</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">clock_id</span>: <span class="ident">u32</span>, <span class="kw-2">mut</span> <span class="ident">time</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
         <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;clock.get: id={}&quot;</span>, <span class="ident">clock_id</span>);
         <span class="kw">match</span> <span class="ident">clock_id</span> {
@@ -181,6 +197,7 @@
         }
     }
 
+    <span class="doccomment">/// Perform a basic read of the clock.  </span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_clock_read</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">handle</span>: <span class="ident">HandleValue</span>, <span class="kw-2">mut</span> <span class="ident">now</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
         <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;clock.read: handle={:#x?}&quot;</span>, <span class="ident">handle</span>);
         <span class="macro">warn</span><span class="macro">!</span>(<span class="string">&quot;ignore clock handle&quot;</span>);
@@ -188,6 +205,7 @@
         <span class="prelude-val">Ok</span>(())
     }
 
+    <span class="doccomment">///</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_clock_adjust</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">resource</span>: <span class="ident">HandleValue</span>, <span class="ident">clock_id</span>: <span class="ident">u32</span>, <span class="ident">offset</span>: <span class="ident">u64</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
         <span class="macro">info</span><span class="macro">!</span>(
             <span class="string">&quot;clock.adjust: resource={:#x?}, id={:#x}, offset={:#x}&quot;</span>,
@@ -206,6 +224,7 @@
         }
     }
 
+    <span class="doccomment">/// Make adjustments to a clock object.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_clock_update</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">_handle</span>: <span class="ident">HandleValue</span>,
@@ -216,6 +235,9 @@
         <span class="prelude-val">Ok</span>(())
     }
 
+    <span class="doccomment">/// Sleep for some number of nanoseconds.</span>
+    <span class="doccomment">///   </span>
+    <span class="doccomment">/// A `deadline` value less than or equal to 0 immediately yields the thread.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">sys_nanosleep</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">deadline</span>: <span class="ident">Deadline</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
         <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;nanosleep: deadline={:?}&quot;</span>, <span class="ident">deadline</span>);
         <span class="kw">if</span> <span class="ident">deadline</span>.<span class="number">0</span> <span class="op">&lt;</span><span class="op">=</span> <span class="number">0</span> {

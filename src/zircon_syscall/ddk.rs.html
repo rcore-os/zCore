@@ -302,6 +302,25 @@
 <span id="302">302</span>
 <span id="303">303</span>
 <span id="304">304</span>
+<span id="305">305</span>
+<span id="306">306</span>
+<span id="307">307</span>
+<span id="308">308</span>
+<span id="309">309</span>
+<span id="310">310</span>
+<span id="311">311</span>
+<span id="312">312</span>
+<span id="313">313</span>
+<span id="314">314</span>
+<span id="315">315</span>
+<span id="316">316</span>
+<span id="317">317</span>
+<span id="318">318</span>
+<span id="319">319</span>
+<span id="320">320</span>
+<span id="321">321</span>
+<span id="322">322</span>
+<span id="323">323</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> {
     <span class="kw">super</span>::<span class="kw-2">*</span>,
@@ -311,6 +330,7 @@
 };
 
 <span class="kw">impl</span> <span class="ident">Syscall</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span> {
+    <span class="doccomment">/// Create a new object in the kernel representing an IOMMU device.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_iommu_create</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">resource</span>: <span class="ident">HandleValue</span>,
@@ -342,7 +362,11 @@
         <span class="ident">out</span>.<span class="ident">write</span>(<span class="ident">handle</span>)<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(())
     }
-
+    <span class="doccomment">/// Creates a new bus transaction initiator.  </span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// `iommu: HandleValue`, a handle to an IOMMU.   </span>
+    <span class="doccomment">/// `options: u32`, must be 0 (reserved for future definition of creation flags).  </span>
+    <span class="doccomment">/// `bti_id: u64`, a hardware transaction identifier for a device downstream of that IOMMU.  </span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_bti_create</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">iommu</span>: <span class="ident">HandleValue</span>,
@@ -369,6 +393,7 @@
     }
 
     <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy</span>::<span class="ident">too_many_arguments</span>)]</span>
+    <span class="doccomment">/// Pin pages and grant devices access to them.  </span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_bti_pin</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">bti</span>: <span class="ident">HandleValue</span>,
@@ -412,6 +437,7 @@
         <span class="prelude-val">Ok</span>(())
     }
 
+    <span class="doccomment">/// Unpins pages that were previously pinned by `zx_bti_pin()`.  </span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_pmt_unpin</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">pmt</span>: <span class="ident">HandleValue</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
         <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;pmt.unpin: pmt={:#x}&quot;</span>, <span class="ident">pmt</span>);
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>();
@@ -420,6 +446,7 @@
         <span class="prelude-val">Ok</span>(())
     }
 
+    <span class="doccomment">/// Releases all quarantined PMTs for the given BTI.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_bti_release_quarantine</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">bti</span>: <span class="ident">HandleValue</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
         <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;bti.release_quarantine: bti = {:#x}&quot;</span>, <span class="ident">bti</span>);
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>();
@@ -428,6 +455,7 @@
         <span class="prelude-val">Ok</span>(())
     }
 
+    <span class="doccomment">///   </span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_pc_firmware_tables</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">resource</span>: <span class="ident">HandleValue</span>,
@@ -444,6 +472,7 @@
         <span class="prelude-val">Ok</span>(())
     }
 
+    <span class="doccomment">/// Creates an interrupt object which represents a physical or virtual interrupt.  </span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_interrupt_create</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">resource</span>: <span class="ident">HandleValue</span>,
@@ -472,6 +501,9 @@
         <span class="prelude-val">Ok</span>(())
     }
 
+    <span class="doccomment">/// Binds or unbinds an interrupt object to a port.   </span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// The key used when binding the interrupt will be present in the key field of the `zx_port_packet_t`.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_interrupt_bind</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">interrupt</span>: <span class="ident">HandleValue</span>,
@@ -498,6 +530,7 @@
         }
     }
 
+    <span class="doccomment">/// Triggers a virtual interrupt object.  </span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_interrupt_trigger</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">interrupt</span>: <span class="ident">HandleValue</span>,
@@ -515,6 +548,9 @@
         <span class="ident">interrupt</span>.<span class="ident">trigger</span>(<span class="ident">timestamp</span>)
     }
 
+    <span class="doccomment">/// Acknowledge an interrupt and re-arm it.  </span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// This system call acknowledges an interrupt object, causing it to be eligible to trigger again (and delivering a packet to the port it is bound to).</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_interrupt_ack</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">interrupt</span>: <span class="ident">HandleValue</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
         <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;interupt.ack: interrupt={:?}&quot;</span>, <span class="ident">interrupt</span>);
         <span class="kw">let</span> <span class="ident">interrupt</span> <span class="op">=</span> <span class="self">self</span>
@@ -524,12 +560,14 @@
         <span class="ident">interrupt</span>.<span class="ident">ack</span>()
     }
 
+    <span class="doccomment">/// Destroys an interrupt object.  </span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_interrupt_destroy</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">interrupt</span>: <span class="ident">HandleValue</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
         <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;interupt.destory: interrupt={:?}&quot;</span>, <span class="ident">interrupt</span>);
         <span class="kw">let</span> <span class="ident">interrupt</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>().<span class="ident">get_object</span>::<span class="op">&lt;</span><span class="ident">Interrupt</span><span class="op">&gt;</span>(<span class="ident">interrupt</span>)<span class="question-mark">?</span>;
         <span class="ident">interrupt</span>.<span class="ident">destroy</span>()
     }
 
+    <span class="doccomment">/// A blocking syscall which causes the caller to wait until an interrupt is triggered.  </span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">sys_interrupt_wait</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">interrupt</span>: <span class="ident">HandleValue</span>,

@@ -354,6 +354,7 @@
 <span id="354">354</span>
 <span id="355">355</span>
 <span id="356">356</span>
+<span id="357">357</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> {
     <span class="kw">super</span>::<span class="kw-2">*</span>,
@@ -366,8 +367,8 @@
 };
 
 <span class="kw">impl</span> <span class="ident">Syscall</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span> {
-    <span class="doccomment">/// Read a message from a channel.</span>
     <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy</span>::<span class="ident">too_many_arguments</span>)]</span>
+    <span class="doccomment">/// Read/Receive a message from a channel.  </span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_channel_read</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">handle_value</span>: <span class="ident">HandleValue</span>,
@@ -431,7 +432,7 @@
         }
         <span class="prelude-val">Ok</span>(())
     }
-
+    <span class="doccomment">/// Write a message to a channel.  </span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_channel_write</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">handle_value</span>: <span class="ident">HandleValue</span>,
@@ -471,7 +472,7 @@
         <span class="ident">channel</span>.<span class="ident">write</span>(<span class="ident">MessagePacket</span> { <span class="ident">data</span>, <span class="ident">handles</span> })<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(())
     }
-
+    <span class="doccomment">/// Create a new channel.   </span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_channel_create</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">options</span>: <span class="ident">u32</span>,
@@ -491,6 +492,7 @@
         <span class="prelude-val">Ok</span>(())
     }
 
+    <span class="doccomment">///   </span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">sys_channel_call_noretry</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">handle_value</span>: <span class="ident">HandleValue</span>,
@@ -567,7 +569,7 @@
             <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">BAD_STATE</span>)
         }
     }
-
+    <span class="doccomment">/// Write a message to a channel.  </span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_channel_write_etc</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">handle</span>: <span class="ident">HandleValue</span>,
