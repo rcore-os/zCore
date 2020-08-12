@@ -17,7 +17,7 @@ fn bench<F: FnMut()>(name: &str, n: u64, mut f: F) {
 }
 
 pub fn benchmark_futex_wake() {
-    bench("futex_wake", 200000, || {
+    bench("futex_wake", 500000, || {
         crate::futex::debug_wake_null();
     });
 }
@@ -80,16 +80,26 @@ pub fn benchmark_user_vm_fault() {
 }
 
 pub fn benchmark_yield() {
-    bench("yield", 500000, || {
+    bench("yield", 1000000, || {
         crate::thread::yield_now();
     });
 }
 
-pub fn run_benchmarks() {
-    benchmark_futex_wake();
-    benchmark_vmalloc();
-    benchmark_pmem_alloc();
-    benchmark_yield();
-    benchmark_kt_spawn();
-    benchmark_user_vm_fault();
+pub fn benchmark_timer_now() {
+    bench("timer_now", 50000, || {
+        crate::timer::now();
+    });
+}
+
+pub fn run_benchmarks(rounds: u64) {
+    for i in 0..rounds {
+        println!("Round {}/{}", i + 1, rounds);
+        benchmark_futex_wake();
+        benchmark_vmalloc();
+        benchmark_pmem_alloc();
+        benchmark_yield();
+        //benchmark_kt_spawn();
+        benchmark_user_vm_fault();
+        benchmark_timer_now();
+    }
 }
