@@ -1,5 +1,5 @@
 //! Linux file objects
-//#![deny(missing_docs)]
+#![deny(missing_docs)]
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
 
 use rcore_fs::vfs::*;
@@ -138,8 +138,9 @@ pub fn create_root_fs(rootfs: Arc<dyn FileSystem>) -> Arc<dyn INode> {
     root
 }
 
-/// ext
+/// extension for INode
 pub trait INodeExt {
+    /// similar to read, but return a u8 vector
     fn read_as_vec(&self) -> Result<Vec<u8>>;
 }
 
@@ -207,6 +208,9 @@ impl LinuxProcess {
         }
     }
 
+    /// Lookup INode from the process.
+    ///
+    /// see `lookup_inode_at`
     pub fn lookup_inode(&self, path: &str) -> LxResult<Arc<dyn INode>> {
         self.lookup_inode_at(FileDesc::CWD, path, true)
     }
@@ -223,4 +227,5 @@ pub fn split_path(path: &str) -> (&str, &str) {
     (dir_path, file_name)
 }
 
+/// the max depth for following a link
 const FOLLOW_MAX_DEPTH: usize = 1;

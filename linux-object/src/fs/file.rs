@@ -1,6 +1,6 @@
 //! File handle for process
 
-#![allow(dead_code)]
+#![allow(dead_code, missing_docs)]
 
 use alloc::{boxed::Box, string::String, sync::Arc};
 
@@ -11,27 +11,38 @@ use rcore_fs::vfs::{FsError, INode, Metadata, PollStatus};
 use spin::Mutex;
 use zircon_object::object::*;
 
+/// file implement struct
 pub struct File {
+    /// object base
     base: KObjectBase,
+    /// file INode
     inode: Arc<dyn INode>,
+    /// file open options
     options: OpenOptions,
+    /// file path
     pub path: String,
+    /// file inner mut data
     inner: Mutex<FileInner>,
 }
 
 impl_kobject!(File);
 
+/// file inner mut data struct
 #[derive(Default)]
 struct FileInner {
     offset: u64,
 }
 
+/// file open options struct
 #[derive(Debug)]
 pub struct OpenOptions {
+    /// open as readable
     pub read: bool,
+    /// open as writeable
     pub write: bool,
     /// Before each write, the file offset is positioned at the end of the file.
     pub append: bool,
+    /// non block open
     pub nonblock: bool,
 }
 
