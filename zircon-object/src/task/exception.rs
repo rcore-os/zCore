@@ -33,6 +33,7 @@ impl Exceptionate {
         })
     }
 
+    /// Shutdown the exceptionate.
     pub fn shutdown(&self) {
         let mut inner = self.inner.lock();
         inner.channel.take();
@@ -62,7 +63,7 @@ impl Exceptionate {
         Ok(receiver)
     }
 
-    pub fn has_channel(&self) -> bool {
+    pub(super) fn has_channel(&self) -> bool {
         let mut inner = self.inner.lock();
         if let Some(channel) = inner.channel.as_ref() {
             if channel.peer().is_ok() {
@@ -74,6 +75,7 @@ impl Exceptionate {
         false
     }
 
+    /// Send exception to the user-owned endpoint.
     pub fn send_exception(&self, exception: &Arc<Exception>) -> ZxResult<oneshot::Receiver<()>> {
         debug!(
             "Exception: {:?} ,try send to {:?}",
@@ -518,6 +520,7 @@ pub struct JobDebuggerIterator {
 }
 
 impl JobDebuggerIterator {
+    /// Create a new JobDebuggerIterator
     pub fn new(job: Arc<Job>) -> Self {
         JobDebuggerIterator { job: Some(job) }
     }
@@ -706,23 +709,5 @@ mod tests {
 
         // test for the order: proc debug -> thread -> job
         assert_eq!(handled_order.lock().clone(), vec![0, 1, 3]);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[async_std::test]
-    async fn exception() {
-        let root_job = Job::root();
-        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
-        let thread = Thread::create(&proc, "thread", 0).expect("failed to create thread");
-
-        let _exceptionate = proc.get_exceptionate();
-        let _debug_exceptionate = proc.get_debug_exceptionate();
-
-        let exception = Exception::create(thread.clone(), ExceptionType::General, None);
-        assert!(!exception.handle().await);
     }
 }

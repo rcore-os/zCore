@@ -293,6 +293,7 @@ impl Thread {
         }
     }
 
+    /// Exit the thread.
     pub fn exit(&self) {
         self.stop(false);
     }
@@ -503,10 +504,12 @@ impl Thread {
         self.inner.lock().exception = exception;
     }
 
+    /// Set this thread as the first thread of a process.
     pub fn set_first_thread(&self, first_thread: bool) {
         self.inner.lock().first_thread = first_thread;
     }
 
+    /// Get whether this thread is the first thread of a process.
     pub fn get_first_thread(&self) -> bool {
         self.inner.lock().first_thread
     }
