@@ -44,7 +44,7 @@ impl UserTask {
 
         // No failures allowed from here
         if unsafe {
-            sys::l4bridge_badge_endpoint_to_ts(
+            sys::l4bridge_badge_endpoint_to_user_thread_ts(
                 fault_channel.object(),
                 cspace.object(),
                 CPtr(1),

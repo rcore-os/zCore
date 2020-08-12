@@ -468,11 +468,12 @@ void l4bridge_delete_cap(seL4_CPtr slot) {
     }
 }
 
-int l4bridge_badge_endpoint_to_ts(seL4_CPtr src, seL4_CPtr dst_root, seL4_CPtr dst, seL4_Word dst_depth, seL4_Word badge) {
+int l4bridge_badge_endpoint_to_user_thread_ts(seL4_CPtr src, seL4_CPtr dst_root, seL4_CPtr dst, seL4_Word dst_depth, seL4_Word badge) {
     return seL4_CNode_Mint(
         dst_root, dst, dst_depth,
         CNODE_SLOT, src, seL4_WordBits,
-        seL4_AllRights, badge
+        seL4_CapRights_new(1, 0, 0, 1), // seL4_CanGrantReply | seL4_CanWrite
+        badge
     );
 }
 
