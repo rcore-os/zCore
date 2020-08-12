@@ -390,7 +390,6 @@
 <span id="390">390</span>
 <span id="391">391</span>
 <span id="392">392</span>
-<span id="393">393</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Zircon syscall implementations</span>
 
@@ -776,7 +775,6 @@
         <span class="kw">if</span> <span class="ident">ret</span> <span class="op">=</span><span class="op">=</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">STOP</span>) <span class="kw-2">&amp;</span><span class="op">&amp;</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">exit</span> {
             <span class="comment">// This is an error that only happens when the thread was killed during a blocking syscall</span>
             <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;{}|{}  KILLED WHEN BLOCKING&quot;</span>, <span class="ident">proc_name</span>, <span class="ident">thread_name</span>);
-            <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">exit</span>();
             <span class="self">self</span>.<span class="ident">exit</span> <span class="op">=</span> <span class="bool-val">true</span>
         }
         <span class="kw">match</span> <span class="ident">ret</span> {

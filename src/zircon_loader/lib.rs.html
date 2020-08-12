@@ -330,6 +330,35 @@
 <span id="330">330</span>
 <span id="331">331</span>
 <span id="332">332</span>
+<span id="333">333</span>
+<span id="334">334</span>
+<span id="335">335</span>
+<span id="336">336</span>
+<span id="337">337</span>
+<span id="338">338</span>
+<span id="339">339</span>
+<span id="340">340</span>
+<span id="341">341</span>
+<span id="342">342</span>
+<span id="343">343</span>
+<span id="344">344</span>
+<span id="345">345</span>
+<span id="346">346</span>
+<span id="347">347</span>
+<span id="348">348</span>
+<span id="349">349</span>
+<span id="350">350</span>
+<span id="351">351</span>
+<span id="352">352</span>
+<span id="353">353</span>
+<span id="354">354</span>
+<span id="355">355</span>
+<span id="356">356</span>
+<span id="357">357</span>
+<span id="358">358</span>
+<span id="359">359</span>
+<span id="360">360</span>
+<span id="361">361</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="attribute">#![<span class="ident">no_std</span>]</span>
 <span class="attribute">#![<span class="ident">feature</span>(<span class="ident">asm</span>)]</span>
@@ -509,7 +538,30 @@
     <span class="kw">let</span> <span class="ident">vmtoken</span> <span class="op">=</span> <span class="ident">thread</span>.<span class="ident">proc</span>().<span class="ident">vmar</span>().<span class="ident">table_phys</span>();
     <span class="kw">let</span> <span class="ident">future</span> <span class="op">=</span> <span class="kw">async</span> <span class="kw">move</span> {
         <span class="ident">kernel_hal</span>::<span class="ident">Thread</span>::<span class="ident">set_tid</span>(<span class="ident">thread</span>.<span class="ident">id</span>(), <span class="ident">thread</span>.<span class="ident">proc</span>().<span class="ident">id</span>());
-        <span class="kw">loop</span> {
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">exit</span> <span class="op">=</span> <span class="bool-val">false</span>;
+        <span class="kw">if</span> <span class="ident">thread</span>.<span class="ident">get_first_thread</span>() {
+            <span class="kw">let</span> <span class="ident">proc_start_exception</span> <span class="op">=</span>
+                <span class="ident">Exception</span>::<span class="ident">create</span>(<span class="ident">thread</span>.<span class="ident">clone</span>(), <span class="ident">ExceptionType</span>::<span class="ident">ProcessStarting</span>, <span class="prelude-val">None</span>);
+            <span class="kw">if</span> <span class="op">!</span><span class="ident">proc_start_exception</span>
+                .<span class="ident">handle_with_exceptionates</span>(
+                    <span class="bool-val">false</span>,
+                    <span class="ident">JobDebuggerIterator</span>::<span class="ident">new</span>(<span class="ident">thread</span>.<span class="ident">proc</span>().<span class="ident">job</span>()),
+                    <span class="bool-val">true</span>,
+                )
+                .<span class="kw">await</span>
+            {
+                <span class="ident">exit</span> <span class="op">=</span> <span class="bool-val">true</span>;
+            }
+        };
+        <span class="kw">let</span> <span class="ident">start_exception</span> <span class="op">=</span>
+            <span class="ident">Exception</span>::<span class="ident">create</span>(<span class="ident">thread</span>.<span class="ident">clone</span>(), <span class="ident">ExceptionType</span>::<span class="ident">ThreadStarting</span>, <span class="prelude-val">None</span>);
+        <span class="kw">if</span> <span class="op">!</span><span class="ident">start_exception</span>
+            .<span class="ident">handle_with_exceptionates</span>(<span class="bool-val">false</span>, <span class="prelude-val">Some</span>(<span class="ident">thread</span>.<span class="ident">proc</span>().<span class="ident">get_debug_exceptionate</span>()), <span class="bool-val">false</span>)
+            .<span class="kw">await</span>
+        {
+            <span class="ident">exit</span> <span class="op">=</span> <span class="bool-val">true</span>;
+        }
+        <span class="kw">while</span> <span class="op">!</span><span class="ident">exit</span> {
             <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">cx</span> <span class="op">=</span> <span class="ident">thread</span>.<span class="ident">wait_for_run</span>().<span class="kw">await</span>;
             <span class="kw">if</span> <span class="ident">thread</span>.<span class="ident">state</span>() <span class="op">=</span><span class="op">=</span> <span class="ident">ThreadState</span>::<span class="ident">Dying</span> {
                 <span class="macro">info</span><span class="macro">!</span>(
@@ -517,7 +569,6 @@
                     <span class="ident">thread</span>.<span class="ident">proc</span>().<span class="ident">name</span>(),
                     <span class="ident">thread</span>.<span class="ident">name</span>()
                 );
-                <span class="ident">thread</span>.<span class="ident">internal_exit</span>();
                 <span class="kw">break</span>;
             }
             <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;go to user: {:#x?}&quot;</span>, <span class="ident">cx</span>);
@@ -529,14 +580,10 @@
             <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;back from user: {:#x?}&quot;</span>, <span class="ident">cx</span>);
             <span class="ident">EXCEPTIONS_USER</span>.<span class="ident">add</span>(<span class="number">1</span>);
             <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;aarch64&quot;</span>)]</span>
-            <span class="kw">let</span> <span class="ident">exit</span>;
-            <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;aarch64&quot;</span>)]</span>
             <span class="kw">match</span> <span class="ident">cx</span>.<span class="ident">trap_num</span> {
                 <span class="number">0</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">exit</span> <span class="op">=</span> <span class="ident">handle_syscall</span>(<span class="kw-2">&amp;</span><span class="ident">thread</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">cx</span>.<span class="ident">general</span>).<span class="kw">await</span>,
                 <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="macro">unimplemented</span><span class="macro">!</span>(),
             }
-            <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>)]</span>
-            <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">exit</span> <span class="op">=</span> <span class="bool-val">false</span>;
             <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>)]</span>
             <span class="kw">match</span> <span class="ident">cx</span>.<span class="ident">trap_num</span> {
                 <span class="number">0x100</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">exit</span> <span class="op">=</span> <span class="ident">handle_syscall</span>(<span class="kw-2">&amp;</span><span class="ident">thread</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">cx</span>.<span class="ident">general</span>).<span class="kw">await</span>,
@@ -582,7 +629,7 @@
                                 <span class="ident">ExceptionType</span>::<span class="ident">FatalPageFault</span>,
                                 <span class="prelude-val">Some</span>(<span class="kw-2">&amp;</span><span class="ident">cx</span>),
                             );
-                            <span class="kw">if</span> <span class="op">!</span><span class="ident">exception</span>.<span class="ident">handle</span>().<span class="kw">await</span> {
+                            <span class="kw">if</span> <span class="op">!</span><span class="ident">exception</span>.<span class="ident">handle</span>(<span class="bool-val">true</span>).<span class="kw">await</span> {
                                 <span class="ident">exit</span> <span class="op">=</span> <span class="bool-val">true</span>;
                             }
                         }
@@ -601,7 +648,7 @@
                     };
                     <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;User mode exception:{:?} {:#x?}&quot;</span>, <span class="ident">type_</span>, <span class="ident">cx</span>);
                     <span class="kw">let</span> <span class="ident">exception</span> <span class="op">=</span> <span class="ident">Exception</span>::<span class="ident">create</span>(<span class="ident">thread</span>.<span class="ident">clone</span>(), <span class="ident">type_</span>, <span class="prelude-val">Some</span>(<span class="kw-2">&amp;</span><span class="ident">cx</span>));
-                    <span class="kw">if</span> <span class="op">!</span><span class="ident">exception</span>.<span class="ident">handle</span>().<span class="kw">await</span> {
+                    <span class="kw">if</span> <span class="op">!</span><span class="ident">exception</span>.<span class="ident">handle</span>(<span class="bool-val">true</span>).<span class="kw">await</span> {
                         <span class="ident">exit</span> <span class="op">=</span> <span class="bool-val">true</span>;
                     }
                 }
@@ -616,6 +663,17 @@
                 <span class="kw">break</span>;
             }
         }
+        <span class="kw">let</span> <span class="ident">end_exception</span> <span class="op">=</span> <span class="ident">Exception</span>::<span class="ident">create</span>(<span class="ident">thread</span>.<span class="ident">clone</span>(), <span class="ident">ExceptionType</span>::<span class="ident">ThreadExiting</span>, <span class="prelude-val">None</span>);
+        <span class="kw">let</span> <span class="ident">handled</span> <span class="op">=</span> <span class="ident">thread</span>
+            .<span class="ident">proc</span>()
+            .<span class="ident">get_debug_exceptionate</span>()
+            .<span class="ident">send_exception</span>(<span class="kw-2">&amp;</span><span class="ident">end_exception</span>);
+        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Ok</span>(<span class="ident">future</span>) <span class="op">=</span> <span class="ident">handled</span> {
+            <span class="ident">thread</span>.<span class="ident">dying_run</span>(<span class="ident">future</span>).<span class="kw">await</span>.<span class="ident">ok</span>();
+        } <span class="kw">else</span> {
+            <span class="ident">handled</span>.<span class="ident">ok</span>();
+        }
+        <span class="ident">thread</span>.<span class="ident">terminate</span>();
     };
     <span class="ident">kernel_hal</span>::<span class="ident">Thread</span>::<span class="ident">spawn</span>(<span class="ident">Box</span>::<span class="ident">pin</span>(<span class="ident">future</span>), <span class="ident">vmtoken</span>);
 }

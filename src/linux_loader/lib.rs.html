@@ -120,6 +120,7 @@
 <span id="120">120</span>
 <span id="121">121</span>
 <span id="122">122</span>
+<span id="123">123</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Linux LibOS</span>
 <span class="doccomment">//! - run process and manage trap/interrupt/syscall</span>
@@ -219,6 +220,7 @@
                 <span class="kw">break</span>;
             }
         }
+        <span class="ident">thread</span>.<span class="ident">terminate</span>();
     };
     <span class="ident">kernel_hal</span>::<span class="ident">Thread</span>::<span class="ident">spawn</span>(<span class="ident">Box</span>::<span class="ident">pin</span>(<span class="ident">future</span>), <span class="ident">vmtoken</span>);
 }

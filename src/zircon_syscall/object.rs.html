@@ -715,7 +715,7 @@
                 <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="ident">UserInPtr</span>::<span class="op">&lt;</span><span class="ident">u32</span><span class="op">&gt;</span>::<span class="ident">from_addr_size</span>(<span class="ident">buffer</span>, <span class="ident">buffer_size</span>)<span class="question-mark">?</span>.<span class="ident">read</span>()<span class="question-mark">?</span>;
                 <span class="ident">proc</span>.<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">ExceptionObject</span><span class="op">&gt;</span>(<span class="ident">handle_value</span>, <span class="ident">Rights</span>::<span class="ident">SET_PROPERTY</span>)<span class="question-mark">?</span>
                     .<span class="ident">get_exception</span>()
-                    .<span class="ident">set_state</span>(<span class="ident">state</span>);
+                    .<span class="ident">set_state</span>(<span class="ident">state</span>)<span class="question-mark">?</span>;
                 <span class="prelude-val">Ok</span>(())
             }
             <span class="ident">Property</span>::<span class="ident">ExceptionStrategy</span> <span class="op">=</span><span class="op">&gt;</span> {
