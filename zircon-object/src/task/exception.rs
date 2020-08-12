@@ -110,8 +110,8 @@ impl Exceptionate {
 
 #[repr(C)]
 struct ExceptionInfo {
-    tid: KoID,
     pid: KoID,
+    tid: KoID,
     type_: ExceptionType,
     padding: u32,
 }
