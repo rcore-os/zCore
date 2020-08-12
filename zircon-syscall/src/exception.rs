@@ -44,7 +44,10 @@ impl Syscall<'_> {
             return Err(ZxError::WRONG_TYPE);
         };
         let user_end = proc.add_handle(Handle::new(
-            exceptionate.create_channel()?,
+            exceptionate.create_channel(
+                rights & Rights::DEFAULT_THREAD,
+                rights & Rights::DEFAULT_PROCESS,
+            )?,
             Rights::TRANSFER | Rights::WAIT | Rights::READ,
         ));
         out.write(user_end)?;
@@ -56,6 +59,7 @@ impl Syscall<'_> {
         exception: HandleValue,
         mut out: UserOutPtr<HandleValue>,
     ) -> ZxResult {
+        info!("exception_get_thread: exception={:#x}", exception);
         let proc = self.thread.proc();
         let exception =
             proc.get_object_with_rights::<ExceptionObject>(exception, Rights::default())?;
@@ -70,9 +74,13 @@ impl Syscall<'_> {
         exception: HandleValue,
         mut out: UserOutPtr<HandleValue>,
     ) -> ZxResult {
+        info!("exception_get_process: exception={:#x}", exception);
         let proc = self.thread.proc();
         let exception =
             proc.get_object_with_rights::<ExceptionObject>(exception, Rights::default())?;
+        if exception.get_exception().get_current_channel_type() == ExceptionChannelType::Thread {
+            return Err(ZxError::ACCESS_DENIED);
+        }
         let (object, right) = exception.get_exception().get_process_and_rights();
         let handle = proc.add_handle(Handle::new(object, right));
         out.write(handle)?;
