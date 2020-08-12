@@ -212,7 +212,7 @@ fn spawn(thread: Arc<Thread>) {
             trace!("go to user: {:#x?}", cx);
             debug!("switch to {}|{}", thread.proc().name(), thread.name());
             let tmp_time = kernel_hal::timer_now().as_nanos();
-            
+
             // * Attention
             // The code will enter a magic zone from here.
             // ‘context run‘ will be executed into a wrapped library where context switching takes place.
@@ -221,7 +221,7 @@ fn spawn(thread: Arc<Thread>) {
             kernel_hal::context_run(&mut cx);
 
             // Back from the userspace
-            
+
             let time = kernel_hal::timer_now().as_nanos() - tmp_time;
             thread.time_add(time);
             trace!("back from user: {:#x?}", cx);
