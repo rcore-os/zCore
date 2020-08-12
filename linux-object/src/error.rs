@@ -6,6 +6,7 @@ use zircon_object::ZxError;
 pub type LxResult<T = ()> = Result<T, LxError>;
 pub type SysResult = LxResult<usize>;
 
+/// Linux error flag defination
 #[allow(dead_code)]
 #[repr(isize)]
 #[derive(Debug)]
