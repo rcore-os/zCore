@@ -52,7 +52,8 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    /// Create a handle for the exception's thread.    
+    /// Create a handle for the exception's thread.
+    ///    
     /// The exception handle out will be filled with a new handle to the exception thread.  
     pub fn sys_exception_get_thread(
         &self,
@@ -69,9 +70,10 @@ impl Syscall<'_> {
     }
 
     /// Create a handle for the exception's process.  
-    /// The exception handle out will be filled with a new handle to the exception process.   
-    /// > Only available for job and process exception channels,     
-    /// > thread exceptions cannot access their parent process handles.  
+    ///
+    /// The exception handle out will be filled with a new handle to the exception process.    
+    /// > Only available for job and process exception channels.      
+    /// > Thread exceptions cannot access their parent process handles.    
     pub fn sys_exception_get_process(
         &self,
         exception: HandleValue,

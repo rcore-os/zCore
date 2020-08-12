@@ -7,7 +7,7 @@ use {
 };
 
 impl Syscall<'_> {
-    /// Create a virtual memory object(VMO).
+    /// Create a new virtual memory object(VMO).  
     pub fn sys_vmo_create(
         &self,
         size: u64,
@@ -29,7 +29,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    /// Read bytes from the VMO.
+    /// Read bytes from a VMO.  
     pub fn sys_vmo_read(
         &self,
         handle_value: HandleValue,
@@ -54,7 +54,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    /// Write bytes to the VMO.
+    /// Write bytes to a VMO.  
     pub fn sys_vmo_write(
         &self,
         handle_value: HandleValue,
@@ -75,7 +75,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    /// Add execute rights to a VMO.
+    /// Add execute rights to a VMO.  
     pub fn sys_vmo_replace_as_executable(
         &self,
         handle: HandleValue,
@@ -102,7 +102,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    /// Read the current size of a VMO object.
+    /// Obtain the current size of a VMO object.  
     pub fn sys_vmo_get_size(&self, handle: HandleValue, mut size: UserOutPtr<usize>) -> ZxResult {
         info!("vmo.get_size: handle={:?}", handle);
         let proc = self.thread.proc();
@@ -111,7 +111,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    /// Create a new virtual memory object (VMO) a child of an existing vmo.
+    /// Create a child of an existing VMO (new virtual memory object).  
     pub fn sys_vmo_create_child(
         &self,
         handle_value: HandleValue,
@@ -175,7 +175,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    /// Create a VM object referring to a specific contiguous range of physical memory.
+    /// Create a VM object referring to a specific contiguous range of physical memory.  
     pub fn sys_vmo_create_physical(
         &self,
         resource: HandleValue,
@@ -204,7 +204,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    /// Create a VM object referring to a specific contiguous range of physical frame.
+    /// Create a VM object referring to a specific contiguous range of physical frame.  
     pub fn sys_vmo_create_contiguous(
         &self,
         bti: HandleValue,
@@ -236,7 +236,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    /// Resize a VMO object.
+    /// Resize a VMO object.  
     pub fn sys_vmo_set_size(&self, handle_value: HandleValue, size: usize) -> ZxResult {
         let proc = self.thread.proc();
         let vmo = proc.get_object_with_rights::<VmObject>(handle_value, Rights::WRITE)?;
@@ -249,7 +249,9 @@ impl Syscall<'_> {
         vmo.set_len(size)
     }
 
-    /// Perform an operation on a range of a VMO.performs cache and memory operations against pages held by the VMO.
+    /// Perform an operation on a range of a VMO.  
+    ///   
+    /// Performs cache and memory operations against pages held by the VMO.  
     pub fn sys_vmo_op_range(
         &self,
         handle_value: HandleValue,
@@ -296,7 +298,7 @@ impl Syscall<'_> {
         }
     }
 
-    /// Set the caching policy for pages held by a VMO.
+    /// Set the caching policy for pages held by a VMO.  
     pub fn sys_vmo_cache_policy(&self, handle_value: HandleValue, policy: u32) -> ZxResult {
         let proc = self.thread.proc();
         let vmo = proc.get_object_with_rights::<VmObject>(handle_value, Rights::MAP)?;

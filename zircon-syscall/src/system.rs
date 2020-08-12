@@ -6,8 +6,9 @@ use {
 
 impl Syscall<'_> {
     /// Retrieve a handle to a system event.  
-    /// root_job: HandleValue, must be a handle to the root job of the system.  
-    /// kind: u32, must be one of the following:  
+    ///
+    /// `root_job: HandleValue`, must be a handle to the root job of the system.  
+    /// `kind: u32`, must be one of the following:    
     /// ```rust
     ///     const EVENT_OUT_OF_MEMORY: u32 = 1;
     ///     const EVENT_MEMORY_PRESSURE_CRITICAL: u32 = 2;

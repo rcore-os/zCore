@@ -1,8 +1,9 @@
 use {super::*, bitflags::bitflags, zircon_object::vm::*};
 
 impl Syscall<'_> {
-    /// Create a stream from a VMO.   
-    /// For reads and writes the data in an underlying VMO.
+    /// Create a stream from a VMO.    
+    ///   
+    /// Stream for reads and writes the data in an underlying VMO.  
     pub fn sys_stream_create(
         &self,
         options: u32,
@@ -40,7 +41,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    /// Write data to a stream at the current seek offset.
+    /// Write data to a stream at the current seek offset.   
     pub fn sys_stream_writev(
         &self,
         handle_value: HandleValue,
@@ -71,7 +72,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    /// Write data to a stream at the given offset.
+    /// Write data to a stream at the given offset.   
     pub fn sys_stream_writev_at(
         &self,
         handle_value: HandleValue,
@@ -100,7 +101,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    /// Read data from a stream at the current seek offset.
+    /// Read data from a stream at the current seek offset.   
     pub fn sys_stream_readv(
         &self,
         handle_value: HandleValue,
@@ -127,7 +128,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    /// Read data from a stream at the given offset.
+    /// Read data from a stream at the given offset.   
     pub fn sys_stream_readv_at(
         &self,
         handle_value: HandleValue,
@@ -157,7 +158,8 @@ impl Syscall<'_> {
     }
 
     /// Modify the seek offset.  
-    /// Sets the seek offset of the stream to ```offset``` relative to ```whence```.
+    ///   
+    /// Sets the seek offset of the stream to `offset` relative to `whence`.  
     pub fn sys_stream_seek(
         &self,
         handle_value: HandleValue,

@@ -39,9 +39,10 @@ impl Syscall<'_> {
         Ok(())
     }
     /// Creates a new bus transaction initiator.  
-    /// iommu: HandleValue, a handle to an IOMMU   
-    /// options: u32, must be 0 (reserved for future definition of creation flags).  
-    /// bti_id: u64, a hardware transaction identifier for a device downstream of that IOMMU.  
+    ///
+    /// `iommu: HandleValue`, a handle to an IOMMU.   
+    /// `options: u32`, must be 0 (reserved for future definition of creation flags).  
+    /// `bti_id: u64`, a hardware transaction identifier for a device downstream of that IOMMU.  
     pub fn sys_bti_create(
         &self,
         iommu: HandleValue,
@@ -68,7 +69,7 @@ impl Syscall<'_> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    /// Pin pages and grant devices access to them.
+    /// Pin pages and grant devices access to them.  
     pub fn sys_bti_pin(
         &self,
         bti: HandleValue,
@@ -112,7 +113,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    /// Unpins pages that were previously pinned by ```zx_bti_pin()```
+    /// Unpins pages that were previously pinned by `zx_bti_pin()`.  
     pub fn sys_pmt_unpin(&self, pmt: HandleValue) -> ZxResult {
         info!("pmt.unpin: pmt={:#x}", pmt);
         let proc = self.thread.proc();
@@ -121,7 +122,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    /// ReleaseRs all quarantined PMTs for the given BTI.
+    /// Releases all quarantined PMTs for the given BTI.
     pub fn sys_bti_release_quarantine(&self, bti: HandleValue) -> ZxResult {
         info!("bti.release_quarantine: bti = {:#x}", bti);
         let proc = self.thread.proc();
@@ -130,6 +131,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
+    ///   
     pub fn sys_pc_firmware_tables(
         &self,
         resource: HandleValue,
@@ -176,7 +178,8 @@ impl Syscall<'_> {
     }
 
     /// Binds or unbinds an interrupt object to a port.   
-    /// The key used when binding the interrupt will be present in the key field of the ```zx_port_packet_t.```
+    ///
+    /// The key used when binding the interrupt will be present in the key field of the `zx_port_packet_t`.
     pub fn sys_interrupt_bind(
         &self,
         interrupt: HandleValue,
@@ -203,7 +206,7 @@ impl Syscall<'_> {
         }
     }
 
-    /// Triggers a virtual interrupt object.
+    /// Triggers a virtual interrupt object.  
     pub fn sys_interrupt_trigger(
         &self,
         interrupt: HandleValue,
@@ -222,7 +225,8 @@ impl Syscall<'_> {
     }
 
     /// Acknowledge an interrupt and re-arm it.  
-    /// causing it to be eligible to trigger again (and delivering a packet to the port it is bound to).
+    ///
+    /// This system call acknowledges an interrupt object, causing it to be eligible to trigger again (and delivering a packet to the port it is bound to).
     pub fn sys_interrupt_ack(&self, interrupt: HandleValue) -> ZxResult {
         info!("interupt.ack: interrupt={:?}", interrupt);
         let interrupt = self
@@ -232,14 +236,14 @@ impl Syscall<'_> {
         interrupt.ack()
     }
 
-    /// Destroys an interrupt object.
+    /// Destroys an interrupt object.  
     pub fn sys_interrupt_destroy(&self, interrupt: HandleValue) -> ZxResult {
         info!("interupt.destory: interrupt={:?}", interrupt);
         let interrupt = self.thread.proc().get_object::<Interrupt>(interrupt)?;
         interrupt.destroy()
     }
 
-    /// A blocking syscall which causes the caller to wait until an interrupt is triggered.
+    /// A blocking syscall which causes the caller to wait until an interrupt is triggered.  
     pub async fn sys_interrupt_wait(
         &self,
         interrupt: HandleValue,

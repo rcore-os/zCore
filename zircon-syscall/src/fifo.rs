@@ -1,7 +1,7 @@
 use {super::*, zircon_object::ipc::Fifo};
 
 impl Syscall<'_> {
-    /// Creates a fifo, which is actually a pair of fifos of ```elem_count``` entries of ```elem_size``` bytes.
+    /// Creates a fifo, which is actually a pair of fifos of `elem_count` entries of `elem_size` bytes.
     pub fn sys_fifo_create(
         &self,
         elem_count: usize,

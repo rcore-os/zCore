@@ -1,8 +1,9 @@
 use {super::*, zircon_object::ipc::Socket, zircon_object::ipc::SocketFlags};
 
 impl Syscall<'_> {
-    /// Create a socket.  
-    /// Socket, a connected pair of bidirectional stream transports, that can move only data, and that have a maximum capacity.
+    /// Create a socket.   
+    ///   
+    /// Socket is a connected pair of bidirectional stream transports, that can move only data, and that have a maximum capacity.
     pub fn sys_socket_create(
         &self,
         options: u32,
@@ -20,7 +21,8 @@ impl Syscall<'_> {
     }
 
     /// Write data to a socket.  
-    /// Attempts to write ```count: usize``` bytes to the socket specified by ```handle_value```.
+    ///  
+    /// Attempts to write `count: usize` bytes to the socket specified by `handle_value`.  
     pub fn sys_socket_write(
         &self,
         handle_value: HandleValue,
@@ -48,7 +50,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    /// Read data from a socket.
+    /// Read data from a socket.  
     pub fn sys_socket_read(
         &self,
         handle_value: HandleValue,
@@ -77,7 +79,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    /// Prevent future reading or writing on a socket
+    /// Prevent future reading or writing on a socket.   
     pub fn sys_socket_shutdown(&self, socket: HandleValue, options: u32) -> ZxResult {
         let options = SocketFlags::from_bits_truncate(options);
         info!(

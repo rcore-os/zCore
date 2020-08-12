@@ -4,7 +4,7 @@ use {
 };
 
 impl Syscall<'_> {
-    /// Create a kernel managed debuglog reader or writer;
+    /// Create a kernel managed debuglog reader or writer.    
     pub fn sys_debuglog_create(
         &self,
         rsrc: HandleValue,
@@ -32,7 +32,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    /// Write log to debuglog Kernel
+    /// Write log entry to debuglog.   
     pub fn sys_debuglog_write(
         &self,
         handle_value: HandleValue,
@@ -62,7 +62,7 @@ impl Syscall<'_> {
     }
 
     #[allow(unsafe_code)]
-    /// Read log to debuglog Kernel
+    /// Read log entries from debuglog.  
     pub fn sys_debuglog_read(
         &self,
         handle_value: HandleValue,
