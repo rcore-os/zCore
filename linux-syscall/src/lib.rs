@@ -148,8 +148,8 @@ impl Syscall<'_> {
             //            Sys::KILL => self.sys_kill(a0, a1),
 
             // schedule
-            //            Sys::SCHED_YIELD => self.sys_yield(),
-            //            Sys::SCHED_GETAFFINITY => self.sys_sched_getaffinity(a0, a1, a2.into()),
+            Sys::SCHED_YIELD => self.unimplemented("yield", Ok(0)),
+            Sys::SCHED_GETAFFINITY => self.unimplemented("sched_getaffinity", Ok(0)),
 
             // socket
             //            Sys::SOCKET => self.sys_socket(a0, a1, a2),
