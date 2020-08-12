@@ -465,6 +465,15 @@ void l4bridge_delete_cap_ts(seL4_CPtr slot) {
     }
 }
 
+int l4bridge_mint_cap_ts(seL4_CPtr src, seL4_CPtr dst, seL4_Word badge) {
+    return seL4_CNode_Mint(
+        CNODE_SLOT, dst, seL4_WordBits,
+        CNODE_SLOT, src, seL4_WordBits,
+        seL4_AllRights,
+        badge
+    );
+}
+
 int l4bridge_badge_endpoint_to_user_thread_ts(seL4_CPtr src, seL4_CPtr dst_root, seL4_CPtr dst, seL4_Word dst_depth, seL4_Word badge) {
     return seL4_CNode_Mint(
         dst_root, dst, dst_depth,

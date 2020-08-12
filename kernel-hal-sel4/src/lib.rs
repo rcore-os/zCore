@@ -25,6 +25,7 @@ mod zc;
 mod futex;
 mod user;
 mod asid;
+mod hal;
 
 use alloc::boxed::Box;
 
@@ -74,7 +75,7 @@ pub unsafe fn boot() -> ! {
     }
     println!("Testing ok.");
 */
-/*
+
     kt::spawn(move || {
         use core::sync::atomic::{AtomicUsize, Ordering};
         static COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -87,7 +88,7 @@ pub unsafe fn boot() -> ! {
             thread::yield_now();
         }
     }).expect("spawn failed");
-*/
+
     kt::spawn(|| {
         zc::zcore_main();
     }).expect("cannot spawn zcore_main");

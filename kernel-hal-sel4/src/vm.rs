@@ -8,7 +8,6 @@ use crate::sys;
 use lazy_static::lazy_static;
 use crate::futex::FMutex;
 use crate::cap;
-use alloc::sync::Arc;
 
 lazy_static! {
     pub static ref K: FMutex<VmAlloc> = FMutex::new(
@@ -19,7 +18,7 @@ lazy_static! {
 pub struct VmAlloc {
     vspace: CPtr,
     paging_structures: LinkedList<PagingStructure>,
-    pages: BTreeMap<usize, Arc<Page>>,
+    pages: BTreeMap<usize, Page>,
     vm_regions: BTreeMap<usize, VmRegion>,
 }
 
@@ -116,19 +115,25 @@ impl VmAlloc {
         panic!("VmAlloc::release_region: cannot find region");
     }
 
-    pub fn page_at(&self, vaddr: usize) -> Option<&Arc<Page>> {
+    pub fn page_at(&self, vaddr: usize) -> Option<&Page> {
         let vaddr = vaddr & (!((1 << Page::bits()) - 1));
         self.pages.get(&vaddr)
     }
 
-    pub fn insert_page(&mut self, addr: usize, page: Arc<Page>) -> KernelResult<()> {
+    pub fn insert_page(&mut self, addr: usize, page: Page) -> KernelResult<()> {
         Page::check_address_aligned(addr)?;
         if self.pages.contains_key(&addr) {
             return Err(KernelError::VmRegionOverlap);
         }
-        self.map_page(&*page, addr)?;
+        self.map_page(&page, addr)?;
         self.pages.insert(addr, page);
         Ok(())
+    }
+
+    /// This function doesn't return the removed page because we unmap the page
+    /// by dropping it.
+    pub fn remove_page(&mut self, vaddr: usize) -> bool {
+        return self.pages.remove(&vaddr).is_some();
     }
 
     pub fn allocate_region(&mut self, range: Range<usize>) -> KernelResult<()> {
@@ -151,7 +156,7 @@ impl VmAlloc {
             pages.push_back((addr, page));
         }
         for (addr, page) in pages {
-            self.pages.insert(addr, Arc::new(page));
+            self.pages.insert(addr, page);
         }
 
         self.vm_regions.insert(range.start, VmRegion {
@@ -161,12 +166,6 @@ impl VmAlloc {
             executable: true,
         });
         Ok(())
-    }
-}
-
-impl Drop for VmAlloc {
-    fn drop(&mut self) {
-        unimplemented!()
     }
 }
 

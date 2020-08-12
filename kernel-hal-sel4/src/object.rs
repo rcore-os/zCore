@@ -4,9 +4,21 @@ use crate::sys;
 use crate::pmem::{PMEM, PhysicalRegion};
 use core::marker::PhantomData;
 use crate::cap;
+use alloc::sync::Arc;
+use core::ops::Deref;
+
+struct ObjectStorage(PhysicalRegion);
+
+impl Drop for ObjectStorage {
+    fn drop(&mut self) {
+        unsafe {
+            PMEM.release_region(self.0);
+        }
+    }
+}
 
 pub struct Object<T: ObjectBacking> {
-    region: PhysicalRegion,
+    region: Arc<ObjectStorage>,
     object: CPtr,
     _phantom: PhantomData<T>,
 }
@@ -33,7 +45,11 @@ impl<T: ObjectBacking> Object<T> {
         } {
             panic!("Object::new: retype failed: {:?}", e);
         }
-        Ok(Object { region, object, _phantom: PhantomData })
+        Ok(Object {
+            region: Arc::new(ObjectStorage(region)),
+            object,
+            _phantom: PhantomData,
+        })
     }
 
     pub fn bits() -> u8 {
@@ -41,11 +57,25 @@ impl<T: ObjectBacking> Object<T> {
     }
     
     pub fn region(&self) -> &PhysicalRegion {
-        &self.region
+        &self.region.0
     }
 
     pub fn object(&self) -> CPtr {
         self.object
+    }
+
+    pub fn try_clone(&self) -> KernelResult<Self> {
+        let cap = cap::G.allocate()?;
+        if unsafe {
+            sys::l4bridge_mint_cap_ts(self.object, cap, 0)
+        } != 0 {
+            panic!("Object::try_clone: cannot mint cap");
+        }
+        Ok(Self {
+            region: self.region.clone(),
+            object: cap,
+            _phantom: PhantomData,
+        })
     }
 }
 
@@ -54,7 +84,6 @@ impl<T: ObjectBacking> Drop for Object<T> {
         unsafe {
             sys::l4bridge_delete_cap_ts(self.object);
             cap::G.release(self.object);
-            PMEM.release_region(self.region);
         }
     }
 }

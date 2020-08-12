@@ -91,7 +91,7 @@ extern "C" {
         ipc_buffer: Word,
     );
     pub fn l4bridge_badge_endpoint_to_user_thread_ts(src: CPtr, dst_root: CPtr, dst: CPtr, dst_depth: Word, badge: Word) -> i32;
-
+    pub fn l4bridge_mint_cap_ts(src: CPtr, dst: CPtr, badge: Word) -> i32;
     pub fn l4bridge_kipc_call(slot: CPtr, data: Word, result: &mut Word) -> i32;
     pub fn l4bridge_kipc_recv(slot: CPtr, data: &mut Word, sender_badge: &mut Word) -> i32;
     pub fn l4bridge_kipc_reply(result: Word);

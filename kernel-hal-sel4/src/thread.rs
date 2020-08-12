@@ -4,7 +4,7 @@ use crate::cap;
 use crate::types::*;
 use crate::error::*;
 use crate::object::*;
-use crate::user::UserProcess;
+use crate::user::UserThread;
 use core::cell::RefCell;
 use alloc::boxed::Box;
 
@@ -74,7 +74,7 @@ impl Tcb {
 
 #[repr(C)]
 pub struct LocalContext {
-    pub user_task: RefCell<Option<UserProcess>>,
+    pub user_thread: RefCell<Option<Box<UserThread>>>,
 }
 
 impl LocalContext {
@@ -92,7 +92,7 @@ impl LocalContext {
             panic!("LocalContext::init_current: non-empty local context");
         }
         let lc = Box::new(LocalContext {
-            user_task: RefCell::new(None),
+            user_thread: RefCell::new(None),
         });
         *p = Some(&*Box::into_raw(lc));
     }

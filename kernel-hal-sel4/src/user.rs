@@ -9,6 +9,8 @@ use core::mem::{self, ManuallyDrop};
 use trapframe::{TrapFrame, UserContext, GeneralRegs};
 use alloc::sync::Arc;
 use alloc::boxed::Box;
+use crate::futex::FMutex;
+use crate::vm::{self, VmAlloc};
 
 const USER_CSPACE_NUM_ENTRIES_BITS: u8 = 1; // 2 entries
 
@@ -26,6 +28,7 @@ pub enum KernelEntryReason {
 /// The context of a user process.
 pub struct UserProcess {
     vspace: UserVspace,
+    vm: FMutex<VmAlloc>,
     fault_channel: UserFaultChannel,
 }
 
@@ -44,11 +47,15 @@ impl UserProcess {
 
         let vspace = UserVspace::new()?;
         let fault_channel = UserFaultChannel::new()?;
+        let vm = FMutex::new(unsafe {
+            VmAlloc::with_vspace(vspace.object())
+        });
 
         asid::assign(vspace.object())?;
 
         Ok(Arc::new(UserProcess {
             vspace,
+            vm,
             fault_channel,
         }))
     }
