@@ -359,6 +359,15 @@
 <span id="359">359</span>
 <span id="360">360</span>
 <span id="361">361</span>
+<span id="362">362</span>
+<span id="363">363</span>
+<span id="364">364</span>
+<span id="365">365</span>
+<span id="366">366</span>
+<span id="367">367</span>
+<span id="368">368</span>
+<span id="369">369</span>
+<span id="370">370</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="attribute">#![<span class="ident">no_std</span>]</span>
 <span class="attribute">#![<span class="ident">feature</span>(<span class="ident">asm</span>)]</span>
@@ -574,7 +583,16 @@
             <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;go to user: {:#x?}&quot;</span>, <span class="ident">cx</span>);
             <span class="macro">debug</span><span class="macro">!</span>(<span class="string">&quot;switch to {}|{}&quot;</span>, <span class="ident">thread</span>.<span class="ident">proc</span>().<span class="ident">name</span>(), <span class="ident">thread</span>.<span class="ident">name</span>());
             <span class="kw">let</span> <span class="ident">tmp_time</span> <span class="op">=</span> <span class="ident">kernel_hal</span>::<span class="ident">timer_now</span>().<span class="ident">as_nanos</span>();
+
+            <span class="comment">// * Attention</span>
+            <span class="comment">// The code will enter a magic zone from here.</span>
+            <span class="comment">// ‘context run‘ will be executed into a wrapped library where context switching takes place.</span>
+            <span class="comment">// The details are available in the trapframe crate on crates.io.</span>
+
             <span class="ident">kernel_hal</span>::<span class="ident">context_run</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">cx</span>);
+
+            <span class="comment">// Back from the userspace</span>
+
             <span class="kw">let</span> <span class="ident">time</span> <span class="op">=</span> <span class="ident">kernel_hal</span>::<span class="ident">timer_now</span>().<span class="ident">as_nanos</span>() <span class="op">-</span> <span class="ident">tmp_time</span>;
             <span class="ident">thread</span>.<span class="ident">time_add</span>(<span class="ident">time</span>);
             <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;back from user: {:#x?}&quot;</span>, <span class="ident">cx</span>);
