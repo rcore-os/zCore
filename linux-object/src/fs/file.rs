@@ -11,38 +11,54 @@ use rcore_fs::vfs::{FsError, INode, Metadata, PollStatus};
 use spin::Mutex;
 use zircon_object::object::*;
 
+/// file implement struct
 pub struct File {
+    /// object base
     base: KObjectBase,
+    /// file INode
     inode: Arc<dyn INode>,
+    /// file open options
     options: OpenOptions,
+    /// file path
     pub path: String,
+    /// file inner mut data
     inner: Mutex<FileInner>,
 }
 
 impl_kobject!(File);
 
+/// file inner mut data struct
 #[derive(Default)]
 struct FileInner {
     offset: u64,
 }
 
+/// file open options struct
 #[derive(Debug)]
 pub struct OpenOptions {
+    /// open as readable
     pub read: bool,
+    /// open as writeable
     pub write: bool,
     /// Before each write, the file offset is positioned at the end of the file.
     pub append: bool,
+    /// non block open
     pub nonblock: bool,
 }
 
+/// file seek type
 #[derive(Debug)]
 pub enum SeekFrom {
+    /// seek from start point
     Start(u64),
+    /// seek from end
     End(i64),
+    /// seek from current
     Current(i64),
 }
 
 impl File {
+    /// create a file struct
     pub fn new(inode: Arc<dyn INode>, options: OpenOptions, path: String) -> Arc<Self> {
         Arc::new(File {
             base: KObjectBase::new(),
@@ -53,6 +69,7 @@ impl File {
         })
     }
 
+    /// read from file
     pub fn read(&self, buf: &mut [u8]) -> LxResult<usize> {
         let mut inner = self.inner.lock();
         let len = self.read_at(inner.offset, buf)?;
@@ -60,6 +77,7 @@ impl File {
         Ok(len)
     }
 
+    /// read from file at given offset
     pub fn read_at(&self, offset: u64, buf: &mut [u8]) -> LxResult<usize> {
         if !self.options.read {
             return Err(LxError::EBADF);
@@ -82,6 +100,7 @@ impl File {
         Ok(len)
     }
 
+    /// write to file
     pub fn write(&self, buf: &[u8]) -> LxResult<usize> {
         let mut inner = self.inner.lock();
         let offset = if self.options.append {
@@ -94,6 +113,7 @@ impl File {
         Ok(len)
     }
 
+    /// write to file at given offset
     pub fn write_at(&self, offset: u64, buf: &[u8]) -> LxResult<usize> {
         if !self.options.write {
             return Err(LxError::EBADF);
@@ -102,6 +122,7 @@ impl File {
         Ok(len)
     }
 
+    /// seek from given type and offset
     pub fn seek(&self, pos: SeekFrom) -> LxResult<u64> {
         let mut inner = self.inner.lock();
         inner.offset = match pos {
@@ -112,6 +133,7 @@ impl File {
         Ok(inner.offset)
     }
 
+    /// resize the file
     pub fn set_len(&self, len: u64) -> LxResult {
         if !self.options.write {
             return Err(LxError::EBADF);
@@ -120,26 +142,31 @@ impl File {
         Ok(())
     }
 
+    /// Sync all data and metadata
     pub fn sync_all(&self) -> LxResult {
         self.inode.sync_all()?;
         Ok(())
     }
 
+    /// Sync data (not include metadata)
     pub fn sync_data(&self) -> LxResult {
         self.inode.sync_data()?;
         Ok(())
     }
 
+    /// get metadata of file
     pub fn metadata(&self) -> LxResult<Metadata> {
         let metadata = self.inode.metadata()?;
         Ok(metadata)
     }
 
+    /// lookup the file following the link
     pub fn lookup_follow(&self, path: &str, max_follow: usize) -> LxResult<Arc<dyn INode>> {
         let inode = self.inode.lookup_follow(path, max_follow)?;
         Ok(inode)
     }
 
+    /// get the name of dir entry
     pub fn read_entry(&self) -> LxResult<String> {
         if !self.options.read {
             return Err(LxError::EBADF);
@@ -150,24 +177,30 @@ impl File {
         Ok(name)
     }
 
+    /// wait for some event on a file
     pub fn poll(&self) -> LxResult<PollStatus> {
         let status = self.inode.poll()?;
         Ok(status)
     }
 
+    /// wait for some event on a file using async
     pub async fn async_poll(&self) -> LxResult<PollStatus> {
         Ok(self.inode.async_poll().await?)
     }
 
+    /// manipulates the underlying device parameters of special files
     pub fn io_control(&self, cmd: u32, arg: usize) -> LxResult<usize> {
         self.inode.io_control(cmd, arg)?;
         Ok(0)
     }
 
+    /// get INode of this file
     pub fn inode(&self) -> Arc<dyn INode> {
         self.inode.clone()
     }
 
+    /// manipulate file descriptor
+    /// unimplemented
     pub fn fcntl(&self, cmd: usize, arg: usize) -> LxResult<usize> {
         if arg & 0x800 > 0 && cmd == 4 {
             unimplemented!()

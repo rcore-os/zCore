@@ -6,10 +6,12 @@ use core::any::Any;
 use rcore_fs::vfs::*;
 use spin::Mutex;
 
+/// random INode data struct
 pub struct RandomINodeData {
     seed: u32,
 }
 
+/// random INode struct
 #[derive(Clone)]
 pub struct RandomINode {
     data: Arc<Mutex<RandomINodeData>>,
@@ -17,8 +19,9 @@ pub struct RandomINode {
 }
 
 impl RandomINode {
-    // urandom -> secure=true
-    // random -> secure=false
+    /// create a random INode
+    /// - urandom -> secure = true
+    /// - random -> secure = false
     pub fn new(secure: bool) -> RandomINode {
         RandomINode {
             secure,

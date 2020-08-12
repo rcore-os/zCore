@@ -8,6 +8,7 @@ use bitflags::bitflags;
 const F_LINUX_SPECIFIC_BASE: usize = 1024;
 
 bitflags! {
+    /// fcntl flags
     pub struct FcntlFlags: usize {
         /// dup
         const F_DUPFD = 0;
@@ -33,6 +34,7 @@ bitflags! {
 }
 
 bitflags! {
+    /// file operate flags
     pub struct FileFlags: usize {
         /// not blocking
         const O_NONBLOCK = 0o4000;

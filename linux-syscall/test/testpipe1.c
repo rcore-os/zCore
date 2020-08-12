@@ -17,6 +17,21 @@ int main()
     int receivep = 0;
     char w[12];
     char r[12];
+    
+    if (pipe(pipefd) == -1)
+    {
+        printf("pipe");
+        exit(-1);
+    }
+    write(pipefd[1], "test", strlen("test"));
+    close(pipefd[1]);
+    while (read(pipefd[0], &buf, 1) > 0)
+        received[receivep++] = buf;
+    received[receivep] = 0;
+    receivep = 0;
+    assert(strcmp(received, "test") == 0);
+    close(pipefd[0]);
+
     if (pipe(pipefd) == -1)
     {
         printf("pipe");

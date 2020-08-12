@@ -147,13 +147,13 @@ impl Syscall<'_> {
         argv: UserInPtr<UserInPtr<u8>>,
         envp: UserInPtr<UserInPtr<u8>>,
     ) -> SysResult {
-        info!(
-            "execve: path: {:?}, argv: {:?}, envp: {:?}",
-            path, argv, envp
-        );
         let path = path.read_cstring()?;
         let args = argv.read_cstring_array()?;
         let envs = envp.read_cstring_array()?;
+        info!(
+            "execve: path: {:?}, argv: {:?}, envs: {:?}",
+            path, argv, envs
+        );
         if args.is_empty() {
             error!("execve: args is null");
             return Err(LxError::EINVAL);

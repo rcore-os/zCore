@@ -1,3 +1,6 @@
+//! Linux ELF Program Loader
+#![deny(missing_docs)]
+
 use {
     crate::error::LxResult,
     crate::fs::INodeExt,
@@ -11,12 +14,16 @@ mod abi;
 
 /// Linux ELF Program Loader.
 pub struct LinuxElfLoader {
+    /// syscall entry
     pub syscall_entry: usize,
+    /// stack page number
     pub stack_pages: usize,
+    /// root inode of LinuxElfLoader
     pub root_inode: Arc<dyn INode>,
 }
 
 impl LinuxElfLoader {
+    /// load a Linux ElfFile and return a tuple of (entry,sp)
     pub fn load(
         &self,
         vmar: &Arc<VmAddressRegion>,

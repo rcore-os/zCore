@@ -5,12 +5,14 @@ use core::any::Any;
 
 use rcore_fs::vfs::*;
 
+/// Pseudo INode struct
 pub struct Pseudo {
     content: Vec<u8>,
     type_: FileType,
 }
 
 impl Pseudo {
+    /// create a Pseudo INode
     pub fn new(s: &str, type_: FileType) -> Self {
         Pseudo {
             content: Vec::from(s.as_bytes()),

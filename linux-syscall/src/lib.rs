@@ -92,7 +92,7 @@ impl Syscall<'_> {
             Sys::WRITEV => self.sys_writev(a0.into(), a1.into(), a2),
             Sys::SENDFILE => self.sys_sendfile(a0.into(), a1.into(), a2.into(), a3),
             Sys::FCNTL => self.sys_fcntl(a0.into(), a1, a2),
-            Sys::FLOCK => self.unimplemented("flock", Ok(0)),
+            Sys::FLOCK => self.sys_flock(a0.into(), a1),
             Sys::FSYNC => self.sys_fsync(a0.into()),
             Sys::FDATASYNC => self.sys_fdatasync(a0.into()),
             Sys::TRUNCATE => self.sys_truncate(a0.into(), a1),
@@ -148,8 +148,8 @@ impl Syscall<'_> {
             //            Sys::KILL => self.sys_kill(a0, a1),
 
             // schedule
-            //            Sys::SCHED_YIELD => self.sys_yield(),
-            //            Sys::SCHED_GETAFFINITY => self.sys_sched_getaffinity(a0, a1, a2.into()),
+            Sys::SCHED_YIELD => self.unimplemented("yield", Ok(0)),
+            Sys::SCHED_GETAFFINITY => self.unimplemented("sched_getaffinity", Ok(0)),
 
             // socket
             //            Sys::SOCKET => self.sys_socket(a0, a1, a2),
@@ -200,7 +200,7 @@ impl Syscall<'_> {
             //            Sys::GETRLIMIT => self.sys_getrlimit(),
             //            Sys::SETRLIMIT => self.sys_setrlimit(),
             Sys::GETRUSAGE => self.sys_getrusage(a0, a1.into()),
-            //            Sys::SYSINFO => self.sys_sysinfo(a0.into()),
+            Sys::SYSINFO => self.sys_sysinfo(a0.into()),
             Sys::TIMES => self.sys_times(a0.into()),
             Sys::GETUID => self.unimplemented("getuid", Ok(0)),
             Sys::GETGID => self.unimplemented("getgid", Ok(0)),

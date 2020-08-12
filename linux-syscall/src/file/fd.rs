@@ -111,6 +111,25 @@ impl Syscall<'_> {
 
         Ok(0)
     }
+
+    /// apply or remove an advisory lock on an open file
+    /// TODO: handle operation
+    pub fn sys_flock(&mut self, fd: FileDesc, operation: usize) -> SysResult {
+        bitflags! {
+            struct Operation: u8 {
+                const LOCK_SH = 1;
+                const LOCK_EX = 2;
+                const LOCK_NB = 4;
+                const LOCK_UN = 8;
+            }
+        }
+        let operation = Operation::from_bits(operation as u8).unwrap();
+        info!("flock: fd: {:?}, operation: {:?}", fd, operation);
+        let proc = self.linux_process();
+
+        proc.get_file(fd)?;
+        Ok(0)
+    }
 }
 
 bitflags! {
