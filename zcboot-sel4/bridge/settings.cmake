@@ -14,10 +14,9 @@ list(
         ${project_dir}/zCore/zcboot-sel4/bridge/
 )
 
-include(application_settings)
-
 include(${project_dir}/seL4/configs/X64_verified.cmake)
 
-# We will attempt to generate a simulation script, so try and generate a simulation
-# compatible configuration
-ApplyCommonSimulationSettings(${KernelArch})
+set(KernelVerificationBuild OFF CACHE BOOL "" FORCE)
+set(KernelPrinting ON CACHE BOOL "" FORCE)
+
+set(KernelMaxNumBootinfoUntypedCaps 230 CACHE STRING "" FORCE)

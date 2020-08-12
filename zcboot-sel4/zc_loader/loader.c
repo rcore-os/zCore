@@ -89,11 +89,19 @@ void fmt_word(char out[18], seL4_Word w) {
     out[17] = 0;
 }
 
+static void set_tls_base(seL4_Word x) {
+#ifdef CONFIG_SET_TLS_BASE_SELF
+    seL4_SetTLSBase(x);
+#else
+    asm volatile("wrfsbase %0" :: "r"(x));
+#endif
+}
+
 void init_master_tls() {
     // reference: https://wiki.osdev.org/Thread_Local_Storage
     seL4_Word thread_area = (seL4_Word) TLS + TLS_SIZE - 0x1000;
     * (seL4_Word *) thread_area = thread_area;
-    seL4_SetTLSBase(thread_area);
+    set_tls_base(thread_area);
 }
 
 void write_string_buf(char *dst, const char *src, int dst_size) {
@@ -114,7 +122,7 @@ void l4bridge_setup_tls(seL4_Word tls_addr, seL4_Word tls_size, seL4_Word ipc_bu
     // reference: https://wiki.osdev.org/Thread_Local_Storage
     seL4_Word thread_area = (seL4_Word) tls_addr + tls_size - 0x1000;
     * (seL4_Word *) thread_area = thread_area;
-    seL4_SetTLSBase(thread_area);
+    set_tls_base(thread_area);
     seL4_SetIPCBuffer((seL4_IPCBuffer *) ipc_buffer);
 }
 

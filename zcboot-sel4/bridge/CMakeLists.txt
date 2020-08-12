@@ -10,13 +10,9 @@
 # @TAG(DATA61_BSD)
 #
 
-set(BOARD "pc")
-set(ARCH "x86_64")
-
 include(${CMAKE_CURRENT_LIST_DIR}/settings.cmake)
 
 cmake_minimum_required(VERSION 3.7.2)
-# declare the dynamic-4 CMake project and the languages it is written in
 project(bridge C ASM)
 
 find_package(seL4 REQUIRED)
