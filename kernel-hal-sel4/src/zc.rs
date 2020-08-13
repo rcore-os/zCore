@@ -6,7 +6,7 @@ use crate::kt;
 use trapframe::UserContext;
 
 pub fn zcore_main() -> ! {
-    println!("Initializing zCore services.");
+    println!("Starting zCore services.");
     crate::benchmark::run_benchmarks(1);
     //force_stack_overflow();
     kt::spawn(first_user_thread).expect("cannot spawn user thread");

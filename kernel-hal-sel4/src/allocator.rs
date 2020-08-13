@@ -15,7 +15,6 @@ pub fn init() {
         HEAP_TOP = heap_start();
         assert!(HEAP_TOP % PAGE_SIZE == 0);
     }
-    println!("sel4/allocator: Initialized.");
 }
 
 pub fn heap_start() -> usize {

@@ -121,5 +121,4 @@ impl CapAlloc {
 
 pub fn init() {
     G.refill_critical_buffer().expect("cap::init: cannot refill critical buffer");
-    println!("sel4/cap: Initialized.");
 }
