@@ -1,13 +1,7 @@
 //! Linux kernel objects
 
 #![no_std]
-#![deny(
-    warnings,
-    unsafe_code,
-    unused_must_use,
-    unreachable_patterns,
-    missing_docs
-)]
+#![deny(warnings, unsafe_code, unused_must_use, unreachable_patterns,)]
 #![feature(bool_to_option)]
 
 extern crate alloc;
