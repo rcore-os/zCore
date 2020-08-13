@@ -40,7 +40,6 @@ impl Syscall<'_> {
         info!("proc.exit: code={:?}", code);
         let proc = self.thread.proc();
         proc.exit(code);
-        self.exit = true;
         Ok(())
     }
 
@@ -180,7 +179,6 @@ impl Syscall<'_> {
     pub fn sys_thread_exit(&mut self) -> ZxResult {
         info!("thread.exit:");
         self.thread.exit();
-        self.exit = true;
         Ok(())
     }
 
@@ -222,21 +220,8 @@ impl Syscall<'_> {
             job.kill();
         } else if let Ok(process) = proc.get_object_with_rights::<Process>(handle, Rights::DESTROY)
         {
-            if Arc::ptr_eq(&process, &proc) {
-                //self kill, exit
-                self.exit = true;
-            }
             process.kill();
         } else if let Ok(thread) = proc.get_object_with_rights::<Thread>(handle, Rights::DESTROY) {
-            info!(
-                "killing thread: proc={:?} thread={:?}",
-                thread.proc().name(),
-                thread.name()
-            );
-            if Arc::ptr_eq(&thread, &self.thread) {
-                //self kill, exit
-                self.exit = true;
-            }
             thread.kill();
         } else {
             return Err(ZxError::WRONG_TYPE);

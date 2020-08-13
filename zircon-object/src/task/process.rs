@@ -159,7 +159,7 @@ impl Process {
             inner.status = Status::Running;
             handle_value = arg1.map_or(INVALID_HANDLE, |handle| inner.add_handle(handle));
         }
-        thread.set_first_thread(true);
+        thread.set_first_thread();
         match thread.start(entry, stack, handle_value as usize, arg2, spawn_fn) {
             Ok(_) => Ok(()),
             Err(err) => {

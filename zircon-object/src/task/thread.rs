@@ -368,7 +368,7 @@ impl Thread {
             wait_exception_channel_type: inner
                 .exception
                 .as_ref()
-                .map_or(0, |exception| exception.get_current_channel_type() as u32),
+                .map_or(0, |exception| exception.current_channel_type() as u32),
             cpu_affinity_mask: [0u64; 8],
         }
     }
@@ -379,11 +379,8 @@ impl Thread {
         if inner.get_state() != ThreadState::BlockedException {
             return Err(ZxError::BAD_STATE);
         }
-        inner
-            .exception
-            .as_ref()
-            .ok_or(ZxError::BAD_STATE)
-            .map(|exception| exception.get_report())
+        let report = inner.exception.as_ref().ok_or(ZxError::BAD_STATE)?.report();
+        Ok(report)
     }
 
     /// Run async future and change state while blocking.
@@ -464,8 +461,9 @@ impl Thread {
         ret
     }
 
-    /// Run a blocking task when the thread is exited itself and dying
-    /// The task will stop running if and once the thread is killed
+    /// Run a blocking task when the thread is exited itself and dying.
+    ///
+    /// The task will stop running if and once the thread is killed.
     pub async fn dying_run<F, T, FT>(&self, future: F) -> ZxResult<T>
     where
         F: Future<Output = FT> + Unpin,
@@ -484,6 +482,23 @@ impl Thread {
             ret = future.fuse() => ret.into_result(),
             _ = killed.fuse() => Err(ZxError::STOP),
         }
+    }
+
+    pub(super) async fn wait_for_exception<T>(
+        &self,
+        future: impl Future<Output = ZxResult<T>> + Unpin,
+        exception: Arc<Exception>,
+    ) -> ZxResult<T> {
+        self.inner.lock().exception = Some(exception);
+        let ret = self
+            .blocking_run(
+                future,
+                ThreadState::BlockedException,
+                Duration::from_nanos(u64::max_value()),
+            )
+            .await;
+        self.inner.lock().exception = None;
+        ret
     }
 
     /// Get the thread state.
@@ -506,18 +521,13 @@ impl Thread {
         self.inner.lock().time as u64
     }
 
-    /// Set the currently processing exception.
-    pub fn set_exception(&self, exception: Option<Arc<Exception>>) {
-        self.inner.lock().exception = exception;
-    }
-
     /// Set this thread as the first thread of a process.
-    pub fn set_first_thread(&self, first_thread: bool) {
-        self.inner.lock().first_thread = first_thread;
+    pub(super) fn set_first_thread(&self) {
+        self.inner.lock().first_thread = true;
     }
 
-    /// Get whether this thread is the first thread of a process.
-    pub fn get_first_thread(&self) -> bool {
+    /// Whether this thread is the first thread of a process.
+    pub fn is_first_thread(&self) -> bool {
         self.inner.lock().first_thread
     }
 

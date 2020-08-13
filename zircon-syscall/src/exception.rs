@@ -67,7 +67,7 @@ impl Syscall<'_> {
         let proc = self.thread.proc();
         let exception =
             proc.get_object_with_rights::<ExceptionObject>(exception, Rights::default())?;
-        let (object, right) = exception.get_exception().get_thread_and_rights();
+        let (object, right) = exception.get_thread_and_rights();
         let handle = proc.add_handle(Handle::new(object, right));
         out.write(handle)?;
         Ok(())
@@ -87,10 +87,10 @@ impl Syscall<'_> {
         let proc = self.thread.proc();
         let exception =
             proc.get_object_with_rights::<ExceptionObject>(exception, Rights::default())?;
-        if exception.get_exception().get_current_channel_type() == ExceptionChannelType::Thread {
+        if exception.current_channel_type() == ExceptionChannelType::Thread {
             return Err(ZxError::ACCESS_DENIED);
         }
-        let (object, right) = exception.get_exception().get_process_and_rights();
+        let (object, right) = exception.get_process_and_rights();
         let handle = proc.add_handle(Handle::new(object, right));
         out.write(handle)?;
         Ok(())

@@ -1,6 +1,6 @@
 use {
     super::*, crate::ipc::*, crate::object::*, alloc::sync::Arc, alloc::vec, alloc::vec::Vec,
-    core::mem::size_of, core::time::Duration, futures::channel::oneshot, futures::pin_mut,
+    core::mem::size_of, core::ops::Deref, futures::channel::oneshot, futures::pin_mut,
     kernel_hal::UserContext, spin::Mutex,
 };
 
@@ -87,8 +87,7 @@ impl Exceptionate {
             type_: exception.type_,
             padding: Default::default(),
         };
-        let (sender, receiver) = oneshot::channel::<()>();
-        let object = ExceptionObject::create(exception.clone(), sender);
+        let (object, closed) = ExceptionObject::create(exception.clone());
         let handle = Handle::new(object, Rights::DEFAULT_EXCEPTION);
         let msg = MessagePacket {
             data: info.pack(),
@@ -102,7 +101,7 @@ impl Exceptionate {
             }
             err
         })?;
-        Ok(receiver)
+        Ok(closed)
     }
 }
 
@@ -241,25 +240,31 @@ pub struct ExceptionObject {
 impl_kobject!(ExceptionObject);
 
 impl ExceptionObject {
-    /// Create an `ExceptionObject`.
-    fn create(exception: Arc<Exception>, close_signal: oneshot::Sender<()>) -> Arc<Self> {
-        Arc::new(ExceptionObject {
+    /// Create an kernel object of `Exception`.
+    ///
+    /// Return the object and a `Receiver` of the object dropped event.
+    fn create(exception: Arc<Exception>) -> (Arc<Self>, oneshot::Receiver<()>) {
+        let (sender, receiver) = oneshot::channel();
+        let object = Arc::new(ExceptionObject {
             base: KObjectBase::new(),
             exception,
-            close_signal: Some(close_signal),
-        })
+            close_signal: Some(sender),
+        });
+        (object, receiver)
     }
-    /// Get the exception.
-    pub fn get_exception(&self) -> &Arc<Exception> {
+}
+
+impl Deref for ExceptionObject {
+    type Target = Arc<Exception>;
+
+    fn deref(&self) -> &Self::Target {
         &self.exception
     }
 }
 
 impl Drop for ExceptionObject {
     fn drop(&mut self) {
-        self.close_signal
-            .take()
-            .and_then(|signal| signal.send(()).ok());
+        self.close_signal.take().unwrap().send(()).ok();
     }
 }
 
@@ -300,15 +305,18 @@ impl Exception {
             }),
         })
     }
-    /// Handle the exception. The return value indicate if the thread is exited after this.
-    /// Note that it's possible that this may returns before exception was send to any exception channel
-    /// This happens only when the thread is killed before we send the exception
-    pub async fn handle(self: &Arc<Self>, fatal: bool) -> bool {
+
+    /// Handle the exception.
+    ///
+    /// Note that it's possible that this may returns before exception was send to any exception channel.
+    /// This happens only when the thread is killed before we send the exception.
+    pub async fn handle(self: &Arc<Self>, fatal: bool) {
         self.handle_with_exceptionates(fatal, ExceptionateIterator::new(self), false)
             .await
     }
 
-    /// Same as handle, but use a customed iterator
+    /// Same as handle, but use a customed iterator.
+    ///
     /// If `first_only` is true, this will only send exception to the first one that received the exception
     /// even when the exception is not handled
     pub async fn handle_with_exceptionates(
@@ -316,30 +324,14 @@ impl Exception {
         fatal: bool,
         exceptionates: impl IntoIterator<Item = Arc<Exceptionate>>,
         first_only: bool,
-    ) -> bool {
-        self.thread.set_exception(Some(self.clone()));
+    ) {
         let future = self.handle_internal(exceptionates, first_only);
         pin_mut!(future);
-        let result: ZxResult = self
-            .thread
-            .blocking_run(
-                future,
-                ThreadState::BlockedException,
-                Duration::from_nanos(u64::max_value()),
-            )
-            .await;
-        self.thread.set_exception(None);
-        if let Err(err) = result {
-            if err == ZxError::STOP {
-                // We are killed
-                return false;
-            } else if err == ZxError::NEXT && fatal {
-                // Nobody handled the exception, kill myself
-                self.thread.proc().exit(TASK_RETCODE_SYSCALL_KILL);
-                return false;
-            }
+        let result = self.thread.wait_for_exception(future, self.clone()).await;
+        if result == Err(ZxError::NEXT) && fatal {
+            // Nobody handled the exception, kill myself
+            self.thread.proc().exit(TASK_RETCODE_SYSCALL_KILL);
         }
-        true
     }
 
     async fn handle_internal(
@@ -349,10 +341,9 @@ impl Exception {
     ) -> ZxResult {
         for exceptionate in exceptionates.into_iter() {
             let closed = match exceptionate.send_exception(self) {
-                Ok(receiver) => receiver,
                 // This channel is not available now!
                 Err(ZxError::NEXT) => continue,
-                Err(err) => return Err(err),
+                res => res?,
             };
             self.inner.lock().current_channel_type = exceptionate.type_;
             // If this error, the sender is dropped, and the handle should also be closed.
@@ -380,18 +371,18 @@ impl Exception {
     }
 
     /// Get the exception's channel type.
-    pub fn get_current_channel_type(&self) -> ExceptionChannelType {
+    pub fn current_channel_type(&self) -> ExceptionChannelType {
         self.inner.lock().current_channel_type
     }
 
     /// Get a report of the exception.
-    pub fn get_report(&self) -> ExceptionReport {
+    pub fn report(&self) -> ExceptionReport {
         self.report.clone()
     }
 
     /// Get whether closing the exception handle will
     /// finish exception processing and resume the underlying thread.
-    pub fn get_state(&self) -> u32 {
+    pub fn state(&self) -> u32 {
         self.inner.lock().handled as u32
     }
 
@@ -407,7 +398,7 @@ impl Exception {
 
     /// Get whether the debugger gets a 'second chance' at handling the exception
     /// if the process-level handler fails to do so.
-    pub fn get_strategy(&self) -> u32 {
+    pub fn strategy(&self) -> u32 {
         self.inner.lock().second_chance as u32
     }
 
@@ -640,7 +631,7 @@ mod tests {
                     .downcast_arc::<ExceptionObject>()
                     .unwrap();
                 if should_handle {
-                    exception.get_exception().set_state(1).unwrap();
+                    exception.set_state(1).unwrap();
                 }
                 // record the order of the handler used
                 handled_order.lock().push(order);
