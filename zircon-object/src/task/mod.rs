@@ -26,4 +26,4 @@ pub trait Task: Sync + Send {
     fn resume(&self);
 }
 
-pub const TASK_RETCODE_SYSCALL_KILL: i64 = -1024;
+pub const TASK_RETCODE_SYSCALL_KILL: i64 = -1028;

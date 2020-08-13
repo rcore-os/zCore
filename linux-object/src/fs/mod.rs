@@ -1,4 +1,6 @@
-use alloc::{sync::Arc, vec::Vec};
+//! Linux file objects
+#![deny(missing_docs)]
+use alloc::{boxed::Box, sync::Arc, vec::Vec};
 
 use rcore_fs::vfs::*;
 use rcore_fs_devfs::{special::*, DevFS};
@@ -6,7 +8,9 @@ use rcore_fs_mountfs::MountFS;
 use rcore_fs_ramfs::RamFS;
 
 pub use self::device::*;
+pub use self::fcntl::*;
 pub use self::file::*;
+pub use self::pipe::*;
 pub use self::pseudo::*;
 pub use self::random::*;
 pub use self::stdio::*;
@@ -14,34 +18,48 @@ pub use rcore_fs::vfs;
 
 use crate::error::*;
 use crate::process::LinuxProcess;
+use async_trait::async_trait;
 use core::convert::TryFrom;
 use downcast_rs::impl_downcast;
 use zircon_object::object::*;
 
 mod device;
+mod fcntl;
 mod file;
 mod ioctl;
+mod pipe;
 mod pseudo;
 mod random;
 mod stdio;
 
+#[async_trait]
 /// Generic file interface
 ///
 /// - Normal file, Directory
 /// - Socket
 /// - Epoll instance
 pub trait FileLike: KernelObject {
-    fn read(&self, buf: &mut [u8]) -> LxResult<usize>;
+    /// read to buffer
+    async fn read(&self, buf: &mut [u8]) -> LxResult<usize>;
+    /// write from buffer
     fn write(&self, buf: &[u8]) -> LxResult<usize>;
-    fn read_at(&self, offset: u64, buf: &mut [u8]) -> LxResult<usize>;
+    /// read to buffer at given offset
+    async fn read_at(&self, offset: u64, buf: &mut [u8]) -> LxResult<usize>;
+    /// write from buffer at given offset
     fn write_at(&self, offset: u64, buf: &[u8]) -> LxResult<usize>;
+    /// wait for some event on a file descriptor
     fn poll(&self) -> LxResult<PollStatus>;
+    /// wait for some event on a file descriptor use async
+    async fn async_poll(&self) -> LxResult<PollStatus>;
+    /// manipulates the underlying device parameters of special files
     fn ioctl(&self, request: usize, arg1: usize, arg2: usize, arg3: usize) -> LxResult<usize>;
+    /// manipulate file descriptor
     fn fcntl(&self, cmd: usize, arg: usize) -> LxResult<usize>;
 }
 
 impl_downcast!(sync FileLike);
 
+/// file descriptor wrapper
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub struct FileDesc(i32);
 
@@ -53,6 +71,12 @@ impl FileDesc {
 impl From<usize> for FileDesc {
     fn from(x: usize) -> Self {
         FileDesc(x as i32)
+    }
+}
+
+impl From<i32> for FileDesc {
+    fn from(x: i32) -> Self {
+        FileDesc(x)
     }
 }
 
@@ -70,6 +94,13 @@ impl Into<usize> for FileDesc {
     }
 }
 
+impl Into<i32> for FileDesc {
+    fn into(self) -> i32 {
+        self.0
+    }
+}
+
+/// create root filesystem, mount DevFS and RamFS
 pub fn create_root_fs(rootfs: Arc<dyn FileSystem>) -> Arc<dyn INode> {
     let rootfs = MountFS::new(rootfs);
     let root = rootfs.root_inode();
@@ -107,7 +138,9 @@ pub fn create_root_fs(rootfs: Arc<dyn FileSystem>) -> Arc<dyn INode> {
     root
 }
 
+/// extension for INode
 pub trait INodeExt {
+    /// similar to read, but return a u8 vector
     fn read_as_vec(&self) -> Result<Vec<u8>>;
 }
 
@@ -175,6 +208,9 @@ impl LinuxProcess {
         }
     }
 
+    /// Lookup INode from the process.
+    ///
+    /// see `lookup_inode_at`
     pub fn lookup_inode(&self, path: &str) -> LxResult<Arc<dyn INode>> {
         self.lookup_inode_at(FileDesc::CWD, path, true)
     }
@@ -191,4 +227,5 @@ pub fn split_path(path: &str) -> (&str, &str) {
     (dir_path, file_name)
 }
 
+/// the max depth for following a link
 const FOLLOW_MAX_DEPTH: usize = 1;

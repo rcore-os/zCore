@@ -75,7 +75,9 @@ run: build justrun
 test: build-test justrun
 debug: build debugrun
 
+TERMINAL 	:= terminal
 debugrun: $(QEMU_DISK)
+	$(TERMINAL) -e "gdb -tui -x gdbinit"
 	$(qemu) $(qemu_opts) -s -S
 
 justrun: $(QEMU_DISK)

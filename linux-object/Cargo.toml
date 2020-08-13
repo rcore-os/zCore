@@ -8,16 +8,18 @@ description = "Linux kernel objects"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+async-trait = "0.1.36"
 log = "0.4"
 spin = "0.5"
 xmas-elf = "0.7"
+bitflags = "1.2"
 hashbrown = "0.7"
 zircon-object = { path = "../zircon-object", features = ["elf"] }
 kernel-hal = { path = "../kernel-hal" }
 downcast-rs = { git = "https://github.com/rcore-os/downcast-rs", rev = "a632ce1", default-features = false }
 lazy_static = { version = "1.4", features = ["spin_no_std"] }
-rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "e17b27b" }
-rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "e17b27b" }
-rcore-fs-ramfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "e17b27b" }
-rcore-fs-mountfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "e17b27b" }
-rcore-fs-devfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "e17b27b" }
+rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "517af47" }
+rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "517af47" }
+rcore-fs-ramfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "517af47" }
+rcore-fs-mountfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "517af47" }
+rcore-fs-devfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "517af47" }

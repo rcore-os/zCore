@@ -1,6 +1,7 @@
 use {super::*, zircon_object::ipc::Fifo};
 
 impl Syscall<'_> {
+    /// Creates a fifo, which is actually a pair of fifos of `elem_count` entries of `elem_size` bytes.
     pub fn sys_fifo_create(
         &self,
         elem_count: usize,
@@ -28,6 +29,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
+    /// Write data to a fifo.
     pub fn sys_fifo_write(
         &self,
         handle_value: HandleValue,
@@ -51,6 +53,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
+    /// Read data from a fifo.
     pub fn sys_fifo_read(
         &self,
         handle_value: HandleValue,
@@ -70,7 +73,7 @@ impl Syscall<'_> {
         let fifo = proc.get_object_with_rights::<Fifo>(handle_value, Rights::READ)?;
         // TODO: uninit buffer
         let mut data = vec![0; elem_size * count];
-        let actual_count = fifo.read(elem_size, count, &mut data)?;
+        let actual_count = fifo.read(elem_size, &mut data, count)?;
         actual_count_ptr.write_if_not_null(actual_count)?;
         user_bytes.write_array(&data)?;
         Ok(())

@@ -121,6 +121,10 @@ struct ThreadInner {
     state: ThreadState,
     /// The currently processing exception
     exception: Option<Arc<Exception>>,
+    /// Should The ProcessStarting exception generated at start of this thread
+    first_thread: bool,
+    /// Should The ThreadExiting exception do not block this thread
+    killed: bool,
     /// The time this thread has run on cpu
     time: u128,
     flags: ThreadFlag,
@@ -128,10 +132,29 @@ struct ThreadInner {
 
 impl ThreadInner {
     pub fn get_state(&self) -> ThreadState {
-        if self.suspend_count == 0 {
+        if self.suspend_count == 0 || self.state == ThreadState::BlockedException {
             self.state
         } else {
             ThreadState::Suspended
+        }
+    }
+    fn update_signal(&self, base: &KObjectBase) {
+        if self.state == ThreadState::Dead {
+            base.signal_clear(Signal::THREAD_RUNNING);
+            base.signal_clear(Signal::THREAD_SUSPENDED);
+            base.signal_set(Signal::THREAD_TERMINATED)
+        } else if self.state == ThreadState::New || self.state == ThreadState::Dying {
+            base.signal_clear(Signal::THREAD_RUNNING);
+            base.signal_clear(Signal::THREAD_SUSPENDED);
+            base.signal_clear(Signal::THREAD_TERMINATED)
+        } else if self.suspend_count == 0 || self.state == ThreadState::BlockedException {
+            base.signal_set(Signal::THREAD_RUNNING);
+            base.signal_clear(Signal::THREAD_SUSPENDED);
+            base.signal_clear(Signal::THREAD_TERMINATED)
+        } else {
+            base.signal_clear(Signal::THREAD_RUNNING);
+            base.signal_set(Signal::THREAD_SUSPENDED);
+            base.signal_clear(Signal::THREAD_TERMINATED)
         }
     }
 }
@@ -209,7 +232,7 @@ impl Thread {
                 context.general.x1 = arg2;
             }
             inner.state = ThreadState::Running;
-            self.base.signal_set(Signal::THREAD_RUNNING);
+            inner.update_signal(&self.base);
         }
         spawn_fn(self.clone());
         Ok(())
@@ -230,22 +253,55 @@ impl Thread {
                 context.general.rflags |= 0x3202;
             }
             inner.state = ThreadState::Running;
+            inner.update_signal(&self.base);
             self.base.signal_set(Signal::THREAD_RUNNING);
         }
         spawn_fn(self.clone());
         Ok(())
     }
 
-    /// Terminate the current running thread.
-    /// TODO: move to CurrentThread
-    pub fn exit(&self) {
-        self.proc().remove_thread(self.base.id);
-        self.internal_exit();
+    fn stop(&self, killed: bool) {
+        let mut inner = self.inner.lock();
+        if inner.state == ThreadState::Dead {
+            return;
+        }
+        if killed {
+            inner.killed = true;
+        }
+        if inner.state == ThreadState::Dying {
+            if killed {
+                if let Some(killer) = inner.killer.take() {
+                    // It's ok to ignore the error since the other end could be closed
+                    killer.send(()).ok();
+                }
+            }
+            return;
+        }
+        inner.state = ThreadState::Dying;
+        // For suspended thread, wake it and clear suspend count
+        inner.suspend_count = 0;
+        inner.update_signal(&self.base);
+        if let Some(waker) = inner.waker.take() {
+            waker.wake();
+        }
+        // For blocking thread, use the killer
+        if let Some(killer) = inner.killer.take() {
+            // It's ok to ignore the error since the other end could be closed
+            killer.send(()).ok();
+        }
     }
 
-    pub fn internal_exit(&self) {
-        self.base.signal_set(Signal::THREAD_TERMINATED);
-        self.inner.lock().state = ThreadState::Dead;
+    pub fn exit(&self) {
+        self.stop(false);
+    }
+
+    /// Terminate the current running thread.
+    pub fn terminate(&self) {
+        let mut inner = self.inner.lock();
+        self.exceptionate.shutdown();
+        inner.state = ThreadState::Dead;
+        inner.update_signal(&self.base);
+        self.proc().remove_thread(self.base.id);
     }
 
     /// Read one aspect of thread state.
@@ -333,7 +389,9 @@ impl Thread {
             }
             let (sender, receiver) = channel::<()>();
             inner.killer = Some(sender);
-            (core::mem::replace(&mut inner.state, state), receiver)
+            let old_state = core::mem::replace(&mut inner.state, state);
+            inner.update_signal(&self.base);
+            (old_state, receiver)
         };
         let ret = select_biased! {
             ret = future.fuse() => ret.into_result(),
@@ -347,6 +405,7 @@ impl Thread {
         }
         assert_eq!(inner.state, state);
         inner.state = old_state;
+        inner.update_signal(&self.base);
         ret
     }
 
@@ -369,7 +428,9 @@ impl Thread {
             }
             let (sender, receiver) = channel::<()>();
             inner.killer = Some(sender);
-            (core::mem::replace(&mut inner.state, state), receiver)
+            let old_state = core::mem::replace(&mut inner.state, state);
+            inner.update_signal(&self.base);
+            (old_state, receiver)
         };
         let ret = select_biased! {
             ret = future.fuse() => ret.into_result(),
@@ -384,7 +445,30 @@ impl Thread {
         }
         assert_eq!(inner.state, state);
         inner.state = old_state;
+        inner.update_signal(&self.base);
         ret
+    }
+
+    /// Run a blocking task when the thread is exited itself and dying
+    /// The task will stop running if and once the thread is killed
+    pub async fn dying_run<F, T, FT>(&self, future: F) -> ZxResult<T>
+    where
+        F: Future<Output = FT> + Unpin,
+        FT: IntoResult<T>,
+    {
+        let killed = {
+            let mut inner = self.inner.lock();
+            if inner.get_state() == ThreadState::Dead || inner.killed {
+                return Err(ZxError::STOP);
+            }
+            let (sender, receiver) = channel::<()>();
+            inner.killer = Some(sender);
+            receiver
+        };
+        select_biased! {
+            ret = future.fuse() => ret.into_result(),
+            _ = killed.fuse() => Err(ZxError::STOP),
+        }
     }
 
     pub fn state(&self) -> ThreadState {
@@ -402,8 +486,17 @@ impl Thread {
     pub fn get_time(&self) -> u64 {
         self.inner.lock().time as u64
     }
+
     pub fn set_exception(&self, exception: Option<Arc<Exception>>) {
         self.inner.lock().exception = exception;
+    }
+
+    pub fn set_first_thread(&self, first_thread: bool) {
+        self.inner.lock().first_thread = first_thread;
+    }
+
+    pub fn get_first_thread(&self) -> bool {
+        self.inner.lock().first_thread
     }
 
     pub fn get_flags(&self) -> ThreadFlag {
@@ -420,27 +513,13 @@ impl Thread {
 
 impl Task for Thread {
     fn kill(&self) {
-        let mut inner = self.inner.lock();
-        if inner.state == ThreadState::Dying || inner.state == ThreadState::Dead {
-            return;
-        }
-        inner.state = ThreadState::Dying;
-        // For suspended thread, wake it and clear suspend count
-        inner.suspend_count = 0;
-        if let Some(waker) = inner.waker.take() {
-            waker.wake();
-        }
-        // For blocking thread, use the killer
-        if let Some(killer) = inner.killer.take() {
-            // It's ok to ignore the error since the other end could be closed
-            killer.send(()).ok();
-        }
+        self.stop(true)
     }
 
     fn suspend(&self) {
         let mut inner = self.inner.lock();
         inner.suspend_count += 1;
-        self.base.signal_set(Signal::THREAD_SUSPENDED);
+        inner.update_signal(&self.base);
         info!(
             "thread {:?} suspend: count={}",
             self.base.name(),
@@ -456,7 +535,7 @@ impl Task for Thread {
         }
         inner.suspend_count -= 1;
         if inner.suspend_count == 0 {
-            self.base.signal_set(Signal::THREAD_RUNNING);
+            inner.update_signal(&self.base);
             if let Some(waker) = inner.waker.take() {
                 waker.wake();
             }

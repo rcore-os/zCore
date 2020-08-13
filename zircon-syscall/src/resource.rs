@@ -2,6 +2,7 @@ use {super::*, core::convert::TryFrom, zircon_object::dev::*};
 
 impl Syscall<'_> {
     #[allow(clippy::too_many_arguments)]
+    /// Create a resource object for use with other DDK syscalls.  
     pub fn sys_resource_create(
         &self,
         parent_rsrc: HandleValue,

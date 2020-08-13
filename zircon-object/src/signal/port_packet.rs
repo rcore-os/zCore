@@ -1,3 +1,4 @@
+#![allow(missing_docs)]
 //! Port packet data structure definition.
 
 use super::*;
@@ -15,6 +16,7 @@ pub struct PortPacket {
 }
 
 // reference: zircon/system/public/zircon/syscalls/port.h ZX_PKT_TYPE_*
+/// The type of a packet.
 #[repr(u32)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum PacketType {
@@ -30,6 +32,7 @@ pub enum PacketType {
 }
 
 #[repr(C)]
+/// The data carried by a packet
 pub union Payload {
     user: PacketUser,
     signal: PacketSignal,
@@ -233,8 +236,8 @@ impl PartialEq for PacketGuestVcpu {
     #[allow(unsafe_code)]
     fn eq(&self, other: &Self) -> bool {
         if !self.type_.eq(&other.type_)
-            || self._padding1.eq(&other._padding1)
-            || self._reserved.eq(&other._reserved)
+            || !self._padding1.eq(&other._padding1)
+            || !self._reserved.eq(&other._reserved)
         {
             return false;
         }
@@ -286,5 +289,139 @@ mod tests {
         assert_eq!(size_of::<PacketGuestIo>(), 32);
         assert_eq!(size_of::<PacketGuestVcpu>(), 32);
         assert_eq!(size_of::<PacketInterrupt>(), 32);
+    }
+
+    fn test_encdec(data: PayloadRepr) {
+        let repr = PortPacketRepr {
+            key: 0,
+            status: ZxError::OK,
+            data: data.clone(),
+        };
+        let packet = PortPacket {
+            key: 0,
+            type_: data.type_(),
+            status: ZxError::OK,
+            data: data.encode(),
+        };
+        assert_eq!(repr, PortPacketRepr::from(&packet));
+        assert_eq!(repr.clone(), PortPacketRepr::from(&PortPacket::from(repr)));
+    }
+
+    #[test]
+    fn user() {
+        let user = PacketUser::default();
+        test_encdec(PayloadRepr::User(user));
+    }
+
+    #[test]
+    fn signal() {
+        let data = PacketSignal {
+            trigger: Signal::READABLE,
+            observed: Signal::WRITABLE,
+            count: 1,
+            timestamp: 0,
+            _reserved1: 0,
+        };
+        test_encdec(PayloadRepr::Signal(data));
+        let packet = PortPacket {
+            key: 1,
+            type_: PacketType::SignalOne,
+            status: ZxError::OK,
+            data: Payload { signal: data },
+        };
+        let packet_ = PortPacket {
+            key: 1,
+            type_: PacketType::SignalRep,
+            status: ZxError::OK,
+            data: Payload { signal: data },
+        };
+        assert_eq!(
+            PortPacketRepr::from(&packet),
+            PortPacketRepr::from(&packet_)
+        );
+    }
+
+    #[test]
+    fn guest_bell() {
+        let guest_bell = PacketGuestBell::default();
+        assert_eq!(guest_bell.addr, 0);
+        test_encdec(PayloadRepr::GuestBell(guest_bell));
+    }
+
+    #[test]
+    fn guest_mem() {
+        let guest_mem = PacketGuestMem::default();
+        assert_eq!(guest_mem.addr, 0);
+        test_encdec(PayloadRepr::GuestMem(guest_mem));
+    }
+
+    #[test]
+    fn guest_io() {
+        let guest_io = PacketGuestIo::default();
+        assert_eq!(guest_io.port, 0);
+        assert_eq!(guest_io.input, false);
+        test_encdec(PayloadRepr::GuestIo(guest_io));
+    }
+
+    #[test]
+    fn guest_vcpu() {
+        let interrupt = PacketGuestVcpuInterrupt { mask: 0, vector: 0 };
+        let guest_vcpu1 = PacketGuestVcpu {
+            data: PacketGuestVcpuData { interrupt },
+            type_: PacketGuestVcpuType::VcpuInterrupt,
+            _padding1: Default::default(),
+            _reserved: 0,
+        };
+        let startup = PacketGuestVcpuStartup { id: 0, entry: 0 };
+        let guest_vcpu2 = PacketGuestVcpu {
+            data: PacketGuestVcpuData { startup },
+            type_: PacketGuestVcpuType::VcpuStartup,
+            _padding1: Default::default(),
+            _reserved: 0,
+        };
+        test_encdec(PayloadRepr::GuestVcpu(guest_vcpu1));
+        test_encdec(PayloadRepr::GuestVcpu(guest_vcpu2));
+
+        let packet = PortPacket {
+            key: 1,
+            type_: PacketType::GuestVcpu,
+            status: ZxError::OK,
+            data: Payload {
+                guest_vcpu: guest_vcpu2,
+            },
+        };
+        assert_eq!(
+            format!("{:?}", packet),
+            "PortPacketRepr { key: 1, status: OK, data: GuestVcpu(PacketGuestVcpu { data: PacketGuestVcpuStartup { id: 0, entry: 0 }, type_: VcpuStartup, _padding1: [0, 0, 0, 0, 0, 0, 0], _reserved: 0 }) }"
+        );
+
+        assert!(!guest_vcpu1.eq(&guest_vcpu2));
+        let guest_vcpu3 = PacketGuestVcpu {
+            data: PacketGuestVcpuData {
+                startup: PacketGuestVcpuStartup { id: 0, entry: 1 },
+            },
+            type_: PacketGuestVcpuType::VcpuStartup,
+            _padding1: Default::default(),
+            _reserved: 0,
+        };
+        assert!(!guest_vcpu2.eq(&guest_vcpu3));
+    }
+
+    #[test]
+    fn interrupt() {
+        let interrupt = PacketInterrupt {
+            timestamp: 12345,
+            _reserved0: 0,
+            _reserved1: 0,
+            _reserved2: 0,
+        };
+        test_encdec(PayloadRepr::Interrupt(interrupt));
+    }
+
+    #[test]
+    #[should_panic(expected = "not implemented")]
+    fn page_request() {
+        let data: PacketUser = [0u8; 32];
+        PayloadRepr::decode(PacketType::PageRequest, &Payload { user: data });
     }
 }

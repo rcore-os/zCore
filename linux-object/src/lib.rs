@@ -18,4 +18,5 @@ pub mod fs;
 // layer 2
 pub mod loader;
 pub mod process;
+pub mod sync;
 pub mod thread;

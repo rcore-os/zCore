@@ -78,7 +78,7 @@ impl Syscall<'_> {
         };
         let [a0, a1, a2, a3, a4, a5] = args;
         let ret = match sys_type {
-            Sys::READ => self.sys_read(a0.into(), a1.into(), a2),
+            Sys::READ => self.sys_read(a0.into(), a1.into(), a2).await,
             Sys::WRITE => self.sys_write(a0.into(), a1.into(), a2),
             Sys::OPENAT => self.sys_openat(a0.into(), a1.into(), a2, a3),
             Sys::CLOSE => self.sys_close(a0.into()),
@@ -86,13 +86,13 @@ impl Syscall<'_> {
             Sys::NEWFSTATAT => self.sys_fstatat(a0.into(), a1.into(), a2.into(), a3),
             Sys::LSEEK => self.sys_lseek(a0.into(), a1 as i64, a2 as u8),
             Sys::IOCTL => self.sys_ioctl(a0.into(), a1, a2, a3, a4),
-            Sys::PREAD64 => self.sys_pread(a0.into(), a1.into(), a2, a3 as _),
+            Sys::PREAD64 => self.sys_pread(a0.into(), a1.into(), a2, a3 as _).await,
             Sys::PWRITE64 => self.sys_pwrite(a0.into(), a1.into(), a2, a3 as _),
-            Sys::READV => self.sys_readv(a0.into(), a1.into(), a2),
+            Sys::READV => self.sys_readv(a0.into(), a1.into(), a2).await,
             Sys::WRITEV => self.sys_writev(a0.into(), a1.into(), a2),
-            Sys::SENDFILE => self.sys_sendfile(a0.into(), a1.into(), a2.into(), a3),
+            Sys::SENDFILE => self.sys_sendfile(a0.into(), a1.into(), a2.into(), a3).await,
             Sys::FCNTL => self.sys_fcntl(a0.into(), a1, a2),
-            Sys::FLOCK => self.unimplemented("flock", Ok(0)),
+            Sys::FLOCK => self.sys_flock(a0.into(), a1),
             Sys::FSYNC => self.sys_fsync(a0.into()),
             Sys::FDATASYNC => self.sys_fdatasync(a0.into()),
             Sys::TRUNCATE => self.sys_truncate(a0.into(), a1),
@@ -112,10 +112,11 @@ impl Syscall<'_> {
             Sys::FCHOWNAT => self.unimplemented("fchownat", Ok(0)),
             Sys::FACCESSAT => self.sys_faccessat(a0.into(), a1.into(), a2, a3),
             Sys::DUP3 => self.sys_dup2(a0.into(), a1.into()), // TODO: handle `flags`
-            //            Sys::PIPE2 => self.sys_pipe(a0.into()),           // TODO: handle `flags`
-            Sys::UTIMENSAT => self.unimplemented("utimensat", Ok(0)),
+            Sys::PIPE2 => self.sys_pipe(a0.into()),           // TODO: handle `flags`
+            Sys::UTIMENSAT => self.sys_utimensat(a0.into(), a1.into(), a2.into(), a3),
             Sys::COPY_FILE_RANGE => {
                 self.sys_copy_file_range(a0.into(), a1.into(), a2.into(), a3.into(), a4, a5)
+                    .await
             }
 
             // io multiplexing
@@ -136,7 +137,7 @@ impl Syscall<'_> {
 
             // memory
             Sys::BRK => self.unimplemented("brk", Err(LxError::ENOMEM)),
-            Sys::MMAP => self.sys_mmap(a0, a1, a2, a3, a4.into(), a5 as _),
+            Sys::MMAP => self.sys_mmap(a0, a1, a2, a3, a4.into(), a5 as _).await,
             Sys::MPROTECT => self.sys_mprotect(a0, a1, a2),
             Sys::MUNMAP => self.sys_munmap(a0, a1),
             Sys::MADVISE => self.unimplemented("madvise", Ok(0)),
@@ -148,8 +149,8 @@ impl Syscall<'_> {
             //            Sys::KILL => self.sys_kill(a0, a1),
 
             // schedule
-            //            Sys::SCHED_YIELD => self.sys_yield(),
-            //            Sys::SCHED_GETAFFINITY => self.sys_sched_getaffinity(a0, a1, a2.into()),
+            Sys::SCHED_YIELD => self.unimplemented("yield", Ok(0)),
+            Sys::SCHED_GETAFFINITY => self.unimplemented("sched_getaffinity", Ok(0)),
 
             // socket
             //            Sys::SOCKET => self.sys_socket(a0, a1, a2),
@@ -181,7 +182,7 @@ impl Syscall<'_> {
             // time
             Sys::NANOSLEEP => self.sys_nanosleep(a0.into()).await,
             Sys::SETITIMER => self.unimplemented("setitimer", Ok(0)),
-            //            Sys::GETTIMEOFDAY => self.sys_gettimeofday(a0.into(), a1.into()),
+            Sys::GETTIMEOFDAY => self.sys_gettimeofday(a0.into(), a1.into()),
             Sys::CLOCK_GETTIME => self.sys_clock_gettime(a0, a1.into()),
 
             // sem
@@ -199,9 +200,9 @@ impl Syscall<'_> {
             Sys::UMASK => self.unimplemented("umask", Ok(0o777)),
             //            Sys::GETRLIMIT => self.sys_getrlimit(),
             //            Sys::SETRLIMIT => self.sys_setrlimit(),
-            //            Sys::GETRUSAGE => self.sys_getrusage(a0, a1.into()),
-            //            Sys::SYSINFO => self.sys_sysinfo(a0.into()),
-            //            Sys::TIMES => self.sys_times(a0.into()),
+            Sys::GETRUSAGE => self.sys_getrusage(a0, a1.into()),
+            Sys::SYSINFO => self.sys_sysinfo(a0.into()),
+            Sys::TIMES => self.sys_times(a0.into()),
             Sys::GETUID => self.unimplemented("getuid", Ok(0)),
             Sys::GETGID => self.unimplemented("getgid", Ok(0)),
             Sys::SETUID => self.unimplemented("setuid", Ok(0)),
@@ -216,7 +217,7 @@ impl Syscall<'_> {
             //            Sys::SETPRIORITY => self.sys_set_priority(a0),
             Sys::PRCTL => self.unimplemented("prctl", Ok(0)),
             Sys::MEMBARRIER => self.unimplemented("membarrier", Ok(0)),
-            //            Sys::PRLIMIT64 => self.sys_prlimit64(a0, a1, a2.into(), a3.into()),
+            Sys::PRLIMIT64 => self.sys_prlimit64(a0, a1, a2.into(), a3.into()),
             //            Sys::REBOOT => self.sys_reboot(a0 as u32, a1 as u32, a2 as u32, a3.into()),
             Sys::GETRANDOM => self.sys_getrandom(a0.into(), a1 as usize, a2 as u32),
             Sys::RT_SIGQUEUEINFO => self.unimplemented("rt_sigqueueinfo", Ok(0)),
@@ -243,9 +244,9 @@ impl Syscall<'_> {
             Sys::OPEN => self.sys_open(a0.into(), a1, a2),
             Sys::STAT => self.sys_stat(a0.into(), a1.into()),
             Sys::LSTAT => self.sys_lstat(a0.into(), a1.into()),
-            Sys::POLL => self.sys_poll(a0.into(), a1, a2),
+            Sys::POLL => self.sys_poll(a0.into(), a1, a2).await,
             Sys::ACCESS => self.sys_access(a0.into(), a1),
-            //            Sys::PIPE => self.sys_pipe(a0.into()),
+            Sys::PIPE => self.sys_pipe(a0.into()),
             //            Sys::SELECT => self.sys_select(a0, a1.into(), a2.into(), a3.into(), a4.into()),
             Sys::DUP2 => self.sys_dup2(a0.into(), a1.into()),
             //            Sys::ALARM => self.unimplemented("alarm", Ok(0)),
@@ -260,7 +261,7 @@ impl Syscall<'_> {
             //            Sys::CHMOD => self.unimplemented("chmod", Ok(0)),
             //            Sys::CHOWN => self.unimplemented("chown", Ok(0)),
             Sys::ARCH_PRCTL => self.sys_arch_prctl(a0 as _, a1),
-            //            Sys::TIME => self.sys_time(a0 as *mut u64),
+            Sys::TIME => self.sys_time(a0.into()),
             //            Sys::EPOLL_CREATE => self.sys_epoll_create(a0),
             //            Sys::EPOLL_WAIT => self.sys_epoll_wait(a0, a1.into(), a2, a3),
             _ => self.unknown_syscall(sys_type),

@@ -16,7 +16,9 @@ mod logging;
 mod lang;
 mod memory;
 
+use alloc::boxed::Box;
 use rboot::BootInfo;
+use linux_object::fs::STDIN;
 
 pub use memory::{hal_frame_alloc, hal_frame_dealloc, hal_pt_map_kernel};
 
@@ -33,6 +35,16 @@ pub extern "C" fn _start(boot_info: &BootInfo) -> ! {
         smbios: boot_info.smbios_addr,
         ap_fn: run,
     });
+    kernel_hal_bare::serial_set_callback(Box::new({
+        move || {
+            let mut buffer = [0; 255];
+            let len = kernel_hal_bare::serial_read(&mut buffer);
+            for c in &buffer[..len] {
+                STDIN.push((*c).into());
+            }
+            false
+        }
+    }));
 
     let ramfs_data = unsafe {
         core::slice::from_raw_parts_mut(

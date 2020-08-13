@@ -20,9 +20,13 @@ use zircon_object::{
     ZxResult,
 };
 
+/// Process extension for linux
 pub trait ProcessExt {
+    /// create Linux process
     fn create_linux(job: &Arc<Job>, rootfs: Arc<dyn FileSystem>) -> ZxResult<Arc<Self>>;
+    /// get linux process
     fn linux(&self) -> &LinuxProcess;
+    /// fork from current linux process
     fn fork_from(parent: &Arc<Self>, vfork: bool) -> ZxResult<Arc<Self>>;
 }
 
@@ -128,6 +132,7 @@ pub struct LinuxProcess {
     inner: Mutex<LinuxProcessInner>,
 }
 
+/// Linux process mut inner data
 #[derive(Default)]
 struct LinuxProcessInner {
     /// Execute path
@@ -144,6 +149,7 @@ struct LinuxProcessInner {
     children: HashMap<KoID, Arc<Process>>,
 }
 
+/// process exit code defination
 pub type ExitCode = i32;
 
 impl LinuxProcess {

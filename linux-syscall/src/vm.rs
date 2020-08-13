@@ -11,7 +11,7 @@ impl Syscall<'_> {
     ///     and whether updates are carried through to the underlying file.
     /// - `fd` - mapping file descriptor
     /// - `offset` - offset in the file
-    pub fn sys_mmap(
+    pub async fn sys_mmap(
         &self,
         addr: usize,
         len: usize,
@@ -45,7 +45,7 @@ impl Syscall<'_> {
         } else {
             let file = self.linux_process().get_file(fd)?;
             let mut buf = vec![0; len];
-            let len = file.read_at(offset, &mut buf)?;
+            let len = file.read_at(offset, &mut buf).await?;
             let vmo = VmObject::new_paged(pages(len));
             vmo.write(0, &buf[..len])?;
             let addr = vmar.map(vmar_offset, vmo.clone(), 0, vmo.len(), prot.to_flags())?;

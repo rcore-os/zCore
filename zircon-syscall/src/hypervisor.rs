@@ -10,6 +10,9 @@ use {
 };
 
 impl Syscall<'_> {
+    /// Creates a guest virtual machine.  
+    ///
+    /// The guest is a virtual machine that can be run within the hypervisor, with `vmar_handle` used to represent the physical address space of the guest.
     pub fn sys_guest_create(
         &self,
         resource: HandleValue,
@@ -49,6 +52,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
+    /// Set a trap within a guest.  
     pub fn sys_guest_set_trap(
         &self,
         handle: HandleValue,
@@ -75,6 +79,9 @@ impl Syscall<'_> {
         guest.set_trap(kind, addr as usize, size as usize, port, key)
     }
 
+    /// Create a VCPU within a guest.  
+    ///
+    /// The VCPU allows for execution within the virtual machine.
     pub fn sys_vcpu_create(
         &self,
         guest_handle: HandleValue,
@@ -97,6 +104,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
+    /// Resume execution of a VCPU.  
     pub fn sys_vcpu_resume(
         &self,
         handle: HandleValue,
@@ -113,6 +121,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
+    /// Raise an interrupt on a VCPU and may be called from any thread.  
     pub fn sys_vcpu_interrupt(&self, handle: HandleValue, vector: u32) -> ZxResult {
         info!(
             "hypervisor.vcpu_interrupt: handle={:#x?}, vector={:?}",
@@ -124,6 +133,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
+    /// Read the state of a VCPU.  
     pub fn sys_vcpu_read_state(
         &self,
         handle: HandleValue,
@@ -148,6 +158,9 @@ impl Syscall<'_> {
         Ok(())
     }
 
+    /// Write the state of a VCPU.  
+    ///
+    /// > It is only valid to write the state of handle when execution has been paused.
     pub fn sys_vcpu_write_state(
         &self,
         handle: HandleValue,

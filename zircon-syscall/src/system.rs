@@ -5,6 +5,16 @@ use {
 };
 
 impl Syscall<'_> {
+    /// Retrieve a handle to a system event.  
+    ///
+    /// `root_job: HandleValue`, must be a handle to the root job of the system.  
+    /// `kind: u32`, must be one of the following:    
+    /// ```rust
+    ///     const EVENT_OUT_OF_MEMORY: u32 = 1;
+    ///     const EVENT_MEMORY_PRESSURE_CRITICAL: u32 = 2;
+    ///     const EVENT_MEMORY_PRESSURE_WARNING: u32 = 3;
+    ///     const EVENT_MEMORY_PRESSURE_NORMAL: u32 = 4;
+    /// ```
     pub fn sys_system_get_event(
         &self,
         root_job: HandleValue,

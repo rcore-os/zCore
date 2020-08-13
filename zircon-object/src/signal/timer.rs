@@ -27,10 +27,15 @@ struct TimerInner {
     deadline: Option<Duration>,
 }
 
-#[derive(Debug)]
+/// Slack specifies how much a timer or event is allowed to deviate from its deadline.
+///
+/// **Not supported: Now slack has no effect on the timer.**
 pub enum Slack {
+    /// slack is centered around deadline
     Center,
+    /// slack interval is (deadline - slack, deadline]
     Early,
+    /// slack interval is [deadline, deadline + slack)
     Late,
 }
 
@@ -94,6 +99,16 @@ impl Timer {
 mod tests {
     use super::*;
     use kernel_hal::timer_now;
+
+    #[test]
+    fn one_shot() {
+        let timer = Timer::one_shot(timer_now() + Duration::from_millis(15));
+        std::thread::sleep(Duration::from_millis(10));
+        assert_eq!(timer.signal(), Signal::empty());
+
+        std::thread::sleep(Duration::from_millis(20));
+        assert_eq!(timer.signal(), Signal::SIGNALED);
+    }
 
     #[test]
     fn set() {
