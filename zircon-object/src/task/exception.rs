@@ -511,7 +511,7 @@ mod tests {
         let thread = Thread::create(&proc, "thread").unwrap();
 
         let exception = Exception::create(&thread, ExceptionType::Synth, None);
-        let iterator = ExceptionateIterator::new(&exception);
+        let actual: Vec<_> = ExceptionateIterator::new(&exception).collect();
         let expected = [
             proc.debug_exceptionate(),
             thread.exceptionate(),
@@ -519,7 +519,8 @@ mod tests {
             job.exceptionate(),
             parent_job.exceptionate(),
         ];
-        for (actual, expected) in iterator.zip(expected.iter()) {
+        assert_eq!(actual.len(), expected.len());
+        for (actual, expected) in actual.iter().zip(expected.iter()) {
             assert!(Arc::ptr_eq(&actual, expected));
         }
     }
@@ -533,7 +534,7 @@ mod tests {
 
         let exception = Exception::create(&thread, ExceptionType::Synth, None);
         exception.inner.lock().second_chance = true;
-        let iterator = ExceptionateIterator::new(&exception);
+        let actual: Vec<_> = ExceptionateIterator::new(&exception).collect();
         let expected = [
             proc.debug_exceptionate(),
             thread.exceptionate(),
@@ -542,7 +543,8 @@ mod tests {
             job.exceptionate(),
             parent_job.exceptionate(),
         ];
-        for (actual, expected) in iterator.zip(expected.iter()) {
+        assert_eq!(actual.len(), expected.len());
+        for (actual, expected) in actual.iter().zip(expected.iter()) {
             assert!(Arc::ptr_eq(&actual, expected));
         }
     }
@@ -554,13 +556,14 @@ mod tests {
         let child_job = job.create_child().unwrap();
         let _grandson_job = child_job.create_child().unwrap();
 
-        let iterator = JobDebuggerIterator::new(child_job.clone());
+        let actual: Vec<_> = JobDebuggerIterator::new(child_job.clone()).collect();
         let expected = [
             child_job.debug_exceptionate(),
             job.debug_exceptionate(),
             parent_job.debug_exceptionate(),
         ];
-        for (actual, expected) in iterator.zip(expected.iter()) {
+        assert_eq!(actual.len(), expected.len());
+        for (actual, expected) in actual.iter().zip(expected.iter()) {
             assert!(Arc::ptr_eq(&actual, expected));
         }
     }
