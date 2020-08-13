@@ -14,7 +14,6 @@
 #include <platsupport/ltimer.h>
 
 #define ZCDAEMON_IPCBUF_VADDR 0x3000000
-#define FAULT_HANDLER_IPCBUF_VADDR 0x2000000
 
 seL4_BootInfo *boot_info;
 simple_t simple;
@@ -67,9 +66,9 @@ int main(int argc, char *argv[]) {
     error = platsupport_serial_setup_simple(&vspace, &simple, &vka);
     ZF_LOGF_IFERR(error, "cannot setup serial");
 
-    simple_print(&simple);
+    //simple_print(&simple);
 
-    printf("ZcBoot bridge started.\n");
+    printf("ZcBoot started.\n");
 
     load_zc();
 
@@ -199,8 +198,6 @@ void load_zc() {
     // Spawn process.
     error = sel4utils_spawn_process_v(&new_process, &vka, &vspace, 2, arglist, 1);
     ZF_LOGF_IFERR(error, "failed to spawn process");
-
-    printf("Spawned process.\n");
 
     // Handle IPC.
     while(1) {

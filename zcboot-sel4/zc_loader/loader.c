@@ -632,9 +632,9 @@ void _start() {
 }
 
 int main() {
-    print_str("Starting zCore.\n");
+    print_str("ZcLoader started.\n");
     setup_twolevel_cspace();
-    print_str("CSpace reconfigured.\n");
+    print_str("CSpace reconfigured, entering Rust.\n");
     rust_start();
     print_str("rust_start unexpectedly returned\n");
     while(1) {}
