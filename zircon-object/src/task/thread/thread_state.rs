@@ -4,6 +4,8 @@ use numeric_enum_macro::numeric_enum;
 
 numeric_enum! {
     #[repr(u32)]
+    /// Possible values for "kind" in zx_thread_read_state and zx_thread_write_state.
+    #[allow(missing_docs)]
     #[derive(Debug, Copy, Clone)]
     pub enum ThreadStateKind {
         General = 0,
@@ -16,7 +18,7 @@ numeric_enum! {
     }
 }
 
-pub trait ContextExt {
+pub(super) trait ContextExt {
     fn read_state(&self, kind: ThreadStateKind, buf: &mut [u8]) -> ZxResult<usize>;
     fn write_state(&mut self, kind: ThreadStateKind, buf: &[u8]) -> ZxResult;
 }
