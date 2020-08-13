@@ -28,25 +28,25 @@ static KVT: FMutex<KtVmTracker> = FMutex::new(KtVmTracker {
 #[repr(C, align(4096))]
 struct KtVm {
     ipc_buffer: [u8; 4096],
-    tls: [u8; 16384],
+    tls: [u8; 8192],
 
     /// Stack guard.
-    unused: [u8; 4096],
+    stack_guard: [u8; 4096],
 
-    stack: [u8; 65536],
+    stack: [u8; 16384],
 }
 
 impl KtVm {
-    const fn offset_unused() -> usize {
-        4096 + 16384
+    const fn offset_stack_guard() -> usize {
+        4096 + 8192
     }
 
     const fn offset_stack() -> usize {
-        4096 + 16384 + 4096
+        4096 + 8192 + 4096
     }
 
     const fn offset_end() -> usize {
-        4096 + 16384 + 4096 + 65536
+        4096 + 8192 + 4096 + 16384
     }
 }
 
@@ -67,7 +67,7 @@ impl KtVmRef {
         // The lock to `vm::K` must be acquired & released within the scope of `kvt`. Otherwise there'll be deadlock.
         let mut kvm = vm::K.lock();
         let alloc_result = 
-            kvm.allocate_region(next_start..next_start + KtVm::offset_unused()).and_then(|_| {
+            kvm.allocate_region(next_start..next_start + KtVm::offset_stack_guard()).and_then(|_| {
                 kvm.allocate_region(next_start + KtVm::offset_stack()..next_start + KtVm::offset_end())
             });
         drop(kvm);
