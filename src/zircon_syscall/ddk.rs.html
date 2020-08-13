@@ -321,6 +321,7 @@
 <span id="321">321</span>
 <span id="322">322</span>
 <span id="323">323</span>
+<span id="324">324</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> {
     <span class="kw">super</span>::<span class="kw-2">*</span>,
@@ -585,6 +586,7 @@
                 <span class="ident">future</span>,
                 <span class="ident">ThreadState</span>::<span class="ident">BlockedInterrupt</span>,
                 <span class="ident">Deadline</span>::<span class="ident">forever</span>().<span class="ident">into</span>(),
+                <span class="prelude-val">None</span>,
             )
             .<span class="kw">await</span><span class="question-mark">?</span>;
         <span class="ident">out</span>.<span class="ident">write_if_not_null</span>(<span class="ident">timestamp</span>)<span class="question-mark">?</span>;

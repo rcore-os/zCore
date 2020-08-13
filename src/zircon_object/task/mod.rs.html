@@ -30,11 +30,19 @@
 <span id="30">30</span>
 <span id="31">31</span>
 <span id="32">32</span>
+<span id="33">33</span>
+<span id="34">34</span>
+<span id="35">35</span>
+<span id="36">36</span>
+<span id="37">37</span>
+<span id="38">38</span>
+<span id="39">39</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="attribute">#![<span class="ident">deny</span>(<span class="ident">missing_docs</span>)]</span>
 <span class="doccomment">//! Objects for Task Management.</span>
 
 <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
+<span class="kw">use</span> <span class="ident">alloc</span>::<span class="ident">sync</span>::<span class="ident">Arc</span>;
 
 <span class="kw">mod</span> <span class="ident">exception</span>;
 <span class="kw">mod</span> <span class="ident">job</span>;
@@ -59,6 +67,12 @@
 
     <span class="doccomment">/// Resume the task</span>
     <span class="kw">fn</span> <span class="ident">resume</span>(<span class="kw-2">&amp;</span><span class="self">self</span>);
+
+    <span class="doccomment">/// Get the exceptionate.</span>
+    <span class="kw">fn</span> <span class="ident">exceptionate</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Exceptionate</span><span class="op">&gt;</span>;
+
+    <span class="doccomment">/// Get the debug exceptionate.</span>
+    <span class="kw">fn</span> <span class="ident">debug_exceptionate</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Exceptionate</span><span class="op">&gt;</span>;
 }
 
 <span class="doccomment">/// The return code set when a task is killed via zx_task_kill().</span>
