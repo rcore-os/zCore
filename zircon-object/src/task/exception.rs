@@ -1,7 +1,7 @@
 use {
     super::*, crate::ipc::*, crate::object::*, alloc::sync::Arc, alloc::vec, alloc::vec::Vec,
-    core::mem::size_of, core::ops::Deref, futures::channel::oneshot, futures::pin_mut,
-    kernel_hal::UserContext, spin::Mutex,
+    core::mem::size_of, futures::channel::oneshot, futures::pin_mut, kernel_hal::UserContext,
+    spin::Mutex,
 };
 
 /// Kernel-owned exception channel endpoint.
@@ -10,67 +10,48 @@ pub struct Exceptionate {
     inner: Mutex<ExceptionateInner>,
 }
 
-struct ExceptionateInner {
-    channel: Option<Arc<Channel>>,
-    thread_rights: Rights,
-    process_rights: Rights,
-    shutdowned: bool,
+enum ExceptionateInner {
+    Init,
+    Bind {
+        channel: Arc<Channel>,
+        rights: Rights,
+    },
+    Shutdown,
 }
 
 impl Exceptionate {
     /// Create an `Exceptionate`.
-    pub fn new(type_: ExceptionChannelType) -> Arc<Self> {
+    pub(super) fn new(type_: ExceptionChannelType) -> Arc<Self> {
         Arc::new(Exceptionate {
             type_,
-            inner: Mutex::new(ExceptionateInner {
-                channel: None,
-                thread_rights: Rights::empty(),
-                process_rights: Rights::empty(),
-                shutdowned: false,
-            }),
+            inner: Mutex::new(ExceptionateInner::Init),
         })
     }
 
     /// Shutdown the exceptionate.
-    pub fn shutdown(&self) {
-        let mut inner = self.inner.lock();
-        inner.channel.take();
-        inner.shutdowned = true;
+    pub(super) fn shutdown(&self) {
+        *self.inner.lock() = ExceptionateInner::Shutdown;
     }
 
     /// Create an exception channel endpoint for user.
-    pub fn create_channel(
-        &self,
-        thread_rights: Rights,
-        process_rights: Rights,
-    ) -> ZxResult<Arc<Channel>> {
+    pub fn create_channel(&self, rights: Rights) -> ZxResult<Arc<Channel>> {
         let mut inner = self.inner.lock();
-        if inner.shutdowned {
-            return Err(ZxError::BAD_STATE);
-        }
-        if let Some(channel) = inner.channel.as_ref() {
-            if channel.peer().is_ok() {
+        match &*inner {
+            ExceptionateInner::Shutdown => return Err(ZxError::BAD_STATE),
+            ExceptionateInner::Bind { channel, .. } if channel.peer().is_ok() => {
                 // already has a valid channel
                 return Err(ZxError::ALREADY_BOUND);
             }
+            _ => {}
         }
-        let (sender, receiver) = Channel::create();
-        inner.channel.replace(sender);
-        inner.process_rights = process_rights;
-        inner.thread_rights = thread_rights;
-        Ok(receiver)
+        let (channel, user_channel) = Channel::create();
+        *inner = ExceptionateInner::Bind { channel, rights };
+        Ok(user_channel)
     }
 
     pub(super) fn has_channel(&self) -> bool {
-        let mut inner = self.inner.lock();
-        if let Some(channel) = inner.channel.as_ref() {
-            if channel.peer().is_ok() {
-                return true;
-            } else {
-                inner.channel.take();
-            }
-        }
-        false
+        let inner = self.inner.lock();
+        matches!(&*inner, ExceptionateInner::Bind { channel, .. } if channel.peer().is_ok())
     }
 
     /// Send exception to the user-owned endpoint.
@@ -80,23 +61,24 @@ impl Exceptionate {
             exception.type_, self.type_
         );
         let mut inner = self.inner.lock();
-        let channel = inner.channel.as_ref().ok_or(ZxError::NEXT)?;
+        let (channel, rights) = match &*inner {
+            ExceptionateInner::Bind { channel, rights } => (channel, *rights),
+            _ => return Err(ZxError::NEXT),
+        };
         let info = ExceptionInfo {
             pid: exception.thread.proc().id(),
             tid: exception.thread.id(),
             type_: exception.type_,
             padding: Default::default(),
         };
-        let (object, closed) = ExceptionObject::create(exception.clone());
-        let handle = Handle::new(object, Rights::DEFAULT_EXCEPTION);
+        let (object, closed) = ExceptionObject::create(exception.clone(), rights);
         let msg = MessagePacket {
             data: info.pack(),
-            handles: vec![handle],
+            handles: vec![Handle::new(object, Rights::DEFAULT_EXCEPTION)],
         };
-        exception.set_rights(inner.thread_rights, inner.process_rights);
         channel.write(msg).map_err(|err| {
             if err == ZxError::PEER_CLOSED {
-                inner.channel.take();
+                *inner = ExceptionateInner::Init;
                 return ZxError::NEXT;
             }
             err
@@ -106,6 +88,7 @@ impl Exceptionate {
 }
 
 #[repr(C)]
+#[derive(Debug)]
 struct ExceptionInfo {
     pid: KoID,
     tid: KoID,
@@ -115,7 +98,7 @@ struct ExceptionInfo {
 
 impl ExceptionInfo {
     #[allow(unsafe_code)]
-    pub fn pack(&self) -> Vec<u8> {
+    fn pack(&self) -> Vec<u8> {
         let buf: [u8; size_of::<ExceptionInfo>()] = unsafe { core::mem::transmute_copy(self) };
         Vec::from(buf)
     }
@@ -215,10 +198,9 @@ pub enum ExceptionType {
 }
 
 /// Type of the exception channel
-#[allow(missing_docs)]
 #[repr(u32)]
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub enum ExceptionChannelType {
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(super) enum ExceptionChannelType {
     None = 0,
     Debugger = 1,
     Thread = 2,
@@ -227,6 +209,8 @@ pub enum ExceptionChannelType {
     JobDebugger = 5,
 }
 
+/// The exception object received from the exception channel.
+///
 /// This will be transmitted to registered exception handlers in userspace
 /// and provides them with exception state and control functionality.
 /// We do not send exception directly since it's hard to figure out
@@ -234,6 +218,8 @@ pub enum ExceptionChannelType {
 pub struct ExceptionObject {
     base: KObjectBase,
     exception: Arc<Exception>,
+    /// Task rights copied from `Exceptionate`.
+    rights: Rights,
     close_signal: Option<oneshot::Sender<()>>,
 }
 
@@ -243,22 +229,72 @@ impl ExceptionObject {
     /// Create an kernel object of `Exception`.
     ///
     /// Return the object and a `Receiver` of the object dropped event.
-    fn create(exception: Arc<Exception>) -> (Arc<Self>, oneshot::Receiver<()>) {
+    fn create(exception: Arc<Exception>, rights: Rights) -> (Arc<Self>, oneshot::Receiver<()>) {
         let (sender, receiver) = oneshot::channel();
         let object = Arc::new(ExceptionObject {
             base: KObjectBase::new(),
             exception,
+            rights,
             close_signal: Some(sender),
         });
         (object, receiver)
     }
-}
 
-impl Deref for ExceptionObject {
-    type Target = Arc<Exception>;
+    /// Create a handle for the exception's thread.
+    pub fn get_thread_handle(&self) -> Handle {
+        Handle {
+            object: self.exception.thread.clone(),
+            rights: self.rights & Rights::DEFAULT_THREAD,
+        }
+    }
 
-    fn deref(&self) -> &Self::Target {
-        &self.exception
+    /// Create a handle for the exception's process.
+    pub fn get_process_handle(&self) -> ZxResult<Handle> {
+        if self.exception.current_channel_type() == ExceptionChannelType::Thread {
+            return Err(ZxError::ACCESS_DENIED);
+        }
+        Ok(Handle {
+            object: self.exception.thread.proc().clone(),
+            rights: self.rights & Rights::DEFAULT_PROCESS,
+        })
+    }
+
+    /// Get whether closing the exception handle will
+    /// finish exception processing and resume the underlying thread.
+    pub fn state(&self) -> u32 {
+        self.exception.inner.lock().handled as u32
+    }
+
+    /// Set whether closing the exception handle will
+    /// finish exception processing and resume the underlying thread.
+    pub fn set_state(&self, state: u32) -> ZxResult {
+        if state > 1 {
+            return Err(ZxError::INVALID_ARGS);
+        }
+        self.exception.inner.lock().handled = state == 1;
+        Ok(())
+    }
+
+    /// Get whether the debugger gets a 'second chance' at handling the exception
+    /// if the process-level handler fails to do so.
+    pub fn strategy(&self) -> u32 {
+        self.exception.inner.lock().second_chance as u32
+    }
+
+    /// Set whether the debugger gets a 'second chance' at handling the exception
+    /// if the process-level handler fails to do so.
+    pub fn set_strategy(&self, strategy: u32) -> ZxResult {
+        if strategy > 1 {
+            return Err(ZxError::INVALID_ARGS);
+        }
+        let mut inner = self.exception.inner.lock();
+        match inner.current_channel_type {
+            ExceptionChannelType::Debugger | ExceptionChannelType::JobDebugger => {
+                inner.second_chance = strategy == 1;
+                Ok(())
+            }
+            _ => Err(ZxError::BAD_STATE),
+        }
     }
 }
 
@@ -278,9 +314,6 @@ pub struct Exception {
 
 struct ExceptionInner {
     current_channel_type: ExceptionChannelType,
-    // Task rights copied from Exceptionate
-    thread_rights: Rights,
-    process_rights: Rights,
     handled: bool,
     second_chance: bool,
 }
@@ -288,18 +321,16 @@ struct ExceptionInner {
 impl Exception {
     /// Create an `Exception`.
     pub fn create(
-        thread: Arc<Thread>,
+        thread: &Arc<Thread>,
         type_: ExceptionType,
         cx: Option<&UserContext>,
     ) -> Arc<Self> {
         Arc::new(Exception {
-            thread,
+            thread: thread.clone(),
             type_,
             report: ExceptionReport::new(type_, cx),
             inner: Mutex::new(ExceptionInner {
                 current_channel_type: ExceptionChannelType::None,
-                thread_rights: Rights::DEFAULT_THREAD,
-                process_rights: Rights::DEFAULT_PROCESS,
                 handled: false,
                 second_chance: false,
             }),
@@ -315,10 +346,10 @@ impl Exception {
             .await
     }
 
-    /// Same as handle, but use a customed iterator.
+    /// Same as `handle`, but use a customized iterator.
     ///
     /// If `first_only` is true, this will only send exception to the first one that received the exception
-    /// even when the exception is not handled
+    /// even when the exception is not handled.
     pub async fn handle_with_exceptionates(
         self: &Arc<Self>,
         fatal: bool,
@@ -360,68 +391,14 @@ impl Exception {
         Err(ZxError::NEXT)
     }
 
-    /// Get the exception's thread and thread rights.
-    pub fn get_thread_and_rights(&self) -> (Arc<Thread>, Rights) {
-        (self.thread.clone(), self.inner.lock().thread_rights)
-    }
-
-    /// Get the exception's process and process rights.
-    pub fn get_process_and_rights(&self) -> (Arc<Process>, Rights) {
-        (self.thread.proc().clone(), self.inner.lock().process_rights)
-    }
-
     /// Get the exception's channel type.
-    pub fn current_channel_type(&self) -> ExceptionChannelType {
+    pub(super) fn current_channel_type(&self) -> ExceptionChannelType {
         self.inner.lock().current_channel_type
     }
 
     /// Get a report of the exception.
-    pub fn report(&self) -> ExceptionReport {
+    pub(super) fn report(&self) -> ExceptionReport {
         self.report.clone()
-    }
-
-    /// Get whether closing the exception handle will
-    /// finish exception processing and resume the underlying thread.
-    pub fn state(&self) -> u32 {
-        self.inner.lock().handled as u32
-    }
-
-    /// Set whether closing the exception handle will
-    /// finish exception processing and resume the underlying thread.
-    pub fn set_state(&self, state: u32) -> ZxResult {
-        if state > 1 {
-            return Err(ZxError::INVALID_ARGS);
-        }
-        self.inner.lock().handled = state == 1;
-        Ok(())
-    }
-
-    /// Get whether the debugger gets a 'second chance' at handling the exception
-    /// if the process-level handler fails to do so.
-    pub fn strategy(&self) -> u32 {
-        self.inner.lock().second_chance as u32
-    }
-
-    /// Set whether the debugger gets a 'second chance' at handling the exception
-    /// if the process-level handler fails to do so.
-    pub fn set_strategy(&self, strategy: u32) -> ZxResult {
-        if strategy > 1 {
-            return Err(ZxError::INVALID_ARGS);
-        }
-        let mut inner = self.inner.lock();
-        match inner.current_channel_type {
-            ExceptionChannelType::Debugger | ExceptionChannelType::JobDebugger => {
-                inner.second_chance = strategy == 1;
-                Ok(())
-            }
-            _ => Err(ZxError::BAD_STATE),
-        }
-    }
-
-    fn set_rights(&self, thread_rights: Rights, process_rights: Rights) {
-        let mut inner = self.inner.lock();
-        inner.thread_rights = thread_rights;
-        inner.process_rights = process_rights;
     }
 }
 
@@ -533,7 +510,7 @@ mod tests {
         let proc = Process::create(&job, "proc").unwrap();
         let thread = Thread::create(&proc, "thread").unwrap();
 
-        let exception = Exception::create(thread.clone(), ExceptionType::Synth, None);
+        let exception = Exception::create(&thread, ExceptionType::Synth, None);
         let iterator = ExceptionateIterator::new(&exception);
         let expected = [
             proc.debug_exceptionate(),
@@ -554,7 +531,7 @@ mod tests {
         let proc = Process::create(&job, "proc").unwrap();
         let thread = Thread::create(&proc, "thread").unwrap();
 
-        let exception = Exception::create(thread.clone(), ExceptionType::Synth, None);
+        let exception = Exception::create(&thread, ExceptionType::Synth, None);
         exception.inner.lock().second_chance = true;
         let iterator = ExceptionateIterator::new(&exception);
         let expected = [
@@ -595,7 +572,7 @@ mod tests {
         let proc = Process::create(&job, "proc").unwrap();
         let thread = Thread::create(&proc, "thread").unwrap();
 
-        let exception = Exception::create(thread.clone(), ExceptionType::Synth, None);
+        let exception = Exception::create(&thread, ExceptionType::Synth, None);
 
         // This is used to verify that exceptions are handled in a specific order
         let handled_order = Arc::new(Mutex::new(Vec::<usize>::new()));
@@ -605,7 +582,7 @@ mod tests {
                               should_handle: bool,
                               order: usize| {
             let channel = exceptionate
-                .create_channel(Rights::DEFAULT_THREAD, Rights::DEFAULT_PROCESS)
+                .create_channel(Rights::DEFAULT_THREAD | Rights::DEFAULT_PROCESS)
                 .unwrap();
             let handled_order = handled_order.clone();
 

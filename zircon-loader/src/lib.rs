@@ -177,7 +177,7 @@ fn spawn(thread: Arc<Thread>) {
     let future = async move {
         kernel_hal::Thread::set_tid(thread.id(), thread.proc().id());
         if thread.is_first_thread() {
-            Exception::create(thread.clone(), ExceptionType::ProcessStarting, None)
+            Exception::create(&thread, ExceptionType::ProcessStarting, None)
                 .handle_with_exceptionates(
                     false,
                     JobDebuggerIterator::new(thread.proc().job()),
@@ -185,7 +185,7 @@ fn spawn(thread: Arc<Thread>) {
                 )
                 .await;
         };
-        Exception::create(thread.clone(), ExceptionType::ThreadStarting, None)
+        Exception::create(&thread, ExceptionType::ThreadStarting, None)
             .handle_with_exceptionates(false, Some(thread.proc().debug_exceptionate()), false)
             .await;
         loop {
@@ -241,11 +241,8 @@ fn spawn(thread: Arc<Thread>) {
                     let vmar = thread.proc().vmar();
                     if vmar.handle_page_fault(fault_vaddr, flags).is_err() {
                         error!("Page Fault from user mode: {:#x?}", cx);
-                        let exception = Exception::create(
-                            thread.clone(),
-                            ExceptionType::FatalPageFault,
-                            Some(&cx),
-                        );
+                        let exception =
+                            Exception::create(&thread, ExceptionType::FatalPageFault, Some(&cx));
                         exception.handle(true).await;
                     }
                 }
@@ -261,13 +258,13 @@ fn spawn(thread: Arc<Thread>) {
                         _ => ExceptionType::General,
                     };
                     error!("User mode exception: {:?} {:#x?}", type_, cx);
-                    let exception = Exception::create(thread.clone(), type_, Some(&cx));
+                    let exception = Exception::create(&thread, type_, Some(&cx));
                     exception.handle(true).await;
                 }
             }
             thread.end_running(cx);
         }
-        let end_exception = Exception::create(thread.clone(), ExceptionType::ThreadExiting, None);
+        let end_exception = Exception::create(&thread, ExceptionType::ThreadExiting, None);
         let handled = thread
             .proc()
             .debug_exceptionate()
