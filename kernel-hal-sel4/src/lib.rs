@@ -31,16 +31,21 @@ mod benchmark;
 use alloc::boxed::Box;
 
 pub unsafe fn boot() -> ! {
-    println!("Initializing seL4 kernel HAL.");
+    let stack_probe: u32 = 0;
+    println!("Initializing seL4 kernel HAL. Boot stack: {:p}", &stack_probe);
     allocator::init();
     pmem::init();
     cap::init();
     futex::init();
+    control::init();
 
     kt::spawn(|| {
         zc::zcore_main();
     }).expect("cannot spawn zcore_main");
-    control::run();
+
+    // It's not safe to do anything useful on the boot thread, since we're not in
+    // control of our stack
+    control::idle();
 }
 
 #[panic_handler]

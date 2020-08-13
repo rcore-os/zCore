@@ -5,12 +5,16 @@ use alloc::collections::btree_map::BTreeMap;
 use alloc::vec::Vec;
 use crate::sync::YieldMutex;
 use crate::object::*;
+use core::sync::atomic::{AtomicUsize, Ordering};
 
 pub static PMEM: PhysicalMemory = PhysicalMemory::new();
 
 pub struct PhysicalMemory {
     /// Used by `futexd` so we cannot use `FMutex` here.
     regions: YieldMutex<BTreeMap<u8, Vec<PhysicalRegion>>>,
+
+    /// Total size of our physical memory, in bytes.
+    size: AtomicUsize,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -24,16 +28,20 @@ impl PhysicalMemory {
     const fn new() -> PhysicalMemory {
         PhysicalMemory {
             regions: YieldMutex::new(BTreeMap::new()),
+            size: AtomicUsize::new(0),
         }
     }
 
     fn init_collect_regions(&self) {
+        let mut total_size: usize = 0;
+
         for bits in (16u8..=63u8).rev() {
             loop {
                 let cslot = cap::G.allocate().expect("init_collect_regions: cannot allocate cap slot");
                 let mut paddr: Word = 0;
                 match sys::locked(|| unsafe { sys::l4bridge_alloc_untyped(cslot, bits as i32, &mut paddr)}) {
                     0 => {
+                        total_size += 1 << bits;
                         self.regions.lock().entry(bits).or_insert(Vec::new()).push(PhysicalRegion {
                             cap: cslot,
                             paddr,
@@ -48,7 +56,14 @@ impl PhysicalMemory {
             }
         }
 
+        println!("Total usable physical memory: {} bytes", total_size);
+        self.size.store(total_size, Ordering::Relaxed);
+
         //println!("Regions: {:#x?}", *self.regions.lock());
+    }
+
+    pub fn size(&self) -> usize {
+        self.size.load(Ordering::Relaxed)
     }
 
     pub fn alloc_region(&self, bits: u8) -> KernelResult<PhysicalRegion> {

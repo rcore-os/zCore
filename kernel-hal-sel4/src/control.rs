@@ -61,9 +61,10 @@ impl SleepQueue {
 enum ControlMessage {
     ExitThread(KernelThread),
     SleepNs(u64),
+    IdleForever,
 }
 
-pub fn run() -> ! {
+fn run() -> ! {
     // Init timer
     unsafe {
         timer::set_period(IDLE_TIMER_PERIOD).expect("failed to set initial timer period");
@@ -94,8 +95,17 @@ pub fn run() -> ! {
                 sleep_queue.queue.entry(deadline).or_insert(LinkedList::new()).push_back(handle);
                 sleep_queue.update_busy_mode(now);
             }
+            ControlMessage::IdleForever => {
+                reply.forget();
+            }
         }
     }
+}
+
+pub fn init() {
+    spawn(|| {
+        run();
+    }).expect("control::init: cannot spawn thread");
 }
 
 pub fn exit_thread(kt: KernelThread) -> ! {
@@ -105,6 +115,11 @@ pub fn exit_thread(kt: KernelThread) -> ! {
 
 pub fn sleep(ns: u64) {
     CONTROL.call(ControlMessage::SleepNs(ns)).expect("sleep: control call failed");
+}
+
+pub fn idle() -> ! {
+    drop(CONTROL.call(ControlMessage::IdleForever));
+    unreachable!("idle");
 }
 
 fn kt_timerd() -> ! {

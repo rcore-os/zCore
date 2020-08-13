@@ -23,15 +23,11 @@
 
 #ifndef BIT
 #define BIT(n) (1ul<<(n))
-#endif 
-
-// 1M stack for Rust
-#define MAIN_STACK_SIZE 1048576
-static char MAIN_STACK[MAIN_STACK_SIZE];
+#endif
 
 // TLS
 // FIXME: Actually load TLS.
-#define TLS_SIZE 65536
+#define TLS_SIZE 8192
 static char TLS[TLS_SIZE];
 
 // IPC buffer
@@ -618,6 +614,8 @@ void setup_twolevel_cspace() {
     }
 }
 
+int main();
+
 void _start() {
     init_master_tls();
     seL4_SetIPCBuffer(ipc_buffer);
@@ -630,13 +628,7 @@ void _start() {
     get_time_cptr = getcap("get_time");
     asid_control_cptr = getcap("asid_control");
 
-    unsigned long stack_top = (unsigned long) MAIN_STACK + MAIN_STACK_SIZE;
-    asm volatile (
-        "movq %0, %%rsp\n"
-        "call main\n"
-        "ud2"
-        :: "r" (stack_top)
-    );
+    main();
 }
 
 int main() {
