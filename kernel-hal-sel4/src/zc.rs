@@ -5,9 +5,18 @@ use crate::user::UserProcess;
 use crate::kt;
 use trapframe::UserContext;
 
+extern "C" {
+    fn zircon_start();
+}
+
 pub fn zcore_main() -> ! {
     println!("Starting zCore services.");
-    crate::benchmark::run_benchmarks(1);
+    //crate::benchmark::run_benchmarks(1);
+    unsafe {
+        zircon_start();
+    }
+    control::idle();
+    panic!("zircon_start returned");
     //force_stack_overflow();
     kt::spawn(first_user_thread).expect("cannot spawn user thread");
     loop {

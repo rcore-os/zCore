@@ -417,15 +417,6 @@ int l4bridge_read_all_registers_ts(
 }
 
 static int handle_fault_ipc_reentry_generic(seL4_MessageInfo_t tag, seL4_UserContext *regs) {
-    seL4_Word *regs_raw = (seL4_Word *) regs;
-    if(seL4_MessageInfo_get_label(tag) == seL4_Fault_UnknownSyscall) {
-        if(seL4_MessageInfo_get_length(tag) != L4BRIDGE_NUM_REGISTERS) {
-            panic_str("handle_fault_ipc_reentry_generic: seL4_Fault_UnknownSyscall: bad payload\n");
-        }
-        for(int i = 0; i < L4BRIDGE_NUM_REGISTERS; i++) {
-            regs_raw[i] = seL4_GetMR(i);
-        }
-    }
     return seL4_MessageInfo_get_label(tag);
 }
 

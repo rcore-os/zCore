@@ -7,10 +7,12 @@ use crate::asid;
 use crate::cap;
 use core::mem::{self, ManuallyDrop};
 use trapframe::{TrapFrame, UserContext, GeneralRegs};
-use alloc::sync::Arc;
+use alloc::sync::{Arc, Weak};
 use alloc::boxed::Box;
 use crate::futex::FMutex;
 use crate::vm::{self, VmAlloc};
+use crate::pmem::Page;
+use alloc::collections::linked_list::LinkedList;
 
 const USER_CSPACE_NUM_ENTRIES_BITS: u8 = 1; // 2 entries
 
@@ -28,8 +30,9 @@ pub enum KernelEntryReason {
 /// The context of a user process.
 pub struct UserProcess {
     vspace: UserVspace,
-    vm: FMutex<VmAlloc>,
+    pub vm: FMutex<VmAlloc>,
     fault_channel: UserFaultChannel,
+    threads: FMutex<LinkedList<Box<UserThread>>>,
 }
 
 /// The context of a user thread.
@@ -57,7 +60,22 @@ impl UserProcess {
             vspace,
             vm,
             fault_channel,
+            threads: FMutex::new(LinkedList::new()),
         }))
+    }
+
+    pub fn get_thread(self: &Arc<Self>) -> KernelResult<Box<UserThread>> {
+        let mut threads = self.threads.lock();
+        if let Some(x) = threads.pop_front() {
+            Ok(x)
+        } else {
+            drop(threads);
+            self.create_thread()
+        }
+    }
+
+    pub fn put_thread(self: &Arc<Self>, t: Box<UserThread>) {
+        self.threads.lock().push_back(t);
     }
 
     pub fn create_thread(self: &Arc<Self>) -> KernelResult<Box<UserThread>> {
@@ -159,7 +177,7 @@ impl UserThread {
         let fault_num = fault_num as usize;
         let registers_preloaded;
         t.kernel_entry_reason = if fault_num == unsafe { sys::L4BRIDGE_FAULT_UNKNOWN_SYSCALL } {
-            registers_preloaded = true;
+            registers_preloaded = false;
             KernelEntryReason::UnknownSyscall
         } else if fault_num == unsafe { sys::L4BRIDGE_FAULT_VM } {
             registers_preloaded = false;

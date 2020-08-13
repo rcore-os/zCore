@@ -10,3 +10,7 @@ panic = "abort"
 
 [dependencies]
 kernel-hal-sel4 = { path = "../kernel-hal-sel4" }
+
+zircon-object = { path = "../zircon-object" }
+zircon-loader = { path = "../zircon-loader", default-features = false }
+zircon-syscall = { path = "../zircon-syscall" }

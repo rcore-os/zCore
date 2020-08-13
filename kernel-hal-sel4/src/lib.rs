@@ -25,8 +25,9 @@ mod zc;
 mod futex;
 mod user;
 mod asid;
-mod hal;
+pub mod hal;
 mod benchmark;
+mod executor;
 
 use alloc::boxed::Box;
 
@@ -38,6 +39,7 @@ pub unsafe fn boot() -> ! {
     cap::init();
     futex::init();
     control::init();
+    executor::init();
 
     kt::spawn(|| {
         zc::zcore_main();

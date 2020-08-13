@@ -4,9 +4,10 @@ use crate::cap;
 use crate::types::*;
 use crate::error::*;
 use crate::object::*;
-use crate::user::UserThread;
+use crate::user::*;
 use core::cell::RefCell;
 use alloc::boxed::Box;
+use alloc::sync::Arc;
 
 pub struct TcbBacking;
 unsafe impl ObjectBacking for TcbBacking {
@@ -74,7 +75,7 @@ impl Tcb {
 
 #[repr(C)]
 pub struct LocalContext {
-    pub user_thread: RefCell<Option<Box<UserThread>>>,
+    pub user_process: RefCell<Option<Arc<UserProcess>>>,
 }
 
 impl LocalContext {
@@ -92,7 +93,7 @@ impl LocalContext {
             panic!("LocalContext::init_current: non-empty local context");
         }
         let lc = Box::new(LocalContext {
-            user_thread: RefCell::new(None),
+            user_process: RefCell::new(None),
         });
         *p = Some(&*Box::into_raw(lc));
     }

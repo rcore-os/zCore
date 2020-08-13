@@ -87,6 +87,27 @@ pub fn benchmark_user_vm_fault() {
     })
 }
 
+pub fn benchmark_user_thread_creation() {
+    use crate::user::{UserProcess};
+    use trapframe::UserContext;
+    let user_proc = UserProcess::new().expect("cannot create user process");
+
+    bench("user_thread_creation", 50000, || {
+        user_proc.create_thread().expect("cannot create user thread");
+    })
+}
+
+pub fn benchmark_user_thread_get_put() {
+    use crate::user::{UserProcess};
+    use trapframe::UserContext;
+    let user_proc = UserProcess::new().expect("cannot create user process");
+
+    bench("benchmark_user_thread_get_put", 5000000, || {
+        let t = user_proc.get_thread().expect("cannot get user thread");
+        user_proc.put_thread(t);
+    })
+}
+
 pub fn benchmark_yield() {
     bench("yield", 1000000, || {
         crate::thread::yield_now();
@@ -109,6 +130,8 @@ pub fn run_benchmarks(rounds: u64) {
         benchmark_kt_spawn();
         benchmark_user_vm_fault();
         benchmark_timer_now();
+        benchmark_user_thread_creation();
+        benchmark_user_thread_get_put();
     }
 }
 

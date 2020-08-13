@@ -9,10 +9,13 @@ description = "Kernel HAL implementation on seL4."
 
 [dependencies]
 bitflags = { version = "1.2", default-features = false }
-kernel-hal = { path = "../kernel-hal" }
 dlmalloc = { git = "https://github.com/losfair/dlmalloc-rs", branch = "rcore-soc", features = ["global", "external"] }
 slab = { git = "https://github.com/losfair/slab", branch = "no-std" }
 lazy_static = { version = "1.4", features = ["spin_no_std" ] }
 num_enum = { version = "0.5", default-features = false }
 trapframe = "0.4"
 git-version = "0.3"
+woke = "0.0.2"
+
+# copied from kernel-hal
+numeric-enum-macro = "0.2"

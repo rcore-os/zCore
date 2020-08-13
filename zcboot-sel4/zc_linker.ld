@@ -20,6 +20,10 @@ SECTIONS {
 
   .data ALIGN(4K):
   {
+    PROVIDE_HIDDEN(kcounter_descriptor_begin = .);
+    KEEP(*(.kcounter.descriptor))
+    PROVIDE_HIDDEN(kcounter_descriptor_end = .);
+    
     *(.data .data.*)
   }
 

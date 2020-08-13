@@ -29,21 +29,8 @@ pub fn create_kcounter_vmo() -> (Arc<VmObject>, Arc<VmObject>) {
     }
     counter_name_vmo.set_name("counters/desc");
 
-    let kcounters_vmo = {
-        extern "C" {
-            fn kcounters_arena_start();
-            fn kcounters_arena_end();
-        }
-        use kernel_hal::PageTableTrait;
-        let mut pgtable = kernel_hal::PageTable::current();
-        let paddr = pgtable.query(kcounters_arena_start as usize).unwrap();
-        assert_eq!(
-            kcounters_arena_start as usize / PAGE_SIZE,
-            kcounters_arena_end as usize / PAGE_SIZE,
-            "all kcounters must in the same page"
-        );
-        VmObject::new_physical(paddr, 1)
-    };
+    let kcounters_vmo = VmObject::new_physical(kernel_hal::kcounters_page(), 1);
+
     kcounters_vmo.set_name("counters/arena");
     (counter_name_vmo, kcounters_vmo)
 }

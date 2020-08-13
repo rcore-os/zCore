@@ -168,6 +168,9 @@ impl KernelThread {
             panic!("KernelThread::new: cannot resume new thread");
         }
 
+        // FIXME: Without this line, the new thread runs *very, very* slow. Why?
+        crate::thread::yield_now();
+
         Ok(())
     }
 }
