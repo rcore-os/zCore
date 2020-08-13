@@ -49,7 +49,7 @@ pub fn benchmark_pmem_alloc() {
 }
 
 pub fn benchmark_kt_spawn() {
-    bench_custom("kt_spawn", 2000, |n| {
+    bench_custom("kt_spawn", 3000, |n| {
         use crate::kt;
         use core::sync::atomic::{AtomicU64, Ordering};
         use alloc::sync::Arc;
@@ -58,11 +58,12 @@ pub fn benchmark_kt_spawn() {
         let sem2 = sem.clone();
 
         kt::spawn(move || {
-            static COUNTER: AtomicU64 = AtomicU64::new(0);
+            let counter = Arc::new(AtomicU64::new(0));
             for i in 0..n {
                 let sem = sem2.clone();
+                let counter = counter.clone();
                 kt::spawn(move || {
-                    if COUNTER.fetch_add(1, Ordering::Relaxed) + 1 == n {
+                    if counter.fetch_add(1, Ordering::Relaxed) + 1 == n {
                         sem.up();
                     }
                 }).expect("benchmark_kt_spawn: spawn failed");
@@ -105,7 +106,7 @@ pub fn run_benchmarks(rounds: u64) {
         benchmark_vmalloc();
         benchmark_pmem_alloc();
         benchmark_yield();
-        //benchmark_kt_spawn();
+        benchmark_kt_spawn();
         benchmark_user_vm_fault();
         benchmark_timer_now();
     }

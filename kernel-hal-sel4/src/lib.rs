@@ -37,7 +37,6 @@ pub unsafe fn boot() -> ! {
     cap::init();
     futex::init();
 
-    benchmark::run_benchmarks(core::u64::MAX);
     kt::spawn(|| {
         zc::zcore_main();
     }).expect("cannot spawn zcore_main");

@@ -7,6 +7,7 @@ use trapframe::UserContext;
 
 pub fn zcore_main() -> ! {
     println!("Initializing zCore services.");
+    crate::benchmark::run_benchmarks(core::u64::MAX);
     /*
     for i in 0..1000 {
         control::sleep(1000000);
