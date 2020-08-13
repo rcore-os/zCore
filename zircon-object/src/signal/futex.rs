@@ -430,7 +430,12 @@ mod tests {
         let futex = proc.get_futex(&VALUE);
         let future = futex.wait_with_owner(1, Some(thread.clone()), Some(thread.clone()));
         let result: ZxResult = thread
-            .blocking_run(future, ThreadState::BlockedFutex, Duration::from_millis(1))
+            .blocking_run(
+                future,
+                ThreadState::BlockedFutex,
+                Duration::from_millis(1),
+                None,
+            )
             .await;
         assert_eq!(result.unwrap_err(), ZxError::TIMED_OUT);
         assert_eq!(futex.wake(1), 0);

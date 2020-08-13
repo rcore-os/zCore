@@ -389,6 +389,7 @@ impl Thread {
         future: F,
         state: ThreadState,
         deadline: Duration,
+        cancel_token: Option<Receiver<()>>,
     ) -> ZxResult<T>
     where
         F: Future<Output = FT> + Unpin,
@@ -399,56 +400,25 @@ impl Thread {
             if inner.get_state() == ThreadState::Dying {
                 return Err(ZxError::STOP);
             }
-            let (sender, receiver) = channel::<()>();
+            let (sender, receiver) = channel();
             inner.killer = Some(sender);
             let old_state = core::mem::replace(&mut inner.state, state);
             inner.update_signal(&self.base);
             (old_state, receiver)
         };
-        let ret = select_biased! {
-            ret = future.fuse() => ret.into_result(),
-            _ = killed.fuse() => Err(ZxError::STOP),
-            _ = sleep_until(deadline).fuse() => Err(ZxError::TIMED_OUT),
-        };
-        let mut inner = self.inner.lock();
-        inner.killer = None;
-        if inner.state == ThreadState::Dying {
-            return ret;
-        }
-        assert_eq!(inner.state, state);
-        inner.state = old_state;
-        inner.update_signal(&self.base);
-        ret
-    }
-
-    /// Run a cancelable async future and change state while blocking.
-    pub async fn cancelable_blocking_run<F, T, FT>(
-        &self,
-        future: F,
-        state: ThreadState,
-        deadline: Duration,
-        cancel_token: Receiver<()>,
-    ) -> ZxResult<T>
-    where
-        F: Future<Output = FT> + Unpin,
-        FT: IntoResult<T>,
-    {
-        let (old_state, killed) = {
-            let mut inner = self.inner.lock();
-            if inner.get_state() == ThreadState::Dying {
-                return Err(ZxError::STOP);
+        let ret = if let Some(cancel_token) = cancel_token {
+            select_biased! {
+                ret = future.fuse() => ret.into_result(),
+                _ = killed.fuse() => Err(ZxError::STOP),
+                _ = sleep_until(deadline).fuse() => Err(ZxError::TIMED_OUT),
+                _ = cancel_token.fuse() => Err(ZxError::CANCELED),
             }
-            let (sender, receiver) = channel::<()>();
-            inner.killer = Some(sender);
-            let old_state = core::mem::replace(&mut inner.state, state);
-            inner.update_signal(&self.base);
-            (old_state, receiver)
-        };
-        let ret = select_biased! {
-            ret = future.fuse() => ret.into_result(),
-            _ = killed.fuse() => Err(ZxError::STOP),
-            _ = sleep_until(deadline).fuse() => Err(ZxError::TIMED_OUT),
-            _ = cancel_token.fuse() => Err(ZxError::CANCELED),
+        } else {
+            select_biased! {
+                ret = future.fuse() => ret.into_result(),
+                _ = killed.fuse() => Err(ZxError::STOP),
+                _ = sleep_until(deadline).fuse() => Err(ZxError::TIMED_OUT),
+            }
         };
         let mut inner = self.inner.lock();
         inner.killer = None;
@@ -495,6 +465,7 @@ impl Thread {
                 future,
                 ThreadState::BlockedException,
                 Duration::from_nanos(u64::max_value()),
+                None,
             )
             .await;
         self.inner.lock().exception = None;
@@ -734,7 +705,7 @@ mod tests {
     }
 
     #[async_std::test]
-    async fn cancelable_blocking_run() {
+    async fn blocking_run() {
         let root_job = Job::root();
         let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
         let thread = Thread::create(&proc, "thread", 0).expect("failed to create thread");
@@ -749,11 +720,11 @@ mod tests {
         let future = object.wait_signal(Signal::READABLE);
         let deadline = timer_now() + Duration::from_millis(20);
         let result = thread
-            .cancelable_blocking_run(
+            .blocking_run(
                 future,
                 ThreadState::BlockedWaitOne,
                 deadline.into(),
-                cancel_token,
+                Some(cancel_token),
             )
             .await;
         assert_eq!(result.err(), Some(ZxError::TIMED_OUT));
@@ -769,11 +740,11 @@ mod tests {
             }
         });
         let result = thread
-            .cancelable_blocking_run(
+            .blocking_run(
                 future,
                 ThreadState::BlockedWaitOne,
                 deadline.into(),
-                cancel_token,
+                Some(cancel_token),
             )
             .await;
         assert_eq!(result.err(), Some(ZxError::CANCELED));

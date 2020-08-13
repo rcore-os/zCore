@@ -203,11 +203,11 @@ impl Syscall<'_> {
         let future = object.wait_signal(signals);
         let signal = self
             .thread
-            .cancelable_blocking_run(
+            .blocking_run(
                 future,
                 ThreadState::BlockedWaitOne,
                 deadline.into(),
-                cancel_token,
+                Some(cancel_token),
             )
             .await
             .or_else(|e| {
@@ -449,7 +449,7 @@ impl Syscall<'_> {
         let future = wait_signal_many(&waiters);
         let res = self
             .thread
-            .blocking_run(future, ThreadState::BlockedWaitMany, deadline.into())
+            .blocking_run(future, ThreadState::BlockedWaitMany, deadline.into(), None)
             .await?;
         for (i, item) in items.iter_mut().enumerate() {
             item.observed = res[i];

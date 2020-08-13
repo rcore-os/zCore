@@ -100,7 +100,8 @@ impl Syscall<'_> {
                 .blocking_run(
                     sleep_until(deadline.into()),
                     ThreadState::BlockedSleeping,
-                    Duration::from_nanos(u64::max_value()),
+                    Deadline::forever().into(),
+                    None,
                 )
                 .await?;
         }
