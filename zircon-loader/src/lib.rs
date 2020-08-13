@@ -172,22 +172,17 @@ kcounter!(EXCEPTIONS_USER, "exceptions.user");
 kcounter!(EXCEPTIONS_TIMER, "exceptions.timer");
 kcounter!(EXCEPTIONS_PGFAULT, "exceptions.pgfault");
 
-fn spawn(thread: Arc<Thread>) {
+fn spawn(thread: CurrentThread) {
     let vmtoken = thread.proc().vmar().table_phys();
     let future = async move {
         kernel_hal::Thread::set_tid(thread.id(), thread.proc().id());
         if thread.is_first_thread() {
-            Exception::create(&thread, ExceptionType::ProcessStarting, None)
-                .handle_with_exceptionates(
-                    false,
-                    JobDebuggerIterator::new(thread.proc().job()),
-                    true,
-                )
-                .await;
+            let exception = Exception::create(&thread, ExceptionType::ProcessStarting, None);
+            thread.wait_for_exception_handling(exception).await;
         };
-        Exception::create(&thread, ExceptionType::ThreadStarting, None)
-            .handle_with_exceptionates(false, Some(thread.proc().debug_exceptionate()), false)
-            .await;
+        let exception = Exception::create(&thread, ExceptionType::ThreadStarting, None);
+        thread.wait_for_exception_handling(exception).await;
+
         loop {
             let mut cx = thread.wait_for_run().await;
             if thread.state() == ThreadState::Dying {
@@ -243,7 +238,7 @@ fn spawn(thread: Arc<Thread>) {
                         error!("Page Fault from user mode: {:#x?}", cx);
                         let exception =
                             Exception::create(&thread, ExceptionType::FatalPageFault, Some(&cx));
-                        exception.handle(true).await;
+                        thread.wait_for_exception_handling(exception).await;
                     }
                 }
                 0x8 => {
@@ -259,7 +254,7 @@ fn spawn(thread: Arc<Thread>) {
                     };
                     error!("User mode exception: {:?} {:#x?}", type_, cx);
                     let exception = Exception::create(&thread, type_, Some(&cx));
-                    exception.handle(true).await;
+                    thread.wait_for_exception_handling(exception).await;
                 }
             }
             thread.end_running(cx);
@@ -277,7 +272,7 @@ fn spawn(thread: Arc<Thread>) {
     kernel_hal::Thread::spawn(Box::pin(future), vmtoken);
 }
 
-async fn handle_syscall(thread: &Arc<Thread>, regs: &mut GeneralRegs) {
+async fn handle_syscall(thread: &CurrentThread, regs: &mut GeneralRegs) {
     #[cfg(target_arch = "x86_64")]
     let num = regs.rax as u32;
     #[cfg(target_arch = "aarch64")]
@@ -305,7 +300,7 @@ async fn handle_syscall(thread: &Arc<Thread>, regs: &mut GeneralRegs) {
     ];
     let mut syscall = Syscall {
         regs,
-        thread: thread.clone(),
+        thread,
         spawn_fn: spawn,
     };
     let ret = syscall.syscall(num, args).await as usize;

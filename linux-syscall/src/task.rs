@@ -15,7 +15,7 @@ use bitflags::bitflags;
 use core::fmt::Debug;
 use linux_object::fs::INodeExt;
 use linux_object::loader::LinuxElfLoader;
-use linux_object::thread::ThreadExt;
+use linux_object::thread::{CurrentThreadExt, ThreadExt};
 
 impl Syscall<'_> {
     /// Fork the current process. Return the child's PID.

@@ -115,7 +115,6 @@ impl Process {
         name: &str,
         ext: impl Any + Send + Sync,
     ) -> ZxResult<Arc<Self>> {
-        // TODO: _options -> options
         let proc = Arc::new(Process {
             base: KObjectBase::with_name(name),
             _counter: CountHelper::new(),
@@ -145,7 +144,7 @@ impl Process {
         stack: usize,
         arg1: Option<Handle>,
         arg2: usize,
-        spawn_fn: fn(thread: Arc<Thread>),
+        spawn_fn: fn(thread: CurrentThread),
     ) -> ZxResult {
         let handle_value;
         {

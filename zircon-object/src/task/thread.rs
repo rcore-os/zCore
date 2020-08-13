@@ -8,11 +8,12 @@ use {
     core::{
         any::Any,
         future::Future,
+        ops::Deref,
         pin::Pin,
         task::{Context, Poll, Waker},
         time::Duration,
     },
-    futures::{channel::oneshot::*, future::FutureExt, select_biased},
+    futures::{channel::oneshot::*, future::FutureExt, pin_mut, select_biased},
     kernel_hal::{sleep_until, GeneralRegs, UserContext},
     spin::Mutex,
 };
@@ -216,7 +217,7 @@ impl Thread {
         stack: usize,
         arg1: usize,
         arg2: usize,
-        spawn_fn: fn(thread: Arc<Thread>),
+        spawn_fn: fn(thread: CurrentThread),
     ) -> ZxResult {
         {
             let mut inner = self.inner.lock();
@@ -239,7 +240,7 @@ impl Thread {
             inner.state = ThreadState::Running;
             inner.update_signal(&self.base);
         }
-        spawn_fn(self.clone());
+        spawn_fn(CurrentThread(self.clone()));
         Ok(())
     }
 
@@ -247,7 +248,7 @@ impl Thread {
     pub fn start_with_regs(
         self: &Arc<Self>,
         regs: GeneralRegs,
-        spawn_fn: fn(thread: Arc<Thread>),
+        spawn_fn: fn(thread: CurrentThread),
     ) -> ZxResult {
         {
             let mut inner = self.inner.lock();
@@ -261,7 +262,7 @@ impl Thread {
             inner.update_signal(&self.base);
             self.base.signal_set(Signal::THREAD_RUNNING);
         }
-        spawn_fn(self.clone());
+        spawn_fn(CurrentThread(self.clone()));
         Ok(())
     }
 
@@ -300,23 +301,6 @@ impl Thread {
         }
     }
 
-    /// Exit the thread.
-    /// The thread do not terminate immediately when exited. It is just made dying.
-    /// It will terminate after some cleanups (when `terminate` are called **explicitly** by upper layer).
-    pub fn exit(&self) {
-        self.stop(false);
-    }
-
-    /// Terminate the current running thread. This function should be called **explicitly**
-    /// by upper layer after cleanups are finished.
-    pub fn terminate(&self) {
-        let mut inner = self.inner.lock();
-        self.exceptionate.shutdown();
-        inner.state = ThreadState::Dead;
-        inner.update_signal(&self.base);
-        self.proc().remove_thread(self.base.id);
-    }
-
     /// Read one aspect of thread state.
     pub fn read_state(&self, kind: ThreadStateKind, buf: &mut [u8]) -> ZxResult<usize> {
         let inner = self.inner.lock();
@@ -329,38 +313,6 @@ impl Thread {
         let mut inner = self.inner.lock();
         let context = inner.context.as_mut().ok_or(ZxError::BAD_STATE)?;
         context.write_state(kind, buf)
-    }
-
-    /// Wait until the thread is ready to run (not suspended),
-    /// and then take away its context to run the thread.
-    pub fn wait_for_run(self: &Arc<Thread>) -> impl Future<Output = Box<UserContext>> {
-        #[must_use = "wait_for_run does nothing unless polled/`await`-ed"]
-        struct RunnableChecker {
-            thread: Arc<Thread>,
-        }
-        impl Future for RunnableChecker {
-            type Output = Box<UserContext>;
-
-            fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-                let mut inner = self.thread.inner.lock();
-                if inner.suspend_count == 0 {
-                    // resume:  return the context token from thread object
-                    Poll::Ready(inner.context.take().unwrap())
-                } else {
-                    // suspend: put waker into the thread object
-                    inner.waker = Some(cx.waker().clone());
-                    Poll::Pending
-                }
-            }
-        }
-        RunnableChecker {
-            thread: self.clone(),
-        }
-    }
-
-    /// The thread ends running and takes back the context.
-    pub fn end_running(&self, context: Box<UserContext>) {
-        self.inner.lock().context = Some(context);
     }
 
     /// Get the thread's information.
@@ -384,95 +336,6 @@ impl Thread {
         }
         let report = inner.exception.as_ref().ok_or(ZxError::BAD_STATE)?.report();
         Ok(report)
-    }
-
-    /// Run async future and change state while blocking.
-    pub async fn blocking_run<F, T, FT>(
-        &self,
-        future: F,
-        state: ThreadState,
-        deadline: Duration,
-        cancel_token: Option<Receiver<()>>,
-    ) -> ZxResult<T>
-    where
-        F: Future<Output = FT> + Unpin,
-        FT: IntoResult<T>,
-    {
-        let (old_state, killed) = {
-            let mut inner = self.inner.lock();
-            if inner.get_state() == ThreadState::Dying {
-                return Err(ZxError::STOP);
-            }
-            let (sender, receiver) = channel();
-            inner.killer = Some(sender);
-            let old_state = core::mem::replace(&mut inner.state, state);
-            inner.update_signal(&self.base);
-            (old_state, receiver)
-        };
-        let ret = if let Some(cancel_token) = cancel_token {
-            select_biased! {
-                ret = future.fuse() => ret.into_result(),
-                _ = killed.fuse() => Err(ZxError::STOP),
-                _ = sleep_until(deadline).fuse() => Err(ZxError::TIMED_OUT),
-                _ = cancel_token.fuse() => Err(ZxError::CANCELED),
-            }
-        } else {
-            select_biased! {
-                ret = future.fuse() => ret.into_result(),
-                _ = killed.fuse() => Err(ZxError::STOP),
-                _ = sleep_until(deadline).fuse() => Err(ZxError::TIMED_OUT),
-            }
-        };
-        let mut inner = self.inner.lock();
-        inner.killer = None;
-        if inner.state == ThreadState::Dying {
-            return ret;
-        }
-        assert_eq!(inner.state, state);
-        inner.state = old_state;
-        inner.update_signal(&self.base);
-        ret
-    }
-
-    /// Run a blocking task when the thread is exited itself and dying.
-    ///
-    /// The task will stop running if and once the thread is killed.
-    pub async fn dying_run<F, T, FT>(&self, future: F) -> ZxResult<T>
-    where
-        F: Future<Output = FT> + Unpin,
-        FT: IntoResult<T>,
-    {
-        let killed = {
-            let mut inner = self.inner.lock();
-            if inner.get_state() == ThreadState::Dead || inner.killed {
-                return Err(ZxError::STOP);
-            }
-            let (sender, receiver) = channel::<()>();
-            inner.killer = Some(sender);
-            receiver
-        };
-        select_biased! {
-            ret = future.fuse() => ret.into_result(),
-            _ = killed.fuse() => Err(ZxError::STOP),
-        }
-    }
-
-    pub(super) async fn wait_for_exception<T>(
-        &self,
-        future: impl Future<Output = ZxResult<T>> + Unpin,
-        exception: Arc<Exception>,
-    ) -> ZxResult<T> {
-        self.inner.lock().exception = Some(exception);
-        let ret = self
-            .blocking_run(
-                future,
-                ThreadState::BlockedException,
-                Duration::from_nanos(u64::max_value()),
-                None,
-            )
-            .await;
-        self.inner.lock().exception = None;
-        ret
     }
 
     /// Get the thread state.
@@ -548,6 +411,157 @@ impl Task for Thread {
 
     fn debug_exceptionate(&self) -> Arc<Exceptionate> {
         panic!("thread do not have debug exceptionate");
+    }
+}
+
+/// Current thread.
+pub struct CurrentThread(Arc<Thread>);
+
+impl Deref for CurrentThread {
+    type Target = Arc<Thread>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl CurrentThread {
+    /// Exit the current thread.
+    ///
+    /// The thread do not terminate immediately when exited. It is just made dying.
+    /// It will terminate after some cleanups (when `terminate` are called **explicitly** by upper layer).
+    pub fn exit(&self) {
+        self.stop(false);
+    }
+
+    /// Terminate the current running thread.
+    ///
+    /// This function should be called **explicitly** by upper layer after cleanups are finished.
+    pub fn terminate(&self) {
+        let mut inner = self.inner.lock();
+        self.exceptionate.shutdown();
+        inner.state = ThreadState::Dead;
+        inner.update_signal(&self.base);
+        self.proc().remove_thread(self.base.id);
+    }
+
+    /// Wait until the thread is ready to run (not suspended),
+    /// and then take away its context to run the thread.
+    pub fn wait_for_run(&self) -> impl Future<Output = Box<UserContext>> {
+        #[must_use = "wait_for_run does nothing unless polled/`await`-ed"]
+        struct RunnableChecker {
+            thread: Arc<Thread>,
+        }
+        impl Future for RunnableChecker {
+            type Output = Box<UserContext>;
+
+            fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+                let mut inner = self.thread.inner.lock();
+                if inner.suspend_count == 0 {
+                    // resume:  return the context token from thread object
+                    Poll::Ready(inner.context.take().unwrap())
+                } else {
+                    // suspend: put waker into the thread object
+                    inner.waker = Some(cx.waker().clone());
+                    Poll::Pending
+                }
+            }
+        }
+        RunnableChecker {
+            thread: self.0.clone(),
+        }
+    }
+
+    /// The thread ends running and takes back the context.
+    pub fn end_running(&self, context: Box<UserContext>) {
+        self.inner.lock().context = Some(context);
+    }
+
+    /// Run async future and change state while blocking.
+    pub async fn blocking_run<F, T, FT>(
+        &self,
+        future: F,
+        state: ThreadState,
+        deadline: Duration,
+        cancel_token: Option<Receiver<()>>,
+    ) -> ZxResult<T>
+    where
+        F: Future<Output = FT> + Unpin,
+        FT: IntoResult<T>,
+    {
+        let (old_state, killed) = {
+            let mut inner = self.inner.lock();
+            if inner.get_state() == ThreadState::Dying {
+                return Err(ZxError::STOP);
+            }
+            let (sender, receiver) = channel();
+            inner.killer = Some(sender);
+            let old_state = core::mem::replace(&mut inner.state, state);
+            inner.update_signal(&self.base);
+            (old_state, receiver)
+        };
+        let ret = if let Some(cancel_token) = cancel_token {
+            select_biased! {
+                ret = future.fuse() => ret.into_result(),
+                _ = killed.fuse() => Err(ZxError::STOP),
+                _ = sleep_until(deadline).fuse() => Err(ZxError::TIMED_OUT),
+                _ = cancel_token.fuse() => Err(ZxError::CANCELED),
+            }
+        } else {
+            select_biased! {
+                ret = future.fuse() => ret.into_result(),
+                _ = killed.fuse() => Err(ZxError::STOP),
+                _ = sleep_until(deadline).fuse() => Err(ZxError::TIMED_OUT),
+            }
+        };
+        let mut inner = self.inner.lock();
+        inner.killer = None;
+        if inner.state == ThreadState::Dying {
+            return ret;
+        }
+        assert_eq!(inner.state, state);
+        inner.state = old_state;
+        inner.update_signal(&self.base);
+        ret
+    }
+
+    /// Blocked wait for exception handling.
+    pub async fn wait_for_exception_handling(&self, exception: Arc<Exception>) {
+        self.inner.lock().exception = Some(exception.clone());
+        let future = exception.handle();
+        pin_mut!(future);
+        self.blocking_run(
+            future,
+            ThreadState::BlockedException,
+            Duration::from_nanos(u64::max_value()),
+            None,
+        )
+        .await
+        .ok();
+        self.inner.lock().exception = None;
+    }
+
+    /// Run a blocking task when the thread is exited itself and dying.
+    ///
+    /// The task will stop running if and once the thread is killed.
+    pub async fn dying_run<F, T, FT>(&self, future: F) -> ZxResult<T>
+    where
+        F: Future<Output = FT> + Unpin,
+        FT: IntoResult<T>,
+    {
+        let killed = {
+            let mut inner = self.inner.lock();
+            if inner.get_state() == ThreadState::Dead || inner.killed {
+                return Err(ZxError::STOP);
+            }
+            let (sender, receiver) = channel::<()>();
+            inner.killer = Some(sender);
+            receiver
+        };
+        select_biased! {
+            ret = future.fuse() => ret.into_result(),
+            _ = killed.fuse() => Err(ZxError::STOP),
+        }
     }
 }
 

@@ -53,7 +53,7 @@ pub fn run(args: Vec<String>, envs: Vec<String>, rootfs: Arc<dyn FileSystem>) ->
 /// - enter user mode
 /// - handle trap/interrupt/syscall according to the return value
 /// - return the context to the user thread
-fn spawn(thread: Arc<Thread>) {
+fn spawn(thread: CurrentThread) {
     let vmtoken = thread.proc().vmar().table_phys();
     let future = async move {
         loop {
@@ -102,7 +102,7 @@ fn spawn(thread: Arc<Thread>) {
 }
 
 /// syscall handler entry: create a struct `syscall: Syscall`, and call `syscall.syscall()`
-async fn handle_syscall(thread: &Arc<Thread>, regs: &mut GeneralRegs) -> bool {
+async fn handle_syscall(thread: &CurrentThread, regs: &mut GeneralRegs) -> bool {
     trace!("syscall: {:#x?}", regs);
     let num = regs.rax as u32;
     let args = [regs.rdi, regs.rsi, regs.rdx, regs.r10, regs.r8, regs.r9];

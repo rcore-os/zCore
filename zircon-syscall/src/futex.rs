@@ -1,4 +1,7 @@
-use {super::*, zircon_object::task::ThreadState};
+use {
+    super::*,
+    zircon_object::task::{Thread, ThreadState},
+};
 
 impl Syscall<'_> {
     /// Wait on a futex.  
@@ -27,7 +30,7 @@ impl Syscall<'_> {
         } else {
             Some(proc.get_object::<Thread>(new_futex_owner)?)
         };
-        let future = futex.wait_with_owner(current_value, Some(self.thread.clone()), new_owner);
+        let future = futex.wait_with_owner(current_value, Some((*self.thread).clone()), new_owner);
         self.thread
             .blocking_run(future, ThreadState::BlockedFutex, deadline.into(), None)
             .await?;

@@ -1,7 +1,6 @@
 use {
     super::*, crate::ipc::*, crate::object::*, alloc::sync::Arc, alloc::vec, alloc::vec::Vec,
-    core::mem::size_of, futures::channel::oneshot, futures::pin_mut, kernel_hal::UserContext,
-    spin::Mutex,
+    core::mem::size_of, futures::channel::oneshot, kernel_hal::UserContext, spin::Mutex,
 };
 
 /// Kernel-owned exception channel endpoint.
@@ -197,6 +196,12 @@ pub enum ExceptionType {
     ProcessStarting = 0x8308,
 }
 
+impl ExceptionType {
+    fn is_fatal(self) -> bool {
+        (self as u32) < 0x1000
+    }
+}
+
 /// Type of the exception channel
 #[repr(u32)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -341,31 +346,32 @@ impl Exception {
     ///
     /// Note that it's possible that this may returns before exception was send to any exception channel.
     /// This happens only when the thread is killed before we send the exception.
-    pub async fn handle(self: &Arc<Self>, fatal: bool) {
-        self.handle_with_exceptionates(fatal, ExceptionateIterator::new(self), false)
-            .await
-    }
-
-    /// Same as `handle`, but use a customized iterator.
-    ///
-    /// If `first_only` is true, this will only send exception to the first one that received the exception
-    /// even when the exception is not handled.
-    pub async fn handle_with_exceptionates(
-        self: &Arc<Self>,
-        fatal: bool,
-        exceptionates: impl IntoIterator<Item = Arc<Exceptionate>>,
-        first_only: bool,
-    ) {
-        let future = self.handle_internal(exceptionates, first_only);
-        pin_mut!(future);
-        let result = self.thread.wait_for_exception(future, self.clone()).await;
-        if result == Err(ZxError::NEXT) && fatal {
+    pub(super) async fn handle(self: &Arc<Self>) {
+        let result = match self.type_ {
+            ExceptionType::ProcessStarting => {
+                self.handle_with(JobDebuggerIterator::new(self.thread.proc().job()), true)
+                    .await
+            }
+            ExceptionType::ThreadStarting | ExceptionType::ThreadExiting => {
+                self.handle_with(Some(self.thread.proc().debug_exceptionate()), false)
+                    .await
+            }
+            _ => {
+                self.handle_with(ExceptionateIterator::new(self), false)
+                    .await
+            }
+        };
+        if result == Err(ZxError::NEXT) && self.type_.is_fatal() {
             // Nobody handled the exception, kill myself
             self.thread.proc().exit(TASK_RETCODE_SYSCALL_KILL);
         }
     }
 
-    async fn handle_internal(
+    /// Handle the exception with a customized iterator.
+    ///
+    /// If `first_only` is true, this will only send exception to the first one that received the exception
+    /// even when the exception is not handled.
+    async fn handle_with(
         self: &Arc<Self>,
         exceptionates: impl IntoIterator<Item = Arc<Exceptionate>>,
         first_only: bool,
@@ -479,13 +485,13 @@ impl<'a> Iterator for ExceptionateIterator<'a> {
 }
 
 /// This is only used by ProcessStarting exceptions
-pub struct JobDebuggerIterator {
+struct JobDebuggerIterator {
     job: Option<Arc<Job>>,
 }
 
 impl JobDebuggerIterator {
     /// Create a new JobDebuggerIterator
-    pub fn new(job: Arc<Job>) -> Self {
+    fn new(job: Arc<Job>) -> Self {
         JobDebuggerIterator { job: Some(job) }
     }
 }

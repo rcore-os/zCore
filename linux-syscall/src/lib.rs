@@ -54,13 +54,13 @@ mod vm;
 /// The struct of Syscall which stores the information about making a syscall
 pub struct Syscall<'a> {
     /// the thread making a syscall
-    pub thread: &'a Arc<Thread>,
+    pub thread: &'a CurrentThread,
     /// the entry of current syscall
     pub syscall_entry: VirtAddr,
     /// store the regs statues
     pub regs: &'a mut GeneralRegs,
     /// the spawn function in linux-loader
-    pub spawn_fn: fn(thread: Arc<Thread>),
+    pub spawn_fn: fn(thread: CurrentThread),
     /// Set `true` to exit current task.
     pub exit: bool,
 }
