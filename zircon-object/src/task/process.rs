@@ -782,7 +782,7 @@ mod tests {
             Some(ZxError::ACCESS_DENIED)
         );
 
-        let _job = root_job.create_child(0).unwrap();
+        let _job = root_job.create_child().unwrap();
         assert_eq!(
             root_job
                 .set_policy_basic(SetPolicyOptions::Absolute, &[policy1, policy2])

@@ -538,7 +538,7 @@ mod tests {
     #[test]
     fn exceptionate_iterator() {
         let parent_job = Job::root();
-        let job = parent_job.create_child(0).unwrap();
+        let job = parent_job.create_child().unwrap();
         let proc = Process::create(&job, "proc", 0).unwrap();
         let thread = Thread::create(&proc, "thread", 0).unwrap();
 
@@ -559,7 +559,7 @@ mod tests {
     #[test]
     fn exceptionate_iterator_second_chance() {
         let parent_job = Job::root();
-        let job = parent_job.create_child(0).unwrap();
+        let job = parent_job.create_child().unwrap();
         let proc = Process::create(&job, "proc", 0).unwrap();
         let thread = Thread::create(&proc, "thread", 0).unwrap();
 
@@ -582,9 +582,9 @@ mod tests {
     #[test]
     fn job_debugger_iterator() {
         let parent_job = Job::root();
-        let job = parent_job.create_child(0).unwrap();
-        let child_job = job.create_child(0).unwrap();
-        let _grandson_job = child_job.create_child(0).unwrap();
+        let job = parent_job.create_child().unwrap();
+        let child_job = job.create_child().unwrap();
+        let _grandson_job = child_job.create_child().unwrap();
 
         let iterator = JobDebuggerIterator::new(child_job.clone());
         let expected = [
@@ -600,7 +600,7 @@ mod tests {
     #[async_std::test]
     async fn exception_handling() {
         let parent_job = Job::root();
-        let job = parent_job.create_child(0).unwrap();
+        let job = parent_job.create_child().unwrap();
         let proc = Process::create(&job, "proc", 0).unwrap();
         let thread = Thread::create(&proc, "thread", 0).unwrap();
 

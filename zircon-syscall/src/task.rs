@@ -262,7 +262,7 @@ impl Syscall<'_> {
             let parent_job = proc
                 .get_object_with_rights::<Job>(parent, Rights::MANAGE_JOB)
                 .or_else(|_| proc.get_object_with_rights::<Job>(parent, Rights::WRITE))?;
-            let child = parent_job.create_child(options)?;
+            let child = parent_job.create_child()?;
             out.write(proc.add_handle(Handle::new(child, Rights::DEFAULT_JOB)))?;
             Ok(())
         }

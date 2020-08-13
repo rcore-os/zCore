@@ -85,8 +85,7 @@ impl Job {
     }
 
     /// Create a new child job object.
-    pub fn create_child(self: &Arc<Self>, _options: u32) -> ZxResult<Arc<Self>> {
-        // TODO: options
+    pub fn create_child(self: &Arc<Self>) -> ZxResult<Arc<Self>> {
         let mut inner = self.inner.lock();
         if inner.killed {
             return Err(ZxError::BAD_STATE);
@@ -298,14 +297,14 @@ mod tests {
     fn create() {
         let root_job = Job::root();
         let job: Arc<dyn KernelObject> =
-            Job::create_child(&root_job, 0).expect("failed to create job");
+            Job::create_child(&root_job).expect("failed to create job");
 
         assert!(Arc::ptr_eq(&root_job.get_child(job.id()).unwrap(), &job));
         assert_eq!(job.related_koid(), root_job.id());
         assert_eq!(root_job.related_koid(), 0);
 
         root_job.kill();
-        assert_eq!(root_job.create_child(0).err(), Some(ZxError::BAD_STATE));
+        assert_eq!(root_job.create_child().err(), Some(ZxError::BAD_STATE));
     }
 
     #[test]
@@ -345,7 +344,7 @@ mod tests {
         );
 
         // create a child job
-        let job = Job::create_child(&root_job, 0).expect("failed to create job");
+        let job = Job::create_child(&root_job).expect("failed to create job");
 
         // should inherit parent's policy.
         assert_eq!(
@@ -393,7 +392,7 @@ mod tests {
     #[test]
     fn parent_child() {
         let root_job = Job::root();
-        let job = Job::create_child(&root_job, 0).expect("failed to create job");
+        let job = Job::create_child(&root_job).expect("failed to create job");
         let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
 
         assert_eq!(root_job.get_child(job.id()).unwrap().id(), job.id());
@@ -404,20 +403,20 @@ mod tests {
         );
         assert!(Arc::ptr_eq(&job.parent().unwrap(), &root_job));
 
-        let job1 = root_job.create_child(0).expect("failed to create job");
+        let job1 = root_job.create_child().expect("failed to create job");
         let proc1 = Process::create(&root_job, "proc1", 0).expect("failed to create process");
         assert_eq!(root_job.children_ids(), vec![job.id(), job1.id()]);
         assert_eq!(root_job.process_ids(), vec![proc.id(), proc1.id()]);
 
         root_job.kill();
-        assert_eq!(root_job.create_child(0).err(), Some(ZxError::BAD_STATE));
+        assert_eq!(root_job.create_child().err(), Some(ZxError::BAD_STATE));
     }
 
     #[test]
     fn check() {
         let root_job = Job::root();
         assert!(root_job.is_empty());
-        let job = root_job.create_child(0).expect("failed to create job");
+        let job = root_job.create_child().expect("failed to create job");
         assert_eq!(root_job.check_root_job(), Ok(()));
         assert_eq!(job.check_root_job(), Err(ZxError::ACCESS_DENIED));
 
@@ -431,7 +430,7 @@ mod tests {
     #[test]
     fn kill() {
         let root_job = Job::root();
-        let job = Job::create_child(&root_job, 0).expect("failed to create job");
+        let job = Job::create_child(&root_job).expect("failed to create job");
         let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
         let thread = Thread::create(&proc, "thread", 0).expect("failed to create thread");
 
@@ -465,7 +464,7 @@ mod tests {
 
         // The job's process have no threads.
         let root_job = Job::root();
-        let job = Job::create_child(&root_job, 0).expect("failed to create job");
+        let job = Job::create_child(&root_job).expect("failed to create job");
         let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
         root_job.kill();
         assert!(root_job.inner.lock().killed);
@@ -479,8 +478,8 @@ mod tests {
     #[test]
     fn critical_process() {
         let root_job = Job::root();
-        let job = root_job.create_child(0).unwrap();
-        let job1 = root_job.create_child(0).unwrap();
+        let job = root_job.create_child().unwrap();
+        let job1 = root_job.create_child().unwrap();
 
         let proc = Process::create(&job, "proc", 0).expect("failed to create process");
 
