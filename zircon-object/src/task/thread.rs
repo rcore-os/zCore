@@ -131,30 +131,34 @@ struct ThreadInner {
 }
 
 impl ThreadInner {
-    pub fn get_state(&self) -> ThreadState {
+    fn get_state(&self) -> ThreadState {
         if self.suspend_count == 0 || self.state == ThreadState::BlockedException {
             self.state
         } else {
             ThreadState::Suspended
         }
     }
+
     fn update_signal(&self, base: &KObjectBase) {
         if self.state == ThreadState::Dead {
-            base.signal_clear(Signal::THREAD_RUNNING);
-            base.signal_clear(Signal::THREAD_SUSPENDED);
-            base.signal_set(Signal::THREAD_TERMINATED)
+            base.signal_change(
+                Signal::THREAD_RUNNING | Signal::THREAD_SUSPENDED,
+                Signal::THREAD_TERMINATED,
+            );
         } else if self.state == ThreadState::New || self.state == ThreadState::Dying {
-            base.signal_clear(Signal::THREAD_RUNNING);
-            base.signal_clear(Signal::THREAD_SUSPENDED);
-            base.signal_clear(Signal::THREAD_TERMINATED)
+            base.signal_clear(
+                Signal::THREAD_RUNNING | Signal::THREAD_SUSPENDED | Signal::THREAD_TERMINATED,
+            );
         } else if self.suspend_count == 0 || self.state == ThreadState::BlockedException {
-            base.signal_set(Signal::THREAD_RUNNING);
-            base.signal_clear(Signal::THREAD_SUSPENDED);
-            base.signal_clear(Signal::THREAD_TERMINATED)
+            base.signal_change(
+                Signal::THREAD_TERMINATED | Signal::THREAD_SUSPENDED,
+                Signal::THREAD_RUNNING,
+            );
         } else {
-            base.signal_clear(Signal::THREAD_RUNNING);
-            base.signal_set(Signal::THREAD_SUSPENDED);
-            base.signal_clear(Signal::THREAD_TERMINATED)
+            base.signal_change(
+                Signal::THREAD_RUNNING | Signal::THREAD_TERMINATED,
+                Signal::THREAD_SUSPENDED,
+            );
         }
     }
 }
@@ -170,7 +174,7 @@ bitflags! {
 
 impl Thread {
     /// Create a new thread.
-    pub fn create(proc: &Arc<Process>, name: &str, _options: u32) -> ZxResult<Arc<Self>> {
+    pub fn create(proc: &Arc<Process>, name: &str) -> ZxResult<Arc<Self>> {
         Self::create_with_ext(proc, name, ())
     }
 
@@ -180,7 +184,6 @@ impl Thread {
         name: &str,
         ext: impl Any + Send + Sync,
     ) -> ZxResult<Arc<Self>> {
-        // TODO: options
         let thread = Arc::new(Thread {
             base: KObjectBase::with_name(name),
             _counter: CountHelper::new(),
@@ -368,7 +371,7 @@ impl Thread {
             wait_exception_channel_type: inner
                 .exception
                 .as_ref()
-                .map_or(0, |exception| exception.get_current_channel_type() as u32),
+                .map_or(0, |exception| exception.current_channel_type() as u32),
             cpu_affinity_mask: [0u64; 8],
         }
     }
@@ -379,11 +382,8 @@ impl Thread {
         if inner.get_state() != ThreadState::BlockedException {
             return Err(ZxError::BAD_STATE);
         }
-        inner
-            .exception
-            .as_ref()
-            .ok_or(ZxError::BAD_STATE)
-            .map(|exception| exception.get_report())
+        let report = inner.exception.as_ref().ok_or(ZxError::BAD_STATE)?.report();
+        Ok(report)
     }
 
     /// Run async future and change state while blocking.
@@ -392,6 +392,7 @@ impl Thread {
         future: F,
         state: ThreadState,
         deadline: Duration,
+        cancel_token: Option<Receiver<()>>,
     ) -> ZxResult<T>
     where
         F: Future<Output = FT> + Unpin,
@@ -402,16 +403,25 @@ impl Thread {
             if inner.get_state() == ThreadState::Dying {
                 return Err(ZxError::STOP);
             }
-            let (sender, receiver) = channel::<()>();
+            let (sender, receiver) = channel();
             inner.killer = Some(sender);
             let old_state = core::mem::replace(&mut inner.state, state);
             inner.update_signal(&self.base);
             (old_state, receiver)
         };
-        let ret = select_biased! {
-            ret = future.fuse() => ret.into_result(),
-            _ = killed.fuse() => Err(ZxError::STOP),
-            _ = sleep_until(deadline).fuse() => Err(ZxError::TIMED_OUT),
+        let ret = if let Some(cancel_token) = cancel_token {
+            select_biased! {
+                ret = future.fuse() => ret.into_result(),
+                _ = killed.fuse() => Err(ZxError::STOP),
+                _ = sleep_until(deadline).fuse() => Err(ZxError::TIMED_OUT),
+                _ = cancel_token.fuse() => Err(ZxError::CANCELED),
+            }
+        } else {
+            select_biased! {
+                ret = future.fuse() => ret.into_result(),
+                _ = killed.fuse() => Err(ZxError::STOP),
+                _ = sleep_until(deadline).fuse() => Err(ZxError::TIMED_OUT),
+            }
         };
         let mut inner = self.inner.lock();
         inner.killer = None;
@@ -424,48 +434,9 @@ impl Thread {
         ret
     }
 
-    /// Run a cancelable async future and change state while blocking.
-    pub async fn cancelable_blocking_run<F, T, FT>(
-        &self,
-        future: F,
-        state: ThreadState,
-        deadline: Duration,
-        cancel_token: Receiver<()>,
-    ) -> ZxResult<T>
-    where
-        F: Future<Output = FT> + Unpin,
-        FT: IntoResult<T>,
-    {
-        let (old_state, killed) = {
-            let mut inner = self.inner.lock();
-            if inner.get_state() == ThreadState::Dying {
-                return Err(ZxError::STOP);
-            }
-            let (sender, receiver) = channel::<()>();
-            inner.killer = Some(sender);
-            let old_state = core::mem::replace(&mut inner.state, state);
-            inner.update_signal(&self.base);
-            (old_state, receiver)
-        };
-        let ret = select_biased! {
-            ret = future.fuse() => ret.into_result(),
-            _ = killed.fuse() => Err(ZxError::STOP),
-            _ = sleep_until(deadline).fuse() => Err(ZxError::TIMED_OUT),
-            _ = cancel_token.fuse() => Err(ZxError::CANCELED),
-        };
-        let mut inner = self.inner.lock();
-        inner.killer = None;
-        if inner.state == ThreadState::Dying {
-            return ret;
-        }
-        assert_eq!(inner.state, state);
-        inner.state = old_state;
-        inner.update_signal(&self.base);
-        ret
-    }
-
-    /// Run a blocking task when the thread is exited itself and dying
-    /// The task will stop running if and once the thread is killed
+    /// Run a blocking task when the thread is exited itself and dying.
+    ///
+    /// The task will stop running if and once the thread is killed.
     pub async fn dying_run<F, T, FT>(&self, future: F) -> ZxResult<T>
     where
         F: Future<Output = FT> + Unpin,
@@ -486,14 +457,27 @@ impl Thread {
         }
     }
 
+    pub(super) async fn wait_for_exception<T>(
+        &self,
+        future: impl Future<Output = ZxResult<T>> + Unpin,
+        exception: Arc<Exception>,
+    ) -> ZxResult<T> {
+        self.inner.lock().exception = Some(exception);
+        let ret = self
+            .blocking_run(
+                future,
+                ThreadState::BlockedException,
+                Duration::from_nanos(u64::max_value()),
+                None,
+            )
+            .await;
+        self.inner.lock().exception = None;
+        ret
+    }
+
     /// Get the thread state.
     pub fn state(&self) -> ThreadState {
         self.inner.lock().get_state()
-    }
-
-    /// Get the exceptionate.
-    pub fn get_exceptionate(&self) -> Arc<Exceptionate> {
-        self.exceptionate.clone()
     }
 
     /// Add the parameter to the time this thread has run on cpu.
@@ -506,31 +490,23 @@ impl Thread {
         self.inner.lock().time as u64
     }
 
-    /// Set the currently processing exception.
-    pub fn set_exception(&self, exception: Option<Arc<Exception>>) {
-        self.inner.lock().exception = exception;
-    }
-
     /// Set this thread as the first thread of a process.
-    pub fn set_first_thread(&self, first_thread: bool) {
-        self.inner.lock().first_thread = first_thread;
+    pub(super) fn set_first_thread(&self) {
+        self.inner.lock().first_thread = true;
     }
 
-    /// Get whether this thread is the first thread of a process.
-    pub fn get_first_thread(&self) -> bool {
+    /// Whether this thread is the first thread of a process.
+    pub fn is_first_thread(&self) -> bool {
         self.inner.lock().first_thread
     }
 
     /// Get the thread's flags.
-    pub fn get_flags(&self) -> ThreadFlag {
+    pub fn flags(&self) -> ThreadFlag {
         self.inner.lock().flags
     }
 
     /// Apply `f` to the thread's flags.
-    pub fn update_flags<F>(&self, f: F)
-    where
-        F: FnOnce(&mut ThreadFlag),
-    {
+    pub fn update_flags(&self, f: impl FnOnce(&mut ThreadFlag)) {
         f(&mut self.inner.lock().flags)
     }
 }
@@ -564,6 +540,14 @@ impl Task for Thread {
                 waker.wake();
             }
         }
+    }
+
+    fn exceptionate(&self) -> Arc<Exceptionate> {
+        self.exceptionate.clone()
+    }
+
+    fn debug_exceptionate(&self) -> Arc<Exceptionate> {
+        panic!("thread do not have debug exceptionate");
     }
 }
 
@@ -649,9 +633,9 @@ mod tests {
     #[test]
     fn create() {
         let root_job = Job::root();
-        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
-        let thread = Thread::create(&proc, "thread", 0).expect("failed to create thread");
-        assert_eq!(thread.get_flags(), ThreadFlag::empty());
+        let proc = Process::create(&root_job, "proc").expect("failed to create process");
+        let thread = Thread::create(&proc, "thread").expect("failed to create thread");
+        assert_eq!(thread.flags(), ThreadFlag::empty());
 
         let thread: Arc<dyn KernelObject> = thread;
         assert_eq!(thread.related_koid(), proc.id());
@@ -662,9 +646,9 @@ mod tests {
     #[ignore]
     fn start() {
         let root_job = Job::root();
-        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
-        let thread = Thread::create(&proc, "thread", 0).expect("failed to create thread");
-        let thread1 = Thread::create(&proc, "thread1", 0).expect("failed to create thread");
+        let proc = Process::create(&root_job, "proc").expect("failed to create process");
+        let thread = Thread::create(&proc, "thread").expect("failed to create thread");
+        let thread1 = Thread::create(&proc, "thread1").expect("failed to create thread");
 
         // allocate stack for new thread
         let mut stack = vec![0u8; 0x1000];
@@ -724,10 +708,10 @@ mod tests {
     }
 
     #[async_std::test]
-    async fn cancelable_blocking_run() {
+    async fn blocking_run() {
         let root_job = Job::root();
-        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
-        let thread = Thread::create(&proc, "thread", 0).expect("failed to create thread");
+        let proc = Process::create(&root_job, "proc").expect("failed to create process");
+        let thread = Thread::create(&proc, "thread").expect("failed to create thread");
 
         let handle = Handle::new(proc.clone(), Rights::DEFAULT_PROCESS);
         let handle_value = proc.add_handle(handle);
@@ -739,11 +723,11 @@ mod tests {
         let future = object.wait_signal(Signal::READABLE);
         let deadline = timer_now() + Duration::from_millis(20);
         let result = thread
-            .cancelable_blocking_run(
+            .blocking_run(
                 future,
                 ThreadState::BlockedWaitOne,
                 deadline.into(),
-                cancel_token,
+                Some(cancel_token),
             )
             .await;
         assert_eq!(result.err(), Some(ZxError::TIMED_OUT));
@@ -759,11 +743,11 @@ mod tests {
             }
         });
         let result = thread
-            .cancelable_blocking_run(
+            .blocking_run(
                 future,
                 ThreadState::BlockedWaitOne,
                 deadline.into(),
-                cancel_token,
+                Some(cancel_token),
             )
             .await;
         assert_eq!(result.err(), Some(ZxError::CANCELED));
@@ -772,8 +756,8 @@ mod tests {
     #[test]
     fn info() {
         let root_job = Job::root();
-        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
-        let thread = Thread::create(&proc, "thread", 0).expect("failed to create thread");
+        let proc = Process::create(&root_job, "proc").expect("failed to create process");
+        let thread = Thread::create(&proc, "thread").expect("failed to create thread");
 
         let info = thread.get_thread_info();
         assert!(info.state == thread.state() as u32 && info.wait_exception_channel_type == 0);
@@ -786,8 +770,8 @@ mod tests {
     #[test]
     fn read_write_state() {
         let root_job = Job::root();
-        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
-        let thread = Thread::create(&proc, "thread", 0).expect("failed to create thread");
+        let proc = Process::create(&root_job, "proc").expect("failed to create process");
+        let thread = Thread::create(&proc, "thread").expect("failed to create thread");
 
         let mut buf = [0; 10];
         assert_eq!(
@@ -811,8 +795,8 @@ mod tests {
     #[test]
     fn ext() {
         let root_job = Job::root();
-        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
-        let thread = Thread::create(&proc, "thread", 0).expect("failed to create thread");
+        let proc = Process::create(&root_job, "proc").expect("failed to create process");
+        let thread = Thread::create(&proc, "thread").expect("failed to create thread");
 
         let _ext = thread.ext();
         // TODO
@@ -821,8 +805,8 @@ mod tests {
     #[async_std::test]
     async fn wait_for_run() {
         let root_job = Job::root();
-        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
-        let thread = Thread::create(&proc, "thread", 0).expect("failed to create thread");
+        let proc = Process::create(&root_job, "proc").expect("failed to create process");
+        let thread = Thread::create(&proc, "thread").expect("failed to create thread");
 
         // without suspend
         let context = thread.wait_for_run().await;
@@ -849,8 +833,8 @@ mod tests {
     #[test]
     fn time() {
         let root_job = Job::root();
-        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
-        let thread = Thread::create(&proc, "thread", 0).expect("failed to create thread");
+        let proc = Process::create(&root_job, "proc").expect("failed to create process");
+        let thread = Thread::create(&proc, "thread").expect("failed to create thread");
 
         assert_eq!(thread.get_time(), 0);
         thread.time_add(10);

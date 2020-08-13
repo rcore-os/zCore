@@ -88,18 +88,16 @@ impl Syscall<'_> {
                 let mut info_ptr = UserOutPtr::<u32>::from_addr_size(buffer, buffer_size)?;
                 let state = proc
                     .get_object_with_rights::<ExceptionObject>(handle_value, Rights::GET_PROPERTY)?
-                    .get_exception()
-                    .get_state();
+                    .state();
                 info_ptr.write(state)?;
                 Ok(())
             }
             Property::ExceptionStrategy => {
                 let mut info_ptr = UserOutPtr::<u32>::from_addr_size(buffer, buffer_size)?;
-                let state = proc
+                let strategy = proc
                     .get_object_with_rights::<ExceptionObject>(handle_value, Rights::GET_PROPERTY)?
-                    .get_exception()
-                    .get_strategy();
-                info_ptr.write(state)?;
+                    .strategy();
+                info_ptr.write(strategy)?;
                 Ok(())
             }
             _ => {
@@ -170,15 +168,13 @@ impl Syscall<'_> {
             Property::ExceptionState => {
                 let state = UserInPtr::<u32>::from_addr_size(buffer, buffer_size)?.read()?;
                 proc.get_object_with_rights::<ExceptionObject>(handle_value, Rights::SET_PROPERTY)?
-                    .get_exception()
                     .set_state(state)?;
                 Ok(())
             }
             Property::ExceptionStrategy => {
-                let state = UserInPtr::<u32>::from_addr_size(buffer, buffer_size)?.read()?;
+                let strategy = UserInPtr::<u32>::from_addr_size(buffer, buffer_size)?.read()?;
                 proc.get_object_with_rights::<ExceptionObject>(handle_value, Rights::SET_PROPERTY)?
-                    .get_exception()
-                    .set_strategy(state)?;
+                    .set_strategy(strategy)?;
                 Ok(())
             }
             _ => {
@@ -207,11 +203,11 @@ impl Syscall<'_> {
         let future = object.wait_signal(signals);
         let signal = self
             .thread
-            .cancelable_blocking_run(
+            .blocking_run(
                 future,
                 ThreadState::BlockedWaitOne,
                 deadline.into(),
-                cancel_token,
+                Some(cancel_token),
             )
             .await
             .or_else(|e| {
@@ -453,7 +449,7 @@ impl Syscall<'_> {
         let future = wait_signal_many(&waiters);
         let res = self
             .thread
-            .blocking_run(future, ThreadState::BlockedWaitMany, deadline.into())
+            .blocking_run(future, ThreadState::BlockedWaitMany, deadline.into(), None)
             .await?;
         for (i, item) in items.iter_mut().enumerate() {
             item.observed = res[i];

@@ -23,7 +23,7 @@ define_count_helper!(Vcpu);
 
 impl Vcpu {
     pub fn new(guest: Arc<Guest>, entry: u64, thread: Arc<Thread>) -> ZxResult<Arc<Self>> {
-        if thread.get_flags().contains(ThreadFlag::VCPU) {
+        if thread.flags().contains(ThreadFlag::VCPU) {
             return Err(ZxError::BAD_STATE);
         }
         let inner = Mutex::new(VcpuInner::new(entry, guest.rvm_guest())?);

@@ -31,7 +31,7 @@ impl Syscall<'_> {
         pin_mut!(future);
         let packet = self
             .thread
-            .blocking_run(future, ThreadState::BlockedPort, deadline.into())
+            .blocking_run(future, ThreadState::BlockedPort, deadline.into(), None)
             .await?;
         packet_res.write(packet)?;
         Ok(())

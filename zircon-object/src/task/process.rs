@@ -105,7 +105,7 @@ impl Default for Status {
 
 impl Process {
     /// Create a new process in the `job`.
-    pub fn create(job: &Arc<Job>, name: &str, _options: u32) -> ZxResult<Arc<Self>> {
+    pub fn create(job: &Arc<Job>, name: &str) -> ZxResult<Arc<Self>> {
         Self::create_with_ext(job, name, ())
     }
 
@@ -159,7 +159,7 @@ impl Process {
             inner.status = Status::Running;
             handle_value = arg1.map_or(INVALID_HANDLE, |handle| inner.add_handle(handle));
         }
-        thread.set_first_thread(true);
+        thread.set_first_thread();
         match thread.start(entry, stack, handle_value as usize, arg2, spawn_fn) {
             Ok(_) => Ok(()),
             Err(err) => {
@@ -492,16 +492,6 @@ impl Process {
         self.inner.lock().get_cancel_token(handle_value)
     }
 
-    /// Get the exceptionate of this process.
-    pub fn get_exceptionate(&self) -> Arc<Exceptionate> {
-        self.exceptionate.clone()
-    }
-
-    /// Get the debug exceptionate of this process.
-    pub fn get_debug_exceptionate(&self) -> Arc<Exceptionate> {
-        self.debug_exceptionate.clone()
-    }
-
     /// Get KoIDs of Threads.
     pub fn thread_ids(&self) -> Vec<KoID> {
         self.inner.lock().threads.iter().map(|t| t.id()).collect()
@@ -510,8 +500,7 @@ impl Process {
 
 impl Task for Process {
     fn kill(&self) {
-        let retcode = TASK_RETCODE_SYSCALL_KILL;
-        self.exit(retcode);
+        self.exit(TASK_RETCODE_SYSCALL_KILL);
     }
 
     fn suspend(&self) {
@@ -526,6 +515,14 @@ impl Task for Process {
         for thread in inner.threads.iter() {
             thread.resume();
         }
+    }
+
+    fn exceptionate(&self) -> Arc<Exceptionate> {
+        self.exceptionate.clone()
+    }
+
+    fn debug_exceptionate(&self) -> Arc<Exceptionate> {
+        self.debug_exceptionate.clone()
     }
 }
 
@@ -591,7 +588,7 @@ mod tests {
     #[test]
     fn create() {
         let root_job = Job::root();
-        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
+        let proc = Process::create(&root_job, "proc").expect("failed to create process");
 
         assert_eq!(proc.related_koid(), root_job.id());
         assert!(Arc::ptr_eq(&root_job, &proc.job()));
@@ -600,7 +597,7 @@ mod tests {
     #[test]
     fn handle() {
         let root_job = Job::root();
-        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
+        let proc = Process::create(&root_job, "proc").expect("failed to create process");
         let handle = Handle::new(proc.clone(), Rights::DEFAULT_PROCESS);
 
         let handle_value = proc.add_handle(handle);
@@ -661,7 +658,7 @@ mod tests {
     #[test]
     fn handle_duplicate() {
         let root_job = Job::root();
-        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
+        let proc = Process::create(&root_job, "proc").expect("failed to create process");
 
         // duplicate non-exist handle should fail.
         assert_eq!(
@@ -702,20 +699,20 @@ mod tests {
     #[test]
     fn get_child() {
         let root_job = Job::root();
-        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
-        let thread = Thread::create(&proc, "thread", 0).expect("failed to create thread");
+        let proc = Process::create(&root_job, "proc").expect("failed to create process");
+        let thread = Thread::create(&proc, "thread").expect("failed to create thread");
 
         assert_eq!(proc.get_child(thread.id()).unwrap().id(), thread.id());
         assert_eq!(proc.get_child(proc.id()).err(), Some(ZxError::NOT_FOUND));
 
-        let thread1 = Thread::create(&proc, "thread1", 0).expect("failed to create thread");
+        let thread1 = Thread::create(&proc, "thread1").expect("failed to create thread");
         assert_eq!(proc.thread_ids(), vec![thread.id(), thread1.id()]);
     }
 
     #[test]
     fn properties() {
         let root_job = Job::root();
-        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
+        let proc = Process::create(&root_job, "proc").expect("failed to create process");
 
         proc.set_debug_addr(123);
         assert_eq!(proc.get_debug_addr(), 123);
@@ -727,8 +724,8 @@ mod tests {
     #[test]
     fn exit() {
         let root_job = Job::root();
-        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
-        let thread = Thread::create(&proc, "thread", 0).expect("failed to create thread");
+        let proc = Process::create(&root_job, "proc").expect("failed to create process");
+        let thread = Thread::create(&proc, "thread").expect("failed to create thread");
 
         let info = proc.get_info();
         assert!(!info.has_exited && !info.started && info.return_code == 0);
@@ -740,7 +737,7 @@ mod tests {
         // TODO: when is the thread dead?
 
         assert_eq!(
-            Thread::create(&proc, "thread1", 0).err(),
+            Thread::create(&proc, "thread1").err(),
             Some(ZxError::BAD_STATE)
         );
     }
@@ -748,11 +745,11 @@ mod tests {
     #[test]
     fn contains_thread() {
         let root_job = Job::root();
-        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
-        let thread = Thread::create(&proc, "thread", 0).expect("failed to create thread");
+        let proc = Process::create(&root_job, "proc").expect("failed to create process");
+        let thread = Thread::create(&proc, "thread").expect("failed to create thread");
 
-        let proc1 = Process::create(&root_job, "proc1", 0).expect("failed to create process");
-        let thread1 = Thread::create(&proc1, "thread1", 0).expect("failed to create thread");
+        let proc1 = Process::create(&root_job, "proc1").expect("failed to create process");
+        let thread1 = Thread::create(&proc1, "thread1").expect("failed to create thread");
 
         let inner = proc.inner.lock();
         assert!(inner.contains_thread(&thread) && !inner.contains_thread(&thread1));
@@ -773,7 +770,7 @@ mod tests {
         assert!(root_job
             .set_policy_basic(SetPolicyOptions::Absolute, &[policy1, policy2])
             .is_ok());
-        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
+        let proc = Process::create(&root_job, "proc").expect("failed to create process");
 
         assert!(proc.check_policy(PolicyCondition::BadHandle).is_ok());
         assert!(proc.check_policy(PolicyCondition::NewProcess).is_ok());
@@ -782,7 +779,7 @@ mod tests {
             Some(ZxError::ACCESS_DENIED)
         );
 
-        let _job = root_job.create_child(0).unwrap();
+        let _job = root_job.create_child().unwrap();
         assert_eq!(
             root_job
                 .set_policy_basic(SetPolicyOptions::Absolute, &[policy1, policy2])

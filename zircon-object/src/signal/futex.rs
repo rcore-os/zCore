@@ -387,8 +387,8 @@ mod tests {
     #[async_std::test]
     async fn owner() {
         let root_job = Job::root();
-        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
-        let thread = Thread::create(&proc, "thread", 0).expect("failed to create thread");
+        let proc = Process::create(&root_job, "proc").expect("failed to create process");
+        let thread = Thread::create(&proc, "thread").expect("failed to create thread");
 
         static VALUE: AtomicI32 = AtomicI32::new(1);
         let futex = proc.get_futex(&VALUE);
@@ -423,14 +423,19 @@ mod tests {
     #[async_std::test]
     async fn time_out() {
         let root_job = Job::root();
-        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
-        let thread = Thread::create(&proc, "thread", 0).expect("failed to create thread");
+        let proc = Process::create(&root_job, "proc").expect("failed to create process");
+        let thread = Thread::create(&proc, "thread").expect("failed to create thread");
 
         static VALUE: AtomicI32 = AtomicI32::new(1);
         let futex = proc.get_futex(&VALUE);
         let future = futex.wait_with_owner(1, Some(thread.clone()), Some(thread.clone()));
         let result: ZxResult = thread
-            .blocking_run(future, ThreadState::BlockedFutex, Duration::from_millis(1))
+            .blocking_run(
+                future,
+                ThreadState::BlockedFutex,
+                Duration::from_millis(1),
+                None,
+            )
             .await;
         assert_eq!(result.unwrap_err(), ZxError::TIMED_OUT);
         assert_eq!(futex.wake(1), 0);

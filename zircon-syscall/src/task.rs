@@ -19,11 +19,14 @@ impl Syscall<'_> {
             "proc.create: job={:#x?}, name={:?}, options={:#x?}",
             job, name, options,
         );
+        if options != 0 {
+            return Err(ZxError::INVALID_ARGS);
+        }
         let proc = self.thread.proc();
         let job = proc
             .get_object_with_rights::<Job>(job, Rights::MANAGE_PROCESS)
             .or_else(|_| proc.get_object_with_rights::<Job>(job, Rights::WRITE))?;
-        let new_proc = Process::create(&job, &name, options)?;
+        let new_proc = Process::create(&job, &name)?;
         let new_vmar = new_proc.vmar();
         let proc_handle_value = proc.add_handle(Handle::new(new_proc, Rights::DEFAULT_PROCESS));
         let vmar_handle_value = proc.add_handle(Handle::new(
@@ -40,7 +43,6 @@ impl Syscall<'_> {
         info!("proc.exit: code={:?}", code);
         let proc = self.thread.proc();
         proc.exit(code);
-        self.exit = true;
         Ok(())
     }
 
@@ -60,10 +62,12 @@ impl Syscall<'_> {
             "thread.create: proc={:#x?}, name={:?}, options={:#x?}",
             proc_handle, name, options,
         );
-        assert_eq!(options, 0);
+        if options != 0 {
+            return Err(ZxError::INVALID_ARGS);
+        }
         let proc = self.thread.proc();
         let process = proc.get_object_with_rights::<Process>(proc_handle, Rights::MANAGE_THREAD)?;
-        let thread = Thread::create(&process, &name, options)?;
+        let thread = Thread::create(&process, &name)?;
         let handle = proc.add_handle(Handle::new(thread, Rights::DEFAULT_THREAD));
         thread_handle.write(handle)?;
         Ok(())
@@ -180,7 +184,6 @@ impl Syscall<'_> {
     pub fn sys_thread_exit(&mut self) -> ZxResult {
         info!("thread.exit:");
         self.thread.exit();
-        self.exit = true;
         Ok(())
     }
 
@@ -222,21 +225,8 @@ impl Syscall<'_> {
             job.kill();
         } else if let Ok(process) = proc.get_object_with_rights::<Process>(handle, Rights::DESTROY)
         {
-            if Arc::ptr_eq(&process, &proc) {
-                //self kill, exit
-                self.exit = true;
-            }
             process.kill();
         } else if let Ok(thread) = proc.get_object_with_rights::<Thread>(handle, Rights::DESTROY) {
-            info!(
-                "killing thread: proc={:?} thread={:?}",
-                thread.proc().name(),
-                thread.name()
-            );
-            if Arc::ptr_eq(&thread, &self.thread) {
-                //self kill, exit
-                self.exit = true;
-            }
             thread.kill();
         } else {
             return Err(ZxError::WRONG_TYPE);
@@ -262,7 +252,7 @@ impl Syscall<'_> {
             let parent_job = proc
                 .get_object_with_rights::<Job>(parent, Rights::MANAGE_JOB)
                 .or_else(|_| proc.get_object_with_rights::<Job>(parent, Rights::WRITE))?;
-            let child = parent_job.create_child(options)?;
+            let child = parent_job.create_child()?;
             out.write(proc.add_handle(Handle::new(child, Rights::DEFAULT_JOB)))?;
             Ok(())
         }

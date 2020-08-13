@@ -85,8 +85,7 @@ impl Job {
     }
 
     /// Create a new child job object.
-    pub fn create_child(self: &Arc<Self>, _options: u32) -> ZxResult<Arc<Self>> {
-        // TODO: options
+    pub fn create_child(self: &Arc<Self>) -> ZxResult<Arc<Self>> {
         let mut inner = self.inner.lock();
         if inner.killed {
             return Err(ZxError::BAD_STATE);
@@ -199,16 +198,6 @@ impl Job {
         }
     }
 
-    /// Get the exceptionate of this job.
-    pub fn get_exceptionate(&self) -> Arc<Exceptionate> {
-        self.exceptionate.clone()
-    }
-
-    /// Get the debug exceptionate of this job.
-    pub fn get_debug_exceptionate(&self) -> Arc<Exceptionate> {
-        self.debug_exceptionate.clone()
-    }
-
     /// Get KoIDs of Processes.
     pub fn process_ids(&self) -> Vec<KoID> {
         self.inner.lock().processes.iter().map(|p| p.id()).collect()
@@ -230,9 +219,21 @@ impl Job {
         self.inner.lock().is_empty()
     }
 
+    /// The job finally terminates.
+    fn terminate(&self) {
+        self.exceptionate.shutdown();
+        self.debug_exceptionate.shutdown();
+        self.base.signal_set(Signal::JOB_TERMINATED);
+        if let Some(parent) = self.parent.as_ref() {
+            parent.remove_child(&self.inner.lock().self_ref)
+        }
+    }
+}
+
+impl Task for Job {
     /// Kill the job. The job do not terminate immediately when killed.
     /// It will terminate after all its children and processes are terminated.
-    pub fn kill(&self) {
+    fn kill(&self) {
         let (children, processes) = {
             let mut inner = self.inner.lock();
             if inner.killed {
@@ -255,14 +256,20 @@ impl Job {
         }
     }
 
-    /// The job finally terminates.
-    fn terminate(&self) {
-        self.exceptionate.shutdown();
-        self.debug_exceptionate.shutdown();
-        self.base.signal_set(Signal::JOB_TERMINATED);
-        if let Some(parent) = self.parent.as_ref() {
-            parent.remove_child(&self.inner.lock().self_ref)
-        }
+    fn suspend(&self) {
+        panic!("job do not support suspend");
+    }
+
+    fn resume(&self) {
+        panic!("job do not support resume");
+    }
+
+    fn exceptionate(&self) -> Arc<Exceptionate> {
+        self.exceptionate.clone()
+    }
+
+    fn debug_exceptionate(&self) -> Arc<Exceptionate> {
+        self.debug_exceptionate.clone()
     }
 }
 
@@ -298,14 +305,14 @@ mod tests {
     fn create() {
         let root_job = Job::root();
         let job: Arc<dyn KernelObject> =
-            Job::create_child(&root_job, 0).expect("failed to create job");
+            Job::create_child(&root_job).expect("failed to create job");
 
         assert!(Arc::ptr_eq(&root_job.get_child(job.id()).unwrap(), &job));
         assert_eq!(job.related_koid(), root_job.id());
         assert_eq!(root_job.related_koid(), 0);
 
         root_job.kill();
-        assert_eq!(root_job.create_child(0).err(), Some(ZxError::BAD_STATE));
+        assert_eq!(root_job.create_child().err(), Some(ZxError::BAD_STATE));
     }
 
     #[test]
@@ -345,7 +352,7 @@ mod tests {
         );
 
         // create a child job
-        let job = Job::create_child(&root_job, 0).expect("failed to create job");
+        let job = Job::create_child(&root_job).expect("failed to create job");
 
         // should inherit parent's policy.
         assert_eq!(
@@ -393,8 +400,8 @@ mod tests {
     #[test]
     fn parent_child() {
         let root_job = Job::root();
-        let job = Job::create_child(&root_job, 0).expect("failed to create job");
-        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
+        let job = Job::create_child(&root_job).expect("failed to create job");
+        let proc = Process::create(&root_job, "proc").expect("failed to create process");
 
         assert_eq!(root_job.get_child(job.id()).unwrap().id(), job.id());
         assert_eq!(root_job.get_child(proc.id()).unwrap().id(), proc.id());
@@ -404,36 +411,36 @@ mod tests {
         );
         assert!(Arc::ptr_eq(&job.parent().unwrap(), &root_job));
 
-        let job1 = root_job.create_child(0).expect("failed to create job");
-        let proc1 = Process::create(&root_job, "proc1", 0).expect("failed to create process");
+        let job1 = root_job.create_child().expect("failed to create job");
+        let proc1 = Process::create(&root_job, "proc1").expect("failed to create process");
         assert_eq!(root_job.children_ids(), vec![job.id(), job1.id()]);
         assert_eq!(root_job.process_ids(), vec![proc.id(), proc1.id()]);
 
         root_job.kill();
-        assert_eq!(root_job.create_child(0).err(), Some(ZxError::BAD_STATE));
+        assert_eq!(root_job.create_child().err(), Some(ZxError::BAD_STATE));
     }
 
     #[test]
     fn check() {
         let root_job = Job::root();
         assert!(root_job.is_empty());
-        let job = root_job.create_child(0).expect("failed to create job");
+        let job = root_job.create_child().expect("failed to create job");
         assert_eq!(root_job.check_root_job(), Ok(()));
         assert_eq!(job.check_root_job(), Err(ZxError::ACCESS_DENIED));
 
         assert!(!root_job.is_empty());
         assert!(job.is_empty());
 
-        let _proc = Process::create(&job, "proc", 0).expect("failed to create process");
+        let _proc = Process::create(&job, "proc").expect("failed to create process");
         assert!(!job.is_empty());
     }
 
     #[test]
     fn kill() {
         let root_job = Job::root();
-        let job = Job::create_child(&root_job, 0).expect("failed to create job");
-        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
-        let thread = Thread::create(&proc, "thread", 0).expect("failed to create thread");
+        let job = Job::create_child(&root_job).expect("failed to create job");
+        let proc = Process::create(&root_job, "proc").expect("failed to create process");
+        let thread = Thread::create(&proc, "thread").expect("failed to create thread");
 
         root_job.kill();
         assert!(root_job.inner.lock().killed);
@@ -465,8 +472,8 @@ mod tests {
 
         // The job's process have no threads.
         let root_job = Job::root();
-        let job = Job::create_child(&root_job, 0).expect("failed to create job");
-        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
+        let job = Job::create_child(&root_job).expect("failed to create job");
+        let proc = Process::create(&root_job, "proc").expect("failed to create process");
         root_job.kill();
         assert!(root_job.inner.lock().killed);
         assert!(job.inner.lock().killed);
@@ -479,10 +486,10 @@ mod tests {
     #[test]
     fn critical_process() {
         let root_job = Job::root();
-        let job = root_job.create_child(0).unwrap();
-        let job1 = root_job.create_child(0).unwrap();
+        let job = root_job.create_child().unwrap();
+        let job1 = root_job.create_child().unwrap();
 
-        let proc = Process::create(&job, "proc", 0).expect("failed to create process");
+        let proc = Process::create(&job, "proc").expect("failed to create process");
 
         assert_eq!(
             proc.set_critical_at_job(&job1, true).err(),

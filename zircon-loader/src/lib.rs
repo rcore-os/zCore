@@ -42,8 +42,8 @@ pub struct Images<T: AsRef<[u8]>> {
 
 pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Process> {
     let job = Job::root();
-    let proc = Process::create(&job, "userboot", 0).unwrap();
-    let thread = Thread::create(&proc, "userboot", 0).unwrap();
+    let proc = Process::create(&job, "userboot").unwrap();
+    let thread = Thread::create(&proc, "userboot").unwrap();
     let resource = Resource::create(
         "root",
         ResourceKind::ROOT,
@@ -176,37 +176,21 @@ fn spawn(thread: Arc<Thread>) {
     let vmtoken = thread.proc().vmar().table_phys();
     let future = async move {
         kernel_hal::Thread::set_tid(thread.id(), thread.proc().id());
-        let mut exit = false;
-        if thread.get_first_thread() {
-            let proc_start_exception =
-                Exception::create(thread.clone(), ExceptionType::ProcessStarting, None);
-            if !proc_start_exception
+        if thread.is_first_thread() {
+            Exception::create(&thread, ExceptionType::ProcessStarting, None)
                 .handle_with_exceptionates(
                     false,
                     JobDebuggerIterator::new(thread.proc().job()),
                     true,
                 )
-                .await
-            {
-                exit = true;
-            }
+                .await;
         };
-        let start_exception =
-            Exception::create(thread.clone(), ExceptionType::ThreadStarting, None);
-        if !start_exception
-            .handle_with_exceptionates(false, Some(thread.proc().get_debug_exceptionate()), false)
-            .await
-        {
-            exit = true;
-        }
-        while !exit {
+        Exception::create(&thread, ExceptionType::ThreadStarting, None)
+            .handle_with_exceptionates(false, Some(thread.proc().debug_exceptionate()), false)
+            .await;
+        loop {
             let mut cx = thread.wait_for_run().await;
             if thread.state() == ThreadState::Dying {
-                info!(
-                    "proc={:?} thread={:?} was killed",
-                    thread.proc().name(),
-                    thread.name()
-                );
                 break;
             }
             trace!("go to user: {:#x?}", cx);
@@ -228,12 +212,12 @@ fn spawn(thread: Arc<Thread>) {
             EXCEPTIONS_USER.add(1);
             #[cfg(target_arch = "aarch64")]
             match cx.trap_num {
-                0 => exit = handle_syscall(&thread, &mut cx.general).await,
+                0 => handle_syscall(&thread, &mut cx.general).await,
                 _ => unimplemented!(),
             }
             #[cfg(target_arch = "x86_64")]
             match cx.trap_num {
-                0x100 => exit = handle_syscall(&thread, &mut cx.general).await,
+                0x100 => handle_syscall(&thread, &mut cx.general).await,
                 0x20..=0x3f => {
                     kernel_hal::InterruptManager::handle(cx.trap_num as u8);
                     if cx.trap_num == 0x20 {
@@ -252,34 +236,14 @@ fn spawn(thread: Arc<Thread>) {
                     // FIXME:
                     #[cfg(target_arch = "aarch64")]
                     let flags = MMUFlags::WRITE;
-                    error!(
-                        "page fualt from user mode {:#x} {:#x?}",
-                        kernel_hal::fetch_fault_vaddr(),
-                        flags
-                    );
-                    match thread
-                        .proc()
-                        .vmar()
-                        .handle_page_fault(kernel_hal::fetch_fault_vaddr(), flags)
-                    {
-                        Ok(()) => {}
-                        Err(e) => {
-                            error!(
-                                "proc={:?} thread={:?} err={:?}",
-                                thread.proc().name(),
-                                thread.name(),
-                                e
-                            );
-                            error!("Page Fault from user mode {:#x?}", cx);
-                            let exception = Exception::create(
-                                thread.clone(),
-                                ExceptionType::FatalPageFault,
-                                Some(&cx),
-                            );
-                            if !exception.handle(true).await {
-                                exit = true;
-                            }
-                        }
+                    let fault_vaddr = kernel_hal::fetch_fault_vaddr();
+                    error!("page fault from user mode {:#x} {:#x?}", fault_vaddr, flags);
+                    let vmar = thread.proc().vmar();
+                    if vmar.handle_page_fault(fault_vaddr, flags).is_err() {
+                        error!("Page Fault from user mode: {:#x?}", cx);
+                        let exception =
+                            Exception::create(&thread, ExceptionType::FatalPageFault, Some(&cx));
+                        exception.handle(true).await;
                     }
                 }
                 0x8 => {
@@ -293,39 +257,27 @@ fn spawn(thread: Arc<Thread>) {
                         0x17 => ExceptionType::UnalignedAccess,
                         _ => ExceptionType::General,
                     };
-                    error!("User mode exception:{:?} {:#x?}", type_, cx);
-                    let exception = Exception::create(thread.clone(), type_, Some(&cx));
-                    if !exception.handle(true).await {
-                        exit = true;
-                    }
+                    error!("User mode exception: {:?} {:#x?}", type_, cx);
+                    let exception = Exception::create(&thread, type_, Some(&cx));
+                    exception.handle(true).await;
                 }
             }
             thread.end_running(cx);
-            if exit {
-                info!(
-                    "proc={:?} thread={:?} exited",
-                    thread.proc().name(),
-                    thread.name()
-                );
-                break;
-            }
         }
-        let end_exception = Exception::create(thread.clone(), ExceptionType::ThreadExiting, None);
+        let end_exception = Exception::create(&thread, ExceptionType::ThreadExiting, None);
         let handled = thread
             .proc()
-            .get_debug_exceptionate()
+            .debug_exceptionate()
             .send_exception(&end_exception);
         if let Ok(future) = handled {
             thread.dying_run(future).await.ok();
-        } else {
-            handled.ok();
         }
         thread.terminate();
     };
     kernel_hal::Thread::spawn(Box::pin(future), vmtoken);
 }
 
-async fn handle_syscall(thread: &Arc<Thread>, regs: &mut GeneralRegs) -> bool {
+async fn handle_syscall(thread: &Arc<Thread>, regs: &mut GeneralRegs) {
     #[cfg(target_arch = "x86_64")]
     let num = regs.rax as u32;
     #[cfg(target_arch = "aarch64")]
@@ -355,7 +307,6 @@ async fn handle_syscall(thread: &Arc<Thread>, regs: &mut GeneralRegs) -> bool {
         regs,
         thread: thread.clone(),
         spawn_fn: spawn,
-        exit: false,
     };
     let ret = syscall.syscall(num, args).await as usize;
     #[cfg(target_arch = "x86_64")]
@@ -366,5 +317,4 @@ async fn handle_syscall(thread: &Arc<Thread>, regs: &mut GeneralRegs) -> bool {
     {
         syscall.regs.x0 = ret;
     }
-    syscall.exit
 }

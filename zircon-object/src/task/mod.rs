@@ -2,6 +2,7 @@
 //! Objects for Task Management.
 
 use super::*;
+use alloc::sync::Arc;
 
 mod exception;
 mod job;
@@ -26,6 +27,12 @@ pub trait Task: Sync + Send {
 
     /// Resume the task
     fn resume(&self);
+
+    /// Get the exceptionate.
+    fn exceptionate(&self) -> Arc<Exceptionate>;
+
+    /// Get the debug exceptionate.
+    fn debug_exceptionate(&self) -> Arc<Exceptionate>;
 }
 
 /// The return code set when a task is killed via zx_task_kill().

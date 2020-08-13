@@ -53,7 +53,6 @@ pub struct Syscall<'a> {
     pub regs: &'a mut GeneralRegs,
     pub thread: Arc<Thread>,
     pub spawn_fn: fn(thread: Arc<Thread>),
-    pub exit: bool,
 }
 
 impl Syscall<'_> {
@@ -379,11 +378,6 @@ impl Syscall<'_> {
             }
         };
         info!("{}|{} {:?} <= {:?}", proc_name, thread_name, sys_type, ret);
-        if ret == Err(ZxError::STOP) && !self.exit {
-            // This is an error that only happens when the thread was killed during a blocking syscall
-            info!("{}|{}  KILLED WHEN BLOCKING", proc_name, thread_name);
-            self.exit = true
-        }
         match ret {
             Ok(_) => 0,
             Err(err) => err as isize,

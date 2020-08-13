@@ -261,6 +261,7 @@ impl Syscall<'_> {
                 future,
                 ThreadState::BlockedInterrupt,
                 Deadline::forever().into(),
+                None,
             )
             .await?;
         out.write_if_not_null(timestamp)?;

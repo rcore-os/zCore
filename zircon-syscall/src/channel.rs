@@ -176,7 +176,7 @@ impl Syscall<'_> {
         pin_mut!(future);
         let rd_msg: MessagePacket = self
             .thread
-            .blocking_run(future, ThreadState::BlockedChannel, deadline.into())
+            .blocking_run(future, ThreadState::BlockedChannel, deadline.into(), None)
             .await?;
 
         actual_bytes.write(rd_msg.data.len() as u32)?;
