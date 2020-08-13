@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use {
     super::*, crate::ipc::*, crate::object::*, alloc::sync::Arc, alloc::vec, alloc::vec::Vec,
     core::mem::size_of, core::time::Duration, futures::channel::oneshot, futures::pin_mut,
@@ -126,39 +124,37 @@ impl ExceptionInfo {
 
 /// The common header of all exception reports.
 #[repr(C)]
-#[derive(Clone)]
-pub struct ExceptionHeader {
+#[derive(Debug, Clone)]
+struct ExceptionHeader {
     /// The actual size, in bytes, of the report (including this field).
-    pub size: u32,
+    size: u32,
     /// The type of the exception.
-    pub type_: ExceptionType,
+    type_: ExceptionType,
 }
 
 /// Data associated with an exception (siginfo in linux parlance)
 /// Things available from regsets (e.g., pc) are not included here.
 /// For an example list of things one might add, see linux siginfo.
-#[allow(missing_docs)]
 #[cfg(target_arch = "x86_64")]
 #[repr(C)]
-#[derive(Default, Clone)]
-pub struct ExceptionContext {
-    pub vector: u64,
-    pub err_code: u64,
-    pub cr2: u64,
+#[derive(Debug, Default, Clone)]
+struct ExceptionContext {
+    vector: u64,
+    err_code: u64,
+    cr2: u64,
 }
 
 /// Data associated with an exception (siginfo in linux parlance)
 /// Things available from regsets (e.g., pc) are not included here.
 /// For an example list of things one might add, see linux siginfo.
-#[allow(missing_docs)]
 #[cfg(target_arch = "aarch64")]
 #[repr(C)]
-#[derive(Default, Clone)]
-pub struct ExceptionContext {
-    pub esr: u32,
-    pub padding1: u32,
-    pub far: u64,
-    pub padding2: u64,
+#[derive(Debug, Default, Clone)]
+struct ExceptionContext {
+    esr: u32,
+    padding1: u32,
+    far: u64,
+    padding2: u64,
 }
 
 impl ExceptionContext {
@@ -178,12 +174,12 @@ impl ExceptionContext {
 
 /// Data reported to an exception handler for most exceptions.
 #[repr(C)]
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct ExceptionReport {
     /// The common header of all exception reports.
-    pub header: ExceptionHeader,
+    header: ExceptionHeader,
     /// Exception-specific data.
-    pub context: ExceptionContext,
+    context: ExceptionContext,
 }
 
 impl ExceptionReport {
@@ -313,7 +309,7 @@ impl Exception {
     }
 
     /// Same as handle, but use a customed iterator
-    /// If first_only is true, this will only send exception to the first one that received the exception
+    /// If `first_only` is true, this will only send exception to the first one that received the exception
     /// even when the exception is not handled
     pub async fn handle_with_exceptionates(
         self: &Arc<Self>,
@@ -547,29 +543,17 @@ mod tests {
         let thread = Thread::create(&proc, "thread", 0).unwrap();
 
         let exception = Exception::create(thread.clone(), ExceptionType::Synth, None);
-        let mut iterator = ExceptionateIterator::new(&exception);
-
-        assert!(Arc::ptr_eq(
-            &iterator.next().unwrap(),
-            &proc.get_debug_exceptionate()
-        ));
-        assert!(Arc::ptr_eq(
-            &iterator.next().unwrap(),
-            &thread.get_exceptionate()
-        ));
-        assert!(Arc::ptr_eq(
-            &iterator.next().unwrap(),
-            &proc.get_exceptionate()
-        ));
-        assert!(Arc::ptr_eq(
-            &iterator.next().unwrap(),
-            &job.get_exceptionate()
-        ));
-        assert!(Arc::ptr_eq(
-            &iterator.next().unwrap(),
-            &parent_job.get_exceptionate()
-        ));
-        assert!(iterator.next().is_none());
+        let iterator = ExceptionateIterator::new(&exception);
+        let expected = [
+            proc.get_debug_exceptionate(),
+            thread.get_exceptionate(),
+            proc.get_exceptionate(),
+            job.get_exceptionate(),
+            parent_job.get_exceptionate(),
+        ];
+        for (actual, expected) in iterator.zip(expected.iter()) {
+            assert!(Arc::ptr_eq(&actual, expected));
+        }
     }
 
     #[test]
@@ -580,34 +564,19 @@ mod tests {
         let thread = Thread::create(&proc, "thread", 0).unwrap();
 
         let exception = Exception::create(thread.clone(), ExceptionType::Synth, None);
-        let mut iterator = ExceptionateIterator::new(&exception);
-
-        assert!(Arc::ptr_eq(
-            &iterator.next().unwrap(),
-            &proc.get_debug_exceptionate()
-        ));
         exception.inner.lock().second_chance = true;
-        assert!(Arc::ptr_eq(
-            &iterator.next().unwrap(),
-            &thread.get_exceptionate()
-        ));
-        assert!(Arc::ptr_eq(
-            &iterator.next().unwrap(),
-            &proc.get_exceptionate()
-        ));
-        assert!(Arc::ptr_eq(
-            &iterator.next().unwrap(),
-            &proc.get_debug_exceptionate()
-        ));
-        assert!(Arc::ptr_eq(
-            &iterator.next().unwrap(),
-            &job.get_exceptionate()
-        ));
-        assert!(Arc::ptr_eq(
-            &iterator.next().unwrap(),
-            &parent_job.get_exceptionate()
-        ));
-        assert!(iterator.next().is_none());
+        let iterator = ExceptionateIterator::new(&exception);
+        let expected = [
+            proc.get_debug_exceptionate(),
+            thread.get_exceptionate(),
+            proc.get_exceptionate(),
+            proc.get_debug_exceptionate(),
+            job.get_exceptionate(),
+            parent_job.get_exceptionate(),
+        ];
+        for (actual, expected) in iterator.zip(expected.iter()) {
+            assert!(Arc::ptr_eq(&actual, expected));
+        }
     }
 
     #[test]
@@ -617,21 +586,15 @@ mod tests {
         let child_job = job.create_child(0).unwrap();
         let _grandson_job = child_job.create_child(0).unwrap();
 
-        let mut iterator = JobDebuggerIterator::new(child_job.clone());
-
-        assert!(Arc::ptr_eq(
-            &iterator.next().unwrap(),
-            &child_job.get_debug_exceptionate()
-        ));
-        assert!(Arc::ptr_eq(
-            &iterator.next().unwrap(),
-            &job.get_debug_exceptionate()
-        ));
-        assert!(Arc::ptr_eq(
-            &iterator.next().unwrap(),
-            &parent_job.get_debug_exceptionate()
-        ));
-        assert!(iterator.next().is_none());
+        let iterator = JobDebuggerIterator::new(child_job.clone());
+        let expected = [
+            child_job.get_debug_exceptionate(),
+            job.get_debug_exceptionate(),
+            parent_job.get_debug_exceptionate(),
+        ];
+        for (actual, expected) in iterator.zip(expected.iter()) {
+            assert!(Arc::ptr_eq(&actual, expected));
+        }
     }
 
     #[async_std::test]
@@ -664,12 +627,7 @@ mod tests {
 
                 if !should_receive {
                     // channel should be closed without message
-                    let read_result = channel.read();
-                    if let Err(err) = read_result {
-                        assert_eq!(err, ZxError::PEER_CLOSED);
-                    } else {
-                        unreachable!();
-                    }
+                    assert_eq!(channel.read().err(), Some(ZxError::PEER_CLOSED));
                     return;
                 }
 
