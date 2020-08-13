@@ -530,8 +530,8 @@ mod tests {
     fn exceptionate_iterator() {
         let parent_job = Job::root();
         let job = parent_job.create_child().unwrap();
-        let proc = Process::create(&job, "proc", 0).unwrap();
-        let thread = Thread::create(&proc, "thread", 0).unwrap();
+        let proc = Process::create(&job, "proc").unwrap();
+        let thread = Thread::create(&proc, "thread").unwrap();
 
         let exception = Exception::create(thread.clone(), ExceptionType::Synth, None);
         let iterator = ExceptionateIterator::new(&exception);
@@ -551,8 +551,8 @@ mod tests {
     fn exceptionate_iterator_second_chance() {
         let parent_job = Job::root();
         let job = parent_job.create_child().unwrap();
-        let proc = Process::create(&job, "proc", 0).unwrap();
-        let thread = Thread::create(&proc, "thread", 0).unwrap();
+        let proc = Process::create(&job, "proc").unwrap();
+        let thread = Thread::create(&proc, "thread").unwrap();
 
         let exception = Exception::create(thread.clone(), ExceptionType::Synth, None);
         exception.inner.lock().second_chance = true;
@@ -592,8 +592,8 @@ mod tests {
     async fn exception_handling() {
         let parent_job = Job::root();
         let job = parent_job.create_child().unwrap();
-        let proc = Process::create(&job, "proc", 0).unwrap();
-        let thread = Thread::create(&proc, "thread", 0).unwrap();
+        let proc = Process::create(&job, "proc").unwrap();
+        let thread = Thread::create(&proc, "thread").unwrap();
 
         let exception = Exception::create(thread.clone(), ExceptionType::Synth, None);
 

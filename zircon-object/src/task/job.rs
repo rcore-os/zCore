@@ -393,7 +393,7 @@ mod tests {
     fn parent_child() {
         let root_job = Job::root();
         let job = Job::create_child(&root_job).expect("failed to create job");
-        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
+        let proc = Process::create(&root_job, "proc").expect("failed to create process");
 
         assert_eq!(root_job.get_child(job.id()).unwrap().id(), job.id());
         assert_eq!(root_job.get_child(proc.id()).unwrap().id(), proc.id());
@@ -404,7 +404,7 @@ mod tests {
         assert!(Arc::ptr_eq(&job.parent().unwrap(), &root_job));
 
         let job1 = root_job.create_child().expect("failed to create job");
-        let proc1 = Process::create(&root_job, "proc1", 0).expect("failed to create process");
+        let proc1 = Process::create(&root_job, "proc1").expect("failed to create process");
         assert_eq!(root_job.children_ids(), vec![job.id(), job1.id()]);
         assert_eq!(root_job.process_ids(), vec![proc.id(), proc1.id()]);
 
@@ -423,7 +423,7 @@ mod tests {
         assert!(!root_job.is_empty());
         assert!(job.is_empty());
 
-        let _proc = Process::create(&job, "proc", 0).expect("failed to create process");
+        let _proc = Process::create(&job, "proc").expect("failed to create process");
         assert!(!job.is_empty());
     }
 
@@ -431,8 +431,8 @@ mod tests {
     fn kill() {
         let root_job = Job::root();
         let job = Job::create_child(&root_job).expect("failed to create job");
-        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
-        let thread = Thread::create(&proc, "thread", 0).expect("failed to create thread");
+        let proc = Process::create(&root_job, "proc").expect("failed to create process");
+        let thread = Thread::create(&proc, "thread").expect("failed to create thread");
 
         root_job.kill();
         assert!(root_job.inner.lock().killed);
@@ -465,7 +465,7 @@ mod tests {
         // The job's process have no threads.
         let root_job = Job::root();
         let job = Job::create_child(&root_job).expect("failed to create job");
-        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
+        let proc = Process::create(&root_job, "proc").expect("failed to create process");
         root_job.kill();
         assert!(root_job.inner.lock().killed);
         assert!(job.inner.lock().killed);
@@ -481,7 +481,7 @@ mod tests {
         let job = root_job.create_child().unwrap();
         let job1 = root_job.create_child().unwrap();
 
-        let proc = Process::create(&job, "proc", 0).expect("failed to create process");
+        let proc = Process::create(&job, "proc").expect("failed to create process");
 
         assert_eq!(
             proc.set_critical_at_job(&job1, true).err(),

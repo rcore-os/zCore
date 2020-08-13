@@ -387,8 +387,8 @@ mod tests {
     #[async_std::test]
     async fn owner() {
         let root_job = Job::root();
-        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
-        let thread = Thread::create(&proc, "thread", 0).expect("failed to create thread");
+        let proc = Process::create(&root_job, "proc").expect("failed to create process");
+        let thread = Thread::create(&proc, "thread").expect("failed to create thread");
 
         static VALUE: AtomicI32 = AtomicI32::new(1);
         let futex = proc.get_futex(&VALUE);
@@ -423,8 +423,8 @@ mod tests {
     #[async_std::test]
     async fn time_out() {
         let root_job = Job::root();
-        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
-        let thread = Thread::create(&proc, "thread", 0).expect("failed to create thread");
+        let proc = Process::create(&root_job, "proc").expect("failed to create process");
+        let thread = Thread::create(&proc, "thread").expect("failed to create thread");
 
         static VALUE: AtomicI32 = AtomicI32::new(1);
         let futex = proc.get_futex(&VALUE);

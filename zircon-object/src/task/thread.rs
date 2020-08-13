@@ -170,7 +170,7 @@ bitflags! {
 
 impl Thread {
     /// Create a new thread.
-    pub fn create(proc: &Arc<Process>, name: &str, _options: u32) -> ZxResult<Arc<Self>> {
+    pub fn create(proc: &Arc<Process>, name: &str) -> ZxResult<Arc<Self>> {
         Self::create_with_ext(proc, name, ())
     }
 
@@ -180,7 +180,6 @@ impl Thread {
         name: &str,
         ext: impl Any + Send + Sync,
     ) -> ZxResult<Arc<Self>> {
-        // TODO: options
         let thread = Arc::new(Thread {
             base: KObjectBase::with_name(name),
             _counter: CountHelper::new(),
@@ -630,8 +629,8 @@ mod tests {
     #[test]
     fn create() {
         let root_job = Job::root();
-        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
-        let thread = Thread::create(&proc, "thread", 0).expect("failed to create thread");
+        let proc = Process::create(&root_job, "proc").expect("failed to create process");
+        let thread = Thread::create(&proc, "thread").expect("failed to create thread");
         assert_eq!(thread.get_flags(), ThreadFlag::empty());
 
         let thread: Arc<dyn KernelObject> = thread;
@@ -643,9 +642,9 @@ mod tests {
     #[ignore]
     fn start() {
         let root_job = Job::root();
-        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
-        let thread = Thread::create(&proc, "thread", 0).expect("failed to create thread");
-        let thread1 = Thread::create(&proc, "thread1", 0).expect("failed to create thread");
+        let proc = Process::create(&root_job, "proc").expect("failed to create process");
+        let thread = Thread::create(&proc, "thread").expect("failed to create thread");
+        let thread1 = Thread::create(&proc, "thread1").expect("failed to create thread");
 
         // allocate stack for new thread
         let mut stack = vec![0u8; 0x1000];
@@ -707,8 +706,8 @@ mod tests {
     #[async_std::test]
     async fn blocking_run() {
         let root_job = Job::root();
-        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
-        let thread = Thread::create(&proc, "thread", 0).expect("failed to create thread");
+        let proc = Process::create(&root_job, "proc").expect("failed to create process");
+        let thread = Thread::create(&proc, "thread").expect("failed to create thread");
 
         let handle = Handle::new(proc.clone(), Rights::DEFAULT_PROCESS);
         let handle_value = proc.add_handle(handle);
@@ -753,8 +752,8 @@ mod tests {
     #[test]
     fn info() {
         let root_job = Job::root();
-        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
-        let thread = Thread::create(&proc, "thread", 0).expect("failed to create thread");
+        let proc = Process::create(&root_job, "proc").expect("failed to create process");
+        let thread = Thread::create(&proc, "thread").expect("failed to create thread");
 
         let info = thread.get_thread_info();
         assert!(info.state == thread.state() as u32 && info.wait_exception_channel_type == 0);
@@ -767,8 +766,8 @@ mod tests {
     #[test]
     fn read_write_state() {
         let root_job = Job::root();
-        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
-        let thread = Thread::create(&proc, "thread", 0).expect("failed to create thread");
+        let proc = Process::create(&root_job, "proc").expect("failed to create process");
+        let thread = Thread::create(&proc, "thread").expect("failed to create thread");
 
         let mut buf = [0; 10];
         assert_eq!(
@@ -792,8 +791,8 @@ mod tests {
     #[test]
     fn ext() {
         let root_job = Job::root();
-        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
-        let thread = Thread::create(&proc, "thread", 0).expect("failed to create thread");
+        let proc = Process::create(&root_job, "proc").expect("failed to create process");
+        let thread = Thread::create(&proc, "thread").expect("failed to create thread");
 
         let _ext = thread.ext();
         // TODO
@@ -802,8 +801,8 @@ mod tests {
     #[async_std::test]
     async fn wait_for_run() {
         let root_job = Job::root();
-        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
-        let thread = Thread::create(&proc, "thread", 0).expect("failed to create thread");
+        let proc = Process::create(&root_job, "proc").expect("failed to create process");
+        let thread = Thread::create(&proc, "thread").expect("failed to create thread");
 
         // without suspend
         let context = thread.wait_for_run().await;
@@ -830,8 +829,8 @@ mod tests {
     #[test]
     fn time() {
         let root_job = Job::root();
-        let proc = Process::create(&root_job, "proc", 0).expect("failed to create process");
-        let thread = Thread::create(&proc, "thread", 0).expect("failed to create thread");
+        let proc = Process::create(&root_job, "proc").expect("failed to create process");
+        let thread = Thread::create(&proc, "thread").expect("failed to create thread");
 
         assert_eq!(thread.get_time(), 0);
         thread.time_add(10);

@@ -42,8 +42,8 @@ pub struct Images<T: AsRef<[u8]>> {
 
 pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Process> {
     let job = Job::root();
-    let proc = Process::create(&job, "userboot", 0).unwrap();
-    let thread = Thread::create(&proc, "userboot", 0).unwrap();
+    let proc = Process::create(&job, "userboot").unwrap();
+    let thread = Thread::create(&proc, "userboot").unwrap();
     let resource = Resource::create(
         "root",
         ResourceKind::ROOT,

@@ -19,11 +19,14 @@ impl Syscall<'_> {
             "proc.create: job={:#x?}, name={:?}, options={:#x?}",
             job, name, options,
         );
+        if options != 0 {
+            return Err(ZxError::INVALID_ARGS);
+        }
         let proc = self.thread.proc();
         let job = proc
             .get_object_with_rights::<Job>(job, Rights::MANAGE_PROCESS)
             .or_else(|_| proc.get_object_with_rights::<Job>(job, Rights::WRITE))?;
-        let new_proc = Process::create(&job, &name, options)?;
+        let new_proc = Process::create(&job, &name)?;
         let new_vmar = new_proc.vmar();
         let proc_handle_value = proc.add_handle(Handle::new(new_proc, Rights::DEFAULT_PROCESS));
         let vmar_handle_value = proc.add_handle(Handle::new(
@@ -59,10 +62,12 @@ impl Syscall<'_> {
             "thread.create: proc={:#x?}, name={:?}, options={:#x?}",
             proc_handle, name, options,
         );
-        assert_eq!(options, 0);
+        if options != 0 {
+            return Err(ZxError::INVALID_ARGS);
+        }
         let proc = self.thread.proc();
         let process = proc.get_object_with_rights::<Process>(proc_handle, Rights::MANAGE_THREAD)?;
-        let thread = Thread::create(&process, &name, options)?;
+        let thread = Thread::create(&process, &name)?;
         let handle = proc.add_handle(Handle::new(thread, Rights::DEFAULT_THREAD));
         thread_handle.write(handle)?;
         Ok(())
