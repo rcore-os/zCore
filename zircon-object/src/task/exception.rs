@@ -475,20 +475,20 @@ impl<'a> Iterator for ExceptionateIterator<'a> {
                     } else {
                         ExceptionateIteratorState::Thread
                     };
-                    return Some(proc.get_debug_exceptionate());
+                    return Some(proc.debug_exceptionate());
                 }
                 ExceptionateIteratorState::Thread => {
                     self.state = ExceptionateIteratorState::Process;
-                    return Some(self.exception.thread.get_exceptionate());
+                    return Some(self.exception.thread.exceptionate());
                 }
                 ExceptionateIteratorState::Process => {
                     let proc = self.exception.thread.proc();
                     self.state = ExceptionateIteratorState::Debug(true);
-                    return Some(proc.get_exceptionate());
+                    return Some(proc.exceptionate());
                 }
                 ExceptionateIteratorState::Job(job) => {
                     let parent = job.parent();
-                    let result = job.get_exceptionate();
+                    let result = job.exceptionate();
                     self.state = parent.map_or(
                         ExceptionateIteratorState::Finished,
                         ExceptionateIteratorState::Job,
@@ -516,7 +516,7 @@ impl JobDebuggerIterator {
 impl Iterator for JobDebuggerIterator {
     type Item = Arc<Exceptionate>;
     fn next(&mut self) -> Option<Self::Item> {
-        let result = self.job.as_ref().map(|job| job.get_debug_exceptionate());
+        let result = self.job.as_ref().map(|job| job.debug_exceptionate());
         self.job = self.job.as_ref().and_then(|job| job.parent());
         result
     }
@@ -536,11 +536,11 @@ mod tests {
         let exception = Exception::create(thread.clone(), ExceptionType::Synth, None);
         let iterator = ExceptionateIterator::new(&exception);
         let expected = [
-            proc.get_debug_exceptionate(),
-            thread.get_exceptionate(),
-            proc.get_exceptionate(),
-            job.get_exceptionate(),
-            parent_job.get_exceptionate(),
+            proc.debug_exceptionate(),
+            thread.exceptionate(),
+            proc.exceptionate(),
+            job.exceptionate(),
+            parent_job.exceptionate(),
         ];
         for (actual, expected) in iterator.zip(expected.iter()) {
             assert!(Arc::ptr_eq(&actual, expected));
@@ -558,12 +558,12 @@ mod tests {
         exception.inner.lock().second_chance = true;
         let iterator = ExceptionateIterator::new(&exception);
         let expected = [
-            proc.get_debug_exceptionate(),
-            thread.get_exceptionate(),
-            proc.get_exceptionate(),
-            proc.get_debug_exceptionate(),
-            job.get_exceptionate(),
-            parent_job.get_exceptionate(),
+            proc.debug_exceptionate(),
+            thread.exceptionate(),
+            proc.exceptionate(),
+            proc.debug_exceptionate(),
+            job.exceptionate(),
+            parent_job.exceptionate(),
         ];
         for (actual, expected) in iterator.zip(expected.iter()) {
             assert!(Arc::ptr_eq(&actual, expected));
@@ -579,9 +579,9 @@ mod tests {
 
         let iterator = JobDebuggerIterator::new(child_job.clone());
         let expected = [
-            child_job.get_debug_exceptionate(),
-            job.get_debug_exceptionate(),
-            parent_job.get_debug_exceptionate(),
+            child_job.debug_exceptionate(),
+            job.debug_exceptionate(),
+            parent_job.debug_exceptionate(),
         ];
         for (actual, expected) in iterator.zip(expected.iter()) {
             assert!(Arc::ptr_eq(&actual, expected));
@@ -639,22 +639,22 @@ mod tests {
         };
 
         // proc debug should get the exception first
-        create_handler(&proc.get_debug_exceptionate(), true, false, 0);
+        create_handler(&proc.debug_exceptionate(), true, false, 0);
         // thread should get the exception next
-        create_handler(&thread.get_exceptionate(), true, false, 1);
+        create_handler(&thread.exceptionate(), true, false, 1);
         // here we omit proc to test that we can handle the case that there is none handler
         // job should get the exception and handle it next
-        create_handler(&job.get_exceptionate(), true, true, 3);
+        create_handler(&job.exceptionate(), true, true, 3);
         // since exception is handled we should not get it from parent job
-        create_handler(&parent_job.get_exceptionate(), false, false, 4);
+        create_handler(&parent_job.exceptionate(), false, false, 4);
 
         exception.handle(false).await;
 
         // terminate handlers by shutdown the related exceptionates
-        thread.get_exceptionate().shutdown();
-        proc.get_debug_exceptionate().shutdown();
-        job.get_exceptionate().shutdown();
-        parent_job.get_exceptionate().shutdown();
+        thread.exceptionate().shutdown();
+        proc.debug_exceptionate().shutdown();
+        job.exceptionate().shutdown();
+        parent_job.exceptionate().shutdown();
 
         // test for the order: proc debug -> thread -> job
         assert_eq!(handled_order.lock().clone(), vec![0, 1, 3]);

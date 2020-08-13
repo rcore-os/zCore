@@ -131,30 +131,34 @@ struct ThreadInner {
 }
 
 impl ThreadInner {
-    pub fn get_state(&self) -> ThreadState {
+    fn get_state(&self) -> ThreadState {
         if self.suspend_count == 0 || self.state == ThreadState::BlockedException {
             self.state
         } else {
             ThreadState::Suspended
         }
     }
+
     fn update_signal(&self, base: &KObjectBase) {
         if self.state == ThreadState::Dead {
-            base.signal_clear(Signal::THREAD_RUNNING);
-            base.signal_clear(Signal::THREAD_SUSPENDED);
-            base.signal_set(Signal::THREAD_TERMINATED)
+            base.signal_change(
+                Signal::THREAD_RUNNING | Signal::THREAD_SUSPENDED,
+                Signal::THREAD_TERMINATED,
+            );
         } else if self.state == ThreadState::New || self.state == ThreadState::Dying {
-            base.signal_clear(Signal::THREAD_RUNNING);
-            base.signal_clear(Signal::THREAD_SUSPENDED);
-            base.signal_clear(Signal::THREAD_TERMINATED)
+            base.signal_clear(
+                Signal::THREAD_RUNNING | Signal::THREAD_SUSPENDED | Signal::THREAD_TERMINATED,
+            );
         } else if self.suspend_count == 0 || self.state == ThreadState::BlockedException {
-            base.signal_set(Signal::THREAD_RUNNING);
-            base.signal_clear(Signal::THREAD_SUSPENDED);
-            base.signal_clear(Signal::THREAD_TERMINATED)
+            base.signal_change(
+                Signal::THREAD_TERMINATED | Signal::THREAD_SUSPENDED,
+                Signal::THREAD_RUNNING,
+            );
         } else {
-            base.signal_clear(Signal::THREAD_RUNNING);
-            base.signal_set(Signal::THREAD_SUSPENDED);
-            base.signal_clear(Signal::THREAD_TERMINATED)
+            base.signal_change(
+                Signal::THREAD_RUNNING | Signal::THREAD_TERMINATED,
+                Signal::THREAD_SUSPENDED,
+            );
         }
     }
 }
@@ -476,11 +480,6 @@ impl Thread {
         self.inner.lock().get_state()
     }
 
-    /// Get the exceptionate.
-    pub fn get_exceptionate(&self) -> Arc<Exceptionate> {
-        self.exceptionate.clone()
-    }
-
     /// Add the parameter to the time this thread has run on cpu.
     pub fn time_add(&self, time: u128) {
         self.inner.lock().time += time;
@@ -502,15 +501,12 @@ impl Thread {
     }
 
     /// Get the thread's flags.
-    pub fn get_flags(&self) -> ThreadFlag {
+    pub fn flags(&self) -> ThreadFlag {
         self.inner.lock().flags
     }
 
     /// Apply `f` to the thread's flags.
-    pub fn update_flags<F>(&self, f: F)
-    where
-        F: FnOnce(&mut ThreadFlag),
-    {
+    pub fn update_flags(&self, f: impl FnOnce(&mut ThreadFlag)) {
         f(&mut self.inner.lock().flags)
     }
 }
@@ -544,6 +540,14 @@ impl Task for Thread {
                 waker.wake();
             }
         }
+    }
+
+    fn exceptionate(&self) -> Arc<Exceptionate> {
+        self.exceptionate.clone()
+    }
+
+    fn debug_exceptionate(&self) -> Arc<Exceptionate> {
+        panic!("thread do not have debug exceptionate");
     }
 }
 
@@ -631,7 +635,7 @@ mod tests {
         let root_job = Job::root();
         let proc = Process::create(&root_job, "proc").expect("failed to create process");
         let thread = Thread::create(&proc, "thread").expect("failed to create thread");
-        assert_eq!(thread.get_flags(), ThreadFlag::empty());
+        assert_eq!(thread.flags(), ThreadFlag::empty());
 
         let thread: Arc<dyn KernelObject> = thread;
         assert_eq!(thread.related_koid(), proc.id());

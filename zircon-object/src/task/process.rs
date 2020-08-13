@@ -492,16 +492,6 @@ impl Process {
         self.inner.lock().get_cancel_token(handle_value)
     }
 
-    /// Get the exceptionate of this process.
-    pub fn get_exceptionate(&self) -> Arc<Exceptionate> {
-        self.exceptionate.clone()
-    }
-
-    /// Get the debug exceptionate of this process.
-    pub fn get_debug_exceptionate(&self) -> Arc<Exceptionate> {
-        self.debug_exceptionate.clone()
-    }
-
     /// Get KoIDs of Threads.
     pub fn thread_ids(&self) -> Vec<KoID> {
         self.inner.lock().threads.iter().map(|t| t.id()).collect()
@@ -525,6 +515,14 @@ impl Task for Process {
         for thread in inner.threads.iter() {
             thread.resume();
         }
+    }
+
+    fn exceptionate(&self) -> Arc<Exceptionate> {
+        self.exceptionate.clone()
+    }
+
+    fn debug_exceptionate(&self) -> Arc<Exceptionate> {
+        self.debug_exceptionate.clone()
     }
 }
 

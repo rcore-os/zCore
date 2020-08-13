@@ -186,7 +186,7 @@ fn spawn(thread: Arc<Thread>) {
                 .await;
         };
         Exception::create(thread.clone(), ExceptionType::ThreadStarting, None)
-            .handle_with_exceptionates(false, Some(thread.proc().get_debug_exceptionate()), false)
+            .handle_with_exceptionates(false, Some(thread.proc().debug_exceptionate()), false)
             .await;
         loop {
             let mut cx = thread.wait_for_run().await;
@@ -270,7 +270,7 @@ fn spawn(thread: Arc<Thread>) {
         let end_exception = Exception::create(thread.clone(), ExceptionType::ThreadExiting, None);
         let handled = thread
             .proc()
-            .get_debug_exceptionate()
+            .debug_exceptionate()
             .send_exception(&end_exception);
         if let Ok(future) = handled {
             thread.dying_run(future).await.ok();

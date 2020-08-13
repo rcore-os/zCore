@@ -25,20 +25,20 @@ impl Syscall<'_> {
                 return Err(ZxError::ACCESS_DENIED);
             }
             match option {
-                ExceptionChannelOption::None => job.get_exceptionate(),
-                ExceptionChannelOption::Debugger => job.get_debug_exceptionate(),
+                ExceptionChannelOption::None => job.exceptionate(),
+                ExceptionChannelOption::Debugger => job.debug_exceptionate(),
             }
         } else if let Ok(process) = task.clone().downcast_arc::<Process>() {
             if !rights.contains(Rights::ENUMERATE) {
                 return Err(ZxError::ACCESS_DENIED);
             }
             match option {
-                ExceptionChannelOption::None => process.get_exceptionate(),
-                ExceptionChannelOption::Debugger => process.get_debug_exceptionate(),
+                ExceptionChannelOption::None => process.exceptionate(),
+                ExceptionChannelOption::Debugger => process.debug_exceptionate(),
             }
         } else if let Ok(thread) = task.clone().downcast_arc::<Thread>() {
             match option {
-                ExceptionChannelOption::None => thread.get_exceptionate(),
+                ExceptionChannelOption::None => thread.exceptionate(),
                 ExceptionChannelOption::Debugger => return Err(ZxError::INVALID_ARGS),
             }
         } else {

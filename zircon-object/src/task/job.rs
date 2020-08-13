@@ -198,16 +198,6 @@ impl Job {
         }
     }
 
-    /// Get the exceptionate of this job.
-    pub fn get_exceptionate(&self) -> Arc<Exceptionate> {
-        self.exceptionate.clone()
-    }
-
-    /// Get the debug exceptionate of this job.
-    pub fn get_debug_exceptionate(&self) -> Arc<Exceptionate> {
-        self.debug_exceptionate.clone()
-    }
-
     /// Get KoIDs of Processes.
     pub fn process_ids(&self) -> Vec<KoID> {
         self.inner.lock().processes.iter().map(|p| p.id()).collect()
@@ -229,9 +219,21 @@ impl Job {
         self.inner.lock().is_empty()
     }
 
+    /// The job finally terminates.
+    fn terminate(&self) {
+        self.exceptionate.shutdown();
+        self.debug_exceptionate.shutdown();
+        self.base.signal_set(Signal::JOB_TERMINATED);
+        if let Some(parent) = self.parent.as_ref() {
+            parent.remove_child(&self.inner.lock().self_ref)
+        }
+    }
+}
+
+impl Task for Job {
     /// Kill the job. The job do not terminate immediately when killed.
     /// It will terminate after all its children and processes are terminated.
-    pub fn kill(&self) {
+    fn kill(&self) {
         let (children, processes) = {
             let mut inner = self.inner.lock();
             if inner.killed {
@@ -254,14 +256,20 @@ impl Job {
         }
     }
 
-    /// The job finally terminates.
-    fn terminate(&self) {
-        self.exceptionate.shutdown();
-        self.debug_exceptionate.shutdown();
-        self.base.signal_set(Signal::JOB_TERMINATED);
-        if let Some(parent) = self.parent.as_ref() {
-            parent.remove_child(&self.inner.lock().self_ref)
-        }
+    fn suspend(&self) {
+        panic!("job do not support suspend");
+    }
+
+    fn resume(&self) {
+        panic!("job do not support resume");
+    }
+
+    fn exceptionate(&self) -> Arc<Exceptionate> {
+        self.exceptionate.clone()
+    }
+
+    fn debug_exceptionate(&self) -> Arc<Exceptionate> {
+        self.debug_exceptionate.clone()
     }
 }
 
