@@ -533,26 +533,38 @@ impl CurrentThread {
         ret
     }
 
-    /// Blocked wait for exception handling.
-    pub async fn wait_for_exception_handling(&self, exception: Arc<Exception>) {
-        self.inner.lock().exception = Some(exception.clone());
-        let future = exception.handle();
-        pin_mut!(future);
-        self.blocking_run(
-            future,
-            ThreadState::BlockedException,
-            Duration::from_nanos(u64::max_value()),
-            None,
-        )
-        .await
-        .ok();
-        self.inner.lock().exception = None;
+    /// Create an exception on this thread and wait for the handling.
+    pub async fn handle_exception(&self, type_: ExceptionType, cx: Option<&UserContext>) {
+        let exception = Exception::new(&self.0, type_, cx);
+        if type_ == ExceptionType::ThreadExiting {
+            let handled = self
+                .0
+                .proc()
+                .debug_exceptionate()
+                .send_exception(&exception);
+            if let Ok(future) = handled {
+                self.dying_run(future).await.ok();
+            }
+        } else {
+            self.inner.lock().exception = Some(exception.clone());
+            let future = exception.handle();
+            pin_mut!(future);
+            self.blocking_run(
+                future,
+                ThreadState::BlockedException,
+                Duration::from_nanos(u64::max_value()),
+                None,
+            )
+            .await
+            .ok();
+            self.inner.lock().exception = None;
+        }
     }
 
     /// Run a blocking task when the thread is exited itself and dying.
     ///
     /// The task will stop running if and once the thread is killed.
-    pub async fn dying_run<F, T, FT>(&self, future: F) -> ZxResult<T>
+    async fn dying_run<F, T, FT>(&self, future: F) -> ZxResult<T>
     where
         F: Future<Output = FT> + Unpin,
         FT: IntoResult<T>,

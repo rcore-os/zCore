@@ -48,13 +48,17 @@ impl Exceptionate {
         Ok(user_channel)
     }
 
+    /// Whether the user-owned channel endpoint is alive.
     pub(super) fn has_channel(&self) -> bool {
         let inner = self.inner.lock();
         matches!(&*inner, ExceptionateInner::Bind { channel, .. } if channel.peer().is_ok())
     }
 
     /// Send exception to the user-owned endpoint.
-    pub fn send_exception(&self, exception: &Arc<Exception>) -> ZxResult<oneshot::Receiver<()>> {
+    pub(super) fn send_exception(
+        &self,
+        exception: &Arc<Exception>,
+    ) -> ZxResult<oneshot::Receiver<()>> {
         debug!(
             "Exception: {:?} ,try send to {:?}",
             exception.type_, self.type_
@@ -180,7 +184,7 @@ impl ExceptionReport {
 /// Type of exception
 #[allow(missing_docs)]
 #[repr(u32)]
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum ExceptionType {
     General = 0x008,
     FatalPageFault = 0x108,
@@ -310,7 +314,7 @@ impl Drop for ExceptionObject {
 }
 
 /// An Exception represents a single currently-active exception.
-pub struct Exception {
+pub(super) struct Exception {
     thread: Arc<Thread>,
     type_: ExceptionType,
     report: ExceptionReport,
@@ -325,11 +329,7 @@ struct ExceptionInner {
 
 impl Exception {
     /// Create an `Exception`.
-    pub fn create(
-        thread: &Arc<Thread>,
-        type_: ExceptionType,
-        cx: Option<&UserContext>,
-    ) -> Arc<Self> {
+    pub fn new(thread: &Arc<Thread>, type_: ExceptionType, cx: Option<&UserContext>) -> Arc<Self> {
         Arc::new(Exception {
             thread: thread.clone(),
             type_,
@@ -346,7 +346,7 @@ impl Exception {
     ///
     /// Note that it's possible that this may returns before exception was send to any exception channel.
     /// This happens only when the thread is killed before we send the exception.
-    pub(super) async fn handle(self: &Arc<Self>) {
+    pub async fn handle(self: &Arc<Self>) {
         let result = match self.type_ {
             ExceptionType::ProcessStarting => {
                 self.handle_with(JobDebuggerIterator::new(self.thread.proc().job()), true)
@@ -398,12 +398,12 @@ impl Exception {
     }
 
     /// Get the exception's channel type.
-    pub(super) fn current_channel_type(&self) -> ExceptionChannelType {
+    pub fn current_channel_type(&self) -> ExceptionChannelType {
         self.inner.lock().current_channel_type
     }
 
     /// Get a report of the exception.
-    pub(super) fn report(&self) -> ExceptionReport {
+    pub fn report(&self) -> ExceptionReport {
         self.report.clone()
     }
 }
@@ -516,7 +516,7 @@ mod tests {
         let proc = Process::create(&job, "proc").unwrap();
         let thread = Thread::create(&proc, "thread").unwrap();
 
-        let exception = Exception::create(&thread, ExceptionType::Synth, None);
+        let exception = Exception::new(&thread, ExceptionType::Synth, None);
         let actual: Vec<_> = ExceptionateIterator::new(&exception).collect();
         let expected = [
             proc.debug_exceptionate(),
@@ -538,7 +538,7 @@ mod tests {
         let proc = Process::create(&job, "proc").unwrap();
         let thread = Thread::create(&proc, "thread").unwrap();
 
-        let exception = Exception::create(&thread, ExceptionType::Synth, None);
+        let exception = Exception::new(&thread, ExceptionType::Synth, None);
         exception.inner.lock().second_chance = true;
         let actual: Vec<_> = ExceptionateIterator::new(&exception).collect();
         let expected = [
@@ -581,7 +581,7 @@ mod tests {
         let proc = Process::create(&job, "proc").unwrap();
         let thread = Thread::create(&proc, "thread").unwrap();
 
-        let exception = Exception::create(&thread, ExceptionType::Synth, None);
+        let exception = Exception::new(&thread, ExceptionType::Synth, None);
 
         // This is used to verify that exceptions are handled in a specific order
         let handled_order = Arc::new(Mutex::new(Vec::<usize>::new()));

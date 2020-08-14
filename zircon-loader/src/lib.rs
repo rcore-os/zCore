@@ -177,11 +177,13 @@ fn spawn(thread: CurrentThread) {
     let future = async move {
         kernel_hal::Thread::set_tid(thread.id(), thread.proc().id());
         if thread.is_first_thread() {
-            let exception = Exception::create(&thread, ExceptionType::ProcessStarting, None);
-            thread.wait_for_exception_handling(exception).await;
+            thread
+                .handle_exception(ExceptionType::ProcessStarting, None)
+                .await;
         };
-        let exception = Exception::create(&thread, ExceptionType::ThreadStarting, None);
-        thread.wait_for_exception_handling(exception).await;
+        thread
+            .handle_exception(ExceptionType::ThreadStarting, None)
+            .await;
 
         loop {
             let mut cx = thread.wait_for_run().await;
@@ -236,9 +238,9 @@ fn spawn(thread: CurrentThread) {
                     let vmar = thread.proc().vmar();
                     if vmar.handle_page_fault(fault_vaddr, flags).is_err() {
                         error!("Page Fault from user mode: {:#x?}", cx);
-                        let exception =
-                            Exception::create(&thread, ExceptionType::FatalPageFault, Some(&cx));
-                        thread.wait_for_exception_handling(exception).await;
+                        thread
+                            .handle_exception(ExceptionType::FatalPageFault, Some(&cx))
+                            .await;
                     }
                 }
                 0x8 => {
@@ -253,20 +255,14 @@ fn spawn(thread: CurrentThread) {
                         _ => ExceptionType::General,
                     };
                     error!("User mode exception: {:?} {:#x?}", type_, cx);
-                    let exception = Exception::create(&thread, type_, Some(&cx));
-                    thread.wait_for_exception_handling(exception).await;
+                    thread.handle_exception(type_, Some(&cx)).await;
                 }
             }
             thread.end_running(cx);
         }
-        let end_exception = Exception::create(&thread, ExceptionType::ThreadExiting, None);
-        let handled = thread
-            .proc()
-            .debug_exceptionate()
-            .send_exception(&end_exception);
-        if let Ok(future) = handled {
-            thread.dying_run(future).await.ok();
-        }
+        thread
+            .handle_exception(ExceptionType::ThreadExiting, None)
+            .await;
     };
     kernel_hal::Thread::spawn(Box::pin(future), vmtoken);
 }
