@@ -98,7 +98,7 @@ impl Syscall<'_> {
         }
         let proc = self.thread.proc();
         let guest = proc.get_object_with_rights::<Guest>(guest_handle, Rights::MANAGE_PROCESS)?;
-        let vcpu = Vcpu::new(guest, entry, self.thread.clone())?;
+        let vcpu = Vcpu::new(guest, entry, (*self.thread).clone())?;
         let handle_value = proc.add_handle(Handle::new(vcpu, Rights::DEFAULT_VCPU));
         out.write(handle_value)?;
         Ok(())

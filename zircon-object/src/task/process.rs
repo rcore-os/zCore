@@ -115,7 +115,6 @@ impl Process {
         name: &str,
         ext: impl Any + Send + Sync,
     ) -> ZxResult<Arc<Self>> {
-        // TODO: _options -> options
         let proc = Arc::new(Process {
             base: KObjectBase::with_name(name),
             _counter: CountHelper::new(),
@@ -131,13 +130,40 @@ impl Process {
         Ok(proc)
     }
 
-    /// Start the first `thread` in the process.
+    /// Start the first thread in the process.
     ///
     /// This causes a thread to begin execution at the program
     /// counter specified by `entry` and with the stack pointer set to `stack`.
     /// The arguments `arg1` and `arg2` are arranged to be in the architecture
     /// specific registers used for the first two arguments of a function call
     /// before the thread is started. All other registers are zero upon start.
+    ///
+    /// # Example
+    /// ```
+    /// # use std::sync::Arc;
+    /// # use zircon_object::task::*;
+    /// # use zircon_object::object::*;
+    /// # kernel_hal_unix::init();
+    /// # async_std::task::block_on(async {
+    /// let job = Job::root();
+    /// let proc = Process::create(&job, "proc").unwrap();
+    /// let thread = Thread::create(&proc, "thread").unwrap();
+    /// let handle = Handle::new(proc.clone(), Rights::DEFAULT_PROCESS);
+    ///
+    /// // start the new thread
+    /// proc.start(&thread, 1, 4, Some(handle), 2, |thread| Box::pin(async move {
+    ///     let cx = thread.wait_for_run().await;
+    ///     assert_eq!(cx.general.rip, 1);  // entry
+    ///     assert_eq!(cx.general.rsp, 4);  // stack_top
+    ///     assert_eq!(cx.general.rdi, 3);  // arg0 (handle)
+    ///     assert_eq!(cx.general.rsi, 2);  // arg1
+    ///     thread.end_running(cx);
+    /// })).unwrap();
+    ///
+    /// # let object: Arc<dyn KernelObject> = thread.clone();
+    /// # object.wait_signal(Signal::THREAD_TERMINATED).await;
+    /// # });
+    /// ```
     pub fn start(
         &self,
         thread: &Arc<Thread>,
@@ -145,7 +171,7 @@ impl Process {
         stack: usize,
         arg1: Option<Handle>,
         arg2: usize,
-        spawn_fn: fn(thread: Arc<Thread>),
+        thread_fn: ThreadFn,
     ) -> ZxResult {
         let handle_value;
         {
@@ -160,7 +186,7 @@ impl Process {
             handle_value = arg1.map_or(INVALID_HANDLE, |handle| inner.add_handle(handle));
         }
         thread.set_first_thread();
-        match thread.start(entry, stack, handle_value as usize, arg2, spawn_fn) {
+        match thread.start(entry, stack, handle_value as usize, arg2, thread_fn) {
             Ok(_) => Ok(()),
             Err(err) => {
                 let mut inner = self.inner.lock();

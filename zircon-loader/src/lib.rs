@@ -10,6 +10,7 @@ extern crate log;
 
 use {
     alloc::{boxed::Box, sync::Arc, vec::Vec},
+    core::{future::Future, pin::Pin},
     kernel_hal::GeneralRegs,
     xmas_elf::ElfFile,
     zircon_object::{dev::*, ipc::*, object::*, task::*, util::elf_loader::*, vm::*},
@@ -163,7 +164,7 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
     let msg = MessagePacket { data, handles };
     kernel_channel.write(msg).unwrap();
 
-    proc.start(&thread, entry, sp, Some(handle), 0, spawn)
+    proc.start(&thread, entry, sp, Some(handle), 0, thread_fn)
         .expect("failed to start main thread");
     proc
 }
@@ -172,112 +173,102 @@ kcounter!(EXCEPTIONS_USER, "exceptions.user");
 kcounter!(EXCEPTIONS_TIMER, "exceptions.timer");
 kcounter!(EXCEPTIONS_PGFAULT, "exceptions.pgfault");
 
-fn spawn(thread: Arc<Thread>) {
-    let vmtoken = thread.proc().vmar().table_phys();
-    let future = async move {
-        kernel_hal::Thread::set_tid(thread.id(), thread.proc().id());
-        if thread.is_first_thread() {
-            Exception::create(&thread, ExceptionType::ProcessStarting, None)
-                .handle_with_exceptionates(
-                    false,
-                    JobDebuggerIterator::new(thread.proc().job()),
-                    true,
-                )
-                .await;
-        };
-        Exception::create(&thread, ExceptionType::ThreadStarting, None)
-            .handle_with_exceptionates(false, Some(thread.proc().debug_exceptionate()), false)
+async fn new_thread(thread: CurrentThread) {
+    kernel_hal::Thread::set_tid(thread.id(), thread.proc().id());
+    if thread.is_first_thread() {
+        thread
+            .handle_exception(ExceptionType::ProcessStarting, None)
             .await;
-        loop {
-            let mut cx = thread.wait_for_run().await;
-            if thread.state() == ThreadState::Dying {
-                break;
-            }
-            trace!("go to user: {:#x?}", cx);
-            debug!("switch to {}|{}", thread.proc().name(), thread.name());
-            let tmp_time = kernel_hal::timer_now().as_nanos();
-
-            // * Attention
-            // The code will enter a magic zone from here.
-            // ‘context run‘ will be executed into a wrapped library where context switching takes place.
-            // The details are available in the trapframe crate on crates.io.
-
-            kernel_hal::context_run(&mut cx);
-
-            // Back from the userspace
-
-            let time = kernel_hal::timer_now().as_nanos() - tmp_time;
-            thread.time_add(time);
-            trace!("back from user: {:#x?}", cx);
-            EXCEPTIONS_USER.add(1);
-            #[cfg(target_arch = "aarch64")]
-            match cx.trap_num {
-                0 => handle_syscall(&thread, &mut cx.general).await,
-                _ => unimplemented!(),
-            }
-            #[cfg(target_arch = "x86_64")]
-            match cx.trap_num {
-                0x100 => handle_syscall(&thread, &mut cx.general).await,
-                0x20..=0x3f => {
-                    kernel_hal::InterruptManager::handle(cx.trap_num as u8);
-                    if cx.trap_num == 0x20 {
-                        EXCEPTIONS_TIMER.add(1);
-                        kernel_hal::yield_now().await;
-                    }
-                }
-                0xe => {
-                    EXCEPTIONS_PGFAULT.add(1);
-                    #[cfg(target_arch = "x86_64")]
-                    let flags = if cx.error_code & 0x2 == 0 {
-                        MMUFlags::READ
-                    } else {
-                        MMUFlags::WRITE
-                    };
-                    // FIXME:
-                    #[cfg(target_arch = "aarch64")]
-                    let flags = MMUFlags::WRITE;
-                    let fault_vaddr = kernel_hal::fetch_fault_vaddr();
-                    error!("page fault from user mode {:#x} {:#x?}", fault_vaddr, flags);
-                    let vmar = thread.proc().vmar();
-                    if vmar.handle_page_fault(fault_vaddr, flags).is_err() {
-                        error!("Page Fault from user mode: {:#x?}", cx);
-                        let exception =
-                            Exception::create(&thread, ExceptionType::FatalPageFault, Some(&cx));
-                        exception.handle(true).await;
-                    }
-                }
-                0x8 => {
-                    panic!("Double fault from user mode! {:#x?}", cx);
-                }
-                num => {
-                    let type_ = match num {
-                        0x1 => ExceptionType::HardwareBreakpoint,
-                        0x3 => ExceptionType::SoftwareBreakpoint,
-                        0x6 => ExceptionType::UndefinedInstruction,
-                        0x17 => ExceptionType::UnalignedAccess,
-                        _ => ExceptionType::General,
-                    };
-                    error!("User mode exception: {:?} {:#x?}", type_, cx);
-                    let exception = Exception::create(&thread, type_, Some(&cx));
-                    exception.handle(true).await;
-                }
-            }
-            thread.end_running(cx);
-        }
-        let end_exception = Exception::create(&thread, ExceptionType::ThreadExiting, None);
-        let handled = thread
-            .proc()
-            .debug_exceptionate()
-            .send_exception(&end_exception);
-        if let Ok(future) = handled {
-            thread.dying_run(future).await.ok();
-        }
-        thread.terminate();
     };
-    kernel_hal::Thread::spawn(Box::pin(future), vmtoken);
+    thread
+        .handle_exception(ExceptionType::ThreadStarting, None)
+        .await;
+
+    loop {
+        let mut cx = thread.wait_for_run().await;
+        if thread.state() == ThreadState::Dying {
+            break;
+        }
+        trace!("go to user: {:#x?}", cx);
+        debug!("switch to {}|{}", thread.proc().name(), thread.name());
+        let tmp_time = kernel_hal::timer_now().as_nanos();
+
+        // * Attention
+        // The code will enter a magic zone from here.
+        // `context run` will be executed into a wrapped library where context switching takes place.
+        // The details are available in the trapframe crate on crates.io.
+
+        kernel_hal::context_run(&mut cx);
+
+        // Back from the userspace
+
+        let time = kernel_hal::timer_now().as_nanos() - tmp_time;
+        thread.time_add(time);
+        trace!("back from user: {:#x?}", cx);
+        EXCEPTIONS_USER.add(1);
+        #[cfg(target_arch = "aarch64")]
+        match cx.trap_num {
+            0 => handle_syscall(&thread, &mut cx.general).await,
+            _ => unimplemented!(),
+        }
+        #[cfg(target_arch = "x86_64")]
+        match cx.trap_num {
+            0x100 => handle_syscall(&thread, &mut cx.general).await,
+            0x20..=0x3f => {
+                kernel_hal::InterruptManager::handle(cx.trap_num as u8);
+                if cx.trap_num == 0x20 {
+                    EXCEPTIONS_TIMER.add(1);
+                    kernel_hal::yield_now().await;
+                }
+            }
+            0xe => {
+                EXCEPTIONS_PGFAULT.add(1);
+                #[cfg(target_arch = "x86_64")]
+                let flags = if cx.error_code & 0x2 == 0 {
+                    MMUFlags::READ
+                } else {
+                    MMUFlags::WRITE
+                };
+                // FIXME:
+                #[cfg(target_arch = "aarch64")]
+                let flags = MMUFlags::WRITE;
+                let fault_vaddr = kernel_hal::fetch_fault_vaddr();
+                error!("page fault from user mode {:#x} {:#x?}", fault_vaddr, flags);
+                let vmar = thread.proc().vmar();
+                if vmar.handle_page_fault(fault_vaddr, flags).is_err() {
+                    error!("Page Fault from user mode: {:#x?}", cx);
+                    thread
+                        .handle_exception(ExceptionType::FatalPageFault, Some(&cx))
+                        .await;
+                }
+            }
+            0x8 => {
+                panic!("Double fault from user mode! {:#x?}", cx);
+            }
+            num => {
+                let type_ = match num {
+                    0x1 => ExceptionType::HardwareBreakpoint,
+                    0x3 => ExceptionType::SoftwareBreakpoint,
+                    0x6 => ExceptionType::UndefinedInstruction,
+                    0x17 => ExceptionType::UnalignedAccess,
+                    _ => ExceptionType::General,
+                };
+                error!("User mode exception: {:?} {:#x?}", type_, cx);
+                thread.handle_exception(type_, Some(&cx)).await;
+            }
+        }
+        thread.end_running(cx);
+    }
+    thread
+        .handle_exception(ExceptionType::ThreadExiting, None)
+        .await;
 }
 
-async fn handle_syscall(thread: &Arc<Thread>, regs: &mut GeneralRegs) {
+fn thread_fn(thread: CurrentThread) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> {
+    Box::pin(new_thread(thread))
+}
+
+async fn handle_syscall(thread: &CurrentThread, regs: &mut GeneralRegs) {
     #[cfg(target_arch = "x86_64")]
     let num = regs.rax as u32;
     #[cfg(target_arch = "aarch64")]
@@ -305,8 +296,8 @@ async fn handle_syscall(thread: &Arc<Thread>, regs: &mut GeneralRegs) {
     ];
     let mut syscall = Syscall {
         regs,
-        thread: thread.clone(),
-        spawn_fn: spawn,
+        thread,
+        thread_fn,
     };
     let ret = syscall.syscall(num, args).await as usize;
     #[cfg(target_arch = "x86_64")]

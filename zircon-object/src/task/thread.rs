@@ -8,11 +8,12 @@ use {
     core::{
         any::Any,
         future::Future,
+        ops::Deref,
         pin::Pin,
         task::{Context, Poll, Waker},
         time::Duration,
     },
-    futures::{channel::oneshot::*, future::FutureExt, select_biased},
+    futures::{channel::oneshot::*, future::FutureExt, pin_mut, select_biased},
     kernel_hal::{sleep_until, GeneralRegs, UserContext},
     spin::Mutex,
 };
@@ -43,14 +44,14 @@ mod thread_state;
 /// on a process.
 ///
 /// A thread terminates execution:
-/// - by calling [`Thread::exit()`]
+/// - by calling [`CurrentThread::exit()`]
 /// - when the parent process terminates
 /// - by calling [`Task::kill()`]
 /// - after generating an exception for which there is no handler or the handler
 /// decides to terminate the thread.
 ///
 /// Returning from the entrypoint routine does not terminate execution. The last
-/// action of the entrypoint should be to call [`Thread::exit()`].
+/// action of the entrypoint should be to call [`CurrentThread::exit()`].
 ///
 /// Closing the last handle to a thread does not terminate execution. In order to
 /// forcefully kill a thread for which there is no available handle, use
@@ -80,7 +81,7 @@ mod thread_state;
 /// you may see any combination of requested signals when they return.
 ///
 /// [`Thread::create()`]: Thread::create
-/// [`Thread::exit()`]: Thread::exit
+/// [`CurrentThread::exit()`]: CurrentThread::exit
 /// [`Process::exit()`]: crate::task::Process::exit
 /// [`THREAD_TERMINATED`]: crate::object::Signal::THREAD_TERMINATED
 /// [`THREAD_SUSPENDED`]: crate::object::Signal::THREAD_SUSPENDED
@@ -131,34 +132,38 @@ struct ThreadInner {
 }
 
 impl ThreadInner {
-    fn get_state(&self) -> ThreadState {
-        if self.suspend_count == 0 || self.state == ThreadState::BlockedException {
+    fn state(&self) -> ThreadState {
+        // Dying > Exception > Suspend > Blocked
+        if self.suspend_count == 0
+            || self.state == ThreadState::BlockedException
+            || self.state == ThreadState::Dying
+            || self.state == ThreadState::Dead
+        {
             self.state
         } else {
             ThreadState::Suspended
         }
     }
 
-    fn update_signal(&self, base: &KObjectBase) {
-        if self.state == ThreadState::Dead {
-            base.signal_change(
+    /// Change state and update signal.
+    fn change_state(&mut self, state: ThreadState, base: &KObjectBase) {
+        self.state = state;
+        match self.state() {
+            ThreadState::Dead => base.signal_change(
                 Signal::THREAD_RUNNING | Signal::THREAD_SUSPENDED,
                 Signal::THREAD_TERMINATED,
-            );
-        } else if self.state == ThreadState::New || self.state == ThreadState::Dying {
-            base.signal_clear(
+            ),
+            ThreadState::New | ThreadState::Dying => base.signal_clear(
                 Signal::THREAD_RUNNING | Signal::THREAD_SUSPENDED | Signal::THREAD_TERMINATED,
-            );
-        } else if self.suspend_count == 0 || self.state == ThreadState::BlockedException {
-            base.signal_change(
-                Signal::THREAD_TERMINATED | Signal::THREAD_SUSPENDED,
-                Signal::THREAD_RUNNING,
-            );
-        } else {
-            base.signal_change(
+            ),
+            ThreadState::Suspended => base.signal_change(
                 Signal::THREAD_RUNNING | Signal::THREAD_TERMINATED,
                 Signal::THREAD_SUSPENDED,
-            );
+            ),
+            _ => base.signal_change(
+                Signal::THREAD_TERMINATED | Signal::THREAD_SUSPENDED,
+                Signal::THREAD_RUNNING,
+            ),
         }
     }
 }
@@ -172,6 +177,9 @@ bitflags! {
     }
 }
 
+/// The type of a new thread function.
+pub type ThreadFn = fn(thread: CurrentThread) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
+
 impl Thread {
     /// Create a new thread.
     pub fn create(proc: &Arc<Process>, name: &str) -> ZxResult<Arc<Self>> {
@@ -179,6 +187,20 @@ impl Thread {
     }
 
     /// Create a new thread with extension info.
+    ///
+    /// # Example
+    /// ```
+    /// # use std::sync::Arc;
+    /// # use zircon_object::task::*;
+    /// # kernel_hal_unix::init();
+    /// let job = Job::root();
+    /// let proc = Process::create(&job, "proc").unwrap();
+    /// // create a thread with extension info
+    /// let thread = Thread::create_with_ext(&proc, "thread", job.clone()).unwrap();
+    /// // get the extension info
+    /// let ext = thread.ext().downcast_ref::<Arc<Job>>().unwrap();
+    /// assert!(Arc::ptr_eq(ext, &job));
+    /// ```
     pub fn create_with_ext(
         proc: &Arc<Process>,
         name: &str,
@@ -204,7 +226,7 @@ impl Thread {
         &self.proc
     }
 
-    /// Get the extension.
+    /// Get the extension info.
     pub fn ext(&self) -> &Box<dyn Any + Send + Sync> {
         &self.ext
     }
@@ -216,7 +238,7 @@ impl Thread {
         stack: usize,
         arg1: usize,
         arg2: usize,
-        spawn_fn: fn(thread: Arc<Thread>),
+        thread_fn: ThreadFn,
     ) -> ZxResult {
         {
             let mut inner = self.inner.lock();
@@ -236,19 +258,15 @@ impl Thread {
                 context.general.x0 = arg1;
                 context.general.x1 = arg2;
             }
-            inner.state = ThreadState::Running;
-            inner.update_signal(&self.base);
+            inner.change_state(ThreadState::Running, &self.base);
         }
-        spawn_fn(self.clone());
+        let vmtoken = self.proc().vmar().table_phys();
+        kernel_hal::Thread::spawn(thread_fn(CurrentThread(self.clone())), vmtoken);
         Ok(())
     }
 
     /// Start execution with given registers.
-    pub fn start_with_regs(
-        self: &Arc<Self>,
-        regs: GeneralRegs,
-        spawn_fn: fn(thread: Arc<Thread>),
-    ) -> ZxResult {
+    pub fn start_with_regs(self: &Arc<Self>, regs: GeneralRegs, thread_fn: ThreadFn) -> ZxResult {
         {
             let mut inner = self.inner.lock();
             let context = inner.context.as_mut().ok_or(ZxError::BAD_STATE)?;
@@ -257,11 +275,10 @@ impl Thread {
             {
                 context.general.rflags |= 0x3202;
             }
-            inner.state = ThreadState::Running;
-            inner.update_signal(&self.base);
-            self.base.signal_set(Signal::THREAD_RUNNING);
+            inner.change_state(ThreadState::Running, &self.base);
         }
-        spawn_fn(self.clone());
+        let vmtoken = self.proc().vmar().table_phys();
+        kernel_hal::Thread::spawn(thread_fn(CurrentThread(self.clone())), vmtoken);
         Ok(())
     }
 
@@ -286,10 +303,7 @@ impl Thread {
             }
             return;
         }
-        inner.state = ThreadState::Dying;
-        // For suspended thread, wake it and clear suspend count
-        inner.suspend_count = 0;
-        inner.update_signal(&self.base);
+        inner.change_state(ThreadState::Dying, &self.base);
         if let Some(waker) = inner.waker.take() {
             waker.wake();
         }
@@ -298,23 +312,6 @@ impl Thread {
             // It's ok to ignore the error since the other end could be closed
             killer.send(()).ok();
         }
-    }
-
-    /// Exit the thread.
-    /// The thread do not terminate immediately when exited. It is just made dying.
-    /// It will terminate after some cleanups (when `terminate` are called **explicitly** by upper layer).
-    pub fn exit(&self) {
-        self.stop(false);
-    }
-
-    /// Terminate the current running thread. This function should be called **explicitly**
-    /// by upper layer after cleanups are finished.
-    pub fn terminate(&self) {
-        let mut inner = self.inner.lock();
-        self.exceptionate.shutdown();
-        inner.state = ThreadState::Dead;
-        inner.update_signal(&self.base);
-        self.proc().remove_thread(self.base.id);
     }
 
     /// Read one aspect of thread state.
@@ -331,43 +328,11 @@ impl Thread {
         context.write_state(kind, buf)
     }
 
-    /// Wait until the thread is ready to run (not suspended),
-    /// and then take away its context to run the thread.
-    pub fn wait_for_run(self: &Arc<Thread>) -> impl Future<Output = Box<UserContext>> {
-        #[must_use = "wait_for_run does nothing unless polled/`await`-ed"]
-        struct RunnableChecker {
-            thread: Arc<Thread>,
-        }
-        impl Future for RunnableChecker {
-            type Output = Box<UserContext>;
-
-            fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-                let mut inner = self.thread.inner.lock();
-                if inner.suspend_count == 0 {
-                    // resume:  return the context token from thread object
-                    Poll::Ready(inner.context.take().unwrap())
-                } else {
-                    // suspend: put waker into the thread object
-                    inner.waker = Some(cx.waker().clone());
-                    Poll::Pending
-                }
-            }
-        }
-        RunnableChecker {
-            thread: self.clone(),
-        }
-    }
-
-    /// The thread ends running and takes back the context.
-    pub fn end_running(&self, context: Box<UserContext>) {
-        self.inner.lock().context = Some(context);
-    }
-
     /// Get the thread's information.
     pub fn get_thread_info(&self) -> ThreadInfo {
         let inner = self.inner.lock();
         ThreadInfo {
-            state: inner.get_state() as u32,
+            state: inner.state() as u32,
             wait_exception_channel_type: inner
                 .exception
                 .as_ref()
@@ -379,105 +344,16 @@ impl Thread {
     /// Get the thread's exception report.
     pub fn get_thread_exception_info(&self) -> ZxResult<ExceptionReport> {
         let inner = self.inner.lock();
-        if inner.get_state() != ThreadState::BlockedException {
+        if inner.state() != ThreadState::BlockedException {
             return Err(ZxError::BAD_STATE);
         }
         let report = inner.exception.as_ref().ok_or(ZxError::BAD_STATE)?.report();
         Ok(report)
     }
 
-    /// Run async future and change state while blocking.
-    pub async fn blocking_run<F, T, FT>(
-        &self,
-        future: F,
-        state: ThreadState,
-        deadline: Duration,
-        cancel_token: Option<Receiver<()>>,
-    ) -> ZxResult<T>
-    where
-        F: Future<Output = FT> + Unpin,
-        FT: IntoResult<T>,
-    {
-        let (old_state, killed) = {
-            let mut inner = self.inner.lock();
-            if inner.get_state() == ThreadState::Dying {
-                return Err(ZxError::STOP);
-            }
-            let (sender, receiver) = channel();
-            inner.killer = Some(sender);
-            let old_state = core::mem::replace(&mut inner.state, state);
-            inner.update_signal(&self.base);
-            (old_state, receiver)
-        };
-        let ret = if let Some(cancel_token) = cancel_token {
-            select_biased! {
-                ret = future.fuse() => ret.into_result(),
-                _ = killed.fuse() => Err(ZxError::STOP),
-                _ = sleep_until(deadline).fuse() => Err(ZxError::TIMED_OUT),
-                _ = cancel_token.fuse() => Err(ZxError::CANCELED),
-            }
-        } else {
-            select_biased! {
-                ret = future.fuse() => ret.into_result(),
-                _ = killed.fuse() => Err(ZxError::STOP),
-                _ = sleep_until(deadline).fuse() => Err(ZxError::TIMED_OUT),
-            }
-        };
-        let mut inner = self.inner.lock();
-        inner.killer = None;
-        if inner.state == ThreadState::Dying {
-            return ret;
-        }
-        assert_eq!(inner.state, state);
-        inner.state = old_state;
-        inner.update_signal(&self.base);
-        ret
-    }
-
-    /// Run a blocking task when the thread is exited itself and dying.
-    ///
-    /// The task will stop running if and once the thread is killed.
-    pub async fn dying_run<F, T, FT>(&self, future: F) -> ZxResult<T>
-    where
-        F: Future<Output = FT> + Unpin,
-        FT: IntoResult<T>,
-    {
-        let killed = {
-            let mut inner = self.inner.lock();
-            if inner.get_state() == ThreadState::Dead || inner.killed {
-                return Err(ZxError::STOP);
-            }
-            let (sender, receiver) = channel::<()>();
-            inner.killer = Some(sender);
-            receiver
-        };
-        select_biased! {
-            ret = future.fuse() => ret.into_result(),
-            _ = killed.fuse() => Err(ZxError::STOP),
-        }
-    }
-
-    pub(super) async fn wait_for_exception<T>(
-        &self,
-        future: impl Future<Output = ZxResult<T>> + Unpin,
-        exception: Arc<Exception>,
-    ) -> ZxResult<T> {
-        self.inner.lock().exception = Some(exception);
-        let ret = self
-            .blocking_run(
-                future,
-                ThreadState::BlockedException,
-                Duration::from_nanos(u64::max_value()),
-                None,
-            )
-            .await;
-        self.inner.lock().exception = None;
-        ret
-    }
-
     /// Get the thread state.
     pub fn state(&self) -> ThreadState {
-        self.inner.lock().get_state()
+        self.inner.lock().state()
     }
 
     /// Add the parameter to the time this thread has run on cpu.
@@ -519,23 +395,17 @@ impl Task for Thread {
     fn suspend(&self) {
         let mut inner = self.inner.lock();
         inner.suspend_count += 1;
-        inner.update_signal(&self.base);
-        info!(
-            "thread {:?} suspend: count={}",
-            self.base.name(),
-            inner.suspend_count
-        );
+        let state = inner.state;
+        inner.change_state(state, &self.base);
     }
 
     fn resume(&self) {
         let mut inner = self.inner.lock();
-        // assert_ne!(inner.suspend_count, 0);
-        if inner.suspend_count == 0 {
-            return;
-        }
+        assert_ne!(inner.suspend_count, 0);
         inner.suspend_count -= 1;
         if inner.suspend_count == 0 {
-            inner.update_signal(&self.base);
+            let state = inner.state;
+            inner.change_state(state, &self.base);
             if let Some(waker) = inner.waker.take() {
                 waker.wake();
             }
@@ -548,6 +418,175 @@ impl Task for Thread {
 
     fn debug_exceptionate(&self) -> Arc<Exceptionate> {
         panic!("thread do not have debug exceptionate");
+    }
+}
+
+/// A handle to current thread.
+///
+/// This is a wrapper of [`Thread`] that provides additional methods for the thread runner.
+/// It can only be obtained from the argument of `thread_fn` in a new thread started by [`Thread::start`].
+///
+/// It will terminate current thread on drop.
+///
+/// [`Thread`]: crate::task::Thread
+/// [`Thread::start`]: crate::task::Thread::start
+pub struct CurrentThread(pub(super) Arc<Thread>);
+
+impl Deref for CurrentThread {
+    type Target = Arc<Thread>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Drop for CurrentThread {
+    /// Terminate the current running thread.
+    fn drop(&mut self) {
+        let mut inner = self.inner.lock();
+        self.exceptionate.shutdown();
+        inner.change_state(ThreadState::Dead, &self.base);
+        self.proc().remove_thread(self.base.id);
+    }
+}
+
+impl CurrentThread {
+    /// Exit the current thread.
+    ///
+    /// The thread do not terminate immediately when exited. It is just made dying.
+    /// It will terminate after some cleanups on this struct drop.
+    pub fn exit(&self) {
+        self.stop(false);
+    }
+
+    /// Wait until the thread is ready to run (not suspended),
+    /// and then take away its context to run the thread.
+    pub fn wait_for_run(&self) -> impl Future<Output = Box<UserContext>> {
+        #[must_use = "wait_for_run does nothing unless polled/`await`-ed"]
+        struct RunnableChecker {
+            thread: Arc<Thread>,
+        }
+        impl Future for RunnableChecker {
+            type Output = Box<UserContext>;
+
+            fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+                let mut inner = self.thread.inner.lock();
+                if inner.state() != ThreadState::Suspended {
+                    // resume:  return the context token from thread object
+                    Poll::Ready(inner.context.take().unwrap())
+                } else {
+                    // suspend: put waker into the thread object
+                    inner.waker = Some(cx.waker().clone());
+                    Poll::Pending
+                }
+            }
+        }
+        RunnableChecker {
+            thread: self.0.clone(),
+        }
+    }
+
+    /// The thread ends running and takes back the context.
+    pub fn end_running(&self, context: Box<UserContext>) {
+        self.inner.lock().context = Some(context);
+    }
+
+    /// Run async future and change state while blocking.
+    pub async fn blocking_run<F, T, FT>(
+        &self,
+        future: F,
+        state: ThreadState,
+        deadline: Duration,
+        cancel_token: Option<Receiver<()>>,
+    ) -> ZxResult<T>
+    where
+        F: Future<Output = FT> + Unpin,
+        FT: IntoResult<T>,
+    {
+        let (old_state, killed) = {
+            let mut inner = self.inner.lock();
+            if inner.state() == ThreadState::Dying {
+                return Err(ZxError::STOP);
+            }
+            let (sender, receiver) = channel();
+            inner.killer = Some(sender);
+            let old_state = inner.state;
+            inner.change_state(state, &self.base);
+            (old_state, receiver)
+        };
+        let ret = if let Some(cancel_token) = cancel_token {
+            select_biased! {
+                ret = future.fuse() => ret.into_result(),
+                _ = killed.fuse() => Err(ZxError::STOP),
+                _ = sleep_until(deadline).fuse() => Err(ZxError::TIMED_OUT),
+                _ = cancel_token.fuse() => Err(ZxError::CANCELED),
+            }
+        } else {
+            select_biased! {
+                ret = future.fuse() => ret.into_result(),
+                _ = killed.fuse() => Err(ZxError::STOP),
+                _ = sleep_until(deadline).fuse() => Err(ZxError::TIMED_OUT),
+            }
+        };
+        let mut inner = self.inner.lock();
+        inner.killer = None;
+        if inner.state() == ThreadState::Dying {
+            return ret;
+        }
+        assert_eq!(inner.state, state);
+        inner.change_state(old_state, &self.base);
+        ret
+    }
+
+    /// Create an exception on this thread and wait for the handling.
+    pub async fn handle_exception(&self, type_: ExceptionType, cx: Option<&UserContext>) {
+        let exception = Exception::new(&self.0, type_, cx);
+        if type_ == ExceptionType::ThreadExiting {
+            let handled = self
+                .0
+                .proc()
+                .debug_exceptionate()
+                .send_exception(&exception);
+            if let Ok(future) = handled {
+                self.dying_run(future).await.ok();
+            }
+        } else {
+            self.inner.lock().exception = Some(exception.clone());
+            let future = exception.handle();
+            pin_mut!(future);
+            self.blocking_run(
+                future,
+                ThreadState::BlockedException,
+                Duration::from_nanos(u64::max_value()),
+                None,
+            )
+            .await
+            .ok();
+            self.inner.lock().exception = None;
+        }
+    }
+
+    /// Run a blocking task when the thread is exited itself and dying.
+    ///
+    /// The task will stop running if and once the thread is killed.
+    async fn dying_run<F, T, FT>(&self, future: F) -> ZxResult<T>
+    where
+        F: Future<Output = FT> + Unpin,
+        FT: IntoResult<T>,
+    {
+        let killed = {
+            let mut inner = self.inner.lock();
+            if inner.killed {
+                return Err(ZxError::STOP);
+            }
+            let (sender, receiver) = channel::<()>();
+            inner.killer = Some(sender);
+            receiver
+        };
+        select_biased! {
+            ret = future.fuse() => ret.into_result(),
+            _ = killed.fuse() => Err(ZxError::STOP),
+        }
     }
 }
 
@@ -627,8 +666,6 @@ mod tests {
     use super::job::Job;
     use super::*;
     use kernel_hal::timer_now;
-    use std::sync::atomic::*;
-    use std::vec;
 
     #[test]
     fn create() {
@@ -642,41 +679,30 @@ mod tests {
         assert!(Arc::ptr_eq(&proc.get_child(thread.id()).unwrap(), &thread));
     }
 
-    #[test]
-    #[ignore]
-    fn start() {
+    #[async_std::test]
+    async fn start() {
+        kernel_hal_unix::init();
         let root_job = Job::root();
         let proc = Process::create(&root_job, "proc").expect("failed to create process");
         let thread = Thread::create(&proc, "thread").expect("failed to create thread");
         let thread1 = Thread::create(&proc, "thread1").expect("failed to create thread");
 
-        // allocate stack for new thread
-        let mut stack = vec![0u8; 0x1000];
-        let stack_top = stack.as_mut_ptr() as usize + 0x1000;
-
-        // global variable for validation
-        static ARG1: AtomicUsize = AtomicUsize::new(0);
-        static ARG2: AtomicUsize = AtomicUsize::new(0);
-
         // function for new thread
-        #[allow(unsafe_code)]
-        unsafe extern "C" fn entry(arg1: usize, arg2: usize) -> ! {
-            ARG1.store(arg1, Ordering::SeqCst);
-            ARG2.store(arg2, Ordering::SeqCst);
-            kernel_hal_unix::syscall_entry();
-            unreachable!();
-        }
-        let entry = entry as usize;
-
-        fn spawn(_thread: Arc<Thread>) {
-            unimplemented!()
+        async fn new_thread(thread: CurrentThread) {
+            let cx = thread.wait_for_run().await;
+            assert_eq!(cx.general.rip, 1);
+            assert_eq!(cx.general.rsp, 4);
+            assert_eq!(cx.general.rdi, 3);
+            assert_eq!(cx.general.rsi, 2);
+            thread.end_running(cx);
         }
 
         // start a new thread
-        let thread_ref_count = Arc::strong_count(&thread);
         let handle = Handle::new(proc.clone(), Rights::DEFAULT_PROCESS);
-        proc.start(&thread, entry, stack_top, Some(handle.clone()), 2, spawn)
-            .expect("failed to start thread");
+        proc.start(&thread, 1, 4, Some(handle.clone()), 2, |thread| {
+            Box::pin(new_thread(thread))
+        })
+        .expect("failed to start thread");
 
         // check info and state
         let info = proc.get_info();
@@ -684,27 +710,27 @@ mod tests {
         assert_eq!(proc.status(), Status::Running);
         assert_eq!(thread.state(), ThreadState::Running);
 
-        // wait 100ms for the new thread to exit
-        std::thread::sleep(core::time::Duration::from_millis(100));
-
-        // validate the thread have started and received correct arguments
-        assert_eq!(ARG1.load(Ordering::SeqCst), 0);
-        assert_eq!(ARG2.load(Ordering::SeqCst), 2);
-
-        // no other references to `Thread`
-        assert_eq!(Arc::strong_count(&thread), thread_ref_count);
-
         // start again should fail
         assert_eq!(
-            proc.start(&thread, entry, stack_top, Some(handle.clone()), 2, spawn),
+            proc.start(&thread, 1, 4, Some(handle.clone()), 2, |thread| Box::pin(
+                new_thread(thread)
+            )),
             Err(ZxError::BAD_STATE)
         );
 
         // start another thread should fail
         assert_eq!(
-            proc.start(&thread1, entry, stack_top, Some(handle.clone()), 2, spawn),
+            proc.start(&thread1, 1, 4, Some(handle.clone()), 2, |thread| Box::pin(
+                new_thread(thread)
+            )),
             Err(ZxError::BAD_STATE)
         );
+
+        // wait 100ms for the new thread to exit
+        async_std::task::sleep(core::time::Duration::from_millis(100)).await;
+
+        // no other references to `Thread`
+        assert_eq!(Arc::strong_count(&thread), 1);
     }
 
     #[async_std::test]
@@ -712,6 +738,7 @@ mod tests {
         let root_job = Job::root();
         let proc = Process::create(&root_job, "proc").expect("failed to create process");
         let thread = Thread::create(&proc, "thread").expect("failed to create thread");
+        let thread = CurrentThread(thread);
 
         let handle = Handle::new(proc.clone(), Rights::DEFAULT_PROCESS);
         let handle_value = proc.add_handle(handle);
@@ -808,26 +835,37 @@ mod tests {
         let proc = Process::create(&root_job, "proc").expect("failed to create process");
         let thread = Thread::create(&proc, "thread").expect("failed to create thread");
 
-        // without suspend
-        let context = thread.wait_for_run().await;
-        thread.end_running(context);
+        assert_eq!(thread.state(), ThreadState::New);
 
-        // with suspend
-        thread.suspend();
-        thread.suspend();
-        assert_eq!(thread.state(), ThreadState::Suspended);
-        async_std::task::spawn({
-            let thread = thread.clone();
-            async move {
-                async_std::task::sleep(Duration::from_millis(10)).await;
-                thread.resume();
-                async_std::task::sleep(Duration::from_millis(10)).await;
-                thread.resume();
-            }
-        });
-        let time = timer_now();
-        let _context = thread.wait_for_run().await;
-        assert!(timer_now() - time >= Duration::from_millis(20));
+        thread
+            .start(0, 0, 0, 0, |thread| Box::pin(new_thread(thread)))
+            .unwrap();
+        async fn new_thread(thread: CurrentThread) {
+            assert_eq!(thread.state(), ThreadState::Running);
+
+            // without suspend
+            let context = thread.wait_for_run().await;
+            thread.end_running(context);
+
+            // with suspend
+            thread.suspend();
+            thread.suspend();
+            assert_eq!(thread.state(), ThreadState::Suspended);
+            async_std::task::spawn({
+                let thread = (*thread).clone();
+                async move {
+                    async_std::task::sleep(Duration::from_millis(10)).await;
+                    thread.resume();
+                    async_std::task::sleep(Duration::from_millis(10)).await;
+                    thread.resume();
+                }
+            });
+            let time = timer_now();
+            let _context = thread.wait_for_run().await;
+            assert!(timer_now() - time >= Duration::from_millis(20));
+        }
+        let thread: Arc<dyn KernelObject> = thread;
+        thread.wait_signal(Signal::THREAD_TERMINATED).await;
     }
 
     #[test]
