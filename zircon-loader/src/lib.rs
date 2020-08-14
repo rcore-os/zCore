@@ -267,7 +267,6 @@ fn spawn(thread: CurrentThread) {
         if let Ok(future) = handled {
             thread.dying_run(future).await.ok();
         }
-        thread.terminate();
     };
     kernel_hal::Thread::spawn(Box::pin(future), vmtoken);
 }

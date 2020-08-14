@@ -96,7 +96,6 @@ fn spawn(thread: CurrentThread) {
                 break;
             }
         }
-        thread.terminate();
     };
     kernel_hal::Thread::spawn(Box::pin(future), vmtoken);
 }

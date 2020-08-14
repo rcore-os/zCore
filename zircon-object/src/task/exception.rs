@@ -634,7 +634,7 @@ mod tests {
         // since exception is handled we should not get it from parent job
         create_handler(&parent_job.exceptionate(), false, false, 4);
 
-        exception.handle(false).await;
+        exception.handle().await;
 
         // terminate handlers by shutdown the related exceptionates
         thread.exceptionate().shutdown();

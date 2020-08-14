@@ -44,14 +44,14 @@ mod thread_state;
 /// on a process.
 ///
 /// A thread terminates execution:
-/// - by calling [`Thread::exit()`]
+/// - by calling [`CurrentThread::exit()`]
 /// - when the parent process terminates
 /// - by calling [`Task::kill()`]
 /// - after generating an exception for which there is no handler or the handler
 /// decides to terminate the thread.
 ///
 /// Returning from the entrypoint routine does not terminate execution. The last
-/// action of the entrypoint should be to call [`Thread::exit()`].
+/// action of the entrypoint should be to call [`CurrentThread::exit()`].
 ///
 /// Closing the last handle to a thread does not terminate execution. In order to
 /// forcefully kill a thread for which there is no available handle, use
@@ -81,7 +81,7 @@ mod thread_state;
 /// you may see any combination of requested signals when they return.
 ///
 /// [`Thread::create()`]: Thread::create
-/// [`Thread::exit()`]: Thread::exit
+/// [`CurrentThread::exit()`]: CurrentThread::exit
 /// [`Process::exit()`]: crate::task::Process::exit
 /// [`THREAD_TERMINATED`]: crate::object::Signal::THREAD_TERMINATED
 /// [`THREAD_SUSPENDED`]: crate::object::Signal::THREAD_SUSPENDED
@@ -414,8 +414,16 @@ impl Task for Thread {
     }
 }
 
-/// Current thread.
-pub struct CurrentThread(Arc<Thread>);
+/// A handle to current thread.
+///
+/// This is a wrapper of [`Thread`] that provides additional methods for the thread runner.
+/// It can only be obtained from the argument of `spawn_fn` in a new thread started by [`Thread::start`].
+///
+/// It will terminate current thread on drop.
+///
+/// [`Thread`]: crate::task::Thread
+/// [`Thread::start`]: crate::task::Thread::start
+pub struct CurrentThread(pub(super) Arc<Thread>);
 
 impl Deref for CurrentThread {
     type Target = Arc<Thread>;
@@ -425,24 +433,24 @@ impl Deref for CurrentThread {
     }
 }
 
-impl CurrentThread {
-    /// Exit the current thread.
-    ///
-    /// The thread do not terminate immediately when exited. It is just made dying.
-    /// It will terminate after some cleanups (when `terminate` are called **explicitly** by upper layer).
-    pub fn exit(&self) {
-        self.stop(false);
-    }
-
+impl Drop for CurrentThread {
     /// Terminate the current running thread.
-    ///
-    /// This function should be called **explicitly** by upper layer after cleanups are finished.
-    pub fn terminate(&self) {
+    fn drop(&mut self) {
         let mut inner = self.inner.lock();
         self.exceptionate.shutdown();
         inner.state = ThreadState::Dead;
         inner.update_signal(&self.base);
         self.proc().remove_thread(self.base.id);
+    }
+}
+
+impl CurrentThread {
+    /// Exit the current thread.
+    ///
+    /// The thread do not terminate immediately when exited. It is just made dying.
+    /// It will terminate after some cleanups on this struct drop.
+    pub fn exit(&self) {
+        self.stop(false);
     }
 
     /// Wait until the thread is ready to run (not suspended),
@@ -641,8 +649,6 @@ mod tests {
     use super::job::Job;
     use super::*;
     use kernel_hal::timer_now;
-    use std::sync::atomic::*;
-    use std::vec;
 
     #[test]
     fn create() {
@@ -656,40 +662,29 @@ mod tests {
         assert!(Arc::ptr_eq(&proc.get_child(thread.id()).unwrap(), &thread));
     }
 
-    #[test]
-    #[ignore]
-    fn start() {
+    #[async_std::test]
+    async fn start() {
+        kernel_hal_unix::init();
         let root_job = Job::root();
         let proc = Process::create(&root_job, "proc").expect("failed to create process");
         let thread = Thread::create(&proc, "thread").expect("failed to create thread");
         let thread1 = Thread::create(&proc, "thread1").expect("failed to create thread");
 
-        // allocate stack for new thread
-        let mut stack = vec![0u8; 0x1000];
-        let stack_top = stack.as_mut_ptr() as usize + 0x1000;
-
-        // global variable for validation
-        static ARG1: AtomicUsize = AtomicUsize::new(0);
-        static ARG2: AtomicUsize = AtomicUsize::new(0);
-
         // function for new thread
-        #[allow(unsafe_code)]
-        unsafe extern "C" fn entry(arg1: usize, arg2: usize) -> ! {
-            ARG1.store(arg1, Ordering::SeqCst);
-            ARG2.store(arg2, Ordering::SeqCst);
-            kernel_hal_unix::syscall_entry();
-            unreachable!();
-        }
-        let entry = entry as usize;
-
-        fn spawn(_thread: Arc<Thread>) {
-            unimplemented!()
+        fn spawn(thread: CurrentThread) {
+            async_std::task::spawn(async move {
+                let cx = thread.wait_for_run().await;
+                assert_eq!(cx.general.rip, 1);
+                assert_eq!(cx.general.rsp, 4);
+                assert_eq!(cx.general.rdi, 3);
+                assert_eq!(cx.general.rsi, 2);
+                thread.end_running(cx);
+            });
         }
 
         // start a new thread
-        let thread_ref_count = Arc::strong_count(&thread);
         let handle = Handle::new(proc.clone(), Rights::DEFAULT_PROCESS);
-        proc.start(&thread, entry, stack_top, Some(handle.clone()), 2, spawn)
+        proc.start(&thread, 1, 4, Some(handle.clone()), 2, spawn)
             .expect("failed to start thread");
 
         // check info and state
@@ -698,27 +693,23 @@ mod tests {
         assert_eq!(proc.status(), Status::Running);
         assert_eq!(thread.state(), ThreadState::Running);
 
-        // wait 100ms for the new thread to exit
-        std::thread::sleep(core::time::Duration::from_millis(100));
-
-        // validate the thread have started and received correct arguments
-        assert_eq!(ARG1.load(Ordering::SeqCst), 0);
-        assert_eq!(ARG2.load(Ordering::SeqCst), 2);
-
-        // no other references to `Thread`
-        assert_eq!(Arc::strong_count(&thread), thread_ref_count);
-
         // start again should fail
         assert_eq!(
-            proc.start(&thread, entry, stack_top, Some(handle.clone()), 2, spawn),
+            proc.start(&thread, 1, 4, Some(handle.clone()), 2, spawn),
             Err(ZxError::BAD_STATE)
         );
 
         // start another thread should fail
         assert_eq!(
-            proc.start(&thread1, entry, stack_top, Some(handle.clone()), 2, spawn),
+            proc.start(&thread1, 1, 4, Some(handle.clone()), 2, spawn),
             Err(ZxError::BAD_STATE)
         );
+
+        // wait 100ms for the new thread to exit
+        async_std::task::sleep(core::time::Duration::from_millis(100)).await;
+
+        // no other references to `Thread`
+        assert_eq!(Arc::strong_count(&thread), 1);
     }
 
     #[async_std::test]
@@ -726,6 +717,7 @@ mod tests {
         let root_job = Job::root();
         let proc = Process::create(&root_job, "proc").expect("failed to create process");
         let thread = Thread::create(&proc, "thread").expect("failed to create thread");
+        let thread = CurrentThread(thread);
 
         let handle = Handle::new(proc.clone(), Rights::DEFAULT_PROCESS);
         let handle_value = proc.add_handle(handle);
@@ -821,6 +813,7 @@ mod tests {
         let root_job = Job::root();
         let proc = Process::create(&root_job, "proc").expect("failed to create process");
         let thread = Thread::create(&proc, "thread").expect("failed to create thread");
+        let thread = CurrentThread(thread);
 
         // without suspend
         let context = thread.wait_for_run().await;
