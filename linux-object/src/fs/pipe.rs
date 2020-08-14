@@ -1,8 +1,14 @@
 //! Implement INode for Pipe
 #![deny(missing_docs)]
 
-use alloc::{collections::vec_deque::VecDeque, sync::Arc};
+use crate::{sync::Event, sync::EventBus};
+use alloc::{boxed::Box, collections::vec_deque::VecDeque, sync::Arc};
 use core::{any::Any, cmp::min};
+use core::{
+    future::Future,
+    pin::Pin,
+    task::{Context, Poll},
+};
 use rcore_fs::vfs::*;
 use spin::Mutex;
 
@@ -20,6 +26,8 @@ pub enum PipeEnd {
 pub struct PipeData {
     /// pipe buffer
     buf: VecDeque<u8>,
+    /// event bus for pipe
+    eventbus: EventBus,
     /// number of pipe ends
     end_cnt: i32,
 }
@@ -36,6 +44,7 @@ impl Drop for Pipe {
         // pipe end closed
         let mut data = self.data.lock();
         data.end_cnt -= 1;
+        data.eventbus.set(Event::CLOSED);
     }
 }
 
@@ -45,6 +54,7 @@ impl Pipe {
     pub fn create_pair() -> (Pipe, Pipe) {
         let inner = PipeData {
             buf: VecDeque::new(),
+            eventbus: EventBus::default(),
             end_cnt: 2, // one read, one write
         };
         let data = Arc::new(Mutex::new(inner));
@@ -95,6 +105,9 @@ impl INode for Pipe {
                 for item in buf.iter_mut().take(len) {
                     *item = data.buf.pop_front().unwrap();
                 }
+                if data.buf.is_empty() {
+                    data.eventbus.clear(Event::READABLE);
+                }
                 Ok(len)
             }
         } else {
@@ -109,6 +122,7 @@ impl INode for Pipe {
             for c in buf {
                 data.buf.push_back(*c);
             }
+            data.eventbus.set(Event::READABLE);
             Ok(buf.len())
         } else {
             Ok(0)
@@ -123,6 +137,36 @@ impl INode for Pipe {
             write: self.can_write(),
             error: false,
         })
+    }
+
+    fn async_poll<'a>(
+        &'a self,
+    ) -> Pin<Box<dyn Future<Output = Result<PollStatus>> + Send + Sync + 'a>> {
+        #[must_use = "future does nothing unless polled/`await`-ed"]
+        struct PipeFuture<'a> {
+            pipe: &'a Pipe,
+        };
+
+        impl<'a> Future for PipeFuture<'a> {
+            type Output = Result<PollStatus>;
+
+            fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+                if self.pipe.can_read() || self.pipe.can_write() {
+                    return Poll::Ready(self.pipe.poll());
+                }
+                let waker = cx.waker().clone();
+                let mut data = self.pipe.data.lock();
+                data.eventbus.subscribe(Box::new({
+                    move |_| {
+                        waker.wake_by_ref();
+                        true
+                    }
+                }));
+                Poll::Pending
+            }
+        }
+
+        Box::pin(PipeFuture { pipe: self })
     }
 
     /// return the any ref
