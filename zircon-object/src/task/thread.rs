@@ -187,6 +187,20 @@ impl Thread {
     }
 
     /// Create a new thread with extension info.
+    ///
+    /// # Example
+    /// ```
+    /// # use std::sync::Arc;
+    /// # use zircon_object::task::*;
+    /// # kernel_hal_unix::init();
+    /// let job = Job::root();
+    /// let proc = Process::create(&job, "proc").unwrap();
+    /// // create a thread with extension info
+    /// let thread = Thread::create_with_ext(&proc, "thread", job.clone()).unwrap();
+    /// // get the extension info
+    /// let ext = thread.ext().downcast_ref::<Arc<Job>>().unwrap();
+    /// assert!(Arc::ptr_eq(ext, &job));
+    /// ```
     pub fn create_with_ext(
         proc: &Arc<Process>,
         name: &str,
@@ -212,7 +226,7 @@ impl Thread {
         &self.proc
     }
 
-    /// Get the extension.
+    /// Get the extension info.
     pub fn ext(&self) -> &Box<dyn Any + Send + Sync> {
         &self.ext
     }
