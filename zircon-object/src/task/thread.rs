@@ -177,6 +177,9 @@ bitflags! {
     }
 }
 
+/// The type of a new thread function.
+pub type ThreadFn = fn(thread: CurrentThread) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
+
 impl Thread {
     /// Create a new thread.
     pub fn create(proc: &Arc<Process>, name: &str) -> ZxResult<Arc<Self>> {
@@ -221,7 +224,7 @@ impl Thread {
         stack: usize,
         arg1: usize,
         arg2: usize,
-        spawn_fn: fn(thread: CurrentThread),
+        thread_fn: ThreadFn,
     ) -> ZxResult {
         {
             let mut inner = self.inner.lock();
@@ -243,16 +246,13 @@ impl Thread {
             }
             inner.change_state(ThreadState::Running, &self.base);
         }
-        spawn_fn(CurrentThread(self.clone()));
+        let vmtoken = self.proc().vmar().table_phys();
+        kernel_hal::Thread::spawn(thread_fn(CurrentThread(self.clone())), vmtoken);
         Ok(())
     }
 
     /// Start execution with given registers.
-    pub fn start_with_regs(
-        self: &Arc<Self>,
-        regs: GeneralRegs,
-        spawn_fn: fn(thread: CurrentThread),
-    ) -> ZxResult {
+    pub fn start_with_regs(self: &Arc<Self>, regs: GeneralRegs, thread_fn: ThreadFn) -> ZxResult {
         {
             let mut inner = self.inner.lock();
             let context = inner.context.as_mut().ok_or(ZxError::BAD_STATE)?;
@@ -263,7 +263,8 @@ impl Thread {
             }
             inner.change_state(ThreadState::Running, &self.base);
         }
-        spawn_fn(CurrentThread(self.clone()));
+        let vmtoken = self.proc().vmar().table_phys();
+        kernel_hal::Thread::spawn(thread_fn(CurrentThread(self.clone())), vmtoken);
         Ok(())
     }
 
@@ -409,7 +410,7 @@ impl Task for Thread {
 /// A handle to current thread.
 ///
 /// This is a wrapper of [`Thread`] that provides additional methods for the thread runner.
-/// It can only be obtained from the argument of `spawn_fn` in a new thread started by [`Thread::start`].
+/// It can only be obtained from the argument of `thread_fn` in a new thread started by [`Thread::start`].
 ///
 /// It will terminate current thread on drop.
 ///
@@ -673,21 +674,21 @@ mod tests {
         let thread1 = Thread::create(&proc, "thread1").expect("failed to create thread");
 
         // function for new thread
-        fn spawn(thread: CurrentThread) {
-            async_std::task::spawn(async move {
-                let cx = thread.wait_for_run().await;
-                assert_eq!(cx.general.rip, 1);
-                assert_eq!(cx.general.rsp, 4);
-                assert_eq!(cx.general.rdi, 3);
-                assert_eq!(cx.general.rsi, 2);
-                thread.end_running(cx);
-            });
+        async fn new_thread(thread: CurrentThread) {
+            let cx = thread.wait_for_run().await;
+            assert_eq!(cx.general.rip, 1);
+            assert_eq!(cx.general.rsp, 4);
+            assert_eq!(cx.general.rdi, 3);
+            assert_eq!(cx.general.rsi, 2);
+            thread.end_running(cx);
         }
 
         // start a new thread
         let handle = Handle::new(proc.clone(), Rights::DEFAULT_PROCESS);
-        proc.start(&thread, 1, 4, Some(handle.clone()), 2, spawn)
-            .expect("failed to start thread");
+        proc.start(&thread, 1, 4, Some(handle.clone()), 2, |thread| {
+            Box::pin(new_thread(thread))
+        })
+        .expect("failed to start thread");
 
         // check info and state
         let info = proc.get_info();
@@ -697,13 +698,17 @@ mod tests {
 
         // start again should fail
         assert_eq!(
-            proc.start(&thread, 1, 4, Some(handle.clone()), 2, spawn),
+            proc.start(&thread, 1, 4, Some(handle.clone()), 2, |thread| Box::pin(
+                new_thread(thread)
+            )),
             Err(ZxError::BAD_STATE)
         );
 
         // start another thread should fail
         assert_eq!(
-            proc.start(&thread1, 1, 4, Some(handle.clone()), 2, spawn),
+            proc.start(&thread1, 1, 4, Some(handle.clone()), 2, |thread| Box::pin(
+                new_thread(thread)
+            )),
             Err(ZxError::BAD_STATE)
         );
 
@@ -818,32 +823,32 @@ mod tests {
 
         assert_eq!(thread.state(), ThreadState::New);
 
-        thread.start(0, 0, 0, 0, spawn).unwrap();
-        fn spawn(thread: CurrentThread) {
-            async_std::task::spawn(async move {
-                assert_eq!(thread.state(), ThreadState::Running);
+        thread
+            .start(0, 0, 0, 0, |thread| Box::pin(new_thread(thread)))
+            .unwrap();
+        async fn new_thread(thread: CurrentThread) {
+            assert_eq!(thread.state(), ThreadState::Running);
 
-                // without suspend
-                let context = thread.wait_for_run().await;
-                thread.end_running(context);
+            // without suspend
+            let context = thread.wait_for_run().await;
+            thread.end_running(context);
 
-                // with suspend
-                thread.suspend();
-                thread.suspend();
-                assert_eq!(thread.state(), ThreadState::Suspended);
-                async_std::task::spawn({
-                    let thread = (*thread).clone();
-                    async move {
-                        async_std::task::sleep(Duration::from_millis(10)).await;
-                        thread.resume();
-                        async_std::task::sleep(Duration::from_millis(10)).await;
-                        thread.resume();
-                    }
-                });
-                let time = timer_now();
-                let _context = thread.wait_for_run().await;
-                assert!(timer_now() - time >= Duration::from_millis(20));
+            // with suspend
+            thread.suspend();
+            thread.suspend();
+            assert_eq!(thread.state(), ThreadState::Suspended);
+            async_std::task::spawn({
+                let thread = (*thread).clone();
+                async move {
+                    async_std::task::sleep(Duration::from_millis(10)).await;
+                    thread.resume();
+                    async_std::task::sleep(Duration::from_millis(10)).await;
+                    thread.resume();
+                }
             });
+            let time = timer_now();
+            let _context = thread.wait_for_run().await;
+            assert!(timer_now() - time >= Duration::from_millis(20));
         }
         let thread: Arc<dyn KernelObject> = thread;
         thread.wait_signal(Signal::THREAD_TERMINATED).await;

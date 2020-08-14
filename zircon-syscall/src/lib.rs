@@ -19,7 +19,7 @@ use {
     futures::pin_mut,
     kernel_hal::{user::*, GeneralRegs},
     zircon_object::object::*,
-    zircon_object::task::CurrentThread,
+    zircon_object::task::{CurrentThread, ThreadFn},
 };
 
 mod channel;
@@ -52,7 +52,7 @@ use consts::SyscallType as Sys;
 pub struct Syscall<'a> {
     pub regs: &'a mut GeneralRegs,
     pub thread: &'a CurrentThread,
-    pub spawn_fn: fn(thread: CurrentThread),
+    pub thread_fn: ThreadFn,
 }
 
 impl Syscall<'_> {
