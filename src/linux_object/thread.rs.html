@@ -63,6 +63,12 @@
 <span id="63">63</span>
 <span id="64">64</span>
 <span id="65">65</span>
+<span id="66">66</span>
+<span id="67">67</span>
+<span id="68">68</span>
+<span id="69">69</span>
+<span id="70">70</span>
+<span id="71">71</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Linux Thread</span>
 
@@ -71,7 +77,7 @@
 <span class="kw">use</span> <span class="ident">kernel_hal</span>::<span class="ident">user</span>::{<span class="ident">Out</span>, <span class="ident">UserOutPtr</span>, <span class="ident">UserPtr</span>};
 <span class="kw">use</span> <span class="ident">kernel_hal</span>::<span class="ident">VirtAddr</span>;
 <span class="kw">use</span> <span class="ident">spin</span>::{<span class="ident">Mutex</span>, <span class="ident">MutexGuard</span>};
-<span class="kw">use</span> <span class="ident">zircon_object</span>::<span class="ident">task</span>::{<span class="ident">Process</span>, <span class="ident">Thread</span>};
+<span class="kw">use</span> <span class="ident">zircon_object</span>::<span class="ident">task</span>::{<span class="ident">CurrentThread</span>, <span class="ident">Process</span>, <span class="ident">Thread</span>};
 <span class="kw">use</span> <span class="ident">zircon_object</span>::<span class="ident">ZxResult</span>;
 
 <span class="doccomment">/// Thread extension for linux</span>
@@ -82,6 +88,10 @@
     <span class="kw">fn</span> <span class="ident">lock_linux</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">MutexGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">LinuxThread</span><span class="op">&gt;</span>;
     <span class="doccomment">/// Set pointer to thread ID.</span>
     <span class="kw">fn</span> <span class="ident">set_tid_address</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">tidptr</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">i32</span><span class="op">&gt;</span>);
+}
+
+<span class="doccomment">/// CurrentThread extension for linux</span>
+<span class="kw">pub</span> <span class="kw">trait</span> <span class="ident">CurrentThreadExt</span> {
     <span class="doccomment">/// exit linux thread</span>
     <span class="kw">fn</span> <span class="ident">exit_linux</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">exit_code</span>: <span class="ident">i32</span>);
 }
@@ -105,7 +115,9 @@
     <span class="kw">fn</span> <span class="ident">set_tid_address</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">tidptr</span>: <span class="ident">UserPtr</span><span class="op">&lt;</span><span class="ident">i32</span>, <span class="ident">Out</span><span class="op">&gt;</span>) {
         <span class="self">self</span>.<span class="ident">lock_linux</span>().<span class="ident">clear_child_tid</span> <span class="op">=</span> <span class="ident">tidptr</span>;
     }
+}
 
+<span class="kw">impl</span> <span class="ident">CurrentThreadExt</span> <span class="kw">for</span> <span class="ident">CurrentThread</span> {
     <span class="doccomment">/// Exit current thread for Linux.</span>
     <span class="kw">fn</span> <span class="ident">exit_linux</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">_exit_code</span>: <span class="ident">i32</span>) {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">linux_thread</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">lock_linux</span>();

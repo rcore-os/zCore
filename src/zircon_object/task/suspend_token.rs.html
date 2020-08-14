@@ -31,15 +31,79 @@
 <span id="31">31</span>
 <span id="32">32</span>
 <span id="33">33</span>
+<span id="34">34</span>
+<span id="35">35</span>
+<span id="36">36</span>
+<span id="37">37</span>
+<span id="38">38</span>
+<span id="39">39</span>
+<span id="40">40</span>
+<span id="41">41</span>
+<span id="42">42</span>
+<span id="43">43</span>
+<span id="44">44</span>
+<span id="45">45</span>
+<span id="46">46</span>
+<span id="47">47</span>
+<span id="48">48</span>
+<span id="49">49</span>
+<span id="50">50</span>
+<span id="51">51</span>
+<span id="52">52</span>
+<span id="53">53</span>
+<span id="54">54</span>
+<span id="55">55</span>
+<span id="56">56</span>
+<span id="57">57</span>
+<span id="58">58</span>
+<span id="59">59</span>
+<span id="60">60</span>
+<span id="61">61</span>
+<span id="62">62</span>
+<span id="63">63</span>
+<span id="64">64</span>
+<span id="65">65</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> {
-    <span class="comment">// super::thread::Thread,</span>
     <span class="kw">super</span>::<span class="kw-2">*</span>,
     <span class="kw">crate</span>::<span class="ident">object</span>::<span class="kw-2">*</span>,
     <span class="ident">alloc</span>::<span class="ident">sync</span>::{<span class="ident">Arc</span>, <span class="ident">Weak</span>},
 };
 
-<span class="doccomment">/// Suspend the given task. Currently only thread or process handles may be suspended.</span>
+<span class="doccomment">/// Suspend the given task.</span>
+<span class="doccomment">///</span>
+<span class="doccomment">/// Currently only thread or process handles may be suspended.</span>
+<span class="doccomment">///</span>
+<span class="doccomment">/// # Example</span>
+<span class="doccomment">/// ```</span>
+<span class="doccomment">/// # use std::sync::Arc;</span>
+<span class="doccomment">/// # use zircon_object::task::*;</span>
+<span class="doccomment">/// # use zircon_object::object::{KernelObject, Signal};</span>
+<span class="doccomment">/// # kernel_hal_unix::init();</span>
+<span class="doccomment">/// let job = Job::root();</span>
+<span class="doccomment">/// let proc = Process::create(&amp;job, &quot;proc&quot;).unwrap();</span>
+<span class="doccomment">/// let thread = Thread::create(&amp;proc, &quot;thread&quot;).unwrap();</span>
+<span class="doccomment">///</span>
+<span class="doccomment">/// // start the thread and never terminate</span>
+<span class="doccomment">/// thread.start(0, 0, 0, 0, |thread| Box::pin(async move {</span>
+<span class="doccomment">///     loop { async_std::task::yield_now().await }</span>
+<span class="doccomment">///     let _ = thread;</span>
+<span class="doccomment">/// })).unwrap();</span>
+<span class="doccomment">///</span>
+<span class="doccomment">/// // wait for the thread running</span>
+<span class="doccomment">/// let object: Arc&lt;dyn KernelObject&gt; = thread.clone();</span>
+<span class="doccomment">/// async_std::task::block_on(object.wait_signal(Signal::THREAD_RUNNING));</span>
+<span class="doccomment">/// assert_eq!(thread.state(), ThreadState::Running);</span>
+<span class="doccomment">///</span>
+<span class="doccomment">/// // suspend the thread</span>
+<span class="doccomment">/// {</span>
+<span class="doccomment">///     let task: Arc&lt;dyn Task&gt; = thread.clone();</span>
+<span class="doccomment">///     let suspend_token = SuspendToken::create(&amp;task);</span>
+<span class="doccomment">///     assert_eq!(thread.state(), ThreadState::Suspended);</span>
+<span class="doccomment">/// }</span>
+<span class="doccomment">/// // suspend token dropped, resume the thread</span>
+<span class="doccomment">/// assert_eq!(thread.state(), ThreadState::Running);</span>
+<span class="doccomment">/// ```</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">SuspendToken</span> {
     <span class="ident">base</span>: <span class="ident">KObjectBase</span>,
     <span class="ident">task</span>: <span class="ident">Weak</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">Task</span><span class="op">&gt;</span>,

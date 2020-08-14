@@ -506,6 +506,7 @@
 <span id="506">506</span>
 <span id="507">507</span>
 <span id="508">508</span>
+<span id="509">509</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> {
     <span class="kw">super</span>::<span class="ident">exception</span>::<span class="kw-2">*</span>,
@@ -808,7 +809,7 @@
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">test</span>)]</span>
 <span class="kw">mod</span> <span class="ident">tests</span> {
     <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
-    <span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">task</span>::{<span class="ident">Status</span>, <span class="ident">Thread</span>, <span class="ident">ThreadState</span>, <span class="ident">TASK_RETCODE_SYSCALL_KILL</span>};
+    <span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">task</span>::{<span class="ident">CurrentThread</span>, <span class="ident">Status</span>, <span class="ident">Thread</span>, <span class="ident">ThreadState</span>, <span class="ident">TASK_RETCODE_SYSCALL_KILL</span>};
 
     <span class="attribute">#[<span class="ident">test</span>]</span>
     <span class="kw">fn</span> <span class="ident">create</span>() {
@@ -950,19 +951,20 @@
         <span class="kw">let</span> <span class="ident">job</span> <span class="op">=</span> <span class="ident">Job</span>::<span class="ident">create_child</span>(<span class="kw-2">&amp;</span><span class="ident">root_job</span>).<span class="ident">expect</span>(<span class="string">&quot;failed to create job&quot;</span>);
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="ident">Process</span>::<span class="ident">create</span>(<span class="kw-2">&amp;</span><span class="ident">root_job</span>, <span class="string">&quot;proc&quot;</span>).<span class="ident">expect</span>(<span class="string">&quot;failed to create process&quot;</span>);
         <span class="kw">let</span> <span class="ident">thread</span> <span class="op">=</span> <span class="ident">Thread</span>::<span class="ident">create</span>(<span class="kw-2">&amp;</span><span class="ident">proc</span>, <span class="string">&quot;thread&quot;</span>).<span class="ident">expect</span>(<span class="string">&quot;failed to create thread&quot;</span>);
+        <span class="kw">let</span> <span class="ident">current_thread</span> <span class="op">=</span> <span class="ident">CurrentThread</span>(<span class="ident">thread</span>.<span class="ident">clone</span>());
 
         <span class="ident">root_job</span>.<span class="ident">kill</span>();
         <span class="macro">assert</span><span class="macro">!</span>(<span class="ident">root_job</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">killed</span>);
         <span class="macro">assert</span><span class="macro">!</span>(<span class="ident">job</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">killed</span>);
         <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">proc</span>.<span class="ident">status</span>(), <span class="ident">Status</span>::<span class="ident">Exited</span>(<span class="ident">TASK_RETCODE_SYSCALL_KILL</span>));
         <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">thread</span>.<span class="ident">state</span>(), <span class="ident">ThreadState</span>::<span class="ident">Dying</span>);
-        <span class="comment">// killed but not terminated, since `thread.terminate()` not called.</span>
+        <span class="comment">// killed but not terminated, since `CurrentThread` not dropped.</span>
         <span class="macro">assert</span><span class="macro">!</span>(<span class="op">!</span><span class="ident">root_job</span>.<span class="ident">signal</span>().<span class="ident">contains</span>(<span class="ident">Signal</span>::<span class="ident">JOB_TERMINATED</span>));
         <span class="macro">assert</span><span class="macro">!</span>(<span class="ident">job</span>.<span class="ident">signal</span>().<span class="ident">contains</span>(<span class="ident">Signal</span>::<span class="ident">JOB_TERMINATED</span>)); <span class="comment">// but the lonely job is terminated</span>
         <span class="macro">assert</span><span class="macro">!</span>(<span class="op">!</span><span class="ident">proc</span>.<span class="ident">signal</span>().<span class="ident">contains</span>(<span class="ident">Signal</span>::<span class="ident">PROCESS_TERMINATED</span>));
         <span class="macro">assert</span><span class="macro">!</span>(<span class="op">!</span><span class="ident">thread</span>.<span class="ident">signal</span>().<span class="ident">contains</span>(<span class="ident">Signal</span>::<span class="ident">THREAD_TERMINATED</span>));
 
-        <span class="ident">thread</span>.<span class="ident">terminate</span>();
+        <span class="ident">std</span>::<span class="ident">mem</span>::<span class="ident">drop</span>(<span class="ident">current_thread</span>);
         <span class="macro">assert</span><span class="macro">!</span>(<span class="ident">root_job</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">killed</span>);
         <span class="macro">assert</span><span class="macro">!</span>(<span class="ident">job</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">killed</span>);
         <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">proc</span>.<span class="ident">status</span>(), <span class="ident">Status</span>::<span class="ident">Exited</span>(<span class="ident">TASK_RETCODE_SYSCALL_KILL</span>));

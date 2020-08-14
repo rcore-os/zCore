@@ -102,8 +102,14 @@
 <span id="102">102</span>
 <span id="103">103</span>
 <span id="104">104</span>
+<span id="105">105</span>
+<span id="106">106</span>
+<span id="107">107</span>
 </pre><div class="example-wrap"><pre class="rust ">
-<span class="kw">use</span> {<span class="kw">super</span>::<span class="kw-2">*</span>, <span class="ident">zircon_object</span>::<span class="ident">task</span>::<span class="ident">ThreadState</span>};
+<span class="kw">use</span> {
+    <span class="kw">super</span>::<span class="kw-2">*</span>,
+    <span class="ident">zircon_object</span>::<span class="ident">task</span>::{<span class="ident">Thread</span>, <span class="ident">ThreadState</span>},
+};
 
 <span class="kw">impl</span> <span class="ident">Syscall</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span> {
     <span class="doccomment">/// Wait on a futex.  </span>
@@ -132,7 +138,7 @@
         } <span class="kw">else</span> {
             <span class="prelude-val">Some</span>(<span class="ident">proc</span>.<span class="ident">get_object</span>::<span class="op">&lt;</span><span class="ident">Thread</span><span class="op">&gt;</span>(<span class="ident">new_futex_owner</span>)<span class="question-mark">?</span>)
         };
-        <span class="kw">let</span> <span class="ident">future</span> <span class="op">=</span> <span class="ident">futex</span>.<span class="ident">wait_with_owner</span>(<span class="ident">current_value</span>, <span class="prelude-val">Some</span>(<span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">clone</span>()), <span class="ident">new_owner</span>);
+        <span class="kw">let</span> <span class="ident">future</span> <span class="op">=</span> <span class="ident">futex</span>.<span class="ident">wait_with_owner</span>(<span class="ident">current_value</span>, <span class="prelude-val">Some</span>((<span class="kw-2">*</span><span class="self">self</span>.<span class="ident">thread</span>).<span class="ident">clone</span>()), <span class="ident">new_owner</span>);
         <span class="self">self</span>.<span class="ident">thread</span>
             .<span class="ident">blocking_run</span>(<span class="ident">future</span>, <span class="ident">ThreadState</span>::<span class="ident">BlockedFutex</span>, <span class="ident">deadline</span>.<span class="ident">into</span>(), <span class="prelude-val">None</span>)
             .<span class="kw">await</span><span class="question-mark">?</span>;
