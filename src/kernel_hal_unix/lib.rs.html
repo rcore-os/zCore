@@ -443,7 +443,6 @@
 <span id="443">443</span>
 <span id="444">444</span>
 <span id="445">445</span>
-<span id="446">446</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="attribute">#![<span class="ident">feature</span>(<span class="ident">asm</span>, <span class="ident">global_asm</span>)]</span>
 <span class="attribute">#![<span class="ident">feature</span>(<span class="ident">linkage</span>)]</span>
@@ -770,19 +769,18 @@
 
 <span class="macro">lazy_static</span><span class="macro">!</span> {
     <span class="kw">static</span> <span class="kw-2">ref</span> <span class="ident">STDIN</span>: <span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">VecDeque</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">Mutex</span>::<span class="ident">new</span>(<span class="ident">VecDeque</span>::<span class="ident">new</span>());
-    <span class="kw">static</span> <span class="kw-2">ref</span> <span class="ident">STDIN_CALLBACK</span>: <span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">FnOnce</span>() <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">Mutex</span>::<span class="ident">new</span>(<span class="ident">Vec</span>::<span class="ident">new</span>());
+    <span class="kw">static</span> <span class="kw-2">ref</span> <span class="ident">STDIN_CALLBACK</span>: <span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">Fn</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span> <span class="op">=</span>
+        <span class="ident">Mutex</span>::<span class="ident">new</span>(<span class="ident">Vec</span>::<span class="ident">new</span>());
 }
 
 <span class="doccomment">/// Put a char by serial interrupt handler.</span>
 <span class="kw">fn</span> <span class="ident">serial_put</span>(<span class="ident">x</span>: <span class="ident">u8</span>) {
     <span class="ident">STDIN</span>.<span class="ident">lock</span>().<span class="ident">unwrap</span>().<span class="ident">push_back</span>(<span class="ident">x</span>);
-    <span class="kw">for</span> <span class="ident">callback</span> <span class="kw">in</span> <span class="ident">STDIN_CALLBACK</span>.<span class="ident">lock</span>().<span class="ident">unwrap</span>().<span class="ident">drain</span>(..) {
-        <span class="ident">callback</span>();
-    }
+    <span class="ident">STDIN_CALLBACK</span>.<span class="ident">lock</span>().<span class="ident">unwrap</span>().<span class="ident">retain</span>(<span class="op">|</span><span class="ident">f</span><span class="op">|</span> <span class="op">!</span><span class="ident">f</span>());
 }
 
 <span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_serial_set_callback&quot;</span>]</span>
-<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">serial_set_callback</span>(<span class="ident">callback</span>: <span class="ident">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">FnOnce</span>() <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span><span class="op">&gt;</span>) {
+<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">serial_set_callback</span>(<span class="ident">callback</span>: <span class="ident">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">Fn</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span><span class="op">&gt;</span>) {
     <span class="ident">STDIN_CALLBACK</span>.<span class="ident">lock</span>().<span class="ident">unwrap</span>().<span class="ident">push</span>(<span class="ident">callback</span>);
 }
 
