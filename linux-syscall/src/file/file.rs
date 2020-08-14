@@ -18,12 +18,12 @@ impl Syscall<'_> {
     /// - fd – file descriptor
     /// - base – pointer to the buffer to fill with read contents
     /// - len – number of bytes to read
-    pub fn sys_read(&self, fd: FileDesc, mut base: UserOutPtr<u8>, len: usize) -> SysResult {
+    pub async fn sys_read(&self, fd: FileDesc, mut base: UserOutPtr<u8>, len: usize) -> SysResult {
         info!("read: fd={:?}, base={:?}, len={:#x}", fd, base, len);
         let proc = self.linux_process();
         let file_like = proc.get_file_like(fd)?;
         let mut buf = vec![0u8; len];
-        let len = file_like.read(&mut buf)?;
+        let len = file_like.read(&mut buf).await?;
         base.write_array(&buf[..len])?;
         Ok(len)
     }
@@ -45,7 +45,7 @@ impl Syscall<'_> {
     /// read from or write to a file descriptor at a given offset
     /// reads up to count bytes from file descriptor fd at offset offset
     /// (from the start of the file) into the buffer starting at buf. The file offset is not changed.
-    pub fn sys_pread(
+    pub async fn sys_pread(
         &self,
         fd: FileDesc,
         mut base: UserOutPtr<u8>,
@@ -59,7 +59,7 @@ impl Syscall<'_> {
         let proc = self.linux_process();
         let file_like = proc.get_file_like(fd)?;
         let mut buf = vec![0u8; len];
-        let len = file_like.read_at(offset, &mut buf)?;
+        let len = file_like.read_at(offset, &mut buf).await?;
         base.write_array(&buf[..len])?;
         Ok(len)
     }
@@ -87,7 +87,7 @@ impl Syscall<'_> {
     /// works just like read except that multiple buffers are filled.
     /// reads iov_count buffers from the file
     /// associated with the file descriptor fd into the buffers described by iov ("scatter input")
-    pub fn sys_readv(
+    pub async fn sys_readv(
         &self,
         fd: FileDesc,
         iov_ptr: UserInPtr<IoVecOut>,
@@ -98,7 +98,7 @@ impl Syscall<'_> {
         let proc = self.linux_process();
         let file_like = proc.get_file_like(fd)?;
         let mut buf = vec![0u8; iovs.total_len()];
-        let len = file_like.read(&mut buf)?;
+        let len = file_like.read(&mut buf).await?;
         iovs.write_from_buf(&buf)?;
         Ok(len)
     }
@@ -163,7 +163,7 @@ impl Syscall<'_> {
     }
 
     /// copies data between one file descriptor and another.
-    pub fn sys_sendfile(
+    pub async fn sys_sendfile(
         &self,
         out_fd: FileDesc,
         in_fd: FileDesc,
@@ -171,10 +171,11 @@ impl Syscall<'_> {
         count: usize,
     ) -> SysResult {
         self.sys_copy_file_range(in_fd, offset_ptr, out_fd, 0.into(), count, 0)
+            .await
     }
 
     /// copies data between one file descriptor and anothe, read from specified offset and write new offset back
-    pub fn sys_copy_file_range(
+    pub async fn sys_copy_file_range(
         &self,
         in_fd: FileDesc,
         mut in_offset: UserInOutPtr<u64>,
@@ -215,7 +216,7 @@ impl Syscall<'_> {
         let mut total_written = 0;
         while bytes_read < count {
             let len = buffer.len().min(count - bytes_read);
-            let read_len = in_file.read_at(read_offset, &mut buffer[..len])?;
+            let read_len = in_file.read_at(read_offset, &mut buffer[..len]).await?;
             if read_len == 0 {
                 break;
             }

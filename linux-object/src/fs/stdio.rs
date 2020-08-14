@@ -2,9 +2,14 @@
 #![allow(unsafe_code)]
 
 use super::ioctl::*;
+use crate::{sync::Event, sync::EventBus};
+use alloc::boxed::Box;
 use alloc::collections::VecDeque;
 use alloc::sync::Arc;
 use core::any::Any;
+use core::future::Future;
+use core::pin::Pin;
+use core::task::{Context, Poll};
 use lazy_static::lazy_static;
 use rcore_fs::vfs::*;
 use spin::Mutex;
@@ -20,25 +25,23 @@ lazy_static! {
 #[derive(Default)]
 pub struct Stdin {
     buf: Mutex<VecDeque<char>>,
-    // TODO: add signal
+    eventbus: Mutex<EventBus>,
 }
 
 impl Stdin {
     /// push a char in Stdin buffer
     pub fn push(&self, c: char) {
         self.buf.lock().push_back(c);
-        // self.pushed.notify_one();
+        self.eventbus.lock().set(Event::READABLE);
     }
     /// pop a char in Stdin buffer
     pub fn pop(&self) -> char {
-        loop {
-            let mut buf_lock = self.buf.lock();
-            if let Some(c) = buf_lock.pop_front() {
-                return c;
-            } else {
-                // self.pushed.wait(buf_lock);
-            }
+        let mut buf_lock = self.buf.lock();
+        let c = buf_lock.pop_front().unwrap();
+        if buf_lock.len() == 0 {
+            self.eventbus.lock().clear(Event::READABLE);
         }
+        c
     }
     /// specify whether the Stdin buffer is readable
     pub fn can_read(&self) -> bool {
@@ -56,11 +59,6 @@ impl INode for Stdin {
             buf[0] = self.pop() as u8;
             Ok(1)
         } else {
-            let mut buffer = [0; 255];
-            let len = kernel_hal::serial_read(&mut buffer);
-            for c in &buffer[..len] {
-                self.push((*c).into());
-            }
             Err(FsError::Again)
         }
     }
@@ -73,6 +71,34 @@ impl INode for Stdin {
             write: false,
             error: false,
         })
+    }
+    fn async_poll<'a>(
+        &'a self,
+    ) -> Pin<Box<dyn Future<Output = Result<PollStatus>> + Send + Sync + 'a>> {
+        #[must_use = "future does nothing unless polled/`await`-ed"]
+        struct SerialFuture<'a> {
+            stdin: &'a Stdin,
+        };
+
+        impl<'a> Future for SerialFuture<'a> {
+            type Output = Result<PollStatus>;
+
+            fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+                if self.stdin.can_read() {
+                    return Poll::Ready(self.stdin.poll());
+                }
+                let waker = cx.waker().clone();
+                self.stdin.eventbus.lock().subscribe(Box::new({
+                    move |_| {
+                        waker.wake_by_ref();
+                        true
+                    }
+                }));
+                Poll::Pending
+            }
+        }
+
+        Box::pin(SerialFuture { stdin: self })
     }
     /*
     fn io_control(&self, cmd: u32, data: usize) -> Result<usize> {

@@ -58,11 +58,25 @@ fn main(ramfs_data: &[u8], cmdline: &str) {
 
 #[cfg(feature = "linux")]
 fn main(ramfs_data: &'static mut [u8], _cmdline: &str) {
+    use alloc::boxed::Box;
     use alloc::sync::Arc;
     use alloc::vec;
     use linux_object::fs::MemBuf;
+    use linux_object::fs::STDIN;
 
-    let args = vec!["/bin/busybox".into()];
+    kernel_hal_bare::serial_set_callback(Box::new({
+        move || {
+            let mut buffer = [0; 255];
+            let len = kernel_hal_bare::serial_read(&mut buffer);
+            for c in &buffer[..len] {
+                STDIN.push((*c).into());
+                kernel_hal_bare::serial_write(alloc::format!("{}", *c as char).as_str());
+            }
+            false
+        }
+    }));
+
+    let args = vec!["/bin/busybox".into(), "sh".into()];
     let envs = vec!["PATH=/usr/sbin:/usr/bin:/sbin:/bin:/usr/x86_64-alpine-linux-musl/bin".into()];
 
     let device = Arc::new(MemBuf::new(ramfs_data));

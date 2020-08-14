@@ -40,11 +40,11 @@ mod stdio;
 /// - Epoll instance
 pub trait FileLike: KernelObject {
     /// read to buffer
-    fn read(&self, buf: &mut [u8]) -> LxResult<usize>;
+    async fn read(&self, buf: &mut [u8]) -> LxResult<usize>;
     /// write from buffer
     fn write(&self, buf: &[u8]) -> LxResult<usize>;
     /// read to buffer at given offset
-    fn read_at(&self, offset: u64, buf: &mut [u8]) -> LxResult<usize>;
+    async fn read_at(&self, offset: u64, buf: &mut [u8]) -> LxResult<usize>;
     /// write from buffer at given offset
     fn write_at(&self, offset: u64, buf: &[u8]) -> LxResult<usize>;
     /// wait for some event on a file descriptor

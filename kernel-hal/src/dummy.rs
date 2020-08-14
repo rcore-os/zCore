@@ -248,7 +248,7 @@ pub fn frame_flush(_target: PhysAddr) {
 /// Register a callback of serial readable event.
 #[linkage = "weak"]
 #[export_name = "hal_serial_set_callback"]
-pub fn serial_set_callback(_callback: Box<dyn FnOnce() + Send + Sync>) {
+pub fn serial_set_callback(_callback: Box<dyn Fn() -> bool + Send + Sync>) {
     unimplemented!()
 }
 

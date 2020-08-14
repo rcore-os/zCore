@@ -72,7 +72,12 @@ impl Future for SerialFuture {
             return Poll::Ready(buf[0]);
         }
         let waker = cx.waker().clone();
-        crate::serial_set_callback(Box::new(move || waker.wake()));
+        crate::serial_set_callback(Box::new({
+            move || {
+                waker.wake_by_ref();
+                true
+            }
+        }));
         Poll::Pending
     }
 }

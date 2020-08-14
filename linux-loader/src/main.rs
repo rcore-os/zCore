@@ -5,6 +5,7 @@
 extern crate log;
 
 use linux_loader::*;
+use linux_object::fs::STDIN;
 use rcore_fs_hostfs::HostFS;
 use std::io::Write;
 use std::sync::Arc;
@@ -17,6 +18,16 @@ async fn main() {
     init_logger();
     // init HAL implementation on unix
     kernel_hal_unix::init();
+    kernel_hal::serial_set_callback(Box::new({
+        move || {
+            let mut buffer = [0; 255];
+            let len = kernel_hal::serial_read(&mut buffer);
+            for c in &buffer[..len] {
+                STDIN.push((*c).into());
+            }
+            false
+        }
+    }));
     // run first process
     let args: Vec<_> = std::env::args().skip(1).collect();
     let envs = vec!["PATH=/usr/sbin:/usr/bin:/sbin:/bin:/usr/x86_64-alpine-linux-musl/bin".into()];

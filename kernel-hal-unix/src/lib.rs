@@ -323,19 +323,18 @@ impl FlagsExt for MMUFlags {
 
 lazy_static! {
     static ref STDIN: Mutex<VecDeque<u8>> = Mutex::new(VecDeque::new());
-    static ref STDIN_CALLBACK: Mutex<Vec<Box<dyn FnOnce() + Send + Sync>>> = Mutex::new(Vec::new());
+    static ref STDIN_CALLBACK: Mutex<Vec<Box<dyn Fn() -> bool + Send + Sync>>> =
+        Mutex::new(Vec::new());
 }
 
 /// Put a char by serial interrupt handler.
 fn serial_put(x: u8) {
     STDIN.lock().unwrap().push_back(x);
-    for callback in STDIN_CALLBACK.lock().unwrap().drain(..) {
-        callback();
-    }
+    STDIN_CALLBACK.lock().unwrap().retain(|f| !f());
 }
 
 #[export_name = "hal_serial_set_callback"]
-pub fn serial_set_callback(callback: Box<dyn FnOnce() + Send + Sync>) {
+pub fn serial_set_callback(callback: Box<dyn Fn() -> bool + Send + Sync>) {
     STDIN_CALLBACK.lock().unwrap().push(callback);
 }
 

@@ -70,15 +70,15 @@ impl File {
     }
 
     /// read from file
-    pub fn read(&self, buf: &mut [u8]) -> LxResult<usize> {
+    pub async fn read(&self, buf: &mut [u8]) -> LxResult<usize> {
         let mut inner = self.inner.lock();
-        let len = self.read_at(inner.offset, buf)?;
+        let len = self.read_at(inner.offset, buf).await?;
         inner.offset += len as u64;
         Ok(len)
     }
 
     /// read from file at given offset
-    pub fn read_at(&self, offset: u64, buf: &mut [u8]) -> LxResult<usize> {
+    pub async fn read_at(&self, offset: u64, buf: &mut [u8]) -> LxResult<usize> {
         if !self.options.read {
             return Err(LxError::EBADF);
         }
@@ -88,9 +88,7 @@ impl File {
                 match self.inode.read_at(offset as usize, buf) {
                     Ok(read_len) => return Ok(read_len),
                     Err(FsError::Again) => {
-                        //thread::yield_now();
-                        //unimplemented!()
-                        self.poll()?;
+                        self.async_poll().await?;
                     }
                     Err(err) => return Err(err.into()),
                 }
@@ -212,16 +210,16 @@ impl File {
 
 #[async_trait]
 impl FileLike for File {
-    fn read(&self, buf: &mut [u8]) -> LxResult<usize> {
-        self.read(buf)
+    async fn read(&self, buf: &mut [u8]) -> LxResult<usize> {
+        self.read(buf).await
     }
 
     fn write(&self, buf: &[u8]) -> LxResult<usize> {
         self.write(buf)
     }
 
-    fn read_at(&self, offset: u64, buf: &mut [u8]) -> LxResult<usize> {
-        self.read_at(offset, buf)
+    async fn read_at(&self, offset: u64, buf: &mut [u8]) -> LxResult<usize> {
+        self.read_at(offset, buf).await
     }
 
     fn write_at(&self, offset: u64, buf: &[u8]) -> LxResult<usize> {

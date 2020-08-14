@@ -270,7 +270,7 @@ pub fn putfmt(fmt: Arguments) {
 
 lazy_static! {
     static ref STDIN: Mutex<VecDeque<u8>> = Mutex::new(VecDeque::new());
-    static ref STDIN_CALLBACK: Mutex<Vec<Box<dyn FnOnce() + Send + Sync>>> = Mutex::new(Vec::new());
+    static ref STDIN_CALLBACK: Mutex<Vec<Box<dyn Fn() -> bool + Send + Sync>>> = Mutex::new(Vec::new());
 }
 
 /// Put a char by serial interrupt handler.
@@ -279,13 +279,11 @@ fn serial_put(mut x: u8) {
         x = b'\n';
     }
     STDIN.lock().push_back(x);
-    for callback in STDIN_CALLBACK.lock().drain(..) {
-        callback();
-    }
+    STDIN_CALLBACK.lock().retain(|f| !f());
 }
 
 #[export_name = "hal_serial_set_callback"]
-pub fn serial_set_callback(callback: Box<dyn FnOnce() + Send + Sync>) {
+pub fn serial_set_callback(callback: Box<dyn Fn() -> bool + Send + Sync>) {
     STDIN_CALLBACK.lock().push(callback);
 }
 

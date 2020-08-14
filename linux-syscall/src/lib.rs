@@ -78,7 +78,7 @@ impl Syscall<'_> {
         };
         let [a0, a1, a2, a3, a4, a5] = args;
         let ret = match sys_type {
-            Sys::READ => self.sys_read(a0.into(), a1.into(), a2),
+            Sys::READ => self.sys_read(a0.into(), a1.into(), a2).await,
             Sys::WRITE => self.sys_write(a0.into(), a1.into(), a2),
             Sys::OPENAT => self.sys_openat(a0.into(), a1.into(), a2, a3),
             Sys::CLOSE => self.sys_close(a0.into()),
@@ -86,11 +86,11 @@ impl Syscall<'_> {
             Sys::NEWFSTATAT => self.sys_fstatat(a0.into(), a1.into(), a2.into(), a3),
             Sys::LSEEK => self.sys_lseek(a0.into(), a1 as i64, a2 as u8),
             Sys::IOCTL => self.sys_ioctl(a0.into(), a1, a2, a3, a4),
-            Sys::PREAD64 => self.sys_pread(a0.into(), a1.into(), a2, a3 as _),
+            Sys::PREAD64 => self.sys_pread(a0.into(), a1.into(), a2, a3 as _).await,
             Sys::PWRITE64 => self.sys_pwrite(a0.into(), a1.into(), a2, a3 as _),
-            Sys::READV => self.sys_readv(a0.into(), a1.into(), a2),
+            Sys::READV => self.sys_readv(a0.into(), a1.into(), a2).await,
             Sys::WRITEV => self.sys_writev(a0.into(), a1.into(), a2),
-            Sys::SENDFILE => self.sys_sendfile(a0.into(), a1.into(), a2.into(), a3),
+            Sys::SENDFILE => self.sys_sendfile(a0.into(), a1.into(), a2.into(), a3).await,
             Sys::FCNTL => self.sys_fcntl(a0.into(), a1, a2),
             Sys::FLOCK => self.sys_flock(a0.into(), a1),
             Sys::FSYNC => self.sys_fsync(a0.into()),
@@ -116,6 +116,7 @@ impl Syscall<'_> {
             Sys::UTIMENSAT => self.sys_utimensat(a0.into(), a1.into(), a2.into(), a3),
             Sys::COPY_FILE_RANGE => {
                 self.sys_copy_file_range(a0.into(), a1.into(), a2.into(), a3.into(), a4, a5)
+                    .await
             }
 
             // io multiplexing
@@ -136,7 +137,7 @@ impl Syscall<'_> {
 
             // memory
             Sys::BRK => self.unimplemented("brk", Err(LxError::ENOMEM)),
-            Sys::MMAP => self.sys_mmap(a0, a1, a2, a3, a4.into(), a5 as _),
+            Sys::MMAP => self.sys_mmap(a0, a1, a2, a3, a4.into(), a5 as _).await,
             Sys::MPROTECT => self.sys_mprotect(a0, a1, a2),
             Sys::MUNMAP => self.sys_munmap(a0, a1),
             Sys::MADVISE => self.unimplemented("madvise", Ok(0)),
