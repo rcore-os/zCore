@@ -79,6 +79,9 @@
 <span id="79">79</span>
 <span id="80">80</span>
 <span id="81">81</span>
+<span id="82">82</span>
+<span id="83">83</span>
+<span id="84">84</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Linux ELF Program Loader</span>
 <span class="attribute">#![<span class="ident">deny</span>(<span class="ident">missing_docs</span>)]</span>
@@ -112,14 +115,17 @@
         <span class="ident">data</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>],
         <span class="kw-2">mut</span> <span class="ident">args</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">String</span><span class="op">&gt;</span>,
         <span class="ident">envs</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">String</span><span class="op">&gt;</span>,
+        <span class="ident">path</span>: <span class="ident">String</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">LxResult</span><span class="op">&lt;</span>(<span class="ident">VirtAddr</span>, <span class="ident">VirtAddr</span>)<span class="op">&gt;</span> {
+        <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;load: vmar: {:?} args: {:?}, envs: {:?}&quot;</span>, <span class="ident">vmar</span>, <span class="ident">args</span>, <span class="ident">envs</span>);
         <span class="kw">let</span> <span class="ident">elf</span> <span class="op">=</span> <span class="ident">ElfFile</span>::<span class="ident">new</span>(<span class="ident">data</span>).<span class="ident">map_err</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">ZxError</span>::<span class="ident">INVALID_ARGS</span>)<span class="question-mark">?</span>;
         <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Ok</span>(<span class="ident">interp</span>) <span class="op">=</span> <span class="ident">elf</span>.<span class="ident">get_interpreter</span>() {
             <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;interp: {:?}&quot;</span>, <span class="ident">interp</span>);
             <span class="kw">let</span> <span class="ident">inode</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">root_inode</span>.<span class="ident">lookup</span>(<span class="ident">interp</span>)<span class="question-mark">?</span>;
             <span class="kw">let</span> <span class="ident">data</span> <span class="op">=</span> <span class="ident">inode</span>.<span class="ident">read_as_vec</span>()<span class="question-mark">?</span>;
+            <span class="ident">args</span>[<span class="number">0</span>] <span class="op">=</span> <span class="ident">path</span>.<span class="ident">clone</span>();
             <span class="ident">args</span>.<span class="ident">insert</span>(<span class="number">0</span>, <span class="ident">interp</span>.<span class="ident">into</span>());
-            <span class="kw">return</span> <span class="self">self</span>.<span class="ident">load</span>(<span class="ident">vmar</span>, <span class="kw-2">&amp;</span><span class="ident">data</span>, <span class="ident">args</span>, <span class="ident">envs</span>);
+            <span class="kw">return</span> <span class="self">self</span>.<span class="ident">load</span>(<span class="ident">vmar</span>, <span class="kw-2">&amp;</span><span class="ident">data</span>, <span class="ident">args</span>, <span class="ident">envs</span>, <span class="ident">path</span>);
         }
 
         <span class="kw">let</span> <span class="ident">size</span> <span class="op">=</span> <span class="ident">elf</span>.<span class="ident">load_segment_size</span>();

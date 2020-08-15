@@ -130,12 +130,62 @@
 <span id="130">130</span>
 <span id="131">131</span>
 <span id="132">132</span>
+<span id="133">133</span>
+<span id="134">134</span>
+<span id="135">135</span>
+<span id="136">136</span>
+<span id="137">137</span>
+<span id="138">138</span>
+<span id="139">139</span>
+<span id="140">140</span>
+<span id="141">141</span>
+<span id="142">142</span>
+<span id="143">143</span>
+<span id="144">144</span>
+<span id="145">145</span>
+<span id="146">146</span>
+<span id="147">147</span>
+<span id="148">148</span>
+<span id="149">149</span>
+<span id="150">150</span>
+<span id="151">151</span>
+<span id="152">152</span>
+<span id="153">153</span>
+<span id="154">154</span>
+<span id="155">155</span>
+<span id="156">156</span>
+<span id="157">157</span>
+<span id="158">158</span>
+<span id="159">159</span>
+<span id="160">160</span>
+<span id="161">161</span>
+<span id="162">162</span>
+<span id="163">163</span>
+<span id="164">164</span>
+<span id="165">165</span>
+<span id="166">166</span>
+<span id="167">167</span>
+<span id="168">168</span>
+<span id="169">169</span>
+<span id="170">170</span>
+<span id="171">171</span>
+<span id="172">172</span>
+<span id="173">173</span>
+<span id="174">174</span>
+<span id="175">175</span>
+<span id="176">176</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Implement INode for Pipe</span>
 <span class="attribute">#![<span class="ident">deny</span>(<span class="ident">missing_docs</span>)]</span>
 
-<span class="kw">use</span> <span class="ident">alloc</span>::{<span class="ident">collections</span>::<span class="ident">vec_deque</span>::<span class="ident">VecDeque</span>, <span class="ident">sync</span>::<span class="ident">Arc</span>};
+<span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">sync</span>::<span class="ident">Event</span>, <span class="ident">sync</span>::<span class="ident">EventBus</span>};
+<span class="kw">use</span> <span class="ident">alloc</span>::{<span class="ident">boxed</span>::<span class="ident">Box</span>, <span class="ident">collections</span>::<span class="ident">vec_deque</span>::<span class="ident">VecDeque</span>, <span class="ident">sync</span>::<span class="ident">Arc</span>};
 <span class="kw">use</span> <span class="ident">core</span>::{<span class="ident">any</span>::<span class="ident">Any</span>, <span class="ident">cmp</span>::<span class="ident">min</span>};
+<span class="kw">use</span> <span class="ident">core</span>::{
+    <span class="ident">future</span>::<span class="ident">Future</span>,
+    <span class="ident">pin</span>::<span class="ident">Pin</span>,
+    <span class="ident">task</span>::{<span class="ident">Context</span>, <span class="ident">Poll</span>},
+};
 <span class="kw">use</span> <span class="ident">rcore_fs</span>::<span class="ident">vfs</span>::<span class="kw-2">*</span>;
 <span class="kw">use</span> <span class="ident">spin</span>::<span class="ident">Mutex</span>;
 
@@ -153,6 +203,8 @@
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">PipeData</span> {
     <span class="doccomment">/// pipe buffer</span>
     <span class="ident">buf</span>: <span class="ident">VecDeque</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>,
+    <span class="doccomment">/// event bus for pipe</span>
+    <span class="ident">eventbus</span>: <span class="ident">EventBus</span>,
     <span class="doccomment">/// number of pipe ends</span>
     <span class="ident">end_cnt</span>: <span class="ident">i32</span>,
 }
@@ -169,6 +221,7 @@
         <span class="comment">// pipe end closed</span>
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">data</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">data</span>.<span class="ident">lock</span>();
         <span class="ident">data</span>.<span class="ident">end_cnt</span> <span class="op">-</span><span class="op">=</span> <span class="number">1</span>;
+        <span class="ident">data</span>.<span class="ident">eventbus</span>.<span class="ident">set</span>(<span class="ident">Event</span>::<span class="ident">CLOSED</span>);
     }
 }
 
@@ -178,6 +231,7 @@
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">create_pair</span>() <span class="op">-</span><span class="op">&gt;</span> (<span class="ident">Pipe</span>, <span class="ident">Pipe</span>) {
         <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="ident">PipeData</span> {
             <span class="ident">buf</span>: <span class="ident">VecDeque</span>::<span class="ident">new</span>(),
+            <span class="ident">eventbus</span>: <span class="ident">EventBus</span>::<span class="ident">default</span>(),
             <span class="ident">end_cnt</span>: <span class="number">2</span>, <span class="comment">// one read, one write</span>
         };
         <span class="kw">let</span> <span class="ident">data</span> <span class="op">=</span> <span class="ident">Arc</span>::<span class="ident">new</span>(<span class="ident">Mutex</span>::<span class="ident">new</span>(<span class="ident">inner</span>));
@@ -228,6 +282,9 @@
                 <span class="kw">for</span> <span class="ident">item</span> <span class="kw">in</span> <span class="ident">buf</span>.<span class="ident">iter_mut</span>().<span class="ident">take</span>(<span class="ident">len</span>) {
                     <span class="kw-2">*</span><span class="ident">item</span> <span class="op">=</span> <span class="ident">data</span>.<span class="ident">buf</span>.<span class="ident">pop_front</span>().<span class="ident">unwrap</span>();
                 }
+                <span class="kw">if</span> <span class="ident">data</span>.<span class="ident">buf</span>.<span class="ident">is_empty</span>() {
+                    <span class="ident">data</span>.<span class="ident">eventbus</span>.<span class="ident">clear</span>(<span class="ident">Event</span>::<span class="ident">READABLE</span>);
+                }
                 <span class="prelude-val">Ok</span>(<span class="ident">len</span>)
             }
         } <span class="kw">else</span> {
@@ -242,6 +299,7 @@
             <span class="kw">for</span> <span class="ident">c</span> <span class="kw">in</span> <span class="ident">buf</span> {
                 <span class="ident">data</span>.<span class="ident">buf</span>.<span class="ident">push_back</span>(<span class="kw-2">*</span><span class="ident">c</span>);
             }
+            <span class="ident">data</span>.<span class="ident">eventbus</span>.<span class="ident">set</span>(<span class="ident">Event</span>::<span class="ident">READABLE</span>);
             <span class="prelude-val">Ok</span>(<span class="ident">buf</span>.<span class="ident">len</span>())
         } <span class="kw">else</span> {
             <span class="prelude-val">Ok</span>(<span class="number">0</span>)
@@ -256,6 +314,36 @@
             <span class="ident">write</span>: <span class="self">self</span>.<span class="ident">can_write</span>(),
             <span class="ident">error</span>: <span class="bool-val">false</span>,
         })
+    }
+
+    <span class="kw">fn</span> <span class="ident">async_poll</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>(
+        <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">self</span>,
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Pin</span><span class="op">&lt;</span><span class="ident">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">Future</span><span class="op">&lt;</span><span class="ident">Output</span> <span class="op">=</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">PollStatus</span><span class="op">&gt;</span><span class="op">&gt;</span> <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span> <span class="op">+</span> <span class="lifetime">&#39;a</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+        <span class="attribute">#[<span class="ident">must_use</span> <span class="op">=</span> <span class="string">&quot;future does nothing unless polled/`await`-ed&quot;</span>]</span>
+        <span class="kw">struct</span> <span class="ident">PipeFuture</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span> {
+            <span class="ident">pipe</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">Pipe</span>,
+        };
+
+        <span class="kw">impl</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span> <span class="ident">Future</span> <span class="kw">for</span> <span class="ident">PipeFuture</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span> {
+            <span class="kw">type</span> <span class="ident">Output</span> <span class="op">=</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">PollStatus</span><span class="op">&gt;</span>;
+
+            <span class="kw">fn</span> <span class="ident">poll</span>(<span class="self">self</span>: <span class="ident">Pin</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">Self</span><span class="op">&gt;</span>, <span class="ident">cx</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Context</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Poll</span><span class="op">&lt;</span><span class="self">Self</span>::<span class="ident">Output</span><span class="op">&gt;</span> {
+                <span class="kw">if</span> <span class="self">self</span>.<span class="ident">pipe</span>.<span class="ident">can_read</span>() <span class="op">|</span><span class="op">|</span> <span class="self">self</span>.<span class="ident">pipe</span>.<span class="ident">can_write</span>() {
+                    <span class="kw">return</span> <span class="ident">Poll</span>::<span class="ident">Ready</span>(<span class="self">self</span>.<span class="ident">pipe</span>.<span class="ident">poll</span>());
+                }
+                <span class="kw">let</span> <span class="ident">waker</span> <span class="op">=</span> <span class="ident">cx</span>.<span class="ident">waker</span>().<span class="ident">clone</span>();
+                <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">data</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">pipe</span>.<span class="ident">data</span>.<span class="ident">lock</span>();
+                <span class="ident">data</span>.<span class="ident">eventbus</span>.<span class="ident">subscribe</span>(<span class="ident">Box</span>::<span class="ident">new</span>({
+                    <span class="kw">move</span> <span class="op">|</span><span class="kw">_</span><span class="op">|</span> {
+                        <span class="ident">waker</span>.<span class="ident">wake_by_ref</span>();
+                        <span class="bool-val">true</span>
+                    }
+                }));
+                <span class="ident">Poll</span>::<span class="ident">Pending</span>
+            }
+        }
+
+        <span class="ident">Box</span>::<span class="ident">pin</span>(<span class="ident">PipeFuture</span> { <span class="ident">pipe</span>: <span class="self">self</span> })
     }
 
     <span class="doccomment">/// return the any ref</span>
