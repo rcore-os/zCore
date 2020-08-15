@@ -173,7 +173,7 @@ impl Syscall<'_> {
             stack_pages: 8,
             root_inode: proc.root_inode().clone(),
         };
-        let (entry, sp) = loader.load(&vmar, &data, args, envs)?;
+        let (entry, sp) = loader.load(&vmar, &data, args, envs, path.clone())?;
 
         // Modify exec path
         proc.set_execute_path(&path);

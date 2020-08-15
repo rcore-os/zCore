@@ -38,7 +38,8 @@ pub fn run(args: Vec<String>, envs: Vec<String>, rootfs: Arc<dyn FileSystem>) ->
     };
     let inode = rootfs.root_inode().lookup(&args[0]).unwrap();
     let data = inode.read_as_vec().unwrap();
-    let (entry, sp) = loader.load(&proc.vmar(), &data, args, envs).unwrap();
+    let path = args[0].clone();
+    let (entry, sp) = loader.load(&proc.vmar(), &data, args, envs, path).unwrap();
 
     thread
         .start(entry, sp, 0, 0, thread_fn)
