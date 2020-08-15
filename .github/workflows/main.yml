@@ -152,6 +152,27 @@ jobs:
           pip3 install pexpect
           python3 core-tests.py
 
+  libc-test:
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v2
+      - name: Pull prebuilt images
+        run: git lfs pull -I prebuilt/linux/libc-libos.so
+      - name: Install musl toolchain
+        run: sudo apt-get install musl-tools musl-dev -y
+      - name: Prepare rootfs and libc-test
+        run: make rootfs && make libc-test
+      - name: Build
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --release -p linux-loader
+      - name: Run libc-tests
+        run: |
+          cd scripts
+          python3 libc-tests.py
+          cat linux/test-result.txt
+
   doc:
     runs-on: ubuntu-20.04
     steps:
@@ -168,25 +189,3 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BRANCH: gh-pages
           FOLDER: target/doc
-
-  libc-test:
-    runs-on: ubuntu-20.04
-    steps:
-      - uses: actions/checkout@v2
-      - name: Pull prebuilt images
-        run: git lfs pull -I prebuilt/linux/libc-libos.so
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: nightly-2020-06-04
-          components: rust-src
-      - name: Install musl toolchain
-        run: sudo apt-get install musl-tools musl-dev -y
-      - name: Prepare rootfs and libc-test
-        run: make rootfs && make libc-test
-      - name: Run libc-tests
-        run: |
-          cd scripts
-          cargo build --release -p linux-loader
-          python3 libc-tests.py
-          cat linux/test-result.txt

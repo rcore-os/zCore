@@ -62,7 +62,6 @@ fn init_logger() {
 mod tests {
     use super::*;
     use std::fs;
-    use zircon_object::object::task::*;
 
     /// test with cmd line
     async fn test(cmdline: &str) -> i64 {
