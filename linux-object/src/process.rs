@@ -96,6 +96,7 @@ pub async fn wait_child(proc: &Arc<Process>, pid: KoID, nonblock: bool) -> LxRes
         }
         let child: Arc<dyn KernelObject> = child.clone();
         drop(inner);
+        child.signal_clear(Signal::PROCESS_TERMINATED);
         child.wait_signal(Signal::PROCESS_TERMINATED).await;
     }
 }
@@ -118,6 +119,7 @@ pub async fn wait_child_any(proc: &Arc<Process>, nonblock: bool) -> LxResult<(Ko
             return Err(LxError::EAGAIN);
         }
         let proc: Arc<dyn KernelObject> = proc.clone();
+        proc.signal_clear(Signal::SIGCHLD);
         proc.wait_signal(Signal::SIGCHLD).await;
     }
 }
