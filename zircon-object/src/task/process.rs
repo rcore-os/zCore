@@ -522,6 +522,17 @@ impl Process {
     pub fn thread_ids(&self) -> Vec<KoID> {
         self.inner.lock().threads.iter().map(|t| t.id()).collect()
     }
+
+    /// Wait for process exit and get return code.
+    pub async fn wait_for_exit(self: &Arc<Self>) -> i64 {
+        let object: Arc<dyn KernelObject> = self.clone();
+        object.wait_signal(Signal::PROCESS_TERMINATED).await;
+        if let Status::Exited(code) = self.status() {
+            code
+        } else {
+            unreachable!();
+        }
+    }
 }
 
 impl Task for Process {

@@ -8,8 +8,6 @@ use linux_loader::*;
 use linux_object::fs::STDIN;
 use rcore_fs_hostfs::HostFS;
 use std::io::Write;
-use std::sync::Arc;
-use zircon_object::object::*;
 
 /// main entry
 #[async_std::main]
@@ -33,8 +31,9 @@ async fn main() {
     let envs = vec!["PATH=/usr/sbin:/usr/bin:/sbin:/bin:/usr/x86_64-alpine-linux-musl/bin".into()];
 
     let hostfs = HostFS::new("rootfs");
-    let proc: Arc<dyn KernelObject> = run(args, envs, hostfs);
-    proc.wait_signal(Signal::PROCESS_TERMINATED).await;
+    let proc = run(args, envs, hostfs);
+    let code = proc.wait_for_exit().await;
+    std::process::exit(code as i32);
 }
 
 /// init the env_logger
@@ -74,12 +73,7 @@ mod tests {
             vec!["PATH=/usr/sbin:/usr/bin:/sbin:/bin:/usr/x86_64-alpine-linux-musl/bin".into()]; // TODO
         let hostfs = HostFS::new("../rootfs");
         let proc = run(args, envs, hostfs);
-        let procobj: Arc<dyn KernelObject> = proc.clone();
-        procobj.wait_signal(Signal::PROCESS_TERMINATED).await;
-        if let Status::Exited(code) = proc.status() {
-            return code;
-        }
-        -1
+        proc.wait_for_exit().await
     }
 
     // test using busybox
