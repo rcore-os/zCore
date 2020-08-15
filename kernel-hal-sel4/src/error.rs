@@ -18,6 +18,8 @@ pub enum KernelError {
     IpcFailure = 12,
     Unknown = 13,
     BadTimerPeriod = 14,
+    BadUserAddress = 15,
+    InvalidPhysicalAddress = 16,
 }
 
 impl KernelError {

@@ -13,6 +13,7 @@ use crate::futex::FMutex;
 use crate::vm::{self, VmAlloc};
 use crate::pmem::Page;
 use alloc::collections::linked_list::LinkedList;
+use crate::thread::LocalContext;
 
 const USER_CSPACE_NUM_ENTRIES_BITS: u8 = 1; // 2 entries
 
@@ -43,7 +44,33 @@ pub struct UserThread {
     kernel_entry_reason: KernelEntryReason,
 }
 
+/// Identity-mapped physical memory range.
+#[derive(Copy, Clone)]
+pub struct IdMap {
+    start: usize,
+}
+
+impl IdMap {
+    pub const unsafe fn assume_idmap(start: usize) -> Self {
+        Self {
+            start,
+        }
+    }
+
+    pub fn phys_to_kvirt(&self, phys: usize) -> KernelResult<usize> {
+        match phys.checked_add(self.start) {
+            Some(x) => Ok(x),
+            None => Err(KernelError::InvalidPhysicalAddress),
+        }
+    }
+}
+
 impl UserProcess {
+    pub fn with_current<R, F: FnOnce(&Arc<UserProcess>) -> R>(f: F) -> R {
+        let process = LocalContext::current().user_process.borrow();
+        f(process.as_ref().expect("UserProcess::with_current: no current process"))
+    }
+
     pub fn new() -> KernelResult<Arc<UserProcess>> {
         // Check consistency early.
         L4UserContext::check_consistency();
@@ -113,6 +140,129 @@ impl UserProcess {
         ut.tcb.set_priority(user_thread_priority()).expect("UserProcess::create_thread: cannot set priority");
 
         Ok(ut)
+    }
+
+    fn access_user_memory<F: FnMut(usize, *mut u8) -> KernelResult<bool>>(&self, idmap: IdMap, start: usize, mut f: F) -> KernelResult<()> {
+        let vm = self.vm.lock();
+
+        let mut current_page: Option<(*mut u8, usize)> = None;
+        for i in 0.. {
+            let uaddr = match start.checked_add(i) {
+                Some(x) => x,
+                None => return Err(KernelError::BadUserAddress),
+            };
+            let this_vframe = VmAlloc::vframe_addr(uaddr);
+            if current_page.map(|x| x.1) != Some(this_vframe) {
+                current_page = match vm.page_at(this_vframe) {
+                    Some(upage) => {
+                        let kpage = idmap.phys_to_kvirt(upage.region().paddr)?;
+                        vm::K.lock().page_at(kpage).expect("access_user_memory: cannot find kernel mapping for user address");
+                        Some((kpage as *mut u8, this_vframe))
+                    },
+                    None => return Err(KernelError::BadUserAddress),
+                };
+            }
+            match f(i, unsafe {
+                current_page.unwrap().0.offset(VmAlloc::vframe_offset(uaddr) as isize)
+            })? {
+                true => {},
+                false => break
+            }
+        }
+        Ok(())
+    }
+
+    fn access_user_memory_range<F: FnMut(usize, *mut u8) -> KernelResult<()>>(&self, idmap: IdMap, start: usize, len: usize, mut f: F) -> KernelResult<()> {
+        if len == 0 {
+            return Ok(());
+        }
+
+        self.access_user_memory(idmap, start, |i, byte| {
+            f(i, byte)?;
+            if i + 1 == len {
+                Ok(false)
+            } else {
+                Ok(true)
+            }
+        })
+    }
+
+    pub fn read_memory(&self, idmap: IdMap, start: usize, out: &mut [u8]) -> KernelResult<()> {
+        let out_len = out.len();
+        self.access_user_memory_range(idmap, start, out_len, |i, byte| {
+            out[i] = unsafe { core::ptr::read_volatile(byte) };
+            Ok(())
+        })?;
+        Ok(())
+    }
+
+    pub fn write_memory(&self, idmap: IdMap, start: usize, data: &[u8]) -> KernelResult<()> {
+        let data_len = data.len();
+        self.access_user_memory_range(idmap, start, data_len, |i, byte| {
+            unsafe {
+                core::ptr::write_volatile(byte, data[i]);
+            }
+            Ok(())
+        })?;
+        Ok(())
+    }
+
+    pub unsafe fn read_memory_typed<T>(&self, idmap: IdMap, start: usize) -> KernelResult<T> {
+        if start % core::mem::align_of::<T>() != 0 {
+            return Err(KernelError::BadUserAddress);
+        }
+        use core::mem::MaybeUninit;
+        let mut result: MaybeUninit<T> = MaybeUninit::uninit();
+        self.read_memory(idmap, start,
+            core::slice::from_raw_parts_mut(
+                result.as_mut_ptr() as *mut u8,
+                core::mem::size_of::<T>(),
+            )
+        )?;
+        Ok(result.assume_init())
+    }
+
+    pub unsafe fn read_memory_typed_atomic<T: Copy>(&self, idmap: IdMap, start: usize) -> KernelResult<T> {
+        // Atomic access requires alignment to size
+        if start % core::mem::size_of::<T>() != 0 {
+            return Err(KernelError::BadUserAddress);
+        }
+        use core::mem::MaybeUninit;
+        let mut result: MaybeUninit<T> = MaybeUninit::uninit();
+        self.access_user_memory(idmap, start, |_, byte| {
+            result.write(core::intrinsics::atomic_load(byte as *const T));
+            Ok(false)
+        })?;
+        Ok(result.assume_init())
+    }
+
+    pub fn write_memory_typed<T>(&self, idmap: IdMap, start: usize, data: T) -> KernelResult<()> {
+        if start % core::mem::align_of::<T>() != 0 {
+            return Err(KernelError::BadUserAddress);
+        }
+        self.write_memory(idmap, start,
+            unsafe {
+                core::slice::from_raw_parts(
+                    &data as *const T as *const u8,
+                    core::mem::size_of::<T>(),
+                )
+            }
+        )?;
+        core::mem::forget(data);
+        Ok(())
+    }
+
+    pub fn write_memory_typed_atomic<T: Copy>(&self, idmap: IdMap, start: usize, value: T) -> KernelResult<()> {
+        // Atomic access requires alignment to size
+        if start % core::mem::size_of::<T>() != 0 {
+            return Err(KernelError::BadUserAddress);
+        }
+        self.access_user_memory(idmap, start, |_, byte| {
+            unsafe {
+                core::intrinsics::atomic_store(byte as *mut T, value);
+            }
+            Ok(false)
+        })
     }
 }
 

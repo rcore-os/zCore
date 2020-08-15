@@ -22,6 +22,7 @@ use alloc::vec::Vec;
 use lazy_static::lazy_static;
 
 const PHYS_IDMAP_BASE: usize = 0x6000_0000_0000;
+pub static IDMAP: IdMap = unsafe { IdMap::assume_idmap(PHYS_IDMAP_BASE) };
 
 #[repr(C)]
 pub struct Thread {

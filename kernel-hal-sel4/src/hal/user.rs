@@ -3,11 +3,23 @@ use alloc::vec::Vec;
 use core::fmt::{Debug, Formatter};
 use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
+use crate::user::UserProcess;
+use core::mem::MaybeUninit;
+use core::sync::atomic::AtomicI32;
 
 #[repr(C)]
 pub struct UserPtr<T, P: Policy> {
     ptr: *mut T,
     mark: PhantomData<P>,
+}
+
+impl<T, P: Policy> Clone for UserPtr<T, P> {
+    fn clone(&self) -> Self {
+        Self {
+            ptr: self.ptr,
+            mark: PhantomData,
+        }
+    }
 }
 
 pub trait Policy {}
@@ -94,15 +106,25 @@ impl<T, P: Policy> UserPtr<T, P> {
     }
 }
 
-impl<T, P: Read> UserPtr<T, P> {
-    pub fn as_ref(&self) -> Result<&'static T> {
-        Ok(unsafe { &*self.ptr })
+impl<P: Read> UserPtr<AtomicI32, P> {
+    pub fn read_atomic(&self) -> Result<i32> {
+        UserProcess::with_current(|p| unsafe {
+            p.read_memory_typed_atomic(super::IDMAP, self.ptr as usize)
+        }).map_err(|_| Error::InvalidPointer)
     }
 
+    pub fn write_atomic(&self, value: i32) -> Result<()> {
+        UserProcess::with_current(|p| unsafe {
+            p.write_memory_typed_atomic(super::IDMAP, self.ptr as usize, value)
+        }).map_err(|_| Error::InvalidPointer)
+    }
+}
+
+impl<T, P: Read> UserPtr<T, P> {
     pub fn read(&self) -> Result<T> {
-        // TODO: check ptr and return err
-        self.check()?;
-        Ok(unsafe { self.ptr.read() })
+        UserProcess::with_current(|p| unsafe {
+            p.read_memory_typed(super::IDMAP, self.ptr as usize)
+        }).map_err(|_| Error::InvalidPointer)
     }
 
     pub fn read_if_not_null(&self) -> Result<Option<T>> {
@@ -121,7 +143,13 @@ impl<T, P: Read> UserPtr<T, P> {
         let mut ret = Vec::<T>::with_capacity(len);
         unsafe {
             ret.set_len(len);
-            ret.as_mut_ptr().copy_from_nonoverlapping(self.ptr, len);
+            UserProcess::with_current(|p| unsafe {
+                let out_slice = core::slice::from_raw_parts_mut(
+                    ret.as_mut_ptr() as *mut u8,
+                    len * core::mem::size_of::<T>(),
+                );
+                p.read_memory(super::IDMAP, self.ptr as usize, out_slice)
+            }).map_err(|_| Error::InvalidPointer)?;
         }
         Ok(ret)
     }
@@ -130,40 +158,26 @@ impl<T, P: Read> UserPtr<T, P> {
 impl<P: Read> UserPtr<u8, P> {
     pub fn read_string(&self, len: usize) -> Result<String> {
         self.check()?;
-        let src = unsafe { core::slice::from_raw_parts(self.ptr, len) };
-        let s = core::str::from_utf8(src).map_err(|_| Error::InvalidUtf8)?;
-        Ok(String::from(s))
+        let v: Vec<u8> = self.read_array(len)?;
+        Ok(String::from_utf8(v).map_err(|_| Error::InvalidUtf8)?)
     }
 
     pub fn read_cstring(&self) -> Result<String> {
-        self.check()?;
-        let len = unsafe { (0usize..).find(|&i| *self.ptr.add(i) == 0).unwrap() };
-        self.read_string(len)
+        unimplemented!("read_cstring");
     }
 }
 
 impl<P: Read> UserPtr<UserPtr<u8, P>, P> {
     pub fn read_cstring_array(&self) -> Result<Vec<String>> {
-        self.check()?;
-        let len = unsafe {
-            (0usize..)
-                .find(|&i| self.ptr.add(i).read().is_null())
-                .unwrap()
-        };
-        self.read_array(len)?
-            .into_iter()
-            .map(|ptr| ptr.read_cstring())
-            .collect()
+        unimplemented!("read_cstring_array");
     }
 }
 
 impl<T, P: Write> UserPtr<T, P> {
     pub fn write(&mut self, value: T) -> Result<()> {
-        self.check()?;
-        unsafe {
-            self.ptr.write(value);
-        }
-        Ok(())
+        UserProcess::with_current(|p| unsafe {
+            p.write_memory_typed(super::IDMAP, self.ptr as usize, value)
+        }).map_err(|_| Error::InvalidPointer)
     }
 
     pub fn write_if_not_null(&mut self, value: T) -> Result<()> {
@@ -174,26 +188,24 @@ impl<T, P: Write> UserPtr<T, P> {
     }
 
     pub fn write_array(&mut self, values: &[T]) -> Result<()> {
-        if values.is_empty() {
+        if values.len() == 0 {
             return Ok(());
         }
-        self.check()?;
-        unsafe {
-            self.ptr
-                .copy_from_nonoverlapping(values.as_ptr(), values.len());
-        }
-        Ok(())
+        UserProcess::with_current(|p| unsafe {
+            let slice = core::slice::from_raw_parts(
+                values.as_ptr() as *const u8,
+                values.len() * core::mem::size_of::<T>(),
+            );
+            p.write_memory(super::IDMAP, self.ptr as usize, slice)
+        }).map_err(|_| Error::InvalidPointer)
     }
 }
 
 impl<P: Write> UserPtr<u8, P> {
     pub fn write_cstring(&mut self, s: &str) -> Result<()> {
-        let bytes = s.as_bytes();
-        self.write_array(bytes)?;
-        unsafe {
-            self.ptr.add(bytes.len()).write(0);
-        }
-        Ok(())
+        let mut bytes = s.as_bytes().to_vec();
+        bytes.push(0);
+        self.write_array(&bytes)
     }
 }
 

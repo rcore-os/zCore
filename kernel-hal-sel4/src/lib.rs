@@ -1,6 +1,6 @@
 #![no_std]
 #![feature(llvm_asm, global_asm, alloc_error_handler)]
-#![feature(linkage, const_btree_new, map_first_last, negative_impls)]
+#![feature(core_intrinsics, maybe_uninit_extra, linkage, const_btree_new, map_first_last, negative_impls)]
 
 #[macro_use]
 extern crate alloc;

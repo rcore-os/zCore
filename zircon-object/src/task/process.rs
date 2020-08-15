@@ -7,6 +7,7 @@ use {
     hashbrown::HashMap,
     spin::Mutex,
 };
+use kernel_hal::user::UserInPtr;
 
 /// Process abstraction
 ///
@@ -301,11 +302,11 @@ impl Process {
     }
 
     /// Get a futex from the process
-    pub fn get_futex(&self, addr: &'static AtomicI32) -> Arc<Futex> {
+    pub fn get_futex(&self, addr: UserInPtr<AtomicI32>) -> Arc<Futex> {
         let mut inner = self.inner.lock();
         inner
             .futexes
-            .entry(addr as *const AtomicI32 as usize)
+            .entry(addr.as_ptr() as usize)
             .or_insert_with(|| Futex::new(addr))
             .clone()
     }

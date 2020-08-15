@@ -14,7 +14,7 @@ use {
     alloc::sync::Arc,
     core::{
         convert::TryFrom,
-        sync::atomic::{AtomicI32, Ordering},
+        sync::atomic::AtomicI32,
     },
     futures::pin_mut,
     kernel_hal::{user::*, GeneralRegs},
@@ -306,10 +306,7 @@ impl Syscall<'_> {
                 }),
             Sys::FUTEX_WAKE_HANDLE_CLOSE_THREAD_EXIT => {
                 // atomic_store_explicit(value_ptr, new_value, memory_order_release)
-                UserInPtr::<AtomicI32>::from(a0)
-                    .as_ref()
-                    .unwrap()
-                    .store(a2 as i32, Ordering::Release);
+                UserInPtr::<AtomicI32>::from(a0).write_atomic(a2 as i32).expect("FUTEX_WAKE_HANDLE_CLOSE_THREAD_EXIT: bad user pointer");
                 let _ = self.sys_futex_wake(a0.into(), a1 as _);
                 let _ = self.sys_handle_close(a3 as _);
                 self.sys_thread_exit()

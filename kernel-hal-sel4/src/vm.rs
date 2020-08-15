@@ -115,8 +115,16 @@ impl VmAlloc {
         panic!("VmAlloc::release_region: cannot find region");
     }
 
+    pub fn vframe_addr(vaddr: usize) -> usize {
+        vaddr & (!((1 << Page::bits()) - 1))
+    }
+
+    pub fn vframe_offset(vaddr: usize) -> usize {
+        vaddr & ((1 << Page::bits()) - 1)
+    }
+
     pub fn page_at(&self, vaddr: usize) -> Option<&Page> {
-        let vaddr = vaddr & (!((1 << Page::bits()) - 1));
+        let vaddr = Self::vframe_addr(vaddr);
         self.pages.get(&vaddr)
     }
 

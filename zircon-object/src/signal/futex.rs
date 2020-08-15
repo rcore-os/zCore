@@ -7,6 +7,7 @@ use core::pin::Pin;
 use core::sync::atomic::*;
 use core::task::{Context, Poll, Waker};
 use spin::Mutex;
+use kernel_hal::user::UserInPtr;
 
 /// A primitive for creating userspace synchronization tools.
 ///
@@ -18,7 +19,7 @@ use spin::Mutex;
 /// resources in the uncontested case.
 pub struct Futex {
     base: KObjectBase,
-    value: &'static AtomicI32,
+    value: UserInPtr<AtomicI32>,
     inner: Mutex<FutexInner>,
 }
 
@@ -40,7 +41,7 @@ impl Futex {
     /// waiting on. The kernel does not currently modify the value of
     /// `*value`. It is up to userspace code to correctly atomically modify this
     /// value across threads in order to build mutexes and so on.
-    pub fn new(value: &'static AtomicI32) -> Arc<Self> {
+    pub fn new(value: UserInPtr<AtomicI32>) -> Arc<Self> {
         Arc::new(Futex {
             base: KObjectBase::default(),
             value,
@@ -138,7 +139,7 @@ impl Futex {
                 // first time?
                 if inner.waker.is_none() {
                     // check value
-                    let value = inner.futex.value.load(Ordering::SeqCst);
+                    let value = inner.futex.value.read_atomic().expect("Futex::wait_with_owner: bad user pointer");
                     if value != self.current_value {
                         return Poll::Ready(Err(ZxError::BAD_STATE));
                     }
@@ -225,7 +226,7 @@ impl Futex {
     ) -> ZxResult {
         let mut inner = self.inner.lock();
         // check value
-        if self.value.load(Ordering::SeqCst) != current_value {
+        if self.value.read_atomic().expect("Futex::requeue: bad user pointer") != current_value {
             return Err(ZxError::BAD_STATE);
         }
         // wake
