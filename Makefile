@@ -19,3 +19,7 @@ rootfs: prebuilt/linux/$(ROOTFS_TAR)
 	tar xf $< -C rootfs
 	cp prebuilt/linux/libc-libos.so rootfs/lib/ld-musl-x86_64.so.1
 	@for VAR in $(BASENAMES); do gcc $(TEST_DIR)$$VAR.c -o $(DEST_DIR)$$VAR $(CFLAG); done
+
+libc-test:
+	cd rootfs && git clone git://repo.or.cz/libc-test --depth 1
+	cd rootfs/libc-test && cp config.mak.def config.mak && echo 'CC := musl-gcc' >> config.mak && make -j

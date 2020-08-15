@@ -4,10 +4,11 @@ import re
 
 TIMEOUT = 300
 ZCORE_PATH = '../zCore'
-OUTPUT_FILE = 'test-output.txt'
-RESULT_FILE = 'test-result.txt'
-CHECK_FILE = 'test-check-passed.txt'
-TEST_CASE_FILE = 'testcases.txt'
+BASE = 'zircon/'
+OUTPUT_FILE = BASE + 'test-output.txt'
+RESULT_FILE = BASE + 'test-result.txt'
+CHECK_FILE = BASE + 'test-check-passed.txt'
+TEST_CASE_FILE = BASE + 'testcases.txt'
 
 
 class Tee:
