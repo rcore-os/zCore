@@ -36,3 +36,11 @@
 /libc-test/src/functional/pthread_mutex_pi.exe
 /libc-test/src/functional/pthread_cancel.exe
 /libc-test/src/functional/pthread_mutex.exe
+/libc-test/src/functional/spawn.exe
+/libc-test/src/functional/popen.exe
+/libc-test/src/regression/execle-env.exe
+/libc-test/src/regression/malloc-oom.exe
+/libc-test/src/regression/pthread_create-oom.exe
+/libc-test/src/regression/setenv-oom.exe
+/libc-test/src/regression/flockfile-list.exe
+/libc-test/src/regression/malloc-brk-fail.exe
