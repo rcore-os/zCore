@@ -297,6 +297,8 @@
 <span id="297">297</span>
 <span id="298">298</span>
 <span id="299">299</span>
+<span id="300">300</span>
+<span id="301">301</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Linux Process</span>
 
@@ -396,6 +398,7 @@
         }
         <span class="kw">let</span> <span class="ident">child</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">KernelObject</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">child</span>.<span class="ident">clone</span>();
         <span class="ident">drop</span>(<span class="ident">inner</span>);
+        <span class="ident">child</span>.<span class="ident">signal_clear</span>(<span class="ident">Signal</span>::<span class="ident">PROCESS_TERMINATED</span>);
         <span class="ident">child</span>.<span class="ident">wait_signal</span>(<span class="ident">Signal</span>::<span class="ident">PROCESS_TERMINATED</span>).<span class="kw">await</span>;
     }
 }
@@ -418,6 +421,7 @@
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">LxError</span>::<span class="ident">EAGAIN</span>);
         }
         <span class="kw">let</span> <span class="ident">proc</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">KernelObject</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">clone</span>();
+        <span class="ident">proc</span>.<span class="ident">signal_clear</span>(<span class="ident">Signal</span>::<span class="ident">SIGCHLD</span>);
         <span class="ident">proc</span>.<span class="ident">wait_signal</span>(<span class="ident">Signal</span>::<span class="ident">SIGCHLD</span>).<span class="kw">await</span>;
     }
 }
