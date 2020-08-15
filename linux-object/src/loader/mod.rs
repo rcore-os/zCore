@@ -30,14 +30,17 @@ impl LinuxElfLoader {
         data: &[u8],
         mut args: Vec<String>,
         envs: Vec<String>,
+        path: String,
     ) -> LxResult<(VirtAddr, VirtAddr)> {
+        info!("load: vmar: {:?} args: {:?}, envs: {:?}", vmar, args, envs);
         let elf = ElfFile::new(data).map_err(|_| ZxError::INVALID_ARGS)?;
         if let Ok(interp) = elf.get_interpreter() {
             info!("interp: {:?}", interp);
             let inode = self.root_inode.lookup(interp)?;
             let data = inode.read_as_vec()?;
+            args[0] = path.clone();
             args.insert(0, interp.into());
-            return self.load(vmar, &data, args, envs);
+            return self.load(vmar, &data, args, envs, path);
         }
 
         let size = elf.load_segment_size();
