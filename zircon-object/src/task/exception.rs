@@ -1,7 +1,6 @@
 use {
     super::*, crate::ipc::*, crate::object::*, alloc::sync::Arc, alloc::vec, alloc::vec::Vec,
-    core::mem::size_of, futures::channel::oneshot, futures::pin_mut, kernel_hal::UserContext,
-    spin::Mutex,
+    core::mem::size_of, futures::channel::oneshot, kernel_hal::UserContext, spin::Mutex,
 };
 
 /// Kernel-owned exception channel endpoint.
@@ -49,13 +48,17 @@ impl Exceptionate {
         Ok(user_channel)
     }
 
+    /// Whether the user-owned channel endpoint is alive.
     pub(super) fn has_channel(&self) -> bool {
         let inner = self.inner.lock();
         matches!(&*inner, ExceptionateInner::Bind { channel, .. } if channel.peer().is_ok())
     }
 
     /// Send exception to the user-owned endpoint.
-    pub fn send_exception(&self, exception: &Arc<Exception>) -> ZxResult<oneshot::Receiver<()>> {
+    pub(super) fn send_exception(
+        &self,
+        exception: &Arc<Exception>,
+    ) -> ZxResult<oneshot::Receiver<()>> {
         debug!(
             "Exception: {:?} ,try send to {:?}",
             exception.type_, self.type_
@@ -181,7 +184,7 @@ impl ExceptionReport {
 /// Type of exception
 #[allow(missing_docs)]
 #[repr(u32)]
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum ExceptionType {
     General = 0x008,
     FatalPageFault = 0x108,
@@ -195,6 +198,12 @@ pub enum ExceptionType {
     ThreadExiting = 0x8108,
     PolicyError = 0x8208,
     ProcessStarting = 0x8308,
+}
+
+impl ExceptionType {
+    fn is_fatal(self) -> bool {
+        (self as u32) < 0x1000
+    }
 }
 
 /// Type of the exception channel
@@ -305,7 +314,7 @@ impl Drop for ExceptionObject {
 }
 
 /// An Exception represents a single currently-active exception.
-pub struct Exception {
+pub(super) struct Exception {
     thread: Arc<Thread>,
     type_: ExceptionType,
     report: ExceptionReport,
@@ -320,11 +329,7 @@ struct ExceptionInner {
 
 impl Exception {
     /// Create an `Exception`.
-    pub fn create(
-        thread: &Arc<Thread>,
-        type_: ExceptionType,
-        cx: Option<&UserContext>,
-    ) -> Arc<Self> {
+    pub fn new(thread: &Arc<Thread>, type_: ExceptionType, cx: Option<&UserContext>) -> Arc<Self> {
         Arc::new(Exception {
             thread: thread.clone(),
             type_,
@@ -341,31 +346,32 @@ impl Exception {
     ///
     /// Note that it's possible that this may returns before exception was send to any exception channel.
     /// This happens only when the thread is killed before we send the exception.
-    pub async fn handle(self: &Arc<Self>, fatal: bool) {
-        self.handle_with_exceptionates(fatal, ExceptionateIterator::new(self), false)
-            .await
-    }
-
-    /// Same as `handle`, but use a customized iterator.
-    ///
-    /// If `first_only` is true, this will only send exception to the first one that received the exception
-    /// even when the exception is not handled.
-    pub async fn handle_with_exceptionates(
-        self: &Arc<Self>,
-        fatal: bool,
-        exceptionates: impl IntoIterator<Item = Arc<Exceptionate>>,
-        first_only: bool,
-    ) {
-        let future = self.handle_internal(exceptionates, first_only);
-        pin_mut!(future);
-        let result = self.thread.wait_for_exception(future, self.clone()).await;
-        if result == Err(ZxError::NEXT) && fatal {
+    pub async fn handle(self: &Arc<Self>) {
+        let result = match self.type_ {
+            ExceptionType::ProcessStarting => {
+                self.handle_with(JobDebuggerIterator::new(self.thread.proc().job()), true)
+                    .await
+            }
+            ExceptionType::ThreadStarting | ExceptionType::ThreadExiting => {
+                self.handle_with(Some(self.thread.proc().debug_exceptionate()), false)
+                    .await
+            }
+            _ => {
+                self.handle_with(ExceptionateIterator::new(self), false)
+                    .await
+            }
+        };
+        if result == Err(ZxError::NEXT) && self.type_.is_fatal() {
             // Nobody handled the exception, kill myself
             self.thread.proc().exit(TASK_RETCODE_SYSCALL_KILL);
         }
     }
 
-    async fn handle_internal(
+    /// Handle the exception with a customized iterator.
+    ///
+    /// If `first_only` is true, this will only send exception to the first one that received the exception
+    /// even when the exception is not handled.
+    async fn handle_with(
         self: &Arc<Self>,
         exceptionates: impl IntoIterator<Item = Arc<Exceptionate>>,
         first_only: bool,
@@ -392,12 +398,12 @@ impl Exception {
     }
 
     /// Get the exception's channel type.
-    pub(super) fn current_channel_type(&self) -> ExceptionChannelType {
+    pub fn current_channel_type(&self) -> ExceptionChannelType {
         self.inner.lock().current_channel_type
     }
 
     /// Get a report of the exception.
-    pub(super) fn report(&self) -> ExceptionReport {
+    pub fn report(&self) -> ExceptionReport {
         self.report.clone()
     }
 }
@@ -479,13 +485,13 @@ impl<'a> Iterator for ExceptionateIterator<'a> {
 }
 
 /// This is only used by ProcessStarting exceptions
-pub struct JobDebuggerIterator {
+struct JobDebuggerIterator {
     job: Option<Arc<Job>>,
 }
 
 impl JobDebuggerIterator {
     /// Create a new JobDebuggerIterator
-    pub fn new(job: Arc<Job>) -> Self {
+    fn new(job: Arc<Job>) -> Self {
         JobDebuggerIterator { job: Some(job) }
     }
 }
@@ -510,7 +516,7 @@ mod tests {
         let proc = Process::create(&job, "proc").unwrap();
         let thread = Thread::create(&proc, "thread").unwrap();
 
-        let exception = Exception::create(&thread, ExceptionType::Synth, None);
+        let exception = Exception::new(&thread, ExceptionType::Synth, None);
         let actual: Vec<_> = ExceptionateIterator::new(&exception).collect();
         let expected = [
             proc.debug_exceptionate(),
@@ -532,7 +538,7 @@ mod tests {
         let proc = Process::create(&job, "proc").unwrap();
         let thread = Thread::create(&proc, "thread").unwrap();
 
-        let exception = Exception::create(&thread, ExceptionType::Synth, None);
+        let exception = Exception::new(&thread, ExceptionType::Synth, None);
         exception.inner.lock().second_chance = true;
         let actual: Vec<_> = ExceptionateIterator::new(&exception).collect();
         let expected = [
@@ -575,7 +581,7 @@ mod tests {
         let proc = Process::create(&job, "proc").unwrap();
         let thread = Thread::create(&proc, "thread").unwrap();
 
-        let exception = Exception::create(&thread, ExceptionType::Synth, None);
+        let exception = Exception::new(&thread, ExceptionType::Synth, None);
 
         // This is used to verify that exceptions are handled in a specific order
         let handled_order = Arc::new(Mutex::new(Vec::<usize>::new()));
@@ -628,7 +634,7 @@ mod tests {
         // since exception is handled we should not get it from parent job
         create_handler(&parent_job.exceptionate(), false, false, 4);
 
-        exception.handle(false).await;
+        exception.handle().await;
 
         // terminate handlers by shutdown the related exceptionates
         thread.exceptionate().shutdown();

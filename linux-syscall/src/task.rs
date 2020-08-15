@@ -15,7 +15,7 @@ use bitflags::bitflags;
 use core::fmt::Debug;
 use linux_object::fs::INodeExt;
 use linux_object::loader::LinuxElfLoader;
-use linux_object::thread::ThreadExt;
+use linux_object::thread::{CurrentThreadExt, ThreadExt};
 
 impl Syscall<'_> {
     /// Fork the current process. Return the child's PID.
@@ -23,7 +23,7 @@ impl Syscall<'_> {
         info!("fork:");
         let new_proc = Process::fork_from(self.zircon_process(), false)?;
         let new_thread = Thread::create_linux(&new_proc)?;
-        new_thread.start_with_regs(GeneralRegs::new_fork(self.regs), self.spawn_fn)?;
+        new_thread.start_with_regs(GeneralRegs::new_fork(self.regs), self.thread_fn)?;
 
         info!("fork: {} -> {}", self.zircon_process().id(), new_proc.id());
         Ok(new_proc.id() as usize)
@@ -34,7 +34,7 @@ impl Syscall<'_> {
         info!("vfork:");
         let new_proc = Process::fork_from(self.zircon_process(), true)?;
         let new_thread = Thread::create_linux(&new_proc)?;
-        new_thread.start_with_regs(GeneralRegs::new_fork(self.regs), self.spawn_fn)?;
+        new_thread.start_with_regs(GeneralRegs::new_fork(self.regs), self.thread_fn)?;
 
         let new_proc: Arc<dyn KernelObject> = new_proc;
         info!("vfork: {} -> {}", self.zircon_process().id(), new_proc.id());
@@ -73,7 +73,7 @@ impl Syscall<'_> {
         }
         let new_thread = Thread::create_linux(self.zircon_process())?;
         let regs = GeneralRegs::new_clone(self.regs, newsp, newtls);
-        new_thread.start_with_regs(regs, self.spawn_fn)?;
+        new_thread.start_with_regs(regs, self.thread_fn)?;
 
         let tid = new_thread.id();
         info!("clone: {} -> {}", self.thread.id(), tid);
@@ -240,7 +240,6 @@ impl Syscall<'_> {
     pub fn sys_exit(&mut self, exit_code: i32) -> SysResult {
         info!("exit: code={}", exit_code);
         self.thread.exit_linux(exit_code);
-        self.exit = true;
         Err(LxError::ENOSYS)
     }
 
@@ -249,7 +248,6 @@ impl Syscall<'_> {
         info!("exit_group: code={}", exit_code);
         let proc = self.zircon_process();
         proc.exit(exit_code as i64);
-        self.exit = true;
         Err(LxError::ENOSYS)
     }
 

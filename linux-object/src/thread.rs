@@ -5,7 +5,7 @@ use alloc::sync::Arc;
 use kernel_hal::user::{Out, UserOutPtr, UserPtr};
 use kernel_hal::VirtAddr;
 use spin::{Mutex, MutexGuard};
-use zircon_object::task::{Process, Thread};
+use zircon_object::task::{CurrentThread, Process, Thread};
 use zircon_object::ZxResult;
 
 /// Thread extension for linux
@@ -16,6 +16,10 @@ pub trait ThreadExt {
     fn lock_linux(&self) -> MutexGuard<'_, LinuxThread>;
     /// Set pointer to thread ID.
     fn set_tid_address(&self, tidptr: UserOutPtr<i32>);
+}
+
+/// CurrentThread extension for linux
+pub trait CurrentThreadExt {
     /// exit linux thread
     fn exit_linux(&self, exit_code: i32);
 }
@@ -39,7 +43,9 @@ impl ThreadExt for Thread {
     fn set_tid_address(&self, tidptr: UserPtr<i32, Out>) {
         self.lock_linux().clear_child_tid = tidptr;
     }
+}
 
+impl CurrentThreadExt for CurrentThread {
     /// Exit current thread for Linux.
     fn exit_linux(&self, _exit_code: i32) {
         let mut linux_thread = self.lock_linux();
