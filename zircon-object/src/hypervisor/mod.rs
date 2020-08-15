@@ -48,6 +48,7 @@ pub struct VmmPageTable(ArchRvmPageTable);
 struct VmmPageTableFlags(MMUFlags);
 
 impl VmmPageTable {
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self(ArchRvmPageTable::new())
     }

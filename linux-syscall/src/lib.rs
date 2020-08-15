@@ -11,9 +11,8 @@
 //!     syscall_entry: kernel_hal_unix::syscall_entry as usize,
 //!     #[cfg(not(feature = "std"))]
 //!     syscall_entry: 0,
-//!     spawn_fn: spawn,
+//!     thread_fn,
 //!     regs,
-//!     exit: false,
 //! };
 //! let ret = syscall.syscall(num, args).await;
 //! ```
@@ -54,15 +53,13 @@ mod vm;
 /// The struct of Syscall which stores the information about making a syscall
 pub struct Syscall<'a> {
     /// the thread making a syscall
-    pub thread: &'a Arc<Thread>,
+    pub thread: &'a CurrentThread,
     /// the entry of current syscall
     pub syscall_entry: VirtAddr,
     /// store the regs statues
     pub regs: &'a mut GeneralRegs,
-    /// the spawn function in linux-loader
-    pub spawn_fn: fn(thread: Arc<Thread>),
-    /// Set `true` to exit current task.
-    pub exit: bool,
+    /// new thread function
+    pub thread_fn: ThreadFn,
 }
 
 impl Syscall<'_> {
@@ -273,7 +270,6 @@ impl Syscall<'_> {
         error!("unknown syscall: {:?}. exit...", sys_type);
         let proc = self.zircon_process();
         proc.exit(-1);
-        self.exit = true;
         Err(LxError::ENOSYS)
     }
 

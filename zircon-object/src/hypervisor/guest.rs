@@ -114,7 +114,7 @@ impl GuestPhysMemorySetTrait for GuestPhysMemorySet {
                 .handle_page_fault(gpaddr, mapping.get_flags())
                 .map_err(From::from)
         } else {
-            return Err(RvmError::NotFound);
+            Err(RvmError::NotFound)
         }
     }
 
