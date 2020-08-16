@@ -286,10 +286,6 @@
 <span id="286">286</span>
 <span id="287">287</span>
 <span id="288">288</span>
-<span id="289">289</span>
-<span id="290">290</span>
-<span id="291">291</span>
-<span id="292">292</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Linux syscall implementations</span>
 <span class="doccomment">//!</span>
@@ -312,13 +308,7 @@
 <span class="doccomment">//!</span>
 
 <span class="attribute">#![<span class="ident">no_std</span>]</span>
-<span class="attribute">#![<span class="ident">deny</span>(
-    <span class="ident">warnings</span>,
-    <span class="ident">unsafe_code</span>,
-    <span class="ident">unused_must_use</span>,
-    <span class="ident">unreachable_patterns</span>,
-    <span class="ident">missing_docs</span>
-)]</span>
+<span class="attribute">#![<span class="ident">deny</span>(<span class="ident">warnings</span>, <span class="ident">unsafe_code</span>, <span class="ident">missing_docs</span>)]</span>
 <span class="attribute">#![<span class="ident">feature</span>(<span class="ident">bool_to_option</span>)]</span>
 
 <span class="attribute">#[<span class="ident">macro_use</span>]</span>
@@ -339,6 +329,7 @@
 <span class="kw">mod</span> <span class="ident">consts</span>;
 <span class="kw">mod</span> <span class="ident">file</span>;
 <span class="kw">mod</span> <span class="ident">misc</span>;
+<span class="kw">mod</span> <span class="ident">signal</span>;
 <span class="kw">mod</span> <span class="ident">task</span>;
 <span class="kw">mod</span> <span class="ident">time</span>;
 <span class="kw">mod</span> <span class="ident">vm</span>;
@@ -434,9 +425,10 @@
             <span class="ident">Sys</span>::<span class="ident">MADVISE</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">unimplemented</span>(<span class="string">&quot;madvise&quot;</span>, <span class="prelude-val">Ok</span>(<span class="number">0</span>)),
 
             <span class="comment">// signal</span>
-            <span class="ident">Sys</span>::<span class="ident">RT_SIGACTION</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">unimplemented</span>(<span class="string">&quot;sigaction&quot;</span>, <span class="prelude-val">Ok</span>(<span class="number">0</span>)),
-            <span class="ident">Sys</span>::<span class="ident">RT_SIGPROCMASK</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">unimplemented</span>(<span class="string">&quot;sigprocmask&quot;</span>, <span class="prelude-val">Ok</span>(<span class="number">0</span>)),
-            <span class="ident">Sys</span>::<span class="ident">SIGALTSTACK</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">unimplemented</span>(<span class="string">&quot;sigaltstack&quot;</span>, <span class="prelude-val">Ok</span>(<span class="number">0</span>)),
+            <span class="ident">Sys</span>::<span class="ident">RT_SIGACTION</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_rt_sigaction</span>(<span class="ident">a0</span>, <span class="ident">a1</span>.<span class="ident">into</span>(), <span class="ident">a2</span>.<span class="ident">into</span>(), <span class="ident">a3</span>),
+            <span class="ident">Sys</span>::<span class="ident">RT_SIGPROCMASK</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_rt_sigprocmask</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span>.<span class="ident">into</span>(), <span class="ident">a2</span>.<span class="ident">into</span>(), <span class="ident">a3</span>),
+            <span class="comment">// Sys::RT_SIGRETURN =&gt; self.sys_rt_sigreturn(),</span>
+            <span class="ident">Sys</span>::<span class="ident">SIGALTSTACK</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_sigaltstack</span>(<span class="ident">a0</span>.<span class="ident">into</span>(), <span class="ident">a1</span>.<span class="ident">into</span>()),
             <span class="comment">//            Sys::KILL =&gt; self.sys_kill(a0, a1),</span>
 
             <span class="comment">// schedule</span>
