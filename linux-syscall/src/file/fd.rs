@@ -74,6 +74,16 @@ impl Syscall<'_> {
         Ok(fd2.into())
     }
 
+    /// create a copy of the file descriptor fd, and uses the lowest-numbered unused descriptor for the new descriptor.
+    pub fn sys_dup(&self, fd1: FileDesc) -> SysResult {
+        info!("dup: from {:?}", fd1);
+        let proc = self.linux_process();
+
+        let file_like = proc.get_file_like(fd1)?;
+        let fd2 = proc.add_file(file_like)?;
+        Ok(fd2.into())
+    }
+
     /// Creates a pipe, a unidirectional data channel that can be used for interprocess communication.
     pub fn sys_pipe(&self, mut fds: UserOutPtr<[i32; 2]>) -> SysResult {
         info!("pipe: fds={:?}", fds);

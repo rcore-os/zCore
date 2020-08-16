@@ -83,7 +83,7 @@ Run all (non-panicked) core-tests for CI:
 
 ```sh
 pip3 install pexpect
-cd script && python3 core-tests.py
+cd scripts && python3 core-tests.py
 # Check `zircon/test-result.txt` for results.
 ```
 
