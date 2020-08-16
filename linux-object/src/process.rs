@@ -157,8 +157,10 @@ struct LinuxProcessInner {
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct RLimit {
-    pub cur: u64, // soft limit
-    pub max: u64, // hard limit
+    /// soft limit
+    pub cur: u64,
+    /// hard limit
+    pub max: u64,
 }
 
 impl Default for RLimit {
@@ -254,9 +256,10 @@ impl LinuxProcess {
         }
     }
 
+    /// get and set file limit number
     pub fn file_limit(&self, new_limit: Option<RLimit>) -> RLimit {
         let mut inner = self.inner.lock();
-        let old = inner.file_limit.clone();
+        let old = inner.file_limit;
         if let Some(limit) = new_limit {
             inner.file_limit = limit;
         }
