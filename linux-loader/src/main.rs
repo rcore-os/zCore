@@ -169,6 +169,11 @@ mod tests {
         fs::read("../rootfs/testtruncate").unwrap();
     }
 
+    #[async_std::test]
+    async fn test_flock() {
+        assert_eq!(test("/bin/busybox flock 0").await, 0);
+    }
+
     // syscall unit test
 
     #[async_std::test]

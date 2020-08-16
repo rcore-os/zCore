@@ -83,7 +83,7 @@ Run all (non-panicked) core-tests for CI:
 
 ```sh
 pip3 install pexpect
-cd script && python3 core-tests.py
+cd scripts && python3 core-tests.py
 # Check `zircon/test-result.txt` for results.
 ```
 
@@ -92,7 +92,7 @@ Run Linux musl libc-tests for CI:
 
 ```sh
 make rootfs && make libc-test
-cd script && python3 libc-tests.py
+cd scripts && python3 libc-tests.py
 # Check `linux/test-result.txt` for results.
 ```
 

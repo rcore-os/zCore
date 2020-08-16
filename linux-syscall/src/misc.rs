@@ -92,6 +92,7 @@ impl Syscall<'_> {
             "prlimit64: pid: {}, resource: {}, new_limit: {:x?}, old_limit: {:x?}",
             pid, resource, new_limit, old_limit
         );
+        let proc = self.linux_process();
         match resource {
             RLIMIT_STACK => {
                 old_limit.write_if_not_null(RLimit {
@@ -101,10 +102,8 @@ impl Syscall<'_> {
                 Ok(0)
             }
             RLIMIT_NOFILE => {
-                old_limit.write_if_not_null(RLimit {
-                    cur: 1024,
-                    max: 1024,
-                })?;
+                let new_limit = new_limit.read_if_not_null()?;
+                old_limit.write_if_not_null(proc.file_limit(new_limit))?;
                 Ok(0)
             }
             RLIMIT_RSS | RLIMIT_AS => {
@@ -155,13 +154,6 @@ const RLIMIT_STACK: usize = 3;
 const RLIMIT_RSS: usize = 5;
 const RLIMIT_NOFILE: usize = 7;
 const RLIMIT_AS: usize = 9;
-
-#[repr(C)]
-#[derive(Debug, Default)]
-pub struct RLimit {
-    cur: u64, // soft limit
-    max: u64, // hard limit
-}
 
 /// sysinfo() return information sturct
 #[repr(C)]

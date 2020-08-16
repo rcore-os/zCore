@@ -5,3 +5,4 @@ Cargo.lock
 /rootfs
 /prebuilt/linux/alpine*
 .idea
+scripts/linux/test-result.txt

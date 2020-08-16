@@ -108,6 +108,7 @@ impl Syscall<'_> {
             Sys::FCHOWN => self.unimplemented("fchown", Ok(0)),
             Sys::FCHOWNAT => self.unimplemented("fchownat", Ok(0)),
             Sys::FACCESSAT => self.sys_faccessat(a0.into(), a1.into(), a2, a3),
+            Sys::DUP => self.sys_dup(a0.into()),
             Sys::DUP3 => self.sys_dup2(a0.into(), a1.into()), // TODO: handle `flags`
             Sys::PIPE2 => self.sys_pipe(a0.into()),           // TODO: handle `flags`
             Sys::UTIMENSAT => self.sys_utimensat(a0.into(), a1.into(), a2.into(), a3),

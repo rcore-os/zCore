@@ -70,7 +70,17 @@ impl Syscall<'_> {
         // close fd2 first if it is opened
         let _ = proc.close_file(fd2);
         let file_like = proc.get_file_like(fd1)?;
-        proc.add_file_at(fd2, file_like);
+        let fd2 = proc.add_file_at(fd2, file_like)?;
+        Ok(fd2.into())
+    }
+
+    /// create a copy of the file descriptor fd, and uses the lowest-numbered unused descriptor for the new descriptor.
+    pub fn sys_dup(&self, fd1: FileDesc) -> SysResult {
+        info!("dup: from {:?}", fd1);
+        let proc = self.linux_process();
+
+        let file_like = proc.get_file_like(fd1)?;
+        let fd2 = proc.add_file(file_like)?;
         Ok(fd2.into())
     }
 
