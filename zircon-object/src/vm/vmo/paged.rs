@@ -242,7 +242,7 @@ impl VMObjectTrait for VMObjectPaged {
             } else if inner.committed_pages_in_range(block.block, block.block + 1) != 0 {
                 // check whether this page is initialized, otherwise nothing should be done
                 let paddr = inner.commit_page(block.block, MMUFlags::WRITE)?;
-                kernel_hal::frame_zero_in_range(paddr, block.begin, block.end);
+                kernel_hal::pmem_zero(paddr + block.begin, block.len());
             }
         }
         inner.release_unwanted_pages_in_parent(unwanted);
@@ -463,7 +463,7 @@ impl VMObjectPaged {
         let (_guard, mut inner) = self.get_inner_mut();
         inner.contiguous = true;
         for (i, f) in frames.drain(0..).enumerate() {
-            kernel_hal::frame_zero_in_range(f.addr(), 0, PAGE_SIZE);
+            kernel_hal::pmem_zero(f.addr(), PAGE_SIZE);
             let mut state = PageState::new(f);
             state.pin_count += 1;
             inner.frames.insert(i, state);
@@ -550,7 +550,7 @@ impl VMObjectPagedInner {
                 }
                 // lazy allocate zero frame
                 let target_frame = PhysFrame::alloc().ok_or(ZxError::NO_MEMORY)?;
-                kernel_hal::frame_zero_in_range(target_frame.addr(), 0, PAGE_SIZE);
+                kernel_hal::pmem_zero(target_frame.addr(), PAGE_SIZE);
                 if out_of_range {
                     // can never be a hidden vmo
                     assert!(!self.type_.is_hidden());

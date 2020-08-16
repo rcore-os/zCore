@@ -231,17 +231,17 @@ pub fn pmem_write(_paddr: PhysAddr, _buf: &[u8]) {
     unimplemented!()
 }
 
+/// Zero physical memory at `[paddr, paddr + len)`
+#[linkage = "weak"]
+#[export_name = "hal_pmem_zero"]
+pub fn pmem_zero(_paddr: PhysAddr, _len: usize) {
+    unimplemented!()
+}
+
 /// Copy content of `src` frame to `target` frame.
 #[linkage = "weak"]
 #[export_name = "hal_frame_copy"]
 pub fn frame_copy(_src: PhysAddr, _target: PhysAddr) {
-    unimplemented!()
-}
-
-/// Zero `target` frame.
-#[linkage = "weak"]
-#[export_name = "hal_frame_zero"]
-pub fn frame_zero_in_range(_target: PhysAddr, _start: usize, _end: usize) {
     unimplemented!()
 }
 
