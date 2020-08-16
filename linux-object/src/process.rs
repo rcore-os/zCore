@@ -12,7 +12,7 @@ use core::sync::atomic::AtomicI32;
 use hashbrown::HashMap;
 use kernel_hal::VirtAddr;
 use rcore_fs::vfs::{FileSystem, INode};
-use spin::Mutex;
+use spin::*;
 use zircon_object::{
     object::{KernelObject, KoID, Signal},
     signal::Futex,
@@ -143,12 +143,31 @@ struct LinuxProcessInner {
     ///
     /// Omit leading '/'.
     current_working_directory: String,
+    /// file open number limit
+    file_limit: RLimit,
     /// Opened files
     files: HashMap<FileDesc, Arc<dyn FileLike>>,
     /// Futexes
     futexes: HashMap<VirtAddr, Arc<Futex>>,
     /// Child processes
     children: HashMap<KoID, Arc<Process>>,
+}
+
+/// resource limit
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct RLimit {
+    pub cur: u64, // soft limit
+    pub max: u64, // hard limit
+}
+
+impl Default for RLimit {
+    fn default() -> Self {
+        RLimit {
+            cur: 1024,
+            max: 1024,
+        }
+    }
 }
 
 /// process exit code defination
@@ -209,16 +228,39 @@ impl LinuxProcess {
 
     /// Add a file to the file descriptor table.
     pub fn add_file(&self, file: Arc<dyn FileLike>) -> LxResult<FileDesc> {
-        let mut inner = self.inner.lock();
+        let inner = self.inner.lock();
         let fd = inner.get_free_fd();
-        inner.files.insert(fd, file);
-        Ok(fd)
+        self.insert_file(inner, fd, file)
     }
 
     /// Add a file to the file descriptor table at given `fd`.
-    pub fn add_file_at(&self, fd: FileDesc, file: Arc<dyn FileLike>) {
+    pub fn add_file_at(&self, fd: FileDesc, file: Arc<dyn FileLike>) -> LxResult<FileDesc> {
+        let inner = self.inner.lock();
+        self.insert_file(inner, fd, file)
+    }
+
+    /// insert a file and fd into the file descriptor table
+    fn insert_file(
+        &self,
+        mut inner: MutexGuard<LinuxProcessInner>,
+        fd: FileDesc,
+        file: Arc<dyn FileLike>,
+    ) -> LxResult<FileDesc> {
+        if inner.files.len() < inner.file_limit.cur as usize {
+            inner.files.insert(fd, file);
+            Ok(fd)
+        } else {
+            Err(LxError::EMFILE)
+        }
+    }
+
+    pub fn file_limit(&self, new_limit: Option<RLimit>) -> RLimit {
         let mut inner = self.inner.lock();
-        inner.files.insert(fd, file);
+        let old = inner.file_limit.clone();
+        if let Some(limit) = new_limit {
+            inner.file_limit = limit;
+        }
+        old
     }
 
     /// Get the `File` with given `fd`.
