@@ -34,6 +34,8 @@ extern crate alloc;
 #[macro_use]
 extern crate log;
 
+extern crate num_derive;
+
 use {
     self::consts::SyscallType as Sys,
     alloc::sync::Arc,
@@ -46,6 +48,7 @@ use {
 mod consts;
 mod file;
 mod misc;
+mod signal;
 mod task;
 mod time;
 mod vm;
@@ -140,9 +143,10 @@ impl Syscall<'_> {
             Sys::MADVISE => self.unimplemented("madvise", Ok(0)),
 
             // signal
-            Sys::RT_SIGACTION => self.unimplemented("sigaction", Ok(0)),
-            Sys::RT_SIGPROCMASK => self.unimplemented("sigprocmask", Ok(0)),
-            Sys::SIGALTSTACK => self.unimplemented("sigaltstack", Ok(0)),
+            Sys::RT_SIGACTION => self.sys_rt_sigaction(a0, a1.into(), a2.into(), a3),
+            Sys::RT_SIGPROCMASK => self.sys_rt_sigprocmask(a0, a1.into(), a2.into(), a3),
+            // Sys::RT_SIGRETURN => self.sys_rt_sigreturn(),
+            Sys::SIGALTSTACK => self.sys_sigaltstack(a0.into(), a1.into()),
             //            Sys::KILL => self.sys_kill(a0, a1),
 
             // schedule

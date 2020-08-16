@@ -9,6 +9,9 @@ extern crate alloc;
 #[macro_use]
 extern crate log;
 
+#[macro_use]
+extern crate num_derive;
+
 // layer 0
 pub mod error;
 
@@ -18,5 +21,6 @@ pub mod fs;
 // layer 2
 pub mod loader;
 pub mod process;
+pub mod signal;
 pub mod sync;
 pub mod thread;

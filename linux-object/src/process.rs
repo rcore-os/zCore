@@ -2,6 +2,7 @@
 
 use crate::error::*;
 use crate::fs::*;
+use crate::signal::{Signal as LSignal, SignalAction};
 use alloc::vec::Vec;
 use alloc::{
     boxed::Box,
@@ -12,7 +13,7 @@ use core::sync::atomic::AtomicI32;
 use hashbrown::HashMap;
 use kernel_hal::VirtAddr;
 use rcore_fs::vfs::{FileSystem, INode};
-use spin::Mutex;
+use spin::{Mutex, MutexGuard};
 use zircon_object::{
     object::{KernelObject, KoID, Signal},
     signal::Futex,
@@ -46,6 +47,7 @@ impl ProcessExt for Process {
     fn fork_from(parent: &Arc<Self>, vfork: bool) -> ZxResult<Arc<Self>> {
         let linux_parent = parent.linux();
         let mut linux_parent_inner = linux_parent.inner.lock();
+        let linux_parent_sinner = linux_parent.sinner.lock();
         let new_linux_proc = LinuxProcess {
             root_inode: linux_parent.root_inode.clone(),
             parent: Arc::downgrade(parent),
@@ -54,6 +56,9 @@ impl ProcessExt for Process {
                 current_working_directory: linux_parent_inner.current_working_directory.clone(),
                 files: linux_parent_inner.files.clone(),
                 ..Default::default()
+            }),
+            sinner: Mutex::new(LinuxProcessSignalInner {
+                dispositions: linux_parent_sinner.dispositions,
             }),
         };
         let new_proc = Process::create_with_ext(&parent.job(), "", new_linux_proc)?;
@@ -132,6 +137,8 @@ pub struct LinuxProcess {
     parent: Weak<Process>,
     /// Inner
     inner: Mutex<LinuxProcessInner>,
+    /// Signal inner
+    sinner: Mutex<LinuxProcessSignalInner>,
 }
 
 /// Linux process mut inner data
@@ -149,6 +156,12 @@ struct LinuxProcessInner {
     futexes: HashMap<VirtAddr, Arc<Futex>>,
     /// Child processes
     children: HashMap<KoID, Arc<Process>>,
+}
+
+/// Linux process signal inner data
+pub struct LinuxProcessSignalInner {
+    /// signal actions
+    pub dispositions: [SignalAction; LSignal::RTMAX + 1],
 }
 
 /// process exit code defination
@@ -188,6 +201,9 @@ impl LinuxProcess {
             inner: Mutex::new(LinuxProcessInner {
                 files,
                 ..Default::default()
+            }),
+            sinner: Mutex::new(LinuxProcessSignalInner {
+                dispositions: [SignalAction::default(); LSignal::RTMAX + 1],
             }),
         }
     }
@@ -288,6 +304,11 @@ impl LinuxProcess {
     /// Set execute path.
     pub fn set_execute_path(&self, path: &str) {
         self.inner.lock().execute_path = String::from(path);
+    }
+
+    /// Get signal inner
+    pub fn signal_inner(&self) -> MutexGuard<LinuxProcessSignalInner> {
+        self.sinner.lock()
     }
 }
 
