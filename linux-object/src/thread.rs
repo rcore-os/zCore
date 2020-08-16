@@ -1,6 +1,7 @@
 //! Linux Thread
 
 use crate::process::ProcessExt;
+use crate::signal::{SignalStack, Sigset};
 use alloc::sync::Arc;
 use kernel_hal::user::{Out, UserOutPtr, UserPtr};
 use kernel_hal::VirtAddr;
@@ -28,6 +29,8 @@ impl ThreadExt for Thread {
     fn create_linux(proc: &Arc<Process>) -> ZxResult<Arc<Self>> {
         let linux_thread = Mutex::new(LinuxThread {
             clear_child_tid: 0.into(),
+            signal_mask: Sigset::default(),
+            signal_alternate_stack: SignalStack::default(),
         });
         Thread::create_with_ext(proc, "", linux_thread)
     }
@@ -68,4 +71,8 @@ pub struct LinuxThread {
     /// Kernel performs futex wake when thread exits.
     /// Ref: [http://man7.org/linux/man-pages/man2/set_tid_address.2.html]
     clear_child_tid: UserOutPtr<i32>,
+    /// Signal mask
+    pub signal_mask: Sigset,
+    /// signal alternate stack
+    pub signal_alternate_stack: SignalStack,
 }

@@ -1,13 +1,7 @@
 //! Linux kernel objects
 
 #![no_std]
-#![deny(
-    warnings,
-    unsafe_code,
-    unused_must_use,
-    unreachable_patterns,
-    missing_docs
-)]
+#![deny(warnings, unsafe_code)]
 #![feature(bool_to_option)]
 
 extern crate alloc;
@@ -24,5 +18,6 @@ pub mod fs;
 // layer 2
 pub mod loader;
 pub mod process;
+pub mod signal;
 pub mod sync;
 pub mod thread;

@@ -2,6 +2,7 @@
 
 use crate::error::*;
 use crate::fs::*;
+use crate::signal::{Signal as LinuxSignal, SignalAction};
 use alloc::vec::Vec;
 use alloc::{
     boxed::Box,
@@ -53,6 +54,7 @@ impl ProcessExt for Process {
                 execute_path: linux_parent_inner.execute_path.clone(),
                 current_working_directory: linux_parent_inner.current_working_directory.clone(),
                 files: linux_parent_inner.files.clone(),
+                signal_actions: linux_parent_inner.signal_actions.clone(),
                 ..Default::default()
             }),
         };
@@ -151,6 +153,21 @@ struct LinuxProcessInner {
     futexes: HashMap<VirtAddr, Arc<Futex>>,
     /// Child processes
     children: HashMap<KoID, Arc<Process>>,
+    /// Signal actions
+    signal_actions: SignalActions,
+}
+
+#[derive(Clone)]
+struct SignalActions {
+    table: [SignalAction; LinuxSignal::RTMAX + 1],
+}
+
+impl Default for SignalActions {
+    fn default() -> Self {
+        Self {
+            table: [SignalAction::default(); LinuxSignal::RTMAX + 1],
+        }
+    }
 }
 
 /// resource limit
@@ -172,7 +189,7 @@ impl Default for RLimit {
     }
 }
 
-/// process exit code defination
+/// The type of process exit code.
 pub type ExitCode = i32;
 
 impl LinuxProcess {
@@ -333,6 +350,16 @@ impl LinuxProcess {
     /// Set execute path.
     pub fn set_execute_path(&self, path: &str) {
         self.inner.lock().execute_path = String::from(path);
+    }
+
+    /// Get signal action.
+    pub fn signal_action(&self, signal: LinuxSignal) -> SignalAction {
+        self.inner.lock().signal_actions.table[signal as u8 as usize]
+    }
+
+    /// Set signal action.
+    pub fn set_signal_action(&self, signal: LinuxSignal, action: SignalAction) {
+        self.inner.lock().signal_actions.table[signal as u8 as usize] = action;
     }
 }
 
