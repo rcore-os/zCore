@@ -1,23 +1,9 @@
 use crate::signal::Signal;
-use bitflags::_core::fmt::Debug;
 use bitflags::*;
-use core::fmt::Formatter;
 
 pub const SIG_ERR: usize = usize::max_value() - 1;
 pub const SIG_DFL: usize = 0;
 pub const SIG_IGN: usize = 1;
-
-pub const SI_ASYNCNL: i32 = -60;
-pub const SI_TKILL: i32 = -6;
-pub const SI_SIGIO: i32 = -5;
-pub const SI_ASYNCIO: i32 = -4;
-pub const SI_MESGQ: i32 = -3;
-pub const SI_TIMER: i32 = -2;
-pub const SI_QUEUE: i32 = -1;
-pub const SI_USER: i32 = 0;
-/// from user
-pub const SI_KERNEL: i32 = 128;
-/// from kernel
 
 // yet there's a bug because of mismatching bits: https://sourceware.org/bugzilla/show_bug.cgi?id=25657
 // just support 64bits size sigset
@@ -30,15 +16,13 @@ impl Sigset {
     pub fn empty() -> Self {
         Sigset(0)
     }
-
     pub fn contains(&self, sig: Signal) -> bool {
         (self.0 >> sig as u64 & 1) != 0
     }
-
-    pub fn add(&mut self, sig: Signal) {
+    pub fn insert(&mut self, sig: Signal) {
         self.0 |= 1 << sig as u64;
     }
-    pub fn add_set(&mut self, sigset: &Sigset) {
+    pub fn insert_set(&mut self, sigset: &Sigset) {
         self.0 |= sigset.0;
     }
     pub fn remove(&mut self, sig: Signal) {
@@ -51,23 +35,12 @@ impl Sigset {
 
 /// Linux struct sigaction
 #[repr(C)]
-#[derive(Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct SignalAction {
     pub handler: usize, // this field may be an union
-    pub flags: usize,
+    pub flags: SignalActionFlags,
     pub restorer: usize,
     pub mask: Sigset,
-}
-
-impl Debug for SignalAction {
-    fn fmt(&self, f: &mut Formatter) -> Result<(), core::fmt::Error> {
-        f.debug_struct("signal action")
-            .field("handler", &self.handler)
-            .field("mask", &self.mask)
-            .field("flags", &SignalActionFlags::from_bits_truncate(self.flags))
-            .field("restorer", &self.restorer)
-            .finish()
-    }
 }
 
 #[repr(C)]
@@ -91,14 +64,32 @@ impl Default for SiginfoFields {
 
 #[repr(C)]
 #[derive(Copy, Clone)]
-pub struct Siginfo {
+pub struct SigInfo {
     pub signo: i32,
     pub errno: i32,
-    pub code: i32,
+    pub code: SignalCode,
     pub field: SiginfoFields,
 }
 
+/// A code identifying the cause of the signal.
+#[repr(i32)]
+#[derive(Debug, Copy, Clone)]
+pub enum SignalCode {
+    ASYNCNL = -60,
+    TKILL = -6,
+    SIGIO = -5,
+    ASYNCIO = -4,
+    MESGQ = -3,
+    TIMER = -2,
+    QUEUE = -1,
+    /// from user
+    USER = 0,
+    /// from kernel
+    KERNEL = 128,
+}
+
 bitflags! {
+    #[derive(Default)]
     pub struct SignalActionFlags : usize {
         const NOCLDSTOP = 1;
         const NOCLDWAIT = 2;

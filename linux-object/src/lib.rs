@@ -1,16 +1,13 @@
 //! Linux kernel objects
 
 #![no_std]
-#![deny(warnings, unsafe_code, unused_must_use, unreachable_patterns)]
+#![deny(warnings, unsafe_code)]
 #![feature(bool_to_option)]
 
 extern crate alloc;
 
 #[macro_use]
 extern crate log;
-
-#[macro_use]
-extern crate num_derive;
 
 // layer 0
 pub mod error;

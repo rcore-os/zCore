@@ -1,12 +1,10 @@
 use bitflags::*;
+use numeric_enum_macro::numeric_enum;
 
 mod action;
 
 pub use self::action::*;
 
-/*
- * from rCore/kernel/src/arch/x86_64/signal.rs
- */
 /// struct mcontext
 #[repr(C)]
 #[derive(Clone, Debug)]
@@ -44,11 +42,10 @@ pub struct MachineContext {
     // reserved
     pub _reserved1: [usize; 8],
 }
-/*
- * end
- */
 
-#[derive(Eq, PartialEq, FromPrimitive, Debug, Copy, Clone)]
+numeric_enum! {
+#[repr(u8)]
+#[derive(Eq, PartialEq, Debug, Copy, Clone)]
 pub enum Signal {
     SIGHUP = 1,
     SIGINT = 2,
@@ -116,6 +113,7 @@ pub enum Signal {
     SIGRT63 = 63,
     SIGRT64 = 64,
 }
+}
 
 impl Signal {
     pub const RTMIN: usize = 32;
@@ -142,7 +140,7 @@ pub struct SignalUserContext {
 #[derive(Clone)]
 pub struct SignalFrame {
     pub ret_code_addr: usize, // point to ret_code
-    pub info: Siginfo,
+    pub info: SigInfo,
     pub ucontext: SignalUserContext, // adapt interface, a little bit waste
     pub ret_code: [u8; 7],           // call sys_sigreturn
 }
@@ -160,7 +158,7 @@ bitflags! {
 #[derive(Copy, Clone, Debug)]
 pub struct SignalStack {
     pub sp: usize,
-    pub flags: u32,
+    pub flags: SignalStackFlags,
     pub size: usize,
 }
 
@@ -169,7 +167,7 @@ impl Default for SignalStack {
         // default to disabled
         SignalStack {
             sp: 0,
-            flags: SignalStackFlags::DISABLE.bits,
+            flags: SignalStackFlags::DISABLE,
             size: 0,
         }
     }

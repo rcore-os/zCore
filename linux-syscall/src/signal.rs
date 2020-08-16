@@ -10,7 +10,7 @@
 use super::*;
 use linux_object::signal::{Signal, SignalAction, SignalStack, SignalStackFlags, Sigset};
 use linux_object::thread::ThreadExt;
-use num::FromPrimitive;
+use numeric_enum_macro::numeric_enum;
 
 impl Syscall<'_> {
     /// Used to change the action taken by a process on receipt of a specific signal.
@@ -21,78 +21,61 @@ impl Syscall<'_> {
         mut oldact: UserOutPtr<SignalAction>,
         sigsetsize: usize,
     ) -> SysResult {
-        if let Some(signal) = <Signal as FromPrimitive>::from_usize(signum) {
-            info!(
-                "rt_sigaction: signum: {:?}, act: {:?}, oldact: {:?}, sigsetsize: {}",
-                signal, act, oldact, sigsetsize
-            );
-            use Signal::*;
-            if signal == SIGKILL
-                || signal == SIGSTOP
-                || sigsetsize != core::mem::size_of::<Sigset>()
-            {
-                Err(LxError::EINVAL)
-            } else {
-                let mut sinner = self.linux_process().signal_inner();
-                if !oldact.is_null() {
-                    oldact.write(sinner.dispositions[signum])?;
-                }
-                if !act.is_null() {
-                    let act = act.read()?;
-                    info!("new action: {:?} -> {:x?}", signal, act);
-                    sinner.dispositions[signum] = act;
-                }
-                Ok(0)
-            }
-        } else {
-            info!(
-                "rt_sigaction: signal: UNKNOWN, act: {:?}, oldact: {:?}, sigsetsize: {}",
-                act, oldact, sigsetsize
-            );
-            Err(LxError::EINVAL)
+        let signal = Signal::try_from(signum as u8).map_err(|_| LxError::EINVAL)?;
+        info!(
+            "rt_sigaction: signal={:?}, act={:?}, oldact={:?}, sigsetsize={}",
+            signal, act, oldact, sigsetsize
+        );
+        if sigsetsize != core::mem::size_of::<Sigset>()
+            || signal == Signal::SIGKILL
+            || signal == Signal::SIGSTOP
+        {
+            return Err(LxError::EINVAL);
         }
+        let proc = self.linux_process();
+        oldact.write_if_not_null(proc.signal_action(signal))?;
+        if let Some(act) = act.read_if_not_null()? {
+            info!("new action: {:?} -> {:x?}", signal, act);
+            proc.set_signal_action(signal, act);
+        }
+        Ok(0)
     }
 
     /// Used to fetch and/or change the signal mask of the calling thread
     pub fn sys_rt_sigprocmask(
         &mut self,
-        how: usize,
+        how: i32,
         set: UserInPtr<Sigset>,
         mut oldset: UserOutPtr<Sigset>,
         sigsetsize: usize,
     ) -> SysResult {
+        numeric_enum! {
+            #[repr(i32)]
+            #[derive(Debug)]
+            enum How {
+                Block = 0,
+                Unblock = 1,
+                SetMask = 2,
+            }
+        }
+        let how = How::try_from(how).map_err(|_| LxError::EINVAL)?;
         info!(
-            "rt_sigprocmask: how: {}, set: {:?}, oldset: {:?}, sigsetsize: {}",
+            "rt_sigprocmask: how={:?}, set={:?}, oldset={:?}, sigsetsize={}",
             how, set, oldset, sigsetsize
         );
-        if sigsetsize != 8 {
+        if sigsetsize != core::mem::size_of::<Sigset>() {
             return Err(LxError::EINVAL);
         }
-        if !oldset.is_null() {
-            oldset.write(self.thread.lock_linux().signal_inner().sig_mask)?;
+        oldset.write_if_not_null(self.thread.lock_linux().signal_mask)?;
+        if set.is_null() {
+            return Ok(0);
         }
-        if !set.is_null() {
-            let set = set.read()?;
-            const BLOCK: usize = 0;
-            const UNBLOCK: usize = 1;
-            const SETMASK: usize = 2;
-            let thread = self.thread.lock_linux();
-            let mut inner = thread.signal_inner();
-            match how {
-                BLOCK => {
-                    info!("rt_sigprocmask: block: {:x?}", set);
-                    inner.sig_mask.add_set(&set);
-                }
-                UNBLOCK => {
-                    info!("rt_sigprocmask: unblock: {:x?}", set);
-                    inner.sig_mask.remove_set(&set)
-                }
-                SETMASK => {
-                    info!("rt_sigprocmask: set: {:x?}", set);
-                    inner.sig_mask = set;
-                }
-                _ => return Err(LxError::EINVAL),
-            }
+        let set = set.read()?;
+        let mut thread = self.thread.lock_linux();
+        match how {
+            How::Block => thread.signal_mask.insert_set(&set),
+            How::Unblock => thread.signal_mask.remove_set(&set),
+            How::SetMask => thread.signal_mask = set,
         }
         Ok(0)
     }
@@ -104,44 +87,29 @@ impl Syscall<'_> {
         ss: UserInPtr<SignalStack>,
         mut old_ss: UserOutPtr<SignalStack>,
     ) -> SysResult {
-        info!("sigaltstack: ss: {:?}, old_ss: {:?}", ss, old_ss);
-        if !old_ss.is_null() {
-            old_ss.write(
-                self.thread
-                    .lock_linux()
-                    .signal_inner()
-                    .signal_alternate_stack,
-            )?;
+        info!("sigaltstack: ss={:?}, old_ss={:?}", ss, old_ss);
+        let mut thread = self.thread.lock_linux();
+        old_ss.write_if_not_null(thread.signal_alternate_stack)?;
+        if ss.is_null() {
+            return Ok(0);
         }
-        if !ss.is_null() {
-            let ss = ss.read()?;
-            info!("new stack: {:?}", ss);
-
-            // check stack size when not disable
-            const MINSIGSTKSZ: usize = 2048;
-            if ss.flags & SignalStackFlags::DISABLE.bits() != 0 && ss.size < MINSIGSTKSZ {
-                return Err(LxError::ENOMEM);
-            }
-
-            // only allow SS_AUTODISARM and SS_DISABLE
-            if ss.flags
-                != ss.flags
-                    & (SignalStackFlags::AUTODISARM.bits() | SignalStackFlags::DISABLE.bits())
-            {
-                return Err(LxError::EINVAL);
-            }
-
-            let thread = self.thread.lock_linux();
-            let mut inner = thread.signal_inner();
-            let old_ss = &mut inner.signal_alternate_stack;
-            let flags = SignalStackFlags::from_bits_truncate(old_ss.flags);
-            if flags.contains(SignalStackFlags::ONSTACK) {
-                // cannot change signal alternate stack when we are on it
-                // see man sigaltstack(2)
-                return Err(LxError::EPERM);
-            }
-            *old_ss = ss;
+        let ss = ss.read()?;
+        // check stack size when not disable
+        const MIN_SIGSTACK_SIZE: usize = 2048;
+        if ss.flags.contains(SignalStackFlags::DISABLE) && ss.size < MIN_SIGSTACK_SIZE {
+            return Err(LxError::ENOMEM);
         }
+        // only allow SS_AUTODISARM and SS_DISABLE
+        if !(SignalStackFlags::AUTODISARM | SignalStackFlags::DISABLE).contains(ss.flags) {
+            return Err(LxError::EINVAL);
+        }
+        let old_ss = &mut thread.signal_alternate_stack;
+        if old_ss.flags.contains(SignalStackFlags::ONSTACK) {
+            // cannot change signal alternate stack when we are on it
+            // see man sigaltstack(2)
+            return Err(LxError::EPERM);
+        }
+        *old_ss = ss;
         Ok(0)
     }
 }

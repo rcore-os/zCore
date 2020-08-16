@@ -2,7 +2,7 @@
 
 use crate::error::*;
 use crate::fs::*;
-use crate::signal::{Signal as LSignal, SignalAction};
+use crate::signal::{Signal as LinuxSignal, SignalAction};
 use alloc::vec::Vec;
 use alloc::{
     boxed::Box,
@@ -13,7 +13,7 @@ use core::sync::atomic::AtomicI32;
 use hashbrown::HashMap;
 use kernel_hal::VirtAddr;
 use rcore_fs::vfs::{FileSystem, INode};
-use spin::{Mutex, MutexGuard};
+use spin::*;
 use zircon_object::{
     object::{KernelObject, KoID, Signal},
     signal::Futex,
@@ -47,7 +47,6 @@ impl ProcessExt for Process {
     fn fork_from(parent: &Arc<Self>, vfork: bool) -> ZxResult<Arc<Self>> {
         let linux_parent = parent.linux();
         let mut linux_parent_inner = linux_parent.inner.lock();
-        let linux_parent_sinner = linux_parent.sinner.lock();
         let new_linux_proc = LinuxProcess {
             root_inode: linux_parent.root_inode.clone(),
             parent: Arc::downgrade(parent),
@@ -55,10 +54,8 @@ impl ProcessExt for Process {
                 execute_path: linux_parent_inner.execute_path.clone(),
                 current_working_directory: linux_parent_inner.current_working_directory.clone(),
                 files: linux_parent_inner.files.clone(),
+                signal_actions: linux_parent_inner.signal_actions.clone(),
                 ..Default::default()
-            }),
-            sinner: Mutex::new(LinuxProcessSignalInner {
-                dispositions: linux_parent_sinner.dispositions,
             }),
         };
         let new_proc = Process::create_with_ext(&parent.job(), "", new_linux_proc)?;
@@ -137,8 +134,6 @@ pub struct LinuxProcess {
     parent: Weak<Process>,
     /// Inner
     inner: Mutex<LinuxProcessInner>,
-    /// Signal inner
-    sinner: Mutex<LinuxProcessSignalInner>,
 }
 
 /// Linux process mut inner data
@@ -150,21 +145,51 @@ struct LinuxProcessInner {
     ///
     /// Omit leading '/'.
     current_working_directory: String,
+    /// file open number limit
+    file_limit: RLimit,
     /// Opened files
     files: HashMap<FileDesc, Arc<dyn FileLike>>,
     /// Futexes
     futexes: HashMap<VirtAddr, Arc<Futex>>,
     /// Child processes
     children: HashMap<KoID, Arc<Process>>,
+    /// Signal actions
+    signal_actions: SignalActions,
 }
 
-/// Linux process signal inner data
-pub struct LinuxProcessSignalInner {
-    /// signal actions
-    pub dispositions: [SignalAction; LSignal::RTMAX + 1],
+#[derive(Clone)]
+struct SignalActions {
+    table: [SignalAction; LinuxSignal::RTMAX + 1],
 }
 
-/// process exit code defination
+impl Default for SignalActions {
+    fn default() -> Self {
+        Self {
+            table: [SignalAction::default(); LinuxSignal::RTMAX + 1],
+        }
+    }
+}
+
+/// resource limit
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct RLimit {
+    /// soft limit
+    pub cur: u64,
+    /// hard limit
+    pub max: u64,
+}
+
+impl Default for RLimit {
+    fn default() -> Self {
+        RLimit {
+            cur: 1024,
+            max: 1024,
+        }
+    }
+}
+
+/// The type of process exit code.
 pub type ExitCode = i32;
 
 impl LinuxProcess {
@@ -202,9 +227,6 @@ impl LinuxProcess {
                 files,
                 ..Default::default()
             }),
-            sinner: Mutex::new(LinuxProcessSignalInner {
-                dispositions: [SignalAction::default(); LSignal::RTMAX + 1],
-            }),
         }
     }
 
@@ -225,16 +247,40 @@ impl LinuxProcess {
 
     /// Add a file to the file descriptor table.
     pub fn add_file(&self, file: Arc<dyn FileLike>) -> LxResult<FileDesc> {
-        let mut inner = self.inner.lock();
+        let inner = self.inner.lock();
         let fd = inner.get_free_fd();
-        inner.files.insert(fd, file);
-        Ok(fd)
+        self.insert_file(inner, fd, file)
     }
 
     /// Add a file to the file descriptor table at given `fd`.
-    pub fn add_file_at(&self, fd: FileDesc, file: Arc<dyn FileLike>) {
+    pub fn add_file_at(&self, fd: FileDesc, file: Arc<dyn FileLike>) -> LxResult<FileDesc> {
+        let inner = self.inner.lock();
+        self.insert_file(inner, fd, file)
+    }
+
+    /// insert a file and fd into the file descriptor table
+    fn insert_file(
+        &self,
+        mut inner: MutexGuard<LinuxProcessInner>,
+        fd: FileDesc,
+        file: Arc<dyn FileLike>,
+    ) -> LxResult<FileDesc> {
+        if inner.files.len() < inner.file_limit.cur as usize {
+            inner.files.insert(fd, file);
+            Ok(fd)
+        } else {
+            Err(LxError::EMFILE)
+        }
+    }
+
+    /// get and set file limit number
+    pub fn file_limit(&self, new_limit: Option<RLimit>) -> RLimit {
         let mut inner = self.inner.lock();
-        inner.files.insert(fd, file);
+        let old = inner.file_limit;
+        if let Some(limit) = new_limit {
+            inner.file_limit = limit;
+        }
+        old
     }
 
     /// Get the `File` with given `fd`.
@@ -306,9 +352,14 @@ impl LinuxProcess {
         self.inner.lock().execute_path = String::from(path);
     }
 
-    /// Get signal inner
-    pub fn signal_inner(&self) -> MutexGuard<LinuxProcessSignalInner> {
-        self.sinner.lock()
+    /// Get signal action.
+    pub fn signal_action(&self, signal: LinuxSignal) -> SignalAction {
+        self.inner.lock().signal_actions.table[signal as u8 as usize]
+    }
+
+    /// Set signal action.
+    pub fn set_signal_action(&self, signal: LinuxSignal, action: SignalAction) {
+        self.inner.lock().signal_actions.table[signal as u8 as usize] = action;
     }
 }
 

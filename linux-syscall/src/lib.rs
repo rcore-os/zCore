@@ -19,13 +19,7 @@
 //!
 
 #![no_std]
-#![deny(
-    warnings,
-    unsafe_code,
-    unused_must_use,
-    unreachable_patterns,
-    missing_docs
-)]
+#![deny(warnings, unsafe_code, missing_docs)]
 #![feature(bool_to_option)]
 
 #[macro_use]
@@ -33,8 +27,6 @@ extern crate alloc;
 
 #[macro_use]
 extern crate log;
-
-extern crate num_derive;
 
 use {
     self::consts::SyscallType as Sys,
@@ -111,6 +103,7 @@ impl Syscall<'_> {
             Sys::FCHOWN => self.unimplemented("fchown", Ok(0)),
             Sys::FCHOWNAT => self.unimplemented("fchownat", Ok(0)),
             Sys::FACCESSAT => self.sys_faccessat(a0.into(), a1.into(), a2, a3),
+            Sys::DUP => self.sys_dup(a0.into()),
             Sys::DUP3 => self.sys_dup2(a0.into(), a1.into()), // TODO: handle `flags`
             Sys::PIPE2 => self.sys_pipe(a0.into()),           // TODO: handle `flags`
             Sys::UTIMENSAT => self.sys_utimensat(a0.into(), a1.into(), a2.into(), a3),
@@ -144,7 +137,7 @@ impl Syscall<'_> {
 
             // signal
             Sys::RT_SIGACTION => self.sys_rt_sigaction(a0, a1.into(), a2.into(), a3),
-            Sys::RT_SIGPROCMASK => self.sys_rt_sigprocmask(a0, a1.into(), a2.into(), a3),
+            Sys::RT_SIGPROCMASK => self.sys_rt_sigprocmask(a0 as _, a1.into(), a2.into(), a3),
             // Sys::RT_SIGRETURN => self.sys_rt_sigreturn(),
             Sys::SIGALTSTACK => self.sys_sigaltstack(a0.into(), a1.into()),
             //            Sys::KILL => self.sys_kill(a0, a1),
