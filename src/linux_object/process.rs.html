@@ -299,6 +299,51 @@
 <span id="299">299</span>
 <span id="300">300</span>
 <span id="301">301</span>
+<span id="302">302</span>
+<span id="303">303</span>
+<span id="304">304</span>
+<span id="305">305</span>
+<span id="306">306</span>
+<span id="307">307</span>
+<span id="308">308</span>
+<span id="309">309</span>
+<span id="310">310</span>
+<span id="311">311</span>
+<span id="312">312</span>
+<span id="313">313</span>
+<span id="314">314</span>
+<span id="315">315</span>
+<span id="316">316</span>
+<span id="317">317</span>
+<span id="318">318</span>
+<span id="319">319</span>
+<span id="320">320</span>
+<span id="321">321</span>
+<span id="322">322</span>
+<span id="323">323</span>
+<span id="324">324</span>
+<span id="325">325</span>
+<span id="326">326</span>
+<span id="327">327</span>
+<span id="328">328</span>
+<span id="329">329</span>
+<span id="330">330</span>
+<span id="331">331</span>
+<span id="332">332</span>
+<span id="333">333</span>
+<span id="334">334</span>
+<span id="335">335</span>
+<span id="336">336</span>
+<span id="337">337</span>
+<span id="338">338</span>
+<span id="339">339</span>
+<span id="340">340</span>
+<span id="341">341</span>
+<span id="342">342</span>
+<span id="343">343</span>
+<span id="344">344</span>
+<span id="345">345</span>
+<span id="346">346</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Linux Process</span>
 
@@ -314,7 +359,7 @@
 <span class="kw">use</span> <span class="ident">hashbrown</span>::<span class="ident">HashMap</span>;
 <span class="kw">use</span> <span class="ident">kernel_hal</span>::<span class="ident">VirtAddr</span>;
 <span class="kw">use</span> <span class="ident">rcore_fs</span>::<span class="ident">vfs</span>::{<span class="ident">FileSystem</span>, <span class="ident">INode</span>};
-<span class="kw">use</span> <span class="ident">spin</span>::<span class="ident">Mutex</span>;
+<span class="kw">use</span> <span class="ident">spin</span>::<span class="kw-2">*</span>;
 <span class="kw">use</span> <span class="ident">zircon_object</span>::{
     <span class="ident">object</span>::{<span class="ident">KernelObject</span>, <span class="ident">KoID</span>, <span class="ident">Signal</span>},
     <span class="ident">signal</span>::<span class="ident">Futex</span>,
@@ -445,12 +490,33 @@
     <span class="doccomment">///</span>
     <span class="doccomment">/// Omit leading &#39;/&#39;.</span>
     <span class="ident">current_working_directory</span>: <span class="ident">String</span>,
+    <span class="doccomment">/// file open number limit</span>
+    <span class="ident">file_limit</span>: <span class="ident">RLimit</span>,
     <span class="doccomment">/// Opened files</span>
     <span class="ident">files</span>: <span class="ident">HashMap</span><span class="op">&lt;</span><span class="ident">FileDesc</span>, <span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">FileLike</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     <span class="doccomment">/// Futexes</span>
     <span class="ident">futexes</span>: <span class="ident">HashMap</span><span class="op">&lt;</span><span class="ident">VirtAddr</span>, <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Futex</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     <span class="doccomment">/// Child processes</span>
     <span class="ident">children</span>: <span class="ident">HashMap</span><span class="op">&lt;</span><span class="ident">KoID</span>, <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Process</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+}
+
+<span class="doccomment">/// resource limit</span>
+<span class="attribute">#[<span class="ident">repr</span>(<span class="ident">C</span>)]</span>
+<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>, <span class="ident">Copy</span>, <span class="ident">Clone</span>)]</span>
+<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">RLimit</span> {
+    <span class="doccomment">/// soft limit</span>
+    <span class="kw">pub</span> <span class="ident">cur</span>: <span class="ident">u64</span>,
+    <span class="doccomment">/// hard limit</span>
+    <span class="kw">pub</span> <span class="ident">max</span>: <span class="ident">u64</span>,
+}
+
+<span class="kw">impl</span> <span class="ident">Default</span> <span class="kw">for</span> <span class="ident">RLimit</span> {
+    <span class="kw">fn</span> <span class="ident">default</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
+        <span class="ident">RLimit</span> {
+            <span class="ident">cur</span>: <span class="number">1024</span>,
+            <span class="ident">max</span>: <span class="number">1024</span>,
+        }
+    }
 }
 
 <span class="doccomment">/// process exit code defination</span>
@@ -511,16 +577,40 @@
 
     <span class="doccomment">/// Add a file to the file descriptor table.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">add_file</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">file</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">FileLike</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">LxResult</span><span class="op">&lt;</span><span class="ident">FileDesc</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
+        <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="kw">let</span> <span class="ident">fd</span> <span class="op">=</span> <span class="ident">inner</span>.<span class="ident">get_free_fd</span>();
-        <span class="ident">inner</span>.<span class="ident">files</span>.<span class="ident">insert</span>(<span class="ident">fd</span>, <span class="ident">file</span>);
-        <span class="prelude-val">Ok</span>(<span class="ident">fd</span>)
+        <span class="self">self</span>.<span class="ident">insert_file</span>(<span class="ident">inner</span>, <span class="ident">fd</span>, <span class="ident">file</span>)
     }
 
     <span class="doccomment">/// Add a file to the file descriptor table at given `fd`.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">add_file_at</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">fd</span>: <span class="ident">FileDesc</span>, <span class="ident">file</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">FileLike</span><span class="op">&gt;</span>) {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">add_file_at</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">fd</span>: <span class="ident">FileDesc</span>, <span class="ident">file</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">FileLike</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">LxResult</span><span class="op">&lt;</span><span class="ident">FileDesc</span><span class="op">&gt;</span> {
+        <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
+        <span class="self">self</span>.<span class="ident">insert_file</span>(<span class="ident">inner</span>, <span class="ident">fd</span>, <span class="ident">file</span>)
+    }
+
+    <span class="doccomment">/// insert a file and fd into the file descriptor table</span>
+    <span class="kw">fn</span> <span class="ident">insert_file</span>(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        <span class="kw-2">mut</span> <span class="ident">inner</span>: <span class="ident">MutexGuard</span><span class="op">&lt;</span><span class="ident">LinuxProcessInner</span><span class="op">&gt;</span>,
+        <span class="ident">fd</span>: <span class="ident">FileDesc</span>,
+        <span class="ident">file</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">FileLike</span><span class="op">&gt;</span>,
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">LxResult</span><span class="op">&lt;</span><span class="ident">FileDesc</span><span class="op">&gt;</span> {
+        <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">files</span>.<span class="ident">len</span>() <span class="op">&lt;</span> <span class="ident">inner</span>.<span class="ident">file_limit</span>.<span class="ident">cur</span> <span class="kw">as</span> <span class="ident">usize</span> {
+            <span class="ident">inner</span>.<span class="ident">files</span>.<span class="ident">insert</span>(<span class="ident">fd</span>, <span class="ident">file</span>);
+            <span class="prelude-val">Ok</span>(<span class="ident">fd</span>)
+        } <span class="kw">else</span> {
+            <span class="prelude-val">Err</span>(<span class="ident">LxError</span>::<span class="ident">EMFILE</span>)
+        }
+    }
+
+    <span class="doccomment">/// get and set file limit number</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">file_limit</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">new_limit</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">RLimit</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">RLimit</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
-        <span class="ident">inner</span>.<span class="ident">files</span>.<span class="ident">insert</span>(<span class="ident">fd</span>, <span class="ident">file</span>);
+        <span class="kw">let</span> <span class="ident">old</span> <span class="op">=</span> <span class="ident">inner</span>.<span class="ident">file_limit</span>;
+        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">limit</span>) <span class="op">=</span> <span class="ident">new_limit</span> {
+            <span class="ident">inner</span>.<span class="ident">file_limit</span> <span class="op">=</span> <span class="ident">limit</span>;
+        }
+        <span class="ident">old</span>
     }
 
     <span class="doccomment">/// Get the `File` with given `fd`.</span>

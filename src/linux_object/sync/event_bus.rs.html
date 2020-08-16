@@ -99,7 +99,34 @@
 <span id="99"> 99</span>
 <span id="100">100</span>
 <span id="101">101</span>
+<span id="102">102</span>
+<span id="103">103</span>
+<span id="104">104</span>
+<span id="105">105</span>
+<span id="106">106</span>
+<span id="107">107</span>
+<span id="108">108</span>
+<span id="109">109</span>
+<span id="110">110</span>
+<span id="111">111</span>
+<span id="112">112</span>
+<span id="113">113</span>
+<span id="114">114</span>
+<span id="115">115</span>
+<span id="116">116</span>
+<span id="117">117</span>
+<span id="118">118</span>
+<span id="119">119</span>
+<span id="120">120</span>
+<span id="121">121</span>
+<span id="122">122</span>
+<span id="123">123</span>
+<span id="124">124</span>
+<span id="125">125</span>
 </pre><div class="example-wrap"><pre class="rust ">
+<span class="doccomment">//! Event bus implement</span>
+<span class="doccomment">//!</span>
+<span class="doccomment">//! An Eventbus is a mechanism that allows different components to communicate with each other without knowing about each other.</span>
 <span class="kw">use</span> <span class="ident">alloc</span>::<span class="ident">boxed</span>::<span class="ident">Box</span>;
 <span class="kw">use</span> <span class="ident">alloc</span>::{<span class="ident">sync</span>::<span class="ident">Arc</span>, <span class="ident">vec</span>::<span class="ident">Vec</span>};
 <span class="kw">use</span> <span class="ident">bitflags</span>::<span class="ident">bitflags</span>;
@@ -112,45 +139,62 @@
 
 <span class="macro">bitflags</span><span class="macro">!</span> {
     <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Default</span>)]</span>
+    <span class="doccomment">/// event bus Event flags</span>
     <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Event</span>: <span class="ident">u32</span> {
-        <span class="doccomment">/// File</span>
+        <span class="doccomment">/// File: is readable</span>
         <span class="kw">const</span> <span class="ident">READABLE</span>                      <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">0</span>;
+        <span class="doccomment">/// File: is writeable</span>
         <span class="kw">const</span> <span class="ident">WRITABLE</span>                      <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">1</span>;
+        <span class="doccomment">/// File: has error</span>
         <span class="kw">const</span> <span class="ident">ERROR</span>                         <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">2</span>;
+        <span class="doccomment">/// File: is closed</span>
         <span class="kw">const</span> <span class="ident">CLOSED</span>                        <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">3</span>;
 
-        <span class="doccomment">/// Process</span>
+        <span class="doccomment">/// Process: is Quit</span>
         <span class="kw">const</span> <span class="ident">PROCESS_QUIT</span>                  <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">10</span>;
+        <span class="doccomment">/// Process: child process is Quit</span>
         <span class="kw">const</span> <span class="ident">CHILD_PROCESS_QUIT</span>            <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">11</span>;
+        <span class="doccomment">/// Process: received signal</span>
         <span class="kw">const</span> <span class="ident">RECEIVE_SIGNAL</span>                <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">12</span>;
 
-        <span class="doccomment">/// Semaphore</span>
+        <span class="doccomment">/// Semaphore: is removed</span>
         <span class="kw">const</span> <span class="ident">SEMAPHORE_REMOVED</span>             <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">20</span>;
+        <span class="doccomment">/// Semaphore: can acquired</span>
         <span class="kw">const</span> <span class="ident">SEMAPHORE_CAN_ACQUIRE</span>         <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">21</span>;
     }
 }
 
+<span class="doccomment">/// handler of event in the event bus</span>
 <span class="kw">pub</span> <span class="kw">type</span> <span class="ident">EventHandler</span> <span class="op">=</span> <span class="ident">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">Fn</span>(<span class="ident">Event</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> <span class="op">+</span> <span class="ident">Send</span><span class="op">&gt;</span>;
 
+<span class="doccomment">/// event bus struct</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Default</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">EventBus</span> {
+    <span class="doccomment">/// event type</span>
     <span class="ident">event</span>: <span class="ident">Event</span>,
+    <span class="doccomment">/// EventBus callback</span>
     <span class="ident">callbacks</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">EventHandler</span><span class="op">&gt;</span>,
 }
 
 <span class="kw">impl</span> <span class="ident">EventBus</span> {
+    <span class="doccomment">/// create an event bus</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Mutex</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="ident">Arc</span>::<span class="ident">new</span>(<span class="ident">Mutex</span>::<span class="ident">new</span>(<span class="self">Self</span>::<span class="ident">default</span>()))
     }
 
+    <span class="doccomment">/// set event flag</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">set</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">set</span>: <span class="ident">Event</span>) {
         <span class="self">self</span>.<span class="ident">change</span>(<span class="ident">Event</span>::<span class="ident">empty</span>(), <span class="ident">set</span>);
     }
 
+    <span class="doccomment">/// clear all event flag</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">clear</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">set</span>: <span class="ident">Event</span>) {
         <span class="self">self</span>.<span class="ident">change</span>(<span class="ident">set</span>, <span class="ident">Event</span>::<span class="ident">empty</span>());
     }
 
+    <span class="doccomment">/// change event flag</span>
+    <span class="doccomment">/// - `reset`: flag to remove</span>
+    <span class="doccomment">/// - `set`: flag to insert</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">change</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">reset</span>: <span class="ident">Event</span>, <span class="ident">set</span>: <span class="ident">Event</span>) {
         <span class="kw">let</span> <span class="ident">orig</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">event</span>;
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">new</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">event</span>;
@@ -162,19 +206,23 @@
         }
     }
 
+    <span class="doccomment">/// push a EventHandler into the callback vector</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">subscribe</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">callback</span>: <span class="ident">EventHandler</span>) {
         <span class="self">self</span>.<span class="ident">callbacks</span>.<span class="ident">push</span>(<span class="ident">callback</span>);
     }
 
+    <span class="doccomment">/// get the callback vector length</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_callback_len</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
         <span class="self">self</span>.<span class="ident">callbacks</span>.<span class="ident">len</span>()
     }
 }
 
+<span class="doccomment">/// wait for a event async</span>
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">wait_for_event</span>(<span class="ident">bus</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">EventBus</span><span class="op">&gt;</span><span class="op">&gt;</span>, <span class="ident">mask</span>: <span class="ident">Event</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw">impl</span> <span class="ident">Future</span><span class="op">&lt;</span><span class="ident">Output</span> <span class="op">=</span> <span class="ident">Event</span><span class="op">&gt;</span> {
     <span class="ident">EventBusFuture</span> { <span class="ident">bus</span>, <span class="ident">mask</span> }
 }
 
+<span class="doccomment">/// EventBus future for async</span>
 <span class="attribute">#[<span class="ident">must_use</span> <span class="op">=</span> <span class="string">&quot;future does nothing unless polled/`await`-ed&quot;</span>]</span>
 <span class="kw">struct</span> <span class="ident">EventBusFuture</span> {
     <span class="ident">bus</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">EventBus</span><span class="op">&gt;</span><span class="op">&gt;</span>,

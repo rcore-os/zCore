@@ -172,6 +172,16 @@
 <span id="172">172</span>
 <span id="173">173</span>
 <span id="174">174</span>
+<span id="175">175</span>
+<span id="176">176</span>
+<span id="177">177</span>
+<span id="178">178</span>
+<span id="179">179</span>
+<span id="180">180</span>
+<span id="181">181</span>
+<span id="182">182</span>
+<span id="183">183</span>
+<span id="184">184</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! File descriptor operations</span>
 <span class="doccomment">//!</span>
@@ -245,7 +255,17 @@
         <span class="comment">// close fd2 first if it is opened</span>
         <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">close_file</span>(<span class="ident">fd2</span>);
         <span class="kw">let</span> <span class="ident">file_like</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_file_like</span>(<span class="ident">fd1</span>)<span class="question-mark">?</span>;
-        <span class="ident">proc</span>.<span class="ident">add_file_at</span>(<span class="ident">fd2</span>, <span class="ident">file_like</span>);
+        <span class="kw">let</span> <span class="ident">fd2</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">add_file_at</span>(<span class="ident">fd2</span>, <span class="ident">file_like</span>)<span class="question-mark">?</span>;
+        <span class="prelude-val">Ok</span>(<span class="ident">fd2</span>.<span class="ident">into</span>())
+    }
+
+    <span class="doccomment">/// create a copy of the file descriptor fd, and uses the lowest-numbered unused descriptor for the new descriptor.</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_dup</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">fd1</span>: <span class="ident">FileDesc</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
+        <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;dup: from {:?}&quot;</span>, <span class="ident">fd1</span>);
+        <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>();
+
+        <span class="kw">let</span> <span class="ident">file_like</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_file_like</span>(<span class="ident">fd1</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">fd2</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">add_file</span>(<span class="ident">file_like</span>)<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(<span class="ident">fd2</span>.<span class="ident">into</span>())
     }
 

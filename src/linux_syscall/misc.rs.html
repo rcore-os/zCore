@@ -184,14 +184,6 @@
 <span id="184">184</span>
 <span id="185">185</span>
 <span id="186">186</span>
-<span id="187">187</span>
-<span id="188">188</span>
-<span id="189">189</span>
-<span id="190">190</span>
-<span id="191">191</span>
-<span id="192">192</span>
-<span id="193">193</span>
-<span id="194">194</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> <span class="kw">super</span>::<span class="ident">time</span>::<span class="ident">TimeSpec</span>;
 <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
@@ -287,6 +279,7 @@
             <span class="string">&quot;prlimit64: pid: {}, resource: {}, new_limit: {:x?}, old_limit: {:x?}&quot;</span>,
             <span class="ident">pid</span>, <span class="ident">resource</span>, <span class="ident">new_limit</span>, <span class="ident">old_limit</span>
         );
+        <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>();
         <span class="kw">match</span> <span class="ident">resource</span> {
             <span class="ident">RLIMIT_STACK</span> <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="ident">old_limit</span>.<span class="ident">write_if_not_null</span>(<span class="ident">RLimit</span> {
@@ -296,10 +289,8 @@
                 <span class="prelude-val">Ok</span>(<span class="number">0</span>)
             }
             <span class="ident">RLIMIT_NOFILE</span> <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="ident">old_limit</span>.<span class="ident">write_if_not_null</span>(<span class="ident">RLimit</span> {
-                    <span class="ident">cur</span>: <span class="number">1024</span>,
-                    <span class="ident">max</span>: <span class="number">1024</span>,
-                })<span class="question-mark">?</span>;
+                <span class="kw">let</span> <span class="ident">new_limit</span> <span class="op">=</span> <span class="ident">new_limit</span>.<span class="ident">read_if_not_null</span>()<span class="question-mark">?</span>;
+                <span class="ident">old_limit</span>.<span class="ident">write_if_not_null</span>(<span class="ident">proc</span>.<span class="ident">file_limit</span>(<span class="ident">new_limit</span>))<span class="question-mark">?</span>;
                 <span class="prelude-val">Ok</span>(<span class="number">0</span>)
             }
             <span class="ident">RLIMIT_RSS</span> <span class="op">|</span> <span class="ident">RLIMIT_AS</span> <span class="op">=</span><span class="op">&gt;</span> {
@@ -350,13 +341,6 @@
 <span class="kw">const</span> <span class="ident">RLIMIT_RSS</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">5</span>;
 <span class="kw">const</span> <span class="ident">RLIMIT_NOFILE</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">7</span>;
 <span class="kw">const</span> <span class="ident">RLIMIT_AS</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">9</span>;
-
-<span class="attribute">#[<span class="ident">repr</span>(<span class="ident">C</span>)]</span>
-<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>, <span class="ident">Default</span>)]</span>
-<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">RLimit</span> {
-    <span class="ident">cur</span>: <span class="ident">u64</span>, <span class="comment">// soft limit</span>
-    <span class="ident">max</span>: <span class="ident">u64</span>, <span class="comment">// hard limit</span>
-}
 
 <span class="doccomment">/// sysinfo() return information sturct</span>
 <span class="attribute">#[<span class="ident">repr</span>(<span class="ident">C</span>)]</span>
