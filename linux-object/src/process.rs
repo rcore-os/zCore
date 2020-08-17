@@ -2,6 +2,7 @@
 
 use crate::error::*;
 use crate::fs::*;
+use crate::ipc::*;
 use crate::signal::{Signal as LinuxSignal, SignalAction};
 use alloc::vec::Vec;
 use alloc::{
@@ -9,6 +10,7 @@ use alloc::{
     string::String,
     sync::{Arc, Weak},
 };
+use core::fmt;
 use core::sync::atomic::AtomicI32;
 use hashbrown::HashMap;
 use kernel_hal::VirtAddr;
@@ -149,6 +151,10 @@ struct LinuxProcessInner {
     file_limit: RLimit,
     /// Opened files
     files: HashMap<FileDesc, Arc<dyn FileLike>>,
+    /// Pid i.e. tgid, usually the tid of first thread
+    pid: Pid,
+    /// Semaphore
+    semaphores: SemProc,
     /// Futexes
     futexes: HashMap<VirtAddr, Arc<Futex>>,
     /// Child processes
@@ -273,6 +279,11 @@ impl LinuxProcess {
         }
     }
 
+    /// get pid
+    pub fn get_pid(&self) -> usize {
+        self.inner.lock().pid.0
+    }
+
     /// get and set file limit number
     pub fn file_limit(&self, new_limit: Option<RLimit>) -> RLimit {
         let mut inner = self.inner.lock();
@@ -369,5 +380,38 @@ impl LinuxProcessInner {
             .map(|i| i.into())
             .find(|fd| !self.files.contains_key(fd))
             .unwrap()
+    }
+}
+
+/// Pid type
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Pid(pub usize);
+
+impl Pid {
+    pub const INIT: usize = 1;
+
+    pub fn new() -> Self {
+        Pid(0)
+    }
+
+    pub fn get(&self) -> usize {
+        self.0
+    }
+
+    /// Return whether this pid represents the init process
+    pub fn is_init(&self) -> bool {
+        self.0 == Self::INIT
+    }
+}
+
+impl fmt::Display for Pid {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl Default for Pid {
+    fn default() -> Self {
+        Pid(Self::INIT)
     }
 }

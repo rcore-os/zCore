@@ -44,6 +44,7 @@ mod signal;
 mod task;
 mod time;
 mod vm;
+mod ipc;
 
 /// The struct of Syscall which stores the information about making a syscall
 pub struct Syscall<'a> {
