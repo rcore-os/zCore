@@ -1,12 +1,12 @@
-use crate::sync::Semaphore;
-use spin::Mutex;
 use crate::error::LxError;
+use crate::sync::Semaphore;
+use crate::time::*;
 use alloc::{collections::BTreeMap, sync::Arc, sync::Weak, vec::Vec};
 use bitflags::*;
 use core::ops::Index;
-use spin::RwLock;
 use lazy_static::*;
-use crate::time::*;
+use spin::Mutex;
+use spin::RwLock;
 
 bitflags! {
     struct SemGetFlag: usize {

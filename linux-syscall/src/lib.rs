@@ -39,12 +39,12 @@ use {
 
 mod consts;
 mod file;
+mod ipc;
 mod misc;
 mod signal;
 mod task;
 mod time;
 mod vm;
-mod ipc;
 
 /// The struct of Syscall which stores the information about making a syscall
 pub struct Syscall<'a> {
@@ -181,12 +181,12 @@ impl Syscall<'_> {
             Sys::CLOCK_GETTIME => self.sys_clock_gettime(a0, a1.into()),
 
             // sem
-            //            #[cfg(not(target_arch = "mips"))]
-            //            Sys::SEMGET => self.sys_semget(a0, a1 as isize, a2),
-            //            #[cfg(not(target_arch = "mips"))]
-            //            Sys::SEMOP => self.sys_semop(a0, a1.into(), a2),
-            //            #[cfg(not(target_arch = "mips"))]
-            //            Sys::SEMCTL => self.sys_semctl(a0, a1, a2, a3 as isize),
+            #[cfg(not(target_arch = "mips"))]
+            Sys::SEMGET => self.sys_semget(a0, a1, a2),
+            #[cfg(not(target_arch = "mips"))]
+            Sys::SEMOP => self.sys_semop(a0, a1.into(), a2).await,
+            #[cfg(not(target_arch = "mips"))]
+            Sys::SEMCTL => self.sys_semctl(a0, a1, a2, a3),
 
             // system
             Sys::GETPID => self.sys_getpid(),

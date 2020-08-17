@@ -7,6 +7,7 @@ pub use linux_object::ipc::*;
 use super::*;
 
 impl Syscall<'_> {
+    ///  returns the semaphore set identifier associated with the argument key
     pub fn sys_semget(&self, key: usize, nsems: usize, flags: usize) -> SysResult {
         info!("semget: key: {} nsems: {} flags: {:#x}", key, nsems, flags);
 
@@ -18,15 +19,19 @@ impl Syscall<'_> {
         }
 
         let sem_array = SemArray::get_or_create(key as u32, nsems, flags)?;
-        let id = self.linux_process().semaphores.add(sem_array);
+        let id = self.linux_process().semaphores_add(sem_array);
         Ok(id)
     }
 
+    /// semaphore operations
     pub async fn sys_semop(&self, id: usize, ops: UserInPtr<SemBuf>, num_ops: usize) -> SysResult {
         info!("semop: id: {}", id);
         let ops = ops.read_array(num_ops)?;
 
-        let sem_array = self.linux_process().semaphores.get(id).ok_or(LxError::EINVAL)?;
+        let sem_array = self
+            .linux_process()
+            .semaphores_get(id)
+            .ok_or(LxError::EINVAL)?;
         sem_array.otime();
         for &SemBuf { num, op, flags } in ops.iter() {
             let flags = SemFlags::from_bits_truncate(flags);
@@ -40,20 +45,24 @@ impl Syscall<'_> {
                 -1 => sem.acquire().await?,
                 _ => unimplemented!("Semaphore: semop.(Not 1/-1)"),
             };
-            sem.set_pid(self.linux_process().get_pid());
+            sem.set_pid(self.zircon_process().id() as usize);
             if flags.contains(SemFlags::SEM_UNDO) {
-                self.linux_process().semaphores.add_undo(id, num, op);
+                self.linux_process().semaphores_add_undo(id, num, op);
             }
         }
         Ok(0)
     }
 
+    /// performs the control operation specified by cmd on the semaphore set identified by semid
     pub fn sys_semctl(&self, id: usize, num: usize, cmd: usize, arg: usize) -> SysResult {
         info!(
             "semctl: id: {}, num: {}, cmd: {} arg: {:#x}",
             id, num, cmd, arg
         );
-        let sem_array = self.linux_process().semaphores.get(id).ok_or(LxError::EINVAL)?;
+        let sem_array = self
+            .linux_process()
+            .semaphores_get(id)
+            .ok_or(LxError::EINVAL)?;
         const IPC_RMID: usize = 0;
         const IPC_SET: usize = 1;
         const IPC_STAT: usize = 2;
@@ -68,7 +77,7 @@ impl Syscall<'_> {
         match cmd {
             IPC_RMID => {
                 sem_array.remove();
-                self.linux_process().semaphores.remove(id);
+                self.linux_process().semaphores_remove(id);
                 Ok(0)
             }
             IPC_SET => {
@@ -95,7 +104,7 @@ impl Syscall<'_> {
                     GETZCNT => Ok(0),
                     SETVAL => {
                         sem.set(arg as isize);
-                        sem.set_pid(self.linux_process().get_pid());
+                        sem.set_pid(self.zircon_process().id() as usize);
                         sem_array.ctime();
                         Ok(0)
                     }

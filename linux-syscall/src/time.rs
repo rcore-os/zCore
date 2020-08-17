@@ -1,6 +1,6 @@
 //! Syscalls for time
 //! - clock_gettime
-//! 
+//!
 use crate::Syscall;
 use kernel_hal::{user::UserInPtr, user::UserOutPtr};
 use linux_object::error::LxError;

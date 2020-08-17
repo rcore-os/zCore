@@ -4,7 +4,6 @@
 #![allow(unused_mut)]
 
 use super::{Event, EventBus};
-use spin::Mutex;
 use crate::error::LxError;
 use alloc::boxed::Box;
 use alloc::sync::Arc;
@@ -12,6 +11,7 @@ use core::future::Future;
 use core::ops::Deref;
 use core::pin::Pin;
 use core::task::{Context, Poll};
+use spin::Mutex;
 
 /// A counting, blocking, semaphore.
 pub struct Semaphore {
