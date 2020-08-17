@@ -21,3 +21,5 @@ pub mod process;
 pub mod signal;
 pub mod sync;
 pub mod thread;
+pub mod ipc;
+pub mod time;

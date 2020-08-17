@@ -10,7 +10,7 @@
 //! - getppid
 
 use super::*;
-use crate::time::TimeSpec;
+use linux_object::time::*;
 use bitflags::bitflags;
 use core::fmt::Debug;
 use linux_object::fs::INodeExt;

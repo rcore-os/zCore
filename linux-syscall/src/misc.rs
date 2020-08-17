@@ -1,4 +1,4 @@
-use super::time::TimeSpec;
+use linux_object::time::*;
 use super::*;
 use bitflags::bitflags;
 
