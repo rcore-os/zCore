@@ -10,12 +10,12 @@
 //! - getppid
 
 use super::*;
-use crate::time::TimeSpec;
 use bitflags::bitflags;
 use core::fmt::Debug;
 use linux_object::fs::INodeExt;
 use linux_object::loader::LinuxElfLoader;
 use linux_object::thread::{CurrentThreadExt, ThreadExt};
+use linux_object::time::*;
 
 impl Syscall<'_> {
     /// Fork the current process. Return the child's PID.

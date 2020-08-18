@@ -1,3 +1,5 @@
+//! Linux signals
+#![allow(missing_docs)]
 use bitflags::*;
 use numeric_enum_macro::numeric_enum;
 
@@ -125,6 +127,7 @@ impl Signal {
 }
 
 /// See musl struct __ucontext
+///
 /// Not exactly the same for now
 #[repr(C)]
 #[derive(Clone)]
@@ -139,10 +142,14 @@ pub struct SignalUserContext {
 #[repr(C)]
 #[derive(Clone)]
 pub struct SignalFrame {
-    pub ret_code_addr: usize, // point to ret_code
+    /// point to ret_code
+    pub ret_code_addr: usize,
+    /// Signal Frame info
     pub info: SigInfo,
-    pub ucontext: SignalUserContext, // adapt interface, a little bit waste
-    pub ret_code: [u8; 7],           // call sys_sigreturn
+    /// adapt interface, a little bit waste
+    pub ucontext: SignalUserContext,
+    /// call sys_sigreturn
+    pub ret_code: [u8; 7],
 }
 
 bitflags! {

@@ -95,6 +95,8 @@ pub enum LxError {
     ENOTEMPTY = 39,
     /// Too many symbolic links encountered
     ELOOP = 40,
+    /// Identifier removed
+    EIDRM = 43,
     /// Socket operation on non-socket
     ENOTSOCK = 88,
     /// Protocol not available
@@ -158,6 +160,7 @@ impl fmt::Display for LxError {
             ENOSYS => "Function not implemented",
             ENOTEMPTY => "Directory not empty",
             ELOOP => "Too many symbolic links encountered",
+            EIDRM => "Identifier removed",
             ENOTSOCK => "Socket operation on non-socket",
             ENOPROTOOPT => "Protocol not available",
             EPFNOSUPPORT => "Protocol family not supported",

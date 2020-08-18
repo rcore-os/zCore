@@ -39,6 +39,7 @@ use {
 
 mod consts;
 mod file;
+mod ipc;
 mod misc;
 mod signal;
 mod task;
@@ -180,12 +181,12 @@ impl Syscall<'_> {
             Sys::CLOCK_GETTIME => self.sys_clock_gettime(a0, a1.into()),
 
             // sem
-            //            #[cfg(not(target_arch = "mips"))]
-            //            Sys::SEMGET => self.sys_semget(a0, a1 as isize, a2),
-            //            #[cfg(not(target_arch = "mips"))]
-            //            Sys::SEMOP => self.sys_semop(a0, a1.into(), a2),
-            //            #[cfg(not(target_arch = "mips"))]
-            //            Sys::SEMCTL => self.sys_semctl(a0, a1, a2, a3 as isize),
+            #[cfg(not(target_arch = "mips"))]
+            Sys::SEMGET => self.sys_semget(a0, a1, a2),
+            #[cfg(not(target_arch = "mips"))]
+            Sys::SEMOP => self.sys_semop(a0, a1.into(), a2).await,
+            #[cfg(not(target_arch = "mips"))]
+            Sys::SEMCTL => self.sys_semctl(a0, a1, a2, a3),
 
             // system
             Sys::GETPID => self.sys_getpid(),
@@ -252,8 +253,8 @@ impl Syscall<'_> {
             Sys::LINK => self.sys_link(a0.into(), a1.into()),
             Sys::UNLINK => self.sys_unlink(a0.into()),
             Sys::READLINK => self.sys_readlink(a0.into(), a1.into(), a2),
-            //            Sys::CHMOD => self.unimplemented("chmod", Ok(0)),
-            //            Sys::CHOWN => self.unimplemented("chown", Ok(0)),
+            Sys::CHMOD => self.unimplemented("chmod", Ok(0)),
+            Sys::CHOWN => self.unimplemented("chown", Ok(0)),
             Sys::ARCH_PRCTL => self.sys_arch_prctl(a0 as _, a1),
             Sys::TIME => self.sys_time(a0.into()),
             //            Sys::EPOLL_CREATE => self.sys_epoll_create(a0),

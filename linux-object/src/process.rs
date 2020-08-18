@@ -2,6 +2,7 @@
 
 use crate::error::*;
 use crate::fs::*;
+use crate::ipc::*;
 use crate::signal::{Signal as LinuxSignal, SignalAction};
 use alloc::vec::Vec;
 use alloc::{
@@ -149,6 +150,8 @@ struct LinuxProcessInner {
     file_limit: RLimit,
     /// Opened files
     files: HashMap<FileDesc, Arc<dyn FileLike>>,
+    /// Semaphore
+    semaphores: SemProc,
     /// Futexes
     futexes: HashMap<VirtAddr, Arc<Futex>>,
     /// Child processes
@@ -360,6 +363,26 @@ impl LinuxProcess {
     /// Set signal action.
     pub fn set_signal_action(&self, signal: LinuxSignal, action: SignalAction) {
         self.inner.lock().signal_actions.table[signal as u8 as usize] = action;
+    }
+
+    /// Insert a `SemArray` and return its ID
+    pub fn semaphores_add(&self, array: Arc<SemArray>) -> usize {
+        self.inner.lock().semaphores.add(array)
+    }
+
+    /// Get an semaphore set by `id`
+    pub fn semaphores_get(&self, id: usize) -> Option<Arc<SemArray>> {
+        self.inner.lock().semaphores.get(id)
+    }
+
+    /// Add an undo operation
+    pub fn semaphores_add_undo(&self, id: usize, num: u16, op: i16) {
+        self.inner.lock().semaphores.add_undo(id, num, op)
+    }
+
+    /// Remove an `SemArray` by ID
+    pub fn semaphores_remove(&self, id: usize) {
+        self.inner.lock().semaphores.remove(id)
     }
 }
 

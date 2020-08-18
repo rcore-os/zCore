@@ -10,7 +10,7 @@
 //! - access, faccessat
 
 use super::*;
-use crate::time::*;
+use linux_object::time::TimeSpec;
 
 impl Syscall<'_> {
     /// Reads from a specified file using a file descriptor. Before using this call,

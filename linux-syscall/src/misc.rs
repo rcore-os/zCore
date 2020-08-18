@@ -1,6 +1,6 @@
-use super::time::TimeSpec;
 use super::*;
 use bitflags::bitflags;
+use linux_object::time::*;
 
 impl Syscall<'_> {
     #[cfg(target_arch = "x86_64")]

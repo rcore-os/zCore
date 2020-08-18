@@ -5,9 +5,10 @@ pub const SIG_ERR: usize = usize::max_value() - 1;
 pub const SIG_DFL: usize = 0;
 pub const SIG_IGN: usize = 1;
 
-// yet there's a bug because of mismatching bits: https://sourceware.org/bugzilla/show_bug.cgi?id=25657
-// just support 64bits size sigset
 /// Linux struct sigset_t
+///
+/// yet there's a bug because of mismatching bits: https://sourceware.org/bugzilla/show_bug.cgi?id=25657
+/// just support 64bits size sigset
 #[derive(Default, Clone, Copy, Debug)]
 #[repr(C)]
 pub struct Sigset(u64);
