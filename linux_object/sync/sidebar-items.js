@@ -1,1 +1,1 @@
-initSidebarItems({"fn":[["wait_for_event","wait for a event async"]],"struct":[["Event","event bus Event flags"],["EventBus","event bus struct"]],"type":[["EventHandler","handler of event in the event bus"]]});
+initSidebarItems({"fn":[["wait_for_event","wait for a event async"]],"struct":[["Event","event bus Event flags"],["EventBus","event bus struct"],["Semaphore","A counting, blocking, semaphore."],["SemaphoreGuard","An RAII guard which will release a resource acquired from a semaphore when dropped."]],"type":[["EventHandler","handler of event in the event bus"]]});

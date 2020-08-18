@@ -373,12 +373,12 @@
 <span class="doccomment">//! - getppid</span>
 
 <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
-<span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">time</span>::<span class="ident">TimeSpec</span>;
 <span class="kw">use</span> <span class="ident">bitflags</span>::<span class="ident">bitflags</span>;
 <span class="kw">use</span> <span class="ident">core</span>::<span class="ident">fmt</span>::<span class="ident">Debug</span>;
 <span class="kw">use</span> <span class="ident">linux_object</span>::<span class="ident">fs</span>::<span class="ident">INodeExt</span>;
 <span class="kw">use</span> <span class="ident">linux_object</span>::<span class="ident">loader</span>::<span class="ident">LinuxElfLoader</span>;
 <span class="kw">use</span> <span class="ident">linux_object</span>::<span class="ident">thread</span>::{<span class="ident">CurrentThreadExt</span>, <span class="ident">ThreadExt</span>};
+<span class="kw">use</span> <span class="ident">linux_object</span>::<span class="ident">time</span>::<span class="kw-2">*</span>;
 
 <span class="kw">impl</span> <span class="ident">Syscall</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span> {
     <span class="doccomment">/// Fork the current process. Return the child&#39;s PID.</span>

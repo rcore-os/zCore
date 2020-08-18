@@ -101,6 +101,7 @@
 <span id="101">101</span>
 <span id="102">102</span>
 <span id="103">103</span>
+<span id="104">104</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">signal</span>::<span class="ident">Signal</span>;
 <span class="kw">use</span> <span class="ident">bitflags</span>::<span class="kw-2">*</span>;
@@ -109,9 +110,10 @@
 <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">SIG_DFL</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">0</span>;
 <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">SIG_IGN</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">1</span>;
 
-<span class="comment">// yet there&#39;s a bug because of mismatching bits: https://sourceware.org/bugzilla/show_bug.cgi?id=25657</span>
-<span class="comment">// just support 64bits size sigset</span>
 <span class="doccomment">/// Linux struct sigset_t</span>
+<span class="doccomment">///</span>
+<span class="doccomment">/// yet there&#39;s a bug because of mismatching bits: https://sourceware.org/bugzilla/show_bug.cgi?id=25657</span>
+<span class="doccomment">/// just support 64bits size sigset</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Default</span>, <span class="ident">Clone</span>, <span class="ident">Copy</span>, <span class="ident">Debug</span>)]</span>
 <span class="attribute">#[<span class="ident">repr</span>(<span class="ident">C</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Sigset</span>(<span class="ident">u64</span>);

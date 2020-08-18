@@ -409,7 +409,7 @@
 <span class="doccomment">//! - access, faccessat</span>
 
 <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
-<span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">time</span>::<span class="kw-2">*</span>;
+<span class="kw">use</span> <span class="ident">linux_object</span>::<span class="ident">time</span>::<span class="ident">TimeSpec</span>;
 
 <span class="kw">impl</span> <span class="ident">Syscall</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span> {
     <span class="doccomment">/// Reads from a specified file using a file descriptor. Before using this call,</span>

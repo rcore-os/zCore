@@ -172,7 +172,16 @@
 <span id="172">172</span>
 <span id="173">173</span>
 <span id="174">174</span>
+<span id="175">175</span>
+<span id="176">176</span>
+<span id="177">177</span>
+<span id="178">178</span>
+<span id="179">179</span>
+<span id="180">180</span>
+<span id="181">181</span>
 </pre><div class="example-wrap"><pre class="rust ">
+<span class="doccomment">//! Linux signals</span>
+<span class="attribute">#![<span class="ident">allow</span>(<span class="ident">missing_docs</span>)]</span>
 <span class="kw">use</span> <span class="ident">bitflags</span>::<span class="kw-2">*</span>;
 <span class="kw">use</span> <span class="ident">numeric_enum_macro</span>::<span class="ident">numeric_enum</span>;
 
@@ -300,6 +309,7 @@
 }
 
 <span class="doccomment">/// See musl struct __ucontext</span>
+<span class="doccomment">///</span>
 <span class="doccomment">/// Not exactly the same for now</span>
 <span class="attribute">#[<span class="ident">repr</span>(<span class="ident">C</span>)]</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>)]</span>
@@ -314,10 +324,14 @@
 <span class="attribute">#[<span class="ident">repr</span>(<span class="ident">C</span>)]</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">SignalFrame</span> {
-    <span class="kw">pub</span> <span class="ident">ret_code_addr</span>: <span class="ident">usize</span>, <span class="comment">// point to ret_code</span>
+    <span class="doccomment">/// point to ret_code</span>
+    <span class="kw">pub</span> <span class="ident">ret_code_addr</span>: <span class="ident">usize</span>,
+    <span class="doccomment">/// Signal Frame info</span>
     <span class="kw">pub</span> <span class="ident">info</span>: <span class="ident">SigInfo</span>,
-    <span class="kw">pub</span> <span class="ident">ucontext</span>: <span class="ident">SignalUserContext</span>, <span class="comment">// adapt interface, a little bit waste</span>
-    <span class="kw">pub</span> <span class="ident">ret_code</span>: [<span class="ident">u8</span>; <span class="number">7</span>],           <span class="comment">// call sys_sigreturn</span>
+    <span class="doccomment">/// adapt interface, a little bit waste</span>
+    <span class="kw">pub</span> <span class="ident">ucontext</span>: <span class="ident">SignalUserContext</span>,
+    <span class="doccomment">/// call sys_sigreturn</span>
+    <span class="kw">pub</span> <span class="ident">ret_code</span>: [<span class="ident">u8</span>; <span class="number">7</span>],
 }
 
 <span class="macro">bitflags</span><span class="macro">!</span> {

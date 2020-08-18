@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["IpcPerm","structure specifies the access permissions on the semaphore set"],["SemArray","A System V semaphore set"],["SemProc","Semaphore table in a process"],["SemidDs","semid data structure"]]});

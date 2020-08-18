@@ -371,11 +371,35 @@
 <span id="371">371</span>
 <span id="372">372</span>
 <span id="373">373</span>
+<span id="374">374</span>
+<span id="375">375</span>
+<span id="376">376</span>
+<span id="377">377</span>
+<span id="378">378</span>
+<span id="379">379</span>
+<span id="380">380</span>
+<span id="381">381</span>
+<span id="382">382</span>
+<span id="383">383</span>
+<span id="384">384</span>
+<span id="385">385</span>
+<span id="386">386</span>
+<span id="387">387</span>
+<span id="388">388</span>
+<span id="389">389</span>
+<span id="390">390</span>
+<span id="391">391</span>
+<span id="392">392</span>
+<span id="393">393</span>
+<span id="394">394</span>
+<span id="395">395</span>
+<span id="396">396</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Linux Process</span>
 
 <span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">error</span>::<span class="kw-2">*</span>;
 <span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">fs</span>::<span class="kw-2">*</span>;
+<span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">ipc</span>::<span class="kw-2">*</span>;
 <span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">signal</span>::{<span class="ident">Signal</span> <span class="kw">as</span> <span class="ident">LinuxSignal</span>, <span class="ident">SignalAction</span>};
 <span class="kw">use</span> <span class="ident">alloc</span>::<span class="ident">vec</span>::<span class="ident">Vec</span>;
 <span class="kw">use</span> <span class="ident">alloc</span>::{
@@ -523,6 +547,8 @@
     <span class="ident">file_limit</span>: <span class="ident">RLimit</span>,
     <span class="doccomment">/// Opened files</span>
     <span class="ident">files</span>: <span class="ident">HashMap</span><span class="op">&lt;</span><span class="ident">FileDesc</span>, <span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">FileLike</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+    <span class="doccomment">/// Semaphore</span>
+    <span class="ident">semaphores</span>: <span class="ident">SemProc</span>,
     <span class="doccomment">/// Futexes</span>
     <span class="ident">futexes</span>: <span class="ident">HashMap</span><span class="op">&lt;</span><span class="ident">VirtAddr</span>, <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Futex</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     <span class="doccomment">/// Child processes</span>
@@ -734,6 +760,26 @@
     <span class="doccomment">/// Set signal action.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">set_signal_action</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">signal</span>: <span class="ident">LinuxSignal</span>, <span class="ident">action</span>: <span class="ident">SignalAction</span>) {
         <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">signal_actions</span>.<span class="ident">table</span>[<span class="ident">signal</span> <span class="kw">as</span> <span class="ident">u8</span> <span class="kw">as</span> <span class="ident">usize</span>] <span class="op">=</span> <span class="ident">action</span>;
+    }
+
+    <span class="doccomment">/// Insert a `SemArray` and return its ID</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">semaphores_add</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">array</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">SemArray</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
+        <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">semaphores</span>.<span class="ident">add</span>(<span class="ident">array</span>)
+    }
+
+    <span class="doccomment">/// Get an semaphore set by `id`</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">semaphores_get</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">id</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">SemArray</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+        <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">semaphores</span>.<span class="ident">get</span>(<span class="ident">id</span>)
+    }
+
+    <span class="doccomment">/// Add an undo operation</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">semaphores_add_undo</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">id</span>: <span class="ident">usize</span>, <span class="ident">num</span>: <span class="ident">u16</span>, <span class="ident">op</span>: <span class="ident">i16</span>) {
+        <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">semaphores</span>.<span class="ident">add_undo</span>(<span class="ident">id</span>, <span class="ident">num</span>, <span class="ident">op</span>)
+    }
+
+    <span class="doccomment">/// Remove an `SemArray` by ID</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">semaphores_remove</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">id</span>: <span class="ident">usize</span>) {
+        <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">semaphores</span>.<span class="ident">remove</span>(<span class="ident">id</span>)
     }
 }
 

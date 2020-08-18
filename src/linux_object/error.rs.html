@@ -225,6 +225,9 @@
 <span id="225">225</span>
 <span id="226">226</span>
 <span id="227">227</span>
+<span id="228">228</span>
+<span id="229">229</span>
+<span id="230">230</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Linux error codes</span>
 <span class="kw">use</span> <span class="ident">core</span>::<span class="ident">fmt</span>;
@@ -323,6 +326,8 @@
     <span class="ident">ENOTEMPTY</span> <span class="op">=</span> <span class="number">39</span>,
     <span class="doccomment">/// Too many symbolic links encountered</span>
     <span class="ident">ELOOP</span> <span class="op">=</span> <span class="number">40</span>,
+    <span class="doccomment">/// Identifier removed</span>
+    <span class="ident">EIDRM</span> <span class="op">=</span> <span class="number">43</span>,
     <span class="doccomment">/// Socket operation on non-socket</span>
     <span class="ident">ENOTSOCK</span> <span class="op">=</span> <span class="number">88</span>,
     <span class="doccomment">/// Protocol not available</span>
@@ -386,6 +391,7 @@
             <span class="ident">ENOSYS</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;Function not implemented&quot;</span>,
             <span class="ident">ENOTEMPTY</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;Directory not empty&quot;</span>,
             <span class="ident">ELOOP</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;Too many symbolic links encountered&quot;</span>,
+            <span class="ident">EIDRM</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;Identifier removed&quot;</span>,
             <span class="ident">ENOTSOCK</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;Socket operation on non-socket&quot;</span>,
             <span class="ident">ENOPROTOOPT</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;Protocol not available&quot;</span>,
             <span class="ident">EPFNOSUPPORT</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;Protocol family not supported&quot;</span>,
