@@ -190,4 +190,9 @@ mod tests {
     async fn test_random() {
         assert_eq!(test("/bin/testrandom").await, 0);
     }
+
+    #[async_std::test]
+    async fn test_sem() {
+        assert_eq!(test("/bin/testsem1").await, 0);
+    }
 }
