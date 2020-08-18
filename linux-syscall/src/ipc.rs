@@ -1,6 +1,8 @@
+//! Syscalls of Inter-Process Communication
 #![allow(dead_code)]
 
 use bitflags::*;
+use numeric_enum_macro::numeric_enum;
 
 pub use linux_object::ipc::*;
 
@@ -24,6 +26,8 @@ impl Syscall<'_> {
     }
 
     /// semaphore operations
+    /// 
+    /// performs operations on selected semaphores in the set indicated by semid
     pub async fn sys_semop(&self, id: usize, ops: UserInPtr<SemBuf>, num_ops: usize) -> SysResult {
         info!("semop: id: {}", id);
         let ops = ops.read_array(num_ops)?;
@@ -53,7 +57,10 @@ impl Syscall<'_> {
         Ok(0)
     }
 
-    /// performs the control operation specified by cmd on the semaphore set identified by semid
+    /// semaphore control operations
+    ///
+    /// performs the control operation specified by cmd on the semaphore set identified by semid,
+    /// or on the semnum-th semaphore of that set.
     pub fn sys_semctl(&self, id: usize, num: usize, cmd: usize, arg: usize) -> SysResult {
         info!(
             "semctl: id: {}, num: {}, cmd: {} arg: {:#x}",
@@ -63,24 +70,21 @@ impl Syscall<'_> {
             .linux_process()
             .semaphores_get(id)
             .ok_or(LxError::EINVAL)?;
-        const IPC_RMID: usize = 0;
-        const IPC_SET: usize = 1;
-        const IPC_STAT: usize = 2;
-        const GETPID: usize = 11;
-        const GETVAL: usize = 12;
-        const GETALL: usize = 13;
-        const GETNCNT: usize = 14;
-        const GETZCNT: usize = 15;
-        const SETVAL: usize = 16;
-        const SETALL: usize = 17;
 
+        let cmd = match SemctlCmds::try_from(cmd) {
+            Ok(t) => t,
+            Err(_) => {
+                error!("invalid semctl cmd: {}", cmd);
+                return Err(LxError::EINVAL);
+            }
+        };
         match cmd {
-            IPC_RMID => {
+            SemctlCmds::IPC_RMID => {
                 sem_array.remove();
                 self.linux_process().semaphores_remove(id);
                 Ok(0)
             }
-            IPC_SET => {
+            SemctlCmds::IPC_SET => {
                 // arg is struct semid_ds
                 let ptr = UserInPtr::from(arg);
                 let ds: SemidDs = ptr.read()?;
@@ -89,7 +93,7 @@ impl Syscall<'_> {
                 sem_array.ctime();
                 Ok(0)
             }
-            IPC_STAT => {
+            SemctlCmds::IPC_STAT => {
                 // arg is struct semid_ds
                 let mut ptr = UserOutPtr::from(arg);
                 ptr.write(*sem_array.semid_ds.lock())?;
@@ -98,20 +102,38 @@ impl Syscall<'_> {
             _ => {
                 let sem = &sem_array[num as usize];
                 match cmd {
-                    GETPID => Ok(sem.get_pid()),
-                    GETVAL => Ok(sem.get() as usize),
-                    GETNCNT => Ok(sem.get_ncnt()),
-                    GETZCNT => Ok(0),
-                    SETVAL => {
+                    SemctlCmds::GETPID => Ok(sem.get_pid()),
+                    SemctlCmds::GETVAL => Ok(sem.get() as usize),
+                    SemctlCmds::GETNCNT => Ok(sem.get_ncnt()),
+                    SemctlCmds::GETZCNT => Ok(0),
+                    SemctlCmds::SETVAL => {
                         sem.set(arg as isize);
                         sem.set_pid(self.zircon_process().id() as usize);
                         sem_array.ctime();
                         Ok(0)
                     }
-                    _ => unimplemented!("Semaphore Semctl cmd: {}", cmd),
+                    _ => unimplemented!("Semaphore Semctl cmd: {:?}", cmd),
                 }
             }
         }
+    }
+}
+
+numeric_enum! {
+    #[repr(usize)]
+    #[derive(Debug, Eq, PartialEq)]
+    #[allow(non_camel_case_types)]
+    pub enum SemctlCmds {
+        IPC_RMID = 0,
+        IPC_SET = 1,
+        IPC_STAT = 2,
+        GETPID = 11,
+        GETVAL = 12,
+        GETALL = 13,
+        GETNCNT = 14,
+        GETZCNT = 15,
+        SETVAL = 16,
+        SETALL = 17,
     }
 }
 
@@ -125,11 +147,17 @@ pub struct SemBuf {
     flags: i16,
 }
 
+/// for the fourth argument of semctl()
+///
+/// unused currently
 pub union SemctlUnion {
+    /// Value for SETVAL
     val: isize,
-    buf: usize,   // semid_ds*, unimplemented
-    array: usize, // short*, unimplemented
-} // unused
+    /// Buffer for IPC_STAT, IPC_SET: type semid_ds
+    buf: usize,
+    /// Array for GETALL, SETALL
+    array: usize,
+}
 
 bitflags! {
     pub struct SemFlags: i16 {

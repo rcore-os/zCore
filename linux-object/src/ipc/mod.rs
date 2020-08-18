@@ -44,7 +44,7 @@ impl SemProc {
 
     /// Get an semaphore set by `id`
     pub fn get(&self, id: SemId) -> Option<Arc<SemArray>> {
-        self.arrays.get(&id).map(|a| a.clone())
+        self.arrays.get(&id).cloned()
     }
 
     /// Add an undo operation
