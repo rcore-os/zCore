@@ -1,3 +1,5 @@
+//! Linux Inter-Process Communication
+#![deny(missing_docs)]
 mod semary;
 
 pub use self::semary::*;

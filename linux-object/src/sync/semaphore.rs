@@ -15,14 +15,19 @@ use spin::Mutex;
 
 /// A counting, blocking, semaphore.
 pub struct Semaphore {
-    // value and removed
+    /// value and removed inner struct
     lock: Arc<Mutex<SemaphoreInner>>,
 }
 
+/// Semaphore inner data
 struct SemaphoreInner {
+    /// can be thought of as a number of resources
     count: isize,
+    /// current Semaphore pid
     pid: usize,
+    /// is removed
     removed: bool,
+    /// EventBus of this Semaphore
     eventbus: EventBus,
 }
 
@@ -49,6 +54,7 @@ impl Semaphore {
         }
     }
 
+    /// Set the semaphore in removed statue
     pub fn remove(&self) {
         let mut inner = self.lock.lock();
         inner.removed = true;
@@ -89,7 +95,7 @@ impl Semaphore {
                     }
                 }));
 
-                return Poll::Pending;
+                Poll::Pending
             }
         }
 
@@ -126,14 +132,17 @@ impl Semaphore {
         self.lock.lock().count
     }
 
+    /// Get the current eventbus callback length
     pub fn get_ncnt(&self) -> usize {
         self.lock.lock().eventbus.get_callback_len()
     }
 
+    /// Get the current pid
     pub fn get_pid(&self) -> usize {
         self.lock.lock().pid
     }
 
+    /// Set the current pid
     pub fn set_pid(&self, pid: usize) {
         self.lock.lock().pid = pid;
     }
@@ -158,6 +167,6 @@ impl<'a> Deref for SemaphoreGuard<'a> {
     type Target = Semaphore;
 
     fn deref(&self) -> &Self::Target {
-        return self.sem;
+        self.sem
     }
 }

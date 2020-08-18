@@ -1,3 +1,4 @@
+//! Linux semaphore ipc
 use crate::error::LxError;
 use crate::sync::Semaphore;
 use crate::time::*;
@@ -16,39 +17,53 @@ bitflags! {
     }
 }
 
-// structure specifies the access permissions on the semaphore set
-// struct ipc_perm
+/// structure specifies the access permissions on the semaphore set
+///
+/// struct ipc_perm
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct IpcPerm {
-    // key_t is int
-    pub key: u32,  /* Key supplied to semget(2) */
-    pub uid: u32,  /* Effective UID of owner */
-    pub gid: u32,  /* Effective GID of owner */
-    pub cuid: u32, /* Effective UID of creator */
-    pub cgid: u32, /* Effective GID of creator */
-    // mode_t is unsigned int
-    pub mode: u32,  /* Permissions */
-    pub __seq: u32, /* Sequence number */
+    /// Key supplied to semget(2)
+    pub key: u32,
+    /// Effective UID of owner
+    pub uid: u32,
+    /// Effective GID of owner
+    pub gid: u32,
+    /// Effective UID of creator
+    pub cuid: u32,
+    /// Effective GID of creator
+    pub cgid: u32,
+    /// Permissions
+    pub mode: u32,
+    /// Sequence number
+    pub __seq: u32,
+    /// pad1
     pub __pad1: usize,
+    /// pad2
     pub __pad2: usize,
 }
 
-// semid data structure
-// struct semid_ds
+/// semid data structure
+///
+/// struct semid_ds
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct SemidDs {
-    pub perm: IpcPerm, /* Ownership and permissions */
-    pub otime: usize,  /* Last semop time */
+    /// Ownership and permissions
+    pub perm: IpcPerm,
+    /// Last semop time
+    pub otime: usize,
     __pad1: usize,
-    pub ctime: usize, /* Last change time */
+    /// Last change time
+    pub ctime: usize,
     __pad2: usize,
-    pub nsems: usize, /* number of semaphores in set */
+    /// number of semaphores in set
+    pub nsems: usize,
 }
 
 /// A System V semaphore set
 pub struct SemArray {
+    /// semid data structure
     pub semid_ds: Mutex<SemidDs>,
     sems: Vec<Semaphore>,
 }
@@ -65,7 +80,7 @@ lazy_static! {
 }
 
 impl SemArray {
-    // remove semaphores
+    /// remove semaphores
     pub fn remove(&self) {
         let mut key2sem = KEY2SEM.write();
         let key = self.semid_ds.lock().perm.key;
@@ -75,10 +90,12 @@ impl SemArray {
         }
     }
 
+    /// set last semop time
     pub fn otime(&self) {
         self.semid_ds.lock().otime = TimeSpec::now().sec;
     }
 
+    /// set last change time
     pub fn ctime(&self) {
         self.semid_ds.lock().ctime = TimeSpec::now().sec;
     }

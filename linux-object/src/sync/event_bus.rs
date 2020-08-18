@@ -33,7 +33,7 @@ bitflags! {
 
         /// Semaphore: is removed
         const SEMAPHORE_REMOVED             = 1 << 20;
-        /// Semaphore: can acquired
+        /// Semaphore: can acquired a resource of this semaphore
         const SEMAPHORE_CAN_ACQUIRE         = 1 << 21;
     }
 }
