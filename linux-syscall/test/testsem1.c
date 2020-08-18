@@ -70,27 +70,6 @@ static void inc()
 	assert(semzcnt == 0);
 }
 
-static void dec()
-{
-	key_t k;
-	int semid, semval;
-	struct sembuf sops;
-
-	T(k = ftok(path, id));
-	T(semid = semget(k, 0, 0));
-
-	/* test sem_op < 0 */
-	sops.sem_num = 0;
-	sops.sem_op = -1;
-	sops.sem_flg = 0;
-	T(semop(semid, &sops, 1));
-	T(semval = semctl(semid, 0, GETVAL));
-	assert(semval == 0);
-
-	/* cleanup */
-	T(semctl(semid, 0, IPC_RMID));
-}
-
 int main(void)
 {
 	int p;

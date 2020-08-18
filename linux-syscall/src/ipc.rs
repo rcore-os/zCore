@@ -9,7 +9,7 @@ pub use linux_object::ipc::*;
 use super::*;
 
 impl Syscall<'_> {
-    ///  returns the semaphore set identifier associated with the argument key
+    /// returns the semaphore set identifier associated with the argument key
     pub fn sys_semget(&self, key: usize, nsems: usize, flags: usize) -> SysResult {
         info!("semget: key: {} nsems: {} flags: {:#x}", key, nsems, flags);
 
@@ -123,16 +123,28 @@ numeric_enum! {
     #[repr(usize)]
     #[derive(Debug, Eq, PartialEq)]
     #[allow(non_camel_case_types)]
+    /// for the third argument of semctl(), specified the control operation
     pub enum SemctlCmds {
+        /// Immediately remove the semaphore set, awakening all processes blocked
         IPC_RMID = 0,
+        /// Write the values of some members of the semid_ds structure pointed to by arg
         IPC_SET = 1,
+        /// Copy information from the kernel data structure associated with
+        /// semid into the semid_ds structure pointed to by arg.buf.
         IPC_STAT = 2,
+        /// Get the value of sempid
         GETPID = 11,
+        /// Get the value of semval
         GETVAL = 12,
+        /// Get semval for all semaphores of the set into arg.array
         GETALL = 13,
+        /// Get the value of semncnt
         GETNCNT = 14,
+        /// Get the value of semzcnt
         GETZCNT = 15,
+        /// Set the value of semval to arg.val
         SETVAL = 16,
+        /// Set semval for all semaphores of the set using arg.array
         SETALL = 17,
     }
 }
