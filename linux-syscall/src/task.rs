@@ -166,6 +166,8 @@ impl Syscall<'_> {
         let inode = proc.lookup_inode(&path)?;
         let data = inode.read_as_vec()?;
 
+        proc.remove_cloexec_files();
+
         let vmar = self.zircon_process().vmar();
         vmar.clear()?;
         let loader = LinuxElfLoader {

@@ -18,7 +18,7 @@ pub struct File {
     /// file INode
     inode: Arc<dyn INode>,
     /// file open options
-    options: OpenOptions,
+    pub options: OpenOptions,
     /// file path
     pub path: String,
     /// file inner mut data
@@ -44,6 +44,8 @@ pub struct OpenOptions {
     pub append: bool,
     /// non block open
     pub nonblock: bool,
+    /// close on exec
+    pub fd_cloexec: bool,
 }
 
 /// file seek type
