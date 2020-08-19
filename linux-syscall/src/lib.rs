@@ -106,7 +106,7 @@ impl Syscall<'_> {
             Sys::FACCESSAT => self.sys_faccessat(a0.into(), a1.into(), a2, a3),
             Sys::DUP => self.sys_dup(a0.into()),
             Sys::DUP3 => self.sys_dup2(a0.into(), a1.into()), // TODO: handle `flags`
-            Sys::PIPE2 => self.sys_pipe(a0.into()),           // TODO: handle `flags`
+            Sys::PIPE2 => self.sys_pipe2(a0.into(), a1),      // TODO: handle `flags`
             Sys::UTIMENSAT => self.sys_utimensat(a0.into(), a1.into(), a2.into(), a3),
             Sys::COPY_FILE_RANGE => {
                 self.sys_copy_file_range(a0.into(), a1.into(), a2.into(), a3.into(), a4, a5)

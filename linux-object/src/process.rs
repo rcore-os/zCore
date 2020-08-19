@@ -205,6 +205,7 @@ impl LinuxProcess {
                 write: false,
                 append: false,
                 nonblock: false,
+                fd_cloexec: false,
             },
             String::from("/dev/stdin"),
         ) as Arc<dyn FileLike>;
@@ -215,6 +216,7 @@ impl LinuxProcess {
                 write: true,
                 append: false,
                 nonblock: false,
+                fd_cloexec: false,
             },
             String::from("/dev/stdout"),
         ) as Arc<dyn FileLike>;
@@ -363,6 +365,29 @@ impl LinuxProcess {
     /// Set signal action.
     pub fn set_signal_action(&self, signal: LinuxSignal, action: SignalAction) {
         self.inner.lock().signal_actions.table[signal as u8 as usize] = action;
+    }
+
+    /// Close file that FD_CLOEXEC is set
+    pub fn remove_cloexec_files(&self) {
+        let mut inner = self.inner.lock();
+        let close_fds = inner
+            .files
+            .iter()
+            .filter_map(|(fd, file_like)| {
+                if let Ok(file) = file_like.clone().downcast_arc::<File>() {
+                    if file.options.fd_cloexec {
+                        Some(*fd)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        for fd in close_fds {
+            inner.files.remove(&fd).map(|_| ()).unwrap();
+        }
     }
 
     /// Insert a `SemArray` and return its ID

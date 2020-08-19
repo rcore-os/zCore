@@ -85,8 +85,13 @@ impl Syscall<'_> {
     }
 
     /// Creates a pipe, a unidirectional data channel that can be used for interprocess communication.
-    pub fn sys_pipe(&self, mut fds: UserOutPtr<[i32; 2]>) -> SysResult {
-        info!("pipe: fds={:?}", fds);
+    pub fn sys_pipe(&self, fds: UserOutPtr<[i32; 2]>) -> SysResult {
+        self.sys_pipe2(fds, 0)
+    }
+
+    /// Creates a pipe, a unidirectional data channel that can be used for interprocess communication.
+    pub fn sys_pipe2(&self, mut fds: UserOutPtr<[i32; 2]>, flags: usize) -> SysResult {
+        info!("pipe2: fds={:?}, flags: {:#x}", fds, flags);
 
         let proc = self.linux_process();
         let (read, write) = Pipe::create_pair();
@@ -97,7 +102,8 @@ impl Syscall<'_> {
                 read: true,
                 write: false,
                 append: false,
-                nonblock: false,
+                nonblock: (flags & O_NONBLOCK) != 0,
+                fd_cloexec: (flags & O_CLOEXEC) != 0,
             },
             String::from("pipe_r:[]"),
         ))?;
@@ -109,13 +115,14 @@ impl Syscall<'_> {
                 write: true,
                 append: false,
                 nonblock: false,
+                fd_cloexec: (flags & O_CLOEXEC) != 0,
             },
             String::from("pipe_w:[]"),
         ))?;
         fds.write([read_fd.into(), write_fd.into()])?;
 
         info!(
-            "pipe: created rfd={:?} wfd={:?} fds={:?}",
+            "pipe2: created rfd={:?} wfd={:?} fds={:?}",
             read_fd, write_fd, fds
         );
 
@@ -158,6 +165,8 @@ bitflags! {
         const TRUNCATE = 1 << 9;
         /// append on each write
         const APPEND = 1 << 10;
+        /// close on exec
+        const CLOEXEC = 1 << 19;
     }
 }
 
@@ -179,6 +188,10 @@ impl OpenFlags {
             write: self.writable(),
             append: self.contains(Self::APPEND),
             nonblock: false,
+            fd_cloexec: self.contains(Self::CLOEXEC),
         }
     }
 }
+
+const O_NONBLOCK: usize = 0o4000;
+const O_CLOEXEC: usize = 0o2000000; /* set close_on_exec */
