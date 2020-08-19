@@ -242,6 +242,8 @@
 <span id="242">242</span>
 <span id="243">243</span>
 <span id="244">244</span>
+<span id="245">245</span>
+<span id="246">246</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! File handle for process</span>
 
@@ -263,7 +265,7 @@
     <span class="doccomment">/// file INode</span>
     <span class="ident">inode</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">INode</span><span class="op">&gt;</span>,
     <span class="doccomment">/// file open options</span>
-    <span class="ident">options</span>: <span class="ident">OpenOptions</span>,
+    <span class="kw">pub</span> <span class="ident">options</span>: <span class="ident">OpenOptions</span>,
     <span class="doccomment">/// file path</span>
     <span class="kw">pub</span> <span class="ident">path</span>: <span class="ident">String</span>,
     <span class="doccomment">/// file inner mut data</span>
@@ -289,6 +291,8 @@
     <span class="kw">pub</span> <span class="ident">append</span>: <span class="ident">bool</span>,
     <span class="doccomment">/// non block open</span>
     <span class="kw">pub</span> <span class="ident">nonblock</span>: <span class="ident">bool</span>,
+    <span class="doccomment">/// close on exec</span>
+    <span class="kw">pub</span> <span class="ident">fd_cloexec</span>: <span class="ident">bool</span>,
 }
 
 <span class="doccomment">/// file seek type</span>
