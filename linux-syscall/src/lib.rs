@@ -115,7 +115,7 @@ impl Syscall<'_> {
 
             // io multiplexing
             //            Sys::PSELECT6 => self.sys_pselect6(a0, a1.into(), a2.into(), a3.into(), a4.into(), a5.into()),
-            //            Sys::PPOLL => self.sys_ppoll(a0.into(), a1, a2.into()), // ignore sigmask
+            Sys::PPOLL => self.sys_ppoll(a0.into(), a1, a2.into()).await, // ignore sigmask
             //            Sys::EPOLL_CREATE1 => self.sys_epoll_create1(a0),
             //            Sys::EPOLL_CTL => self.sys_epoll_ctl(a0, a1, a2, a3.into()),
             //            Sys::EPOLL_PWAIT => self.sys_epoll_pwait(a0, a1.into(), a2, a3, a4),
