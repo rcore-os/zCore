@@ -81,7 +81,7 @@ impl Syscall<'_> {
         addrs_count: usize,
         mut out: UserOutPtr<HandleValue>,
     ) -> ZxResult {
-        let options = BtiOptions::from_bits_truncate(options);
+        let options = BtiOptions::from_bits(options).ok_or(ZxError::INVALID_ARGS)?;
         info!(
             "bti.pin: bti={:#x}, options={:?}, vmo={:#x}, offset={:#x}, size={:#x}, addrs={:#x?}, addrs_count={:#x}",
             bti, options, vmo, offset, size, addrs, addrs_count
@@ -161,7 +161,7 @@ impl Syscall<'_> {
             resource, src_num, options
         );
         let proc = self.thread.proc();
-        let options = InterruptOptions::from_bits_truncate(options);
+        let options = InterruptOptions::from_bits(options).ok_or(ZxError::INVALID_ARGS)?;
         let interrupt = if options.contains(InterruptOptions::VIRTUAL) {
             if options != InterruptOptions::VIRTUAL {
                 return Err(ZxError::INVALID_ARGS);

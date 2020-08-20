@@ -50,7 +50,7 @@ impl Syscall<'_> {
         val: i32,
         timeout: UserInPtr<TimeSpec>,
     ) -> SysResult {
-        let op = FutexFlags::from_bits_truncate(op).ok_or(LxError::EINVAL)?;
+        let op = FutexFlags::from_bits(op).ok_or(LxError::EINVAL)?;
         info!(
             "futex: uaddr: {:#x}, op: {:?}, val: {}, timeout_ptr: {:?}",
             uaddr, op, val, timeout

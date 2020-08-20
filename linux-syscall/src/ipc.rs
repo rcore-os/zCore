@@ -38,7 +38,7 @@ impl Syscall<'_> {
             .ok_or(LxError::EINVAL)?;
         sem_array.otime();
         for &SemBuf { num, op, flags } in ops.iter() {
-            let flags = SemFlags::from_bits_truncate(flags);
+            let flags = SemFlags::from_bits(flags).ok_or(LxError::EINVAL)?;
             if flags.contains(SemFlags::IPC_NOWAIT) {
                 unimplemented!("Semaphore: semop.IPC_NOWAIT");
             }

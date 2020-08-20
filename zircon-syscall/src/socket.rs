@@ -81,7 +81,7 @@ impl Syscall<'_> {
 
     /// Prevent future reading or writing on a socket.   
     pub fn sys_socket_shutdown(&self, socket: HandleValue, options: u32) -> ZxResult {
-        let options = SocketFlags::from_bits_truncate(options);
+        let options = SocketFlags::from_bits(options).ok_or(ZxError::INVALID_ARGS)?;
         info!(
             "socket.shutdown: socket={:#x?}, options={:#x?}",
             socket, options

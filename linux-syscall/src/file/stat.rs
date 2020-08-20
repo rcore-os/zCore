@@ -289,7 +289,7 @@ impl StatMode {
             FileType::Socket => StatMode::SOCKET,
             FileType::NamedPipe => StatMode::FIFO,
         };
-        let mode = StatMode::from_bits(mode as u32).ok_or(LxError::EINVAL)?;
+        let mode = StatMode::from_bits_truncate(mode as u32);
         type_ | mode
     }
 }

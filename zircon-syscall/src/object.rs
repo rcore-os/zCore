@@ -192,7 +192,7 @@ impl Syscall<'_> {
         deadline: Deadline,
         mut observed: UserOutPtr<Signal>,
     ) -> ZxResult {
-        let signals = Signal::from_bits_truncate(signals);
+        let signals = Signal::from_bits(signals).ok_or(ZxError::INVALID_ARGS)?;
         info!(
             "object.wait_one: handle={:#x?}, signals={:#x?}, deadline={:#x?}, observed={:#x?}",
             handle, signals, deadline, observed
@@ -389,7 +389,7 @@ impl Syscall<'_> {
         signals: u32,
         options: u32,
     ) -> ZxResult {
-        let signals = Signal::from_bits_truncate(signals);
+        let signals = Signal::from_bits(signals).ok_or(ZxError::INVALID_ARGS)?;
         info!(
             "object.wait_async: handle={:#x}, port={:#x}, key={:#x}, signal={:?}, options={:#X}",
             handle_value, port_handle_value, key, signals, options
