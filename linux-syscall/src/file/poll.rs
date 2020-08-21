@@ -16,18 +16,18 @@ impl Syscall<'_> {
     /// Wait for some event on a file descriptor
     pub async fn sys_poll(
         &mut self,
-        ufds: UserInOutPtr<PollFd>,
+        mut ufds: UserInOutPtr<PollFd>,
         nfds: usize,
         timeout_msecs: usize,
     ) -> SysResult {
-        let polls = ufds.read_array(nfds)?;
+        let mut polls = ufds.read_array(nfds)?;
         info!(
             "poll: ufds: {:?}, nfds: {:?}, timeout_msecs: {:#x}",
             polls, nfds, timeout_msecs
         );
         #[must_use = "future does nothing unless polled/`await`-ed"]
         struct PollFuture<'a> {
-            polls: Vec<PollFd>,
+            polls: &'a mut Vec<PollFd>,
             syscall: &'a Syscall<'a>,
         }
 
@@ -74,10 +74,12 @@ impl Syscall<'_> {
             }
         }
         let future = PollFuture {
-            polls,
+            polls: &mut polls,
             syscall: self,
         };
-        future.await
+        let result = future.await;
+        ufds.write_array(&polls)?;
+        result
     }
 }
 
