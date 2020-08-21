@@ -1068,6 +1068,37 @@
 <span id="1068">1068</span>
 <span id="1069">1069</span>
 <span id="1070">1070</span>
+<span id="1071">1071</span>
+<span id="1072">1072</span>
+<span id="1073">1073</span>
+<span id="1074">1074</span>
+<span id="1075">1075</span>
+<span id="1076">1076</span>
+<span id="1077">1077</span>
+<span id="1078">1078</span>
+<span id="1079">1079</span>
+<span id="1080">1080</span>
+<span id="1081">1081</span>
+<span id="1082">1082</span>
+<span id="1083">1083</span>
+<span id="1084">1084</span>
+<span id="1085">1085</span>
+<span id="1086">1086</span>
+<span id="1087">1087</span>
+<span id="1088">1088</span>
+<span id="1089">1089</span>
+<span id="1090">1090</span>
+<span id="1091">1091</span>
+<span id="1092">1092</span>
+<span id="1093">1093</span>
+<span id="1094">1094</span>
+<span id="1095">1095</span>
+<span id="1096">1096</span>
+<span id="1097">1097</span>
+<span id="1098">1098</span>
+<span id="1099">1099</span>
+<span id="1100">1100</span>
+<span id="1101">1101</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> <span class="ident">core</span>::<span class="ident">sync</span>::<span class="ident">atomic</span>::<span class="kw-2">*</span>;
 <span class="kw">use</span> {
@@ -1076,18 +1107,34 @@
 };
 
 <span class="macro">bitflags</span><span class="macro">!</span> {
+    <span class="doccomment">/// Creation flags for VmAddressRegion.</span>
     <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">VmarFlags</span>: <span class="ident">u32</span> {
         <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy</span>::<span class="ident">identity_op</span>)]</span>
+        <span class="doccomment">/// When randomly allocating subregions, reduce sprawl by placing allocations</span>
+        <span class="doccomment">/// near each other.</span>
         <span class="kw">const</span> <span class="ident">COMPACT</span>               <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">0</span>;
+        <span class="doccomment">/// Request that the new region be at the specified offset in its parent region.</span>
         <span class="kw">const</span> <span class="ident">SPECIFIC</span>              <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">1</span>;
+        <span class="doccomment">/// Like SPECIFIC, but permits overwriting existing mappings.  This</span>
+        <span class="doccomment">/// flag will not overwrite through a subregion.</span>
         <span class="kw">const</span> <span class="ident">SPECIFIC_OVERWRITE</span>    <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">2</span>;
+        <span class="doccomment">/// Allow VmMappings to be created inside the new region with the SPECIFIC or</span>
+        <span class="doccomment">/// OFFSET_IS_UPPER_LIMIT flag.</span>
         <span class="kw">const</span> <span class="ident">CAN_MAP_SPECIFIC</span>      <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">3</span>;
+        <span class="doccomment">/// Allow VmMappings to be created inside the region with read permissions.</span>
         <span class="kw">const</span> <span class="ident">CAN_MAP_READ</span>          <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">4</span>;
+        <span class="doccomment">/// Allow VmMappings to be created inside the region with write permissions.</span>
         <span class="kw">const</span> <span class="ident">CAN_MAP_WRITE</span>         <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">5</span>;
+        <span class="doccomment">/// Allow VmMappings to be created inside the region with execute permissions.</span>
         <span class="kw">const</span> <span class="ident">CAN_MAP_EXECUTE</span>       <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">6</span>;
+        <span class="doccomment">/// Require that VMO backing the mapping is non-resizable.</span>
         <span class="kw">const</span> <span class="ident">REQUIRE_NON_RESIZABLE</span> <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">7</span>;
+        <span class="doccomment">/// Treat the offset as an upper limit when allocating a VMO or child VMAR.</span>
         <span class="kw">const</span> <span class="ident">ALLOW_FAULTS</span>          <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">8</span>;
+
+        <span class="doccomment">/// Allow VmMappings to be created inside the region with read, write and execute permissions.</span>
         <span class="kw">const</span> <span class="ident">CAN_MAP_RXW</span>           <span class="op">=</span> <span class="self">Self</span>::<span class="ident">CAN_MAP_READ</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">CAN_MAP_EXECUTE</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">CAN_MAP_WRITE</span>.<span class="ident">bits</span>;
+        <span class="doccomment">/// Creation flags for root VmAddressRegion</span>
         <span class="kw">const</span> <span class="ident">ROOT_FLAGS</span>            <span class="op">=</span> <span class="self">Self</span>::<span class="ident">CAN_MAP_RXW</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">CAN_MAP_SPECIFIC</span>.<span class="ident">bits</span>;
     }
 }
@@ -1203,6 +1250,7 @@
         <span class="prelude-val">Ok</span>(<span class="ident">child</span>)
     }
 
+    <span class="doccomment">/// Map the `vmo` into this VMAR at given `offset`.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">map_at</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">vmar_offset</span>: <span class="ident">usize</span>,
@@ -1237,6 +1285,7 @@
         )
     }
 
+    <span class="doccomment">/// Map the `vmo` into this VMAR.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">map</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">vmar_offset</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>,
@@ -1336,6 +1385,9 @@
         <span class="prelude-val">Ok</span>(())
     }
 
+    <span class="doccomment">/// Change protections on a subset of the region of memory in the containing</span>
+    <span class="doccomment">/// address space.  If the requested range overlaps with a subregion,</span>
+    <span class="doccomment">/// protect() will fail.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">protect</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">addr</span>: <span class="ident">usize</span>, <span class="ident">len</span>: <span class="ident">usize</span>, <span class="ident">flags</span>: <span class="ident">MMUFlags</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">guard</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="ident">guard</span>.<span class="ident">as_mut</span>().<span class="ident">ok_or</span>(<span class="ident">ZxError</span>::<span class="ident">BAD_STATE</span>)<span class="question-mark">?</span>;
@@ -1420,10 +1472,12 @@
         <span class="self">self</span>.<span class="ident">addr</span>
     }
 
+    <span class="doccomment">/// Whether this VMAR is dead.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">is_dead</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
         <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">is_none</span>()
     }
 
+    <span class="doccomment">/// Whether this VMAR is alive.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">is_alive</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
         <span class="op">!</span><span class="self">self</span>.<span class="ident">is_dead</span>()
     }
@@ -1510,6 +1564,7 @@
         <span class="self">self</span>.<span class="ident">addr</span> <span class="op">&lt;</span><span class="op">=</span> <span class="ident">vaddr</span> <span class="kw-2">&amp;</span><span class="op">&amp;</span> <span class="ident">vaddr</span> <span class="op">&lt;</span> <span class="self">self</span>.<span class="ident">end_addr</span>()
     }
 
+    <span class="doccomment">/// Get information of this VmAddressRegion</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_info</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">VmarInfo</span> {
         <span class="ident">VmarInfo</span> {
             <span class="ident">base</span>: <span class="self">self</span>.<span class="ident">addr</span>(),
@@ -1517,6 +1572,7 @@
         }
     }
 
+    <span class="doccomment">/// Get VmarFlags of this VMAR.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_flags</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">VmarFlags</span> {
         <span class="self">self</span>.<span class="ident">flags</span>
     }
@@ -1533,6 +1589,7 @@
         }
     }
 
+    <span class="doccomment">/// Get base address of vdso.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">vdso_base_addr</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">guard</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="ident">guard</span>.<span class="ident">as_ref</span>().<span class="ident">unwrap</span>();
@@ -1585,6 +1642,7 @@
         <span class="ident">inner</span>.<span class="ident">fork_from</span>(<span class="ident">src</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">page_table</span>)
     }
 
+    <span class="doccomment">/// Returns statistics about memory used by a task.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_task_stats</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">TaskStatsInfo</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">task_stats</span> <span class="op">=</span> <span class="ident">TaskStatsInfo</span>::<span class="ident">default</span>();
         <span class="self">self</span>.<span class="ident">for_each_mapping</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="op">|</span><span class="ident">map</span><span class="op">|</span> <span class="ident">map</span>.<span class="ident">fill_in_task_status</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">task_stats</span>));
@@ -1666,6 +1724,7 @@
     }
 }
 
+<span class="doccomment">/// Information of a VmAddressRegion.</span>
 <span class="attribute">#[<span class="ident">repr</span>(<span class="ident">C</span>)]</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">VmarInfo</span> {
@@ -1688,6 +1747,7 @@
     <span class="ident">vmo_offset</span>: <span class="ident">usize</span>,
 }
 
+<span class="doccomment">/// Statistics about resources (e.g., memory) used by a task.</span>
 <span class="attribute">#[<span class="ident">repr</span>(<span class="ident">C</span>)]</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Default</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">TaskStatsInfo</span> {
@@ -1878,6 +1938,7 @@
         <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">end_addr</span>()
     }
 
+    <span class="doccomment">/// Get MMUFlags of this VmMapping.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_flags</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">MMUFlags</span> {
         <span class="self">self</span>.<span class="ident">flags</span>
     }
@@ -1902,7 +1963,8 @@
         }
     }
 
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">handle_page_fault</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">vaddr</span>: <span class="ident">VirtAddr</span>, <span class="ident">flags</span>: <span class="ident">MMUFlags</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    <span class="doccomment">/// Handle page fault happened on this VmMapping.</span>
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">handle_page_fault</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">vaddr</span>: <span class="ident">VirtAddr</span>, <span class="ident">flags</span>: <span class="ident">MMUFlags</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
         <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">flags</span>.<span class="ident">contains</span>(<span class="ident">flags</span>) {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">ACCESS_DENIED</span>);
         }

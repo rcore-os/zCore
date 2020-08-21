@@ -142,6 +142,11 @@
 <span id="142">142</span>
 <span id="143">143</span>
 <span id="144">144</span>
+<span id="145">145</span>
+<span id="146">146</span>
+<span id="147">147</span>
+<span id="148">148</span>
+<span id="149">149</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> {<span class="kw">super</span>::<span class="kw-2">*</span>, <span class="kw">crate</span>::<span class="ident">object</span>::<span class="kw-2">*</span>, <span class="ident">alloc</span>::<span class="ident">sync</span>::<span class="ident">Arc</span>, <span class="ident">numeric_enum_macro</span>::<span class="ident">numeric_enum</span>, <span class="ident">spin</span>::<span class="ident">Mutex</span>};
 
@@ -163,9 +168,13 @@
 <span class="macro">numeric_enum</span><span class="macro">!</span> {
     <span class="attribute">#[<span class="ident">repr</span>(<span class="ident">usize</span>)]</span>
     <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>)]</span>
+    <span class="doccomment">/// Enumeration of possible methods to modify the seek within an Stream.</span>
     <span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">SeekOrigin</span> {
+        <span class="doccomment">/// Set the seek offset relative to the start of the stream.</span>
         <span class="ident">Start</span> <span class="op">=</span> <span class="number">0</span>,
+        <span class="doccomment">/// Set the seek offset relative to the current seek offset of the stream.</span>
         <span class="ident">Current</span> <span class="op">=</span> <span class="number">1</span>,
+        <span class="doccomment">/// Set the seek offset relative to the end of the stream, as defined by the content size of the stream.</span>
         <span class="ident">End</span> <span class="op">=</span> <span class="number">2</span>,
     }
 }
@@ -267,6 +276,7 @@
     }
 }
 
+<span class="doccomment">/// Information of a Stream</span>
 <span class="attribute">#[<span class="ident">repr</span>(<span class="ident">C</span>)]</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Default</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">StreamInfo</span> {

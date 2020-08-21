@@ -417,6 +417,58 @@
 <span id="417">417</span>
 <span id="418">418</span>
 <span id="419">419</span>
+<span id="420">420</span>
+<span id="421">421</span>
+<span id="422">422</span>
+<span id="423">423</span>
+<span id="424">424</span>
+<span id="425">425</span>
+<span id="426">426</span>
+<span id="427">427</span>
+<span id="428">428</span>
+<span id="429">429</span>
+<span id="430">430</span>
+<span id="431">431</span>
+<span id="432">432</span>
+<span id="433">433</span>
+<span id="434">434</span>
+<span id="435">435</span>
+<span id="436">436</span>
+<span id="437">437</span>
+<span id="438">438</span>
+<span id="439">439</span>
+<span id="440">440</span>
+<span id="441">441</span>
+<span id="442">442</span>
+<span id="443">443</span>
+<span id="444">444</span>
+<span id="445">445</span>
+<span id="446">446</span>
+<span id="447">447</span>
+<span id="448">448</span>
+<span id="449">449</span>
+<span id="450">450</span>
+<span id="451">451</span>
+<span id="452">452</span>
+<span id="453">453</span>
+<span id="454">454</span>
+<span id="455">455</span>
+<span id="456">456</span>
+<span id="457">457</span>
+<span id="458">458</span>
+<span id="459">459</span>
+<span id="460">460</span>
+<span id="461">461</span>
+<span id="462">462</span>
+<span id="463">463</span>
+<span id="464">464</span>
+<span id="465">465</span>
+<span id="466">466</span>
+<span id="467">467</span>
+<span id="468">468</span>
+<span id="469">469</span>
+<span id="470">470</span>
+<span id="471">471</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> {
     <span class="self">self</span>::{<span class="ident">paged</span>::<span class="kw-2">*</span>, <span class="ident">physical</span>::<span class="kw-2">*</span>, <span class="ident">slice</span>::<span class="kw-2">*</span>},
@@ -439,6 +491,7 @@
 <span class="macro">kcounter</span><span class="macro">!</span>(<span class="ident">VMO_PAGE_ALLOC</span>, <span class="string">&quot;vmo.page_alloc&quot;</span>);
 <span class="macro">kcounter</span><span class="macro">!</span>(<span class="ident">VMO_PAGE_DEALLOC</span>, <span class="string">&quot;vmo.page_dealloc&quot;</span>);
 
+<span class="doccomment">/// The amount of memory committed to VMOs.</span>
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">vmo_page_bytes</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
     (<span class="ident">VMO_PAGE_ALLOC</span>.<span class="ident">get</span>() <span class="op">-</span> <span class="ident">VMO_PAGE_DEALLOC</span>.<span class="ident">get</span>()) <span class="op">*</span> <span class="ident">PAGE_SIZE</span>
 }
@@ -489,38 +542,58 @@
         <span class="ident">user_id</span>: <span class="ident">KoID</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">VMObjectTrait</span><span class="op">&gt;</span><span class="op">&gt;</span>;
 
+    <span class="doccomment">/// Append a mapping to the VMO&#39;s mapping list.</span>
     <span class="kw">fn</span> <span class="ident">append_mapping</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">mapping</span>: <span class="ident">Weak</span><span class="op">&lt;</span><span class="ident">VmMapping</span><span class="op">&gt;</span>);
 
+    <span class="doccomment">/// Remove a mapping from the VMO&#39;s mapping list.</span>
     <span class="kw">fn</span> <span class="ident">remove_mapping</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">mapping</span>: <span class="ident">Weak</span><span class="op">&lt;</span><span class="ident">VmMapping</span><span class="op">&gt;</span>);
 
+    <span class="doccomment">/// Complete the VmoInfo.</span>
     <span class="kw">fn</span> <span class="ident">complete_info</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">info</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">VmoInfo</span>);
 
+    <span class="doccomment">/// Get the cache policy.</span>
     <span class="kw">fn</span> <span class="ident">cache_policy</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">CachePolicy</span>;
 
+    <span class="doccomment">/// Set the cache policy.</span>
     <span class="kw">fn</span> <span class="ident">set_cache_policy</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">policy</span>: <span class="ident">CachePolicy</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span>;
 
+    <span class="doccomment">/// Returns an estimate of the number of unique VmAspaces that this object</span>
+    <span class="doccomment">/// is mapped into.</span>
     <span class="kw">fn</span> <span class="ident">share_count</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span>;
 
+    <span class="doccomment">/// Count committed pages of the VMO.</span>
     <span class="kw">fn</span> <span class="ident">committed_pages_in_range</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">start_idx</span>: <span class="ident">usize</span>, <span class="ident">end_idx</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span>;
 
+    <span class="doccomment">/// Pin the given range of the VMO.</span>
     <span class="kw">fn</span> <span class="ident">pin</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">_offset</span>: <span class="ident">usize</span>, <span class="ident">_len</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
         <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">NOT_SUPPORTED</span>)
     }
 
+    <span class="doccomment">/// Unpin the given range of the VMO.</span>
     <span class="kw">fn</span> <span class="ident">unpin</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">_offset</span>: <span class="ident">usize</span>, <span class="ident">_len</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
         <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">NOT_SUPPORTED</span>)
     }
 
+    <span class="doccomment">/// Returns true if the object is backed by a contiguous range of physical memory.</span>
     <span class="kw">fn</span> <span class="ident">is_contiguous</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
         <span class="bool-val">false</span>
     }
 
+    <span class="doccomment">/// Returns true if the object is backed by RAM.</span>
     <span class="kw">fn</span> <span class="ident">is_paged</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
         <span class="bool-val">false</span>
     }
+
+    <span class="doccomment">/// Resets the range of bytes in the VMO from `offset` to `offset+len` to 0.</span>
     <span class="kw">fn</span> <span class="ident">zero</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">offset</span>: <span class="ident">usize</span>, <span class="ident">len</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span>;
 }
 
+<span class="doccomment">/// Virtual memory containers</span>
+<span class="doccomment">///</span>
+<span class="doccomment">/// ## SYNOPSIS</span>
+<span class="doccomment">///</span>
+<span class="doccomment">/// A Virtual Memory Object (VMO) represents a contiguous region of virtual memory</span>
+<span class="doccomment">/// that may be mapped into multiple address spaces.</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">VmObject</span> {
     <span class="ident">base</span>: <span class="ident">KObjectBase</span>,
     <span class="ident">parent</span>: <span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">Weak</span><span class="op">&lt;</span><span class="ident">VmObject</span><span class="op">&gt;</span><span class="op">&gt;</span>, <span class="comment">// Parent could be changed</span>
@@ -539,6 +612,7 @@
         <span class="self">Self</span>::<span class="ident">new_paged_with_resizable</span>(<span class="bool-val">false</span>, <span class="ident">pages</span>)
     }
 
+    <span class="doccomment">/// Create a new VMO, which can be resizable, backing on physical memory allocated in pages.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new_paged_with_resizable</span>(<span class="ident">resizable</span>: <span class="ident">bool</span>, <span class="ident">pages</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">base</span> <span class="op">=</span> <span class="ident">KObjectBase</span>::<span class="ident">with_signal</span>(<span class="ident">Signal</span>::<span class="ident">VMO_ZERO_CHILDREN</span>);
         <span class="ident">Arc</span>::<span class="ident">new</span>(<span class="ident">VmObject</span> {
@@ -563,6 +637,7 @@
         })
     }
 
+    <span class="doccomment">/// Create a VM object referring to a specific contiguous range of physical frame.  </span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new_contiguous</span>(<span class="ident">p_size</span>: <span class="ident">usize</span>, <span class="ident">align_log2</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="macro">assert</span><span class="macro">!</span>(<span class="ident">align_log2</span> <span class="op">&lt;</span> <span class="number">8</span> <span class="op">*</span> <span class="ident">core</span>::<span class="ident">mem</span>::<span class="ident">size_of</span>::<span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>());
         <span class="kw">let</span> <span class="ident">size</span> <span class="op">=</span> <span class="ident">roundup_pages</span>(<span class="ident">p_size</span>);
@@ -715,6 +790,7 @@
         <span class="ident">ret</span>
     }
 
+    <span class="doccomment">/// Set the cache policy.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">set_cache_policy</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">policy</span>: <span class="ident">CachePolicy</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
         <span class="kw">if</span> <span class="self">self</span>.<span class="ident">children</span>.<span class="ident">lock</span>().<span class="ident">len</span>() <span class="op">!</span><span class="op">=</span> <span class="number">0</span> {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">BAD_STATE</span>);
@@ -722,10 +798,12 @@
         <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">set_cache_policy</span>(<span class="ident">policy</span>)
     }
 
+    <span class="doccomment">/// Returns true if the object size can be changed.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">is_resizable</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
         <span class="self">self</span>.<span class="ident">resizable</span>
     }
 
+    <span class="doccomment">/// Returns true if the object is backed by a contiguous range of physical memory.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">is_contiguous</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
         <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">is_contiguous</span>()
     }
@@ -807,21 +885,47 @@
 
 <span class="macro">bitflags</span><span class="macro">!</span> {
     <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Default</span>)]</span>
+    <span class="doccomment">/// Values used by ZX_INFO_PROCESS_VMOS.</span>
     <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">VmoInfoFlags</span>: <span class="ident">u32</span> {
+        <span class="doccomment">/// The VMO points to a physical address range, and does not consume memory.</span>
+        <span class="doccomment">/// Typically used to access memory-mapped hardware.</span>
+        <span class="doccomment">/// Mutually exclusive with TYPE_PAGED.</span>
         <span class="kw">const</span> <span class="ident">TYPE_PHYSICAL</span> <span class="op">=</span> <span class="number">0</span>;
+
         <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy</span>::<span class="ident">identity_op</span>)]</span>
+        <span class="doccomment">/// The VMO is backed by RAM, consuming memory.</span>
+        <span class="doccomment">/// Mutually exclusive with TYPE_PHYSICAL.</span>
         <span class="kw">const</span> <span class="ident">TYPE_PAGED</span>    <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">0</span>;
+
+        <span class="doccomment">/// The VMO is resizable.</span>
         <span class="kw">const</span> <span class="ident">RESIZABLE</span>     <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">1</span>;
+
+        <span class="doccomment">/// The VMO is a child, and is a copy-on-write clone.</span>
         <span class="kw">const</span> <span class="ident">IS_COW_CLONE</span>  <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">2</span>;
+
+        <span class="doccomment">/// When reading a list of VMOs pointed to by a process, indicates that the</span>
+        <span class="doccomment">/// process has a handle to the VMO, which isn&#39;t necessarily mapped.</span>
         <span class="kw">const</span> <span class="ident">VIA_HANDLE</span>    <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">3</span>;
+
+        <span class="doccomment">/// When reading a list of VMOs pointed to by a process, indicates that the</span>
+        <span class="doccomment">/// process maps the VMO into a VMAR, but doesn&#39;t necessarily have a handle to</span>
+        <span class="doccomment">/// the VMO.</span>
         <span class="kw">const</span> <span class="ident">VIA_MAPPING</span>   <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">4</span>;
+
+        <span class="doccomment">/// The VMO is a pager owned VMO created by zx_pager_create_vmo or is</span>
+        <span class="doccomment">/// a clone of a VMO with this flag set. Will only be set on VMOs with</span>
+        <span class="doccomment">/// the ZX_INFO_VMO_TYPE_PAGED flag set.</span>
         <span class="kw">const</span> <span class="ident">PAGER_BACKED</span>  <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">5</span>;
+
+        <span class="doccomment">/// The VMO is contiguous.</span>
         <span class="kw">const</span> <span class="ident">CONTIGUOUS</span>    <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">6</span>;
     }
 }
 
+<span class="doccomment">/// Different operations that `range_change` can perform against any VmMappings that are found.</span>
+<span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">PartialEq</span>, <span class="ident">Eq</span>, <span class="ident">Clone</span>, <span class="ident">Copy</span>)]</span>
-<span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">RangeChangeOp</span> {
+<span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">enum</span> <span class="ident">RangeChangeOp</span> {
     <span class="ident">Unmap</span>,
     <span class="ident">RemoveWrite</span>,
 }

@@ -87,7 +87,14 @@
 <span id="87">87</span>
 <span id="88">88</span>
 <span id="89">89</span>
+<span id="90">90</span>
+<span id="91">91</span>
+<span id="92">92</span>
+<span id="93">93</span>
+<span id="94">94</span>
+<span id="95">95</span>
 </pre><div class="example-wrap"><pre class="rust ">
+<span class="attribute">#![<span class="ident">deny</span>(<span class="ident">missing_docs</span>)]</span>
 <span class="doccomment">//! Objects for Virtual Memory Management.</span>
 
 <span class="kw">mod</span> <span class="ident">stream</span>;
@@ -111,12 +118,16 @@
 
 <span class="doccomment">/// Size of a page</span>
 <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">PAGE_SIZE</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">0x1000</span>;
+
+<span class="doccomment">/// log2(PAGE_SIZE)</span>
 <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">PAGE_SIZE_LOG2</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">12</span>;
 
+<span class="doccomment">/// Check whether `x` is a multiple of `PAGE_SIZE`.</span>
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">page_aligned</span>(<span class="ident">x</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
-    <span class="ident">x</span> <span class="op">%</span> <span class="ident">PAGE_SIZE</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span>
+    <span class="ident">check_aligned</span>(<span class="ident">x</span>, <span class="ident">PAGE_SIZE</span>)
 }
 
+<span class="doccomment">/// Check whether `x` is a multiple of `align`.</span>
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">check_aligned</span>(<span class="ident">x</span>: <span class="ident">usize</span>, <span class="ident">align</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
     <span class="ident">x</span> <span class="op">%</span> <span class="ident">align</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span>
 }
@@ -124,29 +135,30 @@
 <span class="doccomment">/// How many pages the `size` needs.</span>
 <span class="doccomment">/// To avoid overflow and pass more unit tests, use wrapping add</span>
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">pages</span>(<span class="ident">size</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
-    <span class="ident">size</span>.<span class="ident">wrapping_add</span>(<span class="ident">PAGE_SIZE</span> <span class="op">-</span> <span class="number">1</span>) <span class="op">/</span> <span class="ident">PAGE_SIZE</span>
+    <span class="ident">ceil</span>(<span class="ident">size</span>, <span class="ident">PAGE_SIZE</span>)
 }
 
+<span class="doccomment">/// How many `align` the `x` needs.</span>
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">ceil</span>(<span class="ident">x</span>: <span class="ident">usize</span>, <span class="ident">align</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
     <span class="ident">x</span>.<span class="ident">wrapping_add</span>(<span class="ident">align</span> <span class="op">-</span> <span class="number">1</span>) <span class="op">/</span> <span class="ident">align</span>
 }
 
+<span class="doccomment">/// Round up `size` to a multiple of `PAGE_SIZE`.</span>
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">roundup_pages</span>(<span class="ident">size</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
-    <span class="kw">if</span> <span class="ident">page_aligned</span>(<span class="ident">size</span>) {
-        <span class="ident">size</span>
-    } <span class="kw">else</span> {
-        <span class="ident">pages</span>(<span class="ident">size</span>) <span class="op">*</span> <span class="ident">PAGE_SIZE</span>
-    }
+    <span class="ident">pages</span>(<span class="ident">size</span>) <span class="op">*</span> <span class="ident">PAGE_SIZE</span>
 }
 
+<span class="doccomment">/// Round down `size` to a multiple of `PAGE_SIZE`.</span>
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">round_down_pages</span>(<span class="ident">size</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
     <span class="ident">size</span> <span class="op">/</span> <span class="ident">PAGE_SIZE</span> <span class="op">*</span> <span class="ident">PAGE_SIZE</span>
 }
 
 <span class="macro">lazy_static</span><span class="macro">!</span> {
+    <span class="doccomment">/// Kernel address space.</span>
     <span class="kw">pub</span> <span class="kw">static</span> <span class="kw-2">ref</span> <span class="ident">KERNEL_ASPACE</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">VmAddressRegion</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">VmAddressRegion</span>::<span class="ident">new_kernel</span>();
 }
 
+<span class="doccomment">/// Allocate memory in kernel address space at given physical address.</span>
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">kernel_allocate_physical</span>(
     <span class="ident">size</span>: <span class="ident">usize</span>,
     <span class="ident">paddr</span>: <span class="ident">PhysAddr</span>,
