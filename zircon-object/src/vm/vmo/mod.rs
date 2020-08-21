@@ -19,6 +19,7 @@ mod slice;
 kcounter!(VMO_PAGE_ALLOC, "vmo.page_alloc");
 kcounter!(VMO_PAGE_DEALLOC, "vmo.page_dealloc");
 
+/// The amount of memory committed to VMOs.
 pub fn vmo_page_bytes() -> usize {
     (VMO_PAGE_ALLOC.get() - VMO_PAGE_DEALLOC.get()) * PAGE_SIZE
 }
@@ -69,38 +70,58 @@ pub trait VMObjectTrait: Sync + Send {
         user_id: KoID,
     ) -> ZxResult<Arc<dyn VMObjectTrait>>;
 
+    /// Append a mapping to the VMO's mapping list.
     fn append_mapping(&self, mapping: Weak<VmMapping>);
 
+    /// Remove a mapping from the VMO's mapping list.
     fn remove_mapping(&self, mapping: Weak<VmMapping>);
 
+    /// Complete the VmoInfo.
     fn complete_info(&self, info: &mut VmoInfo);
 
+    /// Get the cache policy.
     fn cache_policy(&self) -> CachePolicy;
 
+    /// Set the cache policy.
     fn set_cache_policy(&self, policy: CachePolicy) -> ZxResult;
 
+    /// Returns an estimate of the number of unique VmAspaces that this object
+    /// is mapped into.
     fn share_count(&self) -> usize;
 
+    /// Count committed pages of the VMO.
     fn committed_pages_in_range(&self, start_idx: usize, end_idx: usize) -> usize;
 
+    /// Pin the given range of the VMO.
     fn pin(&self, _offset: usize, _len: usize) -> ZxResult {
         Err(ZxError::NOT_SUPPORTED)
     }
 
+    /// Unpin the given range of the VMO.
     fn unpin(&self, _offset: usize, _len: usize) -> ZxResult {
         Err(ZxError::NOT_SUPPORTED)
     }
 
+    /// Returns true if the object is backed by a contiguous range of physical memory.
     fn is_contiguous(&self) -> bool {
         false
     }
 
+    /// Returns true if the object is backed by RAM.
     fn is_paged(&self) -> bool {
         false
     }
+
+    /// Resets the range of bytes in the VMO from `offset` to `offset+len` to 0.
     fn zero(&self, offset: usize, len: usize) -> ZxResult;
 }
 
+/// Virtual memory containers
+///
+/// ## SYNOPSIS
+///
+/// A Virtual Memory Object (VMO) represents a contiguous region of virtual memory
+/// that may be mapped into multiple address spaces.
 pub struct VmObject {
     base: KObjectBase,
     parent: Mutex<Weak<VmObject>>, // Parent could be changed
@@ -119,6 +140,7 @@ impl VmObject {
         Self::new_paged_with_resizable(false, pages)
     }
 
+    /// Create a new VMO, which can be resizable, backing on physical memory allocated in pages.
     pub fn new_paged_with_resizable(resizable: bool, pages: usize) -> Arc<Self> {
         let base = KObjectBase::with_signal(Signal::VMO_ZERO_CHILDREN);
         Arc::new(VmObject {
@@ -143,6 +165,7 @@ impl VmObject {
         })
     }
 
+    /// Create a VM object referring to a specific contiguous range of physical frame.  
     pub fn new_contiguous(p_size: usize, align_log2: usize) -> ZxResult<Arc<Self>> {
         assert!(align_log2 < 8 * core::mem::size_of::<usize>());
         let size = roundup_pages(p_size);
@@ -295,6 +318,7 @@ impl VmObject {
         ret
     }
 
+    /// Set the cache policy.
     pub fn set_cache_policy(&self, policy: CachePolicy) -> ZxResult {
         if self.children.lock().len() != 0 {
             return Err(ZxError::BAD_STATE);
@@ -302,10 +326,12 @@ impl VmObject {
         self.inner.set_cache_policy(policy)
     }
 
+    /// Returns true if the object size can be changed.
     pub fn is_resizable(&self) -> bool {
         self.resizable
     }
 
+    /// Returns true if the object is backed by a contiguous range of physical memory.
     pub fn is_contiguous(&self) -> bool {
         self.inner.is_contiguous()
     }
@@ -387,21 +413,47 @@ pub struct VmoInfo {
 
 bitflags! {
     #[derive(Default)]
+    /// Values used by ZX_INFO_PROCESS_VMOS.
     pub struct VmoInfoFlags: u32 {
+        /// The VMO points to a physical address range, and does not consume memory.
+        /// Typically used to access memory-mapped hardware.
+        /// Mutually exclusive with TYPE_PAGED.
         const TYPE_PHYSICAL = 0;
+
         #[allow(clippy::identity_op)]
+        /// The VMO is backed by RAM, consuming memory.
+        /// Mutually exclusive with TYPE_PHYSICAL.
         const TYPE_PAGED    = 1 << 0;
+
+        /// The VMO is resizable.
         const RESIZABLE     = 1 << 1;
+
+        /// The VMO is a child, and is a copy-on-write clone.
         const IS_COW_CLONE  = 1 << 2;
+
+        /// When reading a list of VMOs pointed to by a process, indicates that the
+        /// process has a handle to the VMO, which isn't necessarily mapped.
         const VIA_HANDLE    = 1 << 3;
+
+        /// When reading a list of VMOs pointed to by a process, indicates that the
+        /// process maps the VMO into a VMAR, but doesn't necessarily have a handle to
+        /// the VMO.
         const VIA_MAPPING   = 1 << 4;
+
+        /// The VMO is a pager owned VMO created by zx_pager_create_vmo or is
+        /// a clone of a VMO with this flag set. Will only be set on VMOs with
+        /// the ZX_INFO_VMO_TYPE_PAGED flag set.
         const PAGER_BACKED  = 1 << 5;
+
+        /// The VMO is contiguous.
         const CONTIGUOUS    = 1 << 6;
     }
 }
 
+/// Different operations that `range_change` can perform against any VmMappings that are found.
+#[allow(dead_code)]
 #[derive(PartialEq, Eq, Clone, Copy)]
-pub enum RangeChangeOp {
+pub(super) enum RangeChangeOp {
     Unmap,
     RemoveWrite,
 }
