@@ -82,7 +82,7 @@ impl Syscall<'_> {
     }
 
     /// Wait for some event on a file descriptor
-    /// 
+    ///
     /// ppoll() allows an application to safely wait until either a file descriptor becomes ready or until a signal is caught
     pub async fn sys_ppoll(
         &mut self,
@@ -105,7 +105,6 @@ impl Syscall<'_> {
 
         self.sys_poll(ufds, nfds, timeout_msecs as usize).await
     }
-
 }
 
 #[repr(C)]

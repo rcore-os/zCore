@@ -15,6 +15,7 @@ use hashbrown::HashMap;
 use kernel_hal::VirtAddr;
 use rcore_fs::vfs::{FileSystem, INode};
 use spin::*;
+use zircon_object::vm::*;
 use zircon_object::{
     object::{KernelObject, KoID, Signal},
     signal::Futex,
@@ -152,6 +153,8 @@ struct LinuxProcessInner {
     files: HashMap<FileDesc, Arc<dyn FileLike>>,
     /// Semaphore
     semaphores: SemProc,
+    /// Share Memory
+    shm_identifiers: ShmProc,
     /// Futexes
     futexes: HashMap<VirtAddr, Arc<Futex>>,
     /// Child processes
@@ -408,6 +411,31 @@ impl LinuxProcess {
     /// Remove an `SemArray` by ID
     pub fn semaphores_remove(&self, id: usize) {
         self.inner.lock().semaphores.remove(id)
+    }
+
+    ///
+    pub fn shm_get_id(&self, id: usize) -> Option<usize> {
+        self.inner.lock().shm_identifiers.get_id(id)
+    }
+
+    ///
+    pub fn shm_get(&self, id: usize) -> Option<ShmIdentifier> {
+        self.inner.lock().shm_identifiers.get(id)
+    }
+
+    ///
+    pub fn shm_pop(&self, id: usize) {
+        self.inner.lock().shm_identifiers.pop(id)
+    }
+
+    ///
+    pub fn shm_add(&self, shared_guard: Arc<spin::Mutex<Arc<VmObject>>>) -> usize {
+        self.inner.lock().shm_identifiers.add(shared_guard)
+    }
+
+    ///
+    pub fn shm_set(&self, id: usize, shm_id: ShmIdentifier) {
+        self.inner.lock().shm_identifiers.set(id, shm_id)
     }
 }
 

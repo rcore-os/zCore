@@ -188,6 +188,14 @@ impl Syscall<'_> {
             #[cfg(not(target_arch = "mips"))]
             Sys::SEMCTL => self.sys_semctl(a0, a1, a2, a3),
 
+            // shm
+            #[cfg(not(target_arch = "mips"))]
+            Sys::SHMGET => self.sys_shmget(a0, a1, a2),
+            #[cfg(not(target_arch = "mips"))]
+            Sys::SHMAT => self.sys_shmat(a0, a1, a2),
+            #[cfg(not(target_arch = "mips"))]
+            Sys::SHMDT => self.sys_shmdt(a0, a1, a2),
+
             // system
             Sys::GETPID => self.sys_getpid(),
             Sys::GETTID => self.sys_gettid(),

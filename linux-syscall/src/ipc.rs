@@ -2,9 +2,10 @@
 #![allow(dead_code)]
 
 use bitflags::*;
-use numeric_enum_macro::numeric_enum;
-
+use kernel_hal::user::*;
 pub use linux_object::ipc::*;
+use numeric_enum_macro::numeric_enum;
+use zircon_object::vm::*;
 
 use super::*;
 
@@ -116,6 +117,58 @@ impl Syscall<'_> {
                 }
             }
         }
+    }
+
+    ///
+    pub fn sys_shmget(&self, key: usize, size: usize, _shmflg: usize) -> SysResult {
+        info!("shmget: key: {}", key);
+
+        let shared_guard = ShmIdentifier::new_shared_guard(key, size);
+        let id = self.linux_process().shm_add(shared_guard);
+        Ok(id)
+    }
+
+    ///
+    pub fn sys_shmat(&self, id: usize, mut addr: VirtAddr, _shmflg: usize) -> SysResult {
+        let mut shm_identifier = self.linux_process().shm_get(id).ok_or(LxError::EINVAL)?;
+
+        let proc = self.zircon_process();
+        let vmar = proc.vmar();
+        if addr == 0 {
+            // although NULL can be a valid address
+            // but in C, NULL is regarded as allocation failure
+            // so just skip it
+            addr = PAGE_SIZE;
+        }
+        let vmo = shm_identifier.shared_guard.lock();
+        info!(
+            "shmat: id: {}, addr = {:#x}, size = {}",
+            id,
+            addr,
+            vmo.len()
+        );
+        let addr = vmar.map(
+            None,
+            vmo.clone(),
+            0,
+            vmo.len(),
+            MMUFlags::READ | MMUFlags::WRITE | MMUFlags::EXECUTE,
+        )?;
+        shm_identifier.addr = addr;
+        self.linux_process().shm_set(id, shm_identifier.clone());
+        //self.process().shmIdentifiers.setVirtAddr(id, addr);
+        return Ok(addr);
+    }
+
+    ///
+    pub fn sys_shmdt(&self, _id: usize, addr: VirtAddr, _shmflg: usize) -> SysResult {
+        info!("shmdt: addr={:#x}", addr);
+        let proc = self.linux_process();
+        let opt_id = proc.shm_get_id(addr);
+        if let Some(id) = opt_id {
+            proc.shm_pop(id);
+        }
+        Ok(0)
     }
 }
 
