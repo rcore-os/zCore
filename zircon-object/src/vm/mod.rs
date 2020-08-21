@@ -57,9 +57,11 @@ pub fn round_down_pages(size: usize) -> usize {
 }
 
 lazy_static! {
+    /// Kernel address space.
     pub static ref KERNEL_ASPACE: Arc<VmAddressRegion> = VmAddressRegion::new_kernel();
 }
 
+/// Allocate memory in kernel address space at given physical address.
 pub fn kernel_allocate_physical(
     size: usize,
     paddr: PhysAddr,

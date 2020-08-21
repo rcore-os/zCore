@@ -19,6 +19,7 @@ mod slice;
 kcounter!(VMO_PAGE_ALLOC, "vmo.page_alloc");
 kcounter!(VMO_PAGE_DEALLOC, "vmo.page_dealloc");
 
+/// The amount of memory committed to VMOs.
 pub fn vmo_page_bytes() -> usize {
     (VMO_PAGE_ALLOC.get() - VMO_PAGE_DEALLOC.get()) * PAGE_SIZE
 }
