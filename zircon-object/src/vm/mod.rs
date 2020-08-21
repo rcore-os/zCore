@@ -1,3 +1,4 @@
+#![deny(missing_docs)]
 //! Objects for Virtual Memory Management.
 
 mod stream;
