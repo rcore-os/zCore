@@ -162,7 +162,7 @@ impl VmAddressRegion {
 
     /// Map the `vmo` into this VMAR at given `offset`.
     #[allow(clippy::too_many_arguments)]
-    fn map_at_ext(
+    pub fn map_at_ext(
         &self,
         vmar_offset: usize,
         vmo: Arc<VmObject>,
@@ -197,7 +197,7 @@ impl VmAddressRegion {
 
     /// Map the `vmo` into this VMAR.
     #[allow(clippy::too_many_arguments)]
-    fn map_ext(
+    pub fn map_ext(
         &self,
         vmar_offset: Option<usize>,
         vmo: Arc<VmObject>,
