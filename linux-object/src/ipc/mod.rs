@@ -112,7 +112,7 @@ impl ShmProc {
 
     /// Get an semaphore set by `id`
     pub fn get(&self, id: ShmId) -> Option<ShmIdentifier> {
-        self.shm_identifiers.get(&id).map(|a| a.clone())
+        self.shm_identifiers.get(&id).cloned()
     }
 
     /// Used to set Virtual Addr
