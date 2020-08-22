@@ -15,7 +15,6 @@ use hashbrown::HashMap;
 use kernel_hal::VirtAddr;
 use rcore_fs::vfs::{FileSystem, INode};
 use spin::*;
-use zircon_object::vm::*;
 use zircon_object::{
     object::{KernelObject, KoID, Signal},
     signal::Futex,
@@ -429,7 +428,7 @@ impl LinuxProcess {
     }
 
     ///
-    pub fn shm_add(&self, shared_guard: Arc<spin::Mutex<Arc<VmObject>>>) -> usize {
+    pub fn shm_add(&self, shared_guard: Arc<spin::Mutex<ShmGuard>>) -> usize {
         self.inner.lock().shm_identifiers.add(shared_guard)
     }
 

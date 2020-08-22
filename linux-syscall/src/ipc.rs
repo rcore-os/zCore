@@ -120,10 +120,10 @@ impl Syscall<'_> {
     }
 
     ///
-    pub fn sys_shmget(&self, key: usize, size: usize, _shmflg: usize) -> SysResult {
+    pub fn sys_shmget(&self, key: usize, size: usize, shmflg: usize) -> SysResult {
         info!("shmget: key: {}", key);
 
-        let shared_guard = ShmIdentifier::new_shared_guard(key, size);
+        let shared_guard = ShmIdentifier::new_shared_guard(key, size, shmflg);
         let id = self.linux_process().shm_add(shared_guard);
         Ok(id)
     }
@@ -140,7 +140,7 @@ impl Syscall<'_> {
             // so just skip it
             addr = PAGE_SIZE;
         }
-        let vmo = shm_identifier.shared_guard.lock();
+        let vmo = shm_identifier.guard.lock().shared_guard.clone();
         info!(
             "shmat: id: {}, addr = {:#x}, size = {}",
             id,
@@ -157,7 +157,7 @@ impl Syscall<'_> {
         shm_identifier.addr = addr;
         self.linux_process().shm_set(id, shm_identifier.clone());
         //self.process().shmIdentifiers.setVirtAddr(id, addr);
-        return Ok(addr);
+        Ok(addr)
     }
 
     ///

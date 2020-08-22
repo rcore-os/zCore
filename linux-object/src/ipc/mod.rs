@@ -7,7 +7,6 @@ pub use self::semary::*;
 pub use self::shared_mem::*;
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
-use zircon_object::vm::*;
 
 /// Semaphore table in a process
 #[derive(Default)]
@@ -18,18 +17,20 @@ pub struct SemProc {
     undos: BTreeMap<(SemId, SemNum), SemOp>,
 }
 
-/// TODO: Remove hack
+/// Shared_memory table in a process
 #[derive(Default)]
 pub struct ShmProc {
+    /// Shared_memory identifier sets
     shm_identifiers: BTreeMap<ShmId, ShmIdentifier>,
 }
 
 /// Semaphore set identifier (in a process)
 type SemId = usize;
+/// Shared_memory identifier (in a process)
+type ShmId = usize;
 
 /// Semaphore number (in an array)
 type SemNum = u16;
-type ShmId = usize;
 
 /// Semaphore operation value
 type SemOp = i16;
@@ -93,11 +94,11 @@ impl Drop for SemProc {
 
 impl ShmProc {
     /// Insert the `SharedGuard` and return its ID
-    pub fn add(&mut self, shared_guard: Arc<spin::Mutex<Arc<VmObject>>>) -> ShmId {
+    pub fn add(&mut self, shared_guard: Arc<spin::Mutex<ShmGuard>>) -> ShmId {
         let id = self.get_free_id();
         let shm_identifier = ShmIdentifier {
             addr: 0,
-            shared_guard,
+            guard: shared_guard,
         };
         self.shm_identifiers.insert(id, shm_identifier);
         id
