@@ -195,6 +195,8 @@ impl Syscall<'_> {
             Sys::SHMAT => self.sys_shmat(a0, a1, a2),
             #[cfg(not(target_arch = "mips"))]
             Sys::SHMDT => self.sys_shmdt(a0, a1, a2),
+            #[cfg(not(target_arch = "mips"))]
+            Sys::SHMCTL => self.sys_shmctl(a0, a1, a2.into()),
 
             // system
             Sys::GETPID => self.sys_getpid(),

@@ -21,7 +21,7 @@ bitflags! {
 ///
 /// struct ipc_perm
 #[repr(C)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct IpcPerm {
     /// Key supplied to semget(2)
     pub key: u32,

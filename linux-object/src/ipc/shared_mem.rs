@@ -16,7 +16,7 @@ lazy_static! {
 ///
 /// struct shmid_ds
 #[repr(C)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct ShmidDs {
     /// Ownership and permissions
     pub perm: IpcPerm,
@@ -32,30 +32,30 @@ pub struct ShmidDs {
     pub nattch: usize,
 }
 
-///
+/// shared memory Identifier for process
 #[derive(Clone)]
 pub struct ShmIdentifier {
-    ///
+    /// Shared memory address
     pub addr: usize,
-    ///
+    /// Shared memory buffer and data
     pub guard: Arc<spin::Mutex<ShmGuard>>,
 }
 
-///
+/// shared memory buffer and data
 pub struct ShmGuard {
-    ///
+    /// shared memory buffer
     pub shared_guard: Arc<VmObject>,
-    ///
+    /// shared memory data
     pub shmid_ds: Mutex<ShmidDs>,
 }
 
 impl ShmIdentifier {
-    ///
+    /// set the shared memory address on attach
     pub fn set_addr(&mut self, addr: usize) {
         self.addr = addr;
     }
 
-    ///
+    /// Get or create a ShmGuard
     pub fn new_shared_guard(
         key: usize,
         memsize: usize,
@@ -94,5 +94,22 @@ impl ShmIdentifier {
         // insert to global map
         key2shm.insert(key, Arc::downgrade(&shared_guard));
         shared_guard
+    }
+}
+
+impl ShmGuard {
+    /// set last attach time
+    pub fn atime(&self) {
+        self.shmid_ds.lock().atime = TimeSpec::now().sec;
+    }
+
+    /// set last dettach time
+    pub fn dtime(&self) {
+        self.shmid_ds.lock().dtime = TimeSpec::now().sec;
+    }
+
+    /// set last change time
+    pub fn ctime(&self) {
+        self.shmid_ds.lock().ctime = TimeSpec::now().sec;
     }
 }

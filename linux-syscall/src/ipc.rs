@@ -119,17 +119,22 @@ impl Syscall<'_> {
         }
     }
 
+    /// allocates a shared memory segment
     ///
+    /// returns the identifier of the shared memory segment associated with the value of the argument key
     pub fn sys_shmget(&self, key: usize, size: usize, shmflg: usize) -> SysResult {
-        info!("shmget: key: {}", key);
+        info!(
+            "shmget: key: {}, size: {}, shmflg: {:#x}",
+            key, size, shmflg
+        );
 
         let shared_guard = ShmIdentifier::new_shared_guard(key, size, shmflg);
         let id = self.linux_process().shm_add(shared_guard);
         Ok(id)
     }
 
-    ///
-    pub fn sys_shmat(&self, id: usize, mut addr: VirtAddr, _shmflg: usize) -> SysResult {
+    /// attaches the shared memory segment identified by shmid to the address space of the calling process.
+    pub fn sys_shmat(&self, id: usize, mut addr: VirtAddr, shmflg: usize) -> SysResult {
         let mut shm_identifier = self.linux_process().shm_get(id).ok_or(LxError::EINVAL)?;
 
         let proc = self.zircon_process();
@@ -140,12 +145,14 @@ impl Syscall<'_> {
             // so just skip it
             addr = PAGE_SIZE;
         }
-        let vmo = shm_identifier.guard.lock().shared_guard.clone();
+        let shm_guard = shm_identifier.guard.lock();
+        let vmo = shm_guard.shared_guard.clone();
         info!(
-            "shmat: id: {}, addr = {:#x}, size = {}",
+            "shmat: id: {}, addr = {:#x}, size = {}, flags = {:#x}",
             id,
             addr,
-            vmo.len()
+            vmo.len(),
+            shmflg
         );
         let addr = vmar.map(
             None,
@@ -156,19 +163,65 @@ impl Syscall<'_> {
         )?;
         shm_identifier.addr = addr;
         self.linux_process().shm_set(id, shm_identifier.clone());
-        //self.process().shmIdentifiers.setVirtAddr(id, addr);
+
+        shm_guard.atime();
         Ok(addr)
     }
 
-    ///
-    pub fn sys_shmdt(&self, _id: usize, addr: VirtAddr, _shmflg: usize) -> SysResult {
-        info!("shmdt: addr={:#x}", addr);
+    /// detaches the shared memory segment located at the address specified by shmaddr
+    /// from the address space of the calling process.
+    pub fn sys_shmdt(&self, id: usize, addr: VirtAddr, shmflg: usize) -> SysResult {
+        info!(
+            "shmdt: id = {}, addr = {:#x}, flag = {:#x}",
+            id, addr, shmflg
+        );
         let proc = self.linux_process();
         let opt_id = proc.shm_get_id(addr);
         if let Some(id) = opt_id {
+            let shm_identifier = proc.shm_get(id).ok_or(LxError::EINVAL)?;
             proc.shm_pop(id);
+            shm_identifier.guard.lock().dtime();
         }
         Ok(0)
+    }
+
+    pub fn sys_shmctl(&self, id: usize, cmd: usize, mut buffer: UserInOutPtr<ShmidDs>) -> SysResult {
+        info!(
+            "shmctl: id: {}, cmd: {} buffer: {:?}",
+            id,  cmd, buffer
+        );
+        let cmd = match ShmctlCmds::try_from(cmd) {
+            Ok(t) => t,
+            Err(_) => {
+                error!("invalid semctl cmd: {}", cmd);
+                return Err(LxError::EINVAL);
+            }
+        };
+        match cmd {
+            ShmctlCmds::IPC_RMID => {
+                
+                Ok(0)
+            }
+            ShmctlCmds::IPC_SET => {
+                
+                Ok(0)
+            }
+            ShmctlCmds::IPC_STAT => {
+
+                Ok(0)
+            }
+            ShmctlCmds::SHM_STAT => {
+
+                Ok(0)
+            }
+            ShmctlCmds::SHM_INFO => {
+
+                Ok(0)
+            }
+            ShmctlCmds::SHM_LOCK => Ok(0),
+            ShmctlCmds::SHM_UNLOCK => Ok(0),
+            _ => unimplemented!("Semaphore Semctl cmd: {:?}", cmd),
+        }
     }
 }
 
@@ -202,6 +255,31 @@ numeric_enum! {
     }
 }
 
+numeric_enum! {
+    #[repr(usize)]
+    #[derive(Debug, Eq, PartialEq)]
+    #[allow(non_camel_case_types)]
+    /// for the third argument of semctl(), specified the control operation
+    pub enum ShmctlCmds {
+        /// Mark the segment to be destroyed, actually be destroyed after the last process detaches it
+        IPC_RMID = 0,
+        /// Write the values of some members of the shmid_ds structure pointed to by arg
+        IPC_SET = 1,
+        /// Copy information from the kernel data structure associated with
+        /// shmid into the shmid_ds structure pointed to by arg.buf.
+        IPC_STAT = 2,
+        /// Prevent swapping of the shared memory segment
+        SHM_LOCK = 11,
+        /// Unlock the segment, allowing it to be swapped out.
+        SHM_UNLOCK = 12,
+        /// Returns a shmid_ds structure as for IPC_STAT
+        SHM_STAT = 13,
+        /// Returns a shm_info structure whose fields contain information
+        /// about system resources consumed by shared memory.
+        SHM_INFO = 14,
+    }
+}
+
 /// An operation to be performed on a single semaphore
 ///
 /// Ref: [http://man7.org/linux/man-pages/man2/semop.2.html]
@@ -210,6 +288,19 @@ pub struct SemBuf {
     num: u16,
     op: i16,
     flags: i16,
+}
+
+/// shm_info structure forshmctl
+#[repr(C)]
+struct ShmInfo {
+    /// currently existing segments
+    used_ids: i32,
+    /// Total number of shared memory pages
+    shm_tot: usize,
+    /// of resident shared memory pages
+    shm_rss: usize,
+    /// of swapped shared memory pages
+    shm_swp: usize,
 }
 
 /// for the fourth argument of semctl()
