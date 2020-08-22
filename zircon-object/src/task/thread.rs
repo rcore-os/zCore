@@ -694,6 +694,7 @@ mod tests {
             assert_eq!(cx.general.rsp, 4);
             assert_eq!(cx.general.rdi, 3);
             assert_eq!(cx.general.rsi, 2);
+            async_std::task::sleep(Duration::from_millis(10)).await;
             thread.end_running(cx);
         }
 
@@ -731,6 +732,7 @@ mod tests {
 
         // no other references to `Thread`
         assert_eq!(Arc::strong_count(&thread), 1);
+        assert_eq!(thread.state(), ThreadState::Dead);
     }
 
     #[async_std::test]

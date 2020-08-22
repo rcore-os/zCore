@@ -18,9 +18,13 @@ impl_kobject!(Stream);
 numeric_enum! {
     #[repr(usize)]
     #[derive(Debug)]
+    /// Enumeration of possible methods to modify the seek within an Stream.
     pub enum SeekOrigin {
+        /// Set the seek offset relative to the start of the stream.
         Start = 0,
+        /// Set the seek offset relative to the current seek offset of the stream.
         Current = 1,
+        /// Set the seek offset relative to the end of the stream, as defined by the content size of the stream.
         End = 2,
     }
 }
@@ -122,6 +126,7 @@ impl Stream {
     }
 }
 
+/// Information of a Stream
 #[repr(C)]
 #[derive(Default)]
 pub struct StreamInfo {
