@@ -36,7 +36,7 @@ static void get()
 
 	/* cleanup */
 	T(shmdt(p));
-	//T(shmctl(shmid, IPC_RMID, 0));
+	T(shmctl(shmid, IPC_RMID, 0));
 }
 
 int main(void)

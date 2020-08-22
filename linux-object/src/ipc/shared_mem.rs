@@ -8,7 +8,7 @@ use spin::RwLock;
 use zircon_object::vm::*;
 
 lazy_static! {
-    static ref KEY2SHM: RwLock<BTreeMap<usize, Weak<spin::Mutex<ShmGuard>>>> =
+    static ref KEY2SHM: RwLock<BTreeMap<u32, Weak<spin::Mutex<ShmGuard>>>> =
         RwLock::new(BTreeMap::new());
 }
 
@@ -28,6 +28,10 @@ pub struct ShmidDs {
     pub dtime: usize,
     /// Last change time
     pub ctime: usize,
+    /// PID of creator
+    pub cpid: u32,
+    /// PID of last shmat(2)/shmdt(2)
+    pub lpid: u32,
     /// number of current attaches
     pub nattch: usize,
 }
@@ -57,9 +61,10 @@ impl ShmIdentifier {
 
     /// Get or create a ShmGuard
     pub fn new_shared_guard(
-        key: usize,
+        key: u32,
         memsize: usize,
         flags: usize,
+        cpid: u32,
     ) -> Arc<spin::Mutex<ShmGuard>> {
         let mut key2shm = KEY2SHM.write();
 
@@ -73,7 +78,7 @@ impl ShmIdentifier {
             shared_guard: VmObject::new_paged(pages(memsize)),
             shmid_ds: Mutex::new(ShmidDs {
                 perm: IpcPerm {
-                    key: key as u32,
+                    key,
                     uid: 0,
                     gid: 0,
                     cuid: 0,
@@ -88,6 +93,8 @@ impl ShmIdentifier {
                 atime: 0,
                 dtime: 0,
                 ctime: TimeSpec::now().sec,
+                cpid,
+                lpid: 0,
                 nattch: 0,
             }),
         }));
@@ -99,17 +106,39 @@ impl ShmIdentifier {
 
 impl ShmGuard {
     /// set last attach time
-    pub fn atime(&self) {
-        self.shmid_ds.lock().atime = TimeSpec::now().sec;
+    pub fn attach(&self, pid: u32) {
+        let mut ds = self.shmid_ds.lock();
+        ds.atime = TimeSpec::now().sec;
+        ds.nattch += 1;
+        ds.lpid = pid;
     }
 
     /// set last dettach time
-    pub fn dtime(&self) {
-        self.shmid_ds.lock().dtime = TimeSpec::now().sec;
+    pub fn dettach(&self, pid: u32) {
+        let mut ds = self.shmid_ds.lock();
+        ds.dtime = TimeSpec::now().sec;
+        ds.nattch -= 1;
+        ds.lpid = pid;
     }
 
     /// set last change time
     pub fn ctime(&self) {
         self.shmid_ds.lock().ctime = TimeSpec::now().sec;
+    }
+
+    /// for IPC_SET
+    /// see man shmctl(2)
+    pub fn set(&self, new: &ShmidDs) {
+        let mut lock = self.shmid_ds.lock();
+        lock.perm.uid = new.perm.uid;
+        lock.perm.gid = new.perm.gid;
+        lock.perm.mode = new.perm.mode & 0x1ff;
+    }
+
+    /// remove Shared memory
+    pub fn remove(&self) {
+        let mut key2shm = KEY2SHM.write();
+        let key = self.shmid_ds.lock().perm.key;
+        key2shm.remove(&key);
     }
 }

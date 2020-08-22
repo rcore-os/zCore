@@ -128,7 +128,12 @@ impl Syscall<'_> {
             key, size, shmflg
         );
 
-        let shared_guard = ShmIdentifier::new_shared_guard(key, size, shmflg);
+        let shared_guard = ShmIdentifier::new_shared_guard(
+            key as u32,
+            size,
+            shmflg,
+            self.zircon_process().id() as u32,
+        );
         let id = self.linux_process().shm_add(shared_guard);
         Ok(id)
     }
@@ -164,7 +169,7 @@ impl Syscall<'_> {
         shm_identifier.addr = addr;
         self.linux_process().shm_set(id, shm_identifier.clone());
 
-        shm_guard.atime();
+        shm_guard.attach(proc.id() as u32);
         Ok(addr)
     }
 
@@ -180,16 +185,19 @@ impl Syscall<'_> {
         if let Some(id) = opt_id {
             let shm_identifier = proc.shm_get(id).ok_or(LxError::EINVAL)?;
             proc.shm_pop(id);
-            shm_identifier.guard.lock().dtime();
+            shm_identifier
+                .guard
+                .lock()
+                .dettach(self.zircon_process().id() as u32);
         }
         Ok(0)
     }
 
-    pub fn sys_shmctl(&self, id: usize, cmd: usize, mut buffer: UserInOutPtr<ShmidDs>) -> SysResult {
-        info!(
-            "shmctl: id: {}, cmd: {} buffer: {:?}",
-            id,  cmd, buffer
-        );
+    ///
+    pub fn sys_shmctl(&self, id: usize, cmd: usize, buffer: usize) -> SysResult {
+        info!("shmctl: id: {}, cmd: {} buffer: {:#x}", id, cmd, buffer);
+        let shm_identifier = self.linux_process().shm_get(id).ok_or(LxError::EINVAL)?;
+        let shm_guard = shm_identifier.guard.lock();
         let cmd = match ShmctlCmds::try_from(cmd) {
             Ok(t) => t,
             Err(_) => {
@@ -199,27 +207,28 @@ impl Syscall<'_> {
         };
         match cmd {
             ShmctlCmds::IPC_RMID => {
-                
+                shm_guard.remove();
+                self.linux_process().shm_pop(id);
                 Ok(0)
             }
             ShmctlCmds::IPC_SET => {
-                
+                let buffer: UserInPtr<ShmidDs> = buffer.into();
+                let set_ds = buffer.read()?;
+                shm_guard.set(&set_ds);
+                shm_guard.ctime();
                 Ok(0)
             }
-            ShmctlCmds::IPC_STAT => {
-
-                Ok(0)
-            }
-            ShmctlCmds::SHM_STAT => {
-
+            ShmctlCmds::IPC_STAT | ShmctlCmds::SHM_STAT => {
+                let shmid_ds = shm_guard.shmid_ds.lock();
+                let mut buffer: UserOutPtr<ShmidDs> = buffer.into();
+                buffer.write(*shmid_ds)?;
                 Ok(0)
             }
             ShmctlCmds::SHM_INFO => {
-
+                let mut buffer: UserOutPtr<ShmInfo> = buffer.into();
+                buffer.write(ShmInfo::default())?;
                 Ok(0)
             }
-            ShmctlCmds::SHM_LOCK => Ok(0),
-            ShmctlCmds::SHM_UNLOCK => Ok(0),
             _ => unimplemented!("Semaphore Semctl cmd: {:?}", cmd),
         }
     }
@@ -290,8 +299,9 @@ pub struct SemBuf {
     flags: i16,
 }
 
-/// shm_info structure forshmctl
+/// shm_info structure for shmctl
 #[repr(C)]
+#[derive(Default)]
 struct ShmInfo {
     /// currently existing segments
     used_ids: i32,

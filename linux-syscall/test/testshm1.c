@@ -30,16 +30,16 @@ static void set()
 	
 	/* make sure we get a clean shared memory id */
 	T(shmid = shmget(k, 100, IPC_CREAT|0666));
-	//T(shmctl(shmid, IPC_RMID, 0));
+	T(shmctl(shmid, IPC_RMID, 0));
 	T(shmid = shmget(k, 100, IPC_CREAT|IPC_EXCL|0666));
 
 	/* check IPC_EXCL */
-	//errno = 0;
+	errno = 0;
 	//if (shmget(k, 100, IPC_CREAT|IPC_EXCL|0666) != -1 || errno != EEXIST)
 	//	printf("shmget(IPC_CREAT|IPC_EXCL) should have failed with EEXIST, got %s\n", strerror(errno));
 
 	/* check if shmget initilaized the msshmid_ds structure correctly */
-	/*
+	
 	T(shmctl(shmid, IPC_STAT, &shmid_ds));
 	EQ(shmid_ds.shm_perm.mode & 0x1ff, 0666);
 	EQ(shmid_ds.shm_segsz, 100);
@@ -52,11 +52,11 @@ static void set()
 		printf("shmid_ds.shm_ctime >= t failed: got %lld, want >= %lld\n", (long long)shmid_ds.shm_ctime, (long long)t);
 	if (shmid_ds.shm_ctime > t+5)
 		printf("shmid_ds.shm_ctime <= t+5 failed: got %lld, want <= %lld\n", (long long)shmid_ds.shm_ctime, (long long)t+5);
-	*/
+	
 	/* test attach */
 	if ((p=shmat(shmid, 0, 0)) == 0)
 		printf("shmat failed: %s\n", strerror(errno));
-		/*
+	
 	T(shmctl(shmid, IPC_STAT, &shmid_ds));
 	EQ((int)shmid_ds.shm_nattch, 1);
 	EQ(shmid_ds.shm_lpid, getpid());
@@ -64,7 +64,7 @@ static void set()
 		printf("shm_atime is %lld want >= %lld\n", (long long)shmid_ds.shm_atime, (long long)t);
 	if (shmid_ds.shm_atime > t+5)
 		printf("shm_atime is %lld want <= %lld\n", (long long)shmid_ds.shm_atime, (long long)t+5);
-		*/
+	
 	strcpy((char *)p, "test data");
 	T(shmdt(p));
 }
