@@ -193,7 +193,9 @@ impl Syscall<'_> {
         Ok(0)
     }
 
+    /// shared memory control
     ///
+    /// performs the control operation specified by cmd on the shared memory segment whose identifier is given in id
     pub fn sys_shmctl(&self, id: usize, cmd: usize, buffer: usize) -> SysResult {
         info!("shmctl: id: {}, cmd: {} buffer: {:#x}", id, cmd, buffer);
         let shm_identifier = self.linux_process().shm_get(id).ok_or(LxError::EINVAL)?;

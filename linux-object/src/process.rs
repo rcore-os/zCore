@@ -412,27 +412,27 @@ impl LinuxProcess {
         self.inner.lock().semaphores.remove(id)
     }
 
-    ///
+    /// get ShmId from Virtual Addr
     pub fn shm_get_id(&self, id: usize) -> Option<usize> {
         self.inner.lock().shm_identifiers.get_id(id)
     }
 
-    ///
+    /// get the ShmIdentifier from shm_identifiers
     pub fn shm_get(&self, id: usize) -> Option<ShmIdentifier> {
         self.inner.lock().shm_identifiers.get(id)
     }
 
-    ///
+    /// Delete the ShmIdentifier from shm_identifiers
     pub fn shm_pop(&self, id: usize) {
         self.inner.lock().shm_identifiers.pop(id)
     }
 
-    ///
+    /// Insert the `SharedGuard` and return its ID
     pub fn shm_add(&self, shared_guard: Arc<spin::Mutex<ShmGuard>>) -> usize {
         self.inner.lock().shm_identifiers.add(shared_guard)
     }
 
-    ///
+    /// Set Virtual Addr for shared memory
     pub fn shm_set(&self, id: usize, shm_id: ShmIdentifier) {
         self.inner.lock().shm_identifiers.set(id, shm_id)
     }
