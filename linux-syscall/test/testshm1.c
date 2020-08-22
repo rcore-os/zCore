@@ -35,8 +35,8 @@ static void set()
 
 	/* check IPC_EXCL */
 	errno = 0;
-	//if (shmget(k, 100, IPC_CREAT|IPC_EXCL|0666) != -1 || errno != EEXIST)
-	//	printf("shmget(IPC_CREAT|IPC_EXCL) should have failed with EEXIST, got %s\n", strerror(errno));
+	if (shmget(k, 100, IPC_CREAT|IPC_EXCL|0666) != -1 || errno != EEXIST)
+		printf("shmget(IPC_CREAT|IPC_EXCL) should have failed with EEXIST, got %s\n", strerror(errno));
 
 	/* check if shmget initilaized the msshmid_ds structure correctly */
 	

@@ -1,5 +1,6 @@
-//!
+//! Linux Shared memory ipc
 use super::*;
+use crate::error::LxError;
 use crate::time::TimeSpec;
 use alloc::{collections::BTreeMap, sync::Arc, sync::Weak};
 use lazy_static::lazy_static;
@@ -65,13 +66,18 @@ impl ShmIdentifier {
         memsize: usize,
         flags: usize,
         cpid: u32,
-    ) -> Arc<spin::Mutex<ShmGuard>> {
+    ) -> Result<Arc<spin::Mutex<ShmGuard>>, LxError> {
         let mut key2shm = KEY2SHM.write();
+        let flag = IpcGetFlag::from_bits_truncate(flags);
 
         // found in the map
         if let Some(weak_guard) = key2shm.get(&key) {
             if let Some(guard) = weak_guard.upgrade() {
-                return guard;
+                if flag.contains(IpcGetFlag::CREAT) && flag.contains(IpcGetFlag::EXCLUSIVE) {
+                    // exclusive
+                    return Err(LxError::EEXIST);
+                }
+                return Ok(guard);
             }
         }
         let shared_guard = Arc::new(spin::Mutex::new(ShmGuard {
@@ -100,7 +106,7 @@ impl ShmIdentifier {
         }));
         // insert to global map
         key2shm.insert(key, Arc::downgrade(&shared_guard));
-        shared_guard
+        Ok(shared_guard)
     }
 }
 
@@ -113,8 +119,8 @@ impl ShmGuard {
         ds.lpid = pid;
     }
 
-    /// set last dettach time
-    pub fn dettach(&self, pid: u32) {
+    /// set last detach time
+    pub fn detach(&self, pid: u32) {
         let mut ds = self.shmid_ds.lock();
         ds.dtime = TimeSpec::now().sec;
         ds.nattch -= 1;

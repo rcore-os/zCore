@@ -44,8 +44,6 @@ int main(void)
 	int p;
 	int status;
 
-	//set();
-
 	get();
 
 	return 0;

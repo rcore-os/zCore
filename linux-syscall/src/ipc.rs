@@ -133,7 +133,7 @@ impl Syscall<'_> {
             size,
             shmflg,
             self.zircon_process().id() as u32,
-        );
+        )?;
         let id = self.linux_process().shm_add(shared_guard);
         Ok(id)
     }
@@ -188,7 +188,7 @@ impl Syscall<'_> {
             shm_identifier
                 .guard
                 .lock()
-                .dettach(self.zircon_process().id() as u32);
+                .detach(self.zircon_process().id() as u32);
         }
         Ok(0)
     }

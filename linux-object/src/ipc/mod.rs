@@ -7,6 +7,7 @@ pub use self::semary::*;
 pub use self::shared_mem::*;
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
+use bitflags::*;
 
 /// Semaphore table in a process
 #[derive(Default)]
@@ -22,6 +23,41 @@ pub struct SemProc {
 pub struct ShmProc {
     /// Shared_memory identifier sets
     shm_identifiers: BTreeMap<ShmId, ShmIdentifier>,
+}
+
+bitflags! {
+    /// ipc get bit flags
+    struct IpcGetFlag: usize {
+        const CREAT = 1 << 9;
+        const EXCLUSIVE = 1 << 10;
+        const NO_WAIT = 1 << 11;
+    }
+}
+
+/// structure specifies the access permissions on the semaphore set
+///
+/// struct ipc_perm
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct IpcPerm {
+    /// Key supplied to semget(2)
+    pub key: u32,
+    /// Effective UID of owner
+    pub uid: u32,
+    /// Effective GID of owner
+    pub gid: u32,
+    /// Effective UID of creator
+    pub cuid: u32,
+    /// Effective GID of creator
+    pub cgid: u32,
+    /// Permissions
+    pub mode: u32,
+    /// Sequence number
+    pub __seq: u32,
+    /// pad1
+    pub __pad1: usize,
+    /// pad2
+    pub __pad2: usize,
 }
 
 /// Semaphore set identifier (in a process)

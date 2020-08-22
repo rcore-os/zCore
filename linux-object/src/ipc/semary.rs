@@ -1,47 +1,13 @@
 //! Linux semaphore ipc
+use super::*;
 use crate::error::LxError;
 use crate::sync::Semaphore;
 use crate::time::*;
 use alloc::{collections::BTreeMap, sync::Arc, sync::Weak, vec::Vec};
-use bitflags::*;
 use core::ops::Index;
 use lazy_static::*;
 use spin::Mutex;
 use spin::RwLock;
-
-bitflags! {
-    struct SemGetFlag: usize {
-        const CREAT = 1 << 9;
-        const EXCLUSIVE = 1 << 10;
-        const NO_WAIT = 1 << 11;
-    }
-}
-
-/// structure specifies the access permissions on the semaphore set
-///
-/// struct ipc_perm
-#[repr(C)]
-#[derive(Clone, Copy, Debug)]
-pub struct IpcPerm {
-    /// Key supplied to semget(2)
-    pub key: u32,
-    /// Effective UID of owner
-    pub uid: u32,
-    /// Effective GID of owner
-    pub gid: u32,
-    /// Effective UID of creator
-    pub cuid: u32,
-    /// Effective GID of creator
-    pub cgid: u32,
-    /// Permissions
-    pub mode: u32,
-    /// Sequence number
-    pub __seq: u32,
-    /// pad1
-    pub __pad1: usize,
-    /// pad2
-    pub __pad2: usize,
-}
 
 /// semid data structure
 ///
@@ -113,7 +79,7 @@ impl SemArray {
     /// If not exist, create a new one with `nsems` elements.
     pub fn get_or_create(mut key: u32, nsems: usize, flags: usize) -> Result<Arc<Self>, LxError> {
         let mut key2sem = KEY2SEM.write();
-        let flag = SemGetFlag::from_bits_truncate(flags);
+        let flag = IpcGetFlag::from_bits_truncate(flags);
 
         if key == 0 {
             // IPC_PRIVATE
@@ -123,7 +89,7 @@ impl SemArray {
             // check existence
             if let Some(weak_array) = key2sem.get(&key) {
                 if let Some(array) = weak_array.upgrade() {
-                    if flag.contains(SemGetFlag::CREAT) && flag.contains(SemGetFlag::EXCLUSIVE) {
+                    if flag.contains(IpcGetFlag::CREAT) && flag.contains(IpcGetFlag::EXCLUSIVE) {
                         // exclusive
                         return Err(LxError::EEXIST);
                     }
