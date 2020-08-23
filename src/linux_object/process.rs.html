@@ -419,6 +419,33 @@
 <span id="419">419</span>
 <span id="420">420</span>
 <span id="421">421</span>
+<span id="422">422</span>
+<span id="423">423</span>
+<span id="424">424</span>
+<span id="425">425</span>
+<span id="426">426</span>
+<span id="427">427</span>
+<span id="428">428</span>
+<span id="429">429</span>
+<span id="430">430</span>
+<span id="431">431</span>
+<span id="432">432</span>
+<span id="433">433</span>
+<span id="434">434</span>
+<span id="435">435</span>
+<span id="436">436</span>
+<span id="437">437</span>
+<span id="438">438</span>
+<span id="439">439</span>
+<span id="440">440</span>
+<span id="441">441</span>
+<span id="442">442</span>
+<span id="443">443</span>
+<span id="444">444</span>
+<span id="445">445</span>
+<span id="446">446</span>
+<span id="447">447</span>
+<span id="448">448</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Linux Process</span>
 
@@ -574,6 +601,8 @@
     <span class="ident">files</span>: <span class="ident">HashMap</span><span class="op">&lt;</span><span class="ident">FileDesc</span>, <span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">FileLike</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     <span class="doccomment">/// Semaphore</span>
     <span class="ident">semaphores</span>: <span class="ident">SemProc</span>,
+    <span class="doccomment">/// Share Memory</span>
+    <span class="ident">shm_identifiers</span>: <span class="ident">ShmProc</span>,
     <span class="doccomment">/// Futexes</span>
     <span class="ident">futexes</span>: <span class="ident">HashMap</span><span class="op">&lt;</span><span class="ident">VirtAddr</span>, <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Futex</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     <span class="doccomment">/// Child processes</span>
@@ -830,6 +859,31 @@
     <span class="doccomment">/// Remove an `SemArray` by ID</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">semaphores_remove</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">id</span>: <span class="ident">usize</span>) {
         <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">semaphores</span>.<span class="ident">remove</span>(<span class="ident">id</span>)
+    }
+
+    <span class="doccomment">/// get ShmId from Virtual Addr</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">shm_get_id</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">id</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
+        <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">shm_identifiers</span>.<span class="ident">get_id</span>(<span class="ident">id</span>)
+    }
+
+    <span class="doccomment">/// get the ShmIdentifier from shm_identifiers</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">shm_get</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">id</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">ShmIdentifier</span><span class="op">&gt;</span> {
+        <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">shm_identifiers</span>.<span class="ident">get</span>(<span class="ident">id</span>)
+    }
+
+    <span class="doccomment">/// Delete the ShmIdentifier from shm_identifiers</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">shm_pop</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">id</span>: <span class="ident">usize</span>) {
+        <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">shm_identifiers</span>.<span class="ident">pop</span>(<span class="ident">id</span>)
+    }
+
+    <span class="doccomment">/// Insert the `SharedGuard` and return its ID</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">shm_add</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">shared_guard</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">spin</span>::<span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">ShmGuard</span><span class="op">&gt;</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
+        <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">shm_identifiers</span>.<span class="ident">add</span>(<span class="ident">shared_guard</span>)
+    }
+
+    <span class="doccomment">/// Set Virtual Addr for shared memory</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">shm_set</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">id</span>: <span class="ident">usize</span>, <span class="ident">shm_id</span>: <span class="ident">ShmIdentifier</span>) {
+        <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">shm_identifiers</span>.<span class="ident">set</span>(<span class="ident">id</span>, <span class="ident">shm_id</span>)
     }
 }
 

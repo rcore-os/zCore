@@ -287,6 +287,16 @@
 <span id="287">287</span>
 <span id="288">288</span>
 <span id="289">289</span>
+<span id="290">290</span>
+<span id="291">291</span>
+<span id="292">292</span>
+<span id="293">293</span>
+<span id="294">294</span>
+<span id="295">295</span>
+<span id="296">296</span>
+<span id="297">297</span>
+<span id="298">298</span>
+<span id="299">299</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Linux syscall implementations</span>
 <span class="doccomment">//!</span>
@@ -405,7 +415,7 @@
 
             <span class="comment">// io multiplexing</span>
             <span class="comment">//            Sys::PSELECT6 =&gt; self.sys_pselect6(a0, a1.into(), a2.into(), a3.into(), a4.into(), a5.into()),</span>
-            <span class="comment">//            Sys::PPOLL =&gt; self.sys_ppoll(a0.into(), a1, a2.into()), // ignore sigmask</span>
+            <span class="ident">Sys</span>::<span class="ident">PPOLL</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_ppoll</span>(<span class="ident">a0</span>.<span class="ident">into</span>(), <span class="ident">a1</span>, <span class="ident">a2</span>.<span class="ident">into</span>()).<span class="kw">await</span>, <span class="comment">// ignore sigmask</span>
             <span class="comment">//            Sys::EPOLL_CREATE1 =&gt; self.sys_epoll_create1(a0),</span>
             <span class="comment">//            Sys::EPOLL_CTL =&gt; self.sys_epoll_ctl(a0, a1, a2, a3.into()),</span>
             <span class="comment">//            Sys::EPOLL_PWAIT =&gt; self.sys_epoll_pwait(a0, a1.into(), a2, a3, a4),</span>
@@ -477,6 +487,16 @@
             <span class="ident">Sys</span>::<span class="ident">SEMOP</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_semop</span>(<span class="ident">a0</span>, <span class="ident">a1</span>.<span class="ident">into</span>(), <span class="ident">a2</span>).<span class="kw">await</span>,
             <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">not</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;mips&quot;</span>))]</span>
             <span class="ident">Sys</span>::<span class="ident">SEMCTL</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_semctl</span>(<span class="ident">a0</span>, <span class="ident">a1</span>, <span class="ident">a2</span>, <span class="ident">a3</span>),
+
+            <span class="comment">// shm</span>
+            <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">not</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;mips&quot;</span>))]</span>
+            <span class="ident">Sys</span>::<span class="ident">SHMGET</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_shmget</span>(<span class="ident">a0</span>, <span class="ident">a1</span>, <span class="ident">a2</span>),
+            <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">not</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;mips&quot;</span>))]</span>
+            <span class="ident">Sys</span>::<span class="ident">SHMAT</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_shmat</span>(<span class="ident">a0</span>, <span class="ident">a1</span>, <span class="ident">a2</span>),
+            <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">not</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;mips&quot;</span>))]</span>
+            <span class="ident">Sys</span>::<span class="ident">SHMDT</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_shmdt</span>(<span class="ident">a0</span>, <span class="ident">a1</span>, <span class="ident">a2</span>),
+            <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">not</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;mips&quot;</span>))]</span>
+            <span class="ident">Sys</span>::<span class="ident">SHMCTL</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_shmctl</span>(<span class="ident">a0</span>, <span class="ident">a1</span>, <span class="ident">a2</span>),
 
             <span class="comment">// system</span>
             <span class="ident">Sys</span>::<span class="ident">GETPID</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_getpid</span>(),
