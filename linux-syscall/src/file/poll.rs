@@ -11,6 +11,7 @@ use core::future::Future;
 use core::pin::Pin;
 use core::task::{Context, Poll};
 use linux_object::fs::FileDesc;
+use linux_object::time::*;
 
 impl Syscall<'_> {
     /// Wait for some event on a file descriptor
@@ -80,6 +81,25 @@ impl Syscall<'_> {
         let result = future.await;
         ufds.write_array(&polls)?;
         result
+    }
+
+    /// Wait for some event on a file descriptor
+    ///
+    /// ppoll() allows an application to safely wait until either a file descriptor becomes ready or until a signal is caught
+    pub async fn sys_ppoll(
+        &mut self,
+        ufds: UserInOutPtr<PollFd>,
+        nfds: usize,
+        timeout: UserInPtr<TimeSpec>,
+    ) -> SysResult {
+        let timeout_msecs = if timeout.is_null() {
+            1 << 31 // infinity
+        } else {
+            let timeout = timeout.read().unwrap();
+            timeout.sec * 1_000 + timeout.nsec / 1_000_000
+        };
+
+        self.sys_poll(ufds, nfds, timeout_msecs as usize).await
     }
 }
 
