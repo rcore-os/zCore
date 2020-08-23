@@ -92,12 +92,6 @@ impl Syscall<'_> {
         nfds: usize,
         timeout: UserInPtr<TimeSpec>,
     ) -> SysResult {
-        if self.zircon_process().id() != 1 {
-            info!(
-                "ppoll: ufds: {:?} nfds: {}, timeout: {:?}",
-                ufds, nfds, timeout
-            );
-        }
         let timeout_msecs = if timeout.is_null() {
             1 << 31 // infinity
         } else {

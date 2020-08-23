@@ -19,7 +19,7 @@ pub struct SemProc {
 }
 
 /// Shared_memory table in a process
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ShmProc {
     /// Shared_memory identifier sets
     shm_identifiers: BTreeMap<ShmId, ShmIdentifier>,
@@ -170,14 +170,5 @@ impl ShmProc {
     /// Pop Shared Area
     pub fn pop(&mut self, id: ShmId) {
         self.shm_identifiers.remove(&id);
-    }
-}
-
-/// Fork the semaphore table. Clear undo info.
-impl Clone for ShmProc {
-    fn clone(&self) -> Self {
-        ShmProc {
-            shm_identifiers: self.shm_identifiers.clone(),
-        }
     }
 }
