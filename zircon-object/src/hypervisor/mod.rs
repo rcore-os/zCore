@@ -43,12 +43,14 @@ impl From<ZxError> for RvmError {
     }
 }
 
+/// Virtual Machine Manager's Page Table.
 pub struct VmmPageTable(ArchRvmPageTable);
 
 #[derive(Debug)]
 struct VmmPageTableFlags(MMUFlags);
 
 impl VmmPageTable {
+    /// Create a new VmmPageTable.
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self(ArchRvmPageTable::new())
