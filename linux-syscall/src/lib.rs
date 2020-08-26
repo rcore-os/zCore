@@ -244,7 +244,7 @@ impl Syscall<'_> {
     #[cfg(target_arch = "x86_64")]
     /// syscall specified for x86_64
     async fn x86_64_syscall(&mut self, sys_type: Sys, args: [usize; 6]) -> SysResult {
-        let [a0, a1, a2, _a3, _a4, _a5] = args;
+        let [a0, a1, a2, a3, a4, _a5] = args;
         match sys_type {
             Sys::OPEN => self.sys_open(a0.into(), a1, a2),
             Sys::STAT => self.sys_stat(a0.into(), a1.into()),
@@ -252,7 +252,10 @@ impl Syscall<'_> {
             Sys::POLL => self.sys_poll(a0.into(), a1, a2).await,
             Sys::ACCESS => self.sys_access(a0.into(), a1),
             Sys::PIPE => self.sys_pipe(a0.into()),
-            //            Sys::SELECT => self.sys_select(a0, a1.into(), a2.into(), a3.into(), a4.into()),
+            Sys::SELECT => {
+                self.sys_select(a0, a1.into(), a2.into(), a3.into(), a4.into())
+                    .await
+            }
             Sys::DUP2 => self.sys_dup2(a0.into(), a1.into()),
             //            Sys::ALARM => self.unimplemented("alarm", Ok(0)),
             Sys::FORK => self.sys_fork(),

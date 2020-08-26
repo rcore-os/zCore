@@ -305,6 +305,12 @@ impl LinuxProcess {
         inner.files.get(&fd).cloned().ok_or(LxError::EBADF)
     }
 
+    ///
+    pub fn get_files(&self) -> LxResult<HashMap<FileDesc, Arc<dyn FileLike>>> {
+        let inner = self.inner.lock();
+        Ok(inner.files.clone())
+    }
+
     /// Close file descriptor `fd`.
     pub fn close_file(&self, fd: FileDesc) -> LxResult {
         let mut inner = self.inner.lock();
