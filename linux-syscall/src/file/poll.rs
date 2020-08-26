@@ -105,6 +105,19 @@ impl Syscall<'_> {
     }
 
     ///
+    pub async fn sys_pselect6(
+        &mut self,
+        nfds: usize,
+        read: UserInOutPtr<u32>,
+        write: UserInOutPtr<u32>,
+        err: UserInOutPtr<u32>,
+        timeout: UserInPtr<TimeVal>,
+        _sigset: usize,
+    ) -> SysResult {
+        self.sys_select(nfds, read, write, err, timeout).await
+    }
+
+    ///
     pub async fn sys_select(
         &mut self,
         nfds: usize,
