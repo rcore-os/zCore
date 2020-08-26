@@ -31,7 +31,7 @@ impl ContextExt for UserContext {
             ThreadStateKind::FS => buf.write_struct(&self.general.fsbase),
             #[cfg(target_arch = "x86_64")]
             ThreadStateKind::GS => buf.write_struct(&self.general.gsbase),
-            _ => unimplemented!(),
+            _ => Err(ZxError::NOT_SUPPORTED),
         }
     }
 
@@ -42,7 +42,7 @@ impl ContextExt for UserContext {
             ThreadStateKind::FS => self.general.fsbase = buf.read_struct()?,
             #[cfg(target_arch = "x86_64")]
             ThreadStateKind::GS => self.general.gsbase = buf.read_struct()?,
-            _ => unimplemented!(),
+            _ => return Err(ZxError::NOT_SUPPORTED),
         }
         Ok(())
     }
