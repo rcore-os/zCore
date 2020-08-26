@@ -82,6 +82,12 @@ mod tests {
         assert_eq!(test("/bin/busybox").await, 0);
     }
 
+    #[should_panic]
+    #[async_std::test]
+    async fn test_entry_wrong() {
+        assert_eq!(test("/bin/busybos").await, 0);
+    }
+
     #[async_std::test]
     async fn test_uname() {
         assert_eq!(test("/bin/busybox uname -a").await, 0);
@@ -199,5 +205,15 @@ mod tests {
     #[async_std::test]
     async fn test_shm() {
         assert_eq!(test("/bin/testshm1").await, 0);
+    }
+
+    #[async_std::test]
+    async fn test_select() {
+        assert_eq!(test("/bin/testselect").await, 0);
+    }
+
+    #[async_std::test]
+    async fn test_poll() {
+        assert_eq!(test("/bin/testpoll").await, 0);
     }
 }

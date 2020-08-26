@@ -296,11 +296,7 @@ impl FdSet {
         }
         self.origin.set(fd, true);
         let vec: Vec<u32> = self.origin.clone().into();
-        if let Ok(_) = self.addr.write_array(&vec) {
-            true
-        } else {
-            false
-        }
+        self.addr.write_array(&vec).is_ok()
     }
 
     /// Check to see whether `fd` is in original `FdSet`
