@@ -332,7 +332,7 @@ impl Default for InterruptState {
 }
 
 bitflags! {
-    /// Bits for Interrupt.flags
+    /// Bits for Interrupt.flags.
     pub struct InterruptFlags: u32 {
         #[allow(clippy::identity_op)]
         /// The interrupt is virtual.
