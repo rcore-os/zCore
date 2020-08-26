@@ -305,7 +305,7 @@ impl LinuxProcess {
         inner.files.get(&fd).cloned().ok_or(LxError::EBADF)
     }
 
-    ///
+    /// get all files
     pub fn get_files(&self) -> LxResult<HashMap<FileDesc, Arc<dyn FileLike>>> {
         let inner = self.inner.lock();
         Ok(inner.files.clone())

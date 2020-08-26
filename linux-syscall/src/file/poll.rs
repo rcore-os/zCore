@@ -1,8 +1,7 @@
 //! IO Multiplex operations
 //!
-//! - select4
+//! - select, pselect
 //! - poll, ppoll
-//! - epoll: create, ctl, wait
 
 use super::*;
 use alloc::boxed::Box;
@@ -104,7 +103,7 @@ impl Syscall<'_> {
         self.sys_poll(ufds, nfds, timeout_msecs as usize).await
     }
 
-    ///
+    /// similar to select, but have sigmask argument
     pub async fn sys_pselect6(
         &mut self,
         nfds: usize,
@@ -117,7 +116,10 @@ impl Syscall<'_> {
         self.sys_select(nfds, read, write, err, timeout).await
     }
 
+    /// allow a program to monitor multiple file descriptors,
+    /// waiting until one or more of the file descriptors become "ready" for some class of I/O operation.
     ///
+    /// A file descriptor is considered ready if it is possible to perform the corresponding I/O operation (e.g., read) without blocking.
     pub async fn sys_select(
         &mut self,
         nfds: usize,
@@ -164,9 +166,6 @@ impl Syscall<'_> {
 
                 let mut events = 0;
                 for (&fd, file_like) in files.iter() {
-                    //                if fd >= nfds {
-                    //                    continue;
-                    //                }
                     if !self.err_fds.contains(fd)
                         && !self.read_fds.contains(fd)
                         && !self.write_fds.contains(fd)
@@ -249,16 +248,16 @@ bitflags! {
     }
 }
 
-///
+/// fd size per item
 const FD_PER_ITEM: usize = 8 * size_of::<u32>();
-///
+/// max Fdset size
 const MAX_FDSET_SIZE: usize = 1024 / FD_PER_ITEM;
 
-///
+/// FdSet data struct for select
 struct FdSet {
-    ///
+    /// input addr, for update Fdset use
     addr: UserInOutPtr<u32>,
-    ///
+    /// FdSet bit buffer
     origin: BitVec<Lsb0, u32>,
 }
 
@@ -298,9 +297,9 @@ impl FdSet {
         self.origin.set(fd, true);
         let vec: Vec<u32> = self.origin.clone().into();
         if let Ok(_) = self.addr.write_array(&vec) {
-            return true;
+            true
         } else {
-            return false;
+            false
         }
     }
 
