@@ -15,14 +15,23 @@ mod pci_interrupt;
 mod virtual_interrupt;
 
 trait InterruptTrait: Sync + Send {
+    /// Mask the interrupt.
     fn mask(&self);
+    /// Unmask the interrupt.
     fn unmask(&self);
+    /// Register the interrupt to the given handler.
     fn register_handler(&self, handler: Box<dyn Fn() + Send + Sync>) -> ZxResult;
+    /// Unregister the interrupt to the given handler.
     fn unregister_handler(&self) -> ZxResult;
 }
 
 impl_kobject!(Interrupt);
 
+/// Interrupts - Usermode I/O interrupt delivery.
+///
+/// ## SYNOPSIS
+///
+/// Interrupt objects allow userspace to create, signal, and wait on hardware interrupts.
 pub struct Interrupt {
     base: KObjectBase,
     has_vcpu: bool,
@@ -83,6 +92,7 @@ impl Interrupt {
         Ok(interrupt)
     }
 
+    /// Create a new PCI interrupt.
     pub fn new_pci(device: Arc<dyn IPciNode>, vector: u32, maskable: bool) -> ZxResult<Arc<Self>> {
         let interrupt = Arc::new(Interrupt {
             base: KObjectBase::new(),
@@ -172,6 +182,7 @@ impl Interrupt {
         Ok(())
     }
 
+    /// Acknowledge the interrupt and re-arm it.
     pub fn ack(&self) -> ZxResult {
         let mut inner = self.inner.lock();
         if inner.port.is_none() {
@@ -208,6 +219,7 @@ impl Interrupt {
         Ok(())
     }
 
+    /// Destroy the interrupt.
     pub fn destroy(&self) -> ZxResult {
         self.trait_.mask();
         self.trait_.unregister_handler()?;
@@ -236,6 +248,7 @@ impl Interrupt {
         }
     }
 
+    /// Wait until the interrupt is triggered.
     pub async fn wait(self: &Arc<Self>) -> ZxResult<i64> {
         let mut defer_unmask = false;
         let object = self.clone() as Arc<dyn KernelObject>;
@@ -319,30 +332,47 @@ impl Default for InterruptState {
 }
 
 bitflags! {
+    /// Bits for Interrupt.flags
     pub struct InterruptFlags: u32 {
         #[allow(clippy::identity_op)]
+        /// The interrupt is virtual.
         const VIRTUAL                  = 1 << 0;
+        /// The interrupt should be unmasked before waiting on the event.
         const UNMASK_PREWAIT           = 1 << 1;
+        /// The same as **INTERRUPT_UNMASK_PREWAIT** except release the dispatcher
+        /// spinlock before waiting.
         const UNMASK_PREWAIT_UNLOCKED  = 1 << 2;
+        /// The interrupt should be masked following waiting.
         const MASK_POSTWAIT            = 1 << 4;
     }
 }
 
+
 bitflags! {
+    /// Interrupt bind flags.
     pub struct InterruptOptions: u32 {
         #[allow(clippy::identity_op)]
+        /// Remap interrupt request(IRQ).
         const REMAP_IRQ = 0x1;
+        /// Default mode.
         const MODE_DEFAULT = 0 << 1;
+        /// Falling edge triggered.
         const MODE_EDGE_LOW = 1 << 1;
+        /// Rising edge triggered.
         const MODE_EDGE_HIGH = 2 << 1;
+        /// Low level triggered.
         const MODE_LEVEL_LOW = 3 << 1;
+        /// High level triggered.
         const MODE_LEVEL_HIGH = 4 << 1;
+        /// Falling/rising edge triggered.
         const MODE_EDGE_BOTH = 5 << 1;
+        /// Virtual interrupt.
         const VIRTUAL = 0x10;
     }
 }
 
 impl InterruptOptions {
+    /// Extract the mode bits.
     pub fn to_mode(self) -> Self {
         InterruptOptions::from_bits_truncate(0xe) & self
     }
