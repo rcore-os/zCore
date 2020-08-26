@@ -7,11 +7,11 @@ use {
 };
 
 impl Syscall<'_> {
-    /// Ask for various properties of various kernel objects.  
+    /// Ask for various properties of various kernel objects.
     ///
-    /// `handle_value: HandleValue`, indicates the target kernel object.  
-    /// `property: u32`, indicates which property to get/set.  
-    /// `buffer: usize`, holds the property value, and must be a pointer to a buffer of value_size bytes.  
+    /// `handle_value: HandleValue`, indicates the target kernel object.
+    /// `property: u32`, indicates which property to get/set.
+    /// `buffer: usize`, holds the property value, and must be a pointer to a buffer of value_size bytes.
     pub fn sys_object_get_property(
         &self,
         handle_value: HandleValue,
@@ -107,7 +107,7 @@ impl Syscall<'_> {
         }
     }
 
-    /// Set various properties of various kernel objects.  
+    /// Set various properties of various kernel objects.
     pub fn sys_object_set_property(
         &mut self,
         handle_value: HandleValue,
@@ -138,9 +138,17 @@ impl Syscall<'_> {
             #[cfg(target_arch = "x86_64")]
             Property::RegisterFs => {
                 let thread = proc.get_object::<Thread>(handle_value)?;
-                assert!(Arc::ptr_eq(&thread, &self.thread));
                 let fsbase = UserInPtr::<usize>::from_addr_size(buffer, buffer_size)?.read()?;
-                self.regs.fsbase = fsbase;
+                let buf = fsbase.to_ne_bytes();
+                thread.write_state(ThreadStateKind::FS, &buf)?;
+                Ok(())
+            }
+            #[cfg(target_arch = "x86_64")]
+            Property::RegisterGs => {
+                let thread = proc.get_object::<Thread>(handle_value)?;
+                let fsbase = UserInPtr::<usize>::from_addr_size(buffer, buffer_size)?.read()?;
+                let buf = fsbase.to_ne_bytes();
+                thread.write_state(ThreadStateKind::GS, &buf)?;
                 Ok(())
             }
             Property::ProcessBreakOnLoad => {
@@ -220,9 +228,9 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    /// Query information about an object.  
+    /// Query information about an object.
     ///
-    /// `topic: u32`, indicates what specific information is desired.  
+    /// `topic: u32`, indicates what specific information is desired.
     /// `buffer: usize`, a pointer to a buffer of size buffer_size to return the information.
     pub fn sys_object_get_info(
         &self,
@@ -360,7 +368,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    /// Asserts and deasserts the userspace-accessible signal bits on the object's peer.  
+    /// Asserts and deasserts the userspace-accessible signal bits on the object's peer.
     pub fn sys_object_signal_peer(
         &self,
         handle_value: HandleValue,
@@ -380,7 +388,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    /// A non-blocking syscall subscribes for signals on an object.  
+    /// A non-blocking syscall subscribes for signals on an object.
     pub fn sys_object_wait_async(
         &self,
         handle_value: HandleValue,
@@ -405,7 +413,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    /// Signal an object.  
+    /// Signal an object.
     ///
     /// Asserts and deasserts the userspace-accessible signal bits on an object.
     pub fn sys_object_signal(
@@ -428,7 +436,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    /// Wait for signals on multiple objects.  
+    /// Wait for signals on multiple objects.
     pub async fn sys_object_wait_many(
         &self,
         mut user_items: UserInOutPtr<UserWaitItem>,
@@ -458,7 +466,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    /// Find the child of an object by its kid.  
+    /// Find the child of an object by its kid.
     ///
     /// Given a kernel object with children objects, obtain a handle to the child specified by the provided kernel object id.
     pub fn sys_object_get_child(
@@ -526,6 +534,7 @@ numeric_enum! {
     #[repr(u32)]
     #[derive(Debug)]
     enum Property {
+        RegisterGs = 2,
         Name = 3,
         RegisterFs = 4,
         ProcessDebugAddr = 5,

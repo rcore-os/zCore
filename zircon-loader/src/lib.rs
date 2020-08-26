@@ -206,6 +206,9 @@ async fn new_thread(thread: CurrentThread) {
         thread.time_add(time);
         trace!("back from user: {:#x?}", cx);
         EXCEPTIONS_USER.add(1);
+        let cx_clone = cx.clone();
+        thread.end_running(cx);
+        let mut cx = cx_clone;
         #[cfg(target_arch = "aarch64")]
         match cx.trap_num {
             0 => handle_syscall(&thread, &mut cx.general).await,
@@ -257,7 +260,6 @@ async fn new_thread(thread: CurrentThread) {
                 thread.handle_exception(type_, Some(&cx)).await;
             }
         }
-        thread.end_running(cx);
     }
     thread
         .handle_exception(ExceptionType::ThreadExiting, None)
@@ -294,18 +296,7 @@ async fn handle_syscall(thread: &CurrentThread, regs: &mut GeneralRegs) {
     let args = [
         regs.x0, regs.x1, regs.x2, regs.x3, regs.x4, regs.x5, regs.x6, regs.x7,
     ];
-    let mut syscall = Syscall {
-        regs,
-        thread,
-        thread_fn,
-    };
+    let mut syscall = Syscall { thread, thread_fn };
     let ret = syscall.syscall(num, args).await as usize;
-    #[cfg(target_arch = "x86_64")]
-    {
-        syscall.regs.rax = ret;
-    }
-    #[cfg(target_arch = "aarch64")]
-    {
-        syscall.regs.x0 = ret;
-    }
+    thread.complete_syscall(ret);
 }

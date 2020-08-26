@@ -17,7 +17,7 @@ use {
         sync::atomic::{AtomicI32, Ordering},
     },
     futures::pin_mut,
-    kernel_hal::{user::*, GeneralRegs},
+    kernel_hal::user::*,
     zircon_object::object::*,
     zircon_object::task::{CurrentThread, ThreadFn},
 };
@@ -50,7 +50,6 @@ mod vmo;
 use consts::SyscallType as Sys;
 
 pub struct Syscall<'a> {
-    pub regs: &'a mut GeneralRegs,
     pub thread: &'a CurrentThread,
     pub thread_fn: ThreadFn,
 }

@@ -125,7 +125,7 @@ impl Syscall<'_> {
         let proc = self.thread.proc();
         let thread = proc.get_object_with_rights::<Thread>(handle, Rights::READ)?;
         //TODO: Remove allocation
-        let mut buf = vec![0;buffer_size];
+        let mut buf = vec![0; buffer_size];
         thread.read_state(kind, &mut buf)?;
         buffer.write_array(&buf[..])?;
         Ok(())
