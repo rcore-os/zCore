@@ -347,7 +347,6 @@ bitflags! {
     }
 }
 
-
 bitflags! {
     /// Interrupt bind flags.
     pub struct InterruptOptions: u32 {

@@ -4,7 +4,8 @@ use super::*;
 pub(super) const PCI_MAX_DEVICES_PER_BUS: usize = 32;
 pub(super) const PCI_MAX_FUNCTIONS_PER_DEVICE: usize = 8;
 pub(super) const PCI_MAX_LEGACY_IRQ_PINS: usize = 4;
-pub(super) const PCI_MAX_FUNCTIONS_PER_BUS: usize = PCI_MAX_FUNCTIONS_PER_DEVICE * PCI_MAX_DEVICES_PER_BUS;
+pub(super) const PCI_MAX_FUNCTIONS_PER_BUS: usize =
+    PCI_MAX_FUNCTIONS_PER_DEVICE * PCI_MAX_DEVICES_PER_BUS;
 pub(super) const PCI_MAX_IRQS: usize = 224;
 pub(super) const PCI_INIT_ARG_MAX_ECAM_WINDOWS: usize = 2;
 

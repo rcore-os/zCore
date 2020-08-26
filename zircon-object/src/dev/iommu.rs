@@ -1,3 +1,4 @@
+#![allow(missing_docs)]
 use {crate::object::*, crate::vm::*, alloc::sync::Arc, bitflags::bitflags};
 
 /// Iommu refers to DummyIommu in zircon.

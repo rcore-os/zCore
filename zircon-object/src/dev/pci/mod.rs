@@ -2,9 +2,9 @@
 mod bus;
 mod caps;
 mod config;
+mod constants;
 mod nodes;
 mod pio;
-mod constants;
 
 pub(crate) use nodes::*;
 use pio::*;
@@ -13,9 +13,9 @@ pub use self::bus::{
     MmioPcieAddressProvider, PCIeBusDriver, PcieDeviceInfo, PcieDeviceKObject,
     PioPcieAddressProvider,
 };
+pub use self::constants::*;
 pub use self::nodes::PcieIrqMode;
 pub use self::pio::{pio_config_read, pio_config_write};
-pub use self::constants::*;
 
 #[derive(PartialEq, Debug)]
 pub enum PciAddrSpace {
