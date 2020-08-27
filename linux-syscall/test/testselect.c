@@ -16,9 +16,10 @@ int main(void)
 
     int pipefd[2];
 
+    // test time out 1s
     FD_ZERO(&rfds);
     FD_SET(0, &rfds);
-    tv.tv_sec = 0;
+    tv.tv_sec = 1;
     tv.tv_usec = 0;
     assert(select(1, &rfds, NULL, NULL, &tv) == 0);
     assert(!FD_ISSET(0, &rfds));

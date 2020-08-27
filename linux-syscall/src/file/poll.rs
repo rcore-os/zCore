@@ -11,6 +11,8 @@ use core::future::Future;
 use core::mem::size_of;
 use core::pin::Pin;
 use core::task::{Context, Poll};
+use core::time::Duration;
+use kernel_hal::timer_set;
 use linux_object::fs::FileDesc;
 use linux_object::time::*;
 
@@ -30,8 +32,12 @@ impl Syscall<'_> {
         #[must_use = "future does nothing unless polled/`await`-ed"]
         struct PollFuture<'a> {
             polls: &'a mut Vec<PollFd>,
+            timeout_msecs: usize,
+            begin_time_ms: usize,
             syscall: &'a Syscall<'a>,
         }
+
+        let begin_time_ms = TimeVal::now().to_msec();
 
         impl<'a> Future for PollFuture<'a> {
             type Output = SysResult;
@@ -72,11 +78,33 @@ impl Syscall<'_> {
                 if events > 0 {
                     return Poll::Ready(Ok(events));
                 }
+
+                if self.timeout_msecs == 0 {
+                    // no timeout, return now;
+                    return Poll::Ready(Ok(0));
+                } else {
+                    let waker = cx.waker().clone();
+                    timer_set(
+                        Duration::from_millis(self.timeout_msecs as u64),
+                        Box::new(move |_| waker.wake()),
+                    );
+                }
+
+                let current_time_ms = TimeVal::now().to_msec();
+                // infinity check
+                if self.timeout_msecs < (1 << 31)
+                    && current_time_ms - self.begin_time_ms >= self.timeout_msecs as usize
+                {
+                    return Poll::Ready(Ok(0));
+                }
+
                 Poll::Pending
             }
         }
         let future = PollFuture {
             polls: &mut polls,
+            timeout_msecs,
+            begin_time_ms,
             syscall: self,
         };
         let result = future.await;
@@ -200,12 +228,18 @@ impl Syscall<'_> {
                 if self.timeout_msecs == 0 {
                     // no timeout, return now;
                     return Poll::Ready(Ok(0));
+                } else {
+                    let waker = cx.waker().clone();
+                    timer_set(
+                        Duration::from_millis(self.timeout_msecs as u64),
+                        Box::new(move |_| waker.wake()),
+                    );
                 }
 
                 let current_time_ms = TimeVal::now().to_msec();
                 // infinity check
                 if self.timeout_msecs < (1 << 31)
-                    && current_time_ms - self.begin_time_ms > self.timeout_msecs as usize
+                    && current_time_ms - self.begin_time_ms >= self.timeout_msecs as usize
                 {
                     return Poll::Ready(Ok(0));
                 }

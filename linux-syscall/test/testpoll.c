@@ -17,11 +17,18 @@ int main(int argc, char **argv)
     int pipefd[2];
     struct timespec ts;
 
+    // test poll using pipe
     if (pipe(pipefd) == -1)
     {
         printf("pipe");
         exit(-1);
     }
+
+    // test time out
+    fds[0].fd = 0;
+    fds[0].events = POLLIN;
+    ret = poll(fds, 1, 1000);
+    assert(ret == 0);
 
     fds[0].fd = pipefd[0];
     fds[0].events = POLLIN;
