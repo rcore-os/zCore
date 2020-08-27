@@ -34,8 +34,18 @@
 <span id="34">34</span>
 <span id="35">35</span>
 <span id="36">36</span>
+<span id="37">37</span>
+<span id="38">38</span>
+<span id="39">39</span>
+<span id="40">40</span>
+<span id="41">41</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Zircon kernel objects</span>
+<span class="doccomment">//!</span>
+<span class="doccomment">//! # Feature flags</span>
+<span class="doccomment">//!</span>
+<span class="doccomment">//! - `elf`: Enables `zircon_object::util::elf_loader`.</span>
+<span class="doccomment">//! - `hypervisor`: Enables `zircon_object::hypervisor` (`Guest` and `Vcpu`).</span>
 
 <span class="attribute">#![<span class="ident">no_std</span>]</span>
 <span class="attribute">#![<span class="ident">deny</span>(<span class="ident">warnings</span>, <span class="ident">unsafe_code</span>, <span class="ident">unused_must_use</span>)]</span>
