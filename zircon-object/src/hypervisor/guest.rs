@@ -10,9 +10,13 @@ use {
     rvm::{GuestPhysAddr, GuestPhysMemorySetTrait, HostPhysAddr},
 };
 
+/// The base of the Guest's physical address space.
 pub const GUEST_PHYSICAL_ASPACE_BASE: u64 = 0;
+
+/// The size of the Guest's physical address space.
 pub const GUEST_PHYSICAL_ASPACE_SIZE: u64 = 1 << 36;
 
+/// A guest is a virtual machine that can be run within the hypervisor.
 pub struct Guest {
     base: KObjectBase,
     _counter: CountHelper,
@@ -24,6 +28,7 @@ impl_kobject!(Guest);
 define_count_helper!(Guest);
 
 impl Guest {
+    /// Create a new Guest.
     pub fn new() -> ZxResult<Arc<Self>> {
         if !rvm::check_hypervisor_feature() {
             return Err(ZxError::NOT_SUPPORTED);
@@ -38,6 +43,9 @@ impl Guest {
         }))
     }
 
+    /// Sets a trap within a guest, which generates a packet when there is an access
+    /// by a VCPU within the address range defined by `addr` and `size`,
+    /// within the address space defined by `kind`.
     pub fn set_trap(
         &self,
         kind: u32,
@@ -52,11 +60,12 @@ impl Guest {
             .map_err(From::from)
     }
 
+    /// Get the VMAR of the Guest.
     pub fn vmar(&self) -> Arc<VmAddressRegion> {
         self.gpm.vmar.clone()
     }
 
-    pub fn rvm_guest(&self) -> Arc<GuestInner> {
+    pub(super) fn rvm_guest(&self) -> Arc<GuestInner> {
         self.inner.clone()
     }
 }

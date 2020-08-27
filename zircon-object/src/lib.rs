@@ -1,4 +1,9 @@
 //! Zircon kernel objects
+//!
+//! # Feature flags
+//!
+//! - `elf`: Enables `zircon_object::util::elf_loader`.
+//! - `hypervisor`: Enables `zircon_object::hypervisor` (`Guest` and `Vcpu`).
 
 #![no_std]
 #![deny(warnings, unsafe_code, unused_must_use)]

@@ -11,6 +11,7 @@ use {
     spin::Mutex,
 };
 
+/// Virtual CPU within a Guest, which allows for execution within the virtual machine.
 pub struct Vcpu {
     base: KObjectBase,
     _counter: CountHelper,
@@ -22,6 +23,7 @@ impl_kobject!(Vcpu);
 define_count_helper!(Vcpu);
 
 impl Vcpu {
+    /// Create a new VCPU within a guest.
     pub fn new(guest: Arc<Guest>, entry: u64, thread: Arc<Thread>) -> ZxResult<Arc<Self>> {
         if thread.flags().contains(ThreadFlag::VCPU) {
             return Err(ZxError::BAD_STATE);
@@ -36,10 +38,12 @@ impl Vcpu {
         }))
     }
 
+    /// Check whether `current_thread` is the thread of the VCPU.
     pub fn same_thread(&self, current_thread: &Arc<Thread>) -> bool {
         Arc::ptr_eq(&self.thread, current_thread)
     }
 
+    /// Inject a virtual interrupt.
     pub fn virtual_interrupt(&self, vector: u32) -> ZxResult {
         self.inner
             .lock()
@@ -47,18 +51,22 @@ impl Vcpu {
             .map_err(From::from)
     }
 
+    /// Resume execution of the VCPU.
     pub fn resume(&self) -> ZxResult<PortPacket> {
         self.inner.lock().resume()?.try_into()
     }
 
+    /// Read state from the VCPU.
     pub fn read_state(&self) -> ZxResult<VcpuState> {
         self.inner.lock().read_state().map_err(From::from)
     }
 
+    /// Write state to the VCPU.
     pub fn write_state(&self, state: &VcpuState) -> ZxResult {
         self.inner.lock().write_state(state).map_err(From::from)
     }
 
+    /// Write IO state to the VCPU.
     pub fn write_io_state(&self, state: &VcpuIo) -> ZxResult {
         self.inner.lock().write_io_state(state).map_err(From::from)
     }
