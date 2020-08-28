@@ -505,7 +505,7 @@ impl PcieDeviceKObject {
         device.get_bar(bar_num as usize).ok_or(ZxError::NOT_FOUND)
     }
 
-    /// Map the
+    /// Map the interrupt to the IRQ.
     pub fn map_interrupt(&self, irq: i32) -> ZxResult<Arc<Interrupt>> {
         if irq < 0 || irq as u32 >= self.irqs_avail_cnt {
             return Err(ZxError::INVALID_ARGS);
