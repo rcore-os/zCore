@@ -351,7 +351,6 @@ impl PcieIrqHandlerState {
     }
 }
 
-
 pub struct PcieDevice {
     pub bus_id: usize,
     pub dev_id: usize,
@@ -571,9 +570,10 @@ impl PcieDevice {
                     std,
                     PciCapabilityMsi::create(cfg.as_ref(), cap_offset as usize, id),
                 ),
-                0x10 => {
-                    PciCapability::Pcie(std, PciCapPcie::create(cfg.as_ref(), cap_offset as u16, id))
-                }
+                0x10 => PciCapability::Pcie(
+                    std,
+                    PciCapPcie::create(cfg.as_ref(), cap_offset as u16, id),
+                ),
                 0x13 => PciCapability::AdvFeatures(
                     std,
                     PciCapAdvFeatures::create(cfg.as_ref(), cap_offset as u16, id),
