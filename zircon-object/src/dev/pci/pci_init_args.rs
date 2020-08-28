@@ -3,23 +3,11 @@
 //!
 //! reference: zircon/system/public/zircon/syscalls/pci.h
 
-pub const PCI_MAX_DEVICES_PER_BUS: usize = 32;
-pub const PCI_MAX_FUNCTIONS_PER_DEVICE: usize = 8;
-pub const PCI_MAX_FUNCTIONS_PER_BUS: usize = PCI_MAX_FUNCTIONS_PER_DEVICE * PCI_MAX_DEVICES_PER_BUS;
-
-pub const PCI_MAX_LEGACY_IRQ_PINS: usize = 4;
-
-pub const PCI_NO_IRQ_MAPPING: u32 = u32::MAX;
-
-pub const PCI_CFG_SPACE_TYPE_PIO: u8 = 0;
-pub const PCI_CFG_SPACE_TYPE_MMIO: u8 = 1;
 #[repr(transparent)]
 #[derive(Clone, Copy)]
 pub struct PciIrqSwizzleLut(
     [[[u32; PCI_MAX_LEGACY_IRQ_PINS]; PCI_MAX_FUNCTIONS_PER_DEVICE]; PCI_MAX_DEVICES_PER_BUS],
 );
-
-pub const PCI_MAX_IRQS: usize = 224;
 
 #[repr(C)]
 pub struct PciInitArgsIrqs {
