@@ -297,6 +297,12 @@
 <span id="297">297</span>
 <span id="298">298</span>
 <span id="299">299</span>
+<span id="300">300</span>
+<span id="301">301</span>
+<span id="302">302</span>
+<span id="303">303</span>
+<span id="304">304</span>
+<span id="305">305</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Linux syscall implementations</span>
 <span class="doccomment">//!</span>
@@ -414,7 +420,10 @@
             }
 
             <span class="comment">// io multiplexing</span>
-            <span class="comment">//            Sys::PSELECT6 =&gt; self.sys_pselect6(a0, a1.into(), a2.into(), a3.into(), a4.into(), a5.into()),</span>
+            <span class="ident">Sys</span>::<span class="ident">PSELECT6</span> <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="self">self</span>.<span class="ident">sys_pselect6</span>(<span class="ident">a0</span>, <span class="ident">a1</span>.<span class="ident">into</span>(), <span class="ident">a2</span>.<span class="ident">into</span>(), <span class="ident">a3</span>.<span class="ident">into</span>(), <span class="ident">a4</span>.<span class="ident">into</span>(), <span class="ident">a5</span>)
+                    .<span class="kw">await</span>
+            }
             <span class="ident">Sys</span>::<span class="ident">PPOLL</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_ppoll</span>(<span class="ident">a0</span>.<span class="ident">into</span>(), <span class="ident">a1</span>, <span class="ident">a2</span>.<span class="ident">into</span>()).<span class="kw">await</span>, <span class="comment">// ignore sigmask</span>
             <span class="comment">//            Sys::EPOLL_CREATE1 =&gt; self.sys_epoll_create1(a0),</span>
             <span class="comment">//            Sys::EPOLL_CTL =&gt; self.sys_epoll_ctl(a0, a1, a2, a3.into()),</span>
@@ -544,7 +553,7 @@
     <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>)]</span>
     <span class="doccomment">/// syscall specified for x86_64</span>
     <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">x86_64_syscall</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">sys_type</span>: <span class="ident">Sys</span>, <span class="ident">args</span>: [<span class="ident">usize</span>; <span class="number">6</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
-        <span class="kw">let</span> [<span class="ident">a0</span>, <span class="ident">a1</span>, <span class="ident">a2</span>, <span class="ident">_a3</span>, <span class="ident">_a4</span>, <span class="ident">_a5</span>] <span class="op">=</span> <span class="ident">args</span>;
+        <span class="kw">let</span> [<span class="ident">a0</span>, <span class="ident">a1</span>, <span class="ident">a2</span>, <span class="ident">a3</span>, <span class="ident">a4</span>, <span class="ident">_a5</span>] <span class="op">=</span> <span class="ident">args</span>;
         <span class="kw">match</span> <span class="ident">sys_type</span> {
             <span class="ident">Sys</span>::<span class="ident">OPEN</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_open</span>(<span class="ident">a0</span>.<span class="ident">into</span>(), <span class="ident">a1</span>, <span class="ident">a2</span>),
             <span class="ident">Sys</span>::<span class="ident">STAT</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_stat</span>(<span class="ident">a0</span>.<span class="ident">into</span>(), <span class="ident">a1</span>.<span class="ident">into</span>()),
@@ -552,7 +561,10 @@
             <span class="ident">Sys</span>::<span class="ident">POLL</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_poll</span>(<span class="ident">a0</span>.<span class="ident">into</span>(), <span class="ident">a1</span>, <span class="ident">a2</span>).<span class="kw">await</span>,
             <span class="ident">Sys</span>::<span class="ident">ACCESS</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_access</span>(<span class="ident">a0</span>.<span class="ident">into</span>(), <span class="ident">a1</span>),
             <span class="ident">Sys</span>::<span class="ident">PIPE</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_pipe</span>(<span class="ident">a0</span>.<span class="ident">into</span>()),
-            <span class="comment">//            Sys::SELECT =&gt; self.sys_select(a0, a1.into(), a2.into(), a3.into(), a4.into()),</span>
+            <span class="ident">Sys</span>::<span class="ident">SELECT</span> <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="self">self</span>.<span class="ident">sys_select</span>(<span class="ident">a0</span>, <span class="ident">a1</span>.<span class="ident">into</span>(), <span class="ident">a2</span>.<span class="ident">into</span>(), <span class="ident">a3</span>.<span class="ident">into</span>(), <span class="ident">a4</span>.<span class="ident">into</span>())
+                    .<span class="kw">await</span>
+            }
             <span class="ident">Sys</span>::<span class="ident">DUP2</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_dup2</span>(<span class="ident">a0</span>.<span class="ident">into</span>(), <span class="ident">a1</span>.<span class="ident">into</span>()),
             <span class="comment">//            Sys::ALARM =&gt; self.unimplemented(&quot;alarm&quot;, Ok(0)),</span>
             <span class="ident">Sys</span>::<span class="ident">FORK</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_fork</span>(),
