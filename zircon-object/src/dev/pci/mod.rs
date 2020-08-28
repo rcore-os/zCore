@@ -27,7 +27,6 @@ pub enum PciAddrSpace {
     PIO,
 }
 
-
 pub const PCI_MAX_DEVICES_PER_BUS: usize = 32;
 pub const PCI_MAX_FUNCTIONS_PER_DEVICE: usize = 8;
 pub const PCI_MAX_LEGACY_IRQ_PINS: usize = 4;
