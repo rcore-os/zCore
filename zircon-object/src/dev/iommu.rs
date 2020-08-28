@@ -92,11 +92,13 @@ impl Iommu {
 
 bitflags! {
     /// IOMMU permission flags.
-    #[allow(missing_docs)]
     pub struct IommuPerms: u32 {
         #[allow(clippy::identity_op)]
+        /// Read Permission.
         const PERM_READ             = 1 << 0;
+        /// Write Permission.
         const PERM_WRITE            = 1 << 1;
+        /// Execute Permission.
         const PERM_EXECUTE          = 1 << 2;
     }
 }
