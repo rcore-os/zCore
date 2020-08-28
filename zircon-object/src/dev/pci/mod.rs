@@ -15,7 +15,6 @@ pub use self::bus::{
     MmioPcieAddressProvider, PCIeBusDriver, PcieDeviceInfo, PcieDeviceKObject,
     PioPcieAddressProvider,
 };
-pub use self::constants::*;
 pub use self::nodes::PcieIrqMode;
 pub use self::pio::{pio_config_read, pio_config_write};
 
