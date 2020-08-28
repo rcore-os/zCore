@@ -1,3 +1,5 @@
+//! Objects for Device Drivers.
+#![deny(missing_docs)]
 use super::*;
 
 mod bti;

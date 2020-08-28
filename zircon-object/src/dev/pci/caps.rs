@@ -9,7 +9,9 @@ use spin::*;
 /// Enumeration for PCI capabilities.
 #[derive(Debug)]
 pub enum PciCapability {
+    /// MSI Interrupts.
     Msi(PciCapabilityStd, PciCapabilityMsi),
+    /// PCI Express Capability.
     Pcie(PciCapabilityStd, PciCapPcie),
     AdvFeatures(PciCapabilityStd, PciCapAdvFeatures),
     Std(PciCapabilityStd),
@@ -129,6 +131,7 @@ impl PciCapabilityMsi {
     }
 }
 
+/// PCI Express Capability.
 #[derive(Debug, Clone, Copy)]
 pub struct PciCapPcie {
     pub version: u8,

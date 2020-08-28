@@ -1,5 +1,3 @@
-// #![deny(missing_docs)]
-// use super::*;
 mod bus;
 mod caps;
 mod config;
@@ -31,6 +29,7 @@ pub enum PciAddrSpace {
     PIO,
 }
 
+/// ECAM Region.
 pub struct PciEcamRegion {
     /// Physical address of the memory mapped config region.
     pub phys_base: u64,
@@ -42,7 +41,8 @@ pub struct PciEcamRegion {
     pub bus_end: u8,
 }
 
+/// Memory mapped ECAM Region.
 pub struct MappedEcamRegion {
-    pub ecam: PciEcamRegion,
-    pub vaddr: u64,
+    ecam: PciEcamRegion,
+    vaddr: u64,
 }

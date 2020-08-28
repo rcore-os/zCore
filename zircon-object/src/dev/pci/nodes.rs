@@ -152,6 +152,8 @@ impl PcieUpstream {
     }
 }
 
+/// Struct used to fetch information about a configured base address register.
+#[allow(missing_docs)]
 #[derive(Default, Copy, Clone)]
 pub struct PcieBarInfo {
     pub is_mmio: bool,
@@ -162,13 +164,17 @@ pub struct PcieBarInfo {
     pub bus_addr: u64,
     allocation: Option<(usize, usize)>,
 }
+
+/// Struct for managing shared legacy IRQ handlers.
 #[derive(Default)]
 pub struct SharedLegacyIrqHandler {
+    /// The IRQ id.
     pub irq_id: u32,
     device_handler: Mutex<Vec<Arc<PcieDevice>>>,
 }
 
 impl SharedLegacyIrqHandler {
+    /// Create a new SharedLegacyIrqHandler.
     pub fn create(irq_id: u32) -> Option<Arc<SharedLegacyIrqHandler>> {
         info!("SharedLegacyIrqHandler created for {:#x?}", irq_id);
         InterruptManager::disable(irq_id);
@@ -185,6 +191,8 @@ impl SharedLegacyIrqHandler {
             None
         }
     }
+
+    /// Handle the IRQ.
     pub fn handle(&self) {
         let device_handler = self.device_handler.lock();
         if device_handler.is_empty() {
@@ -257,11 +265,20 @@ impl SharedLegacyIrqHandler {
 numeric_enum! {
     #[repr(u32)]
     #[derive(Debug, PartialEq, Eq, Copy, Clone)]
-    pub enum PcieIrqMode {
+      /// Enumeration which defines the IRQ modes a PCIe device may be operating in.
+      pub enum PcieIrqMode {
+        /// All IRQs are disabled.  0 total IRQs are supported in this mode.
         Disabled = 0,
+        ///    Devices may support up to 1 legacy IRQ in total.  Exclusive IRQ access
+        ///    cannot be guaranteed (the IRQ may be shared with other devices)
         Legacy = 1,
+        /// Devices may support up to 32 MSI IRQs in total.  IRQs may be allocated
+        ///    exclusively, resources permitting.
         Msi = 2,
+        ///   Devices may support up to 2048 MSI-X IRQs in total.  IRQs may be allocated
+        ///   exclusively, resources permitting.
         MsiX = 3,
+        #[allow(missing_docs)]
         Count = 4,
     }
 }
@@ -272,6 +289,7 @@ impl Default for PcieIrqMode {
     }
 }
 
+/// Struct for managing IRQ handlers.
 pub struct PcieIrqHandle {
     handle: Option<Box<dyn Fn() + Send + Sync>>,
     enabled: bool,
@@ -284,7 +302,7 @@ pub struct PcieLegacyIrqState {
     pub shared_handler: Arc<SharedLegacyIrqHandler>,
     pub handlers: Vec<PcieIrqHandle>, // WARNING
     pub mode: PcieIrqMode,            // WANRING
-    pub msi: Option<PciCapacityMsi>,
+    pub msi: Option<PciCapabilityMsi>,
     pub pcie: Option<PciCapPcie>,
 }
 
@@ -306,6 +324,7 @@ impl Default for PcieIrqState {
     }
 }
 
+/// Class for managing shared legacy IRQ handlers.
 #[derive(Default)]
 pub struct PcieIrqHandlerState {
     irq_id: u32,
@@ -331,6 +350,7 @@ impl PcieIrqHandlerState {
         *self.enabled.lock() = e;
     }
 }
+
 
 pub struct PcieDevice {
     pub bus_id: usize,
@@ -753,18 +773,24 @@ impl PcieDevice {
     pub fn config(&self) -> Option<Arc<PciConfig>> {
         self.cfg.clone()
     }
+
+    /// Enable MMIO.
     pub fn enable_mmio(&self, enable: bool) -> ZxResult {
         self.modify_cmd_adv(
             if enable { 0 } else { PCI_COMMAND_MEM_EN },
             if enable { PCI_COMMAND_MEM_EN } else { 0 },
         )
     }
+
+    /// Enable PIO.
     pub fn enable_pio(&self, enable: bool) -> ZxResult {
         self.modify_cmd_adv(
             if enable { 0 } else { PCI_COMMAND_IO_EN },
             if enable { PCI_COMMAND_IO_EN } else { 0 },
         )
     }
+
+    /// Enable bus mastering.
     pub fn enable_master(&self, enable: bool) -> ZxResult {
         self.modify_cmd_adv(
             if enable { 0 } else { PCI_COMMAND_BUS_MASTER_EN },
@@ -776,6 +802,8 @@ impl PcieDevice {
             Ok(())
         }
     }
+
+    /// Enable an IRQ.
     pub fn enable_irq(&self, irq_id: usize, enable: bool) {
         let _dev_lcok = self.dev_lock.lock();
         let inner = self.inner.lock();
@@ -822,6 +850,7 @@ impl PcieDevice {
         inner.irq.handlers[irq_id].enable(enable);
     }
 
+    /// Register an IRQ handle.
     pub fn register_irq_handle(&self, irq_id: usize, handle: Box<dyn Fn() -> u32 + Send + Sync>) {
         let _dev_lcok = self.dev_lock.lock();
         let inner = self.inner.lock();
@@ -832,6 +861,7 @@ impl PcieDevice {
         inner.irq.handlers[irq_id].set_handler(Some(handle));
     }
 
+    /// Unregister an IRQ handle.
     pub fn unregister_irq_handle(&self, irq_id: usize) {
         let _dev_lcok = self.dev_lock.lock();
         let inner = self.inner.lock();
@@ -842,6 +872,7 @@ impl PcieDevice {
         inner.irq.handlers[irq_id].set_handler(None);
     }
 
+    /// Get PcieBarInfo.
     pub fn get_bar(&self, bar_num: usize) -> Option<PcieBarInfo> {
         if bar_num >= self.bar_count {
             None
@@ -849,6 +880,8 @@ impl PcieDevice {
             Some(self.inner.lock().bars[bar_num])
         }
     }
+
+    /// Gets info about the capabilities of a PCI device's IRQ modes.
     pub fn get_irq_mode_capabilities(&self, mode: PcieIrqMode) -> ZxResult<PcieIrqModeCaps> {
         let inner = self.inner.lock();
         if inner.plugged_in {
@@ -1052,6 +1085,8 @@ impl PcieDevice {
             }
         }
     }
+
+    /// Set IRQ mode.
     pub fn set_irq_mode(&self, mode: PcieIrqMode, mut irq_count: u32) -> ZxResult {
         let mut inner = self.inner.lock();
         if let PcieIrqMode::Disabled = mode {
@@ -1100,6 +1135,7 @@ impl PcieDevice {
         }
     }
 
+    /// Read the device's config.
     pub fn config_read(&self, offset: usize, width: usize) -> ZxResult<u32> {
         let inner = self.inner.lock();
         let cfg_size: usize = if inner.pcie().is_some() {
@@ -1118,6 +1154,7 @@ impl PcieDevice {
         }
     }
 
+    /// Write the device's config.
     pub fn config_write(&self, offset: usize, width: usize, val: u32) -> ZxResult {
         let inner = self.inner.lock();
         let cfg_size: usize = if inner.pcie().is_some() {
@@ -1532,6 +1569,8 @@ const PCIE_HAS_IO_ADDR_SPACE: bool = true;
 #[cfg(not(target_arch = "x86_64"))]
 const PCIE_HAS_IO_ADDR_SPACE: bool = false;
 
+/// A structure used to hold output parameters when calling
+/// `pcie_query_irq_mode_capabilities`.
 #[derive(Default)]
 pub struct PcieIrqModeCaps {
     /// The maximum number of IRQ supported by the selected mode
