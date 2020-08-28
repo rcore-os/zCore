@@ -354,7 +354,7 @@ pub struct PcieDevice {
 pub struct PcieDeviceInner {
     pub irq: PcieIrqState,
     pub bars: [PcieBarInfo; 6],
-    pub caps: Vec<PciCapacity>,
+    pub caps: Vec<PciCapability>,
     pub plugged_in: bool,
     pub upstream: Weak<(dyn IPciNode)>,
     pub weak_super: Weak<(dyn IPciNode)>,
@@ -379,9 +379,9 @@ impl PcieDeviceInner {
     pub fn arc_self(&self) -> Arc<PcieDevice> {
         self.weak_super.upgrade().unwrap().device()
     }
-    pub fn msi(&self) -> Option<(&PciCapacityStd, &PciCapacityMsi)> {
+    pub fn msi(&self) -> Option<(&PciCapabilityStd, &PciCapabilityMsi)> {
         for c in self.caps.iter() {
-            if let PciCapacity::Msi(std, msi) = c {
+            if let PciCapability::Msi(std, msi) = c {
                 if std.is_valid() {
                     return Some((&std, &msi));
                 }
@@ -389,9 +389,9 @@ impl PcieDeviceInner {
         }
         None
     }
-    pub fn pcie(&self) -> Option<(&PciCapacityStd, &PciCapPcie)> {
+    pub fn pcie(&self) -> Option<(&PciCapabilityStd, &PciCapPcie)> {
         for c in self.caps.iter() {
-            if let PciCapacity::Pcie(std, pcie) = c {
+            if let PciCapability::Pcie(std, pcie) = c {
                 if std.is_valid() {
                     return Some((&std, &pcie));
                 }
@@ -544,21 +544,21 @@ impl PcieDevice {
                 return Err(ZxError::INVALID_ARGS);
             }
             let id = cfg.read8_(cap_offset as usize);
-            let std = PciCapacityStd::create(cap_offset as u16, id);
+            let std = PciCapabilityStd::create(cap_offset as u16, id);
             let mut inner = self.inner.lock();
             let cap = match id {
-                0x5 => PciCapacity::Msi(
+                0x5 => PciCapability::Msi(
                     std,
-                    PciCapacityMsi::create(cfg.as_ref(), cap_offset as usize, id),
+                    PciCapabilityMsi::create(cfg.as_ref(), cap_offset as usize, id),
                 ),
                 0x10 => {
-                    PciCapacity::Pcie(std, PciCapPcie::create(cfg.as_ref(), cap_offset as u16, id))
+                    PciCapability::Pcie(std, PciCapPcie::create(cfg.as_ref(), cap_offset as u16, id))
                 }
-                0x13 => PciCapacity::AdvFeatures(
+                0x13 => PciCapability::AdvFeatures(
                     std,
                     PciCapAdvFeatures::create(cfg.as_ref(), cap_offset as u16, id),
                 ),
-                _ => PciCapacity::Std(std),
+                _ => PciCapability::Std(std),
             };
             inner.caps.push(cap);
             cap_offset = cfg.read8_(cap_offset as usize + 1) & 0xFC;
@@ -744,7 +744,7 @@ impl PcieDevice {
     }
     fn pcie_device_type(&self) -> PcieDeviceType {
         for cap in self.inner.lock().caps.iter() {
-            if let PciCapacity::Pcie(_std, pcie) = cap {
+            if let PciCapability::Pcie(_std, pcie) = cap {
                 return pcie.dev_type;
             }
         }
@@ -980,7 +980,7 @@ impl PcieDevice {
         let cfg = self.cfg.as_ref().unwrap();
         let addr_reg = std.base + 0x4;
         let addr_reg_upper = std.base + 0x8;
-        let data_reg = std.base + PciCapacityMsi::addr_offset(msi.is_64bit) as u16;
+        let data_reg = std.base + PciCapabilityMsi::addr_offset(msi.is_64bit) as u16;
         cfg.write32_(addr_reg as usize, target_addr as u32);
         if msi.is_64bit {
             cfg.write32_(addr_reg_upper as usize, (target_addr >> 32) as u32);
@@ -993,7 +993,7 @@ impl PcieDevice {
         assert!(log2 <= 5);
         let cfg = self.cfg.as_ref().unwrap();
         let (std, _msi) = inner.msi().unwrap();
-        let ctrl_addr = std.base as usize + PciCapacityMsi::ctrl_offset();
+        let ctrl_addr = std.base as usize + PciCapabilityMsi::ctrl_offset();
         let mut val = cfg.read16_(ctrl_addr);
         val = (val & !0x70) | ((log2 as u16 & 0x7) << 4);
         cfg.write16_(ctrl_addr, val);
@@ -1001,7 +1001,7 @@ impl PcieDevice {
     fn set_msi_enb(&self, inner: &MutexGuard<PcieDeviceInner>, enable: bool) {
         let cfg = self.cfg.as_ref().unwrap();
         let (std, _msi) = inner.msi().unwrap();
-        let ctrl_addr = std.base as usize + PciCapacityMsi::ctrl_offset();
+        let ctrl_addr = std.base as usize + PciCapabilityMsi::ctrl_offset();
         let val = cfg.read16_(ctrl_addr);
         cfg.write16_(ctrl_addr, (val & !0x1) | (enable as u16));
     }

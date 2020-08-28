@@ -6,23 +6,24 @@ use core::convert::TryFrom;
 use kernel_hal::InterruptManager;
 use spin::*;
 
+/// Enumeration for PCI capabilities.
 #[derive(Debug)]
-pub enum PciCapacity {
-    Msi(PciCapacityStd, PciCapacityMsi),
-    Pcie(PciCapacityStd, PciCapPcie),
-    AdvFeatures(PciCapacityStd, PciCapAdvFeatures),
-    Std(PciCapacityStd),
+pub enum PciCapability {
+    Msi(PciCapabilityStd, PciCapabilityMsi),
+    Pcie(PciCapabilityStd, PciCapPcie),
+    AdvFeatures(PciCapabilityStd, PciCapAdvFeatures),
+    Std(PciCapabilityStd),
 }
 
 #[derive(Debug)]
-pub struct PciCapacityStd {
+pub struct PciCapabilityStd {
     pub id: u8,
     pub base: u16,
 }
 
-impl PciCapacityStd {
-    pub fn create(base: u16, id: u8) -> PciCapacityStd {
-        PciCapacityStd { id, base }
+impl PciCapabilityStd {
+    pub fn create(base: u16, id: u8) -> PciCapabilityStd {
+        PciCapabilityStd { id, base }
     }
     pub fn is_valid(&self) -> bool {
         true
@@ -65,7 +66,7 @@ impl PciMsiBlock {
 
 // @see PCI Local Bus Specification 3.0 Section 6.8.1
 #[derive(Debug)]
-pub struct PciCapacityMsi {
+pub struct PciCapabilityMsi {
     pub msi_size: u16,
     pub has_pvm: bool,
     pub is_64bit: bool,
@@ -77,8 +78,8 @@ pub struct PciCapacityMsi {
     pub pending_bits_offset: usize, // reg32
 }
 
-impl PciCapacityMsi {
-    pub fn create(cfg: &PciConfig, base: usize, id: u8) -> PciCapacityMsi {
+impl PciCapabilityMsi {
+    pub fn create(cfg: &PciConfig, base: usize, id: u8) -> PciCapabilityMsi {
         assert_eq!(id, 0x5); // PCIE_CAP_ID_MSI
         let ctrl = cfg.read16_(base + 0x2);
         let has_pvm = (ctrl & 0x100) != 0;
@@ -88,7 +89,7 @@ impl PciCapacityMsi {
         if has_pvm {
             cfg.write32_offset(mask_bits, 0xffff_ffff);
         }
-        PciCapacityMsi {
+        PciCapabilityMsi {
             msi_size: match (has_pvm, is_64bit) {
                 (true, true) => 20,
                 (true, false) => 16,
