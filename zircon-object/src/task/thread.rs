@@ -135,6 +135,7 @@ impl ThreadInner {
     fn state(&self) -> ThreadState {
         // Dying > Exception > Suspend > Blocked
         if self.suspend_count == 0
+            || self.context.is_none()
             || self.state == ThreadState::BlockedException
             || self.state == ThreadState::Dying
             || self.state == ThreadState::Dead
@@ -489,6 +490,8 @@ impl CurrentThread {
                 let mut inner = self.thread.inner.lock();
                 if inner.state() != ThreadState::Suspended {
                     // resume:  return the context token from thread object
+                    // There is no need to call change_state here
+                    // since take away the context of a non-suspended thread won't change it's state
                     Poll::Ready(inner.context.take().unwrap())
                 } else {
                     // suspend: put waker into the thread object
@@ -504,7 +507,10 @@ impl CurrentThread {
 
     /// The thread ends running and takes back the context.
     pub fn end_running(&self, context: Box<UserContext>) {
-        self.inner.lock().context = Some(context);
+        let mut inner = self.inner.lock();
+        inner.context = Some(context);
+        let state = inner.state;
+        inner.change_state(state, &self.base);
     }
 
     /// Run async future and change state while blocking.
