@@ -1,4 +1,3 @@
-#![deny(missing_docs)]
 //! Objects for Virtual Machine Monitor (hypervisor).
 
 mod guest;
