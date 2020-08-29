@@ -132,6 +132,8 @@
 <span id="132">132</span>
 <span id="133">133</span>
 <span id="134">134</span>
+<span id="135">135</span>
+<span id="136">136</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> {
     <span class="kw">super</span>::<span class="kw-2">*</span>,
@@ -190,6 +192,7 @@
         }))
     }
 
+    <span class="doccomment">/// Used during initialization to set up the IOMMU state for this PMT.</span>
     <span class="kw">fn</span> <span class="ident">map_into_iommu</span>(
         <span class="ident">iommu</span>: <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Iommu</span><span class="op">&gt;</span>,
         <span class="ident">vmo</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">VmObject</span><span class="op">&gt;</span>,
@@ -220,6 +223,7 @@
         }
     }
 
+    <span class="doccomment">/// Encode the mapped addresses.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">encode_addrs</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">compress_results</span>: <span class="ident">bool</span>,

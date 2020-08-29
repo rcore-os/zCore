@@ -164,6 +164,10 @@
 <span id="164">164</span>
 <span id="165">165</span>
 <span id="166">166</span>
+<span id="167">167</span>
+<span id="168">168</span>
+<span id="169">169</span>
+<span id="170">170</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> <span class="kw">super</span>::<span class="kw">super</span>::{<span class="ident">ZxError</span>, <span class="ident">ZxResult</span>};
 <span class="kw">use</span> <span class="kw">super</span>::<span class="ident">config</span>::<span class="ident">PciConfig</span>;
@@ -173,23 +177,26 @@
 <span class="kw">use</span> <span class="ident">kernel_hal</span>::<span class="ident">InterruptManager</span>;
 <span class="kw">use</span> <span class="ident">spin</span>::<span class="kw-2">*</span>;
 
+<span class="doccomment">/// Enumeration for PCI capabilities.</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>)]</span>
-<span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">PciCapacity</span> {
-    <span class="ident">Msi</span>(<span class="ident">PciCapacityStd</span>, <span class="ident">PciCapacityMsi</span>),
-    <span class="ident">Pcie</span>(<span class="ident">PciCapacityStd</span>, <span class="ident">PciCapPcie</span>),
-    <span class="ident">AdvFeatures</span>(<span class="ident">PciCapacityStd</span>, <span class="ident">PciCapAdvFeatures</span>),
-    <span class="ident">Std</span>(<span class="ident">PciCapacityStd</span>),
+<span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">PciCapability</span> {
+    <span class="doccomment">/// MSI Interrupts.</span>
+    <span class="ident">Msi</span>(<span class="ident">PciCapabilityStd</span>, <span class="ident">PciCapabilityMsi</span>),
+    <span class="doccomment">/// PCI Express Capability.</span>
+    <span class="ident">Pcie</span>(<span class="ident">PciCapabilityStd</span>, <span class="ident">PciCapPcie</span>),
+    <span class="ident">AdvFeatures</span>(<span class="ident">PciCapabilityStd</span>, <span class="ident">PciCapAdvFeatures</span>),
+    <span class="ident">Std</span>(<span class="ident">PciCapabilityStd</span>),
 }
 
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>)]</span>
-<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">PciCapacityStd</span> {
+<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">PciCapabilityStd</span> {
     <span class="kw">pub</span> <span class="ident">id</span>: <span class="ident">u8</span>,
     <span class="kw">pub</span> <span class="ident">base</span>: <span class="ident">u16</span>,
 }
 
-<span class="kw">impl</span> <span class="ident">PciCapacityStd</span> {
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">create</span>(<span class="ident">base</span>: <span class="ident">u16</span>, <span class="ident">id</span>: <span class="ident">u8</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">PciCapacityStd</span> {
-        <span class="ident">PciCapacityStd</span> { <span class="ident">id</span>, <span class="ident">base</span> }
+<span class="kw">impl</span> <span class="ident">PciCapabilityStd</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">create</span>(<span class="ident">base</span>: <span class="ident">u16</span>, <span class="ident">id</span>: <span class="ident">u8</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">PciCapabilityStd</span> {
+        <span class="ident">PciCapabilityStd</span> { <span class="ident">id</span>, <span class="ident">base</span> }
     }
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">is_valid</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
         <span class="bool-val">true</span>
@@ -232,7 +239,7 @@
 
 <span class="comment">// @see PCI Local Bus Specification 3.0 Section 6.8.1</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>)]</span>
-<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">PciCapacityMsi</span> {
+<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">PciCapabilityMsi</span> {
     <span class="kw">pub</span> <span class="ident">msi_size</span>: <span class="ident">u16</span>,
     <span class="kw">pub</span> <span class="ident">has_pvm</span>: <span class="ident">bool</span>,
     <span class="kw">pub</span> <span class="ident">is_64bit</span>: <span class="ident">bool</span>,
@@ -244,8 +251,8 @@
     <span class="kw">pub</span> <span class="ident">pending_bits_offset</span>: <span class="ident">usize</span>, <span class="comment">// reg32</span>
 }
 
-<span class="kw">impl</span> <span class="ident">PciCapacityMsi</span> {
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">create</span>(<span class="ident">cfg</span>: <span class="kw-2">&amp;</span><span class="ident">PciConfig</span>, <span class="ident">base</span>: <span class="ident">usize</span>, <span class="ident">id</span>: <span class="ident">u8</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">PciCapacityMsi</span> {
+<span class="kw">impl</span> <span class="ident">PciCapabilityMsi</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">create</span>(<span class="ident">cfg</span>: <span class="kw-2">&amp;</span><span class="ident">PciConfig</span>, <span class="ident">base</span>: <span class="ident">usize</span>, <span class="ident">id</span>: <span class="ident">u8</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">PciCapabilityMsi</span> {
         <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">id</span>, <span class="number">0x5</span>); <span class="comment">// PCIE_CAP_ID_MSI</span>
         <span class="kw">let</span> <span class="ident">ctrl</span> <span class="op">=</span> <span class="ident">cfg</span>.<span class="ident">read16_</span>(<span class="ident">base</span> <span class="op">+</span> <span class="number">0x2</span>);
         <span class="kw">let</span> <span class="ident">has_pvm</span> <span class="op">=</span> (<span class="ident">ctrl</span> <span class="op">&amp;</span> <span class="number">0x100</span>) <span class="op">!</span><span class="op">=</span> <span class="number">0</span>;
@@ -255,7 +262,7 @@
         <span class="kw">if</span> <span class="ident">has_pvm</span> {
             <span class="ident">cfg</span>.<span class="ident">write32_offset</span>(<span class="ident">mask_bits</span>, <span class="number">0xffff_ffff</span>);
         }
-        <span class="ident">PciCapacityMsi</span> {
+        <span class="ident">PciCapabilityMsi</span> {
             <span class="ident">msi_size</span>: <span class="kw">match</span> (<span class="ident">has_pvm</span>, <span class="ident">is_64bit</span>) {
                 (<span class="bool-val">true</span>, <span class="bool-val">true</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="number">20</span>,
                 (<span class="bool-val">true</span>, <span class="bool-val">false</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="number">16</span>,
@@ -295,6 +302,7 @@
     }
 }
 
+<span class="doccomment">/// PCI Express Capability.</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>, <span class="ident">Clone</span>, <span class="ident">Copy</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">PciCapPcie</span> {
     <span class="kw">pub</span> <span class="ident">version</span>: <span class="ident">u8</span>,

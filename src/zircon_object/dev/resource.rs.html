@@ -109,12 +109,23 @@
 <span id="109">109</span>
 <span id="110">110</span>
 <span id="111">111</span>
+<span id="112">112</span>
+<span id="113">113</span>
+<span id="114">114</span>
+<span id="115">115</span>
+<span id="116">116</span>
+<span id="117">117</span>
+<span id="118">118</span>
+<span id="119">119</span>
+<span id="120">120</span>
+<span id="121">121</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> {<span class="kw">crate</span>::<span class="ident">object</span>::<span class="kw-2">*</span>, <span class="ident">alloc</span>::<span class="ident">sync</span>::<span class="ident">Arc</span>, <span class="ident">bitflags</span>::<span class="ident">bitflags</span>, <span class="ident">numeric_enum_macro</span>::<span class="ident">numeric_enum</span>};
 
 <span class="macro">numeric_enum</span><span class="macro">!</span> {
     <span class="attribute">#[<span class="ident">repr</span>(<span class="ident">u32</span>)]</span>
     <span class="doccomment">/// ResourceKind definition from fuchsia/zircon/system/public/zircon/syscalls/resource.h</span>
+    <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">missing_docs</span>)]</span>
     <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>, <span class="ident">Clone</span>, <span class="ident">Copy</span>, <span class="ident">Eq</span>, <span class="ident">PartialEq</span>)]</span>
     <span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">ResourceKind</span> {
         <span class="ident">MMIO</span> <span class="op">=</span> <span class="number">0</span>,
@@ -129,8 +140,10 @@
 }
 
 <span class="macro">bitflags</span><span class="macro">!</span> {
+    <span class="doccomment">/// Bits for Resource.flags.</span>
     <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">ResourceFlags</span>: <span class="ident">u32</span> {
         <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy</span>::<span class="ident">identity_op</span>)]</span>
+        <span class="doccomment">/// Exclusive resource.</span>
         <span class="kw">const</span> <span class="ident">EXCLUSIVE</span>      <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">16</span>;
     }
 }
@@ -164,6 +177,7 @@
         })
     }
 
+    <span class="doccomment">/// Validate the resource is the given kind or it is the root resource.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">validate</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">kind</span>: <span class="ident">ResourceKind</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
         <span class="kw">if</span> <span class="self">self</span>.<span class="ident">kind</span> <span class="op">=</span><span class="op">=</span> <span class="ident">kind</span> <span class="op">|</span><span class="op">|</span> <span class="self">self</span>.<span class="ident">kind</span> <span class="op">=</span><span class="op">=</span> <span class="ident">ResourceKind</span>::<span class="ident">ROOT</span> {
             <span class="prelude-val">Ok</span>(())
@@ -172,6 +186,8 @@
         }
     }
 
+    <span class="doccomment">/// Validate the resource is the given kind or it is the root resource,</span>
+    <span class="doccomment">/// and [addr, addr+len] is within the range of the resource.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">validate_ranged_resource</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">kind</span>: <span class="ident">ResourceKind</span>,
@@ -186,6 +202,8 @@
         }
     }
 
+    <span class="doccomment">/// Returns `Err(ZxError::INVALID_ARGS)` if the resource is not the root resource, and</span>
+    <span class="doccomment">/// either it&#39;s flags or parameter `flags` contains `ResourceFlags::EXCLUSIVE`.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">check_exclusive</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">flags</span>: <span class="ident">ResourceFlags</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
         <span class="kw">if</span> <span class="self">self</span>.<span class="ident">kind</span> <span class="op">!</span><span class="op">=</span> <span class="ident">ResourceKind</span>::<span class="ident">ROOT</span>
             <span class="kw-2">&amp;</span><span class="op">&amp;</span> (<span class="self">self</span>.<span class="ident">flags</span>.<span class="ident">contains</span>(<span class="ident">ResourceFlags</span>::<span class="ident">EXCLUSIVE</span>)
@@ -197,6 +215,7 @@
         }
     }
 
+    <span class="doccomment">/// Get information of the resource.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_info</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ResourceInfo</span> {
         <span class="kw">let</span> <span class="ident">name</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">base</span>.<span class="ident">name</span>();
         <span class="kw">let</span> <span class="ident">name</span> <span class="op">=</span> <span class="ident">name</span>.<span class="ident">as_bytes</span>();
@@ -212,6 +231,7 @@
     }
 }
 
+<span class="doccomment">/// Information of a resource.</span>
 <span class="attribute">#[<span class="ident">repr</span>(<span class="ident">C</span>)]</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Default</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">ResourceInfo</span> {

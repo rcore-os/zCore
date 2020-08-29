@@ -57,7 +57,10 @@
 <span id="57">57</span>
 <span id="58">58</span>
 <span id="59">59</span>
+<span id="60">60</span>
+<span id="61">61</span>
 </pre><div class="example-wrap"><pre class="rust ">
+<span class="attribute">#![<span class="ident">allow</span>(<span class="ident">missing_docs</span>)]</span>
 <span class="kw">use</span> <span class="kw">super</span>::<span class="kw">super</span>::<span class="kw-2">*</span>;
 <span class="kw">use</span> <span class="ident">kernel_hal</span>::{<span class="ident">inpd</span>, <span class="ident">outpd</span>};
 <span class="kw">use</span> <span class="ident">spin</span>::<span class="ident">Mutex</span>;
@@ -67,6 +70,7 @@
 <span class="kw">const</span> <span class="ident">PCI_CONFIG_DATA</span>: <span class="ident">u16</span> <span class="op">=</span> <span class="number">0xcfc</span>;
 <span class="kw">const</span> <span class="ident">PCI_CONFIG_ENABLE</span>: <span class="ident">u32</span> <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">31</span>;
 
+<span class="doccomment">/// Returns the BDF address without the bottom two bits masked off.</span>
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">pci_bdf_raw_addr</span>(<span class="ident">bus</span>: <span class="ident">u8</span>, <span class="ident">dev</span>: <span class="ident">u8</span>, <span class="ident">func</span>: <span class="ident">u8</span>, <span class="ident">offset</span>: <span class="ident">u8</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u32</span> {
     ((<span class="ident">bus</span> <span class="kw">as</span> <span class="ident">u32</span> <span class="op">&amp;</span> <span class="number">0xff</span>) <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">16</span>)         <span class="comment">// bits 23-16 bus</span>
         <span class="op">|</span> ((<span class="ident">dev</span> <span class="kw">as</span> <span class="ident">u32</span> <span class="op">&amp;</span> <span class="number">0x1f</span>) <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">11</span>)   <span class="comment">// bits 15-11 device</span>
