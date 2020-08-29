@@ -1,3 +1,4 @@
+//! ELF loading of Zircon and Linux.
 use crate::{error::*, vm::*};
 use alloc::sync::Arc;
 use xmas_elf::{
@@ -7,14 +8,16 @@ use xmas_elf::{
     ElfFile,
 };
 
+/// Extensional ELF loading methods for `VmAddressRegion`.
 pub trait VmarExt {
+    /// Create `VMObject` from all LOAD segments of `elf` and map them to this VMAR.
+    /// Return the first `VMObject`.
     fn load_from_elf(&self, elf: &ElfFile) -> ZxResult<Arc<VmObject>>;
+    /// Same as `load_from_elf`, but the `vmo` is an existing one instead of a lot of new ones.
     fn map_from_elf(&self, elf: &ElfFile, vmo: Arc<VmObject>) -> ZxResult;
 }
 
 impl VmarExt for VmAddressRegion {
-    /// Create `VMObject` from all LOAD segments of `elf` and map them to this VMAR.
-    /// Return the first `VMObject`.
     fn load_from_elf(&self, elf: &ElfFile) -> ZxResult<Arc<VmObject>> {
         let mut first_vmo = None;
         for ph in elf.program_iter() {
@@ -29,7 +32,6 @@ impl VmarExt for VmAddressRegion {
         }
         Ok(first_vmo.unwrap())
     }
-
     fn map_from_elf(&self, elf: &ElfFile, vmo: Arc<VmObject>) -> ZxResult {
         for ph in elf.program_iter() {
             if ph.get_type().unwrap() != Type::Load {
@@ -78,16 +80,21 @@ fn make_vmo(elf: &ElfFile, ph: ProgramHeader) -> ZxResult<Arc<VmObject>> {
     Ok(vmo)
 }
 
+/// Extensional ELF loading methods for `ElfFile`.
 pub trait ElfExt {
+    /// Get total size of all LOAD segments.
     fn load_segment_size(&self) -> usize;
+    /// Get address of the given `symbol`.
     fn get_symbol_address(&self, symbol: &str) -> Option<u64>;
+    /// Get the program interpreter path name.
     fn get_interpreter(&self) -> Result<&str, &str>;
+    /// Get the symbol table for dynamic linking (.dynsym section).
     fn dynsym(&self) -> Result<&[DynEntry64], &'static str>;
+    /// Relocate according to the dynamic relocation section (.rel.dyn section).
     fn relocate(&self, base: usize) -> Result<(), &'static str>;
 }
 
 impl ElfExt for ElfFile<'_> {
-    /// Get total size of all LOAD segments.
     fn load_segment_size(&self) -> usize {
         self.program_iter()
             .filter(|ph| ph.get_type().unwrap() == Type::Load)
@@ -97,7 +104,6 @@ impl ElfExt for ElfFile<'_> {
             * PAGE_SIZE
     }
 
-    /// Get address of the given `symbol`.
     fn get_symbol_address(&self, symbol: &str) -> Option<u64> {
         for section in self.section_iter() {
             if let SectionData::SymbolTable64(entries) = section.get_data(self).unwrap() {

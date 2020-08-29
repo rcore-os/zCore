@@ -11,6 +11,7 @@ pub type ZxResult<T = ()> = Result<T, ZxError>;
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum ZxError {
+    /// Success.
     OK = 0,
 
     // ======= Internal failures =======
