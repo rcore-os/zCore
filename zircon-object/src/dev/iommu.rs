@@ -17,18 +17,23 @@ impl Iommu {
         })
     }
 
+    /// Check if a `bus_txn_id` is valid for this IOMMU.
     pub fn is_valid_bus_txn_id(&self) -> bool {
         true
     }
 
+    /// Returns the number of bytes that Map() can guarantee, upon success, to find
+    /// a contiguous address range for.
     pub fn minimum_contiguity(&self) -> usize {
         PAGE_SIZE as usize
     }
 
+    /// The number of bytes in the address space (UINT64_MAX if 2^64).
     pub fn aspace_size(&self) -> usize {
         usize::MAX
     }
 
+    /// Grant a device access to the range of pages given by [offset, offset + size) in `vmo`.
     pub fn map(
         &self,
         vmo: Arc<VmObject>,
@@ -60,6 +65,9 @@ impl Iommu {
         }
     }
 
+    /// Same as `map`, but with additional guarantee that this will never return a
+    /// partial mapping.  It will either return a single contiguous mapping or
+    /// return a failure.
     pub fn map_contiguous(
         &self,
         vmo: Arc<VmObject>,
@@ -83,10 +91,14 @@ impl Iommu {
 }
 
 bitflags! {
+    /// IOMMU permission flags.
     pub struct IommuPerms: u32 {
         #[allow(clippy::identity_op)]
+        /// Read Permission.
         const PERM_READ             = 1 << 0;
+        /// Write Permission.
         const PERM_WRITE            = 1 << 1;
+        /// Execute Permission.
         const PERM_EXECUTE          = 1 << 2;
     }
 }

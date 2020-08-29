@@ -95,6 +95,7 @@ impl BusTransactionInitiator {
     }
 }
 
+/// Information of BTI.
 #[repr(C)]
 #[derive(Default)]
 pub struct BtiInfo {

@@ -1,3 +1,4 @@
+#![allow(missing_docs)]
 use super::super::*;
 use kernel_hal::{inpd, outpd};
 use spin::Mutex;
@@ -7,6 +8,7 @@ const PCI_CONFIG_ADDR: u16 = 0xcf8;
 const PCI_CONFIG_DATA: u16 = 0xcfc;
 const PCI_CONFIG_ENABLE: u32 = 1 << 31;
 
+/// Returns the BDF address without the bottom two bits masked off.
 pub fn pci_bdf_raw_addr(bus: u8, dev: u8, func: u8, offset: u8) -> u32 {
     ((bus as u32 & 0xff) << 16)         // bits 23-16 bus
         | ((dev as u32 & 0x1f) << 11)   // bits 15-11 device
