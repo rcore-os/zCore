@@ -44,3 +44,4 @@
 /libc-test/src/regression/setenv-oom.exe
 /libc-test/src/regression/flockfile-list.exe
 /libc-test/src/regression/malloc-brk-fail.exe
+/libc-test/src/regression/iconv-roundtrips.exe

@@ -1,7 +1,7 @@
 use super::*;
 use core::convert::TryFrom;
 use zircon_object::{
-    dev::*,
+    dev::{pci_init_args::*, *},
     vm::{pages, VmObject},
 };
 

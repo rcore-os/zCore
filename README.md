@@ -53,6 +53,13 @@ Run native Zircon program (shell):
 cargo run --release -p zircon-loader prebuilt/zircon/x64
 ```
 
+Run Linux shell on bare-metal (zCore):
+
+```sh
+make image
+cd zCore && make run mode=release linux=1 [graphic=on] [accel=1]
+```
+
 Run Zircon on bare-metal (zCore):
 
 ```sh

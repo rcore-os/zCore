@@ -55,6 +55,7 @@ impl PinnedMemoryToken {
         }))
     }
 
+    /// Used during initialization to set up the IOMMU state for this PMT.
     fn map_into_iommu(
         iommu: &Arc<Iommu>,
         vmo: Arc<VmObject>,
@@ -85,6 +86,7 @@ impl PinnedMemoryToken {
         }
     }
 
+    /// Encode the mapped addresses.
     pub fn encode_addrs(
         &self,
         compress_results: bool,

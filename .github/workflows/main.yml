@@ -22,6 +22,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: clippy
+          args: --all-features
 
   build:
     runs-on: ${{ matrix.os }}
@@ -181,7 +182,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: doc
-          args: --no-deps
+          args: --no-deps --all-features
       - name: Deploy to Github Pages
         if: ${{ github.ref == 'refs/heads/master' }}
         uses: JamesIves/github-pages-deploy-action@releases/v3

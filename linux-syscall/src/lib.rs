@@ -114,8 +114,11 @@ impl Syscall<'_> {
             }
 
             // io multiplexing
-            //            Sys::PSELECT6 => self.sys_pselect6(a0, a1.into(), a2.into(), a3.into(), a4.into(), a5.into()),
-            //            Sys::PPOLL => self.sys_ppoll(a0.into(), a1, a2.into()), // ignore sigmask
+            Sys::PSELECT6 => {
+                self.sys_pselect6(a0, a1.into(), a2.into(), a3.into(), a4.into(), a5)
+                    .await
+            }
+            Sys::PPOLL => self.sys_ppoll(a0.into(), a1, a2.into()).await, // ignore sigmask
             //            Sys::EPOLL_CREATE1 => self.sys_epoll_create1(a0),
             //            Sys::EPOLL_CTL => self.sys_epoll_ctl(a0, a1, a2, a3.into()),
             //            Sys::EPOLL_PWAIT => self.sys_epoll_pwait(a0, a1.into(), a2, a3, a4),
@@ -188,6 +191,16 @@ impl Syscall<'_> {
             #[cfg(not(target_arch = "mips"))]
             Sys::SEMCTL => self.sys_semctl(a0, a1, a2, a3),
 
+            // shm
+            #[cfg(not(target_arch = "mips"))]
+            Sys::SHMGET => self.sys_shmget(a0, a1, a2),
+            #[cfg(not(target_arch = "mips"))]
+            Sys::SHMAT => self.sys_shmat(a0, a1, a2),
+            #[cfg(not(target_arch = "mips"))]
+            Sys::SHMDT => self.sys_shmdt(a0, a1, a2),
+            #[cfg(not(target_arch = "mips"))]
+            Sys::SHMCTL => self.sys_shmctl(a0, a1, a2),
+
             // system
             Sys::GETPID => self.sys_getpid(),
             Sys::GETTID => self.sys_gettid(),
@@ -234,7 +247,7 @@ impl Syscall<'_> {
     #[cfg(target_arch = "x86_64")]
     /// syscall specified for x86_64
     async fn x86_64_syscall(&mut self, sys_type: Sys, args: [usize; 6]) -> SysResult {
-        let [a0, a1, a2, _a3, _a4, _a5] = args;
+        let [a0, a1, a2, a3, a4, _a5] = args;
         match sys_type {
             Sys::OPEN => self.sys_open(a0.into(), a1, a2),
             Sys::STAT => self.sys_stat(a0.into(), a1.into()),
@@ -242,7 +255,10 @@ impl Syscall<'_> {
             Sys::POLL => self.sys_poll(a0.into(), a1, a2).await,
             Sys::ACCESS => self.sys_access(a0.into(), a1),
             Sys::PIPE => self.sys_pipe(a0.into()),
-            //            Sys::SELECT => self.sys_select(a0, a1.into(), a2.into(), a3.into(), a4.into()),
+            Sys::SELECT => {
+                self.sys_select(a0, a1.into(), a2.into(), a3.into(), a4.into())
+                    .await
+            }
             Sys::DUP2 => self.sys_dup2(a0.into(), a1.into()),
             //            Sys::ALARM => self.unimplemented("alarm", Ok(0)),
             Sys::FORK => self.sys_fork(),

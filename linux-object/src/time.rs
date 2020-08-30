@@ -30,6 +30,10 @@ impl TimeVal {
     pub fn now() -> TimeVal {
         TimeSpec::now().into()
     }
+    /// to msec
+    pub fn to_msec(&self) -> usize {
+        self.sec * 1_000 + self.usec / 1_000
+    }
 }
 
 impl TimeSpec {
@@ -53,6 +57,11 @@ impl TimeSpec {
             // silently fail for device file
             inode.set_metadata(&metadata).ok();
         }
+    }
+
+    /// to msec
+    pub fn to_msec(&self) -> usize {
+        self.sec * 1_000 + self.nsec / 1_000_000
     }
 }
 
