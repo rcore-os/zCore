@@ -139,16 +139,14 @@ impl Syscall<'_> {
             Property::RegisterFs => {
                 let thread = proc.get_object::<Thread>(handle_value)?;
                 let fsbase = UserInPtr::<usize>::from_addr_size(buffer, buffer_size)?.read()?;
-                let buf = fsbase.to_ne_bytes();
-                thread.write_state(ThreadStateKind::FS, &buf)?;
+                thread.set_fsbase(fsbase)?;
                 Ok(())
             }
             #[cfg(target_arch = "x86_64")]
             Property::RegisterGs => {
                 let thread = proc.get_object::<Thread>(handle_value)?;
-                let fsbase = UserInPtr::<usize>::from_addr_size(buffer, buffer_size)?.read()?;
-                let buf = fsbase.to_ne_bytes();
-                thread.write_state(ThreadStateKind::GS, &buf)?;
+                let gsbase = UserInPtr::<usize>::from_addr_size(buffer, buffer_size)?.read()?;
+                thread.set_gsbase(gsbase)?;
                 Ok(())
             }
             Property::ProcessBreakOnLoad => {

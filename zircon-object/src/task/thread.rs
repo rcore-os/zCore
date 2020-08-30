@@ -318,6 +318,10 @@ impl Thread {
     /// Read one aspect of thread state.
     pub fn read_state(&self, kind: ThreadStateKind, buf: &mut [u8]) -> ZxResult<usize> {
         let inner = self.inner.lock();
+        let state = inner.state();
+        if state != ThreadState::BlockedException && state != ThreadState::Suspended {
+            return Err(ZxError::BAD_STATE);
+        }
         let context = inner.context.as_ref().ok_or(ZxError::BAD_STATE)?;
         context.read_state(kind, buf)
     }
@@ -325,6 +329,10 @@ impl Thread {
     /// Write one aspect of thread state.
     pub fn write_state(&self, kind: ThreadStateKind, buf: &[u8]) -> ZxResult {
         let mut inner = self.inner.lock();
+        let state = inner.state();
+        if state != ThreadState::BlockedException && state != ThreadState::Suspended {
+            return Err(ZxError::BAD_STATE);
+        }
         let context = inner.context.as_mut().ok_or(ZxError::BAD_STATE)?;
         context.write_state(kind, buf)
     }
@@ -401,6 +409,24 @@ impl Thread {
     /// Apply `f` to the thread's flags.
     pub fn update_flags(&self, f: impl FnOnce(&mut ThreadFlag)) {
         f(&mut self.inner.lock().flags)
+    }
+
+    /// Set the thread local fsbase register on x86_64.
+    #[cfg(target_arch = "x86_64")]
+    pub fn set_fsbase(&self, fsbase: usize) -> ZxResult {
+        let mut inner = self.inner.lock();
+        let context = inner.context.as_mut().ok_or(ZxError::BAD_STATE)?;
+        context.general.fsbase = fsbase;
+        Ok(())
+    }
+
+    /// Set the thread local gsbase register on x86_64.
+    #[cfg(target_arch = "x86_64")]
+    pub fn set_gsbase(&self, gsbase: usize) -> ZxResult {
+        let mut inner = self.inner.lock();
+        let context = inner.context.as_mut().ok_or(ZxError::BAD_STATE)?;
+        context.general.gsbase = gsbase;
+        Ok(())
     }
 }
 
