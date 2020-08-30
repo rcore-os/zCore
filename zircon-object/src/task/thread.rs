@@ -850,7 +850,19 @@ mod tests {
         let proc = Process::create(&root_job, "proc").expect("failed to create process");
         let thread = Thread::create(&proc, "thread").expect("failed to create thread");
 
+        const SIZE: usize = core::mem::size_of::<GeneralRegs>();
         let mut buf = [0; 10];
+        assert_eq!(
+            thread.read_state(ThreadStateKind::General, &mut buf).err(),
+            Some(ZxError::BAD_STATE)
+        );
+        assert_eq!(
+            thread.write_state(ThreadStateKind::General, &buf).err(),
+            Some(ZxError::BAD_STATE)
+        );
+
+        thread.suspend();
+
         assert_eq!(
             thread.read_state(ThreadStateKind::General, &mut buf).err(),
             Some(ZxError::BUFFER_TOO_SMALL)
@@ -860,7 +872,6 @@ mod tests {
             Some(ZxError::BUFFER_TOO_SMALL)
         );
 
-        const SIZE: usize = core::mem::size_of::<GeneralRegs>();
         let mut buf = [0; SIZE];
         assert!(thread
             .read_state(ThreadStateKind::General, &mut buf)
