@@ -337,22 +337,6 @@ impl Thread {
         context.write_state(kind, buf)
     }
 
-    /// Complete the syscall by setting the register in the context.
-    ///
-    /// Will panic if the context is not availiable.
-    pub fn complete_syscall(&self, ret: usize) {
-        let mut inner = self.inner.lock();
-        let mut cx = inner.context.as_mut().unwrap();
-        #[cfg(target_arch = "x86_64")]
-        {
-            cx.general.rax = ret;
-        }
-        #[cfg(target_arch = "aarch64")]
-        {
-            cx.general.x0 = ret;
-        }
-    }
-
     /// Get the thread's information.
     pub fn get_thread_info(&self) -> ThreadInfo {
         let inner = self.inner.lock();
@@ -537,6 +521,22 @@ impl CurrentThread {
         inner.context = Some(context);
         let state = inner.state;
         inner.change_state(state, &self.base);
+    }
+
+    /// Complete the syscall by setting the register in the context.
+    ///
+    /// Will panic if the context is not availiable.
+    pub fn complete_syscall(&self, ret: usize) {
+        let mut inner = self.inner.lock();
+        let mut cx = inner.context.as_mut().unwrap();
+        #[cfg(target_arch = "x86_64")]
+        {
+            cx.general.rax = ret;
+        }
+        #[cfg(target_arch = "aarch64")]
+        {
+            cx.general.x0 = ret;
+        }
     }
 
     /// Run async future and change state while blocking.
