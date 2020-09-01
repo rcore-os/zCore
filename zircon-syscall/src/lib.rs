@@ -102,6 +102,9 @@ impl Syscall<'_> {
                 self.sys_thread_create(a0 as _, a1.into(), a2 as _, a3 as _, a4.into())
             }
             Sys::THREAD_START => self.sys_thread_start(a0 as _, a1 as _, a2 as _, a3 as _, a4 as _),
+            Sys::THREAD_READ_STATE => {
+                self.sys_thread_read_state(a0 as _, a1 as _, a2.into(), a3 as _)
+            }
             Sys::THREAD_WRITE_STATE => {
                 self.sys_thread_write_state(a0 as _, a1 as _, a2.into(), a3 as _)
             }

@@ -107,6 +107,28 @@ impl Syscall<'_> {
         Ok(())
     }
 
+    /// Read one aspect of thread state.    
+    ///   
+    /// The thread state may only be read when the thread is halted for an exception or the thread is suspended.
+    pub fn sys_thread_read_state(
+        &self,
+        handle: HandleValue,
+        kind: u32,
+        buffer: UserOutPtr<u8>,
+        buffer_size: usize,
+    ) -> ZxResult {
+        let kind = ThreadStateKind::try_from(kind).map_err(|_| ZxError::INVALID_ARGS)?;
+        info!(
+            "thread.read_state: handle={:#x?}, kind={:#x?}, buf=({:#x?}; {:#x?})",
+            handle, kind, buffer, buffer_size,
+        );
+        let proc = self.thread.proc();
+        let thread = proc.get_object_with_rights::<Thread>(handle, Rights::READ)?;
+        let mut buf = vec![0u8; buffer_size];
+        thread.read_state(kind, &mut buf[..buffer_size])?;
+        Ok(())
+    }
+
     /// Write one aspect of thread state.    
     ///   
     /// The thread state may only be written when the thread is halted for an exception or the thread is suspended.
