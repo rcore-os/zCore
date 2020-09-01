@@ -320,6 +320,9 @@ impl Thread {
         let inner = self.inner.lock();
         let state = inner.state();
         if state != ThreadState::BlockedException && state != ThreadState::Suspended {
+            if inner.exception.is_some() {
+                return Err(ZxError::NOT_SUPPORTED);
+            }
             return Err(ZxError::BAD_STATE);
         }
         let context = inner.context.as_ref().ok_or(ZxError::BAD_STATE)?;
@@ -331,6 +334,9 @@ impl Thread {
         let mut inner = self.inner.lock();
         let state = inner.state();
         if state != ThreadState::BlockedException && state != ThreadState::Suspended {
+            if inner.exception.is_some() {
+                return Err(ZxError::NOT_SUPPORTED);
+            }
             return Err(ZxError::BAD_STATE);
         }
         let context = inner.context.as_mut().ok_or(ZxError::BAD_STATE)?;
@@ -589,6 +595,7 @@ impl CurrentThread {
     /// Create an exception on this thread and wait for the handling.
     pub async fn handle_exception(&self, type_: ExceptionType, cx: Option<&UserContext>) {
         let exception = Exception::new(&self.0, type_, cx);
+        self.inner.lock().exception = Some(exception.clone());
         if type_ == ExceptionType::ThreadExiting {
             let handled = self
                 .0
@@ -599,7 +606,6 @@ impl CurrentThread {
                 self.dying_run(future).await.ok();
             }
         } else {
-            self.inner.lock().exception = Some(exception.clone());
             let future = exception.handle();
             pin_mut!(future);
             self.blocking_run(
@@ -610,8 +616,8 @@ impl CurrentThread {
             )
             .await
             .ok();
-            self.inner.lock().exception = None;
         }
+        self.inner.lock().exception = None;
     }
 
     /// Run a blocking task when the thread is exited itself and dying.
