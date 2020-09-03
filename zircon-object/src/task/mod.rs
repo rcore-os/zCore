@@ -1,4 +1,3 @@
-#![deny(missing_docs)]
 //! Objects for Task Management.
 
 use super::*;

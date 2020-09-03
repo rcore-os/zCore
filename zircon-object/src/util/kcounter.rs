@@ -1,3 +1,4 @@
+//! Kernel counter.
 use core::fmt::{Debug, Error, Formatter};
 use core::sync::atomic::{AtomicUsize, Ordering};
 
@@ -23,9 +24,12 @@ impl KCounter {
     }
 }
 
+/// Kernel counter descriptor.
 #[repr(C)]
 pub struct KCounterDescriptor {
+    /// The counter.
     pub counter: &'static KCounter,
+    /// The counter's name.
     pub name: &'static str,
 }
 
@@ -48,6 +52,7 @@ macro_rules! kcounter {
     };
 }
 
+/// Kernel counter descriptor array.
 pub struct KCounterDescriptorArray(pub &'static [KCounterDescriptor]);
 
 impl KCounterDescriptorArray {

@@ -1,3 +1,4 @@
+//! Objects for Kernel Debuglog.
 use {
     super::*,
     crate::object::*,
@@ -13,6 +14,11 @@ lazy_static! {
     });
 }
 
+/// Debuglog - Kernel debuglog
+///
+/// ## SYNOPSIS
+///
+/// Debuglog objects allow userspace to read and write to kernel debug logs.
 pub struct DebugLog {
     base: KObjectBase,
     flags: u32,
@@ -63,6 +69,8 @@ struct DlogHeader {
     tid: u64,
 }
 
+/// Log entry severity. Used for coarse filtering of log messages.
+#[allow(missing_docs)]
 #[repr(u8)]
 #[derive(Debug)]
 pub enum Severity {
@@ -75,6 +83,7 @@ pub enum Severity {
 }
 
 const HEADER_SIZE: usize = core::mem::size_of::<DlogHeader>();
+/// Max length of Dlog read buffer.
 pub const DLOG_MAX_LEN: usize = 256;
 
 #[allow(unsafe_code)]

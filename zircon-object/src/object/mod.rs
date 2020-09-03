@@ -1,4 +1,3 @@
-#![deny(missing_docs)]
 //! Kernel object basis.
 //!
 //! # Create new kernel object
