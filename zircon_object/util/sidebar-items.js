@@ -1,1 +1,1 @@
-initSidebarItems({"mod":[["block_range",""],["elf_loader",""],["kcounter",""]]});
+initSidebarItems({"mod":[["elf_loader","ELF loading of Zircon and Linux."],["kcounter","Kernel counter."]]});

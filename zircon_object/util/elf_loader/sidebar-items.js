@@ -1,1 +1,1 @@
-initSidebarItems({"trait":[["ElfExt",""],["VmarExt",""]]});
+initSidebarItems({"trait":[["ElfExt","Extensional ELF loading methods for `ElfFile`."],["VmarExt","Extensional ELF loading methods for `VmAddressRegion`."]]});

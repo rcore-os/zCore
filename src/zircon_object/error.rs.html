@@ -240,6 +240,7 @@
 <span id="240">240</span>
 <span id="241">241</span>
 <span id="242">242</span>
+<span id="243">243</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">/// The type returned by kernel objects methods.</span>
 <span class="kw">pub</span> <span class="kw">type</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">T</span> <span class="op">=</span> ()<span class="op">&gt;</span> <span class="op">=</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">T</span>, <span class="ident">ZxError</span><span class="op">&gt;</span>;
@@ -254,6 +255,7 @@
 <span class="attribute">#[<span class="ident">repr</span>(<span class="ident">i32</span>)]</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>, <span class="ident">Clone</span>, <span class="ident">Copy</span>, <span class="ident">Eq</span>, <span class="ident">PartialEq</span>)]</span>
 <span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">ZxError</span> {
+    <span class="doccomment">/// Success.</span>
     <span class="ident">OK</span> <span class="op">=</span> <span class="number">0</span>,
 
     <span class="comment">// ======= Internal failures =======</span>

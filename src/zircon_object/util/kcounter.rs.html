@@ -73,7 +73,13 @@
 <span id="73">73</span>
 <span id="74">74</span>
 <span id="75">75</span>
+<span id="76">76</span>
+<span id="77">77</span>
+<span id="78">78</span>
+<span id="79">79</span>
+<span id="80">80</span>
 </pre><div class="example-wrap"><pre class="rust ">
+<span class="doccomment">//! Kernel counter.</span>
 <span class="kw">use</span> <span class="ident">core</span>::<span class="ident">fmt</span>::{<span class="ident">Debug</span>, <span class="ident">Error</span>, <span class="ident">Formatter</span>};
 <span class="kw">use</span> <span class="ident">core</span>::<span class="ident">sync</span>::<span class="ident">atomic</span>::{<span class="ident">AtomicUsize</span>, <span class="ident">Ordering</span>};
 
@@ -99,9 +105,12 @@
     }
 }
 
+<span class="doccomment">/// Kernel counter descriptor.</span>
 <span class="attribute">#[<span class="ident">repr</span>(<span class="ident">C</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">KCounterDescriptor</span> {
+    <span class="doccomment">/// The counter.</span>
     <span class="kw">pub</span> <span class="ident">counter</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;static</span> <span class="ident">KCounter</span>,
+    <span class="doccomment">/// The counter&#39;s name.</span>
     <span class="kw">pub</span> <span class="ident">name</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;static</span> <span class="ident">str</span>,
 }
 
@@ -124,6 +133,7 @@
     };
 }
 
+<span class="doccomment">/// Kernel counter descriptor array.</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">KCounterDescriptorArray</span>(<span class="kw">pub</span> <span class="kw-2">&amp;</span><span class="lifetime">&#39;static</span> [<span class="ident">KCounterDescriptor</span>]);
 
 <span class="kw">impl</span> <span class="ident">KCounterDescriptorArray</span> {
