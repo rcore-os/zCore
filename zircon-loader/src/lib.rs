@@ -11,7 +11,6 @@ extern crate log;
 use {
     alloc::{boxed::Box, sync::Arc, vec::Vec},
     core::{future::Future, pin::Pin},
-    kernel_hal::GeneralRegs,
     xmas_elf::ElfFile,
     zircon_object::{dev::*, ipc::*, object::*, task::*, util::elf_loader::*, vm::*},
     zircon_syscall::Syscall,
@@ -177,12 +176,10 @@ async fn new_thread(thread: CurrentThread) {
     kernel_hal::Thread::set_tid(thread.id(), thread.proc().id());
     if thread.is_first_thread() {
         thread
-            .handle_exception(ExceptionType::ProcessStarting, None)
+            .handle_exception(ExceptionType::ProcessStarting)
             .await;
     };
-    thread
-        .handle_exception(ExceptionType::ThreadStarting, None)
-        .await;
+    thread.handle_exception(ExceptionType::ThreadStarting).await;
 
     loop {
         let mut cx = thread.wait_for_run().await;
@@ -206,48 +203,44 @@ async fn new_thread(thread: CurrentThread) {
         thread.time_add(time);
         trace!("back from user: {:#x?}", cx);
         EXCEPTIONS_USER.add(1);
-        let cx_clone = cx.clone();
+
+        let trap_num = cx.trap_num;
+        #[cfg(target_arch = "x86_64")]
+        let error_code = cx.error_code;
         thread.end_running(cx);
-        let mut cx = cx_clone;
+
         #[cfg(target_arch = "aarch64")]
-        match cx.trap_num {
-            0 => handle_syscall(&thread, &mut cx.general).await,
+        match trap_num {
+            0 => handle_syscall(&thread).await,
             _ => unimplemented!(),
         }
         #[cfg(target_arch = "x86_64")]
-        match cx.trap_num {
-            0x100 => handle_syscall(&thread, &mut cx.general).await,
+        match trap_num {
+            0x100 => handle_syscall(&thread).await,
             0x20..=0x3f => {
-                kernel_hal::InterruptManager::handle(cx.trap_num as u8);
-                if cx.trap_num == 0x20 {
+                kernel_hal::InterruptManager::handle(trap_num as u8);
+                if trap_num == 0x20 {
                     EXCEPTIONS_TIMER.add(1);
                     kernel_hal::yield_now().await;
                 }
             }
             0xe => {
                 EXCEPTIONS_PGFAULT.add(1);
-                #[cfg(target_arch = "x86_64")]
-                let flags = if cx.error_code & 0x2 == 0 {
+                let flags = if error_code & 0x2 == 0 {
                     MMUFlags::READ
                 } else {
                     MMUFlags::WRITE
                 };
-                // FIXME:
-                #[cfg(target_arch = "aarch64")]
-                let flags = MMUFlags::WRITE;
                 let fault_vaddr = kernel_hal::fetch_fault_vaddr();
-                error!("page fault from user mode {:#x} {:#x?}", fault_vaddr, flags);
+                info!("page fault from user mode {:#x} {:#x?}", fault_vaddr, flags);
                 let vmar = thread.proc().vmar();
                 if vmar.handle_page_fault(fault_vaddr, flags).is_err() {
-                    error!("Page Fault from user mode: {:#x?}", cx);
-                    thread
-                        .handle_exception(ExceptionType::FatalPageFault, Some(&cx))
-                        .await;
+                    thread.handle_exception(ExceptionType::FatalPageFault).await;
                 }
             }
-            0x8 => {
+            0x8 => thread.with_context(|cx| {
                 panic!("Double fault from user mode! {:#x?}", cx);
-            }
+            }),
             num => {
                 let type_ = match num {
                     0x1 => ExceptionType::HardwareBreakpoint,
@@ -256,47 +249,57 @@ async fn new_thread(thread: CurrentThread) {
                     0x17 => ExceptionType::UnalignedAccess,
                     _ => ExceptionType::General,
                 };
-                error!("User mode exception: {:?} {:#x?}", type_, cx);
-                thread.handle_exception(type_, Some(&cx)).await;
+                thread.handle_exception(type_).await;
             }
         }
     }
-    thread
-        .handle_exception(ExceptionType::ThreadExiting, None)
-        .await;
+    thread.handle_exception(ExceptionType::ThreadExiting).await;
 }
 
 fn thread_fn(thread: CurrentThread) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> {
     Box::pin(new_thread(thread))
 }
 
-async fn handle_syscall(thread: &CurrentThread, regs: &mut GeneralRegs) {
-    #[cfg(target_arch = "x86_64")]
-    let num = regs.rax as u32;
-    #[cfg(target_arch = "aarch64")]
-    let num = regs.x16 as u32;
-    // LibOS: Function call ABI
-    #[cfg(feature = "std")]
-    #[cfg(target_arch = "x86_64")]
-    let args = unsafe {
-        let a6 = (regs.rsp as *const usize).read();
-        let a7 = (regs.rsp as *const usize).add(1).read();
-        [
-            regs.rdi, regs.rsi, regs.rdx, regs.rcx, regs.r8, regs.r9, a6, a7,
-        ]
-    };
-    // RealOS: Zircon syscall ABI
-    #[cfg(not(feature = "std"))]
-    #[cfg(target_arch = "x86_64")]
-    let args = [
-        regs.rdi, regs.rsi, regs.rdx, regs.r10, regs.r8, regs.r9, regs.r12, regs.r13,
-    ];
-    // ARM64
-    #[cfg(target_arch = "aarch64")]
-    let args = [
-        regs.x0, regs.x1, regs.x2, regs.x3, regs.x4, regs.x5, regs.x6, regs.x7,
-    ];
+async fn handle_syscall(thread: &CurrentThread) {
+    let (num, args) = thread.with_context(|cx| {
+        let regs = cx.general;
+        #[cfg(target_arch = "x86_64")]
+        let num = regs.rax as u32;
+        #[cfg(target_arch = "aarch64")]
+        let num = regs.x16 as u32;
+        // LibOS: Function call ABI
+        #[cfg(feature = "std")]
+        #[cfg(target_arch = "x86_64")]
+        let args = unsafe {
+            let a6 = (regs.rsp as *const usize).read();
+            let a7 = (regs.rsp as *const usize).add(1).read();
+            [
+                regs.rdi, regs.rsi, regs.rdx, regs.rcx, regs.r8, regs.r9, a6, a7,
+            ]
+        };
+        // RealOS: Zircon syscall ABI
+        #[cfg(not(feature = "std"))]
+        #[cfg(target_arch = "x86_64")]
+        let args = [
+            regs.rdi, regs.rsi, regs.rdx, regs.r10, regs.r8, regs.r9, regs.r12, regs.r13,
+        ];
+        // ARM64
+        #[cfg(target_arch = "aarch64")]
+        let args = [
+            regs.x0, regs.x1, regs.x2, regs.x3, regs.x4, regs.x5, regs.x6, regs.x7,
+        ];
+        (num, args)
+    });
     let mut syscall = Syscall { thread, thread_fn };
     let ret = syscall.syscall(num, args).await as usize;
-    thread.complete_syscall(ret);
+    thread.with_context(|cx| {
+        #[cfg(target_arch = "x86_64")]
+        {
+            cx.general.rax = ret;
+        }
+        #[cfg(target_arch = "aarch64")]
+        {
+            cx.general.x0 = ret;
+        }
+    });
 }

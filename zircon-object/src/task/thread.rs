@@ -529,20 +529,16 @@ impl CurrentThread {
         inner.change_state(state, &self.base);
     }
 
-    /// Complete the syscall by setting the register in the context.
+    /// Access saved context of current thread.
     ///
     /// Will panic if the context is not availiable.
-    pub fn complete_syscall(&self, ret: usize) {
+    pub fn with_context<T, F>(&self, f: F) -> T
+    where
+        F: FnOnce(&mut UserContext) -> T,
+    {
         let mut inner = self.inner.lock();
         let mut cx = inner.context.as_mut().unwrap();
-        #[cfg(target_arch = "x86_64")]
-        {
-            cx.general.rax = ret;
-        }
-        #[cfg(target_arch = "aarch64")]
-        {
-            cx.general.x0 = ret;
-        }
+        f(&mut cx)
     }
 
     /// Run async future and change state while blocking.
@@ -593,9 +589,25 @@ impl CurrentThread {
     }
 
     /// Create an exception on this thread and wait for the handling.
-    pub async fn handle_exception(&self, type_: ExceptionType, cx: Option<&UserContext>) {
-        let exception = Exception::new(&self.0, type_, cx);
-        self.inner.lock().exception = Some(exception.clone());
+    pub async fn handle_exception(&self, type_: ExceptionType) {
+        let exception = {
+            let mut inner = self.inner.lock();
+            let cx = if !type_.is_synth() {
+                inner.context.as_ref().map(|cx| cx.as_ref())
+            } else {
+                None
+            };
+            if !type_.is_synth() {
+                error!(
+                    "User mode exception: {:?} {:#x?}",
+                    type_,
+                    cx.expect("Architectural exception should has context")
+                );
+            }
+            let exception = Exception::new(&self.0, type_, cx);
+            inner.exception = Some(exception.clone());
+            exception
+        };
         if type_ == ExceptionType::ThreadExiting {
             let handled = self
                 .0
