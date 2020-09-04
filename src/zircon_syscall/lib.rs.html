@@ -384,6 +384,8 @@
 <span id="384">384</span>
 <span id="385">385</span>
 <span id="386">386</span>
+<span id="387">387</span>
+<span id="388">388</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Zircon syscall implementations</span>
 
@@ -404,7 +406,7 @@
         <span class="ident">sync</span>::<span class="ident">atomic</span>::{<span class="ident">AtomicI32</span>, <span class="ident">Ordering</span>},
     },
     <span class="ident">futures</span>::<span class="ident">pin_mut</span>,
-    <span class="ident">kernel_hal</span>::{<span class="ident">user</span>::<span class="kw-2">*</span>, <span class="ident">GeneralRegs</span>},
+    <span class="ident">kernel_hal</span>::<span class="ident">user</span>::<span class="kw-2">*</span>,
     <span class="ident">zircon_object</span>::<span class="ident">object</span>::<span class="kw-2">*</span>,
     <span class="ident">zircon_object</span>::<span class="ident">task</span>::{<span class="ident">CurrentThread</span>, <span class="ident">ThreadFn</span>},
 };
@@ -437,7 +439,6 @@
 <span class="kw">use</span> <span class="ident">consts</span>::<span class="ident">SyscallType</span> <span class="kw">as</span> <span class="ident">Sys</span>;
 
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Syscall</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span> {
-    <span class="kw">pub</span> <span class="ident">regs</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="kw-2">mut</span> <span class="ident">GeneralRegs</span>,
     <span class="kw">pub</span> <span class="ident">thread</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">CurrentThread</span>,
     <span class="kw">pub</span> <span class="ident">thread_fn</span>: <span class="ident">ThreadFn</span>,
 }
@@ -491,6 +492,9 @@
             <span class="ident">Sys</span>::<span class="ident">THREAD_START</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_thread_start</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a2</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a3</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a4</span> <span class="kw">as</span> <span class="kw">_</span>),
             <span class="ident">Sys</span>::<span class="ident">THREAD_WRITE_STATE</span> <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="self">self</span>.<span class="ident">sys_thread_write_state</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a2</span>.<span class="ident">into</span>(), <span class="ident">a3</span> <span class="kw">as</span> <span class="kw">_</span>)
+            }
+            <span class="ident">Sys</span>::<span class="ident">THREAD_READ_STATE</span> <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="self">self</span>.<span class="ident">sys_thread_read_state</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a2</span>.<span class="ident">into</span>(), <span class="ident">a3</span> <span class="kw">as</span> <span class="kw">_</span>)
             }
             <span class="ident">Sys</span>::<span class="ident">TASK_KILL</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_task_kill</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>),
             <span class="ident">Sys</span>::<span class="ident">THREAD_EXIT</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_thread_exit</span>(),

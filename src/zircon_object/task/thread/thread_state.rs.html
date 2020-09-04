@@ -106,7 +106,7 @@
             <span class="ident">ThreadStateKind</span>::<span class="ident">FS</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">buf</span>.<span class="ident">write_struct</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">general</span>.<span class="ident">fsbase</span>),
             <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>)]</span>
             <span class="ident">ThreadStateKind</span>::<span class="ident">GS</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">buf</span>.<span class="ident">write_struct</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">general</span>.<span class="ident">gsbase</span>),
-            <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="macro">unimplemented</span><span class="macro">!</span>(),
+            <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">NOT_SUPPORTED</span>),
         }
     }
 
@@ -117,7 +117,7 @@
             <span class="ident">ThreadStateKind</span>::<span class="ident">FS</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">general</span>.<span class="ident">fsbase</span> <span class="op">=</span> <span class="ident">buf</span>.<span class="ident">read_struct</span>()<span class="question-mark">?</span>,
             <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>)]</span>
             <span class="ident">ThreadStateKind</span>::<span class="ident">GS</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">general</span>.<span class="ident">gsbase</span> <span class="op">=</span> <span class="ident">buf</span>.<span class="ident">read_struct</span>()<span class="question-mark">?</span>,
-            <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="macro">unimplemented</span><span class="macro">!</span>(),
+            <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">NOT_SUPPORTED</span>),
         }
         <span class="prelude-val">Ok</span>(())
     }

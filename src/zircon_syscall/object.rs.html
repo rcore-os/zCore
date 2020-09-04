@@ -563,6 +563,13 @@
 <span id="563">563</span>
 <span id="564">564</span>
 <span id="565">565</span>
+<span id="566">566</span>
+<span id="567">567</span>
+<span id="568">568</span>
+<span id="569">569</span>
+<span id="570">570</span>
+<span id="571">571</span>
+<span id="572">572</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> {
     <span class="kw">super</span>::<span class="kw-2">*</span>,
@@ -573,11 +580,11 @@
 };
 
 <span class="kw">impl</span> <span class="ident">Syscall</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span> {
-    <span class="doccomment">/// Ask for various properties of various kernel objects.  </span>
+    <span class="doccomment">/// Ask for various properties of various kernel objects.</span>
     <span class="doccomment">///</span>
-    <span class="doccomment">/// `handle_value: HandleValue`, indicates the target kernel object.  </span>
-    <span class="doccomment">/// `property: u32`, indicates which property to get/set.  </span>
-    <span class="doccomment">/// `buffer: usize`, holds the property value, and must be a pointer to a buffer of value_size bytes.  </span>
+    <span class="doccomment">/// `handle_value: HandleValue`, indicates the target kernel object.</span>
+    <span class="doccomment">/// `property: u32`, indicates which property to get/set.</span>
+    <span class="doccomment">/// `buffer: usize`, holds the property value, and must be a pointer to a buffer of value_size bytes.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_object_get_property</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">handle_value</span>: <span class="ident">HandleValue</span>,
@@ -673,7 +680,7 @@
         }
     }
 
-    <span class="doccomment">/// Set various properties of various kernel objects.  </span>
+    <span class="doccomment">/// Set various properties of various kernel objects.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_object_set_property</span>(
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
         <span class="ident">handle_value</span>: <span class="ident">HandleValue</span>,
@@ -704,9 +711,15 @@
             <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>)]</span>
             <span class="ident">Property</span>::<span class="ident">RegisterFs</span> <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">let</span> <span class="ident">thread</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_object</span>::<span class="op">&lt;</span><span class="ident">Thread</span><span class="op">&gt;</span>(<span class="ident">handle_value</span>)<span class="question-mark">?</span>;
-                <span class="macro">assert</span><span class="macro">!</span>(<span class="ident">Arc</span>::<span class="ident">ptr_eq</span>(<span class="kw-2">&amp;</span><span class="ident">thread</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">thread</span>));
                 <span class="kw">let</span> <span class="ident">fsbase</span> <span class="op">=</span> <span class="ident">UserInPtr</span>::<span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>::<span class="ident">from_addr_size</span>(<span class="ident">buffer</span>, <span class="ident">buffer_size</span>)<span class="question-mark">?</span>.<span class="ident">read</span>()<span class="question-mark">?</span>;
-                <span class="self">self</span>.<span class="ident">regs</span>.<span class="ident">fsbase</span> <span class="op">=</span> <span class="ident">fsbase</span>;
+                <span class="ident">thread</span>.<span class="ident">set_fsbase</span>(<span class="ident">fsbase</span>)<span class="question-mark">?</span>;
+                <span class="prelude-val">Ok</span>(())
+            }
+            <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>)]</span>
+            <span class="ident">Property</span>::<span class="ident">RegisterGs</span> <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="kw">let</span> <span class="ident">thread</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_object</span>::<span class="op">&lt;</span><span class="ident">Thread</span><span class="op">&gt;</span>(<span class="ident">handle_value</span>)<span class="question-mark">?</span>;
+                <span class="kw">let</span> <span class="ident">gsbase</span> <span class="op">=</span> <span class="ident">UserInPtr</span>::<span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>::<span class="ident">from_addr_size</span>(<span class="ident">buffer</span>, <span class="ident">buffer_size</span>)<span class="question-mark">?</span>.<span class="ident">read</span>()<span class="question-mark">?</span>;
+                <span class="ident">thread</span>.<span class="ident">set_gsbase</span>(<span class="ident">gsbase</span>)<span class="question-mark">?</span>;
                 <span class="prelude-val">Ok</span>(())
             }
             <span class="ident">Property</span>::<span class="ident">ProcessBreakOnLoad</span> <span class="op">=</span><span class="op">&gt;</span> {
@@ -786,9 +799,9 @@
         <span class="prelude-val">Ok</span>(())
     }
 
-    <span class="doccomment">/// Query information about an object.  </span>
+    <span class="doccomment">/// Query information about an object.</span>
     <span class="doccomment">///</span>
-    <span class="doccomment">/// `topic: u32`, indicates what specific information is desired.  </span>
+    <span class="doccomment">/// `topic: u32`, indicates what specific information is desired.</span>
     <span class="doccomment">/// `buffer: usize`, a pointer to a buffer of size buffer_size to return the information.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_object_get_info</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
@@ -926,7 +939,7 @@
         <span class="prelude-val">Ok</span>(())
     }
 
-    <span class="doccomment">/// Asserts and deasserts the userspace-accessible signal bits on the object&#39;s peer.  </span>
+    <span class="doccomment">/// Asserts and deasserts the userspace-accessible signal bits on the object&#39;s peer.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_object_signal_peer</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">handle_value</span>: <span class="ident">HandleValue</span>,
@@ -946,7 +959,7 @@
         <span class="prelude-val">Ok</span>(())
     }
 
-    <span class="doccomment">/// A non-blocking syscall subscribes for signals on an object.  </span>
+    <span class="doccomment">/// A non-blocking syscall subscribes for signals on an object.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_object_wait_async</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">handle_value</span>: <span class="ident">HandleValue</span>,
@@ -971,7 +984,7 @@
         <span class="prelude-val">Ok</span>(())
     }
 
-    <span class="doccomment">/// Signal an object.  </span>
+    <span class="doccomment">/// Signal an object.</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// Asserts and deasserts the userspace-accessible signal bits on an object.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_object_signal</span>(
@@ -994,7 +1007,7 @@
         <span class="prelude-val">Ok</span>(())
     }
 
-    <span class="doccomment">/// Wait for signals on multiple objects.  </span>
+    <span class="doccomment">/// Wait for signals on multiple objects.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">sys_object_wait_many</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="kw-2">mut</span> <span class="ident">user_items</span>: <span class="ident">UserInOutPtr</span><span class="op">&lt;</span><span class="ident">UserWaitItem</span><span class="op">&gt;</span>,
@@ -1024,7 +1037,7 @@
         <span class="prelude-val">Ok</span>(())
     }
 
-    <span class="doccomment">/// Find the child of an object by its kid.  </span>
+    <span class="doccomment">/// Find the child of an object by its kid.</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// Given a kernel object with children objects, obtain a handle to the child specified by the provided kernel object id.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_object_get_child</span>(
@@ -1092,6 +1105,7 @@
     <span class="attribute">#[<span class="ident">repr</span>(<span class="ident">u32</span>)]</span>
     <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>)]</span>
     <span class="kw">enum</span> <span class="ident">Property</span> {
+        <span class="ident">RegisterGs</span> <span class="op">=</span> <span class="number">2</span>,
         <span class="ident">Name</span> <span class="op">=</span> <span class="number">3</span>,
         <span class="ident">RegisterFs</span> <span class="op">=</span> <span class="number">4</span>,
         <span class="ident">ProcessDebugAddr</span> <span class="op">=</span> <span class="number">5</span>,
