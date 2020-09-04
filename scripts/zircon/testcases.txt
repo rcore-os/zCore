@@ -15,10 +15,10 @@
 -PThreadBarrierTest.SingleThreadWinsBarrierObjectResetsBetweenIterations
 -SyncMutex.NoRecursion
 -Threads.Reading*State
--Threads.WriteReadDebugRegisterState
 -Threads.DebugRegistersValidation
 -Threads.NoncanonicalRipAddressIRETQ
 -Threads.StartSuspendedThread
+-Threads.X86AcFlagUserCopy
 -Vmar.ProtectOverDemandPagedTest
 -Vmar.ProtectLargeUncomittedTest
 -Vmar.UnmapLargeUncommittedTest

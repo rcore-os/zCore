@@ -17,7 +17,7 @@ use {
         sync::atomic::{AtomicI32, Ordering},
     },
     futures::pin_mut,
-    kernel_hal::{user::*, GeneralRegs},
+    kernel_hal::user::*,
     zircon_object::object::*,
     zircon_object::task::{CurrentThread, ThreadFn},
 };
@@ -50,7 +50,6 @@ mod vmo;
 use consts::SyscallType as Sys;
 
 pub struct Syscall<'a> {
-    pub regs: &'a mut GeneralRegs,
     pub thread: &'a CurrentThread,
     pub thread_fn: ThreadFn,
 }
@@ -104,6 +103,9 @@ impl Syscall<'_> {
             Sys::THREAD_START => self.sys_thread_start(a0 as _, a1 as _, a2 as _, a3 as _, a4 as _),
             Sys::THREAD_WRITE_STATE => {
                 self.sys_thread_write_state(a0 as _, a1 as _, a2.into(), a3 as _)
+            }
+            Sys::THREAD_READ_STATE => {
+                self.sys_thread_read_state(a0 as _, a1 as _, a2.into(), a3 as _)
             }
             Sys::TASK_KILL => self.sys_task_kill(a0 as _),
             Sys::THREAD_EXIT => self.sys_thread_exit(),

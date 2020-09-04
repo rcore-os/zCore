@@ -351,10 +351,12 @@ Threads.SuspendSleeping
 Threads.SuspendChannelCall
 Threads.SuspendPortCall
 Threads.SuspendStopsThread
-Threads.SuspendSelf
 Threads.SuspendMultiple
+Threads.SuspendSelf
 Threads.KillSuspendedThread
 Threads.StartSuspendedAndResumedThread
+Threads.WritingGeneralRegisterState
+Threads.ThreadLocalRegisterState
 Threads.WritingArmFlagsRegister
 Thread.SuspendAfterDeath
 TicksTest.ElapsedTimeUsingTicks

@@ -135,6 +135,7 @@ impl ThreadInner {
     fn state(&self) -> ThreadState {
         // Dying > Exception > Suspend > Blocked
         if self.suspend_count == 0
+            || self.context.is_none()
             || self.state == ThreadState::BlockedException
             || self.state == ThreadState::Dying
             || self.state == ThreadState::Dead
@@ -317,6 +318,13 @@ impl Thread {
     /// Read one aspect of thread state.
     pub fn read_state(&self, kind: ThreadStateKind, buf: &mut [u8]) -> ZxResult<usize> {
         let inner = self.inner.lock();
+        let state = inner.state();
+        if state != ThreadState::BlockedException && state != ThreadState::Suspended {
+            if inner.exception.is_some() {
+                return Err(ZxError::NOT_SUPPORTED);
+            }
+            return Err(ZxError::BAD_STATE);
+        }
         let context = inner.context.as_ref().ok_or(ZxError::BAD_STATE)?;
         context.read_state(kind, buf)
     }
@@ -324,6 +332,13 @@ impl Thread {
     /// Write one aspect of thread state.
     pub fn write_state(&self, kind: ThreadStateKind, buf: &[u8]) -> ZxResult {
         let mut inner = self.inner.lock();
+        let state = inner.state();
+        if state != ThreadState::BlockedException && state != ThreadState::Suspended {
+            if inner.exception.is_some() {
+                return Err(ZxError::NOT_SUPPORTED);
+            }
+            return Err(ZxError::BAD_STATE);
+        }
         let context = inner.context.as_mut().ok_or(ZxError::BAD_STATE)?;
         context.write_state(kind, buf)
     }
@@ -384,6 +399,24 @@ impl Thread {
     /// Apply `f` to the thread's flags.
     pub fn update_flags(&self, f: impl FnOnce(&mut ThreadFlag)) {
         f(&mut self.inner.lock().flags)
+    }
+
+    /// Set the thread local fsbase register on x86_64.
+    #[cfg(target_arch = "x86_64")]
+    pub fn set_fsbase(&self, fsbase: usize) -> ZxResult {
+        let mut inner = self.inner.lock();
+        let context = inner.context.as_mut().ok_or(ZxError::BAD_STATE)?;
+        context.general.fsbase = fsbase;
+        Ok(())
+    }
+
+    /// Set the thread local gsbase register on x86_64.
+    #[cfg(target_arch = "x86_64")]
+    pub fn set_gsbase(&self, gsbase: usize) -> ZxResult {
+        let mut inner = self.inner.lock();
+        let context = inner.context.as_mut().ok_or(ZxError::BAD_STATE)?;
+        context.general.gsbase = gsbase;
+        Ok(())
     }
 }
 
@@ -473,6 +506,8 @@ impl CurrentThread {
                 let mut inner = self.thread.inner.lock();
                 if inner.state() != ThreadState::Suspended {
                     // resume:  return the context token from thread object
+                    // There is no need to call change_state here
+                    // since take away the context of a non-suspended thread won't change it's state
                     Poll::Ready(inner.context.take().unwrap())
                 } else {
                     // suspend: put waker into the thread object
@@ -488,7 +523,22 @@ impl CurrentThread {
 
     /// The thread ends running and takes back the context.
     pub fn end_running(&self, context: Box<UserContext>) {
-        self.inner.lock().context = Some(context);
+        let mut inner = self.inner.lock();
+        inner.context = Some(context);
+        let state = inner.state;
+        inner.change_state(state, &self.base);
+    }
+
+    /// Access saved context of current thread.
+    ///
+    /// Will panic if the context is not availiable.
+    pub fn with_context<T, F>(&self, f: F) -> T
+    where
+        F: FnOnce(&mut UserContext) -> T,
+    {
+        let mut inner = self.inner.lock();
+        let mut cx = inner.context.as_mut().unwrap();
+        f(&mut cx)
     }
 
     /// Run async future and change state while blocking.
@@ -539,8 +589,25 @@ impl CurrentThread {
     }
 
     /// Create an exception on this thread and wait for the handling.
-    pub async fn handle_exception(&self, type_: ExceptionType, cx: Option<&UserContext>) {
-        let exception = Exception::new(&self.0, type_, cx);
+    pub async fn handle_exception(&self, type_: ExceptionType) {
+        let exception = {
+            let mut inner = self.inner.lock();
+            let cx = if !type_.is_synth() {
+                inner.context.as_ref().map(|cx| cx.as_ref())
+            } else {
+                None
+            };
+            if !type_.is_synth() {
+                error!(
+                    "User mode exception: {:?} {:#x?}",
+                    type_,
+                    cx.expect("Architectural exception should has context")
+                );
+            }
+            let exception = Exception::new(&self.0, type_, cx);
+            inner.exception = Some(exception.clone());
+            exception
+        };
         if type_ == ExceptionType::ThreadExiting {
             let handled = self
                 .0
@@ -551,7 +618,6 @@ impl CurrentThread {
                 self.dying_run(future).await.ok();
             }
         } else {
-            self.inner.lock().exception = Some(exception.clone());
             let future = exception.handle();
             pin_mut!(future);
             self.blocking_run(
@@ -562,8 +628,8 @@ impl CurrentThread {
             )
             .await
             .ok();
-            self.inner.lock().exception = None;
         }
+        self.inner.lock().exception = None;
     }
 
     /// Run a blocking task when the thread is exited itself and dying.
@@ -802,7 +868,19 @@ mod tests {
         let proc = Process::create(&root_job, "proc").expect("failed to create process");
         let thread = Thread::create(&proc, "thread").expect("failed to create thread");
 
+        const SIZE: usize = core::mem::size_of::<GeneralRegs>();
         let mut buf = [0; 10];
+        assert_eq!(
+            thread.read_state(ThreadStateKind::General, &mut buf).err(),
+            Some(ZxError::BAD_STATE)
+        );
+        assert_eq!(
+            thread.write_state(ThreadStateKind::General, &buf).err(),
+            Some(ZxError::BAD_STATE)
+        );
+
+        thread.suspend();
+
         assert_eq!(
             thread.read_state(ThreadStateKind::General, &mut buf).err(),
             Some(ZxError::BUFFER_TOO_SMALL)
@@ -812,7 +890,6 @@ mod tests {
             Some(ZxError::BUFFER_TOO_SMALL)
         );
 
-        const SIZE: usize = core::mem::size_of::<GeneralRegs>();
         let mut buf = [0; SIZE];
         assert!(thread
             .read_state(ThreadStateKind::General, &mut buf)
