@@ -740,9 +740,9 @@ mod tests {
         let thread = Thread::create(&proc, "thread").expect("failed to create thread");
         assert_eq!(thread.flags(), ThreadFlag::empty());
 
-        let thread: Arc<dyn KernelObject> = thread;
         assert_eq!(thread.related_koid(), proc.id());
-        assert!(Arc::ptr_eq(&proc.get_child(thread.id()).unwrap(), &thread));
+        let child = proc.get_child(thread.id()).unwrap().downcast_arc().unwrap();
+        assert!(Arc::ptr_eq(&child, &thread));
     }
 
     #[async_std::test]
