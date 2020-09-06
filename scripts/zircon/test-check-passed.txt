@@ -364,9 +364,16 @@ Vmar.DestroyTest
 Vmar.BasicAllocateTest
 Vmar.MapInCompactTest
 Vmar.AllocateOobTest
+Vmar.AllocateUnsatisfiableTest
+Vmar.UnalignedLenTest
+Vmar.UnalignedLenMapTest
+Vmar.VmarMapRangeOffsetTest
 Vmar.ObjectInfoTest
+Vmar.UnmapSplitTest
+Vmar.UnmapMultipleTest
 Vmar.UnmapBaseNotMappedTest
 Vmar.AllowFaultsTest
+Vmar.ConcurrentUnmapReadMemory
 VmoCloneTestCase.SizeAlign
 VmoCloneTestCase.NameProperty
 VmoCloneTestCase.Decommit

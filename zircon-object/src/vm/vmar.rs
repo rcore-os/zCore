@@ -397,9 +397,13 @@ impl VmAddressRegion {
                 Err(ZxError::INVALID_ARGS)
             }
         } else {
-            match self.find_free_area(&inner, 0, len, align) {
-                Some(offset) => Ok(offset),
-                None => Err(ZxError::NO_MEMORY),
+            if len > self.size {
+                Err(ZxError::INVALID_ARGS)
+            } else {
+                match self.find_free_area(&inner, 0, len, align) {
+                    Some(offset) => Ok(offset),
+                    None => Err(ZxError::NO_MEMORY),
+                }
             }
         }
     }

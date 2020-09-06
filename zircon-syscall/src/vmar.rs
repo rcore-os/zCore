@@ -13,9 +13,9 @@ fn amount_of_alignments(options: u32) -> ZxResult<usize> {
 }
 
 impl Syscall<'_> {
-    /// Allocate a new subregion.  
-    ///   
-    /// Creates a new VMAR within the one specified by `parent_vmar`.  
+    /// Allocate a new subregion.
+    ///
+    /// Creates a new VMAR within the one specified by `parent_vmar`.
     pub fn sys_vmar_allocate(
         &self,
         parent_vmar: HandleValue,
@@ -76,8 +76,8 @@ impl Syscall<'_> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    /// Add a memory mapping.   
-    ///   
+    /// Add a memory mapping.
+    ///
     /// Maps the given VMO into the given virtual memory address region.
     pub fn sys_vmar_map(
         &self,
@@ -89,23 +89,17 @@ impl Syscall<'_> {
         len: usize,
         mut mapped_addr: UserOutPtr<VirtAddr>,
     ) -> ZxResult {
-        let options = VmOptions::from_bits(options).ok_or(ZxError::INVALID_ARGS)?;
         info!(
-            "vmar.map: vmar_handle={:#x?}, options={:?}, vmar_offset={:#x?}, vmo_handle={:#x?}, vmo_offset={:#x?}, len={:#x?}",
+            "vmar.map: vmar_handle={:#x?}, options={:#x?}, vmar_offset={:#x?}, vmo_handle={:#x?}, vmo_offset={:#x?}, len={:#x?}",
             vmar_handle, options, vmar_offset, vmo_handle, vmo_offset, len
         );
+        let options = VmOptions::from_bits(options).ok_or(ZxError::INVALID_ARGS)?;
         let proc = self.thread.proc();
         let (vmar, vmar_rights) = proc.get_object_and_rights::<VmAddressRegion>(vmar_handle)?;
         let (vmo, vmo_rights) = proc.get_object_and_rights::<VmObject>(vmo_handle)?;
         if !vmo_rights.contains(Rights::MAP) {
             return Err(ZxError::ACCESS_DENIED);
         };
-        if !options.contains(VmOptions::PERM_READ)
-            && (!options.contains(VmOptions::PERM_WRITE)
-                || options.contains(VmOptions::PERM_EXECUTE))
-        {
-            return Err(ZxError::INVALID_ARGS);
-        }
         if options.contains(VmOptions::CAN_MAP_RXW) {
             return Err(ZxError::INVALID_ARGS);
         }
@@ -164,19 +158,19 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    /// Destroy a virtual memory address region.   
-    ///   
-    /// Unmaps all mappings within the given region, and destroys all sub-regions of the region.   
+    /// Destroy a virtual memory address region.
+    ///
+    /// Unmaps all mappings within the given region, and destroys all sub-regions of the region.
     /// > This operation is logically recursive.
     pub fn sys_vmar_destroy(&self, handle_value: HandleValue) -> ZxResult {
-        info!("vmar.destroy: handle={:?}", handle_value);
+        info!("vmar.destroy: handle={:#x?}", handle_value);
         let proc = self.thread.proc();
         let vmar = proc.get_object::<VmAddressRegion>(handle_value)?;
         vmar.destroy()?;
         Ok(())
     }
 
-    /// Set protection of virtual memory pages.  
+    /// Set protection of virtual memory pages.
     pub fn sys_vmar_protect(
         &self,
         handle_value: HandleValue,
@@ -205,7 +199,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    /// Unmap virtual memory pages.  
+    /// Unmap virtual memory pages.
     pub fn sys_vmar_unmap(&self, handle_value: HandleValue, addr: usize, len: usize) -> ZxResult {
         info!(
             "vmar.unmap: handle_value={:#x}, addr={:#x}, len={:#x}",
