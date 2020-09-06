@@ -304,10 +304,14 @@ mod tests {
     #[test]
     fn create() {
         let root_job = Job::root();
-        let job: Arc<dyn KernelObject> =
-            Job::create_child(&root_job).expect("failed to create job");
+        let job = Job::create_child(&root_job).expect("failed to create job");
 
-        assert!(Arc::ptr_eq(&root_job.get_child(job.id()).unwrap(), &job));
+        let child = root_job
+            .get_child(job.id())
+            .unwrap()
+            .downcast_arc()
+            .unwrap();
+        assert!(Arc::ptr_eq(&child, &job));
         assert_eq!(job.related_koid(), root_job.id());
         assert_eq!(root_job.related_koid(), 0);
 
