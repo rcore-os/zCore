@@ -1701,9 +1701,9 @@
         <span class="kw">let</span> <span class="ident">thread</span> <span class="op">=</span> <span class="ident">Thread</span>::<span class="ident">create</span>(<span class="kw-2">&amp;</span><span class="ident">proc</span>, <span class="string">&quot;thread&quot;</span>).<span class="ident">expect</span>(<span class="string">&quot;failed to create thread&quot;</span>);
         <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">thread</span>.<span class="ident">flags</span>(), <span class="ident">ThreadFlag</span>::<span class="ident">empty</span>());
 
-        <span class="kw">let</span> <span class="ident">thread</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">KernelObject</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">thread</span>;
         <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">thread</span>.<span class="ident">related_koid</span>(), <span class="ident">proc</span>.<span class="ident">id</span>());
-        <span class="macro">assert</span><span class="macro">!</span>(<span class="ident">Arc</span>::<span class="ident">ptr_eq</span>(<span class="kw-2">&amp;</span><span class="ident">proc</span>.<span class="ident">get_child</span>(<span class="ident">thread</span>.<span class="ident">id</span>()).<span class="ident">unwrap</span>(), <span class="kw-2">&amp;</span><span class="ident">thread</span>));
+        <span class="kw">let</span> <span class="ident">child</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_child</span>(<span class="ident">thread</span>.<span class="ident">id</span>()).<span class="ident">unwrap</span>().<span class="ident">downcast_arc</span>().<span class="ident">unwrap</span>();
+        <span class="macro">assert</span><span class="macro">!</span>(<span class="ident">Arc</span>::<span class="ident">ptr_eq</span>(<span class="kw-2">&amp;</span><span class="ident">child</span>, <span class="kw-2">&amp;</span><span class="ident">thread</span>));
     }
 
     <span class="attribute">#[<span class="ident">async_std</span>::<span class="ident">test</span>]</span>
