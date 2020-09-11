@@ -244,6 +244,9 @@ impl Syscall<'_> {
             "object.get_info: handle={:#x?}, topic={:?}, buffer=({:#x}; {:#x})",
             handle, topic, buffer, buffer_size,
         );
+        if buffer_size == 0 {
+            actual.write_if_not_null(0)?;
+        }
         let proc = self.thread.proc();
         match topic {
             Topic::HandleValid => {
