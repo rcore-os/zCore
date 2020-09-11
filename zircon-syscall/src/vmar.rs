@@ -63,7 +63,7 @@ impl Syscall<'_> {
 
         let size = roundup_pages(size as usize);
         // check `size`
-        if size == 0usize {
+        if size == 0 {
             return Err(ZxError::INVALID_ARGS);
         }
         let child = parent.allocate(offset, size, vmar_flags, align)?;
@@ -129,9 +129,19 @@ impl Syscall<'_> {
             "mmuflags: {:?}, is_specific {:?}",
             mapping_flags, is_specific
         );
-        let len = pages(len) * PAGE_SIZE;
         let overwrite = options.contains(VmOptions::SPECIFIC_OVERWRITE);
         let map_range = options.contains(VmOptions::MAP_RANGE);
+        if map_range && overwrite {
+            return Err(ZxError::INVALID_ARGS);
+        }
+        // Note: we should reject non-page-aligned length here,
+        // but since zCore use different memory layout from zircon,
+        // we should not reject them and round up them instead
+        // TODO: reject non-page-aligned length after we have the same memory layout with zircon
+        let len = roundup_pages(len);
+        if len == 0 {
+            return Err(ZxError::INVALID_ARGS);
+        }
         let vaddr = if is_specific {
             vmar.map_at_ext(
                 vmar_offset,

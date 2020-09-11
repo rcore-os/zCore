@@ -287,6 +287,9 @@ impl VmAddressRegion {
     /// address space.  If the requested range overlaps with a subregion,
     /// protect() will fail.
     pub fn protect(&self, addr: usize, len: usize, flags: MMUFlags) -> ZxResult {
+        if !page_aligned(addr) || !page_aligned(len) {
+            return Err(ZxError::INVALID_ARGS);
+        }
         let mut guard = self.inner.lock();
         let inner = guard.as_mut().ok_or(ZxError::BAD_STATE)?;
         let end_addr = addr + len;
