@@ -35,9 +35,12 @@ impl Syscall<'_> {
         let proc = self.thread.proc();
         let parent = proc.get_object_with_rights::<VmAddressRegion>(parent_vmar, perm_rights)?;
 
+        if vm_options.intersects(VmOptions::PERM_RXW | VmOptions::MAP_RANGE) {
+            return Err(ZxError::INVALID_ARGS);
+        }
         // get vmar_flags
         let vmar_flags = vm_options.to_flags();
-        if vmar_flags.contains(
+        if vmar_flags.intersects(
             !(VmarFlags::SPECIFIC
                 | VmarFlags::CAN_MAP_SPECIFIC
                 | VmarFlags::COMPACT
@@ -100,7 +103,9 @@ impl Syscall<'_> {
         if !vmo_rights.contains(Rights::MAP) {
             return Err(ZxError::ACCESS_DENIED);
         };
-        if options.contains(VmOptions::CAN_MAP_RXW) {
+        if options
+            .intersects(VmOptions::CAN_MAP_RXW | VmOptions::CAN_MAP_SPECIFIC | VmOptions::COMPACT)
+        {
             return Err(ZxError::INVALID_ARGS);
         }
         if options.contains(VmOptions::REQUIRE_NON_RESIZABLE) && vmo.is_resizable() {
@@ -196,13 +201,16 @@ impl Syscall<'_> {
         );
         let proc = self.thread.proc();
         let vmar = proc.get_object_with_rights::<VmAddressRegion>(handle_value, rights)?;
+        if options.intersects(!VmOptions::PERM_RXW) {
+            return Err(ZxError::INVALID_ARGS);
+        }
         let mut mapping_flags = MMUFlags::empty();
         mapping_flags.set(MMUFlags::READ, options.contains(VmOptions::PERM_READ));
         mapping_flags.set(MMUFlags::WRITE, options.contains(VmOptions::PERM_WRITE));
         mapping_flags.set(MMUFlags::EXECUTE, options.contains(VmOptions::PERM_EXECUTE));
 
         let len = roundup_pages(len as usize);
-        if len == 0usize {
+        if len == 0 {
             return Err(ZxError::INVALID_ARGS);
         }
         vmar.protect(addr as usize, len, mapping_flags)?;
@@ -239,6 +247,7 @@ bitflags! {
         const REQUIRE_NON_RESIZABLE = 1 << 11;
         const ALLOW_FAULTS          = 1 << 12;
         const CAN_MAP_RXW           = Self::CAN_MAP_READ.bits | Self::CAN_MAP_EXECUTE.bits | Self::CAN_MAP_WRITE.bits;
+        const PERM_RXW           = Self::PERM_READ.bits | Self::PERM_WRITE.bits | Self::PERM_EXECUTE.bits;
     }
 }
 
