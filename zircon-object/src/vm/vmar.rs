@@ -157,30 +157,7 @@ impl VmAddressRegion {
         len: usize,
         flags: MMUFlags,
     ) -> ZxResult<VirtAddr> {
-        self.map_at_ext(vmar_offset, vmo, vmo_offset, len, flags, false, true)
-    }
-
-    /// Map the `vmo` into this VMAR at given `offset`.
-    #[allow(clippy::too_many_arguments)]
-    pub fn map_at_ext(
-        &self,
-        vmar_offset: usize,
-        vmo: Arc<VmObject>,
-        vmo_offset: usize,
-        len: usize,
-        flags: MMUFlags,
-        overwrite: bool,
-        map_range: bool,
-    ) -> ZxResult<VirtAddr> {
-        self.map_ext(
-            Some(vmar_offset),
-            vmo,
-            vmo_offset,
-            len,
-            flags,
-            overwrite,
-            map_range,
-        )
+        self.map_ext(Some(vmar_offset), vmo, vmo_offset, len, flags, false, true)
     }
 
     /// Map the `vmo` into this VMAR.

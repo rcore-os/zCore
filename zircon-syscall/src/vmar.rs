@@ -147,27 +147,16 @@ impl Syscall<'_> {
         if len == 0 {
             return Err(ZxError::INVALID_ARGS);
         }
-        let vaddr = if is_specific {
-            vmar.map_at_ext(
-                vmar_offset,
-                vmo,
-                vmo_offset,
-                len,
-                mapping_flags,
-                overwrite,
-                map_range,
-            )?
-        } else {
-            vmar.map_ext(
-                None,
-                vmo,
-                vmo_offset,
-                len,
-                mapping_flags,
-                overwrite,
-                map_range,
-            )?
-        };
+        let vmar_offset = if is_specific { Some(vmar_offset) } else { None };
+        let vaddr = vmar.map_ext(
+            vmar_offset,
+            vmo,
+            vmo_offset,
+            len,
+            mapping_flags,
+            overwrite,
+            map_range,
+        )?;
         info!("vmar.map: at {:#x?}", vaddr);
         mapped_addr.write(vaddr)?;
         Ok(())
