@@ -337,8 +337,12 @@ impl Syscall<'_> {
                 };
                 let count = (buffer_size / core::mem::size_of::<KoID>()).min(ids.len());
                 UserOutPtr::<KoID>::from(buffer).write_array(&ids[..count])?;
-                actual.write(count)?;
-                avail.write(ids.len())?;
+                if !actual.is_null() {
+                    actual.write(count)?;
+                }
+                if !avail.is_null() {
+                    avail.write(ids.len())?;
+                }
             }
             Topic::Bti => {
                 let mut info_ptr = UserOutPtr::<BtiInfo>::from_addr_size(buffer, buffer_size)?;

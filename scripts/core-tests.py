@@ -1,6 +1,7 @@
 import pexpect
 import sys
 import re
+import subprocess
 
 TIMEOUT = 300
 ZCORE_PATH = '../zCore'
@@ -74,3 +75,5 @@ if not_passed:
     exit(1)
 else:
     print('All checked case passed!')
+    
+subprocess.run("python3 info_statistic.py",shell=True) 
