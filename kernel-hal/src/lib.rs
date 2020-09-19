@@ -19,6 +19,7 @@ pub mod defs {
             const WRITE     = 1 << 3;
             const EXECUTE   = 1 << 4;
             const USER      = 1 << 5;
+            const RXW = Self::READ.bits | Self::WRITE.bits | Self::EXECUTE.bits;
         }
     }
     numeric_enum! {

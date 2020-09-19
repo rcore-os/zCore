@@ -157,7 +157,7 @@ impl VmAddressRegion {
         len: usize,
         flags: MMUFlags,
     ) -> ZxResult<VirtAddr> {
-        self.map_ext(Some(vmar_offset), vmo, vmo_offset, len, flags, false, true)
+        self.map(Some(vmar_offset), vmo, vmo_offset, len, flags)
     }
 
     /// Map the `vmo` into this VMAR.
@@ -169,7 +169,16 @@ impl VmAddressRegion {
         len: usize,
         flags: MMUFlags,
     ) -> ZxResult<VirtAddr> {
-        self.map_ext(vmar_offset, vmo, vmo_offset, len, flags, false, true)
+        self.map_ext(
+            vmar_offset,
+            vmo,
+            vmo_offset,
+            len,
+            MMUFlags::RXW,
+            flags,
+            false,
+            true,
+        )
     }
 
     /// Map the `vmo` into this VMAR.
@@ -180,12 +189,16 @@ impl VmAddressRegion {
         vmo: Arc<VmObject>,
         vmo_offset: usize,
         len: usize,
+        permissions: MMUFlags,
         flags: MMUFlags,
         overwrite: bool,
         _map_range: bool,
     ) -> ZxResult<VirtAddr> {
         if !page_aligned(vmo_offset) || !page_aligned(len) || vmo_offset.overflowing_add(len).1 {
             return Err(ZxError::INVALID_ARGS);
+        }
+        if !permissions.contains(flags & MMUFlags::RXW) {
+            return Err(ZxError::ACCESS_DENIED);
         }
         // TODO: allow the mapping extends past the end of vmo
         if vmo_offset > vmo.len() || len > vmo.len() - vmo_offset {
@@ -208,7 +221,15 @@ impl VmAddressRegion {
                 return Err(ZxError::NO_MEMORY);
             }
         }
-        let mapping = VmMapping::new(addr, len, vmo, vmo_offset, flags, self.page_table.clone());
+        let mapping = VmMapping::new(
+            addr,
+            len,
+            vmo,
+            vmo_offset,
+            permissions,
+            flags,
+            self.page_table.clone(),
+        );
         let map_range = true;
         if map_range {
             mapping.map()?;
@@ -614,6 +635,9 @@ pub struct VmarInfo {
 
 /// Virtual Memory Mapping
 pub struct VmMapping {
+    /// The permission limitation of the vmar
+    permissions: MMUFlags,
+    /// The actual flags used in the mapping
     flags: MMUFlags,
     vmo: Arc<VmObject>,
     page_table: Arc<Mutex<dyn PageTableTrait>>,
@@ -643,6 +667,7 @@ impl core::fmt::Debug for VmMapping {
         f.debug_struct("VmMapping")
             .field("addr", &inner.addr)
             .field("size", &inner.size)
+            .field("permissions", &self.permissions)
             .field("flags", &self.flags)
             .field("vmo_id", &self.vmo.id())
             .field("vmo_offset", &inner.vmo_offset)
@@ -656,6 +681,7 @@ impl VmMapping {
         size: usize,
         vmo: Arc<VmObject>,
         vmo_offset: usize,
+        permissions: MMUFlags,
         flags: MMUFlags,
         page_table: Arc<Mutex<dyn PageTableTrait>>,
     ) -> Arc<Self> {
@@ -665,6 +691,7 @@ impl VmMapping {
                 size,
                 vmo_offset,
             }),
+            permissions,
             flags,
             page_table,
             vmo: vmo.clone(),
@@ -769,6 +796,7 @@ impl VmMapping {
                 new_len2,
                 self.vmo.clone(),
                 inner.vmo_offset + (end - inner.addr),
+                self.permissions,
                 self.flags,
                 self.page_table.clone(),
             ))
@@ -786,16 +814,7 @@ impl VmMapping {
     }
 
     fn is_valid_mapping_flags(&self, flags: MMUFlags) -> bool {
-        if !flags.contains(MMUFlags::READ) && self.flags.contains(MMUFlags::READ) {
-            return false;
-        }
-        if !flags.contains(MMUFlags::WRITE) && self.flags.contains(MMUFlags::WRITE) {
-            return false;
-        }
-        if !flags.contains(MMUFlags::EXECUTE) && self.flags.contains(MMUFlags::EXECUTE) {
-            return false;
-        }
-        true
+        self.permissions.contains(flags & MMUFlags::RXW)
     }
 
     fn protect(&self, flags: MMUFlags) {
@@ -864,6 +883,7 @@ impl VmMapping {
         let new_vmo = self.vmo.create_child(false, 0, self.vmo.len())?;
         let mapping = Arc::new(VmMapping {
             inner: Mutex::new(self.inner.lock().clone()),
+            permissions: self.permissions,
             flags: self.flags,
             page_table,
             vmo: new_vmo.clone(),

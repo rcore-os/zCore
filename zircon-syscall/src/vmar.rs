@@ -117,19 +117,17 @@ impl Syscall<'_> {
         if !is_specific && vmar_offset != 0 {
             return Err(ZxError::INVALID_ARGS);
         }
+        if !vmar_rights.contains(options.to_required_rights()) {
+            return Err(ZxError::ACCESS_DENIED);
+        }
+        let mut permissions = MMUFlags::empty();
+        permissions.set(MMUFlags::READ, vmo_rights.contains(Rights::READ));
+        permissions.set(MMUFlags::WRITE, vmo_rights.contains(Rights::WRITE));
+        permissions.set(MMUFlags::EXECUTE, vmo_rights.contains(Rights::EXECUTE));
         let mut mapping_flags = MMUFlags::USER;
-        mapping_flags.set(
-            MMUFlags::READ,
-            vmar_rights.contains(Rights::READ) && vmo_rights.contains(Rights::READ),
-        );
-        mapping_flags.set(
-            MMUFlags::WRITE,
-            vmar_rights.contains(Rights::WRITE) && vmo_rights.contains(Rights::WRITE),
-        );
-        mapping_flags.set(
-            MMUFlags::EXECUTE,
-            vmar_rights.contains(Rights::EXECUTE) && vmo_rights.contains(Rights::EXECUTE),
-        );
+        mapping_flags.set(MMUFlags::READ, options.contains(VmOptions::PERM_READ));
+        mapping_flags.set(MMUFlags::WRITE, options.contains(VmOptions::PERM_WRITE));
+        mapping_flags.set(MMUFlags::EXECUTE, options.contains(VmOptions::PERM_EXECUTE));
         info!(
             "mmuflags: {:?}, is_specific {:?}",
             mapping_flags, is_specific
@@ -153,6 +151,7 @@ impl Syscall<'_> {
             vmo,
             vmo_offset,
             len,
+            permissions,
             mapping_flags,
             overwrite,
             map_range,
@@ -183,7 +182,7 @@ impl Syscall<'_> {
         len: u64,
     ) -> ZxResult {
         let options = VmOptions::from_bits(options).ok_or(ZxError::INVALID_ARGS)?;
-        let rights = options.to_rights();
+        let rights = options.to_required_rights();
         info!(
             "vmar.protect: handle={:#x}, options={:#x}, addr={:#x}, len={:#x}",
             handle_value, options, addr, len
@@ -250,6 +249,20 @@ impl VmOptions {
             rights.insert(Rights::WRITE);
         }
         if self.contains(VmOptions::CAN_MAP_EXECUTE) {
+            rights.insert(Rights::EXECUTE);
+        }
+        rights
+    }
+
+    fn to_required_rights(self) -> Rights {
+        let mut rights = Rights::empty();
+        if self.contains(VmOptions::PERM_READ) {
+            rights.insert(Rights::READ);
+        }
+        if self.contains(VmOptions::PERM_WRITE) {
+            rights.insert(Rights::WRITE);
+        }
+        if self.contains(VmOptions::PERM_EXECUTE) {
             rights.insert(Rights::EXECUTE);
         }
         rights
