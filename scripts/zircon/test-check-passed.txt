@@ -148,7 +148,6 @@ HandleWaitTest.HandleWaitMultipleThreads
 MemoryMappingTest.MmapZerofilledTest
 MemoryMappingTest.MmapLenTest
 MemoryMappingTest.MmapOffsetTest
-MemoryMappingTest.MmapProtExecTest
 MemoryMappingTest.MmapFlagsTest
 ObjectChildTest.InvalidHandleReturnsBadHandle
 ObjectGetInfoTest.OpenValidHandleSuceeds
