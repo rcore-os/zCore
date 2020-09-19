@@ -365,8 +365,10 @@ Vmar.MapInCompactTest
 Vmar.AllocateOobTest
 Vmar.AllocateUnsatisfiableTest
 Vmar.DestroyedVmarTest
+Vmar.VmarMapRangeOffsetTest
 Vmar.UnalignedLenTest
 Vmar.UnalignedLenMapTest
+Vmar.RightsDropTest
 Vmar.VmarMapRangeOffsetTest
 Vmar.ObjectInfoTest
 Vmar.UnmapSplitTest
