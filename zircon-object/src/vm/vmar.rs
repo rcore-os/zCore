@@ -1,4 +1,3 @@
-use core::sync::atomic::*;
 use {
     super::*, crate::object::*, alloc::sync::Arc, alloc::vec::Vec, bitflags::bitflags,
     kernel_hal::PageTableTrait, spin::Mutex,
@@ -63,16 +62,21 @@ struct VmarInner {
 impl VmAddressRegion {
     /// Create a new root VMAR.
     pub fn new_root() -> Arc<Self> {
-        // FIXME: workaround for unix
-        static VMAR_ID: AtomicUsize = AtomicUsize::new(0);
-        let i = VMAR_ID.fetch_add(1, Ordering::SeqCst);
-        let addr: usize = 0x2_00000000 + 0x100_00000000 * i;
+        #[cfg(feature = "aspace-separate")]
+        let (addr, size) = {
+            use core::sync::atomic::*;
+            static VMAR_ID: AtomicUsize = AtomicUsize::new(0);
+            let i = VMAR_ID.fetch_add(1, Ordering::SeqCst);
+            (0x2_00000000 + 0x100_00000000 * i, 0x100_00000000)
+        };
+        #[cfg(not(feature = "aspace-separate"))]
+        let (addr, size) = (USER_ASPACE_BASE as usize, USER_ASPACE_SIZE as usize);
         Arc::new(VmAddressRegion {
             flags: VmarFlags::ROOT_FLAGS,
             base: KObjectBase::new(),
             _counter: CountHelper::new(),
             addr,
-            size: 0x100_00000000,
+            size,
             parent: None,
             page_table: Arc::new(Mutex::new(kernel_hal::PageTable::new())),
             inner: Mutex::new(Some(VmarInner::default())),
@@ -81,8 +85,8 @@ impl VmAddressRegion {
 
     /// Create a kernel root VMAR.
     pub fn new_kernel() -> Arc<Self> {
-        let kernel_vmar_base = 0xffff_ff02_0000_0000; // Sorry i hard code because i'm lazy
-        let kernel_vmar_size = 0x8000_00000;
+        let kernel_vmar_base = KERNEL_ASPACE_BASE as usize; // Sorry i hard code because i'm lazy
+        let kernel_vmar_size = KERNEL_ASPACE_SIZE as usize;
         Arc::new(VmAddressRegion {
             flags: VmarFlags::ROOT_FLAGS,
             base: KObjectBase::new(),
@@ -904,6 +908,16 @@ impl Drop for VmMapping {
         self.unmap();
     }
 }
+
+/// The base of kernel address space
+/// In x86 fuchsia this is 0xffff_ff80_0000_0000 instead
+pub const KERNEL_ASPACE_BASE: u64 = 0xffff_ff02_0000_0000;
+/// The size of kernel address space
+pub const KERNEL_ASPACE_SIZE: u64 = 0x0000_0080_0000_0000;
+/// The base of user address space
+pub const USER_ASPACE_BASE: u64 = 0x0000_0000_0100_0000;
+/// The size of user address space
+pub const USER_ASPACE_SIZE: u64 = (1u64 << 47) - 4096 - USER_ASPACE_BASE;
 
 #[cfg(test)]
 mod tests {
