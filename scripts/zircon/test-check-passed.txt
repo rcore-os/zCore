@@ -374,6 +374,9 @@ Vmar.ObjectInfoTest
 Vmar.UnmapSplitTest
 Vmar.UnmapMultipleTest
 Vmar.UnmapBaseNotMappedTest
+Vmar.PartialUnmapAndRead
+Vmar.PartialUnmapAndWrite
+Vmar.PartialUnmapWithVmarOffset
 Vmar.AllowFaultsTest
 Vmar.ConcurrentUnmapReadMemory
 VmoCloneTestCase.SizeAlign

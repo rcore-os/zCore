@@ -562,8 +562,10 @@ impl VmAddressRegion {
         let map = self.find_mapping(vaddr).ok_or(ZxError::NO_MEMORY)?;
         let map_inner = map.inner.lock();
         let vmo_offset = vaddr - map_inner.addr + map_inner.vmo_offset;
-        map.vmo.read(vmo_offset, buf)?;
-        Ok(buf.len())
+        let size_limit = map_inner.addr + map_inner.size - vaddr;
+        let actual_size = buf.len().min(size_limit);
+        map.vmo.read(vmo_offset, &mut buf[0..actual_size])?;
+        Ok(actual_size)
     }
 
     /// Write to address space.
@@ -574,8 +576,10 @@ impl VmAddressRegion {
         let map = self.find_mapping(vaddr).ok_or(ZxError::NO_MEMORY)?;
         let map_inner = map.inner.lock();
         let vmo_offset = vaddr - map_inner.addr + map_inner.vmo_offset;
-        map.vmo.write(vmo_offset, buf)?;
-        Ok(buf.len())
+        let size_limit = map_inner.addr + map_inner.size - vaddr;
+        let actual_size = buf.len().min(size_limit);
+        map.vmo.write(vmo_offset, &buf[0..actual_size])?;
+        Ok(actual_size)
     }
 
     /// Find mapping of vaddr
