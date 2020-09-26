@@ -887,10 +887,9 @@ impl VmMapping {
 
     /// Handle page fault happened on this VmMapping.
     pub(crate) fn handle_page_fault(&self, vaddr: VirtAddr, access_flags: MMUFlags) -> ZxResult {
-        let inner = self.inner.lock();
         let vaddr = round_down_pages(vaddr);
         let page_idx = (vaddr - self.addr()) / PAGE_SIZE;
-        let flags = inner.flags[page_idx];
+        let flags = self.inner.lock().flags[page_idx];
         if !flags.contains(access_flags) {
             return Err(ZxError::ACCESS_DENIED);
         }
