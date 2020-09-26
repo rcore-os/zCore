@@ -120,7 +120,7 @@ impl GuestPhysMemorySetTrait for GuestPhysMemorySet {
     fn handle_page_fault(&self, gpaddr: GuestPhysAddr) -> RvmResult {
         if let Some(mapping) = self.vmar.find_mapping(gpaddr) {
             mapping
-                .handle_page_fault(gpaddr, mapping.get_flags())
+                .handle_page_fault(gpaddr, mapping.get_flags(gpaddr).unwrap())
                 .map_err(From::from)
         } else {
             Err(RvmError::NotFound)
