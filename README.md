@@ -121,3 +121,5 @@ cd scripts && python3 libc-tests.py
 | Thread Management         | `executor` | `async-std::task` |
 | Exception Handling        | Interrupt  | Signal            |
 
+### Some plans
+- https://github.com/rcore-os/zCore/wiki/Plans
