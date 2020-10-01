@@ -30,7 +30,7 @@ static PMEM_BASE: usize = PHYSICAL_MEMORY_OFFSET;
 
 pub fn init_frame_allocator(boot_info: &BootInfo) {
     let mut ba = FRAME_ALLOCATOR.lock();
-    for region in boot_info.memory_map.clone().iter {
+    for region in boot_info.memory_map.iter() {
         if region.ty == MemoryType::CONVENTIONAL {
             let start_frame = region.phys_start as usize / PAGE_SIZE;
             let end_frame = start_frame + region.page_count as usize;
@@ -53,6 +53,7 @@ pub fn init_heap() {
 }
 
 #[no_mangle]
+#[allow(improper_ctypes_definitions)]
 pub extern "C" fn hal_frame_alloc() -> Option<usize> {
     // get the real address of the alloc frame
     let ret = FRAME_ALLOCATOR
@@ -64,6 +65,7 @@ pub extern "C" fn hal_frame_alloc() -> Option<usize> {
 }
 
 #[no_mangle]
+#[allow(improper_ctypes_definitions)]
 pub extern "C" fn hal_frame_alloc_contiguous(page_num: usize, align_log2: usize) -> Option<usize> {
     let ret = FRAME_ALLOCATOR
         .lock()

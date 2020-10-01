@@ -171,13 +171,13 @@ pub struct PhysFrame {
 impl PhysFrame {
     #[linkage = "weak"]
     #[export_name = "hal_frame_alloc"]
-    pub extern "C" fn alloc() -> Option<Self> {
+    pub fn alloc() -> Option<Self> {
         unimplemented!()
     }
 
     #[linkage = "weak"]
     #[export_name = "hal_frame_alloc_contiguous"]
-    pub extern "C" fn alloc_contiguous_base(_size: usize, _align_log2: usize) -> Option<PhysAddr> {
+    pub fn alloc_contiguous_base(_size: usize, _align_log2: usize) -> Option<PhysAddr> {
         unimplemented!()
     }
 

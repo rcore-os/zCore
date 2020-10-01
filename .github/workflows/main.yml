@@ -10,7 +10,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly-2020-06-04
+          toolchain: nightly-2020-10-01
           override: true
           components: rustfmt, clippy
       - name: Check code format
@@ -36,7 +36,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly-2020-06-04
+          toolchain: nightly-2020-10-01
           components: rust-src
       - name: Build
         uses: actions-rs/cargo@v1
@@ -58,7 +58,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly-2020-06-04
+          toolchain: nightly-2020-10-01
           override: true
           target: aarch64-unknown-linux-gnu
       - uses: actions-rs/cargo@v1
@@ -79,7 +79,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly-2020-06-04
+          toolchain: nightly-2020-10-01
           target: x86_64-fuchsia
       - name: Build Zircon user programs
         run: |
@@ -136,7 +136,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly-2020-06-04
+          toolchain: nightly-2020-10-01
           components: rust-src
       - name: Install QEMU
         run: |

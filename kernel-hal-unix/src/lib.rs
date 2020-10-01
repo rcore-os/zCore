@@ -154,7 +154,7 @@ lazy_static! {
 
 impl PhysFrame {
     #[export_name = "hal_frame_alloc"]
-    pub extern "C" fn alloc() -> Option<Self> {
+    pub fn alloc() -> Option<Self> {
         let ret = AVAILABLE_FRAMES
             .lock()
             .unwrap()

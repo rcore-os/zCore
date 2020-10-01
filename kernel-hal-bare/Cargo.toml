@@ -12,20 +12,20 @@ log = "0.4"
 spin = "0.5"
 git-version = "0.3"
 executor = { git = "https://github.com/rcore-os/executor.git", rev = "a2d02ee9" }
-trapframe = "0.5.1"
+trapframe = "0.6.0"
 kernel-hal = { path = "../kernel-hal" }
 naive-timer = "0.1.0"
 lazy_static = { version = "1.4", features = ["spin_no_std" ] }
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
-x86_64 = "0.11"
-uart_16550 = "0.2.6"
+x86_64 = "0.12"
+uart_16550 = { version = "0.2.9", features = ["nightly"] }
 raw-cpuid = "8.0"
 pc-keyboard = "0.5"
 apic = { git = "https://github.com/rcore-os/apic-rs", rev = "fb86bd7" }
 x86-smpboot = { git = "https://github.com/rcore-os/x86-smpboot", rev = "43ffedf" }
 rcore-console = { git = "https://github.com/rcore-os/rcore-console", default-features = false, rev = "a980897b" }
-acpi = "1.0.0"
+acpi = "1.1"
 
 [target.'cfg(any(target_arch = "riscv32", target_arch = "riscv64"))'.dependencies]
 riscv = { git = "https://github.com/rcore-os/riscv", features = ["inline-asm"], rev = "c62af46" }
