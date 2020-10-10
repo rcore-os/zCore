@@ -196,7 +196,7 @@ impl Syscall<'_> {
         mapping_flags.set(MMUFlags::READ, options.contains(VmOptions::PERM_READ));
         mapping_flags.set(MMUFlags::WRITE, options.contains(VmOptions::PERM_WRITE));
         mapping_flags.set(MMUFlags::EXECUTE, options.contains(VmOptions::PERM_EXECUTE));
-
+        info!("mmuflags: {:?}", mapping_flags);
         let len = roundup_pages(len as usize);
         if len == 0 {
             return Err(ZxError::INVALID_ARGS);

@@ -25,6 +25,7 @@
 -Vmar.NestedRegionPermsTest
 -Vmar.MapSpecificOverwriteTest
 -Vmar.MapOverDestroyedTest
+-MemoryMappingTest.MprotectTest
 -MemoryMappingTest.MmapProtExecTest
 -MemoryMappingTest.MmapProtTest
 -VmoTestCase.ReadOnlyMap

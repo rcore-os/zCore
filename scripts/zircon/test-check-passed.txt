@@ -369,6 +369,7 @@ Vmar.VmarMapRangeOffsetTest
 Vmar.UnalignedLenTest
 Vmar.UnalignedLenMapTest
 Vmar.RightsDropTest
+Vmar.ProtectTest
 Vmar.VmarMapRangeOffsetTest
 Vmar.ObjectInfoTest
 Vmar.UnmapSplitTest

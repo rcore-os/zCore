@@ -295,6 +295,7 @@ impl VmAddressRegion {
         let mut guard = self.inner.lock();
         let inner = guard.as_mut().ok_or(ZxError::BAD_STATE)?;
         let end_addr = addr + len;
+        // TODO: Partially protect a mapping
         let length: usize = inner
             .mappings
             .iter()
@@ -312,7 +313,7 @@ impl VmAddressRegion {
         if inner
             .mappings
             .iter()
-            .filter(|map| map.addr() >= addr && map.end_addr() <= addr) // get mappings in range: [addr, end_addr]
+            .filter(|map| map.addr() >= addr && map.end_addr() <= end_addr) // get mappings in range: [addr, end_addr]
             .any(|map| !map.is_valid_mapping_flags(flags))
         // check if protect flags is valid
         {
@@ -321,7 +322,7 @@ impl VmAddressRegion {
         inner
             .mappings
             .iter()
-            .filter(|map| map.addr() >= addr && map.end_addr() <= addr)
+            .filter(|map| map.addr() >= addr && map.end_addr() <= end_addr)
             .for_each(|map| {
                 map.protect(flags);
             });
@@ -834,10 +835,16 @@ impl VmMapping {
     }
 
     fn protect(&self, flags: MMUFlags) {
-        let inner = self.inner.lock();
+        let mut inner = self.inner.lock();
         let mut pg_table = self.page_table.lock();
-        for i in 0..inner.size {
-            pg_table.protect(inner.addr + i * PAGE_SIZE, flags).unwrap();
+        for i in 0..pages(inner.size) {
+            let mut new_flags = inner.flags[i];
+            new_flags.remove(MMUFlags::RXW);
+            new_flags.insert(flags & MMUFlags::RXW);
+            inner.flags[i] = new_flags;
+            pg_table
+                .protect(inner.addr + i * PAGE_SIZE, new_flags)
+                .unwrap();
         }
     }
 
