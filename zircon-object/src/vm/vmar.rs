@@ -295,13 +295,20 @@ impl VmAddressRegion {
         let mut guard = self.inner.lock();
         let inner = guard.as_mut().ok_or(ZxError::BAD_STATE)?;
         let end_addr = addr + len;
-        // TODO: Partially protect a mapping
+        // check if there are overlapping subregion
+        if inner
+            .children
+            .iter()
+            .any(|child| child.end_addr() >= addr && child.addr() <= end_addr)
+        {
+            return Err(ZxError::INVALID_ARGS);
+        }
         let length: usize = inner
             .mappings
             .iter()
             .filter_map(|map| {
-                if map.addr() >= addr && map.end_addr() <= end_addr {
-                    Some(map.size())
+                if map.end_addr() >= addr && map.addr() <= end_addr {
+                    Some(end_addr.min(map.end_addr()) - addr.max(map.addr()))
                 } else {
                     None
                 }
@@ -310,21 +317,23 @@ impl VmAddressRegion {
         if length != len {
             return Err(ZxError::NOT_FOUND);
         }
+        // check if protect flags is valid
         if inner
             .mappings
             .iter()
-            .filter(|map| map.addr() >= addr && map.end_addr() <= end_addr) // get mappings in range: [addr, end_addr]
+            .filter(|map| map.end_addr() >= addr && map.addr() <= end_addr) // get mappings in range: [addr, end_addr]
             .any(|map| !map.is_valid_mapping_flags(flags))
-        // check if protect flags is valid
         {
             return Err(ZxError::ACCESS_DENIED);
         }
         inner
             .mappings
             .iter()
-            .filter(|map| map.addr() >= addr && map.end_addr() <= end_addr)
+            .filter(|map| map.end_addr() >= addr && map.addr() <= end_addr)
             .for_each(|map| {
-                map.protect(flags);
+                let start_index = pages(addr.max(map.addr()) - map.addr());
+                let end_index = pages(end_addr.min(map.end_addr()) - map.addr());
+                map.protect(flags, start_index, end_index);
             });
         Ok(())
     }
@@ -834,10 +843,10 @@ impl VmMapping {
         self.permissions.contains(flags & MMUFlags::RXW)
     }
 
-    fn protect(&self, flags: MMUFlags) {
+    fn protect(&self, flags: MMUFlags, start_index: usize, end_index: usize) {
         let mut inner = self.inner.lock();
         let mut pg_table = self.page_table.lock();
-        for i in 0..pages(inner.size) {
+        for i in start_index..end_index {
             let mut new_flags = inner.flags[i];
             new_flags.remove(MMUFlags::RXW);
             new_flags.insert(flags & MMUFlags::RXW);

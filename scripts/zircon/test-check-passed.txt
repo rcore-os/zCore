@@ -375,6 +375,8 @@ Vmar.ObjectInfoTest
 Vmar.UnmapSplitTest
 Vmar.UnmapMultipleTest
 Vmar.UnmapBaseNotMappedTest
+Vmar.ProtectSplitTest
+Vmar.ProtectMultipleTest
 Vmar.PartialUnmapAndRead
 Vmar.PartialUnmapAndWrite
 Vmar.PartialUnmapWithVmarOffset
