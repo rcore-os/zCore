@@ -445,7 +445,8 @@ enum CommitResult {
     /// A reference to existing page.
     Ref(PhysAddr),
     /// A new page copied-on-write.
-    CopyOnWrite(PhysFrame),
+    /// the bool value indicate should we unmap the page after the copy
+    CopyOnWrite(PhysFrame, bool),
     /// A new zero page.
     NewPage(PhysFrame),
 }
@@ -539,6 +540,7 @@ impl VMObjectPagedInner {
         } else {
             (self.parent_offset + page_idx * PAGE_SIZE) >= self.parent_limit
         };
+        let mut need_unmap = false;
         if no_frame {
             // if out_of_range
             if out_of_range || no_parent {
@@ -565,16 +567,25 @@ impl VMObjectPagedInner {
                     CommitResult::NewPage(frame) if !self.type_.is_hidden() => {
                         self.frames.insert(page_idx, PageState::new(frame));
                     }
-                    CommitResult::CopyOnWrite(frame) => {
+                    CommitResult::CopyOnWrite(frame, unmap) => {
                         let mut new_frame = PageState::new(frame);
                         // Cloning a contiguous vmo: original frames are stored in hidden parent nodes.
                         // In order to make sure original vmo (now is a child of hidden parent)
                         // owns physically contiguous frames, swap the new frame with the original
                         if self.contiguous {
-                            let mut parent_inner = parent;
-                            if let Some(par_frame) = parent_inner.frames.get_mut(&parent_idx) {
+                            if let Some(par_frame) = parent.frames.get_mut(&parent_idx) {
                                 par_frame.swap(&mut new_frame);
                             }
+                            let sibling = parent.type_.get_tag_and_other(&self.self_ref).1;
+                            let arc_sibling = sibling.upgrade().unwrap();
+                            let sibling_inner = arc_sibling.inner.borrow();
+                            sibling_inner.range_change(
+                                parent_idx * PAGE_SIZE,
+                                (parent_idx + 1) * PAGE_SIZE,
+                                RangeChangeOp::Unmap,
+                            )
+                        } else {
+                            need_unmap = need_unmap || unmap;
                         }
                         self.frames.insert(page_idx, new_frame);
                     }
@@ -594,20 +605,33 @@ impl VMObjectPagedInner {
             };
             if !in_range {
                 let frame = self.frames.remove(&page_idx).unwrap().take();
-                return Ok(CommitResult::CopyOnWrite(frame));
+                return Ok(CommitResult::CopyOnWrite(frame, need_unmap));
+            } else if need_unmap {
+                other_inner.range_change(
+                    page_idx * PAGE_SIZE,
+                    (1 + page_idx) * PAGE_SIZE,
+                    RangeChangeOp::Unmap,
+                )
+            }
+        }
+        if need_unmap {
+            for map in self.mappings.iter() {
+                if let Some(map) = map.upgrade() {
+                    map.range_change(page_idx, 1, RangeChangeOp::Unmap);
+                }
             }
         }
         let frame = self.frames.get_mut(&page_idx).unwrap();
         if frame.tag.is_split() {
             // has split, take out
             let target_frame = self.frames.remove(&page_idx).unwrap().take();
-            return Ok(CommitResult::CopyOnWrite(target_frame));
+            return Ok(CommitResult::CopyOnWrite(target_frame, need_unmap));
         } else if flags.contains(MMUFlags::WRITE) && child_tag.is_split() {
             // copy-on-write
             let target_frame = PhysFrame::alloc().ok_or(ZxError::NO_MEMORY)?;
             kernel_hal::frame_copy(frame.frame.addr(), target_frame.addr());
             frame.tag = child_tag;
-            return Ok(CommitResult::CopyOnWrite(target_frame));
+            return Ok(CommitResult::CopyOnWrite(target_frame, true));
         }
         // otherwise already committed
         Ok(CommitResult::Ref(frame.frame.addr()))
@@ -617,7 +641,6 @@ impl VMObjectPagedInner {
         self.frames.remove(&page_idx);
     }
 
-    #[allow(dead_code)]
     fn range_change(&self, parent_offset: usize, parent_limit: usize, op: RangeChangeOp) {
         let mut start = self.parent_offset.max(parent_offset);
         let mut end = self.parent_limit.min(parent_limit);
@@ -628,7 +651,7 @@ impl VMObjectPagedInner {
         end -= self.parent_offset;
         for map in self.mappings.iter() {
             if let Some(map) = map.upgrade() {
-                map.range_change(pages(start), pages(end), op);
+                map.range_change(pages(start), pages(end) - pages(start), op);
             }
         }
         if let VMOType::Hidden { left, right, .. } = &self.type_ {

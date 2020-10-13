@@ -29,12 +29,17 @@
 -MemoryMappingTest.MmapProtExecTest
 -MemoryMappingTest.MmapProtTest
 -VmoTestCase.ReadOnlyMap
+-VmoTestCase.MapRead
+-VmoTestCase.ParallelRead
 -VmoTestCase.NoPermMap
 -VmoTestCase.NoPermProtect
 -VmoTestCase.Commit
 -VmoTestCase.CacheOp
 -VmoTestCase.ResizeHazard
 -VmoTestCase.Cache*
+-VmoTestCase.ZeroPage
+-VmoTestCase.PinTests
+-VmoCloneTestCase.Commit
 -VmoClone2TestCase.PinClonePages
 -SocketTest.ReadIntoBadBuffer
 -SocketTest.WriteFromBadBuffer

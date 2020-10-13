@@ -416,6 +416,7 @@ VmoClone2TestCase.ManyChildren
 VmoClone2TestCase.ManyChildrenRevClose
 VmoClone2TestCase.ManyCloneMapping
 VmoClone2TestCase.ManyCloneOffset
+VmoClone2TestCase.ManyCloneMappingOffset
 VmoClone2TestCase.ForbidContiguousVmo
 VmoClone2TestCase.PinBeforeCreateFailure
 VmoClone2TestCase.Uncached
@@ -462,13 +463,10 @@ VmoTestCase.Create
 VmoTestCase.ReadWriteBadLen
 VmoTestCase.ReadWriteRange
 VmoTestCase.Map
-VmoTestCase.MapRead
-VmoTestCase.ParallelRead
 VmoTestCase.Resize
 VmoTestCase.NoResize
 VmoTestCase.SizeAlign
 VmoTestCase.ResizeAlign
-VmoTestCase.ZeroPage
 VmoTestCase.UncachedContiguous
 Bti.Create
 Bti.Pin

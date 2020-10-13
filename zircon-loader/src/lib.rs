@@ -234,7 +234,8 @@ async fn new_thread(thread: CurrentThread) {
                 let fault_vaddr = kernel_hal::fetch_fault_vaddr();
                 info!("page fault from user mode {:#x} {:#x?}", fault_vaddr, flags);
                 let vmar = thread.proc().vmar();
-                if vmar.handle_page_fault(fault_vaddr, flags).is_err() {
+                if let Err(err) = vmar.handle_page_fault(fault_vaddr, flags) {
+                    error!("handle_page_fault error: {:?}", err);
                     thread.handle_exception(ExceptionType::FatalPageFault).await;
                 }
             }

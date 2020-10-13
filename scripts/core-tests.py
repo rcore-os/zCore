@@ -33,7 +33,7 @@ with open(TEST_CASE_FILE, "r") as f:
     lines = f.readlines()
     positive = [line for line in lines if not line.startswith('-')]
     negative = [line[1:] for line in lines if line.startswith('-')]
-    test_filter = (','.join(positive) + (('-' + ','.join(negative) if len(negative) > 0 else "") )).replace('\n', '')
+    test_filter = (','.join(positive) + ((',-' + ','.join(negative) if len(negative) > 0 else "") )).replace('\n', '')
 
 child = pexpect.spawn("make -C %s test mode=release test_filter='%s'" % (ZCORE_PATH, test_filter),
                       timeout=TIMEOUT, encoding='utf-8')
