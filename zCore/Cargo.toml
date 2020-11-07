@@ -18,13 +18,13 @@ lto = true
 [dependencies]
 log = "0.4"
 spin = "0.5"
-buddy_system_allocator = "0.4.0"
+buddy_system_allocator = "0.5.0"
 rlibc-opt = { git = "https://github.com/rcore-os/rlibc-opt.git", rev = "0ab1d1e" }
 rboot = { path = "../rboot", default-features = false }
 kernel-hal-bare = { path = "../kernel-hal-bare" }
 lazy_static = { version = "1.4", features = ["spin_no_std" ] }
 bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator", rev = "03bd9909" }
-trapframe = "0.5.1"
+trapframe = "0.6.0"
 executor = { git = "https://github.com/rcore-os/executor.git", rev = "a2d02ee9" }
 zircon-object = { path = "../zircon-object" }
 zircon-loader = { path = "../zircon-loader", default-features = false, optional = true }
@@ -32,7 +32,7 @@ linux-loader = { path = "../linux-loader", default-features = false, optional = 
 linux-object = { path = "../linux-object", default-features = false, optional = true }
 zircon-syscall = { path = "../zircon-syscall", optional = true }
 rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "6df6cd2", optional = true }
-rvm = { git = "https://github.com/rcore-os/RVM", rev = "4b64355", optional = true }
+rvm = { git = "https://github.com/rcore-os/RVM", rev = "e91d625", optional = true }
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
-x86_64 = "0.11"
+x86_64 = "0.12"

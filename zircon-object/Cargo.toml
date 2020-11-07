@@ -16,16 +16,16 @@ bitflags = "1.2"
 spin = "0.5"
 log = "0.4"
 hashbrown = "0.7"
-downcast-rs = { git = "https://github.com/rcore-os/downcast-rs", rev = "a632ce1", default-features = false }
+downcast-rs = { version = "1.2", default-features = false }
 kernel-hal = { path = "../kernel-hal" }
 numeric-enum-macro = "0.2"
 futures = { version = "0.3", default-features = false, features = ["alloc", "async-await"] }
 xmas-elf = { version = "0.7", optional = true }
 region-alloc = { git = "https://github.com/rzswh/region-allocator", rev = "122c7a71" }
 lazy_static = { version = "1.4", features = ["spin_no_std" ] }
-acpi = "1.0.0"
-rvm = { git = "https://github.com/rcore-os/RVM", rev = "4b64355", optional = true }
+acpi = "1.1"
+rvm = { git = "https://github.com/rcore-os/RVM", rev = "e91d625", optional = true }
 
 [dev-dependencies]
 kernel-hal-unix = { path = "../kernel-hal-unix" }
-async-std = { version = "1.5", features = ["attributes", "unstable"] }
+async-std = { version = "1.6", features = ["attributes", "unstable"] }

@@ -278,10 +278,7 @@ impl PCIeBusDriver {
         Ok(())
     }
     fn is_started(&self, _allow_quirks_phase: bool) -> bool {
-        match self.state {
-            PCIeBusDriverState::NotStarted => false,
-            _ => true,
-        }
+        !matches!(self.state, PCIeBusDriverState::NotStarted)
     }
 
     /// Get a device's config.

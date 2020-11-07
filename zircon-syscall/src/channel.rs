@@ -328,8 +328,8 @@ fn hack_core_tests(handle: HandleValue, thread_name: &str, data: &mut Vec<u8>) {
     if handle == 3 && thread_name == "userboot" {
         let cmdline = core::str::from_utf8(&data).unwrap();
         for kv in cmdline.split('\0') {
-            if kv.starts_with("core-tests=") {
-                *TESTS_ARGS.lock() = format!("test\0-f\0{}\0", kv[11..].replace(',', ":"));
+            if let Some(v) = kv.strip_prefix("core-tests=") {
+                *TESTS_ARGS.lock() = format!("test\0-f\0{}\0", v.replace(',', ":"));
             }
         }
     } else if handle == 3 && thread_name == "test/core-standalone-test" {

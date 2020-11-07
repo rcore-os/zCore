@@ -10,7 +10,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly-2020-06-04
+          toolchain: nightly-2020-10-01
           override: true
           components: rustfmt, clippy
       - name: Check code format
@@ -36,7 +36,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly-2020-06-04
+          toolchain: nightly-2020-10-01
           components: rust-src
       - name: Build
         uses: actions-rs/cargo@v1
@@ -58,7 +58,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly-2020-06-04
+          toolchain: nightly-2020-10-01
           override: true
           target: aarch64-unknown-linux-gnu
       - uses: actions-rs/cargo@v1
@@ -79,7 +79,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly-2020-06-04
+          toolchain: nightly-2020-10-01
           target: x86_64-fuchsia
       - name: Build Zircon user programs
         run: |
@@ -101,20 +101,22 @@ jobs:
           args: --all-features --no-fail-fast --workspace --exclude zircon-loader
         env:
           CARGO_INCREMENTAL: '0'
-          RUSTFLAGS: '-Zprofile -Ccodegen-units=1 -Copt-level=0 -Coverflow-checks=off'
+          RUSTFLAGS: '-Zprofile -Ccodegen-units=1 -Copt-level=0 -Coverflow-checks=off -Zpanic_abort_tests -Cpanic=abort'
+          RUSTDOCFLAGS: '-Zprofile -Ccodegen-units=1 -Copt-level=0 -Coverflow-checks=off -Zpanic_abort_tests -Cpanic=abort'
       - name: Cache grcov
-        uses: actions/cache@v1
+        uses: actions/cache@v2
         with:
-          path: ~/.cargo/bin/grcov
+          path: ~/.cargo/bin
           key: ${{ runner.os }}-grcov
       - name: Gather coverage data
         id: coverage
         uses: actions-rs/grcov@v0.1
-      - name: Coveralls upload
-        uses: coverallsapp/github-action@master
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          path-to-lcov: ${{ steps.coverage.outputs.report }}
+#      FIXME: 'error from lcovParse: Failed to parse string'
+#      - name: Coveralls upload
+#        uses: coverallsapp/github-action@master
+#        with:
+#          github-token: ${{ secrets.GITHUB_TOKEN }}
+#          path-to-lcov: ${{ steps.coverage.outputs.report }}
 
   bench:
     runs-on: ubuntu-20.04
@@ -136,7 +138,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly-2020-06-04
+          toolchain: nightly-2020-10-01
           components: rust-src
       - name: Install QEMU
         run: |
