@@ -45,3 +45,4 @@
 /libc-test/src/regression/flockfile-list.exe
 /libc-test/src/regression/malloc-brk-fail.exe
 /libc-test/src/regression/iconv-roundtrips.exe
+/libc-test/src/regression/sem_close-unmap.exe
