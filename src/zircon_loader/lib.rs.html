@@ -1,4 +1,7 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source to the Rust file `zircon-loader/src/lib.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>lib.rs.html -- source</title><link rel="stylesheet" type="text/css" href="../../normalize.css"><link rel="stylesheet" type="text/css" href="../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../dark.css"><link rel="stylesheet" type="text/css" href="../../light.css" id="themeStyle"><script src="../../storage.js"></script><noscript><link rel="stylesheet" href="../../noscript.css"></noscript><link rel="shortcut icon" href="../../favicon.ico"><style type="text/css">#crate-search{background-image:url("../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 8]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu">&#9776;</div><a href='../../zircon_loader/index.html'><div class='logo-container'><img src='../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!"><img src="../../brush.svg" width="18" alt="Pick another theme!"></button><div id="theme-choices"></div></div><script src="../../theme.js"></script><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><a id="settings-menu" href="../../settings.html"><img src="../../wheel.svg" width="18" alt="Change settings"></a></div></form></nav><section id="main" class="content"><pre class="line-numbers"><span id="1">  1</span>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source to the Rust file `zircon-loader/src/lib.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>lib.rs.html -- source</title><link rel="stylesheet" type="text/css" href="../../normalize.css"><link rel="stylesheet" type="text/css" href="../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../ayu.css" disabled ><script src="../../storage.js"></script><noscript><link rel="stylesheet" href="../../noscript.css"></noscript><link rel="icon" type="image/svg+xml" href="../../favicon.svg">
+<link rel="alternate icon" type="image/png" href="../../favicon-16x16.png">
+<link rel="alternate icon" type="image/png" href="../../favicon-32x32.png"><style type="text/css">#crate-search{background-image:url("../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 8]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu">&#9776;</div><a href='../../zircon_loader/index.html'><div class='logo-container rust-logo'><img src='../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!"><img src="../../brush.svg" width="18" alt="Pick another theme!"></button><div id="theme-choices"></div></div><script src="../../theme.js"></script><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><span class="help-button">?</span>
+                <a id="settings-menu" href="../../settings.html"><img src="../../wheel.svg" width="18" alt="Change settings"></a></div></form></nav><section id="main" class="content"><pre class="line-numbers"><span id="1">  1</span>
 <span id="2">  2</span>
 <span id="3">  3</span>
 <span id="4">  4</span>
@@ -478,17 +481,17 @@
 <span class="macro">kcounter</span><span class="macro">!</span>(<span class="ident">EXCEPTIONS_TIMER</span>, <span class="string">&quot;exceptions.timer&quot;</span>);
 <span class="macro">kcounter</span><span class="macro">!</span>(<span class="ident">EXCEPTIONS_PGFAULT</span>, <span class="string">&quot;exceptions.pgfault&quot;</span>);
 
-<span class="kw">async</span> <span class="kw">fn</span> <span class="ident">new_thread</span>(<span class="ident">thread</span>: <span class="ident">CurrentThread</span>) {
+<span class="ident">async</span> <span class="kw">fn</span> <span class="ident">new_thread</span>(<span class="ident">thread</span>: <span class="ident">CurrentThread</span>) {
     <span class="ident">kernel_hal</span>::<span class="ident">Thread</span>::<span class="ident">set_tid</span>(<span class="ident">thread</span>.<span class="ident">id</span>(), <span class="ident">thread</span>.<span class="ident">proc</span>().<span class="ident">id</span>());
     <span class="kw">if</span> <span class="ident">thread</span>.<span class="ident">is_first_thread</span>() {
         <span class="ident">thread</span>
             .<span class="ident">handle_exception</span>(<span class="ident">ExceptionType</span>::<span class="ident">ProcessStarting</span>)
-            .<span class="kw">await</span>;
+            .<span class="ident">await</span>;
     };
-    <span class="ident">thread</span>.<span class="ident">handle_exception</span>(<span class="ident">ExceptionType</span>::<span class="ident">ThreadStarting</span>).<span class="kw">await</span>;
+    <span class="ident">thread</span>.<span class="ident">handle_exception</span>(<span class="ident">ExceptionType</span>::<span class="ident">ThreadStarting</span>).<span class="ident">await</span>;
 
     <span class="kw">loop</span> {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">cx</span> <span class="op">=</span> <span class="ident">thread</span>.<span class="ident">wait_for_run</span>().<span class="kw">await</span>;
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">cx</span> <span class="op">=</span> <span class="ident">thread</span>.<span class="ident">wait_for_run</span>().<span class="ident">await</span>;
         <span class="kw">if</span> <span class="ident">thread</span>.<span class="ident">state</span>() <span class="op">=</span><span class="op">=</span> <span class="ident">ThreadState</span>::<span class="ident">Dying</span> {
             <span class="kw">break</span>;
         }
@@ -517,17 +520,17 @@
 
         <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;aarch64&quot;</span>)]</span>
         <span class="kw">match</span> <span class="ident">trap_num</span> {
-            <span class="number">0</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">handle_syscall</span>(<span class="kw-2">&amp;</span><span class="ident">thread</span>).<span class="kw">await</span>,
+            <span class="number">0</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">handle_syscall</span>(<span class="kw-2">&amp;</span><span class="ident">thread</span>).<span class="ident">await</span>,
             <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="macro">unimplemented</span><span class="macro">!</span>(),
         }
         <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>)]</span>
         <span class="kw">match</span> <span class="ident">trap_num</span> {
-            <span class="number">0x100</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">handle_syscall</span>(<span class="kw-2">&amp;</span><span class="ident">thread</span>).<span class="kw">await</span>,
+            <span class="number">0x100</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">handle_syscall</span>(<span class="kw-2">&amp;</span><span class="ident">thread</span>).<span class="ident">await</span>,
             <span class="number">0x20</span>..<span class="op">=</span><span class="number">0x3f</span> <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="ident">kernel_hal</span>::<span class="ident">InterruptManager</span>::<span class="ident">handle</span>(<span class="ident">trap_num</span> <span class="kw">as</span> <span class="ident">u8</span>);
                 <span class="kw">if</span> <span class="ident">trap_num</span> <span class="op">=</span><span class="op">=</span> <span class="number">0x20</span> {
                     <span class="ident">EXCEPTIONS_TIMER</span>.<span class="ident">add</span>(<span class="number">1</span>);
-                    <span class="ident">kernel_hal</span>::<span class="ident">yield_now</span>().<span class="kw">await</span>;
+                    <span class="ident">kernel_hal</span>::<span class="ident">yield_now</span>().<span class="ident">await</span>;
                 }
             }
             <span class="number">0xe</span> <span class="op">=</span><span class="op">&gt;</span> {
@@ -541,7 +544,7 @@
                 <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;page fault from user mode {:#x} {:#x?}&quot;</span>, <span class="ident">fault_vaddr</span>, <span class="ident">flags</span>);
                 <span class="kw">let</span> <span class="ident">vmar</span> <span class="op">=</span> <span class="ident">thread</span>.<span class="ident">proc</span>().<span class="ident">vmar</span>();
                 <span class="kw">if</span> <span class="ident">vmar</span>.<span class="ident">handle_page_fault</span>(<span class="ident">fault_vaddr</span>, <span class="ident">flags</span>).<span class="ident">is_err</span>() {
-                    <span class="ident">thread</span>.<span class="ident">handle_exception</span>(<span class="ident">ExceptionType</span>::<span class="ident">FatalPageFault</span>).<span class="kw">await</span>;
+                    <span class="ident">thread</span>.<span class="ident">handle_exception</span>(<span class="ident">ExceptionType</span>::<span class="ident">FatalPageFault</span>).<span class="ident">await</span>;
                 }
             }
             <span class="number">0x8</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">thread</span>.<span class="ident">with_context</span>(<span class="op">|</span><span class="ident">cx</span><span class="op">|</span> {
@@ -555,18 +558,18 @@
                     <span class="number">0x17</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">ExceptionType</span>::<span class="ident">UnalignedAccess</span>,
                     <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">ExceptionType</span>::<span class="ident">General</span>,
                 };
-                <span class="ident">thread</span>.<span class="ident">handle_exception</span>(<span class="ident">type_</span>).<span class="kw">await</span>;
+                <span class="ident">thread</span>.<span class="ident">handle_exception</span>(<span class="ident">type_</span>).<span class="ident">await</span>;
             }
         }
     }
-    <span class="ident">thread</span>.<span class="ident">handle_exception</span>(<span class="ident">ExceptionType</span>::<span class="ident">ThreadExiting</span>).<span class="kw">await</span>;
+    <span class="ident">thread</span>.<span class="ident">handle_exception</span>(<span class="ident">ExceptionType</span>::<span class="ident">ThreadExiting</span>).<span class="ident">await</span>;
 }
 
-<span class="kw">fn</span> <span class="ident">thread_fn</span>(<span class="ident">thread</span>: <span class="ident">CurrentThread</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Pin</span><span class="op">&lt;</span><span class="ident">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">Future</span><span class="op">&lt;</span><span class="ident">Output</span> <span class="op">=</span> ()<span class="op">&gt;</span> <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+<span class="kw">fn</span> <span class="ident">thread_fn</span>(<span class="ident">thread</span>: <span class="ident">CurrentThread</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Pin</span><span class="op">&lt;</span><span class="ident">Box</span><span class="op">&lt;</span><span class="ident">dyn</span> <span class="ident">Future</span><span class="op">&lt;</span><span class="ident">Output</span> <span class="op">=</span> ()<span class="op">&gt;</span> <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span> {
     <span class="ident">Box</span>::<span class="ident">pin</span>(<span class="ident">new_thread</span>(<span class="ident">thread</span>))
 }
 
-<span class="kw">async</span> <span class="kw">fn</span> <span class="ident">handle_syscall</span>(<span class="ident">thread</span>: <span class="kw-2">&amp;</span><span class="ident">CurrentThread</span>) {
+<span class="ident">async</span> <span class="kw">fn</span> <span class="ident">handle_syscall</span>(<span class="ident">thread</span>: <span class="kw-2">&amp;</span><span class="ident">CurrentThread</span>) {
     <span class="kw">let</span> (<span class="ident">num</span>, <span class="ident">args</span>) <span class="op">=</span> <span class="ident">thread</span>.<span class="ident">with_context</span>(<span class="op">|</span><span class="ident">cx</span><span class="op">|</span> {
         <span class="kw">let</span> <span class="ident">regs</span> <span class="op">=</span> <span class="ident">cx</span>.<span class="ident">general</span>;
         <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>)]</span>
@@ -597,7 +600,7 @@
         (<span class="ident">num</span>, <span class="ident">args</span>)
     });
     <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">syscall</span> <span class="op">=</span> <span class="ident">Syscall</span> { <span class="ident">thread</span>, <span class="ident">thread_fn</span> };
-    <span class="kw">let</span> <span class="ident">ret</span> <span class="op">=</span> <span class="ident">syscall</span>.<span class="ident">syscall</span>(<span class="ident">num</span>, <span class="ident">args</span>).<span class="kw">await</span> <span class="kw">as</span> <span class="ident">usize</span>;
+    <span class="kw">let</span> <span class="ident">ret</span> <span class="op">=</span> <span class="ident">syscall</span>.<span class="ident">syscall</span>(<span class="ident">num</span>, <span class="ident">args</span>).<span class="ident">await</span> <span class="kw">as</span> <span class="ident">usize</span>;
     <span class="ident">thread</span>.<span class="ident">with_context</span>(<span class="op">|</span><span class="ident">cx</span><span class="op">|</span> {
         <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>)]</span>
         {

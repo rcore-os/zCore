@@ -1,3 +1,3 @@
 (function() {var implementors = {};
-implementors["kernel_hal"] = [{"text":"impl&lt;P:&nbsp;<a class=\"trait\" href=\"kernel_hal/user/trait.Write.html\" title=\"trait kernel_hal::user::Write\">Write</a>&gt; <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/ops/deref/trait.DerefMut.html\" title=\"trait core::ops::deref::DerefMut\">DerefMut</a> for <a class=\"struct\" href=\"kernel_hal/user/struct.IoVecs.html\" title=\"struct kernel_hal::user::IoVecs\">IoVecs</a>&lt;P&gt;","synthetic":false,"types":["kernel_hal::user::IoVecs"]}];
+implementors["kernel_hal"] = [{"text":"impl&lt;P:&nbsp;Write&gt; DerefMut for IoVecs&lt;P&gt;","synthetic":false,"types":[]}];
 if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()
