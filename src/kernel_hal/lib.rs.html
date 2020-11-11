@@ -53,6 +53,7 @@
 <span id="50">50</span>
 <span id="51">51</span>
 <span id="52">52</span>
+<span id="53">53</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Hardware Abstraction Layer</span>
 
@@ -75,6 +76,7 @@
             <span class="kw">const</span> <span class="ident">WRITE</span>     <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">3</span>;
             <span class="kw">const</span> <span class="ident">EXECUTE</span>   <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">4</span>;
             <span class="kw">const</span> <span class="ident">USER</span>      <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">5</span>;
+            <span class="kw">const</span> <span class="ident">RXW</span> <span class="op">=</span> <span class="self">Self</span>::<span class="ident">READ</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">WRITE</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span>::<span class="ident">EXECUTE</span>.<span class="ident">bits</span>;
         }
     }
     <span class="macro">numeric_enum</span><span class="macro">!</span> {

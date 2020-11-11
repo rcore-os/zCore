@@ -273,7 +273,7 @@
     <span class="kw">fn</span> <span class="ident">handle_page_fault</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">gpaddr</span>: <span class="ident">GuestPhysAddr</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">RvmResult</span> {
         <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">mapping</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">vmar</span>.<span class="ident">find_mapping</span>(<span class="ident">gpaddr</span>) {
             <span class="ident">mapping</span>
-                .<span class="ident">handle_page_fault</span>(<span class="ident">gpaddr</span>, <span class="ident">mapping</span>.<span class="ident">get_flags</span>())
+                .<span class="ident">handle_page_fault</span>(<span class="ident">gpaddr</span>, <span class="ident">mapping</span>.<span class="ident">get_flags</span>(<span class="ident">gpaddr</span>).<span class="ident">unwrap</span>())
                 .<span class="ident">map_err</span>(<span class="ident">From</span>::<span class="ident">from</span>)
         } <span class="kw">else</span> {
             <span class="prelude-val">Err</span>(<span class="ident">RvmError</span>::<span class="ident">NotFound</span>)

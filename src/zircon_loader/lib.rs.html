@@ -306,6 +306,21 @@
 <span id="303">303</span>
 <span id="304">304</span>
 <span id="305">305</span>
+<span id="306">306</span>
+<span id="307">307</span>
+<span id="308">308</span>
+<span id="309">309</span>
+<span id="310">310</span>
+<span id="311">311</span>
+<span id="312">312</span>
+<span id="313">313</span>
+<span id="314">314</span>
+<span id="315">315</span>
+<span id="316">316</span>
+<span id="317">317</span>
+<span id="318">318</span>
+<span id="319">319</span>
+<span id="320">320</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="attribute">#![<span class="ident">no_std</span>]</span>
 <span class="attribute">#![<span class="ident">feature</span>(<span class="ident">asm</span>)]</span>
@@ -535,15 +550,30 @@
             }
             <span class="number">0xe</span> <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="ident">EXCEPTIONS_PGFAULT</span>.<span class="ident">add</span>(<span class="number">1</span>);
-                <span class="kw">let</span> <span class="ident">flags</span> <span class="op">=</span> <span class="kw">if</span> <span class="ident">error_code</span> <span class="op">&amp;</span> <span class="number">0x2</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span> {
-                    <span class="ident">MMUFlags</span>::<span class="ident">READ</span>
-                } <span class="kw">else</span> {
-                    <span class="ident">MMUFlags</span>::<span class="ident">WRITE</span>
-                };
+                <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">flags</span> <span class="op">=</span> <span class="ident">MMUFlags</span>::<span class="ident">empty</span>();
+                <span class="kw">if</span> <span class="ident">error_code</span> <span class="op">&amp;</span> <span class="number">0x01</span> <span class="op">!</span><span class="op">=</span> <span class="number">0</span> {
+                    <span class="ident">flags</span>.<span class="ident">insert</span>(<span class="ident">MMUFlags</span>::<span class="ident">READ</span>)
+                }
+                <span class="kw">if</span> <span class="ident">error_code</span> <span class="op">&amp;</span> <span class="number">0x02</span> <span class="op">!</span><span class="op">=</span> <span class="number">0</span> {
+                    <span class="ident">flags</span>.<span class="ident">insert</span>(<span class="ident">MMUFlags</span>::<span class="ident">WRITE</span>)
+                }
+                <span class="kw">if</span> <span class="ident">error_code</span> <span class="op">&amp;</span> <span class="number">0x04</span> <span class="op">!</span><span class="op">=</span> <span class="number">0</span> {
+                    <span class="ident">flags</span>.<span class="ident">insert</span>(<span class="ident">MMUFlags</span>::<span class="ident">USER</span>)
+                }
+                <span class="kw">if</span> <span class="ident">error_code</span> <span class="op">&amp;</span> <span class="number">0x08</span> <span class="op">!</span><span class="op">=</span> <span class="number">0</span> {
+                    <span class="macro">warn</span><span class="macro">!</span>(<span class="string">&quot;page table entry has reserved bits set!&quot;</span>)
+                }
+                <span class="kw">if</span> <span class="ident">error_code</span> <span class="op">&amp;</span> <span class="number">0x10</span> <span class="op">!</span><span class="op">=</span> <span class="number">0</span> {
+                    <span class="ident">flags</span>.<span class="ident">insert</span>(<span class="ident">MMUFlags</span>::<span class="ident">EXECUTE</span>)
+                }
                 <span class="kw">let</span> <span class="ident">fault_vaddr</span> <span class="op">=</span> <span class="ident">kernel_hal</span>::<span class="ident">fetch_fault_vaddr</span>();
-                <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;page fault from user mode {:#x} {:#x?}&quot;</span>, <span class="ident">fault_vaddr</span>, <span class="ident">flags</span>);
+                <span class="macro">info</span><span class="macro">!</span>(
+                    <span class="string">&quot;page fault from user mode {:#x} {:#x?} {:?}&quot;</span>,
+                    <span class="ident">fault_vaddr</span>, <span class="ident">error_code</span>, <span class="ident">flags</span>
+                );
                 <span class="kw">let</span> <span class="ident">vmar</span> <span class="op">=</span> <span class="ident">thread</span>.<span class="ident">proc</span>().<span class="ident">vmar</span>();
-                <span class="kw">if</span> <span class="ident">vmar</span>.<span class="ident">handle_page_fault</span>(<span class="ident">fault_vaddr</span>, <span class="ident">flags</span>).<span class="ident">is_err</span>() {
+                <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Err</span>(<span class="ident">err</span>) <span class="op">=</span> <span class="ident">vmar</span>.<span class="ident">handle_page_fault</span>(<span class="ident">fault_vaddr</span>, <span class="ident">flags</span>) {
+                    <span class="macro">error</span><span class="macro">!</span>(<span class="string">&quot;handle_page_fault error: {:?}&quot;</span>, <span class="ident">err</span>);
                     <span class="ident">thread</span>.<span class="ident">handle_exception</span>(<span class="ident">ExceptionType</span>::<span class="ident">FatalPageFault</span>).<span class="ident">await</span>;
                 }
             }
