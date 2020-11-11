@@ -1157,4 +1157,40 @@ mod tests {
         assert_eq!(vmar.count(), 1);
         assert_eq!(vmar.used_size(), 0x1000);
     }
+
+    #[test]
+    #[allow(unsafe_code)]
+    fn copy_on_write_update_mapping() {
+        let vmar = VmAddressRegion::new_root();
+        let vmo = VmObject::new_paged(1);
+        vmo.test_write(0, 1);
+        vmar.map_at(0, vmo.clone(), 0, PAGE_SIZE, MMUFlags::RXW)
+            .unwrap();
+        let child_vmo = vmo.create_child(false, 0, 1 * PAGE_SIZE).unwrap();
+        // The clone was created after the map, so the two vmo share pages.
+        assert_eq!(
+            vmo.commit_page(0, MMUFlags::READ),
+            child_vmo.commit_page(0, MMUFlags::READ)
+        );
+        assert_eq!(vmo.test_read(0), 1);
+        assert_eq!(child_vmo.test_read(0), 1);
+        unsafe {
+            assert_eq!((vmar.addr() as *const u8).read(), 1);
+        }
+        vmo.test_write(0, 2);
+        // Here, since the page was copied on write, the actual page used in the vmo should be changed.
+        assert_ne!(
+            vmo.commit_page(0, MMUFlags::READ),
+            child_vmo.commit_page(0, MMUFlags::READ)
+        );
+        assert_eq!(vmo.test_read(0), 2);
+        assert_eq!(child_vmo.test_read(0), 1);
+        // The mapping should update to reflect this change.
+        // Since we do not have page fault handler in the libOS,
+        // so manually simulate the page fault before read to it
+        vmar.handle_page_fault(vmar.addr(), MMUFlags::READ).unwrap();
+        unsafe {
+            assert_eq!((vmar.addr() as *const u8).read(), 2);
+        }
+    }
 }

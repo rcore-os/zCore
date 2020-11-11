@@ -1139,11 +1139,11 @@ mod tests {
     }
 
     impl VmObject {
-        fn test_write(&self, page: usize, value: u8) {
+        pub fn test_write(&self, page: usize, value: u8) {
             self.write(page * PAGE_SIZE, &[value]).unwrap();
         }
 
-        fn test_read(&self, page: usize) -> u8 {
+        pub fn test_read(&self, page: usize) -> u8 {
             let mut buf = [0; 1];
             self.read(page * PAGE_SIZE, &mut buf).unwrap();
             buf[0]
