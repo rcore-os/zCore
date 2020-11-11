@@ -332,7 +332,7 @@ impl Syscall<'_> {
         vaddr: usize,
         mut buffer: UserOutPtr<u8>,
         buffer_size: usize,
-        mut actual: UserOutPtr<u32>,
+        mut actual: UserOutPtr<usize>,
     ) -> ZxResult {
         if buffer.is_null() || buffer_size == 0 || buffer_size > MAX_BLOCK {
             return Err(ZxError::INVALID_ARGS);
@@ -343,7 +343,7 @@ impl Syscall<'_> {
         let mut data = vec![0u8; buffer_size];
         let len = process.vmar().read_memory(vaddr, &mut data)?;
         buffer.write_array(&data[..len])?;
-        actual.write_if_not_null(len as u32)?;
+        actual.write(len)?;
         Ok(())
     }
 
@@ -354,7 +354,7 @@ impl Syscall<'_> {
         vaddr: usize,
         buffer: UserInPtr<u8>,
         buffer_size: usize,
-        mut actual: UserOutPtr<u32>,
+        mut actual: UserOutPtr<usize>,
     ) -> ZxResult {
         if buffer.is_null() || buffer_size == 0 || buffer_size > MAX_BLOCK {
             return Err(ZxError::INVALID_ARGS);
@@ -364,7 +364,7 @@ impl Syscall<'_> {
             proc.get_object_with_rights::<Process>(handle_value, Rights::READ | Rights::WRITE)?;
         let data = buffer.read_array(buffer_size)?;
         let len = process.vmar().write_memory(vaddr, &data)?;
-        actual.write_if_not_null(len as u32)?;
+        actual.write(len)?;
         Ok(())
     }
 }

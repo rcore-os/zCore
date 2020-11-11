@@ -104,6 +104,10 @@ impl PageTableTrait for PageTableImpl {
                 flush.flush();
                 trace!("unmap: {:x?} in {:#x?}", vaddr, self.root_paddr);
             }
+            Err(mapper::UnmapError::PageNotMapped) => {
+                trace!("unmap not mapped, skip: {:x?} in {:#x?}", vaddr, self.root_paddr);
+                return Ok(())
+            }
             Err(err) => {
                 debug!(
                     "unmap failed: {:x?} err={:x?} in {:#x?}",
