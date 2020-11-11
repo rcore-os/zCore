@@ -12,8 +12,6 @@
 #![feature(drain_filter)]
 #![feature(get_mut_unchecked)]
 #![feature(naked_functions)]
-#![feature(ptr_offset_from)]
-#![feature(range_is_empty)]
 #![feature(new_uninit)]
 #![feature(const_in_array_repeat_expressions)]
 

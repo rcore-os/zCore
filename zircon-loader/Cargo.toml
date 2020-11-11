@@ -16,7 +16,7 @@ kernel-hal = { path = "../kernel-hal" }
 env_logger = { version = "0.7", optional = true }
 structopt = { version = "0.3", default-features = false, optional = true }
 kernel-hal-unix = { path = "../kernel-hal-unix", optional = true }
-async-std = { version = "1.5", features = ["attributes"], optional = true }
+async-std = { version = "1.6", features = ["attributes"], optional = true }
 
 [features]
 default = ["std"]
