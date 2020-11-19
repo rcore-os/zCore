@@ -88,7 +88,7 @@ fn main(ramfs_data: &'static mut [u8], _cmdline: &str) {
 fn run() -> ! {
     loop {
         executor::run_until_idle();
-        x86_64::instructions::interrupts::enable_interrupts_and_hlt();
+        x86_64::instructions::interrupts::enable_and_hlt();
         x86_64::instructions::interrupts::disable();
     }
 }
