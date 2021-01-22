@@ -4,12 +4,12 @@ use core::alloc::Layout;
 use core::panic::PanicInfo;
 use core::sync::atomic::spin_loop_hint;
 use log::*;
-use zircon_object::util::kcounter::KCounterDescriptorArray;
+//use zircon_object::util::kcounter::KCounterDescriptorArray;
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     error!("\n\n{}", info);
-    error!("{:#?}", KCounterDescriptorArray::get());
+    //error!("{:#?}", KCounterDescriptorArray::get());
     loop {
         spin_loop_hint();
     }

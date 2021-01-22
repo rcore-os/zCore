@@ -4,20 +4,35 @@
 use {
     bitmap_allocator::BitAlloc,
     buddy_system_allocator::LockedHeap,
-    rboot::{BootInfo, MemoryType},
     spin::Mutex,
-    x86_64::structures::paging::page_table::{PageTable, PageTableFlags as EF},
 };
 
 #[cfg(target_arch = "x86_64")]
+use {
+    rboot::{BootInfo, MemoryType},
+    x86_64::structures::paging::page_table::{PageTable, PageTableFlags as EF},
+};
+
+#[cfg(target_arch = "riscv64")]
+use riscv::paging::{PageTable, PageTableEntry, PageTableFlags as EF};
+
+#[cfg(target_arch = "x86_64")]
 type FrameAlloc = bitmap_allocator::BitAlloc16M;
+
+#[cfg(target_arch = "riscv64")]
+type FrameAlloc = bitmap_allocator::BitAlloc1M;
 
 static FRAME_ALLOCATOR: Mutex<FrameAlloc> = Mutex::new(FrameAlloc::DEFAULT);
 
 const MEMORY_OFFSET: usize = 0;
 const KERNEL_OFFSET: usize = 0xffffff00_00000000;
 const PHYSICAL_MEMORY_OFFSET: usize = 0xffff8000_00000000;
+
+#[cfg(target_arch = "x86_64")]
 const KERNEL_HEAP_SIZE: usize = 16 * 1024 * 1024; // 16 MB
+
+#[cfg(target_arch = "riscv64")]
+const KERNEL_HEAP_SIZE: usize = 8 * 1024 * 1024; // 8 MB
 
 const KERNEL_PM4: usize = (KERNEL_OFFSET >> 39) & 0o777;
 const PHYSICAL_MEMORY_PM4: usize = (PHYSICAL_MEMORY_OFFSET >> 39) & 0o777;
@@ -28,6 +43,7 @@ const PAGE_SIZE: usize = 1 << 12;
 #[export_name = "hal_pmem_base"]
 static PMEM_BASE: usize = PHYSICAL_MEMORY_OFFSET;
 
+#[cfg(target_arch = "x86_64")]
 pub fn init_frame_allocator(boot_info: &BootInfo) {
     let mut ba = FRAME_ALLOCATOR.lock();
     for region in boot_info.memory_map.iter() {
@@ -38,6 +54,14 @@ pub fn init_frame_allocator(boot_info: &BootInfo) {
         }
     }
     info!("Frame allocator init end");
+}
+
+#[cfg(target_arch = "riscv64")]
+use kernel_hal_bare::BootInfo;
+
+#[cfg(target_arch = "riscv64")]
+pub fn init_frame_allocator(boot_info: &BootInfo) {
+
 }
 
 pub fn init_heap() {
@@ -88,11 +112,16 @@ pub extern "C" fn hal_frame_dealloc(target: &usize) {
 }
 
 #[no_mangle]
+#[cfg(target_arch = "x86_64")]
 pub extern "C" fn hal_pt_map_kernel(pt: &mut PageTable, current: &PageTable) {
     let ekernel = current[KERNEL_PM4].clone();
     let ephysical = current[PHYSICAL_MEMORY_PM4].clone();
     pt[KERNEL_PM4].set_addr(ekernel.addr(), ekernel.flags() | EF::GLOBAL);
     pt[PHYSICAL_MEMORY_PM4].set_addr(ephysical.addr(), ephysical.flags() | EF::GLOBAL);
+}
+
+#[cfg(target_arch = "riscv64")]
+pub extern "C" fn hal_pt_map_kernel(pt: &mut PageTable, current: &PageTable) {
 }
 
 #[cfg(feature = "hypervisor")]

@@ -13,10 +13,12 @@ build_args := -Z build-std=core,alloc --target $(arch).json
 build_path := target/$(arch)/$(mode)
 kernel := $(build_path)/zcore
 kernel_img := $(build_path)/zcore.img
+kernel_bin := $(build_path)/zcore.bin
 ESP := $(build_path)/esp
 OVMF := ../rboot/OVMF.fd
-qemu := qemu-system-x86_64
+qemu := qemu-system-$(arch)
 OBJDUMP := rust-objdump -print-imm-hex -x86-asm-syntax=intel
+OBJCOPY := rust-objcopy --binary-architecture=$(arch)
 VMDISK := $(build_path)/boot.vdi
 QEMU_DISK := $(build_path)/disk.qcow2
 
@@ -46,6 +48,14 @@ qemu_opts += \
 	-m 4G \
 	-nic none \
 	-device isa-debug-exit,iobase=0xf4,iosize=0x04
+
+else ifeq ($(arch), riscv64)
+qemu_opts += \
+	-machine virt \
+	-no-reboot \
+	-no-shutdown \
+	-nographic \
+	-kernel $(kernel_bin)
 endif
 
 ifeq ($(hypervisor), 1)
@@ -93,6 +103,12 @@ build-parallel-test: build $(QEMU_DISK)
 	cp ../prebuilt/zircon/x64/core-tests.zbi $(ESP)/EFI/zCore/fuchsia.zbi
 	echo 'cmdline=LOG=warn:userboot=test/core-standalone-test:userboot.shutdown:core-tests=$(test_filter)' >> $(ESP)/EFI/Boot/rboot.conf
 
+ifeq ($(arch), riscv64)
+$(kernel_img): $(kernel_bin)
+
+### k210 使用opensbi
+else
+
 $(kernel_img): kernel bootloader
 	mkdir -p $(ESP)/EFI/zCore $(ESP)/EFI/Boot
 	cp ../rboot/target/x86_64-unknown-uefi/release/rboot.efi $(ESP)/EFI/Boot/BootX64.efi
@@ -107,12 +123,17 @@ else
 endif
 	cp $(kernel) $(ESP)/EFI/zCore/zcore.elf
 
+endif
+
 kernel:
 	echo Building zCore kenel
 	cargo build $(build_args)
 
 bootloader:
 	cd ../rboot && make build
+
+$(kernel_bin): kernel
+	$(OBJCOPY) $(kernel) --strip-all -O binary $@
 
 clean:
 	cargo clean

@@ -28,4 +28,5 @@ rcore-console = { git = "https://github.com/rcore-os/rcore-console", default-fea
 acpi = "1.1"
 
 [target.'cfg(any(target_arch = "riscv32", target_arch = "riscv64"))'.dependencies]
-riscv = { git = "https://github.com/rcore-os/riscv", features = ["inline-asm"], rev = "c62af46" }
+riscv = { git = "https://github.com/rcore-os/riscv", features = ["inline-asm"], rev = "21e32ee1" }
+

@@ -15,8 +15,9 @@
 
 #![no_std]
 #![feature(asm)]
+#![feature(llvm_asm)]
 #![feature(linkage)]
-#![deny(warnings)]
+//#![deny(warnings)]
 
 #[macro_use]
 extern crate log;

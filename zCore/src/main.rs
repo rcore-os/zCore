@@ -4,34 +4,58 @@
 #![feature(asm)]
 #![feature(panic_info_message)]
 #![deny(unused_must_use)]
+#![feature(global_asm)]
+/*
 #![deny(warnings)] // comment this on develop
+*/
 
 extern crate alloc;
 #[macro_use]
 extern crate log;
-extern crate rlibc_opt;
+extern crate rlibc;
+
+#[cfg(target_arch = "x86_64")]
+extern crate rlibc_opt; //Only for x86_64
 
 #[macro_use]
 mod logging;
 mod lang;
 mod memory;
 
+#[cfg(target_arch = "x86_64")]
 use rboot::BootInfo;
 
+#[cfg(target_arch = "riscv64")]
+use kernel_hal_bare::{BootInfo, GraphicInfo};
+
+use alloc::vec::Vec;
 pub use memory::{hal_frame_alloc, hal_frame_dealloc, hal_pt_map_kernel};
 
+#[cfg(target_arch = "riscv64")]
+global_asm!(include_str!("arch/riscv/boot/entry64.asm"));
+
+#[cfg(target_arch = "x86_64")]
 #[no_mangle]
 pub extern "C" fn _start(boot_info: &BootInfo) -> ! {
     logging::init(get_log_level(boot_info.cmdline));
     memory::init_heap();
     memory::init_frame_allocator(boot_info);
+
     #[cfg(feature = "graphic")]
     init_framebuffer(boot_info);
+
     info!("{:#x?}", boot_info);
+
+    #[cfg(target_arch = "x86_64")]
     kernel_hal_bare::init(kernel_hal_bare::Config {
         acpi_rsdp: boot_info.acpi2_rsdp_addr,
         smbios: boot_info.smbios_addr,
         ap_fn: run,
+    });
+
+    #[cfg(target_arch = "riscv64")]
+    kernel_hal_bare::init(kernel_hal_bare::Config {
+        mconfig: 0,
     });
 
     let ramfs_data = unsafe {
@@ -56,35 +80,86 @@ fn main(ramfs_data: &[u8], cmdline: &str) {
     run();
 }
 
+#[cfg(target_arch = "riscv64")]
+#[no_mangle]
+pub extern "C" fn rust_main() -> ! {
+
+    let boot_info = BootInfo {
+        memory_map: Vec::new(),
+        physical_memory_offset: 0,
+        graphic_info: GraphicInfo{mode: 0, fb_addr: 0, fb_size: 0},
+        acpi2_rsdp_addr: 0,
+        smbios_addr: 0,
+        initramfs_addr: 0,
+        initramfs_size: 0,
+        cmdline: "LOG=debug:TERM=xterm-256color:console.shell=true:virtcon.disable=true",
+    };
+
+    logging::init(get_log_level(boot_info.cmdline));
+    warn!("rust_main(), After logging init\n\n");
+    memory::init_heap();
+    memory::init_frame_allocator(&boot_info);
+
+    #[cfg(feature = "graphic")]
+    init_framebuffer(boot_info);
+
+    info!("{:#x?}", boot_info);
+
+    kernel_hal_bare::init(kernel_hal_bare::Config {
+        mconfig: 0,
+    });
+
+    loop {} //remove me
+
+    let ramfs_data = unsafe {
+        core::slice::from_raw_parts_mut(
+            (boot_info.initramfs_addr + boot_info.physical_memory_offset) as *mut u8,
+            boot_info.initramfs_size as usize,
+        )
+    };
+
+    main(ramfs_data, boot_info.cmdline);
+    unreachable!();
+}
+
 #[cfg(feature = "linux")]
 fn main(ramfs_data: &'static mut [u8], _cmdline: &str) {
     use alloc::boxed::Box;
     use alloc::sync::Arc;
     use alloc::vec;
+    use alloc::string::String;
+
+    /*
     use linux_object::fs::MemBuf;
     use linux_object::fs::STDIN;
+    */
 
     kernel_hal_bare::serial_set_callback(Box::new({
         move || {
             let mut buffer = [0; 255];
             let len = kernel_hal_bare::serial_read(&mut buffer);
             for c in &buffer[..len] {
+                /*
                 STDIN.push((*c).into());
+                */
                 kernel_hal_bare::serial_write(alloc::format!("{}", *c as char).as_str());
             }
             false
         }
     }));
 
-    let args = vec!["/bin/busybox".into(), "sh".into()];
-    let envs = vec!["PATH=/usr/sbin:/usr/bin:/sbin:/bin:/usr/x86_64-alpine-linux-musl/bin".into()];
+    let args: Vec<String> = vec!["/bin/busybox".into(), "sh".into()];
+    let envs: Vec<String> = vec!["PATH=/usr/sbin:/usr/bin:/sbin:/bin:/usr/x86_64-alpine-linux-musl/bin".into()];
 
+    /*
     let device = Arc::new(MemBuf::new(ramfs_data));
     let rootfs = rcore_fs_sfs::SimpleFileSystem::open(device).unwrap();
     let _proc = linux_loader::run(args, envs, rootfs);
     run();
+    */
 }
 
+#[cfg(target_arch = "x86_64")]
 fn run() -> ! {
     loop {
         executor::run_until_idle();
