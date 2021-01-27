@@ -55,7 +55,10 @@ qemu_opts += \
 	-no-reboot \
 	-no-shutdown \
 	-nographic \
+	-drive file=$(QEMU_DISK),format=qcow2,id=sfs \
+	-device virtio-blk-device,drive=sfs \
 	-kernel $(kernel_bin)
+
 endif
 
 ifeq ($(hypervisor), 1)
@@ -113,7 +116,7 @@ $(kernel_img): kernel bootloader
 	mkdir -p $(ESP)/EFI/zCore $(ESP)/EFI/Boot
 	cp ../rboot/target/x86_64-unknown-uefi/release/rboot.efi $(ESP)/EFI/Boot/BootX64.efi
 	cp rboot.conf $(ESP)/EFI/Boot/rboot.conf
-ifeq ($(linux), 1)
+ifeq ($(linux), 1) #root文件系统在里
 	cp x86_64.img $(ESP)/EFI/zCore/fuchsia.zbi
 else ifeq ($(user), 1)
 	make -C ../zircon-user
@@ -168,4 +171,11 @@ endif
 	vboxmanage startvm zCoreVM
 
 $(QEMU_DISK):
-	qemu-img create -f qcow2 $@ 100M
+ifeq ($(arch), riscv64)
+	@echo Generating riscv64 sfsimg
+	@qemu-img convert -f raw ../riscv64.img -O qcow2 $@
+	@qemu-img resize $@ +1G
+else
+	@qemu-img create -f qcow2 $@ 100M
+endif
+

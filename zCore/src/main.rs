@@ -111,6 +111,8 @@ pub extern "C" fn rust_main() -> ! {
 
     loop {} //remove me
 
+    // 挂载virtio-blk-device rootfs
+    //
     let ramfs_data = unsafe {
         core::slice::from_raw_parts_mut(
             (boot_info.initramfs_addr + boot_info.physical_memory_offset) as *mut u8,

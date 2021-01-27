@@ -16,6 +16,7 @@
 #![no_std]
 #![feature(asm)]
 #![feature(llvm_asm)]
+#![feature(global_asm)]
 #![feature(linkage)]
 //#![deny(warnings)]
 

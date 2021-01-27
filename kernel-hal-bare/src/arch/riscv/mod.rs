@@ -260,7 +260,8 @@ pub fn timer_now() -> Duration {
 }
 
 fn clock_set_next_event() {
-    let TIMEBASE: u64 = 100000;
+    //let TIMEBASE: u64 = 100000;
+    let TIMEBASE: u64 = 10_000_000;
     sbi::set_timer(get_cycle() + TIMEBASE);
 }
 
@@ -272,11 +273,20 @@ fn timer_init() {
 }
 
 pub fn init(config: Config) {
-    /*
-    timer_init();
     interrupt::init();
-    serial
+    timer_init();
+
+    /*
+    interrupt::init_soft();
+    sbi::send_ipi(0);
     */
+
+    unsafe{
+        llvm_asm!("ebreak"::::"volatile");
+    }
+
+
+    //serial
 
 }
 
@@ -323,4 +333,7 @@ pub struct GraphicInfo {
     pub fb_size: u64,
 }
 
+mod interrupt;
+mod plic;
+mod uart;
 
