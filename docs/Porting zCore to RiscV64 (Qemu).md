@@ -26,9 +26,29 @@ riscv64初始移植路径按照：<br>
 
 * Rust的条件编译cfg，`#[cfg(target_arch = "x86_64")]`也需要为riscv64实现一份；
 
+* 要让OS能打印，要把串口输出初始化；
+  - 有两种方式：一种是调用opensbi的打印接口，一种是MMIO的方式初始化串口输出；
+  - 然后实现fmt::Write和宏println；
+
+* 关于中断，可通过调用crate riscv，方便的进行指令和寄存器操作；
+* 陷入trap填入riscv64上下文切换的汇编;
+* 初始化S态各种中断，包括时钟中断和plic外部中断，在这里的Qemu和K210开发板会有不同；
+  - K210对指令`rdtime`报错非法指令，且无法通过tval取得指令值，故K210无法通过riscv::register::time::read()读当前时间；Qemu无此问题；
+  - 通过联合opensbi调试，riscv当硬件决定触发时钟中断时，会将sip寄存器的STIP位设置为1；当一条指令执行完毕后，如果发现STIP为1，此时如果sie 的STIE位也为1，会进入S态时钟中断的处理程序；
+  - 当在M态不进行时钟中断委派到S态时，Qemu的M态可接收到S态时钟中断；
+  - K210的M态无法收到S态中断，时钟中断和软件中断可以委派到S态来收, 而PLIC外部中断即使委派了也不行, 真是大坑! 同时也要感谢前面童鞋踩过坑的提示；
+
+* Plic外部中断是uart串口输出和virtio-blk-device加载文件系统的关键部分；
+
+ 
+
 由Qemu启动opensbi，装载kernel并引导_start函数，初始化日志log打印，物理内存初始化，进入硬件初始化；
 
 
+后以slice的方式载入ramfs文件系统到内存指定地址，打开该SimpleFileSystem的文件系统并通过linux_loader调用用户程序busybox执行；
+
+移植未完...
+系统运行效果演示：
 
 
 在移植过程中，得到老师和童鞋们的很多帮助！感谢！
