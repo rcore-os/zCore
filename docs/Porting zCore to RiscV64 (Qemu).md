@@ -30,6 +30,8 @@
 * 要让OS能打印，要把串口输出初始化；
   - 有两种方式：一种是调用opensbi的打印接口，一种是MMIO的方式初始化串口输出；
   - 然后实现fmt::Write和宏println；
+<br><br>
+
 
 * 关于中断，可通过调用crate riscv，方便的进行指令和寄存器操作；
 * 陷入trap填入riscv64上下文切换的汇编;
@@ -58,17 +60,15 @@
 * 由Qemu启动opensbi，装载kernel并引导_start函数，初始化日志log打印，物理内存初始化，进入硬件初始化；
 * 后以slice的方式载入ramfs文件系统到内存指定地址，打开该SimpleFileSystem的文件系统并通过linux_loader调用用户程序busybox执行；
 
-解析由rcore-fs-fuse生成的Simple FileSystem，通过SimpleFileSystem::open()来打开内存中的文件系统，读取文件和目录；
-最后通过linux_loader::run busybox sh
+* 解析由rcore-fs-fuse生成的Simple FileSystem，通过SimpleFileSystem::open()来打开内存中的文件系统，读取文件和目录；
+* 最后通过linux_loader::run busybox sh
 
+* 之前这部分工作由uefi bootloader的rboot把initramfs放到内存的指定地址；
+* 内存要初始化好，这里使用Qemu的virtio块设备，故也需要初始化好；
 
-之前这部分工作由uefi bootloader的rboot把initramfs放到内存的指定地址；
-内存要初始化好，这里使用Qemu的virtio块设备，故也需要初始化好；
-
-
-文件系统初始化的地方； 
-移植未完...
-系统运行效果演示：
+ 
+移植未完...<br>
+系统运行效果演示：<br>
 
 
 在移植过程中，得到老师和童鞋们的很多帮助！感谢！
