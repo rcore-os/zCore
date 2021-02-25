@@ -1,29 +1,30 @@
 # Porting zCore to RiscV64 (Qemu)
 
-### zCore系统结构
+### zCore系统结构<br>
 ![](./structure.svg)
 
-riscv64初始移植路径按照：<br>
+### riscv64初始移植路径<br>
+按照：<br>
 |Qemu riscv64|-|kernel-hal-bare|-|kernel-hal|-|zircon-object/ linux-object|-|linux-syscall|-|linux-loader|-|busybox|
 |-|-|-|-|-|-|-|-|-|-|-|-|-|
 
+### 实现思路
 
 * 分析Makefile的结构，弄清楚包括编译和运行的命令执行流；
-* 结合Qemu virt和opensbi以及编译出所需文件格式的kernel，执行过程写入Makefile；
-
+* 结合Qemu virt和opensbi以及编译出所需文件格式的kernel，也包括用户文件系统生成由x86_64到riscv64，这些命令过程写入Makefile；
 * 分析Cargo.toml的结构，理解各个features和依赖库crates的关系，如有些是可选的；
+<br><br>
 * 创建关于riscv64的Rust target-spec-json编译目标规格描述.json
 * 创建riscv64对应的链接脚本.ld以及启动入口汇编.asm
-
 * 重要的修改部分在kernel-hal-bare，arch下添加riscv架构，包括硬件初始化和对opensbi接口调用的封装；
+<br><br>
 
-* 先定一个小目标，让OS跑起来打印初始一段字符；
+* 先定一个小目标，让OS跑起来打印初始一段字符
 * 这时会有大量的编译错误提示，需要解决，Rust错误提示很详细，会建议如何来修正：
   - 报错可能来自多个方面，包括：riscv64在Cargo.toml中的依赖库，非必需的crates先关掉，添加架构相关所需要的；
   - kernel-hal-bare中缺失的待实现的接口，可见kernel-hal中的定义；参考了arch/x86_64的函数；
   - 与target_arch由x86_64移植到riscv64的cfg，其相关的函数或变量需在代码中补上；
   - 变量及函数的作用范围等需要注意
-
 * Rust的条件编译cfg，`#[cfg(target_arch = "x86_64")]`也需要为riscv64实现一份；
 
 * 要让OS能打印，要把串口输出初始化；
@@ -57,6 +58,15 @@ riscv64初始移植路径按照：<br>
 * 由Qemu启动opensbi，装载kernel并引导_start函数，初始化日志log打印，物理内存初始化，进入硬件初始化；
 * 后以slice的方式载入ramfs文件系统到内存指定地址，打开该SimpleFileSystem的文件系统并通过linux_loader调用用户程序busybox执行；
 
+解析由rcore-fs-fuse生成的Simple FileSystem，通过SimpleFileSystem::open()来打开内存中的文件系统，读取文件和目录；
+最后通过linux_loader::run busybox sh
+
+
+之前这部分工作由uefi bootloader的rboot把initramfs放到内存的指定地址；
+内存要初始化好，这里使用Qemu的virtio块设备，故也需要初始化好；
+
+
+文件系统初始化的地方； 
 移植未完...
 系统运行效果演示：
 
