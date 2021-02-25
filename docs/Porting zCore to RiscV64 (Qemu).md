@@ -38,14 +38,24 @@ riscv64初始移植路径按照：<br>
   - 当在M态不进行时钟中断委派到S态时，Qemu的M态可接收到S态时钟中断；
   - K210的M态无法收到S态中断，时钟中断和软件中断可以委派到S态来收, 而PLIC外部中断即使委派了也不行, 真是大坑! 同时也要感谢前面童鞋踩过坑的提示；
 
-* Plic外部中断是uart串口输出和virtio-blk-device加载文件系统的关键部分；
+* PLIC外部中断是uart串口输出和virtio-blk-device加载文件系统的关键部分；
+  - Qemu UART0_IRQ=10, K210的串口ID为33；
+  - 通过MMIO地址对平台级中断控制器PLIC的寄存器进行设置：设置中断源的优先级，分0～7级，7是最高级；设置中断target的全局阀值［0..7]， <= threshold会被屏蔽；
+  - 使能target中某个给定ID的中断，中断ID可查找qemu/include/hw/riscv/virt.h；注意一个核的不同权限模式是不同Target，算出的Target不同则操作的地址也不同，跨步0x80；
 
- 
+|Target:| 0 | 1 | 2 | | 3 | 4 | 5 |
+|-|-|-|-|-|-|-|-|
+|Hart0:| M | S | U | Hart1:| M | S | U |
 
-由Qemu启动opensbi，装载kernel并引导_start函数，初始化日志log打印，物理内存初始化，进入硬件初始化；
+这里基于opensbi后一般运行于Hart0 S态，故为Target1
 
+* PLIC中断初始化完成后，初始化串口中断，Qemu virt串口基地址是0x1000_0000，而K210是0x38000000；
+- 串口中断处理函数，在每个字符从键盘输入时，输出打印出来；
 
-后以slice的方式载入ramfs文件系统到内存指定地址，打开该SimpleFileSystem的文件系统并通过linux_loader调用用户程序busybox执行；
+* 接着处理虚拟内存和文件系统
+
+* 由Qemu启动opensbi，装载kernel并引导_start函数，初始化日志log打印，物理内存初始化，进入硬件初始化；
+* 后以slice的方式载入ramfs文件系统到内存指定地址，打开该SimpleFileSystem的文件系统并通过linux_loader调用用户程序busybox执行；
 
 移植未完...
 系统运行效果演示：
