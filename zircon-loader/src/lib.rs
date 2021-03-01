@@ -1,6 +1,5 @@
 #![no_std]
 #![feature(asm)]
-#![feature(global_asm)]
 #![deny(warnings, unused_must_use)]
 
 #[macro_use]

@@ -1,4 +1,4 @@
-#![feature(asm, global_asm)]
+#![feature(asm)]
 #![feature(linkage)]
 #![deny(warnings)]
 

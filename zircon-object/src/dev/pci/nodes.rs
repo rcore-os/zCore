@@ -33,16 +33,18 @@ pub struct PcieUpstream {
 
 struct PcieUpstreamInner {
     weak_super: Weak<dyn IPciNode>,
-    downstream: [Option<Arc<dyn IPciNode>>; PCI_MAX_FUNCTIONS_PER_BUS],
+    downstream: Vec<Option<Arc<dyn IPciNode>>>,
 }
 
 impl PcieUpstream {
     pub fn create(managed_bus_id: usize) -> Arc<Self> {
+        let mut downstream = Vec::new();
+        downstream.resize(PCI_MAX_FUNCTIONS_PER_BUS, None);
         Arc::new(PcieUpstream {
             managed_bus_id,
             inner: Mutex::new(PcieUpstreamInner {
                 weak_super: Weak::<PciRoot>::new(),
-                downstream: [None; PCI_MAX_FUNCTIONS_PER_BUS],
+                downstream,
             }),
         })
     }
@@ -143,8 +145,8 @@ impl PcieUpstream {
         }
         self.inner.lock().downstream[index].clone()
     }
-    pub fn set_downstream(&self, ind: usize, down: Option<Arc<dyn IPciNode>>) {
-        self.inner.lock().downstream[ind] = down;
+    pub fn set_downstream(&self, index: usize, down: Option<Arc<dyn IPciNode>>) {
+        self.inner.lock().downstream[index] = down;
     }
 
     pub fn set_super(&self, weak_super: Weak<dyn IPciNode>) {

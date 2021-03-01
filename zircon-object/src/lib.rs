@@ -13,7 +13,6 @@
 #![feature(get_mut_unchecked)]
 #![feature(naked_functions)]
 #![feature(new_uninit)]
-#![feature(const_in_array_repeat_expressions)]
 
 extern crate alloc;
 
