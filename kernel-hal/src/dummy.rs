@@ -10,6 +10,13 @@ use core::time::Duration;
 
 type ThreadId = usize;
 
+/// The error type which is returned from HAL functions.
+#[derive(Debug)]
+pub struct HalError;
+
+/// The result type returned by HAL functions.
+pub type Result<T> = core::result::Result<T, HalError>;
+
 #[repr(C)]
 pub struct Thread {
     id: ThreadId,
@@ -49,16 +56,16 @@ pub fn context_run(_context: &mut UserContext) {
 
 pub trait PageTableTrait: Sync + Send {
     /// Map the page of `vaddr` to the frame of `paddr` with `flags`.
-    fn map(&mut self, _vaddr: VirtAddr, _paddr: PhysAddr, _flags: MMUFlags) -> Result<(), ()>;
+    fn map(&mut self, _vaddr: VirtAddr, _paddr: PhysAddr, _flags: MMUFlags) -> Result<()>;
 
     /// Unmap the page of `vaddr`.
-    fn unmap(&mut self, _vaddr: VirtAddr) -> Result<(), ()>;
+    fn unmap(&mut self, _vaddr: VirtAddr) -> Result<()>;
 
     /// Change the `flags` of the page of `vaddr`.
-    fn protect(&mut self, _vaddr: VirtAddr, _flags: MMUFlags) -> Result<(), ()>;
+    fn protect(&mut self, _vaddr: VirtAddr, _flags: MMUFlags) -> Result<()>;
 
     /// Query the physical address which the page of `vaddr` maps to.
-    fn query(&mut self, _vaddr: VirtAddr) -> Result<PhysAddr, ()>;
+    fn query(&mut self, _vaddr: VirtAddr) -> Result<PhysAddr>;
 
     /// Get the physical address of root page table.
     fn table_phys(&self) -> PhysAddr;
@@ -68,7 +75,7 @@ pub trait PageTableTrait: Sync + Send {
         mut vaddr: VirtAddr,
         paddrs: &[PhysAddr],
         flags: MMUFlags,
-    ) -> Result<(), ()> {
+    ) -> Result<()> {
         for &paddr in paddrs {
             self.map(vaddr, paddr, flags)?;
             vaddr += PAGE_SIZE;
@@ -82,7 +89,7 @@ pub trait PageTableTrait: Sync + Send {
         paddr: PhysAddr,
         pages: usize,
         flags: MMUFlags,
-    ) -> Result<(), ()> {
+    ) -> Result<()> {
         for i in 0..pages {
             let paddr = paddr + i * PAGE_SIZE;
             self.map(vaddr, paddr, flags)?;
@@ -91,7 +98,7 @@ pub trait PageTableTrait: Sync + Send {
         Ok(())
     }
 
-    fn unmap_cont(&mut self, vaddr: VirtAddr, pages: usize) -> Result<(), ()> {
+    fn unmap_cont(&mut self, vaddr: VirtAddr, pages: usize) -> Result<()> {
         for i in 0..pages {
             self.unmap(vaddr + i * PAGE_SIZE)?;
         }
@@ -126,25 +133,25 @@ impl PageTableTrait for PageTable {
     /// Map the page of `vaddr` to the frame of `paddr` with `flags`.
     #[linkage = "weak"]
     #[export_name = "hal_pt_map"]
-    fn map(&mut self, _vaddr: VirtAddr, _paddr: PhysAddr, _flags: MMUFlags) -> Result<(), ()> {
+    fn map(&mut self, _vaddr: VirtAddr, _paddr: PhysAddr, _flags: MMUFlags) -> Result<()> {
         unimplemented!()
     }
     /// Unmap the page of `vaddr`.
     #[linkage = "weak"]
     #[export_name = "hal_pt_unmap"]
-    fn unmap(&mut self, _vaddr: VirtAddr) -> Result<(), ()> {
+    fn unmap(&mut self, _vaddr: VirtAddr) -> Result<()> {
         unimplemented!()
     }
     /// Change the `flags` of the page of `vaddr`.
     #[linkage = "weak"]
     #[export_name = "hal_pt_protect"]
-    fn protect(&mut self, _vaddr: VirtAddr, _flags: MMUFlags) -> Result<(), ()> {
+    fn protect(&mut self, _vaddr: VirtAddr, _flags: MMUFlags) -> Result<()> {
         unimplemented!()
     }
     /// Query the physical address which the page of `vaddr` maps to.
     #[linkage = "weak"]
     #[export_name = "hal_pt_query"]
-    fn query(&mut self, _vaddr: VirtAddr) -> Result<PhysAddr, ()> {
+    fn query(&mut self, _vaddr: VirtAddr) -> Result<PhysAddr> {
         unimplemented!()
     }
     /// Get the physical address of root page table.
@@ -155,7 +162,7 @@ impl PageTableTrait for PageTable {
     }
     #[linkage = "weak"]
     #[export_name = "hal_pt_unmap_cont"]
-    fn unmap_cont(&mut self, vaddr: VirtAddr, pages: usize) -> Result<(), ()> {
+    fn unmap_cont(&mut self, vaddr: VirtAddr, pages: usize) -> Result<()> {
         for i in 0..pages {
             self.unmap(vaddr + i * PAGE_SIZE)?;
         }

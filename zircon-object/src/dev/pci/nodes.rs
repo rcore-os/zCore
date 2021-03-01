@@ -1023,7 +1023,7 @@ impl PcieDevice {
         cfg.write16_(data_reg as usize, target_data as u16);
     }
     fn set_msi_multi_message_enb(&self, inner: &MutexGuard<PcieDeviceInner>, irq_num: u32) {
-        assert!(1 <= irq_num && irq_num <= PCIE_MAX_MSI_IRQS);
+        assert!((1..=PCIE_MAX_MSI_IRQS).contains(&irq_num));
         let log2 = u32::next_power_of_two(irq_num).trailing_zeros();
         assert!(log2 <= 5);
         let cfg = self.cfg.as_ref().unwrap();

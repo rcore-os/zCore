@@ -44,13 +44,13 @@ make rootfs
 Run native Linux program (Busybox):
 
 ```sh
-cargo run --release -p linux-loader /bin/busybox [args]
+cargo run --release -p linux-loader -- /bin/busybox [args]
 ```
 
 Run native Zircon program (shell):
 
 ```sh
-cargo run --release -p zircon-loader prebuilt/zircon/x64
+cargo run --release -p zircon-loader -- prebuilt/zircon/x64
 ```
 
 Run Linux shell on bare-metal (zCore):

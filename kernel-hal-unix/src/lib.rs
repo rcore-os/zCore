@@ -87,7 +87,7 @@ impl PageTable {
 impl PageTableTrait for PageTable {
     /// Map the page of `vaddr` to the frame of `paddr` with `flags`.
     #[export_name = "hal_pt_map"]
-    fn map(&mut self, vaddr: VirtAddr, paddr: PhysAddr, flags: MMUFlags) -> Result<(), ()> {
+    fn map(&mut self, vaddr: VirtAddr, paddr: PhysAddr, flags: MMUFlags) -> Result<()> {
         debug_assert!(page_aligned(vaddr));
         debug_assert!(page_aligned(paddr));
         let prot = flags.to_mmap_prot();
@@ -97,13 +97,13 @@ impl PageTableTrait for PageTable {
 
     /// Unmap the page of `vaddr`.
     #[export_name = "hal_pt_unmap"]
-    fn unmap(&mut self, vaddr: VirtAddr) -> Result<(), ()> {
+    fn unmap(&mut self, vaddr: VirtAddr) -> Result<()> {
         self.unmap_cont(vaddr, 1)
     }
 
     /// Change the `flags` of the page of `vaddr`.
     #[export_name = "hal_pt_protect"]
-    fn protect(&mut self, vaddr: VirtAddr, flags: MMUFlags) -> Result<(), ()> {
+    fn protect(&mut self, vaddr: VirtAddr, flags: MMUFlags) -> Result<()> {
         debug_assert!(page_aligned(vaddr));
         let prot = flags.to_mmap_prot();
         let ret = unsafe { libc::mprotect(vaddr as _, PAGE_SIZE, prot) };
@@ -113,7 +113,7 @@ impl PageTableTrait for PageTable {
 
     /// Query the physical address which the page of `vaddr` maps to.
     #[export_name = "hal_pt_query"]
-    fn query(&mut self, vaddr: VirtAddr) -> Result<PhysAddr, ()> {
+    fn query(&mut self, vaddr: VirtAddr) -> Result<PhysAddr> {
         debug_assert!(page_aligned(vaddr));
         unimplemented!()
     }
@@ -125,7 +125,7 @@ impl PageTableTrait for PageTable {
     }
 
     #[export_name = "hal_pt_unmap_cont"]
-    fn unmap_cont(&mut self, vaddr: VirtAddr, pages: usize) -> Result<(), ()> {
+    fn unmap_cont(&mut self, vaddr: VirtAddr, pages: usize) -> Result<()> {
         if pages == 0 {
             return Ok(());
         }
@@ -142,7 +142,7 @@ pub struct PhysFrame {
 }
 
 impl Debug for PhysFrame {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::result::Result<(), std::fmt::Error> {
         write!(f, "PhysFrame({:#x})", self.paddr)
     }
 }
@@ -179,7 +179,7 @@ impl Drop for PhysFrame {
 
 fn phys_to_virt(paddr: PhysAddr) -> VirtAddr {
     /// Map physical memory from here.
-    const PMEM_BASE: VirtAddr = 0x8_00000000;
+    const PMEM_BASE: VirtAddr = 0x8_0000_0000;
 
     PMEM_BASE + paddr
 }
@@ -247,7 +247,7 @@ fn page_aligned(x: VirtAddr) -> bool {
     x % PAGE_SIZE == 0
 }
 
-const PMEM_SIZE: usize = 0x400_00000; // 1GiB
+const PMEM_SIZE: usize = 0x4000_0000; // 1GiB
 
 lazy_static! {
     static ref FRAME_FILE: File = create_pmem_file();
@@ -302,11 +302,11 @@ fn mmap(fd: libc::c_int, offset: usize, len: usize, vaddr: VirtAddr, prot: libc:
 }
 
 trait FlagsExt {
-    fn to_mmap_prot(self) -> libc::c_int;
+    fn to_mmap_prot(&self) -> libc::c_int;
 }
 
 impl FlagsExt for MMUFlags {
-    fn to_mmap_prot(self) -> libc::c_int {
+    fn to_mmap_prot(&self) -> libc::c_int {
         let mut flags = 0;
         if self.contains(MMUFlags::READ) {
             flags |= libc::PROT_READ;

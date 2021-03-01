@@ -67,7 +67,7 @@ impl VmAddressRegion {
             use core::sync::atomic::*;
             static VMAR_ID: AtomicUsize = AtomicUsize::new(0);
             let i = VMAR_ID.fetch_add(1, Ordering::SeqCst);
-            (0x2_00000000 + 0x100_00000000 * i, 0x100_00000000)
+            (0x2_0000_0000 + 0x100_0000_0000 * i, 0x100_0000_0000)
         };
         #[cfg(not(feature = "aspace-separate"))]
         let (addr, size) = (USER_ASPACE_BASE as usize, USER_ASPACE_SIZE as usize);

@@ -2,8 +2,11 @@
 
 extern crate log;
 
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use {std::path::PathBuf, structopt::StructOpt, zircon_loader::*, zircon_object::object::*};
+use structopt::StructOpt;
+use zircon_loader::*;
+use zircon_object::object::*;
 
 #[derive(Debug, StructOpt)]
 #[structopt()]
@@ -29,7 +32,7 @@ async fn main() {
     proc.wait_signal(Signal::USER_SIGNAL_0).await;
 }
 
-fn open_images(path: &PathBuf) -> std::io::Result<Images<Vec<u8>>> {
+fn open_images(path: &Path) -> std::io::Result<Images<Vec<u8>>> {
     Ok(Images {
         userboot: std::fs::read(path.join("userboot-libos.so"))?,
         vdso: std::fs::read(path.join("libzircon-libos.so"))?,

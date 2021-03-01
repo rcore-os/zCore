@@ -88,15 +88,15 @@ impl TryFrom<&str> for FileDesc {
     }
 }
 
-impl Into<usize> for FileDesc {
-    fn into(self) -> usize {
-        self.0 as _
+impl From<FileDesc> for usize {
+    fn from(f: FileDesc) -> Self {
+        f.0 as _
     }
 }
 
-impl Into<i32> for FileDesc {
-    fn into(self) -> i32 {
-        self.0
+impl From<FileDesc> for i32 {
+    fn from(f: FileDesc) -> Self {
+        f.0
     }
 }
 
@@ -221,7 +221,7 @@ pub fn split_path(path: &str) -> (&str, &str) {
     let mut split = path.trim_end_matches('/').rsplitn(2, '/');
     let file_name = split.next().unwrap();
     let mut dir_path = split.next().unwrap_or(".");
-    if dir_path == "" {
+    if dir_path.is_empty() {
         dir_path = "/";
     }
     (dir_path, file_name)
