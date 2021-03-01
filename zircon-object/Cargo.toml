@@ -25,7 +25,7 @@ xmas-elf = { version = "0.7", optional = true }
 region-alloc = { git = "https://github.com/rzswh/region-allocator", rev = "122c7a71" }
 lazy_static = { version = "1.4", features = ["spin_no_std" ] }
 acpi = "1.1"
-rvm = { git = "https://github.com/rcore-os/RVM", rev = "e91d625", optional = true }
+rvm = { git = "https://github.com/rcore-os/RVM", rev = "382fc60", optional = true }
 
 [dev-dependencies]
 kernel-hal-unix = { path = "../kernel-hal-unix" }

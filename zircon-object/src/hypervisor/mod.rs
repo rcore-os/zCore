@@ -4,7 +4,7 @@ mod guest;
 mod vcpu;
 
 use super::ZxError;
-use kernel_hal::{MMUFlags, PageTableTrait};
+use kernel_hal::{HalError, MMUFlags, PageTableTrait, Result};
 use rvm::{
     ArchRvmPageTable, GuestPhysAddr, HostPhysAddr, IntoRvmPageTableFlags, RvmError, RvmPageTable,
 };
@@ -57,29 +57,24 @@ impl VmmPageTable {
 }
 
 impl PageTableTrait for VmmPageTable {
-    fn map(
-        &mut self,
-        gpaddr: GuestPhysAddr,
-        hpaddr: HostPhysAddr,
-        flags: MMUFlags,
-    ) -> Result<(), ()> {
+    fn map(&mut self, gpaddr: GuestPhysAddr, hpaddr: HostPhysAddr, flags: MMUFlags) -> Result<()> {
         self.0
             .map(gpaddr, hpaddr, VmmPageTableFlags(flags))
-            .map_err(|_| ())
+            .map_err(|_| HalError)
     }
 
-    fn unmap(&mut self, gpaddr: GuestPhysAddr) -> Result<(), ()> {
-        self.0.unmap(gpaddr).map_err(|_| ())
+    fn unmap(&mut self, gpaddr: GuestPhysAddr) -> Result<()> {
+        self.0.unmap(gpaddr).map_err(|_| HalError)
     }
 
-    fn protect(&mut self, gpaddr: GuestPhysAddr, flags: MMUFlags) -> Result<(), ()> {
+    fn protect(&mut self, gpaddr: GuestPhysAddr, flags: MMUFlags) -> Result<()> {
         self.0
             .protect(gpaddr, VmmPageTableFlags(flags))
-            .map_err(|_| ())
+            .map_err(|_| HalError)
     }
 
-    fn query(&mut self, gpaddr: GuestPhysAddr) -> Result<HostPhysAddr, ()> {
-        self.0.query(gpaddr).map_err(|_| ())
+    fn query(&mut self, gpaddr: GuestPhysAddr) -> Result<HostPhysAddr> {
+        self.0.query(gpaddr).map_err(|_| HalError)
     }
 
     fn table_phys(&self) -> HostPhysAddr {
