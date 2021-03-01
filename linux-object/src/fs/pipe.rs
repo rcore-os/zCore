@@ -145,7 +145,7 @@ impl INode for Pipe {
         #[must_use = "future does nothing unless polled/`await`-ed"]
         struct PipeFuture<'a> {
             pipe: &'a Pipe,
-        };
+        }
 
         impl<'a> Future for PipeFuture<'a> {
             type Output = Result<PollStatus>;

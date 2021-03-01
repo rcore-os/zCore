@@ -9,7 +9,7 @@ description = "Kernel HAL implementation for bare metal environment."
 
 [dependencies]
 log = "0.4"
-spin = "0.5"
+spin = "0.7"
 git-version = "0.3"
 executor = { git = "https://github.com/rcore-os/executor.git", rev = "a2d02ee9" }
 trapframe = "0.7.0"
@@ -20,7 +20,7 @@ lazy_static = { version = "1.4", features = ["spin_no_std" ] }
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 x86_64 = "0.13.2"
 uart_16550 = "=0.2.12"
-raw-cpuid = "8.0"
+raw-cpuid = "9.0"
 pc-keyboard = "0.5"
 apic = { git = "https://github.com/rcore-os/apic-rs", rev = "fb86bd7" }
 x86-smpboot = { git = "https://github.com/rcore-os/x86-smpboot", rev = "43ffedf" }

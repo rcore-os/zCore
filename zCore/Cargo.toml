@@ -17,8 +17,8 @@ lto = true
 
 [dependencies]
 log = "0.4"
-spin = "0.5"
-buddy_system_allocator = "0.5.0"
+spin = "0.7"
+buddy_system_allocator = "0.7"
 rlibc-opt = { git = "https://github.com/rcore-os/rlibc-opt.git", rev = "0ab1d1e" }
 rboot = { path = "../rboot", default-features = false }
 kernel-hal-bare = { path = "../kernel-hal-bare" }

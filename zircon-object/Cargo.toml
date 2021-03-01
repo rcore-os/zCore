@@ -14,9 +14,9 @@ hypervisor = ["rvm"]
 
 [dependencies]
 bitflags = "1.2"
-spin = "0.5"
+spin = "0.7"
 log = "0.4"
-hashbrown = "0.7"
+hashbrown = "0.9"
 downcast-rs = { version = "1.2", default-features = false }
 kernel-hal = { path = "../kernel-hal" }
 numeric-enum-macro = "0.2"
@@ -29,4 +29,4 @@ rvm = { git = "https://github.com/rcore-os/RVM", rev = "e91d625", optional = tru
 
 [dev-dependencies]
 kernel-hal-unix = { path = "../kernel-hal-unix" }
-async-std = { version = "1.6", features = ["attributes", "unstable"] }
+async-std = { version = "1.9", features = ["attributes", "unstable"] }
