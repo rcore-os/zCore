@@ -7,7 +7,7 @@ use rcore_fs::vfs::*;
 
 /// TimeSpec struct for clock_gettime, similar to Timespec
 #[repr(C)]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Default)]
 pub struct TimeSpec {
     /// seconds
     pub sec: usize,
@@ -17,7 +17,7 @@ pub struct TimeSpec {
 
 /// TimeVal struct for gettimeofday
 #[repr(C)]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Default)]
 pub struct TimeVal {
     /// seconds
     pub sec: usize,
@@ -65,39 +65,27 @@ impl TimeSpec {
     }
 }
 
-impl Into<Timespec> for TimeSpec {
-    fn into(self) -> Timespec {
+impl From<TimeSpec> for Timespec {
+    fn from(t: TimeSpec) -> Self {
         Timespec {
-            sec: self.sec as i64,
-            nsec: self.nsec as i32,
+            sec: t.sec as i64,
+            nsec: t.nsec as i32,
         }
     }
 }
 
-impl Into<Duration> for TimeSpec {
-    fn into(self) -> Duration {
-        Duration::new(self.sec as u64, self.nsec as u32)
+impl From<TimeSpec> for Duration {
+    fn from(t: TimeSpec) -> Self {
+        Duration::new(t.sec as u64, t.nsec as u32)
     }
 }
 
-impl Into<TimeVal> for TimeSpec {
-    fn into(self) -> TimeVal {
+impl From<TimeSpec> for TimeVal {
+    fn from(t: TimeSpec) -> Self {
         TimeVal {
-            sec: self.sec,
-            usec: self.nsec / 1_000 as usize,
+            sec: t.sec,
+            usec: t.nsec / 1_000,
         }
-    }
-}
-
-impl Default for TimeVal {
-    fn default() -> Self {
-        TimeVal { sec: 0, usec: 0 }
-    }
-}
-
-impl Default for TimeSpec {
-    fn default() -> Self {
-        TimeSpec { sec: 0, nsec: 0 }
     }
 }
 

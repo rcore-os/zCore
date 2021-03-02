@@ -7,7 +7,7 @@ pub const SIG_IGN: usize = 1;
 
 /// Linux struct sigset_t
 ///
-/// yet there's a bug because of mismatching bits: https://sourceware.org/bugzilla/show_bug.cgi?id=25657
+/// yet there's a bug because of mismatching bits: <https://sourceware.org/bugzilla/show_bug.cgi?id=25657>
 /// just support 64bits size sigset
 #[derive(Default, Clone, Copy, Debug)]
 #[repr(C)]

@@ -5,7 +5,7 @@ fn amount_of_alignments(options: u32) -> ZxResult<usize> {
     if align_pow2 == 0 {
         align_pow2 = PAGE_SIZE_LOG2;
     }
-    if (align_pow2 < PAGE_SIZE_LOG2) || (align_pow2 > 32) {
+    if !(PAGE_SIZE_LOG2..=32).contains(&align_pow2) {
         Err(ZxError::INVALID_ARGS)
     } else {
         Ok(1 << align_pow2)

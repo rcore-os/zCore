@@ -9,7 +9,7 @@ use {
     core::ptr::NonNull,
     core::time::Duration,
     git_version::git_version,
-    kernel_hal::PageTableTrait,
+    kernel_hal::{Result, HalError, PageTableTrait},
     rcore_console::{Console, ConsoleOnGraphic, DrawTarget, Pixel, Rgb888, Size},
     spin::Mutex,
     uart_16550::SerialPort,
@@ -64,7 +64,7 @@ impl PageTableImpl {
 impl PageTableTrait for PageTableImpl {
     /// Map the page of `vaddr` to the frame of `paddr` with `flags`.
     #[export_name = "hal_pt_map"]
-    fn map(&mut self, vaddr: VirtAddr, paddr: PhysAddr, flags: MMUFlags) -> Result<(), ()> {
+    fn map(&mut self, vaddr: VirtAddr, paddr: PhysAddr, flags: MMUFlags) -> Result<()> {
         let mut pt = self.get();
         unsafe {
             pt.map_to_with_table_flags(
@@ -89,7 +89,7 @@ impl PageTableTrait for PageTableImpl {
 
     /// Unmap the page of `vaddr`.
     #[export_name = "hal_pt_unmap"]
-    fn unmap(&mut self, vaddr: VirtAddr) -> Result<(), ()> {
+    fn unmap(&mut self, vaddr: VirtAddr) -> Result<()> {
         let mut pt = self.get();
         let page =
             Page::<Size4KiB>::from_start_address(x86_64::VirtAddr::new(vaddr as u64)).unwrap();
@@ -113,7 +113,7 @@ impl PageTableTrait for PageTableImpl {
                     "unmap failed: {:x?} err={:x?} in {:#x?}",
                     vaddr, err, self.root_paddr
                 );
-                return Err(());
+                return Err(HalError);
             }
         }
         Ok(())
@@ -121,7 +121,7 @@ impl PageTableTrait for PageTableImpl {
 
     /// Change the `flags` of the page of `vaddr`.
     #[export_name = "hal_pt_protect"]
-    fn protect(&mut self, vaddr: VirtAddr, flags: MMUFlags) -> Result<(), ()> {
+    fn protect(&mut self, vaddr: VirtAddr, flags: MMUFlags) -> Result<()> {
         let mut pt = self.get();
         let page =
             Page::<Size4KiB>::from_start_address(x86_64::VirtAddr::new(vaddr as u64)).unwrap();
@@ -134,11 +134,11 @@ impl PageTableTrait for PageTableImpl {
 
     /// Query the physical address which the page of `vaddr` maps to.
     #[export_name = "hal_pt_query"]
-    fn query(&mut self, vaddr: VirtAddr) -> Result<PhysAddr, ()> {
+    fn query(&mut self, vaddr: VirtAddr) -> Result<PhysAddr> {
         let pt = self.get();
         let ret = pt
             .translate_addr(x86_64::VirtAddr::new(vaddr as u64))
-            .map(|addr| addr.as_u64() as PhysAddr).ok_or(());
+            .map(|addr| addr.as_u64() as PhysAddr).ok_or(HalError);
         trace!("query: {:x?} => {:x?}", vaddr, ret);
         ret
     }
@@ -236,7 +236,7 @@ struct Framebuffer {
 impl DrawTarget<Rgb888> for Framebuffer {
     type Error = core::convert::Infallible;
 
-    fn draw_pixel(&mut self, item: Pixel<Rgb888>) -> Result<(), Self::Error> {
+    fn draw_pixel(&mut self, item: Pixel<Rgb888>) -> core::result::Result<(), Self::Error> {
         let idx = (item.0.x as u32 + item.0.y as u32 * self.width) as usize;
         self.buf[idx] = unsafe { core::mem::transmute(item.1) };
         Ok(())

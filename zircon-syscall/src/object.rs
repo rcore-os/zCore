@@ -305,8 +305,10 @@ impl Syscall<'_> {
             }
             Topic::KmemStats => {
                 let mut info_ptr = UserOutPtr::<KmemInfo>::from_addr_size(buffer, buffer_size)?;
-                let mut kmem = KmemInfo::default();
-                kmem.vmo_bytes = vmo_page_bytes() as u64;
+                let kmem = KmemInfo {
+                    vmo_bytes: vmo_page_bytes() as u64,
+                    ..Default::default()
+                };
                 info_ptr.write(kmem)?;
             }
             Topic::TaskStats => {
