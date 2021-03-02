@@ -69,7 +69,7 @@ impl CurrentThreadExt for CurrentThread {
 /// Linux specific thread information.
 pub struct LinuxThread {
     /// Kernel performs futex wake when thread exits.
-    /// Ref: [http://man7.org/linux/man-pages/man2/set_tid_address.2.html]
+    /// Ref: <http://man7.org/linux/man-pages/man2/set_tid_address.2.html>
     clear_child_tid: UserOutPtr<i32>,
     /// Signal mask
     pub signal_mask: Sigset,

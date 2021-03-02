@@ -23,7 +23,7 @@ for path in glob.glob("../rootfs/libc-test/src/*/*.exe"):
     if path.endswith('-static.exe'):
         continue
     try:
-        subprocess.run("cd .. && cargo run --release -p linux-loader " + path,
+        subprocess.run("cd .. && cargo run --release -p linux-loader -- " + path,
                        shell=True, timeout=TIMEOUT, check=True)
         passed.add(path)
     except subprocess.CalledProcessError:
