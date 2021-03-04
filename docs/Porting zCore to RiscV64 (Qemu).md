@@ -1,5 +1,18 @@
 # Porting zCore to RiscV64 (Qemu)
 
+### 2021-03-04
+<br>之前的内存部分，使用的比较简单的页表映射大页的方式；
+<br>在加载Qemu文件系统镜像到内存中解开时使用，就需要对虚拟内存、virtio-blk-device以及SimpleFileSystem完全初始化好；
+<br>其中有些可以比较方便地调用crate库；
+
+<br>对中间抽象层kernel-hal的内存操作相关函数的实现：
+* PageTable 新建页表或获取页表;
+* trait PageTableTrait，从虚拟地址到物理地址的映射、查询等;
+* hal_frame_alloc物理帧实现；
+* pmem_write/read物理地址访问;
+
+
+
 ### zCore系统结构<br>
 ![](./structure.svg)
 
