@@ -11,6 +11,9 @@
 * hal_frame_alloc物理帧实现；
 * pmem_write/read物理地址访问;
 
+<br>其中，把rCore中的可复用的页表构建PageTableImpl，实际映射的MemoryArea，移到zCore中；
+从目前的运行结果看，应该是页表部分应该是切换好了；
+
 
 
 ### zCore系统结构<br>
