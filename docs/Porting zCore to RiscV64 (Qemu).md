@@ -13,8 +13,9 @@
 
 <br>其中，把rCore中的可复用的页表构建PageTableImpl，实际映射的MemoryArea，移到zCore中；
 从目前的运行结果看，应该是页表部分应该是切换好了；
-
-
+```
+[1.2317591s DEBUG 0 0:0] switch table 8000000000080220 -> 8000000000080a49
+```
 
 ### zCore系统结构<br>
 ![](./structure.svg)
