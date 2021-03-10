@@ -1,6 +1,6 @@
 use core::convert::TryInto;
 use core::fmt::{Error, Write};
-use crate::putfmt;
+use crate::{putfmt, phys_to_virt};
 
 //use crate::console::push_stdin;
 
@@ -131,7 +131,7 @@ fn unsafe mmio_read(address: usize, offset: usize, value: u8) -> u8 {
 */
 
 pub fn handle_interrupt() {
-	let mut my_uart = Uart::new(0x1000_0000);
+	let mut my_uart = Uart::new(phys_to_virt(0x1000_0000));
 	if let Some(c) = my_uart.get() {
 		//CONSOLE
 		//push_stdin(c);

@@ -6,6 +6,7 @@ use {
     buddy_system_allocator::LockedHeap,
     spin::Mutex,
 };
+use crate::consts::{PHYSICAL_MEMORY_OFFSET, KERNEL_OFFSET, KERNEL_HEAP_SIZE, MEMORY_OFFSET, MEMORY_END};
 
 #[cfg(target_arch = "x86_64")]
 use {
@@ -24,6 +25,7 @@ type FrameAlloc = bitmap_allocator::BitAlloc1M;
 
 static FRAME_ALLOCATOR: Mutex<FrameAlloc> = Mutex::new(FrameAlloc::DEFAULT);
 
+/*
 const MEMORY_OFFSET: usize = 0;
 const KERNEL_OFFSET: usize = 0xffffff00_00000000;
 const PHYSICAL_MEMORY_OFFSET: usize = 0xffff8000_00000000;
@@ -33,6 +35,7 @@ const KERNEL_HEAP_SIZE: usize = 16 * 1024 * 1024; // 16 MB
 
 #[cfg(target_arch = "riscv64")]
 const KERNEL_HEAP_SIZE: usize = 8 * 1024 * 1024; // 8 MB
+*/
 
 const KERNEL_PM4: usize = (KERNEL_OFFSET >> 39) & 0o777;
 const PHYSICAL_MEMORY_PM4: usize = (PHYSICAL_MEMORY_OFFSET >> 39) & 0o777;
@@ -61,7 +64,25 @@ use kernel_hal_bare::BootInfo;
 
 #[cfg(target_arch = "riscv64")]
 pub fn init_frame_allocator(boot_info: &BootInfo) {
+    use bitmap_allocator::BitAlloc;
+    use core::ops::Range;
 
+    let mut ba = FRAME_ALLOCATOR.lock();
+    let range = to_range(
+        (end as usize) - KERNEL_OFFSET + MEMORY_OFFSET + PAGE_SIZE,
+        MEMORY_END,
+    );
+    ba.insert(range);
+
+    info!("frame allocator: init end");
+
+    /// Transform memory area `[start, end)` to integer range for `FrameAllocator`
+    fn to_range(start: usize, end: usize) -> Range<usize> {
+        let page_start = (start - MEMORY_OFFSET) / PAGE_SIZE;
+        let page_end = (end - MEMORY_OFFSET - 1) / PAGE_SIZE + 1;
+        assert!(page_start < page_end, "illegal range for frame allocator");
+        page_start..page_end
+    }
 }
 
 pub fn init_heap() {
@@ -122,7 +143,71 @@ pub extern "C" fn hal_pt_map_kernel(pt: &mut PageTable, current: &PageTable) {
 
 #[cfg(target_arch = "riscv64")]
 pub extern "C" fn hal_pt_map_kernel(pt: &mut PageTable, current: &PageTable) {
+    info!("hal_pt_map_kernel(), NULL! ");
 }
+
+pub unsafe fn clear_bss() {
+    let start = sbss as usize;
+    let end = ebss as usize;
+    let step = core::mem::size_of::<usize>();
+    for i in (start..end).step_by(step) {
+        (i as *mut usize).write(0);
+    }
+}
+
+#[inline]
+pub const fn phys_to_virt(paddr: usize) -> usize {
+    PHYSICAL_MEMORY_OFFSET + paddr
+}
+
+#[inline]
+pub const fn virt_to_phys(vaddr: usize) -> usize {
+    vaddr - PHYSICAL_MEMORY_OFFSET
+}
+
+#[inline]
+pub const fn kernel_offset(vaddr: usize) -> usize {
+    vaddr - KERNEL_OFFSET
+}
+
+//测试:只读权限，却要写入
+pub fn write_readonly_test() {
+    debug!("rodata write !");
+    unsafe {
+        let ptr = srodata as usize as *mut u8;
+        *ptr = 0xab;
+    }
+}
+
+//测试:不允许执行，非要执行
+pub fn execute_unexecutable_test() {
+    debug!("bss execute !");
+    unsafe {
+        llvm_asm!("jr $0" :: "r"(sbss as usize) :: "volatile");
+    }
+}
+
+//测试:找不到页表项
+pub fn read_invalid_test() {
+    debug!("invalid page read !");
+    println!("{}", unsafe { *(0x12345678 as usize as *const u8) });
+}
+
+extern "C" {
+    fn stext();
+    fn etext();
+    fn sdata();
+    fn edata();
+    fn srodata();
+    fn erodata();
+    fn sbss();
+    fn ebss();
+    fn start();
+    fn end();
+    fn bootstack();
+    fn bootstacktop();
+}
+
 
 #[cfg(feature = "hypervisor")]
 mod rvm_extern_fn {

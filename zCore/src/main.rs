@@ -1,7 +1,7 @@
 #![no_std]
 #![no_main]
 #![feature(lang_items)]
-#![feature(asm)]
+#![feature(llvm_asm)]
 #![feature(panic_info_message)]
 #![deny(unused_must_use)]
 #![feature(global_asm)]
@@ -17,6 +17,9 @@ extern crate rlibc;
 #[cfg(target_arch = "x86_64")]
 extern crate rlibc_opt; //Only for x86_64
 
+#[cfg(target_arch = "riscv64")]
+mod consts;
+
 #[macro_use]
 mod logging;
 mod lang;
@@ -26,10 +29,10 @@ mod memory;
 use rboot::BootInfo;
 
 #[cfg(target_arch = "riscv64")]
-use kernel_hal_bare::{BootInfo, GraphicInfo};
+use kernel_hal_bare::{BootInfo, GraphicInfo, remap_the_kernel};
 
 use alloc::vec::Vec;
-pub use memory::{hal_frame_alloc, hal_frame_dealloc, hal_pt_map_kernel};
+pub use memory::{hal_frame_alloc, hal_frame_dealloc, hal_pt_map_kernel, phys_to_virt, write_readonly_test, execute_unexecutable_test, read_invalid_test};
 
 #[cfg(target_arch = "riscv64")]
 global_asm!(include_str!("arch/riscv/boot/entry64.asm"));
@@ -82,7 +85,8 @@ fn main(ramfs_data: &[u8], cmdline: &str) {
 
 #[cfg(target_arch = "riscv64")]
 #[no_mangle]
-pub extern "C" fn rust_main() -> ! {
+pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
+    let device_tree_vaddr = phys_to_virt(device_tree_paddr);
 
     let boot_info = BootInfo {
         memory_map: Vec::new(),
@@ -92,13 +96,18 @@ pub extern "C" fn rust_main() -> ! {
         smbios_addr: 0,
         initramfs_addr: 0,
         initramfs_size: 0,
-        cmdline: "LOG=debug:TERM=xterm-256color:console.shell=true:virtcon.disable=true",
+        cmdline: "LOG=trace:TERM=xterm-256color:console.shell=true:virtcon.disable=true",
     };
+
+    unsafe {
+        memory::clear_bss();
+    }
 
     logging::init(get_log_level(boot_info.cmdline));
     warn!("rust_main(), After logging init\n\n");
     memory::init_heap();
     memory::init_frame_allocator(&boot_info);
+    remap_the_kernel(device_tree_vaddr);
 
     #[cfg(feature = "graphic")]
     init_framebuffer(boot_info);
@@ -108,6 +117,15 @@ pub extern "C" fn rust_main() -> ! {
     kernel_hal_bare::init(kernel_hal_bare::Config {
         mconfig: 0,
     });
+
+
+    /* testing
+    write_readonly_test();
+    //execute_unexecutable_test();
+    read_invalid_test();
+    */
+
+
 
     loop {} //remove me
 

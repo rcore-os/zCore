@@ -10,6 +10,8 @@ description = "Kernel HAL implementation for bare metal environment."
 [dependencies]
 log = "0.4"
 spin = "0.5"
+bitflags = "1.0"
+volatile = "0.2"
 git-version = "0.3"
 executor = { git = "https://github.com/rcore-os/executor.git", rev = "a2d02ee9" }
 trapframe = "0.6.0"
@@ -29,4 +31,7 @@ acpi = "1.1"
 
 [target.'cfg(any(target_arch = "riscv32", target_arch = "riscv64"))'.dependencies]
 riscv = { git = "https://github.com/rcore-os/riscv", features = ["inline-asm"], rev = "21e32ee1" }
+rcore-memory = { path = "../crate/memory" }
+rcore-fs = { git = "https://github.com/rcore-os/rcore-fs" }
+device_tree = { git = "https://github.com/rcore-os/device_tree-rs" }
 
