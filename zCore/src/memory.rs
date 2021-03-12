@@ -173,7 +173,7 @@ pub extern "C" fn hal_pt_map_kernel(pt: &mut PageTable, current: &PageTable) {
     //用新页表映射整个kernel; 一般在创建一个新页表时,如PageTableExt中
 }
 
-pub fn remap_the_kernel(_dtb: usize) {
+pub fn remap_the_kernel(dtb: usize) {
     //let mut ms = MemorySet::new();
 
     //这里如需多级页表映射，就不能用MemorySet::new(), 因为它会先映射1G大页，影响后面的多级页表映射
@@ -217,7 +217,15 @@ pub fn remap_the_kernel(_dtb: usize) {
         "bss",
     );
 
-    /*
+    //堆空间也映射前面一点
+    ms.push(
+        end as usize + PAGE_SIZE,
+        end as usize + PAGE_SIZE*1024,
+        MemoryAttr::default(),
+        Linear::new(offset),
+        "heap",
+    );
+
     ms.push(
         dtb,
         dtb + super::consts::MAX_DTB_SIZE,
@@ -225,7 +233,6 @@ pub fn remap_the_kernel(_dtb: usize) {
         Linear::new(offset),
         "dts",
     );
-    */
 
     // map PLIC for HiFiveU & VirtIO
     let offset = -(KERNEL_OFFSET as isize);

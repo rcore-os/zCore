@@ -33,12 +33,14 @@ struct DtbHeader {
 }
 
 pub fn init(dtb: usize) {
+    info!("DTB: {:#x}", dtb);
     let header = unsafe { &*(dtb as *const DtbHeader) };
     let magic = u32::from_be(header.magic);
     if magic == DEVICE_TREE_MAGIC {
         let size = u32::from_be(header.size);
         let dtb_data = unsafe { slice::from_raw_parts(dtb as *const u8, size as usize) };
         if let Ok(dt) = DeviceTree::load(dtb_data) {
+            //trace!("DTB: {:#x?}", dt);
             walk_dt_node(&dt.root);
         }
     }

@@ -92,11 +92,11 @@ pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
         memory_map: Vec::new(),
         physical_memory_offset: 0,
         graphic_info: GraphicInfo{mode: 0, fb_addr: 0, fb_size: 0},
-        acpi2_rsdp_addr: 0,
-        smbios_addr: 0,
+        hartid: hartid as u64,
+        dtb_addr: device_tree_paddr as u64,
         initramfs_addr: 0,
         initramfs_size: 0,
-        cmdline: "LOG=trace:TERM=xterm-256color:console.shell=true:virtcon.disable=true",
+        cmdline: "LOG=debug:TERM=xterm-256color:console.shell=true:virtcon.disable=true",
     };
 
     unsafe {
@@ -116,6 +116,7 @@ pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
 
     kernel_hal_bare::init(kernel_hal_bare::Config {
         mconfig: 0,
+        dtb: device_tree_vaddr,
     });
 
     // memory test

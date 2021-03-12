@@ -295,17 +295,17 @@ pub fn init(config: Config) {
         llvm_asm!("ebreak"::::"volatile");
     }
 
-
-    //serial
-
+    virtio::init(config.dtb);
 }
 
 pub struct Config {
     pub mconfig: u64,
+    pub dtb: usize,
 }
 
 static mut CONFIG: Config = Config {
     mconfig: 0,
+    dtb: 0,
 };
 
 /// This structure represents the information that the bootloader passes to the kernel.
@@ -318,10 +318,15 @@ pub struct BootInfo {
     pub physical_memory_offset: u64,
     /// The graphic output information
     pub graphic_info: GraphicInfo,
-    /// Physical address of ACPI2 RSDP
-    pub acpi2_rsdp_addr: u64,
-    /// Physical address of SMBIOS
-    pub smbios_addr: u64,
+
+    /// Physical address of ACPI2 RSDP, 启动的系统信息表的入口指针
+    //pub acpi2_rsdp_addr: u64,
+    /// Physical address of SMBIOS, 产品管理信息的结构表
+    //pub smbios_addr: u64,
+
+    pub hartid: u64,
+    pub dtb_addr: u64,
+
     /// The start physical address of initramfs
     pub initramfs_addr: u64,
     /// The size of initramfs

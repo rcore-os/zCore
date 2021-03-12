@@ -52,14 +52,10 @@ pub fn init(){
 
 		sstatus::set_sie();
 
-        //init_m();
-
         init_uart();
 
         sie::set_sext();
         init_ext();
-
-        //init_uart();
 	}
 	bare_println!("+++ setup interrupte! +++");
 }

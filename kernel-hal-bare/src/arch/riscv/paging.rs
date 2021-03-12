@@ -185,7 +185,8 @@ impl PageTableExt for PageTableImpl {
         let table = unsafe { &mut *(phys_to_virt(target) as *mut RvPageTable) };
         table.zero();
 
-        debug!("new_bare(), {:#x?}, {:p}", frame, table);
+        debug!("new_bare(), frame:{:#x?}, table:{:p}", frame, table);
+        //root页表的虚拟地址啥时候映射?
         PageTableImpl {
             page_table: TopLevelPageTable::new(table, PHYSICAL_MEMORY_OFFSET),
             root_frame: frame,

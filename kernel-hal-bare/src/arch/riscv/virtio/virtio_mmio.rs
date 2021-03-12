@@ -361,6 +361,7 @@ pub fn virtqueue_used_elem_offset(num: usize, align: usize) -> usize {
 }
 
 pub fn virtio_probe(node: &Node) {
+    //trace!("virtio_probe(), Node: {:#x?}", node);
     if let Some(reg) = node.prop_raw("reg") {
         let from = reg.as_slice().read_be_u64(0).unwrap();
         let size = reg.as_slice().read_be_u64(8).unwrap();
