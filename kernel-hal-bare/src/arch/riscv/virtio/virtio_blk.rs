@@ -16,7 +16,8 @@ use volatile::Volatile;
 use rcore_fs::dev::{BlockDevice, DevError};
 
 use super::BlockDriver;
-use crate::memory::active_table;
+use super::super::paging::PageTableImpl;
+//use crate::memory::active_table;
 //use crate::sync::SpinNoIrqLock as Mutex;
 use spin::Mutex;
 
@@ -111,7 +112,10 @@ impl Driver for VirtIOBlkDriver {
         let driver = self.0.lock();
 
         // ensure header page is mapped
-        active_table().map_if_not_exists(driver.header as usize, driver.header as usize);
+        //active_table().map_if_not_exists(driver.header as usize, driver.header as usize);
+        unsafe{
+            PageTableImpl::active().map(driver.header as usize, driver.header as usize);
+        }
         let header = unsafe { &mut *(driver.header as *mut VirtIOHeader) };
         let interrupt = header.interrupt_status.read();
         if interrupt != 0 {
@@ -132,7 +136,10 @@ impl Driver for VirtIOBlkDriver {
     fn read_block(&self, block_id: usize, buf: &mut [u8]) -> Result<(), DevError> {
         let mut driver = self.0.lock();
         // ensure header page is mapped
-        active_table().map_if_not_exists(driver.header as usize, driver.header as usize);
+        //active_table().map_if_not_exists(driver.header as usize, driver.header as usize);
+        unsafe{
+            PageTableImpl::active().map(driver.header as usize, driver.header as usize);
+        }
 
         let mut req = VirtIOBlkReadReq::default();
         req.req_type = VIRTIO_BLK_T_IN;
@@ -162,7 +169,10 @@ impl Driver for VirtIOBlkDriver {
     fn write_block(&self, block_id: usize, buf: &[u8]) -> Result<(), DevError> {
         let mut driver = self.0.lock();
         // ensure header page is mapped
-        active_table().map_if_not_exists(driver.header as usize, driver.header as usize);
+        //active_table().map_if_not_exists(driver.header as usize, driver.header as usize);
+        unsafe{
+            PageTableImpl::active().map(driver.header as usize, driver.header as usize);
+        }
 
         let mut req: VirtIOBlkWriteReq = unsafe { zeroed() };
         req.req_type = VIRTIO_BLK_T_OUT;

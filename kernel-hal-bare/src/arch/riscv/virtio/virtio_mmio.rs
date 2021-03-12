@@ -13,9 +13,12 @@ use rcore_memory::PAGE_SIZE;
 use volatile::{ReadOnly, Volatile, WriteOnly};
 
 //use crate::arch::consts::{KERNEL_OFFSET, MEMORY_OFFSET};
-use crate::memory::active_table;
-use crate::HEAP_ALLOCATOR;
+//use crate::memory::active_table;
+//use crate::HEAP_ALLOCATOR;
+use super::super::paging::PageTableImpl;
+use super::super::{KERNEL_OFFSET, MEMORY_OFFSET};
 
+use crate::hal_heap_alloc;
 use super::virtio_blk;
 /*
 use super::super::block::virtio_blk;
@@ -23,9 +26,6 @@ use super::super::gpu::virtio_gpu;
 use super::super::input::virtio_input;
 use super::super::net::virtio_net;
 */
-
-pub const KERNEL_OFFSET: usize = 0xFFFF_FFFF_C000_0000;
-pub const MEMORY_OFFSET: usize = 0x8000_0000;
 
 // virtio 4.2.4 Legacy interface
 #[repr(C)]
@@ -96,9 +96,11 @@ impl VirtIOVirtqueue {
         let size = virtqueue_size(queue_num, align);
         assert!(size % align == 0);
         // alloc continuous pages
-        let address =
+        let address = unsafe { hal_heap_alloc(&size, &align) };
+        /*
             unsafe { HEAP_ALLOCATOR.alloc_zeroed(Layout::from_size_align(size, align).unwrap()) }
                 as usize;
+        */
 
         header.queue_num.write(queue_num as u32);
         header.queue_align.write(align as u32);
@@ -364,7 +366,11 @@ pub fn virtio_probe(node: &Node) {
         let size = reg.as_slice().read_be_u64(8).unwrap();
         // assuming one page
         assert_eq!(size as usize, PAGE_SIZE);
-        active_table().map(from as usize, from as usize);
+        //active_table().map(from as usize, from as usize);
+        unsafe{
+        PageTableImpl::active().map(from as usize, from as usize);
+        }
+
         let header = unsafe { &mut *(from as *mut VirtIOHeader) };
         let magic = header.magic.read();
         let version = header.version.read();
@@ -400,7 +406,10 @@ pub fn virtio_probe(node: &Node) {
                 warn!("Unrecognized virtio device {}", device_id);
             }
         } else {
-            active_table().unmap(from as usize);
+            //active_table().unmap(from as usize);
+            unsafe{
+                PageTableImpl::active().unmap(from as usize);
+            }
         }
     }
 }

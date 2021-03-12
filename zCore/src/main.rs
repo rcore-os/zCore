@@ -29,7 +29,7 @@ mod memory;
 use rboot::BootInfo;
 
 #[cfg(target_arch = "riscv64")]
-use kernel_hal_bare::{BootInfo, GraphicInfo, remap_the_kernel};
+use kernel_hal_bare::{BootInfo, GraphicInfo};
 
 use alloc::vec::Vec;
 pub use memory::{hal_frame_alloc, hal_frame_dealloc, hal_pt_map_kernel, phys_to_virt, write_readonly_test, execute_unexecutable_test, read_invalid_test};
@@ -107,7 +107,7 @@ pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
     warn!("rust_main(), After logging init\n\n");
     memory::init_heap();
     memory::init_frame_allocator(&boot_info);
-    remap_the_kernel(device_tree_vaddr);
+    memory::remap_the_kernel(device_tree_vaddr);
 
     #[cfg(feature = "graphic")]
     init_framebuffer(boot_info);
@@ -118,13 +118,10 @@ pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
         mconfig: 0,
     });
 
-
-    /* testing
-    write_readonly_test();
+    // memory test
+    //write_readonly_test();
     //execute_unexecutable_test();
-    read_invalid_test();
-    */
-
+    //read_invalid_test();
 
 
     loop {} //remove me

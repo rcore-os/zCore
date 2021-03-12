@@ -27,7 +27,7 @@ use super::sbi;
 use super::plic;
 use super::uart;
 
-use crate::{putfmt, phys_to_virt};
+use crate::{putfmt, KERNEL_OFFSET};
 use super::clock_set_next_event;
 
 global_asm!(include_str!("trap.asm"));
@@ -54,10 +54,12 @@ pub fn init(){
 
         //init_m();
 
+        init_uart();
+
         sie::set_sext();
         init_ext();
 
-        init_uart();
+        //init_uart();
 	}
 	bare_println!("+++ setup interrupte! +++");
 }
@@ -99,14 +101,13 @@ fn page_fault(stval: usize, tf: &mut TrapFrame){
 fn super_timer(){
     clock_set_next_event();
 
-    //bare_println!("Tick");
     bare_print!(".");
 
 	//发生外界中断时，epc的指令还没有执行，故无需修改epc到下一条
 }
 
 fn init_uart(){
-    uart::Uart::new(phys_to_virt(0x1000_0000)).simple_init();
+    uart::Uart::new(0x1000_0000 + KERNEL_OFFSET).simple_init();
 
     bare_println!("+++ Setting up UART interrupts +++");
 }

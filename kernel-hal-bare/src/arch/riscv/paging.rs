@@ -8,19 +8,17 @@ use riscv::paging::{Mapper, PageTable as RvPageTable, PageTableEntry, PageTableF
 use riscv::register::satp;
 
 use crate::{phys_to_virt, Frame};
-use super::FrameAllocatorImpl;
+use super::{FrameAllocatorImpl, PHYSICAL_MEMORY_OFFSET};
 
 #[cfg(target_arch = "riscv32")]
 type TopLevelPageTable<'a> = riscv::paging::Rv32PageTable<'a>;
 #[cfg(target_arch = "riscv64")]
 type TopLevelPageTable<'a> = riscv::paging::Rv39PageTable<'a>;
 
-static PHYSICAL_MEMORY_OFFSET: usize = 0xFFFF_FFFF_4000_0000;
-
 pub struct PageTableImpl {
-    page_table: TopLevelPageTable<'static>,
-    root_frame: riscv::addr::Frame,
-    entry: Option<PageEntry>,
+    pub page_table: TopLevelPageTable<'static>,
+    pub root_frame: riscv::addr::Frame,
+    pub entry: Option<PageEntry>,
 }
 
 /// PageTableEntry: the contents of this entry.
@@ -31,9 +29,16 @@ impl PageTable for PageTableImpl {
     fn map(&mut self, addr: usize, target: usize) -> &mut dyn Entry {
         // map the 4K `page` to the 4K `frame` with `flags`
         let flags = EF::VALID | EF::READABLE | EF::WRITABLE;
-        let page = Page::of_addr(VirtAddr::new(addr));
+        let page = riscv::addr::Page::of_addr(riscv::addr::VirtAddr::new(addr));
         let frame = riscv::addr::Frame::of_addr(PhysAddr::new(target));
         // we may need frame allocator to alloc frame for new page table(first/second)
+
+        if target < 0x80000000 { 
+            debug!("map() page:{:#x} -> frame:{:#x}", addr, target);
+        }
+        // map() may stuck here
+        // 注意不要在已经map_kernel()进行1G大页映射后的root_table中, 重建p3 p2 p1多级页表，否则出错；
+        // 因与Rv39PageTable的create_p1_if_not_exist()多级页表的建立产生冲突
         self.page_table
             .map_to(page, frame, flags, &mut FrameAllocatorImpl)
             .unwrap()
@@ -189,7 +194,7 @@ impl PageTableExt for PageTableImpl {
     }
 
     fn map_kernel(&mut self) {
-        info!("mapping kernel linear mapping");
+        info!("map_kernel linear mapping");
         let table = unsafe {
             &mut *(phys_to_virt(self.root_frame.start_address().as_usize()) as *mut RvPageTable)
         };
@@ -249,19 +254,3 @@ impl Drop for PageTableImpl {
         .dealloc()
     }
 }
-
-/*
-struct FrameAllocatorForRiscv;
-
-impl FrameAllocator for FrameAllocatorForRiscv {
-    fn alloc(&mut self) -> Option<Frame> {
-        alloc_frame().map(|addr| Frame::of_addr(PhysAddr::new(addr)))
-    }
-}
-
-impl FrameDeallocator for FrameAllocatorForRiscv {
-    fn dealloc(&mut self, frame: Frame) {
-        dealloc_frame(frame.start_address().as_usize());
-    }
-}
-*/

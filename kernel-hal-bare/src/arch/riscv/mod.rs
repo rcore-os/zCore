@@ -4,32 +4,18 @@ use riscv::addr::Page;
 use riscv::paging::{PageTableFlags as PTF, *};
 use riscv::register::{time, satp, sie};
 //use crate::sbi;
-use core::mem;
 use core::fmt::{ self, Write };
 use alloc::{collections::VecDeque, vec::Vec};
+use rcore_memory::paging::PageTableExt;
 
 mod sbi;
+pub mod paging;
 
-mod paging;
-
-use paging::PageTableImpl as rCorePageTableImpl;
-pub type MemorySet = rcore_memory::memory_set::MemorySet<rCorePageTableImpl>;
-
-pub fn remap_the_kernel(_dtb: usize) {
-    let ms = MemorySet::new();
-    unsafe {
-        ms.activate();
-    }
-    unsafe {
-        SATP = ms.token();
-    }
-    mem::forget(ms);
-    info!("remap kernel end");
-}
-
-// First core stores its SATP here.
-static mut SATP: usize = 0;
-
+// value from crate zcore
+//static PHYSICAL_MEMORY_OFFSET: usize = PMEM_BASE ;
+pub const KERNEL_OFFSET: usize = 0xFFFF_FFFF_C000_0000;
+pub const MEMORY_OFFSET: usize = 0x8000_0000;
+pub const PHYSICAL_MEMORY_OFFSET: usize = KERNEL_OFFSET - MEMORY_OFFSET;
 
 /// Page Table
 #[repr(C)]
@@ -42,16 +28,18 @@ impl PageTableImpl {
     #[allow(clippy::new_without_default)]
     #[export_name = "hal_pt_new"]
     pub fn new() -> Self {
-        let root_frame = Frame::alloc().expect("failed to alloc frame");
-        let root_vaddr = phys_to_virt(root_frame.paddr);
-        let root = unsafe { &mut *(root_vaddr as *mut PageTable) };
-        root.zero();
+        let mut pt = paging::PageTableImpl::new_bare();
+        pt.map_kernel();
+
+        /*
         let current =
             phys_to_virt(satp::read().frame().start_address().as_usize()) as *const PageTable;
         map_kernel(root_vaddr as _, current as _);
-        trace!("create page table @ {:#x}", root_frame.paddr);
+        */
+
+        trace!("create page table @ {:#x}", pt.root_frame.start_address().as_usize());
         PageTableImpl {
-            root_paddr: root_frame.paddr,
+            root_paddr: pt.root_frame.start_address().as_usize(),
         }
     }
 

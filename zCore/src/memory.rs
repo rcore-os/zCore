@@ -7,6 +7,14 @@ use {
     spin::Mutex,
 };
 use crate::consts::{PHYSICAL_MEMORY_OFFSET, KERNEL_OFFSET, KERNEL_HEAP_SIZE, MEMORY_OFFSET, MEMORY_END};
+use core::alloc::Layout;
+use core::ptr::NonNull;
+use core::mem;
+
+use kernel_hal_bare::paging::PageTableImpl;
+use rcore_memory::memory_set::{MemoryAttr, handler::Linear};
+
+pub type MemorySet = rcore_memory::memory_set::MemorySet<PageTableImpl>;
 
 #[cfg(target_arch = "x86_64")]
 use {
@@ -98,6 +106,24 @@ pub fn init_heap() {
 }
 
 #[no_mangle]
+pub extern "C" fn hal_heap_alloc(size: &usize, align: &usize) -> usize {
+    let ret = HEAP_ALLOCATOR
+        .lock()
+        .alloc(Layout::from_size_align(*size, *align).unwrap()).unwrap().as_ptr();
+
+    trace!("Allocate heap: {:x?}", ret);
+    ret as usize
+}
+
+#[no_mangle]
+pub extern "C" fn hal_heap_dealloc(ptr: &usize, size: &usize, align: &usize) {
+    trace!("Deallocate heap: {:x}", *ptr);
+    HEAP_ALLOCATOR
+        .lock()
+        .dealloc(NonNull::new(*ptr as *mut u8).unwrap(), Layout::from_size_align(*size, *align).unwrap());
+}
+
+#[no_mangle]
 #[allow(improper_ctypes_definitions)]
 pub extern "C" fn hal_frame_alloc() -> Option<usize> {
     // get the real address of the alloc frame
@@ -143,8 +169,110 @@ pub extern "C" fn hal_pt_map_kernel(pt: &mut PageTable, current: &PageTable) {
 
 #[cfg(target_arch = "riscv64")]
 pub extern "C" fn hal_pt_map_kernel(pt: &mut PageTable, current: &PageTable) {
-    info!("hal_pt_map_kernel(), NULL! ");
+    info!("hal_pt_map_kernel() is NULL!\n Please use paging::PageTableImpl::map_kernel()");
+    //用新页表映射整个kernel; 一般在创建一个新页表时,如PageTableExt中
 }
+
+pub fn remap_the_kernel(_dtb: usize) {
+    //let mut ms = MemorySet::new();
+
+    //这里如需多级页表映射，就不能用MemorySet::new(), 因为它会先映射1G大页，影响后面的多级页表映射
+    let mut ms = MemorySet::new_bare();
+
+    let offset = -(PHYSICAL_MEMORY_OFFSET as isize);
+    debug!("remap kernel page:{:#x} -> frame:{:#x}", stext as usize, stext as isize + offset);
+    ms.push(
+        stext as usize,
+        etext as usize,
+        MemoryAttr::default().execute().readonly(),
+        Linear::new(offset),
+        "text",
+    );
+    ms.push(
+        sdata as usize,
+        edata as usize,
+        MemoryAttr::default(),
+        Linear::new(offset),
+        "data",
+    );
+    ms.push(
+        srodata as usize,
+        erodata as usize,
+        MemoryAttr::default().readonly(),
+        Linear::new(offset),
+        "rodata",
+    );
+    ms.push(
+        bootstack as usize,
+        bootstacktop as usize,
+        MemoryAttr::default(),
+        Linear::new(offset),
+        "stack",
+    );
+    ms.push(
+        sbss as usize,
+        ebss as usize,
+        MemoryAttr::default(),
+        Linear::new(offset),
+        "bss",
+    );
+
+    /*
+    ms.push(
+        dtb,
+        dtb + super::consts::MAX_DTB_SIZE,
+        MemoryAttr::default().readonly(),
+        Linear::new(offset),
+        "dts",
+    );
+    */
+
+    // map PLIC for HiFiveU & VirtIO
+    let offset = -(KERNEL_OFFSET as isize);
+    ms.push(
+        KERNEL_OFFSET + 0x0C00_0000,
+        KERNEL_OFFSET + 0x0C00_0000 + PAGE_SIZE*4,
+        MemoryAttr::default(),
+        Linear::new(offset),
+        "plic_priority",
+    );
+    ms.push(
+        KERNEL_OFFSET + 0x0C20_0000,
+        KERNEL_OFFSET + 0x0C20_0000 + PAGE_SIZE*4,
+        MemoryAttr::default(),
+        Linear::new(offset),
+        "plic_threshold",
+    );
+    // map UART for HiFiveU
+    ms.push(
+        KERNEL_OFFSET + 0x10010000,
+        KERNEL_OFFSET + 0x10010000 + PAGE_SIZE,
+        MemoryAttr::default(),
+        Linear::new(offset),
+        "uart",
+    );
+    // map UART for VirtIO
+    ms.push(
+        KERNEL_OFFSET + 0x10000000,
+        KERNEL_OFFSET + 0x10000000 + PAGE_SIZE,
+        MemoryAttr::default(),
+        Linear::new(offset),
+        "uart16550",
+    );
+
+    //最后写satp
+    unsafe {
+        ms.activate();
+    }
+    unsafe {
+        SATP = ms.token();
+    }
+    mem::forget(ms);
+    info!("remap kernel end");
+}
+
+// First core stores its SATP here.
+static mut SATP: usize = 0;
 
 pub unsafe fn clear_bss() {
     let start = sbss as usize;

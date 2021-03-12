@@ -52,6 +52,9 @@ extern "C" {
     fn hal_frame_dealloc(paddr: &PhysAddr);
     #[link_name = "hal_pmem_base"]
     static PMEM_BASE: usize;
+
+    fn hal_heap_alloc(size: &usize, align: &usize) -> usize;
+    fn hal_heap_dealloc(ptr: &usize, size: &usize, align: &usize);
 }
 
 #[repr(C)]
