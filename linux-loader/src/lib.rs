@@ -67,6 +67,8 @@ async fn new_thread(thread: CurrentThread) {
         kernel_hal::context_run(&mut cx);
         trace!("back from user: {:#x?}", cx);
         // handle trap/interrupt/syscall
+
+        #[cfg(target_arch = "x86_64")]
         match cx.trap_num {
             0x100 => handle_syscall(&thread, &mut cx.general).await,
             0x20..=0x3f => {
@@ -93,6 +95,54 @@ async fn new_thread(thread: CurrentThread) {
             }
             _ => panic!("not supported interrupt from user mode. {:#x?}", cx),
         }
+
+        // UserContext: cx.member
+        #[cfg(target_arch = "riscv64")]
+        let trap_num = cx.scause & 0xfff;
+        #[cfg(target_arch = "riscv64")]
+        let is_interrupt = ((cx.scause >> 63) & 1) == 1;
+
+        #[cfg(target_arch = "riscv64")]
+        if is_interrupt {
+            match trap_num {
+                //Irq
+                0 | 4 | 8 => {
+                    kernel_hal::InterruptManager::handle(trap_num as u8);
+
+                    //Timer
+                    if trap_num == 4 {
+                        kernel_hal::yield_now().await;
+                    }
+                }
+                _ => panic!("not supported interrupt from user mode. {:#x?}", cx),
+            }
+
+        }else{
+            match trap_num {
+                // syscall
+                8 => handle_syscall(&thread, &mut cx.general).await,
+                // PageFault
+                12 | 13 | 15 => {
+                    let vaddr = kernel_hal::fetch_fault_vaddr();
+                    let flags = if trap_num == 15 {
+                        MMUFlags::WRITE
+                    } else {
+                        MMUFlags::READ
+                    };
+
+                    error!("page fualt from user mode {:#x} {:#x}", vaddr, trap_num);
+                    let vmar = thread.proc().vmar();
+                    match vmar.handle_page_fault(vaddr, flags) {
+                        Ok(()) => {}
+                        Err(_) => {
+                            panic!("Page Fault from user mode {:#x?}", cx);
+                        }
+                    }
+                }
+                _ => panic!("not supported exception from user mode. {:#x?}", cx),
+            }
+        }
+
         thread.end_running(cx);
     }
 }
@@ -102,6 +152,7 @@ fn thread_fn(thread: CurrentThread) -> Pin<Box<dyn Future<Output = ()> + Send + 
 }
 
 /// syscall handler entry
+#[cfg(target_arch = "x86_64")]
 async fn handle_syscall(thread: &CurrentThread, regs: &mut GeneralRegs) {
     trace!("syscall: {:#x?}", regs);
     let num = regs.rax as u32;
@@ -116,4 +167,21 @@ async fn handle_syscall(thread: &CurrentThread, regs: &mut GeneralRegs) {
         regs,
     };
     regs.rax = syscall.syscall(num, args).await as usize;
+}
+
+#[cfg(target_arch = "riscv64")]
+async fn handle_syscall(thread: &CurrentThread, regs: &mut GeneralRegs) {
+    trace!("syscall: {:#x?}", regs);
+    let num = regs.a7 as u32;
+    let args = [regs.a0, regs.a1, regs.a2, regs.a3, regs.a4, regs.a5];
+    let mut syscall = Syscall {
+        thread,
+        #[cfg(feature = "std")]
+        syscall_entry: kernel_hal_unix::syscall_entry as usize,
+        #[cfg(not(feature = "std"))]
+        syscall_entry: 0,
+        thread_fn,
+        regs,
+    };
+    regs.a0 = syscall.syscall(num, args).await as usize;
 }

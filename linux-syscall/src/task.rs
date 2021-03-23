@@ -362,3 +362,28 @@ impl RegExt for GeneralRegs {
         GeneralRegs { rax: 0, ..*regs }
     }
 }
+#[cfg(target_arch = "riscv64")]
+impl RegExt for GeneralRegs {
+    fn new_fn(entry: usize, sp: usize, arg1: usize, arg2: usize) -> Self {
+        info!("new_fn(), Did not save ip:{:#x} register! x_x ", entry);
+        GeneralRegs {
+            sp: sp,
+            a0: arg1,
+            a1: arg2,
+            ..Default::default()
+        }
+    }
+
+    fn new_clone(regs: &Self, newsp: usize, newtls: usize) -> Self {
+        GeneralRegs {
+            zero: 0,
+            sp: newsp,
+            tp: newtls,
+            ..*regs
+        }
+    }
+
+    fn new_fork(regs: &Self) -> Self {
+        GeneralRegs { zero: 0, ..*regs }
+    }
+}

@@ -259,6 +259,13 @@ impl Thread {
                 context.general.x0 = arg1;
                 context.general.x1 = arg2;
             }
+            #[cfg(target_arch = "riscv64")]
+            {
+                context.sepc = entry;
+                context.general.sp = stack;
+                context.general.a0 = arg1;
+                context.general.a1 = arg2;
+            }
             inner.change_state(ThreadState::Running, &self.base);
         }
         let vmtoken = self.proc().vmar().table_phys();

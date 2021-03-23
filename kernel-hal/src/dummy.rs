@@ -438,3 +438,8 @@ pub fn fill_random(buf: &mut [u8]) {
 pub fn fill_random(_buf: &mut [u8]) {
     // TODO
 }
+
+#[cfg(target_arch = "riscv64")]
+pub fn fill_random(_buf: &mut [u8]) {
+    // TODO
+}
