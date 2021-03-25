@@ -77,11 +77,11 @@ pub trait Driver: Send + Sync {
     */
 
     // block related drivers should implement these
-    fn read_block(&self, block_id: usize, buf: &mut [u8]) -> Result<(), DevError> {
+    fn read_block(&self, block_id: usize, buf: &mut [u8]) -> bool {
         unimplemented!("not a block driver")
     }
 
-    fn write_block(&self, block_id: usize, buf: &[u8]) -> Result<(), DevError> {
+    fn write_block(&self, block_id: usize, buf: &[u8]) -> bool {
         unimplemented!("not a block driver")
     }
 }
@@ -98,11 +98,17 @@ pub struct BlockDriver(Arc<Driver>);
 impl BlockDevice for BlockDriver {
     const BLOCK_SIZE_LOG2: u8 = 9; // 512
     fn read_at(&self, block_id: usize, buf: &mut [u8]) -> Result<(), DevError> {
-        self.0.read_block(block_id, buf)
+        match self.0.read_block(block_id, buf) {
+            true => Ok(()),
+            false => Err(DevError),
+        }
     }
 
     fn write_at(&self, block_id: usize, buf: &[u8]) -> Result<(), DevError> {
-        self.0.write_block(block_id, buf)
+        match self.0.write_block(block_id, buf) {
+            true => Ok(()),
+            false => Err(DevError),
+        }
     }
 
     fn sync(&self) -> Result<(), DevError> {

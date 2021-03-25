@@ -41,6 +41,7 @@ rvm = { git = "https://github.com/rcore-os/RVM", rev = "e91d625", optional = tru
 [target.'cfg(target_arch = "riscv64")'.dependencies]
 riscv = { git = "https://github.com/rcore-os/riscv", features = ["inline-asm"], rev = "21e32ee1" }
 rcore-memory = { path = "../crate/memory" }
+rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "6df6cd2" }
 
 [patch.crates-io]
 # For kernel-hal UserContext

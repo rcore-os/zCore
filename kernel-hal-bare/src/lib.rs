@@ -48,8 +48,8 @@ pub use self::arch::*;
 #[allow(improper_ctypes)]
 extern "C" {
     fn hal_pt_map_kernel(pt: *mut u8, current: *const u8);
-    fn hal_frame_alloc() -> Option<PhysAddr>;
-    fn hal_frame_dealloc(paddr: &PhysAddr);
+    fn frame_alloc() -> Option<usize>;
+    fn frame_dealloc(paddr: &usize);
     #[link_name = "hal_pmem_base"]
     static PMEM_BASE: usize;
 
@@ -119,13 +119,15 @@ pub struct Frame {
 }
 
 impl Frame {
+    #[export_name = "hal_frame_alloc"]
     pub fn alloc() -> Option<Self> {
-        unsafe { hal_frame_alloc().map(|paddr| Frame { paddr }) }
+        unsafe { frame_alloc().map(|paddr| Frame { paddr }) }
     }
 
+    #[export_name = "hal_frame_dealloc"]
     pub fn dealloc(&mut self) {
         unsafe {
-            hal_frame_dealloc(&self.paddr);
+            frame_dealloc(&self.paddr);
         }
     }
 
@@ -175,7 +177,7 @@ pub fn frame_copy(src: PhysAddr, target: PhysAddr) {
 #[export_name = "hal_frame_zero"]
 pub fn frame_zero_in_range(target: PhysAddr, start: usize, end: usize) {
     assert!(start < PAGE_SIZE && end <= PAGE_SIZE);
-    trace!("frame_zero: {:#x}", target);
+    trace!("kernel-hal-bare, frame_zero: {:#x?}", target);
     unsafe {
         core::ptr::write_bytes(phys_to_virt(target + start) as *mut u8, 0, end - start);
     }

@@ -54,7 +54,9 @@ impl LinuxElfLoader {
             vmo.write(offset as usize, &self.syscall_entry.to_ne_bytes())?;
         }
 
-        elf.relocate(base).map_err(|_| ZxError::INVALID_ARGS)?;
+        // EINVAL
+        //elf.relocate(base).map_err(|_| ZxError::INVALID_ARGS)?;
+        warn!("Skipped elf relocate base: {:#x?}", base);
 
         let stack_vmo = VmObject::new_paged(self.stack_pages);
         let flags = MMUFlags::READ | MMUFlags::WRITE | MMUFlags::USER;

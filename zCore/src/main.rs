@@ -29,10 +29,10 @@ mod memory;
 use rboot::BootInfo;
 
 #[cfg(target_arch = "riscv64")]
-use kernel_hal_bare::{BootInfo, GraphicInfo};
+use kernel_hal_bare::{BootInfo, GraphicInfo, virtio::BLK_DRIVERS};
 
 use alloc::vec::Vec;
-pub use memory::{hal_frame_alloc, hal_frame_dealloc, hal_pt_map_kernel, phys_to_virt, write_readonly_test, execute_unexecutable_test, read_invalid_test};
+pub use memory::{phys_to_virt, write_readonly_test, execute_unexecutable_test, read_invalid_test};
 
 #[cfg(target_arch = "riscv64")]
 global_asm!(include_str!("arch/riscv/boot/entry64.asm"));
@@ -96,7 +96,7 @@ pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
         dtb_addr: device_tree_paddr as u64,
         initramfs_addr: 0,
         initramfs_size: 0,
-        cmdline: "LOG=debug:TERM=xterm-256color:console.shell=true:virtcon.disable=true",
+        cmdline: "LOG=trace:TERM=xterm-256color:console.shell=true:virtcon.disable=true",
     };
 
     unsafe {
@@ -124,11 +124,8 @@ pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
     //execute_unexecutable_test();
     //read_invalid_test();
 
-
-    loop {} //remove me
-
-    // 挂载virtio-blk-device rootfs
-    //
+    // 正常由bootloader载入文件系统镜像到内存, 这里不用，而使用后面的virtio 
+    /*
     let ramfs_data = unsafe {
         core::slice::from_raw_parts_mut(
             (boot_info.initramfs_addr + boot_info.physical_memory_offset) as *mut u8,
@@ -137,29 +134,28 @@ pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
     };
 
     main(ramfs_data, boot_info.cmdline);
+    */
+    main(boot_info.cmdline);
     unreachable!();
 }
 
 #[cfg(feature = "linux")]
-fn main(ramfs_data: &'static mut [u8], _cmdline: &str) {
+//fn main(ramfs_data: &'static mut [u8], _cmdline: &str) {
+fn main(_cmdline: &str) {
     use alloc::boxed::Box;
     use alloc::sync::Arc;
     use alloc::vec;
     use alloc::string::String;
 
-    /*
     use linux_object::fs::MemBuf;
     use linux_object::fs::STDIN;
-    */
 
     kernel_hal_bare::serial_set_callback(Box::new({
         move || {
             let mut buffer = [0; 255];
             let len = kernel_hal_bare::serial_read(&mut buffer);
             for c in &buffer[..len] {
-                /*
                 STDIN.push((*c).into());
-                */
                 kernel_hal_bare::serial_write(alloc::format!("{}", *c as char).as_str());
             }
             false
@@ -169,12 +165,23 @@ fn main(ramfs_data: &'static mut [u8], _cmdline: &str) {
     let args: Vec<String> = vec!["/bin/busybox".into(), "sh".into()];
     let envs: Vec<String> = vec!["PATH=/usr/sbin:/usr/bin:/sbin:/bin:/usr/x86_64-alpine-linux-musl/bin".into()];
 
-    /*
-    let device = Arc::new(MemBuf::new(ramfs_data));
-    let rootfs = rcore_fs_sfs::SimpleFileSystem::open(device).unwrap();
+    //需先初始化kernel-hal-bare virtio_blk驱动
+
+    // ROOT_INODE
+    //let device = Arc::new(MemBuf::new(ramfs_data));
+
+    let device =
+        BLK_DRIVERS.read().iter()
+        .next().expect("Block device not found")
+        .clone();
+
+    info!("Opening the rootfs ...");
+    // 输入类型: Arc<Device>
+    let rootfs = rcore_fs_sfs::SimpleFileSystem::open(device).expect("failed to open device SimpleFS");
     let _proc = linux_loader::run(args, envs, rootfs);
+    info!("linux_loader is complete");
+
     run();
-    */
 }
 
 #[cfg(target_arch = "x86_64")]
@@ -183,6 +190,14 @@ fn run() -> ! {
         executor::run_until_idle();
         x86_64::instructions::interrupts::enable_and_hlt();
         x86_64::instructions::interrupts::disable();
+    }
+}
+
+#[cfg(target_arch = "riscv64")]
+fn run() -> ! {
+    loop {
+        executor::run_until_idle();
+        kernel_hal_bare::interrupt::wait_for_interrupt();
     }
 }
 

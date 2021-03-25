@@ -173,6 +173,17 @@ impl PageTableImpl {
     pub unsafe fn kernel_table() -> ManuallyDrop<Self> {
         Self::active()
     }
+
+    /// When `vaddr` is not mapped, map it to `paddr`.
+    pub fn map_if_not_exists(&mut self, vaddr: usize, paddr: usize) -> bool {
+        if let Some(entry) = self.get_entry(vaddr) {
+            if entry.present() {
+                return false;
+            }
+        }
+        self.map(vaddr, paddr);
+        true
+    }
 }
 
 impl PageTableExt for PageTableImpl {

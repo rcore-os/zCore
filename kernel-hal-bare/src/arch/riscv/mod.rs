@@ -4,6 +4,7 @@ use riscv::addr::Page;
 use riscv::paging::{PageTableFlags as PTF, *};
 use riscv::register::{time, satp, sie};
 //use crate::sbi;
+use core::mem;
 use core::fmt::{ self, Write };
 use alloc::{collections::VecDeque, vec::Vec};
 use rcore_memory::paging::PageTableExt;
@@ -37,10 +38,12 @@ impl PageTableImpl {
         map_kernel(root_vaddr as _, current as _);
         */
 
-        trace!("create page table @ {:#x}", pt.root_frame.start_address().as_usize());
-        PageTableImpl {
+        trace!("new(), create page table @ {:#x}", pt.root_frame.start_address().as_usize());
+        let new = PageTableImpl {
             root_paddr: pt.root_frame.start_address().as_usize(),
-        }
+        };
+        mem::forget(pt); //防止自动Drop掉root frame
+        new
     }
 
     #[cfg(target_arch = "riscv32")]
@@ -348,9 +351,9 @@ pub struct GraphicInfo {
     pub fb_size: u64,
 }
 
-mod interrupt;
+pub mod interrupt;
 mod plic;
 mod uart;
 
-mod virtio;
+pub mod virtio;
 

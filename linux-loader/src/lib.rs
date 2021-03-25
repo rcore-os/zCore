@@ -36,9 +36,22 @@ pub fn run(args: Vec<String>, envs: Vec<String>, rootfs: Arc<dyn FileSystem>) ->
         stack_pages: 8,
         root_inode: rootfs.root_inode(),
     };
+
+    {
+        let mut id = 0;
+        let rust_dir = rootfs.root_inode().lookup("/").unwrap();
+        warn!("Rootfs: / ");
+        while let Ok(name) = rust_dir.get_entry(id) {
+            id += 1;
+            warn!("  {}", name);
+        }
+    }
+
     let inode = rootfs.root_inode().lookup(&args[0]).unwrap();
     let data = inode.read_as_vec().unwrap();
     let path = args[0].clone();
+    debug!("Linux process: {:?}", path);
+
     let (entry, sp) = loader.load(&proc.vmar(), &data, args, envs, path).unwrap();
 
     thread

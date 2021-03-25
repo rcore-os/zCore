@@ -37,7 +37,7 @@ _start:
 	.align 12
 	.global bootstack
 bootstack:
-	.space 1024 * 16
+	.space 4096 * 32
 	.global bootstacktop
 bootstacktop:
 

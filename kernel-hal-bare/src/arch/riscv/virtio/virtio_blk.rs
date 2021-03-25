@@ -113,8 +113,9 @@ impl Driver for VirtIOBlkDriver {
 
         // ensure header page is mapped
         //active_table().map_if_not_exists(driver.header as usize, driver.header as usize);
+        //warn!("Should map_if_not_exists()");
         unsafe{
-            PageTableImpl::active().map(driver.header as usize, driver.header as usize);
+            PageTableImpl::active().map_if_not_exists(driver.header as usize, driver.header as usize);
         }
         let header = unsafe { &mut *(driver.header as *mut VirtIOHeader) };
         let interrupt = header.interrupt_status.read();
@@ -133,12 +134,13 @@ impl Driver for VirtIOBlkDriver {
         format!("virtio_block")
     }
 
-    fn read_block(&self, block_id: usize, buf: &mut [u8]) -> Result<(), DevError> {
+    fn read_block(&self, block_id: usize, buf: &mut [u8]) -> bool {
         let mut driver = self.0.lock();
         // ensure header page is mapped
         //active_table().map_if_not_exists(driver.header as usize, driver.header as usize);
+        //warn!("Should map_if_not_exists()");
         unsafe{
-            PageTableImpl::active().map(driver.header as usize, driver.header as usize);
+            PageTableImpl::active().map_if_not_exists(driver.header as usize, driver.header as usize);
         }
 
         let mut req = VirtIOBlkReadReq::default();
@@ -158,20 +160,19 @@ impl Driver for VirtIOBlkDriver {
         if resp.status == VIRTIO_BLK_S_OK {
             let len = min(buf.len(), VIRTIO_BLK_BLK_SIZE);
             buf[..len].clone_from_slice(&resp.data[..len]);
-            //true
-            Ok(())
+            true
         } else {
-            //false
-            Err(DevError)
+            false
         }
     }
 
-    fn write_block(&self, block_id: usize, buf: &[u8]) -> Result<(), DevError> {
+    fn write_block(&self, block_id: usize, buf: &[u8]) -> bool {
         let mut driver = self.0.lock();
         // ensure header page is mapped
         //active_table().map_if_not_exists(driver.header as usize, driver.header as usize);
+        //warn!("Should map_if_not_exists()");
         unsafe{
-            PageTableImpl::active().map(driver.header as usize, driver.header as usize);
+            PageTableImpl::active().map_if_not_exists(driver.header as usize, driver.header as usize);
         }
 
         let mut req: VirtIOBlkWriteReq = unsafe { zeroed() };
@@ -191,9 +192,9 @@ impl Driver for VirtIOBlkDriver {
         driver.queue.get_block();
         let resp = unsafe { &*(&input as *const u8 as *const VirtIOBlkWriteResp) };
         if resp.status == VIRTIO_BLK_S_OK {
-            Ok(())
+            true
         } else {
-            Err(DevError)
+            false
         }
     }
 }

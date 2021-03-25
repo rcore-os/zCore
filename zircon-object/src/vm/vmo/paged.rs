@@ -549,6 +549,7 @@ impl VMObjectPagedInner {
                     return Ok(CommitResult::Ref(PhysFrame::zero_frame_addr()));
                 }
                 // lazy allocate zero frame
+                // 这里会调用HAL层的hal_frame_alloc, 请注意实现该函数时参数要一样
                 let target_frame = PhysFrame::alloc().ok_or(ZxError::NO_MEMORY)?;
                 kernel_hal::frame_zero_in_range(target_frame.addr(), 0, PAGE_SIZE);
                 if out_of_range {

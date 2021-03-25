@@ -91,7 +91,7 @@ fn breakpoint(sepc: &mut usize){
 }
 
 fn page_fault(stval: usize, tf: &mut TrapFrame){
-    panic!("EXCEPTION: Page Fault @ {:#x}->{:#x}", tf.sepc, stval);
+    panic!("EXCEPTION Page Fault: {:?} @ {:#x}->{:#x}", tf.scause.cause(), tf.sepc, stval);
 }
 
 fn super_timer(){
@@ -128,4 +128,16 @@ pub fn init_soft(){
         sie::set_ssoft();
     }
 	bare_println!("+++ setup soft int! +++");
+}
+
+pub fn wait_for_interrupt() {
+    unsafe {
+        // enable interrupt and disable
+        let sie = riscv::register::sstatus::read().sie();
+        riscv::register::sstatus::set_sie();
+        riscv::asm::wfi();
+        if !sie {
+            riscv::register::sstatus::clear_sie();
+        }
+    }
 }

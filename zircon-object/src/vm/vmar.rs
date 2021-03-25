@@ -78,7 +78,7 @@ impl VmAddressRegion {
             addr,
             size,
             parent: None,
-            page_table: Arc::new(Mutex::new(kernel_hal::PageTable::new())),
+            page_table: Arc::new(Mutex::new(kernel_hal::PageTable::new())), //hal PageTable
             inner: Mutex::new(Some(VmarInner::default())),
         })
     }
