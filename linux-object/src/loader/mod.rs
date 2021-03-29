@@ -6,7 +6,7 @@ use {
     crate::fs::INodeExt,
     alloc::{collections::BTreeMap, string::String, sync::Arc, vec::Vec},
     rcore_fs::vfs::INode,
-    xmas_elf::ElfFile,
+    xmas_elf::{ElfFile, program::Type},
     zircon_object::{util::elf_loader::*, vm::*, ZxError},
 };
 
@@ -54,7 +54,10 @@ impl LinuxElfLoader {
             vmo.write(offset as usize, &self.syscall_entry.to_ne_bytes())?;
         }
 
-        elf.relocate(base).map_err(|_| ZxError::INVALID_ARGS)?;
+        match elf.relocate(base).map_err(|_| ZxError::INVALID_ARGS) {
+            Ok(_) => {},
+            _ => warn!(".rela.dyn not found"),
+        }
 
         let stack_vmo = VmObject::new_paged(self.stack_pages);
         let flags = MMUFlags::READ | MMUFlags::WRITE | MMUFlags::USER;
@@ -67,7 +70,9 @@ impl LinuxElfLoader {
             auxv: {
                 let mut map = BTreeMap::new();
                 map.insert(abi::AT_BASE, base);
-                map.insert(abi::AT_PHDR, base + elf.header.pt2.ph_offset() as usize);
+                if let Some(phdr_vaddr) = get_phdr_vaddr(&elf) {
+                    map.insert(abi::AT_PHDR, phdr_vaddr as usize);
+                }
                 map.insert(abi::AT_ENTRY, entry);
                 map.insert(abi::AT_PHENT, elf.header.pt2.ph_entry_size() as usize);
                 map.insert(abi::AT_PHNUM, elf.header.pt2.ph_count() as usize);
@@ -80,5 +85,24 @@ impl LinuxElfLoader {
         sp -= init_stack.len();
 
         Ok((entry, sp))
+    }
+}
+
+fn get_phdr_vaddr(elf: &ElfFile) -> Option<u64> {
+    if let Some(phdr) = elf
+        .program_iter()
+        .find(|ph| ph.get_type() == Ok(Type::Phdr))
+    {
+        // if phdr exists in program header, use it
+        Some(phdr.virtual_addr())
+    } else if let Some(elf_addr) = elf
+        .program_iter()
+        .find(|ph| ph.get_type() == Ok(Type::Load) && ph.offset() == 0)
+    {
+        // otherwise, check if elf is loaded from the beginning, then phdr can be inferred.
+        Some(elf_addr.virtual_addr() + elf.header.pt2.ph_offset())
+    } else {
+        warn!("elf: no phdr found, tls might not work");
+        None
     }
 }

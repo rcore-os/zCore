@@ -53,10 +53,12 @@ rv64-image: rcore-fs-fuse
 	@rm -rf rootfs
 	@mkdir rootfs
 	@mkdir rootfs/bin
+	@mkdir rootfs/dev
+	@mkdir rootfs/tmp
 ifeq ($(wildcard prebuilt/linux/riscv64/busybox),)
 	@mkdir -p prebuilt/linux/riscv64
 	@wget https://github.com/rcore-os/busybox-prebuilts/raw/master/busybox-1.30.1-riscv64/busybox -O prebuilt/linux/riscv64/busybox
 endif
-	@cp prebuilt/linux/riscv64/busybox rootfs/bin/
-	@@rcore-fs-fuse riscv64.img rootfs zip
+	@cp prebuilt/linux/riscv64/hello rootfs/bin/busybox
+	@@rcore-fs-fuse --fs sfs riscv64.img rootfs zip
 	@qemu-img resize riscv64.img +50M

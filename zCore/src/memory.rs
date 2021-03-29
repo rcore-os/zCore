@@ -99,14 +99,14 @@ pub fn init_heap() {
 
 #[no_mangle]
 #[allow(improper_ctypes_definitions)]
-pub extern "C" fn hal_frame_alloc() -> Option<usize> {
+pub extern "C" fn hal_frame_alloc() -> usize {
     // get the real address of the alloc frame
     let ret = FRAME_ALLOCATOR
         .lock()
         .alloc()
         .map(|id| id * PAGE_SIZE + MEMORY_OFFSET);
     trace!("Allocate frame: {:x?}", ret);
-    ret
+    ret.unwrap()
 }
 
 #[no_mangle]
@@ -141,9 +141,14 @@ pub extern "C" fn hal_pt_map_kernel(pt: &mut PageTable, current: &PageTable) {
     pt[PHYSICAL_MEMORY_PM4].set_addr(ephysical.addr(), ephysical.flags() | EF::GLOBAL);
 }
 
+#[no_mangle]
 #[cfg(target_arch = "riscv64")]
 pub extern "C" fn hal_pt_map_kernel(pt: &mut PageTable, current: &PageTable) {
-    info!("hal_pt_map_kernel(), NULL! ");
+    use riscv::addr::Frame;
+    let ekernel = current[KERNEL_PM4].clone();
+    let ephysical = current[PHYSICAL_MEMORY_PM4].clone();
+    pt[KERNEL_PM4].set(Frame::of_addr(ekernel.addr()), ekernel.flags() | EF::GLOBAL);
+    pt[PHYSICAL_MEMORY_PM4].set(Frame::of_addr(ephysical.addr()), ephysical.flags() | EF::GLOBAL);
 }
 
 pub unsafe fn clear_bss() {

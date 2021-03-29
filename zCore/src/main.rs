@@ -84,26 +84,32 @@ fn main(ramfs_data: &[u8], cmdline: &str) {
 }
 
 #[cfg(target_arch = "riscv64")]
+global_asm!(include_str!("link_user.S"));
+
+#[cfg(target_arch = "riscv64")]
 #[no_mangle]
 pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
     let device_tree_vaddr = phys_to_virt(device_tree_paddr);
-
+    extern "C" {
+        fn _user_img_start();
+        fn _user_img_end();
+    };
     let boot_info = BootInfo {
         memory_map: Vec::new(),
         physical_memory_offset: 0,
         graphic_info: GraphicInfo{mode: 0, fb_addr: 0, fb_size: 0},
         acpi2_rsdp_addr: 0,
         smbios_addr: 0,
-        initramfs_addr: 0,
-        initramfs_size: 0,
-        cmdline: "LOG=trace:TERM=xterm-256color:console.shell=true:virtcon.disable=true",
+        initramfs_addr: _user_img_start as u64,
+        initramfs_size: _user_img_end as u64 - _user_img_start as u64,
+        cmdline: "LOG=info:TERM=xterm-256color:console.shell=true:virtcon.disable=true",
     };
 
     unsafe {
         memory::clear_bss();
     }
 
-    logging::init(get_log_level(boot_info.cmdline));
+    logging::init("info");
     warn!("rust_main(), After logging init\n\n");
     memory::init_heap();
     memory::init_frame_allocator(&boot_info);
@@ -126,9 +132,6 @@ pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
     */
 
 
-
-    loop {} //remove me
-
     // 挂载virtio-blk-device rootfs
     //
     let ramfs_data = unsafe {
@@ -149,19 +152,15 @@ fn main(ramfs_data: &'static mut [u8], _cmdline: &str) {
     use alloc::vec;
     use alloc::string::String;
 
-    /*
     use linux_object::fs::MemBuf;
     use linux_object::fs::STDIN;
-    */
 
     kernel_hal_bare::serial_set_callback(Box::new({
         move || {
             let mut buffer = [0; 255];
             let len = kernel_hal_bare::serial_read(&mut buffer);
             for c in &buffer[..len] {
-                /*
                 STDIN.push((*c).into());
-                */
                 kernel_hal_bare::serial_write(alloc::format!("{}", *c as char).as_str());
             }
             false
@@ -170,13 +169,11 @@ fn main(ramfs_data: &'static mut [u8], _cmdline: &str) {
 
     let args: Vec<String> = vec!["/bin/busybox".into(), "sh".into()];
     let envs: Vec<String> = vec!["PATH=/usr/sbin:/usr/bin:/sbin:/bin:/usr/x86_64-alpine-linux-musl/bin".into()];
-
-    /*
     let device = Arc::new(MemBuf::new(ramfs_data));
     let rootfs = rcore_fs_sfs::SimpleFileSystem::open(device).unwrap();
     let _proc = linux_loader::run(args, envs, rootfs);
     run();
-    */
+
 }
 
 #[cfg(target_arch = "x86_64")]
@@ -185,6 +182,27 @@ fn run() -> ! {
         executor::run_until_idle();
         x86_64::instructions::interrupts::enable_and_hlt();
         x86_64::instructions::interrupts::disable();
+    }
+}
+
+#[cfg(target_arch = "riscv64")]
+pub fn wait_for_interrupt() {
+    unsafe {
+        // enable interrupt and disable
+        let sie = riscv::register::sstatus::read().sie();
+        riscv::register::sstatus::set_sie();
+        riscv::asm::wfi();
+        if !sie {
+            riscv::register::sstatus::clear_sie();
+        }
+    }
+}
+
+#[cfg(target_arch = "riscv64")]
+fn run() -> ! {
+    loop {
+        executor::run_until_idle();
+        wait_for_interrupt();
     }
 }
 

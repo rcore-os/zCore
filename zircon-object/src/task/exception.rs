@@ -142,6 +142,15 @@ struct ExceptionContext {
     padding2: u64,
 }
 
+/// Data associated with an exception (siginfo in linux parlance)
+/// Things available from regsets (e.g., pc) are not included here.
+/// For an example list of things one might add, see linux siginfo.
+#[cfg(target_arch = "riscv64")]
+#[repr(C)]
+#[derive(Debug, Default, Clone)]
+pub struct ExceptionContext {
+}
+
 impl ExceptionContext {
     #[cfg(target_arch = "x86_64")]
     fn from_user_context(cx: &UserContext) -> Self {
@@ -152,6 +161,10 @@ impl ExceptionContext {
         }
     }
     #[cfg(target_arch = "aarch64")]
+    fn from_user_context(_cx: &UserContext) -> Self {
+        unimplemented!()
+    }
+    #[cfg(target_arch = "riscv64")]
     fn from_user_context(_cx: &UserContext) -> Self {
         unimplemented!()
     }

@@ -244,20 +244,24 @@ impl Thread {
         {
             let mut inner = self.inner.lock();
             let context = inner.context.as_mut().ok_or(ZxError::BAD_STATE)?;
+            context.set_ip(entry);
+            context.set_sp(stack);
             #[cfg(target_arch = "x86_64")]
             {
-                context.general.rip = entry;
-                context.general.rsp = stack;
                 context.general.rdi = arg1;
                 context.general.rsi = arg2;
                 context.general.rflags |= 0x3202;
             }
             #[cfg(target_arch = "aarch64")]
             {
-                context.elr = entry;
-                context.sp = stack;
                 context.general.x0 = arg1;
                 context.general.x1 = arg2;
+            }
+            #[cfg(target_arch = "riscv64")]
+            {
+                context.general.a0 = arg1;
+                context.general.a1 = arg2;
+                context.sstatus = 1 << 18 | 1 << 14 | 1 << 13 | 1 << 5;
             }
             inner.change_state(ThreadState::Running, &self.base);
         }

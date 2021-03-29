@@ -171,7 +171,7 @@ pub struct PhysFrame {
 impl PhysFrame {
     #[linkage = "weak"]
     #[export_name = "hal_frame_alloc"]
-    pub fn alloc() -> Option<Self> {
+    pub fn alloc() -> Self {
         unimplemented!()
     }
 
@@ -435,6 +435,11 @@ pub fn fill_random(buf: &mut [u8]) {
 }
 
 #[cfg(target_arch = "aarch64")]
+pub fn fill_random(_buf: &mut [u8]) {
+    // TODO
+}
+
+#[cfg(target_arch = "riscv64")]
 pub fn fill_random(_buf: &mut [u8]) {
     // TODO
 }

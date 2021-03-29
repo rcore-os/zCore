@@ -236,6 +236,8 @@ impl Syscall<'_> {
             //            Sys::DELETE_MODULE => self.sys_delete_module(a0.into(), a1 as u32),
             #[cfg(target_arch = "x86_64")]
             _ => self.x86_64_syscall(sys_type, args).await,
+            #[cfg(target_arch = "riscv64")]
+            _ => self.riscv64_syscall(sys_type, args).await,
         };
         info!("<= {:x?}", ret);
         match ret {
@@ -275,6 +277,16 @@ impl Syscall<'_> {
             Sys::TIME => self.sys_time(a0.into()),
             //            Sys::EPOLL_CREATE => self.sys_epoll_create(a0),
             //            Sys::EPOLL_WAIT => self.sys_epoll_wait(a0, a1.into(), a2, a3),
+            _ => self.unknown_syscall(sys_type),
+        }
+    }
+
+    #[cfg(target_arch = "riscv64")]
+    /// syscall specified for riscv64
+    async fn riscv64_syscall(&mut self, sys_type: Sys, _args: [usize; 6]) -> SysResult {
+        // let [a0, a1, a2, a3, a4, _a5] = args;
+        info!("{:?}", sys_type);
+        match sys_type {
             _ => self.unknown_syscall(sys_type),
         }
     }

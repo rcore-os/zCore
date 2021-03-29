@@ -549,7 +549,7 @@ impl VMObjectPagedInner {
                     return Ok(CommitResult::Ref(PhysFrame::zero_frame_addr()));
                 }
                 // lazy allocate zero frame
-                let target_frame = PhysFrame::alloc().ok_or(ZxError::NO_MEMORY)?;
+                let target_frame = PhysFrame::alloc();
                 kernel_hal::frame_zero_in_range(target_frame.addr(), 0, PAGE_SIZE);
                 if out_of_range {
                     // can never be a hidden vmo
@@ -628,7 +628,7 @@ impl VMObjectPagedInner {
             return Ok(CommitResult::CopyOnWrite(target_frame, need_unmap));
         } else if flags.contains(MMUFlags::WRITE) && child_tag.is_split() {
             // copy-on-write
-            let target_frame = PhysFrame::alloc().ok_or(ZxError::NO_MEMORY)?;
+            let target_frame = PhysFrame::alloc();
             kernel_hal::frame_copy(frame.frame.addr(), target_frame.addr());
             frame.tag = child_tag;
             return Ok(CommitResult::CopyOnWrite(target_frame, true));

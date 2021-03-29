@@ -12,7 +12,7 @@ extern crate log;
 use {
     alloc::{boxed::Box, string::String, sync::Arc, vec::Vec},
     core::{future::Future, pin::Pin},
-    kernel_hal::{GeneralRegs, MMUFlags},
+    kernel_hal::{MMUFlags, UserContext},
     linux_object::{
         fs::{vfs::FileSystem, INodeExt},
         loader::LinuxElfLoader,
@@ -67,6 +67,7 @@ async fn new_thread(thread: CurrentThread) {
         kernel_hal::context_run(&mut cx);
         trace!("back from user: {:#x?}", cx);
         // handle trap/interrupt/syscall
+        #[cfg(target_arch = "x86_64")]
         match cx.trap_num {
             0x100 => handle_syscall(&thread, &mut cx.general).await,
             0x20..=0x3f => {
@@ -93,6 +94,34 @@ async fn new_thread(thread: CurrentThread) {
             }
             _ => panic!("not supported interrupt from user mode. {:#x?}", cx),
         }
+        #[cfg(target_arch = "riscv64")]
+        let trap_num = riscv::register::scause::read().bits();
+        #[cfg(target_arch = "riscv64")]
+        match trap_num {
+            // page fault
+            _ if kernel_hal_bare::arch::is_page_fault(trap_num) => {
+                let addr = kernel_hal_bare::arch::get_page_fault_addr();
+                info!("page fault from user @ {:#x}", addr);
+                let flags = if trap_num == 15 {
+                    MMUFlags::WRITE
+                } else {
+                    MMUFlags::READ
+                };
+                let vmar = thread.proc().vmar();
+                match vmar.handle_page_fault(addr, flags) {
+                    Ok(()) => {}
+                    Err(err) => {
+                        panic!("Page Fault from user mode {:#x?}, tf = {:#x?}", err, cx);
+                    }
+                }
+            }
+            _ if kernel_hal_bare::arch::is_timer_intr(trap_num) => {
+                kernel_hal_bare::arch::clock_set_next_event();
+                kernel_hal::timer_tick();
+            }
+            _ if kernel_hal_bare::arch::is_syscall(trap_num) => handle_syscall(&thread, &mut cx).await,
+            _ => panic!("unhandled trap {:?}", riscv::register::scause::read().cause()),
+        }
         thread.end_running(cx);
     }
 }
@@ -102,10 +131,15 @@ fn thread_fn(thread: CurrentThread) -> Pin<Box<dyn Future<Output = ()> + Send + 
 }
 
 /// syscall handler entry
-async fn handle_syscall(thread: &CurrentThread, regs: &mut GeneralRegs) {
-    trace!("syscall: {:#x?}", regs);
-    let num = regs.rax as u32;
-    let args = [regs.rdi, regs.rsi, regs.rdx, regs.r10, regs.r8, regs.r9];
+async fn handle_syscall(thread: &CurrentThread, context: &mut UserContext) {
+    trace!("syscall: {:#x?}", context);
+    let num = context.get_syscall_num();
+    let args = context.get_syscall_args();
+    let regs = &mut context.general;
+    #[cfg(target_arch = "riscv64")]
+    {
+        context.sepc = context.sepc + 4;
+    }
     let mut syscall = Syscall {
         thread,
         #[cfg(feature = "std")]
@@ -115,5 +149,6 @@ async fn handle_syscall(thread: &CurrentThread, regs: &mut GeneralRegs) {
         thread_fn,
         regs,
     };
-    regs.rax = syscall.syscall(num, args).await as usize;
+    let ret = syscall.syscall(num as u32, args).await;
+    context.set_syscall_ret(ret as usize);
 }

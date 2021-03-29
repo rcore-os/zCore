@@ -184,6 +184,7 @@ impl From<ZxError> for LxError {
             ZxError::SHOULD_WAIT => LxError::EAGAIN,
             ZxError::PEER_CLOSED => LxError::EPIPE,
             ZxError::BAD_HANDLE => LxError::EBADF,
+            ZxError::NO_MEMORY => LxError::ENOMEM,
             _ => unimplemented!("unknown error type: {:?}", e),
         }
     }

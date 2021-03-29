@@ -8,11 +8,13 @@ use riscv::register::{
 	},
     sie,
 	sepc,
+	stval,
 	stvec,
 	sscratch,
     sstatus,
 	sstatus::Sstatus,
 };
+use trapframe::TrapFrame;
 
 /*
 use crate::timer::{
@@ -30,25 +32,14 @@ use super::uart;
 use crate::{putfmt, phys_to_virt};
 use super::clock_set_next_event;
 
-global_asm!(include_str!("trap.asm"));
-
-#[repr(C)]
-pub struct TrapFrame{
-	pub x: [usize; 32], //General registers
-	pub sstatus: Sstatus,
-	pub sepc: usize,
-	pub stval: usize,
-	pub scause: Scause,
-}
-
 pub fn init(){
 	unsafe{
 		extern "C" {
-			fn __alltraps();
+			fn trap_entry();
 		}
 
 		sscratch::write(0);
-		stvec::write(__alltraps as usize, stvec::TrapMode::Direct);
+		stvec::write(trap_entry as usize, stvec::TrapMode::Direct);
 
 		sstatus::set_sie();
 
@@ -63,13 +54,13 @@ pub fn init(){
 }
 
 #[no_mangle]
-pub fn rust_trap(tf: &mut TrapFrame){
+pub fn trap_handler(tf: &mut TrapFrame){
     let sepc = tf.sepc;
-    let stval = tf.stval;
-    let is_int = tf.scause.bits() >> 63;
-    let code = tf.scause.bits() & !(1 << 63);
-
-	match tf.scause.cause() {
+    let scause = scause::read();
+    let stval = stval::read();
+    let is_int = scause.bits() >> 63;
+    let code = scause.bits() & !(1 << 63);
+	match scause.cause() {
 		Trap::Exception(Exception::Breakpoint) => breakpoint(&mut tf.sepc),
 		Trap::Exception(Exception::IllegalInstruction) => panic!("IllegalInstruction: {:#x}->{:#x}", sepc, stval),
         Trap::Exception(Exception::LoadFault) => panic!("Load access fault: {:#x}->{:#x}", sepc, stval),

@@ -90,6 +90,12 @@ pub struct PacketGuestMem {
     pub _reserved: u64,
 }
 
+#[cfg(target_arch = "riscv64")]
+#[repr(C)]
+#[derive(Default, Debug, Copy, Clone, Eq, PartialEq)]
+pub struct PacketGuestMem {
+}
+
 #[repr(C)]
 #[derive(Default, Debug, Copy, Clone, Eq, PartialEq)]
 pub struct PacketGuestIo {

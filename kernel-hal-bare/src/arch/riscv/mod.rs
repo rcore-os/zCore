@@ -2,7 +2,7 @@ use super::super::*;
 use kernel_hal::{PageTableTrait, PhysAddr, VirtAddr};
 use riscv::addr::Page;
 use riscv::paging::{PageTableFlags as PTF, *};
-use riscv::register::{time, satp, sie};
+use riscv::register::{time, satp, sie, stval};
 //use crate::sbi;
 use core::mem;
 use core::fmt::{ self, Write };
@@ -41,7 +41,7 @@ impl PageTableImpl {
     /// Create a new `PageTable`.
     #[allow(clippy::new_without_default)]
     #[export_name = "hal_pt_new"]
-    pub fn new() -> Self {
+    pub extern "C" fn new() -> Self {
         let root_frame = Frame::alloc().expect("failed to alloc frame");
         let root_vaddr = phys_to_virt(root_frame.paddr);
         let root = unsafe { &mut *(root_vaddr as *mut PageTable) };
@@ -274,6 +274,7 @@ fn get_cycle() -> u64 {
     */
 }
 
+#[export_name = "hal_timer_now"]
 pub fn timer_now() -> Duration {
     const FREQUENCY: u64 = 10_000_000; // ???
     let time = get_cycle();
@@ -281,10 +282,15 @@ pub fn timer_now() -> Duration {
     Duration::from_nanos(time * 1_000_000_000 / FREQUENCY as u64)
 }
 
-fn clock_set_next_event() {
+pub fn clock_set_next_event() {
     //let TIMEBASE: u64 = 100000;
     let TIMEBASE: u64 = 10_000_000;
     sbi::set_timer(get_cycle() + TIMEBASE);
+}
+
+pub const Timer: usize = usize::MAX / 2 + 1 + 5;
+pub fn is_timer_intr(trap: usize) -> bool {
+    trap == Timer
 }
 
 fn timer_init() {
@@ -359,5 +365,19 @@ mod interrupt;
 mod plic;
 mod uart;
 
-mod virtio;
+pub const Syscall: usize = 8;
+pub const InstructionPageFault: usize = 12;
+pub const LoadPageFault: usize = 13;
+pub const StorePageFault: usize = 15;
 
+pub fn is_page_fault(trap: usize) -> bool {
+    trap == InstructionPageFault || trap == LoadPageFault || trap == StorePageFault
+}
+
+pub fn get_page_fault_addr() -> usize {
+    stval::read()
+}
+
+pub fn is_syscall(trap: usize) -> bool {
+    trap == Syscall
+}

@@ -6,3 +6,7 @@ Cargo.lock
 /prebuilt/linux/alpine*
 .idea
 scripts/linux/test-result.txt
+*.img
+.vscode
+.DS_Store
+link_user.S

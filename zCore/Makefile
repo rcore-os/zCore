@@ -9,6 +9,8 @@ hypervisor ?=
 smp ?= 1
 test_filter ?= *.*
 
+export ARCH=$(arch)
+
 build_args := -Z build-std=core,alloc --target $(arch).json
 build_path := target/$(arch)/$(mode)
 kernel := $(build_path)/zcore
@@ -17,7 +19,7 @@ kernel_bin := $(build_path)/zcore.bin
 ESP := $(build_path)/esp
 OVMF := ../rboot/OVMF.fd
 qemu := qemu-system-$(arch)
-OBJDUMP := rust-objdump -print-imm-hex -x86-asm-syntax=intel
+OBJDUMP := rust-objdump --print-imm-hex --x86-asm-syntax=intel
 OBJCOPY := rust-objcopy --binary-architecture=$(arch)
 VMDISK := $(build_path)/boot.vdi
 QEMU_DISK := $(build_path)/disk.qcow2
@@ -50,13 +52,16 @@ qemu_opts += \
 	-device isa-debug-exit,iobase=0xf4,iosize=0x04
 
 else ifeq ($(arch), riscv64)
+
+export USER_IMG = ../riscv64.img
+
 qemu_opts += \
 	-machine virt \
 	-no-reboot \
 	-no-shutdown \
 	-nographic \
-	-drive file=$(QEMU_DISK),format=qcow2,id=sfs \
-	-device virtio-blk-device,drive=sfs \
+	-drive file=$(QEMU_DISK),format=raw,id=x0 \
+	-device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0 \
 	-kernel $(kernel_bin)
 
 endif

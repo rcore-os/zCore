@@ -48,7 +48,7 @@ pub use self::arch::*;
 #[allow(improper_ctypes)]
 extern "C" {
     fn hal_pt_map_kernel(pt: *mut u8, current: *const u8);
-    fn hal_frame_alloc() -> Option<PhysAddr>;
+    fn hal_frame_alloc() -> PhysAddr;
     fn hal_frame_dealloc(paddr: &PhysAddr);
     #[link_name = "hal_pmem_base"]
     static PMEM_BASE: usize;
@@ -72,10 +72,14 @@ impl Thread {
         impl Future for PageTableSwitchWrapper {
             type Output = ();
             fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+                info!("spawn poll");
                 unsafe {
                     arch::set_page_table(self.vmtoken);
                 }
-                self.inner.lock().as_mut().poll(cx)
+                info!("spawn poll2");
+                let x = self.inner.lock().as_mut().poll(cx);
+                info!("spawn poll3");
+                x
             }
         }
 
@@ -117,7 +121,7 @@ pub struct Frame {
 
 impl Frame {
     pub fn alloc() -> Option<Self> {
-        unsafe { hal_frame_alloc().map(|paddr| Frame { paddr }) }
+        unsafe { Some(Self { paddr: hal_frame_alloc() }) }
     }
 
     pub fn dealloc(&mut self) {
@@ -211,7 +215,7 @@ mod tests {
     }
 
     #[no_mangle]
-    extern "C" fn hal_frame_alloc() -> Option<PhysAddr> {
+    extern "C" fn hal_frame_alloc() -> PhysAddr {
         unimplemented!()
     }
 
