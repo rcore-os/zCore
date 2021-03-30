@@ -84,7 +84,7 @@ pub extern "C" fn trap_handler(tf: &mut TrapFrame) {
 #[export_name = "hal_irq_handle"]
 pub fn irq_handle(irq: u8) {
 
-    panic!("unhandled U-mode IRQ number: {}", irq);
+    error!("unhandled U-mode IRQ number: {}", irq);
 }
 
 fn breakpoint(sepc: &mut usize){

@@ -12,7 +12,7 @@ extern crate log;
 use {
     alloc::{boxed::Box, string::String, sync::Arc, vec::Vec},
     core::{future::Future, pin::Pin},
-    kernel_hal::{GeneralRegs, MMUFlags},
+    kernel_hal::{UserContext, GeneralRegs, MMUFlags},
     linux_object::{
         fs::{vfs::FileSystem, INodeExt},
         loader::LinuxElfLoader,
@@ -141,7 +141,7 @@ async fn new_thread(thread: CurrentThread) {
         }else{
             match trap_num {
                 // syscall
-                8 => handle_syscall(&thread, &mut cx.general).await,
+                8 => handle_syscall(&thread, &mut cx).await,
                 // PageFault
                 12 | 13 | 15 => {
                     let vaddr = kernel_hal::fetch_fault_vaddr();
@@ -192,10 +192,14 @@ async fn handle_syscall(thread: &CurrentThread, regs: &mut GeneralRegs) {
 }
 
 #[cfg(target_arch = "riscv64")]
-async fn handle_syscall(thread: &CurrentThread, regs: &mut GeneralRegs) {
-    trace!("syscall: {:#x?}", regs);
-    let num = regs.a7 as u32;
-    let args = [regs.a0, regs.a1, regs.a2, regs.a3, regs.a4, regs.a5];
+async fn handle_syscall(thread: &CurrentThread, cx: &mut UserContext) {
+    trace!("syscall: {:#x?}", cx.general);
+    let num = cx.general.a7 as u32;
+    let args = [cx.general.a0, cx.general.a1, cx.general.a2, cx.general.a3, cx.general.a4, cx.general.a5];
+    // add before fork
+    cx.sepc += 4;
+
+    let regs = &mut (cx.general as GeneralRegs);
     let mut syscall = Syscall {
         thread,
         #[cfg(feature = "std")]
@@ -205,5 +209,5 @@ async fn handle_syscall(thread: &CurrentThread, regs: &mut GeneralRegs) {
         thread_fn,
         regs,
     };
-    regs.a0 = syscall.syscall(num, args).await as usize;
+    cx.general.a0 = syscall.syscall(num, args).await as usize;
 }
