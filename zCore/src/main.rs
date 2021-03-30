@@ -96,7 +96,7 @@ pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
         dtb_addr: device_tree_paddr as u64,
         initramfs_addr: 0,
         initramfs_size: 0,
-        cmdline: "LOG=trace:TERM=xterm-256color:console.shell=true:virtcon.disable=true",
+        cmdline: "LOG=warn:TERM=xterm-256color:console.shell=true:virtcon.disable=true",
     };
 
     unsafe {
@@ -162,7 +162,8 @@ fn main(_cmdline: &str) {
         }
     }));
 
-    let args: Vec<String> = vec!["/bin/busybox".into(), "sh".into()];
+    let args: Vec<String> = vec!["/bin/hello".into()];
+    //let args: Vec<String> = vec!["/bin/busybox".into(), "sh".into()];
     let envs: Vec<String> = vec!["PATH=/usr/sbin:/usr/bin:/sbin:/bin:/usr/x86_64-alpine-linux-musl/bin".into()];
 
     //需先初始化kernel-hal-bare virtio_blk驱动

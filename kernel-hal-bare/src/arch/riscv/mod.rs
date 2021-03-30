@@ -2,7 +2,7 @@ use super::super::*;
 use kernel_hal::{PageTableTrait, PhysAddr, VirtAddr};
 use riscv::addr::Page;
 use riscv::paging::{PageTableFlags as PTF, *};
-use riscv::register::{time, satp, sie};
+use riscv::register::{time, satp, sie, stval};
 //use crate::sbi;
 use core::mem;
 use core::fmt::{ self, Write };
@@ -120,6 +120,7 @@ pub unsafe fn set_page_table(vmtoken: usize) {
     let mode = satp::Mode::Sv32;
     #[cfg(target_arch = "riscv64")]
     let mode = satp::Mode::Sv39;
+    debug!("set user table: {:#x?}", vmtoken);
     satp::set(mode, 0, vmtoken >> 12);
 }
 
@@ -265,6 +266,7 @@ fn get_cycle() -> u64 {
     */
 }
 
+#[export_name = "hal_timer_now"]
 pub fn timer_now() -> Duration {
     const FREQUENCY: u64 = 10_000_000; // ???
     let time = get_cycle();
@@ -272,7 +274,8 @@ pub fn timer_now() -> Duration {
     Duration::from_nanos(time * 1_000_000_000 / FREQUENCY as u64)
 }
 
-fn clock_set_next_event() {
+#[export_name = "hal_timer_set_next"]
+fn timer_set_next() {
     //let TIMEBASE: u64 = 100000;
     let TIMEBASE: u64 = 10_000_000;
     sbi::set_timer(get_cycle() + TIMEBASE);
@@ -282,7 +285,7 @@ fn timer_init() {
     unsafe {
         sie::set_stimer();
     }
-    clock_set_next_event();
+    timer_set_next();
 }
 
 pub fn init(config: Config) {
@@ -304,6 +307,11 @@ pub fn init(config: Config) {
 pub struct Config {
     pub mconfig: u64,
     pub dtb: usize,
+}
+
+#[export_name = "fetch_fault_vaddr"]
+pub fn fetch_fault_vaddr() -> VirtAddr {
+    stval::read() as _
 }
 
 static mut CONFIG: Config = Config {

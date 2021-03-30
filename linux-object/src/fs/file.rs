@@ -155,6 +155,7 @@ impl File {
     }
 
     /// get metadata of file
+    /// fstat
     pub fn metadata(&self) -> LxResult<Metadata> {
         let metadata = self.inode.metadata()?;
         Ok(metadata)

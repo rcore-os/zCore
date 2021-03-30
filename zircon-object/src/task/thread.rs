@@ -265,6 +265,9 @@ impl Thread {
                 context.general.sp = stack;
                 context.general.a0 = arg1;
                 context.general.a1 = arg2;
+
+                // SUM | FS | SPIE
+                context.sstatus = 1 << 18 | 1 << 14 | 1 << 13 | 1 << 5;
             }
             inner.change_state(ThreadState::Running, &self.base);
         }

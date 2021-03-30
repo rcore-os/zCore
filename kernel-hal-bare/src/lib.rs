@@ -203,6 +203,7 @@ pub fn init(config: Config) {
     unsafe {
         trapframe::init();
     }
+    trace!("hal dtb: {:#x}", config.dtb);
     arch::init(config);
 }
 

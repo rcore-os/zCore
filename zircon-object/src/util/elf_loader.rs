@@ -27,6 +27,8 @@ impl VmarExt for VmAddressRegion {
             let vmo = make_vmo(&elf, ph)?;
             let offset = ph.virtual_addr() as usize / PAGE_SIZE * PAGE_SIZE;
             let flags = ph.flags().to_mmu_flags();
+            debug!("ph:{:#x?}, offset:{:#x?}, flags:{:#x?}", ph, offset, flags);
+            //映射vmo物理内存块到 VMAR
             self.map_at(offset, vmo.clone(), 0, vmo.len(), flags)?;
             first_vmo.get_or_insert(vmo);
         }
@@ -76,6 +78,7 @@ fn make_vmo(elf: &ElfFile, ph: ProgramHeader) -> ZxResult<Arc<VmObject>> {
         SegmentData::Undefined(data) => data,
         _ => return Err(ZxError::INVALID_ARGS),
     };
+    //调用 VMObjectTrait.write, 分配物理内存，后写入程序数据
     vmo.write(page_offset, data)?;
     Ok(vmo)
 }
@@ -159,8 +162,10 @@ impl ElfExt for ElfFile<'_> {
             const REL_GOT: u32 = 6;
             const REL_PLT: u32 = 7;
             const REL_RELATIVE: u32 = 8;
+            const R_RISCV_64: u32 = 2;
+            const R_RISCV_RELATIVE: u32 = 3;
             match entry.get_type() {
-                REL_GOT | REL_PLT => {
+                REL_GOT | REL_PLT | R_RISCV_64 => {
                     let dynsym = &dynsym[entry.get_symbol_table_index() as usize];
                     let symval = if dynsym.shndx() == 0 {
                         let name = dynsym.get_name(self)?;
@@ -171,13 +176,15 @@ impl ElfExt for ElfFile<'_> {
                     let value = symval + entry.get_addend() as usize;
                     unsafe {
                         let ptr = (base + entry.get_offset() as usize) as *mut usize;
+                        debug!("GOT write: {:#x} @ {:#x}", value, ptr as usize);
                         ptr.write(value);
                     }
                 }
-                REL_RELATIVE => {
+                REL_RELATIVE | R_RISCV_RELATIVE => {
                     let value = base + entry.get_addend() as usize;
                     unsafe {
                         let ptr = (base + entry.get_offset() as usize) as *mut usize;
+                        debug!("RELATIVE write: {:#x} @ {:#x}", value, ptr as usize);
                         ptr.write(value);
                     }
                 }

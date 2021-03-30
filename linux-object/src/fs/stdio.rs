@@ -154,6 +154,27 @@ impl INode for Stdout {
             _ => Err(FsError::NotSupported),
         }
     }
+
+    /// Get metadata of the INode
+    fn metadata(&self) -> Result<Metadata> {
+        Ok(Metadata {
+            dev: 1,
+            inode: 13,
+            size: 0,
+            blk_size: 0,
+            blocks: 0,
+            atime: Timespec { sec: 0, nsec: 0 },
+            mtime: Timespec { sec: 0, nsec: 0 },
+            ctime: Timespec { sec: 0, nsec: 0 },
+            type_: FileType::CharDevice,
+            mode: 0o666,
+            nlinks: 1,
+            uid: 0,
+            gid: 0,
+            rdev: make_rdev(5, 0),
+        })
+    }
+
     fn as_any_ref(&self) -> &dyn Any {
         self
     }

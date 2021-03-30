@@ -22,6 +22,8 @@ OBJCOPY := rust-objcopy --binary-architecture=$(arch)
 VMDISK := $(build_path)/boot.vdi
 QEMU_DISK := $(build_path)/disk.qcow2
 
+export ARCH=$(arch)
+
 ifeq ($(mode), release)
 	build_args += --release
 endif

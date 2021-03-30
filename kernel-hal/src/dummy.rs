@@ -280,6 +280,12 @@ pub fn timer_set(_deadline: Duration, _callback: Box<dyn FnOnce(Duration) + Send
     unimplemented!()
 }
 
+#[linkage = "weak"]
+#[export_name = "hal_timer_set_next"]
+pub fn timer_set_next() {
+    unimplemented!()
+}
+
 /// Check timers, call when timer interrupt happened.
 #[linkage = "weak"]
 #[export_name = "hal_timer_tick"]
@@ -384,6 +390,12 @@ pub fn vdso_constants() -> VdsoConstants {
 #[linkage = "weak"]
 #[export_name = "fetch_fault_vaddr"]
 pub fn fetch_fault_vaddr() -> VirtAddr {
+    unimplemented!()
+}
+
+#[linkage = "weak"]
+#[export_name = "fetch_trap_num"]
+pub fn fetch_trap_num(_context: &UserContext) -> usize {
     unimplemented!()
 }
 

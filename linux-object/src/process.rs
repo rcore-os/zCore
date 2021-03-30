@@ -302,6 +302,7 @@ impl LinuxProcess {
     /// Get the `FileLike` with given `fd`.
     pub fn get_file_like(&self, fd: FileDesc) -> LxResult<Arc<dyn FileLike>> {
         let inner = self.inner.lock();
+        debug!("get_file_like: {:#x?}", inner.files);
         inner.files.get(&fd).cloned().ok_or(LxError::EBADF)
     }
 

@@ -52,6 +52,7 @@ pub fn run(args: Vec<String>, envs: Vec<String>, rootfs: Arc<dyn FileSystem>) ->
     let path = args[0].clone();
     debug!("Linux process: {:?}", path);
 
+    //调用zircon-object/src/task/thread.start设置好要执行的thread
     let (entry, sp) = loader.load(&proc.vmar(), &data, args, envs, path).unwrap();
 
     thread
@@ -109,21 +110,28 @@ async fn new_thread(thread: CurrentThread) {
             _ => panic!("not supported interrupt from user mode. {:#x?}", cx),
         }
 
-        // UserContext: cx.member
+        // UserContext
         #[cfg(target_arch = "riscv64")]
-        let trap_num = cx.scause & 0xfff;
+        let trap_num = kernel_hal::fetch_trap_num(&cx);
         #[cfg(target_arch = "riscv64")]
-        let is_interrupt = ((cx.scause >> 63) & 1) == 1;
+        let is_interrupt = ((trap_num >> 63) & 1) == 1;
+        #[cfg(target_arch = "riscv64")]
+        let trap_num = trap_num & 0xfff;
 
         #[cfg(target_arch = "riscv64")]
         if is_interrupt {
             match trap_num {
                 //Irq
-                0 | 4 | 8 => {
+                0 | 4 | 5 | 8 => {
                     kernel_hal::InterruptManager::handle(trap_num as u8);
 
                     //Timer
-                    if trap_num == 4 {
+                    if trap_num == 4 || trap_num == 5 {
+                        warn!("Timer interrupt: {:#x}", trap_num);
+
+                        kernel_hal::timer_set_next();
+                        kernel_hal::timer_tick();
+
                         kernel_hal::yield_now().await;
                     }
                 }
@@ -143,7 +151,7 @@ async fn new_thread(thread: CurrentThread) {
                         MMUFlags::READ
                     };
 
-                    error!("page fualt from user mode {:#x} {:#x}", vaddr, trap_num);
+                    info!("page fualt from user mode, vaddr:{:#x}, trap:{:#x}", vaddr, trap_num);
                     let vmar = thread.proc().vmar();
                     match vmar.handle_page_fault(vaddr, flags) {
                         Ok(()) => {}
@@ -152,6 +160,7 @@ async fn new_thread(thread: CurrentThread) {
                         }
                     }
                 }
+                //TODO: S-mode ext int
                 _ => panic!("not supported exception from user mode. {:#x?}", cx),
             }
         }

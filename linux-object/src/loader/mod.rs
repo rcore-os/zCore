@@ -32,7 +32,7 @@ impl LinuxElfLoader {
         envs: Vec<String>,
         path: String,
     ) -> LxResult<(VirtAddr, VirtAddr)> {
-        info!("load: vmar: {:?} args: {:?}, envs: {:?}", vmar, args, envs);
+        info!("load: vmar.addr: {:#x?}, args: {:?}, envs: {:?}", vmar.get_info(), args, envs);
         let elf = ElfFile::new(data).map_err(|_| ZxError::INVALID_ARGS)?;
         if let Ok(interp) = elf.get_interpreter() {
             info!("interp: {:?}", interp);
@@ -77,6 +77,7 @@ impl LinuxElfLoader {
                 map
             },
         };
+        debug!("ProcInitInfo auxv: {:#x?}", info.auxv);
         let init_stack = info.push_at(sp);
         stack_vmo.write(self.stack_pages * PAGE_SIZE - init_stack.len(), &init_stack)?;
         sp -= init_stack.len();

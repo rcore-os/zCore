@@ -731,6 +731,7 @@ impl VmMapping {
             let vmo_offset = inner.vmo_offset / PAGE_SIZE;
             for i in 0..page_num {
                 let paddr = commit(vmo_offset + i, inner.flags[i])?;
+                //通过PageTableTrait的hal_pt_map进行页表映射
                 page_table
                     .map(inner.addr + i * PAGE_SIZE, paddr, inner.flags[i])
                     .expect("failed to map");
@@ -958,7 +959,9 @@ pub const KERNEL_ASPACE_BASE: u64 = 0xffff_ff02_0000_0000;
 /// The size of kernel address space
 pub const KERNEL_ASPACE_SIZE: u64 = 0x0000_0080_0000_0000;
 /// The base of user address space
-pub const USER_ASPACE_BASE: u64 = 0x0000_0000_0100_0000;
+//用户态基址
+pub const USER_ASPACE_BASE: u64 = 0;
+//pub const USER_ASPACE_BASE: u64 = 0x0000_0000_0100_0000;
 /// The size of user address space
 pub const USER_ASPACE_SIZE: u64 = (1u64 << 47) - 4096 - USER_ASPACE_BASE;
 

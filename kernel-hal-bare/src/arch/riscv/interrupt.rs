@@ -8,11 +8,13 @@ use riscv::register::{
 	},
     sie,
 	sepc,
+    stval,
 	stvec,
 	sscratch,
     sstatus,
 	sstatus::Sstatus,
 };
+use trapframe::{TrapFrame, UserContext};
 
 /*
 use crate::timer::{
@@ -28,10 +30,11 @@ use super::plic;
 use super::uart;
 
 use crate::{putfmt, KERNEL_OFFSET};
-use super::clock_set_next_event;
+use super::timer_set_next;
 
-global_asm!(include_str!("trap.asm"));
+//global_asm!(include_str!("trap.asm"));
 
+/*
 #[repr(C)]
 pub struct TrapFrame{
 	pub x: [usize; 32], //General registers
@@ -40,15 +43,10 @@ pub struct TrapFrame{
 	pub stval: usize,
 	pub scause: Scause,
 }
+*/
 
 pub fn init(){
 	unsafe{
-		extern "C" {
-			fn __alltraps();
-		}
-
-		sscratch::write(0);
-		stvec::write(__alltraps as usize, stvec::TrapMode::Direct);
 
 		sstatus::set_sie();
 
@@ -61,13 +59,14 @@ pub fn init(){
 }
 
 #[no_mangle]
-pub fn rust_trap(tf: &mut TrapFrame){
+pub extern "C" fn trap_handler(tf: &mut TrapFrame) {
     let sepc = tf.sepc;
-    let stval = tf.stval;
-    let is_int = tf.scause.bits() >> 63;
-    let code = tf.scause.bits() & !(1 << 63);
+    let scause = scause::read();
+    let stval = stval::read();
+    let is_int = scause.bits() >> 63;
+    let code = scause.bits() & !(1 << 63);
 
-	match tf.scause.cause() {
+	match scause.cause() {
 		Trap::Exception(Exception::Breakpoint) => breakpoint(&mut tf.sepc),
 		Trap::Exception(Exception::IllegalInstruction) => panic!("IllegalInstruction: {:#x}->{:#x}", sepc, stval),
         Trap::Exception(Exception::LoadFault) => panic!("Load access fault: {:#x}->{:#x}", sepc, stval),
@@ -82,6 +81,12 @@ pub fn rust_trap(tf: &mut TrapFrame){
 	}
 }
 
+#[export_name = "hal_irq_handle"]
+pub fn irq_handle(irq: u8) {
+
+    panic!("unhandled U-mode IRQ number: {}", irq);
+}
+
 fn breakpoint(sepc: &mut usize){
 	bare_println!("A breakpoint set @0x{:x} ", sepc);
 
@@ -91,11 +96,11 @@ fn breakpoint(sepc: &mut usize){
 }
 
 fn page_fault(stval: usize, tf: &mut TrapFrame){
-    panic!("EXCEPTION Page Fault: {:?} @ {:#x}->{:#x}", tf.scause.cause(), tf.sepc, stval);
+    panic!("EXCEPTION Page Fault: {:?} @ {:#x}->{:#x}", scause::read().cause(), tf.sepc, stval);
 }
 
 fn super_timer(){
-    clock_set_next_event();
+    timer_set_next();
 
     bare_print!(".");
 
@@ -129,6 +134,12 @@ pub fn init_soft(){
     }
 	bare_println!("+++ setup soft int! +++");
 }
+
+#[export_name = "fetch_trap_num"]
+pub fn fetch_trap_num(_context: &UserContext) -> usize {
+    scause::read().bits()
+}
+
 
 pub fn wait_for_interrupt() {
     unsafe {
