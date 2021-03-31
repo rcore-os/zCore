@@ -72,13 +72,10 @@ impl Thread {
         impl Future for PageTableSwitchWrapper {
             type Output = ();
             fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-                info!("spawn poll");
                 unsafe {
                     arch::set_page_table(self.vmtoken);
                 }
-                info!("spawn poll2");
                 let x = self.inner.lock().as_mut().poll(cx);
-                info!("spawn poll3");
                 x
             }
         }

@@ -70,9 +70,20 @@ pub fn trap_handler(tf: &mut TrapFrame){
         Trap::Exception(Exception::InstructionPageFault) => page_fault(stval, tf),
 		Trap::Interrupt(Interrupt::SupervisorTimer) => super_timer(),
 		Trap::Interrupt(Interrupt::SupervisorSoft) => super_soft(),
-		Trap::Interrupt(Interrupt::SupervisorExternal) => plic::handle_interrupt(),
+		Trap::Interrupt(Interrupt::SupervisorExternal) => external(),
 		_ => panic!("Undefined Trap: {:#x} {:#x}", is_int, code)
 	}
+}
+
+fn external() {
+	// assume only keyboard interrupt
+	let mut c = sbi::console_getchar();
+    if c <= 255 {
+        if c == '\r' as usize {
+            c = '\n' as usize;
+        }
+        super::serial_put(c as u8);
+    }
 }
 
 fn breakpoint(sepc: &mut usize){
@@ -91,7 +102,7 @@ fn super_timer(){
     clock_set_next_event();
 
     //bare_println!("Tick");
-    bare_print!(".");
+    // bare_print!(".");
 
 	//发生外界中断时，epc的指令还没有执行，故无需修改epc到下一条
 }

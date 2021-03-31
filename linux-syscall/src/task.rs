@@ -62,8 +62,7 @@ impl Syscall<'_> {
         );
         if flags == 0x4111 || flags == 0x11 {
             warn!("sys_clone is calling sys_fork instead, ignoring other args");
-            unimplemented!()
-            //            return self.sys_fork();
+            return self.sys_fork();
         }
         if flags != 0x7d_0f00 && flags != 0x5d_0f00 {
             // 0x5d0f00: gcc of alpine linux

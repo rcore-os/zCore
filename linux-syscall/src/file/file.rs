@@ -19,7 +19,7 @@ impl Syscall<'_> {
     /// - base – pointer to the buffer to fill with read contents
     /// - len – number of bytes to read
     pub async fn sys_read(&self, fd: FileDesc, mut base: UserOutPtr<u8>, len: usize) -> SysResult {
-        info!("read: fd={:?}, base={:?}, len={:#x}", fd, base, len);
+        trace!("read: fd={:?}, base={:?}, len={:#x}", fd, base, len);
         let proc = self.linux_process();
         let file_like = proc.get_file_like(fd)?;
         let mut buf = vec![0u8; len];

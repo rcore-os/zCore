@@ -239,7 +239,6 @@ impl Syscall<'_> {
             #[cfg(target_arch = "riscv64")]
             _ => self.riscv64_syscall(sys_type, args).await,
         };
-        info!("<= {:x?}", ret);
         match ret {
             Ok(value) => value as isize,
             Err(err) => -(err as isize),
