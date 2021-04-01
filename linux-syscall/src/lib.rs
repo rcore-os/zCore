@@ -32,7 +32,7 @@ use {
     self::consts::SyscallType as Sys,
     alloc::sync::Arc,
     core::convert::TryFrom,
-    kernel_hal::{user::*, GeneralRegs},
+    kernel_hal::{user::*, UserContext},
     linux_object::{error::*, fs::FileDesc, process::*},
     zircon_object::{object::*, task::*, vm::VirtAddr},
 };
@@ -53,7 +53,7 @@ pub struct Syscall<'a> {
     /// the entry of current syscall
     pub syscall_entry: VirtAddr,
     /// store the regs statues
-    pub regs: &'a mut GeneralRegs,
+    pub context: &'a mut UserContext,
     /// new thread function
     pub thread_fn: ThreadFn,
 }

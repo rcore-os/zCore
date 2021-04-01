@@ -640,6 +640,9 @@ impl VmarInner {
             mapping.map()?;
             self.mappings.push(mapping);
         }
+        /* debug info
+        error!("hhhhh: {:#x?}", page_table.lock().query(0xc44b6));
+        */
         Ok(())
     }
 }

@@ -3,7 +3,7 @@
 #![no_std]
 #![feature(asm)]
 #![feature(global_asm)]
-#![deny(warnings, unused_must_use, missing_docs)]
+// #![deny(warnings, unused_must_use, missing_docs)]
 
 extern crate alloc;
 #[macro_use]
@@ -120,7 +120,19 @@ async fn new_thread(thread: CurrentThread) {
                 kernel_hal::timer_tick();
             }
             _ if kernel_hal_bare::arch::is_syscall(trap_num) => handle_syscall(&thread, &mut cx).await,
-            _ => panic!("unhandled trap {:?}", riscv::register::scause::read().cause()),
+            _ => {
+                /* debug info
+                use kernel_hal_bare::PageTableImpl;
+                use kernel_hal::PhysAddr;
+                use kernel_hal::PageTableTrait;
+                let mut page_table = PageTableImpl {
+                    root_paddr: riscv::register::satp::read().bits() as usize
+                };
+                info!("{:x}", riscv::register::satp::read().bits());
+                info!("{:#x?}", page_table.query(riscv::register::sepc::read()));
+                */
+                panic!("unhandled trap {:?}", riscv::register::scause::read().cause());
+            }
         }
         thread.end_running(cx);
     }
@@ -135,7 +147,7 @@ async fn handle_syscall(thread: &CurrentThread, context: &mut UserContext) {
     trace!("syscall: {:#x?}", context);
     let num = context.get_syscall_num();
     let args = context.get_syscall_args();
-    let regs = &mut context.general;
+    // let regs = &mut context.general;
     #[cfg(target_arch = "riscv64")]
     {
         context.sepc = context.sepc + 4;
@@ -147,7 +159,7 @@ async fn handle_syscall(thread: &CurrentThread, context: &mut UserContext) {
         #[cfg(not(feature = "std"))]
         syscall_entry: 0,
         thread_fn,
-        regs,
+        context,
     };
     let ret = syscall.syscall(num as u32, args).await;
     context.set_syscall_ret(ret as usize);

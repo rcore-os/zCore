@@ -14,7 +14,7 @@ use {
         time::Duration,
     },
     futures::{channel::oneshot::*, future::FutureExt, pin_mut, select_biased},
-    kernel_hal::{sleep_until, GeneralRegs, UserContext},
+    kernel_hal::{sleep_until, UserContext},
     spin::Mutex,
 };
 
@@ -270,16 +270,25 @@ impl Thread {
         Ok(())
     }
 
-    /// Start execution with given registers.
-    pub fn start_with_regs(self: &Arc<Self>, regs: GeneralRegs, thread_fn: ThreadFn) -> ZxResult {
+    /// Start execution with given context.
+    pub fn start_with_context(self: &Arc<Self>, ctx: UserContext, thread_fn: ThreadFn) -> ZxResult {
         {
             let mut inner = self.inner.lock();
             let context = inner.context.as_mut().ok_or(ZxError::BAD_STATE)?;
-            context.general = regs;
+            context.general = ctx.general;
             #[cfg(target_arch = "x86_64")]
             {
                 context.general.rflags |= 0x3202;
             }
+            #[cfg(target_arch = "riscv64")]
+            {
+                context.sepc = ctx.sepc;
+                context.sstatus = ctx.sstatus;
+            }
+            /* debug info
+            info!("a0: {:x}", ctx.general.a0);
+            info!("sepc: {:x}", ctx.sepc);
+            */
             inner.change_state(ThreadState::Running, &self.base);
         }
         let vmtoken = self.proc().vmar().table_phys();

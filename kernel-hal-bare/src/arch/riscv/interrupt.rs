@@ -60,6 +60,7 @@ pub fn trap_handler(tf: &mut TrapFrame){
     let stval = stval::read();
     let is_int = scause.bits() >> 63;
     let code = scause.bits() & !(1 << 63);
+	trace!("{:?}", scause.cause());
 	match scause.cause() {
 		Trap::Exception(Exception::Breakpoint) => breakpoint(&mut tf.sepc),
 		Trap::Exception(Exception::IllegalInstruction) => panic!("IllegalInstruction: {:#x}->{:#x}", sepc, stval),
@@ -95,6 +96,15 @@ fn breakpoint(sepc: &mut usize){
 }
 
 fn page_fault(stval: usize, tf: &mut TrapFrame){
+	/* debug info
+	use super::PageTableImpl;
+	use kernel_hal::PhysAddr;
+	use kernel_hal::PageTableTrait;
+	let mut page_table = PageTableImpl {
+		root_paddr: riscv::register::satp::read().bits() as usize
+	};
+	info!("{:#x?}", page_table.query(tf.sepc));
+	*/
     panic!("EXCEPTION: Page Fault @ {:#x}->{:#x}", tf.sepc, stval);
 }
 

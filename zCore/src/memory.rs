@@ -106,6 +106,7 @@ pub extern "C" fn hal_frame_alloc() -> usize {
         .alloc()
         .map(|id| id * PAGE_SIZE + MEMORY_OFFSET);
     trace!("Allocate frame: {:x?}", ret);
+    assert!(ret.unwrap() != 0, "No Mem");
     ret.unwrap()
 }
 

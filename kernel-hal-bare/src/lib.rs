@@ -72,9 +72,18 @@ impl Thread {
         impl Future for PageTableSwitchWrapper {
             type Output = ();
             fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+                /* debug info
+                use kernel_hal::PhysAddr;
+                use kernel_hal::PageTableTrait;
+                let mut page_table = PageTableImpl {
+                    root_paddr: self.vmtoken
+                };
+                error!("asd1: {:#x?}, {:x}", page_table.query(0xc44b6), self.vmtoken);
+                */
                 unsafe {
                     arch::set_page_table(self.vmtoken);
                 }
+                // error!("asd2: {:#x?}, {:x}", page_table.query(0xc44b6), self.vmtoken);
                 let x = self.inner.lock().as_mut().poll(cx);
                 x
             }
