@@ -146,10 +146,9 @@ pub extern "C" fn hal_pt_map_kernel(pt: &mut PageTable, current: &PageTable) {
 #[cfg(target_arch = "riscv64")]
 pub extern "C" fn hal_pt_map_kernel(pt: &mut PageTable, current: &PageTable) {
     use riscv::addr::Frame;
-    let ekernel = current[KERNEL_PM4].clone();
-    let ephysical = current[PHYSICAL_MEMORY_PM4].clone();
-    pt[KERNEL_PM4].set(Frame::of_addr(ekernel.addr()), ekernel.flags() | EF::GLOBAL);
-    pt[PHYSICAL_MEMORY_PM4].set(Frame::of_addr(ephysical.addr()), ephysical.flags() | EF::GLOBAL);
+    for i in 508..512 {
+        pt[i] = current[i].clone();
+    }
 }
 
 pub unsafe fn clear_bss() {

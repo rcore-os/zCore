@@ -10,27 +10,6 @@ use alloc::{collections::VecDeque, vec::Vec};
 
 mod sbi;
 
-mod paging;
-
-use paging::PageTableImpl as rCorePageTableImpl;
-pub type MemorySet = rcore_memory::memory_set::MemorySet<rCorePageTableImpl>;
-
-pub fn remap_the_kernel(_dtb: usize) {
-    let ms = MemorySet::new();
-    unsafe {
-        ms.activate();
-    }
-    unsafe {
-        SATP = ms.token();
-    }
-    mem::forget(ms);
-    info!("remap kernel end");
-}
-
-// First core stores its SATP here.
-static mut SATP: usize = 0;
-
-
 /// Page Table
 #[repr(C)]
 pub struct PageTableImpl {

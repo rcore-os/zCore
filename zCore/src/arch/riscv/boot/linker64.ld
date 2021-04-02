@@ -8,7 +8,7 @@ BASE_ADDRESS = 0x80200000;
 */
 
 /* opensbi仍旧把kernel放在0x80200000物理内存中 */
-BASE_ADDRESS = 0xffffffffc0200000;
+BASE_ADDRESS = 0xffffffff80200000;
 
 SECTIONS
 {
