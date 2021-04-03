@@ -1,8 +1,4 @@
-use {
-    super::*,
-    alloc::sync::{Arc, Weak},
-    spin::Mutex,
-};
+use {super::*, alloc::sync::Arc, spin::Mutex};
 
 /// VMO representing a physical range of memory.
 pub struct VMObjectPhysical {
@@ -14,17 +10,13 @@ pub struct VMObjectPhysical {
 }
 
 struct VMObjectPhysicalInner {
-    mapping_count: u32,
     cache_policy: CachePolicy,
-    content_size: usize,
 }
 
 impl VMObjectPhysicalInner {
     pub fn new() -> VMObjectPhysicalInner {
         VMObjectPhysicalInner {
-            mapping_count: 0,
             cache_policy: CachePolicy::Uncached,
-            content_size: 0,
         }
     }
 }
@@ -58,23 +50,19 @@ impl VMObjectTrait for VMObjectPhysical {
         Ok(())
     }
 
+    fn zero(&self, offset: usize, len: usize) -> ZxResult {
+        let _ = self.data_lock.lock();
+        assert!(offset + len <= self.len());
+        kernel_hal::pmem_zero(self.paddr + offset, len);
+        Ok(())
+    }
+
     fn len(&self) -> usize {
         self.pages * PAGE_SIZE
     }
 
     fn set_len(&self, _len: usize) -> ZxResult {
         unimplemented!()
-    }
-
-    fn content_size(&self) -> usize {
-        let inner = self.inner.lock();
-        inner.content_size
-    }
-
-    fn set_content_size(&self, size: usize) -> ZxResult {
-        let mut inner = self.inner.lock();
-        inner.content_size = size;
-        Ok(())
     }
 
     fn commit_page(&self, page_idx: usize, _flags: MMUFlags) -> ZxResult<PhysAddr> {
@@ -107,17 +95,6 @@ impl VMObjectTrait for VMObjectPhysical {
         Err(ZxError::NOT_SUPPORTED)
     }
 
-    fn append_mapping(&self, _mapping: Weak<VmMapping>) {
-        // TODO this function is only used when physical-vmo supports create_child
-        let mut inner = self.inner.lock();
-        inner.mapping_count += 1;
-    }
-
-    fn remove_mapping(&self, _mapping: Weak<VmMapping>) {
-        let mut inner = self.inner.lock();
-        inner.mapping_count -= 1;
-    }
-
     fn complete_info(&self, _info: &mut VmoInfo) {
         warn!("VmoInfo for physical is unimplemented");
     }
@@ -129,28 +106,12 @@ impl VMObjectTrait for VMObjectPhysical {
 
     fn set_cache_policy(&self, policy: CachePolicy) -> ZxResult {
         let mut inner = self.inner.lock();
-        if inner.cache_policy == policy {
-            Ok(())
-        } else {
-            // if (mapping_list_len_ != 0 || children_list_len_ != 0 || parent_)
-            if inner.mapping_count != 0 {
-                return Err(ZxError::BAD_STATE);
-            }
-            inner.cache_policy = policy;
-            Ok(())
-        }
-    }
-
-    fn share_count(&self) -> usize {
-        self.inner.lock().mapping_count as usize
+        inner.cache_policy = policy;
+        Ok(())
     }
 
     fn committed_pages_in_range(&self, _start_idx: usize, _end_idx: usize) -> usize {
         0
-    }
-
-    fn zero(&self, _offset: usize, _len: usize) -> ZxResult {
-        unimplemented!()
     }
 
     fn is_contiguous(&self) -> bool {

@@ -81,8 +81,6 @@ struct VMObjectPagedInner {
     parent_limit: usize,
     /// The size in bytes.
     size: usize,
-    /// The size of content in bytes.
-    content_size: usize,
     /// Physical frames of this VMO.
     frames: HashMap<usize, PageState>,
     /// All mappings to this VMO.
@@ -168,7 +166,6 @@ impl VMObjectPaged {
                 parent_offset: 0usize,
                 parent_limit: 0usize,
                 size: pages * PAGE_SIZE,
-                content_size: 0usize,
                 frames: HashMap::new(),
                 mappings: Vec::new(),
                 cache_policy: CachePolicy::Cached,
@@ -263,16 +260,6 @@ impl VMObjectTrait for VMObjectPaged {
             inner.resize(len)
         };
         drop(old_parent);
-        Ok(())
-    }
-
-    fn content_size(&self) -> usize {
-        self.get_inner().1.content_size
-    }
-
-    fn set_content_size(&self, size: usize) -> ZxResult {
-        let mut inner = self.get_inner_mut().1;
-        inner.content_size = size;
         Ok(())
     }
 
@@ -379,10 +366,6 @@ impl VMObjectTrait for VMObjectPaged {
     fn committed_pages_in_range(&self, start_idx: usize, end_idx: usize) -> usize {
         let (_guard, inner) = self.get_inner();
         inner.committed_pages_in_range(start_idx, end_idx)
-    }
-
-    fn share_count(&self) -> usize {
-        self.get_inner().1.mappings.len()
     }
 
     fn pin(&self, offset: usize, len: usize) -> ZxResult {
@@ -780,7 +763,6 @@ impl VMObjectPagedInner {
                 parent_offset: offset,
                 parent_limit: (offset + len).min(self.size),
                 size: len,
-                content_size: 0, // fix later
                 frames: HashMap::new(),
                 mappings: Vec::new(),
                 cache_policy: CachePolicy::Cached,
@@ -802,7 +784,6 @@ impl VMObjectPagedInner {
                 parent_offset: self.parent_offset,
                 parent_limit: self.parent_limit,
                 size: self.size,
-                content_size: self.content_size,
                 frames: core::mem::take(&mut self.frames),
                 mappings: Vec::new(),
                 cache_policy: CachePolicy::Cached,

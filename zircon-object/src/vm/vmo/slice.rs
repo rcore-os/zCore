@@ -1,5 +1,4 @@
 use super::*;
-use core::sync::atomic::{AtomicUsize, Ordering};
 
 pub struct VMObjectSlice {
     /// Parent node.
@@ -8,8 +7,6 @@ pub struct VMObjectSlice {
     offset: usize,
     /// The size in bytes.
     size: usize,
-    /// Mapping count.
-    mapping_count: AtomicUsize,
 }
 
 impl VMObjectSlice {
@@ -18,7 +15,6 @@ impl VMObjectSlice {
             parent,
             offset,
             size,
-            mapping_count: AtomicUsize::new(0),
         })
     }
 
@@ -41,19 +37,16 @@ impl VMObjectTrait for VMObjectSlice {
         self.parent.write(offset + self.offset, buf)
     }
 
+    fn zero(&self, offset: usize, len: usize) -> ZxResult {
+        self.check_range(offset, len)?;
+        self.parent.zero(offset + self.offset, len)
+    }
+
     fn len(&self) -> usize {
         self.size
     }
 
     fn set_len(&self, _len: usize) -> ZxResult {
-        unimplemented!()
-    }
-
-    fn content_size(&self) -> usize {
-        unimplemented!()
-    }
-
-    fn set_content_size(&self, _size: usize) -> ZxResult {
         unimplemented!()
     }
 
@@ -86,14 +79,6 @@ impl VMObjectTrait for VMObjectSlice {
         Err(ZxError::NOT_SUPPORTED)
     }
 
-    fn append_mapping(&self, _mapping: Weak<VmMapping>) {
-        self.mapping_count.fetch_add(1, Ordering::SeqCst);
-    }
-
-    fn remove_mapping(&self, _mapping: Weak<VmMapping>) {
-        self.mapping_count.fetch_sub(1, Ordering::SeqCst);
-    }
-
     fn complete_info(&self, info: &mut VmoInfo) {
         self.parent.complete_info(info);
     }
@@ -104,10 +89,6 @@ impl VMObjectTrait for VMObjectSlice {
 
     fn set_cache_policy(&self, _policy: CachePolicy) -> ZxResult {
         Ok(())
-    }
-
-    fn share_count(&self) -> usize {
-        self.mapping_count.load(Ordering::SeqCst)
     }
 
     fn committed_pages_in_range(&self, start_idx: usize, end_idx: usize) -> usize {
@@ -132,10 +113,5 @@ impl VMObjectTrait for VMObjectSlice {
 
     fn is_paged(&self) -> bool {
         self.parent.is_paged()
-    }
-
-    fn zero(&self, offset: usize, len: usize) -> ZxResult {
-        self.check_range(offset, len)?;
-        self.parent.zero(offset + self.offset, len)
     }
 }

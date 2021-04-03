@@ -7,7 +7,10 @@ use {
         vec::Vec,
     },
     bitflags::bitflags,
-    core::ops::Deref,
+    core::{
+        ops::Deref,
+        sync::atomic::{AtomicUsize, Ordering},
+    },
     kernel_hal::CachePolicy,
     spin::Mutex,
 };
@@ -33,17 +36,14 @@ pub trait VMObjectTrait: Sync + Send {
     /// Write memory from `buf` to VMO at `offset`.
     fn write(&self, offset: usize, buf: &[u8]) -> ZxResult;
 
+    /// Resets the range of bytes in the VMO from `offset` to `offset+len` to 0.
+    fn zero(&self, offset: usize, len: usize) -> ZxResult;
+
     /// Get the length of VMO.
     fn len(&self) -> usize;
 
     /// Set the length of VMO.
     fn set_len(&self, len: usize) -> ZxResult;
-
-    /// Get the size of the content stored in the VMO in bytes.
-    fn content_size(&self) -> usize;
-
-    /// Set the size of the content stored in the VMO in bytes.
-    fn set_content_size(&self, size: usize) -> ZxResult;
 
     /// Commit a page.
     fn commit_page(&self, page_idx: usize, flags: MMUFlags) -> ZxResult<PhysAddr>;
@@ -71,10 +71,10 @@ pub trait VMObjectTrait: Sync + Send {
     ) -> ZxResult<Arc<dyn VMObjectTrait>>;
 
     /// Append a mapping to the VMO's mapping list.
-    fn append_mapping(&self, mapping: Weak<VmMapping>);
+    fn append_mapping(&self, _mapping: Weak<VmMapping>) {}
 
     /// Remove a mapping from the VMO's mapping list.
-    fn remove_mapping(&self, mapping: Weak<VmMapping>);
+    fn remove_mapping(&self, _mapping: Weak<VmMapping>) {}
 
     /// Complete the VmoInfo.
     fn complete_info(&self, info: &mut VmoInfo);
@@ -84,10 +84,6 @@ pub trait VMObjectTrait: Sync + Send {
 
     /// Set the cache policy.
     fn set_cache_policy(&self, policy: CachePolicy) -> ZxResult;
-
-    /// Returns an estimate of the number of unique VmAspaces that this object
-    /// is mapped into.
-    fn share_count(&self) -> usize;
 
     /// Count committed pages of the VMO.
     fn committed_pages_in_range(&self, start_idx: usize, end_idx: usize) -> usize;
@@ -111,9 +107,6 @@ pub trait VMObjectTrait: Sync + Send {
     fn is_paged(&self) -> bool {
         false
     }
-
-    /// Resets the range of bytes in the VMO from `offset` to `offset+len` to 0.
-    fn zero(&self, offset: usize, len: usize) -> ZxResult;
 }
 
 /// Virtual memory containers
@@ -128,6 +121,8 @@ pub struct VmObject {
     children: Mutex<Vec<Weak<VmObject>>>,
     _counter: CountHelper,
     resizable: bool,
+    mapping_count: AtomicUsize,
+    content_size: AtomicUsize,
     inner: Arc<dyn VMObjectTrait>,
 }
 
@@ -147,6 +142,8 @@ impl VmObject {
             parent: Mutex::new(Default::default()),
             children: Mutex::new(Vec::new()),
             resizable,
+            mapping_count: AtomicUsize::new(0),
+            content_size: AtomicUsize::new(0),
             _counter: CountHelper::new(),
             inner: VMObjectPaged::new(base.id, pages),
             base,
@@ -160,6 +157,8 @@ impl VmObject {
             parent: Mutex::new(Default::default()),
             children: Mutex::new(Vec::new()),
             resizable: false,
+            mapping_count: AtomicUsize::new(0),
+            content_size: AtomicUsize::new(0),
             _counter: CountHelper::new(),
             inner: VMObjectPhysical::new(paddr, pages),
         })
@@ -181,6 +180,8 @@ impl VmObject {
             parent: Mutex::new(Default::default()),
             children: Mutex::new(Vec::new()),
             resizable: false,
+            mapping_count: AtomicUsize::new(0),
+            content_size: AtomicUsize::new(0),
             _counter: CountHelper::new(),
             inner,
         });
@@ -201,6 +202,8 @@ impl VmObject {
             parent: Mutex::new(Arc::downgrade(self)),
             children: Mutex::new(Vec::new()),
             resizable,
+            mapping_count: AtomicUsize::new(0),
+            content_size: AtomicUsize::new(0),
             _counter: CountHelper::new(),
             inner,
             base,
@@ -235,6 +238,8 @@ impl VmObject {
             parent: Mutex::new(Arc::downgrade(self)),
             children: Mutex::new(Vec::new()),
             resizable: false,
+            mapping_count: AtomicUsize::new(0),
+            content_size: AtomicUsize::new(0),
             _counter: CountHelper::new(),
             inner: VMObjectSlice::new(self.inner.clone(), offset, size),
         });
@@ -259,11 +264,10 @@ impl VmObject {
         if size < len {
             return Err(ZxError::OUT_OF_RANGE);
         }
-        if self.resizable {
-            self.inner.set_len(size)
-        } else {
-            Err(ZxError::UNAVAILABLE)
+        if !self.resizable {
+            return Err(ZxError::UNAVAILABLE);
         }
+        self.inner.set_len(size)
     }
 
     /// Set the size of the content stored in the VMO in bytes, resize vmo if needed
@@ -272,7 +276,7 @@ impl VmObject {
         size: usize,
         zero_until_offset: usize,
     ) -> ZxResult<usize> {
-        let content_size = self.inner.content_size();
+        let content_size = self.content_size.load(Ordering::SeqCst);
         let len = self.inner.len();
         if size < content_size {
             return Ok(content_size);
@@ -283,13 +287,24 @@ impl VmObject {
         } else {
             size
         };
-        self.inner.set_content_size(new_content_size)?;
         let zero_until_offset = zero_until_offset.min(new_content_size);
         if zero_until_offset > content_size {
             self.inner
                 .zero(content_size, zero_until_offset - content_size)?;
         }
+        self.content_size.store(new_content_size, Ordering::SeqCst);
         Ok(new_content_size)
+    }
+
+    /// Get the size of the content stored in the VMO in bytes.
+    pub fn content_size(&self) -> usize {
+        self.content_size.load(Ordering::SeqCst)
+    }
+
+    /// Get the size of the content stored in the VMO in bytes.
+    pub fn set_content_size(&self, size: usize) -> ZxResult {
+        self.content_size.store(size, Ordering::SeqCst);
+        Ok(())
     }
 
     /// Get information of this VMO.
@@ -312,6 +327,7 @@ impl VmObject {
                 VmoInfoFlags::empty()
             },
             cache_policy: self.inner.cache_policy() as u32,
+            share_count: self.share_count() as u64,
             ..Default::default()
         };
         self.inner.complete_info(&mut ret);
@@ -323,7 +339,28 @@ impl VmObject {
         if self.children.lock().len() != 0 {
             return Err(ZxError::BAD_STATE);
         }
+        if self.share_count() != 0 {
+            return Err(ZxError::BAD_STATE);
+        }
         self.inner.set_cache_policy(policy)
+    }
+
+    /// Append a mapping to the VMO's mapping list.
+    pub fn append_mapping(&self, mapping: Weak<VmMapping>) {
+        self.mapping_count.fetch_add(1, Ordering::SeqCst);
+        self.inner.append_mapping(mapping);
+    }
+
+    /// Remove a mapping from the VMO's mapping list.
+    pub fn remove_mapping(&self, mapping: Weak<VmMapping>) {
+        self.mapping_count.fetch_sub(1, Ordering::SeqCst);
+        self.inner.remove_mapping(mapping);
+    }
+
+    /// Returns an estimate of the number of unique VmAspaces that this object
+    /// is mapped into.
+    pub fn share_count(&self) -> usize {
+        self.mapping_count.load(Ordering::SeqCst)
     }
 
     /// Returns true if the object size can be changed.
