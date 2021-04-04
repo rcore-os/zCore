@@ -128,8 +128,7 @@ mod tests {
     #[test]
     fn read_write() {
         let vmo = VmObject::new_physical(0x1000, 2);
-        let vmphy = vmo.inner.clone();
-        assert_eq!(vmphy.cache_policy(), CachePolicy::Uncached);
+        assert_eq!(vmo.cache_policy(), CachePolicy::Uncached);
         super::super::tests::read_write(&vmo);
     }
 }

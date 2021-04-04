@@ -7,10 +7,7 @@ use {
         vec::Vec,
     },
     bitflags::bitflags,
-    core::{
-        ops::Deref,
-        sync::atomic::{AtomicUsize, Ordering},
-    },
+    core::ops::Deref,
     kernel_hal::CachePolicy,
     spin::Mutex,
 };
@@ -117,17 +114,22 @@ pub trait VMObjectTrait: Sync + Send {
 /// that may be mapped into multiple address spaces.
 pub struct VmObject {
     base: KObjectBase,
-    parent: Mutex<Weak<VmObject>>, // Parent could be changed
-    children: Mutex<Vec<Weak<VmObject>>>,
     _counter: CountHelper,
     resizable: bool,
-    mapping_count: AtomicUsize,
-    content_size: AtomicUsize,
-    inner: Arc<dyn VMObjectTrait>,
+    trait_: Arc<dyn VMObjectTrait>,
+    inner: Mutex<VmObjectInner>,
 }
 
 impl_kobject!(VmObject);
 define_count_helper!(VmObject);
+
+#[derive(Default)]
+struct VmObjectInner {
+    parent: Weak<VmObject>,
+    children: Vec<Weak<VmObject>>,
+    mapping_count: usize,
+    content_size: usize,
+}
 
 impl VmObject {
     /// Create a new VMO backing on physical memory allocated in pages.
@@ -139,13 +141,10 @@ impl VmObject {
     pub fn new_paged_with_resizable(resizable: bool, pages: usize) -> Arc<Self> {
         let base = KObjectBase::with_signal(Signal::VMO_ZERO_CHILDREN);
         Arc::new(VmObject {
-            parent: Mutex::new(Default::default()),
-            children: Mutex::new(Vec::new()),
             resizable,
-            mapping_count: AtomicUsize::new(0),
-            content_size: AtomicUsize::new(0),
             _counter: CountHelper::new(),
-            inner: VMObjectPaged::new(base.id, pages),
+            trait_: VMObjectPaged::new(base.id, pages),
+            inner: Mutex::new(VmObjectInner::default()),
             base,
         })
     }
@@ -154,13 +153,10 @@ impl VmObject {
     pub fn new_physical(paddr: PhysAddr, pages: usize) -> Arc<Self> {
         Arc::new(VmObject {
             base: KObjectBase::with_signal(Signal::VMO_ZERO_CHILDREN),
-            parent: Mutex::new(Default::default()),
-            children: Mutex::new(Vec::new()),
             resizable: false,
-            mapping_count: AtomicUsize::new(0),
-            content_size: AtomicUsize::new(0),
             _counter: CountHelper::new(),
-            inner: VMObjectPhysical::new(paddr, pages),
+            trait_: VMObjectPhysical::new(paddr, pages),
+            inner: Mutex::new(VmObjectInner::default()),
         })
     }
 
@@ -173,17 +169,14 @@ impl VmObject {
         }
         let base = KObjectBase::with_signal(Signal::VMO_ZERO_CHILDREN);
         let size_page = pages(size);
-        let inner = VMObjectPaged::new(base.id, size_page);
-        inner.create_contiguous(size, align_log2)?;
+        let trait_ = VMObjectPaged::new(base.id, size_page);
+        trait_.create_contiguous(size, align_log2)?;
         let vmo = Arc::new(VmObject {
             base,
-            parent: Mutex::new(Default::default()),
-            children: Mutex::new(Vec::new()),
             resizable: false,
-            mapping_count: AtomicUsize::new(0),
-            content_size: AtomicUsize::new(0),
             _counter: CountHelper::new(),
-            inner,
+            trait_,
+            inner: Mutex::new(VmObjectInner::default()),
         });
         Ok(vmo)
     }
@@ -197,16 +190,16 @@ impl VmObject {
     ) -> ZxResult<Arc<Self>> {
         let base = KObjectBase::with_signal(Signal::VMO_ZERO_CHILDREN);
         base.set_name(&self.base.name());
-        let inner = self.inner.create_child(offset, len, base.id)?;
+        let trait_ = self.trait_.create_child(offset, len, base.id)?;
         let child = Arc::new(VmObject {
-            parent: Mutex::new(Arc::downgrade(self)),
-            children: Mutex::new(Vec::new()),
-            resizable,
-            mapping_count: AtomicUsize::new(0),
-            content_size: AtomicUsize::new(0),
-            _counter: CountHelper::new(),
-            inner,
             base,
+            resizable,
+            _counter: CountHelper::new(),
+            trait_,
+            inner: Mutex::new(VmObjectInner {
+                parent: Arc::downgrade(self),
+                ..VmObjectInner::default()
+            }),
         });
         self.add_child(&child);
         Ok(child)
@@ -220,7 +213,7 @@ impl VmObject {
             return Err(ZxError::OUT_OF_RANGE);
         }
         // child slice must be wholly contained
-        let parent_size = self.inner.len();
+        let parent_size = self.trait_.len();
         if !page_aligned(offset) {
             return Err(ZxError::INVALID_ARGS);
         }
@@ -230,18 +223,18 @@ impl VmObject {
         if self.resizable {
             return Err(ZxError::NOT_SUPPORTED);
         }
-        if self.inner.cache_policy() != CachePolicy::Cached && !self.inner.is_contiguous() {
+        if self.trait_.cache_policy() != CachePolicy::Cached && !self.trait_.is_contiguous() {
             return Err(ZxError::BAD_STATE);
         }
         let child = Arc::new(VmObject {
             base: KObjectBase::with(&self.base.name(), Signal::VMO_ZERO_CHILDREN),
-            parent: Mutex::new(Arc::downgrade(self)),
-            children: Mutex::new(Vec::new()),
             resizable: false,
-            mapping_count: AtomicUsize::new(0),
-            content_size: AtomicUsize::new(0),
             _counter: CountHelper::new(),
-            inner: VMObjectSlice::new(self.inner.clone(), offset, size),
+            trait_: VMObjectSlice::new(self.trait_.clone(), offset, size),
+            inner: Mutex::new(VmObjectInner {
+                parent: Arc::downgrade(self),
+                ..VmObjectInner::default()
+            }),
         });
         self.add_child(&child);
         Ok(child)
@@ -250,10 +243,10 @@ impl VmObject {
     /// Add child to the list and signal if ZeroChildren signal is active.
     /// If the number of children turns 0 to 1, signal it
     fn add_child(&self, child: &Arc<VmObject>) {
-        let mut children = self.children.lock();
-        children.retain(|x| x.strong_count() != 0);
-        children.push(Arc::downgrade(child));
-        if children.len() == 1 {
+        let mut inner = self.inner.lock();
+        inner.children.retain(|x| x.strong_count() != 0);
+        inner.children.push(Arc::downgrade(child));
+        if inner.children.len() == 1 {
             self.base.signal_clear(Signal::VMO_ZERO_CHILDREN);
         }
     }
@@ -267,7 +260,7 @@ impl VmObject {
         if !self.resizable {
             return Err(ZxError::UNAVAILABLE);
         }
-        self.inner.set_len(size)
+        self.trait_.set_len(size)
     }
 
     /// Set the size of the content stored in the VMO in bytes, resize vmo if needed
@@ -276,8 +269,9 @@ impl VmObject {
         size: usize,
         zero_until_offset: usize,
     ) -> ZxResult<usize> {
-        let content_size = self.content_size.load(Ordering::SeqCst);
-        let len = self.inner.len();
+        let mut inner = self.inner.lock();
+        let content_size = inner.content_size;
+        let len = self.trait_.len();
         if size < content_size {
             return Ok(content_size);
         }
@@ -289,26 +283,29 @@ impl VmObject {
         };
         let zero_until_offset = zero_until_offset.min(new_content_size);
         if zero_until_offset > content_size {
-            self.inner
+            self.trait_
                 .zero(content_size, zero_until_offset - content_size)?;
         }
-        self.content_size.store(new_content_size, Ordering::SeqCst);
+        inner.content_size = new_content_size;
         Ok(new_content_size)
     }
 
     /// Get the size of the content stored in the VMO in bytes.
     pub fn content_size(&self) -> usize {
-        self.content_size.load(Ordering::SeqCst)
+        let inner = self.inner.lock();
+        inner.content_size
     }
 
     /// Get the size of the content stored in the VMO in bytes.
     pub fn set_content_size(&self, size: usize) -> ZxResult {
-        self.content_size.store(size, Ordering::SeqCst);
+        let mut inner = self.inner.lock();
+        inner.content_size = size;
         Ok(())
     }
 
     /// Get information of this VMO.
     pub fn get_info(&self) -> VmoInfo {
+        let inner = self.inner.lock();
         let mut ret = VmoInfo {
             koid: self.base.id,
             name: {
@@ -318,49 +315,51 @@ impl VmObject {
                 arr[..length].copy_from_slice(&name.as_bytes()[..length]);
                 arr
             },
-            size: self.inner.len() as u64,
-            parent_koid: self.parent.lock().upgrade().map(|p| p.id()).unwrap_or(0),
-            num_children: self.children.lock().len() as u64,
+            size: self.trait_.len() as u64,
+            parent_koid: inner.parent.upgrade().map(|p| p.id()).unwrap_or(0),
+            num_children: inner.children.len() as u64,
             flags: if self.resizable {
                 VmoInfoFlags::RESIZABLE
             } else {
                 VmoInfoFlags::empty()
             },
-            cache_policy: self.inner.cache_policy() as u32,
-            share_count: self.share_count() as u64,
+            cache_policy: self.trait_.cache_policy() as u32,
+            share_count: inner.mapping_count as u64,
             ..Default::default()
         };
-        self.inner.complete_info(&mut ret);
+        self.trait_.complete_info(&mut ret);
         ret
     }
 
     /// Set the cache policy.
     pub fn set_cache_policy(&self, policy: CachePolicy) -> ZxResult {
-        if self.children.lock().len() != 0 {
+        let inner = self.inner.lock();
+        if !inner.children.is_empty() {
             return Err(ZxError::BAD_STATE);
         }
-        if self.share_count() != 0 {
+        if inner.mapping_count != 0 {
             return Err(ZxError::BAD_STATE);
         }
-        self.inner.set_cache_policy(policy)
+        self.trait_.set_cache_policy(policy)
     }
 
     /// Append a mapping to the VMO's mapping list.
     pub fn append_mapping(&self, mapping: Weak<VmMapping>) {
-        self.mapping_count.fetch_add(1, Ordering::SeqCst);
-        self.inner.append_mapping(mapping);
+        self.inner.lock().mapping_count += 1;
+        self.trait_.append_mapping(mapping);
     }
 
     /// Remove a mapping from the VMO's mapping list.
     pub fn remove_mapping(&self, mapping: Weak<VmMapping>) {
-        self.mapping_count.fetch_sub(1, Ordering::SeqCst);
-        self.inner.remove_mapping(mapping);
+        self.inner.lock().mapping_count -= 1;
+        self.trait_.remove_mapping(mapping);
     }
 
     /// Returns an estimate of the number of unique VmAspaces that this object
     /// is mapped into.
     pub fn share_count(&self) -> usize {
-        self.mapping_count.load(Ordering::SeqCst)
+        let inner = self.inner.lock();
+        inner.mapping_count
     }
 
     /// Returns true if the object size can be changed.
@@ -370,7 +369,7 @@ impl VmObject {
 
     /// Returns true if the object is backed by a contiguous range of physical memory.
     pub fn is_contiguous(&self) -> bool {
-        self.inner.is_contiguous()
+        self.trait_.is_contiguous()
     }
 }
 
@@ -378,38 +377,37 @@ impl Deref for VmObject {
     type Target = Arc<dyn VMObjectTrait>;
 
     fn deref(&self) -> &Self::Target {
-        &self.inner
+        &self.trait_
     }
 }
 
 impl Drop for VmObject {
     fn drop(&mut self) {
-        if let Some(parent) = self.parent.lock().upgrade() {
-            let mut my_children = {
-                let mut my_children = self.children.lock();
-                for ch in my_children.iter_mut() {
-                    if let Some(ch) = ch.upgrade() {
-                        let mut ch_parent = ch.parent.lock();
-                        *ch_parent = Arc::downgrade(&parent);
-                    }
-                }
-                my_children.clone()
-            };
-            let mut children = parent.children.lock();
-            children.append(&mut my_children);
-            children.retain(|c| c.strong_count() != 0);
-            children.iter().for_each(|child| {
-                let arc_child = child.upgrade().unwrap();
-                let mut locked_children = arc_child.children.lock();
-                locked_children.retain(|c| c.strong_count() != 0);
-                if locked_children.is_empty() {
-                    arc_child.base.signal_set(Signal::VMO_ZERO_CHILDREN);
-                }
-            });
-            // Non-zero to zero?
-            if children.is_empty() {
-                parent.base.signal_set(Signal::VMO_ZERO_CHILDREN);
+        let mut inner = self.inner.lock();
+        let parent = match inner.parent.upgrade() {
+            Some(parent) => parent,
+            None => return,
+        };
+        for child in inner.children.iter() {
+            if let Some(child) = child.upgrade() {
+                child.inner.lock().parent = Arc::downgrade(&parent);
             }
+        }
+        let mut parent_inner = parent.inner.lock();
+        let children = &mut parent_inner.children;
+        children.append(&mut inner.children);
+        children.retain(|c| c.strong_count() != 0);
+        for child in children.iter() {
+            let child = child.upgrade().unwrap();
+            let mut inner = child.inner.lock();
+            inner.children.retain(|c| c.strong_count() != 0);
+            if inner.children.is_empty() {
+                child.base.signal_set(Signal::VMO_ZERO_CHILDREN);
+            }
+        }
+        // Non-zero to zero?
+        if children.is_empty() {
+            parent.base.signal_set(Signal::VMO_ZERO_CHILDREN);
         }
     }
 }
