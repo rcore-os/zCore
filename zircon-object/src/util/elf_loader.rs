@@ -72,7 +72,9 @@ impl FlagsExt for Flags {
 fn make_vmo(elf: &ElfFile, ph: ProgramHeader) -> ZxResult<Arc<VmObject>> {
     assert_eq!(ph.get_type().unwrap(), Type::Load);
     let page_offset = ph.virtual_addr() as usize % PAGE_SIZE;
+    // (VirtAddr余数 + MemSiz)的pages
     let pages = pages(ph.mem_size() as usize + page_offset);
+    trace!("VmObject new pages: {:#x}, virtual_addr: {:#x}", pages, page_offset);
     let vmo = VmObject::new_paged(pages);
     let data = match ph.get_data(&elf).unwrap() {
         SegmentData::Undefined(data) => data,
@@ -91,6 +93,8 @@ pub trait ElfExt {
     fn get_symbol_address(&self, symbol: &str) -> Option<u64>;
     /// Get the program interpreter path name.
     fn get_interpreter(&self) -> Result<&str, &str>;
+    /// Get address of elf phdr
+    fn get_phdr_vaddr(&self) -> Option<u64>;
     /// Get the symbol table for dynamic linking (.dynsym section).
     fn dynsym(&self) -> Result<&[DynEntry64], &'static str>;
     /// Relocate according to the dynamic relocation section (.rel.dyn section).
@@ -132,6 +136,29 @@ impl ElfExt for ElfFile<'_> {
         let len = (0..).find(|&i| data[i] == 0).unwrap();
         let path = core::str::from_utf8(&data[..len]).map_err(|_| "failed to convert to utf8")?;
         Ok(path)
+    }
+
+    /*
+     * [ ERROR ] page fualt from user mode 0x40 READ
+     */
+
+    fn get_phdr_vaddr(&self) -> Option<u64> {
+        if let Some(phdr) = self
+            .program_iter()
+            .find(|ph| ph.get_type() == Ok(Type::Phdr))
+        {
+            // if phdr exists in program header, use it
+            Some(phdr.virtual_addr())
+        } else if let Some(elf_addr) = self
+            .program_iter()
+            .find(|ph| ph.get_type() == Ok(Type::Load) && ph.offset() == 0)
+        {
+            // otherwise, check if elf is loaded from the beginning, then phdr can be inferred.
+            Some(elf_addr.virtual_addr() + self.header.pt2.ph_offset())
+        } else {
+            warn!("elf: no phdr found, tls might not work");
+            None
+        }
     }
 
     fn dynsym(&self) -> Result<&[DynEntry64], &'static str> {

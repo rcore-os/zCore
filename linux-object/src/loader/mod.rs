@@ -54,9 +54,10 @@ impl LinuxElfLoader {
             vmo.write(offset as usize, &self.syscall_entry.to_ne_bytes())?;
         }
 
-        // EINVAL
-        //elf.relocate(base).map_err(|_| ZxError::INVALID_ARGS)?;
-        warn!("Skipped elf relocate base: {:#x?}", base);
+        match elf.relocate(base) {
+            Ok(()) => info!("elf relocate passed !"),
+            Err(error) => error!("elf relocate Err:{:?}", error),
+        }
 
         let stack_vmo = VmObject::new_paged(self.stack_pages);
         let flags = MMUFlags::READ | MMUFlags::WRITE | MMUFlags::USER;
@@ -69,7 +70,10 @@ impl LinuxElfLoader {
             auxv: {
                 let mut map = BTreeMap::new();
                 map.insert(abi::AT_BASE, base);
-                map.insert(abi::AT_PHDR, base + elf.header.pt2.ph_offset() as usize);
+                if let Some(phdr_vaddr) = elf.get_phdr_vaddr() {
+                    map.insert(abi::AT_PHDR, phdr_vaddr as usize);
+                }
+                //信息写到stack中
                 map.insert(abi::AT_ENTRY, entry);
                 map.insert(abi::AT_PHENT, elf.header.pt2.ph_entry_size() as usize);
                 map.insert(abi::AT_PHNUM, elf.header.pt2.ph_count() as usize);

@@ -200,6 +200,7 @@ pub fn serial_read(buf: &mut [u8]) -> usize {
 #[export_name = "hal_serial_write"]
 pub fn serial_write(s: &str) {
     putfmt(format_args!("{}", s));
+    //putfmt_uart(format_args!("{}", s));
 }
 
 // Get TSC frequency.
@@ -214,6 +215,16 @@ fn tsc_frequency() -> u16 {
 pub fn apic_local_id() -> u8 {
     let lapic = 0;
     lapic as u8
+}
+
+////////////
+
+pub fn getchar_option() -> Option<u8> {
+    let c = sbi::console_getchar() as isize;
+    match c {
+        -1 => None,
+        c => Some(c as u8),
+    }
 }
 
 ////////////
@@ -240,6 +251,22 @@ impl fmt::Write for Stdout {
 pub fn putfmt(fmt: fmt::Arguments) {
 	Stdout.write_fmt(fmt).unwrap();
 }
+////////////
+
+struct Stdout1;
+impl fmt::Write for Stdout1 {
+	fn write_str(&mut self, s: &str) -> fmt::Result {
+		//每次都创建一个新的Uart ? 内存位置始终相同
+        write!(uart::Uart::new(0x1000_0000 + KERNEL_OFFSET), "{}", s);
+
+		Ok(())
+	}
+}
+pub fn putfmt_uart(fmt: fmt::Arguments) {
+	Stdout1.write_fmt(fmt).unwrap();
+}
+
+////////////
 
 #[macro_export]
 macro_rules! bare_print {

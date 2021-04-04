@@ -1,4 +1,5 @@
 use super::uart;
+use super::interrupt;
 use crate::{putfmt, KERNEL_OFFSET}; //For bare_println
 
 const MMODE: usize = 0;
@@ -103,9 +104,13 @@ pub fn handle_interrupt() {
 		match interrupt {
 			1..=8 => {
 				//virtio::handle_interrupt(interrupt);
+				bare_println!("plic virtio external interrupt: {}", interrupt);
 			},
 			10 => { //UART中断ID是10
-				uart::handle_interrupt();
+				//uart::handle_interrupt();
+
+                //换用sbi的方式获取字符
+                interrupt::try_process_serial();
 			},
 			_ => {
 				bare_println!("Unknown external interrupt: {}", interrupt);
