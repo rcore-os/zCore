@@ -32,6 +32,13 @@ pub mod defs {
             WriteCombining = 3,
         }
     }
+
+    impl Default for CachePolicy {
+        fn default() -> Self {
+            CachePolicy::Cached
+        }
+    }
+
     pub const CACHE_POLICY_MASK: u32 = 3;
 
     pub type PhysAddr = usize;

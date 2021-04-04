@@ -880,32 +880,6 @@ impl VmMapping {
         }
     }
 
-    /// Remove WRITE flag from the mappings for Copy-on-Write.
-    pub(super) fn range_change(&self, offset: usize, len: usize, op: RangeChangeOp) {
-        let inner = self.inner.try_lock();
-        // If we are already locked, we are handling page fault/map range
-        // In this case we can just ignore the operation since we will update the mapping later
-        if let Some(inner) = inner {
-            let start = offset.max(inner.vmo_offset);
-            let end = (inner.vmo_offset + inner.size / PAGE_SIZE).min(offset + len);
-            if !(start..end).is_empty() {
-                let mut pg_table = self.page_table.lock();
-                for i in (start - inner.vmo_offset)..(end - inner.vmo_offset) {
-                    match op {
-                        RangeChangeOp::RemoveWrite => {
-                            let mut new_flag = inner.flags[i];
-                            new_flag.remove(MMUFlags::WRITE);
-                            pg_table
-                                .protect(inner.addr + i * PAGE_SIZE, new_flag)
-                                .unwrap()
-                        }
-                        RangeChangeOp::Unmap => pg_table.unmap(inner.addr + i * PAGE_SIZE).unwrap(),
-                    }
-                }
-            }
-        }
-    }
-
     /// Handle page fault happened on this VmMapping.
     pub(crate) fn handle_page_fault(&self, vaddr: VirtAddr, access_flags: MMUFlags) -> ZxResult {
         let vaddr = round_down_pages(vaddr);
