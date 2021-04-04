@@ -184,12 +184,20 @@ impl PhysFrame {
 
     #[linkage = "weak"]
     #[export_name = "hal_frame_alloc_contiguous"]
-    pub fn alloc_contiguous_base(_size: usize, _align_log2: usize) -> Option<PhysAddr> {
+    fn alloc_contiguous_base(_size: usize, _align_log2: usize) -> Option<PhysAddr> {
         unimplemented!()
     }
 
-    pub fn alloc_contiguous(size: usize, align_log2: usize) -> Vec<Self> {
+    pub fn alloc_zeroed() -> Option<Self> {
+        Self::alloc().map(|f| {
+            pmem_zero(f.addr(), PAGE_SIZE);
+            f
+        })
+    }
+
+    pub fn alloc_contiguous_zeroed(size: usize, align_log2: usize) -> Vec<Self> {
         PhysFrame::alloc_contiguous_base(size, align_log2).map_or(Vec::new(), |base| {
+            pmem_zero(base, size * PAGE_SIZE);
             (0..size)
                 .map(|i| PhysFrame {
                     paddr: base + i * PAGE_SIZE,
