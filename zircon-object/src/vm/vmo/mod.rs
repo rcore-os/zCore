@@ -156,21 +156,12 @@ impl VmObject {
     }
 
     /// Create a VM object referring to a specific contiguous range of physical frame.  
-    pub fn new_contiguous(p_size: usize, align_log2: usize) -> ZxResult<Arc<Self>> {
-        assert!(align_log2 < 8 * core::mem::size_of::<usize>());
-        let size = roundup_pages(p_size);
-        if size < p_size {
-            return Err(ZxError::INVALID_ARGS);
-        }
-        let base = KObjectBase::with_signal(Signal::VMO_ZERO_CHILDREN);
-        let size_page = pages(size);
-        let trait_ = VMObjectPaged::new(size_page);
-        trait_.create_contiguous(size, align_log2)?;
+    pub fn new_contiguous(pages: usize, align_log2: usize) -> ZxResult<Arc<Self>> {
         let vmo = Arc::new(VmObject {
-            base,
+            base: KObjectBase::with_signal(Signal::VMO_ZERO_CHILDREN),
             resizable: false,
             _counter: CountHelper::new(),
-            trait_,
+            trait_: VMObjectPaged::new_contiguous(pages, align_log2)?,
             inner: Mutex::new(VmObjectInner::default()),
         });
         Ok(vmo)

@@ -230,7 +230,7 @@ impl Syscall<'_> {
         let proc = self.thread.proc();
         proc.check_policy(PolicyCondition::NewVMO)?;
         let _bti = proc.get_object_with_rights::<BusTransactionInitiator>(bti, Rights::MAP)?;
-        let vmo = VmObject::new_contiguous(size, align_log2)?;
+        let vmo = VmObject::new_contiguous(pages(size), align_log2)?;
         let handle_value = proc.add_handle(Handle::new(vmo, Rights::DEFAULT_VMO));
         out.write(handle_value)?;
         Ok(())

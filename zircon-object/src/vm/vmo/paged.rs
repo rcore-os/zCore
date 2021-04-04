@@ -177,6 +177,26 @@ impl VMObjectPaged {
         )
     }
 
+    /// Create a new VMO backing on contiguous pages.
+    pub fn new_contiguous(pages: usize, align_log2: usize) -> ZxResult<Arc<Self>> {
+        let vmo = Self::new(pages);
+        let mut frames = PhysFrame::alloc_contiguous(pages, align_log2 - PAGE_SIZE_LOG2);
+        if frames.is_empty() {
+            return Err(ZxError::NO_MEMORY);
+        }
+        {
+            let (_guard, mut inner) = vmo.get_inner_mut();
+            inner.contiguous = true;
+            for (i, f) in frames.drain(0..).enumerate() {
+                kernel_hal::pmem_zero(f.addr(), PAGE_SIZE);
+                let mut state = PageState::new(f);
+                state.pin_count += 1;
+                inner.frames.insert(i, state);
+            }
+        }
+        Ok(vmo)
+    }
+
     /// Internal: Wrap an inner struct to object.
     fn wrap(inner: VMObjectPagedInner, lock_ref: Option<Arc<Mutex<()>>>) -> Arc<Self> {
         let obj = Arc::new(VMObjectPaged {
@@ -427,27 +447,6 @@ enum CommitResult {
     CopyOnWrite(PhysFrame, bool),
     /// A new zero page.
     NewPage(PhysFrame),
-}
-
-impl VMObjectPaged {
-    /// Create a list of contiguous pages
-    pub fn create_contiguous(&self, size: usize, align_log2: usize) -> ZxResult {
-        assert!(page_aligned(size));
-        let size_page = pages(size);
-        let mut frames = PhysFrame::alloc_contiguous(size_page, align_log2 - PAGE_SIZE_LOG2);
-        if frames.is_empty() {
-            return Err(ZxError::NO_MEMORY);
-        }
-        let (_guard, mut inner) = self.get_inner_mut();
-        inner.contiguous = true;
-        for (i, f) in frames.drain(0..).enumerate() {
-            kernel_hal::pmem_zero(f.addr(), PAGE_SIZE);
-            let mut state = PageState::new(f);
-            state.pin_count += 1;
-            inner.frames.insert(i, state);
-        }
-        Ok(())
-    }
 }
 
 impl VMObjectPagedInner {
