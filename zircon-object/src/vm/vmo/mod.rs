@@ -60,12 +60,7 @@ pub trait VMObjectTrait: Sync + Send {
     fn decommit(&self, offset: usize, len: usize) -> ZxResult;
 
     /// Create a child VMO.
-    fn create_child(
-        &self,
-        offset: usize,
-        len: usize,
-        user_id: KoID,
-    ) -> ZxResult<Arc<dyn VMObjectTrait>>;
+    fn create_child(&self, offset: usize, len: usize) -> ZxResult<Arc<dyn VMObjectTrait>>;
 
     /// Append a mapping to the VMO's mapping list.
     fn append_mapping(&self, _mapping: Weak<VmMapping>) {}
@@ -143,7 +138,7 @@ impl VmObject {
         Arc::new(VmObject {
             resizable,
             _counter: CountHelper::new(),
-            trait_: VMObjectPaged::new(base.id, pages),
+            trait_: VMObjectPaged::new(pages),
             inner: Mutex::new(VmObjectInner::default()),
             base,
         })
@@ -169,7 +164,7 @@ impl VmObject {
         }
         let base = KObjectBase::with_signal(Signal::VMO_ZERO_CHILDREN);
         let size_page = pages(size);
-        let trait_ = VMObjectPaged::new(base.id, size_page);
+        let trait_ = VMObjectPaged::new(size_page);
         trait_.create_contiguous(size, align_log2)?;
         let vmo = Arc::new(VmObject {
             base,
@@ -190,7 +185,7 @@ impl VmObject {
     ) -> ZxResult<Arc<Self>> {
         let base = KObjectBase::with_signal(Signal::VMO_ZERO_CHILDREN);
         base.set_name(&self.base.name());
-        let trait_ = self.trait_.create_child(offset, len, base.id)?;
+        let trait_ = self.trait_.create_child(offset, len)?;
         let child = Arc::new(VmObject {
             base,
             resizable,

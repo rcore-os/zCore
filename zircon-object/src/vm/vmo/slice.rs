@@ -70,12 +70,7 @@ impl VMObjectTrait for VMObjectSlice {
         self.parent.decommit(offset + self.offset, len)
     }
 
-    fn create_child(
-        &self,
-        _offset: usize,
-        _len: usize,
-        _user_id: u64,
-    ) -> ZxResult<Arc<dyn VMObjectTrait>> {
+    fn create_child(&self, _offset: usize, _len: usize) -> ZxResult<Arc<dyn VMObjectTrait>> {
         Err(ZxError::NOT_SUPPORTED)
     }
 

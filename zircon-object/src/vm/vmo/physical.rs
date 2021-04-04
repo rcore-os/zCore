@@ -86,12 +86,7 @@ impl VMObjectTrait for VMObjectPhysical {
         Ok(())
     }
 
-    fn create_child(
-        &self,
-        _offset: usize,
-        _len: usize,
-        _user_id: KoID,
-    ) -> ZxResult<Arc<dyn VMObjectTrait>> {
+    fn create_child(&self, _offset: usize, _len: usize) -> ZxResult<Arc<dyn VMObjectTrait>> {
         Err(ZxError::NOT_SUPPORTED)
     }
 
