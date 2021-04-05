@@ -682,17 +682,17 @@
     <span class="macro">unimplemented</span><span class="macro">!</span>()
 }
 
+<span class="doccomment">/// Zero physical memory at `[paddr, paddr + len)`</span>
+<span class="attribute">#[<span class="ident">linkage</span> <span class="op">=</span> <span class="string">&quot;weak&quot;</span>]</span>
+<span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_pmem_zero&quot;</span>]</span>
+<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">pmem_zero</span>(<span class="ident">_paddr</span>: <span class="ident">PhysAddr</span>, <span class="ident">_len</span>: <span class="ident">usize</span>) {
+    <span class="macro">unimplemented</span><span class="macro">!</span>()
+}
+
 <span class="doccomment">/// Copy content of `src` frame to `target` frame.</span>
 <span class="attribute">#[<span class="ident">linkage</span> <span class="op">=</span> <span class="string">&quot;weak&quot;</span>]</span>
 <span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_frame_copy&quot;</span>]</span>
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">frame_copy</span>(<span class="ident">_src</span>: <span class="ident">PhysAddr</span>, <span class="ident">_target</span>: <span class="ident">PhysAddr</span>) {
-    <span class="macro">unimplemented</span><span class="macro">!</span>()
-}
-
-<span class="doccomment">/// Zero `target` frame.</span>
-<span class="attribute">#[<span class="ident">linkage</span> <span class="op">=</span> <span class="string">&quot;weak&quot;</span>]</span>
-<span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_frame_zero&quot;</span>]</span>
-<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">frame_zero_in_range</span>(<span class="ident">_target</span>: <span class="ident">PhysAddr</span>, <span class="ident">_start</span>: <span class="ident">usize</span>, <span class="ident">_end</span>: <span class="ident">usize</span>) {
     <span class="macro">unimplemented</span><span class="macro">!</span>()
 }
 

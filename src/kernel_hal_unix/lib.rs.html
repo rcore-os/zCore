@@ -661,6 +661,17 @@
     }
 }
 
+<span class="doccomment">/// Zero physical memory at `[paddr, paddr + len)`</span>
+<span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_pmem_zero&quot;</span>]</span>
+<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">pmem_zero</span>(<span class="ident">paddr</span>: <span class="ident">PhysAddr</span>, <span class="ident">len</span>: <span class="ident">usize</span>) {
+    <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;pmem_zero: addr={:#x}, len={:#x}&quot;</span>, <span class="ident">paddr</span>, <span class="ident">len</span>);
+    <span class="macro">assert</span><span class="macro">!</span>(<span class="ident">paddr</span> <span class="op">+</span> <span class="ident">len</span> <span class="op">&lt;</span><span class="op">=</span> <span class="ident">PMEM_SIZE</span>);
+    <span class="ident">ensure_mmap_pmem</span>();
+    <span class="kw">unsafe</span> {
+        <span class="ident">core</span>::<span class="ident">ptr</span>::<span class="ident">write_bytes</span>(<span class="ident">phys_to_virt</span>(<span class="ident">paddr</span>) <span class="kw">as</span> <span class="kw-2">*</span><span class="kw-2">mut</span> <span class="ident">u8</span>, <span class="number">0</span>, <span class="ident">len</span>);
+    }
+}
+
 <span class="doccomment">/// Copy content of `src` frame to `target` frame</span>
 <span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_frame_copy&quot;</span>]</span>
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">frame_copy</span>(<span class="ident">src</span>: <span class="ident">PhysAddr</span>, <span class="ident">target</span>: <span class="ident">PhysAddr</span>) {
@@ -670,17 +681,6 @@
     <span class="kw">unsafe</span> {
         <span class="kw">let</span> <span class="ident">buf</span> <span class="op">=</span> <span class="ident">phys_to_virt</span>(<span class="ident">src</span>) <span class="kw">as</span> <span class="kw-2">*</span><span class="kw">const</span> <span class="ident">u8</span>;
         <span class="ident">buf</span>.<span class="ident">copy_to_nonoverlapping</span>(<span class="ident">phys_to_virt</span>(<span class="ident">target</span>) <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">PAGE_SIZE</span>);
-    }
-}
-
-<span class="doccomment">/// Zero `target` frame.</span>
-<span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_frame_zero&quot;</span>]</span>
-<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">frame_zero</span>(<span class="ident">target</span>: <span class="ident">PhysAddr</span>) {
-    <span class="macro">trace</span><span class="macro">!</span>(<span class="string">&quot;frame_zero: {:#x}&quot;</span>, <span class="ident">target</span>);
-    <span class="macro">assert</span><span class="macro">!</span>(<span class="ident">target</span> <span class="op">+</span> <span class="ident">PAGE_SIZE</span> <span class="op">&lt;</span> <span class="ident">PMEM_SIZE</span>);
-    <span class="ident">ensure_mmap_pmem</span>();
-    <span class="kw">unsafe</span> {
-        <span class="ident">core</span>::<span class="ident">ptr</span>::<span class="ident">write_bytes</span>(<span class="ident">phys_to_virt</span>(<span class="ident">target</span>) <span class="kw">as</span> <span class="kw-2">*</span><span class="kw-2">mut</span> <span class="ident">u8</span>, <span class="number">0</span>, <span class="ident">PAGE_SIZE</span>);
     }
 }
 

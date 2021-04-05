@@ -113,38 +113,8 @@
 <span id="110">110</span>
 <span id="111">111</span>
 <span id="112">112</span>
-<span id="113">113</span>
-<span id="114">114</span>
-<span id="115">115</span>
-<span id="116">116</span>
-<span id="117">117</span>
-<span id="118">118</span>
-<span id="119">119</span>
-<span id="120">120</span>
-<span id="121">121</span>
-<span id="122">122</span>
-<span id="123">123</span>
-<span id="124">124</span>
-<span id="125">125</span>
-<span id="126">126</span>
-<span id="127">127</span>
-<span id="128">128</span>
-<span id="129">129</span>
-<span id="130">130</span>
-<span id="131">131</span>
-<span id="132">132</span>
-<span id="133">133</span>
-<span id="134">134</span>
-<span id="135">135</span>
-<span id="136">136</span>
-<span id="137">137</span>
-<span id="138">138</span>
-<span id="139">139</span>
-<span id="140">140</span>
-<span id="141">141</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
-<span class="kw">use</span> <span class="ident">core</span>::<span class="ident">sync</span>::<span class="ident">atomic</span>::{<span class="ident">AtomicUsize</span>, <span class="ident">Ordering</span>};
 
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">VMObjectSlice</span> {
     <span class="doccomment">/// Parent node.</span>
@@ -153,8 +123,6 @@
     <span class="ident">offset</span>: <span class="ident">usize</span>,
     <span class="doccomment">/// The size in bytes.</span>
     <span class="ident">size</span>: <span class="ident">usize</span>,
-    <span class="doccomment">/// Mapping count.</span>
-    <span class="ident">mapping_count</span>: <span class="ident">AtomicUsize</span>,
 }
 
 <span class="kw">impl</span> <span class="ident">VMObjectSlice</span> {
@@ -163,7 +131,6 @@
             <span class="ident">parent</span>,
             <span class="ident">offset</span>,
             <span class="ident">size</span>,
-            <span class="ident">mapping_count</span>: <span class="ident">AtomicUsize</span>::<span class="ident">new</span>(<span class="number">0</span>),
         })
     }
 
@@ -186,19 +153,16 @@
         <span class="self">self</span>.<span class="ident">parent</span>.<span class="ident">write</span>(<span class="ident">offset</span> <span class="op">+</span> <span class="self">self</span>.<span class="ident">offset</span>, <span class="ident">buf</span>)
     }
 
+    <span class="kw">fn</span> <span class="ident">zero</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">offset</span>: <span class="ident">usize</span>, <span class="ident">len</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+        <span class="self">self</span>.<span class="ident">check_range</span>(<span class="ident">offset</span>, <span class="ident">len</span>)<span class="question-mark">?</span>;
+        <span class="self">self</span>.<span class="ident">parent</span>.<span class="ident">zero</span>(<span class="ident">offset</span> <span class="op">+</span> <span class="self">self</span>.<span class="ident">offset</span>, <span class="ident">len</span>)
+    }
+
     <span class="kw">fn</span> <span class="ident">len</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
         <span class="self">self</span>.<span class="ident">size</span>
     }
 
     <span class="kw">fn</span> <span class="ident">set_len</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">_len</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
-        <span class="macro">unimplemented</span><span class="macro">!</span>()
-    }
-
-    <span class="kw">fn</span> <span class="ident">content_size</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
-        <span class="macro">unimplemented</span><span class="macro">!</span>()
-    }
-
-    <span class="kw">fn</span> <span class="ident">set_content_size</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">_size</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
         <span class="macro">unimplemented</span><span class="macro">!</span>()
     }
 
@@ -222,21 +186,8 @@
         <span class="self">self</span>.<span class="ident">parent</span>.<span class="ident">decommit</span>(<span class="ident">offset</span> <span class="op">+</span> <span class="self">self</span>.<span class="ident">offset</span>, <span class="ident">len</span>)
     }
 
-    <span class="kw">fn</span> <span class="ident">create_child</span>(
-        <span class="kw-2">&amp;</span><span class="self">self</span>,
-        <span class="ident">_offset</span>: <span class="ident">usize</span>,
-        <span class="ident">_len</span>: <span class="ident">usize</span>,
-        <span class="ident">_user_id</span>: <span class="ident">u64</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">VMObjectTrait</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">create_child</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">_offset</span>: <span class="ident">usize</span>, <span class="ident">_len</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">VMObjectTrait</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">NOT_SUPPORTED</span>)
-    }
-
-    <span class="kw">fn</span> <span class="ident">append_mapping</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">_mapping</span>: <span class="ident">Weak</span><span class="op">&lt;</span><span class="ident">VmMapping</span><span class="op">&gt;</span>) {
-        <span class="self">self</span>.<span class="ident">mapping_count</span>.<span class="ident">fetch_add</span>(<span class="number">1</span>, <span class="ident">Ordering</span>::<span class="ident">SeqCst</span>);
-    }
-
-    <span class="kw">fn</span> <span class="ident">remove_mapping</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">_mapping</span>: <span class="ident">Weak</span><span class="op">&lt;</span><span class="ident">VmMapping</span><span class="op">&gt;</span>) {
-        <span class="self">self</span>.<span class="ident">mapping_count</span>.<span class="ident">fetch_sub</span>(<span class="number">1</span>, <span class="ident">Ordering</span>::<span class="ident">SeqCst</span>);
     }
 
     <span class="kw">fn</span> <span class="ident">complete_info</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">info</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">VmoInfo</span>) {
@@ -249,10 +200,6 @@
 
     <span class="kw">fn</span> <span class="ident">set_cache_policy</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">_policy</span>: <span class="ident">CachePolicy</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
         <span class="prelude-val">Ok</span>(())
-    }
-
-    <span class="kw">fn</span> <span class="ident">share_count</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
-        <span class="self">self</span>.<span class="ident">mapping_count</span>.<span class="ident">load</span>(<span class="ident">Ordering</span>::<span class="ident">SeqCst</span>)
     }
 
     <span class="kw">fn</span> <span class="ident">committed_pages_in_range</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">start_idx</span>: <span class="ident">usize</span>, <span class="ident">end_idx</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
@@ -277,11 +224,6 @@
 
     <span class="kw">fn</span> <span class="ident">is_paged</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
         <span class="self">self</span>.<span class="ident">parent</span>.<span class="ident">is_paged</span>()
-    }
-
-    <span class="kw">fn</span> <span class="ident">zero</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">offset</span>: <span class="ident">usize</span>, <span class="ident">len</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
-        <span class="self">self</span>.<span class="ident">check_range</span>(<span class="ident">offset</span>, <span class="ident">len</span>)<span class="question-mark">?</span>;
-        <span class="self">self</span>.<span class="ident">parent</span>.<span class="ident">zero</span>(<span class="ident">offset</span> <span class="op">+</span> <span class="self">self</span>.<span class="ident">offset</span>, <span class="ident">len</span>)
     }
 }
 </pre></div>
