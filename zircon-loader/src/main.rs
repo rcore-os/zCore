@@ -14,7 +14,7 @@ struct Opt {
     #[structopt(parse(from_os_str))]
     prebuilt_path: PathBuf,
 
-    #[structopt(default_value = "")]
+    #[structopt(default_value = "console.shell=true")]
     cmdline: String,
 }
 

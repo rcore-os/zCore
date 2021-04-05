@@ -154,7 +154,8 @@ impl Syscall<'_> {
             permissions,
             mapping_flags,
             overwrite,
-            map_range,
+            // force immediate mapping for libos
+            map_range || cfg!(not(target_os = "none")),
         )?;
         info!("vmar.map: at {:#x?}", vaddr);
         mapped_addr.write(vaddr)?;
