@@ -70,8 +70,8 @@ type WeakRef = Weak<VMObjectPaged>;
 
 /// The mutable part of `VMObjectPaged`.
 struct VMObjectPagedInner {
-    /// Id of this vmo object
-    user_id: KoID,
+    /// Owner identifier.
+    owner: u64,
     type_: VMOType,
     /// Parent node.
     parent: Option<Arc<VMObjectPaged>>,
@@ -81,8 +81,6 @@ struct VMObjectPagedInner {
     parent_limit: usize,
     /// The size in bytes.
     size: usize,
-    /// The size of content in bytes.
-    content_size: usize,
     /// Physical frames of this VMO.
     frames: HashMap<usize, PageState>,
     /// All mappings to this VMO.
@@ -159,16 +157,15 @@ impl Drop for PageState {
 
 impl VMObjectPaged {
     /// Create a new VMO backing on physical memory allocated in pages.
-    pub fn new(id: KoID, pages: usize) -> Arc<Self> {
+    pub fn new(pages: usize) -> Arc<Self> {
         VMObjectPaged::wrap(
             VMObjectPagedInner {
-                user_id: id,
+                owner: new_owner_id(),
                 type_: VMOType::Origin,
                 parent: None,
                 parent_offset: 0usize,
                 parent_limit: 0usize,
                 size: pages * PAGE_SIZE,
-                content_size: 0usize,
                 frames: HashMap::new(),
                 mappings: Vec::new(),
                 cache_policy: CachePolicy::Cached,
@@ -178,6 +175,26 @@ impl VMObjectPaged {
             },
             None,
         )
+    }
+
+    /// Create a new VMO backing on contiguous pages.
+    pub fn new_contiguous(pages: usize, align_log2: usize) -> ZxResult<Arc<Self>> {
+        let vmo = Self::new(pages);
+        let mut frames = PhysFrame::alloc_contiguous(pages, align_log2 - PAGE_SIZE_LOG2);
+        if frames.is_empty() {
+            return Err(ZxError::NO_MEMORY);
+        }
+        {
+            let (_guard, mut inner) = vmo.get_inner_mut();
+            inner.contiguous = true;
+            for (i, f) in frames.drain(0..).enumerate() {
+                kernel_hal::pmem_zero(f.addr(), PAGE_SIZE);
+                let mut state = PageState::new(f);
+                state.pin_count += 1;
+                inner.frames.insert(i, state);
+            }
+        }
+        Ok(vmo)
     }
 
     /// Internal: Wrap an inner struct to object.
@@ -242,7 +259,7 @@ impl VMObjectTrait for VMObjectPaged {
             } else if inner.committed_pages_in_range(block.block, block.block + 1) != 0 {
                 // check whether this page is initialized, otherwise nothing should be done
                 let paddr = inner.commit_page(block.block, MMUFlags::WRITE)?;
-                kernel_hal::frame_zero_in_range(paddr, block.begin, block.end);
+                kernel_hal::pmem_zero(paddr + block.begin, block.len());
             }
         }
         inner.release_unwanted_pages_in_parent(unwanted);
@@ -263,16 +280,6 @@ impl VMObjectTrait for VMObjectPaged {
             inner.resize(len)
         };
         drop(old_parent);
-        Ok(())
-    }
-
-    fn content_size(&self) -> usize {
-        self.get_inner().1.content_size
-    }
-
-    fn set_content_size(&self, size: usize) -> ZxResult {
-        let mut inner = self.get_inner_mut().1;
-        inner.content_size = size;
         Ok(())
     }
 
@@ -311,16 +318,11 @@ impl VMObjectTrait for VMObjectPaged {
         Ok(())
     }
 
-    fn create_child(
-        &self,
-        offset: usize,
-        len: usize,
-        user_id: KoID,
-    ) -> ZxResult<Arc<dyn VMObjectTrait>> {
+    fn create_child(&self, offset: usize, len: usize) -> ZxResult<Arc<dyn VMObjectTrait>> {
         assert!(page_aligned(offset));
         assert!(page_aligned(len));
         let (_guard, mut inner) = self.get_inner_mut();
-        let child = inner.create_child(offset, len, user_id, &self.lock)?;
+        let child = inner.create_child(offset, len, &self.lock)?;
         Ok(child)
     }
 
@@ -379,10 +381,6 @@ impl VMObjectTrait for VMObjectPaged {
     fn committed_pages_in_range(&self, start_idx: usize, end_idx: usize) -> usize {
         let (_guard, inner) = self.get_inner();
         inner.committed_pages_in_range(start_idx, end_idx)
-    }
-
-    fn share_count(&self) -> usize {
-        self.get_inner().1.mappings.len()
     }
 
     fn pin(&self, offset: usize, len: usize) -> ZxResult {
@@ -449,27 +447,6 @@ enum CommitResult {
     CopyOnWrite(PhysFrame, bool),
     /// A new zero page.
     NewPage(PhysFrame),
-}
-
-impl VMObjectPaged {
-    /// Create a list of contiguous pages
-    pub fn create_contiguous(&self, size: usize, align_log2: usize) -> ZxResult {
-        assert!(page_aligned(size));
-        let size_page = pages(size);
-        let mut frames = PhysFrame::alloc_contiguous(size_page, align_log2 - PAGE_SIZE_LOG2);
-        if frames.is_empty() {
-            return Err(ZxError::NO_MEMORY);
-        }
-        let (_guard, mut inner) = self.get_inner_mut();
-        inner.contiguous = true;
-        for (i, f) in frames.drain(0..).enumerate() {
-            kernel_hal::frame_zero_in_range(f.addr(), 0, PAGE_SIZE);
-            let mut state = PageState::new(f);
-            state.pin_count += 1;
-            inner.frames.insert(i, state);
-        }
-        Ok(())
-    }
 }
 
 impl VMObjectPagedInner {
@@ -550,7 +527,7 @@ impl VMObjectPagedInner {
                 }
                 // lazy allocate zero frame
                 let target_frame = PhysFrame::alloc().ok_or(ZxError::NO_MEMORY)?;
-                kernel_hal::frame_zero_in_range(target_frame.addr(), 0, PAGE_SIZE);
+                kernel_hal::pmem_zero(target_frame.addr(), PAGE_SIZE);
                 if out_of_range {
                     // can never be a hidden vmo
                     assert!(!self.type_.is_hidden());
@@ -690,12 +667,12 @@ impl VMObjectPagedInner {
             while let Some(vmop) = current {
                 let inner = vmop.inner.borrow();
                 if let Some(frame) = inner.frames.get(&current_idx) {
-                    if frame.tag.is_split() || inner.user_id == self.user_id {
+                    if frame.tag.is_split() || inner.owner == self.owner {
                         count += 1;
                         break;
                     }
                 }
-                if inner.user_id != self.user_id {
+                if inner.owner != self.owner {
                     break;
                 }
                 current_idx += inner.parent_offset / PAGE_SIZE;
@@ -747,7 +724,7 @@ impl VMObjectPagedInner {
         if let Some(parent) = &self.parent {
             parent.inner.borrow_mut().replace_child(
                 &self.self_ref,
-                self.user_id,
+                self.owner,
                 other_child,
                 Some((child.parent_offset, child.parent_limit)),
             );
@@ -760,7 +737,6 @@ impl VMObjectPagedInner {
         &mut self,
         offset: usize,
         len: usize,
-        user_id: KoID,
         lock_ref: &Arc<Mutex<()>>,
     ) -> ZxResult<Arc<VMObjectPaged>> {
         // clone contiguous vmo is no longer permitted
@@ -774,13 +750,12 @@ impl VMObjectPagedInner {
         // create child VMO
         let child = VMObjectPaged::wrap(
             VMObjectPagedInner {
-                user_id,
+                owner: new_owner_id(),
                 type_: VMOType::Snapshot,
                 parent: None, // set later
                 parent_offset: offset,
                 parent_limit: (offset + len).min(self.size),
                 size: len,
-                content_size: 0, // fix later
                 frames: HashMap::new(),
                 mappings: Vec::new(),
                 cache_policy: CachePolicy::Cached,
@@ -793,7 +768,7 @@ impl VMObjectPagedInner {
         // construct a hidden VMO as shared parent
         let hidden = VMObjectPaged::wrap(
             VMObjectPagedInner {
-                user_id: self.user_id,
+                owner: self.owner,
                 type_: VMOType::Hidden {
                     left: self.self_ref.clone(),
                     right: Arc::downgrade(&child),
@@ -802,7 +777,6 @@ impl VMObjectPagedInner {
                 parent_offset: self.parent_offset,
                 parent_limit: self.parent_limit,
                 size: self.size,
-                content_size: self.content_size,
                 frames: core::mem::take(&mut self.frames),
                 mappings: Vec::new(),
                 cache_policy: CachePolicy::Cached,
@@ -892,19 +866,19 @@ impl VMObjectPagedInner {
 
         self.release_unwanted_pages_in_parent(unwanted);
 
-        if old_id == self.user_id {
+        if old_id == self.owner {
             let mut option_parent = self.parent.clone();
             let mut child = self.self_ref.clone();
-            let mut skip_user_id = old_id;
+            let mut skip_owner = old_id;
             while let Some(parent) = option_parent {
                 let mut parent_inner = parent.inner.borrow_mut();
-                if parent_inner.user_id == old_id {
+                if parent_inner.owner == old_id {
                     let (_, other) = parent_inner.type_.get_tag_and_other(&child);
-                    let new_user_id = other.upgrade().unwrap().inner.borrow().user_id;
+                    let new_owner = other.upgrade().unwrap().inner.borrow().owner;
                     child = parent_inner.self_ref.clone();
-                    assert_ne!(new_user_id, skip_user_id);
-                    parent_inner.user_id = new_user_id;
-                    skip_user_id = new_user_id;
+                    assert_ne!(new_owner, skip_owner);
+                    parent_inner.owner = new_owner;
+                    skip_owner = new_owner;
                     option_parent = parent_inner.parent.clone();
                 } else {
                     break;
@@ -912,7 +886,7 @@ impl VMObjectPagedInner {
             }
         }
 
-        self.user_id = other_child.user_id;
+        self.owner = other_child.owner;
         match &mut self.type_ {
             VMOType::Hidden { left, right, .. } => {
                 if left.ptr_eq(old) {
@@ -1062,7 +1036,6 @@ impl Drop for VMObjectPaged {
     }
 }
 
-#[allow(dead_code)]
 /// Generate a owner ID.
 fn new_owner_id() -> u64 {
     static OWNER_ID: AtomicU64 = AtomicU64::new(1);

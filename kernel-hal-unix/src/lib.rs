@@ -212,6 +212,17 @@ pub fn pmem_write(paddr: PhysAddr, buf: &[u8]) {
     }
 }
 
+/// Zero physical memory at `[paddr, paddr + len)`
+#[export_name = "hal_pmem_zero"]
+pub fn pmem_zero(paddr: PhysAddr, len: usize) {
+    trace!("pmem_zero: addr={:#x}, len={:#x}", paddr, len);
+    assert!(paddr + len <= PMEM_SIZE);
+    ensure_mmap_pmem();
+    unsafe {
+        core::ptr::write_bytes(phys_to_virt(paddr) as *mut u8, 0, len);
+    }
+}
+
 /// Copy content of `src` frame to `target` frame
 #[export_name = "hal_frame_copy"]
 pub fn frame_copy(src: PhysAddr, target: PhysAddr) {
@@ -221,17 +232,6 @@ pub fn frame_copy(src: PhysAddr, target: PhysAddr) {
     unsafe {
         let buf = phys_to_virt(src) as *const u8;
         buf.copy_to_nonoverlapping(phys_to_virt(target) as _, PAGE_SIZE);
-    }
-}
-
-/// Zero `target` frame.
-#[export_name = "hal_frame_zero"]
-pub fn frame_zero(target: PhysAddr) {
-    trace!("frame_zero: {:#x}", target);
-    assert!(target + PAGE_SIZE < PMEM_SIZE);
-    ensure_mmap_pmem();
-    unsafe {
-        core::ptr::write_bytes(phys_to_virt(target) as *mut u8, 0, PAGE_SIZE);
     }
 }
 
