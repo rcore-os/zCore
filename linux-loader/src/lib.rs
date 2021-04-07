@@ -12,7 +12,7 @@ extern crate log;
 use {
     alloc::{boxed::Box, string::String, sync::Arc, vec::Vec},
     core::{future::Future, pin::Pin},
-    kernel_hal::{UserContext, GeneralRegs, MMUFlags},
+    kernel_hal::{UserContext, MMUFlags},
     linux_object::{
         fs::{vfs::FileSystem, INodeExt},
         loader::LinuxElfLoader,
@@ -20,7 +20,10 @@ use {
         thread::ThreadExt,
     },
     linux_syscall::Syscall,
-    zircon_object::task::*,
+    zircon_object::{
+        task::*,
+        object::KernelObject,
+    }
 };
 
 /// Create and run main Linux process
@@ -40,10 +43,10 @@ pub fn run(args: Vec<String>, envs: Vec<String>, rootfs: Arc<dyn FileSystem>) ->
     {
         let mut id = 0;
         let rust_dir = rootfs.root_inode().lookup("/").unwrap();
-        warn!("Rootfs: / ");
+        trace!("run(), Rootfs: / ");
         while let Ok(name) = rust_dir.get_entry(id) {
             id += 1;
-            warn!("  {}", name);
+            trace!("  {}", name);
         }
     }
 
@@ -76,11 +79,14 @@ async fn new_thread(thread: CurrentThread) {
         if thread.state() == ThreadState::Dying {
             break;
         }
+
         // run
         trace!("go to user: {:#x?}", cx);
         kernel_hal::context_run(&mut cx);
         trace!("back from user: {:#x?}", cx);
         // handle trap/interrupt/syscall
+
+        let pid = thread.proc().id();
 
         #[cfg(target_arch = "x86_64")]
         match cx.trap_num {
@@ -122,12 +128,12 @@ async fn new_thread(thread: CurrentThread) {
         if is_interrupt {
             match trap_num {
                 //Irq
-                0 | 4 | 5 | 8 => {
+                0 | 4 | 5 | 8 | 9 => {
                     kernel_hal::InterruptManager::handle(trap_num as u8);
 
                     //Timer
                     if trap_num == 4 || trap_num == 5 {
-                        warn!("Timer interrupt: {:#x}", trap_num);
+                        debug!("Timer interrupt: {}", trap_num);
 
                         /*
                          * 已在irq_handle里加入了timer处理函数
@@ -140,7 +146,7 @@ async fn new_thread(thread: CurrentThread) {
 
                     //kernel_hal::InterruptManager::handle(trap_num as u8);
                 }
-                _ => panic!("not supported interrupt from user mode. {:#x?}", cx),
+                _ => panic!("not supported pid: {} interrupt {} from user mode. {:#x?}", pid, trap_num, cx),
             }
 
         }else{
@@ -150,23 +156,26 @@ async fn new_thread(thread: CurrentThread) {
                 // PageFault
                 12 | 13 | 15 => {
                     let vaddr = kernel_hal::fetch_fault_vaddr();
+
+                    //注意这里flags没有包含WRITE权限，后面handle会移除写权限
                     let flags = if trap_num == 15 {
                         MMUFlags::WRITE
+                    } else if trap_num == 12 {
+                        MMUFlags::EXECUTE
                     } else {
                         MMUFlags::READ
                     };
 
-                    info!("page fualt from user mode, vaddr:{:#x}, trap:{:#x}", vaddr, trap_num);
+                    info!("page fualt from pid: {} user mode, vaddr:{:#x}, trap:{}", pid, vaddr, trap_num);
                     let vmar = thread.proc().vmar();
                     match vmar.handle_page_fault(vaddr, flags) {
                         Ok(()) => {}
-                        Err(_) => {
-                            panic!("Page Fault from user mode {:#x?}", cx);
+                        Err(error) => {
+                            panic!("{:?} Page Fault from user mode {:#x?}", error, cx);
                         }
                     }
                 }
-                //TODO: S-mode ext int
-                _ => panic!("not supported exception from user mode. {:#x?}", cx),
+                _ => panic!("not supported pid: {} exception {} from user mode. {:#x?}", pid, trap_num, cx),
             }
         }
 
@@ -204,15 +213,17 @@ async fn handle_syscall(thread: &CurrentThread, cx: &mut UserContext) {
     // add before fork
     cx.sepc += 4;
 
-    let regs = &mut (cx.general as GeneralRegs);
+    //注意, 此时的regs没有原context所有权，故无法通过此regs修改寄存器
+    //let regs = &mut (cx.general as GeneralRegs);
+
     let mut syscall = Syscall {
         thread,
         #[cfg(feature = "std")]
         syscall_entry: kernel_hal_unix::syscall_entry as usize,
         #[cfg(not(feature = "std"))]
         syscall_entry: 0,
+        context: cx,
         thread_fn,
-        regs,
     };
     cx.general.a0 = syscall.syscall(num, args).await as usize;
 }

@@ -293,6 +293,30 @@ impl Thread {
         Ok(())
     }
 
+    /// Similar to start_with_regs(), but change a parameter: context
+    pub fn start_with_context(self: &Arc<Self>, cx: &UserContext, thread_fn: ThreadFn) -> ZxResult {
+        {
+            let mut inner = self.inner.lock();
+            let context = inner.context.as_mut().ok_or(ZxError::BAD_STATE)?;
+            context.general = cx.general;
+            context.set_syscall_ret(0);
+
+            #[cfg(target_arch = "riscv64")]
+            {
+                context.sepc = cx.sepc;
+                //context.sstatus = 1 << 18 | 1 << 14 | 1 << 13 | 1 << 5;
+                context.sstatus = 1 << 19 | 1 << 18 | 1 << 14 | 1 << 13 | 1 << 5;
+                // MXR=1, workaround for child process panic
+
+                debug!("start_with_regs_pc(), sepc: {:#x}", context.sepc);
+            }
+            inner.change_state(ThreadState::Running, &self.base);
+        }
+        let vmtoken = self.proc().vmar().table_phys();
+        kernel_hal::Thread::spawn(thread_fn(CurrentThread(self.clone())), vmtoken);
+        Ok(())
+    }
+
     /// Stop the thread. Internal implementation of `exit` and `kill`.
     ///
     /// The thread do not terminate immediately when stopped. It is just made dying.

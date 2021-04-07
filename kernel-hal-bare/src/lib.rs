@@ -177,7 +177,7 @@ pub fn frame_copy(src: PhysAddr, target: PhysAddr) {
 #[export_name = "hal_frame_zero"]
 pub fn frame_zero_in_range(target: PhysAddr, start: usize, end: usize) {
     assert!(start < PAGE_SIZE && end <= PAGE_SIZE);
-    trace!("kernel-hal-bare, frame_zero: {:#x?}", target);
+    trace!("frame_zero: {:#x?}", target);
     unsafe {
         core::ptr::write_bytes(phys_to_virt(target + start) as *mut u8, 0, end - start);
     }

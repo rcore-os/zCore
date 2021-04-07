@@ -32,7 +32,7 @@ use {
     self::consts::SyscallType as Sys,
     alloc::sync::Arc,
     core::convert::TryFrom,
-    kernel_hal::{user::*, GeneralRegs},
+    kernel_hal::{user::*, GeneralRegs, UserContext},
     linux_object::{error::*, fs::FileDesc, process::*},
     zircon_object::{object::*, task::*, vm::VirtAddr},
 };
@@ -53,7 +53,11 @@ pub struct Syscall<'a> {
     /// the entry of current syscall
     pub syscall_entry: VirtAddr,
     /// store the regs statues
+    #[cfg(not(target_arch = "riscv64"))]
     pub regs: &'a mut GeneralRegs,
+    /// riscv GeneralRegs does not have Entry register
+    #[cfg(target_arch = "riscv64")]
+    pub context: &'a mut UserContext,
     /// new thread function
     pub thread_fn: ThreadFn,
 }
@@ -61,7 +65,7 @@ pub struct Syscall<'a> {
 impl Syscall<'_> {
     /// syscall entry function
     pub async fn syscall(&mut self, num: u32, args: [usize; 6]) -> isize {
-        debug!("syscall: num={}, args={:x?}", num, args);
+        debug!("pid: {} syscall: num={}, args={:x?}", self.zircon_process().id(), num, args);
         let sys_type = match Sys::try_from(num) {
             Ok(t) => t,
             Err(_) => {
@@ -239,7 +243,7 @@ impl Syscall<'_> {
             #[cfg(target_arch = "riscv64")]
             _ => self.riscv64_syscall(sys_type, args).await,
         };
-        info!("<= {:x?}", ret);
+        info!("<= {:?}", ret);
         match ret {
             Ok(value) => value as isize,
             Err(err) => -(err as isize),

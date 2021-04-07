@@ -23,7 +23,10 @@ use {
 };
 
 #[cfg(target_arch = "riscv64")]
-use riscv::paging::{PageTable, PageTableEntry, PageTableFlags as EF};
+use riscv::{addr::Frame,
+            paging::{
+                PageTable, PageTableEntry, PageTableFlags as EF
+            }};
 
 #[cfg(target_arch = "x86_64")]
 type FrameAlloc = bitmap_allocator::BitAlloc16M;
@@ -167,10 +170,17 @@ pub extern "C" fn hal_pt_map_kernel(pt: &mut PageTable, current: &PageTable) {
     pt[PHYSICAL_MEMORY_PM4].set_addr(ephysical.addr(), ephysical.flags() | EF::GLOBAL);
 }
 
+#[no_mangle]
 #[cfg(target_arch = "riscv64")]
 pub extern "C" fn hal_pt_map_kernel(pt: &mut PageTable, current: &PageTable) {
-    info!("hal_pt_map_kernel() is NULL!\n Please use paging::PageTableImpl::map_kernel()");
+    //warn!("hal_pt_map_kernel() is NULL! Please use paging::PageTableImpl::map_kernel()");
     //用新页表映射整个kernel; 一般在创建一个新页表时,如PageTableExt中
+
+    debug!("new hal_pt_map_kernel()");
+    let ekernel = current[KERNEL_PM4].clone();
+    let ephysical = current[PHYSICAL_MEMORY_PM4].clone();
+    pt[KERNEL_PM4].set(Frame::of_addr(ekernel.addr()), ekernel.flags() | EF::GLOBAL);
+    pt[PHYSICAL_MEMORY_PM4].set(Frame::of_addr(ephysical.addr()), ephysical.flags() | EF::GLOBAL);
 }
 
 pub fn remap_the_kernel(dtb: usize) {

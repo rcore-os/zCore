@@ -33,9 +33,8 @@ impl PageTable for PageTableImpl {
         let frame = riscv::addr::Frame::of_addr(PhysAddr::new(target));
         // we may need frame allocator to alloc frame for new page table(first/second)
 
-        if target < 0x80000000 { 
-            debug!("map() page:{:#x} -> frame:{:#x}", addr, target);
-        }
+        trace!("map PageTableImpl page:{:#x} -> frame:{:#x}", addr, target);
+
         // map() may stuck here
         // 注意不要在已经map_kernel()进行1G大页映射后的root_table中, 重建p3 p2 p1多级页表，否则出错；
         // 因与Rv39PageTable的create_p1_if_not_exist()多级页表的建立产生冲突
@@ -94,17 +93,39 @@ impl Entry for PageEntry {
     fn present(&self) -> bool {
         self.0.flags().contains(EF::VALID | EF::READABLE)
     }
+    //access和dirty两位在set()函数中会被自动置位??? 注意下
     fn clear_accessed(&mut self) {
-        self.0.flags_mut().remove(EF::ACCESSED);
+        warn!("PageTableImpl clear access, may not work out");
+        let flags = self.0.flags() & !EF::ACCESSED;
+        let frame = self.0.frame();
+        self.0.set(frame, flags);
     }
     fn clear_dirty(&mut self) {
-        self.0.flags_mut().remove(EF::DIRTY);
+        warn!("PageTableImpl clear access, may not work out");
+        let flags = self.0.flags() & !EF::DIRTY;
+        let frame = self.0.frame();
+        self.0.set(frame, flags);
     }
     fn set_writable(&mut self, value: bool) {
-        self.0.flags_mut().set(EF::WRITABLE, value);
+        let flags = if value {
+            self.0.flags() | EF::WRITABLE
+        } else {
+            self.0.flags() & !EF::WRITABLE
+        };
+
+        let frame = self.0.frame();
+        self.0.set(frame, flags);
+        //let pte = (self.0.frame().number() << 10) | flags.bits();
+        //warn!("PageTableImpl set {} writable: {:#x?}", value, self.0.flags());
     }
     fn set_present(&mut self, value: bool) {
-        self.0.flags_mut().set(EF::VALID | EF::READABLE, value);
+        let flags = if value {
+            self.0.flags() | (EF::VALID | EF::READABLE)
+        } else {
+            self.0.flags() & !(EF::VALID | EF::READABLE)
+        };
+        let frame = self.0.frame();
+        self.0.set(frame, flags);
     }
     fn target(&self) -> usize {
         self.0.addr().as_usize()
@@ -121,30 +142,54 @@ impl Entry for PageEntry {
         self.0.flags().contains(EF::RESERVED2)
     }
     fn set_shared(&mut self, writable: bool) {
-        let flags = self.0.flags_mut();
-        flags.set(EF::RESERVED1, writable);
-        flags.set(EF::RESERVED2, !writable);
+        let flags = if writable {
+            (self.0.flags() | EF::RESERVED1) & !EF::RESERVED2
+        } else {
+            (self.0.flags() | EF::RESERVED2) & !EF::RESERVED1
+        };
+        let frame = self.0.frame();
+        self.0.set(frame, flags);
     }
     fn clear_shared(&mut self) {
-        self.0.flags_mut().remove(EF::RESERVED1 | EF::RESERVED2);
+        let flags = self.0.flags() & !(EF::RESERVED1 | EF::RESERVED2);
+        let frame = self.0.frame();
+        self.0.set(frame, flags);
     }
     fn swapped(&self) -> bool {
         self.0.flags().contains(EF::RESERVED1)
     }
     fn set_swapped(&mut self, value: bool) {
-        self.0.flags_mut().set(EF::RESERVED1, value);
+        let flags = if value {
+            self.0.flags() | EF::RESERVED1
+        } else {
+            self.0.flags() & !EF::RESERVED1
+        };
+        let frame = self.0.frame();
+        self.0.set(frame, flags);
     }
     fn user(&self) -> bool {
         self.0.flags().contains(EF::USER)
     }
     fn set_user(&mut self, value: bool) {
-        self.0.flags_mut().set(EF::USER, value);
+        let flags = if value {
+            self.0.flags() | EF::USER
+        } else {
+            self.0.flags() & !EF::USER
+        };
+        let frame = self.0.frame();
+        self.0.set(frame, flags);
     }
     fn execute(&self) -> bool {
         self.0.flags().contains(EF::EXECUTABLE)
     }
     fn set_execute(&mut self, value: bool) {
-        self.0.flags_mut().set(EF::EXECUTABLE, value);
+        let flags = if value {
+            self.0.flags() | EF::EXECUTABLE
+        } else {
+            self.0.flags() & !EF::EXECUTABLE
+        };
+        let frame = self.0.frame();
+        self.0.set(frame, flags);
     }
     fn mmio(&self) -> u8 {
         0

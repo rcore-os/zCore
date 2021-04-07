@@ -1,5 +1,6 @@
 use super::super::*;
 use kernel_hal::{PageTableTrait, PhysAddr, VirtAddr};
+use riscv::asm::sfence_vma_all;
 use riscv::addr::Page;
 use riscv::paging::{PageTableFlags as PTF, *};
 use riscv::register::{time, satp, sie, stval};
@@ -29,14 +30,15 @@ impl PageTableImpl {
     #[allow(clippy::new_without_default)]
     #[export_name = "hal_pt_new"]
     pub fn new() -> Self {
-        let mut pt = paging::PageTableImpl::new_bare();
-        pt.map_kernel();
+        let pt = paging::PageTableImpl::new_bare();
+        //调用paging的map_kernel()
+        //pt.map_kernel();
 
-        /*
+        //那换用zCore的map_kernel吧
+        let root_vaddr = phys_to_virt(pt.root_frame.start_address().as_usize());
         let current =
             phys_to_virt(satp::read().frame().start_address().as_usize()) as *const PageTable;
         map_kernel(root_vaddr as _, current as _);
-        */
 
         trace!("new(), create page table @ {:#x}", pt.root_frame.start_address().as_usize());
         let new = PageTableImpl {
@@ -71,7 +73,14 @@ impl PageTableTrait for PageTableImpl {
         pt.map_to(page, frame, flags.to_ptf(), &mut FrameAllocatorImpl)
             .unwrap()
             .flush();
-        trace!("map: {:x?} -> {:x?}, flags={:?}", vaddr, paddr, flags);
+        trace!("PageTable: {:#X}, map: {:x?} -> {:x?}, flags={:?}",self.table_phys() as usize, vaddr, paddr, flags);
+        /*
+        if vaddr == 0x11b000 {
+            info!("map_to 0x11b3c0: {:#X?}", self.query(0x11b3c0));
+        }else if vaddr == 0xc4000 {
+            info!("map_to 0xc44b6: {:#X?}", self.query(0xc44b6));
+        }
+        */
         Ok(())
     }
 
@@ -81,7 +90,7 @@ impl PageTableTrait for PageTableImpl {
         let mut pt = self.get();
         let page = Page::of_addr(riscv::addr::VirtAddr::new(vaddr));
         pt.unmap(page).unwrap().1.flush();
-        trace!("unmap: {:x?}", vaddr);
+        trace!("PageTable: {:#X}, unmap: {:x?}",self.table_phys() as usize, vaddr);
         Ok(())
     }
 
@@ -91,7 +100,14 @@ impl PageTableTrait for PageTableImpl {
         let mut pt = self.get();
         let page = Page::of_addr(riscv::addr::VirtAddr::new(vaddr));
         pt.update_flags(page, flags.to_ptf()).unwrap().flush();
-        trace!("protect: {:x?}, flags={:?}", vaddr, flags);
+        /* debug
+        if vaddr == 0x11b000 {
+            info!("protect 0x11b3c0: {:#X?}", self.query(0x11b3c0));
+        }else if vaddr == 0xc4000 {
+            info!("protect 0xc44b6: {:#X?}", self.query(0xc44b6));
+        }
+        */
+        trace!("PageTable: {:#X}, protect: {:x?}, flags={:?}", self.table_phys() as usize, vaddr, flags);
         Ok(())
     }
 
@@ -101,7 +117,7 @@ impl PageTableTrait for PageTableImpl {
         let mut pt = self.get();
         let page = Page::of_addr(riscv::addr::VirtAddr::new(vaddr));
         let res = pt.ref_entry(page);
-        trace!("query: {:x?} => {:x?}", vaddr, res);
+        info!("query: {:x?} => {:#x?}", vaddr, res);
         match res {
             Ok(entry) => Ok(entry.addr().as_usize()),
             Err(_) => Err(()),
@@ -112,6 +128,20 @@ impl PageTableTrait for PageTableImpl {
     #[export_name = "hal_pt_table_phys"]
     fn table_phys(&self) -> PhysAddr {
         self.root_paddr
+    }
+
+    /// Activate this page table
+    #[export_name = "hal_pt_activate"]
+    fn activate(&self){
+        let now_token = satp::read().bits();
+        let new_token = self.table_phys();
+        if now_token != new_token {
+            debug!("switch table {:x?} -> {:x?}", now_token, new_token);
+            unsafe {
+                set_page_table(new_token);
+                sfence_vma_all();
+            }
+        }
     }
 }
 
@@ -199,8 +229,8 @@ pub fn serial_read(buf: &mut [u8]) -> usize {
 
 #[export_name = "hal_serial_write"]
 pub fn serial_write(s: &str) {
-    putfmt(format_args!("{}", s));
-    //putfmt_uart(format_args!("{}", s));
+    //putfmt(format_args!("{}", s));
+    putfmt_uart(format_args!("{}", s));
 }
 
 // Get TSC frequency.

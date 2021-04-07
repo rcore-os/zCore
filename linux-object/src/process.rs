@@ -71,6 +71,7 @@ impl ProcessExt for Process {
         let parent = parent.clone();
         new_proc.add_signal_callback(Box::new(move |signal| {
             if signal.contains(Signal::PROCESS_TERMINATED) {
+                info!("Received signal: {:?}", signal);
                 parent.signal_set(Signal::SIGCHLD);
             }
             false
@@ -123,6 +124,7 @@ pub async fn wait_child_any(proc: &Arc<Process>, nonblock: bool) -> LxResult<(Ko
         }
         let proc: Arc<dyn KernelObject> = proc.clone();
         proc.signal_clear(Signal::SIGCHLD);
+        //等待进程结束信号
         proc.wait_signal(Signal::SIGCHLD).await;
     }
 }

@@ -834,6 +834,7 @@ impl VMObjectPagedInner {
         for map in self.mappings.iter() {
             if let Some(map) = map.upgrade() {
                 map.range_change(pages(offset), pages(len), RangeChangeOp::RemoveWrite);
+                //用于写时复制
             }
         }
         Ok(child)

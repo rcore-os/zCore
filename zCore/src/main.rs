@@ -162,9 +162,9 @@ fn main(_cmdline: &str) {
         }
     }));
 
-    let args: Vec<String> = vec!["/bin/shell".into()];
+    let args: Vec<String> = vec!["/bin/busybox".into(), "sh".into()];
     //let args: Vec<String> = vec!["/bin/busybox".into(), "sh".into()];
-    let envs: Vec<String> = vec!["PATH=/usr/sbin:/usr/bin:/sbin:/bin:/usr/x86_64-alpine-linux-musl/bin".into()];
+    let envs: Vec<String> = vec!["PATH=/usr/sbin:/usr/bin:/sbin:/bin".into()];
 
     //需先初始化kernel-hal-bare virtio_blk驱动
 

@@ -481,7 +481,9 @@ impl VmAddressRegion {
     }
 
     /// Get information of this VmAddressRegion
-    pub fn get_info(&self) -> VmarInfo {
+    pub fn get_info(&self, va: usize) -> VmarInfo {
+    //pub fn get_info(&self) -> VmarInfo {
+        let _r = self.page_table.lock().query(va);
         VmarInfo {
             base: self.addr(),
             len: self.size,
@@ -491,6 +493,11 @@ impl VmAddressRegion {
     /// Get VmarFlags of this VMAR.
     pub fn get_flags(&self) -> VmarFlags {
         self.flags
+    }
+
+    /// Activate this page table
+    pub fn activate(&self) {
+        self.page_table.lock().activate();
     }
 
     /// Dump all mappings recursively.
@@ -911,12 +918,15 @@ impl VmMapping {
     pub(crate) fn handle_page_fault(&self, vaddr: VirtAddr, access_flags: MMUFlags) -> ZxResult {
         let vaddr = round_down_pages(vaddr);
         let page_idx = (vaddr - self.addr()) / PAGE_SIZE;
-        let mut flags = self.inner.lock().flags[page_idx];
+        //let mut flags = self.inner.lock().flags[page_idx];
+        let flags = self.inner.lock().flags[page_idx];
         if !flags.contains(access_flags) {
             return Err(ZxError::ACCESS_DENIED);
         }
         if !access_flags.contains(MMUFlags::WRITE) {
-            flags.remove(MMUFlags::WRITE)
+            //注意一下!
+            warn!("handle_page_fault remove MMUFlags::WRITE !");
+            //flags.remove(MMUFlags::WRITE)
         }
         let paddr = self.vmo.commit_page(page_idx, access_flags)?;
         let mut pg_table = self.page_table.lock();
@@ -929,6 +939,7 @@ impl VmMapping {
 
     /// Clone VMO and map it to a new page table. (For Linux)
     fn clone_map(&self, page_table: Arc<Mutex<dyn PageTableTrait>>) -> ZxResult<Arc<Self>> {
+        //这里调用hal protect后,protect()好像会破坏页表
         let new_vmo = self.vmo.create_child(false, 0, self.vmo.len())?;
         let mapping = Arc::new(VmMapping {
             inner: Mutex::new(self.inner.lock().clone()),

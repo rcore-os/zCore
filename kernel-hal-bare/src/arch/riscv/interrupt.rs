@@ -6,6 +6,7 @@ use riscv::register::{
 		Exception,
 		Interrupt,
 	},
+    satp,
     sie,
 	sepc,
     stval,
@@ -111,7 +112,7 @@ fn init_irq_table() {
 
 #[export_name = "hal_irq_handle"]
 pub fn irq_handle(irq: u8) {
-    bare_println!("PLIC handle: {:#x}", irq);
+    debug!("PLIC handle: {:#x}", irq);
     let table = IRQ_TABLE.lock();
     match &table[irq as usize] {
         Some(f) => f(),
@@ -221,7 +222,7 @@ fn super_timer(){
     timer_set_next();
     super::timer_tick();
 
-    bare_print!(".");
+    //bare_print!(".");
 
 	//发生外界中断时，epc的指令还没有执行，故无需修改epc到下一条
 }

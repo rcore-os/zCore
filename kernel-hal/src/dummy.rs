@@ -63,6 +63,9 @@ pub trait PageTableTrait: Sync + Send {
     /// Get the physical address of root page table.
     fn table_phys(&self) -> PhysAddr;
 
+    /// Activate this page table
+    fn activate(&self);
+
     fn map_many(
         &mut self,
         mut vaddr: VirtAddr,
@@ -153,6 +156,14 @@ impl PageTableTrait for PageTable {
     fn table_phys(&self) -> PhysAddr {
         self.table_phys
     }
+
+    /// Activate this page table
+    #[linkage = "weak"]
+    #[export_name = "hal_pt_activate"]
+    fn activate(&self) {
+        unimplemented!()
+    }
+
     #[linkage = "weak"]
     #[export_name = "hal_pt_unmap_cont"]
     fn unmap_cont(&mut self, vaddr: VirtAddr, pages: usize) -> Result<(), ()> {
