@@ -93,39 +93,17 @@ impl Entry for PageEntry {
     fn present(&self) -> bool {
         self.0.flags().contains(EF::VALID | EF::READABLE)
     }
-    //access和dirty两位在set()函数中会被自动置位??? 注意下
     fn clear_accessed(&mut self) {
-        warn!("PageTableImpl clear access, may not work out");
-        let flags = self.0.flags() & !EF::ACCESSED;
-        let frame = self.0.frame();
-        self.0.set(frame, flags);
+        self.0.flags_mut().remove(EF::ACCESSED);
     }
     fn clear_dirty(&mut self) {
-        warn!("PageTableImpl clear access, may not work out");
-        let flags = self.0.flags() & !EF::DIRTY;
-        let frame = self.0.frame();
-        self.0.set(frame, flags);
+        self.0.flags_mut().remove(EF::DIRTY);
     }
     fn set_writable(&mut self, value: bool) {
-        let flags = if value {
-            self.0.flags() | EF::WRITABLE
-        } else {
-            self.0.flags() & !EF::WRITABLE
-        };
-
-        let frame = self.0.frame();
-        self.0.set(frame, flags);
-        //let pte = (self.0.frame().number() << 10) | flags.bits();
-        //warn!("PageTableImpl set {} writable: {:#x?}", value, self.0.flags());
+        self.0.flags_mut().set(EF::WRITABLE, value);
     }
     fn set_present(&mut self, value: bool) {
-        let flags = if value {
-            self.0.flags() | (EF::VALID | EF::READABLE)
-        } else {
-            self.0.flags() & !(EF::VALID | EF::READABLE)
-        };
-        let frame = self.0.frame();
-        self.0.set(frame, flags);
+        self.0.flags_mut().set(EF::VALID | EF::READABLE, value);
     }
     fn target(&self) -> usize {
         self.0.addr().as_usize()
@@ -142,54 +120,30 @@ impl Entry for PageEntry {
         self.0.flags().contains(EF::RESERVED2)
     }
     fn set_shared(&mut self, writable: bool) {
-        let flags = if writable {
-            (self.0.flags() | EF::RESERVED1) & !EF::RESERVED2
-        } else {
-            (self.0.flags() | EF::RESERVED2) & !EF::RESERVED1
-        };
-        let frame = self.0.frame();
-        self.0.set(frame, flags);
+        let flags = self.0.flags_mut();
+        flags.set(EF::RESERVED1, writable);
+        flags.set(EF::RESERVED2, !writable);
     }
     fn clear_shared(&mut self) {
-        let flags = self.0.flags() & !(EF::RESERVED1 | EF::RESERVED2);
-        let frame = self.0.frame();
-        self.0.set(frame, flags);
+        self.0.flags_mut().remove(EF::RESERVED1 | EF::RESERVED2);
     }
     fn swapped(&self) -> bool {
         self.0.flags().contains(EF::RESERVED1)
     }
     fn set_swapped(&mut self, value: bool) {
-        let flags = if value {
-            self.0.flags() | EF::RESERVED1
-        } else {
-            self.0.flags() & !EF::RESERVED1
-        };
-        let frame = self.0.frame();
-        self.0.set(frame, flags);
+        self.0.flags_mut().set(EF::RESERVED1, value);
     }
     fn user(&self) -> bool {
         self.0.flags().contains(EF::USER)
     }
     fn set_user(&mut self, value: bool) {
-        let flags = if value {
-            self.0.flags() | EF::USER
-        } else {
-            self.0.flags() & !EF::USER
-        };
-        let frame = self.0.frame();
-        self.0.set(frame, flags);
+        self.0.flags_mut().set(EF::USER, value);
     }
     fn execute(&self) -> bool {
         self.0.flags().contains(EF::EXECUTABLE)
     }
     fn set_execute(&mut self, value: bool) {
-        let flags = if value {
-            self.0.flags() | EF::EXECUTABLE
-        } else {
-            self.0.flags() & !EF::EXECUTABLE
-        };
-        let frame = self.0.frame();
-        self.0.set(frame, flags);
+        self.0.flags_mut().set(EF::EXECUTABLE, value);
     }
     fn mmio(&self) -> u8 {
         0
