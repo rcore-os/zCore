@@ -95,8 +95,8 @@ debug: build debugrun
 
 TERMINAL 	:= terminal
 debugrun: $(QEMU_DISK)
-	$(TERMINAL) -e "gdb -tui -x gdbinit"
-	$(qemu) $(qemu_opts) -s -S
+	$(qemu) $(qemu_opts) -s -S &
+	riscv64-unknown-elf-gdb -x gdbinit $(kernel)
 
 justrun: $(QEMU_DISK)
 	$(qemu) $(qemu_opts)

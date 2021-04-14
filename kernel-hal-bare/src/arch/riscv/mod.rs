@@ -109,6 +109,7 @@ pub unsafe fn set_page_table(vmtoken: usize) {
     #[cfg(target_arch = "riscv64")]
     let mode = satp::Mode::Sv39;
     satp::set(mode, 0, vmtoken >> 12);
+    riscv::asm::sfence_vma_all();
 }
 
 trait FlagsExt {

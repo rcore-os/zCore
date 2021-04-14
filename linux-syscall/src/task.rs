@@ -20,9 +20,7 @@ use linux_object::time::*;
 impl Syscall<'_> {
     /// Fork the current process. Return the child's PID.
     pub fn sys_fork(&self) -> SysResult {
-        info!("fork:");
         let new_proc = Process::fork_from(self.zircon_process(), false)?;
-        info!("fork2:");
         let new_thread = Thread::create_linux(&new_proc)?;
         new_thread.start_with_context(UserContext::new_fork(self.context), self.thread_fn)?;
 
@@ -182,8 +180,8 @@ impl Syscall<'_> {
 
         // TODO: use right signal
         self.zircon_process().signal_set(Signal::SIGNALED);
-
         *self.context = UserContext::new_fn(entry, sp, 0, 0);
+        self.context.sstatus = 1 << 18 | 1 << 14 | 1 << 13 | 1 << 5;
         Ok(0)
     }
     //
@@ -365,8 +363,13 @@ impl RegExt for GeneralRegs {
 
 #[cfg(target_arch = "riscv64")]
 impl RegExt for UserContext {
-    fn new_fn(_entry: usize, _sp: usize, _arg1: usize, _arg2: usize) -> Self {
-        unimplemented!();
+    fn new_fn(entry: usize, sp: usize, arg1: usize, arg2: usize) -> Self {
+        let mut ctx = UserContext::default();
+        ctx.set_ip(entry);
+        ctx.set_sp(sp);
+        ctx.general.a0 = arg1;
+        ctx.general.a1 = arg2;
+        ctx
     }
 
     fn new_clone(_regs: &Self, _newsp: usize, _newtls: usize) -> Self {

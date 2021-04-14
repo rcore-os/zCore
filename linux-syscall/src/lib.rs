@@ -61,14 +61,14 @@ pub struct Syscall<'a> {
 impl Syscall<'_> {
     /// syscall entry function
     pub async fn syscall(&mut self, num: u32, args: [usize; 6]) -> isize {
-        debug!("syscall: num={}, args={:x?}", num, args);
         let sys_type = match Sys::try_from(num) {
             Ok(t) => t,
             Err(_) => {
                 error!("invalid syscall number: {}", num);
                 return LxError::EINVAL as _;
             }
-        };
+        };        
+        debug!("syscall: {:?}, args={:x?}", sys_type, args);
         let [a0, a1, a2, a3, a4, a5] = args;
         let ret = match sys_type {
             Sys::READ => self.sys_read(a0.into(), a1.into(), a2).await,

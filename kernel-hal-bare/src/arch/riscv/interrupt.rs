@@ -105,7 +105,7 @@ fn page_fault(stval: usize, tf: &mut TrapFrame){
 	};
 	info!("{:#x?}", page_table.query(tf.sepc));
 	*/
-    panic!("EXCEPTION: Page Fault @ {:#x}->{:#x}", tf.sepc, stval);
+    panic!("{:#?} @ {:#x}->{:#x}", scause::read().cause(), tf.sepc, stval);
 }
 
 fn super_timer(){
