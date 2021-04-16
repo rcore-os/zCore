@@ -139,7 +139,6 @@ impl PageTableTrait for PageTableImpl {
             debug!("switch table {:x?} -> {:x?}", now_token, new_token);
             unsafe {
                 set_page_table(new_token);
-                sfence_vma_all();
             }
         }
     }
@@ -152,6 +151,8 @@ pub unsafe fn set_page_table(vmtoken: usize) {
     let mode = satp::Mode::Sv39;
     debug!("set user table: {:#x?}", vmtoken);
     satp::set(mode, 0, vmtoken >> 12);
+    //刷TLB好像很重要
+    sfence_vma_all();
 }
 
 trait FlagsExt {

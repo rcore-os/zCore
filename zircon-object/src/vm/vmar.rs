@@ -918,15 +918,14 @@ impl VmMapping {
     pub(crate) fn handle_page_fault(&self, vaddr: VirtAddr, access_flags: MMUFlags) -> ZxResult {
         let vaddr = round_down_pages(vaddr);
         let page_idx = (vaddr - self.addr()) / PAGE_SIZE;
-        //let mut flags = self.inner.lock().flags[page_idx];
-        let flags = self.inner.lock().flags[page_idx];
+        let mut flags = self.inner.lock().flags[page_idx];
         if !flags.contains(access_flags) {
             return Err(ZxError::ACCESS_DENIED);
         }
         if !access_flags.contains(MMUFlags::WRITE) {
             //注意一下!
             warn!("handle_page_fault remove MMUFlags::WRITE !");
-            //flags.remove(MMUFlags::WRITE)
+            flags.remove(MMUFlags::WRITE)
         }
         let paddr = self.vmo.commit_page(page_idx, access_flags)?;
         let mut pg_table = self.page_table.lock();

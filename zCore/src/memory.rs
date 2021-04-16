@@ -230,7 +230,7 @@ pub fn remap_the_kernel(dtb: usize) {
     //堆空间也映射前面一点
     ms.push(
         end as usize + PAGE_SIZE,
-        end as usize + PAGE_SIZE*1024,
+        end as usize + PAGE_SIZE*4096,
         MemoryAttr::default(),
         Linear::new(offset),
         "heap",

@@ -304,8 +304,8 @@ impl Thread {
             #[cfg(target_arch = "riscv64")]
             {
                 context.sepc = cx.sepc;
-                //context.sstatus = 1 << 18 | 1 << 14 | 1 << 13 | 1 << 5;
-                context.sstatus = 1 << 19 | 1 << 18 | 1 << 14 | 1 << 13 | 1 << 5;
+                context.sstatus = 1 << 18 | 1 << 14 | 1 << 13 | 1 << 5;
+                //context.sstatus = 1 << 19 | 1 << 18 | 1 << 14 | 1 << 13 | 1 << 5;
                 // MXR=1, workaround for child process panic
 
                 debug!("start_with_regs_pc(), sepc: {:#x}", context.sepc);
