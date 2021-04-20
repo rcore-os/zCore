@@ -32,6 +32,8 @@ linux-loader = { path = "../linux-loader", default-features = false, optional = 
 linux-object = { path = "../linux-object", default-features = false, optional = true }
 rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "6df6cd2", optional = true }
 
+fatfs = { git = "https://github.com/rafalh/rust-fatfs.git", rev = "26fa79", default-features = false }
+
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 x86_64 = "0.12"
 rlibc-opt = { git = "https://github.com/rcore-os/rlibc-opt.git", rev = "0ab1d1e" }

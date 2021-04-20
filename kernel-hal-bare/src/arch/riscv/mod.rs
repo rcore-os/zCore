@@ -359,7 +359,10 @@ pub fn init(config: Config) {
         llvm_asm!("ebreak"::::"volatile");
     }
 
-    virtio::init(config.dtb);
+    //virtio::init(config.dtb);
+
+    virtio::device_tree::init(config.dtb);
+
 }
 
 pub struct Config {

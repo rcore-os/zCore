@@ -191,6 +191,7 @@ impl File {
 
     /// manipulates the underlying device parameters of special files
     pub fn io_control(&self, cmd: u32, arg: usize) -> LxResult<usize> {
+        // ioctl syscall
         self.inode.io_control(cmd, arg)?;
         Ok(0)
     }

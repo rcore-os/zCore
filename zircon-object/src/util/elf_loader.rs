@@ -27,7 +27,7 @@ impl VmarExt for VmAddressRegion {
             let vmo = make_vmo(&elf, ph)?;
             let offset = ph.virtual_addr() as usize / PAGE_SIZE * PAGE_SIZE;
             let flags = ph.flags().to_mmu_flags();
-            debug!("ph:{:#x?}, offset:{:#x?}, flags:{:#x?}", ph, offset, flags);
+            trace!("ph:{:#x?}, offset:{:#x?}, flags:{:#x?}", ph, offset, flags);
             //映射vmo物理内存块到 VMAR
             self.map_at(offset, vmo.clone(), 0, vmo.len(), flags)?;
             first_vmo.get_or_insert(vmo);

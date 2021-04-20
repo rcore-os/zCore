@@ -35,4 +35,5 @@ rcore-memory = { path = "../crate/memory" }
 # 注意rev版本号必须与其他组件的完全一致，不可多字符
 rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "6df6cd2" }
 device_tree = { git = "https://github.com/rcore-os/device_tree-rs" }
+virtio-drivers = { git = "https://github.com/rcore-os/virtio-drivers", rev = "568276" }
 

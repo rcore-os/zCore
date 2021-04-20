@@ -49,6 +49,7 @@ pub use self::arch::*;
 extern "C" {
     fn hal_pt_map_kernel(pt: *mut u8, current: *const u8);
     fn frame_alloc() -> Option<usize>;
+    fn hal_frame_alloc_contiguous(page_num: usize, align_log2: usize) -> Option<usize>;
     fn frame_dealloc(paddr: &usize);
     #[link_name = "hal_pmem_base"]
     static PMEM_BASE: usize;
@@ -142,6 +143,10 @@ impl Frame {
 
 fn phys_to_virt(paddr: PhysAddr) -> VirtAddr {
     unsafe { PMEM_BASE + paddr }
+}
+
+fn virt_to_phys(vaddr: VirtAddr) -> PhysAddr {
+    unsafe { vaddr - PMEM_BASE }
 }
 
 /// Read physical memory from `paddr` to `buf`.

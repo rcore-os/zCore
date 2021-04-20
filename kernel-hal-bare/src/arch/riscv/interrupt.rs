@@ -33,8 +33,11 @@ use super::sbi;
 use super::plic;
 use super::uart;
 
-use crate::{putfmt, KERNEL_OFFSET};
+use crate::{putfmt, KERNEL_OFFSET, PHYSICAL_MEMORY_OFFSET};
 use super::timer_set_next;
+
+use super::paging::PageTableImpl;
+use rcore_memory::paging::PageTable;
 
 //global_asm!(include_str!("trap.asm"));
 
@@ -215,7 +218,21 @@ fn breakpoint(sepc: &mut usize){
 }
 
 fn page_fault(stval: usize, tf: &mut TrapFrame){
-    panic!("EXCEPTION Page Fault: {:?} @ {:#x}->{:#x}", scause::read().cause(), tf.sepc, stval);
+    warn!("EXCEPTION Page Fault: {:?} @ {:#x}->{:#x}", scause::read().cause(), tf.sepc, stval);
+
+    // temporay处理
+    let vaddr = stval;
+    let addr =
+    if stval > KERNEL_OFFSET {
+        stval - PHYSICAL_MEMORY_OFFSET
+    }else{
+        //stval < 0x10009000
+        stval
+    };
+
+    unsafe{
+        PageTableImpl::active().map(vaddr, addr);
+    }
 }
 
 fn super_timer(){

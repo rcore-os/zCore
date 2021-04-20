@@ -230,7 +230,7 @@ pub fn remap_the_kernel(dtb: usize) {
     //堆空间也映射前面一点
     ms.push(
         end as usize + PAGE_SIZE,
-        end as usize + PAGE_SIZE*4096,
+        end as usize + PAGE_SIZE*2048,
         MemoryAttr::default(),
         Linear::new(offset),
         "heap",
@@ -276,6 +276,15 @@ pub fn remap_the_kernel(dtb: usize) {
         MemoryAttr::default(),
         Linear::new(offset),
         "uart16550",
+    );
+
+    // 一一映射
+    ms.push(
+        0x10001000,
+        0x10001000 + PAGE_SIZE*10,
+        MemoryAttr::default(),
+        Linear::new(0),
+        "vitio_blk",
     );
 
     //最后写satp

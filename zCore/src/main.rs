@@ -17,6 +17,8 @@ extern crate rlibc;
 #[cfg(target_arch = "x86_64")]
 extern crate rlibc_opt; //Only for x86_64
 
+extern crate fatfs;
+
 #[cfg(target_arch = "riscv64")]
 mod consts;
 
@@ -29,7 +31,7 @@ mod memory;
 use rboot::BootInfo;
 
 #[cfg(target_arch = "riscv64")]
-use kernel_hal_bare::{BootInfo, GraphicInfo, virtio::BLK_DRIVERS};
+use kernel_hal_bare::{BootInfo, GraphicInfo, virtio::{BLK_DRIVERS, BlockDriverWrapper},};
 
 use alloc::vec::Vec;
 pub use memory::{phys_to_virt, write_readonly_test, execute_unexecutable_test, read_invalid_test};
@@ -156,7 +158,7 @@ fn main(_cmdline: &str) {
             let len = kernel_hal_bare::serial_read(&mut buffer);
             for c in &buffer[..len] {
                 STDIN.push((*c).into());
-                kernel_hal_bare::serial_write(alloc::format!("{}", *c as char).as_str());
+                //kernel_hal_bare::serial_write(alloc::format!("{}", *c as char).as_str());
             }
             false
         }
@@ -171,14 +173,30 @@ fn main(_cmdline: &str) {
     // ROOT_INODE
     //let device = Arc::new(MemBuf::new(ramfs_data));
 
+    /*
     let device =
         BLK_DRIVERS.read().iter()
         .next().expect("Block device not found")
         .clone();
+    */
+
+    let device = {
+        let driver = BlockDriverWrapper(
+            BLK_DRIVERS.read().iter()
+            .next().expect("Block device not found")
+            .clone());
+        Arc::new(rcore_fs::dev::block_cache::BlockCache::new(driver, 0x100))
+    };
 
     info!("Opening the rootfs ...");
     // 输入类型: Arc<Device>
     let rootfs = rcore_fs_sfs::SimpleFileSystem::open(device).expect("failed to open device SimpleFS");
+
+    // fat32
+    
+    //let img_file = File::open("fat.img")?;
+    //let fs = fatfs::FileSystem::new(img_file, fatfs::FsOptions::new())?;
+
     let _proc = linux_loader::run(args, envs, rootfs);
     info!("linux_loader is complete");
 

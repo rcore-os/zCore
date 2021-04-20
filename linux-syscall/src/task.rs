@@ -46,7 +46,7 @@ impl Syscall<'_> {
         new_thread.start_with_context(self.context, self.thread_fn)?;
 
         let new_proc: Arc<dyn KernelObject> = new_proc;
-        info!("vfork: {} -> {}", self.zircon_process().id(), new_proc.id());
+        info!("vfork: {} -> {}. Waiting for execve SIGNALED", self.zircon_process().id(), new_proc.id());
         new_proc.wait_signal(Signal::SIGNALED).await; // wait for execve
         Ok(new_proc.id() as usize)
     }

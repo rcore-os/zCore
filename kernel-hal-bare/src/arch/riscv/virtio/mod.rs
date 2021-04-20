@@ -1,19 +1,17 @@
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
-
 use lazy_static::lazy_static;
-//use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, Ipv4Address};
+use rcore_fs::dev::{self, BlockDevice, DevError};
 use spin::RwLock;
 
-//use crate::sync::Condvar;
-use rcore_fs::dev::{BlockDevice, DevError};
+//pub use block::BlockDriver;
 
-#[allow(dead_code)]
-pub mod virtio_mmio;
-pub mod virtio_blk;
-mod device_tree;
+/// Block device
+pub mod virtio;
 
+/// Device tree
+pub mod device_tree;
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum DeviceType {
@@ -21,6 +19,9 @@ pub enum DeviceType {
     Gpu,
     Input,
     Block,
+    Rtc,
+    Serial,
+    Intc,
 }
 
 pub trait Driver: Send + Sync {
@@ -28,7 +29,7 @@ pub trait Driver: Send + Sync {
     // return false otherwise
     // irq number is provided when available
     // driver should skip handling when irq number is mismatched
-    fn try_handle_interrupt(&self, irq: Option<u32>) -> bool;
+    fn try_handle_interrupt(&self, irq: Option<usize>) -> bool;
 
     // return the correspondent device type, see DeviceType
     fn device_type(&self) -> DeviceType;
@@ -37,94 +38,64 @@ pub trait Driver: Send + Sync {
     // should be different for each instance
     fn get_id(&self) -> String;
 
+    // trait casting
     /*
-    // Rust trait is still too restricted...
-    // network related drivers should implement these
-    // get mac address for this device
-    fn get_mac(&self) -> EthernetAddress {
-        unimplemented!("not a net driver")
-    }
-
-    // get interface name for this device
-    fn get_ifname(&self) -> String {
-        unimplemented!("not a net driver")
-    }
-
-    // get ip addresses
-    fn get_ip_addresses(&self) -> Vec<IpCidr> {
-        unimplemented!("not a net driver")
-    }
-
-    // get ipv4 address
-    fn ipv4_address(&self) -> Option<Ipv4Address> {
-        unimplemented!("not a net driver")
-    }
-
-    // manually trigger a poll, use it after sending packets
-    fn poll(&self) {
-        unimplemented!("not a net driver")
-    }
-
-    // send an ethernet frame, only use it when necessary
-    fn send(&self, data: &[u8]) -> Option<usize> {
-        unimplemented!("not a net driver")
-    }
-
-    // get mac address from ip address in arp table
-    fn get_arp(&self, ip: IpAddress) -> Option<EthernetAddress> {
-        unimplemented!("not a net driver")
+    fn as_net(&self) -> Option<&dyn NetDriver> {
+        None
     }
     */
 
-    // block related drivers should implement these
-    fn read_block(&self, block_id: usize, buf: &mut [u8]) -> bool {
+    fn as_block(&self) -> Option<&dyn BlockDriver> {
+        None
+    }
+
+    /*
+    fn as_rtc(&self) -> Option<&dyn RtcDriver> {
+        None
+    }
+    */
+}
+
+/////////
+pub trait BlockDriver: Driver {
+    fn read_block(&self, _block_id: usize, _buf: &mut [u8]) -> bool {
         unimplemented!("not a block driver")
     }
 
-    fn write_block(&self, block_id: usize, buf: &[u8]) -> bool {
+    fn write_block(&self, _block_id: usize, _buf: &[u8]) -> bool {
         unimplemented!("not a block driver")
     }
 }
+/////////
 
 lazy_static! {
     // NOTE: RwLock only write when initializing drivers
-    pub static ref DRIVERS: RwLock<Vec<Arc<Driver>>> = RwLock::new(Vec::new());
-    pub static ref NET_DRIVERS: RwLock<Vec<Arc<Driver>>> = RwLock::new(Vec::new());
-    pub static ref BLK_DRIVERS: RwLock<Vec<Arc<BlockDriver>>> = RwLock::new(Vec::new());
+    pub static ref DRIVERS: RwLock<Vec<Arc<dyn Driver>>> = RwLock::new(Vec::new());
+    pub static ref BLK_DRIVERS: RwLock<Vec<Arc<dyn BlockDriver>>> = RwLock::new(Vec::new());
+    //pub static ref IRQ_MANAGER: RwLock<irq::IrqManager> = RwLock::new(irq::IrqManager::new(true));
 }
 
-pub struct BlockDriver(Arc<Driver>);
+pub struct BlockDriverWrapper(pub Arc<dyn BlockDriver>);
 
-impl BlockDevice for BlockDriver {
+impl BlockDevice for BlockDriverWrapper {
     const BLOCK_SIZE_LOG2: u8 = 9; // 512
-    fn read_at(&self, block_id: usize, buf: &mut [u8]) -> Result<(), DevError> {
+    fn read_at(&self, block_id: usize, buf: &mut [u8]) -> dev::Result<()> {
         match self.0.read_block(block_id, buf) {
             true => Ok(()),
             false => Err(DevError),
         }
     }
 
-    fn write_at(&self, block_id: usize, buf: &[u8]) -> Result<(), DevError> {
+    fn write_at(&self, block_id: usize, buf: &[u8]) -> dev::Result<()> {
         match self.0.write_block(block_id, buf) {
             true => Ok(()),
             false => Err(DevError),
         }
     }
 
-    fn sync(&self) -> Result<(), DevError> {
+    fn sync(&self) -> dev::Result<()> {
         Ok(())
     }
-}
-
-/*
-lazy_static! {
-    pub static ref SOCKET_ACTIVITY: Condvar = Condvar::new();
-}
-*/
-
-#[cfg(any(target_arch = "riscv32", target_arch = "riscv64", target_arch = "mips"))]
-pub fn init(dtb: usize) {
-    device_tree::init(dtb);
 }
 
 lazy_static! {
