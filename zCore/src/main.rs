@@ -98,7 +98,7 @@ pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
         dtb_addr: device_tree_paddr as u64,
         initramfs_addr: 0,
         initramfs_size: 0,
-        cmdline: "LOG=debug:TERM=xterm-256color:console.shell=true:virtcon.disable=true",
+        cmdline: "LOG=error:TERM=xterm-256color:console.shell=true:virtcon.disable=true",
     };
 
     unsafe {

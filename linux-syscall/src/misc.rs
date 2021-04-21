@@ -26,7 +26,7 @@ impl Syscall<'_> {
         let strings = ["Linux", "orz", "0.1.0", "1", "machine", "domain"];
 
         #[cfg(target_arch = "riscv64")]
-        let strings = ["Linux", "orz", "0.1.0", "1", "riscv64", "oslab"];
+        let strings = ["Linux", "@zCore", "0.1.0", "1", "riscv64", "oslab"];
         for (i, &s) in strings.iter().enumerate() {
             const OFFSET: usize = 65;
             buf.add(i * OFFSET).write_cstring(s)?;

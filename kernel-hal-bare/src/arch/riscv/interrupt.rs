@@ -79,7 +79,7 @@ pub fn init(){
 
     init_irq();
 
-	bare_println!("+++ setup interrupte! +++");
+	bare_println!("+++ setup interrupt +++");
 }
 
 #[no_mangle]
@@ -210,7 +210,7 @@ pub fn overwrite_handler(msi_id: u32, handle: Box<dyn Fn() + Send + Sync>) -> bo
 }
 
 fn breakpoint(sepc: &mut usize){
-	bare_println!("A breakpoint set @0x{:x} ", sepc);
+	bare_println!("Exception::Breakpoint: A breakpoint set @0x{:x} ", sepc);
 
 	//sepc为触发中断指令ebreak的地址
 	//防止无限循环中断，让sret返回时跳转到sepc的下一条指令地址
@@ -248,7 +248,7 @@ fn init_uart(){
     uart::Uart::new(0x1000_0000 + KERNEL_OFFSET).simple_init();
 
     //但当没有SBI_CONSOLE_PUTCHAR时，却为什么不行？
-    super::putfmt_uart(format_args!("{}", "Uart puts testing\n"));
+    super::putfmt_uart(format_args!("{}", "Uart output testing\n"));
 
     bare_println!("+++ Setting up UART interrupts +++");
 }

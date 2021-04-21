@@ -36,7 +36,8 @@ impl PageTable for PageTableImpl {
         trace!("map PageTableImpl page:{:#x} -> frame:{:#x}", addr, target);
 
         // map() may stuck here
-        // 注意不要在已经map_kernel()进行1G大页映射后的root_table中, 重建p3 p2 p1多级页表，否则出错；
+        // 注意不要在已经map_kernel()进行1G大页映射后的root_table中, 重建p3 p2 p1多级页表，否则出错;
+        // (启动时使用的是1G大页)
         // 因与Rv39PageTable的create_p1_if_not_exist()多级页表的建立产生冲突
         self.page_table
             .map_to(page, frame, flags, &mut FrameAllocatorImpl)
