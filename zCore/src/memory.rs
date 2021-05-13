@@ -6,15 +6,9 @@ use {
     buddy_system_allocator::LockedHeap,
     spin::Mutex,
 };
-use crate::consts::{PHYSICAL_MEMORY_OFFSET, KERNEL_OFFSET, KERNEL_HEAP_SIZE, MEMORY_OFFSET, MEMORY_END};
 use core::alloc::Layout;
 use core::ptr::NonNull;
 use core::mem;
-
-use kernel_hal_bare::paging::PageTableImpl;
-use rcore_memory::memory_set::{MemoryAttr, handler::Linear};
-
-pub type MemorySet = rcore_memory::memory_set::MemorySet<PageTableImpl>;
 
 #[cfg(target_arch = "x86_64")]
 use {
@@ -36,17 +30,14 @@ type FrameAlloc = bitmap_allocator::BitAlloc1M;
 
 static FRAME_ALLOCATOR: Mutex<FrameAlloc> = Mutex::new(FrameAlloc::DEFAULT);
 
-/*
+#[cfg(target_arch = "x86_64")]
 const MEMORY_OFFSET: usize = 0;
+#[cfg(target_arch = "x86_64")]
 const KERNEL_OFFSET: usize = 0xffffff00_00000000;
+#[cfg(target_arch = "x86_64")]
 const PHYSICAL_MEMORY_OFFSET: usize = 0xffff8000_00000000;
-
 #[cfg(target_arch = "x86_64")]
 const KERNEL_HEAP_SIZE: usize = 16 * 1024 * 1024; // 16 MB
-
-#[cfg(target_arch = "riscv64")]
-const KERNEL_HEAP_SIZE: usize = 8 * 1024 * 1024; // 8 MB
-*/
 
 #[cfg(target_arch = "x86_64")]
 const KERNEL_PM4: usize = (KERNEL_OFFSET >> 39) & 0o777;
@@ -54,7 +45,23 @@ const KERNEL_PM4: usize = (KERNEL_OFFSET >> 39) & 0o777;
 const PHYSICAL_MEMORY_PM4: usize = (PHYSICAL_MEMORY_OFFSET >> 39) & 0o777;
 
 #[cfg(target_arch = "riscv64")]
+const KERNEL_OFFSET: usize = 0xFFFF_FFFF_8000_0000;
+#[cfg(target_arch = "riscv64")]
+const MEMORY_OFFSET: usize = 0x8000_0000;
+#[cfg(target_arch = "riscv64")]
+const PHYSICAL_MEMORY_OFFSET: usize = KERNEL_OFFSET - MEMORY_OFFSET;
+
+// TODO: get memory end from device tree
+#[cfg(target_arch = "riscv64")]
+const MEMORY_END: usize = 0x8800_0000;
+
+#[cfg(target_arch = "riscv64")]
+const KERNEL_HEAP_SIZE: usize = 8 * 1024 * 1024; // 8 MB
+
+#[cfg(target_arch = "riscv64")]
 const KERNEL_L2: usize = (KERNEL_OFFSET >> 30) & 0o777;
+#[cfg(target_arch = "riscv64")]
+const PHYSICAL_MEMORY_L2: usize = (PHYSICAL_MEMORY_OFFSET >> 30) & 0o777;
 
 const PAGE_SIZE: usize = 1 << 12;
 
@@ -169,7 +176,7 @@ pub extern "C" fn frame_dealloc(target: &usize) {
 #[no_mangle]
 #[cfg(target_arch = "x86_64")]
 pub extern "C" fn hal_pt_map_kernel(pt: &mut PageTable, current: &PageTable) {
-    //复用旧的Kernel起始虚拟地址和物理内存起始虚拟地址的, Level3及以下级的页表,
+    //复制旧的Kernel起始虚拟地址和物理内存起始虚拟地址的, Level3及以下级的页表,
     //分别可覆盖500G虚拟空间
     let ekernel = current[KERNEL_PM4].clone();
     let ephysical = current[PHYSICAL_MEMORY_PM4].clone();
@@ -180,14 +187,17 @@ pub extern "C" fn hal_pt_map_kernel(pt: &mut PageTable, current: &PageTable) {
 #[no_mangle]
 #[cfg(target_arch = "riscv64")]
 pub extern "C" fn hal_pt_map_kernel(pt: &mut PageTable, current: &PageTable) {
-    //warn!("hal_pt_map_kernel() is NULL! Please use paging::PageTableImpl::map_kernel()");
-    //用新页表映射整个kernel; 一般在创建一个新页表时,如PageTableExt中
-
-    let ekernel = current[KERNEL_L2].clone();
+    let ekernel = current[KERNEL_L2].clone(); //Kernel
+    let ephysical = current[PHYSICAL_MEMORY_L2].clone(); //0xffffffff_00000000 --> 0x00000000
     pt[KERNEL_L2].set(Frame::of_addr(ekernel.addr()), ekernel.flags() | EF::GLOBAL);
-    debug!("new hal_pt_map_kernel(), KERNEL_L2:{:#x?}", ekernel.addr());
+    pt[PHYSICAL_MEMORY_L2].set(Frame::of_addr(ephysical.addr()), ephysical.flags() | EF::GLOBAL);
+    debug!("KERNEL_L2:{:#x?}, PHYSICAL_MEMORY_L2:{:#x?}", ekernel.addr(), ephysical.addr());
 }
 
+// remap the kernel use 4K page
+// kernel 和物理内存起始虚拟地址
+// 而已经映射了1G大页的页表中，再映射多级页表，可能会产生错误
+#[cfg(target_arch = "null")]
 pub fn remap_the_kernel(dtb: usize) {
     //let mut ms = MemorySet::new();
 

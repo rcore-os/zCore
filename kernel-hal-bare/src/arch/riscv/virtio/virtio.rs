@@ -5,8 +5,7 @@ use log::*;
 use rcore_memory::PAGE_SIZE;
 use virtio_drivers::{VirtIOBlk, VirtIOHeader};
 
-use super::super::paging::PageTableImpl;
-use rcore_memory::paging::PageTable;
+use super::super::PHYSICAL_MEMORY_OFFSET;
 
 pub fn virtio_probe(node: &Node) {
     let reg = match node.prop_raw("reg") {
@@ -19,13 +18,13 @@ pub fn virtio_probe(node: &Node) {
     // assuming one page
     assert_eq!(size as usize, PAGE_SIZE);
     
-    //一一映射
+    /* 一一映射
     let vaddr = paddr;
-    /*
     unsafe{
         PageTableImpl::active().map_if_not_exists(vaddr as usize, paddr as usize);
     }
     */
+    let vaddr = paddr + PHYSICAL_MEMORY_OFFSET as u64;
 
     debug!("virtio_probe, paddr:{:#x}, vaddr:{:#x}", paddr, vaddr);
 

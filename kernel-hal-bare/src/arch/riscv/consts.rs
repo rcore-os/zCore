@@ -3,14 +3,12 @@
 #[cfg(target_arch = "riscv32")]
 pub const PHYSICAL_MEMORY_OFFSET: usize = 0x4000_0000;
 #[cfg(target_arch = "riscv64")]
-pub const PHYSICAL_MEMORY_OFFSET: usize = 0xFFFF_FFFF_4000_0000;
+pub const PHYSICAL_MEMORY_OFFSET: usize = 0xFFFF_FFFF_0000_0000;
 
 #[cfg(target_arch = "riscv32")]
 pub const KERNEL_OFFSET: usize = 0xC000_0000;
 #[cfg(target_arch = "riscv64")]
-pub const KERNEL_OFFSET: usize = 0xFFFF_FFFF_C000_0000;
-
-pub const KERNEL_HEAP_SIZE: usize = 0x0080_0000;
+pub const KERNEL_OFFSET: usize = 0xFFFF_FFFF_8000_0000;
 
 pub const MEMORY_OFFSET: usize = 0x8000_0000;
 // TODO: get memory end from device tree

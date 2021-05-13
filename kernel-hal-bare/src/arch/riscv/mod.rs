@@ -5,19 +5,116 @@ use riscv::addr::Page;
 use riscv::paging::{PageTableFlags as PTF, *};
 use riscv::register::{time, satp, sie, stval};
 //use crate::sbi;
-use core::mem;
+//use core::mem;
 use core::fmt::{ self, Write };
+use core::mem;
 use alloc::{collections::VecDeque, vec::Vec};
-use rcore_memory::paging::PageTableExt;
 
 mod sbi;
-pub mod paging;
+//pub mod paging;
 
-// value from crate zcore
-//static PHYSICAL_MEMORY_OFFSET: usize = PMEM_BASE ;
-pub const KERNEL_OFFSET: usize = 0xFFFF_FFFF_C000_0000;
-pub const MEMORY_OFFSET: usize = 0x8000_0000;
-pub const PHYSICAL_MEMORY_OFFSET: usize = KERNEL_OFFSET - MEMORY_OFFSET;
+mod consts;
+
+use consts::PHYSICAL_MEMORY_OFFSET;
+
+// First core stores its SATP here.
+static mut SATP: usize = 0;
+
+/// remap kernel with 4K page
+pub fn remap_the_kernel(dtb: usize) {
+        let root_frame = Frame::alloc().expect("failed to alloc frame");
+        let root_vaddr = phys_to_virt(root_frame.paddr);
+        let root = unsafe { &mut *(root_vaddr as *mut PageTable) };
+        root.zero();
+        let mut pt = Rv39PageTable::new(root, PHYSICAL_MEMORY_OFFSET);
+
+        let linear_offset = PHYSICAL_MEMORY_OFFSET;
+        //let mut flags = PTF::VALID | PTF::READABLE | PTF::WRITABLE | PTF::EXECUTABLE | PTF::USER;
+
+        map_range(&mut pt, stext as usize, etext as usize - 1, linear_offset, PTF::VALID | PTF::READABLE | PTF::EXECUTABLE);
+        map_range(&mut pt, srodata as usize, erodata as usize, linear_offset, PTF::VALID | PTF::READABLE);
+        map_range(&mut pt, sdata as usize, edata as usize, linear_offset, PTF::VALID | PTF::READABLE | PTF::WRITABLE);
+
+        // Stack
+        map_range(&mut pt, bootstack as usize, bootstacktop as usize - 1, linear_offset, PTF::VALID | PTF::READABLE | PTF::WRITABLE);
+
+        map_range(&mut pt, sbss as usize, ebss as usize - 1, linear_offset, PTF::VALID | PTF::READABLE | PTF::WRITABLE);
+
+        // Heap
+        map_range(&mut pt, end as usize, end as usize + PAGE_SIZE*512, linear_offset, PTF::VALID | PTF::READABLE | PTF::WRITABLE);
+
+        // Device Tree
+        map_range(&mut pt, dtb, dtb + consts::MAX_DTB_SIZE, linear_offset, PTF::VALID | PTF::READABLE);
+
+        // CLINT
+        map_range(&mut pt, 0x2000000 + PHYSICAL_MEMORY_OFFSET, 0x2010000 + PHYSICAL_MEMORY_OFFSET, linear_offset, PTF::VALID | PTF::READABLE | PTF::WRITABLE);
+        
+        // PLIC
+        map_range(&mut pt, 0xc000000 + PHYSICAL_MEMORY_OFFSET, 0xc00f000 + PHYSICAL_MEMORY_OFFSET, linear_offset, PTF::VALID | PTF::READABLE | PTF::WRITABLE);
+        map_range(&mut pt, 0xc200000 + PHYSICAL_MEMORY_OFFSET, 0xc20f000 + PHYSICAL_MEMORY_OFFSET, linear_offset, PTF::VALID | PTF::READABLE | PTF::WRITABLE);
+
+        // UART0, VIRTIO
+        map_range(&mut pt, 0x10000000 + PHYSICAL_MEMORY_OFFSET, 0x1000f000 + PHYSICAL_MEMORY_OFFSET, linear_offset, PTF::VALID | PTF::READABLE | PTF::WRITABLE);
+
+
+        //写satp
+        let token = root_frame.paddr;
+        unsafe {
+            set_page_table(token);
+            SATP = token;
+        }
+
+        //mem::forget(pt);
+
+        info!("remap the kernel @ {:#x}", token);
+}
+
+pub fn map_range(page_table: &mut Rv39PageTable, mut start_addr: VirtAddr, mut end_addr: VirtAddr, linear_offset: usize, flags: PageTableFlags) -> Result<(),()> {
+    trace!("Mapping range addr: {:#x} ~ {:#x}", start_addr, end_addr);
+
+    start_addr = start_addr & !(PAGE_SIZE -1);
+    let mut start_page = start_addr / PAGE_SIZE;
+
+    //end_addr = (end_addr + PAGE_SIZE - 1) & !(PAGE_SIZE -1);
+    //let end_page = (end_addr - 1) / PAGE_SIZE;
+    end_addr = end_addr & !(PAGE_SIZE -1);
+    let end_page = end_addr / PAGE_SIZE;
+
+    while start_page <= end_page {
+        let vaddr: VirtAddr = start_page * PAGE_SIZE;
+        let page = riscv::addr::Page::of_addr(riscv::addr::VirtAddr::new(vaddr));
+        let frame = riscv::addr::Frame::of_addr(riscv::addr::PhysAddr::new(vaddr - linear_offset));
+
+        start_page += 1;
+
+        trace!("map_range: {:#x} -> {:#x}, flags={:?}", vaddr, vaddr - linear_offset, flags);
+        page_table.map_to(page, frame, flags, &mut FrameAllocatorImpl)
+            .unwrap()
+            .flush();
+    }
+    info!("map range from {:#x} to {:#x}, flags: {:?}", start_addr, end_page * PAGE_SIZE, flags);
+
+    Ok(())
+}
+
+extern "C" {
+    fn start();
+
+    fn stext();
+    fn etext();
+    fn srodata();
+    fn erodata();
+    fn sdata();
+    fn edata();
+
+    fn bootstack();
+    fn bootstacktop();
+
+    fn sbss();
+    fn ebss();
+
+    fn end();
+}
 
 /// Page Table
 #[repr(C)]
@@ -30,22 +127,18 @@ impl PageTableImpl {
     #[allow(clippy::new_without_default)]
     #[export_name = "hal_pt_new"]
     pub fn new() -> Self {
-        let pt = paging::PageTableImpl::new_bare();
-        //调用paging的map_kernel()
-        //pt.map_kernel();
+        let root_frame = Frame::alloc().expect("failed to alloc frame");
+        let root_vaddr = phys_to_virt(root_frame.paddr);
+        let root = unsafe { &mut *(root_vaddr as *mut PageTable) };
+        root.zero();
 
-        //那换用zCore的map_kernel吧
-        let root_vaddr = phys_to_virt(pt.root_frame.start_address().as_usize());
         let current =
             phys_to_virt(satp::read().frame().start_address().as_usize()) as *const PageTable;
         map_kernel(root_vaddr as _, current as _);
-
-        trace!("new(), create page table @ {:#x}", pt.root_frame.start_address().as_usize());
-        let new = PageTableImpl {
-            root_paddr: pt.root_frame.start_address().as_usize(),
-        };
-        mem::forget(pt); //防止自动Drop掉root frame
-        new
+        trace!("create page table @ {:#x}", root_frame.paddr);
+        PageTableImpl {
+            root_paddr: root_frame.paddr,
+        }
     }
 
     #[cfg(target_arch = "riscv32")]
@@ -73,14 +166,8 @@ impl PageTableTrait for PageTableImpl {
         pt.map_to(page, frame, flags.to_ptf(), &mut FrameAllocatorImpl)
             .unwrap()
             .flush();
-        trace!("PageTable: {:#X}, map: {:x?} -> {:x?}, flags={:?}",self.table_phys() as usize, vaddr, paddr, flags);
-        /*
-        if vaddr == 0x11b000 {
-            info!("map_to 0x11b3c0: {:#X?}", self.query(0x11b3c0));
-        }else if vaddr == 0xc4000 {
-            info!("map_to 0xc44b6: {:#X?}", self.query(0xc44b6));
-        }
-        */
+
+        trace!("PageTable: {:#X}, map: {:x?} -> {:x?}, flags={:?}", self.table_phys() as usize, vaddr, paddr, flags);
         Ok(())
     }
 
@@ -90,7 +177,7 @@ impl PageTableTrait for PageTableImpl {
         let mut pt = self.get();
         let page = Page::of_addr(riscv::addr::VirtAddr::new(vaddr));
         pt.unmap(page).unwrap().1.flush();
-        trace!("PageTable: {:#X}, unmap: {:x?}",self.table_phys() as usize, vaddr);
+        trace!("PageTable: {:#X}, unmap: {:x?}", self.table_phys() as usize, vaddr);
         Ok(())
     }
 
@@ -100,13 +187,12 @@ impl PageTableTrait for PageTableImpl {
         let mut pt = self.get();
         let page = Page::of_addr(riscv::addr::VirtAddr::new(vaddr));
         pt.update_flags(page, flags.to_ptf()).unwrap().flush();
-        /* debug
+
         if vaddr == 0x11b000 {
             info!("protect 0x11b3c0: {:#X?}", self.query(0x11b3c0));
         }else if vaddr == 0xc4000 {
             info!("protect 0xc44b6: {:#X?}", self.query(0xc44b6));
         }
-        */
         trace!("PageTable: {:#X}, protect: {:x?}, flags={:?}", self.table_phys() as usize, vaddr, flags);
         Ok(())
     }
@@ -117,7 +203,7 @@ impl PageTableTrait for PageTableImpl {
         let mut pt = self.get();
         let page = Page::of_addr(riscv::addr::VirtAddr::new(vaddr));
         let res = pt.ref_entry(page);
-        info!("query: {:x?} => {:#x?}", vaddr, res);
+        trace!("query: {:x?} => {:#x?}", vaddr, res);
         match res {
             Ok(entry) => Ok(entry.addr().as_usize()),
             Err(_) => Err(()),
@@ -288,7 +374,7 @@ struct Stdout1;
 impl fmt::Write for Stdout1 {
 	fn write_str(&mut self, s: &str) -> fmt::Result {
 		//每次都创建一个新的Uart ? 内存位置始终相同
-        write!(uart::Uart::new(0x1000_0000 + KERNEL_OFFSET), "{}", s);
+        write!(uart::Uart::new(0x1000_0000 + PHYSICAL_MEMORY_OFFSET), "{}", s);
 
 		Ok(())
 	}

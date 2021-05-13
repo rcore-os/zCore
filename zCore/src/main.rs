@@ -19,9 +19,6 @@ extern crate rlibc_opt; //Only for x86_64
 
 extern crate fatfs;
 
-#[cfg(target_arch = "riscv64")]
-mod consts;
-
 #[macro_use]
 mod logging;
 mod lang;
@@ -31,7 +28,7 @@ mod memory;
 use rboot::BootInfo;
 
 #[cfg(target_arch = "riscv64")]
-use kernel_hal_bare::{BootInfo, GraphicInfo, virtio::{BLK_DRIVERS, BlockDriverWrapper},};
+use kernel_hal_bare::{BootInfo, GraphicInfo, remap_the_kernel, virtio::{BLK_DRIVERS, BlockDriverWrapper},};
 
 use alloc::vec::Vec;
 pub use memory::{phys_to_virt, write_readonly_test, execute_unexecutable_test, read_invalid_test};
@@ -98,7 +95,7 @@ pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
         dtb_addr: device_tree_paddr as u64,
         initramfs_addr: 0,
         initramfs_size: 0,
-        cmdline: "LOG=error:TERM=xterm-256color:console.shell=true:virtcon.disable=true",
+        cmdline: "LOG=debug:TERM=xterm-256color:console.shell=true:virtcon.disable=true",
     };
 
     unsafe {
@@ -109,7 +106,7 @@ pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
     warn!("rust_main(), After logging init\n\n");
     memory::init_heap();
     memory::init_frame_allocator(&boot_info);
-    memory::remap_the_kernel(device_tree_vaddr);
+    remap_the_kernel(device_tree_vaddr);
 
     #[cfg(feature = "graphic")]
     init_framebuffer(boot_info);

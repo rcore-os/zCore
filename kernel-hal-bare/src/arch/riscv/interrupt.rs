@@ -1,19 +1,14 @@
 use riscv::register::{
 	scause::{
 		self,
-        Scause,
 		Trap,
 		Exception,
 		Interrupt,
 	},
     satp,
     sie,
-	sepc,
     stval,
-	stvec,
-	sscratch,
     sstatus,
-	sstatus::Sstatus,
 };
 use trapframe::{TrapFrame, UserContext};
 use alloc::boxed::Box;
@@ -33,11 +28,9 @@ use super::sbi;
 use super::plic;
 use super::uart;
 
-use crate::{putfmt, KERNEL_OFFSET, PHYSICAL_MEMORY_OFFSET};
+use crate::{putfmt, map_range, phys_to_virt};
+use super::consts::PHYSICAL_MEMORY_OFFSET;
 use super::timer_set_next;
-
-use super::paging::PageTableImpl;
-use rcore_memory::paging::PageTable;
 
 //global_asm!(include_str!("trap.asm"));
 
@@ -218,21 +211,59 @@ fn breakpoint(sepc: &mut usize){
 }
 
 fn page_fault(stval: usize, tf: &mut TrapFrame){
-    warn!("EXCEPTION Page Fault: {:?} @ {:#x}->{:#x}", scause::read().cause(), tf.sepc, stval);
-
-    // temporay处理
+    let this_scause = scause::read();
+    info!("EXCEPTION Page Fault: {:?} @ {:#x}->{:#x}", this_scause.cause(), tf.sepc, stval);
     let vaddr = stval;
-    let addr =
-    if stval > KERNEL_OFFSET {
-        stval - PHYSICAL_MEMORY_OFFSET
-    }else{
-        //stval < 0x10009000
-        stval
-    };
 
-    unsafe{
-        PageTableImpl::active().map(vaddr, addr);
-    }
+    use riscv::paging::{Rv39PageTable, PageTableFlags as PTF, *};
+    use riscv::addr::{Page, PhysAddr, VirtAddr};
+    use crate::PageTableImpl;
+    use kernel_hal::{PageTableTrait, MMUFlags};
+
+    //let mut flags = PTF::VALID;
+    let code = this_scause.code();
+    let mut flags = 
+        if code == 15 {
+            //MMUFlags::WRITE ???
+            MMUFlags::READ | MMUFlags::WRITE
+        }else if code == 12 {
+            MMUFlags::EXECUTE
+        }else {
+            MMUFlags::READ
+        };
+
+    let linear_offset = 
+        if stval >= PHYSICAL_MEMORY_OFFSET {
+            // Kernel
+            PHYSICAL_MEMORY_OFFSET
+        }else{
+            // User
+            0
+        };
+
+    /*
+    let current =
+        unsafe { &mut *(phys_to_virt(satp::read().frame().start_address().as_usize()) as *mut PageTable) };
+    let mut pt = Rv39PageTable::new(current, PHYSICAL_MEMORY_OFFSET);
+    map_range(&mut pt, vaddr, vaddr, linear_offset, flags);
+    */
+
+    let mut pti = 
+        PageTableImpl {
+            root_paddr: satp::read().frame().start_address().as_usize(),
+        };
+
+    let page = Page::of_addr(VirtAddr::new(vaddr));
+    if let Ok(pte) = pti.get().ref_entry(page) {
+        let pte = unsafe { &mut *(pte as *mut PageTableEntry) };
+        if !pte.is_unused() {
+            debug!("PageAlreadyMapped -> {:#x?}, {:?}", pte.addr().as_usize(), pte.flags());
+            //TODO update flags
+
+            pti.unmap(vaddr);
+        }
+    };
+    pti.map(vaddr, vaddr - linear_offset, flags);
 }
 
 fn super_timer(){
@@ -245,7 +276,7 @@ fn super_timer(){
 }
 
 fn init_uart(){
-    uart::Uart::new(0x1000_0000 + KERNEL_OFFSET).simple_init();
+    uart::Uart::new(0x1000_0000 + PHYSICAL_MEMORY_OFFSET).simple_init();
 
     //但当没有SBI_CONSOLE_PUTCHAR时，却为什么不行？
     super::putfmt_uart(format_args!("{}", "Uart output testing\n"));

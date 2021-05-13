@@ -1,6 +1,7 @@
 use core::convert::TryInto;
 use core::fmt::{Error, Write};
-use crate::{putfmt, KERNEL_OFFSET};
+use super::consts::PHYSICAL_MEMORY_OFFSET;
+use crate::putfmt;
 
 //use crate::console::push_stdin;
 
@@ -131,7 +132,7 @@ fn unsafe mmio_read(address: usize, offset: usize, value: u8) -> u8 {
 */
 
 pub fn handle_interrupt() {
-	let mut my_uart = Uart::new(0x1000_0000 + KERNEL_OFFSET);
+	let mut my_uart = Uart::new(0x1000_0000 + PHYSICAL_MEMORY_OFFSET);
 	if let Some(c) = my_uart.get() {
 		//CONSOLE
 		//push_stdin(c);

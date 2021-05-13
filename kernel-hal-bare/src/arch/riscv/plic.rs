@@ -1,6 +1,7 @@
 use super::uart;
 use super::interrupt;
-use crate::{putfmt, KERNEL_OFFSET}; //For bare_println
+use crate::putfmt; //For bare_println
+use super::consts::PHYSICAL_MEMORY_OFFSET;
 
 const MMODE: usize = 0;
 
@@ -11,9 +12,9 @@ const MMODE: usize = 0;
 //
 //Source 1 priority: 0x0c000004
 //Source 2 priority: 0x0c000008
-const PLIC_PRIORITY:   usize = 0x0c00_0000 + KERNEL_OFFSET;
+const PLIC_PRIORITY:   usize = 0x0c00_0000 + PHYSICAL_MEMORY_OFFSET;
 //Pending 32位寄存器，每一位标记一个中断源ID
-const PLIC_PENDING:    usize = 0x0c00_1000 + KERNEL_OFFSET;
+const PLIC_PENDING:    usize = 0x0c00_1000 + PHYSICAL_MEMORY_OFFSET;
 
 //Target 0 threshold: 0x0c200000
 //Target 0 claim    : 0x0c200004
@@ -21,8 +22,8 @@ const PLIC_PENDING:    usize = 0x0c00_1000 + KERNEL_OFFSET;
 //Target 1 threshold: 0x0c201000 *
 //Target 1 claim    : 0x0c201004 *
 
-const PLIC_THRESHOLD:  usize = if MMODE == 1 { 0x0c200000 + KERNEL_OFFSET }else{ 0x0c201000 + KERNEL_OFFSET };
-const PLIC_CLAIM:      usize = if MMODE == 1 { 0x0c200004 + KERNEL_OFFSET }else{ 0x0c201004 + KERNEL_OFFSET };
+const PLIC_THRESHOLD:  usize = if MMODE == 1 { 0x0c200000 + PHYSICAL_MEMORY_OFFSET }else{ 0x0c201000 + PHYSICAL_MEMORY_OFFSET };
+const PLIC_CLAIM:      usize = if MMODE == 1 { 0x0c200004 + PHYSICAL_MEMORY_OFFSET }else{ 0x0c201004 + PHYSICAL_MEMORY_OFFSET };
 
 //注意一个核的不同权限模式是不同Target
 //Target: 0  1  2        3  4  5
@@ -30,7 +31,7 @@ const PLIC_CLAIM:      usize = if MMODE == 1 { 0x0c200004 + KERNEL_OFFSET }else{
 //
 //target 0 enable: 0x0c002000
 //target 1 enable: 0x0c002080 *
-const PLIC_INT_ENABLE: usize = if MMODE == 1 { 0x0c002000 + KERNEL_OFFSET }else{ 0x0c002080 + KERNEL_OFFSET }; //基于opensbi后一般运行于Hart0 S态，故为Target1
+const PLIC_INT_ENABLE: usize = if MMODE == 1 { 0x0c002000 + PHYSICAL_MEMORY_OFFSET }else{ 0x0c002080 + PHYSICAL_MEMORY_OFFSET }; //基于opensbi后一般运行于Hart0 S态，故为Target1
 
 //PLIC是async cause 11
 //声明claim会清除中断源上的相应pending位。

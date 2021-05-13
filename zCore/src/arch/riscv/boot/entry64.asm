@@ -9,7 +9,7 @@ _start:
 
 	#可清零低12位地址
 	lui t0, %hi(boot_page_table_sv39)
-	li t1, 0xffffffffc0000000 - 0x80000000 #立即数加载
+	li t1, 0xffffffff80000000 - 0x80000000 #立即数加载
 	#计算出页表的物理地址
 	sub t0, t0, t1
 
@@ -45,8 +45,15 @@ bootstacktop:
 	.section .data
 	.align 12 #12位对齐
 boot_page_table_sv39:
-	#1G的一个大页: 0xffffffff_c0000000 --> 0x80000000
-	#前511项置0
-	.zero 8 * 511
-	#最后一项，PPN=0x80000(当转换为物理地址时还需左移12位), 标志位VRWXAD置1
-	.quad (0x80000 << 10) | 0xcf
+	#1G的一个大页: 0xffffffff_00000000 --> 0x00000000
+	#1G的一个大页: 0xffffffff_80000000 --> 0x80000000
+
+	#前510项置0
+	.zero 8 * 508
+
+	.quad (0x00000 << 10) | 0xef
+	.zero 8
+	#倒数第二项，PPN=0x80000(当转换为物理地址时还需左移12位), 标志位DAG_XWRV置1
+	.quad (0x80000 << 10) | 0xef
+	.zero 8
+
