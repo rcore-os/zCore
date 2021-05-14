@@ -260,10 +260,10 @@ fn page_fault(stval: usize, tf: &mut TrapFrame){
             debug!("PageAlreadyMapped -> {:#x?}, {:?}", pte.addr().as_usize(), pte.flags());
             //TODO update flags
 
-            pti.unmap(vaddr);
+            pti.unmap(vaddr).unwrap();
         }
     };
-    pti.map(vaddr, vaddr - linear_offset, flags);
+    pti.map(vaddr, vaddr - linear_offset, flags).unwrap();
 }
 
 fn super_timer(){

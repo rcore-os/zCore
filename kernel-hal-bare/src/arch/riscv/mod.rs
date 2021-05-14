@@ -5,13 +5,10 @@ use riscv::addr::Page;
 use riscv::paging::{PageTableFlags as PTF, *};
 use riscv::register::{time, satp, sie, stval};
 //use crate::sbi;
-//use core::mem;
 use core::fmt::{ self, Write };
-use core::mem;
 use alloc::{collections::VecDeque, vec::Vec};
 
 mod sbi;
-//pub mod paging;
 
 mod consts;
 
@@ -31,30 +28,30 @@ pub fn remap_the_kernel(dtb: usize) {
         let linear_offset = PHYSICAL_MEMORY_OFFSET;
         //let mut flags = PTF::VALID | PTF::READABLE | PTF::WRITABLE | PTF::EXECUTABLE | PTF::USER;
 
-        map_range(&mut pt, stext as usize, etext as usize - 1, linear_offset, PTF::VALID | PTF::READABLE | PTF::EXECUTABLE);
-        map_range(&mut pt, srodata as usize, erodata as usize, linear_offset, PTF::VALID | PTF::READABLE);
-        map_range(&mut pt, sdata as usize, edata as usize, linear_offset, PTF::VALID | PTF::READABLE | PTF::WRITABLE);
+        map_range(&mut pt, stext as usize, etext as usize - 1, linear_offset, PTF::VALID | PTF::READABLE | PTF::EXECUTABLE).unwrap();
+        map_range(&mut pt, srodata as usize, erodata as usize, linear_offset, PTF::VALID | PTF::READABLE).unwrap();
+        map_range(&mut pt, sdata as usize, edata as usize, linear_offset, PTF::VALID | PTF::READABLE | PTF::WRITABLE).unwrap();
 
         // Stack
-        map_range(&mut pt, bootstack as usize, bootstacktop as usize - 1, linear_offset, PTF::VALID | PTF::READABLE | PTF::WRITABLE);
+        map_range(&mut pt, bootstack as usize, bootstacktop as usize - 1, linear_offset, PTF::VALID | PTF::READABLE | PTF::WRITABLE).unwrap();
 
-        map_range(&mut pt, sbss as usize, ebss as usize - 1, linear_offset, PTF::VALID | PTF::READABLE | PTF::WRITABLE);
+        map_range(&mut pt, sbss as usize, ebss as usize - 1, linear_offset, PTF::VALID | PTF::READABLE | PTF::WRITABLE).unwrap();
 
         // Heap
-        map_range(&mut pt, end as usize, end as usize + PAGE_SIZE*512, linear_offset, PTF::VALID | PTF::READABLE | PTF::WRITABLE);
+        map_range(&mut pt, end as usize, end as usize + PAGE_SIZE*512, linear_offset, PTF::VALID | PTF::READABLE | PTF::WRITABLE).unwrap();
 
         // Device Tree
-        map_range(&mut pt, dtb, dtb + consts::MAX_DTB_SIZE, linear_offset, PTF::VALID | PTF::READABLE);
+        map_range(&mut pt, dtb, dtb + consts::MAX_DTB_SIZE, linear_offset, PTF::VALID | PTF::READABLE).unwrap();
 
         // CLINT
-        map_range(&mut pt, 0x2000000 + PHYSICAL_MEMORY_OFFSET, 0x2010000 + PHYSICAL_MEMORY_OFFSET, linear_offset, PTF::VALID | PTF::READABLE | PTF::WRITABLE);
+        map_range(&mut pt, 0x2000000 + PHYSICAL_MEMORY_OFFSET, 0x2010000 + PHYSICAL_MEMORY_OFFSET, linear_offset, PTF::VALID | PTF::READABLE | PTF::WRITABLE).unwrap();
         
         // PLIC
-        map_range(&mut pt, 0xc000000 + PHYSICAL_MEMORY_OFFSET, 0xc00f000 + PHYSICAL_MEMORY_OFFSET, linear_offset, PTF::VALID | PTF::READABLE | PTF::WRITABLE);
-        map_range(&mut pt, 0xc200000 + PHYSICAL_MEMORY_OFFSET, 0xc20f000 + PHYSICAL_MEMORY_OFFSET, linear_offset, PTF::VALID | PTF::READABLE | PTF::WRITABLE);
+        map_range(&mut pt, 0xc000000 + PHYSICAL_MEMORY_OFFSET, 0xc00f000 + PHYSICAL_MEMORY_OFFSET, linear_offset, PTF::VALID | PTF::READABLE | PTF::WRITABLE).unwrap();
+        map_range(&mut pt, 0xc200000 + PHYSICAL_MEMORY_OFFSET, 0xc20f000 + PHYSICAL_MEMORY_OFFSET, linear_offset, PTF::VALID | PTF::READABLE | PTF::WRITABLE).unwrap();
 
         // UART0, VIRTIO
-        map_range(&mut pt, 0x10000000 + PHYSICAL_MEMORY_OFFSET, 0x1000f000 + PHYSICAL_MEMORY_OFFSET, linear_offset, PTF::VALID | PTF::READABLE | PTF::WRITABLE);
+        map_range(&mut pt, 0x10000000 + PHYSICAL_MEMORY_OFFSET, 0x1000f000 + PHYSICAL_MEMORY_OFFSET, linear_offset, PTF::VALID | PTF::READABLE | PTF::WRITABLE).unwrap();
 
 
         //写satp
@@ -64,6 +61,7 @@ pub fn remap_the_kernel(dtb: usize) {
             SATP = token;
         }
 
+        //use core::mem;
         //mem::forget(pt);
 
         info!("remap the kernel @ {:#x}", token);
@@ -374,7 +372,7 @@ struct Stdout1;
 impl fmt::Write for Stdout1 {
 	fn write_str(&mut self, s: &str) -> fmt::Result {
 		//每次都创建一个新的Uart ? 内存位置始终相同
-        write!(uart::Uart::new(0x1000_0000 + PHYSICAL_MEMORY_OFFSET), "{}", s);
+        write!(uart::Uart::new(0x1000_0000 + PHYSICAL_MEMORY_OFFSET), "{}", s).unwrap();
 
 		Ok(())
 	}

@@ -1,8 +1,7 @@
-use crate::{hal_frame_alloc_contiguous, frame_dealloc, phys_to_virt, virt_to_phys};
+use crate::{hal_frame_alloc_contiguous, frame_dealloc, PAGE_SIZE, phys_to_virt, virt_to_phys};
 use device_tree::util::SliceRead;
 use device_tree::Node;
 use log::*;
-use rcore_memory::PAGE_SIZE;
 use virtio_drivers::{VirtIOBlk, VirtIOHeader};
 
 use super::super::PHYSICAL_MEMORY_OFFSET;

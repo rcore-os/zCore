@@ -146,7 +146,7 @@ fn main(_cmdline: &str) {
     use alloc::vec;
     use alloc::string::String;
 
-    use linux_object::fs::MemBuf;
+    //use linux_object::fs::MemBuf;
     use linux_object::fs::STDIN;
 
     kernel_hal_bare::serial_set_callback(Box::new({

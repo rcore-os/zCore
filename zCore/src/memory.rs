@@ -19,7 +19,7 @@ use {
 #[cfg(target_arch = "riscv64")]
 use riscv::{addr::Frame,
             paging::{
-                PageTable, PageTableEntry, PageTableFlags as EF
+                PageTable, PageTableFlags as EF
             }};
 
 #[cfg(target_arch = "x86_64")]
@@ -87,7 +87,6 @@ use kernel_hal_bare::BootInfo;
 
 #[cfg(target_arch = "riscv64")]
 pub fn init_frame_allocator(boot_info: &BootInfo) {
-    use bitmap_allocator::BitAlloc;
     use core::ops::Range;
 
     let mut ba = FRAME_ALLOCATOR.lock();
@@ -191,126 +190,7 @@ pub extern "C" fn hal_pt_map_kernel(pt: &mut PageTable, current: &PageTable) {
     let ephysical = current[PHYSICAL_MEMORY_L2].clone(); //0xffffffff_00000000 --> 0x00000000
     pt[KERNEL_L2].set(Frame::of_addr(ekernel.addr()), ekernel.flags() | EF::GLOBAL);
     pt[PHYSICAL_MEMORY_L2].set(Frame::of_addr(ephysical.addr()), ephysical.flags() | EF::GLOBAL);
-    debug!("KERNEL_L2:{:#x?}, PHYSICAL_MEMORY_L2:{:#x?}", ekernel.addr(), ephysical.addr());
-}
-
-// remap the kernel use 4K page
-// kernel 和物理内存起始虚拟地址
-// 而已经映射了1G大页的页表中，再映射多级页表，可能会产生错误
-#[cfg(target_arch = "null")]
-pub fn remap_the_kernel(dtb: usize) {
-    //let mut ms = MemorySet::new();
-
-    //这里如需多级页表映射，就不能用MemorySet::new(), 因为它会先映射1G大页，影响后面的多级页表映射
-    let mut ms = MemorySet::new_bare();
-
-    let offset = -(PHYSICAL_MEMORY_OFFSET as isize);
-    debug!("remap kernel page:{:#x} -> frame:{:#x}", stext as usize, stext as isize + offset);
-    ms.push(
-        stext as usize,
-        etext as usize,
-        MemoryAttr::default().execute().readonly(),
-        Linear::new(offset),
-        "text",
-    );
-    ms.push(
-        sdata as usize,
-        edata as usize,
-        MemoryAttr::default(),
-        Linear::new(offset),
-        "data",
-    );
-    ms.push(
-        srodata as usize,
-        erodata as usize,
-        MemoryAttr::default().readonly(),
-        Linear::new(offset),
-        "rodata",
-    );
-    ms.push(
-        bootstack as usize,
-        bootstacktop as usize,
-        MemoryAttr::default(),
-        Linear::new(offset),
-        "stack",
-    );
-    ms.push(
-        sbss as usize,
-        ebss as usize,
-        MemoryAttr::default(),
-        Linear::new(offset),
-        "bss",
-    );
-
-    //堆空间也映射前面一点
-    ms.push(
-        end as usize + PAGE_SIZE,
-        end as usize + PAGE_SIZE*2048,
-        MemoryAttr::default(),
-        Linear::new(offset),
-        "heap",
-    );
-    debug!("Map heap page: {:#x} ~ {:#x} --> frame: {:#x} ~ {:#x}", end as usize + PAGE_SIZE, end as usize + PAGE_SIZE*1024, end as isize + 4096 + offset, end as isize + 4096*1024 + offset);
-
-    ms.push(
-        dtb,
-        dtb + super::consts::MAX_DTB_SIZE,
-        MemoryAttr::default().readonly(),
-        Linear::new(offset),
-        "dts",
-    );
-
-    // map PLIC for HiFiveU & VirtIO
-    let offset = -(KERNEL_OFFSET as isize);
-    ms.push(
-        KERNEL_OFFSET + 0x0C00_0000,
-        KERNEL_OFFSET + 0x0C00_0000 + PAGE_SIZE*4,
-        MemoryAttr::default(),
-        Linear::new(offset),
-        "plic_priority",
-    );
-    ms.push(
-        KERNEL_OFFSET + 0x0C20_0000,
-        KERNEL_OFFSET + 0x0C20_0000 + PAGE_SIZE*4,
-        MemoryAttr::default(),
-        Linear::new(offset),
-        "plic_threshold",
-    );
-    // map UART for HiFiveU
-    ms.push(
-        KERNEL_OFFSET + 0x10010000,
-        KERNEL_OFFSET + 0x10010000 + PAGE_SIZE,
-        MemoryAttr::default(),
-        Linear::new(offset),
-        "uart",
-    );
-    // map UART for VirtIO
-    ms.push(
-        KERNEL_OFFSET + 0x10000000,
-        KERNEL_OFFSET + 0x10000000 + PAGE_SIZE,
-        MemoryAttr::default(),
-        Linear::new(offset),
-        "uart16550",
-    );
-
-    // 一一映射
-    ms.push(
-        0x10001000,
-        0x10001000 + PAGE_SIZE*10,
-        MemoryAttr::default(),
-        Linear::new(0),
-        "vitio_blk",
-    );
-
-    //最后写satp
-    unsafe {
-        ms.activate();
-    }
-    unsafe {
-        SATP = ms.token();
-    }
-    mem::forget(ms);
-    info!("remap kernel end");
+    debug!("KERNEL_L2:{:x?}, PHYSICAL_MEMORY_L2:{:x?}", ekernel.addr(), ephysical.addr());
 }
 
 // First core stores its SATP here.
@@ -364,20 +244,13 @@ pub fn read_invalid_test() {
 }
 
 extern "C" {
-    fn stext();
-    fn etext();
-    fn sdata();
-    fn edata();
+    fn start();
     fn srodata();
     fn erodata();
     fn sbss();
     fn ebss();
-    fn start();
     fn end();
-    fn bootstack();
-    fn bootstacktop();
 }
-
 
 #[cfg(feature = "hypervisor")]
 mod rvm_extern_fn {
