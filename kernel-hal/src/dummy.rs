@@ -445,3 +445,9 @@ pub fn fill_random(buf: &mut [u8]) {
 pub fn fill_random(_buf: &mut [u8]) {
     // TODO
 }
+
+#[linkage = "weak"]
+#[export_name = "hal_rand"]
+pub fn rand() -> u64 {
+    unimplemented!()
+}

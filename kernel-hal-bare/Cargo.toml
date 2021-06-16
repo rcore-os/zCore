@@ -17,6 +17,10 @@ kernel-hal = { path = "../kernel-hal" }
 naive-timer = "0.1.0"
 lazy_static = { version = "1.4", features = ["spin_no_std" ] }
 
+pci = { git = "https://github.com/rcore-os/pci-rs", rev = "a4e7cea6" }
+isomorphic_drivers = { git = "https://github.com/rcore-os/isomorphic_drivers", rev = "dae39d16d5aa045023bf763fab5e028706b195c1", features = ["log"] }
+smoltcp = { git = "https://github.com/rcore-os/smoltcp", rev = "5bd87c7c", default-features = false, features = ["alloc", "log", "ethernet", "proto-ipv4", "proto-igmp", "socket-icmp", "socket-udp", "socket-tcp", "socket-raw"] }
+
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 x86_64 = "0.13.2"
 uart_16550 = "=0.2.12"

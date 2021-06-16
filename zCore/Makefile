@@ -45,7 +45,9 @@ qemu_opts += \
 	-serial mon:stdio \
 	-m 4G \
 	-nic none \
-	-device isa-debug-exit,iobase=0xf4,iosize=0x04
+	-device isa-debug-exit,iobase=0xf4,iosize=0x04 \
+	-netdev type=user,id=net0,hostfwd=udp::6969-:6969 \
+	-device e1000e,netdev=net0
 endif
 
 ifeq ($(hypervisor), 1)

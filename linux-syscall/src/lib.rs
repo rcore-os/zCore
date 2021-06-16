@@ -42,6 +42,7 @@ mod consts;
 mod file;
 mod ipc;
 mod misc;
+mod net;
 mod signal;
 mod task;
 mod time;
@@ -152,12 +153,12 @@ impl Syscall<'_> {
             Sys::SCHED_GETAFFINITY => self.unimplemented("sched_getaffinity", Ok(0)),
 
             // socket
-            //            Sys::SOCKET => self.sys_socket(a0, a1, a2),
-            //            Sys::CONNECT => self.sys_connect(a0, a1.into(), a2),
+            Sys::SOCKET => self.sys_socket(a0, a1, a2),
+            Sys::CONNECT => self.sys_connect(a0, a1.into(), a2),
             //            Sys::ACCEPT => self.sys_accept(a0, a1.into(), a2.into()),
             //            Sys::ACCEPT4 => self.sys_accept(a0, a1.into(), a2.into()), // use accept for accept4
-            //            Sys::SENDTO => self.sys_sendto(a0, a1.into(), a2, a3, a4.into(), a5),
-            //            Sys::RECVFROM => self.sys_recvfrom(a0, a1.into(), a2, a3, a4.into(), a5.into()),
+            Sys::SENDTO => self.sys_sendto(a0, a1.into(), a2, a3, a4.into(), a5),
+            Sys::RECVFROM => self.sys_recvfrom(a0, a1.into(), a2, a3, a4.into(), a5.into()),
             //            Sys::SENDMSG => self.sys_sendmsg(),
             //            Sys::RECVMSG => self.sys_recvmsg(a0, a1.into(), a2),
             //            Sys::SHUTDOWN => self.sys_shutdown(a0, a1),

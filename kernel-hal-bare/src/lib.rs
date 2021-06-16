@@ -43,11 +43,15 @@ pub mod arch;
 
 pub use self::arch::*;
 
+pub mod devices;
+// pub use self::devices::*;
+
 #[allow(improper_ctypes)]
 extern "C" {
     fn hal_pt_map_kernel(pt: *mut u8, current: *const u8);
     fn hal_frame_alloc() -> Option<PhysAddr>;
     fn hal_frame_dealloc(paddr: &PhysAddr);
+    fn hal_frame_alloc_contiguous(size: usize, align_log2: usize) -> Option<usize>;
     #[link_name = "hal_pmem_base"]
     static PMEM_BASE: usize;
 }
@@ -137,6 +141,10 @@ fn phys_to_virt(paddr: PhysAddr) -> VirtAddr {
     unsafe { PMEM_BASE + paddr }
 }
 
+fn virt_to_phys(vaddr: usize) -> usize {
+    unsafe { vaddr - PMEM_BASE }
+}
+
 /// Read physical memory from `paddr` to `buf`.
 #[export_name = "hal_pmem_read"]
 pub fn pmem_read(paddr: PhysAddr, buf: &mut [u8]) {
@@ -196,6 +204,7 @@ pub fn init(config: Config) {
         trapframe::init();
     }
     arch::init(config);
+    devices::devices_init();
 }
 
 #[cfg(test)]

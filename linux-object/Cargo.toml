@@ -24,3 +24,5 @@ rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "6df6cd2" }
 rcore-fs-ramfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "6df6cd2" }
 rcore-fs-mountfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "6df6cd2" }
 rcore-fs-devfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "6df6cd2" }
+
+smoltcp = { git = "https://github.com/rcore-os/smoltcp", rev = "5bd87c7c", default-features = false, features = ["alloc", "log", "ethernet", "proto-ipv4", "proto-igmp", "socket-icmp", "socket-udp", "socket-tcp", "socket-raw"] }

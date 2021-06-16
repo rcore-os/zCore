@@ -22,6 +22,8 @@ use zircon_object::{
     ZxResult,
 };
 
+use crate::net::TcpSocketState;
+
 /// Process extension for linux
 pub trait ProcessExt {
     /// create Linux process
@@ -295,6 +297,15 @@ impl LinuxProcess {
         let file = self
             .get_file_like(fd)?
             .downcast_arc::<File>()
+            .map_err(|_| LxError::EBADF)?;
+        Ok(file)
+    }
+
+    /// Get the `File` with given `socket fd`.
+    pub fn get_tcp_socket(&self, fd: FileDesc) -> LxResult<Arc<TcpSocketState>> {
+        let file = self
+            .get_file_like(fd)?
+            .downcast_arc::<TcpSocketState>()
             .map_err(|_| LxError::EBADF)?;
         Ok(file)
     }

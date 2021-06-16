@@ -4,6 +4,7 @@
 #![deny(warnings, unsafe_code, missing_docs)]
 #![allow(clippy::upper_case_acronyms)]
 #![feature(bool_to_option)]
+#![feature(untagged_unions)]
 
 extern crate alloc;
 
@@ -19,6 +20,7 @@ pub mod fs;
 // layer 2
 pub mod ipc;
 pub mod loader;
+pub mod net;
 pub mod process;
 pub mod signal;
 pub mod sync;

@@ -12,3 +12,7 @@ bitflags = "1.2"
 trapframe = "0.7.0"
 numeric-enum-macro = "0.2"
 acpi = "1.1"
+
+smoltcp = { git = "https://github.com/rcore-os/smoltcp", rev = "5bd87c7c", default-features = false, features = ["log", "ethernet", "proto-ipv4", "proto-igmp", "socket-icmp", "socket-udp", "socket-tcp", "socket-raw"] }
+downcast-rs = { version = "1.2", default-features = false }
+spin = "0.7"
