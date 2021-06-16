@@ -41,6 +41,7 @@ pub mod defs {
 }
 
 mod context;
+pub mod devices;
 mod dummy;
 mod fb;
 mod future;
@@ -49,6 +50,7 @@ pub mod vdso;
 
 pub use self::context::*;
 pub use self::defs::*;
+pub use self::devices::*;
 pub use self::dummy::*;
 pub use self::fb::*;
 pub use self::future::*;

@@ -36,6 +36,18 @@ mod pseudo;
 mod random;
 mod stdio;
 
+/// missing documentation
+pub enum FileLikeType {
+    /// missing documentation
+    File,
+    /// missing documentation
+    TcpSocket,
+    /// missing documentation
+    UdpSocket,
+    /// missing documentation
+    RawSocket,
+}
+
 #[async_trait]
 /// Generic file interface
 ///
@@ -59,6 +71,8 @@ pub trait FileLike: KernelObject {
     fn ioctl(&self, request: usize, arg1: usize, arg2: usize, arg3: usize) -> LxResult<usize>;
     /// manipulate file descriptor
     fn fcntl(&self, cmd: usize, arg: usize) -> LxResult<usize>;
+    /// file type
+    fn file_type(&self)->LxResult<FileLikeType>;
 }
 
 impl_downcast!(sync FileLike);

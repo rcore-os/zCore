@@ -24,6 +24,11 @@ rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "6df6cd2" }
 device_tree = { git = "https://github.com/rcore-os/device_tree-rs" }
 virtio-drivers = { git = "https://github.com/rcore-os/virtio-drivers", rev = "568276" }
 
+
+pci = { git = "https://github.com/rcore-os/pci-rs", rev = "a4e7cea6" }
+isomorphic_drivers = { git = "https://github.com/rcore-os/isomorphic_drivers", rev = "dae39d16d5aa045023bf763fab5e028706b195c1", features = ["log"] }
+smoltcp = { git = "https://github.com/rcore-os/smoltcp", rev = "5bd87c7c", default-features = false, features = ["alloc", "log", "ethernet", "proto-ipv4", "proto-igmp", "socket-icmp", "socket-udp", "socket-tcp", "socket-raw"] }
+
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 x86_64 = "0.14"
 uart_16550 = "=0.2.15"
@@ -34,6 +39,7 @@ x86-smpboot = { git = "https://github.com/rcore-os/x86-smpboot", rev = "43ffedf"
 rcore-console = { git = "https://github.com/rcore-os/rcore-console", default-features = false, rev = "a980897b" }
 acpi = "1.1"
 ps2-mouse = { git = "https://github.com/YXL76/ps2-mouse", branch = "feat" }
+pci = { git = "https://github.com/rcore-os/pci-rs", rev = "a4e7cea6" }
 
 [target.'cfg(any(target_arch = "riscv32", target_arch = "riscv64"))'.dependencies]
 riscv = { git = "https://github.com/rcore-os/riscv", features = [

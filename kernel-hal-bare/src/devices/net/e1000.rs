@@ -5,8 +5,8 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 // smoltcp
-use smoltcp::iface::Interface;
-use smoltcp::iface::InterfaceBuilder;
+use smoltcp::iface::EthernetInterface;
+use smoltcp::iface::EthernetInterfaceBuilder;
 use smoltcp::iface::NeighborCache;
 use smoltcp::phy::Device;
 use smoltcp::phy::{self, DeviceCapabilities};
@@ -65,7 +65,7 @@ impl phy::Device<'_> for E1000Driver {
 }
 
 pub struct E1000Interface {
-    pub iface: Mutex<Interface<'static, E1000Driver>>,
+    pub iface: Mutex<EthernetInterface<'static, 'static, 'static, E1000Driver>>,
     driver: E1000Driver,
     name: String,
     irq: Option<usize>,
@@ -155,11 +155,10 @@ impl NetDriver for E1000Interface {
         }
     }
 
-    fn get_arp(&self, _ip: IpAddress) -> Option<EthernetAddress> {
-        // let iface = self.iface.lock();
-        // let cache = iface.neighbor_cache();
-        // cache.lookup_pure(&ip, Instant::from_millis(0))
-        unimplemented!()
+    fn get_arp(&self, ip: IpAddress) -> Option<EthernetAddress> {
+        let iface = self.iface.lock();
+        let cache = iface.neighbor_cache();
+        cache.lookup_pure(&ip, Instant::from_millis(0))
     }
 
     fn get_device_cap(&self) -> DeviceCapabilities {
@@ -208,7 +207,7 @@ pub fn init(name: String, irq: Option<usize>, header: usize, size: usize, index:
     let ethernet_addr = EthernetAddress::from_bytes(&mac);
     let ip_addrs = [IpCidr::new(IpAddress::v4(10, 0, 2, 15), 24)];
     let neighbor_cache = NeighborCache::new(BTreeMap::new());
-    let iface = InterfaceBuilder::new(net_driver.clone())
+    let iface = EthernetInterfaceBuilder::new(net_driver.clone())
         .ethernet_addr(ethernet_addr)
         .ip_addrs(ip_addrs)
         .neighbor_cache(neighbor_cache)

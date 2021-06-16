@@ -493,3 +493,15 @@ pub fn mice_set_callback(_callback: Box<dyn Fn([u8; 3]) + Send + Sync>) {
 pub fn kbd_set_callback(_callback: Box<dyn Fn(u16, i32) + Send + Sync>) {
     unimplemented!()
 }
+
+#[linkage = "weak"]
+#[export_name = "hal_rand"]
+pub fn rand() -> u64 {
+    unimplemented!()
+}
+
+#[linkage = "weak"]
+#[export_name = "hal_rand"]
+pub fn rand() -> u64 {
+    unimplemented!()
+}

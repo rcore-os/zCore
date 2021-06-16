@@ -4,7 +4,7 @@ mode ?= debug
 zbi_file ?= bringup
 graphic ?=
 accel ?=
-linux ?=
+linux ?= 1
 user ?=
 hypervisor ?=
 smp ?= 1
@@ -81,7 +81,9 @@ qemu_opts += \
 	-drive file=$(QEMU_DISK),format=qcow2,id=sfs \
 	-device virtio-blk-device,drive=sfs \
 	-kernel $(kernel_bin)
-
+	-device isa-debug-exit,iobase=0xf4,iosize=0x04 \
+	-netdev type=user,id=net0,hostfwd=udp::6969-:6969 \
+	-device e1000e,netdev=net0
 endif
 
 ifeq ($(hypervisor), 1)
