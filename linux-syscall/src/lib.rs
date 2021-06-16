@@ -166,7 +166,7 @@ impl Syscall<'_> {
             //            Sys::LISTEN => self.sys_listen(a0, a1),
             //            Sys::GETSOCKNAME => self.sys_getsockname(a0, a1.into(), a2.into()),
             //            Sys::GETPEERNAME => self.sys_getpeername(a0, a1.into(), a2.into()),
-            //            Sys::SETSOCKOPT => self.sys_setsockopt(a0, a1, a2, a3.into(), a4),
+            Sys::SETSOCKOPT => self.sys_setsockopt(a0, a1, a2, a3.into(), a4),
             //            Sys::GETSOCKOPT => self.sys_getsockopt(a0, a1, a2, a3.into(), a4.into()),
 
             // process

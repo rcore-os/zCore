@@ -1,6 +1,7 @@
 // rawsocket 
 #![allow(dead_code)]
 // crate
+use crate::fs::FileLikeType;
 use crate::net::IPPROTO_IP;
 use crate::net::IP_HDRINCL;
 use crate::net::get_net_driver;
@@ -77,7 +78,8 @@ impl RawSocketState {
         }
     }
 
-    fn raw_read(&self, data: &mut [u8]) -> (LxResult<usize>, Endpoint) {
+    /// missing documentation
+    pub fn raw_read(&self, data: &mut [u8]) -> (LxResult<usize>, Endpoint) {
         loop {
             let mut sockets = SOCKETS.lock();
             let mut socket = sockets.get::<RawSocket>(self.handle.0);
@@ -99,7 +101,8 @@ impl RawSocketState {
         }
     }
 
-    fn raw_write(&self, data: &[u8], sendto_endpoint: Option<Endpoint>) -> LxResult<usize> {
+    /// missing documentation
+    pub fn raw_write(&self, data: &[u8], sendto_endpoint: Option<Endpoint>) -> LxResult<usize> {
         if self.header_included {
             let mut sockets = SOCKETS.lock();
             let mut socket = sockets.get::<RawSocket>(self.handle.0);
@@ -148,7 +151,8 @@ impl RawSocketState {
         }
     }
 
-    fn raw_setsockopt(&mut self, level: usize, opt: usize, data: &[u8]) -> LxResult<usize> {
+    /// missing documentation
+    pub fn raw_setsockopt(&mut self, level: usize, opt: usize, data: &[u8]) -> LxResult<usize> {
         match (level, opt) {
             (IPPROTO_IP, IP_HDRINCL) => {
                 if let Some(arg) = data.first() {
@@ -198,5 +202,9 @@ impl FileLike for RawSocketState {
     /// manipulate file descriptor
     fn fcntl(&self, _cmd: usize, _arg: usize) -> LxResult<usize> {
         unimplemented!()
+    }
+    /// file type
+    fn file_type(&self) -> LxResult<FileLikeType> {
+        Ok(FileLikeType::RawSocket)
     }
 }

@@ -9,9 +9,9 @@ use crate::net::GlobalSocketHandle;
 use crate::net::ICMP_SENDBUF;
 use crate::net::ICMP_RECVBUF;
 use crate::net::ICMP_METADATA_BUF;
-use crate::net::poll_ifaces;
+// use crate::net::poll_ifaces;
 use crate::error::LxResult;
-use crate::error::LxError;
+// use crate::error::LxError;
 use crate::fs::FileLike;
 
 // alloc
@@ -63,24 +63,24 @@ impl IcmpSocketState {
 
     /// missing documentation
     pub fn icmp_read(&self,data:&mut [u8]) -> LxResult<usize> {
-        loop {
-            let mut sockets = SOCKETS.lock();
-            let mut socket = sockets.get::<IcmpSocket>(self.handle.0);
+        // loop {
+        //     let mut sockets = SOCKETS.lock();
+        //     let mut socket = sockets.get::<IcmpSocket>(self.handle.0);
 
-            if socket.can_recv() {
-                if let Ok((size, _)) = socket.recv_slice(data) {
-                    // let endpoint = remote_endpoint;
-                    // avoid deadlock
-                    drop(socket);
-                    drop(sockets);
+        //     if socket.can_recv() {
+        //         if let Ok((size, _)) = socket.recv_slice(data) {
+        //             // let endpoint = remote_endpoint;
+        //             // avoid deadlock
+        //             drop(socket);
+        //             drop(sockets);
 
-                    poll_ifaces();
-                    return Ok(size);
-                }
-            } else {
-                return Err(LxError::ENOTCONN);
-            }
-        }
+        //             poll_ifaces();
+        //             return Ok(size);
+        //         }
+        //     } else {
+        //         return Err(LxError::ENOTCONN);
+        //     }
+        // }
         unimplemented!()
     }
 

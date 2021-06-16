@@ -2,6 +2,7 @@
 
 #![allow(dead_code)]
 
+use crate::fs::FileLikeType;
 use alloc::{boxed::Box, string::String, sync::Arc};
 
 use super::FileLike;
@@ -242,5 +243,9 @@ impl FileLike for File {
 
     fn fcntl(&self, cmd: usize, arg: usize) -> LxResult<usize> {
         self.fcntl(cmd, arg)
+    }
+
+    fn file_type(&self) -> LxResult<FileLikeType> {
+        Ok(FileLikeType::File)
     }
 }

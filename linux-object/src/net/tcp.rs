@@ -1,6 +1,7 @@
 // Tcpsocket
 #![allow(dead_code)]
 // crate
+use crate::fs::FileLikeType;
 use crate::net::get_ephemeral_port;
 use crate::net::poll_ifaces;
 use crate::net::IpEndpoint;
@@ -334,5 +335,9 @@ impl FileLike for TcpSocketState {
     fn fcntl(&self, _cmd: usize, _arg: usize) -> LxResult<usize> {
         // unimplemented!()
         Ok(0)
+    }
+    /// file type
+    fn file_type(&self) -> LxResult<FileLikeType> {
+        Ok(FileLikeType::TcpSocket)
     }
 }

@@ -1,6 +1,7 @@
 // udpsocket 
 #![allow(dead_code)]
 // crate
+use crate::fs::FileLikeType;
 use crate::net::ArpReq;
 use crate::net::from_cstr;
 use crate::net::get_net_driver;
@@ -98,7 +99,8 @@ impl UdpSocketState {
         }
     }
 
-    fn write(&self,data:&[u8],sendto_endpoint: Option<Endpoint>) -> LxResult<usize> {
+    /// missing documentation
+    pub fn udp_write(&self,data:&[u8],sendto_endpoint: Option<Endpoint>) -> LxResult<usize> {
         let remote_endpoint = {
             if let Some(Endpoint::Ip(ref endpoint)) = sendto_endpoint {
                 endpoint
@@ -136,7 +138,8 @@ impl UdpSocketState {
         }
     }
 
-    fn poll(&self) -> (bool, bool, bool) {
+    /// missing documentation
+    pub fn poll(&self) -> (bool, bool, bool) {
         let mut sockets = SOCKETS.lock();
         let socket = sockets.get::<UdpSocket>(self.handle.0);
 
@@ -266,6 +269,11 @@ impl FileLike for UdpSocketState {
     }
     /// manipulate file descriptor
     fn fcntl(&self, _cmd: usize, _arg: usize) -> LxResult<usize> {
-        unimplemented!()
+        Ok(0)
+        // unimplemented!()
+    }
+    /// file type
+    fn file_type(&self) -> LxResult<FileLikeType> {
+        Ok(FileLikeType::UdpSocket)
     }
 }

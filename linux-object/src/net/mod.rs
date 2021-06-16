@@ -18,9 +18,9 @@ pub use udp::*;
 pub mod raw;
 pub use raw::*;
 
-/// missing documentation
-pub mod icmp;
-pub use icmp::*;
+// /// missing documentation
+// pub mod icmp;
+// pub use icmp::*;
 
 
 // ============= Socket Set =============
