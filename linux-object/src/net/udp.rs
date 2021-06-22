@@ -177,7 +177,7 @@ impl UdpSocketState {
         }
     }
 
-    fn ioctl(&mut self, request: usize, arg1: usize, _arg2: usize, _arg3: usize) -> LxResult<usize> {
+    fn udp_ioctl(&self, request: usize, arg1: usize, _arg2: usize, _arg3: usize) -> LxResult<usize> {
         match request {
             // SIOCGARP
             0x8954 => {
@@ -264,8 +264,9 @@ impl FileLike for UdpSocketState {
         unimplemented!()
     }
     /// manipulates the underlying device parameters of special files
-    fn ioctl(&self, _request: usize, _arg1: usize, _arg2: usize, _arg3: usize) -> LxResult<usize> {
-        unimplemented!()
+    fn ioctl(&self, request: usize, arg1: usize, arg2: usize, arg3: usize) -> LxResult<usize> {
+        self.udp_ioctl(request,arg1,arg2,arg3)
+        // unimplemented!()
     }
     /// manipulate file descriptor
     fn fcntl(&self, _cmd: usize, _arg: usize) -> LxResult<usize> {

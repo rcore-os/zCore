@@ -25,4 +25,6 @@ rcore-fs-ramfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "6df6cd2"
 rcore-fs-mountfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "6df6cd2" }
 rcore-fs-devfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "6df6cd2" }
 
-smoltcp = { git = "https://github.com/rcore-os/smoltcp", rev = "5bd87c7c", default-features = false, features = ["alloc", "log", "ethernet", "proto-ipv4", "proto-igmp", "socket-icmp", "socket-udp", "socket-tcp", "socket-raw"] }
+# smoltcp = { git = "https://github.com/smoltcp-rs/smoltcp", rev = "e4241510337e095b9d21136c5f58b2eaa1b78479", default-features = false}
+smoltcp = { git = "https://github.com/smoltcp-rs/smoltcp", rev="e4241510337e095b9d21136c5f58b2eaa1b78479", default-features = false, features = ["alloc","log", "async","medium-ethernet", "proto-ipv4", "proto-igmp", "socket-icmp", "socket-udp", "socket-tcp", "socket-raw"] }
+futures = { version = "0.3.5", default-features = false, features = [ "async-await" ]}

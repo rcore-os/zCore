@@ -65,6 +65,7 @@ impl Syscall<'_> {
         };
         // socket
         let fd = proc.add_file(socket)?;
+        warn!("socketfd : {:?}" , fd);
         Ok(fd.into())
     }
 
@@ -176,6 +177,7 @@ impl Syscall<'_> {
             },
             _ => unreachable!()
         };
+        warn!("len : {}",len);
         Ok(len)
 
     }

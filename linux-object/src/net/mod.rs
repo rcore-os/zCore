@@ -22,6 +22,8 @@ pub use raw::*;
 // pub mod icmp;
 // pub use icmp::*;
 
+// pub mod stack;
+
 
 // ============= Socket Set =============
 
@@ -42,7 +44,7 @@ lazy_static! {
     ///
     /// Because smoltcp is a single thread network stack,
     /// every socket operation needs to lock this.
-    pub static ref SOCKETS: Mutex<SocketSet<'static, 'static, 'static>> =
+    pub static ref SOCKETS: Mutex<SocketSet<'static>> =
         Mutex::new(SocketSet::new(vec![]));
 }
 

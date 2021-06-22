@@ -1,6 +1,7 @@
 // Tcpsocket
 #![allow(dead_code)]
 // crate
+// use core::task::{Poll};
 use crate::fs::FileLikeType;
 use crate::net::get_ephemeral_port;
 use crate::net::poll_ifaces;
@@ -151,7 +152,6 @@ impl TcpSocketState {
                     // wait for connection result
                     loop {
                         poll_ifaces();
-
                         let mut sockets = SOCKETS.lock();
                         let socket = sockets.get::<TcpSocket>(self.handle.0);
                         match socket.state() {
@@ -172,6 +172,18 @@ impl TcpSocketState {
                 }
                 Err(_) => Err(LxError::ENOBUFS),
             }
+
+            // futures::future::poll_fn(|cx| {
+            //     match socket.state() {
+            //         TcpState::Closed | TcpState::TimeWait => Poll::Ready(Err(Error::Unaddressable)),
+            //         TcpState::Listen => Poll::Ready(Err(Error::Illegal)),
+            //         TcpState::SynSent | TcpState::SynReceived => {
+            //             socket.register_send_waker(cx.waker());
+            //             Poll::Pending
+            //         }
+            //         _ => Poll::Ready(Ok(())),
+            //     }
+            // }).await
         } else {
             Err(LxError::EINVAL)
         }
@@ -294,6 +306,17 @@ impl TcpSocketState {
     fn tcp_ioctl(&self) -> LxResult<usize> {
         Err(LxError::ENOSYS)
     }
+
+    // fn with<R>(&self, f: impl FnOnce(&mut TcpSocket) -> R) -> R {
+    //     let mut sockets = SOCKETS.lock();
+    //     let socket = sockets.get::<TcpSocket>(self.handle.0);
+    //     let res = {
+    //         let mut s = sockets.get::<TcpSocket>(self.handle.0);
+    //         f(&mut *s)
+    //     };
+    //     stack.wake();
+    //     res
+    // }
 }
 impl_kobject!(TcpSocketState);
 

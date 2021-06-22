@@ -19,7 +19,7 @@ env_logger = { version = "0.8", optional = true }
 kernel-hal-unix = { path = "../kernel-hal-unix", optional = true }
 async-std = { version = "1.9", features = ["attributes"], optional = true }
 
-# smoltcp = { git = "https://github.com/rcore-os/smoltcp", rev = "5bd87c7c", default-features = false, features = ["alloc", "log", "ethernet", "proto-ipv4", "proto-igmp", "socket-icmp", "socket-udp", "socket-tcp", "socket-raw"] }
+# smoltcp = { git = "https://github.com/rcore-os/smoltcp", rev = "e424151", default-features = false, features = ["alloc", "log", "ethernet", "proto-ipv4", "proto-igmp", "socket-icmp", "socket-udp", "socket-tcp", "socket-raw"] }
 # kernel-hal-bare = { path = "../kernel-hal-bare" }
 
 [features]
