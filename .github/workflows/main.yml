@@ -22,7 +22,6 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: --all-features
 
   build:
     runs-on: ${{ matrix.os }}
