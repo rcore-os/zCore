@@ -12,13 +12,13 @@ log = "0.4"
 spin = "0.7"
 git-version = "0.3"
 executor = { git = "https://github.com/rcore-os/executor.git", rev = "a2d02ee9" }
-trapframe = "0.7.0"
+trapframe = "0.8.0"
 kernel-hal = { path = "../kernel-hal" }
 naive-timer = "0.1.0"
 lazy_static = { version = "1.4", features = ["spin_no_std" ] }
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
-x86_64 = "0.13.2"
+x86_64 = "0.14"
 uart_16550 = "=0.2.12"
 raw-cpuid = "9.0"
 pc-keyboard = "0.5"

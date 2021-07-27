@@ -20,6 +20,11 @@ Environments：
 * [QEMU](https://www.qemu.org)
 * [Git LFS](https://git-lfs.github.com)
 
+
+### rustc info
+- current rustc -- rustc 1.56.0-nightly (08095fc1f 2021-07-26)
+- current rust-toolchain -- nightly
+
 Clone repo and pull prebuilt fuchsia images:
 
 ```sh
