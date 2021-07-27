@@ -407,7 +407,7 @@ impl VmAddressRegion {
         if !check_aligned(len, align) {
             Err(ZxError::INVALID_ARGS)
         } else if let Some(offset) = offset {
-            if check_aligned(offset, align) && self.test_map(&inner, offset, len, align) {
+            if check_aligned(offset, align) && self.test_map(inner, offset, len, align) {
                 Ok(offset)
             } else {
                 Err(ZxError::INVALID_ARGS)
@@ -415,7 +415,7 @@ impl VmAddressRegion {
         } else if len > self.size {
             Err(ZxError::INVALID_ARGS)
         } else {
-            match self.find_free_area(&inner, 0, len, align) {
+            match self.find_free_area(inner, 0, len, align) {
                 Some(offset) => Ok(offset),
                 None => Err(ZxError::NO_MEMORY),
             }

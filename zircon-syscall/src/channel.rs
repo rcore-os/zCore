@@ -280,7 +280,7 @@ fn handle_check(
         Err(ZxError::ACCESS_DENIED)
     } else if disposition.handle == handle_value {
         Err(ZxError::NOT_SUPPORTED)
-    } else if disposition.type_ != 0 && disposition.type_ != obj_type(&object) {
+    } else if disposition.type_ != 0 && disposition.type_ != obj_type(object) {
         Err(ZxError::WRONG_TYPE)
     } else if disposition.op != ZX_HANDLE_OP_MOVE && disposition.op != ZX_HANDLE_OP_DUP
         || disposition.rights != Rights::SAME_RIGHTS.bits()
@@ -326,7 +326,7 @@ static TESTS_ARGS: spin::Mutex<String> = spin::Mutex::new(String::new());
 #[allow(clippy::naive_bytecount)]
 fn hack_core_tests(handle: HandleValue, thread_name: &str, data: &mut Vec<u8>) {
     if handle == 3 && thread_name == "userboot" {
-        let cmdline = core::str::from_utf8(&data).unwrap();
+        let cmdline = core::str::from_utf8(data).unwrap();
         for kv in cmdline.split('\0') {
             if let Some(v) = kv.strip_prefix("core-tests=") {
                 *TESTS_ARGS.lock() = format!("test\0-f\0{}\0", v.replace(',', ":"));

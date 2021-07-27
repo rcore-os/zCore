@@ -162,7 +162,7 @@ impl Futex {
                 if !inner.woken {
                     let futex = inner.futex.clone();
                     let queue = &mut futex.inner.lock().waiter_queue;
-                    if let Some(pos) = queue.iter().position(|x| Arc::ptr_eq(&x, &self.waiter)) {
+                    if let Some(pos) = queue.iter().position(|x| Arc::ptr_eq(x, &self.waiter)) {
                         // Nobody cares about the order of queue, so just remove faster
                         queue.swap_remove_back(pos);
                     }
@@ -258,7 +258,7 @@ impl FutexInner {
                 .waiter_queue
                 .iter()
                 .filter_map(|waiter| waiter.thread.as_ref())
-                .any(|thread| Arc::ptr_eq(&thread, new_owner))
+                .any(|thread| Arc::ptr_eq(thread, new_owner))
             {
                 return false;
             }

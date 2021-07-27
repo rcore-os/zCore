@@ -24,7 +24,7 @@ impl VmarExt for VmAddressRegion {
             if ph.get_type().unwrap() != Type::Load {
                 continue;
             }
-            let vmo = make_vmo(&elf, ph)?;
+            let vmo = make_vmo(elf, ph)?;
             let offset = ph.virtual_addr() as usize / PAGE_SIZE * PAGE_SIZE;
             let flags = ph.flags().to_mmu_flags();
             self.map_at(offset, vmo.clone(), 0, vmo.len(), flags)?;
@@ -72,7 +72,7 @@ fn make_vmo(elf: &ElfFile, ph: ProgramHeader) -> ZxResult<Arc<VmObject>> {
     let page_offset = ph.virtual_addr() as usize % PAGE_SIZE;
     let pages = pages(ph.mem_size() as usize + page_offset);
     let vmo = VmObject::new_paged(pages);
-    let data = match ph.get_data(&elf).unwrap() {
+    let data = match ph.get_data(elf).unwrap() {
         SegmentData::Undefined(data) => data,
         _ => return Err(ZxError::INVALID_ARGS),
     };
