@@ -230,7 +230,7 @@ impl LinuxProcess {
         files.insert(2.into(), stdout);
 
         LinuxProcess {
-            root_inode: create_root_fs(rootfs),
+            root_inode: create_root_fs(rootfs), //Arc::clone(&ROOT_INODE),访问磁盘可能更快？
             parent: Weak::default(),
             inner: Mutex::new(LinuxProcessInner {
                 files,
