@@ -4,7 +4,7 @@ fn main() {
     let target = std::env::var("arch").unwrap();
     if target.contains("riscv64") {
         println!("cargo:rerun-if-changed=src/riscv64_syscall.h.in");
-    }else{
+    } else {
         println!("cargo:rerun-if-changed=src/syscall.h.in");
     }
 
@@ -19,7 +19,7 @@ fn main() {
 
     let data = if target.contains("riscv64") {
         std::fs::read_to_string("src/riscv64_syscall.h.in").unwrap()
-    }else{
+    } else {
         std::fs::read_to_string("src/syscall.h.in").unwrap()
     };
 

@@ -37,12 +37,19 @@ struct PcieUpstreamInner {
 }
 
 impl PcieUpstream {
+    #[allow(unsafe_code)]
     pub fn create(managed_bus_id: usize) -> Arc<Self> {
         Arc::new(PcieUpstream {
             managed_bus_id,
             inner: Mutex::new(PcieUpstreamInner {
                 weak_super: Weak::<PciRoot>::new(),
-                downstream: [None; PCI_MAX_FUNCTIONS_PER_BUS],
+                downstream: unsafe {
+                    core::mem::transmute(
+                        [0u8; core::mem::size_of::<Option<Arc<dyn IPciNode>>>()
+                            * PCI_MAX_FUNCTIONS_PER_BUS],
+                    )
+                },
+                // [None; PCI_MAX_FUNCTIONS_PER_BUS],
             }),
         })
     }

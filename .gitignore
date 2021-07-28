@@ -7,3 +7,5 @@ Cargo.lock
 .idea
 scripts/linux/test-result.txt
 rusty-tags.vi
+*.img
+zCore/src/link_user.S

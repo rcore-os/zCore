@@ -13,7 +13,7 @@
   "emit-debug-gdb-scripts": false,
   "executables": true,
   "features": "+m,+a,+c",
-  "is-builtin": true,
+  "is-builtin": false,
   "linker": "rust-lld",
   "linker-flavor": "ld.lld",
   "pre-link-args": {

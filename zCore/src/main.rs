@@ -28,10 +28,14 @@ mod memory;
 use rboot::BootInfo;
 
 #[cfg(target_arch = "riscv64")]
-use kernel_hal_bare::{BootInfo, GraphicInfo, remap_the_kernel, virtio::{BLK_DRIVERS, BlockDriverWrapper},};
+use kernel_hal_bare::{
+    remap_the_kernel,
+    virtio::{BlockDriverWrapper, BLK_DRIVERS},
+    BootInfo, GraphicInfo,
+};
 
 use alloc::vec::Vec;
-pub use memory::{phys_to_virt, write_readonly_test, execute_unexecutable_test, read_invalid_test};
+pub use memory::{execute_unexecutable_test, phys_to_virt, read_invalid_test, write_readonly_test};
 
 #[cfg(target_arch = "riscv64")]
 global_asm!(include_str!("arch/riscv/boot/entry64.asm"));
@@ -56,9 +60,7 @@ pub extern "C" fn _start(boot_info: &BootInfo) -> ! {
     });
 
     #[cfg(target_arch = "riscv64")]
-    kernel_hal_bare::init(kernel_hal_bare::Config {
-        mconfig: 0,
-    });
+    kernel_hal_bare::init(kernel_hal_bare::Config { mconfig: 0 });
 
     let ramfs_data = unsafe {
         core::slice::from_raw_parts_mut(
@@ -90,12 +92,16 @@ pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
     let boot_info = BootInfo {
         memory_map: Vec::new(),
         physical_memory_offset: 0,
-        graphic_info: GraphicInfo{mode: 0, fb_addr: 0, fb_size: 0},
+        graphic_info: GraphicInfo {
+            mode: 0,
+            fb_addr: 0,
+            fb_size: 0,
+        },
         hartid: hartid as u64,
         dtb_addr: device_tree_paddr as u64,
         initramfs_addr: 0,
         initramfs_size: 0,
-        cmdline: "LOG=debug:TERM=xterm-256color:console.shell=true:virtcon.disable=true",
+        cmdline: "LOG=warn:TERM=xterm-256color:console.shell=true:virtcon.disable=true",
     };
 
     unsafe {
@@ -123,7 +129,7 @@ pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
     //execute_unexecutable_test();
     //read_invalid_test();
 
-    // 正常由bootloader载入文件系统镜像到内存, 这里不用，而使用后面的virtio 
+    // 正常由bootloader载入文件系统镜像到内存, 这里不用，而使用后面的virtio
     /*
     let ramfs_data = unsafe {
         core::slice::from_raw_parts_mut(
@@ -142,9 +148,9 @@ pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
 //fn main(ramfs_data: &'static mut [u8], _cmdline: &str) {
 fn main(_cmdline: &str) {
     use alloc::boxed::Box;
+    use alloc::string::String;
     use alloc::sync::Arc;
     use alloc::vec;
-    use alloc::string::String;
 
     //use linux_object::fs::MemBuf;
     use linux_object::fs::STDIN;
@@ -179,18 +185,23 @@ fn main(_cmdline: &str) {
 
     let device = {
         let driver = BlockDriverWrapper(
-            BLK_DRIVERS.read().iter()
-            .next().expect("Block device not found")
-            .clone());
+            BLK_DRIVERS
+                .read()
+                .iter()
+                .next()
+                .expect("Block device not found")
+                .clone(),
+        );
         Arc::new(rcore_fs::dev::block_cache::BlockCache::new(driver, 0x100))
     };
 
     info!("Opening the rootfs ...");
     // 输入类型: Arc<Device>
-    let rootfs = rcore_fs_sfs::SimpleFileSystem::open(device).expect("failed to open device SimpleFS");
+    let rootfs =
+        rcore_fs_sfs::SimpleFileSystem::open(device).expect("failed to open device SimpleFS");
 
     // fat32
-    
+
     //let img_file = File::open("fat.img")?;
     //let fs = fatfs::FileSystem::new(img_file, fatfs::FsOptions::new())?;
 

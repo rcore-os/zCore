@@ -1,4 +1,4 @@
-use crate::{hal_frame_alloc_contiguous, frame_dealloc, PAGE_SIZE, phys_to_virt, virt_to_phys};
+use crate::{frame_dealloc, hal_frame_alloc_contiguous, phys_to_virt, virt_to_phys, PAGE_SIZE};
 use device_tree::util::SliceRead;
 use device_tree::Node;
 use log::*;
@@ -16,7 +16,7 @@ pub fn virtio_probe(node: &Node) {
     let size = reg.as_slice().read_be_u64(8).unwrap();
     // assuming one page
     assert_eq!(size as usize, PAGE_SIZE);
-    
+
     /* 一一映射
     let vaddr = paddr;
     unsafe{
@@ -47,13 +47,12 @@ pub fn virtio_probe(node: &Node) {
 /// virtio_mmio
 /////////
 /// virtio_blk
-
 use alloc::string::String;
 use alloc::sync::Arc;
 
 use alloc::format;
 
-use super::{DeviceType, Driver, BlockDriver, BLK_DRIVERS, DRIVERS};
+use super::{BlockDriver, DeviceType, Driver, BLK_DRIVERS, DRIVERS};
 
 //use crate::{sync::SpinNoIrqLock as Mutex};
 use spin::Mutex;
@@ -76,7 +75,6 @@ impl Driver for VirtIOBlkDriver {
     fn as_block(&self) -> Option<&dyn BlockDriver> {
         None
     }
-
 }
 
 impl BlockDriver for VirtIOBlkDriver {
@@ -102,7 +100,7 @@ pub fn virtio_blk_init(header: &'static mut VirtIOHeader) {
 
 #[no_mangle]
 extern "C" fn virtio_dma_alloc(pages: usize) -> PhysAddr {
-    let paddr = unsafe{ hal_frame_alloc_contiguous(pages, 0).unwrap() };
+    let paddr = unsafe { hal_frame_alloc_contiguous(pages, 0).unwrap() };
     trace!("alloc DMA: paddr={:#x}, pages={}", paddr, pages);
     paddr
 }
@@ -110,7 +108,7 @@ extern "C" fn virtio_dma_alloc(pages: usize) -> PhysAddr {
 #[no_mangle]
 extern "C" fn virtio_dma_dealloc(paddr: PhysAddr, pages: usize) -> i32 {
     for i in 0..pages {
-        unsafe{
+        unsafe {
             frame_dealloc(&(paddr + i * PAGE_SIZE));
         }
     }

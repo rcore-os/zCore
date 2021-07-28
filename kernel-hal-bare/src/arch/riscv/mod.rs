@@ -1,12 +1,12 @@
 use super::super::*;
 use kernel_hal::{PageTableTrait, PhysAddr, VirtAddr};
-use riscv::asm::sfence_vma_all;
 use riscv::addr::Page;
+use riscv::asm::sfence_vma_all;
 use riscv::paging::{PageTableFlags as PTF, *};
-use riscv::register::{time, satp, sie, stval};
+use riscv::register::{satp, sie, stval, time};
 //use crate::sbi;
-use core::fmt::{ self, Write };
 use alloc::{collections::VecDeque, vec::Vec};
+use core::fmt::{self, Write};
 
 mod sbi;
 
@@ -19,63 +19,145 @@ static mut SATP: usize = 0;
 
 /// remap kernel with 4K page
 pub fn remap_the_kernel(dtb: usize) {
-        let root_frame = Frame::alloc().expect("failed to alloc frame");
-        let root_vaddr = phys_to_virt(root_frame.paddr);
-        let root = unsafe { &mut *(root_vaddr as *mut PageTable) };
-        root.zero();
-        let mut pt = Rv39PageTable::new(root, PHYSICAL_MEMORY_OFFSET);
+    let root_frame = Frame::alloc().expect("failed to alloc frame");
+    let root_vaddr = phys_to_virt(root_frame.paddr);
+    let root = unsafe { &mut *(root_vaddr as *mut PageTable) };
+    root.zero();
+    let mut pt = Rv39PageTable::new(root, PHYSICAL_MEMORY_OFFSET);
 
-        let linear_offset = PHYSICAL_MEMORY_OFFSET;
-        //let mut flags = PTF::VALID | PTF::READABLE | PTF::WRITABLE | PTF::EXECUTABLE | PTF::USER;
+    let linear_offset = PHYSICAL_MEMORY_OFFSET;
+    //let mut flags = PTF::VALID | PTF::READABLE | PTF::WRITABLE | PTF::EXECUTABLE | PTF::USER;
 
-        map_range(&mut pt, stext as usize, etext as usize - 1, linear_offset, PTF::VALID | PTF::READABLE | PTF::EXECUTABLE).unwrap();
-        map_range(&mut pt, srodata as usize, erodata as usize, linear_offset, PTF::VALID | PTF::READABLE).unwrap();
-        map_range(&mut pt, sdata as usize, edata as usize, linear_offset, PTF::VALID | PTF::READABLE | PTF::WRITABLE).unwrap();
+    map_range(
+        &mut pt,
+        stext as usize,
+        etext as usize - 1,
+        linear_offset,
+        PTF::VALID | PTF::READABLE | PTF::EXECUTABLE,
+    )
+    .unwrap();
+    map_range(
+        &mut pt,
+        srodata as usize,
+        erodata as usize,
+        linear_offset,
+        PTF::VALID | PTF::READABLE,
+    )
+    .unwrap();
+    map_range(
+        &mut pt,
+        sdata as usize,
+        edata as usize,
+        linear_offset,
+        PTF::VALID | PTF::READABLE | PTF::WRITABLE,
+    )
+    .unwrap();
 
-        // Stack
-        map_range(&mut pt, bootstack as usize, bootstacktop as usize - 1, linear_offset, PTF::VALID | PTF::READABLE | PTF::WRITABLE).unwrap();
+    // Stack
+    map_range(
+        &mut pt,
+        bootstack as usize,
+        bootstacktop as usize - 1,
+        linear_offset,
+        PTF::VALID | PTF::READABLE | PTF::WRITABLE,
+    )
+    .unwrap();
 
-        map_range(&mut pt, sbss as usize, ebss as usize - 1, linear_offset, PTF::VALID | PTF::READABLE | PTF::WRITABLE).unwrap();
+    map_range(
+        &mut pt,
+        sbss as usize,
+        ebss as usize - 1,
+        linear_offset,
+        PTF::VALID | PTF::READABLE | PTF::WRITABLE,
+    )
+    .unwrap();
 
-        // Heap
-        map_range(&mut pt, end as usize, end as usize + PAGE_SIZE*512, linear_offset, PTF::VALID | PTF::READABLE | PTF::WRITABLE).unwrap();
+    // Heap
+    map_range(
+        &mut pt,
+        end as usize,
+        end as usize + PAGE_SIZE * 512,
+        linear_offset,
+        PTF::VALID | PTF::READABLE | PTF::WRITABLE,
+    )
+    .unwrap();
 
-        // Device Tree
-        map_range(&mut pt, dtb, dtb + consts::MAX_DTB_SIZE, linear_offset, PTF::VALID | PTF::READABLE).unwrap();
+    // Device Tree
+    map_range(
+        &mut pt,
+        dtb,
+        dtb + consts::MAX_DTB_SIZE,
+        linear_offset,
+        PTF::VALID | PTF::READABLE,
+    )
+    .unwrap();
 
-        // CLINT
-        map_range(&mut pt, 0x2000000 + PHYSICAL_MEMORY_OFFSET, 0x2010000 + PHYSICAL_MEMORY_OFFSET, linear_offset, PTF::VALID | PTF::READABLE | PTF::WRITABLE).unwrap();
-        
-        // PLIC
-        map_range(&mut pt, 0xc000000 + PHYSICAL_MEMORY_OFFSET, 0xc00f000 + PHYSICAL_MEMORY_OFFSET, linear_offset, PTF::VALID | PTF::READABLE | PTF::WRITABLE).unwrap();
-        map_range(&mut pt, 0xc200000 + PHYSICAL_MEMORY_OFFSET, 0xc20f000 + PHYSICAL_MEMORY_OFFSET, linear_offset, PTF::VALID | PTF::READABLE | PTF::WRITABLE).unwrap();
+    // CLINT
+    map_range(
+        &mut pt,
+        0x2000000 + PHYSICAL_MEMORY_OFFSET,
+        0x2010000 + PHYSICAL_MEMORY_OFFSET,
+        linear_offset,
+        PTF::VALID | PTF::READABLE | PTF::WRITABLE,
+    )
+    .unwrap();
 
-        // UART0, VIRTIO
-        map_range(&mut pt, 0x10000000 + PHYSICAL_MEMORY_OFFSET, 0x1000f000 + PHYSICAL_MEMORY_OFFSET, linear_offset, PTF::VALID | PTF::READABLE | PTF::WRITABLE).unwrap();
+    // PLIC
+    map_range(
+        &mut pt,
+        0xc000000 + PHYSICAL_MEMORY_OFFSET,
+        0xc00f000 + PHYSICAL_MEMORY_OFFSET,
+        linear_offset,
+        PTF::VALID | PTF::READABLE | PTF::WRITABLE,
+    )
+    .unwrap();
+    map_range(
+        &mut pt,
+        0xc200000 + PHYSICAL_MEMORY_OFFSET,
+        0xc20f000 + PHYSICAL_MEMORY_OFFSET,
+        linear_offset,
+        PTF::VALID | PTF::READABLE | PTF::WRITABLE,
+    )
+    .unwrap();
 
+    // UART0, VIRTIO
+    map_range(
+        &mut pt,
+        0x10000000 + PHYSICAL_MEMORY_OFFSET,
+        0x1000f000 + PHYSICAL_MEMORY_OFFSET,
+        linear_offset,
+        PTF::VALID | PTF::READABLE | PTF::WRITABLE,
+    )
+    .unwrap();
 
-        //写satp
-        let token = root_frame.paddr;
-        unsafe {
-            set_page_table(token);
-            SATP = token;
-        }
+    //写satp
+    let token = root_frame.paddr;
+    unsafe {
+        set_page_table(token);
+        SATP = token;
+    }
 
-        //use core::mem;
-        //mem::forget(pt);
+    //use core::mem;
+    //mem::forget(pt);
 
-        info!("remap the kernel @ {:#x}", token);
+    info!("remap the kernel @ {:#x}", token);
 }
 
-pub fn map_range(page_table: &mut Rv39PageTable, mut start_addr: VirtAddr, mut end_addr: VirtAddr, linear_offset: usize, flags: PageTableFlags) -> Result<(),()> {
+pub fn map_range(
+    page_table: &mut Rv39PageTable,
+    mut start_addr: VirtAddr,
+    mut end_addr: VirtAddr,
+    linear_offset: usize,
+    flags: PageTableFlags,
+) -> Result<(), ()> {
     trace!("Mapping range addr: {:#x} ~ {:#x}", start_addr, end_addr);
 
-    start_addr = start_addr & !(PAGE_SIZE -1);
+    start_addr = start_addr & !(PAGE_SIZE - 1);
     let mut start_page = start_addr / PAGE_SIZE;
 
     //end_addr = (end_addr + PAGE_SIZE - 1) & !(PAGE_SIZE -1);
     //let end_page = (end_addr - 1) / PAGE_SIZE;
-    end_addr = end_addr & !(PAGE_SIZE -1);
+    end_addr = end_addr & !(PAGE_SIZE - 1);
     let end_page = end_addr / PAGE_SIZE;
 
     while start_page <= end_page {
@@ -85,12 +167,23 @@ pub fn map_range(page_table: &mut Rv39PageTable, mut start_addr: VirtAddr, mut e
 
         start_page += 1;
 
-        trace!("map_range: {:#x} -> {:#x}, flags={:?}", vaddr, vaddr - linear_offset, flags);
-        page_table.map_to(page, frame, flags, &mut FrameAllocatorImpl)
+        trace!(
+            "map_range: {:#x} -> {:#x}, flags={:?}",
+            vaddr,
+            vaddr - linear_offset,
+            flags
+        );
+        page_table
+            .map_to(page, frame, flags, &mut FrameAllocatorImpl)
             .unwrap()
             .flush();
     }
-    info!("map range from {:#x} to {:#x}, flags: {:?}", start_addr, end_page * PAGE_SIZE, flags);
+    info!(
+        "map range from {:#x} to {:#x}, flags: {:?}",
+        start_addr,
+        end_page * PAGE_SIZE,
+        flags
+    );
 
     Ok(())
 }
@@ -165,7 +258,13 @@ impl PageTableTrait for PageTableImpl {
             .unwrap()
             .flush();
 
-        trace!("PageTable: {:#X}, map: {:x?} -> {:x?}, flags={:?}", self.table_phys() as usize, vaddr, paddr, flags);
+        trace!(
+            "PageTable: {:#X}, map: {:x?} -> {:x?}, flags={:?}",
+            self.table_phys() as usize,
+            vaddr,
+            paddr,
+            flags
+        );
         Ok(())
     }
 
@@ -175,7 +274,11 @@ impl PageTableTrait for PageTableImpl {
         let mut pt = self.get();
         let page = Page::of_addr(riscv::addr::VirtAddr::new(vaddr));
         pt.unmap(page).unwrap().1.flush();
-        trace!("PageTable: {:#X}, unmap: {:x?}", self.table_phys() as usize, vaddr);
+        trace!(
+            "PageTable: {:#X}, unmap: {:x?}",
+            self.table_phys() as usize,
+            vaddr
+        );
         Ok(())
     }
 
@@ -188,10 +291,15 @@ impl PageTableTrait for PageTableImpl {
 
         if vaddr == 0x11b000 {
             info!("protect 0x11b3c0: {:#X?}", self.query(0x11b3c0));
-        }else if vaddr == 0xc4000 {
+        } else if vaddr == 0xc4000 {
             info!("protect 0xc44b6: {:#X?}", self.query(0xc44b6));
         }
-        trace!("PageTable: {:#X}, protect: {:x?}, flags={:?}", self.table_phys() as usize, vaddr, flags);
+        trace!(
+            "PageTable: {:#X}, protect: {:x?}, flags={:?}",
+            self.table_phys() as usize,
+            vaddr,
+            flags
+        );
         Ok(())
     }
 
@@ -216,7 +324,7 @@ impl PageTableTrait for PageTableImpl {
 
     /// Activate this page table
     #[export_name = "hal_pt_activate"]
-    fn activate(&self){
+    fn activate(&self) {
         let now_token = satp::read().bits();
         let new_token = self.table_phys();
         if now_token != new_token {
@@ -284,7 +392,8 @@ impl FrameDeallocator for FrameAllocatorImpl {
 
 lazy_static! {
     static ref STDIN: Mutex<VecDeque<u8>> = Mutex::new(VecDeque::new());
-    static ref STDIN_CALLBACK: Mutex<Vec<Box<dyn Fn() -> bool + Send + Sync>>> = Mutex::new(Vec::new());
+    static ref STDIN_CALLBACK: Mutex<Vec<Box<dyn Fn() -> bool + Send + Sync>>> =
+        Mutex::new(Vec::new());
 }
 
 //调用这里
@@ -344,41 +453,46 @@ pub fn getchar_option() -> Option<u8> {
 
 ////////////
 
-pub fn putchar(ch: char){
-	sbi::console_putchar(ch as u8 as usize);
+pub fn putchar(ch: char) {
+    sbi::console_putchar(ch as u8 as usize);
 }
 
-pub fn puts(s: &str){
-	for ch in s.chars(){
-		putchar(ch);
-	}
+pub fn puts(s: &str) {
+    for ch in s.chars() {
+        putchar(ch);
+    }
 }
 
 struct Stdout;
 
 impl fmt::Write for Stdout {
-	fn write_str(&mut self, s: &str) -> fmt::Result {
-		puts(s);
-		Ok(())
-	}
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        puts(s);
+        Ok(())
+    }
 }
 
 pub fn putfmt(fmt: fmt::Arguments) {
-	Stdout.write_fmt(fmt).unwrap();
+    Stdout.write_fmt(fmt).unwrap();
 }
 ////////////
 
 struct Stdout1;
 impl fmt::Write for Stdout1 {
-	fn write_str(&mut self, s: &str) -> fmt::Result {
-		//每次都创建一个新的Uart ? 内存位置始终相同
-        write!(uart::Uart::new(0x1000_0000 + PHYSICAL_MEMORY_OFFSET), "{}", s).unwrap();
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        //每次都创建一个新的Uart ? 内存位置始终相同
+        write!(
+            uart::Uart::new(0x1000_0000 + PHYSICAL_MEMORY_OFFSET),
+            "{}",
+            s
+        )
+        .unwrap();
 
-		Ok(())
-	}
+        Ok(())
+    }
 }
 pub fn putfmt_uart(fmt: fmt::Arguments) {
-	Stdout1.write_fmt(fmt).unwrap();
+    Stdout1.write_fmt(fmt).unwrap();
 }
 
 ////////////
@@ -439,15 +553,14 @@ pub fn init(config: Config) {
     sbi::send_ipi(0);
     */
 
-    unsafe{
+    unsafe {
         llvm_asm!("ebreak"::::"volatile");
     }
 
-	bare_println!("Setup virtio @devicetree {:#x}", config.dtb);
+    bare_println!("Setup virtio @devicetree {:#x}", config.dtb);
     //virtio::init(config.dtb);
 
     virtio::device_tree::init(config.dtb);
-
 }
 
 pub struct Config {
@@ -460,10 +573,7 @@ pub fn fetch_fault_vaddr() -> VirtAddr {
     stval::read() as _
 }
 
-static mut CONFIG: Config = Config {
-    mconfig: 0,
-    dtb: 0,
-};
+static mut CONFIG: Config = Config { mconfig: 0, dtb: 0 };
 
 /// This structure represents the information that the bootloader passes to the kernel.
 #[repr(C)]
@@ -480,7 +590,6 @@ pub struct BootInfo {
     //pub acpi2_rsdp_addr: u64,
     /// Physical address of SMBIOS, 产品管理信息的结构表
     //pub smbios_addr: u64,
-
     pub hartid: u64,
     pub dtb_addr: u64,
 
@@ -510,4 +619,3 @@ mod plic;
 mod uart;
 
 pub mod virtio;
-

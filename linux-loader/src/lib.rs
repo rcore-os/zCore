@@ -12,7 +12,7 @@ extern crate log;
 use {
     alloc::{boxed::Box, string::String, sync::Arc, vec::Vec},
     core::{future::Future, pin::Pin},
-    kernel_hal::{UserContext, MMUFlags},
+    kernel_hal::{MMUFlags, UserContext},
     linux_object::{
         fs::{vfs::FileSystem, INodeExt},
         loader::LinuxElfLoader,
@@ -20,10 +20,7 @@ use {
         thread::ThreadExt,
     },
     linux_syscall::Syscall,
-    zircon_object::{
-        task::*,
-        object::KernelObject,
-    }
+    zircon_object::{object::KernelObject, task::*},
 };
 
 /// Create and run main Linux process
@@ -146,10 +143,12 @@ async fn new_thread(thread: CurrentThread) {
 
                     //kernel_hal::InterruptManager::handle(trap_num as u8);
                 }
-                _ => panic!("not supported pid: {} interrupt {} from user mode. {:#x?}", pid, trap_num, cx),
+                _ => panic!(
+                    "not supported pid: {} interrupt {} from user mode. {:#x?}",
+                    pid, trap_num, cx
+                ),
             }
-
-        }else{
+        } else {
             match trap_num {
                 // syscall
                 8 => handle_syscall(&thread, &mut cx).await,
@@ -166,7 +165,10 @@ async fn new_thread(thread: CurrentThread) {
                         MMUFlags::READ
                     };
 
-                    info!("page fualt from pid: {} user mode, vaddr:{:#x}, trap:{}", pid, vaddr, trap_num);
+                    info!(
+                        "page fualt from pid: {} user mode, vaddr:{:#x}, trap:{}",
+                        pid, vaddr, trap_num
+                    );
                     let vmar = thread.proc().vmar();
                     match vmar.handle_page_fault(vaddr, flags) {
                         Ok(()) => {}
@@ -175,7 +177,10 @@ async fn new_thread(thread: CurrentThread) {
                         }
                     }
                 }
-                _ => panic!("not supported pid: {} exception {} from user mode. {:#x?}", pid, trap_num, cx),
+                _ => panic!(
+                    "not supported pid: {} exception {} from user mode. {:#x?}",
+                    pid, trap_num, cx
+                ),
             }
         }
 
@@ -209,7 +214,14 @@ async fn handle_syscall(thread: &CurrentThread, regs: &mut GeneralRegs) {
 async fn handle_syscall(thread: &CurrentThread, cx: &mut UserContext) {
     trace!("syscall: {:#x?}", cx.general);
     let num = cx.general.a7 as u32;
-    let args = [cx.general.a0, cx.general.a1, cx.general.a2, cx.general.a3, cx.general.a4, cx.general.a5];
+    let args = [
+        cx.general.a0,
+        cx.general.a1,
+        cx.general.a2,
+        cx.general.a3,
+        cx.general.a4,
+        cx.general.a5,
+    ];
     // add before fork
     cx.sepc += 4;
 

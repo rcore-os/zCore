@@ -65,7 +65,12 @@ pub struct Syscall<'a> {
 impl Syscall<'_> {
     /// syscall entry function
     pub async fn syscall(&mut self, num: u32, args: [usize; 6]) -> isize {
-        debug!("pid: {} syscall: num={}, args={:x?}", self.zircon_process().id(), num, args);
+        debug!(
+            "pid: {} syscall: num={}, args={:x?}",
+            self.zircon_process().id(),
+            num,
+            args
+        );
         let sys_type = match Sys::try_from(num) {
             Ok(t) => t,
             Err(_) => {
