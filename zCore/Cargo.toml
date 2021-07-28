@@ -19,7 +19,8 @@ lto = true
 log = "0.4"
 spin = "0.7"
 buddy_system_allocator = "0.7"
-rlibc-opt = { git = "https://github.com/rcore-os/rlibc-opt.git", rev = "0ab1d1e" }
+rlibc-opt = { git = "https://github.com/rcore-os/rlibc-opt.git", rev = "fb1d4a9" }
+#rlibc-opt = { git = "https://github.com/rcore-os/rlibc-opt.git", branch = "master" }
 rboot = { path = "../rboot", default-features = false }
 kernel-hal-bare = { path = "../kernel-hal-bare" }
 lazy_static = { version = "1.4", features = ["spin_no_std" ] }
