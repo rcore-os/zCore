@@ -78,7 +78,7 @@ impl INode for Stdin {
         #[must_use = "future does nothing unless polled/`await`-ed"]
         struct SerialFuture<'a> {
             stdin: &'a Stdin,
-        };
+        }
 
         impl<'a> Future for SerialFuture<'a> {
             type Output = Result<PollStatus>;

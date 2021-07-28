@@ -21,7 +21,7 @@ impl Syscall<'_> {
     /// Fork the current process. Return the child's PID.
     pub fn sys_fork(&self) -> SysResult {
         info!("fork:");
-        let new_proc = Process::fork_from(self.zircon_process(), false)?;// old pt NULL here
+        let new_proc = Process::fork_from(self.zircon_process(), false)?; // old pt NULL here
         let new_thread = Thread::create_linux(&new_proc)?;
 
         #[cfg(not(target_arch = "riscv64"))]
@@ -46,7 +46,11 @@ impl Syscall<'_> {
         new_thread.start_with_context(self.context, self.thread_fn)?;
 
         let new_proc: Arc<dyn KernelObject> = new_proc;
-        info!("vfork: {} -> {}. Waiting for execve SIGNALED", self.zircon_process().id(), new_proc.id());
+        info!(
+            "vfork: {} -> {}. Waiting for execve SIGNALED",
+            self.zircon_process().id(),
+            new_proc.id()
+        );
         new_proc.wait_signal(Signal::SIGNALED).await; // wait for execve
         Ok(new_proc.id() as usize)
     }
@@ -211,7 +215,12 @@ impl Syscall<'_> {
         {
             self.context.general = GeneralRegs::new_fn(entry, sp, 0, 0);
             self.context.sepc = entry;
-            info!("execve: PageTable: {:#x}, entry: {:#x}, sp: {:#x}", self.zircon_process().vmar().table_phys(), self.context.sepc, self.context.general.sp);
+            info!(
+                "execve: PageTable: {:#x}, entry: {:#x}, sp: {:#x}",
+                self.zircon_process().vmar().table_phys(),
+                self.context.sepc,
+                self.context.general.sp
+            );
         }
 
         Ok(0)
@@ -395,7 +404,10 @@ impl RegExt for GeneralRegs {
 #[cfg(target_arch = "riscv64")]
 impl RegExt for GeneralRegs {
     fn new_fn(entry: usize, sp: usize, arg1: usize, arg2: usize) -> Self {
-        info!("new_fn(), Did NOT save ip:{:#x} register! x_x Saved sp: {:#x}", entry, sp);
+        info!(
+            "new_fn(), Did NOT save ip:{:#x} register! x_x Saved sp: {:#x}",
+            entry, sp
+        );
         GeneralRegs {
             sp: sp,
             a0: arg1,

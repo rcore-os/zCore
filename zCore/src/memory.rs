@@ -1,14 +1,10 @@
 //! Define the FrameAllocator for physical memory
 //! x86_64      --  64GB
 
-use {
-    bitmap_allocator::BitAlloc,
-    buddy_system_allocator::LockedHeap,
-    spin::Mutex,
-};
 use core::alloc::Layout;
-use core::ptr::NonNull;
 use core::mem;
+use core::ptr::NonNull;
+use {bitmap_allocator::BitAlloc, buddy_system_allocator::LockedHeap, spin::Mutex};
 
 #[cfg(target_arch = "x86_64")]
 use {
@@ -17,10 +13,10 @@ use {
 };
 
 #[cfg(target_arch = "riscv64")]
-use riscv::{addr::Frame,
-            paging::{
-                PageTable, PageTableFlags as EF
-            }};
+use riscv::{
+    addr::Frame,
+    paging::{PageTable, PageTableFlags as EF},
+};
 
 #[cfg(target_arch = "x86_64")]
 type FrameAlloc = bitmap_allocator::BitAlloc16M;
@@ -123,7 +119,9 @@ pub fn init_heap() {
 pub extern "C" fn hal_heap_alloc(size: &usize, align: &usize) -> usize {
     let ret = HEAP_ALLOCATOR
         .lock()
-        .alloc(Layout::from_size_align(*size, *align).unwrap()).unwrap().as_ptr();
+        .alloc(Layout::from_size_align(*size, *align).unwrap())
+        .unwrap()
+        .as_ptr();
 
     trace!("Allocate heap: {:x?}", ret);
     ret as usize
@@ -132,9 +130,10 @@ pub extern "C" fn hal_heap_alloc(size: &usize, align: &usize) -> usize {
 #[no_mangle]
 pub extern "C" fn hal_heap_dealloc(ptr: &usize, size: &usize, align: &usize) {
     trace!("Deallocate heap: {:x}", *ptr);
-    HEAP_ALLOCATOR
-        .lock()
-        .dealloc(NonNull::new(*ptr as *mut u8).unwrap(), Layout::from_size_align(*size, *align).unwrap());
+    HEAP_ALLOCATOR.lock().dealloc(
+        NonNull::new(*ptr as *mut u8).unwrap(),
+        Layout::from_size_align(*size, *align).unwrap(),
+    );
 }
 
 #[no_mangle]
@@ -189,8 +188,15 @@ pub extern "C" fn hal_pt_map_kernel(pt: &mut PageTable, current: &PageTable) {
     let ekernel = current[KERNEL_L2].clone(); //Kernel
     let ephysical = current[PHYSICAL_MEMORY_L2].clone(); //0xffffffff_00000000 --> 0x00000000
     pt[KERNEL_L2].set(Frame::of_addr(ekernel.addr()), ekernel.flags() | EF::GLOBAL);
-    pt[PHYSICAL_MEMORY_L2].set(Frame::of_addr(ephysical.addr()), ephysical.flags() | EF::GLOBAL);
-    debug!("KERNEL_L2:{:x?}, PHYSICAL_MEMORY_L2:{:x?}", ekernel.addr(), ephysical.addr());
+    pt[PHYSICAL_MEMORY_L2].set(
+        Frame::of_addr(ephysical.addr()),
+        ephysical.flags() | EF::GLOBAL,
+    );
+    debug!(
+        "KERNEL_L2:{:x?}, PHYSICAL_MEMORY_L2:{:x?}",
+        ekernel.addr(),
+        ephysical.addr()
+    );
 }
 
 // First core stores its SATP here.

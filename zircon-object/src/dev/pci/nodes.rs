@@ -33,7 +33,7 @@ pub struct PcieUpstream {
 
 struct PcieUpstreamInner {
     weak_super: Weak<dyn IPciNode>,
-    downstream: [Option<Arc<dyn IPciNode>>; PCI_MAX_FUNCTIONS_PER_BUS],
+    downstream: Box<[Option<Arc<dyn IPciNode>>]>,
 }
 
 impl PcieUpstream {
@@ -42,7 +42,12 @@ impl PcieUpstream {
             managed_bus_id,
             inner: Mutex::new(PcieUpstreamInner {
                 weak_super: Weak::<PciRoot>::new(),
-                downstream: [None; PCI_MAX_FUNCTIONS_PER_BUS],
+                downstream: {
+                    let mut vec =
+                        Vec::<Option<Arc<dyn IPciNode>>>::with_capacity(PCI_MAX_FUNCTIONS_PER_BUS);
+                    vec.resize(PCI_MAX_FUNCTIONS_PER_BUS, None);
+                    vec.into_boxed_slice()
+                },
             }),
         })
     }

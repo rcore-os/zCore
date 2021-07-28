@@ -88,7 +88,10 @@ impl LinuxElfLoader {
         stack_vmo.write(self.stack_pages * PAGE_SIZE - init_stack.len(), &init_stack)?;
         sp -= init_stack.len();
 
-        debug!("ProcInitInfo auxv: {:#x?}\nentry:{:#x}, sp:{:#x}", info.auxv, entry, sp);
+        debug!(
+            "ProcInitInfo auxv: {:#x?}\nentry:{:#x}, sp:{:#x}",
+            info.auxv, entry, sp
+        );
 
         Ok((entry, sp))
     }

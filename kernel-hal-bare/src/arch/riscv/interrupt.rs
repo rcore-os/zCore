@@ -1,47 +1,40 @@
-use riscv::register::{
-	scause::{
-		self,
-		Trap,
-		Exception,
-		Interrupt,
-	},
-    satp,
-    sie,
-    stval,
-    sstatus,
-};
-use trapframe::{TrapFrame, UserContext};
 use alloc::boxed::Box;
 use alloc::vec::Vec;
+use riscv::register::{
+    satp,
+    scause::{self, Exception, Interrupt, Trap},
+    sie, sstatus, stval,
+};
 use spin::Mutex;
+use trapframe::{TrapFrame, UserContext};
 
 /*
 use crate::timer::{
-	TICKS,
-	clock_set_next_event,
+    TICKS,
+    clock_set_next_event,
     clock_close,
 };
 */
 
 //use crate::context::TrapFrame;
-use super::sbi;
 use super::plic;
+use super::sbi;
 use super::uart;
 
-use crate::{putfmt, map_range, phys_to_virt};
 use super::consts::PHYSICAL_MEMORY_OFFSET;
 use super::timer_set_next;
+use crate::{map_range, phys_to_virt, putfmt};
 
 //global_asm!(include_str!("trap.asm"));
 
 /*
 #[repr(C)]
 pub struct TrapFrame{
-	pub x: [usize; 32], //General registers
-	pub sstatus: Sstatus,
-	pub sepc: usize,
-	pub stval: usize,
-	pub scause: Scause,
+    pub x: [usize; 32], //General registers
+    pub sstatus: Sstatus,
+    pub sepc: usize,
+    pub stval: usize,
+    pub scause: Scause,
 }
 */
 
@@ -52,27 +45,25 @@ lazy_static! {
 }
 
 fn init_irq() {
-
     init_irq_table();
     irq_add_handle(Timer, Box::new(super_timer)); //模拟参照了x86_64,把timer处理函数也放进去了
-    //irq_add_handle(Keyboard, Box::new(keyboard));
+                                                  //irq_add_handle(Keyboard, Box::new(keyboard));
     irq_add_handle(S_PLIC, Box::new(plic::handle_interrupt));
 }
 
-pub fn init(){
-	unsafe{
-
-		sstatus::set_sie();
+pub fn init() {
+    unsafe {
+        sstatus::set_sie();
 
         init_uart();
 
         sie::set_sext();
         init_ext();
-	}
+    }
 
     init_irq();
 
-	bare_println!("+++ setup interrupt +++");
+    bare_println!("+++ setup interrupt +++");
 }
 
 #[no_mangle]
@@ -83,20 +74,26 @@ pub extern "C" fn trap_handler(tf: &mut TrapFrame) {
     let is_int = scause.bits() >> 63;
     let code = scause.bits() & !(1 << 63);
 
-	match scause.cause() {
-		Trap::Exception(Exception::Breakpoint) => breakpoint(&mut tf.sepc),
-		Trap::Exception(Exception::IllegalInstruction) => panic!("IllegalInstruction: {:#x}->{:#x}", sepc, stval),
-        Trap::Exception(Exception::LoadFault) => panic!("Load access fault: {:#x}->{:#x}", sepc, stval),
-        Trap::Exception(Exception::StoreFault) => panic!("Store access fault: {:#x}->{:#x}", sepc, stval),
+    match scause.cause() {
+        Trap::Exception(Exception::Breakpoint) => breakpoint(&mut tf.sepc),
+        Trap::Exception(Exception::IllegalInstruction) => {
+            panic!("IllegalInstruction: {:#x}->{:#x}", sepc, stval)
+        }
+        Trap::Exception(Exception::LoadFault) => {
+            panic!("Load access fault: {:#x}->{:#x}", sepc, stval)
+        }
+        Trap::Exception(Exception::StoreFault) => {
+            panic!("Store access fault: {:#x}->{:#x}", sepc, stval)
+        }
         Trap::Exception(Exception::LoadPageFault) => page_fault(stval, tf),
         Trap::Exception(Exception::StorePageFault) => page_fault(stval, tf),
         Trap::Exception(Exception::InstructionPageFault) => page_fault(stval, tf),
-		Trap::Interrupt(Interrupt::SupervisorTimer) => super_timer(),
-		Trap::Interrupt(Interrupt::SupervisorSoft) => super_soft(),
+        Trap::Interrupt(Interrupt::SupervisorTimer) => super_timer(),
+        Trap::Interrupt(Interrupt::SupervisorSoft) => super_soft(),
         Trap::Interrupt(Interrupt::SupervisorExternal) => plic::handle_interrupt(),
-		//Trap::Interrupt(Interrupt::SupervisorExternal) => irq_handle(code as u8),
-		_ => panic!("Undefined Trap: {:#x} {:#x}", is_int, code)
-	}
+        //Trap::Interrupt(Interrupt::SupervisorExternal) => irq_handle(code as u8),
+        _ => panic!("Undefined Trap: {:#x} {:#x}", is_int, code),
+    }
 }
 
 fn init_irq_table() {
@@ -202,44 +199,47 @@ pub fn overwrite_handler(msi_id: u32, handle: Box<dyn Fn() + Send + Sync>) -> bo
     set
 }
 
-fn breakpoint(sepc: &mut usize){
-	bare_println!("Exception::Breakpoint: A breakpoint set @0x{:x} ", sepc);
+fn breakpoint(sepc: &mut usize) {
+    bare_println!("Exception::Breakpoint: A breakpoint set @0x{:x} ", sepc);
 
-	//sepc为触发中断指令ebreak的地址
-	//防止无限循环中断，让sret返回时跳转到sepc的下一条指令地址
-	*sepc +=2
+    //sepc为触发中断指令ebreak的地址
+    //防止无限循环中断，让sret返回时跳转到sepc的下一条指令地址
+    *sepc += 2
 }
 
-fn page_fault(stval: usize, tf: &mut TrapFrame){
+fn page_fault(stval: usize, tf: &mut TrapFrame) {
     let this_scause = scause::read();
-    info!("EXCEPTION Page Fault: {:?} @ {:#x}->{:#x}", this_scause.cause(), tf.sepc, stval);
+    info!(
+        "EXCEPTION Page Fault: {:?} @ {:#x}->{:#x}",
+        this_scause.cause(),
+        tf.sepc,
+        stval
+    );
     let vaddr = stval;
 
-    use riscv::paging::{Rv39PageTable, PageTableFlags as PTF, *};
-    use riscv::addr::{Page, PhysAddr, VirtAddr};
     use crate::PageTableImpl;
-    use kernel_hal::{PageTableTrait, MMUFlags};
+    use kernel_hal::{MMUFlags, PageTableTrait};
+    use riscv::addr::{Page, PhysAddr, VirtAddr};
+    use riscv::paging::{PageTableFlags as PTF, Rv39PageTable, *};
 
     //let mut flags = PTF::VALID;
     let code = this_scause.code();
-    let mut flags = 
-        if code == 15 {
-            //MMUFlags::WRITE ???
-            MMUFlags::READ | MMUFlags::WRITE
-        }else if code == 12 {
-            MMUFlags::EXECUTE
-        }else {
-            MMUFlags::READ
-        };
+    let mut flags = if code == 15 {
+        //MMUFlags::WRITE ???
+        MMUFlags::READ | MMUFlags::WRITE
+    } else if code == 12 {
+        MMUFlags::EXECUTE
+    } else {
+        MMUFlags::READ
+    };
 
-    let linear_offset = 
-        if stval >= PHYSICAL_MEMORY_OFFSET {
-            // Kernel
-            PHYSICAL_MEMORY_OFFSET
-        }else{
-            // User
-            0
-        };
+    let linear_offset = if stval >= PHYSICAL_MEMORY_OFFSET {
+        // Kernel
+        PHYSICAL_MEMORY_OFFSET
+    } else {
+        // User
+        0
+    };
 
     /*
     let current =
@@ -248,16 +248,19 @@ fn page_fault(stval: usize, tf: &mut TrapFrame){
     map_range(&mut pt, vaddr, vaddr, linear_offset, flags);
     */
 
-    let mut pti = 
-        PageTableImpl {
-            root_paddr: satp::read().frame().start_address().as_usize(),
-        };
+    let mut pti = PageTableImpl {
+        root_paddr: satp::read().frame().start_address().as_usize(),
+    };
 
     let page = Page::of_addr(VirtAddr::new(vaddr));
     if let Ok(pte) = pti.get().ref_entry(page) {
         let pte = unsafe { &mut *(pte as *mut PageTableEntry) };
         if !pte.is_unused() {
-            debug!("PageAlreadyMapped -> {:#x?}, {:?}", pte.addr().as_usize(), pte.flags());
+            debug!(
+                "PageAlreadyMapped -> {:#x?}, {:?}",
+                pte.addr().as_usize(),
+                pte.flags()
+            );
             //TODO update flags
 
             pti.unmap(vaddr).unwrap();
@@ -266,16 +269,16 @@ fn page_fault(stval: usize, tf: &mut TrapFrame){
     pti.map(vaddr, vaddr - linear_offset, flags).unwrap();
 }
 
-fn super_timer(){
+fn super_timer() {
     timer_set_next();
     super::timer_tick();
 
     //bare_print!(".");
 
-	//发生外界中断时，epc的指令还没有执行，故无需修改epc到下一条
+    //发生外界中断时，epc的指令还没有执行，故无需修改epc到下一条
 }
 
-fn init_uart(){
+fn init_uart() {
     uart::Uart::new(0x1000_0000 + PHYSICAL_MEMORY_OFFSET).simple_init();
 
     //但当没有SBI_CONSOLE_PUTCHAR时，却为什么不行？
@@ -295,7 +298,7 @@ pub fn try_process_serial() -> bool {
     }
 }
 
-pub fn init_ext(){
+pub fn init_ext() {
     // Qemu virt
     // UART0 = 10
     plic::set_priority(10, 7);
@@ -305,23 +308,22 @@ pub fn init_ext(){
     bare_println!("+++ Setting up PLIC +++");
 }
 
-fn super_soft(){
+fn super_soft() {
     sbi::clear_ipi();
     bare_println!("Interrupt::SupervisorSoft!");
 }
 
-pub fn init_soft(){
+pub fn init_soft() {
     unsafe {
         sie::set_ssoft();
     }
-	bare_println!("+++ setup soft int! +++");
+    bare_println!("+++ setup soft int! +++");
 }
 
 #[export_name = "fetch_trap_num"]
 pub fn fetch_trap_num(_context: &UserContext) -> usize {
     scause::read().bits()
 }
-
 
 pub fn wait_for_interrupt() {
     unsafe {

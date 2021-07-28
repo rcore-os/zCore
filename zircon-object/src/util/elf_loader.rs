@@ -74,7 +74,11 @@ fn make_vmo(elf: &ElfFile, ph: ProgramHeader) -> ZxResult<Arc<VmObject>> {
     let page_offset = ph.virtual_addr() as usize % PAGE_SIZE;
     // (VirtAddr余数 + MemSiz)的pages
     let pages = pages(ph.mem_size() as usize + page_offset);
-    trace!("VmObject new pages: {:#x}, virtual_addr: {:#x}", pages, page_offset);
+    trace!(
+        "VmObject new pages: {:#x}, virtual_addr: {:#x}",
+        pages,
+        page_offset
+    );
     let vmo = VmObject::new_paged(pages);
     let data = match ph.get_data(&elf).unwrap() {
         SegmentData::Undefined(data) => data,

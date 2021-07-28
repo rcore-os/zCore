@@ -481,8 +481,8 @@ impl VmAddressRegion {
     }
 
     /// Get information of this VmAddressRegion
-    pub fn get_info(&self, va: usize) -> VmarInfo {
     //pub fn get_info(&self) -> VmarInfo {
+    pub fn get_info(&self, va: usize) -> VmarInfo {
         let _r = self.page_table.lock().query(va);
         VmarInfo {
             base: self.addr(),

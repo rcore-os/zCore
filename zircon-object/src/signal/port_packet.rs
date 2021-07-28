@@ -93,8 +93,9 @@ pub struct PacketGuestMem {
 #[cfg(target_arch = "riscv64")]
 #[repr(C)]
 #[derive(Default, Debug, Copy, Clone, Eq, PartialEq)]
-pub struct PacketGuestMem { //保持32节的空间
+pub struct PacketGuestMem {
     pub addr: u64,
+    //保持32字节的空间
     pub _reserved: u64,
     pub _reserved1: u64,
     pub _reserved2: u64,
