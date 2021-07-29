@@ -1,6 +1,10 @@
 name: CI
 
-on: [push, pull_request]
+on: 
+  push:
+  pull_request:
+  schedule:
+    - corn: '20 21 * * *'
 
 jobs:
   check:
