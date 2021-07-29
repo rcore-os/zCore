@@ -10,7 +10,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly-2021-07-27
+          toolchain: nightly
           override: true
           components: rustfmt, clippy
       - name: Check code format
@@ -35,7 +35,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly-2021-07-27
+          toolchain: nightly
           components: rust-src
       - name: Build
         uses: actions-rs/cargo@v1
@@ -45,10 +45,11 @@ jobs:
         run: |
           cd zCore
           make build arch=x86_64 
-      - name: Build zCore with hypervisor
-        run: |
-          cd zCore
-          make build hypervisor=1
+      # FIX LATER
+      # - name: Build zCore with hypervisor
+      #   run: |
+      #     cd zCore
+      #     make build hypervisor=1
 
   build-aarch64:
     runs-on: ubuntu-20.04
@@ -57,7 +58,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly-2021-07-27
+          toolchain: nightly
           override: true
           target: aarch64-unknown-linux-gnu
       - uses: actions-rs/cargo@v1
@@ -78,7 +79,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly-2021-07-27
+          toolchain: nightly
           target: x86_64-fuchsia
       - name: Build Zircon user programs
         run: |
@@ -137,7 +138,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly-2021-07-27
+          toolchain: nightly
           components: rust-src
       - name: Install QEMU
         run: |
