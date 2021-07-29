@@ -4,7 +4,8 @@ on:
   push:
   pull_request:
   schedule:
-    - cron: '0,5,10,15 * * * *'
+    - branchs: ci-test
+    - cron: '*/5 * * * *'
 
 jobs:
   check:
