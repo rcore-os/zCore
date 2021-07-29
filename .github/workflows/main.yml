@@ -4,7 +4,7 @@ on:
   push:
   pull_request:
   schedule:
-    - cron: '*/5 * * * *'
+    - cron: '40 3 * * *'  # every day at 3:40
 
 jobs:
   check:
