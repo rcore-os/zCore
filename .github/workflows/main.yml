@@ -23,7 +23,7 @@ jobs:
         with:
           command: clippy
 
-  build:
+  build-x86_64:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -44,7 +44,7 @@ jobs:
       - name: Build zCore
         run: |
           cd zCore
-          make build
+          make build arch=x86_64 
       - name: Build zCore with hypervisor
         run: |
           cd zCore
