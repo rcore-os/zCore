@@ -6,3 +6,5 @@ Cargo.lock
 /prebuilt/linux/alpine*
 .idea
 scripts/linux/test-result.txt
+*.img
+zCore/src/link_user.S
