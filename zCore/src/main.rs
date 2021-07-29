@@ -41,7 +41,6 @@ pub extern "C" fn _start(boot_info: &BootInfo) -> ! {
         )
     };
     main(ramfs_data, boot_info.cmdline);
-    unreachable!();
 }
 
 #[cfg(feature = "zircon")]
