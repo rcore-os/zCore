@@ -57,7 +57,7 @@ fn main(ramfs_data: &[u8], cmdline: &str) {
 }
 
 #[cfg(feature = "linux")]
-fn main(ramfs_data: &'static mut [u8], _cmdline: &str) {
+fn main(ramfs_data: &'static mut [u8], _cmdline: &str) -> ! {
     use alloc::boxed::Box;
     use alloc::sync::Arc;
     use alloc::vec;

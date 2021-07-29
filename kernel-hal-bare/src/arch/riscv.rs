@@ -1,5 +1,5 @@
 use super::*;
-use kernel_hal::{PageTableTrait, PhysAddr, VirtAddr, Result};
+use kernel_hal::{PageTableTrait, PhysAddr, Result, VirtAddr};
 use riscv::addr::Page;
 use riscv::paging::{PageTableFlags as PTF, *};
 use riscv::register::satp;

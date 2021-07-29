@@ -9,7 +9,7 @@ use {
     core::ptr::NonNull,
     core::time::Duration,
     git_version::git_version,
-    kernel_hal::{Result, HalError, PageTableTrait},
+    kernel_hal::{HalError, PageTableTrait, Result},
     rcore_console::{Console, ConsoleOnGraphic, DrawTarget, Pixel, Rgb888, Size},
     spin::Mutex,
     uart_16550::SerialPort,
@@ -105,8 +105,12 @@ impl PageTableTrait for PageTableImpl {
                 trace!("unmap: {:x?} in {:#x?}", vaddr, self.root_paddr);
             }
             Err(mapper::UnmapError::PageNotMapped) => {
-                trace!("unmap not mapped, skip: {:x?} in {:#x?}", vaddr, self.root_paddr);
-                return Ok(())
+                trace!(
+                    "unmap not mapped, skip: {:x?} in {:#x?}",
+                    vaddr,
+                    self.root_paddr
+                );
+                return Ok(());
             }
             Err(err) => {
                 debug!(
@@ -138,7 +142,8 @@ impl PageTableTrait for PageTableImpl {
         let pt = self.get();
         let ret = pt
             .translate_addr(x86_64::VirtAddr::new(vaddr as u64))
-            .map(|addr| addr.as_u64() as PhysAddr).ok_or(HalError);
+            .map(|addr| addr.as_u64() as PhysAddr)
+            .ok_or(HalError);
         trace!("query: {:x?} => {:x?}", vaddr, ret);
         ret
     }
@@ -274,7 +279,8 @@ pub fn putfmt(fmt: Arguments) {
 
 lazy_static! {
     static ref STDIN: Mutex<VecDeque<u8>> = Mutex::new(VecDeque::new());
-    static ref STDIN_CALLBACK: Mutex<Vec<Box<dyn Fn() -> bool + Send + Sync>>> = Mutex::new(Vec::new());
+    static ref STDIN_CALLBACK: Mutex<Vec<Box<dyn Fn() -> bool + Send + Sync>>> =
+        Mutex::new(Vec::new());
 }
 
 /// Put a char by serial interrupt handler.
