@@ -64,7 +64,6 @@ impl LinuxElfLoader {
         let stack_bottom = vmar.map(None, stack_vmo.clone(), 0, stack_vmo.len(), flags)?;
         let mut sp = stack_bottom + stack_vmo.len();
         debug!("load stack bottom: {:#x}", stack_bottom);
-        vmar.get_info(stack_bottom);
 
         let info = abi::ProcInitInfo {
             args,
