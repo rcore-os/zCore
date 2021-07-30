@@ -22,10 +22,13 @@ jobs:
         with:
           command: fmt
           args: --all -- --check
-      - name: Clippy
-        uses: actions-rs/cargo@v1
-        with:
-          command: clippy
+      - name: Clippy x86_64
+        run: arch=x86_64 cargo clippy
+      - name: Clippy riscv64
+        run: arch=riscv64 cargo clippy
+#        uses: actions-rs/cargo@v1
+#        with:
+#          command: clippy
 
   build-x86_64:
     runs-on: ${{ matrix.os }}
@@ -42,9 +45,10 @@ jobs:
           toolchain: nightly-2021-07-27
           components: rust-src
       - name: Build
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
+        run: arch=x86_64 cargo build
+#        uses: actions-rs/cargo@v1
+#        with:
+#          command: build
       - name: Build zCore
         run: |
           cd zCore
