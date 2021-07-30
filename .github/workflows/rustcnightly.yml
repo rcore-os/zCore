@@ -43,6 +43,7 @@ jobs:
           toolchain: nightly
           components: rust-src
       - run: echo "nightly" >rust-toolchain
+      - run: echo "nightly" >./rboot/rust-toolchain
       - name: Build
         uses: actions-rs/cargo@v1
         with:
@@ -154,6 +155,7 @@ jobs:
           sudo apt update
           sudo apt install qemu-system-x86
       - run: echo "nightly" >rust-toolchain
+      - run: echo "nightly" >./rboot/rust-toolchain      
       - name: Build zCore
         run: |
           cd zCore
