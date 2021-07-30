@@ -1,4 +1,4 @@
-name: rustcnightly.CI
+name: rustcnightly CI
 
 on: 
   push:
