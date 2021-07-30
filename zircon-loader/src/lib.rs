@@ -112,7 +112,7 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
     let sp = stack_bottom + stack_vmo.len() - 8;
     #[cfg(target_arch = "aarch64")]
     let sp = stack_bottom + stack_vmo.len();
-    
+
     // channel
     let (user_channel, kernel_channel) = Channel::create();
     let handle = Handle::new(user_channel, Rights::DEFAULT_CHANNEL);

@@ -220,7 +220,7 @@ pub fn init(config: Config) {
 
     #[cfg(target_arch = "riscv64")]
     trace!("hal dtb: {:#x}", config.dtb);
-    
+
     arch::init(config);
 }
 

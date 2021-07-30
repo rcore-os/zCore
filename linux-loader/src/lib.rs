@@ -11,7 +11,7 @@ extern crate log;
 use {
     alloc::{boxed::Box, string::String, sync::Arc, vec::Vec},
     core::{future::Future, pin::Pin},
-    kernel_hal::{MMUFlags},
+    kernel_hal::MMUFlags,
     linux_object::{
         fs::{vfs::FileSystem, INodeExt},
         loader::LinuxElfLoader,
@@ -19,14 +19,11 @@ use {
         thread::ThreadExt,
     },
     linux_syscall::Syscall,
-    zircon_object::{task::*},
+    zircon_object::task::*,
 };
 
 #[cfg(target_arch = "riscv64")]
-use {
-    kernel_hal::UserContext,
-    zircon_object::object::KernelObject,
-};
+use {kernel_hal::UserContext, zircon_object::object::KernelObject};
 
 #[cfg(target_arch = "x86_64")]
 use kernel_hal::GeneralRegs;
@@ -90,7 +87,6 @@ async fn new_thread(thread: CurrentThread) {
         kernel_hal::context_run(&mut cx);
         trace!("back from user: {:#x?}", cx);
         // handle trap/interrupt/syscall
-        
 
         #[cfg(target_arch = "x86_64")]
         match cx.trap_num {
