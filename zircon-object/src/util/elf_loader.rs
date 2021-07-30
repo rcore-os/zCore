@@ -27,6 +27,8 @@ impl VmarExt for VmAddressRegion {
             let vmo = make_vmo(elf, ph)?;
             let offset = ph.virtual_addr() as usize / PAGE_SIZE * PAGE_SIZE;
             let flags = ph.flags().to_mmu_flags();
+            trace!("ph:{:#x?}, offset:{:#x?}, flags:{:#x?}", ph, offset, flags);
+            //映射vmo物理内存块到 VMAR
             self.map_at(offset, vmo.clone(), 0, vmo.len(), flags)?;
             first_vmo.get_or_insert(vmo);
         }
@@ -70,12 +72,19 @@ impl FlagsExt for Flags {
 fn make_vmo(elf: &ElfFile, ph: ProgramHeader) -> ZxResult<Arc<VmObject>> {
     assert_eq!(ph.get_type().unwrap(), Type::Load);
     let page_offset = ph.virtual_addr() as usize % PAGE_SIZE;
+    // (VirtAddr余数 + MemSiz)的pages
     let pages = pages(ph.mem_size() as usize + page_offset);
+    trace!(
+        "VmObject new pages: {:#x}, virtual_addr: {:#x}",
+        pages,
+        page_offset
+    );
     let vmo = VmObject::new_paged(pages);
     let data = match ph.get_data(elf).unwrap() {
         SegmentData::Undefined(data) => data,
         _ => return Err(ZxError::INVALID_ARGS),
     };
+    //调用 VMObjectTrait.write, 分配物理内存，后写入程序数据
     vmo.write(page_offset, data)?;
     Ok(vmo)
 }
@@ -88,6 +97,8 @@ pub trait ElfExt {
     fn get_symbol_address(&self, symbol: &str) -> Option<u64>;
     /// Get the program interpreter path name.
     fn get_interpreter(&self) -> Result<&str, &str>;
+    /// Get address of elf phdr
+    fn get_phdr_vaddr(&self) -> Option<u64>;
     /// Get the symbol table for dynamic linking (.dynsym section).
     fn dynsym(&self) -> Result<&[DynEntry64], &'static str>;
     /// Relocate according to the dynamic relocation section (.rel.dyn section).
@@ -131,6 +142,29 @@ impl ElfExt for ElfFile<'_> {
         Ok(path)
     }
 
+    /*
+     * [ ERROR ] page fualt from user mode 0x40 READ
+     */
+
+    fn get_phdr_vaddr(&self) -> Option<u64> {
+        if let Some(phdr) = self
+            .program_iter()
+            .find(|ph| ph.get_type() == Ok(Type::Phdr))
+        {
+            // if phdr exists in program header, use it
+            Some(phdr.virtual_addr())
+        } else if let Some(elf_addr) = self
+            .program_iter()
+            .find(|ph| ph.get_type() == Ok(Type::Load) && ph.offset() == 0)
+        {
+            // otherwise, check if elf is loaded from the beginning, then phdr can be inferred.
+            Some(elf_addr.virtual_addr() + self.header.pt2.ph_offset())
+        } else {
+            warn!("elf: no phdr found, tls might not work");
+            None
+        }
+    }
+
     fn dynsym(&self) -> Result<&[DynEntry64], &'static str> {
         match self
             .find_section_by_name(".dynsym")
@@ -159,8 +193,10 @@ impl ElfExt for ElfFile<'_> {
             const REL_GOT: u32 = 6;
             const REL_PLT: u32 = 7;
             const REL_RELATIVE: u32 = 8;
+            const R_RISCV_64: u32 = 2;
+            const R_RISCV_RELATIVE: u32 = 3;
             match entry.get_type() {
-                REL_GOT | REL_PLT => {
+                REL_GOT | REL_PLT | R_RISCV_64 => {
                     let dynsym = &dynsym[entry.get_symbol_table_index() as usize];
                     let symval = if dynsym.shndx() == 0 {
                         let name = dynsym.get_name(self)?;
@@ -171,13 +207,15 @@ impl ElfExt for ElfFile<'_> {
                     let value = symval + entry.get_addend() as usize;
                     unsafe {
                         let ptr = (base + entry.get_offset() as usize) as *mut usize;
+                        debug!("GOT write: {:#x} @ {:#x}", value, ptr as usize);
                         ptr.write(value);
                     }
                 }
-                REL_RELATIVE => {
+                REL_RELATIVE | R_RISCV_RELATIVE => {
                     let value = base + entry.get_addend() as usize;
                     unsafe {
                         let ptr = (base + entry.get_offset() as usize) as *mut usize;
+                        debug!("RELATIVE write: {:#x} @ {:#x}", value, ptr as usize);
                         ptr.write(value);
                     }
                 }

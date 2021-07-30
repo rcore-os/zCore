@@ -100,14 +100,17 @@ impl INode for Stdin {
 
         Box::pin(SerialFuture { stdin: self })
     }
-    /*
+
+    //
     fn io_control(&self, cmd: u32, data: usize) -> Result<usize> {
         match cmd as usize {
             TCGETS | TIOCGWINSZ | TIOCSPGRP => {
+                warn!("TCGETS | TIOCGWINSZ | TIOCSPGRP, pretend to be tty.");
                 // pretend to be tty
                 Ok(0)
             }
             TIOCGPGRP => {
+                warn!("TIOCGPGRP, pretend to be have a tty process group.");
                 // pretend to be have a tty process group
                 // TODO: verify pointer
                 unsafe { *(data as *mut u32) = 0 };
@@ -116,7 +119,7 @@ impl INode for Stdin {
             _ => Err(FsError::NotSupported),
         }
     }
-    */
+
     fn as_any_ref(&self) -> &dyn Any {
         self
     }
@@ -154,6 +157,27 @@ impl INode for Stdout {
             _ => Err(FsError::NotSupported),
         }
     }
+
+    /// Get metadata of the INode
+    fn metadata(&self) -> Result<Metadata> {
+        Ok(Metadata {
+            dev: 1,
+            inode: 13,
+            size: 0,
+            blk_size: 0,
+            blocks: 0,
+            atime: Timespec { sec: 0, nsec: 0 },
+            mtime: Timespec { sec: 0, nsec: 0 },
+            ctime: Timespec { sec: 0, nsec: 0 },
+            type_: FileType::CharDevice,
+            mode: 0o666,
+            nlinks: 1,
+            uid: 0,
+            gid: 0,
+            rdev: make_rdev(5, 0),
+        })
+    }
+
     fn as_any_ref(&self) -> &dyn Any {
         self
     }

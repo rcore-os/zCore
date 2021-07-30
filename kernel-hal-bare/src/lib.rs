@@ -15,8 +15,10 @@
 
 #![no_std]
 #![feature(asm)]
+#![feature(llvm_asm)]
+#![feature(global_asm)]
 #![feature(linkage)]
-#![deny(warnings)]
+//#![deny(warnings)]
 
 #[macro_use]
 extern crate log;
@@ -46,10 +48,14 @@ pub use self::arch::*;
 #[allow(improper_ctypes)]
 extern "C" {
     fn hal_pt_map_kernel(pt: *mut u8, current: *const u8);
-    fn hal_frame_alloc() -> Option<PhysAddr>;
-    fn hal_frame_dealloc(paddr: &PhysAddr);
+    fn frame_alloc() -> Option<usize>;
+    fn hal_frame_alloc_contiguous(page_num: usize, align_log2: usize) -> Option<usize>;
+    fn frame_dealloc(paddr: &usize);
     #[link_name = "hal_pmem_base"]
     static PMEM_BASE: usize;
+
+    fn hal_heap_alloc(size: &usize, align: &usize) -> usize;
+    fn hal_heap_dealloc(ptr: &usize, size: &usize, align: &usize);
 }
 
 #[repr(C)]
@@ -114,13 +120,15 @@ pub struct Frame {
 }
 
 impl Frame {
+    #[export_name = "hal_frame_alloc"]
     pub fn alloc() -> Option<Self> {
-        unsafe { hal_frame_alloc().map(|paddr| Frame { paddr }) }
+        unsafe { frame_alloc().map(|paddr| Frame { paddr }) }
     }
 
+    #[export_name = "hal_frame_dealloc"]
     pub fn dealloc(&mut self) {
         unsafe {
-            hal_frame_dealloc(&self.paddr);
+            frame_dealloc(&self.paddr);
         }
     }
 
@@ -135,6 +143,10 @@ impl Frame {
 
 fn phys_to_virt(paddr: PhysAddr) -> VirtAddr {
     unsafe { PMEM_BASE + paddr }
+}
+
+fn virt_to_phys(vaddr: VirtAddr) -> PhysAddr {
+    unsafe { vaddr - PMEM_BASE }
 }
 
 /// Read physical memory from `paddr` to `buf`.
@@ -175,6 +187,19 @@ pub fn frame_copy(src: PhysAddr, target: PhysAddr) {
     }
 }
 
+<<<<<<< HEAD
+=======
+/// Zero `target` frame.
+#[export_name = "hal_frame_zero"]
+pub fn frame_zero_in_range(target: PhysAddr, start: usize, end: usize) {
+    assert!(start < PAGE_SIZE && end <= PAGE_SIZE);
+    trace!("frame_zero: {:#x?}", target);
+    unsafe {
+        core::ptr::write_bytes(phys_to_virt(target + start) as *mut u8, 0, end - start);
+    }
+}
+
+>>>>>>> rv64
 lazy_static! {
     pub static ref NAIVE_TIMER: Mutex<Timer> = Mutex::new(Timer::default());
 }
@@ -195,6 +220,7 @@ pub fn init(config: Config) {
     unsafe {
         trapframe::init();
     }
+    trace!("hal dtb: {:#x}", config.dtb);
     arch::init(config);
 }
 

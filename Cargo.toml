@@ -7,6 +7,7 @@ members = [
     "linux-syscall",
     "linux-loader",
     "kernel-hal-unix",
+    "kernel-hal-bare",
     "kernel-hal",
 ]
 

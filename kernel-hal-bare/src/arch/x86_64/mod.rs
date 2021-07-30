@@ -143,7 +143,11 @@ impl PageTableTrait for PageTableImpl {
         let ret = pt
             .translate_addr(x86_64::VirtAddr::new(vaddr as u64))
             .map(|addr| addr.as_u64() as PhysAddr)
+<<<<<<< HEAD
             .ok_or(HalError);
+=======
+            .ok_or(());
+>>>>>>> rv64
         trace!("query: {:x?} => {:x?}", vaddr, ret);
         ret
     }

@@ -526,6 +526,7 @@ impl VMObjectPagedInner {
                     return Ok(CommitResult::Ref(PhysFrame::zero_frame_addr()));
                 }
                 // lazy allocate zero frame
+                // 这里会调用HAL层的hal_frame_alloc, 请注意实现该函数时参数要一样
                 let target_frame = PhysFrame::alloc().ok_or(ZxError::NO_MEMORY)?;
                 kernel_hal::pmem_zero(target_frame.addr(), PAGE_SIZE);
                 if out_of_range {
@@ -807,6 +808,7 @@ impl VMObjectPagedInner {
         for map in self.mappings.iter() {
             if let Some(map) = map.upgrade() {
                 map.range_change(pages(offset), pages(len), RangeChangeOp::RemoveWrite);
+                //用于写时复制
             }
         }
         Ok(child)

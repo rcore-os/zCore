@@ -32,7 +32,7 @@ impl LinuxElfLoader {
         envs: Vec<String>,
         path: String,
     ) -> LxResult<(VirtAddr, VirtAddr)> {
-        info!("load: vmar: {:?} args: {:?}, envs: {:?}", vmar, args, envs);
+        //info!("load: vmar.addr: {:#x?}, args: {:?}, envs: {:?}", vmar.get_info(), args, envs);
         let elf = ElfFile::new(data).map_err(|_| ZxError::INVALID_ARGS)?;
         if let Ok(interp) = elf.get_interpreter() {
             info!("interp: {:?}", interp);
@@ -54,21 +54,30 @@ impl LinuxElfLoader {
             vmo.write(offset as usize, &self.syscall_entry.to_ne_bytes())?;
         }
 
-        elf.relocate(base).map_err(|_| ZxError::INVALID_ARGS)?;
+        match elf.relocate(base) {
+            Ok(()) => info!("elf relocate passed !"),
+            Err(error) => warn!("elf relocate Err:{:?}", error),
+        }
 
         let stack_vmo = VmObject::new_paged(self.stack_pages);
         let flags = MMUFlags::READ | MMUFlags::WRITE | MMUFlags::USER;
         let stack_bottom = vmar.map(None, stack_vmo.clone(), 0, stack_vmo.len(), flags)?;
         let mut sp = stack_bottom + stack_vmo.len();
+        debug!("load stack bottom: {:#x}", stack_bottom);
+        vmar.get_info(stack_bottom);
 
         let info = abi::ProcInitInfo {
             args,
             envs,
             auxv: {
                 let mut map = BTreeMap::new();
-                map.insert(abi::AT_BASE, base);
-                map.insert(abi::AT_PHDR, base + elf.header.pt2.ph_offset() as usize);
-                map.insert(abi::AT_ENTRY, entry);
+                //map.insert(abi::AT_BASE, base);
+                if let Some(phdr_vaddr) = elf.get_phdr_vaddr() {
+                    map.insert(abi::AT_PHDR, phdr_vaddr as usize);
+                }
+                //信息写到stack中
+
+                //map.insert(abi::AT_ENTRY, entry);
                 map.insert(abi::AT_PHENT, elf.header.pt2.ph_entry_size() as usize);
                 map.insert(abi::AT_PHNUM, elf.header.pt2.ph_count() as usize);
                 map.insert(abi::AT_PAGESZ, PAGE_SIZE);
@@ -78,6 +87,11 @@ impl LinuxElfLoader {
         let init_stack = info.push_at(sp);
         stack_vmo.write(self.stack_pages * PAGE_SIZE - init_stack.len(), &init_stack)?;
         sp -= init_stack.len();
+
+        debug!(
+            "ProcInitInfo auxv: {:#x?}\nentry:{:#x}, sp:{:#x}",
+            info.auxv, entry, sp
+        );
 
         Ok((entry, sp))
     }

@@ -28,4 +28,10 @@ rcore-console = { git = "https://github.com/rcore-os/rcore-console", default-fea
 acpi = "1.1"
 
 [target.'cfg(any(target_arch = "riscv32", target_arch = "riscv64"))'.dependencies]
-riscv = { git = "https://github.com/rcore-os/riscv", features = ["inline-asm"], rev = "c62af46" }
+riscv = { git = "https://github.com/rcore-os/riscv", features = ["inline-asm"], rev = "0074cbc" }
+# 注意rev版本号必须与其他组件的完全一致，不可多字符
+rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "6df6cd2" }
+device_tree = { git = "https://github.com/rcore-os/device_tree-rs" }
+virtio-drivers = { git = "https://github.com/rcore-os/virtio-drivers", rev = "568276" }
+bitflags = "1.0"
+volatile = "0.2"

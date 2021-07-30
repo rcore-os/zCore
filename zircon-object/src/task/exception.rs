@@ -142,6 +142,15 @@ struct ExceptionContext {
     padding2: u64,
 }
 
+#[cfg(target_arch = "riscv64")]
+#[repr(C)]
+#[derive(Debug, Default, Clone)]
+struct ExceptionContext {
+    padding1: u64,
+    padding2: u64,
+    padding3: u64,
+}
+
 impl ExceptionContext {
     #[cfg(target_arch = "x86_64")]
     fn from_user_context(cx: &UserContext) -> Self {
@@ -152,6 +161,10 @@ impl ExceptionContext {
         }
     }
     #[cfg(target_arch = "aarch64")]
+    fn from_user_context(_cx: &UserContext) -> Self {
+        unimplemented!()
+    }
+    #[cfg(target_arch = "riscv64")]
     fn from_user_context(_cx: &UserContext) -> Self {
         unimplemented!()
     }
