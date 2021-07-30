@@ -22,6 +22,7 @@ prebuilt/linux/$(ROOTFS_TAR):
 rootfs: prebuilt/linux/$(ROOTFS_TAR)
 	rm -rf rootfs && mkdir -p rootfs
 	tar xf $< -C rootfs
+# libc-libos.so (convert syscall to function call) is from https://github.com/rcore-os/musl/tree/rcore
 	cp prebuilt/linux/libc-libos.so rootfs/lib/ld-musl-x86_64.so.1
 	@for VAR in $(BASENAMES); do gcc $(TEST_DIR)$$VAR.c -o $(DEST_DIR)$$VAR $(CFLAG); done
 
@@ -41,6 +42,8 @@ $(OUT_IMG): prebuilt/linux/$(ROOTFS_TAR) rcore-fs-fuse
 	@tar xf $< -C $(TMP_ROOTFS)
 	@cp $(TMP_ROOTFS)/lib/ld-musl-x86_64.so.1 rootfs/lib/
 	@rcore-fs-fuse $@ rootfs zip
+# recover rootfs/ld-musl-x86_64.so.1 for zcore usr libos
+# libc-libos.so (convert syscall to function call) is from https://github.com/rcore-os/musl/tree/rcore
 	@cp prebuilt/linux/libc-libos.so rootfs/lib/ld-musl-x86_64.so.1
 
 image: $(OUT_IMG)
