@@ -23,10 +23,13 @@ jobs:
         with:
           command: fmt
           args: --all -- --check
-      - name: Clippy
-        uses: actions-rs/cargo@v1
-        with:
-          command: clippy
+      - name: Clippy x86_64
+        run: arch=x86_64 cargo clippy
+      - name: Clippy riscv64
+        run: arch=riscv64 cargo clippy
+#        uses: actions-rs/cargo@v1
+#        with:
+#          command: clippy
 
   build-x86_64:
     runs-on: ${{ matrix.os }}
@@ -45,9 +48,10 @@ jobs:
       - run: echo "nightly" >rust-toolchain
       - run: echo "nightly" >./rboot/rust-toolchain
       - name: Build
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
+        run: arch=x86_64 cargo build
+#        uses: actions-rs/cargo@v1
+#        with:
+#          command: build
       - name: Build zCore
         run: |
           cd zCore
@@ -105,10 +109,11 @@ jobs:
         run: make rootfs
       - run: echo "nightly" >rust-toolchain
       - name: Test
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --all-features --no-fail-fast --workspace --exclude zircon-loader
+        run: arch=x86_64 cargo test --all-features --no-fail-fast --workspace --exclude zircon-loader
+#        uses: actions-rs/cargo@v1
+#        with:
+#          command: test
+#          args: --all-features --no-fail-fast --workspace --exclude zircon-loader
         env:
           CARGO_INCREMENTAL: '0'
           RUSTFLAGS: '-Zprofile -Ccodegen-units=1 -Copt-level=0 -Coverflow-checks=off -Zpanic_abort_tests -Cpanic=abort'
@@ -133,9 +138,10 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: Run benchmarks
-        uses: actions-rs/cargo@v1
-        with:
-          command: bench
+        run: arch=x86_64 cargo bench
+#        uses: actions-rs/cargo@v1
+#        with:
+#          command: bench
 
   core-test:
     runs-on: ubuntu-20.04
@@ -179,10 +185,11 @@ jobs:
         run: make rootfs && make libc-test
       - run: echo "nightly" >rust-toolchain
       - name: Build
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --release -p linux-loader
+        run: arch=x86_64 cargo build --release -p linux-loader
+#        uses: actions-rs/cargo@v1
+#        with:
+#          command: build
+#          args: --release -p linux-loader
       - name: Run libc-tests
         run: |
           cd scripts
@@ -195,10 +202,11 @@ jobs:
       - uses: actions/checkout@v2
       - run: echo "nightly" >rust-toolchain
       - name: Build docs
-        uses: actions-rs/cargo@v1
-        with:
-          command: doc
-          args: --no-deps --all-features
+        run: arch=x86_64 cargo doc --no-deps --all-features
+#        uses: actions-rs/cargo@v1
+#        with:
+#          command: doc
+#          args: --no-deps --all-features
       - name: Deploy to Github Pages
         if: ${{ github.ref == 'refs/heads/master' }}
         uses: JamesIves/github-pages-deploy-action@releases/v3

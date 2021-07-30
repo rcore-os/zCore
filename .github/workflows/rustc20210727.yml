@@ -103,10 +103,11 @@ jobs:
       - name: Prepare rootfs
         run: make rootfs
       - name: Test
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --all-features --no-fail-fast --workspace --exclude zircon-loader
+        run: arch=x86_64 cargo test --all-features --no-fail-fast --workspace --exclude zircon-loader
+#        uses: actions-rs/cargo@v1
+#        with:
+#          command: test
+#          args: --all-features --no-fail-fast --workspace --exclude zircon-loader
         env:
           CARGO_INCREMENTAL: '0'
           RUSTFLAGS: '-Zprofile -Ccodegen-units=1 -Copt-level=0 -Coverflow-checks=off -Zpanic_abort_tests -Cpanic=abort'
@@ -131,9 +132,10 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: Run benchmarks
-        uses: actions-rs/cargo@v1
-        with:
-          command: bench
+        run: arch=x86_64 cargo bench
+#        uses: actions-rs/cargo@v1
+#        with:
+#          command: bench
 
   core-test:
     runs-on: ubuntu-20.04
@@ -174,10 +176,11 @@ jobs:
       - name: Prepare rootfs and libc-test
         run: make rootfs && make libc-test
       - name: Build
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --release -p linux-loader
+        run: arch=x86_64 cargo build --release -p linux-loader
+#        uses: actions-rs/cargo@v1
+#        with:
+#          command: build
+#          args: --release -p linux-loader
       - name: Run libc-tests
         run: |
           cd scripts
@@ -189,10 +192,11 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: Build docs
-        uses: actions-rs/cargo@v1
-        with:
-          command: doc
-          args: --no-deps --all-features
+        run: arch=x86_64 cargo doc --no-deps --all-features
+#        uses: actions-rs/cargo@v1
+#        with:
+#          command: doc
+#          args: --no-deps --all-features
       - name: Deploy to Github Pages
         if: ${{ github.ref == 'refs/heads/master' }}
         uses: JamesIves/github-pages-deploy-action@releases/v3
