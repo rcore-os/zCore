@@ -11,7 +11,7 @@ extern crate log;
 use {
     alloc::{boxed::Box, string::String, sync::Arc, vec::Vec},
     core::{future::Future, pin::Pin},
-    kernel_hal::{MMUFlags, UserContext},
+    kernel_hal::{MMUFlags},
     linux_object::{
         fs::{vfs::FileSystem, INodeExt},
         loader::LinuxElfLoader,
@@ -19,8 +19,17 @@ use {
         thread::ThreadExt,
     },
     linux_syscall::Syscall,
-    zircon_object::{object::KernelObject, task::*},
+    zircon_object::{task::*},
 };
+
+#[cfg(target_arch = "riscv64")]
+use {
+    kernel_hal::UserContext,
+    zircon_object::object::KernelObject,
+};
+
+#[cfg(target_arch = "x86_64")]
+use kernel_hal::GeneralRegs;
 
 /// Create and run main Linux process
 pub fn run(args: Vec<String>, envs: Vec<String>, rootfs: Arc<dyn FileSystem>) -> Arc<Process> {
@@ -81,8 +90,7 @@ async fn new_thread(thread: CurrentThread) {
         kernel_hal::context_run(&mut cx);
         trace!("back from user: {:#x?}", cx);
         // handle trap/interrupt/syscall
-
-        let pid = thread.proc().id();
+        
 
         #[cfg(target_arch = "x86_64")]
         match cx.trap_num {
@@ -114,75 +122,73 @@ async fn new_thread(thread: CurrentThread) {
 
         // UserContext
         #[cfg(target_arch = "riscv64")]
-        let trap_num = kernel_hal::fetch_trap_num(&cx);
-        #[cfg(target_arch = "riscv64")]
-        let is_interrupt = ((trap_num >> 63) & 1) == 1;
-        #[cfg(target_arch = "riscv64")]
-        let trap_num = trap_num & 0xfff;
+        {
+            let trap_num = kernel_hal::fetch_trap_num(&cx);
+            let is_interrupt = ((trap_num >> 63) & 1) == 1;
+            let trap_num = trap_num & 0xfff;
+            let pid = thread.proc().id();
+            if is_interrupt {
+                match trap_num {
+                    //Irq
+                    0 | 4 | 5 | 8 | 9 => {
+                        kernel_hal::InterruptManager::handle(trap_num as u8);
 
-        #[cfg(target_arch = "riscv64")]
-        if is_interrupt {
-            match trap_num {
-                //Irq
-                0 | 4 | 5 | 8 | 9 => {
-                    kernel_hal::InterruptManager::handle(trap_num as u8);
+                        //Timer
+                        if trap_num == 4 || trap_num == 5 {
+                            debug!("Timer interrupt: {}", trap_num);
 
-                    //Timer
-                    if trap_num == 4 || trap_num == 5 {
-                        debug!("Timer interrupt: {}", trap_num);
+                            /*
+                            * 已在irq_handle里加入了timer处理函数
+                            kernel_hal::timer_set_next();
+                            kernel_hal::timer_tick();
+                            */
 
-                        /*
-                         * 已在irq_handle里加入了timer处理函数
-                        kernel_hal::timer_set_next();
-                        kernel_hal::timer_tick();
-                        */
+                            kernel_hal::yield_now().await;
+                        }
 
-                        kernel_hal::yield_now().await;
+                        //kernel_hal::InterruptManager::handle(trap_num as u8);
                     }
-
-                    //kernel_hal::InterruptManager::handle(trap_num as u8);
+                    _ => panic!(
+                        "not supported pid: {} interrupt {} from user mode. {:#x?}",
+                        pid, trap_num, cx
+                    ),
                 }
-                _ => panic!(
-                    "not supported pid: {} interrupt {} from user mode. {:#x?}",
-                    pid, trap_num, cx
-                ),
-            }
-        } else {
-            match trap_num {
-                // syscall
-                8 => handle_syscall(&thread, &mut cx).await,
-                // PageFault
-                12 | 13 | 15 => {
-                    let vaddr = kernel_hal::fetch_fault_vaddr();
+            } else {
+                match trap_num {
+                    // syscall
+                    8 => handle_syscall(&thread, &mut cx).await,
+                    // PageFault
+                    12 | 13 | 15 => {
+                        let vaddr = kernel_hal::fetch_fault_vaddr();
 
-                    //注意这里flags没有包含WRITE权限，后面handle会移除写权限
-                    let flags = if trap_num == 15 {
-                        MMUFlags::WRITE
-                    } else if trap_num == 12 {
-                        MMUFlags::EXECUTE
-                    } else {
-                        MMUFlags::READ
-                    };
+                        //注意这里flags没有包含WRITE权限，后面handle会移除写权限
+                        let flags = if trap_num == 15 {
+                            MMUFlags::WRITE
+                        } else if trap_num == 12 {
+                            MMUFlags::EXECUTE
+                        } else {
+                            MMUFlags::READ
+                        };
 
-                    info!(
-                        "page fualt from pid: {} user mode, vaddr:{:#x}, trap:{}",
-                        pid, vaddr, trap_num
-                    );
-                    let vmar = thread.proc().vmar();
-                    match vmar.handle_page_fault(vaddr, flags) {
-                        Ok(()) => {}
-                        Err(error) => {
-                            panic!("{:?} Page Fault from user mode {:#x?}", error, cx);
+                        info!(
+                            "page fualt from pid: {} user mode, vaddr:{:#x}, trap:{}",
+                            pid, vaddr, trap_num
+                        );
+                        let vmar = thread.proc().vmar();
+                        match vmar.handle_page_fault(vaddr, flags) {
+                            Ok(()) => {}
+                            Err(error) => {
+                                panic!("{:?} Page Fault from user mode {:#x?}", error, cx);
+                            }
                         }
                     }
+                    _ => panic!(
+                        "not supported pid: {} exception {} from user mode. {:#x?}",
+                        pid, trap_num, cx
+                    ),
                 }
-                _ => panic!(
-                    "not supported pid: {} exception {} from user mode. {:#x?}",
-                    pid, trap_num, cx
-                ),
             }
         }
-
         thread.end_running(cx);
     }
 }

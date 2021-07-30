@@ -143,11 +143,7 @@ impl PageTableTrait for PageTableImpl {
         let ret = pt
             .translate_addr(x86_64::VirtAddr::new(vaddr as u64))
             .map(|addr| addr.as_u64() as PhysAddr)
-<<<<<<< HEAD
             .ok_or(HalError);
-=======
-            .ok_or(());
->>>>>>> rv64
         trace!("query: {:x?} => {:x?}", vaddr, ret);
         ret
     }
@@ -157,6 +153,12 @@ impl PageTableTrait for PageTableImpl {
     fn table_phys(&self) -> PhysAddr {
         self.root_paddr
     }
+
+    // /// Activate this page table
+    // #[export_name = "hal_pt_activate"]
+    // fn activate(&self) {
+    //     unimplemented!()
+    // }
 }
 
 /// Set page table.

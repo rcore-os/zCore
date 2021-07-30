@@ -70,6 +70,7 @@ pub trait PageTableTrait: Sync + Send {
     /// Get the physical address of root page table.
     fn table_phys(&self) -> PhysAddr;
 
+    #[cfg(target_arch = "riscv64")]
     /// Activate this page table
     fn activate(&self);
 
@@ -165,6 +166,7 @@ impl PageTableTrait for PageTable {
     }
 
     /// Activate this page table
+    #[cfg(target_arch = "riscv64")]
     #[linkage = "weak"]
     #[export_name = "hal_pt_activate"]
     fn activate(&self) {

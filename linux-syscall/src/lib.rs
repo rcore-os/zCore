@@ -33,10 +33,13 @@ use {
     self::consts::SyscallType as Sys,
     alloc::sync::Arc,
     core::convert::TryFrom,
-    kernel_hal::{user::*, GeneralRegs, UserContext},
+    kernel_hal::{user::*, GeneralRegs},
     linux_object::{error::*, fs::FileDesc, process::*},
     zircon_object::{object::*, task::*, vm::VirtAddr},
 };
+
+#[cfg(target_arch = "riscv64")]
+use kernel_hal::UserContext;
 
 mod consts;
 mod file;

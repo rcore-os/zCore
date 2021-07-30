@@ -187,8 +187,6 @@ pub fn frame_copy(src: PhysAddr, target: PhysAddr) {
     }
 }
 
-<<<<<<< HEAD
-=======
 /// Zero `target` frame.
 #[export_name = "hal_frame_zero"]
 pub fn frame_zero_in_range(target: PhysAddr, start: usize, end: usize) {
@@ -199,7 +197,6 @@ pub fn frame_zero_in_range(target: PhysAddr, start: usize, end: usize) {
     }
 }
 
->>>>>>> rv64
 lazy_static! {
     pub static ref NAIVE_TIMER: Mutex<Timer> = Mutex::new(Timer::default());
 }
@@ -220,7 +217,10 @@ pub fn init(config: Config) {
     unsafe {
         trapframe::init();
     }
+
+    #[cfg(target_arch = "riscv64")]
     trace!("hal dtb: {:#x}", config.dtb);
+    
     arch::init(config);
 }
 

@@ -38,8 +38,6 @@ struct PcieUpstreamInner {
 
 impl PcieUpstream {
     pub fn create(managed_bus_id: usize) -> Arc<Self> {
-        let mut downstream = Vec::new();
-        downstream.resize(PCI_MAX_FUNCTIONS_PER_BUS, None);
         Arc::new(PcieUpstream {
             managed_bus_id,
             inner: Mutex::new(PcieUpstreamInner {

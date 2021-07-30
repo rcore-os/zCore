@@ -12,6 +12,8 @@
 extern crate alloc;
 #[macro_use]
 extern crate log;
+
+#[cfg(target_arch = "riscv64")]
 extern crate rlibc;
 
 #[cfg(target_arch = "x86_64")]
@@ -52,15 +54,11 @@ pub extern "C" fn _start(boot_info: &BootInfo) -> ! {
 
     info!("{:#x?}", boot_info);
 
-    #[cfg(target_arch = "x86_64")]
     kernel_hal_bare::init(kernel_hal_bare::Config {
         acpi_rsdp: boot_info.acpi2_rsdp_addr,
         smbios: boot_info.smbios_addr,
         ap_fn: run,
     });
-
-    #[cfg(target_arch = "riscv64")]
-    kernel_hal_bare::init(kernel_hal_bare::Config { mconfig: 0 });
 
     let ramfs_data = unsafe {
         core::slice::from_raw_parts_mut(
@@ -124,23 +122,13 @@ pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
     });
 
     // memory test
-    //write_readonly_test();
-    //execute_unexecutable_test();
-    //read_invalid_test();
+    // write_readonly_test();
+    // execute_unexecutable_test();
+    // read_invalid_test();
 
     // 正常由bootloader载入文件系统镜像到内存, 这里不用，而使用后面的virtio
-    /*
-    let ramfs_data = unsafe {
-        core::slice::from_raw_parts_mut(
-            (boot_info.initramfs_addr + boot_info.physical_memory_offset) as *mut u8,
-            boot_info.initramfs_size as usize,
-        )
-    };
-
-    main(ramfs_data, boot_info.cmdline);
-    */
-    main(boot_info.cmdline);
-    unreachable!();
+    let dummy = unsafe { core::slice::from_raw_parts_mut(0 as *mut u8, 0) };
+    main(dummy, boot_info.cmdline);
 }
 
 #[cfg(feature = "linux")]
@@ -150,7 +138,8 @@ fn main(ramfs_data: &'static mut [u8], _cmdline: &str) -> ! {
     use alloc::sync::Arc;
     use alloc::vec;
 
-    //use linux_object::fs::MemBuf;
+    #[cfg(target_arch = "x86_64")]
+    use linux_object::fs::MemBuf;
     use linux_object::fs::STDIN;
 
     kernel_hal_bare::serial_set_callback(Box::new({
@@ -159,28 +148,18 @@ fn main(ramfs_data: &'static mut [u8], _cmdline: &str) -> ! {
             let len = kernel_hal_bare::serial_read(&mut buffer);
             for c in &buffer[..len] {
                 STDIN.push((*c).into());
-                //kernel_hal_bare::serial_write(alloc::format!("{}", *c as char).as_str());
+                // kernel_hal_bare::serial_write(alloc::format!("{}", *c as char).as_str());
             }
             false
         }
     }));
 
     let args: Vec<String> = vec!["/bin/busybox".into(), "sh".into()];
-    //let args: Vec<String> = vec!["/bin/busybox".into(), "sh".into()];
     let envs: Vec<String> = vec!["PATH=/usr/sbin:/usr/bin:/sbin:/bin".into()];
 
-    //需先初始化kernel-hal-bare virtio_blk驱动
-
-    // ROOT_INODE
-    //let device = Arc::new(MemBuf::new(ramfs_data));
-
-    /*
-    let device =
-        BLK_DRIVERS.read().iter()
-        .next().expect("Block device not found")
-        .clone();
-    */
-
+    #[cfg(target_arch = "x86_64")]
+    let device = Arc::new(MemBuf::new(ramfs_data));
+    #[cfg(target_arch = "riscv64")]
     let device = {
         let driver = BlockDriverWrapper(
             BLK_DRIVERS

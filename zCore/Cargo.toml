@@ -36,7 +36,7 @@ fatfs = { git = "https://github.com/rafalh/rust-fatfs.git", rev = "26fa79", defa
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 x86_64 = "0.14"
-rlibc-opt = { git = "https://github.com/rcore-os/rlibc-opt.git", rev = "0ab1d1e" }
+rlibc-opt = { git = "https://github.com/rcore-os/rlibc-opt.git", rev = "fb1d4a9" }
 # rlibc-opt = { git = "https://github.com/rcore-os/rlibc-opt.git", branch = "master" }
 rboot = { path = "../rboot", default-features = false }
 rvm = { git = "https://github.com/rcore-os/RVM", rev = "e91d625", optional = true }

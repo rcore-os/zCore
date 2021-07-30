@@ -110,10 +110,8 @@ build-parallel-test: build $(QEMU_DISK)
 
 ifeq ($(arch), riscv64)
 $(kernel_img): $(kernel_bin)
-
-### k210 使用opensbi
 else
-
+### k210 使用opensbi
 $(kernel_img): kernel bootloader
 	mkdir -p $(ESP)/EFI/zCore $(ESP)/EFI/Boot
 	cp ../rboot/target/x86_64-unknown-uefi/release/rboot.efi $(ESP)/EFI/Boot/BootX64.efi

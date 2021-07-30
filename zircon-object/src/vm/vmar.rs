@@ -481,9 +481,9 @@ impl VmAddressRegion {
     }
 
     /// Get information of this VmAddressRegion
-    //pub fn get_info(&self) -> VmarInfo {
-    pub fn get_info(&self, va: usize) -> VmarInfo {
-        let _r = self.page_table.lock().query(va);
+    pub fn get_info(&self) -> VmarInfo {
+        // pub fn get_info(&self, va: usize) -> VmarInfo {
+        // let _r = self.page_table.lock().query(va);
         VmarInfo {
             base: self.addr(),
             len: self.size,
@@ -495,6 +495,7 @@ impl VmAddressRegion {
         self.flags
     }
 
+    #[cfg(target_arch = "riscv64")]
     /// Activate this page table
     pub fn activate(&self) {
         self.page_table.lock().activate();
