@@ -10,7 +10,7 @@ edition = "2018"
 graphic = []
 zircon = ["zircon-loader"]
 linux = ["linux-loader", "linux-object", "rcore-fs-sfs"]
-hypervisor = ["rvm", "zircon", "zircon-object/hypervisor", "zircon-syscall/hypervisor"]
+#hypervisor = ["rvm", "zircon", "zircon-object/hypervisor", "zircon-syscall/hypervisor"]
 
 [profile.release]
 lto = true
@@ -19,20 +19,29 @@ lto = true
 log = "0.4"
 spin = "0.7"
 buddy_system_allocator = "0.7"
-rlibc-opt = { git = "https://github.com/rcore-os/rlibc-opt.git", rev = "0ab1d1e" }
-rboot = { path = "../rboot", default-features = false }
 kernel-hal-bare = { path = "../kernel-hal-bare" }
 lazy_static = { version = "1.4", features = ["spin_no_std" ] }
 bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator", rev = "03bd9909" }
-trapframe = "0.7.0"
+trapframe = "0.8.0"
 executor = { git = "https://github.com/rcore-os/executor.git", rev = "a2d02ee9" }
-zircon-object = { path = "../zircon-object" }
 zircon-loader = { path = "../zircon-loader", default-features = false, optional = true }
+zircon-syscall = { path = "../zircon-syscall", optional = true }
+zircon-object = { path = "../zircon-object" }
 linux-loader = { path = "../linux-loader", default-features = false, optional = true }
 linux-object = { path = "../linux-object", default-features = false, optional = true }
-zircon-syscall = { path = "../zircon-syscall", optional = true }
 rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "6df6cd2", optional = true }
-rvm = { git = "https://github.com/rcore-os/RVM", rev = "382fc60", optional = true }
+# FIX LATER
+# rvm = { git = "https://github.com/rcore-os/RVM", rev = "382fc60", optional = true }
+fatfs = { git = "https://github.com/rafalh/rust-fatfs.git", rev = "26fa79", default-features = false }
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
-x86_64 = "0.13.2"
+x86_64 = "0.14"
+rlibc-opt = { git = "https://github.com/rcore-os/rlibc-opt.git", rev = "fb1d4a9" }
+# rlibc-opt = { git = "https://github.com/rcore-os/rlibc-opt.git", branch = "master" }
+rboot = { path = "../rboot", default-features = false }
+rvm = { git = "https://github.com/rcore-os/RVM", rev = "e91d625", optional = true }
+
+[target.'cfg(target_arch = "riscv64")'.dependencies]
+rlibc = "1.0"
+riscv = { git = "https://github.com/rcore-os/riscv", features = ["inline-asm"], rev = "0074cbc" }
+rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "6df6cd2" }

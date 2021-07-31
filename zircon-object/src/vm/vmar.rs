@@ -78,7 +78,7 @@ impl VmAddressRegion {
             addr,
             size,
             parent: None,
-            page_table: Arc::new(Mutex::new(kernel_hal::PageTable::new())),
+            page_table: Arc::new(Mutex::new(kernel_hal::PageTable::new())), //hal PageTable
             inner: Mutex::new(Some(VmarInner::default())),
         })
     }
@@ -407,7 +407,7 @@ impl VmAddressRegion {
         if !check_aligned(len, align) {
             Err(ZxError::INVALID_ARGS)
         } else if let Some(offset) = offset {
-            if check_aligned(offset, align) && self.test_map(&inner, offset, len, align) {
+            if check_aligned(offset, align) && self.test_map(inner, offset, len, align) {
                 Ok(offset)
             } else {
                 Err(ZxError::INVALID_ARGS)
@@ -415,7 +415,7 @@ impl VmAddressRegion {
         } else if len > self.size {
             Err(ZxError::INVALID_ARGS)
         } else {
-            match self.find_free_area(&inner, 0, len, align) {
+            match self.find_free_area(inner, 0, len, align) {
                 Some(offset) => Ok(offset),
                 None => Err(ZxError::NO_MEMORY),
             }
@@ -482,6 +482,8 @@ impl VmAddressRegion {
 
     /// Get information of this VmAddressRegion
     pub fn get_info(&self) -> VmarInfo {
+        // pub fn get_info(&self, va: usize) -> VmarInfo {
+        // let _r = self.page_table.lock().query(va);
         VmarInfo {
             base: self.addr(),
             len: self.size,
@@ -491,6 +493,12 @@ impl VmAddressRegion {
     /// Get VmarFlags of this VMAR.
     pub fn get_flags(&self) -> VmarFlags {
         self.flags
+    }
+
+    #[cfg(target_arch = "riscv64")]
+    /// Activate this page table
+    pub fn activate(&self) {
+        self.page_table.lock().activate();
     }
 
     /// Dump all mappings recursively.
@@ -731,6 +739,7 @@ impl VmMapping {
             let vmo_offset = inner.vmo_offset / PAGE_SIZE;
             for i in 0..page_num {
                 let paddr = commit(vmo_offset + i, inner.flags[i])?;
+                //通过PageTableTrait的hal_pt_map进行页表映射
                 page_table
                     .map(inner.addr + i * PAGE_SIZE, paddr, inner.flags[i])
                     .expect("failed to map");
@@ -915,6 +924,8 @@ impl VmMapping {
             return Err(ZxError::ACCESS_DENIED);
         }
         if !access_flags.contains(MMUFlags::WRITE) {
+            //注意一下!
+            warn!("handle_page_fault remove MMUFlags::WRITE !");
             flags.remove(MMUFlags::WRITE)
         }
         let paddr = self.vmo.commit_page(page_idx, access_flags)?;
@@ -928,6 +939,7 @@ impl VmMapping {
 
     /// Clone VMO and map it to a new page table. (For Linux)
     fn clone_map(&self, page_table: Arc<Mutex<dyn PageTableTrait>>) -> ZxResult<Arc<Self>> {
+        //这里调用hal protect后,protect()好像会破坏页表
         let new_vmo = self.vmo.create_child(false, 0, self.vmo.len())?;
         let mapping = Arc::new(VmMapping {
             inner: Mutex::new(self.inner.lock().clone()),
@@ -958,7 +970,8 @@ pub const KERNEL_ASPACE_BASE: u64 = 0xffff_ff02_0000_0000;
 /// The size of kernel address space
 pub const KERNEL_ASPACE_SIZE: u64 = 0x0000_0080_0000_0000;
 /// The base of user address space
-pub const USER_ASPACE_BASE: u64 = 0x0000_0000_0100_0000;
+pub const USER_ASPACE_BASE: u64 = 0;
+// pub const USER_ASPACE_BASE: u64 = 0x0000_0000_0100_0000;
 /// The size of user address space
 pub const USER_ASPACE_SIZE: u64 = (1u64 << 47) - 4096 - USER_ASPACE_BASE;
 

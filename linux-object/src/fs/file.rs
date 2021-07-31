@@ -155,6 +155,7 @@ impl File {
     }
 
     /// get metadata of file
+    /// fstat
     pub fn metadata(&self) -> LxResult<Metadata> {
         let metadata = self.inode.metadata()?;
         Ok(metadata)
@@ -190,6 +191,7 @@ impl File {
 
     /// manipulates the underlying device parameters of special files
     pub fn io_control(&self, cmd: u32, arg: usize) -> LxResult<usize> {
+        // ioctl syscall
         self.inode.io_control(cmd, arg)?;
         Ok(0)
     }

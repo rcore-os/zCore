@@ -21,9 +21,14 @@ impl Syscall<'_> {
     /// Fork the current process. Return the child's PID.
     pub fn sys_fork(&self) -> SysResult {
         info!("fork:");
-        let new_proc = Process::fork_from(self.zircon_process(), false)?;
+        let new_proc = Process::fork_from(self.zircon_process(), false)?; // old pt NULL here
         let new_thread = Thread::create_linux(&new_proc)?;
+
+        #[cfg(not(target_arch = "riscv64"))]
         new_thread.start_with_regs(GeneralRegs::new_fork(self.regs), self.thread_fn)?;
+
+        #[cfg(target_arch = "riscv64")]
+        new_thread.start_with_context(self.context, self.thread_fn)?;
 
         info!("fork: {} -> {}", self.zircon_process().id(), new_proc.id());
         Ok(new_proc.id() as usize)
@@ -34,10 +39,18 @@ impl Syscall<'_> {
         info!("vfork:");
         let new_proc = Process::fork_from(self.zircon_process(), true)?;
         let new_thread = Thread::create_linux(&new_proc)?;
+        #[cfg(not(target_arch = "riscv64"))]
         new_thread.start_with_regs(GeneralRegs::new_fork(self.regs), self.thread_fn)?;
 
+        #[cfg(target_arch = "riscv64")]
+        new_thread.start_with_context(self.context, self.thread_fn)?;
+
         let new_proc: Arc<dyn KernelObject> = new_proc;
-        info!("vfork: {} -> {}", self.zircon_process().id(), new_proc.id());
+        info!(
+            "vfork: {} -> {}. Waiting for execve SIGNALED",
+            self.zircon_process().id(),
+            new_proc.id()
+        );
         new_proc.wait_signal(Signal::SIGNALED).await; // wait for execve
         Ok(new_proc.id() as usize)
     }
@@ -62,8 +75,8 @@ impl Syscall<'_> {
         );
         if flags == 0x4111 || flags == 0x11 {
             warn!("sys_clone is calling sys_fork instead, ignoring other args");
-            unimplemented!()
-            //            return self.sys_fork();
+            //unimplemented!()
+            return self.sys_fork();
         }
         if flags != 0x7d_0f00 && flags != 0x5d_0f00 {
             // 0x5d0f00: gcc of alpine linux
@@ -72,8 +85,14 @@ impl Syscall<'_> {
             panic!("unsupported sys_clone flags: {:#x}", flags);
         }
         let new_thread = Thread::create_linux(self.zircon_process())?;
-        let regs = GeneralRegs::new_clone(self.regs, newsp, newtls);
-        new_thread.start_with_regs(regs, self.thread_fn)?;
+        #[cfg(not(target_arch = "riscv64"))]
+        {
+            let regs = GeneralRegs::new_clone(self.regs, newsp, newtls);
+            new_thread.start_with_regs(regs, self.thread_fn)?;
+        }
+
+        #[cfg(target_arch = "riscv64")]
+        new_thread.start_with_context(self.context, self.thread_fn)?;
 
         let tid = new_thread.id();
         info!("clone: {} -> {}", self.thread.id(), tid);
@@ -177,13 +196,33 @@ impl Syscall<'_> {
         };
         let (entry, sp) = loader.load(&vmar, &data, args, envs, path.clone())?;
 
+        // Activate page table
+        //vmar.activate();
+
         // Modify exec path
         proc.set_execute_path(&path);
 
         // TODO: use right signal
-        self.zircon_process().signal_set(Signal::SIGNALED);
+        //self.zircon_process().signal_set(Signal::SIGNALED);
+        //Workaround, the child process could NOT exit correctly
 
-        *self.regs = GeneralRegs::new_fn(entry, sp, 0, 0);
+        #[cfg(not(target_arch = "riscv64"))]
+        {
+            *self.regs = GeneralRegs::new_fn(entry, sp, 0, 0);
+        }
+
+        #[cfg(target_arch = "riscv64")]
+        {
+            self.context.general = GeneralRegs::new_fn(entry, sp, 0, 0);
+            self.context.sepc = entry;
+            info!(
+                "execve: PageTable: {:#x}, entry: {:#x}, sp: {:#x}",
+                self.zircon_process().vmar().table_phys(),
+                self.context.sepc,
+                self.context.general.sp
+            );
+        }
+
         Ok(0)
     }
     //
@@ -360,5 +399,34 @@ impl RegExt for GeneralRegs {
 
     fn new_fork(regs: &Self) -> Self {
         GeneralRegs { rax: 0, ..*regs }
+    }
+}
+#[cfg(target_arch = "riscv64")]
+impl RegExt for GeneralRegs {
+    fn new_fn(entry: usize, sp: usize, arg1: usize, arg2: usize) -> Self {
+        info!(
+            "new_fn(), Did NOT save ip:{:#x} register! x_x Saved sp: {:#x}",
+            entry, sp
+        );
+        GeneralRegs {
+            sp: sp,
+            a0: arg1,
+            a1: arg2,
+            ..Default::default()
+        }
+    }
+
+    fn new_clone(regs: &Self, newsp: usize, newtls: usize) -> Self {
+        GeneralRegs {
+            a0: 0,
+            sp: newsp,
+            tp: newtls,
+            ..*regs
+        }
+    }
+
+    //设置了返回值为0
+    fn new_fork(regs: &Self) -> Self {
+        GeneralRegs { a0: 0, ..*regs }
     }
 }
