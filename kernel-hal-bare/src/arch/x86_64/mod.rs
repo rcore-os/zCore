@@ -23,6 +23,7 @@ use {
 mod acpi_table;
 mod interrupt;
 mod keyboard;
+mod rand;
 
 /// Page Table
 #[repr(C)]
