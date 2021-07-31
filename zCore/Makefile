@@ -3,7 +3,7 @@ mode ?= debug
 zbi_file ?= bringup
 graphic ?=
 accel ?=
-linux ?=
+linux ?= 1
 user ?=
 hypervisor ?=
 smp ?= 1
@@ -49,8 +49,9 @@ qemu_opts += \
 	-serial mon:stdio \
 	-m 4G \
 	-nic none \
-	-device isa-debug-exit,iobase=0xf4,iosize=0x04
-
+	-device isa-debug-exit,iobase=0xf4,iosize=0x04 \
+	-netdev type=user,id=net0,hostfwd=udp::6969-:6969 \
+	-device e1000e,netdev=net0
 else ifeq ($(arch), riscv64)
 qemu_opts += \
 	-machine virt \
@@ -60,7 +61,6 @@ qemu_opts += \
 	-drive file=$(QEMU_DISK),format=qcow2,id=sfs \
 	-device virtio-blk-device,drive=sfs \
 	-kernel $(kernel_bin)
-
 endif
 
 ifeq ($(hypervisor), 1)

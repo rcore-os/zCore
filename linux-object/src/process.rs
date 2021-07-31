@@ -301,6 +301,26 @@ impl LinuxProcess {
         Ok(file)
     }
 
+    // /// Get the `File` with given `socket fd`.
+    // pub fn get_socket_type(&self, fd: FileDesc) -> LxResult<Arc<TcpSocketState>> {
+    //     let file = self
+    //         .get_file_like(fd)?;
+    //     match file.file_type()? {
+    //         FileLikeType::RawSocket => {
+    //             file.downcast_arc::<RawSocketState>().map_err(|_| LxError::EBADF)?;
+    //         },
+    //         FileLikeType::TcpSocket => {
+    //             file.downcast_arc::<TcpSocketState>().map_err(|_| LxError::EBADF)?;
+    //         },
+    //         FileLikeType::UdpSocket => {
+    //             file.downcast_arc::<UdpSocketState>().map_err(|_| LxError::EBADF)?;
+    //         },
+    //     }
+    //         .downcast_arc::<TcpSocketState>()
+    //         .map_err(|_| LxError::EBADF)?;
+    //     Ok(file)
+    // }
+
     /// Get the `FileLike` with given `fd`.
     pub fn get_file_like(&self, fd: FileDesc) -> LxResult<Arc<dyn FileLike>> {
         let inner = self.inner.lock();

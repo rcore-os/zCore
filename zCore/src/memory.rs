@@ -138,7 +138,7 @@ pub extern "C" fn hal_heap_dealloc(ptr: &usize, size: &usize, align: &usize) {
 
 #[no_mangle]
 #[allow(improper_ctypes_definitions)]
-pub extern "C" fn frame_alloc() -> Option<usize> {
+pub extern "C" fn hal_frame_alloc() -> Option<usize> {
     // get the real address of the alloc frame
     let ret = FRAME_ALLOCATOR
         .lock()
@@ -164,7 +164,7 @@ pub extern "C" fn hal_frame_alloc_contiguous(page_num: usize, align_log2: usize)
 }
 
 #[no_mangle]
-pub extern "C" fn frame_dealloc(target: &usize) {
+pub extern "C" fn hal_frame_dealloc(target: &usize) {
     trace!("Deallocate frame: {:x}", *target);
     FRAME_ALLOCATOR
         .lock()

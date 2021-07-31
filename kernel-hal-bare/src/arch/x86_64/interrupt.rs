@@ -23,8 +23,13 @@ pub fn init() {
     irq_add_handle(Timer + IRQ0, Box::new(timer));
     irq_add_handle(Keyboard + IRQ0, Box::new(keyboard));
     irq_add_handle(COM1 + IRQ0, Box::new(com1));
+    irq_add_handle(57u8, Box::new(irq57test));
     irq_enable_raw(Keyboard, Keyboard + IRQ0);
     irq_enable_raw(COM1, COM1 + IRQ0);
+}
+
+fn irq57test() {
+    warn!("irq 57");
 }
 
 fn init_irq_table() {

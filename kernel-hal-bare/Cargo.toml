@@ -17,6 +17,7 @@ kernel-hal = { path = "../kernel-hal" }
 naive-timer = "0.1.0"
 lazy_static = { version = "1.4", features = ["spin_no_std" ] }
 
+
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 x86_64 = "0.14"
 uart_16550 = "=0.2.15"
@@ -26,6 +27,9 @@ apic = { git = "https://github.com/rcore-os/apic-rs", rev = "fb86bd7" }
 x86-smpboot = { git = "https://github.com/rcore-os/x86-smpboot", rev = "43ffedf" }
 rcore-console = { git = "https://github.com/rcore-os/rcore-console", default-features = false, rev = "a980897b" }
 acpi = "1.1"
+pci = { git = "https://github.com/rcore-os/pci-rs", rev = "a4e7cea6" }
+isomorphic_drivers = { git = "https://github.com/rcore-os/isomorphic_drivers", rev = "dae39d16d5aa045023bf763fab5e028706b195c1", features = ["log"] }
+smoltcp = { git = "https://github.com/smoltcp-rs/smoltcp", rev="e4241510337e095b9d21136c5f58b2eaa1b78479", default-features = false, features = ["alloc","log", "async", "medium-ethernet","proto-ipv4", "proto-igmp", "socket-icmp", "socket-udp", "socket-tcp", "socket-raw"] }
 
 [target.'cfg(any(target_arch = "riscv32", target_arch = "riscv64"))'.dependencies]
 riscv = { git = "https://github.com/rcore-os/riscv", features = ["inline-asm"], rev = "0074cbc" }
