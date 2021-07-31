@@ -1,44 +1,44 @@
-// udpsocket 
+// udpsocket
 #![allow(dead_code)]
 // crate
+use crate::error::LxError;
+use crate::error::LxResult;
+use crate::fs::FileLike;
 use crate::fs::FileLikeType;
-use crate::net::ArpReq;
 use crate::net::from_cstr;
+use crate::net::get_ephemeral_port;
 use crate::net::get_net_driver;
+use crate::net::poll_ifaces;
+use crate::net::AddressFamily;
+use crate::net::ArpReq;
+use crate::net::Endpoint;
+use crate::net::GlobalSocketHandle;
+use crate::net::IpAddress;
+use crate::net::IpEndpoint;
 use crate::net::Ipv4Address;
 use crate::net::SockAddr;
 use crate::net::SockAddrPlaceholder;
-use crate::net::IpAddress;
-use crate::net::AddressFamily;
-use crate::net::get_ephemeral_port;
-use crate::net::Endpoint;
 use crate::net::SOCKETS;
-use crate::net::IpEndpoint;
-use crate::net::GlobalSocketHandle;
-use crate::net::UDP_SENDBUF;
-use crate::net::UDP_RECVBUF;
 use crate::net::UDP_METADATA_BUF;
-use crate::net::poll_ifaces;
-use crate::error::LxResult;
-use crate::error::LxError;
-use crate::fs::FileLike;
+use crate::net::UDP_RECVBUF;
+use crate::net::UDP_SENDBUF;
 
 // alloc
-use alloc::vec;
 use alloc::boxed::Box;
+use alloc::vec;
 
 // smoltcp
 
+use smoltcp::socket::UdpPacketMetadata;
 use smoltcp::socket::UdpSocket;
 use smoltcp::socket::UdpSocketBuffer;
-use smoltcp::socket::UdpPacketMetadata;
 
 // async
 use async_trait::async_trait;
 
-// third part 
-use zircon_object::impl_kobject;
+// third part
 use rcore_fs::vfs::PollStatus;
+use zircon_object::impl_kobject;
 use zircon_object::object::*;
 
 /// missing documentation
@@ -51,6 +51,11 @@ pub struct UdpSocketState {
     remote_endpoint: Option<IpEndpoint>, // remember remote endpoint for connect()
 }
 
+impl Default for UdpSocketState {
+    fn default() -> Self {
+        UdpSocketState::new()
+    }
+}
 
 impl UdpSocketState {
     /// missing documentation
@@ -73,8 +78,12 @@ impl UdpSocketState {
         }
     }
 
+    fn default() -> Self {
+        Self::new()
+    }
+
     /// missing documentation
-    pub fn udp_read(&self,data:&mut [u8]) -> (LxResult<usize>, Endpoint) {
+    pub fn udp_read(&self, data: &mut [u8]) -> (LxResult<usize>, Endpoint) {
         loop {
             let mut sockets = SOCKETS.lock();
             let mut socket = sockets.get::<UdpSocket>(self.handle.0);
@@ -100,7 +109,7 @@ impl UdpSocketState {
     }
 
     /// missing documentation
-    pub fn udp_write(&self,data:&[u8],sendto_endpoint: Option<Endpoint>) -> LxResult<usize> {
+    pub fn udp_write(&self, data: &[u8], sendto_endpoint: Option<Endpoint>) -> LxResult<usize> {
         let remote_endpoint = {
             if let Some(Endpoint::Ip(ref endpoint)) = sendto_endpoint {
                 endpoint
@@ -122,7 +131,7 @@ impl UdpSocketState {
         }
 
         if socket.can_send() {
-            match socket.send_slice(&data, *remote_endpoint) {
+            match socket.send_slice(data, *remote_endpoint) {
                 Ok(()) => {
                     // avoid deadlock
                     drop(socket);
@@ -177,7 +186,13 @@ impl UdpSocketState {
         }
     }
 
-    fn udp_ioctl(&self, request: usize, arg1: usize, _arg2: usize, _arg3: usize) -> LxResult<usize> {
+    fn udp_ioctl(
+        &self,
+        request: usize,
+        arg1: usize,
+        _arg2: usize,
+        _arg3: usize,
+    ) -> LxResult<usize> {
         match request {
             // SIOCGARP
             0x8954 => {
@@ -229,13 +244,10 @@ impl UdpSocketState {
     }
 
     fn remote_endpoint(&self) -> Option<Endpoint> {
-        self.remote_endpoint.clone().map(|e| Endpoint::Ip(e))
+        self.remote_endpoint.map(Endpoint::Ip)
     }
 }
 impl_kobject!(UdpSocketState);
-
-
-
 
 #[async_trait]
 impl FileLike for UdpSocketState {
@@ -265,7 +277,7 @@ impl FileLike for UdpSocketState {
     }
     /// manipulates the underlying device parameters of special files
     fn ioctl(&self, request: usize, arg1: usize, arg2: usize, arg3: usize) -> LxResult<usize> {
-        self.udp_ioctl(request,arg1,arg2,arg3)
+        self.udp_ioctl(request, arg1, arg2, arg3)
         // unimplemented!()
     }
     /// manipulate file descriptor

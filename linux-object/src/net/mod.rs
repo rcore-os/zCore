@@ -1,7 +1,6 @@
 //! Linux socket objects
 //!
 
-
 /// missing documentation
 pub mod socket_address;
 pub use socket_address::*;
@@ -24,7 +23,6 @@ pub use raw::*;
 
 // pub mod stack;
 
-
 // ============= Socket Set =============
 
 use smoltcp::socket::SocketSet;
@@ -37,8 +35,6 @@ use spin::Mutex;
 
 use alloc::vec;
 
-
-
 lazy_static! {
     /// Global SocketSet in smoltcp.
     ///
@@ -49,7 +45,6 @@ lazy_static! {
 }
 
 // ============= Socket Set =============
-
 
 // ============= Define =============
 
@@ -96,10 +91,6 @@ pub const IP_HDRINCL: usize = 3;
 
 // ============= Define =============
 
-
-
-
-
 // ============= SocketHandle =============
 
 use smoltcp::socket::SocketHandle;
@@ -139,7 +130,6 @@ fn poll_ifaces() {
 
 // ============= SocketHandle =============
 
-
 // ============= Endpoint =============
 
 use smoltcp::wire::IpEndpoint;
@@ -154,7 +144,6 @@ pub enum Endpoint {
 }
 
 // ============= Endpoint =============
-
 
 // ============= Rand Port =============
 
@@ -173,7 +162,7 @@ fn get_ephemeral_port() -> u16 {
         if EPHEMERAL_PORT == 65535 {
             EPHEMERAL_PORT = 49152;
         } else {
-            EPHEMERAL_PORT = EPHEMERAL_PORT + 1;
+            EPHEMERAL_PORT += 1;
         }
         EPHEMERAL_PORT
     }
@@ -181,11 +170,10 @@ fn get_ephemeral_port() -> u16 {
 
 // ============= Rand Port =============
 
-
-
 // ============= Util =============
 
 #[allow(unsafe_code)]
+/// # Safety
 /// Convert C string to Rust string
 pub unsafe fn from_cstr(s: *const u8) -> &'static str {
     use core::{slice, str};
