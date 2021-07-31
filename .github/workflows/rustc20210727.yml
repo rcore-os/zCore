@@ -44,10 +44,10 @@ jobs:
           profile: minimal
           toolchain: nightly-2021-07-27
           components: rust-src
-      - name: Install Qemu-Img
+      - name: Install Qemu-Utils
         run: |
           sudo apt update
-          sudo apt install qemu-img
+          sudo apt install qemu-utils
       - name: Build
         run: arch=x86_64 cargo build
 #        uses: actions-rs/cargo@v1
