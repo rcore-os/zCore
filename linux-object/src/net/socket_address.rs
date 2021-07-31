@@ -2,13 +2,11 @@
 use core::mem::size_of;
 
 // crate
+use crate::error::{LxError, LxResult};
 use crate::net::Endpoint;
-use crate::error::LxError;
-use crate::error::LxResult;
 
 // smoltcp
-pub use smoltcp::wire::Ipv4Address;
-pub use smoltcp::wire::IpAddress;
+pub use smoltcp::wire::{IpAddress, Ipv4Address};
 
 /// missing documentation
 #[repr(C)]
@@ -178,6 +176,7 @@ impl SockAddr {
         }
     }
 
+    /// # Safety
     /// Write to user sockaddr
     /// Check mutability for user
     #[allow(unsafe_code)]
@@ -198,7 +197,7 @@ impl SockAddr {
         //     target.copy_from_slice(source);
         // }
         // *addr_len = full_len as u32;
-        return Ok(0);
+        Ok(0)
     }
 }
 

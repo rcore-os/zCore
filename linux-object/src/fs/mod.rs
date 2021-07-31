@@ -72,7 +72,7 @@ pub trait FileLike: KernelObject {
     /// manipulate file descriptor
     fn fcntl(&self, cmd: usize, arg: usize) -> LxResult<usize>;
     /// file type
-    fn file_type(&self)->LxResult<FileLikeType>;
+    fn file_type(&self) -> LxResult<FileLikeType>;
 }
 
 impl_downcast!(sync FileLike);
