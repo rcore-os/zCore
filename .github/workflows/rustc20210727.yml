@@ -51,6 +51,7 @@ jobs:
 #          command: build
       - name: Build zCore
         run: |
+          make image
           cd zCore
           make build arch=x86_64 
       # FIX LATER
@@ -156,6 +157,7 @@ jobs:
           sudo apt install qemu-system-x86
       - name: Build zCore
         run: |
+          make image
           cd zCore
           make build mode=release
           cd ..
