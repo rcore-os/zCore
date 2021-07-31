@@ -63,3 +63,9 @@ endif
 	@cp prebuilt/linux/riscv64/* rootfs/bin/
 	@@rcore-fs-fuse riscv64.img rootfs zip
 	@qemu-img resize riscv64.img +50M
+
+clean:
+	cargo clean
+
+doc:
+	arch=x86_64 cargo doc --open

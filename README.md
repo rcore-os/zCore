@@ -27,9 +27,10 @@ Environments：
 * [Git LFS](https://git-lfs.github.com)
 
 
-### rustc info
+### Developing environment info
 - current rustc -- rustc 1.56.0-nightly (08095fc1f 2021-07-26)
-- current rust-toolchain -- nightly
+- current rust-toolchain -- nightly-2021-07-27
+- current qemu -- 5.2.0
 
 Clone repo and pull prebuilt fuchsia images:
 
@@ -113,7 +114,12 @@ make rootfs && make libc-test
 cd scripts && python3 libc-tests.py
 # Check `linux/test-result.txt` for results.
 ```
-
+## Doc
+```
+make doc
+```
+### riscv64 porting info
+- [porting riscv64 doc](./docs/porting-rv64.md)
 ## Components
 
 ### Overview
