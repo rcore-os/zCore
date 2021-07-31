@@ -186,7 +186,7 @@ jobs:
       - name: Build zCore
         run: |
           cd zCore
-          make build mode=release zircon=1
+          make build mode=release linux=0
           cd ..
       - name: Run core-tests
         run: |
