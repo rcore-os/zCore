@@ -1,7 +1,7 @@
 use std::io::Write;
 
 fn main() {
-    let target = std::env::var("arch").unwrap();
+    let target = std::env::var("arch").unwrap_or("x86_64".to_string());
     if target.contains("riscv64") {
         println!("cargo:rerun-if-changed=src/riscv64_syscall.h.in");
     } else {
