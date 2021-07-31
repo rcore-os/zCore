@@ -30,7 +30,7 @@ static PMEM_BASE: usize = PHYSICAL_MEMORY_OFFSET;
 
 pub fn init_frame_allocator(boot_info: &BootInfo) {
     let mut ba = FRAME_ALLOCATOR.lock();
-    for region in boot_info.memory_map.clone().iter {
+    for region in boot_info.memory_map.iter() {
         if region.ty == MemoryType::CONVENTIONAL {
             let start_frame = region.phys_start as usize / PAGE_SIZE;
             let end_frame = start_frame + region.page_count as usize;
@@ -53,6 +53,7 @@ pub fn init_heap() {
 }
 
 #[no_mangle]
+#[allow(improper_ctypes_definitions)]
 pub extern "C" fn hal_frame_alloc() -> Option<usize> {
     // get the real address of the alloc frame
     let ret = FRAME_ALLOCATOR
@@ -64,6 +65,7 @@ pub extern "C" fn hal_frame_alloc() -> Option<usize> {
 }
 
 #[no_mangle]
+#[allow(improper_ctypes_definitions)]
 pub extern "C" fn hal_frame_alloc_contiguous(page_num: usize, align_log2: usize) -> Option<usize> {
     let ret = FRAME_ALLOCATOR
         .lock()
@@ -113,12 +115,15 @@ mod rvm_extern_fn {
     }
 
     #[cfg(target_arch = "x86_64")]
-    #[rvm::extern_fn(x86_all_traps_handler_addr)]
-    unsafe fn rvm_x86_all_traps_handler_addr() -> usize {
-        extern "C" {
-            fn __alltraps();
-        }
-        __alltraps as usize
+    #[rvm::extern_fn(is_host_timer_interrupt)]
+    fn rvm_is_host_timer_interrupt(vector: u8) -> bool {
+        vector == 32 // IRQ0 + Timer in kernel-hal-bare/src/arch/x86_64/interrupt.rs
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    #[rvm::extern_fn(is_host_serial_interrupt)]
+    fn rvm_is_host_serial_interrupt(vector: u8) -> bool {
+        vector == 36 // IRQ0 + COM1 in kernel-hal-bare/src/arch/x86_64/interrupt.rs
     }
 }
 

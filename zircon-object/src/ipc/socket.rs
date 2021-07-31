@@ -166,7 +166,7 @@ impl Socket {
         }
         let mut inner = self.inner.lock();
         let actual_count = data.len();
-        inner.data.extend(&data[..]);
+        inner.data.extend(data);
         inner.datagram_len.push_back(actual_count);
         Ok(actual_count)
     }
@@ -174,7 +174,7 @@ impl Socket {
     fn write_stream(&self, data: &[u8]) -> ZxResult<usize> {
         let actual_count = data.len();
         let mut inner = self.inner.lock();
-        inner.data.extend(&data[..]);
+        inner.data.extend(data);
         Ok(actual_count)
     }
 

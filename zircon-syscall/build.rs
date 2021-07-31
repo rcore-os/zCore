@@ -10,6 +10,7 @@ fn main() {
     writeln!(fout, "#[repr(u32)]").unwrap();
     writeln!(fout, "#[derive(Debug, Eq, PartialEq)]").unwrap();
     writeln!(fout, "#[allow(non_camel_case_types)]").unwrap();
+    writeln!(fout, "#[allow(clippy::upper_case_acronyms)]").unwrap();
     writeln!(fout, "pub enum SyscallType {{").unwrap();
 
     let data = std::fs::read_to_string("src/zx-syscall-numbers.h").unwrap();

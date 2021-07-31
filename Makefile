@@ -1,7 +1,7 @@
 ROOTFS_TAR := alpine-minirootfs-3.12.0-x86_64.tar.gz
 ROOTFS_URL := http://dl-cdn.alpinelinux.org/alpine/v3.12/releases/x86_64/$(ROOTFS_TAR)
 
-ARCH := x86_64
+ARCH ?= x86_64
 rcore_fs_fuse_revision := 7f5eeac
 OUT_IMG := zCore/$(ARCH).img
 TMP_ROOTFS := /tmp/rootfs
@@ -47,3 +47,16 @@ image: $(OUT_IMG)
 	@echo Resizing $(ARCH).img
 	@qemu-img resize $(OUT_IMG) +50M
 
+
+rv64-image: rcore-fs-fuse
+	@echo building riscv64.img
+	@rm -rf rootfs
+	@mkdir rootfs
+	@mkdir rootfs/bin
+ifeq ($(wildcard prebuilt/linux/riscv64/busybox),)
+	@mkdir -p prebuilt/linux/riscv64
+	@wget https://github.com/rcore-os/busybox-prebuilts/raw/master/busybox-1.30.1-riscv64/busybox -O prebuilt/linux/riscv64/busybox
+endif
+	@cp prebuilt/linux/riscv64/busybox rootfs/bin/
+	@@rcore-fs-fuse riscv64.img rootfs zip
+	@qemu-img resize riscv64.img +50M

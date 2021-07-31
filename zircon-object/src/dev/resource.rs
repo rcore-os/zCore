@@ -4,6 +4,7 @@ numeric_enum! {
     #[repr(u32)]
     /// ResourceKind definition from fuchsia/zircon/system/public/zircon/syscalls/resource.h
     #[allow(missing_docs)]
+    #[allow(clippy::upper_case_acronyms)]
     #[derive(Debug, Clone, Copy, Eq, PartialEq)]
     pub enum ResourceKind {
         MMIO = 0,
@@ -97,7 +98,7 @@ impl Resource {
     pub fn get_info(&self) -> ResourceInfo {
         let name = self.base.name();
         let name = name.as_bytes();
-        let mut name_vec = [0 as u8; 32];
+        let mut name_vec = [0u8; 32];
         name_vec[..name.len()].clone_from_slice(name);
         ResourceInfo {
             kind: self.kind as _,

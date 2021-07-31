@@ -20,6 +20,7 @@
 
 #![no_std]
 #![deny(warnings, unsafe_code, missing_docs)]
+#![allow(clippy::upper_case_acronyms)]
 #![feature(bool_to_option)]
 
 #[macro_use]

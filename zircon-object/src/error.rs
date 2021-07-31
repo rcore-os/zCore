@@ -8,6 +8,7 @@ pub type ZxResult<T = ()> = Result<T, ZxError>;
 /// - Positive values are reserved for protocol-specific error values,
 ///   and will never be defined by the system.
 #[allow(non_camel_case_types)]
+#[allow(clippy::upper_case_acronyms)]
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum ZxError {

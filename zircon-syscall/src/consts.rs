@@ -5,6 +5,7 @@ numeric_enum! {
 #[repr(u32)]
 #[derive(Debug, Eq, PartialEq)]
 #[allow(non_camel_case_types)]
+#[allow(clippy::upper_case_acronyms)]
 pub enum SyscallType {
     BTI_CREATE = 0,
     BTI_PIN = 1,

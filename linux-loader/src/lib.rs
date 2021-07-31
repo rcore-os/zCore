@@ -2,7 +2,6 @@
 //! - run process and manage trap/interrupt/syscall
 #![no_std]
 #![feature(asm)]
-#![feature(global_asm)]
 #![deny(warnings, unused_must_use, missing_docs)]
 
 extern crate alloc;
