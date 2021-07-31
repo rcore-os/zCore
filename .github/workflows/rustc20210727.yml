@@ -86,7 +86,7 @@ jobs:
         - name: Build zCore
           run: |
             cd zCore
-            make build arch=x86_64 zircon=1
+            make build arch=x86_64 linux=0
 
   build-aarch64:
     runs-on: ubuntu-20.04
