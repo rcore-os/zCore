@@ -54,6 +54,7 @@ jobs:
 #          command: build
       - name: Build zCore
         run: |
+          make rootfs
           make image
           cd zCore
           make build arch=x86_64 
@@ -165,6 +166,7 @@ jobs:
       - run: echo "nightly" >./rboot/rust-toolchain      
       - name: Build zCore
         run: |
+          make rootfs
           make image
           cd zCore
           make build mode=release
