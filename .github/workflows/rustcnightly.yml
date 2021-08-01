@@ -31,7 +31,7 @@ jobs:
 #        with:
 #          command: clippy
 
-  build-x86_64:
+  build:#x86_64
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
