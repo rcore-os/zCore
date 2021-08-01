@@ -71,6 +71,7 @@ impl ProcessExt for Process {
         let parent = parent.clone();
         new_proc.add_signal_callback(Box::new(move |signal| {
             if signal.contains(Signal::PROCESS_TERMINATED) {
+                info!("Received signal: {:?}", signal);
                 parent.signal_set(Signal::SIGCHLD);
             }
             false
@@ -123,6 +124,7 @@ pub async fn wait_child_any(proc: &Arc<Process>, nonblock: bool) -> LxResult<(Ko
         }
         let proc: Arc<dyn KernelObject> = proc.clone();
         proc.signal_clear(Signal::SIGCHLD);
+        //等待进程结束信号
         proc.wait_signal(Signal::SIGCHLD).await;
     }
 }
@@ -228,7 +230,7 @@ impl LinuxProcess {
         files.insert(2.into(), stdout);
 
         LinuxProcess {
-            root_inode: create_root_fs(rootfs),
+            root_inode: create_root_fs(rootfs), //Arc::clone(&ROOT_INODE),访问磁盘可能更快？
             parent: Weak::default(),
             inner: Mutex::new(LinuxProcessInner {
                 files,
@@ -302,6 +304,7 @@ impl LinuxProcess {
     /// Get the `FileLike` with given `fd`.
     pub fn get_file_like(&self, fd: FileDesc) -> LxResult<Arc<dyn FileLike>> {
         let inner = self.inner.lock();
+        trace!("get_file_like: {:#x?}", inner.files);
         inner.files.get(&fd).cloned().ok_or(LxError::EBADF)
     }
 

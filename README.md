@@ -12,6 +12,12 @@ Reimplement [Zircon][zircon] microkernel in safe Rust as a userspace program!
 
 - 2020.04.16: Zircon console is working on zCore! 🎉
 
+## Quick start for RISCV64
+```
+cd zCore
+make run arch=riscv64 linux=1
+```
+
 ## Getting started
 
 Environments：
@@ -19,6 +25,12 @@ Environments：
 * [Rust toolchain](http://rustup.rs)
 * [QEMU](https://www.qemu.org)
 * [Git LFS](https://git-lfs.github.com)
+
+
+### Developing environment info
+- current rustc -- rustc 1.56.0-nightly (08095fc1f 2021-07-26)
+- current rust-toolchain -- nightly-2021-07-27
+- current qemu -- 5.2.0
 
 Clone repo and pull prebuilt fuchsia images:
 
@@ -102,7 +114,12 @@ make rootfs && make libc-test
 cd scripts && python3 libc-tests.py
 # Check `linux/test-result.txt` for results.
 ```
-
+## Doc
+```
+make doc
+```
+### riscv64 porting info
+- [porting riscv64 doc](./docs/porting-rv64.md)
 ## Components
 
 ### Overview

@@ -91,7 +91,7 @@ impl Syscall<'_> {
         let proc = self.thread.proc();
         let process = proc.get_object_with_rights::<Process>(proc_handle, Rights::WRITE)?;
         let thread = proc.get_object_with_rights::<Thread>(thread_handle, Rights::WRITE)?;
-        if !Arc::ptr_eq(&thread.proc(), &process) {
+        if !Arc::ptr_eq(thread.proc(), &process) {
             return Err(ZxError::ACCESS_DENIED);
         }
         let arg1 = if arg1_handle != INVALID_HANDLE {
@@ -222,7 +222,7 @@ impl Syscall<'_> {
         info!("task.suspend_token: handle={:?}, token={:?}", handle, token);
         let proc = self.thread.proc();
         if let Ok(thread) = proc.get_object_with_rights::<Thread>(handle, Rights::WRITE) {
-            if Arc::ptr_eq(&thread, &self.thread) {
+            if Arc::ptr_eq(&thread, self.thread) {
                 return Err(ZxError::NOT_SUPPORTED);
             }
             if thread.state() == ThreadState::Dying || thread.state() == ThreadState::Dead {

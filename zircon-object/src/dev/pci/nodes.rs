@@ -33,18 +33,21 @@ pub struct PcieUpstream {
 
 struct PcieUpstreamInner {
     weak_super: Weak<dyn IPciNode>,
-    downstream: Vec<Option<Arc<dyn IPciNode>>>,
+    downstream: Box<[Option<Arc<dyn IPciNode>>]>,
 }
 
 impl PcieUpstream {
     pub fn create(managed_bus_id: usize) -> Arc<Self> {
-        let mut downstream = Vec::new();
-        downstream.resize(PCI_MAX_FUNCTIONS_PER_BUS, None);
         Arc::new(PcieUpstream {
             managed_bus_id,
             inner: Mutex::new(PcieUpstreamInner {
                 weak_super: Weak::<PciRoot>::new(),
-                downstream,
+                downstream: {
+                    let mut vec =
+                        Vec::<Option<Arc<dyn IPciNode>>>::with_capacity(PCI_MAX_FUNCTIONS_PER_BUS);
+                    vec.resize(PCI_MAX_FUNCTIONS_PER_BUS, None);
+                    vec.into_boxed_slice()
+                },
             }),
         })
     }
@@ -404,7 +407,7 @@ impl PcieDeviceInner {
         for c in self.caps.iter() {
             if let PciCapability::Msi(std, msi) = c {
                 if std.is_valid() {
-                    return Some((&std, &msi));
+                    return Some((std, msi));
                 }
             }
         }
@@ -414,7 +417,7 @@ impl PcieDeviceInner {
         for c in self.caps.iter() {
             if let PciCapability::Pcie(std, pcie) = c {
                 if std.is_valid() {
-                    return Some((&std, &pcie));
+                    return Some((std, pcie));
                 }
             }
         }
@@ -647,7 +650,7 @@ impl PcieDevice {
 
     pub fn allocate_bars(&self) -> ZxResult {
         let mut inner = self.inner.lock();
-        assert_eq!(inner.plugged_in, true);
+        assert!(inner.plugged_in);
         for i in 0..self.bar_count {
             let bar_info = &inner.bars[i];
             if bar_info.size == 0 || bar_info.allocation.is_some() {
@@ -1387,7 +1390,7 @@ impl PciBridge {
                 .set_super(Arc::downgrade(&(node.clone() as _)));
             node.base_upstream
                 .set_super(Arc::downgrade(&(node.clone() as _)));
-            node.init(&driver);
+            node.init(driver);
             node
         })
     }

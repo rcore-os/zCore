@@ -189,7 +189,7 @@ impl LinuxProcess {
                 FileType::SymLink,
             )));
         }
-        let (fd_dir_path, fd_name) = split_path(&path);
+        let (fd_dir_path, fd_name) = split_path(path);
         if fd_dir_path == "/proc/self/fd" {
             let fd = FileDesc::try_from(fd_name)?;
             let fd_path = &self.get_file(fd)?.path;

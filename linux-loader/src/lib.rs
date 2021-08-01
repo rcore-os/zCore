@@ -11,7 +11,7 @@ extern crate log;
 use {
     alloc::{boxed::Box, string::String, sync::Arc, vec::Vec},
     core::{future::Future, pin::Pin},
-    kernel_hal::{GeneralRegs, MMUFlags},
+    kernel_hal::MMUFlags,
     linux_object::{
         fs::{vfs::FileSystem, INodeExt},
         loader::LinuxElfLoader,
@@ -21,6 +21,12 @@ use {
     linux_syscall::Syscall,
     zircon_object::task::*,
 };
+
+#[cfg(target_arch = "riscv64")]
+use {kernel_hal::UserContext, zircon_object::object::KernelObject};
+
+#[cfg(target_arch = "x86_64")]
+use kernel_hal::GeneralRegs;
 
 /// Create and run main Linux process
 pub fn run(args: Vec<String>, envs: Vec<String>, rootfs: Arc<dyn FileSystem>) -> Arc<Process> {
@@ -35,9 +41,23 @@ pub fn run(args: Vec<String>, envs: Vec<String>, rootfs: Arc<dyn FileSystem>) ->
         stack_pages: 8,
         root_inode: rootfs.root_inode(),
     };
+
+    {
+        let mut id = 0;
+        let rust_dir = rootfs.root_inode().lookup("/").unwrap();
+        trace!("run(), Rootfs: / ");
+        while let Ok(name) = rust_dir.get_entry(id) {
+            id += 1;
+            trace!("  {}", name);
+        }
+    }
+
     let inode = rootfs.root_inode().lookup(&args[0]).unwrap();
     let data = inode.read_as_vec().unwrap();
     let path = args[0].clone();
+    debug!("Linux process: {:?}", path);
+
+    //调用zircon-object/src/task/thread.start设置好要执行的thread
     let (entry, sp) = loader.load(&proc.vmar(), &data, args, envs, path).unwrap();
 
     thread
@@ -61,11 +81,14 @@ async fn new_thread(thread: CurrentThread) {
         if thread.state() == ThreadState::Dying {
             break;
         }
+
         // run
         trace!("go to user: {:#x?}", cx);
         kernel_hal::context_run(&mut cx);
         trace!("back from user: {:#x?}", cx);
         // handle trap/interrupt/syscall
+
+        #[cfg(target_arch = "x86_64")]
         match cx.trap_num {
             0x100 => handle_syscall(&thread, &mut cx.general).await,
             0x20..=0x3f => {
@@ -92,6 +115,76 @@ async fn new_thread(thread: CurrentThread) {
             }
             _ => panic!("not supported interrupt from user mode. {:#x?}", cx),
         }
+
+        // UserContext
+        #[cfg(target_arch = "riscv64")]
+        {
+            let trap_num = kernel_hal::fetch_trap_num(&cx);
+            let is_interrupt = ((trap_num >> 63) & 1) == 1;
+            let trap_num = trap_num & 0xfff;
+            let pid = thread.proc().id();
+            if is_interrupt {
+                match trap_num {
+                    //Irq
+                    0 | 4 | 5 | 8 | 9 => {
+                        kernel_hal::InterruptManager::handle(trap_num as u8);
+
+                        //Timer
+                        if trap_num == 4 || trap_num == 5 {
+                            debug!("Timer interrupt: {}", trap_num);
+
+                            /*
+                            * 已在irq_handle里加入了timer处理函数
+                            kernel_hal::timer_set_next();
+                            kernel_hal::timer_tick();
+                            */
+
+                            kernel_hal::yield_now().await;
+                        }
+
+                        //kernel_hal::InterruptManager::handle(trap_num as u8);
+                    }
+                    _ => panic!(
+                        "not supported pid: {} interrupt {} from user mode. {:#x?}",
+                        pid, trap_num, cx
+                    ),
+                }
+            } else {
+                match trap_num {
+                    // syscall
+                    8 => handle_syscall(&thread, &mut cx).await,
+                    // PageFault
+                    12 | 13 | 15 => {
+                        let vaddr = kernel_hal::fetch_fault_vaddr();
+
+                        //注意这里flags没有包含WRITE权限，后面handle会移除写权限
+                        let flags = if trap_num == 15 {
+                            MMUFlags::WRITE
+                        } else if trap_num == 12 {
+                            MMUFlags::EXECUTE
+                        } else {
+                            MMUFlags::READ
+                        };
+
+                        info!(
+                            "page fualt from pid: {} user mode, vaddr:{:#x}, trap:{}",
+                            pid, vaddr, trap_num
+                        );
+                        let vmar = thread.proc().vmar();
+                        match vmar.handle_page_fault(vaddr, flags) {
+                            Ok(()) => {}
+                            Err(error) => {
+                                panic!("{:?} Page Fault from user mode {:#x?}", error, cx);
+                            }
+                        }
+                    }
+                    _ => panic!(
+                        "not supported pid: {} exception {} from user mode. {:#x?}",
+                        pid, trap_num, cx
+                    ),
+                }
+            }
+        }
         thread.end_running(cx);
     }
 }
@@ -101,6 +194,7 @@ fn thread_fn(thread: CurrentThread) -> Pin<Box<dyn Future<Output = ()> + Send + 
 }
 
 /// syscall handler entry
+#[cfg(target_arch = "x86_64")]
 async fn handle_syscall(thread: &CurrentThread, regs: &mut GeneralRegs) {
     trace!("syscall: {:#x?}", regs);
     let num = regs.rax as u32;
@@ -115,4 +209,34 @@ async fn handle_syscall(thread: &CurrentThread, regs: &mut GeneralRegs) {
         regs,
     };
     regs.rax = syscall.syscall(num, args).await as usize;
+}
+
+#[cfg(target_arch = "riscv64")]
+async fn handle_syscall(thread: &CurrentThread, cx: &mut UserContext) {
+    trace!("syscall: {:#x?}", cx.general);
+    let num = cx.general.a7 as u32;
+    let args = [
+        cx.general.a0,
+        cx.general.a1,
+        cx.general.a2,
+        cx.general.a3,
+        cx.general.a4,
+        cx.general.a5,
+    ];
+    // add before fork
+    cx.sepc += 4;
+
+    //注意, 此时的regs没有原context所有权，故无法通过此regs修改寄存器
+    //let regs = &mut (cx.general as GeneralRegs);
+
+    let mut syscall = Syscall {
+        thread,
+        #[cfg(feature = "std")]
+        syscall_entry: kernel_hal_unix::syscall_entry as usize,
+        #[cfg(not(feature = "std"))]
+        syscall_entry: 0,
+        context: cx,
+        thread_fn,
+    };
+    cx.general.a0 = syscall.syscall(num, args).await as usize;
 }

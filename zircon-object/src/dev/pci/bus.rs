@@ -177,7 +177,7 @@ impl PCIeBusDriver {
         )?;
         self.foreach_root(
             |root, _c| {
-                root.base_upstream.scan_downstream(&self);
+                root.base_upstream.scan_downstream(self);
                 true
             },
             (),

@@ -70,6 +70,10 @@ pub trait PageTableTrait: Sync + Send {
     /// Get the physical address of root page table.
     fn table_phys(&self) -> PhysAddr;
 
+    #[cfg(target_arch = "riscv64")]
+    /// Activate this page table
+    fn activate(&self);
+
     fn map_many(
         &mut self,
         mut vaddr: VirtAddr,
@@ -160,6 +164,15 @@ impl PageTableTrait for PageTable {
     fn table_phys(&self) -> PhysAddr {
         self.table_phys
     }
+
+    /// Activate this page table
+    #[cfg(target_arch = "riscv64")]
+    #[linkage = "weak"]
+    #[export_name = "hal_pt_activate"]
+    fn activate(&self) {
+        unimplemented!()
+    }
+
     #[linkage = "weak"]
     #[export_name = "hal_pt_unmap_cont"]
     fn unmap_cont(&mut self, vaddr: VirtAddr, pages: usize) -> Result<()> {
@@ -287,6 +300,12 @@ pub fn timer_set(_deadline: Duration, _callback: Box<dyn FnOnce(Duration) + Send
     unimplemented!()
 }
 
+#[linkage = "weak"]
+#[export_name = "hal_timer_set_next"]
+pub fn timer_set_next() {
+    unimplemented!()
+}
+
 /// Check timers, call when timer interrupt happened.
 #[linkage = "weak"]
 #[export_name = "hal_timer_tick"]
@@ -394,6 +413,12 @@ pub fn fetch_fault_vaddr() -> VirtAddr {
     unimplemented!()
 }
 
+#[linkage = "weak"]
+#[export_name = "fetch_trap_num"]
+pub fn fetch_trap_num(_context: &UserContext) -> usize {
+    unimplemented!()
+}
+
 /// Get physical address of `acpi_rsdp` and `smbios` on x86_64.
 #[linkage = "weak"]
 #[export_name = "hal_pc_firmware_tables"]
@@ -442,6 +467,11 @@ pub fn fill_random(buf: &mut [u8]) {
 }
 
 #[cfg(target_arch = "aarch64")]
+pub fn fill_random(_buf: &mut [u8]) {
+    // TODO
+}
+
+#[cfg(target_arch = "riscv64")]
 pub fn fill_random(_buf: &mut [u8]) {
     // TODO
 }
