@@ -1,7 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `zircon-object/src/signal/port_packet.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>port_packet.rs - source</title><link rel="stylesheet" type="text/css" href="../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../../ayu.css" disabled ><script id="default-settings"></script><script src="../../../storage.js"></script><noscript><link rel="stylesheet" href="../../../noscript.css"></noscript><link rel="icon" type="image/svg+xml" href="../../../favicon.svg">
-<link rel="alternate icon" type="image/png" href="../../../favicon-16x16.png">
-<link rel="alternate icon" type="image/png" href="../../../favicon-32x32.png"><style type="text/css">#crate-search{background-image:url("../../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 8]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../../zircon_object/index.html'><div class='logo-container rust-logo'><img src='../../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu"><img src="../../../brush.svg" width="18" alt="Pick another theme!"></button><div id="theme-choices" role="menu"></div></div><script src="../../../theme.js"></script><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" class="help-button">?</button>
-                <a id="settings-menu" href="../../../settings.html"><img src="../../../wheel.svg" width="18" alt="Change settings"></a></div></form></nav><section id="main" class="content"><pre class="line-numbers"><span id="1">  1</span>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `zircon-object&#x2F;src&#x2F;signal&#x2F;port_packet.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>port_packet.rs - source</title><link rel="stylesheet" type="text/css" href="../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../../ayu.css" disabled ><script id="default-settings" ></script><script src="../../../storage.js"></script><script src="../../../crates.js"></script><noscript><link rel="stylesheet" href="../../../noscript.css"></noscript><link rel="icon" type="image/svg+xml" href="../../../favicon.svg"><link rel="alternate icon" type="image/png" href="../../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../../favicon-32x32.png"><style type="text/css">#crate-search{background-image:url("../../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../../zircon_object/index.html'><div class='logo-container rust-logo'><img src='../../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu" title="themes"><img width="18" height="18" alt="Pick another theme!" src="../../../brush.svg"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input"name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" id="help-button" title="help">?</button><a id="settings-menu" href="../../../settings.html" title="settings"><img width="18" height="18" alt="Change settings" src="../../../wheel.svg"></a></div></form></nav><section id="main" class="content"><div class="example-wrap"><pre class="line-numbers"><span id="1">  1</span>
 <span id="2">  2</span>
 <span id="3">  3</span>
 <span id="4">  4</span>
@@ -428,12 +425,23 @@
 <span id="425">425</span>
 <span id="426">426</span>
 <span id="427">427</span>
-</pre><div class="example-wrap"><pre class="rust ">
+<span id="428">428</span>
+<span id="429">429</span>
+<span id="430">430</span>
+<span id="431">431</span>
+<span id="432">432</span>
+<span id="433">433</span>
+<span id="434">434</span>
+<span id="435">435</span>
+<span id="436">436</span>
+<span id="437">437</span>
+<span id="438">438</span>
+</pre><pre class="rust">
 <span class="attribute">#![<span class="ident">allow</span>(<span class="ident">missing_docs</span>)]</span>
 <span class="doccomment">//! Port packet data structure definition.</span>
 
 <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
-<span class="kw">use</span> <span class="ident">core</span>::<span class="ident">fmt</span>::{<span class="ident">Debug</span>, <span class="ident">Formatter</span>};
+<span class="kw">use</span> <span class="ident">core::fmt</span>::{<span class="ident">Debug</span>, <span class="ident">Formatter</span>};
 
 <span class="comment">// C struct: for storing</span>
 
@@ -521,6 +529,17 @@
     <span class="kw">pub</span> <span class="ident">_reserved</span>: <span class="ident">u64</span>,
 }
 
+<span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;riscv64&quot;</span>)]</span>
+<span class="attribute">#[<span class="ident">repr</span>(<span class="ident">C</span>)]</span>
+<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Default</span>, <span class="ident">Debug</span>, <span class="ident">Copy</span>, <span class="ident">Clone</span>, <span class="ident">Eq</span>, <span class="ident">PartialEq</span>)]</span>
+<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">PacketGuestMem</span> {
+    <span class="kw">pub</span> <span class="ident">addr</span>: <span class="ident">u64</span>,
+    <span class="comment">//保持32字节的空间</span>
+    <span class="kw">pub</span> <span class="ident">_reserved</span>: <span class="ident">u64</span>,
+    <span class="kw">pub</span> <span class="ident">_reserved1</span>: <span class="ident">u64</span>,
+    <span class="kw">pub</span> <span class="ident">_reserved2</span>: <span class="ident">u64</span>,
+}
+
 <span class="attribute">#[<span class="ident">repr</span>(<span class="ident">C</span>)]</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Default</span>, <span class="ident">Debug</span>, <span class="ident">Copy</span>, <span class="ident">Clone</span>, <span class="ident">Eq</span>, <span class="ident">PartialEq</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">PacketGuestIo</span> {
@@ -604,39 +623,39 @@
 <span class="kw">impl</span> <span class="ident">PayloadRepr</span> {
     <span class="kw">fn</span> <span class="ident">type_</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">PacketType</span> {
         <span class="kw">match</span> <span class="self">self</span> {
-            <span class="ident">PayloadRepr</span>::<span class="ident">User</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">PacketType</span>::<span class="ident">User</span>,
-            <span class="ident">PayloadRepr</span>::<span class="ident">Signal</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">PacketType</span>::<span class="ident">SignalOne</span>,
-            <span class="ident">PayloadRepr</span>::<span class="ident">GuestBell</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">PacketType</span>::<span class="ident">GuestBell</span>,
-            <span class="ident">PayloadRepr</span>::<span class="ident">GuestMem</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">PacketType</span>::<span class="ident">GuestMem</span>,
-            <span class="ident">PayloadRepr</span>::<span class="ident">GuestIo</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">PacketType</span>::<span class="ident">GuestIo</span>,
-            <span class="ident">PayloadRepr</span>::<span class="ident">GuestVcpu</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">PacketType</span>::<span class="ident">GuestVcpu</span>,
-            <span class="ident">PayloadRepr</span>::<span class="ident">Interrupt</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">PacketType</span>::<span class="ident">Interrupt</span>,
+            <span class="ident">PayloadRepr::User</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">PacketType::User</span>,
+            <span class="ident">PayloadRepr::Signal</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">PacketType::SignalOne</span>,
+            <span class="ident">PayloadRepr::GuestBell</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">PacketType::GuestBell</span>,
+            <span class="ident">PayloadRepr::GuestMem</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">PacketType::GuestMem</span>,
+            <span class="ident">PayloadRepr::GuestIo</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">PacketType::GuestIo</span>,
+            <span class="ident">PayloadRepr::GuestVcpu</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">PacketType::GuestVcpu</span>,
+            <span class="ident">PayloadRepr::Interrupt</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">PacketType::Interrupt</span>,
         }
     }
     <span class="kw">fn</span> <span class="ident">encode</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Payload</span> {
         <span class="kw">match</span> <span class="kw-2">*</span><span class="self">self</span> {
-            <span class="ident">PayloadRepr</span>::<span class="ident">User</span>(<span class="ident">user</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">Payload</span> { <span class="ident">user</span> },
-            <span class="ident">PayloadRepr</span>::<span class="ident">Signal</span>(<span class="ident">signal</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">Payload</span> { <span class="ident">signal</span> },
-            <span class="ident">PayloadRepr</span>::<span class="ident">GuestBell</span>(<span class="ident">guest_bell</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">Payload</span> { <span class="ident">guest_bell</span> },
-            <span class="ident">PayloadRepr</span>::<span class="ident">GuestMem</span>(<span class="ident">guest_mem</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">Payload</span> { <span class="ident">guest_mem</span> },
-            <span class="ident">PayloadRepr</span>::<span class="ident">GuestIo</span>(<span class="ident">guest_io</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">Payload</span> { <span class="ident">guest_io</span> },
-            <span class="ident">PayloadRepr</span>::<span class="ident">GuestVcpu</span>(<span class="ident">guest_vcpu</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">Payload</span> { <span class="ident">guest_vcpu</span> },
-            <span class="ident">PayloadRepr</span>::<span class="ident">Interrupt</span>(<span class="ident">interrupt</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">Payload</span> { <span class="ident">interrupt</span> },
+            <span class="ident">PayloadRepr::User</span>(<span class="ident">user</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">Payload</span> { <span class="ident">user</span> },
+            <span class="ident">PayloadRepr::Signal</span>(<span class="ident">signal</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">Payload</span> { <span class="ident">signal</span> },
+            <span class="ident">PayloadRepr::GuestBell</span>(<span class="ident">guest_bell</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">Payload</span> { <span class="ident">guest_bell</span> },
+            <span class="ident">PayloadRepr::GuestMem</span>(<span class="ident">guest_mem</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">Payload</span> { <span class="ident">guest_mem</span> },
+            <span class="ident">PayloadRepr::GuestIo</span>(<span class="ident">guest_io</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">Payload</span> { <span class="ident">guest_io</span> },
+            <span class="ident">PayloadRepr::GuestVcpu</span>(<span class="ident">guest_vcpu</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">Payload</span> { <span class="ident">guest_vcpu</span> },
+            <span class="ident">PayloadRepr::Interrupt</span>(<span class="ident">interrupt</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">Payload</span> { <span class="ident">interrupt</span> },
         }
     }
     <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">unsafe_code</span>)]</span>
     <span class="kw">fn</span> <span class="ident">decode</span>(<span class="ident">type_</span>: <span class="ident">PacketType</span>, <span class="ident">data</span>: <span class="kw-2">&amp;</span><span class="ident">Payload</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
         <span class="kw">unsafe</span> {
             <span class="kw">match</span> <span class="ident">type_</span> {
-                <span class="ident">PacketType</span>::<span class="ident">User</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">PayloadRepr</span>::<span class="ident">User</span>(<span class="ident">data</span>.<span class="ident">user</span>),
-                <span class="ident">PacketType</span>::<span class="ident">SignalOne</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">PayloadRepr</span>::<span class="ident">Signal</span>(<span class="ident">data</span>.<span class="ident">signal</span>),
-                <span class="ident">PacketType</span>::<span class="ident">SignalRep</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">PayloadRepr</span>::<span class="ident">Signal</span>(<span class="ident">data</span>.<span class="ident">signal</span>),
-                <span class="ident">PacketType</span>::<span class="ident">GuestBell</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">PayloadRepr</span>::<span class="ident">GuestBell</span>(<span class="ident">data</span>.<span class="ident">guest_bell</span>),
-                <span class="ident">PacketType</span>::<span class="ident">GuestMem</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">PayloadRepr</span>::<span class="ident">GuestMem</span>(<span class="ident">data</span>.<span class="ident">guest_mem</span>),
-                <span class="ident">PacketType</span>::<span class="ident">GuestIo</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">PayloadRepr</span>::<span class="ident">GuestIo</span>(<span class="ident">data</span>.<span class="ident">guest_io</span>),
-                <span class="ident">PacketType</span>::<span class="ident">GuestVcpu</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">PayloadRepr</span>::<span class="ident">GuestVcpu</span>(<span class="ident">data</span>.<span class="ident">guest_vcpu</span>),
-                <span class="ident">PacketType</span>::<span class="ident">Interrupt</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">PayloadRepr</span>::<span class="ident">Interrupt</span>(<span class="ident">data</span>.<span class="ident">interrupt</span>),
-                <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="macro">unimplemented</span><span class="macro">!</span>(),
+                <span class="ident">PacketType::User</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">PayloadRepr::User</span>(<span class="ident">data</span>.<span class="ident">user</span>),
+                <span class="ident">PacketType::SignalOne</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">PayloadRepr::Signal</span>(<span class="ident">data</span>.<span class="ident">signal</span>),
+                <span class="ident">PacketType::SignalRep</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">PayloadRepr::Signal</span>(<span class="ident">data</span>.<span class="ident">signal</span>),
+                <span class="ident">PacketType::GuestBell</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">PayloadRepr::GuestBell</span>(<span class="ident">data</span>.<span class="ident">guest_bell</span>),
+                <span class="ident">PacketType::GuestMem</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">PayloadRepr::GuestMem</span>(<span class="ident">data</span>.<span class="ident">guest_mem</span>),
+                <span class="ident">PacketType::GuestIo</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">PayloadRepr::GuestIo</span>(<span class="ident">data</span>.<span class="ident">guest_io</span>),
+                <span class="ident">PacketType::GuestVcpu</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">PayloadRepr::GuestVcpu</span>(<span class="ident">data</span>.<span class="ident">guest_vcpu</span>),
+                <span class="ident">PacketType::Interrupt</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">PayloadRepr::Interrupt</span>(<span class="ident">data</span>.<span class="ident">interrupt</span>),
+                <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="macro">unimplemented!</span>(),
             }
         }
     }
@@ -658,7 +677,7 @@
         <span class="ident">PortPacketRepr</span> {
             <span class="ident">key</span>: <span class="ident">p</span>.<span class="ident">key</span>,
             <span class="ident">status</span>: <span class="ident">p</span>.<span class="ident">status</span>,
-            <span class="ident">data</span>: <span class="ident">PayloadRepr</span>::<span class="ident">decode</span>(<span class="ident">p</span>.<span class="ident">type_</span>, <span class="kw-2">&amp;</span><span class="ident">p</span>.<span class="ident">data</span>),
+            <span class="ident">data</span>: <span class="ident">PayloadRepr::decode</span>(<span class="ident">p</span>.<span class="ident">type_</span>, <span class="kw-2">&amp;</span><span class="ident">p</span>.<span class="ident">data</span>),
         }
     }
 }
@@ -674,8 +693,8 @@
         }
         <span class="kw">unsafe</span> {
             <span class="kw">match</span> <span class="self">self</span>.<span class="ident">type_</span> {
-                <span class="ident">PacketGuestVcpuType</span>::<span class="ident">VcpuInterrupt</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">data</span>.<span class="ident">interrupt</span>.<span class="ident">eq</span>(<span class="kw-2">&amp;</span><span class="ident">other</span>.<span class="ident">data</span>.<span class="ident">interrupt</span>),
-                <span class="ident">PacketGuestVcpuType</span>::<span class="ident">VcpuStartup</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">data</span>.<span class="ident">startup</span>.<span class="ident">eq</span>(<span class="kw-2">&amp;</span><span class="ident">other</span>.<span class="ident">data</span>.<span class="ident">startup</span>),
+                <span class="ident">PacketGuestVcpuType::VcpuInterrupt</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">data</span>.<span class="ident">interrupt</span>.<span class="ident">eq</span>(<span class="kw-2">&amp;</span><span class="ident">other</span>.<span class="ident">data</span>.<span class="ident">interrupt</span>),
+                <span class="ident">PacketGuestVcpuType::VcpuStartup</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">data</span>.<span class="ident">startup</span>.<span class="ident">eq</span>(<span class="kw-2">&amp;</span><span class="ident">other</span>.<span class="ident">data</span>.<span class="ident">startup</span>),
             }
         }
     }
@@ -685,12 +704,12 @@
 
 <span class="kw">impl</span> <span class="ident">Debug</span> <span class="kw">for</span> <span class="ident">PacketGuestVcpu</span> {
     <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">unsafe_code</span>)]</span>
-    <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Formatter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">core</span>::<span class="ident">fmt</span>::<span class="prelude-ty">Result</span> {
+    <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Formatter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">core::fmt::Result</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">out</span> <span class="op">=</span> <span class="ident">f</span>.<span class="ident">debug_struct</span>(<span class="string">&quot;PacketGuestVcpu&quot;</span>);
         <span class="kw">unsafe</span> {
             <span class="kw">match</span> <span class="self">self</span>.<span class="ident">type_</span> {
-                <span class="ident">PacketGuestVcpuType</span>::<span class="ident">VcpuInterrupt</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">out</span>.<span class="ident">field</span>(<span class="string">&quot;data&quot;</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">data</span>.<span class="ident">interrupt</span>),
-                <span class="ident">PacketGuestVcpuType</span>::<span class="ident">VcpuStartup</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">out</span>.<span class="ident">field</span>(<span class="string">&quot;data&quot;</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">data</span>.<span class="ident">startup</span>),
+                <span class="ident">PacketGuestVcpuType::VcpuInterrupt</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">out</span>.<span class="ident">field</span>(<span class="string">&quot;data&quot;</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">data</span>.<span class="ident">interrupt</span>),
+                <span class="ident">PacketGuestVcpuType::VcpuStartup</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">out</span>.<span class="ident">field</span>(<span class="string">&quot;data&quot;</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">data</span>.<span class="ident">startup</span>),
             };
         }
         <span class="ident">out</span>.<span class="ident">field</span>(<span class="string">&quot;type_&quot;</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">type_</span>)
@@ -701,8 +720,8 @@
 }
 
 <span class="kw">impl</span> <span class="ident">Debug</span> <span class="kw">for</span> <span class="ident">PortPacket</span> {
-    <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Formatter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">core</span>::<span class="ident">fmt</span>::<span class="prelude-ty">Result</span> {
-        <span class="ident">PortPacketRepr</span>::<span class="ident">from</span>(<span class="self">self</span>).<span class="ident">fmt</span>(<span class="ident">f</span>)
+    <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Formatter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">core::fmt::Result</span> {
+        <span class="ident">PortPacketRepr::from</span>(<span class="self">self</span>).<span class="ident">fmt</span>(<span class="ident">f</span>)
     }
 }
 
@@ -712,86 +731,86 @@
 
     <span class="attribute">#[<span class="ident">test</span>]</span>
     <span class="kw">fn</span> <span class="ident">port_packet_size</span>() {
-        <span class="kw">use</span> <span class="ident">core</span>::<span class="ident">mem</span>::<span class="ident">size_of</span>;
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">size_of</span>::<span class="op">&lt;</span><span class="ident">PacketUser</span><span class="op">&gt;</span>(), <span class="number">32</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">size_of</span>::<span class="op">&lt;</span><span class="ident">PacketSignal</span><span class="op">&gt;</span>(), <span class="number">32</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">size_of</span>::<span class="op">&lt;</span><span class="ident">PacketGuestBell</span><span class="op">&gt;</span>(), <span class="number">32</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">size_of</span>::<span class="op">&lt;</span><span class="ident">PacketGuestMem</span><span class="op">&gt;</span>(), <span class="number">32</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">size_of</span>::<span class="op">&lt;</span><span class="ident">PacketGuestIo</span><span class="op">&gt;</span>(), <span class="number">32</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">size_of</span>::<span class="op">&lt;</span><span class="ident">PacketGuestVcpu</span><span class="op">&gt;</span>(), <span class="number">32</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">size_of</span>::<span class="op">&lt;</span><span class="ident">PacketInterrupt</span><span class="op">&gt;</span>(), <span class="number">32</span>);
+        <span class="kw">use</span> <span class="ident">core::mem::size_of</span>;
+        <span class="macro">assert_eq!</span>(<span class="ident">size_of</span>::<span class="op">&lt;</span><span class="ident">PacketUser</span><span class="op">&gt;</span>(), <span class="number">32</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">size_of</span>::<span class="op">&lt;</span><span class="ident">PacketSignal</span><span class="op">&gt;</span>(), <span class="number">32</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">size_of</span>::<span class="op">&lt;</span><span class="ident">PacketGuestBell</span><span class="op">&gt;</span>(), <span class="number">32</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">size_of</span>::<span class="op">&lt;</span><span class="ident">PacketGuestMem</span><span class="op">&gt;</span>(), <span class="number">32</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">size_of</span>::<span class="op">&lt;</span><span class="ident">PacketGuestIo</span><span class="op">&gt;</span>(), <span class="number">32</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">size_of</span>::<span class="op">&lt;</span><span class="ident">PacketGuestVcpu</span><span class="op">&gt;</span>(), <span class="number">32</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">size_of</span>::<span class="op">&lt;</span><span class="ident">PacketInterrupt</span><span class="op">&gt;</span>(), <span class="number">32</span>);
     }
 
     <span class="kw">fn</span> <span class="ident">test_encdec</span>(<span class="ident">data</span>: <span class="ident">PayloadRepr</span>) {
         <span class="kw">let</span> <span class="ident">repr</span> <span class="op">=</span> <span class="ident">PortPacketRepr</span> {
             <span class="ident">key</span>: <span class="number">0</span>,
-            <span class="ident">status</span>: <span class="ident">ZxError</span>::<span class="ident">OK</span>,
+            <span class="ident">status</span>: <span class="ident">ZxError::OK</span>,
             <span class="ident">data</span>: <span class="ident">data</span>.<span class="ident">clone</span>(),
         };
         <span class="kw">let</span> <span class="ident">packet</span> <span class="op">=</span> <span class="ident">PortPacket</span> {
             <span class="ident">key</span>: <span class="number">0</span>,
             <span class="ident">type_</span>: <span class="ident">data</span>.<span class="ident">type_</span>(),
-            <span class="ident">status</span>: <span class="ident">ZxError</span>::<span class="ident">OK</span>,
+            <span class="ident">status</span>: <span class="ident">ZxError::OK</span>,
             <span class="ident">data</span>: <span class="ident">data</span>.<span class="ident">encode</span>(),
         };
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">repr</span>, <span class="ident">PortPacketRepr</span>::<span class="ident">from</span>(<span class="kw-2">&amp;</span><span class="ident">packet</span>));
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">repr</span>.<span class="ident">clone</span>(), <span class="ident">PortPacketRepr</span>::<span class="ident">from</span>(<span class="kw-2">&amp;</span><span class="ident">PortPacket</span>::<span class="ident">from</span>(<span class="ident">repr</span>)));
+        <span class="macro">assert_eq!</span>(<span class="ident">repr</span>, <span class="ident">PortPacketRepr::from</span>(<span class="kw-2">&amp;</span><span class="ident">packet</span>));
+        <span class="macro">assert_eq!</span>(<span class="ident">repr</span>.<span class="ident">clone</span>(), <span class="ident">PortPacketRepr::from</span>(<span class="kw-2">&amp;</span><span class="ident">PortPacket::from</span>(<span class="ident">repr</span>)));
     }
 
     <span class="attribute">#[<span class="ident">test</span>]</span>
     <span class="kw">fn</span> <span class="ident">user</span>() {
-        <span class="kw">let</span> <span class="ident">user</span> <span class="op">=</span> <span class="ident">PacketUser</span>::<span class="ident">default</span>();
-        <span class="ident">test_encdec</span>(<span class="ident">PayloadRepr</span>::<span class="ident">User</span>(<span class="ident">user</span>));
+        <span class="kw">let</span> <span class="ident">user</span> <span class="op">=</span> <span class="ident">PacketUser::default</span>();
+        <span class="ident">test_encdec</span>(<span class="ident">PayloadRepr::User</span>(<span class="ident">user</span>));
     }
 
     <span class="attribute">#[<span class="ident">test</span>]</span>
     <span class="kw">fn</span> <span class="ident">signal</span>() {
         <span class="kw">let</span> <span class="ident">data</span> <span class="op">=</span> <span class="ident">PacketSignal</span> {
-            <span class="ident">trigger</span>: <span class="ident">Signal</span>::<span class="ident">READABLE</span>,
-            <span class="ident">observed</span>: <span class="ident">Signal</span>::<span class="ident">WRITABLE</span>,
+            <span class="ident">trigger</span>: <span class="ident">Signal::READABLE</span>,
+            <span class="ident">observed</span>: <span class="ident">Signal::WRITABLE</span>,
             <span class="ident">count</span>: <span class="number">1</span>,
             <span class="ident">timestamp</span>: <span class="number">0</span>,
             <span class="ident">_reserved1</span>: <span class="number">0</span>,
         };
-        <span class="ident">test_encdec</span>(<span class="ident">PayloadRepr</span>::<span class="ident">Signal</span>(<span class="ident">data</span>));
+        <span class="ident">test_encdec</span>(<span class="ident">PayloadRepr::Signal</span>(<span class="ident">data</span>));
         <span class="kw">let</span> <span class="ident">packet</span> <span class="op">=</span> <span class="ident">PortPacket</span> {
             <span class="ident">key</span>: <span class="number">1</span>,
-            <span class="ident">type_</span>: <span class="ident">PacketType</span>::<span class="ident">SignalOne</span>,
-            <span class="ident">status</span>: <span class="ident">ZxError</span>::<span class="ident">OK</span>,
+            <span class="ident">type_</span>: <span class="ident">PacketType::SignalOne</span>,
+            <span class="ident">status</span>: <span class="ident">ZxError::OK</span>,
             <span class="ident">data</span>: <span class="ident">Payload</span> { <span class="ident">signal</span>: <span class="ident">data</span> },
         };
         <span class="kw">let</span> <span class="ident">packet_</span> <span class="op">=</span> <span class="ident">PortPacket</span> {
             <span class="ident">key</span>: <span class="number">1</span>,
-            <span class="ident">type_</span>: <span class="ident">PacketType</span>::<span class="ident">SignalRep</span>,
-            <span class="ident">status</span>: <span class="ident">ZxError</span>::<span class="ident">OK</span>,
+            <span class="ident">type_</span>: <span class="ident">PacketType::SignalRep</span>,
+            <span class="ident">status</span>: <span class="ident">ZxError::OK</span>,
             <span class="ident">data</span>: <span class="ident">Payload</span> { <span class="ident">signal</span>: <span class="ident">data</span> },
         };
-        <span class="macro">assert_eq</span><span class="macro">!</span>(
-            <span class="ident">PortPacketRepr</span>::<span class="ident">from</span>(<span class="kw-2">&amp;</span><span class="ident">packet</span>),
-            <span class="ident">PortPacketRepr</span>::<span class="ident">from</span>(<span class="kw-2">&amp;</span><span class="ident">packet_</span>)
+        <span class="macro">assert_eq!</span>(
+            <span class="ident">PortPacketRepr::from</span>(<span class="kw-2">&amp;</span><span class="ident">packet</span>),
+            <span class="ident">PortPacketRepr::from</span>(<span class="kw-2">&amp;</span><span class="ident">packet_</span>)
         );
     }
 
     <span class="attribute">#[<span class="ident">test</span>]</span>
     <span class="kw">fn</span> <span class="ident">guest_bell</span>() {
-        <span class="kw">let</span> <span class="ident">guest_bell</span> <span class="op">=</span> <span class="ident">PacketGuestBell</span>::<span class="ident">default</span>();
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">guest_bell</span>.<span class="ident">addr</span>, <span class="number">0</span>);
-        <span class="ident">test_encdec</span>(<span class="ident">PayloadRepr</span>::<span class="ident">GuestBell</span>(<span class="ident">guest_bell</span>));
+        <span class="kw">let</span> <span class="ident">guest_bell</span> <span class="op">=</span> <span class="ident">PacketGuestBell::default</span>();
+        <span class="macro">assert_eq!</span>(<span class="ident">guest_bell</span>.<span class="ident">addr</span>, <span class="number">0</span>);
+        <span class="ident">test_encdec</span>(<span class="ident">PayloadRepr::GuestBell</span>(<span class="ident">guest_bell</span>));
     }
 
     <span class="attribute">#[<span class="ident">test</span>]</span>
     <span class="kw">fn</span> <span class="ident">guest_mem</span>() {
-        <span class="kw">let</span> <span class="ident">guest_mem</span> <span class="op">=</span> <span class="ident">PacketGuestMem</span>::<span class="ident">default</span>();
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">guest_mem</span>.<span class="ident">addr</span>, <span class="number">0</span>);
-        <span class="ident">test_encdec</span>(<span class="ident">PayloadRepr</span>::<span class="ident">GuestMem</span>(<span class="ident">guest_mem</span>));
+        <span class="kw">let</span> <span class="ident">guest_mem</span> <span class="op">=</span> <span class="ident">PacketGuestMem::default</span>();
+        <span class="macro">assert_eq!</span>(<span class="ident">guest_mem</span>.<span class="ident">addr</span>, <span class="number">0</span>);
+        <span class="ident">test_encdec</span>(<span class="ident">PayloadRepr::GuestMem</span>(<span class="ident">guest_mem</span>));
     }
 
     <span class="attribute">#[<span class="ident">test</span>]</span>
     <span class="kw">fn</span> <span class="ident">guest_io</span>() {
-        <span class="kw">let</span> <span class="ident">guest_io</span> <span class="op">=</span> <span class="ident">PacketGuestIo</span>::<span class="ident">default</span>();
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">guest_io</span>.<span class="ident">port</span>, <span class="number">0</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">guest_io</span>.<span class="ident">input</span>, <span class="bool-val">false</span>);
-        <span class="ident">test_encdec</span>(<span class="ident">PayloadRepr</span>::<span class="ident">GuestIo</span>(<span class="ident">guest_io</span>));
+        <span class="kw">let</span> <span class="ident">guest_io</span> <span class="op">=</span> <span class="ident">PacketGuestIo::default</span>();
+        <span class="macro">assert_eq!</span>(<span class="ident">guest_io</span>.<span class="ident">port</span>, <span class="number">0</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">guest_io</span>.<span class="ident">input</span>, <span class="bool-val">false</span>);
+        <span class="ident">test_encdec</span>(<span class="ident">PayloadRepr::GuestIo</span>(<span class="ident">guest_io</span>));
     }
 
     <span class="attribute">#[<span class="ident">test</span>]</span>
@@ -799,43 +818,43 @@
         <span class="kw">let</span> <span class="ident">interrupt</span> <span class="op">=</span> <span class="ident">PacketGuestVcpuInterrupt</span> { <span class="ident">mask</span>: <span class="number">0</span>, <span class="ident">vector</span>: <span class="number">0</span> };
         <span class="kw">let</span> <span class="ident">guest_vcpu1</span> <span class="op">=</span> <span class="ident">PacketGuestVcpu</span> {
             <span class="ident">data</span>: <span class="ident">PacketGuestVcpuData</span> { <span class="ident">interrupt</span> },
-            <span class="ident">type_</span>: <span class="ident">PacketGuestVcpuType</span>::<span class="ident">VcpuInterrupt</span>,
-            <span class="ident">_padding1</span>: <span class="ident">Default</span>::<span class="ident">default</span>(),
+            <span class="ident">type_</span>: <span class="ident">PacketGuestVcpuType::VcpuInterrupt</span>,
+            <span class="ident">_padding1</span>: <span class="ident">Default::default</span>(),
             <span class="ident">_reserved</span>: <span class="number">0</span>,
         };
         <span class="kw">let</span> <span class="ident">startup</span> <span class="op">=</span> <span class="ident">PacketGuestVcpuStartup</span> { <span class="ident">id</span>: <span class="number">0</span>, <span class="ident">entry</span>: <span class="number">0</span> };
         <span class="kw">let</span> <span class="ident">guest_vcpu2</span> <span class="op">=</span> <span class="ident">PacketGuestVcpu</span> {
             <span class="ident">data</span>: <span class="ident">PacketGuestVcpuData</span> { <span class="ident">startup</span> },
-            <span class="ident">type_</span>: <span class="ident">PacketGuestVcpuType</span>::<span class="ident">VcpuStartup</span>,
-            <span class="ident">_padding1</span>: <span class="ident">Default</span>::<span class="ident">default</span>(),
+            <span class="ident">type_</span>: <span class="ident">PacketGuestVcpuType::VcpuStartup</span>,
+            <span class="ident">_padding1</span>: <span class="ident">Default::default</span>(),
             <span class="ident">_reserved</span>: <span class="number">0</span>,
         };
-        <span class="ident">test_encdec</span>(<span class="ident">PayloadRepr</span>::<span class="ident">GuestVcpu</span>(<span class="ident">guest_vcpu1</span>));
-        <span class="ident">test_encdec</span>(<span class="ident">PayloadRepr</span>::<span class="ident">GuestVcpu</span>(<span class="ident">guest_vcpu2</span>));
+        <span class="ident">test_encdec</span>(<span class="ident">PayloadRepr::GuestVcpu</span>(<span class="ident">guest_vcpu1</span>));
+        <span class="ident">test_encdec</span>(<span class="ident">PayloadRepr::GuestVcpu</span>(<span class="ident">guest_vcpu2</span>));
 
         <span class="kw">let</span> <span class="ident">packet</span> <span class="op">=</span> <span class="ident">PortPacket</span> {
             <span class="ident">key</span>: <span class="number">1</span>,
-            <span class="ident">type_</span>: <span class="ident">PacketType</span>::<span class="ident">GuestVcpu</span>,
-            <span class="ident">status</span>: <span class="ident">ZxError</span>::<span class="ident">OK</span>,
+            <span class="ident">type_</span>: <span class="ident">PacketType::GuestVcpu</span>,
+            <span class="ident">status</span>: <span class="ident">ZxError::OK</span>,
             <span class="ident">data</span>: <span class="ident">Payload</span> {
                 <span class="ident">guest_vcpu</span>: <span class="ident">guest_vcpu2</span>,
             },
         };
-        <span class="macro">assert_eq</span><span class="macro">!</span>(
-            <span class="macro">format</span><span class="macro">!</span>(<span class="string">&quot;{:?}&quot;</span>, <span class="ident">packet</span>),
+        <span class="macro">assert_eq!</span>(
+            <span class="macro">format!</span>(<span class="string">&quot;{:?}&quot;</span>, <span class="ident">packet</span>),
             <span class="string">&quot;PortPacketRepr { key: 1, status: OK, data: GuestVcpu(PacketGuestVcpu { data: PacketGuestVcpuStartup { id: 0, entry: 0 }, type_: VcpuStartup, _padding1: [0, 0, 0, 0, 0, 0, 0], _reserved: 0 }) }&quot;</span>
         );
 
-        <span class="macro">assert</span><span class="macro">!</span>(<span class="op">!</span><span class="ident">guest_vcpu1</span>.<span class="ident">eq</span>(<span class="kw-2">&amp;</span><span class="ident">guest_vcpu2</span>));
+        <span class="macro">assert!</span>(<span class="op">!</span><span class="ident">guest_vcpu1</span>.<span class="ident">eq</span>(<span class="kw-2">&amp;</span><span class="ident">guest_vcpu2</span>));
         <span class="kw">let</span> <span class="ident">guest_vcpu3</span> <span class="op">=</span> <span class="ident">PacketGuestVcpu</span> {
             <span class="ident">data</span>: <span class="ident">PacketGuestVcpuData</span> {
                 <span class="ident">startup</span>: <span class="ident">PacketGuestVcpuStartup</span> { <span class="ident">id</span>: <span class="number">0</span>, <span class="ident">entry</span>: <span class="number">1</span> },
             },
-            <span class="ident">type_</span>: <span class="ident">PacketGuestVcpuType</span>::<span class="ident">VcpuStartup</span>,
-            <span class="ident">_padding1</span>: <span class="ident">Default</span>::<span class="ident">default</span>(),
+            <span class="ident">type_</span>: <span class="ident">PacketGuestVcpuType::VcpuStartup</span>,
+            <span class="ident">_padding1</span>: <span class="ident">Default::default</span>(),
             <span class="ident">_reserved</span>: <span class="number">0</span>,
         };
-        <span class="macro">assert</span><span class="macro">!</span>(<span class="op">!</span><span class="ident">guest_vcpu2</span>.<span class="ident">eq</span>(<span class="kw-2">&amp;</span><span class="ident">guest_vcpu3</span>));
+        <span class="macro">assert!</span>(<span class="op">!</span><span class="ident">guest_vcpu2</span>.<span class="ident">eq</span>(<span class="kw-2">&amp;</span><span class="ident">guest_vcpu3</span>));
     }
 
     <span class="attribute">#[<span class="ident">test</span>]</span>
@@ -846,16 +865,17 @@
             <span class="ident">_reserved1</span>: <span class="number">0</span>,
             <span class="ident">_reserved2</span>: <span class="number">0</span>,
         };
-        <span class="ident">test_encdec</span>(<span class="ident">PayloadRepr</span>::<span class="ident">Interrupt</span>(<span class="ident">interrupt</span>));
+        <span class="ident">test_encdec</span>(<span class="ident">PayloadRepr::Interrupt</span>(<span class="ident">interrupt</span>));
     }
 
     <span class="attribute">#[<span class="ident">test</span>]</span>
     <span class="attribute">#[<span class="ident">should_panic</span>(<span class="ident">expected</span> <span class="op">=</span> <span class="string">&quot;not implemented&quot;</span>)]</span>
     <span class="kw">fn</span> <span class="ident">page_request</span>() {
         <span class="kw">let</span> <span class="ident">data</span>: <span class="ident">PacketUser</span> <span class="op">=</span> [<span class="number">0u8</span>; <span class="number">32</span>];
-        <span class="ident">PayloadRepr</span>::<span class="ident">decode</span>(<span class="ident">PacketType</span>::<span class="ident">PageRequest</span>, <span class="kw-2">&amp;</span><span class="ident">Payload</span> { <span class="ident">user</span>: <span class="ident">data</span> });
+        <span class="ident">PayloadRepr::decode</span>(<span class="ident">PacketType::PageRequest</span>, <span class="kw-2">&amp;</span><span class="ident">Payload</span> { <span class="ident">user</span>: <span class="ident">data</span> });
     }
 }
 </pre></div>
-</section><section id="search" class="content hidden"></section><section class="footer"></section><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="zircon_object"></div>
-    <script src="../../../main.js"></script><script src="../../../source-script.js"></script><script src="../../../source-files.js"></script><script defer src="../../../search-index.js"></script></body></html>
+</section><section id="search" class="content hidden"></section><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="zircon_object" data-search-index-js="../../../search-index.js" data-search-js="../../../search.js"></div>
+    <script src="../../../main.js"></script><script src="../../../source-script.js"></script><script src="../../../source-files.js"></script>
+</body></html>

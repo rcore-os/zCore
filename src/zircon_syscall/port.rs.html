@@ -1,7 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `zircon-syscall/src/port.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>port.rs - source</title><link rel="stylesheet" type="text/css" href="../../normalize.css"><link rel="stylesheet" type="text/css" href="../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../ayu.css" disabled ><script id="default-settings"></script><script src="../../storage.js"></script><noscript><link rel="stylesheet" href="../../noscript.css"></noscript><link rel="icon" type="image/svg+xml" href="../../favicon.svg">
-<link rel="alternate icon" type="image/png" href="../../favicon-16x16.png">
-<link rel="alternate icon" type="image/png" href="../../favicon-32x32.png"><style type="text/css">#crate-search{background-image:url("../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 8]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../zircon_syscall/index.html'><div class='logo-container rust-logo'><img src='../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu"><img src="../../brush.svg" width="18" alt="Pick another theme!"></button><div id="theme-choices" role="menu"></div></div><script src="../../theme.js"></script><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" class="help-button">?</button>
-                <a id="settings-menu" href="../../settings.html"><img src="../../wheel.svg" width="18" alt="Change settings"></a></div></form></nav><section id="main" class="content"><pre class="line-numbers"><span id="1"> 1</span>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `zircon-syscall&#x2F;src&#x2F;port.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>port.rs - source</title><link rel="stylesheet" type="text/css" href="../../normalize.css"><link rel="stylesheet" type="text/css" href="../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../ayu.css" disabled ><script id="default-settings" ></script><script src="../../storage.js"></script><script src="../../crates.js"></script><noscript><link rel="stylesheet" href="../../noscript.css"></noscript><link rel="icon" type="image/svg+xml" href="../../favicon.svg"><link rel="alternate icon" type="image/png" href="../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../favicon-32x32.png"><style type="text/css">#crate-search{background-image:url("../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../zircon_syscall/index.html'><div class='logo-container rust-logo'><img src='../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu" title="themes"><img width="18" height="18" alt="Pick another theme!" src="../../brush.svg"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input"name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" id="help-button" title="help">?</button><a id="settings-menu" href="../../settings.html" title="settings"><img width="18" height="18" alt="Change settings" src="../../wheel.svg"></a></div></form></nav><section id="main" class="content"><div class="example-wrap"><pre class="line-numbers"><span id="1"> 1</span>
 <span id="2"> 2</span>
 <span id="3"> 3</span>
 <span id="4"> 4</span>
@@ -57,7 +54,7 @@
 <span id="54">54</span>
 <span id="55">55</span>
 <span id="56">56</span>
-</pre><div class="example-wrap"><pre class="rust ">
+</pre><pre class="rust">
 <span class="kw">use</span> {
     <span class="kw">super</span>::<span class="kw-2">*</span>,
     <span class="ident">zircon_object</span>::{<span class="ident">signal</span>::<span class="kw-2">*</span>, <span class="ident">task</span>::<span class="kw-2">*</span>},
@@ -66,8 +63,8 @@
 <span class="kw">impl</span> <span class="ident">Syscall</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span> {
     <span class="doccomment">/// Create an IO port.  </span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_port_create</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">options</span>: <span class="ident">u32</span>, <span class="kw-2">mut</span> <span class="ident">out</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">HandleValue</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
-        <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;port.create: options={:#x}&quot;</span>, <span class="ident">options</span>);
-        <span class="kw">let</span> <span class="ident">port_handle</span> <span class="op">=</span> <span class="ident">Handle</span>::<span class="ident">new</span>(<span class="ident">Port</span>::<span class="ident">new</span>(<span class="ident">options</span>)<span class="question-mark">?</span>, <span class="ident">Rights</span>::<span class="ident">DEFAULT_PORT</span>);
+        <span class="macro">info!</span>(<span class="string">&quot;port.create: options={:#x}&quot;</span>, <span class="ident">options</span>);
+        <span class="kw">let</span> <span class="ident">port_handle</span> <span class="op">=</span> <span class="ident">Handle::new</span>(<span class="ident">Port::new</span>(<span class="ident">options</span>)<span class="question-mark">?</span>, <span class="ident">Rights::DEFAULT_PORT</span>);
         <span class="kw">let</span> <span class="ident">handle_value</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>().<span class="ident">add_handle</span>(<span class="ident">port_handle</span>);
         <span class="ident">out</span>.<span class="ident">write</span>(<span class="ident">handle_value</span>)<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(())
@@ -80,18 +77,18 @@
         <span class="ident">deadline</span>: <span class="ident">Deadline</span>,
         <span class="kw-2">mut</span> <span class="ident">packet_res</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">PortPacket</span><span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
-        <span class="macro">info</span><span class="macro">!</span>(
+        <span class="macro">info!</span>(
             <span class="string">&quot;port.wait: handle={}, deadline={:?}&quot;</span>,
             <span class="ident">handle_value</span>, <span class="ident">deadline</span>
         );
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">core</span>::<span class="ident">mem</span>::<span class="ident">size_of</span>::<span class="op">&lt;</span><span class="ident">PortPacket</span><span class="op">&gt;</span>(), <span class="number">48</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">core::mem::size_of</span>::<span class="op">&lt;</span><span class="ident">PortPacket</span><span class="op">&gt;</span>(), <span class="number">48</span>);
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>();
-        <span class="kw">let</span> <span class="ident">port</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">Port</span><span class="op">&gt;</span>(<span class="ident">handle_value</span>, <span class="ident">Rights</span>::<span class="ident">READ</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">port</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">Port</span><span class="op">&gt;</span>(<span class="ident">handle_value</span>, <span class="ident">Rights::READ</span>)<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">future</span> <span class="op">=</span> <span class="ident">port</span>.<span class="ident">wait</span>();
-        <span class="macro">pin_mut</span><span class="macro">!</span>(<span class="ident">future</span>);
+        <span class="macro">pin_mut!</span>(<span class="ident">future</span>);
         <span class="kw">let</span> <span class="ident">packet</span> <span class="op">=</span> <span class="self">self</span>
             .<span class="ident">thread</span>
-            .<span class="ident">blocking_run</span>(<span class="ident">future</span>, <span class="ident">ThreadState</span>::<span class="ident">BlockedPort</span>, <span class="ident">deadline</span>.<span class="ident">into</span>(), <span class="prelude-val">None</span>)
+            .<span class="ident">blocking_run</span>(<span class="ident">future</span>, <span class="ident">ThreadState::BlockedPort</span>, <span class="ident">deadline</span>.<span class="ident">into</span>(), <span class="prelude-val">None</span>)
             .<span class="kw">await</span><span class="question-mark">?</span>;
         <span class="ident">packet_res</span>.<span class="ident">write</span>(<span class="ident">packet</span>)<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(())
@@ -104,9 +101,9 @@
         <span class="ident">packcet_in</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">PortPacket</span><span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>();
-        <span class="kw">let</span> <span class="ident">port</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">Port</span><span class="op">&gt;</span>(<span class="ident">handle_value</span>, <span class="ident">Rights</span>::<span class="ident">WRITE</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">port</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">Port</span><span class="op">&gt;</span>(<span class="ident">handle_value</span>, <span class="ident">Rights::WRITE</span>)<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">packet</span> <span class="op">=</span> <span class="ident">packcet_in</span>.<span class="ident">read</span>()<span class="question-mark">?</span>;
-        <span class="macro">info</span><span class="macro">!</span>(
+        <span class="macro">info!</span>(
             <span class="string">&quot;port.queue: handle={:#x}, packet={:?}&quot;</span>,
             <span class="ident">handle_value</span>, <span class="ident">packet</span>
         );
@@ -115,5 +112,6 @@
     }
 }
 </pre></div>
-</section><section id="search" class="content hidden"></section><section class="footer"></section><div id="rustdoc-vars" data-root-path="../../" data-current-crate="zircon_syscall"></div>
-    <script src="../../main.js"></script><script src="../../source-script.js"></script><script src="../../source-files.js"></script><script defer src="../../search-index.js"></script></body></html>
+</section><section id="search" class="content hidden"></section><div id="rustdoc-vars" data-root-path="../../" data-current-crate="zircon_syscall" data-search-index-js="../../search-index.js" data-search-js="../../search.js"></div>
+    <script src="../../main.js"></script><script src="../../source-script.js"></script><script src="../../source-files.js"></script>
+</body></html>

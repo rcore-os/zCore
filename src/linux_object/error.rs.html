@@ -1,7 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `linux-object/src/error.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>error.rs - source</title><link rel="stylesheet" type="text/css" href="../../normalize.css"><link rel="stylesheet" type="text/css" href="../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../ayu.css" disabled ><script id="default-settings"></script><script src="../../storage.js"></script><noscript><link rel="stylesheet" href="../../noscript.css"></noscript><link rel="icon" type="image/svg+xml" href="../../favicon.svg">
-<link rel="alternate icon" type="image/png" href="../../favicon-16x16.png">
-<link rel="alternate icon" type="image/png" href="../../favicon-32x32.png"><style type="text/css">#crate-search{background-image:url("../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 8]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../linux_object/index.html'><div class='logo-container rust-logo'><img src='../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu"><img src="../../brush.svg" width="18" alt="Pick another theme!"></button><div id="theme-choices" role="menu"></div></div><script src="../../theme.js"></script><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" class="help-button">?</button>
-                <a id="settings-menu" href="../../settings.html"><img src="../../wheel.svg" width="18" alt="Change settings"></a></div></form></nav><section id="main" class="content"><pre class="line-numbers"><span id="1">  1</span>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `linux-object&#x2F;src&#x2F;error.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>error.rs - source</title><link rel="stylesheet" type="text/css" href="../../normalize.css"><link rel="stylesheet" type="text/css" href="../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../ayu.css" disabled ><script id="default-settings" ></script><script src="../../storage.js"></script><script src="../../crates.js"></script><noscript><link rel="stylesheet" href="../../noscript.css"></noscript><link rel="icon" type="image/svg+xml" href="../../favicon.svg"><link rel="alternate icon" type="image/png" href="../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../favicon-32x32.png"><style type="text/css">#crate-search{background-image:url("../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../linux_object/index.html'><div class='logo-container rust-logo'><img src='../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu" title="themes"><img width="18" height="18" alt="Pick another theme!" src="../../brush.svg"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input"name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" id="help-button" title="help">?</button><a id="settings-menu" href="../../settings.html" title="settings"><img width="18" height="18" alt="Change settings" src="../../wheel.svg"></a></div></form></nav><section id="main" class="content"><div class="example-wrap"><pre class="line-numbers"><span id="1">  1</span>
 <span id="2">  2</span>
 <span id="3">  3</span>
 <span id="4">  4</span>
@@ -231,11 +228,11 @@
 <span id="228">228</span>
 <span id="229">229</span>
 <span id="230">230</span>
-</pre><div class="example-wrap"><pre class="rust ">
+</pre><pre class="rust">
 <span class="doccomment">//! Linux error codes</span>
-<span class="kw">use</span> <span class="ident">core</span>::<span class="ident">fmt</span>;
-<span class="kw">use</span> <span class="ident">rcore_fs</span>::<span class="ident">vfs</span>::<span class="ident">FsError</span>;
-<span class="kw">use</span> <span class="ident">zircon_object</span>::<span class="ident">ZxError</span>;
+<span class="kw">use</span> <span class="ident">core::fmt</span>;
+<span class="kw">use</span> <span class="ident">rcore_fs::vfs::FsError</span>;
+<span class="kw">use</span> <span class="ident">zircon_object::ZxError</span>;
 
 <span class="doccomment">/// Linux Result defination</span>
 <span class="kw">pub</span> <span class="kw">type</span> <span class="ident">LxResult</span><span class="op">&lt;</span><span class="ident">T</span> <span class="op">=</span> ()<span class="op">&gt;</span> <span class="op">=</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">T</span>, <span class="ident">LxError</span><span class="op">&gt;</span>;
@@ -350,9 +347,9 @@
 }
 
 <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">non_snake_case</span>)]</span>
-<span class="kw">impl</span> <span class="ident">fmt</span>::<span class="ident">Display</span> <span class="kw">for</span> <span class="ident">LxError</span> {
-    <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">fmt</span>::<span class="ident">Formatter</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">fmt</span>::<span class="prelude-ty">Result</span> {
-        <span class="kw">use</span> <span class="self">self</span>::<span class="ident">LxError</span>::<span class="kw-2">*</span>;
+<span class="kw">impl</span> <span class="ident">fmt::Display</span> <span class="kw">for</span> <span class="ident">LxError</span> {
+    <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">fmt::Formatter</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">fmt::Result</span> {
+        <span class="kw">use</span> <span class="self">self</span><span class="ident">::LxError</span>::<span class="kw-2">*</span>;
         <span class="kw">let</span> <span class="ident">explain</span> <span class="op">=</span> <span class="kw">match</span> <span class="self">self</span> {
             <span class="ident">EPERM</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;Operation not permitted&quot;</span>,
             <span class="ident">ENOENT</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;No such file or directory&quot;</span>,
@@ -405,20 +402,20 @@
             <span class="ident">ECONNREFUSED</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;Connection refused&quot;</span>,
             <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;Unknown error&quot;</span>,
         };
-        <span class="macro">write</span><span class="macro">!</span>(<span class="ident">f</span>, <span class="string">&quot;{}&quot;</span>, <span class="ident">explain</span>)
+        <span class="macro">write!</span>(<span class="ident">f</span>, <span class="string">&quot;{}&quot;</span>, <span class="ident">explain</span>)
     }
 }
 
 <span class="kw">impl</span> <span class="ident">From</span><span class="op">&lt;</span><span class="ident">ZxError</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">LxError</span> {
     <span class="kw">fn</span> <span class="ident">from</span>(<span class="ident">e</span>: <span class="ident">ZxError</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
         <span class="kw">match</span> <span class="ident">e</span> {
-            <span class="ident">ZxError</span>::<span class="ident">INVALID_ARGS</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError</span>::<span class="ident">EINVAL</span>,
-            <span class="ident">ZxError</span>::<span class="ident">NOT_SUPPORTED</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError</span>::<span class="ident">ENOSYS</span>,
-            <span class="ident">ZxError</span>::<span class="ident">ALREADY_EXISTS</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError</span>::<span class="ident">EEXIST</span>,
-            <span class="ident">ZxError</span>::<span class="ident">SHOULD_WAIT</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError</span>::<span class="ident">EAGAIN</span>,
-            <span class="ident">ZxError</span>::<span class="ident">PEER_CLOSED</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError</span>::<span class="ident">EPIPE</span>,
-            <span class="ident">ZxError</span>::<span class="ident">BAD_HANDLE</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError</span>::<span class="ident">EBADF</span>,
-            <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="macro">unimplemented</span><span class="macro">!</span>(<span class="string">&quot;unknown error type: {:?}&quot;</span>, <span class="ident">e</span>),
+            <span class="ident">ZxError::INVALID_ARGS</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::EINVAL</span>,
+            <span class="ident">ZxError::NOT_SUPPORTED</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::ENOSYS</span>,
+            <span class="ident">ZxError::ALREADY_EXISTS</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::EEXIST</span>,
+            <span class="ident">ZxError::SHOULD_WAIT</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::EAGAIN</span>,
+            <span class="ident">ZxError::PEER_CLOSED</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::EPIPE</span>,
+            <span class="ident">ZxError::BAD_HANDLE</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::EBADF</span>,
+            <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="macro">unimplemented!</span>(<span class="string">&quot;unknown error type: {:?}&quot;</span>, <span class="ident">e</span>),
         }
     }
 }
@@ -426,42 +423,43 @@
 <span class="kw">impl</span> <span class="ident">From</span><span class="op">&lt;</span><span class="ident">FsError</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">LxError</span> {
     <span class="kw">fn</span> <span class="ident">from</span>(<span class="ident">error</span>: <span class="ident">FsError</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
         <span class="kw">match</span> <span class="ident">error</span> {
-            <span class="ident">FsError</span>::<span class="ident">NotSupported</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError</span>::<span class="ident">ENOSYS</span>,
-            <span class="ident">FsError</span>::<span class="ident">NotFile</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError</span>::<span class="ident">EISDIR</span>,
-            <span class="ident">FsError</span>::<span class="ident">IsDir</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError</span>::<span class="ident">EISDIR</span>,
-            <span class="ident">FsError</span>::<span class="ident">NotDir</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError</span>::<span class="ident">ENOTDIR</span>,
-            <span class="ident">FsError</span>::<span class="ident">EntryNotFound</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError</span>::<span class="ident">ENOENT</span>,
-            <span class="ident">FsError</span>::<span class="ident">EntryExist</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError</span>::<span class="ident">EEXIST</span>,
-            <span class="ident">FsError</span>::<span class="ident">NotSameFs</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError</span>::<span class="ident">EXDEV</span>,
-            <span class="ident">FsError</span>::<span class="ident">InvalidParam</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError</span>::<span class="ident">EINVAL</span>,
-            <span class="ident">FsError</span>::<span class="ident">NoDeviceSpace</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError</span>::<span class="ident">ENOMEM</span>,
-            <span class="ident">FsError</span>::<span class="ident">DirRemoved</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError</span>::<span class="ident">ENOENT</span>,
-            <span class="ident">FsError</span>::<span class="ident">DirNotEmpty</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError</span>::<span class="ident">ENOTEMPTY</span>,
-            <span class="ident">FsError</span>::<span class="ident">WrongFs</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError</span>::<span class="ident">EINVAL</span>,
-            <span class="ident">FsError</span>::<span class="ident">DeviceError</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError</span>::<span class="ident">EIO</span>,
-            <span class="ident">FsError</span>::<span class="ident">IOCTLError</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError</span>::<span class="ident">EINVAL</span>,
-            <span class="ident">FsError</span>::<span class="ident">NoDevice</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError</span>::<span class="ident">EINVAL</span>,
-            <span class="ident">FsError</span>::<span class="ident">Again</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError</span>::<span class="ident">EAGAIN</span>,
-            <span class="ident">FsError</span>::<span class="ident">SymLoop</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError</span>::<span class="ident">ELOOP</span>,
-            <span class="ident">FsError</span>::<span class="ident">Busy</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError</span>::<span class="ident">EBUSY</span>,
-            <span class="ident">FsError</span>::<span class="ident">Interrupted</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError</span>::<span class="ident">EINTR</span>,
+            <span class="ident">FsError::NotSupported</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::ENOSYS</span>,
+            <span class="ident">FsError::NotFile</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::EISDIR</span>,
+            <span class="ident">FsError::IsDir</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::EISDIR</span>,
+            <span class="ident">FsError::NotDir</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::ENOTDIR</span>,
+            <span class="ident">FsError::EntryNotFound</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::ENOENT</span>,
+            <span class="ident">FsError::EntryExist</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::EEXIST</span>,
+            <span class="ident">FsError::NotSameFs</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::EXDEV</span>,
+            <span class="ident">FsError::InvalidParam</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::EINVAL</span>,
+            <span class="ident">FsError::NoDeviceSpace</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::ENOMEM</span>,
+            <span class="ident">FsError::DirRemoved</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::ENOENT</span>,
+            <span class="ident">FsError::DirNotEmpty</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::ENOTEMPTY</span>,
+            <span class="ident">FsError::WrongFs</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::EINVAL</span>,
+            <span class="ident">FsError::DeviceError</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::EIO</span>,
+            <span class="ident">FsError::IOCTLError</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::EINVAL</span>,
+            <span class="ident">FsError::NoDevice</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::EINVAL</span>,
+            <span class="ident">FsError::Again</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::EAGAIN</span>,
+            <span class="ident">FsError::SymLoop</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::ELOOP</span>,
+            <span class="ident">FsError::Busy</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::EBUSY</span>,
+            <span class="ident">FsError::Interrupted</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::EINTR</span>,
         }
     }
 }
 
-<span class="kw">use</span> <span class="ident">kernel_hal</span>::<span class="ident">user</span>::<span class="ident">Error</span>;
+<span class="kw">use</span> <span class="ident">kernel_hal::user::Error</span>;
 
 <span class="kw">impl</span> <span class="ident">From</span><span class="op">&lt;</span><span class="ident">Error</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">LxError</span> {
     <span class="kw">fn</span> <span class="ident">from</span>(<span class="ident">e</span>: <span class="ident">Error</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
         <span class="kw">match</span> <span class="ident">e</span> {
-            <span class="ident">Error</span>::<span class="ident">InvalidUtf8</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError</span>::<span class="ident">EINVAL</span>,
-            <span class="ident">Error</span>::<span class="ident">InvalidPointer</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError</span>::<span class="ident">EFAULT</span>,
-            <span class="ident">Error</span>::<span class="ident">BufferTooSmall</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError</span>::<span class="ident">ENOBUFS</span>,
-            <span class="ident">Error</span>::<span class="ident">InvalidLength</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError</span>::<span class="ident">EINVAL</span>,
-            <span class="ident">Error</span>::<span class="ident">InvalidVectorAddress</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError</span>::<span class="ident">EINVAL</span>,
+            <span class="ident">Error::InvalidUtf8</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::EINVAL</span>,
+            <span class="ident">Error::InvalidPointer</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::EFAULT</span>,
+            <span class="ident">Error::BufferTooSmall</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::ENOBUFS</span>,
+            <span class="ident">Error::InvalidLength</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::EINVAL</span>,
+            <span class="ident">Error::InvalidVectorAddress</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::EINVAL</span>,
         }
     }
 }
 </pre></div>
-</section><section id="search" class="content hidden"></section><section class="footer"></section><div id="rustdoc-vars" data-root-path="../../" data-current-crate="linux_object"></div>
-    <script src="../../main.js"></script><script src="../../source-script.js"></script><script src="../../source-files.js"></script><script defer src="../../search-index.js"></script></body></html>
+</section><section id="search" class="content hidden"></section><div id="rustdoc-vars" data-root-path="../../" data-current-crate="linux_object" data-search-index-js="../../search-index.js" data-search-js="../../search.js"></div>
+    <script src="../../main.js"></script><script src="../../source-script.js"></script><script src="../../source-files.js"></script>
+</body></html>

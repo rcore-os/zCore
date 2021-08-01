@@ -1,7 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `zircon-syscall/src/signal.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>signal.rs - source</title><link rel="stylesheet" type="text/css" href="../../normalize.css"><link rel="stylesheet" type="text/css" href="../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../ayu.css" disabled ><script id="default-settings"></script><script src="../../storage.js"></script><noscript><link rel="stylesheet" href="../../noscript.css"></noscript><link rel="icon" type="image/svg+xml" href="../../favicon.svg">
-<link rel="alternate icon" type="image/png" href="../../favicon-16x16.png">
-<link rel="alternate icon" type="image/png" href="../../favicon-32x32.png"><style type="text/css">#crate-search{background-image:url("../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 8]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../zircon_syscall/index.html'><div class='logo-container rust-logo'><img src='../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu"><img src="../../brush.svg" width="18" alt="Pick another theme!"></button><div id="theme-choices" role="menu"></div></div><script src="../../theme.js"></script><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" class="help-button">?</button>
-                <a id="settings-menu" href="../../settings.html"><img src="../../wheel.svg" width="18" alt="Change settings"></a></div></form></nav><section id="main" class="content"><pre class="line-numbers"><span id="1"> 1</span>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `zircon-syscall&#x2F;src&#x2F;signal.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>signal.rs - source</title><link rel="stylesheet" type="text/css" href="../../normalize.css"><link rel="stylesheet" type="text/css" href="../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../ayu.css" disabled ><script id="default-settings" ></script><script src="../../storage.js"></script><script src="../../crates.js"></script><noscript><link rel="stylesheet" href="../../noscript.css"></noscript><link rel="icon" type="image/svg+xml" href="../../favicon.svg"><link rel="alternate icon" type="image/png" href="../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../favicon-32x32.png"><style type="text/css">#crate-search{background-image:url("../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../zircon_syscall/index.html'><div class='logo-container rust-logo'><img src='../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu" title="themes"><img width="18" height="18" alt="Pick another theme!" src="../../brush.svg"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input"name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" id="help-button" title="help">?</button><a id="settings-menu" href="../../settings.html" title="settings"><img width="18" height="18" alt="Change settings" src="../../wheel.svg"></a></div></form></nav><section id="main" class="content"><div class="example-wrap"><pre class="line-numbers"><span id="1"> 1</span>
 <span id="2"> 2</span>
 <span id="3"> 3</span>
 <span id="4"> 4</span>
@@ -98,11 +95,11 @@
 <span id="95">95</span>
 <span id="96">96</span>
 <span id="97">97</span>
-</pre><div class="example-wrap"><pre class="rust ">
+</pre><pre class="rust">
 <span class="kw">use</span> {
     <span class="kw">super</span>::<span class="kw-2">*</span>,
-    <span class="ident">core</span>::<span class="ident">time</span>::<span class="ident">Duration</span>,
-    <span class="ident">zircon_object</span>::{<span class="ident">signal</span>::<span class="kw-2">*</span>, <span class="ident">task</span>::<span class="ident">PolicyCondition</span>},
+    <span class="ident">core::time::Duration</span>,
+    <span class="ident">zircon_object</span>::{<span class="ident">signal</span>::<span class="kw-2">*</span>, <span class="ident">task::PolicyCondition</span>},
 };
 
 <span class="kw">impl</span> <span class="ident">Syscall</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span> {
@@ -115,35 +112,35 @@
         <span class="ident">clock_id</span>: <span class="ident">u32</span>,
         <span class="kw-2">mut</span> <span class="ident">out</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">HandleValue</span><span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
-        <span class="macro">info</span><span class="macro">!</span>(
+        <span class="macro">info!</span>(
             <span class="string">&quot;timer.create: options={:#x}, clock_id={:#x}&quot;</span>,
             <span class="ident">options</span>, <span class="ident">clock_id</span>
         );
         <span class="kw">if</span> <span class="ident">clock_id</span> <span class="op">!</span><span class="op">=</span> <span class="number">0</span> {
-            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">INVALID_ARGS</span>);
+            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::INVALID_ARGS</span>);
         }
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>();
-        <span class="ident">proc</span>.<span class="ident">check_policy</span>(<span class="ident">PolicyCondition</span>::<span class="ident">NewTimer</span>)<span class="question-mark">?</span>;
+        <span class="ident">proc</span>.<span class="ident">check_policy</span>(<span class="ident">PolicyCondition::NewTimer</span>)<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">slack</span> <span class="op">=</span> <span class="kw">match</span> <span class="ident">options</span> {
-            <span class="number">0</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">Slack</span>::<span class="ident">Center</span>,
-            <span class="number">1</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">Slack</span>::<span class="ident">Early</span>,
-            <span class="number">2</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">Slack</span>::<span class="ident">Late</span>,
-            <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">INVALID_ARGS</span>),
+            <span class="number">0</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">Slack::Center</span>,
+            <span class="number">1</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">Slack::Early</span>,
+            <span class="number">2</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">Slack::Late</span>,
+            <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::INVALID_ARGS</span>),
         };
-        <span class="kw">let</span> <span class="ident">handle</span> <span class="op">=</span> <span class="ident">Handle</span>::<span class="ident">new</span>(<span class="ident">Timer</span>::<span class="ident">with_slack</span>(<span class="ident">slack</span>), <span class="ident">Rights</span>::<span class="ident">DEFAULT_TIMER</span>);
+        <span class="kw">let</span> <span class="ident">handle</span> <span class="op">=</span> <span class="ident">Handle::new</span>(<span class="ident">Timer::with_slack</span>(<span class="ident">slack</span>), <span class="ident">Rights::DEFAULT_TIMER</span>);
         <span class="ident">out</span>.<span class="ident">write</span>(<span class="ident">proc</span>.<span class="ident">add_handle</span>(<span class="ident">handle</span>))<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(())
     }
 
     <span class="doccomment">/// Create an event.  </span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_event_create</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">options</span>: <span class="ident">u32</span>, <span class="kw-2">mut</span> <span class="ident">out</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">HandleValue</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
-        <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;event.create: options={:#x}&quot;</span>, <span class="ident">options</span>);
+        <span class="macro">info!</span>(<span class="string">&quot;event.create: options={:#x}&quot;</span>, <span class="ident">options</span>);
         <span class="kw">if</span> <span class="ident">options</span> <span class="op">!</span><span class="op">=</span> <span class="number">0</span> {
-            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">INVALID_ARGS</span>);
+            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::INVALID_ARGS</span>);
         }
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>();
-        <span class="ident">proc</span>.<span class="ident">check_policy</span>(<span class="ident">PolicyCondition</span>::<span class="ident">NewEvent</span>)<span class="question-mark">?</span>;
-        <span class="kw">let</span> <span class="ident">handle</span> <span class="op">=</span> <span class="ident">Handle</span>::<span class="ident">new</span>(<span class="ident">Event</span>::<span class="ident">new</span>(), <span class="ident">Rights</span>::<span class="ident">DEFAULT_EVENT</span>);
+        <span class="ident">proc</span>.<span class="ident">check_policy</span>(<span class="ident">PolicyCondition::NewEvent</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">handle</span> <span class="op">=</span> <span class="ident">Handle::new</span>(<span class="ident">Event::new</span>(), <span class="ident">Rights::DEFAULT_EVENT</span>);
         <span class="ident">out</span>.<span class="ident">write</span>(<span class="ident">proc</span>.<span class="ident">add_handle</span>(<span class="ident">handle</span>))<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(())
     }
@@ -155,15 +152,15 @@
         <span class="kw-2">mut</span> <span class="ident">out0</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">HandleValue</span><span class="op">&gt;</span>,
         <span class="kw-2">mut</span> <span class="ident">out1</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">HandleValue</span><span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
-        <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;eventpair.create: options={:#x}&quot;</span>, <span class="ident">options</span>);
+        <span class="macro">info!</span>(<span class="string">&quot;eventpair.create: options={:#x}&quot;</span>, <span class="ident">options</span>);
         <span class="kw">if</span> <span class="ident">options</span> <span class="op">!</span><span class="op">=</span> <span class="number">0</span> {
-            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">NOT_SUPPORTED</span>);
+            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::NOT_SUPPORTED</span>);
         }
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>();
-        <span class="ident">proc</span>.<span class="ident">check_policy</span>(<span class="ident">PolicyCondition</span>::<span class="ident">NewEvent</span>)<span class="question-mark">?</span>;
-        <span class="kw">let</span> (<span class="ident">event0</span>, <span class="ident">event1</span>) <span class="op">=</span> <span class="ident">EventPair</span>::<span class="ident">create</span>();
-        <span class="kw">let</span> <span class="ident">handle0</span> <span class="op">=</span> <span class="ident">Handle</span>::<span class="ident">new</span>(<span class="ident">event0</span>, <span class="ident">Rights</span>::<span class="ident">DEFAULT_EVENTPAIR</span>);
-        <span class="kw">let</span> <span class="ident">handle1</span> <span class="op">=</span> <span class="ident">Handle</span>::<span class="ident">new</span>(<span class="ident">event1</span>, <span class="ident">Rights</span>::<span class="ident">DEFAULT_EVENTPAIR</span>);
+        <span class="ident">proc</span>.<span class="ident">check_policy</span>(<span class="ident">PolicyCondition::NewEvent</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> (<span class="ident">event0</span>, <span class="ident">event1</span>) <span class="op">=</span> <span class="ident">EventPair::create</span>();
+        <span class="kw">let</span> <span class="ident">handle0</span> <span class="op">=</span> <span class="ident">Handle::new</span>(<span class="ident">event0</span>, <span class="ident">Rights::DEFAULT_EVENTPAIR</span>);
+        <span class="kw">let</span> <span class="ident">handle1</span> <span class="op">=</span> <span class="ident">Handle::new</span>(<span class="ident">event1</span>, <span class="ident">Rights::DEFAULT_EVENTPAIR</span>);
         <span class="ident">out0</span>.<span class="ident">write</span>(<span class="ident">proc</span>.<span class="ident">add_handle</span>(<span class="ident">handle0</span>))<span class="question-mark">?</span>;
         <span class="ident">out1</span>.<span class="ident">write</span>(<span class="ident">proc</span>.<span class="ident">add_handle</span>(<span class="ident">handle1</span>))<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(())
@@ -174,28 +171,29 @@
     <span class="doccomment">/// To fire the timer immediately pass a deadline less than or equal to 0.  </span>
     <span class="doccomment">/// The slack parameter specifies a range from deadline - slack to deadline + slack during which the timer is allowed to fire.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_timer_set</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">handle</span>: <span class="ident">HandleValue</span>, <span class="ident">deadline</span>: <span class="ident">Deadline</span>, <span class="ident">slack</span>: <span class="ident">i64</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
-        <span class="macro">info</span><span class="macro">!</span>(
+        <span class="macro">info!</span>(
             <span class="string">&quot;timer.set: handle={:#x}, deadline={:#x?}, slack={:#x}&quot;</span>,
             <span class="ident">handle</span>, <span class="ident">deadline</span>, <span class="ident">slack</span>
         );
         <span class="kw">if</span> <span class="ident">slack</span>.<span class="ident">is_negative</span>() {
-            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError</span>::<span class="ident">OUT_OF_RANGE</span>);
+            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::OUT_OF_RANGE</span>);
         }
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>();
-        <span class="kw">let</span> <span class="ident">timer</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">Timer</span><span class="op">&gt;</span>(<span class="ident">handle</span>, <span class="ident">Rights</span>::<span class="ident">WRITE</span>)<span class="question-mark">?</span>;
-        <span class="ident">timer</span>.<span class="ident">set</span>(<span class="ident">Duration</span>::<span class="ident">from</span>(<span class="ident">deadline</span>), <span class="ident">Duration</span>::<span class="ident">from_nanos</span>(<span class="ident">slack</span> <span class="kw">as</span> <span class="ident">u64</span>));
+        <span class="kw">let</span> <span class="ident">timer</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">Timer</span><span class="op">&gt;</span>(<span class="ident">handle</span>, <span class="ident">Rights::WRITE</span>)<span class="question-mark">?</span>;
+        <span class="ident">timer</span>.<span class="ident">set</span>(<span class="ident">Duration::from</span>(<span class="ident">deadline</span>), <span class="ident">Duration::from_nanos</span>(<span class="ident">slack</span> <span class="kw">as</span> <span class="ident">u64</span>));
         <span class="prelude-val">Ok</span>(())
     }
 
     <span class="doccomment">/// Cancel a timer.  </span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_timer_cancel</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">handle</span>: <span class="ident">HandleValue</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
-        <span class="macro">info</span><span class="macro">!</span>(<span class="string">&quot;timer.cancel: handle={:#x}&quot;</span>, <span class="ident">handle</span>);
+        <span class="macro">info!</span>(<span class="string">&quot;timer.cancel: handle={:#x}&quot;</span>, <span class="ident">handle</span>);
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>();
-        <span class="kw">let</span> <span class="ident">timer</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">Timer</span><span class="op">&gt;</span>(<span class="ident">handle</span>, <span class="ident">Rights</span>::<span class="ident">WRITE</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">timer</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">Timer</span><span class="op">&gt;</span>(<span class="ident">handle</span>, <span class="ident">Rights::WRITE</span>)<span class="question-mark">?</span>;
         <span class="ident">timer</span>.<span class="ident">cancel</span>();
         <span class="prelude-val">Ok</span>(())
     }
 }
 </pre></div>
-</section><section id="search" class="content hidden"></section><section class="footer"></section><div id="rustdoc-vars" data-root-path="../../" data-current-crate="zircon_syscall"></div>
-    <script src="../../main.js"></script><script src="../../source-script.js"></script><script src="../../source-files.js"></script><script defer src="../../search-index.js"></script></body></html>
+</section><section id="search" class="content hidden"></section><div id="rustdoc-vars" data-root-path="../../" data-current-crate="zircon_syscall" data-search-index-js="../../search-index.js" data-search-js="../../search.js"></div>
+    <script src="../../main.js"></script><script src="../../source-script.js"></script><script src="../../source-files.js"></script>
+</body></html>
