@@ -29,8 +29,8 @@ jobs:
 #        uses: actions-rs/cargo@v1
 #        with:
 #          command: clippy
-
-  build:#x86_64
+#x86_64
+  build:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
