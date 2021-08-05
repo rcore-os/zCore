@@ -1,0 +1,24 @@
+name: deploy CI
+
+on: 
+  push:
+  pull_request:
+
+jobs:
+  doc:
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v2
+      - name: Build docs
+        run: arch=x86_64 cargo doc --no-deps --all-features
+#        uses: actions-rs/cargo@v1
+#        with:
+#          command: doc
+#          args: --no-deps --all-features
+      - name: Deploy to Github Pages
+        if: ${{ github.ref == 'refs/heads/master' }}
+        uses: JamesIves/github-pages-deploy-action@releases/v3
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: gh-pages
+          FOLDER: target/doc
