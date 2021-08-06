@@ -53,9 +53,6 @@ extern "C" {
     fn frame_dealloc(paddr: &usize);
     #[link_name = "hal_pmem_base"]
     static PMEM_BASE: usize;
-
-    fn hal_heap_alloc(size: &usize, align: &usize) -> usize;
-    fn hal_heap_dealloc(ptr: &usize, size: &usize, align: &usize);
 }
 
 #[repr(C)]
@@ -141,11 +138,11 @@ impl Frame {
     }
 }
 
-fn phys_to_virt(paddr: PhysAddr) -> VirtAddr {
+pub fn phys_to_virt(paddr: PhysAddr) -> VirtAddr {
     unsafe { PMEM_BASE + paddr }
 }
 
-fn virt_to_phys(vaddr: VirtAddr) -> PhysAddr {
+pub fn virt_to_phys(vaddr: VirtAddr) -> PhysAddr {
     unsafe { vaddr - PMEM_BASE }
 }
 
