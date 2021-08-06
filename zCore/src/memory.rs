@@ -1,9 +1,6 @@
 //! Define the FrameAllocator for physical memory
 //! x86_64      --  64GB
 
-use core::alloc::Layout;
-use core::mem;
-use core::ptr::NonNull;
 use {bitmap_allocator::BitAlloc, buddy_system_allocator::LockedHeap, spin::Mutex};
 
 #[cfg(target_arch = "x86_64")]
@@ -116,27 +113,6 @@ pub fn init_heap() {
 }
 
 #[no_mangle]
-pub extern "C" fn hal_heap_alloc(size: &usize, align: &usize) -> usize {
-    let ret = HEAP_ALLOCATOR
-        .lock()
-        .alloc(Layout::from_size_align(*size, *align).unwrap())
-        .unwrap()
-        .as_ptr();
-
-    trace!("Allocate heap: {:x?}", ret);
-    ret as usize
-}
-
-#[no_mangle]
-pub extern "C" fn hal_heap_dealloc(ptr: &usize, size: &usize, align: &usize) {
-    trace!("Deallocate heap: {:x}", *ptr);
-    HEAP_ALLOCATOR.lock().dealloc(
-        NonNull::new(*ptr as *mut u8).unwrap(),
-        Layout::from_size_align(*size, *align).unwrap(),
-    );
-}
-
-#[no_mangle]
 #[allow(improper_ctypes_definitions)]
 pub extern "C" fn frame_alloc() -> Option<usize> {
     // get the real address of the alloc frame
@@ -202,6 +178,7 @@ pub extern "C" fn hal_pt_map_kernel(pt: &mut PageTable, current: &PageTable) {
 // First core stores its SATP here.
 static mut SATP: usize = 0;
 
+#[cfg(target_arch = "riscv64")]
 pub unsafe fn clear_bss() {
     let start = sbss as usize;
     let end = ebss as usize;
@@ -211,44 +188,7 @@ pub unsafe fn clear_bss() {
     }
 }
 
-#[inline]
-pub const fn phys_to_virt(paddr: usize) -> usize {
-    PHYSICAL_MEMORY_OFFSET + paddr
-}
-
-#[inline]
-pub const fn virt_to_phys(vaddr: usize) -> usize {
-    vaddr - PHYSICAL_MEMORY_OFFSET
-}
-
-#[inline]
-pub const fn kernel_offset(vaddr: usize) -> usize {
-    vaddr - KERNEL_OFFSET
-}
-
-//测试:只读权限，却要写入
-pub fn write_readonly_test() {
-    debug!("rodata write !");
-    unsafe {
-        let ptr = srodata as usize as *mut u8;
-        *ptr = 0xab;
-    }
-}
-
-//测试:不允许执行，非要执行
-pub fn execute_unexecutable_test() {
-    debug!("bss execute !");
-    unsafe {
-        llvm_asm!("jr $0" :: "r"(sbss as usize) :: "volatile");
-    }
-}
-
-//测试:找不到页表项
-pub fn read_invalid_test() {
-    debug!("invalid page read !");
-    println!("{}", unsafe { *(0x12345678 as usize as *const u8) });
-}
-
+#[allow(dead_code)]
 extern "C" {
     fn start();
     fn srodata();
