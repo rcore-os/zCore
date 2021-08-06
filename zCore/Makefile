@@ -45,7 +45,7 @@ qemu_opts += \
 	-drive format=raw,file=fat:rw:$(ESP) \
 	-drive format=qcow2,file=$(QEMU_DISK),id=disk,if=none \
 	-device ich9-ahci,id=ahci \
-	-device ide-drive,drive=disk,bus=ahci.0 \
+	-device ide-hd,drive=disk,bus=ahci.0 \
 	-serial mon:stdio \
 	-m 4G \
 	-nic none \

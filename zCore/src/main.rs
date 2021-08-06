@@ -31,13 +31,12 @@ use rboot::BootInfo;
 
 #[cfg(target_arch = "riscv64")]
 use kernel_hal_bare::{
-    remap_the_kernel,
+    phys_to_virt, remap_the_kernel,
     virtio::{BlockDriverWrapper, BLK_DRIVERS},
     BootInfo, GraphicInfo,
 };
 
 use alloc::vec::Vec;
-pub use memory::{execute_unexecutable_test, phys_to_virt, read_invalid_test, write_readonly_test};
 
 #[cfg(target_arch = "riscv64")]
 global_asm!(include_str!("arch/riscv/boot/entry64.asm"));
@@ -121,11 +120,6 @@ pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
         dtb: device_tree_vaddr,
     });
 
-    // memory test
-    // write_readonly_test();
-    // execute_unexecutable_test();
-    // read_invalid_test();
-
     // 正常由bootloader载入文件系统镜像到内存, 这里不用，而使用后面的virtio
     let dummy = unsafe { core::slice::from_raw_parts_mut(0 as *mut u8, 0) };
     main(dummy, boot_info.cmdline);
@@ -187,19 +181,15 @@ fn main(ramfs_data: &'static mut [u8], _cmdline: &str) -> ! {
     run();
 }
 
-#[cfg(target_arch = "x86_64")]
 fn run() -> ! {
     loop {
         executor::run_until_idle();
-        x86_64::instructions::interrupts::enable_and_hlt();
-        x86_64::instructions::interrupts::disable();
-    }
-}
-
-#[cfg(target_arch = "riscv64")]
-fn run() -> ! {
-    loop {
-        executor::run_until_idle();
+        #[cfg(target_arch = "x86_64")]
+        {
+            x86_64::instructions::interrupts::enable_and_hlt();
+            x86_64::instructions::interrupts::disable();
+        }
+        #[cfg(target_arch = "riscv64")]
         kernel_hal_bare::interrupt::wait_for_interrupt();
     }
 }

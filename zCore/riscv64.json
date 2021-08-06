@@ -5,7 +5,6 @@
   "code-model": "medium",
   "cpu": "generic-rv64",
   "data-layout": "e-m:e-p:64:64-i64:64-i128:128-n64-S128",
-  "target-endian": "little",
   "target-c-int-width": "32",
   "target-endian": "little",
   "target-pointer-width": "64",
@@ -23,19 +22,5 @@
   },
   "max-atomic-width": 64,
   "panic-strategy": "abort",
-  "relocation-model": "static",
-  "unsupported-abis": [
-    "cdecl",
-    "stdcall",
-    "fastcall",
-    "vectorcall",
-    "thiscall",
-    "aapcs",
-    "win64",
-    "sysv64",
-    "ptx-kernel",
-    "msp430-interrupt",
-    "x86-interrupt",
-    "amdgpu-kernel"
-  ]
+  "relocation-model": "static"
 }
