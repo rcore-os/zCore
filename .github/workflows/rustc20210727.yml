@@ -210,6 +210,13 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v2
+        with:
+          submodules: 'recursive'
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly-2021-07-27
+          components: rust-src
       - name: Pull prebuilt images
         run: git lfs pull -I prebuilt/linux/libc-libos.so
       - name: Install musl toolchain qemu-system-x86
