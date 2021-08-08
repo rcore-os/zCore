@@ -38,6 +38,7 @@ endif
 
 $(OUT_IMG): prebuilt/linux/$(ROOTFS_TAR) rcore-fs-fuse
 	@echo Generating $(ARCH).img
+	@rm -rf $(TMP_ROOTFS)
 	@mkdir -p $(TMP_ROOTFS)
 	@tar xf $< -C $(TMP_ROOTFS)
 	@cp $(TMP_ROOTFS)/lib/ld-musl-x86_64.so.1 rootfs/lib/
@@ -69,3 +70,21 @@ clean:
 
 doc:
 	arch=x86_64 cargo doc --open
+
+baremetal-test-img: prebuilt/linux/$(ROOTFS_TAR) rcore-fs-fuse
+	@echo Generating $(ARCH).img
+	@rm -rf $(TMP_ROOTFS)
+	@mkdir -p $(TMP_ROOTFS)
+	@tar xf $< -C $(TMP_ROOTFS)
+	@cp $(TMP_ROOTFS)/lib/ld-musl-x86_64.so.1 rootfs/lib/
+	@cd rootfs && rm -rf libc-test && git clone git://repo.or.cz/libc-test --depth 1
+	@cd rootfs/libc-test && cp config.mak.def config.mak && echo 'CC := musl-gcc' >> config.mak && make -j
+	@rcore-fs-fuse $(OUT_IMG) rootfs zip
+# recover rootfs/ld-musl-x86_64.so.1 for zcore usr libos
+# libc-libos.so (convert syscall to function call) is from https://github.com/rcore-os/musl/tree/rcore
+	@cp prebuilt/linux/libc-libos.so rootfs/lib/ld-musl-x86_64.so.1
+	@echo Resizing $(ARCH).img
+	@qemu-img resize $(OUT_IMG) +50M
+
+baremetal-test:
+	@make -C zCore baremetal-test mode=release linux=1 | tee stdout-baremetal-test

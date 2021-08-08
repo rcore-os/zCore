@@ -1,0 +1,3 @@
+/libc-test/src/functional/argv.exe
+/libc-test/src/functional/utime.exe
+/libc-test/src/functional/qsort.exe
