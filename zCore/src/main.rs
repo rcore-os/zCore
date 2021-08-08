@@ -126,7 +126,34 @@ pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
 }
 
 #[cfg(feature = "linux")]
-fn main(ramfs_data: &'static mut [u8], _cmdline: &str) -> ! {
+use alloc::string::String;
+fn get_rootproc(cmdline: &str) -> Vec<String> {
+    use alloc::vec;
+
+    for opt in cmdline.split(':') {
+        // parse 'key=value'
+        let mut iter = opt.trim().splitn(2, '=');
+        let key = iter.next().expect("failed to parse key");
+        let value = iter.next().expect("failed to parse value");
+        info!("value {}", value);
+        if key == "ROOTPROC" {
+            let mut iter = value.trim().splitn(2, '?');
+            let k1=iter.next().expect("failed to parse k1");
+            let v1=iter.next().expect("failed to parse v1");
+            if v1=="" {
+                return vec![k1.into()];
+            } else {
+                return vec![k1.into(), v1.into()];
+            }
+        }
+    }
+    vec!["/bin/busybox".into(), "sh".into()]
+    //vec!["/bin/busybox".into()]
+}
+
+
+#[cfg(feature = "linux")]
+fn main(ramfs_data: &'static mut [u8], cmdline: &str) -> ! {
     use alloc::boxed::Box;
     use alloc::string::String;
     use alloc::sync::Arc;
@@ -148,7 +175,8 @@ fn main(ramfs_data: &'static mut [u8], _cmdline: &str) -> ! {
         }
     }));
 
-    let args: Vec<String> = vec!["/bin/busybox".into(), "sh".into()];
+    //let args: Vec<String> = vec!["/bin/busybox".into(), "sh".into()];
+    let args: Vec<String> = get_rootproc(cmdline);
     let envs: Vec<String> = vec!["PATH=/usr/sbin:/usr/bin:/sbin:/bin".into()];
 
     #[cfg(target_arch = "x86_64")]

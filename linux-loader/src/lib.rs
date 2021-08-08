@@ -51,7 +51,7 @@ pub fn run(args: Vec<String>, envs: Vec<String>, rootfs: Arc<dyn FileSystem>) ->
             trace!("  {}", name);
         }
     }
-
+    info!("args {:?}", args);
     let inode = rootfs.root_inode().lookup(&args[0]).unwrap();
     let data = inode.read_as_vec().unwrap();
     let path = args[0].clone();
