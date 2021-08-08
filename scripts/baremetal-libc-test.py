@@ -5,7 +5,7 @@ import re
 import sys
 # ===============Must Config========================
 
-TIMEOUT = 7  # seconds
+TIMEOUT = 10  # seconds
 ZCORE_PATH = '../zCore'
 BASE = 'linux/'
 CHECK_FILE = BASE + 'baremetal-test-allow.txt'
@@ -55,9 +55,9 @@ with open(FAIL_FILE,'r') as f:
 
 for file in allow_files:
     if not (file in failed_files):
-        print(file)
+#        print(file)
         rboot_file=rboot+file+'?'
-        print(rboot)
+#        print(rboot)
         with open(RBOOT_FILE,'w') as f:
             print(rboot_file, file=f)
         try:
@@ -95,7 +95,7 @@ print("=======================================")
 #     for bad_file in failed:
 #         print(bad_file, file=f)
 
-if len(failed) > 0 :
+if len(failed) > 3 :
     sys.exit(-1)
 else:
     sys.exit(0)

@@ -179,4 +179,4 @@ else
 endif
 
 baremetal-test: $(kernel_img) $(QEMU_DISK)
-	timeout --foreground 5s  $(qemu) $(qemu_opts)
+	timeout --foreground 8s  $(qemu) $(qemu_opts)
