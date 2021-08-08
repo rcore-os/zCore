@@ -126,6 +126,7 @@ pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
 }
 
 #[cfg(feature = "linux")]
+use alloc::vec;
 use alloc::string::String;
 fn get_rootproc(cmdline: &str) -> Vec<String> {
     use alloc::vec;
