@@ -74,8 +74,9 @@ doc:
 baremetal-test-img: prebuilt/linux/$(ROOTFS_TAR) rcore-fs-fuse
 	@echo Generating $(ARCH).img
 	@rm -rf $(TMP_ROOTFS)
-	@mkdir -p $(TMP_ROOTFS)/lib/
+	@mkdir -p $(TMP_ROOTFS)
 	@tar xf $< -C $(TMP_ROOTFS)
+	@mkdir -p rootfs/lib
 	@cp $(TMP_ROOTFS)/lib/ld-musl-x86_64.so.1 rootfs/lib/
 	@cd rootfs && rm -rf libc-test && git clone git://repo.or.cz/libc-test --depth 1
 	@cd rootfs/libc-test && cp config.mak.def config.mak && echo 'CC := musl-gcc' >> config.mak && make -j
