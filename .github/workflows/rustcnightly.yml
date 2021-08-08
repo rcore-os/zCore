@@ -214,3 +214,28 @@ jobs:
 #          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 #          BRANCH: gh-pages
 #          FOLDER: target/doc
+
+
+  baremetal-libc-test:
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: 'recursive'
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          components: rust-src
+      - run: echo "nightly" >rust-toolchain
+      - run: echo "nightly" >./rboot/rust-toolchain
+      - name: Pull prebuilt images
+        run: git lfs pull -I prebuilt/linux/libc-libos.so
+      - name: Install musl toolchain qemu-system-x86
+        run: sudo apt-get install musl-tools musl-dev qemu-system-x86 -y
+      - name: Prepare rootfs and libc-test
+        run: make baremetal-test-img
+      - name: Run baremetal-libc-test
+        run: |
+          cd scripts
+          python3 ./baremetal-libc-test.py

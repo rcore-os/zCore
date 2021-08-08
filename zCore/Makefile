@@ -50,7 +50,6 @@ qemu_opts += \
 	-m 4G \
 	-nic none \
 	-device isa-debug-exit,iobase=0xf4,iosize=0x04
-
 else ifeq ($(arch), riscv64)
 qemu_opts += \
 	-machine virt \
@@ -179,3 +178,5 @@ else
 	@qemu-img create -f qcow2 $@ 100M
 endif
 
+baremetal-test:
+	timeout --foreground 10s  $(qemu) $(qemu_opts)
