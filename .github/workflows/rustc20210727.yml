@@ -219,4 +219,4 @@ jobs:
       - name: Run baremetal-libc-tests
         run: |
           cd scripts
-          python3 baremetal-libc-tests.py
+          python3 ./baremetal-libc-tests.py
