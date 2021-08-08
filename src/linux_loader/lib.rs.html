@@ -294,7 +294,7 @@
             <span class="macro">trace!</span>(<span class="string">&quot;  {}&quot;</span>, <span class="ident">name</span>);
         }
     }
-
+    <span class="macro">info!</span>(<span class="string">&quot;args {:?}&quot;</span>, <span class="ident">args</span>);
     <span class="kw">let</span> <span class="ident">inode</span> <span class="op">=</span> <span class="ident">rootfs</span>.<span class="ident">root_inode</span>().<span class="ident">lookup</span>(<span class="kw-2">&amp;</span><span class="ident">args</span>[<span class="number">0</span>]).<span class="ident">unwrap</span>();
     <span class="kw">let</span> <span class="ident">data</span> <span class="op">=</span> <span class="ident">inode</span>.<span class="ident">read_as_vec</span>().<span class="ident">unwrap</span>();
     <span class="kw">let</span> <span class="ident">path</span> <span class="op">=</span> <span class="ident">args</span>[<span class="number">0</span>].<span class="ident">clone</span>();
