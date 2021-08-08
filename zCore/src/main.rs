@@ -129,7 +129,7 @@ pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
 use alloc::string::String;
 fn get_rootproc(cmdline: &str) -> Vec<String> {
     use alloc::vec;
-
+    use alloc::string::String;
     for opt in cmdline.split(':') {
         // parse 'key=value'
         let mut iter = opt.trim().splitn(2, '=');
