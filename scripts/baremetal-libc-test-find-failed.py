@@ -5,7 +5,7 @@ import re
 import sys
 # ===============Must Config========================
 
-TIMEOUT = 7  # seconds
+TIMEOUT = 10  # seconds
 ZCORE_PATH = '../zCore'
 BASE = 'linux/'
 CHECK_FILE = BASE + 'baremetal-test-allow.txt'
@@ -50,50 +50,44 @@ FAILED = [
 with open(CHECK_FILE, 'r') as f:
     allow_files = set([case.strip() for case in f.readlines()])
 
-with open(FAIL_FILE,'r') as f:
-    failed_files = set([case.strip() for case in f.readlines()])
-
 for file in allow_files:
-    if not (file in failed_files):
-        print(file)
-        rboot_file=rboot+file+'?'
-        print(rboot)
-        with open(RBOOT_FILE,'w') as f:
-            print(rboot_file, file=f)
-        try:
-            subprocess.run(r'cp rboot.conf ../zCore && cd ../ && make baremetal-test | tee stdout-zcore && sed -i '
-                           r'"/BdsDxe/d" stdout-zcore',
-                           shell=True, timeout=TIMEOUT, check=True)
+    print(file)
+    rboot_file=rboot+file+'?'
+    print(rboot)
+    with open(RBOOT_FILE,'w') as f:
+        print(rboot_file, file=f)
+    try:
+        subprocess.run(r'cp rboot.conf ../zCore && cd ../ && make baremetal-test | tee stdout-zcore && sed -i '
+                       r'"/BdsDxe/d" stdout-zcore',
+                       shell=True, timeout=TIMEOUT, check=True)
 
-            with open(RESULT_FILE, 'r') as f:
-                output=f.read();
+        with open(RESULT_FILE, 'r') as f:
+            output=f.read();
 
-            break_out_flag = False
-            for pattern in FAILED:
-                if re.search(pattern, output):
-                    failed.add(file)
-                    break_out_flag = True
-                else:
-                    continue
-            if not break_out_flag:
-                passed.add(file)
-        except subprocess.CalledProcessError:
-            failed.add(file)
-        except subprocess.TimeoutExpired:
-            timeout.add(file)
+        break_out_flag = False
+        for pattern in FAILED:
+            if re.search(pattern, output):
+                failed.add(file)
+                break_out_flag = True
+            else:
+                continue
+        if not break_out_flag:
+            passed.add(file)
+    except subprocess.CalledProcessError:
+        failed.add(file)
+    except subprocess.TimeoutExpired:
+        timeout.add(file)
 
 
 
 print("PASSED %d", len(passed))
-print("=======================================")
 print("FAILED %d", len(failed))
 print(failed)
-print("=======================================")
 print("TIMEOUT %d", len(timeout))
-print("=======================================")
-# with open(FAIL_FILE,'w') as f:
-#     for bad_file in failed:
-#         print(bad_file, file=f)
+
+with open(FAIL_FILE,'w') as f:
+    for bad_file in failed:
+        print(bad_file, file=f)
 
 if len(failed) > 0 :
     sys.exit(-1)

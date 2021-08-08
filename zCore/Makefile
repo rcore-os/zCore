@@ -178,5 +178,5 @@ else
 	@qemu-img create -f qcow2 $@ 100M
 endif
 
-baremetal-test:
-	timeout --foreground 10s  $(qemu) $(qemu_opts)
+baremetal-test: $(kernel_img) $(QEMU_DISK)
+	timeout --foreground 5s  $(qemu) $(qemu_opts)
