@@ -84,15 +84,16 @@ for file in allow_files:
         except subprocess.TimeoutExpired:
             timeout.add(file)
 
-
-
-print("PASSED %d", len(passed))
 print("=======================================")
-print("FAILED %d", len(failed))
+print("PASSED num: ", len(passed))
+print("=======================================")
+print("FAILED num: ", len(failed))
 print(failed)
 print("=======================================")
-print("TIMEOUT %d", len(timeout))
+print("TIMEOUT num: ", len(timeout))
 print(timeout)
+print("=======================================")
+print("Total tested num: ", len(all_files)-len(failed_files))
 print("=======================================")
 # with open(FAIL_FILE,'w') as f:
 #     for bad_file in failed:
