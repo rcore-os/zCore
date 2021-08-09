@@ -9,7 +9,7 @@ import sys
 TIMEOUT = 10  # seconds
 ZCORE_PATH = '../zCore'
 BASE = 'linux/'
-CHECK_FILE = BASE + 'baremetal-test-one.txt'
+CHECK_FILE = BASE + 'baremetal-test-ones.txt'
 # FAIL_FILE = BASE + 'baremetal-test-fail.txt'
 RBOOT_FILE = 'rboot.conf'
 RESULT_FILE = '../stdout-zcore'
