@@ -50,6 +50,16 @@ qemu_opts += \
 	-m 4G \
 	-nic none \
 	-device isa-debug-exit,iobase=0xf4,iosize=0x04
+baremetal-test-qemu_opts += \
+	-machine q35 \
+	-cpu Haswell,+smap,-check,-fsgsbase \
+	-drive if=pflash,format=raw,readonly,file=$(OVMF) \
+	-drive format=raw,file=fat:rw:$(ESP) \
+	-device ich9-ahci,id=ahci \
+	-serial mon:stdio \
+	-m 4G \
+	-nic none \
+	-device isa-debug-exit,iobase=0xf4,iosize=0x04
 else ifeq ($(arch), riscv64)
 qemu_opts += \
 	-machine virt \
@@ -82,6 +92,7 @@ ifeq ($(MAKECMDGOALS), vbox)
 build_args += --features graphic
 else
 qemu_opts += -display none -nographic
+baremetal-test-qemu_opts += -display none -nographic
 endif
 endif
 
@@ -178,5 +189,8 @@ else
 	@qemu-img create -f qcow2 $@ 100M
 endif
 
-baremetal-test: $(kernel_img) $(QEMU_DISK)
-	timeout --foreground 8s  $(qemu) $(qemu_opts)
+baremetal-qemu-disk:
+	@qemu-img create -f qcow2 $(build_path)/disk.qcow2 100M
+baremetal-test:
+	cp rboot.conf $(ESP)/EFI/Boot/rboot.conf
+	timeout --foreground 8s  $(qemu) $(baremetal-test-qemu_opts)

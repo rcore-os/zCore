@@ -61,20 +61,22 @@ for file in allow_files:
         with open(RBOOT_FILE,'w') as f:
             print(rboot_file, file=f)
         try:
-            subprocess.run(r'cp rboot.conf ../zCore && cd ../ && make baremetal-test | tee stdout-zcore && sed -i '
+            subprocess.run(r'cp rboot.conf ../zCore && cd ../ && make baremetal-test | tee stdout-zcore '
+                           r'&& '
+                           r'sed -i '
                            r'"/BdsDxe/d" stdout-zcore',
                            shell=True, timeout=TIMEOUT, check=True)
 
             with open(RESULT_FILE, 'r') as f:
-                output=f.read();
+                output=f.read()
 
             break_out_flag = False
             for pattern in FAILED:
                 if re.search(pattern, output):
                     failed.add(file)
                     break_out_flag = True
-                else:
-                    continue
+                    break
+
             if not break_out_flag:
                 passed.add(file)
         except subprocess.CalledProcessError:
@@ -82,14 +84,16 @@ for file in allow_files:
         except subprocess.TimeoutExpired:
             timeout.add(file)
 
-
-
-print("PASSED %d", len(passed))
 print("=======================================")
-print("FAILED %d", len(failed))
+print("PASSED num: ", len(passed))
+print("=======================================")
+print("FAILED num: ", len(failed))
 print(failed)
 print("=======================================")
-print("TIMEOUT %d", len(timeout))
+print("TIMEOUT num: ", len(timeout))
+print(timeout)
+print("=======================================")
+print("Total tested num: ", len(allow_files)-len(failed_files))
 print("=======================================")
 # with open(FAIL_FILE,'w') as f:
 #     for bad_file in failed:
