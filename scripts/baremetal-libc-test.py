@@ -61,7 +61,9 @@ for file in allow_files:
         with open(RBOOT_FILE,'w') as f:
             print(rboot_file, file=f)
         try:
-            subprocess.run(r'cp rboot.conf ../zCore && cd ../ && make baremetal-test | tee stdout-zcore && sed -i '
+            subprocess.run(r'cp rboot.conf ../zCore && cd ../ && make baremetal-test | tee stdout-zcore '
+                           r'&& '
+                           r'sed -i '
                            r'"/BdsDxe/d" stdout-zcore',
                            shell=True, timeout=TIMEOUT, check=True)
 
@@ -90,6 +92,7 @@ print("FAILED %d", len(failed))
 print(failed)
 print("=======================================")
 print("TIMEOUT %d", len(timeout))
+print(timeout)
 print("=======================================")
 # with open(FAIL_FILE,'w') as f:
 #     for bad_file in failed:
