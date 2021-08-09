@@ -223,6 +223,8 @@ jobs:
         run: sudo apt-get install musl-tools musl-dev qemu-system-x86 -y
       - name: Prepare rootfs and libc-test
         run: make baremetal-test-img
+      - name: Build  kernel
+        run: cd zCore && make build mode=release linux=1 arch=x86_64
       - name: Run baremetal-libc-test
         run: |
           cd scripts
