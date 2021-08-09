@@ -225,6 +225,8 @@ jobs:
         run: make baremetal-test-img
       - name: Build  kernel
         run: cd zCore && make build mode=release linux=1 arch=x86_64
+      - name: create qemu disk
+        run: cd zCore && make baremetal-qemu-disk mode=release linux=1 arch=x86_64
       - name: Run baremetal-libc-test
         run: |
           cd scripts
