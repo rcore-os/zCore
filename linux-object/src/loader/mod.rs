@@ -6,7 +6,7 @@ use {
     crate::fs::INodeExt,
     alloc::{collections::BTreeMap, string::String, sync::Arc, vec::Vec},
     rcore_fs::vfs::INode,
-    xmas_elf::ElfFile,
+    xmas_elf::{program::{ProgramHeader,},ElfFile,},
     zircon_object::{util::elf_loader::*, vm::*, ZxError},
 };
 
@@ -32,8 +32,14 @@ impl LinuxElfLoader {
         envs: Vec<String>,
         path: String,
     ) -> LxResult<(VirtAddr, VirtAddr)> {
-        //info!("load: vmar.addr: {:#x?}, args: {:?}, envs: {:?}", vmar.get_info(), args, envs);
+        debug!("load: vmar.addr & size: {:#x?}, data {:#x?}, args: {:?}, envs: {:?}", vmar.get_info(),
+            data.as_ptr(),
+            args,
+            envs);
         let elf = ElfFile::new(data).map_err(|_| ZxError::INVALID_ARGS)?;
+
+        debug!("elf info:  {:#x?}",elf.header.pt2 );
+
         if let Ok(interp) = elf.get_interpreter() {
             info!("interp: {:?}", interp);
             let inode = self.root_inode.lookup(interp)?;
@@ -45,9 +51,15 @@ impl LinuxElfLoader {
 
         let size = elf.load_segment_size();
         let image_vmar = vmar.allocate(None, size, VmarFlags::CAN_MAP_RXW, PAGE_SIZE)?;
-        let base = image_vmar.addr();
+        let mut base = image_vmar.addr();
         let vmo = image_vmar.load_from_elf(&elf)?;
         let entry = base + elf.header.pt2.entry_point() as usize;
+
+        //for static exec program
+        let ph:ProgramHeader = elf.program_iter().next().unwrap();
+        let static_prog_base = ph.virtual_addr() as usize / PAGE_SIZE * PAGE_SIZE;
+        debug!("load: vmar.addr & size: {:#x?}, base: {:#x?}, entry: {:#x?}", vmar.get_info(), base,
+            entry);
 
         // fill syscall entry
         if let Some(offset) = elf.get_symbol_address("rcore_syscall_entry") {
@@ -56,7 +68,8 @@ impl LinuxElfLoader {
 
         match elf.relocate(base) {
             Ok(()) => info!("elf relocate passed !"),
-            Err(error) => warn!("elf relocate Err:{:?}", error),
+            Err(error) => { base= static_prog_base; warn!("elf relocate Err:{:?}, base {:x?}",
+                error, base);},
         }
 
         let stack_vmo = VmObject::new_paged(self.stack_pages);
