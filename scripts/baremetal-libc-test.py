@@ -68,15 +68,15 @@ for file in allow_files:
                            shell=True, timeout=TIMEOUT, check=True)
 
             with open(RESULT_FILE, 'r') as f:
-                output=f.read();
+                output=f.read()
 
             break_out_flag = False
             for pattern in FAILED:
                 if re.search(pattern, output):
                     failed.add(file)
                     break_out_flag = True
-                else:
-                    continue
+                    break
+
             if not break_out_flag:
                 passed.add(file)
         except subprocess.CalledProcessError:
