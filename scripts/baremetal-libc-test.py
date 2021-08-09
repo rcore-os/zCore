@@ -93,7 +93,7 @@ print("=======================================")
 print("TIMEOUT num: ", len(timeout))
 print(timeout)
 print("=======================================")
-print("Total tested num: ", len(all_files)-len(failed_files))
+print("Total tested num: ", len(allow_files)-len(failed_files))
 print("=======================================")
 # with open(FAIL_FILE,'w') as f:
 #     for bad_file in failed:
