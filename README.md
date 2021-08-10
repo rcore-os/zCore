@@ -14,6 +14,7 @@ Reimplement [Zircon][zircon] microkernel in safe Rust as a userspace program!
 
 ## Quick start for RISCV64
 ```
+make rv64-image
 cd zCore
 make run arch=riscv64 linux=1
 ```
