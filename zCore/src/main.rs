@@ -121,9 +121,7 @@ pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
     });
 
     // 正常由bootloader载入文件系统镜像到内存, 这里不用，而使用后面的virtio
-    // 使用Box创建一个dummy来绕过编译器的参数检查
-    let dummy = Box::leak(Box::new([]));
-    main(dummy, boot_info.cmdline);
+    main(&[], boot_info.cmdline);
 }
 
 #[cfg(feature = "linux")]
