@@ -120,7 +120,7 @@ pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
     });
 
     // 正常由bootloader载入文件系统镜像到内存, 这里不用，而使用后面的virtio
-    main(&[], boot_info.cmdline);
+    main(&mut [], boot_info.cmdline);
 }
 
 #[cfg(feature = "linux")]
@@ -152,7 +152,7 @@ fn get_rootproc(cmdline: &str) -> Vec<String> {
 
 
 #[cfg(feature = "linux")]
-fn main(ramfs_data: &[u8], cmdline: &str) -> ! {
+fn main(ramfs_data: &'static mut [u8], cmdline: &str) -> ! {
     use alloc::boxed::Box;
     use alloc::string::String;
     use alloc::sync::Arc;
