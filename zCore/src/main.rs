@@ -37,7 +37,7 @@ use kernel_hal_bare::{
 };
 
 use alloc::vec::Vec;
-
+use alloc::boxed::Box;
 #[cfg(target_arch = "riscv64")]
 global_asm!(include_str!("arch/riscv/boot/entry64.asm"));
 
@@ -121,7 +121,8 @@ pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
     });
 
     // 正常由bootloader载入文件系统镜像到内存, 这里不用，而使用后面的virtio
-    let dummy = unsafe { core::slice::from_raw_parts_mut(0 as *mut u8, 0) };
+    // 使用Box创建一个dummy来绕过编译器的参数检查
+    let dummy = Box::leak(Box::new([]));
     main(dummy, boot_info.cmdline);
 }
 
