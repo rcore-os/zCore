@@ -1,6 +1,9 @@
 ROOTFS_TAR := alpine-minirootfs-3.12.0-x86_64.tar.gz
 ROOTFS_URL := http://dl-cdn.alpinelinux.org/alpine/v3.12/releases/x86_64/$(ROOTFS_TAR)
 
+RISCV64_ROOTFS_TAR := prebuild.tar.xz
+RISCV64_ROOTFS_URL := https://github.com/rcore-os/libc-test-prebuilt/releases/download/0.1/$(RISCV64_ROOTFS_TAR)
+
 ARCH ?= x86_64
 rcore_fs_fuse_revision := 7f5eeac
 OUT_IMG := zCore/$(ARCH).img
@@ -19,12 +22,20 @@ CFLAG := -Wl,--dynamic-linker=/lib/ld-musl-x86_64.so.1
 prebuilt/linux/$(ROOTFS_TAR):
 	wget $(ROOTFS_URL) -O $@
 
+prebuilt/linux/riscv64/$(RISCV64_ROOTFS_TAR):
+	wget $(RISCV64_ROOTFS_URL) -O $@
+
 rootfs: prebuilt/linux/$(ROOTFS_TAR)
 	rm -rf rootfs && mkdir -p rootfs
 	tar xf $< -C rootfs
 # libc-libos.so (convert syscall to function call) is from https://github.com/rcore-os/musl/tree/rcore
 	cp prebuilt/linux/libc-libos.so rootfs/lib/ld-musl-x86_64.so.1
 	@for VAR in $(BASENAMES); do gcc $(TEST_DIR)$$VAR.c -o $(DEST_DIR)$$VAR $(CFLAG); done
+
+riscv-rootfs:prebuilt/linux/riscv64/$(RISCV64_ROOTFS_TAR)
+	rm -rf riscv_rootfs && mkdir -p riscv_rootfs
+	tar -xvf $< -C riscv_rootfs --strip-components 1
+
 
 libc-test:
 	cd rootfs && git clone git://repo.or.cz/libc-test --depth 1
@@ -52,18 +63,11 @@ image: $(OUT_IMG)
 	@qemu-img resize $(OUT_IMG) +50M
 
 
-rv64-image: rcore-fs-fuse
-	@echo building riscv64.img
-	@rm -rf rootfs
-	@mkdir rootfs
-	@mkdir rootfs/bin
-ifeq ($(wildcard prebuilt/linux/riscv64/busybox),)
-	@mkdir -p prebuilt/linux/riscv64
-	@wget https://github.com/rcore-os/busybox-prebuilts/raw/master/busybox-1.30.1-riscv64/busybox -O prebuilt/linux/riscv64/busybox
-endif
-	@cp prebuilt/linux/riscv64/* rootfs/bin/
-	@@rcore-fs-fuse riscv64.img rootfs zip
-	@qemu-img resize riscv64.img +50M
+riscv-image: rcore-fs-fuse
+	@echo building riscv.img
+	@@rcore-fs-fuse zCore/riscv64.img riscv_rootfs zip
+	@qemu-img resize -f raw zCore/riscv64.img +50M
+	
 
 clean:
 	cargo clean

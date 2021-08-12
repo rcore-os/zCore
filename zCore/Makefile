@@ -63,6 +63,7 @@ baremetal-test-qemu_opts += \
 else ifeq ($(arch), riscv64)
 qemu_opts += \
 	-machine virt \
+	-bios default \
 	-no-reboot \
 	-no-shutdown \
 	-nographic \
@@ -183,7 +184,7 @@ endif
 $(QEMU_DISK):
 ifeq ($(arch), riscv64)
 	@echo Generating riscv64 sfsimg
-	@qemu-img convert -f raw ../riscv64.img -O qcow2 $@
+	@qemu-img convert -f raw riscv64.img -O qcow2 $@
 	@qemu-img resize $@ +1G
 else
 	@qemu-img create -f qcow2 $@ 100M
