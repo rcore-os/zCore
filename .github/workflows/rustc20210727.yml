@@ -34,7 +34,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-20.04, macos-latest]
+        os: [ubuntu-20.04]
     steps:
       - uses: actions/checkout@v2
         with:
@@ -44,6 +44,10 @@ jobs:
           profile: minimal
           toolchain: nightly-2021-07-27
           components: rust-src
+      - name: Install Qemu-Utils
+        run: |
+          sudo apt update
+          sudo apt install qemu-utils
       - name: Build
         run: arch=x86_64 cargo build
 #        uses: actions-rs/cargo@v1
@@ -51,13 +55,38 @@ jobs:
 #          command: build
       - name: Build zCore
         run: |
+          make rootfs
+          make image
           cd zCore
-          make build arch=x86_64 
+          make build arch=x86_64 linux=1
       # FIX LATER
       # - name: Build zCore with hypervisor
       #   run: |
       #     cd zCore
       #     make build hypervisor=1
+  build-x86_64-zircon:
+      runs-on: ${{ matrix.os }}
+      strategy:
+        matrix:
+          os: [ubuntu-20.04, macos-latest]
+      steps:
+        - uses: actions/checkout@v2
+          with:
+            submodules: 'recursive'
+        - uses: actions-rs/toolchain@v1
+          with:
+            profile: minimal
+            toolchain: nightly-2021-07-27
+            components: rust-src
+        - name: Build
+          run: arch=x86_64 cargo build
+  #        uses: actions-rs/cargo@v1
+  #        with:
+  #          command: build
+        - name: Build zCore
+          run: |
+            cd zCore
+            make build arch=x86_64 linux=0
 
   build-aarch64:
     runs-on: ubuntu-20.04
@@ -157,7 +186,7 @@ jobs:
       - name: Build zCore
         run: |
           cd zCore
-          make build mode=release
+          make build mode=release linux=0
           cd ..
       - name: Run core-tests
         run: |

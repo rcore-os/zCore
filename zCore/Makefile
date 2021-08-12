@@ -4,7 +4,7 @@ mode ?= debug
 zbi_file ?= bringup
 graphic ?=
 accel ?=
-linux ?= 1
+linux ?=
 user ?=
 hypervisor ?=
 smp ?= 1
@@ -22,6 +22,8 @@ OBJDUMP := rust-objdump -print-imm-hex -x86-asm-syntax=intel
 OBJCOPY := rust-objcopy --binary-architecture=$(arch)
 VMDISK := $(build_path)/boot.vdi
 QEMU_DISK := $(build_path)/disk.qcow2
+BOOTLOADER  := ../prebuilt/opensbi/c906_opensbi.bin
+BOOTLOADER_SIZE := 2097152
 
 export ARCH=$(arch)
 export BOARD=$(board)
@@ -227,3 +229,11 @@ baremetal-test:
 baremetal-test-rv64: build $(QEMU_DISK)
 	timeout --foreground 8s $(qemu) $(qemu_opts) -append ROOTPROC=$(ROOTPROC)
 
+
+d1: $(kernel_bin)
+	cp $(BOOTLOADER) $(BOOTLOADER).copy
+	dd if=$(kernel_bin) of=$(BOOTLOADER).copy bs=$(BOOTLOADER_SIZE) seek=1
+	mv $(BOOTLOADER).copy $(kernel_bin)
+	xfel ddr ddr3
+	xfel write 0x40000000 $(kernel_bin)
+	xfel exec 0x40000000

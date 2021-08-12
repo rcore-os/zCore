@@ -46,6 +46,7 @@ pub mod drivers;
 
 pub use self::arch::*;
 
+#[cfg(target_arch = "x86_64")]
 pub mod devices;
 // pub use self::devices::*;
 
@@ -229,6 +230,7 @@ pub fn init(config: Config) {
     trace!("hal dtb: {:#x}", config.dtb);
 
     arch::init(config);
+    #[cfg(target_arch = "x86_64")]
     devices::devices_init();
 }
 
