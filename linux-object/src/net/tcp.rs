@@ -2,18 +2,18 @@
 #![allow(dead_code)]
 // crate
 // use core::task::{Poll};
-use crate::fs::FileLikeType;
-use crate::net::get_ephemeral_port;
-use crate::net::poll_ifaces;
-use crate::net::IpEndpoint;
-use crate::net::Endpoint;
-use crate::net::SOCKETS;
-use crate::net::TCP_SENDBUF;
-use crate::net::TCP_RECVBUF;
-use crate::net::GlobalSocketHandle;
 use crate::error::LxError;
 use crate::error::LxResult;
 use crate::fs::FileLike;
+use crate::fs::FileLikeType;
+use crate::net::get_ephemeral_port;
+use crate::net::poll_ifaces;
+use crate::net::Endpoint;
+use crate::net::GlobalSocketHandle;
+use crate::net::IpEndpoint;
+use crate::net::SOCKETS;
+use crate::net::TCP_RECVBUF;
+use crate::net::TCP_SENDBUF;
 
 // alloc
 use alloc::boxed::Box;
@@ -32,8 +32,6 @@ use async_trait::async_trait;
 use rcore_fs::vfs::PollStatus;
 use zircon_object::object::*;
 
-
-
 /// missing documentation
 pub struct TcpSocketState {
     /// missing documentation
@@ -44,6 +42,12 @@ pub struct TcpSocketState {
     local_endpoint: Option<IpEndpoint>, // save local endpoint for bind()
     /// missing documentation
     is_listening: bool,
+}
+
+impl Default for TcpSocketState {
+    fn default() -> Self {
+        TcpSocketState::new()
+    }
 }
 
 impl TcpSocketState {
@@ -94,7 +98,7 @@ impl TcpSocketState {
         let mut socket = sockets.get::<TcpSocket>(self.handle.0);
         if socket.is_open() {
             if socket.can_send() {
-                match socket.send_slice(&data) {
+                match socket.send_slice(data) {
                     Ok(size) => {
                         // avoid deadlock
                         drop(socket);
@@ -273,19 +277,16 @@ impl TcpSocketState {
 
     /// missing documentation
     fn endpoint(&self) -> Option<Endpoint> {
-        self.local_endpoint
-            .clone()
-            .map(|e| Endpoint::Ip(e))
-            .or_else(|| {
-                let mut sockets = SOCKETS.lock();
-                let socket = sockets.get::<TcpSocket>(self.handle.0);
-                let endpoint = socket.local_endpoint();
-                if endpoint.port != 0 {
-                    Some(Endpoint::Ip(endpoint))
-                } else {
-                    None
-                }
-            })
+        self.local_endpoint.map(Endpoint::Ip).or_else(|| {
+            let mut sockets = SOCKETS.lock();
+            let socket = sockets.get::<TcpSocket>(self.handle.0);
+            let endpoint = socket.local_endpoint();
+            if endpoint.port != 0 {
+                Some(Endpoint::Ip(endpoint))
+            } else {
+                None
+            }
+        })
     }
 
     /// missing documentation
@@ -324,7 +325,7 @@ impl_kobject!(TcpSocketState);
 impl FileLike for TcpSocketState {
     /// read to buffer
     async fn read(&self, _buf: &mut [u8]) -> LxResult<usize> {
-        let (a,_b) = self.tcp_read(_buf);
+        let (a, _b) = self.tcp_read(_buf);
         a
         // unimplemented!()
     }

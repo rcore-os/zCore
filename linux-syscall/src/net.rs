@@ -1,11 +1,11 @@
+use super::*;
 use linux_object::fs::FileLike;
 use linux_object::fs::FileLikeType;
 use linux_object::net::sockaddr_to_endpoint;
-use linux_object::net::UdpSocketState;
-use linux_object::net::TcpSocketState;
 use linux_object::net::RawSocketState;
-use super::*;
 use linux_object::net::SockAddr;
+use linux_object::net::TcpSocketState;
+use linux_object::net::UdpSocketState;
 
 impl Syscall<'_> {
     /// net socket
@@ -65,7 +65,7 @@ impl Syscall<'_> {
         };
         // socket
         let fd = proc.add_file(socket)?;
-        warn!("socketfd : {:?}" , fd);
+        warn!("socketfd : {:?}", fd);
         Ok(fd.into())
     }
 
@@ -90,15 +90,17 @@ impl Syscall<'_> {
         match file.file_type()? {
             FileLikeType::RawSocket => {
                 unreachable!()
-            },
+            }
             FileLikeType::TcpSocket => {
-                let socket = file.downcast_arc::<TcpSocketState>().map_err(|_| LxError::EBADF)?;
+                let socket = file
+                    .downcast_arc::<TcpSocketState>()
+                    .map_err(|_| LxError::EBADF)?;
                 socket.connect(endpoint)?;
-            },
+            }
             FileLikeType::UdpSocket => {
                 unreachable!()
-            },
-            _ => unreachable!()
+            }
+            _ => unreachable!(),
         };
         Ok(0)
     }
@@ -124,14 +126,14 @@ impl Syscall<'_> {
                 // let socket = file.downcast_arc::<RawSocketState>().map_err(|_| LxError::EBADF)?;
                 // socket.raw_setsockopt(level, optname, data);
                 0
-            },
+            }
             FileLikeType::TcpSocket => {
                 unreachable!()
-            },
+            }
             FileLikeType::UdpSocket => {
                 unreachable!()
-            },
-            _ => unreachable!()
+            }
+            _ => unreachable!(),
         };
         Ok(len)
     }
@@ -164,22 +166,27 @@ impl Syscall<'_> {
         let file = proc.get_file_like(sockfd.into())?;
         let len = match file.file_type()? {
             FileLikeType::RawSocket => {
-                let socket = file.downcast_arc::<RawSocketState>().map_err(|_| LxError::EBADF)?;
+                let socket = file
+                    .downcast_arc::<RawSocketState>()
+                    .map_err(|_| LxError::EBADF)?;
                 socket.raw_write(&data, endpoint)?
-            },
+            }
             FileLikeType::TcpSocket => {
-                let socket = file.downcast_arc::<TcpSocketState>().map_err(|_| LxError::EBADF)?;
+                let socket = file
+                    .downcast_arc::<TcpSocketState>()
+                    .map_err(|_| LxError::EBADF)?;
                 socket.tcp_write(&data, endpoint)?
-            },
+            }
             FileLikeType::UdpSocket => {
-                let socket = file.downcast_arc::<UdpSocketState>().map_err(|_| LxError::EBADF)?;
+                let socket = file
+                    .downcast_arc::<UdpSocketState>()
+                    .map_err(|_| LxError::EBADF)?;
                 socket.udp_write(&data, endpoint)?
-            },
-            _ => unreachable!()
+            }
+            _ => unreachable!(),
         };
-        warn!("len : {}",len);
+        warn!("len : {}", len);
         Ok(len)
-
     }
 
     /// net setsockopt
@@ -202,19 +209,24 @@ impl Syscall<'_> {
         let file = proc.get_file_like(sockfd.into())?;
         let (result, endpoint) = match file.file_type()? {
             FileLikeType::RawSocket => {
-                let socket = file.downcast_arc::<RawSocketState>().map_err(|_| LxError::EBADF)?;
+                let socket = file
+                    .downcast_arc::<RawSocketState>()
+                    .map_err(|_| LxError::EBADF)?;
                 socket.raw_read(&mut data)
-                
-            },
+            }
             FileLikeType::TcpSocket => {
-                let socket = file.downcast_arc::<TcpSocketState>().map_err(|_| LxError::EBADF)?;
+                let socket = file
+                    .downcast_arc::<TcpSocketState>()
+                    .map_err(|_| LxError::EBADF)?;
                 socket.tcp_read(&mut data)
-            },
+            }
             FileLikeType::UdpSocket => {
-                let socket = file.downcast_arc::<UdpSocketState>().map_err(|_| LxError::EBADF)?;
+                let socket = file
+                    .downcast_arc::<UdpSocketState>()
+                    .map_err(|_| LxError::EBADF)?;
                 socket.udp_read(&mut data)
-            },
-            _ => unreachable!()
+            }
+            _ => unreachable!(),
         };
         if result.is_ok() && !src_addr.is_null() {
             let _sockaddr_in = SockAddr::from(endpoint);

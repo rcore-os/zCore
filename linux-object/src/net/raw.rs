@@ -1,45 +1,44 @@
-// rawsocket 
+// rawsocket
 #![allow(dead_code)]
 // crate
 use crate::fs::FileLikeType;
-use crate::net::IPPROTO_IP;
-use crate::net::IP_HDRINCL;
 use crate::net::get_net_driver;
+use crate::net::Endpoint;
 use crate::net::IpAddress;
 use crate::net::IpEndpoint;
-use crate::net::Endpoint;
-use crate::net::RAW_SENDBUF;
-use crate::net::RAW_RECVBUF;
+use crate::net::IPPROTO_IP;
+use crate::net::IP_HDRINCL;
 use crate::net::RAW_METADATA_BUF;
+use crate::net::RAW_RECVBUF;
+use crate::net::RAW_SENDBUF;
 use crate::net::SOCKETS;
 
 use crate::net::GlobalSocketHandle;
 
-use crate::error::LxResult;
 use crate::error::LxError;
+use crate::error::LxResult;
 use crate::fs::FileLike;
 
 // alloc
-use alloc::vec;
 use alloc::boxed::Box;
+use alloc::vec;
 
 // smoltcp
 
-use smoltcp::socket::RawSocketBuffer;
 use smoltcp::socket::RawPacketMetadata;
 use smoltcp::socket::RawSocket;
+use smoltcp::socket::RawSocketBuffer;
 
 use smoltcp::wire::IpProtocol;
 use smoltcp::wire::IpVersion;
 use smoltcp::wire::Ipv4Packet;
 
-
 // async
 use async_trait::async_trait;
 
-// third part 
-use zircon_object::impl_kobject;
+// third part
 use rcore_fs::vfs::PollStatus;
+use zircon_object::impl_kobject;
 use zircon_object::object::*;
 
 /// missing documentation
@@ -107,67 +106,60 @@ impl RawSocketState {
             let mut sockets = SOCKETS.lock();
             let mut socket = sockets.get::<RawSocket>(self.handle.0);
 
-            match socket.send_slice(&data) {
+            match socket.send_slice(data) {
                 Ok(()) => Ok(data.len()),
                 Err(_) => Err(LxError::ENOBUFS),
             }
-        } else {
-            if let Some(Endpoint::Ip(endpoint)) = sendto_endpoint {
-                // temporary solution
-                let iface = &*(get_net_driver()[0]);
-                let v4_src = iface.ipv4_address().unwrap();
-                let mut sockets = SOCKETS.lock();
-                let mut socket = sockets.get::<RawSocket>(self.handle.0);
+        } else if let Some(Endpoint::Ip(endpoint)) = sendto_endpoint {
+            // temporary solution
+            let iface = &*(get_net_driver()[0]);
+            let v4_src = iface.ipv4_address().unwrap();
+            let mut sockets = SOCKETS.lock();
+            let mut socket = sockets.get::<RawSocket>(self.handle.0);
 
-                if let IpAddress::Ipv4(v4_dst) = endpoint.addr {
-                    let len = data.len();
-                    // using 20-byte IPv4 header
-                    let mut buffer = vec![0u8; len + 20];
-                    let mut packet = Ipv4Packet::new_unchecked(&mut buffer);
-                    packet.set_version(4);
-                    packet.set_header_len(20);
-                    packet.set_total_len((20 + len) as u16);
-                    packet.set_protocol(socket.ip_protocol().into());
-                    packet.set_src_addr(v4_src);
-                    packet.set_dst_addr(v4_dst);
-                    let payload = packet.payload_mut();
-                    payload.copy_from_slice(data);
-                    packet.fill_checksum();
+            if let IpAddress::Ipv4(v4_dst) = endpoint.addr {
+                let len = data.len();
+                // using 20-byte IPv4 header
+                let mut buffer = vec![0u8; len + 20];
+                let mut packet = Ipv4Packet::new_unchecked(&mut buffer);
+                packet.set_version(4);
+                packet.set_header_len(20);
+                packet.set_total_len((20 + len) as u16);
+                packet.set_protocol(socket.ip_protocol());
+                packet.set_src_addr(v4_src);
+                packet.set_dst_addr(v4_dst);
+                let payload = packet.payload_mut();
+                payload.copy_from_slice(data);
+                packet.fill_checksum();
 
-                    socket.send_slice(&buffer).unwrap();
+                socket.send_slice(&buffer).unwrap();
 
-                    // avoid deadlock
-                    drop(socket);
-                    drop(sockets);
-                    iface.poll(&(*SOCKETS));
+                // avoid deadlock
+                drop(socket);
+                drop(sockets);
+                iface.poll(&(*SOCKETS));
 
-                    Ok(len)
-                } else {
-                    unimplemented!("ip type")
-                }
+                Ok(len)
             } else {
-                Err(LxError::ENOTCONN)
+                unimplemented!("ip type")
             }
+        } else {
+            Err(LxError::ENOTCONN)
         }
     }
 
     /// missing documentation
     pub fn raw_setsockopt(&mut self, level: usize, opt: usize, data: &[u8]) -> LxResult<usize> {
-        match (level, opt) {
-            (IPPROTO_IP, IP_HDRINCL) => {
-                if let Some(arg) = data.first() {
-                    self.header_included = *arg > 0;
-                    debug!("hdrincl set to {}", self.header_included);
-                }
+        if let (IPPROTO_IP, IP_HDRINCL) = (level, opt) {
+            if let Some(arg) = data.first() {
+                self.header_included = *arg > 0;
+                debug!("hdrincl set to {}", self.header_included);
             }
-            _ => {}
         }
         Ok(0)
     }
 }
 impl_kobject!(RawSocketState);
-
-
 
 #[async_trait]
 impl FileLike for RawSocketState {
