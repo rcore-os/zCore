@@ -7,6 +7,26 @@ on:
     - cron: '40 3 * * *'  # every day at 3:40
 
 jobs:
+  baremetal-riscv-libc-test:
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: 'recursive'
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly-2021-07-27
+          components: rust-src
+      - name: Set up QEMU
+        id: qemu
+        uses: docker/setup-qemu-action@v1
+        with:
+          image: tonistiigi/binfmt:qemu-v5.2.0
+          platforms: all
+      - name: Available platforms
+        run: echo ${{ steps.qemu.outputs.platforms }}
+
 #   check:
 #     runs-on: ubuntu-20.04
 #     steps:
@@ -234,22 +254,3 @@ jobs:
 #           BRANCH: gh-pages
 #           FOLDER: target/doc
 
-  baremetal-riscv-libc-test:
-    runs-on: ubuntu-20.04
-    steps:
-      - uses: actions/checkout@v2
-        with:
-          submodules: 'recursive'
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: nightly-2021-07-27
-          components: rust-src
-        name: Set up QEMU
-        id: qemu
-        uses: docker/setup-qemu-action@v1
-        with:
-          image: tonistiigi/binfmt:qemu-v5.2.0
-          platforms: all
-      - name: Available platforms
-        run: echo ${{ steps.qemu.outputs.platforms }}
