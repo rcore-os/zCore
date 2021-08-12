@@ -127,8 +127,8 @@ pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
     // read_invalid_test();
 
     // 正常由bootloader载入文件系统镜像到内存, 这里不用，而使用后面的virtio
-    let dummy = unsafe { core::slice::from_raw_parts_mut(0 as *mut u8, 0) };
-    main(dummy, boot_info.cmdline);
+    // let dummy = unsafe { core::slice::from_raw_parts_mut(0 as *mut u8, 0) };
+    main(&mut [], boot_info.cmdline);
 }
 
 #[cfg(feature = "linux")]

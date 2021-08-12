@@ -21,6 +21,8 @@ OBJDUMP := rust-objdump -print-imm-hex -x86-asm-syntax=intel
 OBJCOPY := rust-objcopy --binary-architecture=$(arch)
 VMDISK := $(build_path)/boot.vdi
 QEMU_DISK := $(build_path)/disk.qcow2
+BOOTLOADER  := ../prebuilt/opensbi/c906_opensbi.bin
+BOOTLOADER_SIZE := 2097152
 
 export ARCH=$(arch)
 
@@ -55,6 +57,7 @@ qemu_opts += \
 else ifeq ($(arch), riscv64)
 qemu_opts += \
 	-machine virt \
+	-bios default \
 	-no-reboot \
 	-no-shutdown \
 	-nographic \
@@ -179,3 +182,10 @@ else
 	@qemu-img create -f qcow2 $@ 100M
 endif
 
+d1: $(kernel_bin)
+	cp $(BOOTLOADER) $(BOOTLOADER).copy
+	dd if=$(kernel_bin) of=$(BOOTLOADER).copy bs=$(BOOTLOADER_SIZE) seek=1
+	mv $(BOOTLOADER).copy $(kernel_bin)
+	xfel ddr ddr3
+	xfel write 0x40000000 $(kernel_bin)
+	xfel exec 0x40000000
