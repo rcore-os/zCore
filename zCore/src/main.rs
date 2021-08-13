@@ -119,8 +119,18 @@ pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
         dtb: device_tree_vaddr,
     });
 
+    use alloc::{format, string::ToString};
+    use kernel_hal_bare::virtio::CMDLINE;
+    let cmdline_dt = CMDLINE.read();
+    let mut cmdline = boot_info.cmdline.to_string();
+
+    if !cmdline_dt.is_empty() {
+        cmdline = format!("{}:{}", boot_info.cmdline, cmdline_dt);
+    };
+    warn!("cmdline: {:?}", cmdline);
+
     // 正常由bootloader载入文件系统镜像到内存, 这里不用，而使用后面的virtio
-    main(&mut [], boot_info.cmdline);
+    main(&mut [], &cmdline);
 }
 
 #[cfg(feature = "linux")]
