@@ -11,7 +11,7 @@ BASE = 'linux/'
 CHECK_FILE = BASE + 'baremetal-test-allow-rv64.txt'
 FAIL_FILE = BASE + 'baremetal-test-fail-rv64.txt'
 SCRIPT_FILE = 'script.sh'
-RESULT_FILE ='../stdout-baremetal-test-rv64'
+RESULT_FILE ='../stdout-rv64'
 script=r'''
 #!/bin/bash
 
@@ -23,7 +23,7 @@ failed = set()
 timeout = set()
 
 FAILED = [
-    "failed",
+    "panicked at",
     "ERROR",
 ]
 

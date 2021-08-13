@@ -243,3 +243,31 @@ jobs:
         run: |
           cd scripts
           python3 ./baremetal-libc-test.py
+  baremetal-rv64-oscomp-test:
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: 'recursive'
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          components: rust-src
+      - run: echo "nightly" >rust-toolchain
+      - run: echo "nightly" >./rboot/rust-toolchain
+      - name: Install cargo tools and qemu-system-riscv64
+        run: |
+          sudo apt install qemu-utils
+          cargo install cargo-binutils
+          rustup component add llvm-tools-preview
+          wget https://github.com/rcore-os/qemu-prebuilt/releases/download/5.2.0-riscv64/qemu-system-riscv64.tar.xz > /dev/null
+          tar xJf qemu-system-riscv64.tar.xz && sudo cp qemu-system-riscv64 /usr/local/bin
+          wget https://github.com/rcore-os/qemu-prebuilt/releases/download/qemu-share/qemu-share.tar.xz > /dev/null
+          tar xJf qemu-share.tar.xz && sudo cp -r qemu /usr/local/share/
+      - name: Prepare rootfs and oscomp
+        run: make riscv-image
+      - name: Run baremetal-libc-test
+        run: |
+          cd scripts
+          python3 baremetal-test-riscv64.py
