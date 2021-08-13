@@ -23,7 +23,7 @@ prebuilt/linux/$(ROOTFS_TAR):
 	wget $(ROOTFS_URL) -O $@
 
 prebuilt/linux/riscv64/$(RISCV64_ROOTFS_TAR):
-	wget $(RISCV64_ROOTFS_URL) -O $@
+	@wget $(RISCV64_ROOTFS_URL) -O $@
 
 rootfs: prebuilt/linux/$(ROOTFS_TAR)
 	rm -rf rootfs && mkdir -p rootfs
@@ -33,9 +33,8 @@ rootfs: prebuilt/linux/$(ROOTFS_TAR)
 	@for VAR in $(BASENAMES); do gcc $(TEST_DIR)$$VAR.c -o $(DEST_DIR)$$VAR $(CFLAG); done
 
 riscv-rootfs:prebuilt/linux/riscv64/$(RISCV64_ROOTFS_TAR)
-	rm -rf riscv_rootfs && mkdir -p riscv_rootfs
-	tar -xvf $< -C riscv_rootfs --strip-components 1
-
+	@rm -rf riscv_rootfs && mkdir -p riscv_rootfs
+	@tar -xvf $< -C riscv_rootfs --strip-components 1
 
 libc-test:
 	cd rootfs && git clone git://repo.or.cz/libc-test --depth 1
@@ -63,14 +62,23 @@ image: $(OUT_IMG)
 	@qemu-img resize $(OUT_IMG) +50M
 
 
-riscv-image: rcore-fs-fuse
+riscv-image: rcore-fs-fuse riscv-rootfs
 	@echo building riscv.img
-	@@rcore-fs-fuse zCore/riscv64.img riscv_rootfs zip
+	@rcore-fs-fuse zCore/riscv64.img riscv_rootfs zip
 	@qemu-img resize -f raw zCore/riscv64.img +50M
 	
 
 clean:
 	cargo clean
+	find zCore -maxdepth 1 -name "*.img" -delete
+	rm -rf rootfs
+	rm -rf riscv-rootfs
+	find zCore/target -type f -name "*.zbi" -delete
+	find zCore/target -type f -name "*.elf" -delete
+	cd linux-syscall/test-oscomp && make clean
+	cd linux-syscall/busybox && make clean
+	cd linux-syscall/lua && make clean
+	cd linux-syscall/lmbench && make clean
 
 doc:
 	arch=x86_64 cargo doc --open
@@ -93,3 +101,7 @@ baremetal-test-img: prebuilt/linux/$(ROOTFS_TAR) rcore-fs-fuse
 
 baremetal-test:
 	@make -C zCore baremetal-test mode=release linux=1 | tee stdout-baremetal-test
+
+baremetal-test-rv64:
+	@make -C zCore baremetal-test-rv64 arch=riscv64 mode=release linux=1 ROOTPROC=$(ROOTPROC) | tee stdout-baremetal-test-rv64
+

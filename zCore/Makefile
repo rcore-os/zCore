@@ -195,3 +195,7 @@ baremetal-qemu-disk:
 baremetal-test:
 	cp rboot.conf $(ESP)/EFI/Boot/rboot.conf
 	timeout --foreground 8s  $(qemu) $(baremetal-test-qemu_opts)
+
+baremetal-test-rv64: build $(QEMU_DISK)
+	timeout --foreground 8s $(qemu) $(qemu_opts) -append ROOTPROC=$(ROOTPROC)
+
