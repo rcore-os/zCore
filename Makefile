@@ -103,5 +103,5 @@ baremetal-test:
 	@make -C zCore baremetal-test mode=release linux=1 | tee stdout-baremetal-test
 
 baremetal-test-rv64:
-	@make -C zCore baremetal-test-rv64 arch=riscv64 mode=release linux=1 ROOTPROC=$(ROOTPROC) | tee stdout-baremetal-test-rv64
+	@make -C zCore baremetal-test-rv64 arch=riscv64 mode=release linux=1 ROOTPROC=$(ROOTPROC) | tee -a stdout-baremetal-test-rv64 | tee stdout-rv64
 
