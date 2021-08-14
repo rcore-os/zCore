@@ -59,7 +59,7 @@ impl LinuxElfLoader {
         let vmo = image_vmar.load_from_elf(&elf)?;
         let entry = base + elf.header.pt2.entry_point() as usize;
 
-        //for static exec program
+        // for static exec program
         let ph: ProgramHeader = elf.program_iter().next().unwrap();
         let static_prog_base = ph.virtual_addr() as usize / PAGE_SIZE * PAGE_SIZE;
         debug!(
@@ -74,7 +74,7 @@ impl LinuxElfLoader {
             vmo.write(offset as usize, &self.syscall_entry.to_ne_bytes())?;
         }
 
-        match elf.relocate(base) {
+        match elf.relocate(image_vmar) {
             Ok(()) => info!("elf relocate passed !"),
             Err(error) => {
                 base = static_prog_base;

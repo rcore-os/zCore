@@ -487,6 +487,7 @@ impl VmAddressRegion {
         VmarInfo {
             base: self.addr(),
             len: self.size,
+            // pg_token: self.page_table.lock().table_phys(),
         }
     }
 
@@ -658,6 +659,7 @@ impl VmarInner {
 pub struct VmarInfo {
     base: usize,
     len: usize,
+    // pg_token: usize,
 }
 
 /// Virtual Memory Mapping
@@ -924,7 +926,7 @@ impl VmMapping {
             return Err(ZxError::ACCESS_DENIED);
         }
         if !access_flags.contains(MMUFlags::WRITE) {
-            //注意一下!
+            // 注意一下!
             warn!("handle_page_fault remove MMUFlags::WRITE !");
             flags.remove(MMUFlags::WRITE)
         }

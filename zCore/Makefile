@@ -192,6 +192,7 @@ endif
 
 baremetal-qemu-disk:
 	@qemu-img create -f qcow2 $(build_path)/disk.qcow2 100M
+
 baremetal-test:
 	cp rboot.conf $(ESP)/EFI/Boot/rboot.conf
 	timeout --foreground 8s  $(qemu) $(baremetal-test-qemu_opts)

@@ -2,7 +2,7 @@
 	.globl _start
 _start:
 	#关闭mmu
-        #csrw satp, zero
+    #csrw satp, zero
 
 	#la sp, bootstacktop
 	#call rust_main
