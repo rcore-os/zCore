@@ -402,6 +402,11 @@ pub fn vdso_constants() -> VdsoConstants {
     constants
 }
 
+#[export_name = "hal_current_pgtable"]
+pub fn current_page_table() -> usize {
+    0
+}
+
 /// Initialize the HAL.
 ///
 /// This function must be called at the beginning.
