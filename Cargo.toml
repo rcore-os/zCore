@@ -1,9 +1,10 @@
 [workspace]
 members = [
     "zircon-object",
+    "zircon-syscall",
     "zircon-loader",
     "linux-object",
-    "zircon-syscall",    
+    "linux-syscall",
     "linux-loader",
     "kernel-hal-unix",
     "kernel-hal",
@@ -13,6 +14,5 @@ exclude = [
     "zircon-user",
     "zCore",
     "rboot",
-    "linux-syscall",
     "kernel-hal-bare",    
 ]
