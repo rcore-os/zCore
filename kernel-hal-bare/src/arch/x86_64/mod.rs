@@ -77,12 +77,9 @@ impl PageTableTrait for PageTableImpl {
             .unwrap()
             .flush();
         };
-        trace!(
+        debug!(
             "map: {:x?} -> {:x?}, flags={:?} in {:#x?}",
-            vaddr,
-            paddr,
-            flags,
-            self.root_paddr
+            vaddr, paddr, flags, self.root_paddr
         );
         Ok(())
     }
@@ -171,6 +168,7 @@ pub unsafe fn set_page_table(vmtoken: usize) {
         return;
     }
     Cr3::write(frame, Cr3Flags::empty());
+    debug!("set page_table @ {:#x}", vmtoken);
 }
 
 fn frame_to_page_table(frame: PhysFrame) -> *mut PageTable {
@@ -506,4 +504,9 @@ pub fn frame_flush(target: PhysAddr) {
 fn cacheline_size() -> usize {
     let leaf = unsafe { __cpuid(1).ebx };
     (((leaf >> 8) & 0xff) << 3) as usize
+}
+
+#[export_name = "hal_current_pgtable"]
+pub fn current_page_table() -> usize {
+    PageTableImpl::current().root_paddr
 }

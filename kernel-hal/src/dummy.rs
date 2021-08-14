@@ -475,3 +475,9 @@ pub fn fill_random(_buf: &mut [u8]) {
 pub fn fill_random(_buf: &mut [u8]) {
     // TODO
 }
+
+#[linkage = "weak"]
+#[export_name = "hal_current_pgtable"]
+pub fn current_page_table() -> usize {
+    unimplemented!()
+}
