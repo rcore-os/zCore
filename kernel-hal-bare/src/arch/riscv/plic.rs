@@ -1,7 +1,6 @@
 use super::consts::PHYSICAL_MEMORY_OFFSET;
 use super::interrupt;
 use super::uart;
-use crate::putfmt; //For bare_println
 
 const MMODE: usize = 0;
 
@@ -117,7 +116,7 @@ pub fn handle_interrupt() {
         match interrupt {
             1..=8 => {
                 //virtio::handle_interrupt(interrupt);
-                bare_println!("plic virtio external interrupt: {}", interrupt);
+                info!("plic virtio external interrupt: {}", interrupt);
             }
             10 => {
                 //UART中断ID是10
@@ -127,7 +126,7 @@ pub fn handle_interrupt() {
                 //interrupt::try_process_serial();
             }
             _ => {
-                bare_println!("Unknown external interrupt: {}", interrupt);
+                info!("Unknown external interrupt: {}", interrupt);
             }
         }
         //这将复位pending的中断，允许UART再次中断。

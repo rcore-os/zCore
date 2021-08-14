@@ -496,12 +496,6 @@ impl VmAddressRegion {
         self.flags
     }
 
-    #[cfg(target_arch = "riscv64")]
-    /// Activate this page table
-    pub fn activate(&self) {
-        self.page_table.lock().activate();
-    }
-
     /// Dump all mappings recursively.
     pub fn dump(&self) {
         let mut guard = self.inner.lock();

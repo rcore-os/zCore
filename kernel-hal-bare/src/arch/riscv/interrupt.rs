@@ -25,19 +25,6 @@ use super::consts::PHYSICAL_MEMORY_OFFSET;
 use super::timer_set_next;
 use crate::{map_range, phys_to_virt, putfmt};
 
-//global_asm!(include_str!("trap.asm"));
-
-/*
-#[repr(C)]
-pub struct TrapFrame{
-    pub x: [usize; 32], //General registers
-    pub sstatus: Sstatus,
-    pub sepc: usize,
-    pub stval: usize,
-    pub scause: Scause,
-}
-*/
-
 const TABLE_SIZE: usize = 256;
 pub type InterruptHandle = Box<dyn Fn() + Send + Sync>;
 lazy_static! {
@@ -63,7 +50,7 @@ pub fn init() {
 
     init_irq();
 
-    bare_println!("+++ setup interrupt +++");
+    info!("+++ setup interrupt +++");
 }
 
 #[no_mangle]
@@ -200,7 +187,7 @@ pub fn overwrite_handler(msi_id: u32, handle: Box<dyn Fn() + Send + Sync>) -> bo
 }
 
 fn breakpoint(sepc: &mut usize) {
-    bare_println!("Exception::Breakpoint: A breakpoint set @0x{:x} ", sepc);
+    info!("Exception::Breakpoint: A breakpoint set @0x{:x} ", sepc);
 
     //sepc为触发中断指令ebreak的地址
     //防止无限循环中断，让sret返回时跳转到sepc的下一条指令地址
@@ -273,8 +260,6 @@ fn super_timer() {
     timer_set_next();
     super::timer_tick();
 
-    //bare_print!(".");
-
     //发生外界中断时，epc的指令还没有执行，故无需修改epc到下一条
 }
 
@@ -284,7 +269,7 @@ fn init_uart() {
     //但当没有SBI_CONSOLE_PUTCHAR时，却为什么不行？
     super::putfmt_uart(format_args!("{}", "Uart output testing\n"));
 
-    bare_println!("+++ Setting up UART interrupts +++");
+    info!("+++ Setting up UART interrupts +++");
 }
 
 //被plic串口中断调用
@@ -305,19 +290,19 @@ pub fn init_ext() {
     plic::set_threshold(0);
     plic::enable(10);
 
-    bare_println!("+++ Setting up PLIC +++");
+    info!("+++ Setting up PLIC +++");
 }
 
 fn super_soft() {
     sbi::clear_ipi();
-    bare_println!("Interrupt::SupervisorSoft!");
+    info!("Interrupt::SupervisorSoft!");
 }
 
 pub fn init_soft() {
     unsafe {
         sie::set_ssoft();
     }
-    bare_println!("+++ setup soft int! +++");
+    info!("+++ setup soft int! +++");
 }
 
 #[export_name = "fetch_trap_num"]

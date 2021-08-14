@@ -1,5 +1,4 @@
 use super::consts::PHYSICAL_MEMORY_OFFSET;
-use crate::putfmt;
 use core::convert::TryInto;
 use core::fmt::{Error, Write};
 
@@ -132,20 +131,5 @@ pub fn handle_interrupt() {
         //CONSOLE
         //push_stdin(c);
         super::serial_put(c);
-
-        /*
-         * 因serial_write()已可以被回调输出了，这里则不再需要了
-        match c {
-            0x7f => { //0x8 [backspace] ; 而实际qemu运行，[backspace]键输出0x7f, 表示del
-                bare_print!("{} {}", 8 as char, 8 as char);
-            },
-            10 | 13 => { // 新行或回车
-                bare_println!();
-            },
-            _ => {
-                bare_print!("{}", c as char);
-            },
-        }
-        */
     }
 }

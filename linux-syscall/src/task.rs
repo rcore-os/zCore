@@ -196,9 +196,6 @@ impl Syscall<'_> {
         };
         let (entry, sp) = loader.load(&vmar, &data, args, envs, path.clone())?;
 
-        // Activate page table
-        // vmar.activate();
-
         // Modify exec path
         proc.set_execute_path(&path);
 

@@ -1,7 +1,6 @@
 #![no_std]
 #![no_main]
 #![feature(lang_items)]
-#![feature(llvm_asm)]
 #![feature(panic_info_message)]
 #![deny(unused_must_use)]
 #![feature(global_asm)]
@@ -15,11 +14,8 @@ extern crate log;
 
 #[cfg(target_arch = "riscv64")]
 extern crate rlibc;
-
 #[cfg(target_arch = "x86_64")]
 extern crate rlibc_opt; //Only for x86_64
-
-extern crate fatfs;
 
 #[macro_use]
 mod logging;
@@ -33,17 +29,17 @@ use rboot::BootInfo;
 use kernel_hal_bare::{
     phys_to_virt, remap_the_kernel,
     virtio::{BlockDriverWrapper, BLK_DRIVERS},
-    BootInfo, GraphicInfo,
 };
 
-use alloc::vec::Vec;
+use alloc::{string::String, vec::Vec};
+
 #[cfg(target_arch = "riscv64")]
 global_asm!(include_str!("arch/riscv/boot/entry64.asm"));
 
 #[cfg(target_arch = "x86_64")]
 #[no_mangle]
 pub extern "C" fn _start(boot_info: &BootInfo) -> ! {
-    logging::init(get_log_level(boot_info.cmdline));
+    logging::init(get_value(boot_info.cmdline, "LOG").unwrap_or(""));
     memory::init_heap();
     memory::init_frame_allocator(boot_info);
 
@@ -83,75 +79,38 @@ fn main(ramfs_data: &[u8], cmdline: &str) -> ! {
 #[no_mangle]
 pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
     let device_tree_vaddr = phys_to_virt(device_tree_paddr);
-
-    let boot_info = BootInfo {
-        memory_map: Vec::new(),
-        physical_memory_offset: 0,
-        graphic_info: GraphicInfo {
-            mode: 0,
-            fb_addr: 0,
-            fb_size: 0,
-        },
-        hartid: hartid as u64,
-        dtb_addr: device_tree_paddr as u64,
-        initramfs_addr: 0,
-        initramfs_size: 0,
-        cmdline: "LOG=warn:TERM=xterm-256color:console.shell=true:virtcon.disable=true",
-    };
-
     unsafe {
         memory::clear_bss();
     }
 
-    logging::init(get_log_level(boot_info.cmdline));
-    warn!("rust_main(), After logging init\n\n");
+    logging::init("info");
     memory::init_heap();
-    memory::init_frame_allocator(&boot_info);
+    memory::init_frame_allocator();
     remap_the_kernel(device_tree_vaddr);
 
-    #[cfg(feature = "graphic")]
-    init_framebuffer(boot_info);
-
-    info!("{:#x?}", boot_info);
-
     kernel_hal_bare::init(kernel_hal_bare::Config {
-        mconfig: 0,
         dtb: device_tree_vaddr,
     });
 
-    use alloc::{format, string::ToString};
-    use kernel_hal_bare::virtio::CMDLINE;
-    let cmdline_dt = CMDLINE.read();
-    let mut cmdline = boot_info.cmdline.to_string();
-
-    if !cmdline_dt.is_empty() {
-        cmdline = format!("{}:{}", boot_info.cmdline, cmdline_dt);
-    };
-    warn!("cmdline: {:?}", cmdline);
+    let cmdline = kernel_hal_bare::cmdline();
+    info!("cmdline: {:?}", cmdline);
+    logging::init(get_value(cmdline, "LOG").unwrap_or(""));
 
     // 正常由bootloader载入文件系统镜像到内存, 这里不用，而使用后面的virtio
     main(&mut [], &cmdline);
 }
 
-use alloc::string::String;
-use alloc::vec;
 #[cfg(feature = "linux")]
+use alloc::vec;
 fn get_rootproc(cmdline: &str) -> Vec<String> {
-    for opt in cmdline.split(':') {
-        // parse 'key=value'
-        let mut iter = opt.trim().splitn(2, '=');
-        let key = iter.next().expect("failed to parse key");
-        let value = iter.next().expect("failed to parse value");
-        info!("value {}", value);
-        if key == "ROOTPROC" {
-            let mut iter = value.trim().splitn(2, '?');
-            let k1 = iter.next().expect("failed to parse k1");
-            let v1 = iter.next().expect("failed to parse v1");
-            if v1 == "" {
-                return vec![k1.into()];
-            } else {
-                return vec![k1.into(), v1.into()];
-            }
+    if let Some(value) = get_value(cmdline, "ROOTPROC") {
+        let mut iter = value.trim().splitn(2, '?');
+        let k1 = iter.next().expect("failed to parse k1");
+        let v1 = iter.next().expect("failed to parse v1");
+        if v1 == "" {
+            return vec![k1.into()];
+        } else {
+            return vec![k1.into(), v1.into()];
         }
     }
     vec!["/bin/busybox".into(), "sh".into()]
@@ -160,9 +119,7 @@ fn get_rootproc(cmdline: &str) -> Vec<String> {
 #[cfg(feature = "linux")]
 fn main(ramfs_data: &'static mut [u8], cmdline: &str) -> ! {
     use alloc::boxed::Box;
-    use alloc::string::String;
     use alloc::sync::Arc;
-    use alloc::vec;
 
     #[cfg(target_arch = "x86_64")]
     use linux_object::fs::MemBuf;
@@ -227,17 +184,20 @@ fn run() -> ! {
     }
 }
 
-fn get_log_level(cmdline: &str) -> &str {
+fn get_value<'a>(cmdline: &'a str, key: &str) -> Option<&'a str> {
     for opt in cmdline.split(':') {
+        if opt.is_empty() {
+            continue;
+        }
         // parse 'key=value'
         let mut iter = opt.trim().splitn(2, '=');
-        let key = iter.next().expect("failed to parse key");
+        let key0 = iter.next().expect("failed to parse key");
         let value = iter.next().expect("failed to parse value");
-        if key == "LOG" {
-            return value;
+        if key == key0 {
+            return Some(value);
         }
     }
-    ""
+    None
 }
 
 #[cfg(feature = "graphic")]

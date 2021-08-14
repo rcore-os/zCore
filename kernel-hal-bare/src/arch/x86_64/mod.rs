@@ -150,12 +150,6 @@ impl PageTableTrait for PageTableImpl {
     fn table_phys(&self) -> PhysAddr {
         self.root_paddr
     }
-
-    // /// Activate this page table
-    // #[export_name = "hal_pt_activate"]
-    // fn activate(&self) {
-    //     unimplemented!()
-    // }
 }
 
 /// Set page table.

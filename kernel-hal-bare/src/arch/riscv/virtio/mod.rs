@@ -97,8 +97,3 @@ impl BlockDevice for BlockDriverWrapper {
         Ok(())
     }
 }
-
-lazy_static! {
-    // Write only once at boot
-    pub static ref CMDLINE: RwLock<String> = RwLock::new(String::new());
-}

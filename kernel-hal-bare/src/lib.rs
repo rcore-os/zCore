@@ -15,8 +15,6 @@
 
 #![no_std]
 #![feature(asm)]
-#![feature(llvm_asm)]
-#![feature(global_asm)]
 #![feature(linkage)]
 //#![deny(warnings)]
 
@@ -190,16 +188,6 @@ pub fn frame_copy(src: PhysAddr, target: PhysAddr) {
     }
 }
 
-/// Zero `target` frame.
-#[export_name = "hal_frame_zero"]
-pub fn frame_zero_in_range(target: PhysAddr, start: usize, end: usize) {
-    assert!(start < PAGE_SIZE && end <= PAGE_SIZE);
-    trace!("frame_zero: {:#x?}", target);
-    unsafe {
-        core::ptr::write_bytes(phys_to_virt(target + start) as *mut u8, 0, end - start);
-    }
-}
-
 lazy_static! {
     pub static ref NAIVE_TIMER: Mutex<Timer> = Mutex::new(Timer::default());
 }
@@ -220,10 +208,6 @@ pub fn init(config: Config) {
     unsafe {
         trapframe::init();
     }
-
-    #[cfg(target_arch = "riscv64")]
-    trace!("hal dtb: {:#x}", config.dtb);
-
     arch::init(config);
 }
 

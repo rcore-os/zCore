@@ -5,7 +5,7 @@ use {
 
 pub fn init(level: &str) {
     static LOGGER: SimpleLogger = SimpleLogger;
-    log::set_logger(&LOGGER).unwrap();
+    let _ = log::set_logger(&LOGGER);
     log::set_max_level(match level {
         "error" => LevelFilter::Error,
         "warn" => LevelFilter::Warn,

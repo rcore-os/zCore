@@ -76,10 +76,7 @@ pub fn init_frame_allocator(boot_info: &BootInfo) {
 }
 
 #[cfg(target_arch = "riscv64")]
-use kernel_hal_bare::BootInfo;
-
-#[cfg(target_arch = "riscv64")]
-pub fn init_frame_allocator(boot_info: &BootInfo) {
+pub fn init_frame_allocator() {
     use core::ops::Range;
 
     let mut ba = FRAME_ALLOCATOR.lock();

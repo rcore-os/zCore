@@ -5,14 +5,16 @@ use riscv::asm::sfence_vma_all;
 use riscv::paging::{PageTableFlags as PTF, *};
 use riscv::register::{satp, sie, stval, time};
 //use crate::sbi;
-use alloc::{collections::VecDeque, vec::Vec};
+use alloc::{collections::VecDeque, vec::Vec, string::String};
 use core::fmt::{self, Write};
+use self::consts::PHYSICAL_MEMORY_OFFSET;
 
 mod sbi;
-
 mod consts;
-
-use consts::PHYSICAL_MEMORY_OFFSET;
+pub mod interrupt;
+mod plic;
+mod uart;
+pub mod virtio;
 
 // First core stores its SATP here.
 static mut SATP: usize = 0;
@@ -321,19 +323,6 @@ impl PageTableTrait for PageTableImpl {
     fn table_phys(&self) -> PhysAddr {
         self.root_paddr
     }
-
-    /// Activate this page table
-    #[export_name = "hal_pt_activate"]
-    fn activate(&self) {
-        let now_token = satp::read().bits();
-        let new_token = self.table_phys();
-        if now_token != new_token {
-            debug!("switch table {:x?} -> {:x?}", now_token, new_token);
-            unsafe {
-                set_page_table(new_token);
-            }
-        }
-    }
 }
 
 pub unsafe fn set_page_table(vmtoken: usize) {
@@ -495,21 +484,6 @@ pub fn putfmt_uart(fmt: fmt::Arguments) {
     Stdout1.write_fmt(fmt).unwrap();
 }
 
-////////////
-
-#[macro_export]
-macro_rules! bare_print {
-	($($arg:tt)*) => ({
-        putfmt(format_args!($($arg)*));
-	});
-}
-
-#[macro_export]
-macro_rules! bare_println {
-	() => (bare_print!("\n"));
-	($($arg:tt)*) => (bare_print!("{}\n", format_args!($($arg)*)));
-}
-
 pub const MMIO_MTIMECMP0: *mut u64 = 0x0200_4000usize as *mut u64;
 pub const MMIO_MTIME: *const u64 = 0x0200_BFF8 as *const u64;
 
@@ -526,7 +500,6 @@ fn get_cycle() -> u64 {
 pub fn timer_now() -> Duration {
     const FREQUENCY: u64 = 10_000_000; // ???
     let time = get_cycle();
-    //bare_println!("timer_now(): {:?}", time);
     Duration::from_nanos(time * 1_000_000_000 / FREQUENCY as u64)
 }
 
@@ -548,23 +521,17 @@ pub fn init(config: Config) {
     interrupt::init();
     timer_init();
 
-    /*
-    interrupt::init_soft();
-    sbi::send_ipi(0);
-    */
+    let cmdline = virtio::device_tree::init(config.dtb);
+    unsafe { CMDLINE = cmdline };
+}
 
-    unsafe {
-        llvm_asm!("ebreak"::::"volatile");
-    }
+static mut CMDLINE: String = String::new();
 
-    bare_println!("Setup virtio @devicetree {:#x}", config.dtb);
-    //virtio::init(config.dtb);
-
-    virtio::device_tree::init(config.dtb);
+pub fn cmdline() -> &'static str {
+    unsafe { CMDLINE.as_str() }
 }
 
 pub struct Config {
-    pub mconfig: u64,
     pub dtb: usize,
 }
 
@@ -572,53 +539,6 @@ pub struct Config {
 pub fn fetch_fault_vaddr() -> VirtAddr {
     stval::read() as _
 }
-
-static mut CONFIG: Config = Config { mconfig: 0, dtb: 0 };
-
-/// This structure represents the information that the bootloader passes to the kernel.
-#[repr(C)]
-#[derive(Debug)]
-pub struct BootInfo {
-    pub memory_map: Vec<u64>,
-    //pub memory_map: Vec<&'static MemoryDescriptor>,
-    /// The offset into the virtual address space where the physical memory is mapped.
-    pub physical_memory_offset: u64,
-    /// The graphic output information
-    pub graphic_info: GraphicInfo,
-
-    /// Physical address of ACPI2 RSDP, 启动的系统信息表的入口指针
-    //pub acpi2_rsdp_addr: u64,
-    /// Physical address of SMBIOS, 产品管理信息的结构表
-    //pub smbios_addr: u64,
-    pub hartid: u64,
-    pub dtb_addr: u64,
-
-    /// The start physical address of initramfs
-    pub initramfs_addr: u64,
-    /// The size of initramfs
-    pub initramfs_size: u64,
-    /// Kernel command line
-    pub cmdline: &'static str,
-}
-
-/// Graphic output information
-#[derive(Debug, Copy, Clone)]
-#[repr(C)]
-pub struct GraphicInfo {
-    /// Graphic mode
-    //pub mode: ModeInfo,
-    pub mode: u64,
-    /// Framebuffer base physical address
-    pub fb_addr: u64,
-    /// Framebuffer size
-    pub fb_size: u64,
-}
-
-pub mod interrupt;
-mod plic;
-mod uart;
-
-pub mod virtio;
 
 #[export_name = "hal_current_pgtable"]
 pub fn current_page_table() -> usize {
