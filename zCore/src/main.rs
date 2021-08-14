@@ -50,7 +50,7 @@ pub extern "C" fn _start(boot_info: &BootInfo) -> ! {
     #[cfg(feature = "graphic")]
     init_framebuffer(boot_info);
 
-    info!("{:#x?}", boot_info);
+    trace!("{:#x?}", boot_info);
 
     kernel_hal_bare::init(kernel_hal_bare::Config {
         acpi_rsdp: boot_info.acpi2_rsdp_addr,
@@ -123,12 +123,10 @@ pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
     main(&mut [], boot_info.cmdline);
 }
 
-#[cfg(feature = "linux")]
-use alloc::vec;
 use alloc::string::String;
+use alloc::vec;
+#[cfg(feature = "linux")]
 fn get_rootproc(cmdline: &str) -> Vec<String> {
-    use alloc::vec;
-    use alloc::string::String;
     for opt in cmdline.split(':') {
         // parse 'key=value'
         let mut iter = opt.trim().splitn(2, '=');
@@ -137,9 +135,9 @@ fn get_rootproc(cmdline: &str) -> Vec<String> {
         info!("value {}", value);
         if key == "ROOTPROC" {
             let mut iter = value.trim().splitn(2, '?');
-            let k1=iter.next().expect("failed to parse k1");
-            let v1=iter.next().expect("failed to parse v1");
-            if v1=="" {
+            let k1 = iter.next().expect("failed to parse k1");
+            let v1 = iter.next().expect("failed to parse v1");
+            if v1 == "" {
                 return vec![k1.into()];
             } else {
                 return vec![k1.into(), v1.into()];
@@ -147,9 +145,7 @@ fn get_rootproc(cmdline: &str) -> Vec<String> {
         }
     }
     vec!["/bin/busybox".into(), "sh".into()]
-    //vec!["/bin/busybox".into()]
 }
-
 
 #[cfg(feature = "linux")]
 fn main(ramfs_data: &'static mut [u8], cmdline: &str) -> ! {
@@ -199,8 +195,8 @@ fn main(ramfs_data: &'static mut [u8], cmdline: &str) -> ! {
         rcore_fs_sfs::SimpleFileSystem::open(device).expect("failed to open device SimpleFS");
 
     // fat32
-    //let img_file = File::open("fat.img")?;
-    //let fs = fatfs::FileSystem::new(img_file, fatfs::FsOptions::new())?;
+    // let img_file = File::open("fat.img")?;
+    // let fs = fatfs::FileSystem::new(img_file, fatfs::FsOptions::new())?;
 
     let _proc = linux_loader::run(args, envs, rootfs);
     info!("linux_loader is complete");

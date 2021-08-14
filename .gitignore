@@ -3,7 +3,9 @@
 **/*.rs.bk
 Cargo.lock
 /rootfs
+/riscv_rootfs
 /prebuilt/linux/alpine*
+/prebuilt/linux/riscv64/prebuild*
 .idea
 scripts/linux/test-result.txt
 rusty-tags.vi

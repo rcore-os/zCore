@@ -84,6 +84,7 @@ impl Thread {
             inner: Mutex::new(future),
             vmtoken,
         });
+
         Thread { thread: 0 }
     }
 
@@ -158,7 +159,12 @@ pub fn pmem_read(paddr: PhysAddr, buf: &mut [u8]) {
 /// Write physical memory to `paddr` from `buf`.
 #[export_name = "hal_pmem_write"]
 pub fn pmem_write(paddr: PhysAddr, buf: &[u8]) {
-    trace!("pmem_write: addr={:#x}, len={:#x}", paddr, buf.len());
+    trace!(
+        "pmem_write: addr={:#x}, len={:#x}, vaddr = {:#x}",
+        paddr,
+        buf.len(),
+        phys_to_virt(paddr)
+    );
     unsafe {
         buf.as_ptr()
             .copy_to_nonoverlapping(phys_to_virt(paddr) as _, buf.len());

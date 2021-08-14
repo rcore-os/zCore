@@ -258,7 +258,7 @@ impl PageTableTrait for PageTableImpl {
             .unwrap()
             .flush();
 
-        trace!(
+        debug!(
             "PageTable: {:#X}, map: {:x?} -> {:x?}, flags={:?}",
             self.table_phys() as usize,
             vaddr,
@@ -619,3 +619,12 @@ mod plic;
 mod uart;
 
 pub mod virtio;
+
+#[export_name = "hal_current_pgtable"]
+pub fn current_page_table() -> usize {
+    #[cfg(target_arch = "riscv32")]
+    let mode = satp::Mode::Sv32;
+    #[cfg(target_arch = "riscv64")]
+    let mode = satp::Mode::Sv39;
+    satp::read().ppn() << 12
+}
