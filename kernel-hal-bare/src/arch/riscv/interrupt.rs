@@ -8,48 +8,18 @@ use riscv::register::{
 use spin::Mutex;
 use trapframe::{TrapFrame, UserContext};
 
-/*
-use crate::timer::{
-    TICKS,
-    clock_set_next_event,
-    clock_close,
-};
-*/
-
-//use crate::context::TrapFrame;
 use super::plic;
 use super::sbi;
-use super::uart;
-
 use super::consts::PHYSICAL_MEMORY_OFFSET;
 use super::timer_set_next;
-use crate::{map_range, phys_to_virt, putfmt};
-
-const TABLE_SIZE: usize = 256;
-pub type InterruptHandle = Box<dyn Fn() + Send + Sync>;
-lazy_static! {
-    static ref IRQ_TABLE: Mutex<Vec<Option<InterruptHandle>>> = Default::default();
-}
-
-fn init_irq() {
-    init_irq_table();
-    irq_add_handle(Timer, Box::new(super_timer)); //模拟参照了x86_64,把timer处理函数也放进去了
-                                                  //irq_add_handle(Keyboard, Box::new(keyboard));
-    irq_add_handle(S_PLIC, Box::new(plic::handle_interrupt));
-}
+use super::{map_range, phys_to_virt, putfmt};
 
 pub fn init() {
     unsafe {
         sstatus::set_sie();
-
-        init_uart();
-
         sie::set_sext();
         init_ext();
     }
-
-    init_irq();
-
     info!("+++ setup interrupt +++");
 }
 
@@ -77,113 +47,22 @@ pub extern "C" fn trap_handler(tf: &mut TrapFrame) {
         Trap::Exception(Exception::InstructionPageFault) => page_fault(stval, tf),
         Trap::Interrupt(Interrupt::SupervisorTimer) => super_timer(),
         Trap::Interrupt(Interrupt::SupervisorSoft) => super_soft(),
-        Trap::Interrupt(Interrupt::SupervisorExternal) => plic::handle_interrupt(),
+        Trap::Interrupt(Interrupt::SupervisorExternal) => {
+            if let Some(id) = plic::next() {
+                match id {
+                    1..=8 => {
+                        //virtio::handle_interrupt(interrupt);
+                        info!("plic virtio external interrupt: {}", id);
+                    }
+                    10 => serial(),
+                    _ => info!("Unknown external interrupt: {}", id),
+                }
+                plic::complete(id);
+            }
+        }
         //Trap::Interrupt(Interrupt::SupervisorExternal) => irq_handle(code as u8),
         _ => panic!("Undefined Trap: {:#x} {:#x}", is_int, code),
     }
-}
-
-fn init_irq_table() {
-    let mut table = IRQ_TABLE.lock();
-    for _ in 0..TABLE_SIZE {
-        table.push(None);
-    }
-}
-
-#[export_name = "hal_irq_handle"]
-pub fn irq_handle(irq: u8) {
-    debug!("PLIC handle: {:#x}", irq);
-    let table = IRQ_TABLE.lock();
-    match &table[irq as usize] {
-        Some(f) => f(),
-        None => panic!("unhandled U-mode external IRQ number: {}", irq),
-    }
-}
-
-/// Add a handle to IRQ table. Return the specified irq or an allocated irq on success
-#[export_name = "hal_irq_add_handle"]
-pub fn irq_add_handle(irq: u8, handle: InterruptHandle) -> Option<u8> {
-    info!("IRQ add handle {:#x?}", irq);
-    let mut table = IRQ_TABLE.lock();
-    // allocate a valid irq number
-    // why?
-    if irq == 0 {
-        let mut id = 0x20;
-        while id < table.len() {
-            if table[id].is_none() {
-                table[id] = Some(handle);
-                return Some(id as u8);
-            }
-            id += 1;
-        }
-        return None;
-    }
-
-    match table[irq as usize] {
-        Some(_) => None,
-        None => {
-            table[irq as usize] = Some(handle);
-            Some(irq)
-        }
-    }
-}
-
-#[export_name = "hal_irq_remove_handle"]
-pub fn irq_remove_handle(irq: u8) -> bool {
-    info!("IRQ remove handle {:#x?}", irq);
-    let irq = irq as usize;
-    let mut table = IRQ_TABLE.lock();
-    match table[irq] {
-        Some(_) => {
-            table[irq] = None;
-            false
-        }
-        None => true,
-    }
-}
-
-/*
-#[export_name = "hal_irq_allocate_block"]
-pub fn allocate_block(irq_num: u32) -> Option<(usize, usize)> {
-    info!("hal_irq_allocate_block: count={:#x?}", irq_num);
-    let irq_num = u32::next_power_of_two(irq_num) as usize;
-    let mut irq_start = 0x20;
-    let mut irq_cur = irq_start;
-    let mut table = IRQ_TABLE.lock();
-    while irq_cur < TABLE_SIZE && irq_cur < irq_start + irq_num {
-        if table[irq_cur].is_none() {
-            irq_cur += 1;
-        } else {
-            irq_start = (irq_cur - irq_cur % irq_num) + irq_num;
-            irq_cur = irq_start;
-        }
-    }
-    for i in irq_start..irq_start + irq_num {
-        table[i] = Some(Box::new(|| {}));
-    }
-    info!(
-        "hal_irq_allocate_block: start={:#x?} num={:#x?}",
-        irq_start, irq_num
-    );
-    Some((irq_start, irq_num))
-}
-
-#[export_name = "hal_irq_free_block"]
-pub fn free_block(irq_start: u32, irq_num: u32) {
-    let mut table = IRQ_TABLE.lock();
-    for i in irq_start..irq_start + irq_num {
-        table[i as usize] = None;
-    }
-}
-*/
-
-#[export_name = "hal_irq_overwrite_handler"]
-pub fn overwrite_handler(msi_id: u32, handle: Box<dyn Fn() + Send + Sync>) -> bool {
-    info!("IRQ overwrite handle {:#x?}", msi_id);
-    let mut table = IRQ_TABLE.lock();
-    let set = table[msi_id as usize].is_none();
-    table[msi_id as usize] = Some(handle);
-    set
 }
 
 fn breakpoint(sepc: &mut usize) {
@@ -191,7 +70,7 @@ fn breakpoint(sepc: &mut usize) {
 
     //sepc为触发中断指令ebreak的地址
     //防止无限循环中断，让sret返回时跳转到sepc的下一条指令地址
-    *sepc += 2
+    *sepc += 2;
 }
 
 fn page_fault(stval: usize, tf: &mut TrapFrame) {
@@ -204,7 +83,7 @@ fn page_fault(stval: usize, tf: &mut TrapFrame) {
     );
     let vaddr = stval;
 
-    use crate::PageTableImpl;
+    use super::PageTableImpl;
     use kernel_hal::{MMUFlags, PageTableTrait};
     use riscv::addr::{Page, PhysAddr, VirtAddr};
     use riscv::paging::{PageTableFlags as PTF, Rv39PageTable, *};
@@ -263,24 +142,9 @@ fn super_timer() {
     //发生外界中断时，epc的指令还没有执行，故无需修改epc到下一条
 }
 
-fn init_uart() {
-    uart::Uart::new(0x1000_0000 + PHYSICAL_MEMORY_OFFSET).simple_init();
-
-    //但当没有SBI_CONSOLE_PUTCHAR时，却为什么不行？
-    super::putfmt_uart(format_args!("{}", "Uart output testing\n"));
-
-    info!("+++ Setting up UART interrupts +++");
-}
-
-//被plic串口中断调用
-pub fn try_process_serial() -> bool {
-    match super::getchar_option() {
-        Some(ch) => {
-            super::serial_put(ch);
-            true
-        }
-        None => false,
-    }
+fn serial() {
+    let c = super::UART.lock().receive();
+    super::serial_put(c);
 }
 
 pub fn init_ext() {
@@ -325,46 +189,3 @@ pub fn wait_for_interrupt() {
 fn timer() {
     super::timer_tick();
 }
-
-/*
- * 改道uart::handle_interrupt()中
- *
-fn com1() {
-    let c = super::COM1.lock().receive();
-    super::serial_put(c);
-}
-*/
-
-/*
-fn keyboard() {
-    use pc_keyboard::{DecodedKey, KeyCode};
-    if let Some(key) = super::keyboard::receive() {
-        match key {
-            DecodedKey::Unicode(c) => super::serial_put(c as u8),
-            DecodedKey::RawKey(code) => {
-                let s = match code {
-                    KeyCode::ArrowUp => "\u{1b}[A",
-                    KeyCode::ArrowDown => "\u{1b}[B",
-                    KeyCode::ArrowRight => "\u{1b}[C",
-                    KeyCode::ArrowLeft => "\u{1b}[D",
-                    _ => "",
-                };
-                for c in s.bytes() {
-                    super::serial_put(c);
-                }
-            }
-        }
-    }
-}
-*/
-
-// IRQ
-const Timer: u8 = 5;
-const U_PLIC: u8 = 8;
-const S_PLIC: u8 = 9;
-const M_PLIC: u8 = 11;
-
-//const Keyboard: u8 = 1;
-//const COM2: u8 = 3;
-const COM1: u8 = 0;
-//const IDE: u8 = 14;

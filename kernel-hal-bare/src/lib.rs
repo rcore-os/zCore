@@ -39,9 +39,10 @@ use kernel_hal::UserContext;
 use naive_timer::Timer;
 use spin::Mutex;
 
-pub mod arch;
+mod arch;
+mod serial;
 
-pub use self::arch::*;
+pub use self::{arch::*, serial::*};
 
 #[allow(improper_ctypes)]
 extern "C" {
@@ -197,14 +198,13 @@ pub fn timer_set(deadline: Duration, callback: Box<dyn FnOnce(Duration) + Send +
     NAIVE_TIMER.lock().add(deadline, callback);
 }
 
-#[export_name = "hal_timer_tick"]
 pub fn timer_tick() {
     let now = arch::timer_now();
     NAIVE_TIMER.lock().expire(now);
 }
 
 /// Initialize the HAL.
-pub fn init(config: Config) {
+pub fn init(config: arch::Config) {
     unsafe {
         trapframe::init();
     }

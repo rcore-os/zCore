@@ -288,19 +288,6 @@ pub fn timer_set(_deadline: Duration, _callback: Box<dyn FnOnce(Duration) + Send
     unimplemented!()
 }
 
-#[linkage = "weak"]
-#[export_name = "hal_timer_set_next"]
-pub fn timer_set_next() {
-    unimplemented!()
-}
-
-/// Check timers, call when timer interrupt happened.
-#[linkage = "weak"]
-#[export_name = "hal_timer_tick"]
-pub fn timer_tick() {
-    unimplemented!()
-}
-
 pub struct InterruptManager {}
 impl InterruptManager {
     /// Handle IRQ.

@@ -8,6 +8,7 @@ user ?=
 hypervisor ?=
 smp ?= 1
 test_filter ?= *.*
+log ?=
 
 build_args := -Z build-std=core,alloc --target $(arch).json
 build_path := target/$(arch)/$(mode)
@@ -69,7 +70,8 @@ qemu_opts += \
 	-nographic \
 	-drive file=$(QEMU_DISK),format=qcow2,id=sfs \
 	-device virtio-blk-device,drive=sfs \
-	-kernel $(kernel_bin)
+	-kernel $(kernel_bin) \
+	-append LOG=$(log)
 
 endif
 

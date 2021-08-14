@@ -13,7 +13,6 @@ mod sbi;
 mod consts;
 pub mod interrupt;
 mod plic;
-mod uart;
 pub mod virtio;
 
 // First core stores its SATP here.
@@ -379,43 +378,6 @@ impl FrameDeallocator for FrameAllocatorImpl {
     }
 }
 
-lazy_static! {
-    static ref STDIN: Mutex<VecDeque<u8>> = Mutex::new(VecDeque::new());
-    static ref STDIN_CALLBACK: Mutex<Vec<Box<dyn Fn() -> bool + Send + Sync>>> =
-        Mutex::new(Vec::new());
-}
-
-//调用这里
-/// Put a char by serial interrupt handler.
-fn serial_put(mut x: u8) {
-    if x == b'\r' {
-        x = b'\n';
-    }
-    STDIN.lock().push_back(x);
-    STDIN_CALLBACK.lock().retain(|f| !f());
-}
-
-#[export_name = "hal_serial_set_callback"]
-pub fn serial_set_callback(callback: Box<dyn Fn() -> bool + Send + Sync>) {
-    STDIN_CALLBACK.lock().push(callback);
-}
-
-#[export_name = "hal_serial_read"]
-pub fn serial_read(buf: &mut [u8]) -> usize {
-    let mut stdin = STDIN.lock();
-    let len = stdin.len().min(buf.len());
-    for c in &mut buf[..len] {
-        *c = stdin.pop_front().unwrap();
-    }
-    len
-}
-
-#[export_name = "hal_serial_write"]
-pub fn serial_write(s: &str) {
-    //putfmt(format_args!("{}", s));
-    putfmt_uart(format_args!("{}", s));
-}
-
 // Get TSC frequency.
 fn tsc_frequency() -> u16 {
     const DEFAULT: u16 = 2600;
@@ -430,58 +392,26 @@ pub fn apic_local_id() -> u8 {
     lapic as u8
 }
 
-////////////
-
-pub fn getchar_option() -> Option<u8> {
-    let c = sbi::console_getchar() as isize;
-    match c {
-        -1 => None,
-        c => Some(c as u8),
-    }
-}
-
-////////////
-
-pub fn putchar(ch: char) {
-    sbi::console_putchar(ch as u8 as usize);
-}
-
-pub fn puts(s: &str) {
-    for ch in s.chars() {
-        putchar(ch);
-    }
+lazy_static! {
+    static ref UART: Mutex<uart_16550::MmioSerialPort> 
+        = Mutex::new(unsafe { uart_16550::MmioSerialPort::new(0x1000_0000 + PHYSICAL_MEMORY_OFFSET) });
 }
 
 struct Stdout;
 
 impl fmt::Write for Stdout {
     fn write_str(&mut self, s: &str) -> fmt::Result {
-        puts(s);
+        for b in s.bytes() {
+            sbi::console_putchar(b as _);
+        }
         Ok(())
     }
 }
 
 pub fn putfmt(fmt: fmt::Arguments) {
     Stdout.write_fmt(fmt).unwrap();
-}
-////////////
-
-struct Stdout1;
-impl fmt::Write for Stdout1 {
-    fn write_str(&mut self, s: &str) -> fmt::Result {
-        //每次都创建一个新的Uart ? 内存位置始终相同
-        write!(
-            uart::Uart::new(0x1000_0000 + PHYSICAL_MEMORY_OFFSET),
-            "{}",
-            s
-        )
-        .unwrap();
-
-        Ok(())
-    }
-}
-pub fn putfmt_uart(fmt: fmt::Arguments) {
-    Stdout1.write_fmt(fmt).unwrap();
+    // FIXME: use UART would block
+    // UART.lock().write_fmt(fmt).unwrap();
 }
 
 pub const MMIO_MTIMECMP0: *mut u64 = 0x0200_4000usize as *mut u64;
@@ -489,11 +419,6 @@ pub const MMIO_MTIME: *const u64 = 0x0200_BFF8 as *const u64;
 
 fn get_cycle() -> u64 {
     time::read() as u64
-    /*
-    unsafe {
-        MMIO_MTIME.read_volatile()
-    }
-    */
 }
 
 #[export_name = "hal_timer_now"]
@@ -503,7 +428,6 @@ pub fn timer_now() -> Duration {
     Duration::from_nanos(time * 1_000_000_000 / FREQUENCY as u64)
 }
 
-#[export_name = "hal_timer_set_next"]
 fn timer_set_next() {
     //let TIMEBASE: u64 = 100000;
     let TIMEBASE: u64 = 10_000_000;
@@ -520,6 +444,7 @@ fn timer_init() {
 pub fn init(config: Config) {
     interrupt::init();
     timer_init();
+    UART.lock().init();
 
     let cmdline = virtio::device_tree::init(config.dtb);
     unsafe { CMDLINE = cmdline };

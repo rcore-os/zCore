@@ -1,6 +1,4 @@
 use super::consts::PHYSICAL_MEMORY_OFFSET;
-use super::interrupt;
-use super::uart;
 
 const MMODE: usize = 0;
 
@@ -108,29 +106,5 @@ pub fn set_threshold(tsh: u8) {
     let tsh_reg = PLIC_THRESHOLD as *mut u32;
     unsafe {
         tsh_reg.write_volatile(actual_tsh as u32); // 0x0c20_0000 <= 0 = 0 & 7
-    }
-}
-
-pub fn handle_interrupt() {
-    if let Some(interrupt) = next() {
-        match interrupt {
-            1..=8 => {
-                //virtio::handle_interrupt(interrupt);
-                info!("plic virtio external interrupt: {}", interrupt);
-            }
-            10 => {
-                //UART中断ID是10
-                uart::handle_interrupt();
-
-                //换用sbi的方式获取字符
-                //interrupt::try_process_serial();
-            }
-            _ => {
-                info!("Unknown external interrupt: {}", interrupt);
-            }
-        }
-        //这将复位pending的中断，允许UART再次中断。
-        //否则，UART将被“卡住”
-        complete(interrupt);
     }
 }
