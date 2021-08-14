@@ -1207,6 +1207,8 @@
 <span id="1207">1207</span>
 <span id="1208">1208</span>
 <span id="1209">1209</span>
+<span id="1210">1210</span>
+<span id="1211">1211</span>
 </pre><pre class="rust">
 <span class="kw">use</span> {
     <span class="kw">super</span>::<span class="kw-2">*</span>, <span class="kw">crate</span><span class="ident">::object</span>::<span class="kw-2">*</span>, <span class="ident">alloc::sync::Arc</span>, <span class="ident">alloc::vec</span>, <span class="ident">alloc::vec::Vec</span>, <span class="ident">bitflags::bitflags</span>,
@@ -1697,6 +1699,7 @@
         <span class="ident">VmarInfo</span> {
             <span class="ident">base</span>: <span class="self">self</span>.<span class="ident">addr</span>(),
             <span class="ident">len</span>: <span class="self">self</span>.<span class="ident">size</span>,
+            <span class="comment">// pg_token: self.page_table.lock().table_phys(),</span>
         }
     }
 
@@ -1868,6 +1871,7 @@
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">VmarInfo</span> {
     <span class="ident">base</span>: <span class="ident">usize</span>,
     <span class="ident">len</span>: <span class="ident">usize</span>,
+    <span class="comment">// pg_token: usize,</span>
 }
 
 <span class="doccomment">/// Virtual Memory Mapping</span>
@@ -2134,7 +2138,7 @@
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::ACCESS_DENIED</span>);
         }
         <span class="kw">if</span> <span class="op">!</span><span class="ident">access_flags</span>.<span class="ident">contains</span>(<span class="ident">MMUFlags::WRITE</span>) {
-            <span class="comment">//注意一下!</span>
+            <span class="comment">// 注意一下!</span>
             <span class="macro">warn!</span>(<span class="string">&quot;handle_page_fault remove MMUFlags::WRITE !&quot;</span>);
             <span class="ident">flags</span>.<span class="ident">remove</span>(<span class="ident">MMUFlags::WRITE</span>)
         }

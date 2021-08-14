@@ -443,6 +443,11 @@
 <span id="443">443</span>
 <span id="444">444</span>
 <span id="445">445</span>
+<span id="446">446</span>
+<span id="447">447</span>
+<span id="448">448</span>
+<span id="449">449</span>
+<span id="450">450</span>
 </pre><pre class="rust">
 <span class="attribute">#![<span class="ident">feature</span>(<span class="ident">asm</span>)]</span>
 <span class="attribute">#![<span class="ident">feature</span>(<span class="ident">linkage</span>)]</span>
@@ -846,6 +851,11 @@
         <span class="ident">args</span> <span class="op">=</span> [<span class="string">&quot;--always&quot;</span>, <span class="string">&quot;--abbrev=40&quot;</span>, <span class="string">&quot;--dirty=-dirty&quot;</span>]
     ));
     <span class="ident">constants</span>
+}
+
+<span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_current_pgtable&quot;</span>]</span>
+<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">current_page_table</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
+    <span class="number">0</span>
 }
 
 <span class="doccomment">/// Initialize the HAL.</span>
