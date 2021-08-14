@@ -14,4 +14,7 @@ zCore/src/link_user.S
 scripts/rboot.conf
 stdout-baremetal-test
 stdout-zcore
+scripts/script.sh
+stdout-baremetal-test-rv64
+stdout-rv64
 
