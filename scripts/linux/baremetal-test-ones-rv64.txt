@@ -1,2 +1,1 @@
-
-/libc-test/src/functional/argv-static.exe
+/libc-test/functional/argv-static.exe?
