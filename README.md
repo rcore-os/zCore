@@ -133,9 +133,9 @@ cd ../scripts && python3 ./baremetal-libc-test.py
 ## 
 ```
 
-You can use `scripts\baremetal-libc-test-ones.py` & `scripts\linux\baremetal-test-ones.txt` to test specified apps. 
+You can use [`scripts/baremetal-libc-test-ones.py`](./scripts/baremetal-libc-test-ones.py) & [`scripts/linux/baremetal-test-ones.txt`](./scripts/linux/baremetal-test-ones.txt) to test specified apps. 
 
-`scripts\linux\baremetal-test-fail.txt` includes all failed x86-64 apps (We need YOUR HELP to fix bugs!)
+[`scripts/linux/baremetal-test-fail.txt`](./scripts/linux/baremetal-test-fail.txt) includes all failed x86-64 apps (We need YOUR HELP to fix bugs!)
 
 #### riscv-64 Linux related
 
@@ -148,11 +148,10 @@ cd ../scripts && python3 baremetal-test-riscv64.py
 ## 
 ```
 
-You can use `scripts\baremetal-libc-test-ones-riscv64.py` & `scripts\linux\baremetal-test-ones-rv64.txt` to test 
+You can use[ `scripts/baremetal-libc-test-ones-riscv64.py`](./scripts/baremetal-libc-test-ones-riscv64.py) & [`scripts/linux/baremetal-test-ones-rv64.txt`](scripts/linux/baremetal-test-ones-rv64.txt)to test 
 specified apps.
 
-
-`scripts\linux\baremetal-test-fail-riscv64.txt` includes all failed riscv-64 apps (We need YOUR HELP to fix bugs!)
+[`scripts/linux/baremetal-test-fail-riscv64.txt`](./scripts/linux/baremetal-test-fail-riscv64.txt)includes all failed riscv-64 apps (We need YOUR HELP to fix bugs!)
 
 ## Doc
 ```
@@ -178,5 +177,5 @@ make doc
 | Thread Management         | `executor` | `async-std::task` |
 | Exception Handling        | Interrupt  | Signal            |
 
-### Some plans
+### Small Goal & Little Plans
 - https://github.com/rcore-os/zCore/wiki/Plans
