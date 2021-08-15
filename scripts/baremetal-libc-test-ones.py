@@ -36,7 +36,7 @@ resolution=1024x768
 initramfs=\EFI\zCore\fuchsia.zbi
 # LOG=debug/info/error/warn/trace
 # add ROOTPROC info  ? split CMD and ARG : ROOTPROC=/libc-test/src/functional/argv.exe?   OR ROOTPROC=/bin/busybox?sh
-cmdline=LOG=trace:TERM=xterm-256color:console.shell=true:virtcon.disable=true:ROOTPROC='''
+cmdline=LOG=warn:TERM=xterm-256color:console.shell=true:virtcon.disable=true:ROOTPROC='''
 
 # ==============================================
 passed = set()
