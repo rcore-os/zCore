@@ -16,6 +16,9 @@ struct Opt {
 
     #[structopt(default_value = "")]
     cmdline: String,
+
+    #[structopt(short, long)]
+    debug: bool,
 }
 
 #[async_std::main]
@@ -24,19 +27,23 @@ async fn main() {
     init_logger();
 
     let opt = Opt::from_args();
-    let images = open_images(&opt.prebuilt_path).expect("failed to read file");
-
+    let images = open_images(&opt.prebuilt_path, opt.debug).expect("failed to read file");
     let proc: Arc<dyn KernelObject> = run_userboot(&images, &opt.cmdline);
     drop(images);
 
     proc.wait_signal(Signal::USER_SIGNAL_0).await;
 }
 
-fn open_images(path: &Path) -> std::io::Result<Images<Vec<u8>>> {
+fn open_images(path: &Path, debug: bool) -> std::io::Result<Images<Vec<u8>>> {
     Ok(Images {
         userboot: std::fs::read(path.join("userboot-libos.so"))?,
         vdso: std::fs::read(path.join("libzircon-libos.so"))?,
-        zbi: std::fs::read(path.join("bringup.zbi"))?,
+        zbi: 
+            if debug { 
+                std::fs::read(path.join("core-tests.zbi"))?
+            } else {
+                std::fs::read(path.join("bringup.zbi"))?
+            }
     })
 }
 
