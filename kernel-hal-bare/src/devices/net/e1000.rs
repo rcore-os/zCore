@@ -8,6 +8,8 @@ use alloc::vec::Vec;
 use smoltcp::iface::Interface;
 use smoltcp::iface::InterfaceBuilder;
 use smoltcp::iface::NeighborCache;
+use smoltcp::iface::Route;
+use smoltcp::iface::Routes;
 use smoltcp::phy::Device;
 use smoltcp::phy::{self, DeviceCapabilities};
 use smoltcp::socket::SocketSet;
@@ -207,10 +209,15 @@ pub fn init(name: String, irq: Option<usize>, header: usize, size: usize, index:
 
     let ethernet_addr = EthernetAddress::from_bytes(&mac);
     let ip_addrs = [IpCidr::new(IpAddress::v4(10, 0, 2, 15), 24)];
+    let default_gateway = Ipv4Address::new(10,0,2,2);
     let neighbor_cache = NeighborCache::new(BTreeMap::new());
+    static mut routes_storage : [Option<(IpCidr,Route)>;1] = [None;1];
+    let mut routes = unsafe { Routes::new(&mut routes_storage[..]) };
+    routes.add_default_ipv4_route(default_gateway).unwrap();
     let iface = InterfaceBuilder::new(net_driver.clone())
         .ethernet_addr(ethernet_addr)
         .ip_addrs(ip_addrs)
+        .routes(routes)
         .neighbor_cache(neighbor_cache)
         .finalize();
 
