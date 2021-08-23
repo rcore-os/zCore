@@ -147,36 +147,31 @@ impl TcpSocketState {
         if let Endpoint::Ip(ip) = endpoint {
             let temp_port = get_ephemeral_port();
 
-            match socket.connect(ip, temp_port) {
-                Ok(()) => {
-                    // avoid deadlock
-                    drop(socket);
-                    drop(sockets);
-
-                    // wait for connection result
-                    loop {
-                        poll_ifaces();
-                        let mut sockets = SOCKETS.lock();
-                        let socket = sockets.get::<TcpSocket>(self.handle.0);
-                        match socket.state() {
-                            TcpState::SynSent => {
-                                // still connecting
-                                drop(socket);
-                                debug!("poll for connection wait");
-                                // SOCKET_ACTIVITY.wait(sockets);
-                            }
-                            TcpState::Established => {
-                                break Ok(0);
-                            }
-                            _ => {
-                                break Err(LxError::ECONNREFUSED);
-                            }
-                        }
+            socket.connect(ip, temp_port).map_err(|_| LxError::ENOBUFS)?;
+            
+            // avoid deadlock
+            drop(socket);
+            drop(sockets);
+            // wait for connection result
+            loop {
+                poll_ifaces();
+                let mut sockets = SOCKETS.lock();
+                let socket = sockets.get::<TcpSocket>(self.handle.0);
+                match socket.state() {
+                    TcpState::SynSent => {
+                        // still connecting
+                        drop(socket);
+                        warn!("poll for connection wait");
+                        // SOCKET_ACTIVITY.wait(sockets);
+                    }
+                    TcpState::Established => {
+                        break Ok(0);
+                    }
+                    _ => {
+                        break Err(LxError::ECONNREFUSED);
                     }
                 }
-                Err(_) => Err(LxError::ENOBUFS),
             }
-
             // futures::future::poll_fn(|cx| {
             //     match socket.state() {
             //         TcpState::Closed | TcpState::TimeWait => Poll::Ready(Err(Error::Unaddressable)),
