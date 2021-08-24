@@ -66,14 +66,14 @@ with open(RESULT_FILE, "w") as f:
     f.writelines(passed)
     f.writelines(failed)
 
-# with open(CHECK_FILE, 'r') as f:
-#     check_case = set([case.strip() for case in f.readlines()])
+with open(CHECK_FILE, 'r') as f:
+    check_case = set([case.strip() for case in f.readlines()])
 
-# not_passed = check_case - passed_case
-# if not_passed:
-#     print('=== Failed cases ===')
-#     for case in not_passed:
-#         print(case)
-#     exit(1)
-# else:
-#     print('All checked case passed!')
+not_passed = check_case - passed_case
+if not_passed:
+    print('=== Failed cases ===')
+    for case in not_passed:
+        print(case)
+    exit(1)
+else:
+    print('All checked case passed!')

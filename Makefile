@@ -103,7 +103,3 @@ baremetal-test:
 
 baremetal-test-rv64:
 	@make -C zCore baremetal-test-rv64 arch=riscv64 mode=release linux=1 ROOTPROC=$(ROOTPROC) | tee -a stdout-baremetal-test-rv64 | tee stdout-rv64
-
-## JUST FOR TEST, delete it later
-run:
-	cargo run -p zircon-loader -- prebuilt/zircon/x64 LOG=warn:TERM=xterm-256color:console.shell=true:virtcon.disable=true
