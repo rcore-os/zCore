@@ -1,14 +1,16 @@
 import pexpect
 import sys
 import re
+import os
 
-TIMEOUT = 300
+TIMEOUT = 8
 ZIRCON_LOADER_PATH = 'zircon-loader'
 BASE = 'zircon/'
-OUTPUT_FILE = BASE + 'test-output.txt'
-RESULT_FILE = BASE + 'test-result.txt'
+OUTPUT_FILE = BASE + 'test-output-libos.txt'
+RESULT_FILE = BASE + 'test-result-libos.txt'
 CHECK_FILE = BASE + 'test-check-passed.txt'
-TEST_CASE_FILE = BASE + 'testcases.txt'
+TEST_CASE_ALL = BASE + 'testcases-all.txt'
+TEST_CASE_EXCEPTION = BASE + 'testcases-failed-libos.txt'
 PREBUILT_PATH = '../prebuilt/zircon/x64'
 CMDLINE_BASE = 'LOG=warn:userboot=test/core-standalone-test:userboot.shutdown:core-tests='
 
@@ -29,22 +31,25 @@ class Tee:
     def flush(self):
         self.file.flush()
 
+if os.path.exists(OUTPUT_FILE): os.remove(OUTPUT_FILE)
+if os.path.exists(RESULT_FILE): os.remove(RESULT_FILE)
 
-with open(TEST_CASE_FILE, "r") as f:
-    lines = f.readlines()
-    positive = [line for line in lines if not line.startswith('-')]
-    negative = [line[1:] for line in lines if line.startswith('-')]
-    test_filter = (','.join(positive) + ((',-' + ','.join(negative) if len(negative) > 0 else "") )).replace('\n', '')
+with open(TEST_CASE_ALL, "r") as tcf:
+    all_case = set([case.strip() for case in tcf.readlines()])
+with open(TEST_CASE_EXCEPTION, "r") as tcf:
+    exception_case = set([case.strip() for case in tcf.readlines()])
+check_case = all_case - exception_case
 
-child = pexpect.spawn("cargo run -p '%s' -- '%s' '%s' --debug" % 
-                        (ZIRCON_LOADER_PATH, PREBUILT_PATH, CMDLINE_BASE + test_filter), 
-                        timeout=TIMEOUT, encoding='utf-8')
+for line in check_case: 
+    child = pexpect.spawn("cargo run -p '%s' -- '%s' '%s' --debug" % 
+                    (ZIRCON_LOADER_PATH, PREBUILT_PATH, CMDLINE_BASE+line), 
+                    timeout=TIMEOUT, encoding='utf-8')
 
-child.logfile = Tee(OUTPUT_FILE, 'w')
+    child.logfile = Tee(OUTPUT_FILE, 'a')
 
-index = child.expect(['finished!', 'panicked', pexpect.EOF, pexpect.TIMEOUT])
-result = ['FINISHED', 'PANICKED', 'EOF', 'TIMEOUT'][index]
-# print(result)
+    index = child.expect(['finished!', 'panicked', pexpect.EOF, pexpect.TIMEOUT])
+    result = ['FINISHED', 'PANICKED', 'EOF', 'TIMEOUT'][index]
+    # print(result)
 
 passed = []
 failed = []
@@ -53,8 +58,9 @@ passed_case = set()
 # see https://stackoverflow.com/questions/59379174/ignore-ansi-colors-in-pexpect-response
 ansi_escape = re.compile(r"\x1B[@-_][0-?]*[ -/]*[@-~]")
 
-with open(OUTPUT_FILE, "r") as f:
-    for line in f.readlines():
+
+with open(OUTPUT_FILE, "r") as opf:
+    for line in opf.readlines():
         line=ansi_escape.sub('',line)
         if line.startswith('[       OK ]'):
             passed += line
@@ -62,12 +68,10 @@ with open(OUTPUT_FILE, "r") as f:
         elif line.startswith('[  FAILED  ]') and line.endswith(')\n'):
             failed += line
 
-with open(RESULT_FILE, "w") as f:
-    f.writelines(passed)
-    f.writelines(failed)
+with open(RESULT_FILE, "a") as rstf:
+    rstf.writelines(passed)
+    rstf.writelines(failed)
 
-with open(CHECK_FILE, 'r') as f:
-    check_case = set([case.strip() for case in f.readlines()])
 
 not_passed = check_case - passed_case
 if not_passed:
