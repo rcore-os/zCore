@@ -137,7 +137,7 @@ jobs:
 #        with:
 #          command: bench
 
-  core-test:
+  core-test-libos:
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v2
@@ -163,7 +163,7 @@ jobs:
         run: |
           cd scripts
           pip3 install pexpect
-          python3 core-tests.py
+          python3 unix-core-tests.py
 
   libc-test:
     runs-on: ubuntu-20.04
