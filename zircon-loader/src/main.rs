@@ -38,12 +38,11 @@ fn open_images(path: &Path, debug: bool) -> std::io::Result<Images<Vec<u8>>> {
     Ok(Images {
         userboot: std::fs::read(path.join("userboot-libos.so"))?,
         vdso: std::fs::read(path.join("libzircon-libos.so"))?,
-        zbi: 
-            if debug { 
-                std::fs::read(path.join("core-tests.zbi"))?
-            } else {
-                std::fs::read(path.join("bringup.zbi"))?
-            }
+        zbi: if debug {
+            std::fs::read(path.join("core-tests.zbi"))?
+        } else {
+            std::fs::read(path.join("bringup.zbi"))?
+        },
     })
 }
 
@@ -85,8 +84,9 @@ mod tests {
             #[cfg(target_arch = "aarch64")]
             prebuilt_path: PathBuf::from("../prebuilt/zircon/arm64"),
             cmdline: String::from(""),
+            debug: false,
         };
-        let images = open_images(&opt.prebuilt_path).expect("failed to read file");
+        let images = open_images(&opt.prebuilt_path, opt.debug).expect("failed to read file");
 
         let proc: Arc<dyn KernelObject> = run_userboot(&images, &opt.cmdline);
         drop(images);
