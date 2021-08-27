@@ -150,23 +150,12 @@ jobs:
         with:
           submodules: 'recursive'
       - name: Pull prebuilt images
-        run: git lfs pull -I prebuilt/zircon/x64/core-tests.zbi,prebuilt/zircon/x64/libzircon.so,prebuilt/zircon/x64/userboot.so
+        run: git lfs pull -I prebuilt/zircon/x64/core-tests.zbi,prebuilt/zircon/x64/libzircon-libos.so,prebuilt/zircon/x64/userboot-libos.so
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
           toolchain: nightly
           components: rust-src
-      - name: Install QEMU
-        run: |
-          sudo apt update
-          sudo apt install qemu-system-x86
-      - run: echo "nightly" >rust-toolchain
-      - run: echo "nightly" >./rboot/rust-toolchain      
-      - name: Build zCore
-        run: |
-          cd zCore
-          make build mode=release
-          cd ..
       - name: Run core-tests
         run: |
           cd scripts
