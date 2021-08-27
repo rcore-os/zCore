@@ -3,7 +3,7 @@ import sys
 import re
 import os
 
-TIMEOUT = 8
+TIMEOUT = 300
 ZIRCON_LOADER_PATH = 'zircon-loader'
 BASE = 'zircon/'
 OUTPUT_FILE = BASE + 'test-output-libos.txt'
