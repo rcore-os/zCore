@@ -300,6 +300,10 @@
 <span id="300">300</span>
 <span id="301">301</span>
 <span id="302">302</span>
+<span id="303">303</span>
+<span id="304">304</span>
+<span id="305">305</span>
+<span id="306">306</span>
 </pre><pre class="rust">
 <span class="kw">use</span> {<span class="kw">super</span>::<span class="kw-2">*</span>, <span class="ident">bitflags::bitflags</span>, <span class="ident">zircon_object::vm</span>::<span class="kw-2">*</span>};
 
@@ -431,12 +435,16 @@
         <span class="ident">mapping_flags</span>.<span class="ident">set</span>(<span class="ident">MMUFlags::READ</span>, <span class="ident">options</span>.<span class="ident">contains</span>(<span class="ident">VmOptions::PERM_READ</span>));
         <span class="ident">mapping_flags</span>.<span class="ident">set</span>(<span class="ident">MMUFlags::WRITE</span>, <span class="ident">options</span>.<span class="ident">contains</span>(<span class="ident">VmOptions::PERM_WRITE</span>));
         <span class="ident">mapping_flags</span>.<span class="ident">set</span>(<span class="ident">MMUFlags::EXECUTE</span>, <span class="ident">options</span>.<span class="ident">contains</span>(<span class="ident">VmOptions::PERM_EXECUTE</span>));
-        <span class="macro">info!</span>(
-            <span class="string">&quot;mmuflags: {:?}, is_specific {:?}&quot;</span>,
-            <span class="ident">mapping_flags</span>, <span class="ident">is_specific</span>
-        );
         <span class="kw">let</span> <span class="ident">overwrite</span> <span class="op">=</span> <span class="ident">options</span>.<span class="ident">contains</span>(<span class="ident">VmOptions::SPECIFIC_OVERWRITE</span>);
+        <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;deny-page-fault&quot;</span>)]</span>
+        <span class="kw">let</span> <span class="ident">map_range</span> <span class="op">=</span> <span class="bool-val">true</span>;
+        <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">not</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;deny-page-fault&quot;</span>))]</span>
         <span class="kw">let</span> <span class="ident">map_range</span> <span class="op">=</span> <span class="ident">options</span>.<span class="ident">contains</span>(<span class="ident">VmOptions::MAP_RANGE</span>);
+
+        <span class="macro">info!</span>(
+            <span class="string">&quot;mmuflags: {:?}, is_specific {:?}, overwrite {:?}, map_range {:?}&quot;</span>,
+            <span class="ident">mapping_flags</span>, <span class="ident">is_specific</span>, <span class="ident">overwrite</span>, <span class="ident">map_range</span>
+        );
         <span class="kw">if</span> <span class="ident">map_range</span> <span class="op">&amp;&amp;</span> <span class="ident">overwrite</span> {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::INVALID_ARGS</span>);
         }
