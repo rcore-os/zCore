@@ -128,12 +128,16 @@ impl Syscall<'_> {
         mapping_flags.set(MMUFlags::READ, options.contains(VmOptions::PERM_READ));
         mapping_flags.set(MMUFlags::WRITE, options.contains(VmOptions::PERM_WRITE));
         mapping_flags.set(MMUFlags::EXECUTE, options.contains(VmOptions::PERM_EXECUTE));
-        info!(
-            "mmuflags: {:?}, is_specific {:?}",
-            mapping_flags, is_specific
-        );
         let overwrite = options.contains(VmOptions::SPECIFIC_OVERWRITE);
+        #[cfg(feature = "deny-page-fault")]
+        let map_range = true;
+        #[cfg(not(feature = "deny-page-fault"))]
         let map_range = options.contains(VmOptions::MAP_RANGE);
+
+        info!(
+            "mmuflags: {:?}, is_specific {:?}, overwrite {:?}, map_range {:?}",
+            mapping_flags, is_specific, overwrite, map_range
+        );
         if map_range && overwrite {
             return Err(ZxError::INVALID_ARGS);
         }

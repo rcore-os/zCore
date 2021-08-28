@@ -165,6 +165,25 @@ jobs:
           pip3 install pexpect
           python3 core-tests.py
 
+  core-test-libos:
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: 'recursive'
+      - name: Pull prebuilt images
+        run: git lfs pull -I prebuilt/zircon/x64/core-tests.zbi,prebuilt/zircon/x64/libzircon-libos.so,prebuilt/zircon/x64/userboot-libos.so
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly-2021-07-27
+          components: rust-src
+      - name: Run core-tests
+        run: |
+          cd scripts
+          pip3 install pexpect
+          python3 unix-core-tests.py
+
   libc-test:
     runs-on: ubuntu-20.04
     steps:
@@ -220,7 +239,9 @@ jobs:
       - name: Pull prebuilt images
         run: git lfs pull -I prebuilt/linux/libc-libos.so
       - name: Install musl toolchain qemu-system-x86
-        run: sudo apt-get install musl-tools musl-dev qemu-system-x86 -y
+        run: |
+          sudo apt-get update
+          sudo apt-get install musl-tools musl-dev qemu-system-x86 -y
       - name: Prepare rootfs and libc-test
         run: make baremetal-test-img
       - name: Build  kernel
@@ -244,6 +265,7 @@ jobs:
           components: rust-src
       - name: Install cargo tools and qemu-system-riscv64
         run: |
+          sudo apt update
           sudo apt install qemu-utils
           cargo install cargo-binutils
           rustup component add llvm-tools-preview

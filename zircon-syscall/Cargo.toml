@@ -8,7 +8,11 @@ description = "Zircon syscalls implementation"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-#hypervisor = ["zircon-object/hypervisor"]
+# hypervisor = ["zircon-object/hypervisor"]
+default = []
+deny-page-fault = []
+std = ["deny-page-fault"]
+
 
 [dependencies]
 log = "0.4"
@@ -18,3 +22,4 @@ numeric-enum-macro = "0.2"
 zircon-object = { path = "../zircon-object" }
 kernel-hal = { path = "../kernel-hal" }
 futures = { version = "0.3", default-features = false, features = ["alloc", "async-await"] }
+
