@@ -251,7 +251,9 @@ jobs:
       - name: Pull prebuilt images
         run: git lfs pull -I prebuilt/linux/libc-libos.so
       - name: Install musl toolchain qemu-system-x86
-        run: sudo apt-get install musl-tools musl-dev qemu-system-x86 -y
+        run: |
+          sudo apt-get update
+          sudo apt-get install musl-tools musl-dev qemu-system-x86 -y
       - name: Prepare rootfs and libc-test
         run: make baremetal-test-img
       - name: Build  kernel
@@ -277,6 +279,7 @@ jobs:
       - run: echo "nightly" >./rboot/rust-toolchain
       - name: Install cargo tools and qemu-system-riscv64
         run: |
+          sudo apt-get update
           sudo apt install qemu-utils
           cargo install cargo-binutils
           rustup component add llvm-tools-preview
