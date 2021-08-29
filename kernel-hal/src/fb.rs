@@ -81,6 +81,12 @@ pub enum FbType {
     FourCC = 5,
 }
 
+impl Default for FbType {
+    fn default() -> Self {
+        Self::PackedPixels
+    }
+}
+
 #[repr(u32)]
 #[allow(dead_code)]
 #[derive(Debug, Copy, Clone)]
@@ -101,11 +107,17 @@ pub enum FbVisual {
     FourCC = 6,
 }
 
+impl Default for FbVisual {
+    fn default() -> Self {
+        Self::Mono01
+    }
+}
+
 /// No hardware accelerator
 const FB_ACCEL_NONE: u32 = 0;
 
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct FbFixScreeninfo {
     /// identification string eg "TT Builtin"
     id: [u8; 16],
@@ -139,8 +151,14 @@ pub struct FbFixScreeninfo {
     reserved: [u16; 2],
 }
 
+impl FbFixScreeninfo {
+    pub fn size(&self) -> u32 {
+        self.smem_len
+    }
+}
+
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct FbVarScreeninfo {
     /// visible resolution x
     xres: u32,
@@ -204,8 +222,14 @@ pub struct FbVarScreeninfo {
     reserved: [u32; 4],
 }
 
+impl FbVarScreeninfo {
+    pub fn size(&self) -> (u32, u32) {
+        (self.xres, self.yres)
+    }
+}
+
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct FbBitfield {
     /// beginning of bitfield
     offset: u32,
