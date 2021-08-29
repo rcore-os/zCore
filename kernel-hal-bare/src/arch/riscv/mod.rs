@@ -1,5 +1,8 @@
 use super::super::*;
-use kernel_hal::{HalError, PageTableTrait, PhysAddr, VirtAddr};
+use kernel_hal::{
+    ColorDepth, ColorFormat, FramebufferInfo, HalError, PageTableTrait, PhysAddr, VirtAddr,
+    FRAME_BUFFER,
+};
 use riscv::addr::Page;
 use riscv::asm::sfence_vma_all;
 use riscv::paging::{PageTableFlags as PTF, *};
@@ -627,4 +630,21 @@ pub fn current_page_table() -> usize {
     #[cfg(target_arch = "riscv64")]
     let mode = satp::Mode::Sv39;
     satp::read().ppn() << 12
+}
+
+pub fn init_framebuffer(width: u32, height: u32, addr: usize, size: usize) {
+    let fb_info = FramebufferInfo {
+        xres: width,
+        yres: height,
+        xres_virtual: width,
+        yres_virtual: height,
+        xoffset: 0,
+        yoffset: 0,
+        depth: ColorDepth::ColorDepth32,
+        format: ColorFormat::RGBA8888,
+        paddr: virt_to_phys(addr),
+        vaddr: addr,
+        screen_size: size,
+    };
+    *FRAME_BUFFER.write() = Some(fb_info);
 }

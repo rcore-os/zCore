@@ -32,7 +32,7 @@ use rboot::BootInfo;
 #[cfg(target_arch = "riscv64")]
 use kernel_hal_bare::{
     phys_to_virt, remap_the_kernel,
-    virtio::{BlockDriverWrapper, BLK_DRIVERS},
+    virtio::{BlockDriverWrapper, BLK_DRIVERS, GPU_DRIVERS},
     BootInfo, GraphicInfo,
 };
 
@@ -47,9 +47,6 @@ pub extern "C" fn _start(boot_info: &BootInfo) -> ! {
     memory::init_heap();
     memory::init_frame_allocator(boot_info);
 
-    #[cfg(feature = "graphic")]
-    init_framebuffer(boot_info);
-
     trace!("{:#x?}", boot_info);
 
     kernel_hal_bare::init(kernel_hal_bare::Config {
@@ -57,6 +54,14 @@ pub extern "C" fn _start(boot_info: &BootInfo) -> ! {
         smbios: boot_info.smbios_addr,
         ap_fn: run,
     });
+
+    #[cfg(feature = "graphic")]
+    {
+        let (width, height) = boot_info.graphic_info.mode.resolution();
+        let fb_addr = boot_info.graphic_info.fb_addr as usize;
+        let fb_size = boot_info.graphic_info.fb_size as usize;
+        kernel_hal_bare::init_framebuffer(width as u32, height as u32, fb_addr, fb_size);
+    }
 
     let ramfs_data = unsafe {
         core::slice::from_raw_parts_mut(
@@ -109,9 +114,6 @@ pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
     memory::init_frame_allocator(&boot_info);
     remap_the_kernel(device_tree_vaddr);
 
-    #[cfg(feature = "graphic")]
-    init_framebuffer(boot_info);
-
     info!("{:#x?}", boot_info);
 
     kernel_hal_bare::init(kernel_hal_bare::Config {
@@ -128,6 +130,19 @@ pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
         cmdline = format!("{}:{}", boot_info.cmdline, cmdline_dt);
     };
     warn!("cmdline: {:?}", cmdline);
+
+    #[cfg(feature = "graphic")]
+    {
+        let gpu = GPU_DRIVERS
+            .read()
+            .iter()
+            .next()
+            .expect("Gpu device not found")
+            .clone();
+        let (width, height) = gpu.resolution();
+        let (fb_vaddr, fb_size) = gpu.setup_framebuffer();
+        kernel_hal_bare::init_framebuffer(width, height, fb_vaddr, fb_size);
+    }
 
     // 正常由bootloader载入文件系统镜像到内存, 这里不用，而使用后面的virtio
     main(&mut [], &cmdline);
@@ -238,11 +253,4 @@ fn get_log_level(cmdline: &str) -> &str {
         }
     }
     ""
-}
-
-#[cfg(feature = "graphic")]
-fn init_framebuffer(boot_info: &BootInfo) {
-    let (width, height) = boot_info.graphic_info.mode.resolution();
-    let fb_addr = boot_info.graphic_info.fb_addr as usize;
-    kernel_hal_bare::init_framebuffer(width as u32, height as u32, fb_addr);
 }

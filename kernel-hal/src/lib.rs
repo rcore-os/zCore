@@ -42,6 +42,7 @@ pub mod defs {
 
 mod context;
 mod dummy;
+mod fb;
 mod future;
 pub mod user;
 pub mod vdso;
@@ -49,5 +50,6 @@ pub mod vdso;
 pub use self::context::*;
 pub use self::defs::*;
 pub use self::dummy::*;
+pub use self::fb::*;
 pub use self::future::*;
 pub use trapframe::{GeneralRegs, UserContext};
