@@ -66,12 +66,34 @@ pub trait BlockDriver: Driver {
         unimplemented!("not a block driver")
     }
 }
+
+pub trait GpuDriver: Driver {
+    fn resolution(&self) -> (u32, u32) {
+        unimplemented!("not a gpu driver")
+    }
+
+    fn setup_framebuffer(&self) -> (usize, usize) {
+        unimplemented!("not a gpu driver")
+    }
+
+    fn flush(&self) -> virtio_drivers::Result {
+        unimplemented!("not a gpu driver")
+    }
+}
+
+pub trait InputDriver: Driver {
+    fn mouse_xy(&self) -> (i32, i32) {
+        unimplemented!("not a input driver")
+    }
+}
 /////////
 
 lazy_static! {
     // NOTE: RwLock only write when initializing drivers
     pub static ref DRIVERS: RwLock<Vec<Arc<dyn Driver>>> = RwLock::new(Vec::new());
     pub static ref BLK_DRIVERS: RwLock<Vec<Arc<dyn BlockDriver>>> = RwLock::new(Vec::new());
+    pub static ref INPUT_DRIVERS: RwLock<Vec<Arc<dyn InputDriver>>> = RwLock::new(Vec::new());
+    pub static ref GPU_DRIVERS: RwLock<Vec<Arc<dyn GpuDriver>>> = RwLock::new(Vec::new());
     //pub static ref IRQ_MANAGER: RwLock<irq::IrqManager> = RwLock::new(irq::IrqManager::new(true));
 }
 
