@@ -5,6 +5,7 @@ use super::{acpi_table::*, phys_to_virt};
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 use apic::IoApic;
+use ps2_mouse::{Mouse, MouseState};
 use spin::Mutex;
 use trapframe::TrapFrame;
 
@@ -15,15 +16,34 @@ lazy_static! {
     static ref IRQ_TABLE: Mutex<Vec<Option<InterruptHandle>>> = Default::default();
 }
 
+lazy_static! {
+    static ref MOUSE: Mutex<Mouse> = Mutex::new(Mouse::new());
+}
+
+fn mouse_on_complete(mouse_state: MouseState) {
+    debug!("mouse state: {:?}", mouse_state);
+}
+
+fn mouse() {
+    use x86_64::instructions::port::PortReadOnly;
+    let mut port = PortReadOnly::new(0x60);
+    let packet = unsafe { port.read() };
+    MOUSE.lock().process_packet(packet);
+}
+
 pub fn init() {
+    MOUSE.lock().init().unwrap();
+    MOUSE.lock().set_on_complete(mouse_on_complete);
     unsafe {
         init_ioapic();
     }
     init_irq_table();
     irq_add_handle(Timer + IRQ0, Box::new(timer));
     irq_add_handle(Keyboard + IRQ0, Box::new(keyboard));
+    irq_add_handle(Mouse + IRQ0, Box::new(mouse));
     irq_add_handle(COM1 + IRQ0, Box::new(com1));
     irq_enable_raw(Keyboard, Keyboard + IRQ0);
+    irq_enable_raw(Mouse, Mouse + IRQ0);
     irq_enable_raw(COM1, COM1 + IRQ0);
 }
 
@@ -102,6 +122,7 @@ pub fn set_handle(global_irq: u32, handle: InterruptHandle) -> Option<u8> {
         Box::new(move || {
             handle();
             keyboard();
+            mouse();
         })
     } else {
         handle
@@ -371,6 +392,7 @@ const Timer: u8 = 0;
 const Keyboard: u8 = 1;
 const COM2: u8 = 3;
 const COM1: u8 = 4;
+const Mouse: u8 = 12;
 const IDE: u8 = 14;
 const Error: u8 = 19;
 const Spurious: u8 = 31;
