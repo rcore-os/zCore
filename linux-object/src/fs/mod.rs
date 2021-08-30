@@ -8,6 +8,7 @@ use rcore_fs_mountfs::MountFS;
 use rcore_fs_ramfs::RamFS;
 
 pub use self::device::*;
+pub use self::fbdev::*;
 pub use self::fcntl::*;
 pub use self::file::*;
 pub use self::pipe::*;
@@ -24,6 +25,7 @@ use downcast_rs::impl_downcast;
 use zircon_object::object::*;
 
 mod device;
+mod fbdev;
 mod fcntl;
 mod file;
 mod ioctl;
@@ -119,6 +121,9 @@ pub fn create_root_fs(rootfs: Arc<dyn FileSystem>) -> Arc<dyn INode> {
     devfs
         .add("urandom", Arc::new(RandomINode::new(true)))
         .expect("failed to mknod /dev/urandom");
+    devfs
+        .add("fb0", Arc::new(Fbdev::default()))
+        .expect("failed to mknod /dev/fb0");
 
     // mount DevFS at /dev
     let dev = root.find(true, "dev").unwrap_or_else(|_| {

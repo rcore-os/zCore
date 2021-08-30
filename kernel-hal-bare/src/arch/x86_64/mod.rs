@@ -9,7 +9,9 @@ use {
     core::ptr::NonNull,
     core::time::Duration,
     git_version::git_version,
-    kernel_hal::{HalError, PageTableTrait, Result},
+    kernel_hal::{
+        ColorDepth, ColorFormat, FramebufferInfo, HalError, PageTableTrait, Result, FRAME_BUFFER,
+    },
     rcore_console::{Console, ConsoleOnGraphic, DrawTarget, Pixel, Rgb888, Size},
     spin::Mutex,
     uart_16550::SerialPort,
@@ -257,18 +259,29 @@ impl DrawTarget<Rgb888> for Framebuffer {
 }
 
 /// Initialize console on framebuffer.
-pub fn init_framebuffer(width: u32, height: u32, paddr: PhysAddr) {
-    let fb = Framebuffer {
+pub fn init_framebuffer(width: u32, height: u32, addr: usize, size: usize) {
+    let vaddr = phys_to_virt(addr);
+    let fb_info = FramebufferInfo {
+        xres: width,
+        yres: height,
+        xres_virtual: width,
+        yres_virtual: height,
+        xoffset: 0,
+        yoffset: 0,
+        depth: ColorDepth::ColorDepth32,
+        format: ColorFormat::RGBA8888,
+        paddr: addr,
+        vaddr,
+        screen_size: size,
+    };
+    *FRAME_BUFFER.write() = Some(fb_info);
+    let console = Console::on_frame_buffer(Framebuffer {
         width,
         height,
         buf: unsafe {
-            core::slice::from_raw_parts_mut(
-                phys_to_virt(paddr) as *mut u32,
-                (width * height) as usize,
-            )
+            core::slice::from_raw_parts_mut(vaddr as *mut u32, (width * height) as usize)
         },
-    };
-    let console = Console::on_frame_buffer(fb);
+    });
     *CONSOLE.lock() = Some(console);
 }
 
