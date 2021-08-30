@@ -139,8 +139,45 @@ use smoltcp::wire::IpEndpoint;
 pub enum Endpoint {
     /// missing documentation
     Ip(IpEndpoint),
-    // LinkLevel(LinkLevelEndpoint),
-    // Netlink(NetlinkEndpoint),
+    /// missing documentation
+    LinkLevel(LinkLevelEndpoint),
+    /// missing documentation
+    Netlink(NetlinkEndpoint),
+}
+
+/// missing documentation
+#[derive(Clone, Debug)]
+pub struct LinkLevelEndpoint {
+    /// missing documentation
+    pub interface_index: usize,
+}
+
+impl LinkLevelEndpoint {
+    /// missing documentation
+    pub fn new(ifindex: usize) -> Self {
+        LinkLevelEndpoint {
+            interface_index: ifindex,
+        }
+    }
+}
+
+/// missing documentation
+#[derive(Clone, Debug)]
+pub struct NetlinkEndpoint {
+    /// missing documentation
+    pub port_id: u32,
+    /// missing documentation
+    pub multicast_groups_mask: u32,
+}
+
+impl NetlinkEndpoint {
+    /// missing documentation
+    pub fn new(port_id: u32, multicast_groups_mask: u32) -> Self {
+        NetlinkEndpoint {
+            port_id,
+            multicast_groups_mask,
+        }
+    }
 }
 
 // ============= Endpoint =============
@@ -182,3 +219,61 @@ pub unsafe fn from_cstr(s: *const u8) -> &'static str {
 }
 
 // ============= Util =============
+
+use crate::error::*;
+use alloc::boxed::Box;
+use alloc::fmt::Debug;
+use alloc::sync::Arc;
+use async_trait::async_trait;
+// use core::ops::{Deref, DerefMut};
+/// Common methods that a socket must have
+#[async_trait]
+pub trait Socket: Send + Sync + Debug {
+    /// missing documentation
+    async fn read(&self, data: &mut [u8]) -> (SysResult, Endpoint);
+    /// missing documentation
+    fn write(&self, data: &[u8], sendto_endpoint: Option<Endpoint>) -> SysResult;
+    /// missing documentation
+    fn poll(&self) -> (bool, bool, bool); // (in, out, err)
+    /// missing documentation
+    async fn connect(&self, endpoint: Endpoint) -> SysResult;
+    /// missing documentation
+    fn bind(&mut self, _endpoint: Endpoint) -> SysResult {
+        Err(LxError::EINVAL)
+    }
+    /// missing documentation
+    fn listen(&mut self) -> SysResult {
+        Err(LxError::EINVAL)
+    }
+    /// missing documentation
+    fn shutdown(&self) -> SysResult {
+        Err(LxError::EINVAL)
+    }
+    /// missing documentation
+    async fn accept(&mut self) -> LxResult<(Arc<Mutex<dyn Socket>>, Endpoint)> {
+        Err(LxError::EINVAL)
+    }
+    /// missing documentation
+    fn endpoint(&self) -> Option<Endpoint> {
+        None
+    }
+    /// missing documentation
+    fn remote_endpoint(&self) -> Option<Endpoint> {
+        None
+    }
+    /// missing documentation
+    fn setsockopt(&self, _level: usize, _opt: usize, _data: &[u8]) -> SysResult {
+        warn!("setsockopt is unimplemented");
+        Ok(0)
+    }
+    /// missing documentation
+    fn ioctl(&self, _request: usize, _arg1: usize, _arg2: usize, _arg3: usize) -> SysResult {
+        warn!("ioctl is unimplemented for this socket");
+        Ok(0)
+    }
+    /// missing documentation
+    fn fcntl(&self, _cmd: usize, _arg: usize) -> SysResult {
+        warn!("ioctl is unimplemented for this socket");
+        Ok(0)
+    }
+}
