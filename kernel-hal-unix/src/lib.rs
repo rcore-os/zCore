@@ -446,7 +446,7 @@ pub fn init_framebuffer() {
     let size = finfo.size() as usize;
     let addr = unsafe {
         libc::mmap(
-            0 as *mut libc::c_void,
+            std::ptr::null_mut::<libc::c_void>(),
             size,
             libc::PROT_READ | libc::PROT_WRITE,
             libc::MAP_SHARED,

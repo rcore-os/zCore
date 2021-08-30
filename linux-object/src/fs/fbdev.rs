@@ -24,7 +24,7 @@ impl INode for Fbdev {
             let len = buf.len().min(fb.screen_size - offset);
             let data =
                 unsafe { core::slice::from_raw_parts((fb.vaddr + offset) as *const u8, len) };
-            buf[..len].copy_from_slice(&data);
+            buf[..len].copy_from_slice(data);
             Ok(len)
         } else {
             Err(FsError::NoDevice)
@@ -89,14 +89,14 @@ impl INode for Fbdev {
             FBIOGET_FSCREENINFO => {
                 if let Some(fb) = FRAME_BUFFER.read().as_ref() {
                     let fb_fix_info = unsafe { &mut *(data as *mut FbFixScreeninfo) };
-                    fb_fix_info.fill_from(&fb);
+                    fb_fix_info.fill_from(fb);
                 }
                 Ok(0)
             }
             FBIOGET_VSCREENINFO => {
                 if let Some(fb) = FRAME_BUFFER.read().as_ref() {
                     let fb_var_info = unsafe { &mut *(data as *mut FbVarScreeninfo) };
-                    fb_var_info.fill_from(&fb);
+                    fb_var_info.fill_from(fb);
                 }
                 Ok(0)
             }

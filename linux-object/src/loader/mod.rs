@@ -58,7 +58,6 @@ impl LinuxElfLoader {
         let mut base = image_vmar.addr();
         let vmo = image_vmar.load_from_elf(&elf)?;
         let entry = base + elf.header.pt2.entry_point() as usize;
-        error!("tmp");
 
         // for static exec program
         let ph: ProgramHeader = elf.program_iter().next().unwrap();
