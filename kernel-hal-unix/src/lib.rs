@@ -428,6 +428,9 @@ pub fn init_framebuffer() {
     const FBIOGET_VSCREENINFO: u64 = 0x4600;
     const FBIOGET_FSCREENINFO: u64 = 0x4602;
 
+    #[cfg(target_arch = "aarch64")]
+    let fbfd = unsafe { libc::open("/dev/fb0".as_ptr(), libc::O_RDWR) };
+    #[cfg(not(target_arch = "aarch64"))]
     let fbfd = unsafe { libc::open("/dev/fb0".as_ptr() as *const i8, libc::O_RDWR) };
     if fbfd < 0 {
         return;
