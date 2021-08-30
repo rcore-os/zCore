@@ -229,6 +229,11 @@
 <span id="229">229</span>
 <span id="230">230</span>
 <span id="231">231</span>
+<span id="232">232</span>
+<span id="233">233</span>
+<span id="234">234</span>
+<span id="235">235</span>
+<span id="236">236</span>
 </pre><pre class="rust">
 <span class="doccomment">//! Linux file objects</span>
 <span class="attribute">#![<span class="ident">deny</span>(<span class="ident">missing_docs</span>)]</span>
@@ -240,6 +245,7 @@
 <span class="kw">use</span> <span class="ident">rcore_fs_ramfs::RamFS</span>;
 
 <span class="kw">pub</span> <span class="kw">use</span> <span class="self">self</span><span class="ident">::device</span>::<span class="kw-2">*</span>;
+<span class="kw">pub</span> <span class="kw">use</span> <span class="self">self</span><span class="ident">::fbdev</span>::<span class="kw-2">*</span>;
 <span class="kw">pub</span> <span class="kw">use</span> <span class="self">self</span><span class="ident">::fcntl</span>::<span class="kw-2">*</span>;
 <span class="kw">pub</span> <span class="kw">use</span> <span class="self">self</span><span class="ident">::file</span>::<span class="kw-2">*</span>;
 <span class="kw">pub</span> <span class="kw">use</span> <span class="self">self</span><span class="ident">::pipe</span>::<span class="kw-2">*</span>;
@@ -256,6 +262,7 @@
 <span class="kw">use</span> <span class="ident">zircon_object::object</span>::<span class="kw-2">*</span>;
 
 <span class="kw">mod</span> <span class="ident">device</span>;
+<span class="kw">mod</span> <span class="ident">fbdev</span>;
 <span class="kw">mod</span> <span class="ident">fcntl</span>;
 <span class="kw">mod</span> <span class="ident">file</span>;
 <span class="kw">mod</span> <span class="ident">ioctl</span>;
@@ -351,6 +358,9 @@
     <span class="ident">devfs</span>
         .<span class="ident">add</span>(<span class="string">&quot;urandom&quot;</span>, <span class="ident">Arc::new</span>(<span class="ident">RandomINode::new</span>(<span class="bool-val">true</span>)))
         .<span class="ident">expect</span>(<span class="string">&quot;failed to mknod /dev/urandom&quot;</span>);
+    <span class="ident">devfs</span>
+        .<span class="ident">add</span>(<span class="string">&quot;fb0&quot;</span>, <span class="ident">Arc::new</span>(<span class="ident">Fbdev::default</span>()))
+        .<span class="ident">expect</span>(<span class="string">&quot;failed to mknod /dev/fb0&quot;</span>);
 
     <span class="comment">// mount DevFS at /dev</span>
     <span class="kw">let</span> <span class="ident">dev</span> <span class="op">=</span> <span class="ident">root</span>.<span class="ident">find</span>(<span class="bool-val">true</span>, <span class="string">&quot;dev&quot;</span>).<span class="ident">unwrap_or_else</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> {
