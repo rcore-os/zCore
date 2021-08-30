@@ -52,8 +52,8 @@ qemu_opts += \
 	-m 4G \
 	-nic none \
 	-device isa-debug-exit,iobase=0xf4,iosize=0x04 \
-	-netdev type=user,id=net0,hostfwd=udp::6969-:6969 \
-	-device e1000e,netdev=net0
+	-netdev type=user,id=net0,hostfwd=udp::6969-:6969,hostfwd=tcp::9999-:9999 \
+	-device e1000e,netdev=net0,mac=52:54:98:76:54:32
 else ifeq ($(arch), riscv64)
 qemu_opts += \
 	-machine virt \

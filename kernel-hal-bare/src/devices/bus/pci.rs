@@ -1,5 +1,5 @@
-use crate::devices::NET_DRIVERS;
 use crate::devices::net::e1000;
+use crate::devices::NET_DRIVERS;
 use crate::phys_to_virt;
 use alloc::format;
 use kernel_hal::PAGE_SIZE;

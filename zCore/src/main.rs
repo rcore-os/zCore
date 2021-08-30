@@ -181,7 +181,10 @@ fn main(ramfs_data: &'static mut [u8], _cmdline: &str) -> ! {
     //let img_file = File::open("fat.img")?;
     //let fs = fatfs::FileSystem::new(img_file, fatfs::FsOptions::new())?;
 
-    let _proc = linux_loader::run(args, envs, rootfs);
+    // let net_device = 获得设备
+    // let net_stack = net_stack::init(device).expect("faild init net statck")
+
+    let _proc = linux_loader::run(args, envs, rootfs /* ， net_stack */);
     info!("linux_loader is complete");
 
     run();

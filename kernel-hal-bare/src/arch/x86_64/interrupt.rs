@@ -30,6 +30,7 @@ pub fn init() {
 
 fn irq57test() {
     warn!("irq 57");
+    // poll_ifaces();
 }
 
 fn init_irq_table() {

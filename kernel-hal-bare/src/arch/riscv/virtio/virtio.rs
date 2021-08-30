@@ -1,4 +1,7 @@
-use crate::{hal_frame_dealloc as frame_dealloc, hal_frame_alloc_contiguous as frame_alloc_contiguous, phys_to_virt, virt_to_phys, PAGE_SIZE};
+use crate::{
+    hal_frame_alloc_contiguous as frame_alloc_contiguous, hal_frame_dealloc as frame_dealloc,
+    phys_to_virt, virt_to_phys, PAGE_SIZE,
+};
 use device_tree::util::SliceRead;
 use device_tree::Node;
 use log::*;
