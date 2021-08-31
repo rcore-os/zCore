@@ -1,7 +1,8 @@
 //! Implement INode for framebuffer
 
 use core::any::Any;
-use kernel_hal::{FbFixScreeninfo, FbVarScreeninfo, FRAME_BUFFER};
+use kernel_hal::FRAME_BUFFER;
+use kernel_hal_unix::{FbFixScreeninfo, FbVarScreeninfo};
 
 use rcore_fs::vfs::*;
 

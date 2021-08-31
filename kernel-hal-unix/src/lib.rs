@@ -12,7 +12,7 @@ use {
     async_std::task_local,
     core::{cell::Cell, future::Future, pin::Pin},
     git_version::git_version,
-    kernel_hal::{FbFixScreeninfo, FbVarScreeninfo, PageTableTrait},
+    kernel_hal::PageTableTrait,
     lazy_static::lazy_static,
     std::fmt::{Debug, Formatter},
     std::fs::{File, OpenOptions},
@@ -23,6 +23,9 @@ use {
     tempfile::tempdir,
 };
 
+mod fb;
+
+pub use fb::*;
 pub use kernel_hal::defs::*;
 use kernel_hal::vdso::*;
 pub use kernel_hal::*;
@@ -461,7 +464,7 @@ pub fn init_framebuffer() {
         return;
     }
 
-    let (width, height) = vinfo.size();
+    let (width, height) = vinfo.resolution();
     let addr = addr as usize;
 
     let fb_info = FramebufferInfo {
