@@ -648,3 +648,13 @@ pub fn init_framebuffer(width: u32, height: u32, addr: usize, size: usize) {
     };
     *FRAME_BUFFER.write() = Some(fb_info);
 }
+
+#[export_name = "hal_mice_set_callback"]
+pub fn mice_set_callback(_callback: Box<dyn Fn([u8; 3]) + Send + Sync>) {
+    //
+}
+
+#[export_name = "hal_kbd_set_callback"]
+pub fn kbd_set_callback(_callback: Box<dyn Fn(u16, i32) + Send + Sync>) {
+    //
+}

@@ -481,3 +481,15 @@ pub fn fill_random(_buf: &mut [u8]) {
 pub fn current_page_table() -> usize {
     unimplemented!()
 }
+
+#[linkage = "weak"]
+#[export_name = "hal_mice_set_callback"]
+pub fn mice_set_callback(_callback: Box<dyn Fn([u8; 3]) + Send + Sync>) {
+    unimplemented!()
+}
+
+#[linkage = "weak"]
+#[export_name = "hal_kbd_set_callback"]
+pub fn kbd_set_callback(_callback: Box<dyn Fn(u16, i32) + Send + Sync>) {
+    unimplemented!()
+}

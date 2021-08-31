@@ -26,7 +26,7 @@ apic = { git = "https://github.com/rcore-os/apic-rs", rev = "fb86bd7" }
 x86-smpboot = { git = "https://github.com/rcore-os/x86-smpboot", rev = "43ffedf" }
 rcore-console = { git = "https://github.com/rcore-os/rcore-console", default-features = false, rev = "a980897b" }
 acpi = "1.1"
-ps2-mouse = "0.1"
+ps2-mouse = { git = "https://github.com/YXL76/ps2-mouse", branch = "feat" }
 
 [target.'cfg(any(target_arch = "riscv32", target_arch = "riscv64"))'.dependencies]
 riscv = { git = "https://github.com/rcore-os/riscv", features = [

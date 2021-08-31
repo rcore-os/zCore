@@ -12,7 +12,7 @@ use {
     async_std::task_local,
     core::{cell::Cell, future::Future, pin::Pin},
     git_version::git_version,
-    kernel_hal::{FbFixScreeninfo, FbVarScreeninfo, PageTableTrait},
+    kernel_hal::PageTableTrait,
     lazy_static::lazy_static,
     std::fmt::{Debug, Formatter},
     std::fs::{File, OpenOptions},
@@ -436,6 +436,80 @@ pub fn init_framebuffer() {
         return;
     }
 
+    #[repr(C)]
+    #[derive(Debug, Default)]
+    struct FbFixScreeninfo {
+        id: [u8; 16],
+        smem_start: u64,
+        smem_len: u32,
+        type_: u32,
+        type_aux: u32,
+        visual: u32,
+        xpanstep: u16,
+        ypanstep: u16,
+        ywrapstep: u16,
+        line_length: u32,
+        mmio_start: u64,
+        mmio_len: u32,
+        accel: u32,
+        capabilities: u16,
+        reserved: [u16; 2],
+    }
+
+    impl FbFixScreeninfo {
+        pub fn size(&self) -> u32 {
+            self.smem_len
+        }
+    }
+
+    #[repr(C)]
+    #[derive(Debug, Default)]
+    struct FbVarScreeninfo {
+        xres: u32,
+        yres: u32,
+        xres_virtual: u32,
+        yres_virtual: u32,
+        xoffset: u32,
+        yoffset: u32,
+        bits_per_pixel: u32,
+        grayscale: u32,
+        red: FbBitfield,
+        green: FbBitfield,
+        blue: FbBitfield,
+        transp: FbBitfield,
+        nonstd: u32,
+        activate: u32,
+        height: u32,
+        width: u32,
+        accel_flags: u32,
+        pixclock: u32,
+        left_margin: u32,
+        right_margin: u32,
+        upper_margin: u32,
+        lower_margin: u32,
+        hsync_len: u32,
+        vsync_len: u32,
+        sync: u32,
+        vmode: u32,
+        rotate: u32,
+        colorspace: u32,
+        reserved: [u32; 4],
+    }
+
+    impl FbVarScreeninfo {
+        pub fn resolution(&self) -> (u32, u32) {
+            (self.xres, self.yres)
+        }
+    }
+
+    #[repr(C)]
+    #[derive(Debug, Default)]
+    pub struct FbBitfield {
+        offset: u32,
+        length: u32,
+        msb_right: u32,
+    }
+
     let mut vinfo = FbVarScreeninfo::default();
     if unsafe { libc::ioctl(fbfd, FBIOGET_VSCREENINFO, &mut vinfo) } < 0 {
         return;
@@ -461,7 +535,7 @@ pub fn init_framebuffer() {
         return;
     }
 
-    let (width, height) = vinfo.size();
+    let (width, height) = vinfo.resolution();
     let addr = addr as usize;
 
     let fb_info = FramebufferInfo {
@@ -479,6 +553,101 @@ pub fn init_framebuffer() {
         screen_size: size,
     };
     *FRAME_BUFFER.write() = Some(fb_info);
+}
+
+type MouseCallbackFn = dyn Fn([u8; 3]) + Send + Sync;
+type KBDCallbackFn = dyn Fn(u16, i32) + Send + Sync;
+
+lazy_static! {
+    static ref MOUSE_CALLBACK: Mutex<Vec<Box<MouseCallbackFn>>> = Mutex::new(Vec::new());
+    static ref KBD_CALLBACK: Mutex<Vec<Box<KBDCallbackFn>>> = Mutex::new(Vec::new());
+}
+
+#[export_name = "hal_mice_set_callback"]
+pub fn mice_set_callback(callback: Box<dyn Fn([u8; 3]) + Send + Sync>) {
+    MOUSE_CALLBACK.lock().unwrap().push(callback);
+}
+
+#[export_name = "hal_kbd_set_callback"]
+pub fn kbd_set_callback(callback: Box<dyn Fn(u16, i32) + Send + Sync>) {
+    KBD_CALLBACK.lock().unwrap().push(callback);
+}
+
+fn init_kbd() {
+    let fd = std::fs::File::open("/dev/input/event1").expect("Failed to open input event device.");
+    // ??
+    /* let inputfd = unsafe {
+        libc::open(
+            "/dev/input/event1".as_ptr() as *const i8,
+            libc::O_RDONLY /* | libc::O_NONBLOCK */,
+        )
+    }; */
+    if fd.as_raw_fd() < 0 {
+        return;
+    }
+
+    #[repr(C)]
+    #[derive(Debug, Copy, Clone, Default)]
+    pub struct TimeVal {
+        pub sec: usize,
+        pub usec: usize,
+    }
+    #[repr(C)]
+    #[derive(Debug, Copy, Clone, Default)]
+    struct InputEvent {
+        time: TimeVal,
+        type_: u16,
+        code: u16,
+        value: i32,
+    }
+
+    std::thread::spawn(move || {
+        use core::mem::{size_of, transmute, transmute_copy};
+        let ev = InputEvent::default();
+        const LEN: usize = size_of::<InputEvent>();
+        let mut buf: [u8; LEN] = unsafe { transmute(ev) };
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(8));
+            let ret =
+                unsafe { libc::read(fd.as_raw_fd(), buf.as_mut_ptr() as *mut libc::c_void, LEN) };
+            if ret < 0 {
+                break;
+            }
+            let ev: InputEvent = unsafe { transmute_copy(&buf) };
+            if ev.type_ == 1 {
+                KBD_CALLBACK.lock().unwrap().iter().for_each(|callback| {
+                    callback(ev.code, ev.value);
+                });
+            }
+        }
+    });
+}
+
+fn init_mice() {
+    let fd = std::fs::File::open("/dev/input/mice").expect("Failed to open input event device.");
+    if fd.as_raw_fd() < 0 {
+        return;
+    }
+
+    std::thread::spawn(move || {
+        let mut buf = [0u8; 3];
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(8));
+            let ret =
+                unsafe { libc::read(fd.as_raw_fd(), buf.as_mut_ptr() as *mut libc::c_void, 3) };
+            if ret < 0 {
+                break;
+            }
+            MOUSE_CALLBACK.lock().unwrap().iter().for_each(|callback| {
+                callback(buf);
+            });
+        }
+    });
+}
+
+pub fn init_input() {
+    init_kbd();
+    init_mice();
 }
 
 #[cfg(test)]
