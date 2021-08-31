@@ -25,6 +25,7 @@ extern crate fatfs;
 mod logging;
 mod lang;
 mod memory;
+mod arch;
 
 #[cfg(target_arch = "x86_64")]
 use rboot::BootInfo;
@@ -37,6 +38,11 @@ use kernel_hal_bare::{
 };
 
 use alloc::vec::Vec;
+
+#[cfg(feature = "board_qemu")]
+global_asm!(include_str!("arch/riscv/boot/boot_qemu.asm"));
+#[cfg(feature = "board_d1")]
+global_asm!(include_str!("arch/riscv/boot/boot_d1.asm"));
 #[cfg(target_arch = "riscv64")]
 global_asm!(include_str!("arch/riscv/boot/entry64.asm"));
 
@@ -82,6 +88,7 @@ fn main(ramfs_data: &[u8], cmdline: &str) -> ! {
 #[cfg(target_arch = "riscv64")]
 #[no_mangle]
 pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
+    println!("zCore rust_main( hartid: {}, device_tree_paddr: {:#x} )", hartid, device_tree_paddr);
     let device_tree_vaddr = phys_to_virt(device_tree_paddr);
 
     let boot_info = BootInfo {
@@ -104,7 +111,6 @@ pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
     }
 
     logging::init(get_log_level(boot_info.cmdline));
-    warn!("rust_main(), After logging init\n\n");
     memory::init_heap();
     memory::init_frame_allocator(&boot_info);
     remap_the_kernel(device_tree_vaddr);
