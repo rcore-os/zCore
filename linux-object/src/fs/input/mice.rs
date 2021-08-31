@@ -34,10 +34,14 @@ impl Default for InputMiceInode {
 
 impl INode for InputMiceInode {
     fn read_at(&self, _offset: usize, buf: &mut [u8]) -> Result<usize> {
-        let data = self.data.lock().pop_front().unwrap_or([0, 0, 0]);
-        let len = buf.len().min(3);
-        buf[..len].copy_from_slice(&data[..len]);
-        Ok(len)
+        let data = self.data.lock().pop_front();
+        if let Some(data) = data {
+            let len = buf.len().min(3);
+            buf[..len].copy_from_slice(&data[..len]);
+            Ok(len)
+        } else {
+            Ok(0)
+        }
     }
 
     fn write_at(&self, _offset: usize, _buf: &[u8]) -> Result<usize> {

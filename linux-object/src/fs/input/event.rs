@@ -32,16 +32,16 @@ impl InputEventInode {
 impl INode for InputEventInode {
     #[allow(unsafe_code)]
     fn read_at(&self, _offset: usize, buf: &mut [u8]) -> Result<usize> {
-        let event = self
-            .data
-            .lock()
-            .pop_front()
-            .unwrap_or_else(|| InputEvent::new(0, 0, 0));
-        let event: [u8; core::mem::size_of::<InputEvent>()] =
-            unsafe { core::mem::transmute(event) };
-        let len = event.len().min(buf.len());
-        buf.copy_from_slice(&event[..len]);
-        Ok(len)
+        let event = self.data.lock().pop_front();
+        if let Some(event) = event {
+            let event: [u8; core::mem::size_of::<InputEvent>()] =
+                unsafe { core::mem::transmute(event) };
+            let len = event.len().min(buf.len());
+            buf.copy_from_slice(&event[..len]);
+            Ok(len)
+        } else {
+            Ok(0)
+        }
     }
 
     fn write_at(&self, _offset: usize, _buf: &[u8]) -> Result<usize> {
