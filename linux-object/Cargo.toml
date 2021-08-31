@@ -17,7 +17,6 @@ hashbrown = "0.9"
 numeric-enum-macro = "0.2"
 zircon-object = { path = "../zircon-object", features = ["elf"] }
 kernel-hal = { path = "../kernel-hal" }
-kernel-hal-unix = { path = "../kernel-hal-unix" }
 downcast-rs = { version = "1.2", default-features = false }
 lazy_static = { version = "1.4", features = ["spin_no_std"] }
 rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "6df6cd2" }

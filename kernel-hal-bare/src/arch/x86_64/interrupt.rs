@@ -30,11 +30,11 @@ pub fn mice_set_callback(callback: Box<dyn Fn([u8; 3]) + Send + Sync>) {
 fn mouse_on_complete(mouse_state: MouseState) {
     debug!("mouse state: {:?}", mouse_state);
     MOUSE_CALLBACK.lock().iter().for_each(|callback| {
-        callback(
+        callback([
             mouse_state.get_flags().bits(),
             mouse_state.get_x() as u8,
             mouse_state.get_y() as u8,
-        );
+        ]);
     });
 }
 
