@@ -79,7 +79,7 @@ pub fn remap_the_kernel(dtb: usize) {
     map_range(
         &mut pt,
         end as usize,
-        end as usize + PAGE_SIZE * 512,
+        end as usize + PAGE_SIZE * 5120,
         linear_offset,
         PTF::VALID | PTF::READABLE | PTF::WRITABLE,
     )
@@ -551,11 +551,11 @@ pub fn init(config: Config) {
         llvm_asm!("ebreak"::::"volatile");
     }
 
-    bare_println!("Setup virtio @devicetree {:#x}", config.dtb);
-    //virtio::init(config.dtb);
-
     #[cfg(feature = "board_qemu")]
-    virtio::device_tree::init(config.dtb);
+    {
+        bare_println!("Setup virtio @devicetree {:#x}", config.dtb);
+        drivers::virtio::device_tree::init(config.dtb);
+    }
 }
 
 pub struct Config {
@@ -612,8 +612,6 @@ pub struct GraphicInfo {
 pub mod interrupt;
 mod plic;
 mod uart;
-
-pub mod virtio;
 
 #[export_name = "hal_current_pgtable"]
 pub fn current_page_table() -> usize {

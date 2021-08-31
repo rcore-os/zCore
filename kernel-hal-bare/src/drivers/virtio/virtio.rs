@@ -4,26 +4,16 @@ use device_tree::Node;
 use log::*;
 use virtio_drivers::{VirtIOBlk, VirtIOGpu, VirtIOHeader, VirtIOInput};
 
-use super::super::PHYSICAL_MEMORY_OFFSET;
-
 pub fn virtio_probe(node: &Node) {
     let reg = match node.prop_raw("reg") {
         Some(reg) => reg,
         _ => return,
     };
     let paddr = reg.as_slice().read_be_u64(0).unwrap();
-    //let vaddr = phys_to_virt(paddr as usize);
+    let vaddr = phys_to_virt(paddr as usize);
     let size = reg.as_slice().read_be_u64(8).unwrap();
     // assuming one page
     assert_eq!(size as usize, PAGE_SIZE);
-
-    /* 一一映射
-    let vaddr = paddr;
-    unsafe{
-        PageTableImpl::active().map_if_not_exists(vaddr as usize, paddr as usize);
-    }
-    */
-    let vaddr = paddr + PHYSICAL_MEMORY_OFFSET as u64;
 
     debug!("virtio_probe, paddr:{:#x}, vaddr:{:#x}", paddr, vaddr);
 

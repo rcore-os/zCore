@@ -3,7 +3,6 @@ use core::slice;
 
 use device_tree::{DeviceTree, Node};
 
-//use super::virtio_mmio::virtio_probe;
 use super::virtio::virtio_probe;
 use super::CMDLINE;
 

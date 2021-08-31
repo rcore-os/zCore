@@ -42,6 +42,7 @@ use naive_timer::Timer;
 use spin::Mutex;
 
 pub mod arch;
+pub mod drivers;
 
 pub use self::arch::*;
 

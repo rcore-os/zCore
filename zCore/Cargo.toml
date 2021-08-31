@@ -33,6 +33,7 @@ zircon-object = { path = "../zircon-object" }
 linux-loader = { path = "../linux-loader", default-features = false, optional = true }
 linux-object = { path = "../linux-object", default-features = false, optional = true }
 rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "6df6cd2", optional = true }
+rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "6df6cd2" }
 # FIX LATER
 # rvm = { git = "https://github.com/rcore-os/RVM", rev = "382fc60", optional = true }
 fatfs = { git = "https://github.com/rafalh/rust-fatfs.git", rev = "26fa79", default-features = false }
@@ -46,4 +47,3 @@ rvm = { git = "https://github.com/rcore-os/RVM", rev = "e91d625", optional = tru
 [target.'cfg(target_arch = "riscv64")'.dependencies]
 rlibc = "1.0"
 riscv = { git = "https://github.com/rcore-os/riscv", features = ["inline-asm"], rev = "0074cbc" }
-rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "6df6cd2" }

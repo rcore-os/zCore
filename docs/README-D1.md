@@ -8,7 +8,7 @@
 ```
 make riscv-image
 cd zCore
-make build linux=1 arch=riscv64 board=D1
+make build linux=1 arch=riscv64 board=d1
 
 ```
 
@@ -24,7 +24,7 @@ make
 
 生成包含了opensbi和zCore的待烧写固件:
 ```
-cp ../prebuilt/fw_jump-0x40020000.bin fw-zCore.bin
+cp ../prebuilt/firmware/fw_jump-0x40020000.bin fw-zCore.bin
 dd if=target/riscv64/debug/zcore.bin of=fw-zCore.bin bs=1 seek=131072
 ```
 
@@ -38,7 +38,7 @@ sudo xfel exec 0x40000000
 
 或者在安装好工具xfel，开发板进入FEL模式后，直接运行：
 ```
-make run-thead linux=1 arch=riscv64 board=D1
+make run-thead linux=1 arch=riscv64 board=d1
 ```
 
 ## 引导运行

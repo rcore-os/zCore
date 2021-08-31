@@ -19,13 +19,14 @@ extern crate rlibc;
 #[cfg(target_arch = "x86_64")]
 extern crate rlibc_opt; //Only for x86_64
 
-extern crate fatfs;
-
 #[macro_use]
 mod logging;
 mod lang;
-mod memory;
 mod arch;
+mod memory;
+
+#[cfg(feature = "linux")]
+mod fs;
 
 #[cfg(target_arch = "x86_64")]
 use rboot::BootInfo;
@@ -33,11 +34,16 @@ use rboot::BootInfo;
 #[cfg(target_arch = "riscv64")]
 use kernel_hal_bare::{
     phys_to_virt, remap_the_kernel,
-    virtio::{BlockDriverWrapper, BLK_DRIVERS, GPU_DRIVERS},
+    drivers::virtio::{GPU_DRIVERS, CMDLINE},
     BootInfo, GraphicInfo,
 };
 
-use alloc::vec::Vec;
+use alloc::{
+    format,vec,
+    vec::Vec,
+    boxed::Box,
+    string::{String, ToString},
+};
 
 #[cfg(feature = "board_qemu")]
 global_asm!(include_str!("arch/riscv/boot/boot_qemu.asm"));
@@ -127,8 +133,6 @@ pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
         dtb: device_tree_vaddr,
     });
 
-    use alloc::{format, string::ToString};
-    use kernel_hal_bare::virtio::CMDLINE;
     let cmdline_dt = CMDLINE.read();
     let mut cmdline = boot_info.cmdline.to_string();
 
@@ -150,12 +154,10 @@ pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
         kernel_hal_bare::init_framebuffer(width, height, fb_vaddr, fb_size);
     }
 
-    // 正常由bootloader载入文件系统镜像到内存, 这里不用，而使用后面的virtio
+    // riscv64在之后使用ramfs或virtio, 而x86_64则由bootloader载入文件系统镜像到内存
     main(&mut [], &cmdline);
 }
 
-use alloc::string::String;
-use alloc::vec;
 #[cfg(feature = "linux")]
 fn get_rootproc(cmdline: &str) -> Vec<String> {
     for opt in cmdline.split(':') {
@@ -180,13 +182,6 @@ fn get_rootproc(cmdline: &str) -> Vec<String> {
 
 #[cfg(feature = "linux")]
 fn main(ramfs_data: &'static mut [u8], cmdline: &str) -> ! {
-    use alloc::boxed::Box;
-    use alloc::string::String;
-    use alloc::sync::Arc;
-    use alloc::vec;
-
-    #[cfg(target_arch = "x86_64")]
-    use linux_object::fs::MemBuf;
     use linux_object::fs::STDIN;
 
     kernel_hal_bare::serial_set_callback(Box::new({
@@ -205,30 +200,7 @@ fn main(ramfs_data: &'static mut [u8], cmdline: &str) -> ! {
     let args: Vec<String> = get_rootproc(cmdline);
     let envs: Vec<String> = vec!["PATH=/usr/sbin:/usr/bin:/sbin:/bin".into()];
 
-    #[cfg(target_arch = "x86_64")]
-    let device = Arc::new(MemBuf::new(ramfs_data));
-    #[cfg(target_arch = "riscv64")]
-    let device = {
-        let driver = BlockDriverWrapper(
-            BLK_DRIVERS
-                .read()
-                .iter()
-                .next()
-                .expect("Block device not found")
-                .clone(),
-        );
-        Arc::new(rcore_fs::dev::block_cache::BlockCache::new(driver, 0x100))
-    };
-
-    info!("Opening the rootfs ...");
-    // 输入类型: Arc<Device>
-    let rootfs =
-        rcore_fs_sfs::SimpleFileSystem::open(device).expect("failed to open device SimpleFS");
-
-    // fat32
-    // let img_file = File::open("fat.img")?;
-    // let fs = fatfs::FileSystem::new(img_file, fatfs::FsOptions::new())?;
-
+    let rootfs = fs::init_filesystem(ramfs_data);
     let _proc = linux_loader::run(args, envs, rootfs);
     info!("linux_loader is complete");
 
