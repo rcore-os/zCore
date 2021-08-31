@@ -16,7 +16,11 @@ async fn main() {
     init_logger();
     // init HAL implementation on unix
     kernel_hal_unix::init();
-    // kernel_hal_unix::init_framebuffer();
+    #[cfg(feature = "graphic")]
+    {
+        kernel_hal_unix::init_framebuffer();
+        kernel_hal_unix::init_input();
+    }
     kernel_hal::serial_set_callback(Box::new({
         move || {
             let mut buffer = [0; 255];

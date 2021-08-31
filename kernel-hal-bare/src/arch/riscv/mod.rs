@@ -650,7 +650,7 @@ pub fn init_framebuffer(width: u32, height: u32, addr: usize, size: usize) {
 }
 
 #[export_name = "hal_mice_set_callback"]
-pub fn mice_set_callback(_callback: Box<dyn Fn(u8, u8, u8) + Send + Sync>) {
+pub fn mice_set_callback(_callback: Box<dyn Fn([u8; 3]) + Send + Sync>) {
     //
 }
 

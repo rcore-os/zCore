@@ -15,12 +15,12 @@ impl InputMiceInode {
     pub fn new() -> Self {
         let data = Arc::new(Mutex::new(VecDeque::with_capacity(MAX_QUEUE)));
         let data_clone = data.clone();
-        kernel_hal::mice_set_callback(Box::new(move |flags, x, y| {
+        kernel_hal::mice_set_callback(Box::new(move |data| {
             let mut queue = data_clone.lock();
             while queue.len() >= MAX_QUEUE {
                 queue.pop_front();
             }
-            queue.push_back([flags, x, y]);
+            queue.push_back(data);
         }));
         Self { data }
     }

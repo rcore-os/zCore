@@ -484,7 +484,7 @@ pub fn current_page_table() -> usize {
 
 #[linkage = "weak"]
 #[export_name = "hal_mice_set_callback"]
-pub fn mice_set_callback(_callback: Box<dyn Fn(u8, u8, u8) + Send + Sync>) {
+pub fn mice_set_callback(_callback: Box<dyn Fn([u8; 3]) + Send + Sync>) {
     unimplemented!()
 }
 

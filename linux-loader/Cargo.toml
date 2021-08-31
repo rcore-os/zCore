@@ -22,3 +22,4 @@ async-std = { version = "1.9", features = ["attributes"], optional = true }
 [features]
 default = ["std"]
 std = ["env_logger", "async-std", "kernel-hal-unix", "rcore-fs-hostfs", "zircon-object/aspace-separate"]
+graphic = ["std"]

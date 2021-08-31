@@ -18,12 +18,12 @@ lazy_static! {
 
 lazy_static! {
     static ref MOUSE: Mutex<Mouse> = Mutex::new(Mouse::new());
-    static ref MOUSE_CALLBACK: Mutex<Vec<Box<dyn Fn(u8, u8, u8) + Send + Sync>>> =
+    static ref MOUSE_CALLBACK: Mutex<Vec<Box<dyn Fn([u8; 3]) + Send + Sync>>> =
         Mutex::new(Vec::new());
 }
 
 #[export_name = "hal_mice_set_callback"]
-pub fn mice_set_callback(callback: Box<dyn Fn(u8, u8, u8) + Send + Sync>) {
+pub fn mice_set_callback(callback: Box<dyn Fn([u8; 3]) + Send + Sync>) {
     MOUSE_CALLBACK.lock().push(callback);
 }
 
