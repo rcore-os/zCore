@@ -481,6 +481,18 @@
 <span id="481">481</span>
 <span id="482">482</span>
 <span id="483">483</span>
+<span id="484">484</span>
+<span id="485">485</span>
+<span id="486">486</span>
+<span id="487">487</span>
+<span id="488">488</span>
+<span id="489">489</span>
+<span id="490">490</span>
+<span id="491">491</span>
+<span id="492">492</span>
+<span id="493">493</span>
+<span id="494">494</span>
+<span id="495">495</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
 <span class="kw">use</span> <span class="kw">crate</span><span class="ident">::vdso::VdsoConstants</span>;
@@ -963,6 +975,18 @@
 <span class="attribute">#[<span class="ident">linkage</span> <span class="op">=</span> <span class="string">&quot;weak&quot;</span>]</span>
 <span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_current_pgtable&quot;</span>]</span>
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">current_page_table</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
+    <span class="macro">unimplemented!</span>()
+}
+
+<span class="attribute">#[<span class="ident">linkage</span> <span class="op">=</span> <span class="string">&quot;weak&quot;</span>]</span>
+<span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_mice_set_callback&quot;</span>]</span>
+<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">mice_set_callback</span>(<span class="ident">_callback</span>: <span class="ident">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">Fn</span>([<span class="ident">u8</span>; <span class="number">3</span>]) <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span><span class="op">&gt;</span>) {
+    <span class="macro">unimplemented!</span>()
+}
+
+<span class="attribute">#[<span class="ident">linkage</span> <span class="op">=</span> <span class="string">&quot;weak&quot;</span>]</span>
+<span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_kbd_set_callback&quot;</span>]</span>
+<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">kbd_set_callback</span>(<span class="ident">_callback</span>: <span class="ident">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">Fn</span>(<span class="ident">u16</span>, <span class="ident">i32</span>) <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span><span class="op">&gt;</span>) {
     <span class="macro">unimplemented!</span>()
 }
 </pre></div>
