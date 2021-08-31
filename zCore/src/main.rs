@@ -117,10 +117,6 @@ pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
         cmdline: "LOG=warn:TERM=xterm-256color:console.shell=true:virtcon.disable=true",
     };
 
-    unsafe {
-        memory::clear_bss();
-    }
-
     logging::init(get_log_level(boot_info.cmdline));
     memory::init_heap();
     memory::init_frame_allocator(&boot_info);
