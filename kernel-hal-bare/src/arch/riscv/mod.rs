@@ -86,22 +86,13 @@ pub fn remap_the_kernel(dtb: usize) {
     .unwrap();
 
     // Device Tree
+    #[cfg(feature = "board_qemu")]
     map_range(
         &mut pt,
         dtb,
         dtb + consts::MAX_DTB_SIZE,
         linear_offset,
         PTF::VALID | PTF::READABLE,
-    )
-    .unwrap();
-
-    // CLINT
-    map_range(
-        &mut pt,
-        0x2000000 + PHYSICAL_MEMORY_OFFSET,
-        0x2010000 + PHYSICAL_MEMORY_OFFSET,
-        linear_offset,
-        PTF::VALID | PTF::READABLE | PTF::WRITABLE,
     )
     .unwrap();
 
@@ -563,6 +554,7 @@ pub fn init(config: Config) {
     bare_println!("Setup virtio @devicetree {:#x}", config.dtb);
     //virtio::init(config.dtb);
 
+    #[cfg(feature = "board_qemu")]
     virtio::device_tree::init(config.dtb);
 }
 

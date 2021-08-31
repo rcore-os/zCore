@@ -2,6 +2,7 @@
 //! x86_64      --  64GB
 
 use {bitmap_allocator::BitAlloc, buddy_system_allocator::LockedHeap, spin::Mutex};
+use crate::arch::consts::*;
 
 #[cfg(target_arch = "x86_64")]
 use {
@@ -22,41 +23,6 @@ type FrameAlloc = bitmap_allocator::BitAlloc16M;
 type FrameAlloc = bitmap_allocator::BitAlloc1M;
 
 static FRAME_ALLOCATOR: Mutex<FrameAlloc> = Mutex::new(FrameAlloc::DEFAULT);
-
-#[cfg(target_arch = "x86_64")]
-const MEMORY_OFFSET: usize = 0;
-#[cfg(target_arch = "x86_64")]
-const KERNEL_OFFSET: usize = 0xffffff00_00000000;
-#[cfg(target_arch = "x86_64")]
-const PHYSICAL_MEMORY_OFFSET: usize = 0xffff8000_00000000;
-#[cfg(target_arch = "x86_64")]
-const KERNEL_HEAP_SIZE: usize = 16 * 1024 * 1024; // 16 MB
-
-#[cfg(target_arch = "x86_64")]
-const KERNEL_PM4: usize = (KERNEL_OFFSET >> 39) & 0o777;
-#[cfg(target_arch = "x86_64")]
-const PHYSICAL_MEMORY_PM4: usize = (PHYSICAL_MEMORY_OFFSET >> 39) & 0o777;
-
-#[cfg(target_arch = "riscv64")]
-const KERNEL_OFFSET: usize = 0xFFFF_FFFF_8000_0000;
-#[cfg(target_arch = "riscv64")]
-const MEMORY_OFFSET: usize = 0x8000_0000;
-#[cfg(target_arch = "riscv64")]
-const PHYSICAL_MEMORY_OFFSET: usize = KERNEL_OFFSET - MEMORY_OFFSET;
-
-// TODO: get memory end from device tree
-#[cfg(target_arch = "riscv64")]
-const MEMORY_END: usize = 0x8800_0000;
-
-#[cfg(target_arch = "riscv64")]
-const KERNEL_HEAP_SIZE: usize = 8 * 1024 * 1024; // 8 MB
-
-#[cfg(target_arch = "riscv64")]
-const KERNEL_L2: usize = (KERNEL_OFFSET >> 30) & 0o777;
-#[cfg(target_arch = "riscv64")]
-const PHYSICAL_MEMORY_L2: usize = (PHYSICAL_MEMORY_OFFSET >> 30) & 0o777;
-
-const PAGE_SIZE: usize = 1 << 12;
 
 #[used]
 #[export_name = "hal_pmem_base"]

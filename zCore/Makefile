@@ -1,4 +1,5 @@
 arch ?= x86_64
+board ?= qemu
 mode ?= debug
 zbi_file ?= bringup
 graphic ?=
@@ -23,6 +24,15 @@ VMDISK := $(build_path)/boot.vdi
 QEMU_DISK := $(build_path)/disk.qcow2
 
 export ARCH=$(arch)
+export BOARD=$(board)
+
+ifeq ($(arch), riscv64)
+ifeq ($(board), d1)
+build_args += --features board_d1
+else
+build_args += --features board_qemu
+endif
+endif
 
 ifeq ($(mode), release)
 	build_args += --release

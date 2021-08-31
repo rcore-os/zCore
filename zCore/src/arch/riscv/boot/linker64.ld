@@ -1,15 +1,6 @@
 OUTPUT_ARCH(riscv)
 ENTRY(_start)
 
-BASE_ADDRESS = 0x80010000;
-
-/* Qemu
-BASE_ADDRESS = 0x80200000;
-*/
-
-/* opensbi仍旧把kernel放在0x80200000物理内存中 */
-BASE_ADDRESS = 0xffffffff80200000;
-
 SECTIONS
 {
     /* Load the kernel at this address: "." means the current address */

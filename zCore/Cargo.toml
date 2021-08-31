@@ -8,6 +8,9 @@ edition = "2018"
 
 [features]
 graphic = []
+board_qemu = ["kernel-hal-bare/board_qemu"]
+board_d1 = ["link_user_img", "kernel-hal-bare/board_d1"]
+link_user_img = []
 zircon = ["zircon-loader"]
 linux = ["linux-loader", "linux-object", "rcore-fs-sfs"]
 #hypervisor = ["rvm", "zircon", "zircon-object/hypervisor", "zircon-syscall/hypervisor"]
