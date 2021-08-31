@@ -74,9 +74,9 @@ with open(RESULT_FILE, "a") as rstf:
 
 
 not_passed = check_case - passed_case
-if not_passed:
+if failed:
     print('=== Failed cases ===')
-    for case in not_passed:
+    for case in failed:
         print(case)
     exit(1)
 else:
