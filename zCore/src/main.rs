@@ -21,8 +21,8 @@ extern crate rlibc_opt; //Only for x86_64
 
 #[macro_use]
 mod logging;
-mod lang;
 mod arch;
+mod lang;
 mod memory;
 
 #[cfg(feature = "linux")]
@@ -33,16 +33,16 @@ use rboot::BootInfo;
 
 #[cfg(target_arch = "riscv64")]
 use kernel_hal_bare::{
-    phys_to_virt, remap_the_kernel,
-    drivers::virtio::{GPU_DRIVERS, CMDLINE},
-    BootInfo, GraphicInfo,
+    drivers::virtio::{CMDLINE, GPU_DRIVERS},
+    phys_to_virt, remap_the_kernel, BootInfo, GraphicInfo,
 };
 
 use alloc::{
-    format,vec,
-    vec::Vec,
     boxed::Box,
+    format,
     string::{String, ToString},
+    vec,
+    vec::Vec,
 };
 
 #[cfg(feature = "board_qemu")]
@@ -99,7 +99,10 @@ fn main(ramfs_data: &[u8], cmdline: &str) -> ! {
 #[cfg(target_arch = "riscv64")]
 #[no_mangle]
 pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
-    println!("zCore rust_main( hartid: {}, device_tree_paddr: {:#x} )", hartid, device_tree_paddr);
+    println!(
+        "zCore rust_main( hartid: {}, device_tree_paddr: {:#x} )",
+        hartid, device_tree_paddr
+    );
     let device_tree_vaddr = phys_to_virt(device_tree_paddr);
 
     let boot_info = BootInfo {

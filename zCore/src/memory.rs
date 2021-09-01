@@ -1,8 +1,8 @@
 //! Define the FrameAllocator for physical memory
 //! x86_64      --  64GB
 
-use {bitmap_allocator::BitAlloc, buddy_system_allocator::LockedHeap, spin::Mutex};
 use crate::arch::consts::*;
+use {bitmap_allocator::BitAlloc, buddy_system_allocator::LockedHeap, spin::Mutex};
 
 #[cfg(target_arch = "x86_64")]
 use {

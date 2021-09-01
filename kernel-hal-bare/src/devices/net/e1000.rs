@@ -241,14 +241,14 @@ pub fn init(name: String, irq: Option<usize>, header: usize, size: usize, index:
 
 // provider
 
+use crate::drivers::virtio::virtio::virtio_dma_alloc;
+use crate::drivers::virtio::virtio::virtio_dma_dealloc;
 #[allow(unused_imports)]
 use crate::{
     hal_frame_alloc_contiguous as alloc_frame_contiguous, hal_frame_dealloc as dealloc_frame,
     phys_to_virt, virt_to_phys,
 };
 use isomorphic_drivers::provider;
-use crate::drivers::virtio::virtio::virtio_dma_alloc;
-use crate::drivers::virtio::virtio::virtio_dma_dealloc;
 pub struct Provider;
 
 impl provider::Provider for Provider {
