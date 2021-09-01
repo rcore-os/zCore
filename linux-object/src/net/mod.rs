@@ -115,7 +115,7 @@ impl Drop for GlobalSocketHandle {
 
         // send FIN immediately when applicable
         drop(sockets);
-        poll_ifaces_e1000();
+        // poll_ifaces_e1000();
         poll_ifaces_loopback();
     }
 }
@@ -123,11 +123,11 @@ impl Drop for GlobalSocketHandle {
 use kernel_hal::get_net_driver;
 
 //  Safety: call this without SOCKETS locked
-fn poll_ifaces_e1000() {
-    for iface in get_net_driver().iter() {
-        iface.poll(&(*SOCKETS));
-    }
-}
+// fn poll_ifaces_e1000() {
+//     for iface in get_net_driver().iter() {
+//         iface.poll(&(*SOCKETS));
+//     }
+// }
 
 use net_stack::{NetStack, NET_STACK};
 // use alloc::vec::Vec;

@@ -212,7 +212,7 @@ impl SockAddr {
             addr.write_array(source)?;
         }
         addr_len.write(full_len as u32)?;
-        return Ok(0);
+        Ok(0)
     }
 }
 
