@@ -42,6 +42,7 @@ use naive_timer::Timer;
 use spin::Mutex;
 
 pub mod arch;
+pub mod drivers;
 
 pub use self::arch::*;
 
@@ -56,9 +57,6 @@ extern "C" {
     fn hal_frame_alloc_contiguous(size: usize, align_log2: usize) -> Option<usize>;
     #[link_name = "hal_pmem_base"]
     static PMEM_BASE: usize;
-
-    fn hal_heap_alloc(size: &usize, align: &usize) -> usize;
-    fn hal_heap_dealloc(ptr: &usize, size: &usize, align: &usize);
 }
 
 #[repr(C)]
@@ -90,6 +88,7 @@ impl Thread {
             inner: Mutex::new(future),
             vmtoken,
         });
+
         Thread { thread: 0 }
     }
 
@@ -144,11 +143,11 @@ impl Frame {
     }
 }
 
-fn phys_to_virt(paddr: PhysAddr) -> VirtAddr {
+pub fn phys_to_virt(paddr: PhysAddr) -> VirtAddr {
     unsafe { PMEM_BASE + paddr }
 }
 
-fn virt_to_phys(vaddr: VirtAddr) -> PhysAddr {
+pub fn virt_to_phys(vaddr: VirtAddr) -> PhysAddr {
     unsafe { vaddr - PMEM_BASE }
 }
 
@@ -164,7 +163,12 @@ pub fn pmem_read(paddr: PhysAddr, buf: &mut [u8]) {
 /// Write physical memory to `paddr` from `buf`.
 #[export_name = "hal_pmem_write"]
 pub fn pmem_write(paddr: PhysAddr, buf: &[u8]) {
-    trace!("pmem_write: addr={:#x}, len={:#x}", paddr, buf.len());
+    trace!(
+        "pmem_write: addr={:#x}, len={:#x}, vaddr = {:#x}",
+        paddr,
+        buf.len(),
+        phys_to_virt(paddr)
+    );
     unsafe {
         buf.as_ptr()
             .copy_to_nonoverlapping(phys_to_virt(paddr) as _, buf.len());

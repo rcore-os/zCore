@@ -126,7 +126,7 @@ impl MmapProt {
         }
         // FIXME: hack for unimplemented mprotect
         if self.is_empty() {
-            flags = MMUFlags::READ | MMUFlags::WRITE;
+            flags |= MMUFlags::READ | MMUFlags::WRITE;
         }
         flags
     }

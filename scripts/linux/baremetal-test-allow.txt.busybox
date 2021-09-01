@@ -1,0 +1,53 @@
+/bin/busybox ash -c exit
+/bin/busybox sh -c exit
+/bin/busybox basename /aaa/bbb
+/bin/busybox cal
+/bin/busybox clear
+/bin/busybox date 
+/bin/busybox df 
+/bin/busybox dirname /aaa/bbb
+/bin/busybox dmesg 
+/bin/busybox du
+/bin/busybox expr 1 + 1
+/bin/busybox false
+/bin/busybox true
+/bin/busybox which ls
+/bin/busybox uname
+/bin/busybox uptime
+/bin/busybox printf "abc\n"
+/bin/busybox ps
+/bin/busybox pwd
+/bin/busybox free
+/bin/busybox hwclock
+/bin/busybox kill 10
+/bin/busybox ls
+/bin/busybox sleep 1
+/bin/busybox touch test.txt
+/bin/busybox echo "hello world" > test.txt
+/bin/busybox cat test.txt
+/bin/busybox cut -c 3 test.txt
+/bin/busybox od test.txt
+/bin/busybox head test.txt
+/bin/busybox tail test.txt 
+/bin/busybox hexdump -C test.txt 
+/bin/busybox md5sum test.txt
+/bin/busybox echo "ccccccc" >> test.txt
+/bin/busybox echo "bbbbbbb" >> test.txt
+/bin/busybox echo "aaaaaaa" >> test.txt
+/bin/busybox echo "2222222" >> test.txt
+/bin/busybox echo "1111111" >> test.txt
+/bin/busybox echo "bbbbbbb" >> test.txt
+/bin/busybox sort test.txt | ./busybox uniq
+/bin/busybox stat test.txt
+/bin/busybox strings test.txt 
+/bin/busybox wc test.txt
+/bin/busybox [ -f test.txt ]
+/bin/busybox more test.txt
+/bin/busybox rm test.txt
+/bin/busybox mkdir test_dir
+/bin/busybox mv test_dir test
+/bin/busybox rmdir test
+/bin/busybox grep hello busybox_cmd.txt
+/bin/busybox cp busybox_cmd.txt busybox_cmd.bak
+/bin/busybox rm busybox_cmd.bak
+/bin/busybox find -name "busybox_cmd.txt"

@@ -1,4 +1,4 @@
-//! consts for fctnl
+//! consts for fcntl
 //! currently support x86_64 only
 //! copy from fcntl.h (from rCore)
 #![allow(dead_code)]

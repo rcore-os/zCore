@@ -1,4 +1,4 @@
-name: rustc20210727 CI
+name: current CI
 
 on: 
   push:
@@ -29,8 +29,8 @@ jobs:
 #        uses: actions-rs/cargo@v1
 #        with:
 #          command: clippy
-
-  build-x86_64-linux:
+#x86_64
+  build:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -194,6 +194,25 @@ jobs:
           pip3 install pexpect
           python3 core-tests.py
 
+  core-test-libos:
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: 'recursive'
+      - name: Pull prebuilt images
+        run: git lfs pull -I prebuilt/zircon/x64/core-tests.zbi,prebuilt/zircon/x64/libzircon-libos.so,prebuilt/zircon/x64/userboot-libos.so
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly-2021-07-27
+          components: rust-src
+      - name: Run core-tests
+        run: |
+          cd scripts
+          pip3 install pexpect
+          python3 unix-core-tests.py
+
   libc-test:
     runs-on: ubuntu-20.04
     steps:
@@ -226,10 +245,66 @@ jobs:
 #        with:
 #          command: doc
 #          args: --no-deps --all-features
-      - name: Deploy to Github Pages
-        if: ${{ github.ref == 'refs/heads/master' }}
-        uses: JamesIves/github-pages-deploy-action@releases/v3
+#      - name: Deploy to Github Pages
+#        if: ${{ github.ref == 'refs/heads/master' }}
+#        uses: JamesIves/github-pages-deploy-action@releases/v3
+#        with:
+#          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+#          BRANCH: gh-pages
+#          FOLDER: target/doc
+
+
+  baremetal-libc-test:
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v2
         with:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          BRANCH: gh-pages
-          FOLDER: target/doc
+          submodules: 'recursive'
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly-2021-07-27
+          components: rust-src
+      - name: Pull prebuilt images
+        run: git lfs pull -I prebuilt/linux/libc-libos.so
+      - name: Install musl toolchain qemu-system-x86
+        run: |
+          sudo apt-get update
+          sudo apt-get install musl-tools musl-dev qemu-system-x86 -y
+      - name: Prepare rootfs and libc-test
+        run: make baremetal-test-img
+      - name: Build  kernel
+        run: cd zCore && make build mode=release linux=1 arch=x86_64
+      - name: create qemu disk
+        run: cd zCore && make baremetal-qemu-disk mode=release linux=1 arch=x86_64
+      - name: Run baremetal-libc-test
+        run: |
+          cd scripts
+          python3 ./baremetal-libc-test.py
+  baremetal-rv64-oscomp-test:
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: 'recursive'
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly-2021-07-27
+          components: rust-src
+      - name: Install cargo tools and qemu-system-riscv64
+        run: |
+          sudo apt update
+          sudo apt install qemu-utils
+          cargo install cargo-binutils
+          rustup component add llvm-tools-preview
+          wget https://github.com/rcore-os/qemu-prebuilt/releases/download/5.2.0-riscv64/qemu-system-riscv64.tar.xz > /dev/null
+          tar xJf qemu-system-riscv64.tar.xz && sudo cp qemu-system-riscv64 /usr/local/bin
+          wget https://github.com/rcore-os/qemu-prebuilt/releases/download/qemu-share/qemu-share.tar.xz > /dev/null
+          tar xJf qemu-share.tar.xz && sudo cp -r qemu /usr/local/share/
+      - name: Prepare rootfs and oscomp
+        run: make riscv-image
+      - name: Run baremetal-libc-test
+        run: |
+          cd scripts
+          python3 baremetal-test-riscv64.py

@@ -51,12 +51,14 @@ pub fn run(args: Vec<String>, envs: Vec<String>, rootfs: Arc<dyn FileSystem>) ->
             trace!("  {}", name);
         }
     }
-
+    info!("args {:?}", args);
     let inode = rootfs.root_inode().lookup(&args[0]).unwrap();
     let data = inode.read_as_vec().unwrap();
     let path = args[0].clone();
     debug!("Linux process: {:?}", path);
 
+    let pg_token = kernel_hal::current_page_table();
+    debug!("current pgt = {:#x}", pg_token);
     //调用zircon-object/src/task/thread.start设置好要执行的thread
     let (entry, sp) = loader.load(&proc.vmar(), &data, args, envs, path).unwrap();
 

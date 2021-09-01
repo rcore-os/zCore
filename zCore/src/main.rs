@@ -19,26 +19,36 @@ extern crate rlibc;
 #[cfg(target_arch = "x86_64")]
 extern crate rlibc_opt; //Only for x86_64
 
-extern crate fatfs;
-
 #[macro_use]
 mod logging;
 mod lang;
+mod arch;
 mod memory;
+
+#[cfg(feature = "linux")]
+mod fs;
 
 #[cfg(target_arch = "x86_64")]
 use rboot::BootInfo;
 
 #[cfg(target_arch = "riscv64")]
 use kernel_hal_bare::{
-    remap_the_kernel,
-    virtio::{BlockDriverWrapper, BLK_DRIVERS},
+    phys_to_virt, remap_the_kernel,
+    drivers::virtio::{GPU_DRIVERS, CMDLINE},
     BootInfo, GraphicInfo,
 };
 
-use alloc::vec::Vec;
-pub use memory::{execute_unexecutable_test, phys_to_virt, read_invalid_test, write_readonly_test};
+use alloc::{
+    format,vec,
+    vec::Vec,
+    boxed::Box,
+    string::{String, ToString},
+};
 
+#[cfg(feature = "board_qemu")]
+global_asm!(include_str!("arch/riscv/boot/boot_qemu.asm"));
+#[cfg(feature = "board_d1")]
+global_asm!(include_str!("arch/riscv/boot/boot_d1.asm"));
 #[cfg(target_arch = "riscv64")]
 global_asm!(include_str!("arch/riscv/boot/entry64.asm"));
 
@@ -49,16 +59,21 @@ pub extern "C" fn _start(boot_info: &BootInfo) -> ! {
     memory::init_heap();
     memory::init_frame_allocator(boot_info);
 
-    #[cfg(feature = "graphic")]
-    init_framebuffer(boot_info);
-
-    info!("{:#x?}", boot_info);
+    trace!("{:#x?}", boot_info);
 
     kernel_hal_bare::init(kernel_hal_bare::Config {
         acpi_rsdp: boot_info.acpi2_rsdp_addr,
         smbios: boot_info.smbios_addr,
         ap_fn: run,
     });
+
+    #[cfg(feature = "graphic")]
+    {
+        let (width, height) = boot_info.graphic_info.mode.resolution();
+        let fb_addr = boot_info.graphic_info.fb_addr as usize;
+        let fb_size = boot_info.graphic_info.fb_size as usize;
+        kernel_hal_bare::init_framebuffer(width as u32, height as u32, fb_addr, fb_size);
+    }
 
     let ramfs_data = unsafe {
         core::slice::from_raw_parts_mut(
@@ -84,6 +99,7 @@ fn main(ramfs_data: &[u8], cmdline: &str) -> ! {
 #[cfg(target_arch = "riscv64")]
 #[no_mangle]
 pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
+    println!("zCore rust_main( hartid: {}, device_tree_paddr: {:#x} )", hartid, device_tree_paddr);
     let device_tree_vaddr = phys_to_virt(device_tree_paddr);
 
     let boot_info = BootInfo {
@@ -101,18 +117,10 @@ pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
         cmdline: "LOG=warn:TERM=xterm-256color:console.shell=true:virtcon.disable=true",
     };
 
-    unsafe {
-        memory::clear_bss();
-    }
-
     logging::init(get_log_level(boot_info.cmdline));
-    warn!("rust_main(), After logging init\n\n");
     memory::init_heap();
     memory::init_frame_allocator(&boot_info);
     remap_the_kernel(device_tree_vaddr);
-
-    #[cfg(feature = "graphic")]
-    init_framebuffer(boot_info);
 
     info!("{:#x?}", boot_info);
 
@@ -121,25 +129,55 @@ pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
         dtb: device_tree_vaddr,
     });
 
-    // memory test
-    // write_readonly_test();
-    // execute_unexecutable_test();
-    // read_invalid_test();
+    let cmdline_dt = CMDLINE.read();
+    let mut cmdline = boot_info.cmdline.to_string();
 
-    // 正常由bootloader载入文件系统镜像到内存, 这里不用，而使用后面的virtio
-    let dummy = unsafe { core::slice::from_raw_parts_mut(0 as *mut u8, 0) };
-    main(dummy, boot_info.cmdline);
+    if !cmdline_dt.is_empty() {
+        cmdline = format!("{}:{}", boot_info.cmdline, cmdline_dt);
+    };
+    warn!("cmdline: {:?}", cmdline);
+
+    #[cfg(feature = "graphic")]
+    {
+        let gpu = GPU_DRIVERS
+            .read()
+            .iter()
+            .next()
+            .expect("Gpu device not found")
+            .clone();
+        let (width, height) = gpu.resolution();
+        let (fb_vaddr, fb_size) = gpu.setup_framebuffer();
+        kernel_hal_bare::init_framebuffer(width, height, fb_vaddr, fb_size);
+    }
+
+    // riscv64在之后使用ramfs或virtio, 而x86_64则由bootloader载入文件系统镜像到内存
+    main(&mut [], &cmdline);
 }
 
 #[cfg(feature = "linux")]
-fn main(ramfs_data: &'static mut [u8], _cmdline: &str) -> ! {
-    use alloc::boxed::Box;
-    use alloc::string::String;
-    use alloc::sync::Arc;
-    use alloc::vec;
+fn get_rootproc(cmdline: &str) -> Vec<String> {
+    for opt in cmdline.split(':') {
+        // parse 'key=value'
+        let mut iter = opt.trim().splitn(2, '=');
+        let key = iter.next().expect("failed to parse key");
+        let value = iter.next().expect("failed to parse value");
+        info!("value {}", value);
+        if key == "ROOTPROC" {
+            let mut iter = value.trim().splitn(2, '?');
+            let k1 = iter.next().expect("failed to parse k1");
+            let v1 = iter.next().expect("failed to parse v1");
+            if v1 == "" {
+                return vec![k1.into()];
+            } else {
+                return vec![k1.into(), v1.into()];
+            }
+        }
+    }
+    vec!["/bin/busybox".into(), "sh".into()]
+}
 
-    #[cfg(target_arch = "x86_64")]
-    use linux_object::fs::MemBuf;
+#[cfg(feature = "linux")]
+fn main(ramfs_data: &'static mut [u8], cmdline: &str) -> ! {
     use linux_object::fs::STDIN;
 
     kernel_hal_bare::serial_set_callback(Box::new({
@@ -154,52 +192,26 @@ fn main(ramfs_data: &'static mut [u8], _cmdline: &str) -> ! {
         }
     }));
 
-    let args: Vec<String> = vec!["/bin/busybox".into(), "sh".into()];
+    //let args: Vec<String> = vec!["/bin/busybox".into(), "sh".into()];
+    let args: Vec<String> = get_rootproc(cmdline);
     let envs: Vec<String> = vec!["PATH=/usr/sbin:/usr/bin:/sbin:/bin".into()];
 
-    #[cfg(target_arch = "x86_64")]
-    let device = Arc::new(MemBuf::new(ramfs_data));
-    #[cfg(target_arch = "riscv64")]
-    let device = {
-        let driver = BlockDriverWrapper(
-            BLK_DRIVERS
-                .read()
-                .iter()
-                .next()
-                .expect("Block device not found")
-                .clone(),
-        );
-        Arc::new(rcore_fs::dev::block_cache::BlockCache::new(driver, 0x100))
-    };
-
-    info!("Opening the rootfs ...");
-    // 输入类型: Arc<Device>
-    let rootfs =
-        rcore_fs_sfs::SimpleFileSystem::open(device).expect("failed to open device SimpleFS");
-
-    // fat32
-    //let img_file = File::open("fat.img")?;
-    //let fs = fatfs::FileSystem::new(img_file, fatfs::FsOptions::new())?;
-
+    let rootfs = fs::init_filesystem(ramfs_data);
     let _proc = linux_loader::run(args, envs, rootfs);
     info!("linux_loader is complete");
 
     run();
 }
 
-#[cfg(target_arch = "x86_64")]
 fn run() -> ! {
     loop {
         executor::run_until_idle();
-        x86_64::instructions::interrupts::enable_and_hlt();
-        x86_64::instructions::interrupts::disable();
-    }
-}
-
-#[cfg(target_arch = "riscv64")]
-fn run() -> ! {
-    loop {
-        executor::run_until_idle();
+        #[cfg(target_arch = "x86_64")]
+        {
+            x86_64::instructions::interrupts::enable_and_hlt();
+            x86_64::instructions::interrupts::disable();
+        }
+        #[cfg(target_arch = "riscv64")]
         kernel_hal_bare::interrupt::wait_for_interrupt();
     }
 }
@@ -215,11 +227,4 @@ fn get_log_level(cmdline: &str) -> &str {
         }
     }
     ""
-}
-
-#[cfg(feature = "graphic")]
-fn init_framebuffer(boot_info: &BootInfo) {
-    let (width, height) = boot_info.graphic_info.mode.resolution();
-    let fb_addr = boot_info.graphic_info.fb_addr as usize;
-    kernel_hal_bare::init_framebuffer(width as u32, height as u32, fb_addr);
 }
