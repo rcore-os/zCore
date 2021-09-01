@@ -11,8 +11,8 @@ use crate::net::Endpoint;
 pub use smoltcp::wire::{IpAddress, Ipv4Address};
 
 // #
-use kernel_hal::user::{UserOutPtr,UserInOutPtr};
 use crate::net::*;
+use kernel_hal::user::{UserInOutPtr, UserOutPtr};
 // use numeric_enum_macro::numeric_enum;
 
 /// missing documentation
@@ -153,7 +153,7 @@ pub fn sockaddr_to_endpoint(addr: SockAddr, len: usize) -> Result<Endpoint, LxEr
         match AddressFamily::from(addr.family) {
             AddressFamily::Internet => {
                 let port = u16::from_be(addr.addr_in.sin_port);
-                warn!("port : {:?}",port);
+                warn!("port : {:?}", port);
                 let addr = IpAddress::from(Ipv4Address::from_bytes(
                     &u32::from_be(addr.addr_in.sin_addr).to_be_bytes()[..],
                 ));
@@ -188,7 +188,11 @@ impl SockAddr {
     /// Write to user sockaddr
     /// Check mutability for user
     #[allow(dead_code)]
-    pub fn write_to(self, addr: UserOutPtr<SockAddr>, mut addr_len: UserInOutPtr<u32>) -> SysResult {
+    pub fn write_to(
+        self,
+        addr: UserOutPtr<SockAddr>,
+        mut addr_len: UserInOutPtr<u32>,
+    ) -> SysResult {
         // Ignore NULL
         if addr.is_null() {
             return Ok(0);

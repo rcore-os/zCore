@@ -26,6 +26,6 @@ rcore-fs-mountfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "6df6cd
 rcore-fs-devfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "6df6cd2" }
 
 # smoltcp = { git = "https://github.com/smoltcp-rs/smoltcp", rev = "e4241510337e095b9d21136c5f58b2eaa1b78479", default-features = false}
-smoltcp = { git = "https://github.com/smoltcp-rs/smoltcp", rev="e4241510337e095b9d21136c5f58b2eaa1b78479", default-features = false, features = ["alloc","log", "async","medium-ethernet", "proto-ipv4", "proto-igmp", "socket-icmp", "socket-udp", "socket-tcp", "socket-raw"] }
+smoltcp = { git = "https://gitee.com/gcyyfun/smoltcp", rev="d31f93d", default-features = false, features = ["alloc","log", "async", "medium-ethernet","proto-ipv4", "proto-igmp", "socket-icmp", "socket-udp", "socket-tcp", "socket-raw"] }
 futures = { version = "0.3.5", default-features = false, features = [ "async-await" ]}
-net-stack = {path = "/home/own/RoadMap/net-stack"}
+net-stack = {git = "https://gitee.com/gcyyfun/net-stack",rev = "d16b28e"}

@@ -33,7 +33,7 @@ zircon-object = { path = "../zircon-object" }
 linux-loader = { path = "../linux-loader", default-features = false, optional = true }
 linux-object = { path = "../linux-object", default-features = false, optional = true }
 rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "6df6cd2", optional = true }
-net-stack = {git = "https://gitee.com/gcyyfun/net-stack",rev = "7d444c1"}
+net-stack = {git = "https://gitee.com/gcyyfun/net-stack",rev = "d16b28e"}
 rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "6df6cd2" }
 # FIX LATER
 # rvm = { git = "https://github.com/rcore-os/RVM", rev = "382fc60", optional = true }

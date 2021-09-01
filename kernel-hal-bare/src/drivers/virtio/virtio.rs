@@ -177,14 +177,14 @@ pub fn virtio_gpu_init(header: &'static mut VirtIOHeader) {
 /// virtio dma alloc/dealloc
 
 #[no_mangle]
-extern "C" fn virtio_dma_alloc(pages: usize) -> PhysAddr {
+pub extern "C" fn virtio_dma_alloc(pages: usize) -> PhysAddr {
     let paddr = unsafe { frame_alloc_contiguous(pages, 0).unwrap() };
     trace!("alloc DMA: paddr={:#x}, pages={}", paddr, pages);
     paddr
 }
 
 #[no_mangle]
-extern "C" fn virtio_dma_dealloc(paddr: PhysAddr, pages: usize) -> i32 {
+pub extern "C" fn virtio_dma_dealloc(paddr: PhysAddr, pages: usize) -> i32 {
     for i in 0..pages {
         unsafe {
             frame_dealloc(&(paddr + i * PAGE_SIZE));

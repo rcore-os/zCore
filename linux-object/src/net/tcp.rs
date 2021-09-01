@@ -2,13 +2,13 @@
 #![allow(dead_code)]
 // crate
 // use core::task::{Poll};
-use crate::net::poll_ifaces_loopback;
-use spin::Mutex;
 use crate::error::LxError;
 use crate::error::LxResult;
+use crate::net::poll_ifaces_loopback;
 use crate::net::Socket;
 use crate::net::SysResult;
 use alloc::sync::Arc;
+use spin::Mutex;
 // use crate::fs::FileLike;
 // use crate::fs::FileLikeType;
 use crate::net::get_ephemeral_port;
@@ -155,7 +155,7 @@ impl TcpSocketState {
         #[allow(warnings)]
         if let Endpoint::Ip(ip) = endpoint {
             let local_port = get_ephemeral_port();
-            warn!("ip:{:?},port:{:?}",ip,local_port);
+            warn!("ip:{:?},port:{:?}", ip, local_port);
             socket
                 .connect(ip, local_port)
                 .map_err(|_| LxError::ENOBUFS)?;

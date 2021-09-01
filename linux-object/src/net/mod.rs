@@ -129,24 +129,21 @@ fn poll_ifaces_e1000() {
     }
 }
 
-
-
-
-use net_stack::{NetStack,NET_STACK};
+use net_stack::{NetStack, NET_STACK};
 // use alloc::vec::Vec;
+use hashbrown::HashMap;
 use kernel_hal::timer_now;
 use smoltcp::time::Instant;
-use hashbrown::HashMap;
 /// miss doc
-pub fn get_net_stack() -> HashMap<usize,Arc<dyn NetStack>> {
+pub fn get_net_stack() -> HashMap<usize, Arc<dyn NetStack>> {
     NET_STACK.read().clone()
 }
 
 /// miss doc
 fn poll_ifaces_loopback() {
-    for (_key,stack) in get_net_stack().iter() {
+    for (_key, stack) in get_net_stack().iter() {
         let timestamp = Instant::from_millis(timer_now().as_millis() as i64);
-        stack.poll(&(*SOCKETS),timestamp);
+        stack.poll(&(*SOCKETS), timestamp);
     }
 }
 
