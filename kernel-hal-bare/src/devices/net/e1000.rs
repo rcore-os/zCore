@@ -201,7 +201,7 @@ pub fn init(name: String, irq: Option<usize>, header: usize, size: usize, index:
     warn!("Probing e1000 {}", name);
 
     // randomly generated
-    let mac: [u8; 6] = [0x52, 0x54, 0x98, 0x76, 0x54, 0x32];
+    let mac: [u8; 6] = [0x52, 0x54, 0x98, 0x76, 0x54, 0x33];
     // 52:54:98:76:54:32
 
     let e1000 = E1000::new(header, size, DriverEthernetAddress::from_bytes(&mac));
@@ -245,7 +245,7 @@ use crate::drivers::virtio::virtio::virtio_dma_alloc;
 use crate::drivers::virtio::virtio::virtio_dma_dealloc;
 #[allow(unused_imports)]
 use crate::{
-    hal_frame_alloc_contiguous as alloc_frame_contiguous, hal_frame_dealloc as dealloc_frame,
+    hal_frame_alloc_contiguous as frame_alloc_contiguous, hal_frame_dealloc as frame_dealloc,
     phys_to_virt, virt_to_phys,
 };
 use isomorphic_drivers::provider;
@@ -264,7 +264,7 @@ impl provider::Provider for Provider {
         let paddr = virt_to_phys(vaddr);
         for i in 0..size / PAGE_SIZE {
             unsafe {
-                dealloc_frame(&(paddr + i * PAGE_SIZE));
+                frame_dealloc(&(paddr + i * PAGE_SIZE));
             }
         }
     }
