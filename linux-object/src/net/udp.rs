@@ -11,7 +11,8 @@ use crate::net::SysResult;
 use crate::net::from_cstr;
 use crate::net::get_ephemeral_port;
 use crate::net::get_net_driver;
-use crate::net::poll_ifaces;
+use crate::net::poll_ifaces_e1000;
+use crate::net::poll_ifaces_loopback;
 use crate::net::AddressFamily;
 use crate::net::ArpReq;
 use crate::net::Endpoint;
@@ -89,7 +90,8 @@ impl UdpSocketState {
     /// missing documentation
     pub async fn read(&self, data: &mut [u8]) -> (SysResult, Endpoint) {
         loop {
-            poll_ifaces();
+            poll_ifaces_e1000();
+            poll_ifaces_loopback();
             let mut sockets = SOCKETS.lock();
             let mut socket = sockets.get::<UdpSocket>(self.handle.0);
 
@@ -100,7 +102,8 @@ impl UdpSocketState {
                     drop(socket);
                     drop(sockets);
                     warn!("????????????");
-                    poll_ifaces();
+                    poll_ifaces_e1000();
+                    poll_ifaces_loopback();
                     return (Ok(size), Endpoint::Ip(endpoint));
                 }
             } else {
@@ -145,7 +148,8 @@ impl UdpSocketState {
                     drop(socket);
                     drop(sockets);
 
-                    poll_ifaces();
+                    poll_ifaces_e1000();
+                    poll_ifaces_loopback();
                     Ok(data.len())
                 }
                 Err(_) => Err(LxError::ENOBUFS),
