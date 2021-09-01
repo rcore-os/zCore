@@ -21,7 +21,6 @@
 #![no_std]
 #![deny(warnings, unsafe_code, missing_docs)]
 #![allow(clippy::upper_case_acronyms)]
-#![feature(bool_to_option)]
 
 #[macro_use]
 extern crate alloc;
@@ -41,7 +40,10 @@ use {
 #[cfg(target_arch = "riscv64")]
 use kernel_hal::UserContext;
 
-mod consts;
+mod consts {
+    // generated from syscall.h.in
+    include!(concat!(env!("OUT_DIR"), "/consts.rs"));
+}
 mod file;
 mod ipc;
 mod misc;

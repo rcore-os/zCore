@@ -1,5 +1,8 @@
 use super::super::*;
-use kernel_hal::{HalError, PageTableTrait, PhysAddr, VirtAddr};
+use kernel_hal::{
+    ColorDepth, ColorFormat, FramebufferInfo, HalError, PageTableTrait, PhysAddr, VirtAddr,
+    FRAME_BUFFER,
+};
 use riscv::addr::Page;
 use riscv::asm::sfence_vma_all;
 use riscv::paging::{PageTableFlags as PTF, *};
@@ -12,7 +15,7 @@ mod sbi;
 
 mod consts;
 
-use consts::PHYSICAL_MEMORY_OFFSET;
+use consts::*;
 
 // First core stores its SATP here.
 static mut SATP: usize = 0;
@@ -72,17 +75,20 @@ pub fn remap_the_kernel(dtb: usize) {
     )
     .unwrap();
 
+    info!("map Heap ...");
     // Heap
     map_range(
         &mut pt,
         end as usize,
-        end as usize + PAGE_SIZE * 512,
+        end as usize + PAGE_SIZE * 5120,
         linear_offset,
         PTF::VALID | PTF::READABLE | PTF::WRITABLE,
     )
     .unwrap();
+    info!("... Heap");
 
     // Device Tree
+    #[cfg(feature = "board_qemu")]
     map_range(
         &mut pt,
         dtb,
@@ -92,29 +98,19 @@ pub fn remap_the_kernel(dtb: usize) {
     )
     .unwrap();
 
-    // CLINT
-    map_range(
-        &mut pt,
-        0x2000000 + PHYSICAL_MEMORY_OFFSET,
-        0x2010000 + PHYSICAL_MEMORY_OFFSET,
-        linear_offset,
-        PTF::VALID | PTF::READABLE | PTF::WRITABLE,
-    )
-    .unwrap();
-
     // PLIC
     map_range(
         &mut pt,
-        0xc000000 + PHYSICAL_MEMORY_OFFSET,
-        0xc00f000 + PHYSICAL_MEMORY_OFFSET,
+        phys_to_virt(PLIC_PRIORITY),
+        phys_to_virt(PLIC_PRIORITY) + PAGE_SIZE * 0xf,
         linear_offset,
         PTF::VALID | PTF::READABLE | PTF::WRITABLE,
     )
     .unwrap();
     map_range(
         &mut pt,
-        0xc200000 + PHYSICAL_MEMORY_OFFSET,
-        0xc20f000 + PHYSICAL_MEMORY_OFFSET,
+        phys_to_virt(PLIC_THRESHOLD),
+        phys_to_virt(PLIC_THRESHOLD) + PAGE_SIZE * 0xf,
         linear_offset,
         PTF::VALID | PTF::READABLE | PTF::WRITABLE,
     )
@@ -123,8 +119,8 @@ pub fn remap_the_kernel(dtb: usize) {
     // UART0, VIRTIO
     map_range(
         &mut pt,
-        0x10000000 + PHYSICAL_MEMORY_OFFSET,
-        0x1000f000 + PHYSICAL_MEMORY_OFFSET,
+        phys_to_virt(UART_BASE),
+        phys_to_virt(UART_BASE) + PAGE_SIZE * 0xf,
         linear_offset,
         PTF::VALID | PTF::READABLE | PTF::WRITABLE,
     )
@@ -289,11 +285,6 @@ impl PageTableTrait for PageTableImpl {
         let page = Page::of_addr(riscv::addr::VirtAddr::new(vaddr));
         pt.update_flags(page, flags.to_ptf()).unwrap().flush();
 
-        if vaddr == 0x11b000 {
-            info!("protect 0x11b3c0: {:#X?}", self.query(0x11b3c0));
-        } else if vaddr == 0xc4000 {
-            info!("protect 0xc44b6: {:#X?}", self.query(0xc44b6));
-        }
         trace!(
             "PageTable: {:#X}, protect: {:x?}, flags={:?}",
             self.table_phys() as usize,
@@ -399,10 +390,12 @@ lazy_static! {
 //调用这里
 /// Put a char by serial interrupt handler.
 fn serial_put(mut x: u8) {
-    if x == b'\r' {
-        x = b'\n';
+    if (x == b'\r') || (x == b'\n') {
+        STDIN.lock().push_back(b'\n');
+        STDIN.lock().push_back(b'\r');
+    }else{
+        STDIN.lock().push_back(x);
     }
-    STDIN.lock().push_back(x);
     STDIN_CALLBACK.lock().retain(|f| !f());
 }
 
@@ -482,11 +475,9 @@ impl fmt::Write for Stdout1 {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         //每次都创建一个新的Uart ? 内存位置始终相同
         write!(
-            uart::Uart::new(0x1000_0000 + PHYSICAL_MEMORY_OFFSET),
-            "{}",
-            s
-        )
-        .unwrap();
+            uart::Uart::new(phys_to_virt(UART_BASE)),
+            "{}", s
+        ).unwrap();
 
         Ok(())
     }
@@ -509,9 +500,6 @@ macro_rules! bare_println {
 	() => (bare_print!("\n"));
 	($($arg:tt)*) => (bare_print!("{}\n", format_args!($($arg)*)));
 }
-
-pub const MMIO_MTIMECMP0: *mut u64 = 0x0200_4000usize as *mut u64;
-pub const MMIO_MTIME: *const u64 = 0x0200_BFF8 as *const u64;
 
 fn get_cycle() -> u64 {
     time::read() as u64
@@ -557,10 +545,11 @@ pub fn init(config: Config) {
         llvm_asm!("ebreak"::::"volatile");
     }
 
-    bare_println!("Setup virtio @devicetree {:#x}", config.dtb);
-    //virtio::init(config.dtb);
-
-    virtio::device_tree::init(config.dtb);
+    #[cfg(feature = "board_qemu")]
+    {
+        bare_println!("Setup virtio @devicetree {:#x}", config.dtb);
+        drivers::virtio::device_tree::init(config.dtb);
+    }
 }
 
 pub struct Config {
@@ -618,4 +607,38 @@ pub mod interrupt;
 mod plic;
 mod uart;
 
-pub mod virtio;
+#[export_name = "hal_current_pgtable"]
+pub fn current_page_table() -> usize {
+    #[cfg(target_arch = "riscv32")]
+    let mode = satp::Mode::Sv32;
+    #[cfg(target_arch = "riscv64")]
+    let mode = satp::Mode::Sv39;
+    satp::read().ppn() << 12
+}
+
+pub fn init_framebuffer(width: u32, height: u32, addr: usize, size: usize) {
+    let fb_info = FramebufferInfo {
+        xres: width,
+        yres: height,
+        xres_virtual: width,
+        yres_virtual: height,
+        xoffset: 0,
+        yoffset: 0,
+        depth: ColorDepth::ColorDepth32,
+        format: ColorFormat::RGBA8888,
+        paddr: virt_to_phys(addr),
+        vaddr: addr,
+        screen_size: size,
+    };
+    *FRAME_BUFFER.write() = Some(fb_info);
+}
+
+#[export_name = "hal_mice_set_callback"]
+pub fn mice_set_callback(_callback: Box<dyn Fn([u8; 3]) + Send + Sync>) {
+    //
+}
+
+#[export_name = "hal_kbd_set_callback"]
+pub fn kbd_set_callback(_callback: Box<dyn Fn(u16, i32) + Send + Sync>) {
+    //
+}

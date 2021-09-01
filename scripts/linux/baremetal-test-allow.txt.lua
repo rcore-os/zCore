@@ -1,0 +1,9 @@
+/bin/lua /bin/date.lua
+/bin/lua /bin/file_io.lua
+/bin/lua /bin/max_min.lua
+/bin/lua /bin/random.lua
+/bin/lua /bin/remove.lua
+/bin/lua /bin/round_num.lua
+/bin/lua /bin/sin30.lua
+/bin/lua /bin/sort.lua
+/bin/lua /bin/strings.lua

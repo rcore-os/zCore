@@ -1,4 +1,5 @@
 arch ?= x86_64
+board ?= qemu
 mode ?= debug
 zbi_file ?= bringup
 graphic ?=
@@ -25,6 +26,16 @@ BOOTLOADER  := ../prebuilt/opensbi/c906_opensbi.bin
 BOOTLOADER_SIZE := 2097152
 
 export ARCH=$(arch)
+export BOARD=$(board)
+export USER_IMG=$(ARCH).img
+
+ifeq ($(arch), riscv64)
+ifeq ($(board), d1)
+build_args += --features board_d1 --features link_user_img
+else
+build_args += --features board_qemu --features link_user_img
+endif
+endif
 
 ifeq ($(mode), release)
 	build_args += --release
@@ -47,7 +58,17 @@ qemu_opts += \
 	-drive format=raw,file=fat:rw:$(ESP) \
 	-drive format=qcow2,file=$(QEMU_DISK),id=disk,if=none \
 	-device ich9-ahci,id=ahci \
-	-device ide-drive,drive=disk,bus=ahci.0 \
+	-device ide-hd,drive=disk,bus=ahci.0 \
+	-serial mon:stdio \
+	-m 4G \
+	-nic none \
+	-device isa-debug-exit,iobase=0xf4,iosize=0x04
+baremetal-test-qemu_opts += \
+	-machine q35 \
+	-cpu Haswell,+smap,-check,-fsgsbase \
+	-drive if=pflash,format=raw,readonly,file=$(OVMF) \
+	-drive format=raw,file=fat:rw:$(ESP) \
+	-device ich9-ahci,id=ahci \
 	-serial mon:stdio \
 	-m 4G \
 	-nic none \
@@ -58,9 +79,12 @@ else ifeq ($(arch), riscv64)
 qemu_opts += \
 	-machine virt \
 	-bios default \
+<<<<<<< HEAD
+=======
+	-serial mon:stdio \
+>>>>>>> master
 	-no-reboot \
 	-no-shutdown \
-	-nographic \
 	-drive file=$(QEMU_DISK),format=qcow2,id=sfs \
 	-device virtio-blk-device,drive=sfs \
 	-kernel $(kernel_bin)
@@ -81,11 +105,17 @@ endif
 
 ifeq ($(graphic), on)
 build_args += --features graphic
+ifeq ($(arch), riscv64)
+qemu_opts += \
+	-device virtio-gpu-device \
+	-device virtio-mouse-device
+endif
 else
 ifeq ($(MAKECMDGOALS), vbox)
 build_args += --features graphic
 else
 qemu_opts += -display none -nographic
+baremetal-test-qemu_opts += -display none -nographic
 endif
 endif
 
@@ -113,8 +143,17 @@ build-parallel-test: build $(QEMU_DISK)
 
 ifeq ($(arch), riscv64)
 $(kernel_img): $(kernel_bin)
+
+ifeq ($(board), d1)
+run-thead: build
+	@cp ../prebuilt/firmware/fw_jump-0x40020000.bin fw-zCore.bin
+	@dd if=$(kernel_bin) of=fw-zCore.bin bs=1 seek=131072
+	xfel ddr ddr3
+	xfel write 0x40000000 fw-zCore.bin
+	xfel exec 0x40000000
+endif
+
 else
-### k210 使用opensbi
 $(kernel_img): kernel bootloader
 	mkdir -p $(ESP)/EFI/zCore $(ESP)/EFI/Boot
 	cp ../rboot/target/x86_64-unknown-uefi/release/rboot.efi $(ESP)/EFI/Boot/BootX64.efi
@@ -176,8 +215,8 @@ endif
 $(QEMU_DISK):
 ifeq ($(arch), riscv64)
 	@echo Generating riscv64 sfsimg
-	@qemu-img convert -f raw ../riscv64.img -O qcow2 $@
-	@qemu-img resize $@ +1G
+	@qemu-img convert -f raw riscv64.img -O qcow2 $@
+	@qemu-img resize $@ +5M
 else
 	@qemu-img create -f qcow2 $@ 100M
 endif
@@ -189,3 +228,14 @@ d1: $(kernel_bin)
 	xfel ddr ddr3
 	xfel write 0x40000000 $(kernel_bin)
 	xfel exec 0x40000000
+	
+baremetal-qemu-disk:
+	@qemu-img create -f qcow2 $(build_path)/disk.qcow2 100M
+
+baremetal-test:
+	cp rboot.conf $(ESP)/EFI/Boot/rboot.conf
+	timeout --foreground 8s  $(qemu) $(baremetal-test-qemu_opts)
+
+baremetal-test-rv64: build $(QEMU_DISK)
+	timeout --foreground 8s $(qemu) $(qemu_opts) -append ROOTPROC=$(ROOTPROC)
+
