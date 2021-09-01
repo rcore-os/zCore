@@ -35,6 +35,7 @@ rootfs: prebuilt/linux/$(ROOTFS_TAR)
 riscv-rootfs:prebuilt/linux/riscv64/$(RISCV64_ROOTFS_TAR)
 	@rm -rf riscv_rootfs && mkdir -p riscv_rootfs
 	@tar -xvf $< -C riscv_rootfs --strip-components 1
+	@ln -s busybox riscv_rootfs/bin/ls
 
 libc-test:
 	cd rootfs && git clone git://repo.or.cz/libc-test --depth 1
@@ -59,13 +60,13 @@ $(OUT_IMG): prebuilt/linux/$(ROOTFS_TAR) rcore-fs-fuse
 
 image: $(OUT_IMG)
 	@echo Resizing $(ARCH).img
-	@qemu-img resize $(OUT_IMG) +50M
+	@qemu-img resize $(OUT_IMG) +5M
 
 
 riscv-image: rcore-fs-fuse riscv-rootfs
 	@echo building riscv.img
 	@rcore-fs-fuse zCore/riscv64.img riscv_rootfs zip
-	@qemu-img resize -f raw zCore/riscv64.img +50M
+	@qemu-img resize -f raw zCore/riscv64.img +5M
 	
 clean:
 	cargo clean
@@ -96,7 +97,7 @@ baremetal-test-img: prebuilt/linux/$(ROOTFS_TAR) rcore-fs-fuse
 # libc-libos.so (convert syscall to function call) is from https://github.com/rcore-os/musl/tree/rcore
 	@cp prebuilt/linux/libc-libos.so rootfs/lib/ld-musl-x86_64.so.1
 	@echo Resizing $(ARCH).img
-	@qemu-img resize $(OUT_IMG) +50M
+	@qemu-img resize $(OUT_IMG) +5M
 
 baremetal-test:
 	@make -C zCore baremetal-test mode=release linux=1 | tee stdout-baremetal-test

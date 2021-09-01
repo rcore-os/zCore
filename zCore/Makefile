@@ -25,12 +25,13 @@ QEMU_DISK := $(build_path)/disk.qcow2
 
 export ARCH=$(arch)
 export BOARD=$(board)
+export USER_IMG=$(ARCH).img
 
 ifeq ($(arch), riscv64)
 ifeq ($(board), d1)
-build_args += --features board_d1
+build_args += --features board_d1 --features link_user_img
 else
-build_args += --features board_qemu
+build_args += --features board_qemu --features link_user_img
 endif
 endif
 
@@ -136,8 +137,17 @@ build-parallel-test: build $(QEMU_DISK)
 
 ifeq ($(arch), riscv64)
 $(kernel_img): $(kernel_bin)
+
+ifeq ($(board), d1)
+run-thead: build
+	@cp ../prebuilt/firmware/fw_jump-0x40020000.bin fw-zCore.bin
+	@dd if=$(kernel_bin) of=fw-zCore.bin bs=1 seek=131072
+	xfel ddr ddr3
+	xfel write 0x40000000 fw-zCore.bin
+	xfel exec 0x40000000
+endif
+
 else
-### k210 使用opensbi
 $(kernel_img): kernel bootloader
 	mkdir -p $(ESP)/EFI/zCore $(ESP)/EFI/Boot
 	cp ../rboot/target/x86_64-unknown-uefi/release/rboot.efi $(ESP)/EFI/Boot/BootX64.efi
@@ -200,7 +210,7 @@ $(QEMU_DISK):
 ifeq ($(arch), riscv64)
 	@echo Generating riscv64 sfsimg
 	@qemu-img convert -f raw riscv64.img -O qcow2 $@
-	@qemu-img resize $@ +1G
+	@qemu-img resize $@ +5M
 else
 	@qemu-img create -f qcow2 $@ 100M
 endif

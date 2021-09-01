@@ -8,35 +8,9 @@ use riscv::register::{
 use spin::Mutex;
 use trapframe::{TrapFrame, UserContext};
 
-/*
-use crate::timer::{
-    TICKS,
-    clock_set_next_event,
-    clock_close,
-};
-*/
-
-//use crate::context::TrapFrame;
-use super::plic;
-use super::sbi;
-use super::uart;
-
-use super::consts::PHYSICAL_MEMORY_OFFSET;
-use super::timer_set_next;
+use super::{plic, uart, sbi, timer_set_next};
+use super::consts::{PHYSICAL_MEMORY_OFFSET, UART_BASE, UART0_INT_NUM};
 use crate::{map_range, phys_to_virt, putfmt};
-
-//global_asm!(include_str!("trap.asm"));
-
-/*
-#[repr(C)]
-pub struct TrapFrame{
-    pub x: [usize; 32], //General registers
-    pub sstatus: Sstatus,
-    pub sepc: usize,
-    pub stval: usize,
-    pub scause: Scause,
-}
-*/
 
 const TABLE_SIZE: usize = 256;
 pub type InterruptHandle = Box<dyn Fn() + Send + Sync>;
@@ -279,10 +253,10 @@ fn super_timer() {
 }
 
 fn init_uart() {
-    uart::Uart::new(0x1000_0000 + PHYSICAL_MEMORY_OFFSET).simple_init();
+    uart::Uart::new(phys_to_virt(UART_BASE)).simple_init();
 
     //但当没有SBI_CONSOLE_PUTCHAR时，却为什么不行？
-    super::putfmt_uart(format_args!("{}", "Uart output testing\n"));
+    super::putfmt_uart(format_args!("{}", "UART output testing\n\r"));
 
     bare_println!("+++ Setting up UART interrupts +++");
 }
@@ -299,11 +273,11 @@ pub fn try_process_serial() -> bool {
 }
 
 pub fn init_ext() {
-    // Qemu virt
-    // UART0 = 10
-    plic::set_priority(10, 7);
+    // Qemu virt UART0 = 10
+    // ALLWINNER D1 UART0 = 18
+    plic::set_priority(UART0_INT_NUM, 7);
     plic::set_threshold(0);
-    plic::enable(10);
+    plic::enable(UART0_INT_NUM);
 
     bare_println!("+++ Setting up PLIC +++");
 }
