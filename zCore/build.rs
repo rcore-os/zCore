@@ -7,9 +7,6 @@ fn main() {
         let board = std::env::var("BOARD").unwrap();
         let kernel_base_addr: u64 = if board.contains("d1") {
             0xffffffffc0020000
-        } else if board.contains("qemu") {
-            // opensbi仍旧把kernel放在0x80200000物理内存中
-            0xffffffff80200000
         } else {
             0xffffffff80200000
         };
