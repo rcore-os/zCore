@@ -182,9 +182,7 @@ impl Syscall<'_> {
             Sys::SHUTDOWN => self.sys_shutdown(a0, a1),
             Sys::BIND => self.sys_bind(a0, a1.into(), a2),
             Sys::LISTEN => self.sys_listen(a0, a1),
-            Sys::GETSOCKNAME => {
-                self.sys_getsockname(a0, a1.into(), a2.into())
-            }
+            Sys::GETSOCKNAME => self.sys_getsockname(a0, a1.into(), a2.into()),
             Sys::GETPEERNAME => {
                 self.unimplemented("sys_getpeername(a0, a1.into(), a2.into()),", Ok(0))
             }

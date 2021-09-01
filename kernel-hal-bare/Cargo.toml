@@ -36,11 +36,11 @@ pc-keyboard = "0.5"
 apic = { git = "https://github.com/rcore-os/apic-rs", rev = "fb86bd7" }
 x86-smpboot = { git = "https://github.com/rcore-os/x86-smpboot", rev = "43ffedf" }
 rcore-console = { git = "https://github.com/rcore-os/rcore-console", default-features = false, rev = "a980897b" }
-acpi = "1.1"
-ps2-mouse = { git = "https://github.com/YXL76/ps2-mouse", branch = "feat" }
+acpi = "1.1.0"
 pci = { git = "https://github.com/rcore-os/pci-rs", rev = "a4e7cea6" }
 isomorphic_drivers = { git = "https://gitee.com/gcyyfun/isomorphic_drivers.git", rev = "805752c9f4f4331292f0511c8d5579e36f1aa75d", features = ["log"] }
-smoltcp = { git = "https://github.com/smoltcp-rs/smoltcp", rev="e4241510337e095b9d21136c5f58b2eaa1b78479", default-features = false, features = ["alloc","log", "async", "medium-ethernet","proto-ipv4", "proto-igmp", "socket-icmp", "socket-udp", "socket-tcp", "socket-raw"] }
+smoltcp = { git = "https://gitee.com/gcyyfun/smoltcp", rev="d31f93d", default-features = false, features = ["alloc","log", "async", "medium-ethernet","proto-ipv4", "proto-igmp", "socket-icmp", "socket-udp", "socket-tcp", "socket-raw"] }
+ps2-mouse = { git = "https://github.com/YXL76/ps2-mouse", branch = "feat" }
 
 [target.'cfg(any(target_arch = "riscv32", target_arch = "riscv64"))'.dependencies]
 riscv = { git = "https://github.com/rcore-os/riscv", features = [

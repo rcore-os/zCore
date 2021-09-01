@@ -1,7 +1,7 @@
-use spin::Mutex;
 use super::*;
 use linux_object::net::Socket;
 use linux_object::net::UdpSocketState;
+use spin::Mutex;
 // use linux_object::fs::FileLike;
 // use linux_object::fs::FileLikeType;
 use linux_object::net::sockaddr_to_endpoint;
@@ -92,7 +92,7 @@ impl Syscall<'_> {
         let sa: SockAddr = addr.read()?;
 
         let endpoint = sockaddr_to_endpoint(sa, addr_len)?;
-        warn!("connect endpoint : {:?}",endpoint);
+        warn!("connect endpoint : {:?}", endpoint);
         let socket = _proc.get_socket(fd.into())?;
         let x = socket.lock();
         x.connect(endpoint).await?;
@@ -219,12 +219,7 @@ impl Syscall<'_> {
     }
 
     /// net bind
-    pub fn sys_bind(
-        &mut self,
-        fd: usize,
-        addr: UserInPtr<SockAddr>,
-        addr_len: usize,
-    ) -> SysResult {
+    pub fn sys_bind(&mut self, fd: usize, addr: UserInPtr<SockAddr>, addr_len: usize) -> SysResult {
         info!("sys_bind: fd={:?} addr={:?} len={}", fd, addr, addr_len);
         let proc = self.linux_process();
         let sa: SockAddr = addr.read()?;

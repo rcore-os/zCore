@@ -2,16 +2,17 @@
 #![allow(dead_code)]
 // crate
 // use core::task::{Poll};
-use spin::Mutex;
 use crate::error::LxError;
 use crate::error::LxResult;
+use crate::net::poll_ifaces_loopback;
 use crate::net::Socket;
 use crate::net::SysResult;
 use alloc::sync::Arc;
+use spin::Mutex;
 // use crate::fs::FileLike;
 // use crate::fs::FileLikeType;
 use crate::net::get_ephemeral_port;
-use crate::net::poll_ifaces;
+use crate::net::poll_ifaces_e1000;
 use crate::net::Endpoint;
 use crate::net::GlobalSocketHandle;
 use crate::net::IpEndpoint;
@@ -73,7 +74,8 @@ impl TcpSocketState {
     /// missing documentation
     pub async fn read(&self, data: &mut [u8]) -> (LxResult<usize>, Endpoint) {
         loop {
-            poll_ifaces();
+            poll_ifaces_e1000();
+            poll_ifaces_loopback();
             let mut sockets = SOCKETS.lock();
             let mut socket = sockets.get::<TcpSocket>(self.handle.0);
             if socket.may_recv() {
@@ -84,7 +86,8 @@ impl TcpSocketState {
                         drop(socket);
                         drop(sockets);
 
-                        poll_ifaces();
+                        poll_ifaces_e1000();
+                        poll_ifaces_loopback();
                         return (Ok(size), Endpoint::Ip(endpoint));
                     }
                 }
@@ -109,7 +112,8 @@ impl TcpSocketState {
                         drop(socket);
                         drop(sockets);
 
-                        poll_ifaces();
+                        poll_ifaces_e1000();
+                        poll_ifaces_loopback();
                         Ok(size)
                     }
                     Err(_) => Err(LxError::ENOBUFS),
@@ -151,7 +155,7 @@ impl TcpSocketState {
         #[allow(warnings)]
         if let Endpoint::Ip(ip) = endpoint {
             let local_port = get_ephemeral_port();
-            warn!("ip:{:?},port:{:?}",ip,local_port);
+            warn!("ip:{:?},port:{:?}", ip, local_port);
             socket
                 .connect(ip, local_port)
                 .map_err(|_| LxError::ENOBUFS)?;
@@ -161,7 +165,8 @@ impl TcpSocketState {
             drop(sockets);
             // wait for connection result
             loop {
-                poll_ifaces();
+                poll_ifaces_e1000();
+                poll_ifaces_loopback();
                 let mut sockets = SOCKETS.lock();
                 let socket = sockets.get::<TcpSocket>(self.handle.0);
                 match socket.state() {
@@ -169,6 +174,8 @@ impl TcpSocketState {
                         // still connecting
                         drop(socket);
                         drop(sockets);
+                        poll_ifaces_e1000();
+                        poll_ifaces_loopback();
                         // warn!("poll for connection wait");
                         // SOCKET_ACTIVITY.wait(sockets);
                     }
@@ -237,7 +244,8 @@ impl TcpSocketState {
     async fn accept(&mut self) -> Result<(Arc<Mutex<dyn Socket>>, Endpoint), LxError> {
         let endpoint = self.local_endpoint.ok_or(LxError::EINVAL)?;
         loop {
-            poll_ifaces();
+            poll_ifaces_e1000();
+            poll_ifaces_loopback();
             let mut sockets = SOCKETS.lock();
             let socket = sockets.get::<TcpSocket>(self.handle.0);
             // warn!("1 {:?}",socket.state());
@@ -261,7 +269,8 @@ impl TcpSocketState {
                 };
                 warn!("3");
                 drop(sockets);
-                poll_ifaces();
+                poll_ifaces_e1000();
+                poll_ifaces_loopback();
                 return Ok((new_socket, Endpoint::Ip(remote_endpoint)));
             }
 

@@ -74,7 +74,7 @@ impl IcmpSocketState {
         //             drop(socket);
         //             drop(sockets);
 
-        //             poll_ifaces();
+        //             poll_ifaces_e1000();
         //             return Ok(size);
         //         }
         //     } else {

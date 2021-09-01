@@ -241,13 +241,14 @@ pub fn init(name: String, irq: Option<usize>, header: usize, size: usize, index:
 
 // provider
 
+use crate::drivers::virtio::virtio::virtio_dma_alloc;
+use crate::drivers::virtio::virtio::virtio_dma_dealloc;
 #[allow(unused_imports)]
 use crate::{
     hal_frame_alloc_contiguous as alloc_frame_contiguous, hal_frame_dealloc as dealloc_frame,
     phys_to_virt, virt_to_phys,
 };
 use isomorphic_drivers::provider;
-
 pub struct Provider;
 
 impl provider::Provider for Provider {
@@ -269,33 +270,33 @@ impl provider::Provider for Provider {
     }
 }
 
-#[no_mangle]
-extern "C" fn virtio_dma_alloc(pages: usize) -> PhysAddr {
-    let paddr = unsafe { alloc_frame_contiguous(pages, 0).unwrap() };
-    trace!("alloc DMA: paddr={:#x}, pages={}", paddr, pages);
-    paddr
-}
+// #[no_mangle]
+// extern "C" fn virtio_dma_alloc(pages: usize) -> PhysAddr {
+//     let paddr = unsafe { alloc_frame_contiguous(pages, 0).unwrap() };
+//     trace!("alloc DMA: paddr={:#x}, pages={}", paddr, pages);
+//     paddr
+// }
 
-#[no_mangle]
-extern "C" fn virtio_dma_dealloc(paddr: PhysAddr, pages: usize) -> i32 {
-    for i in 0..pages {
-        unsafe {
-            dealloc_frame(&(paddr + i * PAGE_SIZE));
-        }
-    }
-    trace!("dealloc DMA: paddr={:#x}, pages={}", paddr, pages);
-    0
-}
+// #[no_mangle]
+// extern "C" fn virtio_dma_dealloc(paddr: PhysAddr, pages: usize) -> i32 {
+//     for i in 0..pages {
+//         unsafe {
+//             dealloc_frame(&(paddr + i * PAGE_SIZE));
+//         }
+//     }
+//     trace!("dealloc DMA: paddr={:#x}, pages={}", paddr, pages);
+//     0
+// }
 
-#[no_mangle]
-extern "C" fn virtio_phys_to_virt(paddr: PhysAddr) -> VirtAddr {
-    phys_to_virt(paddr)
-}
+// #[no_mangle]
+// extern "C" fn virtio_phys_to_virt(paddr: PhysAddr) -> VirtAddr {
+//     phys_to_virt(paddr)
+// }
 
-#[no_mangle]
-extern "C" fn virtio_virt_to_phys(vaddr: VirtAddr) -> PhysAddr {
-    virt_to_phys(vaddr)
-}
+// #[no_mangle]
+// extern "C" fn virtio_virt_to_phys(vaddr: VirtAddr) -> PhysAddr {
+//     virt_to_phys(vaddr)
+// }
 
 type VirtAddr = usize;
 type PhysAddr = usize;

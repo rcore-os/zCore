@@ -21,8 +21,8 @@ extern crate rlibc_opt; //Only for x86_64
 
 #[macro_use]
 mod logging;
-mod lang;
 mod arch;
+mod lang;
 mod memory;
 
 #[cfg(feature = "linux")]
@@ -33,16 +33,16 @@ use rboot::BootInfo;
 
 #[cfg(target_arch = "riscv64")]
 use kernel_hal_bare::{
-    phys_to_virt, remap_the_kernel,
-    drivers::virtio::{GPU_DRIVERS, CMDLINE},
-    BootInfo, GraphicInfo,
+    drivers::virtio::{CMDLINE, GPU_DRIVERS},
+    phys_to_virt, remap_the_kernel, BootInfo, GraphicInfo,
 };
 
 use alloc::{
-    format,vec,
-    vec::Vec,
     boxed::Box,
+    format,
     string::{String, ToString},
+    vec,
+    vec::Vec,
 };
 
 #[cfg(feature = "board_qemu")]
@@ -99,7 +99,10 @@ fn main(ramfs_data: &[u8], cmdline: &str) -> ! {
 #[cfg(target_arch = "riscv64")]
 #[no_mangle]
 pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
-    println!("zCore rust_main( hartid: {}, device_tree_paddr: {:#x} )", hartid, device_tree_paddr);
+    println!(
+        "zCore rust_main( hartid: {}, device_tree_paddr: {:#x} )",
+        hartid, device_tree_paddr
+    );
     let device_tree_vaddr = phys_to_virt(device_tree_paddr);
 
     let boot_info = BootInfo {
@@ -196,8 +199,35 @@ fn main(ramfs_data: &'static mut [u8], cmdline: &str) -> ! {
     let args: Vec<String> = get_rootproc(cmdline);
     let envs: Vec<String> = vec!["PATH=/usr/sbin:/usr/bin:/sbin:/bin".into()];
 
-    let rootfs = fs::init_filesystem(ramfs_data);
-    let _proc = linux_loader::run(args, envs, rootfs);
+    #[cfg(target_arch = "x86_64")]
+    let device = Arc::new(MemBuf::new(ramfs_data));
+    #[cfg(target_arch = "riscv64")]
+    let device = {
+        let driver = BlockDriverWrapper(
+            BLK_DRIVERS
+                .read()
+                .iter()
+                .next()
+                .expect("Block device not found")
+                .clone(),
+        );
+        Arc::new(rcore_fs::dev::block_cache::BlockCache::new(driver, 0x100))
+    };
+
+    info!("Opening the rootfs ...");
+    // 输入类型: Arc<Device>
+    let rootfs =
+        rcore_fs_sfs::SimpleFileSystem::open(device).expect("failed to open device SimpleFS");
+
+    // fat32
+    //let img_file = File::open("fat.img")?;
+    //let fs = fatfs::FileSystem::new(img_file, fatfs::FsOptions::new())?;
+
+    // let net_device = 获得设备
+    // let net_stack = net_stack::init(device).expect("faild init net statck")
+    let net_stack = net_stack::init();
+    
+    let _proc = linux_loader::run(args, envs, rootfs /* ， net_stack */);
     info!("linux_loader is complete");
 
     run();
