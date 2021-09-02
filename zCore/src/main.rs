@@ -21,8 +21,8 @@ extern crate rlibc_opt; //Only for x86_64
 
 #[macro_use]
 mod logging;
-mod lang;
 mod arch;
+mod lang;
 mod memory;
 
 #[cfg(feature = "linux")]
@@ -33,16 +33,16 @@ use rboot::BootInfo;
 
 #[cfg(target_arch = "riscv64")]
 use kernel_hal_bare::{
-    phys_to_virt, remap_the_kernel,
-    drivers::virtio::{GPU_DRIVERS, CMDLINE},
-    BootInfo, GraphicInfo,
+    drivers::virtio::{CMDLINE, GPU_DRIVERS},
+    phys_to_virt, remap_the_kernel, BootInfo, GraphicInfo,
 };
 
 use alloc::{
-    format,vec,
-    vec::Vec,
     boxed::Box,
+    format,
     string::{String, ToString},
+    vec,
+    vec::Vec,
 };
 
 #[cfg(feature = "board_qemu")]
@@ -61,7 +61,7 @@ pub extern "C" fn _start(boot_info: &BootInfo) -> ! {
 
     trace!("{:#x?}", boot_info);
 
-    kernel_hal_bare::init(kernel_hal_bare::Config {
+    kernel_hal::init(kernel_hal::HalConfig {
         acpi_rsdp: boot_info.acpi2_rsdp_addr,
         smbios: boot_info.smbios_addr,
         ap_fn: run,
@@ -72,7 +72,7 @@ pub extern "C" fn _start(boot_info: &BootInfo) -> ! {
         let (width, height) = boot_info.graphic_info.mode.resolution();
         let fb_addr = boot_info.graphic_info.fb_addr as usize;
         let fb_size = boot_info.graphic_info.fb_size as usize;
-        kernel_hal_bare::init_framebuffer(width as u32, height as u32, fb_addr, fb_size);
+        kernel_hal::dev::fb::init(width as u32, height as u32, fb_addr, fb_size);
     }
 
     let ramfs_data = unsafe {
@@ -99,7 +99,10 @@ fn main(ramfs_data: &[u8], cmdline: &str) -> ! {
 #[cfg(target_arch = "riscv64")]
 #[no_mangle]
 pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
-    println!("zCore rust_main( hartid: {}, device_tree_paddr: {:#x} )", hartid, device_tree_paddr);
+    println!(
+        "zCore rust_main( hartid: {}, device_tree_paddr: {:#x} )",
+        hartid, device_tree_paddr
+    );
     let device_tree_vaddr = phys_to_virt(device_tree_paddr);
 
     let boot_info = BootInfo {
@@ -124,7 +127,7 @@ pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
 
     info!("{:#x?}", boot_info);
 
-    kernel_hal_bare::init(kernel_hal_bare::Config {
+    kernel_hal::init(kernel_hal::HalConfig {
         mconfig: 0,
         dtb: device_tree_vaddr,
     });
@@ -180,10 +183,10 @@ fn get_rootproc(cmdline: &str) -> Vec<String> {
 fn main(ramfs_data: &'static mut [u8], cmdline: &str) -> ! {
     use linux_object::fs::STDIN;
 
-    kernel_hal_bare::serial_set_callback(Box::new({
+    kernel_hal::serial::serial_set_callback(Box::new({
         move || {
             let mut buffer = [0; 255];
-            let len = kernel_hal_bare::serial_read(&mut buffer);
+            let len = kernel_hal::serial::serial_read(&mut buffer);
             for c in &buffer[..len] {
                 STDIN.push((*c).into());
                 // kernel_hal_bare::print_str(alloc::format!("{}", *c as char).as_str());

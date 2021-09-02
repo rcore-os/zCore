@@ -8,8 +8,8 @@ edition = "2018"
 
 [features]
 graphic = []
-board_qemu = ["kernel-hal-bare/board_qemu"]
-board_d1 = ["link_user_img", "kernel-hal-bare/board_d1"]
+board_qemu = [] # "kernel-hal-bare/board_qemu"]
+board_d1 = ["link_user_img"] #, "kernel-hal-bare/board_d1"]
 link_user_img = []
 zircon = ["zircon-loader"]
 linux = ["linux-loader", "linux-object", "rcore-fs-sfs"]
@@ -23,7 +23,6 @@ log = "0.4"
 spin = "0.7"
 buddy_system_allocator = "0.7"
 kernel-hal = { path = "../kernel-hal" }
-kernel-hal-bare = { path = "../kernel-hal-bare" }
 lazy_static = { version = "1.4", features = ["spin_no_std" ] }
 bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator", rev = "03bd9909" }
 trapframe = "0.8.0"

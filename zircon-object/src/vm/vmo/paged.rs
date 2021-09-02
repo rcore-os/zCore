@@ -8,7 +8,7 @@ use {
     core::ops::Range,
     core::sync::atomic::*,
     hashbrown::HashMap,
-    kernel_hal::{memory::PhysFrame, PAGE_SIZE},
+    kernel_hal::{mem::PhysFrame, PAGE_SIZE},
     spin::{Mutex, MutexGuard},
 };
 
@@ -188,7 +188,7 @@ impl VMObjectPaged {
             let (_guard, mut inner) = vmo.get_inner_mut();
             inner.contiguous = true;
             for (i, f) in frames.drain(0..).enumerate() {
-                kernel_hal::memory::pmem_zero(f.addr(), PAGE_SIZE);
+                kernel_hal::mem::pmem_zero(f.addr(), PAGE_SIZE);
                 let mut state = PageState::new(f);
                 state.pin_count += 1;
                 inner.frames.insert(i, state);
@@ -225,7 +225,7 @@ impl VMObjectTrait for VMObjectPaged {
             return Err(ZxError::BAD_STATE);
         }
         inner.for_each_page(offset, buf.len(), MMUFlags::READ, |paddr, buf_range| {
-            kernel_hal::memory::pmem_read(paddr, &mut buf[buf_range]);
+            kernel_hal::mem::pmem_read(paddr, &mut buf[buf_range]);
         })
     }
 
@@ -235,7 +235,7 @@ impl VMObjectTrait for VMObjectPaged {
             return Err(ZxError::BAD_STATE);
         }
         inner.for_each_page(offset, buf.len(), MMUFlags::WRITE, |paddr, buf_range| {
-            kernel_hal::memory::pmem_write(paddr, &buf[buf_range]);
+            kernel_hal::mem::pmem_write(paddr, &buf[buf_range]);
         })
     }
 
@@ -259,7 +259,7 @@ impl VMObjectTrait for VMObjectPaged {
             } else if inner.committed_pages_in_range(block.block, block.block + 1) != 0 {
                 // check whether this page is initialized, otherwise nothing should be done
                 let paddr = inner.commit_page(block.block, MMUFlags::WRITE)?;
-                kernel_hal::memory::pmem_zero(paddr + block.begin, block.len());
+                kernel_hal::mem::pmem_zero(paddr + block.begin, block.len());
             }
         }
         inner.release_unwanted_pages_in_parent(unwanted);
@@ -371,7 +371,7 @@ impl VMObjectTrait for VMObjectPaged {
         }
         if inner.cache_policy == CachePolicy::Cached && policy != CachePolicy::Cached {
             for (_, value) in inner.frames.iter() {
-                kernel_hal::memory::frame_flush(value.frame.addr());
+                kernel_hal::mem::frame_flush(value.frame.addr());
             }
         }
         inner.cache_policy = policy;
@@ -528,7 +528,7 @@ impl VMObjectPagedInner {
                 // lazy allocate zero frame
                 // 这里会调用HAL层的hal_frame_alloc, 请注意实现该函数时参数要一样
                 let target_frame = PhysFrame::alloc().ok_or(ZxError::NO_MEMORY)?;
-                kernel_hal::memory::pmem_zero(target_frame.addr(), PAGE_SIZE);
+                kernel_hal::mem::pmem_zero(target_frame.addr(), PAGE_SIZE);
                 if out_of_range {
                     // can never be a hidden vmo
                     assert!(!self.type_.is_hidden());
@@ -607,7 +607,7 @@ impl VMObjectPagedInner {
         } else if flags.contains(MMUFlags::WRITE) && child_tag.is_split() {
             // copy-on-write
             let target_frame = PhysFrame::alloc().ok_or(ZxError::NO_MEMORY)?;
-            kernel_hal::memory::frame_copy(frame.frame.addr(), target_frame.addr());
+            kernel_hal::mem::frame_copy(frame.frame.addr(), target_frame.addr());
             frame.tag = child_tag;
             return Ok(CommitResult::CopyOnWrite(target_frame, true));
         }

@@ -12,7 +12,7 @@ hal_fn_def! {
         fn cpu_frequency() -> u16 { 3000 }
     }
 
-    pub mod memory: common::memory {
+    pub mod mem: common::mem {
         /// Read physical memory from `paddr` to `buf`.
         fn pmem_read(paddr: PhysAddr, buf: &mut [u8]);
 
@@ -31,8 +31,8 @@ hal_fn_def! {
         /// Allocate one physical frame.
         fn frame_alloc() -> Option<PhysAddr>;
 
-        /// Allocate contiguous physical frames of totally `size` bytes.
-        fn frame_alloc_contiguous(size: usize, align_log2: usize) -> Option<PhysAddr>;
+        /// Allocate contiguous `frame_count` physical frames.
+        fn frame_alloc_contiguous(frame_count: usize, align_log2: usize) -> Option<PhysAddr>;
 
         /// Deallocate a physical frame.
         fn frame_dealloc(paddr: PhysAddr);
@@ -153,13 +153,17 @@ hal_fn_def! {
 
     pub mod vdso: common::vdso {
         /// Get platform specific information.
-        fn vdso_constants() -> VdsoConstants;
+        fn vdso_constants() -> VdsoConstants {
+            vdso_constants_template()
+        }
     }
 }
 
 pub mod dev {
+    use super::*;
+
     hal_fn_def! {
-        pub mod fb: crate::common::fb {
+        pub mod fb: common::fb {
             /// Initialize framebuffer.
             fn init();
         }

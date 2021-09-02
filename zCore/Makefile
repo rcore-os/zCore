@@ -18,7 +18,7 @@ kernel_bin := $(build_path)/zcore.bin
 ESP := $(build_path)/esp
 OVMF := ../rboot/OVMF.fd
 qemu := qemu-system-$(arch)
-OBJDUMP := rust-objdump -print-imm-hex -x86-asm-syntax=intel
+OBJDUMP := rust-objdump --print-imm-hex --x86-asm-syntax=intel
 OBJCOPY := rust-objcopy --binary-architecture=$(arch)
 VMDISK := $(build_path)/boot.vdi
 QEMU_DISK := $(build_path)/disk.qcow2
@@ -185,7 +185,7 @@ image:
 header:
 	$(OBJDUMP) -x $(kernel) | less
 
-asm:
+disasm:
 	$(OBJDUMP) -d $(kernel) | less
 
 vbox: build
@@ -224,4 +224,3 @@ baremetal-test:
 
 baremetal-test-rv64: build $(QEMU_DISK)
 	timeout --foreground 8s $(qemu) $(qemu_opts) -append ROOTPROC=$(ROOTPROC)
-

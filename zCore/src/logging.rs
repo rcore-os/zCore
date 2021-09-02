@@ -37,12 +37,12 @@ macro_rules! with_color {
 }
 
 fn print_in_color(args: fmt::Arguments, color_code: u8) {
-    kernel_hal_bare::arch::putfmt(with_color!(args, color_code));
+    kernel_hal::serial::print_fmt(with_color!(args, color_code));
 }
 
 #[allow(dead_code)]
 pub fn print(args: fmt::Arguments) {
-    kernel_hal_bare::arch::putfmt(args);
+    kernel_hal::serial::print_fmt(args);
 }
 
 struct SimpleLogger;
@@ -56,11 +56,11 @@ impl Log for SimpleLogger {
             return;
         }
 
-        let (tid, pid) = kernel_hal_bare::Thread::get_tid();
+        let (tid, pid) = kernel_hal::thread::get_tid();
         print_in_color(
             format_args!(
                 "[{:?} {:>5} {} {}:{}] {}\n",
-                kernel_hal_bare::timer_now(),
+                kernel_hal::timer::timer_now(),
                 record.level(),
                 kernel_hal::cpu::cpu_id(),
                 pid,

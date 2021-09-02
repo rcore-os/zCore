@@ -22,7 +22,7 @@ cfg_if::cfg_if! {
         mod libos;
         pub use self::libos::*;
     } else {
-        mod libos;
-        pub use self::libos::*;
+        mod bare;
+        pub use self::bare::*;
     }
 }

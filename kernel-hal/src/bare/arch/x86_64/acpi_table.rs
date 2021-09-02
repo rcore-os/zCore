@@ -1,18 +1,60 @@
 #![allow(dead_code)]
-use crate::get_acpi_table;
-pub use acpi::{
-    interrupt::{InterruptModel, InterruptSourceOverride, IoApic, Polarity, TriggerMode},
-    Acpi,
-};
+
 use alloc::vec::Vec;
-use lazy_static::*;
+use core::ptr::NonNull;
+
+use acpi::interrupt::{InterruptModel, InterruptSourceOverride, IoApic, Polarity, TriggerMode};
+use acpi::{parse_rsdp, Acpi, AcpiHandler, PhysicalMapping};
 use spin::Mutex;
+
+use super::super::mem::phys_to_virt;
+use crate::PAGE_SIZE;
+
 pub struct AcpiTable {
     inner: Acpi,
 }
 
-lazy_static! {
+lazy_static::lazy_static! {
     static ref ACPI_TABLE: Mutex<Option<AcpiTable>> = Mutex::default();
+}
+
+/// Build ACPI Table
+struct AcpiHelper;
+
+impl AcpiHandler for AcpiHelper {
+    unsafe fn map_physical_region<T>(
+        &mut self,
+        physical_address: usize,
+        size: usize,
+    ) -> PhysicalMapping<T> {
+        #[allow(non_snake_case)]
+        let OFFSET = 0;
+        let page_start = physical_address / PAGE_SIZE;
+        let page_end = (physical_address + size + PAGE_SIZE - 1) / PAGE_SIZE;
+        PhysicalMapping::<T> {
+            physical_start: physical_address,
+            virtual_start: NonNull::new_unchecked(phys_to_virt(physical_address + OFFSET) as *mut T),
+            mapped_length: size,
+            region_length: PAGE_SIZE * (page_end - page_start),
+        }
+    }
+    fn unmap_physical_region<T>(&mut self, _region: PhysicalMapping<T>) {}
+}
+
+fn get_acpi_table() -> Option<Acpi> {
+    let mut handler = AcpiHelper;
+    match unsafe {
+        parse_rsdp(
+            &mut handler,
+            super::special::pc_firmware_tables().0 as usize,
+        )
+    } {
+        Ok(table) => Some(table),
+        Err(info) => {
+            warn!("get_acpi_table error: {:#x?}", info);
+            None
+        }
+    }
 }
 
 impl AcpiTable {

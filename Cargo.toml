@@ -13,5 +13,4 @@ exclude = [
     "zCore",
     "rboot",
     "linux-syscall",
-    "kernel-hal-bare",
 ]

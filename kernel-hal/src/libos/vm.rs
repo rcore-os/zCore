@@ -4,7 +4,7 @@ use std::os::unix::io::AsRawFd;
 use super::mem_common::{mmap, FRAME_FILE};
 use crate::{addr::is_aligned, HalResult, MMUFlags, PhysAddr, VirtAddr, PAGE_SIZE};
 
-pub use crate::common::paging::*;
+pub use crate::common::vm::*;
 
 pub struct PageTable;
 

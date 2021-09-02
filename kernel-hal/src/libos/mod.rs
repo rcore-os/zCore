@@ -1,12 +1,12 @@
 mod mem_common;
 
 pub mod context;
-pub mod memory;
-pub mod paging;
+pub mod mem;
 pub mod serial;
 pub mod thread;
 pub mod timer;
 pub mod vdso;
+pub mod vm;
 
 pub use super::defs::{cpu, interrupt, rand};
 

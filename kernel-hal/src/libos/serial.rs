@@ -1,8 +1,7 @@
-use lazy_static::lazy_static;
 use std::collections::VecDeque;
 use std::sync::Mutex;
 
-lazy_static! {
+lazy_static::lazy_static! {
     static ref STDIN: Mutex<VecDeque<u8>> = Mutex::new(VecDeque::new());
     static ref STDIN_CALLBACK: Mutex<Vec<Box<dyn Fn() -> bool + Send + Sync>>> =
         Mutex::new(Vec::new());

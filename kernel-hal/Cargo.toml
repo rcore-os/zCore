@@ -30,21 +30,21 @@ async-std = { version = "1.9", optional = true }
 
 # Bare-metal mode
 [target.'cfg(target_os = "none")'.dependencies]
-# executor = { git = "https://github.com/rcore-os/executor.git", rev = "a2d02ee9" }
-# naive-timer = "0.1.0"
-# lazy_static = { version = "1.4", features = ["spin_no_std"] }
+executor = { git = "https://github.com/rcore-os/executor.git", rev = "a2d02ee9" }
+naive-timer = "0.1.0"
+lazy_static = { version = "1.4", features = ["spin_no_std"] }
 # rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "6df6cd2" }
 # device_tree = { git = "https://github.com/rcore-os/device_tree-rs" }
 # virtio-drivers = { git = "https://github.com/rcore-os/virtio-drivers", rev = "568276" }
 
 # Bare-metal mode on x86_64
 [target.'cfg(all(target_os = "none", target_arch = "x86_64"))'.dependencies]
-# x86_64 = "0.14"
-# uart_16550 = "=0.2.15"
-# raw-cpuid = "9.0"
+x86_64 = "0.14"
+uart_16550 = "=0.2.15"
+raw-cpuid = "9.0"
+apic = { git = "https://github.com/rcore-os/apic-rs", rev = "fb86bd7" }
+x86-smpboot = { git = "https://github.com/rcore-os/x86-smpboot", rev = "43ffedf" }
 # pc-keyboard = "0.5"
-# apic = { git = "https://github.com/rcore-os/apic-rs", rev = "fb86bd7" }
-# x86-smpboot = { git = "https://github.com/rcore-os/x86-smpboot", rev = "43ffedf" }
 # rcore-console = { git = "https://github.com/rcore-os/rcore-console", default-features = false, rev = "a980897b" }
 # ps2-mouse = { git = "https://github.com/YXL76/ps2-mouse", branch = "feat" }
 

@@ -57,8 +57,8 @@ pub fn run(args: Vec<String>, envs: Vec<String>, rootfs: Arc<dyn FileSystem>) ->
     let path = args[0].clone();
     debug!("Linux process: {:?}", path);
 
-    use kernel_hal::paging::PageTableTrait;
-    let pg_token = kernel_hal::paging::PageTable::current().table_phys();
+    use kernel_hal::vm::PageTableTrait;
+    let pg_token = kernel_hal::vm::PageTable::current().table_phys();
     debug!("current pgt = {:#x}", pg_token);
     //调用zircon-object/src/task/thread.start设置好要执行的thread
     let (entry, sp) = loader.load(&proc.vmar(), &data, args, envs, path).unwrap();

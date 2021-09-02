@@ -1,11 +1,26 @@
-use lazy_static::lazy_static;
 use std::os::unix::io::AsRawFd;
 use std::sync::Mutex;
 
 type MouseCallbackFn = dyn Fn([u8; 3]) + Send + Sync;
 type KBDCallbackFn = dyn Fn(u16, i32) + Send + Sync;
 
-lazy_static! {
+#[repr(C)]
+#[derive(Debug, Copy, Clone, Default)]
+struct TimeVal {
+    pub sec: usize,
+    pub usec: usize,
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, Default)]
+struct InputEvent {
+    time: TimeVal,
+    type_: u16,
+    code: u16,
+    value: i32,
+}
+
+lazy_static::lazy_static! {
     static ref MOUSE_CALLBACK: Mutex<Vec<Box<MouseCallbackFn>>> = Mutex::new(Vec::new());
     static ref KBD_CALLBACK: Mutex<Vec<Box<KBDCallbackFn>>> = Mutex::new(Vec::new());
 }
@@ -21,21 +36,6 @@ fn init_kbd() {
     }; */
     if fd.as_raw_fd() < 0 {
         return;
-    }
-
-    #[repr(C)]
-    #[derive(Debug, Copy, Clone, Default)]
-    pub struct TimeVal {
-        pub sec: usize,
-        pub usec: usize,
-    }
-    #[repr(C)]
-    #[derive(Debug, Copy, Clone, Default)]
-    struct InputEvent {
-        time: TimeVal,
-        type_: u16,
-        code: u16,
-        value: i32,
     }
 
     std::thread::spawn(move || {

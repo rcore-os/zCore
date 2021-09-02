@@ -1,5 +1,4 @@
 use alloc::collections::VecDeque;
-use lazy_static::lazy_static;
 use std::fs::{File, OpenOptions};
 use std::io::Error;
 use std::os::unix::io::AsRawFd;
@@ -10,7 +9,7 @@ use crate::{PhysAddr, VirtAddr, PAGE_SIZE};
 /// Map physical memory from here.
 pub(super) const PMEM_SIZE: usize = 0x4000_0000; // 1GiB
 
-lazy_static! {
+lazy_static::lazy_static! {
     pub(super) static ref FRAME_FILE: File = create_pmem_file();
     pub(super) static ref AVAILABLE_FRAMES: Mutex<VecDeque<usize>> =
         Mutex::new((PAGE_SIZE..PMEM_SIZE).step_by(PAGE_SIZE).collect());
