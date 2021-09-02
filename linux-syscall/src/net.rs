@@ -15,7 +15,7 @@ impl Syscall<'_> {
     pub fn sys_socket(&mut self, domain: usize, socket_type: usize, protocol: usize) -> SysResult {
         // let domain = AddressFamily::from(domain as u16);
         // let socket_type = SocketType::from(socket_type as u8 & SOCK_TYPE_MASK);
-        warn!(
+        info!(
             "sys_socket: domain: {:?}, socket_type: {:?}, protocol: {}",
             domain, socket_type, protocol
         );
@@ -36,12 +36,10 @@ impl Syscall<'_> {
                 //              6 DCCP
                 //              10 SOCK_PACKET
                 1 => {
-                    warn!("TCP");
                     Arc::new(Mutex::new(TcpSocketState::new()))
                     // Arc::new(UdpSocketState::new())
                 }
                 2 => {
-                    warn!("UDP");
                     Arc::new(Mutex::new(UdpSocketState::new()))
                     // Arc::new(UdpSocketState::new())
                 }
@@ -52,7 +50,6 @@ impl Syscall<'_> {
                     // Arc::new(UdpSocketState::new())
                     // }
                     _ => {
-                        warn!("yes Raw socekt");
                         // Arc::new(RawSocketState::new(protocol as u8))
                         Arc::new(Mutex::new(UdpSocketState::new()))
                     }
@@ -71,9 +68,7 @@ impl Syscall<'_> {
         };
         // socket
         let fd = proc.add_socket(socket)?;
-        warn!("socketfd : {:?}", fd);
         Ok(fd.into())
-        // Ok(0)
     }
 
     /// net sys_connect
@@ -83,7 +78,7 @@ impl Syscall<'_> {
         addr: UserInPtr<SockAddr>,
         addr_len: usize,
     ) -> SysResult {
-        warn!(
+        info!(
             "sys_connect: fd: {}, addr: {:?}, addr_len: {}",
             fd, addr, addr_len
         );
@@ -92,7 +87,6 @@ impl Syscall<'_> {
         let sa: SockAddr = addr.read()?;
 
         let endpoint = sockaddr_to_endpoint(sa, addr_len)?;
-        warn!("connect endpoint : {:?}", endpoint);
         let socket = _proc.get_socket(fd.into())?;
         let x = socket.lock();
         x.connect(endpoint).await?;
@@ -123,7 +117,7 @@ impl Syscall<'_> {
         optval: UserInPtr<u8>,
         optlen: usize,
     ) -> SysResult {
-        warn!(
+        info!(
             "sys_setsockopt : sockfd : {:?}, level : {:?}, optname : {:?}, optval : {:?} , optlen : {:?}",
             sockfd, level, optname,optval,optlen
         );
@@ -144,7 +138,7 @@ impl Syscall<'_> {
         dest_addr: UserInPtr<SockAddr>,
         addrlen: usize,
     ) -> SysResult {
-        warn!(
+        info!(
             "sys_sendto : sockfd : {:?}, buffer : {:?}, length : {:?}, flags : {:?} , optlen : {:?}, addrlen : {:?}",
             sockfd,buffer,length,flags,dest_addr,addrlen
         );
@@ -155,7 +149,6 @@ impl Syscall<'_> {
         } else {
             let _sa: SockAddr = dest_addr.read()?;
             let endpoint = sockaddr_to_endpoint(dest_addr.read()?, addrlen)?;
-            warn!("sys_sendto: sending to endpoint {:?}", endpoint);
             Some(endpoint)
         };
         // 有问题 FIXME
@@ -197,7 +190,7 @@ impl Syscall<'_> {
         addr: UserOutPtr<SockAddr>,
         addr_len: UserInOutPtr<u32>,
     ) -> SysResult {
-        warn!(
+        info!(
             "sys_recvfrom : sockfd : {:?}, buffer : {:?}, length : {:?}, flags : {:?} , optlen : {:?}, addr_len : {:?}",
             sockfd, buffer, length,flags,addr,addr_len
         );

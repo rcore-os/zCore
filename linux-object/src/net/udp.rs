@@ -11,7 +11,9 @@ use spin::Mutex;
 use crate::net::from_cstr;
 use crate::net::get_ephemeral_port;
 use crate::net::get_net_driver;
-// use crate::net::poll_ifaces_e1000;
+#[cfg(feature = "e1000")]
+use crate::net::poll_ifaces_e1000;
+#[cfg(feature = "loopback")]
 use crate::net::poll_ifaces_loopback;
 use crate::net::AddressFamily;
 use crate::net::ArpReq;
@@ -90,7 +92,9 @@ impl UdpSocketState {
     /// missing documentation
     pub async fn read(&self, data: &mut [u8]) -> (SysResult, Endpoint) {
         loop {
-            // poll_ifaces_e1000();
+            #[cfg(feature = "e1000")]
+            poll_ifaces_e1000();
+            #[cfg(feature = "loopback")]
             poll_ifaces_loopback();
             let mut sockets = SOCKETS.lock();
             let mut socket = sockets.get::<UdpSocket>(self.handle.0);
@@ -101,8 +105,9 @@ impl UdpSocketState {
                     // avoid deadlock
                     drop(socket);
                     drop(sockets);
-                    warn!("????????????");
-                    // poll_ifaces_e1000();
+                    #[cfg(feature = "e1000")]
+                    poll_ifaces_e1000();
+                    #[cfg(feature = "loopback")]
                     poll_ifaces_loopback();
                     return (Ok(size), Endpoint::Ip(endpoint));
                 }
@@ -119,8 +124,6 @@ impl UdpSocketState {
 
     /// missing documentation
     pub fn write(&self, data: &[u8], sendto_endpoint: Option<Endpoint>) -> SysResult {
-        warn!("send to endpoint {:?}", sendto_endpoint);
-        warn!("self.remote endpoint {:?}", self.remote_endpoint);
         let remote_endpoint = {
             if let Some(Endpoint::Ip(ref endpoint)) = sendto_endpoint {
                 endpoint
@@ -148,7 +151,9 @@ impl UdpSocketState {
                     drop(socket);
                     drop(sockets);
 
-                    // poll_ifaces_e1000();
+                    #[cfg(feature = "e1000")]
+                    poll_ifaces_e1000();
+                    #[cfg(feature = "loopback")]
                     poll_ifaces_loopback();
                     Ok(data.len())
                 }
@@ -192,7 +197,6 @@ impl UdpSocketState {
             if ip.port == 0 {
                 ip.port = get_ephemeral_port();
             }
-            warn!("ip {:?}", ip);
             match socket.bind(ip) {
                 Ok(()) => Ok(0),
                 Err(_) => Err(LxError::EINVAL),

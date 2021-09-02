@@ -1,18 +1,17 @@
 // Tcpsocket
 #![allow(dead_code)]
 // crate
-// use core::task::{Poll};
 use crate::error::LxError;
 use crate::error::LxResult;
+#[cfg(feature = "loopback")]
 use crate::net::poll_ifaces_loopback;
 use crate::net::Socket;
 use crate::net::SysResult;
 use alloc::sync::Arc;
 use spin::Mutex;
-// use crate::fs::FileLike;
-// use crate::fs::FileLikeType;
 use crate::net::get_ephemeral_port;
-// use crate::net::poll_ifaces_e1000;
+#[cfg(feature = "e1000")]
+use crate::net::poll_ifaces_e1000;
 use crate::net::Endpoint;
 use crate::net::GlobalSocketHandle;
 use crate::net::IpEndpoint;
@@ -74,7 +73,9 @@ impl TcpSocketState {
     /// missing documentation
     pub async fn read(&self, data: &mut [u8]) -> (LxResult<usize>, Endpoint) {
         loop {
-            // poll_ifaces_e1000();
+            #[cfg(feature = "e1000")]
+            poll_ifaces_e1000();
+            #[cfg(feature = "loopback")]
             poll_ifaces_loopback();
             let mut sockets = SOCKETS.lock();
             let mut socket = sockets.get::<TcpSocket>(self.handle.0);
@@ -86,7 +87,9 @@ impl TcpSocketState {
                         drop(socket);
                         drop(sockets);
 
-                        // poll_ifaces_e1000();
+                        #[cfg(feature = "e1000")]
+                        poll_ifaces_e1000();
+                        #[cfg(feature = "loopback")]
                         poll_ifaces_loopback();
                         return (Ok(size), Endpoint::Ip(endpoint));
                     }
@@ -112,7 +115,9 @@ impl TcpSocketState {
                         drop(socket);
                         drop(sockets);
 
-                        // poll_ifaces_e1000();
+                        #[cfg(feature = "e1000")]
+                        poll_ifaces_e1000();
+                        #[cfg(feature = "loopback")]
                         poll_ifaces_loopback();
                         Ok(size)
                     }
@@ -155,7 +160,6 @@ impl TcpSocketState {
         #[allow(warnings)]
         if let Endpoint::Ip(ip) = endpoint {
             let local_port = get_ephemeral_port();
-            warn!("ip:{:?},port:{:?}", ip, local_port);
             socket
                 .connect(ip, local_port)
                 .map_err(|_| LxError::ENOBUFS)?;
@@ -165,7 +169,9 @@ impl TcpSocketState {
             drop(sockets);
             // wait for connection result
             loop {
-                // poll_ifaces_e1000();
+                #[cfg(feature = "e1000")]
+                poll_ifaces_e1000();
+                #[cfg(feature = "loopback")]
                 poll_ifaces_loopback();
                 let mut sockets = SOCKETS.lock();
                 let socket = sockets.get::<TcpSocket>(self.handle.0);
@@ -174,10 +180,11 @@ impl TcpSocketState {
                         // still connecting
                         drop(socket);
                         drop(sockets);
-                        // poll_ifaces_e1000();
+                        
+                        #[cfg(feature = "e1000")]
+                        poll_ifaces_e1000();
+                        #[cfg(feature = "loopback")]
                         poll_ifaces_loopback();
-                        // warn!("poll for connection wait");
-                        // SOCKET_ACTIVITY.wait(sockets);
                     }
                     TcpState::Established => {
                         break Ok(0);
@@ -198,7 +205,6 @@ impl TcpSocketState {
     fn bind(&mut self, endpoint: Endpoint) -> SysResult {
         if let Endpoint::Ip(mut ip) = endpoint {
             if ip.port == 0 {
-                warn!("port : 0");
                 ip.port = get_ephemeral_port();
             }
             self.local_endpoint = Some(ip);
@@ -244,15 +250,15 @@ impl TcpSocketState {
     async fn accept(&mut self) -> Result<(Arc<Mutex<dyn Socket>>, Endpoint), LxError> {
         let endpoint = self.local_endpoint.ok_or(LxError::EINVAL)?;
         loop {
-            // poll_ifaces_e1000();
+            #[cfg(feature = "e1000")]
+            poll_ifaces_e1000();
+            #[cfg(feature = "loopback")]
             poll_ifaces_loopback();
             let mut sockets = SOCKETS.lock();
             let socket = sockets.get::<TcpSocket>(self.handle.0);
-            // warn!("1 {:?}",socket.state());
             if socket.is_active() {
                 let remote_endpoint = socket.remote_endpoint();
                 drop(socket);
-                warn!("2");
                 let new_socket = {
                     let rx_buffer = TcpSocketBuffer::new(vec![0; TCP_RECVBUF]);
                     let tx_buffer = TcpSocketBuffer::new(vec![0; TCP_SENDBUF]);
@@ -267,15 +273,15 @@ impl TcpSocketState {
                         is_listening: false,
                     }))
                 };
-                warn!("3");
                 drop(sockets);
-                // poll_ifaces_e1000();
+                #[cfg(feature = "e1000")]
+                poll_ifaces_e1000();
+                #[cfg(feature = "loopback")]
                 poll_ifaces_loopback();
                 return Ok((new_socket, Endpoint::Ip(remote_endpoint)));
             }
 
             drop(socket);
-            // SOCKET_ACTIVITY.wait(sockets);
         }
     }
 
@@ -304,24 +310,9 @@ impl TcpSocketState {
         }
     }
 
-    // fn box_clone(&self) -> Box<dyn FileLike> {
-    //     Box::new(self.clone())
-    // }
-
     fn ioctl(&self) -> SysResult {
         Err(LxError::ENOSYS)
     }
-
-    // fn with<R>(&self, f: impl FnOnce(&mut TcpSocket) -> R) -> R {
-    //     let mut sockets = SOCKETS.lock();
-    //     let socket = sockets.get::<TcpSocket>(self.handle.0);
-    //     let res = {
-    //         let mut s = sockets.get::<TcpSocket>(self.handle.0);
-    //         f(&mut *s)
-    //     };
-    //     stack.wake();
-    //     res
-    // }
 }
 impl_kobject!(TcpSocketState);
 

@@ -12,9 +12,7 @@ use crate::net::RAW_METADATA_BUF;
 use crate::net::RAW_RECVBUF;
 use crate::net::RAW_SENDBUF;
 use crate::net::SOCKETS;
-
 use crate::net::GlobalSocketHandle;
-
 use crate::error::LxError;
 use crate::error::LxResult;
 use crate::fs::FileLike;

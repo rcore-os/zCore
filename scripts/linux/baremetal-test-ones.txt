@@ -1,2 +1,3 @@
 /libc-test/src/functional/argv-static.exe
 /libc-test/src/functional/argv.exe
+/libc-test/src/functional/socket-static.exe
