@@ -146,7 +146,7 @@ fn page_fault(stval: usize, tf: &mut TrapFrame) {
     let vaddr = stval;
 
     use crate::PageTableImpl;
-    use kernel_hal::{MMUFlags, PageTableTrait};
+    use kernel_hal::{MMUFlags, paging::PageTableTrait};
     use riscv::addr::{Page, PhysAddr, VirtAddr};
     use riscv::paging::{PageTableFlags as PTF, Rv39PageTable, *};
 

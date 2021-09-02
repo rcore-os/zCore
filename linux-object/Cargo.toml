@@ -7,6 +7,9 @@ description = "Linux kernel objects"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+graphic = []
+
 [dependencies]
 async-trait = "0.1"
 log = "0.4"
@@ -24,3 +27,4 @@ rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "6df6cd2" }
 rcore-fs-ramfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "6df6cd2" }
 rcore-fs-mountfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "6df6cd2" }
 rcore-fs-devfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "6df6cd2" }
+cfg-if = "1.0"

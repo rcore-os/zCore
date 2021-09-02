@@ -1,8 +1,6 @@
 use super::super::*;
-use kernel_hal::{
-    ColorDepth, ColorFormat, FramebufferInfo, HalError, PageTableTrait, PhysAddr, VirtAddr,
-    FRAME_BUFFER,
-};
+use kernel_hal::dev::fb::{ColorDepth, ColorFormat, FramebufferInfo, FRAME_BUFFER};
+use kernel_hal::{HalError, PhysAddr, VirtAddr, paging::PageTableTrait};
 use riscv::addr::Page;
 use riscv::asm::sfence_vma_all;
 use riscv::paging::{PageTableFlags as PTF, *};

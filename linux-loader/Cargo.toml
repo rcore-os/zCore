@@ -16,10 +16,10 @@ zircon-object = { path = "../zircon-object" }
 kernel-hal = { path = "../kernel-hal" }
 rcore-fs-hostfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "6df6cd2", optional = true }
 env_logger = { version = "0.8", optional = true }
-kernel-hal-unix = { path = "../kernel-hal-unix", optional = true }
 async-std = { version = "1.9", features = ["attributes"], optional = true }
 
 [features]
-default = ["std"]
-std = ["env_logger", "async-std", "kernel-hal-unix", "rcore-fs-hostfs", "zircon-object/aspace-separate"]
-graphic = ["std"]
+default = ["std", "libos"]
+libos = ["kernel-hal/libos"]
+std = ["env_logger", "async-std", "rcore-fs-hostfs", "zircon-object/aspace-separate"]
+graphic = ["std", "linux-object/graphic"]

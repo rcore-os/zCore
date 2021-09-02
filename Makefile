@@ -67,7 +67,7 @@ riscv-image: rcore-fs-fuse riscv-rootfs
 	@echo building riscv.img
 	@rcore-fs-fuse zCore/riscv64.img riscv_rootfs zip
 	@qemu-img resize -f raw zCore/riscv64.img +5M
-	
+
 clean:
 	cargo clean
 	find zCore -maxdepth 1 -name "*.img" -delete

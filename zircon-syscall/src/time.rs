@@ -5,7 +5,7 @@ use {
         sync::atomic::{AtomicU64, Ordering},
         time::Duration,
     },
-    kernel_hal::{sleep_until, timer_now, yield_now},
+    kernel_hal::timer::timer_now,
     zircon_object::{dev::*, task::*},
 };
 
@@ -16,7 +16,7 @@ const ZX_CLOCK_UTC: u32 = 1;
 const ZX_CLOCK_THREAD: u32 = 2;
 
 impl Syscall<'_> {
-    /// Create a new clock object.  
+    /// Create a new clock object.
     pub fn sys_clock_create(
         &self,
         _options: u64,
@@ -27,10 +27,10 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    /// Acquire the current time.  
-    ///   
-    /// + Returns the current time of clock_id via `time`.  
-    /// + Returns whether `clock_id` was valid.  
+    /// Acquire the current time.
+    ///
+    /// + Returns the current time of clock_id via `time`.
+    /// + Returns whether `clock_id` was valid.
     pub fn sys_clock_get(&self, clock_id: u32, mut time: UserOutPtr<u64>) -> ZxResult {
         info!("clock.get: id={}", clock_id);
         match clock_id {
@@ -50,7 +50,7 @@ impl Syscall<'_> {
         }
     }
 
-    /// Perform a basic read of the clock.  
+    /// Perform a basic read of the clock.
     pub fn sys_clock_read(&self, handle: HandleValue, mut now: UserOutPtr<u64>) -> ZxResult {
         info!("clock.read: handle={:#x?}", handle);
         warn!("ignore clock handle");
@@ -89,16 +89,16 @@ impl Syscall<'_> {
     }
 
     /// Sleep for some number of nanoseconds.
-    ///   
+    ///
     /// A `deadline` value less than or equal to 0 immediately yields the thread.
     pub async fn sys_nanosleep(&self, deadline: Deadline) -> ZxResult {
         info!("nanosleep: deadline={:?}", deadline);
         if deadline.0 <= 0 {
-            yield_now().await;
+            kernel_hal::future::yield_now().await;
         } else {
             self.thread
                 .blocking_run(
-                    sleep_until(deadline.into()),
+                    kernel_hal::future::sleep_until(deadline.into()),
                     ThreadState::BlockedSleeping,
                     Deadline::forever().into(),
                     None,

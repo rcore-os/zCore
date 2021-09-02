@@ -132,7 +132,7 @@ impl Syscall<'_> {
     pub fn sys_getrandom(&mut self, mut buf: UserOutPtr<u8>, len: usize, flag: u32) -> SysResult {
         info!("getrandom: buf: {:?}, len: {:?}, flag {:?}", buf, len, flag);
         let mut buffer = vec![0u8; len];
-        kernel_hal::fill_random(&mut buffer);
+        kernel_hal::rand::fill_random(&mut buffer);
         buf.write_array(&buffer[..len])?;
         Ok(len)
     }

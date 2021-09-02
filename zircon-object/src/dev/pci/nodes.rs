@@ -13,7 +13,7 @@ use crate::{vm::PAGE_SIZE, ZxError, ZxResult};
 
 use alloc::sync::{Arc, Weak};
 use alloc::{boxed::Box, vec::Vec};
-use kernel_hal::InterruptManager;
+use kernel_hal::interrupt;
 use numeric_enum_macro::numeric_enum;
 use region_alloc::RegionAllocator;
 use spin::{Mutex, MutexGuard};
@@ -192,13 +192,13 @@ impl SharedLegacyIrqHandler {
     /// Create a new SharedLegacyIrqHandler.
     pub fn create(irq_id: u32) -> Option<Arc<SharedLegacyIrqHandler>> {
         info!("SharedLegacyIrqHandler created for {:#x?}", irq_id);
-        InterruptManager::disable_irq(irq_id);
+        interrupt::disable_irq(irq_id);
         let handler = Arc::new(SharedLegacyIrqHandler {
             irq_id,
             device_handler: Mutex::new(Vec::new()),
         });
         let handler_copy = handler.clone();
-        if InterruptManager::register_irq_handler(irq_id, Box::new(move || handler_copy.handle()))
+        if interrupt::register_irq_handler(irq_id, Box::new(move || handler_copy.handle()))
             .is_some()
         {
             Some(handler)
@@ -211,7 +211,7 @@ impl SharedLegacyIrqHandler {
     pub fn handle(&self) {
         let device_handler = self.device_handler.lock();
         if device_handler.is_empty() {
-            InterruptManager::disable_irq(self.irq_id);
+            interrupt::disable_irq(self.irq_id);
             return;
         }
         for dev in device_handler.iter() {
@@ -260,7 +260,7 @@ impl SharedLegacyIrqHandler {
         let is_first = device_handler.is_empty();
         device_handler.push(device);
         if is_first {
-            InterruptManager::enable_irq(self.irq_id);
+            interrupt::enable_irq(self.irq_id);
         }
     }
     pub fn remove_device(&self, device: Arc<PcieDevice>) {
@@ -272,7 +272,7 @@ impl SharedLegacyIrqHandler {
         let mut device_handler = self.device_handler.lock();
         device_handler.retain(|h| Arc::ptr_eq(h, &device));
         if device_handler.is_empty() {
-            InterruptManager::disable_irq(self.irq_id);
+            interrupt::disable_irq(self.irq_id);
         }
     }
 }

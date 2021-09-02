@@ -1,5 +1,7 @@
 use core::fmt;
 
+pub use trapframe::{GeneralRegs, UserContext};
+
 #[repr(C, align(16))]
 #[derive(Debug, Copy, Clone)]
 pub struct VectorRegs {

@@ -3,9 +3,8 @@ members = [
     "zircon-object",
     "zircon-loader",
     "linux-object",
-    "zircon-syscall",    
+    "zircon-syscall",
     "linux-loader",
-    "kernel-hal-unix",
     "kernel-hal",
 ]
 
@@ -14,5 +13,5 @@ exclude = [
     "zCore",
     "rboot",
     "linux-syscall",
-    "kernel-hal-bare",    
+    "kernel-hal-bare",
 ]

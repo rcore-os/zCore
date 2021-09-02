@@ -1,6 +1,6 @@
 use {
     super::*, crate::object::*, alloc::sync::Arc, alloc::vec, alloc::vec::Vec, bitflags::bitflags,
-    kernel_hal::PageTableTrait, spin::Mutex,
+    kernel_hal::paging::PageTableTrait, spin::Mutex,
 };
 
 bitflags! {
@@ -78,7 +78,7 @@ impl VmAddressRegion {
             addr,
             size,
             parent: None,
-            page_table: Arc::new(Mutex::new(kernel_hal::PageTable::new())), //hal PageTable
+            page_table: Arc::new(Mutex::new(kernel_hal::paging::PageTable::new())), //hal PageTable
             inner: Mutex::new(Some(VmarInner::default())),
         })
     }
@@ -94,7 +94,7 @@ impl VmAddressRegion {
             addr: kernel_vmar_base,
             size: kernel_vmar_size,
             parent: None,
-            page_table: Arc::new(Mutex::new(kernel_hal::PageTable::new())),
+            page_table: Arc::new(Mutex::new(kernel_hal::paging::PageTable::new())),
             inner: Mutex::new(Some(VmarInner::default())),
         })
     }

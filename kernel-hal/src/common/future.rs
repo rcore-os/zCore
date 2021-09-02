@@ -1,4 +1,3 @@
-use crate::timer_now;
 use alloc::boxed::Box;
 use core::future::Future;
 use core::pin::Pin;
@@ -44,12 +43,12 @@ impl Future for SleepFuture {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        if timer_now() >= self.deadline {
+        if crate::timer::timer_now() >= self.deadline {
             return Poll::Ready(());
         }
         if self.deadline.as_nanos() < i64::max_value() as u128 {
             let waker = cx.waker().clone();
-            crate::timer_set(self.deadline, Box::new(move |_| waker.wake()));
+            crate::timer::timer_set(self.deadline, Box::new(move |_| waker.wake()));
         }
         Poll::Pending
     }
@@ -68,11 +67,11 @@ impl Future for SerialFuture {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let mut buf = [0u8];
-        if crate::serial_read(&mut buf) != 0 {
+        if crate::serial::serial_read(&mut buf) != 0 {
             return Poll::Ready(buf[0]);
         }
         let waker = cx.waker().clone();
-        crate::serial_set_callback(Box::new({
+        crate::serial::serial_set_callback(Box::new({
             move || {
                 waker.wake_by_ref();
                 true

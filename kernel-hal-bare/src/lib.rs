@@ -35,9 +35,9 @@ use core::{
     pin::Pin,
     task::{Context, Poll},
 };
-use kernel_hal::defs::*;
+use kernel_hal::{VirtAddr, PhysAddr, PAGE_SIZE, CachePolicy, MMUFlags};
 use kernel_hal::vdso::*;
-use kernel_hal::UserContext;
+use kernel_hal::context::UserContext;
 use naive_timer::Timer;
 use spin::Mutex;
 

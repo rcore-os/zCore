@@ -4,7 +4,7 @@ use {
 };
 
 impl Syscall<'_> {
-    /// Create a kernel managed debuglog reader or writer.    
+    /// Create a kernel managed debuglog reader or writer.
     pub fn sys_debuglog_create(
         &self,
         rsrc: HandleValue,
@@ -32,7 +32,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    /// Write log entry to debuglog.   
+    /// Write log entry to debuglog.
     pub fn sys_debuglog_write(
         &self,
         handle_value: HandleValue,
@@ -54,15 +54,15 @@ impl Syscall<'_> {
         let dlog = proc.get_object_with_rights::<DebugLog>(handle_value, Rights::WRITE)?;
         dlog.write(Severity::Info, options, self.thread.id(), proc.id(), &data);
         // print to kernel console
-        kernel_hal::serial_write(&data);
+        kernel_hal::serial::serial_write(&data);
         if data.as_bytes().last() != Some(&b'\n') {
-            kernel_hal::serial_write("\n");
+            kernel_hal::serial::serial_write("\n");
         }
         Ok(())
     }
 
     #[allow(unsafe_code)]
-    /// Read log entries from debuglog.  
+    /// Read log entries from debuglog.
     pub fn sys_debuglog_read(
         &self,
         handle_value: HandleValue,

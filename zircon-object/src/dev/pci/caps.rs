@@ -3,7 +3,7 @@ use crate::{ZxError, ZxResult};
 
 use alloc::boxed::Box;
 use core::convert::TryFrom;
-use kernel_hal::InterruptManager;
+use kernel_hal::interrupt;
 use spin::*;
 
 /// Enumeration for PCI capabilities.
@@ -46,8 +46,7 @@ impl PciMsiBlock {
         if irq_num == 0 || irq_num > 32 {
             return Err(ZxError::INVALID_ARGS);
         }
-        let (start, size) =
-            InterruptManager::msi_allocate_block(irq_num).ok_or(ZxError::NO_RESOURCES)?;
+        let (start, size) = interrupt::msi_allocate_block(irq_num).ok_or(ZxError::NO_RESOURCES)?;
         Ok(PciMsiBlock {
             target_addr: (0xFEE0_0000 | 0x08) & !0x4,
             target_data: start as u32,
@@ -57,12 +56,12 @@ impl PciMsiBlock {
         })
     }
     pub fn free(&self) {
-        InterruptManager::msi_free_block(self.base_irq, self.num_irq)
+        interrupt::msi_free_block(self.base_irq, self.num_irq)
     }
     pub fn register_handler(&self, msi_id: u32, handle: Box<dyn Fn() + Send + Sync>) {
         assert!(self.allocated);
         assert!(msi_id < self.num_irq);
-        InterruptManager::msi_register_handler(self.base_irq, self.num_irq, msi_id, handle);
+        interrupt::msi_register_handler(self.base_irq, self.num_irq, msi_id, handle);
     }
 }
 

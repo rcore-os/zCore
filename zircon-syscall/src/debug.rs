@@ -2,15 +2,15 @@ use super::*;
 use zircon_object::dev::*;
 
 impl Syscall<'_> {
-    /// Write debug info to the serial port.  
+    /// Write debug info to the serial port.
     pub fn sys_debug_write(&self, buf: UserInPtr<u8>, len: usize) -> ZxResult {
         info!("debug.write: buf=({:?}; {:#x})", buf, len);
         let data = buf.read_array(len)?;
-        kernel_hal::serial_write(core::str::from_utf8(&data).unwrap());
+        kernel_hal::serial::serial_write(core::str::from_utf8(&data).unwrap());
         Ok(())
     }
 
-    /// Read debug info from the serial port.  
+    /// Read debug info from the serial port.
     pub async fn sys_debug_read(
         &self,
         handle: HandleValue,
@@ -31,7 +31,7 @@ impl Syscall<'_> {
         // let len = kernel_hal::serial_read(&mut vec);
         // buf.write_array(&vec[..len])?;
         // actual.write(len as u32)?;
-        let c = kernel_hal::serial_getchar().await;
+        let c = kernel_hal::future::serial_getchar().await;
         buf.write_array(&[c])?;
         actual.write(1)?;
         Ok(())

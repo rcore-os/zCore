@@ -45,17 +45,17 @@ pub const PCI_INIT_ARG_MAX_SIZE: usize = core::mem::size_of::<PciInitArgsAddrWin
     * PCI_INIT_ARG_MAX_ECAM_WINDOWS
     + core::mem::size_of::<PciInitArgsHeader>();
 
-use kernel_hal::InterruptManager;
+use kernel_hal::interrupt;
 
 impl PciInitArgsHeader {
     pub fn configure_interrupt(&mut self) -> ZxResult {
         for i in 0..self.num_irqs as usize {
             let irq = &mut self.irqs[i];
             let global_irq = irq.global_irq;
-            if !InterruptManager::is_valid_irq(global_irq) {
+            if !interrupt::is_valid_irq(global_irq) {
                 irq.global_irq = PCI_NO_IRQ_MAPPING;
                 self.dev_pin_to_global_irq.remove_irq(global_irq);
-            } else if !InterruptManager::configure_irq(
+            } else if !interrupt::configure_irq(
                 global_irq,
                 irq.level_triggered, /* Trigger mode */
                 irq.active_high,     /* Polarity */

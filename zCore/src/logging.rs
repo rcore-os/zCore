@@ -62,7 +62,7 @@ impl Log for SimpleLogger {
                 "[{:?} {:>5} {} {}:{}] {}\n",
                 kernel_hal_bare::timer_now(),
                 record.level(),
-                kernel_hal_bare::apic_local_id(),
+                kernel_hal::cpu::cpu_id(),
                 pid,
                 tid,
                 record.args()

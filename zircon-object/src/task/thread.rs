@@ -14,7 +14,8 @@ use {
         time::Duration,
     },
     futures::{channel::oneshot::*, future::FutureExt, pin_mut, select_biased},
-    kernel_hal::{sleep_until, GeneralRegs, UserContext},
+    kernel_hal::context::{GeneralRegs, UserContext},
+    // kernel_hal::future::sleep_until,
     spin::Mutex,
 };
 
@@ -193,7 +194,7 @@ impl Thread {
     /// ```
     /// # use std::sync::Arc;
     /// # use zircon_object::task::*;
-    /// # kernel_hal_unix::init();
+    /// # kernel_hal::init();
     /// let job = Job::root();
     /// let proc = Process::create(&job, "proc").unwrap();
     /// // create a thread with extension info
@@ -272,7 +273,7 @@ impl Thread {
             inner.change_state(ThreadState::Running, &self.base);
         }
         let vmtoken = self.proc().vmar().table_phys();
-        kernel_hal::Thread::spawn(thread_fn(CurrentThread(self.clone())), vmtoken);
+        kernel_hal::thread::spawn(thread_fn(CurrentThread(self.clone())), vmtoken);
         Ok(())
     }
 
@@ -289,7 +290,7 @@ impl Thread {
             inner.change_state(ThreadState::Running, &self.base);
         }
         let vmtoken = self.proc().vmar().table_phys();
-        kernel_hal::Thread::spawn(thread_fn(CurrentThread(self.clone())), vmtoken);
+        kernel_hal::thread::spawn(thread_fn(CurrentThread(self.clone())), vmtoken);
         Ok(())
     }
 
@@ -313,7 +314,7 @@ impl Thread {
             inner.change_state(ThreadState::Running, &self.base);
         }
         let vmtoken = self.proc().vmar().table_phys();
-        kernel_hal::Thread::spawn(thread_fn(CurrentThread(self.clone())), vmtoken);
+        kernel_hal::thread::spawn(thread_fn(CurrentThread(self.clone())), vmtoken);
         Ok(())
     }
 
@@ -602,14 +603,14 @@ impl CurrentThread {
             select_biased! {
                 ret = future.fuse() => ret.into_result(),
                 _ = killed.fuse() => Err(ZxError::STOP),
-                _ = sleep_until(deadline).fuse() => Err(ZxError::TIMED_OUT),
+                _ = kernel_hal::future::sleep_until(deadline).fuse() => Err(ZxError::TIMED_OUT),
                 _ = cancel_token.fuse() => Err(ZxError::CANCELED),
             }
         } else {
             select_biased! {
                 ret = future.fuse() => ret.into_result(),
                 _ = killed.fuse() => Err(ZxError::STOP),
-                _ = sleep_until(deadline).fuse() => Err(ZxError::TIMED_OUT),
+                _ = kernel_hal::future::sleep_until(deadline).fuse() => Err(ZxError::TIMED_OUT),
             }
         };
         let mut inner = self.inner.lock();
@@ -765,7 +766,7 @@ pub struct ThreadInfo {
 mod tests {
     use super::job::Job;
     use super::*;
-    use kernel_hal::timer_now;
+    use kernel_hal::timer::timer_now;
 
     #[test]
     fn create() {
@@ -781,7 +782,7 @@ mod tests {
 
     #[async_std::test]
     async fn start() {
-        kernel_hal_unix::init();
+        kernel_hal::init();
         let root_job = Job::root();
         let proc = Process::create(&root_job, "proc").expect("failed to create process");
         let thread = Thread::create(&proc, "thread").expect("failed to create thread");

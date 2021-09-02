@@ -1,7 +1,7 @@
 //! Implement INode for framebuffer
 
 use core::any::Any;
-use kernel_hal::{ColorFormat, FramebufferInfo, FRAME_BUFFER};
+use kernel_hal::dev::fb::{ColorFormat, FramebufferInfo, FRAME_BUFFER};
 
 use rcore_fs::vfs::*;
 

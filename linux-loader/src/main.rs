@@ -15,16 +15,16 @@ async fn main() {
     // init loggger for debug
     init_logger();
     // init HAL implementation on unix
-    kernel_hal_unix::init();
+    kernel_hal::init();
     #[cfg(feature = "graphic")]
     {
-        kernel_hal_unix::init_framebuffer();
-        kernel_hal_unix::init_input();
+        kernel_hal::dev::fb::init();
+        kernel_hal::dev::input::init();
     }
-    kernel_hal::serial_set_callback(Box::new({
+    kernel_hal::serial::serial_set_callback(Box::new({
         move || {
             let mut buffer = [0; 255];
-            let len = kernel_hal::serial_read(&mut buffer);
+            let len = kernel_hal::serial::serial_read(&mut buffer);
             for c in &buffer[..len] {
                 STDIN.push((*c).into());
             }
@@ -70,7 +70,7 @@ mod tests {
 
     /// test with cmd line
     async fn test(cmdline: &str) -> i64 {
-        kernel_hal_unix::init();
+        kernel_hal::init();
 
         let args: Vec<String> = cmdline.split(' ').map(|s| s.into()).collect();
         let envs =

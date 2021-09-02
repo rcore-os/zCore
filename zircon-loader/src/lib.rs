@@ -83,7 +83,7 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
             let offset = elf
                 .get_symbol_address("zcore_syscall_entry")
                 .expect("failed to locate syscall entry") as usize;
-            let syscall_entry = &(kernel_hal_unix::syscall_entry as usize).to_ne_bytes();
+            let syscall_entry = &(kernel_hal::context::syscall_entry as usize).to_ne_bytes();
             // fill syscall entry x3
             vdso_vmo.write(offset, syscall_entry).unwrap();
             vdso_vmo.write(offset + 8, syscall_entry).unwrap();
@@ -127,7 +127,7 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
     const VDSO_DATA_CONSTANTS: usize = 0x4a50;
     const VDSO_DATA_CONSTANTS_SIZE: usize = 0x78;
     let constants: [u8; VDSO_DATA_CONSTANTS_SIZE] =
-        unsafe { core::mem::transmute(kernel_hal::vdso_constants()) };
+        unsafe { core::mem::transmute(kernel_hal::vdso::vdso_constants()) };
     vdso_vmo.write(VDSO_DATA_CONSTANTS, &constants).unwrap();
     vdso_vmo.set_name("vdso/full");
     let vdso_test1 = vdso_vmo.create_child(false, 0, vdso_vmo.len()).unwrap();
@@ -172,7 +172,7 @@ kcounter!(EXCEPTIONS_TIMER, "exceptions.timer");
 kcounter!(EXCEPTIONS_PGFAULT, "exceptions.pgfault");
 
 async fn new_thread(thread: CurrentThread) {
-    kernel_hal::Thread::set_tid(thread.id(), thread.proc().id());
+    kernel_hal::thread::set_tid(thread.id(), thread.proc().id());
     if thread.is_first_thread() {
         thread
             .handle_exception(ExceptionType::ProcessStarting)
@@ -187,18 +187,18 @@ async fn new_thread(thread: CurrentThread) {
         }
         trace!("go to user: {:#x?}", cx);
         debug!("switch to {}|{}", thread.proc().name(), thread.name());
-        let tmp_time = kernel_hal::timer_now().as_nanos();
+        let tmp_time = kernel_hal::timer::timer_now().as_nanos();
 
         // * Attention
         // The code will enter a magic zone from here.
         // `context run` will be executed into a wrapped library where context switching takes place.
         // The details are available in the trapframe crate on crates.io.
 
-        kernel_hal::context_run(&mut cx);
+        kernel_hal::context::context_run(&mut cx);
 
         // Back from the userspace
 
-        let time = kernel_hal::timer_now().as_nanos() - tmp_time;
+        let time = kernel_hal::timer::timer_now().as_nanos() - tmp_time;
         thread.time_add(time);
         trace!("back from user: {:#x?}", cx);
         EXCEPTIONS_USER.add(1);
@@ -217,10 +217,10 @@ async fn new_thread(thread: CurrentThread) {
         match trap_num {
             0x100 => handle_syscall(&thread).await,
             0x20..=0x3f => {
-                kernel_hal::InterruptManager::handle_irq(trap_num as u32);
+                kernel_hal::interrupt::handle_irq(trap_num as u32);
                 if trap_num == 0x20 {
                     EXCEPTIONS_TIMER.add(1);
-                    kernel_hal::yield_now().await;
+                    kernel_hal::future::yield_now().await;
                 }
             }
             0xe => {

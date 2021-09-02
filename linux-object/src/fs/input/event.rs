@@ -3,6 +3,7 @@ use alloc::{boxed::Box, collections::VecDeque, sync::Arc};
 use core::any::Any;
 use spin::Mutex;
 
+use kernel_hal::dev::input;
 use rcore_fs::vfs::*;
 
 /// input device
@@ -18,7 +19,7 @@ impl InputEventInode {
     pub fn new(id: usize) -> Self {
         let data = Arc::new(Mutex::new(VecDeque::with_capacity(MAX_QUEUE)));
         let data_clone = data.clone();
-        kernel_hal::kbd_set_callback(Box::new(move |code, value| {
+        input::kbd_set_callback(Box::new(move |code, value| {
             let mut queue = data_clone.lock();
             while queue.len() >= MAX_QUEUE {
                 queue.pop_front();

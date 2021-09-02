@@ -23,10 +23,10 @@ use {
 };
 
 #[cfg(target_arch = "riscv64")]
-use {kernel_hal::UserContext, zircon_object::object::KernelObject};
+use {kernel_hal::context::UserContext, zircon_object::object::KernelObject};
 
 #[cfg(target_arch = "x86_64")]
-use kernel_hal::GeneralRegs;
+use kernel_hal::context::GeneralRegs;
 
 /// Create and run main Linux process
 pub fn run(args: Vec<String>, envs: Vec<String>, rootfs: Arc<dyn FileSystem>) -> Arc<Process> {
@@ -35,7 +35,7 @@ pub fn run(args: Vec<String>, envs: Vec<String>, rootfs: Arc<dyn FileSystem>) ->
     let thread = Thread::create_linux(&proc).unwrap();
     let loader = LinuxElfLoader {
         #[cfg(feature = "std")]
-        syscall_entry: kernel_hal_unix::syscall_entry as usize,
+        syscall_entry: kernel_hal::context::syscall_entry as usize,
         #[cfg(not(feature = "std"))]
         syscall_entry: 0,
         stack_pages: 8,
@@ -57,7 +57,8 @@ pub fn run(args: Vec<String>, envs: Vec<String>, rootfs: Arc<dyn FileSystem>) ->
     let path = args[0].clone();
     debug!("Linux process: {:?}", path);
 
-    let pg_token = kernel_hal::current_page_table();
+    use kernel_hal::paging::PageTableTrait;
+    let pg_token = kernel_hal::paging::PageTable::current().table_phys();
     debug!("current pgt = {:#x}", pg_token);
     //调用zircon-object/src/task/thread.start设置好要执行的thread
     let (entry, sp) = loader.load(&proc.vmar(), &data, args, envs, path).unwrap();
@@ -86,7 +87,7 @@ async fn new_thread(thread: CurrentThread) {
 
         // run
         trace!("go to user: {:#x?}", cx);
-        kernel_hal::context_run(&mut cx);
+        kernel_hal::context::context_run(&mut cx);
         trace!("back from user: {:#x?}", cx);
         // handle trap/interrupt/syscall
 
@@ -94,13 +95,13 @@ async fn new_thread(thread: CurrentThread) {
         match cx.trap_num {
             0x100 => handle_syscall(&thread, &mut cx.general).await,
             0x20..=0x3f => {
-                kernel_hal::InterruptManager::handle_irq(cx.trap_num as u32);
+                kernel_hal::interrupt::handle_irq(cx.trap_num as u32);
                 if cx.trap_num == 0x20 {
-                    kernel_hal::yield_now().await;
+                    kernel_hal::future::yield_now().await;
                 }
             }
             0xe => {
-                let vaddr = kernel_hal::fetch_fault_vaddr();
+                let vaddr = kernel_hal::context::fetch_fault_vaddr();
                 let flags = if cx.error_code & 0x2 == 0 {
                     MMUFlags::READ
                 } else {
@@ -129,7 +130,7 @@ async fn new_thread(thread: CurrentThread) {
                 match trap_num {
                     //Irq
                     0 | 4 | 5 | 8 | 9 => {
-                        kernel_hal::InterruptManager::handle_irq(trap_num as u32);
+                        kernel_hal::interrupt::handle_irq(trap_num as u32);
 
                         //Timer
                         if trap_num == 4 || trap_num == 5 {
@@ -141,10 +142,10 @@ async fn new_thread(thread: CurrentThread) {
                             kernel_hal::timer_tick();
                             */
 
-                            kernel_hal::yield_now().await;
+                            kernel_hal::future::yield_now().await;
                         }
 
-                        //kernel_hal::InterruptManager::handle_irq(trap_num as u32);
+                        //kernel_hal::interrupt::handle_irq(trap_num as u32);
                     }
                     _ => panic!(
                         "not supported pid: {} interrupt {} from user mode. {:#x?}",
@@ -204,7 +205,7 @@ async fn handle_syscall(thread: &CurrentThread, regs: &mut GeneralRegs) {
     let mut syscall = Syscall {
         thread,
         #[cfg(feature = "std")]
-        syscall_entry: kernel_hal_unix::syscall_entry as usize,
+        syscall_entry: kernel_hal::context::syscall_entry as usize,
         #[cfg(not(feature = "std"))]
         syscall_entry: 0,
         thread_fn,
@@ -234,7 +235,7 @@ async fn handle_syscall(thread: &CurrentThread, cx: &mut UserContext) {
     let mut syscall = Syscall {
         thread,
         #[cfg(feature = "std")]
-        syscall_entry: kernel_hal_unix::syscall_entry as usize,
+        syscall_entry: kernel_hal::context::syscall_entry as usize,
         #[cfg(not(feature = "std"))]
         syscall_entry: 0,
         context: cx,

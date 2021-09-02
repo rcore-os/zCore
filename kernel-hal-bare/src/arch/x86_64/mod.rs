@@ -9,9 +9,8 @@ use {
     core::ptr::NonNull,
     core::time::Duration,
     git_version::git_version,
-    kernel_hal::{
-        ColorDepth, ColorFormat, FramebufferInfo, HalError, PageTableTrait, Result, FRAME_BUFFER,
-    },
+    kernel_hal::dev::fb::{ColorDepth, ColorFormat, FramebufferInfo, FRAME_BUFFER},
+    kernel_hal::{HalError, paging::PageTableTrait, HalResult as Result},
     rcore_console::{Console, ConsoleOnGraphic, DrawTarget, Pixel, Rgb888, Size},
     spin::Mutex,
     uart_16550::SerialPort,

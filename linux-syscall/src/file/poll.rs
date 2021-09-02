@@ -12,7 +12,7 @@ use core::mem::size_of;
 use core::pin::Pin;
 use core::task::{Context, Poll};
 use core::time::Duration;
-use kernel_hal::timer_set;
+use kernel_hal::timer::timer_set;
 use linux_object::fs::FileDesc;
 use linux_object::time::*;
 

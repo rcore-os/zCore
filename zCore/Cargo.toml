@@ -22,6 +22,7 @@ lto = true
 log = "0.4"
 spin = "0.7"
 buddy_system_allocator = "0.7"
+kernel-hal = { path = "../kernel-hal" }
 kernel-hal-bare = { path = "../kernel-hal-bare" }
 lazy_static = { version = "1.4", features = ["spin_no_std" ] }
 bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator", rev = "03bd9909" }
