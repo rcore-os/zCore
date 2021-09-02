@@ -17,7 +17,7 @@ passed = set()
 failed = set()
 timeout = set()
 
-subprocess.run("cd .. && cargo build --release -p linux-loader -- /libc-test/src/functional/argv.exe", shell=True)
+subprocess.run("cd .. && cargo run --release -p linux-loader -- /libc-test/src/functional/argv.exe", shell=True)
 
 for path in glob.glob("../rootfs/libc-test/src/*/*.exe"):
     path = path[len('../rootfs'):]
