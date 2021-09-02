@@ -10,6 +10,8 @@ description = "Kernel HAL implementation for bare metal environment."
 [features]
 board_qemu = []
 board_d1 = []
+e1000 = []
+loopback = []
 
 [dependencies]
 log = "0.4"

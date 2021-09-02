@@ -107,11 +107,21 @@ impl Syscall<'_> {
         info!("readv: fd={:?}, iov={:?}, count={}", fd, iov_ptr, iov_count);
         let mut iovs = iov_ptr.read_iovecs(iov_count)?;
         let proc = self.linux_process();
-        let file_like = proc.get_file_like(fd)?;
-        let mut buf = vec![0u8; iovs.total_len()];
-        let len = file_like.read(&mut buf).await?;
-        iovs.write_from_buf(&buf)?;
-        Ok(len)
+        if usize::from(fd) >= 1000usize {
+            let x = usize::from(fd);
+            let socket = proc.get_socket(x.into())?;
+            let mut buf = vec![0u8; iovs.total_len()];
+            let (len, _) = socket.lock().read(&mut buf).await;
+            let len = len.unwrap();
+            iovs.write_from_buf(&buf)?;
+            Ok(len)
+        } else {
+            let file_like = proc.get_file_like(fd)?;
+            let mut buf = vec![0u8; iovs.total_len()];
+            let len = file_like.read(&mut buf).await?;
+            iovs.write_from_buf(&buf)?;
+            Ok(len)
+        }
     }
 
     /// works just like write except that multiple buffers are written out.

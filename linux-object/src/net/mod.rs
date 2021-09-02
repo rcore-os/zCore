@@ -115,31 +115,40 @@ impl Drop for GlobalSocketHandle {
 
         // send FIN immediately when applicable
         drop(sockets);
-        // poll_ifaces_e1000();
+        #[cfg(feature = "e1000")]
+        poll_ifaces_e1000();
+        #[cfg(feature = "loopback")]
         poll_ifaces_loopback();
     }
 }
 
+// #[cfg(feature = "e1000")]
 use kernel_hal::get_net_driver;
 
 //  Safety: call this without SOCKETS locked
-// fn poll_ifaces_e1000() {
-//     for iface in get_net_driver().iter() {
-//         iface.poll(&(*SOCKETS));
-//     }
-// }
+#[cfg(feature = "e1000")]
+fn poll_ifaces_e1000() {
+    for iface in get_net_driver().iter() {
+        iface.poll(&(*SOCKETS));
+    }
+}
 
+#[cfg(feature = "loopback")]
 use net_stack::{NetStack, NET_STACK};
-// use alloc::vec::Vec;
+#[cfg(feature = "loopback")]
 use hashbrown::HashMap;
+#[cfg(feature = "loopback")]
 use kernel_hal::timer_now;
+#[cfg(feature = "loopback")]
 use smoltcp::time::Instant;
 /// miss doc
+#[cfg(feature = "loopback")]
 pub fn get_net_stack() -> HashMap<usize, Arc<dyn NetStack>> {
     NET_STACK.read().clone()
 }
 
 /// miss doc
+#[cfg(feature = "loopback")]
 fn poll_ifaces_loopback() {
     for (_key, stack) in get_net_stack().iter() {
         let timestamp = Instant::from_millis(timer_now().as_millis() as i64);

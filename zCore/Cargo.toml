@@ -13,6 +13,8 @@ board_d1 = ["link_user_img", "kernel-hal-bare/board_d1"]
 link_user_img = []
 zircon = ["zircon-loader"]
 linux = ["linux-loader", "linux-object", "rcore-fs-sfs"]
+loopback = ["net-stack","linux-object/loopback"]
+e1000 = ["linux-object/e1000","kernel-hal-bare/e1000"]
 #hypervisor = ["rvm", "zircon", "zircon-object/hypervisor", "zircon-syscall/hypervisor"]
 
 [profile.release]
@@ -33,7 +35,7 @@ zircon-object = { path = "../zircon-object" }
 linux-loader = { path = "../linux-loader", default-features = false, optional = true }
 linux-object = { path = "../linux-object", default-features = false, optional = true }
 rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "6df6cd2", optional = true }
-net-stack = {git = "https://gitee.com/gcyyfun/net-stack",rev = "d16b28e"}
+net-stack = {git = "https://gitee.com/gcyyfun/net-stack",rev = "d16b28e" , optional = true}
 rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "6df6cd2" }
 net-stack = {git = "https://gitee.com/gcyyfun/net-stack",rev = "7d444c1"}
 # FIX LATER

@@ -225,6 +225,7 @@ fn main(ramfs_data: &'static mut [u8], cmdline: &str) -> ! {
 
     // let net_device = 获得设备
     // let net_stack = net_stack::init(device).expect("faild init net statck")
+    #[cfg(feature = "loopback")]
     let net_stack = net_stack::init();
     
     let _proc = linux_loader::run(args, envs, rootfs /* ， net_stack */);
