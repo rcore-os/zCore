@@ -3,21 +3,21 @@
 // crate
 use crate::error::LxError;
 use crate::error::LxResult;
-#[cfg(feature = "loopback")]
-use crate::net::poll_ifaces_loopback;
-use crate::net::Socket;
-use crate::net::SysResult;
-use alloc::sync::Arc;
-use spin::Mutex;
 use crate::net::get_ephemeral_port;
 #[cfg(feature = "e1000")]
 use crate::net::poll_ifaces_e1000;
+#[cfg(feature = "loopback")]
+use crate::net::poll_ifaces_loopback;
 use crate::net::Endpoint;
 use crate::net::GlobalSocketHandle;
 use crate::net::IpEndpoint;
+use crate::net::Socket;
+use crate::net::SysResult;
 use crate::net::SOCKETS;
 use crate::net::TCP_RECVBUF;
 use crate::net::TCP_SENDBUF;
+use alloc::sync::Arc;
+use spin::Mutex;
 
 // alloc
 use alloc::boxed::Box;
@@ -180,7 +180,7 @@ impl TcpSocketState {
                         // still connecting
                         drop(socket);
                         drop(sockets);
-                        
+
                         #[cfg(feature = "e1000")]
                         poll_ifaces_e1000();
                         #[cfg(feature = "loopback")]
