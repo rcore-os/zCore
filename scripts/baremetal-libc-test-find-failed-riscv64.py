@@ -11,8 +11,8 @@ BASE = 'linux/'
 CHECK_FILE = BASE + 'baremetal-test-allow-rv64.txt'
 FAIL_FILE = BASE + 'baremetal-test-fail-rv64.txt'
 SCRIPT_FILE = 'script.sh'
-RESULT_FILE ='../stdout-rv64'
-script=r'''
+RESULT_FILE = '../stdout-rv64'
+script = r'''
 #!/bin/bash
 
 cd .. && make baremetal-test-rv64 ROOTPROC='''
@@ -32,14 +32,14 @@ with open(CHECK_FILE, 'r') as f:
     allow_files = set([case.strip() for case in f.readlines()])
 
 for file in allow_files:
-    script_file = script+file
+    script_file = script + file
     with open(SCRIPT_FILE, 'w') as f:
         print(script_file, file=f)
     try:
-        subprocess.run(['sh',SCRIPT_FILE], timeout=TIMEOUT, check=True)
+        subprocess.run(['sh', SCRIPT_FILE], timeout=TIMEOUT, check=True)
 
         with open(RESULT_FILE, 'r') as f:
-            output=f.read();
+            output = f.read()
 
         break_out_flag = False
         for pattern in FAILED:
@@ -55,18 +55,16 @@ for file in allow_files:
     except subprocess.TimeoutExpired:
         timeout.add(file)
 
-
-
 print("PASSED %d", len(passed))
 print("FAILED %d", len(failed))
 print(failed)
 print("TIMEOUT %d", len(timeout))
 
-with open(FAIL_FILE,'w') as f:
+with open(FAIL_FILE, 'w') as f:
     for bad_file in failed:
         print(bad_file, file=f)
 
-if len(failed) > 0 :
+if len(failed) > 0:
     sys.exit(-1)
 else:
     sys.exit(0)

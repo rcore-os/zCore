@@ -30,6 +30,7 @@ class Tee:
     def flush(self):
         self.file.flush()
 
+
 if os.path.exists(OUTPUT_FILE): os.remove(OUTPUT_FILE)
 if os.path.exists(RESULT_FILE): os.remove(RESULT_FILE)
 if os.path.exists(DBG_FILE): os.remove(DBG_FILE)
@@ -37,13 +38,17 @@ if os.path.exists(DBG_FILE): os.remove(DBG_FILE)
 with open(TEST_CASE_FILE, "r") as tcf:
     lines = tcf.readlines()
     for line in lines:
-        with open(DBG_FILE, "a") as dbg: print(line, file=dbg)
+        with open(DBG_FILE, "a") as dbg:
+            print(line, file=dbg)
 
-        child = pexpect.spawn("make -C %s test mode=release test_filter='%s'" % (ZCORE_PATH, line.replace('\n','')),
-                            timeout=TIMEOUT, encoding='utf-8')
+        child = pexpect.spawn("make -C %s test mode=release test_filter='%s'" %
+                              (ZCORE_PATH, line.replace('\n', '')),
+                              timeout=TIMEOUT,
+                              encoding='utf-8')
         child.logfile = Tee(OUTPUT_FILE, 'a')
 
-        index = child.expect(['finished!', 'panicked', pexpect.EOF, pexpect.TIMEOUT])
+        index = child.expect(
+            ['finished!', 'panicked', pexpect.EOF, pexpect.TIMEOUT])
         result = ['FINISHED', 'PANICKED', 'EOF', 'TIMEOUT'][index]
         print(result)
 
@@ -56,13 +61,12 @@ ansi_escape = re.compile(r"\x1B[@-_][0-?]*[ -/]*[@-~]")
 
 with open(OUTPUT_FILE, "r") as opf:
     for line in opf:
-        line=ansi_escape.sub('',line)
+        line = ansi_escape.sub('', line)
         with open(RESULT_FILE, "a") as rstf:
             if line.startswith('[       OK ]'):
                 print(line, file=rstf)
             elif line.startswith('[  FAILED  ]') and line.endswith(')\n'):
                 print(line, file=rstf)
-
 
 # with open(CHECK_FILE, 'r') as f:
 #     check_case = set([case.strip() for case in f.readlines()])

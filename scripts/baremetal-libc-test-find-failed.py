@@ -11,8 +11,8 @@ BASE = 'linux/'
 CHECK_FILE = BASE + 'baremetal-test-allow.txt'
 FAIL_FILE = BASE + 'baremetal-test-fail.txt'
 RBOOT_FILE = 'rboot.conf'
-RESULT_FILE ='../stdout-zcore'
-rboot= r'''
+RESULT_FILE = '../stdout-zcore'
+rboot = r'''
 # The config file for rboot.
 # Place me at \EFI\Boot\rboot.conf
 
@@ -52,17 +52,20 @@ with open(CHECK_FILE, 'r') as f:
 
 for file in allow_files:
     print(file)
-    rboot_file=rboot+file+'?'
+    rboot_file = rboot + file + '?'
     print(rboot)
-    with open(RBOOT_FILE,'w') as f:
+    with open(RBOOT_FILE, 'w') as f:
         print(rboot_file, file=f)
     try:
-        subprocess.run(r'cp rboot.conf ../zCore && cd ../ && make baremetal-test | tee stdout-zcore && sed -i '
-                       r'"/BdsDxe/d" stdout-zcore',
-                       shell=True, timeout=TIMEOUT, check=True)
+        subprocess.run(
+            r'cp rboot.conf ../zCore && cd ../ && make baremetal-test | tee stdout-zcore && sed -i '
+            r'"/BdsDxe/d" stdout-zcore',
+            shell=True,
+            timeout=TIMEOUT,
+            check=True)
 
         with open(RESULT_FILE, 'r') as f:
-            output=f.read();
+            output = f.read()
 
         break_out_flag = False
         for pattern in FAILED:
@@ -78,18 +81,16 @@ for file in allow_files:
     except subprocess.TimeoutExpired:
         timeout.add(file)
 
-
-
 print("PASSED %d", len(passed))
 print("FAILED %d", len(failed))
 print(failed)
 print("TIMEOUT %d", len(timeout))
 
-with open(FAIL_FILE,'w') as f:
+with open(FAIL_FILE, 'w') as f:
     for bad_file in failed:
         print(bad_file, file=f)
 
-if len(failed) > 0 :
+if len(failed) > 0:
     sys.exit(-1)
 else:
     sys.exit(0)

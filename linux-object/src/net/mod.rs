@@ -134,11 +134,11 @@ fn poll_ifaces_e1000() {
 }
 
 #[cfg(feature = "loopback")]
-use net_stack::{NetStack, NET_STACK};
-#[cfg(feature = "loopback")]
 use hashbrown::HashMap;
 #[cfg(feature = "loopback")]
 use kernel_hal::timer_now;
+#[cfg(feature = "loopback")]
+use net_stack::{NetStack, NET_STACK};
 #[cfg(feature = "loopback")]
 use smoltcp::time::Instant;
 /// miss doc

@@ -16,12 +16,10 @@
 /libc-test/src/functional/ipc_shm-static.exe
 /libc-test/src/regression/getpwnam_r-crash-static.exe
 /libc-test/src/regression/pthread_rwlock-ebusy-static.exe
-/libc-test/src/functional/socket.exe
 /libc-test/src/regression/malloc-brk-fail.exe
 /libc-test/src/functional/vfork-static.exe
 /libc-test/src/functional/pthread_cancel-points-static.exe
 /libc-test/src/functional/ipc_sem.exe
-/libc-test/src/functional/socket-static.exe
 /libc-test/src/functional/tls_align_dlopen.exe
 /libc-test/src/functional/fcntl-static.exe
 /libc-test/src/regression/pthread_create-oom.exe
