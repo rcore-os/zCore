@@ -5,7 +5,7 @@ import re
 import sys
 # ===============Must Config========================
 
-TIMEOUT = 20  # seconds
+TIMEOUT = 30  # seconds
 ZCORE_PATH = '../zCore'
 BASE = 'linux/'
 CHECK_FILE = BASE + 'baremetal-test-allow.txt'
