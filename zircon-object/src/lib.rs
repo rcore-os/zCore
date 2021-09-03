@@ -7,12 +7,8 @@
 
 #![no_std]
 #![deny(warnings, unsafe_code, unused_must_use, missing_docs)]
-#![feature(asm)]
-#![feature(linkage)]
 #![feature(drain_filter)]
 #![feature(get_mut_unchecked)]
-#![feature(naked_functions)]
-#![feature(new_uninit)]
 
 extern crate alloc;
 

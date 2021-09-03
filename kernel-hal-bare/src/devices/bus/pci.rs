@@ -1,5 +1,5 @@
-use crate::devices::NET_DRIVERS;
 use crate::devices::net::e1000;
+use crate::devices::NET_DRIVERS;
 use crate::phys_to_virt;
 use alloc::format;
 use kernel_hal::PAGE_SIZE;
@@ -78,7 +78,9 @@ pub fn init_driver(dev: &PCIDevice) {
                 let irq = unsafe { enable(dev.loc) };
                 let vaddr = phys_to_virt(addr as usize);
                 let index = NET_DRIVERS.read().len();
-                warn!("e1000");
+                #[cfg(feature = "e1000")]
+                warn!("e1000 init");
+                #[cfg(feature = "e1000")]
                 e1000::init(name, irq, vaddr, len as usize, index);
                 return;
             }

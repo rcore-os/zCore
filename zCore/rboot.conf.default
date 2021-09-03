@@ -1,0 +1,23 @@
+# The config file for rboot.
+# Place me at \EFI\Boot\rboot.conf
+
+# The address at which the kernel stack is placed.
+# kernel_stack_address=0xFFFFFF8000000000
+
+# The size of the kernel stack, given in number of 4KiB pages. Defaults to 512.
+# kernel_stack_size=128
+
+# The virtual address offset from which physical memory is mapped, as described in
+# https://os.phil-opp.com/paging-implementation/#map-the-complete-physical-memory
+physical_memory_offset=0xFFFF800000000000
+
+# The path of kernel ELF
+kernel_path=\EFI\zCore\zcore.elf
+
+# The resolution of graphic output
+resolution=1024x768
+
+initramfs=\EFI\zCore\fuchsia.zbi
+# LOG=debug/info/error/warn/trace
+# add ROOTPROC info  ? split CMD and ARG : ROOTPROC=/libc-test/src/functional/argv.exe?   OR ROOTPROC=/bin/busybox?sh
+cmdline=LOG=info:TERM=xterm-256color:console.shell=true:virtcon.disable=true

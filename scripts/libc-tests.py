@@ -17,14 +17,19 @@ passed = set()
 failed = set()
 timeout = set()
 
+subprocess.run("cd .. && cargo run --release -p linux-loader -- /libc-test/src/functional/argv.exe", shell=True)
+
 for path in glob.glob("../rootfs/libc-test/src/*/*.exe"):
     path = path[len('../rootfs'):]
     # ignore static linked tests
     if path.endswith('-static.exe'):
         continue
     try:
-        subprocess.run("cd .. && cargo run --release -p linux-loader -- " + path,
-                       shell=True, timeout=TIMEOUT, check=True)
+        subprocess.run("cd .. && cargo run --release -p linux-loader -- " +
+                       path,
+                       shell=True,
+                       timeout=TIMEOUT,
+                       check=True)
         passed.add(path)
     except subprocess.CalledProcessError:
         failed.add(path)

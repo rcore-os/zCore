@@ -59,7 +59,12 @@ impl Syscall<'_> {
     pub fn sys_close(&self, fd: FileDesc) -> SysResult {
         info!("close: fd={:?}", fd);
         let proc = self.linux_process();
-        proc.close_file(fd)?;
+        if usize::from(fd) >= 1000usize {
+            let x = usize::from(fd);
+            proc.close_socket(x.into())?;
+        } else {
+            proc.close_file(fd)?;
+        }
         Ok(0)
     }
 

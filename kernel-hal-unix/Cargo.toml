@@ -18,4 +18,4 @@ async-std = "1.9"
 git-version = "0.3"
 trapframe = "0.8.0"
 
-smoltcp = { git = "https://github.com/smoltcp-rs/smoltcp", rev = "e4241510337e095b9d21136c5f58b2eaa1b78479", default-features = false, features = ["alloc","log", "async", "medium-ethernet", "proto-ipv4", "proto-igmp", "socket-icmp", "socket-udp", "socket-tcp", "socket-raw"] }
+smoltcp = { git = "https://gitee.com/gcyyfun/smoltcp", rev="d31f93d", default-features = false, features = ["alloc","log", "async", "medium-ethernet","proto-ipv4", "proto-igmp", "socket-icmp", "socket-udp", "socket-tcp", "socket-raw"] }

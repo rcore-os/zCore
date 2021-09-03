@@ -115,16 +115,44 @@ impl Drop for GlobalSocketHandle {
 
         // send FIN immediately when applicable
         drop(sockets);
-        poll_ifaces();
+        #[cfg(feature = "e1000")]
+        poll_ifaces_e1000();
+        #[cfg(feature = "loopback")]
+        poll_ifaces_loopback();
     }
 }
 
+// #[cfg(feature = "e1000")]
 use kernel_hal::get_net_driver;
 
-/// Safety: call this without SOCKETS locked
-fn poll_ifaces() {
+//  Safety: call this without SOCKETS locked
+#[cfg(feature = "e1000")]
+fn poll_ifaces_e1000() {
     for iface in get_net_driver().iter() {
         iface.poll(&(*SOCKETS));
+    }
+}
+
+#[cfg(feature = "loopback")]
+use hashbrown::HashMap;
+#[cfg(feature = "loopback")]
+use kernel_hal::timer_now;
+#[cfg(feature = "loopback")]
+use net_stack::{NetStack, NET_STACK};
+#[cfg(feature = "loopback")]
+use smoltcp::time::Instant;
+/// miss doc
+#[cfg(feature = "loopback")]
+pub fn get_net_stack() -> HashMap<usize, Arc<dyn NetStack>> {
+    NET_STACK.read().clone()
+}
+
+/// miss doc
+#[cfg(feature = "loopback")]
+fn poll_ifaces_loopback() {
+    for (_key, stack) in get_net_stack().iter() {
+        let timestamp = Instant::from_millis(timer_now().as_millis() as i64);
+        stack.poll(&(*SOCKETS), timestamp);
     }
 }
 
@@ -139,8 +167,45 @@ use smoltcp::wire::IpEndpoint;
 pub enum Endpoint {
     /// missing documentation
     Ip(IpEndpoint),
-    // LinkLevel(LinkLevelEndpoint),
-    // Netlink(NetlinkEndpoint),
+    /// missing documentation
+    LinkLevel(LinkLevelEndpoint),
+    /// missing documentation
+    Netlink(NetlinkEndpoint),
+}
+
+/// missing documentation
+#[derive(Clone, Debug)]
+pub struct LinkLevelEndpoint {
+    /// missing documentation
+    pub interface_index: usize,
+}
+
+impl LinkLevelEndpoint {
+    /// missing documentation
+    pub fn new(ifindex: usize) -> Self {
+        LinkLevelEndpoint {
+            interface_index: ifindex,
+        }
+    }
+}
+
+/// missing documentation
+#[derive(Clone, Debug)]
+pub struct NetlinkEndpoint {
+    /// missing documentation
+    pub port_id: u32,
+    /// missing documentation
+    pub multicast_groups_mask: u32,
+}
+
+impl NetlinkEndpoint {
+    /// missing documentation
+    pub fn new(port_id: u32, multicast_groups_mask: u32) -> Self {
+        NetlinkEndpoint {
+            port_id,
+            multicast_groups_mask,
+        }
+    }
 }
 
 // ============= Endpoint =============
@@ -182,3 +247,61 @@ pub unsafe fn from_cstr(s: *const u8) -> &'static str {
 }
 
 // ============= Util =============
+
+use crate::error::*;
+use alloc::boxed::Box;
+use alloc::fmt::Debug;
+use alloc::sync::Arc;
+use async_trait::async_trait;
+// use core::ops::{Deref, DerefMut};
+/// Common methods that a socket must have
+#[async_trait]
+pub trait Socket: Send + Sync + Debug {
+    /// missing documentation
+    async fn read(&self, data: &mut [u8]) -> (SysResult, Endpoint);
+    /// missing documentation
+    fn write(&self, data: &[u8], sendto_endpoint: Option<Endpoint>) -> SysResult;
+    /// missing documentation
+    fn poll(&self) -> (bool, bool, bool); // (in, out, err)
+    /// missing documentation
+    async fn connect(&self, endpoint: Endpoint) -> SysResult;
+    /// missing documentation
+    fn bind(&mut self, _endpoint: Endpoint) -> SysResult {
+        Err(LxError::EINVAL)
+    }
+    /// missing documentation
+    fn listen(&mut self) -> SysResult {
+        Err(LxError::EINVAL)
+    }
+    /// missing documentation
+    fn shutdown(&self) -> SysResult {
+        Err(LxError::EINVAL)
+    }
+    /// missing documentation
+    async fn accept(&mut self) -> LxResult<(Arc<Mutex<dyn Socket>>, Endpoint)> {
+        Err(LxError::EINVAL)
+    }
+    /// missing documentation
+    fn endpoint(&self) -> Option<Endpoint> {
+        None
+    }
+    /// missing documentation
+    fn remote_endpoint(&self) -> Option<Endpoint> {
+        None
+    }
+    /// missing documentation
+    fn setsockopt(&self, _level: usize, _opt: usize, _data: &[u8]) -> SysResult {
+        warn!("setsockopt is unimplemented");
+        Ok(0)
+    }
+    /// missing documentation
+    fn ioctl(&self, _request: usize, _arg1: usize, _arg2: usize, _arg3: usize) -> SysResult {
+        warn!("ioctl is unimplemented for this socket");
+        Ok(0)
+    }
+    /// missing documentation
+    fn fcntl(&self, _cmd: usize, _arg: usize) -> SysResult {
+        warn!("ioctl is unimplemented for this socket");
+        Ok(0)
+    }
+}

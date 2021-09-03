@@ -30,6 +30,7 @@ impl VmarExt for VmAddressRegion {
             trace!("ph:{:#x?}, offset:{:#x?}, flags:{:#x?}", ph, offset, flags);
             //映射vmo物理内存块到 VMAR
             self.map_at(offset, vmo.clone(), 0, vmo.len(), flags)?;
+            debug!("Map [{:x}, {:x})", offset, offset + vmo.len());
             first_vmo.get_or_insert(vmo);
         }
         Ok(first_vmo.unwrap())
@@ -102,7 +103,7 @@ pub trait ElfExt {
     /// Get the symbol table for dynamic linking (.dynsym section).
     fn dynsym(&self) -> Result<&[DynEntry64], &'static str>;
     /// Relocate according to the dynamic relocation section (.rel.dyn section).
-    fn relocate(&self, base: usize) -> Result<(), &'static str>;
+    fn relocate(&self, vmar: Arc<VmAddressRegion>) -> Result<(), &'static str>;
 }
 
 impl ElfExt for ElfFile<'_> {
@@ -178,7 +179,7 @@ impl ElfExt for ElfFile<'_> {
     }
 
     #[allow(unsafe_code)]
-    fn relocate(&self, base: usize) -> Result<(), &'static str> {
+    fn relocate(&self, vmar: Arc<VmAddressRegion>) -> Result<(), &'static str> {
         let data = self
             .find_section_by_name(".rela.dyn")
             .ok_or(".rela.dyn not found")?
@@ -188,8 +189,9 @@ impl ElfExt for ElfFile<'_> {
             SectionData::Rela64(entries) => entries,
             _ => return Err("bad .rela.dyn"),
         };
+        let base = vmar.addr();
         let dynsym = self.dynsym()?;
-        for entry in entries {
+        for entry in entries.iter() {
             const REL_GOT: u32 = 6;
             const REL_PLT: u32 = 7;
             const REL_RELATIVE: u32 = 8;
@@ -205,23 +207,22 @@ impl ElfExt for ElfFile<'_> {
                         base + dynsym.value() as usize
                     };
                     let value = symval + entry.get_addend() as usize;
-                    unsafe {
-                        let ptr = (base + entry.get_offset() as usize) as *mut usize;
-                        debug!("GOT write: {:#x} @ {:#x}", value, ptr as usize);
-                        ptr.write(value);
-                    }
+                    let addr = base + entry.get_offset() as usize;
+                    debug!("GOT write: {:#x} @ {:#x}", value, addr);
+                    vmar.write_memory(addr, &value.to_ne_bytes())
+                        .map_err(|_| "Invalid Vmar")?;
                 }
                 REL_RELATIVE | R_RISCV_RELATIVE => {
                     let value = base + entry.get_addend() as usize;
-                    unsafe {
-                        let ptr = (base + entry.get_offset() as usize) as *mut usize;
-                        debug!("RELATIVE write: {:#x} @ {:#x}", value, ptr as usize);
-                        ptr.write(value);
-                    }
+                    let addr = base + entry.get_offset() as usize;
+                    debug!("RELATIVE write: {:#x} @ {:#x}", value, addr);
+                    vmar.write_memory(addr, &value.to_ne_bytes())
+                        .map_err(|_| "Invalid Vmar")?;
                 }
                 t => unimplemented!("unknown type: {}", t),
             }
         }
+        // panic!("STOP");
         Ok(())
     }
 }

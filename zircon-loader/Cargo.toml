@@ -20,4 +20,5 @@ async-std = { version = "1.9", features = ["attributes"], optional = true }
 
 [features]
 default = ["std"]
-std = ["env_logger", "structopt", "async-std", "kernel-hal-unix", "zircon-object/aspace-separate"]
+std = ["env_logger", "structopt", "async-std", "kernel-hal-unix", 
+        "zircon-object/aspace-separate", "zircon-syscall/std"]

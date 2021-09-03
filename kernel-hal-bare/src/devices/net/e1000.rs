@@ -8,6 +8,8 @@ use alloc::vec::Vec;
 use smoltcp::iface::Interface;
 use smoltcp::iface::InterfaceBuilder;
 use smoltcp::iface::NeighborCache;
+use smoltcp::iface::Route;
+use smoltcp::iface::Routes;
 use smoltcp::phy::Device;
 use smoltcp::phy::{self, DeviceCapabilities};
 use smoltcp::socket::SocketSet;
@@ -22,11 +24,11 @@ use smoltcp::Result;
 use isomorphic_drivers::net::ethernet::intel::e1000::E1000;
 use isomorphic_drivers::net::ethernet::structs::EthernetAddress as DriverEthernetAddress;
 
-// ctate 
+// ctate
 use crate::arch::timer_now;
 use crate::devices::NET_DRIVERS;
 use crate::PAGE_SIZE;
-use kernel_hal::{DeviceType, Driver,NetDriver};
+use kernel_hal::{DeviceType, Driver, NetDriver};
 
 // spin
 use spin::Mutex;
@@ -173,7 +175,7 @@ impl phy::RxToken for E1000RxToken {
     where
         F: FnOnce(&mut [u8]) -> Result<R>,
     {
-        warn!("Enter : E1000TxToken");
+        // warn!("Enter : E1000TxToken");
         f(&mut self.0)
     }
 }
@@ -183,7 +185,7 @@ impl phy::TxToken for E1000TxToken {
     where
         F: FnOnce(&mut [u8]) -> Result<R>,
     {
-        warn!("Enter : E1000RxToken");
+        // warn!("Enter : E1000RxToken");
         let mut buffer = [0u8; PAGE_SIZE];
         let result = f(&mut buffer[..len]);
 
@@ -199,7 +201,8 @@ pub fn init(name: String, irq: Option<usize>, header: usize, size: usize, index:
     warn!("Probing e1000 {}", name);
 
     // randomly generated
-    let mac: [u8; 6] = [0x54, 0x51, 0x9F, 0x71, 0xC0, index as u8];
+    let mac: [u8; 6] = [0x52, 0x54, 0x98, 0x76, 0x54, 0x33];
+    // 52:54:98:76:54:32
 
     let e1000 = E1000::new(header, size, DriverEthernetAddress::from_bytes(&mac));
 
@@ -207,10 +210,17 @@ pub fn init(name: String, irq: Option<usize>, header: usize, size: usize, index:
 
     let ethernet_addr = EthernetAddress::from_bytes(&mac);
     let ip_addrs = [IpCidr::new(IpAddress::v4(10, 0, 2, 15), 24)];
+    // let ip_addrs = [IpCidr::new(IpAddress::v4(127,0, 0,1), 24)];
+    let default_gateway = Ipv4Address::new(10, 0, 2, 2);
+    // let default_gateway = Ipv4Address::new(127, 0, 0, 1);
     let neighbor_cache = NeighborCache::new(BTreeMap::new());
+    static mut routes_storage: [Option<(IpCidr, Route)>; 1] = [None; 1];
+    let mut routes = unsafe { Routes::new(&mut routes_storage[..]) };
+    routes.add_default_ipv4_route(default_gateway).unwrap();
     let iface = InterfaceBuilder::new(net_driver.clone())
         .ethernet_addr(ethernet_addr)
         .ip_addrs(ip_addrs)
+        .routes(routes)
         .neighbor_cache(neighbor_cache)
         .finalize();
 
@@ -222,22 +232,23 @@ pub fn init(name: String, irq: Option<usize>, header: usize, size: usize, index:
         irq,
     };
 
-    // irq_add_handle(57,e1000_iface.try_handle_interrupt);
+    // #[cfg(target_arch = "x86_64")]
+    // use crate::arch::x86_64::interrupt::irq_add_handle;
+    // irq_add_handle(57,e1000_iface.try_handle_interrupt());
     let driver = Arc::new(e1000_iface);
     NET_DRIVERS.write().push(driver);
 }
 
-
-
 // provider
 
+use crate::drivers::virtio::virtio::virtio_dma_alloc;
+use crate::drivers::virtio::virtio::virtio_dma_dealloc;
 #[allow(unused_imports)]
 use crate::{
-    hal_frame_alloc_contiguous as alloc_frame_contiguous, hal_frame_dealloc as dealloc_frame,
+    hal_frame_alloc_contiguous as frame_alloc_contiguous, hal_frame_dealloc as frame_dealloc,
     phys_to_virt, virt_to_phys,
 };
 use isomorphic_drivers::provider;
-
 pub struct Provider;
 
 impl provider::Provider for Provider {
@@ -253,39 +264,39 @@ impl provider::Provider for Provider {
         let paddr = virt_to_phys(vaddr);
         for i in 0..size / PAGE_SIZE {
             unsafe {
-                dealloc_frame(&(paddr + i * PAGE_SIZE));
+                frame_dealloc(&(paddr + i * PAGE_SIZE));
             }
         }
     }
 }
 
-#[no_mangle]
-extern "C" fn virtio_dma_alloc(pages: usize) -> PhysAddr {
-    let paddr = unsafe { alloc_frame_contiguous(pages, 0).unwrap() };
-    trace!("alloc DMA: paddr={:#x}, pages={}", paddr, pages);
-    paddr
-}
+// #[no_mangle]
+// extern "C" fn virtio_dma_alloc(pages: usize) -> PhysAddr {
+//     let paddr = unsafe { alloc_frame_contiguous(pages, 0).unwrap() };
+//     trace!("alloc DMA: paddr={:#x}, pages={}", paddr, pages);
+//     paddr
+// }
 
-#[no_mangle]
-extern "C" fn virtio_dma_dealloc(paddr: PhysAddr, pages: usize) -> i32 {
-    for i in 0..pages {
-        unsafe {
-            dealloc_frame(&(paddr + i * PAGE_SIZE));
-        }
-    }
-    trace!("dealloc DMA: paddr={:#x}, pages={}", paddr, pages);
-    0
-}
+// #[no_mangle]
+// extern "C" fn virtio_dma_dealloc(paddr: PhysAddr, pages: usize) -> i32 {
+//     for i in 0..pages {
+//         unsafe {
+//             dealloc_frame(&(paddr + i * PAGE_SIZE));
+//         }
+//     }
+//     trace!("dealloc DMA: paddr={:#x}, pages={}", paddr, pages);
+//     0
+// }
 
-#[no_mangle]
-extern "C" fn virtio_phys_to_virt(paddr: PhysAddr) -> VirtAddr {
-    phys_to_virt(paddr)
-}
+// #[no_mangle]
+// extern "C" fn virtio_phys_to_virt(paddr: PhysAddr) -> VirtAddr {
+//     phys_to_virt(paddr)
+// }
 
-#[no_mangle]
-extern "C" fn virtio_virt_to_phys(vaddr: VirtAddr) -> PhysAddr {
-    virt_to_phys(vaddr)
-}
+// #[no_mangle]
+// extern "C" fn virtio_virt_to_phys(vaddr: VirtAddr) -> PhysAddr {
+//     virt_to_phys(vaddr)
+// }
 
 type VirtAddr = usize;
 type PhysAddr = usize;

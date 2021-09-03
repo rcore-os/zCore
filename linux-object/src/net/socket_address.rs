@@ -1,12 +1,19 @@
 // core
+
+use core::cmp::min;
 use core::mem::size_of;
 
 // crate
-use crate::error::{LxError, LxResult};
+use crate::error::LxError;
 use crate::net::Endpoint;
 
 // smoltcp
 pub use smoltcp::wire::{IpAddress, Ipv4Address};
+
+// #
+use crate::net::*;
+use kernel_hal::user::{UserInOutPtr, UserOutPtr};
+// use numeric_enum_macro::numeric_enum;
 
 /// missing documentation
 #[repr(C)]
@@ -146,6 +153,7 @@ pub fn sockaddr_to_endpoint(addr: SockAddr, len: usize) -> Result<Endpoint, LxEr
         match AddressFamily::from(addr.family) {
             AddressFamily::Internet => {
                 let port = u16::from_be(addr.addr_in.sin_port);
+                warn!("port : {:?}", port);
                 let addr = IpAddress::from(Ipv4Address::from_bytes(
                     &u32::from_be(addr.addr_in.sin_addr).to_be_bytes()[..],
                 ));
@@ -179,24 +187,31 @@ impl SockAddr {
     /// # Safety
     /// Write to user sockaddr
     /// Check mutability for user
-    #[allow(unsafe_code)]
-    pub unsafe fn write_to(self) -> LxResult<usize> {
+    #[allow(dead_code)]
+    pub fn write_to(
+        self,
+        addr: UserOutPtr<SockAddr>,
+        mut addr_len: UserInOutPtr<u32>,
+    ) -> SysResult {
         // Ignore NULL
-        // if addr.is_null() {
-        //     return Ok(0);
-        // }
+        if addr.is_null() {
+            return Ok(0);
+        }
 
-        // let addr_len = vm.check_write_ptr(addr_len)?;
-        // // // let max_addr_len = *addr_len as usize;
-        // // // let full_len = self.len()?;
+        let max_addr_len = addr_len.read()? as usize;
+        let full_len = self.len()?;
 
-        // // // let _written_len = min(max_addr_len, full_len);
-        // if written_len > 0 {
-        //     let target = vm.check_write_array(addr as *mut u8, written_len)?;
-        //     let source = slice::from_raw_parts(&self as *const SockAddr as *const u8, written_len);
-        //     target.copy_from_slice(source);
-        // }
-        // *addr_len = full_len as u32;
+        let written_len = min(max_addr_len, full_len);
+        if written_len > 0 {
+            #[allow(unsafe_code)]
+            let source = unsafe {
+                core::slice::from_raw_parts(&self as *const SockAddr as *const u8, written_len)
+            };
+            #[allow(unsafe_code)]
+            let mut addr: UserOutPtr<u8> = unsafe { core::mem::transmute(addr) };
+            addr.write_array(source)?;
+        }
+        addr_len.write(full_len as u32)?;
         Ok(0)
     }
 }

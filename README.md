@@ -14,6 +14,7 @@ Reimplement [Zircon][zircon] microkernel in safe Rust as a userspace program!
 
 ## Quick start for RISCV64
 ```
+make riscv-image
 cd zCore
 make run arch=riscv64 linux=1
 ```
@@ -46,39 +47,57 @@ For users in China, there's a mirror you can try:
 ```sh
 git clone https://github.com.cnpmjs.org/rcore-os/zCore --recursive
 ```
-
-Prepare Alpine Linux rootfs:
+### Run zcore in libos mode
+#### Run zcore in linux-libos mode
+##### step1: Prepare Alpine Linux rootfs:
 
 ```sh
 make rootfs
 ```
 
-Run native Linux program (Busybox):
+##### step2: Compile&Run native Linux program (Busybox) in libos mode:
 
 ```sh
 cargo run --release -p linux-loader -- /bin/busybox [args]
 ```
 
-Run native Zircon program (shell):
+#### Run native Zircon program (shell) in zircon-libos mode:
+
+#### step1: Compile and Run Zircon shell
 
 ```sh
 cargo run --release -p zircon-loader -- prebuilt/zircon/x64
 ```
 
-Run Linux shell on bare-metal (zCore):
+To debug, set `RUST_LOG` environment variable to one of `error`, `warn`, `info`, `debug`, `trace`.
+
+### Run zcore in bare-metal mode
+#### Run Linux shell in  linux-bare-metal mode:
+##### step1: Prepare Alpine Linux rootfs:
+
+```sh
+make rootfs
+```
+##### step2: Create Linux rootfs image:
+Note: Before below step, you can add some special apps in zCore/rootfs
 
 ```sh
 make image
+```
+##### step3: build and run zcore in  linux-bare-metal mode:
+
+```sh
 cd zCore && make run mode=release linux=1 [graphic=on] [accel=1]
 ```
 
-Run Zircon on bare-metal (zCore):
+#### Run Zircon shell in zircon-bare-metal mode:
+##### step1.1 :  build and run zcore in  zircon-bare-metal mode:
 
 ```sh
 cd zCore && make run mode=release [graphic=on] [accel=1]
 ```
 
-Build and run your own Zircon user programs:
+##### step1.2 :  Build and run your own Zircon user programs:
 
 ```sh
 # See template in zircon-user
@@ -90,8 +109,11 @@ cd zCore && make run mode=release user=1
 
 To debug, set `RUST_LOG` environment variable to one of `error`, `warn`, `info`, `debug`, `trace`.
 
-## Testing
 
+## Testing
+### LibOS Mode Testing
+
+#### Zircon related
 Run Zircon official core-tests:
 
 ```sh
@@ -105,7 +127,7 @@ pip3 install pexpect
 cd scripts && python3 core-tests.py
 # Check `zircon/test-result.txt` for results.
 ```
-
+#### Linux related
 
 Run Linux musl libc-tests for CI:
 
@@ -114,6 +136,79 @@ make rootfs && make libc-test
 cd scripts && python3 libc-tests.py
 # Check `linux/test-result.txt` for results.
 ```
+
+### Baremetal Mode Testing
+
+#### x86-64 Linux related
+
+Run Linux musl libc-tests for CI:
+```
+##  Prepare rootfs with libc-test apps
+make baremetal-test-img
+## Build zCore kernel
+cd zCore && make build mode=release linux=1 arch=x86_64
+## Testing
+cd ../scripts && python3 ./baremetal-libc-test.py
+## 
+```
+
+You can use [`scripts/baremetal-libc-test-ones.py`](./scripts/baremetal-libc-test-ones.py) & [`scripts/linux/baremetal-test-ones.txt`](./scripts/linux/baremetal-test-ones.txt) to test specified apps. 
+
+[`scripts/linux/baremetal-test-fail.txt`](./scripts/linux/baremetal-test-fail.txt) includes all failed x86-64 apps (We need YOUR HELP to fix bugs!)
+
+#### riscv-64 Linux related
+
+Run Linux musl libc-tests for CI:
+```
+##  Prepare rootfs with libc-test & oscomp apps
+make riscv-image
+## Build zCore kernel & Testing
+cd ../scripts && python3 baremetal-test-riscv64.py
+## 
+```
+
+You can use[ `scripts/baremetal-libc-test-ones-riscv64.py`](./scripts/baremetal-libc-test-ones-riscv64.py) & [`scripts/linux/baremetal-test-ones-rv64.txt`](scripts/linux/baremetal-test-ones-rv64.txt)to test 
+specified apps.
+
+[`scripts/linux/baremetal-test-fail-riscv64.txt`](./scripts/linux/baremetal-test-fail-riscv64.txt)includes all failed riscv-64 apps (We need YOUR HELP to fix bugs!)
+
+## Graph/Game
+
+snake game: https://github.com/rcore-os/rcore-user/blob/master/app/src/snake.c
+
+### Step1: compile usr app
+We can use musl-gcc compile it in x86_64 mode
+
+### Step2: change zcore for run snake app first.
+change zCore/zCore/main.rs L176
+vec!["/bin/busybox".into(), "sh".into()]
+TO
+vec!["/bin/snake".into(), "sh".into()]
+
+### Step3: prepare root fs image, run zcore in linux-bare-metal mode
+exec:
+
+```
+cd zCore #zCore ROOT DIR
+make rootfs
+cp ../rcore-user/app/snake rootfs/bin #copy snake ELF file to rootfs/bin
+make image # build rootfs image
+cd zCore #zCore kernel dir
+make run mode=release linux=1 graphic=on
+```
+
+Then you can play the game.
+Operation
+
+- Keyboard
+  - `W`/`A`/`S`/`D`: Move
+  - `R`: Restart
+  - `ESC`: End
+- Mouse
+  - `Left`: Speed up
+  - `Right`: Slow down
+  - `Middle`: Pause/Resume
+
 ## Doc
 ```
 make doc
@@ -138,5 +233,5 @@ make doc
 | Thread Management         | `executor` | `async-std::task` |
 | Exception Handling        | Interrupt  | Signal            |
 
-### Some plans
+### Small Goal & Little Plans
 - https://github.com/rcore-os/zCore/wiki/Plans

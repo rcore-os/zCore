@@ -1,9 +1,13 @@
 // rawsocket
 #![allow(dead_code)]
 // crate
+use crate::error::LxError;
+use crate::error::LxResult;
+use crate::fs::FileLike;
 use crate::fs::FileLikeType;
 use crate::net::get_net_driver;
 use crate::net::Endpoint;
+use crate::net::GlobalSocketHandle;
 use crate::net::IpAddress;
 use crate::net::IpEndpoint;
 use crate::net::IPPROTO_IP;
@@ -12,12 +16,6 @@ use crate::net::RAW_METADATA_BUF;
 use crate::net::RAW_RECVBUF;
 use crate::net::RAW_SENDBUF;
 use crate::net::SOCKETS;
-
-use crate::net::GlobalSocketHandle;
-
-use crate::error::LxError;
-use crate::error::LxResult;
-use crate::fs::FileLike;
 
 // alloc
 use alloc::boxed::Box;

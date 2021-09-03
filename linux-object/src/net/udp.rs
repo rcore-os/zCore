@@ -3,12 +3,18 @@
 // crate
 use crate::error::LxError;
 use crate::error::LxResult;
-use crate::fs::FileLike;
-use crate::fs::FileLikeType;
+use crate::net::Socket;
+use crate::net::SysResult;
+use spin::Mutex;
+// use crate::fs::FileLike;
+// use crate::fs::FileLikeType;
 use crate::net::from_cstr;
 use crate::net::get_ephemeral_port;
 use crate::net::get_net_driver;
-use crate::net::poll_ifaces;
+#[cfg(feature = "e1000")]
+use crate::net::poll_ifaces_e1000;
+#[cfg(feature = "loopback")]
+use crate::net::poll_ifaces_loopback;
 use crate::net::AddressFamily;
 use crate::net::ArpReq;
 use crate::net::Endpoint;
@@ -25,6 +31,7 @@ use crate::net::UDP_SENDBUF;
 
 // alloc
 use alloc::boxed::Box;
+use alloc::sync::Arc;
 use alloc::vec;
 
 // smoltcp
@@ -37,7 +44,7 @@ use smoltcp::socket::UdpSocketBuffer;
 use async_trait::async_trait;
 
 // third part
-use rcore_fs::vfs::PollStatus;
+// use rcore_fs::vfs::PollStatus;
 use zircon_object::impl_kobject;
 use zircon_object::object::*;
 
@@ -83,8 +90,12 @@ impl UdpSocketState {
     }
 
     /// missing documentation
-    pub fn udp_read(&self, data: &mut [u8]) -> (LxResult<usize>, Endpoint) {
+    pub async fn read(&self, data: &mut [u8]) -> (SysResult, Endpoint) {
         loop {
+            #[cfg(feature = "e1000")]
+            poll_ifaces_e1000();
+            #[cfg(feature = "loopback")]
+            poll_ifaces_loopback();
             let mut sockets = SOCKETS.lock();
             let mut socket = sockets.get::<UdpSocket>(self.handle.0);
 
@@ -94,8 +105,10 @@ impl UdpSocketState {
                     // avoid deadlock
                     drop(socket);
                     drop(sockets);
-
-                    poll_ifaces();
+                    #[cfg(feature = "e1000")]
+                    poll_ifaces_e1000();
+                    #[cfg(feature = "loopback")]
+                    poll_ifaces_loopback();
                     return (Ok(size), Endpoint::Ip(endpoint));
                 }
             } else {
@@ -105,11 +118,12 @@ impl UdpSocketState {
                 );
             }
             drop(socket);
+            drop(sockets);
         }
     }
 
     /// missing documentation
-    pub fn udp_write(&self, data: &[u8], sendto_endpoint: Option<Endpoint>) -> LxResult<usize> {
+    pub fn write(&self, data: &[u8], sendto_endpoint: Option<Endpoint>) -> SysResult {
         let remote_endpoint = {
             if let Some(Endpoint::Ip(ref endpoint)) = sendto_endpoint {
                 endpoint
@@ -137,7 +151,10 @@ impl UdpSocketState {
                     drop(socket);
                     drop(sockets);
 
-                    poll_ifaces();
+                    #[cfg(feature = "e1000")]
+                    poll_ifaces_e1000();
+                    #[cfg(feature = "loopback")]
+                    poll_ifaces_loopback();
                     Ok(data.len())
                 }
                 Err(_) => Err(LxError::ENOBUFS),
@@ -162,7 +179,7 @@ impl UdpSocketState {
         (input, output, err)
     }
 
-    fn connect(&mut self, endpoint: Endpoint) -> LxResult<usize> {
+    async fn connect(&mut self, endpoint: Endpoint) -> SysResult {
         #[allow(irrefutable_let_patterns)]
         if let Endpoint::Ip(ip) = endpoint {
             self.remote_endpoint = Some(ip);
@@ -172,11 +189,14 @@ impl UdpSocketState {
         }
     }
 
-    fn bind(&mut self, endpoint: Endpoint) -> LxResult<usize> {
+    fn bind(&mut self, endpoint: Endpoint) -> SysResult {
         let mut sockets = SOCKETS.lock();
         let mut socket = sockets.get::<UdpSocket>(self.handle.0);
         #[allow(irrefutable_let_patterns)]
-        if let Endpoint::Ip(ip) = endpoint {
+        if let Endpoint::Ip(mut ip) = endpoint {
+            if ip.port == 0 {
+                ip.port = get_ephemeral_port();
+            }
             match socket.bind(ip) {
                 Ok(()) => Ok(0),
                 Err(_) => Err(LxError::EINVAL),
@@ -186,13 +206,7 @@ impl UdpSocketState {
         }
     }
 
-    fn udp_ioctl(
-        &self,
-        request: usize,
-        arg1: usize,
-        _arg2: usize,
-        _arg3: usize,
-    ) -> LxResult<usize> {
+    fn ioctl(&self, request: usize, arg1: usize, _arg2: usize, _arg3: usize) -> SysResult {
         match request {
             // SIOCGARP
             0x8954 => {
@@ -249,44 +263,65 @@ impl UdpSocketState {
 }
 impl_kobject!(UdpSocketState);
 
+/// missing in implementation
 #[async_trait]
-impl FileLike for UdpSocketState {
+impl Socket for UdpSocketState {
     /// read to buffer
-    async fn read(&self, _buf: &mut [u8]) -> LxResult<usize> {
-        unimplemented!()
+    async fn read(&self, data: &mut [u8]) -> (SysResult, Endpoint) {
+        self.read(data).await
+        // unimplemented!()
     }
     /// write from buffer
-    fn write(&self, _buf: &[u8]) -> LxResult<usize> {
-        unimplemented!()
+    fn write(&self, data: &[u8], sendto_endpoint: Option<Endpoint>) -> SysResult {
+        self.write(data, sendto_endpoint)
+        // unimplemented!()
     }
-    /// read to buffer at given offset
-    async fn read_at(&self, _offset: u64, _buf: &mut [u8]) -> LxResult<usize> {
-        unimplemented!()
-    }
-    /// write from buffer at given offset
-    fn write_at(&self, _offset: u64, _buf: &[u8]) -> LxResult<usize> {
-        unimplemented!()
+    /// connect
+    async fn connect(&self, endpoint: Endpoint) -> SysResult {
+        self.connect(endpoint).await
+        // unimplemented!()
     }
     /// wait for some event on a file descriptor
-    fn poll(&self) -> LxResult<PollStatus> {
-        unimplemented!()
-    }
-    /// wait for some event on a file descriptor use async
-    async fn async_poll(&self) -> LxResult<PollStatus> {
-        unimplemented!()
-    }
-    /// manipulates the underlying device parameters of special files
-    fn ioctl(&self, request: usize, arg1: usize, arg2: usize, arg3: usize) -> LxResult<usize> {
-        self.udp_ioctl(request, arg1, arg2, arg3)
+    fn poll(&self) -> (bool, bool, bool) {
+        self.poll()
         // unimplemented!()
     }
-    /// manipulate file descriptor
-    fn fcntl(&self, _cmd: usize, _arg: usize) -> LxResult<usize> {
+
+    fn bind(&mut self, endpoint: Endpoint) -> SysResult {
+        self.bind(endpoint)
+        // Err(LxError::EINVAL)
+    }
+    fn listen(&mut self) -> SysResult {
+        Err(LxError::EINVAL)
+    }
+    fn shutdown(&self) -> SysResult {
+        Err(LxError::EINVAL)
+    }
+    async fn accept(&mut self) -> LxResult<(Arc<Mutex<dyn Socket>>, Endpoint)> {
+        Err(LxError::EINVAL)
+    }
+    fn endpoint(&self) -> Option<Endpoint> {
+        self.endpoint()
+        // None
+    }
+    fn remote_endpoint(&self) -> Option<Endpoint> {
+        self.remote_endpoint()
+        // None
+    }
+    fn setsockopt(&self, _level: usize, _opt: usize, _data: &[u8]) -> SysResult {
+        warn!("setsockopt is unimplemented");
         Ok(0)
-        // unimplemented!()
     }
-    /// file type
-    fn file_type(&self) -> LxResult<FileLikeType> {
-        Ok(FileLikeType::UdpSocket)
+
+    /// manipulate file descriptor
+    fn ioctl(&self, request: usize, arg1: usize, arg2: usize, arg3: usize) -> SysResult {
+        warn!("ioctl is unimplemented for this socket");
+        self.ioctl(request, arg1, arg2, arg3)
+        // Ok(0)
+    }
+
+    fn fcntl(&self, _cmd: usize, _arg: usize) -> SysResult {
+        warn!("fnctl is unimplemented for this socket");
+        Ok(0)
     }
 }
