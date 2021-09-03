@@ -1,12 +1,22 @@
 #![allow(dead_code)]
+#![allow(missing_docs)]
 
-use super::{caps::*, config::*, *};
-use crate::vm::PAGE_SIZE;
-use alloc::{boxed::Box, sync::*, vec::Vec};
+use super::caps::{
+    PciCapAdvFeatures, PciCapPcie, PciCapability, PciCapabilityMsi, PciCapabilityStd, PciMsiBlock,
+};
+use super::config::{
+    PciConfig, PciReg16, PciReg32, PciReg8, PCIE_BASE_CONFIG_SIZE, PCIE_EXTENDED_CONFIG_SIZE,
+};
+use super::constants::*;
+use super::{bus::PCIeBusDriver, pci_init_args::PciIrqSwizzleLut};
+use crate::{vm::PAGE_SIZE, ZxError, ZxResult};
+
+use alloc::sync::{Arc, Weak};
+use alloc::{boxed::Box, vec::Vec};
 use kernel_hal::InterruptManager;
-use numeric_enum_macro::*;
+use numeric_enum_macro::numeric_enum;
 use region_alloc::RegionAllocator;
-use spin::*;
+use spin::{Mutex, MutexGuard};
 
 numeric_enum! {
     #[repr(u8)]
@@ -953,7 +963,7 @@ impl PcieDevice {
             }))
         }
     }
-    fn enable_msi_irq_mode(&self, inner: &mut MutexGuard<PcieDeviceInner>, irq: u32) -> ZxResult {
+    fn enter_msi_irq_mode(&self, inner: &mut MutexGuard<PcieDeviceInner>, irq: u32) -> ZxResult {
         let (_std, msi) = inner.msi().ok_or(ZxError::NOT_SUPPORTED)?;
         let initially_masked = if msi.has_pvm {
             self.cfg
@@ -1134,7 +1144,7 @@ impl PcieDevice {
                 inner.irq.legacy.shared_handler.add_device(inner.arc_self());
                 Ok(())
             }
-            PcieIrqMode::Msi => self.enable_msi_irq_mode(&mut inner, irq_count),
+            PcieIrqMode::Msi => self.enter_msi_irq_mode(&mut inner, irq_count),
             PcieIrqMode::MsiX => Err(ZxError::NOT_SUPPORTED),
             _ => Err(ZxError::INVALID_ARGS),
         }

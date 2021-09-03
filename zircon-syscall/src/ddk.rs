@@ -132,6 +132,7 @@ impl Syscall<'_> {
     }
 
     ///   
+    #[allow(unused_variables, unused_mut)]
     pub fn sys_pc_firmware_tables(
         &self,
         resource: HandleValue,
@@ -142,10 +143,16 @@ impl Syscall<'_> {
         let proc = self.thread.proc();
         proc.get_object::<Resource>(resource)?
             .validate(ResourceKind::ROOT)?;
-        let (acpi_rsdp, smbios) = kernel_hal::pc_firmware_tables();
-        acpi_rsdp_ptr.write(acpi_rsdp)?;
-        smbios_ptr.write(smbios)?;
-        Ok(())
+        cfg_if::cfg_if! {
+            if #[cfg(all(target_arch = "x86_64", target_os = "none"))] {
+                let (acpi_rsdp, smbios) = kernel_hal::pc_firmware_tables();
+                acpi_rsdp_ptr.write(acpi_rsdp)?;
+                smbios_ptr.write(smbios)?;
+                Ok(())
+            } else {
+                Err(ZxError::NOT_SUPPORTED)
+            }
+        }
     }
 
     /// Creates an interrupt object which represents a physical or virtual interrupt.  

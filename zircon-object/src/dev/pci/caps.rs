@@ -1,6 +1,6 @@
-use super::super::{ZxError, ZxResult};
-use super::config::PciConfig;
-use super::nodes::PcieDeviceType;
+use super::{config::PciConfig, nodes::PcieDeviceType};
+use crate::{ZxError, ZxResult};
+
 use alloc::boxed::Box;
 use core::convert::TryFrom;
 use kernel_hal::InterruptManager;

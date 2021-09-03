@@ -1,5 +1,6 @@
-use super::*;
-use numeric_enum_macro::*;
+use super::pio::{pio_config_read_addr, pio_config_write_addr};
+use super::PciAddrSpace;
+use numeric_enum_macro::numeric_enum;
 
 #[derive(Debug)]
 pub struct PciConfig {

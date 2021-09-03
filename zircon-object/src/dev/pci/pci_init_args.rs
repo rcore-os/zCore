@@ -3,6 +3,9 @@
 //!
 //! reference: zircon/system/public/zircon/syscalls/pci.h
 
+use super::constants::*;
+use crate::{ZxError, ZxResult};
+
 #[repr(transparent)]
 #[derive(Clone, Copy)]
 pub struct PciIrqSwizzleLut(
@@ -42,7 +45,6 @@ pub const PCI_INIT_ARG_MAX_SIZE: usize = core::mem::size_of::<PciInitArgsAddrWin
     * PCI_INIT_ARG_MAX_ECAM_WINDOWS
     + core::mem::size_of::<PciInitArgsHeader>();
 
-use super::*;
 use kernel_hal::InterruptManager;
 
 impl PciInitArgsHeader {

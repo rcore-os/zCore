@@ -1,4 +1,9 @@
-use {super::super::pci::PCIE_IRQRET_MASK, super::super::IPciNode, super::*, spin::Mutex};
+use alloc::{boxed::Box, sync::Arc};
+use spin::Mutex;
+
+use super::InterruptTrait;
+use crate::dev::pci::{constants::PCIE_IRQRET_MASK, IPciNode};
+use crate::{ZxError, ZxResult};
 
 pub struct PciInterrupt {
     device: Arc<dyn IPciNode>,
