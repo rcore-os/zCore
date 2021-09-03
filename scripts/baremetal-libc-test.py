@@ -3,6 +3,7 @@ import glob
 import subprocess
 import re
 import sys
+import time
 # ===============Must Config========================
 
 TIMEOUT = 30  # seconds
@@ -86,6 +87,10 @@ for file in allow_files:
             failed.add(file)
         except subprocess.TimeoutExpired:
             timeout.add(file)
+        # here qemu need to be done and exit 
+        # if not ， kill it manual
+        os.system('killall qemu-system-x86')
+        time.sleep(2)
 
 print("=======================================")
 print("PASSED num: ", len(passed))
