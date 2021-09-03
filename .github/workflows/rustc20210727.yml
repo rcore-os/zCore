@@ -7,10 +7,11 @@ on:
     - cron: '40 3 * * *'  # every day at 3:40
 
 jobs:
-  baremetal-riscv-libc-test:
+  check:
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
           toolchain: nightly-2021-07-27
@@ -43,19 +44,36 @@ jobs:
           profile: minimal
           toolchain: nightly-2021-07-27
           components: rust-src
-      - name: Set up QEMU
-        id: qemu
-        uses: docker/setup-qemu-action@v1
+      - name: Build
+        run: arch=x86_64 cargo build
+#        uses: actions-rs/cargo@v1
+#        with:
+#          command: build
+      - name: Build zCore
+        run: |
+          cd zCore
+          make build arch=x86_64 
+      # FIX LATER
+      # - name: Build zCore with hypervisor
+      #   run: |
+      #     cd zCore
+      #     make build hypervisor=1
+
+  build-aarch64:
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
         with:
-          image: tonistiigi/binfmt:qemu-v5.2.0
-          platforms: all
-      - name: Available platforms
-        run: echo ${{ steps.qemu.outputs.platforms }}
-      - name: Use Qemu 
-        run: | 
-          qemu-riscv64 -M virt -m 256M -nographic \    
-            -bios  default \   
-            -append "root=/dev/vda rw console=ttyS0"
+          profile: minimal
+          toolchain: nightly-2021-07-27
+          override: true
+          target: aarch64-unknown-linux-gnu
+      - uses: actions-rs/cargo@v1
+        with:
+          command: build
+          use-cross: true
+          args: -p zircon-loader --target aarch64-unknown-linux-gnu
 
   build-user:
     runs-on: ${{ matrix.os }}
@@ -108,21 +126,15 @@ jobs:
 #          github-token: ${{ secrets.GITHUB_TOKEN }}
 #          path-to-lcov: ${{ steps.coverage.outputs.report }}
 
-#   build-aarch64:
-#     runs-on: ubuntu-20.04
-#     steps:
-#       - uses: actions/checkout@v2
-#       - uses: actions-rs/toolchain@v1
-#         with:
-#           profile: minimal
-#           toolchain: nightly-2021-07-27
-#           override: true
-#           target: aarch64-unknown-linux-gnu
-#       - uses: actions-rs/cargo@v1
-#         with:
-#           command: build
-#           use-cross: true
-#           args: -p zircon-loader --target aarch64-unknown-linux-gnu
+  bench:
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v2
+      - name: Run benchmarks
+        run: arch=x86_64 cargo bench
+#        uses: actions-rs/cargo@v1
+#        with:
+#          command: bench
 
   core-test:
     runs-on: ubuntu-20.04
