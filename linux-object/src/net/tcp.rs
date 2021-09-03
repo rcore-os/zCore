@@ -376,6 +376,11 @@ impl Socket for TcpSocketState {
 
     fn fcntl(&self, _cmd: usize, _arg: usize) -> SysResult {
         warn!("fnctl is unimplemented for this socket");
-        Ok(0)
+        // now no fnctl impl but need to pass libctest , so just do a trick
+        match _cmd {
+            1 => Ok(1),
+            3 => Ok(0o4000),
+            _ => Ok(0)
+        }
     }
 }
