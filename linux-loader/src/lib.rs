@@ -94,7 +94,7 @@ async fn new_thread(thread: CurrentThread) {
         match cx.trap_num {
             0x100 => handle_syscall(&thread, &mut cx.general).await,
             0x20..=0x3f => {
-                kernel_hal::InterruptManager::handle(cx.trap_num as u8);
+                kernel_hal::InterruptManager::handle_irq(cx.trap_num as u32);
                 if cx.trap_num == 0x20 {
                     kernel_hal::yield_now().await;
                 }
@@ -129,7 +129,7 @@ async fn new_thread(thread: CurrentThread) {
                 match trap_num {
                     //Irq
                     0 | 4 | 5 | 8 | 9 => {
-                        kernel_hal::InterruptManager::handle(trap_num as u8);
+                        kernel_hal::InterruptManager::handle_irq(trap_num as u32);
 
                         //Timer
                         if trap_num == 4 || trap_num == 5 {
@@ -144,7 +144,7 @@ async fn new_thread(thread: CurrentThread) {
                             kernel_hal::yield_now().await;
                         }
 
-                        //kernel_hal::InterruptManager::handle(trap_num as u8);
+                        //kernel_hal::InterruptManager::handle_irq(trap_num as u32);
                     }
                     _ => panic!(
                         "not supported pid: {} interrupt {} from user mode. {:#x?}",

@@ -47,7 +47,7 @@ impl PciMsiBlock {
             return Err(ZxError::INVALID_ARGS);
         }
         let (start, size) =
-            InterruptManager::allocate_block(irq_num).ok_or(ZxError::NO_RESOURCES)?;
+            InterruptManager::msi_allocate_block(irq_num).ok_or(ZxError::NO_RESOURCES)?;
         Ok(PciMsiBlock {
             target_addr: (0xFEE0_0000 | 0x08) & !0x4,
             target_data: start as u32,
@@ -57,12 +57,12 @@ impl PciMsiBlock {
         })
     }
     pub fn free(&self) {
-        InterruptManager::free_block(self.base_irq, self.num_irq)
+        InterruptManager::msi_free_block(self.base_irq, self.num_irq)
     }
     pub fn register_handler(&self, msi_id: u32, handle: Box<dyn Fn() + Send + Sync>) {
         assert!(self.allocated);
         assert!(msi_id < self.num_irq);
-        InterruptManager::overwrite_handler(self.base_irq + msi_id, handle);
+        InterruptManager::msi_register_handler(self.base_irq, self.num_irq, msi_id, handle);
     }
 }
 

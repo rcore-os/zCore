@@ -25,14 +25,14 @@ impl InterruptTrait for EventInterrupt {
     fn mask(&self) {
         let inner = self.inner.lock();
         if inner.register {
-            InterruptManager::disable(self.vector as u32);
+            InterruptManager::disable_irq(self.vector as u32);
         }
     }
 
     fn unmask(&self) {
         let inner = self.inner.lock();
         if inner.register {
-            InterruptManager::enable(self.vector as u32);
+            InterruptManager::enable_irq(self.vector as u32);
         }
     }
 
@@ -41,7 +41,7 @@ impl InterruptTrait for EventInterrupt {
         if inner.register {
             return Err(ZxError::ALREADY_BOUND);
         }
-        if InterruptManager::set_ioapic_handle(self.vector, handle).is_some() {
+        if InterruptManager::register_irq_handler(self.vector, handle).is_some() {
             inner.register = true;
             Ok(())
         } else {
@@ -54,7 +54,7 @@ impl InterruptTrait for EventInterrupt {
         if !inner.register {
             return Ok(());
         }
-        if InterruptManager::reset_ioapic_handle(self.vector) {
+        if InterruptManager::unregister_irq_handler(self.vector) {
             inner.register = false;
             Ok(())
         } else {

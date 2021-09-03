@@ -121,8 +121,8 @@ pub fn irq_handle(irq: u8) {
     }
 }
 
-#[export_name = "hal_ioapic_set_handle"]
-pub fn set_handle(global_irq: u32, handle: InterruptHandle) -> Option<u8> {
+#[export_name = "hal_irq_register_handler"]
+pub fn register_irq_handler(global_irq: u32, handle: InterruptHandle) -> Option<u32> {
     info!("set_handle irq={:#x?}", global_irq);
     // if global_irq == 1 {
     //     irq_add_handle(global_irq as u8 + IRQ0, handle);
@@ -147,12 +147,12 @@ pub fn set_handle(global_irq: u32, handle: InterruptHandle) -> Option<u8> {
             global_irq, x
         );
         ioapic.set_irq_vector(offset, x);
-        x
+        x as u32
     })
 }
 
-#[export_name = "hal_ioapic_reset_handle"]
-pub fn reset_handle(global_irq: u32) -> bool {
+#[export_name = "hal_irq_unregister_handler"]
+pub fn unregister_irq_handler(global_irq: u32) -> bool {
     info!("reset_handle");
     let ioapic_info = if let Some(x) = get_ioapic(global_irq) {
         x
@@ -171,8 +171,7 @@ pub fn reset_handle(global_irq: u32) -> bool {
 }
 
 /// Add a handle to IRQ table. Return the specified irq or an allocated irq on success
-#[export_name = "hal_irq_add_handle"]
-pub fn irq_add_handle(irq: u8, handle: InterruptHandle) -> Option<u8> {
+fn irq_add_handle(irq: u8, handle: InterruptHandle) -> Option<u8> {
     info!("IRQ add handle {:#x?}", irq);
     let mut table = IRQ_TABLE.lock();
     // allocate a valid irq number
@@ -196,8 +195,7 @@ pub fn irq_add_handle(irq: u8, handle: InterruptHandle) -> Option<u8> {
     }
 }
 
-#[export_name = "hal_irq_remove_handle"]
-pub fn irq_remove_handle(irq: u8) -> bool {
+fn irq_remove_handle(irq: u8) -> bool {
     // TODO: ioapic redirection entries associated with this should be reset.
     info!("IRQ remove handle {:#x?}", irq);
     let irq = irq as usize;
@@ -211,8 +209,16 @@ pub fn irq_remove_handle(irq: u8) -> bool {
     }
 }
 
-#[export_name = "hal_irq_allocate_block"]
-pub fn allocate_block(irq_num: u32) -> Option<(usize, usize)> {
+fn irq_overwrite_handler(irq: u8, handle: Box<dyn Fn() + Send + Sync>) -> bool {
+    info!("IRQ overwrite handle {:#x?}", irq);
+    let mut table = IRQ_TABLE.lock();
+    let set = table[irq as usize].is_none();
+    table[irq as usize] = Some(handle);
+    set
+}
+
+#[export_name = "hal_msi_allocate_block"]
+pub fn msi_allocate_block(irq_num: u32) -> Option<(usize, usize)> {
     info!("hal_irq_allocate_block: count={:#x?}", irq_num);
     let irq_num = u32::next_power_of_two(irq_num) as usize;
     let mut irq_start = 0x20;
@@ -236,21 +242,22 @@ pub fn allocate_block(irq_num: u32) -> Option<(usize, usize)> {
     Some((irq_start, irq_num))
 }
 
-#[export_name = "hal_irq_free_block"]
-pub fn free_block(irq_start: u32, irq_num: u32) {
+#[export_name = "hal_msi_free_block"]
+pub fn msi_free_block(irq_start: u32, irq_num: u32) {
     let mut table = IRQ_TABLE.lock();
     for i in irq_start..irq_start + irq_num {
         table[i as usize] = None;
     }
 }
 
-#[export_name = "hal_irq_overwrite_handler"]
-pub fn overwrite_handler(msi_id: u32, handle: Box<dyn Fn() + Send + Sync>) -> bool {
-    info!("IRQ overwrite handle {:#x?}", msi_id);
-    let mut table = IRQ_TABLE.lock();
-    let set = table[msi_id as usize].is_none();
-    table[msi_id as usize] = Some(handle);
-    set
+#[export_name = "hal_msi_register_handler"]
+pub fn msi_register_handler(
+    irq_start: u32,
+    _irq_num: u32,
+    msi_id: u32,
+    handle: Box<dyn Fn() + Send + Sync>,
+) {
+    irq_overwrite_handler((irq_start + msi_id) as u8, handle);
 }
 
 #[export_name = "hal_irq_enable"]
@@ -283,26 +290,21 @@ pub fn irq_disable(irq: u32) {
 }
 
 #[export_name = "hal_irq_configure"]
-pub fn irq_configure(
-    global_irq: u32,
-    vector: u8,
-    dest: u8,
-    level_trig: bool,
-    active_high: bool,
-) -> bool {
+pub fn irq_configure(vector: u32, trig_mode: bool, polarity: bool) -> bool {
     info!(
-        "irq_configure: irq={:#x?}, vector={:#x?}, dest={:#x?}, level_trig={:#x?}, active_high={:#x?}",
-        global_irq, vector, dest, level_trig, active_high
+        "irq_configure: vector={:#x?}, trig_mode={:#x?}, polarity={:#x?}",
+        vector, trig_mode, polarity
     );
-    get_ioapic(global_irq)
+    let dest = super::apic_local_id();
+    get_ioapic(vector)
         .map(|x| {
             let mut ioapic = ioapic_controller(&x);
             ioapic.config(
-                (global_irq - x.global_system_interrupt_base) as u8,
-                vector,
+                (vector - x.global_system_interrupt_base) as u8,
+                0,
                 dest,
-                level_trig,
-                active_high,
+                trig_mode,
+                polarity,
                 false, /* physical */
                 true,  /* mask */
             );
@@ -310,8 +312,7 @@ pub fn irq_configure(
         .is_some()
 }
 
-#[export_name = "hal_irq_maxinstr"]
-pub fn ioapic_maxinstr(ioapic_addr: u32) -> Option<u8> {
+fn ioapic_maxinstr(ioapic_addr: u32) -> Option<u8> {
     let mut table = MAX_INSTR_TABLE.lock();
     for (addr, v) in table.iter() {
         if *addr == ioapic_addr as usize {
@@ -329,7 +330,7 @@ lazy_static! {
 }
 
 #[export_name = "hal_irq_isvalid"]
-pub fn irq_is_valid(irq: u32) -> bool {
+pub fn is_valid_irq(irq: u32) -> bool {
     trace!("irq_is_valid: irq={:#x?}", irq);
     get_ioapic(irq).is_some()
 }
