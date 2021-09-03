@@ -81,7 +81,6 @@ baremetal-test-qemu_opts += \
 	-device ich9-ahci,id=ahci \
 	-serial mon:stdio \
 	-m 4G \
-	-device isa-debug-exit,iobase=0xf4,iosize=0x04 \
 	-netdev type=user,id=net0,hostfwd=udp::6969-:6969,hostfwd=tcp::9999-:9999 \
 	-device e1000,netdev=net0,mac=52:54:98:76:54:32 \
 	-device isa-debug-exit,iobase=0xf4,iosize=0x04
@@ -96,9 +95,6 @@ qemu_opts += \
 	-drive file=$(QEMU_DISK),format=qcow2,id=sfs \
 	-device virtio-blk-device,drive=sfs \
 	-kernel $(kernel_bin)
-	-device isa-debug-exit,iobase=0xf4,iosize=0x04 \
-	-netdev type=user,id=net0,hostfwd=udp::6969-:6969 \
-	-device e1000e,netdev=net0
 endif
 
 ifeq ($(hypervisor), 1)
@@ -232,6 +228,14 @@ else
 	@qemu-img create -f qcow2 $@ 100M
 endif
 
+d1: $(kernel_bin)
+	cp $(BOOTLOADER) $(BOOTLOADER).copy
+	dd if=$(kernel_bin) of=$(BOOTLOADER).copy bs=$(BOOTLOADER_SIZE) seek=1
+	mv $(BOOTLOADER).copy $(kernel_bin)
+	xfel ddr ddr3
+	xfel write 0x40000000 $(kernel_bin)
+	xfel exec 0x40000000
+	
 baremetal-qemu-disk:
 	@qemu-img create -f qcow2 $(build_path)/disk.qcow2 100M
 

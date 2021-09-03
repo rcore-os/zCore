@@ -199,35 +199,12 @@ fn main(ramfs_data: &'static mut [u8], cmdline: &str) -> ! {
     let args: Vec<String> = get_rootproc(cmdline);
     let envs: Vec<String> = vec!["PATH=/usr/sbin:/usr/bin:/sbin:/bin".into()];
 
-    #[cfg(target_arch = "x86_64")]
-    let device = Arc::new(MemBuf::new(ramfs_data));
-    #[cfg(target_arch = "riscv64")]
-    let device = {
-        let driver = BlockDriverWrapper(
-            BLK_DRIVERS
-                .read()
-                .iter()
-                .next()
-                .expect("Block device not found")
-                .clone(),
-        );
-        Arc::new(rcore_fs::dev::block_cache::BlockCache::new(driver, 0x100))
-    };
-
-    info!("Opening the rootfs ...");
-    // 输入类型: Arc<Device>
-    let rootfs =
-        rcore_fs_sfs::SimpleFileSystem::open(device).expect("failed to open device SimpleFS");
-
-    // fat32
-    //let img_file = File::open("fat.img")?;
-    //let fs = fatfs::FileSystem::new(img_file, fatfs::FsOptions::new())?;
-
     // let net_device = 获得设备
     // let net_stack = net_stack::init(device).expect("faild init net statck")
     #[cfg(feature = "loopback")]
     let net_stack = net_stack::init();
-    
+
+    let rootfs = fs::init_filesystem(ramfs_data);
     let _proc = linux_loader::run(args, envs, rootfs /* ， net_stack */);
     info!("linux_loader is complete");
 

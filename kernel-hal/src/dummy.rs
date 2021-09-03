@@ -477,6 +477,12 @@ pub fn fill_random(_buf: &mut [u8]) {
 }
 
 #[linkage = "weak"]
+#[export_name = "hal_rand"]
+pub fn rand() -> u64 {
+    unimplemented!()
+}
+
+#[linkage = "weak"]
 #[export_name = "hal_current_pgtable"]
 pub fn current_page_table() -> usize {
     unimplemented!()
@@ -491,17 +497,5 @@ pub fn mice_set_callback(_callback: Box<dyn Fn([u8; 3]) + Send + Sync>) {
 #[linkage = "weak"]
 #[export_name = "hal_kbd_set_callback"]
 pub fn kbd_set_callback(_callback: Box<dyn Fn(u16, i32) + Send + Sync>) {
-    unimplemented!()
-}
-
-#[linkage = "weak"]
-#[export_name = "hal_rand"]
-pub fn rand() -> u64 {
-    unimplemented!()
-}
-
-#[linkage = "weak"]
-#[export_name = "hal_rand"]
-pub fn rand() -> u64 {
     unimplemented!()
 }
