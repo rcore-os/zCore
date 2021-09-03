@@ -380,7 +380,11 @@ impl Socket for TcpSocketState {
         match _cmd {
             1 => Ok(1),
             3 => Ok(0o4000),
+<<<<<<< HEAD
+            _ => Ok(0),
+=======
             _ => Ok(0)
+>>>>>>> 4a495f59c4cc8445d70487161c5ea653628cecc8
         }
     }
 }
