@@ -3,6 +3,9 @@
 //!
 //! reference: zircon/system/public/zircon/syscalls/pci.h
 
+use super::constants::*;
+use crate::{ZxError, ZxResult};
+
 #[repr(transparent)]
 #[derive(Clone, Copy)]
 pub struct PciIrqSwizzleLut(
@@ -42,7 +45,6 @@ pub const PCI_INIT_ARG_MAX_SIZE: usize = core::mem::size_of::<PciInitArgsAddrWin
     * PCI_INIT_ARG_MAX_ECAM_WINDOWS
     + core::mem::size_of::<PciInitArgsHeader>();
 
-use super::*;
 use kernel_hal::InterruptManager;
 
 impl PciInitArgsHeader {
@@ -50,38 +52,18 @@ impl PciInitArgsHeader {
         for i in 0..self.num_irqs as usize {
             let irq = &mut self.irqs[i];
             let global_irq = irq.global_irq;
-            if !is_valid_interrupt(global_irq) {
+            if !InterruptManager::is_valid_irq(global_irq) {
                 irq.global_irq = PCI_NO_IRQ_MAPPING;
                 self.dev_pin_to_global_irq.remove_irq(global_irq);
-            } else {
-                irq_configure(
-                    global_irq,
-                    irq.level_triggered, /* Trigger mode */
-                    irq.active_high,     /* Polarity */
-                )?;
+            } else if !InterruptManager::configure_irq(
+                global_irq,
+                irq.level_triggered, /* Trigger mode */
+                irq.active_high,     /* Polarity */
+            ) {
+                return Err(ZxError::INVALID_ARGS);
             }
         }
         Ok(())
-    }
-}
-
-fn is_valid_interrupt(irq: u32) -> bool {
-    InterruptManager::is_valid(irq)
-}
-
-fn irq_configure(irq: u32, level_trigger: bool, active_high: bool) -> ZxResult {
-    // In fuchsia source code, 'BSP' stands for bootstrap processor
-    let dest = kernel_hal::apic_local_id();
-    if InterruptManager::configure(
-        irq,
-        0, // vector
-        dest,
-        level_trigger,
-        active_high,
-    ) {
-        Ok(())
-    } else {
-        Err(ZxError::INVALID_ARGS)
     }
 }
 

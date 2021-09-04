@@ -88,8 +88,7 @@ pub fn irq_handle(irq: u8) {
 }
 
 /// Add a handle to IRQ table. Return the specified irq or an allocated irq on success
-#[export_name = "hal_irq_add_handle"]
-pub fn irq_add_handle(irq: u8, handle: InterruptHandle) -> Option<u8> {
+fn irq_add_handle(irq: u8, handle: InterruptHandle) -> Option<u8> {
     info!("IRQ add handle {:#x?}", irq);
     let mut table = IRQ_TABLE.lock();
     // allocate a valid irq number
@@ -115,8 +114,7 @@ pub fn irq_add_handle(irq: u8, handle: InterruptHandle) -> Option<u8> {
     }
 }
 
-#[export_name = "hal_irq_remove_handle"]
-pub fn irq_remove_handle(irq: u8) -> bool {
+fn irq_remove_handle(irq: u8) -> bool {
     info!("IRQ remove handle {:#x?}", irq);
     let irq = irq as usize;
     let mut table = IRQ_TABLE.lock();
@@ -127,50 +125,6 @@ pub fn irq_remove_handle(irq: u8) -> bool {
         }
         None => true,
     }
-}
-
-/*
-#[export_name = "hal_irq_allocate_block"]
-pub fn allocate_block(irq_num: u32) -> Option<(usize, usize)> {
-    info!("hal_irq_allocate_block: count={:#x?}", irq_num);
-    let irq_num = u32::next_power_of_two(irq_num) as usize;
-    let mut irq_start = 0x20;
-    let mut irq_cur = irq_start;
-    let mut table = IRQ_TABLE.lock();
-    while irq_cur < TABLE_SIZE && irq_cur < irq_start + irq_num {
-        if table[irq_cur].is_none() {
-            irq_cur += 1;
-        } else {
-            irq_start = (irq_cur - irq_cur % irq_num) + irq_num;
-            irq_cur = irq_start;
-        }
-    }
-    for i in irq_start..irq_start + irq_num {
-        table[i] = Some(Box::new(|| {}));
-    }
-    info!(
-        "hal_irq_allocate_block: start={:#x?} num={:#x?}",
-        irq_start, irq_num
-    );
-    Some((irq_start, irq_num))
-}
-
-#[export_name = "hal_irq_free_block"]
-pub fn free_block(irq_start: u32, irq_num: u32) {
-    let mut table = IRQ_TABLE.lock();
-    for i in irq_start..irq_start + irq_num {
-        table[i as usize] = None;
-    }
-}
-*/
-
-#[export_name = "hal_irq_overwrite_handler"]
-pub fn overwrite_handler(msi_id: u32, handle: Box<dyn Fn() + Send + Sync>) -> bool {
-    info!("IRQ overwrite handle {:#x?}", msi_id);
-    let mut table = IRQ_TABLE.lock();
-    let set = table[msi_id as usize].is_none();
-    table[msi_id as usize] = Some(handle);
-    set
 }
 
 fn breakpoint(sepc: &mut usize) {

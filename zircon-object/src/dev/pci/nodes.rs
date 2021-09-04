@@ -1,12 +1,22 @@
 #![allow(dead_code)]
+#![allow(missing_docs)]
 
-use super::{caps::*, config::*, *};
-use crate::vm::PAGE_SIZE;
-use alloc::{boxed::Box, sync::*, vec::Vec};
+use super::caps::{
+    PciCapAdvFeatures, PciCapPcie, PciCapability, PciCapabilityMsi, PciCapabilityStd, PciMsiBlock,
+};
+use super::config::{
+    PciConfig, PciReg16, PciReg32, PciReg8, PCIE_BASE_CONFIG_SIZE, PCIE_EXTENDED_CONFIG_SIZE,
+};
+use super::constants::*;
+use super::{bus::PCIeBusDriver, pci_init_args::PciIrqSwizzleLut};
+use crate::{vm::PAGE_SIZE, ZxError, ZxResult};
+
+use alloc::sync::{Arc, Weak};
+use alloc::{boxed::Box, vec::Vec};
 use kernel_hal::InterruptManager;
-use numeric_enum_macro::*;
+use numeric_enum_macro::numeric_enum;
 use region_alloc::RegionAllocator;
-use spin::*;
+use spin::{Mutex, MutexGuard};
 
 numeric_enum! {
     #[repr(u8)]
@@ -182,13 +192,13 @@ impl SharedLegacyIrqHandler {
     /// Create a new SharedLegacyIrqHandler.
     pub fn create(irq_id: u32) -> Option<Arc<SharedLegacyIrqHandler>> {
         info!("SharedLegacyIrqHandler created for {:#x?}", irq_id);
-        InterruptManager::disable(irq_id);
+        InterruptManager::disable_irq(irq_id);
         let handler = Arc::new(SharedLegacyIrqHandler {
             irq_id,
             device_handler: Mutex::new(Vec::new()),
         });
         let handler_copy = handler.clone();
-        if InterruptManager::set_ioapic_handle(irq_id, Box::new(move || handler_copy.handle()))
+        if InterruptManager::register_irq_handler(irq_id, Box::new(move || handler_copy.handle()))
             .is_some()
         {
             Some(handler)
@@ -201,7 +211,7 @@ impl SharedLegacyIrqHandler {
     pub fn handle(&self) {
         let device_handler = self.device_handler.lock();
         if device_handler.is_empty() {
-            InterruptManager::disable(self.irq_id);
+            InterruptManager::disable_irq(self.irq_id);
             return;
         }
         for dev in device_handler.iter() {
@@ -250,7 +260,7 @@ impl SharedLegacyIrqHandler {
         let is_first = device_handler.is_empty();
         device_handler.push(device);
         if is_first {
-            InterruptManager::enable(self.irq_id);
+            InterruptManager::enable_irq(self.irq_id);
         }
     }
     pub fn remove_device(&self, device: Arc<PcieDevice>) {
@@ -262,7 +272,7 @@ impl SharedLegacyIrqHandler {
         let mut device_handler = self.device_handler.lock();
         device_handler.retain(|h| Arc::ptr_eq(h, &device));
         if device_handler.is_empty() {
-            InterruptManager::disable(self.irq_id);
+            InterruptManager::disable_irq(self.irq_id);
         }
     }
 }
@@ -953,7 +963,7 @@ impl PcieDevice {
             }))
         }
     }
-    fn enable_msi_irq_mode(&self, inner: &mut MutexGuard<PcieDeviceInner>, irq: u32) -> ZxResult {
+    fn enter_msi_irq_mode(&self, inner: &mut MutexGuard<PcieDeviceInner>, irq: u32) -> ZxResult {
         let (_std, msi) = inner.msi().ok_or(ZxError::NOT_SUPPORTED)?;
         let initially_masked = if msi.has_pvm {
             self.cfg
@@ -1134,7 +1144,7 @@ impl PcieDevice {
                 inner.irq.legacy.shared_handler.add_device(inner.arc_self());
                 Ok(())
             }
-            PcieIrqMode::Msi => self.enable_msi_irq_mode(&mut inner, irq_count),
+            PcieIrqMode::Msi => self.enter_msi_irq_mode(&mut inner, irq_count),
             PcieIrqMode::MsiX => Err(ZxError::NOT_SUPPORTED),
             _ => Err(ZxError::INVALID_ARGS),
         }

@@ -1,9 +1,18 @@
-use super::super::*;
-use super::config::*;
-use super::*;
+use super::nodes::{
+    IPciNode, PciNodeType, PciRoot, PcieBarInfo, PcieIrqMode, PcieIrqModeCaps,
+    SharedLegacyIrqHandler,
+};
+use super::{
+    config::PciConfig, constants::*, pci_init_args::PciIrqSwizzleLut, pio::pci_bdf_raw_addr,
+    MappedEcamRegion, PciAddrSpace, PciEcamRegion,
+};
+use crate::dev::Interrupt;
 use crate::object::*;
 use crate::vm::{kernel_allocate_physical, CachePolicy, MMUFlags, PhysAddr, VirtAddr};
-use alloc::{collections::BTreeMap, sync::Arc, vec::Vec};
+use crate::ZxResult;
+
+use alloc::sync::{Arc, Weak};
+use alloc::{collections::BTreeMap, vec::Vec};
 use core::cmp::min;
 use core::marker::{Send, Sync};
 use lazy_static::*;

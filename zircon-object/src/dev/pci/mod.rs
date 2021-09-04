@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 mod bus;
 mod caps;
 mod config;
@@ -5,17 +7,11 @@ mod nodes;
 pub mod pci_init_args;
 mod pio;
 
-use super::*;
-use alloc::sync::*;
-pub(crate) use nodes::*;
-use pci_init_args::*;
-use pio::*;
-
 pub use self::bus::{
     MmioPcieAddressProvider, PCIeBusDriver, PcieDeviceInfo, PcieDeviceKObject,
     PioPcieAddressProvider,
 };
-pub use self::nodes::PcieIrqMode;
+pub use self::nodes::{IPciNode, PcieIrqMode};
 pub use self::pio::{pio_config_read, pio_config_write};
 
 /// Type of PCI address space.
@@ -46,10 +42,8 @@ pub struct MappedEcamRegion {
     vaddr: u64,
 }
 
-pub use constants::*;
-
 #[allow(missing_docs)]
-mod constants {
+pub mod constants {
     pub const PCI_MAX_DEVICES_PER_BUS: usize = 32;
     pub const PCI_MAX_FUNCTIONS_PER_DEVICE: usize = 8;
     pub const PCI_MAX_LEGACY_IRQ_PINS: usize = 4;

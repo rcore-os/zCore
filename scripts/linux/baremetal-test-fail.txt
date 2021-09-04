@@ -53,3 +53,7 @@
 /libc-test/src/functional/popen.exe
 /libc-test/src/regression/statvfs-static.exe
 /libc-test/src/regression/sem_close-unmap-static.exe
+/libc-test/src/regression/execle-env-static.exe
+/libc-test/src/regression/execle-env.exe
+/libc-test/src/functional/pthread_tsd-static.exe
+/libc-test/src/functional/tls_init-static.exe

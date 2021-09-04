@@ -22,4 +22,4 @@ numeric-enum-macro = "0.2"
 zircon-object = { path = "../zircon-object" }
 kernel-hal = { path = "../kernel-hal" }
 futures = { version = "0.3", default-features = false, features = ["alloc", "async-await"] }
-
+cfg-if = "1.0"

@@ -217,7 +217,7 @@ async fn new_thread(thread: CurrentThread) {
         match trap_num {
             0x100 => handle_syscall(&thread).await,
             0x20..=0x3f => {
-                kernel_hal::InterruptManager::handle(trap_num as u8);
+                kernel_hal::InterruptManager::handle_irq(trap_num as u32);
                 if trap_num == 0x20 {
                     EXCEPTIONS_TIMER.add(1);
                     kernel_hal::yield_now().await;

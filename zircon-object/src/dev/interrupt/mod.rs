@@ -2,7 +2,7 @@ use {
     self::event_interrupt::*,
     self::pci_interrupt::*,
     self::virtual_interrupt::*,
-    super::IPciNode,
+    crate::dev::pci::IPciNode,
     crate::object::*,
     crate::signal::*,
     alloc::{boxed::Box, sync::Arc},

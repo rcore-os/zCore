@@ -322,7 +322,6 @@ impl Syscall<'_> {
             Sys::PCI_ADD_SUBTRACT_IO_RANGE => {
                 self.sys_pci_add_subtract_io_range(a0 as _, a1 != 0, a2 as _, a3 as _, a4 != 0)
             }
-            #[cfg(target_arch = "x86_64")]
             Sys::PCI_CFG_PIO_RW => self.sys_pci_cfg_pio_rw(
                 a0 as _,
                 a1 as _,
