@@ -315,86 +315,76 @@ pub fn timer_tick() {
 
 pub struct InterruptManager {}
 impl InterruptManager {
-    /// Handle IRQ.
-    #[linkage = "weak"]
-    #[export_name = "hal_irq_handle"]
-    pub fn handle(_irq: u8) {
-        unimplemented!()
-    }
-    ///
-    #[linkage = "weak"]
-    #[export_name = "hal_ioapic_set_handle"]
-    pub fn set_ioapic_handle(_global_irq: u32, _handle: Box<dyn Fn() + Send + Sync>) -> Option<u8> {
-        unimplemented!()
-    }
-    /// Add an interrupt handle to an irq
-    #[linkage = "weak"]
-    #[export_name = "hal_irq_add_handle"]
-    pub fn add_handle(_global_irq: u8, _handle: Box<dyn Fn() + Send + Sync>) -> Option<u8> {
-        unimplemented!()
-    }
-    ///
-    #[linkage = "weak"]
-    #[export_name = "hal_ioapic_reset_handle"]
-    pub fn reset_ioapic_handle(_global_irq: u32) -> bool {
-        unimplemented!()
-    }
-    /// Remove the interrupt handle of an irq
-    #[linkage = "weak"]
-    #[export_name = "hal_irq_remove_handle"]
-    pub fn remove_handle(_irq: u8) -> bool {
-        unimplemented!()
-    }
-    /// Allocate contiguous positions for irq
-    #[linkage = "weak"]
-    #[export_name = "hal_irq_allocate_block"]
-    pub fn allocate_block(_irq_num: u32) -> Option<(usize, usize)> {
-        unimplemented!()
-    }
-    #[linkage = "weak"]
-    #[export_name = "hal_irq_free_block"]
-    pub fn free_block(_irq_start: u32, _irq_num: u32) {
-        unimplemented!()
-    }
-    #[linkage = "weak"]
-    #[export_name = "hal_irq_overwrite_handler"]
-    pub fn overwrite_handler(_msi_id: u32, _handle: Box<dyn Fn() + Send + Sync>) -> bool {
-        unimplemented!()
-    }
-
     /// Enable IRQ.
     #[linkage = "weak"]
     #[export_name = "hal_irq_enable"]
-    pub fn enable(_global_irq: u32) {
+    pub fn enable_irq(_vector: u32) {
         unimplemented!()
     }
-
     /// Disable IRQ.
     #[linkage = "weak"]
     #[export_name = "hal_irq_disable"]
-    pub fn disable(_global_irq: u32) {
+    pub fn disable_irq(_vector: u32) {
         unimplemented!()
     }
-    /// Get IO APIC maxinstr
-    #[linkage = "weak"]
-    #[export_name = "hal_irq_maxinstr"]
-    pub fn maxinstr(_irq: u32) -> Option<u8> {
-        unimplemented!()
-    }
-    #[linkage = "weak"]
-    #[export_name = "hal_irq_configure"]
-    pub fn configure(
-        _irq: u32,
-        _vector: u8,
-        _dest: u8,
-        _level_trig: bool,
-        _active_high: bool,
-    ) -> bool {
-        unimplemented!()
-    }
+    /// Is a valid IRQ number.
     #[linkage = "weak"]
     #[export_name = "hal_irq_isvalid"]
-    pub fn is_valid(_irq: u32) -> bool {
+    pub fn is_valid_irq(_vector: u32) -> bool {
+        unimplemented!()
+    }
+
+    /// Configure the specified interrupt vector.  If it is invoked, it muust be
+    /// invoked prior to interrupt registration.
+    #[linkage = "weak"]
+    #[export_name = "hal_irq_configure"]
+    pub fn configure_irq(_vector: u32, _trig_mode: bool, _polarity: bool) -> bool {
+        unimplemented!()
+    }
+    /// Add an interrupt handle to an IRQ
+    #[linkage = "weak"]
+    #[export_name = "hal_irq_register_handler"]
+    pub fn register_irq_handler(_vector: u32, _handle: Box<dyn Fn() + Send + Sync>) -> Option<u32> {
+        unimplemented!()
+    }
+    /// Remove the interrupt handle to an IRQ
+    #[linkage = "weak"]
+    #[export_name = "hal_irq_unregister_handler"]
+    pub fn unregister_irq_handler(_vector: u32) -> bool {
+        unimplemented!()
+    }
+    /// Handle IRQ.
+    #[linkage = "weak"]
+    #[export_name = "hal_irq_handle"]
+    pub fn handle_irq(_vector: u32) {
+        unimplemented!()
+    }
+
+    /// Method used for platform allocation of blocks of MSI and MSI-X compatible
+    /// IRQ targets.
+    #[linkage = "weak"]
+    #[export_name = "hal_msi_allocate_block"]
+    pub fn msi_allocate_block(_irq_num: u32) -> Option<(usize, usize)> {
+        unimplemented!()
+    }
+    /// Method used to free a block of MSI IRQs previously allocated by msi_alloc_block().
+    /// This does not unregister IRQ handlers.
+    #[linkage = "weak"]
+    #[export_name = "hal_msi_free_block"]
+    pub fn msi_free_block(_irq_start: u32, _irq_num: u32) {
+        unimplemented!()
+    }
+    /// Register a handler function for a given msi_id within an msi_block_t. Passing a
+    /// NULL handler will effectively unregister a handler for a given msi_id within the
+    /// block.
+    #[linkage = "weak"]
+    #[export_name = "hal_msi_register_handler"]
+    pub fn msi_register_handler(
+        _irq_start: u32,
+        _irq_num: u32,
+        _msi_id: u32,
+        _handle: Box<dyn Fn() + Send + Sync>,
+    ) {
         unimplemented!()
     }
 }

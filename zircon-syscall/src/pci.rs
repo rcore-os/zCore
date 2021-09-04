@@ -1,7 +1,14 @@
 use super::*;
+use alloc::sync::Arc;
 use core::convert::TryFrom;
 use zircon_object::{
-    dev::{pci_init_args::*, *},
+    dev::pci::{
+        constants::*,
+        pci_init_args::{PciInitArgsAddrWindows, PciInitArgsHeader, PCI_INIT_ARG_MAX_SIZE},
+        MmioPcieAddressProvider, PCIeBusDriver, PciAddrSpace, PciEcamRegion, PcieDeviceInfo,
+        PcieDeviceKObject, PcieIrqMode, PioPcieAddressProvider,
+    },
+    dev::{Resource, ResourceKind},
     vm::{pages, VmObject},
 };
 
@@ -33,8 +40,7 @@ impl Syscall<'_> {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
-    #[cfg(target_arch = "x86_64")]
+    #[allow(clippy::too_many_arguments, unused_variables, unused_mut)]
     pub fn sys_pci_cfg_pio_rw(
         &self,
         handle: HandleValue,
@@ -50,17 +56,24 @@ impl Syscall<'_> {
                 "pci.cfg_pio_rw: handle={:#x}, addr={:x}:{:x}:{:x}, offset={:#x}, width={:#x}, write={:#}",
                 handle, bus, dev, func, offset, width, write
             );
-        let proc = self.thread.proc();
-        proc.get_object::<Resource>(handle)?
-            .validate(ResourceKind::ROOT)?;
-        if write {
-            let value = value_ptr.read()?;
-            pio_config_write(bus, dev, func, offset, value, width)?;
-        } else {
-            let value = pio_config_read(bus, dev, func, offset, width)?;
-            value_ptr.write(value)?;
+        cfg_if::cfg_if! {
+            if #[cfg(all(target_arch = "x86_64", target_os = "none"))] {
+                use zircon_object::dev::pci::{pio_config_read, pio_config_write};
+                let proc = self.thread.proc();
+                proc.get_object::<Resource>(handle)?
+                    .validate(ResourceKind::ROOT)?;
+                if write {
+                    let value = value_ptr.read()?;
+                    pio_config_write(bus, dev, func, offset, value, width)?;
+                } else {
+                    let value = pio_config_read(bus, dev, func, offset, width)?;
+                    value_ptr.write(value)?;
+                }
+                Ok(())
+            } else {
+                Err(ZxError::NOT_SUPPORTED)
+            }
         }
-        Ok(())
     }
 
     // TODO: review
