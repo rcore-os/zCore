@@ -3,16 +3,17 @@ import glob
 import subprocess
 import re
 import sys
+import time
 # ===============Must Config========================
 
-TIMEOUT = 10  # seconds
+TIMEOUT = 30  # seconds
 ZCORE_PATH = '../zCore'
 BASE = 'linux/'
 CHECK_FILE = BASE + 'baremetal-test-allow.txt'
 FAIL_FILE = BASE + 'baremetal-test-fail.txt'
 RBOOT_FILE = 'rboot.conf'
-RESULT_FILE ='../stdout-zcore'
-rboot= r'''
+RESULT_FILE = '../stdout-zcore'
+rboot = r'''
 # The config file for rboot.
 # Place me at \EFI\Boot\rboot.conf
 
@@ -50,25 +51,28 @@ FAILED = [
 with open(CHECK_FILE, 'r') as f:
     allow_files = set([case.strip() for case in f.readlines()])
 
-with open(FAIL_FILE,'r') as f:
+with open(FAIL_FILE, 'r') as f:
     failed_files = set([case.strip() for case in f.readlines()])
 
 for file in allow_files:
     if not (file in failed_files):
-#        print(file)
-        rboot_file=rboot+file+'?'
-#        print(rboot)
-        with open(RBOOT_FILE,'w') as f:
+        #        print(file)
+        rboot_file = rboot + file + '?'
+        #        print(rboot)
+        with open(RBOOT_FILE, 'w') as f:
             print(rboot_file, file=f)
         try:
-            subprocess.run(r'cp rboot.conf ../zCore && cd ../ && make baremetal-test | tee stdout-zcore '
-                           r'&& '
-                           r'sed -i '
-                           r'"/BdsDxe/d" stdout-zcore',
-                           shell=True, timeout=TIMEOUT, check=True)
+            subprocess.run(
+                r'cp rboot.conf ../zCore && cd ../ && make baremetal-test | tee stdout-zcore '
+                r'&& '
+                r'sed -i '
+                r'"/BdsDxe/d" stdout-zcore',
+                shell=True,
+                timeout=TIMEOUT,
+                check=True)
 
             with open(RESULT_FILE, 'r') as f:
-                output=f.read()
+                output = f.read()
 
             break_out_flag = False
             for pattern in FAILED:
@@ -83,6 +87,10 @@ for file in allow_files:
             failed.add(file)
         except subprocess.TimeoutExpired:
             timeout.add(file)
+        # here qemu need to be done and exit 
+        # if not ， kill it manual
+        os.system('killall qemu-system-x86')
+        time.sleep(2)
 
 print("=======================================")
 print("PASSED num: ", len(passed))
@@ -93,13 +101,13 @@ print("=======================================")
 print("TIMEOUT num: ", len(timeout))
 print(timeout)
 print("=======================================")
-print("Total tested num: ", len(allow_files)-len(failed_files))
+print("Total tested num: ", len(allow_files) - len(failed_files))
 print("=======================================")
 # with open(FAIL_FILE,'w') as f:
 #     for bad_file in failed:
 #         print(bad_file, file=f)
 
-if len(failed) > 3 :
+if len(failed) > 3:
     sys.exit(-1)
 else:
     sys.exit(0)

@@ -393,7 +393,7 @@ fn serial_put(mut x: u8) {
     if (x == b'\r') || (x == b'\n') {
         STDIN.lock().push_back(b'\n');
         STDIN.lock().push_back(b'\r');
-    }else{
+    } else {
         STDIN.lock().push_back(x);
     }
     STDIN_CALLBACK.lock().retain(|f| !f());
@@ -474,10 +474,7 @@ struct Stdout1;
 impl fmt::Write for Stdout1 {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         //每次都创建一个新的Uart ? 内存位置始终相同
-        write!(
-            uart::Uart::new(phys_to_virt(UART_BASE)),
-            "{}", s
-        ).unwrap();
+        write!(uart::Uart::new(phys_to_virt(UART_BASE)), "{}", s).unwrap();
 
         Ok(())
     }

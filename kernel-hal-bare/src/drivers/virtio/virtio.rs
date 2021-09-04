@@ -1,4 +1,7 @@
-use crate::{frame_dealloc, hal_frame_alloc_contiguous, phys_to_virt, virt_to_phys, PAGE_SIZE};
+use crate::{
+    hal_frame_alloc_contiguous as frame_alloc_contiguous, hal_frame_dealloc as frame_dealloc,
+    phys_to_virt, virt_to_phys, PAGE_SIZE,
+};
 use device_tree::util::SliceRead;
 use device_tree::Node;
 use log::*;
@@ -174,14 +177,14 @@ pub fn virtio_gpu_init(header: &'static mut VirtIOHeader) {
 /// virtio dma alloc/dealloc
 
 #[no_mangle]
-extern "C" fn virtio_dma_alloc(pages: usize) -> PhysAddr {
-    let paddr = unsafe { hal_frame_alloc_contiguous(pages, 0).unwrap() };
+pub extern "C" fn virtio_dma_alloc(pages: usize) -> PhysAddr {
+    let paddr = unsafe { frame_alloc_contiguous(pages, 0).unwrap() };
     trace!("alloc DMA: paddr={:#x}, pages={}", paddr, pages);
     paddr
 }
 
 #[no_mangle]
-extern "C" fn virtio_dma_dealloc(paddr: PhysAddr, pages: usize) -> i32 {
+pub extern "C" fn virtio_dma_dealloc(paddr: PhysAddr, pages: usize) -> i32 {
     for i in 0..pages {
         unsafe {
             frame_dealloc(&(paddr + i * PAGE_SIZE));

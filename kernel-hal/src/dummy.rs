@@ -467,6 +467,12 @@ pub fn fill_random(_buf: &mut [u8]) {
 }
 
 #[linkage = "weak"]
+#[export_name = "hal_rand"]
+pub fn rand() -> u64 {
+    unimplemented!()
+}
+
+#[linkage = "weak"]
 #[export_name = "hal_current_pgtable"]
 pub fn current_page_table() -> usize {
     unimplemented!()

@@ -11,6 +11,7 @@ scripts/linux/test-result.txt
 rusty-tags.vi
 *.img
 zCore/src/link_user.S
+zCore/x86_64.img
 scripts/rboot.conf
 stdout-baremetal-test
 stdout-zcore

@@ -11,8 +11,8 @@ ZCORE_PATH = '../zCore'
 BASE = 'linux/'
 CHECK_FILE = BASE + 'baremetal-test-ones-rv64.txt'
 SCRIPT_FILE = 'script.sh'
-RESULT_FILE ='../stdout-rv64'
-script=r'''
+RESULT_FILE = '../stdout-rv64'
+script = r'''
 #!/bin/bash
 
 cd .. && make baremetal-test-rv64 ROOTPROC='''
@@ -32,11 +32,11 @@ with open(CHECK_FILE, 'r') as f:
     allow_files = set([case.strip() for case in f.readlines()])
 
 for file in allow_files:
-    script_file = script+file
+    script_file = script + file
     with open(SCRIPT_FILE, 'w') as f:
         print(script_file, file=f)
     try:
-        subprocess.run(['sh',SCRIPT_FILE], timeout=TIMEOUT, check=True)
+        subprocess.run(['sh', SCRIPT_FILE], timeout=TIMEOUT, check=True)
 
         with open(RESULT_FILE, 'r') as f:
             output = f.read()

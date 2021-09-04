@@ -1,8 +1,10 @@
 //! Linux Process
 
+// use smoltcp::socket::SocketRef;
 use crate::error::*;
 use crate::fs::*;
 use crate::ipc::*;
+use crate::net::Socket;
 use crate::signal::{Signal as LinuxSignal, SignalAction};
 use alloc::vec::Vec;
 use alloc::{
@@ -14,6 +16,8 @@ use core::sync::atomic::AtomicI32;
 use hashbrown::HashMap;
 use kernel_hal::VirtAddr;
 use rcore_fs::vfs::{FileSystem, INode};
+use smoltcp::socket::SocketHandle;
+// use smoltcp::socket::SocketSet;
 use spin::*;
 use zircon_object::{
     object::{KernelObject, KoID, Signal},
@@ -25,7 +29,10 @@ use zircon_object::{
 /// Process extension for linux
 pub trait ProcessExt {
     /// create Linux process
-    fn create_linux(job: &Arc<Job>, rootfs: Arc<dyn FileSystem>) -> ZxResult<Arc<Self>>;
+    fn create_linux(
+        job: &Arc<Job>,
+        rootfs: Arc<dyn FileSystem>, /*,net_statck : Arc<dyn NetStack>*/
+    ) -> ZxResult<Arc<Self>>;
     /// get linux process
     fn linux(&self) -> &LinuxProcess;
     /// fork from current linux process
@@ -33,8 +40,11 @@ pub trait ProcessExt {
 }
 
 impl ProcessExt for Process {
-    fn create_linux(job: &Arc<Job>, rootfs: Arc<dyn FileSystem>) -> ZxResult<Arc<Self>> {
-        let linux_proc = LinuxProcess::new(rootfs);
+    fn create_linux(
+        job: &Arc<Job>,
+        rootfs: Arc<dyn FileSystem>, /*,net_statck : Arc<dyn NetStack>*/
+    ) -> ZxResult<Arc<Self>> {
+        let linux_proc = LinuxProcess::new(rootfs /* ,net_statck*/);
         Process::create_with_ext(job, "root", linux_proc)
     }
 
@@ -162,6 +172,9 @@ struct LinuxProcessInner {
     children: HashMap<KoID, Arc<Process>>,
     /// Signal actions
     signal_actions: SignalActions,
+    /*Arc<Mutex<Sockets>> */
+    /// miss
+    sockets: HashMap<SocketHandle, Arc<Mutex<dyn Socket>>>,
 }
 
 #[derive(Clone)]
@@ -201,7 +214,7 @@ pub type ExitCode = i32;
 
 impl LinuxProcess {
     /// Create a new process.
-    pub fn new(rootfs: Arc<dyn FileSystem>) -> Self {
+    pub fn new(rootfs: Arc<dyn FileSystem> /*,net_statck : Arc<dyn NetStack>*/) -> Self {
         let stdin = File::new(
             STDIN.clone(), // FIXME: stdin
             OpenOptions {
@@ -231,9 +244,11 @@ impl LinuxProcess {
 
         LinuxProcess {
             root_inode: create_root_fs(rootfs), //Arc::clone(&ROOT_INODE),访问磁盘可能更快？
+            /*net_statck:create_net_stack(net_stack) */  // temp may be don't needed
             parent: Weak::default(),
             inner: Mutex::new(LinuxProcessInner {
                 files,
+                /*sockets */
                 ..Default::default()
             }),
         }
@@ -301,6 +316,26 @@ impl LinuxProcess {
         Ok(file)
     }
 
+    // /// Get the `File` with given `socket fd`.
+    // pub fn get_socket_type(&self, fd: FileDesc) -> LxResult<Arc<TcpSocketState>> {
+    //     let file = self
+    //         .get_file_like(fd)?;
+    //     match file.file_type()? {
+    //         FileLikeType::RawSocket => {
+    //             file.downcast_arc::<RawSocketState>().map_err(|_| LxError::EBADF)?;
+    //         },
+    //         FileLikeType::TcpSocket => {
+    //             file.downcast_arc::<TcpSocketState>().map_err(|_| LxError::EBADF)?;
+    //         },
+    //         FileLikeType::UdpSocket => {
+    //             file.downcast_arc::<UdpSocketState>().map_err(|_| LxError::EBADF)?;
+    //         },
+    //     }
+    //         .downcast_arc::<TcpSocketState>()
+    //         .map_err(|_| LxError::EBADF)?;
+    //     Ok(file)
+    // }
+
     /// Get the `FileLike` with given `fd`.
     pub fn get_file_like(&self, fd: FileDesc) -> LxResult<Arc<dyn FileLike>> {
         let inner = self.inner.lock();
@@ -312,6 +347,43 @@ impl LinuxProcess {
     pub fn get_files(&self) -> LxResult<HashMap<FileDesc, Arc<dyn FileLike>>> {
         let inner = self.inner.lock();
         Ok(inner.files.clone())
+    }
+
+    /// miss
+    pub fn add_socket(&self, socket: Arc<Mutex<dyn Socket>>) -> LxResult<SocketHandle> {
+        let inner = self.inner.lock();
+        let fd = inner.get_free_hd();
+        self.insert_socket(inner, fd, socket)
+        // unimplemented!()
+    }
+
+    /// insert a file and fd into the file descriptor table
+    fn insert_socket(
+        &self,
+        mut inner: MutexGuard<LinuxProcessInner>,
+        fd: SocketHandle,
+        socket: Arc<Mutex<dyn Socket>>,
+    ) -> LxResult<SocketHandle> {
+        if inner.sockets.len() < inner.file_limit.cur as usize {
+            inner.sockets.insert(fd, socket);
+            Ok(fd)
+        } else {
+            Err(LxError::EMFILE)
+        }
+    }
+
+    /// Get the `Socket` with given `fd`.
+    pub fn get_socket(&self, fd: SocketHandle) -> LxResult<Arc<Mutex<dyn Socket>>> {
+        // unimplemented!()
+        let inner = self.inner.lock();
+        let socket = inner.sockets.get(&fd).cloned().ok_or(LxError::EBADF);
+        socket
+    }
+
+    /// Close file descriptor `fd`.
+    pub fn close_socket(&self, fd: SocketHandle) -> LxResult {
+        let mut inner = self.inner.lock();
+        inner.sockets.remove(&fd).map(|_| ()).ok_or(LxError::EBADF)
     }
 
     /// Close file descriptor `fd`.
@@ -452,6 +524,12 @@ impl LinuxProcessInner {
         (0usize..)
             .map(|i| i.into())
             .find(|fd| !self.files.contains_key(fd))
+            .unwrap()
+    }
+    fn get_free_hd(&self) -> SocketHandle {
+        (1000usize..)
+            .map(|i| i.into())
+            .find(|fd| !self.sockets.contains_key(fd))
             .unwrap()
     }
 }

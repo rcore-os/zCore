@@ -8,8 +8,8 @@ use riscv::register::{
 use spin::Mutex;
 use trapframe::{TrapFrame, UserContext};
 
-use super::{plic, uart, sbi, timer_set_next};
-use super::consts::{PHYSICAL_MEMORY_OFFSET, UART_BASE, UART0_INT_NUM};
+use super::consts::{PHYSICAL_MEMORY_OFFSET, UART0_INT_NUM, UART_BASE};
+use super::{plic, sbi, timer_set_next, uart};
 use crate::{map_range, phys_to_virt, putfmt};
 
 const TABLE_SIZE: usize = 256;

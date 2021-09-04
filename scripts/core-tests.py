@@ -1,6 +1,7 @@
 import pexpect
 import sys
 import re
+import subprocess
 
 TIMEOUT = 300
 ZCORE_PATH = '../zCore'
@@ -33,10 +34,14 @@ with open(TEST_CASE_FILE, "r") as f:
     lines = f.readlines()
     positive = [line for line in lines if not line.startswith('-')]
     negative = [line[1:] for line in lines if line.startswith('-')]
-    test_filter = (','.join(positive) + ((',-' + ','.join(negative) if len(negative) > 0 else "") )).replace('\n', '')
+    test_filter = (','.join(positive) + (
+        (',-' + ','.join(negative) if len(negative) > 0 else ""))).replace(
+            '\n', '')
 
-child = pexpect.spawn("make -C %s test mode=release test_filter='%s'" % (ZCORE_PATH, test_filter),
-                      timeout=TIMEOUT, encoding='utf-8')
+child = pexpect.spawn("make -C %s test mode=release test_filter='%s'" %
+                      (ZCORE_PATH, test_filter),
+                      timeout=TIMEOUT,
+                      encoding='utf-8')
 child.logfile = Tee(OUTPUT_FILE, 'w')
 
 index = child.expect(['finished!', 'panicked', pexpect.EOF, pexpect.TIMEOUT])
@@ -52,7 +57,7 @@ ansi_escape = re.compile(r"\x1B[@-_][0-?]*[ -/]*[@-~]")
 
 with open(OUTPUT_FILE, "r") as f:
     for line in f.readlines():
-        line=ansi_escape.sub('',line)
+        line = ansi_escape.sub('', line)
         if line.startswith('[       OK ]'):
             passed += line
             passed_case.add(line[13:].split(' ')[0])
@@ -74,3 +79,5 @@ if not_passed:
     exit(1)
 else:
     print('All checked case passed!')
+
+subprocess.run("python3 info_statistic.py", shell=True)

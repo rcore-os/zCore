@@ -14,6 +14,7 @@ TEST_CASE_EXCEPTION = BASE + 'testcases-failed-libos.txt'
 PREBUILT_PATH = '../prebuilt/zircon/x64'
 CMDLINE_BASE = 'LOG=warn:userboot=test/core-standalone-test:userboot.shutdown:core-tests='
 
+
 class Tee:
     def __init__(self, name, mode):
         self.file = open(name, mode)
@@ -31,6 +32,7 @@ class Tee:
     def flush(self):
         self.file.flush()
 
+
 if os.path.exists(OUTPUT_FILE): os.remove(OUTPUT_FILE)
 if os.path.exists(RESULT_FILE): os.remove(RESULT_FILE)
 
@@ -40,14 +42,17 @@ with open(TEST_CASE_EXCEPTION, "r") as tcf:
     exception_case = set([case.strip() for case in tcf.readlines()])
 check_case = all_case - exception_case
 
-for line in check_case: 
-    child = pexpect.spawn("cargo run -p '%s' -- '%s' '%s' --debug" % 
-                    (ZIRCON_LOADER_PATH, PREBUILT_PATH, CMDLINE_BASE+line), 
-                    timeout=TIMEOUT, encoding='utf-8')
+for line in check_case:
+    child = pexpect.spawn(
+        "cargo run -p '%s' -- '%s' '%s' --debug" %
+        (ZIRCON_LOADER_PATH, PREBUILT_PATH, CMDLINE_BASE + line),
+        timeout=TIMEOUT,
+        encoding='utf-8')
 
     child.logfile = Tee(OUTPUT_FILE, 'a')
 
-    index = child.expect(['finished!', 'panicked', pexpect.EOF, pexpect.TIMEOUT])
+    index = child.expect(
+        ['finished!', 'panicked', pexpect.EOF, pexpect.TIMEOUT])
     result = ['FINISHED', 'PANICKED', 'EOF', 'TIMEOUT'][index]
     # print(result)
 
@@ -58,10 +63,9 @@ passed_case = set()
 # see https://stackoverflow.com/questions/59379174/ignore-ansi-colors-in-pexpect-response
 ansi_escape = re.compile(r"\x1B[@-_][0-?]*[ -/]*[@-~]")
 
-
 with open(OUTPUT_FILE, "r") as opf:
     for line in opf.readlines():
-        line=ansi_escape.sub('',line)
+        line = ansi_escape.sub('', line)
         if line.startswith('[       OK ]'):
             passed += line
             passed_case.add(line[13:].split(' ')[0])
@@ -71,7 +75,6 @@ with open(OUTPUT_FILE, "r") as opf:
 with open(RESULT_FILE, "a") as rstf:
     rstf.writelines(passed)
     rstf.writelines(failed)
-
 
 not_passed = check_case - passed_case
 if failed:

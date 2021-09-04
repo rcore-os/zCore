@@ -98,7 +98,6 @@ jobs:
         run: |
           cd zircon-user
           make build mode=release
-
   test:
     runs-on: ubuntu-20.04
     steps:
@@ -172,7 +171,6 @@ jobs:
           cd scripts
           pip3 install pexpect
           python3 core-tests.py
-
   core-test-libos:
     runs-on: ubuntu-20.04
     steps:
@@ -191,7 +189,6 @@ jobs:
           cd scripts
           pip3 install pexpect
           python3 unix-core-tests.py
-
   libc-test:
     runs-on: ubuntu-20.04
     steps:
@@ -214,7 +211,6 @@ jobs:
           cd scripts
           python3 libc-tests.py
           cat linux/test-result.txt
-
   doc:
     runs-on: ubuntu-20.04
     steps:

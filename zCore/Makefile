@@ -5,6 +5,7 @@ zbi_file ?= bringup
 graphic ?=
 accel ?=
 linux ?=
+loopback ?= 1
 user ?=
 hypervisor ?=
 smp ?= 1
@@ -22,6 +23,8 @@ OBJDUMP := rust-objdump -print-imm-hex -x86-asm-syntax=intel
 OBJCOPY := rust-objcopy --binary-architecture=$(arch)
 VMDISK := $(build_path)/boot.vdi
 QEMU_DISK := $(build_path)/disk.qcow2
+BOOTLOADER  := ../prebuilt/opensbi/c906_opensbi.bin
+BOOTLOADER_SIZE := 2097152
 
 export ARCH=$(arch)
 export BOARD=$(board)
@@ -29,9 +32,9 @@ export USER_IMG=$(ARCH).img
 
 ifeq ($(arch), riscv64)
 ifeq ($(board), d1)
-build_args += --features board_d1 --features link_user_img
+	build_args += --features board_d1 --features link_user_img
 else
-build_args += --features board_qemu --features link_user_img
+	build_args += --features board_qemu --features link_user_img
 endif
 endif
 
@@ -44,6 +47,13 @@ ifeq ($(linux), 1)
 else
 	build_args += --features zircon
 endif
+
+ifeq ($(loopback), 1)
+	build_args += --features loopback
+else
+	build_args += --features e1000
+endif
+
 
 qemu_opts := \
 	-smp $(smp)
@@ -59,8 +69,10 @@ qemu_opts += \
 	-device ide-hd,drive=disk,bus=ahci.0 \
 	-serial mon:stdio \
 	-m 4G \
-	-nic none \
-	-device isa-debug-exit,iobase=0xf4,iosize=0x04
+	-netdev type=user,id=net0,hostfwd=udp::6969-:6969,hostfwd=tcp::9999-:9999 \
+	-device e1000,netdev=net0,mac=52:54:98:76:54:32 \
+	-device isa-debug-exit,iobase=0xf4,iosize=0x04 
+
 baremetal-test-qemu_opts += \
 	-machine q35 \
 	-cpu Haswell,+smap,-check,-fsgsbase \
@@ -69,8 +81,10 @@ baremetal-test-qemu_opts += \
 	-device ich9-ahci,id=ahci \
 	-serial mon:stdio \
 	-m 4G \
-	-nic none \
+	-netdev type=user,id=net0,hostfwd=udp::6969-:6969,hostfwd=tcp::9999-:9999 \
+	-device e1000,netdev=net0,mac=52:54:98:76:54:32 \
 	-device isa-debug-exit,iobase=0xf4,iosize=0x04
+
 else ifeq ($(arch), riscv64)
 qemu_opts += \
 	-machine virt \
@@ -81,7 +95,6 @@ qemu_opts += \
 	-drive file=$(QEMU_DISK),format=qcow2,id=sfs \
 	-device virtio-blk-device,drive=sfs \
 	-kernel $(kernel_bin)
-
 endif
 
 ifeq ($(hypervisor), 1)
@@ -215,13 +228,20 @@ else
 	@qemu-img create -f qcow2 $@ 100M
 endif
 
+d1: $(kernel_bin)
+	cp $(BOOTLOADER) $(BOOTLOADER).copy
+	dd if=$(kernel_bin) of=$(BOOTLOADER).copy bs=$(BOOTLOADER_SIZE) seek=1
+	mv $(BOOTLOADER).copy $(kernel_bin)
+	xfel ddr ddr3
+	xfel write 0x40000000 $(kernel_bin)
+	xfel exec 0x40000000
+	
 baremetal-qemu-disk:
 	@qemu-img create -f qcow2 $(build_path)/disk.qcow2 100M
 
 baremetal-test:
 	cp rboot.conf $(ESP)/EFI/Boot/rboot.conf
-	timeout --foreground 8s  $(qemu) $(baremetal-test-qemu_opts)
+	timeout --foreground 20s $(qemu) $(baremetal-test-qemu_opts)
 
 baremetal-test-rv64: build $(QEMU_DISK)
-	timeout --foreground 8s $(qemu) $(qemu_opts) -append ROOTPROC=$(ROOTPROC)
-
+	timeout --foreground 10s $(qemu) $(qemu_opts) -append ROOTPROC=$(ROOTPROC)

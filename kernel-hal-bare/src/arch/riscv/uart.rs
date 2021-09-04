@@ -1,5 +1,5 @@
 use super::consts::UART_BASE;
-use crate::{putfmt, phys_to_virt};
+use crate::{phys_to_virt, putfmt};
 use core::convert::TryInto;
 use core::fmt::{Error, Write};
 

@@ -46,12 +46,16 @@ pub mod drivers;
 
 pub use self::arch::*;
 
+#[cfg(target_arch = "x86_64")]
+pub mod devices;
+// pub use self::devices::*;
+
 #[allow(improper_ctypes)]
 extern "C" {
     fn hal_pt_map_kernel(pt: *mut u8, current: *const u8);
-    fn frame_alloc() -> Option<usize>;
-    fn hal_frame_alloc_contiguous(page_num: usize, align_log2: usize) -> Option<usize>;
-    fn frame_dealloc(paddr: &usize);
+    fn hal_frame_alloc() -> Option<PhysAddr>;
+    fn hal_frame_dealloc(paddr: &PhysAddr);
+    fn hal_frame_alloc_contiguous(size: usize, align_log2: usize) -> Option<usize>;
     #[link_name = "hal_pmem_base"]
     static PMEM_BASE: usize;
 }
@@ -119,15 +123,15 @@ pub struct Frame {
 }
 
 impl Frame {
-    #[export_name = "hal_frame_alloc"]
+    // #[export_name = "hal_frame_alloc"]
     pub fn alloc() -> Option<Self> {
-        unsafe { frame_alloc().map(|paddr| Frame { paddr }) }
+        unsafe { hal_frame_alloc().map(|paddr| Frame { paddr }) }
     }
 
-    #[export_name = "hal_frame_dealloc"]
+    // #[export_name = "hal_frame_dealloc"]
     pub fn dealloc(&mut self) {
         unsafe {
-            frame_dealloc(&self.paddr);
+            hal_frame_dealloc(&self.paddr);
         }
     }
 
@@ -226,6 +230,8 @@ pub fn init(config: Config) {
     trace!("hal dtb: {:#x}", config.dtb);
 
     arch::init(config);
+    #[cfg(target_arch = "x86_64")]
+    devices::devices_init();
 }
 
 #[cfg(test)]

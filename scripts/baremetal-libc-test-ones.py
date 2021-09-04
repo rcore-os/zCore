@@ -6,7 +6,7 @@ import sys
 
 # ===============Must Config========================
 
-TIMEOUT = 10  # seconds
+TIMEOUT = 20  # seconds
 ZCORE_PATH = '../zCore'
 BASE = 'linux/'
 CHECK_FILE = BASE + 'baremetal-test-ones.txt'
@@ -63,11 +63,14 @@ for file in allow_files:
         print(rboot_file, file=f)
 
     try:
-        subprocess.run(r'cp rboot.conf ../zCore && cd ../ && make baremetal-test | tee stdout-zcore '
-                       r'&& '
-                       r'sed -i '
-                       r'"/BdsDxe/d" stdout-zcore',
-                       shell=True, timeout=TIMEOUT, check=True)
+        subprocess.run(
+            r'cp rboot.conf ../zCore && cd ../ && make baremetal-test | tee stdout-zcore '
+            r'&& '
+            r'sed -i '
+            r'"/BdsDxe/d" stdout-zcore',
+            shell=True,
+            timeout=TIMEOUT,
+            check=True)
 
         with open(RESULT_FILE, 'r') as f:
             output = f.read()
