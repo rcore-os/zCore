@@ -1,7 +1,6 @@
 mod mem_common;
 
 pub mod context;
-pub mod cpu;
 pub mod memory;
 pub mod paging;
 pub mod serial;
@@ -9,17 +8,16 @@ pub mod thread;
 pub mod timer;
 pub mod vdso;
 
-#[path = "../unimp/interrupt.rs"]
-pub mod interrupt;
-#[path = "../unimp/rand.rs"]
-pub mod rand;
+pub use super::defs::{cpu, interrupt, rand};
+
+hal_fn_impl_default!(rand, interrupt, cpu);
 
 cfg_if::cfg_if! {
     if #[cfg(target_os = "linux")] {
         pub mod dev;
     } else {
-        #[path = "../unimp/dev/mod.rs"]
-        pub mod dev;
+        pub use super::defs::dev;
+        hal_fn_impl_default!(dev::fb, dev::input);
     }
 }
 
@@ -43,8 +41,3 @@ pub fn init() {
         }
     });
 }
-
-// FIXME
-#[path = "../unimp/misc.rs"]
-mod misc;
-pub use misc::*;

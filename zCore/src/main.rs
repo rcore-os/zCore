@@ -186,7 +186,7 @@ fn main(ramfs_data: &'static mut [u8], cmdline: &str) -> ! {
             let len = kernel_hal_bare::serial_read(&mut buffer);
             for c in &buffer[..len] {
                 STDIN.push((*c).into());
-                // kernel_hal_bare::serial_write(alloc::format!("{}", *c as char).as_str());
+                // kernel_hal_bare::print_str(alloc::format!("{}", *c as char).as_str());
             }
             false
         }

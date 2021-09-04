@@ -1,4 +1,4 @@
-use super::{HalResult, MMUFlags, PhysAddr, VirtAddr, PAGE_SIZE};
+use crate::{HalResult, MMUFlags, PhysAddr, VirtAddr, PAGE_SIZE};
 
 pub trait PageTableTrait: Sync + Send {
     /// Map the page of `vaddr` to the frame of `paddr` with `flags`.

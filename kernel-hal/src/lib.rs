@@ -6,18 +6,23 @@
 
 extern crate alloc;
 
-mod common;
+#[macro_use]
+extern crate log;
 
-pub use common::{defs::*, future, user};
+#[macro_use]
+mod macros;
+
+mod common;
+mod defs;
+
+pub use common::{addr, defs::*, future, user};
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "libos")] {
-        #[macro_use]
-        extern crate log;
         mod libos;
         pub use self::libos::*;
     } else {
-        mod unimp;
-        pub use self::unimp::*;
+        mod libos;
+        pub use self::libos::*;
     }
 }

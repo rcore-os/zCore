@@ -1,4 +1,5 @@
 use core::fmt::{Debug, Error, Formatter};
+use git_version::git_version;
 
 /// This struct contains constants that are initialized by the kernel
 /// once at boot time.  From the vDSO code's perspective, they are
@@ -68,4 +69,29 @@ impl Debug for VersionString {
         }
         Ok(())
     }
+}
+
+pub(crate) fn vdso_constants_template() -> VdsoConstants {
+    let frequency = crate::cpu::cpu_frequency();
+    let mut constants = VdsoConstants {
+        max_num_cpus: 1,
+        features: Features {
+            cpu: 0,
+            hw_breakpoint_count: 0,
+            hw_watchpoint_count: 0,
+        },
+        dcache_line_size: 0,
+        icache_line_size: 0,
+        ticks_per_second: frequency as u64 * 1_000_000,
+        ticks_to_mono_numerator: 1000,
+        ticks_to_mono_denominator: frequency as u32,
+        physmem: 0,
+        version_string_len: 0,
+        version_string: Default::default(),
+    };
+    constants.set_version_string(git_version!(
+        prefix = "git-",
+        args = ["--always", "--abbrev=40", "--dirty=-dirty"]
+    ));
+    constants
 }

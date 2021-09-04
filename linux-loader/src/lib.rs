@@ -158,7 +158,7 @@ async fn new_thread(thread: CurrentThread) {
                     8 => handle_syscall(&thread, &mut cx).await,
                     // PageFault
                     12 | 13 | 15 => {
-                        let vaddr = kernel_hal::fetch_fault_vaddr();
+                        let vaddr = kernel_hal::context::fetch_fault_vaddr();
 
                         //注意这里flags没有包含WRITE权限，后面handle会移除写权限
                         let flags = if trap_num == 15 {

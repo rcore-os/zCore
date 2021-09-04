@@ -241,7 +241,7 @@ async fn new_thread(thread: CurrentThread) {
                 if error_code & 0x10 != 0 {
                     flags.insert(MMUFlags::EXECUTE)
                 }
-                let fault_vaddr = kernel_hal::fetch_fault_vaddr();
+                let fault_vaddr = kernel_hal::context::fetch_fault_vaddr();
                 info!(
                     "page fault from user mode {:#x} {:#x?} {:?}",
                     fault_vaddr, error_code, flags

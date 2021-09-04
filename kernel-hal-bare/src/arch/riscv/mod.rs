@@ -413,7 +413,7 @@ pub fn serial_read(buf: &mut [u8]) -> usize {
 }
 
 #[export_name = "hal_serial_write"]
-pub fn serial_write(s: &str) {
+pub fn print_str(s: &str) {
     //putfmt(format_args!("{}", s));
     putfmt_uart(format_args!("{}", s));
 }
@@ -631,8 +631,8 @@ pub fn init_framebuffer(width: u32, height: u32, addr: usize, size: usize) {
     *FRAME_BUFFER.write() = Some(fb_info);
 }
 
-#[export_name = "hal_mice_set_callback"]
-pub fn mice_set_callback(_callback: Box<dyn Fn([u8; 3]) + Send + Sync>) {
+#[export_name = "hal_mouse_set_callback"]
+pub fn mouse_set_callback(_callback: Box<dyn Fn([u8; 3]) + Send + Sync>) {
     //
 }
 

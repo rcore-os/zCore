@@ -82,15 +82,19 @@ fn init_mice() {
     });
 }
 
-pub fn mice_set_callback(callback: Box<dyn Fn([u8; 3]) + Send + Sync>) {
-    MOUSE_CALLBACK.lock().unwrap().push(callback);
-}
+hal_fn_impl! {
+    impl mod crate::defs::dev::input {
+        fn kbd_set_callback(callback: Box<dyn Fn(u16, i32) + Send + Sync>) {
+            KBD_CALLBACK.lock().unwrap().push(callback);
+        }
 
-pub fn kbd_set_callback(callback: Box<dyn Fn(u16, i32) + Send + Sync>) {
-    KBD_CALLBACK.lock().unwrap().push(callback);
-}
+        fn mouse_set_callback(callback: Box<dyn Fn([u8; 3]) + Send + Sync>) {
+            MOUSE_CALLBACK.lock().unwrap().push(callback);
+        }
 
-pub fn init() {
-    init_kbd();
-    init_mice();
+        fn init() {
+            init_kbd();
+            init_mice();
+        }
+    }
 }

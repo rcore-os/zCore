@@ -2,7 +2,7 @@ use std::io::Error;
 use std::os::unix::io::AsRawFd;
 
 use super::mem_common::{mmap, FRAME_FILE};
-use crate::{HalResult, MMUFlags, PhysAddr, VirtAddr, PAGE_SIZE};
+use crate::{addr::is_aligned, HalResult, MMUFlags, PhysAddr, VirtAddr, PAGE_SIZE};
 
 pub use crate::common::paging::*;
 
@@ -22,8 +22,8 @@ impl PageTable {
 impl PageTableTrait for PageTable {
     /// Map the page of `vaddr` to the frame of `paddr` with `flags`.
     fn map(&mut self, vaddr: VirtAddr, paddr: PhysAddr, flags: MMUFlags) -> HalResult<()> {
-        debug_assert!(page_aligned(vaddr));
-        debug_assert!(page_aligned(paddr));
+        debug_assert!(is_aligned(vaddr));
+        debug_assert!(is_aligned(paddr));
         let prot = flags.to_mmap_prot();
         mmap(FRAME_FILE.as_raw_fd(), paddr, PAGE_SIZE, vaddr, prot);
         Ok(())
@@ -36,7 +36,7 @@ impl PageTableTrait for PageTable {
 
     /// Change the `flags` of the page of `vaddr`.
     fn protect(&mut self, vaddr: VirtAddr, flags: MMUFlags) -> HalResult<()> {
-        debug_assert!(page_aligned(vaddr));
+        debug_assert!(is_aligned(vaddr));
         let prot = flags.to_mmap_prot();
         let ret = unsafe { libc::mprotect(vaddr as _, PAGE_SIZE, prot) };
         assert_eq!(ret, 0, "failed to mprotect: {:?}", Error::last_os_error());
@@ -45,7 +45,7 @@ impl PageTableTrait for PageTable {
 
     /// Query the physical address which the page of `vaddr` maps to.
     fn query(&mut self, vaddr: VirtAddr) -> HalResult<PhysAddr> {
-        debug_assert!(page_aligned(vaddr));
+        debug_assert!(is_aligned(vaddr));
         unimplemented!()
     }
 
@@ -58,15 +58,11 @@ impl PageTableTrait for PageTable {
         if pages == 0 {
             return Ok(());
         }
-        debug_assert!(page_aligned(vaddr));
+        debug_assert!(is_aligned(vaddr));
         let ret = unsafe { libc::munmap(vaddr as _, PAGE_SIZE * pages) };
         assert_eq!(ret, 0, "failed to munmap: {:?}", Error::last_os_error());
         Ok(())
     }
-}
-
-fn page_aligned(x: VirtAddr) -> bool {
-    x % PAGE_SIZE == 0
 }
 
 trait FlagsExt {

@@ -324,7 +324,7 @@ pub fn serial_read(buf: &mut [u8]) -> usize {
 }
 
 #[export_name = "hal_serial_write"]
-pub fn serial_write(s: &str) {
+pub fn print_str(s: &str) {
     putfmt(format_args!("{}", s));
 }
 

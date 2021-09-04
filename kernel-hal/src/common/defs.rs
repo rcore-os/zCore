@@ -6,7 +6,7 @@ use numeric_enum_macro::numeric_enum;
 pub struct HalError;
 
 /// The result type returned by HAL functions.
-pub type HalResult<T> = core::result::Result<T, HalError>;
+pub type HalResult<T = ()> = core::result::Result<T, HalError>;
 
 bitflags! {
     pub struct MMUFlags: usize {
@@ -32,7 +32,6 @@ numeric_enum! {
 }
 pub const CACHE_POLICY_MASK: u32 = 3;
 
-pub type PhysAddr = usize;
-pub type VirtAddr = usize;
-pub type DevVAddr = usize;
 pub const PAGE_SIZE: usize = 0x1000;
+
+pub use super::addr::{DevVAddr, PhysAddr, VirtAddr};

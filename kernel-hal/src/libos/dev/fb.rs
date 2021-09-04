@@ -74,59 +74,63 @@ struct FbBitfield {
     msb_right: u32,
 }
 
-pub fn init() {
-    const FBIOGET_VSCREENINFO: u64 = 0x4600;
-    const FBIOGET_FSCREENINFO: u64 = 0x4602;
+hal_fn_impl! {
+    impl mod crate::defs::dev::fb {
+        fn init() {
+            const FBIOGET_VSCREENINFO: u64 = 0x4600;
+            const FBIOGET_FSCREENINFO: u64 = 0x4602;
 
-    #[cfg(target_arch = "aarch64")]
-    let fbfd = unsafe { libc::open("/dev/fb0".as_ptr(), libc::O_RDWR) };
-    #[cfg(not(target_arch = "aarch64"))]
-    let fbfd = unsafe { libc::open("/dev/fb0".as_ptr() as *const i8, libc::O_RDWR) };
-    if fbfd < 0 {
-        return;
+            #[cfg(target_arch = "aarch64")]
+            let fbfd = unsafe { libc::open("/dev/fb0".as_ptr(), libc::O_RDWR) };
+            #[cfg(not(target_arch = "aarch64"))]
+            let fbfd = unsafe { libc::open("/dev/fb0".as_ptr() as *const i8, libc::O_RDWR) };
+            if fbfd < 0 {
+                return;
+            }
+
+            let mut vinfo = FbVarScreeninfo::default();
+            if unsafe { libc::ioctl(fbfd, FBIOGET_VSCREENINFO, &mut vinfo) } < 0 {
+                return;
+            }
+
+            let mut finfo = FbFixScreeninfo::default();
+            if unsafe { libc::ioctl(fbfd, FBIOGET_FSCREENINFO, &mut finfo) } < 0 {
+                return;
+            }
+
+            let size = finfo.size() as usize;
+            let addr = unsafe {
+                libc::mmap(
+                    std::ptr::null_mut::<libc::c_void>(),
+                    size,
+                    libc::PROT_READ | libc::PROT_WRITE,
+                    libc::MAP_SHARED,
+                    fbfd,
+                    0,
+                )
+            };
+            if (addr as isize) < 0 {
+                return;
+            }
+
+            let (width, height) = vinfo.resolution();
+            let addr = addr as usize;
+
+            let fb_info = FramebufferInfo {
+                xres: width,
+                yres: height,
+                xres_virtual: width,
+                yres_virtual: height,
+                xoffset: 0,
+                yoffset: 0,
+                depth: ColorDepth::ColorDepth32,
+                format: ColorFormat::RGBA8888,
+                // paddr: virt_to_phys(addr),
+                paddr: addr,
+                vaddr: addr,
+                screen_size: size,
+            };
+            *FRAME_BUFFER.write() = Some(fb_info);
+        }
     }
-
-    let mut vinfo = FbVarScreeninfo::default();
-    if unsafe { libc::ioctl(fbfd, FBIOGET_VSCREENINFO, &mut vinfo) } < 0 {
-        return;
-    }
-
-    let mut finfo = FbFixScreeninfo::default();
-    if unsafe { libc::ioctl(fbfd, FBIOGET_FSCREENINFO, &mut finfo) } < 0 {
-        return;
-    }
-
-    let size = finfo.size() as usize;
-    let addr = unsafe {
-        libc::mmap(
-            std::ptr::null_mut::<libc::c_void>(),
-            size,
-            libc::PROT_READ | libc::PROT_WRITE,
-            libc::MAP_SHARED,
-            fbfd,
-            0,
-        )
-    };
-    if (addr as isize) < 0 {
-        return;
-    }
-
-    let (width, height) = vinfo.resolution();
-    let addr = addr as usize;
-
-    let fb_info = FramebufferInfo {
-        xres: width,
-        yres: height,
-        xres_virtual: width,
-        yres_virtual: height,
-        xoffset: 0,
-        yoffset: 0,
-        depth: ColorDepth::ColorDepth32,
-        format: ColorFormat::RGBA8888,
-        // paddr: virt_to_phys(addr),
-        paddr: addr,
-        vaddr: addr,
-        screen_size: size,
-    };
-    *FRAME_BUFFER.write() = Some(fb_info);
 }

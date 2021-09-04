@@ -22,8 +22,8 @@ lazy_static! {
         Mutex::new(Vec::new());
 }
 
-#[export_name = "hal_mice_set_callback"]
-pub fn mice_set_callback(callback: Box<dyn Fn([u8; 3]) + Send + Sync>) {
+#[export_name = "hal_mouse_set_callback"]
+pub fn mouse_set_callback(callback: Box<dyn Fn([u8; 3]) + Send + Sync>) {
     MOUSE_CALLBACK.lock().push(callback);
 }
 
