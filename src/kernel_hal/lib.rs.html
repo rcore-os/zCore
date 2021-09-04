@@ -53,6 +53,8 @@
 <span id="53">53</span>
 <span id="54">54</span>
 <span id="55">55</span>
+<span id="56">56</span>
+<span id="57">57</span>
 </pre><pre class="rust">
 <span class="doccomment">//! Hardware Abstraction Layer</span>
 
@@ -97,6 +99,7 @@
 }
 
 <span class="kw">mod</span> <span class="ident">context</span>;
+<span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">devices</span>;
 <span class="kw">mod</span> <span class="ident">dummy</span>;
 <span class="kw">mod</span> <span class="ident">fb</span>;
 <span class="kw">mod</span> <span class="ident">future</span>;
@@ -105,6 +108,7 @@
 
 <span class="kw">pub</span> <span class="kw">use</span> <span class="self">self</span><span class="ident">::context</span>::<span class="kw-2">*</span>;
 <span class="kw">pub</span> <span class="kw">use</span> <span class="self">self</span><span class="ident">::defs</span>::<span class="kw-2">*</span>;
+<span class="kw">pub</span> <span class="kw">use</span> <span class="self">self</span><span class="ident">::devices</span>::<span class="kw-2">*</span>;
 <span class="kw">pub</span> <span class="kw">use</span> <span class="self">self</span><span class="ident">::dummy</span>::<span class="kw-2">*</span>;
 <span class="kw">pub</span> <span class="kw">use</span> <span class="self">self</span><span class="ident">::fb</span>::<span class="kw-2">*</span>;
 <span class="kw">pub</span> <span class="kw">use</span> <span class="self">self</span><span class="ident">::future</span>::<span class="kw-2">*</span>;

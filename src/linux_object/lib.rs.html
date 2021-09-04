@@ -24,6 +24,8 @@
 <span id="24">24</span>
 <span id="25">25</span>
 <span id="26">26</span>
+<span id="27">27</span>
+<span id="28">28</span>
 </pre><pre class="rust">
 <span class="doccomment">//! Linux kernel objects</span>
 
@@ -31,6 +33,7 @@
 <span class="attribute">#![<span class="ident">deny</span>(<span class="ident">warnings</span>, <span class="ident">unsafe_code</span>, <span class="ident">missing_docs</span>)]</span>
 <span class="attribute">#![<span class="ident">allow</span>(<span class="ident">clippy::upper_case_acronyms</span>)]</span>
 <span class="attribute">#![<span class="ident">feature</span>(<span class="ident">bool_to_option</span>)]</span>
+<span class="attribute">#![<span class="ident">feature</span>(<span class="ident">untagged_unions</span>)]</span>
 
 <span class="kw">extern</span> <span class="kw">crate</span> <span class="ident">alloc</span>;
 
@@ -46,6 +49,7 @@
 <span class="comment">// layer 2</span>
 <span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">ipc</span>;
 <span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">loader</span>;
+<span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">net</span>;
 <span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">process</span>;
 <span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">signal</span>;
 <span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">sync</span>;
