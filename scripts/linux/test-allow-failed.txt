@@ -48,3 +48,4 @@
 /libc-test/src/regression/malloc-brk-fail.exe
 /libc-test/src/regression/iconv-roundtrips.exe
 /libc-test/src/regression/sem_close-unmap.exe
+/libc-test/src/regression/fgets-eof.exe
