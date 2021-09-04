@@ -169,9 +169,9 @@
 <span id="169">169</span>
 <span id="170">170</span>
 </pre><pre class="rust">
-<span class="kw">use</span> <span class="kw">super</span>::<span class="kw">super</span>::{<span class="ident">ZxError</span>, <span class="ident">ZxResult</span>};
-<span class="kw">use</span> <span class="kw">super</span><span class="ident">::config::PciConfig</span>;
-<span class="kw">use</span> <span class="kw">super</span><span class="ident">::nodes::PcieDeviceType</span>;
+<span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">config::PciConfig</span>, <span class="ident">nodes::PcieDeviceType</span>};
+<span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">ZxError</span>, <span class="ident">ZxResult</span>};
+
 <span class="kw">use</span> <span class="ident">alloc::boxed::Box</span>;
 <span class="kw">use</span> <span class="ident">core::convert::TryFrom</span>;
 <span class="kw">use</span> <span class="ident">kernel_hal::InterruptManager</span>;
@@ -218,7 +218,7 @@
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::INVALID_ARGS</span>);
         }
         <span class="kw">let</span> (<span class="ident">start</span>, <span class="ident">size</span>) <span class="op">=</span>
-            <span class="ident">InterruptManager::allocate_block</span>(<span class="ident">irq_num</span>).<span class="ident">ok_or</span>(<span class="ident">ZxError::NO_RESOURCES</span>)<span class="question-mark">?</span>;
+            <span class="ident">InterruptManager::msi_allocate_block</span>(<span class="ident">irq_num</span>).<span class="ident">ok_or</span>(<span class="ident">ZxError::NO_RESOURCES</span>)<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(<span class="ident">PciMsiBlock</span> {
             <span class="ident">target_addr</span>: (<span class="number">0xFEE0_0000</span> <span class="op">|</span> <span class="number">0x08</span>) <span class="op">&amp;</span> <span class="op">!</span><span class="number">0x4</span>,
             <span class="ident">target_data</span>: <span class="ident">start</span> <span class="kw">as</span> <span class="ident">u32</span>,
@@ -228,12 +228,12 @@
         })
     }
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">free</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) {
-        <span class="ident">InterruptManager::free_block</span>(<span class="self">self</span>.<span class="ident">base_irq</span>, <span class="self">self</span>.<span class="ident">num_irq</span>)
+        <span class="ident">InterruptManager::msi_free_block</span>(<span class="self">self</span>.<span class="ident">base_irq</span>, <span class="self">self</span>.<span class="ident">num_irq</span>)
     }
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">register_handler</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">msi_id</span>: <span class="ident">u32</span>, <span class="ident">handle</span>: <span class="ident">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">Fn</span>() <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span><span class="op">&gt;</span>) {
         <span class="macro">assert!</span>(<span class="self">self</span>.<span class="ident">allocated</span>);
         <span class="macro">assert!</span>(<span class="ident">msi_id</span> <span class="op">&lt;</span> <span class="self">self</span>.<span class="ident">num_irq</span>);
-        <span class="ident">InterruptManager::overwrite_handler</span>(<span class="self">self</span>.<span class="ident">base_irq</span> <span class="op">+</span> <span class="ident">msi_id</span>, <span class="ident">handle</span>);
+        <span class="ident">InterruptManager::msi_register_handler</span>(<span class="self">self</span>.<span class="ident">base_irq</span>, <span class="self">self</span>.<span class="ident">num_irq</span>, <span class="ident">msi_id</span>, <span class="ident">handle</span>);
     }
 }
 

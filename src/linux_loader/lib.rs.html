@@ -339,7 +339,7 @@
         <span class="kw">match</span> <span class="ident">cx</span>.<span class="ident">trap_num</span> {
             <span class="number">0x100</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">handle_syscall</span>(<span class="kw-2">&amp;</span><span class="ident">thread</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">cx</span>.<span class="ident">general</span>).<span class="kw">await</span>,
             <span class="number">0x20</span>..<span class="op">=</span><span class="number">0x3f</span> <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="ident">kernel_hal::InterruptManager::handle</span>(<span class="ident">cx</span>.<span class="ident">trap_num</span> <span class="kw">as</span> <span class="ident">u8</span>);
+                <span class="ident">kernel_hal::InterruptManager::handle_irq</span>(<span class="ident">cx</span>.<span class="ident">trap_num</span> <span class="kw">as</span> <span class="ident">u32</span>);
                 <span class="kw">if</span> <span class="ident">cx</span>.<span class="ident">trap_num</span> <span class="op">=</span><span class="op">=</span> <span class="number">0x20</span> {
                     <span class="ident">kernel_hal::yield_now</span>().<span class="kw">await</span>;
                 }
@@ -374,7 +374,7 @@
                 <span class="kw">match</span> <span class="ident">trap_num</span> {
                     <span class="comment">//Irq</span>
                     <span class="number">0</span> <span class="op">|</span> <span class="number">4</span> <span class="op">|</span> <span class="number">5</span> <span class="op">|</span> <span class="number">8</span> <span class="op">|</span> <span class="number">9</span> <span class="op">=</span><span class="op">&gt;</span> {
-                        <span class="ident">kernel_hal::InterruptManager::handle</span>(<span class="ident">trap_num</span> <span class="kw">as</span> <span class="ident">u8</span>);
+                        <span class="ident">kernel_hal::InterruptManager::handle_irq</span>(<span class="ident">trap_num</span> <span class="kw">as</span> <span class="ident">u32</span>);
 
                         <span class="comment">//Timer</span>
                         <span class="kw">if</span> <span class="ident">trap_num</span> <span class="op">=</span><span class="op">=</span> <span class="number">4</span> <span class="op">|</span><span class="op">|</span> <span class="ident">trap_num</span> <span class="op">=</span><span class="op">=</span> <span class="number">5</span> {
@@ -389,7 +389,7 @@
                             <span class="ident">kernel_hal::yield_now</span>().<span class="kw">await</span>;
                         }
 
-                        <span class="comment">//kernel_hal::InterruptManager::handle(trap_num as u8);</span>
+                        <span class="comment">//kernel_hal::InterruptManager::handle_irq(trap_num as u32);</span>
                     }
                     <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="macro">panic!</span>(
                         <span class="string">&quot;not supported pid: {} interrupt {} from user mode. {:#x?}&quot;</span>,

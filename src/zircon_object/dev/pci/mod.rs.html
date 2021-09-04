@@ -63,13 +63,9 @@
 <span id="63">63</span>
 <span id="64">64</span>
 <span id="65">65</span>
-<span id="66">66</span>
-<span id="67">67</span>
-<span id="68">68</span>
-<span id="69">69</span>
-<span id="70">70</span>
-<span id="71">71</span>
 </pre><pre class="rust">
+<span class="attribute">#![<span class="ident">allow</span>(<span class="ident">missing_docs</span>)]</span>
+
 <span class="kw">mod</span> <span class="ident">bus</span>;
 <span class="kw">mod</span> <span class="ident">caps</span>;
 <span class="kw">mod</span> <span class="ident">config</span>;
@@ -77,17 +73,11 @@
 <span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">pci_init_args</span>;
 <span class="kw">mod</span> <span class="ident">pio</span>;
 
-<span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
-<span class="kw">use</span> <span class="ident">alloc::sync</span>::<span class="kw-2">*</span>;
-<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">use</span> <span class="ident">nodes</span>::<span class="kw-2">*</span>;
-<span class="kw">use</span> <span class="ident">pci_init_args</span>::<span class="kw-2">*</span>;
-<span class="kw">use</span> <span class="ident">pio</span>::<span class="kw-2">*</span>;
-
 <span class="kw">pub</span> <span class="kw">use</span> <span class="self">self</span><span class="ident">::bus</span>::{
     <span class="ident">MmioPcieAddressProvider</span>, <span class="ident">PCIeBusDriver</span>, <span class="ident">PcieDeviceInfo</span>, <span class="ident">PcieDeviceKObject</span>,
     <span class="ident">PioPcieAddressProvider</span>,
 };
-<span class="kw">pub</span> <span class="kw">use</span> <span class="self">self</span><span class="ident">::nodes::PcieIrqMode</span>;
+<span class="kw">pub</span> <span class="kw">use</span> <span class="self">self</span><span class="ident">::nodes</span>::{<span class="ident">IPciNode</span>, <span class="ident">PcieIrqMode</span>};
 <span class="kw">pub</span> <span class="kw">use</span> <span class="self">self</span><span class="ident">::pio</span>::{<span class="ident">pio_config_read</span>, <span class="ident">pio_config_write</span>};
 
 <span class="doccomment">/// Type of PCI address space.</span>
@@ -118,10 +108,8 @@
     <span class="ident">vaddr</span>: <span class="ident">u64</span>,
 }
 
-<span class="kw">pub</span> <span class="kw">use</span> <span class="ident">constants</span>::<span class="kw-2">*</span>;
-
 <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">missing_docs</span>)]</span>
-<span class="kw">mod</span> <span class="ident">constants</span> {
+<span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">constants</span> {
     <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">PCI_MAX_DEVICES_PER_BUS</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">32</span>;
     <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">PCI_MAX_FUNCTIONS_PER_DEVICE</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">8</span>;
     <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">PCI_MAX_LEGACY_IRQ_PINS</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">4</span>;

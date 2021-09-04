@@ -90,14 +90,14 @@
     <span class="kw">fn</span> <span class="ident">mask</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) {
         <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">register</span> {
-            <span class="ident">InterruptManager::disable</span>(<span class="self">self</span>.<span class="ident">vector</span> <span class="kw">as</span> <span class="ident">u32</span>);
+            <span class="ident">InterruptManager::disable_irq</span>(<span class="self">self</span>.<span class="ident">vector</span> <span class="kw">as</span> <span class="ident">u32</span>);
         }
     }
 
     <span class="kw">fn</span> <span class="ident">unmask</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) {
         <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">register</span> {
-            <span class="ident">InterruptManager::enable</span>(<span class="self">self</span>.<span class="ident">vector</span> <span class="kw">as</span> <span class="ident">u32</span>);
+            <span class="ident">InterruptManager::enable_irq</span>(<span class="self">self</span>.<span class="ident">vector</span> <span class="kw">as</span> <span class="ident">u32</span>);
         }
     }
 
@@ -106,7 +106,7 @@
         <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">register</span> {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::ALREADY_BOUND</span>);
         }
-        <span class="kw">if</span> <span class="ident">InterruptManager::set_ioapic_handle</span>(<span class="self">self</span>.<span class="ident">vector</span>, <span class="ident">handle</span>).<span class="ident">is_some</span>() {
+        <span class="kw">if</span> <span class="ident">InterruptManager::register_irq_handler</span>(<span class="self">self</span>.<span class="ident">vector</span>, <span class="ident">handle</span>).<span class="ident">is_some</span>() {
             <span class="ident">inner</span>.<span class="ident">register</span> <span class="op">=</span> <span class="bool-val">true</span>;
             <span class="prelude-val">Ok</span>(())
         } <span class="kw">else</span> {
@@ -119,7 +119,7 @@
         <span class="kw">if</span> <span class="op">!</span><span class="ident">inner</span>.<span class="ident">register</span> {
             <span class="kw">return</span> <span class="prelude-val">Ok</span>(());
         }
-        <span class="kw">if</span> <span class="ident">InterruptManager::reset_ioapic_handle</span>(<span class="self">self</span>.<span class="ident">vector</span>) {
+        <span class="kw">if</span> <span class="ident">InterruptManager::unregister_irq_handler</span>(<span class="self">self</span>.<span class="ident">vector</span>) {
             <span class="ident">inner</span>.<span class="ident">register</span> <span class="op">=</span> <span class="bool-val">false</span>;
             <span class="prelude-val">Ok</span>(())
         } <span class="kw">else</span> {

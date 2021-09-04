@@ -545,13 +545,31 @@
 <span id="545">545</span>
 <span id="546">546</span>
 <span id="547">547</span>
+<span id="548">548</span>
+<span id="549">549</span>
+<span id="550">550</span>
+<span id="551">551</span>
+<span id="552">552</span>
+<span id="553">553</span>
+<span id="554">554</span>
+<span id="555">555</span>
+<span id="556">556</span>
 </pre><pre class="rust">
-<span class="kw">use</span> <span class="kw">super</span>::<span class="kw">super</span>::<span class="kw-2">*</span>;
-<span class="kw">use</span> <span class="kw">super</span><span class="ident">::config</span>::<span class="kw-2">*</span>;
-<span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
+<span class="kw">use</span> <span class="kw">super</span><span class="ident">::nodes</span>::{
+    <span class="ident">IPciNode</span>, <span class="ident">PciNodeType</span>, <span class="ident">PciRoot</span>, <span class="ident">PcieBarInfo</span>, <span class="ident">PcieIrqMode</span>, <span class="ident">PcieIrqModeCaps</span>,
+    <span class="ident">SharedLegacyIrqHandler</span>,
+};
+<span class="kw">use</span> <span class="kw">super</span>::{
+    <span class="ident">config::PciConfig</span>, <span class="ident">constants</span>::<span class="kw-2">*</span>, <span class="ident">pci_init_args::PciIrqSwizzleLut</span>, <span class="ident">pio::pci_bdf_raw_addr</span>,
+    <span class="ident">MappedEcamRegion</span>, <span class="ident">PciAddrSpace</span>, <span class="ident">PciEcamRegion</span>,
+};
+<span class="kw">use</span> <span class="kw">crate</span><span class="ident">::dev::Interrupt</span>;
 <span class="kw">use</span> <span class="kw">crate</span><span class="ident">::object</span>::<span class="kw-2">*</span>;
 <span class="kw">use</span> <span class="kw">crate</span><span class="ident">::vm</span>::{<span class="ident">kernel_allocate_physical</span>, <span class="ident">CachePolicy</span>, <span class="ident">MMUFlags</span>, <span class="ident">PhysAddr</span>, <span class="ident">VirtAddr</span>};
-<span class="kw">use</span> <span class="ident">alloc</span>::{<span class="ident">collections::BTreeMap</span>, <span class="ident">sync::Arc</span>, <span class="ident">vec::Vec</span>};
+<span class="kw">use</span> <span class="kw">crate</span><span class="ident">::ZxResult</span>;
+
+<span class="kw">use</span> <span class="ident">alloc::sync</span>::{<span class="ident">Arc</span>, <span class="ident">Weak</span>};
+<span class="kw">use</span> <span class="ident">alloc</span>::{<span class="ident">collections::BTreeMap</span>, <span class="ident">vec::Vec</span>};
 <span class="kw">use</span> <span class="ident">core::cmp::min</span>;
 <span class="kw">use</span> <span class="ident">core::marker</span>::{<span class="ident">Send</span>, <span class="ident">Sync</span>};
 <span class="kw">use</span> <span class="ident">lazy_static</span>::<span class="kw-2">*</span>;

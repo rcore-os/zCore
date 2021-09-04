@@ -322,6 +322,13 @@
 <span id="322">322</span>
 <span id="323">323</span>
 <span id="324">324</span>
+<span id="325">325</span>
+<span id="326">326</span>
+<span id="327">327</span>
+<span id="328">328</span>
+<span id="329">329</span>
+<span id="330">330</span>
+<span id="331">331</span>
 </pre><pre class="rust">
 <span class="kw">use</span> {
     <span class="kw">super</span>::<span class="kw-2">*</span>,
@@ -457,6 +464,7 @@
     }
 
     <span class="doccomment">///   </span>
+    <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">unused_variables</span>, <span class="ident">unused_mut</span>)]</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_pc_firmware_tables</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">resource</span>: <span class="ident">HandleValue</span>,
@@ -467,10 +475,16 @@
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>();
         <span class="ident">proc</span>.<span class="ident">get_object</span>::<span class="op">&lt;</span><span class="ident">Resource</span><span class="op">&gt;</span>(<span class="ident">resource</span>)<span class="question-mark">?</span>
             .<span class="ident">validate</span>(<span class="ident">ResourceKind::ROOT</span>)<span class="question-mark">?</span>;
-        <span class="kw">let</span> (<span class="ident">acpi_rsdp</span>, <span class="ident">smbios</span>) <span class="op">=</span> <span class="ident">kernel_hal::pc_firmware_tables</span>();
-        <span class="ident">acpi_rsdp_ptr</span>.<span class="ident">write</span>(<span class="ident">acpi_rsdp</span>)<span class="question-mark">?</span>;
-        <span class="ident">smbios_ptr</span>.<span class="ident">write</span>(<span class="ident">smbios</span>)<span class="question-mark">?</span>;
-        <span class="prelude-val">Ok</span>(())
+        <span class="macro">cfg_if::cfg_if!</span> {
+            <span class="kw">if</span> <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">all</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>, <span class="ident">target_os</span> <span class="op">=</span> <span class="string">&quot;none&quot;</span>))]</span> {
+                <span class="kw">let</span> (<span class="ident">acpi_rsdp</span>, <span class="ident">smbios</span>) <span class="op">=</span> <span class="ident">kernel_hal::pc_firmware_tables</span>();
+                <span class="ident">acpi_rsdp_ptr</span>.<span class="ident">write</span>(<span class="ident">acpi_rsdp</span>)<span class="question-mark">?</span>;
+                <span class="ident">smbios_ptr</span>.<span class="ident">write</span>(<span class="ident">smbios</span>)<span class="question-mark">?</span>;
+                <span class="prelude-val">Ok</span>(())
+            } <span class="kw">else</span> {
+                <span class="prelude-val">Err</span>(<span class="ident">ZxError::NOT_SUPPORTED</span>)
+            }
+        }
     }
 
     <span class="doccomment">/// Creates an interrupt object which represents a physical or virtual interrupt.  </span>

@@ -157,9 +157,11 @@
 <span id="157">157</span>
 <span id="158">158</span>
 <span id="159">159</span>
+<span id="160">160</span>
 </pre><pre class="rust">
-<span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
-<span class="kw">use</span> <span class="ident">numeric_enum_macro</span>::<span class="kw-2">*</span>;
+<span class="kw">use</span> <span class="kw">super</span><span class="ident">::pio</span>::{<span class="ident">pio_config_read_addr</span>, <span class="ident">pio_config_write_addr</span>};
+<span class="kw">use</span> <span class="kw">super</span><span class="ident">::PciAddrSpace</span>;
+<span class="kw">use</span> <span class="ident">numeric_enum_macro::numeric_enum</span>;
 
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">PciConfig</span> {

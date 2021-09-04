@@ -65,8 +65,18 @@
 <span id="65">65</span>
 <span id="66">66</span>
 <span id="67">67</span>
+<span id="68">68</span>
+<span id="69">69</span>
+<span id="70">70</span>
+<span id="71">71</span>
+<span id="72">72</span>
 </pre><pre class="rust">
-<span class="kw">use</span> {<span class="kw">super</span>::<span class="kw">super</span><span class="ident">::pci::PCIE_IRQRET_MASK</span>, <span class="kw">super</span>::<span class="kw">super</span><span class="ident">::IPciNode</span>, <span class="kw">super</span>::<span class="kw-2">*</span>, <span class="ident">spin::Mutex</span>};
+<span class="kw">use</span> <span class="ident">alloc</span>::{<span class="ident">boxed::Box</span>, <span class="ident">sync::Arc</span>};
+<span class="kw">use</span> <span class="ident">spin::Mutex</span>;
+
+<span class="kw">use</span> <span class="kw">super</span><span class="ident">::InterruptTrait</span>;
+<span class="kw">use</span> <span class="kw">crate</span><span class="ident">::dev::pci</span>::{<span class="ident">constants::PCIE_IRQRET_MASK</span>, <span class="ident">IPciNode</span>};
+<span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">ZxError</span>, <span class="ident">ZxResult</span>};
 
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">PciInterrupt</span> {
     <span class="ident">device</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">IPciNode</span><span class="op">&gt;</span>,

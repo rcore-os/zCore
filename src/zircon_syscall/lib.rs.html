@@ -385,7 +385,6 @@
 <span id="385">385</span>
 <span id="386">386</span>
 <span id="387">387</span>
-<span id="388">388</span>
 </pre><pre class="rust">
 <span class="doccomment">//! Zircon syscall implementations</span>
 
@@ -711,7 +710,6 @@
             <span class="ident">Sys::PCI_ADD_SUBTRACT_IO_RANGE</span> <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="self">self</span>.<span class="ident">sys_pci_add_subtract_io_range</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span> <span class="op">!</span><span class="op">=</span> <span class="number">0</span>, <span class="ident">a2</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a3</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a4</span> <span class="op">!</span><span class="op">=</span> <span class="number">0</span>)
             }
-            <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>)]</span>
             <span class="ident">Sys::PCI_CFG_PIO_RW</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">sys_pci_cfg_pio_rw</span>(
                 <span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>,
                 <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>,
