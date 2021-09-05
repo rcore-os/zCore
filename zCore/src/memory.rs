@@ -15,6 +15,8 @@ use riscv::{
     addr::Frame,
     paging::{PageTable, PageTableFlags as EF},
 };
+#[cfg(target_arch = "riscv64")]
+use kernel_hal::BootInfo;
 
 #[cfg(target_arch = "x86_64")]
 type FrameAlloc = bitmap_allocator::BitAlloc16M;
@@ -36,9 +38,6 @@ pub fn init_frame_allocator(boot_info: &BootInfo) {
     }
     info!("Frame allocator init end");
 }
-
-#[cfg(target_arch = "riscv64")]
-use kernel_hal_bare::BootInfo;
 
 #[cfg(target_arch = "riscv64")]
 pub fn init_frame_allocator(boot_info: &BootInfo) {

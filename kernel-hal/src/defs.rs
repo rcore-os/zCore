@@ -121,12 +121,12 @@ hal_fn_def! {
         /// Read a string from serial buffer.
         fn serial_read(buf: &mut [u8]) -> usize;
 
-        /// Print format string and its arguments to console.
-        fn print_fmt(fmt: Arguments);
+        /// Print format string and its arguments to serial.
+        fn serial_write_fmt(fmt: Arguments);
 
-        /// Print a string to console.
-        fn print_str(s: &str) {
-            print_fmt(format_args!("{}", s));
+        /// Print a string to serial.
+        fn serial_write(s: &str) {
+            serial_write_fmt(format_args!("{}", s));
         }
     }
 

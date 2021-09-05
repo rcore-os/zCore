@@ -3,7 +3,7 @@ use core::convert::TryFrom;
 use x86_64::{
     registers::control::{Cr3, Cr3Flags},
     structures::paging::{mapper, FrameAllocator, FrameDeallocator, Mapper, Translate},
-    structures::paging::{OffsetPageTable, PageTable as X86PageTable, PageTableFlags as PTF},
+    structures::paging::{OffsetPageTable, PageTable as PT, PageTableFlags as PTF},
     structures::paging::{Page, PhysFrame, Size4KiB},
 };
 
@@ -25,9 +25,9 @@ pub(crate) unsafe fn set_page_table(vmtoken: usize) {
     debug!("set page_table @ {:#x}", vmtoken);
 }
 
-fn frame_to_page_table(frame: PhysFrame) -> *mut X86PageTable {
+fn frame_to_page_table(frame: PhysFrame) -> *mut PT {
     let vaddr = phys_to_virt(frame.start_address().as_u64() as usize);
-    vaddr as *mut X86PageTable
+    vaddr as *mut PT
 }
 
 /// Page Table
@@ -36,26 +36,26 @@ pub struct PageTable {
 }
 
 impl PageTable {
-    pub fn current() -> Self {
-        PageTable {
-            root_paddr: Cr3::read().0.start_address().as_u64() as _,
-        }
-    }
-
     /// Create a new `PageTable`.
     pub fn new() -> Self {
         let root_paddr = crate::mem::frame_alloc().expect("failed to alloc frame");
         let root_vaddr = phys_to_virt(root_paddr);
-        let root = unsafe { &mut *(root_vaddr as *mut X86PageTable) };
+        let root = unsafe { &mut *(root_vaddr as *mut PT) };
         root.zero();
         unsafe { ffi::hal_pt_map_kernel(root_vaddr as _, frame_to_page_table(Cr3::read().0) as _) };
         trace!("create page table @ {:#x}", root_paddr);
         PageTable { root_paddr }
     }
 
+    pub fn current() -> Self {
+        PageTable {
+            root_paddr: Cr3::read().0.start_address().as_u64() as _,
+        }
+    }
+
     fn get(&mut self) -> OffsetPageTable<'_> {
         let root_vaddr = phys_to_virt(self.root_paddr);
-        let root = unsafe { &mut *(root_vaddr as *mut X86PageTable) };
+        let root = unsafe { &mut *(root_vaddr as *mut PT) };
         let offset = x86_64::VirtAddr::new(phys_to_virt(0) as u64);
         unsafe { OffsetPageTable::new(root, offset) }
     }

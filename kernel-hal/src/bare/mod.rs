@@ -6,7 +6,7 @@ cfg_if::cfg_if! {
         mod arch;
         pub use self::arch::special as x86_64;
     } else if #[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))] {
-        #[path = "arch/x86_64/mod.rs"]
+        #[path = "arch/riscv/mod.rs"]
         mod arch;
         pub use self::arch::special as riscv;
     }
@@ -22,16 +22,14 @@ hal_fn_impl_default!(rand, vdso, dev::fb, dev::input);
 
 pub use self::arch::{context, cpu, interrupt, serial, vm, HalConfig};
 
+#[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))]
+pub use self::arch::{BootInfo, GraphicInfo};
+
 /// Initialize the HAL.
 ///
 /// This function must be called at the beginning.
 pub fn init(config: HalConfig) {
-    unsafe {
-        trapframe::init();
-    }
-
-    #[cfg(target_arch = "riscv64")]
-    trace!("hal dtb: {:#x}", config.dtb);
+    unsafe { trapframe::init() };
 
     self::arch::init(config);
 }

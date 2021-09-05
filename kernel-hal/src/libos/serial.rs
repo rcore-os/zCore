@@ -27,7 +27,7 @@ hal_fn_impl! {
             len
         }
 
-        fn print_fmt(fmt: core::fmt::Arguments) {
+        fn serial_write_fmt(fmt: core::fmt::Arguments) {
             eprint!("{}", fmt);
         }
     }

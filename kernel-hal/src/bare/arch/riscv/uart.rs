@@ -1,15 +1,18 @@
-use super::consts::UART_BASE;
-use crate::{putfmt, phys_to_virt};
-use core::convert::TryInto;
 use core::fmt::{Error, Write};
+use spin::{Mutex, Once};
 
-pub struct Uart {
-    base_address: usize,
+use super::super::mem::phys_to_virt;
+use crate::{PhysAddr, VirtAddr};
+
+pub(super) struct Uart {
+    base_address: VirtAddr,
 }
+
+pub(super) static UART: Mutex<Once<Uart>> = Mutex::new(Once::new());
 
 // 结构体Uart的实现块
 impl Uart {
-    pub fn new(base_address: usize) -> Self {
+    pub fn new(base_address: VirtAddr) -> Self {
         Uart { base_address }
     }
 
@@ -81,26 +84,35 @@ impl Write for Uart {
     }
 }
 
-pub fn handle_interrupt() {
-    let mut my_uart = Uart::new(phys_to_virt(UART_BASE));
-    if let Some(c) = my_uart.get() {
-        let c = c & 0xff;
-        //CONSOLE
-        super::serial_put(c);
+pub(super) fn handle_interrupt() {
+    if let Some(ref mut uart) = UART.lock().get_mut() {
+        if let Some(c) = uart.get() {
+            let c = c & 0xff;
+            //CONSOLE
+            crate::serial::serial_put(c);
 
-        /*
-         * 因serial_write()已可以被回调输出了，这里则不再需要了
-        match c {
-            0x7f => { //0x8 [backspace] ; 而实际qemu运行，[backspace]键输出0x7f, 表示del
-                bare_print!("{} {}", 8 as char, 8 as char);
-            },
-            10 | 13 => { // 新行或回车
-                bare_println!();
-            },
-            _ => {
-                bare_print!("{}", c as char);
-            },
+            /*
+            * 因serial_write()已可以被回调输出了，这里则不再需要了
+            match c {
+                0x7f => { //0x8 [backspace] ; 而实际qemu运行，[backspace]键输出0x7f, 表示del
+                    bare_print!("{} {}", 8 as char, 8 as char);
+                },
+                10 | 13 => { // 新行或回车
+                    bare_println!();
+                },
+                _ => {
+                    bare_print!("{}", c as char);
+                },
+            }
+            */
         }
-        */
     }
+}
+
+pub(super) fn init(base_paddr: PhysAddr) {
+    UART.lock().call_once(|| {
+        let mut uart = Uart::new(phys_to_virt(base_paddr));
+        uart.simple_init();
+        uart
+    });
 }

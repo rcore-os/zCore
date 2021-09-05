@@ -151,6 +151,13 @@ fn irq_overwrite_handler(irq: u8, handler: Box<dyn Fn() + Send + Sync>) -> bool 
     set
 }
 
+fn init_irq_table() {
+    let mut table = IRQ_TABLE.lock();
+    for _ in 0..TABLE_SIZE {
+        table.push(None);
+    }
+}
+
 hal_fn_impl! {
     impl mod crate::defs::interrupt {
         fn enable_irq(irq: u32) {
@@ -337,13 +344,6 @@ fn keyboard() {
 }
 */
 
-fn init_irq_table() {
-    let mut table = IRQ_TABLE.lock();
-    for _ in 0..TABLE_SIZE {
-        table.push(None);
-    }
-}
-
 fn irq_enable_raw(irq: u8, vector: u8) {
     info!("irq_enable_raw: irq={:#x?}, vector={:#x?}", irq, vector);
     let mut ioapic = super::apic::get_ioapic();
@@ -351,7 +351,7 @@ fn irq_enable_raw(irq: u8, vector: u8) {
     ioapic.enable(irq, 0)
 }
 
-pub fn init() {
+pub(super) fn init() {
     // MOUSE.lock().init().unwrap();
     // MOUSE.lock().set_on_complete(mouse_on_complete);
     unsafe {

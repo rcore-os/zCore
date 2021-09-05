@@ -37,7 +37,7 @@ hal_fn_impl! {
             len
         }
 
-        fn print_fmt(fmt: Arguments) {
+        fn serial_write_fmt(fmt: Arguments) {
             COM1.lock().write_fmt(fmt).unwrap();
             // if let Some(console) = CONSOLE.lock().as_mut() {
             //     console.write_fmt(fmt).unwrap();

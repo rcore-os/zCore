@@ -122,7 +122,7 @@ async fn new_thread(thread: CurrentThread) {
         // UserContext
         #[cfg(target_arch = "riscv64")]
         {
-            let trap_num = kernel_hal::fetch_trap_num(&cx);
+            let trap_num = kernel_hal::context::fetch_trap_num(&cx);
             let is_interrupt = ((trap_num >> 63) & 1) == 1;
             let trap_num = trap_num & 0xfff;
             let pid = thread.proc().id();

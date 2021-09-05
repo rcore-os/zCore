@@ -32,10 +32,7 @@ mod fs;
 use rboot::BootInfo;
 
 #[cfg(target_arch = "riscv64")]
-use kernel_hal_bare::{
-    drivers::virtio::{CMDLINE, GPU_DRIVERS},
-    phys_to_virt, remap_the_kernel, BootInfo, GraphicInfo,
-};
+use kernel_hal::{vm::remap_the_kernel, BootInfo, GraphicInfo};
 
 use alloc::{
     boxed::Box,
@@ -103,7 +100,7 @@ pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
         "zCore rust_main( hartid: {}, device_tree_paddr: {:#x} )",
         hartid, device_tree_paddr
     );
-    let device_tree_vaddr = phys_to_virt(device_tree_paddr);
+    let device_tree_vaddr = device_tree_paddr + arch::consts::PHYSICAL_MEMORY_OFFSET;
 
     let boot_info = BootInfo {
         memory_map: Vec::new(),
@@ -132,7 +129,7 @@ pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
         dtb: device_tree_vaddr,
     });
 
-    let cmdline_dt = CMDLINE.read();
+    let cmdline_dt = "";// FIXME: CMDLINE.read();
     let mut cmdline = boot_info.cmdline.to_string();
 
     if !cmdline_dt.is_empty() {
@@ -150,7 +147,7 @@ pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
             .clone();
         let (width, height) = gpu.resolution();
         let (fb_vaddr, fb_size) = gpu.setup_framebuffer();
-        kernel_hal_bare::init_framebuffer(width, height, fb_vaddr, fb_size);
+        kernel_hal::deb::fb::init(width, height, fb_vaddr, fb_size);
     }
 
     // riscv64在之后使用ramfs或virtio, 而x86_64则由bootloader载入文件系统镜像到内存
@@ -189,7 +186,7 @@ fn main(ramfs_data: &'static mut [u8], cmdline: &str) -> ! {
             let len = kernel_hal::serial::serial_read(&mut buffer);
             for c in &buffer[..len] {
                 STDIN.push((*c).into());
-                // kernel_hal_bare::print_str(alloc::format!("{}", *c as char).as_str());
+                // kernel_hal::serial::serial_write(alloc::format!("{}", *c as char).as_str());
             }
             false
         }
@@ -215,7 +212,7 @@ fn run() -> ! {
             x86_64::instructions::interrupts::disable();
         }
         #[cfg(target_arch = "riscv64")]
-        kernel_hal_bare::interrupt::wait_for_interrupt();
+        kernel_hal::riscv::wait_for_interrupt();
     }
 }
 

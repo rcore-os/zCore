@@ -132,7 +132,7 @@ impl INode for Stdout {
     fn write_at(&self, _offset: usize, buf: &[u8]) -> Result<usize> {
         // we do not care the utf-8 things, we just want to print it!
         let s = unsafe { core::str::from_utf8_unchecked(buf) };
-        kernel_hal::serial::print_str(s);
+        kernel_hal::serial::serial_write(s);
         Ok(buf.len())
     }
     fn poll(&self) -> Result<PollStatus> {
