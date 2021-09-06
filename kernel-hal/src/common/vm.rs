@@ -25,6 +25,10 @@ pub trait PageTableTrait: Sync + Send {
     fn table_phys(&self) -> PhysAddr;
 
     /// Activate this page table.
+    ///
+    /// # Safety
+    ///
+    /// This function is unsafe because it switches the page table.
     unsafe fn activate(&self) {
         crate::vm::activate_paging(self.table_phys());
     }

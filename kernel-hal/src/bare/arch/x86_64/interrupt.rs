@@ -2,32 +2,34 @@
 #![allow(non_upper_case_globals)]
 
 use alloc::{boxed::Box, vec::Vec};
+use core::ops::Range;
 
 use apic::IoApic;
 use spin::Mutex;
 
 use super::acpi_table::AcpiTable;
-use crate::mem::phys_to_virt;
+use crate::interrupt::{IrqHandler, IrqManager};
+use crate::{mem::phys_to_virt, HalError, HalResult};
 
-const IRQ0: u8 = 32;
+const IRQ0: u32 = 32;
+
+pub(crate) const IRQ_MIN_ID: u32 = 0x20;
+pub(crate) const IRQ_MAX_ID: u32 = 0xff;
 
 // IRQ
-const Timer: u8 = 0;
-const Keyboard: u8 = 1;
-const COM2: u8 = 3;
-const COM1: u8 = 4;
-const Mouse: u8 = 12;
-const IDE: u8 = 14;
-const Error: u8 = 19;
-const Spurious: u8 = 31;
+const Timer: u32 = 0;
+const Keyboard: u32 = 1;
+const COM2: u32 = 3;
+const COM1: u32 = 4;
+const Mouse: u32 = 12;
+const IDE: u32 = 14;
+const Error: u32 = 19;
+const Spurious: u32 = 31;
 
 const IO_APIC_NUM_REDIRECTIONS: u8 = 120;
-const TABLE_SIZE: usize = 256;
-
-type InterruptHandler = Box<dyn Fn() + Send + Sync>;
 
 lazy_static::lazy_static! {
-    static ref IRQ_TABLE: Mutex<Vec<Option<InterruptHandler>>> = Default::default();
+    static ref IRQ_MANAGER: Mutex<IrqManager> = Mutex::default();
     static ref MAX_INSTR_TABLE: Mutex<Vec<(usize, u8)>> = Mutex::default();
 }
 
@@ -104,60 +106,6 @@ fn ioapic_controller(i: &acpi::interrupt::IoApic) -> IoApic {
     unsafe { IoApic::new(phys_to_virt(i.address as usize)) }
 }
 
-/// Add a handler to IRQ table. Return the specified irq or an allocated irq on success
-fn irq_add_handler(irq: u8, handler: InterruptHandler) -> Option<u8> {
-    info!("IRQ add handler {:#x?}", irq);
-    let mut table = IRQ_TABLE.lock();
-    // allocate a valid irq number
-    if irq == 0 {
-        let mut id = 0x20;
-        while id < table.len() {
-            if table[id].is_none() {
-                table[id] = Some(handler);
-                return Some(id as u8);
-            }
-            id += 1;
-        }
-        return None;
-    }
-    match table[irq as usize] {
-        Some(_) => None,
-        None => {
-            table[irq as usize] = Some(handler);
-            Some(irq)
-        }
-    }
-}
-
-fn irq_remove_handler(irq: u8) -> bool {
-    // TODO: ioapic redirection entries associated with this should be reset.
-    info!("IRQ remove handler {:#x?}", irq);
-    let irq = irq as usize;
-    let mut table = IRQ_TABLE.lock();
-    match table[irq] {
-        Some(_) => {
-            table[irq] = None;
-            false
-        }
-        None => true,
-    }
-}
-
-fn irq_overwrite_handler(irq: u8, handler: Box<dyn Fn() + Send + Sync>) -> bool {
-    info!("IRQ overwrite handle {:#x?}", irq);
-    let mut table = IRQ_TABLE.lock();
-    let set = table[irq as usize].is_none();
-    table[irq as usize] = Some(handler);
-    set
-}
-
-fn init_irq_table() {
-    let mut table = IRQ_TABLE.lock();
-    for _ in 0..TABLE_SIZE {
-        table.push(None);
-    }
-}
-
 hal_fn_impl! {
     impl mod crate::defs::interrupt {
         fn enable_irq(irq: u32) {
@@ -185,7 +133,7 @@ hal_fn_impl! {
             get_ioapic(irq).is_some()
         }
 
-        fn configure_irq(vector: u32, trig_mode: bool, polarity: bool) -> bool {
+        fn configure_irq(vector: u32, trig_mode: bool, polarity: bool) -> HalResult {
             info!(
                 "configure_irq: vector={:#x?}, trig_mode={:#x?}, polarity={:#x?}",
                 vector, trig_mode, polarity
@@ -204,19 +152,19 @@ hal_fn_impl! {
                         true,  /* mask */
                     );
                 })
-                .is_some()
+                .ok_or(HalError)
         }
 
-        fn register_irq_handler(global_irq: u32, handler: InterruptHandler) -> Option<u32> {
-            info!("set_handle irq={:#x?}", global_irq);
+        fn register_irq_handler(global_irq: u32, handler: IrqHandler) -> HalResult<u32> {
+            info!("register_irq_handler irq={:#x?}", global_irq);
             // if global_irq == 1 {
             //     irq_add_handler(global_irq as u8 + IRQ0, handler);
             //     return Some(global_irq as u8 + IRQ0);
             // }
-            let ioapic_info = get_ioapic(global_irq)?;
+            let ioapic_info = get_ioapic(global_irq).ok_or(HalError)?;
             let mut ioapic = ioapic_controller(&ioapic_info);
             let offset = (global_irq - ioapic_info.global_system_interrupt_base) as u8;
-            let irq = ioapic.irq_vector(offset);
+            let x86_vector = ioapic.irq_vector(offset);
             let new_handler = if global_irq == 0x1 {
                 Box::new(move || {
                     handler();
@@ -226,83 +174,58 @@ hal_fn_impl! {
             } else {
                 handler
             };
-            irq_add_handler(irq, new_handler).map(|x| {
-                info!(
-                    "irq_set_handle: mapping from {:#x?} to {:#x?}",
-                    global_irq, x
-                );
-                ioapic.set_irq_vector(offset, x);
-                x as u32
-            })
+            let x86_vector = IRQ_MANAGER
+                .lock()
+                .add_handler(x86_vector as u32, new_handler)?;
+            info!(
+                "irq_set_handle: mapping from {:#x?} to {:#x?}",
+                global_irq, x86_vector
+            );
+            ioapic.set_irq_vector(offset, x86_vector as u8);
+            Ok(x86_vector)
         }
 
-        fn unregister_irq_handler(global_irq: u32) -> bool {
-            info!("reset_handle");
+        fn unregister_irq_handler(global_irq: u32) -> HalResult {
+            info!("unregister_irq_handler irq={:#x}", global_irq);
             let ioapic_info = if let Some(x) = get_ioapic(global_irq) {
                 x
             } else {
-                return false;
+                return Err(HalError);
             };
             let mut ioapic = ioapic_controller(&ioapic_info);
             let offset = (global_irq - ioapic_info.global_system_interrupt_base) as u8;
-            let irq = ioapic.irq_vector(offset);
-            if !irq_remove_handler(irq) {
-                ioapic.set_irq_vector(offset, 0);
-                true
-            } else {
-                false
-            }
+            let x86_vector = ioapic.irq_vector(offset);
+            // TODO: ioapic redirection entries associated with this should be reset.
+            IRQ_MANAGER.lock().remove_handler(x86_vector as u32)
         }
 
-        fn handle_irq(irq: u32) {
+        fn handle_irq(vector: u32) {
             use apic::LocalApic;
             let mut lapic = super::apic::get_lapic();
             lapic.eoi();
-            let table = IRQ_TABLE.lock();
-            match &table[irq as usize] {
-                Some(f) => f(),
-                None => panic!("unhandled external IRQ number: {}", irq),
-            }
+            IRQ_MANAGER.lock().handle(vector);
         }
 
-        fn msi_allocate_block(irq_num: u32) -> Option<(usize, usize)> {
-            info!("hal_irq_allocate_block: count={:#x?}", irq_num);
-            let irq_num = u32::next_power_of_two(irq_num) as usize;
-            let mut irq_start = 0x20;
-            let mut irq_cur = irq_start;
-            let mut table = IRQ_TABLE.lock();
-            while irq_cur < TABLE_SIZE && irq_cur < irq_start + irq_num {
-                if table[irq_cur].is_none() {
-                    irq_cur += 1;
-                } else {
-                    irq_start = (irq_cur - irq_cur % irq_num) + irq_num;
-                    irq_cur = irq_start;
-                }
-            }
-            for i in irq_start..irq_start + irq_num {
-                table[i] = Some(Box::new(|| {}));
-            }
-            info!(
-                "hal_irq_allocate_block: start={:#x?} num={:#x?}",
-                irq_start, irq_num
-            );
-            Some((irq_start, irq_num))
+        fn msi_allocate_block(requested_irqs: u32) -> HalResult<Range<u32>> {
+            let alloc_size = requested_irqs.next_power_of_two();
+            let start = IRQ_MANAGER.lock().alloc_block(alloc_size)?;
+            Ok(start..start + alloc_size)
         }
 
-        fn msi_free_block(irq_start: u32, irq_num: u32) {
-            let mut table = IRQ_TABLE.lock();
-            for i in irq_start..irq_start + irq_num {
-                table[i as usize] = None;
-            }
+        fn msi_free_block(block: Range<u32>) -> HalResult {
+            IRQ_MANAGER
+                .lock()
+                .free_block(block.start, block.len() as u32)
         }
 
         fn msi_register_handler(
-            irq_start: u32,
-            _irq_num: u32,
+            block: Range<u32>,
             msi_id: u32,
             handler: Box<dyn Fn() + Send + Sync>,
-        ) {
-            irq_overwrite_handler((irq_start + msi_id) as u8, handler);
+        ) -> HalResult {
+            IRQ_MANAGER
+                .lock()
+                .overwrite_handler(block.start + msi_id, handler)
         }
     }
 }
@@ -344,11 +267,11 @@ fn keyboard() {
 }
 */
 
-fn irq_enable_raw(irq: u8, vector: u8) {
+fn irq_enable_raw(irq: u32, vector: u32) {
     info!("irq_enable_raw: irq={:#x?}, vector={:#x?}", irq, vector);
     let mut ioapic = super::apic::get_ioapic();
-    ioapic.set_irq_vector(irq, vector);
-    ioapic.enable(irq, 0)
+    ioapic.set_irq_vector(irq as u8, vector as u8);
+    ioapic.enable(irq as u8, 0)
 }
 
 pub(super) fn init() {
@@ -357,12 +280,13 @@ pub(super) fn init() {
     unsafe {
         init_ioapic();
     }
-    init_irq_table();
-    irq_add_handler(Timer + IRQ0, Box::new(timer));
-    // irq_add_handler(Keyboard + IRQ0, Box::new(keyboard));
-    // irq_add_handler(Mouse + IRQ0, Box::new(mouse));
-    irq_add_handler(COM1 + IRQ0, Box::new(com1));
-    irq_add_handler(57u8, Box::new(irq57test));
+
+    let mut im = IRQ_MANAGER.lock();
+    im.add_handler(Timer + IRQ0, Box::new(timer)).ok();
+    // im.add_handler(Keyboard + IRQ0, Box::new(keyboard));
+    // im.add_handler(Mouse + IRQ0, Box::new(mouse));
+    im.add_handler(COM1 + IRQ0, Box::new(com1)).ok();
+    im.add_handler(57u32, Box::new(irq57test)).ok();
     // irq_enable_raw(Keyboard, Keyboard + IRQ0);
     // irq_enable_raw(Mouse, Mouse + IRQ0);
     irq_enable_raw(COM1, COM1 + IRQ0);

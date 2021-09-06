@@ -1,5 +1,5 @@
 use alloc::boxed::Box;
-use core::{fmt::Arguments, future::Future, pin::Pin, time::Duration};
+use core::{fmt::Arguments, future::Future, ops::Range, pin::Pin, time::Duration};
 
 use crate::{common, HalResult, MMUFlags, PhysAddr, VirtAddr};
 
@@ -82,29 +82,29 @@ hal_fn_def! {
 
         /// Configure the specified interrupt vector.  If it is invoked, it muust be
         /// invoked prior to interrupt registration.
-        pub fn configure_irq(vector: u32, trig_mode: bool, polarity: bool) -> bool;
+        pub fn configure_irq(vector: u32, trig_mode: bool, polarity: bool) -> HalResult;
 
         /// Add an interrupt handle to an IRQ
-        pub fn register_irq_handler(vector: u32, handler: Box<dyn Fn() + Send + Sync>) -> Option<u32>;
+        pub fn register_irq_handler(vector: u32, handler: Box<dyn Fn() + Send + Sync>) -> HalResult<u32>;
 
         /// Remove the interrupt handle to an IRQ
-        pub fn unregister_irq_handler(vector: u32) -> bool;
+        pub fn unregister_irq_handler(vector: u32) -> HalResult;
 
         /// Handle IRQ.
         pub fn handle_irq(vector: u32);
 
         /// Method used for platform allocation of blocks of MSI and MSI-X compatible
         /// IRQ targets.
-        pub fn msi_allocate_block(irq_num: u32) -> Option<(usize, usize)>;
+        pub fn msi_allocate_block(requested_irqs: u32) -> HalResult<Range<u32>>;
 
         /// Method used to free a block of MSI IRQs previously allocated by msi_alloc_block().
         /// This does not unregister IRQ handlers.
-        pub fn msi_free_block(irq_start: u32, irq_num: u32);
+        pub fn msi_free_block(block: Range<u32>) -> HalResult;
 
         /// Register a handler function for a given msi_id within an msi_block_t. Passing a
         /// NULL handler will effectively unregister a handler for a given msi_id within the
         /// block.
-        pub fn msi_register_handler(irq_start: u32, irq_num: u32, msi_id: u32, handler: Box<dyn Fn() + Send + Sync>);
+        pub fn msi_register_handler(block: Range<u32>, msi_id: u32, handler: Box<dyn Fn() + Send + Sync>) -> HalResult;
     }
 
     pub mod context: common::context {

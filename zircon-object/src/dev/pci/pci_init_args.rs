@@ -55,12 +55,13 @@ impl PciInitArgsHeader {
             if !interrupt::is_valid_irq(global_irq) {
                 irq.global_irq = PCI_NO_IRQ_MAPPING;
                 self.dev_pin_to_global_irq.remove_irq(global_irq);
-            } else if !interrupt::configure_irq(
-                global_irq,
-                irq.level_triggered, /* Trigger mode */
-                irq.active_high,     /* Polarity */
-            ) {
-                return Err(ZxError::INVALID_ARGS);
+            } else {
+                interrupt::configure_irq(
+                    global_irq,
+                    irq.level_triggered, /* Trigger mode */
+                    irq.active_high,     /* Polarity */
+                )
+                .map_err(|_| ZxError::INVALID_ARGS)?;
             }
         }
         Ok(())

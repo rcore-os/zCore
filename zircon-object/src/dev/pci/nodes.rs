@@ -198,13 +198,9 @@ impl SharedLegacyIrqHandler {
             device_handler: Mutex::new(Vec::new()),
         });
         let handler_copy = handler.clone();
-        if interrupt::register_irq_handler(irq_id, Box::new(move || handler_copy.handle()))
-            .is_some()
-        {
-            Some(handler)
-        } else {
-            None
-        }
+        interrupt::register_irq_handler(irq_id, Box::new(move || handler_copy.handle()))
+            .map(|_| handler)
+            .ok()
     }
 
     /// Handle the IRQ.

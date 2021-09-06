@@ -25,14 +25,14 @@ impl InterruptTrait for EventInterrupt {
     fn mask(&self) {
         let inner = self.inner.lock();
         if inner.register {
-            interrupt::disable_irq(self.vector as u32);
+            interrupt::disable_irq(self.vector);
         }
     }
 
     fn unmask(&self) {
         let inner = self.inner.lock();
         if inner.register {
-            interrupt::enable_irq(self.vector as u32);
+            interrupt::enable_irq(self.vector);
         }
     }
 
@@ -41,7 +41,7 @@ impl InterruptTrait for EventInterrupt {
         if inner.register {
             return Err(ZxError::ALREADY_BOUND);
         }
-        if interrupt::register_irq_handler(self.vector, handle).is_some() {
+        if interrupt::register_irq_handler(self.vector, handle).is_ok() {
             inner.register = true;
             Ok(())
         } else {
@@ -54,11 +54,11 @@ impl InterruptTrait for EventInterrupt {
         if !inner.register {
             return Ok(());
         }
-        if interrupt::unregister_irq_handler(self.vector) {
+        if interrupt::unregister_irq_handler(self.vector).is_ok() {
             inner.register = false;
             Ok(())
         } else {
-            Err(ZxError::ALREADY_BOUND)
+            Err(ZxError::NOT_FOUND)
         } // maybe a better error code?
     }
 }

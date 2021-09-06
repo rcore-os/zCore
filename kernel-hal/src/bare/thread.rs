@@ -14,7 +14,7 @@ hal_fn_impl! {
             impl Future for PageTableSwitchWrapper {
                 type Output = ();
                 fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-                    super::arch::vm::activate_paging(self.vmtoken);
+                    crate::vm::activate_paging(self.vmtoken);
                     self.inner.lock().as_mut().poll(cx)
                 }
             }
