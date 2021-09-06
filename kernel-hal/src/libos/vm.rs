@@ -4,64 +4,68 @@ use std::os::unix::io::AsRawFd;
 use super::mem_common::{mmap, FRAME_FILE};
 use crate::{addr::is_aligned, HalResult, MMUFlags, PhysAddr, VirtAddr, PAGE_SIZE};
 
-pub use crate::common::vm::*;
+fn unmap_cont(vaddr: VirtAddr, pages: usize) -> HalResult {
+    if pages == 0 {
+        return Ok(());
+    }
+    debug_assert!(is_aligned(vaddr));
+    let ret = unsafe { libc::munmap(vaddr as _, PAGE_SIZE * pages) };
+    assert_eq!(ret, 0, "failed to munmap: {:?}", Error::last_os_error());
+    Ok(())
+}
 
+hal_fn_impl! {
+    impl mod crate::defs::vm {
+        fn map_page(_vmtoken: PhysAddr, vaddr: VirtAddr, paddr: PhysAddr, flags: MMUFlags) -> HalResult {
+            debug_assert!(is_aligned(vaddr));
+            debug_assert!(is_aligned(paddr));
+            let prot = flags.to_mmap_prot();
+            mmap(FRAME_FILE.as_raw_fd(), paddr, PAGE_SIZE, vaddr, prot);
+            Ok(())
+        }
+
+        fn unmap_page(_vmtoken: PhysAddr, vaddr: VirtAddr) -> HalResult {
+            println!("unmap_page {:x?}",vaddr);
+            unmap_cont(vaddr, 1)
+        }
+
+        fn update_page(_vmtoken: PhysAddr, vaddr: VirtAddr, _paddr: Option<PhysAddr>, flags: Option<MMUFlags>) -> HalResult {
+            debug_assert!(is_aligned(vaddr));
+            if let Some(flags) = flags {
+                let prot = flags.to_mmap_prot();
+                let ret = unsafe { libc::mprotect(vaddr as _, PAGE_SIZE, prot) };
+                assert_eq!(ret, 0, "failed to mprotect: {:?}", Error::last_os_error());
+            }
+            Ok(())
+        }
+
+        fn current_vmtoken() -> PhysAddr {
+            0
+        }
+    }
+}
+
+/// Page Table
 pub struct PageTable;
 
 impl PageTable {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
-        PageTable
+        Self
     }
 
-    pub fn current() -> Self {
-        PageTable
+    pub fn new_and_map_kernel() -> Self {
+        Self
     }
 }
 
 impl PageTableTrait for PageTable {
-    /// Map the page of `vaddr` to the frame of `paddr` with `flags`.
-    fn map(&mut self, vaddr: VirtAddr, paddr: PhysAddr, flags: MMUFlags) -> HalResult<()> {
-        debug_assert!(is_aligned(vaddr));
-        debug_assert!(is_aligned(paddr));
-        let prot = flags.to_mmap_prot();
-        mmap(FRAME_FILE.as_raw_fd(), paddr, PAGE_SIZE, vaddr, prot);
-        Ok(())
-    }
-
-    /// Unmap the page of `vaddr`.
-    fn unmap(&mut self, vaddr: VirtAddr) -> HalResult<()> {
-        self.unmap_cont(vaddr, 1)
-    }
-
-    /// Change the `flags` of the page of `vaddr`.
-    fn protect(&mut self, vaddr: VirtAddr, flags: MMUFlags) -> HalResult<()> {
-        debug_assert!(is_aligned(vaddr));
-        let prot = flags.to_mmap_prot();
-        let ret = unsafe { libc::mprotect(vaddr as _, PAGE_SIZE, prot) };
-        assert_eq!(ret, 0, "failed to mprotect: {:?}", Error::last_os_error());
-        Ok(())
-    }
-
-    /// Query the physical address which the page of `vaddr` maps to.
-    fn query(&mut self, vaddr: VirtAddr) -> HalResult<PhysAddr> {
-        debug_assert!(is_aligned(vaddr));
-        unimplemented!()
-    }
-
-    /// Get the physical address of root page table.
     fn table_phys(&self) -> PhysAddr {
         0
     }
 
-    fn unmap_cont(&mut self, vaddr: VirtAddr, pages: usize) -> HalResult<()> {
-        if pages == 0 {
-            return Ok(());
-        }
-        debug_assert!(is_aligned(vaddr));
-        let ret = unsafe { libc::munmap(vaddr as _, PAGE_SIZE * pages) };
-        assert_eq!(ret, 0, "failed to munmap: {:?}", Error::last_os_error());
-        Ok(())
+    fn unmap_cont(&mut self, vaddr: VirtAddr, pages: usize) -> HalResult {
+        unmap_cont(vaddr, pages)
     }
 }
 

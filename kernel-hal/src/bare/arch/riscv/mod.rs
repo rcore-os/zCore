@@ -68,11 +68,6 @@ pub fn init(config: HalConfig) {
     interrupt::init();
     timer::init();
 
-    /*
-    interrupt::init_soft();
-    sbi::send_ipi(0);
-    */
-
     unsafe { asm!("ebreak") };
 
     #[cfg(feature = "board_qemu")]

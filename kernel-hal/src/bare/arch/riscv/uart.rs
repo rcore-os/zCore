@@ -1,8 +1,7 @@
 use core::fmt::{Error, Write};
 use spin::{Mutex, Once};
 
-use super::super::mem::phys_to_virt;
-use crate::{PhysAddr, VirtAddr};
+use crate::{mem::phys_to_virt, PhysAddr, VirtAddr};
 
 pub(super) struct Uart {
     base_address: VirtAddr,
@@ -60,7 +59,7 @@ impl Uart {
             if ptr.add(5).read_volatile() & 0b1 == 0 {
                 None
             } else {
-                Some((ptr.add(0).read_volatile() & 0xff) as u8)
+                Some(ptr.add(0).read_volatile() as u8)
             }
         }
     }
@@ -87,7 +86,6 @@ impl Write for Uart {
 pub(super) fn handle_interrupt() {
     if let Some(ref mut uart) = UART.lock().get_mut() {
         if let Some(c) = uart.get() {
-            let c = c & 0xff;
             //CONSOLE
             crate::serial::serial_put(c);
 

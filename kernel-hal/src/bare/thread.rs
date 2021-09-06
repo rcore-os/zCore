@@ -14,9 +14,7 @@ hal_fn_impl! {
             impl Future for PageTableSwitchWrapper {
                 type Output = ();
                 fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-                    unsafe {
-                        super::arch::vm::set_page_table(self.vmtoken);
-                    }
+                    super::arch::vm::activate_paging(self.vmtoken);
                     self.inner.lock().as_mut().poll(cx)
                 }
             }

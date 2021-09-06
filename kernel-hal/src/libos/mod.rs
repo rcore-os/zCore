@@ -1,6 +1,5 @@
 mod mem_common;
 
-pub mod context;
 pub mod mem;
 pub mod serial;
 pub mod thread;
@@ -8,11 +7,11 @@ pub mod timer;
 pub mod vdso;
 pub mod vm;
 
-pub use super::defs::{cpu, interrupt, rand};
+pub use super::defs::{context, cpu, interrupt, rand};
 
-hal_fn_impl_default!(rand, interrupt, cpu);
+hal_fn_impl_default!(context, cpu, interrupt, rand);
 
-cfg_if::cfg_if! {
+cfg_if! {
     if #[cfg(target_os = "linux")] {
         pub mod dev;
     } else {

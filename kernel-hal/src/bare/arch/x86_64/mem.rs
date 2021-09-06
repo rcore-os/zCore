@@ -1,7 +1,6 @@
 use core::arch::x86_64::{__cpuid, _mm_clflush, _mm_mfence};
 
-use super::super::mem::phys_to_virt;
-use crate::{PhysAddr, PAGE_SIZE};
+use crate::{mem::phys_to_virt, PhysAddr, PAGE_SIZE};
 
 // Get cache line size in bytes.
 fn cacheline_size() -> usize {

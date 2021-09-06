@@ -35,7 +35,7 @@ pub fn create_kcounter_vmo() -> (Arc<VmObject>, Arc<VmObject>) {
             fn kcounters_arena_end();
         }
         use kernel_hal::vm::{PageTable, PageTableTrait};
-        let mut pgtable = PageTable::current();
+        let mut pgtable = PageTable::from_current();
         let paddr = pgtable.query(kcounters_arena_start as usize).unwrap();
         assert_eq!(
             kcounters_arena_start as usize / PAGE_SIZE,

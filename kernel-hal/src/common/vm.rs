@@ -2,50 +2,31 @@ use crate::{HalResult, MMUFlags, PhysAddr, VirtAddr, PAGE_SIZE};
 
 pub trait PageTableTrait: Sync + Send {
     /// Map the page of `vaddr` to the frame of `paddr` with `flags`.
-    fn map(&mut self, _vaddr: VirtAddr, _paddr: PhysAddr, _flags: MMUFlags) -> HalResult<()>;
+    fn map(&mut self, vaddr: VirtAddr, paddr: PhysAddr, flags: MMUFlags) -> HalResult {
+        crate::vm::map_page(self.table_phys(), vaddr, paddr, flags)
+    }
 
     /// Unmap the page of `vaddr`.
-    fn unmap(&mut self, _vaddr: VirtAddr) -> HalResult<()>;
+    fn unmap(&mut self, vaddr: VirtAddr) -> HalResult {
+        crate::vm::unmap_page(self.table_phys(), vaddr)
+    }
 
     /// Change the `flags` of the page of `vaddr`.
-    fn protect(&mut self, _vaddr: VirtAddr, _flags: MMUFlags) -> HalResult<()>;
+    fn protect(&mut self, vaddr: VirtAddr, flags: MMUFlags) -> HalResult {
+        crate::vm::update_page(self.table_phys(), vaddr, None, Some(flags))
+    }
 
     /// Query the physical address which the page of `vaddr` maps to.
-    fn query(&mut self, _vaddr: VirtAddr) -> HalResult<PhysAddr>;
+    fn query(&mut self, vaddr: VirtAddr) -> HalResult<PhysAddr> {
+        crate::vm::query(self.table_phys(), vaddr).map(|(paddr, _)| paddr)
+    }
 
     /// Get the physical address of root page table.
     fn table_phys(&self) -> PhysAddr;
 
-    #[cfg(target_arch = "riscv64")]
-    /// Activate this page table
-    fn activate(&self);
-
-    fn map_many(
-        &mut self,
-        mut vaddr: VirtAddr,
-        paddrs: &[PhysAddr],
-        flags: MMUFlags,
-    ) -> HalResult<()> {
-        for &paddr in paddrs {
-            self.map(vaddr, paddr, flags)?;
-            vaddr += PAGE_SIZE;
-        }
-        Ok(())
-    }
-
-    fn map_cont(
-        &mut self,
-        mut vaddr: VirtAddr,
-        paddr: PhysAddr,
-        pages: usize,
-        flags: MMUFlags,
-    ) -> HalResult<()> {
-        for i in 0..pages {
-            let paddr = paddr + i * PAGE_SIZE;
-            self.map(vaddr, paddr, flags)?;
-            vaddr += PAGE_SIZE;
-        }
-        Ok(())
+    /// Activate this page table.
+    unsafe fn activate(&self) {
+        crate::vm::activate_paging(self.table_phys());
     }
 
     fn unmap_cont(&mut self, vaddr: VirtAddr, pages: usize) -> HalResult<()> {

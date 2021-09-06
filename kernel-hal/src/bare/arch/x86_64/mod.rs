@@ -55,10 +55,6 @@ pub fn init(config: HalConfig) {
                 stack
             }
         }
-        x86_smpboot::start_application_processors(
-            ap_main,
-            stack_fn,
-            super::super::mem::phys_to_virt,
-        );
+        x86_smpboot::start_application_processors(ap_main, stack_fn, crate::mem::phys_to_virt);
     }
 }

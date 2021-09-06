@@ -6,8 +6,8 @@ use alloc::{boxed::Box, vec::Vec};
 use apic::IoApic;
 use spin::Mutex;
 
-use super::super::mem::phys_to_virt;
 use super::acpi_table::AcpiTable;
+use crate::mem::phys_to_virt;
 
 const IRQ0: u8 = 32;
 

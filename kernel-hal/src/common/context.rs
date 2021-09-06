@@ -47,3 +47,6 @@ impl fmt::Debug for U128 {
         write!(f, "{:#016x}{:016x}", self.0[1], self.0[0])
     }
 }
+
+#[cfg(feature = "libos")]
+pub use trapframe::syscall_fn_entry as syscall_entry;

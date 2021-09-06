@@ -1,16 +1,16 @@
 use super::ffi;
 use crate::{PhysAddr, VirtAddr, PAGE_SIZE};
 
-pub(super) fn phys_to_virt(paddr: PhysAddr) -> VirtAddr {
-    unsafe { ffi::PMEM_BASE + paddr }
-}
-
-pub(super) fn virt_to_phys(vaddr: VirtAddr) -> PhysAddr {
-    unsafe { vaddr - ffi::PMEM_BASE }
-}
-
 hal_fn_impl! {
     impl mod crate::defs::mem {
+        fn phys_to_virt(paddr: PhysAddr) -> VirtAddr {
+            unsafe { ffi::PMEM_BASE + paddr }
+        }
+
+        fn virt_to_phys(vaddr: VirtAddr) -> PhysAddr {
+            unsafe { vaddr - ffi::PMEM_BASE }
+        }
+
         fn pmem_read(paddr: PhysAddr, buf: &mut [u8]) {
             trace!("pmem_read: addr={:#x}, len={:#x}", paddr, buf.len());
             unsafe {

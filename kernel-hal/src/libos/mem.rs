@@ -1,8 +1,16 @@
-use super::mem_common::{ensure_mmap_pmem, phys_to_virt, AVAILABLE_FRAMES, PMEM_SIZE};
-use crate::{PhysAddr, PAGE_SIZE};
+use super::mem_common::{ensure_mmap_pmem, AVAILABLE_FRAMES, PMEM_BASE, PMEM_SIZE};
+use crate::{PhysAddr, VirtAddr, PAGE_SIZE};
 
 hal_fn_impl! {
     impl mod crate::defs::mem {
+        fn phys_to_virt(paddr: PhysAddr) -> VirtAddr {
+            PMEM_BASE + paddr
+        }
+
+        fn virt_to_phys(vaddr: VirtAddr) -> PhysAddr{
+            vaddr - PMEM_BASE
+        }
+
         fn pmem_read(paddr: PhysAddr, buf: &mut [u8]) {
             trace!("pmem read: paddr={:#x}, len={:#x}", paddr, buf.len());
             assert!(paddr + buf.len() <= PMEM_SIZE);

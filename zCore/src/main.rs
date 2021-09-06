@@ -34,13 +34,7 @@ use rboot::BootInfo;
 #[cfg(target_arch = "riscv64")]
 use kernel_hal::{vm::remap_the_kernel, BootInfo, GraphicInfo};
 
-use alloc::{
-    boxed::Box,
-    format,
-    string::{String, ToString},
-    vec,
-    vec::Vec,
-};
+use alloc::{boxed::Box, string::String, vec, vec::Vec};
 
 #[cfg(feature = "board_qemu")]
 global_asm!(include_str!("arch/riscv/boot/boot_qemu.asm"));
@@ -120,7 +114,7 @@ pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
     logging::init(get_log_level(boot_info.cmdline));
     memory::init_heap();
     memory::init_frame_allocator(&boot_info);
-    remap_the_kernel(device_tree_vaddr);
+    remap_the_kernel(device_tree_vaddr).unwrap();
 
     info!("{:#x?}", boot_info);
 
@@ -129,11 +123,12 @@ pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
         dtb: device_tree_vaddr,
     });
 
-    let cmdline_dt = "";// FIXME: CMDLINE.read();
-    let mut cmdline = boot_info.cmdline.to_string();
-
-    if !cmdline_dt.is_empty() {
-        cmdline = format!("{}:{}", boot_info.cmdline, cmdline_dt);
+    let cmdline_dt = ""; // FIXME: CMDLINE.read();
+    let cmdline = if !cmdline_dt.is_empty() {
+        alloc::format!("{}:{}", boot_info.cmdline, cmdline_dt)
+    } else {
+        use alloc::string::ToString;
+        boot_info.cmdline.to_string()
     };
     warn!("cmdline: {:?}", cmdline);
 
@@ -166,7 +161,7 @@ fn get_rootproc(cmdline: &str) -> Vec<String> {
             let mut iter = value.trim().splitn(2, '?');
             let k1 = iter.next().expect("failed to parse k1");
             let v1 = iter.next().expect("failed to parse v1");
-            if v1 == "" {
+            if v1.is_empty() {
                 return vec![k1.into()];
             } else {
                 return vec![k1.into(), v1.into()];

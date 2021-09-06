@@ -11,6 +11,8 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v2
+        with:
+          submodules: 'recursive'
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
@@ -22,10 +24,16 @@ jobs:
         with:
           command: fmt
           args: --all -- --check
-      - name: Clippy x86_64
+      - name: Clippy LibOS
         run: arch=x86_64 cargo clippy
-      - name: Clippy riscv64
-        run: arch=riscv64 cargo clippy
+      - name: Clippy x86_64 bare-metal
+        run: |
+          cd zCore
+          make clippy arch=x86_64
+      - name: Clippy riscv64 bare-metal
+        run: |
+          cd zCore
+          make clippy arch=riscv64
 #        uses: actions-rs/cargo@v1
 #        with:
 #          command: clippy

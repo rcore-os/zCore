@@ -38,10 +38,7 @@ pub fn init_filesystem(ramfs_data: &'static mut [u8]) -> Arc<dyn FileSystem> {
 
     info!("Opening the rootfs ...");
     // 输入类型: Arc<Device>
-    let rootfs =
-        rcore_fs_sfs::SimpleFileSystem::open(device).expect("failed to open device SimpleFS");
-
-    rootfs
+    rcore_fs_sfs::SimpleFileSystem::open(device).expect("failed to open device SimpleFS")
 }
 
 // Hard link rootfs img

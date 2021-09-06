@@ -132,8 +132,8 @@ mod hal_extern_fn {
     #[no_mangle]
     #[cfg(target_arch = "riscv64")]
     pub extern "C" fn hal_pt_map_kernel(pt: &mut PageTable, current: &PageTable) {
-        let ekernel = current[KERNEL_L2].clone(); //Kernel
-        let ephysical = current[PHYSICAL_MEMORY_L2].clone(); //0xffffffff_00000000 --> 0x00000000
+        let ekernel = current[KERNEL_L2]; //Kernel
+        let ephysical = current[PHYSICAL_MEMORY_L2]; //0xffffffff_00000000 --> 0x00000000
         pt[KERNEL_L2].set(Frame::of_addr(ekernel.addr()), ekernel.flags() | EF::GLOBAL);
         pt[PHYSICAL_MEMORY_L2].set(
             Frame::of_addr(ephysical.addr()),
@@ -146,9 +146,6 @@ mod hal_extern_fn {
         );
     }
 }
-
-// First core stores its SATP here.
-static mut SATP: usize = 0;
 
 #[cfg(target_arch = "riscv64")]
 pub unsafe fn clear_bss() {

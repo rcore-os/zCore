@@ -1,5 +1,5 @@
-use super::super::mem::phys_to_virt;
 use super::consts::*;
+use crate::mem::phys_to_virt;
 
 //通过MMIO地址对平台级中断控制器PLIC的寄存器进行设置
 //基于opensbi后一般运行于Hart0 S态，为Target1

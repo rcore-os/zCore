@@ -28,7 +28,7 @@ pub fn console_putchar(ch: usize) {
 }
 
 pub fn console_getchar() -> usize {
-    return sbi_call(SBI_CONSOLE_GETCHAR, 0, 0, 0);
+    sbi_call(SBI_CONSOLE_GETCHAR, 0, 0, 0)
 }
 
 pub fn set_timer(stime_value: u64) {

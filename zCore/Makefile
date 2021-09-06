@@ -168,6 +168,9 @@ kernel:
 	echo Building zCore kenel
 	cargo build $(build_args)
 
+clippy:
+	cargo clippy $(build_args)
+
 bootloader:
 	cd ../rboot && make build
 

@@ -78,7 +78,7 @@ impl VmAddressRegion {
             addr,
             size,
             parent: None,
-            page_table: Arc::new(Mutex::new(kernel_hal::vm::PageTable::new())), //hal PageTable
+            page_table: Arc::new(Mutex::new(kernel_hal::vm::PageTable::new_and_map_kernel())), //hal PageTable
             inner: Mutex::new(Some(VmarInner::default())),
         })
     }
@@ -94,7 +94,7 @@ impl VmAddressRegion {
             addr: kernel_vmar_base,
             size: kernel_vmar_size,
             parent: None,
-            page_table: Arc::new(Mutex::new(kernel_hal::vm::PageTable::new())),
+            page_table: Arc::new(Mutex::new(kernel_hal::vm::PageTable::new_and_map_kernel())),
             inner: Mutex::new(Some(VmarInner::default())),
         })
     }
@@ -494,12 +494,6 @@ impl VmAddressRegion {
     /// Get VmarFlags of this VMAR.
     pub fn get_flags(&self) -> VmarFlags {
         self.flags
-    }
-
-    #[cfg(target_arch = "riscv64")]
-    /// Activate this page table
-    pub fn activate(&self) {
-        self.page_table.lock().activate();
     }
 
     /// Dump all mappings recursively.

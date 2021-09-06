@@ -1,6 +1,6 @@
 use apic::{IoApic, LocalApic, XApic};
 
-use super::super::mem::phys_to_virt;
+use crate::mem::phys_to_virt;
 
 const LAPIC_ADDR: usize = 0xfee0_0000;
 const IOAPIC_ADDR: usize = 0xfec0_0000;

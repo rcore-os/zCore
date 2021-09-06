@@ -7,8 +7,7 @@ use acpi::interrupt::{InterruptModel, InterruptSourceOverride, IoApic, Polarity,
 use acpi::{parse_rsdp, Acpi, AcpiHandler, PhysicalMapping};
 use spin::Mutex;
 
-use super::super::mem::phys_to_virt;
-use crate::PAGE_SIZE;
+use crate::{mem::phys_to_virt, PAGE_SIZE};
 
 pub struct AcpiTable {
     inner: Acpi,
