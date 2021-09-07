@@ -2,43 +2,10 @@ use std::io::Error;
 use std::os::unix::io::AsRawFd;
 
 use super::mem_common::{mmap, FRAME_FILE};
-use crate::{addr::is_aligned, HalResult, MMUFlags, PhysAddr, VirtAddr, PAGE_SIZE};
-
-fn unmap_cont(vaddr: VirtAddr, pages: usize) -> HalResult {
-    if pages == 0 {
-        return Ok(());
-    }
-    debug_assert!(is_aligned(vaddr));
-    let ret = unsafe { libc::munmap(vaddr as _, PAGE_SIZE * pages) };
-    assert_eq!(ret, 0, "failed to munmap: {:?}", Error::last_os_error());
-    Ok(())
-}
+use crate::{addr::is_aligned, MMUFlags, PhysAddr, VirtAddr, PAGE_SIZE};
 
 hal_fn_impl! {
     impl mod crate::defs::vm {
-        fn map_page(_vmtoken: PhysAddr, vaddr: VirtAddr, paddr: PhysAddr, flags: MMUFlags) -> HalResult {
-            debug_assert!(is_aligned(vaddr));
-            debug_assert!(is_aligned(paddr));
-            let prot = flags.to_mmap_prot();
-            mmap(FRAME_FILE.as_raw_fd(), paddr, PAGE_SIZE, vaddr, prot);
-            Ok(())
-        }
-
-        fn unmap_page(_vmtoken: PhysAddr, vaddr: VirtAddr) -> HalResult {
-            println!("unmap_page {:x?}",vaddr);
-            unmap_cont(vaddr, 1)
-        }
-
-        fn update_page(_vmtoken: PhysAddr, vaddr: VirtAddr, _paddr: Option<PhysAddr>, flags: Option<MMUFlags>) -> HalResult {
-            debug_assert!(is_aligned(vaddr));
-            if let Some(flags) = flags {
-                let prot = flags.to_mmap_prot();
-                let ret = unsafe { libc::mprotect(vaddr as _, PAGE_SIZE, prot) };
-                assert_eq!(ret, 0, "failed to mprotect: {:?}", Error::last_os_error());
-            }
-            Ok(())
-        }
-
         fn current_vmtoken() -> PhysAddr {
             0
         }
@@ -57,32 +24,76 @@ impl PageTable {
     pub fn new_and_map_kernel() -> Self {
         Self
     }
+
+    pub fn from_current() -> Self {
+        Self
+    }
 }
 
-impl PageTableTrait for PageTable {
+impl GenericPageTable for PageTable {
     fn table_phys(&self) -> PhysAddr {
         0
     }
 
-    fn unmap_cont(&mut self, vaddr: VirtAddr, pages: usize) -> HalResult {
-        unmap_cont(vaddr, pages)
+    fn map(&mut self, page: Page, paddr: PhysAddr, flags: MMUFlags) -> PagingResult {
+        debug_assert!(page.size as usize == PAGE_SIZE);
+        debug_assert!(is_aligned(paddr));
+        mmap(
+            FRAME_FILE.as_raw_fd(),
+            paddr,
+            PAGE_SIZE,
+            page.vaddr,
+            flags.into(),
+        );
+        Ok(())
+    }
+
+    fn unmap(&mut self, vaddr: VirtAddr) -> PagingResult<(PhysAddr, PageSize)> {
+        println!("unmap_page {:x?}", vaddr);
+        self.unmap_cont(vaddr, PageSize::Size4K, 1)?;
+        Ok((0, PageSize::Size4K))
+    }
+
+    fn update(
+        &mut self,
+        vaddr: VirtAddr,
+        _paddr: Option<PhysAddr>,
+        flags: Option<MMUFlags>,
+    ) -> PagingResult<PageSize> {
+        debug_assert!(is_aligned(vaddr));
+        if let Some(flags) = flags {
+            let ret = unsafe { libc::mprotect(vaddr as _, PAGE_SIZE, flags.into()) };
+            assert_eq!(ret, 0, "failed to mprotect: {:?}", Error::last_os_error());
+        }
+        Ok(PageSize::Size4K)
+    }
+
+    fn query(&self, vaddr: VirtAddr) -> PagingResult<(PhysAddr, MMUFlags, PageSize)> {
+        debug_assert!(is_aligned(vaddr));
+        unimplemented!()
+    }
+
+    fn unmap_cont(&mut self, vaddr: VirtAddr, page_size: PageSize, count: usize) -> PagingResult {
+        if count == 0 {
+            return Ok(());
+        }
+        debug_assert!(is_aligned(vaddr));
+        let ret = unsafe { libc::munmap(vaddr as _, page_size as usize * count) };
+        assert_eq!(ret, 0, "failed to munmap: {:?}", Error::last_os_error());
+        Ok(())
     }
 }
 
-trait FlagsExt {
-    fn to_mmap_prot(&self) -> libc::c_int;
-}
-
-impl FlagsExt for MMUFlags {
-    fn to_mmap_prot(&self) -> libc::c_int {
+impl From<MMUFlags> for libc::c_int {
+    fn from(f: MMUFlags) -> libc::c_int {
         let mut flags = 0;
-        if self.contains(MMUFlags::READ) {
+        if f.contains(MMUFlags::READ) {
             flags |= libc::PROT_READ;
         }
-        if self.contains(MMUFlags::WRITE) {
+        if f.contains(MMUFlags::WRITE) {
             flags |= libc::PROT_WRITE;
         }
-        if self.contains(MMUFlags::EXECUTE) {
+        if f.contains(MMUFlags::EXECUTE) {
             flags |= libc::PROT_EXEC;
         }
         flags
@@ -101,8 +112,14 @@ mod tests {
         let mut pt = PageTable::new();
         let flags = MMUFlags::READ | MMUFlags::WRITE;
         // map 2 pages to 1 frame
-        pt.map(VBASE, 0x1000, flags).unwrap();
-        pt.map(VBASE + 0x1000, 0x1000, flags).unwrap();
+        pt.map(Page::new_aligned(VBASE, PageSize::Size4K), 0x1000, flags)
+            .unwrap();
+        pt.map(
+            Page::new_aligned(VBASE + 0x1000, PageSize::Size4K),
+            0x1000,
+            flags,
+        )
+        .unwrap();
 
         unsafe {
             const MAGIC: usize = 0xdead_beaf;

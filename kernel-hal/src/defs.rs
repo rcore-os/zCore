@@ -1,7 +1,7 @@
 use alloc::boxed::Box;
 use core::{fmt::Arguments, future::Future, ops::Range, pin::Pin, time::Duration};
 
-use crate::{common, HalResult, MMUFlags, PhysAddr, VirtAddr};
+use crate::{common, HalResult, PhysAddr, VirtAddr};
 
 hal_fn_def! {
     pub mod cpu {
@@ -48,26 +48,14 @@ hal_fn_def! {
     }
 
     pub mod vm: common::vm {
-        /// Map the page of `vaddr` to the frame of `paddr` with `flags`.
-        pub(crate) fn map_page(vmtoken: PhysAddr, vaddr: VirtAddr, paddr: PhysAddr, flags: MMUFlags) -> HalResult;
-
-        /// Unmap the page of `vaddr`.
-        pub(crate) fn unmap_page(vmtoken: PhysAddr, vaddr: VirtAddr) -> HalResult;
-
-        /// Update the page entry of `vaddr` (e.g. target `paddr`, `flags`).
-        pub(crate) fn update_page(vmtoken: PhysAddr, vaddr: VirtAddr, paddr: Option<PhysAddr>, flags: Option<MMUFlags>) -> HalResult;
-
-        /// Query the physical address which the page of `vaddr` maps to.
-        pub(crate) fn query(vmtoken: PhysAddr, vaddr: VirtAddr) -> HalResult<(PhysAddr, MMUFlags)>;
-
         /// Activate this page table by given `vmtoken`.
         pub(crate) fn activate_paging(vmtoken: PhysAddr);
 
         /// Read current VM token. (e.g. CR3, SATP, ...)
-        pub fn current_vmtoken() -> PhysAddr;
+        pub(crate) fn current_vmtoken() -> PhysAddr;
 
         /// Flush TLB by the associated `vaddr`, or flush the entire TLB. (`vaddr` is `None`).
-        pub fn flush_tlb(vaddr: Option<VirtAddr>);
+        pub(crate) fn flush_tlb(vaddr: Option<VirtAddr>);
     }
 
     pub mod interrupt {

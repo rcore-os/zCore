@@ -6,7 +6,7 @@ use riscv::{
 };
 
 use super::consts;
-use crate::vm::{PageTable, PageTableTrait};
+use crate::vm::{GenericPageTable, PageTable};
 use crate::{mem::phys_to_virt, HalError, HalResult, MMUFlags, PhysAddr, VirtAddr, PAGE_SIZE};
 
 #[cfg(target_arch = "riscv32")]

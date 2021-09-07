@@ -1,118 +1,24 @@
 use core::convert::TryFrom;
+use core::fmt::{Debug, Formatter, Result};
 
 use x86_64::{
     instructions::tlb,
     registers::control::{Cr3, Cr3Flags},
-    structures::paging::{mapper, FrameAllocator, FrameDeallocator, Mapper, Translate},
-    structures::paging::{OffsetPageTable, PageTable as PT, PageTableFlags as PTF},
-    structures::paging::{Page, PhysFrame, Size4KiB},
+    structures::paging::page_table::PageTableFlags as PTF,
 };
 
-use crate::{mem::phys_to_virt, CachePolicy, HalError, HalResult, MMUFlags, PhysAddr, VirtAddr};
-
-fn page_table_of<'a>(root_paddr: PhysAddr) -> OffsetPageTable<'a> {
-    let root_vaddr = phys_to_virt(root_paddr);
-    let root = unsafe { &mut *(root_vaddr as *mut PT) };
-    let offset = x86_64::VirtAddr::new(phys_to_virt(0) as u64);
-    unsafe { OffsetPageTable::new(root, offset) }
-}
+use crate::utils::page_table::{GenericPTE, PageTableImpl};
+use crate::{CachePolicy, MMUFlags, PhysAddr, VirtAddr};
 
 hal_fn_impl! {
     impl mod crate::defs::vm {
-        fn map_page(vmtoken: PhysAddr, vaddr: VirtAddr, paddr: PhysAddr, flags: MMUFlags) -> HalResult {
-            let mut pt = page_table_of(vmtoken);
-            unsafe {
-                pt.map_to_with_table_flags(
-                    Page::<Size4KiB>::from_start_address(x86_64::VirtAddr::new(vaddr as u64)).unwrap(),
-                    PhysFrame::from_start_address(x86_64::PhysAddr::new(paddr as u64)).unwrap(),
-                    flags.to_ptf(),
-                    PTF::PRESENT | PTF::WRITABLE | PTF::USER_ACCESSIBLE,
-                    &mut FrameAllocatorImpl,
-                )
-                .unwrap()
-                .flush();
-            };
-            debug!(
-                "map: {:x?} -> {:x?}, flags={:?} in {:#x?}",
-                vaddr, paddr, flags, vmtoken
-            );
-            Ok(())
-        }
-
-        fn unmap_page(vmtoken: PhysAddr, vaddr: VirtAddr) -> HalResult {
-            let mut pt = page_table_of(vmtoken);
-            let page = Page::<Size4KiB>::from_start_address(x86_64::VirtAddr::new(vaddr as u64)).unwrap();
-            // This is a workaround to an issue in the x86-64 crate
-            // A page without PRESENT bit is not unmappable AND mapable
-            // So we add PRESENT bit here
-            unsafe {
-                pt.update_flags(page, PTF::PRESENT | PTF::NO_EXECUTE).ok();
-            }
-            match pt.unmap(page) {
-                Ok((_, flush)) => {
-                    flush.flush();
-                    trace!("unmap: {:x?} in {:#x?}", vaddr, vmtoken);
-                }
-                Err(mapper::UnmapError::PageNotMapped) => {
-                    trace!("unmap not mapped, skip: {:x?} in {:#x?}", vaddr, vmtoken);
-                    return Ok(());
-                }
-                Err(err) => {
-                    debug!(
-                        "unmap failed: {:x?} err={:x?} in {:#x?}",
-                        vaddr, err, vmtoken
-                    );
-                    return Err(HalError);
-                }
-            }
-            Ok(())
-        }
-
-        fn update_page(
-            vmtoken: PhysAddr,
-            vaddr: VirtAddr,
-            paddr: Option<PhysAddr>,
-            flags: Option<MMUFlags>,
-        ) -> HalResult {
-            debug_assert!(paddr.is_none());
-            let mut pt = page_table_of(vmtoken);
-            if let Some(flags) = flags {
-                let page =
-                    Page::<Size4KiB>::from_start_address(x86_64::VirtAddr::new(vaddr as u64)).unwrap();
-                if let Ok(flush) = unsafe { pt.update_flags(page, flags.to_ptf()) } {
-                    flush.flush();
-                }
-                trace!("protect: {:x?}, flags={:?}", vaddr, flags);
-            }
-            Ok(())
-        }
-
-        fn query(vmtoken: PhysAddr, vaddr: VirtAddr) -> HalResult<(PhysAddr, MMUFlags)> {
-            let pt = page_table_of(vmtoken);
-            let ret = pt.translate(x86_64::VirtAddr::new(vaddr as u64));
-            trace!("query: {:x?} => {:x?}", vaddr, ret);
-            match ret {
-                mapper::TranslateResult::Mapped {
-                    frame,
-                    offset,
-                    flags,
-                } => Ok((
-                    (frame.start_address().as_u64() + offset) as PhysAddr,
-                    MMUFlags::from_ptf(flags),
-                )),
-                _ => Err(HalError),
-            }
-        }
-
         fn activate_paging(vmtoken: PhysAddr) {
+            use x86_64::structures::paging::PhysFrame;
             let frame = PhysFrame::containing_address(x86_64::PhysAddr::new(vmtoken as _));
-            unsafe {
-                if Cr3::read().0 == frame {
-                    return;
-                }
-                Cr3::write(frame, Cr3Flags::empty());
+            if Cr3::read().0 != frame {
+                unsafe { Cr3::write(frame, Cr3Flags::empty()) };
+                debug!("set page_table @ {:#x}", vmtoken);
             }
-            debug!("set page_table @ {:#x}", vmtoken);
         }
 
         fn current_vmtoken() -> PhysAddr {
@@ -129,27 +35,22 @@ hal_fn_impl! {
     }
 }
 
-trait FlagsExt {
-    fn to_ptf(self) -> PTF;
-    fn from_ptf(f: PTF) -> Self;
-}
-
-impl FlagsExt for MMUFlags {
-    fn to_ptf(self) -> PTF {
+impl From<MMUFlags> for PTF {
+    fn from(f: MMUFlags) -> Self {
         let mut flags = PTF::empty();
-        if self.contains(MMUFlags::READ) {
+        if f.contains(MMUFlags::READ) {
             flags |= PTF::PRESENT;
         }
-        if self.contains(MMUFlags::WRITE) {
+        if f.contains(MMUFlags::WRITE) {
             flags |= PTF::WRITABLE;
         }
-        if !self.contains(MMUFlags::EXECUTE) {
+        if !f.contains(MMUFlags::EXECUTE) {
             flags |= PTF::NO_EXECUTE;
         }
-        if self.contains(MMUFlags::USER) {
+        if f.contains(MMUFlags::USER) {
             flags |= PTF::USER_ACCESSIBLE;
         }
-        let cache_policy = (self.bits() & 3) as u32; // 最低三位用于储存缓存策略
+        let cache_policy = (f.bits() & 3) as u32; // 最低三位用于储存缓存策略
         match CachePolicy::try_from(cache_policy) {
             Ok(CachePolicy::Cached) => {
                 flags.remove(PTF::WRITE_THROUGH);
@@ -166,8 +67,10 @@ impl FlagsExt for MMUFlags {
         }
         flags
     }
+}
 
-    fn from_ptf(f: PTF) -> Self {
+impl From<PTF> for MMUFlags {
+    fn from(f: PTF) -> Self {
         let mut ret = Self::empty();
         if f.contains(PTF::PRESENT) {
             ret |= Self::READ;
@@ -188,19 +91,56 @@ impl FlagsExt for MMUFlags {
     }
 }
 
-struct FrameAllocatorImpl;
+const PHYS_ADDR_MASK: u64 = 0x000f_ffff_ffff_f000; // 12..52
 
-unsafe impl FrameAllocator<Size4KiB> for FrameAllocatorImpl {
-    fn allocate_frame(&mut self) -> Option<PhysFrame> {
-        crate::mem::frame_alloc().map(|f| {
-            let paddr = x86_64::PhysAddr::new(f as u64);
-            PhysFrame::from_start_address(paddr).unwrap()
-        })
+#[derive(Clone)]
+#[repr(transparent)]
+pub struct X86PTE(u64);
+
+impl GenericPTE for X86PTE {
+    fn addr(&self) -> PhysAddr {
+        (self.0 & PHYS_ADDR_MASK) as _
+    }
+    fn flags(&self) -> MMUFlags {
+        PTF::from_bits_truncate(self.0).into()
+    }
+    fn is_unused(&self) -> bool {
+        self.0 == 0
+    }
+    fn is_present(&self) -> bool {
+        PTF::from_bits_truncate(self.0).contains(PTF::PRESENT)
+    }
+    fn is_huge(&self) -> bool {
+        PTF::from_bits_truncate(self.0).contains(PTF::HUGE_PAGE)
+    }
+
+    fn set_addr(&mut self, paddr: PhysAddr) {
+        self.0 = (self.0 & !PHYS_ADDR_MASK) | (paddr as u64 & PHYS_ADDR_MASK);
+    }
+    fn set_flags(&mut self, flags: MMUFlags, is_huge: bool) {
+        let mut flags: PTF = flags.into();
+        if is_huge {
+            flags |= PTF::HUGE_PAGE;
+        }
+        self.0 = self.addr() as u64 | flags.bits();
+    }
+    fn set_table(&mut self, paddr: PhysAddr) {
+        self.0 = (paddr as u64 & PHYS_ADDR_MASK)
+            | (PTF::PRESENT | PTF::WRITABLE | PTF::USER_ACCESSIBLE).bits();
+    }
+    fn clear(&mut self) {
+        self.0 = 0
     }
 }
 
-impl FrameDeallocator<Size4KiB> for FrameAllocatorImpl {
-    unsafe fn deallocate_frame(&mut self, frame: PhysFrame) {
-        crate::mem::frame_dealloc(frame.start_address().as_u64() as PhysAddr);
+impl Debug for X86PTE {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        let mut f = f.debug_struct("X86PTE");
+        f.field("raw", &self.0);
+        f.field("addr", &self.addr());
+        f.field("flags", &self.flags());
+        f.finish()
     }
 }
+
+pub type PageTable = PageTableImpl<X86PTE>;

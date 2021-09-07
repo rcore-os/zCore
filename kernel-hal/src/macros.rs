@@ -41,6 +41,7 @@ macro_rules! hal_fn_impl {
                     $($fn)*
                 }
             }
+            #[allow(unused_imports)]
             pub use $mod_name$(::$mod_name_more)*::*;
         )+
     };

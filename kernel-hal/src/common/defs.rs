@@ -32,6 +32,6 @@ numeric_enum! {
 }
 pub const CACHE_POLICY_MASK: u32 = 3;
 
-pub const PAGE_SIZE: usize = 0x1000;
+pub const PAGE_SIZE: usize = super::vm::PageSize::Size4K as usize;
 
 pub use super::addr::{DevVAddr, PhysAddr, VirtAddr};

@@ -4,7 +4,7 @@ mod guest;
 mod vcpu;
 
 use super::ZxError;
-use kernel_hal::{HalError, MMUFlags, PageTableTrait, Result};
+use kernel_hal::{GenericPageTable, HalError, MMUFlags, Result};
 use rvm::{
     ArchRvmPageTable, GuestPhysAddr, HostPhysAddr, IntoRvmPageTableFlags, RvmError, RvmPageTable,
 };
@@ -56,7 +56,7 @@ impl VmmPageTable {
     }
 }
 
-impl PageTableTrait for VmmPageTable {
+impl GenericPageTable for VmmPageTable {
     fn map(&mut self, gpaddr: GuestPhysAddr, hpaddr: HostPhysAddr, flags: MMUFlags) -> Result<()> {
         self.0
             .map(gpaddr, hpaddr, VmmPageTableFlags(flags))

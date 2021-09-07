@@ -1,41 +1,82 @@
-use crate::{HalResult, MMUFlags, PhysAddr, VirtAddr, PAGE_SIZE};
+use crate::{MMUFlags, PhysAddr, VirtAddr};
 
-pub trait PageTableTrait: Sync + Send {
-    /// Map the page of `vaddr` to the frame of `paddr` with `flags`.
-    fn map(&mut self, vaddr: VirtAddr, paddr: PhysAddr, flags: MMUFlags) -> HalResult {
-        crate::vm::map_page(self.table_phys(), vaddr, paddr, flags)
+#[derive(Debug)]
+pub enum PagingError {
+    NoMemory,
+    NotMapped,
+    AlreadyMapped,
+    MappedToHugePage,
+}
+
+pub type PagingResult<T = ()> = Result<T, PagingError>;
+
+#[repr(usize)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum PageSize {
+    Size4K = 0x1000,
+    Size2M = 0x20_0000,
+    Size1G = 0x4000_0000,
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct Page {
+    pub vaddr: VirtAddr,
+    pub size: PageSize,
+}
+
+impl PageSize {
+    pub const fn is_aligned(self, addr: usize) -> bool {
+        self.page_offset(addr) == 0
     }
 
-    /// Unmap the page of `vaddr`.
-    fn unmap(&mut self, vaddr: VirtAddr) -> HalResult {
-        crate::vm::unmap_page(self.table_phys(), vaddr)
+    pub const fn align_down(self, addr: usize) -> usize {
+        addr & !(self as usize - 1)
     }
 
-    /// Change the `flags` of the page of `vaddr`.
-    fn protect(&mut self, vaddr: VirtAddr, flags: MMUFlags) -> HalResult {
-        crate::vm::update_page(self.table_phys(), vaddr, None, Some(flags))
+    pub const fn page_offset(self, addr: usize) -> usize {
+        addr & (self as usize - 1)
     }
 
-    /// Query the physical address which the page of `vaddr` maps to.
-    fn query(&mut self, vaddr: VirtAddr) -> HalResult<PhysAddr> {
-        crate::vm::query(self.table_phys(), vaddr).map(|(paddr, _)| paddr)
+    pub const fn is_huge(self) -> bool {
+        matches!(self, Self::Size1G | Self::Size2M)
     }
+}
 
+impl Page {
+    pub fn new_aligned(vaddr: VirtAddr, size: PageSize) -> Self {
+        debug_assert!(size.is_aligned(vaddr));
+        Self { vaddr, size }
+    }
+}
+
+pub trait GenericPageTable: Sync + Send {
     /// Get the physical address of root page table.
     fn table_phys(&self) -> PhysAddr;
 
-    /// Activate this page table.
-    ///
-    /// # Safety
-    ///
-    /// This function is unsafe because it switches the page table.
-    unsafe fn activate(&self) {
-        crate::vm::activate_paging(self.table_phys());
-    }
+    /// Map the `page` to the frame of `paddr` with `flags`.
+    fn map(&mut self, page: Page, paddr: PhysAddr, flags: MMUFlags) -> PagingResult;
 
-    fn unmap_cont(&mut self, vaddr: VirtAddr, pages: usize) -> HalResult<()> {
-        for i in 0..pages {
-            self.unmap(vaddr + i * PAGE_SIZE)?;
+    /// Unmap the page of `vaddr`.
+    fn unmap(&mut self, vaddr: VirtAddr) -> PagingResult<(PhysAddr, PageSize)>;
+
+    /// Change the `flags` of the page of `vaddr`.
+    fn update(
+        &mut self,
+        vaddr: VirtAddr,
+        paddr: Option<PhysAddr>,
+        flags: Option<MMUFlags>,
+    ) -> PagingResult<PageSize>;
+
+    /// Query the physical address which the page of `vaddr` maps to.
+    fn query(&self, vaddr: VirtAddr) -> PagingResult<(PhysAddr, MMUFlags, PageSize)>;
+
+    fn unmap_cont(&mut self, vaddr: VirtAddr, page_size: PageSize, count: usize) -> PagingResult {
+        for i in 0..count {
+            if let Err(err) = self.unmap(vaddr + i * page_size as usize) {
+                if !matches!(err, PagingError::NotMapped) {
+                    return Err(err);
+                }
+            }
         }
         Ok(())
     }

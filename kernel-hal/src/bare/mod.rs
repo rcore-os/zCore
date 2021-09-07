@@ -1,4 +1,4 @@
-mod ffi;
+pub(crate) mod ffi;
 
 cfg_if! {
     if #[cfg(target_arch = "x86_64")] {
@@ -15,9 +15,8 @@ cfg_if! {
 pub mod mem;
 pub mod thread;
 pub mod timer;
-pub mod vm;
 
-pub use self::arch::{config, context, cpu, interrupt, serial};
+pub use self::arch::{config, context, cpu, interrupt, serial, vm};
 pub use super::defs::{dev, rand, vdso};
 
 hal_fn_impl_default!(rand, vdso, dev::fb, dev::input);

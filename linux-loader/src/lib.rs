@@ -57,7 +57,8 @@ pub fn run(args: Vec<String>, envs: Vec<String>, rootfs: Arc<dyn FileSystem>) ->
     let path = args[0].clone();
     debug!("Linux process: {:?}", path);
 
-    let pg_token = kernel_hal::vm::current_vmtoken();
+    use kernel_hal::vm::{GenericPageTable, PageTable};
+    let pg_token = PageTable::from_current().table_phys();
     debug!("current pgt = {:#x}", pg_token);
     //调用zircon-object/src/task/thread.start设置好要执行的thread
     let (entry, sp) = loader.load(&proc.vmar(), &data, args, envs, path).unwrap();
@@ -106,12 +107,15 @@ async fn new_thread(thread: CurrentThread) {
                 } else {
                     MMUFlags::WRITE
                 };
-                error!("page fualt from user mode {:#x} {:#x?}", vaddr, flags);
+                error!("page fault from user mode @ {:#x}({:?})", vaddr, flags);
                 let vmar = thread.proc().vmar();
                 match vmar.handle_page_fault(vaddr, flags) {
                     Ok(()) => {}
-                    Err(_) => {
-                        panic!("Page Fault from user mode {:#x?}", cx);
+                    Err(err) => {
+                        panic!(
+                            "Handle page fault from user mode error @ {:#x}({:?}): {:?}\n{:#x?}",
+                            vaddr, flags, err, cx
+                        );
                     }
                 }
             }
