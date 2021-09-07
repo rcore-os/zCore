@@ -59,10 +59,6 @@ hal_fn_impl! {
             ret
         }
 
-        fn frame_alloc_contiguous(_frame_count: usize, _align_log2: usize) -> Option<PhysAddr> {
-            unimplemented!()
-        }
-
         fn frame_dealloc(paddr: PhysAddr) {
             trace!("frame dealloc: {:?}", paddr);
             AVAILABLE_FRAMES.lock().unwrap().push_back(paddr);

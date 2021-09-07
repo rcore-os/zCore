@@ -31,8 +31,12 @@ mod fs;
 #[cfg(target_arch = "x86_64")]
 use rboot::BootInfo;
 
+use kernel_hal::config::HalConfig;
 #[cfg(target_arch = "riscv64")]
-use kernel_hal::{vm::remap_the_kernel, BootInfo, GraphicInfo};
+use kernel_hal::{
+    config::{BootInfo, GraphicInfo},
+    vm::remap_the_kernel,
+};
 
 use alloc::{boxed::Box, string::String, vec, vec::Vec};
 
@@ -52,7 +56,7 @@ pub extern "C" fn _start(boot_info: &BootInfo) -> ! {
 
     trace!("{:#x?}", boot_info);
 
-    kernel_hal::init(kernel_hal::HalConfig {
+    kernel_hal::init(HalConfig {
         acpi_rsdp: boot_info.acpi2_rsdp_addr,
         smbios: boot_info.smbios_addr,
         ap_fn: run,
@@ -118,7 +122,7 @@ pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
 
     info!("{:#x?}", boot_info);
 
-    kernel_hal::init(kernel_hal::HalConfig {
+    kernel_hal::init(HalConfig {
         mconfig: 0,
         dtb: device_tree_vaddr,
     });

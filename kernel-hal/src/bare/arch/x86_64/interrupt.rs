@@ -8,13 +8,13 @@ use apic::IoApic;
 use spin::Mutex;
 
 use super::acpi_table::AcpiTable;
-use crate::interrupt::{IrqHandler, IrqManager};
+use crate::utils::irq_manager::{IrqHandler, IrqManager};
 use crate::{mem::phys_to_virt, HalError, HalResult};
 
 const IRQ0: u32 = 32;
 
-pub(crate) const IRQ_MIN_ID: u32 = 0x20;
-pub(crate) const IRQ_MAX_ID: u32 = 0xff;
+const IRQ_MIN_ID: u32 = 0x20;
+const IRQ_MAX_ID: u32 = 0xff;
 
 // IRQ
 const Timer: u32 = 0;
@@ -29,7 +29,7 @@ const Spurious: u32 = 31;
 const IO_APIC_NUM_REDIRECTIONS: u8 = 120;
 
 lazy_static::lazy_static! {
-    static ref IRQ_MANAGER: Mutex<IrqManager> = Mutex::default();
+    static ref IRQ_MANAGER: Mutex<IrqManager> = Mutex::new(IrqManager::new(0x20, 0xff));
     static ref MAX_INSTR_TABLE: Mutex<Vec<(usize, u8)>> = Mutex::default();
 }
 
@@ -176,7 +176,7 @@ hal_fn_impl! {
             };
             let x86_vector = IRQ_MANAGER
                 .lock()
-                .add_handler(x86_vector as u32, new_handler)?;
+                .register_handler(x86_vector as u32, new_handler)?;
             info!(
                 "irq_set_handle: mapping from {:#x?} to {:#x?}",
                 global_irq, x86_vector
@@ -196,7 +196,7 @@ hal_fn_impl! {
             let offset = (global_irq - ioapic_info.global_system_interrupt_base) as u8;
             let x86_vector = ioapic.irq_vector(offset);
             // TODO: ioapic redirection entries associated with this should be reset.
-            IRQ_MANAGER.lock().remove_handler(x86_vector as u32)
+            IRQ_MANAGER.lock().unregister_handler(x86_vector as u32)
         }
 
         fn handle_irq(vector: u32) {
@@ -282,12 +282,13 @@ pub(super) fn init() {
     }
 
     let mut im = IRQ_MANAGER.lock();
-    im.add_handler(Timer + IRQ0, Box::new(timer)).ok();
-    // im.add_handler(Keyboard + IRQ0, Box::new(keyboard));
-    // im.add_handler(Mouse + IRQ0, Box::new(mouse));
-    im.add_handler(COM1 + IRQ0, Box::new(com1)).ok();
-    im.add_handler(57u32, Box::new(irq57test)).ok();
-    // irq_enable_raw(Keyboard, Keyboard + IRQ0);
-    // irq_enable_raw(Mouse, Mouse + IRQ0);
-    irq_enable_raw(COM1, COM1 + IRQ0);
+    im.register_handler(Timer + IRQ_MIN_ID, Box::new(timer))
+        .ok();
+    // im.register_handler(Keyboard + IRQ_MIN_ID, Box::new(keyboard));
+    // im.register_handler(Mouse + IRQ_MIN_ID, Box::new(mouse));
+    im.register_handler(COM1 + IRQ_MIN_ID, Box::new(com1)).ok();
+    im.register_handler(57u32, Box::new(irq57test)).ok();
+    // register_handler(Keyboard, Keyboard + IRQ_MIN_ID);
+    // register_handler(Mouse, Mouse + IRQ_MIN_ID);
+    irq_enable_raw(COM1, COM1 + IRQ_MIN_ID);
 }

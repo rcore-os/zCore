@@ -12,26 +12,20 @@ cfg_if! {
     }
 }
 
-pub mod interrupt;
 pub mod mem;
 pub mod thread;
 pub mod timer;
 pub mod vm;
 
+pub use self::arch::{config, context, cpu, interrupt, serial};
 pub use super::defs::{dev, rand, vdso};
 
 hal_fn_impl_default!(rand, vdso, dev::fb, dev::input);
 
-pub use self::arch::{context, cpu, serial, HalConfig};
-
-#[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))]
-pub use self::arch::{BootInfo, GraphicInfo};
-
 /// Initialize the HAL.
 ///
 /// This function must be called at the beginning.
-pub fn init(config: HalConfig) {
+pub fn init(cfg: config::HalConfig) {
     unsafe { trapframe::init() };
-
-    self::arch::init(config);
+    self::arch::init(cfg);
 }

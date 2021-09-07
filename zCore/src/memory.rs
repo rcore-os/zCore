@@ -16,7 +16,7 @@ use riscv::{
     paging::{PageTable, PageTableFlags as EF},
 };
 #[cfg(target_arch = "riscv64")]
-use kernel_hal::BootInfo;
+use kernel_hal::config::BootInfo;
 
 #[cfg(target_arch = "x86_64")]
 type FrameAlloc = bitmap_allocator::BitAlloc16M;

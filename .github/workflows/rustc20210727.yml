@@ -18,7 +18,7 @@ jobs:
           profile: minimal
           toolchain: nightly-2021-07-27
           override: true
-          components: rustfmt, clippy
+          components: rust-src, rustfmt, clippy
       - name: Check code format
         uses: actions-rs/cargo@v1
         with:
@@ -33,7 +33,7 @@ jobs:
       - name: Clippy riscv64 bare-metal
         run: |
           cd zCore
-          make clippy arch=riscv64
+          make clippy arch=riscv64 linux=1
 #        uses: actions-rs/cargo@v1
 #        with:
 #          command: clippy

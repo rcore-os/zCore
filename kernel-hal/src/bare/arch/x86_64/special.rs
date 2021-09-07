@@ -12,5 +12,6 @@ pub fn pio_write(port: u16, value: u32) {
 
 /// Get physical address of `acpi_rsdp` and `smbios` on x86_64.
 pub fn pc_firmware_tables() -> (u64, u64) {
-    unsafe { (super::CONFIG.acpi_rsdp, super::CONFIG.smbios) }
+    let cfg = super::config::CONFIG.get().unwrap();
+    (cfg.acpi_rsdp, cfg.smbios)
 }
