@@ -181,6 +181,29 @@ jobs:
           cd scripts
           pip3 install pexpect
           python3 unix-core-tests.py
+# TODO : the output of github CI is too large
+  # core-test-baremetal:
+  #   runs-on: ubuntu-20.04
+  #   steps:
+  #     - uses: actions/checkout@v2
+  #       with:
+  #         submodules: 'recursive'
+  #     - name: Pull prebuilt images
+  #       run: git lfs pull -I prebuilt/zircon/x64/core-tests.zbi,prebuilt/zircon/x64/libzircon.so,prebuilt/zircon/x64/userboot.so
+  #     - uses: actions-rs/toolchain@v1
+  #       with:
+  #         profile: minimal
+  #         toolchain: nightly-2021-07-27
+  #         components: rust-src
+  #     - name: Install QEMU
+  #       run: |
+  #         sudo apt update
+  #         sudo apt install qemu-system-x86
+  #     - name: Run core-tests
+  #       run: |
+  #         cd scripts
+  #         pip3 install pexpect
+  #         python3 baremetal-core-tests.py
   libc-test:
     runs-on: ubuntu-20.04
     steps:
@@ -221,7 +244,7 @@ jobs:
 #          FOLDER: target/doc
 
 
-  baremetal-libc-test:
+  libc-test-baremetal:
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v2

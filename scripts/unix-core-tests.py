@@ -3,7 +3,7 @@ import sys
 import re
 import os
 
-TIMEOUT = 300
+TIMEOUT = 100
 ZIRCON_LOADER_PATH = 'zircon-loader'
 BASE = 'zircon/'
 OUTPUT_FILE = BASE + 'test-output-libos.txt'
@@ -54,11 +54,12 @@ for line in check_case:
     index = child.expect(
         ['finished!', 'panicked', pexpect.EOF, pexpect.TIMEOUT])
     result = ['FINISHED', 'PANICKED', 'EOF', 'TIMEOUT'][index]
-    # print(result)
+    print(result)
 
 passed = []
 failed = []
 passed_case = set()
+failed_case = set()
 
 # see https://stackoverflow.com/questions/59379174/ignore-ansi-colors-in-pexpect-response
 ansi_escape = re.compile(r"\x1B[@-_][0-?]*[ -/]*[@-~]")
@@ -71,15 +72,16 @@ with open(OUTPUT_FILE, "r") as opf:
             passed_case.add(line[13:].split(' ')[0])
         elif line.startswith('[  FAILED  ]') and line.endswith(')\n'):
             failed += line
+            failed_case.add(line[13:].split(' ')[0])
 
 with open(RESULT_FILE, "a") as rstf:
     rstf.writelines(passed)
     rstf.writelines(failed)
 
-not_passed = check_case - passed_case
-if failed:
+# not_passed = check_case - passed_case
+if failed_case:
     print('=== Failed cases ===')
-    for case in failed:
+    for case in failed_case:
         print(case)
     exit(1)
 else:
