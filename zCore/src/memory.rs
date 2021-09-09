@@ -11,12 +11,12 @@ use {
 };
 
 #[cfg(target_arch = "riscv64")]
+use kernel_hal::config::BootInfo;
+#[cfg(target_arch = "riscv64")]
 use riscv::{
     addr::Frame,
     paging::{PageTable, PageTableFlags as EF},
 };
-#[cfg(target_arch = "riscv64")]
-use kernel_hal::config::BootInfo;
 
 #[cfg(target_arch = "x86_64")]
 type FrameAlloc = bitmap_allocator::BitAlloc16M;
@@ -77,8 +77,8 @@ mod hal_extern_fn {
     use super::*;
 
     #[used]
-    #[export_name = "hal_pmem_base"]
-    static PMEM_BASE: usize = PHYSICAL_MEMORY_OFFSET;
+    #[export_name = "hal_phys_to_virt_offset"]
+    static PHYS_TO_VIRT_OFFSET: usize = PHYSICAL_MEMORY_OFFSET;
 
     #[no_mangle]
     #[allow(improper_ctypes_definitions)]

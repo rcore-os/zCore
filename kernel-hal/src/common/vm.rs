@@ -10,6 +10,19 @@ pub enum PagingError {
 
 pub type PagingResult<T = ()> = Result<T, PagingError>;
 
+pub trait IgnoreNotMappedErr {
+    fn ignore(self) -> PagingResult;
+}
+
+impl<T> IgnoreNotMappedErr for PagingResult<T> {
+    fn ignore(self) -> PagingResult {
+        match self {
+            Ok(_) | Err(PagingError::NotMapped) => Ok(()),
+            Err(e) => Err(e),
+        }
+    }
+}
+
 #[repr(usize)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum PageSize {
@@ -72,11 +85,7 @@ pub trait GenericPageTable: Sync + Send {
 
     fn unmap_cont(&mut self, vaddr: VirtAddr, page_size: PageSize, count: usize) -> PagingResult {
         for i in 0..count {
-            if let Err(err) = self.unmap(vaddr + i * page_size as usize) {
-                if !matches!(err, PagingError::NotMapped) {
-                    return Err(err);
-                }
-            }
+            self.unmap(vaddr + i * page_size as usize).ignore()?;
         }
         Ok(())
     }

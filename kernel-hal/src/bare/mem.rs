@@ -4,11 +4,7 @@ use crate::{PhysAddr, VirtAddr, PAGE_SIZE};
 hal_fn_impl! {
     impl mod crate::defs::mem {
         fn phys_to_virt(paddr: PhysAddr) -> VirtAddr {
-            unsafe { ffi::PMEM_BASE + paddr }
-        }
-
-        fn virt_to_phys(vaddr: VirtAddr) -> PhysAddr {
-            unsafe { vaddr - ffi::PMEM_BASE }
+            unsafe { ffi::PHYS_TO_VIRT_OFFSET + paddr }
         }
 
         fn pmem_read(paddr: PhysAddr, buf: &mut [u8]) {
@@ -60,13 +56,6 @@ hal_fn_impl! {
 
         fn frame_dealloc(paddr: PhysAddr) {
             unsafe { ffi::hal_frame_dealloc(paddr) }
-        }
-
-        fn zero_frame_addr() -> PhysAddr {
-            #[repr(align(0x1000))]
-            struct AlignedPage([u8; PAGE_SIZE]);
-            static ZERO_PAGE: AlignedPage = AlignedPage([0u8; PAGE_SIZE]);
-            virt_to_phys(ZERO_PAGE.0.as_ptr() as VirtAddr)
         }
     }
 }

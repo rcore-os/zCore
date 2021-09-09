@@ -1,6 +1,7 @@
 arch ?= x86_64
 board ?= qemu
 mode ?= debug
+log ?= warn
 zbi_file ?= bringup
 graphic ?=
 accel ?=
@@ -127,13 +128,13 @@ justrun: $(QEMU_DISK)
 
 build-test: build
 	cp ../prebuilt/zircon/x64/core-tests.zbi $(ESP)/EFI/zCore/fuchsia.zbi
-	echo 'cmdline=LOG=warn:userboot=test/core-standalone-test:userboot.shutdown:core-tests=$(test_filter)' >> $(ESP)/EFI/Boot/rboot.conf
+	echo 'cmdline=LOG=$(log):userboot=test/core-standalone-test:userboot.shutdown:core-tests=$(test_filter)' >> $(ESP)/EFI/Boot/rboot.conf
 
 build: $(kernel_img)
 
 build-parallel-test: build $(QEMU_DISK)
 	cp ../prebuilt/zircon/x64/core-tests.zbi $(ESP)/EFI/zCore/fuchsia.zbi
-	echo 'cmdline=LOG=warn:userboot=test/core-standalone-test:userboot.shutdown:core-tests=$(test_filter)' >> $(ESP)/EFI/Boot/rboot.conf
+	echo 'cmdline=LOG=$(log):userboot=test/core-standalone-test:userboot.shutdown:core-tests=$(test_filter)' >> $(ESP)/EFI/Boot/rboot.conf
 
 ifeq ($(arch), riscv64)
 $(kernel_img): $(kernel_bin)

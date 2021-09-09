@@ -8,6 +8,8 @@ Cargo.lock
 /prebuilt/linux/riscv64/prebuild*
 .idea
 scripts/linux/test-result.txt
+scripts/zircon/test-result.txt
+scripts/zircon/test-output.txt
 rusty-tags.vi
 *.img
 zCore/src/link_user.S
@@ -17,4 +19,3 @@ stdout-zcore
 scripts/script.sh
 stdout-baremetal-test-rv64
 stdout-rv64
-

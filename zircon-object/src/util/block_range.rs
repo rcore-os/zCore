@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 /// Given a range and iterate sub-range for each block
+#[derive(Debug)]
 pub struct BlockIter {
     pub begin: usize,
     pub end: usize,

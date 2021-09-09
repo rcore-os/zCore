@@ -7,10 +7,6 @@ hal_fn_impl! {
             PMEM_BASE + paddr
         }
 
-        fn virt_to_phys(vaddr: VirtAddr) -> PhysAddr{
-            vaddr - PMEM_BASE
-        }
-
         fn pmem_read(paddr: PhysAddr, buf: &mut [u8]) {
             trace!("pmem read: paddr={:#x}, len={:#x}", paddr, buf.len());
             assert!(paddr + buf.len() <= PMEM_SIZE);
@@ -62,10 +58,6 @@ hal_fn_impl! {
         fn frame_dealloc(paddr: PhysAddr) {
             trace!("frame dealloc: {:?}", paddr);
             AVAILABLE_FRAMES.lock().unwrap().push_back(paddr);
-        }
-
-        fn zero_frame_addr() -> PhysAddr {
-            0
         }
     }
 }

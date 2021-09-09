@@ -188,6 +188,13 @@ impl<PTE: GenericPTE> GenericPageTable for PageTableImpl<PTE> {
         entry.set_addr(page.size.align_down(paddr));
         entry.set_flags(flags, page.size.is_huge());
         crate::vm::flush_tlb(Some(page.vaddr));
+        debug!(
+            "PageTable map: {:x?} -> {:x?}, flags={:?} in {:#x?}",
+            page,
+            paddr,
+            flags,
+            self.table_phys()
+        );
         Ok(())
     }
 
@@ -199,6 +206,7 @@ impl<PTE: GenericPTE> GenericPageTable for PageTableImpl<PTE> {
         let paddr = entry.addr();
         entry.clear();
         crate::vm::flush_tlb(Some(vaddr));
+        debug!("PageTable unmap: {:x?} in {:#x?}", vaddr, self.table_phys());
         Ok((paddr, size))
     }
 
@@ -216,6 +224,12 @@ impl<PTE: GenericPTE> GenericPageTable for PageTableImpl<PTE> {
             entry.set_flags(flags, size.is_huge())
         }
         crate::vm::flush_tlb(Some(vaddr));
+        trace!(
+            "PageTable update: {:x?}, flags={:?} in {:#x?}",
+            vaddr,
+            flags,
+            self.table_phys()
+        );
         Ok(size)
     }
 
@@ -225,7 +239,9 @@ impl<PTE: GenericPTE> GenericPageTable for PageTableImpl<PTE> {
             return Err(PagingError::NotMapped);
         }
         let off = size.page_offset(vaddr);
-        Ok((entry.addr() + off, entry.flags(), size))
+        let ret = (entry.addr() + off, entry.flags(), size);
+        trace!("PageTable query: {:x?} => {:x?}", vaddr, ret);
+        Ok(ret)
     }
 }
 

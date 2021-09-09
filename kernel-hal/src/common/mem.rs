@@ -63,14 +63,15 @@ impl PhysFrame {
     pub fn zero(&mut self) {
         crate::mem::pmem_zero(self.paddr, PAGE_SIZE);
     }
-
-    pub fn zero_frame_addr() -> PhysAddr {
-        crate::mem::zero_frame_addr()
-    }
 }
 
 impl Drop for PhysFrame {
     fn drop(&mut self) {
         crate::mem::frame_dealloc(self.paddr)
     }
+}
+
+lazy_static::lazy_static! {
+    /// The global physical frame contains all zeros.
+    pub static ref ZERO_FRAME: PhysFrame = PhysFrame::new_zero().expect("failed to alloc zero frame");
 }

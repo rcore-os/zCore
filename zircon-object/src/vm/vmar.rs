@@ -3,7 +3,7 @@ use {
     crate::object::*,
     alloc::{sync::Arc, vec, vec::Vec},
     bitflags::bitflags,
-    kernel_hal::vm::{GenericPageTable, Page, PageSize, PagingError},
+    kernel_hal::vm::{GenericPageTable, IgnoreNotMappedErr, Page, PageSize, PagingError},
     spin::Mutex,
 };
 
@@ -867,6 +867,7 @@ impl VmMapping {
             inner.flags[i] = new_flags;
             pg_table
                 .update(inner.addr + i * PAGE_SIZE, None, Some(new_flags))
+                .ignore()
                 .unwrap();
         }
     }
@@ -910,10 +911,11 @@ impl VmMapping {
                             new_flag.remove(MMUFlags::WRITE);
                             pg_table
                                 .update(inner.addr + i * PAGE_SIZE, None, Some(new_flag))
+                                .ignore()
                                 .unwrap();
                         }
                         RangeChangeOp::Unmap => {
-                            pg_table.unmap(inner.addr + i * PAGE_SIZE).unwrap();
+                            pg_table.unmap(inner.addr + i * PAGE_SIZE).ignore().unwrap();
                         }
                     };
                 }
@@ -924,8 +926,11 @@ impl VmMapping {
     /// Handle page fault happened on this VmMapping.
     pub(crate) fn handle_page_fault(&self, vaddr: VirtAddr, access_flags: MMUFlags) -> ZxResult {
         let vaddr = round_down_pages(vaddr);
-        let page_idx = (vaddr - self.addr()) / PAGE_SIZE;
-        let mut flags = self.inner.lock().flags[page_idx];
+        let (vmo_offset, mut flags) = {
+            let inner = self.inner.lock();
+            let offset = vaddr - inner.addr;
+            (offset + inner.vmo_offset, inner.flags[offset / PAGE_SIZE])
+        };
         if !flags.contains(access_flags) {
             return Err(ZxError::ACCESS_DENIED);
         }
@@ -934,11 +939,11 @@ impl VmMapping {
             warn!("handle_page_fault remove MMUFlags::WRITE !");
             flags.remove(MMUFlags::WRITE)
         }
-        let paddr = self.vmo.commit_page(page_idx, access_flags)?;
+        let paddr = self.vmo.commit_page(vmo_offset / PAGE_SIZE, access_flags)?;
         let mut pg_table = self.page_table.lock();
         let mut res = pg_table.map(Page::new_aligned(vaddr, PageSize::Size4K), paddr, flags);
         if let Err(PagingError::AlreadyMapped) = res {
-            res = pg_table.update(vaddr, None, Some(flags)).map(|_| ());
+            res = pg_table.update(vaddr, Some(paddr), Some(flags)).map(|_| ());
         }
         res.map_err(|_| ZxError::ACCESS_DENIED)?;
         Ok(())

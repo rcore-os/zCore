@@ -523,12 +523,11 @@ impl VMObjectPagedInner {
             if out_of_range || no_parent {
                 if !flags.contains(MMUFlags::WRITE) {
                     // read-only, just return zero frame
-                    return Ok(CommitResult::Ref(PhysFrame::zero_frame_addr()));
+                    return Ok(CommitResult::Ref(kernel_hal::mem::ZERO_FRAME.paddr()));
                 }
                 // lazy allocate zero frame
                 // 这里会调用HAL层的hal_frame_alloc, 请注意实现该函数时参数要一样
-                let target_frame = PhysFrame::new().ok_or(ZxError::NO_MEMORY)?;
-                kernel_hal::mem::pmem_zero(target_frame.paddr(), PAGE_SIZE);
+                let target_frame = PhysFrame::new_zero().ok_or(ZxError::NO_MEMORY)?;
                 if out_of_range {
                     // can never be a hidden vmo
                     assert!(!self.type_.is_hidden());

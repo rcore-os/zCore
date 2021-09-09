@@ -16,9 +16,6 @@ hal_fn_def! {
         /// Convert physical address to virtual address.
         pub(crate) fn phys_to_virt(paddr: PhysAddr) -> VirtAddr;
 
-        /// Convert virtual address to physical address.
-        pub(crate) fn virt_to_phys(vaddr: VirtAddr) -> PhysAddr;
-
         /// Read physical memory from `paddr` to `buf`.
         pub fn pmem_read(paddr: PhysAddr, buf: &mut [u8]);
 
@@ -35,16 +32,13 @@ hal_fn_def! {
         pub fn frame_flush(target: PhysAddr);
 
         /// Allocate one physical frame.
-        pub fn frame_alloc() -> Option<PhysAddr>;
+        pub(crate) fn frame_alloc() -> Option<PhysAddr>;
 
         /// Allocate contiguous `frame_count` physical frames.
-        pub fn frame_alloc_contiguous(frame_count: usize, align_log2: usize) -> Option<PhysAddr>;
+        pub(crate) fn frame_alloc_contiguous(frame_count: usize, align_log2: usize) -> Option<PhysAddr>;
 
         /// Deallocate a physical frame.
-        pub fn frame_dealloc(paddr: PhysAddr);
-
-        /// Get the physical frame contains all zeros.
-        pub fn zero_frame_addr() -> PhysAddr;
+        pub(crate) fn frame_dealloc(paddr: PhysAddr);
     }
 
     pub mod vm: common::vm {
