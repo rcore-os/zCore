@@ -25,8 +25,8 @@ hal_fn_def! {
         /// Zero physical memory at `[paddr, paddr + len)`.
         pub fn pmem_zero(paddr: PhysAddr, len: usize);
 
-        /// Copy content of `src` frame to `target` frame.
-        pub fn frame_copy(src: PhysAddr, target: PhysAddr);
+        /// Copy content of physical memory `src` to `dst` with `len` bytes.
+        pub fn pmem_copy(dst: PhysAddr, src: PhysAddr, len: usize);
 
         /// Flush the physical frame.
         pub fn frame_flush(target: PhysAddr);
@@ -42,14 +42,6 @@ hal_fn_def! {
     }
 
     pub mod vm: common::vm {
-        // pub(crate) fn map_page(vmtoken: PhysAddr, vaddr: VirtAddr, paddr: PhysAddr, flags: MMUFlags) -> HalResult;
-
-        // pub fn unmap_page(vmtoken: PhysAddr, vaddr: VirtAddr) -> HalResult;
-
-        // pub fn update_page(vmtoken: PhysAddr, vaddr: VirtAddr, paddr: Option<PhysAddr>, flags: Option<MMUFlags>) -> HalResult;
-
-        // pub fn query(vmtoken: PhysAddr, vaddr: VirtAddr) -> HalResult<(PhysAddr, MMUFlags)>;
-
         /// Activate this page table by given `vmtoken`.
         pub(crate) fn activate_paging(vmtoken: PhysAddr);
 
@@ -58,6 +50,9 @@ hal_fn_def! {
 
         /// Flush TLB by the associated `vaddr`, or flush the entire TLB. (`vaddr` is `None`).
         pub(crate) fn flush_tlb(vaddr: Option<VirtAddr>);
+
+        /// Clone kernel space entries (top level only) from `src` page table to `dst` page table.
+        pub(crate) fn pt_clone_kernel_space(dst_pt_root: PhysAddr, src_pt_root: PhysAddr);
     }
 
     pub mod interrupt {

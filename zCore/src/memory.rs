@@ -5,18 +5,7 @@ use crate::arch::consts::*;
 use {bitmap_allocator::BitAlloc, buddy_system_allocator::LockedHeap, spin::Mutex};
 
 #[cfg(target_arch = "x86_64")]
-use {
-    rboot::{BootInfo, MemoryType},
-    x86_64::structures::paging::page_table::{PageTable, PageTableFlags as EF},
-};
-
-#[cfg(target_arch = "riscv64")]
-use kernel_hal::config::BootInfo;
-#[cfg(target_arch = "riscv64")]
-use riscv::{
-    addr::Frame,
-    paging::{PageTable, PageTableFlags as EF},
-};
+use rboot::{BootInfo, MemoryType};
 
 #[cfg(target_arch = "x86_64")]
 type FrameAlloc = bitmap_allocator::BitAlloc16M;
@@ -44,7 +33,7 @@ pub fn init_frame_allocator(boot_info: &BootInfo) {
 }
 
 #[cfg(target_arch = "riscv64")]
-pub fn init_frame_allocator(boot_info: &BootInfo) {
+pub fn init_frame_allocator() {
     use core::ops::Range;
     use kernel_hal::addr::{align_down, align_up};
 
@@ -120,34 +109,6 @@ mod hal_extern_fn {
         FRAME_ALLOCATOR
             .lock()
             .dealloc((target - MEMORY_OFFSET) / PAGE_SIZE);
-    }
-
-    #[no_mangle]
-    #[cfg(target_arch = "x86_64")]
-    pub extern "C" fn hal_pt_map_kernel(pt: &mut PageTable, current: &PageTable) {
-        //复制旧的Kernel起始虚拟地址和物理内存起始虚拟地址的, Level3及以下级的页表,
-        //分别可覆盖500G虚拟空间
-        let ekernel = current[KERNEL_PM4].clone();
-        let ephysical = current[PHYSICAL_MEMORY_PM4].clone();
-        pt[KERNEL_PM4].set_addr(ekernel.addr(), ekernel.flags() | EF::GLOBAL);
-        pt[PHYSICAL_MEMORY_PM4].set_addr(ephysical.addr(), ephysical.flags() | EF::GLOBAL);
-    }
-
-    #[no_mangle]
-    #[cfg(target_arch = "riscv64")]
-    pub extern "C" fn hal_pt_map_kernel(pt: &mut PageTable, current: &PageTable) {
-        let ekernel = current[KERNEL_L2]; //Kernel
-        let ephysical = current[PHYSICAL_MEMORY_L2]; //0xffffffff_00000000 --> 0x00000000
-        pt[KERNEL_L2].set(Frame::of_addr(ekernel.addr()), ekernel.flags() | EF::GLOBAL);
-        pt[PHYSICAL_MEMORY_L2].set(
-            Frame::of_addr(ephysical.addr()),
-            ephysical.flags() | EF::GLOBAL,
-        );
-        debug!(
-            "KERNEL_L2:{:x?}, PHYSICAL_MEMORY_L2:{:x?}",
-            ekernel.addr(),
-            ephysical.addr()
-        );
     }
 }
 

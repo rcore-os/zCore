@@ -25,9 +25,9 @@ impl Write for SbiConsole {
 
 impl Write for UartConsole {
     fn write_str(&mut self, s: &str) -> Result {
-        if let Some(ref mut uart) = uart::UART.lock().get_mut() {
+        if let Some(uart) = uart::UART.get() {
             //每次都创建一个新的Uart ? 内存位置始终相同
-            write!(uart, "{}", s)
+            write!(uart.lock(), "{}", s)
         } else {
             SbiConsole.write_str(s)
         }

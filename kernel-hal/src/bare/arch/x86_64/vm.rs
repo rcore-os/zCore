@@ -1,5 +1,5 @@
-use core::convert::TryFrom;
 use core::fmt::{Debug, Formatter, Result};
+use core::{convert::TryFrom, slice};
 
 use x86_64::{
     instructions::tlb,
@@ -8,7 +8,7 @@ use x86_64::{
 };
 
 use crate::utils::page_table::{GenericPTE, PageTableImpl, PageTableLevel4};
-use crate::{CachePolicy, MMUFlags, PhysAddr, VirtAddr};
+use crate::{mem::phys_to_virt, CachePolicy, MMUFlags, PhysAddr, VirtAddr};
 
 hal_fn_impl! {
     impl mod crate::defs::vm {
@@ -30,6 +30,18 @@ hal_fn_impl! {
                 tlb::flush(x86_64::VirtAddr::new(vaddr as u64))
             } else {
                 tlb::flush_all()
+            }
+        }
+
+        fn pt_clone_kernel_space(dst_pt_root: PhysAddr, src_pt_root: PhysAddr) {
+            let entry_range = 0x100..0x200; // 0xFFFF_8000_0000_0000 .. 0xFFFF_FFFF_FFFF_FFFF
+            let dst_table = unsafe { slice::from_raw_parts_mut(phys_to_virt(dst_pt_root) as *mut X86PTE, 512) };
+            let src_table = unsafe { slice::from_raw_parts(phys_to_virt(src_pt_root) as *const X86PTE, 512) };
+            for i in entry_range {
+                dst_table[i] = src_table[i];
+                if !dst_table[i].is_unused() {
+                    dst_table[i].0 |= PTF::GLOBAL.bits();
+                }
             }
         }
     }
@@ -93,7 +105,7 @@ impl From<PTF> for MMUFlags {
 
 const PHYS_ADDR_MASK: u64 = 0x000f_ffff_ffff_f000; // 12..52
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 #[repr(transparent)]
 pub struct X86PTE(u64);
 
@@ -114,22 +126,15 @@ impl GenericPTE for X86PTE {
         PTF::from_bits_truncate(self.0).contains(PTF::HUGE_PAGE)
     }
 
-    fn set_leaf(&mut self, paddr: Option<PhysAddr>, flags: Option<MMUFlags>, is_huge: bool) {
-        let paddr_bits = if let Some(paddr) = paddr {
-            paddr as u64 & PHYS_ADDR_MASK
-        } else {
-            self.0 & PHYS_ADDR_MASK
-        };
-        let flags_bits = if let Some(flags) = flags {
-            if is_huge {
-                (PTF::from(flags) | PTF::HUGE_PAGE).bits()
-            } else {
-                PTF::from(flags).bits()
-            }
-        } else {
-            self.0 & !PHYS_ADDR_MASK
-        };
-        self.0 = paddr_bits | flags_bits;
+    fn set_addr(&mut self, paddr: PhysAddr) {
+        self.0 = (self.0 & !PHYS_ADDR_MASK) | (paddr as u64 & PHYS_ADDR_MASK);
+    }
+    fn set_flags(&mut self, flags: MMUFlags, is_huge: bool) {
+        let mut flags: PTF = flags.into();
+        if is_huge {
+            flags |= PTF::HUGE_PAGE;
+        }
+        self.0 = self.addr() as u64 | flags.bits();
     }
     fn set_table(&mut self, paddr: PhysAddr) {
         self.0 = (paddr as u64 & PHYS_ADDR_MASK)

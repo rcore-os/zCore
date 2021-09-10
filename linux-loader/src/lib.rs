@@ -173,14 +173,19 @@ async fn new_thread(thread: CurrentThread) {
                         };
 
                         info!(
-                            "page fualt from pid: {} user mode, vaddr:{:#x}, trap:{}",
+                            "page fault from pid: {} user mode, vaddr:{:#x}, trap:{}",
                             pid, vaddr, trap_num
                         );
                         let vmar = thread.proc().vmar();
                         match vmar.handle_page_fault(vaddr, flags) {
                             Ok(()) => {}
                             Err(error) => {
-                                panic!("{:?} Page Fault from user mode {:#x?}", error, cx);
+                                panic!(
+                                    "{:?} Page Fault from user mode @ {:#x}\n{:#x?}",
+                                    error,
+                                    kernel_hal::context::fetch_fault_vaddr(),
+                                    cx
+                                );
                             }
                         }
                     }

@@ -2,7 +2,6 @@ use alloc::vec::Vec;
 
 use crate::{PhysAddr, PAGE_SIZE};
 
-#[repr(C)]
 #[derive(Debug)]
 pub struct PhysFrame {
     paddr: PhysAddr,

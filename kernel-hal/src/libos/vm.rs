@@ -21,12 +21,12 @@ impl PageTable {
         Self
     }
 
-    pub fn new_and_map_kernel() -> Self {
+    pub fn from_current() -> Self {
         Self
     }
 
-    pub fn from_current() -> Self {
-        Self
+    pub fn clone_kernel(&self) -> Self {
+        Self::new()
     }
 }
 

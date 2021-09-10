@@ -14,10 +14,8 @@ pub mod vm;
 
 use x86_64::registers::control::{Cr4, Cr4Flags};
 
-pub fn init(cfg: config::HalConfig) {
-    // store config
-    config::CONFIG.call_once(|| cfg);
-
+pub fn init(cfg: config::KernelConfig) {
+    crate::CONFIG.call_once(|| cfg);
     apic::init();
     interrupt::init();
     serial::init();
@@ -26,7 +24,7 @@ pub fn init(cfg: config::HalConfig) {
         info!("processor {} started", cpu::cpu_id());
         unsafe { trapframe::init() };
         apic::init();
-        let ap_fn = config::CONFIG.get().unwrap().ap_fn;
+        let ap_fn = crate::CONFIG.get().unwrap().ap_fn;
         ap_fn();
     }
 

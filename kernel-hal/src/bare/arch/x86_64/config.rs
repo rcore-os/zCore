@@ -1,10 +1,11 @@
-use spin::Once;
-
 /// Configuration of HAL.
-pub struct HalConfig {
+#[derive(Debug)]
+pub struct KernelConfig {
+    pub kernel_offset: usize,
+    pub phys_mem_start: usize,
+    pub phys_to_virt_offset: usize,
+
     pub acpi_rsdp: u64,
     pub smbios: u64,
     pub ap_fn: fn() -> !,
 }
-
-pub(super) static CONFIG: Once<HalConfig> = Once::new();

@@ -19,7 +19,7 @@ impl PageTableLevel for PageTableLevel4 {
     const LEVEL: usize = 4;
 }
 
-pub trait GenericPTE: Debug + Clone + Sync + Send {
+pub trait GenericPTE: Debug + Clone + Copy + Sync + Send {
     /// Returns the physical address mapped by this entry.
     fn addr(&self) -> PhysAddr;
     /// Returns the flags of this entry.
@@ -31,8 +31,10 @@ pub trait GenericPTE: Debug + Clone + Sync + Send {
     /// Returns whether this entry maps to a huge frame (or it's a terminal entry).
     fn is_leaf(&self) -> bool;
 
-    /// Set physical address (optional) and flags (optional) for terminal entries.
-    fn set_leaf(&mut self, paddr: Option<PhysAddr>, flags: Option<MMUFlags>, is_huge: bool);
+    /// Set flags for all types of entries.
+    fn set_flags(&mut self, flags: MMUFlags, is_huge: bool);
+    /// Set physical address for terminal entries.
+    fn set_addr(&mut self, paddr: PhysAddr);
     /// Set physical address and flags for intermediate table entries.
     fn set_table(&mut self, paddr: PhysAddr);
     /// Set this entry to zero.
@@ -187,22 +189,15 @@ impl<L: PageTableLevel, PTE: GenericPTE> PageTableImpl<L, PTE> {
         }
     }
 
-    pub fn new_and_map_kernel() -> Self {
-        let pt = Self::new();
-        #[cfg(not(feature = "libos"))]
-        {
-            let old_root_vaddr = crate::mem::phys_to_virt(crate::vm::current_vmtoken());
-            let new_root_vaddr = crate::mem::phys_to_virt(pt.table_phys());
-            unsafe {
-                crate::bare::ffi::hal_pt_map_kernel(new_root_vaddr as _, old_root_vaddr as _);
-            }
-        }
-        pt
-    }
-
     /// Create a new `PageTable` from current VM token. (e.g. CR3, SATP, ...)
     pub fn from_current() -> Self {
         unsafe { Self::from_root(crate::vm::current_vmtoken()) }
+    }
+
+    pub fn clone_kernel(&self) -> Self {
+        let pt = Self::new();
+        crate::vm::pt_clone_kernel_space(pt.table_phys(), self.table_phys());
+        pt
     }
 }
 
@@ -216,11 +211,8 @@ impl<L: PageTableLevel, PTE: GenericPTE> GenericPageTable for PageTableImpl<L, P
         if !entry.is_unused() {
             return Err(PagingError::AlreadyMapped);
         }
-        entry.set_leaf(
-            Some(page.size.align_down(paddr)),
-            Some(flags),
-            page.size.is_huge(),
-        );
+        entry.set_addr(page.size.align_down(paddr));
+        entry.set_flags(flags, page.size.is_huge());
         crate::vm::flush_tlb(Some(page.vaddr));
         trace!(
             "PageTable map: {:x?} -> {:x?}, flags={:?} in {:#x?}",
@@ -251,7 +243,12 @@ impl<L: PageTableLevel, PTE: GenericPTE> GenericPageTable for PageTableImpl<L, P
         flags: Option<MMUFlags>,
     ) -> PagingResult<PageSize> {
         let (entry, size) = self.get_entry_mut(vaddr)?;
-        entry.set_leaf(paddr, flags, size.is_huge());
+        if let Some(paddr) = paddr {
+            entry.set_addr(paddr);
+        }
+        if let Some(flags) = flags {
+            entry.set_flags(flags, size.is_huge());
+        }
         crate::vm::flush_tlb(Some(vaddr));
         trace!(
             "PageTable update: {:x?}, flags={:?} in {:#x?}",

@@ -1,5 +1,5 @@
 use super::mem_common::{ensure_mmap_pmem, AVAILABLE_FRAMES, PMEM_BASE, PMEM_SIZE};
-use crate::{PhysAddr, VirtAddr, PAGE_SIZE};
+use crate::{PhysAddr, VirtAddr};
 
 hal_fn_impl! {
     impl mod crate::defs::mem {
@@ -11,38 +11,31 @@ hal_fn_impl! {
             trace!("pmem read: paddr={:#x}, len={:#x}", paddr, buf.len());
             assert!(paddr + buf.len() <= PMEM_SIZE);
             ensure_mmap_pmem();
-            unsafe {
-                (phys_to_virt(paddr) as *const u8).copy_to_nonoverlapping(buf.as_mut_ptr(), buf.len());
-            }
+            let src = phys_to_virt(paddr) as _;
+            unsafe { buf.as_mut_ptr().copy_from_nonoverlapping(src, buf.len()) };
         }
 
         fn pmem_write(paddr: PhysAddr, buf: &[u8]) {
             trace!("pmem write: paddr={:#x}, len={:#x}", paddr, buf.len());
             assert!(paddr + buf.len() <= PMEM_SIZE);
             ensure_mmap_pmem();
-            unsafe {
-                buf.as_ptr()
-                    .copy_to_nonoverlapping(phys_to_virt(paddr) as _, buf.len());
-            }
+            let dst = phys_to_virt(paddr) as *mut u8;
+            unsafe { dst.copy_from_nonoverlapping(buf.as_ptr(), buf.len()) };
         }
 
         fn pmem_zero(paddr: PhysAddr, len: usize) {
             trace!("pmem_zero: addr={:#x}, len={:#x}", paddr, len);
             assert!(paddr + len <= PMEM_SIZE);
             ensure_mmap_pmem();
-            unsafe {
-                core::ptr::write_bytes(phys_to_virt(paddr) as *mut u8, 0, len);
-            }
+            unsafe { core::ptr::write_bytes(phys_to_virt(paddr) as *mut u8, 0, len) };
         }
 
-        fn frame_copy(src: PhysAddr, target: PhysAddr) {
-            trace!("frame_copy: {:#x} <- {:#x}", target, src);
-            assert!(src + PAGE_SIZE <= PMEM_SIZE && target + PAGE_SIZE <= PMEM_SIZE);
+        fn pmem_copy(dst: PhysAddr, src: PhysAddr, len: usize) {
+            trace!("pmem_copy: {:#x} <- {:#x}, len={:#x}", dst, src, len);
+            assert!(src + len <= PMEM_SIZE && dst + len <= PMEM_SIZE);
             ensure_mmap_pmem();
-            unsafe {
-                let buf = phys_to_virt(src) as *const u8;
-                buf.copy_to_nonoverlapping(phys_to_virt(target) as _, PAGE_SIZE);
-            }
+            let dst = phys_to_virt(dst) as *mut u8;
+            unsafe { dst.copy_from_nonoverlapping(phys_to_virt(src) as _, len) };
         }
 
         fn frame_flush(_target: PhysAddr) {

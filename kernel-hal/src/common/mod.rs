@@ -1,3 +1,4 @@
+pub(super) mod config;
 pub(super) mod defs;
 pub(super) mod fb;
 

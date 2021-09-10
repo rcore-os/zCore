@@ -1,5 +1,6 @@
 mod mem_common;
 
+pub mod config;
 pub mod mem;
 pub mod serial;
 pub mod thread;

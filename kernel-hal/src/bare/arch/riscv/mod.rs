@@ -18,8 +18,8 @@ pub mod special;
 pub mod timer;
 pub mod vm;
 
-pub fn init(cfg: config::HalConfig) {
-    trace!("hal dtb: {:#x}", cfg.dtb);
+pub fn init(cfg: config::KernelConfig) {
+    crate::CONFIG.call_once(|| cfg);
     vm::remap_the_kernel().unwrap();
     interrupt::init();
     timer::init();

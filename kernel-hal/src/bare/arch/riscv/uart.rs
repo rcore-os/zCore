@@ -7,7 +7,7 @@ pub(super) struct Uart {
     base_address: VirtAddr,
 }
 
-pub(super) static UART: Mutex<Once<Uart>> = Mutex::new(Once::new());
+pub(super) static UART: Once<Mutex<Uart>> = Once::new();
 
 // 结构体Uart的实现块
 impl Uart {
@@ -84,8 +84,8 @@ impl Write for Uart {
 }
 
 pub(super) fn handle_interrupt() {
-    if let Some(ref mut uart) = UART.lock().get_mut() {
-        if let Some(c) = uart.get() {
+    if let Some(uart) = UART.get() {
+        if let Some(c) = uart.lock().get() {
             //CONSOLE
             crate::serial::serial_put(c);
 
@@ -108,9 +108,9 @@ pub(super) fn handle_interrupt() {
 }
 
 pub(super) fn init(base_paddr: PhysAddr) {
-    UART.lock().call_once(|| {
+    UART.call_once(|| {
         let mut uart = Uart::new(phys_to_virt(base_paddr));
         uart.simple_init();
-        uart
+        Mutex::new(uart)
     });
 }

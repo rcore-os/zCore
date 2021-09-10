@@ -28,5 +28,6 @@ cfg_if! {
     } else {
         mod bare;
         pub use self::bare::*;
+        use common::config::CONFIG;
     }
 }

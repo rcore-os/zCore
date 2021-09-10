@@ -1,11 +1,12 @@
 use core::fmt::{Debug, Formatter, Result};
+use core::slice;
 
 use riscv::{asm, paging::PageTableFlags as PTF, register::satp};
 
 use super::consts;
 use crate::addr::{align_down, align_up};
 use crate::utils::page_table::{GenericPTE, PageTableImpl, PageTableLevel3};
-use crate::{mem::phys_to_virt, MMUFlags, PhysAddr, VirtAddr, PAGE_SIZE};
+use crate::{mem::phys_to_virt, MMUFlags, PhysAddr, VirtAddr, CONFIG, PAGE_SIZE};
 
 #[cfg(target_arch = "riscv32")]
 type RvPageTable<'a> = riscv::paging::Rv32PageTable<'a>;
@@ -36,7 +37,7 @@ pub(super) fn remap_the_kernel() -> PagingResult {
         pt.map_cont(
             start,
             crate::addr::align_up(end - start),
-            start - unsafe { super::super::ffi::PHYS_TO_VIRT_OFFSET },
+            start - CONFIG.get().unwrap().phys_to_virt_offset,
             flags | MMUFlags::HUGE_PAGE,
         )
     };
@@ -63,10 +64,10 @@ pub(super) fn remap_the_kernel() -> PagingResult {
         bootstacktop as usize,
         MMUFlags::READ | MMUFlags::WRITE,
     )?;
-    // physical memory
+    // physical frames
     map_range(
         align_up(end as usize + PAGE_SIZE),
-        phys_to_virt(align_down(consts::MEMORY_END)),
+        phys_to_virt(align_down(CONFIG.get().unwrap().phys_mem_end)),
         MMUFlags::READ | MMUFlags::WRITE,
     )?;
     // PLIC
@@ -119,6 +120,18 @@ hal_fn_impl! {
                 }
             }
         }
+
+        fn pt_clone_kernel_space(dst_pt_root: PhysAddr, src_pt_root: PhysAddr) {
+            let entry_range = 0x100..0x200; // 0xFFFF_FFC0_0000_0000 .. 0xFFFF_FFFF_FFFF_FFFF
+            let dst_table = unsafe { slice::from_raw_parts_mut(phys_to_virt(dst_pt_root) as *mut Rv64PTE, 512) };
+            let src_table = unsafe { slice::from_raw_parts(phys_to_virt(src_pt_root) as *const Rv64PTE, 512) };
+            for i in entry_range {
+                dst_table[i] = src_table[i];
+                if !dst_table[i].is_unused() {
+                    dst_table[i].0 |= PTF::GLOBAL.bits() as u64;
+                }
+            }
+        }
     }
 }
 
@@ -162,7 +175,7 @@ impl From<PTF> for MMUFlags {
 
 const PHYS_ADDR_MASK: u64 = 0x003f_ffff_ffff_fc00; // 10..54
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 #[repr(transparent)]
 pub struct Rv64PTE(u64);
 
@@ -183,20 +196,13 @@ impl GenericPTE for Rv64PTE {
         PTF::from_bits_truncate(self.0 as usize).contains(PTF::READABLE | PTF::EXECUTABLE)
     }
 
-    fn set_leaf(&mut self, paddr: Option<PhysAddr>, flags: Option<MMUFlags>, _is_huge: bool) {
-        let paddr_bits = if let Some(paddr) = paddr {
-            (paddr as u64 >> 2) & PHYS_ADDR_MASK
-        } else {
-            self.0 & PHYS_ADDR_MASK
-        };
-        let flags_bits = if let Some(flags) = flags {
-            let flags = PTF::from(flags) | PTF::ACCESSED | PTF::DIRTY;
-            debug_assert!(flags.contains(PTF::READABLE | PTF::EXECUTABLE));
-            flags.bits() as u64
-        } else {
-            self.0 & !PHYS_ADDR_MASK
-        };
-        self.0 = paddr_bits | flags_bits;
+    fn set_addr(&mut self, paddr: PhysAddr) {
+        self.0 = (self.0 & !PHYS_ADDR_MASK) | ((paddr as u64 >> 2) & PHYS_ADDR_MASK);
+    }
+    fn set_flags(&mut self, flags: MMUFlags, _is_huge: bool) {
+        let flags = PTF::from(flags) | PTF::ACCESSED | PTF::DIRTY;
+        debug_assert!(flags.contains(PTF::READABLE | PTF::EXECUTABLE));
+        self.0 = (self.0 & PHYS_ADDR_MASK) | flags.bits() as u64;
     }
     fn set_table(&mut self, paddr: PhysAddr) {
         self.0 = ((paddr as u64 >> 2) & PHYS_ADDR_MASK) | PTF::VALID.bits() as u64;

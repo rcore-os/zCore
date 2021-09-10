@@ -24,7 +24,7 @@ hal_fn_impl_default!(rand, vdso, dev::fb, dev::input);
 /// Initialize the HAL.
 ///
 /// This function must be called at the beginning.
-pub fn init(cfg: config::HalConfig) {
+pub fn init(cfg: config::KernelConfig) {
     unsafe { trapframe::init() };
     self::arch::init(cfg);
 }

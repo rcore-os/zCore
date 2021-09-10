@@ -606,7 +606,7 @@ impl VMObjectPagedInner {
         } else if flags.contains(MMUFlags::WRITE) && child_tag.is_split() {
             // copy-on-write
             let target_frame = PhysFrame::new().ok_or(ZxError::NO_MEMORY)?;
-            kernel_hal::mem::frame_copy(frame.frame.paddr(), target_frame.paddr());
+            kernel_hal::mem::pmem_copy(target_frame.paddr(), frame.frame.paddr(), PAGE_SIZE);
             frame.tag = child_tag;
             return Ok(CommitResult::CopyOnWrite(target_frame, true));
         }

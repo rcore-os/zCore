@@ -31,11 +31,11 @@ mod fs;
 #[cfg(target_arch = "x86_64")]
 use rboot::BootInfo;
 
-use kernel_hal::config::HalConfig;
-#[cfg(target_arch = "riscv64")]
-use kernel_hal::config::{BootInfo, GraphicInfo};
+use kernel_hal::config::KernelConfig;
 
 use alloc::{boxed::Box, string::String, vec, vec::Vec};
+
+use crate::arch::consts::*;
 
 #[cfg(feature = "board_qemu")]
 global_asm!(include_str!("arch/riscv/boot/boot_qemu.asm"));
@@ -53,7 +53,11 @@ pub extern "C" fn _start(boot_info: &BootInfo) -> ! {
 
     trace!("{:#x?}", boot_info);
 
-    kernel_hal::init(HalConfig {
+    kernel_hal::init(KernelConfig {
+        kernel_offset: KERNEL_OFFSET,
+        phys_mem_start: PHYSICAL_MEMORY_OFFSET,
+        phys_to_virt_offset: PHYSICAL_MEMORY_OFFSET,
+
         acpi_rsdp: boot_info.acpi2_rsdp_addr,
         smbios: boot_info.smbios_addr,
         ap_fn: run,
@@ -95,40 +99,28 @@ pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
         "zCore rust_main( hartid: {}, device_tree_paddr: {:#x} )",
         hartid, device_tree_paddr
     );
-    let device_tree_vaddr = device_tree_paddr + arch::consts::PHYSICAL_MEMORY_OFFSET;
-
-    let boot_info = BootInfo {
-        memory_map: Vec::new(),
-        physical_memory_offset: 0,
-        graphic_info: GraphicInfo {
-            mode: 0,
-            fb_addr: 0,
-            fb_size: 0,
-        },
-        hartid: hartid as u64,
-        dtb_addr: device_tree_paddr as u64,
-        initramfs_addr: 0,
-        initramfs_size: 0,
-        cmdline: "LOG=warn:TERM=xterm-256color:console.shell=true:virtcon.disable=true",
+    let cmdline = "LOG=warn:TERM=xterm-256color:console.shell=true:virtcon.disable=true";
+    let config = KernelConfig {
+        kernel_offset: KERNEL_OFFSET,
+        phys_mem_start: MEMORY_OFFSET,
+        phys_mem_end: MEMORY_END,
+        phys_to_virt_offset: PHYSICAL_MEMORY_OFFSET,
+        dtb_paddr: device_tree_paddr,
     };
 
-    logging::init(get_log_level(boot_info.cmdline));
+    logging::init(get_log_level(cmdline));
     memory::init_heap();
-    memory::init_frame_allocator(&boot_info);
+    memory::init_frame_allocator();
 
-    info!("{:#x?}", boot_info);
-
-    kernel_hal::init(HalConfig {
-        mconfig: 0,
-        dtb: device_tree_vaddr,
-    });
+    info!("{:#x?}", config);
+    kernel_hal::init(config);
 
     let cmdline_dt = ""; // FIXME: CMDLINE.read();
     let cmdline = if !cmdline_dt.is_empty() {
-        alloc::format!("{}:{}", boot_info.cmdline, cmdline_dt)
+        alloc::format!("{}:{}", cmdline, cmdline_dt)
     } else {
         use alloc::string::ToString;
-        boot_info.cmdline.to_string()
+        cmdline.to_string()
     };
     warn!("cmdline: {:?}", cmdline);
 
