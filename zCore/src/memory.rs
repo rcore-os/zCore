@@ -34,6 +34,10 @@ pub fn init_frame_allocator(boot_info: &BootInfo) {
             let start_frame = region.phys_start as usize / PAGE_SIZE;
             let end_frame = start_frame + region.page_count as usize;
             ba.insert(start_frame..end_frame);
+            info!(
+                "Frame allocator add range: {:#x?}",
+                region.phys_start..region.phys_start + region.page_count * PAGE_SIZE as u64,
+            );
         }
     }
     info!("Frame allocator init end");
@@ -42,23 +46,23 @@ pub fn init_frame_allocator(boot_info: &BootInfo) {
 #[cfg(target_arch = "riscv64")]
 pub fn init_frame_allocator(boot_info: &BootInfo) {
     use core::ops::Range;
-
-    let mut ba = FRAME_ALLOCATOR.lock();
-    let range = to_range(
-        (end as usize) - KERNEL_OFFSET + MEMORY_OFFSET + PAGE_SIZE,
-        MEMORY_END,
-    );
-    ba.insert(range);
-
-    info!("frame allocator: init end");
+    use kernel_hal::addr::{align_down, align_up};
 
     /// Transform memory area `[start, end)` to integer range for `FrameAllocator`
     fn to_range(start: usize, end: usize) -> Range<usize> {
+        info!("Frame allocator add range: {:#x?}", start..end);
         let page_start = (start - MEMORY_OFFSET) / PAGE_SIZE;
-        let page_end = (end - MEMORY_OFFSET - 1) / PAGE_SIZE + 1;
+        let page_end = (end - MEMORY_OFFSET) / PAGE_SIZE;
         assert!(page_start < page_end, "illegal range for frame allocator");
         page_start..page_end
     }
+
+    let mut ba = FRAME_ALLOCATOR.lock();
+    let mem_pool_start = align_up(end as usize + PAGE_SIZE - KERNEL_OFFSET + MEMORY_OFFSET);
+    let mem_pool_end = align_down(MEMORY_END);
+    ba.insert(to_range(mem_pool_start, mem_pool_end));
+
+    info!("Frame allocator: init end");
 }
 
 pub fn init_heap() {

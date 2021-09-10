@@ -48,41 +48,14 @@ pub struct PageTableImpl<L: PageTableLevel, PTE: GenericPTE> {
     _phantom: PhantomData<(L, PTE)>,
 }
 
+/// Private implementation.
 impl<L: PageTableLevel, PTE: GenericPTE> PageTableImpl<L, PTE> {
-    #[allow(clippy::new_without_default)]
-    pub fn new() -> Self {
-        let root = PhysFrame::new_zero().expect("failed to alloc frame");
-        Self {
-            root,
-            intrm_tables: Vec::new(),
-            _phantom: PhantomData,
-        }
-    }
-
-    pub fn new_and_map_kernel() -> Self {
-        let pt = Self::new();
-        #[cfg(not(feature = "libos"))]
-        {
-            let old_root_vaddr = crate::mem::phys_to_virt(crate::vm::current_vmtoken());
-            let new_root_vaddr = crate::mem::phys_to_virt(pt.table_phys());
-            unsafe {
-                crate::bare::ffi::hal_pt_map_kernel(new_root_vaddr as _, old_root_vaddr as _);
-            }
-        }
-        pt
-    }
-
     unsafe fn from_root(root_paddr: PhysAddr) -> Self {
         Self {
             root: PhysFrame::from_paddr(root_paddr),
             intrm_tables: Vec::new(),
             _phantom: PhantomData,
         }
-    }
-
-    /// Create a new `PageTable` from current VM token. (e.g. CR3, SATP, ...)
-    pub fn from_current() -> Self {
-        unsafe { Self::from_root(crate::vm::current_vmtoken()) }
     }
 
     fn alloc_intrm_table(&mut self) -> Option<PhysAddr> {
@@ -199,6 +172,37 @@ impl<L: PageTableLevel, PTE: GenericPTE> PageTableImpl<L, PTE> {
     #[allow(dead_code)]
     pub(crate) unsafe fn activate(&mut self) {
         crate::vm::activate_paging(self.table_phys());
+    }
+}
+
+/// Public implementation.
+impl<L: PageTableLevel, PTE: GenericPTE> PageTableImpl<L, PTE> {
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
+        let root = PhysFrame::new_zero().expect("failed to alloc frame");
+        Self {
+            root,
+            intrm_tables: Vec::new(),
+            _phantom: PhantomData,
+        }
+    }
+
+    pub fn new_and_map_kernel() -> Self {
+        let pt = Self::new();
+        #[cfg(not(feature = "libos"))]
+        {
+            let old_root_vaddr = crate::mem::phys_to_virt(crate::vm::current_vmtoken());
+            let new_root_vaddr = crate::mem::phys_to_virt(pt.table_phys());
+            unsafe {
+                crate::bare::ffi::hal_pt_map_kernel(new_root_vaddr as _, old_root_vaddr as _);
+            }
+        }
+        pt
+    }
+
+    /// Create a new `PageTable` from current VM token. (e.g. CR3, SATP, ...)
+    pub fn from_current() -> Self {
+        unsafe { Self::from_root(crate::vm::current_vmtoken()) }
     }
 }
 

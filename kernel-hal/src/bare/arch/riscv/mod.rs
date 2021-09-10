@@ -20,7 +20,7 @@ pub mod vm;
 
 pub fn init(cfg: config::HalConfig) {
     trace!("hal dtb: {:#x}", cfg.dtb);
-
+    vm::remap_the_kernel().unwrap();
     interrupt::init();
     timer::init();
 

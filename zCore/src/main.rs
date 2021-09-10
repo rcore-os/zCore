@@ -33,10 +33,7 @@ use rboot::BootInfo;
 
 use kernel_hal::config::HalConfig;
 #[cfg(target_arch = "riscv64")]
-use kernel_hal::{
-    config::{BootInfo, GraphicInfo},
-    vm::remap_the_kernel,
-};
+use kernel_hal::config::{BootInfo, GraphicInfo};
 
 use alloc::{boxed::Box, string::String, vec, vec::Vec};
 
@@ -118,7 +115,6 @@ pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
     logging::init(get_log_level(boot_info.cmdline));
     memory::init_heap();
     memory::init_frame_allocator(&boot_info);
-    remap_the_kernel(device_tree_vaddr).unwrap();
 
     info!("{:#x?}", boot_info);
 

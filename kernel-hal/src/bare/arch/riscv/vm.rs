@@ -3,6 +3,7 @@ use core::fmt::{Debug, Formatter, Result};
 use riscv::{asm, paging::PageTableFlags as PTF, register::satp};
 
 use super::consts;
+use crate::addr::{align_down, align_up};
 use crate::utils::page_table::{GenericPTE, PageTableImpl, PageTableLevel3};
 use crate::{mem::phys_to_virt, MMUFlags, PhysAddr, VirtAddr, PAGE_SIZE};
 
@@ -11,149 +12,73 @@ type RvPageTable<'a> = riscv::paging::Rv32PageTable<'a>;
 #[cfg(target_arch = "riscv64")]
 type RvPageTable<'a> = riscv::paging::Rv39PageTable<'a>;
 
-fn map_range(
-    pt: &mut PageTable,
-    start_addr: VirtAddr,
-    end_addr: VirtAddr,
-    linear_offset: usize,
-    flags: MMUFlags,
-) -> PagingResult {
-    info!(
-        "Mapping range addr: {:#x} ~ {:#x} {:?}",
-        start_addr, end_addr, flags
-    );
-
-    let start_addr = start_addr & !(PAGE_SIZE - 1);
-    let mut start_page = start_addr / PAGE_SIZE;
-
-    //end_addr = (end_addr + PAGE_SIZE - 1) & !(PAGE_SIZE -1);
-    //let end_page = (end_addr - 1) / PAGE_SIZE;
-    let end_addr = end_addr & !(PAGE_SIZE - 1);
-    let end_page = end_addr / PAGE_SIZE;
-
-    while start_page <= end_page {
-        let vaddr: VirtAddr = start_page * PAGE_SIZE;
-        let page = Page::new_aligned(vaddr, PageSize::Size4K);
-        pt.map(page, vaddr - linear_offset, flags)?;
-        start_page += 1;
-    }
-    info!(
-        "map range from {:#x} to {:#x}, flags: {:?}",
-        start_addr,
-        end_page * PAGE_SIZE,
-        flags
-    );
-
-    Ok(())
-}
-
 /// remap kernel with 4K page
-pub fn remap_the_kernel(dtb: usize) -> PagingResult {
+pub(super) fn remap_the_kernel() -> PagingResult {
     extern "C" {
-        fn start();
-
         fn stext();
         fn etext();
         fn srodata();
         fn erodata();
         fn sdata();
         fn edata();
+        fn sbss();
+        fn ebss();
 
         fn bootstack();
         fn bootstacktop();
-
-        fn sbss();
-        fn ebss();
 
         fn end();
     }
 
     let mut pt = PageTable::new();
     let root_paddr = pt.table_phys();
-    let linear_offset = consts::PHYSICAL_MEMORY_OFFSET;
+    let mut map_range = |start: VirtAddr, end: VirtAddr, flags: MMUFlags| -> PagingResult {
+        pt.map_cont(
+            start,
+            crate::addr::align_up(end - start),
+            start - unsafe { super::super::ffi::PHYS_TO_VIRT_OFFSET },
+            flags | MMUFlags::HUGE_PAGE,
+        )
+    };
 
     map_range(
-        &mut pt,
         stext as usize,
-        etext as usize - 1,
-        linear_offset,
+        etext as usize,
         MMUFlags::READ | MMUFlags::EXECUTE,
     )?;
+    map_range(srodata as usize, erodata as usize, MMUFlags::READ)?;
     map_range(
-        &mut pt,
-        srodata as usize,
-        erodata as usize,
-        linear_offset,
-        MMUFlags::READ,
-    )?;
-    map_range(
-        &mut pt,
         sdata as usize,
         edata as usize,
-        linear_offset,
         MMUFlags::READ | MMUFlags::WRITE,
     )?;
-
-    // Stack
     map_range(
-        &mut pt,
-        bootstack as usize,
-        bootstacktop as usize - 1,
-        linear_offset,
-        MMUFlags::READ | MMUFlags::WRITE,
-    )?;
-
-    map_range(
-        &mut pt,
         sbss as usize,
-        ebss as usize - 1,
-        linear_offset,
+        ebss as usize,
         MMUFlags::READ | MMUFlags::WRITE,
     )?;
-
-    info!("map Heap ...");
-    // Heap
+    // stack
     map_range(
-        &mut pt,
-        end as usize,
-        end as usize + PAGE_SIZE * 5120,
-        linear_offset,
+        bootstack as usize,
+        bootstacktop as usize,
         MMUFlags::READ | MMUFlags::WRITE,
     )?;
-    info!("... Heap");
-
-    // Device Tree
-    #[cfg(feature = "board_qemu")]
+    // physical memory
     map_range(
-        &mut pt,
-        dtb,
-        dtb + consts::MAX_DTB_SIZE,
-        linear_offset,
-        MMUFlags::READ,
+        align_up(end as usize + PAGE_SIZE),
+        phys_to_virt(align_down(consts::MEMORY_END)),
+        MMUFlags::READ | MMUFlags::WRITE,
     )?;
-
     // PLIC
     map_range(
-        &mut pt,
-        phys_to_virt(consts::PLIC_PRIORITY),
-        phys_to_virt(consts::PLIC_PRIORITY) + PAGE_SIZE * 0xf,
-        linear_offset,
+        phys_to_virt(consts::PLIC_BASE),
+        phys_to_virt(consts::PLIC_BASE + 0x40_0000), // 4M
         MMUFlags::READ | MMUFlags::WRITE,
     )?;
-    map_range(
-        &mut pt,
-        phys_to_virt(consts::PLIC_THRESHOLD),
-        phys_to_virt(consts::PLIC_THRESHOLD) + PAGE_SIZE * 0xf,
-        linear_offset,
-        MMUFlags::READ | MMUFlags::WRITE,
-    )?;
-
     // UART0, VIRTIO
     map_range(
-        &mut pt,
         phys_to_virt(consts::UART_BASE),
-        phys_to_virt(consts::UART_BASE) + PAGE_SIZE * 0xf,
-        linear_offset,
+        phys_to_virt(consts::UART_BASE + 0x1000),
         MMUFlags::READ | MMUFlags::WRITE,
     )?;
 
@@ -176,7 +101,6 @@ hal_fn_impl! {
                 debug!("switch table {:x?} -> {:x?}", old_token, vmtoken);
                 unsafe {
                     satp::set(mode, 0, vmtoken >> 12);
-                    //刷TLB好像很重要
                     asm::sfence_vma_all();
                 }
             }

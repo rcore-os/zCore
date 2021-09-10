@@ -1,4 +1,4 @@
-use crate::{MMUFlags, PhysAddr, VirtAddr};
+use crate::{addr::is_aligned, MMUFlags, PhysAddr, VirtAddr};
 
 #[derive(Debug)]
 pub enum PagingError {
@@ -82,9 +82,75 @@ pub trait GenericPageTable: Sync + Send {
     /// Query the physical address which the page of `vaddr` maps to.
     fn query(&self, vaddr: VirtAddr) -> PagingResult<(PhysAddr, MMUFlags, PageSize)>;
 
-    fn unmap_cont(&mut self, vaddr: VirtAddr, page_size: PageSize, count: usize) -> PagingResult {
-        for i in 0..count {
-            self.unmap(vaddr + i * page_size as usize).ignore()?;
+    fn map_cont(
+        &mut self,
+        start_vaddr: VirtAddr,
+        size: usize,
+        start_paddr: PhysAddr,
+        flags: MMUFlags,
+    ) -> PagingResult {
+        assert!(is_aligned(start_vaddr));
+        assert!(is_aligned(start_vaddr));
+        assert!(is_aligned(size));
+        debug!(
+            "map_cont: {:#x?} => {:#x}, flags={:?}",
+            start_vaddr..start_vaddr + size,
+            start_paddr,
+            flags
+        );
+        let mut vaddr = start_vaddr;
+        let mut paddr = start_paddr;
+        let end_vaddr = vaddr + size;
+        if flags.contains(MMUFlags::HUGE_PAGE) {
+            while vaddr < end_vaddr {
+                let remains = end_vaddr - vaddr;
+                let page_size = if remains >= PageSize::Size1G as usize
+                    && PageSize::Size1G.is_aligned(vaddr)
+                    && PageSize::Size1G.is_aligned(paddr)
+                {
+                    PageSize::Size1G
+                } else if remains >= PageSize::Size2M as usize
+                    && PageSize::Size2M.is_aligned(vaddr)
+                    && PageSize::Size2M.is_aligned(paddr)
+                {
+                    PageSize::Size2M
+                } else {
+                    PageSize::Size4K
+                };
+                let page = Page::new_aligned(vaddr, page_size);
+                self.map(page, paddr, flags)?;
+                vaddr += page_size as usize;
+                paddr += page_size as usize;
+            }
+        } else {
+            while vaddr < end_vaddr {
+                let page_size = PageSize::Size4K;
+                let page = Page::new_aligned(vaddr, page_size);
+                self.map(page, paddr, flags)?;
+                vaddr += page_size as usize;
+                paddr += page_size as usize;
+            }
+        }
+        Ok(())
+    }
+
+    fn unmap_cont(&mut self, start_vaddr: VirtAddr, size: usize) -> PagingResult {
+        assert!(is_aligned(start_vaddr));
+        assert!(is_aligned(size));
+        debug!("unmap_cont: {:#x?}", start_vaddr..start_vaddr + size,);
+        let mut vaddr = start_vaddr;
+        let end_vaddr = vaddr + size;
+        while vaddr < end_vaddr {
+            let page_size = match self.unmap(vaddr) {
+                Ok((_, s)) => {
+                    assert!(s.is_aligned(vaddr));
+                    s as usize
+                }
+                Err(PagingError::NotMapped) => PageSize::Size4K as usize,
+                Err(e) => return Err(e),
+            };
+            vaddr += page_size;
+            assert!(vaddr <= end_vaddr);
         }
         Ok(())
     }

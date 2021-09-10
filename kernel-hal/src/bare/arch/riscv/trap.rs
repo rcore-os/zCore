@@ -31,7 +31,7 @@ fn page_fault(tf: &mut TrapFrame, access_flags: MMUFlags) {
     let fault_vaddr = stval::read();
     // TODO
     panic!(
-        "EXCEPTION Page Fault @ {:#x} with access {:?}, pc = ${:#x}",
+        "EXCEPTION Page Fault @ {:#x} with access {:?}, pc = {:#x}",
         fault_vaddr, access_flags, tf.sepc,
     );
 }

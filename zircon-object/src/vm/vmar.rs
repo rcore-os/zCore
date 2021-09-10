@@ -754,11 +754,10 @@ impl VmMapping {
 
     fn unmap(&self) {
         let inner = self.inner.lock();
-        let pages = inner.size / PAGE_SIZE;
         // TODO inner.vmo_offset unused?
         self.page_table
             .lock()
-            .unmap_cont(inner.addr, PageSize::Size4K, pages)
+            .unmap_cont(inner.addr, inner.size)
             .expect("failed to unmap")
     }
 
@@ -791,7 +790,7 @@ impl VmMapping {
         if inner.addr >= begin && inner.end_addr() <= end {
             // subset: [xxxxxxxxxx]
             page_table
-                .unmap_cont(inner.addr, PageSize::Size4K, pages(inner.size))
+                .unmap_cont(inner.addr, inner.size)
                 .expect("failed to unmap");
             inner.size = 0;
             inner.flags.clear();
@@ -800,7 +799,7 @@ impl VmMapping {
             // prefix: [xxxx------]
             let cut_len = end - inner.addr;
             page_table
-                .unmap_cont(inner.addr, PageSize::Size4K, pages(cut_len))
+                .unmap_cont(inner.addr, cut_len)
                 .expect("failed to unmap");
             inner.addr = end;
             inner.size -= cut_len;
@@ -812,7 +811,7 @@ impl VmMapping {
             let cut_len = inner.end_addr() - begin;
             let new_len = begin - inner.addr;
             page_table
-                .unmap_cont(begin, PageSize::Size4K, pages(cut_len))
+                .unmap_cont(begin, cut_len)
                 .expect("failed to unmap");
             inner.size = new_len;
             inner.flags.truncate(new_len);
@@ -823,7 +822,7 @@ impl VmMapping {
             let new_len1 = begin - inner.addr;
             let new_len2 = inner.end_addr() - end;
             page_table
-                .unmap_cont(begin, PageSize::Size4K, pages(cut_len))
+                .unmap_cont(begin, cut_len)
                 .expect("failed to unmap");
             let new_flags_range = (pages(inner.size) - pages(new_len2))..pages(inner.size);
             let new_mapping = Arc::new(VmMapping {

@@ -50,7 +50,7 @@ impl GenericPageTable for PageTable {
 
     fn unmap(&mut self, vaddr: VirtAddr) -> PagingResult<(PhysAddr, PageSize)> {
         println!("unmap_page {:x?}", vaddr);
-        self.unmap_cont(vaddr, PageSize::Size4K, 1)?;
+        self.unmap_cont(vaddr, PAGE_SIZE)?;
         Ok((0, PageSize::Size4K))
     }
 
@@ -73,12 +73,12 @@ impl GenericPageTable for PageTable {
         unimplemented!()
     }
 
-    fn unmap_cont(&mut self, vaddr: VirtAddr, page_size: PageSize, count: usize) -> PagingResult {
-        if count == 0 {
+    fn unmap_cont(&mut self, vaddr: VirtAddr, size: usize) -> PagingResult {
+        if size == 0 {
             return Ok(());
         }
         debug_assert!(is_aligned(vaddr));
-        let ret = unsafe { libc::munmap(vaddr as _, page_size as usize * count) };
+        let ret = unsafe { libc::munmap(vaddr as _, size) };
         assert_eq!(ret, 0, "failed to munmap: {:?}", Error::last_os_error());
         Ok(())
     }
