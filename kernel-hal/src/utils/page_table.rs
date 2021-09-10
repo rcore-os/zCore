@@ -4,6 +4,21 @@ use core::{fmt::Debug, marker::PhantomData, slice};
 use crate::common::vm::*;
 use crate::{mem::PhysFrame, MMUFlags, PhysAddr, VirtAddr};
 
+pub trait PageTableLevel: Sync + Send {
+    const LEVEL: usize;
+}
+
+pub struct PageTableLevel3;
+pub struct PageTableLevel4;
+
+impl PageTableLevel for PageTableLevel3 {
+    const LEVEL: usize = 3;
+}
+
+impl PageTableLevel for PageTableLevel4 {
+    const LEVEL: usize = 4;
+}
+
 pub trait GenericPTE: Debug + Clone + Sync + Send {
     /// Returns the physical address mapped by this entry.
     fn addr(&self) -> PhysAddr;
@@ -13,29 +28,27 @@ pub trait GenericPTE: Debug + Clone + Sync + Send {
     fn is_unused(&self) -> bool;
     /// Returns whether this entry flag indicates present.
     fn is_present(&self) -> bool;
-    /// Returns whether this entry maps to a huge frame.
-    fn is_huge(&self) -> bool;
+    /// Returns whether this entry maps to a huge frame (or it's a terminal entry).
+    fn is_leaf(&self) -> bool;
 
-    /// Set physical address for terminal entries.
-    fn set_addr(&mut self, paddr: PhysAddr);
-    /// Set flags for terminal entries.
-    fn set_flags(&mut self, flags: MMUFlags, is_huge: bool);
+    /// Set physical address (optional) and flags (optional) for terminal entries.
+    fn set_leaf(&mut self, paddr: Option<PhysAddr>, flags: Option<MMUFlags>, is_huge: bool);
     /// Set physical address and flags for intermediate table entries.
     fn set_table(&mut self, paddr: PhysAddr);
     /// Set this entry to zero.
     fn clear(&mut self);
 }
 
-pub struct PageTableImpl<PTE: GenericPTE> {
+pub struct PageTableImpl<L: PageTableLevel, PTE: GenericPTE> {
     /// Root table frame.
     root: PhysFrame,
     /// Intermediate level table frames.
     intrm_tables: Vec<PhysFrame>,
     /// Phantom data.
-    _phantom: PhantomData<PTE>,
+    _phantom: PhantomData<(L, PTE)>,
 }
 
-impl<PTE: GenericPTE> PageTableImpl<PTE> {
+impl<L: PageTableLevel, PTE: GenericPTE> PageTableImpl<L, PTE> {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         let root = PhysFrame::new_zero().expect("failed to alloc frame");
@@ -80,18 +93,24 @@ impl<PTE: GenericPTE> PageTableImpl<PTE> {
     }
 
     fn get_entry_mut(&self, vaddr: VirtAddr) -> PagingResult<(&mut PTE, PageSize)> {
-        let p4 = table_of_mut::<PTE>(self.table_phys());
-        let p4e = &mut p4[p4_index(vaddr)];
+        let p3 = if L::LEVEL == 3 {
+            table_of_mut::<PTE>(self.table_phys())
+        } else if L::LEVEL == 4 {
+            let p4 = table_of_mut::<PTE>(self.table_phys());
+            let p4e = &mut p4[p4_index(vaddr)];
+            next_table_mut(p4e)?
+        } else {
+            unreachable!()
+        };
 
-        let p3 = next_table_mut(p4e)?;
         let p3e = &mut p3[p3_index(vaddr)];
-        if p3e.is_huge() {
+        if p3e.is_leaf() {
             return Ok((p3e, PageSize::Size1G));
         }
 
         let p2 = next_table_mut(p3e)?;
         let p2e = &mut p2[p2_index(vaddr)];
-        if p2e.is_huge() {
+        if p2e.is_leaf() {
             return Ok((p2e, PageSize::Size2M));
         }
 
@@ -102,10 +121,16 @@ impl<PTE: GenericPTE> PageTableImpl<PTE> {
 
     fn get_entry_mut_or_create(&mut self, page: Page) -> PagingResult<&mut PTE> {
         let vaddr = page.vaddr;
-        let p4 = table_of_mut::<PTE>(self.table_phys());
-        let p4e = &mut p4[p4_index(vaddr)];
+        let p3 = if L::LEVEL == 3 {
+            table_of_mut::<PTE>(self.table_phys())
+        } else if L::LEVEL == 4 {
+            let p4 = table_of_mut::<PTE>(self.table_phys());
+            let p4e = &mut p4[p4_index(vaddr)];
+            next_table_mut_or_create(p4e, || self.alloc_intrm_table())?
+        } else {
+            unreachable!()
+        };
 
-        let p3 = next_table_mut_or_create(p4e, || self.alloc_intrm_table())?;
         let p3e = &mut p3[p3_index(vaddr)];
         if page.size == PageSize::Size1G {
             return Ok(p3e);
@@ -136,12 +161,9 @@ impl<PTE: GenericPTE> PageTableImpl<PTE> {
             let vaddr = start_vaddr + (i << (12 + (3 - level) * 9));
             if entry.is_present() {
                 func(level, i, vaddr, entry);
-                if level < 3 {
-                    match next_table_mut(entry) {
-                        Ok(entry) => self.walk(entry, level + 1, vaddr, limit, func),
-                        Err(PagingError::MappedToHugePage) => {}
-                        _ => unreachable!(),
-                    }
+                if level < 3 && !entry.is_leaf() {
+                    let table_entry = next_table_mut(entry).unwrap();
+                    self.walk(table_entry, level + 1, vaddr, limit, func);
                 }
                 n += 1;
                 if n >= limit {
@@ -173,9 +195,14 @@ impl<PTE: GenericPTE> PageTableImpl<PTE> {
             },
         );
     }
+
+    #[allow(dead_code)]
+    pub(crate) unsafe fn activate(&mut self) {
+        crate::vm::activate_paging(self.table_phys());
+    }
 }
 
-impl<PTE: GenericPTE> GenericPageTable for PageTableImpl<PTE> {
+impl<L: PageTableLevel, PTE: GenericPTE> GenericPageTable for PageTableImpl<L, PTE> {
     fn table_phys(&self) -> PhysAddr {
         self.root.paddr()
     }
@@ -185,10 +212,13 @@ impl<PTE: GenericPTE> GenericPageTable for PageTableImpl<PTE> {
         if !entry.is_unused() {
             return Err(PagingError::AlreadyMapped);
         }
-        entry.set_addr(page.size.align_down(paddr));
-        entry.set_flags(flags, page.size.is_huge());
+        entry.set_leaf(
+            Some(page.size.align_down(paddr)),
+            Some(flags),
+            page.size.is_huge(),
+        );
         crate::vm::flush_tlb(Some(page.vaddr));
-        debug!(
+        trace!(
             "PageTable map: {:x?} -> {:x?}, flags={:?} in {:#x?}",
             page,
             paddr,
@@ -206,7 +236,7 @@ impl<PTE: GenericPTE> GenericPageTable for PageTableImpl<PTE> {
         let paddr = entry.addr();
         entry.clear();
         crate::vm::flush_tlb(Some(vaddr));
-        debug!("PageTable unmap: {:x?} in {:#x?}", vaddr, self.table_phys());
+        trace!("PageTable unmap: {:x?} in {:#x?}", vaddr, self.table_phys());
         Ok((paddr, size))
     }
 
@@ -217,12 +247,7 @@ impl<PTE: GenericPTE> GenericPageTable for PageTableImpl<PTE> {
         flags: Option<MMUFlags>,
     ) -> PagingResult<PageSize> {
         let (entry, size) = self.get_entry_mut(vaddr)?;
-        if let Some(paddr) = paddr {
-            entry.set_addr(paddr)
-        }
-        if let Some(flags) = flags {
-            entry.set_flags(flags, size.is_huge())
-        }
+        entry.set_leaf(paddr, flags, size.is_huge());
         crate::vm::flush_tlb(Some(vaddr));
         trace!(
             "PageTable update: {:x?}, flags={:?} in {:#x?}",
@@ -276,9 +301,8 @@ fn table_of_mut<'a, E>(paddr: PhysAddr) -> &'a mut [E] {
 fn next_table_mut<'a, E: GenericPTE>(entry: &E) -> PagingResult<&'a mut [E]> {
     if !entry.is_present() {
         Err(PagingError::NotMapped)
-    } else if entry.is_huge() {
-        Err(PagingError::MappedToHugePage)
     } else {
+        debug_assert!(!entry.is_leaf());
         Ok(table_of_mut(entry.addr()))
     }
 }

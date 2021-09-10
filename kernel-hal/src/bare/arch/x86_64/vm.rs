@@ -7,7 +7,7 @@ use x86_64::{
     structures::paging::page_table::PageTableFlags as PTF,
 };
 
-use crate::utils::page_table::{GenericPTE, PageTableImpl};
+use crate::utils::page_table::{GenericPTE, PageTableImpl, PageTableLevel4};
 use crate::{CachePolicy, MMUFlags, PhysAddr, VirtAddr};
 
 hal_fn_impl! {
@@ -110,19 +110,26 @@ impl GenericPTE for X86PTE {
     fn is_present(&self) -> bool {
         PTF::from_bits_truncate(self.0).contains(PTF::PRESENT)
     }
-    fn is_huge(&self) -> bool {
+    fn is_leaf(&self) -> bool {
         PTF::from_bits_truncate(self.0).contains(PTF::HUGE_PAGE)
     }
 
-    fn set_addr(&mut self, paddr: PhysAddr) {
-        self.0 = (self.0 & !PHYS_ADDR_MASK) | (paddr as u64 & PHYS_ADDR_MASK);
-    }
-    fn set_flags(&mut self, flags: MMUFlags, is_huge: bool) {
-        let mut flags: PTF = flags.into();
-        if is_huge {
-            flags |= PTF::HUGE_PAGE;
-        }
-        self.0 = self.addr() as u64 | flags.bits();
+    fn set_leaf(&mut self, paddr: Option<PhysAddr>, flags: Option<MMUFlags>, is_huge: bool) {
+        let paddr_bits = if let Some(paddr) = paddr {
+            paddr as u64 & PHYS_ADDR_MASK
+        } else {
+            self.0 & PHYS_ADDR_MASK
+        };
+        let flags_bits = if let Some(flags) = flags {
+            if is_huge {
+                (PTF::from(flags) | PTF::HUGE_PAGE).bits()
+            } else {
+                PTF::from(flags).bits()
+            }
+        } else {
+            self.0 & !PHYS_ADDR_MASK
+        };
+        self.0 = paddr_bits | flags_bits;
     }
     fn set_table(&mut self, paddr: PhysAddr) {
         self.0 = (paddr as u64 & PHYS_ADDR_MASK)
@@ -143,4 +150,4 @@ impl Debug for X86PTE {
     }
 }
 
-pub type PageTable = PageTableImpl<X86PTE>;
+pub type PageTable = PageTableImpl<PageTableLevel4, X86PTE>;

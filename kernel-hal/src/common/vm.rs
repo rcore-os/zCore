@@ -5,7 +5,6 @@ pub enum PagingError {
     NoMemory,
     NotMapped,
     AlreadyMapped,
-    MappedToHugePage,
 }
 
 pub type PagingResult<T = ()> = Result<T, PagingError>;

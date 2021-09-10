@@ -42,6 +42,14 @@ hal_fn_def! {
     }
 
     pub mod vm: common::vm {
+        // pub(crate) fn map_page(vmtoken: PhysAddr, vaddr: VirtAddr, paddr: PhysAddr, flags: MMUFlags) -> HalResult;
+
+        // pub fn unmap_page(vmtoken: PhysAddr, vaddr: VirtAddr) -> HalResult;
+
+        // pub fn update_page(vmtoken: PhysAddr, vaddr: VirtAddr, paddr: Option<PhysAddr>, flags: Option<MMUFlags>) -> HalResult;
+
+        // pub fn query(vmtoken: PhysAddr, vaddr: VirtAddr) -> HalResult<(PhysAddr, MMUFlags)>;
+
         /// Activate this page table by given `vmtoken`.
         pub(crate) fn activate_paging(vmtoken: PhysAddr);
 

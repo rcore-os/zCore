@@ -67,7 +67,9 @@ impl PhysFrame {
 
 impl Drop for PhysFrame {
     fn drop(&mut self) {
-        crate::mem::frame_dealloc(self.paddr)
+        if self.allocated {
+            crate::mem::frame_dealloc(self.paddr)
+        }
     }
 }
 
