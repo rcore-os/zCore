@@ -1,5 +1,3 @@
-pub(crate) mod ffi;
-
 cfg_if! {
     if #[cfg(target_arch = "x86_64")] {
         #[path = "arch/x86_64/mod.rs"]
@@ -17,14 +15,19 @@ pub mod thread;
 pub mod timer;
 
 pub use self::arch::{config, context, cpu, interrupt, serial, vm};
-pub use super::defs::{dev, rand, vdso};
+pub use super::hal_fn::{dev, rand, vdso};
 
 hal_fn_impl_default!(rand, vdso, dev::fb, dev::input);
+
+use crate::{KernelConfig, KernelHandler, KCONFIG, KHANDLER};
 
 /// Initialize the HAL.
 ///
 /// This function must be called at the beginning.
-pub fn init(cfg: config::KernelConfig) {
+pub fn init(cfg: KernelConfig, handler: &'static impl KernelHandler) {
+    KCONFIG.init_by(cfg);
+    KHANDLER.init_by(handler);
+
     unsafe { trapframe::init() };
-    self::arch::init(cfg);
+    self::arch::init();
 }

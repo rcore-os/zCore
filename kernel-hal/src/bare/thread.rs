@@ -5,7 +5,7 @@ use core::{future::Future, pin::Pin};
 use spin::Mutex;
 
 hal_fn_impl! {
-    impl mod crate::defs::thread {
+    impl mod crate::hal_fn::thread {
         fn spawn(future: Pin<Box<dyn Future<Output = ()> + Send + 'static>>, vmtoken: usize) {
             struct PageTableSwitchWrapper {
                 inner: Mutex<Pin<Box<dyn Future<Output = ()> + Send>>>,

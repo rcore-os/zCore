@@ -83,7 +83,7 @@ fn init_mice() {
 }
 
 hal_fn_impl! {
-    impl mod crate::defs::dev::input {
+    impl mod crate::hal_fn::dev::input {
         fn kbd_set_callback(callback: Box<dyn Fn(u16, i32) + Send + Sync>) {
             KBD_CALLBACK.lock().unwrap().push(callback);
         }

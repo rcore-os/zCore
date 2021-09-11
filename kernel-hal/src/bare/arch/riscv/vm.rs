@@ -6,7 +6,7 @@ use riscv::{asm, paging::PageTableFlags as PTF, register::satp};
 use super::consts;
 use crate::addr::{align_down, align_up};
 use crate::utils::page_table::{GenericPTE, PageTableImpl, PageTableLevel3};
-use crate::{mem::phys_to_virt, MMUFlags, PhysAddr, VirtAddr, CONFIG, PAGE_SIZE};
+use crate::{mem::phys_to_virt, MMUFlags, PhysAddr, VirtAddr, KCONFIG, PAGE_SIZE};
 
 #[cfg(target_arch = "riscv32")]
 type RvPageTable<'a> = riscv::paging::Rv32PageTable<'a>;
@@ -37,7 +37,7 @@ pub(super) fn remap_the_kernel() -> PagingResult {
         pt.map_cont(
             start,
             crate::addr::align_up(end - start),
-            start - CONFIG.get().unwrap().phys_to_virt_offset,
+            start - KCONFIG.phys_to_virt_offset,
             flags | MMUFlags::HUGE_PAGE,
         )
     };
@@ -67,7 +67,7 @@ pub(super) fn remap_the_kernel() -> PagingResult {
     // physical frames
     map_range(
         align_up(end as usize + PAGE_SIZE),
-        phys_to_virt(align_down(CONFIG.get().unwrap().phys_mem_end)),
+        phys_to_virt(align_down(KCONFIG.phys_mem_end)),
         MMUFlags::READ | MMUFlags::WRITE,
     )?;
     // PLIC
@@ -93,7 +93,7 @@ pub(super) fn remap_the_kernel() -> PagingResult {
 }
 
 hal_fn_impl! {
-    impl mod crate::defs::vm {
+    impl mod crate::hal_fn::vm {
         fn activate_paging(vmtoken: PhysAddr) {
             let old_token = current_vmtoken();
             if old_token != vmtoken {

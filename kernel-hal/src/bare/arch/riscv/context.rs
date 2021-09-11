@@ -3,7 +3,7 @@ use riscv::register::{scause, stval};
 use crate::VirtAddr;
 
 hal_fn_impl! {
-    impl mod crate::defs::context {
+    impl mod crate::hal_fn::context {
         fn fetch_fault_vaddr() -> VirtAddr {
             stval::read() as _
         }

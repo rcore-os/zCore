@@ -1,5 +1,7 @@
 mod mem_common;
 
+pub(super) mod dummy;
+
 pub mod config;
 pub mod mem;
 pub mod serial;
@@ -8,7 +10,7 @@ pub mod timer;
 pub mod vdso;
 pub mod vm;
 
-pub use super::defs::{context, cpu, interrupt, rand};
+pub use super::hal_fn::{context, cpu, interrupt, rand};
 
 hal_fn_impl_default!(context, cpu, interrupt, rand);
 
@@ -16,7 +18,7 @@ cfg_if! {
     if #[cfg(target_os = "linux")] {
         pub mod dev;
     } else {
-        pub use super::defs::dev;
+        pub use super::hal_fn::dev;
         hal_fn_impl_default!(dev::fb, dev::input);
     }
 }
@@ -28,6 +30,8 @@ include!("macos.rs");
 ///
 /// This function must be called at the beginning.
 pub fn init() {
+    crate::KHANDLER.init_by(&crate::DummyKernelHandler);
+
     #[cfg(target_os = "macos")]
     unsafe {
         register_sigsegv_handler();

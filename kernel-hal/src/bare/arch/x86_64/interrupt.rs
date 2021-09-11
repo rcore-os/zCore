@@ -107,7 +107,7 @@ fn ioapic_controller(i: &acpi::interrupt::IoApic) -> IoApic {
 }
 
 hal_fn_impl! {
-    impl mod crate::defs::interrupt {
+    impl mod crate::hal_fn::interrupt {
         fn enable_irq(irq: u32) {
             info!("enable_irq irq={:#x?}", irq);
             // if irq == 1 {

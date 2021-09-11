@@ -31,7 +31,7 @@ mod fs;
 #[cfg(target_arch = "x86_64")]
 use rboot::BootInfo;
 
-use kernel_hal::config::KernelConfig;
+use kernel_hal::{KernelConfig, KernelHandler};
 
 use alloc::{boxed::Box, string::String, vec, vec::Vec};
 
@@ -53,7 +53,7 @@ pub extern "C" fn _start(boot_info: &BootInfo) -> ! {
 
     trace!("{:#x?}", boot_info);
 
-    kernel_hal::init(KernelConfig {
+    let config = KernelConfig {
         kernel_offset: KERNEL_OFFSET,
         phys_mem_start: PHYSICAL_MEMORY_OFFSET,
         phys_to_virt_offset: PHYSICAL_MEMORY_OFFSET,
@@ -61,7 +61,9 @@ pub extern "C" fn _start(boot_info: &BootInfo) -> ! {
         acpi_rsdp: boot_info.acpi2_rsdp_addr,
         smbios: boot_info.smbios_addr,
         ap_fn: run,
-    });
+    };
+    info!("{:#x?}", config);
+    kernel_hal::init(config, &ZcoreKernelHandler);
 
     #[cfg(feature = "graphic")]
     {
@@ -113,7 +115,7 @@ pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
     memory::init_frame_allocator();
 
     info!("{:#x?}", config);
-    kernel_hal::init(config);
+    kernel_hal::init(config, &ZcoreKernelHandler);
 
     let cmdline_dt = ""; // FIXME: CMDLINE.read();
     let cmdline = if !cmdline_dt.is_empty() {
@@ -214,4 +216,20 @@ fn get_log_level(cmdline: &str) -> &str {
         }
     }
     ""
+}
+
+struct ZcoreKernelHandler;
+
+impl KernelHandler for ZcoreKernelHandler {
+    fn frame_alloc(&self) -> Option<usize> {
+        memory::frame_alloc()
+    }
+
+    fn frame_alloc_contiguous(&self, frame_count: usize, align_log2: usize) -> Option<usize> {
+        memory::frame_alloc_contiguous(frame_count, align_log2)
+    }
+
+    fn frame_dealloc(&self, paddr: usize) {
+        memory::frame_dealloc(paddr)
+    }
 }

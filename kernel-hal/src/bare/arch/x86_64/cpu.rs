@@ -11,7 +11,7 @@ lazy_static::lazy_static! {
 }
 
 hal_fn_impl! {
-    impl mod crate::defs::cpu {
+    impl mod crate::hal_fn::cpu {
         fn cpu_id() -> u8 {
             super::apic::lapic_id()
         }

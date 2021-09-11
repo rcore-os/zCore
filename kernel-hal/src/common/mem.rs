@@ -1,6 +1,6 @@
 use alloc::vec::Vec;
 
-use crate::{PhysAddr, PAGE_SIZE};
+use crate::{PhysAddr, KHANDLER, PAGE_SIZE};
 
 #[derive(Debug)]
 pub struct PhysFrame {
@@ -11,7 +11,7 @@ pub struct PhysFrame {
 impl PhysFrame {
     /// Allocate one physical frame.
     pub fn new() -> Option<Self> {
-        crate::mem::frame_alloc().map(|paddr| Self {
+        KHANDLER.frame_alloc().map(|paddr| Self {
             paddr,
             allocated: true,
         })
@@ -26,7 +26,7 @@ impl PhysFrame {
     }
 
     fn alloc_contiguous_base(frame_count: usize, align_log2: usize) -> Option<PhysAddr> {
-        crate::mem::frame_alloc_contiguous(frame_count, align_log2)
+        KHANDLER.frame_alloc_contiguous(frame_count, align_log2)
     }
 
     /// Allocate contiguous physical frames.
@@ -67,7 +67,7 @@ impl PhysFrame {
 impl Drop for PhysFrame {
     fn drop(&mut self) {
         if self.allocated {
-            crate::mem::frame_dealloc(self.paddr)
+            KHANDLER.frame_dealloc(self.paddr)
         }
     }
 }

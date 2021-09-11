@@ -18,8 +18,7 @@ pub mod special;
 pub mod timer;
 pub mod vm;
 
-pub fn init(cfg: config::KernelConfig) {
-    crate::CONFIG.call_once(|| cfg);
+pub fn init() {
     vm::remap_the_kernel().unwrap();
     interrupt::init();
     timer::init();

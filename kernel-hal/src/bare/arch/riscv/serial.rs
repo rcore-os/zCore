@@ -25,7 +25,7 @@ impl Write for SbiConsole {
 
 impl Write for UartConsole {
     fn write_str(&mut self, s: &str) -> Result {
-        if let Some(uart) = uart::UART.get() {
+        if let Some(uart) = uart::UART.try_get() {
             //每次都创建一个新的Uart ? 内存位置始终相同
             write!(uart.lock(), "{}", s)
         } else {
@@ -43,7 +43,7 @@ pub(super) fn uart_print_fmt(fmt: Arguments) {
 }
 
 hal_fn_impl! {
-    impl mod crate::defs::serial {
+    impl mod crate::hal_fn::serial {
         fn serial_put(x: u8) {
             if (x == b'\r') || (x == b'\n') {
                 STDIN.lock().push_back(b'\n');

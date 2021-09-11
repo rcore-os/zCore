@@ -11,7 +11,7 @@ use crate::utils::page_table::{GenericPTE, PageTableImpl, PageTableLevel4};
 use crate::{mem::phys_to_virt, CachePolicy, MMUFlags, PhysAddr, VirtAddr};
 
 hal_fn_impl! {
-    impl mod crate::defs::vm {
+    impl mod crate::hal_fn::vm {
         fn activate_paging(vmtoken: PhysAddr) {
             use x86_64::structures::paging::PhysFrame;
             let frame = PhysFrame::containing_address(x86_64::PhysAddr::new(vmtoken as _));

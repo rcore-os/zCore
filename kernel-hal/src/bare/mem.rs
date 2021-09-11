@@ -1,10 +1,9 @@
-use super::ffi;
-use crate::{PhysAddr, VirtAddr};
+use crate::{PhysAddr, VirtAddr, KCONFIG};
 
 hal_fn_impl! {
-    impl mod crate::defs::mem {
+    impl mod crate::hal_fn::mem {
         fn phys_to_virt(paddr: PhysAddr) -> VirtAddr {
-            crate::CONFIG.get().unwrap().phys_to_virt_offset + paddr
+            KCONFIG.phys_to_virt_offset + paddr
         }
 
         fn pmem_read(paddr: PhysAddr, buf: &mut [u8]) {
@@ -32,18 +31,6 @@ hal_fn_impl! {
 
         fn frame_flush(target: PhysAddr) {
             super::arch::mem::frame_flush(target)
-        }
-
-        fn frame_alloc() -> Option<PhysAddr> {
-            unsafe { ffi::hal_frame_alloc() }
-        }
-
-        fn frame_alloc_contiguous(frame_count: usize, align_log2: usize) -> Option<PhysAddr> {
-            unsafe { ffi::hal_frame_alloc_contiguous(frame_count, align_log2) }
-        }
-
-        fn frame_dealloc(paddr: PhysAddr) {
-            unsafe { ffi::hal_frame_dealloc(paddr) }
         }
     }
 }

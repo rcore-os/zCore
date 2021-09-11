@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use alloc::boxed::Box;
 use bitmap_allocator::{BitAlloc, BitAlloc256};
 use core::ops::Range;

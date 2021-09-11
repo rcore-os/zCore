@@ -17,7 +17,7 @@ pub(super) fn init() {
 }
 
 hal_fn_impl! {
-    impl mod crate::defs::serial {
+    impl mod crate::hal_fn::serial {
         fn serial_put(x: u8) {
             let x = if x == b'\r' { b'\n' } else { x };
             STDIN.lock().push_back(x);

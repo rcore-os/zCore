@@ -1,13 +1,13 @@
 use core::fmt::{Error, Write};
-use spin::{Mutex, Once};
+use spin::Mutex;
 
-use crate::{mem::phys_to_virt, PhysAddr, VirtAddr};
+use crate::{mem::phys_to_virt, utils::init_once::InitOnce, PhysAddr, VirtAddr};
 
 pub(super) struct Uart {
     base_address: VirtAddr,
 }
 
-pub(super) static UART: Once<Mutex<Uart>> = Once::new();
+pub(super) static UART: InitOnce<Mutex<Uart>> = InitOnce::new();
 
 // 结构体Uart的实现块
 impl Uart {
@@ -84,7 +84,7 @@ impl Write for Uart {
 }
 
 pub(super) fn handle_interrupt() {
-    if let Some(uart) = UART.get() {
+    if let Some(uart) = UART.try_get() {
         if let Some(c) = uart.lock().get() {
             //CONSOLE
             crate::serial::serial_put(c);
@@ -108,7 +108,7 @@ pub(super) fn handle_interrupt() {
 }
 
 pub(super) fn init(base_paddr: PhysAddr) {
-    UART.call_once(|| {
+    UART.init(|| {
         let mut uart = Uart::new(phys_to_virt(base_paddr));
         uart.simple_init();
         Mutex::new(uart)

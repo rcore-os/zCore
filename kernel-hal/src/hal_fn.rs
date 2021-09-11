@@ -30,15 +30,6 @@ hal_fn_def! {
 
         /// Flush the physical frame.
         pub fn frame_flush(target: PhysAddr);
-
-        /// Allocate one physical frame.
-        pub(crate) fn frame_alloc() -> Option<PhysAddr>;
-
-        /// Allocate contiguous `frame_count` physical frames.
-        pub(crate) fn frame_alloc_contiguous(frame_count: usize, align_log2: usize) -> Option<PhysAddr>;
-
-        /// Deallocate a physical frame.
-        pub(crate) fn frame_dealloc(paddr: PhysAddr);
     }
 
     pub mod vm: common::vm {

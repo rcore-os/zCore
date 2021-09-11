@@ -8,7 +8,7 @@ lazy_static::lazy_static! {
 }
 
 hal_fn_impl! {
-    impl mod crate::defs::serial {
+    impl mod crate::hal_fn::serial {
         fn serial_put(x: u8) {
             STDIN.lock().unwrap().push_back(x);
             STDIN_CALLBACK.lock().unwrap().retain(|f| !f());

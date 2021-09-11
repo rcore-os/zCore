@@ -7,7 +7,7 @@ task_local! {
 }
 
 hal_fn_impl! {
-    impl mod crate::defs::thread {
+    impl mod crate::hal_fn::thread {
         fn spawn(future: Pin<Box<dyn Future<Output = ()> + Send + 'static>>, _vmtoken: usize) {
             async_std::task::spawn(future);
         }

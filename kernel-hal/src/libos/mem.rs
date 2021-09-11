@@ -1,8 +1,8 @@
-use super::mem_common::{ensure_mmap_pmem, AVAILABLE_FRAMES, PMEM_BASE, PMEM_SIZE};
+use super::mem_common::{ensure_mmap_pmem, PMEM_BASE, PMEM_SIZE};
 use crate::{PhysAddr, VirtAddr};
 
 hal_fn_impl! {
-    impl mod crate::defs::mem {
+    impl mod crate::hal_fn::mem {
         fn phys_to_virt(paddr: PhysAddr) -> VirtAddr {
             PMEM_BASE + paddr
         }
@@ -40,17 +40,6 @@ hal_fn_impl! {
 
         fn frame_flush(_target: PhysAddr) {
             // do nothing
-        }
-
-        fn frame_alloc() -> Option<PhysAddr> {
-            let ret = AVAILABLE_FRAMES.lock().unwrap().pop_front();
-            trace!("frame alloc: {:?}", ret);
-            ret
-        }
-
-        fn frame_dealloc(paddr: PhysAddr) {
-            trace!("frame dealloc: {:?}", paddr);
-            AVAILABLE_FRAMES.lock().unwrap().push_back(paddr);
         }
     }
 }

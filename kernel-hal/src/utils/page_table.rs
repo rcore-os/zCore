@@ -122,7 +122,6 @@ impl<L: PageTableLevel, PTE: GenericPTE> PageTableImpl<L, PTE> {
         Ok(p1e)
     }
 
-    #[allow(dead_code)]
     fn walk(
         &self,
         table: &[PTE],
@@ -148,7 +147,6 @@ impl<L: PageTableLevel, PTE: GenericPTE> PageTableImpl<L, PTE> {
         }
     }
 
-    #[allow(dead_code)]
     fn dump(&self, limit: usize, print_fn: impl Fn(core::fmt::Arguments)) {
         static LOCK: spin::Mutex<()> = spin::Mutex::new(());
         let _lock = LOCK.lock();
@@ -171,7 +169,6 @@ impl<L: PageTableLevel, PTE: GenericPTE> PageTableImpl<L, PTE> {
         );
     }
 
-    #[allow(dead_code)]
     pub(crate) unsafe fn activate(&mut self) {
         crate::vm::activate_paging(self.table_phys());
     }

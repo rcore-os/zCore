@@ -9,7 +9,7 @@ lazy_static::lazy_static! {
 }
 
 hal_fn_impl! {
-    impl mod crate::defs::timer {
+    impl mod crate::hal_fn::timer {
         fn timer_now() -> Duration {
             super::arch::timer::timer_now()
         }

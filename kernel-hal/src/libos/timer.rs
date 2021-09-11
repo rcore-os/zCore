@@ -1,7 +1,7 @@
 use std::time::{Duration, SystemTime};
 
 hal_fn_impl! {
-    impl mod crate::defs::timer {
+    impl mod crate::hal_fn::timer {
         fn timer_now() -> Duration {
             SystemTime::now()
                 .duration_since(SystemTime::UNIX_EPOCH)

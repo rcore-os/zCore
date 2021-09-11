@@ -5,7 +5,7 @@ use super::mem_common::{mmap, FRAME_FILE};
 use crate::{addr::is_aligned, MMUFlags, PhysAddr, VirtAddr, PAGE_SIZE};
 
 hal_fn_impl! {
-    impl mod crate::defs::vm {
+    impl mod crate::hal_fn::vm {
         fn current_vmtoken() -> PhysAddr {
             0
         }

@@ -16,18 +16,22 @@ extern crate cfg_if;
 mod macros;
 
 mod common;
-mod defs;
+mod config;
+mod hal_fn;
+mod kernel_handler;
 mod utils;
-
-pub use common::{addr, defs::*, future, user};
 
 cfg_if! {
     if #[cfg(feature = "libos")] {
-        mod libos;
-        pub use self::libos::*;
+        #[path = "libos/mod.rs"]
+        mod imp;
     } else {
-        mod bare;
-        pub use self::bare::*;
-        use common::config::CONFIG;
+        #[path = "bare/mod.rs"]
+        mod imp;
     }
 }
+
+pub use common::{addr, defs::*, future, user};
+pub use config::*;
+pub use imp::*;
+pub use kernel_handler::*;

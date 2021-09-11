@@ -66,50 +66,34 @@ pub fn init_heap() {
     info!("heap init end");
 }
 
-mod hal_extern_fn {
-    use super::*;
+pub fn frame_alloc() -> Option<usize> {
+    // get the real address of the alloc frame
+    let ret = FRAME_ALLOCATOR
+        .lock()
+        .alloc()
+        .map(|id| id * PAGE_SIZE + MEMORY_OFFSET);
+    trace!("Allocate frame: {:x?}", ret);
+    ret
+}
 
-    #[used]
-    #[export_name = "hal_phys_to_virt_offset"]
-    static PHYS_TO_VIRT_OFFSET: usize = PHYSICAL_MEMORY_OFFSET;
+pub fn frame_alloc_contiguous(frame_count: usize, align_log2: usize) -> Option<usize> {
+    let ret = FRAME_ALLOCATOR
+        .lock()
+        .alloc_contiguous(frame_count, align_log2)
+        .map(|id| id * PAGE_SIZE + MEMORY_OFFSET);
+    trace!(
+        "Allocate contiguous frames: {:x?} ~ {:x?}",
+        ret,
+        ret.map(|x| x + frame_count)
+    );
+    ret
+}
 
-    #[no_mangle]
-    #[allow(improper_ctypes_definitions)]
-    pub extern "C" fn hal_frame_alloc() -> Option<usize> {
-        // get the real address of the alloc frame
-        let ret = FRAME_ALLOCATOR
-            .lock()
-            .alloc()
-            .map(|id| id * PAGE_SIZE + MEMORY_OFFSET);
-        trace!("Allocate frame: {:x?}", ret);
-        ret
-    }
-
-    #[no_mangle]
-    #[allow(improper_ctypes_definitions)]
-    pub extern "C" fn hal_frame_alloc_contiguous(
-        page_num: usize,
-        align_log2: usize,
-    ) -> Option<usize> {
-        let ret = FRAME_ALLOCATOR
-            .lock()
-            .alloc_contiguous(page_num, align_log2)
-            .map(|id| id * PAGE_SIZE + MEMORY_OFFSET);
-        trace!(
-            "Allocate contiguous frames: {:x?} ~ {:x?}",
-            ret,
-            ret.map(|x| x + page_num)
-        );
-        ret
-    }
-
-    #[no_mangle]
-    pub extern "C" fn hal_frame_dealloc(target: usize) {
-        trace!("Deallocate frame: {:x}", target);
-        FRAME_ALLOCATOR
-            .lock()
-            .dealloc((target - MEMORY_OFFSET) / PAGE_SIZE);
-    }
+pub fn frame_dealloc(target: usize) {
+    trace!("Deallocate frame: {:x}", target);
+    FRAME_ALLOCATOR
+        .lock()
+        .dealloc((target - MEMORY_OFFSET) / PAGE_SIZE);
 }
 
 #[cfg(target_arch = "riscv64")]

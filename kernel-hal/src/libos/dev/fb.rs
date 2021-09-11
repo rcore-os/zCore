@@ -75,7 +75,7 @@ struct FbBitfield {
 }
 
 hal_fn_impl! {
-    impl mod crate::defs::dev::fb {
+    impl mod crate::hal_fn::dev::fb {
         fn init() {
             const FBIOGET_VSCREENINFO: u64 = 0x4600;
             const FBIOGET_FSCREENINFO: u64 = 0x4602;

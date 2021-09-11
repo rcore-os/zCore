@@ -54,7 +54,7 @@ pub(super) fn init() {
 }
 
 hal_fn_impl! {
-    impl mod crate::defs::interrupt {
+    impl mod crate::hal_fn::interrupt {
         fn handle_irq(vector: u32) {
             debug!("PLIC handle: {:#x}", vector);
             IRQ_MANAGER.lock().handle(vector);
