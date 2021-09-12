@@ -1,7 +1,7 @@
 use alloc::boxed::Box;
 use core::{fmt::Arguments, future::Future, ops::Range, pin::Pin, time::Duration};
 
-use crate::{common, HalResult, PhysAddr, VirtAddr};
+use crate::{common, HalResult, MMUFlags, PhysAddr, VirtAddr};
 
 hal_fn_def! {
     pub mod cpu {
@@ -95,11 +95,12 @@ hal_fn_def! {
             }
         }
 
-        /// Get fault address of the last page fault.
-        pub fn fetch_fault_vaddr() -> VirtAddr;
-
         /// Get the trap number when trap.
         pub fn fetch_trap_num(context: &UserContext) -> usize;
+
+        /// Get the fault virtual address and access type of the last page fault by `info_reg`
+        /// (`error_code` for x86, `scause` for riscv).
+        pub fn fetch_page_fault_info(info_reg: usize) -> (VirtAddr, MMUFlags);
     }
 
     pub mod thread {

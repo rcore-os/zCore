@@ -27,13 +27,8 @@ fn super_soft() {
     sbi_println!("Interrupt::SupervisorSoft!");
 }
 
-fn page_fault(tf: &mut TrapFrame, access_flags: MMUFlags) {
-    let fault_vaddr = stval::read();
-    // TODO
-    panic!(
-        "EXCEPTION Page Fault @ {:#x} with access {:?}, pc = {:#x}",
-        fault_vaddr, access_flags, tf.sepc,
-    );
+fn page_fault(access_flags: MMUFlags) {
+    crate::KHANDLER.handle_page_fault(stval::read(), access_flags);
 }
 
 #[no_mangle]
@@ -51,9 +46,9 @@ pub extern "C" fn trap_handler(tf: &mut TrapFrame) {
         Trap::Exception(Exception::StoreFault) => {
             panic!("Store access fault: {:#x}->{:#x}", sepc, stval::read())
         }
-        Trap::Exception(Exception::LoadPageFault) => page_fault(tf, MMUFlags::READ),
-        Trap::Exception(Exception::StorePageFault) => page_fault(tf, MMUFlags::WRITE),
-        Trap::Exception(Exception::InstructionPageFault) => page_fault(tf, MMUFlags::EXECUTE),
+        Trap::Exception(Exception::LoadPageFault) => page_fault(MMUFlags::READ),
+        Trap::Exception(Exception::StorePageFault) => page_fault(MMUFlags::WRITE),
+        Trap::Exception(Exception::InstructionPageFault) => page_fault(MMUFlags::EXECUTE),
         Trap::Interrupt(Interrupt::SupervisorTimer) => super_timer(),
         Trap::Interrupt(Interrupt::SupervisorSoft) => super_soft(),
         Trap::Interrupt(Interrupt::SupervisorExternal) => plic::handle_interrupt(),

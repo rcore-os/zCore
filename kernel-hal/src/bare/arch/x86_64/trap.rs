@@ -37,11 +37,8 @@ fn double_fault(tf: &TrapFrame) {
 }
 
 fn page_fault(tf: &mut TrapFrame) {
-    panic!(
-        "\nEXCEPTION: Page Fault @ {:#x?}\n{:#x?}",
-        crate::context::fetch_fault_vaddr(),
-        tf
-    );
+    let (fault_vaddr, access_flags) = crate::context::fetch_page_fault_info(tf.error_code);
+    crate::KHANDLER.handle_page_fault(fault_vaddr, access_flags);
 }
 
 #[no_mangle]

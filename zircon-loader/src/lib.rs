@@ -225,28 +225,13 @@ async fn new_thread(thread: CurrentThread) {
             }
             0xe => {
                 EXCEPTIONS_PGFAULT.add(1);
-                let mut flags = MMUFlags::empty();
-                if error_code & (1 << 1) != 0 {
-                    flags.insert(MMUFlags::WRITE)
-                } else {
-                    flags.insert(MMUFlags::READ)
-                }
-                if error_code & (1 << 2) != 0 {
-                    flags.insert(MMUFlags::USER)
-                }
-                if error_code & (1 << 3) != 0 {
-                    warn!("page table entry has reserved bits set!")
-                }
-                if error_code & (1 << 4) != 0 {
-                    flags.insert(MMUFlags::EXECUTE)
-                }
-                let fault_vaddr = kernel_hal::context::fetch_fault_vaddr();
+                let (vaddr, flags) = kernel_hal::context::fetch_page_fault_info(error_code);
                 info!(
                     "page fault from user mode {:#x} {:#x?} {:?}",
-                    fault_vaddr, error_code, flags
+                    vaddr, error_code, flags
                 );
                 let vmar = thread.proc().vmar();
-                if let Err(err) = vmar.handle_page_fault(fault_vaddr, flags) {
+                if let Err(err) = vmar.handle_page_fault(vaddr, flags) {
                     error!("handle_page_fault error: {:?}", err);
                     thread.handle_exception(ExceptionType::FatalPageFault).await;
                 }

@@ -11,7 +11,6 @@ extern crate log;
 use {
     alloc::{boxed::Box, string::String, sync::Arc, vec::Vec},
     core::{future::Future, pin::Pin},
-    kernel_hal::MMUFlags,
     linux_object::{
         fs::{vfs::FileSystem, INodeExt},
         loader::LinuxElfLoader,
@@ -101,12 +100,7 @@ async fn new_thread(thread: CurrentThread) {
                 }
             }
             0xe => {
-                let vaddr = kernel_hal::context::fetch_fault_vaddr();
-                let flags = if cx.error_code & 0x2 == 0 {
-                    MMUFlags::READ
-                } else {
-                    MMUFlags::WRITE
-                };
+                let (vaddr, flags) = kernel_hal::context::fetch_page_fault_info(cx.error_code);
                 error!("page fault from user mode @ {:#x}({:?})", vaddr, flags);
                 let vmar = thread.proc().vmar();
                 match vmar.handle_page_fault(vaddr, flags) {
@@ -161,17 +155,7 @@ async fn new_thread(thread: CurrentThread) {
                     8 => handle_syscall(&thread, &mut cx).await,
                     // PageFault
                     12 | 13 | 15 => {
-                        let vaddr = kernel_hal::context::fetch_fault_vaddr();
-
-                        //注意这里flags没有包含WRITE权限，后面handle会移除写权限
-                        let flags = if trap_num == 15 {
-                            MMUFlags::WRITE
-                        } else if trap_num == 12 {
-                            MMUFlags::EXECUTE
-                        } else {
-                            MMUFlags::READ
-                        };
-
+                        let (vaddr, flags) = kernel_hal::context::fetch_page_fault_info(trap_num);
                         info!(
                             "page fault from pid: {} user mode, vaddr:{:#x}, trap:{}",
                             pid, vaddr, trap_num
@@ -181,10 +165,8 @@ async fn new_thread(thread: CurrentThread) {
                             Ok(()) => {}
                             Err(error) => {
                                 panic!(
-                                    "{:?} Page Fault from user mode @ {:#x}\n{:#x?}",
-                                    error,
-                                    kernel_hal::context::fetch_fault_vaddr(),
-                                    cx
+                                    "Page Fault from user mode @ {:#x}({:?}): {:?}\n{:#x?}",
+                                    vaddr, flags, error, cx
                                 );
                             }
                         }

@@ -157,7 +157,7 @@ impl ExceptionContext {
         ExceptionContext {
             vector: cx.trap_num as u64,
             err_code: cx.error_code as u64,
-            cr2: kernel_hal::context::fetch_fault_vaddr() as u64,
+            cr2: kernel_hal::context::fetch_page_fault_info(cx.error_code).0 as u64,
         }
     }
     #[cfg(target_arch = "aarch64")]

@@ -31,7 +31,7 @@ mod fs;
 #[cfg(target_arch = "x86_64")]
 use rboot::BootInfo;
 
-use kernel_hal::{KernelConfig, KernelHandler};
+use kernel_hal::{KernelConfig, KernelHandler, MMUFlags};
 
 use alloc::{boxed::Box, string::String, vec, vec::Vec};
 
@@ -231,5 +231,9 @@ impl KernelHandler for ZcoreKernelHandler {
 
     fn frame_dealloc(&self, paddr: usize) {
         memory::frame_dealloc(paddr)
+    }
+
+    fn handle_page_fault(&self, fault_vaddr: usize, access_flags: MMUFlags) {
+        panic!("page fault from kernel mode @ {:#x}({:?})", fault_vaddr, access_flags);
     }
 }
