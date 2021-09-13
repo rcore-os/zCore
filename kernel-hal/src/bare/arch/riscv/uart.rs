@@ -88,21 +88,6 @@ pub(super) fn handle_interrupt() {
         if let Some(c) = uart.lock().get() {
             //CONSOLE
             crate::serial::serial_put(c);
-
-            /*
-            * 因serial_write()已可以被回调输出了，这里则不再需要了
-            match c {
-                0x7f => { //0x8 [backspace] ; 而实际qemu运行，[backspace]键输出0x7f, 表示del
-                    bare_print!("{} {}", 8 as char, 8 as char);
-                },
-                10 | 13 => { // 新行或回车
-                    bare_println!();
-                },
-                _ => {
-                    bare_print!("{}", c as char);
-                },
-            }
-            */
         }
     }
 }

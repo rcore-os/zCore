@@ -84,7 +84,7 @@ pub(super) fn handle_interrupt() {
         match interrupt {
             1..=8 => {
                 //virtio::handle_interrupt(interrupt);
-                sbi_println!("plic virtio external interrupt: {}", interrupt);
+                info!("plic virtio external interrupt: {}", interrupt);
             }
             UART0_INT_NUM => {
                 //UART中断ID是10
@@ -94,7 +94,7 @@ pub(super) fn handle_interrupt() {
                 //interrupt::try_process_serial();
             }
             _ => {
-                sbi_println!("Unknown external interrupt: {}", interrupt);
+                info!("Unknown external interrupt: {}", interrupt);
             }
         }
         //这将复位pending的中断，允许UART再次中断。

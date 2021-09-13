@@ -5,6 +5,7 @@ pub mod addr;
 pub mod context;
 pub mod future;
 pub mod mem;
+pub mod serial;
 pub mod user;
 pub mod vdso;
 pub mod vm;

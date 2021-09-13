@@ -18,30 +18,8 @@ pub(super) fn init() {
 
 hal_fn_impl! {
     impl mod crate::hal_fn::serial {
-        fn serial_put(x: u8) {
-            let x = if x == b'\r' { b'\n' } else { x };
-            STDIN.lock().push_back(x);
-            STDIN_CALLBACK.lock().retain(|f| !f());
-        }
-
-        fn serial_set_callback(callback: Box<dyn Fn() -> bool + Send + Sync>) {
-            STDIN_CALLBACK.lock().push(callback);
-        }
-
-        fn serial_read(buf: &mut [u8]) -> usize {
-            let mut stdin = STDIN.lock();
-            let len = stdin.len().min(buf.len());
-            for c in &mut buf[..len] {
-                *c = stdin.pop_front().unwrap();
-            }
-            len
-        }
-
         fn serial_write_fmt(fmt: Arguments) {
             COM1.lock().write_fmt(fmt).unwrap();
-            // if let Some(console) = CONSOLE.lock().as_mut() {
-            //     console.write_fmt(fmt).unwrap();
-            // }
         }
     }
 }

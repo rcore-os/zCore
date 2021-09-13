@@ -133,12 +133,6 @@ async fn new_thread(thread: CurrentThread) {
                         if trap_num == 4 || trap_num == 5 {
                             debug!("Timer interrupt: {}", trap_num);
 
-                            /*
-                            * 已在irq_handle里加入了timer处理函数
-                            kernel_hal::timer_set_next();
-                            kernel_hal::timer_tick();
-                            */
-
                             kernel_hal::future::yield_now().await;
                         }
 

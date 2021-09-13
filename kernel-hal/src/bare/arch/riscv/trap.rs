@@ -6,7 +6,7 @@ use super::{plic, sbi};
 use crate::MMUFlags;
 
 fn breakpoint(sepc: &mut usize) {
-    sbi_println!("Exception::Breakpoint: A breakpoint set @0x{:x} ", sepc);
+    info!("Exception::Breakpoint: A breakpoint set @0x{:x} ", sepc);
 
     //sepc为触发中断指令ebreak的地址
     //防止无限循环中断，让sret返回时跳转到sepc的下一条指令地址
@@ -17,14 +17,12 @@ pub(super) fn super_timer() {
     super::timer::timer_set_next();
     crate::timer::timer_tick();
 
-    //sbi_print!(".");
-
     //发生外界中断时，epc的指令还没有执行，故无需修改epc到下一条
 }
 
 fn super_soft() {
     sbi::clear_ipi();
-    sbi_println!("Interrupt::SupervisorSoft!");
+    info!("Interrupt::SupervisorSoft!");
 }
 
 fn page_fault(access_flags: MMUFlags) {

@@ -1,8 +1,5 @@
 #![allow(dead_code)]
 
-#[macro_use]
-pub mod serial;
-
 mod consts;
 mod plic;
 mod sbi;
@@ -14,6 +11,7 @@ pub mod context;
 pub mod cpu;
 pub mod interrupt;
 pub mod mem;
+pub mod serial;
 pub mod special;
 pub mod timer;
 pub mod vm;
@@ -22,8 +20,7 @@ pub fn init() {
     vm::remap_the_kernel().unwrap();
     interrupt::init();
     timer::init();
-
-    unsafe { asm!("ebreak") };
+    uart::init(consts::UART_BASE);
 
     #[cfg(feature = "board_qemu")]
     {

@@ -122,26 +122,12 @@ hal_fn_def! {
         pub fn timer_set(deadline: Duration, callback: Box<dyn FnOnce(Duration) + Send + Sync>);
 
         /// Check timers, call when timer interrupt happened.
-        pub fn timer_tick();
+        pub(crate) fn timer_tick();
     }
 
-    pub mod serial {
-        /// Register a callback of serial readable event.
-        pub fn serial_set_callback(callback: Box<dyn Fn() -> bool + Send + Sync>);
-
-        /// Put a char to serial buffer.
-        pub fn serial_put(x: u8);
-
-        /// Read a string from serial buffer.
-        pub fn serial_read(buf: &mut [u8]) -> usize;
-
+    pub mod serial: common::serial {
         /// Print format string and its arguments to serial.
         pub fn serial_write_fmt(fmt: Arguments);
-
-        /// Print a string to serial.
-        pub fn serial_write(s: &str) {
-            serial_write_fmt(format_args!("{}", s));
-        }
     }
 
     pub mod rand {
