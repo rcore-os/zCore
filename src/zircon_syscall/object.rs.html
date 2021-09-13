@@ -572,13 +572,6 @@
 <span id="572">572</span>
 <span id="573">573</span>
 <span id="574">574</span>
-<span id="575">575</span>
-<span id="576">576</span>
-<span id="577">577</span>
-<span id="578">578</span>
-<span id="579">579</span>
-<span id="580">580</span>
-<span id="581">581</span>
 </pre><pre class="rust">
 <span class="kw">use</span> {
     <span class="kw">super</span>::<span class="kw-2">*</span>,
@@ -826,9 +819,6 @@
             <span class="string">&quot;object.get_info: handle={:#x?}, topic={:?}, buffer=({:#x}; {:#x})&quot;</span>,
             <span class="ident">handle</span>, <span class="ident">topic</span>, <span class="ident">buffer</span>, <span class="ident">buffer_size</span>,
         );
-        <span class="kw">if</span> <span class="ident">buffer_size</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span> {
-            <span class="ident">actual</span>.<span class="ident">write_if_not_null</span>(<span class="number">0</span>)<span class="question-mark">?</span>;
-        }
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>();
         <span class="kw">match</span> <span class="ident">topic</span> {
             <span class="ident">Topic::HandleValid</span> <span class="op">=</span><span class="op">&gt;</span> {
@@ -921,12 +911,8 @@
                 };
                 <span class="kw">let</span> <span class="ident">count</span> <span class="op">=</span> (<span class="ident">buffer_size</span> <span class="op">/</span> <span class="ident">core::mem::size_of</span>::<span class="op">&lt;</span><span class="ident">KoID</span><span class="op">&gt;</span>()).<span class="ident">min</span>(<span class="ident">ids</span>.<span class="ident">len</span>());
                 <span class="ident">UserOutPtr</span>::<span class="op">&lt;</span><span class="ident">KoID</span><span class="op">&gt;</span><span class="ident">::from</span>(<span class="ident">buffer</span>).<span class="ident">write_array</span>(<span class="kw-2">&amp;</span><span class="ident">ids</span>[..<span class="ident">count</span>])<span class="question-mark">?</span>;
-                <span class="kw">if</span> <span class="op">!</span><span class="ident">actual</span>.<span class="ident">is_null</span>() {
-                    <span class="ident">actual</span>.<span class="ident">write</span>(<span class="ident">count</span>)<span class="question-mark">?</span>;
-                }
-                <span class="kw">if</span> <span class="op">!</span><span class="ident">avail</span>.<span class="ident">is_null</span>() {
-                    <span class="ident">avail</span>.<span class="ident">write</span>(<span class="ident">ids</span>.<span class="ident">len</span>())<span class="question-mark">?</span>;
-                }
+                <span class="ident">actual</span>.<span class="ident">write</span>(<span class="ident">count</span>)<span class="question-mark">?</span>;
+                <span class="ident">avail</span>.<span class="ident">write</span>(<span class="ident">ids</span>.<span class="ident">len</span>())<span class="question-mark">?</span>;
             }
             <span class="ident">Topic::Bti</span> <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">info_ptr</span> <span class="op">=</span> <span class="ident">UserOutPtr</span>::<span class="op">&lt;</span><span class="ident">BtiInfo</span><span class="op">&gt;</span><span class="ident">::from_addr_size</span>(<span class="ident">buffer</span>, <span class="ident">buffer_size</span>)<span class="question-mark">?</span>;

@@ -244,20 +244,6 @@
 <span id="244">244</span>
 <span id="245">245</span>
 <span id="246">246</span>
-<span id="247">247</span>
-<span id="248">248</span>
-<span id="249">249</span>
-<span id="250">250</span>
-<span id="251">251</span>
-<span id="252">252</span>
-<span id="253">253</span>
-<span id="254">254</span>
-<span id="255">255</span>
-<span id="256">256</span>
-<span id="257">257</span>
-<span id="258">258</span>
-<span id="259">259</span>
-<span id="260">260</span>
 </pre><pre class="rust">
 <span class="doccomment">//! Linux file objects</span>
 <span class="attribute">#![<span class="ident">deny</span>(<span class="ident">missing_docs</span>)]</span>
@@ -297,18 +283,6 @@
 <span class="kw">mod</span> <span class="ident">random</span>;
 <span class="kw">mod</span> <span class="ident">stdio</span>;
 
-<span class="doccomment">/// missing documentation</span>
-<span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">FileLikeType</span> {
-    <span class="doccomment">/// missing documentation</span>
-    <span class="ident">File</span>,
-    <span class="doccomment">/// missing documentation</span>
-    <span class="ident">TcpSocket</span>,
-    <span class="doccomment">/// missing documentation</span>
-    <span class="ident">UdpSocket</span>,
-    <span class="doccomment">/// missing documentation</span>
-    <span class="ident">RawSocket</span>,
-}
-
 <span class="attribute">#[<span class="ident">async_trait</span>]</span>
 <span class="doccomment">/// Generic file interface</span>
 <span class="doccomment">///</span>
@@ -332,8 +306,6 @@
     <span class="kw">fn</span> <span class="ident">ioctl</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">request</span>: <span class="ident">usize</span>, <span class="ident">arg1</span>: <span class="ident">usize</span>, <span class="ident">arg2</span>: <span class="ident">usize</span>, <span class="ident">arg3</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">LxResult</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>;
     <span class="doccomment">/// manipulate file descriptor</span>
     <span class="kw">fn</span> <span class="ident">fcntl</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">cmd</span>: <span class="ident">usize</span>, <span class="ident">arg</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">LxResult</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>;
-    <span class="doccomment">/// file type</span>
-    <span class="kw">fn</span> <span class="ident">file_type</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">LxResult</span><span class="op">&lt;</span><span class="ident">FileLikeType</span><span class="op">&gt;</span>;
 }
 
 <span class="macro">impl_downcast!</span>(<span class="ident">sync</span> <span class="ident">FileLike</span>);

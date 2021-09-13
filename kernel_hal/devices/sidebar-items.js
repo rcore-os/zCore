@@ -1,1 +1,0 @@
-initSidebarItems({"enum":[["DeviceType",""]],"fn":[["get_driver",""],["get_net_driver",""],["init",""]],"mod":[["e1000",""]],"trait":[["Driver",""],["NetDriver",""]]});

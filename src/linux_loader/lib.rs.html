@@ -242,80 +242,6 @@
 <span id="242">242</span>
 <span id="243">243</span>
 <span id="244">244</span>
-<span id="245">245</span>
-<span id="246">246</span>
-<span id="247">247</span>
-<span id="248">248</span>
-<span id="249">249</span>
-<span id="250">250</span>
-<span id="251">251</span>
-<span id="252">252</span>
-<span id="253">253</span>
-<span id="254">254</span>
-<span id="255">255</span>
-<span id="256">256</span>
-<span id="257">257</span>
-<span id="258">258</span>
-<span id="259">259</span>
-<span id="260">260</span>
-<span id="261">261</span>
-<span id="262">262</span>
-<span id="263">263</span>
-<span id="264">264</span>
-<span id="265">265</span>
-<span id="266">266</span>
-<span id="267">267</span>
-<span id="268">268</span>
-<span id="269">269</span>
-<span id="270">270</span>
-<span id="271">271</span>
-<span id="272">272</span>
-<span id="273">273</span>
-<span id="274">274</span>
-<span id="275">275</span>
-<span id="276">276</span>
-<span id="277">277</span>
-<span id="278">278</span>
-<span id="279">279</span>
-<span id="280">280</span>
-<span id="281">281</span>
-<span id="282">282</span>
-<span id="283">283</span>
-<span id="284">284</span>
-<span id="285">285</span>
-<span id="286">286</span>
-<span id="287">287</span>
-<span id="288">288</span>
-<span id="289">289</span>
-<span id="290">290</span>
-<span id="291">291</span>
-<span id="292">292</span>
-<span id="293">293</span>
-<span id="294">294</span>
-<span id="295">295</span>
-<span id="296">296</span>
-<span id="297">297</span>
-<span id="298">298</span>
-<span id="299">299</span>
-<span id="300">300</span>
-<span id="301">301</span>
-<span id="302">302</span>
-<span id="303">303</span>
-<span id="304">304</span>
-<span id="305">305</span>
-<span id="306">306</span>
-<span id="307">307</span>
-<span id="308">308</span>
-<span id="309">309</span>
-<span id="310">310</span>
-<span id="311">311</span>
-<span id="312">312</span>
-<span id="313">313</span>
-<span id="314">314</span>
-<span id="315">315</span>
-<span id="316">316</span>
-<span id="317">317</span>
-<span id="318">318</span>
 </pre><pre class="rust">
 <span class="doccomment">//! Linux LibOS</span>
 <span class="doccomment">//! - run process and manage trap/interrupt/syscall</span>
@@ -402,8 +328,6 @@
         <span class="kw">if</span> <span class="ident">thread</span>.<span class="ident">state</span>() <span class="op">=</span><span class="op">=</span> <span class="ident">ThreadState::Dying</span> {
             <span class="kw">break</span>;
         }
-
-        <span class="comment">// super_mode_net_test();</span>
 
         <span class="comment">// run</span>
         <span class="macro">trace!</span>(<span class="string">&quot;go to user: {:#x?}&quot;</span>, <span class="ident">cx</span>);
@@ -563,78 +487,6 @@
     };
     <span class="ident">cx</span>.<span class="ident">general</span>.<span class="ident">a0</span> <span class="op">=</span> <span class="ident">syscall</span>.<span class="ident">syscall</span>(<span class="ident">num</span>, <span class="ident">args</span>).<span class="kw">await</span> <span class="kw">as</span> <span class="ident">usize</span>;
 }
-
-<span class="comment">// #[allow(dead_code)]</span>
-<span class="comment">// fn super_mode_net_test() {</span>
-<span class="comment">//     use smoltcp::socket::UdpPacketMetadata;</span>
-<span class="comment">//     use smoltcp::socket::UdpSocket;</span>
-<span class="comment">//     use smoltcp::socket::UdpSocketBuffer;</span>
-<span class="comment">//     use smoltcp::time::Instant;</span>
-<span class="comment">//     use core::str::from_utf8;</span>
-<span class="comment">//     use kernel_hal::devices::get_net_driver;</span>
-<span class="comment">//     use kernel_hal::timer_now;</span>
-<span class="comment">//     use kernel_hal_bare::devices::net::e1000::E1000Interface;</span>
-<span class="comment">//     use smoltcp::socket::SocketSet;</span>
-
-<span class="comment">//     // udp s</span>
-<span class="comment">//     let udp_rx_buffer = UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY], vec![0; 64]);</span>
-<span class="comment">//     let udp_tx_buffer = UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY], vec![0; 128]);</span>
-<span class="comment">//     // udp socket</span>
-<span class="comment">//     let udp_socket = UdpSocket::new(udp_rx_buffer, udp_tx_buffer);</span>
-
-<span class="comment">//     use alloc::vec;</span>
-<span class="comment">//     // use alloc::vec::Vec;</span>
-<span class="comment">//     let mut sockets = SocketSet::new(vec![]);</span>
-<span class="comment">//     let udp_handle = sockets.add(udp_socket);</span>
-
-<span class="comment">//     let e1000 = get_net_driver()[0].clone();</span>
-<span class="comment">//         // let local = NET_DRIVERS.read()[0].clone();</span>
-
-<span class="comment">//     if let Ok(_li) = e1000.downcast_arc::&lt;E1000Interface&gt;() {</span>
-<span class="comment">//             // use std::os::unix::io::AsRawFd;</span>
-<span class="comment">//             // let fd = li.iface.lock().device().as_raw_fd();</span>
-<span class="comment">//             // let mut sockets = SOCKETS.lock();</span>
-<span class="comment">//         loop {</span>
-<span class="comment">//             // let _timestamp = Instant::now();</span>
-<span class="comment">//             let timestamp = Instant::from_millis(timer_now().as_millis() as i64);</span>
-<span class="comment">//             match _li.iface.lock().poll(&amp;mut sockets, timestamp) {</span>
-<span class="comment">//                 Ok(_a) =&gt; {</span>
-<span class="comment">//                     // warn!(&quot;poll ok: {}&quot;, a);</span>
-<span class="comment">//                 }</span>
-<span class="comment">//                 Err(e) =&gt; {</span>
-<span class="comment">//                     warn!(&quot;poll error: {}&quot;, e);</span>
-<span class="comment">//                 }</span>
-<span class="comment">//             }</span>
-<span class="comment">//             {</span>
-<span class="comment">//                 // udp bind</span>
-<span class="comment">//                 let mut socket = sockets.get::&lt;UdpSocket&gt;(udp_handle);</span>
-<span class="comment">//                 if !socket.is_open() {</span>
-<span class="comment">//                     warn!(&quot;bind 6969&quot;);</span>
-<span class="comment">//                     socket.bind(6969).unwrap()</span>
-<span class="comment">//                 }</span>
-<span class="comment">//                  // udp recv</span>
-<span class="comment">//                 let client = match socket.recv() {</span>
-<span class="comment">//                     Ok((data, endpoint)) =&gt; {</span>
-<span class="comment">//                         warn!(&quot; udp recv : {} form {}&quot;, from_utf8(data).unwrap(), endpoint);</span>
-<span class="comment">//                         Some(endpoint)</span>
-<span class="comment">//                     }</span>
-<span class="comment">//                     Err(_) =&gt; None,</span>
-<span class="comment">//                 };</span>
-<span class="comment">//                 // udp send</span>
-<span class="comment">//                 if let Some(endpoint) = client {</span>
-<span class="comment">//                     let data = b&quot;cargo test OK&quot;;</span>
-<span class="comment">//                     warn!(</span>
-<span class="comment">//                         &quot;udp:6969 send data: {:?}&quot;,</span>
-<span class="comment">//                         from_utf8(data.as_ref()).unwrap()</span>
-<span class="comment">//                     );</span>
-<span class="comment">//                     socket.send_slice(data, endpoint).unwrap();</span>
-<span class="comment">//                 }</span>
-<span class="comment">//             }</span>
-<span class="comment">//         }</span>
-<span class="comment">//     }</span>
-<span class="comment">//     todo!();</span>
-
-<span class="comment">// }</span>
 </pre></div>
 </section><section id="search" class="content hidden"></section><div id="rustdoc-vars" data-root-path="../../" data-current-crate="linux_loader" data-search-index-js="../../search-index.js" data-search-js="../../search.js"></div>
     <script src="../../main.js"></script><script src="../../source-script.js"></script><script src="../../source-files.js"></script>

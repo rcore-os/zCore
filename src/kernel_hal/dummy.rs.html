@@ -483,12 +483,6 @@
 <span id="483">483</span>
 <span id="484">484</span>
 <span id="485">485</span>
-<span id="486">486</span>
-<span id="487">487</span>
-<span id="488">488</span>
-<span id="489">489</span>
-<span id="490">490</span>
-<span id="491">491</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
 <span class="kw">use</span> <span class="kw">crate</span><span class="ident">::vdso::VdsoConstants</span>;
@@ -956,12 +950,6 @@
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;riscv64&quot;</span>)]</span>
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">fill_random</span>(<span class="ident">_buf</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> [<span class="ident">u8</span>]) {
     <span class="comment">// TODO</span>
-}
-
-<span class="attribute">#[<span class="ident">linkage</span> <span class="op">=</span> <span class="string">&quot;weak&quot;</span>]</span>
-<span class="attribute">#[<span class="ident">export_name</span> <span class="op">=</span> <span class="string">&quot;hal_rand&quot;</span>]</span>
-<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">rand</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u64</span> {
-    <span class="macro">unimplemented!</span>()
 }
 
 <span class="attribute">#[<span class="ident">linkage</span> <span class="op">=</span> <span class="string">&quot;weak&quot;</span>]</span>
