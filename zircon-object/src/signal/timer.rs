@@ -73,7 +73,7 @@ impl Timer {
         inner.deadline = Some(deadline);
         self.base.signal_clear(Signal::SIGNALED);
         let me = Arc::downgrade(self);
-        kernel_hal::timer_set(
+        kernel_hal::timer::timer_set(
             deadline,
             Box::new(move |now| me.upgrade().map(|timer| timer.touch(now)).unwrap_or(())),
         );
@@ -100,7 +100,7 @@ impl Timer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use kernel_hal::timer_now;
+    use kernel_hal::timer::timer_now;
 
     #[test]
     fn one_shot() {

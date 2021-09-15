@@ -12,7 +12,7 @@ pub fn pci_bdf_raw_addr(bus: u8, dev: u8, func: u8, offset: u8) -> u32 {
 
 cfg_if::cfg_if! {
 if #[cfg(all(target_arch = "x86_64", target_os = "none"))] {
-    use kernel_hal::{inpd, outpd};
+    use kernel_hal::x86_64::{pio_read, pio_write};
     use spin::Mutex;
 
     static PIO_LOCK: Mutex<()> = Mutex::new(());
@@ -26,8 +26,8 @@ if #[cfg(all(target_arch = "x86_64", target_os = "none"))] {
         if shift + width > 32 {
             return Err(ZxError::INVALID_ARGS);
         }
-        outpd(PCI_CONFIG_ADDR, (addr & !0x3) | PCI_CONFIG_ENABLE);
-        let tmp_val = u32::from_le(inpd(PCI_CONFIG_DATA));
+        pio_write(PCI_CONFIG_ADDR, (addr & !0x3) | PCI_CONFIG_ENABLE);
+        let tmp_val = u32::from_le(pio_read(PCI_CONFIG_DATA));
         Ok((tmp_val >> shift) & (((1u64 << width) - 1) as u32))
     }
     pub fn pio_config_write_addr(addr: u32, val: u32, width: usize) -> ZxResult {
@@ -36,15 +36,15 @@ if #[cfg(all(target_arch = "x86_64", target_os = "none"))] {
         if shift + width > 32 {
             return Err(ZxError::INVALID_ARGS);
         }
-        outpd(PCI_CONFIG_ADDR, (addr & !0x3) | PCI_CONFIG_ENABLE);
+        pio_write(PCI_CONFIG_ADDR, (addr & !0x3) | PCI_CONFIG_ENABLE);
         let width_mask = ((1u64 << width) - 1) as u32;
         let val = val & width_mask;
         let tmp_val = if width < 32 {
-            (u32::from_le(inpd(PCI_CONFIG_DATA)) & !(width_mask << shift)) | (val << shift)
+            (u32::from_le(pio_read(PCI_CONFIG_DATA)) & !(width_mask << shift)) | (val << shift)
         } else {
             val
         };
-        outpd(PCI_CONFIG_DATA, u32::to_le(tmp_val));
+        pio_write(PCI_CONFIG_DATA, u32::to_le(tmp_val));
         Ok(())
     }
 } else {

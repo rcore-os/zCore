@@ -23,7 +23,7 @@ struct Opt {
 
 #[async_std::main]
 async fn main() {
-    kernel_hal_unix::init();
+    kernel_hal::init();
     init_logger();
 
     let opt = Opt::from_args();
@@ -53,7 +53,7 @@ fn init_logger() {
             use log::Level;
             use std::io::Write;
 
-            let (tid, pid) = kernel_hal::Thread::get_tid();
+            let (tid, pid) = kernel_hal::thread::get_tid();
             let mut style = buf.style();
             match record.level() {
                 Level::Trace => style.set_color(Color::Black).set_intense(true),
@@ -62,7 +62,7 @@ fn init_logger() {
                 Level::Warn => style.set_color(Color::Yellow),
                 Level::Error => style.set_color(Color::Red).set_bold(true),
             };
-            let now = kernel_hal_unix::timer_now();
+            let now = kernel_hal::timer::timer_now();
             let level = style.value(record.level());
             let args = record.args();
             writeln!(buf, "[{:?} {:>5} {}:{}] {}", now, level, pid, tid, args)
@@ -76,7 +76,7 @@ mod tests {
 
     #[async_std::test]
     async fn userboot() {
-        kernel_hal_unix::init();
+        kernel_hal::init();
 
         let opt = Opt {
             #[cfg(target_arch = "x86_64")]

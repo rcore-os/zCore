@@ -21,8 +21,8 @@ extern crate rlibc_opt; //Only for x86_64
 
 #[macro_use]
 mod logging;
-mod lang;
 mod arch;
+mod lang;
 mod memory;
 
 #[cfg(feature = "linux")]
@@ -31,19 +31,11 @@ mod fs;
 #[cfg(target_arch = "x86_64")]
 use rboot::BootInfo;
 
-#[cfg(target_arch = "riscv64")]
-use kernel_hal_bare::{
-    phys_to_virt, remap_the_kernel,
-    drivers::virtio::{GPU_DRIVERS, CMDLINE},
-    BootInfo, GraphicInfo,
-};
+use kernel_hal::{KernelConfig, KernelHandler, MMUFlags};
 
-use alloc::{
-    format,vec,
-    vec::Vec,
-    boxed::Box,
-    string::{String, ToString},
-};
+use alloc::{boxed::Box, string::String, vec, vec::Vec};
+
+use crate::arch::consts::*;
 
 #[cfg(feature = "board_qemu")]
 global_asm!(include_str!("arch/riscv/boot/boot_qemu.asm"));
@@ -61,18 +53,24 @@ pub extern "C" fn _start(boot_info: &BootInfo) -> ! {
 
     trace!("{:#x?}", boot_info);
 
-    kernel_hal_bare::init(kernel_hal_bare::Config {
+    let config = KernelConfig {
+        kernel_offset: KERNEL_OFFSET,
+        phys_mem_start: PHYSICAL_MEMORY_OFFSET,
+        phys_to_virt_offset: PHYSICAL_MEMORY_OFFSET,
+
         acpi_rsdp: boot_info.acpi2_rsdp_addr,
         smbios: boot_info.smbios_addr,
         ap_fn: run,
-    });
+    };
+    info!("{:#x?}", config);
+    kernel_hal::init(config, &ZcoreKernelHandler);
 
     #[cfg(feature = "graphic")]
     {
         let (width, height) = boot_info.graphic_info.mode.resolution();
         let fb_addr = boot_info.graphic_info.fb_addr as usize;
         let fb_size = boot_info.graphic_info.fb_size as usize;
-        kernel_hal_bare::init_framebuffer(width as u32, height as u32, fb_addr, fb_size);
+        kernel_hal::dev::fb::init(width as u32, height as u32, fb_addr, fb_size);
     }
 
     let ramfs_data = unsafe {
@@ -99,41 +97,32 @@ fn main(ramfs_data: &[u8], cmdline: &str) -> ! {
 #[cfg(target_arch = "riscv64")]
 #[no_mangle]
 pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
-    println!("zCore rust_main( hartid: {}, device_tree_paddr: {:#x} )", hartid, device_tree_paddr);
-    let device_tree_vaddr = phys_to_virt(device_tree_paddr);
-
-    let boot_info = BootInfo {
-        memory_map: Vec::new(),
-        physical_memory_offset: 0,
-        graphic_info: GraphicInfo {
-            mode: 0,
-            fb_addr: 0,
-            fb_size: 0,
-        },
-        hartid: hartid as u64,
-        dtb_addr: device_tree_paddr as u64,
-        initramfs_addr: 0,
-        initramfs_size: 0,
-        cmdline: "LOG=warn:TERM=xterm-256color:console.shell=true:virtcon.disable=true",
+    println!(
+        "zCore rust_main( hartid: {}, device_tree_paddr: {:#x} )",
+        hartid, device_tree_paddr
+    );
+    let cmdline = "LOG=warn:TERM=xterm-256color:console.shell=true:virtcon.disable=true";
+    let config = KernelConfig {
+        kernel_offset: KERNEL_OFFSET,
+        phys_mem_start: MEMORY_OFFSET,
+        phys_mem_end: MEMORY_END,
+        phys_to_virt_offset: PHYSICAL_MEMORY_OFFSET,
+        dtb_paddr: device_tree_paddr,
     };
 
-    logging::init(get_log_level(boot_info.cmdline));
+    logging::init(get_log_level(cmdline));
     memory::init_heap();
-    memory::init_frame_allocator(&boot_info);
-    remap_the_kernel(device_tree_vaddr);
+    memory::init_frame_allocator();
 
-    info!("{:#x?}", boot_info);
+    info!("{:#x?}", config);
+    kernel_hal::init(config, &ZcoreKernelHandler);
 
-    kernel_hal_bare::init(kernel_hal_bare::Config {
-        mconfig: 0,
-        dtb: device_tree_vaddr,
-    });
-
-    let cmdline_dt = CMDLINE.read();
-    let mut cmdline = boot_info.cmdline.to_string();
-
-    if !cmdline_dt.is_empty() {
-        cmdline = format!("{}:{}", boot_info.cmdline, cmdline_dt);
+    let cmdline_dt = ""; // FIXME: CMDLINE.read();
+    let cmdline = if !cmdline_dt.is_empty() {
+        alloc::format!("{}:{}", cmdline, cmdline_dt)
+    } else {
+        use alloc::string::ToString;
+        cmdline.to_string()
     };
     warn!("cmdline: {:?}", cmdline);
 
@@ -147,7 +136,7 @@ pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
             .clone();
         let (width, height) = gpu.resolution();
         let (fb_vaddr, fb_size) = gpu.setup_framebuffer();
-        kernel_hal_bare::init_framebuffer(width, height, fb_vaddr, fb_size);
+        kernel_hal::deb::fb::init(width, height, fb_vaddr, fb_size);
     }
 
     // riscv64在之后使用ramfs或virtio, 而x86_64则由bootloader载入文件系统镜像到内存
@@ -166,7 +155,7 @@ fn get_rootproc(cmdline: &str) -> Vec<String> {
             let mut iter = value.trim().splitn(2, '?');
             let k1 = iter.next().expect("failed to parse k1");
             let v1 = iter.next().expect("failed to parse v1");
-            if v1 == "" {
+            if v1.is_empty() {
                 return vec![k1.into()];
             } else {
                 return vec![k1.into(), v1.into()];
@@ -180,13 +169,13 @@ fn get_rootproc(cmdline: &str) -> Vec<String> {
 fn main(ramfs_data: &'static mut [u8], cmdline: &str) -> ! {
     use linux_object::fs::STDIN;
 
-    kernel_hal_bare::serial_set_callback(Box::new({
+    kernel_hal::serial::serial_set_callback(Box::new({
         move || {
             let mut buffer = [0; 255];
-            let len = kernel_hal_bare::serial_read(&mut buffer);
+            let len = kernel_hal::serial::serial_read(&mut buffer);
             for c in &buffer[..len] {
                 STDIN.push((*c).into());
-                // kernel_hal_bare::serial_write(alloc::format!("{}", *c as char).as_str());
+                // kernel_hal::serial::serial_write(alloc::format!("{}", *c as char).as_str());
             }
             false
         }
@@ -212,7 +201,7 @@ fn run() -> ! {
             x86_64::instructions::interrupts::disable();
         }
         #[cfg(target_arch = "riscv64")]
-        kernel_hal_bare::interrupt::wait_for_interrupt();
+        kernel_hal::riscv::wait_for_interrupt();
     }
 }
 
@@ -227,4 +216,24 @@ fn get_log_level(cmdline: &str) -> &str {
         }
     }
     ""
+}
+
+struct ZcoreKernelHandler;
+
+impl KernelHandler for ZcoreKernelHandler {
+    fn frame_alloc(&self) -> Option<usize> {
+        memory::frame_alloc()
+    }
+
+    fn frame_alloc_contiguous(&self, frame_count: usize, align_log2: usize) -> Option<usize> {
+        memory::frame_alloc_contiguous(frame_count, align_log2)
+    }
+
+    fn frame_dealloc(&self, paddr: usize) {
+        memory::frame_dealloc(paddr)
+    }
+
+    fn handle_page_fault(&self, fault_vaddr: usize, access_flags: MMUFlags) {
+        panic!("page fault from kernel mode @ {:#x}({:?})", fault_vaddr, access_flags);
+    }
 }

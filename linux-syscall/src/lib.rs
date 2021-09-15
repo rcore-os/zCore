@@ -8,7 +8,7 @@
 //! let mut syscall = Syscall {
 //!     thread,
 //!     #[cfg(feature = "std")]
-//!     syscall_entry: kernel_hal_unix::syscall_entry as usize,
+//!     syscall_entry: kernel_hal::context::syscall_entry as usize,
 //!     #[cfg(not(feature = "std"))]
 //!     syscall_entry: 0,
 //!     thread_fn,
@@ -32,13 +32,13 @@ use {
     self::consts::SyscallType as Sys,
     alloc::sync::Arc,
     core::convert::TryFrom,
-    kernel_hal::{user::*, GeneralRegs},
+    kernel_hal::{context::GeneralRegs, user::*},
     linux_object::{error::*, fs::FileDesc, process::*},
     zircon_object::{object::*, task::*, vm::VirtAddr},
 };
 
 #[cfg(target_arch = "riscv64")]
-use kernel_hal::UserContext;
+use kernel_hal::context::UserContext;
 
 mod consts {
     // generated from syscall.h.in

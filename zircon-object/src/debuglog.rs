@@ -3,7 +3,6 @@ use {
     super::*,
     crate::object::*,
     alloc::{sync::Arc, vec::Vec},
-    kernel_hal::timer_now,
     lazy_static::lazy_static,
     spin::Mutex,
 };
@@ -111,7 +110,7 @@ impl DlogBuffer {
             datalen: data.len() as u16,
             severity,
             flags: flags as u8,
-            timestamp: timer_now().as_nanos() as u64,
+            timestamp: kernel_hal::timer::timer_now().as_nanos() as u64,
             pid,
             tid,
         };

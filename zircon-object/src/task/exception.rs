@@ -1,6 +1,6 @@
 use {
     super::*, crate::ipc::*, crate::object::*, alloc::sync::Arc, alloc::vec, alloc::vec::Vec,
-    core::mem::size_of, futures::channel::oneshot, kernel_hal::UserContext, spin::Mutex,
+    core::mem::size_of, futures::channel::oneshot, kernel_hal::context::UserContext, spin::Mutex,
 };
 
 /// Kernel-owned exception channel endpoint.
@@ -157,7 +157,7 @@ impl ExceptionContext {
         ExceptionContext {
             vector: cx.trap_num as u64,
             err_code: cx.error_code as u64,
-            cr2: kernel_hal::fetch_fault_vaddr() as u64,
+            cr2: kernel_hal::context::fetch_page_fault_info(cx.error_code).0 as u64,
         }
     }
     #[cfg(target_arch = "aarch64")]

@@ -2,7 +2,6 @@
 
 use alloc::sync::Arc;
 use core::time::Duration;
-use kernel_hal::timer_now;
 use rcore_fs::vfs::*;
 
 /// TimeSpec struct for clock_gettime, similar to Timespec
@@ -39,7 +38,7 @@ impl TimeVal {
 impl TimeSpec {
     /// create TimeSpec
     pub fn now() -> TimeSpec {
-        let time = timer_now();
+        let time = kernel_hal::timer::timer_now();
         TimeSpec {
             sec: time.as_secs() as usize,
             nsec: (time.as_nanos() % 1_000_000_000) as usize,

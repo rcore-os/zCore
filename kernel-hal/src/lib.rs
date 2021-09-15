@@ -1,55 +1,37 @@
 //! Hardware Abstraction Layer
 
-#![no_std]
-#![feature(linkage)]
+#![cfg_attr(not(feature = "libos"), no_std)]
+#![feature(asm)]
 #![deny(warnings)]
 
 extern crate alloc;
 
-pub mod defs {
-    use bitflags::bitflags;
-    use numeric_enum_macro::numeric_enum;
+#[macro_use]
+extern crate log;
 
-    bitflags! {
-        pub struct MMUFlags: usize {
-            #[allow(clippy::identity_op)]
-            const CACHE_1   = 1 << 0;
-            const CACHE_2   = 1 << 1;
-            const READ      = 1 << 2;
-            const WRITE     = 1 << 3;
-            const EXECUTE   = 1 << 4;
-            const USER      = 1 << 5;
-            const RXW = Self::READ.bits | Self::WRITE.bits | Self::EXECUTE.bits;
-        }
-    }
-    numeric_enum! {
-        #[repr(u32)]
-        #[derive(Debug, PartialEq, Clone, Copy)]
-        pub enum CachePolicy {
-            Cached = 0,
-            Uncached = 1,
-            UncachedDevice = 2,
-            WriteCombining = 3,
-        }
-    }
-    pub const CACHE_POLICY_MASK: u32 = 3;
+#[macro_use]
+extern crate cfg_if;
 
-    pub type PhysAddr = usize;
-    pub type VirtAddr = usize;
-    pub type DevVAddr = usize;
-    pub const PAGE_SIZE: usize = 0x1000;
+#[macro_use]
+mod macros;
+
+mod common;
+mod config;
+mod hal_fn;
+mod kernel_handler;
+mod utils;
+
+cfg_if! {
+    if #[cfg(feature = "libos")] {
+        #[path = "libos/mod.rs"]
+        mod imp;
+    } else {
+        #[path = "bare/mod.rs"]
+        mod imp;
+    }
 }
 
-mod context;
-mod dummy;
-mod fb;
-mod future;
-pub mod user;
-pub mod vdso;
-
-pub use self::context::*;
-pub use self::defs::*;
-pub use self::dummy::*;
-pub use self::fb::*;
-pub use self::future::*;
-pub use trapframe::{GeneralRegs, UserContext};
+pub use common::{addr, defs::*, future, user};
+pub use config::*;
+pub use imp::*;
+pub use kernel_handler::*;

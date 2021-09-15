@@ -1,6 +1,12 @@
 use {
-    super::*, crate::object::*, alloc::sync::Arc, alloc::vec, alloc::vec::Vec, bitflags::bitflags,
-    kernel_hal::PageTableTrait, spin::Mutex,
+    super::*,
+    crate::object::*,
+    alloc::{sync::Arc, vec, vec::Vec},
+    bitflags::bitflags,
+    kernel_hal::vm::{
+        GenericPageTable, IgnoreNotMappedErr, Page, PageSize, PageTable, PagingError,
+    },
+    spin::Mutex,
 };
 
 bitflags! {
@@ -44,7 +50,7 @@ pub struct VmAddressRegion {
     addr: VirtAddr,
     size: usize,
     parent: Option<Arc<VmAddressRegion>>,
-    page_table: Arc<Mutex<dyn PageTableTrait>>,
+    page_table: Arc<Mutex<dyn GenericPageTable>>,
     /// If inner is None, this region is destroyed, all operations are invalid.
     inner: Mutex<Option<VmarInner>>,
 }
@@ -78,7 +84,7 @@ impl VmAddressRegion {
             addr,
             size,
             parent: None,
-            page_table: Arc::new(Mutex::new(kernel_hal::PageTable::new())), //hal PageTable
+            page_table: Arc::new(Mutex::new(PageTable::from_current().clone_kernel())), //hal PageTable
             inner: Mutex::new(Some(VmarInner::default())),
         })
     }
@@ -94,7 +100,7 @@ impl VmAddressRegion {
             addr: kernel_vmar_base,
             size: kernel_vmar_size,
             parent: None,
-            page_table: Arc::new(Mutex::new(kernel_hal::PageTable::new())),
+            page_table: Arc::new(Mutex::new(PageTable::from_current().clone_kernel())),
             inner: Mutex::new(Some(VmarInner::default())),
         })
     }
@@ -496,12 +502,6 @@ impl VmAddressRegion {
         self.flags
     }
 
-    #[cfg(target_arch = "riscv64")]
-    /// Activate this page table
-    pub fn activate(&self) {
-        self.page_table.lock().activate();
-    }
-
     /// Dump all mappings recursively.
     pub fn dump(&self) {
         let mut guard = self.inner.lock();
@@ -637,7 +637,7 @@ impl VmarInner {
     fn fork_from(
         &mut self,
         src: &Arc<VmAddressRegion>,
-        page_table: &Arc<Mutex<dyn PageTableTrait>>,
+        page_table: &Arc<Mutex<dyn GenericPageTable>>,
     ) -> ZxResult {
         let src_guard = src.inner.lock();
         let src_inner = src_guard.as_ref().unwrap();
@@ -667,7 +667,7 @@ pub struct VmMapping {
     /// The permission limitation of the vmar
     permissions: MMUFlags,
     vmo: Arc<VmObject>,
-    page_table: Arc<Mutex<dyn PageTableTrait>>,
+    page_table: Arc<Mutex<dyn GenericPageTable>>,
     inner: Mutex<VmMappingInner>,
 }
 
@@ -712,7 +712,7 @@ impl VmMapping {
         vmo_offset: usize,
         permissions: MMUFlags,
         flags: MMUFlags,
-        page_table: Arc<Mutex<dyn PageTableTrait>>,
+        page_table: Arc<Mutex<dyn GenericPageTable>>,
     ) -> Arc<Self> {
         let mapping = Arc::new(VmMapping {
             inner: Mutex::new(VmMappingInner {
@@ -741,9 +741,13 @@ impl VmMapping {
             let vmo_offset = inner.vmo_offset / PAGE_SIZE;
             for i in 0..page_num {
                 let paddr = commit(vmo_offset + i, inner.flags[i])?;
-                //通过PageTableTrait的hal_pt_map进行页表映射
+                //通过GenericPageTable的hal_pt_map进行页表映射
                 page_table
-                    .map(inner.addr + i * PAGE_SIZE, paddr, inner.flags[i])
+                    .map(
+                        Page::new_aligned(inner.addr + i * PAGE_SIZE, PageSize::Size4K),
+                        paddr,
+                        inner.flags[i],
+                    )
                     .expect("failed to map");
             }
             Ok(())
@@ -752,11 +756,10 @@ impl VmMapping {
 
     fn unmap(&self) {
         let inner = self.inner.lock();
-        let pages = inner.size / PAGE_SIZE;
         // TODO inner.vmo_offset unused?
         self.page_table
             .lock()
-            .unmap_cont(inner.addr, pages)
+            .unmap_cont(inner.addr, inner.size)
             .expect("failed to unmap")
     }
 
@@ -789,7 +792,7 @@ impl VmMapping {
         if inner.addr >= begin && inner.end_addr() <= end {
             // subset: [xxxxxxxxxx]
             page_table
-                .unmap_cont(inner.addr, pages(inner.size))
+                .unmap_cont(inner.addr, inner.size)
                 .expect("failed to unmap");
             inner.size = 0;
             inner.flags.clear();
@@ -798,7 +801,7 @@ impl VmMapping {
             // prefix: [xxxx------]
             let cut_len = end - inner.addr;
             page_table
-                .unmap_cont(inner.addr, pages(cut_len))
+                .unmap_cont(inner.addr, cut_len)
                 .expect("failed to unmap");
             inner.addr = end;
             inner.size -= cut_len;
@@ -810,7 +813,7 @@ impl VmMapping {
             let cut_len = inner.end_addr() - begin;
             let new_len = begin - inner.addr;
             page_table
-                .unmap_cont(begin, pages(cut_len))
+                .unmap_cont(begin, cut_len)
                 .expect("failed to unmap");
             inner.size = new_len;
             inner.flags.truncate(new_len);
@@ -821,7 +824,7 @@ impl VmMapping {
             let new_len1 = begin - inner.addr;
             let new_len2 = inner.end_addr() - end;
             page_table
-                .unmap_cont(begin, pages(cut_len))
+                .unmap_cont(begin, cut_len)
                 .expect("failed to unmap");
             let new_flags_range = (pages(inner.size) - pages(new_len2))..pages(inner.size);
             let new_mapping = Arc::new(VmMapping {
@@ -864,7 +867,8 @@ impl VmMapping {
             new_flags.insert(flags & MMUFlags::RXW);
             inner.flags[i] = new_flags;
             pg_table
-                .protect(inner.addr + i * PAGE_SIZE, new_flags)
+                .update(inner.addr + i * PAGE_SIZE, None, Some(new_flags))
+                .ignore()
                 .unwrap();
         }
     }
@@ -907,11 +911,14 @@ impl VmMapping {
                             let mut new_flag = inner.flags[i];
                             new_flag.remove(MMUFlags::WRITE);
                             pg_table
-                                .protect(inner.addr + i * PAGE_SIZE, new_flag)
-                                .unwrap()
+                                .update(inner.addr + i * PAGE_SIZE, None, Some(new_flag))
+                                .ignore()
+                                .unwrap();
                         }
-                        RangeChangeOp::Unmap => pg_table.unmap(inner.addr + i * PAGE_SIZE).unwrap(),
-                    }
+                        RangeChangeOp::Unmap => {
+                            pg_table.unmap(inner.addr + i * PAGE_SIZE).ignore().unwrap();
+                        }
+                    };
                 }
             }
         }
@@ -920,8 +927,11 @@ impl VmMapping {
     /// Handle page fault happened on this VmMapping.
     pub(crate) fn handle_page_fault(&self, vaddr: VirtAddr, access_flags: MMUFlags) -> ZxResult {
         let vaddr = round_down_pages(vaddr);
-        let page_idx = (vaddr - self.addr()) / PAGE_SIZE;
-        let mut flags = self.inner.lock().flags[page_idx];
+        let (vmo_offset, mut flags) = {
+            let inner = self.inner.lock();
+            let offset = vaddr - inner.addr;
+            (offset + inner.vmo_offset, inner.flags[offset / PAGE_SIZE])
+        };
         if !flags.contains(access_flags) {
             return Err(ZxError::ACCESS_DENIED);
         }
@@ -930,17 +940,18 @@ impl VmMapping {
             warn!("handle_page_fault remove MMUFlags::WRITE !");
             flags.remove(MMUFlags::WRITE)
         }
-        let paddr = self.vmo.commit_page(page_idx, access_flags)?;
+        let paddr = self.vmo.commit_page(vmo_offset / PAGE_SIZE, access_flags)?;
         let mut pg_table = self.page_table.lock();
-        pg_table.unmap(vaddr).unwrap();
-        pg_table
-            .map(vaddr, paddr, flags)
-            .map_err(|_| ZxError::ACCESS_DENIED)?;
+        let mut res = pg_table.map(Page::new_aligned(vaddr, PageSize::Size4K), paddr, flags);
+        if let Err(PagingError::AlreadyMapped) = res {
+            res = pg_table.update(vaddr, Some(paddr), Some(flags)).map(|_| ());
+        }
+        res.map_err(|_| ZxError::ACCESS_DENIED)?;
         Ok(())
     }
 
     /// Clone VMO and map it to a new page table. (For Linux)
-    fn clone_map(&self, page_table: Arc<Mutex<dyn PageTableTrait>>) -> ZxResult<Arc<Self>> {
+    fn clone_map(&self, page_table: Arc<Mutex<dyn GenericPageTable>>) -> ZxResult<Arc<Self>> {
         //这里调用hal protect后,protect()好像会破坏页表
         let new_vmo = self.vmo.create_child(false, 0, self.vmo.len())?;
         let mapping = Arc::new(VmMapping {

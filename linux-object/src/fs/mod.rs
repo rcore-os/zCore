@@ -8,10 +8,8 @@ use rcore_fs_mountfs::MountFS;
 use rcore_fs_ramfs::RamFS;
 
 pub use self::device::*;
-pub use self::fbdev::*;
 pub use self::fcntl::*;
 pub use self::file::*;
-pub use self::input::*;
 pub use self::pipe::*;
 pub use self::pseudo::*;
 pub use self::random::*;
@@ -26,15 +24,22 @@ use downcast_rs::impl_downcast;
 use zircon_object::object::*;
 
 mod device;
-mod fbdev;
 mod fcntl;
 mod file;
-mod input;
 mod ioctl;
 mod pipe;
 mod pseudo;
 mod random;
 mod stdio;
+
+cfg_if::cfg_if! {
+    if #[cfg(feature = "graphic")] {
+        mod fbdev;
+        mod input;
+        pub use self::input::*;
+        pub use self::fbdev::*;
+    }
+}
 
 #[async_trait]
 /// Generic file interface
@@ -123,17 +128,21 @@ pub fn create_root_fs(rootfs: Arc<dyn FileSystem>) -> Arc<dyn INode> {
     devfs
         .add("urandom", Arc::new(RandomINode::new(true)))
         .expect("failed to mknod /dev/urandom");
-    devfs
-        .add("fb0", Arc::new(Fbdev::default()))
-        .expect("failed to mknod /dev/fb0");
-    // TODO /dev/input/event0
-    devfs
-        .add("input-event0", Arc::new(InputEventInode::new(0)))
-        .expect("failed to mknod /dev/input-event0");
-    // TODO /dev/input/mice
-    devfs
-        .add("input-mice", Arc::new(InputMiceInode::default()))
-        .expect("failed to mknod /dev/input-mice");
+
+    #[cfg(feature = "graphic")]
+    {
+        devfs
+            .add("fb0", Arc::new(Fbdev::default()))
+            .expect("failed to mknod /dev/fb0");
+        // TODO /dev/input/event0
+        devfs
+            .add("input-event0", Arc::new(InputEventInode::new(0)))
+            .expect("failed to mknod /dev/input-event0");
+        // TODO /dev/input/mice
+        devfs
+            .add("input-mice", Arc::new(InputMiceInode::default()))
+            .expect("failed to mknod /dev/input-mice");
+    }
 
     // mount DevFS at /dev
     let dev = root.find(true, "dev").unwrap_or_else(|_| {

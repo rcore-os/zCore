@@ -1,6 +1,6 @@
 name: rustcnightly CI
 
-on: 
+on:
   push:
   pull_request:
   schedule:
@@ -55,7 +55,7 @@ jobs:
       - name: Build zCore
         run: |
           cd zCore
-          make build arch=x86_64 
+          make build arch=x86_64
       # FIX LATER
       # - name: Build zCore with hypervisor
       #   run: |
@@ -212,6 +212,7 @@ jobs:
       - name: Run libc-tests
         run: |
           cd scripts
+          pip3 install -r requirements.txt
           python3 libc-tests.py
           cat linux/test-result.txt
 
@@ -289,6 +290,8 @@ jobs:
           tar xJf qemu-share.tar.xz && sudo cp -r qemu /usr/local/share/
       - name: Prepare rootfs and oscomp
         run: make riscv-image
+      - name: Build  kernel
+        run: cd zCore && make build mode=release linux=1 arch=riscv64
       - name: Run baremetal-libc-test
         run: |
           cd scripts

@@ -11,7 +11,6 @@ extern crate log;
 use {
     alloc::{boxed::Box, string::String, sync::Arc, vec::Vec},
     core::{future::Future, pin::Pin},
-    kernel_hal::MMUFlags,
     linux_object::{
         fs::{vfs::FileSystem, INodeExt},
         loader::LinuxElfLoader,
@@ -23,10 +22,10 @@ use {
 };
 
 #[cfg(target_arch = "riscv64")]
-use {kernel_hal::UserContext, zircon_object::object::KernelObject};
+use {kernel_hal::context::UserContext, zircon_object::object::KernelObject};
 
 #[cfg(target_arch = "x86_64")]
-use kernel_hal::GeneralRegs;
+use kernel_hal::context::GeneralRegs;
 
 /// Create and run main Linux process
 pub fn run(args: Vec<String>, envs: Vec<String>, rootfs: Arc<dyn FileSystem>) -> Arc<Process> {
@@ -35,7 +34,7 @@ pub fn run(args: Vec<String>, envs: Vec<String>, rootfs: Arc<dyn FileSystem>) ->
     let thread = Thread::create_linux(&proc).unwrap();
     let loader = LinuxElfLoader {
         #[cfg(feature = "std")]
-        syscall_entry: kernel_hal_unix::syscall_entry as usize,
+        syscall_entry: kernel_hal::context::syscall_entry as usize,
         #[cfg(not(feature = "std"))]
         syscall_entry: 0,
         stack_pages: 8,
@@ -57,7 +56,8 @@ pub fn run(args: Vec<String>, envs: Vec<String>, rootfs: Arc<dyn FileSystem>) ->
     let path = args[0].clone();
     debug!("Linux process: {:?}", path);
 
-    let pg_token = kernel_hal::current_page_table();
+    use kernel_hal::vm::{GenericPageTable, PageTable};
+    let pg_token = PageTable::from_current().table_phys();
     debug!("current pgt = {:#x}", pg_token);
     //调用zircon-object/src/task/thread.start设置好要执行的thread
     let (entry, sp) = loader.load(&proc.vmar(), &data, args, envs, path).unwrap();
@@ -86,7 +86,7 @@ async fn new_thread(thread: CurrentThread) {
 
         // run
         trace!("go to user: {:#x?}", cx);
-        kernel_hal::context_run(&mut cx);
+        kernel_hal::context::context_run(&mut cx);
         trace!("back from user: {:#x?}", cx);
         // handle trap/interrupt/syscall
 
@@ -94,24 +94,22 @@ async fn new_thread(thread: CurrentThread) {
         match cx.trap_num {
             0x100 => handle_syscall(&thread, &mut cx.general).await,
             0x20..=0x3f => {
-                kernel_hal::InterruptManager::handle_irq(cx.trap_num as u32);
+                kernel_hal::interrupt::handle_irq(cx.trap_num as u32);
                 if cx.trap_num == 0x20 {
-                    kernel_hal::yield_now().await;
+                    kernel_hal::future::yield_now().await;
                 }
             }
             0xe => {
-                let vaddr = kernel_hal::fetch_fault_vaddr();
-                let flags = if cx.error_code & 0x2 == 0 {
-                    MMUFlags::READ
-                } else {
-                    MMUFlags::WRITE
-                };
-                error!("page fualt from user mode {:#x} {:#x?}", vaddr, flags);
+                let (vaddr, flags) = kernel_hal::context::fetch_page_fault_info(cx.error_code);
+                error!("page fault from user mode @ {:#x}({:?})", vaddr, flags);
                 let vmar = thread.proc().vmar();
                 match vmar.handle_page_fault(vaddr, flags) {
                     Ok(()) => {}
-                    Err(_) => {
-                        panic!("Page Fault from user mode {:#x?}", cx);
+                    Err(err) => {
+                        panic!(
+                            "Handle page fault from user mode error @ {:#x}({:?}): {:?}\n{:#x?}",
+                            vaddr, flags, err, cx
+                        );
                     }
                 }
             }
@@ -121,7 +119,7 @@ async fn new_thread(thread: CurrentThread) {
         // UserContext
         #[cfg(target_arch = "riscv64")]
         {
-            let trap_num = kernel_hal::fetch_trap_num(&cx);
+            let trap_num = kernel_hal::context::fetch_trap_num(&cx);
             let is_interrupt = ((trap_num >> 63) & 1) == 1;
             let trap_num = trap_num & 0xfff;
             let pid = thread.proc().id();
@@ -129,22 +127,16 @@ async fn new_thread(thread: CurrentThread) {
                 match trap_num {
                     //Irq
                     0 | 4 | 5 | 8 | 9 => {
-                        kernel_hal::InterruptManager::handle_irq(trap_num as u32);
+                        kernel_hal::interrupt::handle_irq(trap_num as u32);
 
                         //Timer
                         if trap_num == 4 || trap_num == 5 {
                             debug!("Timer interrupt: {}", trap_num);
 
-                            /*
-                            * 已在irq_handle里加入了timer处理函数
-                            kernel_hal::timer_set_next();
-                            kernel_hal::timer_tick();
-                            */
-
-                            kernel_hal::yield_now().await;
+                            kernel_hal::future::yield_now().await;
                         }
 
-                        //kernel_hal::InterruptManager::handle_irq(trap_num as u32);
+                        //kernel_hal::interrupt::handle_irq(trap_num as u32);
                     }
                     _ => panic!(
                         "not supported pid: {} interrupt {} from user mode. {:#x?}",
@@ -157,26 +149,19 @@ async fn new_thread(thread: CurrentThread) {
                     8 => handle_syscall(&thread, &mut cx).await,
                     // PageFault
                     12 | 13 | 15 => {
-                        let vaddr = kernel_hal::fetch_fault_vaddr();
-
-                        //注意这里flags没有包含WRITE权限，后面handle会移除写权限
-                        let flags = if trap_num == 15 {
-                            MMUFlags::WRITE
-                        } else if trap_num == 12 {
-                            MMUFlags::EXECUTE
-                        } else {
-                            MMUFlags::READ
-                        };
-
+                        let (vaddr, flags) = kernel_hal::context::fetch_page_fault_info(trap_num);
                         info!(
-                            "page fualt from pid: {} user mode, vaddr:{:#x}, trap:{}",
+                            "page fault from pid: {} user mode, vaddr:{:#x}, trap:{}",
                             pid, vaddr, trap_num
                         );
                         let vmar = thread.proc().vmar();
                         match vmar.handle_page_fault(vaddr, flags) {
                             Ok(()) => {}
                             Err(error) => {
-                                panic!("{:?} Page Fault from user mode {:#x?}", error, cx);
+                                panic!(
+                                    "Page Fault from user mode @ {:#x}({:?}): {:?}\n{:#x?}",
+                                    vaddr, flags, error, cx
+                                );
                             }
                         }
                     }
@@ -204,7 +189,7 @@ async fn handle_syscall(thread: &CurrentThread, regs: &mut GeneralRegs) {
     let mut syscall = Syscall {
         thread,
         #[cfg(feature = "std")]
-        syscall_entry: kernel_hal_unix::syscall_entry as usize,
+        syscall_entry: kernel_hal::context::syscall_entry as usize,
         #[cfg(not(feature = "std"))]
         syscall_entry: 0,
         thread_fn,
@@ -234,7 +219,7 @@ async fn handle_syscall(thread: &CurrentThread, cx: &mut UserContext) {
     let mut syscall = Syscall {
         thread,
         #[cfg(feature = "std")]
-        syscall_entry: kernel_hal_unix::syscall_entry as usize,
+        syscall_entry: kernel_hal::context::syscall_entry as usize,
         #[cfg(not(feature = "std"))]
         syscall_entry: 0,
         context: cx,

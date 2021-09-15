@@ -29,5 +29,4 @@ cfg-if = "1.0"
 #rvm = { git = "https://github.com/rcore-os/RVM", rev = "382fc60", optional = true }
 
 [dev-dependencies]
-kernel-hal-unix = { path = "../kernel-hal-unix" }
 async-std = { version = "1.9", features = ["attributes", "unstable"] }

@@ -1,6 +1,6 @@
 name: current CI
 
-on: 
+on:
   push:
   pull_request:
   schedule:
@@ -11,21 +11,29 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v2
+        with:
+          submodules: 'recursive'
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
           toolchain: nightly-2021-07-27
           override: true
-          components: rustfmt, clippy
+          components: rust-src, rustfmt, clippy
       - name: Check code format
         uses: actions-rs/cargo@v1
         with:
           command: fmt
           args: --all -- --check
-      - name: Clippy x86_64
+      - name: Clippy LibOS
         run: arch=x86_64 cargo clippy
-      - name: Clippy riscv64
-        run: arch=riscv64 cargo clippy
+      - name: Clippy x86_64 bare-metal
+        run: |
+          cd zCore
+          make clippy arch=x86_64
+      - name: Clippy riscv64 bare-metal
+        run: |
+          cd zCore
+          make clippy arch=riscv64 linux=1
 #        uses: actions-rs/cargo@v1
 #        with:
 #          command: clippy
@@ -52,7 +60,7 @@ jobs:
       - name: Build zCore
         run: |
           cd zCore
-          make build arch=x86_64 
+          make build arch=x86_64
       # FIX LATER
       # - name: Build zCore with hypervisor
       #   run: |
@@ -203,6 +211,7 @@ jobs:
       - name: Run libc-tests
         run: |
           cd scripts
+          pip3 install -r requirements.txt
           python3 libc-tests.py
           cat linux/test-result.txt
 
@@ -275,6 +284,8 @@ jobs:
           tar xJf qemu-share.tar.xz && sudo cp -r qemu /usr/local/share/
       - name: Prepare rootfs and oscomp
         run: make riscv-image
+      - name: Build  kernel
+        run: cd zCore && make build mode=release linux=1 arch=riscv64
       - name: Run baremetal-libc-test
         run: |
           cd scripts

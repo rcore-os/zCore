@@ -1,6 +1,7 @@
 arch ?= x86_64
 board ?= qemu
 mode ?= debug
+log ?= warn
 zbi_file ?= bringup
 graphic ?=
 accel ?=
@@ -18,7 +19,7 @@ kernel_bin := $(build_path)/zcore.bin
 ESP := $(build_path)/esp
 OVMF := ../rboot/OVMF.fd
 qemu := qemu-system-$(arch)
-OBJDUMP := rust-objdump -print-imm-hex -x86-asm-syntax=intel
+OBJDUMP := rust-objdump --print-imm-hex --x86-asm-syntax=intel
 OBJCOPY := rust-objcopy --binary-architecture=$(arch)
 VMDISK := $(build_path)/boot.vdi
 QEMU_DISK := $(build_path)/disk.qcow2
@@ -127,13 +128,13 @@ justrun: $(QEMU_DISK)
 
 build-test: build
 	cp ../prebuilt/zircon/x64/core-tests.zbi $(ESP)/EFI/zCore/fuchsia.zbi
-	echo 'cmdline=LOG=warn:userboot=test/core-standalone-test:userboot.shutdown:core-tests=$(test_filter)' >> $(ESP)/EFI/Boot/rboot.conf
+	echo 'cmdline=LOG=$(log):userboot=test/core-standalone-test:userboot.shutdown:core-tests=$(test_filter)' >> $(ESP)/EFI/Boot/rboot.conf
 
 build: $(kernel_img)
 
 build-parallel-test: build $(QEMU_DISK)
 	cp ../prebuilt/zircon/x64/core-tests.zbi $(ESP)/EFI/zCore/fuchsia.zbi
-	echo 'cmdline=LOG=warn:userboot=test/core-standalone-test:userboot.shutdown:core-tests=$(test_filter)' >> $(ESP)/EFI/Boot/rboot.conf
+	echo 'cmdline=LOG=$(log):userboot=test/core-standalone-test:userboot.shutdown:core-tests=$(test_filter)' >> $(ESP)/EFI/Boot/rboot.conf
 
 ifeq ($(arch), riscv64)
 $(kernel_img): $(kernel_bin)
@@ -168,6 +169,9 @@ kernel:
 	echo Building zCore kenel
 	cargo build $(build_args)
 
+clippy:
+	cargo clippy $(build_args)
+
 bootloader:
 	cd ../rboot && make build
 
@@ -185,7 +189,7 @@ image:
 header:
 	$(OBJDUMP) -x $(kernel) | less
 
-asm:
+disasm:
 	$(OBJDUMP) -d $(kernel) | less
 
 vbox: build
@@ -224,4 +228,3 @@ baremetal-test:
 
 baremetal-test-rv64: build $(QEMU_DISK)
 	timeout --foreground 8s $(qemu) $(qemu_opts) -append ROOTPROC=$(ROOTPROC)
-
