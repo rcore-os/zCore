@@ -1,34 +1,48 @@
 use core::fmt::{Arguments, Result, Write};
 
-use super::{sbi, uart};
+use spin::Mutex;
+use zcore_drivers::scheme::{Scheme, UartScheme};
+use zcore_drivers::{io::Mmio, uart::Uart16550};
 
-struct SbiConsole;
-struct UartConsole;
+use crate::{mem::phys_to_virt, utils::init_once::InitOnce};
 
-impl Write for SbiConsole {
-    fn write_str(&mut self, s: &str) -> Result {
-        for ch in s.chars() {
-            sbi::console_putchar(ch as u8 as usize);
+pub(super) static UART: InitOnce<Mutex<&'static mut Uart16550<Mmio<u8>>>> = InitOnce::new();
+
+pub(super) fn init() {
+    UART.init(|| {
+        let uart = unsafe { Uart16550::<Mmio<u8>>::new(phys_to_virt(super::consts::UART_BASE)) };
+        uart.init().unwrap();
+        Mutex::new(uart)
+    });
+}
+
+pub(super) fn handle_irq() {
+    if let Some(uart) = UART.try_get() {
+        if let Some(c) = uart.lock().try_recv().unwrap() {
+            crate::serial::serial_put(c);
         }
-        Ok(())
     }
 }
 
-impl Write for UartConsole {
+struct SbiWriter;
+
+impl Write for SbiWriter {
     fn write_str(&mut self, s: &str) -> Result {
-        if let Some(uart) = uart::UART.try_get() {
-            //每次都创建一个新的Uart ? 内存位置始终相同
-            write!(uart.lock(), "{}", s)
-        } else {
-            SbiConsole.write_str(s)
+        for ch in s.chars() {
+            super::sbi::console_putchar(ch as usize);
         }
+        Ok(())
     }
 }
 
 hal_fn_impl! {
     impl mod crate::hal_fn::serial {
         fn serial_write_fmt(fmt: Arguments) {
-            UartConsole.write_fmt(fmt).unwrap();
+            if let Some(uart) = UART.try_get() {
+                uart.lock().write_fmt(fmt).unwrap();
+            } else {
+                SbiWriter.write_fmt(fmt).unwrap();
+            }
         }
     }
 }

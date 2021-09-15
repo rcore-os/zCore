@@ -4,7 +4,6 @@ mod consts;
 mod plic;
 mod sbi;
 mod trap;
-mod uart;
 
 pub mod config;
 pub mod context;
@@ -20,7 +19,7 @@ pub fn init() {
     vm::remap_the_kernel().unwrap();
     interrupt::init();
     timer::init();
-    uart::init(consts::UART_BASE);
+    serial::init();
 
     #[cfg(feature = "board_qemu")]
     {

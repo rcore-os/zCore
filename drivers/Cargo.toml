@@ -1,0 +1,16 @@
+[package]
+name = "zcore-drivers"
+version = "0.1.0"
+authors = ["Yuekai Jia <equation618@gmail.com>"]
+edition = "2018"
+description = "Device drivers of zCore"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[features]
+virtio = ["virtio-drivers"]
+
+[dependencies]
+log = "0.4"
+bitflags = "1.3"
+virtio-drivers = { git = "https://github.com/rcore-os/virtio-drivers", rev = "2b3c6cf", optional = true }

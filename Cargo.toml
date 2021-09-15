@@ -7,6 +7,7 @@ members = [
     "linux-syscall",
     "linux-loader",
     "kernel-hal",
+    "drivers",
 ]
 
 exclude = [

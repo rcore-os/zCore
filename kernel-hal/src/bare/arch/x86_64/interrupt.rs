@@ -240,8 +240,7 @@ fn timer() {
 }
 
 fn com1() {
-    let c = super::serial::COM1.lock().receive();
-    crate::serial::serial_put(c);
+    super::serial::handle_irq();
 }
 
 /*

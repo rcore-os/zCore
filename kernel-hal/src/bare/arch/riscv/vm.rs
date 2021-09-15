@@ -8,11 +8,6 @@ use crate::addr::{align_down, align_up};
 use crate::utils::page_table::{GenericPTE, PageTableImpl, PageTableLevel3};
 use crate::{mem::phys_to_virt, MMUFlags, PhysAddr, VirtAddr, KCONFIG, PAGE_SIZE};
 
-#[cfg(target_arch = "riscv32")]
-type RvPageTable<'a> = riscv::paging::Rv32PageTable<'a>;
-#[cfg(target_arch = "riscv64")]
-type RvPageTable<'a> = riscv::paging::Rv39PageTable<'a>;
-
 /// remap kernel with 4K page
 pub(super) fn remap_the_kernel() -> PagingResult {
     extern "C" {
