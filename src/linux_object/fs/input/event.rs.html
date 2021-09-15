@@ -100,12 +100,14 @@
 <span id="100">100</span>
 <span id="101">101</span>
 <span id="102">102</span>
+<span id="103">103</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="kw">crate</span><span class="ident">::time::TimeVal</span>;
 <span class="kw">use</span> <span class="ident">alloc</span>::{<span class="ident">boxed::Box</span>, <span class="ident">collections::VecDeque</span>, <span class="ident">sync::Arc</span>};
 <span class="kw">use</span> <span class="ident">core::any::Any</span>;
 <span class="kw">use</span> <span class="ident">spin::Mutex</span>;
 
+<span class="kw">use</span> <span class="ident">kernel_hal::dev::input</span>;
 <span class="kw">use</span> <span class="ident">rcore_fs::vfs</span>::<span class="kw-2">*</span>;
 
 <span class="doccomment">/// input device</span>
@@ -121,7 +123,7 @@
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">id</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
         <span class="kw">let</span> <span class="ident">data</span> <span class="op">=</span> <span class="ident">Arc::new</span>(<span class="ident">Mutex::new</span>(<span class="ident">VecDeque::with_capacity</span>(<span class="ident">MAX_QUEUE</span>)));
         <span class="kw">let</span> <span class="ident">data_clone</span> <span class="op">=</span> <span class="ident">data</span>.<span class="ident">clone</span>();
-        <span class="ident">kernel_hal::kbd_set_callback</span>(<span class="ident">Box::new</span>(<span class="kw">move</span> <span class="op">|</span><span class="ident">code</span>, <span class="ident">value</span><span class="op">|</span> {
+        <span class="ident">input::kbd_set_callback</span>(<span class="ident">Box::new</span>(<span class="kw">move</span> <span class="op">|</span><span class="ident">code</span>, <span class="ident">value</span><span class="op">|</span> {
             <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">queue</span> <span class="op">=</span> <span class="ident">data_clone</span>.<span class="ident">lock</span>();
             <span class="kw">while</span> <span class="ident">queue</span>.<span class="ident">len</span>() <span class="op">&gt;</span><span class="op">=</span> <span class="ident">MAX_QUEUE</span> {
                 <span class="ident">queue</span>.<span class="ident">pop_front</span>();

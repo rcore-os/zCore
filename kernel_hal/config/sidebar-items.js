@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["KernelConfig","Configuration of HAL."]]});

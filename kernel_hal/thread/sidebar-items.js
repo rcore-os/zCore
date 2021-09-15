@@ -1,0 +1,1 @@
+initSidebarItems({"fn":[["get_tid","Get tid and pid of current task.]"],["set_tid","Set tid and pid of current task."],["spawn","Spawn a new thread."]]});

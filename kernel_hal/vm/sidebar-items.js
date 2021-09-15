@@ -1,0 +1,1 @@
+initSidebarItems({"enum":[["PageSize",""],["PagingError",""]],"struct":[["Page",""],["PageTable","Page Table"]],"trait":[["GenericPageTable",""],["IgnoreNotMappedErr",""]],"type":[["PagingResult",""]]});

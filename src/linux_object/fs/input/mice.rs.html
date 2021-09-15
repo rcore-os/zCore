@@ -79,11 +79,13 @@
 <span id="79">79</span>
 <span id="80">80</span>
 <span id="81">81</span>
+<span id="82">82</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="ident">alloc</span>::{<span class="ident">boxed::Box</span>, <span class="ident">collections::VecDeque</span>, <span class="ident">sync::Arc</span>};
 <span class="kw">use</span> <span class="ident">core::any::Any</span>;
 <span class="kw">use</span> <span class="ident">spin::Mutex</span>;
 
+<span class="kw">use</span> <span class="ident">kernel_hal::dev::input</span>;
 <span class="kw">use</span> <span class="ident">rcore_fs::vfs</span>::<span class="kw-2">*</span>;
 
 <span class="doccomment">/// mice device</span>
@@ -97,7 +99,7 @@
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
         <span class="kw">let</span> <span class="ident">data</span> <span class="op">=</span> <span class="ident">Arc::new</span>(<span class="ident">Mutex::new</span>(<span class="ident">VecDeque::with_capacity</span>(<span class="ident">MAX_QUEUE</span>)));
         <span class="kw">let</span> <span class="ident">data_clone</span> <span class="op">=</span> <span class="ident">data</span>.<span class="ident">clone</span>();
-        <span class="ident">kernel_hal::mice_set_callback</span>(<span class="ident">Box::new</span>(<span class="kw">move</span> <span class="op">|</span><span class="ident">data</span><span class="op">|</span> {
+        <span class="ident">input::mouse_set_callback</span>(<span class="ident">Box::new</span>(<span class="kw">move</span> <span class="op">|</span><span class="ident">data</span><span class="op">|</span> {
             <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">queue</span> <span class="op">=</span> <span class="ident">data_clone</span>.<span class="ident">lock</span>();
             <span class="kw">while</span> <span class="ident">queue</span>.<span class="ident">len</span>() <span class="op">&gt;</span><span class="op">=</span> <span class="ident">MAX_QUEUE</span> {
                 <span class="ident">queue</span>.<span class="ident">pop_front</span>();

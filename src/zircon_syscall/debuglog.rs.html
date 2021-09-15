@@ -96,7 +96,7 @@
 };
 
 <span class="kw">impl</span> <span class="ident">Syscall</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span> {
-    <span class="doccomment">/// Create a kernel managed debuglog reader or writer.    </span>
+    <span class="doccomment">/// Create a kernel managed debuglog reader or writer.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_debuglog_create</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">rsrc</span>: <span class="ident">HandleValue</span>,
@@ -124,7 +124,7 @@
         <span class="prelude-val">Ok</span>(())
     }
 
-    <span class="doccomment">/// Write log entry to debuglog.   </span>
+    <span class="doccomment">/// Write log entry to debuglog.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_debuglog_write</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">handle_value</span>: <span class="ident">HandleValue</span>,
@@ -146,15 +146,15 @@
         <span class="kw">let</span> <span class="ident">dlog</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">DebugLog</span><span class="op">&gt;</span>(<span class="ident">handle_value</span>, <span class="ident">Rights::WRITE</span>)<span class="question-mark">?</span>;
         <span class="ident">dlog</span>.<span class="ident">write</span>(<span class="ident">Severity::Info</span>, <span class="ident">options</span>, <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">id</span>(), <span class="ident">proc</span>.<span class="ident">id</span>(), <span class="kw-2">&amp;</span><span class="ident">data</span>);
         <span class="comment">// print to kernel console</span>
-        <span class="ident">kernel_hal::serial_write</span>(<span class="kw-2">&amp;</span><span class="ident">data</span>);
+        <span class="ident">kernel_hal::serial::serial_write</span>(<span class="kw-2">&amp;</span><span class="ident">data</span>);
         <span class="kw">if</span> <span class="ident">data</span>.<span class="ident">as_bytes</span>().<span class="ident">last</span>() <span class="op">!</span><span class="op">=</span> <span class="prelude-val">Some</span>(<span class="kw-2">&amp;</span><span class="string">b&#39;\n&#39;</span>) {
-            <span class="ident">kernel_hal::serial_write</span>(<span class="string">&quot;\n&quot;</span>);
+            <span class="ident">kernel_hal::serial::serial_write</span>(<span class="string">&quot;\n&quot;</span>);
         }
         <span class="prelude-val">Ok</span>(())
     }
 
     <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">unsafe_code</span>)]</span>
-    <span class="doccomment">/// Read log entries from debuglog.  </span>
+    <span class="doccomment">/// Read log entries from debuglog.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_debuglog_read</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">handle_value</span>: <span class="ident">HandleValue</span>,

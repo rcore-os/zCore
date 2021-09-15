@@ -42,15 +42,15 @@
 <span class="kw">use</span> <span class="ident">zircon_object::dev</span>::<span class="kw-2">*</span>;
 
 <span class="kw">impl</span> <span class="ident">Syscall</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span> {
-    <span class="doccomment">/// Write debug info to the serial port.  </span>
+    <span class="doccomment">/// Write debug info to the serial port.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_debug_write</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">buf</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>, <span class="ident">len</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
         <span class="macro">info!</span>(<span class="string">&quot;debug.write: buf=({:?}; {:#x})&quot;</span>, <span class="ident">buf</span>, <span class="ident">len</span>);
         <span class="kw">let</span> <span class="ident">data</span> <span class="op">=</span> <span class="ident">buf</span>.<span class="ident">read_array</span>(<span class="ident">len</span>)<span class="question-mark">?</span>;
-        <span class="ident">kernel_hal::serial_write</span>(<span class="ident">core::str::from_utf8</span>(<span class="kw-2">&amp;</span><span class="ident">data</span>).<span class="ident">unwrap</span>());
+        <span class="ident">kernel_hal::serial::serial_write</span>(<span class="ident">core::str::from_utf8</span>(<span class="kw-2">&amp;</span><span class="ident">data</span>).<span class="ident">unwrap</span>());
         <span class="prelude-val">Ok</span>(())
     }
 
-    <span class="doccomment">/// Read debug info from the serial port.  </span>
+    <span class="doccomment">/// Read debug info from the serial port.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">sys_debug_read</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">handle</span>: <span class="ident">HandleValue</span>,
@@ -71,7 +71,7 @@
         <span class="comment">// let len = kernel_hal::serial_read(&amp;mut vec);</span>
         <span class="comment">// buf.write_array(&amp;vec[..len])?;</span>
         <span class="comment">// actual.write(len as u32)?;</span>
-        <span class="kw">let</span> <span class="ident">c</span> <span class="op">=</span> <span class="ident">kernel_hal::serial_getchar</span>().<span class="kw">await</span>;
+        <span class="kw">let</span> <span class="ident">c</span> <span class="op">=</span> <span class="ident">kernel_hal::future::serial_getchar</span>().<span class="kw">await</span>;
         <span class="ident">buf</span>.<span class="ident">write_array</span>(<span class="kw-2">&amp;</span>[<span class="ident">c</span>])<span class="question-mark">?</span>;
         <span class="ident">actual</span>.<span class="ident">write</span>(<span class="number">1</span>)<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(())

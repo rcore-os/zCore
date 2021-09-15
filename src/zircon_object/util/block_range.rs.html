@@ -100,10 +100,12 @@
 <span id="100">100</span>
 <span id="101">101</span>
 <span id="102">102</span>
+<span id="103">103</span>
 </pre><pre class="rust">
 <span class="attribute">#![<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
 
 <span class="doccomment">/// Given a range and iterate sub-range for each block</span>
+<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">BlockIter</span> {
     <span class="kw">pub</span> <span class="ident">begin</span>: <span class="ident">usize</span>,
     <span class="kw">pub</span> <span class="ident">end</span>: <span class="ident">usize</span>,

@@ -124,14 +124,12 @@
 <span id="124">124</span>
 <span id="125">125</span>
 <span id="126">126</span>
-<span id="127">127</span>
 </pre><pre class="rust">
 <span class="doccomment">//! Objects for Kernel Debuglog.</span>
 <span class="kw">use</span> {
     <span class="kw">super</span>::<span class="kw-2">*</span>,
     <span class="kw">crate</span><span class="ident">::object</span>::<span class="kw-2">*</span>,
     <span class="ident">alloc</span>::{<span class="ident">sync::Arc</span>, <span class="ident">vec::Vec</span>},
-    <span class="ident">kernel_hal::timer_now</span>,
     <span class="ident">lazy_static::lazy_static</span>,
     <span class="ident">spin::Mutex</span>,
 };
@@ -239,7 +237,7 @@
             <span class="ident">datalen</span>: <span class="ident">data</span>.<span class="ident">len</span>() <span class="kw">as</span> <span class="ident">u16</span>,
             <span class="ident">severity</span>,
             <span class="ident">flags</span>: <span class="ident">flags</span> <span class="kw">as</span> <span class="ident">u8</span>,
-            <span class="ident">timestamp</span>: <span class="ident">timer_now</span>().<span class="ident">as_nanos</span>() <span class="kw">as</span> <span class="ident">u64</span>,
+            <span class="ident">timestamp</span>: <span class="ident">kernel_hal::timer::timer_now</span>().<span class="ident">as_nanos</span>() <span class="kw">as</span> <span class="ident">u64</span>,
             <span class="ident">pid</span>,
             <span class="ident">tid</span>,
         };

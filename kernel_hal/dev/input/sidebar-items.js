@@ -1,0 +1,1 @@
+initSidebarItems({"fn":[["init","Initialize input devices."],["kbd_set_callback","Setup the callback when a keyboard event occurs."],["mouse_set_callback","Setup the callback when a mouse event occurs."]]});

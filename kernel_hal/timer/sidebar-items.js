@@ -1,0 +1,1 @@
+initSidebarItems({"fn":[["timer_now","Get current time."],["timer_set","Set a new timer. After `deadline`, the `callback` will be called."]]});

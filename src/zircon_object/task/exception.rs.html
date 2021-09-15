@@ -663,7 +663,7 @@
 </pre><pre class="rust">
 <span class="kw">use</span> {
     <span class="kw">super</span>::<span class="kw-2">*</span>, <span class="kw">crate</span><span class="ident">::ipc</span>::<span class="kw-2">*</span>, <span class="kw">crate</span><span class="ident">::object</span>::<span class="kw-2">*</span>, <span class="ident">alloc::sync::Arc</span>, <span class="ident">alloc::vec</span>, <span class="ident">alloc::vec::Vec</span>,
-    <span class="ident">core::mem::size_of</span>, <span class="ident">futures::channel::oneshot</span>, <span class="ident">kernel_hal::UserContext</span>, <span class="ident">spin::Mutex</span>,
+    <span class="ident">core::mem::size_of</span>, <span class="ident">futures::channel::oneshot</span>, <span class="ident">kernel_hal::context::UserContext</span>, <span class="ident">spin::Mutex</span>,
 };
 
 <span class="doccomment">/// Kernel-owned exception channel endpoint.</span>
@@ -820,7 +820,7 @@
         <span class="ident">ExceptionContext</span> {
             <span class="ident">vector</span>: <span class="ident">cx</span>.<span class="ident">trap_num</span> <span class="kw">as</span> <span class="ident">u64</span>,
             <span class="ident">err_code</span>: <span class="ident">cx</span>.<span class="ident">error_code</span> <span class="kw">as</span> <span class="ident">u64</span>,
-            <span class="ident">cr2</span>: <span class="ident">kernel_hal::fetch_fault_vaddr</span>() <span class="kw">as</span> <span class="ident">u64</span>,
+            <span class="ident">cr2</span>: <span class="ident">kernel_hal::context::fetch_page_fault_info</span>(<span class="ident">cx</span>.<span class="ident">error_code</span>).<span class="number">0</span> <span class="kw">as</span> <span class="ident">u64</span>,
         }
     }
     <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;aarch64&quot;</span>)]</span>

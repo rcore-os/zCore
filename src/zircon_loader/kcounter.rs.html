@@ -136,9 +136,9 @@
             <span class="kw">fn</span> <span class="ident">kcounters_arena_start</span>();
             <span class="kw">fn</span> <span class="ident">kcounters_arena_end</span>();
         }
-        <span class="kw">use</span> <span class="ident">kernel_hal::PageTableTrait</span>;
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">pgtable</span> <span class="op">=</span> <span class="ident">kernel_hal::PageTable::current</span>();
-        <span class="kw">let</span> <span class="ident">paddr</span> <span class="op">=</span> <span class="ident">pgtable</span>.<span class="ident">query</span>(<span class="ident">kcounters_arena_start</span> <span class="kw">as</span> <span class="ident">usize</span>).<span class="ident">unwrap</span>();
+        <span class="kw">use</span> <span class="ident">kernel_hal::vm</span>::{<span class="ident">GenericPageTable</span>, <span class="ident">PageTable</span>};
+        <span class="kw">let</span> <span class="ident">pgtable</span> <span class="op">=</span> <span class="ident">PageTable::from_current</span>();
+        <span class="kw">let</span> <span class="ident">paddr</span> <span class="op">=</span> <span class="ident">pgtable</span>.<span class="ident">query</span>(<span class="ident">kcounters_arena_start</span> <span class="kw">as</span> <span class="ident">usize</span>).<span class="ident">unwrap</span>().<span class="number">0</span>;
         <span class="macro">assert_eq!</span>(
             <span class="ident">kcounters_arena_start</span> <span class="kw">as</span> <span class="ident">usize</span> <span class="op">/</span> <span class="ident">PAGE_SIZE</span>,
             <span class="ident">kcounters_arena_end</span> <span class="kw">as</span> <span class="ident">usize</span> <span class="op">/</span> <span class="ident">PAGE_SIZE</span>,
