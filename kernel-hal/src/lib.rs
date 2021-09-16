@@ -31,7 +31,7 @@ cfg_if! {
     }
 }
 
-pub use common::{addr, defs::*, future, user};
+pub use common::{addr, defs::*, drivers, future, serial, user};
 pub use config::*;
 pub use imp::*;
 pub use kernel_handler::*;

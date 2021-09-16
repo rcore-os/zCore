@@ -16,7 +16,6 @@ hal_fn_impl! {
 pub struct PageTable;
 
 impl PageTable {
-    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self
     }
@@ -26,6 +25,12 @@ impl PageTable {
     }
 
     pub fn clone_kernel(&self) -> Self {
+        Self::new()
+    }
+}
+
+impl Default for PageTable {
+    fn default() -> Self {
         Self::new()
     }
 }

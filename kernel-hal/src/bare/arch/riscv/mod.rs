@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 mod consts;
+mod drivers;
 mod plic;
 mod sbi;
 mod trap;
@@ -10,7 +11,6 @@ pub mod context;
 pub mod cpu;
 pub mod interrupt;
 pub mod mem;
-pub mod serial;
 pub mod special;
 pub mod timer;
 pub mod vm;
@@ -19,7 +19,7 @@ pub fn init() {
     vm::remap_the_kernel().unwrap();
     interrupt::init();
     timer::init();
-    serial::init();
+    drivers::init();
 
     #[cfg(feature = "board_qemu")]
     {

@@ -1,6 +1,8 @@
-use core::{convert::TryInto, fmt};
+use core::convert::TryInto;
+use core::ops::{BitAnd, BitOr, Not};
 
 use bitflags::bitflags;
+use spin::Mutex;
 
 use crate::io::{Io, Mmio, ReadOnly};
 use crate::scheme::{Scheme, UartScheme};
@@ -28,7 +30,7 @@ bitflags! {
 }
 
 #[repr(C)]
-pub struct Uart16550<T: Io> {
+struct Uart16550Inner<T: Io> {
     /// Data register, read to receive, write to send
     data: T,
     /// Interrupt enable
@@ -45,50 +47,11 @@ pub struct Uart16550<T: Io> {
     modem_sts: ReadOnly<T>,
 }
 
-#[cfg(target_arch = "x86_64")]
-impl Uart16550<crate::io::Pio<u8>> {
-    pub const fn new(base: u16) -> Self {
-        use crate::io::Pio;
-        Self {
-            data: Pio::new(base),
-            int_en: Pio::new(base + 1),
-            fifo_ctrl: Pio::new(base + 2),
-            line_ctrl: Pio::new(base + 3),
-            modem_ctrl: Pio::new(base + 4),
-            line_sts: ReadOnly::new(Pio::new(base + 5)),
-            modem_sts: ReadOnly::new(Pio::new(base + 6)),
-        }
-    }
-}
-
-impl Uart16550<Mmio<u8>> {
-    pub unsafe fn new(base: usize) -> &'static mut Self {
-        Mmio::<u8>::from_base(base)
-    }
-}
-
-impl Uart16550<Mmio<u32>> {
-    pub unsafe fn new(base: usize) -> &'static mut Self {
-        Mmio::<u32>::from_base(base)
-    }
-}
-
-impl<T: Io> Uart16550<T>
+impl<T: Io> Uart16550Inner<T>
 where
     T::Value: From<u8> + TryInto<u8>,
 {
-    fn line_sts(&self) -> LineStsFlags {
-        LineStsFlags::from_bits_truncate(
-            (self.line_sts.read() & 0xFF.into()).try_into().unwrap_or(0),
-        )
-    }
-}
-
-impl<T: Io> Scheme for Uart16550<T>
-where
-    T::Value: From<u8> + TryInto<u8>,
-{
-    fn init(&mut self) -> DeviceResult {
+    fn init(&mut self) {
         // Disable interrupts
         self.int_en.write(0x00.into());
 
@@ -112,15 +75,14 @@ where
 
         // Enable interrupts
         self.int_en.write(0x01.into());
-
-        Ok(())
     }
-}
 
-impl<T: Io> UartScheme for Uart16550<T>
-where
-    T::Value: From<u8> + TryInto<u8>,
-{
+    fn line_sts(&self) -> LineStsFlags {
+        LineStsFlags::from_bits_truncate(
+            (self.line_sts.read() & 0xFF.into()).try_into().unwrap_or(0),
+        )
+    }
+
     fn try_recv(&mut self) -> DeviceResult<Option<u8>> {
         if self.line_sts().contains(LineStsFlags::INPUT_FULL) {
             Ok(Some(
@@ -136,29 +98,132 @@ where
         self.data.write(ch.into());
         Ok(())
     }
-}
 
-impl<T: Io> fmt::Write for Uart16550<T>
-where
-    T::Value: From<u8> + TryInto<u8>,
-{
-    fn write_str(&mut self, s: &str) -> fmt::Result {
+    fn write_str(&mut self, s: &str) -> DeviceResult {
         for b in s.bytes() {
             match b {
                 8 | 0x7F => {
-                    self.send(8).unwrap();
-                    self.send(b' ').unwrap();
-                    self.send(8).unwrap();
+                    self.send(8)?;
+                    self.send(b' ')?;
+                    self.send(8)?;
                 }
                 b'\n' => {
-                    self.send(b'\r').unwrap();
-                    self.send(b'\n').unwrap();
+                    self.send(b'\r')?;
+                    self.send(b'\n')?;
                 }
                 _ => {
-                    self.send(b).unwrap();
+                    self.send(b)?;
                 }
             }
         }
         Ok(())
     }
 }
+
+pub struct Uart16550Mmio<V: 'static>
+where
+    V: Copy + BitAnd<Output = V> + BitOr<Output = V> + Not<Output = V>,
+{
+    inner: Mutex<&'static mut Uart16550Inner<Mmio<V>>>,
+}
+
+impl<V> Scheme for Uart16550Mmio<V> where
+    V: Copy + BitAnd<Output = V> + BitOr<Output = V> + Not<Output = V> + Send
+{
+}
+
+impl<V> UartScheme for Uart16550Mmio<V>
+where
+    V: Copy
+        + BitAnd<Output = V>
+        + BitOr<Output = V>
+        + Not<Output = V>
+        + From<u8>
+        + TryInto<u8>
+        + Send,
+{
+    fn try_recv(&self) -> DeviceResult<Option<u8>> {
+        self.inner.lock().try_recv()
+    }
+
+    fn send(&self, ch: u8) -> DeviceResult {
+        self.inner.lock().send(ch)
+    }
+
+    fn write_str(&self, s: &str) -> DeviceResult {
+        self.inner.lock().write_str(s)
+    }
+}
+
+impl Uart16550Mmio<u8> {
+    /// # Safety
+    ///
+    /// This function is unsafe because `base_addr` may be an arbitrary address.
+    pub unsafe fn new(base: usize) -> Self {
+        let uart: &mut Uart16550Inner<Mmio<u8>> = Mmio::<u8>::from_base(base);
+        uart.init();
+        Self {
+            inner: Mutex::new(uart),
+        }
+    }
+}
+
+impl Uart16550Mmio<u32> {
+    /// # Safety
+    ///
+    /// This function is unsafe because `base_addr` may be an arbitrary address.
+    pub unsafe fn new(base: usize) -> Self {
+        let uart: &mut Uart16550Inner<Mmio<u32>> = Mmio::<u32>::from_base(base);
+        uart.init();
+        Self {
+            inner: Mutex::new(uart),
+        }
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+mod pio {
+    use super::*;
+    use crate::io::Pio;
+
+    pub struct Uart16550Pio {
+        inner: Mutex<Uart16550Inner<Pio<u8>>>,
+    }
+
+    impl Scheme for Uart16550Pio {}
+
+    impl UartScheme for Uart16550Pio {
+        fn try_recv(&self) -> DeviceResult<Option<u8>> {
+            self.inner.lock().try_recv()
+        }
+
+        fn send(&self, ch: u8) -> DeviceResult {
+            self.inner.lock().send(ch)
+        }
+
+        fn write_str(&self, s: &str) -> DeviceResult {
+            self.inner.lock().write_str(s)
+        }
+    }
+
+    impl Uart16550Pio {
+        pub fn new(base: u16) -> Self {
+            let mut uart = Uart16550Inner::<Pio<u8>> {
+                data: Pio::new(base),
+                int_en: Pio::new(base + 1),
+                fifo_ctrl: Pio::new(base + 2),
+                line_ctrl: Pio::new(base + 3),
+                modem_ctrl: Pio::new(base + 4),
+                line_sts: ReadOnly::new(Pio::new(base + 5)),
+                modem_sts: ReadOnly::new(Pio::new(base + 6)),
+            };
+            uart.init();
+            Self {
+                inner: Mutex::new(uart),
+            }
+        }
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+pub use pio::Uart16550Pio;

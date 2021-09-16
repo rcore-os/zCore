@@ -240,7 +240,7 @@ fn timer() {
 }
 
 fn com1() {
-    super::serial::handle_irq();
+    crate::serial::handle_irq();
 }
 
 /*

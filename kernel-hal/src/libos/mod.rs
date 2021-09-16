@@ -1,10 +1,10 @@
+mod drivers;
 mod mem_common;
 
 pub(super) mod dummy;
 
 pub mod config;
 pub mod mem;
-pub mod serial;
 pub mod thread;
 pub mod timer;
 pub mod vdso;
@@ -32,16 +32,16 @@ include!("macos.rs");
 pub fn init() {
     crate::KHANDLER.init_by(&crate::DummyKernelHandler);
 
+    drivers::init();
+
     #[cfg(target_os = "macos")]
     unsafe {
         register_sigsegv_handler();
     }
     // spawn a thread to read stdin
     // TODO: raw mode
-    use std::io::Read;
-    std::thread::spawn(|| {
-        for i in std::io::stdin().bytes() {
-            serial::serial_put(i.unwrap());
-        }
+    std::thread::spawn(|| loop {
+        crate::serial::handle_irq();
+        core::hint::spin_loop();
     });
 }

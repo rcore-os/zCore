@@ -1,5 +1,5 @@
 use alloc::boxed::Box;
-use core::{fmt::Arguments, future::Future, ops::Range, pin::Pin, time::Duration};
+use core::{future::Future, ops::Range, pin::Pin, time::Duration};
 
 use crate::{common, HalResult, MMUFlags, PhysAddr, VirtAddr};
 
@@ -123,11 +123,6 @@ hal_fn_def! {
 
         /// Check timers, call when timer interrupt happened.
         pub(crate) fn timer_tick();
-    }
-
-    pub mod serial: common::serial {
-        /// Print format string and its arguments to serial.
-        pub fn serial_write_fmt(fmt: Arguments);
     }
 
     pub mod rand {

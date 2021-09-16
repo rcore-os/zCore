@@ -176,7 +176,6 @@ impl<L: PageTableLevel, PTE: GenericPTE> PageTableImpl<L, PTE> {
 
 /// Public implementation.
 impl<L: PageTableLevel, PTE: GenericPTE> PageTableImpl<L, PTE> {
-    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         let root = PhysFrame::new_zero().expect("failed to alloc frame");
         Self {
@@ -195,6 +194,12 @@ impl<L: PageTableLevel, PTE: GenericPTE> PageTableImpl<L, PTE> {
         let pt = Self::new();
         crate::vm::pt_clone_kernel_space(pt.table_phys(), self.table_phys());
         pt
+    }
+}
+
+impl<L: PageTableLevel, PTE: GenericPTE> Default for PageTableImpl<L, PTE> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

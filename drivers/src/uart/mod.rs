@@ -1,7 +1,5 @@
 mod uart_16550;
-pub use uart_16550::Uart16550;
+pub use uart_16550::Uart16550Mmio;
 
-#[cfg(feature = "virtio")]
-mod virtio_console;
-#[cfg(feature = "virtio")]
-pub use virtio_console::VirtIoConsole;
+#[cfg(target_arch = "x86_64")]
+pub use uart_16550::Uart16550Pio;

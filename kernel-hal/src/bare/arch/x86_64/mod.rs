@@ -1,5 +1,6 @@
 mod acpi_table;
 mod apic;
+mod drivers;
 mod trap;
 
 pub mod config;
@@ -7,7 +8,6 @@ pub mod context;
 pub mod cpu;
 pub mod interrupt;
 pub mod mem;
-pub mod serial;
 pub mod special;
 pub mod timer;
 pub mod vm;
@@ -16,8 +16,8 @@ use x86_64::registers::control::{Cr4, Cr4Flags};
 
 pub fn init() {
     apic::init();
+    drivers::init();
     interrupt::init();
-    serial::init();
 
     fn ap_main() {
         info!("processor {} started", cpu::cpu_id());

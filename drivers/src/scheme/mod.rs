@@ -10,8 +10,6 @@ pub use input::InputScheme;
 pub use net::NetScheme;
 pub use uart::UartScheme;
 
-pub trait Scheme {
-    fn init(&mut self) -> crate::DeviceResult {
-        Ok(())
-    }
+pub trait Scheme: Send + Sync {
+    fn handle_irq(&self, _irq_num: u32) {}
 }

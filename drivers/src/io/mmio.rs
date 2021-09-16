@@ -9,6 +9,9 @@ pub struct Mmio<T> {
 }
 
 impl<T> Mmio<T> {
+    /// # Safety
+    ///
+    /// This function is unsafe because `base_addr` may be an arbitrary address.
     pub unsafe fn from_base<'a, R>(base_addr: usize) -> &'a mut R {
         &mut *(base_addr as *mut R)
     }

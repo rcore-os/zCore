@@ -25,7 +25,7 @@ pub struct ReadOnly<I> {
 
 impl<I> ReadOnly<I> {
     pub const fn new(inner: I) -> ReadOnly<I> {
-        ReadOnly { inner: inner }
+        ReadOnly { inner }
     }
 }
 
@@ -43,7 +43,7 @@ pub struct WriteOnly<I> {
 
 impl<I> WriteOnly<I> {
     pub const fn new(inner: I) -> WriteOnly<I> {
-        WriteOnly { inner: inner }
+        WriteOnly { inner }
     }
 }
 

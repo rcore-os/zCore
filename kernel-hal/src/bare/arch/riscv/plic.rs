@@ -88,7 +88,7 @@ pub(super) fn handle_interrupt() {
             }
             UART0_INT_NUM => {
                 //UART中断ID是10
-                super::serial::handle_irq();
+                crate::serial::handle_irq();
 
                 //换用sbi的方式获取字符
                 //interrupt::try_process_serial();

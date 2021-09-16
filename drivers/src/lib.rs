@@ -1,12 +1,14 @@
-#![no_std]
+#![cfg_attr(not(feature = "mock"), no_std)]
 #![feature(asm)]
 
 extern crate alloc;
 
-#[cfg(feature = "virtio")]
-mod virtio;
+#[cfg(feature = "mock")]
+pub mod mock;
 
-pub mod block;
+#[cfg(feature = "virtio")]
+pub mod virtio;
+
 pub mod io;
 pub mod scheme;
 pub mod uart;
