@@ -56,8 +56,7 @@ pub fn run(args: Vec<String>, envs: Vec<String>, rootfs: Arc<dyn FileSystem>) ->
     let path = args[0].clone();
     debug!("Linux process: {:?}", path);
 
-    use kernel_hal::vm::{GenericPageTable, PageTable};
-    let pg_token = PageTable::from_current().table_phys();
+    let pg_token = kernel_hal::vm::current_vmtoken();
     debug!("current pgt = {:#x}", pg_token);
     //调用zircon-object/src/task/thread.start设置好要执行的thread
     let (entry, sp) = loader.load(&proc.vmar(), &data, args, envs, path).unwrap();
@@ -96,7 +95,7 @@ async fn new_thread(thread: CurrentThread) {
             0x20..=0x3f => {
                 kernel_hal::interrupt::handle_irq(cx.trap_num as u32);
                 if cx.trap_num == 0x20 {
-                    kernel_hal::future::yield_now().await;
+                    kernel_hal::thread::yield_now().await;
                 }
             }
             0xe => {
@@ -133,7 +132,7 @@ async fn new_thread(thread: CurrentThread) {
                         if trap_num == 4 || trap_num == 5 {
                             debug!("Timer interrupt: {}", trap_num);
 
-                            kernel_hal::future::yield_now().await;
+                            kernel_hal::thread::yield_now().await;
                         }
 
                         //kernel_hal::interrupt::handle_irq(trap_num as u32);

@@ -10,7 +10,7 @@ use crate::{mem::phys_to_virt, VirtAddr, PAGE_SIZE};
 pub(super) const PMEM_BASE: VirtAddr = 0x8_0000_0000;
 pub(super) const PMEM_SIZE: usize = 0x4000_0000; // 1GiB
 
-lazy_static::lazy_static! {
+lazy_static! {
     pub(super) static ref FRAME_FILE: File = create_pmem_file();
     pub(super) static ref AVAILABLE_FRAMES: Mutex<VecDeque<usize>> =
         Mutex::new((PAGE_SIZE..PMEM_SIZE).step_by(PAGE_SIZE).collect());

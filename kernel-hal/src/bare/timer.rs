@@ -4,7 +4,7 @@ use core::time::Duration;
 use naive_timer::Timer;
 use spin::Mutex;
 
-lazy_static::lazy_static! {
+lazy_static! {
     pub static ref NAIVE_TIMER: Mutex<Timer> = Mutex::new(Timer::default());
 }
 

@@ -297,7 +297,7 @@ impl Syscall<'_> {
     pub async fn sys_nanosleep(&self, req: UserInPtr<TimeSpec>) -> SysResult {
         info!("nanosleep: deadline={:?}", req);
         let req = req.read()?;
-        kernel_hal::future::sleep_until(req.into()).await;
+        kernel_hal::thread::sleep_until(req.into()).await;
         Ok(0)
     }
 

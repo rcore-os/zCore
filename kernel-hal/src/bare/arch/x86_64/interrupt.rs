@@ -28,7 +28,7 @@ const Spurious: u32 = 31;
 
 const IO_APIC_NUM_REDIRECTIONS: u8 = 120;
 
-lazy_static::lazy_static! {
+lazy_static! {
     static ref IRQ_MANAGER: Mutex<IrqManager> = Mutex::new(IrqManager::new(0x20, 0xff));
     static ref MAX_INSTR_TABLE: Mutex<Vec<(usize, u8)>> = Mutex::default();
 }
@@ -239,10 +239,6 @@ fn timer() {
     crate::timer::timer_tick();
 }
 
-fn com1() {
-    crate::serial::handle_irq();
-}
-
 /*
 fn keyboard() {
     use pc_keyboard::{DecodedKey, KeyCode};
@@ -285,7 +281,11 @@ pub(super) fn init() {
         .ok();
     // im.register_handler(Keyboard + IRQ_MIN_ID, Box::new(keyboard));
     // im.register_handler(Mouse + IRQ_MIN_ID, Box::new(mouse));
-    im.register_handler(COM1 + IRQ_MIN_ID, Box::new(com1)).ok();
+    im.register_handler(
+        COM1 + IRQ_MIN_ID,
+        Box::new(|| crate::drivers::UART.handle_irq(COM1)),
+    )
+    .ok();
     im.register_handler(57u32, Box::new(irq57test)).ok();
     // register_handler(Keyboard, Keyboard + IRQ_MIN_ID);
     // register_handler(Mouse, Mouse + IRQ_MIN_ID);

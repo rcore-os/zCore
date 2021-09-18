@@ -1,28 +1,43 @@
-use std::io::{self, Read};
-use std::sync::mpsc::{self, Receiver};
+use std::collections::VecDeque;
 use std::sync::Mutex;
+
+use async_std::{io, io::prelude::*, task};
 
 use crate::scheme::{Scheme, UartScheme};
 use crate::DeviceResult;
 
-pub struct MockUart {
-    stdin_channel: Mutex<Receiver<u8>>,
+const UART_BUF_LEN: usize = 256;
+
+lazy_static::lazy_static! {
+    static ref UART_BUF: Mutex<VecDeque<u8>> = Mutex::new(VecDeque::with_capacity(UART_BUF_LEN));
 }
+
+pub struct MockUart;
 
 impl MockUart {
     pub fn new() -> Self {
-        let (tx, rx) = mpsc::channel();
-        std::thread::spawn(move || loop {
-            let mut buf = [0];
-            io::stdin().read_exact(&mut buf).unwrap();
-            if tx.send(buf[0]).is_err() {
-                break;
+        Self
+    }
+
+    pub fn start_irq_serve(irq_handler: impl Fn() + Send + Sync + 'static) {
+        task::spawn(async move {
+            loop {
+                let mut buf = [0; UART_BUF_LEN];
+                let remains = UART_BUF_LEN - UART_BUF.lock().unwrap().len();
+                if remains > 0 {
+                    if let Ok(n) = io::stdin().read(&mut buf[..remains]).await {
+                        {
+                            let mut uart_buf = UART_BUF.lock().unwrap();
+                            for c in &buf[..n] {
+                                uart_buf.push_back(*c);
+                            }
+                        }
+                        irq_handler();
+                    }
+                }
+                task::yield_now().await;
             }
-            core::hint::spin_loop();
         });
-        Self {
-            stdin_channel: Mutex::new(rx),
-        }
     }
 }
 
@@ -36,9 +51,10 @@ impl Scheme for MockUart {}
 
 impl UartScheme for MockUart {
     fn try_recv(&self) -> DeviceResult<Option<u8>> {
-        match self.stdin_channel.lock().unwrap().try_recv() {
-            Ok(ch) => Ok(Some(ch)),
-            _ => Ok(None),
+        if let Some(c) = UART_BUF.lock().unwrap().pop_front() {
+            Ok(Some(c))
+        } else {
+            Ok(None)
         }
     }
 
@@ -56,10 +72,14 @@ impl UartScheme for MockUart {
 #[cfg(test)]
 mod test {
     use super::*;
+    use std::sync::Arc;
 
     #[test]
     fn test_mock_uart() {
-        let uart = MockUart::new();
+        let uart = Arc::new(MockUart::new());
+        let u = uart.clone();
+        MockUart::start_irq_serve(move || u.handle_irq(0));
+
         uart.write_str("Hello, World!\n").unwrap();
         uart.write_str(format!("{} + {} = {}\n", 1, 2, 1 + 2).as_str())
             .unwrap();

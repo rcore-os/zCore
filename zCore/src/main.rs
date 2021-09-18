@@ -167,19 +167,18 @@ fn get_rootproc(cmdline: &str) -> Vec<String> {
 
 #[cfg(feature = "linux")]
 fn main(ramfs_data: &'static mut [u8], cmdline: &str) -> ! {
+    use kernel_hal::drivers::UART;
     use linux_object::fs::STDIN;
 
-    kernel_hal::serial::serial_set_callback(Box::new({
-        move || {
-            let mut buffer = [0; 255];
-            let len = kernel_hal::serial::serial_read(&mut buffer);
-            for c in &buffer[..len] {
-                STDIN.push((*c).into());
-                // kernel_hal::serial::serial_write(alloc::format!("{}", *c as char).as_str());
+    UART.subscribe(
+        Box::new(|_| {
+            while let Some(c) = UART.try_recv().unwrap() {
+                let c = if c == b'\r' { b'\n' } else { c };
+                STDIN.push(c as char);
             }
-            false
-        }
-    }));
+        }),
+        false,
+    );
 
     //let args: Vec<String> = vec!["/bin/busybox".into(), "sh".into()];
     let args: Vec<String> = get_rootproc(cmdline);
@@ -234,6 +233,9 @@ impl KernelHandler for ZcoreKernelHandler {
     }
 
     fn handle_page_fault(&self, fault_vaddr: usize, access_flags: MMUFlags) {
-        panic!("page fault from kernel mode @ {:#x}({:?})", fault_vaddr, access_flags);
+        panic!(
+            "page fault from kernel mode @ {:#x}({:?})",
+            fault_vaddr, access_flags
+        );
     }
 }

@@ -38,10 +38,4 @@ pub fn init() {
     unsafe {
         register_sigsegv_handler();
     }
-    // spawn a thread to read stdin
-    // TODO: raw mode
-    std::thread::spawn(|| loop {
-        crate::serial::handle_irq();
-        core::hint::spin_loop();
-    });
 }

@@ -15,7 +15,6 @@ use {
     },
     futures::{channel::oneshot::*, future::FutureExt, pin_mut, select_biased},
     kernel_hal::context::{GeneralRegs, UserContext},
-    // kernel_hal::future::sleep_until,
     spin::Mutex,
 };
 
@@ -603,14 +602,14 @@ impl CurrentThread {
             select_biased! {
                 ret = future.fuse() => ret.into_result(),
                 _ = killed.fuse() => Err(ZxError::STOP),
-                _ = kernel_hal::future::sleep_until(deadline).fuse() => Err(ZxError::TIMED_OUT),
+                _ = kernel_hal::thread::sleep_until(deadline).fuse() => Err(ZxError::TIMED_OUT),
                 _ = cancel_token.fuse() => Err(ZxError::CANCELED),
             }
         } else {
             select_biased! {
                 ret = future.fuse() => ret.into_result(),
                 _ = killed.fuse() => Err(ZxError::STOP),
-                _ = kernel_hal::future::sleep_until(deadline).fuse() => Err(ZxError::TIMED_OUT),
+                _ = kernel_hal::thread::sleep_until(deadline).fuse() => Err(ZxError::TIMED_OUT),
             }
         };
         let mut inner = self.inner.lock();

@@ -220,7 +220,7 @@ async fn new_thread(thread: CurrentThread) {
                 kernel_hal::interrupt::handle_irq(trap_num as u32);
                 if trap_num == 0x20 {
                     EXCEPTIONS_TIMER.add(1);
-                    kernel_hal::future::yield_now().await;
+                    kernel_hal::thread::yield_now().await;
                 }
             }
             0xe => {

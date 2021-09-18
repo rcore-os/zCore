@@ -16,7 +16,11 @@ impl<'a> VirtIoBlk<'a> {
     }
 }
 
-impl<'a> Scheme for VirtIoBlk<'a> {}
+impl<'a> Scheme for VirtIoBlk<'a> {
+    fn handle_irq(&self, _irq_num: u32) {
+        self.inner.lock().ack_interrupt();
+    }
+}
 
 impl<'a> BlockScheme for VirtIoBlk<'a> {
     fn read_block(&self, block_id: usize, buf: &mut [u8]) -> DeviceResult {

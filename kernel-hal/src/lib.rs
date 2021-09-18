@@ -5,12 +5,12 @@
 #![deny(warnings)]
 
 extern crate alloc;
-
 #[macro_use]
 extern crate log;
-
 #[macro_use]
 extern crate cfg_if;
+#[macro_use]
+extern crate lazy_static;
 
 #[macro_use]
 mod macros;
@@ -31,7 +31,7 @@ cfg_if! {
     }
 }
 
-pub use common::{addr, defs::*, drivers, future, serial, user};
+pub use common::{addr, defs::*, drivers, serial, user};
 pub use config::*;
 pub use imp::*;
 pub use kernel_handler::*;

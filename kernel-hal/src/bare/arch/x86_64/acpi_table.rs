@@ -13,7 +13,7 @@ pub struct AcpiTable {
     inner: Acpi,
 }
 
-lazy_static::lazy_static! {
+lazy_static! {
     static ref ACPI_TABLE: Mutex<Option<AcpiTable>> = Mutex::default();
 }
 

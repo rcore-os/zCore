@@ -8,7 +8,7 @@ description = "Device drivers of zCore"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-mock = []
+mock = ["async-std"]
 virtio = ["virtio-drivers"]
 
 [dependencies]
@@ -16,4 +16,6 @@ log = "0.4"
 spin = "0.9"
 cfg-if = "1.0"
 bitflags = "1.3"
+lazy_static = "1.4"
 virtio-drivers = { git = "https://github.com/rcore-os/virtio-drivers", rev = "2b3c6cf", optional = true }
+async-std = { version = "1.10", optional = true }

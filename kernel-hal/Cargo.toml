@@ -28,7 +28,7 @@ zcore-drivers = { path = "../drivers" }
 libc = "0.2"
 tempfile = "3"
 lazy_static = "1.4"
-async-std = { version = "1.9", optional = true }
+async-std = { version = "1.10", optional = true }
 
 # Bare-metal mode
 [target.'cfg(target_os = "none")'.dependencies]

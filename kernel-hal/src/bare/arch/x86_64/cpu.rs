@@ -1,4 +1,4 @@
-lazy_static::lazy_static! {
+lazy_static! {
     static ref TSC_FREQUENCY: u16 = {
         const DEFAULT: u16 = 2600;
         if let Some(info) = raw_cpuid::CpuId::new().get_processor_frequency_info() {

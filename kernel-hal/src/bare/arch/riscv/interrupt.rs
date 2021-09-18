@@ -11,7 +11,7 @@ const U_PLIC: u32 = 8;
 const S_PLIC: u32 = 9;
 const M_PLIC: u32 = 11;
 
-lazy_static::lazy_static! {
+lazy_static! {
     static ref IRQ_MANAGER: Mutex<IrqManager> = Mutex::new(IrqManager::new(1, 15));
 }
 

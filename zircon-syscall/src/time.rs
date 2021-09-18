@@ -94,11 +94,13 @@ impl Syscall<'_> {
     pub async fn sys_nanosleep(&self, deadline: Deadline) -> ZxResult {
         info!("nanosleep: deadline={:?}", deadline);
         if deadline.0 <= 0 {
-            kernel_hal::future::yield_now().await;
+            kernel_hal::thread::yield_now().await;
         } else {
+            let future = kernel_hal::thread::sleep_until(deadline.into());
+            pin_mut!(future);
             self.thread
                 .blocking_run(
-                    kernel_hal::future::sleep_until(deadline.into()),
+                    future,
                     ThreadState::BlockedSleeping,
                     Deadline::forever().into(),
                     None,

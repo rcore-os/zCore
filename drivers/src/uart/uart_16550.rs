@@ -102,11 +102,6 @@ where
     fn write_str(&mut self, s: &str) -> DeviceResult {
         for b in s.bytes() {
             match b {
-                8 | 0x7F => {
-                    self.send(8)?;
-                    self.send(b' ')?;
-                    self.send(8)?;
-                }
                 b'\n' => {
                     self.send(b'\r')?;
                     self.send(b'\n')?;

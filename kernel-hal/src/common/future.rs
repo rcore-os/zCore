@@ -1,17 +1,11 @@
 use alloc::boxed::Box;
-use core::future::Future;
-use core::pin::Pin;
 use core::task::{Context, Poll};
 use core::time::Duration;
-
-/// Yields execution back to the async runtime.
-pub fn yield_now() -> impl Future<Output = ()> {
-    YieldFuture::default()
-}
+use core::{future::Future, pin::Pin};
 
 #[must_use = "yield_now does nothing unless polled/`await`-ed"]
 #[derive(Default)]
-struct YieldFuture {
+pub(super) struct YieldFuture {
     flag: bool,
 }
 
@@ -29,14 +23,15 @@ impl Future for YieldFuture {
     }
 }
 
-/// Sleeps until the specified of time.
-pub fn sleep_until(deadline: Duration) -> impl Future {
-    SleepFuture { deadline }
+#[must_use = "sleep does nothing unless polled/`await`-ed"]
+pub(super) struct SleepFuture {
+    deadline: Duration,
 }
 
-#[must_use = "sleep does nothing unless polled/`await`-ed"]
-pub struct SleepFuture {
-    deadline: Duration,
+impl SleepFuture {
+    pub fn new(deadline: Duration) -> Self {
+        Self { deadline }
+    }
 }
 
 impl Future for SleepFuture {
@@ -54,29 +49,37 @@ impl Future for SleepFuture {
     }
 }
 
-/// Get a char from serial.
-pub fn serial_getchar() -> impl Future<Output = u8> {
-    SerialFuture
+#[must_use = "serial_getchar does nothing unless polled/`await`-ed"]
+pub(super) struct SerialFuture<'a> {
+    buf: &'a mut [u8],
 }
 
-#[must_use = "serial_getchar does nothing unless polled/`await`-ed"]
-pub struct SerialFuture;
+impl<'a> SerialFuture<'a> {
+    pub fn new(buf: &'a mut [u8]) -> Self {
+        Self { buf }
+    }
+}
 
-impl Future for SerialFuture {
-    type Output = u8;
+impl Future for SerialFuture<'_> {
+    type Output = usize;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let mut buf = [0u8];
-        if crate::serial::serial_read(&mut buf) != 0 {
-            return Poll::Ready(buf[0]);
+        use crate::drivers::UART;
+        let buf = &mut self.get_mut().buf;
+        let mut n = 0;
+        for i in 0..buf.len() {
+            if let Some(c) = UART.try_recv().unwrap() {
+                buf[i] = if c == b'\r' { b'\n' } else { c };
+                n += 1;
+            } else {
+                break;
+            }
+        }
+        if n > 0 {
+            return Poll::Ready(n);
         }
         let waker = cx.waker().clone();
-        crate::serial::serial_set_callback(Box::new({
-            move || {
-                waker.wake_by_ref();
-                true
-            }
-        }));
+        UART.subscribe(Box::new(move |_| waker.wake_by_ref()), true);
         Poll::Pending
     }
 }

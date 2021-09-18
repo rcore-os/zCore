@@ -21,16 +21,18 @@ async fn main() {
         kernel_hal::dev::fb::init();
         kernel_hal::dev::input::init();
     }
-    kernel_hal::serial::serial_set_callback(Box::new({
-        move || {
-            let mut buffer = [0; 255];
-            let len = kernel_hal::serial::serial_read(&mut buffer);
-            for c in &buffer[..len] {
-                STDIN.push((*c).into());
+
+    use kernel_hal::drivers::UART;
+    UART.subscribe(
+        Box::new(|_| {
+            while let Some(c) = UART.try_recv().unwrap() {
+                let c = if c == b'\r' { b'\n' } else { c };
+                STDIN.push(c as char);
             }
-            false
-        }
-    }));
+        }),
+        false,
+    );
+
     // run first process
     let args: Vec<_> = std::env::args().skip(1).collect();
     let envs = vec!["PATH=/usr/sbin:/usr/bin:/sbin:/bin:/usr/x86_64-alpine-linux-musl/bin".into()];

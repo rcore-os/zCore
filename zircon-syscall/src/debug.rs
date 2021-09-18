@@ -25,15 +25,10 @@ impl Syscall<'_> {
         let proc = self.thread.proc();
         proc.get_object::<Resource>(handle)?
             .validate(ResourceKind::ROOT)?;
-        // FIXME: To make 'console' work, now debug_read is a blocking call.
-        //        But it should be non-blocking.
-        // let mut vec = vec![0u8; buf_size as usize];
-        // let len = kernel_hal::serial_read(&mut vec);
-        // buf.write_array(&vec[..len])?;
-        // actual.write(len as u32)?;
-        let c = kernel_hal::future::serial_getchar().await;
-        buf.write_array(&[c])?;
-        actual.write(1)?;
+        let mut vec = vec![0u8; buf_size as usize];
+        let len = kernel_hal::serial::serial_read(&mut vec).await;
+        buf.write_array(&vec[..len])?;
+        actual.write(len as u32)?;
         Ok(())
     }
 }

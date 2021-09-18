@@ -29,4 +29,4 @@ pub enum DeviceError {
 
 pub type DeviceResult<T = ()> = core::result::Result<T, DeviceError>;
 
-pub type IrqHandler = alloc::boxed::Box<dyn Fn() + Send + Sync>;
+pub type IrqHandler = alloc::boxed::Box<dyn Fn(u32) + Send + Sync>;

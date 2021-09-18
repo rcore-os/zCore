@@ -17,9 +17,9 @@ pub mod vm;
 
 pub fn init() {
     vm::remap_the_kernel().unwrap();
+    drivers::init();
     interrupt::init();
     timer::init();
-    drivers::init();
 
     #[cfg(feature = "board_qemu")]
     {

@@ -33,11 +33,11 @@ hal_fn_def! {
     }
 
     pub mod vm: common::vm {
+        /// Read current VM token. (e.g. CR3, SATP, ...)
+        pub fn current_vmtoken() -> PhysAddr;
+
         /// Activate this page table by given `vmtoken`.
         pub(crate) fn activate_paging(vmtoken: PhysAddr);
-
-        /// Read current VM token. (e.g. CR3, SATP, ...)
-        pub(crate) fn current_vmtoken() -> PhysAddr;
 
         /// Flush TLB by the associated `vaddr`, or flush the entire TLB. (`vaddr` is `None`).
         pub(crate) fn flush_tlb(vaddr: Option<VirtAddr>);
@@ -103,7 +103,7 @@ hal_fn_def! {
         pub fn fetch_page_fault_info(info_reg: usize) -> (VirtAddr, MMUFlags);
     }
 
-    pub mod thread {
+    pub mod thread: common::thread {
         /// Spawn a new thread.
         pub fn spawn(future: Pin<Box<dyn Future<Output = ()> + Send + 'static>>, vmtoken: usize);
 

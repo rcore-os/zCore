@@ -20,7 +20,7 @@ struct InputEvent {
     value: i32,
 }
 
-lazy_static::lazy_static! {
+lazy_static! {
     static ref MOUSE_CALLBACK: Mutex<Vec<Box<MouseCallbackFn>>> = Mutex::new(Vec::new());
     static ref KBD_CALLBACK: Mutex<Vec<Box<KBDCallbackFn>>> = Mutex::new(Vec::new());
 }

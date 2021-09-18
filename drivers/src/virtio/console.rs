@@ -18,7 +18,11 @@ impl<'a> VirtIoConsole<'a> {
     }
 }
 
-impl<'a> Scheme for VirtIoConsole<'a> {}
+impl<'a> Scheme for VirtIoConsole<'a> {
+    fn handle_irq(&self, _irq_num: u32) {
+        self.inner.lock().ack_interrupt().unwrap();
+    }
+}
 
 impl<'a> UartScheme for VirtIoConsole<'a> {
     fn try_recv(&self) -> DeviceResult<Option<u8>> {
