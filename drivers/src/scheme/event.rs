@@ -2,8 +2,8 @@ use alloc::vec::Vec;
 
 use spin::Mutex;
 
-use super::{Scheme, UartScheme};
-use crate::{DeviceResult, IrqHandler};
+use super::{IrqHandler, Scheme, UartScheme};
+use crate::DeviceResult;
 
 pub struct EventListener<T: Scheme> {
     inner: T,
@@ -20,7 +20,7 @@ impl<T: Scheme> EventListener<T> {
 }
 
 impl<T: Scheme> Scheme for EventListener<T> {
-    fn handle_irq(&self, irq_num: u32) {
+    fn handle_irq(&self, irq_num: usize) {
         self.inner.handle_irq(irq_num);
         self.events.lock().retain(|(f, once)| {
             f(irq_num);

@@ -1,8 +1,7 @@
-use riscv::register::scause::{self, Exception, Interrupt, Trap};
+use riscv::register::scause::{self, Exception, Trap};
 use riscv::register::stval;
 use trapframe::TrapFrame;
 
-use super::{plic, sbi};
 use crate::MMUFlags;
 
 fn breakpoint(sepc: &mut usize) {
@@ -20,8 +19,8 @@ pub(super) fn super_timer() {
     //发生外界中断时，epc的指令还没有执行，故无需修改epc到下一条
 }
 
-fn super_soft() {
-    sbi::clear_ipi();
+pub(super) fn super_soft() {
+    super::sbi::clear_ipi();
     info!("Interrupt::SupervisorSoft!");
 }
 
@@ -47,10 +46,7 @@ pub extern "C" fn trap_handler(tf: &mut TrapFrame) {
         Trap::Exception(Exception::LoadPageFault) => page_fault(MMUFlags::READ),
         Trap::Exception(Exception::StorePageFault) => page_fault(MMUFlags::WRITE),
         Trap::Exception(Exception::InstructionPageFault) => page_fault(MMUFlags::EXECUTE),
-        Trap::Interrupt(Interrupt::SupervisorTimer) => super_timer(),
-        Trap::Interrupt(Interrupt::SupervisorSoft) => super_soft(),
-        Trap::Interrupt(Interrupt::SupervisorExternal) => plic::handle_interrupt(),
-        //Trap::Interrupt(Interrupt::SupervisorExternal) => irq_handle(code as u8),
+        Trap::Interrupt(_) => crate::interrupt::handle_irq(scause.code() as u32),
         _ => panic!("Undefined Trap: {:?}", scause.cause()),
     }
 }

@@ -283,7 +283,7 @@ pub(super) fn init() {
     // im.register_handler(Mouse + IRQ_MIN_ID, Box::new(mouse));
     im.register_handler(
         COM1 + IRQ_MIN_ID,
-        Box::new(|| crate::drivers::UART.handle_irq(COM1)),
+        Box::new(|| crate::drivers::UART.handle_irq(COM1 as usize)),
     )
     .ok();
     im.register_handler(57u32, Box::new(irq57test)).ok();

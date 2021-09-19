@@ -2,7 +2,6 @@
 
 mod consts;
 mod drivers;
-mod plic;
 mod sbi;
 mod trap;
 

@@ -17,5 +17,9 @@ spin = "0.9"
 cfg-if = "1.0"
 bitflags = "1.3"
 lazy_static = "1.4"
+bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator", rev = "b3f9f51" }
 virtio-drivers = { git = "https://github.com/rcore-os/virtio-drivers", rev = "2b3c6cf", optional = true }
 async-std = { version = "1.10", optional = true }
+
+[target.'cfg(any(target_arch = "riscv32", target_arch = "riscv64"))'.dependencies]
+riscv = { version = "0.7", features = ["inline-asm"] }

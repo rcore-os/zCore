@@ -12,8 +12,22 @@ impl<T> Mmio<T> {
     /// # Safety
     ///
     /// This function is unsafe because `base_addr` may be an arbitrary address.
-    pub unsafe fn from_base<'a, R>(base_addr: usize) -> &'a mut R {
+    pub unsafe fn from_base_as<'a, R>(base_addr: usize) -> &'a mut R {
+        assert_eq!(base_addr % core::mem::size_of::<T>(), 0);
         &mut *(base_addr as *mut R)
+    }
+
+    /// # Safety
+    ///
+    /// This function is unsafe because `base_addr` may be an arbitrary address.
+    pub unsafe fn from_base<'a>(base_addr: usize) -> &'a mut Self {
+        Self::from_base_as(base_addr)
+    }
+
+    pub fn add<'a>(&self, offset: usize) -> &'a mut Self {
+        unsafe {
+            Self::from_base(self.value.as_ptr() as usize + offset * core::mem::size_of::<T>())
+        }
     }
 }
 

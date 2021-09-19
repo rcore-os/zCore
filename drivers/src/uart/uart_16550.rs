@@ -155,7 +155,7 @@ impl Uart16550Mmio<u8> {
     ///
     /// This function is unsafe because `base_addr` may be an arbitrary address.
     pub unsafe fn new(base: usize) -> Self {
-        let uart: &mut Uart16550Inner<Mmio<u8>> = Mmio::<u8>::from_base(base);
+        let uart: &mut Uart16550Inner<Mmio<u8>> = Mmio::<u8>::from_base_as(base);
         uart.init();
         Self {
             inner: Mutex::new(uart),
@@ -168,7 +168,7 @@ impl Uart16550Mmio<u32> {
     ///
     /// This function is unsafe because `base_addr` may be an arbitrary address.
     pub unsafe fn new(base: usize) -> Self {
-        let uart: &mut Uart16550Inner<Mmio<u32>> = Mmio::<u32>::from_base(base);
+        let uart: &mut Uart16550Inner<Mmio<u32>> = Mmio::<u32>::from_base_as(base);
         uart.init();
         Self {
             inner: Mutex::new(uart),

@@ -2,11 +2,11 @@ cfg_if! {
     if #[cfg(feature = "board_qemu")] {
         pub const UART_BASE: usize = 0x1000_0000;
         pub const PLIC_BASE: usize = 0x0C00_0000;
-        pub const UART0_INT_NUM: u32 = 10;
+        pub const UART0_INT_NUM: usize = 10;
     } else if #[cfg(feature = "board_d1")] {
         pub const UART_BASE: usize = 0x0250_0000;
         pub const PLIC_BASE: usize = 0x1000_0000;
-        pub const UART0_INT_NUM: u32 = 18;
+        pub const UART0_INT_NUM: usize = 18;
     }
 }
 

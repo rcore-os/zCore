@@ -17,7 +17,7 @@ impl<'a> VirtIoBlk<'a> {
 }
 
 impl<'a> Scheme for VirtIoBlk<'a> {
-    fn handle_irq(&self, _irq_num: u32) {
+    fn handle_irq(&self, _irq_num: usize) {
         self.inner.lock().ack_interrupt();
     }
 }

@@ -1,8 +1,7 @@
 use core::time::Duration;
-use riscv::register::{sie, time};
 
 fn get_cycle() -> u64 {
-    time::read() as u64
+    riscv::register::time::read() as u64
 }
 
 pub(super) fn timer_set_next() {
@@ -12,7 +11,6 @@ pub(super) fn timer_set_next() {
 }
 
 pub(super) fn init() {
-    unsafe { sie::set_stimer() };
     timer_set_next();
 }
 

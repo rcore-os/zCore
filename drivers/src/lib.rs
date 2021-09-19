@@ -3,6 +3,11 @@
 
 extern crate alloc;
 
+#[macro_use]
+extern crate log;
+
+mod utils;
+
 #[cfg(feature = "mock")]
 pub mod mock;
 
@@ -10,6 +15,7 @@ pub mod mock;
 pub mod virtio;
 
 pub mod io;
+pub mod irq;
 pub mod scheme;
 pub mod uart;
 
@@ -25,8 +31,10 @@ pub enum DeviceError {
     DmaError,
     /// I/O Error
     IoError,
+    /// A resource with the specified identifier already exists.
+    AlreadyExists,
+    /// No resource to allocate.
+    NoResources,
 }
 
 pub type DeviceResult<T = ()> = core::result::Result<T, DeviceError>;
-
-pub type IrqHandler = alloc::boxed::Box<dyn Fn(u32) + Send + Sync>;

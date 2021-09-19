@@ -19,7 +19,7 @@ impl<'a> VirtIoConsole<'a> {
 }
 
 impl<'a> Scheme for VirtIoConsole<'a> {
-    fn handle_irq(&self, _irq_num: u32) {
+    fn handle_irq(&self, _irq_num: usize) {
         self.inner.lock().ack_interrupt().unwrap();
     }
 }

@@ -1,7 +1,7 @@
 use core::fmt::{Debug, Formatter, Result};
 use core::slice;
 
-use riscv::{asm, paging::PageTableFlags as PTF, register::satp};
+use riscv::{asm, register::satp};
 
 use super::consts;
 use crate::addr::{align_down, align_up};
@@ -127,6 +127,22 @@ hal_fn_impl! {
                 }
             }
         }
+    }
+}
+
+bitflags::bitflags! {
+    /// Possible flags for a page table entry.
+    pub struct PTF: usize {
+        const VALID =       1 << 0;
+        const READABLE =    1 << 1;
+        const WRITABLE =    1 << 2;
+        const EXECUTABLE =  1 << 3;
+        const USER =        1 << 4;
+        const GLOBAL =      1 << 5;
+        const ACCESSED =    1 << 6;
+        const DIRTY =       1 << 7;
+        const RESERVED1 =   1 << 8;
+        const RESERVED2 =   1 << 9;
     }
 }
 
