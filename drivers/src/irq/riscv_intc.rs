@@ -9,19 +9,19 @@ const S_TIMER: usize = 5;
 const S_EXT: usize = 9;
 
 #[repr(usize)]
-pub enum RiscvScauseIntCode {
+pub enum ScauseIntCode {
     SupervisorSoft = S_SOFT,
     SupervisorTimer = S_TIMER,
     SupervisorExternal = S_EXT,
 }
 
-pub struct RiscvIntc {
+pub struct Intc {
     soft_handler: Mutex<Option<IrqHandler>>,
     timer_handler: Mutex<Option<IrqHandler>>,
     ext_handler: Mutex<Option<IrqHandler>>,
 }
 
-impl RiscvIntc {
+impl Intc {
     pub fn new() -> Self {
         Self {
             soft_handler: Mutex::new(None),
@@ -46,13 +46,13 @@ impl RiscvIntc {
     }
 }
 
-impl Default for RiscvIntc {
+impl Default for Intc {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Scheme for RiscvIntc {
+impl Scheme for Intc {
     fn handle_irq(&self, cause: usize) {
         self.with_handler(cause, |opt| {
             if let Some(h) = opt {
@@ -66,7 +66,7 @@ impl Scheme for RiscvIntc {
     }
 }
 
-impl IrqScheme for RiscvIntc {
+impl IrqScheme for Intc {
     fn mask(&self, cause: usize) {
         unsafe {
             match cause {

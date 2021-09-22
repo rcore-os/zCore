@@ -3,7 +3,15 @@ cfg_if::cfg_if! {
         mod riscv_intc;
         mod riscv_plic;
 
-        pub use riscv_intc::{RiscvIntc, RiscvScauseIntCode};
-        pub use riscv_plic::RiscvPlic;
+        pub mod riscv {
+            pub use super::riscv_intc::{Intc, ScauseIntCode};
+            pub use super::riscv_plic::Plic;
+        }
+    } else if #[cfg(any(target_arch = "x86", target_arch = "x86_64"))] {
+        mod x86_apic;
+
+        pub mod x86 {
+            pub use super::x86_apic::Apic;
+        }
     }
 }

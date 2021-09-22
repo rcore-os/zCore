@@ -22,7 +22,7 @@ struct PlicUnlocked {
     manager: IrqManager<1024>,
 }
 
-pub struct RiscvPlic {
+pub struct Plic {
     inner: Mutex<PlicUnlocked>,
 }
 
@@ -70,7 +70,7 @@ impl PlicUnlocked {
     }
 }
 
-impl RiscvPlic {
+impl Plic {
     pub fn new(base: usize) -> Self {
         let mut inner = PlicUnlocked {
             priority_base: unsafe { Mmio::<u32>::from_base(base + PLIC_PRIORITY_BASE) },
@@ -85,11 +85,11 @@ impl RiscvPlic {
     }
 }
 
-impl Scheme for RiscvPlic {
+impl Scheme for Plic {
     fn handle_irq(&self, _unused: usize) {
         let mut inner = self.inner.lock();
         while let Some(irq_num) = inner.pending_irq() {
-            if inner.manager.handle(irq_num as _).is_err() {
+            if inner.manager.handle(irq_num).is_err() {
                 warn!("no registered handler for IRQ {}!", irq_num);
             }
             inner.eoi(irq_num);
@@ -97,7 +97,7 @@ impl Scheme for RiscvPlic {
     }
 }
 
-impl IrqScheme for RiscvPlic {
+impl IrqScheme for Plic {
     fn mask(&self, irq_num: usize) {
         self.inner.lock().toggle(irq_num, false)
     }

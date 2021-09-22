@@ -56,7 +56,7 @@ hal_fn_def! {
         /// Is a valid IRQ number.
         pub fn is_valid_irq(vector: u32) -> bool;
 
-        /// Configure the specified interrupt vector.  If it is invoked, it muust be
+        /// Configure the specified interrupt vector. If it is invoked, it must be
         /// invoked prior to interrupt registration.
         pub fn configure_irq(vector: u32, trig_mode: bool, polarity: bool) -> HalResult;
 

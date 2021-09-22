@@ -92,7 +92,7 @@ async fn new_thread(thread: CurrentThread) {
         #[cfg(target_arch = "x86_64")]
         match cx.trap_num {
             0x100 => handle_syscall(&thread, &mut cx.general).await,
-            0x20..=0x3f => {
+            0x20..=0xff => {
                 kernel_hal::interrupt::handle_irq(cx.trap_num as u32);
                 if cx.trap_num == 0x20 {
                     kernel_hal::thread::yield_now().await;

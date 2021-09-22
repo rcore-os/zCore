@@ -33,15 +33,18 @@ impl<const IRQ_COUNT: usize> IrqManager<IRQ_COUNT> {
         self.allocator.free(start, count)
     }
 
-    /// Add a handler to IRQ table. Return the specified irq or an allocated irq on success
+    /// Add a handler to IRQ table. if `irq_num == 0`, we need to allocate one.
+    /// Returns the specified IRQ number or an allocated IRQ on success.
     pub fn register_handler(&mut self, irq_num: usize, handler: IrqHandler) -> DeviceResult<usize> {
         info!("IRQ add handler {:#x?}", irq_num);
-        let irq_num = if !self.irq_range.contains(&irq_num) {
-            // allocate a valid irq number
+        let irq_num = if irq_num == 0 {
+            // allocate a valid IRQ number
             self.allocator.alloc()?
-        } else {
+        } else if self.irq_range.contains(&irq_num) {
             self.allocator.alloc_fixed(irq_num)?;
             irq_num
+        } else {
+            return Err(DeviceError::InvalidParam);
         };
         self.table[irq_num] = Some(handler);
         Ok(irq_num)

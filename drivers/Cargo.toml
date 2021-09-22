@@ -21,5 +21,9 @@ bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator", rev =
 virtio-drivers = { git = "https://github.com/rcore-os/virtio-drivers", rev = "2b3c6cf", optional = true }
 async-std = { version = "1.10", optional = true }
 
+[target.'cfg(target_arch = "x86_64")'.dependencies]
+acpi = "4.0"
+x2apic = { git = "https://github.com/equation314/x2apic-rs", rev = "a14b1d8" }
+
 [target.'cfg(any(target_arch = "riscv32", target_arch = "riscv64"))'.dependencies]
 riscv = { version = "0.7", features = ["inline-asm"] }

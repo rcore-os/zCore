@@ -2,7 +2,7 @@
 
 #![cfg_attr(not(feature = "libos"), no_std)]
 #![feature(asm)]
-#![deny(warnings)]
+// #![deny(warnings)]
 
 extern crate alloc;
 #[macro_use]

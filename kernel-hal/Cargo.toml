@@ -20,7 +20,6 @@ numeric-enum-macro = "0.2"
 spin = "0.9"
 git-version = "0.3"
 cfg-if = "1.0"
-acpi = "1.1"
 zcore-drivers = { path = "../drivers" }
 
 # LibOS mode
@@ -41,7 +40,6 @@ bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator", rev =
 [target.'cfg(all(target_os = "none", target_arch = "x86_64"))'.dependencies]
 x86_64 = "0.14"
 raw-cpuid = "9.0"
-apic = { git = "https://github.com/rcore-os/apic-rs", rev = "fb86bd7" }
 x86-smpboot = { git = "https://github.com/rcore-os/x86-smpboot", rev = "43ffedf" }
 
 # Bare-metal mode on riscv64
