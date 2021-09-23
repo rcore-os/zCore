@@ -74,6 +74,7 @@ impl Apic {
 
 impl Scheme for Apic {
     fn handle_irq(&self, vector: usize) {
+        Self::local_apic().eoi();
         let res = if vector >= X86_INT_LOCAL_APIC_BASE {
             self.manager_lapic
                 .lock()
@@ -84,7 +85,6 @@ impl Scheme for Apic {
         if res.is_err() {
             warn!("no registered handler for interrupt vector {}!", vector);
         }
-        Self::local_apic().eoi();
     }
 }
 
@@ -94,11 +94,17 @@ impl IrqScheme for Apic {
     }
 
     fn mask(&self, gsi: usize) -> DeviceResult {
-        self.with_ioapic(gsi as _, |apic| Ok(apic.toggle(gsi as _, false)))
+        self.with_ioapic(gsi as _, |apic| {
+            apic.toggle(gsi as _, false);
+            Ok(())
+        })
     }
 
     fn unmask(&self, gsi: usize) -> DeviceResult {
-        self.with_ioapic(gsi as _, |apic| Ok(apic.toggle(gsi as _, true)))
+        self.with_ioapic(gsi as _, |apic| {
+            apic.toggle(gsi as _, true);
+            Ok(())
+        })
     }
 
     fn configure(&self, gsi: usize, tm: IrqTriggerMode, pol: IrqPolarity) -> DeviceResult {

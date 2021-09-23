@@ -218,7 +218,8 @@ async fn new_thread(thread: CurrentThread) {
             0x100 => handle_syscall(&thread).await,
             0x20..=0xff => {
                 kernel_hal::interrupt::handle_irq(trap_num);
-                if trap_num == 0x20 {
+                // TODO: configurable
+                if trap_num == 0xf1 {
                     EXCEPTIONS_TIMER.add(1);
                     kernel_hal::thread::yield_now().await;
                 }

@@ -94,7 +94,8 @@ async fn new_thread(thread: CurrentThread) {
             0x100 => handle_syscall(&thread, &mut cx.general).await,
             0x20..=0xff => {
                 kernel_hal::interrupt::handle_irq(cx.trap_num);
-                if cx.trap_num == 0x20 {
+                // TODO: configurable
+                if cx.trap_num == 0xf1 {
                     kernel_hal::thread::yield_now().await;
                 }
             }

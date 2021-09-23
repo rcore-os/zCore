@@ -1,5 +1,3 @@
-// mod acpi_table;
-// mod apic;
 mod drivers;
 mod trap;
 
