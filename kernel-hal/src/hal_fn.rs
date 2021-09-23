@@ -46,41 +46,45 @@ hal_fn_def! {
         pub(crate) fn pt_clone_kernel_space(dst_pt_root: PhysAddr, src_pt_root: PhysAddr);
     }
 
-    pub mod interrupt {
-        /// Enable IRQ.
-        pub fn enable_irq(vector: u32);
-
-        /// Disable IRQ.
-        pub fn disable_irq(vector: u32);
+    pub mod interrupt: common::interrupt {
+        /// Suspend the CPU (also enable interrupts) and wait for an interrupt
+        /// to occurs, then disable interrupts.
+        pub fn wait_for_interrupt();
 
         /// Is a valid IRQ number.
-        pub fn is_valid_irq(vector: u32) -> bool;
+        pub fn is_valid_irq(vector: usize) -> bool;
+
+        /// Disable IRQ.
+        pub fn mask_irq(vector: usize) -> HalResult;
+
+        /// Enable IRQ.
+        pub fn unmask_irq(vector: usize) -> HalResult;
 
         /// Configure the specified interrupt vector. If it is invoked, it must be
         /// invoked prior to interrupt registration.
-        pub fn configure_irq(vector: u32, trig_mode: bool, polarity: bool) -> HalResult;
+        pub fn configure_irq(vector: usize, tm: IrqTriggerMode, pol: IrqPolarity) -> HalResult;
 
-        /// Add an interrupt handle to an IRQ
-        pub fn register_irq_handler(vector: u32, handler: Box<dyn Fn() + Send + Sync>) -> HalResult<u32>;
+        /// Add an interrupt handle to an IRQ.
+        pub fn register_irq_handler(vector: usize, handler: IrqHandler) -> HalResult;
 
-        /// Remove the interrupt handle to an IRQ
-        pub fn unregister_irq_handler(vector: u32) -> HalResult;
+        /// Remove the interrupt handle to an IRQ.
+        pub fn unregister_irq_handler(vector: usize) -> HalResult;
 
         /// Handle IRQ.
-        pub fn handle_irq(vector: u32);
+        pub fn handle_irq(vector: usize);
 
         /// Method used for platform allocation of blocks of MSI and MSI-X compatible
         /// IRQ targets.
-        pub fn msi_allocate_block(requested_irqs: u32) -> HalResult<Range<u32>>;
+        pub fn msi_alloc_block(requested_irqs: usize) -> HalResult<Range<usize>>;
 
         /// Method used to free a block of MSI IRQs previously allocated by msi_alloc_block().
         /// This does not unregister IRQ handlers.
-        pub fn msi_free_block(block: Range<u32>) -> HalResult;
+        pub fn msi_free_block(block: Range<usize>) -> HalResult;
 
         /// Register a handler function for a given msi_id within an msi_block_t. Passing a
         /// NULL handler will effectively unregister a handler for a given msi_id within the
         /// block.
-        pub fn msi_register_handler(block: Range<u32>, msi_id: u32, handler: Box<dyn Fn() + Send + Sync>) -> HalResult;
+        pub fn msi_register_handler(block: Range<usize>, msi_id: usize, handler: IrqHandler) -> HalResult;
     }
 
     pub mod context: common::context {

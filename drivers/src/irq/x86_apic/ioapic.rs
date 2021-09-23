@@ -4,9 +4,9 @@ use core::{fmt, ptr::NonNull};
 use acpi::platform::interrupt::InterruptModel;
 use acpi::{AcpiHandler, AcpiTables, PhysicalMapping};
 use spin::Mutex;
-use x2apic::ioapic::IoApic as IoApicInner;
+use x2apic::ioapic::{IoApic as IoApicInner, IrqFlags, IrqMode};
 
-use super::Phys2VirtFn;
+use super::{IrqPolarity, IrqTriggerMode, Phys2VirtFn};
 
 const PAGE_SIZE: usize = 4096;
 
@@ -52,9 +52,9 @@ impl IoApic {
     pub fn new(id: u8, base_vaddr: usize, gsi_start: u32) -> Self {
         let mut inner = unsafe { IoApicInner::new(base_vaddr as u64) };
         let max_entry = unsafe { inner.max_table_entry() };
-        unsafe {
-            assert_eq!(id, inner.id());
-            inner.init(super::consts::X86_INT_BASE as _);
+        unsafe { assert_eq!(id, inner.id()) };
+        for i in 0..max_entry + 1 {
+            unsafe { inner.disable_irq(i) }
         }
         Self {
             id,
@@ -88,6 +88,26 @@ impl IoApic {
             entry.set_vector(vector);
             inner.set_table_entry(idx, entry);
         }
+    }
+
+    pub fn configure(&self, gsi: u32, tm: IrqTriggerMode, pol: IrqPolarity, dest: u8, vector: u8) {
+        let idx = (gsi - self.gsi_start) as u8;
+        let mut inner = self.inner.lock();
+        let mut entry = unsafe { inner.table_entry(idx) };
+        entry.set_vector(vector);
+        entry.set_mode(IrqMode::Fixed);
+        entry.set_dest(dest);
+
+        let mut flags = IrqFlags::MASKED; // destination mode: physical
+        if matches!(tm, IrqTriggerMode::Edge) {
+            flags |= IrqFlags::LEVEL_TRIGGERED;
+        }
+        if matches!(pol, IrqPolarity::ActiveLow) {
+            flags |= IrqFlags::LOW_ACTIVE;
+        }
+        entry.set_flags(flags);
+
+        unsafe { inner.set_table_entry(idx, entry) };
     }
 }
 

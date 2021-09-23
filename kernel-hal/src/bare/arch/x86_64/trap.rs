@@ -59,12 +59,16 @@ fn page_fault(tf: &mut TrapFrame) {
 
 #[no_mangle]
 pub extern "C" fn trap_handler(tf: &mut TrapFrame) {
-    trace!("Interrupt: {:#x} @ CPU{}", tf.trap_num, 0); // TODO 0 should replace in multi-core case
+    trace!(
+        "Interrupt: {:#x} @ CPU{}",
+        tf.trap_num,
+        super::cpu::cpu_id()
+    );
     match tf.trap_num {
         BREAKPOINT => breakpoint(),
         DOUBLE_FAULT => double_fault(tf),
         PAGE_FAULT => page_fault(tf),
-        X86_INT_BASE..=X86_INT_MAX => crate::interrupt::handle_irq(tf.trap_num as u32),
+        X86_INT_BASE..=X86_INT_MAX => crate::interrupt::handle_irq(tf.trap_num),
         _ => panic!("Unhandled interrupt {:x} {:#x?}", tf.trap_num, tf),
     }
 }

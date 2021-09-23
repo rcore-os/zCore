@@ -1,7 +1,6 @@
 // TODO: configurable
 
 pub const X86_INT_BASE: usize = 0x20;
-pub const X86_INT_MAX: usize = 0xff;
 
 pub const X86_INT_LOCAL_APIC_BASE: usize = 0xf0;
 pub const X86_INT_APIC_SPURIOUS: usize = X86_INT_LOCAL_APIC_BASE + 0x0;

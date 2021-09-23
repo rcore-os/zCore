@@ -1,9 +1,7 @@
-use alloc::boxed::Box;
 use core::ops::Range;
 
+use crate::drivers::IRQ;
 use crate::HalResult;
-
-type IrqHandler = Box<dyn Fn() + Send + Sync>;
 
 /*
 lazy_static! {
@@ -38,48 +36,54 @@ fn mouse() {
 
 hal_fn_impl! {
     impl mod crate::hal_fn::interrupt {
-        fn enable_irq(irq: u32) {
-            todo!()
+        fn wait_for_interrupt() {
+            use x86_64::instructions::interrupts;
+            interrupts::enable_and_hlt();
+            interrupts::disable();
         }
 
-        fn disable_irq(irq: u32) {
-            todo!()
+        fn is_valid_irq(gsi: usize) -> bool {
+            IRQ.is_valid_irq(gsi)
         }
 
-        fn is_valid_irq(irq: u32) -> bool {
-            todo!()
+        fn mask_irq(gsi: usize) -> HalResult {
+            Ok(IRQ.mask(gsi)?)
         }
 
-        fn configure_irq(vector: u32, trig_mode: bool, polarity: bool) -> HalResult {
-            todo!()
+        fn unmask_irq(gsi: usize) -> HalResult {
+            Ok(IRQ.unmask(gsi)?)
         }
 
-        fn register_irq_handler(global_irq: u32, handler: IrqHandler) -> HalResult<u32> {
-            todo!()
+        fn configure_irq(gsi: usize, tm: IrqTriggerMode, pol: IrqPolarity) -> HalResult {
+            Ok(IRQ.configure(gsi, tm, pol)?)
         }
 
-        fn unregister_irq_handler(global_irq: u32) -> HalResult {
-            todo!()
+        fn register_irq_handler(gsi: usize, handler: IrqHandler) -> HalResult {
+            Ok(IRQ.register_handler(gsi, handler)?)
         }
 
-        fn handle_irq(vector: u32) {
-            crate::drivers::IRQ.handle_irq(vector as usize);
+        fn unregister_irq_handler(gsi: usize) -> HalResult {
+            Ok(IRQ.unregister(gsi)?)
         }
 
-        fn msi_allocate_block(requested_irqs: u32) -> HalResult<Range<u32>> {
-            todo!()
+        fn handle_irq(vector: usize) {
+            IRQ.handle_irq(vector as usize);
         }
 
-        fn msi_free_block(block: Range<u32>) -> HalResult {
-            todo!()
+        fn msi_alloc_block(requested_irqs: usize) -> HalResult<Range<usize>> {
+            Ok(IRQ.msi_alloc_block(requested_irqs)?)
+        }
+
+        fn msi_free_block(block: Range<usize>) -> HalResult {
+            Ok(IRQ.msi_free_block(block)?)
         }
 
         fn msi_register_handler(
-            block: Range<u32>,
-            msi_id: u32,
-            handler: Box<dyn Fn() + Send + Sync>,
+            block: Range<usize>,
+            msi_id: usize,
+            handler: IrqHandler,
         ) -> HalResult {
-            todo!()
+            Ok(IRQ.msi_register_handler(block, msi_id, handler)?)
         }
     }
 }

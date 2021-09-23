@@ -46,7 +46,7 @@ pub extern "C" fn trap_handler(tf: &mut TrapFrame) {
         Trap::Exception(Exception::LoadPageFault) => page_fault(MMUFlags::READ),
         Trap::Exception(Exception::StorePageFault) => page_fault(MMUFlags::WRITE),
         Trap::Exception(Exception::InstructionPageFault) => page_fault(MMUFlags::EXECUTE),
-        Trap::Interrupt(_) => crate::interrupt::handle_irq(scause.code() as u32),
+        Trap::Interrupt(_) => crate::interrupt::handle_irq(scause.code()),
         _ => panic!("Undefined Trap: {:?}", scause.cause()),
     }
 }

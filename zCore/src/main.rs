@@ -171,7 +171,7 @@ fn main(ramfs_data: &'static mut [u8], cmdline: &str) -> ! {
     use linux_object::fs::STDIN;
 
     UART.subscribe(
-        Box::new(|_| {
+        Box::new(|| {
             while let Some(c) = UART.try_recv().unwrap() {
                 let c = if c == b'\r' { b'\n' } else { c };
                 STDIN.push(c as char);
@@ -194,13 +194,7 @@ fn main(ramfs_data: &'static mut [u8], cmdline: &str) -> ! {
 fn run() -> ! {
     loop {
         executor::run_until_idle();
-        #[cfg(target_arch = "x86_64")]
-        {
-            x86_64::instructions::interrupts::enable_and_hlt();
-            x86_64::instructions::interrupts::disable();
-        }
-        #[cfg(target_arch = "riscv64")]
-        kernel_hal::riscv::wait_for_interrupt();
+        kernel_hal::interrupt::wait_for_interrupt();
     }
 }
 

@@ -7,12 +7,13 @@ use super::constants::*;
 use crate::{ZxError, ZxResult};
 
 #[repr(transparent)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct PciIrqSwizzleLut(
     [[[u32; PCI_MAX_LEGACY_IRQ_PINS]; PCI_MAX_FUNCTIONS_PER_DEVICE]; PCI_MAX_DEVICES_PER_BUS],
 );
 
 #[repr(C)]
+#[derive(Debug)]
 pub struct PciInitArgsIrqs {
     pub global_irq: u32,
     pub level_triggered: bool,
@@ -21,6 +22,7 @@ pub struct PciInitArgsIrqs {
 }
 
 #[repr(C)]
+#[derive(Debug)]
 pub struct PciInitArgsHeader {
     pub dev_pin_to_global_irq: PciIrqSwizzleLut,
     pub num_irqs: u32,
@@ -52,16 +54,23 @@ impl PciInitArgsHeader {
         for i in 0..self.num_irqs as usize {
             let irq = &mut self.irqs[i];
             let global_irq = irq.global_irq;
-            if !interrupt::is_valid_irq(global_irq) {
+            if !interrupt::is_valid_irq(global_irq as usize) {
                 irq.global_irq = PCI_NO_IRQ_MAPPING;
                 self.dev_pin_to_global_irq.remove_irq(global_irq);
             } else {
-                interrupt::configure_irq(
-                    global_irq,
-                    irq.level_triggered, /* Trigger mode */
-                    irq.active_high,     /* Polarity */
-                )
-                .map_err(|_| ZxError::INVALID_ARGS)?;
+                use kernel_hal::interrupt::{IrqPolarity, IrqTriggerMode};
+                let tm = if irq.level_triggered {
+                    IrqTriggerMode::Level
+                } else {
+                    IrqTriggerMode::Edge
+                };
+                let pol = if irq.active_high {
+                    IrqPolarity::ActiveHigh
+                } else {
+                    IrqPolarity::ActiveLow
+                };
+                interrupt::configure_irq(global_irq as usize, tm, pol)
+                    .map_err(|_| ZxError::INVALID_ARGS)?;
             }
         }
         Ok(())

@@ -10,7 +10,7 @@ pub use block::BlockScheme;
 pub use display::DisplayScheme;
 pub use event::EventListener;
 pub use input::InputScheme;
-pub use irq::{IrqHandler, IrqScheme};
+pub use irq::{IrqHandler, IrqPolarity, IrqScheme, IrqTriggerMode};
 pub use net::NetScheme;
 pub use uart::UartScheme;
 

@@ -24,19 +24,21 @@ impl<const IRQ_COUNT: usize> IrqManager<IRQ_COUNT> {
     }
 
     pub fn alloc_block(&mut self, count: usize) -> DeviceResult<usize> {
+        info!("IRQ alloc_block {}", count);
         debug_assert!(count.is_power_of_two());
-        let align_log2 = 31 - count.leading_zeros();
+        let align_log2 = 31 - (count as u32).leading_zeros();
         self.allocator.alloc_contiguous(count, align_log2 as _)
     }
 
     pub fn free_block(&mut self, start: usize, count: usize) -> DeviceResult {
+        info!("IRQ free_block {:#x?}", start..start + count);
         self.allocator.free(start, count)
     }
 
     /// Add a handler to IRQ table. if `irq_num == 0`, we need to allocate one.
     /// Returns the specified IRQ number or an allocated IRQ on success.
     pub fn register_handler(&mut self, irq_num: usize, handler: IrqHandler) -> DeviceResult<usize> {
-        info!("IRQ add handler {:#x?}", irq_num);
+        info!("IRQ register handler {:#x}", irq_num);
         let irq_num = if irq_num == 0 {
             // allocate a valid IRQ number
             self.allocator.alloc()?
@@ -51,7 +53,7 @@ impl<const IRQ_COUNT: usize> IrqManager<IRQ_COUNT> {
     }
 
     pub fn unregister_handler(&mut self, irq_num: usize) -> DeviceResult {
-        info!("IRQ remove handler {:#x?}", irq_num);
+        info!("IRQ unregister handler {:#x}", irq_num);
         if !self.allocator.is_alloced(irq_num) {
             Err(DeviceError::InvalidParam)
         } else {
@@ -62,7 +64,7 @@ impl<const IRQ_COUNT: usize> IrqManager<IRQ_COUNT> {
     }
 
     pub fn overwrite_handler(&mut self, irq_num: usize, handler: IrqHandler) -> DeviceResult {
-        info!("IRQ overwrite handle {:#x?}", irq_num);
+        info!("IRQ overwrite handle {:#x}", irq_num);
         if !self.allocator.is_alloced(irq_num) {
             Err(DeviceError::InvalidParam)
         } else {
@@ -73,7 +75,7 @@ impl<const IRQ_COUNT: usize> IrqManager<IRQ_COUNT> {
 
     pub fn handle(&self, irq_num: usize) -> DeviceResult {
         if let Some(f) = &self.table[irq_num] {
-            f(irq_num);
+            f();
             Ok(())
         } else {
             Err(DeviceError::InvalidParam)

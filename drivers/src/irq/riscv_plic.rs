@@ -4,7 +4,7 @@ use spin::Mutex;
 
 use crate::io::{Io, Mmio};
 use crate::scheme::{IrqHandler, IrqScheme, Scheme};
-use crate::{utils::IrqManager, DeviceResult};
+use crate::{utils::IrqManager, DeviceError, DeviceResult};
 
 const IRQ_RANGE: Range<usize> = 1..1024;
 
@@ -98,19 +98,34 @@ impl Scheme for Plic {
 }
 
 impl IrqScheme for Plic {
-    fn mask(&self, irq_num: usize) {
-        self.inner.lock().toggle(irq_num, false)
+    fn is_valid_irq(&self, irq_num: usize) -> bool {
+        IRQ_RANGE.contains(&irq_num)
     }
 
-    fn unmask(&self, irq_num: usize) {
-        self.inner.lock().toggle(irq_num, true)
+    fn mask(&self, irq_num: usize) -> DeviceResult {
+        if self.is_valid_irq(irq_num) {
+            Ok(self.inner.lock().toggle(irq_num, false))
+        } else {
+            Err(DeviceError::InvalidParam)
+        }
+    }
+
+    fn unmask(&self, irq_num: usize) -> DeviceResult {
+        if self.is_valid_irq(irq_num) {
+            Ok(self.inner.lock().toggle(irq_num, true))
+        } else {
+            Err(DeviceError::InvalidParam)
+        }
     }
 
     fn register_handler(&self, irq_num: usize, handler: IrqHandler) -> DeviceResult {
         let mut inner = self.inner.lock();
-        inner.toggle(irq_num, true);
-        inner.set_priority(irq_num, 7);
-        inner.manager.register_handler(irq_num, handler)?;
-        Ok(())
+        inner.manager.register_handler(irq_num, handler).map(|_| {
+            inner.set_priority(irq_num, 7);
+        })
+    }
+
+    fn unregister(&self, irq_num: usize) -> DeviceResult {
+        self.inner.lock().manager.unregister_handler(irq_num)
     }
 }

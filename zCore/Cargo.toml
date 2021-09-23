@@ -40,11 +40,9 @@ rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "6df6cd2" }
 fatfs = { git = "https://github.com/rafalh/rust-fatfs.git", rev = "26fa79", default-features = false }
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
-x86_64 = "0.14"
 rlibc-opt = { git = "https://github.com/rcore-os/rlibc-opt.git", rev = "fb1d4a9" }
 rboot = { path = "../rboot", default-features = false }
 rvm = { git = "https://github.com/rcore-os/RVM", rev = "e91d625", optional = true }
 
 [target.'cfg(target_arch = "riscv64")'.dependencies]
 rlibc = "1.0"
-riscv = { version = "0.7", features = ["inline-asm"] }

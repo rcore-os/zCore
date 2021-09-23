@@ -23,7 +23,7 @@ impl<T: Scheme> Scheme for EventListener<T> {
     fn handle_irq(&self, irq_num: usize) {
         self.inner.handle_irq(irq_num);
         self.events.lock().retain(|(f, once)| {
-            f(irq_num);
+            f();
             !once
         });
     }

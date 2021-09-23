@@ -1,7 +1,7 @@
 use alloc::boxed::Box;
 use core::ops::{Deref, DerefMut, Range};
 
-use bitmap_allocator::{BitAlloc, BitAlloc256, BitAlloc4K, BitAlloc64K};
+use bitmap_allocator::{BitAlloc, BitAlloc16, BitAlloc256, BitAlloc4K, BitAlloc64K};
 
 use crate::{DeviceError, DeviceResult};
 
@@ -21,7 +21,8 @@ pub struct IdAllocator(Box<dyn IdAllocatorWrapper>);
 impl IdAllocator {
     pub fn new(range: Range<usize>) -> DeviceResult<Self> {
         Ok(match range.end {
-            0..=0x100 => Self(Box::new(IdAllocator256::new(range))),
+            0..=0x10 => Self(Box::new(IdAllocator16::new(range))),
+            0x11..=0x100 => Self(Box::new(IdAllocator256::new(range))),
             0x101..=0x1000 => Self(Box::new(IdAllocator4K::new(range))),
             0x1001..=0x10000 => Self(Box::new(IdAllocator64K::new(range))),
             _ => {
@@ -98,6 +99,7 @@ macro_rules! define_allocator {
     };
 }
 
+define_allocator!(IdAllocator16, BitAlloc16);
 define_allocator!(IdAllocator256, BitAlloc256);
 define_allocator!(IdAllocator4K, BitAlloc4K);
 define_allocator!(IdAllocator64K, BitAlloc64K);

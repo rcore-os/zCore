@@ -17,9 +17,10 @@ pub(super) fn init() -> DeviceResult {
         crate::mem::phys_to_virt,
     ));
     irq.register_device(trap::X86_ISA_IRQ_COM1, UART.as_scheme())?;
+    irq.unmask(trap::X86_ISA_IRQ_COM1)?;
     irq.register_local_apic_handler(
         trap::X86_INT_APIC_TIMER,
-        Box::new(|_| crate::timer::timer_tick()),
+        Box::new(|| crate::timer::timer_tick()),
     )?;
     IRQ.init_by(irq);
 

@@ -36,37 +36,36 @@ impl PciCapabilityStd {
 pub struct PciMsiBlock {
     pub target_addr: u64,
     pub allocated: bool,
-    pub base_irq: u32,
-    pub num_irq: u32,
+    pub base_irq: usize,
+    pub num_irq: usize,
     pub target_data: u32,
 }
 
 impl PciMsiBlock {
-    pub fn allocate(irq_num: u32) -> ZxResult<Self> {
+    pub fn allocate(irq_num: usize) -> ZxResult<Self> {
         if irq_num == 0 || irq_num > 32 {
             return Err(ZxError::INVALID_ARGS);
         }
-        let range = interrupt::msi_allocate_block(irq_num).map_err(|_| ZxError::NO_RESOURCES)?;
+        let range = interrupt::msi_alloc_block(irq_num).map_err(|_| ZxError::NO_RESOURCES)?;
         Ok(PciMsiBlock {
             target_addr: (0xFEE0_0000 | 0x08) & !0x4,
-            target_data: range.start,
+            target_data: range.start as u32,
             base_irq: range.start,
-            num_irq: range.len() as u32,
+            num_irq: range.len(),
             allocated: true,
         })
     }
     pub fn free(&self) {
         interrupt::msi_free_block(self.base_irq..self.base_irq + self.num_irq).ok();
     }
-    pub fn register_handler(&self, msi_id: u32, handle: Box<dyn Fn() + Send + Sync>) {
+    pub fn register_handler(&self, msi_id: usize, handle: Box<dyn Fn() + Send + Sync>) {
         assert!(self.allocated);
-        assert!(msi_id < self.num_irq);
         interrupt::msi_register_handler(
             self.base_irq..self.base_irq + self.num_irq,
             msi_id,
             handle,
         )
-        .ok();
+        .unwrap();
     }
 }
 

@@ -56,7 +56,7 @@ impl Scheme for Intc {
     fn handle_irq(&self, cause: usize) {
         self.with_handler(cause, |opt| {
             if let Some(h) = opt {
-                h(cause);
+                h();
             } else {
                 warn!("no registered handler for SCAUSE {}!", cause);
             }
@@ -67,36 +67,50 @@ impl Scheme for Intc {
 }
 
 impl IrqScheme for Intc {
-    fn mask(&self, cause: usize) {
+    fn is_valid_irq(&self, cause: usize) -> bool {
+        matches!(cause, S_SOFT | S_TIMER | S_EXT)
+    }
+
+    fn mask(&self, cause: usize) -> DeviceResult {
         unsafe {
-            match cause {
+            Ok(match cause {
                 S_SOFT => sie::clear_ssoft(),
                 S_TIMER => sie::clear_stimer(),
                 S_EXT => sie::clear_sext(),
-                _ => {}
-            }
+                _ => return Err(DeviceError::InvalidParam),
+            })
         }
     }
 
-    fn unmask(&self, cause: usize) {
+    fn unmask(&self, cause: usize) -> DeviceResult {
         unsafe {
-            match cause {
+            Ok(match cause {
                 S_SOFT => sie::set_ssoft(),
                 S_TIMER => sie::set_stimer(),
                 S_EXT => sie::set_sext(),
-                _ => {}
-            }
+                _ => return Err(DeviceError::InvalidParam),
+            })
         }
     }
 
     fn register_handler(&self, cause: usize, handler: IrqHandler) -> DeviceResult {
-        self.unmask(cause);
         self.with_handler(cause, |opt| {
             if opt.is_some() {
                 Err(DeviceError::AlreadyExists)
             } else {
                 *opt = Some(handler);
                 Ok(())
+            }
+        })
+    }
+
+    fn unregister(&self, cause: usize) -> DeviceResult {
+        self.with_handler(cause, |opt| {
+            if opt.is_some() {
+                *opt = None;
+                Ok(())
+            } else {
+                Err(DeviceError::InvalidParam)
             }
         })
     }

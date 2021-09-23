@@ -331,7 +331,7 @@ impl PCIeBusDriver {
     }
 
     /// Find the legacy IRQ handler.
-    pub fn find_legacy_irq_handler(&self, irq_id: u32) -> ZxResult<Arc<SharedLegacyIrqHandler>> {
+    pub fn find_legacy_irq_handler(&self, irq_id: usize) -> ZxResult<Arc<SharedLegacyIrqHandler>> {
         let mut list = self.legacy_irq_list.lock();
         for i in list.iter() {
             if irq_id == i.irq_id {
@@ -540,8 +540,8 @@ impl PcieDeviceKObject {
     }
 
     /// Set IRQ mode.
-    pub fn set_irq_mode(&self, mode: PcieIrqMode, irq_count: u32) -> ZxResult {
-        self.device.device().set_irq_mode(mode, irq_count)
+    pub fn set_irq_mode(&self, mode: PcieIrqMode, requested_irqs: usize) -> ZxResult {
+        self.device.device().set_irq_mode(mode, requested_irqs)
     }
 
     /// Read the device's config.

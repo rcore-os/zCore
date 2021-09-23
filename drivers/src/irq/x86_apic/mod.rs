@@ -6,26 +6,29 @@ use core::ops::Range;
 
 use spin::Mutex;
 
-use self::consts::{X86_INT_BASE, X86_INT_LOCAL_APIC_BASE, X86_INT_MAX};
+use self::consts::{X86_INT_BASE, X86_INT_LOCAL_APIC_BASE};
 use self::ioapic::{IoApic, IoApicList};
 use self::lapic::LocalApic;
-use crate::scheme::{IrqHandler, IrqScheme, Scheme};
+use crate::scheme::{IrqHandler, IrqPolarity, IrqScheme, IrqTriggerMode, Scheme};
 use crate::{utils::IrqManager, DeviceError, DeviceResult};
 
-const IRQ_RANGE: Range<usize> = X86_INT_BASE..X86_INT_MAX + 1;
+const IOAPIC_IRQ_RANGE: Range<usize> = X86_INT_BASE..X86_INT_LOCAL_APIC_BASE;
+const LAPIC_IRQ_RANGE: Range<usize> = 0..16;
 
 type Phys2VirtFn = fn(usize) -> usize;
 
 pub struct Apic {
     ioapic_list: IoApicList,
-    manager: Mutex<IrqManager<256>>,
+    manager_ioapic: Mutex<IrqManager<256>>,
+    manager_lapic: Mutex<IrqManager<16>>,
 }
 
 impl Apic {
     pub fn new(acpi_rsdp: usize, phys_to_virt: Phys2VirtFn) -> Self {
         Self {
-            manager: Mutex::new(IrqManager::new(IRQ_RANGE)),
             ioapic_list: IoApicList::new(acpi_rsdp, phys_to_virt),
+            manager_ioapic: Mutex::new(IrqManager::new(IOAPIC_IRQ_RANGE)),
+            manager_lapic: Mutex::new(IrqManager::new(LAPIC_IRQ_RANGE)),
         }
     }
 
@@ -45,20 +48,22 @@ impl Apic {
     }
 
     pub fn init_local_apic_bsp(phys_to_virt: Phys2VirtFn) {
-        unsafe { self::lapic::init_bsp(phys_to_virt) }
+        unsafe { LocalApic::init_bsp(phys_to_virt) }
     }
 
     pub fn init_local_apic_ap() {
-        unsafe { self::lapic::init_ap() }
+        unsafe { LocalApic::init_ap() }
     }
 
     pub fn local_apic<'a>() -> &'a mut LocalApic {
-        unsafe { self::lapic::get_local_apic() }
+        unsafe { LocalApic::get() }
     }
 
     pub fn register_local_apic_handler(&self, vector: usize, handler: IrqHandler) -> DeviceResult {
         if vector >= X86_INT_LOCAL_APIC_BASE {
-            self.manager.lock().register_handler(vector, handler)?;
+            self.manager_lapic
+                .lock()
+                .register_handler(vector - X86_INT_LOCAL_APIC_BASE, handler)?;
             Ok(())
         } else {
             error!("invalid local APIC interrupt vector {}", vector);
@@ -69,7 +74,14 @@ impl Apic {
 
 impl Scheme for Apic {
     fn handle_irq(&self, vector: usize) {
-        if self.manager.lock().handle(vector).is_err() {
+        let res = if vector >= X86_INT_LOCAL_APIC_BASE {
+            self.manager_lapic
+                .lock()
+                .handle(vector - X86_INT_LOCAL_APIC_BASE)
+        } else {
+            self.manager_ioapic.lock().handle(vector)
+        };
+        if res.is_err() {
             warn!("no registered handler for interrupt vector {}!", vector);
         }
         Self::local_apic().eoi();
@@ -77,24 +89,73 @@ impl Scheme for Apic {
 }
 
 impl IrqScheme for Apic {
-    fn mask(&self, gsi: usize) {
-        self.with_ioapic(gsi as _, |apic| Ok(apic.toggle(gsi as _, false)))
-            .ok();
+    fn is_valid_irq(&self, gsi: usize) -> bool {
+        self.ioapic_list.find(gsi as _).is_some()
     }
 
-    fn unmask(&self, gsi: usize) {
+    fn mask(&self, gsi: usize) -> DeviceResult {
+        self.with_ioapic(gsi as _, |apic| Ok(apic.toggle(gsi as _, false)))
+    }
+
+    fn unmask(&self, gsi: usize) -> DeviceResult {
         self.with_ioapic(gsi as _, |apic| Ok(apic.toggle(gsi as _, true)))
-            .ok();
+    }
+
+    fn configure(&self, gsi: usize, tm: IrqTriggerMode, pol: IrqPolarity) -> DeviceResult {
+        let gsi = gsi as u32;
+        self.with_ioapic(gsi, |apic| {
+            apic.configure(gsi, tm, pol, LocalApic::bsp_id(), 0);
+            Ok(())
+        })
     }
 
     fn register_handler(&self, gsi: usize, handler: IrqHandler) -> DeviceResult {
         let gsi = gsi as u32;
         self.with_ioapic(gsi, |apic| {
             let vector = apic.get_vector(gsi) as _; // if not mapped, allocate an available vector by `register_handler()`.
-            let vector = self.manager.lock().register_handler(vector, handler)? as u8;
+            let vector = self
+                .manager_ioapic
+                .lock()
+                .register_handler(vector, handler)? as u8;
             apic.map_vector(gsi, vector);
-            apic.toggle(gsi, true);
             Ok(())
         })
+    }
+
+    fn unregister(&self, gsi: usize) -> DeviceResult {
+        let gsi = gsi as u32;
+        self.with_ioapic(gsi, |apic| {
+            let vector = apic.get_vector(gsi) as _;
+            self.manager_ioapic.lock().unregister_handler(vector)?;
+            apic.map_vector(gsi, 0);
+            Ok(())
+        })
+    }
+
+    fn msi_alloc_block(&self, requested_irqs: usize) -> DeviceResult<Range<usize>> {
+        let alloc_size = requested_irqs.next_power_of_two();
+        let start = self.manager_ioapic.lock().alloc_block(alloc_size)?;
+        Ok(start..start + alloc_size)
+    }
+
+    fn msi_free_block(&self, block: Range<usize>) -> DeviceResult {
+        self.manager_lapic
+            .lock()
+            .free_block(block.start, block.len())
+    }
+
+    fn msi_register_handler(
+        &self,
+        block: Range<usize>,
+        msi_id: usize,
+        handler: IrqHandler,
+    ) -> DeviceResult {
+        if msi_id < block.len() {
+            self.manager_ioapic
+                .lock()
+                .overwrite_handler(block.start + msi_id, handler)
+        } else {
+            Err(DeviceError::InvalidParam)
+        }
     }
 }

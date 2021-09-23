@@ -24,7 +24,7 @@ async fn main() {
 
     use kernel_hal::drivers::UART;
     UART.subscribe(
-        Box::new(|_| {
+        Box::new(|| {
             while let Some(c) = UART.try_recv().unwrap() {
                 let c = if c == b'\r' { b'\n' } else { c };
                 STDIN.push(c as char);

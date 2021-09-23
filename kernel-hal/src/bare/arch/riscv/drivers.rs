@@ -20,16 +20,20 @@ pub(super) fn init() -> DeviceResult {
 
     PLIC.init_by(Plic::new(phys_to_virt(consts::PLIC_BASE)));
     PLIC.register_device(consts::UART0_INT_NUM, UART.as_scheme())?;
+    PLIC.unmask(consts::UART0_INT_NUM)?;
 
     IRQ.register_handler(
         ScauseIntCode::SupervisorSoft as _,
-        Box::new(|_| trap::super_soft()),
+        Box::new(|| trap::super_soft()),
     )?;
     IRQ.register_handler(
         ScauseIntCode::SupervisorTimer as _,
-        Box::new(|_| trap::super_timer()),
+        Box::new(|| trap::super_timer()),
     )?;
     IRQ.register_device(ScauseIntCode::SupervisorExternal as _, PLIC.as_scheme())?;
+    IRQ.unmask(ScauseIntCode::SupervisorSoft as _)?;
+    IRQ.unmask(ScauseIntCode::SupervisorTimer as _)?;
+    IRQ.unmask(ScauseIntCode::SupervisorExternal as _)?;
 
     Ok(())
 }
