@@ -1,7 +1,7 @@
 use alloc::boxed::Box;
 
 use zcore_drivers::irq::x86::Apic;
-use zcore_drivers::scheme::{EventListener, IrqScheme};
+use zcore_drivers::scheme::IrqScheme;
 use zcore_drivers::uart::Uart16550Pio;
 use zcore_drivers::DeviceResult;
 
@@ -9,7 +9,7 @@ use super::trap;
 use crate::drivers::{IRQ, UART};
 
 pub(super) fn init() -> DeviceResult {
-    UART.init_by(Box::new(EventListener::new(Uart16550Pio::new(0x3F8))));
+    UART.init_by(Box::new(Uart16550Pio::new(0x3F8)));
 
     Apic::init_local_apic_bsp(crate::mem::phys_to_virt);
     let irq = Box::new(Apic::new(

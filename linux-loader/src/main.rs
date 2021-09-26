@@ -22,11 +22,10 @@ async fn main() {
         kernel_hal::dev::input::init();
     }
 
-    use kernel_hal::drivers::UART;
-    UART.subscribe(
+    use kernel_hal::serial;
+    serial::subscribe_event(
         Box::new(|| {
-            while let Some(c) = UART.try_recv().unwrap() {
-                let c = if c == b'\r' { b'\n' } else { c };
+            while let Some(c) = serial::serial_try_read() {
                 STDIN.push(c as char);
             }
         }),

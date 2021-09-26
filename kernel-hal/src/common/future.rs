@@ -64,12 +64,11 @@ impl Future for SerialFuture<'_> {
     type Output = usize;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        use crate::drivers::UART;
         let buf = &mut self.get_mut().buf;
         let mut n = 0;
         for i in 0..buf.len() {
-            if let Some(c) = UART.try_recv().unwrap() {
-                buf[i] = if c == b'\r' { b'\n' } else { c };
+            if let Some(c) = crate::serial::serial_try_read() {
+                buf[i] = c;
                 n += 1;
             } else {
                 break;
@@ -79,7 +78,7 @@ impl Future for SerialFuture<'_> {
             return Poll::Ready(n);
         }
         let waker = cx.waker().clone();
-        UART.subscribe(Box::new(move || waker.wake_by_ref()), true);
+        crate::serial::subscribe_event(Box::new(move || waker.wake_by_ref()), true);
         Poll::Pending
     }
 }

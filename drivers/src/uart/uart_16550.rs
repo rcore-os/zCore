@@ -6,7 +6,7 @@ use spin::Mutex;
 
 use crate::io::{Io, Mmio, ReadOnly};
 use crate::scheme::{Scheme, UartScheme};
-use crate::DeviceResult;
+use crate::{utils::EventListener, DeviceResult};
 
 bitflags! {
     /// Interrupt enable flags
@@ -120,11 +120,18 @@ where
     V: Copy + BitAnd<Output = V> + BitOr<Output = V> + Not<Output = V>,
 {
     inner: Mutex<&'static mut Uart16550Inner<Mmio<V>>>,
+    listener: Mutex<Option<EventListener>>,
 }
 
-impl<V> Scheme for Uart16550Mmio<V> where
-    V: Copy + BitAnd<Output = V> + BitOr<Output = V> + Not<Output = V> + Send
+impl<V> Scheme for Uart16550Mmio<V>
+where
+    V: Copy + BitAnd<Output = V> + BitOr<Output = V> + Not<Output = V> + Send,
 {
+    fn handle_irq(&self, _irq_num: usize) {
+        if let Some(l) = self.listener.lock().as_mut() {
+            l.trigger();
+        }
+    }
 }
 
 impl<V> UartScheme for Uart16550Mmio<V>
@@ -148,6 +155,10 @@ where
     fn write_str(&self, s: &str) -> DeviceResult {
         self.inner.lock().write_str(s)
     }
+
+    fn bind_listener(&self, listener: EventListener) {
+        *self.listener.lock() = Some(listener);
+    }
 }
 
 impl Uart16550Mmio<u8> {
@@ -159,6 +170,7 @@ impl Uart16550Mmio<u8> {
         uart.init();
         Self {
             inner: Mutex::new(uart),
+            listener: Mutex::new(None),
         }
     }
 }
@@ -172,6 +184,7 @@ impl Uart16550Mmio<u32> {
         uart.init();
         Self {
             inner: Mutex::new(uart),
+            listener: Mutex::new(None),
         }
     }
 }
@@ -183,9 +196,16 @@ mod pio {
 
     pub struct Uart16550Pio {
         inner: Mutex<Uart16550Inner<Pio<u8>>>,
+        listener: Mutex<Option<EventListener>>,
     }
 
-    impl Scheme for Uart16550Pio {}
+    impl Scheme for Uart16550Pio {
+        fn handle_irq(&self, _irq_num: usize) {
+            if let Some(l) = self.listener.lock().as_mut() {
+                l.trigger();
+            }
+        }
+    }
 
     impl UartScheme for Uart16550Pio {
         fn try_recv(&self) -> DeviceResult<Option<u8>> {
@@ -198,6 +218,10 @@ mod pio {
 
         fn write_str(&self, s: &str) -> DeviceResult {
             self.inner.lock().write_str(s)
+        }
+
+        fn bind_listener(&self, listener: EventListener) {
+            *self.listener.lock() = Some(listener);
         }
     }
 
@@ -215,6 +239,7 @@ mod pio {
             uart.init();
             Self {
                 inner: Mutex::new(uart),
+                listener: Mutex::new(None),
             }
         }
     }

@@ -1,10 +1,10 @@
 use std::collections::VecDeque;
-use std::sync::Mutex;
 
 use async_std::{io, io::prelude::*, task};
+use spin::Mutex;
 
 use crate::scheme::{Scheme, UartScheme};
-use crate::DeviceResult;
+use crate::{utils::EventListener, DeviceResult};
 
 const UART_BUF_LEN: usize = 256;
 
@@ -12,22 +12,26 @@ lazy_static::lazy_static! {
     static ref UART_BUF: Mutex<VecDeque<u8>> = Mutex::new(VecDeque::with_capacity(UART_BUF_LEN));
 }
 
-pub struct MockUart;
+pub struct MockUart {
+    listener: Mutex<Option<EventListener>>,
+}
 
 impl MockUart {
     pub fn new() -> Self {
-        Self
+        Self {
+            listener: Mutex::new(None),
+        }
     }
 
     pub fn start_irq_serve(irq_handler: impl Fn() + Send + Sync + 'static) {
         task::spawn(async move {
             loop {
                 let mut buf = [0; UART_BUF_LEN];
-                let remains = UART_BUF_LEN - UART_BUF.lock().unwrap().len();
+                let remains = UART_BUF_LEN - UART_BUF.lock().len();
                 if remains > 0 {
                     if let Ok(n) = io::stdin().read(&mut buf[..remains]).await {
                         {
-                            let mut uart_buf = UART_BUF.lock().unwrap();
+                            let mut uart_buf = UART_BUF.lock();
                             for c in &buf[..n] {
                                 uart_buf.push_back(*c);
                             }
@@ -47,11 +51,17 @@ impl Default for MockUart {
     }
 }
 
-impl Scheme for MockUart {}
+impl Scheme for MockUart {
+    fn handle_irq(&self, _irq_num: usize) {
+        if let Some(l) = self.listener.lock().as_mut() {
+            l.trigger();
+        }
+    }
+}
 
 impl UartScheme for MockUart {
     fn try_recv(&self) -> DeviceResult<Option<u8>> {
-        if let Some(c) = UART_BUF.lock().unwrap().pop_front() {
+        if let Some(c) = UART_BUF.lock().pop_front() {
             Ok(Some(c))
         } else {
             Ok(None)
@@ -66,6 +76,10 @@ impl UartScheme for MockUart {
     fn write_str(&self, s: &str) -> DeviceResult {
         eprint!("{}", s);
         Ok(())
+    }
+
+    fn bind_listener(&self, listener: EventListener) {
+        *self.listener.lock() = Some(listener);
     }
 }
 

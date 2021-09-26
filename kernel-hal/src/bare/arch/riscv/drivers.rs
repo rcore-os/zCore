@@ -1,7 +1,7 @@
 use alloc::boxed::Box;
 
 use zcore_drivers::irq::riscv::{Intc, Plic, ScauseIntCode};
-use zcore_drivers::scheme::{AsScheme, EventListener, IrqScheme};
+use zcore_drivers::scheme::{AsScheme, IrqScheme};
 use zcore_drivers::uart::Uart16550Mmio;
 use zcore_drivers::DeviceResult;
 
@@ -13,9 +13,9 @@ use crate::utils::init_once::InitOnce;
 static PLIC: InitOnce<Plic> = InitOnce::new();
 
 pub(super) fn init() -> DeviceResult {
-    UART.init_by(Box::new(EventListener::new(unsafe {
+    UART.init_by(Box::new(unsafe {
         Uart16550Mmio::<u8>::new(phys_to_virt(consts::UART_BASE))
-    })));
+    }));
     IRQ.init_by(Box::new(Intc::new()));
 
     PLIC.init_by(Plic::new(phys_to_virt(consts::PLIC_BASE)));

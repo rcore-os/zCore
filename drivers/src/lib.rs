@@ -6,8 +6,6 @@ extern crate alloc;
 #[macro_use]
 extern crate log;
 
-mod utils;
-
 #[cfg(feature = "mock")]
 pub mod mock;
 
@@ -18,6 +16,7 @@ pub mod io;
 pub mod irq;
 pub mod scheme;
 pub mod uart;
+pub mod utils;
 
 #[derive(Debug)]
 pub enum DeviceError {

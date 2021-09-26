@@ -10,6 +10,5 @@ pub(super) mod vdso;
 pub(super) mod vm;
 
 pub mod addr;
-pub mod drivers;
 pub mod serial;
 pub mod user;

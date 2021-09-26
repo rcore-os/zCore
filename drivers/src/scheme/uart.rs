@@ -1,5 +1,5 @@
 use super::Scheme;
-use crate::DeviceResult;
+use crate::{utils::EventListener, DeviceResult};
 
 pub trait UartScheme: Scheme {
     fn try_recv(&self) -> DeviceResult<Option<u8>>;
@@ -9,5 +9,9 @@ pub trait UartScheme: Scheme {
             self.send(c)?;
         }
         Ok(())
+    }
+
+    fn bind_listener(&self, _listener: EventListener) {
+        unimplemented!()
     }
 }

@@ -17,6 +17,7 @@ mod macros;
 
 mod common;
 mod config;
+mod drivers;
 mod hal_fn;
 mod kernel_handler;
 mod utils;
@@ -31,7 +32,7 @@ cfg_if! {
     }
 }
 
-pub use common::{addr, defs::*, drivers, serial, user};
+pub use common::{addr, defs::*, serial, user};
 pub use config::*;
 pub use imp::*;
 pub use kernel_handler::*;

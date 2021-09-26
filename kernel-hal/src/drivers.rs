@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use alloc::boxed::Box;
 
 use zcore_drivers::scheme::{IrqScheme, UartScheme};

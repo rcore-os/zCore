@@ -167,13 +167,12 @@ fn get_rootproc(cmdline: &str) -> Vec<String> {
 
 #[cfg(feature = "linux")]
 fn main(ramfs_data: &'static mut [u8], cmdline: &str) -> ! {
-    use kernel_hal::drivers::UART;
+    use kernel_hal::serial;
     use linux_object::fs::STDIN;
 
-    UART.subscribe(
+    serial::subscribe_event(
         Box::new(|| {
-            while let Some(c) = UART.try_recv().unwrap() {
-                let c = if c == b'\r' { b'\n' } else { c };
+            while let Some(c) = serial::serial_try_read() {
                 STDIN.push(c as char);
             }
         }),
