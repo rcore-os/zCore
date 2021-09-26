@@ -77,6 +77,13 @@ fn init_irq_table() {
     }
 }
 
+// Drivers IrqManager
+pub fn enable_irq(irq: usize) {
+    // Handled in PLIC driver
+}
+
+// IRQ_MANAGER.read().try_handle_interrupt(Some(SupervisorExternal));
+
 #[export_name = "hal_irq_handle"]
 pub fn irq_handle(irq: u8) {
     debug!("PLIC handle: {:#x}", irq);

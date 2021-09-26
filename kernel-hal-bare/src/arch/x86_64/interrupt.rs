@@ -273,6 +273,17 @@ fn irq_enable_raw(irq: u8, vector: u8) {
     ioapic.enable(irq, 0)
 }
 
+const IrqMin: usize = 0x20;
+const IrqMax: usize = 0x3f;
+
+// Drivers IrqManager
+#[inline(always)]
+pub fn enable_irq(irq: usize) {
+    let mut ioapic = unsafe { IoApic::new(phys_to_virt(super::IOAPIC_ADDR as usize)) };
+    ioapic.set_irq_vector(irq as u8, (IrqMin + irq) as u8);
+    ioapic.enable(irq as u8, 0);
+}
+
 #[export_name = "hal_irq_disable"]
 pub fn irq_disable(irq: u32) {
     info!("irq_disable");

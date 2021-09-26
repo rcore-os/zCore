@@ -22,8 +22,8 @@ use {
     },
 };
 
+pub mod interrupt;
 mod acpi_table;
-mod interrupt;
 mod keyboard;
 
 /// Page Table

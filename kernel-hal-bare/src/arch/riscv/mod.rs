@@ -7,9 +7,10 @@ use riscv::addr::Page;
 use riscv::asm::sfence_vma_all;
 use riscv::paging::{PageTableFlags as PTF, *};
 use riscv::register::{satp, sie, stval, time};
-//use crate::sbi;
 use alloc::{collections::VecDeque, vec::Vec};
 use core::fmt::{self, Write};
+
+use crate::drivers::{device_tree, virtio, irq};
 
 mod sbi;
 
@@ -548,7 +549,11 @@ pub fn init(config: Config) {
     #[cfg(feature = "board_qemu")]
     {
         bare_println!("Setup virtio @devicetree {:#x}", config.dtb);
-        drivers::virtio::device_tree::init(config.dtb);
+
+        virtio::virtio::driver_init();
+        irq::plic::driver_init();
+
+        device_tree::init(config.dtb);
     }
 }
 

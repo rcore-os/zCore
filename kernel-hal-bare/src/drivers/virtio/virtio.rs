@@ -1,8 +1,11 @@
 use crate::{frame_dealloc, hal_frame_alloc_contiguous, phys_to_virt, virt_to_phys, PAGE_SIZE};
-use device_tree::util::SliceRead;
 use device_tree::Node;
+use device_tree::util::SliceRead;
 use log::*;
 use virtio_drivers::{VirtIOBlk, VirtIOGpu, VirtIOHeader, VirtIOInput};
+use crate::drivers::device_tree::DEVICE_TREE_REGISTRY;
+use crate::drivers::net::virtio_net;
+use crate::drivers::{DeviceType, Driver, BlockDriver, InputDriver, GpuDriver, BLK_DRIVERS, INPUT_DRIVERS, GPU_DRIVERS, DRIVERS, IRQ_MANAGER };
 
 pub fn virtio_probe(node: &Node) {
     let reg = match node.prop_raw("reg") {
@@ -23,12 +26,12 @@ pub fn virtio_probe(node: &Node) {
         return;
     }
     info!(
-        "Detected virtio device with vendor id: {:#X}",
-        header.vendor_id()
+        "Detected virtio device with vendor id: {:#X}, DeviceType: {:?}",
+        header.vendor_id(), header.device_type(),
     );
     info!("Device tree node {:?}", node);
     match header.device_type() {
-        //DeviceType::Network => virtio_net::init(header),
+        virtio_drivers::DeviceType::Network => virtio_net::init(header),
         virtio_drivers::DeviceType::Block => virtio_blk_init(header),
         virtio_drivers::DeviceType::Input => virtio_input_init(header),
         virtio_drivers::DeviceType::GPU => virtio_gpu_init(header),
@@ -36,21 +39,20 @@ pub fn virtio_probe(node: &Node) {
     }
 }
 
+pub fn driver_init() {
+    DEVICE_TREE_REGISTRY
+        .write()
+        .insert("virtio,mmio", virtio_probe);
+}
+
 /// virtio_mmio
 /////////
 /// virtio_blk
 use alloc::string::String;
 use alloc::sync::Arc;
-
 use alloc::format;
-
-use super::{
-    BlockDriver, DeviceType, Driver, GpuDriver, InputDriver, BLK_DRIVERS, DRIVERS, GPU_DRIVERS,
-    INPUT_DRIVERS,
-};
-
-//use crate::{sync::SpinNoIrqLock as Mutex};
 use spin::Mutex;
+//use crate::{sync::SpinNoIrqLock as Mutex};
 
 struct VirtIOBlkDriver(Mutex<VirtIOBlk<'static>>);
 struct VirtIOGpuDriver(Mutex<VirtIOGpu<'static>>);
@@ -96,10 +98,6 @@ impl Driver for VirtIOGpuDriver {
     fn get_id(&self) -> String {
         format!("virtio_gpu")
     }
-
-    fn as_block(&self) -> Option<&dyn BlockDriver> {
-        None
-    }
 }
 
 impl GpuDriver for VirtIOGpuDriver {
@@ -132,10 +130,6 @@ impl Driver for VirtIOInputDriver {
     fn get_id(&self) -> String {
         format!("virtio_input")
     }
-
-    fn as_block(&self) -> Option<&dyn BlockDriver> {
-        None
-    }
 }
 
 impl InputDriver for VirtIOInputDriver {
@@ -148,7 +142,7 @@ pub fn virtio_blk_init(header: &'static mut VirtIOHeader) {
     let blk = VirtIOBlk::new(header).expect("failed to init blk driver");
     let driver = Arc::new(VirtIOBlkDriver(Mutex::new(blk)));
     DRIVERS.write().push(driver.clone());
-    //IRQ_MANAGER.write().register_all(driver.clone());
+    IRQ_MANAGER.write().register_all(driver.clone());
     BLK_DRIVERS.write().push(driver);
 }
 
@@ -169,37 +163,3 @@ pub fn virtio_gpu_init(header: &'static mut VirtIOHeader) {
     DRIVERS.write().push(driver.clone());
     GPU_DRIVERS.write().push(driver);
 }
-
-/////////
-/// virtio dma alloc/dealloc
-
-#[no_mangle]
-extern "C" fn virtio_dma_alloc(pages: usize) -> PhysAddr {
-    let paddr = unsafe { hal_frame_alloc_contiguous(pages, 0).unwrap() };
-    trace!("alloc DMA: paddr={:#x}, pages={}", paddr, pages);
-    paddr
-}
-
-#[no_mangle]
-extern "C" fn virtio_dma_dealloc(paddr: PhysAddr, pages: usize) -> i32 {
-    for i in 0..pages {
-        unsafe {
-            frame_dealloc(&(paddr + i * PAGE_SIZE));
-        }
-    }
-    trace!("dealloc DMA: paddr={:#x}, pages={}", paddr, pages);
-    0
-}
-
-#[no_mangle]
-extern "C" fn virtio_phys_to_virt(paddr: PhysAddr) -> VirtAddr {
-    phys_to_virt(paddr)
-}
-
-#[no_mangle]
-extern "C" fn virtio_virt_to_phys(vaddr: VirtAddr) -> PhysAddr {
-    virt_to_phys(vaddr)
-}
-
-type VirtAddr = usize;
-type PhysAddr = usize;
