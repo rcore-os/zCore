@@ -127,6 +127,10 @@ impl<V> Scheme for Uart16550Mmio<V>
 where
     V: Copy + BitAnd<Output = V> + BitOr<Output = V> + Not<Output = V> + Send,
 {
+    fn name(&self) -> &'static str {
+        "uart16550-mmio"
+    }
+
     fn handle_irq(&self, _irq_num: usize) {
         if let Some(l) = self.listener.lock().as_mut() {
             l.trigger();
@@ -200,6 +204,10 @@ mod pio {
     }
 
     impl Scheme for Uart16550Pio {
+        fn name(&self) -> &'static str {
+            "uart16550-pio"
+        }
+
         fn handle_irq(&self, _irq_num: usize) {
             if let Some(l) = self.listener.lock().as_mut() {
                 l.trigger();

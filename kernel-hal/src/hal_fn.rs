@@ -87,6 +87,10 @@ hal_fn_def! {
         pub fn msi_register_handler(block: Range<usize>, msi_id: usize, handler: IrqHandler) -> HalResult;
     }
 
+    pub(crate) mod serial {
+        pub(crate) fn serial_write_early(_s: &str) {}
+    }
+
     pub mod context: common::context {
         /// Enter user mode.
         pub fn context_run(context: &mut UserContext) {

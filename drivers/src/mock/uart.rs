@@ -52,6 +52,10 @@ impl Default for MockUart {
 }
 
 impl Scheme for MockUart {
+    fn name(&self) -> &'static str {
+        "mock-uart"
+    }
+
     fn handle_irq(&self, _irq_num: usize) {
         if let Some(l) = self.listener.lock().as_mut() {
             l.trigger();

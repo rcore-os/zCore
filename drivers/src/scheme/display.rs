@@ -1,7 +1,7 @@
 use super::Scheme;
 
-pub trait DisplayScheme: Scheme {
-    type DisplayInfo;
+pub struct DisplayInfo;
 
-    fn info(&self) -> Self::DisplayInfo;
+pub trait DisplayScheme: Scheme {
+    fn info(&self) -> DisplayInfo;
 }

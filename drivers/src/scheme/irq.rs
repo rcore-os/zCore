@@ -1,4 +1,5 @@
 use alloc::boxed::Box;
+use alloc::sync::Arc;
 use core::ops::Range;
 
 use super::Scheme;
@@ -38,7 +39,7 @@ pub trait IrqScheme: Scheme {
     fn register_handler(&self, irq_num: usize, handler: IrqHandler) -> DeviceResult;
 
     /// Register the device to delivery an IRQ.
-    fn register_device(&self, irq_num: usize, dev: &'static dyn Scheme) -> DeviceResult {
+    fn register_device(&self, irq_num: usize, dev: Arc<dyn Scheme>) -> DeviceResult {
         self.register_handler(irq_num, Box::new(move || dev.handle_irq(irq_num)))
     }
 

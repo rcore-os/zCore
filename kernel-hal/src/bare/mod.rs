@@ -24,10 +24,10 @@ use crate::{KernelConfig, KernelHandler, KCONFIG, KHANDLER};
 ///
 /// This function must be called at the beginning.
 pub fn init(cfg: KernelConfig, handler: &'static impl KernelHandler) {
-    KCONFIG.init_by(cfg);
-    KHANDLER.init_by(handler);
+    KCONFIG.init_once_by(cfg);
+    KHANDLER.init_once_by(handler);
 
     unsafe { trapframe::init() };
     self::arch::init();
-    crate::serial::init();
+    crate::serial::init_listener();
 }

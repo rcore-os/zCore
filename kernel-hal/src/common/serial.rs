@@ -43,12 +43,14 @@ impl Write for SerialWriter {
     fn write_str(&mut self, s: &str) -> Result {
         if let Some(uart) = UART.try_get() {
             uart.write_str(s).unwrap();
+        } else {
+            crate::hal_fn::serial::serial_write_early(s);
         }
         Ok(())
     }
 }
 
-pub(crate) fn init() {
+pub(crate) fn init_listener() {
     let mut listener = EventListener::new();
     listener.subscribe(Box::new(|| SERIAL.handle_irq()), false);
     UART.bind_listener(listener);

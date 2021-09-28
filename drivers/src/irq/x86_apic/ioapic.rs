@@ -23,10 +23,9 @@ impl AcpiHandler for AcpiMapHandler {
     ) -> PhysicalMapping<Self, T> {
         let aligned_start = physical_address & !(PAGE_SIZE - 1);
         let aligned_end = (physical_address + size + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
-        let phys_to_virt = self.phys_to_virt;
         PhysicalMapping::new(
             physical_address,
-            NonNull::new_unchecked(phys_to_virt(physical_address) as *mut T),
+            NonNull::new_unchecked((self.phys_to_virt)(physical_address) as *mut T),
             size,
             aligned_end - aligned_start,
             self.clone(),

@@ -12,7 +12,7 @@ pub mod vm;
 
 pub use super::hal_fn::{context, cpu, interrupt, rand};
 
-hal_fn_impl_default!(context, cpu, interrupt, rand);
+hal_fn_impl_default!(context, cpu, interrupt, rand, super::hal_fn::serial);
 
 cfg_if! {
     if #[cfg(target_os = "linux")] {
@@ -30,10 +30,10 @@ include!("macos.rs");
 ///
 /// This function must be called at the beginning.
 pub fn init() {
-    crate::KHANDLER.init_by(&crate::DummyKernelHandler);
+    crate::KHANDLER.init_once_by(&crate::DummyKernelHandler);
 
     drivers::init();
-    crate::serial::init();
+    crate::serial::init_listener();
 
     #[cfg(target_os = "macos")]
     unsafe {

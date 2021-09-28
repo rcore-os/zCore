@@ -19,6 +19,10 @@ impl<'a> VirtIoConsole<'a> {
 }
 
 impl<'a> Scheme for VirtIoConsole<'a> {
+    fn name(&self) -> &'static str {
+        "virtio-console"
+    }
+
     fn handle_irq(&self, _irq_num: usize) {
         self.inner.lock().ack_interrupt().unwrap();
     }

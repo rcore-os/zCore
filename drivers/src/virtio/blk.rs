@@ -17,6 +17,10 @@ impl<'a> VirtIoBlk<'a> {
 }
 
 impl<'a> Scheme for VirtIoBlk<'a> {
+    fn name(&self) -> &'static str {
+        "virtio-blk"
+    }
+
     fn handle_irq(&self, _irq_num: usize) {
         self.inner.lock().ack_interrupt();
     }

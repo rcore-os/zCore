@@ -10,6 +10,8 @@ pub mod special;
 pub mod timer;
 pub mod vm;
 
+hal_fn_impl_default!(crate::hal_fn::serial);
+
 use x86_64::registers::control::{Cr4, Cr4Flags};
 
 pub fn init() {
@@ -29,8 +31,7 @@ pub fn init() {
         x86_smpboot::start_application_processors(
             || {
                 init_ap();
-                let ap_fn = crate::KCONFIG.ap_fn;
-                ap_fn();
+                (crate::KCONFIG.ap_fn)();
             },
             stack_fn,
             crate::mem::phys_to_virt,

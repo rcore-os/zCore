@@ -46,3 +46,13 @@ pub fn clear_ipi() {
 pub fn send_ipi(sipi_value: usize) {
     sbi_call(SBI_SEND_IPI, sipi_value, 0, 0);
 }
+
+hal_fn_impl! {
+    impl mod crate::hal_fn::serial {
+        fn serial_write_early(s: &str) {
+            for c in s.bytes() {
+                console_putchar(c as usize);
+            }
+        }
+    }
+}

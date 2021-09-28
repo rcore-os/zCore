@@ -53,6 +53,10 @@ impl Default for Intc {
 }
 
 impl Scheme for Intc {
+    fn name(&self) -> &'static str {
+        "riscv-intc"
+    }
+
     fn handle_irq(&self, cause: usize) {
         self.with_handler(cause, |opt| {
             if let Some(h) = opt {

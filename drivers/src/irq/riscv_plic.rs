@@ -86,6 +86,10 @@ impl Plic {
 }
 
 impl Scheme for Plic {
+    fn name(&self) -> &'static str {
+        "riscv-plic"
+    }
+
     fn handle_irq(&self, _unused: usize) {
         let mut inner = self.inner.lock();
         while let Some(irq_num) = inner.pending_irq() {

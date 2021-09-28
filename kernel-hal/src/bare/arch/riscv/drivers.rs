@@ -1,39 +1,52 @@
-use alloc::boxed::Box;
+use alloc::{boxed::Box, sync::Arc};
 
-use zcore_drivers::irq::riscv::{Intc, Plic, ScauseIntCode};
-use zcore_drivers::scheme::{AsScheme, IrqScheme};
-use zcore_drivers::uart::Uart16550Mmio;
-use zcore_drivers::DeviceResult;
+use zcore_drivers::builder::{DeviceTreeDriverBuilder, IoMapper};
+use zcore_drivers::irq::riscv::ScauseIntCode;
+use zcore_drivers::scheme::IrqScheme;
+use zcore_drivers::{Device, DeviceResult};
 
-use super::{consts, trap};
 use crate::drivers::{IRQ, UART};
-use crate::mem::phys_to_virt;
 use crate::utils::init_once::InitOnce;
+use crate::{mem::phys_to_virt, PhysAddr, VirtAddr};
 
-static PLIC: InitOnce<Plic> = InitOnce::new();
+static PLIC: InitOnce<Arc<dyn IrqScheme>> = InitOnce::new();
+
+struct IoMapperImpl;
+
+impl IoMapper for IoMapperImpl {
+    fn query_or_map(&self, paddr: PhysAddr, _size: usize) -> Option<VirtAddr> {
+        Some(phys_to_virt(paddr)) // FIXME
+    }
+}
 
 pub(super) fn init() -> DeviceResult {
-    UART.init_by(Box::new(unsafe {
-        Uart16550Mmio::<u8>::new(phys_to_virt(consts::UART_BASE))
-    }));
-    IRQ.init_by(Box::new(Intc::new()));
-
-    PLIC.init_by(Plic::new(phys_to_virt(consts::PLIC_BASE)));
-    PLIC.register_device(consts::UART0_INT_NUM, UART.as_scheme())?;
-    PLIC.unmask(consts::UART0_INT_NUM)?;
+    let dev_list =
+        DeviceTreeDriverBuilder::new(phys_to_virt(crate::config::KCONFIG.dtb_paddr), IoMapperImpl)?
+            .build()?;
+    for dev in dev_list.into_iter() {
+        match dev {
+            Device::Irq(irq) => {
+                if !IRQ.is_completed() {
+                    IRQ.init_once_by(irq);
+                } else {
+                    PLIC.init_once_by(irq);
+                }
+            }
+            Device::Uart(uart) => UART.init_once_by(uart),
+            _ => {}
+        }
+    }
 
     IRQ.register_handler(
         ScauseIntCode::SupervisorSoft as _,
-        Box::new(|| trap::super_soft()),
+        Box::new(|| super::trap::super_soft()),
     )?;
     IRQ.register_handler(
         ScauseIntCode::SupervisorTimer as _,
-        Box::new(|| trap::super_timer()),
+        Box::new(|| super::trap::super_timer()),
     )?;
-    IRQ.register_device(ScauseIntCode::SupervisorExternal as _, PLIC.as_scheme())?;
     IRQ.unmask(ScauseIntCode::SupervisorSoft as _)?;
     IRQ.unmask(ScauseIntCode::SupervisorTimer as _)?;
-    IRQ.unmask(ScauseIntCode::SupervisorExternal as _)?;
 
     Ok(())
 }

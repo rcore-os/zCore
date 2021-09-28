@@ -17,11 +17,4 @@ pub fn init() {
     vm::remap_the_kernel().unwrap();
     drivers::init().unwrap();
     timer::init();
-
-    #[cfg(feature = "board_qemu")]
-    {
-        // TODO
-        // sbi_println!("Setup virtio @devicetree {:#x}", cfg.dtb);
-        // drivers::virtio::device_tree::init(cfg.dtb);
-    }
 }

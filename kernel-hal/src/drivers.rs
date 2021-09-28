@@ -1,10 +1,10 @@
 #![allow(dead_code)]
 
-use alloc::boxed::Box;
+use alloc::sync::Arc;
 
 use zcore_drivers::scheme::{IrqScheme, UartScheme};
 
 use crate::utils::init_once::InitOnce;
 
-pub static UART: InitOnce<Box<dyn UartScheme>> = InitOnce::new();
-pub static IRQ: InitOnce<Box<dyn IrqScheme>> = InitOnce::new();
+pub static UART: InitOnce<Arc<dyn UartScheme>> = InitOnce::new();
+pub static IRQ: InitOnce<Arc<dyn IrqScheme>> = InitOnce::new();

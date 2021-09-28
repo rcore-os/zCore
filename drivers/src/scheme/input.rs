@@ -1,8 +1,7 @@
 use super::Scheme;
-use crate::DeviceResult;
+
+pub struct InputState;
 
 pub trait InputScheme: Scheme {
-    type InputState;
-
-    fn state(&self) -> DeviceResult<Self::InputState>;
+    fn state(&self) -> InputState;
 }
