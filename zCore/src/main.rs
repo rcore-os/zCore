@@ -167,17 +167,18 @@ fn get_rootproc(cmdline: &str) -> Vec<String> {
 
 #[cfg(feature = "linux")]
 fn main(ramfs_data: &'static mut [u8], cmdline: &str) -> ! {
-    use kernel_hal::serial;
     use linux_object::fs::STDIN;
 
-    serial::subscribe_event(
-        Box::new(|| {
-            while let Some(c) = serial::serial_try_read() {
-                STDIN.push(c as char);
-            }
-        }),
-        false,
-    );
+    if let Some(uart) = kernel_hal::drivers::uart::first() {
+        uart.clone().subscribe(
+            Box::new(move || {
+                while let Some(c) = uart.try_recv().unwrap_or(None) {
+                    STDIN.push(c as char);
+                }
+            }),
+            false,
+        );
+    }
 
     //let args: Vec<String> = vec!["/bin/busybox".into(), "sh".into()];
     let args: Vec<String> = get_rootproc(cmdline);

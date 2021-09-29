@@ -3,7 +3,7 @@ use core::task::{Context, Poll};
 use core::time::Duration;
 use core::{future::Future, pin::Pin};
 
-#[must_use = "yield_now does nothing unless polled/`await`-ed"]
+#[must_use = "`yield_now()` does nothing unless polled/`await`-ed"]
 #[derive(Default)]
 pub(super) struct YieldFuture {
     flag: bool,
@@ -23,7 +23,7 @@ impl Future for YieldFuture {
     }
 }
 
-#[must_use = "sleep does nothing unless polled/`await`-ed"]
+#[must_use = "`sleep_until()` does nothing unless polled/`await`-ed"]
 pub(super) struct SleepFuture {
     deadline: Duration,
 }
@@ -49,25 +49,30 @@ impl Future for SleepFuture {
     }
 }
 
-#[must_use = "serial_getchar does nothing unless polled/`await`-ed"]
-pub(super) struct SerialFuture<'a> {
+#[must_use = "`serial_read()` does nothing unless polled/`await`-ed"]
+pub(super) struct SerialReadFuture<'a> {
     buf: &'a mut [u8],
 }
 
-impl<'a> SerialFuture<'a> {
+impl<'a> SerialReadFuture<'a> {
     pub fn new(buf: &'a mut [u8]) -> Self {
         Self { buf }
     }
 }
 
-impl Future for SerialFuture<'_> {
+impl Future for SerialReadFuture<'_> {
     type Output = usize;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let uart = if let Some(uart) = crate::drivers::uart::first() {
+            uart
+        } else {
+            return Poll::Pending;
+        };
         let buf = &mut self.get_mut().buf;
         let mut n = 0;
         for i in 0..buf.len() {
-            if let Some(c) = crate::serial::serial_try_read() {
+            if let Some(c) = uart.try_recv().unwrap_or(None) {
                 buf[i] = c;
                 n += 1;
             } else {
@@ -78,7 +83,7 @@ impl Future for SerialFuture<'_> {
             return Poll::Ready(n);
         }
         let waker = cx.waker().clone();
-        crate::serial::subscribe_event(Box::new(move || waker.wake_by_ref()), true);
+        uart.subscribe(Box::new(move || waker.wake_by_ref()), true);
         Poll::Pending
     }
 }

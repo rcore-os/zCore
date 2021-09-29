@@ -1,17 +1,12 @@
-use alloc::{boxed::Box, sync::Arc};
+use alloc::boxed::Box;
 
 use zcore_drivers::builder::{DeviceTreeDriverBuilder, IoMapper};
 use zcore_drivers::irq::riscv::ScauseIntCode;
-use zcore_drivers::scheme::IrqScheme;
 use zcore_drivers::uart::BufferedUart;
 use zcore_drivers::{Device, DeviceResult};
 
 use crate::common::vm::GenericPageTable;
-use crate::drivers::{IRQ, UART};
-use crate::utils::init_once::InitOnce;
-use crate::{mem::phys_to_virt, CachePolicy, MMUFlags, PhysAddr, VirtAddr};
-
-static PLIC: InitOnce<Arc<dyn IrqScheme>> = InitOnce::new();
+use crate::{drivers, mem::phys_to_virt, CachePolicy, MMUFlags, PhysAddr, VirtAddr};
 
 struct IoMapperImpl;
 
@@ -56,29 +51,26 @@ pub(super) fn init() -> DeviceResult {
         DeviceTreeDriverBuilder::new(phys_to_virt(crate::config::KCONFIG.dtb_paddr), IoMapperImpl)?
             .build()?;
     for dev in dev_list.into_iter() {
-        match dev {
-            Device::Irq(irq) => {
-                if !IRQ.is_completed() {
-                    IRQ.init_once_by(irq);
-                } else {
-                    PLIC.init_once_by(irq);
-                }
-            }
-            Device::Uart(uart) => UART.init_once_by(BufferedUart::new(uart)),
-            _ => {}
+        if let Device::Uart(uart) = dev {
+            drivers::add_device(Device::Uart(BufferedUart::new(uart)));
+        } else {
+            drivers::add_device(dev);
         }
     }
 
-    IRQ.register_handler(
+    let irq = drivers::irq::first()
+        .filter(|d| d.name() == "riscv-intc")
+        .expect("IRQ device 'riscv-intc' not initialized!");
+    irq.register_handler(
         ScauseIntCode::SupervisorSoft as _,
         Box::new(|| super::trap::super_soft()),
     )?;
-    IRQ.register_handler(
+    irq.register_handler(
         ScauseIntCode::SupervisorTimer as _,
         Box::new(|| super::trap::super_timer()),
     )?;
-    IRQ.unmask(ScauseIntCode::SupervisorSoft as _)?;
-    IRQ.unmask(ScauseIntCode::SupervisorTimer as _)?;
+    irq.unmask(ScauseIntCode::SupervisorSoft as _)?;
+    irq.unmask(ScauseIntCode::SupervisorTimer as _)?;
 
     Ok(())
 }

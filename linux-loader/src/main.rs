@@ -22,15 +22,16 @@ async fn main() {
         kernel_hal::dev::input::init();
     }
 
-    use kernel_hal::serial;
-    serial::subscribe_event(
-        Box::new(|| {
-            while let Some(c) = serial::serial_try_read() {
-                STDIN.push(c as char);
-            }
-        }),
-        false,
-    );
+    if let Some(uart) = kernel_hal::drivers::uart::first() {
+        uart.clone().subscribe(
+            Box::new(move || {
+                while let Some(c) = uart.try_recv().unwrap_or(None) {
+                    STDIN.push(c as char);
+                }
+            }),
+            false,
+        );
+    }
 
     // run first process
     let args: Vec<_> = std::env::args().skip(1).collect();

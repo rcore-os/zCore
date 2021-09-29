@@ -17,10 +17,11 @@ mod macros;
 
 mod common;
 mod config;
-mod drivers;
 mod hal_fn;
 mod kernel_handler;
 mod utils;
+
+pub mod drivers;
 
 cfg_if! {
     if #[cfg(feature = "libos")] {

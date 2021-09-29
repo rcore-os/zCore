@@ -1,6 +1,6 @@
 use core::ops::Range;
 
-use crate::drivers::IRQ;
+use crate::drivers::irq;
 use crate::HalResult;
 
 /*
@@ -43,39 +43,39 @@ hal_fn_impl! {
         }
 
         fn is_valid_irq(gsi: usize) -> bool {
-            IRQ.is_valid_irq(gsi)
+            irq::first_unwrap().is_valid_irq(gsi)
         }
 
         fn mask_irq(gsi: usize) -> HalResult {
-            Ok(IRQ.mask(gsi)?)
+            Ok(irq::first_unwrap().mask(gsi)?)
         }
 
         fn unmask_irq(gsi: usize) -> HalResult {
-            Ok(IRQ.unmask(gsi)?)
+            Ok(irq::first_unwrap().unmask(gsi)?)
         }
 
         fn configure_irq(gsi: usize, tm: IrqTriggerMode, pol: IrqPolarity) -> HalResult {
-            Ok(IRQ.configure(gsi, tm, pol)?)
+            Ok(irq::first_unwrap().configure(gsi, tm, pol)?)
         }
 
         fn register_irq_handler(gsi: usize, handler: IrqHandler) -> HalResult {
-            Ok(IRQ.register_handler(gsi, handler)?)
+            Ok(irq::first_unwrap().register_handler(gsi, handler)?)
         }
 
         fn unregister_irq_handler(gsi: usize) -> HalResult {
-            Ok(IRQ.unregister(gsi)?)
+            Ok(irq::first_unwrap().unregister(gsi)?)
         }
 
         fn handle_irq(vector: usize) {
-            IRQ.handle_irq(vector as usize);
+            irq::first_unwrap().handle_irq(vector as usize);
         }
 
         fn msi_alloc_block(requested_irqs: usize) -> HalResult<Range<usize>> {
-            Ok(IRQ.msi_alloc_block(requested_irqs)?)
+            Ok(irq::first_unwrap().msi_alloc_block(requested_irqs)?)
         }
 
         fn msi_free_block(block: Range<usize>) -> HalResult {
-            Ok(IRQ.msi_free_block(block)?)
+            Ok(irq::first_unwrap().msi_free_block(block)?)
         }
 
         fn msi_register_handler(
@@ -83,7 +83,7 @@ hal_fn_impl! {
             msi_id: usize,
             handler: IrqHandler,
         ) -> HalResult {
-            Ok(IRQ.msi_register_handler(block, msi_id, handler)?)
+            Ok(irq::first_unwrap().msi_register_handler(block, msi_id, handler)?)
         }
     }
 }

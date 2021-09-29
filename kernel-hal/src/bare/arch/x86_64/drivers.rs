@@ -3,10 +3,10 @@ use alloc::{boxed::Box, sync::Arc};
 use zcore_drivers::irq::x86::Apic;
 use zcore_drivers::scheme::{IrqScheme, SchemeUpcast};
 use zcore_drivers::uart::{BufferedUart, Uart16550Pio};
-use zcore_drivers::DeviceResult;
+use zcore_drivers::{Device, DeviceResult};
 
 use super::trap;
-use crate::drivers::{IRQ, UART};
+use crate::drivers;
 
 pub(super) fn init() -> DeviceResult {
     let uart = Arc::new(Uart16550Pio::new(0x3F8));
@@ -22,8 +22,8 @@ pub(super) fn init() -> DeviceResult {
         trap::X86_INT_APIC_TIMER,
         Box::new(|| crate::timer::timer_tick()),
     )?;
-    IRQ.init_once_by(irq);
-    UART.init_once_by(BufferedUart::new(uart));
+    drivers::add_device(Device::Irq(irq));
+    drivers::add_device(Device::Uart(BufferedUart::new(uart)));
 
     Ok(())
 }

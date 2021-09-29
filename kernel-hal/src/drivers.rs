@@ -1,17 +1,78 @@
 #![allow(dead_code)]
 
-use alloc::sync::Arc;
+use alloc::{sync::Arc, vec::Vec};
 use core::convert::From;
 
-use zcore_drivers::scheme::{IrqScheme, UartScheme};
-use zcore_drivers::DeviceError;
+use spin::{RwLock, RwLockReadGuard};
 
-use crate::{utils::init_once::InitOnce, HalError};
+use zcore_drivers::scheme::{
+    BlockScheme, DisplayScheme, InputScheme, IrqScheme, NetScheme, UartScheme,
+};
+use zcore_drivers::{Device, DeviceError};
 
-pub static UART: InitOnce<Arc<dyn UartScheme>> = InitOnce::new();
-pub static IRQ: InitOnce<Arc<dyn IrqScheme>> = InitOnce::new();
+lazy_static! {
+    static ref DEVICES: DeviceList = DeviceList::default();
+}
 
-impl From<DeviceError> for HalError {
+#[derive(Default)]
+struct DeviceList {
+    block: RwLock<Vec<Arc<dyn BlockScheme>>>,
+    display: RwLock<Vec<Arc<dyn DisplayScheme>>>,
+    input: RwLock<Vec<Arc<dyn InputScheme>>>,
+    irq: RwLock<Vec<Arc<dyn IrqScheme>>>,
+    net: RwLock<Vec<Arc<dyn NetScheme>>>,
+    uart: RwLock<Vec<Arc<dyn UartScheme>>>,
+}
+
+impl DeviceList {
+    pub fn add_device(&self, dev: Device) {
+        match dev {
+            Device::Block(d) => self.block.write().push(d),
+            Device::Display(d) => self.display.write().push(d),
+            Device::Input(d) => self.input.write().push(d),
+            Device::Irq(d) => self.irq.write().push(d),
+            Device::Net(d) => self.net.write().push(d),
+            Device::Uart(d) => self.uart.write().push(d),
+        }
+    }
+}
+
+macro_rules! device_fn_def {
+    ($dev:ident, $scheme:path) => {
+        pub mod $dev {
+            use super::*;
+
+            pub fn all<'a>() -> RwLockReadGuard<'a, Vec<Arc<dyn $scheme>>> {
+                DEVICES.$dev.read()
+            }
+
+            pub fn try_get(idx: usize) -> Option<Arc<dyn $scheme>> {
+                DEVICES.$dev.read().get(idx).cloned()
+            }
+
+            pub fn first() -> Option<Arc<dyn $scheme>> {
+                try_get(0)
+            }
+
+            pub fn first_unwrap() -> Arc<dyn $scheme> {
+                first().expect(concat!(stringify!($dev), " deivce not initialized!"))
+            }
+        }
+    };
+}
+
+pub(crate) fn add_device(dev: Device) {
+    DEVICES.add_device(dev)
+}
+
+device_fn_def!(block, BlockScheme);
+device_fn_def!(display, DisplayScheme);
+device_fn_def!(input, InputScheme);
+device_fn_def!(irq, IrqScheme);
+device_fn_def!(net, NetScheme);
+device_fn_def!(uart, UartScheme);
+
+impl From<DeviceError> for crate::HalError {
     fn from(err: DeviceError) -> Self {
         warn!("{:?}", err);
         Self
