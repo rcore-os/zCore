@@ -1,44 +1,57 @@
+#![allow(unused_variables)]
+
 use alloc::sync::Arc;
-use linux_object::fs::MemBuf;
+
+use rcore_fs::dev::{BlockDevice, DevError, Result};
 use rcore_fs::vfs::FileSystem;
+use zcore_drivers::scheme::BlockScheme;
+
+struct BlockDriverWrapper(Arc<dyn BlockScheme>);
+
+impl BlockDevice for BlockDriverWrapper {
+    const BLOCK_SIZE_LOG2: u8 = 9; // 512
+
+    fn read_at(&self, block_id: usize, buf: &mut [u8]) -> Result<()> {
+        self.0.read_block(block_id, buf).map_err(|_| DevError)
+    }
+
+    fn write_at(&self, block_id: usize, buf: &[u8]) -> Result<()> {
+        self.0.write_block(block_id, buf).map_err(|_| DevError)
+    }
+
+    fn sync(&self) -> Result<()> {
+        self.0.flush().map_err(|_| DevError)
+    }
+}
 
 pub fn init_filesystem(ramfs_data: &'static mut [u8]) -> Arc<dyn FileSystem> {
-    #[cfg(target_arch = "x86_64")]
-    let device = Arc::new(MemBuf::new(ramfs_data));
-
-    #[cfg(feature = "link_user_img")]
-    let ramfs_data = unsafe {
+    #[cfg(feature = "ramfs")]
+    let device = {
+        use linux_object::fs::MemBuf;
         extern "C" {
             fn _user_img_start();
             fn _user_img_end();
         }
 
-        core::slice::from_raw_parts_mut(
-            _user_img_start as *mut u8,
-            _user_img_end as usize - _user_img_start as usize,
-        )
+        #[cfg(feature = "link_user_img")]
+        let ramfs_data = unsafe {
+            core::slice::from_raw_parts_mut(
+                _user_img_start as *mut u8,
+                _user_img_end as usize - _user_img_start as usize,
+            )
+        };
+        MemBuf::new(ramfs_data)
     };
 
-    #[cfg(feature = "link_user_img")]
-    let device = Arc::new(MemBuf::new(ramfs_data));
-
-    #[cfg(all(target_arch = "riscv64", not(feature = "link_user_img")))]
+    #[cfg(not(feature = "ramfs"))]
     let device = {
-        use kernel_hal::drivers::virtio::{BlockDriverWrapper, BLK_DRIVERS};
-        let driver = BlockDriverWrapper(
-            BLK_DRIVERS
-                .read()
-                .iter()
-                .next()
-                .expect("Block device not found")
-                .clone(),
-        );
-        Arc::new(rcore_fs::dev::block_cache::BlockCache::new(driver, 0x100))
+        use rcore_fs::dev::block_cache::BlockCache;
+        let block = kernel_hal::drivers::block::first_unwrap();
+        BlockCache::new(BlockDriverWrapper(block), 0x100)
     };
 
     info!("Opening the rootfs ...");
-    // 输入类型: Arc<Device>
-    rcore_fs_sfs::SimpleFileSystem::open(device).expect("failed to open device SimpleFS")
+    rcore_fs_sfs::SimpleFileSystem::open(Arc::new(device)).expect("failed to open device SimpleFS")
 }
 
 // Hard link rootfs img

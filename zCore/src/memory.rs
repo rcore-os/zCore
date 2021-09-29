@@ -46,6 +46,10 @@ pub fn init_frame_allocator() {
         page_start..page_end
     }
 
+    extern "C" {
+        fn end();
+    }
+
     let mut ba = FRAME_ALLOCATOR.lock();
     let mem_pool_start = align_up(end as usize + PAGE_SIZE - KERNEL_OFFSET + MEMORY_OFFSET);
     let mem_pool_end = align_down(MEMORY_END);
@@ -94,26 +98,6 @@ pub fn frame_dealloc(target: usize) {
     FRAME_ALLOCATOR
         .lock()
         .dealloc((target - MEMORY_OFFSET) / PAGE_SIZE);
-}
-
-#[cfg(target_arch = "riscv64")]
-pub unsafe fn clear_bss() {
-    let start = sbss as usize;
-    let end = ebss as usize;
-    let step = core::mem::size_of::<usize>();
-    for i in (start..end).step_by(step) {
-        (i as *mut usize).write(0);
-    }
-}
-
-#[allow(dead_code)]
-extern "C" {
-    fn start();
-    fn srodata();
-    fn erodata();
-    fn sbss();
-    fn ebss();
-    fn end();
 }
 
 #[cfg(feature = "hypervisor")]

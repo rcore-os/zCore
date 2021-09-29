@@ -28,16 +28,20 @@ export ARCH=$(arch)
 export BOARD=$(board)
 export USER_IMG=$(ARCH).img
 
+ifeq ($(mode), release)
+	build_args += --release
+endif
+
 ifeq ($(arch), riscv64)
 ifeq ($(board), d1)
 build_args += --features board_d1 --features link_user_img
 else
-build_args += --features board_qemu --features link_user_img
+build_args += --features board_qemu
 endif
 endif
 
-ifeq ($(mode), release)
-	build_args += --release
+ifeq ($(arch), x86_64)
+build_args += --features ramfs
 endif
 
 ifeq ($(linux), 1)
