@@ -5,17 +5,48 @@ use zcore_drivers::irq::riscv::ScauseIntCode;
 use zcore_drivers::scheme::IrqScheme;
 use zcore_drivers::{Device, DeviceResult};
 
+use crate::common::vm::GenericPageTable;
 use crate::drivers::{IRQ, UART};
 use crate::utils::init_once::InitOnce;
-use crate::{mem::phys_to_virt, PhysAddr, VirtAddr};
+use crate::{mem::phys_to_virt, CachePolicy, MMUFlags, PhysAddr, VirtAddr};
 
 static PLIC: InitOnce<Arc<dyn IrqScheme>> = InitOnce::new();
 
 struct IoMapperImpl;
 
 impl IoMapper for IoMapperImpl {
-    fn query_or_map(&self, paddr: PhysAddr, _size: usize) -> Option<VirtAddr> {
-        Some(phys_to_virt(paddr)) // FIXME
+    fn query_or_map(&self, paddr: PhysAddr, size: usize) -> Option<VirtAddr> {
+        let vaddr = phys_to_virt(paddr);
+        let mut pt = super::vm::kernel_page_table().lock();
+        if let Ok((paddr_mapped, _, _)) = pt.query(vaddr) {
+            if paddr_mapped == paddr {
+                Some(vaddr)
+            } else {
+                warn!(
+                    "IoMapper::query_or_map: not linear mapping: vaddr={:#x}, paddr={:#x}",
+                    vaddr, paddr_mapped
+                );
+                None
+            }
+        } else {
+            let size = crate::addr::align_up(size);
+            let flags = MMUFlags::READ
+                | MMUFlags::WRITE
+                | MMUFlags::HUGE_PAGE
+                | MMUFlags::from_bits_truncate(CachePolicy::UncachedDevice as usize);
+            if let Err(err) = pt.map_cont(vaddr, size, paddr, flags) {
+                warn!(
+                    "IoMapper::query_or_map: failed to map {:#x?} => {:#x}, flags={:?}: {:?}",
+                    vaddr..vaddr + size,
+                    paddr,
+                    flags,
+                    err
+                );
+                None
+            } else {
+                Some(vaddr)
+            }
+        }
     }
 }
 

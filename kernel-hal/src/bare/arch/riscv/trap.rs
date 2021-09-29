@@ -35,13 +35,13 @@ pub extern "C" fn trap_handler(tf: &mut TrapFrame) {
     match scause.cause() {
         Trap::Exception(Exception::Breakpoint) => breakpoint(&mut tf.sepc),
         Trap::Exception(Exception::IllegalInstruction) => {
-            panic!("IllegalInstruction: {:#x}->{:#x}", sepc, stval::read())
+            panic!("IllegalInstruction: {:#x}, sepc={:#x}", stval::read(), sepc)
         }
         Trap::Exception(Exception::LoadFault) => {
-            panic!("Load access fault: {:#x}->{:#x}", sepc, stval::read())
+            panic!("Load access fault: {:#x}, sepc={:#x}", stval::read(), sepc)
         }
         Trap::Exception(Exception::StoreFault) => {
-            panic!("Store access fault: {:#x}->{:#x}", sepc, stval::read())
+            panic!("Store access fault: {:#x}, sepc={:#x}", stval::read(), sepc)
         }
         Trap::Exception(Exception::LoadPageFault) => page_fault(MMUFlags::READ),
         Trap::Exception(Exception::StorePageFault) => page_fault(MMUFlags::WRITE),

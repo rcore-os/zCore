@@ -20,7 +20,7 @@ numeric-enum-macro = "0.2"
 spin = "0.9"
 git-version = "0.3"
 cfg-if = "1.0"
-zcore-drivers = { path = "../drivers" }
+zcore-drivers = { path = "../drivers", features = ["virtio"] }
 
 # LibOS mode
 [target.'cfg(not(target_os = "none"))'.dependencies]

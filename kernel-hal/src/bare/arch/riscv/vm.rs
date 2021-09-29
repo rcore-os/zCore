@@ -2,14 +2,18 @@ use core::fmt::{Debug, Formatter, Result};
 use core::slice;
 
 use riscv::{asm, register::satp};
+use spin::Mutex;
 
-use super::consts;
 use crate::addr::{align_down, align_up};
 use crate::utils::page_table::{GenericPTE, PageTableImpl, PageTableLevel3};
 use crate::{mem::phys_to_virt, MMUFlags, PhysAddr, VirtAddr, KCONFIG, PAGE_SIZE};
 
-/// remap kernel with 4K page
-pub(super) fn remap_the_kernel() -> PagingResult {
+lazy_static! {
+    static ref KERNEL_PT: Mutex<PageTable> = Mutex::new(init_kernel_page_table().unwrap());
+}
+
+/// remap kernel ELF segments with 4K page
+fn init_kernel_page_table() -> PagingResult<PageTable> {
     extern "C" {
         fn stext();
         fn etext();
@@ -27,7 +31,6 @@ pub(super) fn remap_the_kernel() -> PagingResult {
     }
 
     let mut pt = PageTable::new();
-    let root_paddr = pt.table_phys();
     let mut map_range = |start: VirtAddr, end: VirtAddr, flags: MMUFlags| -> PagingResult {
         pt.map_cont(
             start,
@@ -65,26 +68,17 @@ pub(super) fn remap_the_kernel() -> PagingResult {
         phys_to_virt(align_down(KCONFIG.phys_mem_end)),
         MMUFlags::READ | MMUFlags::WRITE,
     )?;
-    // PLIC
-    map_range(
-        phys_to_virt(consts::PLIC_BASE),
-        phys_to_virt(consts::PLIC_BASE + 0x40_0000), // 4M
-        MMUFlags::READ | MMUFlags::WRITE,
-    )?;
-    // UART0, VIRTIO
-    map_range(
-        phys_to_virt(consts::UART_BASE),
-        phys_to_virt(consts::UART_BASE + 0x1000),
-        MMUFlags::READ | MMUFlags::WRITE,
-    )?;
 
-    unsafe {
-        pt.activate();
-        core::mem::forget(pt);
-    }
+    info!("initialized kernel page table @ {:#x}", pt.table_phys());
+    Ok(pt)
+}
 
-    info!("remap the kernel @ {:#x}", root_paddr);
-    Ok(())
+pub(super) fn kernel_page_table() -> &'static Mutex<PageTable> {
+    &KERNEL_PT
+}
+
+pub(super) fn init() {
+    unsafe { KERNEL_PT.lock().activate() };
 }
 
 hal_fn_impl! {
@@ -204,7 +198,7 @@ impl GenericPTE for Rv64PTE {
         PTF::from_bits_truncate(self.0 as usize).contains(PTF::VALID)
     }
     fn is_leaf(&self) -> bool {
-        PTF::from_bits_truncate(self.0 as usize).contains(PTF::READABLE | PTF::EXECUTABLE)
+        PTF::from_bits_truncate(self.0 as usize).intersects(PTF::READABLE | PTF::EXECUTABLE)
     }
 
     fn set_addr(&mut self, paddr: PhysAddr) {

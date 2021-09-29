@@ -1,6 +1,5 @@
 #![allow(dead_code)]
 
-mod consts;
 mod drivers;
 mod sbi;
 mod trap;
@@ -14,7 +13,7 @@ pub mod timer;
 pub mod vm;
 
 pub fn init() {
-    vm::remap_the_kernel().unwrap();
+    vm::init();
     drivers::init().unwrap();
     timer::init();
 }

@@ -164,9 +164,39 @@ impl<M: IoMapper> DeviceTreeDriverBuilder<M> {
         })
     }
 
+    #[cfg(feature = "virtio")]
     fn parse_virtio(&self, node: &Node, props: &InheritProps) -> DeviceResult<DevWithInterrupt> {
-        info!("parse_virtio {:?} {:?}", props, node);
-        Err(DeviceError::NotSupported)
+        use crate::virtio::*;
+        use virtio_drivers::{DeviceType, VirtIOHeader};
+
+        let interrupts_extended = parse_interrupts(node, props)?;
+        let base_vaddr = parse_reg(node, props).and_then(|(paddr, size)| {
+            self.io_mapper
+                .query_or_map(paddr as usize, size as usize)
+                .ok_or(DeviceError::NoResources)
+        })?;
+        let header = unsafe { &mut *(base_vaddr as *mut VirtIOHeader) };
+        if !header.verify() {
+            return Err(DeviceError::NotSupported);
+        }
+        info!(
+            "device-tree: detected virtio device: vendor_id={:#X}, type={:?}",
+            header.vendor_id(),
+            header.device_type()
+        );
+
+        let dev = match header.device_type() {
+            DeviceType::Block => Device::Block(Arc::new(VirtIoBlk::new(header)?)),
+            DeviceType::Console => Device::Uart(Arc::new(VirtIoConsole::new(header)?)),
+            _ => return Err(DeviceError::NotSupported),
+        };
+
+        Ok(DevWithInterrupt {
+            phandle: None,
+            interrupt_cells: None,
+            interrupts_extended,
+            dev,
+        })
     }
 
     fn parse_uart(
