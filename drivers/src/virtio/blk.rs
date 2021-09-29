@@ -17,7 +17,7 @@ impl<'a> VirtIoBlk<'a> {
 }
 
 impl<'a> Scheme for VirtIoBlk<'a> {
-    fn name(&self) -> &'static str {
+    fn name(&self) -> &str {
         "virtio-blk"
     }
 

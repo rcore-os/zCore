@@ -5,7 +5,7 @@ use bitflags::bitflags;
 use spin::Mutex;
 
 use crate::io::{Io, Mmio, ReadOnly};
-use crate::scheme::{Scheme, UartScheme};
+use crate::scheme::{IrqHandler, Scheme, UartScheme};
 use crate::{utils::EventListener, DeviceResult};
 
 bitflags! {
@@ -120,21 +120,19 @@ where
     V: Copy + BitAnd<Output = V> + BitOr<Output = V> + Not<Output = V>,
 {
     inner: Mutex<&'static mut Uart16550Inner<Mmio<V>>>,
-    listener: Mutex<Option<EventListener>>,
+    listener: EventListener,
 }
 
 impl<V> Scheme for Uart16550Mmio<V>
 where
     V: Copy + BitAnd<Output = V> + BitOr<Output = V> + Not<Output = V> + Send,
 {
-    fn name(&self) -> &'static str {
+    fn name(&self) -> &str {
         "uart16550-mmio"
     }
 
     fn handle_irq(&self, _irq_num: usize) {
-        if let Some(l) = self.listener.lock().as_mut() {
-            l.trigger();
-        }
+        self.listener.trigger();
     }
 }
 
@@ -160,8 +158,8 @@ where
         self.inner.lock().write_str(s)
     }
 
-    fn bind_listener(&self, listener: EventListener) {
-        *self.listener.lock() = Some(listener);
+    fn subscribe(&self, handler: IrqHandler, once: bool) {
+        self.listener.subscribe(handler, once);
     }
 }
 
@@ -174,7 +172,7 @@ impl Uart16550Mmio<u8> {
         uart.init();
         Self {
             inner: Mutex::new(uart),
-            listener: Mutex::new(None),
+            listener: EventListener::new(),
         }
     }
 }
@@ -188,7 +186,7 @@ impl Uart16550Mmio<u32> {
         uart.init();
         Self {
             inner: Mutex::new(uart),
-            listener: Mutex::new(None),
+            listener: EventListener::new(),
         }
     }
 }
@@ -200,18 +198,16 @@ mod pio {
 
     pub struct Uart16550Pio {
         inner: Mutex<Uart16550Inner<Pio<u8>>>,
-        listener: Mutex<Option<EventListener>>,
+        listener: EventListener,
     }
 
     impl Scheme for Uart16550Pio {
-        fn name(&self) -> &'static str {
+        fn name(&self) -> &str {
             "uart16550-pio"
         }
 
         fn handle_irq(&self, _irq_num: usize) {
-            if let Some(l) = self.listener.lock().as_mut() {
-                l.trigger();
-            }
+            self.listener.trigger();
         }
     }
 
@@ -228,8 +224,8 @@ mod pio {
             self.inner.lock().write_str(s)
         }
 
-        fn bind_listener(&self, listener: EventListener) {
-            *self.listener.lock() = Some(listener);
+        fn subscribe(&self, handler: IrqHandler, once: bool) {
+            self.listener.subscribe(handler, once);
         }
     }
 
@@ -247,7 +243,7 @@ mod pio {
             uart.init();
             Self {
                 inner: Mutex::new(uart),
-                listener: Mutex::new(None),
+                listener: EventListener::new(),
             }
         }
     }

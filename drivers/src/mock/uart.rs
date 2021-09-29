@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use async_std::{io, io::prelude::*, task};
 use spin::Mutex;
 
-use crate::scheme::{Scheme, UartScheme};
+use crate::scheme::{IrqHandler, Scheme, UartScheme};
 use crate::{utils::EventListener, DeviceResult};
 
 const UART_BUF_LEN: usize = 256;
@@ -13,13 +13,13 @@ lazy_static::lazy_static! {
 }
 
 pub struct MockUart {
-    listener: Mutex<Option<EventListener>>,
+    listener: EventListener,
 }
 
 impl MockUart {
     pub fn new() -> Self {
         Self {
-            listener: Mutex::new(None),
+            listener: EventListener::new(),
         }
     }
 
@@ -52,14 +52,12 @@ impl Default for MockUart {
 }
 
 impl Scheme for MockUart {
-    fn name(&self) -> &'static str {
+    fn name(&self) -> &str {
         "mock-uart"
     }
 
     fn handle_irq(&self, _irq_num: usize) {
-        if let Some(l) = self.listener.lock().as_mut() {
-            l.trigger();
-        }
+        self.listener.trigger();
     }
 }
 
@@ -82,8 +80,8 @@ impl UartScheme for MockUart {
         Ok(())
     }
 
-    fn bind_listener(&self, listener: EventListener) {
-        *self.listener.lock() = Some(listener);
+    fn subscribe(&self, handler: IrqHandler, once: bool) {
+        self.listener.subscribe(handler, once);
     }
 }
 

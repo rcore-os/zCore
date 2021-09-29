@@ -3,6 +3,7 @@ use alloc::{boxed::Box, sync::Arc};
 use zcore_drivers::builder::{DeviceTreeDriverBuilder, IoMapper};
 use zcore_drivers::irq::riscv::ScauseIntCode;
 use zcore_drivers::scheme::IrqScheme;
+use zcore_drivers::uart::BufferedUart;
 use zcore_drivers::{Device, DeviceResult};
 
 use crate::common::vm::GenericPageTable;
@@ -63,7 +64,7 @@ pub(super) fn init() -> DeviceResult {
                     PLIC.init_once_by(irq);
                 }
             }
-            Device::Uart(uart) => UART.init_once_by(uart),
+            Device::Uart(uart) => UART.init_once_by(BufferedUart::new(uart)),
             _ => {}
         }
     }

@@ -29,5 +29,4 @@ pub fn init(cfg: KernelConfig, handler: &'static impl KernelHandler) {
 
     unsafe { trapframe::init() };
     self::arch::init();
-    crate::serial::init_listener();
 }

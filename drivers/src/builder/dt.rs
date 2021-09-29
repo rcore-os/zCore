@@ -105,7 +105,7 @@ impl<M: IoMapper> DeviceTreeDriverBuilder<M> {
         comp: &str,
         props: &InheritProps,
     ) -> DeviceResult<DevWithInterrupt> {
-        info!("device-tree: parsing node {:?}", node.name);
+        debug!("device-tree: parsing node {:?}", node.name);
 
         let res = if node.has_prop("interrupt-controller") {
             self.parse_intc(node, comp, props)

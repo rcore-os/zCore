@@ -1,5 +1,5 @@
-use super::Scheme;
-use crate::{utils::EventListener, DeviceResult};
+use super::{IrqHandler, Scheme};
+use crate::DeviceResult;
 
 pub trait UartScheme: Scheme {
     fn try_recv(&self) -> DeviceResult<Option<u8>>;
@@ -11,7 +11,7 @@ pub trait UartScheme: Scheme {
         Ok(())
     }
 
-    fn bind_listener(&self, _listener: EventListener) {
+    fn subscribe(&self, _handler: IrqHandler, _once: bool) {
         unimplemented!()
     }
 }

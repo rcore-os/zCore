@@ -1,13 +1,22 @@
 #![allow(dead_code)]
 
 use alloc::sync::Arc;
+use core::convert::From;
 
 use zcore_drivers::scheme::{IrqScheme, UartScheme};
+use zcore_drivers::DeviceError;
 
-use crate::utils::init_once::InitOnce;
+use crate::{utils::init_once::InitOnce, HalError};
 
 pub static UART: InitOnce<Arc<dyn UartScheme>> = InitOnce::new();
 pub static IRQ: InitOnce<Arc<dyn IrqScheme>> = InitOnce::new();
+
+impl From<DeviceError> for HalError {
+    fn from(err: DeviceError) -> Self {
+        warn!("{:?}", err);
+        Self
+    }
+}
 
 #[cfg(not(feature = "libos"))]
 mod virtio_drivers_ffi {

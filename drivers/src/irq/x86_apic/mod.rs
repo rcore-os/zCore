@@ -73,7 +73,7 @@ impl Apic {
 }
 
 impl Scheme for Apic {
-    fn name(&self) -> &'static str {
+    fn name(&self) -> &str {
         "x86-apic"
     }
 

@@ -1,47 +1,16 @@
-use alloc::{boxed::Box, collections::VecDeque};
+use alloc::sync::Arc;
 use core::fmt::{Arguments, Result, Write};
 
-use spin::Mutex;
-use zcore_drivers::scheme::IrqHandler;
-use zcore_drivers::utils::EventListener;
+use zcore_drivers::scheme::{IrqHandler, UartScheme};
 
 use crate::drivers::UART;
+use crate::utils::init_once::InitOnce;
 
-const BUF_CAPACITY: usize = 4096;
-
-struct BufferedSerial {
-    buf: Mutex<VecDeque<u8>>,
-    listener: Mutex<EventListener>,
-}
-
-impl BufferedSerial {
-    fn new() -> Self {
-        Self {
-            buf: Mutex::new(VecDeque::with_capacity(BUF_CAPACITY)),
-            listener: Mutex::new(EventListener::new()),
-        }
-    }
-
-    fn handle_irq(&self) {
-        while let Some(c) = UART.try_recv().unwrap_or(None) {
-            let c = if c == b'\r' { b'\n' } else { c };
-            self.buf.lock().push_back(c);
-        }
-        if self.buf.lock().len() > 0 {
-            self.listener.lock().trigger();
-        }
-    }
-}
-
-lazy_static! {
-    static ref SERIAL: BufferedSerial = BufferedSerial::new();
-}
-
-struct SerialWriter;
+struct SerialWriter(&'static InitOnce<Arc<dyn UartScheme>>);
 
 impl Write for SerialWriter {
     fn write_str(&mut self, s: &str) -> Result {
-        if let Some(uart) = UART.try_get() {
+        if let Some(uart) = self.0.try_get() {
             uart.write_str(s).unwrap();
         } else {
             crate::hal_fn::serial::serial_write_early(s);
@@ -50,19 +19,13 @@ impl Write for SerialWriter {
     }
 }
 
-pub(crate) fn init_listener() {
-    let mut listener = EventListener::new();
-    listener.subscribe(Box::new(|| SERIAL.handle_irq()), false);
-    UART.bind_listener(listener);
-}
-
 pub fn subscribe_event(handler: IrqHandler, once: bool) {
-    SERIAL.listener.lock().subscribe(handler, once);
+    UART.subscribe(handler, once);
 }
 
 /// Print format string and its arguments to serial.
 pub fn serial_write_fmt(fmt: Arguments) {
-    SerialWriter.write_fmt(fmt).unwrap();
+    SerialWriter(&UART).write_fmt(fmt).unwrap();
 }
 
 /// Print a string to serial.
@@ -72,7 +35,7 @@ pub fn serial_write(s: &str) {
 
 /// Try to get a char from serial.
 pub fn serial_try_read() -> Option<u8> {
-    SERIAL.buf.lock().pop_front()
+    UART.try_recv().unwrap_or(None)
 }
 
 /// Read buffer data from serial.

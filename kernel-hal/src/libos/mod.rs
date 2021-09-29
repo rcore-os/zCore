@@ -33,7 +33,6 @@ pub fn init() {
     crate::KHANDLER.init_once_by(&crate::DummyKernelHandler);
 
     drivers::init();
-    crate::serial::init_listener();
 
     #[cfg(target_os = "macos")]
     unsafe {

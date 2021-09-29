@@ -53,7 +53,7 @@ impl Default for Intc {
 }
 
 impl Scheme for Intc {
-    fn name(&self) -> &'static str {
+    fn name(&self) -> &str {
         "riscv-intc"
     }
 

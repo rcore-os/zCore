@@ -3,33 +3,31 @@ use core::fmt::{Result, Write};
 use spin::Mutex;
 use virtio_drivers::{VirtIOConsole as InnerDriver, VirtIOHeader};
 
-use crate::scheme::{Scheme, UartScheme};
+use crate::scheme::{IrqHandler, Scheme, UartScheme};
 use crate::{utils::EventListener, DeviceResult};
 
 pub struct VirtIoConsole<'a> {
     inner: Mutex<InnerDriver<'a>>,
-    listener: Mutex<Option<EventListener>>,
+    listener: EventListener,
 }
 
 impl<'a> VirtIoConsole<'a> {
     pub fn new(header: &'static mut VirtIOHeader) -> DeviceResult<Self> {
         Ok(Self {
             inner: Mutex::new(InnerDriver::new(header)?),
-            listener: Mutex::new(None),
+            listener: EventListener::new(),
         })
     }
 }
 
 impl<'a> Scheme for VirtIoConsole<'a> {
-    fn name(&self) -> &'static str {
+    fn name(&self) -> &str {
         "virtio-console"
     }
 
     fn handle_irq(&self, _irq_num: usize) {
         self.inner.lock().ack_interrupt().unwrap();
-        if let Some(l) = self.listener.lock().as_mut() {
-            l.trigger();
-        }
+        self.listener.trigger();
     }
 }
 
@@ -43,8 +41,8 @@ impl<'a> UartScheme for VirtIoConsole<'a> {
         Ok(())
     }
 
-    fn bind_listener(&self, listener: EventListener) {
-        *self.listener.lock() = Some(listener);
+    fn subscribe(&self, handler: IrqHandler, once: bool) {
+        self.listener.subscribe(handler, once);
     }
 }
 

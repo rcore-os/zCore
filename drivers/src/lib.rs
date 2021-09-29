@@ -9,6 +9,8 @@ extern crate log;
 use alloc::sync::Arc;
 use core::fmt;
 
+mod utils;
+
 #[cfg(feature = "mock")]
 pub mod mock;
 
@@ -20,7 +22,6 @@ pub mod io;
 pub mod irq;
 pub mod scheme;
 pub mod uart;
-pub mod utils;
 
 #[derive(Debug)]
 pub enum DeviceError {

@@ -86,7 +86,7 @@ impl Plic {
 }
 
 impl Scheme for Plic {
-    fn name(&self) -> &'static str {
+    fn name(&self) -> &str {
         "riscv-plic"
     }
 

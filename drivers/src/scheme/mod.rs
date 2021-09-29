@@ -15,7 +15,7 @@ pub use net::NetScheme;
 pub use uart::UartScheme;
 
 pub trait Scheme: SchemeUpcast + Send + Sync {
-    fn name(&self) -> &'static str;
+    fn name(&self) -> &str;
     fn handle_irq(&self, _irq_num: usize) {}
 }
 

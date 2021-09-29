@@ -1,22 +1,26 @@
 use alloc::vec::Vec;
 
+use spin::Mutex;
+
 use crate::scheme::IrqHandler;
 
 pub struct EventListener {
-    events: Vec<(IrqHandler, bool)>,
+    events: Mutex<Vec<(IrqHandler, bool)>>,
 }
 
 impl EventListener {
     pub fn new() -> Self {
-        Self { events: Vec::new() }
+        Self {
+            events: Mutex::new(Vec::new()),
+        }
     }
 
-    pub fn subscribe(&mut self, handler: IrqHandler, once: bool) {
-        self.events.push((handler, once));
+    pub fn subscribe(&self, handler: IrqHandler, once: bool) {
+        self.events.lock().push((handler, once));
     }
 
-    pub fn trigger(&mut self) {
-        self.events.retain(|(f, once)| {
+    pub fn trigger(&self) {
+        self.events.lock().retain(|(f, once)| {
             f();
             !once
         });
