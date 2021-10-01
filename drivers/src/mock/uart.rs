@@ -3,7 +3,8 @@ use std::collections::VecDeque;
 use async_std::{io, io::prelude::*, task};
 use spin::Mutex;
 
-use crate::scheme::{IrqHandler, Scheme, UartScheme};
+use crate::irq::IrqHandler;
+use crate::scheme::{Scheme, UartScheme};
 use crate::{utils::EventListener, DeviceResult};
 
 const UART_BUF_LEN: usize = 256;

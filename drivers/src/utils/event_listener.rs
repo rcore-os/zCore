@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 
 use spin::Mutex;
 
-use crate::scheme::IrqHandler;
+use crate::irq::IrqHandler;
 
 pub struct EventListener {
     events: Mutex<Vec<(IrqHandler, bool)>>,

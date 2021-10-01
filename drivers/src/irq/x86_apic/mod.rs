@@ -9,7 +9,8 @@ use spin::Mutex;
 use self::consts::{X86_INT_BASE, X86_INT_LOCAL_APIC_BASE};
 use self::ioapic::{IoApic, IoApicList};
 use self::lapic::LocalApic;
-use crate::scheme::{IrqHandler, IrqPolarity, IrqScheme, IrqTriggerMode, Scheme};
+use super::{IrqHandler, IrqPolarity, IrqTriggerMode};
+use crate::scheme::{IrqScheme, Scheme};
 use crate::{utils::IrqManager, DeviceError, DeviceResult, PhysAddr, VirtAddr};
 
 const IOAPIC_IRQ_RANGE: Range<usize> = X86_INT_BASE..X86_INT_LOCAL_APIC_BASE;

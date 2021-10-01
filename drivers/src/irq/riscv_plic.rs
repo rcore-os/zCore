@@ -2,8 +2,9 @@ use core::ops::Range;
 
 use spin::Mutex;
 
+use super::IrqHandler;
 use crate::io::{Io, Mmio};
-use crate::scheme::{IrqHandler, IrqScheme, Scheme};
+use crate::scheme::{IrqScheme, Scheme};
 use crate::{utils::IrqManager, DeviceError, DeviceResult};
 
 const IRQ_RANGE: Range<usize> = 1..1024;

@@ -8,7 +8,8 @@ description = "Device drivers of zCore"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-mock = ["async-std"]
+graphic = []
+mock = ["async-std", "sdl2"]
 virtio = ["virtio-drivers"]
 
 [dependencies]
@@ -20,7 +21,10 @@ lazy_static = "1.4"
 device_tree = { git = "https://github.com/rcore-os/device_tree-rs", rev = "4e8144b" }
 bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator", rev = "b3f9f51" }
 virtio-drivers = { git = "https://github.com/rcore-os/virtio-drivers", rev = "2b3c6cf", optional = true }
+
+[target.'cfg(not(target_os = "none"))'.dependencies]
 async-std = { version = "1.10", optional = true }
+sdl2 = { version = "0.34", optional = true }
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 acpi = "4.0"

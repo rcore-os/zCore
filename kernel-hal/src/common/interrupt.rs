@@ -1,1 +1,1 @@
-pub use zcore_drivers::scheme::{IrqHandler, IrqPolarity, IrqTriggerMode};
+pub use zcore_drivers::irq::{IrqHandler, IrqPolarity, IrqTriggerMode};

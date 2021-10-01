@@ -1,3 +1,4 @@
-mod uart;
+pub mod uart;
 
-pub use uart::MockUart;
+#[cfg(feature = "graphic")]
+pub mod display;

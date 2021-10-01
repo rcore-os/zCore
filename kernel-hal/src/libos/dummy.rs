@@ -1,7 +1,8 @@
 use super::mem_common::AVAILABLE_FRAMES;
-use crate::{KernelHandler, PhysAddr};
+use crate::kernel_handler::{DummyKernelHandler, KernelHandler};
+use crate::PhysAddr;
 
-impl KernelHandler for crate::DummyKernelHandler {
+impl KernelHandler for DummyKernelHandler {
     fn frame_alloc(&self) -> Option<PhysAddr> {
         let ret = AVAILABLE_FRAMES.lock().unwrap().pop_front();
         trace!("frame alloc: {:?}", ret);

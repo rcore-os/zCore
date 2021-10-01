@@ -65,6 +65,7 @@ pub extern "C" fn _start(boot_info: &BootInfo) -> ! {
     info!("{:#x?}", config);
     kernel_hal::init(config, &ZcoreKernelHandler);
 
+    /* TODO
     #[cfg(feature = "graphic")]
     {
         let (width, height) = boot_info.graphic_info.mode.resolution();
@@ -72,6 +73,7 @@ pub extern "C" fn _start(boot_info: &BootInfo) -> ! {
         let fb_size = boot_info.graphic_info.fb_size as usize;
         kernel_hal::dev::fb::init(width as u32, height as u32, fb_addr, fb_size);
     }
+    */
 
     let ramfs_data = unsafe {
         core::slice::from_raw_parts_mut(
@@ -126,6 +128,7 @@ pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
     };
     warn!("cmdline: {:?}", cmdline);
 
+    /* TODO
     #[cfg(feature = "graphic")]
     {
         let gpu = GPU_DRIVERS
@@ -138,6 +141,7 @@ pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
         let (fb_vaddr, fb_size) = gpu.setup_framebuffer();
         kernel_hal::deb::fb::init(width, height, fb_vaddr, fb_size);
     }
+    */
 
     // riscv64在之后使用ramfs或virtio, 而x86_64则由bootloader载入文件系统镜像到内存
     main(&mut [], &cmdline);

@@ -11,7 +11,7 @@ hypervisor ?=
 smp ?= 1
 test_filter ?= *.*
 
-build_args := -Z build-std=core,alloc --target $(arch).json
+build_args := -Z weak-dep-features -Z build-std=core,alloc --target $(arch).json
 build_path := target/$(arch)/$(mode)
 kernel := $(build_path)/zcore
 kernel_img := $(build_path)/zcore.img

@@ -1,7 +1,6 @@
 mod drivers;
+mod dummy;
 mod mem_common;
-
-pub(super) mod dummy;
 
 pub mod config;
 pub mod mem;
@@ -9,6 +8,9 @@ pub mod thread;
 pub mod timer;
 pub mod vdso;
 pub mod vm;
+
+#[path = "special.rs"]
+pub mod libos;
 
 pub use super::hal_fn::{context, cpu, interrupt, rand};
 
@@ -30,7 +32,8 @@ include!("macos.rs");
 ///
 /// This function must be called at the beginning.
 pub fn init() {
-    crate::KHANDLER.init_once_by(&crate::DummyKernelHandler);
+    let _ = crate::KCONFIG;
+    crate::KHANDLER.init_once_by(&crate::kernel_handler::DummyKernelHandler);
 
     drivers::init();
 

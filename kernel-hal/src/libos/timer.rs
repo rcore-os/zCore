@@ -1,3 +1,4 @@
+use async_std::task;
 use std::time::{Duration, SystemTime};
 
 hal_fn_impl! {
@@ -9,11 +10,9 @@ hal_fn_impl! {
         }
 
         fn timer_set(deadline: Duration, callback: Box<dyn FnOnce(Duration) + Send + Sync>) {
-            std::thread::spawn(move || {
-                let now = timer_now();
-                if deadline > now {
-                    std::thread::sleep(deadline - now);
-                }
+            let dur = deadline - timer_now();
+            task::spawn(async move {
+                task::sleep(dur).await;
                 callback(timer_now());
             });
         }

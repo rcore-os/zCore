@@ -1,16 +1,16 @@
-mod block;
-mod display;
-mod input;
-mod irq;
-mod net;
-mod uart;
+pub(super) mod block;
+pub(super) mod display;
+pub(super) mod input;
+pub(super) mod irq;
+pub(super) mod net;
+pub(super) mod uart;
 
 use alloc::sync::Arc;
 
 pub use block::BlockScheme;
 pub use display::DisplayScheme;
 pub use input::InputScheme;
-pub use irq::{IrqHandler, IrqPolarity, IrqScheme, IrqTriggerMode};
+pub use irq::IrqScheme;
 pub use net::NetScheme;
 pub use uart::UartScheme;
 

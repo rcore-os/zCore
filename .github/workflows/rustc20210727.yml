@@ -111,7 +111,7 @@ jobs:
       - name: Prepare rootfs
         run: make rootfs
       - name: Test
-        run: arch=x86_64 cargo test --all-features --no-fail-fast --workspace --exclude zircon-loader
+        run: arch=x86_64 cargo test --no-fail-fast --workspace --exclude zircon-loader
 #        uses: actions-rs/cargo@v1
 #        with:
 #          command: test

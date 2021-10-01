@@ -18,6 +18,7 @@ pub mod mock;
 pub mod virtio;
 
 pub mod builder;
+pub mod display;
 pub mod io;
 pub mod irq;
 pub mod scheme;

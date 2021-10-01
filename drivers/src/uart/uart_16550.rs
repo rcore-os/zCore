@@ -5,7 +5,8 @@ use bitflags::bitflags;
 use spin::Mutex;
 
 use crate::io::{Io, Mmio, ReadOnly};
-use crate::scheme::{IrqHandler, Scheme, UartScheme};
+use crate::irq::IrqHandler;
+use crate::scheme::{Scheme, UartScheme};
 use crate::{utils::EventListener, DeviceResult};
 
 bitflags! {

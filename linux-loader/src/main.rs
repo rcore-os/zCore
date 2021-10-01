@@ -16,11 +16,6 @@ async fn main() {
     init_logger();
     // init HAL implementation on unix
     kernel_hal::init();
-    #[cfg(feature = "graphic")]
-    {
-        kernel_hal::dev::fb::init();
-        kernel_hal::dev::input::init();
-    }
 
     if let Some(uart) = kernel_hal::drivers::uart::first() {
         uart.clone().subscribe(
@@ -35,11 +30,23 @@ async fn main() {
 
     // run first process
     let args: Vec<_> = std::env::args().skip(1).collect();
+    let proc_name = args.join(" ");
     let envs = vec!["PATH=/usr/sbin:/usr/bin:/sbin:/bin:/usr/x86_64-alpine-linux-musl/bin".into()];
 
     let hostfs = HostFS::new("rootfs");
     let proc = run(args, envs, hostfs);
-    let code = proc.wait_for_exit().await;
+
+    let wait_for_exit = async move { proc.wait_for_exit().await };
+
+    #[cfg(feature = "graphic")]
+    let wait_for_exit = {
+        let handle = async_std::task::spawn(wait_for_exit);
+        kernel_hal::libos::run_display_serve();
+        handle
+    };
+
+    let code = wait_for_exit.await;
+    log::info!("process {:?} exited with {}", proc_name, code);
     std::process::exit(code as i32);
 }
 

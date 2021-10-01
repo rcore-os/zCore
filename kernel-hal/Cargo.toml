@@ -9,6 +9,7 @@ description = "Kernel HAL interface definations."
 
 [features]
 libos = ["async-std", "zcore-drivers/mock"]
+graphic = ["zcore-drivers/graphic"]
 
 [dependencies]
 log = "0.4"

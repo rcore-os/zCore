@@ -22,4 +22,4 @@ async-std = { version = "1.9", features = ["attributes"], optional = true }
 default = ["std", "libos"]
 libos = ["kernel-hal/libos"]
 std = ["env_logger", "async-std", "rcore-fs-hostfs", "zircon-object/aspace-separate"]
-graphic = ["std", "linux-object/graphic"]
+graphic = ["linux-object/graphic", "kernel-hal/graphic"]

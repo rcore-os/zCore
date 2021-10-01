@@ -32,6 +32,7 @@ mod pseudo;
 mod random;
 mod stdio;
 
+/* TODO
 cfg_if::cfg_if! {
     if #[cfg(feature = "graphic")] {
         mod fbdev;
@@ -40,6 +41,7 @@ cfg_if::cfg_if! {
         pub use self::fbdev::*;
     }
 }
+*/
 
 #[async_trait]
 /// Generic file interface
@@ -129,7 +131,8 @@ pub fn create_root_fs(rootfs: Arc<dyn FileSystem>) -> Arc<dyn INode> {
         .add("urandom", Arc::new(RandomINode::new(true)))
         .expect("failed to mknod /dev/urandom");
 
-    #[cfg(feature = "graphic")]
+    /*
+    #[cfg(feature = "graphic")] // TODO
     {
         devfs
             .add("fb0", Arc::new(Fbdev::default()))
@@ -143,6 +146,7 @@ pub fn create_root_fs(rootfs: Arc<dyn FileSystem>) -> Arc<dyn INode> {
             .add("input-mice", Arc::new(InputMiceInode::default()))
             .expect("failed to mknod /dev/input-mice");
     }
+    */
 
     // mount DevFS at /dev
     let dev = root.find(true, "dev").unwrap_or_else(|_| {

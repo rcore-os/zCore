@@ -48,7 +48,7 @@ impl IoMapper for IoMapperImpl {
 
 pub(super) fn init() -> DeviceResult {
     let dev_list =
-        DeviceTreeDriverBuilder::new(phys_to_virt(crate::config::KCONFIG.dtb_paddr), IoMapperImpl)?
+        DeviceTreeDriverBuilder::new(phys_to_virt(crate::KCONFIG.dtb_paddr), IoMapperImpl)?
             .build()?;
     for dev in dev_list.into_iter() {
         if let Device::Uart(uart) = dev {

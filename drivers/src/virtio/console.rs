@@ -3,7 +3,8 @@ use core::fmt::{Result, Write};
 use spin::Mutex;
 use virtio_drivers::{VirtIOConsole as InnerDriver, VirtIOHeader};
 
-use crate::scheme::{IrqHandler, Scheme, UartScheme};
+use crate::irq::IrqHandler;
+use crate::scheme::{Scheme, UartScheme};
 use crate::{utils::EventListener, DeviceResult};
 
 pub struct VirtIoConsole<'a> {

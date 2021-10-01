@@ -296,8 +296,9 @@ impl Syscall<'_> {
     /// an interval specified with nanosecond precision
     pub async fn sys_nanosleep(&self, req: UserInPtr<TimeSpec>) -> SysResult {
         info!("nanosleep: deadline={:?}", req);
-        let req = req.read()?;
-        kernel_hal::thread::sleep_until(req.into()).await;
+        let duration = req.read()?.into();
+        use kernel_hal::{thread, timer};
+        thread::sleep_until(timer::deadline_after(duration)).await;
         Ok(0)
     }
 

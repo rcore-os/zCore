@@ -1,7 +1,8 @@
 use riscv::register::sie;
 use spin::Mutex;
 
-use crate::scheme::{IrqHandler, IrqScheme, Scheme};
+use super::IrqHandler;
+use crate::scheme::{IrqScheme, Scheme};
 use crate::{DeviceError, DeviceResult};
 
 const S_SOFT: usize = 1;

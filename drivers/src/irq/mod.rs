@@ -15,3 +15,5 @@ cfg_if::cfg_if! {
         }
     }
 }
+
+pub use super::scheme::irq::{IrqHandler, IrqPolarity, IrqTriggerMode};

@@ -124,9 +124,16 @@ hal_fn_def! {
 
     pub mod timer {
         /// Get current time.
+        /// TODO: use `Instant` as return type.
         pub fn timer_now() -> Duration;
 
+        /// Converting from now-relative durations to absolute deadlines.
+        pub fn deadline_after(dur: Duration) -> Duration {
+            timer_now() + dur
+        }
+
         /// Set a new timer. After `deadline`, the `callback` will be called.
+        /// TODO: use `Instant` as the type of `deadline`.
         pub fn timer_set(deadline: Duration, callback: Box<dyn FnOnce(Duration) + Send + Sync>);
 
         /// Check timers, call when timer interrupt happened.

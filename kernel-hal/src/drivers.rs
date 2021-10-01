@@ -47,7 +47,11 @@ macro_rules! device_fn_def {
             }
 
             pub fn try_get(idx: usize) -> Option<Arc<dyn $scheme>> {
-                DEVICES.$dev.read().get(idx).cloned()
+                all().get(idx).cloned()
+            }
+
+            pub fn find(name: &str) -> Option<Arc<dyn $scheme>> {
+                all().iter().find(|d| d.name() == name).cloned()
             }
 
             pub fn first() -> Option<Arc<dyn $scheme>> {
@@ -55,7 +59,7 @@ macro_rules! device_fn_def {
             }
 
             pub fn first_unwrap() -> Arc<dyn $scheme> {
-                first().expect(concat!(stringify!($dev), " deivce not initialized!"))
+                first().expect(concat!(stringify!($dev), " device not initialized!"))
             }
         }
     };
