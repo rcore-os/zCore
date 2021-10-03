@@ -5,7 +5,9 @@ use log::*;
 use virtio_drivers::{VirtIOBlk, VirtIOGpu, VirtIOHeader, VirtIOInput};
 use crate::drivers::device_tree::DEVICE_TREE_REGISTRY;
 use crate::drivers::net::virtio_net;
-use crate::drivers::{DeviceType, Driver, BlockDriver, InputDriver, GpuDriver, BLK_DRIVERS, INPUT_DRIVERS, GPU_DRIVERS, DRIVERS, IRQ_MANAGER };
+use crate::drivers::{InputDriver, GpuDriver, INPUT_DRIVERS, GPU_DRIVERS, IRQ_MANAGER };
+//use kernel_hal::drivers::{Driver, BlockDriver, DeviceType, DRIVERS, BLK_DRIVERS};
+use super::{Driver, BlockDriver, DeviceType, DRIVERS, BLK_DRIVERS};
 
 pub fn virtio_probe(node: &Node) {
     let reg = match node.prop_raw("reg") {

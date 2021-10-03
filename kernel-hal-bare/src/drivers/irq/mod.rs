@@ -1,4 +1,4 @@
-use super::Driver;
+use kernel_hal::drivers::Driver;
 use crate::arch::interrupt::enable_irq;
 use alloc::collections::btree_map::Entry;
 use alloc::collections::BTreeMap;

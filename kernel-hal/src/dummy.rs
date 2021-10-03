@@ -476,6 +476,28 @@ pub fn fill_random(_buf: &mut [u8]) {
     // TODO
 }
 
+/// Generate a random u64.
+#[cfg(target_arch = "x86_64")]
+pub fn rand_u64() -> u64 {
+    let mut r = 0;
+    unsafe {
+        core::arch::x86_64::_rdrand64_step(&mut r);
+    }
+    r
+}
+
+/// Generate a random u64.
+#[cfg(target_arch = "aarch64")]
+pub fn rand_u64() -> u64 {
+    todo!()
+}
+
+/// Generate a random u64.
+#[cfg(target_arch = "riscv64")]
+pub fn rand_u64() -> u64 {
+    todo!()
+}
+
 #[linkage = "weak"]
 #[export_name = "hal_current_pgtable"]
 pub fn current_page_table() -> usize {

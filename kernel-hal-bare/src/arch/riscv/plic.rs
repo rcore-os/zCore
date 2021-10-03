@@ -79,6 +79,15 @@ pub fn handle_interrupt() {
             1..=8 => {
                 //virtio::handle_interrupt(interrupt);
                 bare_println!("plic virtio external interrupt: {}", interrupt);
+
+                /*
+                if interrupt == 7 {
+                    //virtio net irq
+                    use crate::drivers::IRQ_MANAGER;
+                    IRQ_MANAGER.read()
+                        .try_handle_interrupt(Some(interrupt as usize));
+                }
+                */
             }
             UART0_INT_NUM => {
                 //UART中断ID是10

@@ -7,9 +7,11 @@ use rcore_fs::dev::{self, BlockDevice, DevError};
 use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, Ipv4Address};
 use spin::RwLock;
 
+pub use kernel_hal::drivers::{BlockDriver, BLK_DRIVERS};
+
 pub use self::virtio::*;
 //pub use block::BlockDriver;
-pub use net::NetDriver;
+//pub use net::NetDriver;
 //pub use rtc::RtcDriver;
 //pub use serial::SerialDriver;
 
@@ -40,6 +42,7 @@ pub mod provider;
 /// Serial port
 //pub mod serial;
 
+/* define in kernel-hal
 #[derive(Debug, Eq, PartialEq)]
 pub enum DeviceType {
     Net,
@@ -80,12 +83,15 @@ pub trait Driver: Send + Sync {
     }
     */
 }
+*/
 
 lazy_static! {
     // NOTE: RwLock only write when initializing drivers
+    /* define in kernel-hal
     pub static ref DRIVERS: RwLock<Vec<Arc<dyn Driver>>> = RwLock::new(Vec::new());
     pub static ref NET_DRIVERS: RwLock<Vec<Arc<dyn NetDriver>>> = RwLock::new(Vec::new());
     pub static ref BLK_DRIVERS: RwLock<Vec<Arc<dyn BlockDriver>>> = RwLock::new(Vec::new());
+    */
     pub static ref INPUT_DRIVERS: RwLock<Vec<Arc<dyn InputDriver>>> = RwLock::new(Vec::new());
     pub static ref GPU_DRIVERS: RwLock<Vec<Arc<dyn GpuDriver>>> = RwLock::new(Vec::new());
     //pub static ref RTC_DRIVERS: RwLock<Vec<Arc<dyn RtcDriver>>> = RwLock::new(Vec::new());

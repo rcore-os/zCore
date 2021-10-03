@@ -1,20 +1,9 @@
-use crate::drivers::Driver;
-//pub use block::BlockDriver;
+use kernel_hal::drivers::{Driver, BlockDriver, DeviceType, DRIVERS, BLK_DRIVERS};
 
 /// Block device
 pub mod virtio;
 
 /////////
-pub trait BlockDriver: Driver {
-    fn read_block(&self, _block_id: usize, _buf: &mut [u8]) -> bool {
-        unimplemented!("not a block driver")
-    }
-
-    fn write_block(&self, _block_id: usize, _buf: &[u8]) -> bool {
-        unimplemented!("not a block driver")
-    }
-}
-
 pub trait GpuDriver: Driver {
     fn resolution(&self) -> (u32, u32) {
         unimplemented!("not a gpu driver")

@@ -23,6 +23,9 @@ lazy_static = { version = "1.4", features = ["spin_no_std"] }
 rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "6df6cd2" }
 device_tree = { git = "https://github.com/rcore-os/device_tree-rs" }
 virtio-drivers = { git = "https://github.com/rcore-os/virtio-drivers", rev = "568276" }
+#isomorphic_drivers = { git = "https://github.com/rcore-os/isomorphic_drivers", rev = "fcf694d2", features = ["log"] }
+isomorphic_drivers = { path = "/home/xly/rust/arch-lib/isomorphic_drivers", features = ["log"] }
+smoltcp = { path = "/home/xly/rust/arch-lib/smoltcp", default-features = false, features = ["log", "alloc", "verbose", "proto-ipv4", "proto-igmp", "medium-ip", "medium-ethernet", "socket-raw", "socket-udp", "socket-tcp", "socket-icmp"] }
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 x86_64 = "0.14"

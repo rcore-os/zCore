@@ -14,22 +14,20 @@ use smoltcp::Result;
 
 use isomorphic_drivers::net::ethernet::intel::e1000::E1000;
 use isomorphic_drivers::net::ethernet::structs::EthernetAddress as DriverEthernetAddress;
-use rcore_memory::PAGE_SIZE;
+use crate::PAGE_SIZE;
 
 use crate::drivers::{provider::Provider, BlockDriver};
-use crate::net::SOCKETS;
-use crate::sync::SpinNoIrqLock as Mutex;
+//use crate::sync::SpinNoIrqLock as Mutex;
+use spin::Mutex;
 
-use super::{
-    super::{DeviceType, Driver, DRIVERS, IRQ_MANAGER, NET_DRIVERS, SOCKET_ACTIVITY},
-    NetDriver,
-};
+use super::super::IRQ_MANAGER;
+use kernel_hal::drivers::{Driver, DeviceType, NetDriver, DRIVERS, NET_DRIVERS, SOCKETS};
 
 #[derive(Clone)]
 pub struct E1000Driver(Arc<Mutex<E1000<Provider>>>);
 
 pub struct E1000Interface {
-    iface: Mutex<EthernetInterface<'static, 'static, 'static, E1000Driver>>,
+    iface: Mutex<Interface<'static, E1000Driver>>,
     driver: E1000Driver,
     name: String,
     irq: Option<usize>,
@@ -45,11 +43,14 @@ impl Driver for E1000Interface {
         let data = self.driver.0.lock().handle_interrupt();
 
         if data {
-            let timestamp = Instant::from_millis(crate::trap::uptime_msec() as i64);
+            //let timestamp = Instant::from_millis(crate::trap::uptime_msec() as i64);
+            // Fix me
+            let timestamp = Instant::from_millis(100);
             let mut sockets = SOCKETS.lock();
             match self.iface.lock().poll(&mut sockets, timestamp) {
                 Ok(_) => {
-                    SOCKET_ACTIVITY.notify_all();
+                    //SOCKET_ACTIVITY.notify_all();
+                    error!("e1000 try_handle_interrupt SOCKET_ACTIVITY unimplemented !");
                 }
                 Err(err) => {
                     debug!("poll got err {}", err);
@@ -96,11 +97,13 @@ impl NetDriver for E1000Interface {
     }
 
     fn poll(&self) {
-        let timestamp = Instant::from_millis(crate::trap::uptime_msec() as i64);
+        //let timestamp = Instant::from_millis(crate::trap::uptime_msec() as i64);
+        let timestamp = Instant::from_millis(100);
         let mut sockets = SOCKETS.lock();
         match self.iface.lock().poll(&mut sockets, timestamp) {
             Ok(_) => {
-                SOCKET_ACTIVITY.notify_all();
+                //SOCKET_ACTIVITY.notify_all();
+                error!("e1000 poll SOCKET_ACTIVITY unimplemented !");
             }
             Err(err) => {
                 debug!("poll got err {}", err);
@@ -125,9 +128,12 @@ impl NetDriver for E1000Interface {
     }
 
     fn get_arp(&self, ip: IpAddress) -> Option<EthernetAddress> {
+        /*
         let iface = self.iface.lock();
         let cache = iface.neighbor_cache();
-        cache.lookup_pure(&ip, Instant::from_millis(0))
+        cache.lookup(&ip, Instant::from_millis(0))
+        */
+        unimplemented!()
     }
 }
 
@@ -197,12 +203,13 @@ pub fn init(name: String, irq: Option<usize>, header: usize, size: usize, index:
     let net_driver = E1000Driver(Arc::new(Mutex::new(e1000)));
 
     let ethernet_addr = EthernetAddress::from_bytes(&mac);
-    let ip_addrs = [IpCidr::new(IpAddress::v4(10, 0, index as u8, 2), 24)];
+    //let ip_addrs = [IpCidr::new(IpAddress::v4(10, 0, index as u8, 2), 24)];
+    let ip_addrs = [IpCidr::new(IpAddress::v4(10, 0, 2, 15), 24)];
     let neighbor_cache = NeighborCache::new(BTreeMap::new());
-    let iface = EthernetInterfaceBuilder::new(net_driver.clone())
+    let iface = InterfaceBuilder::new(net_driver.clone())
         .ethernet_addr(ethernet_addr)
-        .ip_addrs(ip_addrs)
         .neighbor_cache(neighbor_cache)
+        .ip_addrs(ip_addrs)
         .finalize();
 
     info!("e1000 interface {} up with addr 10.0.{}.2/24", name, index);

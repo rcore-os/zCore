@@ -1,9 +1,9 @@
 //! RISC-V plic
 
-use super::super::DRIVERS;
+pub use kernel_hal::drivers::{Driver, DeviceType, DRIVERS};
 use super::{super::IRQ_MANAGER, IntcDriver, IrqManager};
 use crate::drivers::{
-    device_tree::DEVICE_TREE_INTC, device_tree::DEVICE_TREE_REGISTRY, DeviceType, Driver,
+    device_tree::DEVICE_TREE_INTC, device_tree::DEVICE_TREE_REGISTRY,
 };
 use crate::phys_to_virt;
 //use crate::{sync::SpinNoIrqLock as Mutex, util::read, util::write};

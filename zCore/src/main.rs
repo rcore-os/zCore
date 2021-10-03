@@ -34,7 +34,7 @@ use rboot::BootInfo;
 #[cfg(target_arch = "riscv64")]
 use kernel_hal_bare::{
     phys_to_virt, remap_the_kernel,
-    drivers::virtio::{GPU_DRIVERS, CMDLINE},
+    drivers::{GPU_DRIVERS, CMDLINE},
     BootInfo, GraphicInfo,
 };
 
@@ -114,7 +114,7 @@ pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
         dtb_addr: device_tree_paddr as u64,
         initramfs_addr: 0,
         initramfs_size: 0,
-        cmdline: "LOG=warn:TERM=xterm-256color:console.shell=true:virtcon.disable=true",
+        cmdline: "LOG=debug:TERM=xterm-256color:console.shell=true:virtcon.disable=true",
     };
 
     logging::init(get_log_level(boot_info.cmdline));
@@ -198,6 +198,15 @@ fn main(ramfs_data: &'static mut [u8], cmdline: &str) -> ! {
 
     let rootfs = fs::init_filesystem(ramfs_data);
     let _proc = linux_loader::run(args, envs, rootfs);
+
+    /*
+    info!("linux_loader run linux proc +++");
+    use linux_object::net::test::server;
+    server(0);
+
+    // 用户程序无法访问内核的代码？？？ 页表：USER
+    linux_loader::run_linux_proc(vec!["run_linux_proc".into()], server as usize);
+    */
     info!("linux_loader is complete");
 
     run();

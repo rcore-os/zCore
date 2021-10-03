@@ -68,6 +68,42 @@ pub fn run(args: Vec<String>, envs: Vec<String>, rootfs: Arc<dyn FileSystem>) ->
     proc
 }
 
+
+//待实际测试是否可用？
+/// Create and run a Linux process
+pub fn run_linux_proc(args: Vec<String>, entry: usize) -> Arc<Process> {
+    use rcore_fs_ramfs::RamFS;
+    let rootfs = RamFS::new();
+
+    let job = Job::root();
+    let proc = Process::create_linux(&job, rootfs.clone()).unwrap();
+    let thread = Thread::create_linux(&proc).unwrap();
+
+    info!("args {:?}", args);
+    {
+        let mut id = 0;
+        let rust_dir = rootfs.root_inode().lookup("/").unwrap();
+        debug!("Rootfs: / ");
+        while let Ok(name) = rust_dir.get_entry(id) {
+            id += 1;
+            debug!("    {}", name);
+        }
+    }
+
+    use zircon_object::vm::VmObject;
+    let stack_vmo = VmObject::new_paged(8);
+    let flags = MMUFlags::READ | MMUFlags::WRITE | MMUFlags::USER;
+    let stack_bottom = proc.vmar().map(None, stack_vmo.clone(), 0, stack_vmo.len(), flags).unwrap();
+    //let sp = stack_bottom + stack_vmo.len();
+    let sp = stack_bottom + stack_vmo.len() - 4096;
+    debug!("load stack bottom: {:#x} -- {:#x}", stack_bottom, sp);
+
+    thread
+        .start(entry, sp, 0, 0, thread_fn)
+        .expect("failed to start main thread");
+    proc
+}
+
 /// The function of a new thread.
 ///
 /// loop:

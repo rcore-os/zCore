@@ -31,7 +31,7 @@ ifeq ($(arch), riscv64)
 ifeq ($(board), d1)
 build_args += --features board_d1 --features link_user_img
 else
-build_args += --features board_qemu --features link_user_img
+build_args += --features board_qemu
 endif
 endif
 
@@ -47,6 +47,8 @@ endif
 
 qemu_opts := \
 	-smp $(smp)
+
+qemu_net_opts :=
 
 ifeq ($(arch), x86_64)
 qemu_opts += \
@@ -82,6 +84,10 @@ qemu_opts += \
 	-device virtio-blk-device,drive=sfs \
 	-kernel $(kernel_bin)
 
+qemu_net_opts += \
+	-netdev type=tap,id=net0,script=no,downscript=no \
+	-device virtio-net-device,netdev=net0
+
 endif
 
 ifeq ($(hypervisor), 1)
@@ -95,6 +101,11 @@ qemu_opts += -accel hvf
 else
 qemu_opts += -accel kvm -cpu host,migratable=no,+invtsc
 endif
+endif
+
+ifeq ($(net), on)
+qemu_opts += $(qemu_net_opts)
+qemu := sudo $(qemu)
 endif
 
 ifeq ($(graphic), on)

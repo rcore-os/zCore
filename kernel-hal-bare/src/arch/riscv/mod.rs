@@ -223,7 +223,7 @@ impl PageTableImpl {
         let current =
             phys_to_virt(satp::read().frame().start_address().as_usize()) as *const PageTable;
         map_kernel(root_vaddr as _, current as _);
-        trace!("create page table @ {:#x}", root_frame.paddr);
+        info!("create page table @ {:#x}", root_frame.paddr);
         PageTableImpl {
             root_paddr: root_frame.paddr,
         }

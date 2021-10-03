@@ -1,7 +1,7 @@
 use alloc::sync::Arc;
 use rcore_fs::vfs::FileSystem;
 use linux_object::fs::MemBuf;
-use kernel_hal_bare::drivers::virtio::{BlockDriverWrapper, BLK_DRIVERS};
+use kernel_hal_bare::drivers::{BLK_DRIVERS, BlockDriverWrapper};
 
 pub fn init_filesystem(ramfs_data: &'static mut [u8]) -> Arc<dyn FileSystem> {
     #[cfg(target_arch = "x86_64")]
@@ -45,6 +45,7 @@ pub fn init_filesystem(ramfs_data: &'static mut [u8]) -> Arc<dyn FileSystem> {
 }
 
 // Hard link rootfs img
+// 原生字符串: r#"hello"#
 #[cfg(feature = "link_user_img")]
 global_asm!(concat!(
     r#"

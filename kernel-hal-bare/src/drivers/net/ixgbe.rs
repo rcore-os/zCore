@@ -15,16 +15,11 @@ use smoltcp::wire::EthernetAddress;
 use smoltcp::wire::*;
 use smoltcp::Result;
 
-use crate::net::SOCKETS;
-use crate::sync::FlagsGuard;
-use crate::{drivers::BlockDriver, sync::SpinNoIrqLock as Mutex};
+//use crate::sync::FlagsGuard;
+use spin::Mutex;
 
-use super::{
-    super::{
-        provider::Provider, DeviceType, Driver, DRIVERS, IRQ_MANAGER, NET_DRIVERS, SOCKET_ACTIVITY,
-    },
-    NetDriver,
-};
+use super::super::{IRQ_MANAGER, provider::Provider};
+use kernel_hal::drivers::{Driver, DeviceType, NetDriver, DRIVERS, NET_DRIVERS, SOCKETS};
 
 #[derive(Clone)]
 struct IXGBEDriver {
@@ -35,7 +30,7 @@ struct IXGBEDriver {
 }
 
 pub struct IXGBEInterface {
-    iface: Mutex<EthernetInterface<'static, 'static, 'static, IXGBEDriver>>,
+    iface: Mutex<Interface<'static, IXGBEDriver>>,
     driver: IXGBEDriver,
     ifname: String,
     irq: Option<usize>,
@@ -50,16 +45,18 @@ impl Driver for IXGBEInterface {
         }
 
         let handled = {
-            let _ = FlagsGuard::no_irq_region();
+            //let _ = FlagsGuard::no_irq_region();
             self.driver.inner.lock().try_handle_interrupt()
         };
 
         if handled {
-            let timestamp = Instant::from_millis(crate::trap::uptime_msec() as i64);
+            //let timestamp = Instant::from_millis(crate::trap::uptime_msec() as i64);
+            let timestamp = Instant::from_millis(100);
             let mut sockets = SOCKETS.lock();
             match self.iface.lock().poll(&mut sockets, timestamp) {
                 Ok(_) => {
-                    SOCKET_ACTIVITY.notify_all();
+                    //SOCKET_ACTIVITY.notify_all();
+                    error!("ixgbe try_handle_interrupt SOCKET_ACTIVITY unimplemented !");
                 }
                 Err(err) => {
                     debug!("poll got err {}", err);
@@ -82,9 +79,11 @@ impl Driver for IXGBEInterface {
         Some(self)
     }
 
+    /*
     fn as_block(&self) -> Option<&dyn BlockDriver> {
         None
     }
+    */
 }
 
 impl NetDriver for IXGBEInterface {
@@ -106,11 +105,13 @@ impl NetDriver for IXGBEInterface {
     }
 
     fn poll(&self) {
-        let timestamp = Instant::from_millis(crate::trap::uptime_msec() as i64);
+        //let timestamp = Instant::from_millis(crate::trap::uptime_msec() as i64);
+        let timestamp = Instant::from_millis(100);
         let mut sockets = SOCKETS.lock();
         match self.iface.lock().poll(&mut sockets, timestamp) {
             Ok(_) => {
-                SOCKET_ACTIVITY.notify_all();
+                //SOCKET_ACTIVITY.notify_all();
+                error!("ixgbe poll SOCKET_ACTIVITY unimplemented !");
             }
             Err(err) => {
                 debug!("poll got err {}", err);
@@ -124,9 +125,12 @@ impl NetDriver for IXGBEInterface {
     }
 
     fn get_arp(&self, ip: IpAddress) -> Option<EthernetAddress> {
+        /*
         let iface = self.iface.lock();
         let cache = iface.neighbor_cache();
         cache.lookup_pure(&ip, Instant::from_millis(0))
+        */
+        unimplemented!()
     }
 }
 pub struct IXGBERxToken(Vec<u8>);
@@ -137,7 +141,7 @@ impl<'a> phy::Device<'a> for IXGBEDriver {
     type TxToken = IXGBETxToken;
 
     fn receive(&'a mut self) -> Option<(Self::RxToken, Self::TxToken)> {
-        let _ = FlagsGuard::no_irq_region();
+        //let _ = FlagsGuard::no_irq_region();
         if self.inner.lock().can_send() {
             if let Some(data) = self.inner.lock().recv() {
                 Some((IXGBERxToken(data), IXGBETxToken(self.clone())))
@@ -150,7 +154,7 @@ impl<'a> phy::Device<'a> for IXGBEDriver {
     }
 
     fn transmit(&'a mut self) -> Option<Self::TxToken> {
-        let _ = FlagsGuard::no_irq_region();
+        //let _ = FlagsGuard::no_irq_region();
         if self.inner.lock().can_send() {
             Some(IXGBETxToken(self.clone()))
         } else {
@@ -184,7 +188,7 @@ impl phy::TxToken for IXGBETxToken {
     where
         F: FnOnce(&mut [u8]) -> Result<R>,
     {
-        let _ = FlagsGuard::no_irq_region();
+        //let _ = FlagsGuard::no_irq_region();
         let mut buffer = [0u8; ixgbe::IXGBE::<Provider>::get_mtu()];
         let result = f(&mut buffer[..len]);
         if result.is_ok() {
@@ -201,7 +205,7 @@ pub fn ixgbe_init(
     size: usize,
     index: usize,
 ) -> Arc<IXGBEInterface> {
-    let _ = FlagsGuard::no_irq_region();
+    //let _ = FlagsGuard::no_irq_region();
     let mut ixgbe = ixgbe::IXGBE::new(header, size);
     ixgbe.enable_irq();
 
@@ -214,14 +218,13 @@ pub fn ixgbe_init(
         mtu: 1500,
     };
 
-    let ip_addrs = [IpCidr::new(IpAddress::v4(10, 0, index as u8, 2), 24)];
+    //let ip_addrs = [IpCidr::new(IpAddress::v4(10, 0, index as u8, 2), 24)];
+    let ip_addrs = [IpCidr::new(IpAddress::v4(10, 0, 2, 15), 24)];
     let neighbor_cache = NeighborCache::new(BTreeMap::new());
-    let routes = Routes::new(BTreeMap::new());
-    let iface = EthernetInterfaceBuilder::new(net_driver.clone())
+    let iface = InterfaceBuilder::new(net_driver.clone())
         .ethernet_addr(ethernet_addr)
         .ip_addrs(ip_addrs)
         .neighbor_cache(neighbor_cache)
-        .routes(routes)
         .finalize();
 
     info!("ixgbe interface {} up with addr 10.0.{}.2/24", name, index);

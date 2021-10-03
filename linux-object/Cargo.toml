@@ -17,6 +17,8 @@ hashbrown = "0.9"
 numeric-enum-macro = "0.2"
 zircon-object = { path = "../zircon-object", features = ["elf"] }
 kernel-hal = { path = "../kernel-hal" }
+#xly
+kernel-hal-bare = { path = "../kernel-hal-bare" }
 downcast-rs = { version = "1.2", default-features = false }
 lazy_static = { version = "1.4", features = ["spin_no_std"] }
 rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "6df6cd2" }
@@ -24,3 +26,4 @@ rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "6df6cd2" }
 rcore-fs-ramfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "6df6cd2" }
 rcore-fs-mountfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "6df6cd2" }
 rcore-fs-devfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "6df6cd2" }
+smoltcp = { path = "/home/xly/rust/arch-lib/smoltcp", default-features = false, features = ["log", "alloc", "verbose", "proto-ipv4", "proto-igmp", "medium-ip", "medium-ethernet", "socket-raw", "socket-udp", "socket-tcp", "socket-icmp"] }
