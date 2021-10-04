@@ -269,7 +269,7 @@ impl Syscall<'_> {
             Sys::OPEN => self.sys_open(a0.into(), a1, a2),
             Sys::STAT => self.sys_stat(a0.into(), a1.into()),
             Sys::LSTAT => self.sys_lstat(a0.into(), a1.into()),
-            Sys::POLL => self.sys_poll(a0.into(), a1, a2).await,
+            Sys::POLL => self.sys_poll(a0.into(), a1, a2 as _).await,
             Sys::ACCESS => self.sys_access(a0.into(), a1),
             Sys::PIPE => self.sys_pipe(a0.into()),
             Sys::SELECT => {

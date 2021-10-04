@@ -33,7 +33,6 @@ async-std = { version = "1.10", optional = true }
 executor = { git = "https://github.com/rcore-os/executor.git", rev = "a2d02ee9" }
 naive-timer = "0.2.0"
 lazy_static = { version = "1.4", features = ["spin_no_std"] }
-bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator", rev = "b3f9f51" }
 
 # Bare-metal mode on x86_64
 [target.'cfg(all(target_os = "none", target_arch = "x86_64"))'.dependencies]

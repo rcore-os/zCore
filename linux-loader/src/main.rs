@@ -28,24 +28,26 @@ async fn main() {
         );
     }
 
-    // run first process
     let args: Vec<_> = std::env::args().skip(1).collect();
     let proc_name = args.join(" ");
     let envs = vec!["PATH=/usr/sbin:/usr/bin:/sbin:/bin:/usr/x86_64-alpine-linux-musl/bin".into()];
 
-    let hostfs = HostFS::new("rootfs");
-    let proc = run(args, envs, hostfs);
+    // Run the first process.
+    let run_proc = async move {
+        let hostfs = HostFS::new("rootfs");
+        let proc = run(args, envs, hostfs);
+        proc.wait_for_exit().await
+    };
 
-    let wait_for_exit = async move { proc.wait_for_exit().await };
-
+    // If the graphic mode is on, run the process in another thread.
     #[cfg(feature = "graphic")]
-    let wait_for_exit = {
-        let handle = async_std::task::spawn(wait_for_exit);
+    let run_proc = {
+        let handle = async_std::task::spawn(run_proc);
         kernel_hal::libos::run_display_serve();
         handle
     };
 
-    let code = wait_for_exit.await;
+    let code = run_proc.await;
     log::info!("process {:?} exited with {}", proc_name, code);
     std::process::exit(code as i32);
 }

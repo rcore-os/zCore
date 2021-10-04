@@ -1,1 +1,1 @@
-pub use crate::scheme::display::{ColorDepth, ColorFormat, DisplayInfo};
+pub use crate::scheme::display::{ColorFormat, DisplayInfo, RgbColor};

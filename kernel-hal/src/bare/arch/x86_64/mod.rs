@@ -10,7 +10,7 @@ pub mod special;
 pub mod timer;
 pub mod vm;
 
-hal_fn_impl_default!(crate::hal_fn::serial);
+hal_fn_impl_default!(crate::hal_fn::console);
 
 use x86_64::registers::control::{Cr4, Cr4Flags};
 

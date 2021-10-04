@@ -10,5 +10,5 @@ pub(super) mod vdso;
 pub(super) mod vm;
 
 pub mod addr;
-pub mod serial;
+pub mod console;
 pub mod user;

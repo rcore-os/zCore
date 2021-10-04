@@ -48,8 +48,8 @@ pub fn send_ipi(sipi_value: usize) {
 }
 
 hal_fn_impl! {
-    impl mod crate::hal_fn::serial {
-        fn serial_write_early(s: &str) {
+    impl mod crate::hal_fn::console {
+        fn console_write_early(s: &str) {
             for c in s.bytes() {
                 console_putchar(c as usize);
             }

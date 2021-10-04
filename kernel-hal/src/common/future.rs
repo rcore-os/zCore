@@ -49,7 +49,7 @@ impl Future for SleepFuture {
     }
 }
 
-#[must_use = "`serial_read()` does nothing unless polled/`await`-ed"]
+#[must_use = "`console_read()` does nothing unless polled/`await`-ed"]
 pub(super) struct SerialReadFuture<'a> {
     buf: &'a mut [u8],
 }

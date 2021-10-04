@@ -14,7 +14,7 @@ pub mod libos;
 
 pub use super::hal_fn::{context, cpu, interrupt, rand};
 
-hal_fn_impl_default!(context, cpu, interrupt, rand, super::hal_fn::serial);
+hal_fn_impl_default!(context, cpu, interrupt, rand, super::hal_fn::console);
 
 cfg_if! {
     if #[cfg(target_os = "linux")] {
