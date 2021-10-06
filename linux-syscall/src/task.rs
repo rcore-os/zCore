@@ -385,6 +385,8 @@ impl RegExt for GeneralRegs {
             rsp: sp,
             rdi: arg1,
             rsi: arg2,
+            // FIXME: set IOPL = 0 when IO port bitmap is supported
+            rflags: 0x3202, // IOPL = 3, enable interrupt
             ..Default::default()
         }
     }

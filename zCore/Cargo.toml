@@ -7,7 +7,7 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-graphic = ["linux-loader?/graphic"]
+graphic = ["linux-loader?/graphic", "kernel-hal/graphic"]
 board_qemu = []
 board_d1 = ["link_user_img"]
 ramfs = []

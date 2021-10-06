@@ -104,18 +104,20 @@ endif
 
 ifeq ($(graphic), on)
 build_args += --features graphic
+
 ifeq ($(arch), riscv64)
 qemu_opts += \
 	-device virtio-gpu-device \
 	-device virtio-mouse-device
-endif
-else
-ifeq ($(MAKECMDGOALS), vbox)
+else ifeq ($(arch), x86_64)
+qemu_opts += -vga virtio # disable std VGA to for zircon to avoid incorrect graphic rendering
+else ifeq ($(MAKECMDGOALS), vbox)
 build_args += --features graphic
+endif
+
 else
 qemu_opts += -display none -nographic
 baremetal-test-qemu_opts += -display none -nographic
-endif
 endif
 
 run: build justrun

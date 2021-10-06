@@ -250,7 +250,8 @@ impl Thread {
                 context.general.rsp = stack;
                 context.general.rdi = arg1;
                 context.general.rsi = arg2;
-                context.general.rflags |= 0x3202;
+                // FIXME: set IOPL = 0 when IO port bitmap is supported
+                context.general.rflags = 0x3202; // IOPL = 3, enable interrupt
             }
             #[cfg(target_arch = "aarch64")]
             {
@@ -265,9 +266,7 @@ impl Thread {
                 context.general.sp = stack;
                 context.general.a0 = arg1;
                 context.general.a1 = arg2;
-
-                // SUM | FS | SPIE
-                context.sstatus = 1 << 18 | 1 << 14 | 1 << 13 | 1 << 5;
+                context.sstatus = 1 << 18 | 3 << 13 | 1 << 5; // SUM | FS | SPIE
             }
             inner.change_state(ThreadState::Running, &self.base);
         }
@@ -284,7 +283,8 @@ impl Thread {
             context.general = regs;
             #[cfg(target_arch = "x86_64")]
             {
-                context.general.rflags |= 0x3202;
+                // FIXME: set IOPL = 0 when IO port bitmap is supported
+                context.general.rflags |= 0x3202; // IOPL = 3, enable interrupt
             }
             inner.change_state(ThreadState::Running, &self.base);
         }
@@ -304,10 +304,7 @@ impl Thread {
             #[cfg(target_arch = "riscv64")]
             {
                 context.sepc = cx.sepc;
-                context.sstatus = 1 << 18 | 1 << 14 | 1 << 13 | 1 << 5;
-                //context.sstatus = 1 << 19 | 1 << 18 | 1 << 14 | 1 << 13 | 1 << 5;
-                // MXR=1, workaround for child process panic
-
+                context.sstatus = 1 << 18 | 3 << 13 | 1 << 5; // SUM | FS | SPIE
                 debug!("start_with_regs_pc(), sepc: {:#x}", context.sepc);
             }
             inner.change_state(ThreadState::Running, &self.base);

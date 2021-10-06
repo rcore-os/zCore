@@ -30,9 +30,7 @@ impl DrawTarget for DisplayWrapper {
     {
         for p in pixels {
             let color = unsafe { core::mem::transmute(p.1) };
-            self.0
-                .write_pixel(p.0.x as u32, p.0.y as u32, color)
-                .unwrap();
+            self.0.draw_pixel(p.0.x as u32, p.0.y as u32, color);
         }
         Ok(())
     }

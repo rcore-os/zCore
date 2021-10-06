@@ -72,5 +72,17 @@ pub(super) fn init() -> DeviceResult {
     irq.unmask(ScauseIntCode::SupervisorSoft as _)?;
     irq.unmask(ScauseIntCode::SupervisorTimer as _)?;
 
+    #[cfg(feature = "graphic")]
+    if let Some(display) = drivers::display::first() {
+        crate::console::init_graphic_console(display.clone());
+        if display.need_flush() {
+            // TODO: support nested interrupt to render in time
+            crate::thread::spawn(
+                Box::pin(crate::common::future::DisplayFlushFuture::new(display, 30)),
+                crate::vm::current_vmtoken(),
+            );
+        }
+    }
+
     Ok(())
 }

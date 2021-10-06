@@ -23,10 +23,19 @@ cfg_if! {
         use zcore_drivers::{scheme::DisplayScheme, utils::GraphicConsole};
 
         static GRAPHIC_CONSOLE: InitOnce<Mutex<GraphicConsole>> = InitOnce::new();
+        static CONSOLE_WIN_SIZE: InitOnce<ConsoleWinSize> = InitOnce::new();
 
-        #[allow(dead_code)]
         pub(crate) fn init_graphic_console(display: Arc<dyn DisplayScheme>) {
-            GRAPHIC_CONSOLE.init_once_by(Mutex::new(GraphicConsole::new(display)));
+            let info = display.info();
+            let cons = GraphicConsole::new(display);
+            let winsz = ConsoleWinSize {
+                ws_row: cons.rows() as u16,
+                ws_col: cons.columns() as u16,
+                ws_xpixel: info.width as u16,
+                ws_ypixel: info.height as u16,
+            };
+            CONSOLE_WIN_SIZE.init_once_by(winsz);
+            GRAPHIC_CONSOLE.init_once_by(Mutex::new(cons));
         }
     }
 }
@@ -74,4 +83,21 @@ pub fn console_write(s: &str) {
 /// Read buffer data from console (serial).
 pub async fn console_read(buf: &mut [u8]) -> usize {
     super::future::SerialReadFuture::new(buf).await
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct ConsoleWinSize {
+    pub ws_row: u16,
+    pub ws_col: u16,
+    pub ws_xpixel: u16,
+    pub ws_ypixel: u16,
+}
+
+pub fn console_win_size() -> ConsoleWinSize {
+    #[cfg(feature = "graphic")]
+    if let Some(&winsz) = CONSOLE_WIN_SIZE.try_get() {
+        return winsz;
+    }
+    ConsoleWinSize::default()
 }

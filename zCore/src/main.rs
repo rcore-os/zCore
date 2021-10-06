@@ -53,27 +53,28 @@ pub extern "C" fn _start(boot_info: &BootInfo) -> ! {
 
     trace!("{:#x?}", boot_info);
 
+    use zcore_drivers::display::{ColorFormat, DisplayInfo};
+    let graphic_info = &boot_info.graphic_info;
+    let (width, height) = graphic_info.mode.resolution();
+    let display_info = DisplayInfo {
+        width: width as _,
+        height: height as _,
+        format: ColorFormat::ARGB8888, // uefi::proto::console::gop::PixelFormat::Bgr
+        fb_base_vaddr: graphic_info.fb_addr as usize + PHYSICAL_MEMORY_OFFSET,
+        fb_size: graphic_info.fb_size as usize,
+    };
+
     let config = KernelConfig {
         kernel_offset: KERNEL_OFFSET,
         phys_mem_start: PHYSICAL_MEMORY_OFFSET,
         phys_to_virt_offset: PHYSICAL_MEMORY_OFFSET,
-
+        display_info,
         acpi_rsdp: boot_info.acpi2_rsdp_addr,
         smbios: boot_info.smbios_addr,
         ap_fn: run,
     };
     info!("{:#x?}", config);
     kernel_hal::init(config, &ZcoreKernelHandler);
-
-    /* TODO
-    #[cfg(feature = "graphic")]
-    {
-        let (width, height) = boot_info.graphic_info.mode.resolution();
-        let fb_addr = boot_info.graphic_info.fb_addr as usize;
-        let fb_size = boot_info.graphic_info.fb_size as usize;
-        kernel_hal::dev::fb::init(width as u32, height as u32, fb_addr, fb_size);
-    }
-    */
 
     let ramfs_data = unsafe {
         core::slice::from_raw_parts_mut(
@@ -127,21 +128,6 @@ pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
         cmdline.to_string()
     };
     warn!("cmdline: {:?}", cmdline);
-
-    /* TODO
-    #[cfg(feature = "graphic")]
-    {
-        let gpu = GPU_DRIVERS
-            .read()
-            .iter()
-            .next()
-            .expect("Gpu device not found")
-            .clone();
-        let (width, height) = gpu.resolution();
-        let (fb_vaddr, fb_size) = gpu.setup_framebuffer();
-        kernel_hal::deb::fb::init(width, height, fb_vaddr, fb_size);
-    }
-    */
 
     // riscv64在之后使用ramfs或virtio, 而x86_64则由bootloader载入文件系统镜像到内存
     main(&mut [], &cmdline);

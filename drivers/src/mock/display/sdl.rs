@@ -68,8 +68,7 @@ impl core::convert::From<ColorFormat> for PixelFormatEnum {
             ColorFormat::RGB332 => Self::RGB332,
             ColorFormat::RGB565 => Self::RGB565,
             ColorFormat::RGB888 => Self::BGR24, // notice: BGR24 means R at the highest address, B at the lowest address.
-            ColorFormat::RGBA8888 => Self::RGBA8888,
-            ColorFormat::BGRA8888 => Self::BGRA8888,
+            ColorFormat::ARGB8888 => Self::ARGB8888,
         }
     }
 }

@@ -5,7 +5,7 @@ use naive_timer::Timer;
 use spin::Mutex;
 
 lazy_static! {
-    pub static ref NAIVE_TIMER: Mutex<Timer> = Mutex::new(Timer::default());
+    static ref NAIVE_TIMER: Mutex<Timer> = Mutex::new(Timer::default());
 }
 
 hal_fn_impl! {
@@ -19,8 +19,7 @@ hal_fn_impl! {
         }
 
         fn timer_tick() {
-            let now = timer_now();
-            NAIVE_TIMER.lock().expire(now);
+            NAIVE_TIMER.lock().expire(timer_now());
         }
     }
 }

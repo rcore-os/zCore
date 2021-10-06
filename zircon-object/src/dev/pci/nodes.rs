@@ -169,7 +169,7 @@ impl PcieUpstream {
 
 /// Struct used to fetch information about a configured base address register.
 #[allow(missing_docs)]
-#[derive(Default, Copy, Clone)]
+#[derive(Default, Debug, Copy, Clone)]
 pub struct PcieBarInfo {
     pub is_mmio: bool,
     pub is_64bit: bool,
@@ -556,7 +556,7 @@ impl PcieDevice {
             i += 1;
             if is_64bit && bar_info_size > 0 {
                 i += 1;
-                if i >= self.bar_count {
+                if i > self.bar_count {
                     return Err(ZxError::BAD_STATE);
                 }
             }

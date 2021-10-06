@@ -10,6 +10,7 @@ use core::any::Any;
 use core::future::Future;
 use core::pin::Pin;
 use core::task::{Context, Poll};
+use kernel_hal::console::{self, ConsoleWinSize};
 use lazy_static::lazy_static;
 use rcore_fs::vfs::*;
 use spin::Mutex;
@@ -104,13 +105,18 @@ impl INode for Stdin {
     //
     fn io_control(&self, cmd: u32, data: usize) -> Result<usize> {
         match cmd as usize {
-            TCGETS | TIOCGWINSZ | TIOCSPGRP => {
-                warn!("TCGETS | TIOCGWINSZ | TIOCSPGRP, pretend to be tty.");
+            TIOCGWINSZ => {
+                let winsize = data as *mut ConsoleWinSize;
+                unsafe { *winsize = console::console_win_size() };
+                Ok(0)
+            }
+            TCGETS | TIOCSPGRP => {
+                warn!("stdin TCGETS | TIOCSPGRP, pretend to be tty.");
                 // pretend to be tty
                 Ok(0)
             }
             TIOCGPGRP => {
-                warn!("TIOCGPGRP, pretend to be have a tty process group.");
+                warn!("stdin TIOCGPGRP, pretend to be have a tty process group.");
                 // pretend to be have a tty process group
                 // TODO: verify pointer
                 unsafe { *(data as *mut u32) = 0 };
@@ -144,7 +150,13 @@ impl INode for Stdout {
     }
     fn io_control(&self, cmd: u32, data: usize) -> Result<usize> {
         match cmd as usize {
-            TCGETS | TIOCGWINSZ | TIOCSPGRP => {
+            TIOCGWINSZ => {
+                let winsize = data as *mut ConsoleWinSize;
+                unsafe { *winsize = console::console_win_size() };
+                Ok(0)
+            }
+            TCGETS | TIOCSPGRP => {
+                warn!("stdout TCGETS | TIOCSPGRP, pretend to be tty.");
                 // pretend to be tty
                 Ok(0)
             }

@@ -25,5 +25,13 @@ pub(super) fn init() -> DeviceResult {
     drivers::add_device(Device::Irq(irq));
     drivers::add_device(Device::Uart(BufferedUart::new(uart)));
 
+    #[cfg(feature = "graphic")]
+    {
+        use zcore_drivers::display::UefiDisplay;
+        let display = Arc::new(UefiDisplay::new(crate::KCONFIG.display_info));
+        crate::drivers::add_device(Device::Display(display.clone()));
+        crate::console::init_graphic_console(display);
+    }
+
     Ok(())
 }

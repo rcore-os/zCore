@@ -188,6 +188,7 @@ impl<M: IoMapper> DeviceTreeDriverBuilder<M> {
         let dev = match header.device_type() {
             DeviceType::Block => Device::Block(Arc::new(VirtIoBlk::new(header)?)),
             DeviceType::Console => Device::Uart(Arc::new(VirtIoConsole::new(header)?)),
+            DeviceType::GPU => Device::Display(Arc::new(VirtIoGpu::new(header)?)),
             _ => return Err(DeviceError::NotSupported),
         };
 
