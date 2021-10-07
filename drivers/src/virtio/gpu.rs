@@ -1,7 +1,7 @@
 use spin::Mutex;
 use virtio_drivers::{VirtIOGpu as InnerDriver, VirtIOHeader};
 
-use crate::display::{ColorFormat, DisplayInfo};
+use crate::prelude::{ColorFormat, DisplayInfo};
 use crate::scheme::{DisplayScheme, Scheme};
 use crate::DeviceResult;
 

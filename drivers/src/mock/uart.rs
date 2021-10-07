@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use async_std::{io, io::prelude::*, task};
 use spin::Mutex;
 
-use crate::irq::IrqHandler;
+use crate::prelude::IrqHandler;
 use crate::scheme::{Scheme, UartScheme};
 use crate::{utils::EventListener, DeviceResult};
 

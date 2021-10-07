@@ -19,6 +19,7 @@ pub mod builder;
 pub mod display;
 pub mod io;
 pub mod irq;
+pub mod prelude;
 pub mod scheme;
 pub mod uart;
 pub mod utils;

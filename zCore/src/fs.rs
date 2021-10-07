@@ -4,7 +4,7 @@ use alloc::sync::Arc;
 
 use rcore_fs::dev::{BlockDevice, DevError, Result};
 use rcore_fs::vfs::FileSystem;
-use zcore_drivers::scheme::BlockScheme;
+use kernel_hal::drivers::scheme::BlockScheme;
 
 struct BlockDriverWrapper(Arc<dyn BlockScheme>);
 

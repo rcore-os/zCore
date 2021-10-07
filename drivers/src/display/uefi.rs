@@ -1,6 +1,6 @@
 //! UEFI Graphics Output Protocol
 
-use super::DisplayInfo;
+use crate::prelude::DisplayInfo;
 use crate::scheme::{DisplayScheme, Scheme};
 
 pub struct UefiDisplay {

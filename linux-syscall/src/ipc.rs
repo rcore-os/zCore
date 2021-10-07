@@ -293,7 +293,7 @@ numeric_enum! {
 
 /// An operation to be performed on a single semaphore
 ///
-/// Ref: [http://man7.org/linux/man-pages/man2/semop.2.html]
+/// Ref: <http://man7.org/linux/man-pages/man2/semop.2.html>
 #[repr(C)]
 pub struct SemBuf {
     num: u16,

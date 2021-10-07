@@ -1,7 +1,7 @@
 use riscv::register::sie;
 use spin::Mutex;
 
-use super::IrqHandler;
+use crate::prelude::IrqHandler;
 use crate::scheme::{IrqScheme, Scheme};
 use crate::{DeviceError, DeviceResult};
 

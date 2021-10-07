@@ -16,15 +16,6 @@ pub use super::hal_fn::{context, cpu, interrupt, rand};
 
 hal_fn_impl_default!(context, cpu, interrupt, rand, super::hal_fn::console);
 
-cfg_if! {
-    if #[cfg(target_os = "linux")] {
-        pub mod dev;
-    } else {
-        pub use super::hal_fn::dev;
-        hal_fn_impl_default!(dev::fb, dev::input);
-    }
-}
-
 #[cfg(target_os = "macos")]
 include!("macos.rs");
 

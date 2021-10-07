@@ -2,8 +2,8 @@ use core::ops::Range;
 
 use spin::Mutex;
 
-use super::IrqHandler;
 use crate::io::{Io, Mmio};
+use crate::prelude::IrqHandler;
 use crate::scheme::{IrqScheme, Scheme};
 use crate::{utils::IrqManager, DeviceError, DeviceResult};
 

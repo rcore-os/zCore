@@ -10,6 +10,8 @@ use zcore_drivers::scheme::{
 };
 use zcore_drivers::{Device, DeviceError};
 
+pub use zcore_drivers::{prelude, scheme};
+
 lazy_static! {
     static ref DEVICES: DeviceList = DeviceList::default();
 }

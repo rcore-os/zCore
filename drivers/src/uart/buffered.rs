@@ -2,7 +2,7 @@ use alloc::{boxed::Box, collections::VecDeque, string::String, sync::Arc};
 
 use spin::Mutex;
 
-use crate::irq::IrqHandler;
+use crate::prelude::IrqHandler;
 use crate::scheme::{Scheme, UartScheme};
 use crate::utils::EventListener;
 use crate::DeviceResult;

@@ -53,7 +53,7 @@ pub extern "C" fn _start(boot_info: &BootInfo) -> ! {
 
     trace!("{:#x?}", boot_info);
 
-    use zcore_drivers::display::{ColorFormat, DisplayInfo};
+    use kernel_hal::drivers::prelude::{ColorFormat, DisplayInfo};
     let graphic_info = &boot_info.graphic_info;
     let (width, height) = graphic_info.mode.resolution();
     let display_info = DisplayInfo {

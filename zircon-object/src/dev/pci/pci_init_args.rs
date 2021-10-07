@@ -3,6 +3,9 @@
 //!
 //! reference: zircon/system/public/zircon/syscalls/pci.h
 
+use kernel_hal::drivers::prelude::{IrqPolarity, IrqTriggerMode};
+use kernel_hal::interrupt;
+
 use super::constants::*;
 use crate::{ZxError, ZxResult};
 
@@ -47,8 +50,6 @@ pub const PCI_INIT_ARG_MAX_SIZE: usize = core::mem::size_of::<PciInitArgsAddrWin
     * PCI_INIT_ARG_MAX_ECAM_WINDOWS
     + core::mem::size_of::<PciInitArgsHeader>();
 
-use kernel_hal::interrupt;
-
 impl PciInitArgsHeader {
     pub fn configure_interrupt(&mut self) -> ZxResult {
         for i in 0..self.num_irqs as usize {
@@ -58,7 +59,6 @@ impl PciInitArgsHeader {
                 irq.global_irq = PCI_NO_IRQ_MAPPING;
                 self.dev_pin_to_global_irq.remove_irq(global_irq);
             } else {
-                use kernel_hal::interrupt::{IrqPolarity, IrqTriggerMode};
                 let tm = if irq.level_triggered {
                     IrqTriggerMode::Level
                 } else {

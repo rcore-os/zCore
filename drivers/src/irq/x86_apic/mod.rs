@@ -9,7 +9,7 @@ use spin::Mutex;
 use self::consts::{X86_INT_BASE, X86_INT_LOCAL_APIC_BASE};
 use self::ioapic::{IoApic, IoApicList};
 use self::lapic::LocalApic;
-use super::{IrqHandler, IrqPolarity, IrqTriggerMode};
+use crate::prelude::{IrqHandler, IrqPolarity, IrqTriggerMode};
 use crate::scheme::{IrqScheme, Scheme};
 use crate::{utils::IrqManager, DeviceError, DeviceResult, PhysAddr, VirtAddr};
 

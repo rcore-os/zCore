@@ -3,7 +3,7 @@ use core::fmt::{Result, Write};
 use spin::Mutex;
 use virtio_drivers::{VirtIOConsole as InnerDriver, VirtIOHeader};
 
-use crate::irq::IrqHandler;
+use crate::prelude::IrqHandler;
 use crate::scheme::{Scheme, UartScheme};
 use crate::{utils::EventListener, DeviceResult};
 

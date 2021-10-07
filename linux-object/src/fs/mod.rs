@@ -1,47 +1,36 @@
 //! Linux file objects
-#![deny(missing_docs)]
-use alloc::{boxed::Box, sync::Arc, vec::Vec};
 
-use rcore_fs::vfs::*;
-use rcore_fs_devfs::{special::*, DevFS};
-use rcore_fs_mountfs::MountFS;
-use rcore_fs_ramfs::RamFS;
-
-pub use self::device::*;
-pub use self::fcntl::*;
-pub use self::file::*;
-pub use self::pipe::*;
-pub use self::pseudo::*;
-pub use self::random::*;
-pub use self::stdio::*;
-pub use rcore_fs::vfs;
-
-use crate::error::*;
-use crate::process::LinuxProcess;
-use async_trait::async_trait;
-use core::convert::TryFrom;
-use downcast_rs::impl_downcast;
-use zircon_object::object::*;
-
+mod devfs;
 mod device;
 mod fcntl;
 mod file;
 mod ioctl;
 mod pipe;
 mod pseudo;
-mod random;
 mod stdio;
 
-/* TODO
-cfg_if::cfg_if! {
-    if #[cfg(feature = "graphic")] {
-        mod fbdev;
-        mod input;
-        pub use self::input::*;
-        pub use self::fbdev::*;
-    }
-}
-*/
+use alloc::{boxed::Box, sync::Arc, vec::Vec};
+use core::convert::TryFrom;
+
+use async_trait::async_trait;
+use downcast_rs::impl_downcast;
+
+use rcore_fs::vfs::{FileSystem, FileType, INode, PollStatus, Result};
+use rcore_fs_devfs::special::{NullINode, ZeroINode};
+use rcore_fs_devfs::DevFS;
+use rcore_fs_mountfs::MountFS;
+use rcore_fs_ramfs::RamFS;
+use zircon_object::object::KernelObject;
+
+use self::{devfs::RandomINode, pseudo::Pseudo};
+use crate::error::{LxError, LxResult};
+use crate::process::LinuxProcess;
+
+pub use device::MemBuf;
+pub use file::{File, OpenOptions, SeekFrom};
+pub use pipe::Pipe;
+pub use rcore_fs::vfs;
+pub use stdio::{STDIN, STDOUT};
 
 #[async_trait]
 /// Generic file interface
@@ -131,12 +120,12 @@ pub fn create_root_fs(rootfs: Arc<dyn FileSystem>) -> Arc<dyn INode> {
         .add("urandom", Arc::new(RandomINode::new(true)))
         .expect("failed to mknod /dev/urandom");
 
-    /*
-    #[cfg(feature = "graphic")] // TODO
+    #[cfg(feature = "graphic")]
     {
         devfs
-            .add("fb0", Arc::new(Fbdev::default()))
+            .add("fb0", Arc::new(self::devfs::Fbdev::default()))
             .expect("failed to mknod /dev/fb0");
+        /*
         // TODO /dev/input/event0
         devfs
             .add("input-event0", Arc::new(InputEventInode::new(0)))
@@ -145,8 +134,8 @@ pub fn create_root_fs(rootfs: Arc<dyn FileSystem>) -> Arc<dyn INode> {
         devfs
             .add("input-mice", Arc::new(InputMiceInode::default()))
             .expect("failed to mknod /dev/input-mice");
+        */
     }
-    */
 
     // mount DevFS at /dev
     let dev = root.find(true, "dev").unwrap_or_else(|_| {

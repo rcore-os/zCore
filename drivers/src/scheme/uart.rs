@@ -1,5 +1,5 @@
 use super::Scheme;
-use crate::{irq::IrqHandler, DeviceResult};
+use crate::{prelude::IrqHandler, DeviceResult};
 
 pub trait UartScheme: Scheme {
     fn try_recv(&self) -> DeviceResult<Option<u8>>;

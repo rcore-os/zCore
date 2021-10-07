@@ -1,26 +1,29 @@
 //! Linux Process
 
-use crate::error::*;
-use crate::fs::*;
-use crate::ipc::*;
-use crate::signal::{Signal as LinuxSignal, SignalAction};
-use alloc::vec::Vec;
 use alloc::{
     boxed::Box,
     string::String,
     sync::{Arc, Weak},
+    vec::Vec,
 };
 use core::sync::atomic::AtomicI32;
+
 use hashbrown::HashMap;
-use kernel_hal::VirtAddr;
 use rcore_fs::vfs::{FileSystem, INode};
-use spin::*;
+use spin::{Mutex, MutexGuard};
+
+use kernel_hal::VirtAddr;
 use zircon_object::{
     object::{KernelObject, KoID, Signal},
     signal::Futex,
     task::{Job, Process, Status},
     ZxResult,
 };
+
+use crate::error::{LxError, LxResult};
+use crate::fs::{File, FileDesc, FileLike, OpenOptions, STDIN, STDOUT};
+use crate::ipc::*;
+use crate::signal::{Signal as LinuxSignal, SignalAction};
 
 /// Process extension for linux
 pub trait ProcessExt {
@@ -230,7 +233,7 @@ impl LinuxProcess {
         files.insert(2.into(), stdout);
 
         LinuxProcess {
-            root_inode: create_root_fs(rootfs), //Arc::clone(&ROOT_INODE),访问磁盘可能更快？
+            root_inode: crate::fs::create_root_fs(rootfs), //Arc::clone(&ROOT_INODE),访问磁盘可能更快？
             parent: Weak::default(),
             inner: Mutex::new(LinuxProcessInner {
                 files,

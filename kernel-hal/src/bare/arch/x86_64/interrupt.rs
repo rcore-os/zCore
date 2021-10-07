@@ -1,6 +1,7 @@
 use core::ops::Range;
 
 use crate::drivers::irq;
+use crate::drivers::prelude::{IrqHandler, IrqPolarity, IrqTriggerMode};
 use crate::HalResult;
 
 /*

@@ -14,9 +14,9 @@ pub mod thread;
 pub mod timer;
 
 pub use self::arch::{config, context, cpu, interrupt, vm};
-pub use super::hal_fn::{dev, rand, vdso};
+pub use super::hal_fn::{rand, vdso};
 
-hal_fn_impl_default!(rand, vdso, dev::fb, dev::input);
+hal_fn_impl_default!(rand, vdso);
 
 use crate::{KernelConfig, KernelHandler, KCONFIG, KHANDLER};
 

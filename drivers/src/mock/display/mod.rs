@@ -2,7 +2,7 @@ pub mod sdl;
 
 use alloc::vec::Vec;
 
-use crate::display::{ColorFormat, DisplayInfo};
+use crate::prelude::{ColorFormat, DisplayInfo};
 use crate::scheme::{DisplayScheme, Scheme};
 
 pub struct MockDisplay {

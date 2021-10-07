@@ -3,7 +3,7 @@
 use core::ops::Range;
 
 use super::IdAllocator;
-use crate::{irq::IrqHandler, DeviceError, DeviceResult};
+use crate::{prelude::IrqHandler, DeviceError, DeviceResult};
 
 pub struct IrqManager<const IRQ_COUNT: usize> {
     irq_range: Range<usize>,

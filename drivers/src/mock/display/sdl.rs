@@ -3,7 +3,7 @@ use alloc::sync::Arc;
 use sdl2::{event::Event, keyboard::Keycode, EventPump};
 use sdl2::{pixels::PixelFormatEnum, render::Canvas, video::Window};
 
-use crate::display::ColorFormat;
+use crate::prelude::ColorFormat;
 use crate::scheme::DisplayScheme;
 
 pub struct SdlWindow {

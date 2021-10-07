@@ -1,6 +1,7 @@
 use alloc::boxed::Box;
 use core::{future::Future, ops::Range, pin::Pin, time::Duration};
 
+use crate::drivers::prelude::{IrqHandler, IrqPolarity, IrqTriggerMode};
 use crate::{common, HalResult, MMUFlags, PhysAddr, VirtAddr};
 
 hal_fn_def! {
@@ -46,7 +47,7 @@ hal_fn_def! {
         pub(crate) fn pt_clone_kernel_space(dst_pt_root: PhysAddr, src_pt_root: PhysAddr);
     }
 
-    pub mod interrupt: common::interrupt {
+    pub mod interrupt {
         /// Suspend the CPU (also enable interrupts) and wait for an interrupt
         /// to occurs, then disable interrupts.
         pub fn wait_for_interrupt();
@@ -165,28 +166,6 @@ hal_fn_def! {
         /// Get platform specific information.
         pub fn vdso_constants() -> VdsoConstants {
             vdso_constants_template()
-        }
-    }
-}
-
-pub mod dev {
-    use super::*;
-
-    hal_fn_def! {
-        pub mod fb: common::fb {
-            /// Initialize framebuffer.
-            pub fn init();
-        }
-
-        pub mod input {
-            /// Initialize input devices.
-            pub fn init();
-
-            /// Setup the callback when a keyboard event occurs.
-            pub fn kbd_set_callback(callback: Box<dyn Fn(u16, i32) + Send + Sync>);
-
-            /// Setup the callback when a mouse event occurs.
-            pub fn mouse_set_callback(callback: Box<dyn Fn([u8; 3]) + Send + Sync>);
         }
     }
 }
