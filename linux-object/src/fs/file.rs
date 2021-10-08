@@ -1,4 +1,5 @@
 //! File handle for process
+//! TODO: check OpenOptions
 
 #![allow(dead_code)]
 
@@ -7,9 +8,10 @@ use alloc::{boxed::Box, string::String, sync::Arc};
 use super::FileLike;
 use crate::error::{LxError, LxResult};
 use async_trait::async_trait;
-use rcore_fs::vfs::{FsError, INode, Metadata, PollStatus};
+use rcore_fs::vfs::{FileType, FsError, INode, Metadata, PollStatus};
 use spin::Mutex;
 use zircon_object::object::*;
+use zircon_object::vm::{pages, VmObject};
 
 /// file implement struct
 pub struct File {
@@ -210,6 +212,29 @@ impl File {
         }
         Ok(0)
     }
+
+    /// Returns the [`VmObject`] representing the file with given `offset` and `len`.
+    pub fn get_vmo(&self, offset: usize, len: usize) -> LxResult<Arc<VmObject>> {
+        match self.inode.metadata()?.type_ {
+            FileType::File => {
+                // TODO: better implementation
+                let mut buf = alloc::vec![0; len];
+                let len = self.inode.read_at(offset, &mut buf)?;
+                let vmo = VmObject::new_paged(pages(len));
+                vmo.write(0, &buf[..len])?;
+                Ok(vmo)
+            }
+            FileType::CharDevice => {
+                use super::devfs::Fbdev;
+                if let Some(fbdev) = self.inode.downcast_ref::<Fbdev>() {
+                    fbdev.get_vmo(offset, len)
+                } else {
+                    Err(LxError::ENOSYS)
+                }
+            }
+            _ => Err(LxError::ENOSYS),
+        }
+    }
 }
 
 #[async_trait]
@@ -244,5 +269,9 @@ impl FileLike for File {
 
     fn fcntl(&self, cmd: usize, arg: usize) -> LxResult<usize> {
         self.fcntl(cmd, arg)
+    }
+
+    fn get_vmo(&self, offset: usize, len: usize) -> LxResult<Arc<VmObject>> {
+        self.get_vmo(offset, len)
     }
 }

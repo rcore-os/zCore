@@ -20,7 +20,7 @@ use rcore_fs_devfs::special::{NullINode, ZeroINode};
 use rcore_fs_devfs::DevFS;
 use rcore_fs_mountfs::MountFS;
 use rcore_fs_ramfs::RamFS;
-use zircon_object::object::KernelObject;
+use zircon_object::{object::KernelObject, vm::VmObject};
 
 use self::{devfs::RandomINode, pseudo::Pseudo};
 use crate::error::{LxError, LxResult};
@@ -55,6 +55,8 @@ pub trait FileLike: KernelObject {
     fn ioctl(&self, request: usize, arg1: usize, arg2: usize, arg3: usize) -> LxResult<usize>;
     /// manipulate file descriptor
     fn fcntl(&self, cmd: usize, arg: usize) -> LxResult<usize>;
+    /// Returns the [`VmObject`] representing the file with given `offset` and `len`.
+    fn get_vmo(&self, offset: usize, len: usize) -> LxResult<Arc<VmObject>>;
 }
 
 impl_downcast!(sync FileLike);

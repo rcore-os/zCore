@@ -25,16 +25,16 @@ impl BlockDevice for BlockDriverWrapper {
 }
 
 pub fn init_filesystem(ramfs_data: &'static mut [u8]) -> Arc<dyn FileSystem> {
-    #[cfg(feature = "ramfs")]
+    #[cfg(feature = "ram_user_img")]
     let device = {
         use linux_object::fs::MemBuf;
-        extern "C" {
-            fn _user_img_start();
-            fn _user_img_end();
-        }
 
         #[cfg(feature = "link_user_img")]
         let ramfs_data = unsafe {
+            extern "C" {
+                fn _user_img_start();
+                fn _user_img_end();
+            }
             core::slice::from_raw_parts_mut(
                 _user_img_start as *mut u8,
                 _user_img_end as usize - _user_img_start as usize,
@@ -43,7 +43,7 @@ pub fn init_filesystem(ramfs_data: &'static mut [u8]) -> Arc<dyn FileSystem> {
         MemBuf::new(ramfs_data)
     };
 
-    #[cfg(not(feature = "ramfs"))]
+    #[cfg(not(feature = "ram_user_img"))]
     let device = {
         use rcore_fs::dev::block_cache::BlockCache;
         let block = kernel_hal::drivers::block::first_unwrap();

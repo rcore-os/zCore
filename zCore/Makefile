@@ -41,7 +41,7 @@ endif
 endif
 
 ifeq ($(arch), x86_64)
-build_args += --features ramfs
+build_args += --features ram_user_img
 endif
 
 ifeq ($(linux), 1)
@@ -185,7 +185,7 @@ $(kernel_bin): kernel
 	$(OBJCOPY) $(kernel) --strip-all -O binary $@
 
 clean:
-	cargo clean
+	cargo clean -Z weak-dep-features
 
 image:
 	# for macOS only

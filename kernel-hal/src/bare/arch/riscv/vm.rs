@@ -142,12 +142,15 @@ bitflags::bitflags! {
 
 impl From<MMUFlags> for PTF {
     fn from(f: MMUFlags) -> Self {
+        if f.is_empty() {
+            return PTF::empty();
+        }
         let mut flags = PTF::VALID;
         if f.contains(MMUFlags::READ) {
             flags |= PTF::READABLE;
         }
         if f.contains(MMUFlags::WRITE) {
-            flags |= PTF::WRITABLE;
+            flags |= PTF::READABLE | PTF::WRITABLE;
         }
         if f.contains(MMUFlags::EXECUTE) {
             flags |= PTF::EXECUTABLE;

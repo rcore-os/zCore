@@ -1,10 +1,15 @@
 //! Implement INode for framebuffer
 
+use alloc::sync::Arc;
 use core::{any::Any, convert::From};
 
 use kernel_hal::drivers;
 use kernel_hal::drivers::prelude::{ColorFormat, DisplayInfo};
+use kernel_hal::vm::{GenericPageTable, PageTable};
 use rcore_fs::vfs::*;
+use zircon_object::vm::{page_aligned, pages, VmObject};
+
+use crate::error::{LxError, LxResult};
 
 // IOCTLs
 const FBIOGET_VSCREENINFO: u32 = 0x4600;
@@ -104,8 +109,14 @@ pub struct FbFixScreeninfo {
 
 impl From<DisplayInfo> for FbFixScreeninfo {
     fn from(info: DisplayInfo) -> Self {
+        let smem_start =
+            if let Ok((paddr, _, _)) = PageTable::from_current().query(info.fb_base_vaddr) {
+                paddr as u64
+            } else {
+                u64::MAX
+            };
         Self {
-            smem_start: 0, // TODO
+            smem_start,
             smem_len: info.fb_size as u32,
             fb_type: FbType::PackedPixels,
             visual: FbVisual::TrueColor,
@@ -246,6 +257,25 @@ impl From<DisplayInfo> for FbVarScreeninfo {
 /// Framebuffer device
 #[derive(Default)]
 pub struct Fbdev;
+
+impl Fbdev {
+    pub fn get_vmo(&self, offset: usize, len: usize) -> LxResult<Arc<VmObject>> {
+        if let Some(display) = drivers::display::first() {
+            let info = display.info();
+            if !page_aligned(offset) || offset >= info.fb_size {
+                return Err(LxError::EINVAL);
+            }
+            let paddr = FbFixScreeninfo::from(info).smem_start;
+            if paddr == u64::MAX {
+                return Err(LxError::ENOMEM);
+            }
+            let len = len.min(info.fb_size - offset);
+            Ok(VmObject::new_physical(paddr as usize + offset, pages(len)))
+        } else {
+            Err(LxError::ENOSYS)
+        }
+    }
+}
 
 impl INode for Fbdev {
     #[allow(unsafe_code)]

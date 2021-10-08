@@ -49,10 +49,10 @@ hal_fn_impl! {
 
 impl From<MMUFlags> for PTF {
     fn from(f: MMUFlags) -> Self {
-        let mut flags = PTF::empty();
-        if f.contains(MMUFlags::READ) {
-            flags |= PTF::PRESENT;
+        if f.is_empty() {
+            return PTF::empty();
         }
+        let mut flags = PTF::PRESENT;
         if f.contains(MMUFlags::WRITE) {
             flags |= PTF::WRITABLE;
         }
@@ -83,10 +83,10 @@ impl From<MMUFlags> for PTF {
 
 impl From<PTF> for MMUFlags {
     fn from(f: PTF) -> Self {
-        let mut ret = Self::empty();
-        if f.contains(PTF::PRESENT) {
-            ret |= Self::READ;
+        if f.is_empty() {
+            return Self::empty();
         }
+        let mut ret = Self::READ;
         if f.contains(PTF::WRITABLE) {
             ret |= Self::WRITE;
         }
