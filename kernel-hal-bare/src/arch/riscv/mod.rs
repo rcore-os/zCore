@@ -13,8 +13,8 @@ use core::fmt::{self, Write};
 use crate::drivers::{device_tree, virtio, irq};
 
 mod sbi;
-
 mod consts;
+pub mod cpu_C906;
 
 use consts::*;
 
@@ -98,6 +98,37 @@ pub fn remap_the_kernel(dtb: usize) {
         PTF::VALID | PTF::READABLE,
     )
     .unwrap();
+
+
+    // GPIO/CCU
+    #[cfg(feature = "board_d1")]
+    map_range(
+        &mut pt,
+        phys_to_virt(0x0200_0000),
+        phys_to_virt(0x0200_0000) + PAGE_SIZE,
+        linear_offset,
+        PTF::VALID | PTF::READABLE | PTF::WRITABLE,
+    ).unwrap();
+
+    //SYS_CFG
+    #[cfg(feature = "board_d1")]
+    map_range(
+        &mut pt,
+        phys_to_virt(0x0300_0000),
+        phys_to_virt(0x0300_0000) + PAGE_SIZE,
+        linear_offset,
+        PTF::VALID | PTF::READABLE | PTF::WRITABLE,
+    ).unwrap();
+
+    //GMAC
+    #[cfg(feature = "board_d1")]
+    map_range(
+        &mut pt,
+        phys_to_virt(0x0450_0000),
+        phys_to_virt(0x0450_0000) + PAGE_SIZE,
+        linear_offset,
+        PTF::VALID | PTF::READABLE | PTF::WRITABLE,
+    ).unwrap();
 
     // PLIC
     map_range(
@@ -502,7 +533,7 @@ macro_rules! bare_println {
 	($($arg:tt)*) => (bare_print!("{}\n", format_args!($($arg)*)));
 }
 
-fn get_cycle() -> u64 {
+pub fn get_cycle() -> u64 {
     time::read() as u64
     /*
     unsafe {
@@ -516,7 +547,8 @@ pub fn timer_now() -> Duration {
     const FREQUENCY: u64 = 10_000_000; // ???
     let time = get_cycle();
     //bare_println!("timer_now(): {:?}", time);
-    Duration::from_nanos(time * 1_000_000_000 / FREQUENCY as u64)
+    //Duration::from_nanos(time * 1_000_000_000 / FREQUENCY as u64)
+    Duration::from_nanos(time as u64)
 }
 
 #[export_name = "hal_timer_set_next"]
@@ -555,6 +587,11 @@ pub fn init(config: Config) {
 
         device_tree::init(config.dtb);
     }
+
+    use crate::alloc::string::ToString;
+    #[cfg(feature = "board_d1")]
+    crate::drivers::net::rtl8x::init("rtl8211f".to_string(), Some(62));
+
 }
 
 pub struct Config {

@@ -19,19 +19,24 @@ pub extern "C" fn server(_arg: usize) -> ! {
         }
     }
 
-    use kernel_hal_bare::drivers::net::virtio_net::VirtIONetDriver;
+    use kernel_hal_bare::drivers::net::rtl8x::RTL8xInterface;
 
     // Ref: https://github.com/elliott10/rCore/blob/6f1953b9773d66cf7ab831c345a44e89036751c1/kernel/src/net/test.rs
     let driver = {
         //选第一个网卡驱动
-        let ref_driver = Arc::clone(&NET_DRIVERS.read()[0]);
-        ref_driver.as_any().downcast_ref::<VirtIONetDriver>().unwrap().clone()
+        let ref_driver = Arc::clone(&NET_DRIVERS.write()[0]);
+                                            //需实现Clone
+        ref_driver.as_any().downcast_ref::<RTL8xInterface>().unwrap().clone()
     };
     let ethernet_addr = driver.get_mac();
     let ifname = driver.get_ifname();
 
     debug!("NET_DRIVERS read OK!\n{} MAC: {:x?}", ifname, ethernet_addr);
+    debug!("IP address: {:?}", driver.get_ip_addresses());
 
+    let mut iface = driver.iface.lock();
+
+    /*
     //let hw_addr = EthernetAddress::from_bytes(&mac);
     let hw_addr = ethernet_addr;
     let neighbor_cache = NeighborCache::new(BTreeMap::new());
@@ -43,6 +48,7 @@ pub extern "C" fn server(_arg: usize) -> ! {
         .neighbor_cache(neighbor_cache)
         .ip_addrs(ip_addrs)
         .finalize();
+    */
 
     let udp_rx_buffer = UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY], vec![0; 64]);
     let udp_tx_buffer = UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY], vec![0; 128]);
@@ -67,7 +73,7 @@ pub extern "C" fn server(_arg: usize) -> ! {
         {
             let mut sockets = SOCKETS.lock();
 
-            let timestamp = Instant::from_millis(10);
+            let timestamp = Instant::from_millis(0);
             //poll一般不要被阻塞,以便可以响应下列监听的网络协议
             match iface.poll(&mut sockets, timestamp) {
                 Ok(_) => {},
@@ -89,8 +95,8 @@ pub extern "C" fn server(_arg: usize) -> ! {
                     Err(_) => None,
                 };
                 if let Some(endpoint) = client {
-                    debug!("UDP 6969");
-                    let hello = b"hello\n";
+                    info!("UDP 6969 recv");
+                    let hello = b"hello from zCore\n";
                     socket.send_slice(hello, endpoint).unwrap();
                 }
             }
@@ -104,8 +110,8 @@ pub extern "C" fn server(_arg: usize) -> ! {
                 }
 
                 if socket.can_send() {
-                    debug!("TCP 80");
-                    write!(socket, "HTTP/1.1 200 OK\r\nServer: rCore\r\nContent-Length: 13\r\nContent-Type: text/html\r\nConnection: Closed\r\n\r\nHello, world!\r\n").unwrap();
+                    info!("TCP 80 recv");
+                    write!(socket, "HTTP/1.1 200 OK\r\nServer: zCore\r\nContent-Length: 13\r\nContent-Type: text/html\r\nConnection: Closed\r\n\r\nHello! zCore \r\n").unwrap();
                     socket.close();
                 }
             }
@@ -119,15 +125,21 @@ pub extern "C" fn server(_arg: usize) -> ! {
                 }
 
                 if socket.can_recv() {
-                    debug!("TCP 2222");
+                    info!("TCP 2222 recv");
                     let mut data = [0u8; 2048];
                     let _size = socket.recv_slice(&mut data).unwrap();
+
+                    let mut linebuf: [char; 16] = [0 as char; 16];
+                    for i in 0..linebuf.len() {
+                        linebuf[i] = data[i] as char;
+                    }
+                    info!("Got: {:?}", linebuf);
                 }
             }
         }
 
         //一般大量循环打印是正常状态
-        debug!("--- loop() ---");
+        trace!("--- loop() ---");
 
         //thread::yield_now();
     }

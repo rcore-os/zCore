@@ -196,15 +196,16 @@ fn main(ramfs_data: &'static mut [u8], cmdline: &str) -> ! {
     let args: Vec<String> = get_rootproc(cmdline);
     let envs: Vec<String> = vec!["PATH=/usr/sbin:/usr/bin:/sbin:/bin".into()];
 
+    /*
     let rootfs = fs::init_filesystem(ramfs_data);
     let _proc = linux_loader::run(args, envs, rootfs);
+    */
 
-    /*
     info!("linux_loader run linux proc +++");
     use linux_object::net::test::server;
     server(0);
 
-    // 用户程序无法访问内核的代码？？？ 页表：USER
+    /* 用户程序无法访问内核的代码？？？ 页表：USER
     linux_loader::run_linux_proc(vec!["run_linux_proc".into()], server as usize);
     */
     info!("linux_loader is complete");
