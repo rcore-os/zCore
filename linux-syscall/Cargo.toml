@@ -17,4 +17,4 @@ linux-object = { path = "../linux-object" }
 kernel-hal = { path = "../kernel-hal" }
 rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "ba1aa90" }
 lazy_static = { version = "1.4", features = ["spin_no_std"] }
-bitvec = { version = "0.21", default-features = false, features = ["alloc"] }
+bitvec = { version = "0.22", default-features = false, features = ["alloc"] }

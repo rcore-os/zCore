@@ -11,10 +11,27 @@ pub struct MockDisplay {
 }
 
 impl MockDisplay {
-    pub fn new(width: u32, height: u32) -> Self {
-        let format = ColorFormat::ARGB8888;
+    pub fn new(width: u32, height: u32, format: ColorFormat) -> Self {
         let fb_size = (width * height * format.bytes() as u32) as usize;
         let fb = vec![0; fb_size];
+        let info = DisplayInfo {
+            width,
+            height,
+            format,
+            fb_base_vaddr: fb.as_ptr() as usize,
+            fb_size,
+        };
+        Self { info, fb }
+    }
+
+    pub unsafe fn from_raw_parts(
+        width: u32,
+        height: u32,
+        format: ColorFormat,
+        ptr: *mut u8,
+    ) -> Self {
+        let fb_size = (width * height * format.bytes() as u32) as usize;
+        let fb = Vec::from_raw_parts(ptr, fb_size, fb_size);
         let info = DisplayInfo {
             width,
             height,
