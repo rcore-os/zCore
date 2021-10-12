@@ -8,7 +8,7 @@ mod graphic_console;
 pub(super) use id_allocator::IdAllocator;
 pub(super) use irq_manager::IrqManager;
 
-pub use event_listener::EventListener;
+pub use event_listener::{EventHandler, EventListener};
 
 #[cfg(feature = "graphic")]
 pub use graphic_console::GraphicConsole;

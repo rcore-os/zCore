@@ -3,9 +3,9 @@ use core::fmt::{Result, Write};
 use spin::Mutex;
 use virtio_drivers::{VirtIOConsole as InnerDriver, VirtIOHeader};
 
-use crate::prelude::IrqHandler;
+use crate::prelude::DeviceResult;
 use crate::scheme::{Scheme, UartScheme};
-use crate::{utils::EventListener, DeviceResult};
+use crate::utils::{EventHandler, EventListener};
 
 pub struct VirtIoConsole<'a> {
     inner: Mutex<InnerDriver<'a>>,
@@ -28,7 +28,7 @@ impl<'a> Scheme for VirtIoConsole<'a> {
 
     fn handle_irq(&self, _irq_num: usize) {
         self.inner.lock().ack_interrupt().unwrap();
-        self.listener.trigger();
+        self.listener.trigger(());
     }
 }
 
@@ -42,7 +42,7 @@ impl<'a> UartScheme for VirtIoConsole<'a> {
         Ok(())
     }
 
-    fn subscribe(&self, handler: IrqHandler, once: bool) {
+    fn subscribe(&self, handler: EventHandler, once: bool) {
         self.listener.subscribe(handler, once);
     }
 }

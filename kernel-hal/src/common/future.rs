@@ -86,7 +86,7 @@ impl Future for SerialReadFuture<'_> {
             return Poll::Ready(n);
         }
         let waker = cx.waker().clone();
-        uart.subscribe(Box::new(move || waker.wake_by_ref()), true);
+        uart.subscribe(Box::new(move |_| waker.wake_by_ref()), true);
         Poll::Pending
     }
 }

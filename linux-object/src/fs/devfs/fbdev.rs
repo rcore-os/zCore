@@ -3,8 +3,8 @@
 use alloc::sync::Arc;
 use core::{any::Any, convert::From};
 
-use kernel_hal::drivers;
 use kernel_hal::drivers::prelude::{ColorFormat, DisplayInfo};
+use kernel_hal::drivers::scheme::DisplayScheme;
 use kernel_hal::vm::{GenericPageTable, PageTable};
 use rcore_fs::vfs::*;
 use zircon_object::vm::{page_aligned, pages, VmObject};
@@ -255,29 +255,30 @@ impl From<DisplayInfo> for FbVarScreeninfo {
 }
 
 /// Framebuffer device
-#[derive(Default)]
-pub struct Fbdev;
+pub struct FbDev {
+    display: Arc<dyn DisplayScheme>,
+}
 
-impl Fbdev {
+impl FbDev {
+    pub fn new(display: Arc<dyn DisplayScheme>) -> Self {
+        Self { display }
+    }
+
     pub fn get_vmo(&self, offset: usize, len: usize) -> LxResult<Arc<VmObject>> {
-        if let Some(display) = drivers::display::first() {
-            let info = display.info();
-            if !page_aligned(offset) || offset >= info.fb_size {
-                return Err(LxError::EINVAL);
-            }
-            let paddr = FbFixScreeninfo::from(info).smem_start;
-            if paddr == u64::MAX {
-                return Err(LxError::ENOMEM);
-            }
-            let len = len.min(info.fb_size - offset);
-            Ok(VmObject::new_physical(paddr as usize + offset, pages(len)))
-        } else {
-            Err(LxError::ENOSYS)
+        let info = self.display.info();
+        if !page_aligned(offset) || offset >= info.fb_size {
+            return Err(LxError::EINVAL);
         }
+        let paddr = FbFixScreeninfo::from(info).smem_start;
+        if paddr == u64::MAX {
+            return Err(LxError::ENOMEM);
+        }
+        let len = len.min(info.fb_size - offset);
+        Ok(VmObject::new_physical(paddr as usize + offset, pages(len)))
     }
 }
 
-impl INode for Fbdev {
+impl INode for FbDev {
     #[allow(unsafe_code)]
     fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
         info!(
@@ -286,18 +287,14 @@ impl INode for Fbdev {
             buf.len()
         );
 
-        if let Some(display) = drivers::display::first() {
-            let info = display.info();
-            if offset >= info.fb_size {
-                return Ok(0);
-            }
-            let len = buf.len().min(info.fb_size - offset);
-            let fb = unsafe { display.raw_fb() };
-            buf[..len].copy_from_slice(&fb[offset..offset + len]);
-            Ok(len)
-        } else {
-            Err(FsError::NoDevice)
+        let info = self.display.info();
+        if offset >= info.fb_size {
+            return Ok(0);
         }
+        let len = buf.len().min(info.fb_size - offset);
+        let fb = unsafe { self.display.raw_fb() };
+        buf[..len].copy_from_slice(&fb[offset..offset + len]);
+        Ok(len)
     }
 
     #[allow(unsafe_code)]
@@ -307,18 +304,15 @@ impl INode for Fbdev {
             offset,
             buf.len()
         );
-        if let Some(display) = drivers::display::first() {
-            let info = display.info();
-            if offset >= info.fb_size {
-                return Ok(0);
-            }
-            let len = buf.len().min(info.fb_size - offset);
-            let fb = unsafe { display.raw_fb() };
-            fb[offset..offset + len].copy_from_slice(&buf[..len]);
-            Ok(len)
-        } else {
-            Err(FsError::NoDevice)
+
+        let info = self.display.info();
+        if offset >= info.fb_size {
+            return Ok(0);
         }
+        let len = buf.len().min(info.fb_size - offset);
+        let fb = unsafe { self.display.raw_fb() };
+        fb[offset..offset + len].copy_from_slice(&buf[..len]);
+        Ok(len)
     }
 
     fn poll(&self) -> Result<PollStatus> {
@@ -332,8 +326,8 @@ impl INode for Fbdev {
 
     fn metadata(&self) -> Result<Metadata> {
         Ok(Metadata {
-            dev: 0,
-            inode: 0,
+            dev: 1,
+            inode: 1,
             size: 0,
             blk_size: 0,
             blocks: 0,
@@ -345,7 +339,7 @@ impl INode for Fbdev {
             nlinks: 1,
             uid: 0,
             gid: 0,
-            rdev: make_rdev(29, 0),
+            rdev: make_rdev(0x1d, 0),
         })
     }
 
@@ -354,21 +348,13 @@ impl INode for Fbdev {
         match cmd {
             FBIOGET_FSCREENINFO => {
                 let dst = unsafe { &mut *(data as *mut FbFixScreeninfo) };
-                if let Some(display) = drivers::display::first() {
-                    *dst = display.info().into();
-                    Ok(0)
-                } else {
-                    Err(FsError::NoDevice)
-                }
+                *dst = self.display.info().into();
+                Ok(0)
             }
             FBIOGET_VSCREENINFO => {
                 let dst = unsafe { &mut *(data as *mut FbVarScreeninfo) };
-                if let Some(display) = drivers::display::first() {
-                    *dst = display.info().into();
-                    Ok(0)
-                } else {
-                    Err(FsError::NoDevice)
-                }
+                *dst = self.display.info().into();
+                Ok(0)
             }
             _ => {
                 warn!("use never support ioctl !");

@@ -2,9 +2,8 @@ use alloc::{boxed::Box, collections::VecDeque, string::String, sync::Arc};
 
 use spin::Mutex;
 
-use crate::prelude::IrqHandler;
 use crate::scheme::{Scheme, UartScheme};
-use crate::utils::EventListener;
+use crate::utils::{EventHandler, EventListener};
 use crate::DeviceResult;
 
 const BUF_CAPACITY: usize = 4096;
@@ -25,7 +24,7 @@ impl BufferedUart {
             listener: EventListener::new(),
         });
         let cloned = ret.clone();
-        uart.subscribe(Box::new(move || cloned.handle_irq(0)), false);
+        uart.subscribe(Box::new(move |_| cloned.handle_irq(0)), false);
         ret
     }
 }
@@ -37,11 +36,14 @@ impl Scheme for BufferedUart {
 
     fn handle_irq(&self, _unused: usize) {
         while let Some(c) = self.inner.try_recv().unwrap_or(None) {
-            let c = if c == b'\r' { b'\n' } else { c };
-            self.buf.lock().push_back(c);
+            let mut buf = self.buf.lock();
+            if buf.len() < BUF_CAPACITY {
+                let c = if c == b'\r' { b'\n' } else { c };
+                buf.push_back(c);
+            }
         }
         if self.buf.lock().len() > 0 {
-            self.listener.trigger();
+            self.listener.trigger(());
         }
     }
 }
@@ -56,7 +58,7 @@ impl UartScheme for BufferedUart {
     fn write_str(&self, s: &str) -> DeviceResult {
         self.inner.write_str(s)
     }
-    fn subscribe(&self, handler: IrqHandler, once: bool) {
+    fn subscribe(&self, handler: EventHandler, once: bool) {
         self.listener.subscribe(handler, once);
     }
 }

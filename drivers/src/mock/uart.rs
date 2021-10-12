@@ -3,9 +3,9 @@ use std::collections::VecDeque;
 use async_std::{io, io::prelude::*, task};
 use spin::Mutex;
 
-use crate::prelude::IrqHandler;
 use crate::scheme::{Scheme, UartScheme};
-use crate::{utils::EventListener, DeviceResult};
+use crate::utils::{EventHandler, EventListener};
+use crate::DeviceResult;
 
 const UART_BUF_LEN: usize = 256;
 
@@ -58,7 +58,7 @@ impl Scheme for MockUart {
     }
 
     fn handle_irq(&self, _irq_num: usize) {
-        self.listener.trigger();
+        self.listener.trigger(());
     }
 }
 
@@ -81,7 +81,7 @@ impl UartScheme for MockUart {
         Ok(())
     }
 
-    fn subscribe(&self, handler: IrqHandler, once: bool) {
+    fn subscribe(&self, handler: EventHandler, once: bool) {
         self.listener.subscribe(handler, once);
     }
 }

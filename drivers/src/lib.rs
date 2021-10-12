@@ -17,6 +17,7 @@ pub mod virtio;
 
 pub mod builder;
 pub mod display;
+pub mod input;
 pub mod io;
 pub mod irq;
 pub mod prelude;

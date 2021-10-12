@@ -5,9 +5,9 @@ use bitflags::bitflags;
 use spin::Mutex;
 
 use crate::io::{Io, Mmio, ReadOnly};
-use crate::prelude::IrqHandler;
 use crate::scheme::{Scheme, UartScheme};
-use crate::{utils::EventListener, DeviceResult};
+use crate::utils::{EventHandler, EventListener};
+use crate::DeviceResult;
 
 bitflags! {
     /// Interrupt enable flags
@@ -133,7 +133,7 @@ where
     }
 
     fn handle_irq(&self, _irq_num: usize) {
-        self.listener.trigger();
+        self.listener.trigger(());
     }
 }
 
@@ -159,7 +159,7 @@ where
         self.inner.lock().write_str(s)
     }
 
-    fn subscribe(&self, handler: IrqHandler, once: bool) {
+    fn subscribe(&self, handler: EventHandler, once: bool) {
         self.listener.subscribe(handler, once);
     }
 }
@@ -208,7 +208,7 @@ mod pio {
         }
 
         fn handle_irq(&self, _irq_num: usize) {
-            self.listener.trigger();
+            self.listener.trigger(());
         }
     }
 
@@ -225,7 +225,7 @@ mod pio {
             self.inner.lock().write_str(s)
         }
 
-        fn subscribe(&self, handler: IrqHandler, once: bool) {
+        fn subscribe(&self, handler: EventHandler, once: bool) {
             self.listener.subscribe(handler, once);
         }
     }

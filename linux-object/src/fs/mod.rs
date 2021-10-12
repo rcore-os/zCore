@@ -9,12 +9,13 @@ mod pipe;
 mod pseudo;
 mod stdio;
 
-use alloc::{boxed::Box, sync::Arc, vec::Vec};
+use alloc::{boxed::Box, string::ToString, sync::Arc, vec::Vec};
 use core::convert::TryFrom;
 
 use async_trait::async_trait;
 use downcast_rs::impl_downcast;
 
+use kernel_hal::drivers;
 use rcore_fs::vfs::{FileSystem, FileType, INode, PollStatus, Result};
 use rcore_fs_devfs::special::{NullINode, ZeroINode};
 use rcore_fs_devfs::DevFS;
@@ -105,38 +106,40 @@ impl From<FileDesc> for i32 {
 /// create root filesystem, mount DevFS and RamFS
 pub fn create_root_fs(rootfs: Arc<dyn FileSystem>) -> Arc<dyn INode> {
     let rootfs = MountFS::new(rootfs);
-    let root = rootfs.root_inode();
+    let root = rootfs.mountpoint_root_inode();
 
     // create DevFS
     let devfs = DevFS::new();
-    devfs
+    let devfs_root = devfs.root();
+    devfs_root
         .add("null", Arc::new(NullINode::default()))
         .expect("failed to mknod /dev/null");
-    devfs
+    devfs_root
         .add("zero", Arc::new(ZeroINode::default()))
         .expect("failed to mknod /dev/zero");
-    devfs
+    devfs_root
         .add("random", Arc::new(RandomINode::new(false)))
         .expect("failed to mknod /dev/random");
-    devfs
+    devfs_root
         .add("urandom", Arc::new(RandomINode::new(true)))
         .expect("failed to mknod /dev/urandom");
 
-    #[cfg(feature = "graphic")]
-    {
-        devfs
-            .add("fb0", Arc::new(self::devfs::Fbdev::default()))
-            .expect("failed to mknod /dev/fb0");
-        /*
-        // TODO /dev/input/event0
-        devfs
-            .add("input-event0", Arc::new(InputEventInode::new(0)))
-            .expect("failed to mknod /dev/input-event0");
-        // TODO /dev/input/mice
-        devfs
-            .add("input-mice", Arc::new(InputMiceInode::default()))
-            .expect("failed to mknod /dev/input-mice");
-        */
+    if let Some(display) = drivers::display::first() {
+        use self::devfs::{FbDev, MiceDev};
+
+        if let Err(e) = devfs_root.add("fb0", Arc::new(FbDev::new(display.clone()))) {
+            warn!("failed to mknod /dev/fb0: {:?}", e);
+        }
+
+        let input_dev = devfs_root
+            .add_dir("input")
+            .expect("failed to mkdir /dev/input");
+        for (id, m) in MiceDev::from_input_devices(&drivers::input::all()) {
+            let fname = id.map_or("mice".to_string(), |id| format!("mouse{}", id));
+            if let Err(e) = input_dev.add(&fname, Arc::new(m)) {
+                warn!("failed to mknod /dev/input/{}: {:?}", &fname, e);
+            }
+        }
     }
 
     // mount DevFS at /dev

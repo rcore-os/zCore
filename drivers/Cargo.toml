@@ -18,9 +18,10 @@ spin = "0.9"
 cfg-if = "1.0"
 bitflags = "1.3"
 lazy_static = "1.4"
+numeric-enum-macro = "0.2"
 device_tree = { git = "https://github.com/rcore-os/device_tree-rs", rev = "4e8144b" }
 bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator", rev = "b3f9f51" }
-virtio-drivers = { git = "https://github.com/rcore-os/virtio-drivers", rev = "2b3c6cf", optional = true }
+virtio-drivers = { git = "https://github.com/rcore-os/virtio-drivers", rev = "fbc5970", optional = true }
 rcore-console = { git = "https://github.com/rcore-os/rcore-console", default-features = false, rev = "ca5b1bc", optional = true }
 
 [target.'cfg(not(target_os = "none"))'.dependencies]
@@ -29,7 +30,7 @@ sdl2 = { version = "0.34", optional = true }
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 acpi = "4.0"
-x2apic = { git = "https://github.com/equation314/x2apic-rs", rev = "a14b1d8" }
+x2apic = "0.4"
 
 [target.'cfg(any(target_arch = "riscv32", target_arch = "riscv64"))'.dependencies]
 riscv = { version = "0.7", features = ["inline-asm"] }

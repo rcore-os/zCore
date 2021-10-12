@@ -161,7 +161,7 @@ fn main(ramfs_data: &'static mut [u8], cmdline: &str) -> ! {
 
     if let Some(uart) = kernel_hal::drivers::uart::first() {
         uart.clone().subscribe(
-            Box::new(move || {
+            Box::new(move |_| {
                 while let Some(c) = uart.try_recv().unwrap_or(None) {
                     STDIN.push(c as char);
                 }

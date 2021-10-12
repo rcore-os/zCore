@@ -1,48 +1,116 @@
-use alloc::{boxed::Box, collections::VecDeque, sync::Arc};
-use core::any::Any;
+use alloc::{boxed::Box, collections::VecDeque, sync::Arc, vec::Vec};
+use core::task::{Context, Poll};
+use core::{any::Any, future::Future, pin::Pin};
+
 use spin::Mutex;
 
-use kernel_hal::dev::input;
+use kernel_hal::drivers::prelude::input::{Mouse, MouseFlags, MouseState};
+use kernel_hal::drivers::scheme::InputScheme;
 use rcore_fs::vfs::*;
 
+const MAX_MOUSE_DEVICES: usize = 30;
+const PACKET_SIZE: usize = 3;
+const BUF_CAPACITY: usize = 32;
+
+struct MiceDevInner {
+    packet_offset: usize,
+    last_buttons: MouseFlags,
+    buf: VecDeque<MouseState>,
+}
+
 /// mice device
-pub struct InputMiceInode {
-    data: Arc<Mutex<VecDeque<[u8; 3]>>>,
-}
-const MAX_QUEUE: usize = 32;
-
-impl InputMiceInode {
-    /// Create a mice INode
-    pub fn new() -> Self {
-        let data = Arc::new(Mutex::new(VecDeque::with_capacity(MAX_QUEUE)));
-        let data_clone = data.clone();
-        input::mouse_set_callback(Box::new(move |data| {
-            let mut queue = data_clone.lock();
-            while queue.len() >= MAX_QUEUE {
-                queue.pop_front();
-            }
-            queue.push_back(data);
-        }));
-        Self { data }
-    }
+pub struct MiceDev {
+    id: usize,
+    mice: Vec<Arc<Mouse>>,
+    inner: Arc<Mutex<MiceDevInner>>,
 }
 
-impl Default for InputMiceInode {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl INode for InputMiceInode {
-    fn read_at(&self, _offset: usize, buf: &mut [u8]) -> Result<usize> {
-        let data = self.data.lock().pop_front();
-        if let Some(data) = data {
-            let len = buf.len().min(3);
-            buf[..len].copy_from_slice(&data[..len]);
-            Ok(len)
-        } else {
-            Ok(0)
+impl MiceDevInner {
+    fn read_at(&mut self, buf: &mut [u8]) -> Result<usize> {
+        if self.buf.is_empty() {
+            return Err(FsError::Again);
         }
+        let mut count = 0;
+        for i in 0..buf.len().min(PACKET_SIZE) {
+            if let Some(p) = self.buf.front() {
+                let data = p.as_ps2_buf();
+                buf[i] = data[self.packet_offset];
+                count += 1;
+                self.packet_offset += 1;
+                if self.packet_offset == PACKET_SIZE {
+                    self.packet_offset = 0;
+                    self.buf.pop_front();
+                }
+            } else {
+                break;
+            }
+        }
+        Ok(count)
+    }
+
+    fn handle_mouse_packet(&mut self, p: &MouseState) {
+        if p.dx == 0 && p.dy == 0 && p.dz == 0 && p.buttons == self.last_buttons {
+            return;
+        }
+
+        self.last_buttons = p.buttons;
+        while self.buf.len() >= BUF_CAPACITY {
+            self.packet_offset = 0;
+            self.buf.pop_front();
+        }
+        self.buf.push_back(*p);
+    }
+}
+
+impl MiceDev {
+    /// Create a list of "mouse%d" and "mice" INode from input devices.
+    pub fn from_input_devices(inputs: &[Arc<dyn InputScheme>]) -> Vec<(Option<usize>, MiceDev)> {
+        let mut mice = Vec::with_capacity(inputs.len());
+        for i in inputs {
+            // TODO: identify mouse device
+            if mice.len() < 2 && mice.len() < MAX_MOUSE_DEVICES {
+                mice.push(Mouse::new(i.clone()));
+            }
+        }
+        let mut ret = mice
+            .iter()
+            .enumerate()
+            .map(|(i, m)| (Some(i), Self::new(m.clone(), i)))
+            .collect::<Vec<_>>();
+        ret.push((None, Self::new_many(mice, MAX_MOUSE_DEVICES + 1)));
+        ret
+    }
+
+    /// Create a "mouse%d" INode from one mouse device.
+    pub fn new(mouse: Arc<Mouse>, id: usize) -> Self {
+        Self::new_many(vec![mouse], id)
+    }
+
+    /// Create a "mice" INode from multiple mice.
+    pub fn new_many(mice: Vec<Arc<Mouse>>, id: usize) -> Self {
+        let inner = Arc::new(Mutex::new(MiceDevInner {
+            packet_offset: 0,
+            last_buttons: MouseFlags::empty(),
+            buf: VecDeque::with_capacity(BUF_CAPACITY),
+        }));
+        for m in &mice {
+            let cloned = inner.clone();
+            m.subscribe(
+                Box::new(move |p| cloned.lock().handle_mouse_packet(p)),
+                false,
+            );
+        }
+        Self { id, mice, inner }
+    }
+
+    pub fn can_read(&self) -> bool {
+        !self.inner.lock().buf.is_empty()
+    }
+}
+
+impl INode for MiceDev {
+    fn read_at(&self, _offset: usize, buf: &mut [u8]) -> Result<usize> {
+        self.inner.lock().read_at(buf)
     }
 
     fn write_at(&self, _offset: usize, _buf: &[u8]) -> Result<usize> {
@@ -51,16 +119,42 @@ impl INode for InputMiceInode {
 
     fn poll(&self) -> Result<PollStatus> {
         Ok(PollStatus {
-            read: true,
+            read: self.can_read(),
             write: false,
             error: false,
         })
     }
 
+    fn async_poll<'a>(
+        &'a self,
+    ) -> Pin<Box<dyn Future<Output = Result<PollStatus>> + Send + Sync + 'a>> {
+        #[must_use = "future does nothing unless polled/`await`-ed"]
+        struct MiceFuture<'a> {
+            dev: &'a MiceDev,
+        }
+
+        impl<'a> Future for MiceFuture<'a> {
+            type Output = Result<PollStatus>;
+
+            fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+                if self.dev.can_read() {
+                    return Poll::Ready(self.dev.poll());
+                }
+                for m in &self.dev.mice {
+                    let waker = cx.waker().clone();
+                    m.subscribe(Box::new(move |_| waker.wake_by_ref()), true);
+                }
+                Poll::Pending
+            }
+        }
+
+        Box::pin(MiceFuture { dev: self })
+    }
+
     fn metadata(&self) -> Result<Metadata> {
         Ok(Metadata {
-            dev: 5,
-            inode: 0,
+            dev: 1,
+            inode: 1,
             size: 0,
             blk_size: 0,
             blocks: 0,
@@ -72,7 +166,7 @@ impl INode for InputMiceInode {
             nlinks: 1,
             uid: 0,
             gid: 0,
-            rdev: make_rdev(13, 63),
+            rdev: make_rdev(0xd, self.id + 0x20),
         })
     }
 

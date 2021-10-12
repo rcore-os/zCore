@@ -1,2 +1,8 @@
-pub use super::scheme::display::{ColorFormat, DisplayInfo, Rectangle, RgbColor};
-pub use super::scheme::irq::{IrqHandler, IrqPolarity, IrqTriggerMode};
+pub use crate::scheme::display::{ColorFormat, DisplayInfo, Rectangle, RgbColor};
+pub use crate::scheme::input::{InputEvent, InputEventType};
+pub use crate::scheme::irq::{IrqHandler, IrqPolarity, IrqTriggerMode};
+pub use crate::{Device, DeviceError, DeviceResult};
+
+pub mod input {
+    pub use crate::input::{Mouse, MouseFlags, MouseState};
+}

@@ -1,10 +1,12 @@
 mod blk;
 mod console;
 mod gpu;
+mod input;
 
 pub use blk::VirtIoBlk;
 pub use console::VirtIoConsole;
 pub use gpu::VirtIoGpu;
+pub use input::VirtIoInput;
 
 use crate::DeviceError;
 use core::convert::From;

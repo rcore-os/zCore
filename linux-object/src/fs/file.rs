@@ -225,8 +225,8 @@ impl File {
                 Ok(vmo)
             }
             FileType::CharDevice => {
-                use super::devfs::Fbdev;
-                if let Some(fbdev) = self.inode.downcast_ref::<Fbdev>() {
+                use super::devfs::FbDev;
+                if let Some(fbdev) = self.inode.downcast_ref::<FbDev>() {
                     fbdev.get_vmo(offset, len)
                 } else {
                     Err(LxError::ENOSYS)
