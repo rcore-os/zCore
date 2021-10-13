@@ -215,10 +215,15 @@ impl LinuxProcess {
             OpenFlags::WRONLY,
             String::from("/dev/stdout"),
         ) as Arc<dyn FileLike>;
+        let stderr = File::new(
+            STDOUT.clone(), // TODO: open from '/dev/stderr'
+            OpenFlags::WRONLY,
+            String::from("/dev/stderr"),
+        ) as Arc<dyn FileLike>;
         let mut files = HashMap::new();
         files.insert(0.into(), stdin);
-        files.insert(1.into(), stdout.clone());
-        files.insert(2.into(), stdout);
+        files.insert(1.into(), stdout);
+        files.insert(2.into(), stderr);
 
         LinuxProcess {
             root_inode: crate::fs::create_root_fs(rootfs), //Arc::clone(&ROOT_INODE),访问磁盘可能更快？
@@ -243,6 +248,16 @@ impl LinuxProcess {
                 Futex::new(value)
             })
             .clone()
+    }
+
+    /// Get lowest free fd
+    pub fn get_free_fd(&self) -> FileDesc {
+        self.inner.lock().get_free_fd()
+    }
+
+    /// get the lowest available fd great than or equal to `start`.
+    pub fn get_free_fd_from(&self, start: usize) -> FileDesc {
+        self.inner.lock().get_free_fd_from(start)
     }
 
     /// Add a file to the file descriptor table.
@@ -440,7 +455,11 @@ impl LinuxProcess {
 
 impl LinuxProcessInner {
     fn get_free_fd(&self) -> FileDesc {
-        (0usize..)
+        self.get_free_fd_from(0)
+    }
+
+    fn get_free_fd_from(&self, start: usize) -> FileDesc {
+        (start..)
             .map(|i| i.into())
             .find(|fd| !self.files.contains_key(fd))
             .unwrap()

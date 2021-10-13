@@ -2,7 +2,6 @@
 
 mod devfs;
 mod device;
-mod fcntl;
 mod file;
 mod ioctl;
 mod pipe;
@@ -40,6 +39,12 @@ pub use stdio::{STDIN, STDOUT};
 /// - Socket
 /// - Epoll instance
 pub trait FileLike: KernelObject {
+    /// Returns open flags.
+    fn flags(&self) -> OpenFlags;
+    /// Set open flags.
+    fn set_flags(&self, f: OpenFlags) -> LxResult;
+    /// Duplicate the file.
+    fn dup(&self) -> Arc<dyn FileLike>;
     /// read to buffer
     async fn read(&self, buf: &mut [u8]) -> LxResult<usize>;
     /// write from buffer
@@ -54,8 +59,6 @@ pub trait FileLike: KernelObject {
     async fn async_poll(&self) -> LxResult<PollStatus>;
     /// manipulates the underlying device parameters of special files
     fn ioctl(&self, request: usize, arg1: usize, arg2: usize, arg3: usize) -> LxResult<usize>;
-    /// manipulate file descriptor
-    fn fcntl(&self, cmd: usize, arg: usize) -> LxResult<usize>;
     /// Returns the [`VmObject`] representing the file with given `offset` and `len`.
     fn get_vmo(&self, offset: usize, len: usize) -> LxResult<Arc<VmObject>>;
 }

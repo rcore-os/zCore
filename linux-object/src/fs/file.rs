@@ -11,7 +11,7 @@ use rcore_fs::vfs::{FileType, FsError, INode, Metadata, PollStatus};
 use zircon_object::object::*;
 use zircon_object::vm::{pages, VmObject};
 
-use super::{fcntl::FcntlCmd, FileLike};
+use super::FileLike;
 use crate::error::{LxError, LxResult};
 
 bitflags::bitflags! {
@@ -75,6 +75,7 @@ pub enum SeekFrom {
 }
 
 /// file inner mut data struct
+#[derive(Clone)]
 struct FileInner {
     /// content offset on read/write
     offset: u64,
@@ -166,11 +167,6 @@ impl File {
         &self.path
     }
 
-    /// Returns the file open flags.
-    pub fn flags(&self) -> OpenFlags {
-        self.inner.read().flags
-    }
-
     /// seek from given type and offset
     pub fn seek(&self, pos: SeekFrom) -> LxResult<u64> {
         let mut inner = self.inner.write();
@@ -234,6 +230,26 @@ impl File {
 
 #[async_trait]
 impl FileLike for File {
+    fn flags(&self) -> OpenFlags {
+        self.inner.read().flags
+    }
+
+    fn set_flags(&self, f: OpenFlags) -> LxResult {
+        let flags = &mut self.inner.write().flags;
+        flags.set(OpenFlags::APPEND, f.contains(OpenFlags::APPEND));
+        flags.set(OpenFlags::NON_BLOCK, f.contains(OpenFlags::NON_BLOCK));
+        flags.set(OpenFlags::CLOEXEC, f.contains(OpenFlags::CLOEXEC));
+        Ok(())
+    }
+
+    fn dup(&self) -> Arc<dyn FileLike> {
+        Arc::new(Self {
+            base: KObjectBase::new(),
+            path: self.path.clone(),
+            inner: RwLock::new(self.inner.read().clone()),
+        })
+    }
+
     async fn read(&self, buf: &mut [u8]) -> LxResult<usize> {
         self.inner.write().read(buf).await
     }
@@ -262,30 +278,6 @@ impl FileLike for File {
         // ioctl syscall
         self.inner.read().inode.io_control(request as u32, arg1)?;
         Ok(0)
-    }
-
-    fn fcntl(&self, cmd: usize, arg: usize) -> LxResult<usize> {
-        use core::convert::TryFrom;
-        if let Ok(cmd) = FcntlCmd::try_from(cmd) {
-            match cmd {
-                FcntlCmd::GETFD => Ok(self.flags().close_on_exec() as usize),
-                FcntlCmd::SETFD => {
-                    let flags = &mut self.inner.write().flags;
-                    flags.set(OpenFlags::CLOEXEC, (arg & 1) != 0);
-                    Ok(0)
-                }
-                FcntlCmd::GETFL => Ok(self.flags().bits()),
-                FcntlCmd::SETFL => {
-                    let flags = &mut self.inner.write().flags;
-                    flags.set(OpenFlags::NON_BLOCK, arg & OpenFlags::NON_BLOCK.bits() != 0);
-                    flags.set(OpenFlags::APPEND, arg & OpenFlags::APPEND.bits() != 0);
-                    Ok(0)
-                }
-                _ => Ok(0),
-            }
-        } else {
-            Err(LxError::EINVAL)
-        }
     }
 
     /// Returns the [`VmObject`] representing the file with given `offset` and `len`.
