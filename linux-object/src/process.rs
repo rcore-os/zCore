@@ -21,7 +21,7 @@ use zircon_object::{
 };
 
 use crate::error::{LxError, LxResult};
-use crate::fs::{File, FileDesc, FileLike, OpenOptions, STDIN, STDOUT};
+use crate::fs::{File, FileDesc, FileLike, OpenFlags, STDIN, STDOUT};
 use crate::ipc::*;
 use crate::signal::{Signal as LinuxSignal, SignalAction};
 
@@ -207,24 +207,12 @@ impl LinuxProcess {
     pub fn new(rootfs: Arc<dyn FileSystem>) -> Self {
         let stdin = File::new(
             STDIN.clone(), // FIXME: stdin
-            OpenOptions {
-                read: true,
-                write: false,
-                append: false,
-                nonblock: false,
-                fd_cloexec: false,
-            },
+            OpenFlags::RDONLY,
             String::from("/dev/stdin"),
         ) as Arc<dyn FileLike>;
         let stdout = File::new(
             STDOUT.clone(), // TODO: open from '/dev/stdout'
-            OpenOptions {
-                read: false,
-                write: true,
-                append: false,
-                nonblock: false,
-                fd_cloexec: false,
-            },
+            OpenFlags::WRONLY,
             String::from("/dev/stdout"),
         ) as Arc<dyn FileLike>;
         let mut files = HashMap::new();
@@ -389,7 +377,7 @@ impl LinuxProcess {
             .iter()
             .filter_map(|(fd, file_like)| {
                 if let Ok(file) = file_like.clone().downcast_arc::<File>() {
-                    if file.options.fd_cloexec {
+                    if file.flags().close_on_exec() {
                         Some(*fd)
                     } else {
                         None

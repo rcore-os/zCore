@@ -28,7 +28,7 @@ use crate::error::{LxError, LxResult};
 use crate::process::LinuxProcess;
 
 pub use device::MemBuf;
-pub use file::{File, OpenOptions, SeekFrom};
+pub use file::{File, OpenFlags, SeekFrom};
 pub use pipe::Pipe;
 pub use rcore_fs::vfs;
 pub use stdio::{STDIN, STDOUT};
@@ -214,8 +214,8 @@ impl LinuxProcess {
         let (fd_dir_path, fd_name) = split_path(path);
         if fd_dir_path == "/proc/self/fd" {
             let fd = FileDesc::try_from(fd_name)?;
-            let fd_path = &self.get_file(fd)?.path;
-            return Ok(Arc::new(Pseudo::new(fd_path, FileType::SymLink)));
+            let file = self.get_file(fd)?;
+            return Ok(Arc::new(Pseudo::new(file.path(), FileType::SymLink)));
         }
 
         let follow_max_depth = if follow { FOLLOW_MAX_DEPTH } else { 0 };

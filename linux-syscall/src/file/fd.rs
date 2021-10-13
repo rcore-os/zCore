@@ -50,7 +50,7 @@ impl Syscall<'_> {
             proc.lookup_inode_at(dir_fd, &path, true)?
         };
 
-        let file = File::new(inode, flags.to_options(), path);
+        let file = File::new(inode, flags, path);
         let fd = proc.add_file(file)?;
         Ok(fd.into())
     }
@@ -96,27 +96,17 @@ impl Syscall<'_> {
         let proc = self.linux_process();
         let (read, write) = Pipe::create_pair();
 
+        let base_flags =
+            OpenFlags::from_bits_truncate(flags) & (OpenFlags::NON_BLOCK | OpenFlags::CLOEXEC);
         let read_fd = proc.add_file(File::new(
             Arc::new(read),
-            OpenOptions {
-                read: true,
-                write: false,
-                append: false,
-                nonblock: (flags & O_NONBLOCK) != 0,
-                fd_cloexec: (flags & O_CLOEXEC) != 0,
-            },
+            base_flags | OpenFlags::RDONLY,
             String::from("pipe_r:[]"),
         ))?;
 
         let write_fd = proc.add_file(File::new(
             Arc::new(write),
-            OpenOptions {
-                read: false,
-                write: true,
-                append: false,
-                nonblock: false,
-                fd_cloexec: (flags & O_CLOEXEC) != 0,
-            },
+            base_flags | OpenFlags::WRONLY,
             String::from("pipe_w:[]"),
         ))?;
         fds.write([read_fd.into(), write_fd.into()])?;
@@ -148,50 +138,3 @@ impl Syscall<'_> {
         Ok(0)
     }
 }
-
-bitflags! {
-    struct OpenFlags: usize {
-        /// read only
-        const RDONLY = 0;
-        /// write only
-        const WRONLY = 1;
-        /// read write
-        const RDWR = 2;
-        /// create file if it does not exist
-        const CREATE = 1 << 6;
-        /// error if CREATE and the file exists
-        const EXCLUSIVE = 1 << 7;
-        /// truncate file upon open
-        const TRUNCATE = 1 << 9;
-        /// append on each write
-        const APPEND = 1 << 10;
-        /// close on exec
-        const CLOEXEC = 1 << 19;
-    }
-}
-
-impl OpenFlags {
-    /// check if the OpenFlags is readable
-    fn readable(self) -> bool {
-        let b = self.bits() & 0b11;
-        b == Self::RDONLY.bits() || b == Self::RDWR.bits()
-    }
-    /// check if the OpenFlags is writable
-    fn writable(self) -> bool {
-        let b = self.bits() & 0b11;
-        b == Self::WRONLY.bits() || b == Self::RDWR.bits()
-    }
-    /// convert OpenFlags to OpenOptions
-    fn to_options(self) -> OpenOptions {
-        OpenOptions {
-            read: self.readable(),
-            write: self.writable(),
-            append: self.contains(Self::APPEND),
-            nonblock: false,
-            fd_cloexec: self.contains(Self::CLOEXEC),
-        }
-    }
-}
-
-const O_NONBLOCK: usize = 0o4000;
-const O_CLOEXEC: usize = 0o2000000; /* set close_on_exec */
