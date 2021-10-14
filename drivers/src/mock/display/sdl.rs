@@ -41,8 +41,9 @@ impl SdlWindow {
             .create_texture_streaming(format, info.width, info.height)
             .unwrap();
 
-        let buf = unsafe { self.display.raw_fb() };
-        texture.update(None, buf, info.pitch() as usize).unwrap();
+        texture
+            .update(None, &self.display.fb(), info.pitch() as usize)
+            .unwrap();
         self.canvas.copy(&texture, None, None).unwrap();
         self.canvas.present();
     }

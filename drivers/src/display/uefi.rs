@@ -1,6 +1,6 @@
 //! UEFI Graphics Output Protocol
 
-use crate::prelude::DisplayInfo;
+use crate::prelude::{DisplayInfo, FrameBuffer};
 use crate::scheme::{DisplayScheme, Scheme};
 
 pub struct UefiDisplay {
@@ -26,7 +26,9 @@ impl DisplayScheme for UefiDisplay {
     }
 
     #[inline]
-    unsafe fn raw_fb(&self) -> &mut [u8] {
-        core::slice::from_raw_parts_mut(self.info.fb_base_vaddr as *mut u8, self.info.fb_size)
+    fn fb(&self) -> FrameBuffer {
+        unsafe {
+            FrameBuffer::from_raw_parts_mut(self.info.fb_base_vaddr as *mut u8, self.info.fb_size)
+        }
     }
 }

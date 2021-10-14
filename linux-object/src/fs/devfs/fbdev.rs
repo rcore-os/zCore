@@ -292,7 +292,7 @@ impl INode for FbDev {
             return Ok(0);
         }
         let len = buf.len().min(info.fb_size - offset);
-        let fb = unsafe { self.display.raw_fb() };
+        let fb = self.display.fb();
         buf[..len].copy_from_slice(&fb[offset..offset + len]);
         Ok(len)
     }
@@ -310,7 +310,7 @@ impl INode for FbDev {
             return Ok(0);
         }
         let len = buf.len().min(info.fb_size - offset);
-        let fb = unsafe { self.display.raw_fb() };
+        let mut fb = self.display.fb();
         fb[offset..offset + len].copy_from_slice(&buf[..len]);
         Ok(len)
     }

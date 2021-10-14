@@ -19,7 +19,8 @@ impl From<Error> for DeviceError {
             Error::NotReady => Self::NotReady,
             Error::InvalidParam => Self::InvalidParam,
             Error::DmaError => Self::DmaError,
-            _ => Self::IoError,
+            Error::AlreadyUsed => Self::AlreadyExists,
+            Error::IoError => Self::IoError,
         }
     }
 }

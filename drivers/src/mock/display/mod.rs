@@ -2,7 +2,7 @@ pub mod sdl;
 
 use alloc::vec::Vec;
 
-use crate::prelude::{ColorFormat, DisplayInfo};
+use crate::prelude::{ColorFormat, DisplayInfo, FrameBuffer};
 use crate::scheme::{DisplayScheme, Scheme};
 
 pub struct MockDisplay {
@@ -56,7 +56,7 @@ impl DisplayScheme for MockDisplay {
     }
 
     #[inline]
-    unsafe fn raw_fb(&self) -> &mut [u8] {
-        core::slice::from_raw_parts_mut(self.fb.as_ptr() as _, self.info.fb_size)
+    fn fb(&self) -> FrameBuffer {
+        unsafe { FrameBuffer::from_raw_parts_mut(self.fb.as_ptr() as _, self.info.fb_size) }
     }
 }
