@@ -36,7 +36,7 @@ impl<'a> Scheme for VirtIoInput<'a> {
                 self.listener.trigger(InputEvent {
                     event_type,
                     code: e.code,
-                    value: e.value,
+                    value: e.value as i32,
                 });
             }
         }

@@ -1,48 +1,106 @@
-use crate::time::TimeVal;
 use alloc::{boxed::Box, collections::VecDeque, sync::Arc};
-use core::any::Any;
+use core::task::{Context, Poll};
+use core::{any::Any, future::Future, mem::size_of, pin::Pin};
+
 use spin::Mutex;
 
-use kernel_hal::dev::input;
+use kernel_hal::drivers::prelude::{InputEvent, InputEventType};
+use kernel_hal::drivers::scheme::InputScheme;
 use rcore_fs::vfs::*;
 
-/// input device
-pub struct InputEventInode {
-    id: usize,
-    data: Arc<Mutex<VecDeque<InputEvent>>>,
+use crate::time::TimeVal;
+
+const BUF_CAPACITY: usize = 64;
+
+const EVENT_DEV_MINOR_BASE: usize = 0x40;
+
+/// The event structure itself
+#[repr(C)]
+struct TimedInputEvent {
+    time: TimeVal,
+    event_type: InputEventType,
+    code: u16,
+    value: i32,
 }
 
-const MAX_QUEUE: usize = 32;
+struct EventDevInner {
+    buf: VecDeque<TimedInputEvent>,
+}
 
-impl InputEventInode {
-    /// Create a input event INode
-    pub fn new(id: usize) -> Self {
-        let data = Arc::new(Mutex::new(VecDeque::with_capacity(MAX_QUEUE)));
-        let data_clone = data.clone();
-        input::kbd_set_callback(Box::new(move |code, value| {
-            let mut queue = data_clone.lock();
-            while queue.len() >= MAX_QUEUE {
-                queue.pop_front();
-            }
-            queue.push_back(InputEvent::new(1, code, value));
-        }));
-        Self { id, data }
+/// Event char device, giving access to raw input device events.
+pub struct EventDev {
+    id: usize,
+    input: Arc<dyn InputScheme>,
+    inner: Arc<Mutex<EventDevInner>>,
+}
+
+impl TimedInputEvent {
+    pub fn from(e: &InputEvent) -> Self {
+        TimedInputEvent {
+            time: TimeVal::now(),
+            event_type: e.event_type,
+            code: e.code,
+            value: e.value,
+        }
+    }
+
+    #[allow(unsafe_code)]
+    pub fn as_buf(&self) -> &[u8] {
+        unsafe { core::slice::from_raw_parts(self as *const _ as _, size_of::<TimedInputEvent>()) }
     }
 }
 
-impl INode for InputEventInode {
-    #[allow(unsafe_code)]
-    fn read_at(&self, _offset: usize, buf: &mut [u8]) -> Result<usize> {
-        let event = self.data.lock().pop_front();
-        if let Some(event) = event {
-            let event: [u8; core::mem::size_of::<InputEvent>()] =
-                unsafe { core::mem::transmute(event) };
-            let len = event.len().min(buf.len());
-            buf.copy_from_slice(&event[..len]);
-            Ok(len)
-        } else {
-            Ok(0)
+impl EventDevInner {
+    fn read_at(&mut self, buf: &mut [u8]) -> Result<usize> {
+        let event_size = size_of::<TimedInputEvent>();
+        if buf.len() < event_size {
+            return Err(FsError::InvalidParam);
         }
+        if self.buf.is_empty() {
+            return Err(FsError::Again);
+        }
+        let mut read = 0;
+        while read + event_size <= buf.len() {
+            if let Some(e) = self.buf.pop_front() {
+                buf[read..read + event_size].copy_from_slice(e.as_buf());
+                read += event_size;
+            } else {
+                break;
+            }
+        }
+        Ok(read)
+    }
+
+    fn handle_input_event(&mut self, e: &InputEvent) {
+        while self.buf.len() >= BUF_CAPACITY {
+            self.buf.pop_front();
+        }
+        self.buf.push_back(TimedInputEvent::from(e));
+    }
+}
+
+impl EventDev {
+    /// Create a input event INode
+    pub fn new(input: Arc<dyn InputScheme>, id: usize) -> Self {
+        let inner = Arc::new(Mutex::new(EventDevInner {
+            buf: VecDeque::with_capacity(BUF_CAPACITY),
+        }));
+        let cloned = inner.clone();
+        input.subscribe(
+            Box::new(move |e| cloned.lock().handle_input_event(e)),
+            false,
+        );
+        Self { id, input, inner }
+    }
+
+    fn can_read(&self) -> bool {
+        !self.inner.lock().buf.is_empty()
+    }
+}
+
+impl INode for EventDev {
+    fn read_at(&self, _offset: usize, buf: &mut [u8]) -> Result<usize> {
+        self.inner.lock().read_at(buf)
     }
 
     fn write_at(&self, _offset: usize, _buf: &[u8]) -> Result<usize> {
@@ -51,16 +109,42 @@ impl INode for InputEventInode {
 
     fn poll(&self) -> Result<PollStatus> {
         Ok(PollStatus {
-            read: true,
+            read: self.can_read(),
             write: false,
             error: false,
         })
     }
 
+    fn async_poll<'a>(
+        &'a self,
+    ) -> Pin<Box<dyn Future<Output = Result<PollStatus>> + Send + Sync + 'a>> {
+        #[must_use = "future does nothing unless polled/`await`-ed"]
+        struct EventFuture<'a> {
+            dev: &'a EventDev,
+        }
+
+        impl<'a> Future for EventFuture<'a> {
+            type Output = Result<PollStatus>;
+
+            fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+                if self.dev.can_read() {
+                    return Poll::Ready(self.dev.poll());
+                }
+                let waker = cx.waker().clone();
+                self.dev
+                    .input
+                    .subscribe(Box::new(move |_| waker.wake_by_ref()), true);
+                Poll::Pending
+            }
+        }
+
+        Box::pin(EventFuture { dev: self })
+    }
+
     fn metadata(&self) -> Result<Metadata> {
         Ok(Metadata {
-            dev: 5,
-            inode: 0,
+            dev: 1,
+            inode: 1,
             size: 0,
             blk_size: 0,
             blocks: 0,
@@ -68,36 +152,15 @@ impl INode for InputEventInode {
             mtime: Timespec { sec: 0, nsec: 0 },
             ctime: Timespec { sec: 0, nsec: 0 },
             type_: FileType::CharDevice,
-            mode: 0o666,
+            mode: 0o660,
             nlinks: 1,
             uid: 0,
             gid: 0,
-            rdev: make_rdev(13, 64 + self.id),
+            rdev: make_rdev(0xd, EVENT_DEV_MINOR_BASE + self.id),
         })
     }
 
     fn as_any_ref(&self) -> &dyn Any {
         self
-    }
-}
-
-#[repr(C)]
-/// The event structure itself
-pub struct InputEvent {
-    time: TimeVal,
-    type_: u16,
-    code: u16,
-    value: i32,
-}
-
-impl InputEvent {
-    /// Create a new input event
-    pub fn new(type_: u16, code: u16, value: i32) -> Self {
-        InputEvent {
-            time: TimeVal::now(),
-            type_,
-            code,
-            value,
-        }
     }
 }

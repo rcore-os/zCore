@@ -43,7 +43,7 @@ async fn main() {
     #[cfg(feature = "graphic")]
     let run_proc = {
         let handle = async_std::task::spawn(run_proc);
-        kernel_hal::libos::run_display_serve();
+        kernel_hal::libos::run_display_service();
         handle
     };
 

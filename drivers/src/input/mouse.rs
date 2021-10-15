@@ -77,9 +77,9 @@ impl MouseState {
             InputEventType::RelAxis => {
                 use super::input_event_codes::rel::*;
                 match e.code {
-                    REL_X => self.dx += e.value as i32,
-                    REL_Y => self.dy -= e.value as i32,
-                    REL_WHEEL => self.dz -= e.value as i32,
+                    REL_X => self.dx += e.value,
+                    REL_Y => self.dy -= e.value,
+                    REL_WHEEL => self.dz -= e.value,
                     _ => {}
                 }
             }

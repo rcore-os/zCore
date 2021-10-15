@@ -12,6 +12,8 @@ const MAX_MOUSE_DEVICES: usize = 30;
 const PACKET_SIZE: usize = 3;
 const BUF_CAPACITY: usize = 32;
 
+const MOUSE_DEV_MINOR_BASE: usize = 0x20;
+
 struct MiceDevInner {
     packet_offset: usize,
     last_buttons: MouseFlags,
@@ -30,12 +32,12 @@ impl MiceDevInner {
         if self.buf.is_empty() {
             return Err(FsError::Again);
         }
-        let mut count = 0;
+        let mut read = 0;
         for i in 0..buf.len().min(PACKET_SIZE) {
             if let Some(p) = self.buf.front() {
                 let data = p.as_ps2_buf();
                 buf[i] = data[self.packet_offset];
-                count += 1;
+                read += 1;
                 self.packet_offset += 1;
                 if self.packet_offset == PACKET_SIZE {
                     self.packet_offset = 0;
@@ -45,7 +47,7 @@ impl MiceDevInner {
                 break;
             }
         }
-        Ok(count)
+        Ok(read)
     }
 
     fn handle_mouse_packet(&mut self, p: &MouseState) {
@@ -63,7 +65,7 @@ impl MiceDevInner {
 }
 
 impl MiceDev {
-    /// Create a list of "mouse%d" and "mice" INode from input devices.
+    /// Create a list of "mouseX" and "mice" INode from input devices.
     pub fn from_input_devices(inputs: &[Arc<dyn InputScheme>]) -> Vec<(Option<usize>, MiceDev)> {
         let mut mice = Vec::with_capacity(inputs.len());
         for i in inputs {
@@ -82,7 +84,7 @@ impl MiceDev {
         ret
     }
 
-    /// Create a "mouse%d" INode from one mouse device.
+    /// Create a "mouseX" INode from one mouse device.
     pub fn new(mouse: Arc<Mouse>, id: usize) -> Self {
         Self::new_many(vec![mouse], id)
     }
@@ -104,7 +106,7 @@ impl MiceDev {
         Self { id, mice, inner }
     }
 
-    pub fn can_read(&self) -> bool {
+    fn can_read(&self) -> bool {
         !self.inner.lock().buf.is_empty()
     }
 }
@@ -163,11 +165,11 @@ impl INode for MiceDev {
             mtime: Timespec { sec: 0, nsec: 0 },
             ctime: Timespec { sec: 0, nsec: 0 },
             type_: FileType::CharDevice,
-            mode: 0o666,
+            mode: 0o660,
             nlinks: 1,
             uid: 0,
             gid: 0,
-            rdev: make_rdev(0xd, self.id + 0x20),
+            rdev: make_rdev(0xd, MOUSE_DEV_MINOR_BASE + self.id),
         })
     }
 

@@ -44,7 +44,7 @@ numeric_enum_macro::numeric_enum! {
 pub struct InputEvent {
     pub event_type: InputEventType,
     pub code: u16,
-    pub value: u32,
+    pub value: i32,
 }
 
 #[repr(u16)]

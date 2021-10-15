@@ -26,7 +26,7 @@ cfg_if! {
 pub(super) fn init() {
     let uart = Arc::new(MockUart::new());
     crate::drivers::add_device(Device::Uart(uart.clone()));
-    MockUart::start_irq_serve(move || uart.handle_irq(0));
+    MockUart::start_irq_service(move || uart.handle_irq(0));
 
     #[cfg(feature = "graphic")]
     {

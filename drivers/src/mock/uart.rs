@@ -24,7 +24,7 @@ impl MockUart {
         }
     }
 
-    pub fn start_irq_serve(irq_handler: impl Fn() + Send + Sync + 'static) {
+    pub fn start_irq_service(irq_handler: impl Fn() + Send + Sync + 'static) {
         task::spawn(async move {
             loop {
                 let mut buf = [0; UART_BUF_LEN];
