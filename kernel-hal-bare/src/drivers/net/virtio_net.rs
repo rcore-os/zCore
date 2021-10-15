@@ -9,8 +9,9 @@ use smoltcp::time::Instant;
 use smoltcp::wire::{EthernetAddress, IpAddress, Ipv4Address, IpCidr};
 use smoltcp::Result;
 use virtio_drivers::{VirtIOHeader, VirtIONet};
+use device_tree::Node;
 
-use super::super::IRQ_MANAGER;
+use super::super::{IRQ_MANAGER, device_tree::DEVICE_TREE_INTC};
 use kernel_hal::drivers::{Driver, DeviceType, NetDriver, DRIVERS, NET_DRIVERS};
 //use crate::{drivers::BlockDriver, sync::SpinNoIrqLock as Mutex};
 use spin::Mutex;
@@ -136,10 +137,11 @@ impl phy::TxToken for VirtIONetDriver {
     }
 }
 
-pub fn init(header: &'static mut VirtIOHeader) {
+pub fn init(node: &Node, header: &'static mut VirtIOHeader) {
     debug!("virtio net init");
     let net = VirtIONet::new(header).expect("failed to create net driver");
     //let mac = net.mac();
+
     let device = VirtIONetDriver(Arc::new(Mutex::new(net)));
 
     /* Todo like e1000
@@ -156,7 +158,33 @@ pub fn init(header: &'static mut VirtIOHeader) {
     //let driver = Arc::new(iface);
 
     let driver = Arc::new(device);
+
+    let mut found = false;
+    let irq_opt = node.prop_u32("interrupts").ok().map(|irq| irq as usize);
+
+    if let Ok(intc) = node.prop_u32("interrupt-parent") {
+        if let Some(irq) = irq_opt {
+            if let Some(manager) = DEVICE_TREE_INTC.write().get_mut(&intc) {
+                manager.register_local_irq(irq, driver.clone());
+                info!("Registed virtio net irq {} to INTC", irq);
+                found = true;
+            }
+        }
+    }
+    if !found {
+        info!("Registed virtio net driver to ROOT");
+        IRQ_MANAGER.write().register_opt(irq_opt, driver.clone());
+    }
+
+    /*
+    {
+        let mut buffer = [0u8; 2000];
+        let mut dri = driver.0.lock();
+        //触发virtioNet网卡中断一次。 不过现在中断hanlde会死锁
+        let len = dri.recv(&mut buffer).expect("failed to recv packet");
+    }
+    */
+
     DRIVERS.write().push(driver.clone());
-    IRQ_MANAGER.write().register_all(driver.clone());
     NET_DRIVERS.write().push(driver);
 }

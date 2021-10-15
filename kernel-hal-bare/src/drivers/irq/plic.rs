@@ -21,10 +21,19 @@ pub struct Plic {
 
 impl Driver for Plic {
     fn try_handle_interrupt(&self, irq: Option<usize>) -> bool {
-        // TODO: support more than 32 irqs
-        let pending: u32 = read(self.base + 0x1000);
-        if pending != 0 {
-            let claim: u32 = read(self.base + 0x201004);
+        // Supported more than 32 irqs
+        /* Int id is pending
+        let id = 10;
+        let step = ((id / 32) * 4) as usize; //4节
+        let pending: u32 = read(self.base + step + 0x1000);
+        let is_pending = (pending & (1 << id%32)) != 0;
+        debug!("Plic handle irq, Is {} pending: {}", id, is_pending);
+        */
+
+        let claim: u32 = read(self.base + 0x201004);
+        if claim != 0 {
+            //debug!("Plic handle irq: {}", claim);
+
             let manager = self.manager.lock();
             let res = manager.try_handle_interrupt(Some(claim as usize));
             // complete
@@ -47,10 +56,11 @@ impl Driver for Plic {
 impl IntcDriver for Plic {
     /// Register interrupt controller local irq
     fn register_local_irq(&self, irq: usize, driver: Arc<dyn Driver>) {
+        let step = (irq / 32) * 4;
         // enable irq for context 1
         write(
-            self.base + 0x2080,
-            read::<u32>(self.base + 0x2080) | (1 << irq),
+            self.base + step + 0x2080,
+            read::<u32>(self.base + step + 0x2080) | (1 << irq%32),
         );
         // set priority to 7
         write(self.base + irq * 4, 7);
@@ -61,7 +71,7 @@ impl IntcDriver for Plic {
 
 pub const SupervisorExternal: usize = usize::MAX / 2 + 1 + 8;
 
-fn init_dt(dt: &Node) {
+pub fn init_dt(dt: &Node) {
     let addr = dt.prop_u64("reg").unwrap() as usize;
     let phandle = dt.prop_u32("phandle").unwrap();
     info!("Found riscv plic at {:#x}, {:?}", addr, dt);
@@ -78,7 +88,7 @@ fn init_dt(dt: &Node) {
     IRQ_MANAGER
         .write()
         .register_irq(SupervisorExternal, plic.clone());
-    // register interrupt controller
+    // register interrupt controller. phandle: 3
     DEVICE_TREE_INTC.write().insert(phandle, plic);
 }
 

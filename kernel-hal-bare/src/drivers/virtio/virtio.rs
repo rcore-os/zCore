@@ -33,7 +33,7 @@ pub fn virtio_probe(node: &Node) {
     );
     info!("Device tree node {:?}", node);
     match header.device_type() {
-        virtio_drivers::DeviceType::Network => virtio_net::init(header),
+        virtio_drivers::DeviceType::Network => virtio_net::init(node, header),
         virtio_drivers::DeviceType::Block => virtio_blk_init(header),
         virtio_drivers::DeviceType::Input => virtio_input_init(header),
         virtio_drivers::DeviceType::GPU => virtio_gpu_init(header),

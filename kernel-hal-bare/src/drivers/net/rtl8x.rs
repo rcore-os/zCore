@@ -39,7 +39,7 @@ impl Driver for RTL8xInterface {
         let handle_tx_rx = 3;
         if status == handle_tx_rx {
             let timestamp = Instant::from_millis(0);
-            let mut sockets = SOCKETS.lock();
+            let mut sockets = SOCKETS.lock(); //引发死锁？
 
             self.driver.0.lock().int_disable();
             match self.iface.lock().poll(&mut sockets, timestamp) {

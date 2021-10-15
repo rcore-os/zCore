@@ -13,7 +13,7 @@ pub use self::virtio::*;
 //pub use block::BlockDriver;
 //pub use net::NetDriver;
 //pub use rtc::RtcDriver;
-//pub use serial::SerialDriver;
+pub use serial::SerialDriver;
 
 /// Block device
 //pub mod block;
@@ -40,7 +40,7 @@ pub mod provider;
 /// Real time clock
 //pub mod rtc;
 /// Serial port
-//pub mod serial;
+pub mod serial;
 
 /* define in kernel-hal
 #[derive(Debug, Eq, PartialEq)]
@@ -95,7 +95,7 @@ lazy_static! {
     pub static ref INPUT_DRIVERS: RwLock<Vec<Arc<dyn InputDriver>>> = RwLock::new(Vec::new());
     pub static ref GPU_DRIVERS: RwLock<Vec<Arc<dyn GpuDriver>>> = RwLock::new(Vec::new());
     //pub static ref RTC_DRIVERS: RwLock<Vec<Arc<dyn RtcDriver>>> = RwLock::new(Vec::new());
-    //pub static ref SERIAL_DRIVERS: RwLock<Vec<Arc<dyn SerialDriver>>> = RwLock::new(Vec::new());
+    pub static ref SERIAL_DRIVERS: RwLock<Vec<Arc<dyn SerialDriver>>> = RwLock::new(Vec::new());
     pub static ref IRQ_MANAGER: RwLock<irq::IrqManager> = RwLock::new(irq::IrqManager::new(true));
 }
 

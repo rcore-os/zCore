@@ -26,4 +26,4 @@ rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "6df6cd2" }
 rcore-fs-ramfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "6df6cd2" }
 rcore-fs-mountfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "6df6cd2" }
 rcore-fs-devfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "6df6cd2" }
-smoltcp = { path = "/home/xly/rust/arch-lib/smoltcp", default-features = false, features = ["log", "alloc", "verbose", "proto-ipv4", "proto-igmp", "medium-ip", "medium-ethernet", "socket-raw", "socket-udp", "socket-tcp", "socket-icmp"] }
+smoltcp = { git = "https://github.com/smoltcp-rs/smoltcp", rev = "35e833e3", default-features = false, features = ["log", "alloc", "verbose", "proto-ipv4", "proto-igmp", "medium-ip", "medium-ethernet", "socket-raw", "socket-udp", "socket-tcp", "socket-icmp"] }

@@ -11,6 +11,7 @@ use trapframe::{TrapFrame, UserContext};
 use super::{plic, uart, sbi, timer_set_next};
 use super::consts::{PHYSICAL_MEMORY_OFFSET, UART_BASE, UART0_INT_NUM};
 use crate::{map_range, phys_to_virt, putfmt};
+use crate::drivers::IRQ_MANAGER;
 
 const TABLE_SIZE: usize = 256;
 pub type InterruptHandle = Box<dyn Fn() + Send + Sync>;
@@ -20,19 +21,21 @@ lazy_static! {
 
 fn init_irq() {
     init_irq_table();
-    irq_add_handle(Timer, Box::new(super_timer)); //模拟参照了x86_64,把timer处理函数也放进去了
-                                                  //irq_add_handle(Keyboard, Box::new(keyboard));
-    irq_add_handle(S_PLIC, Box::new(plic::handle_interrupt));
+    irq_add_handle(Timer, Box::new(super_timer));
+    //模拟参照了x86_64,把timer处理函数也放进去了
+
+    //irq_add_handle(Keyboard, Box::new(keyboard));
+    irq_add_handle(S_PLIC, Box::new(external));
 }
 
 pub fn init() {
     unsafe {
         sstatus::set_sie();
 
-        init_uart();
+        //init_uart();
 
         sie::set_sext();
-        init_ext();
+        //init_ext();
     }
 
     init_irq();
@@ -64,7 +67,7 @@ pub extern "C" fn trap_handler(tf: &mut TrapFrame) {
         Trap::Exception(Exception::InstructionPageFault) => page_fault(stval, tf),
         Trap::Interrupt(Interrupt::SupervisorTimer) => super_timer(),
         Trap::Interrupt(Interrupt::SupervisorSoft) => super_soft(),
-        Trap::Interrupt(Interrupt::SupervisorExternal) => plic::handle_interrupt(),
+        Trap::Interrupt(Interrupt::SupervisorExternal) => external(),
         //Trap::Interrupt(Interrupt::SupervisorExternal) => irq_handle(code as u8),
         _ => panic!("Undefined Trap: {:#x} {:#x}", is_int, code),
     }
@@ -82,11 +85,14 @@ pub fn enable_irq(irq: usize) {
     // Handled in PLIC driver
 }
 
-// IRQ_MANAGER.read().try_handle_interrupt(Some(SupervisorExternal));
+fn external() {
+    IRQ_MANAGER.read()
+        .try_handle_interrupt(Some(SupervisorExternal));
+}
 
 #[export_name = "hal_irq_handle"]
 pub fn irq_handle(irq: u8) {
-    debug!("PLIC handle: {:#x}", irq);
+    debug!("hal_irq_handle: {:#x}", irq);
     let table = IRQ_TABLE.lock();
     match &table[irq as usize] {
         Some(f) => f(),
@@ -355,6 +361,8 @@ fn keyboard() {
     }
 }
 */
+
+const SupervisorExternal: usize = usize::MAX / 2 + 1 + 8;
 
 // IRQ
 const Timer: u8 = 5;

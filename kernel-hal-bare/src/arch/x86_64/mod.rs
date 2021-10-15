@@ -301,7 +301,7 @@ lazy_static! {
 }
 
 /// Put a char by serial interrupt handler.
-fn serial_put(mut x: u8) {
+pub fn serial_put(mut x: u8) {
     if x == b'\r' {
         x = b'\n';
     }

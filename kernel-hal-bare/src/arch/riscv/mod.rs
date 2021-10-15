@@ -7,10 +7,10 @@ use riscv::addr::Page;
 use riscv::asm::sfence_vma_all;
 use riscv::paging::{PageTableFlags as PTF, *};
 use riscv::register::{satp, sie, stval, time};
-use alloc::{collections::VecDeque, vec::Vec};
+use alloc::{collections::VecDeque, string::String, vec, vec::Vec};
 use core::fmt::{self, Write};
 
-use crate::drivers::{device_tree, virtio, irq};
+use crate::drivers::{device_tree::{self, Node}, irq, net, serial, virtio};
 
 mod sbi;
 mod consts;
@@ -421,7 +421,7 @@ lazy_static! {
 
 //调用这里
 /// Put a char by serial interrupt handler.
-fn serial_put(mut x: u8) {
+pub fn serial_put(mut x: u8) {
     if (x == b'\r') || (x == b'\n') {
         STDIN.lock().push_back(b'\n');
         STDIN.lock().push_back(b'\r');
@@ -566,31 +566,61 @@ fn timer_init() {
 }
 
 pub fn init(config: Config) {
-    interrupt::init();
+    //interrupt::init();
     timer_init();
 
     /*
     interrupt::init_soft();
     sbi::send_ipi(0);
-    */
 
     unsafe {
         llvm_asm!("ebreak"::::"volatile");
     }
+    */
 
     #[cfg(feature = "board_qemu")]
     {
         bare_println!("Setup virtio @devicetree {:#x}", config.dtb);
 
-        virtio::virtio::driver_init();
         irq::plic::driver_init();
+        //serial::uart16550::driver_init();
+        serial::uart::driver_init();
+        virtio::virtio::driver_init();
 
         device_tree::init(config.dtb);
     }
 
-    use crate::alloc::string::ToString;
     #[cfg(feature = "board_d1")]
-    crate::drivers::net::rtl8x::init("rtl8211f".to_string(), Some(62));
+    {
+        let plic_node =
+            Node {
+                name: String::from("plic"),
+                props: vec![
+                    (String::from("reg"), vec![00, 00, 00, 00, 0x10, 0x00, 0x00, 0x00]),
+                    (String::from("phandle"), vec![00, 00, 00, 0x03]),
+                ],
+                children: Vec::new(),
+            };
+
+        let uart_node =
+            Node {
+                name: String::from("uart"),
+                props: vec![
+                    (String::from("reg"), vec![00, 00, 00, 00, 0x02, 0x50, 0x00, 0x00]),
+                    (String::from("interrupts"), vec![00, 00, 00, 0x12]),
+                    (String::from("interrupt-parent"), vec![00, 00, 00, 0x03]),
+                ],
+                children: Vec::new(),
+            };
+
+        irq::plic::init_dt(&plic_node);
+        serial::uart::init_dt(&uart_node);
+
+        let gmacirq = 62;
+        net::rtl8x::init(String::from("rtl8211f"), Some(gmacirq));
+    }
+
+    interrupt::init();
 
 }
 

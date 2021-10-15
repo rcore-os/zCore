@@ -7,7 +7,7 @@ use super::CMDLINE;
 use crate::phys_to_virt;
 use alloc::{collections::BTreeMap, string::String, sync::Arc};
 use core::slice;
-use device_tree::{DeviceTree, Node};
+pub use device_tree::{DeviceTree, Node};
 use spin::RwLock;
 
 const DEVICE_TREE_MAGIC: u32 = 0xd00dfeed;
