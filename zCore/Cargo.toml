@@ -31,8 +31,8 @@ kernel-hal = { path = "../kernel-hal" }
 zircon-loader = { path = "../zircon-loader", default-features = false, optional = true }
 linux-loader = { path = "../linux-loader", default-features = false, optional = true }
 linux-object = { path = "../linux-object", default-features = false, optional = true }
-rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "df1ad1c", optional = true }
-rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "df1ad1c", optional = true }
+rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "7c232ec", optional = true }
+rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "7c232ec", optional = true }
 # FIX LATER
 # rvm = { git = "https://github.com/rcore-os/RVM", rev = "382fc60", optional = true }
 

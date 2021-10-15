@@ -4,6 +4,7 @@ use alloc::sync::Arc;
 use core::any::Any;
 
 use rcore_fs::vfs::*;
+use rcore_fs_devfs::DevFS;
 use spin::Mutex;
 
 /// random INode data struct
@@ -14,8 +15,9 @@ pub struct RandomINodeData {
 /// random INode struct
 #[derive(Clone)]
 pub struct RandomINode {
-    data: Arc<Mutex<RandomINodeData>>,
     secure: bool,
+    inode_id: usize,
+    data: Arc<Mutex<RandomINodeData>>,
 }
 
 impl RandomINode {
@@ -25,6 +27,7 @@ impl RandomINode {
     pub fn new(secure: bool) -> RandomINode {
         RandomINode {
             secure,
+            inode_id: DevFS::new_inode_id(),
             data: Arc::new(Mutex::new(RandomINodeData { seed: 1 })),
         }
     }
@@ -60,7 +63,7 @@ impl INode for RandomINode {
     fn metadata(&self) -> Result<Metadata> {
         Ok(Metadata {
             dev: 1,
-            inode: 1,
+            inode: self.inode_id,
             size: 0,
             blk_size: 0,
             blocks: 0,

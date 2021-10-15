@@ -95,7 +95,7 @@ mod test {
     fn test_mock_uart() {
         let uart = Arc::new(MockUart::new());
         let u = uart.clone();
-        MockUart::start_irq_serve(move || u.handle_irq(0));
+        MockUart::start_irq_service(move || u.handle_irq(0));
 
         uart.write_str("Hello, World!\n").unwrap();
         uart.write_str(format!("{} + {} = {}\n", 1, 2, 1 + 2).as_str())

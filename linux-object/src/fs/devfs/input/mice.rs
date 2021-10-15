@@ -7,6 +7,7 @@ use spin::Mutex;
 use kernel_hal::drivers::prelude::input::{Mouse, MouseFlags, MouseState};
 use kernel_hal::drivers::scheme::InputScheme;
 use rcore_fs::vfs::*;
+use rcore_fs_devfs::DevFS;
 
 const MAX_MOUSE_DEVICES: usize = 30;
 const PACKET_SIZE: usize = 3;
@@ -23,6 +24,7 @@ struct MiceDevInner {
 /// mice device
 pub struct MiceDev {
     id: usize,
+    inode_id: usize,
     mice: Vec<Arc<Mouse>>,
     inner: Arc<Mutex<MiceDevInner>>,
 }
@@ -103,7 +105,12 @@ impl MiceDev {
                 false,
             );
         }
-        Self { id, mice, inner }
+        Self {
+            id,
+            mice,
+            inner,
+            inode_id: DevFS::new_inode_id(),
+        }
     }
 
     fn can_read(&self) -> bool {
@@ -157,7 +164,7 @@ impl INode for MiceDev {
     fn metadata(&self) -> Result<Metadata> {
         Ok(Metadata {
             dev: 1,
-            inode: 1,
+            inode: self.inode_id,
             size: 0,
             blk_size: 0,
             blocks: 0,

@@ -7,6 +7,7 @@ use kernel_hal::drivers::prelude::{ColorFormat, DisplayInfo};
 use kernel_hal::drivers::scheme::DisplayScheme;
 use kernel_hal::vm::{GenericPageTable, PageTable};
 use rcore_fs::vfs::*;
+use rcore_fs_devfs::DevFS;
 use zircon_object::vm::{page_aligned, pages, VmObject};
 
 use crate::error::{LxError, LxResult};
@@ -257,11 +258,15 @@ impl From<DisplayInfo> for FbVarScreeninfo {
 /// Framebuffer device
 pub struct FbDev {
     display: Arc<dyn DisplayScheme>,
+    inode_id: usize,
 }
 
 impl FbDev {
     pub fn new(display: Arc<dyn DisplayScheme>) -> Self {
-        Self { display }
+        Self {
+            display,
+            inode_id: DevFS::new_inode_id(),
+        }
     }
 
     pub fn get_vmo(&self, offset: usize, len: usize) -> LxResult<Arc<VmObject>> {
@@ -327,7 +332,7 @@ impl INode for FbDev {
     fn metadata(&self) -> Result<Metadata> {
         Ok(Metadata {
             dev: 1,
-            inode: 1,
+            inode: self.inode_id,
             size: 0,
             blk_size: 0,
             blocks: 0,

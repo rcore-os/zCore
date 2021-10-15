@@ -115,10 +115,10 @@ pub fn create_root_fs(rootfs: Arc<dyn FileSystem>) -> Arc<dyn INode> {
     let devfs = DevFS::new();
     let devfs_root = devfs.root();
     devfs_root
-        .add("null", Arc::new(NullINode::default()))
+        .add("null", Arc::new(NullINode::new()))
         .expect("failed to mknod /dev/null");
     devfs_root
-        .add("zero", Arc::new(ZeroINode::default()))
+        .add("zero", Arc::new(ZeroINode::new()))
         .expect("failed to mknod /dev/zero");
     devfs_root
         .add("random", Arc::new(RandomINode::new(false)))

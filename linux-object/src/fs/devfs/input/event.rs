@@ -7,6 +7,7 @@ use spin::Mutex;
 use kernel_hal::drivers::prelude::{InputEvent, InputEventType};
 use kernel_hal::drivers::scheme::InputScheme;
 use rcore_fs::vfs::*;
+use rcore_fs_devfs::DevFS;
 
 use crate::time::TimeVal;
 
@@ -30,6 +31,7 @@ struct EventDevInner {
 /// Event char device, giving access to raw input device events.
 pub struct EventDev {
     id: usize,
+    inode_id: usize,
     input: Arc<dyn InputScheme>,
     inner: Arc<Mutex<EventDevInner>>,
 }
@@ -90,7 +92,12 @@ impl EventDev {
             Box::new(move |e| cloned.lock().handle_input_event(e)),
             false,
         );
-        Self { id, input, inner }
+        Self {
+            id,
+            input,
+            inner,
+            inode_id: DevFS::new_inode_id(),
+        }
     }
 
     fn can_read(&self) -> bool {
@@ -144,7 +151,7 @@ impl INode for EventDev {
     fn metadata(&self) -> Result<Metadata> {
         Ok(Metadata {
             dev: 1,
-            inode: 1,
+            inode: self.inode_id,
             size: 0,
             blk_size: 0,
             blocks: 0,
