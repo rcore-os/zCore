@@ -5,6 +5,27 @@
 #![allow(dead_code)]
 #![allow(unused_parens)]
 
+/// Device properties and quirks
+pub mod input_prop {
+    /// needs a pointer
+    pub const INPUT_PROP_POINTER: u16 = 0x00;
+    /// direct input devices
+    pub const INPUT_PROP_DIRECT: u16 = 0x01;
+    /// has button(s) under pad
+    pub const INPUT_PROP_BUTTONPAD: u16 = 0x02;
+    /// touch rectangle only
+    pub const INPUT_PROP_SEMI_MT: u16 = 0x03;
+    /// softbuttons at top of pad
+    pub const INPUT_PROP_TOPBUTTONPAD: u16 = 0x04;
+    /// is a pointing stick
+    pub const INPUT_PROP_POINTING_STICK: u16 = 0x05;
+    /// has accelerometer
+    pub const INPUT_PROP_ACCELEROMETER: u16 = 0x06;
+
+    pub const INPUT_PROP_MAX: u16 = 0x1f;
+    pub const INPUT_PROP_CNT: u16 = (INPUT_PROP_MAX + 1);
+}
+
 /// Event types
 pub mod ev {
     pub const EV_SYN: u16 = 0x00;

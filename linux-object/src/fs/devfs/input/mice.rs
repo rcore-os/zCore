@@ -67,8 +67,7 @@ impl MiceDev {
     pub fn from_input_devices(inputs: &[Arc<dyn InputScheme>]) -> Vec<(Option<usize>, MiceDev)> {
         let mut mice = Vec::with_capacity(inputs.len());
         for i in inputs {
-            // TODO: identify mouse device
-            if mice.len() < 2 && mice.len() < MAX_MOUSE_DEVICES {
+            if mice.len() < MAX_MOUSE_DEVICES && Mouse::compatible_with(i) {
                 mice.push(Mouse::new(i.clone()));
             }
         }
@@ -77,7 +76,9 @@ impl MiceDev {
             .enumerate()
             .map(|(i, m)| (Some(i), Self::new(m.clone(), i)))
             .collect::<Vec<_>>();
-        ret.push((None, Self::new_many(mice, MAX_MOUSE_DEVICES + 1)));
+        if !mice.is_empty() {
+            ret.push((None, Self::new_many(mice, MAX_MOUSE_DEVICES + 1)));
+        }
         ret
     }
 

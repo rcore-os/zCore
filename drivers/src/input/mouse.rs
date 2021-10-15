@@ -2,7 +2,7 @@ use alloc::{boxed::Box, sync::Arc};
 
 use spin::Mutex;
 
-use crate::prelude::{InputEvent, InputEventType};
+use crate::prelude::{CapabilityType, InputEvent, InputEventType};
 use crate::scheme::InputScheme;
 use crate::utils::{EventHandler, EventListener};
 
@@ -109,6 +109,24 @@ impl Mouse {
         if let Some(p) = self.state.lock().update(e) {
             self.listener.trigger(p);
         }
+    }
+
+    pub fn compatible_with(input: &Arc<dyn InputScheme>) -> bool {
+        // A mouse like device, at least one button, two relative axes.
+        use super::input_event_codes::{ev::*, key::*, rel::*};
+        let ev = input.capability(CapabilityType::Event);
+        let key = input.capability(CapabilityType::Key);
+        let rel = input.capability(CapabilityType::RelAxis);
+        if !ev.contains_all(&[EV_KEY, EV_REL]) {
+            return false;
+        }
+        if !key.contains(BTN_LEFT) {
+            return false;
+        }
+        if !rel.contains_all(&[REL_X, REL_Y]) {
+            return false;
+        }
+        true
     }
 
     pub fn subscribe(&self, handler: EventHandler<MouseState>, once: bool) {
