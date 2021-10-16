@@ -1,7 +1,7 @@
-use super::Scheme;
-use crate::{utils::EventHandler, DeviceResult};
+use super::{event::EventScheme, Scheme};
+use crate::DeviceResult;
 
-pub trait UartScheme: Scheme {
+pub trait UartScheme: Scheme + EventScheme<Event = ()> {
     fn try_recv(&self) -> DeviceResult<Option<u8>>;
     fn send(&self, ch: u8) -> DeviceResult;
     fn write_str(&self, s: &str) -> DeviceResult {
@@ -9,9 +9,5 @@ pub trait UartScheme: Scheme {
             self.send(c)?;
         }
         Ok(())
-    }
-
-    fn subscribe(&self, _handler: EventHandler, _once: bool) {
-        unimplemented!()
     }
 }

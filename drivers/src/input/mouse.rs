@@ -3,8 +3,8 @@ use alloc::{boxed::Box, sync::Arc};
 use spin::Mutex;
 
 use crate::prelude::{CapabilityType, InputEvent, InputEventType};
-use crate::scheme::InputScheme;
-use crate::utils::{EventHandler, EventListener};
+use crate::scheme::{impl_event_scheme, InputScheme};
+use crate::utils::EventListener;
 
 bitflags::bitflags! {
     #[derive(Default)]
@@ -94,6 +94,8 @@ pub struct Mouse {
     state: Mutex<MouseState>,
 }
 
+impl_event_scheme!(Mouse, MouseState);
+
 impl Mouse {
     pub fn new(input: Arc<dyn InputScheme>) -> Arc<Self> {
         let ret = Arc::new(Self {
@@ -127,9 +129,5 @@ impl Mouse {
             return false;
         }
         true
-    }
-
-    pub fn subscribe(&self, handler: EventHandler<MouseState>, once: bool) {
-        self.listener.subscribe(handler, once);
     }
 }

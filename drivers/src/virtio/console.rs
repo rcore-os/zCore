@@ -4,13 +4,15 @@ use spin::Mutex;
 use virtio_drivers::{VirtIOConsole as InnerDriver, VirtIOHeader};
 
 use crate::prelude::DeviceResult;
-use crate::scheme::{Scheme, UartScheme};
-use crate::utils::{EventHandler, EventListener};
+use crate::scheme::{impl_event_scheme, Scheme, UartScheme};
+use crate::utils::EventListener;
 
 pub struct VirtIoConsole<'a> {
     inner: Mutex<InnerDriver<'a>>,
     listener: EventListener,
 }
+
+impl_event_scheme!(VirtIoConsole<'_>);
 
 impl<'a> VirtIoConsole<'a> {
     pub fn new(header: &'static mut VirtIOHeader) -> DeviceResult<Self> {
@@ -40,10 +42,6 @@ impl<'a> UartScheme for VirtIoConsole<'a> {
     fn send(&self, ch: u8) -> DeviceResult {
         self.inner.lock().send(ch)?;
         Ok(())
-    }
-
-    fn subscribe(&self, handler: EventHandler, once: bool) {
-        self.listener.subscribe(handler, once);
     }
 }
 

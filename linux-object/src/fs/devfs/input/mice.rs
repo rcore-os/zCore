@@ -5,7 +5,7 @@ use core::{any::Any, future::Future, pin::Pin};
 use spin::Mutex;
 
 use kernel_hal::drivers::prelude::input::{Mouse, MouseFlags, MouseState};
-use kernel_hal::drivers::scheme::InputScheme;
+use kernel_hal::drivers::scheme::{EventScheme, InputScheme};
 use rcore_fs::vfs::*;
 use rcore_fs_devfs::DevFS;
 

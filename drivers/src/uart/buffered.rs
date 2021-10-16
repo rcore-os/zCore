@@ -2,8 +2,8 @@ use alloc::{boxed::Box, collections::VecDeque, string::String, sync::Arc};
 
 use spin::Mutex;
 
-use crate::scheme::{Scheme, UartScheme};
-use crate::utils::{EventHandler, EventListener};
+use crate::scheme::{impl_event_scheme, Scheme, UartScheme};
+use crate::utils::EventListener;
 use crate::DeviceResult;
 
 const BUF_CAPACITY: usize = 4096;
@@ -14,6 +14,8 @@ pub struct BufferedUart {
     listener: EventListener,
     name: String,
 }
+
+impl_event_scheme!(BufferedUart);
 
 impl BufferedUart {
     pub fn new(uart: Arc<dyn UartScheme>) -> Arc<Self> {
@@ -57,8 +59,5 @@ impl UartScheme for BufferedUart {
     }
     fn write_str(&self, s: &str) -> DeviceResult {
         self.inner.write_str(s)
-    }
-    fn subscribe(&self, handler: EventHandler, once: bool) {
-        self.listener.subscribe(handler, once);
     }
 }

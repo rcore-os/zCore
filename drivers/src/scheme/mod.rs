@@ -5,10 +5,15 @@ pub(super) mod irq;
 pub(super) mod net;
 pub(super) mod uart;
 
+#[macro_use]
+pub(super) mod event;
+pub(super) use impl_event_scheme;
+
 use alloc::sync::Arc;
 
 pub use block::BlockScheme;
 pub use display::DisplayScheme;
+pub use event::EventScheme;
 pub use input::InputScheme;
 pub use irq::IrqScheme;
 pub use net::NetScheme;

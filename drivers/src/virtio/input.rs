@@ -4,8 +4,8 @@ use spin::Mutex;
 use virtio_drivers::{InputConfigSelect, VirtIOHeader, VirtIOInput as InnerDriver};
 
 use crate::prelude::{CapabilityType, InputCapability, InputEvent, InputEventType};
-use crate::scheme::{InputScheme, Scheme};
-use crate::utils::{EventHandler, EventListener};
+use crate::scheme::{impl_event_scheme, InputScheme, Scheme};
+use crate::utils::EventListener;
 use crate::DeviceResult;
 
 pub struct VirtIoInput<'a> {
@@ -22,6 +22,8 @@ impl<'a> VirtIoInput<'a> {
         })
     }
 }
+
+impl_event_scheme!(VirtIoInput<'_>, InputEvent);
 
 impl<'a> Scheme for VirtIoInput<'a> {
     fn name(&self) -> &str {
@@ -72,9 +74,5 @@ impl<'a> InputScheme for VirtIoInput<'a> {
                 InputCapability::from_bitmap(&bitmap[..size as usize])
             }
         }
-    }
-
-    fn subscribe(&self, handler: EventHandler<InputEvent>, once: bool) {
-        self.listener.subscribe(handler, once);
     }
 }

@@ -1,7 +1,7 @@
-use super::Scheme;
-use crate::input::input_event_codes::ev::*;
-use crate::utils::EventHandler;
 use core::fmt;
+
+use super::{event::EventScheme, Scheme};
+use crate::input::input_event_codes::ev::*;
 
 numeric_enum_macro::numeric_enum! {
     #[repr(u16)]
@@ -125,7 +125,6 @@ impl fmt::Debug for InputCapability {
     }
 }
 
-pub trait InputScheme: Scheme {
+pub trait InputScheme: Scheme + EventScheme<Event = InputEvent> {
     fn capability(&self, cap_type: CapabilityType) -> InputCapability;
-    fn subscribe(&self, handler: EventHandler<InputEvent>, once: bool);
 }

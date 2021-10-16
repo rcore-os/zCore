@@ -3,8 +3,8 @@ use std::collections::VecDeque;
 use async_std::{io, io::prelude::*, task};
 use spin::Mutex;
 
-use crate::scheme::{Scheme, UartScheme};
-use crate::utils::{EventHandler, EventListener};
+use crate::scheme::{impl_event_scheme, Scheme, UartScheme};
+use crate::utils::EventListener;
 use crate::DeviceResult;
 
 const UART_BUF_LEN: usize = 256;
@@ -16,6 +16,8 @@ lazy_static::lazy_static! {
 pub struct MockUart {
     listener: EventListener,
 }
+
+impl_event_scheme!(MockUart);
 
 impl MockUart {
     pub fn new() -> Self {
@@ -79,10 +81,6 @@ impl UartScheme for MockUart {
     fn write_str(&self, s: &str) -> DeviceResult {
         eprint!("{}", s);
         Ok(())
-    }
-
-    fn subscribe(&self, handler: EventHandler, once: bool) {
-        self.listener.subscribe(handler, once);
     }
 }
 

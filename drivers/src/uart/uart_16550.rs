@@ -5,8 +5,8 @@ use bitflags::bitflags;
 use spin::Mutex;
 
 use crate::io::{Io, Mmio, ReadOnly};
-use crate::scheme::{Scheme, UartScheme};
-use crate::utils::{EventHandler, EventListener};
+use crate::scheme::{impl_event_scheme, Scheme, UartScheme};
+use crate::utils::EventListener;
 use crate::DeviceResult;
 
 bitflags! {
@@ -124,6 +124,17 @@ where
     listener: EventListener,
 }
 
+impl_event_scheme!(Uart16550Mmio<V>
+where
+    V: Copy
+        + BitAnd<Output = V>
+        + BitOr<Output = V>
+        + Not<Output = V>
+        + From<u8>
+        + TryInto<u8>
+        + Send
+);
+
 impl<V> Scheme for Uart16550Mmio<V>
 where
     V: Copy + BitAnd<Output = V> + BitOr<Output = V> + Not<Output = V> + Send,
@@ -158,9 +169,25 @@ where
     fn write_str(&self, s: &str) -> DeviceResult {
         self.inner.lock().write_str(s)
     }
+}
 
-    fn subscribe(&self, handler: EventHandler, once: bool) {
-        self.listener.subscribe(handler, once);
+impl<V> Uart16550Mmio<V>
+where
+    V: Copy
+        + BitAnd<Output = V>
+        + BitOr<Output = V>
+        + Not<Output = V>
+        + From<u8>
+        + TryInto<u8>
+        + Send,
+{
+    unsafe fn new_common(base: usize) -> Self {
+        let uart: &mut Uart16550Inner<Mmio<V>> = Mmio::<V>::from_base_as(base);
+        uart.init();
+        Self {
+            inner: Mutex::new(uart),
+            listener: EventListener::new(),
+        }
     }
 }
 
@@ -169,12 +196,7 @@ impl Uart16550Mmio<u8> {
     ///
     /// This function is unsafe because `base_addr` may be an arbitrary address.
     pub unsafe fn new(base: usize) -> Self {
-        let uart: &mut Uart16550Inner<Mmio<u8>> = Mmio::<u8>::from_base_as(base);
-        uart.init();
-        Self {
-            inner: Mutex::new(uart),
-            listener: EventListener::new(),
-        }
+        Self::new_common(base)
     }
 }
 
@@ -183,12 +205,7 @@ impl Uart16550Mmio<u32> {
     ///
     /// This function is unsafe because `base_addr` may be an arbitrary address.
     pub unsafe fn new(base: usize) -> Self {
-        let uart: &mut Uart16550Inner<Mmio<u32>> = Mmio::<u32>::from_base_as(base);
-        uart.init();
-        Self {
-            inner: Mutex::new(uart),
-            listener: EventListener::new(),
-        }
+        Self::new_common(base)
     }
 }
 
@@ -201,6 +218,8 @@ mod pio {
         inner: Mutex<Uart16550Inner<Pio<u8>>>,
         listener: EventListener,
     }
+
+    impl_event_scheme!(Uart16550Pio);
 
     impl Scheme for Uart16550Pio {
         fn name(&self) -> &str {
@@ -223,10 +242,6 @@ mod pio {
 
         fn write_str(&self, s: &str) -> DeviceResult {
             self.inner.lock().write_str(s)
-        }
-
-        fn subscribe(&self, handler: EventHandler, once: bool) {
-            self.listener.subscribe(handler, once);
         }
     }
 
