@@ -108,6 +108,7 @@ build_args += --features graphic
 ifeq ($(arch), riscv64)
 qemu_opts += \
 	-device virtio-gpu-device \
+	-device virtio-keyboard-device \
 	-device virtio-mouse-device
 else ifeq ($(arch), x86_64)
 qemu_opts += -vga virtio # disable std VGA to for zircon to avoid incorrect graphic rendering

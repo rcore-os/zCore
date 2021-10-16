@@ -1,5 +1,6 @@
 use alloc::sync::Arc;
 
+use crate::drivers;
 use zcore_drivers::mock::uart::MockUart;
 use zcore_drivers::{scheme::Scheme, Device};
 
@@ -25,16 +26,21 @@ cfg_if! {
 
 pub(super) fn init() {
     let uart = Arc::new(MockUart::new());
-    crate::drivers::add_device(Device::Uart(uart.clone()));
+    drivers::add_device(Device::Uart(uart.clone()));
     MockUart::start_irq_service(move || uart.handle_irq(0));
 
     #[cfg(feature = "graphic")]
     {
         use zcore_drivers::mock::display::MockDisplay;
+        use zcore_drivers::mock::input::{MockKeyboard, MockMouse};
+
         let display = Arc::new(unsafe {
             MockDisplay::from_raw_parts(FB_WIDTH, FB_HEIGHT, FB_FORMAT, FB_FRAMES[0].as_mut_ptr())
         });
-        crate::drivers::add_device(Device::Display(display.clone()));
+        drivers::add_device(Device::Display(display.clone()));
+        drivers::add_device(Device::Input(Arc::new(MockKeyboard::default())));
+        drivers::add_device(Device::Input(Arc::new(MockMouse::default())));
+
         crate::console::init_graphic_console(display);
     }
 }

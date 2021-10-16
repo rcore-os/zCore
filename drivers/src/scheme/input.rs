@@ -126,5 +126,6 @@ impl fmt::Debug for InputCapability {
 }
 
 pub trait InputScheme: Scheme + EventScheme<Event = InputEvent> {
+    /// Returns the capability bitmap of the specific kind of event.
     fn capability(&self, cap_type: CapabilityType) -> InputCapability;
 }

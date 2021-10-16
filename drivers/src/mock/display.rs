@@ -1,5 +1,3 @@
-pub mod sdl;
-
 use alloc::vec::Vec;
 
 use crate::prelude::{ColorFormat, DisplayInfo, FrameBuffer};
@@ -24,6 +22,10 @@ impl MockDisplay {
         Self { info, fb }
     }
 
+    /// # Safety
+    ///
+    /// This function is unsafe, the caller must ensure the `ptr` points to the
+    /// start of a valid frame buffer.
     pub unsafe fn from_raw_parts(
         width: u32,
         height: u32,
