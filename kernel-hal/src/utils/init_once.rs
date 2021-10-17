@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use spin::Once;
 
 pub struct InitOnce<T> {

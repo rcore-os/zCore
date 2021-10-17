@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use alloc::{sync::Arc, vec::Vec};
 use core::convert::From;
 

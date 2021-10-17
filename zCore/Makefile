@@ -111,12 +111,15 @@ qemu_opts += \
 	-device virtio-keyboard-device \
 	-device virtio-mouse-device
 else ifeq ($(arch), x86_64)
-qemu_opts += -vga virtio # disable std VGA to for zircon to avoid incorrect graphic rendering
-else ifeq ($(MAKECMDGOALS), vbox)
-build_args += --features graphic
+qemu_opts += -vga virtio # disable std VGA for zircon mode to avoid incorrect graphic rendering
 endif
 
 else
+
+ifeq ($(MAKECMDGOALS), vbox)
+build_args += --features graphic
+endif
+
 qemu_opts += -display none -nographic
 baremetal-test-qemu_opts += -display none -nographic
 endif
