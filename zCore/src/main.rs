@@ -53,25 +53,28 @@ pub extern "C" fn _start(boot_info: &BootInfo) -> ! {
 
     trace!("{:#x?}", boot_info);
 
+    use kernel_hal::drivers::prelude::{ColorFormat, DisplayInfo};
+    let graphic_info = &boot_info.graphic_info;
+    let (width, height) = graphic_info.mode.resolution();
+    let display_info = DisplayInfo {
+        width: width as _,
+        height: height as _,
+        format: ColorFormat::ARGB8888, // uefi::proto::console::gop::PixelFormat::Bgr
+        fb_base_vaddr: graphic_info.fb_addr as usize + PHYSICAL_MEMORY_OFFSET,
+        fb_size: graphic_info.fb_size as usize,
+    };
+
     let config = KernelConfig {
         kernel_offset: KERNEL_OFFSET,
         phys_mem_start: PHYSICAL_MEMORY_OFFSET,
         phys_to_virt_offset: PHYSICAL_MEMORY_OFFSET,
-
+        display_info,
         acpi_rsdp: boot_info.acpi2_rsdp_addr,
         smbios: boot_info.smbios_addr,
         ap_fn: run,
     };
     info!("{:#x?}", config);
     kernel_hal::init(config, &ZcoreKernelHandler);
-
-    #[cfg(feature = "graphic")]
-    {
-        let (width, height) = boot_info.graphic_info.mode.resolution();
-        let fb_addr = boot_info.graphic_info.fb_addr as usize;
-        let fb_size = boot_info.graphic_info.fb_size as usize;
-        kernel_hal::dev::fb::init(width as u32, height as u32, fb_addr, fb_size);
-    }
 
     let ramfs_data = unsafe {
         core::slice::from_raw_parts_mut(
@@ -126,19 +129,6 @@ pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
     };
     warn!("cmdline: {:?}", cmdline);
 
-    #[cfg(feature = "graphic")]
-    {
-        let gpu = GPU_DRIVERS
-            .read()
-            .iter()
-            .next()
-            .expect("Gpu device not found")
-            .clone();
-        let (width, height) = gpu.resolution();
-        let (fb_vaddr, fb_size) = gpu.setup_framebuffer();
-        kernel_hal::deb::fb::init(width, height, fb_vaddr, fb_size);
-    }
-
     // riscv64在之后使用ramfs或virtio, 而x86_64则由bootloader载入文件系统镜像到内存
     main(&mut [], &cmdline);
 }
@@ -169,17 +159,16 @@ fn get_rootproc(cmdline: &str) -> Vec<String> {
 fn main(ramfs_data: &'static mut [u8], cmdline: &str) -> ! {
     use linux_object::fs::STDIN;
 
-    kernel_hal::serial::serial_set_callback(Box::new({
-        move || {
-            let mut buffer = [0; 255];
-            let len = kernel_hal::serial::serial_read(&mut buffer);
-            for c in &buffer[..len] {
-                STDIN.push((*c).into());
-                // kernel_hal::serial::serial_write(alloc::format!("{}", *c as char).as_str());
-            }
-            false
-        }
-    }));
+    if let Some(uart) = kernel_hal::drivers::uart::first() {
+        uart.clone().subscribe(
+            Box::new(move |_| {
+                while let Some(c) = uart.try_recv().unwrap_or(None) {
+                    STDIN.push(c as char);
+                }
+            }),
+            false,
+        );
+    }
 
     //let args: Vec<String> = vec!["/bin/busybox".into(), "sh".into()];
     let args: Vec<String> = get_rootproc(cmdline);
@@ -195,13 +184,7 @@ fn main(ramfs_data: &'static mut [u8], cmdline: &str) -> ! {
 fn run() -> ! {
     loop {
         executor::run_until_idle();
-        #[cfg(target_arch = "x86_64")]
-        {
-            x86_64::instructions::interrupts::enable_and_hlt();
-            x86_64::instructions::interrupts::disable();
-        }
-        #[cfg(target_arch = "riscv64")]
-        kernel_hal::riscv::wait_for_interrupt();
+        kernel_hal::interrupt::wait_for_interrupt();
     }
 }
 
@@ -234,6 +217,9 @@ impl KernelHandler for ZcoreKernelHandler {
     }
 
     fn handle_page_fault(&self, fault_vaddr: usize, access_flags: MMUFlags) {
-        panic!("page fault from kernel mode @ {:#x}({:?})", fault_vaddr, access_flags);
+        panic!(
+            "page fault from kernel mode @ {:#x}({:?})",
+            fault_vaddr, access_flags
+        );
     }
 }

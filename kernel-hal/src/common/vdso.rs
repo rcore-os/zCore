@@ -56,6 +56,12 @@ impl VdsoConstants {
 #[repr(C)]
 pub struct VersionString([u8; 64]);
 
+impl VersionString {
+    pub fn as_str(&self) -> &str {
+        core::str::from_utf8(&self.0).unwrap()
+    }
+}
+
 impl Default for VersionString {
     fn default() -> Self {
         VersionString([0; 64])

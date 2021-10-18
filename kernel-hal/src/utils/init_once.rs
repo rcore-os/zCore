@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use spin::Once;
 
 pub struct InitOnce<T> {
@@ -20,11 +22,11 @@ impl<T> InitOnce<T> {
         }
     }
 
-    pub fn init_by(&self, value: T) {
+    pub fn init_once_by(&self, value: T) {
         self.inner.call_once(|| value);
     }
 
-    pub fn init<F>(&self, f: F)
+    pub fn init_once<F>(&self, f: F)
     where
         F: FnOnce() -> T,
     {
@@ -37,6 +39,10 @@ impl<T> InitOnce<T> {
 
     pub fn try_get(&self) -> Option<&T> {
         self.inner.get()
+    }
+
+    pub fn is_completed(&self) -> bool {
+        self.inner.is_completed()
     }
 }
 

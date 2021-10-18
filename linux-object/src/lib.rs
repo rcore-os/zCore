@@ -5,6 +5,7 @@
 #![allow(clippy::upper_case_acronyms)]
 #![feature(bool_to_option)]
 
+#[macro_use]
 extern crate alloc;
 
 #[macro_use]

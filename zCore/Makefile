@@ -11,7 +11,7 @@ hypervisor ?=
 smp ?= 1
 test_filter ?= *.*
 
-build_args := -Z build-std=core,alloc --target $(arch).json
+build_args := -Z weak-dep-features -Z build-std=core,alloc --target $(arch).json
 build_path := target/$(arch)/$(mode)
 kernel := $(build_path)/zcore
 kernel_img := $(build_path)/zcore.img
@@ -28,16 +28,20 @@ export ARCH=$(arch)
 export BOARD=$(board)
 export USER_IMG=$(ARCH).img
 
+ifeq ($(mode), release)
+	build_args += --release
+endif
+
 ifeq ($(arch), riscv64)
 ifeq ($(board), d1)
 build_args += --features board_d1 --features link_user_img
 else
-build_args += --features board_qemu --features link_user_img
+build_args += --features board_qemu
 endif
 endif
 
-ifeq ($(mode), release)
-	build_args += --release
+ifeq ($(arch), x86_64)
+build_args += --features ram_user_img
 endif
 
 ifeq ($(linux), 1)
@@ -100,18 +104,24 @@ endif
 
 ifeq ($(graphic), on)
 build_args += --features graphic
+
 ifeq ($(arch), riscv64)
 qemu_opts += \
 	-device virtio-gpu-device \
+	-device virtio-keyboard-device \
 	-device virtio-mouse-device
+else ifeq ($(arch), x86_64)
+qemu_opts += -vga virtio # disable std VGA for zircon mode to avoid incorrect graphic rendering
 endif
+
 else
+
 ifeq ($(MAKECMDGOALS), vbox)
 build_args += --features graphic
-else
+endif
+
 qemu_opts += -display none -nographic
 baremetal-test-qemu_opts += -display none -nographic
-endif
 endif
 
 run: build justrun
@@ -179,7 +189,7 @@ $(kernel_bin): kernel
 	$(OBJCOPY) $(kernel) --strip-all -O binary $@
 
 clean:
-	cargo clean
+	cargo clean -Z weak-dep-features
 
 image:
 	# for macOS only

@@ -61,6 +61,8 @@ make rootfs
 cargo run --release -p linux-loader -- /bin/busybox [args]
 ```
 
+You can add `--features graphic` as cargo arguments to show the graphical output (with [sdl2](https://www.libsdl.org) installed).
+
 #### Run native Zircon program (shell) in zircon-libos mode:
 
 #### step1: Compile and Run Zircon shell
@@ -149,10 +151,10 @@ make baremetal-test-img
 cd zCore && make build mode=release linux=1 arch=x86_64
 ## Testing
 cd ../scripts && python3 ./baremetal-libc-test.py
-## 
+##
 ```
 
-You can use [`scripts/baremetal-libc-test-ones.py`](./scripts/baremetal-libc-test-ones.py) & [`scripts/linux/baremetal-test-ones.txt`](./scripts/linux/baremetal-test-ones.txt) to test specified apps. 
+You can use [`scripts/baremetal-libc-test-ones.py`](./scripts/baremetal-libc-test-ones.py) & [`scripts/linux/baremetal-test-ones.txt`](./scripts/linux/baremetal-test-ones.txt) to test specified apps.
 
 [`scripts/linux/baremetal-test-fail.txt`](./scripts/linux/baremetal-test-fail.txt) includes all failed x86-64 apps (We need YOUR HELP to fix bugs!)
 
@@ -164,10 +166,10 @@ Run Linux musl libc-tests for CI:
 make riscv-image
 ## Build zCore kernel & Testing
 cd ../scripts && python3 baremetal-test-riscv64.py
-## 
+##
 ```
 
-You can use[ `scripts/baremetal-libc-test-ones-riscv64.py`](./scripts/baremetal-libc-test-ones-riscv64.py) & [`scripts/linux/baremetal-test-ones-rv64.txt`](scripts/linux/baremetal-test-ones-rv64.txt)to test 
+You can use[ `scripts/baremetal-libc-test-ones-riscv64.py`](./scripts/baremetal-libc-test-ones-riscv64.py) & [`scripts/linux/baremetal-test-ones-rv64.txt`](scripts/linux/baremetal-test-ones-rv64.txt)to test
 specified apps.
 
 [`scripts/linux/baremetal-test-fail-riscv64.txt`](./scripts/linux/baremetal-test-fail-riscv64.txt)includes all failed riscv-64 apps (We need YOUR HELP to fix bugs!)

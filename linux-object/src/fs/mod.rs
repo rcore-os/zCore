@@ -1,45 +1,36 @@
 //! Linux file objects
-#![deny(missing_docs)]
-use alloc::{boxed::Box, sync::Arc, vec::Vec};
 
-use rcore_fs::vfs::*;
-use rcore_fs_devfs::{special::*, DevFS};
-use rcore_fs_mountfs::MountFS;
-use rcore_fs_ramfs::RamFS;
-
-pub use self::device::*;
-pub use self::fcntl::*;
-pub use self::file::*;
-pub use self::pipe::*;
-pub use self::pseudo::*;
-pub use self::random::*;
-pub use self::stdio::*;
-pub use rcore_fs::vfs;
-
-use crate::error::*;
-use crate::process::LinuxProcess;
-use async_trait::async_trait;
-use core::convert::TryFrom;
-use downcast_rs::impl_downcast;
-use zircon_object::object::*;
-
+mod devfs;
 mod device;
-mod fcntl;
 mod file;
 mod ioctl;
 mod pipe;
 mod pseudo;
-mod random;
 mod stdio;
 
-cfg_if::cfg_if! {
-    if #[cfg(feature = "graphic")] {
-        mod fbdev;
-        mod input;
-        pub use self::input::*;
-        pub use self::fbdev::*;
-    }
-}
+use alloc::{boxed::Box, string::ToString, sync::Arc, vec::Vec};
+use core::convert::TryFrom;
+
+use async_trait::async_trait;
+use downcast_rs::impl_downcast;
+
+use kernel_hal::drivers;
+use rcore_fs::vfs::{FileSystem, FileType, INode, PollStatus, Result};
+use rcore_fs_devfs::special::{NullINode, ZeroINode};
+use rcore_fs_devfs::DevFS;
+use rcore_fs_mountfs::MountFS;
+use rcore_fs_ramfs::RamFS;
+use zircon_object::{object::KernelObject, vm::VmObject};
+
+use self::{devfs::RandomINode, pseudo::Pseudo};
+use crate::error::{LxError, LxResult};
+use crate::process::LinuxProcess;
+
+pub use device::MemBuf;
+pub use file::{File, OpenFlags, SeekFrom};
+pub use pipe::Pipe;
+pub use rcore_fs::vfs;
+pub use stdio::{STDIN, STDOUT};
 
 #[async_trait]
 /// Generic file interface
@@ -48,6 +39,12 @@ cfg_if::cfg_if! {
 /// - Socket
 /// - Epoll instance
 pub trait FileLike: KernelObject {
+    /// Returns open flags.
+    fn flags(&self) -> OpenFlags;
+    /// Set open flags.
+    fn set_flags(&self, f: OpenFlags) -> LxResult;
+    /// Duplicate the file.
+    fn dup(&self) -> Arc<dyn FileLike>;
     /// read to buffer
     async fn read(&self, buf: &mut [u8]) -> LxResult<usize>;
     /// write from buffer
@@ -62,8 +59,8 @@ pub trait FileLike: KernelObject {
     async fn async_poll(&self) -> LxResult<PollStatus>;
     /// manipulates the underlying device parameters of special files
     fn ioctl(&self, request: usize, arg1: usize, arg2: usize, arg3: usize) -> LxResult<usize>;
-    /// manipulate file descriptor
-    fn fcntl(&self, cmd: usize, arg: usize) -> LxResult<usize>;
+    /// Returns the [`VmObject`] representing the file with given `offset` and `len`.
+    fn get_vmo(&self, offset: usize, len: usize) -> LxResult<Arc<VmObject>>;
 }
 
 impl_downcast!(sync FileLike);
@@ -112,36 +109,51 @@ impl From<FileDesc> for i32 {
 /// create root filesystem, mount DevFS and RamFS
 pub fn create_root_fs(rootfs: Arc<dyn FileSystem>) -> Arc<dyn INode> {
     let rootfs = MountFS::new(rootfs);
-    let root = rootfs.root_inode();
+    let root = rootfs.mountpoint_root_inode();
 
     // create DevFS
     let devfs = DevFS::new();
-    devfs
-        .add("null", Arc::new(NullINode::default()))
+    let devfs_root = devfs.root();
+    devfs_root
+        .add("null", Arc::new(NullINode::new()))
         .expect("failed to mknod /dev/null");
-    devfs
-        .add("zero", Arc::new(ZeroINode::default()))
+    devfs_root
+        .add("zero", Arc::new(ZeroINode::new()))
         .expect("failed to mknod /dev/zero");
-    devfs
+    devfs_root
         .add("random", Arc::new(RandomINode::new(false)))
         .expect("failed to mknod /dev/random");
-    devfs
+    devfs_root
         .add("urandom", Arc::new(RandomINode::new(true)))
         .expect("failed to mknod /dev/urandom");
 
-    #[cfg(feature = "graphic")]
-    {
-        devfs
-            .add("fb0", Arc::new(Fbdev::default()))
-            .expect("failed to mknod /dev/fb0");
-        // TODO /dev/input/event0
-        devfs
-            .add("input-event0", Arc::new(InputEventInode::new(0)))
-            .expect("failed to mknod /dev/input-event0");
-        // TODO /dev/input/mice
-        devfs
-            .add("input-mice", Arc::new(InputMiceInode::default()))
-            .expect("failed to mknod /dev/input-mice");
+    if let Some(display) = drivers::display::first() {
+        use self::devfs::{EventDev, FbDev, MiceDev};
+
+        // Add framebuffer device at `/dev/fb0`
+        if let Err(e) = devfs_root.add("fb0", Arc::new(FbDev::new(display.clone()))) {
+            warn!("failed to mknod /dev/fb0: {:?}", e);
+        }
+
+        let input_dev = devfs_root
+            .add_dir("input")
+            .expect("failed to mkdir /dev/input");
+
+        // Add mouse devices at `/dev/input/mouseX` and `/dev/input/mice`
+        for (id, m) in MiceDev::from_input_devices(&drivers::input::all()) {
+            let fname = id.map_or("mice".to_string(), |id| format!("mouse{}", id));
+            if let Err(e) = input_dev.add(&fname, Arc::new(m)) {
+                warn!("failed to mknod /dev/input/{}: {:?}", &fname, e);
+            }
+        }
+
+        // Add input event devices at `/dev/input/eventX`
+        for (id, i) in drivers::input::all().iter().enumerate() {
+            let fname = format!("event{}", id);
+            if let Err(e) = input_dev.add(&fname, Arc::new(EventDev::new(i.clone(), id))) {
+                warn!("failed to mknod /dev/input/{}: {:?}", &fname, e);
+            }
+        }
     }
 
     // mount DevFS at /dev
@@ -216,8 +228,8 @@ impl LinuxProcess {
         let (fd_dir_path, fd_name) = split_path(path);
         if fd_dir_path == "/proc/self/fd" {
             let fd = FileDesc::try_from(fd_name)?;
-            let fd_path = &self.get_file(fd)?.path;
-            return Ok(Arc::new(Pseudo::new(fd_path, FileType::SymLink)));
+            let file = self.get_file(fd)?;
+            return Ok(Arc::new(Pseudo::new(file.path(), FileType::SymLink)));
         }
 
         let follow_max_depth = if follow { FOLLOW_MAX_DEPTH } else { 0 };

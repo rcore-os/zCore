@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 const SBI_SET_TIMER: usize = 0;
 const SBI_CONSOLE_PUTCHAR: usize = 1;
 const SBI_CONSOLE_GETCHAR: usize = 2;
@@ -45,4 +47,14 @@ pub fn clear_ipi() {
 
 pub fn send_ipi(sipi_value: usize) {
     sbi_call(SBI_SEND_IPI, sipi_value, 0, 0);
+}
+
+hal_fn_impl! {
+    impl mod crate::hal_fn::console {
+        fn console_write_early(s: &str) {
+            for c in s.bytes() {
+                console_putchar(c as usize);
+            }
+        }
+    }
 }

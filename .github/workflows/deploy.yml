@@ -1,6 +1,6 @@
 name: deploy CI
 
-on: 
+on:
   push:
   pull_request:
 
@@ -10,11 +10,18 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: Build docs
-        run: arch=x86_64 cargo doc --no-deps --all-features
-#        uses: actions-rs/cargo@v1
-#        with:
-#          command: doc
-#          args: --no-deps --all-features
+        run: |
+          arch=x86_64 cargo doc --no-deps --all-features
+          cat >target/doc/index.html <<EOF
+          <html>
+            <head>
+              <noscript><meta http-equiv="refresh" content="0; url=kernel_hal/index.html"></noscript>
+            </head>
+            <body onload="window.location = 'kernel_hal/index.html'">
+              <a href="kernel_hal/index.html">look here</a>
+            </body>
+          </html>
+          EOF
       - name: Deploy to Github Pages
         if: ${{ github.ref == 'refs/heads/master' }}
         uses: JamesIves/github-pages-deploy-action@releases/v3

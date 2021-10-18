@@ -14,7 +14,7 @@ linux-syscall = { path = "../linux-syscall" }
 linux-object = { path = "../linux-object" }
 zircon-object = { path = "../zircon-object" }
 kernel-hal = { path = "../kernel-hal" }
-rcore-fs-hostfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "6df6cd2", optional = true }
+rcore-fs-hostfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "7c232ec", optional = true }
 env_logger = { version = "0.8", optional = true }
 async-std = { version = "1.9", features = ["attributes"], optional = true }
 
@@ -22,4 +22,4 @@ async-std = { version = "1.9", features = ["attributes"], optional = true }
 default = ["std", "libos"]
 libos = ["kernel-hal/libos"]
 std = ["env_logger", "async-std", "rcore-fs-hostfs", "zircon-object/aspace-separate"]
-graphic = ["std", "linux-object/graphic"]
+graphic = ["linux-object/graphic", "kernel-hal/graphic"]

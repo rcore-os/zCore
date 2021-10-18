@@ -1,7 +1,4 @@
-use std::io::Error;
-use std::os::unix::io::AsRawFd;
-
-use super::mem_common::{mmap, FRAME_FILE};
+use super::mem::{MOCK_PHYS_MEM, PMEM_BASE, PMEM_SIZE};
 use crate::{addr::is_aligned, MMUFlags, PhysAddr, VirtAddr, PAGE_SIZE};
 
 hal_fn_impl! {
@@ -16,7 +13,6 @@ hal_fn_impl! {
 pub struct PageTable;
 
 impl PageTable {
-    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self
     }
@@ -30,6 +26,12 @@ impl PageTable {
     }
 }
 
+impl Default for PageTable {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl GenericPageTable for PageTable {
     fn table_phys(&self) -> PhysAddr {
         0
@@ -38,18 +40,15 @@ impl GenericPageTable for PageTable {
     fn map(&mut self, page: Page, paddr: PhysAddr, flags: MMUFlags) -> PagingResult {
         debug_assert!(page.size as usize == PAGE_SIZE);
         debug_assert!(is_aligned(paddr));
-        mmap(
-            FRAME_FILE.as_raw_fd(),
-            paddr,
-            PAGE_SIZE,
-            page.vaddr,
-            flags.into(),
-        );
-        Ok(())
+        if paddr < PMEM_SIZE {
+            MOCK_PHYS_MEM.mmap(page.vaddr, PAGE_SIZE, paddr, flags);
+            Ok(())
+        } else {
+            Err(PagingError::NoMemory)
+        }
     }
 
     fn unmap(&mut self, vaddr: VirtAddr) -> PagingResult<(PhysAddr, PageSize)> {
-        println!("unmap_page {:x?}", vaddr);
         self.unmap_cont(vaddr, PAGE_SIZE)?;
         Ok((0, PageSize::Size4K))
     }
@@ -62,15 +61,22 @@ impl GenericPageTable for PageTable {
     ) -> PagingResult<PageSize> {
         debug_assert!(is_aligned(vaddr));
         if let Some(flags) = flags {
-            let ret = unsafe { libc::mprotect(vaddr as _, PAGE_SIZE, flags.into()) };
-            assert_eq!(ret, 0, "failed to mprotect: {:?}", Error::last_os_error());
+            MOCK_PHYS_MEM.mprotect(vaddr as _, PAGE_SIZE, flags);
         }
         Ok(PageSize::Size4K)
     }
 
     fn query(&self, vaddr: VirtAddr) -> PagingResult<(PhysAddr, MMUFlags, PageSize)> {
         debug_assert!(is_aligned(vaddr));
-        unimplemented!()
+        if PMEM_BASE <= vaddr && vaddr < PMEM_BASE + PMEM_SIZE {
+            Ok((
+                vaddr - PMEM_BASE,
+                MMUFlags::READ | MMUFlags::WRITE,
+                PageSize::Size4K,
+            ))
+        } else {
+            Err(PagingError::NotMapped)
+        }
     }
 
     fn unmap_cont(&mut self, vaddr: VirtAddr, size: usize) -> PagingResult {
@@ -78,25 +84,8 @@ impl GenericPageTable for PageTable {
             return Ok(());
         }
         debug_assert!(is_aligned(vaddr));
-        let ret = unsafe { libc::munmap(vaddr as _, size) };
-        assert_eq!(ret, 0, "failed to munmap: {:?}", Error::last_os_error());
+        MOCK_PHYS_MEM.munmap(vaddr as _, size);
         Ok(())
-    }
-}
-
-impl From<MMUFlags> for libc::c_int {
-    fn from(f: MMUFlags) -> libc::c_int {
-        let mut flags = 0;
-        if f.contains(MMUFlags::READ) {
-            flags |= libc::PROT_READ;
-        }
-        if f.contains(MMUFlags::WRITE) {
-            flags |= libc::PROT_WRITE;
-        }
-        if f.contains(MMUFlags::EXECUTE) {
-            flags |= libc::PROT_EXEC;
-        }
-        flags
     }
 }
 

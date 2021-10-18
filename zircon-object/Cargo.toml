@@ -13,8 +13,8 @@ elf = ["xmas-elf"]
 #hypervisor = ["rvm"]
 
 [dependencies]
-bitflags = "1.2"
-spin = "0.7"
+bitflags = "1.3"
+spin = "0.9"
 log = "0.4"
 hashbrown = "0.9"
 downcast-rs = { version = "1.2", default-features = false }
@@ -24,7 +24,6 @@ futures = { version = "0.3", default-features = false, features = ["alloc", "asy
 xmas-elf = { version = "0.7", optional = true }
 region-alloc = { git = "https://github.com/rzswh/region-allocator", rev = "122c7a71" }
 lazy_static = { version = "1.4", features = ["spin_no_std" ] }
-acpi = "1.1"
 cfg-if = "1.0"
 #rvm = { git = "https://github.com/rcore-os/RVM", rev = "382fc60", optional = true }
 

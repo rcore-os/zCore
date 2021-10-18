@@ -5,6 +5,7 @@
 /libc-test/src/functional/ipc_shm.exe
 /libc-test/src/functional/popen.exe
 /libc-test/src/functional/pthread_cancel-points.exe
+/libc-test/src/functional/pthread_cond.exe
 /libc-test/src/functional/pthread_robust.exe
 /libc-test/src/functional/sem_open.exe
 /libc-test/src/functional/socket.exe

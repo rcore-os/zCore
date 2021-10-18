@@ -16,28 +16,39 @@ async fn main() {
     init_logger();
     // init HAL implementation on unix
     kernel_hal::init();
-    #[cfg(feature = "graphic")]
-    {
-        kernel_hal::dev::fb::init();
-        kernel_hal::dev::input::init();
+
+    if let Some(uart) = kernel_hal::drivers::uart::first() {
+        uart.clone().subscribe(
+            Box::new(move |_| {
+                while let Some(c) = uart.try_recv().unwrap_or(None) {
+                    STDIN.push(c as char);
+                }
+            }),
+            false,
+        );
     }
-    kernel_hal::serial::serial_set_callback(Box::new({
-        move || {
-            let mut buffer = [0; 255];
-            let len = kernel_hal::serial::serial_read(&mut buffer);
-            for c in &buffer[..len] {
-                STDIN.push((*c).into());
-            }
-            false
-        }
-    }));
-    // run first process
+
     let args: Vec<_> = std::env::args().skip(1).collect();
+    let proc_name = args.join(" ");
     let envs = vec!["PATH=/usr/sbin:/usr/bin:/sbin:/bin:/usr/x86_64-alpine-linux-musl/bin".into()];
 
-    let hostfs = HostFS::new("rootfs");
-    let proc = run(args, envs, hostfs);
-    let code = proc.wait_for_exit().await;
+    // Run the first process.
+    let run_proc = async move {
+        let hostfs = HostFS::new("rootfs");
+        let proc = run(args, envs, hostfs);
+        proc.wait_for_exit().await
+    };
+
+    // If the graphic mode is on, run the process in another thread.
+    #[cfg(feature = "graphic")]
+    let run_proc = {
+        let handle = async_std::task::spawn(run_proc);
+        kernel_hal::libos::run_graphic_service();
+        handle
+    };
+
+    let code = run_proc.await;
+    log::info!("process {:?} exited with {}", proc_name, code);
     std::process::exit(code as i32);
 }
 

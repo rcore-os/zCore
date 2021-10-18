@@ -216,11 +216,12 @@ async fn new_thread(thread: CurrentThread) {
         #[cfg(target_arch = "x86_64")]
         match trap_num {
             0x100 => handle_syscall(&thread).await,
-            0x20..=0x3f => {
-                kernel_hal::interrupt::handle_irq(trap_num as u32);
-                if trap_num == 0x20 {
+            0x20..=0xff => {
+                kernel_hal::interrupt::handle_irq(trap_num);
+                // TODO: configurable
+                if trap_num == 0xf1 {
                     EXCEPTIONS_TIMER.add(1);
-                    kernel_hal::future::yield_now().await;
+                    kernel_hal::thread::yield_now().await;
                 }
             }
             0xe => {

@@ -37,12 +37,12 @@ macro_rules! with_color {
 }
 
 fn print_in_color(args: fmt::Arguments, color_code: u8) {
-    kernel_hal::serial::serial_write_fmt(with_color!(args, color_code));
+    kernel_hal::console::console_write_fmt(with_color!(args, color_code));
 }
 
 #[allow(dead_code)]
 pub fn print(args: fmt::Arguments) {
-    kernel_hal::serial::serial_write_fmt(args);
+    kernel_hal::console::console_write_fmt(args);
 }
 
 struct SimpleLogger;

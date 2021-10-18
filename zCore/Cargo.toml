@@ -7,44 +7,39 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-graphic = []
-board_qemu = ["link_user_img", "kernel-hal/board_qemu"]
-board_d1 = ["link_user_img", "kernel-hal/board_d1"]
-link_user_img = []
+graphic = ["linux-loader?/graphic", "kernel-hal/graphic"]
+board_qemu = []
+board_d1 = ["link_user_img"]
+ram_user_img = []
+link_user_img = ["ram_user_img"]
 zircon = ["zircon-loader"]
-linux = ["linux-loader", "linux-object", "rcore-fs-sfs"]
-#hypervisor = ["rvm", "zircon", "zircon-object/hypervisor", "zircon-syscall/hypervisor"]
+linux = ["linux-loader", "linux-object", "rcore-fs", "rcore-fs-sfs"]
 
 [profile.release]
 lto = true
 
 [dependencies]
 log = "0.4"
-spin = "0.7"
+spin = "0.9"
 cfg-if = "1.0"
 buddy_system_allocator = "0.7"
-kernel-hal = { path = "../kernel-hal" }
 lazy_static = { version = "1.4", features = ["spin_no_std" ] }
 bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator", rev = "b3f9f51" }
 trapframe = "0.8.0"
 executor = { git = "https://github.com/rcore-os/executor.git", rev = "a2d02ee9" }
+kernel-hal = { path = "../kernel-hal" }
 zircon-loader = { path = "../zircon-loader", default-features = false, optional = true }
-zircon-syscall = { path = "../zircon-syscall", optional = true }
-zircon-object = { path = "../zircon-object" }
 linux-loader = { path = "../linux-loader", default-features = false, optional = true }
 linux-object = { path = "../linux-object", default-features = false, optional = true }
-rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "6df6cd2", optional = true }
-rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "6df6cd2" }
+rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "7c232ec", optional = true }
+rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "7c232ec", optional = true }
 # FIX LATER
 # rvm = { git = "https://github.com/rcore-os/RVM", rev = "382fc60", optional = true }
-fatfs = { git = "https://github.com/rafalh/rust-fatfs.git", rev = "26fa79", default-features = false }
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
-x86_64 = "0.14"
 rlibc-opt = { git = "https://github.com/rcore-os/rlibc-opt.git", rev = "fb1d4a9" }
 rboot = { path = "../rboot", default-features = false }
 rvm = { git = "https://github.com/rcore-os/RVM", rev = "e91d625", optional = true }
 
 [target.'cfg(target_arch = "riscv64")'.dependencies]
 rlibc = "1.0"
-riscv = { git = "https://github.com/rcore-os/riscv", features = ["inline-asm"], rev = "0074cbc" }

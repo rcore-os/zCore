@@ -1,23 +1,21 @@
 use core::time::Duration;
-use riscv::register::{sie, time};
+
+const CLOCK_FREQ: u64 = 12_500_000;
+const TICKS_PER_SEC: u64 = 100;
 
 fn get_cycle() -> u64 {
-    time::read() as u64
+    riscv::register::time::read() as u64
 }
 
 pub(super) fn timer_set_next() {
-    //let TIMEBASE: u64 = 100000;
-    const TIMEBASE: u64 = 10_000_000;
-    super::sbi::set_timer(get_cycle() + TIMEBASE);
+    super::sbi::set_timer(get_cycle() + CLOCK_FREQ / TICKS_PER_SEC);
 }
 
 pub(super) fn init() {
-    unsafe { sie::set_stimer() };
     timer_set_next();
 }
 
 pub(crate) fn timer_now() -> Duration {
-    const FREQUENCY: u64 = 10_000_000; // ???
     let time = get_cycle();
-    Duration::from_nanos(time * 1_000_000_000 / FREQUENCY as u64)
+    Duration::from_nanos(time * 1_000_000_000 / CLOCK_FREQ as u64)
 }

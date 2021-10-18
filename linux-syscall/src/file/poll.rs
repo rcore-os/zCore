@@ -12,7 +12,7 @@ use core::mem::size_of;
 use core::pin::Pin;
 use core::task::{Context, Poll};
 use core::time::Duration;
-use kernel_hal::timer::timer_set;
+use kernel_hal::timer;
 use linux_object::fs::FileDesc;
 use linux_object::time::*;
 
@@ -22,7 +22,7 @@ impl Syscall<'_> {
         &mut self,
         mut ufds: UserInOutPtr<PollFd>,
         nfds: usize,
-        timeout_msecs: usize,
+        timeout_msecs: isize,
     ) -> SysResult {
         let mut polls = ufds.read_array(nfds)?;
         info!(
@@ -32,7 +32,7 @@ impl Syscall<'_> {
         #[must_use = "future does nothing unless polled/`await`-ed"]
         struct PollFuture<'a> {
             polls: &'a mut Vec<PollFd>,
-            timeout_msecs: usize,
+            timeout_msecs: isize,
             begin_time_ms: usize,
             syscall: &'a Syscall<'a>,
         }
@@ -79,23 +79,23 @@ impl Syscall<'_> {
                     return Poll::Ready(Ok(events));
                 }
 
-                if self.timeout_msecs == 0 {
+                match self.timeout_msecs {
                     // no timeout, return now;
-                    return Poll::Ready(Ok(0));
-                } else {
-                    let waker = cx.waker().clone();
-                    timer_set(
-                        Duration::from_millis(self.timeout_msecs as u64),
-                        Box::new(move |_| waker.wake()),
-                    );
-                }
-
-                let current_time_ms = TimeVal::now().to_msec();
-                // infinity check
-                if self.timeout_msecs < (1 << 31)
-                    && current_time_ms - self.begin_time_ms >= self.timeout_msecs as usize
-                {
-                    return Poll::Ready(Ok(0));
+                    0 => return Poll::Ready(Ok(0)),
+                    1.. => {
+                        let current_time_ms = TimeVal::now().to_msec();
+                        let deadline = self.begin_time_ms + self.timeout_msecs as usize;
+                        if current_time_ms >= deadline {
+                            return Poll::Ready(Ok(0));
+                        } else {
+                            let waker = cx.waker().clone();
+                            timer::timer_set(
+                                Duration::from_millis(deadline as u64),
+                                Box::new(move |_| waker.wake()),
+                            );
+                        }
+                    }
+                    _ => {}
                 }
 
                 Poll::Pending
@@ -122,13 +122,13 @@ impl Syscall<'_> {
         timeout: UserInPtr<TimeSpec>,
     ) -> SysResult {
         let timeout_msecs = if timeout.is_null() {
-            1 << 31 // infinity
+            -1
         } else {
             let timeout = timeout.read().unwrap();
-            timeout.to_msec()
+            timeout.to_msec() as isize
         };
 
-        self.sys_poll(ufds, nfds, timeout_msecs as usize).await
+        self.sys_poll(ufds, nfds, timeout_msecs).await
     }
 
     /// similar to select, but have sigmask argument
@@ -169,10 +169,10 @@ impl Syscall<'_> {
 
         let timeout_msecs = if !timeout.is_null() {
             let timeout = timeout.read()?;
-            timeout.to_msec()
+            timeout.to_msec() as isize
         } else {
             // infinity
-            1 << 31
+            -1
         };
         let begin_time_ms = TimeVal::now().to_msec();
 
@@ -181,7 +181,7 @@ impl Syscall<'_> {
             read_fds: &'a mut FdSet,
             write_fds: &'a mut FdSet,
             err_fds: &'a mut FdSet,
-            timeout_msecs: usize,
+            timeout_msecs: isize,
             begin_time_ms: usize,
             syscall: &'a Syscall<'a>,
         }
@@ -225,25 +225,24 @@ impl Syscall<'_> {
                     return Poll::Ready(Ok(events));
                 }
 
-                if self.timeout_msecs == 0 {
+                match self.timeout_msecs {
                     // no timeout, return now;
-                    return Poll::Ready(Ok(0));
-                } else {
-                    let waker = cx.waker().clone();
-                    timer_set(
-                        Duration::from_millis(self.timeout_msecs as u64),
-                        Box::new(move |_| waker.wake()),
-                    );
+                    0 => return Poll::Ready(Ok(0)),
+                    1.. => {
+                        let current_time_ms = TimeVal::now().to_msec();
+                        let deadline = self.begin_time_ms + self.timeout_msecs as usize;
+                        if current_time_ms >= deadline {
+                            return Poll::Ready(Ok(0));
+                        } else {
+                            let waker = cx.waker().clone();
+                            timer::timer_set(
+                                Duration::from_millis(deadline as u64),
+                                Box::new(move |_| waker.wake()),
+                            );
+                        }
+                    }
+                    _ => {}
                 }
-
-                let current_time_ms = TimeVal::now().to_msec();
-                // infinity check
-                if self.timeout_msecs < (1 << 31)
-                    && current_time_ms - self.begin_time_ms >= self.timeout_msecs as usize
-                {
-                    return Poll::Ready(Ok(0));
-                }
-
                 Poll::Pending
             }
         }

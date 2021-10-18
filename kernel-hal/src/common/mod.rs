@@ -1,11 +1,11 @@
+pub(super) mod context;
 pub(super) mod defs;
-pub(super) mod fb;
+pub(super) mod future;
+pub(super) mod mem;
+pub(super) mod thread;
+pub(super) mod vdso;
+pub(super) mod vm;
 
 pub mod addr;
-pub mod context;
-pub mod future;
-pub mod mem;
-pub mod serial;
+pub mod console;
 pub mod user;
-pub mod vdso;
-pub mod vm;

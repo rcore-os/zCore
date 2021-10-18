@@ -1,6 +1,6 @@
 use super::*;
 use bitflags::bitflags;
-use zircon_object::vm::*;
+use zircon_object::vm::{pages, MMUFlags, VmObject};
 
 impl Syscall<'_> {
     /// creates a new mapping in the virtual address space of the calling process.
@@ -43,11 +43,8 @@ impl Syscall<'_> {
             let addr = vmar.map(vmar_offset, vmo.clone(), 0, vmo.len(), prot.to_flags())?;
             Ok(addr)
         } else {
-            let file = self.linux_process().get_file(fd)?;
-            let mut buf = vec![0; len];
-            let len = file.read_at(offset, &mut buf).await?;
-            let vmo = VmObject::new_paged(pages(len));
-            vmo.write(0, &buf[..len])?;
+            let file_like = self.linux_process().get_file_like(fd)?;
+            let vmo = file_like.get_vmo(offset as usize, len)?;
             let addr = vmar.map(vmar_offset, vmo.clone(), 0, vmo.len(), prot.to_flags())?;
             Ok(addr)
         }

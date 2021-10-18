@@ -2,6 +2,7 @@ use bitflags::bitflags;
 use numeric_enum_macro::numeric_enum;
 
 /// The error type which is returned from HAL functions.
+/// TODO: more error types.
 #[derive(Debug)]
 pub struct HalError;
 

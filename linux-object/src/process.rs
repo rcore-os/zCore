@@ -1,26 +1,29 @@
 //! Linux Process
 
-use crate::error::*;
-use crate::fs::*;
-use crate::ipc::*;
-use crate::signal::{Signal as LinuxSignal, SignalAction};
-use alloc::vec::Vec;
 use alloc::{
     boxed::Box,
     string::String,
     sync::{Arc, Weak},
+    vec::Vec,
 };
 use core::sync::atomic::AtomicI32;
+
 use hashbrown::HashMap;
-use kernel_hal::VirtAddr;
 use rcore_fs::vfs::{FileSystem, INode};
-use spin::*;
+use spin::{Mutex, MutexGuard};
+
+use kernel_hal::VirtAddr;
 use zircon_object::{
     object::{KernelObject, KoID, Signal},
     signal::Futex,
     task::{Job, Process, Status},
     ZxResult,
 };
+
+use crate::error::{LxError, LxResult};
+use crate::fs::{File, FileDesc, FileLike, OpenFlags, STDIN, STDOUT};
+use crate::ipc::*;
+use crate::signal::{Signal as LinuxSignal, SignalAction};
 
 /// Process extension for linux
 pub trait ProcessExt {
@@ -204,33 +207,26 @@ impl LinuxProcess {
     pub fn new(rootfs: Arc<dyn FileSystem>) -> Self {
         let stdin = File::new(
             STDIN.clone(), // FIXME: stdin
-            OpenOptions {
-                read: true,
-                write: false,
-                append: false,
-                nonblock: false,
-                fd_cloexec: false,
-            },
+            OpenFlags::RDONLY,
             String::from("/dev/stdin"),
         ) as Arc<dyn FileLike>;
         let stdout = File::new(
             STDOUT.clone(), // TODO: open from '/dev/stdout'
-            OpenOptions {
-                read: false,
-                write: true,
-                append: false,
-                nonblock: false,
-                fd_cloexec: false,
-            },
+            OpenFlags::WRONLY,
             String::from("/dev/stdout"),
+        ) as Arc<dyn FileLike>;
+        let stderr = File::new(
+            STDOUT.clone(), // TODO: open from '/dev/stderr'
+            OpenFlags::WRONLY,
+            String::from("/dev/stderr"),
         ) as Arc<dyn FileLike>;
         let mut files = HashMap::new();
         files.insert(0.into(), stdin);
-        files.insert(1.into(), stdout.clone());
-        files.insert(2.into(), stdout);
+        files.insert(1.into(), stdout);
+        files.insert(2.into(), stderr);
 
         LinuxProcess {
-            root_inode: create_root_fs(rootfs), //Arc::clone(&ROOT_INODE),访问磁盘可能更快？
+            root_inode: crate::fs::create_root_fs(rootfs), //Arc::clone(&ROOT_INODE),访问磁盘可能更快？
             parent: Weak::default(),
             inner: Mutex::new(LinuxProcessInner {
                 files,
@@ -252,6 +248,16 @@ impl LinuxProcess {
                 Futex::new(value)
             })
             .clone()
+    }
+
+    /// Get lowest free fd
+    pub fn get_free_fd(&self) -> FileDesc {
+        self.inner.lock().get_free_fd()
+    }
+
+    /// get the lowest available fd great than or equal to `start`.
+    pub fn get_free_fd_from(&self, start: usize) -> FileDesc {
+        self.inner.lock().get_free_fd_from(start)
     }
 
     /// Add a file to the file descriptor table.
@@ -386,7 +392,7 @@ impl LinuxProcess {
             .iter()
             .filter_map(|(fd, file_like)| {
                 if let Ok(file) = file_like.clone().downcast_arc::<File>() {
-                    if file.options.fd_cloexec {
+                    if file.flags().close_on_exec() {
                         Some(*fd)
                     } else {
                         None
@@ -449,7 +455,11 @@ impl LinuxProcess {
 
 impl LinuxProcessInner {
     fn get_free_fd(&self) -> FileDesc {
-        (0usize..)
+        self.get_free_fd_from(0)
+    }
+
+    fn get_free_fd_from(&self, start: usize) -> FileDesc {
+        (start..)
             .map(|i| i.into())
             .find(|fd| !self.files.contains_key(fd))
             .unwrap()

@@ -255,7 +255,7 @@ impl Syscall<'_> {
         );
         let proc = self.thread.proc();
         let device = proc.get_object_with_rights::<PcieDeviceKObject>(handle, Rights::WRITE)?;
-        device.set_irq_mode(mode, requested_irq_count)
+        device.set_irq_mode(mode, requested_irq_count as usize)
     }
 
     pub fn sys_pci_config_read(

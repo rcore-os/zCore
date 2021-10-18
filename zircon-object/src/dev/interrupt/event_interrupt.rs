@@ -2,7 +2,7 @@ use kernel_hal::interrupt;
 use {super::*, spin::Mutex};
 
 pub struct EventInterrupt {
-    vector: u32,
+    vector: usize,
     inner: Mutex<EventInterruptInner>,
 }
 
@@ -15,7 +15,7 @@ impl EventInterrupt {
     pub fn new(vector: usize) -> Box<Self> {
         // TODO check vector is a vaild IRQ number
         Box::new(EventInterrupt {
-            vector: vector as u32,
+            vector,
             inner: Default::default(),
         })
     }
@@ -25,14 +25,14 @@ impl InterruptTrait for EventInterrupt {
     fn mask(&self) {
         let inner = self.inner.lock();
         if inner.register {
-            interrupt::disable_irq(self.vector);
+            interrupt::mask_irq(self.vector).unwrap();
         }
     }
 
     fn unmask(&self) {
         let inner = self.inner.lock();
         if inner.register {
-            interrupt::enable_irq(self.vector);
+            interrupt::unmask_irq(self.vector).unwrap();
         }
     }
 

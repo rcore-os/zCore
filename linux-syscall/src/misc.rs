@@ -22,11 +22,26 @@ impl Syscall<'_> {
     pub fn sys_uname(&self, buf: UserOutPtr<u8>) -> SysResult {
         info!("uname: buf={:?}", buf);
 
-        #[cfg(not(target_arch = "riscv64"))]
-        let strings = ["Linux", "orz", "0.1.0", "1", "machine", "domain"];
+        let release = alloc::string::String::from(concat!(env!("CARGO_PKG_VERSION"), "-zcore"));
+        #[cfg(not(target_os = "none"))]
+        let release = release + "-libos";
 
+        let vdso_const = kernel_hal::vdso::vdso_constants();
+
+        #[cfg(target_arch = "x86_64")]
+        let arch = "x86_64";
         #[cfg(target_arch = "riscv64")]
-        let strings = ["Linux", "@zCore", "0.1.0", "1", "riscv64", "oslab"];
+        let arch = "riscv64";
+
+        let strings = [
+            "Linux",                            // sysname
+            "zcore",                            // nodename
+            release.as_str(),                   // release
+            vdso_const.version_string.as_str(), // version
+            arch,                               // machine
+            "rcore-os",                         // domainname
+        ];
+
         for (i, &s) in strings.iter().enumerate() {
             const OFFSET: usize = 65;
             buf.add(i * OFFSET).write_cstring(s)?;

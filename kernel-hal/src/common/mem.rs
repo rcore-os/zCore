@@ -58,6 +58,16 @@ impl PhysFrame {
         self.paddr
     }
 
+    /// convert to raw a pointer.
+    pub fn as_ptr(&self) -> *const u8 {
+        crate::mem::phys_to_virt(self.paddr) as *const u8
+    }
+
+    /// convert to a mutable raw pointer.
+    pub fn as_mut_ptr(&self) -> *mut u8 {
+        crate::mem::phys_to_virt(self.paddr) as *mut u8
+    }
+
     /// Fill `self` with zero.
     pub fn zero(&mut self) {
         crate::mem::pmem_zero(self.paddr, PAGE_SIZE);
@@ -72,7 +82,7 @@ impl Drop for PhysFrame {
     }
 }
 
-lazy_static::lazy_static! {
+lazy_static! {
     /// The global physical frame contains all zeros.
     pub static ref ZERO_FRAME: PhysFrame = PhysFrame::new_zero().expect("failed to alloc zero frame");
 }

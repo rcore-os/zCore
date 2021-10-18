@@ -61,5 +61,5 @@ pub mod constants {
     pub const PCI_CFG_SPACE_TYPE_PIO: u8 = 0;
     pub const PCI_CFG_SPACE_TYPE_MMIO: u8 = 1;
     pub const PCIE_IRQRET_MASK: u32 = 0x1;
-    pub const PCIE_MAX_MSI_IRQS: u32 = 32;
+    pub const PCIE_MAX_MSI_IRQS: usize = 32;
 }

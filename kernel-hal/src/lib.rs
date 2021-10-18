@@ -5,12 +5,12 @@
 #![deny(warnings)]
 
 extern crate alloc;
-
 #[macro_use]
 extern crate log;
-
 #[macro_use]
 extern crate cfg_if;
+#[macro_use]
+extern crate lazy_static;
 
 #[macro_use]
 mod macros;
@@ -20,6 +20,8 @@ mod config;
 mod hal_fn;
 mod kernel_handler;
 mod utils;
+
+pub mod drivers;
 
 cfg_if! {
     if #[cfg(feature = "libos")] {
@@ -31,7 +33,10 @@ cfg_if! {
     }
 }
 
-pub use common::{addr, defs::*, future, user};
-pub use config::*;
+pub(crate) use config::KCONFIG;
+pub(crate) use kernel_handler::KHANDLER;
+
+pub use common::{addr, console, defs::*, user};
+pub use config::KernelConfig;
 pub use imp::*;
-pub use kernel_handler::*;
+pub use kernel_handler::KernelHandler;

@@ -1,47 +1,35 @@
-mod mem_common;
-
-pub(super) mod dummy;
+mod drivers;
+mod dummy;
+mod mock_mem;
 
 pub mod config;
 pub mod mem;
-pub mod serial;
 pub mod thread;
 pub mod timer;
 pub mod vdso;
 pub mod vm;
 
+#[path = "special.rs"]
+pub mod libos;
+
 pub use super::hal_fn::{context, cpu, interrupt, rand};
 
-hal_fn_impl_default!(context, cpu, interrupt, rand);
-
-cfg_if! {
-    if #[cfg(target_os = "linux")] {
-        pub mod dev;
-    } else {
-        pub use super::hal_fn::dev;
-        hal_fn_impl_default!(dev::fb, dev::input);
-    }
-}
+hal_fn_impl_default!(context, cpu, interrupt, rand, super::hal_fn::console);
 
 #[cfg(target_os = "macos")]
-include!("macos.rs");
+mod macos;
 
 /// Initialize the HAL.
 ///
 /// This function must be called at the beginning.
 pub fn init() {
-    crate::KHANDLER.init_by(&crate::DummyKernelHandler);
+    let _ = crate::KCONFIG;
+    crate::KHANDLER.init_once_by(&crate::kernel_handler::DummyKernelHandler);
+
+    drivers::init();
 
     #[cfg(target_os = "macos")]
     unsafe {
-        register_sigsegv_handler();
+        macos::register_sigsegv_handler();
     }
-    // spawn a thread to read stdin
-    // TODO: raw mode
-    use std::io::Read;
-    std::thread::spawn(|| {
-        for i in std::io::stdin().bytes() {
-            serial::serial_put(i.unwrap());
-        }
-    });
 }

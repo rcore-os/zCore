@@ -1,6 +1,7 @@
 use alloc::boxed::Box;
-use core::{fmt::Arguments, future::Future, ops::Range, pin::Pin, time::Duration};
+use core::{future::Future, ops::Range, pin::Pin, time::Duration};
 
+use crate::drivers::prelude::{IrqHandler, IrqPolarity, IrqTriggerMode};
 use crate::{common, HalResult, MMUFlags, PhysAddr, VirtAddr};
 
 hal_fn_def! {
@@ -33,11 +34,11 @@ hal_fn_def! {
     }
 
     pub mod vm: common::vm {
+        /// Read current VM token. (e.g. CR3, SATP, ...)
+        pub fn current_vmtoken() -> PhysAddr;
+
         /// Activate this page table by given `vmtoken`.
         pub(crate) fn activate_paging(vmtoken: PhysAddr);
-
-        /// Read current VM token. (e.g. CR3, SATP, ...)
-        pub(crate) fn current_vmtoken() -> PhysAddr;
 
         /// Flush TLB by the associated `vaddr`, or flush the entire TLB. (`vaddr` is `None`).
         pub(crate) fn flush_tlb(vaddr: Option<VirtAddr>);
@@ -47,40 +48,48 @@ hal_fn_def! {
     }
 
     pub mod interrupt {
-        /// Enable IRQ.
-        pub fn enable_irq(vector: u32);
-
-        /// Disable IRQ.
-        pub fn disable_irq(vector: u32);
+        /// Suspend the CPU (also enable interrupts) and wait for an interrupt
+        /// to occurs, then disable interrupts.
+        pub fn wait_for_interrupt();
 
         /// Is a valid IRQ number.
-        pub fn is_valid_irq(vector: u32) -> bool;
+        pub fn is_valid_irq(vector: usize) -> bool;
 
-        /// Configure the specified interrupt vector.  If it is invoked, it muust be
+        /// Disable IRQ.
+        pub fn mask_irq(vector: usize) -> HalResult;
+
+        /// Enable IRQ.
+        pub fn unmask_irq(vector: usize) -> HalResult;
+
+        /// Configure the specified interrupt vector. If it is invoked, it must be
         /// invoked prior to interrupt registration.
-        pub fn configure_irq(vector: u32, trig_mode: bool, polarity: bool) -> HalResult;
+        pub fn configure_irq(vector: usize, tm: IrqTriggerMode, pol: IrqPolarity) -> HalResult;
 
-        /// Add an interrupt handle to an IRQ
-        pub fn register_irq_handler(vector: u32, handler: Box<dyn Fn() + Send + Sync>) -> HalResult<u32>;
+        /// Add an interrupt handle to an IRQ.
+        pub fn register_irq_handler(vector: usize, handler: IrqHandler) -> HalResult;
 
-        /// Remove the interrupt handle to an IRQ
-        pub fn unregister_irq_handler(vector: u32) -> HalResult;
+        /// Remove the interrupt handle to an IRQ.
+        pub fn unregister_irq_handler(vector: usize) -> HalResult;
 
         /// Handle IRQ.
-        pub fn handle_irq(vector: u32);
+        pub fn handle_irq(vector: usize);
 
         /// Method used for platform allocation of blocks of MSI and MSI-X compatible
         /// IRQ targets.
-        pub fn msi_allocate_block(requested_irqs: u32) -> HalResult<Range<u32>>;
+        pub fn msi_alloc_block(requested_irqs: usize) -> HalResult<Range<usize>>;
 
         /// Method used to free a block of MSI IRQs previously allocated by msi_alloc_block().
         /// This does not unregister IRQ handlers.
-        pub fn msi_free_block(block: Range<u32>) -> HalResult;
+        pub fn msi_free_block(block: Range<usize>) -> HalResult;
 
         /// Register a handler function for a given msi_id within an msi_block_t. Passing a
         /// NULL handler will effectively unregister a handler for a given msi_id within the
         /// block.
-        pub fn msi_register_handler(block: Range<u32>, msi_id: u32, handler: Box<dyn Fn() + Send + Sync>) -> HalResult;
+        pub fn msi_register_handler(block: Range<usize>, msi_id: usize, handler: IrqHandler) -> HalResult;
+    }
+
+    pub(crate) mod console {
+        pub(crate) fn console_write_early(_s: &str) {}
     }
 
     pub mod context: common::context {
@@ -103,7 +112,7 @@ hal_fn_def! {
         pub fn fetch_page_fault_info(info_reg: usize) -> (VirtAddr, MMUFlags);
     }
 
-    pub mod thread {
+    pub mod thread: common::thread {
         /// Spawn a new thread.
         pub fn spawn(future: Pin<Box<dyn Future<Output = ()> + Send + 'static>>, vmtoken: usize);
 
@@ -116,18 +125,20 @@ hal_fn_def! {
 
     pub mod timer {
         /// Get current time.
+        /// TODO: use `Instant` as return type.
         pub fn timer_now() -> Duration;
 
+        /// Converting from now-relative durations to absolute deadlines.
+        pub fn deadline_after(dur: Duration) -> Duration {
+            timer_now() + dur
+        }
+
         /// Set a new timer. After `deadline`, the `callback` will be called.
+        /// TODO: use `Instant` as the type of `deadline`.
         pub fn timer_set(deadline: Duration, callback: Box<dyn FnOnce(Duration) + Send + Sync>);
 
         /// Check timers, call when timer interrupt happened.
         pub(crate) fn timer_tick();
-    }
-
-    pub mod serial: common::serial {
-        /// Print format string and its arguments to serial.
-        pub fn serial_write_fmt(fmt: Arguments);
     }
 
     pub mod rand {
@@ -139,13 +150,18 @@ hal_fn_def! {
                     // TODO: optimize
                     for x in buf.iter_mut() {
                         let mut r = 0;
-                        unsafe {
-                            core::arch::x86_64::_rdrand16_step(&mut r);
-                        }
+                        unsafe { core::arch::x86_64::_rdrand16_step(&mut r) };
                         *x = r as _;
                     }
                 } else {
-                    unimplemented!()
+                    static mut SEED: u64 = 0xdeadbeef_cafebabe;
+                    for x in buf.iter_mut() {
+                        unsafe {
+                            // from musl
+                            SEED = SEED.wrapping_mul(0x5851_f42d_4c95_7f2d);
+                            *x = (SEED >> 33) as u8;
+                        }
+                    }
                 }
             }
         }
@@ -155,28 +171,6 @@ hal_fn_def! {
         /// Get platform specific information.
         pub fn vdso_constants() -> VdsoConstants {
             vdso_constants_template()
-        }
-    }
-}
-
-pub mod dev {
-    use super::*;
-
-    hal_fn_def! {
-        pub mod fb: common::fb {
-            /// Initialize framebuffer.
-            pub fn init();
-        }
-
-        pub mod input {
-            /// Initialize input devices.
-            pub fn init();
-
-            /// Setup the callback when a keyboard event occurs.
-            pub fn kbd_set_callback(callback: Box<dyn Fn(u16, i32) + Send + Sync>);
-
-            /// Setup the callback when a mouse event occurs.
-            pub fn mouse_set_callback(callback: Box<dyn Fn([u8; 3]) + Send + Sync>);
         }
     }
 }
