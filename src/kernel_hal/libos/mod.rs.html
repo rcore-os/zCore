@@ -33,65 +33,41 @@
 <span id="33">33</span>
 <span id="34">34</span>
 <span id="35">35</span>
-<span id="36">36</span>
-<span id="37">37</span>
-<span id="38">38</span>
-<span id="39">39</span>
-<span id="40">40</span>
-<span id="41">41</span>
-<span id="42">42</span>
-<span id="43">43</span>
-<span id="44">44</span>
-<span id="45">45</span>
-<span id="46">46</span>
-<span id="47">47</span>
 </pre><pre class="rust">
-<span class="kw">mod</span> <span class="ident">mem_common</span>;
-
-<span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">mod</span> <span class="ident">dummy</span>;
+<span class="kw">mod</span> <span class="ident">drivers</span>;
+<span class="kw">mod</span> <span class="ident">dummy</span>;
+<span class="kw">mod</span> <span class="ident">mock_mem</span>;
 
 <span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">config</span>;
 <span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">mem</span>;
-<span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">serial</span>;
 <span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">thread</span>;
 <span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">timer</span>;
 <span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">vdso</span>;
 <span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">vm</span>;
 
+<span class="attribute">#[<span class="ident">path</span> <span class="op">=</span> <span class="string">&quot;special.rs&quot;</span>]</span>
+<span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">libos</span>;
+
 <span class="kw">pub</span> <span class="kw">use</span> <span class="kw">super</span><span class="ident">::hal_fn</span>::{<span class="ident">context</span>, <span class="ident">cpu</span>, <span class="ident">interrupt</span>, <span class="ident">rand</span>};
 
-<span class="macro">hal_fn_impl_default!</span>(<span class="ident">context</span>, <span class="ident">cpu</span>, <span class="ident">interrupt</span>, <span class="ident">rand</span>);
-
-<span class="macro">cfg_if!</span> {
-    <span class="kw">if</span> <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_os</span> <span class="op">=</span> <span class="string">&quot;linux&quot;</span>)]</span> {
-        <span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">dev</span>;
-    } <span class="kw">else</span> {
-        <span class="kw">pub</span> <span class="kw">use</span> <span class="kw">super</span><span class="ident">::hal_fn::dev</span>;
-        <span class="macro">hal_fn_impl_default!</span>(<span class="ident">dev::fb</span>, <span class="ident">dev::input</span>);
-    }
-}
+<span class="macro">hal_fn_impl_default!</span>(<span class="ident">context</span>, <span class="ident">cpu</span>, <span class="ident">interrupt</span>, <span class="ident">rand</span>, <span class="kw">super</span><span class="ident">::hal_fn::console</span>);
 
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_os</span> <span class="op">=</span> <span class="string">&quot;macos&quot;</span>)]</span>
-<span class="macro">include!</span>(<span class="string">&quot;macos.rs&quot;</span>);
+<span class="kw">mod</span> <span class="ident">macos</span>;
 
 <span class="doccomment">/// Initialize the HAL.</span>
 <span class="doccomment">///</span>
 <span class="doccomment">/// This function must be called at the beginning.</span>
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">init</span>() {
-    <span class="kw">crate</span><span class="ident">::KHANDLER</span>.<span class="ident">init_by</span>(<span class="kw-2">&amp;</span><span class="kw">crate</span><span class="ident">::DummyKernelHandler</span>);
+    <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="kw">crate</span><span class="ident">::KCONFIG</span>;
+    <span class="kw">crate</span><span class="ident">::KHANDLER</span>.<span class="ident">init_once_by</span>(<span class="kw-2">&amp;</span><span class="kw">crate</span><span class="ident">::kernel_handler::DummyKernelHandler</span>);
+
+    <span class="ident">drivers::init</span>();
 
     <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_os</span> <span class="op">=</span> <span class="string">&quot;macos&quot;</span>)]</span>
     <span class="kw">unsafe</span> {
-        <span class="ident">register_sigsegv_handler</span>();
+        <span class="ident">macos::register_sigsegv_handler</span>();
     }
-    <span class="comment">// spawn a thread to read stdin</span>
-    <span class="comment">// TODO: raw mode</span>
-    <span class="kw">use</span> <span class="ident">std::io::Read</span>;
-    <span class="ident">std::thread::spawn</span>(<span class="op">|</span><span class="op">|</span> {
-        <span class="kw">for</span> <span class="ident">i</span> <span class="kw">in</span> <span class="ident">std::io::stdin</span>().<span class="ident">bytes</span>() {
-            <span class="ident">serial::serial_put</span>(<span class="ident">i</span>.<span class="ident">unwrap</span>());
-        }
-    });
 }
 </pre></div>
 </section><section id="search" class="content hidden"></section><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="kernel_hal" data-search-index-js="../../../search-index.js" data-search-js="../../../search.js"></div>

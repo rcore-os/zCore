@@ -12,7 +12,7 @@
     <span class="kw">impl</span> <span class="kw">mod</span> <span class="kw">crate</span><span class="ident">::hal_fn::vdso</span> {
         <span class="kw">fn</span> <span class="ident">vdso_constants</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="ident">VdsoConstants</span> {
             <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">constants</span> <span class="op">=</span> <span class="ident">vdso_constants_template</span>();
-            <span class="ident">constants</span>.<span class="ident">physmem</span> <span class="op">=</span> <span class="kw">super</span><span class="ident">::mem_common::PMEM_SIZE</span> <span class="kw">as</span> <span class="ident">u64</span>;
+            <span class="ident">constants</span>.<span class="ident">physmem</span> <span class="op">=</span> <span class="kw">super</span><span class="ident">::mem::PMEM_SIZE</span> <span class="kw">as</span> <span class="ident">u64</span>;
             <span class="ident">constants</span>
         }
     }

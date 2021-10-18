@@ -430,6 +430,9 @@
 <span id="430">430</span>
 <span id="431">431</span>
 <span id="432">432</span>
+<span id="433">433</span>
+<span id="434">434</span>
+<span id="435">435</span>
 </pre><pre class="rust">
 <span class="doccomment">//! Syscalls for process</span>
 <span class="doccomment">//!</span>
@@ -729,8 +732,9 @@
     <span class="doccomment">/// an interval specified with nanosecond precision</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">sys_nanosleep</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">req</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">TimeSpec</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
         <span class="macro">info!</span>(<span class="string">&quot;nanosleep: deadline={:?}&quot;</span>, <span class="ident">req</span>);
-        <span class="kw">let</span> <span class="ident">req</span> <span class="op">=</span> <span class="ident">req</span>.<span class="ident">read</span>()<span class="question-mark">?</span>;
-        <span class="ident">kernel_hal::future::sleep_until</span>(<span class="ident">req</span>.<span class="ident">into</span>()).<span class="kw">await</span>;
+        <span class="kw">let</span> <span class="ident">duration</span> <span class="op">=</span> <span class="ident">req</span>.<span class="ident">read</span>()<span class="question-mark">?</span>.<span class="ident">into</span>();
+        <span class="kw">use</span> <span class="ident">kernel_hal</span>::{<span class="ident">thread</span>, <span class="ident">timer</span>};
+        <span class="ident">thread::sleep_until</span>(<span class="ident">timer::deadline_after</span>(<span class="ident">duration</span>)).<span class="kw">await</span>;
         <span class="prelude-val">Ok</span>(<span class="number">0</span>)
     }
 
@@ -817,6 +821,8 @@
             <span class="ident">rsp</span>: <span class="ident">sp</span>,
             <span class="ident">rdi</span>: <span class="ident">arg1</span>,
             <span class="ident">rsi</span>: <span class="ident">arg2</span>,
+            <span class="comment">// FIXME: set IOPL = 0 when IO port bitmap is supported</span>
+            <span class="ident">rflags</span>: <span class="number">0x3202</span>, <span class="comment">// IOPL = 3, enable interrupt</span>
             ..<span class="ident">Default::default</span>()
         }
     }

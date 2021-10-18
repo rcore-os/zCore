@@ -1,1 +1,0 @@
-initSidebarItems({"enum":[["ColorDepth",""],["ColorDepth",""],["ColorFormat",""],["ColorFormat",""]],"fn":[["init","Initialize framebuffer."]],"static":[["FRAME_BUFFER",""],["FRAME_BUFFER",""]],"struct":[["FramebufferInfo","FramebufferInfo information"],["FramebufferInfo","FramebufferInfo information"]]});

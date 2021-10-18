@@ -76,6 +76,16 @@
 <span id="76">76</span>
 <span id="77">77</span>
 <span id="78">78</span>
+<span id="79">79</span>
+<span id="80">80</span>
+<span id="81">81</span>
+<span id="82">82</span>
+<span id="83">83</span>
+<span id="84">84</span>
+<span id="85">85</span>
+<span id="86">86</span>
+<span id="87">87</span>
+<span id="88">88</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="ident">alloc::vec::Vec</span>;
 
@@ -137,6 +147,16 @@
         <span class="self">self</span>.<span class="ident">paddr</span>
     }
 
+    <span class="doccomment">/// convert to raw a pointer.</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">as_ptr</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">*</span><span class="kw">const</span> <span class="ident">u8</span> {
+        <span class="kw">crate</span><span class="ident">::mem::phys_to_virt</span>(<span class="self">self</span>.<span class="ident">paddr</span>) <span class="kw">as</span> <span class="kw-2">*</span><span class="kw">const</span> <span class="ident">u8</span>
+    }
+
+    <span class="doccomment">/// convert to a mutable raw pointer.</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">as_mut_ptr</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">*</span><span class="kw-2">mut</span> <span class="ident">u8</span> {
+        <span class="kw">crate</span><span class="ident">::mem::phys_to_virt</span>(<span class="self">self</span>.<span class="ident">paddr</span>) <span class="kw">as</span> <span class="kw-2">*</span><span class="kw-2">mut</span> <span class="ident">u8</span>
+    }
+
     <span class="doccomment">/// Fill `self` with zero.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">zero</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) {
         <span class="kw">crate</span><span class="ident">::mem::pmem_zero</span>(<span class="self">self</span>.<span class="ident">paddr</span>, <span class="ident">PAGE_SIZE</span>);
@@ -151,7 +171,7 @@
     }
 }
 
-<span class="macro">lazy_static::lazy_static!</span> {
+<span class="macro">lazy_static!</span> {
     <span class="doccomment">/// The global physical frame contains all zeros.</span>
     <span class="kw">pub</span> <span class="kw">static</span> <span class="kw-2">ref</span> <span class="ident">ZERO_FRAME</span>: <span class="ident">PhysFrame</span> <span class="op">=</span> <span class="ident">PhysFrame::new_zero</span>().<span class="ident">expect</span>(<span class="string">&quot;failed to alloc zero frame&quot;</span>);
 }

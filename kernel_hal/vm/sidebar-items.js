@@ -1,1 +1,1 @@
-initSidebarItems({"enum":[["PageSize",""],["PagingError",""]],"struct":[["Page",""],["PageTable","Page Table"]],"trait":[["GenericPageTable",""],["IgnoreNotMappedErr",""]],"type":[["PagingResult",""]]});
+initSidebarItems({"enum":[["PageSize",""],["PagingError",""]],"fn":[["current_vmtoken","Read current VM token. (e.g. CR3, SATP, …)"]],"struct":[["Page",""],["PageTable","Page Table"]],"trait":[["GenericPageTable",""],["IgnoreNotMappedErr",""]],"type":[["PagingResult",""]]});

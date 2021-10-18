@@ -1444,7 +1444,7 @@
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">flags</span> <span class="op">=</span> <span class="ident">flags</span>;
         <span class="comment">// if vmo != 0</span>
         {
-            <span class="ident">flags</span> <span class="op">|</span><span class="op">=</span> <span class="ident">MMUFlags::from_bits_truncate</span>(<span class="ident">vmo</span>.<span class="ident">cache_policy</span>() <span class="kw">as</span> <span class="ident">u32</span> <span class="kw">as</span> <span class="ident">usize</span>);
+            <span class="ident">flags</span> <span class="op">|</span><span class="op">=</span> <span class="ident">MMUFlags::from_bits_truncate</span>(<span class="ident">vmo</span>.<span class="ident">cache_policy</span>() <span class="kw">as</span> <span class="ident">usize</span>);
         }
         <span class="comment">// align = 1K? 2K? 4K? 8K? ...</span>
         <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">test_map</span>(<span class="ident">inner</span>, <span class="ident">offset</span>, <span class="ident">len</span>, <span class="ident">PAGE_SIZE</span>) {

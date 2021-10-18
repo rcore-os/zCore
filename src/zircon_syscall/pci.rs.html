@@ -561,7 +561,7 @@
         );
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>();
         <span class="kw">let</span> <span class="ident">device</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">PcieDeviceKObject</span><span class="op">&gt;</span>(<span class="ident">handle</span>, <span class="ident">Rights::WRITE</span>)<span class="question-mark">?</span>;
-        <span class="ident">device</span>.<span class="ident">set_irq_mode</span>(<span class="ident">mode</span>, <span class="ident">requested_irq_count</span>)
+        <span class="ident">device</span>.<span class="ident">set_irq_mode</span>(<span class="ident">mode</span>, <span class="ident">requested_irq_count</span> <span class="kw">as</span> <span class="ident">usize</span>)
     }
 
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_pci_config_read</span>(

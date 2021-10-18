@@ -1,0 +1,1 @@
+initSidebarItems({"mod":[["input_event_codes","Linux input event codes."]],"struct":[["Mouse",""],["MouseFlags",""],["MouseState",""]]});

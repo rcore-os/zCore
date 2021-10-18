@@ -1,1 +1,0 @@
-initSidebarItems({"fn":[["serial_put","Put a char to serial buffer."],["serial_read","Read a string from serial buffer."],["serial_set_callback","Register a callback of serial readable event."],["serial_write","Print a string to serial."],["serial_write_fmt","Print format string and its arguments to serial."]]});

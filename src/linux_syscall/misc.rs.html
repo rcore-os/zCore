@@ -188,6 +188,21 @@
 <span id="188">188</span>
 <span id="189">189</span>
 <span id="190">190</span>
+<span id="191">191</span>
+<span id="192">192</span>
+<span id="193">193</span>
+<span id="194">194</span>
+<span id="195">195</span>
+<span id="196">196</span>
+<span id="197">197</span>
+<span id="198">198</span>
+<span id="199">199</span>
+<span id="200">200</span>
+<span id="201">201</span>
+<span id="202">202</span>
+<span id="203">203</span>
+<span id="204">204</span>
+<span id="205">205</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
 <span class="kw">use</span> <span class="ident">bitflags::bitflags</span>;
@@ -213,11 +228,26 @@
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_uname</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">buf</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
         <span class="macro">info!</span>(<span class="string">&quot;uname: buf={:?}&quot;</span>, <span class="ident">buf</span>);
 
-        <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">not</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;riscv64&quot;</span>))]</span>
-        <span class="kw">let</span> <span class="ident">strings</span> <span class="op">=</span> [<span class="string">&quot;Linux&quot;</span>, <span class="string">&quot;orz&quot;</span>, <span class="string">&quot;0.1.0&quot;</span>, <span class="string">&quot;1&quot;</span>, <span class="string">&quot;machine&quot;</span>, <span class="string">&quot;domain&quot;</span>];
+        <span class="kw">let</span> <span class="ident">release</span> <span class="op">=</span> <span class="ident">alloc::string::String::from</span>(<span class="macro">concat!</span>(<span class="macro">env!</span>(<span class="string">&quot;CARGO_PKG_VERSION&quot;</span>), <span class="string">&quot;-zcore&quot;</span>));
+        <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">not</span>(<span class="ident">target_os</span> <span class="op">=</span> <span class="string">&quot;none&quot;</span>))]</span>
+        <span class="kw">let</span> <span class="ident">release</span> <span class="op">=</span> <span class="ident">release</span> <span class="op">+</span> <span class="string">&quot;-libos&quot;</span>;
 
+        <span class="kw">let</span> <span class="ident">vdso_const</span> <span class="op">=</span> <span class="ident">kernel_hal::vdso::vdso_constants</span>();
+
+        <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>)]</span>
+        <span class="kw">let</span> <span class="ident">arch</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>;
         <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;riscv64&quot;</span>)]</span>
-        <span class="kw">let</span> <span class="ident">strings</span> <span class="op">=</span> [<span class="string">&quot;Linux&quot;</span>, <span class="string">&quot;@zCore&quot;</span>, <span class="string">&quot;0.1.0&quot;</span>, <span class="string">&quot;1&quot;</span>, <span class="string">&quot;riscv64&quot;</span>, <span class="string">&quot;oslab&quot;</span>];
+        <span class="kw">let</span> <span class="ident">arch</span> <span class="op">=</span> <span class="string">&quot;riscv64&quot;</span>;
+
+        <span class="kw">let</span> <span class="ident">strings</span> <span class="op">=</span> [
+            <span class="string">&quot;Linux&quot;</span>,                            <span class="comment">// sysname</span>
+            <span class="string">&quot;zcore&quot;</span>,                            <span class="comment">// nodename</span>
+            <span class="ident">release</span>.<span class="ident">as_str</span>(),                   <span class="comment">// release</span>
+            <span class="ident">vdso_const</span>.<span class="ident">version_string</span>.<span class="ident">as_str</span>(), <span class="comment">// version</span>
+            <span class="ident">arch</span>,                               <span class="comment">// machine</span>
+            <span class="string">&quot;rcore-os&quot;</span>,                         <span class="comment">// domainname</span>
+        ];
+
         <span class="kw">for</span> (<span class="ident">i</span>, <span class="kw-2">&amp;</span><span class="ident">s</span>) <span class="kw">in</span> <span class="ident">strings</span>.<span class="ident">iter</span>().<span class="ident">enumerate</span>() {
             <span class="kw">const</span> <span class="ident">OFFSET</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">65</span>;
             <span class="ident">buf</span>.<span class="ident">add</span>(<span class="ident">i</span> <span class="op">*</span> <span class="ident">OFFSET</span>).<span class="ident">write_cstring</span>(<span class="ident">s</span>)<span class="question-mark">?</span>;

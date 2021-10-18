@@ -455,30 +455,43 @@
 <span id="455">455</span>
 <span id="456">456</span>
 <span id="457">457</span>
+<span id="458">458</span>
+<span id="459">459</span>
+<span id="460">460</span>
+<span id="461">461</span>
+<span id="462">462</span>
+<span id="463">463</span>
+<span id="464">464</span>
+<span id="465">465</span>
+<span id="466">466</span>
+<span id="467">467</span>
 </pre><pre class="rust">
 <span class="doccomment">//! Linux Process</span>
 
-<span class="kw">use</span> <span class="kw">crate</span><span class="ident">::error</span>::<span class="kw-2">*</span>;
-<span class="kw">use</span> <span class="kw">crate</span><span class="ident">::fs</span>::<span class="kw-2">*</span>;
-<span class="kw">use</span> <span class="kw">crate</span><span class="ident">::ipc</span>::<span class="kw-2">*</span>;
-<span class="kw">use</span> <span class="kw">crate</span><span class="ident">::signal</span>::{<span class="ident">Signal</span> <span class="kw">as</span> <span class="ident">LinuxSignal</span>, <span class="ident">SignalAction</span>};
-<span class="kw">use</span> <span class="ident">alloc::vec::Vec</span>;
 <span class="kw">use</span> <span class="ident">alloc</span>::{
     <span class="ident">boxed::Box</span>,
     <span class="ident">string::String</span>,
     <span class="ident">sync</span>::{<span class="ident">Arc</span>, <span class="ident">Weak</span>},
+    <span class="ident">vec::Vec</span>,
 };
 <span class="kw">use</span> <span class="ident">core::sync::atomic::AtomicI32</span>;
+
 <span class="kw">use</span> <span class="ident">hashbrown::HashMap</span>;
-<span class="kw">use</span> <span class="ident">kernel_hal::VirtAddr</span>;
 <span class="kw">use</span> <span class="ident">rcore_fs::vfs</span>::{<span class="ident">FileSystem</span>, <span class="ident">INode</span>};
-<span class="kw">use</span> <span class="ident">spin</span>::<span class="kw-2">*</span>;
+<span class="kw">use</span> <span class="ident">spin</span>::{<span class="ident">Mutex</span>, <span class="ident">MutexGuard</span>};
+
+<span class="kw">use</span> <span class="ident">kernel_hal::VirtAddr</span>;
 <span class="kw">use</span> <span class="ident">zircon_object</span>::{
     <span class="ident">object</span>::{<span class="ident">KernelObject</span>, <span class="ident">KoID</span>, <span class="ident">Signal</span>},
     <span class="ident">signal::Futex</span>,
     <span class="ident">task</span>::{<span class="ident">Job</span>, <span class="ident">Process</span>, <span class="ident">Status</span>},
     <span class="ident">ZxResult</span>,
 };
+
+<span class="kw">use</span> <span class="kw">crate</span><span class="ident">::error</span>::{<span class="ident">LxError</span>, <span class="ident">LxResult</span>};
+<span class="kw">use</span> <span class="kw">crate</span><span class="ident">::fs</span>::{<span class="ident">File</span>, <span class="ident">FileDesc</span>, <span class="ident">FileLike</span>, <span class="ident">OpenFlags</span>, <span class="ident">STDIN</span>, <span class="ident">STDOUT</span>};
+<span class="kw">use</span> <span class="kw">crate</span><span class="ident">::ipc</span>::<span class="kw-2">*</span>;
+<span class="kw">use</span> <span class="kw">crate</span><span class="ident">::signal</span>::{<span class="ident">Signal</span> <span class="kw">as</span> <span class="ident">LinuxSignal</span>, <span class="ident">SignalAction</span>};
 
 <span class="doccomment">/// Process extension for linux</span>
 <span class="kw">pub</span> <span class="kw">trait</span> <span class="ident">ProcessExt</span> {
@@ -662,33 +675,26 @@
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">rootfs</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">FileSystem</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
         <span class="kw">let</span> <span class="ident">stdin</span> <span class="op">=</span> <span class="ident">File::new</span>(
             <span class="ident">STDIN</span>.<span class="ident">clone</span>(), <span class="comment">// FIXME: stdin</span>
-            <span class="ident">OpenOptions</span> {
-                <span class="ident">read</span>: <span class="bool-val">true</span>,
-                <span class="ident">write</span>: <span class="bool-val">false</span>,
-                <span class="ident">append</span>: <span class="bool-val">false</span>,
-                <span class="ident">nonblock</span>: <span class="bool-val">false</span>,
-                <span class="ident">fd_cloexec</span>: <span class="bool-val">false</span>,
-            },
+            <span class="ident">OpenFlags::RDONLY</span>,
             <span class="ident">String::from</span>(<span class="string">&quot;/dev/stdin&quot;</span>),
         ) <span class="kw">as</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">FileLike</span><span class="op">&gt;</span>;
         <span class="kw">let</span> <span class="ident">stdout</span> <span class="op">=</span> <span class="ident">File::new</span>(
             <span class="ident">STDOUT</span>.<span class="ident">clone</span>(), <span class="comment">// TODO: open from &#39;/dev/stdout&#39;</span>
-            <span class="ident">OpenOptions</span> {
-                <span class="ident">read</span>: <span class="bool-val">false</span>,
-                <span class="ident">write</span>: <span class="bool-val">true</span>,
-                <span class="ident">append</span>: <span class="bool-val">false</span>,
-                <span class="ident">nonblock</span>: <span class="bool-val">false</span>,
-                <span class="ident">fd_cloexec</span>: <span class="bool-val">false</span>,
-            },
+            <span class="ident">OpenFlags::WRONLY</span>,
             <span class="ident">String::from</span>(<span class="string">&quot;/dev/stdout&quot;</span>),
+        ) <span class="kw">as</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">FileLike</span><span class="op">&gt;</span>;
+        <span class="kw">let</span> <span class="ident">stderr</span> <span class="op">=</span> <span class="ident">File::new</span>(
+            <span class="ident">STDOUT</span>.<span class="ident">clone</span>(), <span class="comment">// TODO: open from &#39;/dev/stderr&#39;</span>
+            <span class="ident">OpenFlags::WRONLY</span>,
+            <span class="ident">String::from</span>(<span class="string">&quot;/dev/stderr&quot;</span>),
         ) <span class="kw">as</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">FileLike</span><span class="op">&gt;</span>;
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">files</span> <span class="op">=</span> <span class="ident">HashMap::new</span>();
         <span class="ident">files</span>.<span class="ident">insert</span>(<span class="number">0</span>.<span class="ident">into</span>(), <span class="ident">stdin</span>);
-        <span class="ident">files</span>.<span class="ident">insert</span>(<span class="number">1</span>.<span class="ident">into</span>(), <span class="ident">stdout</span>.<span class="ident">clone</span>());
-        <span class="ident">files</span>.<span class="ident">insert</span>(<span class="number">2</span>.<span class="ident">into</span>(), <span class="ident">stdout</span>);
+        <span class="ident">files</span>.<span class="ident">insert</span>(<span class="number">1</span>.<span class="ident">into</span>(), <span class="ident">stdout</span>);
+        <span class="ident">files</span>.<span class="ident">insert</span>(<span class="number">2</span>.<span class="ident">into</span>(), <span class="ident">stderr</span>);
 
         <span class="ident">LinuxProcess</span> {
-            <span class="ident">root_inode</span>: <span class="ident">create_root_fs</span>(<span class="ident">rootfs</span>), <span class="comment">//Arc::clone(&amp;ROOT_INODE),访问磁盘可能更快？</span>
+            <span class="ident">root_inode</span>: <span class="kw">crate</span><span class="ident">::fs::create_root_fs</span>(<span class="ident">rootfs</span>), <span class="comment">//Arc::clone(&amp;ROOT_INODE),访问磁盘可能更快？</span>
             <span class="ident">parent</span>: <span class="ident">Weak::default</span>(),
             <span class="ident">inner</span>: <span class="ident">Mutex::new</span>(<span class="ident">LinuxProcessInner</span> {
                 <span class="ident">files</span>,
@@ -710,6 +716,16 @@
                 <span class="ident">Futex::new</span>(<span class="ident">value</span>)
             })
             .<span class="ident">clone</span>()
+    }
+
+    <span class="doccomment">/// Get lowest free fd</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_free_fd</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">FileDesc</span> {
+        <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">get_free_fd</span>()
+    }
+
+    <span class="doccomment">/// get the lowest available fd great than or equal to `start`.</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_free_fd_from</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">start</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">FileDesc</span> {
+        <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">get_free_fd_from</span>(<span class="ident">start</span>)
     }
 
     <span class="doccomment">/// Add a file to the file descriptor table.</span>
@@ -844,7 +860,7 @@
             .<span class="ident">iter</span>()
             .<span class="ident">filter_map</span>(<span class="op">|</span>(<span class="ident">fd</span>, <span class="ident">file_like</span>)<span class="op">|</span> {
                 <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Ok</span>(<span class="ident">file</span>) <span class="op">=</span> <span class="ident">file_like</span>.<span class="ident">clone</span>().<span class="ident">downcast_arc</span>::<span class="op">&lt;</span><span class="ident">File</span><span class="op">&gt;</span>() {
-                    <span class="kw">if</span> <span class="ident">file</span>.<span class="ident">options</span>.<span class="ident">fd_cloexec</span> {
+                    <span class="kw">if</span> <span class="ident">file</span>.<span class="ident">flags</span>().<span class="ident">close_on_exec</span>() {
                         <span class="prelude-val">Some</span>(<span class="kw-2">*</span><span class="ident">fd</span>)
                     } <span class="kw">else</span> {
                         <span class="prelude-val">None</span>
@@ -907,7 +923,11 @@
 
 <span class="kw">impl</span> <span class="ident">LinuxProcessInner</span> {
     <span class="kw">fn</span> <span class="ident">get_free_fd</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">FileDesc</span> {
-        (<span class="number">0usize</span>..)
+        <span class="self">self</span>.<span class="ident">get_free_fd_from</span>(<span class="number">0</span>)
+    }
+
+    <span class="kw">fn</span> <span class="ident">get_free_fd_from</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">start</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">FileDesc</span> {
+        (<span class="ident">start</span>..)
             .<span class="ident">map</span>(<span class="op">|</span><span class="ident">i</span><span class="op">|</span> <span class="ident">i</span>.<span class="ident">into</span>())
             .<span class="ident">find</span>(<span class="op">|</span><span class="ident">fd</span><span class="op">|</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">files</span>.<span class="ident">contains_key</span>(<span class="ident">fd</span>))
             .<span class="ident">unwrap</span>()

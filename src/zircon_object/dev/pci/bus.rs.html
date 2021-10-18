@@ -888,7 +888,7 @@
     }
 
     <span class="doccomment">/// Find the legacy IRQ handler.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">find_legacy_irq_handler</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">irq_id</span>: <span class="ident">u32</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">SharedLegacyIrqHandler</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">find_legacy_irq_handler</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">irq_id</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">SharedLegacyIrqHandler</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">list</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">legacy_irq_list</span>.<span class="ident">lock</span>();
         <span class="kw">for</span> <span class="ident">i</span> <span class="kw">in</span> <span class="ident">list</span>.<span class="ident">iter</span>() {
             <span class="kw">if</span> <span class="ident">irq_id</span> <span class="op">=</span><span class="op">=</span> <span class="ident">i</span>.<span class="ident">irq_id</span> {
@@ -1097,8 +1097,8 @@
     }
 
     <span class="doccomment">/// Set IRQ mode.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">set_irq_mode</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">mode</span>: <span class="ident">PcieIrqMode</span>, <span class="ident">irq_count</span>: <span class="ident">u32</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
-        <span class="self">self</span>.<span class="ident">device</span>.<span class="ident">device</span>().<span class="ident">set_irq_mode</span>(<span class="ident">mode</span>, <span class="ident">irq_count</span>)
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">set_irq_mode</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">mode</span>: <span class="ident">PcieIrqMode</span>, <span class="ident">requested_irqs</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+        <span class="self">self</span>.<span class="ident">device</span>.<span class="ident">device</span>().<span class="ident">set_irq_mode</span>(<span class="ident">mode</span>, <span class="ident">requested_irqs</span>)
     }
 
     <span class="doccomment">/// Read the device&#39;s config.</span>
