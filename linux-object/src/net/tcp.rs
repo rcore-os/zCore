@@ -5,6 +5,7 @@ use crate::error::LxError;
 use crate::error::LxResult;
 use crate::net::get_ephemeral_port;
 use crate::net::get_net_sockets;
+use crate::net::poll_ifaces;
 #[allow(unused_imports)]
 #[cfg(feature = "e1000")]
 use crate::net::poll_ifaces_e1000;
@@ -78,14 +79,9 @@ impl TcpSocketState {
     }
 
     /// missing documentation
-
-    #[cfg(feature = "loopback")]
     pub async fn read(&self, data: &mut [u8]) -> (LxResult<usize>, Endpoint) {
         loop {
-            #[cfg(feature = "e1000")]
-            poll_ifaces_e1000();
-            #[cfg(feature = "loopback")]
-            poll_ifaces_loopback();
+            poll_ifaces();
             let net_sockets = get_net_sockets();
             let mut sockets = net_sockets.lock();
             let mut socket = sockets.get::<TcpSocket>(self.handle.0);
@@ -96,11 +92,7 @@ impl TcpSocketState {
                         // avoid deadlock
                         drop(socket);
                         drop(sockets);
-
-                        #[cfg(feature = "e1000")]
-                        poll_ifaces_e1000();
-                        #[cfg(feature = "loopback")]
-                        poll_ifaces_loopback();
+                        poll_ifaces();
                         return (Ok(size), Endpoint::Ip(endpoint));
                     }
                 }
@@ -117,9 +109,6 @@ impl TcpSocketState {
     #[cfg(feature = "e1000")]
     pub async fn read(&self, data: &mut [u8]) -> (LxResult<usize>, Endpoint) {
         warn!("tcp read");
-        // use crate::net::IFaceFuture;
-        // IFaceFuture { flag: false }.await;
-        // warn!("read ready");
         use core::task::Poll;
         futures::future::poll_fn(|cx| {
             self.with(|s| {
@@ -220,7 +209,6 @@ impl TcpSocketState {
     }
 
     /// missing documentation
-    #[cfg(feature = "loopback")]
     pub async fn connect(&self, endpoint: Endpoint) -> SysResult {
         let net_sockets = get_net_sockets();
         let mut sockets = net_sockets.lock();
@@ -237,10 +225,7 @@ impl TcpSocketState {
             drop(sockets);
             // wait for connection result
             loop {
-                #[cfg(feature = "e1000")]
-                poll_ifaces_e1000();
-                #[cfg(feature = "loopback")]
-                poll_ifaces_loopback();
+                poll_ifaces();
                 let net_sockets = get_net_sockets();
                 let mut sockets = net_sockets.lock();
                 let socket = sockets.get::<TcpSocket>(self.handle.0);
@@ -251,10 +236,7 @@ impl TcpSocketState {
                         drop(socket);
                         drop(sockets);
 
-                        #[cfg(feature = "e1000")]
-                        poll_ifaces_e1000();
-                        #[cfg(feature = "loopback")]
-                        poll_ifaces_loopback();
+                        poll_ifaces();
                     }
                     TcpState::Established => {
                         break Ok(0);
@@ -507,15 +489,10 @@ impl TcpSocketState {
     }
 
     /// missing documentation
-
-    #[cfg(feature = "loopback")]
     async fn accept(&mut self) -> Result<(Arc<Mutex<dyn Socket>>, Endpoint), LxError> {
         let endpoint = self.local_endpoint.ok_or(LxError::EINVAL)?;
         loop {
-            #[cfg(feature = "e1000")]
-            poll_ifaces_e1000();
-            #[cfg(feature = "loopback")]
-            poll_ifaces_loopback();
+            poll_ifaces();
             let net_sockets = get_net_sockets();
             let mut sockets = net_sockets.lock();
             let socket = sockets.get::<TcpSocket>(self.handle.0);
@@ -537,10 +514,7 @@ impl TcpSocketState {
                     }))
                 };
                 drop(sockets);
-                #[cfg(feature = "e1000")]
-                poll_ifaces_e1000();
-                #[cfg(feature = "loopback")]
-                poll_ifaces_loopback();
+                poll_ifaces();
                 return Ok((new_socket, Endpoint::Ip(remote_endpoint)));
             }
 

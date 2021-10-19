@@ -107,6 +107,7 @@ impl Drop for GlobalSocketHandle {
 
         // send FIN immediately when applicable
         drop(sockets);
+        poll_ifaces();
         #[cfg(feature = "e1000")]
         poll_ifaces_e1000();
         #[cfg(feature = "loopback")]
@@ -139,6 +140,13 @@ use smoltcp::time::Instant;
 // pub fn get_net_stack() -> HashMap<usize, Arc<dyn NetStack>> {
 //     NET_STACK.read().clone()
 // }
+
+/// miss doc
+fn poll_ifaces() {
+    for iface in get_net_driver().iter() {
+        iface.poll();
+    }
+}
 
 /// miss doc
 #[cfg(feature = "loopback")]
