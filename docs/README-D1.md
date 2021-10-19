@@ -99,3 +99,24 @@ Hello world from user mode program!
 
 ```
 
+## 执行测例
+
+```
+# zCore在D1上运行起来后，测试主机上退出串口连接程序
+cd scripts
+# 运行第一部分的测例
+cp linux/baremetal-test-ones.txt.1 linux/baremetal-test-ones.txt
+sudo python3 baremetal-libc-test-d1.py
+# 运行第二部分的测例
+cp linux/baremetal-test-ones.txt.2 linux/baremetal-test-ones.txt
+sudo python3 baremetal-libc-test-d1.py
+# 运行第三部分的测例
+cp linux/baremetal-test-ones.txt.3 linux/baremetal-test-ones.txt
+sudo python3 baremetal-libc-test-d1.py
+# 运行第四部分的测例
+cp linux/baremetal-test-ones.txt.4 linux/baremetal-test-ones.txt
+sudo python3 baremetal-libc-test-d1.py
+# 运行网络的测例
+sudo python3 baremetal-net-test-d1.py
+```
+
