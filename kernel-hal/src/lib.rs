@@ -41,17 +41,17 @@ pub mod defs {
 }
 
 mod context;
+pub mod drivers;
 mod dummy;
 mod fb;
 mod future;
-pub mod drivers;
 pub mod user;
 pub mod vdso;
 
 pub use self::context::*;
 pub use self::defs::*;
-pub use self::dummy::*;
 pub use self::drivers::*;
+pub use self::dummy::*;
 pub use self::fb::*;
 pub use self::future::*;
 pub use trapframe::{GeneralRegs, UserContext};

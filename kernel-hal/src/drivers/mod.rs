@@ -4,9 +4,9 @@ use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 use lazy_static::lazy_static;
-use spin::RwLock;
-use spin::Mutex;
 use smoltcp::socket::SocketSet;
+use spin::Mutex;
+use spin::RwLock;
 
 //pub use self::virtio::*;
 pub use block::BlockDriver;

@@ -1,13 +1,13 @@
 //use super::consts::UART_BASE;
-use crate::{putfmt, phys_to_virt};
 use crate::arch::serial_put;
 use crate::drivers::device_tree::{DEVICE_TREE_INTC, DEVICE_TREE_REGISTRY};
-use crate::drivers::{SerialDriver, SERIAL_DRIVERS, IRQ_MANAGER};
-use alloc::{format, sync::Arc, string::String};
+use crate::drivers::{SerialDriver, IRQ_MANAGER, SERIAL_DRIVERS};
+use crate::{phys_to_virt, putfmt};
+use alloc::{format, string::String, sync::Arc};
 use core::convert::TryInto;
 use core::fmt::{Error, Write};
-use kernel_hal::drivers::{Driver, DeviceType, DRIVERS};
 use device_tree::Node;
+use kernel_hal::drivers::{DeviceType, Driver, DRIVERS};
 
 pub struct Uart {
     base_address: usize,
@@ -183,4 +183,3 @@ pub fn init_dt(dt: &Node) {
 pub fn driver_init() {
     DEVICE_TREE_REGISTRY.write().insert("ns16550a", init_dt);
 }
-

@@ -1,18 +1,16 @@
 //! RISC-V plic
 
-pub use kernel_hal::drivers::{Driver, DeviceType, DRIVERS};
 use super::{super::IRQ_MANAGER, IntcDriver, IrqManager};
-use crate::drivers::{
-    device_tree::DEVICE_TREE_INTC, device_tree::DEVICE_TREE_REGISTRY,
-};
+use crate::drivers::{device_tree::DEVICE_TREE_INTC, device_tree::DEVICE_TREE_REGISTRY};
 use crate::phys_to_virt;
+pub use kernel_hal::drivers::{DeviceType, Driver, DRIVERS};
 //use crate::{sync::SpinNoIrqLock as Mutex, util::read, util::write};
-use spin::Mutex;
-use core::ptr::{read_volatile, write_volatile};
 use alloc::format;
 use alloc::string::String;
 use alloc::sync::Arc;
+use core::ptr::{read_volatile, write_volatile};
 use device_tree::Node;
+use spin::Mutex;
 
 pub struct Plic {
     base: usize,
@@ -60,7 +58,7 @@ impl IntcDriver for Plic {
         // enable irq for context 1
         write(
             self.base + step + 0x2080,
-            read::<u32>(self.base + step + 0x2080) | (1 << irq%32),
+            read::<u32>(self.base + step + 0x2080) | (1 << irq % 32),
         );
         // set priority to 7
         write(self.base + irq * 4, 7);

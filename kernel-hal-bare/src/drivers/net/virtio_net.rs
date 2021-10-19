@@ -1,18 +1,18 @@
+use alloc::collections::BTreeMap;
 use alloc::format;
 use alloc::string::String;
 use alloc::sync::Arc;
-use alloc::collections::BTreeMap;
 
-use smoltcp::phy::{self, DeviceCapabilities};
+use device_tree::Node;
 use smoltcp::iface::{InterfaceBuilder, NeighborCache};
+use smoltcp::phy::{self, DeviceCapabilities};
 use smoltcp::time::Instant;
-use smoltcp::wire::{EthernetAddress, IpAddress, Ipv4Address, IpCidr};
+use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, Ipv4Address};
 use smoltcp::Result;
 use virtio_drivers::{VirtIOHeader, VirtIONet};
-use device_tree::Node;
 
-use super::super::{IRQ_MANAGER, device_tree::DEVICE_TREE_INTC};
-use kernel_hal::drivers::{Driver, DeviceType, NetDriver, DRIVERS, NET_DRIVERS};
+use super::super::{device_tree::DEVICE_TREE_INTC, IRQ_MANAGER};
+use kernel_hal::drivers::{DeviceType, Driver, NetDriver, DRIVERS, NET_DRIVERS};
 //use crate::{drivers::BlockDriver, sync::SpinNoIrqLock as Mutex};
 use spin::Mutex;
 
@@ -111,7 +111,8 @@ impl phy::RxToken for VirtIONetDriver {
         info!("RxToken recv consume()");
         let mut buffer = [0u8; 2000];
         let mut len = buffer.len();
-        { //若无括号会与TxToken consume中的lock()发生死锁
+        {
+            //若无括号会与TxToken consume中的lock()发生死锁
             let mut driver = self.0.lock();
             //需要添加recv_queue和写queue_notify，才能触发virtioNet网卡中断一次?
             //这里有等待总能收到包，TODO: fix me

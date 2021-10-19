@@ -1,4 +1,4 @@
-use kernel_hal::drivers::{Driver, BlockDriver, DeviceType, DRIVERS, BLK_DRIVERS};
+use kernel_hal::drivers::{BlockDriver, DeviceType, Driver, BLK_DRIVERS, DRIVERS};
 
 /// Block device
 pub mod virtio;

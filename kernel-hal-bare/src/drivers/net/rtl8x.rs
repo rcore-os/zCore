@@ -1,20 +1,20 @@
-use alloc::vec::Vec;
-use alloc::sync::Arc;
-use alloc::string::String;
 use alloc::collections::BTreeMap;
+use alloc::string::String;
+use alloc::sync::Arc;
+use alloc::vec::Vec;
 use spin::Mutex;
 
 use smoltcp::iface::*;
-use smoltcp::phy::{self, Device, Medium, DeviceCapabilities};
-use smoltcp::wire::*;
+use smoltcp::phy::{self, Device, DeviceCapabilities, Medium};
 use smoltcp::time::Instant;
+use smoltcp::wire::*;
 use smoltcp::Result;
 
-use super::realtek::rtl8211f::RTL8211F;
 use super::super::IRQ_MANAGER;
-use crate::PAGE_SIZE;
+use super::realtek::rtl8211f::RTL8211F;
 use crate::drivers::provider::Provider;
-use kernel_hal::drivers::{Driver, DeviceType, NetDriver, DRIVERS, NET_DRIVERS, SOCKETS};
+use crate::PAGE_SIZE;
+use kernel_hal::drivers::{DeviceType, Driver, NetDriver, DRIVERS, NET_DRIVERS, SOCKETS};
 
 #[derive(Clone)]
 pub struct RTL8xDriver(Arc<Mutex<RTL8211F<Provider>>>);

@@ -21,7 +21,7 @@ pub fn flush_dcache_range(start: u64, end: u64) {
         unsafe {
             // 老风格的llvm asm
             // DCACHE 指定物理地址清脏表项
-            // llvm_asm!("dcache.cpa $0"::"r"(i)); 
+            // llvm_asm!("dcache.cpa $0"::"r"(i));
 
             // 新asm
             asm!(".long 0x0295000b", in("a0") i); // dcache.cpa a0, 因编译器无法识别该指令

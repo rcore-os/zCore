@@ -1,13 +1,13 @@
 //! 16550 serial adapter driver for malta board
 
 use super::SerialDriver;
+use crate::arch::serial_put;
 use crate::drivers::device_tree::{DEVICE_TREE_INTC, DEVICE_TREE_REGISTRY};
 use crate::drivers::IRQ_MANAGER;
 use crate::drivers::SERIAL_DRIVERS;
-use kernel_hal::drivers::{Driver, DeviceType, DRIVERS};
-use spin::Mutex;
 use crate::phys_to_virt;
-use crate::arch::serial_put;
+use kernel_hal::drivers::{DeviceType, Driver, DRIVERS};
+use spin::Mutex;
 /*
 use crate::{
     memory::phys_to_virt,
@@ -105,7 +105,7 @@ pub fn init_dt(dt: &Node) {
     SERIAL_DRIVERS.write().push(com.clone());
     if let Ok(intc) = dt.prop_u32("interrupt-parent") {
         if let Some(irq) = irq_opt {
-                                                            //PLIC phandle
+            //PLIC phandle
             if let Some(manager) = DEVICE_TREE_INTC.write().get_mut(&intc) {
                 manager.register_local_irq(irq, com.clone());
                 info!("registered uart16550 irq {} to PLIC intc", irq);

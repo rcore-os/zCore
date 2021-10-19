@@ -1,17 +1,16 @@
+use alloc::collections::BTreeMap;
+use alloc::sync::Arc;
+use alloc::vec;
+use core::fmt::Write;
 use kernel_hal::drivers::NET_DRIVERS;
 use kernel_hal::drivers::SOCKETS;
 use kernel_hal::NetDriver;
-use alloc::vec;
-use alloc::sync::Arc;
-use alloc::collections::BTreeMap;
-use core::fmt::Write;
+use smoltcp::iface::{InterfaceBuilder, NeighborCache};
 use smoltcp::socket::*;
 use smoltcp::time::Instant;
-use smoltcp::iface::{InterfaceBuilder, NeighborCache};
 use smoltcp::wire::{IpAddress, IpCidr};
 
 pub extern "C" fn server(_arg: usize) -> ! {
-
     //判断Vec中是否有保存初始化好的驱动
     if NET_DRIVERS.read().len() < 1 {
         loop {
@@ -25,8 +24,12 @@ pub extern "C" fn server(_arg: usize) -> ! {
     let driver = {
         //选第一个网卡驱动
         let ref_driver = Arc::clone(&NET_DRIVERS.write()[0]);
-                                            //需实现Clone
-        ref_driver.as_any().downcast_ref::<RTL8xInterface>().unwrap().clone()
+        //需实现Clone
+        ref_driver
+            .as_any()
+            .downcast_ref::<RTL8xInterface>()
+            .unwrap()
+            .clone()
     };
     let ethernet_addr = driver.get_mac();
     let ifname = driver.get_ifname();
@@ -68,15 +71,14 @@ pub extern "C" fn server(_arg: usize) -> ! {
     let tcp2_handle = sockets.add(tcp2_socket);
     drop(sockets);
 
-    loop
-    {
+    loop {
         {
             let mut sockets = SOCKETS.lock();
 
             let timestamp = Instant::from_millis(0);
             //poll一般不要被阻塞,以便可以响应下列监听的网络协议
             match iface.poll(&mut sockets, timestamp) {
-                Ok(_) => {},
+                Ok(_) => {}
                 Err(e) => {
                     error!("poll error: {}", e);
                 }

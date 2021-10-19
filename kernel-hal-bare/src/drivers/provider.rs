@@ -1,5 +1,4 @@
-use crate::{hal_frame_alloc_contiguous, frame_dealloc,
-    phys_to_virt, virt_to_phys, PAGE_SIZE};
+use crate::{frame_dealloc, hal_frame_alloc_contiguous, phys_to_virt, virt_to_phys, PAGE_SIZE};
 use isomorphic_drivers::provider;
 
 pub struct Provider;
@@ -27,7 +26,7 @@ impl provider::Provider for Provider {
 #[no_mangle]
 extern "C" fn virtio_dma_alloc(pages: usize) -> PhysAddr {
     //let paddr = alloc_frame_contiguous(pages, 0).unwrap();
-    let paddr = unsafe{ hal_frame_alloc_contiguous(pages, 0).unwrap() };
+    let paddr = unsafe { hal_frame_alloc_contiguous(pages, 0).unwrap() };
     trace!("alloc DMA: paddr={:#x}, pages={}", paddr, pages);
     paddr
 }
@@ -35,7 +34,7 @@ extern "C" fn virtio_dma_alloc(pages: usize) -> PhysAddr {
 #[no_mangle]
 extern "C" fn virtio_dma_dealloc(paddr: PhysAddr, pages: usize) -> i32 {
     for i in 0..pages {
-        unsafe{
+        unsafe {
             frame_dealloc(&(paddr + i * PAGE_SIZE));
         }
         //dealloc_frame(paddr + i * PAGE_SIZE);

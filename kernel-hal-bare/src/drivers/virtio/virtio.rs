@@ -1,13 +1,13 @@
-use crate::{frame_dealloc, hal_frame_alloc_contiguous, phys_to_virt, virt_to_phys, PAGE_SIZE};
-use device_tree::Node;
-use device_tree::util::SliceRead;
-use log::*;
-use virtio_drivers::{VirtIOBlk, VirtIOGpu, VirtIOHeader, VirtIOInput};
 use crate::drivers::device_tree::DEVICE_TREE_REGISTRY;
 use crate::drivers::net::virtio_net;
-use crate::drivers::{InputDriver, GpuDriver, INPUT_DRIVERS, GPU_DRIVERS, IRQ_MANAGER };
+use crate::drivers::{GpuDriver, InputDriver, GPU_DRIVERS, INPUT_DRIVERS, IRQ_MANAGER};
+use crate::{frame_dealloc, hal_frame_alloc_contiguous, phys_to_virt, virt_to_phys, PAGE_SIZE};
+use device_tree::util::SliceRead;
+use device_tree::Node;
+use log::*;
+use virtio_drivers::{VirtIOBlk, VirtIOGpu, VirtIOHeader, VirtIOInput};
 //use kernel_hal::drivers::{Driver, BlockDriver, DeviceType, DRIVERS, BLK_DRIVERS};
-use super::{Driver, BlockDriver, DeviceType, DRIVERS, BLK_DRIVERS};
+use super::{BlockDriver, DeviceType, Driver, BLK_DRIVERS, DRIVERS};
 
 pub fn virtio_probe(node: &Node) {
     let reg = match node.prop_raw("reg") {
@@ -29,7 +29,8 @@ pub fn virtio_probe(node: &Node) {
     }
     info!(
         "Detected virtio device with vendor id: {:#X}, DeviceType: {:?}",
-        header.vendor_id(), header.device_type(),
+        header.vendor_id(),
+        header.device_type(),
     );
     info!("Device tree node {:?}", node);
     match header.device_type() {
@@ -47,12 +48,12 @@ pub fn driver_init() {
         .insert("virtio,mmio", virtio_probe);
 }
 
+use alloc::format;
 /// virtio_mmio
 /////////
 /// virtio_blk
 use alloc::string::String;
 use alloc::sync::Arc;
-use alloc::format;
 use spin::Mutex;
 //use crate::{sync::SpinNoIrqLock as Mutex};
 
