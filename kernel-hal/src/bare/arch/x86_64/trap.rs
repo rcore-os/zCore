@@ -2,47 +2,51 @@
 
 use trapframe::TrapFrame;
 
-// Reference: https://wiki.osdev.org/Exceptions
-const DIVIDE_ERROR: usize = 0;
-const DEBUG: usize = 1;
-const NON_MASKABLE_INTERRUPT: usize = 2;
-const BREAKPOINT: usize = 3;
-const OVERFLOW: usize = 4;
-const BOUND_RANGE_EXCEEDED: usize = 5;
-const INVALID_OPCODE: usize = 6;
-const DEVICE_NOT_AVAILABLE: usize = 7;
-const DOUBLE_FAULT: usize = 8;
-const COPROCESSOR_SEGMENT_OVERRUN: usize = 9;
-const INVALID_TSS: usize = 10;
-const SEGMENT_NOT_PRESENT: usize = 11;
-const STACK_SEGMENT_FAULT: usize = 12;
-const GENERAL_PROTECTION_FAULT: usize = 13;
-const PAGE_FAULT: usize = 14;
-const FLOATING_POINTEXCEPTION: usize = 16;
-const ALIGNMENT_CHECK: usize = 17;
-const MACHINE_CHECK: usize = 18;
-const SIMD_FLOATING_POINT_EXCEPTION: usize = 19;
-const VIRTUALIZATION_EXCEPTION: usize = 20;
-const SECURITY_EXCEPTION: usize = 30;
+pub mod consts {
+    // Reference: https://wiki.osdev.org/Exceptions
+    pub const DIVIDE_ERROR: usize = 0;
+    pub const DEBUG: usize = 1;
+    pub const NON_MASKABLE_INTERRUPT: usize = 2;
+    pub const BREAKPOINT: usize = 3;
+    pub const OVERFLOW: usize = 4;
+    pub const BOUND_RANGE_EXCEEDED: usize = 5;
+    pub const INVALID_OPCODE: usize = 6;
+    pub const DEVICE_NOT_AVAILABLE: usize = 7;
+    pub const DOUBLE_FAULT: usize = 8;
+    pub const COPROCESSOR_SEGMENT_OVERRUN: usize = 9;
+    pub const INVALID_TSS: usize = 10;
+    pub const SEGMENT_NOT_PRESENT: usize = 11;
+    pub const STACK_SEGMENT_FAULT: usize = 12;
+    pub const GENERAL_PROTECTION_FAULT: usize = 13;
+    pub const PAGE_FAULT: usize = 14;
+    pub const FLOATING_POINTEXCEPTION: usize = 16;
+    pub const ALIGNMENT_CHECK: usize = 17;
+    pub const MACHINE_CHECK: usize = 18;
+    pub const SIMD_FLOATING_POINT_EXCEPTION: usize = 19;
+    pub const VIRTUALIZATION_EXCEPTION: usize = 20;
+    pub const SECURITY_EXCEPTION: usize = 30;
 
-// IRQ vectors
-pub(super) const X86_INT_BASE: usize = 0x20;
-pub(super) const X86_INT_MAX: usize = 0xff;
+    // IRQ vectors
+    pub const X86_INT_BASE: usize = 0x20;
+    pub const X86_INT_MAX: usize = 0xff;
 
-pub(super) const X86_INT_LOCAL_APIC_BASE: usize = 0xf0;
-pub(super) const X86_INT_APIC_SPURIOUS: usize = X86_INT_LOCAL_APIC_BASE + 0x0;
-pub(super) const X86_INT_APIC_TIMER: usize = X86_INT_LOCAL_APIC_BASE + 0x1;
-pub(super) const X86_INT_APIC_ERROR: usize = X86_INT_LOCAL_APIC_BASE + 0x2;
+    pub const X86_INT_LOCAL_APIC_BASE: usize = 0xf0;
+    pub const X86_INT_APIC_SPURIOUS: usize = X86_INT_LOCAL_APIC_BASE + 0x0;
+    pub const X86_INT_APIC_TIMER: usize = X86_INT_LOCAL_APIC_BASE + 0x1;
+    pub const X86_INT_APIC_ERROR: usize = X86_INT_LOCAL_APIC_BASE + 0x2;
 
-// ISA IRQ numbers
-pub(super) const X86_ISA_IRQ_PIT: usize = 0;
-pub(super) const X86_ISA_IRQ_KEYBOARD: usize = 1;
-pub(super) const X86_ISA_IRQ_PIC2: usize = 2;
-pub(super) const X86_ISA_IRQ_COM2: usize = 3;
-pub(super) const X86_ISA_IRQ_COM1: usize = 4;
-pub(super) const X86_ISA_IRQ_CMOSRTC: usize = 8;
-pub(super) const X86_ISA_IRQ_MOUSE: usize = 12;
-pub(super) const X86_ISA_IRQ_IDE: usize = 14;
+    // ISA IRQ numbers
+    pub const X86_ISA_IRQ_PIT: usize = 0;
+    pub const X86_ISA_IRQ_KEYBOARD: usize = 1;
+    pub const X86_ISA_IRQ_PIC2: usize = 2;
+    pub const X86_ISA_IRQ_COM2: usize = 3;
+    pub const X86_ISA_IRQ_COM1: usize = 4;
+    pub const X86_ISA_IRQ_CMOSRTC: usize = 8;
+    pub const X86_ISA_IRQ_MOUSE: usize = 12;
+    pub const X86_ISA_IRQ_IDE: usize = 14;
+}
+
+pub use consts::*;
 
 fn breakpoint() {
     panic!("\nEXCEPTION: Breakpoint");

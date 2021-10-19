@@ -17,6 +17,7 @@ kernel-hal = { path = "../kernel-hal" }
 rcore-fs-hostfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "7c232ec", optional = true }
 env_logger = { version = "0.8", optional = true }
 async-std = { version = "1.9", features = ["attributes"], optional = true }
+cfg-if = "1.0"
 
 [features]
 default = ["std", "libos"]

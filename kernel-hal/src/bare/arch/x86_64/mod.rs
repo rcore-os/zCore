@@ -1,5 +1,4 @@
 mod drivers;
-mod trap;
 
 pub mod config;
 pub mod context;
@@ -8,6 +7,7 @@ pub mod interrupt;
 pub mod mem;
 pub mod special;
 pub mod timer;
+pub mod trap;
 pub mod vm;
 
 hal_fn_impl_default!(crate::hal_fn::console);
