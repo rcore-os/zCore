@@ -4,7 +4,7 @@ use core::cmp::min;
 use core::mem::size_of;
 
 // crate
-use helper::error::LxError;
+use crate::error::LxError;
 use crate::net::Endpoint;
 
 // smoltcp
@@ -12,7 +12,7 @@ pub use smoltcp::wire::{IpAddress, Ipv4Address};
 
 // #
 use crate::net::*;
-use helper::user::{UserInOutPtr, UserOutPtr};
+use kernel_hal::user::{UserInOutPtr, UserOutPtr};
 // use numeric_enum_macro::numeric_enum;
 
 /// missing documentation

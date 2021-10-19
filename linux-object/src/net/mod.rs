@@ -24,7 +24,6 @@ pub use udp::*;
 // pub mod stack;
 
 // ============= Socket Set =============
-
 use kernel_hal::get_net_sockets;
 use spin::Mutex;
 // lazy_static! {
@@ -165,7 +164,7 @@ fn poll_ifaces_loopback() {
     }
 }
 
-struct IFaceFuture;
+// struct IFaceFuture;
 
 use core::future::Future;
 use core::pin::Pin;
@@ -173,140 +172,137 @@ use core::task::Context;
 use core::task::Poll;
 // use core::task::Waker;
 
-impl Future for IFaceFuture {
-    type Output = ();
+// impl Future for IFaceFuture {
+//     type Output = ();
 
-    fn poll(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Self::Output> {
-        // let ss = get_net_sockets();
-        // let mut sockets = ss.lock();
-        // for s in sockets.iter_mut() {
-        //     warn!("poll register waker");
-        //     use smoltcp::socket::SocketRef;
-        //     let ms = SocketRef::into_inner(s);
-        //     use smoltcp::socket::Socket;
-        //     match ms {
-        //         Socket::Udp(u) => {
-        //             u.register_recv_waker(&_cx.waker().clone());
-        //             u.register_send_waker(&_cx.waker().clone());
-        //         }
-        //         Socket::Tcp(t) => {
-        //             t.register_recv_waker(&_cx.waker().clone());
-        //             t.register_send_waker(&_cx.waker().clone());
-        //         }
-        //         Socket::Raw(r) => {
-        //             r.register_recv_waker(&_cx.waker().clone());
-        //             r.register_send_waker(&_cx.waker().clone());
-        //         }
-        //         _ => {
-        //             warn!("None");
-        //         }
-        //     }
-        // }
+//     fn poll(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Self::Output> {
+//         // let ss = get_net_sockets();
+//         // let mut sockets = ss.lock();
+//         // for s in sockets.iter_mut() {
+//         //     warn!("poll register waker");
+//         //     use smoltcp::socket::SocketRef;
+//         //     let ms = SocketRef::into_inner(s);
+//         //     use smoltcp::socket::Socket;
+//         //     match ms {
+//         //         Socket::Udp(u) => {
+//         //             u.register_recv_waker(&_cx.waker().clone());
+//         //             u.register_send_waker(&_cx.waker().clone());
+//         //         }
+//         //         Socket::Tcp(t) => {
+//         //             t.register_recv_waker(&_cx.waker().clone());
+//         //             t.register_send_waker(&_cx.waker().clone());
+//         //         }
+//         //         Socket::Raw(r) => {
+//         //             r.register_recv_waker(&_cx.waker().clone());
+//         //             r.register_send_waker(&_cx.waker().clone());
+//         //         }
+//         //         _ => {
+//         //             warn!("None");
+//         //         }
+//         //     }
+//         // }
 
-        for iface in get_net_driver().iter() {
-            match iface.poll(&(*get_net_sockets())) {
-                Ok(b) => {
-                    warn!("..............b {}", b);
+//         for iface in get_net_driver().iter() {
+//             match iface.poll(&(*get_net_sockets())) {
+//                 Ok(b) => {
+//                     warn!("..............b {}", b);
 
-                    let ss = get_net_sockets();
-                    let mut sockets = ss.lock();
-                    for s in sockets.iter_mut() {
-                        warn!("poll register waker");
-                        use smoltcp::socket::SocketRef;
-                        let ms = SocketRef::into_inner(s);
-                        use smoltcp::socket::Socket;
-                        match ms {
-                            Socket::Udp(u) => {
-                                warn!("udp register");
-                                if !u.can_send() && !u.can_recv() {
-                                    u.register_send_waker(&_cx.waker());
-                                    u.register_recv_waker(&_cx.waker());
-                                    return Poll::Pending;
-                                }
-                                else{
-                                    u.register_send_waker(&_cx.waker());
-                                    u.register_recv_waker(&_cx.waker());
-                                    return Poll::Ready(());
-                                }
-                            }
-                            Socket::Tcp(t) => {
-                                if !t.can_send() && !t.can_recv() {
-                                    t.register_send_waker(&_cx.waker());
-                                    t.register_recv_waker(&_cx.waker());
-                                    return Poll::Pending;
-                                }
-                                else{
-                                    t.register_send_waker(&_cx.waker());
-                                    t.register_recv_waker(&_cx.waker());
-                                    return Poll::Ready(());
-                                }
-                            }
-                            Socket::Raw(r) => {
-                                if !r.can_send() && !r.can_recv() {
-                                    r.register_send_waker(&_cx.waker());
-                                    r.register_recv_waker(&_cx.waker());
-                                    return Poll::Pending;
-                                }
-                                else{
-                                    r.register_send_waker(&_cx.waker());
-                                    r.register_recv_waker(&_cx.waker());
-                                    return Poll::Ready(());
-                                }
-                            }
-                            _ => {
-                                warn!("None");
-                            }
-                        }
-                    }
-                }
-                Err(_err) => {
-                    warn!("err {:?}", _err);
-                    return Poll::Pending;
-                }
-            }
-        }
-        Poll::Pending
-        //     let ss = get_net_sockets();
-        //     let mut sockets = ss.lock();
-        //     for s in sockets.iter_mut() {
-        //         warn!("poll register waker");
-        //         use smoltcp::socket::SocketRef;
-        //         let ms = SocketRef::into_inner(s);
-        //         use smoltcp::socket::Socket;
-        //         match ms {
-        //             Socket::Udp(u) => {
-        //                 u.register_recv_waker(&_cx.waker().clone());
-        //                 u.register_send_waker(&_cx.waker().clone());
-        //             }
-        //             Socket::Tcp(t) => {
-        //                 t.register_recv_waker(&_cx.waker().clone());
-        //                 t.register_send_waker(&_cx.waker().clone());
-        //             }
-        //             Socket::Raw(r) => {
-        //                 r.register_recv_waker(&_cx.waker().clone());
-        //                 r.register_send_waker(&_cx.waker().clone());
-        //             }
-        //             _ => {
-        //                 warn!("None");
-        //             }
-        //         }
-        //     }
-        //     warn!("register ok");
-        //     // let mut socket = sockets.get::<UdpSocket>(self.handle.0);
-        //     Poll::Ready(())
-        //     match self.iface.lock().poll(&mut sockets, timestamp) {
-        //         Ok(_) => {iface
-        //             warn!("interrupt iface poll");
-        //             Poll::Ready(()
-        //         }
-        //         Err(err) => {
-        //             debug!("poll got err {}", err);
-        //             _cx.waker().clone().wake();
-        //             Poll::Pending
-        //         }
-        //     }
-    }
-}
+//                     let ss = get_net_sockets();
+//                     let mut sockets = ss.lock();
+//                     for s in sockets.iter_mut() {
+//                         warn!("poll register waker");
+//                         use smoltcp::socket::SocketRef;
+//                         let ms = SocketRef::into_inner(s);
+//                         use smoltcp::socket::Socket;
+//                         match ms {
+//                             Socket::Udp(u) => {
+//                                 warn!("udp register");
+//                                 if !u.can_send() && !u.can_recv() {
+//                                     u.register_send_waker(&_cx.waker());
+//                                     u.register_recv_waker(&_cx.waker());
+//                                     return Poll::Pending;
+//                                 } else {
+//                                     u.register_send_waker(&_cx.waker());
+//                                     u.register_recv_waker(&_cx.waker());
+//                                     return Poll::Ready(());
+//                                 }
+//                             }
+//                             Socket::Tcp(t) => {
+//                                 if !t.can_send() && !t.can_recv() {
+//                                     t.register_send_waker(&_cx.waker());
+//                                     t.register_recv_waker(&_cx.waker());
+//                                     return Poll::Pending;
+//                                 } else {
+//                                     t.register_send_waker(&_cx.waker());
+//                                     t.register_recv_waker(&_cx.waker());
+//                                     return Poll::Ready(());
+//                                 }
+//                             }
+//                             Socket::Raw(r) => {
+//                                 if !r.can_send() && !r.can_recv() {
+//                                     r.register_send_waker(&_cx.waker());
+//                                     r.register_recv_waker(&_cx.waker());
+//                                     return Poll::Pending;
+//                                 } else {
+//                                     r.register_send_waker(&_cx.waker());
+//                                     r.register_recv_waker(&_cx.waker());
+//                                     return Poll::Ready(());
+//                                 }
+//                             }
+//                             _ => {
+//                                 warn!("None");
+//                             }
+//                         }
+//                     }
+//                 }
+//                 Err(_err) => {
+//                     warn!("err {:?}", _err);
+//                     return Poll::Pending;
+//                 }
+//             }
+//         }
+//         Poll::Pending
+//         //     let ss = get_net_sockets();
+//         //     let mut sockets = ss.lock();
+//         //     for s in sockets.iter_mut() {
+//         //         warn!("poll register waker");
+//         //         use smoltcp::socket::SocketRef;
+//         //         let ms = SocketRef::into_inner(s);
+//         //         use smoltcp::socket::Socket;
+//         //         match ms {
+//         //             Socket::Udp(u) => {
+//         //                 u.register_recv_waker(&_cx.waker().clone());
+//         //                 u.register_send_waker(&_cx.waker().clone());
+//         //             }
+//         //             Socket::Tcp(t) => {
+//         //                 t.register_recv_waker(&_cx.waker().clone());
+//         //                 t.register_send_waker(&_cx.waker().clone());
+//         //             }
+//         //             Socket::Raw(r) => {
+//         //                 r.register_recv_waker(&_cx.waker().clone());
+//         //                 r.register_send_waker(&_cx.waker().clone());
+//         //             }
+//         //             _ => {
+//         //                 warn!("None");
+//         //             }
+//         //         }
+//         //     }
+//         //     warn!("register ok");
+//         //     // let mut socket = sockets.get::<UdpSocket>(self.handle.0);
+//         //     Poll::Ready(())
+//         //     match self.iface.lock().poll(&mut sockets, timestamp) {
+//         //         Ok(_) => {iface
+//         //             warn!("interrupt iface poll");
+//         //             Poll::Ready(()
+//         //         }
+//         //         Err(err) => {
+//         //             debug!("poll got err {}", err);
+//         //             _cx.waker().clone().wake();
+//         //             Poll::Pending
+//         //         }
+//         //     }
+//     }
+// }
 
 use smoltcp::socket::TcpSocket;
 struct ConnectFuture<'a> {
@@ -402,8 +398,13 @@ impl NetlinkEndpoint {
 
 // ============= Rand Port =============
 
-// rand
-use kernel_hal::rand;
+/// rand
+pub fn rand() -> u64 {
+    // use core::arch::x86_64::_rdtsc;
+    // rdrand is not implemented in QEMU
+    // so use rdtsc instead
+    1000
+}
 
 #[allow(unsafe_code)]
 /// missing documentation
@@ -438,7 +439,7 @@ pub unsafe fn from_cstr(s: *const u8) -> &'static str {
 
 // ============= Util =============
 
-use helper::error::*;
+use crate::error::*;
 use alloc::boxed::Box;
 use alloc::fmt::Debug;
 use alloc::sync::Arc;
@@ -494,8 +495,4 @@ pub trait Socket: Send + Sync + Debug {
         warn!("ioctl is unimplemented for this socket");
         Ok(0)
     }
-
-    // fn register_recv_waker(&mut self, waker: &Waker);
-
-    // fn register_send_waker(&mut self, waker: &Waker);
 }
