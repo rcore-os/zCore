@@ -1,6 +1,7 @@
 // udpsocket
 #![allow(dead_code)]
 // crate
+use crate::net::poll_ifaces;
 use crate::error::LxError;
 use crate::error::LxResult;
 use crate::net::from_cstr;
@@ -92,11 +93,10 @@ impl UdpSocketState {
 
     /// missing documentation
 
-    #[cfg(feature = "loopback")]
     pub async fn read(&self, data: &mut [u8]) -> (SysResult, Endpoint) {
         loop {
-            #[cfg(feature = "e1000")]
-            poll_ifaces_e1000();
+
+            poll_ifaces();
             #[cfg(feature = "loopback")]
             poll_ifaces_loopback();
             let net_sockets = get_net_sockets();
@@ -109,8 +109,7 @@ impl UdpSocketState {
                     // avoid deadlock
                     drop(socket);
                     drop(sockets);
-                    #[cfg(feature = "e1000")]
-                    poll_ifaces_e1000();
+                    poll_ifaces();
                     #[cfg(feature = "loopback")]
                     poll_ifaces_loopback();
                     return (Ok(size), Endpoint::Ip(endpoint));
@@ -184,8 +183,7 @@ impl UdpSocketState {
                     drop(socket);
                     drop(sockets);
 
-                    #[cfg(feature = "e1000")]
-                    poll_ifaces_e1000();
+                    poll_ifaces();
                     #[cfg(feature = "loopback")]
                     poll_ifaces_loopback();
                     Ok(data.len())

@@ -169,10 +169,7 @@ impl TcpSocketState {
                         drop(socket);
                         drop(sockets);
 
-                        // #[cfg(feature = "e1000")]
-                        // poll_ifaces_e1000();
-                        #[cfg(feature = "loopback")]
-                        poll_ifaces_loopback();
+                        poll_ifaces();
                         Ok(size)
                     }
                     Err(_) => Err(LxError::ENOBUFS),

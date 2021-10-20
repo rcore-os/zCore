@@ -1,6 +1,8 @@
 // icmpsocket
 #![allow(dead_code)]
 // crate
+use crate::net::IpEndpoint;
+use crate::net::poll_ifaces;
 use crate::net::get_net_sockets;
 use crate::net::Endpoint;
 use crate::net::GlobalSocketHandle;
@@ -66,12 +68,55 @@ impl IcmpSocketState {
     }
 
     /// missing documentation
-    pub async fn read(&self, _data: &mut [u8]) -> SysResult {
-        unimplemented!()
+    pub async fn read(&self, data: &mut [u8]) -> (SysResult, Endpoint)  {
+        loop {
+            poll_ifaces();
+            let net_sockets = get_net_sockets();
+            let mut sockets = net_sockets.lock();
+            let mut socket = sockets.get::<IcmpSocket>(self.handle.0);
+            if socket.can_recv() {
+                if let Ok((size,ip)) = socket.recv_slice(data) {
+                    if size > 0 {
+                        // avoid deadlock
+                        drop(socket);
+                        drop(sockets);
+                        poll_ifaces();
+                        // tcp udp use endpoint , but icmp use ip address
+                        return (Ok(size), Endpoint::Ip(IpEndpoint::Ip(ip)));
+                    }
+                }
+            } else {
+                return (
+                    Err(LxError::ENOTCONN),
+                    Endpoint::Ip(IpEndpoint::UNSPECIFIED),
+                );
+            }
+        }
     }
 
     fn write(&self, _data: &[u8], _remote_addr: IpAddress) -> SysResult {
-        unimplemented!()
+        let net_sockets = get_net_sockets();
+        let mut sockets = net_sockets.lock();
+        let mut socket = sockets.get::<IcmpSocket>(self.handle.0);
+        if socket.is_open() {
+            if socket.can_send() {
+                match socket.send_slice(data) {
+                    Ok(size) => {
+                        // avoid deadlock
+                        drop(socket);
+                        drop(sockets);
+
+                        poll_ifaces();
+                        Ok(size)
+                    }
+                    Err(_) => Err(LxError::ENOBUFS),
+                }
+            } else {
+                Err(LxError::ENOBUFS)
+            }
+        } else {
+            Err(LxError::ENOTCONN)
+        }
     }
 
     fn poll(&self) -> (bool, bool, bool) {
@@ -83,7 +128,21 @@ impl IcmpSocketState {
     }
 
     fn bind(&mut self, _endpoint: Endpoint) -> SysResult {
-        unimplemented!()
+        let net_sockets = get_net_sockets();
+        let mut sockets = net_sockets.lock();
+        let mut socket = sockets.get::<IcmpSocket>(self.handle.0);
+        #[allow(irrefutable_let_patterns)]
+        if let Endpoint::Ip(mut ip) = endpoint {
+            if ip.port == 0 {
+                ip.port = get_ephemeral_port();
+            }
+            match socket.bind(ip) {
+                Ok(()) => Ok(0),
+                Err(_) => Err(LxError::EINVAL),
+            }
+        } else {
+            Err(LxError::EINVAL)
+        }
     }
 
     fn ioctl(&mut self, _request: usize, _arg1: usize, _arg2: usize, _arg3: usize) -> SysResult {
@@ -103,14 +162,12 @@ impl_kobject!(IcmpSocketState);
 #[async_trait]
 impl Socket for IcmpSocketState {
     /// read to buffer
-    async fn read(&self, _data: &mut [u8]) -> (SysResult, Endpoint) {
-        unimplemented!()
-        // self.read(data).await
+    async fn read(&self, data: &mut [u8]) -> (SysResult, Endpoint) {
+        self.read(data).await
     }
     /// write from buffer
     fn write(&self, _data: &[u8], _sendto_endpoint: Option<Endpoint>) -> SysResult {
-        unimplemented!()
-        // self.write(data, sendto_endpoint)
+        self.write(data, sendto_endpoint)
     }
     /// connect
     async fn connect(&self, _endpoint: Endpoint) -> SysResult {
@@ -124,8 +181,7 @@ impl Socket for IcmpSocketState {
     }
 
     fn bind(&mut self, _endpoint: Endpoint) -> SysResult {
-        unimplemented!()
-        // self.bind(endpoint)
+        self.bind(endpoint)
     }
     fn listen(&mut self) -> SysResult {
         unimplemented!()
