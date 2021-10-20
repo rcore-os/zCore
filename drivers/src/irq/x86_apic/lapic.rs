@@ -25,16 +25,15 @@ impl LocalApic {
             .set_xapic_base(base_vaddr as u64)
             .build()
             .unwrap_or_else(|err| panic!("{}", err));
+        inner.enable();
 
         assert!(inner.is_bsp());
         BSP_ID = Some((inner.id() >> 24) as u8);
-
-        inner.enable();
         LOCAL_APIC = Some(LocalApic { inner });
     }
 
     pub unsafe fn init_ap() {
-        Self::get().inner.enable()
+        Self::get().inner.enable();
     }
 
     pub fn bsp_id() -> u8 {
