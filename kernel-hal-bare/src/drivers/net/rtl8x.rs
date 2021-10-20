@@ -93,9 +93,9 @@ impl NetDriver for RTL8xInterface {
         let timestamp = Instant::from_millis(0);
         let mut sockets = SOCKETS.lock();
         match self.iface.lock().poll(&mut sockets, timestamp) {
-            Ok(_) => {
+            Ok(b) => {
                 //SOCKET_ACTIVITY.notify_all();
-                error!("e1000 poll SOCKET_ACTIVITY unimplemented !");
+                error!("poll change : {}!", b);
             }
             Err(err) => {
                 debug!("poll got err {}", err);
