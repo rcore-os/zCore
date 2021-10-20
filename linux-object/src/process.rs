@@ -3,6 +3,7 @@
 use crate::error::*;
 use crate::fs::*;
 use crate::ipc::*;
+use crate::net::Socket;
 use crate::signal::{Signal as LinuxSignal, SignalAction};
 use alloc::vec::Vec;
 use alloc::{
@@ -14,6 +15,7 @@ use core::sync::atomic::AtomicI32;
 use hashbrown::HashMap;
 use kernel_hal::VirtAddr;
 use rcore_fs::vfs::{FileSystem, INode};
+use smoltcp::socket::SocketHandle;
 use spin::*;
 use zircon_object::{
     object::{KernelObject, KoID, Signal},
@@ -21,8 +23,6 @@ use zircon_object::{
     task::{Job, Process, Status},
     ZxResult,
 };
-use crate::net::Socket;
-use smoltcp::socket::SocketHandle;
 
 /// Process extension for linux
 pub trait ProcessExt {
