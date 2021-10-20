@@ -406,12 +406,12 @@ impl NetlinkEndpoint {
 
 // ============= Rand Port =============
 
-/// rand
+/// !!!! need riscv rng
 pub fn rand() -> u64 {
     // use core::arch::x86_64::_rdtsc;
     // rdrand is not implemented in QEMU
     // so use rdtsc instead
-    1000
+    10000
 }
 
 #[allow(unsafe_code)]
