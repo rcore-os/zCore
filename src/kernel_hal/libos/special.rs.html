@@ -20,14 +20,14 @@
 </pre><pre class="rust">
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;graphic&quot;</span>)]</span>
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">run_graphic_service</span>() {
-    <span class="kw">use</span> <span class="kw">crate</span><span class="ident">::drivers</span>::{<span class="ident">display</span>, <span class="ident">input</span>};
+    <span class="kw">use</span> <span class="kw">crate</span><span class="ident">::drivers</span>::{<span class="ident">all_display</span>, <span class="ident">all_input</span>};
     <span class="kw">use</span> <span class="ident">zcore_drivers::mock::graphic::sdl::SdlWindow</span>;
 
-    <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">window</span> <span class="op">=</span> <span class="ident">SdlWindow::new</span>(<span class="string">&quot;zcore-libos&quot;</span>, <span class="ident">display::first_unwrap</span>());
-    <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">i</span>) <span class="op">=</span> <span class="ident">input::find</span>(<span class="string">&quot;mock-mouse-input&quot;</span>) {
+    <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">window</span> <span class="op">=</span> <span class="ident">SdlWindow::new</span>(<span class="string">&quot;zcore-libos&quot;</span>, <span class="ident">all_display</span>().<span class="ident">first_unwrap</span>());
+    <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">i</span>) <span class="op">=</span> <span class="ident">all_input</span>().<span class="ident">find</span>(<span class="string">&quot;mock-mouse-input&quot;</span>) {
         <span class="ident">window</span>.<span class="ident">register_mouse</span>(<span class="ident">i</span>);
     }
-    <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">i</span>) <span class="op">=</span> <span class="ident">input::find</span>(<span class="string">&quot;mock-keyboard-input&quot;</span>) {
+    <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">i</span>) <span class="op">=</span> <span class="ident">all_input</span>().<span class="ident">find</span>(<span class="string">&quot;mock-keyboard-input&quot;</span>) {
         <span class="ident">window</span>.<span class="ident">register_keyboard</span>(<span class="ident">i</span>);
     }
 

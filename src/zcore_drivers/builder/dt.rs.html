@@ -306,10 +306,15 @@
 <span id="306">306</span>
 <span id="307">307</span>
 <span id="308">308</span>
+<span id="309">309</span>
+<span id="310">310</span>
+<span id="311">311</span>
+<span id="312">312</span>
+<span id="313">313</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="ident">alloc</span>::{<span class="ident">collections::BTreeMap</span>, <span class="ident">sync::Arc</span>, <span class="ident">vec::Vec</span>};
 
-<span class="kw">use</span> <span class="ident">device_tree</span>::{<span class="ident">DeviceTree</span>, <span class="ident">Node</span>, <span class="ident">PropError</span>};
+<span class="kw">use</span> <span class="ident">device_tree</span>::{<span class="ident">util::StringList</span>, <span class="ident">DeviceTree</span>, <span class="ident">Node</span>, <span class="ident">PropError</span>};
 
 <span class="kw">use</span> <span class="kw">super</span><span class="ident">::IoMapper</span>;
 <span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">Device</span>, <span class="ident">DeviceError</span>, <span class="ident">DeviceResult</span>};
@@ -358,15 +363,15 @@
 
     <span class="kw">fn</span> <span class="ident">walk</span><span class="op">&lt;</span><span class="ident">F</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">node</span>: <span class="kw-2">&amp;</span><span class="ident">Node</span>, <span class="ident">props</span>: <span class="ident">InheritProps</span>, <span class="ident">device_node_op</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">F</span>)
     <span class="kw">where</span>
-        <span class="ident">F</span>: <span class="ident">FnMut</span>(<span class="kw-2">&amp;</span><span class="ident">Node</span>, <span class="kw-2">&amp;</span><span class="ident">str</span>, <span class="kw-2">&amp;</span><span class="ident">InheritProps</span>),
+        <span class="ident">F</span>: <span class="ident">FnMut</span>(<span class="kw-2">&amp;</span><span class="ident">Node</span>, <span class="kw-2">&amp;</span><span class="ident">StringList</span>, <span class="kw-2">&amp;</span><span class="ident">InheritProps</span>),
     {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">props</span> <span class="op">=</span> <span class="ident">props</span>;
         <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Ok</span>(<span class="ident">num</span>) <span class="op">=</span> <span class="ident">node</span>.<span class="ident">prop_u32</span>(<span class="string">&quot;interrupt-parent&quot;</span>) {
             <span class="ident">props</span>.<span class="ident">interrupt_parent</span> <span class="op">=</span> <span class="ident">num</span>;
         }
 
-        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Ok</span>(<span class="ident">comp</span>) <span class="op">=</span> <span class="ident">node</span>.<span class="ident">prop_str</span>(<span class="string">&quot;compatible&quot;</span>) {
-            <span class="ident">device_node_op</span>(<span class="ident">node</span>, <span class="ident">comp</span>, <span class="kw-2">&amp;</span><span class="ident">props</span>);
+        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Ok</span>(<span class="ident">comp</span>) <span class="op">=</span> <span class="ident">node</span>.<span class="ident">prop_str_list</span>(<span class="string">&quot;compatible&quot;</span>) {
+            <span class="ident">device_node_op</span>(<span class="ident">node</span>, <span class="kw-2">&amp;</span><span class="ident">comp</span>, <span class="kw-2">&amp;</span><span class="ident">props</span>);
         }
 
         <span class="ident">props</span>.<span class="ident">parent_address_cells</span> <span class="op">=</span> <span class="ident">node</span>.<span class="ident">prop_u32</span>(<span class="string">&quot;#address-cells&quot;</span>).<span class="ident">unwrap_or</span>(<span class="number">0</span>);
@@ -411,18 +416,21 @@
     <span class="kw">fn</span> <span class="ident">parse_device</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">node</span>: <span class="kw-2">&amp;</span><span class="ident">Node</span>,
-        <span class="ident">comp</span>: <span class="kw-2">&amp;</span><span class="ident">str</span>,
+        <span class="ident">comp</span>: <span class="kw-2">&amp;</span><span class="ident">StringList</span>,
         <span class="ident">props</span>: <span class="kw-2">&amp;</span><span class="ident">InheritProps</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">DeviceResult</span><span class="op">&lt;</span><span class="ident">DevWithInterrupt</span><span class="op">&gt;</span> {
-        <span class="macro">debug!</span>(<span class="string">&quot;device-tree: parsing node {:?}&quot;</span>, <span class="ident">node</span>.<span class="ident">name</span>);
+        <span class="macro">debug!</span>(
+            <span class="string">&quot;device-tree: parsing node {:?} with compatible {:?}&quot;</span>,
+            <span class="ident">node</span>.<span class="ident">name</span>, <span class="ident">comp</span>
+        );
 
         <span class="kw">let</span> <span class="ident">res</span> <span class="op">=</span> <span class="kw">if</span> <span class="ident">node</span>.<span class="ident">has_prop</span>(<span class="string">&quot;interrupt-controller&quot;</span>) {
             <span class="self">self</span>.<span class="ident">parse_intc</span>(<span class="ident">node</span>, <span class="ident">comp</span>, <span class="ident">props</span>)
         } <span class="kw">else</span> {
             <span class="kw">match</span> <span class="ident">comp</span> {
                 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;virtio&quot;</span>)]</span>
-                <span class="string">&quot;virtio,mmio&quot;</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">parse_virtio</span>(<span class="ident">node</span>, <span class="ident">props</span>),
-                <span class="string">&quot;ns16550a&quot;</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">parse_uart</span>(<span class="ident">node</span>, <span class="ident">comp</span>, <span class="ident">props</span>),
+                <span class="ident">c</span> <span class="kw">if</span> <span class="ident">c</span>.<span class="ident">contains</span>(<span class="string">&quot;virtio,mmio&quot;</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">parse_virtio</span>(<span class="ident">node</span>, <span class="ident">props</span>),
+                <span class="ident">c</span> <span class="kw">if</span> <span class="ident">c</span>.<span class="ident">contains</span>(<span class="string">&quot;ns16550a&quot;</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">parse_uart</span>(<span class="ident">node</span>, <span class="ident">comp</span>, <span class="ident">props</span>),
                 <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Err</span>(<span class="ident">DeviceError::NotSupported</span>),
             }
         };
@@ -441,7 +449,7 @@
     <span class="kw">fn</span> <span class="ident">parse_intc</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">node</span>: <span class="kw-2">&amp;</span><span class="ident">Node</span>,
-        <span class="ident">comp</span>: <span class="kw-2">&amp;</span><span class="ident">str</span>,
+        <span class="ident">comp</span>: <span class="kw-2">&amp;</span><span class="ident">StringList</span>,
         <span class="ident">props</span>: <span class="kw-2">&amp;</span><span class="ident">InheritProps</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">DeviceResult</span><span class="op">&lt;</span><span class="ident">DevWithInterrupt</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">phandle</span> <span class="op">=</span> <span class="ident">node</span>.<span class="ident">prop_u32</span>(<span class="string">&quot;phandle&quot;</span>).<span class="ident">ok</span>();
@@ -459,9 +467,9 @@
         <span class="kw">use</span> <span class="kw">crate</span><span class="ident">::irq</span>::<span class="kw-2">*</span>;
         <span class="kw">let</span> <span class="ident">dev</span> <span class="op">=</span> <span class="ident">Device::Irq</span>(<span class="kw">match</span> <span class="ident">comp</span> {
             <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">any</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;riscv32&quot;</span>, <span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;riscv64&quot;</span>))]</span>
-            <span class="string">&quot;riscv,cpu-intc&quot;</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">Arc::new</span>(<span class="ident">riscv::Intc::new</span>()),
+            <span class="ident">c</span> <span class="kw">if</span> <span class="ident">c</span>.<span class="ident">contains</span>(<span class="string">&quot;riscv,cpu-intc&quot;</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">Arc::new</span>(<span class="ident">riscv::Intc::new</span>()),
             <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">any</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;riscv32&quot;</span>, <span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;riscv64&quot;</span>))]</span>
-            <span class="string">&quot;riscv,plic0&quot;</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">Arc::new</span>(<span class="ident">riscv::Plic::new</span>(<span class="ident">base_vaddr</span><span class="question-mark">?</span>)),
+            <span class="ident">c</span> <span class="kw">if</span> <span class="ident">c</span>.<span class="ident">contains</span>(<span class="string">&quot;riscv,plic0&quot;</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">Arc::new</span>(<span class="ident">riscv::Plic::new</span>(<span class="ident">base_vaddr</span><span class="question-mark">?</span>)),
             <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">DeviceError::NotSupported</span>),
         });
 
@@ -513,7 +521,7 @@
     <span class="kw">fn</span> <span class="ident">parse_uart</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">node</span>: <span class="kw-2">&amp;</span><span class="ident">Node</span>,
-        <span class="ident">comp</span>: <span class="kw-2">&amp;</span><span class="ident">str</span>,
+        <span class="ident">comp</span>: <span class="kw-2">&amp;</span><span class="ident">StringList</span>,
         <span class="ident">props</span>: <span class="kw-2">&amp;</span><span class="ident">InheritProps</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">DeviceResult</span><span class="op">&lt;</span><span class="ident">DevWithInterrupt</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">interrupts_extended</span> <span class="op">=</span> <span class="ident">parse_interrupts</span>(<span class="ident">node</span>, <span class="ident">props</span>)<span class="question-mark">?</span>;
@@ -525,7 +533,9 @@
 
         <span class="kw">use</span> <span class="kw">crate</span><span class="ident">::uart</span>::<span class="kw-2">*</span>;
         <span class="kw">let</span> <span class="ident">dev</span> <span class="op">=</span> <span class="ident">Device::Uart</span>(<span class="kw">match</span> <span class="ident">comp</span> {
-            <span class="string">&quot;ns16550a&quot;</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">Arc::new</span>(<span class="kw">unsafe</span> { <span class="ident">Uart16550Mmio</span>::<span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span><span class="ident">::new</span>(<span class="ident">base_vaddr</span><span class="question-mark">?</span>) }),
+            <span class="ident">c</span> <span class="kw">if</span> <span class="ident">c</span>.<span class="ident">contains</span>(<span class="string">&quot;ns16550a&quot;</span>) <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="ident">Arc::new</span>(<span class="kw">unsafe</span> { <span class="ident">Uart16550Mmio</span>::<span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span><span class="ident">::new</span>(<span class="ident">base_vaddr</span><span class="question-mark">?</span>) })
+            }
             <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">DeviceError::NotSupported</span>),
         });
 

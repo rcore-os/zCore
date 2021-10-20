@@ -395,7 +395,7 @@
         .<span class="ident">add</span>(<span class="string">&quot;urandom&quot;</span>, <span class="ident">Arc::new</span>(<span class="ident">RandomINode::new</span>(<span class="bool-val">true</span>)))
         .<span class="ident">expect</span>(<span class="string">&quot;failed to mknod /dev/urandom&quot;</span>);
 
-    <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">display</span>) <span class="op">=</span> <span class="ident">drivers::display::first</span>() {
+    <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">display</span>) <span class="op">=</span> <span class="ident">drivers::all_display</span>().<span class="ident">first</span>() {
         <span class="kw">use</span> <span class="self">self</span><span class="ident">::devfs</span>::{<span class="ident">EventDev</span>, <span class="ident">FbDev</span>, <span class="ident">MiceDev</span>};
 
         <span class="comment">// Add framebuffer device at `/dev/fb0`</span>
@@ -408,7 +408,7 @@
             .<span class="ident">expect</span>(<span class="string">&quot;failed to mkdir /dev/input&quot;</span>);
 
         <span class="comment">// Add mouse devices at `/dev/input/mouseX` and `/dev/input/mice`</span>
-        <span class="kw">for</span> (<span class="ident">id</span>, <span class="ident">m</span>) <span class="kw">in</span> <span class="ident">MiceDev::from_input_devices</span>(<span class="kw-2">&amp;</span><span class="ident">drivers::input::all</span>()) {
+        <span class="kw">for</span> (<span class="ident">id</span>, <span class="ident">m</span>) <span class="kw">in</span> <span class="ident">MiceDev::from_input_devices</span>(<span class="kw-2">&amp;</span><span class="ident">drivers::all_input</span>().<span class="ident">as_vec</span>()) {
             <span class="kw">let</span> <span class="ident">fname</span> <span class="op">=</span> <span class="ident">id</span>.<span class="ident">map_or</span>(<span class="string">&quot;mice&quot;</span>.<span class="ident">to_string</span>(), <span class="op">|</span><span class="ident">id</span><span class="op">|</span> <span class="macro">format!</span>(<span class="string">&quot;mouse{}&quot;</span>, <span class="ident">id</span>));
             <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Err</span>(<span class="ident">e</span>) <span class="op">=</span> <span class="ident">input_dev</span>.<span class="ident">add</span>(<span class="kw-2">&amp;</span><span class="ident">fname</span>, <span class="ident">Arc::new</span>(<span class="ident">m</span>)) {
                 <span class="macro">warn!</span>(<span class="string">&quot;failed to mknod /dev/input/{}: {:?}&quot;</span>, <span class="kw-2">&amp;</span><span class="ident">fname</span>, <span class="ident">e</span>);
@@ -416,7 +416,7 @@
         }
 
         <span class="comment">// Add input event devices at `/dev/input/eventX`</span>
-        <span class="kw">for</span> (<span class="ident">id</span>, <span class="ident">i</span>) <span class="kw">in</span> <span class="ident">drivers::input::all</span>().<span class="ident">iter</span>().<span class="ident">enumerate</span>() {
+        <span class="kw">for</span> (<span class="ident">id</span>, <span class="ident">i</span>) <span class="kw">in</span> <span class="ident">drivers::all_input</span>().<span class="ident">as_vec</span>().<span class="ident">iter</span>().<span class="ident">enumerate</span>() {
             <span class="kw">let</span> <span class="ident">fname</span> <span class="op">=</span> <span class="macro">format!</span>(<span class="string">&quot;event{}&quot;</span>, <span class="ident">id</span>);
             <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Err</span>(<span class="ident">e</span>) <span class="op">=</span> <span class="ident">input_dev</span>.<span class="ident">add</span>(<span class="kw-2">&amp;</span><span class="ident">fname</span>, <span class="ident">Arc::new</span>(<span class="ident">EventDev::new</span>(<span class="ident">i</span>.<span class="ident">clone</span>(), <span class="ident">id</span>))) {
                 <span class="macro">warn!</span>(<span class="string">&quot;failed to mknod /dev/input/{}: {:?}&quot;</span>, <span class="kw-2">&amp;</span><span class="ident">fname</span>, <span class="ident">e</span>);

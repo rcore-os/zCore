@@ -110,7 +110,7 @@
 
 <span class="kw">impl</span> <span class="ident">Write</span> <span class="kw">for</span> <span class="ident">SerialWriter</span> {
     <span class="kw">fn</span> <span class="ident">write_str</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">s</span>: <span class="kw-2">&amp;</span><span class="ident">str</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span> {
-        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">uart</span>) <span class="op">=</span> <span class="ident">drivers::uart::first</span>() {
+        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">uart</span>) <span class="op">=</span> <span class="ident">drivers::all_uart</span>().<span class="ident">first</span>() {
             <span class="ident">uart</span>.<span class="ident">write_str</span>(<span class="ident">s</span>).<span class="ident">unwrap</span>();
         } <span class="kw">else</span> {
             <span class="kw">crate</span><span class="ident">::hal_fn::console::console_write_early</span>(<span class="ident">s</span>);

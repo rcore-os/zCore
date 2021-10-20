@@ -48,7 +48,6 @@
 <span id="48">48</span>
 <span id="49">49</span>
 <span id="50">50</span>
-<span id="51">51</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="ident">x2apic::lapic</span>::{<span class="ident">xapic_base</span>, <span class="ident">LocalApic</span> <span class="kw">as</span> <span class="ident">LocalApicInner</span>, <span class="ident">LocalApicBuilder</span>};
 
@@ -77,16 +76,15 @@
             .<span class="ident">set_xapic_base</span>(<span class="ident">base_vaddr</span> <span class="kw">as</span> <span class="ident">u64</span>)
             .<span class="ident">build</span>()
             .<span class="ident">unwrap_or_else</span>(<span class="op">|</span><span class="ident">err</span><span class="op">|</span> <span class="macro">panic!</span>(<span class="string">&quot;{}&quot;</span>, <span class="ident">err</span>));
+        <span class="ident">inner</span>.<span class="ident">enable</span>();
 
         <span class="macro">assert!</span>(<span class="ident">inner</span>.<span class="ident">is_bsp</span>());
         <span class="ident">BSP_ID</span> <span class="op">=</span> <span class="prelude-val">Some</span>((<span class="ident">inner</span>.<span class="ident">id</span>() <span class="op">&gt;</span><span class="op">&gt;</span> <span class="number">24</span>) <span class="kw">as</span> <span class="ident">u8</span>);
-
-        <span class="ident">inner</span>.<span class="ident">enable</span>();
         <span class="ident">LOCAL_APIC</span> <span class="op">=</span> <span class="prelude-val">Some</span>(<span class="ident">LocalApic</span> { <span class="ident">inner</span> });
     }
 
     <span class="kw">pub</span> <span class="kw">unsafe</span> <span class="kw">fn</span> <span class="ident">init_ap</span>() {
-        <span class="self">Self</span><span class="ident">::get</span>().<span class="ident">inner</span>.<span class="ident">enable</span>()
+        <span class="self">Self</span><span class="ident">::get</span>().<span class="ident">inner</span>.<span class="ident">enable</span>();
     }
 
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">bsp_id</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u8</span> {
