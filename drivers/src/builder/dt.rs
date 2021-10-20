@@ -1,6 +1,6 @@
 use alloc::{collections::BTreeMap, sync::Arc, vec::Vec};
 
-use device_tree::{DeviceTree, Node, PropError};
+use device_tree::{util::StringList, DeviceTree, Node, PropError};
 
 use super::IoMapper;
 use crate::{Device, DeviceError, DeviceResult};
@@ -49,15 +49,15 @@ impl<M: IoMapper> DeviceTreeDriverBuilder<M> {
 
     fn walk<F>(&self, node: &Node, props: InheritProps, device_node_op: &mut F)
     where
-        F: FnMut(&Node, &str, &InheritProps),
+        F: FnMut(&Node, &StringList, &InheritProps),
     {
         let mut props = props;
         if let Ok(num) = node.prop_u32("interrupt-parent") {
             props.interrupt_parent = num;
         }
 
-        if let Ok(comp) = node.prop_str("compatible") {
-            device_node_op(node, comp, &props);
+        if let Ok(comp) = node.prop_str_list("compatible") {
+            device_node_op(node, &comp, &props);
         }
 
         props.parent_address_cells = node.prop_u32("#address-cells").unwrap_or(0);
@@ -102,18 +102,21 @@ impl<M: IoMapper> DeviceTreeDriverBuilder<M> {
     fn parse_device(
         &self,
         node: &Node,
-        comp: &str,
+        comp: &StringList,
         props: &InheritProps,
     ) -> DeviceResult<DevWithInterrupt> {
-        debug!("device-tree: parsing node {:?}", node.name);
+        debug!(
+            "device-tree: parsing node {:?} with compatible {:?}",
+            node.name, comp
+        );
 
         let res = if node.has_prop("interrupt-controller") {
             self.parse_intc(node, comp, props)
         } else {
             match comp {
                 #[cfg(feature = "virtio")]
-                "virtio,mmio" => self.parse_virtio(node, props),
-                "ns16550a" => self.parse_uart(node, comp, props),
+                c if c.contains("virtio,mmio") => self.parse_virtio(node, props),
+                c if c.contains("ns16550a") => self.parse_uart(node, comp, props),
                 _ => Err(DeviceError::NotSupported),
             }
         };
@@ -132,7 +135,7 @@ impl<M: IoMapper> DeviceTreeDriverBuilder<M> {
     fn parse_intc(
         &self,
         node: &Node,
-        comp: &str,
+        comp: &StringList,
         props: &InheritProps,
     ) -> DeviceResult<DevWithInterrupt> {
         let phandle = node.prop_u32("phandle").ok();
@@ -150,9 +153,9 @@ impl<M: IoMapper> DeviceTreeDriverBuilder<M> {
         use crate::irq::*;
         let dev = Device::Irq(match comp {
             #[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))]
-            "riscv,cpu-intc" => Arc::new(riscv::Intc::new()),
+            c if c.contains("riscv,cpu-intc") => Arc::new(riscv::Intc::new()),
             #[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))]
-            "riscv,plic0" => Arc::new(riscv::Plic::new(base_vaddr?)),
+            c if c.contains("riscv,plic0") => Arc::new(riscv::Plic::new(base_vaddr?)),
             _ => return Err(DeviceError::NotSupported),
         });
 
@@ -204,7 +207,7 @@ impl<M: IoMapper> DeviceTreeDriverBuilder<M> {
     fn parse_uart(
         &self,
         node: &Node,
-        comp: &str,
+        comp: &StringList,
         props: &InheritProps,
     ) -> DeviceResult<DevWithInterrupt> {
         let interrupts_extended = parse_interrupts(node, props)?;
@@ -216,7 +219,9 @@ impl<M: IoMapper> DeviceTreeDriverBuilder<M> {
 
         use crate::uart::*;
         let dev = Device::Uart(match comp {
-            "ns16550a" => Arc::new(unsafe { Uart16550Mmio::<u8>::new(base_vaddr?) }),
+            c if c.contains("ns16550a") => {
+                Arc::new(unsafe { Uart16550Mmio::<u8>::new(base_vaddr?) })
+            }
             _ => return Err(DeviceError::NotSupported),
         });
 
