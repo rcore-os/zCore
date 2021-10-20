@@ -58,8 +58,8 @@ pub(super) fn init() -> DeviceResult {
         }
     }
 
-    let irq = drivers::irq::first()
-        .filter(|d| d.name() == "riscv-intc")
+    let irq = drivers::all_irq()
+        .find("riscv-intc")
         .expect("IRQ device 'riscv-intc' not initialized!");
     irq.register_handler(
         ScauseIntCode::SupervisorSoft as _,
@@ -73,7 +73,7 @@ pub(super) fn init() -> DeviceResult {
     irq.unmask(ScauseIntCode::SupervisorTimer as _)?;
 
     #[cfg(feature = "graphic")]
-    if let Some(display) = drivers::display::first() {
+    if let Some(display) = drivers::all_display().first() {
         crate::console::init_graphic_console(display.clone());
         if display.need_flush() {
             // TODO: support nested interrupt to render in time

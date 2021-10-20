@@ -46,7 +46,7 @@ pub fn init_filesystem(ramfs_data: &'static mut [u8]) -> Arc<dyn FileSystem> {
     #[cfg(not(feature = "ram_user_img"))]
     let device = {
         use rcore_fs::dev::block_cache::BlockCache;
-        let block = kernel_hal::drivers::block::first_unwrap();
+        let block = kernel_hal::drivers::all_block().first_unwrap();
         BlockCache::new(BlockDriverWrapper(block), 0x100)
     };
 

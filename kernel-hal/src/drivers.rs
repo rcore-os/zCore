@@ -4,77 +4,118 @@ use core::convert::From;
 use spin::{RwLock, RwLockReadGuard};
 
 use zcore_drivers::scheme::{
-    BlockScheme, DisplayScheme, InputScheme, IrqScheme, NetScheme, UartScheme,
+    BlockScheme, DisplayScheme, InputScheme, IrqScheme, NetScheme, Scheme, UartScheme,
 };
 use zcore_drivers::{Device, DeviceError};
 
+/// Re-exported modules from crate [`zcore_drivers`].
 pub use zcore_drivers::{prelude, scheme};
 
-lazy_static! {
-    static ref DEVICES: DeviceList = DeviceList::default();
+/// A wrapper of a device array with the same [`Scheme`].
+pub struct DeviceList<T: Scheme + ?Sized>(RwLock<Vec<Arc<T>>>);
+
+impl<T: Scheme + ?Sized> DeviceList<T> {
+    fn add(&self, dev: Arc<T>) {
+        self.0.write().push(dev);
+    }
+
+    /// Convert self into a vector.
+    pub fn as_vec(&self) -> RwLockReadGuard<'_, Vec<Arc<T>>> {
+        self.0.read()
+    }
+
+    /// Returns the device at given position, or `None` if out of bounds.
+    pub fn try_get(&self, idx: usize) -> Option<Arc<T>> {
+        self.0.read().get(idx).cloned()
+    }
+
+    /// Returns the device with the given name, or `None` if not found.
+    pub fn find(&self, name: &str) -> Option<Arc<T>> {
+        self.0.read().iter().find(|d| d.name() == name).cloned()
+    }
+
+    /// Returns the first device of this device array, or `None` if it is empty.
+    pub fn first(&self) -> Option<Arc<T>> {
+        self.try_get(0)
+    }
+
+    /// Returns the first device of this device array.
+    ///
+    /// # Panic
+    ///
+    /// Panics if the array is empty.
+    pub fn first_unwrap(&self) -> Arc<T> {
+        self.first()
+            .unwrap_or_else(|| panic!("device not initialized: {}", core::any::type_name::<T>()))
+    }
+}
+
+impl<T: Scheme + ?Sized> Default for DeviceList<T> {
+    fn default() -> Self {
+        Self(RwLock::new(Vec::new()))
+    }
 }
 
 #[derive(Default)]
-struct DeviceList {
-    block: RwLock<Vec<Arc<dyn BlockScheme>>>,
-    display: RwLock<Vec<Arc<dyn DisplayScheme>>>,
-    input: RwLock<Vec<Arc<dyn InputScheme>>>,
-    irq: RwLock<Vec<Arc<dyn IrqScheme>>>,
-    net: RwLock<Vec<Arc<dyn NetScheme>>>,
-    uart: RwLock<Vec<Arc<dyn UartScheme>>>,
+struct AllDeviceList {
+    block: DeviceList<dyn BlockScheme>,
+    display: DeviceList<dyn DisplayScheme>,
+    input: DeviceList<dyn InputScheme>,
+    irq: DeviceList<dyn IrqScheme>,
+    net: DeviceList<dyn NetScheme>,
+    uart: DeviceList<dyn UartScheme>,
 }
 
-impl DeviceList {
+impl AllDeviceList {
     pub fn add_device(&self, dev: Device) {
         match dev {
-            Device::Block(d) => self.block.write().push(d),
-            Device::Display(d) => self.display.write().push(d),
-            Device::Input(d) => self.input.write().push(d),
-            Device::Irq(d) => self.irq.write().push(d),
-            Device::Net(d) => self.net.write().push(d),
-            Device::Uart(d) => self.uart.write().push(d),
+            Device::Block(d) => self.block.add(d),
+            Device::Display(d) => self.display.add(d),
+            Device::Input(d) => self.input.add(d),
+            Device::Irq(d) => self.irq.add(d),
+            Device::Net(d) => self.net.add(d),
+            Device::Uart(d) => self.uart.add(d),
         }
     }
 }
 
-macro_rules! device_fn_def {
-    ($dev:ident, $scheme:path) => {
-        pub mod $dev {
-            use super::*;
-
-            pub fn all<'a>() -> RwLockReadGuard<'a, Vec<Arc<dyn $scheme>>> {
-                DEVICES.$dev.read()
-            }
-
-            pub fn try_get(idx: usize) -> Option<Arc<dyn $scheme>> {
-                all().get(idx).cloned()
-            }
-
-            pub fn find(name: &str) -> Option<Arc<dyn $scheme>> {
-                all().iter().find(|d| d.name() == name).cloned()
-            }
-
-            pub fn first() -> Option<Arc<dyn $scheme>> {
-                try_get(0)
-            }
-
-            pub fn first_unwrap() -> Arc<dyn $scheme> {
-                first().expect(concat!(stringify!($dev), " device not initialized!"))
-            }
-        }
-    };
+lazy_static! {
+    static ref DEVICES: AllDeviceList = AllDeviceList::default();
 }
 
 pub(crate) fn add_device(dev: Device) {
     DEVICES.add_device(dev)
 }
 
-device_fn_def!(block, BlockScheme);
-device_fn_def!(display, DisplayScheme);
-device_fn_def!(input, InputScheme);
-device_fn_def!(irq, IrqScheme);
-device_fn_def!(net, NetScheme);
-device_fn_def!(uart, UartScheme);
+/// Returns all devices which implement the [`BlockScheme`].
+pub fn all_block() -> &'static DeviceList<dyn BlockScheme> {
+    &DEVICES.block
+}
+
+/// Returns all devices which implement the [`DisplayScheme`].
+pub fn all_display() -> &'static DeviceList<dyn DisplayScheme> {
+    &DEVICES.display
+}
+
+/// Returns all devices which implement the [`InputScheme`].
+pub fn all_input() -> &'static DeviceList<dyn InputScheme> {
+    &DEVICES.input
+}
+
+/// Returns all devices which implement the [`IrqScheme`].
+pub fn all_irq() -> &'static DeviceList<dyn IrqScheme> {
+    &DEVICES.irq
+}
+
+/// Returns all devices which implement the [`NetScheme`].
+pub fn all_net() -> &'static DeviceList<dyn NetScheme> {
+    &DEVICES.net
+}
+
+/// Returns all devices which implement the [`UartScheme`].
+pub fn all_uart() -> &'static DeviceList<dyn UartScheme> {
+    &DEVICES.uart
+}
 
 impl From<DeviceError> for crate::HalError {
     fn from(err: DeviceError) -> Self {

@@ -17,7 +17,7 @@ async fn main() {
     // init HAL implementation on unix
     kernel_hal::init();
 
-    if let Some(uart) = kernel_hal::drivers::uart::first() {
+    if let Some(uart) = kernel_hal::drivers::all_uart().first() {
         uart.clone().subscribe(
             Box::new(move |_| {
                 while let Some(c) = uart.try_recv().unwrap_or(None) {

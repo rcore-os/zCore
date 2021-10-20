@@ -159,7 +159,7 @@ fn get_rootproc(cmdline: &str) -> Vec<String> {
 fn main(ramfs_data: &'static mut [u8], cmdline: &str) -> ! {
     use linux_object::fs::STDIN;
 
-    if let Some(uart) = kernel_hal::drivers::uart::first() {
+    if let Some(uart) = kernel_hal::drivers::all_uart().first() {
         uart.clone().subscribe(
             Box::new(move |_| {
                 while let Some(c) = uart.try_recv().unwrap_or(None) {

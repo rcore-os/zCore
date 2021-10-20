@@ -12,7 +12,7 @@ hal_fn_impl! {
         }
 
         fn handle_irq(cause: usize) {
-            crate::drivers::irq::first_unwrap().handle_irq(cause)
+            crate::drivers::all_irq().first_unwrap().handle_irq(cause)
         }
     }
 }

@@ -127,7 +127,7 @@ pub fn create_root_fs(rootfs: Arc<dyn FileSystem>) -> Arc<dyn INode> {
         .add("urandom", Arc::new(RandomINode::new(true)))
         .expect("failed to mknod /dev/urandom");
 
-    if let Some(display) = drivers::display::first() {
+    if let Some(display) = drivers::all_display().first() {
         use self::devfs::{EventDev, FbDev, MiceDev};
 
         // Add framebuffer device at `/dev/fb0`
@@ -140,7 +140,7 @@ pub fn create_root_fs(rootfs: Arc<dyn FileSystem>) -> Arc<dyn INode> {
             .expect("failed to mkdir /dev/input");
 
         // Add mouse devices at `/dev/input/mouseX` and `/dev/input/mice`
-        for (id, m) in MiceDev::from_input_devices(&drivers::input::all()) {
+        for (id, m) in MiceDev::from_input_devices(&drivers::all_input().as_vec()) {
             let fname = id.map_or("mice".to_string(), |id| format!("mouse{}", id));
             if let Err(e) = input_dev.add(&fname, Arc::new(m)) {
                 warn!("failed to mknod /dev/input/{}: {:?}", &fname, e);
@@ -148,7 +148,7 @@ pub fn create_root_fs(rootfs: Arc<dyn FileSystem>) -> Arc<dyn INode> {
         }
 
         // Add input event devices at `/dev/input/eventX`
-        for (id, i) in drivers::input::all().iter().enumerate() {
+        for (id, i) in drivers::all_input().as_vec().iter().enumerate() {
             let fname = format!("event{}", id);
             if let Err(e) = input_dev.add(&fname, Arc::new(EventDev::new(i.clone(), id))) {
                 warn!("failed to mknod /dev/input/{}: {:?}", &fname, e);

@@ -67,7 +67,7 @@ impl Future for SerialReadFuture<'_> {
     type Output = usize;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let uart = if let Some(uart) = crate::drivers::uart::first() {
+        let uart = if let Some(uart) = crate::drivers::all_uart().first() {
             uart
         } else {
             return Poll::Pending;

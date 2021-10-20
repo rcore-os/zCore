@@ -10,20 +10,20 @@ use crate::drivers;
 
 pub(super) fn init() -> DeviceResult {
     let uart = Arc::new(Uart16550Pio::new(0x3F8));
+    drivers::add_device(Device::Uart(BufferedUart::new(uart.clone())));
 
     Apic::init_local_apic_bsp(crate::mem::phys_to_virt);
     let irq = Arc::new(Apic::new(
         super::special::pc_firmware_tables().0 as usize,
         crate::mem::phys_to_virt,
     ));
-    irq.register_device(trap::X86_ISA_IRQ_COM1, uart.clone().upcast())?;
+    irq.register_device(trap::X86_ISA_IRQ_COM1, uart.upcast())?;
     irq.unmask(trap::X86_ISA_IRQ_COM1)?;
     irq.register_local_apic_handler(
         trap::X86_INT_APIC_TIMER,
         Box::new(|| crate::timer::timer_tick()),
     )?;
     drivers::add_device(Device::Irq(irq));
-    drivers::add_device(Device::Uart(BufferedUart::new(uart)));
 
     #[cfg(feature = "graphic")]
     {
