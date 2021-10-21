@@ -1,8 +1,10 @@
-use core::fmt::{Arguments, Result, Write};
-
 use crate::drivers;
+use core::fmt::{Arguments, Result, Write};
+use spin::Mutex;
 
 struct SerialWriter;
+
+static SERIAL_WRITER: Mutex<SerialWriter> = Mutex::new(SerialWriter);
 
 impl Write for SerialWriter {
     fn write_str(&mut self, s: &str) -> Result {
@@ -19,7 +21,6 @@ cfg_if! {
     if #[cfg(feature = "graphic")] {
         use crate::utils::init_once::InitOnce;
         use alloc::sync::Arc;
-        use spin::Mutex;
         use zcore_drivers::{scheme::DisplayScheme, utils::GraphicConsole};
 
         static GRAPHIC_CONSOLE: InitOnce<Mutex<GraphicConsole>> = InitOnce::new();
@@ -42,12 +43,12 @@ cfg_if! {
 
 /// Print format string and its arguments to serial.
 pub fn serial_write_fmt(fmt: Arguments) {
-    SerialWriter.write_fmt(fmt).unwrap();
+    SERIAL_WRITER.lock().write_fmt(fmt).unwrap();
 }
 
 /// Print format string and its arguments to serial.
 pub fn serial_write(s: &str) {
-    SerialWriter.write_str(s).unwrap();
+    SERIAL_WRITER.lock().write_str(s).unwrap();
 }
 
 /// Print format string and its arguments to graphic console.
