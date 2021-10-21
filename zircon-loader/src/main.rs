@@ -23,7 +23,7 @@ struct Opt {
 
 #[async_std::main]
 async fn main() {
-    kernel_hal::primary_init();
+    kernel_hal::init();
     init_logger();
 
     let opt = Opt::from_args();

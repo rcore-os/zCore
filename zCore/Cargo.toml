@@ -26,7 +26,7 @@ buddy_system_allocator = "0.7"
 lazy_static = { version = "1.4", features = ["spin_no_std" ] }
 bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator", rev = "b3f9f51" }
 executor = { git = "https://github.com/rcore-os/executor.git", rev = "a2d02ee9" }
-kernel-hal = { path = "../kernel-hal" }
+kernel-hal = { path = "../kernel-hal", features = ["smp"] }
 zircon-loader = { path = "../zircon-loader", default-features = false, optional = true }
 linux-loader = { path = "../linux-loader", default-features = false, optional = true }
 linux-object = { path = "../linux-object", default-features = false, optional = true }

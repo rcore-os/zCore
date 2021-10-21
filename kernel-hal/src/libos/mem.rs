@@ -10,7 +10,7 @@ use crate::{MMUFlags, PhysAddr, VirtAddr, PAGE_SIZE};
 type FrameAlloc = bitmap_allocator::BitAlloc1M;
 
 /// Map physical memory from here.
-pub(super) const PMEM_BASE: VirtAddr = 0x8_0000_0000;
+pub(super) const PMEM_MAP_VADDR: VirtAddr = 0x8_0000_0000;
 /// Physical memory size = 1GiB
 pub(super) const PMEM_SIZE: usize = 0x4000_0000;
 
@@ -35,7 +35,7 @@ lazy_static! {
 hal_fn_impl! {
     impl mod crate::hal_fn::mem {
         fn phys_to_virt(paddr: PhysAddr) -> VirtAddr {
-            PMEM_BASE + paddr
+            PMEM_MAP_VADDR + paddr
         }
 
         fn free_pmem_regions() -> Vec<Range<PhysAddr>> {

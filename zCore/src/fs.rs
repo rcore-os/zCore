@@ -15,7 +15,7 @@ pub fn init_ram_disk() -> &'static mut [u8] {
     }
 }
 
-cfg_if::cfg_if! {
+cfg_if! {
     if #[cfg(feature = "linux")] {
         use alloc::sync::Arc;
 

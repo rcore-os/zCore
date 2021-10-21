@@ -1,6 +1,6 @@
 // RISCV
 
-cfg_if::cfg_if! {
+cfg_if! {
     if #[cfg(feature = "board_qemu")] {
         pub const KERNEL_OFFSET: usize = 0xFFFF_FFFF_8000_0000;
         pub const PHYS_MEMORY_BASE: usize = 0x8000_0000;

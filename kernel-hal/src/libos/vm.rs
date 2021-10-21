@@ -1,4 +1,4 @@
-use super::mem::{MOCK_PHYS_MEM, PMEM_BASE, PMEM_SIZE};
+use super::mem::{MOCK_PHYS_MEM, PMEM_MAP_VADDR, PMEM_SIZE};
 use crate::{addr::is_aligned, MMUFlags, PhysAddr, VirtAddr, PAGE_SIZE};
 
 hal_fn_impl! {
@@ -68,9 +68,9 @@ impl GenericPageTable for PageTable {
 
     fn query(&self, vaddr: VirtAddr) -> PagingResult<(PhysAddr, MMUFlags, PageSize)> {
         debug_assert!(is_aligned(vaddr));
-        if PMEM_BASE <= vaddr && vaddr < PMEM_BASE + PMEM_SIZE {
+        if PMEM_MAP_VADDR <= vaddr && vaddr < PMEM_MAP_VADDR + PMEM_SIZE {
             Ok((
-                vaddr - PMEM_BASE,
+                vaddr - PMEM_MAP_VADDR,
                 MMUFlags::READ | MMUFlags::WRITE,
                 PageSize::Size4K,
             ))

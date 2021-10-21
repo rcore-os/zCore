@@ -8,6 +8,7 @@ description = "Kernel HAL interface definations."
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
+smp = []
 libos = ["async-std", "bitmap-allocator", "zcore-drivers/mock"]
 graphic = ["zcore-drivers/graphic"]
 

@@ -35,12 +35,10 @@ fn primary_main(config: kernel_hal::KernelConfig) {
 
     cfg_if! {
         if #[cfg(feature = "linux")] {
-            use alloc::vec;
             let args = boot_options
-                .get("ROOTPROC")
-                .map(|&s| s.split("?").map(Into::into).collect()) // parse "arg0?arg1?arg2"
-                .unwrap_or(vec!["/bin/busybox".into(), "sh".into()]);
-            let envs = vec!["PATH=/usr/sbin:/usr/bin:/sbin:/bin".into()];
+                .get("ROOTPROC").unwrap_or(&"/bin/busybox?sh")
+                .split('?').map(Into::into).collect(); // parse "arg0?arg1?arg2"
+            let envs = alloc::vec!["PATH=/usr/sbin:/usr/bin:/sbin:/bin".into()];
             let rootfs = fs::rootfs();
             linux_loader::run(args, envs, rootfs);
         } else {

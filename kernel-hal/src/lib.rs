@@ -2,6 +2,7 @@
 
 #![cfg_attr(not(feature = "libos"), no_std)]
 #![feature(asm)]
+#![feature(doc_cfg)]
 #![deny(warnings)]
 
 extern crate alloc;
@@ -41,4 +42,6 @@ pub use config::KernelConfig;
 pub use imp::*;
 pub use kernel_handler::KernelHandler;
 
+#[cfg(any(feature = "smp", doc))]
+#[doc(cfg(feature = "smp"))]
 pub use imp::boot::{primary_init, primary_init_early, secondary_init};

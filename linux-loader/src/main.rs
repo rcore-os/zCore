@@ -13,7 +13,7 @@ async fn main() {
     // init loggger for debug
     init_logger();
     // init HAL implementation on unix
-    kernel_hal::primary_init();
+    kernel_hal::init();
 
     let args: Vec<_> = std::env::args().skip(1).collect();
     let proc_name = args.join(" ");
@@ -74,7 +74,7 @@ mod tests {
         let envs =
             vec!["PATH=/usr/sbin:/usr/bin:/sbin:/bin:/usr/x86_64-alpine-linux-musl/bin".into()]; // TODO
         let hostfs = HostFS::new("../rootfs");
-        let proc = run(args, envs, hostfs);
+        let proc = linux_loader::run(args, envs, hostfs);
         proc.wait_for_exit().await
     }
 
