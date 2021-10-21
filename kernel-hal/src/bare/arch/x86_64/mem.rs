@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 use core::arch::x86_64::{__cpuid, _mm_clflush, _mm_mfence};
 use core::ops::Range;
 
-use rboot::MemoryType;
+use uefi::table::boot::MemoryType;
 
 use crate::{mem::phys_to_virt, PhysAddr, KCONFIG, PAGE_SIZE};
 

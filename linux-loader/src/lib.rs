@@ -29,6 +29,8 @@ use kernel_hal::context::GeneralRegs;
 
 /// Create and run main Linux process
 pub fn run(args: Vec<String>, envs: Vec<String>, rootfs: Arc<dyn FileSystem>) -> Arc<Process> {
+    info!("Run Linux process: args={:?}, envs={:?}", args, envs);
+
     let job = Job::root();
     let proc = Process::create_linux(&job, rootfs.clone()).unwrap();
     let thread = Thread::create_linux(&proc).unwrap();
@@ -41,20 +43,9 @@ pub fn run(args: Vec<String>, envs: Vec<String>, rootfs: Arc<dyn FileSystem>) ->
         root_inode: rootfs.root_inode(),
     };
 
-    {
-        let mut id = 0;
-        let rust_dir = rootfs.root_inode().lookup("/").unwrap();
-        trace!("run(), Rootfs: / ");
-        while let Ok(name) = rust_dir.get_entry(id) {
-            id += 1;
-            trace!("  {}", name);
-        }
-    }
-    info!("args {:?}", args);
     let inode = rootfs.root_inode().lookup(&args[0]).unwrap();
     let data = inode.read_as_vec().unwrap();
     let path = args[0].clone();
-    debug!("Linux process: {:?}", path);
 
     let pg_token = kernel_hal::vm::current_vmtoken();
     debug!("current pgt = {:#x}", pg_token);

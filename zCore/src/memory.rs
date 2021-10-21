@@ -7,7 +7,7 @@ use buddy_system_allocator::LockedHeap;
 use kernel_hal::PhysAddr;
 use spin::Mutex;
 
-use super::arch::consts::*;
+use super::platform::consts::*;
 
 #[cfg(target_arch = "x86_64")]
 type FrameAlloc = bitmap_allocator::BitAlloc16M; // max 64G

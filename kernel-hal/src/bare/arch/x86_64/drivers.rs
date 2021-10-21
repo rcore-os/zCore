@@ -33,17 +33,17 @@ pub(super) fn init() -> DeviceResult {
 
     #[cfg(feature = "graphic")]
     {
+        use crate::KCONFIG;
         use zcore_drivers::display::UefiDisplay;
         use zcore_drivers::prelude::{ColorFormat, DisplayInfo};
 
-        let info = crate::KCONFIG.graphic_info;
-        let (width, height) = info.mode.resolution();
+        let (width, height) = KCONFIG.fb_mode.resolution();
         let display = Arc::new(UefiDisplay::new(DisplayInfo {
             width: width as _,
             height: height as _,
             format: ColorFormat::ARGB8888, // uefi::proto::console::gop::PixelFormat::Bgr
-            fb_base_vaddr: crate::mem::phys_to_virt(info.fb_addr as usize),
-            fb_size: info.fb_size as usize,
+            fb_base_vaddr: crate::mem::phys_to_virt(KCONFIG.fb_addr as usize),
+            fb_size: KCONFIG.fb_size as usize,
         }));
         crate::drivers::add_device(Device::Display(display.clone()));
         crate::console::init_graphic_console(display);

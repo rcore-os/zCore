@@ -11,7 +11,7 @@ hypervisor ?=
 smp ?= 1
 test_filter ?= *.*
 
-build_args := -Z weak-dep-features -Z build-std=core,alloc --target $(arch).json
+build_args := --target $(arch).json -Z weak-dep-features -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem
 build_path := target/$(arch)/$(mode)
 kernel := $(build_path)/zcore
 kernel_img := $(build_path)/zcore.img
@@ -41,7 +41,7 @@ endif
 endif
 
 ifeq ($(arch), x86_64)
-build_args += --features ram_user_img
+build_args += --features init_ram_disk
 endif
 
 ifeq ($(linux), 1)

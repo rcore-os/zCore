@@ -20,8 +20,8 @@ pub fn cmdline() -> &'static str {
 }
 
 pub fn init_ram_disk() -> Option<&'static mut [u8]> {
-    let start = phys_to_virt(KCONFIG.initrd_start);
-    Some(unsafe { core::slice::from_raw_parts_mut(start as *mut u8, KCONFIG.initrd_size) })
+    let start = phys_to_virt(KCONFIG.initrd_start as usize);
+    Some(unsafe { core::slice::from_raw_parts_mut(start as *mut u8, KCONFIG.initrd_size as usize) })
 }
 
 pub fn primary_init_early() {
