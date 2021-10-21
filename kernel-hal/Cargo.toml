@@ -40,6 +40,7 @@ lazy_static = { version = "1.4", features = ["spin_no_std"] }
 x86_64 = "0.14"
 raw-cpuid = "9.0"
 x86-smpboot = { git = "https://github.com/rcore-os/x86-smpboot", rev = "43ffedf" }
+rboot = { path = "../rboot", default-features = false }
 
 # Bare-metal mode on riscv64
 [target.'cfg(all(target_os = "none", target_arch = "riscv64"))'.dependencies]

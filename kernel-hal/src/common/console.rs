@@ -94,6 +94,7 @@ pub struct ConsoleWinSize {
     pub ws_ypixel: u16,
 }
 
+/// Returns the size information of the console, see [`ConsoleWinSize`].
 pub fn console_win_size() -> ConsoleWinSize {
     #[cfg(feature = "graphic")]
     if let Some(&winsz) = CONSOLE_WIN_SIZE.try_get() {

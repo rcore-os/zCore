@@ -40,3 +40,5 @@ pub use common::{addr, console, defs::*, user};
 pub use config::KernelConfig;
 pub use imp::*;
 pub use kernel_handler::KernelHandler;
+
+pub use imp::boot::{primary_init, primary_init_early, secondary_init};

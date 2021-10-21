@@ -1,3 +1,6 @@
+use alloc::vec::Vec;
+use core::ops::Range;
+
 use bitmap_allocator::BitAlloc;
 use spin::Mutex;
 
@@ -33,6 +36,10 @@ hal_fn_impl! {
     impl mod crate::hal_fn::mem {
         fn phys_to_virt(paddr: PhysAddr) -> VirtAddr {
             PMEM_BASE + paddr
+        }
+
+        fn free_pmem_regions() -> Vec<Range<PhysAddr>> {
+            alloc::vec![PAGE_SIZE..PMEM_SIZE]
         }
 
         fn pmem_read(paddr: PhysAddr, buf: &mut [u8]) {

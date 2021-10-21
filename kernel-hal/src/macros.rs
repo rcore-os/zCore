@@ -82,6 +82,7 @@ macro_rules! __hal_fn_unimpl {
         $($tail:tt)*
     ) => {
         $(#[$inner $($args)*])*
+        #[allow(unused_variables)]
         fn $fn ( $($arg : $type),* ) $( -> $ret )? $body
         __hal_fn_unimpl! {
             mod $mod_name;

@@ -3,17 +3,14 @@ use {
     log::{self, Level, LevelFilter, Log, Metadata, Record},
 };
 
-pub fn init(level: &str) {
+pub fn init() {
     static LOGGER: SimpleLogger = SimpleLogger;
     log::set_logger(&LOGGER).unwrap();
-    log::set_max_level(match level {
-        "error" => LevelFilter::Error,
-        "warn" => LevelFilter::Warn,
-        "info" => LevelFilter::Info,
-        "debug" => LevelFilter::Debug,
-        "trace" => LevelFilter::Trace,
-        _ => LevelFilter::Off,
-    });
+    log::set_max_level(LevelFilter::Warn);
+}
+
+pub fn set_max_level(level: &str) {
+    log::set_max_level(level.parse().unwrap_or(LevelFilter::Off));
 }
 
 #[macro_export]

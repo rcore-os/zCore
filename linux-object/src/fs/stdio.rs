@@ -17,7 +17,21 @@ use spin::Mutex;
 
 lazy_static! {
     /// STDIN global reference
-    pub static ref STDIN: Arc<Stdin> = Default::default();
+    pub static ref STDIN: Arc<Stdin> = {
+        let stdin = Arc::new(Stdin::default());
+        let cloned = stdin.clone();
+        if let Some(uart) = kernel_hal::drivers::all_uart().first() {
+            uart.clone().subscribe(
+                Box::new(move |_| {
+                    while let Some(c) = uart.try_recv().unwrap_or(None) {
+                        cloned.push(c as char);
+                    }
+                }),
+                false,
+            );
+        }
+        stdin
+    };
     /// STDOUT global reference
     pub static ref STDOUT: Arc<Stdout> = Default::default();
 }

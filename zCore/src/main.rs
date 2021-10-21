@@ -33,9 +33,7 @@ use rboot::BootInfo;
 
 use kernel_hal::{KernelConfig, KernelHandler, MMUFlags};
 
-use alloc::{boxed::Box, string::String, vec, vec::Vec};
-
-use crate::arch::consts::*;
+use alloc::{string::String, vec, vec::Vec};
 
 #[cfg(feature = "board_qemu")]
 global_asm!(include_str!("arch/riscv/boot/boot_qemu.asm"));
@@ -46,35 +44,30 @@ global_asm!(include_str!("arch/riscv/boot/entry64.asm"));
 
 #[cfg(target_arch = "x86_64")]
 #[no_mangle]
-pub extern "C" fn _start(boot_info: &BootInfo) -> ! {
-    logging::init(get_log_level(boot_info.cmdline));
+pub extern "C" fn _start(boot_info: &'static BootInfo) -> ! {
+    logging::init();
     memory::init_heap();
-    memory::init_frame_allocator(boot_info);
-
-    trace!("{:#x?}", boot_info);
-
-    use kernel_hal::drivers::prelude::{ColorFormat, DisplayInfo};
-    let graphic_info = &boot_info.graphic_info;
-    let (width, height) = graphic_info.mode.resolution();
-    let display_info = DisplayInfo {
-        width: width as _,
-        height: height as _,
-        format: ColorFormat::ARGB8888, // uefi::proto::console::gop::PixelFormat::Bgr
-        fb_base_vaddr: graphic_info.fb_addr as usize + PHYSICAL_MEMORY_OFFSET,
-        fb_size: graphic_info.fb_size as usize,
-    };
 
     let config = KernelConfig {
-        kernel_offset: KERNEL_OFFSET,
-        phys_mem_start: PHYSICAL_MEMORY_OFFSET,
-        phys_to_virt_offset: PHYSICAL_MEMORY_OFFSET,
-        display_info,
+        cmdline: boot_info.cmdline,
+        initrd_start: boot_info.initramfs_addr as _,
+        initrd_size: boot_info.initramfs_size as _,
+
+        memory_map: &boot_info.memory_map,
+        phys_to_virt_offset: boot_info.physical_memory_offset as _,
+        graphic_info: boot_info.graphic_info,
+
         acpi_rsdp: boot_info.acpi2_rsdp_addr,
         smbios: boot_info.smbios_addr,
-        ap_fn: run,
+        ap_fn: secondary_main,
     };
-    info!("{:#x?}", config);
-    kernel_hal::init(config, &ZcoreKernelHandler);
+    kernel_hal::primary_init_early(config, &ZcoreKernelHandler);
+
+    let cmdline = kernel_hal::boot::cmdline();
+    logging::set_max_level(get_log_level(cmdline));
+
+    memory::init_frame_allocator(&kernel_hal::mem::free_pmem_regions());
+    kernel_hal::primary_init();
 
     let ramfs_data = unsafe {
         core::slice::from_raw_parts_mut(
@@ -82,7 +75,7 @@ pub extern "C" fn _start(boot_info: &BootInfo) -> ! {
             boot_info.initramfs_size as usize,
         )
     };
-    main(ramfs_data, boot_info.cmdline);
+    main(ramfs_data, cmdline);
 }
 
 #[cfg(feature = "zircon")]
@@ -100,37 +93,35 @@ fn main(ramfs_data: &[u8], cmdline: &str) -> ! {
 #[cfg(target_arch = "riscv64")]
 #[no_mangle]
 pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
+    logging::init();
+    memory::init_heap();
+
     println!(
         "zCore rust_main( hartid: {}, device_tree_paddr: {:#x} )",
         hartid, device_tree_paddr
     );
-    let cmdline = "LOG=warn:TERM=xterm-256color:console.shell=true:virtcon.disable=true";
+    use arch::consts::*;
     let config = KernelConfig {
-        kernel_offset: KERNEL_OFFSET,
-        phys_mem_start: MEMORY_OFFSET,
-        phys_mem_end: MEMORY_END,
+        phys_mem_start: PHYS_MEMORY_BASE,
+        phys_mem_end: PHYS_MEMORY_END,
         phys_to_virt_offset: PHYSICAL_MEMORY_OFFSET,
         dtb_paddr: device_tree_paddr,
     };
+    kernel_hal::primary_init_early(config, &ZcoreKernelHandler);
 
-    logging::init(get_log_level(cmdline));
-    memory::init_heap();
-    memory::init_frame_allocator();
+    let cmdline = kernel_hal::boot::cmdline();
+    logging::set_max_level(get_log_level(cmdline));
 
-    info!("{:#x?}", config);
-    kernel_hal::init(config, &ZcoreKernelHandler);
-
-    let cmdline_dt = ""; // FIXME: CMDLINE.read();
-    let cmdline = if !cmdline_dt.is_empty() {
-        alloc::format!("{}:{}", cmdline, cmdline_dt)
-    } else {
-        use alloc::string::ToString;
-        cmdline.to_string()
-    };
-    warn!("cmdline: {:?}", cmdline);
+    memory::init_frame_allocator(&kernel_hal::mem::free_pmem_regions());
+    kernel_hal::primary_init();
 
     // riscv64在之后使用ramfs或virtio, 而x86_64则由bootloader载入文件系统镜像到内存
     main(&mut [], &cmdline);
+}
+
+fn secondary_main() -> ! {
+    kernel_hal::secondary_init();
+    run()
 }
 
 #[cfg(feature = "linux")]
@@ -157,22 +148,9 @@ fn get_rootproc(cmdline: &str) -> Vec<String> {
 
 #[cfg(feature = "linux")]
 fn main(ramfs_data: &'static mut [u8], cmdline: &str) -> ! {
-    use linux_object::fs::STDIN;
-
-    if let Some(uart) = kernel_hal::drivers::all_uart().first() {
-        uart.clone().subscribe(
-            Box::new(move |_| {
-                while let Some(c) = uart.try_recv().unwrap_or(None) {
-                    STDIN.push(c as char);
-                }
-            }),
-            false,
-        );
-    }
-
     //let args: Vec<String> = vec!["/bin/busybox".into(), "sh".into()];
-    let args: Vec<String> = get_rootproc(cmdline);
-    let envs: Vec<String> = vec!["PATH=/usr/sbin:/usr/bin:/sbin:/bin".into()];
+    let args = get_rootproc(cmdline);
+    let envs = vec!["PATH=/usr/sbin:/usr/bin:/sbin:/bin".into()];
 
     let rootfs = fs::init_filesystem(ramfs_data);
     let _proc = linux_loader::run(args, envs, rootfs);

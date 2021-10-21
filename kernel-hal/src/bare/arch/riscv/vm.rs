@@ -4,9 +4,8 @@ use core::slice;
 use riscv::{asm, register::satp};
 use spin::Mutex;
 
-use crate::addr::{align_down, align_up};
 use crate::utils::page_table::{GenericPTE, PageTableImpl, PageTableLevel3};
-use crate::{mem::phys_to_virt, MMUFlags, PhysAddr, VirtAddr, KCONFIG, PAGE_SIZE};
+use crate::{mem::phys_to_virt, MMUFlags, PhysAddr, VirtAddr, KCONFIG};
 
 lazy_static! {
     static ref KERNEL_PT: Mutex<PageTable> = Mutex::new(init_kernel_page_table().unwrap());
@@ -26,8 +25,6 @@ fn init_kernel_page_table() -> PagingResult<PageTable> {
 
         fn bootstack();
         fn bootstacktop();
-
-        fn end();
     }
 
     let mut pt = PageTable::new();
@@ -63,9 +60,10 @@ fn init_kernel_page_table() -> PagingResult<PageTable> {
         MMUFlags::READ | MMUFlags::WRITE,
     )?;
     // physical frames
+    let region = &crate::mem::free_pmem_regions()[0];
     map_range(
-        align_up(end as usize + PAGE_SIZE),
-        phys_to_virt(align_down(KCONFIG.phys_mem_end)),
+        phys_to_virt(region.start),
+        phys_to_virt(region.end),
         MMUFlags::READ | MMUFlags::WRITE,
     )?;
 
@@ -230,4 +228,5 @@ impl Debug for Rv64PTE {
     }
 }
 
+/// Sv39: Page-Based 39-bit Virtual-Memory System
 pub type PageTable = PageTableImpl<PageTableLevel3, Rv64PTE>;

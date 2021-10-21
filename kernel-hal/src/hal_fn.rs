@@ -1,10 +1,29 @@
-use alloc::boxed::Box;
+use alloc::{boxed::Box, vec::Vec};
 use core::{future::Future, ops::Range, pin::Pin, time::Duration};
 
 use crate::drivers::prelude::{IrqHandler, IrqPolarity, IrqTriggerMode};
-use crate::{common, HalResult, MMUFlags, PhysAddr, VirtAddr};
+use crate::{common, HalResult, KernelConfig, KernelHandler, MMUFlags, PhysAddr, VirtAddr};
 
 hal_fn_def! {
+    pub mod boot {
+        /// The kernel command line.
+        pub fn cmdline() -> &'static str { "" }
+
+        /// Returns the slice of the initial RAM disk, or `None` if not exist.
+        pub fn init_ram_disk() -> Option<&'static mut [u8]> {
+            None
+        }
+
+        /// Initialize the primary CPU at an early stage (before the physical frame allocator).
+        pub fn primary_init_early(cfg: KernelConfig, handler: &'static impl KernelHandler) {}
+
+        /// The main part of the primary CPU initialization.
+        pub fn primary_init();
+
+        /// Initialize the secondary CPUs.
+        pub fn secondary_init() {}
+    }
+
     pub mod cpu {
         /// Current CPU ID.
         pub fn cpu_id() -> u8 { 0 }
@@ -16,6 +35,9 @@ hal_fn_def! {
     pub mod mem: common::mem {
         /// Convert physical address to virtual address.
         pub(crate) fn phys_to_virt(paddr: PhysAddr) -> VirtAddr;
+
+        /// Returns all free physical memory regions.
+        pub fn free_pmem_regions() -> Vec<Range<PhysAddr>>;
 
         /// Read physical memory from `paddr` to `buf`.
         pub fn pmem_read(paddr: PhysAddr, buf: &mut [u8]);

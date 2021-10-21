@@ -4,8 +4,6 @@
 
 extern crate log;
 
-use linux_loader::*;
-use linux_object::fs::STDIN;
 use rcore_fs_hostfs::HostFS;
 use std::io::Write;
 
@@ -15,18 +13,7 @@ async fn main() {
     // init loggger for debug
     init_logger();
     // init HAL implementation on unix
-    kernel_hal::init();
-
-    if let Some(uart) = kernel_hal::drivers::all_uart().first() {
-        uart.clone().subscribe(
-            Box::new(move |_| {
-                while let Some(c) = uart.try_recv().unwrap_or(None) {
-                    STDIN.push(c as char);
-                }
-            }),
-            false,
-        );
-    }
+    kernel_hal::primary_init();
 
     let args: Vec<_> = std::env::args().skip(1).collect();
     let proc_name = args.join(" ");
@@ -35,7 +22,7 @@ async fn main() {
     // Run the first process.
     let run_proc = async move {
         let hostfs = HostFS::new("rootfs");
-        let proc = run(args, envs, hostfs);
+        let proc = linux_loader::run(args, envs, hostfs);
         proc.wait_for_exit().await
     };
 
