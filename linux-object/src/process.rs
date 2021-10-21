@@ -3,6 +3,7 @@
 use crate::error::*;
 use crate::fs::*;
 use crate::ipc::*;
+use crate::net::Socket;
 use crate::signal::{Signal as LinuxSignal, SignalAction};
 use alloc::vec::Vec;
 use alloc::{
@@ -14,6 +15,7 @@ use core::sync::atomic::AtomicI32;
 use hashbrown::HashMap;
 use kernel_hal::VirtAddr;
 use rcore_fs::vfs::{FileSystem, INode};
+use smoltcp::socket::SocketHandle;
 use spin::*;
 use zircon_object::{
     object::{KernelObject, KoID, Signal},
@@ -162,6 +164,8 @@ struct LinuxProcessInner {
     children: HashMap<KoID, Arc<Process>>,
     /// Signal actions
     signal_actions: SignalActions,
+    /// Sockets
+    sockets: HashMap<SocketHandle, Arc<Mutex<dyn Socket>>>,
 }
 
 #[derive(Clone)]
@@ -320,6 +324,43 @@ impl LinuxProcess {
         inner.files.remove(&fd).map(|_| ()).ok_or(LxError::EBADF)
     }
 
+    /// miss
+    pub fn add_socket(&self, socket: Arc<Mutex<dyn Socket>>) -> LxResult<SocketHandle> {
+        let inner = self.inner.lock();
+        let fd = inner.get_free_hd();
+        self.insert_socket(inner, fd, socket)
+        // unimplemented!()
+    }
+
+    /// insert a file and fd into the file descriptor table
+    fn insert_socket(
+        &self,
+        mut inner: MutexGuard<LinuxProcessInner>,
+        fd: SocketHandle,
+        socket: Arc<Mutex<dyn Socket>>,
+    ) -> LxResult<SocketHandle> {
+        if inner.sockets.len() < inner.file_limit.cur as usize {
+            inner.sockets.insert(fd, socket);
+            Ok(fd)
+        } else {
+            Err(LxError::EMFILE)
+        }
+    }
+
+    /// Get the `Socket` with given `fd`.
+    pub fn get_socket(&self, fd: SocketHandle) -> LxResult<Arc<Mutex<dyn Socket>>> {
+        // unimplemented!()
+        let inner = self.inner.lock();
+        let socket = inner.sockets.get(&fd).cloned().ok_or(LxError::EBADF);
+        socket
+    }
+
+    /// Close file descriptor `fd`.
+    pub fn close_socket(&self, fd: SocketHandle) -> LxResult {
+        let mut inner = self.inner.lock();
+        inner.sockets.remove(&fd).map(|_| ()).ok_or(LxError::EBADF)
+    }
+
     /// Get root INode of the process.
     pub fn root_inode(&self) -> &Arc<dyn INode> {
         &self.root_inode
@@ -452,6 +493,12 @@ impl LinuxProcessInner {
         (0usize..)
             .map(|i| i.into())
             .find(|fd| !self.files.contains_key(fd))
+            .unwrap()
+    }
+    fn get_free_hd(&self) -> SocketHandle {
+        (10000usize..)
+            .map(|i| i.into())
+            .find(|fd| !self.sockets.contains_key(fd))
             .unwrap()
     }
 }

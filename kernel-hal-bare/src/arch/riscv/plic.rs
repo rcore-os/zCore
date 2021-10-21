@@ -1,7 +1,7 @@
+use super::consts::*;
 use super::interrupt;
 use super::uart;
-use crate::{putfmt, phys_to_virt};
-use super::consts::*;
+use crate::{phys_to_virt, putfmt};
 
 //通过MMIO地址对平台级中断控制器PLIC的寄存器进行设置
 //基于opensbi后一般运行于Hart0 S态，为Target1

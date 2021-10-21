@@ -21,8 +21,8 @@ extern crate rlibc_opt; //Only for x86_64
 
 #[macro_use]
 mod logging;
-mod lang;
 mod arch;
+mod lang;
 mod memory;
 
 #[cfg(feature = "linux")]
@@ -33,16 +33,16 @@ use rboot::BootInfo;
 
 #[cfg(target_arch = "riscv64")]
 use kernel_hal_bare::{
-    phys_to_virt, remap_the_kernel,
-    drivers::{GPU_DRIVERS, CMDLINE},
-    BootInfo, GraphicInfo,
+    drivers::{CMDLINE, GPU_DRIVERS},
+    phys_to_virt, remap_the_kernel, BootInfo, GraphicInfo,
 };
 
 use alloc::{
-    format,vec,
-    vec::Vec,
     boxed::Box,
+    format,
     string::{String, ToString},
+    vec,
+    vec::Vec,
 };
 
 #[cfg(feature = "board_qemu")]
@@ -99,7 +99,10 @@ fn main(ramfs_data: &[u8], cmdline: &str) -> ! {
 #[cfg(target_arch = "riscv64")]
 #[no_mangle]
 pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
-    println!("zCore rust_main( hartid: {}, device_tree_paddr: {:#x} )", hartid, device_tree_paddr);
+    println!(
+        "zCore rust_main( hartid: {}, device_tree_paddr: {:#x} )",
+        hartid, device_tree_paddr
+    );
     let device_tree_vaddr = phys_to_virt(device_tree_paddr);
 
     let boot_info = BootInfo {
@@ -114,7 +117,7 @@ pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
         dtb_addr: device_tree_paddr as u64,
         initramfs_addr: 0,
         initramfs_size: 0,
-        cmdline: "LOG=debug:TERM=xterm-256color:console.shell=true:virtcon.disable=true",
+        cmdline: "LOG=warn:TERM=xterm-256color:console.shell=true:virtcon.disable=true",
     };
 
     logging::init(get_log_level(boot_info.cmdline));
@@ -196,14 +199,12 @@ fn main(ramfs_data: &'static mut [u8], cmdline: &str) -> ! {
     let args: Vec<String> = get_rootproc(cmdline);
     let envs: Vec<String> = vec!["PATH=/usr/sbin:/usr/bin:/sbin:/bin".into()];
 
-    /*
     let rootfs = fs::init_filesystem(ramfs_data);
     let _proc = linux_loader::run(args, envs, rootfs);
-    */
 
     info!("linux_loader run linux proc +++");
-    use linux_object::net::test::server;
-    server(0);
+    // use linux_object::net::test::server;
+    // server(0);
 
     /* 用户程序无法访问内核的代码？？？ 页表：USER
     linux_loader::run_linux_proc(vec!["run_linux_proc".into()], server as usize);

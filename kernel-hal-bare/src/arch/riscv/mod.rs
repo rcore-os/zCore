@@ -1,4 +1,6 @@
 use super::super::*;
+use alloc::{collections::VecDeque, string::String, vec, vec::Vec};
+use core::fmt::{self, Write};
 use kernel_hal::{
     ColorDepth, ColorFormat, FramebufferInfo, HalError, PageTableTrait, PhysAddr, VirtAddr,
     FRAME_BUFFER,
@@ -7,14 +9,15 @@ use riscv::addr::Page;
 use riscv::asm::sfence_vma_all;
 use riscv::paging::{PageTableFlags as PTF, *};
 use riscv::register::{satp, sie, stval, time};
-use alloc::{collections::VecDeque, string::String, vec, vec::Vec};
-use core::fmt::{self, Write};
 
-use crate::drivers::{device_tree::{self, Node}, irq, net, serial, virtio};
+use crate::drivers::{
+    device_tree::{self, Node},
+    irq, net, serial, virtio,
+};
 
-mod sbi;
 mod consts;
 pub mod cpu_C906;
+mod sbi;
 
 use consts::*;
 
@@ -99,7 +102,6 @@ pub fn remap_the_kernel(dtb: usize) {
     )
     .unwrap();
 
-
     // GPIO/CCU
     #[cfg(feature = "board_d1")]
     map_range(
@@ -108,7 +110,8 @@ pub fn remap_the_kernel(dtb: usize) {
         phys_to_virt(0x0200_0000) + PAGE_SIZE,
         linear_offset,
         PTF::VALID | PTF::READABLE | PTF::WRITABLE,
-    ).unwrap();
+    )
+    .unwrap();
 
     //SYS_CFG
     #[cfg(feature = "board_d1")]
@@ -118,7 +121,8 @@ pub fn remap_the_kernel(dtb: usize) {
         phys_to_virt(0x0300_0000) + PAGE_SIZE,
         linear_offset,
         PTF::VALID | PTF::READABLE | PTF::WRITABLE,
-    ).unwrap();
+    )
+    .unwrap();
 
     //GMAC
     #[cfg(feature = "board_d1")]
@@ -128,7 +132,8 @@ pub fn remap_the_kernel(dtb: usize) {
         phys_to_virt(0x0450_0000) + PAGE_SIZE,
         linear_offset,
         PTF::VALID | PTF::READABLE | PTF::WRITABLE,
-    ).unwrap();
+    )
+    .unwrap();
 
     // PLIC
     map_range(
@@ -425,7 +430,7 @@ pub fn serial_put(mut x: u8) {
     if (x == b'\r') || (x == b'\n') {
         STDIN.lock().push_back(b'\n');
         STDIN.lock().push_back(b'\r');
-    }else{
+    } else {
         STDIN.lock().push_back(x);
     }
     STDIN_CALLBACK.lock().retain(|f| !f());
@@ -506,10 +511,7 @@ struct Stdout1;
 impl fmt::Write for Stdout1 {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         //每次都创建一个新的Uart ? 内存位置始终相同
-        write!(
-            uart::Uart::new(phys_to_virt(UART_BASE)),
-            "{}", s
-        ).unwrap();
+        write!(uart::Uart::new(phys_to_virt(UART_BASE)), "{}", s).unwrap();
 
         Ok(())
     }
@@ -592,26 +594,30 @@ pub fn init(config: Config) {
 
     #[cfg(feature = "board_d1")]
     {
-        let plic_node =
-            Node {
-                name: String::from("plic"),
-                props: vec![
-                    (String::from("reg"), vec![00, 00, 00, 00, 0x10, 0x00, 0x00, 0x00]),
-                    (String::from("phandle"), vec![00, 00, 00, 0x03]),
-                ],
-                children: Vec::new(),
-            };
+        let plic_node = Node {
+            name: String::from("plic"),
+            props: vec![
+                (
+                    String::from("reg"),
+                    vec![00, 00, 00, 00, 0x10, 0x00, 0x00, 0x00],
+                ),
+                (String::from("phandle"), vec![00, 00, 00, 0x03]),
+            ],
+            children: Vec::new(),
+        };
 
-        let uart_node =
-            Node {
-                name: String::from("uart"),
-                props: vec![
-                    (String::from("reg"), vec![00, 00, 00, 00, 0x02, 0x50, 0x00, 0x00]),
-                    (String::from("interrupts"), vec![00, 00, 00, 0x12]),
-                    (String::from("interrupt-parent"), vec![00, 00, 00, 0x03]),
-                ],
-                children: Vec::new(),
-            };
+        let uart_node = Node {
+            name: String::from("uart"),
+            props: vec![
+                (
+                    String::from("reg"),
+                    vec![00, 00, 00, 00, 0x02, 0x50, 0x00, 0x00],
+                ),
+                (String::from("interrupts"), vec![00, 00, 00, 0x12]),
+                (String::from("interrupt-parent"), vec![00, 00, 00, 0x03]),
+            ],
+            children: Vec::new(),
+        };
 
         irq::plic::init_dt(&plic_node);
         serial::uart::init_dt(&uart_node);
@@ -621,7 +627,6 @@ pub fn init(config: Config) {
     }
 
     interrupt::init();
-
 }
 
 pub struct Config {

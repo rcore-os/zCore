@@ -1,8 +1,8 @@
 pub mod mii;
 //pub mod rtl8211f;
 
+use crate::{phys_to_virt, virt_to_phys};
 use isomorphic_drivers::provider::Provider;
-use crate::{virt_to_phys, phys_to_virt};
 
 #[macro_use]
 mod log {

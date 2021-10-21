@@ -4,9 +4,9 @@ use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 use lazy_static::lazy_static;
-use spin::RwLock;
-use spin::Mutex;
 use smoltcp::socket::SocketSet;
+use spin::Mutex;
+use spin::RwLock;
 
 //pub use self::virtio::*;
 pub use block::BlockDriver;
@@ -74,8 +74,8 @@ lazy_static! {
     ///
     /// Because smoltcp is a single thread network stack,
     /// every socket operation needs to lock this.
-    pub static ref SOCKETS: Mutex<SocketSet<'static>> =
-        Mutex::new(SocketSet::new(vec![]));
+    pub static ref SOCKETS: Arc<Mutex<SocketSet<'static>>> =
+    Arc::new(Mutex::new(SocketSet::new(vec![])));
 }
 
 /*
@@ -83,3 +83,15 @@ lazy_static! {
     //pub static ref SOCKET_ACTIVITY: Condvar = Condvar::new();
 }
 */
+
+#[allow(warnings)]
+#[export_name = "hal_get_driver"]
+#[no_mangle]
+pub extern "C" fn get_net_driver() -> Vec<Arc<dyn NetDriver>> {
+    NET_DRIVERS.read().clone()
+}
+
+#[export_name = "hal_get_net_sockets"]
+pub fn get_net_sockets() -> Arc<Mutex<SocketSet<'static>>> {
+    SOCKETS.clone()
+}

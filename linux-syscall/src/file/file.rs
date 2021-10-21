@@ -21,11 +21,22 @@ impl Syscall<'_> {
     pub async fn sys_read(&self, fd: FileDesc, mut base: UserOutPtr<u8>, len: usize) -> SysResult {
         info!("read: fd={:?}, base={:?}, len={:#x}", fd, base, len);
         let proc = self.linux_process();
-        let file_like = proc.get_file_like(fd)?;
-        let mut buf = vec![0u8; len];
-        let len = file_like.read(&mut buf).await?;
-        base.write_array(&buf[..len])?;
-        Ok(len)
+
+        if usize::from(fd) >= 10000usize {
+            let x = usize::from(fd);
+            let socket = proc.get_socket(x.into())?;
+            let mut buf = vec![0u8; len];
+            let (len, _) = socket.lock().read(&mut buf).await;
+            let len = len.unwrap_or(0);
+            base.write_array(&buf[..len])?;
+            Ok(len)
+        } else {
+            let file_like = proc.get_file_like(fd)?;
+            let mut buf = vec![0u8; len];
+            let len = file_like.read(&mut buf).await?;
+            base.write_array(&buf[..len])?;
+            Ok(len)
+        }
     }
 
     /// Writes to a specified file using a file descriptor. Before using this call,
@@ -96,11 +107,21 @@ impl Syscall<'_> {
         info!("readv: fd={:?}, iov={:?}, count={}", fd, iov_ptr, iov_count);
         let mut iovs = iov_ptr.read_iovecs(iov_count)?;
         let proc = self.linux_process();
-        let file_like = proc.get_file_like(fd)?;
-        let mut buf = vec![0u8; iovs.total_len()];
-        let len = file_like.read(&mut buf).await?;
-        iovs.write_from_buf(&buf)?;
-        Ok(len)
+        if usize::from(fd) >= 10000usize {
+            let x = usize::from(fd);
+            let socket = proc.get_socket(x.into())?;
+            let mut buf = vec![0u8; iovs.total_len()];
+            let (len, _) = socket.lock().read(&mut buf).await;
+            let len = len.unwrap();
+            iovs.write_from_buf(&buf)?;
+            Ok(len)
+        } else {
+            let file_like = proc.get_file_like(fd)?;
+            let mut buf = vec![0u8; iovs.total_len()];
+            let len = file_like.read(&mut buf).await?;
+            iovs.write_from_buf(&buf)?;
+            Ok(len)
+        }
     }
 
     /// works just like write except that multiple buffers are written out.
@@ -119,9 +140,16 @@ impl Syscall<'_> {
         let iovs = iov_ptr.read_iovecs(iov_count)?;
         let buf = iovs.read_to_vec()?;
         let proc = self.linux_process();
-        let file_like = proc.get_file_like(fd)?;
-        let len = file_like.write(&buf)?;
-        Ok(len)
+        if usize::from(fd) >= 10000usize {
+            let x = usize::from(fd);
+            let socket = proc.get_socket(x.into())?;
+            let len = socket.lock().write(&buf, None)?;
+            Ok(len)
+        } else {
+            let file_like = proc.get_file_like(fd)?;
+            let len = file_like.write(&buf)?;
+            Ok(len)
+        }
     }
 
     /// repositions the offset of the open file associated with the file descriptor fd
@@ -291,8 +319,15 @@ impl Syscall<'_> {
             fd, request, arg1, arg2, arg3
         );
         let proc = self.linux_process();
-        let file_like = proc.get_file_like(fd)?;
-        file_like.ioctl(request, arg1, arg2, arg3)
+        if usize::from(fd) >= 10000usize {
+            let f = usize::from(fd);
+            let socket = proc.get_socket(f.into())?;
+            let x = socket.lock();
+            x.ioctl(request, arg1, arg2, arg3)
+        } else {
+            let file_like = proc.get_file_like(fd)?;
+            file_like.ioctl(request, arg1, arg2, arg3)
+        }
     }
 
     /// Manipulate a file descriptor.
@@ -301,8 +336,15 @@ impl Syscall<'_> {
     pub fn sys_fcntl(&self, fd: FileDesc, cmd: usize, arg: usize) -> SysResult {
         info!("fcntl: fd={:?}, cmd={:x}, arg={}", fd, cmd, arg);
         let proc = self.linux_process();
-        let file_like = proc.get_file_like(fd)?;
-        file_like.fcntl(cmd, arg)
+        if usize::from(fd) >= 10000usize {
+            let f = usize::from(fd);
+            let socket = proc.get_socket(f.into())?;
+            let x = socket.lock();
+            x.fcntl(cmd, arg)
+        } else {
+            let file_like = proc.get_file_like(fd)?;
+            file_like.fcntl(cmd, arg)
+        }
     }
 
     /// Checks whether the calling process can access the file pathname

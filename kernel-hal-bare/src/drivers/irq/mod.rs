@@ -1,9 +1,9 @@
-use kernel_hal::drivers::Driver;
 use crate::arch::interrupt::enable_irq;
 use alloc::collections::btree_map::Entry;
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+use kernel_hal::drivers::Driver;
 
 #[cfg(feature = "board_raspi3")]
 pub mod bcm2837;

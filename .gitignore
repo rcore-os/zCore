@@ -17,4 +17,5 @@ stdout-zcore
 scripts/script.sh
 stdout-baremetal-test-rv64
 stdout-rv64
+zCore/fw-zCore.bin
 

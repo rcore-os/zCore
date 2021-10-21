@@ -12,16 +12,16 @@ use smoltcp::time::Instant;
 use smoltcp::wire::*;
 use smoltcp::Result;
 
+use crate::PAGE_SIZE;
 use isomorphic_drivers::net::ethernet::intel::e1000::E1000;
 use isomorphic_drivers::net::ethernet::structs::EthernetAddress as DriverEthernetAddress;
-use crate::PAGE_SIZE;
 
 use crate::drivers::{provider::Provider, BlockDriver};
 //use crate::sync::SpinNoIrqLock as Mutex;
 use spin::Mutex;
 
 use super::super::IRQ_MANAGER;
-use kernel_hal::drivers::{Driver, DeviceType, NetDriver, DRIVERS, NET_DRIVERS, SOCKETS};
+use kernel_hal::drivers::{DeviceType, Driver, NetDriver, DRIVERS, NET_DRIVERS, SOCKETS};
 
 #[derive(Clone)]
 pub struct E1000Driver(Arc<Mutex<E1000<Provider>>>);

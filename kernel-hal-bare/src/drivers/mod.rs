@@ -29,10 +29,6 @@ pub mod device_tree;
 //pub mod input;
 /// Interrupt controller
 pub mod irq;
-/// MMC controller
-//pub mod mmc;
-/// virtio device
-pub mod virtio;
 /// Network controller
 pub mod net;
 /// For isomorphic_drivers
@@ -41,6 +37,10 @@ pub mod provider;
 //pub mod rtc;
 /// Serial port
 pub mod serial;
+/// MMC controller
+//pub mod mmc;
+/// virtio device
+pub mod virtio;
 
 /* define in kernel-hal
 #[derive(Debug, Eq, PartialEq)]

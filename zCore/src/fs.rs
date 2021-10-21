@@ -1,7 +1,7 @@
 use alloc::sync::Arc;
-use rcore_fs::vfs::FileSystem;
+use kernel_hal_bare::drivers::{BlockDriverWrapper, BLK_DRIVERS};
 use linux_object::fs::MemBuf;
-use kernel_hal_bare::drivers::{BLK_DRIVERS, BlockDriverWrapper};
+use rcore_fs::vfs::FileSystem;
 
 pub fn init_filesystem(ramfs_data: &'static mut [u8]) -> Arc<dyn FileSystem> {
     #[cfg(target_arch = "x86_64")]
@@ -9,7 +9,7 @@ pub fn init_filesystem(ramfs_data: &'static mut [u8]) -> Arc<dyn FileSystem> {
 
     #[cfg(feature = "link_user_img")]
     let ramfs_data = unsafe {
-        extern {
+        extern "C" {
             fn _user_img_start();
             fn _user_img_end();
         }
@@ -23,7 +23,7 @@ pub fn init_filesystem(ramfs_data: &'static mut [u8]) -> Arc<dyn FileSystem> {
     #[cfg(feature = "link_user_img")]
     let device = Arc::new(MemBuf::new(ramfs_data));
 
-    #[cfg(all(target_arch="riscv64", not(feature="link_user_img")))]
+    #[cfg(all(target_arch = "riscv64", not(feature = "link_user_img")))]
     let device = {
         let driver = BlockDriverWrapper(
             BLK_DRIVERS

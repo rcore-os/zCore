@@ -18,8 +18,8 @@ use smoltcp::Result;
 //use crate::sync::FlagsGuard;
 use spin::Mutex;
 
-use super::super::{IRQ_MANAGER, provider::Provider};
-use kernel_hal::drivers::{Driver, DeviceType, NetDriver, DRIVERS, NET_DRIVERS, SOCKETS};
+use super::super::{provider::Provider, IRQ_MANAGER};
+use kernel_hal::drivers::{DeviceType, Driver, NetDriver, DRIVERS, NET_DRIVERS, SOCKETS};
 
 #[derive(Clone)]
 struct IXGBEDriver {

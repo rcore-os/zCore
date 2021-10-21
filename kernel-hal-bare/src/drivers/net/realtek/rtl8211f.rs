@@ -2,20 +2,20 @@
 
 extern crate alloc;
 
-use crate::arch::cpu_C906::{flush_cache, invalidate_dcache, fence_w};
 use super::mii::*;
+use crate::arch::cpu_C906::{fence_w, flush_cache, invalidate_dcache};
 
-use core::mem::size_of;
 use core::marker::PhantomData;
+use core::mem::size_of;
 
-use alloc::sync::Arc;
-use alloc::string::String;
-use alloc::slice;
-use alloc::vec::Vec;
+use super::{phys_to_virt, virt_to_phys, Provider};
 use alloc::boxed::Box;
-use super::{virt_to_phys, phys_to_virt, Provider};
+use alloc::slice;
+use alloc::string::String;
+use alloc::sync::Arc;
+use alloc::vec::Vec;
 
-use crate::{putfmt, bare_print};
+use crate::{bare_print, putfmt};
 //use super::{error, warn, info, debug};
 
 /*
@@ -40,8 +40,8 @@ const MAC_ADDR: &str = "3a:c5:31:d5:de:88";
 
 const DMA_DESC_RX: usize = 256;
 const DMA_DESC_TX: usize = 256;
-const BUDGET: usize = DMA_DESC_RX/4;
-const TX_THRESH: usize = DMA_DESC_TX/4;
+const BUDGET: usize = DMA_DESC_RX / 4;
+const TX_THRESH: usize = DMA_DESC_TX / 4;
 
 const MAX_BUF_SZ: u32 = 2048 - 1;
 
@@ -50,69 +50,69 @@ const RX_DELAY: u32 = 0;
 
 const MDC_CLOCK_RATIO: u32 = 0x03;
 
-const GETH_BASIC_CTL0:   u32 = 0x00;
-const GETH_BASIC_CTL1:   u32 = 0x04;
-const GETH_INT_STA:      u32 = 0x08;
-const GETH_INT_EN:       u32 = 0x0C;
-const GETH_TX_CTL0:      u32 = 0x10;
-const GETH_TX_CTL1:      u32 = 0x14;
-const GETH_TX_FLOW_CTL:  u32 = 0x1C;
+const GETH_BASIC_CTL0: u32 = 0x00;
+const GETH_BASIC_CTL1: u32 = 0x04;
+const GETH_INT_STA: u32 = 0x08;
+const GETH_INT_EN: u32 = 0x0C;
+const GETH_TX_CTL0: u32 = 0x10;
+const GETH_TX_CTL1: u32 = 0x14;
+const GETH_TX_FLOW_CTL: u32 = 0x1C;
 const GETH_TX_DESC_LIST: u32 = 0x20;
-const GETH_RX_CTL0:      u32 = 0x24;
-const GETH_RX_CTL1:      u32 = 0x28;
+const GETH_RX_CTL0: u32 = 0x24;
+const GETH_RX_CTL1: u32 = 0x28;
 const GETH_RX_DESC_LIST: u32 = 0x34;
-const GETH_RX_FRM_FLT:   u32 = 0x38;
-const GETH_RX_HASH0:     u32 = 0x40;
-const GETH_RX_HASH1:     u32 = 0x44;
-const GETH_MDIO_ADDR:    u32 = 0x48;
-const GETH_MDIO_DATA:    u32 = 0x4C;
-const GETH_ADDR_HI:      u32 = 0x50; //(0x50 + ((reg) << 3))
-const GETH_ADDR_LO:      u32 = 0x54; //(0x54 + ((reg) << 3))
-const GETH_TX_DMA_STA :  u32 = 0xB0;
-const GETH_TX_CUR_DESC:  u32 = 0xB4;
-const GETH_TX_CUR_BUF :  u32 = 0xB8;
-const GETH_RX_DMA_STA :  u32 = 0xC0;
-const GETH_RX_CUR_DESC:  u32 = 0xC4;
-const GETH_RX_CUR_BUF :  u32 = 0xC8;
-const GETH_RGMII_STA  :  u32 = 0xD0;
+const GETH_RX_FRM_FLT: u32 = 0x38;
+const GETH_RX_HASH0: u32 = 0x40;
+const GETH_RX_HASH1: u32 = 0x44;
+const GETH_MDIO_ADDR: u32 = 0x48;
+const GETH_MDIO_DATA: u32 = 0x4C;
+const GETH_ADDR_HI: u32 = 0x50; //(0x50 + ((reg) << 3))
+const GETH_ADDR_LO: u32 = 0x54; //(0x54 + ((reg) << 3))
+const GETH_TX_DMA_STA: u32 = 0xB0;
+const GETH_TX_CUR_DESC: u32 = 0xB4;
+const GETH_TX_CUR_BUF: u32 = 0xB8;
+const GETH_RX_DMA_STA: u32 = 0xC0;
+const GETH_RX_CUR_DESC: u32 = 0xC4;
+const GETH_RX_CUR_BUF: u32 = 0xC8;
+const GETH_RGMII_STA: u32 = 0xD0;
 
-const RGMII_IRQ : u32 = 0x00000001;
+const RGMII_IRQ: u32 = 0x00000001;
 
 const MII: usize = 2;
 const GMII: usize = 3;
 const RMII: usize = 7;
 const RGMII: usize = 8;
 
-const CTL0_LM   : u32 = 0x02;
-const CTL0_DM   : u32 = 0x01;
+const CTL0_LM: u32 = 0x02;
+const CTL0_DM: u32 = 0x01;
 const CTL0_SPEED: u32 = 0x04;
 
-const BURST_LEN : u32 = 0x3F000000;
-const RX_TX_PRI : u32 = 0x02;
-const SOFT_RST  : u32 = 0x01;
+const BURST_LEN: u32 = 0x3F000000;
+const RX_TX_PRI: u32 = 0x02;
+const SOFT_RST: u32 = 0x01;
 
-const TX_FLUSH:    u32 = 0x01;
-const TX_MD:       u32 = 0x02;
+const TX_FLUSH: u32 = 0x01;
+const TX_MD: u32 = 0x02;
 const TX_NEXT_FRM: u32 = 0x04;
-const TX_TH:       u32 = 0x0700;
+const TX_TH: u32 = 0x0700;
 
-const RX_FLUSH:    u32 = 0x01;
-const RX_MD:       u32 = 0x02;
+const RX_FLUSH: u32 = 0x01;
+const RX_MD: u32 = 0x02;
 const RX_RUNT_FRM: u32 = 0x04;
-const RX_ERR_FRM:  u32 = 0x08;
-const RX_TH:       u32 = 0x0030;
+const RX_ERR_FRM: u32 = 0x08;
+const RX_TH: u32 = 0x0030;
 
-const TX_INT      : u32 = 0x00001;
-const TX_STOP_INT : u32 = 0x00002;
-const TX_UA_INT   : u32 = 0x00004;
-const TX_TOUT_INT : u32 = 0x00008;
-const TX_UNF_INT  : u32 = 0x00010;
+const TX_INT: u32 = 0x00001;
+const TX_STOP_INT: u32 = 0x00002;
+const TX_UA_INT: u32 = 0x00004;
+const TX_TOUT_INT: u32 = 0x00008;
+const TX_UNF_INT: u32 = 0x00010;
 const TX_EARLY_INT: u32 = 0x00020;
-const RX_INT      : u32 = 0x00100;
-const RX_UA_INT   : u32 = 0x00200;
-const RX_STOP_INT : u32 = 0x00400;
-const RX_TOUT_INT : u32 = 0x00800;
-const RX_OVF_INT  : u32 = 0x01000;
+const RX_INT: u32 = 0x00100;
+const RX_UA_INT: u32 = 0x00200;
+const RX_STOP_INT: u32 = 0x00400;
+const RX_TOUT_INT: u32 = 0x00800;
+const RX_OVF_INT: u32 = 0x01000;
 const RX_EARLY_INT: u32 = 0x02000;
 const LINK_STA_INT: u32 = 0x10000;
 
@@ -127,7 +127,6 @@ const DUPLEX_UNKNOWN: i32 = 0xff;
 
 const SF_DMA_MODE: usize = 1;
 
-
 /* - 0: Flow Off
  * - 1: Rx Flow
  * - 2: Tx Flow
@@ -135,7 +134,6 @@ const SF_DMA_MODE: usize = 1;
  */
 const Flow_Ctrl: u32 = 0;
 const Pause: u32 = 0x400;
-
 
 /* Enable or disable autonegotiation. */
 const AUTONEG_DISABLE: usize = 0;
@@ -167,17 +165,18 @@ const MII_BMCR: u32 = 0x00;
 const BMCR_RESET: u32 = 0x8000;
 const BMCR_PDOWN: u32 = 0x0800;
 
-
 #[derive(Debug, Copy, Clone)]
 #[repr(packed)]
-pub struct dma_desc { // size: 16
+pub struct dma_desc {
+    // size: 16
     desc0: u32, // Status
     desc1: u32, // Buffer Size
     desc2: u32, // Buffer Addr
     desc3: u32, // Next Desc
 }
 
-pub enum rx_frame_status { /* IPC status */
+pub enum rx_frame_status {
+    /* IPC status */
     good_frame = 0,
     discard_frame = 1,
     csum_none = 2,
@@ -198,7 +197,7 @@ static WAKER: AtomicWaker = AtomicWaker::new();
 */
 
 pub struct RTL8211F<P: Provider> {
-    base: u32, // 0x4500000
+    base: u32,     // 0x4500000
     base_ccu: u32, // CCU_BASE
     base_phy: u32, // SYS_CFG
 
@@ -226,27 +225,37 @@ pub struct RTL8211F<P: Provider> {
     marker: PhantomData<P>,
 }
 
-impl<P> RTL8211F<P> where P: Provider {
+impl<P> RTL8211F<P>
+where
+    P: Provider,
+{
     pub fn new(mac_addr: &[u8; 6]) -> Self {
-
         assert_eq!(size_of::<dma_desc>(), 16);
 
         let mut mac: [u8; 6] = [0; 6];
-        let v_addr = mac_addr[0] as u32 + mac_addr[1] as u32 + mac_addr[2] as u32 + 
-             mac_addr[3] as u32 + mac_addr[4] as u32 + mac_addr[5] as u32;
+        let v_addr = mac_addr[0] as u32
+            + mac_addr[1] as u32
+            + mac_addr[2] as u32
+            + mac_addr[3] as u32
+            + mac_addr[4] as u32
+            + mac_addr[5] as u32;
         if (v_addr == 0) || // mac addr is all 0
            ((mac_addr[0] & 0x01) == 1) || // mac addr is multicast
-           (v_addr == 0x5fa) // mac addr is broadcast
-           {
-               let tokens: Vec<&str> = MAC_ADDR.split(":").collect();
-               for (i, s) in tokens.iter().enumerate() {
-                   mac[i] = u8::from_str_radix(s, 16).unwrap();
-               }
-           }else{
-               mac = mac_addr.clone();
-           }
+           (v_addr == 0x5fa)
+        // mac addr is broadcast
+        {
+            let tokens: Vec<&str> = MAC_ADDR.split(":").collect();
+            for (i, s) in tokens.iter().enumerate() {
+                mac[i] = u8::from_str_radix(s, 16).unwrap();
+            }
+        } else {
+            mac = mac_addr.clone();
+        }
 
-        info!("mac addr: {:x}:{:x}:{:x}:{:x}:{:x}:{:x}", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+        info!(
+            "mac addr: {:x}:{:x}:{:x}:{:x}:{:x}:{:x}",
+            mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
+        );
 
         // DMA使用的dma_desc内存，有一致性要求，一般非cache的
         // 而这里到时会flush_cache()来同步cache
@@ -257,18 +266,28 @@ impl<P> RTL8211F<P> where P: Provider {
             slice::from_raw_parts_mut(
                 send_ring_va as *mut dma_desc,
                 P::PAGE_SIZE / size_of::<dma_desc>(), // 4096/16 = 256 个 dma_desc
-                )
+            )
         };
 
         let recv_ring = unsafe {
             slice::from_raw_parts_mut(
                 recv_ring_va as *mut dma_desc,
                 P::PAGE_SIZE / size_of::<dma_desc>(),
-                )
+            )
         };
 
-        send_ring.fill(dma_desc { desc0: 0, desc1: 0, desc2: 0, desc3: 0 });
-        recv_ring.fill(dma_desc { desc0: 0, desc1: 0, desc2: 0, desc3: 0 });
+        send_ring.fill(dma_desc {
+            desc0: 0,
+            desc1: 0,
+            desc2: 0,
+            desc3: 0,
+        });
+        recv_ring.fill(dma_desc {
+            desc0: 0,
+            desc1: 0,
+            desc2: 0,
+            desc3: 0,
+        });
 
         let mut send_buffers = Vec::with_capacity(send_ring.len());
         let mut recv_buffers = Vec::with_capacity(recv_ring.len());
@@ -283,10 +302,11 @@ impl<P> RTL8211F<P> where P: Provider {
 
             send_ring[i].desc2 = buffer_page_pa as u32;
 
-            if (i + 1) == send_ring.len(){
+            if (i + 1) == send_ring.len() {
                 send_ring[i].desc3 = virt_to_phys(&send_ring[0] as *const dma_desc as usize) as u32;
-            }else{
-                send_ring[i].desc3 = virt_to_phys(&send_ring[i+1] as *const dma_desc as usize) as u32;
+            } else {
+                send_ring[i].desc3 =
+                    virt_to_phys(&send_ring[i + 1] as *const dma_desc as usize) as u32;
             }
 
             send_buffers.push(buffer_page_va);
@@ -299,15 +319,16 @@ impl<P> RTL8211F<P> where P: Provider {
 
             recv_ring[i].desc1 |= (1 << 24);
             //recv_ring[i].desc2 = buffer_page_pa as u32;
-            if (i + 1) == recv_ring.len(){
+            if (i + 1) == recv_ring.len() {
                 recv_ring[i].desc3 = virt_to_phys(&recv_ring[0] as *const dma_desc as usize) as u32;
-            }else{
-                recv_ring[i].desc3 = virt_to_phys(&recv_ring[i+1] as *const dma_desc as usize) as u32;
+            } else {
+                recv_ring[i].desc3 =
+                    virt_to_phys(&recv_ring[i + 1] as *const dma_desc as usize) as u32;
             }
 
             recv_buffers.push(buffer_page_va);
 
-            // geth_rx_refill, 实际运行refill时却是：priv->rx_clean: 0 ~ 254 ? 
+            // geth_rx_refill, 实际运行refill时却是：priv->rx_clean: 0 ~ 254 ?
             // desc_buf_set(&mut recv_ring[i], buffer_page_pa as u32, MAX_BUF_SZ);
             recv_ring[i].desc1 &= (!((1 << 11) - 1));
             recv_ring[i].desc1 |= (MAX_BUF_SZ & ((1 << 11) - 1));
@@ -318,7 +339,11 @@ impl<P> RTL8211F<P> where P: Provider {
             desc_set_own(&mut recv_ring[i]);
         }
 
-        info!("send_buffers length: {}, recv_buffers length: {}", send_buffers.len(), recv_buffers.len());
+        info!(
+            "send_buffers length: {}, recv_buffers length: {}",
+            send_buffers.len(),
+            recv_buffers.len()
+        );
 
         RTL8211F {
             base: GMAC_BASE,
@@ -337,7 +362,6 @@ impl<P> RTL8211F<P> where P: Provider {
             phy_mode: RGMII,
             autoneg: AUTONEG_ENABLE,
             //autoneg: AUTONEG_DISABLE,
-
             tx_delay: TX_DELAY,
             rx_delay: RX_DELAY,
 
@@ -351,7 +375,6 @@ impl<P> RTL8211F<P> where P: Provider {
     }
 
     pub fn open(&mut self) -> Result<i32, &str> {
-
         // 初始化驱动之前设置 pinctrl
         self.pinctrl_gpio_set_gmac();
 
@@ -380,7 +403,6 @@ impl<P> RTL8211F<P> where P: Provider {
         let phyaddr = 0;
         self.mdio_write(phyaddr, MII_BMCR, BMCR_RESET);
         while (BMCR_RESET & self.mdio_read(phyaddr, MII_BMCR)) != 0 {
-            ;
             //sleep(30);  // sleep 30 milliseconds
         }
 
@@ -400,8 +422,14 @@ impl<P> RTL8211F<P> where P: Provider {
         //
         self.rx_refill();
 
-        flush_cache(virt_to_phys(&self.recv_ring[0] as *const dma_desc as usize) as u64, (size_of::<dma_desc>() * self.recv_ring.len()) as u64);
-        flush_cache(virt_to_phys(&self.send_ring[0] as *const dma_desc as usize) as u64, (size_of::<dma_desc>() * self.send_ring.len()) as u64);
+        flush_cache(
+            virt_to_phys(&self.recv_ring[0] as *const dma_desc as usize) as u64,
+            (size_of::<dma_desc>() * self.recv_ring.len()) as u64,
+        );
+        flush_cache(
+            virt_to_phys(&self.send_ring[0] as *const dma_desc as usize) as u64,
+            (size_of::<dma_desc>() * self.send_ring.len()) as u64,
+        );
 
         // phy_start
         // 注意地址32位对齐
@@ -434,7 +462,6 @@ impl<P> RTL8211F<P> where P: Provider {
 
         // PE_DRV1, multi driving select level0
         self.pinctrl_gpio_set(0xd8, 0x0);
-
     }
 
     pub fn pinctrl_gpio_reset_gmac_phy(&mut self) {
@@ -498,11 +525,11 @@ impl<P> RTL8211F<P> where P: Provider {
 
             /* Setup standard advertisement */
             let adv = ADVERTISE_ALL;
-            self.phy_modify(MII_ADVERTISE,
-                            ADVERTISE_ALL | ADVERTISE_100BASE4 |
-                            ADVERTISE_PAUSE_CAP | ADVERTISE_PAUSE_ASYM,
-                            adv);
-
+            self.phy_modify(
+                MII_ADVERTISE,
+                ADVERTISE_ALL | ADVERTISE_100BASE4 | ADVERTISE_PAUSE_CAP | ADVERTISE_PAUSE_ASYM,
+                adv,
+            );
 
             // 1000M PHY BMSR_ESTATEN = 1
             let bmcr = self.mdio_read(phyaddr, MII_BMSR);
@@ -526,7 +553,9 @@ impl<P> RTL8211F<P> where P: Provider {
                 let advgb = self.mdio_read(phyaddr, MII_CTRL1000);
                 if (lpagb & LPA_1000MSFAIL) != 0 {
                     if (advgb & CTL1000_ENABLE_MASTER) != 0 {
-                        error!("Master/Slave resolution failed, maybe conflicting manual settings ?");
+                        error!(
+                            "Master/Slave resolution failed, maybe conflicting manual settings ?"
+                        );
                     } else {
                         error!("Master/Slave resolution failed");
                     }
@@ -560,7 +589,6 @@ impl<P> RTL8211F<P> where P: Provider {
 
             //speed按从高到低的优先顺序匹配
             if speed == SPEED_1000 {
-                ;
             } else if (lpa & LPA_100FULL) != 0 {
                 speed = SPEED_100;
                 duplex = DUPLEX_FULL;
@@ -576,12 +604,11 @@ impl<P> RTL8211F<P> where P: Provider {
             }
 
             if duplex == DUPLEX_FULL {
-                pause = if (lpa & LPA_PAUSE_CAP) != 0 { 1 }else{ 0 };
-                asym_pause = if (lpa & LPA_PAUSE_ASYM) != 0 { 1 }else{ 0 };
+                pause = if (lpa & LPA_PAUSE_CAP) != 0 { 1 } else { 0 };
+                asym_pause = if (lpa & LPA_PAUSE_ASYM) != 0 { 1 } else { 0 };
             }
 
             // 解析到speed duplex并设置后,判断网线Link
-
         } else {
             // AUTONEG_DISABLE
 
@@ -597,14 +624,14 @@ impl<P> RTL8211F<P> where P: Provider {
             info!("MII_BMCR: {:#x}", bmcr);
             if (bmcr & BMCR_FULLDPLX) != 0 {
                 duplex = DUPLEX_FULL;
-            }else{
+            } else {
                 duplex = DUPLEX_HALF;
             }
             if (bmcr & BMCR_SPEED1000) != 0 {
                 speed = SPEED_1000;
-            }else if (bmcr & BMCR_SPEED100) != 0 {
+            } else if (bmcr & BMCR_SPEED100) != 0 {
                 speed = SPEED_100;
-            }else{
+            } else {
                 speed = SPEED_10;
             }
             // AUTONEG_DISABLE
@@ -626,7 +653,7 @@ impl<P> RTL8211F<P> where P: Provider {
 
         // 而没网线Link时, 不进行下列设置: PHY state change UP -> NOLINK
         if link != 0 {
-            if pause != 0{
+            if pause != 0 {
                 self.flow_ctrl(duplex, Flow_Ctrl, Pause);
             }
 
@@ -640,7 +667,10 @@ impl<P> RTL8211F<P> where P: Provider {
 
     pub fn can_recv(&mut self) -> bool {
         let desc = &self.recv_ring[self.rx_dirty];
-        invalidate_dcache(virt_to_phys(desc as *const dma_desc as usize) as u64, size_of::<dma_desc>() as u64);
+        invalidate_dcache(
+            virt_to_phys(desc as *const dma_desc as usize) as u64,
+            size_of::<dma_desc>() as u64,
+        );
         desc_get_own(desc) == 0
     }
 
@@ -656,7 +686,10 @@ impl<P> RTL8211F<P> where P: Provider {
             entry = self.rx_dirty;
             let mut desc = &mut self.recv_ring[entry];
 
-            invalidate_dcache(virt_to_phys(desc as *const dma_desc as usize) as u64, size_of::<dma_desc>() as u64);
+            invalidate_dcache(
+                virt_to_phys(desc as *const dma_desc as usize) as u64,
+                size_of::<dma_desc>() as u64,
+            );
 
             if desc_get_own(desc) != 0 {
                 break;
@@ -670,12 +703,11 @@ impl<P> RTL8211F<P> where P: Provider {
             let mut frame_len = (desc.desc0 >> 16) & 0x3fff; // Frame length bit[16:29]
 
             //discard frame when last_desc, err_sum, len_err, mii_err
-            let status = 
-                if (((desc.desc0 >> 8) & 0x1) == 0) || ((desc.desc0 & 0x9008) != 0) {
-                    rx_frame_status::discard_frame as i32
-                } else {
-                    rx_frame_status::good_frame as i32
-                };
+            let status = if (((desc.desc0 >> 8) & 0x1) == 0) || ((desc.desc0 & 0x9008) != 0) {
+                rx_frame_status::discard_frame as i32
+            } else {
+                rx_frame_status::good_frame as i32
+            };
 
             info!("RX frame size {}, status: {:?}", frame_len, status);
 
@@ -684,13 +716,13 @@ impl<P> RTL8211F<P> where P: Provider {
                 break;
             }
 
-            invalidate_dcache(virt_to_phys(self.recv_buffers[entry]) as u64, frame_len as u64);
+            invalidate_dcache(
+                virt_to_phys(self.recv_buffers[entry]) as u64,
+                frame_len as u64,
+            );
 
             let skb = unsafe {
-                slice::from_raw_parts(
-                    self.recv_buffers[entry] as *const u8,
-                    frame_len as usize,
-                    )
+                slice::from_raw_parts(self.recv_buffers[entry] as *const u8, frame_len as usize)
             };
 
             info!("========== RX PKT DATA: <<<<<<<<<<");
@@ -701,10 +733,7 @@ impl<P> RTL8211F<P> where P: Provider {
 
                 // Just need to clear 64 bits header
                 unsafe {
-                    slice::from_raw_parts_mut(
-                        self.recv_buffers[entry] as *mut u8,
-                        64)
-                        .fill(0);
+                    slice::from_raw_parts_mut(self.recv_buffers[entry] as *mut u8, 64).fill(0);
                 }
                 flush_cache(virt_to_phys(self.recv_buffers[entry]) as u64, 64);
 
@@ -715,24 +744,29 @@ impl<P> RTL8211F<P> where P: Provider {
                 frame_len -= 4; // ETH_FCS_LEN, 帧出错检验
             }
 
-            flush_cache(virt_to_phys(self.recv_buffers[entry]) as u64, frame_len as u64);
+            flush_cache(
+                virt_to_phys(self.recv_buffers[entry]) as u64,
+                frame_len as u64,
+            );
 
             //注意只接收一个网络帧, limit=1
             buffer = unsafe {
-                slice::from_raw_parts(
-                    self.recv_buffers[entry] as *const u8,
-                    frame_len as usize)
-                .to_vec()
+                slice::from_raw_parts(self.recv_buffers[entry] as *const u8, frame_len as usize)
+                    .to_vec()
             };
 
-            /* 
+            /*
             // skb_put(skb, frame_len);
             // dma_unmap_single
             P::dealloc_dma(self.recv_buffers[entry], P::PAGE_SIZE);
             self.recv_buffers[entry] = 0;
             */
-            
-            info!("desc_buf_get_addr: {:#x}, desc_buf_get_len: {}", desc.desc2, desc.desc1 & ((1 << 11) - 1));
+
+            info!(
+                "desc_buf_get_addr: {:#x}, desc_buf_get_len: {}",
+                desc.desc2,
+                desc.desc1 & ((1 << 11) - 1)
+            );
 
             //u-boot testing
             /*
@@ -747,12 +781,24 @@ impl<P> RTL8211F<P> where P: Provider {
             rx_bytes += frame_len as u64;
         }
 
-        info!("RX DMA State: {:#x}", read_volatile((self.base + GETH_RX_DMA_STA) as *mut u32));
+        info!(
+            "RX DMA State: {:#x}",
+            read_volatile((self.base + GETH_RX_DMA_STA) as *mut u32)
+        );
 
         if rxcount > 0 {
-            info!("######### RX Descriptor DMA: {:#x}", self.recv_ring.as_ptr() as usize);
-            info!("RX pointor: dirty: {}, clean: {}", self.rx_dirty, self.rx_clean);
-            info!("[0]: {:#x?} \ndesc: {:#x?}", self.recv_ring[0], self.recv_ring[desc_count]);
+            info!(
+                "######### RX Descriptor DMA: {:#x}",
+                self.recv_ring.as_ptr() as usize
+            );
+            info!(
+                "RX pointor: dirty: {}, clean: {}",
+                self.rx_dirty, self.rx_clean
+            );
+            info!(
+                "[0]: {:#x?} \ndesc: {:#x?}",
+                self.recv_ring[0], self.recv_ring[desc_count]
+            );
         }
 
         self.rx_refill();
@@ -761,12 +807,11 @@ impl<P> RTL8211F<P> where P: Provider {
     }
 
     pub fn can_send(&mut self) -> bool {
-        let avail_tx =
-            if self.tx_clean >= (self.tx_dirty + 1) {
-                (self.tx_clean - (self.tx_dirty + 1))
-            }else{
-                DMA_DESC_TX - ((self.tx_dirty + 1) - self.tx_clean)
-            };
+        let avail_tx = if self.tx_clean >= (self.tx_dirty + 1) {
+            (self.tx_clean - (self.tx_dirty + 1))
+        } else {
+            DMA_DESC_TX - ((self.tx_dirty + 1) - self.tx_clean)
+        };
 
         if avail_tx < 1 {
             error!("Tx Ring full !");
@@ -775,7 +820,10 @@ impl<P> RTL8211F<P> where P: Provider {
         /////////
 
         let desc = &self.send_ring[self.tx_dirty];
-        invalidate_dcache(virt_to_phys(desc as *const dma_desc as usize) as u64, size_of::<dma_desc>() as u64);
+        invalidate_dcache(
+            virt_to_phys(desc as *const dma_desc as usize) as u64,
+            size_of::<dma_desc>() as u64,
+        );
         if desc_get_own(desc) != 0 {
             return false;
         }
@@ -783,14 +831,13 @@ impl<P> RTL8211F<P> where P: Provider {
         let tx_status = read_volatile((self.base + GETH_TX_DMA_STA) as *mut u32) & 0b111;
         // from u-boot
         if (tx_status != 0b000) && (tx_status != 0b110) {
-            return false
+            return false;
         }
 
         true
     }
 
     pub fn geth_send(&mut self, send_buff: &[u8]) -> Result<i32, &str> {
-
         // Tx Ring full 判断一下？
 
         let mut entry = self.tx_dirty;
@@ -805,10 +852,9 @@ impl<P> RTL8211F<P> where P: Provider {
         let mut len = send_buff.len() as u32;
 
         // send buffer长度需要注意下, 应该2k左右
-        let target = unsafe { slice::from_raw_parts_mut(
-                self.send_buffers[entry] as *mut u8,
-                send_buff.len()
-                )};
+        let target = unsafe {
+            slice::from_raw_parts_mut(self.send_buffers[entry] as *mut u8, send_buff.len())
+        };
         target.copy_from_slice(send_buff);
 
         if len > MAX_BUF_SZ {
@@ -851,14 +897,32 @@ impl<P> RTL8211F<P> where P: Provider {
 
         // 再判断下环形缓冲区的空间
 
-        flush_cache(virt_to_phys(&self.send_ring[desc_count] as *const dma_desc as usize) as u64, size_of::<dma_desc>() as u64);
-        flush_cache(virt_to_phys(self.send_buffers[desc_count] as usize) as u64, send_buff.len() as u64);
+        flush_cache(
+            virt_to_phys(&self.send_ring[desc_count] as *const dma_desc as usize) as u64,
+            size_of::<dma_desc>() as u64,
+        );
+        flush_cache(
+            virt_to_phys(self.send_buffers[desc_count] as usize) as u64,
+            send_buff.len() as u64,
+        );
 
-        info!("######### TX Descriptor DMA: {:#x}", self.send_ring.as_ptr() as usize);
-        info!("TX pointor: dirty: {}, clean: {}", self.tx_dirty, self.tx_clean);
-        info!("[0]: {:#x?} \n[first]: {:#x?} \ndesc: {:#x?}", self.send_ring[0], self.send_ring[first], self.send_ring[desc_count]);
+        info!(
+            "######### TX Descriptor DMA: {:#x}",
+            self.send_ring.as_ptr() as usize
+        );
+        info!(
+            "TX pointor: dirty: {}, clean: {}",
+            self.tx_dirty, self.tx_clean
+        );
+        info!(
+            "[0]: {:#x?} \n[first]: {:#x?} \ndesc: {:#x?}",
+            self.send_ring[0], self.send_ring[first], self.send_ring[desc_count]
+        );
 
-        info!("TX DMA State: {:#x}", read_volatile((self.base + GETH_TX_DMA_STA) as *mut u32));
+        info!(
+            "TX DMA State: {:#x}",
+            read_volatile((self.base + GETH_TX_DMA_STA) as *mut u32)
+        );
 
         self.tx_poll();
 
@@ -869,15 +933,17 @@ impl<P> RTL8211F<P> where P: Provider {
     }
 
     pub fn rx_refill(&mut self) {
-
         while if self.rx_dirty >= (self.rx_clean + 1) {
             (self.rx_dirty - (self.rx_clean + 1))
-        }else{
+        } else {
             DMA_DESC_RX - ((self.rx_clean + 1) - self.rx_dirty)
             // (self.rx_dirty - (self.rx_clean + 1)) & (DMA_DESC_RX - 1)
-        } > 0 {
-
-            info!("rx_refill, rx_dirty: {}, rx_clean: {}", self.rx_dirty, self.rx_clean);
+        } > 0
+        {
+            info!(
+                "rx_refill, rx_dirty: {}, rx_clean: {}",
+                self.rx_dirty, self.rx_clean
+            );
 
             let entry = self.rx_clean;
             let mut desc = &mut self.recv_ring[entry];
@@ -895,7 +961,10 @@ impl<P> RTL8211F<P> where P: Provider {
             let paddr = desc.desc2 as u32;
             desc_buf_set(desc, paddr, MAX_BUF_SZ);
             desc_set_own(desc);
-            flush_cache(virt_to_phys(&self.recv_ring[entry] as *const dma_desc as usize) as u64, size_of::<dma_desc>() as u64);
+            flush_cache(
+                virt_to_phys(&self.recv_ring[entry] as *const dma_desc as usize) as u64,
+                size_of::<dma_desc>() as u64,
+            );
 
             // sync memery
             fence_w();
@@ -903,7 +972,6 @@ impl<P> RTL8211F<P> where P: Provider {
             self.rx_clean = (self.rx_clean + 1) % DMA_DESC_RX;
         }
     }
-
 
     pub fn tx_complete(&mut self) {
         let mut entry = 0;
@@ -913,11 +981,15 @@ impl<P> RTL8211F<P> where P: Provider {
 
         while if self.tx_dirty >= self.tx_clean {
             (self.tx_dirty - self.tx_clean)
-        }else{
+        } else {
             DMA_DESC_TX - (self.tx_clean - self.tx_dirty)
             //(self.tx_dirty - self.tx_clean) & (DMA_DESC_TX - 1)
-        } > 0 {
-            debug!("tx_complete, tx_dirty: {}, tx_clean: {}", self.tx_dirty, self.tx_clean);
+        } > 0
+        {
+            debug!(
+                "tx_complete, tx_dirty: {}, tx_clean: {}",
+                self.tx_dirty, self.tx_clean
+            );
 
             entry = self.tx_clean;
             let mut desc = &mut self.send_ring[entry];
@@ -927,7 +999,6 @@ impl<P> RTL8211F<P> where P: Provider {
             }
 
             if desc_get_tx_ls(desc) != 0 {
-
                 // Underflow error, No carrier, Loss of collision
                 if (desc.desc0 & ((0b1 << 1) | (0b11 << 10))) != 0 {
                     tx_stat = -1;
@@ -935,8 +1006,8 @@ impl<P> RTL8211F<P> where P: Provider {
 
                 if tx_stat == 0 {
                     tx_packets += 1;
-                }else{
-                    tx_errors +=1;
+                } else {
+                    tx_errors += 1;
                 }
             }
 
@@ -966,7 +1037,10 @@ impl<P> RTL8211F<P> where P: Provider {
             //link = status & BMSR_LSTATUS;
 
             if autoneg_complete == BMSR_ANEGCOMPLETE {
-                info!("Autonegotiation is completed ! autoneg_complete: {:#x}", autoneg_complete);
+                info!(
+                    "Autonegotiation is completed ! autoneg_complete: {:#x}",
+                    autoneg_complete
+                );
                 break;
             }
         }
@@ -991,8 +1065,6 @@ impl<P> RTL8211F<P> where P: Provider {
 
         Ok(0)
     }
-
-
 
     pub fn power_on(&mut self) {
         let mut value: u32 = read_volatile((self.base_phy + EMAC_EPHY_CLK_REG0) as *mut u32);
@@ -1048,7 +1120,7 @@ impl<P> RTL8211F<P> where P: Provider {
         value &= !(1 << 16); // assert reset
         write_volatile((self.base_ccu + EMAC_BGR_REG) as *mut u32, value);
 
-        value |= (1<<16); // deassert reset
+        value |= (1 << 16); // deassert reset
         value |= 1; // enable bus clock
         write_volatile((self.base_ccu + EMAC_BGR_REG) as *mut u32, value);
     }
@@ -1078,7 +1150,7 @@ impl<P> RTL8211F<P> where P: Provider {
             }
         }
         /* Clear the interrupt by writing a logic 1 to the CSR5[15-0] */
-        write_volatile((self.base + GETH_INT_STA ) as *mut u32, intr_status & 0x3FFF);
+        write_volatile((self.base + GETH_INT_STA) as *mut u32, intr_status & 0x3FFF);
 
         status
     }
@@ -1097,8 +1169,6 @@ impl<P> RTL8211F<P> where P: Provider {
             if work_done < BUDGET as i32 {
                 self.int_enable();
             }
-
-
         } else if status == tx_dma_irq_status::tx_hard_error as i32 {
             error!("gmac interrupt handle tx error !");
         } else {
@@ -1123,11 +1193,11 @@ impl<P> RTL8211F<P> where P: Provider {
         let mut desc = (&mut self.send_ring[first]) as *mut dma_desc;
         //let mut desc = first as *mut dma_desc;
 
-        self.send_ring[first].desc1 |= 1 << 29; //First Segment, 
+        self.send_ring[first].desc1 |= 1 << 29; //First Segment,
         self.send_ring[end].desc1 |= 0b11 << 30; // Last Segment, Interrupt on completion
 
         if csum_insert != 0 {
-            loop{
+            loop {
                 unsafe {
                     (*desc).desc1 |= 0b11 << 27;
                     desc = desc.add(1);
@@ -1163,16 +1233,14 @@ impl<P> RTL8211F<P> where P: Provider {
 
         // 原子上下文的等待
         //udelay(10000);
-        while (SOFT_RST & read_volatile((self.base + GETH_BASIC_CTL1) as *mut u32)) != 0{
-            ;
-        }
+        while (SOFT_RST & read_volatile((self.base + GETH_BASIC_CTL1) as *mut u32)) != 0 {}
 
         let value = read_volatile((self.base + GETH_BASIC_CTL1) as *mut u32);
         info!("Read BASIC CTL1: {:#x}", value);
         if (value & SOFT_RST) == 0 {
             info!("Soft reset operation is completed !");
             Ok((value & SOFT_RST) as i32)
-        }else{
+        } else {
             error!("Soft reset operation is NOT completed !");
             Err("mac Soft Reset failed !")
         }
@@ -1183,18 +1251,21 @@ impl<P> RTL8211F<P> where P: Provider {
 
         /* Initialize the core component */
         let mut value: u32 = read_volatile((self.base + GETH_TX_CTL0) as *mut u32);
-        value |= (1 << 30);     /* Jabber Disable */
+        value |= (1 << 30); /* Jabber Disable */
         write_volatile((self.base + GETH_TX_CTL0) as *mut u32, value);
         info!("mac init, write TX_CTL0 {:#x}", value);
 
         let mut value: u32 = read_volatile((self.base + GETH_RX_CTL0) as *mut u32);
-         value |= (1 << 27);     /* Enable CRC & IPv4 Header Checksum */
-         value |= (1 << 28);     /* Automatic Pad/CRC Stripping */
-         value |= (1 << 29);     /* Jumbo Frame Enable */
+        value |= (1 << 27); /* Enable CRC & IPv4 Header Checksum */
+        value |= (1 << 28); /* Automatic Pad/CRC Stripping */
+        value |= (1 << 29); /* Jumbo Frame Enable */
         write_volatile((self.base + GETH_RX_CTL0) as *mut u32, value);
         info!("mac init, write RX_CTL0 {:#x}", value);
 
-        write_volatile((self.base + GETH_MDIO_ADDR) as *mut u32, (MDC_CLOCK_RATIO << 20)); /* MDC_DIV_RATIO */
+        write_volatile(
+            (self.base + GETH_MDIO_ADDR) as *mut u32,
+            (MDC_CLOCK_RATIO << 20),
+        ); /* MDC_DIV_RATIO */
 
         /* Set the Rx&Tx mode */
         let mut value: u32 = read_volatile((self.base + GETH_TX_CTL1) as *mut u32);
@@ -1267,12 +1338,18 @@ impl<P> RTL8211F<P> where P: Provider {
     }
 
     pub fn set_umac(&self, addr: &[u8; 6], index: u32) {
-        info!("Read mac addr high0 and low0: {:#x} {:#x}", read_volatile((self.base + GETH_ADDR_HI) as *mut u32),
-        read_volatile((self.base + GETH_ADDR_LO) as *mut u32));
+        info!(
+            "Read mac addr high0 and low0: {:#x} {:#x}",
+            read_volatile((self.base + GETH_ADDR_HI) as *mut u32),
+            read_volatile((self.base + GETH_ADDR_LO) as *mut u32)
+        );
 
         let data: u32 = ((addr[5] as u32) << 8) | (addr[4] as u32);
         write_volatile((self.base + GETH_ADDR_HI + (index << 3)) as *mut u32, data);
-        let data: u32 = ((addr[3] as u32) << 24) | ((addr[2] as u32) << 16) | ((addr[1] as u32) << 8) | (addr[0] as u32);
+        let data: u32 = ((addr[3] as u32) << 24)
+            | ((addr[2] as u32) << 16)
+            | ((addr[1] as u32) << 8)
+            | (addr[0] as u32);
         write_volatile((self.base + GETH_ADDR_LO + (index << 3)) as *mut u32, data);
     }
 
@@ -1306,9 +1383,12 @@ impl<P> RTL8211F<P> where P: Provider {
         write_volatile((self.base + GETH_TX_CTL1) as *mut u32, value);
     }
 
-
     pub fn pinctrl_gpio_set(&mut self, offset: u32, value: u32) {
-        assert!(0x0 <= offset && offset <= 0x0350, "Invalid gpio register offset: {:#x}", offset);
+        assert!(
+            0x0 <= offset && offset <= 0x0350,
+            "Invalid gpio register offset: {:#x}",
+            offset
+        );
 
         let mut regval: u32 = read_volatile((self.pinctrl + offset) as *mut u32);
         //regval |= value;
@@ -1326,16 +1406,19 @@ impl<P> RTL8211F<P> where P: Provider {
     pub fn set_filter(&mut self, flags: u64) {
         let mut tmp_flags: u32 = 0;
 
-        tmp_flags |= ((flags >> 31) |
-                      ((flags >> 9) & 0x00000002) |
-                      ((flags << 1) & 0x00000010) |
-                      ((flags >> 3) & 0x00000060) |
-                      ((flags << 7) & 0x00000300) |
-                      ((flags << 6) & 0x00003000) |
-                      ((flags << 12) & 0x00030000) |
-                      (flags << 31)) as u32;
+        tmp_flags |= ((flags >> 31)
+            | ((flags >> 9) & 0x00000002)
+            | ((flags << 1) & 0x00000010)
+            | ((flags >> 3) & 0x00000060)
+            | ((flags << 7) & 0x00000300)
+            | ((flags << 6) & 0x00003000)
+            | ((flags << 12) & 0x00030000)
+            | (flags << 31)) as u32;
 
-        info!("Set RX frame filter, flags: {:#x}, write value: {:#x}", flags, tmp_flags);
+        info!(
+            "Set RX frame filter, flags: {:#x}, write value: {:#x}",
+            flags, tmp_flags
+        );
         write_volatile((self.base + GETH_RX_FRM_FLT) as *mut u32, tmp_flags);
     }
 
@@ -1351,9 +1434,9 @@ impl<P> RTL8211F<P> where P: Provider {
             1000 => ctrl &= !0x0C,
             100 | 10 | _ => {
                 ctrl |= 0x08;
-                if (speed == 100){
+                if (speed == 100) {
                     ctrl |= 0x04;
-                }else{
+                } else {
                     ctrl &= !0x04;
                 }
             }
@@ -1362,7 +1445,10 @@ impl<P> RTL8211F<P> where P: Provider {
         write_volatile((self.base + GETH_BASIC_CTL0) as *mut u32, ctrl);
 
         let value = read_volatile((self.base + GETH_BASIC_CTL0) as *mut u32);
-        info!("Set link mode:  duplex {}, speed {}, CTL0: {:#x}", duplex, speed, value);
+        info!(
+            "Set link mode:  duplex {}, speed {}, CTL0: {:#x}",
+            duplex, speed, value
+        );
     }
 
     pub fn mac_loopback(&mut self, enable: u32) {
@@ -1377,7 +1463,10 @@ impl<P> RTL8211F<P> where P: Provider {
 
     pub fn flow_ctrl(&mut self, duplex: i32, fc: u32, pause: u32) {
         let mut flow: u32 = 0;
-        info!("Set flow ctrl: duplex {}, fc {}, pause {}", duplex, fc, pause);
+        info!(
+            "Set flow ctrl: duplex {}, fc {}, pause {}",
+            duplex, fc, pause
+        );
 
         if fc & FLOW_RX != 0 {
             flow = read_volatile((self.base + GETH_RX_CTL0) as *mut u32);
@@ -1398,24 +1487,18 @@ impl<P> RTL8211F<P> where P: Provider {
         }
     }
 
-
-
     pub fn mdio_read(&mut self, phyaddr: u32, phyreg: u32) -> u32 {
         let mut value: u32 = 0;
 
         value |= ((MDC_CLOCK_RATIO & 0x07) << 20);
 
-        value |= (((phyaddr << 12) & (0x0001F000)) |
-                  ((phyreg << 4) & (0x000007F0)) |
-                  MII_BUSY);
+        value |= (((phyaddr << 12) & (0x0001F000)) | ((phyreg << 4) & (0x000007F0)) | MII_BUSY);
 
-        while (read_volatile((self.base + GETH_MDIO_ADDR) as *mut u32) & MII_BUSY) == 1 {
-            ;}
+        while (read_volatile((self.base + GETH_MDIO_ADDR) as *mut u32) & MII_BUSY) == 1 {}
 
-        write_volatile((self.base + GETH_MDIO_ADDR) as *mut u32, value); 
+        write_volatile((self.base + GETH_MDIO_ADDR) as *mut u32, value);
 
-        while (read_volatile((self.base + GETH_MDIO_ADDR) as *mut u32) & MII_BUSY) == 1 {
-            ;}
+        while (read_volatile((self.base + GETH_MDIO_ADDR) as *mut u32) & MII_BUSY) == 1 {}
 
         //16位有效
         let ret = read_volatile((self.base + GETH_MDIO_DATA) as *mut u32);
@@ -1425,41 +1508,36 @@ impl<P> RTL8211F<P> where P: Provider {
     }
 
     pub fn mdio_write(&mut self, phyaddr: u32, phyreg: u32, data: u32) {
-        let mut value: u32 = ((0x07 << 20) & 
-                              read_volatile((self.base + GETH_MDIO_ADDR) as *mut u32) |
-                              (MDC_CLOCK_RATIO << 20));
+        let mut value: u32 = ((0x07 << 20)
+            & read_volatile((self.base + GETH_MDIO_ADDR) as *mut u32)
+            | (MDC_CLOCK_RATIO << 20));
 
-        value |= (((phyaddr << 12) & (0x0001F000)) |
-                  ((phyreg << 4) & (0x000007F0))) |
-                 MII_WRITE | MII_BUSY;
+        value |= (((phyaddr << 12) & (0x0001F000)) | ((phyreg << 4) & (0x000007F0)))
+            | MII_WRITE
+            | MII_BUSY;
 
-        while (read_volatile((self.base + GETH_MDIO_ADDR) as *mut u32) & MII_BUSY) == 1 {
-            ;}
+        while (read_volatile((self.base + GETH_MDIO_ADDR) as *mut u32) & MII_BUSY) == 1 {}
 
-        write_volatile((self.base + GETH_MDIO_DATA) as *mut u32, data); 
-        write_volatile((self.base + GETH_MDIO_ADDR) as *mut u32, value); 
+        write_volatile((self.base + GETH_MDIO_DATA) as *mut u32, data);
+        write_volatile((self.base + GETH_MDIO_ADDR) as *mut u32, value);
 
-        while (read_volatile((self.base + GETH_MDIO_ADDR) as *mut u32) & MII_BUSY ) == 1 {
-            ;}
+        while (read_volatile((self.base + GETH_MDIO_ADDR) as *mut u32) & MII_BUSY) == 1 {}
     }
 
     pub fn mdio_reset(&mut self) {
-        write_volatile((self.base + GETH_MDIO_ADDR) as *mut u32, (4 << 2)); 
+        write_volatile((self.base + GETH_MDIO_ADDR) as *mut u32, (4 << 2));
     }
-
-
 }
 
-
-pub fn desc_set_own(desc: &mut dma_desc){
+pub fn desc_set_own(desc: &mut dma_desc) {
     desc.desc0 |= 0x80000000;
 }
 
-pub fn desc_get_own(desc: &dma_desc) -> u32{
+pub fn desc_get_own(desc: &dma_desc) -> u32 {
     desc.desc0 & 0x80000000
 }
 
-pub fn desc_get_tx_ls(desc: &dma_desc) -> u32{
+pub fn desc_get_tx_ls(desc: &dma_desc) -> u32 {
     desc.desc1 & 0x40000000 // Last Segment
 }
 
@@ -1477,9 +1555,7 @@ pub fn desc_init(desc: &mut dma_desc) {
 }
 
 fn read_volatile<T>(src: *const T) -> T {
-    unsafe {
-        core::ptr::read_volatile(phys_to_virt(src as usize) as *const T)
-    }
+    unsafe { core::ptr::read_volatile(phys_to_virt(src as usize) as *const T) }
 }
 
 fn write_volatile<T>(dst: *mut T, value: T) {
@@ -1513,15 +1589,13 @@ pub fn print_hex_dump(buf: &[u8], len: usize) {
     bare_print!("\t{:?}\n", linebuf);
 }
 
-
 // For testing
 pub fn init() {
-
     //EAPOL packet: 0007326b9940 ca9027e0a80f 888e020000050104000501
-    let frame: Box<[u8]> = Box::new(
-        [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x52, 0x54, 0x00, 0x12, 0x34, 0x56,
-        0x88, 0x8e, 0x02, 0x00, 0x00, 0x05, 0x01, 0x04, 0x00, 0x05, 0x01]
-        );
+    let frame: Box<[u8]> = Box::new([
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x52, 0x54, 0x00, 0x12, 0x34, 0x56, 0x88, 0x8e, 0x02,
+        0x00, 0x00, 0x05, 0x01, 0x04, 0x00, 0x05, 0x01,
+    ]);
 
     let mac: [u8; 6] = [0x52, 0x54, 0x00, 0x12, 0x34, 0x56];
 
@@ -1548,5 +1622,5 @@ pub fn init() {
     rtl8211f.geth_send(&frame);
     rtl8211f.geth_send(&frame);
 
-    loop{}
+    loop {}
 }
