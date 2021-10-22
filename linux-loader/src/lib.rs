@@ -67,6 +67,7 @@ pub fn run(args: Vec<String>, envs: Vec<String>, rootfs: Arc<dyn FileSystem>) ->
 /// - handle trap/interrupt/syscall according to the return value
 /// - return the context to the user thread
 async fn new_thread(thread: CurrentThread) {
+    kernel_hal::thread::set_tid(thread.id(), thread.proc().id());
     loop {
         // wait
         let mut cx = thread.wait_for_run().await;

@@ -18,7 +18,9 @@ hal_fn_impl! {
         }
 
         fn get_tid() -> (u64, u64) {
-            (TID.with(|x| x.get()), PID.with(|x| x.get()))
+            let tid = TID.try_with(|x| x.get()).unwrap_or(0);
+            let pid = PID.try_with(|x| x.get()).unwrap_or(0);
+            (tid, pid)
         }
     }
 }
