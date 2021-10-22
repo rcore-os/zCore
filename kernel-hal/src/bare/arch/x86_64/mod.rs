@@ -17,8 +17,8 @@ hal_fn_impl_default!(crate::hal_fn::console);
 use crate::{mem::phys_to_virt, KCONFIG};
 use x86_64::registers::control::{Cr4, Cr4Flags};
 
-pub fn cmdline() -> &'static str {
-    KCONFIG.cmdline
+pub fn cmdline() -> alloc::string::String {
+    KCONFIG.cmdline.into()
 }
 
 pub fn init_ram_disk() -> Option<&'static mut [u8]> {

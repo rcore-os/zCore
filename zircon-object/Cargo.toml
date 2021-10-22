@@ -28,4 +28,4 @@ cfg-if = "1.0"
 #rvm = { git = "https://github.com/rcore-os/RVM", rev = "382fc60", optional = true }
 
 [dev-dependencies]
-async-std = { version = "1.9", features = ["attributes", "unstable"] }
+async-std = { version = "1.10", features = ["attributes", "unstable"] }

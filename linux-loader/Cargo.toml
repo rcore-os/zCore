@@ -9,17 +9,15 @@ description = "Linux programs loader and runner."
 
 [dependencies]
 log = "0.4"
-xmas-elf = "0.7"
 linux-syscall = { path = "../linux-syscall" }
 linux-object = { path = "../linux-object" }
 zircon-object = { path = "../zircon-object" }
 kernel-hal = { path = "../kernel-hal" }
-rcore-fs-hostfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "7c232ec", optional = true }
-env_logger = { version = "0.8", optional = true }
-async-std = { version = "1.9", features = ["attributes"], optional = true }
 
 [features]
-default = ["std", "libos"]
-libos = ["kernel-hal/libos"]
-std = ["env_logger", "async-std", "rcore-fs-hostfs", "zircon-object/aspace-separate"]
-graphic = ["linux-object/graphic", "kernel-hal/graphic"]
+default = ["libos"]
+libos = ["kernel-hal/libos", "zircon-object/aspace-separate"]
+
+[dev-dependencies]
+async-std = { version = "1.10", features = ["attributes"] }
+rcore-fs-hostfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "7c232ec" }

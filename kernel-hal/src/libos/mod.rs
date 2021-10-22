@@ -24,5 +24,6 @@ mod macos;
 /// Non-SMP initialization.
 #[doc(cfg(any(feature = "libos", not(feature = "smp"))))]
 pub fn init() {
+    drivers::init_early();
     boot::primary_init();
 }

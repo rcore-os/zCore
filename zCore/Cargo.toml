@@ -7,13 +7,18 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-graphic = ["linux-loader?/graphic", "kernel-hal/graphic"]
-board_qemu = []
-board_d1 = ["link_user_img"]
+default = ["color_log"]
+color_log = []
+graphic = ["kernel-hal/graphic"]
 init_ram_disk = []
 link_user_img = ["init_ram_disk"]
+
 zircon = ["zircon-loader"]
 linux = ["linux-loader", "linux-object", "rcore-fs", "rcore-fs-sfs"]
+
+libos = ["async-std", "chrono", "rcore-fs-hostfs", "linux-loader/libos"]
+board_qemu = []
+board_d1 = ["link_user_img"]
 
 [profile.release]
 lto = true
@@ -22,17 +27,28 @@ lto = true
 log = "0.4"
 spin = "0.9"
 cfg-if = "1.0"
-buddy_system_allocator = "0.7"
 lazy_static = { version = "1.4", features = ["spin_no_std" ] }
 bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator", rev = "b3f9f51" }
-executor = { git = "https://github.com/rcore-os/executor.git", rev = "a2d02ee9" }
 kernel-hal = { path = "../kernel-hal", features = ["smp"] }
+zircon-object = { path = "../zircon-object" }
+linux-object = { path = "../linux-object", optional = true }
 zircon-loader = { path = "../zircon-loader", default-features = false, optional = true }
 linux-loader = { path = "../linux-loader", default-features = false, optional = true }
-linux-object = { path = "../linux-object", default-features = false, optional = true }
-rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "7c232ec", optional = true }
 rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "7c232ec", optional = true }
+rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "7c232ec", optional = true }
 
+# LibOS mode
+[target.'cfg(not(target_os = "none"))'.dependencies]
+async-std = { version = "1.10", features = ["attributes"], optional = true }
+chrono = { version = "0.4", optional = true }
+rcore-fs-hostfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "7c232ec", optional = true }
+
+# Bare-metal mode
+[target.'cfg(target_os = "none")'.dependencies]
+buddy_system_allocator = "0.7"
+executor = { git = "https://github.com/rcore-os/executor.git", rev = "a2d02ee9" }
+
+# Bare-metal mode on x86_64
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 rboot = { path = "../rboot", default-features = false }
-rvm = { git = "https://github.com/rcore-os/RVM", rev = "e91d625", optional = true }
+# rvm = { git = "https://github.com/rcore-os/RVM", rev = "e91d625", optional = true }

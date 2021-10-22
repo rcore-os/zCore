@@ -1,69 +1,13 @@
 //! Linux LibOS entrance
+//! TODO: move to the test directory
+
 #![deny(warnings, unused_must_use, missing_docs)]
-#![feature(thread_id_value)]
 
-extern crate log;
-
-use rcore_fs_hostfs::HostFS;
-use std::io::Write;
-
-/// main entry
-#[async_std::main]
-async fn main() {
-    // init loggger for debug
-    init_logger();
-    // init HAL implementation on unix
-    kernel_hal::init();
-
-    let args: Vec<_> = std::env::args().skip(1).collect();
-    let proc_name = args.join(" ");
-    let envs = vec!["PATH=/usr/sbin:/usr/bin:/sbin:/bin:/usr/x86_64-alpine-linux-musl/bin".into()];
-
-    // Run the first process.
-    let run_proc = async move {
-        let hostfs = HostFS::new("rootfs");
-        let proc = linux_loader::run(args, envs, hostfs);
-        proc.wait_for_exit().await
-    };
-
-    // If the graphic mode is on, run the process in another thread.
-    #[cfg(feature = "graphic")]
-    let run_proc = {
-        let handle = async_std::task::spawn(run_proc);
-        kernel_hal::libos::run_graphic_service();
-        handle
-    };
-
-    let code = run_proc.await;
-    log::info!("process {:?} exited with {}", proc_name, code);
-    std::process::exit(code as i32);
-}
-
-/// init the env_logger
-fn init_logger() {
-    env_logger::builder()
-        .format(|buf, record| {
-            use env_logger::fmt::Color;
-            use log::Level;
-
-            let tid = async_std::task::current().id();
-            let mut style = buf.style();
-            match record.level() {
-                Level::Trace => style.set_color(Color::Black).set_intense(true),
-                Level::Debug => style.set_color(Color::White),
-                Level::Info => style.set_color(Color::Green),
-                Level::Warn => style.set_color(Color::Yellow),
-                Level::Error => style.set_color(Color::Red).set_bold(true),
-            };
-            let level = style.value(record.level());
-            writeln!(buf, "[{:>5}][{}] {}", level, tid, record.args())
-        })
-        .init();
-}
+fn main() {}
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use rcore_fs_hostfs::HostFS;
     use std::fs;
 
     /// test with cmd line

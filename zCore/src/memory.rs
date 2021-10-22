@@ -3,7 +3,6 @@
 use core::ops::Range;
 
 use bitmap_allocator::BitAlloc;
-use buddy_system_allocator::LockedHeap;
 use kernel_hal::PhysAddr;
 use spin::Mutex;
 
@@ -19,12 +18,6 @@ const PAGE_SIZE: usize = 4096;
 
 /// Global physical frame allocator
 static FRAME_ALLOCATOR: Mutex<FrameAlloc> = Mutex::new(FrameAlloc::DEFAULT);
-
-/// Global heap allocator
-///
-/// Available after `memory::init_heap()`.
-#[global_allocator]
-static HEAP_ALLOCATOR: LockedHeap = LockedHeap::new();
 
 fn phys_addr_to_frame_idx(addr: PhysAddr) -> usize {
     (addr - PHYS_MEMORY_BASE) / PAGE_SIZE
@@ -47,23 +40,6 @@ pub fn init_frame_allocator(regions: &[Range<PhysAddr>]) {
         );
     }
     info!("Frame allocator init end.");
-}
-
-/// Initialize the global heap allocator.
-pub fn init_heap() {
-    const MACHINE_ALIGN: usize = core::mem::size_of::<usize>();
-    const HEAP_BLOCK: usize = KERNEL_HEAP_SIZE / MACHINE_ALIGN;
-    static mut HEAP: [usize; HEAP_BLOCK] = [0; HEAP_BLOCK];
-    let heap_start = unsafe { HEAP.as_ptr() as usize };
-    unsafe {
-        HEAP_ALLOCATOR
-            .lock()
-            .init(heap_start, HEAP_BLOCK * MACHINE_ALIGN);
-    }
-    info!(
-        "Heap init end: {:#x?}",
-        heap_start..heap_start + KERNEL_HEAP_SIZE
-    );
 }
 
 pub fn frame_alloc() -> Option<PhysAddr> {
@@ -91,6 +67,37 @@ pub fn frame_dealloc(target: PhysAddr) {
     FRAME_ALLOCATOR
         .lock()
         .dealloc(phys_addr_to_frame_idx(target))
+}
+
+cfg_if! {
+    if #[cfg(not(feature = "libos"))] {
+        use buddy_system_allocator::LockedHeap;
+
+        /// Global heap allocator
+        ///
+        /// Available after `memory::init_heap()`.
+        #[global_allocator]
+        static HEAP_ALLOCATOR: LockedHeap = LockedHeap::new();
+
+        /// Initialize the global heap allocator.
+        pub fn init_heap() {
+            const MACHINE_ALIGN: usize = core::mem::size_of::<usize>();
+            const HEAP_BLOCK: usize = KERNEL_HEAP_SIZE / MACHINE_ALIGN;
+            static mut HEAP: [usize; HEAP_BLOCK] = [0; HEAP_BLOCK];
+            let heap_start = unsafe { HEAP.as_ptr() as usize };
+            unsafe {
+                HEAP_ALLOCATOR
+                    .lock()
+                    .init(heap_start, HEAP_BLOCK * MACHINE_ALIGN);
+            }
+            info!(
+                "Heap init end: {:#x?}",
+                heap_start..heap_start + KERNEL_HEAP_SIZE
+            );
+        }
+    } else {
+        pub fn init_heap() {}
+    }
 }
 
 #[cfg(feature = "hypervisor")]

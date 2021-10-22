@@ -53,7 +53,7 @@ impl Log for SimpleLogger {
             return;
         }
 
-        let (tid, pid) = kernel_hal::thread::get_tid();
+        let (tid, pid) = (0, 0); // kernel_hal::thread::get_tid(); // FIXME
         print_in_color(
             format_args!(
                 "[{:?} {:>5} {} {}:{}] {}\n",

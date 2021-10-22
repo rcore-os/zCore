@@ -1,4 +1,4 @@
-use alloc::{boxed::Box, vec::Vec};
+use alloc::{boxed::Box, string::String, vec::Vec};
 use core::{future::Future, ops::Range, pin::Pin, time::Duration};
 
 use crate::drivers::prelude::{IrqHandler, IrqPolarity, IrqTriggerMode};
@@ -7,7 +7,7 @@ use crate::{common, HalResult, KernelConfig, KernelHandler, MMUFlags, PhysAddr, 
 hal_fn_def! {
     pub mod boot {
         /// The kernel command line.
-        pub fn cmdline() -> &'static str { "" }
+        pub fn cmdline() -> String { "".into() }
 
         /// Returns the slice of the initial RAM disk, or `None` if not exist.
         pub fn init_ram_disk() -> Option<&'static mut [u8]> {
@@ -75,7 +75,9 @@ hal_fn_def! {
     pub mod interrupt {
         /// Suspend the CPU (also enable interrupts) and wait for an interrupt
         /// to occurs, then disable interrupts.
-        pub fn wait_for_interrupt();
+        pub fn wait_for_interrupt() {
+            core::hint::spin_loop();
+        }
 
         /// Is a valid IRQ number.
         pub fn is_valid_irq(vector: usize) -> bool;

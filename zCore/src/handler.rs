@@ -1,4 +1,4 @@
-use kernel_hal::{MMUFlags, KernelHandler};
+use kernel_hal::{KernelHandler, MMUFlags};
 
 use super::memory;
 

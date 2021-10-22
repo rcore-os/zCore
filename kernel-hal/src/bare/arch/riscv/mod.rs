@@ -10,9 +10,9 @@ pub mod mem;
 pub mod timer;
 pub mod vm;
 
-pub fn cmdline() -> &'static str {
+pub fn cmdline() -> alloc::string::String {
     // TODO: get bootargs from device tree.
-    "LOG=warn:TERM=xterm-256color:console.shell=true:virtcon.disable=true"
+    "LOG=warn:TERM=xterm-256color:console.shell=true:virtcon.disable=true".into()
 }
 
 pub fn init_ram_disk() -> Option<&'static mut [u8]> {

@@ -5,7 +5,7 @@ use bitmap_allocator::BitAlloc;
 use spin::Mutex;
 
 use super::mock_mem::MockMemory;
-use crate::{MMUFlags, PhysAddr, VirtAddr, PAGE_SIZE};
+use crate::{PhysAddr, VirtAddr, PAGE_SIZE};
 
 type FrameAlloc = bitmap_allocator::BitAlloc1M;
 
@@ -20,26 +20,17 @@ lazy_static! {
         allocator.insert(1..PMEM_SIZE / PAGE_SIZE);
         Mutex::new(allocator)
     };
-    pub(super) static ref MOCK_PHYS_MEM: MockMemory = {
-        let mock_phys_mem = MockMemory::new(PMEM_SIZE);
-        mock_phys_mem.mmap(
-            phys_to_virt(0),
-            PMEM_SIZE,
-            0,
-            MMUFlags::READ | MMUFlags::WRITE,
-        );
-        mock_phys_mem
-    };
+    pub(super) static ref MOCK_PHYS_MEM: MockMemory = MockMemory::new(PMEM_SIZE);
 }
 
 hal_fn_impl! {
     impl mod crate::hal_fn::mem {
         fn phys_to_virt(paddr: PhysAddr) -> VirtAddr {
-            PMEM_MAP_VADDR + paddr
+            MOCK_PHYS_MEM.phys_to_virt(paddr)
         }
 
         fn free_pmem_regions() -> Vec<Range<PhysAddr>> {
-            alloc::vec![PAGE_SIZE..PMEM_SIZE]
+            vec![PAGE_SIZE..PMEM_SIZE]
         }
 
         fn pmem_read(paddr: PhysAddr, buf: &mut [u8]) {

@@ -1,5 +1,10 @@
 cfg_if! {
-    if #[cfg(target_arch = "x86_64")] {
+    if #[cfg(feature = "libos")] {
+        #[path = "libos/entry.rs"]
+        mod entry;
+        #[path = "libos/consts.rs"]
+        pub mod consts;
+    } else if #[cfg(target_arch = "x86_64")] {
         #[path = "x86/entry.rs"]
         mod entry;
         #[path = "x86/consts.rs"]

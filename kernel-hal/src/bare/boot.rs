@@ -2,7 +2,7 @@ use crate::{KernelConfig, KernelHandler, KCONFIG, KHANDLER};
 
 hal_fn_impl! {
     impl mod crate::hal_fn::boot {
-        fn cmdline() -> &'static str {
+        fn cmdline() -> alloc::string::String {
             super::arch::cmdline()
         }
 
