@@ -17,3 +17,4 @@ lazy_static = { version = "1.4", features = ["spin_no_std"] }
 smoltcp = { git = "https://gitee.com/gcyyfun/smoltcp", rev="d31f93d", default-features = false, features = ["alloc","log", "async", "medium-ethernet","proto-ipv4", "proto-igmp", "socket-icmp", "socket-udp", "socket-tcp", "socket-raw"] }
 #[patch.crates-io]
 #trapframe = { path = "/home/xly/rust/arch-lib/trapframe-rs" }
+downcast-rs = { version = "1.2", default-features = false }

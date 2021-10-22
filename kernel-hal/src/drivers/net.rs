@@ -1,7 +1,7 @@
 use super::Driver;
 use alloc::string::String;
 use alloc::vec::Vec;
-use core::any::Any;
+// use core::any::Any;
 use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, Ipv4Address};
 
 /*
@@ -12,7 +12,7 @@ use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, Ipv4Address};
  * 在底层再实现一遍该trait，并替代以上的struct的函数
  */
 
-pub trait NetDriver: Driver + AsAny {
+pub trait NetDriver: Driver {
     // get mac address for this device
     fn get_mac(&self) -> EthernetAddress {
         unimplemented!("not a net driver")
@@ -49,13 +49,16 @@ pub trait NetDriver: Driver + AsAny {
     }
 }
 
-// little hack, see https://users.rust-lang.org/t/how-to-downcast-from-a-trait-any-to-a-struct/11219/3
-pub trait AsAny {
-    fn as_any(&self) -> &dyn Any;
-}
+use downcast_rs::impl_downcast;
+impl_downcast!(sync NetDriver);
 
-impl<T: Any> AsAny for T {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-}
+// little hack, see https://users.rust-lang.org/t/how-to-downcast-from-a-trait-any-to-a-struct/11219/3
+// pub trait AsAny : Sync + Send {
+//     fn as_any(&self) -> &dyn Any;
+// }
+
+// impl<T: Any + Send + Sync> AsAny for T {
+//     fn as_any(&self) -> &dyn Any {
+//         self
+//     }
+// }
