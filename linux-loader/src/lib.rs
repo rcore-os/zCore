@@ -128,6 +128,7 @@ async fn new_thread(thread: CurrentThread) {
         // super_mode_net_tcp_server_test();
         // super_mode_net_tcp_client_test();
         // super_mode_frame_test();
+        /*
         use core::time::Duration;
         use kernel_hal::sleep_until;
         use kernel_hal::timer_now;
@@ -136,6 +137,7 @@ async fn new_thread(thread: CurrentThread) {
         ping();
 
         loop {}
+        */
         //========= 网络认证 添加 区域  end =======
 
         // run
@@ -297,6 +299,23 @@ async fn handle_syscall(thread: &CurrentThread, cx: &mut UserContext) {
     cx.general.a0 = syscall.syscall(num, args).await as usize;
 }
 
+/// network testing
+pub fn net_start_thread() {
+    let ping_future = Box::pin(ping());
+    let eap_future = Box::pin(eap_test());
+    let vmtoken = kernel_hal::current_page_table();
+    kernel_hal::Thread::spawn(ping_future, vmtoken);
+    kernel_hal::Thread::spawn(eap_future, vmtoken);
+}
+
+use kernel_hal::yield_now;
+async fn eap_test() {
+    for n in 0..3 {
+        super_mode_eap_test().await;
+    }
+}
+
+
 #[allow(dead_code)]
 #[allow(unused_imports)]
 #[allow(unused_variables)]
@@ -318,7 +337,7 @@ async fn super_mode_eap_test() {
 
     use kernel_hal::timer_tick;
 
-    let latency: u64 = 300; // 毫秒 millis
+    let latency: u64 = 100; // 毫秒 millis
 
     let rtl8x = get_net_driver()[0].clone();
 
@@ -583,11 +602,15 @@ async fn super_mode_eap_test() {
         }
         sleep_until(timer_now() + Duration::from_millis(latency)).await;
 
+    #[cfg(target_arch = "riscv64")]
+    kernel_hal_bare::interrupt::wait_for_interrupt();
+    yield_now().await;
+
         // }
     }
 }
 
-fn ping() {
+async fn ping() {
     macro_rules! send_icmp_ping {
         ( $repr_type:ident, $packet_type:ident, $ident:expr, $seq_no:expr,
           $echo_payload:expr, $socket:expr, $remote_addr:expr ) => {{
@@ -651,12 +674,12 @@ fn ping() {
     let mut waiting_queue = BTreeMap::new();
     let ident = 0x22b;
 
-    let count = 4;
+    let count = 2000;
     // ping 的 目的 地址 、um.. 暂时手动修改吧
     // baidu
     let ip_addr = "220.181.38.251";
+    //let ip_addr = "192.168.0.62";
     // let ip_addr = "172.24.103.1";
-    // let ip_addr = "192.100.1.1";
     let remote_addr = IpAddress::from_str(ip_addr).expect("invalid address format");
     warn!("ping gateway {:?}", remote_addr);
     let interval = Duration::from_secs(1);
@@ -730,6 +753,10 @@ fn ping() {
                     }
                 }
 
+    #[cfg(target_arch = "riscv64")]
+    kernel_hal_bare::interrupt::wait_for_interrupt();
+    yield_now().await;
+
                 waiting_queue.retain(|seq, from| {
                     if timestamp - *from < timeout {
                         true
@@ -746,9 +773,16 @@ fn ping() {
                 }
             }
 
+            /*
             if timeout_return {
                 return;
             }
+            */
+
+    #[cfg(target_arch = "riscv64")]
+    kernel_hal_bare::interrupt::wait_for_interrupt();
+    yield_now().await;
+
         }
     }
 }

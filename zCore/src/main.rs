@@ -203,8 +203,7 @@ fn main(ramfs_data: &'static mut [u8], cmdline: &str) -> ! {
     let _proc = linux_loader::run(args, envs, rootfs);
 
     info!("linux_loader run linux proc +++");
-    // use linux_object::net::test::server;
-    // server(0);
+    linux_loader::net_start_thread();
 
     /* 用户程序无法访问内核的代码？？？ 页表：USER
     linux_loader::run_linux_proc(vec!["run_linux_proc".into()], server as usize);
