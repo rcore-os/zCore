@@ -92,10 +92,10 @@ hal_fn_def! {
         /// invoked prior to interrupt registration.
         pub fn configure_irq(vector: usize, tm: IrqTriggerMode, pol: IrqPolarity) -> HalResult;
 
-        /// Add an interrupt handle to an IRQ.
+        /// Add an interrupt handler to an IRQ.
         pub fn register_irq_handler(vector: usize, handler: IrqHandler) -> HalResult;
 
-        /// Remove the interrupt handle to an IRQ.
+        /// Remove the interrupt handler to an IRQ.
         pub fn unregister_irq_handler(vector: usize) -> HalResult;
 
         /// Handle IRQ.

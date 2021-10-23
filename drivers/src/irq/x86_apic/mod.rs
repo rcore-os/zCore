@@ -16,7 +16,7 @@ use crate::{utils::IrqManager, DeviceError, DeviceResult, PhysAddr, VirtAddr};
 const IOAPIC_IRQ_RANGE: Range<usize> = X86_INT_BASE..X86_INT_LOCAL_APIC_BASE;
 const LAPIC_IRQ_RANGE: Range<usize> = 0..16;
 
-type Phys2VirtFn = fn(PhysAddr) -> VirtAddr;
+type Phys2VirtFn = fn(paddr: PhysAddr) -> VirtAddr;
 
 pub struct Apic {
     ioapic_list: IoApicList,
