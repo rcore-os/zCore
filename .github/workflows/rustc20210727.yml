@@ -25,19 +25,16 @@ jobs:
           command: fmt
           args: --all -- --check
       - name: Clippy LibOS
-        run: arch=x86_64 cargo clippy
+        run: cargo clippy --all-features
       - name: Clippy x86_64 bare-metal
         run: |
           cd zCore
-          make clippy arch=x86_64
+          make clippy ARCH=x86_64
       - name: Clippy riscv64 bare-metal
         run: |
           cd zCore
-          make clippy arch=riscv64 linux=1
-#        uses: actions-rs/cargo@v1
-#        with:
-#          command: clippy
-#x86_64
+          make clippy ARCH=riscv64 LINUX=1
+
   build:
     runs-on: ${{ matrix.os }}
     strategy:
@@ -53,19 +50,11 @@ jobs:
           toolchain: nightly-2021-07-27
           components: rust-src
       - name: Build
-        run: arch=x86_64 cargo build
-#        uses: actions-rs/cargo@v1
-#        with:
-#          command: build
+        run: cargo build
       - name: Build zCore
         run: |
           cd zCore
-          make build arch=x86_64
-      # FIX LATER
-      # - name: Build zCore with hypervisor
-      #   run: |
-      #     cd zCore
-      #     make build hypervisor=1
+          make build ARCH=x86_64
 
   build-aarch64:
     runs-on: ubuntu-20.04
@@ -100,22 +89,22 @@ jobs:
       - name: Build Zircon user programs
         run: |
           cd zircon-user
-          make build mode=release
+          make build MODE=release
 
   test:
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v2
       - name: Pull prebuilt images
-        run: git lfs pull -I prebuilt/linux/libc-libos.so
+        run: git lfs pull -I prebuilt/linux/libc-libos.so,prebuilt/zircon/x64/bringup.zbi,prebuilt/zircon/x64/libzircon-libos.so,prebuilt/zircon/x64/userboot-libos.so
       - name: Prepare rootfs
         run: make rootfs
       - name: Test
-        run: arch=x86_64 cargo test --no-fail-fast --workspace --exclude zircon-loader
+        run: cargo test --no-fail-fast
 #        uses: actions-rs/cargo@v1
 #        with:
 #          command: test
-#          args: --all-features --no-fail-fast --workspace --exclude zircon-loader
+#          args: --all-features --no-fail-fast
         env:
           CARGO_INCREMENTAL: '0'
           RUSTFLAGS: '-Zprofile -Ccodegen-units=1 -Copt-level=0 -Coverflow-checks=off -Zpanic_abort_tests -Cpanic=abort'
@@ -140,7 +129,7 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: Run benchmarks
-        run: arch=x86_64 cargo bench
+        run: cargo bench
 #        uses: actions-rs/cargo@v1
 #        with:
 #          command: bench
@@ -165,7 +154,7 @@ jobs:
       - name: Build zCore
         run: |
           cd zCore
-          make build mode=release
+          make build MODE=release
           cd ..
       - name: Run core-tests
         run: |
@@ -196,6 +185,8 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v2
+        with:
+          submodules: 'recursive'
       - name: Pull prebuilt images
         run: git lfs pull -I prebuilt/linux/libc-libos.so
       - name: Install musl toolchain
@@ -203,7 +194,7 @@ jobs:
       - name: Prepare rootfs and libc-test
         run: make rootfs && make libc-test
       - name: Build
-        run: arch=x86_64 cargo build --release -p linux-loader
+        run: cargo build --release -p linux-loader
 #        uses: actions-rs/cargo@v1
 #        with:
 #          command: build
@@ -220,7 +211,7 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: Build docs
-        run: arch=x86_64 cargo doc --no-deps --all-features
+        run: cargo doc --no-deps --all-features
 #        uses: actions-rs/cargo@v1
 #        with:
 #          command: doc
@@ -254,9 +245,9 @@ jobs:
       - name: Prepare rootfs and libc-test
         run: make baremetal-test-img
       - name: Build  kernel
-        run: cd zCore && make build mode=release linux=1 arch=x86_64
+        run: cd zCore && make build MODE=release LINUX=1 ARCH=x86_64
       - name: create qemu disk
-        run: cd zCore && make baremetal-qemu-disk mode=release linux=1 arch=x86_64
+        run: cd zCore && make baremetal-qemu-disk MODE=release LINUX=1 ARCH=x86_64
       - name: Run baremetal-libc-test
         run: |
           cd scripts
@@ -285,7 +276,7 @@ jobs:
       - name: Prepare rootfs and oscomp
         run: make riscv-image
       - name: Build  kernel
-        run: cd zCore && make build mode=release linux=1 arch=riscv64
+        run: cd zCore && make build MODE=release LINUX=1 ARCH=riscv64
       - name: Run baremetal-libc-test
         run: |
           cd scripts

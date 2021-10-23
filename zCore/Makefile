@@ -1,207 +1,265 @@
-arch ?= x86_64
-board ?= qemu
-mode ?= debug
-log ?= warn
-zbi_file ?= bringup
-graphic ?=
-accel ?=
-linux ?=
-user ?=
-hypervisor ?=
-smp ?= 1
-test_filter ?= *.*
+################ Arguments ################
 
-build_args := --target $(arch).json -Z weak-dep-features -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem
-build_path := target/$(arch)/$(mode)
-kernel := $(build_path)/zcore
-kernel_img := $(build_path)/zcore.img
-kernel_bin := $(build_path)/zcore.bin
-ESP := $(build_path)/esp
-OVMF := ../rboot/OVMF.fd
-qemu := qemu-system-$(arch)
-OBJDUMP := rust-objdump --print-imm-hex --x86-asm-syntax=intel
-OBJCOPY := rust-objcopy --binary-architecture=$(arch)
-VMDISK := $(build_path)/boot.vdi
-QEMU_DISK := $(build_path)/disk.qcow2
+ARCH ?= x86_64
+PLATFORM ?= qemu
+MODE ?= debug
+LOG ?= warn
+LINUX ?=
+LIBOS ?=
+GRAPHIC ?=
+HYPERVISOR ?=
+SMP ?= 1
+ACCEL ?=
+V ?=
+USER ?=
+ZBI ?= bringup
+CMDLINE ?=
+ARGS ?= /bin/busybox
 
-export ARCH=$(arch)
-export BOARD=$(board)
-export USER_IMG=$(ARCH).img
+OBJDUMP ?= rust-objdump --print-imm-hex --x86-asm-syntax=intel
+OBJCOPY ?= rust-objcopy --binary-architecture=$(ARCH)
 
-ifeq ($(mode), release)
-	build_args += --release
-endif
+################ Internal variables ################
 
-ifeq ($(arch), riscv64)
-ifeq ($(board), d1)
-build_args += --features board_d1 --features link_user_img
-else
-build_args += --features board_qemu
-endif
-endif
+qemu := qemu-system-$(ARCH)
+build_path := target/$(ARCH)/$(MODE)
+kernel_elf := $(build_path)/zcore
+kernel_img := $(build_path)/zcore.bin
+esp := $(build_path)/esp
+ovmf := ../rboot/OVMF.fd
+qemu_disk := $(build_path)/disk.qcow2
 
-ifeq ($(arch), x86_64)
-build_args += --features init_ram_disk
-endif
-
-ifeq ($(linux), 1)
-	build_args += --features linux
-else
-	build_args += --features zircon
-endif
-
-qemu_opts := \
-	-smp $(smp)
-
-ifeq ($(arch), x86_64)
-qemu_opts += \
-	-machine q35 \
-	-cpu Haswell,+smap,-check,-fsgsbase \
-	-drive if=pflash,format=raw,readonly,file=$(OVMF) \
-	-drive format=raw,file=fat:rw:$(ESP) \
-	-drive format=qcow2,file=$(QEMU_DISK),id=disk,if=none \
-	-device ich9-ahci,id=ahci \
-	-device ide-hd,drive=disk,bus=ahci.0 \
-	-serial mon:stdio \
-	-m 4G \
-	-nic none \
-	-device isa-debug-exit,iobase=0xf4,iosize=0x04
-baremetal-test-qemu_opts += \
-	-machine q35 \
-	-cpu Haswell,+smap,-check,-fsgsbase \
-	-drive if=pflash,format=raw,readonly,file=$(OVMF) \
-	-drive format=raw,file=fat:rw:$(ESP) \
-	-device ich9-ahci,id=ahci \
-	-serial mon:stdio \
-	-m 4G \
-	-nic none \
-	-device isa-debug-exit,iobase=0xf4,iosize=0x04
-else ifeq ($(arch), riscv64)
-qemu_opts += \
-	-machine virt \
-	-bios default \
-	-serial mon:stdio \
-	-no-reboot \
-	-no-shutdown \
-	-drive file=$(QEMU_DISK),format=qcow2,id=sfs \
-	-device virtio-blk-device,drive=sfs \
-	-kernel $(kernel_bin)
-
-endif
-
-ifeq ($(hypervisor), 1)
-build_args += --features hypervisor
-accel = 1
-endif
-
-ifeq ($(accel), 1)
 ifeq ($(shell uname), Darwin)
-qemu_opts += -accel hvf
+  sed := sed -i ""
 else
-qemu_opts += -accel kvm -cpu host,migratable=no,+invtsc
-endif
-endif
-
-ifeq ($(graphic), on)
-build_args += --features graphic
-
-ifeq ($(arch), riscv64)
-qemu_opts += \
-	-device virtio-gpu-device \
-	-device virtio-keyboard-device \
-	-device virtio-mouse-device
-else ifeq ($(arch), x86_64)
-qemu_opts += -vga virtio # disable std VGA for zircon mode to avoid incorrect graphic rendering
+  sed := sed -i
 endif
 
+ifeq ($(LINUX), 1)
+  user_img := $(ARCH).img
+else ifeq ($(USER), 1)
+  user_img := ../zircon-user/target/zcore-user.zbi
 else
-
-ifeq ($(MAKECMDGOALS), vbox)
-build_args += --features graphic
+  user_img := ../prebuilt/zircon/x64/$(ZBI).zbi
 endif
 
-qemu_opts += -display none -nographic
-baremetal-test-qemu_opts += -display none -nographic
+################ Export environments ###################
+
+export ARCH
+export PLATFORM
+export LOG
+
+################ Cargo features ################
+
+ifeq ($(LINUX), 1)
+  features := linux
+else
+  features := zircon
 endif
 
+ifeq ($(PLATFORM), libos)
+  LIBOS := 1
+endif
+
+ifeq ($(LIBOS), 1)
+  ifneq ($(ARCH), $(shell uname -m))
+    $(error "ARCH" must be "$(shell uname -m)" for libos mode)
+  endif
+  features += libos
+else
+  ifeq ($(ARCH), x86_64)
+    features += init_ram_disk
+  else ifeq ($(ARCH), riscv64)
+    ifeq ($(PLATFORM), d1)
+      features += board_d1 link_user_img
+    else
+      features += board_qemu
+    endif
+  endif
+endif
+
+ifeq ($(GRAPHIC), on)
+  features += graphic
+else ifeq ($(MAKECMDGOALS), vbox)
+  features += graphic
+endif
+
+ifeq ($(HYPERVISOR), 1)
+  features += hypervisor
+  ACCEL := 1
+endif
+
+################ Cargo build args ################
+
+build_args := --features "$(features)"
+
+ifneq ($(LIBOS), 1) # no_std
+  build_args += --target $(ARCH).json -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem
+endif
+
+ifeq ($(MODE), release)
+  build_args += --release
+endif
+
+ifeq ($(V), 1)
+  build_args += --verbose
+endif
+
+################ QEMU options ################
+
+qemu_opts := -smp $(SMP)
+
+ifeq ($(ARCH), x86_64)
+  baremetal-test-qemu_opts := \
+		-machine q35 \
+		-cpu Haswell,+smap,-check,-fsgsbase \
+		-m 4G \
+		-serial mon:stdio \
+		-drive format=raw,if=pflash,readonly=on,file=$(ovmf) \
+		-drive format=raw,file=fat:rw:$(esp) \
+		-device ich9-ahci,id=ahci \
+		-device isa-debug-exit,iobase=0xf4,iosize=0x04 \
+		-nic none
+  qemu_opts += $(baremetal-test-qemu_opts) \
+		-drive format=qcow2,id=userdisk,if=none,file=$(qemu_disk) \
+		-device ide-hd,bus=ahci.0,drive=userdisk
+else ifeq ($(ARCH), riscv64)
+  qemu_opts += \
+		-machine virt \
+		-bios default \
+		-kernel $(kernel_img) \
+		-no-reboot \
+		-no-shutdown \
+		-serial mon:stdio \
+		-drive format=qcow2,id=userdisk,file=$(qemu_disk) \
+		-device virtio-blk-device,drive=userdisk
+endif
+
+ifeq ($(GRAPHIC), on)
+  ifeq ($(ARCH), x86_64)
+    qemu_opts += -vga virtio # disable std VGA for zircon mode to avoid incorrect graphic rendering
+  else ifeq ($(ARCH), riscv64)
+    qemu_opts += \
+		-device virtio-gpu-device \
+		-device virtio-keyboard-device \
+		-device virtio-mouse-device
+  endif
+else
+  qemu_opts += -display none -nographic
+  baremetal-test-qemu_opts += -display none -nographic
+endif
+
+ifeq ($(ACCEL), 1)
+  ifeq ($(shell uname), Darwin)
+    qemu_opts += -accel hvf
+  else
+    qemu_opts += -accel kvm -cpu host,migratable=no,+invtsc
+  endif
+endif
+
+################ Make targets ################
+
+.PHONY: all
+all: build
+
+.PHONY: build run test debug
+ifeq ($(LIBOS), 1)
+build: kernel
+run:
+	cargo run $(build_args) -- $(ARGS)
+test:
+	cargo test $(build_args)
+debug: build
+	gdb --args target/$(MODE)/zcore $(ARGS)
+else
+build: $(kernel_img)
 run: build justrun
-test: build-test justrun
 debug: build debugrun
+endif
 
-TERMINAL 	:= gnome-terminal
-debugrun: $(QEMU_DISK)
-	$(TERMINAL) -e "gdb -tui -x gdbinit"
-	$(qemu) $(qemu_opts) -s -S
-
-justrun: $(QEMU_DISK)
+.PHONY: justrun
+justrun: $(qemu_disk)
 	$(qemu) $(qemu_opts)
 
-build-test: build
-	cp ../prebuilt/zircon/x64/core-tests.zbi $(ESP)/EFI/zCore/fuchsia.zbi
-	echo 'cmdline=LOG=$(log):userboot=test/core-standalone-test:userboot.shutdown:core-tests=$(test_filter)' >> $(ESP)/EFI/Boot/rboot.conf
+.PHONY: debugrun
+debugrun: $(qemu_disk)
+	$(qemu) $(qemu_opts) -s -S &
+	@sleep 1
+	gdb $(kernel_elf) -tui -x gdbinit
 
-build: $(kernel_img)
-
-build-parallel-test: build $(QEMU_DISK)
-	cp ../prebuilt/zircon/x64/core-tests.zbi $(ESP)/EFI/zCore/fuchsia.zbi
-	echo 'cmdline=LOG=$(log):userboot=test/core-standalone-test:userboot.shutdown:core-tests=$(test_filter)' >> $(ESP)/EFI/Boot/rboot.conf
-
-ifeq ($(arch), riscv64)
-$(kernel_img): $(kernel_bin)
-
-ifeq ($(board), d1)
-run-thead: build
-	@cp ../prebuilt/firmware/fw_jump-0x40020000.bin fw-zCore.bin
-	@dd if=$(kernel_bin) of=fw-zCore.bin bs=1 seek=131072
-	xfel ddr ddr3
-	xfel write 0x40000000 fw-zCore.bin
-	xfel exec 0x40000000
-endif
-
-else
-$(kernel_img): kernel bootloader
-	mkdir -p $(ESP)/EFI/zCore $(ESP)/EFI/Boot
-	cp ../rboot/target/x86_64-unknown-uefi/release/rboot.efi $(ESP)/EFI/Boot/BootX64.efi
-	cp rboot.conf $(ESP)/EFI/Boot/rboot.conf
-ifeq ($(linux), 1) #root文件系统在里
-	cp x86_64.img $(ESP)/EFI/zCore/fuchsia.zbi
-else ifeq ($(user), 1)
-	make -C ../zircon-user
-	cp ../zircon-user/target/zcore.zbi $(ESP)/EFI/zCore/fuchsia.zbi
-else
-	cp ../prebuilt/zircon/x64/$(zbi_file).zbi $(ESP)/EFI/zCore/fuchsia.zbi
-endif
-	cp $(kernel) $(ESP)/EFI/zCore/zcore.elf
-
-endif
-
+.PHONY: kernel
 kernel:
-	echo Building zCore kenel
+	@echo Building zCore kenel
 	cargo build $(build_args)
 
+.PHONY: disasm
+disasm:
+	$(OBJDUMP) -d $(kernel_elf) | less
+
+.PHONY: header
+header:
+	$(OBJDUMP) -x $(kernel_elf) | less
+
+.PHONY: clippy
 clippy:
 	cargo clippy $(build_args)
 
-bootloader:
-	cd ../rboot && make build
-
-$(kernel_bin): kernel
-	$(OBJCOPY) $(kernel) --strip-all -O binary $@
-
+.PHONY: clean
 clean:
-	cargo clean -Z weak-dep-features
+	cargo clean
 
+.PHONY: bootloader
+bootloader:
+ifeq ($(ARCH), x86_64)
+	@cd ../rboot && make build
+endif
+
+$(kernel_img): kernel bootloader
+ifeq ($(ARCH), x86_64)
+  ifeq ($(USER), 1)
+	make -C ../zircon-user
+  endif
+	mkdir -p $(esp)/EFI/zCore $(esp)/EFI/Boot
+	cp ../rboot/target/x86_64-unknown-uefi/release/rboot.efi $(esp)/EFI/Boot/BootX64.efi
+	cp rboot.conf $(esp)/EFI/Boot/rboot.conf
+	cp $(kernel_elf) $(esp)/EFI/zCore/zcore.elf
+	cp $(user_img) $(esp)/EFI/zCore/
+	$(sed) "s/fuchsia.zbi/$(notdir $(user_img))/" $(esp)/EFI/Boot/rboot.conf
+  ifneq ($(CMDLINE),)
+	$(sed) "s#cmdline=.*#cmdline=$(CMDLINE)#" $(esp)/EFI/Boot/rboot.conf
+  else
+	$(sed) "s/LOG=warn/LOG=$(LOG)/" $(esp)/EFI/Boot/rboot.conf
+  endif
+else ifeq ($(ARCH), riscv64)
+	$(OBJCOPY) $(kernel_elf) --strip-all -O binary $@
+endif
+
+.PHONY: image
 image:
-	# for macOS only
-	hdiutil create -fs fat32 -ov -volname EFI -format UDTO -srcfolder $(ESP) $(build_path)/zcore.cdr
+# for macOS only
+	hdiutil create -fs fat32 -ov -volname EFI -format UDTO -srcfolder $(esp) $(build_path)/zcore.cdr
 	qemu-img convert -f raw $(build_path)/zcore.cdr -O qcow2 $(build_path)/zcore.qcow2
 
-header:
-	$(OBJDUMP) -x $(kernel) | less
+################ Tests ################
 
-disasm:
-	$(OBJDUMP) -d $(kernel) | less
+.PHONY: baremetal-qemu-disk
+baremetal-qemu-disk:
+	@qemu-img create -f qcow2 $(build_path)/disk.qcow2 100M
 
+.PHONY: baremetal-test
+baremetal-test:
+	cp rboot.conf $(esp)/EFI/Boot/rboot.conf
+	timeout --foreground 8s  $(qemu) $(baremetal-test-qemu_opts)
+
+.PHONY: baremetal-test-rv64
+baremetal-test-rv64: build $(qemu_disk)
+	timeout --foreground 8s $(qemu) $(qemu_opts) -append ROOTPROC=$(ROOTPROC)
+
+################ Deprecated ################
+
+VMDISK := $(build_path)/boot.vdi
+
+.PHONY: vbox
 vbox: build
 ifneq "$(VMDISK)" "$(wildcard $(VMDISK))"
 	vboxmanage createvm --name zCoreVM --basefolder $(build_path) --register
@@ -220,21 +278,12 @@ endif
 	rm $(build_path)/esp.tar
 	vboxmanage startvm zCoreVM
 
-$(QEMU_DISK):
-ifeq ($(arch), riscv64)
+$(qemu_disk):
+ifeq ($(ARCH), riscv64)
+# FIXME: no longer need to create QCOW2 when use initrd for RISC-V
 	@echo Generating riscv64 sfsimg
 	@qemu-img convert -f raw riscv64.img -O qcow2 $@
 	@qemu-img resize $@ +5M
 else
 	@qemu-img create -f qcow2 $@ 100M
 endif
-
-baremetal-qemu-disk:
-	@qemu-img create -f qcow2 $(build_path)/disk.qcow2 100M
-
-baremetal-test:
-	cp rboot.conf $(ESP)/EFI/Boot/rboot.conf
-	timeout --foreground 8s  $(qemu) $(baremetal-test-qemu_opts)
-
-baremetal-test-rv64: build $(QEMU_DISK)
-	timeout --foreground 8s $(qemu) $(qemu_opts) -append ROOTPROC=$(ROOTPROC)

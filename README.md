@@ -16,7 +16,7 @@ Reimplement [Zircon][zircon] microkernel in safe Rust as a userspace program!
 ```
 make riscv-image
 cd zCore
-make run arch=riscv64 linux=1
+make run ARCH=riscv64 LINUX=1
 ```
 
 ## Getting started
@@ -71,7 +71,7 @@ You can add `--features graphic` as cargo arguments to show the graphical output
 cargo run --release -p zircon-loader -- prebuilt/zircon/x64
 ```
 
-To debug, set `RUST_LOG` environment variable to one of `error`, `warn`, `info`, `debug`, `trace`.
+To debug, set `LOG` environment variable to one of `error`, `warn`, `info`, `debug`, `trace`.
 
 ### Run zcore in bare-metal mode
 #### Run Linux shell in  linux-bare-metal mode:
@@ -89,27 +89,27 @@ make image
 ##### step3: build and run zcore in  linux-bare-metal mode:
 
 ```sh
-cd zCore && make run mode=release linux=1 [graphic=on] [accel=1]
+cd zCore && make run MODE=release LINUX=1 [GRAPHIC=on] [ACCEL=1]
 ```
 
 #### Run Zircon shell in zircon-bare-metal mode:
 ##### step1.1 :  build and run zcore in  zircon-bare-metal mode:
 
 ```sh
-cd zCore && make run mode=release [graphic=on] [accel=1]
+cd zCore && make run MODE=release [GRAPHIC=on] [ACCEL=1]
 ```
 
 ##### step1.2 :  Build and run your own Zircon user programs:
 
 ```sh
 # See template in zircon-user
-cd zircon-user && make zbi mode=release
+cd zircon-user && make zbi MODE=release
 
 # Run your programs in zCore
-cd zCore && make run mode=release user=1
+cd zCore && make run MODE=release USER=1
 ```
 
-To debug, set `RUST_LOG` environment variable to one of `error`, `warn`, `info`, `debug`, `trace`.
+To debug, set `LOG` environment variable to one of `error`, `warn`, `info`, `debug`, `trace`.
 
 
 ## Testing
@@ -119,7 +119,7 @@ To debug, set `RUST_LOG` environment variable to one of `error`, `warn`, `info`,
 Run Zircon official core-tests:
 
 ```sh
-cd zCore && make test mode=release [accel=1] test_filter='Channel.*'
+cd zCore && make test MODE=release [ACCEL=1] TEST_FILTER='Channel.*'
 ```
 
 Run all (non-panicked) core-tests for CI:
@@ -148,7 +148,7 @@ Run Linux musl libc-tests for CI:
 ##  Prepare rootfs with libc-test apps
 make baremetal-test-img
 ## Build zCore kernel
-cd zCore && make build mode=release linux=1 arch=x86_64
+cd zCore && make build MODE=release LINUX=1 ARCH=x86_64
 ## Testing
 cd ../scripts && python3 ./baremetal-libc-test.py
 ##
@@ -196,7 +196,7 @@ make rootfs
 cp ../rcore-user/app/snake rootfs/bin #copy snake ELF file to rootfs/bin
 make image # build rootfs image
 cd zCore #zCore kernel dir
-make run mode=release linux=1 graphic=on
+make run MODE=release LINUX=1 GRAPHIC=on
 ```
 
 Then you can play the game.

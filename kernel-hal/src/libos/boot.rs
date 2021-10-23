@@ -5,7 +5,7 @@ hal_fn_impl! {
         fn cmdline() -> String {
             let root_proc = std::env::args().skip(1).collect::<Vec<_>>().join("?");
             let mut cmdline = format!("ROOTPROC={}", root_proc);
-            if let Ok(level) = std::env::var("RUST_LOG") {
+            if let Ok(level) = std::env::var("LOG") {
                 cmdline += &format!(":LOG={}", level);
             }
             cmdline

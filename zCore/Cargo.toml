@@ -49,6 +49,6 @@ buddy_system_allocator = "0.7"
 executor = { git = "https://github.com/rcore-os/executor.git", rev = "a2d02ee9" }
 
 # Bare-metal mode on x86_64
-[target.'cfg(target_arch = "x86_64")'.dependencies]
+[target.'cfg(all(target_os = "none", target_arch = "x86_64"))'.dependencies]
 rboot = { path = "../rboot", default-features = false }
 # rvm = { git = "https://github.com/rcore-os/RVM", rev = "e91d625", optional = true }

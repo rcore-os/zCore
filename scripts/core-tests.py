@@ -10,6 +10,7 @@ RESULT_FILE = BASE + 'test-result.txt'
 CHECK_FILE = BASE + 'test-check-passed.txt'
 TEST_CASE_FILE = BASE + 'testcases.txt'
 
+CMDLINE = "LOG=warn:userboot=test/core-standalone-test:userboot.shutdown:core-tests=%s"
 
 class Tee:
     def __init__(self, name, mode):
@@ -35,7 +36,7 @@ with open(TEST_CASE_FILE, "r") as f:
     negative = [line[1:] for line in lines if line.startswith('-')]
     test_filter = (','.join(positive) + ((',-' + ','.join(negative) if len(negative) > 0 else "") )).replace('\n', '')
 
-child = pexpect.spawn("make -C %s test mode=release test_filter='%s'" % (ZCORE_PATH, test_filter),
+child = pexpect.spawn("make -C %s run MODE=release ZBI=core-tests CMDLINE='%s'" % (ZCORE_PATH, CMDLINE % test_filter),
                       timeout=TIMEOUT, encoding='utf-8')
 child.logfile = Tee(OUTPUT_FILE, 'w')
 

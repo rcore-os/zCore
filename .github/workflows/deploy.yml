@@ -11,7 +11,7 @@ jobs:
       - uses: actions/checkout@v2
       - name: Build docs
         run: |
-          arch=x86_64 cargo doc --no-deps --all-features
+          cargo doc --no-deps --all-features
           cat >target/doc/index.html <<EOF
           <html>
             <head>
