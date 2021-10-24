@@ -530,6 +530,12 @@ impl Process {
         let object: Arc<dyn KernelObject> = self.clone();
         object.wait_signal(Signal::PROCESS_TERMINATED).await;
         if let Status::Exited(code) = self.status() {
+            info!(
+                "process {:?}({}) exited with code {:?}",
+                self.name(),
+                self.id(),
+                code
+            );
             code
         } else {
             unreachable!();

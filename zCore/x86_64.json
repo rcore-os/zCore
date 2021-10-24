@@ -11,7 +11,7 @@
   "linker": "rust-lld",
   "pre-link-args": {
     "ld.lld": [
-      "-Tsrc/platform/x86/linker.ld"
+      "-TzCore/src/platform/x86/linker.ld"
     ]
   },
   "disable-redzone": true,

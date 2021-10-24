@@ -58,20 +58,20 @@ make rootfs
 ##### step2: Compile&Run native Linux program (Busybox) in libos mode:
 
 ```sh
-cargo run --release -p linux-loader -- /bin/busybox [args]
+cargo run --release --features "linux libos" -- /bin/busybox [args]
 ```
 
-You can add `--features graphic` as cargo arguments to show the graphical output (with [sdl2](https://www.libsdl.org) installed).
+You can also add the feature `graphic` to show the graphical output (with [sdl2](https://www.libsdl.org) installed).
+
+To debug, set `LOG` environment variable to one of `error`, `warn`, `info`, `debug`, `trace`.
 
 #### Run native Zircon program (shell) in zircon-libos mode:
 
 #### step1: Compile and Run Zircon shell
 
 ```sh
-cargo run --release -p zircon-loader -- prebuilt/zircon/x64
+cargo run --release --features "zircon libos" -- prebuilt/zircon/x64
 ```
-
-To debug, set `LOG` environment variable to one of `error`, `warn`, `info`, `debug`, `trace`.
 
 ### Run zcore in bare-metal mode
 #### Run Linux shell in  linux-bare-metal mode:

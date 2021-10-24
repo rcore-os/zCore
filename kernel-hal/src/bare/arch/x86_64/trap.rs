@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+#![allow(clippy::identity_op)]
 
 use trapframe::TrapFrame;
 

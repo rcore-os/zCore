@@ -63,11 +63,11 @@ pub(super) fn init() -> DeviceResult {
         .expect("IRQ device 'riscv-intc' not initialized!");
     irq.register_handler(
         ScauseIntCode::SupervisorSoft as _,
-        Box::new(|| super::trap::super_soft()),
+        Box::new(super::trap::super_soft),
     )?;
     irq.register_handler(
         ScauseIntCode::SupervisorTimer as _,
-        Box::new(|| super::trap::super_timer()),
+        Box::new(super::trap::super_timer),
     )?;
     irq.unmask(ScauseIntCode::SupervisorSoft as _)?;
     irq.unmask(ScauseIntCode::SupervisorTimer as _)?;

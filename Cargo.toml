@@ -8,10 +8,13 @@ members = [
     "linux-loader",
     "kernel-hal",
     "drivers",
+    "zCore",
 ]
 
 exclude = [
     "zircon-user",
-    "zCore",
     "rboot",
 ]
+
+[profile.release]
+lto = true

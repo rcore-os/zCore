@@ -412,7 +412,7 @@ impl RegExt for GeneralRegs {
             entry, sp
         );
         GeneralRegs {
-            sp: sp,
+            sp,
             a0: arg1,
             a1: arg2,
             ..Default::default()

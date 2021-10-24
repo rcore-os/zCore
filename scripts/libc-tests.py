@@ -25,7 +25,7 @@ def print_cases(cases, file=None):
         print(case, file=file)
 
 
-subprocess.run("cd ../zCore && cargo build --release --features 'libos linux'",
+subprocess.run("cd .. && cargo build -p zcore --release --features 'libos linux'",
                shell=True, check=True)
 
 for path in sorted(glob.glob("../rootfs/libc-test/src/*/*.exe")):
@@ -35,7 +35,7 @@ for path in sorted(glob.glob("../rootfs/libc-test/src/*/*.exe")):
         continue
     try:
         time_start = time.time()
-        subprocess.run("cd ../zCore && ./target/release/zcore " + path,
+        subprocess.run("cd .. && ./target/release/zcore " + path,
                        shell=True, timeout=TIMEOUT, check=True)
         time_end = time.time()
         passed.add(path)

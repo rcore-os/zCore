@@ -32,7 +32,6 @@ pub fn wait_for_exit(proc: Option<Arc<Process>>) -> ! {
         };
 
         let code = async_std::task::block_on(future);
-        info!("process exited with {}", code);
         std::process::exit(code as i32);
     }
     loop {

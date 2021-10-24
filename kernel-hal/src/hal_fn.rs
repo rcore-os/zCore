@@ -181,7 +181,7 @@ hal_fn_def! {
                         *x = r as _;
                     }
                 } else {
-                    static mut SEED: u64 = 0xdeadbeef_cafebabe;
+                    static mut SEED: u64 = 0xdead_beef_cafe_babe;
                     for x in buf.iter_mut() {
                         unsafe {
                             // from musl

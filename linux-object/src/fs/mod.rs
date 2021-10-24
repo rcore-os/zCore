@@ -1,12 +1,13 @@
 //! Linux file objects
 
 mod devfs;
-mod device;
 mod file;
 mod ioctl;
 mod pipe;
 mod pseudo;
 mod stdio;
+
+pub mod rcore_fs_wrapper;
 
 use alloc::{boxed::Box, string::ToString, sync::Arc, vec::Vec};
 use core::convert::TryFrom;
@@ -26,7 +27,6 @@ use self::{devfs::RandomINode, pseudo::Pseudo};
 use crate::error::{LxError, LxResult};
 use crate::process::LinuxProcess;
 
-pub use device::MemBuf;
 pub use file::{File, OpenFlags, SeekFrom};
 pub use pipe::Pipe;
 pub use rcore_fs::vfs;

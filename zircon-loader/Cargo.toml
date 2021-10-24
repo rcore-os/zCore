@@ -15,7 +15,7 @@ zircon-syscall = { path = "../zircon-syscall" }
 kernel-hal = { path = "../kernel-hal" }
 env_logger = { version = "0.8", optional = true }
 structopt = { version = "0.3", default-features = false, optional = true }
-async-std = { version = "1.9", features = ["attributes"], optional = true }
+async-std = { version = "1.10", features = ["attributes"], optional = true }
 
 [features]
 default = ["std", "libos"]

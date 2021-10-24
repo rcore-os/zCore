@@ -23,34 +23,24 @@ cfg_if! {
 
         #[cfg(feature = "libos")]
         pub fn rootfs() -> Arc<dyn FileSystem> {
-            rcore_fs_hostfs::HostFS::new("../rootfs")
+            let base = if let Ok(dir) = std::env::var("CARGO_MANIFEST_DIR") {
+                std::path::Path::new(&dir).join("..")
+            } else {
+                std::env::current_dir().unwrap()
+            };
+            rcore_fs_hostfs::HostFS::new(base.join("rootfs"))
         }
 
         #[cfg(not(feature = "libos"))]
         pub fn rootfs() -> Arc<dyn FileSystem> {
-            let device: Arc<dyn rcore_fs::dev::Device> = if cfg!(feature = "init_ram_disk") {
-                Arc::new(linux_object::fs::MemBuf::new(init_ram_disk()))
+            use rcore_fs::dev::Device;
+            use linux_object::fs::rcore_fs_wrapper::{MemBuf, Block, BlockCache};
+
+            let device: Arc<dyn Device> = if cfg!(feature = "init_ram_disk") {
+                Arc::new(MemBuf::new(init_ram_disk()))
             } else {
-                use kernel_hal::drivers::scheme::BlockScheme;
-                use rcore_fs::dev::{block_cache::BlockCache, BlockDevice, DevError, Result};
-
-                struct BlockDriverWrapper(Arc<dyn BlockScheme>);
-
-                impl BlockDevice for BlockDriverWrapper {
-                    const BLOCK_SIZE_LOG2: u8 = 9; // 512
-                    fn read_at(&self, block_id: usize, buf: &mut [u8]) -> Result<()> {
-                        self.0.read_block(block_id, buf).map_err(|_| DevError)
-                    }
-                    fn write_at(&self, block_id: usize, buf: &[u8]) -> Result<()> {
-                        self.0.write_block(block_id, buf).map_err(|_| DevError)
-                    }
-                    fn sync(&self) -> Result<()> {
-                        self.0.flush().map_err(|_| DevError)
-                    }
-                }
-
                 let block = kernel_hal::drivers::all_block().first_unwrap();
-                Arc::new(BlockCache::new(BlockDriverWrapper(block), 0x100))
+                Arc::new(BlockCache::new(Block::new(block), 0x100))
             };
             info!("Opening the rootfs...");
             rcore_fs_sfs::SimpleFileSystem::open(device).expect("failed to open device SimpleFS")
@@ -59,6 +49,7 @@ cfg_if! {
 }
 
 // Hard link rootfs img
+#[cfg(not(feature = "libos"))]
 #[cfg(feature = "link_user_img")]
 global_asm!(concat!(
     r#"

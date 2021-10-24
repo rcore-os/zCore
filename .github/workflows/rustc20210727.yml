@@ -11,8 +11,6 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v2
-        with:
-          submodules: 'recursive'
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
@@ -27,13 +25,9 @@ jobs:
       - name: Clippy LibOS
         run: cargo clippy --all-features
       - name: Clippy x86_64 bare-metal
-        run: |
-          cd zCore
-          make clippy ARCH=x86_64
+        run: cd zCore && make clippy ARCH=x86_64
       - name: Clippy riscv64 bare-metal
-        run: |
-          cd zCore
-          make clippy ARCH=riscv64 LINUX=1
+        run: cd zCore && make clippy ARCH=riscv64 LINUX=1
 
   build:
     runs-on: ${{ matrix.os }}
@@ -48,13 +42,20 @@ jobs:
         with:
           profile: minimal
           toolchain: nightly-2021-07-27
-          components: rust-src
-      - name: Build
-        run: cargo build
-      - name: Build zCore
-        run: |
-          cd zCore
-          make build ARCH=x86_64
+          components: rust-src, llvm-tools-preview
+      - uses: actions-rs/install@v0.1
+        with:
+          crate: cargo-binutils
+          version: latest
+          use-tool-cache: true
+      - name: Build linux LibOS
+        run: cargo build --features "linux libos"
+      - name: Build zircon LibOS
+        run: cargo build --features "zircon libos"
+      - name: Build x86_64 bare-metal
+        run: cd zCore && make build ARCH=x86_64
+      - name: Build riscv64 bare-metal
+        run: cd zCore && make build ARCH=riscv64 LINUX=1
 
   build-aarch64:
     runs-on: ubuntu-20.04
@@ -101,10 +102,6 @@ jobs:
         run: make rootfs
       - name: Test
         run: cargo test --no-fail-fast
-#        uses: actions-rs/cargo@v1
-#        with:
-#          command: test
-#          args: --all-features --no-fail-fast
         env:
           CARGO_INCREMENTAL: '0'
           RUSTFLAGS: '-Zprofile -Ccodegen-units=1 -Copt-level=0 -Coverflow-checks=off -Zpanic_abort_tests -Cpanic=abort'
@@ -130,9 +127,6 @@ jobs:
       - uses: actions/checkout@v2
       - name: Run benchmarks
         run: cargo bench
-#        uses: actions-rs/cargo@v1
-#        with:
-#          command: bench
 
   core-test:
     runs-on: ubuntu-20.04
@@ -166,8 +160,6 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v2
-        with:
-          submodules: 'recursive'
       - name: Pull prebuilt images
         run: git lfs pull -I prebuilt/zircon/x64/core-tests.zbi,prebuilt/zircon/x64/libzircon-libos.so,prebuilt/zircon/x64/userboot-libos.so
       - uses: actions-rs/toolchain@v1
@@ -185,8 +177,6 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v2
-        with:
-          submodules: 'recursive'
       - name: Pull prebuilt images
         run: git lfs pull -I prebuilt/linux/libc-libos.so
       - name: Install musl toolchain
@@ -262,13 +252,16 @@ jobs:
         with:
           profile: minimal
           toolchain: nightly-2021-07-27
-          components: rust-src
+          components: rust-src, llvm-tools-preview
+      - uses: actions-rs/install@v0.1
+        with:
+          crate: cargo-binutils
+          version: latest
+          use-tool-cache: true
       - name: Install cargo tools and qemu-system-riscv64
         run: |
           sudo apt update
           sudo apt install qemu-utils
-          cargo install cargo-binutils
-          rustup component add llvm-tools-preview
           wget https://github.com/rcore-os/qemu-prebuilt/releases/download/5.2.0-riscv64/qemu-system-riscv64.tar.xz > /dev/null
           tar xJf qemu-system-riscv64.tar.xz && sudo cp qemu-system-riscv64 /usr/local/bin
           wget https://github.com/rcore-os/qemu-prebuilt/releases/download/qemu-share/qemu-share.tar.xz > /dev/null

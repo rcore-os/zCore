@@ -22,7 +22,7 @@ OBJCOPY ?= rust-objcopy --binary-architecture=$(ARCH)
 ################ Internal variables ################
 
 qemu := qemu-system-$(ARCH)
-build_path := target/$(ARCH)/$(MODE)
+build_path := ../target/$(ARCH)/$(MODE)
 kernel_elf := $(build_path)/zcore
 kernel_img := $(build_path)/zcore.bin
 esp := $(build_path)/esp
@@ -170,7 +170,7 @@ run:
 test:
 	cargo test $(build_args)
 debug: build
-	gdb --args target/$(MODE)/zcore $(ARGS)
+	gdb --args ../target/$(MODE)/zcore $(ARGS)
 else
 build: $(kernel_img)
 run: build justrun

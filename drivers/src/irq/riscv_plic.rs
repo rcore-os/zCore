@@ -109,7 +109,8 @@ impl IrqScheme for Plic {
 
     fn mask(&self, irq_num: usize) -> DeviceResult {
         if self.is_valid_irq(irq_num) {
-            Ok(self.inner.lock().toggle(irq_num, false))
+            self.inner.lock().toggle(irq_num, false);
+            Ok(())
         } else {
             Err(DeviceError::InvalidParam)
         }
@@ -117,7 +118,8 @@ impl IrqScheme for Plic {
 
     fn unmask(&self, irq_num: usize) -> DeviceResult {
         if self.is_valid_irq(irq_num) {
-            Ok(self.inner.lock().toggle(irq_num, true))
+            self.inner.lock().toggle(irq_num, true);
+            Ok(())
         } else {
             Err(DeviceError::InvalidParam)
         }

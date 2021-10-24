@@ -3,8 +3,16 @@ name = "zcore"
 version = "0.1.0"
 authors = ["PanQL <panqinglin00@163.com>"]
 edition = "2018"
+default-run = "zcore"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[[bin]]
+# Disable cargo test, bench and doc for this package
+name = "zcore"
+test = false
+bench = false
+doc = false
 
 [features]
 default = ["color_log"]
@@ -19,9 +27,6 @@ linux = ["linux-loader", "linux-object", "rcore-fs", "rcore-fs-sfs"]
 libos = ["async-std", "chrono", "rcore-fs-hostfs", "linux-loader/libos"]
 board_qemu = []
 board_d1 = ["link_user_img"]
-
-[profile.release]
-lto = true
 
 [dependencies]
 log = "0.4"
@@ -39,7 +44,7 @@ rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "7c232ec", 
 
 # LibOS mode
 [target.'cfg(not(target_os = "none"))'.dependencies]
-async-std = { version = "1.10", features = ["attributes"], optional = true }
+async-std = { version = "1.10", optional = true }
 chrono = { version = "0.4", optional = true }
 rcore-fs-hostfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "7c232ec", optional = true }
 
@@ -50,5 +55,5 @@ executor = { git = "https://github.com/rcore-os/executor.git", rev = "a2d02ee9" 
 
 # Bare-metal mode on x86_64
 [target.'cfg(all(target_os = "none", target_arch = "x86_64"))'.dependencies]
-rboot = { path = "../rboot", default-features = false }
+rboot = { git = "https://github.com/rcore-os/rboot.git", rev = "e1dbac1", default-features = false }
 # rvm = { git = "https://github.com/rcore-os/RVM", rev = "e91d625", optional = true }

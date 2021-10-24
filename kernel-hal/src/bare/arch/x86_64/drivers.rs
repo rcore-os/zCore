@@ -25,10 +25,7 @@ pub(super) fn init() -> DeviceResult {
         drivers::all_uart().first_unwrap().upcast(),
     )?;
     irq.unmask(trap::X86_ISA_IRQ_COM1)?;
-    irq.register_local_apic_handler(
-        trap::X86_INT_APIC_TIMER,
-        Box::new(|| crate::timer::timer_tick()),
-    )?;
+    irq.register_local_apic_handler(trap::X86_INT_APIC_TIMER, Box::new(crate::timer::timer_tick))?;
     drivers::add_device(Device::Irq(irq));
 
     #[cfg(feature = "graphic")]

@@ -1,5 +1,5 @@
 cfg_if! {
-    if #[cfg(feature = "libos")] {
+    if #[cfg(not(target_os = "none"))] {
         #[path = "libos/entry.rs"]
         mod entry;
         #[path = "libos/consts.rs"]
