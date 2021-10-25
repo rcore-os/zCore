@@ -12,7 +12,7 @@ log = "0.4"
 linux-syscall = { path = "../linux-syscall" }
 linux-object = { path = "../linux-object" }
 zircon-object = { path = "../zircon-object" }
-kernel-hal = { path = "../kernel-hal" }
+kernel-hal = { path = "../kernel-hal", default-features = false }
 
 [features]
 default = ["libos"]

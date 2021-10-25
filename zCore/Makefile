@@ -80,12 +80,12 @@ ifeq ($(LIBOS), 1)
   features += libos
 else
   ifeq ($(ARCH), x86_64)
-    features += init_ram_disk
+    features += init-ram-disk
   else ifeq ($(ARCH), riscv64)
     ifeq ($(PLATFORM), d1)
-      features += board_d1 link_user_img
+      features += board-d1 link-user-img
     else
-      features += board_qemu
+      features += board-qemu
     endif
   endif
 endif
@@ -106,7 +106,7 @@ endif
 build_args := --features "$(features)"
 
 ifneq ($(LIBOS), 1) # no_std
-  build_args += --target $(ARCH).json -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem
+  build_args += --no-default-features --target $(ARCH).json -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem
 endif
 
 ifeq ($(MODE), release)

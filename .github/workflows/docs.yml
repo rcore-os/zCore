@@ -1,4 +1,4 @@
-name: deploy CI
+name: Deploy docs
 
 on:
   push:

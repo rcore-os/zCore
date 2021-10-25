@@ -7,9 +7,9 @@
 //! let args = [regs.rdi, regs.rsi, regs.rdx, regs.r10, regs.r8, regs.r9];
 //! let mut syscall = Syscall {
 //!     thread,
-//!     #[cfg(feature = "std")]
+//!     #[cfg(feature = "libos")]
 //!     syscall_entry: kernel_hal::context::syscall_entry as usize,
-//!     #[cfg(not(feature = "std"))]
+//!     #[cfg(not(feature = "libos"))]
 //!     syscall_entry: 0,
 //!     thread_fn,
 //!     regs,

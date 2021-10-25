@@ -1,6 +1,6 @@
-#[cfg(feature = "board_qemu")]
+#[cfg(feature = "board-qemu")]
 global_asm!(include_str!("boot/boot_qemu.asm"));
-#[cfg(feature = "board_d1")]
+#[cfg(feature = "board-d1")]
 global_asm!(include_str!("boot/boot_d1.asm"));
 
 global_asm!(include_str!("boot/entry64.asm"));

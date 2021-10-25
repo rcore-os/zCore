@@ -52,10 +52,10 @@ enum ColorCode {
 /// Add escape sequence to print with color in Linux console
 macro_rules! with_color {
     ($color_code:expr, $($arg:tt)*) => {{
-        #[cfg(feature = "color_log")]
+        #[cfg(feature = "colorless-log")]
+        { let _ = $color_code; format_args!($($arg)*) }
+        #[cfg(not(feature = "colorless-log"))]
         { format_args!("\u{1B}[{}m{}\u{1B}[m", $color_code as u8, format_args!($($arg)*)) }
-        #[cfg(not(feature = "color_log"))]
-        { format_args!($($arg)*) }
     }};
 }
 

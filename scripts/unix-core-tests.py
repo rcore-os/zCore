@@ -2,6 +2,7 @@ import pexpect
 import sys
 import re
 import os
+import subprocess
 
 TIMEOUT = 300
 ZIRCON_LOADER_PATH = 'zircon-loader'
@@ -40,9 +41,11 @@ with open(TEST_CASE_EXCEPTION, "r") as tcf:
     exception_case = set([case.strip() for case in tcf.readlines()])
 check_case = all_case - exception_case
 
+subprocess.run("cargo build -p zcore --release --features 'zircon libos'",
+               shell=True, check=True)
+
 for line in check_case:
-    child = pexpect.spawn("cargo run -p zcore --features 'zircon libos' -- '%s' '%s'" %
-                    (ZBI_PATH, CMDLINE_BASE+line),
+    child = pexpect.spawn("../target/release/zcore", [ZBI_PATH, CMDLINE_BASE+line],
                     timeout=TIMEOUT, encoding='utf-8')
 
     child.logfile = Tee(OUTPUT_FILE, 'a')

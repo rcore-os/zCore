@@ -15,18 +15,18 @@ bench = false
 doc = false
 
 [features]
-default = ["color_log"]
-color_log = []
+default = ["libos"]
+colorless-log = []
 graphic = ["kernel-hal/graphic"]
-init_ram_disk = []
-link_user_img = ["init_ram_disk"]
+init-ram-disk = []
+link-user-img = ["init-ram-disk"]
 
 zircon = ["zircon-loader"]
 linux = ["linux-loader", "linux-object", "rcore-fs", "rcore-fs-sfs"]
 
-libos = ["async-std", "chrono", "rcore-fs-hostfs", "linux-loader/libos", "zircon-loader/libos"]
-board_qemu = []
-board_d1 = ["link_user_img"]
+libos = ["async-std", "chrono", "rcore-fs-hostfs", "kernel-hal/libos", "linux-loader/libos", "zircon-loader/libos"]
+board-qemu = []
+board-d1 = ["link-user-img"]
 
 [dependencies]
 log = "0.4"
@@ -34,7 +34,7 @@ spin = "0.9"
 cfg-if = "1.0"
 lazy_static = { version = "1.4", features = ["spin_no_std" ] }
 bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator", rev = "b3f9f51" }
-kernel-hal = { path = "../kernel-hal", features = ["smp"] }
+kernel-hal = { path = "../kernel-hal", default-features = false, features = ["smp"] }
 zircon-object = { path = "../zircon-object" }
 linux-object = { path = "../linux-object", optional = true }
 zircon-loader = { path = "../zircon-loader", default-features = false, optional = true }

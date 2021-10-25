@@ -25,7 +25,7 @@ def print_cases(cases, file=None):
         print(case, file=file)
 
 
-subprocess.run("cd .. && cargo build -p zcore --release --features 'linux libos'",
+subprocess.run("cargo build -p zcore --release --features 'linux libos'",
                shell=True, check=True)
 
 for path in sorted(glob.glob("../rootfs/libc-test/src/*/*.exe")):

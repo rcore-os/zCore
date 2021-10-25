@@ -8,8 +8,9 @@ description = "Kernel HAL interface definations."
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
+default = ["libos"]
 smp = []
-libos = ["async-std", "bitmap-allocator", "zcore-drivers/mock"]
+libos = ["nix", "tempfile", "async-std", "bitmap-allocator", "zcore-drivers/mock"]
 graphic = ["zcore-drivers/graphic"]
 
 [dependencies]
@@ -25,8 +26,8 @@ zcore-drivers = { path = "../drivers", features = ["virtio"] }
 
 # LibOS mode
 [target.'cfg(not(target_os = "none"))'.dependencies]
-nix = "0.23"
-tempfile = "3"
+nix = { version = "0.23", optional = true }
+tempfile = { version = "3", optional = true }
 async-std = { version = "1.10", optional = true }
 bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator", rev = "b3f9f51", optional = true }
 

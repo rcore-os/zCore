@@ -1,5 +1,6 @@
 //! Process init info
 #![allow(unsafe_code)]
+#![allow(dead_code)]
 
 use alloc::collections::btree_map::BTreeMap;
 use alloc::string::String;

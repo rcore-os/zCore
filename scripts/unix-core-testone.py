@@ -12,7 +12,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('testcase', nargs=1)
 args = parser.parse_args()
 
-child = pexpect.spawn("cargo run -p zcore --features 'zircon libos' -- '%s' '%s'" %
+child = pexpect.spawn("cargo run -p zcore --release --features 'zircon libos' -- '%s' '%s'" %
                         (ZBI_PATH, CMDLINE_BASE+args.testcase[0]),
                         timeout=TIMEOUT, encoding='utf-8')
 
