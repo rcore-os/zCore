@@ -9,15 +9,16 @@ description = "Zircon user program (userboot) loader"
 
 [dependencies]
 log = "0.4"
+cfg-if = "1.0"
 xmas-elf = "0.7"
 zircon-object = { path = "../zircon-object", features = ["elf"] }
 zircon-syscall = { path = "../zircon-syscall" }
 kernel-hal = { path = "../kernel-hal" }
-env_logger = { version = "0.8", optional = true }
-structopt = { version = "0.3", default-features = false, optional = true }
-async-std = { version = "1.10", features = ["attributes"], optional = true }
 
 [features]
-default = ["std", "libos"]
-libos = ["kernel-hal/libos"]
-std = ["env_logger", "structopt", "async-std", "zircon-object/aspace-separate", "zircon-syscall/std"]
+default = ["libos"]
+libos = ["kernel-hal/libos", "zircon-object/aspace-separate", "zircon-syscall/std"]
+
+[dev-dependencies]
+env_logger = "0.9"
+async-std = { version = "1.10", features = ["attributes"] }

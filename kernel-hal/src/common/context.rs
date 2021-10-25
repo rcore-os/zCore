@@ -44,9 +44,17 @@ pub struct U128(pub [u64; 2]);
 
 impl fmt::Debug for U128 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:#016x}{:016x}", self.0[1], self.0[0])
+        write!(f, "{:#016x}_{:016x}", self.0[1], self.0[0])
     }
 }
 
-#[cfg(feature = "libos")]
-pub use trapframe::syscall_fn_entry as syscall_entry;
+cfg_if! {
+    if #[cfg(feature = "libos")] {
+        pub use trapframe::syscall_fn_entry as syscall_entry;
+    } else {
+        pub use dummpy_syscall_entry as syscall_entry;
+        pub fn dummpy_syscall_entry() {
+            unreachable!("dummpy_syscall_entry")
+        }
+    }
+}

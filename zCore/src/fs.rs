@@ -1,5 +1,5 @@
 #[allow(dead_code)]
-pub fn init_ram_disk() -> &'static mut [u8] {
+fn init_ram_disk() -> &'static mut [u8] {
     if cfg!(feature = "link_user_img") {
         extern "C" {
             fn _user_img_start();
@@ -33,8 +33,8 @@ cfg_if! {
 
         #[cfg(not(feature = "libos"))]
         pub fn rootfs() -> Arc<dyn FileSystem> {
+            use linux_object::fs::rcore_fs_wrapper::{Block, BlockCache, MemBuf};
             use rcore_fs::dev::Device;
-            use linux_object::fs::rcore_fs_wrapper::{MemBuf, Block, BlockCache};
 
             let device: Arc<dyn Device> = if cfg!(feature = "init_ram_disk") {
                 Arc::new(MemBuf::new(init_ram_disk()))
@@ -44,6 +44,22 @@ cfg_if! {
             };
             info!("Opening the rootfs...");
             rcore_fs_sfs::SimpleFileSystem::open(device).expect("failed to open device SimpleFS")
+        }
+    } else if #[cfg(feature = "zircon")] {
+
+        #[cfg(feature = "libos")]
+        pub fn zbi() -> impl AsRef<[u8]> {
+            let args = std::env::args().collect::<Vec<_>>();
+            if args.len() < 2 {
+                println!("Usage: {} ZBI_FILE [CMDLINE]", args[0]);
+                std::process::exit(-1);
+            }
+            std::fs::read(&args[1]).expect("failed to read zbi file")
+        }
+
+        #[cfg(not(feature = "libos"))]
+        pub fn zbi() -> impl AsRef<[u8]> {
+            init_ram_disk()
         }
     }
 }

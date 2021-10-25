@@ -24,7 +24,7 @@ link_user_img = ["init_ram_disk"]
 zircon = ["zircon-loader"]
 linux = ["linux-loader", "linux-object", "rcore-fs", "rcore-fs-sfs"]
 
-libos = ["async-std", "chrono", "rcore-fs-hostfs", "linux-loader/libos"]
+libos = ["async-std", "chrono", "rcore-fs-hostfs", "linux-loader/libos", "zircon-loader/libos"]
 board_qemu = []
 board_d1 = ["link_user_img"]
 

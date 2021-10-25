@@ -8,21 +8,44 @@ LINUX ?=
 LIBOS ?=
 GRAPHIC ?=
 HYPERVISOR ?=
-SMP ?= 1
-ACCEL ?=
 V ?=
+
 USER ?=
 ZBI ?= bringup
 CMDLINE ?=
-ARGS ?= /bin/busybox
+
+SMP ?= 1
+ACCEL ?=
 
 OBJDUMP ?= rust-objdump --print-imm-hex --x86-asm-syntax=intel
 OBJCOPY ?= rust-objcopy --binary-architecture=$(ARCH)
 
+ifeq ($(LINUX), 1)
+  user_img := $(ARCH).img
+else ifeq ($(USER), 1)
+  user_img := ../zircon-user/target/zcore-user.zbi
+else
+  user_img := ../prebuilt/zircon/x64/$(ZBI).zbi
+endif
+
+ifeq ($(PLATFORM), libos)
+  LIBOS := 1
+endif
+ifeq ($(LIBOS), 1)
+  build_path := ../target/$(MODE)
+  PLATFORM := libos
+  ifeq ($(LINUX), 1)
+    ARGS ?= /bin/busybox
+  else
+    ARGS ?= $(user_img) $(CMDLINE)
+  endif
+else
+  build_path := ../target/$(ARCH)/$(MODE)
+endif
+
 ################ Internal variables ################
 
 qemu := qemu-system-$(ARCH)
-build_path := ../target/$(ARCH)/$(MODE)
 kernel_elf := $(build_path)/zcore
 kernel_img := $(build_path)/zcore.bin
 esp := $(build_path)/esp
@@ -35,13 +58,6 @@ else
   sed := sed -i
 endif
 
-ifeq ($(LINUX), 1)
-  user_img := $(ARCH).img
-else ifeq ($(USER), 1)
-  user_img := ../zircon-user/target/zcore-user.zbi
-else
-  user_img := ../prebuilt/zircon/x64/$(ZBI).zbi
-endif
 
 ################ Export environments ###################
 
@@ -55,10 +71,6 @@ ifeq ($(LINUX), 1)
   features := linux
 else
   features := zircon
-endif
-
-ifeq ($(PLATFORM), libos)
-  LIBOS := 1
 endif
 
 ifeq ($(LIBOS), 1)
@@ -170,7 +182,7 @@ run:
 test:
 	cargo test $(build_args)
 debug: build
-	gdb --args ../target/$(MODE)/zcore $(ARGS)
+	gdb --args $(kernel_elf) $(ARGS)
 else
 build: $(kernel_img)
 run: build justrun

@@ -294,6 +294,15 @@ impl Process {
         self.inner.lock().status
     }
 
+    /// Get process exit code if it exited, else returns `None`.
+    pub fn exit_code(&self) -> Option<i64> {
+        if let Status::Exited(code) = self.status() {
+            Some(code)
+        } else {
+            None
+        }
+    }
+
     /// Get the extension.
     pub fn ext(&self) -> &Box<dyn Any + Send + Sync> {
         &self.ext
@@ -529,17 +538,14 @@ impl Process {
     pub async fn wait_for_exit(self: &Arc<Self>) -> i64 {
         let object: Arc<dyn KernelObject> = self.clone();
         object.wait_signal(Signal::PROCESS_TERMINATED).await;
-        if let Status::Exited(code) = self.status() {
-            info!(
-                "process {:?}({}) exited with code {:?}",
-                self.name(),
-                self.id(),
-                code
-            );
+        let code = self.exit_code().expect("process not exited!");
+        info!(
+            "process {:?}({}) exited with code {:?}",
+            self.name(),
+            self.id(),
             code
-        } else {
-            unreachable!();
-        }
+        );
+        code
     }
 }
 

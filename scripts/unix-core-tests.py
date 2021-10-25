@@ -11,7 +11,7 @@ RESULT_FILE = BASE + 'test-result-libos.txt'
 CHECK_FILE = BASE + 'test-check-passed.txt'
 TEST_CASE_ALL = BASE + 'testcases-all.txt'
 TEST_CASE_EXCEPTION = BASE + 'testcases-failed-libos.txt'
-PREBUILT_PATH = '../prebuilt/zircon/x64'
+ZBI_PATH = '../prebuilt/zircon/x64/core-tests.zbi'
 CMDLINE_BASE = 'LOG=warn:userboot=test/core-standalone-test:userboot.shutdown:core-tests='
 
 class Tee:
@@ -40,9 +40,9 @@ with open(TEST_CASE_EXCEPTION, "r") as tcf:
     exception_case = set([case.strip() for case in tcf.readlines()])
 check_case = all_case - exception_case
 
-for line in check_case: 
-    child = pexpect.spawn("cargo run -p '%s' -- '%s' '%s' --debug" % 
-                    (ZIRCON_LOADER_PATH, PREBUILT_PATH, CMDLINE_BASE+line), 
+for line in check_case:
+    child = pexpect.spawn("cargo run -p zcore --features 'zircon libos' -- '%s' '%s'" %
+                    (ZBI_PATH, CMDLINE_BASE+line),
                     timeout=TIMEOUT, encoding='utf-8')
 
     child.logfile = Tee(OUTPUT_FILE, 'a')

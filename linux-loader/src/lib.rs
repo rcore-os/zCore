@@ -35,10 +35,7 @@ pub fn run(args: Vec<String>, envs: Vec<String>, rootfs: Arc<dyn FileSystem>) ->
     let proc = Process::create_linux(&job, rootfs.clone()).unwrap();
     let thread = Thread::create_linux(&proc).unwrap();
     let loader = LinuxElfLoader {
-        #[cfg(feature = "libos")]
         syscall_entry: kernel_hal::context::syscall_entry as usize,
-        #[cfg(not(feature = "libos"))]
-        syscall_entry: 0,
         stack_pages: 8,
         root_inode: rootfs.root_inode(),
     };
@@ -181,10 +178,7 @@ async fn handle_syscall(thread: &CurrentThread, regs: &mut GeneralRegs) {
     let args = [regs.rdi, regs.rsi, regs.rdx, regs.r10, regs.r8, regs.r9];
     let mut syscall = Syscall {
         thread,
-        #[cfg(feature = "libos")]
         syscall_entry: kernel_hal::context::syscall_entry as usize,
-        #[cfg(not(feature = "libos"))]
-        syscall_entry: 0,
         thread_fn,
         regs,
     };
@@ -211,10 +205,7 @@ async fn handle_syscall(thread: &CurrentThread, cx: &mut UserContext) {
 
     let mut syscall = Syscall {
         thread,
-        #[cfg(feature = "libos")]
         syscall_entry: kernel_hal::context::syscall_entry as usize,
-        #[cfg(not(feature = "libos"))]
-        syscall_entry: 0,
         context: cx,
         thread_fn,
     };

@@ -32,14 +32,34 @@ const K_COUNTERS: usize = 10;
 const K_FISTINSTRUMENTATIONDATA: usize = 11;
 const K_HANDLECOUNT: usize = 15;
 
-/// Program images to run.
-pub struct Images<T: AsRef<[u8]>> {
-    pub userboot: T,
-    pub vdso: T,
-    pub zbi: T,
+macro_rules! boot_firmware {
+    ($name: expr) => {{
+        cfg_if::cfg_if! {
+            if #[cfg(target_arch = "x86_64")] {
+                boot_firmware!($name, "../../prebuilt/zircon/x64")
+            } else if #[cfg(target_arch = "aarch64")] {
+                boot_firmware!($name, "../../prebuilt/zircon/arm64")
+            } else {
+                compile_error!("Unsupported architecture for zircon mode!")
+            }
+        }
+    }};
+    ($name: expr, $base_dir: expr) => {{
+        #[cfg(feature = "libos")]
+        {
+            include_bytes!(concat!($base_dir, "/", $name, "-libos.so"))
+        }
+        #[cfg(not(feature = "libos"))]
+        {
+            include_bytes!(concat!($base_dir, "/", $name, ".so"))
+        }
+    }};
 }
 
-pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Process> {
+pub fn run_userboot(zbi: impl AsRef<[u8]>, cmdline: &str) -> Arc<Process> {
+    let userboot = boot_firmware!("userboot");
+    let vdso = boot_firmware!("libzircon");
+
     let job = Job::root();
     let proc = Process::create(&job, "userboot").unwrap();
     let thread = Thread::create(&proc, "userboot").unwrap();
@@ -54,7 +74,7 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
 
     // userboot
     let (entry, userboot_size) = {
-        let elf = ElfFile::new(images.userboot.as_ref()).unwrap();
+        let elf = ElfFile::new(userboot).unwrap();
         let size = elf.load_segment_size();
         let vmar = vmar
             .allocate(None, size, VmarFlags::CAN_MAP_RXW, PAGE_SIZE)
@@ -65,9 +85,9 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
 
     // vdso
     let vdso_vmo = {
-        let elf = ElfFile::new(images.vdso.as_ref()).unwrap();
-        let vdso_vmo = VmObject::new_paged(images.vdso.as_ref().len() / PAGE_SIZE + 1);
-        vdso_vmo.write(0, images.vdso.as_ref()).unwrap();
+        let elf = ElfFile::new(vdso).unwrap();
+        let vdso_vmo = VmObject::new_paged(vdso.len() / PAGE_SIZE + 1);
+        vdso_vmo.write(0, vdso).unwrap();
         let size = elf.load_segment_size();
         let vmar = vmar
             .allocate_at(
@@ -78,7 +98,7 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
             )
             .unwrap();
         vmar.map_from_elf(&elf, vdso_vmo.clone()).unwrap();
-        #[cfg(feature = "std")]
+        #[cfg(feature = "libos")]
         {
             let offset = elf
                 .get_symbol_address("zcore_syscall_entry")
@@ -94,8 +114,8 @@ pub fn run_userboot(images: &Images<impl AsRef<[u8]>>, cmdline: &str) -> Arc<Pro
 
     // zbi
     let zbi_vmo = {
-        let vmo = VmObject::new_paged(images.zbi.as_ref().len() / PAGE_SIZE + 1);
-        vmo.write(0, images.zbi.as_ref()).unwrap();
+        let vmo = VmObject::new_paged(zbi.as_ref().len() / PAGE_SIZE + 1);
+        vmo.write(0, zbi.as_ref()).unwrap();
         vmo.set_name("zbi");
         vmo
     };
@@ -267,7 +287,7 @@ async fn handle_syscall(thread: &CurrentThread) {
         #[cfg(target_arch = "aarch64")]
         let num = regs.x16 as u32;
         // LibOS: Function call ABI
-        #[cfg(feature = "std")]
+        #[cfg(feature = "libos")]
         #[cfg(target_arch = "x86_64")]
         let args = unsafe {
             let a6 = (regs.rsp as *const usize).read();
@@ -277,7 +297,7 @@ async fn handle_syscall(thread: &CurrentThread) {
             ]
         };
         // RealOS: Zircon syscall ABI
-        #[cfg(not(feature = "std"))]
+        #[cfg(not(feature = "libos"))]
         #[cfg(target_arch = "x86_64")]
         let args = [
             regs.rdi, regs.rsi, regs.rdx, regs.r10, regs.r8, regs.r9, regs.r12, regs.r13,

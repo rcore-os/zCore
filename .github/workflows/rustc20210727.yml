@@ -47,7 +47,6 @@ jobs:
         with:
           crate: cargo-binutils
           version: latest
-          use-tool-cache: true
       - name: Build linux LibOS
         run: cargo build --features "linux libos"
       - name: Build zircon LibOS
@@ -257,7 +256,6 @@ jobs:
         with:
           crate: cargo-binutils
           version: latest
-          use-tool-cache: true
       - name: Install cargo tools and qemu-system-riscv64
         run: |
           sudo apt update
