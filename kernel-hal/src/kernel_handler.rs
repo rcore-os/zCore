@@ -2,6 +2,7 @@
 
 use crate::{utils::init_once::InitOnce, MMUFlags, PhysAddr, VirtAddr};
 
+/// Functions implemented in the kernel and used by HAL funtions.
 pub trait KernelHandler: Send + Sync + 'static {
     /// Allocate one physical frame.
     fn frame_alloc(&self) -> Option<PhysAddr> {

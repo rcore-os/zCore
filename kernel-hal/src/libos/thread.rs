@@ -1,3 +1,5 @@
+//! Thread spawning.
+
 use async_std::task_local;
 use core::{cell::Cell, future::Future, pin::Pin};
 

@@ -1,3 +1,5 @@
+//! Virutal memory operations.
+
 use super::mem::{MOCK_PHYS_MEM, PMEM_MAP_VADDR, PMEM_SIZE};
 use crate::{addr::is_aligned, MMUFlags, PhysAddr, VirtAddr, PAGE_SIZE};
 
@@ -9,7 +11,7 @@ hal_fn_impl! {
     }
 }
 
-/// Page Table
+/// Dummy page table implemented by `mmap`, `munmap`, and `mprotect`.
 pub struct PageTable;
 
 impl PageTable {

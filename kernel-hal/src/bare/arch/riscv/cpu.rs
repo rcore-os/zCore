@@ -1,3 +1,5 @@
+//! CPU information.
+
 hal_fn_impl! {
     impl mod crate::hal_fn::cpu {
         fn cpu_frequency() -> u16 {

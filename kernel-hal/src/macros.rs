@@ -1,12 +1,14 @@
 macro_rules! hal_fn_def {
     (
         $(
+            $(#[$inner:ident $($args:tt)*])*
             $vis:vis mod $mod_name:ident $( : $base:path )? {
                 $($fn:tt)*
             }
         )+
     ) => {
         $(
+            $(#[$inner $($args)*])*
             $vis mod $mod_name {
                 #![allow(unused_imports)]
                 $( pub use $base::*; )?

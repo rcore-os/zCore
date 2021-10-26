@@ -1,3 +1,5 @@
+//! Device drivers.
+
 use alloc::{sync::Arc, vec::Vec};
 use core::convert::From;
 

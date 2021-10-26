@@ -1,7 +1,9 @@
+//! Kernel configuration.
+
 use uefi::proto::console::gop::ModeInfo;
 use uefi::table::boot::MemoryDescriptor;
 
-/// Configuration of HAL.
+/// Kernel configuration passed by kernel when calls [`crate::primary_init_early()`].
 #[derive(Debug)]
 pub struct KernelConfig {
     pub cmdline: &'static str,

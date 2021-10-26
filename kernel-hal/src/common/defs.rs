@@ -10,6 +10,7 @@ pub struct HalError;
 pub type HalResult<T = ()> = core::result::Result<T, HalError>;
 
 bitflags! {
+    /// Generic memory flags.
     pub struct MMUFlags: usize {
         #[allow(clippy::identity_op)]
         const CACHE_1   = 1 << 0;
@@ -25,6 +26,7 @@ bitflags! {
 numeric_enum! {
     #[repr(u32)]
     #[derive(Debug, PartialEq, Clone, Copy)]
+    /// Generic cache policy.
     pub enum CachePolicy {
         Cached = 0,
         Uncached = 1,
@@ -32,8 +34,8 @@ numeric_enum! {
         WriteCombining = 3,
     }
 }
-pub const CACHE_POLICY_MASK: u32 = 3;
 
+/// The smallest size of a page (4K).
 pub const PAGE_SIZE: usize = super::vm::PageSize::Size4K as usize;
 
 pub use super::addr::{DevVAddr, PhysAddr, VirtAddr};

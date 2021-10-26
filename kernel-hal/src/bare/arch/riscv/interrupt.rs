@@ -1,3 +1,5 @@
+//! Interrupts management.
+
 use riscv::{asm, register::sstatus};
 
 hal_fn_impl! {

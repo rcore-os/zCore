@@ -5,6 +5,7 @@ use crate::drivers::prelude::{IrqHandler, IrqPolarity, IrqTriggerMode};
 use crate::{common, HalResult, KernelConfig, KernelHandler, MMUFlags, PhysAddr, VirtAddr};
 
 hal_fn_def! {
+    /// Bootstrap and initialization.
     pub mod boot {
         /// The kernel command line.
         pub fn cmdline() -> String { "".into() }
@@ -27,6 +28,7 @@ hal_fn_def! {
         pub fn secondary_init() {}
     }
 
+    /// CPU information.
     pub mod cpu {
         /// Current CPU ID.
         pub fn cpu_id() -> u8 { 0 }
@@ -35,6 +37,7 @@ hal_fn_def! {
         pub fn cpu_frequency() -> u16 { 3000 }
     }
 
+    /// Physical memory operations.
     pub mod mem: common::mem {
         /// Convert physical address to virtual address.
         pub(crate) fn phys_to_virt(paddr: PhysAddr) -> VirtAddr;
@@ -58,6 +61,7 @@ hal_fn_def! {
         pub fn frame_flush(target: PhysAddr);
     }
 
+    /// Virutal memory operations.
     pub mod vm: common::vm {
         /// Read current VM token. (e.g. CR3, SATP, ...)
         pub fn current_vmtoken() -> PhysAddr;
@@ -72,6 +76,7 @@ hal_fn_def! {
         pub(crate) fn pt_clone_kernel_space(dst_pt_root: PhysAddr, src_pt_root: PhysAddr);
     }
 
+    /// Interrupts management.
     pub mod interrupt {
         /// Suspend the CPU (also enable interrupts) and wait for an interrupt
         /// to occurs, then disable interrupts.
@@ -119,6 +124,7 @@ hal_fn_def! {
         pub(crate) fn console_write_early(_s: &str) {}
     }
 
+    /// Context switch.
     pub mod context: common::context {
         /// Enter user mode.
         pub fn context_run(context: &mut UserContext) {
@@ -139,6 +145,7 @@ hal_fn_def! {
         pub fn fetch_page_fault_info(info_reg: usize) -> (VirtAddr, MMUFlags);
     }
 
+    /// Thread spawning.
     pub mod thread: common::thread {
         /// Spawn a new thread.
         pub fn spawn(future: Pin<Box<dyn Future<Output = ()> + Send + 'static>>, vmtoken: usize);
@@ -146,10 +153,11 @@ hal_fn_def! {
         /// Set tid and pid of current task.
         pub fn set_tid(tid: u64, pid: u64);
 
-        /// Get tid and pid of current task.]
+        /// Get tid and pid of current task.
         pub fn get_tid() -> (u64, u64);
     }
 
+    /// Time and clock functions.
     pub mod timer {
         /// Get current time.
         /// TODO: use `Instant` as return type.
@@ -168,6 +176,7 @@ hal_fn_def! {
         pub(crate) fn timer_tick();
     }
 
+    /// Random number generator.
     pub mod rand {
         /// Fill random bytes to the buffer
         #[allow(unused_variables)]
@@ -194,6 +203,7 @@ hal_fn_def! {
         }
     }
 
+    /// VDSO constants.
     pub mod vdso: common::vdso {
         /// Get platform specific information.
         pub fn vdso_constants() -> VdsoConstants {

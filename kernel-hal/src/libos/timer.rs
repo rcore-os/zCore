@@ -1,3 +1,5 @@
+//! Time and clock functions.
+
 use async_std::task;
 use std::time::{Duration, SystemTime};
 

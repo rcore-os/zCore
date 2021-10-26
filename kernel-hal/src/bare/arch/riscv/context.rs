@@ -1,3 +1,5 @@
+//! Context switch.
+
 use riscv::register::scause::{Exception, Trap};
 use riscv::register::{scause, stval};
 

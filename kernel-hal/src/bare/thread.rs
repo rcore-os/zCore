@@ -1,3 +1,5 @@
+//! Thread spawning.
+
 use alloc::boxed::Box;
 use core::task::{Context, Poll};
 use core::{future::Future, pin::Pin};

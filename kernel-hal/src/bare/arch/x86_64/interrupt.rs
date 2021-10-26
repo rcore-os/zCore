@@ -1,3 +1,5 @@
+//! Interrupts management.
+
 use core::ops::Range;
 
 use crate::drivers::all_irq;

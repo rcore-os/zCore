@@ -1,3 +1,5 @@
+//! Functions only available on the libos mode.
+
 #[cfg(feature = "graphic")]
 pub fn run_graphic_service() {
     use crate::drivers::{all_display, all_input};

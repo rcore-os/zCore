@@ -1,5 +1,6 @@
 use crate::{addr::is_aligned, MMUFlags, PhysAddr, VirtAddr};
 
+/// Errors may occur during address translation.
 #[derive(Debug)]
 pub enum PagingError {
     NoMemory,
@@ -7,9 +8,13 @@ pub enum PagingError {
     AlreadyMapped,
 }
 
+/// Address translation result.
 pub type PagingResult<T = ()> = Result<T, PagingError>;
 
+/// The [`PagingError::NotMapped`] can be ignored.
 pub trait IgnoreNotMappedErr {
+    /// If self is `Err(PagingError::NotMapped`, ignores the error and returns
+    /// `Ok(())`, otherwise remain unchanged.
     fn ignore(self) -> PagingResult;
 }
 
@@ -22,6 +27,7 @@ impl<T> IgnoreNotMappedErr for PagingResult<T> {
     }
 }
 
+/// Possible page size (4K, 2M, 1G).
 #[repr(usize)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum PageSize {
@@ -30,6 +36,7 @@ pub enum PageSize {
     Size1G = 0x4000_0000,
 }
 
+/// A 4K, 2M or 1G size page.
 #[derive(Debug, Copy, Clone)]
 pub struct Page {
     pub vaddr: VirtAddr,
@@ -61,6 +68,7 @@ impl Page {
     }
 }
 
+/// A generic page table abstraction.
 pub trait GenericPageTable: Sync + Send {
     /// Get the physical address of root page table.
     fn table_phys(&self) -> PhysAddr;

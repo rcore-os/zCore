@@ -1,3 +1,5 @@
+//! Context switch.
+
 use bitflags::bitflags;
 use x86_64::registers::control::Cr2;
 

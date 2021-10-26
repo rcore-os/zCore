@@ -2,8 +2,13 @@
 
 use crate::PAGE_SIZE;
 
+/// Physical address.
 pub type PhysAddr = usize;
+
+/// Virtual address.
 pub type VirtAddr = usize;
+
+/// Device address.
 pub type DevVAddr = usize;
 
 pub const fn align_down(addr: usize) -> usize {

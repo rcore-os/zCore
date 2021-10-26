@@ -1,3 +1,5 @@
+//! Physical memory operations.
+
 use alloc::vec::Vec;
 use core::ops::Range;
 

@@ -1,3 +1,5 @@
+//! Bootstrap and initialization.
+
 use crate::{KernelConfig, KernelHandler, KCONFIG, KHANDLER};
 
 hal_fn_impl! {

@@ -1,3 +1,5 @@
+//! Virutal memory operations.
+
 use core::fmt::{Debug, Formatter, Result};
 use core::slice;
 
@@ -124,7 +126,7 @@ hal_fn_impl! {
 
 bitflags::bitflags! {
     /// Possible flags for a page table entry.
-    pub struct PTF: usize {
+    struct PTF: usize {
         const VALID =       1 << 0;
         const READABLE =    1 << 1;
         const WRITABLE =    1 << 2;
@@ -181,6 +183,7 @@ impl From<PTF> for MMUFlags {
 
 const PHYS_ADDR_MASK: u64 = 0x003f_ffff_ffff_fc00; // 10..54
 
+/// Sv39 and Sv48 page table entry.
 #[derive(Clone, Copy)]
 #[repr(transparent)]
 pub struct Rv64PTE(u64);
@@ -228,5 +231,5 @@ impl Debug for Rv64PTE {
     }
 }
 
-/// Sv39: Page-Based 39-bit Virtual-Memory System
+/// Sv39: Page-Based 39-bit Virtual-Memory System.
 pub type PageTable = PageTableImpl<PageTableLevel3, Rv64PTE>;

@@ -1,3 +1,5 @@
+//! VDSO constants.
+
 hal_fn_impl! {
     impl mod crate::hal_fn::vdso {
         fn vdso_constants() -> VdsoConstants {
