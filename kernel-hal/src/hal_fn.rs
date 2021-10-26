@@ -8,7 +8,7 @@ hal_fn_def! {
     /// Bootstrap and initialization.
     pub mod boot {
         /// The kernel command line.
-        pub fn cmdline() -> String { "".into() }
+        pub fn cmdline() -> String { String::new() }
 
         /// Returns the slice of the initial RAM disk, or `None` if not exist.
         pub fn init_ram_disk() -> Option<&'static mut [u8]> {

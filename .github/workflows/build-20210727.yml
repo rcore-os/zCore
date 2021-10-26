@@ -69,7 +69,7 @@ jobs:
         with:
           command: build
           use-cross: true
-          args: --target aarch64-unknown-linux-gnu --workspace --exclude linux-syscall --exclude linux-loader --exclude zcore
+          args: --target aarch64-unknown-linux-gnu --workspace --exclude linux-syscall --exclude zcore-loader --exclude zcore
 
   build-user:
     runs-on: ${{ matrix.os }}

@@ -5,7 +5,6 @@ import os
 import subprocess
 
 TIMEOUT = 300
-ZIRCON_LOADER_PATH = 'zircon-loader'
 BASE = 'zircon/'
 OUTPUT_FILE = BASE + 'test-output-libos.txt'
 RESULT_FILE = BASE + 'test-result-libos.txt'

@@ -13,8 +13,8 @@ async fn main() {
     }
 
     let zbi = std::fs::read(&args[1]).expect("failed to read zbi file");
-    let cmdline = args.get(2).map(String::as_str).unwrap_or("");
+    let cmdline = args.get(2).map(String::as_str).unwrap_or_default();
 
-    let proc: Arc<dyn KernelObject> = zircon_loader::run_userboot(zbi, cmdline);
+    let proc: Arc<dyn KernelObject> = zcore_loader::zircon::run_userboot(zbi, cmdline);
     proc.wait_signal(Signal::USER_SIGNAL_0).await;
 }

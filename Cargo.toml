@@ -1,13 +1,12 @@
 [workspace]
 members = [
+    "drivers",
+    "kernel-hal",
     "zircon-object",
     "zircon-syscall",
-    "zircon-loader",
     "linux-object",
     "linux-syscall",
-    "linux-loader",
-    "kernel-hal",
-    "drivers",
+    "loader",
     "zCore",
 ]
 

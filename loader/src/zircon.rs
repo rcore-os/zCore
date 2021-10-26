@@ -1,11 +1,4 @@
-#![no_std]
-#![feature(asm)]
-#![deny(warnings, unused_must_use)]
-
-#[macro_use]
-extern crate alloc;
-#[macro_use]
-extern crate log;
+//! Run Zircon user program (userboot) and manage trap/interrupt/syscall.
 
 use {
     alloc::{boxed::Box, sync::Arc, vec::Vec},
@@ -14,8 +7,6 @@ use {
     zircon_object::{dev::*, ipc::*, object::*, task::*, util::elf_loader::*, vm::*},
     zircon_syscall::Syscall,
 };
-
-mod kcounter;
 
 // These describe userboot itself
 const K_PROC_SELF: usize = 0;
@@ -32,13 +23,13 @@ const K_COUNTERS: usize = 10;
 const K_FISTINSTRUMENTATIONDATA: usize = 11;
 const K_HANDLECOUNT: usize = 15;
 
-macro_rules! boot_firmware {
+macro_rules! boot_library {
     ($name: expr) => {{
         cfg_if::cfg_if! {
             if #[cfg(target_arch = "x86_64")] {
-                boot_firmware!($name, "../../prebuilt/zircon/x64")
+                boot_library!($name, "../../prebuilt/zircon/x64")
             } else if #[cfg(target_arch = "aarch64")] {
-                boot_firmware!($name, "../../prebuilt/zircon/arm64")
+                boot_library!($name, "../../prebuilt/zircon/arm64")
             } else {
                 compile_error!("Unsupported architecture for zircon mode!")
             }
@@ -56,9 +47,10 @@ macro_rules! boot_firmware {
     }};
 }
 
+/// Run Zircon `userboot` process from the prebuilt path, and load the ZBI file as the bootfs.
 pub fn run_userboot(zbi: impl AsRef<[u8]>, cmdline: &str) -> Arc<Process> {
-    let userboot = boot_firmware!("userboot");
-    let vdso = boot_firmware!("libzircon");
+    let userboot = boot_library!("userboot");
+    let vdso = boot_library!("libzircon");
 
     let job = Job::root();
     let proc = Process::create(&job, "userboot").unwrap();
@@ -137,7 +129,7 @@ pub fn run_userboot(zbi: impl AsRef<[u8]>, cmdline: &str) -> Arc<Process> {
     let (user_channel, kernel_channel) = Channel::create();
     let handle = Handle::new(user_channel, Rights::DEFAULT_CHANNEL);
 
-    let mut handles = vec![Handle::new(proc.clone(), Rights::empty()); K_HANDLECOUNT];
+    let mut handles = alloc::vec![Handle::new(proc.clone(), Rights::empty()); K_HANDLECOUNT];
     handles[K_PROC_SELF] = Handle::new(proc.clone(), Rights::DEFAULT_PROCESS);
     handles[K_VMARROOT_SELF] = Handle::new(proc.vmar(), Rights::DEFAULT_VMAR | Rights::IO);
     handles[K_ROOTJOB] = Handle::new(job, Rights::DEFAULT_JOB);
@@ -161,7 +153,7 @@ pub fn run_userboot(zbi: impl AsRef<[u8]>, cmdline: &str) -> Arc<Process> {
     let crash_log_vmo = VmObject::new_paged(1);
     crash_log_vmo.set_name("crashlog");
     handles[K_CRASHLOG] = Handle::new(crash_log_vmo, Rights::DEFAULT_VMO);
-    let (counter_name_vmo, kcounters_vmo) = kcounter::create_kcounter_vmo();
+    let (counter_name_vmo, kcounters_vmo) = super::kcounter::create_kcounter_vmo();
     handles[K_COUNTERNAMES] = Handle::new(counter_name_vmo, Rights::DEFAULT_VMO);
     handles[K_COUNTERS] = Handle::new(kcounters_vmo, Rights::DEFAULT_VMO);
     // TODO: use correct Instrumentation data handle

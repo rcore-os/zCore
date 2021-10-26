@@ -9,9 +9,7 @@ description = "Zircon syscalls implementation"
 
 [features]
 # hypervisor = ["zircon-object/hypervisor"]
-default = []
 deny-page-fault = []
-libos = ["deny-page-fault", "kernel-hal/libos"]
 
 [dependencies]
 log = "0.4"

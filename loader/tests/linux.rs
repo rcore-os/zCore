@@ -1,5 +1,3 @@
-//! Linux LibOS entrance
-
 use rcore_fs_hostfs::HostFS;
 use std::fs;
 
@@ -10,7 +8,7 @@ async fn test(cmdline: &str) -> i64 {
     let args: Vec<String> = cmdline.split(' ').map(|s| s.into()).collect();
     let envs = vec!["PATH=/usr/sbin:/usr/bin:/sbin:/bin:/usr/x86_64-alpine-linux-musl/bin".into()]; // TODO
     let hostfs = HostFS::new("../rootfs");
-    let proc = linux_loader::run(args, envs, hostfs);
+    let proc = zcore_loader::linux::run(args, envs, hostfs);
     proc.wait_for_exit().await
 }
 

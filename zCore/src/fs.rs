@@ -1,4 +1,5 @@
-#[allow(dead_code)]
+#![allow(dead_code)]
+
 fn init_ram_disk() -> &'static mut [u8] {
     if cfg!(feature = "link-user-img") {
         extern "C" {
@@ -49,12 +50,8 @@ cfg_if! {
 
         #[cfg(feature = "libos")]
         pub fn zbi() -> impl AsRef<[u8]> {
-            let args = std::env::args().collect::<Vec<_>>();
-            if args.len() < 2 {
-                println!("Usage: {} ZBI_FILE [CMDLINE]", args[0]);
-                std::process::exit(-1);
-            }
-            std::fs::read(&args[1]).expect("failed to read zbi file")
+            let path = std::env::args().nth(1).unwrap();
+            std::fs::read(path).expect("failed to read zbi file")
         }
 
         #[cfg(not(feature = "libos"))]

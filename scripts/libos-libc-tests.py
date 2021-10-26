@@ -73,4 +73,4 @@ if check_failed:
 else:
     print(colored('All checked case passed!', 'green'))
 
-os.system('killall linux-loader')
+os.system('killall zcore')

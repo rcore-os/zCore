@@ -1,7 +1,7 @@
 [package]
 name = "zcore"
 version = "0.1.0"
-authors = ["PanQL <panqinglin00@163.com>"]
+authors = ["PanQL <panqinglin00@163.com>", "Yuekai Jia <equation618@gmail.com>"]
 edition = "2018"
 default-run = "zcore"
 
@@ -21,10 +21,10 @@ graphic = ["kernel-hal/graphic"]
 init-ram-disk = []
 link-user-img = ["init-ram-disk"]
 
-zircon = ["zircon-loader"]
-linux = ["linux-loader", "linux-object", "rcore-fs", "rcore-fs-sfs"]
+zircon = ["zcore-loader/zircon"]
+linux = ["zcore-loader/linux", "linux-object", "rcore-fs", "rcore-fs-sfs"]
 
-libos = ["async-std", "chrono", "rcore-fs-hostfs", "kernel-hal/libos", "linux-loader/libos", "zircon-loader/libos"]
+libos = ["kernel-hal/libos", "zcore-loader/libos", "async-std", "chrono", "rcore-fs-hostfs"]
 board-qemu = []
 board-d1 = ["link-user-img"]
 
@@ -35,10 +35,9 @@ cfg-if = "1.0"
 lazy_static = { version = "1.4", features = ["spin_no_std" ] }
 bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator", rev = "b3f9f51" }
 kernel-hal = { path = "../kernel-hal", default-features = false, features = ["smp"] }
+zcore-loader = { path = "../loader", default-features = false }
 zircon-object = { path = "../zircon-object" }
 linux-object = { path = "../linux-object", optional = true }
-zircon-loader = { path = "../zircon-loader", default-features = false, optional = true }
-linux-loader = { path = "../linux-loader", default-features = false, optional = true }
 rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "7c232ec", optional = true }
 rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "7c232ec", optional = true }
 

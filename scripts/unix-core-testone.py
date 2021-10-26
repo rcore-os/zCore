@@ -4,7 +4,6 @@ import re
 import argparse
 
 TIMEOUT = 300
-ZIRCON_LOADER_PATH = 'zircon-loader'
 ZBI_PATH = '../prebuilt/zircon/x64/core-tests.zbi'
 CMDLINE_BASE = 'LOG=warn:userboot=test/core-standalone-test:userboot.shutdown:core-tests='
 

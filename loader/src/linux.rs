@@ -1,12 +1,4 @@
-//! Linux LibOS
-//! - run process and manage trap/interrupt/syscall
-#![no_std]
-#![feature(asm)]
-#![deny(warnings, unused_must_use, missing_docs)]
-
-extern crate alloc;
-#[macro_use]
-extern crate log;
+//! Run Linux process and manage trap/interrupt/syscall.
 
 use {
     alloc::{boxed::Box, string::String, sync::Arc, vec::Vec},

@@ -29,9 +29,18 @@ fn parse_cmdline(cmdline: &str) -> BTreeMap<&str, &str> {
 pub fn boot_options() -> BootOptions {
     cfg_if! {
         if #[cfg(feature = "libos")] {
+            let args = std::env::args().collect::<Vec<_>>();
+            if args.len() < 2 {
+                #[cfg(feature = "linux")]
+                println!("Usage: {} PROGRAM", args[0]);
+                #[cfg(feature = "zircon")]
+                println!("Usage: {} ZBI_FILE [CMDLINE]", args[0]);
+                std::process::exit(-1);
+            }
+
             let log_level = std::env::var("LOG").unwrap_or_default();
             let cmdline = if cfg!(feature = "zircon") {
-                std::env::args().nth(2).unwrap_or_default()
+                args.get(2).cloned().unwrap_or_default()
             } else {
                 String::new()
             };
@@ -39,7 +48,7 @@ pub fn boot_options() -> BootOptions {
                 cmdline,
                 log_level,
                 #[cfg(feature = "linux")]
-                root_proc: std::env::args().skip(1).collect::<Vec<_>>().join("?"),
+                root_proc: args[1..].join("?"),
             }
         } else {
             let cmdline = kernel_hal::boot::cmdline();

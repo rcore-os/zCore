@@ -1,16 +1,13 @@
 //! Linux syscall implementations
 //!
 //! ## Example
-//! the syscall is called like this in the linux-loader:
+//! The syscall is called like this in the [`zcore_loader`](../zcore_loader/index.html):
 //! ```ignore
 //! let num = regs.rax as u32;
 //! let args = [regs.rdi, regs.rsi, regs.rdx, regs.r10, regs.r8, regs.r9];
 //! let mut syscall = Syscall {
 //!     thread,
-//!     #[cfg(feature = "libos")]
 //!     syscall_entry: kernel_hal::context::syscall_entry as usize,
-//!     #[cfg(not(feature = "libos"))]
-//!     syscall_entry: 0,
 //!     thread_fn,
 //!     regs,
 //! };
