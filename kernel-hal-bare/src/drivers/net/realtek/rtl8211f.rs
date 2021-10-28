@@ -1549,8 +1549,6 @@ pub fn desc_buf_set(desc: &mut dma_desc, paddr: u32, size: u32) {
 
 pub fn desc_init(desc: &mut dma_desc) {
     desc.desc1 = 0;
-    desc.desc2 = 0;
-
     desc.desc1 |= (1 << 24);
 }
 
