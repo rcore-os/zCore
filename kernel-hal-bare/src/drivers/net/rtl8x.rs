@@ -179,6 +179,7 @@ pub fn init(name: String, irq: Option<usize>) {
     let mut rtl8211f = RTL8211F::<Provider>::new(&[0u8; 6]);
     let mac = rtl8211f.get_umac();
     //启动前请为D1插上网线
+    warn!("Please plug in the Ethernet cable");
     rtl8211f.open();
     rtl8211f.set_rx_mode();
     rtl8211f.adjust_link();

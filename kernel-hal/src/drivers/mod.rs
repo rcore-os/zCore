@@ -32,7 +32,9 @@ pub enum DeviceType {
     Intc,
 }
 
-pub trait Driver: Send + Sync {
+use downcast_rs::DowncastSync;
+
+pub trait Driver: DowncastSync + Send + Sync {
     // if interrupt belongs to this driver, handle it and return true
     // return false otherwise
     // irq number is provided when available

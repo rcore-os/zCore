@@ -93,7 +93,7 @@ fn external() {
 
 #[export_name = "hal_irq_handle"]
 pub fn irq_handle(irq: u8) {
-    debug!("hal_irq_handle: {:#x}", irq);
+    trace!("hal_irq_handle: {:#x}", irq);
     let table = IRQ_TABLE.lock();
     match &table[irq as usize] {
         Some(f) => f(),

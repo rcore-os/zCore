@@ -369,7 +369,7 @@ pub unsafe fn set_page_table(vmtoken: usize) {
     let mode = satp::Mode::Sv32;
     #[cfg(target_arch = "riscv64")]
     let mode = satp::Mode::Sv39;
-    debug!("set user table: {:#x?}", vmtoken);
+    trace!("set user table: {:#x?}", vmtoken);
     satp::set(mode, 0, vmtoken >> 12);
     //刷TLB好像很重要
     sfence_vma_all();
@@ -556,7 +556,7 @@ pub fn timer_now() -> Duration {
 #[export_name = "hal_timer_set_next"]
 fn timer_set_next() {
     //let TIMEBASE: u64 = 100000;
-    let TIMEBASE: u64 = 10_000_000;
+    let TIMEBASE: u64 = 250000;
     sbi::set_timer(get_cycle() + TIMEBASE);
 }
 

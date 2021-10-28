@@ -252,8 +252,8 @@ where
             mac = mac_addr.clone();
         }
 
-        info!(
-            "mac addr: {:x}:{:x}:{:x}:{:x}:{:x}:{:x}",
+        bare_print!(
+            "mac addr: {:x}:{:x}:{:x}:{:x}:{:x}:{:x}\n",
             mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
         );
 
@@ -1549,8 +1549,6 @@ pub fn desc_buf_set(desc: &mut dma_desc, paddr: u32, size: u32) {
 
 pub fn desc_init(desc: &mut dma_desc) {
     desc.desc1 = 0;
-    desc.desc2 = 0;
-
     desc.desc1 |= (1 << 24);
 }
 
