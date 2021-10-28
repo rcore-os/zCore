@@ -64,6 +64,7 @@ endif
 export ARCH
 export PLATFORM
 export LOG
+export USER_IMG=$(realpath $(user_img))
 
 ################ Cargo features ################
 
