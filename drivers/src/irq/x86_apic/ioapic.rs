@@ -16,11 +16,13 @@ struct AcpiMapHandler {
 }
 
 impl AcpiHandler for AcpiMapHandler {
+    /// we just impl this function, rdsp crate will use it, and we not.
     unsafe fn map_physical_region<T>(
         &self,
         physical_address: usize,
         size: usize,
     ) -> PhysicalMapping<Self, T> {
+        // address maybe not aligned, so we align it mannualy
         let aligned_start = physical_address & !(PAGE_SIZE - 1);
         let aligned_end = (physical_address + size + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
         PhysicalMapping::new(
@@ -32,26 +34,35 @@ impl AcpiHandler for AcpiMapHandler {
         )
     }
 
+    /// we do nothing here, 
     fn unmap_physical_region<T>(_region: &PhysicalMapping<Self, T>) {}
 }
 
+/// for apic, we can learn something from here: https://wiki.osdev.org/APIC
 pub struct IoApic {
+    // ioapic id
     id: u8,
+    // gsi means Global System Interrupt, gsi_start is the base number of gsi in this ioapic
     gsi_start: u32,
+    // max entry num of interrupt redirection table.
     max_entry: u8,
+    // use x2apic crate to help us manipulate apic
     inner: Mutex<IoApicInner>,
 }
 
+/// one io-subsystem own one IoApic, maybe we have multiple io-subsystems, so we use a Vec to store IoApic
 #[derive(Debug)]
 pub struct IoApicList {
     io_apics: Vec<IoApic>,
 }
 
 impl IoApic {
+    /// create new IoApic
     pub fn new(id: u8, base_vaddr: usize, gsi_start: u32) -> Self {
         let mut inner = unsafe { IoApicInner::new(base_vaddr as u64) };
         let max_entry = unsafe { inner.max_table_entry() };
         unsafe { assert_eq!(id, inner.id()) };
+        // close interrupt
         for i in 0..max_entry + 1 {
             unsafe { inner.disable_irq(i) }
         }
@@ -63,6 +74,7 @@ impl IoApic {
         }
     }
 
+    /// set apic entry irq state by gsi.
     pub fn toggle(&self, gsi: u32, enabled: bool) {
         let idx = (gsi - self.gsi_start) as u8;
         unsafe {
@@ -74,11 +86,14 @@ impl IoApic {
         }
     }
 
+    /// get interrupt vector by gsi.
     pub fn get_vector(&self, gsi: u32) -> u8 {
         let idx = (gsi - self.gsi_start) as u8;
         unsafe { self.inner.lock().table_entry(idx).vector() }
     }
 
+    /// set interrupt vector by gsi, vector is a notion of CPU, it is the index of handler in IRQ table
+    /// the vector is assigned by fn register_handler.
     pub fn map_vector(&self, gsi: u32, vector: u8) {
         let idx = (gsi - self.gsi_start) as u8;
         let mut inner = self.inner.lock();
@@ -111,8 +126,10 @@ impl IoApic {
 }
 
 impl IoApicList {
+    /// create new IoApicList
     pub fn new(acpi_rsdp: usize, phys_to_virt: Phys2VirtFn) -> Self {
         let handler = AcpiMapHandler { phys_to_virt };
+        // read rsdt
         let tables = unsafe { AcpiTables::from_rsdp(handler, acpi_rsdp).unwrap() };
         let io_apics =
             if let InterruptModel::Apic(apic) = tables.platform_info().unwrap().interrupt_model {
@@ -127,11 +144,13 @@ impl IoApicList {
                     })
                     .collect()
             } else {
+                // only legacy i8259 PIC is present
                 Vec::new()
             };
         Self { io_apics }
     }
 
+    /// find IoApic by gsi, each IoApic have a range of gsi.
     pub fn find(&self, gsi: u32) -> Option<&IoApic> {
         self.io_apics
             .iter()
