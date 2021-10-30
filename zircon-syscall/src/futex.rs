@@ -4,10 +4,10 @@ use {
 };
 
 impl Syscall<'_> {
-    /// Wait on a futex.  
-    ///  
-    /// This system call function atomically verifies that `value_ptr` still contains the value `current_value`   
-    /// and sleeps until the futex is made available by a call to `zx_futex_wake`  
+    /// Wait on a futex.
+    ///
+    /// This system call function atomically verifies that `value_ptr` still contains the value `current_value`
+    /// and sleeps until the futex is made available by a call to `zx_futex_wake`
     pub async fn sys_futex_wait(
         &self,
         value_ptr: UserInPtr<AtomicI32>,
@@ -30,14 +30,14 @@ impl Syscall<'_> {
         } else {
             Some(proc.get_object::<Thread>(new_futex_owner)?)
         };
-        let future = futex.wait_with_owner(current_value, Some((*self.thread).clone()), new_owner);
+        let future = futex.wait_with_owner(current_value, Some(self.thread.inner()), new_owner);
         self.thread
             .blocking_run(future, ThreadState::BlockedFutex, deadline.into(), None)
             .await?;
         Ok(())
     }
-    /// Wake some waiters and requeue other waiters.   
-    ///   
+    /// Wake some waiters and requeue other waiters.
+    ///
     /// Wake some number of threads waiting on a futex, and move more waiters to another wait queue.
     pub fn sys_futex_requeue(
         &self,
@@ -78,7 +78,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    /// Wake some number of threads waiting on a futex.   
+    /// Wake some number of threads waiting on a futex.
     ///
     /// > Waking up zero threads is not an error condition. Passing in an unallocated address for value_ptr is not an error condition.
     pub fn sys_futex_wake(&self, value_ptr: UserInPtr<AtomicI32>, count: u32) -> ZxResult {

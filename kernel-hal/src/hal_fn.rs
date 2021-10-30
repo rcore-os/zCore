@@ -1,5 +1,5 @@
 use alloc::{boxed::Box, string::String, vec::Vec};
-use core::{future::Future, ops::Range, pin::Pin, time::Duration};
+use core::{future::Future, ops::Range, time::Duration};
 
 use crate::drivers::prelude::{IrqHandler, IrqPolarity, IrqTriggerMode};
 use crate::{common, HalResult, KernelConfig, KernelHandler, MMUFlags, PhysAddr, VirtAddr};
@@ -63,11 +63,13 @@ hal_fn_def! {
 
     /// Virutal memory operations.
     pub mod vm: common::vm {
-        /// Read current VM token. (e.g. CR3, SATP, ...)
+        /// Read the current VM token, which is the page table root address on
+        /// various architectures. (e.g. CR3, SATP, ...)
         pub fn current_vmtoken() -> PhysAddr;
 
-        /// Activate this page table by given `vmtoken`.
-        pub(crate) fn activate_paging(vmtoken: PhysAddr);
+        /// Activate the page table associated with the `vmtoken` by writing the
+        /// page table root address.
+        pub fn activate_paging(vmtoken: PhysAddr);
 
         /// Flush TLB by the associated `vaddr`, or flush the entire TLB. (`vaddr` is `None`).
         pub(crate) fn flush_tlb(vaddr: Option<VirtAddr>);
@@ -124,7 +126,7 @@ hal_fn_def! {
         pub(crate) fn console_write_early(_s: &str) {}
     }
 
-    /// Context switch.
+    /// User context.
     pub mod context: common::context {
         /// Enter user mode.
         pub fn context_run(context: &mut UserContext) {
@@ -148,7 +150,7 @@ hal_fn_def! {
     /// Thread spawning.
     pub mod thread: common::thread {
         /// Spawn a new thread.
-        pub fn spawn(future: Pin<Box<dyn Future<Output = ()> + Send + 'static>>, vmtoken: usize);
+        pub fn spawn(future: impl Future<Output = ()> + Send + 'static);
 
         /// Set tid and pid of current task.
         pub fn set_tid(tid: u64, pid: u64);

@@ -5,9 +5,8 @@ use crate::{addr::is_aligned, MMUFlags, PhysAddr, VirtAddr, PAGE_SIZE};
 
 hal_fn_impl! {
     impl mod crate::hal_fn::vm {
-        fn current_vmtoken() -> PhysAddr {
-            0
-        }
+        fn current_vmtoken() -> PhysAddr { 0 }
+        fn activate_paging(_vmtoken: PhysAddr) {}
     }
 }
 

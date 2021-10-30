@@ -183,7 +183,11 @@ kcounter!(EXCEPTIONS_USER, "exceptions.user");
 kcounter!(EXCEPTIONS_TIMER, "exceptions.timer");
 kcounter!(EXCEPTIONS_PGFAULT, "exceptions.pgfault");
 
-async fn new_thread(thread: CurrentThread) {
+fn thread_fn(thread: CurrentThread) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> {
+    Box::pin(run_user(thread))
+}
+
+async fn run_user(thread: CurrentThread) {
     kernel_hal::thread::set_tid(thread.id(), thread.proc().id());
     if thread.is_first_thread() {
         thread
@@ -216,59 +220,60 @@ async fn new_thread(thread: CurrentThread) {
         EXCEPTIONS_USER.add(1);
 
         let trap_num = cx.trap_num;
-        #[cfg(target_arch = "x86_64")]
-        let error_code = cx.error_code;
         thread.end_running(cx);
 
-        #[cfg(target_arch = "aarch64")]
-        match trap_num {
-            0 => handle_syscall(&thread).await,
-            _ => unimplemented!(),
-        }
-        #[cfg(target_arch = "x86_64")]
-        match trap_num {
-            0x100 => handle_syscall(&thread).await,
-            0x20..=0xff => {
-                kernel_hal::interrupt::handle_irq(trap_num);
-                // TODO: configurable
-                if trap_num == 0xf1 {
-                    EXCEPTIONS_TIMER.add(1);
-                    kernel_hal::thread::yield_now().await;
-                }
-            }
-            0xe => {
-                EXCEPTIONS_PGFAULT.add(1);
-                let (vaddr, flags) = kernel_hal::context::fetch_page_fault_info(error_code);
-                info!(
-                    "page fault from user mode {:#x} {:#x?} {:?}",
-                    vaddr, error_code, flags
-                );
-                let vmar = thread.proc().vmar();
-                if let Err(err) = vmar.handle_page_fault(vaddr, flags) {
-                    error!("handle_page_fault error: {:?}", err);
-                    thread.handle_exception(ExceptionType::FatalPageFault).await;
-                }
-            }
-            0x8 => thread.with_context(|cx| {
-                panic!("Double fault from user mode! {:#x?}", cx);
-            }),
-            num => {
-                let type_ = match num {
-                    0x1 => ExceptionType::HardwareBreakpoint,
-                    0x3 => ExceptionType::SoftwareBreakpoint,
-                    0x6 => ExceptionType::UndefinedInstruction,
-                    0x17 => ExceptionType::UnalignedAccess,
-                    _ => ExceptionType::General,
-                };
-                thread.handle_exception(type_).await;
-            }
+        if let Err(e) = handler_user_trap(&thread, trap_num).await {
+            thread.handle_exception(e).await;
         }
     }
     thread.handle_exception(ExceptionType::ThreadExiting).await;
 }
 
-fn thread_fn(thread: CurrentThread) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> {
-    Box::pin(new_thread(thread))
+async fn handler_user_trap(thread: &CurrentThread, trap_num: usize) -> Result<(), ExceptionType> {
+    #[cfg(target_arch = "aarch64")]
+    match trap_num {
+        0 => handle_syscall(&thread).await,
+        _ => unimplemented!(),
+    }
+    #[cfg(target_arch = "x86_64")]
+    match trap_num {
+        0x100 => handle_syscall(thread).await,
+        0x20..=0xff => {
+            kernel_hal::interrupt::handle_irq(trap_num);
+            // TODO: configurable
+            if trap_num == 0xf1 {
+                EXCEPTIONS_TIMER.add(1);
+                kernel_hal::thread::yield_now().await;
+            }
+        }
+        0xe => {
+            EXCEPTIONS_PGFAULT.add(1);
+            let error_code = thread.with_context(|cx| cx.error_code);
+            let (vaddr, flags) = kernel_hal::context::fetch_page_fault_info(error_code);
+            info!(
+                "page fault from user mode {:#x} {:#x?} {:?}",
+                vaddr, error_code, flags
+            );
+            let vmar = thread.proc().vmar();
+            if let Err(err) = vmar.handle_page_fault(vaddr, flags) {
+                error!("handle_page_fault error: {:?}", err);
+                return Err(ExceptionType::FatalPageFault);
+            }
+        }
+        0x8 => thread.with_context(|cx| {
+            panic!("Double fault from user mode! {:#x?}", cx);
+        }),
+        num => {
+            return Err(match num {
+                0x1 => ExceptionType::HardwareBreakpoint,
+                0x3 => ExceptionType::SoftwareBreakpoint,
+                0x6 => ExceptionType::UndefinedInstruction,
+                0x17 => ExceptionType::UnalignedAccess,
+                _ => ExceptionType::General,
+            })
+        }
+    }
+    Ok(())
 }
 
 async fn handle_syscall(thread: &CurrentThread) {

@@ -47,6 +47,10 @@ pub fn run(args: Vec<String>, envs: Vec<String>, rootfs: Arc<dyn FileSystem>) ->
     proc
 }
 
+fn thread_fn(thread: CurrentThread) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> {
+    Box::pin(run_user(thread))
+}
+
 /// The function of a new thread.
 ///
 /// loop:
@@ -55,7 +59,7 @@ pub fn run(args: Vec<String>, envs: Vec<String>, rootfs: Arc<dyn FileSystem>) ->
 /// - enter user mode
 /// - handle trap/interrupt/syscall according to the return value
 /// - return the context to the user thread
-async fn new_thread(thread: CurrentThread) {
+async fn run_user(thread: CurrentThread) {
     kernel_hal::thread::set_tid(thread.id(), thread.proc().id());
     loop {
         // wait
@@ -70,7 +74,7 @@ async fn new_thread(thread: CurrentThread) {
         trace!("back from user: {:#x?}", cx);
         // handle trap/interrupt/syscall
 
-        if let Err(err) = handler_user_trap(&thread, &mut cx).await {
+        if let Err(err) = handle_user_trap(&thread, &mut cx).await {
             thread.exit_linux(err as i32);
         }
 
@@ -78,11 +82,7 @@ async fn new_thread(thread: CurrentThread) {
     }
 }
 
-fn thread_fn(thread: CurrentThread) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> {
-    Box::pin(new_thread(thread))
-}
-
-async fn handler_user_trap(thread: &CurrentThread, cx: &mut UserContext) -> ZxResult {
+async fn handle_user_trap(thread: &CurrentThread, cx: &mut UserContext) -> ZxResult {
     let pid = thread.proc().id();
 
     #[cfg(target_arch = "x86_64")]

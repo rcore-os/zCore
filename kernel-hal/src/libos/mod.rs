@@ -4,6 +4,7 @@ mod mock_mem;
 
 pub mod boot;
 pub mod config;
+pub mod cpu;
 pub mod mem;
 pub mod thread;
 pub mod timer;
@@ -14,9 +15,9 @@ pub mod vm;
 #[doc(cfg(feature = "libos"))]
 pub mod libos;
 
-pub use super::hal_fn::{context, cpu, interrupt, rand};
+pub use super::hal_fn::{context, interrupt, rand};
 
-hal_fn_impl_default!(context, cpu, interrupt, rand, super::hal_fn::console);
+hal_fn_impl_default!(context, interrupt, rand, super::hal_fn::console);
 
 #[cfg(target_os = "macos")]
 mod macos;

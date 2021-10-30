@@ -178,8 +178,11 @@ bitflags! {
     }
 }
 
+type ThreadFuture = dyn Future<Output = ()> + Send;
+type ThreadFuturePinned = Pin<Box<ThreadFuture>>;
+
 /// The type of a new thread function.
-pub type ThreadFn = fn(thread: CurrentThread) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
+pub type ThreadFn = fn(thread: CurrentThread) -> ThreadFuturePinned;
 
 impl Thread {
     /// Create a new thread.
@@ -270,8 +273,7 @@ impl Thread {
             }
             inner.change_state(ThreadState::Running, &self.base);
         }
-        let vmtoken = self.proc().vmar().table_phys();
-        kernel_hal::thread::spawn(thread_fn(CurrentThread(self.clone())), vmtoken);
+        self.spawn(thread_fn);
         Ok(())
     }
 
@@ -288,8 +290,7 @@ impl Thread {
             }
             inner.change_state(ThreadState::Running, &self.base);
         }
-        let vmtoken = self.proc().vmar().table_phys();
-        kernel_hal::thread::spawn(thread_fn(CurrentThread(self.clone())), vmtoken);
+        self.spawn(thread_fn);
         Ok(())
     }
 
@@ -309,8 +310,7 @@ impl Thread {
             }
             inner.change_state(ThreadState::Running, &self.base);
         }
-        let vmtoken = self.proc().vmar().table_phys();
-        kernel_hal::thread::spawn(thread_fn(CurrentThread(self.clone())), vmtoken);
+        self.spawn(thread_fn);
         Ok(())
     }
 
@@ -337,7 +337,7 @@ impl Thread {
         }
         inner.change_state(ThreadState::Dying, &self.base);
         if let Some(waker) = inner.waker.take() {
-            waker.wake();
+            waker.wake_by_ref();
         }
         // For blocking thread, use the killer
         if let Some(killer) = inner.killer.take() {
@@ -449,6 +449,21 @@ impl Thread {
         context.general.gsbase = gsbase;
         Ok(())
     }
+
+    /// Spawn the future returned by `thread_fn` in this thread.
+    fn spawn(self: &Arc<Self>, thread_fn: ThreadFn) {
+        let current = CurrentThread(self.clone());
+        let future = thread_fn(current);
+        kernel_hal::thread::spawn(ThreadSwitchFuture::new(self.clone(), future));
+    }
+
+    /// Terminate the current running thread.
+    fn terminate(&self) {
+        let mut inner = self.inner.lock();
+        self.exceptionate.shutdown();
+        inner.change_state(ThreadState::Dead, &self.base);
+        self.proc().remove_thread(self.base.id);
+    }
 }
 
 impl Task for Thread {
@@ -471,7 +486,7 @@ impl Task for Thread {
             let state = inner.state;
             inner.change_state(state, &self.base);
             if let Some(waker) = inner.waker.take() {
-                waker.wake();
+                waker.wake_by_ref();
             }
         }
     }
@@ -494,27 +509,14 @@ impl Task for Thread {
 ///
 /// [`Thread`]: crate::task::Thread
 /// [`Thread::start`]: crate::task::Thread::start
-pub struct CurrentThread(pub(super) Arc<Thread>);
-
-impl Deref for CurrentThread {
-    type Target = Arc<Thread>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl Drop for CurrentThread {
-    /// Terminate the current running thread.
-    fn drop(&mut self) {
-        let mut inner = self.inner.lock();
-        self.exceptionate.shutdown();
-        inner.change_state(ThreadState::Dead, &self.base);
-        self.proc().remove_thread(self.base.id);
-    }
-}
+pub struct CurrentThread(Arc<Thread>);
 
 impl CurrentThread {
+    /// Returns the inner structure `Arc<Thread>`.
+    pub fn inner(&self) -> Arc<Thread> {
+        self.0.clone()
+    }
+
     /// Exit the current thread.
     ///
     /// The thread do not terminate immediately when exited. It is just made dying.
@@ -687,6 +689,20 @@ impl CurrentThread {
     }
 }
 
+impl Deref for CurrentThread {
+    type Target = Arc<Thread>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Drop for CurrentThread {
+    fn drop(&mut self) {
+        self.terminate();
+    }
+}
+
 /// `into_result` returns `Self` if the type parameter is already a `ZxResult`,
 /// otherwise wraps the value in an `Ok`.
 ///
@@ -756,6 +772,28 @@ pub struct ThreadInfo {
     state: u32,
     wait_exception_channel_type: u32,
     cpu_affinity_mask: [u64; 8],
+}
+
+struct ThreadSwitchFuture {
+    thread: Arc<Thread>,
+    future: Mutex<ThreadFuturePinned>,
+}
+
+impl ThreadSwitchFuture {
+    pub fn new(thread: Arc<Thread>, future: ThreadFuturePinned) -> Self {
+        Self {
+            future: Mutex::new(future),
+            thread,
+        }
+    }
+}
+
+impl Future for ThreadSwitchFuture {
+    type Output = ();
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        kernel_hal::vm::activate_paging(self.thread.proc().vmar().table_phys());
+        self.future.lock().as_mut().poll(cx)
+    }
 }
 
 #[cfg(test)]

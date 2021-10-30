@@ -91,7 +91,7 @@ impl Syscall<'_> {
                             let waker = cx.waker().clone();
                             timer::timer_set(
                                 Duration::from_millis(deadline as u64),
-                                Box::new(move |_| waker.wake()),
+                                Box::new(move |_| waker.wake_by_ref()),
                             );
                         }
                     }
@@ -237,7 +237,7 @@ impl Syscall<'_> {
                             let waker = cx.waker().clone();
                             timer::timer_set(
                                 Duration::from_millis(deadline as u64),
-                                Box::new(move |_| waker.wake()),
+                                Box::new(move |_| waker.wake_by_ref()),
                             );
                         }
                     }

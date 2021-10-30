@@ -20,7 +20,7 @@ impl Future for YieldFuture {
             Poll::Ready(())
         } else {
             self.flag = true;
-            cx.waker().clone().wake();
+            cx.waker().wake_by_ref();
             Poll::Pending
         }
     }
@@ -46,7 +46,7 @@ impl Future for SleepFuture {
         }
         if self.deadline.as_nanos() < i64::max_value() as u128 {
             let waker = cx.waker().clone();
-            timer::timer_set(self.deadline, Box::new(move |_| waker.wake()));
+            timer::timer_set(self.deadline, Box::new(move |_| waker.wake_by_ref()));
         }
         Poll::Pending
     }
@@ -118,7 +118,7 @@ impl Future for DisplayFlushFuture {
             let frame_time = self.frame_time;
             self.next_flush_time += frame_time;
             let waker = cx.waker().clone();
-            timer::timer_set(self.next_flush_time, Box::new(move |_| waker.wake()));
+            timer::timer_set(self.next_flush_time, Box::new(move |_| waker.wake_by_ref()));
         }
         Poll::Pending
     }

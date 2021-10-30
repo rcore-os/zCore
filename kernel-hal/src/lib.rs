@@ -1,6 +1,7 @@
 //! Hardware Abstraction Layer
 
 #![cfg_attr(not(feature = "libos"), no_std)]
+#![cfg_attr(feature = "libos", feature(thread_id_value))]
 #![feature(asm)]
 #![feature(doc_cfg)]
 #![deny(warnings)]
