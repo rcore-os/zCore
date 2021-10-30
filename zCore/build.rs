@@ -10,8 +10,8 @@ fn main() {
         // } else if board.contains("qemu") {
         } else {
             // opensbi仍旧把kernel放在0x80200000物理内存中
-        //     0xffffffff80200000
-        // } else {
+            //     0xffffffff80200000
+            // } else {
             0xffffffff80200000
         };
 

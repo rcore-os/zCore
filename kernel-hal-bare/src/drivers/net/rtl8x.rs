@@ -187,7 +187,13 @@ pub fn init(name: String, irq: Option<usize>) {
     let net_driver = RTL8xDriver(Arc::new(Mutex::new(rtl8211f)));
 
     let ethernet_addr = EthernetAddress::from_bytes(&mac);
-    let ip_addrs = [IpCidr::new(IpAddress::v4(192, 168, 0, 123), 24)];
+    let ip_addrs = [IpCidr::new(IpAddress::v4(192, 100, 1, 5), 24)];
+    let default_v4_gw = Ipv4Address::new(192, 100, 1, 1);
+    warn!("gate way {:?}", default_v4_gw);
+    #[allow(warnings)]
+    static mut routes_storage: [Option<(IpCidr, Route)>; 1] = [None; 1];
+    let mut routes = unsafe { Routes::new(&mut routes_storage[..]) };
+    routes.add_default_ipv4_route(default_v4_gw).unwrap();
     let neighbor_cache = NeighborCache::new(BTreeMap::new());
     let iface = InterfaceBuilder::new(net_driver.clone())
         .ethernet_addr(ethernet_addr)
@@ -195,7 +201,7 @@ pub fn init(name: String, irq: Option<usize>) {
         .ip_addrs(ip_addrs)
         .finalize();
 
-    info!("rtl8211f interface {} up with addr 192.168.0.123/24", name);
+    info!("rtl8211f interface {} up with addr 192.100.1.5/24", name);
     let rtl8211f_iface = RTL8xInterface {
         iface: Arc::new(Mutex::new(iface)),
         driver: net_driver.clone(),

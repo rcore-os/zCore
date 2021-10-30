@@ -546,17 +546,19 @@ pub fn get_cycle() -> u64 {
 
 #[export_name = "hal_timer_now"]
 pub fn timer_now() -> Duration {
-    const FREQUENCY: u64 = 10_000_000; // ???
+    const FREQUENCY: u64 = 24_000_000; // ???
+                                       // 1_000_000_000
+                                       // clock / 频率 /
     let time = get_cycle();
     //bare_println!("timer_now(): {:?}", time);
-    //Duration::from_nanos(time * 1_000_000_000 / FREQUENCY as u64)
-    Duration::from_nanos(time as u64)
+    Duration::from_nanos(((time / FREQUENCY) * 1_000_000_000) as u64)
+    // Duration::from_nanos(time /  as u64)
 }
 
 #[export_name = "hal_timer_set_next"]
 fn timer_set_next() {
-    //let TIMEBASE: u64 = 100000;
-    let TIMEBASE: u64 = 250000;
+    let TIMEBASE: u64 = 240_000;
+    // let TIMEBASE: u64 = 25_000_000;
     sbi::set_timer(get_cycle() + TIMEBASE);
 }
 

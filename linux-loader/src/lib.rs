@@ -128,16 +128,16 @@ async fn new_thread(thread: CurrentThread) {
         // super_mode_net_tcp_server_test();
         // super_mode_net_tcp_client_test();
         // super_mode_frame_test();
-        /*
-        use core::time::Duration;
-        use kernel_hal::sleep_until;
-        use kernel_hal::timer_now;
-        ping();
-        super_mode_eap_test().await;
-        ping();
 
-        loop {}
-        */
+        // use core::time::Duration;
+        // use kernel_hal::sleep_until;
+        // use kernel_hal::timer_now;
+        // ping().await;
+        // super_mode_eap_test().await;
+        // ping().await;
+
+        // loop {}
+
         //========= 网络认证 添加 区域  end =======
 
         // run
@@ -301,20 +301,27 @@ async fn handle_syscall(thread: &CurrentThread, cx: &mut UserContext) {
 
 /// network testing
 pub fn net_start_thread() {
-    let ping_future = Box::pin(ping());
+    // let ping_before_auth_future = Box::pin(ping_test());
     let eap_future = Box::pin(eap_test());
+    // let ping_after_auth_future = Box::pin(ping_test());
     let vmtoken = kernel_hal::current_page_table();
-    kernel_hal::Thread::spawn(ping_future, vmtoken);
+    // kernel_hal::Thread::spawn(ping_before_auth_future, vmtoken);
     kernel_hal::Thread::spawn(eap_future, vmtoken);
+    // kernel_hal::Thread::spawn(ping_after_auth_future, vmtoken);
 }
 
 use kernel_hal::yield_now;
 async fn eap_test() {
-    for n in 0..3 {
-        super_mode_eap_test().await;
-    }
+    // for n in 0..3 {
+    ping().await;
+    super_mode_eap_test().await;
+    ping().await;
+    // }
 }
 
+async fn ping_test() {
+    ping().await;
+}
 
 #[allow(dead_code)]
 #[allow(unused_imports)]
@@ -602,9 +609,9 @@ async fn super_mode_eap_test() {
         }
         sleep_until(timer_now() + Duration::from_millis(latency)).await;
 
-    #[cfg(target_arch = "riscv64")]
-    kernel_hal_bare::interrupt::wait_for_interrupt();
-    yield_now().await;
+        // #[cfg(target_arch = "riscv64")]
+        // kernel_hal_bare::interrupt::wait_for_interrupt();
+        // yield_now().await;
 
         // }
     }
@@ -674,14 +681,16 @@ async fn ping() {
     let mut waiting_queue = BTreeMap::new();
     let ident = 0x22b;
 
-    let count = 2000;
+    let count = 4;
     // ping 的 目的 地址 、um.. 暂时手动修改吧
     // baidu
-    let ip_addr = "220.181.38.251";
+    // let ip_addr = "220.181.38.251";
+    // 114 dns
+    let ip_addr = "114.114.114.114";
     //let ip_addr = "192.168.0.62";
     // let ip_addr = "172.24.103.1";
     let remote_addr = IpAddress::from_str(ip_addr).expect("invalid address format");
-    warn!("ping gateway {:?}", remote_addr);
+    warn!("ping ip addr {:?}", remote_addr);
     let interval = Duration::from_secs(1);
     let timeout = Duration::from_secs(10);
 
@@ -692,7 +701,9 @@ async fn ping() {
         loop {
             let timestamp = Instant::from_millis(timer_now().as_millis() as i64);
             match _li.iface.lock().poll(&mut sockets, timestamp) {
-                Ok(_) => {}
+                Ok(b) => {
+                    warn!("poll ok {}", b);
+                }
                 Err(e) => {
                     debug!("poll error: {}", e);
                 }
@@ -712,7 +723,8 @@ async fn ping() {
                     NetworkEndian::write_i64(&mut echo_payload, timestamp.total_millis());
 
                     match remote_addr {
-                        IpAddress::Ipv4(_) => {
+                        IpAddress::Ipv4(addr) => {
+                            warn!("ping send addr : {}", addr);
                             let (icmp_repr, mut icmp_packet) = send_icmp_ping!(
                                 Icmpv4Repr,
                                 Icmpv4Packet,
@@ -735,7 +747,8 @@ async fn ping() {
                     let (payload, _) = socket.recv().unwrap();
 
                     match remote_addr {
-                        IpAddress::Ipv4(_) => {
+                        IpAddress::Ipv4(addr) => {
+                            warn!("ping recv addr : {}", addr);
                             let icmp_packet = Icmpv4Packet::new_checked(&payload).unwrap();
                             let icmp_repr =
                                 Icmpv4Repr::parse(&icmp_packet, &device_caps.checksum).unwrap();
@@ -753,9 +766,9 @@ async fn ping() {
                     }
                 }
 
-    #[cfg(target_arch = "riscv64")]
-    kernel_hal_bare::interrupt::wait_for_interrupt();
-    yield_now().await;
+                // #[cfg(target_arch = "riscv64")]
+                // kernel_hal_bare::interrupt::wait_for_interrupt();
+                // yield_now().await;
 
                 waiting_queue.retain(|seq, from| {
                     if timestamp - *from < timeout {
@@ -773,16 +786,13 @@ async fn ping() {
                 }
             }
 
-            /*
             if timeout_return {
                 return;
             }
-            */
 
-    #[cfg(target_arch = "riscv64")]
-    kernel_hal_bare::interrupt::wait_for_interrupt();
-    yield_now().await;
-
+            #[cfg(target_arch = "riscv64")]
+            kernel_hal_bare::interrupt::wait_for_interrupt();
+            yield_now().await;
         }
     }
 }
