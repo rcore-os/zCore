@@ -198,7 +198,7 @@ impl Syscall<'_> {
         if thread.proc().status() != Status::Running {
             return Err(ZxError::BAD_STATE);
         }
-        thread.start(entry, stack, arg1, arg2, self.thread_fn)?;
+        thread.start_with_entry(entry, stack, arg1, arg2, self.thread_fn)?;
         Ok(())
     }
 

@@ -50,7 +50,7 @@ rcore-fs-hostfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "7c232ec
 # Bare-metal mode
 [target.'cfg(target_os = "none")'.dependencies]
 buddy_system_allocator = "0.7"
-executor = { git = "https://github.com/rcore-os/executor.git", rev = "a2d02ee9" }
+executor = { git = "https://github.com/rcore-os/executor.git", rev = "04b6b7b" }
 
 # Bare-metal mode on x86_64
 [target.'cfg(all(target_os = "none", target_arch = "x86_64"))'.dependencies]

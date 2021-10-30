@@ -1,4 +1,3 @@
-pub(super) mod context;
 pub(super) mod defs;
 pub(super) mod future;
 pub(super) mod mem;
@@ -8,4 +7,5 @@ pub(super) mod vm;
 
 pub mod addr;
 pub mod console;
+pub mod context;
 pub mod user;

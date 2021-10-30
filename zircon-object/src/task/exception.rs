@@ -1,7 +1,14 @@
-use {
-    super::*, crate::ipc::*, crate::object::*, alloc::sync::Arc, alloc::vec, alloc::vec::Vec,
-    core::mem::size_of, futures::channel::oneshot, kernel_hal::context::UserContext, spin::Mutex,
-};
+use alloc::{sync::Arc, vec::Vec};
+use core::mem::size_of;
+
+use futures::channel::oneshot;
+use kernel_hal::context::{TrapReason, UserContext};
+use spin::Mutex;
+
+use super::{Job, Task, Thread};
+use crate::ipc::{Channel, MessagePacket};
+use crate::object::{Handle, KObjectBase, KernelObject, KoID, Rights, Signal};
+use crate::{impl_kobject, ZxError, ZxResult};
 
 /// Kernel-owned exception channel endpoint.
 pub struct Exceptionate {
@@ -77,7 +84,7 @@ impl Exceptionate {
         let (object, closed) = ExceptionObject::create(exception.clone(), rights);
         let msg = MessagePacket {
             data: info.pack(),
-            handles: vec![Handle::new(object, Rights::DEFAULT_EXCEPTION)],
+            handles: alloc::vec![Handle::new(object, Rights::DEFAULT_EXCEPTION)],
         };
         channel.write(msg).map_err(|err| {
             if err == ZxError::PEER_CLOSED {
@@ -120,53 +127,67 @@ struct ExceptionHeader {
 /// Data associated with an exception (siginfo in linux parlance)
 /// Things available from regsets (e.g., pc) are not included here.
 /// For an example list of things one might add, see linux siginfo.
-#[cfg(target_arch = "x86_64")]
-#[repr(C)]
+#[repr(transparent)]
 #[derive(Debug, Default, Clone)]
-struct ExceptionContext {
-    vector: u64,
-    err_code: u64,
-    cr2: u64,
-}
+struct ExceptionContext(ExceptionContextInner);
 
-/// Data associated with an exception (siginfo in linux parlance)
-/// Things available from regsets (e.g., pc) are not included here.
-/// For an example list of things one might add, see linux siginfo.
-#[cfg(target_arch = "aarch64")]
-#[repr(C)]
-#[derive(Debug, Default, Clone)]
-struct ExceptionContext {
-    esr: u32,
-    padding1: u32,
-    far: u64,
-    padding2: u64,
-}
-
-#[cfg(target_arch = "riscv64")]
-#[repr(C)]
-#[derive(Debug, Default, Clone)]
-struct ExceptionContext {
-    padding1: u64,
-    padding2: u64,
-    padding3: u64,
+cfg_if::cfg_if! {
+    if #[cfg(target_arch = "x86_64")] {
+        #[repr(C)]
+        #[derive(Debug, Default, Clone)]
+        struct ExceptionContextInner {
+            vector: u64,
+            err_code: u64,
+            cr2: u64,
+        }
+    } else if #[cfg(target_arch = "aarch64")] {
+        #[repr(C)]
+        #[derive(Debug, Default, Clone)]
+        struct ExceptionContextInner {
+            esr: u32,
+            _padding1: u32,
+            far: u64,
+            _padding2: u64,
+        }
+    } else if #[cfg(target_arch = "riscv64")] {
+        #[repr(C)]
+        #[derive(Debug, Default, Clone)]
+        struct ExceptionContextInner {
+            scause: u64,
+            stval: u64,
+            _padding: u64,
+        }
+    }
 }
 
 impl ExceptionContext {
-    #[cfg(target_arch = "x86_64")]
-    fn from_user_context(cx: &UserContext) -> Self {
-        ExceptionContext {
-            vector: cx.trap_num as u64,
-            err_code: cx.error_code as u64,
-            cr2: kernel_hal::context::fetch_page_fault_info(cx.error_code).0 as u64,
+    fn from_user_context(ctx: &UserContext) -> Self {
+        let fault_vaddr = if let TrapReason::PageFault(vaddr, _) = ctx.trap_reason() {
+            vaddr as u64
+        } else {
+            return Default::default();
+        };
+        cfg_if::cfg_if! {
+            if #[cfg(target_arch = "x86_64")] {
+                Self(ExceptionContextInner {
+                    vector: ctx.raw_trap_reason() as _,
+                    err_code: ctx.error_code() as _,
+                    cr2: fault_vaddr,
+                })
+            } else if #[cfg(target_arch = "aarch64")] {
+                Self(ExceptionContextInner {
+                    esr: ctx.raw_trap_reason() as _,
+                    far: fault_vaddr,
+                    ..Default::default()
+                })
+            } else if #[cfg(target_arch = "riscv64")] {
+                Self(ExceptionContextInner {
+                    scause: ctx.raw_trap_reason() as _,
+                    stval: fault_vaddr,
+                    ..Default::default()
+                })
+            }
         }
-    }
-    #[cfg(target_arch = "aarch64")]
-    fn from_user_context(_cx: &UserContext) -> Self {
-        unimplemented!()
-    }
-    #[cfg(target_arch = "riscv64")]
-    fn from_user_context(_cx: &UserContext) -> Self {
-        unimplemented!()
     }
 }
 
@@ -377,7 +398,7 @@ impl Exception {
         };
         if result == Err(ZxError::NEXT) && !self.type_.is_synth() {
             // Nobody handled the exception, kill myself
-            self.thread.proc().exit(TASK_RETCODE_SYSCALL_KILL);
+            self.thread.proc().exit(super::TASK_RETCODE_SYSCALL_KILL);
         }
     }
 
@@ -522,6 +543,7 @@ impl Iterator for JobDebuggerIterator {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::task::*;
 
     #[test]
     fn exceptionate_iterator() {

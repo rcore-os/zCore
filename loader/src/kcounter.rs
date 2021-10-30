@@ -6,7 +6,7 @@ use {
 
 /// Create kcounter VMOs from kernel memory.
 /// Return (KCOUNTER_NAMES_VMO, KCOUNTER_VMO).
-#[cfg(target_os = "none")]
+#[cfg(not(feature = "libos"))]
 pub fn create_kcounter_vmo() -> (Arc<VmObject>, Arc<VmObject>) {
     const HEADER_SIZE: usize = size_of::<KCounterVmoHeader>();
     const DESC_SIZE: usize = size_of::<KCounterDescItem>();
@@ -50,7 +50,7 @@ pub fn create_kcounter_vmo() -> (Arc<VmObject>, Arc<VmObject>) {
 
 /// Create kcounter VMOs.
 /// NOTE: kcounter is not supported in libos.
-#[cfg(not(target_os = "none"))]
+#[cfg(feature = "libos")]
 pub fn create_kcounter_vmo() -> (Arc<VmObject>, Arc<VmObject>) {
     const HEADER_SIZE: usize = size_of::<KCounterVmoHeader>();
     let counter_name_vmo = VmObject::new_paged(1);

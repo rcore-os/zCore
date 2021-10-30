@@ -8,15 +8,17 @@
 extern crate alloc;
 #[macro_use]
 extern crate log;
+#[macro_use]
+extern crate cfg_if;
 
-cfg_if::cfg_if! {
+cfg_if! {
     if #[cfg(any(feature = "linux", doc))] {
         #[doc(cfg(feature = "linux"))]
         pub mod linux;
     }
 }
 
-cfg_if::cfg_if! {
+cfg_if! {
     if #[cfg(any(feature = "zircon", doc))] {
         mod kcounter;
 

@@ -3,7 +3,6 @@ mod sbi;
 mod trap;
 
 pub mod config;
-pub mod context;
 pub mod cpu;
 pub mod interrupt;
 pub mod mem;

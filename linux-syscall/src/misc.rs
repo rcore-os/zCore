@@ -11,7 +11,9 @@ impl Syscall<'_> {
         match code {
             ARCH_SET_FS => {
                 info!("sys_arch_prctl: set FSBASE to {:#x}", addr);
-                self.regs.fsbase = addr;
+                self.thread.with_context(|ctx| {
+                    ctx.set_field(kernel_hal::context::UserContextField::ThreadPointer, addr)
+                })?;
                 Ok(0)
             }
             _ => Err(LxError::EINVAL),
@@ -28,10 +30,15 @@ impl Syscall<'_> {
 
         let vdso_const = kernel_hal::vdso::vdso_constants();
 
-        #[cfg(target_arch = "x86_64")]
-        let arch = "x86_64";
-        #[cfg(target_arch = "riscv64")]
-        let arch = "riscv64";
+        let arch = if cfg!(target_arch = "x86_64") {
+            "x86_64"
+        } else if cfg!(target_arch = "aarch64") {
+            "aarch64"
+        } else if cfg!(target_arch = "riscv64") {
+            "riscv64"
+        } else {
+            "unknown"
+        };
 
         let strings = [
             "Linux",                            // sysname

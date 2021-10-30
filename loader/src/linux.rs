@@ -1,23 +1,14 @@
 //! Run Linux process and manage trap/interrupt/syscall.
 
-use {
-    alloc::{boxed::Box, string::String, sync::Arc, vec::Vec},
-    core::{future::Future, pin::Pin},
-    linux_object::{
-        fs::{vfs::FileSystem, INodeExt},
-        loader::LinuxElfLoader,
-        process::ProcessExt,
-        thread::{CurrentThreadExt, ThreadExt},
-    },
-    linux_syscall::Syscall,
-    zircon_object::task::*,
-    zircon_object::{object::KernelObject, ZxError, ZxResult},
-};
+use alloc::{boxed::Box, string::String, sync::Arc, vec::Vec};
+use core::{future::Future, pin::Pin};
 
-use kernel_hal::context::UserContext;
-
-#[cfg(target_arch = "x86_64")]
-use kernel_hal::context::GeneralRegs;
+use kernel_hal::context::{TrapReason, UserContext, UserContextField};
+use linux_object::fs::{vfs::FileSystem, INodeExt};
+use linux_object::thread::{CurrentThreadExt, ThreadExt};
+use linux_object::{loader::LinuxElfLoader, process::ProcessExt};
+use zircon_object::task::{CurrentThread, Job, Process, Thread, ThreadState};
+use zircon_object::{object::KernelObject, ZxError, ZxResult};
 
 /// Create and run main Linux process
 pub fn run(args: Vec<String>, envs: Vec<String>, rootfs: Arc<dyn FileSystem>) -> Arc<Process> {
@@ -42,7 +33,7 @@ pub fn run(args: Vec<String>, envs: Vec<String>, rootfs: Arc<dyn FileSystem>) ->
     let (entry, sp) = loader.load(&proc.vmar(), &data, args, envs, path).unwrap();
 
     thread
-        .start(entry, sp, 0, 0, thread_fn)
+        .start_with_entry(entry, sp, 0, 0, thread_fn)
         .expect("failed to start main thread");
     proc
 }
@@ -63,143 +54,99 @@ async fn run_user(thread: CurrentThread) {
     kernel_hal::thread::set_tid(thread.id(), thread.proc().id());
     loop {
         // wait
-        let mut cx = thread.wait_for_run().await;
+        let mut ctx = thread.wait_for_run().await;
         if thread.state() == ThreadState::Dying {
             break;
         }
 
         // run
-        trace!("go to user: {:#x?}", cx);
-        kernel_hal::context::context_run(&mut cx);
-        trace!("back from user: {:#x?}", cx);
-        // handle trap/interrupt/syscall
+        trace!("go to user: {:#x?}", ctx);
+        ctx.enter_uspace();
+        trace!("back from user: {:#x?}", ctx);
 
-        if let Err(err) = handle_user_trap(&thread, &mut cx).await {
+        // handle trap/interrupt/syscall
+        if let Err(err) = handle_user_trap(&thread, ctx).await {
             thread.exit_linux(err as i32);
         }
-
-        thread.end_running(cx);
     }
 }
 
-async fn handle_user_trap(thread: &CurrentThread, cx: &mut UserContext) -> ZxResult {
-    let pid = thread.proc().id();
+async fn handle_user_trap(thread: &CurrentThread, mut ctx: Box<UserContext>) -> ZxResult {
+    let reason = ctx.trap_reason();
 
-    #[cfg(target_arch = "x86_64")]
-    match cx.trap_num {
-        0x100 => handle_syscall(thread, &mut cx.general).await,
-        0x20..=0xff => {
-            kernel_hal::interrupt::handle_irq(cx.trap_num);
-            // TODO: configurable
-            if cx.trap_num == 0xf1 {
-                kernel_hal::thread::yield_now().await;
-            }
+    if let TrapReason::Syscall = reason {
+        let num = syscall_num(&ctx);
+        let args = syscall_args(&ctx);
+        ctx.advance_pc(reason);
+        thread.put_context(ctx);
+        let mut syscall = linux_syscall::Syscall {
+            thread,
+            thread_fn,
+            syscall_entry: kernel_hal::context::syscall_entry as usize,
+        };
+        let ret = syscall.syscall(num as u32, args).await as usize;
+        thread.with_context(|ctx| ctx.set_field(UserContextField::ReturnValue, ret))?;
+        return Ok(());
+    }
+
+    thread.put_context(ctx);
+    match reason {
+        TrapReason::Interrupt(vector) => {
+            kernel_hal::interrupt::handle_irq(vector);
+            kernel_hal::thread::yield_now().await;
+            Ok(())
         }
-        0xe => {
-            let (vaddr, flags) = kernel_hal::context::fetch_page_fault_info(cx.error_code);
-            warn!(
-                "page fault from user mode @ {:#x}({:?}), pid={}",
-                vaddr, flags, pid
-            );
+        TrapReason::PageFault(vaddr, flags) => {
+            info!("page fault from user mode @ {:#x}({:?})", vaddr, flags);
             let vmar = thread.proc().vmar();
-            if let Err(err) = vmar.handle_page_fault(vaddr, flags) {
+            vmar.handle_page_fault(vaddr, flags).map_err(|err| {
                 error!(
-                    "Failed to handle page Fault from user mode @ {:#x}({:?}): {:?}\n{:#x?}",
-                    vaddr, flags, err, cx
+                    "failed to handle page fault from user mode @ {:#x}({:?}): {:?}\n{:#x?}",
+                    vaddr,
+                    flags,
+                    err,
+                    thread.context_cloned(),
                 );
-                return Err(err);
-            }
+                err
+            })
         }
         _ => {
-            error!("not supported interrupt from user mode. {:#x?}", cx);
-            return Err(ZxError::NOT_SUPPORTED);
+            error!(
+                "unsupported trap from user mode: {:x?} {:#x?}",
+                reason,
+                thread.context_cloned(),
+            );
+            Err(ZxError::NOT_SUPPORTED)
         }
     }
+}
 
-    // UserContext
-    #[cfg(target_arch = "riscv64")]
-    {
-        let trap_num = kernel_hal::context::fetch_trap_num(cx);
-        let is_interrupt = ((trap_num >> (core::mem::size_of::<usize>() * 8 - 1)) & 1) == 1;
-        let trap_num = trap_num & 0xfff;
-        if is_interrupt {
-            kernel_hal::interrupt::handle_irq(trap_num);
-            // Timer
-            if trap_num == 5 {
-                kernel_hal::thread::yield_now().await;
-            }
+fn syscall_num(ctx: &UserContext) -> usize {
+    let regs = ctx.general();
+    cfg_if! {
+        if #[cfg(target_arch = "x86_64")] {
+            regs.rax
+        } else if #[cfg(target_arch = "aarch64")] {
+            regs.x8
+        } else if #[cfg(target_arch = "riscv64")] {
+            regs.a7
         } else {
-            match trap_num {
-                // syscall
-                8 => handle_syscall(thread, cx).await,
-                // PageFault
-                12 | 13 | 15 => {
-                    let (vaddr, flags) = kernel_hal::context::fetch_page_fault_info(trap_num);
-                    warn!(
-                        "page fault from user mode @ {:#x}({:?}), pid={}",
-                        vaddr, flags, pid
-                    );
-                    let vmar = thread.proc().vmar();
-                    if let Err(err) = vmar.handle_page_fault(vaddr, flags) {
-                        error!(
-                            "Failed to handle page Fault from user mode @ {:#x}({:?}): {:?}\n{:#x?}",
-                            vaddr, flags, err, cx
-                        );
-                        return Err(err);
-                    }
-                }
-                _ => {
-                    error!(
-                        "not supported pid: {} exception {} from user mode. {:#x?}",
-                        pid, trap_num, cx
-                    );
-                    return Err(ZxError::NOT_SUPPORTED);
-                }
-            }
+            unimplemented!()
         }
     }
-
-    Ok(())
 }
 
-/// syscall handler entry
-#[cfg(target_arch = "x86_64")]
-async fn handle_syscall(thread: &CurrentThread, regs: &mut GeneralRegs) {
-    trace!("syscall: {:#x?}", regs);
-    let num = regs.rax as u32;
-    let args = [regs.rdi, regs.rsi, regs.rdx, regs.r10, regs.r8, regs.r9];
-    let mut syscall = Syscall {
-        thread,
-        syscall_entry: kernel_hal::context::syscall_entry as usize,
-        thread_fn,
-        regs,
-    };
-    regs.rax = syscall.syscall(num, args).await as usize;
-}
-
-#[cfg(target_arch = "riscv64")]
-async fn handle_syscall(thread: &CurrentThread, cx: &mut UserContext) {
-    trace!("syscall: {:#x?}", cx.general);
-    let num = cx.general.a7 as u32;
-    let args = [
-        cx.general.a0,
-        cx.general.a1,
-        cx.general.a2,
-        cx.general.a3,
-        cx.general.a4,
-        cx.general.a5,
-    ];
-    // add before fork
-    cx.sepc += 4;
-
-    //注意, 此时的regs没有原context所有权，故无法通过此regs修改寄存器
-    //let regs = &mut (cx.general as GeneralRegs);
-
-    let mut syscall = Syscall {
-        thread,
-        syscall_entry: kernel_hal::context::syscall_entry as usize,
-        context: cx,
-        thread_fn,
-    };
-    cx.general.a0 = syscall.syscall(num, args).await as usize;
+fn syscall_args(ctx: &UserContext) -> [usize; 6] {
+    let regs = ctx.general();
+    cfg_if! {
+        if #[cfg(target_arch = "x86_64")] {
+            [regs.rdi, regs.rsi, regs.rdx, regs.r10, regs.r8, regs.r9]
+        } else if #[cfg(target_arch = "aarch64")] {
+            [regs.x0, regs.x1, regs.x2, regs.x3, regs.x4, regs.x5]
+        } else if #[cfg(target_arch = "riscv64")] {
+            [regs.a0, regs.a1, regs.a2, regs.a3, regs.a4, regs.a5]
+        } else {
+            unimplemented!()
+        }
+    }
 }

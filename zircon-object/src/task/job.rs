@@ -447,7 +447,7 @@ mod tests {
         let proc = Process::create(&root_job, "proc").expect("failed to create process");
         let thread = Thread::create(&proc, "thread").expect("failed to create thread");
         thread
-            .start(0, 0, 0, 0, |thread| {
+            .start(|thread| {
                 std::boxed::Box::pin(async {
                     println!("should not be killed");
                     async_std::task::sleep(Duration::from_millis(1000)).await;

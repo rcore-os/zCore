@@ -432,7 +432,7 @@ pub fn wait_signal_many(
 #[macro_export]
 macro_rules! impl_kobject {
     ($class:ident $( $fn:tt )*) => {
-        impl KernelObject for $class {
+        impl $crate::object::KernelObject for $class {
             fn id(&self) -> KoID {
                 self.base.id
             }
@@ -457,7 +457,7 @@ macro_rules! impl_kobject {
             fn signal_change(&self, clear: Signal, set: Signal) {
                 self.base.signal_change(clear, set);
             }
-            fn add_signal_callback(&self, callback: SignalHandler) {
+            fn add_signal_callback(&self, callback: $crate::object::SignalHandler) {
                 self.base.add_signal_callback(callback);
             }
             $( $fn )*
@@ -467,6 +467,7 @@ macro_rules! impl_kobject {
                 &self,
                 f: &mut core::fmt::Formatter<'_>,
             ) -> core::result::Result<(), core::fmt::Error> {
+                use $crate::object::KernelObject;
                 f.debug_tuple(&stringify!($class))
                     .field(&self.id())
                     .field(&self.name())
@@ -484,14 +485,14 @@ macro_rules! define_count_helper {
         struct CountHelper(());
         impl CountHelper {
             fn new() -> Self {
-                kcounter!(CREATE_COUNT, concat!(stringify!($class), ".create"));
+                $crate::kcounter!(CREATE_COUNT, concat!(stringify!($class), ".create"));
                 CREATE_COUNT.add(1);
                 CountHelper(())
             }
         }
         impl Drop for CountHelper {
             fn drop(&mut self) {
-                kcounter!(DESTROY_COUNT, concat!(stringify!($class), ".destroy"));
+                $crate::kcounter!(DESTROY_COUNT, concat!(stringify!($class), ".destroy"));
                 DESTROY_COUNT.add(1);
             }
         }

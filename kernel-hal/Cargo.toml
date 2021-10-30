@@ -33,13 +33,17 @@ bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator", rev =
 
 # Bare-metal mode
 [target.'cfg(target_os = "none")'.dependencies]
-executor = { git = "https://github.com/rcore-os/executor.git", rev = "a2d02ee9" }
+executor = { git = "https://github.com/rcore-os/executor.git", rev = "04b6b7b" }
 naive-timer = "0.2.0"
+
+# All mode on x86_64
+[target.'cfg(target_arch = "x86_64")'.dependencies]
+x86 = "0.43"
+x86_64 = "0.14"
 
 # Bare-metal mode on x86_64
 [target.'cfg(all(target_os = "none", target_arch = "x86_64"))'.dependencies]
 uefi = "0.11"
-x86_64 = "0.14"
 raw-cpuid = "9.0"
 x86-smpboot = { git = "https://github.com/rcore-os/x86-smpboot", rev = "43ffedf" }
 

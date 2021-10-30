@@ -15,9 +15,9 @@ pub mod vm;
 #[doc(cfg(feature = "libos"))]
 pub mod libos;
 
-pub use super::hal_fn::{context, interrupt, rand};
+pub use super::hal_fn::{interrupt, rand};
 
-hal_fn_impl_default!(context, interrupt, rand, super::hal_fn::console);
+hal_fn_impl_default!(interrupt, rand, super::hal_fn::console);
 
 #[cfg(target_os = "macos")]
 mod macos;

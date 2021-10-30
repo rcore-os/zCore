@@ -1,12 +1,19 @@
 //! Run Zircon user program (userboot) and manage trap/interrupt/syscall.
 
-use {
-    alloc::{boxed::Box, sync::Arc, vec::Vec},
-    core::{future::Future, pin::Pin},
-    xmas_elf::ElfFile,
-    zircon_object::{dev::*, ipc::*, object::*, task::*, util::elf_loader::*, vm::*},
-    zircon_syscall::Syscall,
-};
+use alloc::{boxed::Box, sync::Arc, vec::Vec};
+use core::{future::Future, pin::Pin};
+
+use xmas_elf::ElfFile;
+
+use kernel_hal::context::{TrapReason, UserContext, UserContextField};
+use kernel_hal::{MMUFlags, PAGE_SIZE};
+use zircon_object::dev::{Resource, ResourceFlags, ResourceKind};
+use zircon_object::ipc::{Channel, MessagePacket};
+use zircon_object::kcounter;
+use zircon_object::object::{Handle, KernelObject, Rights};
+use zircon_object::task::{CurrentThread, ExceptionType, Job, Process, Thread, ThreadState};
+use zircon_object::util::elf_loader::{ElfExt, VmarExt};
+use zircon_object::vm::{VmObject, VmarFlags};
 
 // These describe userboot itself
 const K_PROC_SELF: usize = 0;
@@ -119,11 +126,12 @@ pub fn run_userboot(zbi: impl AsRef<[u8]>, cmdline: &str) -> Arc<Process> {
     let stack_bottom = vmar
         .map(None, stack_vmo.clone(), 0, stack_vmo.len(), flags)
         .unwrap();
-    #[cfg(target_arch = "x86_64")]
-    // WARN: align stack to 16B, then emulate a 'call' (push rip)
-    let sp = stack_bottom + stack_vmo.len() - 8;
-    #[cfg(target_arch = "aarch64")]
-    let sp = stack_bottom + stack_vmo.len();
+    let sp = if cfg!(target_arch = "x86_64") {
+        // WARN: align stack to 16B, then emulate a 'call' (push rip)
+        stack_bottom + stack_vmo.len() - 8
+    } else {
+        stack_bottom + stack_vmo.len()
+    };
 
     // channel
     let (user_channel, kernel_channel) = Channel::create();
@@ -180,7 +188,7 @@ pub fn run_userboot(zbi: impl AsRef<[u8]>, cmdline: &str) -> Arc<Process> {
 }
 
 kcounter!(EXCEPTIONS_USER, "exceptions.user");
-kcounter!(EXCEPTIONS_TIMER, "exceptions.timer");
+kcounter!(EXCEPTIONS_IRQ, "exceptions.irq");
 kcounter!(EXCEPTIONS_PGFAULT, "exceptions.pgfault");
 
 fn thread_fn(thread: CurrentThread) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> {
@@ -197,125 +205,123 @@ async fn run_user(thread: CurrentThread) {
     thread.handle_exception(ExceptionType::ThreadStarting).await;
 
     loop {
-        let mut cx = thread.wait_for_run().await;
+        // wait
+        let mut ctx = thread.wait_for_run().await;
         if thread.state() == ThreadState::Dying {
             break;
         }
-        trace!("go to user: {:#x?}", cx);
+
+        // run
+        trace!("go to user: {:#x?}", ctx);
         debug!("switch to {}|{}", thread.proc().name(), thread.name());
         let tmp_time = kernel_hal::timer::timer_now().as_nanos();
 
         // * Attention
         // The code will enter a magic zone from here.
-        // `context run` will be executed into a wrapped library where context switching takes place.
-        // The details are available in the trapframe crate on crates.io.
-
-        kernel_hal::context::context_run(&mut cx);
+        // `enter_uspace` will be executed into a wrapped library where context switching takes place.
+        // The details are available in the `trapframe` crate on crates.io.
+        ctx.enter_uspace();
 
         // Back from the userspace
-
         let time = kernel_hal::timer::timer_now().as_nanos() - tmp_time;
         thread.time_add(time);
-        trace!("back from user: {:#x?}", cx);
+        trace!("back from user: {:#x?}", ctx);
         EXCEPTIONS_USER.add(1);
 
-        let trap_num = cx.trap_num;
-        thread.end_running(cx);
-
-        if let Err(e) = handler_user_trap(&thread, trap_num).await {
+        // handle trap/interrupt/syscall
+        if let Err(e) = handler_user_trap(&thread, ctx).await {
+            if let ExceptionType::ThreadExiting = e {
+                break;
+            }
             thread.handle_exception(e).await;
         }
     }
     thread.handle_exception(ExceptionType::ThreadExiting).await;
 }
 
-async fn handler_user_trap(thread: &CurrentThread, trap_num: usize) -> Result<(), ExceptionType> {
-    #[cfg(target_arch = "aarch64")]
-    match trap_num {
-        0 => handle_syscall(&thread).await,
-        _ => unimplemented!(),
+async fn handler_user_trap(
+    thread: &CurrentThread,
+    mut ctx: Box<UserContext>,
+) -> Result<(), ExceptionType> {
+    let reason = ctx.trap_reason();
+
+    if let TrapReason::Syscall = reason {
+        let num = syscall_num(&ctx);
+        let args = syscall_args(&ctx);
+        ctx.advance_pc(reason);
+        thread.put_context(ctx);
+        let mut syscall = zircon_syscall::Syscall { thread, thread_fn };
+        let ret = syscall.syscall(num as u32, args).await as usize;
+        thread
+            .with_context(|ctx| ctx.set_field(UserContextField::ReturnValue, ret))
+            .map_err(|_| ExceptionType::ThreadExiting)?;
+        return Ok(());
     }
-    #[cfg(target_arch = "x86_64")]
-    match trap_num {
-        0x100 => handle_syscall(thread).await,
-        0x20..=0xff => {
-            kernel_hal::interrupt::handle_irq(trap_num);
-            // TODO: configurable
-            if trap_num == 0xf1 {
-                EXCEPTIONS_TIMER.add(1);
-                kernel_hal::thread::yield_now().await;
-            }
+
+    thread.put_context(ctx);
+    match reason {
+        TrapReason::Interrupt(vector) => {
+            kernel_hal::interrupt::handle_irq(vector);
+            kernel_hal::thread::yield_now().await;
+            EXCEPTIONS_IRQ.add(1); // FIXME
+            Ok(())
         }
-        0xe => {
+        TrapReason::PageFault(vaddr, flags) => {
             EXCEPTIONS_PGFAULT.add(1);
-            let error_code = thread.with_context(|cx| cx.error_code);
-            let (vaddr, flags) = kernel_hal::context::fetch_page_fault_info(error_code);
-            info!(
-                "page fault from user mode {:#x} {:#x?} {:?}",
-                vaddr, error_code, flags
-            );
+            info!("page fault from user mode @ {:#x}({:?})", vaddr, flags);
             let vmar = thread.proc().vmar();
-            if let Err(err) = vmar.handle_page_fault(vaddr, flags) {
-                error!("handle_page_fault error: {:?}", err);
-                return Err(ExceptionType::FatalPageFault);
-            }
-        }
-        0x8 => thread.with_context(|cx| {
-            panic!("Double fault from user mode! {:#x?}", cx);
-        }),
-        num => {
-            return Err(match num {
-                0x1 => ExceptionType::HardwareBreakpoint,
-                0x3 => ExceptionType::SoftwareBreakpoint,
-                0x6 => ExceptionType::UndefinedInstruction,
-                0x17 => ExceptionType::UnalignedAccess,
-                _ => ExceptionType::General,
+            vmar.handle_page_fault(vaddr, flags).map_err(|err| {
+                error!(
+                    "failed to handle page fault from user mode @ {:#x}({:?}): {:?}\n{:#x?}",
+                    vaddr,
+                    flags,
+                    err,
+                    thread.context_cloned()
+                );
+                ExceptionType::FatalPageFault
             })
         }
+        TrapReason::UndefinedInstruction => Err(ExceptionType::UndefinedInstruction),
+        TrapReason::SoftwareBreakpoint => Err(ExceptionType::SoftwareBreakpoint),
+        TrapReason::HardwareBreakpoint => Err(ExceptionType::HardwareBreakpoint),
+        TrapReason::UnalignedAccess => Err(ExceptionType::UnalignedAccess),
+        TrapReason::GernelFault(_) => Err(ExceptionType::General),
+        _ => unreachable!(),
     }
-    Ok(())
 }
 
-async fn handle_syscall(thread: &CurrentThread) {
-    let (num, args) = thread.with_context(|cx| {
-        let regs = cx.general;
-        #[cfg(target_arch = "x86_64")]
-        let num = regs.rax as u32;
-        #[cfg(target_arch = "aarch64")]
-        let num = regs.x16 as u32;
-        // LibOS: Function call ABI
-        #[cfg(feature = "libos")]
-        #[cfg(target_arch = "x86_64")]
-        let args = unsafe {
-            let a6 = (regs.rsp as *const usize).read();
-            let a7 = (regs.rsp as *const usize).add(1).read();
-            [
-                regs.rdi, regs.rsi, regs.rdx, regs.rcx, regs.r8, regs.r9, a6, a7,
-            ]
-        };
-        // RealOS: Zircon syscall ABI
-        #[cfg(not(feature = "libos"))]
-        #[cfg(target_arch = "x86_64")]
-        let args = [
-            regs.rdi, regs.rsi, regs.rdx, regs.r10, regs.r8, regs.r9, regs.r12, regs.r13,
-        ];
-        // ARM64
-        #[cfg(target_arch = "aarch64")]
-        let args = [
-            regs.x0, regs.x1, regs.x2, regs.x3, regs.x4, regs.x5, regs.x6, regs.x7,
-        ];
-        (num, args)
-    });
-    let mut syscall = Syscall { thread, thread_fn };
-    let ret = syscall.syscall(num, args).await as usize;
-    thread.with_context(|cx| {
-        #[cfg(target_arch = "x86_64")]
-        {
-            cx.general.rax = ret;
+fn syscall_num(ctx: &UserContext) -> usize {
+    let regs = ctx.general();
+    cfg_if! {
+        if #[cfg(target_arch = "x86_64")] {
+            regs.rax
+        } else if #[cfg(target_arch = "aarch64")] {
+            regs.x16
+        } else if #[cfg(target_arch = "riscv64")] {
+            regs.a7
+        } else {
+            unimplemented!()
         }
-        #[cfg(target_arch = "aarch64")]
-        {
-            cx.general.x0 = ret;
+    }
+}
+
+fn syscall_args(ctx: &UserContext) -> [usize; 8] {
+    let regs = ctx.general();
+    cfg_if! {
+        if #[cfg(target_arch = "x86_64")] {
+            if cfg!(feature = "libos") {
+                let arg7 = unsafe{ (regs.rsp as *const usize).read() };
+                let arg8 = unsafe{ (regs.rsp as *const usize).add(1).read() };
+                [regs.rdi, regs.rsi, regs.rdx, regs.rcx, regs.r8, regs.r9, arg7, arg8]
+            } else {
+                [regs.rdi, regs.rsi, regs.rdx, regs.r10, regs.r8, regs.r9, regs.r12, regs.r13]
+            }
+        } else if #[cfg(target_arch = "aarch64")] {
+            [regs.x0, regs.x1, regs.x2, regs.x3, regs.x4, regs.x5, regs.x6, regs.x7]
+        } else if #[cfg(target_arch = "riscv64")] {
+            [regs.a0, regs.a1, regs.a2, regs.a3, regs.a4, regs.a5, regs.a6, regs.a7]
+        } else {
+            unimplemented!()
         }
-    });
+    }
 }

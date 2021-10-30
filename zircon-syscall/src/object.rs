@@ -139,14 +139,14 @@ impl Syscall<'_> {
             Property::RegisterFs => {
                 let thread = proc.get_object::<Thread>(handle_value)?;
                 let fsbase = UserInPtr::<usize>::from_addr_size(buffer, buffer_size)?.read()?;
-                thread.set_fsbase(fsbase)?;
+                thread.with_context(|ctx| ctx.general_mut().fsbase = fsbase)?;
                 Ok(())
             }
             #[cfg(target_arch = "x86_64")]
             Property::RegisterGs => {
                 let thread = proc.get_object::<Thread>(handle_value)?;
                 let gsbase = UserInPtr::<usize>::from_addr_size(buffer, buffer_size)?.read()?;
-                thread.set_gsbase(gsbase)?;
+                thread.with_context(|ctx| ctx.general_mut().gsbase = gsbase)?;
                 Ok(())
             }
             Property::ProcessBreakOnLoad => {
@@ -184,7 +184,7 @@ impl Syscall<'_> {
                 Ok(())
             }
             _ => {
-                warn!("unknown property");
+                warn!("unknown property {:?}", property);
                 Err(ZxError::INVALID_ARGS)
             }
         }

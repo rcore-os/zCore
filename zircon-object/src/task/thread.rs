@@ -1,26 +1,21 @@
-use {
-    super::exception::*,
-    super::process::Process,
-    super::*,
-    crate::object::*,
-    alloc::{boxed::Box, sync::Arc},
-    bitflags::bitflags,
-    core::{
-        any::Any,
-        future::Future,
-        ops::Deref,
-        pin::Pin,
-        task::{Context, Poll, Waker},
-        time::Duration,
-    },
-    futures::{channel::oneshot::*, future::FutureExt, pin_mut, select_biased},
-    kernel_hal::context::{GeneralRegs, UserContext},
-    spin::Mutex,
-};
-
-pub use self::thread_state::*;
-
 mod thread_state;
+
+pub use self::thread_state::ThreadStateKind;
+
+use alloc::{boxed::Box, sync::Arc};
+use core::task::{Context, Poll, Waker};
+use core::time::Duration;
+use core::{any::Any, future::Future, pin::Pin};
+
+use bitflags::bitflags;
+use futures::{channel::oneshot::*, future::FutureExt, pin_mut, select_biased};
+use kernel_hal::context::UserContext;
+use spin::Mutex;
+
+use self::thread_state::ContextAccessState;
+use super::{exception::*, Process, Task};
+use crate::object::{KObjectBase, KoID, Signal};
+use crate::{define_count_helper, impl_kobject, ZxError, ZxResult};
 
 /// Runnable / computation entity
 ///
@@ -217,7 +212,7 @@ impl Thread {
             ext: Box::new(ext),
             exceptionate: Exceptionate::new(ExceptionChannelType::Thread),
             inner: Mutex::new(ThreadInner {
-                context: Some(Box::new(UserContext::default())),
+                context: Some(Box::new(UserContext::new())),
                 ..Default::default()
             }),
         });
@@ -235,8 +230,39 @@ impl Thread {
         &self.ext
     }
 
+    /// Returns a copy of saved context of current thread, or `Err(ZxError::BAD_STATE)`
+    /// if the thread is running.
+    pub fn context_cloned(&self) -> ZxResult<UserContext> {
+        self.with_context(|ctx| ctx.clone())
+    }
+
+    /// Access saved context of current thread, or `Err(ZxError::BAD_STATE)` if
+    /// the thread is running.
+    pub fn with_context<T, F>(&self, f: F) -> ZxResult<T>
+    where
+        F: FnOnce(&mut UserContext) -> T,
+    {
+        let mut inner = self.inner.lock();
+        if let Some(ctx) = inner.context.as_mut() {
+            Ok(f(ctx))
+        } else {
+            Err(ZxError::BAD_STATE)
+        }
+    }
+
     /// Start execution on the thread.
-    pub fn start(
+    pub fn start(self: &Arc<Self>, thread_fn: ThreadFn) -> ZxResult {
+        self.inner
+            .lock()
+            .change_state(ThreadState::Running, &self.base);
+        let current = CurrentThread(self.clone());
+        let future = thread_fn(current);
+        kernel_hal::thread::spawn(ThreadSwitchFuture::new(self.clone(), future));
+        Ok(())
+    }
+
+    /// Setup the instruction and stack pointer, then tart execution on the thread
+    pub fn start_with_entry(
         self: &Arc<Self>,
         entry: usize,
         stack: usize,
@@ -244,74 +270,8 @@ impl Thread {
         arg2: usize,
         thread_fn: ThreadFn,
     ) -> ZxResult {
-        {
-            let mut inner = self.inner.lock();
-            let context = inner.context.as_mut().ok_or(ZxError::BAD_STATE)?;
-            #[cfg(target_arch = "x86_64")]
-            {
-                context.general.rip = entry;
-                context.general.rsp = stack;
-                context.general.rdi = arg1;
-                context.general.rsi = arg2;
-                // FIXME: set IOPL = 0 when IO port bitmap is supported
-                context.general.rflags = 0x3202; // IOPL = 3, enable interrupt
-            }
-            #[cfg(target_arch = "aarch64")]
-            {
-                context.elr = entry;
-                context.sp = stack;
-                context.general.x0 = arg1;
-                context.general.x1 = arg2;
-            }
-            #[cfg(target_arch = "riscv64")]
-            {
-                context.sepc = entry;
-                context.general.sp = stack;
-                context.general.a0 = arg1;
-                context.general.a1 = arg2;
-                context.sstatus = 1 << 18 | 3 << 13 | 1 << 5; // SUM | FS | SPIE
-            }
-            inner.change_state(ThreadState::Running, &self.base);
-        }
-        self.spawn(thread_fn);
-        Ok(())
-    }
-
-    /// Start execution with given registers.
-    pub fn start_with_regs(self: &Arc<Self>, regs: GeneralRegs, thread_fn: ThreadFn) -> ZxResult {
-        {
-            let mut inner = self.inner.lock();
-            let context = inner.context.as_mut().ok_or(ZxError::BAD_STATE)?;
-            context.general = regs;
-            #[cfg(target_arch = "x86_64")]
-            {
-                // FIXME: set IOPL = 0 when IO port bitmap is supported
-                context.general.rflags |= 0x3202; // IOPL = 3, enable interrupt
-            }
-            inner.change_state(ThreadState::Running, &self.base);
-        }
-        self.spawn(thread_fn);
-        Ok(())
-    }
-
-    /// Similar to start_with_regs(), but change a parameter: context
-    pub fn start_with_context(self: &Arc<Self>, cx: &UserContext, thread_fn: ThreadFn) -> ZxResult {
-        {
-            let mut inner = self.inner.lock();
-            let context = inner.context.as_mut().ok_or(ZxError::BAD_STATE)?;
-            context.general = cx.general;
-            context.set_syscall_ret(0);
-
-            #[cfg(target_arch = "riscv64")]
-            {
-                context.sepc = cx.sepc;
-                context.sstatus = 1 << 18 | 3 << 13 | 1 << 5; // SUM | FS | SPIE
-                debug!("start_with_regs_pc(), sepc: {:#x}", context.sepc);
-            }
-            inner.change_state(ThreadState::Running, &self.base);
-        }
-        self.spawn(thread_fn);
-        Ok(())
+        self.with_context(|ctx| ctx.setup_uspace(entry, stack, arg1, arg2))?;
+        self.start(thread_fn)
     }
 
     /// Stop the thread. Internal implementation of `exit` and `kill`.
@@ -432,31 +392,6 @@ impl Thread {
         f(&mut self.inner.lock().flags)
     }
 
-    /// Set the thread local fsbase register on x86_64.
-    #[cfg(target_arch = "x86_64")]
-    pub fn set_fsbase(&self, fsbase: usize) -> ZxResult {
-        let mut inner = self.inner.lock();
-        let context = inner.context.as_mut().ok_or(ZxError::BAD_STATE)?;
-        context.general.fsbase = fsbase;
-        Ok(())
-    }
-
-    /// Set the thread local gsbase register on x86_64.
-    #[cfg(target_arch = "x86_64")]
-    pub fn set_gsbase(&self, gsbase: usize) -> ZxResult {
-        let mut inner = self.inner.lock();
-        let context = inner.context.as_mut().ok_or(ZxError::BAD_STATE)?;
-        context.general.gsbase = gsbase;
-        Ok(())
-    }
-
-    /// Spawn the future returned by `thread_fn` in this thread.
-    fn spawn(self: &Arc<Self>, thread_fn: ThreadFn) {
-        let current = CurrentThread(self.clone());
-        let future = thread_fn(current);
-        kernel_hal::thread::spawn(ThreadSwitchFuture::new(self.clone(), future));
-    }
-
     /// Terminate the current running thread.
     fn terminate(&self) {
         let mut inner = self.inner.lock();
@@ -555,23 +490,11 @@ impl CurrentThread {
     }
 
     /// The thread ends running and takes back the context.
-    pub fn end_running(&self, context: Box<UserContext>) {
+    pub fn put_context(&self, context: Box<UserContext>) {
         let mut inner = self.inner.lock();
         inner.context = Some(context);
         let state = inner.state;
         inner.change_state(state, &self.base);
-    }
-
-    /// Access saved context of current thread.
-    ///
-    /// Will panic if the context is not availiable.
-    pub fn with_context<T, F>(&self, f: F) -> T
-    where
-        F: FnOnce(&mut UserContext) -> T,
-    {
-        let mut inner = self.inner.lock();
-        let mut cx = inner.context.as_mut().unwrap();
-        f(&mut cx)
     }
 
     /// Run async future and change state while blocking.
@@ -689,9 +612,8 @@ impl CurrentThread {
     }
 }
 
-impl Deref for CurrentThread {
+impl core::ops::Deref for CurrentThread {
     type Target = Arc<Thread>;
-
     fn deref(&self) -> &Self::Target {
         &self.0
     }
@@ -798,8 +720,9 @@ impl Future for ThreadSwitchFuture {
 
 #[cfg(test)]
 mod tests {
-    use super::job::Job;
     use super::*;
+    use crate::object::*;
+    use crate::task::*;
     use kernel_hal::timer::timer_now;
 
     #[test]
@@ -825,12 +748,12 @@ mod tests {
         // function for new thread
         async fn new_thread(thread: CurrentThread) {
             let cx = thread.wait_for_run().await;
-            assert_eq!(cx.general.rip, 1);
-            assert_eq!(cx.general.rsp, 4);
-            assert_eq!(cx.general.rdi, 3);
-            assert_eq!(cx.general.rsi, 2);
+            assert_eq!(cx.general().rip, 1);
+            assert_eq!(cx.general().rsp, 4);
+            assert_eq!(cx.general().rdi, 3);
+            assert_eq!(cx.general().rsi, 2);
             async_std::task::sleep(Duration::from_millis(10)).await;
-            thread.end_running(cx);
+            thread.put_context(cx);
         }
 
         // start a new thread
@@ -937,7 +860,7 @@ mod tests {
         let proc = Process::create(&root_job, "proc").expect("failed to create process");
         let thread = Thread::create(&proc, "thread").expect("failed to create thread");
 
-        const SIZE: usize = core::mem::size_of::<GeneralRegs>();
+        const SIZE: usize = core::mem::size_of::<kernel_hal::context::GeneralRegs>();
         let mut buf = [0; 10];
         assert_eq!(
             thread.read_state(ThreadStateKind::General, &mut buf).err(),
@@ -985,15 +908,13 @@ mod tests {
 
         assert_eq!(thread.state(), ThreadState::New);
 
-        thread
-            .start(0, 0, 0, 0, |thread| Box::pin(new_thread(thread)))
-            .unwrap();
+        thread.start(|thread| Box::pin(new_thread(thread))).unwrap();
         async fn new_thread(thread: CurrentThread) {
             assert_eq!(thread.state(), ThreadState::Running);
 
             // without suspend
             let context = thread.wait_for_run().await;
-            thread.end_running(context);
+            thread.put_context(context);
 
             // with suspend
             thread.suspend();

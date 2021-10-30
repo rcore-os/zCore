@@ -19,7 +19,7 @@ use {
 /// let thread = Thread::create(&proc, "thread").unwrap();
 ///
 /// // start the thread and never terminate
-/// thread.start(0, 0, 0, 0, |thread| Box::pin(async move {
+/// thread.start(|thread| Box::pin(async move {
 ///     loop { async_std::task::yield_now().await }
 ///     let _ = thread;
 /// })).unwrap();

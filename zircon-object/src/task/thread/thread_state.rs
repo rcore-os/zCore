@@ -13,35 +13,25 @@ numeric_enum! {
         Vector = 2,
         Debug = 4,
         SingleStep = 5,
-        FS = 6,
-        GS = 7,
     }
 }
 
-pub(super) trait ContextExt {
+pub(super) trait ContextAccessState {
     fn read_state(&self, kind: ThreadStateKind, buf: &mut [u8]) -> ZxResult<usize>;
     fn write_state(&mut self, kind: ThreadStateKind, buf: &[u8]) -> ZxResult;
 }
 
-impl ContextExt for UserContext {
+impl ContextAccessState for UserContext {
     fn read_state(&self, kind: ThreadStateKind, buf: &mut [u8]) -> ZxResult<usize> {
         match kind {
-            ThreadStateKind::General => buf.write_struct(&self.general),
-            #[cfg(target_arch = "x86_64")]
-            ThreadStateKind::FS => buf.write_struct(&self.general.fsbase),
-            #[cfg(target_arch = "x86_64")]
-            ThreadStateKind::GS => buf.write_struct(&self.general.gsbase),
+            ThreadStateKind::General => buf.write_struct(self.general()),
             _ => Err(ZxError::NOT_SUPPORTED),
         }
     }
 
     fn write_state(&mut self, kind: ThreadStateKind, buf: &[u8]) -> ZxResult {
         match kind {
-            ThreadStateKind::General => self.general = buf.read_struct()?,
-            #[cfg(target_arch = "x86_64")]
-            ThreadStateKind::FS => self.general.fsbase = buf.read_struct()?,
-            #[cfg(target_arch = "x86_64")]
-            ThreadStateKind::GS => self.general.gsbase = buf.read_struct()?,
+            ThreadStateKind::General => *self.general_mut() = buf.read_struct()?,
             _ => return Err(ZxError::NOT_SUPPORTED),
         }
         Ok(())

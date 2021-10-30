@@ -38,7 +38,7 @@ cfg_if! {
 pub(crate) use config::KCONFIG;
 pub(crate) use kernel_handler::KHANDLER;
 
-pub use common::{addr, console, defs::*, user};
+pub use common::{addr, console, context, defs::*, user};
 pub use config::KernelConfig;
 pub use imp::*;
 pub use kernel_handler::KernelHandler;

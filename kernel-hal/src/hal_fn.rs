@@ -2,7 +2,7 @@ use alloc::{boxed::Box, string::String, vec::Vec};
 use core::{future::Future, ops::Range, time::Duration};
 
 use crate::drivers::prelude::{IrqHandler, IrqPolarity, IrqTriggerMode};
-use crate::{common, HalResult, KernelConfig, KernelHandler, MMUFlags, PhysAddr, VirtAddr};
+use crate::{common, HalResult, KernelConfig, KernelHandler, PhysAddr, VirtAddr};
 
 hal_fn_def! {
     /// Bootstrap and initialization.
@@ -124,27 +124,6 @@ hal_fn_def! {
 
     pub(crate) mod console {
         pub(crate) fn console_write_early(_s: &str) {}
-    }
-
-    /// User context.
-    pub mod context: common::context {
-        /// Enter user mode.
-        pub fn context_run(context: &mut UserContext) {
-            cfg_if! {
-                if #[cfg(feature = "libos")] {
-                    context.run_fncall()
-                } else {
-                    context.run()
-                }
-            }
-        }
-
-        /// Get the trap number when trap.
-        pub fn fetch_trap_num(context: &UserContext) -> usize;
-
-        /// Get the fault virtual address and access type of the last page fault by `info_reg`
-        /// (`error_code` for x86, `scause` for riscv).
-        pub fn fetch_page_fault_info(info_reg: usize) -> (VirtAddr, MMUFlags);
     }
 
     /// Thread spawning.
