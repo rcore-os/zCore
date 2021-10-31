@@ -20,7 +20,7 @@ env_logger = { version = "0.8", optional = true }
 kernel-hal-unix = { path = "../kernel-hal-unix", optional = true }
 async-std = { version = "1.9", features = ["attributes"], optional = true }
 
-smoltcp = { git = "https://gitee.com/gcyyfun/smoltcp", rev="d31f93d", default-features = false, features = ["alloc","log", "async", "medium-ethernet","proto-ipv4", "proto-igmp", "socket-icmp", "socket-udp", "socket-tcp", "socket-raw"] }
+smoltcp = { git = "https://gitee.com/gcyyfun/smoltcp", rev="043eb60", default-features = false, features = ["alloc","log", "async", "medium-ethernet","proto-ipv4", "proto-igmp", "socket-icmp", "socket-udp", "socket-tcp", "socket-raw"] }
 kernel-hal-bare = { path = "../kernel-hal-bare" }
 byteorder = { version = "1.0", default-features = false }
 

@@ -392,11 +392,11 @@ async fn super_mode_eap_test() {
                 let typedata: [u8; 2] = [0x63, 0x6a];
                 eap_data.typedata_mut().copy_from_slice(&typedata[..]);
 
-                warn!("eframe : {:X?}", frame);
+                // warn!("eframe : {:X?}", frame);
             };
 
             let timestamp = Instant::from_millis(timer_now().as_millis() as i64);
-            warn!("timestamp1 : {:?}", timestamp);
+            warn!("{:?} : EAP Respone  ", timestamp);
             let _x = li.iface.lock().eap(timestamp, eapol_repr.buffer_len(), f);
         }
 
@@ -460,11 +460,11 @@ async fn super_mode_eap_test() {
                 // 00b0   00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 25   ...............%
                 // 00c0   00 00 00                                          ...
                 eap_data.typedata_mut().copy_from_slice(&typedata[..]);
-                warn!("eframe : {:X?}", frame);
+                // warn!("eframe : {:X?}", frame);
             };
 
             let timestamp = Instant::from_millis(timer_now().as_millis() as i64);
-            warn!("timestamp2 : {:?}", timestamp);
+            warn!("{:?} : EAP Respone  ", timestamp);
             let _x = li.iface.lock().eap(timestamp, eapol_repr.buffer_len(), f);
         }
 
@@ -600,11 +600,11 @@ async fn super_mode_eap_test() {
                 // 0330   00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00   ................
                 // 0340   00 00 00 00 00 00 00 00 00 00 00 00 74            ............t
 
-                warn!("eframe : {:X?}", frame);
+                // warn!("eframe : {:X?}", frame);
             };
 
             let timestamp = Instant::from_millis(timer_now().as_millis() as i64);
-            warn!("timestamp3 : {:?}", timestamp);
+            warn!("{:?} : EAP Respone  ", timestamp);
             let _x = li.iface.lock().eap(timestamp, eapol_repr.buffer_len(), f);
         }
         sleep_until(timer_now() + Duration::from_millis(latency)).await;
@@ -701,8 +701,8 @@ async fn ping() {
         loop {
             let timestamp = Instant::from_millis(timer_now().as_millis() as i64);
             match _li.iface.lock().poll(&mut sockets, timestamp) {
-                Ok(b) => {
-                    warn!("poll ok {}", b);
+                Ok(_) => {
+                    // warn!("poll ok {}", b);
                 }
                 Err(e) => {
                     debug!("poll error: {}", e);
@@ -713,8 +713,8 @@ async fn ping() {
                 let timestamp = Instant::from_millis(timer_now().as_millis() as i64);
                 let mut socket = sockets.get::<IcmpSocket>(icmp_handle);
                 if !socket.is_open() {
-                    warn!("no open");
-                    warn!("bind ident {} to icmp socket", ident);
+                    // warn!("no open");
+                    // warn!("bind ident {} to icmp socket", ident);
                     socket.bind(IcmpEndpoint::Ident(ident)).unwrap();
                     send_at = timestamp;
                 }
@@ -724,7 +724,7 @@ async fn ping() {
 
                     match remote_addr {
                         IpAddress::Ipv4(addr) => {
-                            warn!("ping send addr : {}", addr);
+                            // warn!("ping send addr : {}", addr);
                             let (icmp_repr, mut icmp_packet) = send_icmp_ping!(
                                 Icmpv4Repr,
                                 Icmpv4Packet,
@@ -748,7 +748,7 @@ async fn ping() {
 
                     match remote_addr {
                         IpAddress::Ipv4(addr) => {
-                            warn!("ping recv addr : {}", addr);
+                            // warn!("ping recv addr : {}", addr);
                             let icmp_packet = Icmpv4Packet::new_checked(&payload).unwrap();
                             let icmp_repr =
                                 Icmpv4Repr::parse(&icmp_packet, &device_caps.checksum).unwrap();

@@ -45,7 +45,7 @@ impl Driver for RTL8xInterface {
             match self.iface.lock().poll(&mut sockets, timestamp) {
                 Ok(_) => {
                     //SOCKET_ACTIVITY.notify_all();
-                    error!("e1000 try_handle_interrupt SOCKET_ACTIVITY unimplemented !");
+                    // error!("rtl8x try_handle_interrupt SOCKET_ACTIVITY unimplemented !");
                 }
                 Err(err) => {
                     debug!("poll got err {}", err);
@@ -93,9 +93,9 @@ impl NetDriver for RTL8xInterface {
         let timestamp = Instant::from_millis(0);
         let mut sockets = SOCKETS.lock();
         match self.iface.lock().poll(&mut sockets, timestamp) {
-            Ok(b) => {
+            Ok(_) => {
                 //SOCKET_ACTIVITY.notify_all();
-                error!("poll change : {}!", b);
+                // error!("poll change : {}!", b);
             }
             Err(err) => {
                 debug!("poll got err {}", err);
@@ -157,6 +157,7 @@ impl phy::RxToken for RTL8xRxToken {
     where
         F: FnOnce(&mut [u8]) -> Result<R>,
     {
+        // warn!("rx consume {:?}",self.0);
         f(&mut self.0)
     }
 }
@@ -166,7 +167,8 @@ impl phy::TxToken for RTL8xTxToken {
     where
         F: FnOnce(&mut [u8]) -> Result<R>,
     {
-        let mut buffer = [0u8; 1536];
+        use alloc::vec;
+        let mut buffer = vec![0u8; len];
         let result = f(&mut buffer[..len]);
         if result.is_ok() {
             (self.0).0.lock().geth_send(&buffer[..len]);
@@ -199,6 +201,7 @@ pub fn init(name: String, irq: Option<usize>) {
         .ethernet_addr(ethernet_addr)
         .neighbor_cache(neighbor_cache)
         .ip_addrs(ip_addrs)
+        .routes(routes)
         .finalize();
 
     info!("rtl8211f interface {} up with addr 192.100.1.5/24", name);
