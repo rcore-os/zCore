@@ -34,7 +34,7 @@ impl AcpiHandler for AcpiMapHandler {
         )
     }
 
-    /// we do nothing here, 
+    /// we do nothing here
     fn unmap_physical_region<T>(_region: &PhysicalMapping<Self, T>) {}
 }
 
@@ -50,7 +50,7 @@ pub struct IoApic {
     inner: Mutex<IoApicInner>,
 }
 
-/// one io-subsystem own one IoApic, maybe we have multiple io-subsystems, so we use a Vec to store IoApic
+/// one io-subsystem own one IoApic, maybe we have multiple io-subsystems, so store IoApic in a Vec
 #[derive(Debug)]
 pub struct IoApicList {
     io_apics: Vec<IoApic>,

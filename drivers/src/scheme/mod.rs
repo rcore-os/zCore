@@ -1,3 +1,6 @@
+//! The Scheme describe some fn must be impl for device, there are many Scheme traits in this mod,
+//! If you need to develop a new device, just impl the corresponding trait.
+//! The Scheme trait is suitable for any arch.
 pub(super) mod block;
 pub(super) mod display;
 pub(super) mod input;
