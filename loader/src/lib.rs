@@ -20,8 +20,6 @@ cfg_if! {
 
 cfg_if! {
     if #[cfg(any(feature = "zircon", doc))] {
-        mod kcounter;
-
         #[doc(cfg(feature = "zircon"))]
         pub mod zircon;
     }

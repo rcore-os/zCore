@@ -1,4 +1,6 @@
 //! Run Zircon user program (userboot) and manage trap/interrupt/syscall.
+//!
+//! Reference: <https://fuchsia.googlesource.com/fuchsia/+/3c234f79f71/zircon/kernel/lib/userabi/userboot.cc>
 
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
 use core::{future::Future, pin::Pin};
@@ -25,7 +27,7 @@ const K_ROOTRESOURCE: usize = 3;
 const K_ZBI: usize = 4;
 const K_FIRSTVDSO: usize = 5;
 const K_CRASHLOG: usize = 8;
-const K_COUNTERNAMES: usize = 9;
+const K_COUNTER_NAMES: usize = 9;
 const K_COUNTERS: usize = 10;
 const K_FISTINSTRUMENTATIONDATA: usize = 11;
 const K_HANDLECOUNT: usize = 15;
@@ -52,6 +54,39 @@ macro_rules! boot_library {
             include_bytes!(concat!($base_dir, "/", $name, ".so"))
         }
     }};
+}
+
+fn kcounter_vmos() -> (Arc<VmObject>, Arc<VmObject>) {
+    let (desc_vmo, arena_vmo) = if cfg!(feature = "libos") {
+        // dummy VMOs
+        use zircon_object::util::kcounter::DescriptorVmoHeader;
+        const HEADER_SIZE: usize = core::mem::size_of::<DescriptorVmoHeader>();
+        let desc_vmo = VmObject::new_paged(1);
+        let arena_vmo = VmObject::new_paged(1);
+
+        let header = DescriptorVmoHeader::default();
+        let header_buf: [u8; HEADER_SIZE] = unsafe { core::mem::transmute(header) };
+        desc_vmo.write(0, &header_buf).unwrap();
+        (desc_vmo, arena_vmo)
+    } else {
+        use kernel_hal::vm::{GenericPageTable, PageTable};
+        use zircon_object::{util::kcounter::AllCounters, vm::pages};
+        let pgtable = PageTable::from_current();
+
+        // kcounters names table.
+        let desc_vmo_data = AllCounters::raw_desc_vmo_data();
+        let paddr = pgtable.query(desc_vmo_data.as_ptr() as usize).unwrap().0;
+        let desc_vmo = VmObject::new_physical(paddr, pages(desc_vmo_data.len()));
+
+        // kcounters live data.
+        let arena_vmo_data = AllCounters::raw_arena_vmo_data();
+        let paddr = pgtable.query(arena_vmo_data.as_ptr() as usize).unwrap().0;
+        let arena_vmo = VmObject::new_physical(paddr, pages(arena_vmo_data.len()));
+        (desc_vmo, arena_vmo)
+    };
+    desc_vmo.set_name("counters/desc");
+    arena_vmo.set_name("counters/arena");
+    (desc_vmo, arena_vmo)
 }
 
 /// Run Zircon `userboot` process from the prebuilt path, and load the ZBI file as the bootfs.
@@ -143,6 +178,7 @@ pub fn run_userboot(zbi: impl AsRef<[u8]>, cmdline: &str) -> Arc<Process> {
     handles[K_ROOTJOB] = Handle::new(job, Rights::DEFAULT_JOB);
     handles[K_ROOTRESOURCE] = Handle::new(resource, Rights::DEFAULT_RESOURCE);
     handles[K_ZBI] = Handle::new(zbi_vmo, Rights::DEFAULT_VMO);
+
     // set up handles[K_FIRSTVDSO..K_LASTVDSO + 1]
     const VDSO_DATA_CONSTANTS: usize = 0x4a50;
     const VDSO_DATA_CONSTANTS_SIZE: usize = 0x78;
@@ -157,13 +193,17 @@ pub fn run_userboot(zbi: impl AsRef<[u8]>, cmdline: &str) -> Arc<Process> {
     handles[K_FIRSTVDSO] = Handle::new(vdso_vmo, Rights::DEFAULT_VMO | Rights::EXECUTE);
     handles[K_FIRSTVDSO + 1] = Handle::new(vdso_test1, Rights::DEFAULT_VMO | Rights::EXECUTE);
     handles[K_FIRSTVDSO + 2] = Handle::new(vdso_test2, Rights::DEFAULT_VMO | Rights::EXECUTE);
+
     // TODO: use correct CrashLogVmo handle
     let crash_log_vmo = VmObject::new_paged(1);
     crash_log_vmo.set_name("crashlog");
     handles[K_CRASHLOG] = Handle::new(crash_log_vmo, Rights::DEFAULT_VMO);
-    let (counter_name_vmo, kcounters_vmo) = super::kcounter::create_kcounter_vmo();
-    handles[K_COUNTERNAMES] = Handle::new(counter_name_vmo, Rights::DEFAULT_VMO);
-    handles[K_COUNTERS] = Handle::new(kcounters_vmo, Rights::DEFAULT_VMO);
+
+    // kcounter
+    let (desc_vmo, arena_vmo) = kcounter_vmos();
+    handles[K_COUNTER_NAMES] = Handle::new(desc_vmo, Rights::DEFAULT_VMO);
+    handles[K_COUNTERS] = Handle::new(arena_vmo, Rights::DEFAULT_VMO);
+
     // TODO: use correct Instrumentation data handle
     let instrumentation_data_vmo = VmObject::new_paged(0);
     instrumentation_data_vmo.set_name("UNIMPLEMENTED_VMO");
