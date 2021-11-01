@@ -1,3 +1,10 @@
+//! The [`Scheme`] describe some functions must be implemented for device, there are
+//! many [`Scheme`] traits in this mod.
+//!
+//! If you need to develop a new device, just implement the corresponding trait.
+//!
+//! The [`Scheme`] trait is suitable for any architecture.
+
 pub(super) mod block;
 pub(super) mod display;
 pub(super) mod input;
