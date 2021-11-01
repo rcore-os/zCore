@@ -64,12 +64,12 @@ if __name__=='__main__':
         basename = os.path.basename(cmd)
         cmd = cmd + '\n'
         serial.write(cmd.encode())
-        print("while Ture: in")
+        #print("while Ture: in")
         start_time = time.time()
         while True:
             with open(TMP_FILE, 'r') as f: output = f.read()
             if re.search(r"/ # [\r\n]", output):
-                print("while Ture: find #, out")
+                #print("while Ture: find #, out")
                 time.sleep(1)
                 break_out_flag = False
                 for pattern in FAILED:
@@ -83,7 +83,7 @@ if __name__=='__main__':
                     os.rename(TMP_FILE, BASE+"passed-"+basename)
                 break
             if time.time() - start_time > TIMEOUT:
-                print("while True: timeout, out")
+                #print("while True: timeout, out")
                 break_out_flag = False
                 for pattern in FAILED:
                     if re.search(pattern, output):
