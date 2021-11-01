@@ -16,7 +16,7 @@ struct AcpiMapHandler {
 }
 
 impl AcpiHandler for AcpiMapHandler {
-    /// we just impl this function, rdsp crate will use it, and we not.
+    /// we just impl this function, `rdsp` crate will use it, and we not.
     unsafe fn map_physical_region<T>(
         &self,
         physical_address: usize,
@@ -38,31 +38,35 @@ impl AcpiHandler for AcpiMapHandler {
     fn unmap_physical_region<T>(_region: &PhysicalMapping<Self, T>) {}
 }
 
-/// for apic, we can learn something from here: https://wiki.osdev.org/APIC
+/// An I/O APIC structure.
+///
+/// For local APIC and I/O APIC, we can learn something from here: <https://wiki.osdev.org/APIC>.
 pub struct IoApic {
-    // ioapic id
+    /// I/O APIC id.
     id: u8,
-    // gsi means Global System Interrupt, gsi_start is the base number of gsi in this ioapic
+    /// GSI means Global System Interrupt, `gsi_start` is the base number of GSI
+    /// in this I/O APIC.
     gsi_start: u32,
-    // max entry num of interrupt redirection table.
+    /// Max entry num of the interrupt redirection table.
     max_entry: u8,
-    // use x2apic crate to help us manipulate apic
+    /// Use `x2apic` crate to help us manipulate IOAPIC.
     inner: Mutex<IoApicInner>,
 }
 
-/// one io-subsystem own one IoApic, maybe we have multiple io-subsystems, so store IoApic in a Vec
+/// A list of I/O-APICs for systems have multiple I/O subsystems.
 #[derive(Debug)]
 pub struct IoApicList {
     io_apics: Vec<IoApic>,
 }
 
 impl IoApic {
-    /// create new IoApic
+    /// Create a new [`IoApic`] from fields parsed from the ACPI table, and
+    /// initialize it by disabling all interrupts.
     pub fn new(id: u8, base_vaddr: usize, gsi_start: u32) -> Self {
         let mut inner = unsafe { IoApicInner::new(base_vaddr as u64) };
         let max_entry = unsafe { inner.max_table_entry() };
         unsafe { assert_eq!(id, inner.id()) };
-        // close interrupt
+        // disable all interrupts
         for i in 0..max_entry + 1 {
             unsafe { inner.disable_irq(i) }
         }
@@ -74,7 +78,7 @@ impl IoApic {
         }
     }
 
-    /// set apic entry irq state by gsi.
+    /// Set apic entry IRQ state by `gsi`.
     pub fn toggle(&self, gsi: u32, enabled: bool) {
         let idx = (gsi - self.gsi_start) as u8;
         unsafe {
@@ -86,14 +90,13 @@ impl IoApic {
         }
     }
 
-    /// get interrupt vector by gsi.
+    /// Get the IDT vector of the `gsi` from redirection table.
     pub fn get_vector(&self, gsi: u32) -> u8 {
         let idx = (gsi - self.gsi_start) as u8;
         unsafe { self.inner.lock().table_entry(idx).vector() }
     }
 
-    /// set interrupt vector by gsi, vector is a notion of CPU, it is the index of handler in IRQ table
-    /// the vector is assigned by fn register_handler.
+    /// Set the IDT vector of the `gsi` in redirection table.
     pub fn map_vector(&self, gsi: u32, vector: u8) {
         let idx = (gsi - self.gsi_start) as u8;
         let mut inner = self.inner.lock();
@@ -104,6 +107,8 @@ impl IoApic {
         }
     }
 
+    /// Set the interrupt triggle mode, polarity and other fields of the `gsi`
+    /// in redirection table.
     pub fn configure(&self, gsi: u32, tm: IrqTriggerMode, pol: IrqPolarity, dest: u8, vector: u8) {
         let idx = (gsi - self.gsi_start) as u8;
         let mut inner = self.inner.lock();
@@ -126,10 +131,10 @@ impl IoApic {
 }
 
 impl IoApicList {
-    /// create new IoApicList
+    /// Probe all I/O APICs from the ACPI table represented by `acpi_rsdp`.
     pub fn new(acpi_rsdp: usize, phys_to_virt: Phys2VirtFn) -> Self {
         let handler = AcpiMapHandler { phys_to_virt };
-        // read rsdt
+        // parse ACPI table by the physical address of the RSDP.
         let tables = unsafe { AcpiTables::from_rsdp(handler, acpi_rsdp).unwrap() };
         let io_apics =
             if let InterruptModel::Apic(apic) = tables.platform_info().unwrap().interrupt_model {
@@ -150,7 +155,8 @@ impl IoApicList {
         Self { io_apics }
     }
 
-    /// find IoApic by gsi, each IoApic have a range of gsi.
+    /// Get the corresponding I/O APIC of the `gsi`, each I/O-APIC have a range
+    /// of GSI number.
     pub fn find(&self, gsi: u32) -> Option<&IoApic> {
         self.io_apics
             .iter()

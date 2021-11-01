@@ -1,5 +1,7 @@
-//! This file provide some fn to read dtb and get information about device.
-//! About device tree: https://kernel.meizu.com/device-tree.html
+//! Probe devices and create drivers from device tree.
+//!
+//! Specification: <https://github.com/devicetree-org/devicetree-specification/releases/download/v0.3/devicetree-specification-v0.3.pdf>.
+
 use alloc::{collections::BTreeMap, sync::Arc, vec::Vec};
 
 use device_tree::{util::StringList, DeviceTree, Node, PropError};
@@ -9,33 +11,43 @@ use crate::{Device, DeviceError, DeviceResult};
 
 const MAGIC_NUMBER: u32 = 0xd00dfeed;
 
-/// Some properties of parent node
-/// About the notion: cell, see https://elinux.org/Device_Tree_Usage#How_Addressing_Works
+/// Some properties inherited from ancestor nodes.
+/// About the notion: cell, see <https://elinux.org/Device_Tree_Usage#How_Addressing_Works>.
 #[derive(Clone, Copy, Debug, Default)]
 struct InheritProps {
+    /// The `#address-cells` property of its parent node.
     parent_address_cells: u32,
+    /// The `#size-cells` property of its parent node.
     parent_size_cells: u32,
+    /// The `interrupt-parent` property of the node. If don't have, inherit from
+    /// its parent node.
     interrupt_parent: u32,
 }
 
-/// A struct store device information in Node temporarily.
+/// A wrapper of [`Device`] which provides interrupt information additionally.
 #[derive(Debug)]
 struct DevWithInterrupt {
-    // A phandle value is a way to reference another node in the devicetree.
-    phandle: Option<u32>,         // only for interrupt controller
-    interrupt_cells: Option<u32>, // only for interrupt controller
+    /// For interrupt controller, represent the `phandle` property, otherwise
+    /// is `None`.
+    phandle: Option<u32>,
+    /// For interrupt controller, represent the `interrupt_cells` property,
+    /// otherwise is `None`.
+    interrupt_cells: Option<u32>,
+    /// A unified representation of the `interrupts` and `interrupts_extended`
+    /// properties for any interrupt generating device.
     interrupts_extended: Vec<u32>,
-    // device scheme
+    /// The inner [`Device`] structure.
     dev: Device,
 }
 
+/// A builder to probe devices and create drivers from device tree.
 pub struct DeviceTreeDriverBuilder<M: IoMapper> {
     dt: DeviceTree,
     io_mapper: M,
 }
 
 impl<M: IoMapper> DeviceTreeDriverBuilder<M> {
-    /// read dtb from dtb_base_vaddr and return DeviceTreeDriverBuilder
+    /// Prepare to parse DTB from the given virtual address.
     pub fn new(dtb_base_vaddr: usize, io_mapper: M) -> DeviceResult<Self> {
         // read device tree blob header firstly
         let header = unsafe { core::slice::from_raw_parts(dtb_base_vaddr as *const u32, 2) };
@@ -57,8 +69,8 @@ impl<M: IoMapper> DeviceTreeDriverBuilder<M> {
         Ok(Self { dt, io_mapper })
     }
 
-    /// A fn accept a fn,Node and InheritProps, and run the accepted fn for node and it's children node.
-    /// Here we use it to build device and children device.
+    /// Traverse the tree by DFS, collect necessary properties, and apply the
+    /// `device_node_op` to each node.
     fn walk<F>(&self, node: &Node, props: InheritProps, device_node_op: &mut F)
     where
         F: FnMut(&Node, &StringList, &InheritProps),
@@ -74,13 +86,13 @@ impl<M: IoMapper> DeviceTreeDriverBuilder<M> {
 
         props.parent_address_cells = node.prop_u32("#address-cells").unwrap_or(0);
         props.parent_size_cells = node.prop_u32("#size-cells").unwrap_or(0);
-        // depth first traversal
+        // DFS
         for child in node.children.iter() {
             self.walk(child, props, device_node_op);
         }
     }
 
-    /// build Device from device tree root node.
+    /// Parse the device tree from root, and returns an array of [`Device`] it found.
     pub fn build(&self) -> DeviceResult<Vec<Device>> {
         let mut intc_map = BTreeMap::new();
         let mut dev_list = Vec::new();
@@ -92,6 +104,7 @@ impl<M: IoMapper> DeviceTreeDriverBuilder<M> {
                 if let Ok(dev) = self.parse_device(node, comp, props) {
                     if node.has_prop("interrupt-controller") {
                         if let Some(phandle) = dev.phandle {
+                            // create the phandle-device mapping
                             intc_map.insert(phandle, dev_list.len());
                         }
                     }
@@ -103,7 +116,7 @@ impl<M: IoMapper> DeviceTreeDriverBuilder<M> {
         for dev in &dev_list {
             register_interrupt(dev, &dev_list, &intc_map).ok();
         }
-        //The fields besides dev in DevWithInterrupt is useless, so just return dev.
+
         Ok(dev_list.into_iter().map(|d| d.dev).collect())
     }
 }
@@ -113,7 +126,7 @@ impl<M: IoMapper> DeviceTreeDriverBuilder<M> {
 #[allow(unused_variables)]
 #[allow(unreachable_code)]
 impl<M: IoMapper> DeviceTreeDriverBuilder<M> {
-    /// parse DevWithInterrupt from device tree node.
+    /// Parse nodes for interrupt generating devices.
     fn parse_device(
         &self,
         node: &Node,
@@ -148,7 +161,7 @@ impl<M: IoMapper> DeviceTreeDriverBuilder<M> {
         res
     }
 
-    /// parse interrupt controller
+    /// Parse nodes for interrupt controllers.
     fn parse_intc(
         &self,
         node: &Node,
@@ -184,7 +197,7 @@ impl<M: IoMapper> DeviceTreeDriverBuilder<M> {
         })
     }
 
-    /// parse virtio device
+    /// Parse nodes for virtio devices over MMIO.
     #[cfg(feature = "virtio")]
     fn parse_virtio(&self, node: &Node, props: &InheritProps) -> DeviceResult<DevWithInterrupt> {
         use crate::virtio::*;
@@ -222,7 +235,7 @@ impl<M: IoMapper> DeviceTreeDriverBuilder<M> {
         })
     }
 
-    /// parse uart device
+    /// Parse nodes for UART devices.
     fn parse_uart(
         &self,
         node: &Node,
@@ -253,7 +266,8 @@ impl<M: IoMapper> DeviceTreeDriverBuilder<M> {
     }
 }
 
-/// register interrupts for dev
+/// Register interrupts for `dev` according to its interrupt parent, which can
+/// be found from the phandle-device mapping.
 fn register_interrupt(
     dev: &DevWithInterrupt,
     dev_list: &[DevWithInterrupt],
@@ -262,19 +276,19 @@ fn register_interrupt(
     let mut pos = 0;
     while pos < dev.interrupts_extended.len() {
         let parent = dev.interrupts_extended[pos];
-        // find interrupt controller
+        // find the interrupt parent in `dev_list`
         if let Some(intc) = intc_map.get(&parent).map(|&i| &dev_list[i]) {
             let cells = intc.interrupt_cells.ok_or(DeviceError::InvalidParam)?;
             if let Device::Irq(irq) = &intc.dev {
+                // get irq_num from the `interrupts_extended` property
                 let irq_num = dev.interrupts_extended[pos + 1] as usize;
                 if irq_num != 0xffff_ffff {
                     info!(
                         "device-tree: register interrupts for {:?}: {:?}, irq_num={:#x}",
                         intc.dev, dev.dev, irq_num
                     );
-                    // register irq_num and decive in irq table
                     irq.register_device(irq_num, dev.dev.inner())?;
-                    // close interrupt bacause we are not ready
+                    // enable the interrupt after registration
                     irq.unmask(irq_num)?;
                 }
             } else {
@@ -284,6 +298,7 @@ fn register_interrupt(
                 );
                 return Err(DeviceError::InvalidParam);
             }
+            // process the next interrupt parent
             pos += 1 + cells as usize;
         } else {
             warn!(
@@ -296,7 +311,7 @@ fn register_interrupt(
     Ok(())
 }
 
-/// read value from cells
+/// Combine `cell_num` of 32-bit integers from `cells` into a 64-bit integer.
 fn from_cells(cells: &[u32], cell_num: u32) -> DeviceResult<u64> {
     if cell_num as usize > cells.len() {
         return Err(DeviceError::InvalidParam);
@@ -308,7 +323,7 @@ fn from_cells(cells: &[u32], cell_num: u32) -> DeviceResult<u64> {
     Ok(value)
 }
 
-/// parse reg, reg is not register, about reg: https://elinux.org/Device_Tree_Usage#How_Addressing_Works
+/// Parse the `reg` property, about `reg`: <https://elinux.org/Device_Tree_Usage#How_Addressing_Works>.
 fn parse_reg(node: &Node, props: &InheritProps) -> DeviceResult<(u64, u64)> {
     let cells = node.prop_cells("reg")?;
     let addr = from_cells(&cells, props.parent_address_cells)?;
@@ -319,7 +334,8 @@ fn parse_reg(node: &Node, props: &InheritProps) -> DeviceResult<(u64, u64)> {
     Ok((addr, size))
 }
 
-// parse interrupts from node's interrupts property
+/// Returns a `Vec<u32>` according to the `interrupts` or `interrupts-extended`
+/// property, the first element is the interrupt parent.
 fn parse_interrupts(node: &Node, props: &InheritProps) -> DeviceResult<Vec<u32>> {
     if node.has_prop("interrupts-extended") {
         Ok(node.prop_cells("interrupts-extended")?)

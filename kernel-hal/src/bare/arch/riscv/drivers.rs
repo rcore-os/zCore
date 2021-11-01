@@ -11,7 +11,6 @@ use crate::{drivers, mem::phys_to_virt, CachePolicy, MMUFlags, PhysAddr, VirtAdd
 struct IoMapperImpl;
 
 impl IoMapper for IoMapperImpl {
-    /// query whether the paddr map exists, if not, map it.
     fn query_or_map(&self, paddr: PhysAddr, size: usize) -> Option<VirtAddr> {
         let vaddr = phys_to_virt(paddr);
         let mut pt = super::vm::kernel_page_table().lock();
@@ -47,9 +46,9 @@ impl IoMapper for IoMapperImpl {
     }
 }
 
-/// init device driver
+/// Initialize device drivers.
 pub(super) fn init() -> DeviceResult {
-    // read dtb and build driver
+    // prase DTB and probe devices
     let dev_list =
         DeviceTreeDriverBuilder::new(phys_to_virt(crate::KCONFIG.dtb_paddr), IoMapperImpl)?
             .build()?;
@@ -61,16 +60,16 @@ pub(super) fn init() -> DeviceResult {
             drivers::add_device(dev);
         }
     }
-    // get interrupt controller
+
     let irq = drivers::all_irq()
         .find("riscv-intc")
         .expect("IRQ device 'riscv-intc' not initialized!");
-    // register soft interrupt
+    // register soft interrupts handler
     irq.register_handler(
         ScauseIntCode::SupervisorSoft as _,
         Box::new(|| super::trap::super_soft()),
     )?;
-    // register timer interrupt
+    // register timer interrupts handler
     irq.register_handler(
         ScauseIntCode::SupervisorTimer as _,
         Box::new(|| super::trap::super_timer()),
