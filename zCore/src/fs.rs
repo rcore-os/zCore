@@ -1,19 +1,19 @@
 #![allow(dead_code)]
 
-fn init_ram_disk() -> &'static mut [u8] {
+fn init_ram_disk() -> Option<&'static mut [u8]> {
     if cfg!(feature = "link-user-img") {
         extern "C" {
             fn _user_img_start();
             fn _user_img_end();
         }
-        unsafe {
+        Some(unsafe {
             core::slice::from_raw_parts_mut(
                 _user_img_start as *mut u8,
                 _user_img_end as usize - _user_img_start as usize,
             )
-        }
+        })
     } else {
-        kernel_hal::boot::init_ram_disk().expect("failed to get init RAM disk data")
+        kernel_hal::boot::init_ram_disk()
     }
 }
 
@@ -37,8 +37,8 @@ cfg_if! {
             use linux_object::fs::rcore_fs_wrapper::{Block, BlockCache, MemBuf};
             use rcore_fs::dev::Device;
 
-            let device: Arc<dyn Device> = if cfg!(feature = "init-ram-disk") {
-                Arc::new(MemBuf::new(init_ram_disk()))
+            let device: Arc<dyn Device> = if let Some(initrd) = init_ram_disk() {
+                Arc::new(MemBuf::new(initrd))
             } else {
                 let block = kernel_hal::drivers::all_block().first_unwrap();
                 Arc::new(BlockCache::new(Block::new(block), 0x100))
@@ -56,7 +56,7 @@ cfg_if! {
 
         #[cfg(not(feature = "libos"))]
         pub fn zbi() -> impl AsRef<[u8]> {
-            init_ram_disk()
+            init_ram_disk().expect("failed to get the init RAM disk")
         }
     }
 }

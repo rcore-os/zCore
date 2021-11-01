@@ -8,7 +8,7 @@ pub fn free_pmem_regions() -> Vec<Range<PhysAddr>> {
         fn end();
     }
     let start = align_up(end as usize + PAGE_SIZE) - KCONFIG.phys_to_virt_offset;
-    // TODO: get physical memory end from device tree.
+    // TODO: get physical memory end from device tree and skip initrd
     alloc::vec![start..KCONFIG.phys_mem_end]
 }
 

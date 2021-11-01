@@ -8,6 +8,8 @@ hal_fn_def! {
     /// Bootstrap and initialization.
     pub mod boot {
         /// The kernel command line.
+        ///
+        /// TODO: use `&'a str` as return type.
         pub fn cmdline() -> String { String::new() }
 
         /// Returns the slice of the initial RAM disk, or `None` if not exist.

@@ -1,6 +1,6 @@
-mod dt;
+mod devicetree;
 
-pub use dt::DeviceTreeDriverBuilder;
+pub use devicetree::DevicetreeDriverBuilder;
 
 use crate::{PhysAddr, VirtAddr};
 

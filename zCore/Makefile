@@ -80,9 +80,7 @@ ifeq ($(LIBOS), 1)
   endif
   features += libos
 else
-  ifeq ($(ARCH), x86_64)
-    features += init-ram-disk
-  else ifeq ($(ARCH), riscv64)
+  ifeq ($(ARCH), riscv64)
     ifeq ($(PLATFORM), d1)
       features += board-d1 link-user-img
     else
@@ -140,12 +138,15 @@ else ifeq ($(ARCH), riscv64)
   qemu_opts += \
 		-machine virt \
 		-bios default \
-		-kernel $(kernel_img) \
+		-m 512M \
 		-no-reboot \
 		-no-shutdown \
 		-serial mon:stdio \
 		-drive format=qcow2,id=userdisk,file=$(qemu_disk) \
-		-device virtio-blk-device,drive=userdisk
+		-device virtio-blk-device,drive=userdisk \
+		-kernel $(kernel_img) \
+		-initrd $(USER_IMG) \
+		-append "LOG=$(LOG)"
 endif
 
 ifeq ($(GRAPHIC), on)

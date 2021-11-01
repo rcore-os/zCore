@@ -18,8 +18,7 @@ doc = false
 default = ["libos"]
 colorless-log = []
 graphic = ["kernel-hal/graphic"]
-init-ram-disk = []
-link-user-img = ["init-ram-disk"]
+link-user-img = []
 
 zircon = ["zcore-loader/zircon"]
 linux = ["zcore-loader/linux", "linux-object", "rcore-fs", "rcore-fs-sfs"]

@@ -1,90 +1,52 @@
 use alloc::{collections::BTreeMap, sync::Arc, vec::Vec};
 
-use device_tree::{util::StringList, DeviceTree, Node, PropError};
-
 use super::IoMapper;
-use crate::{Device, DeviceError, DeviceResult};
+use crate::utils::devicetree::{Devicetree, InheritProps, Node, StringList};
+use crate::{Device, DeviceError, DeviceResult, VirtAddr};
 
-const MAGIC_NUMBER: u32 = 0xd00dfeed;
-
-#[derive(Clone, Copy, Debug, Default)]
-struct InheritProps {
-    parent_address_cells: u32,
-    parent_size_cells: u32,
-    interrupt_parent: u32,
-}
-
+/// A wrapper of [`Device`] which provides interrupt information additionally.
 #[derive(Debug)]
 struct DevWithInterrupt {
-    phandle: Option<u32>,         // only for interrupt controller
-    interrupt_cells: Option<u32>, // only for interrupt controller
+    /// For interrupt controller, represent the `phandle` property, otherwise
+    /// is `None`.
+    phandle: Option<u32>,
+    /// For interrupt controller, represent the `interrupt_cells` property,
+    /// otherwise is `None`.
+    interrupt_cells: Option<u32>,
+    /// A unified representation of the `interrupts` and `interrupts_extended`
+    /// properties for any interrupt generating device.
     interrupts_extended: Vec<u32>,
+    /// The inner [`Device`] structure.
     dev: Device,
 }
 
-pub struct DeviceTreeDriverBuilder<M: IoMapper> {
-    dt: DeviceTree,
+pub struct DevicetreeDriverBuilder<M: IoMapper> {
+    dt: Devicetree,
     io_mapper: M,
 }
 
-impl<M: IoMapper> DeviceTreeDriverBuilder<M> {
-    pub fn new(dtb_base_vaddr: usize, io_mapper: M) -> DeviceResult<Self> {
-        let header = unsafe { core::slice::from_raw_parts(dtb_base_vaddr as *const u32, 2) };
-        let magic = u32::from_be(header[0]);
-        let size = u32::from_be(header[1]);
-        if magic != MAGIC_NUMBER {
-            return Err(DeviceError::InvalidParam);
-        }
-        let buf =
-            unsafe { core::slice::from_raw_parts(dtb_base_vaddr as *const u8, size as usize) };
-        let dt = DeviceTree::load(buf).map_err(|e| {
-            warn!(
-                "device-tree: failed to load DTB @ {:#x}: {:?}",
-                dtb_base_vaddr, e
-            );
-            DeviceError::InvalidParam
-        })?;
-        Ok(Self { dt, io_mapper })
-    }
-
-    fn walk<F>(&self, node: &Node, props: InheritProps, device_node_op: &mut F)
-    where
-        F: FnMut(&Node, &StringList, &InheritProps),
-    {
-        let mut props = props;
-        if let Ok(num) = node.prop_u32("interrupt-parent") {
-            props.interrupt_parent = num;
-        }
-
-        if let Ok(comp) = node.prop_str_list("compatible") {
-            device_node_op(node, &comp, &props);
-        }
-
-        props.parent_address_cells = node.prop_u32("#address-cells").unwrap_or(0);
-        props.parent_size_cells = node.prop_u32("#size-cells").unwrap_or(0);
-        for child in node.children.iter() {
-            self.walk(child, props, device_node_op);
-        }
+impl<M: IoMapper> DevicetreeDriverBuilder<M> {
+    pub fn new(dtb_base_vaddr: VirtAddr, io_mapper: M) -> DeviceResult<Self> {
+        Ok(Self {
+            dt: Devicetree::from(dtb_base_vaddr)?,
+            io_mapper,
+        })
     }
 
     pub fn build(&self) -> DeviceResult<Vec<Device>> {
         let mut intc_map = BTreeMap::new();
         let mut dev_list = Vec::new();
 
-        self.walk(
-            &self.dt.root,
-            InheritProps::default(),
-            &mut |node, comp, props| {
-                if let Ok(dev) = self.parse_device(node, comp, props) {
-                    if node.has_prop("interrupt-controller") {
-                        if let Some(phandle) = dev.phandle {
-                            intc_map.insert(phandle, dev_list.len());
-                        }
+        self.dt.walk(&mut |node, comp, props| {
+            if let Ok(dev) = self.parse_device(node, comp, props) {
+                if node.has_prop("interrupt-controller") {
+                    if let Some(phandle) = dev.phandle {
+                        intc_map.insert(phandle, dev_list.len());
                     }
-                    dev_list.push(dev);
                 }
-            },
-        );
+                dev_list.push(dev);
+            }
+        });
 
         for dev in &dev_list {
             register_interrupt(dev, &dev_list, &intc_map).ok();
@@ -98,7 +60,7 @@ impl<M: IoMapper> DeviceTreeDriverBuilder<M> {
 #[allow(unused_imports)]
 #[allow(unused_variables)]
 #[allow(unreachable_code)]
-impl<M: IoMapper> DeviceTreeDriverBuilder<M> {
+impl<M: IoMapper> DevicetreeDriverBuilder<M> {
     fn parse_device(
         &self,
         node: &Node,
@@ -303,11 +265,5 @@ fn parse_interrupts(node: &Node, props: &InheritProps) -> DeviceResult<Vec<u32>>
         Ok(ret)
     } else {
         Ok(Vec::new())
-    }
-}
-
-impl From<PropError> for DeviceError {
-    fn from(_err: PropError) -> Self {
-        Self::InvalidParam
     }
 }

@@ -5,6 +5,8 @@ mod irq_manager;
 #[cfg(feature = "graphic")]
 mod graphic_console;
 
+pub mod devicetree;
+
 pub(super) use id_allocator::IdAllocator;
 pub(super) use irq_manager::IrqManager;
 
