@@ -301,9 +301,9 @@ async fn handler_user_trap(
     thread.put_context(ctx);
     match reason {
         TrapReason::Interrupt(vector) => {
+            EXCEPTIONS_IRQ.add(1); // FIXME
             kernel_hal::interrupt::handle_irq(vector);
             kernel_hal::thread::yield_now().await;
-            EXCEPTIONS_IRQ.add(1); // FIXME
             Ok(())
         }
         TrapReason::PageFault(vaddr, flags) => {

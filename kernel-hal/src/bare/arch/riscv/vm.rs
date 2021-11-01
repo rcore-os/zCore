@@ -61,13 +61,22 @@ fn init_kernel_page_table() -> PagingResult<PageTable> {
         bootstacktop as usize,
         MMUFlags::READ | MMUFlags::WRITE,
     )?;
+    // initrd
+    if let Some(initrd) = super::INITRD_REGION.as_ref() {
+        map_range(
+            phys_to_virt(initrd.start),
+            phys_to_virt(initrd.end),
+            MMUFlags::READ | MMUFlags::WRITE,
+        )?;
+    }
     // physical frames
-    let region = &crate::mem::free_pmem_regions()[0];
-    map_range(
-        phys_to_virt(region.start),
-        phys_to_virt(region.end),
-        MMUFlags::READ | MMUFlags::WRITE,
-    )?;
+    for r in crate::mem::free_pmem_regions() {
+        map_range(
+            phys_to_virt(r.start),
+            phys_to_virt(r.end),
+            MMUFlags::READ | MMUFlags::WRITE,
+        )?;
+    }
 
     info!("initialized kernel page table @ {:#x}", pt.table_phys());
     Ok(pt)

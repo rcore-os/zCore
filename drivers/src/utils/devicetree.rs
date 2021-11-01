@@ -1,3 +1,4 @@
+use alloc::vec::Vec;
 use core::ops::Range;
 
 use device_tree::{DeviceTree as DeviceTreeInner, PropError};
@@ -5,6 +6,10 @@ use device_tree::{DeviceTree as DeviceTreeInner, PropError};
 use crate::{DeviceError, DeviceResult, PhysAddr, VirtAddr};
 
 pub use device_tree::{util::StringList, Node};
+
+/// A unified representation of the `interrupts` and `interrupts_extended`
+/// properties for any interrupt generating device.
+pub type InterruptsProp = Vec<u32>;
 
 /// A wrapper structure of `device_tree::DeviceTree`.
 pub struct Devicetree(DeviceTreeInner);
@@ -81,6 +86,58 @@ impl Devicetree {
         let start = chosen.prop_u32("linux,initrd-start").ok()? as _;
         let end = chosen.prop_u32("linux,initrd-end").ok()? as _;
         Some(start..end)
+    }
+
+    pub fn memory_regions(&self) -> DeviceResult<Vec<Range<PhysAddr>>> {
+        let props = InheritProps {
+            parent_address_cells: self.0.root.prop_u32("#address-cells").unwrap_or(0),
+            parent_size_cells: self.0.root.prop_u32("#size-cells").unwrap_or(0),
+            ..Default::default()
+        };
+
+        let mut regions = Vec::new();
+        for node in &self.0.root.children {
+            if node.name.starts_with("memory@")
+                || node.prop_str("device_type").unwrap_or_default() == "memory"
+            {
+                let (addr, size) = parse_reg(node, &props)?;
+                regions.push(addr as usize..addr as usize + size as usize)
+            }
+        }
+        Ok(regions)
+    }
+}
+
+fn from_cells(cells: &[u32], cell_num: u32) -> DeviceResult<u64> {
+    if cell_num as usize > cells.len() {
+        return Err(DeviceError::InvalidParam);
+    }
+    let mut value = 0;
+    for &c in &cells[..cell_num as usize] {
+        value = value << 32 | c as u64;
+    }
+    Ok(value)
+}
+
+pub fn parse_reg(node: &Node, props: &InheritProps) -> DeviceResult<(u64, u64)> {
+    let cells = node.prop_cells("reg")?;
+    let addr = from_cells(&cells, props.parent_address_cells)?;
+    let size = from_cells(
+        &cells[props.parent_address_cells as usize..],
+        props.parent_size_cells,
+    )?;
+    Ok((addr, size))
+}
+
+pub fn parse_interrupts(node: &Node, props: &InheritProps) -> DeviceResult<InterruptsProp> {
+    if node.has_prop("interrupts-extended") {
+        Ok(node.prop_cells("interrupts-extended")?)
+    } else if node.has_prop("interrupts") && props.interrupt_parent > 0 {
+        let mut ret = node.prop_cells("interrupts")?;
+        ret.insert(0, props.interrupt_parent);
+        Ok(ret)
+    } else {
+        Ok(Vec::new())
     }
 }
 

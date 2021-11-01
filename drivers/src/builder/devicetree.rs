@@ -1,7 +1,8 @@
 use alloc::{collections::BTreeMap, sync::Arc, vec::Vec};
 
 use super::IoMapper;
-use crate::utils::devicetree::{Devicetree, InheritProps, Node, StringList};
+use crate::utils::devicetree::{parse_interrupts, parse_reg};
+use crate::utils::devicetree::{Devicetree, InheritProps, InterruptsProp, Node, StringList};
 use crate::{Device, DeviceError, DeviceResult, VirtAddr};
 
 /// A wrapper of [`Device`] which provides interrupt information additionally.
@@ -15,7 +16,7 @@ struct DevWithInterrupt {
     interrupt_cells: Option<u32>,
     /// A unified representation of the `interrupts` and `interrupts_extended`
     /// properties for any interrupt generating device.
-    interrupts_extended: Vec<u32>,
+    interrupts_extended: InterruptsProp,
     /// The inner [`Device`] structure.
     dev: Device,
 }
@@ -233,37 +234,4 @@ fn register_interrupt(
         }
     }
     Ok(())
-}
-
-fn from_cells(cells: &[u32], cell_num: u32) -> DeviceResult<u64> {
-    if cell_num as usize > cells.len() {
-        return Err(DeviceError::InvalidParam);
-    }
-    let mut value = 0;
-    for &c in &cells[..cell_num as usize] {
-        value = value << 32 | c as u64;
-    }
-    Ok(value)
-}
-
-fn parse_reg(node: &Node, props: &InheritProps) -> DeviceResult<(u64, u64)> {
-    let cells = node.prop_cells("reg")?;
-    let addr = from_cells(&cells, props.parent_address_cells)?;
-    let size = from_cells(
-        &cells[props.parent_address_cells as usize..],
-        props.parent_size_cells,
-    )?;
-    Ok((addr, size))
-}
-
-fn parse_interrupts(node: &Node, props: &InheritProps) -> DeviceResult<Vec<u32>> {
-    if node.has_prop("interrupts-extended") {
-        Ok(node.prop_cells("interrupts-extended")?)
-    } else if node.has_prop("interrupts") && props.interrupt_parent > 0 {
-        let mut ret = node.prop_cells("interrupts")?;
-        ret.insert(0, props.interrupt_parent);
-        Ok(ret)
-    } else {
-        Ok(Vec::new())
-    }
 }

@@ -35,12 +35,13 @@ pub fn init_frame_allocator(regions: &[Range<PhysAddr>]) {
     for region in regions {
         let frame_start = phys_addr_to_frame_idx(region.start);
         let frame_end = phys_addr_to_frame_idx(region.end - 1) + 1;
-        assert!(frame_start < frame_end, "illegal range for frame allocator");
-        ba.insert(frame_start..frame_end);
-        info!(
-            "Frame allocator: add range {:#x?}",
-            frame_idx_to_phys_addr(frame_start)..frame_idx_to_phys_addr(frame_end),
-        );
+        if frame_start < frame_end {
+            ba.insert(frame_start..frame_end);
+            info!(
+                "Frame allocator: add range {:#x?}",
+                frame_idx_to_phys_addr(frame_start)..frame_idx_to_phys_addr(frame_end),
+            );
+        }
     }
     info!("Frame allocator init end.");
 }

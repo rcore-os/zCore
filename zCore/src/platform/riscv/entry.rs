@@ -15,8 +15,6 @@ pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
         hartid, device_tree_paddr
     );
     let config = KernelConfig {
-        phys_mem_start: PHYS_MEMORY_BASE,
-        phys_mem_end: PHYS_MEMORY_END,
         phys_to_virt_offset: PHYSICAL_MEMORY_OFFSET,
         dtb_paddr: device_tree_paddr,
     };
