@@ -9,6 +9,7 @@ user ?=
 hypervisor ?=
 smp ?= 1
 test_filter ?= *.*
+loopback= ?= 0
 
 build_args := -Z build-std=core,alloc --target $(arch).json
 build_path := target/$(arch)/$(mode)
@@ -43,6 +44,12 @@ ifeq ($(linux), 1)
 	build_args += --features linux
 else
 	build_args += --features zircon
+endif
+
+ifeq ($(loopback), 1)
+	build_args += --features loopback
+else
+	build_args += --features rtl8x
 endif
 
 qemu_opts := \

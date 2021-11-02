@@ -624,8 +624,15 @@ pub fn init(config: Config) {
         irq::plic::init_dt(&plic_node);
         serial::uart::init_dt(&uart_node);
 
-        let gmacirq = 62;
-        net::rtl8x::init(String::from("rtl8211f"), Some(gmacirq));
+        #[cfg(feature = "rtl8x")]
+        {
+            let gmacirq = 62;
+            net::rtl8x::init(String::from("rtl8211f"), Some(gmacirq));
+        }
+        #[cfg(feature = "loopback")]
+        {
+            net::loopback::init(String::from("loopback"));
+        }
     }
 
     interrupt::init();

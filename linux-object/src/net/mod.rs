@@ -108,23 +108,11 @@ impl Drop for GlobalSocketHandle {
         // send FIN immediately when applicable
         drop(sockets);
         poll_ifaces();
-        #[cfg(feature = "e1000")]
-        poll_ifaces_e1000();
-        #[cfg(feature = "loopback")]
-        poll_ifaces_loopback();
     }
 }
 
 // #[cfg(feature = "e1000")]
 use kernel_hal::get_net_driver;
-
-//  Safety: call this without SOCKETS locked
-#[cfg(feature = "e1000")]
-fn poll_ifaces_e1000() {
-    for iface in get_net_driver().iter() {
-        if let Ok(_) = iface.poll(&(*get_net_sockets())) {}
-    }
-}
 
 #[cfg(feature = "loopback")]
 use hashbrown::HashMap;
@@ -148,12 +136,6 @@ fn poll_ifaces() {
     }
 }
 
-/// miss doc
-#[cfg(feature = "loopback")]
-pub fn get_net_stack() -> Arc<Mutex<HashMap<usize, Arc<dyn NetStack>>>> {
-    NET_STACK.read().clone()
-}
-
 // /// miss doc
 // #[cfg(feature = "loopback")]
 // fn poll_ifaces_loopback() {
@@ -162,17 +144,6 @@ pub fn get_net_stack() -> Arc<Mutex<HashMap<usize, Arc<dyn NetStack>>>> {
 //         stack.poll(&(*get_net_sockets()), timestamp);
 //     }
 // }
-
-/// miss doc
-#[cfg(feature = "loopback")]
-fn poll_ifaces_loopback() {
-    for (_key, stack) in get_net_stack().lock().iter() {
-        let timestamp = Instant::from_millis(timer_now().as_millis() as i64);
-        stack.poll(&(*get_net_sockets()), timestamp);
-    }
-}
-
-// struct IFaceFuture;
 
 use core::future::Future;
 use core::pin::Pin;
