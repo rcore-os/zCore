@@ -1,3 +1,7 @@
+//! Probe devices and create drivers from device tree.
+//!
+//! Specification: <https://github.com/devicetree-org/devicetree-specification/releases/download/v0.3/devicetree-specification-v0.3.pdf>.
+
 use alloc::{collections::BTreeMap, sync::Arc, vec::Vec};
 
 use super::IoMapper;
@@ -21,12 +25,14 @@ struct DevWithInterrupt {
     dev: Device,
 }
 
+/// A builder to probe devices and create drivers from device tree.
 pub struct DevicetreeDriverBuilder<M: IoMapper> {
     dt: Devicetree,
     io_mapper: M,
 }
 
 impl<M: IoMapper> DevicetreeDriverBuilder<M> {
+    /// Prepare to parse DTB from the given virtual address.
     pub fn new(dtb_base_vaddr: VirtAddr, io_mapper: M) -> DeviceResult<Self> {
         Ok(Self {
             dt: Devicetree::from(dtb_base_vaddr)?,
@@ -34,12 +40,14 @@ impl<M: IoMapper> DevicetreeDriverBuilder<M> {
         })
     }
 
+    /// Parse the device tree from root, and returns an array of [`Device`] it found.
     pub fn build(&self) -> DeviceResult<Vec<Device>> {
         let mut intc_map = BTreeMap::new();
         let mut dev_list = Vec::new();
 
         self.dt.walk(&mut |node, comp, props| {
             if let Ok(dev) = self.parse_device(node, comp, props) {
+                // create the phandle-device mapping
                 if node.has_prop("interrupt-controller") {
                     if let Some(phandle) = dev.phandle {
                         intc_map.insert(phandle, dev_list.len());
@@ -62,6 +70,7 @@ impl<M: IoMapper> DevicetreeDriverBuilder<M> {
 #[allow(unused_variables)]
 #[allow(unreachable_code)]
 impl<M: IoMapper> DevicetreeDriverBuilder<M> {
+    /// Parse device nodes
     fn parse_device(
         &self,
         node: &Node,
@@ -72,10 +81,11 @@ impl<M: IoMapper> DevicetreeDriverBuilder<M> {
             "device-tree: parsing node {:?} with compatible {:?}",
             node.name, comp
         );
-
+        // parse interrupt controller
         let res = if node.has_prop("interrupt-controller") {
             self.parse_intc(node, comp, props)
         } else {
+            // parse other device
             match comp {
                 #[cfg(feature = "virtio")]
                 c if c.contains("virtio,mmio") => self.parse_virtio(node, props),
@@ -95,6 +105,7 @@ impl<M: IoMapper> DevicetreeDriverBuilder<M> {
         res
     }
 
+    /// Parse nodes for interrupt controllers.
     fn parse_intc(
         &self,
         node: &Node,
@@ -130,6 +141,7 @@ impl<M: IoMapper> DevicetreeDriverBuilder<M> {
         })
     }
 
+    /// Parse nodes for virtio devices over MMIO.
     #[cfg(feature = "virtio")]
     fn parse_virtio(&self, node: &Node, props: &InheritProps) -> DeviceResult<DevWithInterrupt> {
         use crate::virtio::*;
@@ -167,6 +179,7 @@ impl<M: IoMapper> DevicetreeDriverBuilder<M> {
         })
     }
 
+    /// Parse nodes for UART devices.
     fn parse_uart(
         &self,
         node: &Node,
@@ -197,6 +210,8 @@ impl<M: IoMapper> DevicetreeDriverBuilder<M> {
     }
 }
 
+/// Register interrupts for `dev` according to its interrupt parent, which can
+/// be found from the phandle-device mapping.
 fn register_interrupt(
     dev: &DevWithInterrupt,
     dev_list: &[DevWithInterrupt],
@@ -205,9 +220,11 @@ fn register_interrupt(
     let mut pos = 0;
     while pos < dev.interrupts_extended.len() {
         let parent = dev.interrupts_extended[pos];
+        // find the interrupt parent in `dev_list`
         if let Some(intc) = intc_map.get(&parent).map(|&i| &dev_list[i]) {
             let cells = intc.interrupt_cells.ok_or(DeviceError::InvalidParam)?;
             if let Device::Irq(irq) = &intc.dev {
+                // get irq_num from the `interrupts_extended` property
                 let irq_num = dev.interrupts_extended[pos + 1] as usize;
                 if irq_num != 0xffff_ffff {
                     info!(
@@ -215,6 +232,7 @@ fn register_interrupt(
                         intc.dev, dev.dev, irq_num
                     );
                     irq.register_device(irq_num, dev.dev.inner())?;
+                    // enable the interrupt after registration
                     irq.unmask(irq_num)?;
                 }
             } else {
@@ -224,6 +242,7 @@ fn register_interrupt(
                 );
                 return Err(DeviceError::InvalidParam);
             }
+            // process the next interrupt parent
             pos += 1 + cells as usize;
         } else {
             warn!(

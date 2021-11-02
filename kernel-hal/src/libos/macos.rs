@@ -45,7 +45,7 @@ struct Mcontext {
 
 /// Signal handler for when code tries to use %fs.
 ///
-/// Ref: https://github.com/NuxiNL/cloudabi-utils/blob/38d845bc5cc6fcf441fe0d3c2433f9298cbeb760/src/libemulator/tls.c#L30-L53
+/// Ref: <https://github.com/NuxiNL/cloudabi-utils/blob/38d845bc5cc6fcf441fe0d3c2433f9298cbeb760/src/libemulator/tls.c#L30-L53>
 extern "C" fn sig_handler(_sig: libc::c_int, _si: *mut libc::siginfo_t, uc: *mut libc::c_void) {
     unsafe {
         let uc = uc as *mut Ucontext;

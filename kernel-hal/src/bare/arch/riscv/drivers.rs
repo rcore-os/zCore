@@ -46,10 +46,13 @@ impl IoMapper for IoMapperImpl {
     }
 }
 
+/// Initialize device drivers.
 pub(super) fn init() -> DeviceResult {
+    // prase DTB and probe devices
     let dev_list =
         DevicetreeDriverBuilder::new(phys_to_virt(crate::KCONFIG.dtb_paddr), IoMapperImpl)?
             .build()?;
+    // add drivers
     for dev in dev_list.into_iter() {
         if let Device::Uart(uart) = dev {
             drivers::add_device(Device::Uart(BufferedUart::new(uart)));
@@ -61,10 +64,12 @@ pub(super) fn init() -> DeviceResult {
     let irq = drivers::all_irq()
         .find("riscv-intc")
         .expect("IRQ device 'riscv-intc' not initialized!");
+    // register soft interrupts handler
     irq.register_handler(
         ScauseIntCode::SupervisorSoft as _,
         Box::new(super::trap::super_soft),
     )?;
+    // register timer interrupts handler
     irq.register_handler(
         ScauseIntCode::SupervisorTimer as _,
         Box::new(super::trap::super_timer),

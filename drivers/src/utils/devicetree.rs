@@ -88,6 +88,7 @@ impl Devicetree {
         Some(start..end)
     }
 
+    /// Returns the physical memory regions specified in the `/memory` nodes.
     pub fn memory_regions(&self) -> DeviceResult<Vec<Range<PhysAddr>>> {
         let props = InheritProps {
             parent_address_cells: self.0.root.prop_u32("#address-cells").unwrap_or(0),
@@ -108,6 +109,7 @@ impl Devicetree {
     }
 }
 
+/// Combine `cell_num` of 32-bit integers from `cells` into a 64-bit integer.
 fn from_cells(cells: &[u32], cell_num: u32) -> DeviceResult<u64> {
     if cell_num as usize > cells.len() {
         return Err(DeviceError::InvalidParam);
@@ -119,6 +121,7 @@ fn from_cells(cells: &[u32], cell_num: u32) -> DeviceResult<u64> {
     Ok(value)
 }
 
+/// Parse the `reg` property, about `reg`: <https://elinux.org/Device_Tree_Usage#How_Addressing_Works>.
 pub fn parse_reg(node: &Node, props: &InheritProps) -> DeviceResult<(u64, u64)> {
     let cells = node.prop_cells("reg")?;
     let addr = from_cells(&cells, props.parent_address_cells)?;
@@ -129,6 +132,8 @@ pub fn parse_reg(node: &Node, props: &InheritProps) -> DeviceResult<(u64, u64)> 
     Ok((addr, size))
 }
 
+/// Returns a `Vec<u32>` according to the `interrupts` or `interrupts-extended`
+/// property, the first element is the interrupt parent.
 pub fn parse_interrupts(node: &Node, props: &InheritProps) -> DeviceResult<InterruptsProp> {
     if node.has_prop("interrupts-extended") {
         Ok(node.prop_cells("interrupts-extended")?)

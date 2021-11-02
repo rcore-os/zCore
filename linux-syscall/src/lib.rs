@@ -7,9 +7,8 @@
 //! let args = [regs.rdi, regs.rsi, regs.rdx, regs.r10, regs.r8, regs.r9];
 //! let mut syscall = Syscall {
 //!     thread,
-//!     syscall_entry: kernel_hal::context::syscall_entry as usize,
 //!     thread_fn,
-//!     regs,
+//!     syscall_entry: kernel_hal::context::syscall_entry as usize,
 //! };
 //! let ret = syscall.syscall(num, args).await;
 //! ```
