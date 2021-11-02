@@ -63,7 +63,7 @@ hal_fn_def! {
         pub fn frame_flush(target: PhysAddr);
     }
 
-    /// Virutal memory operations.
+    /// Virtual memory operations.
     pub mod vm: common::vm {
         /// Read the current VM token, which is the page table root address on
         /// various architectures. (e.g. CR3, SATP, ...)

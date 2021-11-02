@@ -1,4 +1,4 @@
-//! Virutal memory operations.
+//! Virtual memory operations.
 
 use super::mem::{MOCK_PHYS_MEM, PMEM_MAP_VADDR, PMEM_SIZE};
 use crate::{addr::is_aligned, MMUFlags, PhysAddr, VirtAddr, PAGE_SIZE};

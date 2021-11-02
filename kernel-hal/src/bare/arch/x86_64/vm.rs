@@ -1,4 +1,4 @@
-//! Virutal memory operations.
+//! Virtual memory operations.
 
 use core::fmt::{Debug, Formatter, Result};
 use core::{convert::TryFrom, slice};
