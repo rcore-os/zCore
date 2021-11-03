@@ -32,7 +32,7 @@ fn init_kernel_page_table() -> PagingResult<PageTable> {
     let mut pt = PageTable::new();
     let mut map_range = |start: VirtAddr, end: VirtAddr, flags: MMUFlags| -> PagingResult {
         pt.map_cont(
-            start,
+            crate::addr::align_down(start),
             crate::addr::align_up(end - start),
             start - KCONFIG.phys_to_virt_offset,
             flags | MMUFlags::HUGE_PAGE,

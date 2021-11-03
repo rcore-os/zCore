@@ -1,8 +1,9 @@
 use alloc::vec::Vec;
 use core::ops::Range;
 
+use crate::addr::{align_down, align_up};
 use crate::utils::init_once::InitOnce;
-use crate::{addr::align_up, PhysAddr, KCONFIG, PAGE_SIZE};
+use crate::{PhysAddr, KCONFIG, PAGE_SIZE};
 
 pub fn free_pmem_regions() -> Vec<Range<PhysAddr>> {
     extern "C" {
@@ -16,7 +17,7 @@ pub fn free_pmem_regions() -> Vec<Range<PhysAddr>> {
 
         let mut regions = Vec::new();
         for r in super::MEMORY_REGIONS.iter() {
-            let (start, end) = (r.start.max(min_start), r.end);
+            let (start, end) = (align_up(r.start.max(min_start)), align_down(r.end));
             if start >= end {
                 continue;
             }
@@ -28,11 +29,11 @@ pub fn free_pmem_regions() -> Vec<Range<PhysAddr>> {
                 }
                 // no overlap on the left
                 if initrd.start > start {
-                    regions.push(start..initrd.start);
+                    regions.push(start..align_down(initrd.start));
                 }
                 // no overlap on the right
                 if initrd.end < end {
-                    regions.push(initrd.end..end);
+                    regions.push(align_up(initrd.end)..end);
                 }
             }
         }
