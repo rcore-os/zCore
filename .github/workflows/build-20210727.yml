@@ -1,0 +1,96 @@
+name: Build CI
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: '40 3 * * *'  # every day at 3:40
+
+jobs:
+  check:
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly-2021-07-27
+          override: true
+          components: rust-src, rustfmt, clippy
+      - name: Check code format
+        run: cargo fmt --all -- --check
+      - name: Clippy LibOS
+        run: cargo clippy --all-features
+      - name: Clippy x86_64 bare-metal
+        run: cd zCore && make clippy ARCH=x86_64
+      - name: Clippy riscv64 bare-metal
+        run: cd zCore && make clippy ARCH=riscv64 LINUX=1
+
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-20.04, macos-latest]
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: 'recursive'
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly-2021-07-27
+          components: rust-src, llvm-tools-preview
+      - uses: actions-rs/install@v0.1
+        with:
+          crate: cargo-binutils
+          version: latest
+      - name: Build all packages
+        run: cargo build
+      - name: Build linux LibOS
+        run: cargo build --features "linux libos"
+      - name: Build zircon LibOS
+        run: cargo build --features "zircon libos"
+      - name: Build x86_64 bare-metal
+        run: cd zCore && make build ARCH=x86_64
+      - name: Build riscv64 bare-metal
+        run: cd zCore && make build ARCH=riscv64 LINUX=1
+
+  build-aarch64:
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly-2021-07-27
+          override: true
+          target: aarch64-unknown-linux-gnu
+      - uses: actions-rs/cargo@v1
+        with:
+          command: build
+          use-cross: true
+          args: --target aarch64-unknown-linux-gnu --workspace --exclude linux-syscall --exclude zcore-loader --exclude zcore
+
+  build-user:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-20.04, macos-latest]
+    steps:
+      - uses: actions/checkout@v2
+      - name: Pull prebuilt images
+        run: git lfs pull -I prebuilt/zircon/x64/libc.so,prebuilt/zircon/x64/libfdio.so,prebuilt/zircon/x64/libunwind.so,prebuilt/zircon/x64/libzircon.so,prebuilt/zircon/x64/Scrt1.o
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly-2021-07-27
+          target: x86_64-fuchsia
+      - name: Build Zircon user programs
+        run: cd zircon-user && make build MODE=release
+
+  build-doc:
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v2
+      - name: Build docs
+        run: cargo doc --no-deps --all-features

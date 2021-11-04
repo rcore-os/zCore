@@ -9,18 +9,19 @@ extern crate alloc;
 #[macro_use]
 extern crate log;
 
-use {
-    self::time::Deadline,
-    alloc::sync::Arc,
-    core::{
-        convert::TryFrom,
-        sync::atomic::{AtomicI32, Ordering},
-    },
-    futures::pin_mut,
-    kernel_hal::user::*,
-    zircon_object::object::*,
-    zircon_object::task::{CurrentThread, ThreadFn},
-};
+use alloc::sync::Arc;
+use core::convert::TryFrom;
+use core::sync::atomic::{AtomicI32, Ordering};
+
+use futures::pin_mut;
+use kernel_hal::user::{IoVecIn, IoVecOut, UserInOutPtr, UserInPtr, UserOutPtr};
+use zircon_object::object::{wait_signal_many, KernelObject, KoID, Rights, Signal};
+use zircon_object::object::{Handle, HandleBasicInfo, HandleValue, INVALID_HANDLE};
+use zircon_object::task::{CurrentThread, ThreadFn};
+use zircon_object::{ZxError, ZxResult};
+
+use self::consts::SyscallType as Sys;
+use self::time::Deadline;
 
 mod channel;
 mod consts;
@@ -46,8 +47,6 @@ mod task;
 mod time;
 mod vmar;
 mod vmo;
-
-use consts::SyscallType as Sys;
 
 pub struct Syscall<'a> {
     pub thread: &'a CurrentThread,

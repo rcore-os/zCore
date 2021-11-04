@@ -28,7 +28,7 @@ impl LinuxElfLoader {
         &self,
         vmar: &Arc<VmAddressRegion>,
         data: &[u8],
-        mut args: Vec<String>,
+        args: Vec<String>,
         envs: Vec<String>,
         path: String,
     ) -> LxResult<(VirtAddr, VirtAddr)> {
@@ -45,12 +45,12 @@ impl LinuxElfLoader {
         debug!("elf info:  {:#x?}", elf.header.pt2);
 
         if let Ok(interp) = elf.get_interpreter() {
-            info!("interp: {:?}", interp);
+            info!("interp: {:?}, path: {:?}", interp, path);
             let inode = self.root_inode.lookup(interp)?;
             let data = inode.read_as_vec()?;
-            args[0] = path.clone();
-            args.insert(0, interp.into());
-            return self.load(vmar, &data, args, envs, path);
+            let mut new_args = vec![interp.into(), path.clone()];
+            new_args.extend_from_slice(&args[1..]);
+            return self.load(vmar, &data, new_args, envs, path);
         }
 
         let size = elf.load_segment_size();

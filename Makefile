@@ -81,7 +81,7 @@ clean:
 	cd linux-syscall/lmbench && make clean
 
 doc:
-	arch=x86_64 cargo doc --open
+	cargo doc --open
 
 baremetal-test-img: prebuilt/linux/$(ROOTFS_TAR) rcore-fs-fuse
 	@echo Generating $(ARCH).img
@@ -100,7 +100,7 @@ baremetal-test-img: prebuilt/linux/$(ROOTFS_TAR) rcore-fs-fuse
 	@qemu-img resize $(OUT_IMG) +5M
 
 baremetal-test:
-	@make -C zCore baremetal-test mode=release linux=1 | tee stdout-baremetal-test
+	@make -C zCore baremetal-test MODE=release LINUX=1 | tee stdout-baremetal-test
 
 baremetal-test-rv64:
-	@make -C zCore baremetal-test-rv64 arch=riscv64 mode=release linux=1 ROOTPROC=$(ROOTPROC) | tee -a stdout-baremetal-test-rv64 | tee stdout-rv64
+	@make -C zCore baremetal-test-rv64 ARCH=riscv64 MODE=release LINUX=1 ROOTPROC=$(ROOTPROC) | tee -a stdout-baremetal-test-rv64 | tee stdout-rv64

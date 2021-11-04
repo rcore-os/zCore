@@ -2,16 +2,16 @@ import pexpect
 import sys
 import re
 import os
+import subprocess
 
 TIMEOUT = 300
-ZIRCON_LOADER_PATH = 'zircon-loader'
 BASE = 'zircon/'
 OUTPUT_FILE = BASE + 'test-output-libos.txt'
 RESULT_FILE = BASE + 'test-result-libos.txt'
 CHECK_FILE = BASE + 'test-check-passed.txt'
 TEST_CASE_ALL = BASE + 'testcases-all.txt'
 TEST_CASE_EXCEPTION = BASE + 'testcases-failed-libos.txt'
-PREBUILT_PATH = '../prebuilt/zircon/x64'
+ZBI_PATH = '../prebuilt/zircon/x64/core-tests.zbi'
 CMDLINE_BASE = 'LOG=warn:userboot=test/core-standalone-test:userboot.shutdown:core-tests='
 
 class Tee:
@@ -40,9 +40,11 @@ with open(TEST_CASE_EXCEPTION, "r") as tcf:
     exception_case = set([case.strip() for case in tcf.readlines()])
 check_case = all_case - exception_case
 
-for line in check_case: 
-    child = pexpect.spawn("cargo run -p '%s' -- '%s' '%s' --debug" % 
-                    (ZIRCON_LOADER_PATH, PREBUILT_PATH, CMDLINE_BASE+line), 
+subprocess.run("cargo build -p zcore --release --features 'zircon libos'",
+               shell=True, check=True)
+
+for line in check_case:
+    child = pexpect.spawn("../target/release/zcore", [ZBI_PATH, CMDLINE_BASE+line],
                     timeout=TIMEOUT, encoding='utf-8')
 
     child.logfile = Tee(OUTPUT_FILE, 'a')

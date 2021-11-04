@@ -1,18 +1,14 @@
 //! Linux syscall implementations
 //!
 //! ## Example
-//! the syscall is called like this in the linux-loader:
+//! The syscall is called like this in the [`zcore_loader`](../zcore_loader/index.html):
 //! ```ignore
 //! let num = regs.rax as u32;
 //! let args = [regs.rdi, regs.rsi, regs.rdx, regs.r10, regs.r8, regs.r9];
 //! let mut syscall = Syscall {
 //!     thread,
-//!     #[cfg(feature = "std")]
-//!     syscall_entry: kernel_hal::context::syscall_entry as usize,
-//!     #[cfg(not(feature = "std"))]
-//!     syscall_entry: 0,
 //!     thread_fn,
-//!     regs,
+//!     syscall_entry: kernel_hal::context::syscall_entry as usize,
 //! };
 //! let ret = syscall.syscall(num, args).await;
 //! ```
@@ -28,17 +24,18 @@ extern crate alloc;
 #[macro_use]
 extern crate log;
 
-use {
-    self::consts::SyscallType as Sys,
-    alloc::sync::Arc,
-    core::convert::TryFrom,
-    kernel_hal::{context::GeneralRegs, user::*},
-    linux_object::{error::*, fs::FileDesc, process::*},
-    zircon_object::{object::*, task::*, vm::VirtAddr},
-};
+use alloc::sync::Arc;
+use core::convert::TryFrom;
 
-#[cfg(target_arch = "riscv64")]
-use kernel_hal::context::UserContext;
+use kernel_hal::user::{IoVecIn, IoVecOut, UserInOutPtr, UserInPtr, UserOutPtr};
+use linux_object::error::{LxError, SysResult};
+use linux_object::fs::FileDesc;
+use linux_object::process::{wait_child, wait_child_any, LinuxProcess, ProcessExt, RLimit};
+use zircon_object::object::{KernelObject, KoID, Signal};
+use zircon_object::task::{CurrentThread, Process, Thread, ThreadFn};
+use zircon_object::{vm::VirtAddr, ZxError};
+
+use self::consts::SyscallType as Sys;
 
 mod consts {
     // generated from syscall.h.in
@@ -56,16 +53,10 @@ mod vm;
 pub struct Syscall<'a> {
     /// the thread making a syscall
     pub thread: &'a CurrentThread,
-    /// the entry of current syscall
-    pub syscall_entry: VirtAddr,
-    /// store the regs statues
-    #[cfg(not(target_arch = "riscv64"))]
-    pub regs: &'a mut GeneralRegs,
-    /// riscv GeneralRegs does not have Entry register
-    #[cfg(target_arch = "riscv64")]
-    pub context: &'a mut UserContext,
     /// new thread function
     pub thread_fn: ThreadFn,
+    /// the entry of current syscall
+    pub syscall_entry: VirtAddr,
 }
 
 impl Syscall<'_> {

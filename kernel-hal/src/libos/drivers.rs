@@ -24,11 +24,13 @@ cfg_if! {
     }
 }
 
-pub(super) fn init() {
+pub(super) fn init_early() {
     let uart = Arc::new(MockUart::new());
     drivers::add_device(Device::Uart(uart.clone()));
     MockUart::start_irq_service(move || uart.handle_irq(0));
+}
 
+pub(super) fn init() {
     #[cfg(feature = "graphic")]
     {
         use zcore_drivers::mock::display::MockDisplay;

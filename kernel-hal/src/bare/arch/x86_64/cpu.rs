@@ -1,3 +1,5 @@
+//! CPU information.
+
 use raw_cpuid::CpuId;
 
 lazy_static! {

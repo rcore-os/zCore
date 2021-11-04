@@ -32,7 +32,7 @@ kernel_path=\EFI\zCore\zcore.elf
 # The resolution of graphic output
 resolution=1024x768
 
-initramfs=\EFI\zCore\fuchsia.zbi
+initramfs=\EFI\zCore\x86_64.img
 # LOG=debug/info/error/warn/trace
 # add ROOTPROC info  ? split CMD and ARG : ROOTPROC=/libc-test/src/functional/argv.exe?   OR ROOTPROC=/bin/busybox?sh
 cmdline=LOG=error:TERM=xterm-256color:console.shell=true:virtcon.disable=true:ROOTPROC='''

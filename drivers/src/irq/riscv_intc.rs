@@ -78,24 +78,26 @@ impl IrqScheme for Intc {
 
     fn mask(&self, cause: usize) -> DeviceResult {
         unsafe {
-            Ok(match cause {
+            match cause {
                 S_SOFT => sie::clear_ssoft(),
                 S_TIMER => sie::clear_stimer(),
                 S_EXT => sie::clear_sext(),
                 _ => return Err(DeviceError::InvalidParam),
-            })
+            }
         }
+        Ok(())
     }
 
     fn unmask(&self, cause: usize) -> DeviceResult {
         unsafe {
-            Ok(match cause {
+            match cause {
                 S_SOFT => sie::set_ssoft(),
                 S_TIMER => sie::set_stimer(),
                 S_EXT => sie::set_sext(),
                 _ => return Err(DeviceError::InvalidParam),
-            })
+            }
         }
+        Ok(())
     }
 
     fn register_handler(&self, cause: usize, handler: IrqHandler) -> DeviceResult {

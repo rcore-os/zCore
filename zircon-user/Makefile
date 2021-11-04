@@ -1,33 +1,33 @@
-mode ?= debug
+MODE ?= debug
 
-ZBI_IN := ../prebuilt/zircon/x64/bringup.zbi
-ZBI_OUT := target/zcore.zbi
-BUILD_DIR := target/x86_64-fuchsia/$(mode)
-BOOTFS := $(BUILD_DIR)/bootfs
-BINS := $(patsubst src/bin/%.rs, $(BOOTFS)/bin/%, $(wildcard src/bin/*.rs))
+zbi_in := ../prebuilt/zircon/x64/bringup.zbi
+zbi_out := target/zcore-user.zbi
+build_dir := target/x86_64-fuchsia/$(MODE)
+bootfs := $(build_dir)/bootfs
+bins := $(patsubst src/bin/%.rs, $(bootfs)/bin/%, $(wildcard src/bin/*.rs))
 
-ifeq ($(mode), release)
-	BUILD_ARGS += --release
+ifeq ($(MODE), release)
+  build_args += --release
 endif
 
 ifeq ($(shell uname), Darwin)
-	ZBI_CLI := ../prebuilt/zircon/x64/zbi-macos
+  zbi_cli := ../prebuilt/zircon/x64/zbi-macos
 else
-	ZBI_CLI := ../prebuilt/zircon/x64/zbi-linux
+  zbi_cli := ../prebuilt/zircon/x64/zbi-linux
 endif
 
 .PHONY: zbi
 
 all: zbi
 
-zbi: $(ZBI_OUT)
+zbi: $(zbi_out)
 
 build:
-	cargo build $(BUILD_ARGS)
+	cargo build $(build_args)
 
-$(BOOTFS)/bin/%: $(BUILD_DIR)/%
-	mkdir -p $(BOOTFS)/bin
+$(bootfs)/bin/%: $(build_dir)/%
+	mkdir -p $(bootfs)/bin
 	cp $^ $@
 
-$(ZBI_OUT): build $(BINS)
-	$(ZBI_CLI) $(ZBI_IN) $(BOOTFS) -o $@
+$(zbi_out): build $(bins)
+	$(zbi_cli) $(zbi_in) $(bootfs) -o $@

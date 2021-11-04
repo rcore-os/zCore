@@ -129,10 +129,11 @@ impl Syscall<'_> {
         mapping_flags.set(MMUFlags::WRITE, options.contains(VmOptions::PERM_WRITE));
         mapping_flags.set(MMUFlags::EXECUTE, options.contains(VmOptions::PERM_EXECUTE));
         let overwrite = options.contains(VmOptions::SPECIFIC_OVERWRITE);
-        #[cfg(feature = "deny-page-fault")]
-        let map_range = true;
-        #[cfg(not(feature = "deny-page-fault"))]
-        let map_range = options.contains(VmOptions::MAP_RANGE);
+        let map_range = if cfg!(any(feature = "deny-page-fault", not(target_os = "none"))) {
+            true
+        } else {
+            options.contains(VmOptions::MAP_RANGE)
+        };
 
         info!(
             "mmuflags: {:?}, is_specific {:?}, overwrite {:?}, map_range {:?}",

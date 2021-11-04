@@ -1,12 +1,13 @@
+//! Virtual memory operations.
+
 use core::fmt::{Debug, Formatter, Result};
 use core::slice;
 
 use riscv::{asm, register::satp};
 use spin::Mutex;
 
-use crate::addr::{align_down, align_up};
 use crate::utils::page_table::{GenericPTE, PageTableImpl, PageTableLevel3};
-use crate::{mem::phys_to_virt, MMUFlags, PhysAddr, VirtAddr, KCONFIG, PAGE_SIZE};
+use crate::{mem::phys_to_virt, MMUFlags, PhysAddr, VirtAddr, KCONFIG};
 
 lazy_static! {
     static ref KERNEL_PT: Mutex<PageTable> = Mutex::new(init_kernel_page_table().unwrap());
@@ -26,14 +27,12 @@ fn init_kernel_page_table() -> PagingResult<PageTable> {
 
         fn bootstack();
         fn bootstacktop();
-
-        fn end();
     }
 
     let mut pt = PageTable::new();
     let mut map_range = |start: VirtAddr, end: VirtAddr, flags: MMUFlags| -> PagingResult {
         pt.map_cont(
-            start,
+            crate::addr::align_down(start),
             crate::addr::align_up(end - start),
             start - KCONFIG.phys_to_virt_offset,
             flags | MMUFlags::HUGE_PAGE,
@@ -62,12 +61,22 @@ fn init_kernel_page_table() -> PagingResult<PageTable> {
         bootstacktop as usize,
         MMUFlags::READ | MMUFlags::WRITE,
     )?;
+    // initrd
+    if let Some(initrd) = super::INITRD_REGION.as_ref() {
+        map_range(
+            phys_to_virt(initrd.start),
+            phys_to_virt(initrd.end),
+            MMUFlags::READ | MMUFlags::WRITE,
+        )?;
+    }
     // physical frames
-    map_range(
-        align_up(end as usize + PAGE_SIZE),
-        phys_to_virt(align_down(KCONFIG.phys_mem_end)),
-        MMUFlags::READ | MMUFlags::WRITE,
-    )?;
+    for r in crate::mem::free_pmem_regions() {
+        map_range(
+            phys_to_virt(r.start),
+            phys_to_virt(r.end),
+            MMUFlags::READ | MMUFlags::WRITE,
+        )?;
+    }
 
     info!("initialized kernel page table @ {:#x}", pt.table_phys());
     Ok(pt)
@@ -126,7 +135,7 @@ hal_fn_impl! {
 
 bitflags::bitflags! {
     /// Possible flags for a page table entry.
-    pub struct PTF: usize {
+    struct PTF: usize {
         const VALID =       1 << 0;
         const READABLE =    1 << 1;
         const WRITABLE =    1 << 2;
@@ -183,6 +192,7 @@ impl From<PTF> for MMUFlags {
 
 const PHYS_ADDR_MASK: u64 = 0x003f_ffff_ffff_fc00; // 10..54
 
+/// Sv39 and Sv48 page table entry.
 #[derive(Clone, Copy)]
 #[repr(transparent)]
 pub struct Rv64PTE(u64);
@@ -230,4 +240,5 @@ impl Debug for Rv64PTE {
     }
 }
 
+/// Sv39: Page-Based 39-bit Virtual-Memory System.
 pub type PageTable = PageTableImpl<PageTableLevel3, Rv64PTE>;

@@ -1,6 +1,6 @@
 use alloc::boxed::Box;
 
-use zcore_drivers::builder::{DeviceTreeDriverBuilder, IoMapper};
+use zcore_drivers::builder::{DevicetreeDriverBuilder, IoMapper};
 use zcore_drivers::irq::riscv::ScauseIntCode;
 use zcore_drivers::uart::BufferedUart;
 use zcore_drivers::{Device, DeviceResult};
@@ -50,7 +50,7 @@ impl IoMapper for IoMapperImpl {
 pub(super) fn init() -> DeviceResult {
     // prase DTB and probe devices
     let dev_list =
-        DeviceTreeDriverBuilder::new(phys_to_virt(crate::KCONFIG.dtb_paddr), IoMapperImpl)?
+        DevicetreeDriverBuilder::new(phys_to_virt(crate::KCONFIG.dtb_paddr), IoMapperImpl)?
             .build()?;
     // add drivers
     for dev in dev_list.into_iter() {
@@ -67,12 +67,12 @@ pub(super) fn init() -> DeviceResult {
     // register soft interrupts handler
     irq.register_handler(
         ScauseIntCode::SupervisorSoft as _,
-        Box::new(|| super::trap::super_soft()),
+        Box::new(super::trap::super_soft),
     )?;
     // register timer interrupts handler
     irq.register_handler(
         ScauseIntCode::SupervisorTimer as _,
-        Box::new(|| super::trap::super_timer()),
+        Box::new(super::trap::super_timer),
     )?;
     irq.unmask(ScauseIntCode::SupervisorSoft as _)?;
     irq.unmask(ScauseIntCode::SupervisorTimer as _)?;
@@ -82,10 +82,7 @@ pub(super) fn init() -> DeviceResult {
         crate::console::init_graphic_console(display.clone());
         if display.need_flush() {
             // TODO: support nested interrupt to render in time
-            crate::thread::spawn(
-                Box::pin(crate::common::future::DisplayFlushFuture::new(display, 30)),
-                crate::vm::current_vmtoken(),
-            );
+            crate::thread::spawn(crate::common::future::DisplayFlushFuture::new(display, 30));
         }
     }
 

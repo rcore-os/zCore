@@ -1,103 +1,107 @@
-//! Define the FrameAllocator for physical memory
-//! x86_64      --  64GB
+//! Define physical frame allocation and dynamic memory allocation.
 
-use crate::arch::consts::*;
-use {bitmap_allocator::BitAlloc, buddy_system_allocator::LockedHeap, spin::Mutex};
+use core::ops::Range;
+
+use bitmap_allocator::BitAlloc;
+use kernel_hal::PhysAddr;
+use spin::Mutex;
+
+use super::platform::consts::*;
 
 #[cfg(target_arch = "x86_64")]
-use rboot::{BootInfo, MemoryType};
-
-#[cfg(target_arch = "x86_64")]
-type FrameAlloc = bitmap_allocator::BitAlloc16M;
+type FrameAlloc = bitmap_allocator::BitAlloc16M; // max 64G
 
 #[cfg(target_arch = "riscv64")]
-type FrameAlloc = bitmap_allocator::BitAlloc1M;
+type FrameAlloc = bitmap_allocator::BitAlloc1M; // max 4G
 
+#[cfg(target_arch = "aarch64")]
+type FrameAlloc = bitmap_allocator::BitAlloc1M; // max 4G
+
+const PAGE_SIZE: usize = 4096;
+
+/// Global physical frame allocator
 static FRAME_ALLOCATOR: Mutex<FrameAlloc> = Mutex::new(FrameAlloc::DEFAULT);
 
-#[cfg(target_arch = "x86_64")]
-pub fn init_frame_allocator(boot_info: &BootInfo) {
+fn phys_addr_to_frame_idx(addr: PhysAddr) -> usize {
+    (addr - PHYS_MEMORY_BASE) / PAGE_SIZE
+}
+
+fn frame_idx_to_phys_addr(idx: usize) -> PhysAddr {
+    idx * PAGE_SIZE + PHYS_MEMORY_BASE
+}
+
+pub fn init_frame_allocator(regions: &[Range<PhysAddr>]) {
     let mut ba = FRAME_ALLOCATOR.lock();
-    for region in boot_info.memory_map.iter() {
-        if region.ty == MemoryType::CONVENTIONAL {
-            let start_frame = region.phys_start as usize / PAGE_SIZE;
-            let end_frame = start_frame + region.page_count as usize;
-            ba.insert(start_frame..end_frame);
+    for region in regions {
+        let frame_start = phys_addr_to_frame_idx(region.start);
+        let frame_end = phys_addr_to_frame_idx(region.end - 1) + 1;
+        if frame_start < frame_end {
+            ba.insert(frame_start..frame_end);
             info!(
-                "Frame allocator add range: {:#x?}",
-                region.phys_start..region.phys_start + region.page_count * PAGE_SIZE as u64,
+                "Frame allocator: add range {:#x?}",
+                frame_idx_to_phys_addr(frame_start)..frame_idx_to_phys_addr(frame_end),
             );
         }
     }
-    info!("Frame allocator init end");
+    info!("Frame allocator init end.");
 }
 
-#[cfg(target_arch = "riscv64")]
-pub fn init_frame_allocator() {
-    use core::ops::Range;
-    use kernel_hal::addr::{align_down, align_up};
-
-    /// Transform memory area `[start, end)` to integer range for `FrameAllocator`
-    fn to_range(start: usize, end: usize) -> Range<usize> {
-        info!("Frame allocator add range: {:#x?}", start..end);
-        let page_start = (start - MEMORY_OFFSET) / PAGE_SIZE;
-        let page_end = (end - MEMORY_OFFSET) / PAGE_SIZE;
-        assert!(page_start < page_end, "illegal range for frame allocator");
-        page_start..page_end
-    }
-
-    extern "C" {
-        fn end();
-    }
-
-    let mut ba = FRAME_ALLOCATOR.lock();
-    let mem_pool_start = align_up(end as usize + PAGE_SIZE - KERNEL_OFFSET + MEMORY_OFFSET);
-    let mem_pool_end = align_down(MEMORY_END);
-    ba.insert(to_range(mem_pool_start, mem_pool_end));
-
-    info!("Frame allocator: init end");
-}
-
-pub fn init_heap() {
-    const MACHINE_ALIGN: usize = core::mem::size_of::<usize>();
-    const HEAP_BLOCK: usize = KERNEL_HEAP_SIZE / MACHINE_ALIGN;
-    static mut HEAP: [usize; HEAP_BLOCK] = [0; HEAP_BLOCK];
-    unsafe {
-        HEAP_ALLOCATOR
-            .lock()
-            .init(HEAP.as_ptr() as usize, HEAP_BLOCK * MACHINE_ALIGN);
-    }
-    info!("heap init end");
-}
-
-pub fn frame_alloc() -> Option<usize> {
-    // get the real address of the alloc frame
-    let ret = FRAME_ALLOCATOR
-        .lock()
-        .alloc()
-        .map(|id| id * PAGE_SIZE + MEMORY_OFFSET);
-    trace!("Allocate frame: {:x?}", ret);
+pub fn frame_alloc() -> Option<PhysAddr> {
+    let ret = FRAME_ALLOCATOR.lock().alloc().map(frame_idx_to_phys_addr);
+    trace!("frame_alloc(): {:x?}", ret);
     ret
 }
 
-pub fn frame_alloc_contiguous(frame_count: usize, align_log2: usize) -> Option<usize> {
+pub fn frame_alloc_contiguous(frame_count: usize, align_log2: usize) -> Option<PhysAddr> {
     let ret = FRAME_ALLOCATOR
         .lock()
         .alloc_contiguous(frame_count, align_log2)
-        .map(|id| id * PAGE_SIZE + MEMORY_OFFSET);
+        .map(frame_idx_to_phys_addr);
     trace!(
-        "Allocate contiguous frames: {:x?} ~ {:x?}",
+        "frame_alloc_contiguous(): {:x?} ~ {:x?}, align_log2={}",
         ret,
-        ret.map(|x| x + frame_count)
+        ret.map(|x| x + frame_count),
+        align_log2,
     );
     ret
 }
 
-pub fn frame_dealloc(target: usize) {
-    trace!("Deallocate frame: {:x}", target);
+pub fn frame_dealloc(target: PhysAddr) {
+    trace!("frame_dealloc(): {:x}", target);
     FRAME_ALLOCATOR
         .lock()
-        .dealloc((target - MEMORY_OFFSET) / PAGE_SIZE);
+        .dealloc(phys_addr_to_frame_idx(target))
+}
+
+cfg_if! {
+    if #[cfg(not(feature = "libos"))] {
+        use buddy_system_allocator::LockedHeap;
+
+        /// Global heap allocator
+        ///
+        /// Available after `memory::init_heap()`.
+        #[global_allocator]
+        static HEAP_ALLOCATOR: LockedHeap = LockedHeap::new();
+
+        /// Initialize the global heap allocator.
+        pub fn init_heap() {
+            const MACHINE_ALIGN: usize = core::mem::size_of::<usize>();
+            const HEAP_BLOCK: usize = KERNEL_HEAP_SIZE / MACHINE_ALIGN;
+            static mut HEAP: [usize; HEAP_BLOCK] = [0; HEAP_BLOCK];
+            let heap_start = unsafe { HEAP.as_ptr() as usize };
+            unsafe {
+                HEAP_ALLOCATOR
+                    .lock()
+                    .init(heap_start, HEAP_BLOCK * MACHINE_ALIGN);
+            }
+            info!(
+                "Heap init end: {:#x?}",
+                heap_start..heap_start + KERNEL_HEAP_SIZE
+            );
+        }
+    } else {
+        pub fn init_heap() {}
+    }
 }
 
 #[cfg(feature = "hypervisor")]
@@ -131,9 +135,3 @@ mod rvm_extern_fn {
         vector == 36 // IRQ0 + COM1 in kernel-hal-bare/src/arch/x86_64/interrupt.rs
     }
 }
-
-/// Global heap allocator
-///
-/// Available after `memory::init_heap()`.
-#[global_allocator]
-static HEAP_ALLOCATOR: LockedHeap = LockedHeap::new();

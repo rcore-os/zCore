@@ -1,3 +1,5 @@
+//! Time and clock functions.
+
 use alloc::boxed::Box;
 use core::time::Duration;
 

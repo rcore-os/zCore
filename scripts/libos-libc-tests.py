@@ -25,7 +25,7 @@ def print_cases(cases, file=None):
         print(case, file=file)
 
 
-subprocess.run("cd .. && cargo build --release -p linux-loader",
+subprocess.run("cargo build -p zcore --release --features 'linux libos'",
                shell=True, check=True)
 
 for path in sorted(glob.glob("../rootfs/libc-test/src/*/*.exe")):
@@ -35,7 +35,7 @@ for path in sorted(glob.glob("../rootfs/libc-test/src/*/*.exe")):
         continue
     try:
         time_start = time.time()
-        subprocess.run("cd .. && ./target/release/linux-loader " + path,
+        subprocess.run("cd .. && ./target/release/zcore " + path,
                        shell=True, timeout=TIMEOUT, check=True)
         time_end = time.time()
         passed.add(path)
@@ -73,4 +73,4 @@ if check_failed:
 else:
     print(colored('All checked case passed!', 'green'))
 
-os.system('killall linux-loader')
+os.system('killall zcore')

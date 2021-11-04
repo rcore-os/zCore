@@ -1,17 +1,19 @@
 [workspace]
 members = [
+    "drivers",
+    "kernel-hal",
     "zircon-object",
     "zircon-syscall",
-    "zircon-loader",
     "linux-object",
     "linux-syscall",
-    "linux-loader",
-    "kernel-hal",
-    "drivers",
+    "loader",
+    "zCore",
 ]
 
 exclude = [
     "zircon-user",
-    "zCore",
     "rboot",
 ]
+
+[profile.release]
+lto = true

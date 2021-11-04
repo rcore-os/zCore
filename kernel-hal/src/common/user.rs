@@ -1,3 +1,5 @@
+//! Read/write user space pointer.
+
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt::{Debug, Formatter};

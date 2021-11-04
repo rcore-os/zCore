@@ -1,3 +1,5 @@
+//! Functions only available on x86 platforms.
+
 use x86_64::instructions::port::Port;
 
 /// IO Port in instruction

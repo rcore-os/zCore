@@ -1,15 +1,16 @@
-use super::mem::{MOCK_PHYS_MEM, PMEM_BASE, PMEM_SIZE};
+//! Virtual memory operations.
+
+use super::mem::{MOCK_PHYS_MEM, PMEM_MAP_VADDR, PMEM_SIZE};
 use crate::{addr::is_aligned, MMUFlags, PhysAddr, VirtAddr, PAGE_SIZE};
 
 hal_fn_impl! {
     impl mod crate::hal_fn::vm {
-        fn current_vmtoken() -> PhysAddr {
-            0
-        }
+        fn current_vmtoken() -> PhysAddr { 0 }
+        fn activate_paging(_vmtoken: PhysAddr) {}
     }
 }
 
-/// Page Table
+/// Dummy page table implemented by `mmap`, `munmap`, and `mprotect`.
 pub struct PageTable;
 
 impl PageTable {
@@ -68,9 +69,9 @@ impl GenericPageTable for PageTable {
 
     fn query(&self, vaddr: VirtAddr) -> PagingResult<(PhysAddr, MMUFlags, PageSize)> {
         debug_assert!(is_aligned(vaddr));
-        if PMEM_BASE <= vaddr && vaddr < PMEM_BASE + PMEM_SIZE {
+        if PMEM_MAP_VADDR <= vaddr && vaddr < PMEM_MAP_VADDR + PMEM_SIZE {
             Ok((
-                vaddr - PMEM_BASE,
+                vaddr - PMEM_MAP_VADDR,
                 MMUFlags::READ | MMUFlags::WRITE,
                 PageSize::Size4K,
             ))

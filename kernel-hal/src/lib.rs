@@ -1,7 +1,9 @@
 //! Hardware Abstraction Layer
 
 #![cfg_attr(not(feature = "libos"), no_std)]
+#![cfg_attr(feature = "libos", feature(thread_id_value))]
 #![feature(asm)]
+#![feature(doc_cfg)]
 #![deny(warnings)]
 
 extern crate alloc;
@@ -36,7 +38,11 @@ cfg_if! {
 pub(crate) use config::KCONFIG;
 pub(crate) use kernel_handler::KHANDLER;
 
-pub use common::{addr, console, defs::*, user};
+pub use common::{addr, console, context, defs::*, user};
 pub use config::KernelConfig;
 pub use imp::*;
 pub use kernel_handler::KernelHandler;
+
+#[cfg(any(feature = "smp", doc))]
+#[doc(cfg(feature = "smp"))]
+pub use imp::boot::{primary_init, primary_init_early, secondary_init};

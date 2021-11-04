@@ -299,7 +299,8 @@ pub struct JobInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::task::{CurrentThread, Status, Thread, ThreadState, TASK_RETCODE_SYSCALL_KILL};
+    use crate::task::{Status, Thread, ThreadState, TASK_RETCODE_SYSCALL_KILL};
+    use core::time::Duration;
 
     #[test]
     fn create() {
@@ -439,14 +440,28 @@ mod tests {
         assert!(!job.is_empty());
     }
 
-    #[test]
-    fn kill() {
+    #[async_std::test]
+    async fn kill() {
         let root_job = Job::root();
         let job = Job::create_child(&root_job).expect("failed to create job");
         let proc = Process::create(&root_job, "proc").expect("failed to create process");
         let thread = Thread::create(&proc, "thread").expect("failed to create thread");
-        let current_thread = CurrentThread(thread.clone());
+        thread
+            .start(|thread| {
+                std::boxed::Box::pin(async {
+                    println!("should not be killed");
+                    async_std::task::sleep(Duration::from_millis(1000)).await;
+                    {
+                        // FIXME
+                        drop(thread);
+                        async_std::task::sleep(Duration::from_millis(1000)).await;
+                    }
+                    unreachable!("should be killed");
+                })
+            })
+            .expect("failed to start thread");
 
+        async_std::task::sleep(Duration::from_millis(500)).await;
         root_job.kill();
         assert!(root_job.inner.lock().killed);
         assert!(job.inner.lock().killed);
@@ -458,7 +473,8 @@ mod tests {
         assert!(!proc.signal().contains(Signal::PROCESS_TERMINATED));
         assert!(!thread.signal().contains(Signal::THREAD_TERMINATED));
 
-        std::mem::drop(current_thread);
+        // wait for killing...
+        async_std::task::sleep(Duration::from_millis(1000)).await;
         assert!(root_job.inner.lock().killed);
         assert!(job.inner.lock().killed);
         assert_eq!(proc.status(), Status::Exited(TASK_RETCODE_SYSCALL_KILL));

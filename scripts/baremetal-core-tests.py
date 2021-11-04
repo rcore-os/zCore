@@ -39,7 +39,7 @@ with open(TEST_CASE_FILE, "r") as tcf:
     for line in lines:
         with open(DBG_FILE, "a") as dbg: print(line, file=dbg)
 
-        child = pexpect.spawn("make -C %s test mode=release test_filter='%s'" % (ZCORE_PATH, line.replace('\n','')),
+        child = pexpect.spawn("make -C %s test MODE=release TEST_FILTER='%s'" % (ZCORE_PATH, line.replace('\n','')),
                             timeout=TIMEOUT, encoding='utf-8')
         child.logfile = Tee(OUTPUT_FILE, 'a')
 

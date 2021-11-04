@@ -1,9 +1,18 @@
+//! Physical memory operations.
+
+use alloc::vec::Vec;
+use core::ops::Range;
+
 use crate::{PhysAddr, VirtAddr, KCONFIG};
 
 hal_fn_impl! {
     impl mod crate::hal_fn::mem {
         fn phys_to_virt(paddr: PhysAddr) -> VirtAddr {
             KCONFIG.phys_to_virt_offset + paddr
+        }
+
+        fn free_pmem_regions() -> Vec<Range<PhysAddr>> {
+            super::arch::mem::free_pmem_regions()
         }
 
         fn pmem_read(paddr: PhysAddr, buf: &mut [u8]) {

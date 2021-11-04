@@ -18,7 +18,7 @@ spin = "0.9"
 log = "0.4"
 hashbrown = "0.9"
 downcast-rs = { version = "1.2", default-features = false }
-kernel-hal = { path = "../kernel-hal" }
+kernel-hal = { path = "../kernel-hal", default-features = false }
 numeric-enum-macro = "0.2"
 futures = { version = "0.3", default-features = false, features = ["alloc", "async-await"] }
 xmas-elf = { version = "0.7", optional = true }
@@ -28,4 +28,4 @@ cfg-if = "1.0"
 #rvm = { git = "https://github.com/rcore-os/RVM", rev = "382fc60", optional = true }
 
 [dev-dependencies]
-async-std = { version = "1.9", features = ["attributes", "unstable"] }
+async-std = { version = "1.10", features = ["attributes", "unstable"] }

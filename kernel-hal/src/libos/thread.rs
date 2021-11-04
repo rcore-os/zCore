@@ -1,5 +1,7 @@
+//! Thread spawning.
+
 use async_std::task_local;
-use core::{cell::Cell, future::Future, pin::Pin};
+use core::{cell::Cell, future::Future};
 
 task_local! {
     static TID: Cell<u64> = Cell::new(0);
@@ -8,7 +10,7 @@ task_local! {
 
 hal_fn_impl! {
     impl mod crate::hal_fn::thread {
-        fn spawn(future: Pin<Box<dyn Future<Output = ()> + Send + 'static>>, _vmtoken: usize) {
+        fn spawn(future: impl Future<Output = ()> + Send + 'static) {
             async_std::task::spawn(future);
         }
 
@@ -18,7 +20,9 @@ hal_fn_impl! {
         }
 
         fn get_tid() -> (u64, u64) {
-            (TID.with(|x| x.get()), PID.with(|x| x.get()))
+            let tid = TID.try_with(|x| x.get()).unwrap_or(0);
+            let pid = PID.try_with(|x| x.get()).unwrap_or(0);
+            (tid, pid)
         }
     }
 }

@@ -1,8 +1,7 @@
-use riscv::register::scause::{self, Exception, Trap};
-use riscv::register::stval;
+use riscv::register::scause;
 use trapframe::TrapFrame;
 
-use crate::MMUFlags;
+use crate::context::TrapReason;
 
 fn breakpoint(sepc: &mut usize) {
     info!("Exception::Breakpoint: A breakpoint set @0x{:x} ", sepc);
@@ -24,29 +23,13 @@ pub(super) fn super_soft() {
     info!("Interrupt::SupervisorSoft!");
 }
 
-fn page_fault(access_flags: MMUFlags) {
-    crate::KHANDLER.handle_page_fault(stval::read(), access_flags);
-}
-
 #[no_mangle]
 pub extern "C" fn trap_handler(tf: &mut TrapFrame) {
-    let sepc = tf.sepc;
     let scause = scause::read();
-    match scause.cause() {
-        Trap::Exception(Exception::Breakpoint) => breakpoint(&mut tf.sepc),
-        Trap::Exception(Exception::IllegalInstruction) => {
-            panic!("IllegalInstruction: {:#x}, sepc={:#x}", stval::read(), sepc)
-        }
-        Trap::Exception(Exception::LoadFault) => {
-            panic!("Load access fault: {:#x}, sepc={:#x}", stval::read(), sepc)
-        }
-        Trap::Exception(Exception::StoreFault) => {
-            panic!("Store access fault: {:#x}, sepc={:#x}", stval::read(), sepc)
-        }
-        Trap::Exception(Exception::LoadPageFault) => page_fault(MMUFlags::READ),
-        Trap::Exception(Exception::StorePageFault) => page_fault(MMUFlags::WRITE),
-        Trap::Exception(Exception::InstructionPageFault) => page_fault(MMUFlags::EXECUTE),
-        Trap::Interrupt(_) => crate::interrupt::handle_irq(scause.code()),
-        _ => panic!("Undefined Trap: {:?}", scause.cause()),
+    match TrapReason::from(scause) {
+        TrapReason::SoftwareBreakpoint => breakpoint(&mut tf.sepc),
+        TrapReason::PageFault(vaddr, flags) => crate::KHANDLER.handle_page_fault(vaddr, flags),
+        TrapReason::Interrupt(vector) => crate::interrupt::handle_irq(vector),
+        other => panic!("Undefined trap: {:x?} {:#x?}", other, tf),
     }
 }

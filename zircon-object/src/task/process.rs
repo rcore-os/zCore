@@ -1,12 +1,17 @@
-use {
-    super::{exception::*, job::Job, job_policy::*, thread::Thread, *},
-    crate::{object::*, signal::Futex, vm::*},
-    alloc::{boxed::Box, sync::Arc, vec::Vec},
-    core::{any::Any, sync::atomic::AtomicI32},
-    futures::channel::oneshot::{self, Receiver, Sender},
-    hashbrown::HashMap,
-    spin::Mutex,
-};
+use alloc::{boxed::Box, sync::Arc, vec::Vec};
+use core::{any::Any, sync::atomic::AtomicI32};
+
+use futures::channel::oneshot::{self, Receiver, Sender};
+use hashbrown::HashMap;
+use spin::Mutex;
+
+use super::exception::{ExceptionChannelType, Exceptionate};
+use super::job_policy::{JobPolicy, PolicyAction, PolicyCondition};
+use super::{Job, Task, Thread, ThreadFn};
+use crate::object::{Handle, HandleBasicInfo, HandleValue, INVALID_HANDLE};
+use crate::object::{KObjectBase, KernelObject, KoID, Rights, Signal};
+use crate::{define_count_helper, impl_kobject};
+use crate::{signal::Futex, vm::VmAddressRegion, ZxError, ZxResult};
 
 /// Process abstraction
 ///
@@ -153,11 +158,11 @@ impl Process {
     /// // start the new thread
     /// proc.start(&thread, 1, 4, Some(handle), 2, |thread| Box::pin(async move {
     ///     let cx = thread.wait_for_run().await;
-    ///     assert_eq!(cx.general.rip, 1);  // entry
-    ///     assert_eq!(cx.general.rsp, 4);  // stack_top
-    ///     assert_eq!(cx.general.rdi, 3);  // arg0 (handle)
-    ///     assert_eq!(cx.general.rsi, 2);  // arg1
-    ///     thread.end_running(cx);
+    ///     assert_eq!(cx.general().rip, 1);  // entry
+    ///     assert_eq!(cx.general().rsp, 4);  // stack_top
+    ///     assert_eq!(cx.general().rdi, 3);  // arg0 (handle)
+    ///     assert_eq!(cx.general().rsi, 2);  // arg1
+    ///     thread.put_context(cx);
     /// })).unwrap();
     ///
     /// # let object: Arc<dyn KernelObject> = thread.clone();
@@ -186,16 +191,11 @@ impl Process {
             handle_value = arg1.map_or(INVALID_HANDLE, |handle| inner.add_handle(handle));
         }
         thread.set_first_thread();
-        match thread.start(entry, stack, handle_value as usize, arg2, thread_fn) {
-            Ok(_) => Ok(()),
-            Err(err) => {
-                let mut inner = self.inner.lock();
-                if handle_value != INVALID_HANDLE {
-                    inner.remove_handle(handle_value).ok();
-                }
-                Err(err)
-            }
+        let res = thread.start_with_entry(entry, stack, handle_value as usize, arg2, thread_fn);
+        if res.is_err() && handle_value != INVALID_HANDLE {
+            self.inner.lock().remove_handle(handle_value).ok();
         }
+        res
     }
 
     /// Exit current process with `retcode`.
@@ -292,6 +292,15 @@ impl Process {
     /// Get process status.
     pub fn status(&self) -> Status {
         self.inner.lock().status
+    }
+
+    /// Get process exit code if it exited, else returns `None`.
+    pub fn exit_code(&self) -> Option<i64> {
+        if let Status::Exited(code) = self.status() {
+            Some(code)
+        } else {
+            None
+        }
     }
 
     /// Get the extension.
@@ -529,17 +538,20 @@ impl Process {
     pub async fn wait_for_exit(self: &Arc<Self>) -> i64 {
         let object: Arc<dyn KernelObject> = self.clone();
         object.wait_signal(Signal::PROCESS_TERMINATED).await;
-        if let Status::Exited(code) = self.status() {
+        let code = self.exit_code().expect("process not exited!");
+        info!(
+            "process {:?}({}) exited with code {:?}",
+            self.name(),
+            self.id(),
             code
-        } else {
-            unreachable!();
-        }
+        );
+        code
     }
 }
 
 impl Task for Process {
     fn kill(&self) {
-        self.exit(TASK_RETCODE_SYSCALL_KILL);
+        self.exit(super::TASK_RETCODE_SYSCALL_KILL);
     }
 
     fn suspend(&self) {
@@ -623,6 +635,8 @@ pub struct ProcessInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::object::KernelObject;
+    use crate::task::*;
 
     #[test]
     fn create() {

@@ -1,66 +1,74 @@
-#![allow(unused_variables)]
+#![allow(dead_code)]
 
-use alloc::sync::Arc;
-
-use rcore_fs::dev::{BlockDevice, DevError, Result};
-use rcore_fs::vfs::FileSystem;
-use kernel_hal::drivers::scheme::BlockScheme;
-
-struct BlockDriverWrapper(Arc<dyn BlockScheme>);
-
-impl BlockDevice for BlockDriverWrapper {
-    const BLOCK_SIZE_LOG2: u8 = 9; // 512
-
-    fn read_at(&self, block_id: usize, buf: &mut [u8]) -> Result<()> {
-        self.0.read_block(block_id, buf).map_err(|_| DevError)
-    }
-
-    fn write_at(&self, block_id: usize, buf: &[u8]) -> Result<()> {
-        self.0.write_block(block_id, buf).map_err(|_| DevError)
-    }
-
-    fn sync(&self) -> Result<()> {
-        self.0.flush().map_err(|_| DevError)
-    }
-}
-
-pub fn init_filesystem(ramfs_data: &'static mut [u8]) -> Arc<dyn FileSystem> {
-    #[cfg(feature = "ram_user_img")]
-    let device = {
-        use linux_object::fs::MemBuf;
-
-        #[cfg(feature = "link_user_img")]
-        let ramfs_data = unsafe {
-            extern "C" {
-                fn _user_img_start();
-                fn _user_img_end();
-            }
+fn init_ram_disk() -> Option<&'static mut [u8]> {
+    if cfg!(feature = "link-user-img") {
+        extern "C" {
+            fn _user_img_start();
+            fn _user_img_end();
+        }
+        Some(unsafe {
             core::slice::from_raw_parts_mut(
                 _user_img_start as *mut u8,
                 _user_img_end as usize - _user_img_start as usize,
             )
-        };
-        MemBuf::new(ramfs_data)
-    };
+        })
+    } else {
+        kernel_hal::boot::init_ram_disk()
+    }
+}
 
-    #[cfg(not(feature = "ram_user_img"))]
-    let device = {
-        use rcore_fs::dev::block_cache::BlockCache;
-        let block = kernel_hal::drivers::all_block().first_unwrap();
-        BlockCache::new(BlockDriverWrapper(block), 0x100)
-    };
+cfg_if! {
+    if #[cfg(feature = "linux")] {
+        use alloc::sync::Arc;
+        use rcore_fs::vfs::FileSystem;
 
-    info!("Opening the rootfs ...");
-    rcore_fs_sfs::SimpleFileSystem::open(Arc::new(device)).expect("failed to open device SimpleFS")
+        #[cfg(feature = "libos")]
+        pub fn rootfs() -> Arc<dyn FileSystem> {
+            let base = if let Ok(dir) = std::env::var("CARGO_MANIFEST_DIR") {
+                std::path::Path::new(&dir).join("..")
+            } else {
+                std::env::current_dir().unwrap()
+            };
+            rcore_fs_hostfs::HostFS::new(base.join("rootfs"))
+        }
+
+        #[cfg(not(feature = "libos"))]
+        pub fn rootfs() -> Arc<dyn FileSystem> {
+            use linux_object::fs::rcore_fs_wrapper::{Block, BlockCache, MemBuf};
+            use rcore_fs::dev::Device;
+
+            let device: Arc<dyn Device> = if let Some(initrd) = init_ram_disk() {
+                Arc::new(MemBuf::new(initrd))
+            } else {
+                let block = kernel_hal::drivers::all_block().first_unwrap();
+                Arc::new(BlockCache::new(Block::new(block), 0x100))
+            };
+            info!("Opening the rootfs...");
+            rcore_fs_sfs::SimpleFileSystem::open(device).expect("failed to open device SimpleFS")
+        }
+    } else if #[cfg(feature = "zircon")] {
+
+        #[cfg(feature = "libos")]
+        pub fn zbi() -> impl AsRef<[u8]> {
+            let path = std::env::args().nth(1).unwrap();
+            std::fs::read(path).expect("failed to read zbi file")
+        }
+
+        #[cfg(not(feature = "libos"))]
+        pub fn zbi() -> impl AsRef<[u8]> {
+            init_ram_disk().expect("failed to get the init RAM disk")
+        }
+    }
 }
 
 // Hard link rootfs img
-#[cfg(feature = "link_user_img")]
+#[cfg(not(feature = "libos"))]
+#[cfg(feature = "link-user-img")]
 global_asm!(concat!(
     r#"
-	.section .data.img
-	.global _user_img_start
-	.global _user_img_end
+    .section .data.img
+    .global _user_img_start
+    .global _user_img_end
 _user_img_start:
     .incbin ""#,
     env!("USER_IMG"),

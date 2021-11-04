@@ -1,11 +1,21 @@
-/// Configuration of HAL.
+//! Kernel configuration.
+
+use uefi::proto::console::gop::ModeInfo;
+use uefi::table::boot::MemoryDescriptor;
+
+/// Kernel configuration passed by kernel when calls [`crate::primary_init_early()`].
 #[derive(Debug)]
 pub struct KernelConfig {
-    pub kernel_offset: usize,
-    pub phys_mem_start: usize,
+    pub cmdline: &'static str,
+    pub initrd_start: u64,
+    pub initrd_size: u64,
+
+    pub memory_map: &'static [&'static MemoryDescriptor],
     pub phys_to_virt_offset: usize,
 
-    pub display_info: zcore_drivers::prelude::DisplayInfo,
+    pub fb_mode: ModeInfo,
+    pub fb_addr: u64,
+    pub fb_size: u64,
 
     pub acpi_rsdp: u64,
     pub smbios: u64,

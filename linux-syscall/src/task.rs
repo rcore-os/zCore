@@ -10,12 +10,14 @@
 //! - getppid
 
 use super::*;
-use bitflags::bitflags;
 use core::fmt::Debug;
-use linux_object::fs::INodeExt;
-use linux_object::loader::LinuxElfLoader;
+
+use bitflags::bitflags;
+
+use kernel_hal::context::UserContextField;
 use linux_object::thread::{CurrentThreadExt, ThreadExt};
-use linux_object::time::*;
+use linux_object::time::TimeSpec;
+use linux_object::{fs::INodeExt, loader::LinuxElfLoader};
 
 impl Syscall<'_> {
     /// Fork the current process. Return the child's PID.
@@ -23,12 +25,10 @@ impl Syscall<'_> {
         info!("fork:");
         let new_proc = Process::fork_from(self.zircon_process(), false)?; // old pt NULL here
         let new_thread = Thread::create_linux(&new_proc)?;
-
-        #[cfg(not(target_arch = "riscv64"))]
-        new_thread.start_with_regs(GeneralRegs::new_fork(self.regs), self.thread_fn)?;
-
-        #[cfg(target_arch = "riscv64")]
-        new_thread.start_with_context(self.context, self.thread_fn)?;
+        let mut new_ctx = self.thread.context_cloned()?;
+        new_ctx.set_field(UserContextField::ReturnValue, 0);
+        new_thread.with_context(|ctx| *ctx = new_ctx)?;
+        new_thread.start(self.thread_fn)?;
 
         info!("fork: {} -> {}", self.zircon_process().id(), new_proc.id());
         Ok(new_proc.id() as usize)
@@ -39,11 +39,10 @@ impl Syscall<'_> {
         info!("vfork:");
         let new_proc = Process::fork_from(self.zircon_process(), true)?;
         let new_thread = Thread::create_linux(&new_proc)?;
-        #[cfg(not(target_arch = "riscv64"))]
-        new_thread.start_with_regs(GeneralRegs::new_fork(self.regs), self.thread_fn)?;
-
-        #[cfg(target_arch = "riscv64")]
-        new_thread.start_with_context(self.context, self.thread_fn)?;
+        let mut new_ctx = self.thread.context_cloned()?;
+        new_ctx.set_field(UserContextField::ReturnValue, 0);
+        new_thread.with_context(|ctx| *ctx = new_ctx)?;
+        new_thread.start(self.thread_fn)?;
 
         let new_proc: Arc<dyn KernelObject> = new_proc;
         info!(
@@ -85,14 +84,12 @@ impl Syscall<'_> {
             panic!("unsupported sys_clone flags: {:#x}", flags);
         }
         let new_thread = Thread::create_linux(self.zircon_process())?;
-        #[cfg(not(target_arch = "riscv64"))]
-        {
-            let regs = GeneralRegs::new_clone(self.regs, newsp, newtls);
-            new_thread.start_with_regs(regs, self.thread_fn)?;
-        }
-
-        #[cfg(target_arch = "riscv64")]
-        new_thread.start_with_context(self.context, self.thread_fn)?;
+        let mut new_ctx = self.thread.context_cloned()?;
+        new_ctx.set_field(UserContextField::StackPointer, newsp);
+        new_ctx.set_field(UserContextField::ThreadPointer, newtls);
+        new_ctx.set_field(UserContextField::ReturnValue, 0);
+        new_thread.with_context(|ctx| *ctx = new_ctx)?;
+        new_thread.start(self.thread_fn)?;
 
         let tid = new_thread.id();
         info!("clone: {} -> {}", self.thread.id(), tid);
@@ -196,36 +193,18 @@ impl Syscall<'_> {
         };
         let (entry, sp) = loader.load(&vmar, &data, args, envs, path.clone())?;
 
-        // Activate page table
-        // vmar.activate();
-
         // Modify exec path
         proc.set_execute_path(&path);
 
         // TODO: use right signal
-        //self.zircon_process().signal_set(Signal::SIGNALED);
-        //Workaround, the child process could NOT exit correctly
+        // self.zircon_process().signal_set(Signal::SIGNALED);
+        // Workaround, the child process could NOT exit correctly
 
-        #[cfg(not(target_arch = "riscv64"))]
-        {
-            *self.regs = GeneralRegs::new_fn(entry, sp, 0, 0);
-        }
-
-        #[cfg(target_arch = "riscv64")]
-        {
-            self.context.general = GeneralRegs::new_fn(entry, sp, 0, 0);
-            self.context.sepc = entry;
-            info!(
-                "execve: PageTable: {:#x}, entry: {:#x}, sp: {:#x}",
-                self.zircon_process().vmar().table_phys(),
-                self.context.sepc,
-                self.context.general.sp
-            );
-        }
-
+        self.thread
+            .with_context(|ctx| ctx.setup_uspace(entry, sp, 0, 0))?;
         Ok(0)
     }
-    //
+
     //    pub fn sys_yield(&self) -> SysResult {
     //        thread::yield_now();
     //        Ok(0)
@@ -368,68 +347,5 @@ bitflags! {
         const NEWNET =          1 << 30;
         /// the new process shares an I/O context with the calling process.
         const IO =              1 << 31;
-    }
-}
-
-trait RegExt {
-    fn new_fn(entry: usize, sp: usize, arg1: usize, arg2: usize) -> Self;
-    fn new_clone(regs: &Self, newsp: usize, newtls: usize) -> Self;
-    fn new_fork(regs: &Self) -> Self;
-}
-
-#[cfg(target_arch = "x86_64")]
-impl RegExt for GeneralRegs {
-    fn new_fn(entry: usize, sp: usize, arg1: usize, arg2: usize) -> Self {
-        GeneralRegs {
-            rip: entry,
-            rsp: sp,
-            rdi: arg1,
-            rsi: arg2,
-            // FIXME: set IOPL = 0 when IO port bitmap is supported
-            rflags: 0x3202, // IOPL = 3, enable interrupt
-            ..Default::default()
-        }
-    }
-
-    fn new_clone(regs: &Self, newsp: usize, newtls: usize) -> Self {
-        GeneralRegs {
-            rax: 0,
-            rsp: newsp,
-            fsbase: newtls,
-            ..*regs
-        }
-    }
-
-    fn new_fork(regs: &Self) -> Self {
-        GeneralRegs { rax: 0, ..*regs }
-    }
-}
-#[cfg(target_arch = "riscv64")]
-impl RegExt for GeneralRegs {
-    fn new_fn(entry: usize, sp: usize, arg1: usize, arg2: usize) -> Self {
-        info!(
-            "new_fn(), Did NOT save ip:{:#x} register! x_x Saved sp: {:#x}",
-            entry, sp
-        );
-        GeneralRegs {
-            sp: sp,
-            a0: arg1,
-            a1: arg2,
-            ..Default::default()
-        }
-    }
-
-    fn new_clone(regs: &Self, newsp: usize, newtls: usize) -> Self {
-        GeneralRegs {
-            a0: 0,
-            sp: newsp,
-            tp: newtls,
-            ..*regs
-        }
-    }
-
-    //设置了返回值为0
-    fn new_fork(regs: &Self) -> Self {
-        GeneralRegs { a0: 0, ..*regs }
     }
 }

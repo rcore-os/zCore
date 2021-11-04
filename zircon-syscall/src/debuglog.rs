@@ -54,9 +54,9 @@ impl Syscall<'_> {
         let dlog = proc.get_object_with_rights::<DebugLog>(handle_value, Rights::WRITE)?;
         dlog.write(Severity::Info, options, self.thread.id(), proc.id(), &data);
         // print to kernel console
-        kernel_hal::console::console_write(&data);
+        kernel_hal::console::console_write_str(&data);
         if data.as_bytes().last() != Some(&b'\n') {
-            kernel_hal::console::console_write("\n");
+            kernel_hal::console::console_write_str("\n");
         }
         Ok(())
     }

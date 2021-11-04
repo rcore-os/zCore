@@ -1,7 +1,7 @@
 # zCore
 
 [![CI](https://github.com/rcore-os/zCore/workflows/CI/badge.svg?branch=master)](https://github.com/rcore-os/zCore/actions)
-[![Docs](https://img.shields.io/badge/docs-alpha-blue)](https://rcore-os.github.io/zCore/zircon_object/)
+[![Docs](https://img.shields.io/badge/docs-alpha-blue)](https://rcore-os.github.io/zCore/)
 [![Coverage Status](https://coveralls.io/repos/github/rcore-os/zCore/badge.svg?branch=master)](https://coveralls.io/github/rcore-os/zCore?branch=master)
 
 Reimplement [Zircon][zircon] microkernel in safe Rust as a userspace program!
@@ -13,10 +13,11 @@ Reimplement [Zircon][zircon] microkernel in safe Rust as a userspace program!
 - 2020.04.16: Zircon console is working on zCore! 🎉
 
 ## Quick start for RISCV64
-```
+
+```sh
 make riscv-image
 cd zCore
-make run arch=riscv64 linux=1
+make run ARCH=riscv64 LINUX=1
 ```
 
 ## Getting started
@@ -26,7 +27,6 @@ Environments：
 * [Rust toolchain](http://rustup.rs)
 * [QEMU](https://www.qemu.org)
 * [Git LFS](https://git-lfs.github.com)
-
 
 ### Developing environment info
 - current rustc -- rustc 1.56.0-nightly (08095fc1f 2021-07-26)
@@ -49,77 +49,110 @@ git clone https://github.com.cnpmjs.org/rcore-os/zCore --recursive
 ```
 ### Run zcore in libos mode
 #### Run zcore in linux-libos mode
-##### step1: Prepare Alpine Linux rootfs:
+* step 1: Prepare Alpine Linux rootfs:
 
-```sh
-make rootfs
-```
+  ```sh
+  make rootfs
+  ```
 
-##### step2: Compile&Run native Linux program (Busybox) in libos mode:
+* step 2: Compile & Run native Linux program (Busybox) in libos mode:
 
-```sh
-cargo run --release -p linux-loader -- /bin/busybox [args]
-```
+  ```sh
+  cargo run --release --features "linux libos" -- /bin/busybox [args]
+  ```
 
-You can add `--features graphic` as cargo arguments to show the graphical output (with [sdl2](https://www.libsdl.org) installed).
+  You can also add the feature `graphic` to show the graphical output (with [sdl2](https://www.libsdl.org) installed).
+
+  To debug, set the `LOG` environment variable to one of `error`, `warn`, `info`, `debug`, `trace`.
 
 #### Run native Zircon program (shell) in zircon-libos mode:
 
-#### step1: Compile and Run Zircon shell
+* step 1: Compile and Run Zircon shell
 
-```sh
-cargo run --release -p zircon-loader -- prebuilt/zircon/x64
-```
+  ```sh
+  cargo run --release --features "zircon libos" -- prebuilt/zircon/x64/bringup.zbi
+  ```
 
-To debug, set `RUST_LOG` environment variable to one of `error`, `warn`, `info`, `debug`, `trace`.
+  The `graphic` and `LOG` options are the same as Linux.
 
 ### Run zcore in bare-metal mode
 #### Run Linux shell in  linux-bare-metal mode:
-##### step1: Prepare Alpine Linux rootfs:
 
-```sh
-make rootfs
-```
-##### step2: Create Linux rootfs image:
-Note: Before below step, you can add some special apps in zCore/rootfs
+* step 1: Prepare Alpine Linux rootfs:
 
-```sh
-make image
-```
-##### step3: build and run zcore in  linux-bare-metal mode:
+  ```sh
+  make rootfs
+  ```
 
-```sh
-cd zCore && make run mode=release linux=1 [graphic=on] [accel=1]
-```
+* step 2: Create Linux rootfs image:
+
+  Note: Before below step, you can add some special apps in zCore/rootfs
+
+  ```sh
+  make image
+  ```
+
+* step 3: Build and run zcore in  linux-bare-metal mode:
+
+  ```sh
+  cd zCore && make run MODE=release LINUX=1 [LOG=warn] [GRAPHIC=on] [ACCEL=1]
+  ```
 
 #### Run Zircon shell in zircon-bare-metal mode:
-##### step1.1 :  build and run zcore in  zircon-bare-metal mode:
 
-```sh
-cd zCore && make run mode=release [graphic=on] [accel=1]
-```
+* step 1: Build and run zcore in  zircon-bare-metal mode:
 
-##### step1.2 :  Build and run your own Zircon user programs:
+  ```sh
+  cd zCore && make run MODE=release [LOG=warn] [GRAPHIC=on] [ACCEL=1]
+  ```
 
-```sh
-# See template in zircon-user
-cd zircon-user && make zbi mode=release
+* step 2: Build and run your own Zircon user programs:
 
-# Run your programs in zCore
-cd zCore && make run mode=release user=1
-```
+  ```sh
+  # See template in zircon-user
+  cd zircon-user && make zbi MODE=release
 
-To debug, set `RUST_LOG` environment variable to one of `error`, `warn`, `info`, `debug`, `trace`.
-
+  # Run your programs in zCore
+  cd zCore && make run MODE=release USER=1 [LOG=warn] [GRAPHIC=on] [ACCEL=1]
+  ```
 
 ## Testing
 ### LibOS Mode Testing
 
 #### Zircon related
+
 Run Zircon official core-tests:
 
 ```sh
-cd zCore && make test mode=release [accel=1] test_filter='Channel.*'
+pip3 install pexpect
+cd scripts && python3 unix-core-testone.py 'Channel.*'
+```
+
+Run all (non-panicked) core-tests for CI:
+
+```sh
+pip3 install pexpect
+cd scripts && python3 unix-core-tests.py
+# Check `zircon/test-result.txt` for results.
+```
+
+#### Linux related
+
+Run Linux musl libc-tests for CI:
+
+```sh
+make rootfs && make libc-test
+cd scripts && python3 libos-libc-tests.py
+# Check `linux/test-result.txt` for results.
+```
+
+### Bare-metal Mode Testing
+#### Zircon related
+
+Run Zircon official core-tests on bare-metal:
+
+```sh
+cd zCore && make test MODE=release [ACCEL=1] TEST_FILTER='Channel.*'
 ```
 
 Run all (non-panicked) core-tests for CI:
@@ -129,28 +162,17 @@ pip3 install pexpect
 cd scripts && python3 core-tests.py
 # Check `zircon/test-result.txt` for results.
 ```
-#### Linux related
-
-Run Linux musl libc-tests for CI:
-
-```sh
-make rootfs && make libc-test
-cd scripts && python3 libc-tests.py
-# Check `linux/test-result.txt` for results.
-```
-
-### Baremetal Mode Testing
 
 #### x86-64 Linux related
 
 Run Linux musl libc-tests for CI:
-```
+```sh
 ##  Prepare rootfs with libc-test apps
 make baremetal-test-img
 ## Build zCore kernel
-cd zCore && make build mode=release linux=1 arch=x86_64
+cd zCore && make build MODE=release LINUX=1 ARCH=x86_64
 ## Testing
-cd ../scripts && python3 ./baremetal-libc-test.py
+cd scripts && python3 baremetal-libc-test.py
 ##
 ```
 
@@ -161,11 +183,11 @@ You can use [`scripts/baremetal-libc-test-ones.py`](./scripts/baremetal-libc-tes
 #### riscv-64 Linux related
 
 Run Linux musl libc-tests for CI:
-```
+```sh
 ##  Prepare rootfs with libc-test & oscomp apps
 make riscv-image
 ## Build zCore kernel & Testing
-cd ../scripts && python3 baremetal-test-riscv64.py
+cd scripts && python3 baremetal-test-riscv64.py
 ##
 ```
 
@@ -190,13 +212,13 @@ vec!["/bin/snake".into(), "sh".into()]
 ### Step3: prepare root fs image, run zcore in linux-bare-metal mode
 exec:
 
-```
+```sh
 cd zCore #zCore ROOT DIR
 make rootfs
 cp ../rcore-user/app/snake rootfs/bin #copy snake ELF file to rootfs/bin
 make image # build rootfs image
 cd zCore #zCore kernel dir
-make run mode=release linux=1 graphic=on
+make run MODE=release LINUX=1 GRAPHIC=on
 ```
 
 Then you can play the game.
@@ -215,7 +237,8 @@ Operation
 ```
 make doc
 ```
-### riscv64 porting info
+### RISC-V 64 porting info
+
 - [porting riscv64 doc](./docs/porting-rv64.md)
 ## Components
 

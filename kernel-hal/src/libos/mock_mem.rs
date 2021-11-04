@@ -4,7 +4,8 @@ use nix::fcntl::{self, OFlag};
 use nix::sys::mman::{self, MapFlags, ProtFlags};
 use nix::{sys::stat::Mode, unistd};
 
-use crate::{mem::phys_to_virt, MMUFlags, PhysAddr, VirtAddr};
+use super::mem::PMEM_MAP_VADDR;
+use crate::{MMUFlags, PhysAddr, VirtAddr};
 
 pub struct MockMemory {
     size: usize,
@@ -24,7 +25,9 @@ impl MockMemory {
         .expect("faild to open");
         unistd::ftruncate(fd, size as _).expect("failed to set size of shared memory!");
 
-        Self { size, fd }
+        let mem = Self { size, fd };
+        mem.mmap(PMEM_MAP_VADDR, size, 0, MMUFlags::READ | MMUFlags::WRITE);
+        mem
     }
 
     /// Mmap `paddr` to `vaddr` in frame file.
@@ -45,7 +48,7 @@ impl MockMemory {
         let fd = self.fd;
         let offset = paddr as _;
         trace!(
-            "mmap file: fd={}, offset={:#x}, len={:#x}, vaddr={:#x}, prot={:#b}",
+            "mmap file: fd={}, offset={:#x}, len={:#x}, vaddr={:#x}, prot={:?}",
             fd,
             offset,
             len,
@@ -56,7 +59,7 @@ impl MockMemory {
         unsafe { mman::mmap(vaddr as _, len, prot_noexec, flags, fd, offset) }.unwrap_or_else(
             |err| {
                 panic!(
-                    "failed to mmap: fd={}, offset={:#x}, len={:#x}, vaddr={:#x}, prot={:#b}: {:?}",
+                    "failed to mmap: fd={}, offset={:#x}, len={:#x}, vaddr={:#x}, prot={:?}: {:?}",
                     fd, offset, len, vaddr, prot, err
                 )
             },
@@ -80,14 +83,17 @@ impl MockMemory {
         });
     }
 
-    pub fn as_ptr<T>(&self, paddr: PhysAddr) -> *const T {
+    pub fn phys_to_virt(&self, paddr: PhysAddr) -> VirtAddr {
         assert!(paddr < self.size);
-        phys_to_virt(paddr) as _
+        PMEM_MAP_VADDR + paddr
+    }
+
+    pub fn as_ptr<T>(&self, paddr: PhysAddr) -> *const T {
+        self.phys_to_virt(paddr) as _
     }
 
     pub fn as_mut_ptr<T>(&self, paddr: PhysAddr) -> *mut T {
-        assert!(paddr < self.size);
-        phys_to_virt(paddr) as _
+        self.phys_to_virt(paddr) as _
     }
 }
 

@@ -1,9 +1,9 @@
 //! Various builders to probe devices and create corresponding drivers
 //! (e.g. device tree, ACPI table, ...)
 
-mod dt;
+mod devicetree;
 
-pub use dt::DeviceTreeDriverBuilder;
+pub use devicetree::DevicetreeDriverBuilder;
 
 use crate::{PhysAddr, VirtAddr};
 

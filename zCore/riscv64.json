@@ -17,8 +17,8 @@
   "linker-flavor": "ld.lld",
   "pre-link-args": {
 	  "ld.lld": [
-		  "-Tsrc/arch/riscv/boot/linker64.ld",
-		  "-Tsrc/arch/riscv/boot/kernel-vars.ld"
+		  "-TzCore/src/platform/riscv/boot/linker64.ld",
+		  "-TzCore/src/platform/riscv/boot/kernel-vars.ld"
 	  ]
   },
   "max-atomic-width": 64,

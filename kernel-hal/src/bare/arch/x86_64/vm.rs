@@ -1,3 +1,5 @@
+//! Virtual memory operations.
+
 use core::fmt::{Debug, Formatter, Result};
 use core::{convert::TryFrom, slice};
 
@@ -105,6 +107,7 @@ impl From<PTF> for MMUFlags {
 
 const PHYS_ADDR_MASK: u64 = 0x000f_ffff_ffff_f000; // 12..52
 
+/// Page table entry on x86.
 #[derive(Clone, Copy)]
 #[repr(transparent)]
 pub struct X86PTE(u64);
@@ -155,4 +158,5 @@ impl Debug for X86PTE {
     }
 }
 
+/// The 4-level page table on x86.
 pub type PageTable = PageTableImpl<PageTableLevel4, X86PTE>;

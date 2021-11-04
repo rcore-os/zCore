@@ -1,4 +1,4 @@
-name: current CI
+name: Test CI
 
 on:
   push:
@@ -7,115 +7,16 @@ on:
     - cron: '40 3 * * *'  # every day at 3:40
 
 jobs:
-  check:
-    runs-on: ubuntu-20.04
-    steps:
-      - uses: actions/checkout@v2
-        with:
-          submodules: 'recursive'
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: nightly-2021-07-27
-          override: true
-          components: rust-src, rustfmt, clippy
-      - name: Check code format
-        uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --all -- --check
-      - name: Clippy LibOS
-        run: arch=x86_64 cargo clippy
-      - name: Clippy x86_64 bare-metal
-        run: |
-          cd zCore
-          make clippy arch=x86_64
-      - name: Clippy riscv64 bare-metal
-        run: |
-          cd zCore
-          make clippy arch=riscv64 linux=1
-#        uses: actions-rs/cargo@v1
-#        with:
-#          command: clippy
-#x86_64
-  build:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-20.04, macos-latest]
-    steps:
-      - uses: actions/checkout@v2
-        with:
-          submodules: 'recursive'
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: nightly-2021-07-27
-          components: rust-src
-      - name: Build
-        run: arch=x86_64 cargo build
-#        uses: actions-rs/cargo@v1
-#        with:
-#          command: build
-      - name: Build zCore
-        run: |
-          cd zCore
-          make build arch=x86_64
-      # FIX LATER
-      # - name: Build zCore with hypervisor
-      #   run: |
-      #     cd zCore
-      #     make build hypervisor=1
-
-  build-aarch64:
-    runs-on: ubuntu-20.04
-    steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: nightly-2021-07-27
-          override: true
-          target: aarch64-unknown-linux-gnu
-      - uses: actions-rs/cargo@v1
-        with:
-          command: build
-          use-cross: true
-          args: -p zircon-loader --target aarch64-unknown-linux-gnu
-
-  build-user:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-20.04, macos-latest]
-    steps:
-      - uses: actions/checkout@v2
-      - name: Pull prebuilt images
-        run: git lfs pull -I prebuilt/zircon/x64/libc.so,prebuilt/zircon/x64/libfdio.so,prebuilt/zircon/x64/libunwind.so,prebuilt/zircon/x64/libzircon.so,prebuilt/zircon/x64/Scrt1.o
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: nightly-2021-07-27
-          target: x86_64-fuchsia
-      - name: Build Zircon user programs
-        run: |
-          cd zircon-user
-          make build mode=release
-
   test:
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v2
       - name: Pull prebuilt images
-        run: git lfs pull -I prebuilt/linux/libc-libos.so
+        run: git lfs pull -I prebuilt/linux/libc-libos.so,prebuilt/zircon/x64/bringup.zbi,prebuilt/zircon/x64/libzircon-libos.so,prebuilt/zircon/x64/userboot-libos.so
       - name: Prepare rootfs
         run: make rootfs
       - name: Test
-        run: arch=x86_64 cargo test --no-fail-fast --workspace --exclude zircon-loader
-#        uses: actions-rs/cargo@v1
-#        with:
-#          command: test
-#          args: --all-features --no-fail-fast --workspace --exclude zircon-loader
+        run: cargo test --no-fail-fast
         env:
           CARGO_INCREMENTAL: '0'
           RUSTFLAGS: '-Zprofile -Ccodegen-units=1 -Copt-level=0 -Coverflow-checks=off -Zpanic_abort_tests -Cpanic=abort'
@@ -140,10 +41,7 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: Run benchmarks
-        run: arch=x86_64 cargo bench
-#        uses: actions-rs/cargo@v1
-#        with:
-#          command: bench
+        run: cargo bench
 
   core-test:
     runs-on: ubuntu-20.04
@@ -163,22 +61,17 @@ jobs:
           sudo apt update
           sudo apt install qemu-system-x86
       - name: Build zCore
-        run: |
-          cd zCore
-          make build mode=release
-          cd ..
+        run: cd zCore && make build MODE=release
       - name: Run core-tests
         run: |
           cd scripts
-          pip3 install pexpect
+          pip3 install -r requirements.txt
           python3 core-tests.py
 
-  core-test-libos:
+  libos-core-test:
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v2
-        with:
-          submodules: 'recursive'
       - name: Pull prebuilt images
         run: git lfs pull -I prebuilt/zircon/x64/core-tests.zbi,prebuilt/zircon/x64/libzircon-libos.so,prebuilt/zircon/x64/userboot-libos.so
       - uses: actions-rs/toolchain@v1
@@ -186,13 +79,13 @@ jobs:
           profile: minimal
           toolchain: nightly-2021-07-27
           components: rust-src
-      - name: Run core-tests
+      - name: Run libos-core-tests
         run: |
           cd scripts
-          pip3 install pexpect
+          pip3 install -r requirements.txt
           python3 unix-core-tests.py
 
-  libc-test:
+  libos-libc-test:
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v2
@@ -202,37 +95,12 @@ jobs:
         run: sudo apt-get install musl-tools musl-dev -y
       - name: Prepare rootfs and libc-test
         run: make rootfs && make libc-test
-      - name: Build
-        run: arch=x86_64 cargo build --release -p linux-loader
-#        uses: actions-rs/cargo@v1
-#        with:
-#          command: build
-#          args: --release -p linux-loader
-      - name: Run libc-tests
+      - name: Run libos-libc-tests
         run: |
           cd scripts
           pip3 install -r requirements.txt
-          python3 libc-tests.py
+          python3 libos-libc-tests.py
           cat linux/test-result.txt
-
-  doc:
-    runs-on: ubuntu-20.04
-    steps:
-      - uses: actions/checkout@v2
-      - name: Build docs
-        run: arch=x86_64 cargo doc --no-deps --all-features
-#        uses: actions-rs/cargo@v1
-#        with:
-#          command: doc
-#          args: --no-deps --all-features
-#      - name: Deploy to Github Pages
-#        if: ${{ github.ref == 'refs/heads/master' }}
-#        uses: JamesIves/github-pages-deploy-action@releases/v3
-#        with:
-#          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-#          BRANCH: gh-pages
-#          FOLDER: target/doc
-
 
   baremetal-libc-test:
     runs-on: ubuntu-20.04
@@ -253,14 +121,15 @@ jobs:
           sudo apt-get install musl-tools musl-dev qemu-system-x86 -y
       - name: Prepare rootfs and libc-test
         run: make baremetal-test-img
-      - name: Build  kernel
-        run: cd zCore && make build mode=release linux=1 arch=x86_64
+      - name: Build kernel
+        run: cd zCore && make build MODE=release LINUX=1 ARCH=x86_64
       - name: create qemu disk
-        run: cd zCore && make baremetal-qemu-disk mode=release linux=1 arch=x86_64
+        run: cd zCore && make baremetal-qemu-disk MODE=release LINUX=1 ARCH=x86_64
       - name: Run baremetal-libc-test
         run: |
           cd scripts
           python3 ./baremetal-libc-test.py
+
   baremetal-rv64-oscomp-test:
     runs-on: ubuntu-20.04
     steps:
@@ -271,21 +140,23 @@ jobs:
         with:
           profile: minimal
           toolchain: nightly-2021-07-27
-          components: rust-src
+          components: rust-src, llvm-tools-preview
+      - uses: actions-rs/install@v0.1
+        with:
+          crate: cargo-binutils
+          version: latest
       - name: Install cargo tools and qemu-system-riscv64
         run: |
           sudo apt update
           sudo apt install qemu-utils
-          cargo install cargo-binutils
-          rustup component add llvm-tools-preview
           wget https://github.com/rcore-os/qemu-prebuilt/releases/download/5.2.0-riscv64/qemu-system-riscv64.tar.xz > /dev/null
           tar xJf qemu-system-riscv64.tar.xz && sudo cp qemu-system-riscv64 /usr/local/bin
           wget https://github.com/rcore-os/qemu-prebuilt/releases/download/qemu-share/qemu-share.tar.xz > /dev/null
           tar xJf qemu-share.tar.xz && sudo cp -r qemu /usr/local/share/
       - name: Prepare rootfs and oscomp
         run: make riscv-image
-      - name: Build  kernel
-        run: cd zCore && make build mode=release linux=1 arch=riscv64
+      - name: Build kernel
+        run: cd zCore && make build MODE=release LINUX=1 ARCH=riscv64
       - name: Run baremetal-libc-test
         run: |
           cd scripts
