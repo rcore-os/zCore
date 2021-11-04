@@ -33,11 +33,13 @@
 <span id="33">33</span>
 <span id="34">34</span>
 <span id="35">35</span>
+<span id="36">36</span>
 </pre><pre class="rust">
 <span class="doccomment">//! Handlers implemented in kernel and called by HAL.</span>
 
 <span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">utils::init_once::InitOnce</span>, <span class="ident">MMUFlags</span>, <span class="ident">PhysAddr</span>, <span class="ident">VirtAddr</span>};
 
+<span class="doccomment">/// Functions implemented in the kernel and used by HAL funtions.</span>
 <span class="kw">pub</span> <span class="kw">trait</span> <span class="ident">KernelHandler</span>: <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span> <span class="op">+</span> <span class="lifetime">&#39;static</span> {
     <span class="doccomment">/// Allocate one physical frame.</span>
     <span class="kw">fn</span> <span class="ident">frame_alloc</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">PhysAddr</span><span class="op">&gt;</span> {

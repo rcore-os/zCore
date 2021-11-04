@@ -69,16 +69,21 @@
 <span id="69">69</span>
 <span id="70">70</span>
 </pre><pre class="rust">
+<span class="doccomment">//! Physical memory operations.</span>
+
+<span class="kw">use</span> <span class="ident">alloc::vec::Vec</span>;
+<span class="kw">use</span> <span class="ident">core::ops::Range</span>;
+
 <span class="kw">use</span> <span class="ident">bitmap_allocator::BitAlloc</span>;
 <span class="kw">use</span> <span class="ident">spin::Mutex</span>;
 
 <span class="kw">use</span> <span class="kw">super</span><span class="ident">::mock_mem::MockMemory</span>;
-<span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">MMUFlags</span>, <span class="ident">PhysAddr</span>, <span class="ident">VirtAddr</span>, <span class="ident">PAGE_SIZE</span>};
+<span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">PhysAddr</span>, <span class="ident">VirtAddr</span>, <span class="ident">PAGE_SIZE</span>};
 
 <span class="kw">type</span> <span class="ident">FrameAlloc</span> <span class="op">=</span> <span class="ident">bitmap_allocator::BitAlloc1M</span>;
 
 <span class="doccomment">/// Map physical memory from here.</span>
-<span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">const</span> <span class="ident">PMEM_BASE</span>: <span class="ident">VirtAddr</span> <span class="op">=</span> <span class="number">0x8_0000_0000</span>;
+<span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">const</span> <span class="ident">PMEM_MAP_VADDR</span>: <span class="ident">VirtAddr</span> <span class="op">=</span> <span class="number">0x8_0000_0000</span>;
 <span class="doccomment">/// Physical memory size = 1GiB</span>
 <span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">const</span> <span class="ident">PMEM_SIZE</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">0x4000_0000</span>;
 
@@ -88,22 +93,17 @@
         <span class="ident">allocator</span>.<span class="ident">insert</span>(<span class="number">1</span>..<span class="ident">PMEM_SIZE</span> <span class="op">/</span> <span class="ident">PAGE_SIZE</span>);
         <span class="ident">Mutex::new</span>(<span class="ident">allocator</span>)
     };
-    <span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">static</span> <span class="kw-2">ref</span> <span class="ident">MOCK_PHYS_MEM</span>: <span class="ident">MockMemory</span> <span class="op">=</span> {
-        <span class="kw">let</span> <span class="ident">mock_phys_mem</span> <span class="op">=</span> <span class="ident">MockMemory::new</span>(<span class="ident">PMEM_SIZE</span>);
-        <span class="ident">mock_phys_mem</span>.<span class="ident">mmap</span>(
-            <span class="ident">phys_to_virt</span>(<span class="number">0</span>),
-            <span class="ident">PMEM_SIZE</span>,
-            <span class="number">0</span>,
-            <span class="ident">MMUFlags::READ</span> <span class="op">|</span> <span class="ident">MMUFlags::WRITE</span>,
-        );
-        <span class="ident">mock_phys_mem</span>
-    };
+    <span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">static</span> <span class="kw-2">ref</span> <span class="ident">MOCK_PHYS_MEM</span>: <span class="ident">MockMemory</span> <span class="op">=</span> <span class="ident">MockMemory::new</span>(<span class="ident">PMEM_SIZE</span>);
 }
 
 <span class="macro">hal_fn_impl!</span> {
     <span class="kw">impl</span> <span class="kw">mod</span> <span class="kw">crate</span><span class="ident">::hal_fn::mem</span> {
         <span class="kw">fn</span> <span class="ident">phys_to_virt</span>(<span class="ident">paddr</span>: <span class="ident">PhysAddr</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">VirtAddr</span> {
-            <span class="ident">PMEM_BASE</span> <span class="op">+</span> <span class="ident">paddr</span>
+            <span class="ident">MOCK_PHYS_MEM</span>.<span class="ident">phys_to_virt</span>(<span class="ident">paddr</span>)
+        }
+
+        <span class="kw">fn</span> <span class="ident">free_pmem_regions</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Range</span><span class="op">&lt;</span><span class="ident">PhysAddr</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+            <span class="macro">vec!</span>[<span class="ident">PAGE_SIZE</span>..<span class="ident">PMEM_SIZE</span>]
         }
 
         <span class="kw">fn</span> <span class="ident">pmem_read</span>(<span class="ident">paddr</span>: <span class="ident">PhysAddr</span>, <span class="ident">buf</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> [<span class="ident">u8</span>]) {

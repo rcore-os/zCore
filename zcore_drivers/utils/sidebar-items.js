@@ -1,1 +1,1 @@
-initSidebarItems({"struct":[["EventListener",""],["GraphicConsole",""]],"type":[["EventHandler",""]]});
+initSidebarItems({"mod":[["devicetree",""]],"struct":[["EventListener",""],["GraphicConsole",""]],"type":[["EventHandler",""]]});

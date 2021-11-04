@@ -1,0 +1,1 @@
+initSidebarItems({"fn":[["run_userboot","Run Zircon `userboot` process from the prebuilt path, and load the ZBI file as the bootfs."]]});

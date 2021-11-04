@@ -269,12 +269,13 @@
 <span class="doccomment">//! Linux file objects</span>
 
 <span class="kw">mod</span> <span class="ident">devfs</span>;
-<span class="kw">mod</span> <span class="ident">device</span>;
 <span class="kw">mod</span> <span class="ident">file</span>;
 <span class="kw">mod</span> <span class="ident">ioctl</span>;
 <span class="kw">mod</span> <span class="ident">pipe</span>;
 <span class="kw">mod</span> <span class="ident">pseudo</span>;
 <span class="kw">mod</span> <span class="ident">stdio</span>;
+
+<span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">rcore_fs_wrapper</span>;
 
 <span class="kw">use</span> <span class="ident">alloc</span>::{<span class="ident">boxed::Box</span>, <span class="ident">string::ToString</span>, <span class="ident">sync::Arc</span>, <span class="ident">vec::Vec</span>};
 <span class="kw">use</span> <span class="ident">core::convert::TryFrom</span>;
@@ -294,7 +295,6 @@
 <span class="kw">use</span> <span class="kw">crate</span><span class="ident">::error</span>::{<span class="ident">LxError</span>, <span class="ident">LxResult</span>};
 <span class="kw">use</span> <span class="kw">crate</span><span class="ident">::process::LinuxProcess</span>;
 
-<span class="kw">pub</span> <span class="kw">use</span> <span class="ident">device::MemBuf</span>;
 <span class="kw">pub</span> <span class="kw">use</span> <span class="ident">file</span>::{<span class="ident">File</span>, <span class="ident">OpenFlags</span>, <span class="ident">SeekFrom</span>};
 <span class="kw">pub</span> <span class="kw">use</span> <span class="ident">pipe::Pipe</span>;
 <span class="kw">pub</span> <span class="kw">use</span> <span class="ident">rcore_fs::vfs</span>;

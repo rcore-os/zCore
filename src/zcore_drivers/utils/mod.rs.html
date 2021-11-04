@@ -12,6 +12,8 @@
 <span id="12">12</span>
 <span id="13">13</span>
 <span id="14">14</span>
+<span id="15">15</span>
+<span id="16">16</span>
 </pre><pre class="rust">
 <span class="kw">mod</span> <span class="ident">event_listener</span>;
 <span class="kw">mod</span> <span class="ident">id_allocator</span>;
@@ -19,6 +21,8 @@
 
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;graphic&quot;</span>)]</span>
 <span class="kw">mod</span> <span class="ident">graphic_console</span>;
+
+<span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">devicetree</span>;
 
 <span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">use</span> <span class="ident">id_allocator::IdAllocator</span>;
 <span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">use</span> <span class="ident">irq_manager::IrqManager</span>;

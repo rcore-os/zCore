@@ -37,6 +37,8 @@
 <span id="37">37</span>
 <span id="38">38</span>
 <span id="39">39</span>
+<span id="40">40</span>
+<span id="41">41</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="ident">bitflags::bitflags</span>;
 <span class="kw">use</span> <span class="ident">numeric_enum_macro::numeric_enum</span>;
@@ -50,6 +52,7 @@
 <span class="kw">pub</span> <span class="kw">type</span> <span class="ident">HalResult</span><span class="op">&lt;</span><span class="ident">T</span> <span class="op">=</span> ()<span class="op">&gt;</span> <span class="op">=</span> <span class="ident">core::result::Result</span><span class="op">&lt;</span><span class="ident">T</span>, <span class="ident">HalError</span><span class="op">&gt;</span>;
 
 <span class="macro">bitflags!</span> {
+    <span class="doccomment">/// Generic memory flags.</span>
     <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">MMUFlags</span>: <span class="ident">usize</span> {
         <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy::identity_op</span>)]</span>
         <span class="kw">const</span> <span class="ident">CACHE_1</span>   <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">0</span>;
@@ -65,6 +68,7 @@
 <span class="macro">numeric_enum!</span> {
     <span class="attribute">#[<span class="ident">repr</span>(<span class="ident">u32</span>)]</span>
     <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>, <span class="ident">PartialEq</span>, <span class="ident">Clone</span>, <span class="ident">Copy</span>)]</span>
+    <span class="doccomment">/// Generic cache policy.</span>
     <span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">CachePolicy</span> {
         <span class="ident">Cached</span> <span class="op">=</span> <span class="number">0</span>,
         <span class="ident">Uncached</span> <span class="op">=</span> <span class="number">1</span>,
@@ -72,8 +76,8 @@
         <span class="ident">WriteCombining</span> <span class="op">=</span> <span class="number">3</span>,
     }
 }
-<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">CACHE_POLICY_MASK</span>: <span class="ident">u32</span> <span class="op">=</span> <span class="number">3</span>;
 
+<span class="doccomment">/// The smallest size of a page (4K).</span>
 <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">PAGE_SIZE</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="kw">super</span><span class="ident">::vm::PageSize::Size4K</span> <span class="kw">as</span> <span class="ident">usize</span>;
 
 <span class="kw">pub</span> <span class="kw">use</span> <span class="kw">super</span><span class="ident">::addr</span>::{<span class="ident">DevVAddr</span>, <span class="ident">PhysAddr</span>, <span class="ident">VirtAddr</span>};

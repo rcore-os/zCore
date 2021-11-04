@@ -321,31 +321,18 @@
 <span id="321">321</span>
 <span id="322">322</span>
 <span id="323">323</span>
-<span id="324">324</span>
-<span id="325">325</span>
-<span id="326">326</span>
-<span id="327">327</span>
-<span id="328">328</span>
-<span id="329">329</span>
-<span id="330">330</span>
-<span id="331">331</span>
-<span id="332">332</span>
 </pre><pre class="rust">
 <span class="doccomment">//! Linux syscall implementations</span>
 <span class="doccomment">//!</span>
 <span class="doccomment">//! ## Example</span>
-<span class="doccomment">//! the syscall is called like this in the linux-loader:</span>
+<span class="doccomment">//! The syscall is called like this in the [`zcore_loader`](../zcore_loader/index.html):</span>
 <span class="doccomment">//! ```ignore</span>
 <span class="doccomment">//! let num = regs.rax as u32;</span>
 <span class="doccomment">//! let args = [regs.rdi, regs.rsi, regs.rdx, regs.r10, regs.r8, regs.r9];</span>
 <span class="doccomment">//! let mut syscall = Syscall {</span>
 <span class="doccomment">//!     thread,</span>
-<span class="doccomment">//!     #[cfg(feature = &quot;std&quot;)]</span>
-<span class="doccomment">//!     syscall_entry: kernel_hal::context::syscall_entry as usize,</span>
-<span class="doccomment">//!     #[cfg(not(feature = &quot;std&quot;))]</span>
-<span class="doccomment">//!     syscall_entry: 0,</span>
 <span class="doccomment">//!     thread_fn,</span>
-<span class="doccomment">//!     regs,</span>
+<span class="doccomment">//!     syscall_entry: kernel_hal::context::syscall_entry as usize,</span>
 <span class="doccomment">//! };</span>
 <span class="doccomment">//! let ret = syscall.syscall(num, args).await;</span>
 <span class="doccomment">//! ```</span>
@@ -361,17 +348,18 @@
 <span class="attribute">#[<span class="ident">macro_use</span>]</span>
 <span class="kw">extern</span> <span class="kw">crate</span> <span class="ident">log</span>;
 
-<span class="kw">use</span> {
-    <span class="self">self</span><span class="ident">::consts::SyscallType</span> <span class="kw">as</span> <span class="ident">Sys</span>,
-    <span class="ident">alloc::sync::Arc</span>,
-    <span class="ident">core::convert::TryFrom</span>,
-    <span class="ident">kernel_hal</span>::{<span class="ident">context::GeneralRegs</span>, <span class="ident">user</span>::<span class="kw-2">*</span>},
-    <span class="ident">linux_object</span>::{<span class="ident">error</span>::<span class="kw-2">*</span>, <span class="ident">fs::FileDesc</span>, <span class="ident">process</span>::<span class="kw-2">*</span>},
-    <span class="ident">zircon_object</span>::{<span class="ident">object</span>::<span class="kw-2">*</span>, <span class="ident">task</span>::<span class="kw-2">*</span>, <span class="ident">vm::VirtAddr</span>},
-};
+<span class="kw">use</span> <span class="ident">alloc::sync::Arc</span>;
+<span class="kw">use</span> <span class="ident">core::convert::TryFrom</span>;
 
-<span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;riscv64&quot;</span>)]</span>
-<span class="kw">use</span> <span class="ident">kernel_hal::context::UserContext</span>;
+<span class="kw">use</span> <span class="ident">kernel_hal::user</span>::{<span class="ident">IoVecIn</span>, <span class="ident">IoVecOut</span>, <span class="ident">UserInOutPtr</span>, <span class="ident">UserInPtr</span>, <span class="ident">UserOutPtr</span>};
+<span class="kw">use</span> <span class="ident">linux_object::error</span>::{<span class="ident">LxError</span>, <span class="ident">SysResult</span>};
+<span class="kw">use</span> <span class="ident">linux_object::fs::FileDesc</span>;
+<span class="kw">use</span> <span class="ident">linux_object::process</span>::{<span class="ident">wait_child</span>, <span class="ident">wait_child_any</span>, <span class="ident">LinuxProcess</span>, <span class="ident">ProcessExt</span>, <span class="ident">RLimit</span>};
+<span class="kw">use</span> <span class="ident">zircon_object::object</span>::{<span class="ident">KernelObject</span>, <span class="ident">KoID</span>, <span class="ident">Signal</span>};
+<span class="kw">use</span> <span class="ident">zircon_object::task</span>::{<span class="ident">CurrentThread</span>, <span class="ident">Process</span>, <span class="ident">Thread</span>, <span class="ident">ThreadFn</span>};
+<span class="kw">use</span> <span class="ident">zircon_object</span>::{<span class="ident">vm::VirtAddr</span>, <span class="ident">ZxError</span>};
+
+<span class="kw">use</span> <span class="self">self</span><span class="ident">::consts::SyscallType</span> <span class="kw">as</span> <span class="ident">Sys</span>;
 
 <span class="kw">mod</span> <span class="ident">consts</span> {
     <span class="comment">// generated from syscall.h.in</span>
@@ -389,16 +377,10 @@
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Syscall</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span> {
     <span class="doccomment">/// the thread making a syscall</span>
     <span class="kw">pub</span> <span class="ident">thread</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">CurrentThread</span>,
-    <span class="doccomment">/// the entry of current syscall</span>
-    <span class="kw">pub</span> <span class="ident">syscall_entry</span>: <span class="ident">VirtAddr</span>,
-    <span class="doccomment">/// store the regs statues</span>
-    <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">not</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;riscv64&quot;</span>))]</span>
-    <span class="kw">pub</span> <span class="ident">regs</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="kw-2">mut</span> <span class="ident">GeneralRegs</span>,
-    <span class="doccomment">/// riscv GeneralRegs does not have Entry register</span>
-    <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;riscv64&quot;</span>)]</span>
-    <span class="kw">pub</span> <span class="ident">context</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="kw-2">mut</span> <span class="ident">UserContext</span>,
     <span class="doccomment">/// new thread function</span>
     <span class="kw">pub</span> <span class="ident">thread_fn</span>: <span class="ident">ThreadFn</span>,
+    <span class="doccomment">/// the entry of current syscall</span>
+    <span class="kw">pub</span> <span class="ident">syscall_entry</span>: <span class="ident">VirtAddr</span>,
 }
 
 <span class="kw">impl</span> <span class="ident">Syscall</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span> {

@@ -112,10 +112,10 @@
 };
 
 <span class="kw">impl</span> <span class="ident">Syscall</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span> {
-    <span class="doccomment">/// Wait on a futex.  </span>
-    <span class="doccomment">///  </span>
-    <span class="doccomment">/// This system call function atomically verifies that `value_ptr` still contains the value `current_value`   </span>
-    <span class="doccomment">/// and sleeps until the futex is made available by a call to `zx_futex_wake`  </span>
+    <span class="doccomment">/// Wait on a futex.</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// This system call function atomically verifies that `value_ptr` still contains the value `current_value`</span>
+    <span class="doccomment">/// and sleeps until the futex is made available by a call to `zx_futex_wake`</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">sys_futex_wait</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">value_ptr</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">AtomicI32</span><span class="op">&gt;</span>,
@@ -138,14 +138,14 @@
         } <span class="kw">else</span> {
             <span class="prelude-val">Some</span>(<span class="ident">proc</span>.<span class="ident">get_object</span>::<span class="op">&lt;</span><span class="ident">Thread</span><span class="op">&gt;</span>(<span class="ident">new_futex_owner</span>)<span class="question-mark">?</span>)
         };
-        <span class="kw">let</span> <span class="ident">future</span> <span class="op">=</span> <span class="ident">futex</span>.<span class="ident">wait_with_owner</span>(<span class="ident">current_value</span>, <span class="prelude-val">Some</span>((<span class="kw-2">*</span><span class="self">self</span>.<span class="ident">thread</span>).<span class="ident">clone</span>()), <span class="ident">new_owner</span>);
+        <span class="kw">let</span> <span class="ident">future</span> <span class="op">=</span> <span class="ident">futex</span>.<span class="ident">wait_with_owner</span>(<span class="ident">current_value</span>, <span class="prelude-val">Some</span>(<span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">inner</span>()), <span class="ident">new_owner</span>);
         <span class="self">self</span>.<span class="ident">thread</span>
             .<span class="ident">blocking_run</span>(<span class="ident">future</span>, <span class="ident">ThreadState::BlockedFutex</span>, <span class="ident">deadline</span>.<span class="ident">into</span>(), <span class="prelude-val">None</span>)
             .<span class="kw">await</span><span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(())
     }
-    <span class="doccomment">/// Wake some waiters and requeue other waiters.   </span>
-    <span class="doccomment">///   </span>
+    <span class="doccomment">/// Wake some waiters and requeue other waiters.</span>
+    <span class="doccomment">///</span>
     <span class="doccomment">/// Wake some number of threads waiting on a futex, and move more waiters to another wait queue.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_futex_requeue</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
@@ -186,7 +186,7 @@
         <span class="prelude-val">Ok</span>(())
     }
 
-    <span class="doccomment">/// Wake some number of threads waiting on a futex.   </span>
+    <span class="doccomment">/// Wake some number of threads waiting on a futex.</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// &gt; Waking up zero threads is not an error condition. Passing in an unallocated address for value_ptr is not an error condition.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_futex_wake</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">value_ptr</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">AtomicI32</span><span class="op">&gt;</span>, <span class="ident">count</span>: <span class="ident">u32</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {

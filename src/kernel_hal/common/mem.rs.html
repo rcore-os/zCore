@@ -86,11 +86,13 @@
 <span id="86">86</span>
 <span id="87">87</span>
 <span id="88">88</span>
+<span id="89">89</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="ident">alloc::vec::Vec</span>;
 
 <span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">PhysAddr</span>, <span class="ident">KHANDLER</span>, <span class="ident">PAGE_SIZE</span>};
 
+<span class="doccomment">/// A 4K size physical frame.</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">PhysFrame</span> {
     <span class="ident">paddr</span>: <span class="ident">PhysAddr</span>,

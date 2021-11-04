@@ -44,6 +44,8 @@
 <span id="44">44</span>
 <span id="45">45</span>
 <span id="46">46</span>
+<span id="47">47</span>
+<span id="48">48</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="ident">alloc::sync::Arc</span>;
 
@@ -71,11 +73,13 @@
     }
 }
 
-<span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn</span> <span class="ident">init</span>() {
+<span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn</span> <span class="ident">init_early</span>() {
     <span class="kw">let</span> <span class="ident">uart</span> <span class="op">=</span> <span class="ident">Arc::new</span>(<span class="ident">MockUart::new</span>());
     <span class="ident">drivers::add_device</span>(<span class="ident">Device::Uart</span>(<span class="ident">uart</span>.<span class="ident">clone</span>()));
     <span class="ident">MockUart::start_irq_service</span>(<span class="kw">move</span> <span class="op">|</span><span class="op">|</span> <span class="ident">uart</span>.<span class="ident">handle_irq</span>(<span class="number">0</span>));
+}
 
+<span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn</span> <span class="ident">init</span>() {
     <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;graphic&quot;</span>)]</span>
     {
         <span class="kw">use</span> <span class="ident">zcore_drivers::mock::display::MockDisplay</span>;

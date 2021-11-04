@@ -96,10 +96,10 @@
     <span class="doccomment">/// Is a valid IRQ number.</span>
     <span class="kw">fn</span> <span class="ident">is_valid_irq</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">irq_num</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span>;
 
-    <span class="doccomment">/// Enable IRQ.</span>
+    <span class="doccomment">/// Disable IRQ.</span>
     <span class="kw">fn</span> <span class="ident">mask</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">irq_num</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">DeviceResult</span>;
 
-    <span class="doccomment">/// Disable IRQ.</span>
+    <span class="doccomment">/// Enable IRQ.</span>
     <span class="kw">fn</span> <span class="ident">unmask</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">irq_num</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">DeviceResult</span>;
 
     <span class="doccomment">/// Configure the specified interrupt vector. If it is invoked, it must be</span>
@@ -108,7 +108,7 @@
         <span class="macro">unimplemented!</span>()
     }
 
-    <span class="doccomment">/// Add an interrupt handle to an IRQ.</span>
+    <span class="doccomment">/// Add an interrupt handler to an IRQ.</span>
     <span class="kw">fn</span> <span class="ident">register_handler</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">irq_num</span>: <span class="ident">usize</span>, <span class="ident">handler</span>: <span class="ident">IrqHandler</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">DeviceResult</span>;
 
     <span class="doccomment">/// Register the device to delivery an IRQ.</span>
@@ -116,7 +116,7 @@
         <span class="self">self</span>.<span class="ident">register_handler</span>(<span class="ident">irq_num</span>, <span class="ident">Box::new</span>(<span class="kw">move</span> <span class="op">|</span><span class="op">|</span> <span class="ident">dev</span>.<span class="ident">handle_irq</span>(<span class="ident">irq_num</span>)))
     }
 
-    <span class="doccomment">/// Remove the interrupt handle to an IRQ.</span>
+    <span class="doccomment">/// Remove the interrupt handler to an IRQ.</span>
     <span class="kw">fn</span> <span class="ident">unregister</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">irq_num</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">DeviceResult</span>;
 
     <span class="doccomment">/// Method used for platform allocation of blocks of MSI and MSI-X compatible</span>

@@ -85,7 +85,7 @@
 <span class="doccomment">/// let thread = Thread::create(&amp;proc, &quot;thread&quot;).unwrap();</span>
 <span class="doccomment">///</span>
 <span class="doccomment">/// // start the thread and never terminate</span>
-<span class="doccomment">/// thread.start(0, 0, 0, 0, |thread| Box::pin(async move {</span>
+<span class="doccomment">/// thread.start(|thread| Box::pin(async move {</span>
 <span class="doccomment">///     loop { async_std::task::yield_now().await }</span>
 <span class="doccomment">///     let _ = thread;</span>
 <span class="doccomment">/// })).unwrap();</span>

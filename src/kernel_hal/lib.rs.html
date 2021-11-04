@@ -40,11 +40,19 @@
 <span id="40">40</span>
 <span id="41">41</span>
 <span id="42">42</span>
+<span id="43">43</span>
+<span id="44">44</span>
+<span id="45">45</span>
+<span id="46">46</span>
+<span id="47">47</span>
+<span id="48">48</span>
 </pre><pre class="rust">
 <span class="doccomment">//! Hardware Abstraction Layer</span>
 
 <span class="attribute">#![<span class="ident">cfg_attr</span>(<span class="ident">not</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;libos&quot;</span>), <span class="ident">no_std</span>)]</span>
+<span class="attribute">#![<span class="ident">cfg_attr</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;libos&quot;</span>, <span class="ident">feature</span>(<span class="ident">thread_id_value</span>))]</span>
 <span class="attribute">#![<span class="ident">feature</span>(<span class="ident">asm</span>)]</span>
+<span class="attribute">#![<span class="ident">feature</span>(<span class="ident">doc_cfg</span>)]</span>
 <span class="attribute">#![<span class="ident">deny</span>(<span class="ident">warnings</span>)]</span>
 
 <span class="kw">extern</span> <span class="kw">crate</span> <span class="ident">alloc</span>;
@@ -79,10 +87,14 @@
 <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">use</span> <span class="ident">config::KCONFIG</span>;
 <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">use</span> <span class="ident">kernel_handler::KHANDLER</span>;
 
-<span class="kw">pub</span> <span class="kw">use</span> <span class="ident">common</span>::{<span class="ident">addr</span>, <span class="ident">console</span>, <span class="ident">defs</span>::<span class="kw-2">*</span>, <span class="ident">user</span>};
+<span class="kw">pub</span> <span class="kw">use</span> <span class="ident">common</span>::{<span class="ident">addr</span>, <span class="ident">console</span>, <span class="ident">context</span>, <span class="ident">defs</span>::<span class="kw-2">*</span>, <span class="ident">user</span>};
 <span class="kw">pub</span> <span class="kw">use</span> <span class="ident">config::KernelConfig</span>;
 <span class="kw">pub</span> <span class="kw">use</span> <span class="ident">imp</span>::<span class="kw-2">*</span>;
 <span class="kw">pub</span> <span class="kw">use</span> <span class="ident">kernel_handler::KernelHandler</span>;
+
+<span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">any</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;smp&quot;</span>, <span class="ident">doc</span>))]</span>
+<span class="attribute">#[<span class="ident">doc</span>(<span class="ident">cfg</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;smp&quot;</span>))]</span>
+<span class="kw">pub</span> <span class="kw">use</span> <span class="ident">imp::boot</span>::{<span class="ident">primary_init</span>, <span class="ident">primary_init_early</span>, <span class="ident">secondary_init</span>};
 </pre></div>
 </section><section id="search" class="content hidden"></section><div id="rustdoc-vars" data-root-path="../../" data-current-crate="kernel_hal" data-search-index-js="../../search-index.js" data-search-js="../../search.js"></div>
     <script src="../../main.js"></script><script src="../../source-script.js"></script><script src="../../source-files.js"></script>

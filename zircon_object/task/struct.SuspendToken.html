@@ -7,7 +7,7 @@
 <span class="kw">let</span> <span class="ident">thread</span> <span class="op">=</span> <span class="ident">Thread::create</span>(<span class="kw-2">&amp;</span><span class="ident">proc</span>, <span class="string">&quot;thread&quot;</span>).<span class="ident">unwrap</span>();
 
 <span class="comment">// start the thread and never terminate</span>
-<span class="ident">thread</span>.<span class="ident">start</span>(<span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="op">|</span><span class="ident">thread</span><span class="op">|</span> <span class="ident">Box::pin</span>(<span class="kw">async</span> <span class="kw">move</span> {
+<span class="ident">thread</span>.<span class="ident">start</span>(<span class="op">|</span><span class="ident">thread</span><span class="op">|</span> <span class="ident">Box::pin</span>(<span class="kw">async</span> <span class="kw">move</span> {
     <span class="kw">loop</span> { <span class="ident">async_std::task::yield_now</span>().<span class="kw">await</span> }
     <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">thread</span>;
 })).<span class="ident">unwrap</span>();

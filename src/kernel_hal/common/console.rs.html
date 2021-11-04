@@ -101,12 +101,21 @@
 <span id="101">101</span>
 <span id="102">102</span>
 <span id="103">103</span>
+<span id="104">104</span>
+<span id="105">105</span>
+<span id="106">106</span>
+<span id="107">107</span>
+<span id="108">108</span>
 </pre><pre class="rust">
-<span class="kw">use</span> <span class="ident">core::fmt</span>::{<span class="ident">Arguments</span>, <span class="prelude-ty">Result</span>, <span class="ident">Write</span>};
+<span class="doccomment">//! Console input and output.</span>
 
 <span class="kw">use</span> <span class="kw">crate</span><span class="ident">::drivers</span>;
+<span class="kw">use</span> <span class="ident">core::fmt</span>::{<span class="ident">Arguments</span>, <span class="prelude-ty">Result</span>, <span class="ident">Write</span>};
+<span class="kw">use</span> <span class="ident">spin::Mutex</span>;
 
 <span class="kw">struct</span> <span class="ident">SerialWriter</span>;
+
+<span class="kw">static</span> <span class="ident">SERIAL_WRITER</span>: <span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">SerialWriter</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">Mutex::new</span>(<span class="ident">SerialWriter</span>);
 
 <span class="kw">impl</span> <span class="ident">Write</span> <span class="kw">for</span> <span class="ident">SerialWriter</span> {
     <span class="kw">fn</span> <span class="ident">write_str</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">s</span>: <span class="kw-2">&amp;</span><span class="ident">str</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span> {
@@ -123,7 +132,6 @@
     <span class="kw">if</span> <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;graphic&quot;</span>)]</span> {
         <span class="kw">use</span> <span class="kw">crate</span><span class="ident">::utils::init_once::InitOnce</span>;
         <span class="kw">use</span> <span class="ident">alloc::sync::Arc</span>;
-        <span class="kw">use</span> <span class="ident">spin::Mutex</span>;
         <span class="kw">use</span> <span class="ident">zcore_drivers</span>::{<span class="ident">scheme::DisplayScheme</span>, <span class="ident">utils::GraphicConsole</span>};
 
         <span class="kw">static</span> <span class="ident">GRAPHIC_CONSOLE</span>: <span class="ident">InitOnce</span><span class="op">&lt;</span><span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">GraphicConsole</span><span class="op">&gt;</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">InitOnce::new</span>();
@@ -144,17 +152,26 @@
     }
 }
 
-<span class="doccomment">/// Print format string and its arguments to serial.</span>
+<span class="doccomment">/// Writes a string slice into the serial.</span>
+<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">serial_write_str</span>(<span class="ident">s</span>: <span class="kw-2">&amp;</span><span class="ident">str</span>) {
+    <span class="ident">SERIAL_WRITER</span>.<span class="ident">lock</span>().<span class="ident">write_str</span>(<span class="ident">s</span>).<span class="ident">unwrap</span>();
+}
+
+<span class="doccomment">/// Writes formatted data into the serial.</span>
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">serial_write_fmt</span>(<span class="ident">fmt</span>: <span class="ident">Arguments</span>) {
-    <span class="ident">SerialWriter</span>.<span class="ident">write_fmt</span>(<span class="ident">fmt</span>).<span class="ident">unwrap</span>();
+    <span class="ident">SERIAL_WRITER</span>.<span class="ident">lock</span>().<span class="ident">write_fmt</span>(<span class="ident">fmt</span>).<span class="ident">unwrap</span>();
 }
 
-<span class="doccomment">/// Print format string and its arguments to serial.</span>
-<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">serial_write</span>(<span class="ident">s</span>: <span class="kw-2">&amp;</span><span class="ident">str</span>) {
-    <span class="ident">SerialWriter</span>.<span class="ident">write_str</span>(<span class="ident">s</span>).<span class="ident">unwrap</span>();
+<span class="doccomment">/// Writes a string slice into the graphic console.</span>
+<span class="attribute">#[<span class="ident">allow</span>(<span class="ident">unused_variables</span>)]</span>
+<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">graphic_console_write_str</span>(<span class="ident">s</span>: <span class="kw-2">&amp;</span><span class="ident">str</span>) {
+    <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;graphic&quot;</span>)]</span>
+    <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">cons</span>) <span class="op">=</span> <span class="ident">GRAPHIC_CONSOLE</span>.<span class="ident">try_get</span>() {
+        <span class="ident">cons</span>.<span class="ident">lock</span>().<span class="ident">write_str</span>(<span class="ident">s</span>).<span class="ident">unwrap</span>();
+    }
 }
 
-<span class="doccomment">/// Print format string and its arguments to graphic console.</span>
+<span class="doccomment">/// Writes formatted data into the graphic console.</span>
 <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">unused_variables</span>)]</span>
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">graphic_console_write_fmt</span>(<span class="ident">fmt</span>: <span class="ident">Arguments</span>) {
     <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;graphic&quot;</span>)]</span>
@@ -163,25 +180,16 @@
     }
 }
 
-<span class="doccomment">/// Print format string and its arguments to graphic console.</span>
-<span class="attribute">#[<span class="ident">allow</span>(<span class="ident">unused_variables</span>)]</span>
-<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">graphic_console_write</span>(<span class="ident">s</span>: <span class="kw-2">&amp;</span><span class="ident">str</span>) {
-    <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;graphic&quot;</span>)]</span>
-    <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">cons</span>) <span class="op">=</span> <span class="ident">GRAPHIC_CONSOLE</span>.<span class="ident">try_get</span>() {
-        <span class="ident">cons</span>.<span class="ident">lock</span>().<span class="ident">write_str</span>(<span class="ident">s</span>).<span class="ident">unwrap</span>();
-    }
+<span class="doccomment">/// Writes a string slice into the serial, and the graphic console if it exists.</span>
+<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">console_write_str</span>(<span class="ident">s</span>: <span class="kw-2">&amp;</span><span class="ident">str</span>) {
+    <span class="ident">serial_write_str</span>(<span class="ident">s</span>);
+    <span class="ident">graphic_console_write_str</span>(<span class="ident">s</span>);
 }
 
-<span class="doccomment">/// Print format string and its arguments to serial and graphic console (if exists).</span>
+<span class="doccomment">/// Writes formatted data into the serial, and the graphic console if it exists.</span>
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">console_write_fmt</span>(<span class="ident">fmt</span>: <span class="ident">Arguments</span>) {
     <span class="ident">serial_write_fmt</span>(<span class="ident">fmt</span>);
     <span class="ident">graphic_console_write_fmt</span>(<span class="ident">fmt</span>);
-}
-
-<span class="doccomment">/// Print a string to serial and graphic console (if exists).</span>
-<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">console_write</span>(<span class="ident">s</span>: <span class="kw-2">&amp;</span><span class="ident">str</span>) {
-    <span class="ident">serial_write</span>(<span class="ident">s</span>);
-    <span class="ident">graphic_console_write</span>(<span class="ident">s</span>);
 }
 
 <span class="doccomment">/// Read buffer data from console (serial).</span>
@@ -189,6 +197,7 @@
     <span class="kw">super</span><span class="ident">::future::SerialReadFuture::new</span>(<span class="ident">buf</span>).<span class="kw">await</span>
 }
 
+<span class="doccomment">/// The POSIX `winsize` structure.</span>
 <span class="attribute">#[<span class="ident">repr</span>(<span class="ident">C</span>)]</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Copy</span>, <span class="ident">Default</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">ConsoleWinSize</span> {
@@ -198,6 +207,7 @@
     <span class="kw">pub</span> <span class="ident">ws_ypixel</span>: <span class="ident">u16</span>,
 }
 
+<span class="doccomment">/// Returns the size information of the console, see [`ConsoleWinSize`].</span>
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">console_win_size</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ConsoleWinSize</span> {
     <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;graphic&quot;</span>)]</span>
     <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="kw-2">&amp;</span><span class="ident">winsz</span>) <span class="op">=</span> <span class="ident">CONSOLE_WIN_SIZE</span>.<span class="ident">try_get</span>() {

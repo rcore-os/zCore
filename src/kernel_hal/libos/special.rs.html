@@ -17,7 +17,11 @@
 <span id="17">17</span>
 <span id="18">18</span>
 <span id="19">19</span>
+<span id="20">20</span>
+<span id="21">21</span>
 </pre><pre class="rust">
+<span class="doccomment">//! Functions only available on the libos mode.</span>
+
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;graphic&quot;</span>)]</span>
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">run_graphic_service</span>() {
     <span class="kw">use</span> <span class="kw">crate</span><span class="ident">::drivers</span>::{<span class="ident">all_display</span>, <span class="ident">all_input</span>};

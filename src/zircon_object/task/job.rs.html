@@ -511,6 +511,22 @@
 <span id="511">511</span>
 <span id="512">512</span>
 <span id="513">513</span>
+<span id="514">514</span>
+<span id="515">515</span>
+<span id="516">516</span>
+<span id="517">517</span>
+<span id="518">518</span>
+<span id="519">519</span>
+<span id="520">520</span>
+<span id="521">521</span>
+<span id="522">522</span>
+<span id="523">523</span>
+<span id="524">524</span>
+<span id="525">525</span>
+<span id="526">526</span>
+<span id="527">527</span>
+<span id="528">528</span>
+<span id="529">529</span>
 </pre><pre class="rust">
 <span class="kw">use</span> {
     <span class="kw">super</span><span class="ident">::exception</span>::<span class="kw-2">*</span>,
@@ -813,7 +829,8 @@
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">test</span>)]</span>
 <span class="kw">mod</span> <span class="ident">tests</span> {
     <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
-    <span class="kw">use</span> <span class="kw">crate</span><span class="ident">::task</span>::{<span class="ident">CurrentThread</span>, <span class="ident">Status</span>, <span class="ident">Thread</span>, <span class="ident">ThreadState</span>, <span class="ident">TASK_RETCODE_SYSCALL_KILL</span>};
+    <span class="kw">use</span> <span class="kw">crate</span><span class="ident">::task</span>::{<span class="ident">Status</span>, <span class="ident">Thread</span>, <span class="ident">ThreadState</span>, <span class="ident">TASK_RETCODE_SYSCALL_KILL</span>};
+    <span class="kw">use</span> <span class="ident">core::time::Duration</span>;
 
     <span class="attribute">#[<span class="ident">test</span>]</span>
     <span class="kw">fn</span> <span class="ident">create</span>() {
@@ -953,14 +970,28 @@
         <span class="macro">assert!</span>(<span class="op">!</span><span class="ident">job</span>.<span class="ident">is_empty</span>());
     }
 
-    <span class="attribute">#[<span class="ident">test</span>]</span>
-    <span class="kw">fn</span> <span class="ident">kill</span>() {
+    <span class="attribute">#[<span class="ident">async_std::test</span>]</span>
+    <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">kill</span>() {
         <span class="kw">let</span> <span class="ident">root_job</span> <span class="op">=</span> <span class="ident">Job::root</span>();
         <span class="kw">let</span> <span class="ident">job</span> <span class="op">=</span> <span class="ident">Job::create_child</span>(<span class="kw-2">&amp;</span><span class="ident">root_job</span>).<span class="ident">expect</span>(<span class="string">&quot;failed to create job&quot;</span>);
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="ident">Process::create</span>(<span class="kw-2">&amp;</span><span class="ident">root_job</span>, <span class="string">&quot;proc&quot;</span>).<span class="ident">expect</span>(<span class="string">&quot;failed to create process&quot;</span>);
         <span class="kw">let</span> <span class="ident">thread</span> <span class="op">=</span> <span class="ident">Thread::create</span>(<span class="kw-2">&amp;</span><span class="ident">proc</span>, <span class="string">&quot;thread&quot;</span>).<span class="ident">expect</span>(<span class="string">&quot;failed to create thread&quot;</span>);
-        <span class="kw">let</span> <span class="ident">current_thread</span> <span class="op">=</span> <span class="ident">CurrentThread</span>(<span class="ident">thread</span>.<span class="ident">clone</span>());
+        <span class="ident">thread</span>
+            .<span class="ident">start</span>(<span class="op">|</span><span class="ident">thread</span><span class="op">|</span> {
+                <span class="ident">std::boxed::Box::pin</span>(<span class="kw">async</span> {
+                    <span class="macro">println!</span>(<span class="string">&quot;should not be killed&quot;</span>);
+                    <span class="ident">async_std::task::sleep</span>(<span class="ident">Duration::from_millis</span>(<span class="number">1000</span>)).<span class="kw">await</span>;
+                    {
+                        <span class="comment">// FIXME</span>
+                        <span class="ident">drop</span>(<span class="ident">thread</span>);
+                        <span class="ident">async_std::task::sleep</span>(<span class="ident">Duration::from_millis</span>(<span class="number">1000</span>)).<span class="kw">await</span>;
+                    }
+                    <span class="macro">unreachable!</span>(<span class="string">&quot;should be killed&quot;</span>);
+                })
+            })
+            .<span class="ident">expect</span>(<span class="string">&quot;failed to start thread&quot;</span>);
 
+        <span class="ident">async_std::task::sleep</span>(<span class="ident">Duration::from_millis</span>(<span class="number">500</span>)).<span class="kw">await</span>;
         <span class="ident">root_job</span>.<span class="ident">kill</span>();
         <span class="macro">assert!</span>(<span class="ident">root_job</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">killed</span>);
         <span class="macro">assert!</span>(<span class="ident">job</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">killed</span>);
@@ -972,7 +1003,8 @@
         <span class="macro">assert!</span>(<span class="op">!</span><span class="ident">proc</span>.<span class="ident">signal</span>().<span class="ident">contains</span>(<span class="ident">Signal::PROCESS_TERMINATED</span>));
         <span class="macro">assert!</span>(<span class="op">!</span><span class="ident">thread</span>.<span class="ident">signal</span>().<span class="ident">contains</span>(<span class="ident">Signal::THREAD_TERMINATED</span>));
 
-        <span class="ident">std::mem::drop</span>(<span class="ident">current_thread</span>);
+        <span class="comment">// wait for killing...</span>
+        <span class="ident">async_std::task::sleep</span>(<span class="ident">Duration::from_millis</span>(<span class="number">1000</span>)).<span class="kw">await</span>;
         <span class="macro">assert!</span>(<span class="ident">root_job</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">killed</span>);
         <span class="macro">assert!</span>(<span class="ident">job</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">killed</span>);
         <span class="macro">assert_eq!</span>(<span class="ident">proc</span>.<span class="ident">status</span>(), <span class="ident">Status::Exited</span>(<span class="ident">TASK_RETCODE_SYSCALL_KILL</span>));

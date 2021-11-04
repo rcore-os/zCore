@@ -714,14 +714,14 @@
             <span class="ident">Property::RegisterFs</span> <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">let</span> <span class="ident">thread</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_object</span>::<span class="op">&lt;</span><span class="ident">Thread</span><span class="op">&gt;</span>(<span class="ident">handle_value</span>)<span class="question-mark">?</span>;
                 <span class="kw">let</span> <span class="ident">fsbase</span> <span class="op">=</span> <span class="ident">UserInPtr</span>::<span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span><span class="ident">::from_addr_size</span>(<span class="ident">buffer</span>, <span class="ident">buffer_size</span>)<span class="question-mark">?</span>.<span class="ident">read</span>()<span class="question-mark">?</span>;
-                <span class="ident">thread</span>.<span class="ident">set_fsbase</span>(<span class="ident">fsbase</span>)<span class="question-mark">?</span>;
+                <span class="ident">thread</span>.<span class="ident">with_context</span>(<span class="op">|</span><span class="ident">ctx</span><span class="op">|</span> <span class="ident">ctx</span>.<span class="ident">general_mut</span>().<span class="ident">fsbase</span> <span class="op">=</span> <span class="ident">fsbase</span>)<span class="question-mark">?</span>;
                 <span class="prelude-val">Ok</span>(())
             }
             <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>)]</span>
             <span class="ident">Property::RegisterGs</span> <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">let</span> <span class="ident">thread</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_object</span>::<span class="op">&lt;</span><span class="ident">Thread</span><span class="op">&gt;</span>(<span class="ident">handle_value</span>)<span class="question-mark">?</span>;
                 <span class="kw">let</span> <span class="ident">gsbase</span> <span class="op">=</span> <span class="ident">UserInPtr</span>::<span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span><span class="ident">::from_addr_size</span>(<span class="ident">buffer</span>, <span class="ident">buffer_size</span>)<span class="question-mark">?</span>.<span class="ident">read</span>()<span class="question-mark">?</span>;
-                <span class="ident">thread</span>.<span class="ident">set_gsbase</span>(<span class="ident">gsbase</span>)<span class="question-mark">?</span>;
+                <span class="ident">thread</span>.<span class="ident">with_context</span>(<span class="op">|</span><span class="ident">ctx</span><span class="op">|</span> <span class="ident">ctx</span>.<span class="ident">general_mut</span>().<span class="ident">gsbase</span> <span class="op">=</span> <span class="ident">gsbase</span>)<span class="question-mark">?</span>;
                 <span class="prelude-val">Ok</span>(())
             }
             <span class="ident">Property::ProcessBreakOnLoad</span> <span class="op">=</span><span class="op">&gt;</span> {
@@ -759,7 +759,7 @@
                 <span class="prelude-val">Ok</span>(())
             }
             <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="macro">warn!</span>(<span class="string">&quot;unknown property&quot;</span>);
+                <span class="macro">warn!</span>(<span class="string">&quot;unknown property {:?}&quot;</span>, <span class="ident">property</span>);
                 <span class="prelude-val">Err</span>(<span class="ident">ZxError::INVALID_ARGS</span>)
             }
         }

@@ -194,6 +194,20 @@
 <span id="194">194</span>
 <span id="195">195</span>
 <span id="196">196</span>
+<span id="197">197</span>
+<span id="198">198</span>
+<span id="199">199</span>
+<span id="200">200</span>
+<span id="201">201</span>
+<span id="202">202</span>
+<span id="203">203</span>
+<span id="204">204</span>
+<span id="205">205</span>
+<span id="206">206</span>
+<span id="207">207</span>
+<span id="208">208</span>
+<span id="209">209</span>
+<span id="210">210</span>
 </pre><pre class="rust">
 <span class="doccomment">//! Implement INode for Stdin &amp; Stdout</span>
 <span class="attribute">#![<span class="ident">allow</span>(<span class="ident">unsafe_code</span>)]</span>
@@ -214,7 +228,21 @@
 
 <span class="macro">lazy_static!</span> {
     <span class="doccomment">/// STDIN global reference</span>
-    <span class="kw">pub</span> <span class="kw">static</span> <span class="kw-2">ref</span> <span class="ident">STDIN</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Stdin</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">Default::default</span>();
+    <span class="kw">pub</span> <span class="kw">static</span> <span class="kw-2">ref</span> <span class="ident">STDIN</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Stdin</span><span class="op">&gt;</span> <span class="op">=</span> {
+        <span class="kw">let</span> <span class="ident">stdin</span> <span class="op">=</span> <span class="ident">Arc::new</span>(<span class="ident">Stdin::default</span>());
+        <span class="kw">let</span> <span class="ident">cloned</span> <span class="op">=</span> <span class="ident">stdin</span>.<span class="ident">clone</span>();
+        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">uart</span>) <span class="op">=</span> <span class="ident">kernel_hal::drivers::all_uart</span>().<span class="ident">first</span>() {
+            <span class="ident">uart</span>.<span class="ident">clone</span>().<span class="ident">subscribe</span>(
+                <span class="ident">Box::new</span>(<span class="kw">move</span> <span class="op">|</span><span class="kw">_</span><span class="op">|</span> {
+                    <span class="kw">while</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">c</span>) <span class="op">=</span> <span class="ident">uart</span>.<span class="ident">try_recv</span>().<span class="ident">unwrap_or</span>(<span class="prelude-val">None</span>) {
+                        <span class="ident">cloned</span>.<span class="ident">push</span>(<span class="ident">c</span> <span class="kw">as</span> <span class="ident">char</span>);
+                    }
+                }),
+                <span class="bool-val">false</span>,
+            );
+        }
+        <span class="ident">stdin</span>
+    };
     <span class="doccomment">/// STDOUT global reference</span>
     <span class="kw">pub</span> <span class="kw">static</span> <span class="kw-2">ref</span> <span class="ident">STDOUT</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Stdout</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">Default::default</span>();
 }
@@ -335,7 +363,7 @@
     <span class="kw">fn</span> <span class="ident">write_at</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">_offset</span>: <span class="ident">usize</span>, <span class="ident">buf</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
         <span class="comment">// we do not care the utf-8 things, we just want to print it!</span>
         <span class="kw">let</span> <span class="ident">s</span> <span class="op">=</span> <span class="kw">unsafe</span> { <span class="ident">core::str::from_utf8_unchecked</span>(<span class="ident">buf</span>) };
-        <span class="ident">kernel_hal::console::console_write</span>(<span class="ident">s</span>);
+        <span class="ident">kernel_hal::console::console_write_str</span>(<span class="ident">s</span>);
         <span class="prelude-val">Ok</span>(<span class="ident">buf</span>.<span class="ident">len</span>())
     }
     <span class="kw">fn</span> <span class="ident">poll</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">PollStatus</span><span class="op">&gt;</span> {

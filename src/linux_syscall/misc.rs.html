@@ -203,6 +203,13 @@
 <span id="203">203</span>
 <span id="204">204</span>
 <span id="205">205</span>
+<span id="206">206</span>
+<span id="207">207</span>
+<span id="208">208</span>
+<span id="209">209</span>
+<span id="210">210</span>
+<span id="211">211</span>
+<span id="212">212</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
 <span class="kw">use</span> <span class="ident">bitflags::bitflags</span>;
@@ -217,7 +224,9 @@
         <span class="kw">match</span> <span class="ident">code</span> {
             <span class="ident">ARCH_SET_FS</span> <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="macro">info!</span>(<span class="string">&quot;sys_arch_prctl: set FSBASE to {:#x}&quot;</span>, <span class="ident">addr</span>);
-                <span class="self">self</span>.<span class="ident">regs</span>.<span class="ident">fsbase</span> <span class="op">=</span> <span class="ident">addr</span>;
+                <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">with_context</span>(<span class="op">|</span><span class="ident">ctx</span><span class="op">|</span> {
+                    <span class="ident">ctx</span>.<span class="ident">set_field</span>(<span class="ident">kernel_hal::context::UserContextField::ThreadPointer</span>, <span class="ident">addr</span>)
+                })<span class="question-mark">?</span>;
                 <span class="prelude-val">Ok</span>(<span class="number">0</span>)
             }
             <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Err</span>(<span class="ident">LxError::EINVAL</span>),
@@ -234,10 +243,15 @@
 
         <span class="kw">let</span> <span class="ident">vdso_const</span> <span class="op">=</span> <span class="ident">kernel_hal::vdso::vdso_constants</span>();
 
-        <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>)]</span>
-        <span class="kw">let</span> <span class="ident">arch</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>;
-        <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;riscv64&quot;</span>)]</span>
-        <span class="kw">let</span> <span class="ident">arch</span> <span class="op">=</span> <span class="string">&quot;riscv64&quot;</span>;
+        <span class="kw">let</span> <span class="ident">arch</span> <span class="op">=</span> <span class="kw">if</span> <span class="macro">cfg!</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>) {
+            <span class="string">&quot;x86_64&quot;</span>
+        } <span class="kw">else</span> <span class="kw">if</span> <span class="macro">cfg!</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;aarch64&quot;</span>) {
+            <span class="string">&quot;aarch64&quot;</span>
+        } <span class="kw">else</span> <span class="kw">if</span> <span class="macro">cfg!</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;riscv64&quot;</span>) {
+            <span class="string">&quot;riscv64&quot;</span>
+        } <span class="kw">else</span> {
+            <span class="string">&quot;unknown&quot;</span>
+        };
 
         <span class="kw">let</span> <span class="ident">strings</span> <span class="op">=</span> [
             <span class="string">&quot;Linux&quot;</span>,                            <span class="comment">// sysname</span>

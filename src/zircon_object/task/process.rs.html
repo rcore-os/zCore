@@ -827,16 +827,35 @@
 <span id="827">827</span>
 <span id="828">828</span>
 <span id="829">829</span>
+<span id="830">830</span>
+<span id="831">831</span>
+<span id="832">832</span>
+<span id="833">833</span>
+<span id="834">834</span>
+<span id="835">835</span>
+<span id="836">836</span>
+<span id="837">837</span>
+<span id="838">838</span>
+<span id="839">839</span>
+<span id="840">840</span>
+<span id="841">841</span>
+<span id="842">842</span>
+<span id="843">843</span>
 </pre><pre class="rust">
-<span class="kw">use</span> {
-    <span class="kw">super</span>::{<span class="ident">exception</span>::<span class="kw-2">*</span>, <span class="ident">job::Job</span>, <span class="ident">job_policy</span>::<span class="kw-2">*</span>, <span class="ident">thread::Thread</span>, <span class="kw-2">*</span>},
-    <span class="kw">crate</span>::{<span class="ident">object</span>::<span class="kw-2">*</span>, <span class="ident">signal::Futex</span>, <span class="ident">vm</span>::<span class="kw-2">*</span>},
-    <span class="ident">alloc</span>::{<span class="ident">boxed::Box</span>, <span class="ident">sync::Arc</span>, <span class="ident">vec::Vec</span>},
-    <span class="ident">core</span>::{<span class="ident">any::Any</span>, <span class="ident">sync::atomic::AtomicI32</span>},
-    <span class="ident">futures::channel::oneshot</span>::{<span class="self">self</span>, <span class="ident">Receiver</span>, <span class="ident">Sender</span>},
-    <span class="ident">hashbrown::HashMap</span>,
-    <span class="ident">spin::Mutex</span>,
-};
+<span class="kw">use</span> <span class="ident">alloc</span>::{<span class="ident">boxed::Box</span>, <span class="ident">sync::Arc</span>, <span class="ident">vec::Vec</span>};
+<span class="kw">use</span> <span class="ident">core</span>::{<span class="ident">any::Any</span>, <span class="ident">sync::atomic::AtomicI32</span>};
+
+<span class="kw">use</span> <span class="ident">futures::channel::oneshot</span>::{<span class="self">self</span>, <span class="ident">Receiver</span>, <span class="ident">Sender</span>};
+<span class="kw">use</span> <span class="ident">hashbrown::HashMap</span>;
+<span class="kw">use</span> <span class="ident">spin::Mutex</span>;
+
+<span class="kw">use</span> <span class="kw">super</span><span class="ident">::exception</span>::{<span class="ident">ExceptionChannelType</span>, <span class="ident">Exceptionate</span>};
+<span class="kw">use</span> <span class="kw">super</span><span class="ident">::job_policy</span>::{<span class="ident">JobPolicy</span>, <span class="ident">PolicyAction</span>, <span class="ident">PolicyCondition</span>};
+<span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">Job</span>, <span class="ident">Task</span>, <span class="ident">Thread</span>, <span class="ident">ThreadFn</span>};
+<span class="kw">use</span> <span class="kw">crate</span><span class="ident">::object</span>::{<span class="ident">Handle</span>, <span class="ident">HandleBasicInfo</span>, <span class="ident">HandleValue</span>, <span class="ident">INVALID_HANDLE</span>};
+<span class="kw">use</span> <span class="kw">crate</span><span class="ident">::object</span>::{<span class="ident">KObjectBase</span>, <span class="ident">KernelObject</span>, <span class="ident">KoID</span>, <span class="ident">Rights</span>, <span class="ident">Signal</span>};
+<span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">define_count_helper</span>, <span class="ident">impl_kobject</span>};
+<span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">signal::Futex</span>, <span class="ident">vm::VmAddressRegion</span>, <span class="ident">ZxError</span>, <span class="ident">ZxResult</span>};
 
 <span class="doccomment">/// Process abstraction</span>
 <span class="doccomment">///</span>
@@ -983,11 +1002,11 @@
     <span class="doccomment">/// // start the new thread</span>
     <span class="doccomment">/// proc.start(&amp;thread, 1, 4, Some(handle), 2, |thread| Box::pin(async move {</span>
     <span class="doccomment">///     let cx = thread.wait_for_run().await;</span>
-    <span class="doccomment">///     assert_eq!(cx.general.rip, 1);  // entry</span>
-    <span class="doccomment">///     assert_eq!(cx.general.rsp, 4);  // stack_top</span>
-    <span class="doccomment">///     assert_eq!(cx.general.rdi, 3);  // arg0 (handle)</span>
-    <span class="doccomment">///     assert_eq!(cx.general.rsi, 2);  // arg1</span>
-    <span class="doccomment">///     thread.end_running(cx);</span>
+    <span class="doccomment">///     assert_eq!(cx.general().rip, 1);  // entry</span>
+    <span class="doccomment">///     assert_eq!(cx.general().rsp, 4);  // stack_top</span>
+    <span class="doccomment">///     assert_eq!(cx.general().rdi, 3);  // arg0 (handle)</span>
+    <span class="doccomment">///     assert_eq!(cx.general().rsi, 2);  // arg1</span>
+    <span class="doccomment">///     thread.put_context(cx);</span>
     <span class="doccomment">/// })).unwrap();</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// # let object: Arc&lt;dyn KernelObject&gt; = thread.clone();</span>
@@ -1016,16 +1035,11 @@
             <span class="ident">handle_value</span> <span class="op">=</span> <span class="ident">arg1</span>.<span class="ident">map_or</span>(<span class="ident">INVALID_HANDLE</span>, <span class="op">|</span><span class="ident">handle</span><span class="op">|</span> <span class="ident">inner</span>.<span class="ident">add_handle</span>(<span class="ident">handle</span>));
         }
         <span class="ident">thread</span>.<span class="ident">set_first_thread</span>();
-        <span class="kw">match</span> <span class="ident">thread</span>.<span class="ident">start</span>(<span class="ident">entry</span>, <span class="ident">stack</span>, <span class="ident">handle_value</span> <span class="kw">as</span> <span class="ident">usize</span>, <span class="ident">arg2</span>, <span class="ident">thread_fn</span>) {
-            <span class="prelude-val">Ok</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Ok</span>(()),
-            <span class="prelude-val">Err</span>(<span class="ident">err</span>) <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
-                <span class="kw">if</span> <span class="ident">handle_value</span> <span class="op">!</span><span class="op">=</span> <span class="ident">INVALID_HANDLE</span> {
-                    <span class="ident">inner</span>.<span class="ident">remove_handle</span>(<span class="ident">handle_value</span>).<span class="ident">ok</span>();
-                }
-                <span class="prelude-val">Err</span>(<span class="ident">err</span>)
-            }
+        <span class="kw">let</span> <span class="ident">res</span> <span class="op">=</span> <span class="ident">thread</span>.<span class="ident">start_with_entry</span>(<span class="ident">entry</span>, <span class="ident">stack</span>, <span class="ident">handle_value</span> <span class="kw">as</span> <span class="ident">usize</span>, <span class="ident">arg2</span>, <span class="ident">thread_fn</span>);
+        <span class="kw">if</span> <span class="ident">res</span>.<span class="ident">is_err</span>() <span class="op">&amp;&amp;</span> <span class="ident">handle_value</span> <span class="op">!</span><span class="op">=</span> <span class="ident">INVALID_HANDLE</span> {
+            <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">remove_handle</span>(<span class="ident">handle_value</span>).<span class="ident">ok</span>();
         }
+        <span class="ident">res</span>
     }
 
     <span class="doccomment">/// Exit current process with `retcode`.</span>
@@ -1122,6 +1136,15 @@
     <span class="doccomment">/// Get process status.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">status</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Status</span> {
         <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">status</span>
+    }
+
+    <span class="doccomment">/// Get process exit code if it exited, else returns `None`.</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">exit_code</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">i64</span><span class="op">&gt;</span> {
+        <span class="kw">if</span> <span class="kw">let</span> <span class="ident">Status::Exited</span>(<span class="ident">code</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">status</span>() {
+            <span class="prelude-val">Some</span>(<span class="ident">code</span>)
+        } <span class="kw">else</span> {
+            <span class="prelude-val">None</span>
+        }
     }
 
     <span class="doccomment">/// Get the extension.</span>
@@ -1359,17 +1382,20 @@
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">wait_for_exit</span>(<span class="self">self</span>: <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">i64</span> {
         <span class="kw">let</span> <span class="ident">object</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">KernelObject</span><span class="op">&gt;</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">clone</span>();
         <span class="ident">object</span>.<span class="ident">wait_signal</span>(<span class="ident">Signal::PROCESS_TERMINATED</span>).<span class="kw">await</span>;
-        <span class="kw">if</span> <span class="kw">let</span> <span class="ident">Status::Exited</span>(<span class="ident">code</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">status</span>() {
+        <span class="kw">let</span> <span class="ident">code</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">exit_code</span>().<span class="ident">expect</span>(<span class="string">&quot;process not exited!&quot;</span>);
+        <span class="macro">info!</span>(
+            <span class="string">&quot;process {:?}({}) exited with code {:?}&quot;</span>,
+            <span class="self">self</span>.<span class="ident">name</span>(),
+            <span class="self">self</span>.<span class="ident">id</span>(),
             <span class="ident">code</span>
-        } <span class="kw">else</span> {
-            <span class="macro">unreachable!</span>();
-        }
+        );
+        <span class="ident">code</span>
     }
 }
 
 <span class="kw">impl</span> <span class="ident">Task</span> <span class="kw">for</span> <span class="ident">Process</span> {
     <span class="kw">fn</span> <span class="ident">kill</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) {
-        <span class="self">self</span>.<span class="ident">exit</span>(<span class="ident">TASK_RETCODE_SYSCALL_KILL</span>);
+        <span class="self">self</span>.<span class="ident">exit</span>(<span class="kw">super</span><span class="ident">::TASK_RETCODE_SYSCALL_KILL</span>);
     }
 
     <span class="kw">fn</span> <span class="ident">suspend</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) {
@@ -1453,6 +1479,8 @@
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">test</span>)]</span>
 <span class="kw">mod</span> <span class="ident">tests</span> {
     <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
+    <span class="kw">use</span> <span class="kw">crate</span><span class="ident">::object::KernelObject</span>;
+    <span class="kw">use</span> <span class="kw">crate</span><span class="ident">::task</span>::<span class="kw-2">*</span>;
 
     <span class="attribute">#[<span class="ident">test</span>]</span>
     <span class="kw">fn</span> <span class="ident">create</span>() {

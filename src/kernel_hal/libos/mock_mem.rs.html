@@ -113,6 +113,12 @@
 <span id="113">113</span>
 <span id="114">114</span>
 <span id="115">115</span>
+<span id="116">116</span>
+<span id="117">117</span>
+<span id="118">118</span>
+<span id="119">119</span>
+<span id="120">120</span>
+<span id="121">121</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="ident">std::os::unix::io::RawFd</span>;
 
@@ -120,7 +126,8 @@
 <span class="kw">use</span> <span class="ident">nix::sys::mman</span>::{<span class="self">self</span>, <span class="ident">MapFlags</span>, <span class="ident">ProtFlags</span>};
 <span class="kw">use</span> <span class="ident">nix</span>::{<span class="ident">sys::stat::Mode</span>, <span class="ident">unistd</span>};
 
-<span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">mem::phys_to_virt</span>, <span class="ident">MMUFlags</span>, <span class="ident">PhysAddr</span>, <span class="ident">VirtAddr</span>};
+<span class="kw">use</span> <span class="kw">super</span><span class="ident">::mem::PMEM_MAP_VADDR</span>;
+<span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">MMUFlags</span>, <span class="ident">PhysAddr</span>, <span class="ident">VirtAddr</span>};
 
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">MockMemory</span> {
     <span class="ident">size</span>: <span class="ident">usize</span>,
@@ -140,7 +147,9 @@
         .<span class="ident">expect</span>(<span class="string">&quot;faild to open&quot;</span>);
         <span class="ident">unistd::ftruncate</span>(<span class="ident">fd</span>, <span class="ident">size</span> <span class="kw">as</span> <span class="kw">_</span>).<span class="ident">expect</span>(<span class="string">&quot;failed to set size of shared memory!&quot;</span>);
 
-        <span class="self">Self</span> { <span class="ident">size</span>, <span class="ident">fd</span> }
+        <span class="kw">let</span> <span class="ident">mem</span> <span class="op">=</span> <span class="self">Self</span> { <span class="ident">size</span>, <span class="ident">fd</span> };
+        <span class="ident">mem</span>.<span class="ident">mmap</span>(<span class="ident">PMEM_MAP_VADDR</span>, <span class="ident">size</span>, <span class="number">0</span>, <span class="ident">MMUFlags::READ</span> <span class="op">|</span> <span class="ident">MMUFlags::WRITE</span>);
+        <span class="ident">mem</span>
     }
 
     <span class="doccomment">/// Mmap `paddr` to `vaddr` in frame file.</span>
@@ -161,7 +170,7 @@
         <span class="kw">let</span> <span class="ident">fd</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">fd</span>;
         <span class="kw">let</span> <span class="ident">offset</span> <span class="op">=</span> <span class="ident">paddr</span> <span class="kw">as</span> <span class="kw">_</span>;
         <span class="macro">trace!</span>(
-            <span class="string">&quot;mmap file: fd={}, offset={:#x}, len={:#x}, vaddr={:#x}, prot={:#b}&quot;</span>,
+            <span class="string">&quot;mmap file: fd={}, offset={:#x}, len={:#x}, vaddr={:#x}, prot={:?}&quot;</span>,
             <span class="ident">fd</span>,
             <span class="ident">offset</span>,
             <span class="ident">len</span>,
@@ -172,7 +181,7 @@
         <span class="kw">unsafe</span> { <span class="ident">mman::mmap</span>(<span class="ident">vaddr</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">len</span>, <span class="ident">prot_noexec</span>, <span class="ident">flags</span>, <span class="ident">fd</span>, <span class="ident">offset</span>) }.<span class="ident">unwrap_or_else</span>(
             <span class="op">|</span><span class="ident">err</span><span class="op">|</span> {
                 <span class="macro">panic!</span>(
-                    <span class="string">&quot;failed to mmap: fd={}, offset={:#x}, len={:#x}, vaddr={:#x}, prot={:#b}: {:?}&quot;</span>,
+                    <span class="string">&quot;failed to mmap: fd={}, offset={:#x}, len={:#x}, vaddr={:#x}, prot={:?}: {:?}&quot;</span>,
                     <span class="ident">fd</span>, <span class="ident">offset</span>, <span class="ident">len</span>, <span class="ident">vaddr</span>, <span class="ident">prot</span>, <span class="ident">err</span>
                 )
             },
@@ -196,14 +205,17 @@
         });
     }
 
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">as_ptr</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">paddr</span>: <span class="ident">PhysAddr</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">*</span><span class="kw">const</span> <span class="ident">T</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">phys_to_virt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">paddr</span>: <span class="ident">PhysAddr</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">VirtAddr</span> {
         <span class="macro">assert!</span>(<span class="ident">paddr</span> <span class="op">&lt;</span> <span class="self">self</span>.<span class="ident">size</span>);
-        <span class="ident">phys_to_virt</span>(<span class="ident">paddr</span>) <span class="kw">as</span> <span class="kw">_</span>
+        <span class="ident">PMEM_MAP_VADDR</span> <span class="op">+</span> <span class="ident">paddr</span>
+    }
+
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">as_ptr</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">paddr</span>: <span class="ident">PhysAddr</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">*</span><span class="kw">const</span> <span class="ident">T</span> {
+        <span class="self">self</span>.<span class="ident">phys_to_virt</span>(<span class="ident">paddr</span>) <span class="kw">as</span> <span class="kw">_</span>
     }
 
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">as_mut_ptr</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">paddr</span>: <span class="ident">PhysAddr</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">*</span><span class="kw-2">mut</span> <span class="ident">T</span> {
-        <span class="macro">assert!</span>(<span class="ident">paddr</span> <span class="op">&lt;</span> <span class="self">self</span>.<span class="ident">size</span>);
-        <span class="ident">phys_to_virt</span>(<span class="ident">paddr</span>) <span class="kw">as</span> <span class="kw">_</span>
+        <span class="self">self</span>.<span class="ident">phys_to_virt</span>(<span class="ident">paddr</span>) <span class="kw">as</span> <span class="kw">_</span>
     }
 }
 

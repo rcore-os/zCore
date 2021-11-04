@@ -384,7 +384,6 @@
 <span id="384">384</span>
 <span id="385">385</span>
 <span id="386">386</span>
-<span id="387">387</span>
 </pre><pre class="rust">
 <span class="doccomment">//! Zircon syscall implementations</span>
 
@@ -397,18 +396,19 @@
 <span class="attribute">#[<span class="ident">macro_use</span>]</span>
 <span class="kw">extern</span> <span class="kw">crate</span> <span class="ident">log</span>;
 
-<span class="kw">use</span> {
-    <span class="self">self</span><span class="ident">::time::Deadline</span>,
-    <span class="ident">alloc::sync::Arc</span>,
-    <span class="ident">core</span>::{
-        <span class="ident">convert::TryFrom</span>,
-        <span class="ident">sync::atomic</span>::{<span class="ident">AtomicI32</span>, <span class="ident">Ordering</span>},
-    },
-    <span class="ident">futures::pin_mut</span>,
-    <span class="ident">kernel_hal::user</span>::<span class="kw-2">*</span>,
-    <span class="ident">zircon_object::object</span>::<span class="kw-2">*</span>,
-    <span class="ident">zircon_object::task</span>::{<span class="ident">CurrentThread</span>, <span class="ident">ThreadFn</span>},
-};
+<span class="kw">use</span> <span class="ident">alloc::sync::Arc</span>;
+<span class="kw">use</span> <span class="ident">core::convert::TryFrom</span>;
+<span class="kw">use</span> <span class="ident">core::sync::atomic</span>::{<span class="ident">AtomicI32</span>, <span class="ident">Ordering</span>};
+
+<span class="kw">use</span> <span class="ident">futures::pin_mut</span>;
+<span class="kw">use</span> <span class="ident">kernel_hal::user</span>::{<span class="ident">IoVecIn</span>, <span class="ident">IoVecOut</span>, <span class="ident">UserInOutPtr</span>, <span class="ident">UserInPtr</span>, <span class="ident">UserOutPtr</span>};
+<span class="kw">use</span> <span class="ident">zircon_object::object</span>::{<span class="ident">wait_signal_many</span>, <span class="ident">KernelObject</span>, <span class="ident">KoID</span>, <span class="ident">Rights</span>, <span class="ident">Signal</span>};
+<span class="kw">use</span> <span class="ident">zircon_object::object</span>::{<span class="ident">Handle</span>, <span class="ident">HandleBasicInfo</span>, <span class="ident">HandleValue</span>, <span class="ident">INVALID_HANDLE</span>};
+<span class="kw">use</span> <span class="ident">zircon_object::task</span>::{<span class="ident">CurrentThread</span>, <span class="ident">ThreadFn</span>};
+<span class="kw">use</span> <span class="ident">zircon_object</span>::{<span class="ident">ZxError</span>, <span class="ident">ZxResult</span>};
+
+<span class="kw">use</span> <span class="self">self</span><span class="ident">::consts::SyscallType</span> <span class="kw">as</span> <span class="ident">Sys</span>;
+<span class="kw">use</span> <span class="self">self</span><span class="ident">::time::Deadline</span>;
 
 <span class="kw">mod</span> <span class="ident">channel</span>;
 <span class="kw">mod</span> <span class="ident">consts</span>;
@@ -434,8 +434,6 @@
 <span class="kw">mod</span> <span class="ident">time</span>;
 <span class="kw">mod</span> <span class="ident">vmar</span>;
 <span class="kw">mod</span> <span class="ident">vmo</span>;
-
-<span class="kw">use</span> <span class="ident">consts::SyscallType</span> <span class="kw">as</span> <span class="ident">Sys</span>;
 
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Syscall</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span> {
     <span class="kw">pub</span> <span class="ident">thread</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">CurrentThread</span>,

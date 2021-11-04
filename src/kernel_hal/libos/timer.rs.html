@@ -18,7 +18,11 @@
 <span id="18">18</span>
 <span id="19">19</span>
 <span id="20">20</span>
+<span id="21">21</span>
+<span id="22">22</span>
 </pre><pre class="rust">
+<span class="doccomment">//! Time and clock functions.</span>
+
 <span class="kw">use</span> <span class="ident">async_std::task</span>;
 <span class="kw">use</span> <span class="ident">std::time</span>::{<span class="ident">Duration</span>, <span class="ident">SystemTime</span>};
 
@@ -31,8 +35,8 @@
         }
 
         <span class="kw">fn</span> <span class="ident">timer_set</span>(<span class="ident">deadline</span>: <span class="ident">Duration</span>, <span class="ident">callback</span>: <span class="ident">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">FnOnce</span>(<span class="ident">Duration</span>) <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span><span class="op">&gt;</span>) {
-            <span class="kw">let</span> <span class="ident">dur</span> <span class="op">=</span> <span class="ident">deadline</span> <span class="op">-</span> <span class="ident">timer_now</span>();
             <span class="ident">task::spawn</span>(<span class="kw">async</span> <span class="kw">move</span> {
+                <span class="kw">let</span> <span class="ident">dur</span> <span class="op">=</span> <span class="ident">deadline</span> <span class="op">-</span> <span class="ident">timer_now</span>();
                 <span class="ident">task::sleep</span>(<span class="ident">dur</span>).<span class="kw">await</span>;
                 <span class="ident">callback</span>(<span class="ident">timer_now</span>());
             });

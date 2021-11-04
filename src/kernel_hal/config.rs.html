@@ -4,12 +4,18 @@
 <span id="4">4</span>
 <span id="5">5</span>
 <span id="6">6</span>
+<span id="7">7</span>
+<span id="8">8</span>
+<span id="9">9</span>
 </pre><pre class="rust">
 <span class="kw">use</span> <span class="kw">crate</span><span class="ident">::utils::init_once::InitOnce</span>;
 
 <span class="kw">pub</span> <span class="kw">use</span> <span class="kw">super</span><span class="ident">::imp::config::KernelConfig</span>;
 
-<span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
+<span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;libos&quot;</span>)]</span>
+<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">static</span> <span class="ident">KCONFIG</span>: <span class="ident">InitOnce</span><span class="op">&lt;</span><span class="ident">KernelConfig</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">InitOnce::new_with_default</span>(<span class="ident">KernelConfig</span>);
+
+<span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">not</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;libos&quot;</span>))]</span>
 <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">static</span> <span class="ident">KCONFIG</span>: <span class="ident">InitOnce</span><span class="op">&lt;</span><span class="ident">KernelConfig</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">InitOnce::new</span>();
 </pre></div>
 </section><section id="search" class="content hidden"></section><div id="rustdoc-vars" data-root-path="../../" data-current-crate="kernel_hal" data-search-index-js="../../search-index.js" data-search-js="../../search.js"></div>

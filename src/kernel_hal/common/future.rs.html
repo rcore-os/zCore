@@ -146,7 +146,7 @@
             <span class="ident">Poll::Ready</span>(())
         } <span class="kw">else</span> {
             <span class="self">self</span>.<span class="ident">flag</span> <span class="op">=</span> <span class="bool-val">true</span>;
-            <span class="ident">cx</span>.<span class="ident">waker</span>().<span class="ident">clone</span>().<span class="ident">wake</span>();
+            <span class="ident">cx</span>.<span class="ident">waker</span>().<span class="ident">wake_by_ref</span>();
             <span class="ident">Poll::Pending</span>
         }
     }
@@ -172,7 +172,7 @@
         }
         <span class="kw">if</span> <span class="self">self</span>.<span class="ident">deadline</span>.<span class="ident">as_nanos</span>() <span class="op">&lt;</span> <span class="ident">i64::max_value</span>() <span class="kw">as</span> <span class="ident">u128</span> {
             <span class="kw">let</span> <span class="ident">waker</span> <span class="op">=</span> <span class="ident">cx</span>.<span class="ident">waker</span>().<span class="ident">clone</span>();
-            <span class="ident">timer::timer_set</span>(<span class="self">self</span>.<span class="ident">deadline</span>, <span class="ident">Box::new</span>(<span class="kw">move</span> <span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">waker</span>.<span class="ident">wake</span>()));
+            <span class="ident">timer::timer_set</span>(<span class="self">self</span>.<span class="ident">deadline</span>, <span class="ident">Box::new</span>(<span class="kw">move</span> <span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">waker</span>.<span class="ident">wake_by_ref</span>()));
         }
         <span class="ident">Poll::Pending</span>
     }
@@ -244,7 +244,7 @@
             <span class="kw">let</span> <span class="ident">frame_time</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">frame_time</span>;
             <span class="self">self</span>.<span class="ident">next_flush_time</span> <span class="op">+</span><span class="op">=</span> <span class="ident">frame_time</span>;
             <span class="kw">let</span> <span class="ident">waker</span> <span class="op">=</span> <span class="ident">cx</span>.<span class="ident">waker</span>().<span class="ident">clone</span>();
-            <span class="ident">timer::timer_set</span>(<span class="self">self</span>.<span class="ident">next_flush_time</span>, <span class="ident">Box::new</span>(<span class="kw">move</span> <span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">waker</span>.<span class="ident">wake</span>()));
+            <span class="ident">timer::timer_set</span>(<span class="self">self</span>.<span class="ident">next_flush_time</span>, <span class="ident">Box::new</span>(<span class="kw">move</span> <span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">waker</span>.<span class="ident">wake_by_ref</span>()));
         }
         <span class="ident">Poll::Pending</span>
     }

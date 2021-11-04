@@ -612,6 +612,7 @@
 <span id="612">612</span>
 <span id="613">613</span>
 <span id="614">614</span>
+<span id="615">615</span>
 </pre><pre class="rust">
 <span class="doccomment">//! Kernel object basis.</span>
 <span class="doccomment">//!</span>
@@ -1047,7 +1048,7 @@
 <span class="attribute">#[<span class="ident">macro_export</span>]</span>
 <span class="macro">macro_rules!</span> <span class="ident">impl_kobject</span> {
     (<span class="macro-nonterminal">$</span><span class="macro-nonterminal">class</span>:<span class="ident">ident</span> $( <span class="macro-nonterminal">$</span><span class="kw">fn</span>:<span class="macro-nonterminal">tt</span> )<span class="kw-2">*</span>) <span class="op">=</span><span class="op">&gt;</span> {
-        <span class="kw">impl</span> <span class="ident">KernelObject</span> <span class="kw">for</span> <span class="macro-nonterminal">$</span><span class="macro-nonterminal">class</span> {
+        <span class="kw">impl</span> <span class="macro-nonterminal">$</span><span class="kw">crate</span><span class="macro-nonterminal">::object::KernelObject</span> <span class="kw">for</span> <span class="macro-nonterminal">$</span><span class="macro-nonterminal">class</span> {
             <span class="kw">fn</span> <span class="ident">id</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">KoID</span> {
                 <span class="self">self</span>.<span class="ident">base</span>.<span class="ident">id</span>
             }
@@ -1072,7 +1073,7 @@
             <span class="kw">fn</span> <span class="ident">signal_change</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">clear</span>: <span class="ident">Signal</span>, <span class="ident">set</span>: <span class="ident">Signal</span>) {
                 <span class="self">self</span>.<span class="ident">base</span>.<span class="ident">signal_change</span>(<span class="ident">clear</span>, <span class="ident">set</span>);
             }
-            <span class="kw">fn</span> <span class="ident">add_signal_callback</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">callback</span>: <span class="ident">SignalHandler</span>) {
+            <span class="kw">fn</span> <span class="ident">add_signal_callback</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">callback</span>: <span class="macro-nonterminal">$</span><span class="kw">crate</span><span class="macro-nonterminal">::object::SignalHandler</span>) {
                 <span class="self">self</span>.<span class="ident">base</span>.<span class="ident">add_signal_callback</span>(<span class="ident">callback</span>);
             }
             $( <span class="macro-nonterminal">$</span><span class="kw">fn</span> )<span class="op">*</span>
@@ -1082,6 +1083,7 @@
                 <span class="kw-2">&amp;</span><span class="self">self</span>,
                 <span class="ident">f</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">core::fmt::Formatter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>,
             ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">core::result::Result</span><span class="op">&lt;</span>(), <span class="ident">core::fmt::Error</span><span class="op">&gt;</span> {
+                <span class="kw">use</span> <span class="macro-nonterminal">$</span><span class="kw">crate</span><span class="macro-nonterminal">::object::KernelObject</span>;
                 <span class="ident">f</span>.<span class="ident">debug_tuple</span>(<span class="kw-2">&amp;</span><span class="macro">stringify!</span>(<span class="macro-nonterminal">$</span><span class="macro-nonterminal">class</span>))
                     .<span class="ident">field</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">id</span>())
                     .<span class="ident">field</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">name</span>())
@@ -1099,14 +1101,14 @@
         <span class="kw">struct</span> <span class="ident">CountHelper</span>(());
         <span class="kw">impl</span> <span class="ident">CountHelper</span> {
             <span class="kw">fn</span> <span class="ident">new</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
-                <span class="macro">kcounter!</span>(<span class="ident">CREATE_COUNT</span>, <span class="macro">concat!</span>(<span class="macro">stringify!</span>(<span class="macro-nonterminal">$</span><span class="macro-nonterminal">class</span>), <span class="string">&quot;.create&quot;</span>));
+                <span class="macro-nonterminal">$</span><span class="kw">crate</span><span class="macro">::kcounter!</span>(<span class="macro-nonterminal">CREATE_COUNT</span>, <span class="macro">concat!</span>(<span class="macro">stringify!</span>(<span class="macro-nonterminal">$</span><span class="macro-nonterminal">class</span>), <span class="string">&quot;.create&quot;</span>));
                 <span class="ident">CREATE_COUNT</span>.<span class="ident">add</span>(<span class="number">1</span>);
                 <span class="ident">CountHelper</span>(())
             }
         }
         <span class="kw">impl</span> <span class="ident">Drop</span> <span class="kw">for</span> <span class="ident">CountHelper</span> {
             <span class="kw">fn</span> <span class="ident">drop</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) {
-                <span class="macro">kcounter!</span>(<span class="ident">DESTROY_COUNT</span>, <span class="macro">concat!</span>(<span class="macro">stringify!</span>(<span class="macro-nonterminal">$</span><span class="macro-nonterminal">class</span>), <span class="string">&quot;.destroy&quot;</span>));
+                <span class="macro-nonterminal">$</span><span class="kw">crate</span><span class="macro">::kcounter!</span>(<span class="macro-nonterminal">DESTROY_COUNT</span>, <span class="macro">concat!</span>(<span class="macro">stringify!</span>(<span class="macro-nonterminal">$</span><span class="macro-nonterminal">class</span>), <span class="string">&quot;.destroy&quot;</span>));
                 <span class="ident">DESTROY_COUNT</span>.<span class="ident">add</span>(<span class="number">1</span>);
             }
         }
