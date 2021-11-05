@@ -2,6 +2,7 @@
 #![allow(unused_variables)]
 
 use alloc::{collections::BTreeMap, string::String, sync::Arc};
+use zircon_object::object::KernelObject;
 use zircon_object::task::Process;
 
 #[derive(Debug)]
@@ -63,11 +64,30 @@ pub fn boot_options() -> BootOptions {
     }
 }
 
+fn check_exit_code(proc: Arc<Process>) -> i32 {
+    let code = proc.exit_code().unwrap_or(-1);
+    if code != 0 {
+        error!(
+            "process {:?}({}) exited with code {:?}",
+            proc.name(),
+            proc.id(),
+            code
+        );
+    } else {
+        info!(
+            "process {:?}({}) exited with code 0",
+            proc.name(),
+            proc.id()
+        )
+    }
+    code as i32
+}
+
+#[cfg(feature = "libos")]
 pub fn wait_for_exit(proc: Option<Arc<Process>>) -> ! {
-    #[cfg(feature = "libos")]
-    if let Some(proc) = proc {
+    let exit_code = if let Some(proc) = proc {
         let future = async move {
-            use zircon_object::object::{KernelObject, Signal};
+            use zircon_object::object::Signal;
             let object: Arc<dyn KernelObject> = proc.clone();
             let signal = if cfg!(feature = "zircon") {
                 Signal::USER_SIGNAL_0
@@ -75,14 +95,7 @@ pub fn wait_for_exit(proc: Option<Arc<Process>>) -> ! {
                 Signal::PROCESS_TERMINATED
             };
             object.wait_signal(signal).await;
-            let code = proc.exit_code().unwrap_or(-1);
-            info!(
-                "process {:?}({}) exited with code {:?}",
-                proc.name(),
-                proc.id(),
-                code
-            );
-            code
+            check_exit_code(proc)
         };
 
         // If the graphic mode is on, run the process in another thread.
@@ -93,12 +106,25 @@ pub fn wait_for_exit(proc: Option<Arc<Process>>) -> ! {
             handle
         };
 
-        let code = async_std::task::block_on(future);
-        std::process::exit(code as i32);
-    }
+        async_std::task::block_on(future)
+    } else {
+        warn!("No process to run, exit!");
+        0
+    };
+    std::process::exit(exit_code);
+}
+
+#[cfg(not(feature = "libos"))]
+pub fn wait_for_exit(proc: Option<Arc<Process>>) -> ! {
     loop {
-        #[cfg(not(feature = "libos"))]
-        executor::run_until_idle();
+        let has_task = executor::run_until_idle();
+        if cfg!(feature = "baremetal-test") && !has_task {
+            proc.map(check_exit_code);
+            // if let Some(p) = proc {
+            //     check_exit_code(p);
+            // }
+            kernel_hal::cpu::reset();
+        }
         kernel_hal::interrupt::wait_for_interrupt();
     }
 }

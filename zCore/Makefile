@@ -6,13 +6,14 @@ MODE ?= debug
 LOG ?= warn
 LINUX ?=
 LIBOS ?=
+TEST ?=
 GRAPHIC ?=
 HYPERVISOR ?=
 V ?=
 
 USER ?=
 ZBI ?= bringup
-CMDLINE ?=
+CMDLINE ?= LOG=$(LOG)
 
 SMP ?= 1
 ACCEL ?=
@@ -87,6 +88,10 @@ else
       features += board-qemu
     endif
   endif
+endif
+
+ifeq ($(TEST), 1)
+  features += baremetal-test
 endif
 
 ifeq ($(GRAPHIC), on)

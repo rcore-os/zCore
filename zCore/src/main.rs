@@ -54,6 +54,7 @@ fn primary_main(config: kernel_hal::KernelConfig) {
 }
 
 #[allow(dead_code)]
+#[cfg(not(feature = "libos"))]
 fn secondary_main() -> ! {
     kernel_hal::secondary_init();
     utils::wait_for_exit(None)

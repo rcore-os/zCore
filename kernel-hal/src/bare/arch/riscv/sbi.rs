@@ -49,6 +49,11 @@ pub fn send_ipi(sipi_value: usize) {
     sbi_call(SBI_SEND_IPI, sipi_value, 0, 0);
 }
 
+pub fn shutdown() -> ! {
+    sbi_call(SBI_SHUTDOWN, 0, 0, 0);
+    unreachable!();
+}
+
 hal_fn_impl! {
     impl mod crate::hal_fn::console {
         fn console_write_early(s: &str) {

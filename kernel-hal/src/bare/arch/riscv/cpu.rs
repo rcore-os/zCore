@@ -9,5 +9,10 @@ hal_fn_impl! {
         fn cpu_frequency() -> u16 {
             *CPU_FREQ_MHZ
         }
+
+        fn reset() -> ! {
+            info!("shutdown...");
+            super::sbi::shutdown()
+        }
     }
 }

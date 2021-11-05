@@ -16,15 +16,30 @@ doc = false
 
 [features]
 default = ["libos"]
+
+# Print colorless logs
 colorless-log = []
+
+# Enable graphical output
 graphic = ["kernel-hal/graphic"]
+
+# Directly link the user image to the kernel image
 link-user-img = []
 
+# For bare-metal testing, if kernel panic or the root process is finished,
+# shutdown the machine and exit QEMU.
+baremetal-test = []
+
+# Run as Zircon mode
 zircon = ["zcore-loader/zircon"]
+# Run as Linux mode
 linux = ["zcore-loader/linux", "linux-object", "rcore-fs", "rcore-fs-sfs"]
 
+# Run as LibOS
 libos = ["kernel-hal/libos", "zcore-loader/libos", "async-std", "chrono", "rcore-fs-hostfs"]
+# Run on QEMU
 board-qemu = []
+# Run on Allwinner d1 (riscv only)
 board-d1 = ["link-user-img"]
 
 [dependencies]
@@ -49,7 +64,7 @@ rcore-fs-hostfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "7c232ec
 # Bare-metal mode
 [target.'cfg(target_os = "none")'.dependencies]
 buddy_system_allocator = "0.7"
-executor = { git = "https://github.com/rcore-os/executor.git", rev = "04b6b7b" }
+executor = { git = "https://github.com/rcore-os/executor.git", rev = "85b9335" }
 
 # Bare-metal mode on x86_64
 [target.'cfg(all(target_os = "none", target_arch = "x86_64"))'.dependencies]
