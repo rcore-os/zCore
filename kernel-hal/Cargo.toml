@@ -10,6 +10,7 @@ description = "Kernel HAL interface definations."
 [features]
 default = ["libos"]
 smp = []
+board-d1 = ["zcore-drivers/board-d1"]
 libos = ["nix", "tempfile", "async-std", "bitmap-allocator", "zcore-drivers/mock"]
 graphic = ["zcore-drivers/graphic"]
 

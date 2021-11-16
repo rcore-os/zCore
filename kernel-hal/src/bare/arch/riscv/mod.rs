@@ -38,6 +38,7 @@ pub fn primary_init_early() {
         INITRD_REGION.init_once_by(Some(initrd_region));
     }
     if let Ok(regions) = dt.memory_regions() {
+        debug!("RISCV primary_init_early load Devicetree, memory@{:x?}", regions[0]);
         MEMORY_REGIONS.init_once_by(regions);
     }
 }

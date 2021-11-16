@@ -90,6 +90,7 @@ impl<M: IoMapper> DevicetreeDriverBuilder<M> {
                 #[cfg(feature = "virtio")]
                 c if c.contains("virtio,mmio") => self.parse_virtio(node, props),
                 c if c.contains("ns16550a") => self.parse_uart(node, comp, props),
+                c if c.contains("allwinner,sun20i-uart") => self.parse_uart(node, comp, props),
                 _ => Err(DeviceError::NotSupported),
             }
         };
@@ -198,6 +199,9 @@ impl<M: IoMapper> DevicetreeDriverBuilder<M> {
             c if c.contains("ns16550a") => {
                 Arc::new(unsafe { Uart16550Mmio::<u8>::new(base_vaddr?) })
             }
+            c if c.contains("allwinner,sun20i-uart") => {
+                Arc::new(unsafe { Uart16550Mmio::<u32>::new(base_vaddr?) })
+            }
             _ => return Err(DeviceError::NotSupported),
         });
 
@@ -228,7 +232,7 @@ fn register_interrupt(
                 let irq_num = dev.interrupts_extended[pos + 1] as usize;
                 if irq_num != 0xffff_ffff {
                     info!(
-                        "device-tree: register interrupts for {:?}: {:?}, irq_num={:#x}",
+                        "device-tree: register interrupts for {:?}: {:?}, irq_num={}",
                         intc.dev, dev.dev, irq_num
                     );
                     irq.register_device(irq_num, dev.dev.inner())?;

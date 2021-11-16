@@ -56,6 +56,8 @@ where
         // Disable interrupts
         self.int_en.write(0x00.into());
 
+        #[cfg(not(feature = "board-d1"))]
+        {
         // Enable DLAB
         self.line_ctrl.write(0x80.into());
 
@@ -65,6 +67,7 @@ where
 
         // Disable DLAB and set data word length to 8 bits
         self.line_ctrl.write(0x03.into());
+        }
 
         // Enable FIFO, clear TX/RX queues and
         // set interrupt watermark at 14 bytes

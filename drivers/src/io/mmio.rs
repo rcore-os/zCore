@@ -12,6 +12,7 @@ impl<T> Mmio<T> {
     /// # Safety
     ///
     /// This function is unsafe because `base_addr` may be an arbitrary address.
+    /// R泛型, 在调用函数并获得返回值时, 可推断出具体类型
     pub unsafe fn from_base_as<'a, R>(base_addr: usize) -> &'a mut R {
         assert_eq!(base_addr % core::mem::size_of::<T>(), 0);
         &mut *(base_addr as *mut R)
@@ -37,6 +38,7 @@ where
 {
     type Value = T;
 
+    /// MaybeUninit<T>.as_ptr(), gets a pointer to the contained value.
     fn read(&self) -> T {
         unsafe { core::ptr::read_volatile(self.value.as_ptr()) }
     }

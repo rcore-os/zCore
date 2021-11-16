@@ -1,14 +1,16 @@
 use core::fmt;
 use log::{self, Level, LevelFilter, Log, Metadata, Record};
 
+/// 首次初始化log等级
 pub fn init() {
     static LOGGER: SimpleLogger = SimpleLogger;
     log::set_logger(&LOGGER).unwrap();
     log::set_max_level(LevelFilter::Warn);
 }
 
+/// 第二次设置log等级
 pub fn set_max_level(level: &str) {
-    log::set_max_level(level.parse().unwrap_or(LevelFilter::Off));
+    log::set_max_level(level.parse().unwrap_or(LevelFilter::Warn));
 }
 
 pub fn print(args: fmt::Arguments) {

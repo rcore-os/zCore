@@ -61,6 +61,15 @@ fn init_kernel_page_table() -> PagingResult<PageTable> {
         bootstacktop as usize,
         MMUFlags::READ | MMUFlags::WRITE,
     )?;
+
+    // dtb
+    #[cfg(feature = "board-d1")]
+    map_range(
+        phys_to_virt(crate::KCONFIG.dtb_paddr) as usize,
+        phys_to_virt(crate::KCONFIG.dtb_paddr) as usize + 16*4096,
+        MMUFlags::READ,
+        )?;
+
     // initrd
     if let Some(initrd) = super::INITRD_REGION.as_ref() {
         map_range(
@@ -219,7 +228,7 @@ impl GenericPTE for Rv64PTE {
     }
     fn set_flags(&mut self, flags: MMUFlags, _is_huge: bool) {
         let flags = PTF::from(flags) | PTF::ACCESSED | PTF::DIRTY;
-        debug_assert!(flags.contains(PTF::READABLE | PTF::EXECUTABLE));
+        //debug_assert!(flags.contains(PTF::READABLE | PTF::EXECUTABLE));
         self.0 = (self.0 & PHYS_ADDR_MASK) | flags.bits() as u64;
     }
     fn set_table(&mut self, paddr: PhysAddr) {

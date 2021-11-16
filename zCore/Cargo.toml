@@ -25,7 +25,7 @@ linux = ["zcore-loader/linux", "linux-object", "rcore-fs", "rcore-fs-sfs"]
 
 libos = ["kernel-hal/libos", "zcore-loader/libos", "async-std", "chrono", "rcore-fs-hostfs"]
 board-qemu = []
-board-d1 = ["link-user-img"]
+board-d1 = ["link-user-img", "kernel-hal/board-d1"]
 
 [dependencies]
 log = "0.4"

@@ -247,17 +247,23 @@ impl<L: PageTableLevel, PTE: GenericPTE> GenericPageTable for PageTableImpl<L, P
         flags: Option<MMUFlags>,
     ) -> PagingResult<PageSize> {
         let (entry, size) = self.get_entry_mut(vaddr)?;
+        // update() Bug! Fix me!
+        #[cfg(not(feature = "board-d1"))]
+        {
         if let Some(paddr) = paddr {
             entry.set_addr(paddr);
         }
         if let Some(flags) = flags {
             entry.set_flags(flags, size.is_huge());
         }
+        }
         crate::vm::flush_tlb(Some(vaddr));
         trace!(
-            "PageTable update: {:x?}, flags={:?} in {:#x?}",
+            "PageTable update: vaddr={:x?}, paddr={:x?}, flags={:?} to flags={:?} in {:#x?}",
             vaddr,
+            paddr,
             flags,
+            entry.flags(),
             self.table_phys()
         );
         Ok(size)
