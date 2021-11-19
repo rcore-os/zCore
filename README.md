@@ -13,11 +13,22 @@ Reimplement [Zircon][zircon] microkernel in safe Rust as a userspace program!
 - 2020.04.16: Zircon console is working on zCore! 🎉
 
 ## Quick start for RISCV64
-```
+```sh
 make riscv-image
 cd zCore
 make run arch=riscv64 linux=1
 ```
+
+## 哪吒开发板SD卡支持
+
+```sh
+make riscv-image
+dd if=zCore/riscv64.img of=dev
+cd zCore
+make run-d1
+```
+
+
 
 ## Getting started
 

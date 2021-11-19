@@ -20,7 +20,7 @@ ESP := $(build_path)/esp
 OVMF := ../rboot/OVMF.fd
 qemu := qemu-system-$(arch)
 OBJDUMP := rust-objdump -print-imm-hex -x86-asm-syntax=intel
-OBJCOPY := rust-objcopy.exe --binary-architecture=$(arch)
+OBJCOPY := rust-objcopy --binary-architecture=$(arch)
 VMDISK := $(build_path)/boot.vdi
 QEMU_DISK := $(build_path)/disk.qcow2
 
@@ -160,9 +160,9 @@ ifeq ($(board), d1)
 run-thead: build
 	cp ../prebuilt/firmware/fw_jump.bin fw-zCore.bin
 	dd if=$(kernel_bin) of=fw-zCore.bin bs=1k seek=128
-	xfel.exe ddr ddr3
-	xfel.exe write 0x40000000 fw-zCore.bin
-	xfel.exe exec 0x40000000
+	xfel ddr ddr3
+	xfel write 0x40000000 fw-zCore.bin
+	xfel exec 0x40000000
 endif
 
 else
