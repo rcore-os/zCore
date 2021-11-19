@@ -41,7 +41,7 @@ pub mod serial;
 //pub mod mmc;
 /// virtio device
 pub mod virtio;
-
+pub mod sdc;
 /* define in kernel-hal
 #[derive(Debug, Eq, PartialEq)]
 pub enum DeviceType {

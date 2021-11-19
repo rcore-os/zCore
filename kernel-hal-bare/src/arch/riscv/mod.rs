@@ -12,7 +12,7 @@ use riscv::register::{satp, sie, stval, time};
 
 use crate::drivers::{
     device_tree::{self, Node},
-    irq, net, serial, virtio,
+    irq, net, serial, virtio, sdc
 };
 
 mod consts;
@@ -107,7 +107,7 @@ pub fn remap_the_kernel(dtb: usize) {
     map_range(
         &mut pt,
         phys_to_virt(0x0200_0000),
-        phys_to_virt(0x0200_0000) + PAGE_SIZE,
+        phys_to_virt(0x0200_0000) + PAGE_SIZE * 2,
         linear_offset,
         PTF::VALID | PTF::READABLE | PTF::WRITABLE,
     )
@@ -162,6 +162,15 @@ pub fn remap_the_kernel(dtb: usize) {
         PTF::VALID | PTF::READABLE | PTF::WRITABLE,
     )
     .unwrap();
+    //SHMC
+    #[cfg(feature = "board_d1")]
+    map_range(
+        &mut pt,
+        phys_to_virt(0x04020000usize),
+        phys_to_virt(0x04020000usize) + PAGE_SIZE * 0x1,
+        linear_offset,
+        PTF::VALID | PTF::READABLE | PTF::WRITABLE,
+    ).unwrap();
 
     //写satp
     let token = root_frame.paddr;
@@ -633,8 +642,9 @@ pub fn init(config: Config) {
         {
             net::loopback::init(String::from("loopback"));
         }
+        sdc::sdc_init();
     }
-
+    
     interrupt::init();
 }
 

@@ -17,6 +17,7 @@ rtl8x = []
 log = "0.4"
 spin = "0.7"
 git-version = "0.3"
+nezha_sdc = { git = "https://github.com/ez4yunfeng2/nezha-sdc.git" }
 executor = { git = "https://github.com/rcore-os/executor.git", rev = "a2d02ee9" }
 trapframe = "0.8.0"
 kernel-hal = { path = "../kernel-hal" }
