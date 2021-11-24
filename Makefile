@@ -4,7 +4,7 @@ ROOTFS_URL := http://dl-cdn.alpinelinux.org/alpine/v3.12/releases/x86_64/$(ROOTF
 RISCV64_ROOTFS_TAR := prebuild.tar.xz
 RISCV64_ROOTFS_URL := https://github.com/rcore-os/libc-test-prebuilt/releases/download/0.1/$(RISCV64_ROOTFS_TAR)
 
-ARCH ?= x86_64
+ARCH ?= riscv64
 rcore_fs_fuse_revision := 7f5eeac
 OUT_IMG := zCore/$(ARCH).img
 TMP_ROOTFS := /tmp/rootfs

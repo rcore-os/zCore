@@ -1,10 +1,10 @@
 ################ Arguments ################
 
-ARCH ?= x86_64
+ARCH ?= riscv64
 PLATFORM ?= qemu
-MODE ?= debug
+MODE ?= release
 LOG ?= warn
-LINUX ?=
+LINUX ?= 1
 LIBOS ?=
 GRAPHIC ?=
 HYPERVISOR ?=
@@ -137,7 +137,7 @@ ifeq ($(ARCH), x86_64)
 else ifeq ($(ARCH), riscv64)
   qemu_opts += \
 		-machine virt \
-		-bios default \
+		-bios generic_fw_jump.bin \
 		-m 512M \
 		-no-reboot \
 		-no-shutdown \
