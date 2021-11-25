@@ -92,6 +92,7 @@ async fn handle_user_trap(thread: &CurrentThread, mut ctx: Box<UserContext>) -> 
     thread.put_context(ctx);
     match reason {
         TrapReason::Interrupt(vector) => {
+            log::warn!("irq={}", vector);
             kernel_hal::interrupt::handle_irq(vector);
             kernel_hal::thread::yield_now().await;
             Ok(())

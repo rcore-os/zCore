@@ -48,6 +48,7 @@ impl IoMapper for IoMapperImpl {
 
 /// Initialize device drivers.
 pub(super) fn init() -> DeviceResult {
+    log::warn!("enter dev init");
     // prase DTB and probe devices
     let dev_list =
         DevicetreeDriverBuilder::new(phys_to_virt(crate::KCONFIG.dtb_paddr), IoMapperImpl)?
@@ -61,6 +62,7 @@ pub(super) fn init() -> DeviceResult {
         }
     }
 
+    log::warn!("find irq");
     let irq = drivers::all_irq()
         .find("riscv-intc")
         .expect("IRQ device 'riscv-intc' not initialized!");

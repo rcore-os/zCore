@@ -10,6 +10,10 @@ use kernel_hal::KernelConfig;
 
 #[no_mangle]
 pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
+    unsafe {
+        asm!("mv tp, {0}", in(reg) hartid);
+    };
+    
     println!(
         "zCore rust_main(hartid: {}, device_tree_paddr: {:#x})",
         hartid, device_tree_paddr
@@ -18,6 +22,7 @@ pub extern "C" fn rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
         phys_to_virt_offset: PHYSICAL_MEMORY_OFFSET,
         dtb_paddr: device_tree_paddr,
     };
+    
     crate::primary_main(config);
     unreachable!()
 }

@@ -59,6 +59,7 @@ impl Scheme for Intc {
     }
 
     fn handle_irq(&self, cause: usize) {
+        // log::warn!("intc: handle_irq");
         self.with_handler(cause, |opt| {
             if let Some(h) = opt {
                 h();
@@ -101,6 +102,7 @@ impl IrqScheme for Intc {
     }
 
     fn register_handler(&self, cause: usize, handler: IrqHandler) -> DeviceResult {
+        log::warn!("riscv-intc cause={}", cause);
         self.with_handler(cause, |opt| {
             if opt.is_some() {
                 Err(DeviceError::AlreadyExists)

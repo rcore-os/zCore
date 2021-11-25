@@ -6,5 +6,13 @@ hal_fn_impl! {
             const DEFAULT: u16 = 2600;
             DEFAULT
         }
+
+        fn cpu_id() -> u8 {
+            let mut cpu_id;
+            unsafe {
+                asm!("mv {0}, tp", out(reg) cpu_id);
+            }
+            cpu_id
+        }
     }
 }

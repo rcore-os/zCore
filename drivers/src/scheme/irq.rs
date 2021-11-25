@@ -69,4 +69,10 @@ pub trait IrqScheme: Scheme {
     ) -> DeviceResult {
         unimplemented!()
     }
+
+    /// Init irq for current cpu.
+    /// Some IRQ hardware requires per-CPU initialization.
+    fn init_hart(&self) {
+        unimplemented!()
+    }
 }

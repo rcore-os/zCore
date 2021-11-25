@@ -1,5 +1,5 @@
 mod drivers;
-mod sbi;
+pub mod sbi;
 mod trap;
 
 pub mod config;
@@ -12,6 +12,7 @@ pub mod vm;
 use alloc::{string::String, vec::Vec};
 use core::ops::Range;
 use zcore_drivers::utils::devicetree::Devicetree;
+use zcore_drivers::irq::riscv::ScauseIntCode;
 
 use crate::{mem::phys_to_virt, utils::init_once::InitOnce, PhysAddr};
 
@@ -48,4 +49,12 @@ pub fn primary_init() {
     timer::init();
 }
 
-pub fn secondary_init() {}
+pub fn secondary_init() {
+    vm::init();
+    let irq = crate::drivers::all_irq()
+        .find("riscv-intc")
+        .expect("IRQ device 'riscv-intc' not initialized!");
+    irq.unmask(ScauseIntCode::SupervisorSoft as usize).unwrap();
+    irq.unmask(ScauseIntCode::SupervisorTimer as usize).unwrap();
+    irq.init_hart();
+}

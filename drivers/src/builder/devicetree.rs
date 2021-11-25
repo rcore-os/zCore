@@ -231,6 +231,7 @@ fn register_interrupt(
                         "device-tree: register interrupts for {:?}: {:?}, irq_num={:#x}",
                         intc.dev, dev.dev, irq_num
                     );
+                    log::warn!("register device: irq={} dev={:?}", irq_num, dev.dev);
                     irq.register_device(irq_num, dev.dev.inner())?;
                     // enable the interrupt after registration
                     irq.unmask(irq_num)?;

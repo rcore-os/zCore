@@ -42,9 +42,12 @@ _start:
 	#刷新TLB
 	sfence.vma
 
-
+	# li t0, 4096 * 8
+	# mul t0, t0, a0
 	#此时在虚拟内存空间，设置sp为虚拟地址
 	lui sp, %hi(bootstacktop)
+	# sub sp, sp, t0
+
 	lui t0, %hi(rust_main)
 	addi t0, t0, %lo(rust_main)
 	jr t0

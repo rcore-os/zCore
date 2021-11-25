@@ -2,6 +2,7 @@
 #![cfg_attr(not(feature = "libos"), no_std)]
 #![feature(global_asm)]
 #![feature(lang_items)]
+#![feature(asm)]
 #![deny(warnings)] // comment this on develop
 
 extern crate alloc;
@@ -34,6 +35,14 @@ fn primary_main(config: kernel_hal::KernelConfig) {
     memory::init_frame_allocator(&kernel_hal::mem::free_pmem_regions());
     kernel_hal::primary_init();
 
+    // for i in 0..=1 {
+    //     if i != kernel_hal::cpu::cpu_id() {
+    //         let ipi_mask = 1usize << i;
+    //         warn!("send ipi to {}, mask={}", i, ipi_mask);
+    //         kernel_hal::arch::sbi::send_ipi(&ipi_mask as *const usize as usize);
+    //         warn!("send ipi to {}, finish", i);
+    //     }
+    // }
     cfg_if! {
         if #[cfg(all(feature = "linux", feature = "zircon"))] {
             panic!("Feature `linux` and `zircon` cannot be enabled at the same time!");
