@@ -14,19 +14,7 @@ hal_fn_impl! {
         }
 
         fn handle_irq(cause: usize) {
-            // supervisor software interrupt and
-            // supervisor timer interrupt
-            if cause == 1 || cause == 5 {
-                crate::drivers::all_irq().
-                                find("riscv-intc").
-                                expect("IRQ device 'riscv-intc' not initialized!")
-                                .handle_irq(cause);
-            } else {
-                crate::drivers::all_irq().
-                                find("riscv-plic").
-                                expect("IRQ device 'riscv-intc' not initialized!")
-                                .handle_irq(cause);
-            }
+            crate::drivers::all_irq().first_unwrap().handle_irq(cause)
         }
     }
 }

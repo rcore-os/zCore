@@ -123,7 +123,7 @@ impl<M: IoMapper> DevicetreeDriverBuilder<M> {
                 .query_or_map(paddr as usize, size as usize)
                 .ok_or(DeviceError::NoResources)
         });
-
+        log::warn!("parse_intc={:?}", comp);
         use crate::irq::*;
         let dev = Device::Irq(match comp {
             #[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))]
@@ -231,7 +231,12 @@ fn register_interrupt(
                         "device-tree: register interrupts for {:?}: {:?}, irq_num={:#x}",
                         intc.dev, dev.dev, irq_num
                     );
-                    log::warn!("register device: irq={} dev={:?}", irq_num, dev.dev);
+                    log::warn! (
+                        "register device: irq_dev_addr={:x} irq={} dev={:?}",
+                        irq as *const _ as usize,
+                        irq_num,
+                        dev.dev
+                    );
                     irq.register_device(irq_num, dev.dev.inner())?;
                     // enable the interrupt after registration
                     irq.unmask(irq_num)?;

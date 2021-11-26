@@ -16,9 +16,9 @@ const PLIC_CONTEXT_BASE: usize = 0x20_1000;
 const PLIC_CONTEXT_THRESHOLD: usize = 0x0;
 const PLIC_CONTEXT_CLAIM: usize = 0x4 / core::mem::size_of::<u32>();
 
-const PLIC_ENABLE_HART_OFFSET: usize = 0x100;
-const PLIC_PRIORITY_HART_OFFSET: usize = 0x2000;
-const PLIC_CONTEXT_CLAIM_HART_OFFSET: usize = 0x2000;
+const PLIC_ENABLE_HART_OFFSET: usize = 0x100 / core::mem::size_of::<u32>();
+const PLIC_PRIORITY_HART_OFFSET: usize = 0x2000 / core::mem::size_of::<u32>();
+const PLIC_CONTEXT_CLAIM_HART_OFFSET: usize = 0x2000 / core::mem::size_of::<u32>();
 
 struct PlicUnlocked {
     priority_base: &'static mut Mmio<u32>,
@@ -52,7 +52,6 @@ impl PlicUnlocked {
     /// Ask the PLIC what type of interrupt is occurred on the current hart.
     fn pending_irq(&mut self) -> Option<usize> {
         let hart_id = cpu_id() as usize;
-        log::warn!("PLIC_CONTEXT_CLAIM={:x}", PLIC_CONTEXT_CLAIM);
         let irq_num = self
             .context_base
             .add(PLIC_CONTEXT_CLAIM_HART_OFFSET * hart_id)
@@ -118,6 +117,7 @@ impl Scheme for Plic {
     }
 
     fn handle_irq(&self, _unused: usize) {
+        log::warn!("riscv plic: handle irq");
         let mut inner = self.inner.lock();
         while let Some(irq_num) = inner.pending_irq() {
             if inner.manager.handle(irq_num).is_err() {
@@ -134,6 +134,7 @@ impl IrqScheme for Plic {
     }
 
     fn mask(&self, irq_num: usize) -> DeviceResult {
+        log::warn!("riscv-plic mask irq={}, cpu={}", irq_num, cpu_id());
         if self.is_valid_irq(irq_num) {
             self.inner.lock().toggle(irq_num, false);
             Ok(())
@@ -143,6 +144,7 @@ impl IrqScheme for Plic {
     }
 
     fn unmask(&self, irq_num: usize) -> DeviceResult {
+        log::warn!("riscv-plic umask irq={}, cpu={}", irq_num, cpu_id());
         if self.is_valid_irq(irq_num) {
             self.inner.lock().toggle(irq_num, true);
             Ok(())
