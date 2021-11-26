@@ -83,7 +83,6 @@ impl PlicUnlocked {
     /// Set current hart's priority threshold to 0.
     fn set_threshold(&mut self, threshold: u8) {
         let hart_id = cpu_id() as usize;
-        log::warn!("hart id ={}", hart_id);
         self.context_base
             .add(PLIC_PRIORITY_HART_OFFSET * hart_id)
             .add(PLIC_CONTEXT_THRESHOLD)
@@ -97,7 +96,6 @@ impl PlicUnlocked {
 
 impl Plic {
     pub fn new(base: usize) -> Self {
-        log::warn!("plic base {:x}", base);
         let mut inner = PlicUnlocked {
             priority_base: unsafe { Mmio::<u32>::from_base(base + PLIC_PRIORITY_BASE) },
             enable_base: unsafe { Mmio::<u32>::from_base(base + PLIC_ENABLE_BASE) },
@@ -117,7 +115,6 @@ impl Scheme for Plic {
     }
 
     fn handle_irq(&self, _unused: usize) {
-        log::warn!("riscv plic: handle irq");
         let mut inner = self.inner.lock();
         while let Some(irq_num) = inner.pending_irq() {
             if inner.manager.handle(irq_num).is_err() {
@@ -134,7 +131,6 @@ impl IrqScheme for Plic {
     }
 
     fn mask(&self, irq_num: usize) -> DeviceResult {
-        log::warn!("riscv-plic mask irq={}, cpu={}", irq_num, cpu_id());
         if self.is_valid_irq(irq_num) {
             self.inner.lock().toggle(irq_num, false);
             Ok(())
@@ -144,7 +140,6 @@ impl IrqScheme for Plic {
     }
 
     fn unmask(&self, irq_num: usize) -> DeviceResult {
-        log::warn!("riscv-plic umask irq={}, cpu={}", irq_num, cpu_id());
         if self.is_valid_irq(irq_num) {
             self.inner.lock().toggle(irq_num, true);
             Ok(())
@@ -154,7 +149,6 @@ impl IrqScheme for Plic {
     }
 
     fn register_handler(&self, irq_num: usize, handler: IrqHandler) -> DeviceResult {
-        log::warn!("riscv-plic irq_num={}", irq_num);
         let mut inner = self.inner.lock();
         inner.manager.register_handler(irq_num, handler).map(|_| {
             inner.set_priority(irq_num, 7);

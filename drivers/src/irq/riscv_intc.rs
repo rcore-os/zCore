@@ -24,7 +24,6 @@ pub struct Intc {
 
 impl Intc {
     pub fn new() -> Self {
-        log::warn!("riscv intc new()");
         Self {
             soft_handler: Mutex::new(None),
             timer_handler: Mutex::new(None),
@@ -60,9 +59,6 @@ impl Scheme for Intc {
     }
 
     fn handle_irq(&self, cause: usize) {
-        if cause == 9 {
-            log::warn!("intc handle_irq, supervisor ");
-        }
         self.with_handler(cause, |opt| {
             if let Some(h) = opt {
                 h();
@@ -105,7 +101,6 @@ impl IrqScheme for Intc {
     }
 
     fn register_handler(&self, cause: usize, handler: IrqHandler) -> DeviceResult {
-        log::warn!("riscv-intc cause={}", cause);
         self.with_handler(cause, |opt| {
             if opt.is_some() {
                 Err(DeviceError::AlreadyExists)
