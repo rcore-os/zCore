@@ -50,10 +50,11 @@ pub fn primary_init() {
 }
 
 pub fn secondary_init() {
+    log::warn!("secondary init");
     vm::init();
     let irq = crate::drivers::all_irq()
-        .find("riscv-intc")
-        .expect("IRQ device 'riscv-intc' not initialized!");
+        .find("riscv-plic")
+        .expect("IRQ device 'riscv-plic' not initialized!");
     irq.unmask(ScauseIntCode::SupervisorSoft as usize).unwrap();
     irq.unmask(ScauseIntCode::SupervisorTimer as usize).unwrap();
     irq.init_hart();

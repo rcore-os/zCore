@@ -2,7 +2,7 @@
 
 ARCH ?= riscv64
 PLATFORM ?= qemu
-MODE ?= release
+MODE ?= debug
 LOG ?= warn
 LINUX ?= 1
 LIBOS ?=
@@ -14,7 +14,7 @@ USER ?=
 ZBI ?= bringup
 CMDLINE ?=
 
-SMP ?= 5
+SMP ?= 2
 ACCEL ?=
 
 OBJDUMP ?= rust-objdump --print-imm-hex --x86-asm-syntax=intel
@@ -137,7 +137,7 @@ ifeq ($(ARCH), x86_64)
 else ifeq ($(ARCH), riscv64)
   qemu_opts += \
 		-machine virt \
-		-bios generic_fw_jump.bin \
+		-bios fw_jump.bin \
 		-m 512M \
 		-no-reboot \
 		-no-shutdown \

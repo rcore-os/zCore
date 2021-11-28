@@ -165,7 +165,7 @@ impl IrqScheme for Plic {
 }
 
 fn cpu_id() -> u8 {
-    let mut cpu_id = 0;
+    let mut cpu_id ;
     unsafe {
         asm!("mv {0}, tp", out(reg) cpu_id);
     }

@@ -2,8 +2,12 @@
 #![cfg_attr(not(feature = "libos"), no_std)]
 #![feature(global_asm)]
 #![feature(lang_items)]
+#![feature(core_intrinsics)]
 #![feature(asm)]
-#![deny(warnings)] // comment this on develop
+// #![deny(warnings)] // comment this on develop
+
+use core::sync::atomic::{AtomicBool, Ordering};
+use lazy_static::*;
 
 extern crate alloc;
 #[macro_use]
@@ -23,6 +27,8 @@ mod memory;
 mod platform;
 mod utils;
 
+static STARTED: AtomicBool = AtomicBool::new(false);
+
 fn primary_main(config: kernel_hal::KernelConfig) {
     logging::init();
     memory::init_heap();
@@ -31,22 +37,15 @@ fn primary_main(config: kernel_hal::KernelConfig) {
     let options = utils::boot_options();
     logging::set_max_level(&options.log_level);
     info!("Boot options: {:#?}", options);
-
     memory::init_frame_allocator(&kernel_hal::mem::free_pmem_regions());
     kernel_hal::primary_init();
-
-    // for i in 0..=1 {
-    //     if i != kernel_hal::cpu::cpu_id() {
-    //         let ipi_mask = 1usize << i;
-    //         warn!("send ipi to {}, mask={}", i, ipi_mask);
-    //         kernel_hal::arch::sbi::send_ipi(&ipi_mask as *const usize as usize);
-    //         warn!("send ipi to {}, finish", i);
-    //     }
-    // }
+    STARTED.store(true, Ordering::SeqCst);
+    log::warn!("PRIMARY_INITED");
     cfg_if! {
         if #[cfg(all(feature = "linux", feature = "zircon"))] {
             panic!("Feature `linux` and `zircon` cannot be enabled at the same time!");
         } else if #[cfg(feature = "linux")] {
+            log::info!("run prog");
             let args = options.root_proc.split('?').map(Into::into).collect(); // parse "arg0?arg1?arg2"
             let envs = alloc::vec!["PATH=/usr/sbin:/usr/bin:/sbin:/bin".into()];
             let rootfs = fs::rootfs();
@@ -62,8 +61,20 @@ fn primary_main(config: kernel_hal::KernelConfig) {
     }
 }
 
-#[allow(dead_code)]
-fn secondary_main() -> ! {
+// #[allow(dead_code)]
+fn secondary_main() {
+    let sp: usize;
+    unsafe {
+        riscv::register::sstatus::clear_sie();
+        asm!("mv {0}, sp", out(reg) sp);
+    }
+
+    println!("secondary_main sp={:x}", sp);
+    // loop {
+    while !STARTED.load(Ordering::SeqCst) {}
+    println!("secondary_main1");
+    // }
+    // loop {}
     kernel_hal::secondary_init();
     utils::wait_for_exit(None)
 }
