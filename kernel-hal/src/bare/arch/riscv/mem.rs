@@ -35,6 +35,8 @@ pub fn free_pmem_regions() -> Vec<Range<PhysAddr>> {
                 if initrd.end < end {
                     regions.push(align_up(initrd.end)..end);
                 }
+            } else {
+                regions.push(start..end);
             }
         }
         regions

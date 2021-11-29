@@ -31,6 +31,7 @@ fn frame_idx_to_phys_addr(idx: usize) -> PhysAddr {
 }
 
 pub fn init_frame_allocator(regions: &[Range<PhysAddr>]) {
+    debug!("init_frame_allocator regions: {:x?}", regions);
     let mut ba = FRAME_ALLOCATOR.lock();
     for region in regions {
         let frame_start = phys_addr_to_frame_idx(region.start);

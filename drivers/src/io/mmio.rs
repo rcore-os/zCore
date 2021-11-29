@@ -37,6 +37,7 @@ where
 {
     type Value = T;
 
+    /// MaybeUninit<T>.as_ptr(), gets a pointer to the contained value.
     fn read(&self) -> T {
         unsafe { core::ptr::read_volatile(self.value.as_ptr()) }
     }

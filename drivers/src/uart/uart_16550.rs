@@ -56,16 +56,6 @@ where
         // Disable interrupts
         self.int_en.write(0x00.into());
 
-        // Enable DLAB
-        self.line_ctrl.write(0x80.into());
-
-        // Set maximum speed to 38400 bps by configuring DLL and DLM
-        self.data.write(0x03.into());
-        self.int_en.write(0x00.into());
-
-        // Disable DLAB and set data word length to 8 bits
-        self.line_ctrl.write(0x03.into());
-
         // Enable FIFO, clear TX/RX queues and
         // set interrupt watermark at 14 bytes
         self.fifo_ctrl.write(0xC7.into());
