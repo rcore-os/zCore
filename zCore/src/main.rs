@@ -40,7 +40,7 @@ fn primary_main(config: kernel_hal::KernelConfig) {
     memory::init_frame_allocator(&kernel_hal::mem::free_pmem_regions());
     kernel_hal::primary_init();
     STARTED.store(true, Ordering::SeqCst);
-    log::warn!("PRIMARY_INITED");
+
     cfg_if! {
         if #[cfg(all(feature = "linux", feature = "zircon"))] {
             panic!("Feature `linux` and `zircon` cannot be enabled at the same time!");
@@ -61,20 +61,12 @@ fn primary_main(config: kernel_hal::KernelConfig) {
     }
 }
 
-// #[allow(dead_code)]
+#[allow(dead_code)]
 fn secondary_main() {
-    let sp: usize;
-    unsafe {
-        riscv::register::sstatus::clear_sie();
-        asm!("mv {0}, sp", out(reg) sp);
-    }
-
-    println!("secondary_main sp={:x}", sp);
-    // loop {
     while !STARTED.load(Ordering::SeqCst) {}
-    println!("secondary_main1");
-    // }
-    // loop {}
+    // Don't print anything between previous line and next line.
+    // boot hart already init uart, but others not maps uart mmio
+    // address. 
     kernel_hal::secondary_init();
     utils::wait_for_exit(None)
 }

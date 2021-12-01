@@ -2,7 +2,7 @@
 
 ARCH ?= riscv64
 PLATFORM ?= qemu
-MODE ?= debug
+MODE ?= release
 LOG ?= warn
 LINUX ?= 1
 LIBOS ?=

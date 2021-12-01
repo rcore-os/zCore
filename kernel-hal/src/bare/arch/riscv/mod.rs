@@ -50,7 +50,6 @@ pub fn primary_init() {
 }
 
 pub fn secondary_init() {
-    log::warn!("secondary init");
     vm::init();
     let irq = crate::drivers::all_irq()
         .find("riscv-plic")
