@@ -159,7 +159,7 @@ $(kernel_img): $(kernel_bin)
 ifeq ($(board), d1)
 run-thead: build
 	cp ../prebuilt/firmware/fw_jump-0x40020000.bin fw-zCore.bin
-	dd if=$(kernel_bin) of=fw-zCore.bin bs=1 seek=131072
+	dd if=$(kernel_bin) of=fw-zCore.bin bs=1 seek=131072 status=progress
 	xfel ddr ddr3
 	xfel write 0x40000000 fw-zCore.bin
 	xfel exec 0x40000000
