@@ -51,10 +51,25 @@ pub fn primary_init() {
 
 pub fn secondary_init() {
     vm::init();
-    let irq = crate::drivers::all_irq()
+    let intc = crate::drivers::all_irq()
+        .find("riscv-intc")
+        .expect("IRQ device 'riscv-intc' not initialized!");
+    // register soft interrupts handler
+    // intc.register_handler(
+    //     ScauseIntCode::SupervisorSoft as _,
+    //     Box::new(trap::super_soft),
+    // ).unwrap();
+    // // register timer interrupts handler
+    // intc.register_handler(
+    //     ScauseIntCode::SupervisorTimer as _,
+    //     Box::new(trap::super_timer),
+    // ).unwrap();
+    intc.unmask(ScauseIntCode::SupervisorSoft as _).unwrap();
+    intc.unmask(ScauseIntCode::SupervisorTimer as _).unwrap();
+
+    let plic = crate::drivers::all_irq()
         .find("riscv-plic")
         .expect("IRQ device 'riscv-plic' not initialized!");
-    irq.unmask(ScauseIntCode::SupervisorSoft as usize).unwrap();
-    irq.unmask(ScauseIntCode::SupervisorTimer as usize).unwrap();
-    irq.init_hart();
+    plic.init_hart();
+    timer::init();
 }

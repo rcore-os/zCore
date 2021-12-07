@@ -33,7 +33,8 @@ bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator", rev =
 
 # Bare-metal mode
 [target.'cfg(target_os = "none")'.dependencies]
-executor = { git = "https://github.com/rcore-os/executor.git", rev = "04b6b7b" }
+# executor = { git = "https://github.com/rcore-os/executor.git", rev = "04b6b7b" }
+executor = { path = "../../executor/executor"}
 naive-timer = "0.2.0"
 
 # All mode on x86_64

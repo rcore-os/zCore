@@ -96,9 +96,15 @@ pub fn wait_for_exit(proc: Option<Arc<Process>>) -> ! {
         let code = async_std::task::block_on(future);
         std::process::exit(code as i32);
     }
+    log::warn!("enter executor::run");
     loop {
         #[cfg(not(feature = "libos"))]
-        executor::run_until_idle();
+        executor::run();
         kernel_hal::interrupt::wait_for_interrupt();
     }
+}
+
+#[no_mangle]
+fn wait_for_interrupt() {
+    kernel_hal::interrupt::wait_for_interrupt();
 }
