@@ -79,6 +79,11 @@ impl Devicetree {
         self.0.find("/chosen")?.prop_str("bootargs").ok()
     }
 
+    /// Returns the `timebase-frequency` property in the `/cpus` node, as timer
+    pub fn timebase_frequency(&self) -> Option<u32> {
+        self.0.find("/cpus")?.prop_u32("timebase-frequency").ok()
+    }
+
     /// Returns the `linux,initrd-start` and `linux,initrd-end` properties in
     /// the `/chosen` node, as the init RAM disk address region.
     pub fn initrd_region(&self) -> Option<Range<PhysAddr>> {

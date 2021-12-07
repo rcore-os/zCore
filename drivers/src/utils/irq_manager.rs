@@ -38,7 +38,7 @@ impl<const IRQ_COUNT: usize> IrqManager<IRQ_COUNT> {
     /// Add a handler to IRQ table. if `irq_num == 0`, we need to allocate one.
     /// Returns the specified IRQ number or an allocated IRQ on success.
     pub fn register_handler(&mut self, irq_num: usize, handler: IrqHandler) -> DeviceResult<usize> {
-        info!("IRQ register handler {:#x}", irq_num);
+        info!("IRQ register handler {}", irq_num);
         let irq_num = if irq_num == 0 {
             // allocate a valid IRQ number
             self.allocator.alloc()?
@@ -53,7 +53,7 @@ impl<const IRQ_COUNT: usize> IrqManager<IRQ_COUNT> {
     }
 
     pub fn unregister_handler(&mut self, irq_num: usize) -> DeviceResult {
-        info!("IRQ unregister handler {:#x}", irq_num);
+        info!("IRQ unregister handler {}", irq_num);
         if !self.allocator.is_alloced(irq_num) {
             Err(DeviceError::InvalidParam)
         } else {
@@ -64,7 +64,7 @@ impl<const IRQ_COUNT: usize> IrqManager<IRQ_COUNT> {
     }
 
     pub fn overwrite_handler(&mut self, irq_num: usize, handler: IrqHandler) -> DeviceResult {
-        info!("IRQ overwrite handle {:#x}", irq_num);
+        info!("IRQ overwrite handle {}", irq_num);
         if !self.allocator.is_alloced(irq_num) {
             Err(DeviceError::InvalidParam)
         } else {

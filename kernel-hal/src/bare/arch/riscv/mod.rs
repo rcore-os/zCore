@@ -14,6 +14,7 @@ use core::ops::Range;
 use zcore_drivers::utils::devicetree::Devicetree;
 
 use crate::{mem::phys_to_virt, utils::init_once::InitOnce, PhysAddr};
+use timer::CLOCK_FREQ;
 
 static CMDLINE: InitOnce<String> = InitOnce::new_with_default(String::new());
 static INITRD_REGION: InitOnce<Option<Range<PhysAddr>>> = InitOnce::new_with_default(None);
@@ -34,10 +35,18 @@ pub fn primary_init_early() {
     if let Some(cmdline) = dt.bootargs() {
         CMDLINE.init_once_by(cmdline.into());
     }
+    if let Some(time_freq) = dt.timebase_frequency() {
+        warn!("CPU CLOCK FREQ: {}", time_freq);
+        CLOCK_FREQ.init_once_by(time_freq.into());
+    }
     if let Some(initrd_region) = dt.initrd_region() {
         INITRD_REGION.init_once_by(Some(initrd_region));
     }
     if let Ok(regions) = dt.memory_regions() {
+        debug!(
+            "RISCV primary_init_early load Devicetree, memory@{:x?}",
+            regions[0]
+        );
         MEMORY_REGIONS.init_once_by(regions);
     }
 }
