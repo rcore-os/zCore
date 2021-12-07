@@ -150,6 +150,12 @@
 <span id="150">150</span>
 <span id="151">151</span>
 <span id="152">152</span>
+<span id="153">153</span>
+<span id="154">154</span>
+<span id="155">155</span>
+<span id="156">156</span>
+<span id="157">157</span>
+<span id="158">158</span>
 </pre><pre class="rust">
 <span class="doccomment">//! Run Linux process and manage trap/interrupt/syscall.</span>
 
@@ -243,6 +249,8 @@
     }
 
     <span class="ident">thread</span>.<span class="ident">put_context</span>(<span class="ident">ctx</span>);
+
+    <span class="kw">let</span> <span class="ident">pid</span> <span class="op">=</span> <span class="ident">thread</span>.<span class="ident">proc</span>().<span class="ident">id</span>();
     <span class="kw">match</span> <span class="ident">reason</span> {
         <span class="ident">TrapReason::Interrupt</span>(<span class="ident">vector</span>) <span class="op">=</span><span class="op">&gt;</span> {
             <span class="ident">kernel_hal::interrupt::handle_irq</span>(<span class="ident">vector</span>);
@@ -250,7 +258,10 @@
             <span class="prelude-val">Ok</span>(())
         }
         <span class="ident">TrapReason::PageFault</span>(<span class="ident">vaddr</span>, <span class="ident">flags</span>) <span class="op">=</span><span class="op">&gt;</span> {
-            <span class="macro">info!</span>(<span class="string">&quot;page fault from user mode @ {:#x}({:?})&quot;</span>, <span class="ident">vaddr</span>, <span class="ident">flags</span>);
+            <span class="macro">info!</span>(
+                <span class="string">&quot;page fault from pid: {} user mode @ {:#x}({:?})&quot;</span>,
+                <span class="ident">pid</span>, <span class="ident">vaddr</span>, <span class="ident">flags</span>
+            );
             <span class="kw">let</span> <span class="ident">vmar</span> <span class="op">=</span> <span class="ident">thread</span>.<span class="ident">proc</span>().<span class="ident">vmar</span>();
             <span class="ident">vmar</span>.<span class="ident">handle_page_fault</span>(<span class="ident">vaddr</span>, <span class="ident">flags</span>).<span class="ident">map_err</span>(<span class="op">|</span><span class="ident">err</span><span class="op">|</span> {
                 <span class="macro">error!</span>(
@@ -265,7 +276,8 @@
         }
         <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> {
             <span class="macro">error!</span>(
-                <span class="string">&quot;unsupported trap from user mode: {:x?} {:#x?}&quot;</span>,
+                <span class="string">&quot;unsupported pid: {} trap from user mode: {:x?} {:#x?}&quot;</span>,
+                <span class="ident">pid</span>,
                 <span class="ident">reason</span>,
                 <span class="ident">thread</span>.<span class="ident">context_cloned</span>(),
             );

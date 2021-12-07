@@ -123,7 +123,7 @@
     <span class="doccomment">/// Add a handler to IRQ table. if `irq_num == 0`, we need to allocate one.</span>
     <span class="doccomment">/// Returns the specified IRQ number or an allocated IRQ on success.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">register_handler</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">irq_num</span>: <span class="ident">usize</span>, <span class="ident">handler</span>: <span class="ident">IrqHandler</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">DeviceResult</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
-        <span class="macro">info!</span>(<span class="string">&quot;IRQ register handler {:#x}&quot;</span>, <span class="ident">irq_num</span>);
+        <span class="macro">info!</span>(<span class="string">&quot;IRQ register handler {}&quot;</span>, <span class="ident">irq_num</span>);
         <span class="kw">let</span> <span class="ident">irq_num</span> <span class="op">=</span> <span class="kw">if</span> <span class="ident">irq_num</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span> {
             <span class="comment">// allocate a valid IRQ number</span>
             <span class="self">self</span>.<span class="ident">allocator</span>.<span class="ident">alloc</span>()<span class="question-mark">?</span>
@@ -138,7 +138,7 @@
     }
 
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">unregister_handler</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">irq_num</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">DeviceResult</span> {
-        <span class="macro">info!</span>(<span class="string">&quot;IRQ unregister handler {:#x}&quot;</span>, <span class="ident">irq_num</span>);
+        <span class="macro">info!</span>(<span class="string">&quot;IRQ unregister handler {}&quot;</span>, <span class="ident">irq_num</span>);
         <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">allocator</span>.<span class="ident">is_alloced</span>(<span class="ident">irq_num</span>) {
             <span class="prelude-val">Err</span>(<span class="ident">DeviceError::InvalidParam</span>)
         } <span class="kw">else</span> {
@@ -149,7 +149,7 @@
     }
 
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">overwrite_handler</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">irq_num</span>: <span class="ident">usize</span>, <span class="ident">handler</span>: <span class="ident">IrqHandler</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">DeviceResult</span> {
-        <span class="macro">info!</span>(<span class="string">&quot;IRQ overwrite handle {:#x}&quot;</span>, <span class="ident">irq_num</span>);
+        <span class="macro">info!</span>(<span class="string">&quot;IRQ overwrite handle {}&quot;</span>, <span class="ident">irq_num</span>);
         <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">allocator</span>.<span class="ident">is_alloced</span>(<span class="ident">irq_num</span>) {
             <span class="prelude-val">Err</span>(<span class="ident">DeviceError::InvalidParam</span>)
         } <span class="kw">else</span> {

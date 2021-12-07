@@ -254,6 +254,10 @@
 <span id="254">254</span>
 <span id="255">255</span>
 <span id="256">256</span>
+<span id="257">257</span>
+<span id="258">258</span>
+<span id="259">259</span>
+<span id="260">260</span>
 </pre><pre class="rust">
 <span class="doccomment">//! Probe devices and create drivers from device tree.</span>
 <span class="doccomment">//!</span>
@@ -347,6 +351,7 @@
                 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;virtio&quot;</span>)]</span>
                 <span class="ident">c</span> <span class="kw">if</span> <span class="ident">c</span>.<span class="ident">contains</span>(<span class="string">&quot;virtio,mmio&quot;</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">parse_virtio</span>(<span class="ident">node</span>, <span class="ident">props</span>),
                 <span class="ident">c</span> <span class="kw">if</span> <span class="ident">c</span>.<span class="ident">contains</span>(<span class="string">&quot;ns16550a&quot;</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">parse_uart</span>(<span class="ident">node</span>, <span class="ident">comp</span>, <span class="ident">props</span>),
+                <span class="ident">c</span> <span class="kw">if</span> <span class="ident">c</span>.<span class="ident">contains</span>(<span class="string">&quot;allwinner,sun20i-uart&quot;</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">parse_uart</span>(<span class="ident">node</span>, <span class="ident">comp</span>, <span class="ident">props</span>),
                 <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Err</span>(<span class="ident">DeviceError::NotSupported</span>),
             }
         };
@@ -455,6 +460,9 @@
             <span class="ident">c</span> <span class="kw">if</span> <span class="ident">c</span>.<span class="ident">contains</span>(<span class="string">&quot;ns16550a&quot;</span>) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="ident">Arc::new</span>(<span class="kw">unsafe</span> { <span class="ident">Uart16550Mmio</span>::<span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span><span class="ident">::new</span>(<span class="ident">base_vaddr</span><span class="question-mark">?</span>) })
             }
+            <span class="ident">c</span> <span class="kw">if</span> <span class="ident">c</span>.<span class="ident">contains</span>(<span class="string">&quot;allwinner,sun20i-uart&quot;</span>) <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="ident">Arc::new</span>(<span class="kw">unsafe</span> { <span class="ident">Uart16550Mmio</span>::<span class="op">&lt;</span><span class="ident">u32</span><span class="op">&gt;</span><span class="ident">::new</span>(<span class="ident">base_vaddr</span><span class="question-mark">?</span>) })
+            }
             <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">DeviceError::NotSupported</span>),
         });
 
@@ -485,7 +493,7 @@
                 <span class="kw">let</span> <span class="ident">irq_num</span> <span class="op">=</span> <span class="ident">dev</span>.<span class="ident">interrupts_extended</span>[<span class="ident">pos</span> <span class="op">+</span> <span class="number">1</span>] <span class="kw">as</span> <span class="ident">usize</span>;
                 <span class="kw">if</span> <span class="ident">irq_num</span> <span class="op">!</span><span class="op">=</span> <span class="number">0xffff_ffff</span> {
                     <span class="macro">info!</span>(
-                        <span class="string">&quot;device-tree: register interrupts for {:?}: {:?}, irq_num={:#x}&quot;</span>,
+                        <span class="string">&quot;device-tree: register interrupts for {:?}: {:?}, irq_num={}&quot;</span>,
                         <span class="ident">intc</span>.<span class="ident">dev</span>, <span class="ident">dev</span>.<span class="ident">dev</span>, <span class="ident">irq_num</span>
                     );
                     <span class="ident">irq</span>.<span class="ident">register_device</span>(<span class="ident">irq_num</span>, <span class="ident">dev</span>.<span class="ident">dev</span>.<span class="ident">inner</span>())<span class="question-mark">?</span>;
