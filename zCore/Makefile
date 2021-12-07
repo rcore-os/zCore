@@ -250,12 +250,12 @@ endif
 
 ifeq ($(ARCH), riscv64)
 ifeq ($(PLATFORM), d1)
-.PHONY: rund1
-rund1: build
-	$(OBJCOPY) ../prebuilt/firmware/d1/fw_payload.elf --strip-all -O binary ./fw_payload.bin
-	dd if=../target/riscv64/release/zcore.bin of=fw_payload.bin bs=512 seek=2048
+.PHONY: run_d1
+run_d1: build
+	$(OBJCOPY) ../prebuilt/firmware/d1/fw_payload.elf --strip-all -O binary ./zcore_d1.bin
+	dd if=$(kernel_img) of=zcore_d1.bin bs=512 seek=2048
 	xfel ddr ddr3
-	xfel write 0x40000000 fw_payload.bin
+	xfel write 0x40000000 zcore_d1.bin
 	xfel exec 0x40000000
 endif
 endif
