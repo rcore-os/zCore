@@ -23,6 +23,7 @@ device_tree = { git = "https://github.com/rcore-os/device_tree-rs", rev = "2f2e5
 bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator", rev = "b3f9f51" }
 virtio-drivers = { git = "https://github.com/rcore-os/virtio-drivers", rev = "2aaf7d6", optional = true }
 rcore-console = { git = "https://github.com/rcore-os/rcore-console", default-features = false, rev = "ca5b1bc", optional = true }
+smoltcp = { git = "https://github.com/smoltcp-rs/smoltcp", rev = "35e833e3", default-features = false, features = ["log", "alloc", "verbose", "proto-ipv4", "proto-ipv6", "proto-igmp", "medium-ip", "medium-ethernet", "socket-raw", "socket-udp", "socket-tcp", "socket-icmp"] }
 
 [target.'cfg(not(target_os = "none"))'.dependencies]
 async-std = { version = "1.10", optional = true }

@@ -2,7 +2,7 @@ use crate::utils::init_once::InitOnce;
 use core::time::Duration;
 
 pub static CLOCK_FREQ: InitOnce<u64> = InitOnce::new_with_default(10_000_000);
-const TICKS_PER_SEC: u64 = 100;
+const TICKS_PER_SEC: u64 = 10;
 
 fn get_cycle() -> u64 {
     riscv::register::time::read() as u64
