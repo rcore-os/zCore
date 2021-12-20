@@ -25,7 +25,7 @@ make
 在安装好工具xfel，开发板进入FEL模式，可在开发板的Linux系统中执行`reboot efex`命令进入FEL模式。<br>
 直接运行：
 ```
-make rund1 LINUX=1 ARCH=riscv64 PLATFORM=d1 MODE=release
+make run_d1 LINUX=1 ARCH=riscv64 PLATFORM=d1 MODE=release
 ```
 
 * 手动烧写运行
