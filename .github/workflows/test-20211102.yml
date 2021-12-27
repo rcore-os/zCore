@@ -54,7 +54,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly-2021-07-27
+          toolchain: nightly-2021-11-02
           components: rust-src
       - name: Install QEMU
         run: |
@@ -77,7 +77,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly-2021-07-27
+          toolchain: nightly-2021-11-02
           components: rust-src
       - name: Run libos-core-tests
         run: |
@@ -111,7 +111,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly-2021-07-27
+          toolchain: nightly-2021-11-02
           components: rust-src
       - name: Pull prebuilt images
         run: git lfs pull -I prebuilt/linux/libc-libos.so
@@ -139,7 +139,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly-2021-07-27
+          toolchain: nightly-2021-11-02
           components: rust-src, llvm-tools-preview
       - uses: actions-rs/install@v0.1
         with:

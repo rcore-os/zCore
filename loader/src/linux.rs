@@ -99,9 +99,9 @@ async fn handle_user_trap(thread: &CurrentThread, mut ctx: Box<UserContext>) -> 
             Ok(())
         }
         TrapReason::PageFault(vaddr, flags) => {
-            info!(
-                "page fault from pid: {} user mode @ {:#x}({:?})",
-                pid, vaddr, flags
+            warn!(
+                "page fault from user mode @ {:#x}({:?}), pid={}",
+                vaddr, flags, pid
             );
             let vmar = thread.proc().vmar();
             vmar.handle_page_fault(vaddr, flags).map_err(|err| {
@@ -117,9 +117,9 @@ async fn handle_user_trap(thread: &CurrentThread, mut ctx: Box<UserContext>) -> 
         }
         _ => {
             error!(
-                "unsupported pid: {} trap from user mode: {:x?} {:#x?}",
-                pid,
+                "unsupported trap from user mode: {:x?}, pid={}, {:#x?}",
                 reason,
+                pid,
                 thread.context_cloned(),
             );
             Err(ZxError::NOT_SUPPORTED)

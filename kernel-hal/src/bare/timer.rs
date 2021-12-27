@@ -6,6 +6,9 @@ use core::time::Duration;
 use naive_timer::Timer;
 use spin::Mutex;
 
+#[allow(dead_code)]
+pub(super) const TICKS_PER_SEC: u64 = 100;
+
 lazy_static! {
     static ref NAIVE_TIMER: Mutex<Timer> = Mutex::new(Timer::default());
 }

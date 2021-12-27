@@ -4,6 +4,7 @@
 #![cfg_attr(feature = "libos", feature(thread_id_value))]
 #![feature(asm)]
 #![feature(doc_cfg)]
+#![allow(clippy::uninit_vec)]
 #![deny(warnings)]
 
 extern crate alloc;

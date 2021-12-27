@@ -89,6 +89,7 @@ impl<M: IoMapper> DevicetreeDriverBuilder<M> {
             match comp {
                 #[cfg(feature = "virtio")]
                 c if c.contains("virtio,mmio") => self.parse_virtio(node, props),
+                c if c.contains("allwinner,sunxi-gmac") => self.parse_ethernet(node, comp, props),
                 c if c.contains("ns16550a") => self.parse_uart(node, comp, props),
                 c if c.contains("allwinner,sun20i-uart") => self.parse_uart(node, comp, props),
                 _ => Err(DeviceError::NotSupported),
@@ -171,6 +172,41 @@ impl<M: IoMapper> DevicetreeDriverBuilder<M> {
             DeviceType::Console => Device::Uart(Arc::new(VirtIoConsole::new(header)?)),
             _ => return Err(DeviceError::NotSupported),
         };
+
+        Ok(DevWithInterrupt {
+            phandle: None,
+            interrupt_cells: None,
+            interrupts_extended,
+            dev,
+        })
+    }
+
+    /// Parse nodes for Ethernet devices.
+    fn parse_ethernet(
+        &self,
+        node: &Node,
+        comp: &StringList,
+        props: &InheritProps,
+    ) -> DeviceResult<DevWithInterrupt> {
+        let interrupts_extended = parse_interrupts(node, props)?;
+        let base_vaddr = parse_reg(node, props).and_then(|(paddr, size)| {
+            self.io_mapper
+                .query_or_map(paddr as usize, size as usize)
+                .ok_or(DeviceError::NoResources)
+        });
+        info!("Ethernet gmac init ...");
+
+        let irq_num = interrupts_extended[1];
+        use crate::net::*;
+        let dev = Device::Net(match comp {
+            #[cfg(target_arch = "riscv64")]
+            c if c.contains("allwinner,sunxi-gmac") => {
+                Arc::new(rtlx_init(irq_num as usize, |paddr, size| {
+                    self.io_mapper.query_or_map(paddr, size)
+                })?)
+            }
+            _ => return Err(DeviceError::NotSupported),
+        });
 
         Ok(DevWithInterrupt {
             phandle: None,

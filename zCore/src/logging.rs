@@ -1,14 +1,14 @@
 use core::fmt;
 use log::{self, Level, LevelFilter, Log, Metadata, Record};
 
-/// first set log level
+/// Initialize logging with the default max log level (WARN).
 pub fn init() {
     static LOGGER: SimpleLogger = SimpleLogger;
     log::set_logger(&LOGGER).unwrap();
     log::set_max_level(LevelFilter::Warn);
 }
 
-/// second set log level
+/// Reset max log level.
 pub fn set_max_level(level: &str) {
     log::set_max_level(level.parse().unwrap_or(LevelFilter::Warn));
 }
