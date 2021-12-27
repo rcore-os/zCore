@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `zircon-object&#x2F;src&#x2F;vm&#x2F;vmo&#x2F;paged.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>paged.rs - source</title><link rel="stylesheet" type="text/css" href="../../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../../../ayu.css" disabled ><script id="default-settings" ></script><script src="../../../../storage.js"></script><script src="../../../../crates.js"></script><noscript><link rel="stylesheet" href="../../../../noscript.css"></noscript><link rel="icon" type="image/svg+xml" href="../../../../favicon.svg"><link rel="alternate icon" type="image/png" href="../../../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../../../favicon-32x32.png"><style type="text/css">#crate-search{background-image:url("../../../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../../../zircon_object/index.html'><div class='logo-container rust-logo'><img src='../../../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu" title="themes"><img width="18" height="18" alt="Pick another theme!" src="../../../../brush.svg"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input"name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" id="help-button" title="help">?</button><a id="settings-menu" href="../../../../settings.html" title="settings"><img width="18" height="18" alt="Change settings" src="../../../../wheel.svg"></a></div></form></nav><section id="main" class="content"><div class="example-wrap"><pre class="line-numbers"><span id="1">   1</span>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `zircon-object&#x2F;src&#x2F;vm&#x2F;vmo&#x2F;paged.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>paged.rs - source</title><link rel="stylesheet" type="text/css" href="../../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../../../ayu.css" disabled ><script id="default-settings" ></script><script src="../../../../storage.js"></script><script src="../../../../crates.js"></script><noscript><link rel="stylesheet" href="../../../../noscript.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../../../favicon-32x32.png"><link rel="icon" type="image/svg+xml" href="../../../../favicon.svg"><style type="text/css">#crate-search{background-image:url("../../../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../../../zircon_object/index.html'><div class='logo-container rust-logo'><img src='../../../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu" title="themes"><img width="18" height="18" alt="Pick another theme!" src="../../../../brush.svg"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" id="help-button" title="help">?</button><a id="settings-menu" href="../../../../settings.html" title="settings"><img width="18" height="18" alt="Change settings" src="../../../../wheel.svg"></a></div></form></nav><section id="main" class="content"><div class="example-wrap"><pre class="line-numbers"><span id="1">   1</span>
 <span id="2">   2</span>
 <span id="3">   3</span>
 <span id="4">   4</span>
@@ -1124,10 +1124,9 @@
 <span id="1124">1124</span>
 <span id="1125">1125</span>
 <span id="1126">1126</span>
-</pre><pre class="rust">
-<span class="kw">use</span> {
+</pre><pre class="rust"><code><span class="kw">use</span> {
     <span class="kw">super</span>::<span class="kw-2">*</span>,
-    <span class="kw">crate</span><span class="ident">::util::block_range::BlockIter</span>,
+    <span class="ident"><span class="kw">crate</span>::util::block_range::BlockIter</span>,
     <span class="ident">alloc::collections::VecDeque</span>,
     <span class="ident">alloc::sync</span>::{<span class="ident">Arc</span>, <span class="ident">Weak</span>},
     <span class="ident">alloc::vec::Vec</span>,
@@ -1161,9 +1160,9 @@
 }
 
 <span class="kw">impl</span> <span class="ident">VMOType</span> {
-    <span class="kw">fn</span> <span class="ident">get_tag_and_other</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">child</span>: <span class="kw-2">&amp;</span><span class="ident">WeakRef</span>) <span class="op">-</span><span class="op">&gt;</span> (<span class="ident">PageStateTag</span>, <span class="ident">WeakRef</span>) {
+    <span class="kw">fn</span> <span class="ident">get_tag_and_other</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">child</span>: <span class="kw-2">&amp;</span><span class="ident">WeakRef</span>) -&gt; (<span class="ident">PageStateTag</span>, <span class="ident">WeakRef</span>) {
         <span class="kw">match</span> <span class="self">self</span> {
-            <span class="ident">VMOType::Hidden</span> { <span class="ident">left</span>, <span class="ident">right</span>, .. } <span class="op">=</span><span class="op">&gt;</span> {
+            <span class="ident">VMOType::Hidden</span> { <span class="ident">left</span>, <span class="ident">right</span>, .. } =&gt; {
                 <span class="kw">if</span> <span class="ident">left</span>.<span class="ident">ptr_eq</span>(<span class="ident">child</span>) {
                     (<span class="ident">PageStateTag::LeftSplit</span>, <span class="ident">right</span>.<span class="ident">clone</span>())
                 } <span class="kw">else</span> <span class="kw">if</span> <span class="ident">right</span>.<span class="ident">ptr_eq</span>(<span class="ident">child</span>) {
@@ -1172,11 +1171,11 @@
                     (<span class="ident">PageStateTag::Owned</span>, <span class="ident">Weak::new</span>())
                 }
             }
-            <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> (<span class="ident">PageStateTag::Owned</span>, <span class="ident">Weak::new</span>()),
+            <span class="kw">_</span> =&gt; (<span class="ident">PageStateTag::Owned</span>, <span class="ident">Weak::new</span>()),
         }
     }
 
-    <span class="kw">fn</span> <span class="ident">is_hidden</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+    <span class="kw">fn</span> <span class="ident">is_hidden</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">bool</span> {
         <span class="macro">matches!</span>(<span class="self">self</span>, <span class="ident">VMOType::Hidden</span> { .. })
     }
 }
@@ -1242,20 +1241,20 @@
 }
 
 <span class="kw">impl</span> <span class="ident">PageStateTag</span> {
-    <span class="kw">fn</span> <span class="ident">negate</span>(<span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
+    <span class="kw">fn</span> <span class="ident">negate</span>(<span class="self">self</span>) -&gt; <span class="self">Self</span> {
         <span class="kw">match</span> <span class="self">self</span> {
-            <span class="ident">PageStateTag::LeftSplit</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">PageStateTag::RightSplit</span>,
-            <span class="ident">PageStateTag::RightSplit</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">PageStateTag::LeftSplit</span>,
-            <span class="ident">PageStateTag::Owned</span> <span class="op">=</span><span class="op">&gt;</span> <span class="macro">unreachable!</span>(),
+            <span class="ident">PageStateTag::LeftSplit</span> =&gt; <span class="ident">PageStateTag::RightSplit</span>,
+            <span class="ident">PageStateTag::RightSplit</span> =&gt; <span class="ident">PageStateTag::LeftSplit</span>,
+            <span class="ident">PageStateTag::Owned</span> =&gt; <span class="macro">unreachable!</span>(),
         }
     }
-    <span class="kw">fn</span> <span class="ident">is_split</span>(<span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+    <span class="kw">fn</span> <span class="ident">is_split</span>(<span class="self">self</span>) -&gt; <span class="ident">bool</span> {
         <span class="self">self</span> <span class="op">!</span><span class="op">=</span> <span class="ident">PageStateTag::Owned</span>
     }
 }
 
 <span class="kw">impl</span> <span class="ident">PageState</span> {
-    <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">frame</span>: <span class="ident">PhysFrame</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
+    <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">frame</span>: <span class="ident">PhysFrame</span>) -&gt; <span class="self">Self</span> {
         <span class="ident">VMO_PAGE_ALLOC</span>.<span class="ident">add</span>(<span class="number">1</span>);
         <span class="ident">PageState</span> {
             <span class="ident">frame</span>,
@@ -1264,27 +1263,27 @@
         }
     }
     <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">unsafe_code</span>)]</span>
-    <span class="kw">fn</span> <span class="ident">take</span>(<span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">PhysFrame</span> {
+    <span class="kw">fn</span> <span class="ident">take</span>(<span class="self">self</span>) -&gt; <span class="ident">PhysFrame</span> {
         <span class="kw">let</span> <span class="ident">frame</span> <span class="op">=</span> <span class="kw">unsafe</span> { <span class="ident">core::mem::transmute_copy</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">frame</span>) };
         <span class="ident">VMO_PAGE_DEALLOC</span>.<span class="ident">add</span>(<span class="number">1</span>);
         <span class="ident">core::mem::forget</span>(<span class="self">self</span>);
         <span class="ident">frame</span>
     }
-    <span class="kw">fn</span> <span class="ident">swap</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">t</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">Self</span>) {
-        <span class="ident">core::mem::swap</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>.<span class="ident">frame</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">t</span>.<span class="ident">frame</span>);
-        <span class="ident">core::mem::swap</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>.<span class="ident">pin_count</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">t</span>.<span class="ident">pin_count</span>);
+    <span class="kw">fn</span> <span class="ident">swap</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>, <span class="ident">t</span>: <span class="kw-2">&amp;mut</span> <span class="self">Self</span>) {
+        <span class="ident">core::mem::swap</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>.<span class="ident">frame</span>, <span class="kw-2">&amp;mut</span> <span class="ident">t</span>.<span class="ident">frame</span>);
+        <span class="ident">core::mem::swap</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>.<span class="ident">pin_count</span>, <span class="kw-2">&amp;mut</span> <span class="ident">t</span>.<span class="ident">pin_count</span>);
     }
 }
 
 <span class="kw">impl</span> <span class="ident">Drop</span> <span class="kw">for</span> <span class="ident">PageState</span> {
-    <span class="kw">fn</span> <span class="ident">drop</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) {
+    <span class="kw">fn</span> <span class="ident">drop</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>) {
         <span class="ident">VMO_PAGE_DEALLOC</span>.<span class="ident">add</span>(<span class="number">1</span>);
     }
 }
 
 <span class="kw">impl</span> <span class="ident">VMObjectPaged</span> {
     <span class="doccomment">/// Create a new VMO backing on physical memory allocated in pages.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">pages</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">pages</span>: <span class="ident">usize</span>) -&gt; <span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
         <span class="ident">VMObjectPaged::wrap</span>(
             <span class="ident">VMObjectPagedInner</span> {
                 <span class="ident">owner</span>: <span class="ident">new_owner_id</span>(),
@@ -1305,8 +1304,8 @@
     }
 
     <span class="doccomment">/// Create a new VMO backing on contiguous pages.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new_contiguous</span>(<span class="ident">pages</span>: <span class="ident">usize</span>, <span class="ident">align_log2</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="ident">vmo</span> <span class="op">=</span> <span class="self">Self</span><span class="ident">::new</span>(<span class="ident">pages</span>);
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new_contiguous</span>(<span class="ident">pages</span>: <span class="ident">usize</span>, <span class="ident">align_log2</span>: <span class="ident">usize</span>) -&gt; <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+        <span class="kw">let</span> <span class="ident">vmo</span> <span class="op">=</span> <span class="ident"><span class="self">Self</span>::new</span>(<span class="ident">pages</span>);
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">frames</span> <span class="op">=</span> <span class="ident">PhysFrame::new_contiguous</span>(<span class="ident">pages</span>, <span class="ident">align_log2</span> <span class="op">-</span> <span class="ident">PAGE_SIZE_LOG2</span>);
         <span class="kw">if</span> <span class="ident">frames</span>.<span class="ident">is_empty</span>() {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::NO_MEMORY</span>);
@@ -1325,7 +1324,7 @@
     }
 
     <span class="doccomment">/// Internal: Wrap an inner struct to object.</span>
-    <span class="kw">fn</span> <span class="ident">wrap</span>(<span class="ident">inner</span>: <span class="ident">VMObjectPagedInner</span>, <span class="ident">lock_ref</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Mutex</span><span class="op">&lt;</span>()<span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">wrap</span>(<span class="ident">inner</span>: <span class="ident">VMObjectPagedInner</span>, <span class="ident">lock_ref</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Mutex</span><span class="op">&lt;</span>()<span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span>) -&gt; <span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">obj</span> <span class="op">=</span> <span class="ident">Arc::new</span>(<span class="ident">VMObjectPaged</span> {
             <span class="ident">lock</span>: <span class="ident">lock_ref</span>.<span class="ident">unwrap_or_else</span>(<span class="op">|</span><span class="op">|</span> <span class="ident">Arc::new</span>(<span class="ident">Mutex::new</span>(()))),
             <span class="ident">inner</span>: <span class="ident">RefCell::new</span>(<span class="ident">inner</span>),
@@ -1335,28 +1334,28 @@
     }
 
     <span class="doccomment">/// get the reference to inner by lock the shared lock</span>
-    <span class="kw">fn</span> <span class="ident">get_inner</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> (<span class="ident">MutexGuard</span><span class="op">&lt;</span>()<span class="op">&gt;</span>, <span class="ident">Ref</span><span class="op">&lt;</span><span class="ident">VMObjectPagedInner</span><span class="op">&gt;</span>) {
+    <span class="kw">fn</span> <span class="ident">get_inner</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; (<span class="ident">MutexGuard</span><span class="op">&lt;</span>()<span class="op">&gt;</span>, <span class="ident">Ref</span><span class="op">&lt;</span><span class="ident">VMObjectPagedInner</span><span class="op">&gt;</span>) {
         (<span class="self">self</span>.<span class="ident">lock</span>.<span class="ident">lock</span>(), <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">borrow</span>())
     }
 
     <span class="doccomment">/// get the mutable reference to inner by lock the shared lock</span>
-    <span class="kw">fn</span> <span class="ident">get_inner_mut</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> (<span class="ident">MutexGuard</span><span class="op">&lt;</span>()<span class="op">&gt;</span>, <span class="ident">RefMut</span><span class="op">&lt;</span><span class="ident">VMObjectPagedInner</span><span class="op">&gt;</span>) {
+    <span class="kw">fn</span> <span class="ident">get_inner_mut</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; (<span class="ident">MutexGuard</span><span class="op">&lt;</span>()<span class="op">&gt;</span>, <span class="ident">RefMut</span><span class="op">&lt;</span><span class="ident">VMObjectPagedInner</span><span class="op">&gt;</span>) {
         (<span class="self">self</span>.<span class="ident">lock</span>.<span class="ident">lock</span>(), <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">borrow_mut</span>())
     }
 }
 
 <span class="kw">impl</span> <span class="ident">VMObjectTrait</span> <span class="kw">for</span> <span class="ident">VMObjectPaged</span> {
-    <span class="kw">fn</span> <span class="ident">read</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">offset</span>: <span class="ident">usize</span>, <span class="ident">buf</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> [<span class="ident">u8</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    <span class="kw">fn</span> <span class="ident">read</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">offset</span>: <span class="ident">usize</span>, <span class="ident">buf</span>: <span class="kw-2">&amp;mut</span> [<span class="ident">u8</span>]) -&gt; <span class="ident">ZxResult</span> {
         <span class="kw">let</span> (<span class="ident">_guard</span>, <span class="kw-2">mut</span> <span class="ident">inner</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">get_inner_mut</span>();
         <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">cache_policy</span> <span class="op">!</span><span class="op">=</span> <span class="ident">CachePolicy::Cached</span> {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::BAD_STATE</span>);
         }
         <span class="ident">inner</span>.<span class="ident">for_each_page</span>(<span class="ident">offset</span>, <span class="ident">buf</span>.<span class="ident">len</span>(), <span class="ident">MMUFlags::READ</span>, <span class="op">|</span><span class="ident">paddr</span>, <span class="ident">buf_range</span><span class="op">|</span> {
-            <span class="ident">kernel_hal::mem::pmem_read</span>(<span class="ident">paddr</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">buf</span>[<span class="ident">buf_range</span>]);
+            <span class="ident">kernel_hal::mem::pmem_read</span>(<span class="ident">paddr</span>, <span class="kw-2">&amp;mut</span> <span class="ident">buf</span>[<span class="ident">buf_range</span>]);
         })
     }
 
-    <span class="kw">fn</span> <span class="ident">write</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">offset</span>: <span class="ident">usize</span>, <span class="ident">buf</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    <span class="kw">fn</span> <span class="ident">write</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">offset</span>: <span class="ident">usize</span>, <span class="ident">buf</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]) -&gt; <span class="ident">ZxResult</span> {
         <span class="kw">let</span> (<span class="ident">_guard</span>, <span class="kw-2">mut</span> <span class="ident">inner</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">get_inner_mut</span>();
         <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">cache_policy</span> <span class="op">!</span><span class="op">=</span> <span class="ident">CachePolicy::Cached</span> {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::BAD_STATE</span>);
@@ -1366,7 +1365,7 @@
         })
     }
 
-    <span class="kw">fn</span> <span class="ident">zero</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">offset</span>: <span class="ident">usize</span>, <span class="ident">len</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    <span class="kw">fn</span> <span class="ident">zero</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">offset</span>: <span class="ident">usize</span>, <span class="ident">len</span>: <span class="ident">usize</span>) -&gt; <span class="ident">ZxResult</span> {
         <span class="kw">let</span> (<span class="ident">_guard</span>, <span class="kw-2">mut</span> <span class="ident">inner</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">get_inner_mut</span>();
         <span class="kw">if</span> <span class="ident">offset</span> <span class="op">+</span> <span class="ident">len</span> <span class="op">&gt;</span> <span class="ident">inner</span>.<span class="ident">size</span> {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::OUT_OF_RANGE</span>);
@@ -1379,7 +1378,7 @@
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">unwanted</span> <span class="op">=</span> <span class="ident">VecDeque::new</span>();
         <span class="kw">for</span> <span class="ident">block</span> <span class="kw">in</span> <span class="ident">iter</span> {
             <span class="comment">//let paddr = self.commit_page(block.block, MMUFlags::READ)?;</span>
-            <span class="kw">if</span> <span class="ident">block</span>.<span class="ident">len</span>() <span class="op">=</span><span class="op">=</span> <span class="ident">PAGE_SIZE</span> <span class="op">&amp;&amp;</span> <span class="op">!</span><span class="ident">inner</span>.<span class="ident">is_contiguous</span>() {
+            <span class="kw">if</span> <span class="ident">block</span>.<span class="ident">len</span>() <span class="op">==</span> <span class="ident">PAGE_SIZE</span> <span class="op">&amp;&amp;</span> <span class="op">!</span><span class="ident">inner</span>.<span class="ident">is_contiguous</span>() {
                 <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="ident">inner</span>.<span class="ident">commit_page</span>(<span class="ident">block</span>.<span class="ident">block</span>, <span class="ident">MMUFlags::WRITE</span>)<span class="question-mark">?</span>;
                 <span class="ident">unwanted</span>.<span class="ident">push_back</span>(<span class="ident">block</span>.<span class="ident">block</span> <span class="op">+</span> <span class="ident">inner</span>.<span class="ident">parent_offset</span> <span class="op">/</span> <span class="ident">PAGE_SIZE</span>);
                 <span class="ident">inner</span>.<span class="ident">frames</span>.<span class="ident">remove</span>(<span class="kw-2">&amp;</span><span class="ident">block</span>.<span class="ident">block</span>);
@@ -1393,11 +1392,11 @@
         <span class="prelude-val">Ok</span>(())
     }
 
-    <span class="kw">fn</span> <span class="ident">len</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
+    <span class="kw">fn</span> <span class="ident">len</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">usize</span> {
         <span class="self">self</span>.<span class="ident">get_inner</span>().<span class="number">1</span>.<span class="ident">size</span>
     }
 
-    <span class="kw">fn</span> <span class="ident">set_len</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">len</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    <span class="kw">fn</span> <span class="ident">set_len</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">len</span>: <span class="ident">usize</span>) -&gt; <span class="ident">ZxResult</span> {
         <span class="macro">assert!</span>(<span class="ident">page_aligned</span>(<span class="ident">len</span>));
         <span class="kw">let</span> <span class="ident">old_parent</span> <span class="op">=</span> {
             <span class="kw">let</span> (<span class="ident">_guard</span>, <span class="kw-2">mut</span> <span class="ident">inner</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">get_inner_mut</span>();
@@ -1410,19 +1409,19 @@
         <span class="prelude-val">Ok</span>(())
     }
 
-    <span class="kw">fn</span> <span class="ident">commit_page</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">page_idx</span>: <span class="ident">usize</span>, <span class="ident">flags</span>: <span class="ident">MMUFlags</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">PhysAddr</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">commit_page</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">page_idx</span>: <span class="ident">usize</span>, <span class="ident">flags</span>: <span class="ident">MMUFlags</span>) -&gt; <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">PhysAddr</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">get_inner_mut</span>().<span class="number">1</span>.<span class="ident">commit_page</span>(<span class="ident">page_idx</span>, <span class="ident">flags</span>)
     }
 
     <span class="kw">fn</span> <span class="ident">commit_pages_with</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
-        <span class="ident">f</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="kw">dyn</span> <span class="ident">FnMut</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="kw">dyn</span> <span class="ident">FnMut</span>(<span class="ident">usize</span>, <span class="ident">MMUFlags</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">PhysAddr</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+        <span class="ident">f</span>: <span class="kw-2">&amp;mut</span> <span class="kw">dyn</span> <span class="ident">FnMut</span>(<span class="kw-2">&amp;mut</span> <span class="kw">dyn</span> <span class="ident">FnMut</span>(<span class="ident">usize</span>, <span class="ident">MMUFlags</span>) -&gt; <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">PhysAddr</span><span class="op">&gt;</span>) -&gt; <span class="ident">ZxResult</span>,
+    ) -&gt; <span class="ident">ZxResult</span> {
         <span class="kw">let</span> (<span class="ident">_guard</span>, <span class="kw-2">mut</span> <span class="ident">inner</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">get_inner_mut</span>();
-        <span class="ident">f</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="op">|</span><span class="ident">page_idx</span>, <span class="ident">flags</span><span class="op">|</span> <span class="ident">inner</span>.<span class="ident">commit_page</span>(<span class="ident">page_idx</span>, <span class="ident">flags</span>))
+        <span class="ident">f</span>(<span class="kw-2">&amp;mut</span> <span class="op">|</span><span class="ident">page_idx</span>, <span class="ident">flags</span><span class="op">|</span> <span class="ident">inner</span>.<span class="ident">commit_page</span>(<span class="ident">page_idx</span>, <span class="ident">flags</span>))
     }
 
-    <span class="kw">fn</span> <span class="ident">commit</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">offset</span>: <span class="ident">usize</span>, <span class="ident">len</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    <span class="kw">fn</span> <span class="ident">commit</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">offset</span>: <span class="ident">usize</span>, <span class="ident">len</span>: <span class="ident">usize</span>) -&gt; <span class="ident">ZxResult</span> {
         <span class="kw">let</span> (<span class="ident">_guard</span>, <span class="kw-2">mut</span> <span class="ident">inner</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">get_inner_mut</span>();
         <span class="kw">let</span> <span class="ident">start_page</span> <span class="op">=</span> <span class="ident">offset</span> <span class="op">/</span> <span class="ident">PAGE_SIZE</span>;
         <span class="kw">let</span> <span class="ident">pages</span> <span class="op">=</span> <span class="ident">len</span> <span class="op">/</span> <span class="ident">PAGE_SIZE</span>;
@@ -1432,7 +1431,7 @@
         <span class="prelude-val">Ok</span>(())
     }
 
-    <span class="kw">fn</span> <span class="ident">decommit</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">offset</span>: <span class="ident">usize</span>, <span class="ident">len</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    <span class="kw">fn</span> <span class="ident">decommit</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">offset</span>: <span class="ident">usize</span>, <span class="ident">len</span>: <span class="ident">usize</span>) -&gt; <span class="ident">ZxResult</span> {
         <span class="kw">let</span> (<span class="ident">_guard</span>, <span class="kw-2">mut</span> <span class="ident">inner</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">get_inner_mut</span>();
         <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">parent</span>.<span class="ident">is_some</span>() {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::NOT_SUPPORTED</span>);
@@ -1445,7 +1444,7 @@
         <span class="prelude-val">Ok</span>(())
     }
 
-    <span class="kw">fn</span> <span class="ident">create_child</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">offset</span>: <span class="ident">usize</span>, <span class="ident">len</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">VMObjectTrait</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">create_child</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">offset</span>: <span class="ident">usize</span>, <span class="ident">len</span>: <span class="ident">usize</span>) -&gt; <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">VMObjectTrait</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="macro">assert!</span>(<span class="ident">page_aligned</span>(<span class="ident">offset</span>));
         <span class="macro">assert!</span>(<span class="ident">page_aligned</span>(<span class="ident">len</span>));
         <span class="kw">let</span> (<span class="ident">_guard</span>, <span class="kw-2">mut</span> <span class="ident">inner</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">get_inner_mut</span>();
@@ -1461,21 +1460,21 @@
         <span class="self">self</span>.<span class="ident">get_inner_mut</span>()
             .<span class="number">1</span>
             .<span class="ident">mappings</span>
-            .<span class="ident">drain_filter</span>(<span class="op">|</span><span class="ident">x</span><span class="op">|</span> <span class="ident">x</span>.<span class="ident">strong_count</span>() <span class="op">=</span><span class="op">=</span> <span class="number">0</span> <span class="op">|</span><span class="op">|</span> <span class="ident">Weak::ptr_eq</span>(<span class="ident">x</span>, <span class="kw-2">&amp;</span><span class="ident">mapping</span>));
+            .<span class="ident">drain_filter</span>(<span class="op">|</span><span class="ident">x</span><span class="op">|</span> <span class="ident">x</span>.<span class="ident">strong_count</span>() <span class="op">==</span> <span class="number">0</span> <span class="op">|</span><span class="op">|</span> <span class="ident">Weak::ptr_eq</span>(<span class="ident">x</span>, <span class="kw-2">&amp;</span><span class="ident">mapping</span>));
     }
 
-    <span class="kw">fn</span> <span class="ident">complete_info</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">info</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">VmoInfo</span>) {
+    <span class="kw">fn</span> <span class="ident">complete_info</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">info</span>: <span class="kw-2">&amp;mut</span> <span class="ident">VmoInfo</span>) {
         <span class="kw">let</span> (<span class="ident">_guard</span>, <span class="ident">inner</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">get_inner</span>();
         <span class="ident">info</span>.<span class="ident">flags</span> <span class="op">|</span><span class="op">=</span> <span class="ident">VmoInfoFlags::TYPE_PAGED</span>;
         <span class="ident">inner</span>.<span class="ident">complete_info</span>(<span class="ident">info</span>);
     }
 
-    <span class="kw">fn</span> <span class="ident">cache_policy</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">CachePolicy</span> {
+    <span class="kw">fn</span> <span class="ident">cache_policy</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">CachePolicy</span> {
         <span class="kw">let</span> (<span class="ident">_guard</span>, <span class="ident">inner</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">get_inner</span>();
         <span class="ident">inner</span>.<span class="ident">cache_policy</span>
     }
 
-    <span class="kw">fn</span> <span class="ident">set_cache_policy</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">policy</span>: <span class="ident">CachePolicy</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    <span class="kw">fn</span> <span class="ident">set_cache_policy</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">policy</span>: <span class="ident">CachePolicy</span>) -&gt; <span class="ident">ZxResult</span> {
         <span class="comment">// conditions for allowing the cache policy to be set:</span>
         <span class="comment">// 1) vmo either has no pages committed currently or is transitioning from being cached</span>
         <span class="comment">// 2) vmo has no pinned pages</span>
@@ -1496,7 +1495,7 @@
         <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">pin_count</span> <span class="op">!</span><span class="op">=</span> <span class="number">0</span> {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::BAD_STATE</span>);
         }
-        <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">cache_policy</span> <span class="op">=</span><span class="op">=</span> <span class="ident">CachePolicy::Cached</span> <span class="op">&amp;&amp;</span> <span class="ident">policy</span> <span class="op">!</span><span class="op">=</span> <span class="ident">CachePolicy::Cached</span> {
+        <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">cache_policy</span> <span class="op">==</span> <span class="ident">CachePolicy::Cached</span> <span class="op">&amp;&amp;</span> <span class="ident">policy</span> <span class="op">!</span><span class="op">=</span> <span class="ident">CachePolicy::Cached</span> {
             <span class="kw">for</span> (<span class="kw">_</span>, <span class="ident">value</span>) <span class="kw">in</span> <span class="ident">inner</span>.<span class="ident">frames</span>.<span class="ident">iter</span>() {
                 <span class="ident">kernel_hal::mem::frame_flush</span>(<span class="ident">value</span>.<span class="ident">frame</span>.<span class="ident">paddr</span>());
             }
@@ -1505,24 +1504,24 @@
         <span class="prelude-val">Ok</span>(())
     }
 
-    <span class="kw">fn</span> <span class="ident">committed_pages_in_range</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">start_idx</span>: <span class="ident">usize</span>, <span class="ident">end_idx</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
+    <span class="kw">fn</span> <span class="ident">committed_pages_in_range</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">start_idx</span>: <span class="ident">usize</span>, <span class="ident">end_idx</span>: <span class="ident">usize</span>) -&gt; <span class="ident">usize</span> {
         <span class="kw">let</span> (<span class="ident">_guard</span>, <span class="ident">inner</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">get_inner</span>();
         <span class="ident">inner</span>.<span class="ident">committed_pages_in_range</span>(<span class="ident">start_idx</span>, <span class="ident">end_idx</span>)
     }
 
-    <span class="kw">fn</span> <span class="ident">pin</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">offset</span>: <span class="ident">usize</span>, <span class="ident">len</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    <span class="kw">fn</span> <span class="ident">pin</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">offset</span>: <span class="ident">usize</span>, <span class="ident">len</span>: <span class="ident">usize</span>) -&gt; <span class="ident">ZxResult</span> {
         <span class="kw">let</span> (<span class="ident">_guard</span>, <span class="kw-2">mut</span> <span class="ident">inner</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">get_inner_mut</span>();
         <span class="kw">if</span> <span class="ident">offset</span> <span class="op">+</span> <span class="ident">len</span> <span class="op">&gt;</span> <span class="ident">inner</span>.<span class="ident">size</span> {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::OUT_OF_RANGE</span>);
         }
-        <span class="kw">if</span> <span class="ident">len</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span> {
+        <span class="kw">if</span> <span class="ident">len</span> <span class="op">==</span> <span class="number">0</span> {
             <span class="kw">return</span> <span class="prelude-val">Ok</span>(());
         }
         <span class="kw">let</span> <span class="ident">start_page</span> <span class="op">=</span> <span class="ident">offset</span> <span class="op">/</span> <span class="ident">PAGE_SIZE</span>;
         <span class="kw">let</span> <span class="ident">end_page</span> <span class="op">=</span> <span class="ident">pages</span>(<span class="ident">offset</span> <span class="op">+</span> <span class="ident">len</span>);
         <span class="kw">for</span> <span class="ident">i</span> <span class="kw">in</span> <span class="ident">start_page</span>..<span class="ident">end_page</span> {
             <span class="kw">let</span> <span class="ident">frame</span> <span class="op">=</span> <span class="ident">inner</span>.<span class="ident">frames</span>.<span class="ident">get</span>(<span class="kw-2">&amp;</span><span class="ident">i</span>).<span class="ident">unwrap</span>();
-            <span class="kw">if</span> <span class="ident">frame</span>.<span class="ident">pin_count</span> <span class="op">=</span><span class="op">=</span> <span class="ident">VM_PAGE_OBJECT_MAX_PIN_COUNT</span> {
+            <span class="kw">if</span> <span class="ident">frame</span>.<span class="ident">pin_count</span> <span class="op">==</span> <span class="ident">VM_PAGE_OBJECT_MAX_PIN_COUNT</span> {
                 <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::UNAVAILABLE</span>);
             }
         }
@@ -1533,19 +1532,19 @@
         <span class="prelude-val">Ok</span>(())
     }
 
-    <span class="kw">fn</span> <span class="ident">unpin</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">offset</span>: <span class="ident">usize</span>, <span class="ident">len</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    <span class="kw">fn</span> <span class="ident">unpin</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">offset</span>: <span class="ident">usize</span>, <span class="ident">len</span>: <span class="ident">usize</span>) -&gt; <span class="ident">ZxResult</span> {
         <span class="kw">let</span> (<span class="ident">_guard</span>, <span class="kw-2">mut</span> <span class="ident">inner</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">get_inner_mut</span>();
         <span class="kw">if</span> <span class="ident">offset</span> <span class="op">+</span> <span class="ident">len</span> <span class="op">&gt;</span> <span class="ident">inner</span>.<span class="ident">size</span> {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::OUT_OF_RANGE</span>);
         }
-        <span class="kw">if</span> <span class="ident">len</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span> {
+        <span class="kw">if</span> <span class="ident">len</span> <span class="op">==</span> <span class="number">0</span> {
             <span class="kw">return</span> <span class="prelude-val">Ok</span>(());
         }
         <span class="kw">let</span> <span class="ident">start_page</span> <span class="op">=</span> <span class="ident">offset</span> <span class="op">/</span> <span class="ident">PAGE_SIZE</span>;
         <span class="kw">let</span> <span class="ident">end_page</span> <span class="op">=</span> <span class="ident">pages</span>(<span class="ident">offset</span> <span class="op">+</span> <span class="ident">len</span>);
         <span class="kw">for</span> <span class="ident">i</span> <span class="kw">in</span> <span class="ident">start_page</span>..<span class="ident">end_page</span> {
             <span class="kw">let</span> <span class="ident">frame</span> <span class="op">=</span> <span class="ident">inner</span>.<span class="ident">frames</span>.<span class="ident">get</span>(<span class="kw-2">&amp;</span><span class="ident">i</span>).<span class="ident">unwrap</span>();
-            <span class="kw">if</span> <span class="ident">frame</span>.<span class="ident">pin_count</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span> {
+            <span class="kw">if</span> <span class="ident">frame</span>.<span class="ident">pin_count</span> <span class="op">==</span> <span class="number">0</span> {
                 <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::UNAVAILABLE</span>);
             }
         }
@@ -1557,11 +1556,11 @@
         <span class="prelude-val">Ok</span>(())
     }
 
-    <span class="kw">fn</span> <span class="ident">is_contiguous</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+    <span class="kw">fn</span> <span class="ident">is_contiguous</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">bool</span> {
         <span class="self">self</span>.<span class="ident">get_inner</span>().<span class="number">1</span>.<span class="ident">is_contiguous</span>()
     }
 
-    <span class="kw">fn</span> <span class="ident">is_paged</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+    <span class="kw">fn</span> <span class="ident">is_paged</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">bool</span> {
         <span class="bool-val">true</span>
     }
 }
@@ -1600,12 +1599,12 @@
     <span class="doccomment">/// * `paddr`: the start physical address of the in-page range.</span>
     <span class="doccomment">/// * `buf_range`: the range in view of the input buffer.</span>
     <span class="kw">fn</span> <span class="ident">for_each_page</span>(
-        <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
+        <span class="kw-2">&amp;mut</span> <span class="self">self</span>,
         <span class="ident">offset</span>: <span class="ident">usize</span>,
         <span class="ident">buf_len</span>: <span class="ident">usize</span>,
         <span class="ident">flags</span>: <span class="ident">MMUFlags</span>,
         <span class="kw-2">mut</span> <span class="ident">f</span>: <span class="kw">impl</span> <span class="ident">FnMut</span>(<span class="ident">PhysAddr</span>, <span class="ident">Range</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>),
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    ) -&gt; <span class="ident">ZxResult</span> {
         <span class="kw">let</span> <span class="ident">iter</span> <span class="op">=</span> <span class="ident">BlockIter</span> {
             <span class="ident">begin</span>: <span class="ident">offset</span>,
             <span class="ident">end</span>: <span class="ident">offset</span> <span class="op">+</span> <span class="ident">buf_len</span>,
@@ -1619,10 +1618,10 @@
         <span class="prelude-val">Ok</span>(())
     }
 
-    <span class="kw">fn</span> <span class="ident">commit_page</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">page_idx</span>: <span class="ident">usize</span>, <span class="ident">flags</span>: <span class="ident">MMUFlags</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">PhysAddr</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">commit_page</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>, <span class="ident">page_idx</span>: <span class="ident">usize</span>, <span class="ident">flags</span>: <span class="ident">MMUFlags</span>) -&gt; <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">PhysAddr</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">ret</span> <span class="op">=</span> <span class="kw">match</span> <span class="self">self</span>.<span class="ident">commit_page_internal</span>(<span class="ident">page_idx</span>, <span class="ident">flags</span>, <span class="kw-2">&amp;</span><span class="ident">Weak::new</span>())<span class="question-mark">?</span> {
-            <span class="ident">CommitResult::Ref</span>(<span class="ident">paddr</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Ok</span>(<span class="ident">paddr</span>),
-            <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="macro">unreachable!</span>(),
+            <span class="ident">CommitResult::Ref</span>(<span class="ident">paddr</span>) =&gt; <span class="prelude-val">Ok</span>(<span class="ident">paddr</span>),
+            <span class="kw">_</span> =&gt; <span class="macro">unreachable!</span>(),
         };
         <span class="comment">// force check conntiguous on each leaf node</span>
         <span class="macro">assert!</span>(<span class="self">self</span>.<span class="ident">check_contig</span>());
@@ -1631,11 +1630,11 @@
 
     <span class="doccomment">/// Commit a page recursively.</span>
     <span class="kw">fn</span> <span class="ident">commit_page_internal</span>(
-        <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
+        <span class="kw-2">&amp;mut</span> <span class="self">self</span>,
         <span class="ident">page_idx</span>: <span class="ident">usize</span>,
         <span class="ident">flags</span>: <span class="ident">MMUFlags</span>,
         <span class="ident">child</span>: <span class="kw-2">&amp;</span><span class="ident">WeakRef</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">CommitResult</span><span class="op">&gt;</span> {
+    ) -&gt; <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">CommitResult</span><span class="op">&gt;</span> {
         <span class="comment">// special case</span>
         <span class="kw">let</span> <span class="ident">no_parent</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">parent</span>.<span class="ident">is_none</span>();
         <span class="kw">let</span> <span class="ident">no_frame</span> <span class="op">=</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">frames</span>.<span class="ident">contains_key</span>(<span class="kw-2">&amp;</span><span class="ident">page_idx</span>);
@@ -1668,17 +1667,17 @@
                 <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">parent</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">parent</span>.<span class="ident">as_ref</span>().<span class="ident">unwrap</span>().<span class="ident">inner</span>.<span class="ident">borrow_mut</span>();
                 <span class="kw">let</span> <span class="ident">parent_idx</span> <span class="op">=</span> <span class="ident">page_idx</span> <span class="op">+</span> <span class="self">self</span>.<span class="ident">parent_offset</span> <span class="op">/</span> <span class="ident">PAGE_SIZE</span>;
                 <span class="kw">match</span> <span class="ident">parent</span>.<span class="ident">commit_page_internal</span>(<span class="ident">parent_idx</span>, <span class="ident">flags</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">self_ref</span>)<span class="question-mark">?</span> {
-                    <span class="ident">CommitResult::NewPage</span>(<span class="ident">frame</span>) <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">type_</span>.<span class="ident">is_hidden</span>() <span class="op">=</span><span class="op">&gt;</span> {
+                    <span class="ident">CommitResult::NewPage</span>(<span class="ident">frame</span>) <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">type_</span>.<span class="ident">is_hidden</span>() =&gt; {
                         <span class="self">self</span>.<span class="ident">frames</span>.<span class="ident">insert</span>(<span class="ident">page_idx</span>, <span class="ident">PageState::new</span>(<span class="ident">frame</span>));
                     }
-                    <span class="ident">CommitResult::CopyOnWrite</span>(<span class="ident">frame</span>, <span class="ident">unmap</span>) <span class="op">=</span><span class="op">&gt;</span> {
+                    <span class="ident">CommitResult::CopyOnWrite</span>(<span class="ident">frame</span>, <span class="ident">unmap</span>) =&gt; {
                         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">new_frame</span> <span class="op">=</span> <span class="ident">PageState::new</span>(<span class="ident">frame</span>);
                         <span class="comment">// Cloning a contiguous vmo: original frames are stored in hidden parent nodes.</span>
                         <span class="comment">// In order to make sure original vmo (now is a child of hidden parent)</span>
                         <span class="comment">// owns physically contiguous frames, swap the new frame with the original</span>
                         <span class="kw">if</span> <span class="self">self</span>.<span class="ident">contiguous</span> {
                             <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">par_frame</span>) <span class="op">=</span> <span class="ident">parent</span>.<span class="ident">frames</span>.<span class="ident">get_mut</span>(<span class="kw-2">&amp;</span><span class="ident">parent_idx</span>) {
-                                <span class="ident">par_frame</span>.<span class="ident">swap</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">new_frame</span>);
+                                <span class="ident">par_frame</span>.<span class="ident">swap</span>(<span class="kw-2">&amp;mut</span> <span class="ident">new_frame</span>);
                             }
                             <span class="kw">let</span> <span class="ident">sibling</span> <span class="op">=</span> <span class="ident">parent</span>.<span class="ident">type_</span>.<span class="ident">get_tag_and_other</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">self_ref</span>).<span class="number">1</span>;
                             <span class="kw">let</span> <span class="ident">arc_sibling</span> <span class="op">=</span> <span class="ident">sibling</span>.<span class="ident">upgrade</span>().<span class="ident">unwrap</span>();
@@ -1693,7 +1692,7 @@
                         }
                         <span class="self">self</span>.<span class="ident">frames</span>.<span class="ident">insert</span>(<span class="ident">page_idx</span>, <span class="ident">new_frame</span>);
                     }
-                    <span class="ident">r</span> <span class="op">=</span><span class="op">&gt;</span> <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">r</span>),
+                    <span class="ident">r</span> =&gt; <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">r</span>),
                 }
             }
         }
@@ -1741,7 +1740,7 @@
         <span class="prelude-val">Ok</span>(<span class="ident">CommitResult::Ref</span>(<span class="ident">frame</span>.<span class="ident">frame</span>.<span class="ident">paddr</span>()))
     }
 
-    <span class="kw">fn</span> <span class="ident">decommit</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">page_idx</span>: <span class="ident">usize</span>) {
+    <span class="kw">fn</span> <span class="ident">decommit</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>, <span class="ident">page_idx</span>: <span class="ident">usize</span>) {
         <span class="self">self</span>.<span class="ident">frames</span>.<span class="ident">remove</span>(<span class="kw-2">&amp;</span><span class="ident">page_idx</span>);
     }
 
@@ -1767,9 +1766,9 @@
     }
 
     <span class="doccomment">/// Count committed pages of the VMO.</span>
-    <span class="kw">fn</span> <span class="ident">committed_pages_in_range</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">start_idx</span>: <span class="ident">usize</span>, <span class="ident">end_idx</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
+    <span class="kw">fn</span> <span class="ident">committed_pages_in_range</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">start_idx</span>: <span class="ident">usize</span>, <span class="ident">end_idx</span>: <span class="ident">usize</span>) -&gt; <span class="ident">usize</span> {
         <span class="macro">assert!</span>(
-            <span class="ident">start_idx</span> <span class="op">&lt;</span> <span class="self">self</span>.<span class="ident">size</span> <span class="op">/</span> <span class="ident">PAGE_SIZE</span> <span class="op">|</span><span class="op">|</span> <span class="ident">start_idx</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span>,
+            <span class="ident">start_idx</span> <span class="op">&lt;</span> <span class="self">self</span>.<span class="ident">size</span> <span class="op">/</span> <span class="ident">PAGE_SIZE</span> <span class="op">|</span><span class="op">|</span> <span class="ident">start_idx</span> <span class="op">==</span> <span class="number">0</span>,
             <span class="string">&quot;start_idx {:#x}, self.size {:#x}&quot;</span>,
             <span class="ident">start_idx</span>,
             <span class="self">self</span>.<span class="ident">size</span>
@@ -1794,7 +1793,7 @@
             <span class="kw">while</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">vmop</span>) <span class="op">=</span> <span class="ident">current</span> {
                 <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="ident">vmop</span>.<span class="ident">inner</span>.<span class="ident">borrow</span>();
                 <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">frame</span>) <span class="op">=</span> <span class="ident">inner</span>.<span class="ident">frames</span>.<span class="ident">get</span>(<span class="kw-2">&amp;</span><span class="ident">current_idx</span>) {
-                    <span class="kw">if</span> <span class="ident">frame</span>.<span class="ident">tag</span>.<span class="ident">is_split</span>() <span class="op">|</span><span class="op">|</span> <span class="ident">inner</span>.<span class="ident">owner</span> <span class="op">=</span><span class="op">=</span> <span class="self">self</span>.<span class="ident">owner</span> {
+                    <span class="kw">if</span> <span class="ident">frame</span>.<span class="ident">tag</span>.<span class="ident">is_split</span>() <span class="op">|</span><span class="op">|</span> <span class="ident">inner</span>.<span class="ident">owner</span> <span class="op">==</span> <span class="self">self</span>.<span class="ident">owner</span> {
                         <span class="ident">count</span> <span class="op">+</span><span class="op">=</span> <span class="number">1</span>;
                         <span class="kw">break</span>;
                     }
@@ -1821,7 +1820,7 @@
     <span class="doccomment">///  A   B       B</span>
     <span class="doccomment">///  ^remove</span>
     <span class="doccomment">/// ```</span>
-    <span class="kw">fn</span> <span class="ident">remove_child</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">child</span>: <span class="kw-2">&amp;</span><span class="ident">WeakRef</span>) {
+    <span class="kw">fn</span> <span class="ident">remove_child</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>, <span class="ident">child</span>: <span class="kw-2">&amp;</span><span class="ident">WeakRef</span>) {
         <span class="comment">// a child slice do not have to belong to a hidden parent</span>
         <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">type_</span>.<span class="ident">is_hidden</span>() {
             <span class="kw">return</span>;
@@ -1832,7 +1831,7 @@
         <span class="kw">let</span> <span class="ident">start</span> <span class="op">=</span> <span class="ident">child</span>.<span class="ident">parent_offset</span> <span class="op">/</span> <span class="ident">PAGE_SIZE</span>;
         <span class="kw">let</span> <span class="ident">end</span> <span class="op">=</span> <span class="ident">child</span>.<span class="ident">parent_limit</span> <span class="op">/</span> <span class="ident">PAGE_SIZE</span>;
         <span class="comment">// merge nodes to the child</span>
-        <span class="kw">for</span> (<span class="ident">key</span>, <span class="kw-2">mut</span> <span class="ident">value</span>) <span class="kw">in</span> <span class="ident">core::mem::take</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>.<span class="ident">frames</span>) {
+        <span class="kw">for</span> (<span class="ident">key</span>, <span class="kw-2">mut</span> <span class="ident">value</span>) <span class="kw">in</span> <span class="ident">core::mem::take</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>.<span class="ident">frames</span>) {
             <span class="kw">if</span> <span class="ident">key</span> <span class="op">&lt;</span> <span class="ident">start</span> <span class="op">|</span><span class="op">|</span> <span class="ident">key</span> <span class="op">&gt;</span><span class="op">=</span> <span class="ident">end</span> {
                 <span class="kw">continue</span>;
             }
@@ -1861,11 +1860,11 @@
 
     <span class="doccomment">/// Create a snapshot child VMO.</span>
     <span class="kw">fn</span> <span class="ident">create_child</span>(
-        <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
+        <span class="kw-2">&amp;mut</span> <span class="self">self</span>,
         <span class="ident">offset</span>: <span class="ident">usize</span>,
         <span class="ident">len</span>: <span class="ident">usize</span>,
         <span class="ident">lock_ref</span>: <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Mutex</span><span class="op">&lt;</span>()<span class="op">&gt;</span><span class="op">&gt;</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">VMObjectPaged</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+    ) -&gt; <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">VMObjectPaged</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="comment">// clone contiguous vmo is no longer permitted</span>
         <span class="comment">// https://fuchsia.googlesource.com/fuchsia/+/e6b4c6751bbdc9ed2795e81b8211ea294f139a45</span>
         <span class="kw">if</span> <span class="self">self</span>.<span class="ident">is_contiguous</span>() {
@@ -1904,7 +1903,7 @@
                 <span class="ident">parent_offset</span>: <span class="self">self</span>.<span class="ident">parent_offset</span>,
                 <span class="ident">parent_limit</span>: <span class="self">self</span>.<span class="ident">parent_limit</span>,
                 <span class="ident">size</span>: <span class="self">self</span>.<span class="ident">size</span>,
-                <span class="ident">frames</span>: <span class="ident">core::mem::take</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>.<span class="ident">frames</span>),
+                <span class="ident">frames</span>: <span class="ident">core::mem::take</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>.<span class="ident">frames</span>),
                 <span class="ident">mappings</span>: <span class="ident">Vec::new</span>(),
                 <span class="ident">cache_policy</span>: <span class="ident">CachePolicy::Cached</span>,
                 <span class="ident">contiguous</span>: <span class="self">self</span>.<span class="ident">contiguous</span>,
@@ -1915,7 +1914,7 @@
         );
         <span class="comment">// update parent&#39;s child</span>
         <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">parent</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">parent</span>.<span class="ident">take</span>() {
-            <span class="kw">if</span> <span class="kw">let</span> <span class="ident">VMOType::Hidden</span> { <span class="ident">left</span>, <span class="ident">right</span>, .. } <span class="op">=</span> <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">parent</span>.<span class="ident">inner</span>.<span class="ident">borrow_mut</span>().<span class="ident">type_</span> {
+            <span class="kw">if</span> <span class="kw">let</span> <span class="ident">VMOType::Hidden</span> { <span class="ident">left</span>, <span class="ident">right</span>, .. } <span class="op">=</span> <span class="kw-2">&amp;mut</span> <span class="ident">parent</span>.<span class="ident">inner</span>.<span class="ident">borrow_mut</span>().<span class="ident">type_</span> {
                 <span class="kw">if</span> <span class="ident">left</span>.<span class="ident">ptr_eq</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">self_ref</span>) {
                     <span class="kw-2">*</span><span class="ident">left</span> <span class="op">=</span> <span class="ident">Arc::downgrade</span>(<span class="kw-2">&amp;</span><span class="ident">hidden</span>);
                 } <span class="kw">else</span> <span class="kw">if</span> <span class="ident">right</span>.<span class="ident">ptr_eq</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">self_ref</span>) {
@@ -1943,7 +1942,7 @@
     <span class="doccomment">/// Replace a child of the hidden node.</span>
     <span class="doccomment">/// `new_start` and `new_end` are in bytes</span>
     <span class="kw">fn</span> <span class="ident">replace_child</span>(
-        <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
+        <span class="kw-2">&amp;mut</span> <span class="self">self</span>,
         <span class="ident">old</span>: <span class="kw-2">&amp;</span><span class="ident">WeakRef</span>,
         <span class="ident">old_id</span>: <span class="ident">KoID</span>,
         <span class="ident">new</span>: <span class="ident">WeakRef</span>,
@@ -1981,7 +1980,7 @@
                             {
                                 <span class="ident">new_frame</span>.<span class="ident">pin_count</span> <span class="op">-</span><span class="op">=</span> <span class="number">1</span>;
                             }
-                            <span class="kw">if</span> <span class="ident">new_frame</span>.<span class="ident">tag</span> <span class="op">=</span><span class="op">=</span> <span class="ident">tag</span> <span class="op">&amp;&amp;</span> <span class="ident">other_start</span> <span class="op">&lt;</span><span class="op">=</span> <span class="ident">i</span> <span class="op">&amp;&amp;</span> <span class="ident">other_end</span> <span class="op">&gt;</span> <span class="ident">i</span> {
+                            <span class="kw">if</span> <span class="ident">new_frame</span>.<span class="ident">tag</span> <span class="op">==</span> <span class="ident">tag</span> <span class="op">&amp;&amp;</span> <span class="ident">other_start</span> <span class="op">&lt;</span><span class="op">=</span> <span class="ident">i</span> <span class="op">&amp;&amp;</span> <span class="ident">other_end</span> <span class="op">&gt;</span> <span class="ident">i</span> {
                                 <span class="ident">new_frame</span>.<span class="ident">tag</span> <span class="op">=</span> <span class="ident">PageStateTag::Owned</span>;
                                 <span class="kw">let</span> <span class="ident">new_key</span> <span class="op">=</span> <span class="ident">i</span> <span class="op">-</span> <span class="ident">other_child</span>.<span class="ident">parent_offset</span> <span class="op">/</span> <span class="ident">PAGE_SIZE</span>;
                                 <span class="ident">other_child</span>.<span class="ident">frames</span>.<span class="ident">insert</span>(<span class="ident">new_key</span>, <span class="ident">new_frame</span>);
@@ -1994,13 +1993,13 @@
 
         <span class="self">self</span>.<span class="ident">release_unwanted_pages_in_parent</span>(<span class="ident">unwanted</span>);
 
-        <span class="kw">if</span> <span class="ident">old_id</span> <span class="op">=</span><span class="op">=</span> <span class="self">self</span>.<span class="ident">owner</span> {
+        <span class="kw">if</span> <span class="ident">old_id</span> <span class="op">==</span> <span class="self">self</span>.<span class="ident">owner</span> {
             <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">option_parent</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">parent</span>.<span class="ident">clone</span>();
             <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">child</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">self_ref</span>.<span class="ident">clone</span>();
             <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">skip_owner</span> <span class="op">=</span> <span class="ident">old_id</span>;
             <span class="kw">while</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">parent</span>) <span class="op">=</span> <span class="ident">option_parent</span> {
                 <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">parent_inner</span> <span class="op">=</span> <span class="ident">parent</span>.<span class="ident">inner</span>.<span class="ident">borrow_mut</span>();
-                <span class="kw">if</span> <span class="ident">parent_inner</span>.<span class="ident">owner</span> <span class="op">=</span><span class="op">=</span> <span class="ident">old_id</span> {
+                <span class="kw">if</span> <span class="ident">parent_inner</span>.<span class="ident">owner</span> <span class="op">==</span> <span class="ident">old_id</span> {
                     <span class="kw">let</span> (<span class="kw">_</span>, <span class="ident">other</span>) <span class="op">=</span> <span class="ident">parent_inner</span>.<span class="ident">type_</span>.<span class="ident">get_tag_and_other</span>(<span class="kw-2">&amp;</span><span class="ident">child</span>);
                     <span class="kw">let</span> <span class="ident">new_owner</span> <span class="op">=</span> <span class="ident">other</span>.<span class="ident">upgrade</span>().<span class="ident">unwrap</span>().<span class="ident">inner</span>.<span class="ident">borrow</span>().<span class="ident">owner</span>;
                     <span class="ident">child</span> <span class="op">=</span> <span class="ident">parent_inner</span>.<span class="ident">self_ref</span>.<span class="ident">clone</span>();
@@ -2015,8 +2014,8 @@
         }
 
         <span class="self">self</span>.<span class="ident">owner</span> <span class="op">=</span> <span class="ident">other_child</span>.<span class="ident">owner</span>;
-        <span class="kw">match</span> <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>.<span class="ident">type_</span> {
-            <span class="ident">VMOType::Hidden</span> { <span class="ident">left</span>, <span class="ident">right</span>, .. } <span class="op">=</span><span class="op">&gt;</span> {
+        <span class="kw">match</span> <span class="kw-2">&amp;mut</span> <span class="self">self</span>.<span class="ident">type_</span> {
+            <span class="ident">VMOType::Hidden</span> { <span class="ident">left</span>, <span class="ident">right</span>, .. } =&gt; {
                 <span class="kw">if</span> <span class="ident">left</span>.<span class="ident">ptr_eq</span>(<span class="ident">old</span>) {
                     <span class="kw-2">*</span><span class="ident">left</span> <span class="op">=</span> <span class="ident">new</span>;
                 } <span class="kw">else</span> <span class="kw">if</span> <span class="ident">right</span>.<span class="ident">ptr_eq</span>(<span class="ident">old</span>) {
@@ -2025,11 +2024,11 @@
                     <span class="macro">panic!</span>();
                 }
             }
-            <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="macro">panic!</span>(),
+            <span class="kw">_</span> =&gt; <span class="macro">panic!</span>(),
         }
     }
 
-    <span class="kw">fn</span> <span class="ident">complete_info</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">info</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">VmoInfo</span>) {
+    <span class="kw">fn</span> <span class="ident">complete_info</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">info</span>: <span class="kw-2">&amp;mut</span> <span class="ident">VmoInfo</span>) {
         <span class="kw">if</span> <span class="kw">let</span> <span class="ident">VMOType::Snapshot</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">type_</span> {
             <span class="ident">info</span>.<span class="ident">flags</span> <span class="op">|</span><span class="op">=</span> <span class="ident">VmoInfoFlags::IS_COW_CLONE</span>;
         }
@@ -2043,7 +2042,7 @@
             (<span class="self">self</span>.<span class="ident">committed_pages_in_range</span>(<span class="number">0</span>, <span class="self">self</span>.<span class="ident">size</span> <span class="op">/</span> <span class="ident">PAGE_SIZE</span>) <span class="op">*</span> <span class="ident">PAGE_SIZE</span>) <span class="kw">as</span> <span class="ident">u64</span>;
     }
 
-    <span class="kw">fn</span> <span class="ident">release_unwanted_pages_in_parent</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="kw-2">mut</span> <span class="ident">unwanted</span>: <span class="ident">VecDeque</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>) {
+    <span class="kw">fn</span> <span class="ident">release_unwanted_pages_in_parent</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>, <span class="kw-2">mut</span> <span class="ident">unwanted</span>: <span class="ident">VecDeque</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>) {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">option_parent</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">parent</span>.<span class="ident">clone</span>();
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">child</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">self_ref</span>.<span class="ident">clone</span>();
         <span class="kw">while</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">parent</span>) <span class="op">=</span> <span class="ident">option_parent</span> {
@@ -2086,9 +2085,9 @@
         }
     }
 
-    <span class="kw">fn</span> <span class="ident">resize</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">new_size</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">VMObjectPaged</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">resize</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>, <span class="ident">new_size</span>: <span class="ident">usize</span>) -&gt; <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">VMObjectPaged</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">old_parent</span> <span class="op">=</span> <span class="prelude-val">None</span>;
-        <span class="kw">if</span> <span class="ident">new_size</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span> <span class="op">&amp;&amp;</span> <span class="ident">new_size</span> <span class="op">&lt;</span> <span class="self">self</span>.<span class="ident">size</span> {
+        <span class="kw">if</span> <span class="ident">new_size</span> <span class="op">==</span> <span class="number">0</span> <span class="op">&amp;&amp;</span> <span class="ident">new_size</span> <span class="op">&lt;</span> <span class="self">self</span>.<span class="ident">size</span> {
             <span class="self">self</span>.<span class="ident">frames</span>.<span class="ident">clear</span>();
             <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">parent</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">parent</span>.<span class="ident">as_ref</span>() {
                 <span class="ident">parent</span>.<span class="ident">inner</span>.<span class="ident">borrow_mut</span>().<span class="ident">remove_child</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">self_ref</span>);
@@ -2116,23 +2115,23 @@
         <span class="ident">old_parent</span>
     }
 
-    <span class="kw">fn</span> <span class="ident">is_contiguous</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+    <span class="kw">fn</span> <span class="ident">is_contiguous</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">bool</span> {
         <span class="self">self</span>.<span class="ident">contiguous</span>
     }
 
-    <span class="kw">fn</span> <span class="ident">clear_invalild_mappings</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) {
-        <span class="self">self</span>.<span class="ident">mappings</span>.<span class="ident">drain_filter</span>(<span class="op">|</span><span class="ident">x</span><span class="op">|</span> <span class="ident">x</span>.<span class="ident">strong_count</span>() <span class="op">=</span><span class="op">=</span> <span class="number">0</span>);
+    <span class="kw">fn</span> <span class="ident">clear_invalild_mappings</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>) {
+        <span class="self">self</span>.<span class="ident">mappings</span>.<span class="ident">drain_filter</span>(<span class="op">|</span><span class="ident">x</span><span class="op">|</span> <span class="ident">x</span>.<span class="ident">strong_count</span>() <span class="op">==</span> <span class="number">0</span>);
     }
 
     <span class="doccomment">/// Check whether it is not physically contiguous when it should be</span>
-    <span class="kw">fn</span> <span class="ident">check_contig</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+    <span class="kw">fn</span> <span class="ident">check_contig</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">bool</span> {
         <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">contiguous</span> {
             <span class="kw">return</span> <span class="bool-val">true</span>;
         }
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">base</span> <span class="op">=</span> <span class="number">0</span>;
         <span class="kw">for</span> (<span class="ident">key</span>, <span class="ident">ps</span>) <span class="kw">in</span> <span class="self">self</span>.<span class="ident">frames</span>.<span class="ident">iter</span>() {
             <span class="kw">let</span> <span class="ident">new_base</span> <span class="op">=</span> <span class="ident">ps</span>.<span class="ident">frame</span>.<span class="ident">paddr</span>() <span class="op">-</span> <span class="ident">key</span> <span class="op">*</span> <span class="ident">PAGE_SIZE</span>;
-            <span class="kw">if</span> <span class="ident">base</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span> <span class="op">|</span><span class="op">|</span> <span class="ident">new_base</span> <span class="op">=</span><span class="op">=</span> <span class="ident">base</span> {
+            <span class="kw">if</span> <span class="ident">base</span> <span class="op">==</span> <span class="number">0</span> <span class="op">|</span><span class="op">|</span> <span class="ident">new_base</span> <span class="op">==</span> <span class="ident">base</span> {
                 <span class="ident">base</span> <span class="op">=</span> <span class="ident">new_base</span>;
             } <span class="kw">else</span> {
                 <span class="kw">return</span> <span class="bool-val">false</span>;
@@ -2143,7 +2142,7 @@
 }
 
 <span class="kw">impl</span> <span class="ident">Drop</span> <span class="kw">for</span> <span class="ident">VMObjectPaged</span> {
-    <span class="kw">fn</span> <span class="ident">drop</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) {
+    <span class="kw">fn</span> <span class="ident">drop</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>) {
         <span class="kw">let</span> (<span class="ident">_guard</span>, <span class="kw-2">mut</span> <span class="ident">inner</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">get_inner_mut</span>();
         <span class="comment">// remove self from parent</span>
         <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">parent</span>) <span class="op">=</span> <span class="kw-2">&amp;</span><span class="ident">inner</span>.<span class="ident">parent</span> {
@@ -2165,7 +2164,7 @@
 }
 
 <span class="doccomment">/// Generate a owner ID.</span>
-<span class="kw">fn</span> <span class="ident">new_owner_id</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u64</span> {
+<span class="kw">fn</span> <span class="ident">new_owner_id</span>() -&gt; <span class="ident">u64</span> {
     <span class="kw">static</span> <span class="ident">OWNER_ID</span>: <span class="ident">AtomicU64</span> <span class="op">=</span> <span class="ident">AtomicU64::new</span>(<span class="number">1</span>);
     <span class="ident">OWNER_ID</span>.<span class="ident">fetch_add</span>(<span class="number">1</span>, <span class="ident">Ordering::SeqCst</span>)
 }
@@ -2179,7 +2178,7 @@
     <span class="attribute">#[<span class="ident">test</span>]</span>
     <span class="kw">fn</span> <span class="ident">read_write</span>() {
         <span class="kw">let</span> <span class="ident">vmo</span> <span class="op">=</span> <span class="ident">VmObject::new_paged</span>(<span class="number">2</span>);
-        <span class="kw">super</span>::<span class="kw">super</span><span class="ident">::tests::read_write</span>(<span class="kw-2">&amp;</span><span class="kw-2">*</span><span class="ident">vmo</span>);
+        <span class="ident"><span class="kw">super</span>::<span class="kw">super</span>::tests::read_write</span>(<span class="kw-2">&amp;</span><span class="kw-2">*</span><span class="ident">vmo</span>);
     }
 
     <span class="attribute">#[<span class="ident">test</span>]</span>
@@ -2244,14 +2243,14 @@
             <span class="self">self</span>.<span class="ident">write</span>(<span class="ident">page</span> <span class="op">*</span> <span class="ident">PAGE_SIZE</span>, <span class="kw-2">&amp;</span>[<span class="ident">value</span>]).<span class="ident">unwrap</span>();
         }
 
-        <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">test_read</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">page</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u8</span> {
+        <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">test_read</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">page</span>: <span class="ident">usize</span>) -&gt; <span class="ident">u8</span> {
             <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">buf</span> <span class="op">=</span> [<span class="number">0</span>; <span class="number">1</span>];
-            <span class="self">self</span>.<span class="ident">read</span>(<span class="ident">page</span> <span class="op">*</span> <span class="ident">PAGE_SIZE</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">buf</span>).<span class="ident">unwrap</span>();
+            <span class="self">self</span>.<span class="ident">read</span>(<span class="ident">page</span> <span class="op">*</span> <span class="ident">PAGE_SIZE</span>, <span class="kw-2">&amp;mut</span> <span class="ident">buf</span>).<span class="ident">unwrap</span>();
             <span class="ident">buf</span>[<span class="number">0</span>]
         }
     }
 }
-</pre></div>
+</code></pre></div>
 </section><section id="search" class="content hidden"></section><div id="rustdoc-vars" data-root-path="../../../../" data-current-crate="zircon_object" data-search-index-js="../../../../search-index.js" data-search-js="../../../../search.js"></div>
     <script src="../../../../main.js"></script><script src="../../../../source-script.js"></script><script src="../../../../source-files.js"></script>
 </body></html>

@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `linux-object&#x2F;src&#x2F;sync&#x2F;event_bus.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>event_bus.rs - source</title><link rel="stylesheet" type="text/css" href="../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../../ayu.css" disabled ><script id="default-settings" ></script><script src="../../../storage.js"></script><script src="../../../crates.js"></script><noscript><link rel="stylesheet" href="../../../noscript.css"></noscript><link rel="icon" type="image/svg+xml" href="../../../favicon.svg"><link rel="alternate icon" type="image/png" href="../../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../../favicon-32x32.png"><style type="text/css">#crate-search{background-image:url("../../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../../linux_object/index.html'><div class='logo-container rust-logo'><img src='../../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu" title="themes"><img width="18" height="18" alt="Pick another theme!" src="../../../brush.svg"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input"name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" id="help-button" title="help">?</button><a id="settings-menu" href="../../../settings.html" title="settings"><img width="18" height="18" alt="Change settings" src="../../../wheel.svg"></a></div></form></nav><section id="main" class="content"><div class="example-wrap"><pre class="line-numbers"><span id="1">  1</span>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `linux-object&#x2F;src&#x2F;sync&#x2F;event_bus.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>event_bus.rs - source</title><link rel="stylesheet" type="text/css" href="../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../../ayu.css" disabled ><script id="default-settings" ></script><script src="../../../storage.js"></script><script src="../../../crates.js"></script><noscript><link rel="stylesheet" href="../../../noscript.css"></noscript><link rel="alternate icon" type="image/png" href="../../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../../favicon-32x32.png"><link rel="icon" type="image/svg+xml" href="../../../favicon.svg"><style type="text/css">#crate-search{background-image:url("../../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../../linux_object/index.html'><div class='logo-container rust-logo'><img src='../../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu" title="themes"><img width="18" height="18" alt="Pick another theme!" src="../../../brush.svg"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" id="help-button" title="help">?</button><a id="settings-menu" href="../../../settings.html" title="settings"><img width="18" height="18" alt="Change settings" src="../../../wheel.svg"></a></div></form></nav><section id="main" class="content"><div class="example-wrap"><pre class="line-numbers"><span id="1">  1</span>
 <span id="2">  2</span>
 <span id="3">  3</span>
 <span id="4">  4</span>
@@ -123,8 +123,7 @@
 <span id="123">123</span>
 <span id="124">124</span>
 <span id="125">125</span>
-</pre><pre class="rust">
-<span class="doccomment">//! Event bus implement</span>
+</pre><pre class="rust"><code><span class="doccomment">//! Event bus implement</span>
 <span class="doccomment">//!</span>
 <span class="doccomment">//! An Eventbus is a mechanism that allows different components to communicate with each other without knowing about each other.</span>
 <span class="kw">use</span> <span class="ident">alloc::boxed::Box</span>;
@@ -165,7 +164,7 @@
 }
 
 <span class="doccomment">/// handler of event in the event bus</span>
-<span class="kw">pub</span> <span class="kw">type</span> <span class="ident">EventHandler</span> <span class="op">=</span> <span class="ident">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">Fn</span>(<span class="ident">Event</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> <span class="op">+</span> <span class="ident">Send</span><span class="op">&gt;</span>;
+<span class="kw">pub</span> <span class="kw">type</span> <span class="ident">EventHandler</span> <span class="op">=</span> <span class="ident">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">Fn</span>(<span class="ident">Event</span>) -&gt; <span class="ident">bool</span> <span class="op">+</span> <span class="ident">Send</span><span class="op">&gt;</span>;
 
 <span class="doccomment">/// event bus struct</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Default</span>)]</span>
@@ -178,24 +177,24 @@
 
 <span class="kw">impl</span> <span class="ident">EventBus</span> {
     <span class="doccomment">/// create an event bus</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Mutex</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span><span class="op">&gt;</span> {
-        <span class="ident">Arc::new</span>(<span class="ident">Mutex::new</span>(<span class="self">Self</span><span class="ident">::default</span>()))
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>() -&gt; <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Mutex</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+        <span class="ident">Arc::new</span>(<span class="ident">Mutex::new</span>(<span class="ident"><span class="self">Self</span>::default</span>()))
     }
 
     <span class="doccomment">/// set event flag</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">set</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">set</span>: <span class="ident">Event</span>) {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">set</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>, <span class="ident">set</span>: <span class="ident">Event</span>) {
         <span class="self">self</span>.<span class="ident">change</span>(<span class="ident">Event::empty</span>(), <span class="ident">set</span>);
     }
 
     <span class="doccomment">/// clear all event flag</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">clear</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">set</span>: <span class="ident">Event</span>) {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">clear</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>, <span class="ident">set</span>: <span class="ident">Event</span>) {
         <span class="self">self</span>.<span class="ident">change</span>(<span class="ident">set</span>, <span class="ident">Event::empty</span>());
     }
 
     <span class="doccomment">/// change event flag</span>
     <span class="doccomment">/// - `reset`: flag to remove</span>
     <span class="doccomment">/// - `set`: flag to insert</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">change</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">reset</span>: <span class="ident">Event</span>, <span class="ident">set</span>: <span class="ident">Event</span>) {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">change</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>, <span class="ident">reset</span>: <span class="ident">Event</span>, <span class="ident">set</span>: <span class="ident">Event</span>) {
         <span class="kw">let</span> <span class="ident">orig</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">event</span>;
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">new</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">event</span>;
         <span class="ident">new</span>.<span class="ident">remove</span>(<span class="ident">reset</span>);
@@ -207,18 +206,18 @@
     }
 
     <span class="doccomment">/// push a EventHandler into the callback vector</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">subscribe</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">callback</span>: <span class="ident">EventHandler</span>) {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">subscribe</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>, <span class="ident">callback</span>: <span class="ident">EventHandler</span>) {
         <span class="self">self</span>.<span class="ident">callbacks</span>.<span class="ident">push</span>(<span class="ident">callback</span>);
     }
 
     <span class="doccomment">/// get the callback vector length</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_callback_len</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_callback_len</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">usize</span> {
         <span class="self">self</span>.<span class="ident">callbacks</span>.<span class="ident">len</span>()
     }
 }
 
 <span class="doccomment">/// wait for a event async</span>
-<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">wait_for_event</span>(<span class="ident">bus</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">EventBus</span><span class="op">&gt;</span><span class="op">&gt;</span>, <span class="ident">mask</span>: <span class="ident">Event</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw">impl</span> <span class="ident">Future</span><span class="op">&lt;</span><span class="ident">Output</span> <span class="op">=</span> <span class="ident">Event</span><span class="op">&gt;</span> {
+<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">wait_for_event</span>(<span class="ident">bus</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">EventBus</span><span class="op">&gt;</span><span class="op">&gt;</span>, <span class="ident">mask</span>: <span class="ident">Event</span>) -&gt; <span class="kw">impl</span> <span class="ident">Future</span><span class="op">&lt;</span><span class="ident">Output</span> <span class="op">=</span> <span class="ident">Event</span><span class="op">&gt;</span> {
     <span class="ident">EventBusFuture</span> { <span class="ident">bus</span>, <span class="ident">mask</span> }
 }
 
@@ -232,7 +231,7 @@
 <span class="kw">impl</span> <span class="ident">Future</span> <span class="kw">for</span> <span class="ident">EventBusFuture</span> {
     <span class="kw">type</span> <span class="ident">Output</span> <span class="op">=</span> <span class="ident">Event</span>;
 
-    <span class="kw">fn</span> <span class="ident">poll</span>(<span class="self">self</span>: <span class="ident">Pin</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">Self</span><span class="op">&gt;</span>, <span class="ident">cx</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Context</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Poll</span><span class="op">&lt;</span><span class="self">Self</span><span class="ident">::Output</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">poll</span>(<span class="self">self</span>: <span class="ident">Pin</span><span class="op">&lt;</span><span class="kw-2">&amp;mut</span> <span class="self">Self</span><span class="op">&gt;</span>, <span class="ident">cx</span>: <span class="kw-2">&amp;mut</span> <span class="ident">Context</span>) -&gt; <span class="ident">Poll</span><span class="op">&lt;</span><span class="ident"><span class="self">Self</span>::Output</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">lock</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">bus</span>.<span class="ident">lock</span>();
         <span class="kw">if</span> <span class="op">!</span>(<span class="ident">lock</span>.<span class="ident">event</span> <span class="op">&amp;</span> <span class="self">self</span>.<span class="ident">mask</span>).<span class="ident">is_empty</span>() {
             <span class="kw">return</span> <span class="ident">Poll::Ready</span>(<span class="ident">lock</span>.<span class="ident">event</span>);
@@ -249,7 +248,7 @@
         <span class="ident">Poll::Pending</span>
     }
 }
-</pre></div>
+</code></pre></div>
 </section><section id="search" class="content hidden"></section><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="linux_object" data-search-index-js="../../../search-index.js" data-search-js="../../../search.js"></div>
     <script src="../../../main.js"></script><script src="../../../source-script.js"></script><script src="../../../source-files.js"></script>
 </body></html>

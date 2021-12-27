@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `zircon-object&#x2F;src&#x2F;signal&#x2F;port.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>port.rs - source</title><link rel="stylesheet" type="text/css" href="../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../../ayu.css" disabled ><script id="default-settings" ></script><script src="../../../storage.js"></script><script src="../../../crates.js"></script><noscript><link rel="stylesheet" href="../../../noscript.css"></noscript><link rel="icon" type="image/svg+xml" href="../../../favicon.svg"><link rel="alternate icon" type="image/png" href="../../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../../favicon-32x32.png"><style type="text/css">#crate-search{background-image:url("../../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../../zircon_object/index.html'><div class='logo-container rust-logo'><img src='../../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu" title="themes"><img width="18" height="18" alt="Pick another theme!" src="../../../brush.svg"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input"name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" id="help-button" title="help">?</button><a id="settings-menu" href="../../../settings.html" title="settings"><img width="18" height="18" alt="Change settings" src="../../../wheel.svg"></a></div></form></nav><section id="main" class="content"><div class="example-wrap"><pre class="line-numbers"><span id="1">  1</span>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `zircon-object&#x2F;src&#x2F;signal&#x2F;port.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>port.rs - source</title><link rel="stylesheet" type="text/css" href="../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../../ayu.css" disabled ><script id="default-settings" ></script><script src="../../../storage.js"></script><script src="../../../crates.js"></script><noscript><link rel="stylesheet" href="../../../noscript.css"></noscript><link rel="alternate icon" type="image/png" href="../../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../../favicon-32x32.png"><link rel="icon" type="image/svg+xml" href="../../../favicon.svg"><style type="text/css">#crate-search{background-image:url("../../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../../zircon_object/index.html'><div class='logo-container rust-logo'><img src='../../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu" title="themes"><img width="18" height="18" alt="Pick another theme!" src="../../../brush.svg"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" id="help-button" title="help">?</button><a id="settings-menu" href="../../../settings.html" title="settings"><img width="18" height="18" alt="Change settings" src="../../../wheel.svg"></a></div></form></nav><section id="main" class="content"><div class="example-wrap"><pre class="line-numbers"><span id="1">  1</span>
 <span id="2">  2</span>
 <span id="3">  3</span>
 <span id="4">  4</span>
@@ -232,10 +232,9 @@
 <span id="232">232</span>
 <span id="233">233</span>
 <span id="234">234</span>
-</pre><pre class="rust">
-<span class="kw">pub</span> <span class="kw">use</span> <span class="self">self</span><span class="ident">::port_packet</span>::<span class="kw-2">*</span>;
+</pre><pre class="rust"><code><span class="kw">pub</span> <span class="kw">use</span> <span class="ident"><span class="self">self</span>::port_packet</span>::<span class="kw-2">*</span>;
 <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
-<span class="kw">use</span> <span class="kw">crate</span><span class="ident">::object</span>::<span class="kw-2">*</span>;
+<span class="kw">use</span> <span class="ident"><span class="kw">crate</span>::object</span>::<span class="kw-2">*</span>;
 <span class="kw">use</span> <span class="ident">alloc::collections</span>::{<span class="ident">BTreeSet</span>, <span class="ident">VecDeque</span>};
 <span class="kw">use</span> <span class="ident">alloc::sync::Arc</span>;
 <span class="kw">use</span> <span class="ident">bitflags::bitflags</span>;
@@ -279,7 +278,7 @@
 }
 
 <span class="kw">impl</span> <span class="ident">From</span><span class="op">&lt;</span><span class="ident">PortInterruptPacket</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">PacketInterrupt</span> {
-    <span class="kw">fn</span> <span class="ident">from</span>(<span class="ident">packet</span>: <span class="ident">PortInterruptPacket</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
+    <span class="kw">fn</span> <span class="ident">from</span>(<span class="ident">packet</span>: <span class="ident">PortInterruptPacket</span>) -&gt; <span class="self">Self</span> {
         <span class="ident">PacketInterrupt</span> {
             <span class="ident">timestamp</span>: <span class="ident">packet</span>.<span class="ident">timestamp</span>,
             <span class="ident">_reserved0</span>: <span class="number">0</span>,
@@ -291,7 +290,7 @@
 
 <span class="kw">impl</span> <span class="ident">Port</span> {
     <span class="doccomment">/// Create a new `Port`.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">options</span>: <span class="ident">u32</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">options</span>: <span class="ident">u32</span>) -&gt; <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="prelude-val">Ok</span>(<span class="ident">Arc::new</span>(<span class="ident">Port</span> {
             <span class="ident">base</span>: <span class="ident">KObjectBase::default</span>(),
             <span class="ident">options</span>: <span class="ident">PortOptions::from_bits</span>(<span class="ident">options</span>).<span class="ident">ok_or</span>(<span class="ident">ZxError::INVALID_ARGS</span>)<span class="question-mark">?</span>,
@@ -308,7 +307,7 @@
     }
 
     <span class="doccomment">/// Push a `User` type `packet` into the port.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">push_user</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">packet</span>: <span class="kw">impl</span> <span class="ident">Into</span><span class="op">&lt;</span><span class="ident">PortPacket</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">push_user</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">packet</span>: <span class="kw">impl</span> <span class="ident">Into</span><span class="op">&lt;</span><span class="ident">PortPacket</span><span class="op">&gt;</span>) -&gt; <span class="ident">ZxResult</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">packet</span> <span class="op">=</span> <span class="ident">packet</span>.<span class="ident">into</span>();
         <span class="ident">packet</span>.<span class="ident">type_</span> <span class="op">=</span> <span class="ident">PacketType::User</span>;
         <span class="kw">if</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">queue</span>.<span class="ident">len</span>() <span class="op">&gt;</span> <span class="ident">MAX_ALLOCATED_PACKET_COUNT_PER_PORT</span> {
@@ -319,7 +318,7 @@
     }
 
     <span class="doccomment">/// Push an `InterruptPacket` into the port.</span>
-    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">push_interrupt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">timestamp</span>: <span class="ident">i64</span>, <span class="ident">key</span>: <span class="ident">u64</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u64</span> {
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">push_interrupt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">timestamp</span>: <span class="ident">i64</span>, <span class="ident">key</span>: <span class="ident">u64</span>) -&gt; <span class="ident">u64</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="ident">inner</span>.<span class="ident">interrupt_pid</span> <span class="op">+</span><span class="op">=</span> <span class="number">1</span>;
         <span class="kw">let</span> <span class="ident">pid</span> <span class="op">=</span> <span class="ident">inner</span>.<span class="ident">interrupt_pid</span>;
@@ -336,14 +335,14 @@
 
     <span class="doccomment">/// Remove an `InterruptPacket` from the port.</span>
     <span class="doccomment">/// Return whether the packet is in the port</span>
-    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">remove_interrupt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">pid</span>: <span class="ident">u64</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">remove_interrupt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">pid</span>: <span class="ident">u64</span>) -&gt; <span class="ident">bool</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="ident">inner</span>.<span class="ident">interrupt_grave</span>.<span class="ident">remove</span>(<span class="kw-2">&amp;</span><span class="ident">pid</span>)
     }
 
     <span class="doccomment">/// Asynchronous wait until at least one packet is available, then take out the earliest</span>
     <span class="doccomment">/// (in FIFO order) available packet.</span>
-    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">wait</span>(<span class="self">self</span>: <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">PortPacket</span> {
+    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">wait</span>(<span class="self">self</span>: <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span>) -&gt; <span class="ident">PortPacket</span> {
         <span class="kw">let</span> <span class="ident">object</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">clone</span>() <span class="kw">as</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">KernelObject</span><span class="op">&gt;</span>;
         <span class="kw">loop</span> {
             <span class="ident">object</span>.<span class="ident">wait_signal</span>(<span class="ident">Signal::READABLE</span>).<span class="kw">await</span>;
@@ -378,12 +377,12 @@
 
     <span class="doccomment">/// Get the number of packets in queue.</span>
     <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
-    <span class="kw">fn</span> <span class="ident">len</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
+    <span class="kw">fn</span> <span class="ident">len</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">usize</span> {
         <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">queue</span>.<span class="ident">len</span>()
     }
 
     <span class="doccomment">/// Check whether the port can be bound to an interrupt.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">can_bind_to_interrupt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">can_bind_to_interrupt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">bool</span> {
         <span class="self">self</span>.<span class="ident">options</span>.<span class="ident">contains</span>(<span class="ident">PortOptions::BIND_TO_INTERUPT</span>)
     }
 }
@@ -467,7 +466,7 @@
         <span class="macro">assert_eq!</span>(<span class="ident">PortPacketRepr::from</span>(<span class="kw-2">&amp;</span><span class="ident">packet</span>), <span class="ident">packet_repr</span>);
     }
 }
-</pre></div>
+</code></pre></div>
 </section><section id="search" class="content hidden"></section><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="zircon_object" data-search-index-js="../../../search-index.js" data-search-js="../../../search.js"></div>
     <script src="../../../main.js"></script><script src="../../../source-script.js"></script><script src="../../../source-files.js"></script>
 </body></html>

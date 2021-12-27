@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `kernel-hal&#x2F;src&#x2F;drivers.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>drivers.rs - source</title><link rel="stylesheet" type="text/css" href="../../normalize.css"><link rel="stylesheet" type="text/css" href="../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../ayu.css" disabled ><script id="default-settings" ></script><script src="../../storage.js"></script><script src="../../crates.js"></script><noscript><link rel="stylesheet" href="../../noscript.css"></noscript><link rel="icon" type="image/svg+xml" href="../../favicon.svg"><link rel="alternate icon" type="image/png" href="../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../favicon-32x32.png"><style type="text/css">#crate-search{background-image:url("../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../kernel_hal/index.html'><div class='logo-container rust-logo'><img src='../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu" title="themes"><img width="18" height="18" alt="Pick another theme!" src="../../brush.svg"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input"name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" id="help-button" title="help">?</button><a id="settings-menu" href="../../settings.html" title="settings"><img width="18" height="18" alt="Change settings" src="../../wheel.svg"></a></div></form></nav><section id="main" class="content"><div class="example-wrap"><pre class="line-numbers"><span id="1">  1</span>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `kernel-hal&#x2F;src&#x2F;drivers.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>drivers.rs - source</title><link rel="stylesheet" type="text/css" href="../../normalize.css"><link rel="stylesheet" type="text/css" href="../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../ayu.css" disabled ><script id="default-settings" ></script><script src="../../storage.js"></script><script src="../../crates.js"></script><noscript><link rel="stylesheet" href="../../noscript.css"></noscript><link rel="alternate icon" type="image/png" href="../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../favicon-32x32.png"><link rel="icon" type="image/svg+xml" href="../../favicon.svg"><style type="text/css">#crate-search{background-image:url("../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../kernel_hal/index.html'><div class='logo-container rust-logo'><img src='../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu" title="themes"><img width="18" height="18" alt="Pick another theme!" src="../../brush.svg"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" id="help-button" title="help">?</button><a id="settings-menu" href="../../settings.html" title="settings"><img width="18" height="18" alt="Change settings" src="../../wheel.svg"></a></div></form></nav><section id="main" class="content"><div class="example-wrap"><pre class="line-numbers"><span id="1">  1</span>
 <span id="2">  2</span>
 <span id="3">  3</span>
 <span id="4">  4</span>
@@ -156,8 +156,38 @@
 <span id="156">156</span>
 <span id="157">157</span>
 <span id="158">158</span>
-</pre><pre class="rust">
-<span class="doccomment">//! Device drivers.</span>
+<span id="159">159</span>
+<span id="160">160</span>
+<span id="161">161</span>
+<span id="162">162</span>
+<span id="163">163</span>
+<span id="164">164</span>
+<span id="165">165</span>
+<span id="166">166</span>
+<span id="167">167</span>
+<span id="168">168</span>
+<span id="169">169</span>
+<span id="170">170</span>
+<span id="171">171</span>
+<span id="172">172</span>
+<span id="173">173</span>
+<span id="174">174</span>
+<span id="175">175</span>
+<span id="176">176</span>
+<span id="177">177</span>
+<span id="178">178</span>
+<span id="179">179</span>
+<span id="180">180</span>
+<span id="181">181</span>
+<span id="182">182</span>
+<span id="183">183</span>
+<span id="184">184</span>
+<span id="185">185</span>
+<span id="186">186</span>
+<span id="187">187</span>
+<span id="188">188</span>
+<span id="189">189</span>
+</pre><pre class="rust"><code><span class="doccomment">//! Device drivers.</span>
 
 <span class="kw">use</span> <span class="ident">alloc</span>::{<span class="ident">sync::Arc</span>, <span class="ident">vec::Vec</span>};
 <span class="kw">use</span> <span class="ident">core::convert::From</span>;
@@ -181,22 +211,22 @@
     }
 
     <span class="doccomment">/// Convert self into a vector.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">as_vec</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">RwLockReadGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">as_vec</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">RwLockReadGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="number">0</span>.<span class="ident">read</span>()
     }
 
     <span class="doccomment">/// Returns the device at given position, or `None` if out of bounds.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">try_get</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">idx</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">try_get</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">idx</span>: <span class="ident">usize</span>) -&gt; <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="number">0</span>.<span class="ident">read</span>().<span class="ident">get</span>(<span class="ident">idx</span>).<span class="ident">cloned</span>()
     }
 
     <span class="doccomment">/// Returns the device with the given name, or `None` if not found.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">find</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">name</span>: <span class="kw-2">&amp;</span><span class="ident">str</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span><span class="op">&gt;</span> {
-        <span class="self">self</span>.<span class="number">0</span>.<span class="ident">read</span>().<span class="ident">iter</span>().<span class="ident">find</span>(<span class="op">|</span><span class="ident">d</span><span class="op">|</span> <span class="ident">d</span>.<span class="ident">name</span>() <span class="op">=</span><span class="op">=</span> <span class="ident">name</span>).<span class="ident">cloned</span>()
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">find</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">name</span>: <span class="kw-2">&amp;</span><span class="ident">str</span>) -&gt; <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+        <span class="self">self</span>.<span class="number">0</span>.<span class="ident">read</span>().<span class="ident">iter</span>().<span class="ident">find</span>(<span class="op">|</span><span class="ident">d</span><span class="op">|</span> <span class="ident">d</span>.<span class="ident">name</span>() <span class="op">==</span> <span class="ident">name</span>).<span class="ident">cloned</span>()
     }
 
     <span class="doccomment">/// Returns the first device of this device array, or `None` if it is empty.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">first</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">first</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">try_get</span>(<span class="number">0</span>)
     }
 
@@ -205,14 +235,14 @@
     <span class="doccomment">/// # Panic</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// Panics if the array is empty.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">first_unwrap</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">first_unwrap</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">first</span>()
             .<span class="ident">unwrap_or_else</span>(<span class="op">|</span><span class="op">|</span> <span class="macro">panic!</span>(<span class="string">&quot;device not initialized: {}&quot;</span>, <span class="ident">core::any::type_name</span>::<span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span>()))
     }
 }
 
 <span class="kw">impl</span><span class="op">&lt;</span><span class="ident">T</span>: <span class="ident">Scheme</span> <span class="op">+</span> <span class="question-mark">?</span><span class="ident">Sized</span><span class="op">&gt;</span> <span class="ident">Default</span> <span class="kw">for</span> <span class="ident">DeviceList</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> {
-    <span class="kw">fn</span> <span class="ident">default</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
+    <span class="kw">fn</span> <span class="ident">default</span>() -&gt; <span class="self">Self</span> {
         <span class="self">Self</span>(<span class="ident">RwLock::new</span>(<span class="ident">Vec::new</span>()))
     }
 }
@@ -230,12 +260,12 @@
 <span class="kw">impl</span> <span class="ident">AllDeviceList</span> {
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">add_device</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">dev</span>: <span class="ident">Device</span>) {
         <span class="kw">match</span> <span class="ident">dev</span> {
-            <span class="ident">Device::Block</span>(<span class="ident">d</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">block</span>.<span class="ident">add</span>(<span class="ident">d</span>),
-            <span class="ident">Device::Display</span>(<span class="ident">d</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">display</span>.<span class="ident">add</span>(<span class="ident">d</span>),
-            <span class="ident">Device::Input</span>(<span class="ident">d</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">input</span>.<span class="ident">add</span>(<span class="ident">d</span>),
-            <span class="ident">Device::Irq</span>(<span class="ident">d</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">irq</span>.<span class="ident">add</span>(<span class="ident">d</span>),
-            <span class="ident">Device::Net</span>(<span class="ident">d</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">net</span>.<span class="ident">add</span>(<span class="ident">d</span>),
-            <span class="ident">Device::Uart</span>(<span class="ident">d</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">uart</span>.<span class="ident">add</span>(<span class="ident">d</span>),
+            <span class="ident">Device::Block</span>(<span class="ident">d</span>) =&gt; <span class="self">self</span>.<span class="ident">block</span>.<span class="ident">add</span>(<span class="ident">d</span>),
+            <span class="ident">Device::Display</span>(<span class="ident">d</span>) =&gt; <span class="self">self</span>.<span class="ident">display</span>.<span class="ident">add</span>(<span class="ident">d</span>),
+            <span class="ident">Device::Input</span>(<span class="ident">d</span>) =&gt; <span class="self">self</span>.<span class="ident">input</span>.<span class="ident">add</span>(<span class="ident">d</span>),
+            <span class="ident">Device::Irq</span>(<span class="ident">d</span>) =&gt; <span class="self">self</span>.<span class="ident">irq</span>.<span class="ident">add</span>(<span class="ident">d</span>),
+            <span class="ident">Device::Net</span>(<span class="ident">d</span>) =&gt; <span class="self">self</span>.<span class="ident">net</span>.<span class="ident">add</span>(<span class="ident">d</span>),
+            <span class="ident">Device::Uart</span>(<span class="ident">d</span>) =&gt; <span class="self">self</span>.<span class="ident">uart</span>.<span class="ident">add</span>(<span class="ident">d</span>),
         }
     }
 }
@@ -249,37 +279,37 @@
 }
 
 <span class="doccomment">/// Returns all devices which implement the [`BlockScheme`].</span>
-<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">all_block</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="lifetime">&#39;static</span> <span class="ident">DeviceList</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">BlockScheme</span><span class="op">&gt;</span> {
+<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">all_block</span>() -&gt; <span class="kw-2">&amp;</span><span class="lifetime">&#39;static</span> <span class="ident">DeviceList</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">BlockScheme</span><span class="op">&gt;</span> {
     <span class="kw-2">&amp;</span><span class="ident">DEVICES</span>.<span class="ident">block</span>
 }
 
 <span class="doccomment">/// Returns all devices which implement the [`DisplayScheme`].</span>
-<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">all_display</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="lifetime">&#39;static</span> <span class="ident">DeviceList</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">DisplayScheme</span><span class="op">&gt;</span> {
+<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">all_display</span>() -&gt; <span class="kw-2">&amp;</span><span class="lifetime">&#39;static</span> <span class="ident">DeviceList</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">DisplayScheme</span><span class="op">&gt;</span> {
     <span class="kw-2">&amp;</span><span class="ident">DEVICES</span>.<span class="ident">display</span>
 }
 
 <span class="doccomment">/// Returns all devices which implement the [`InputScheme`].</span>
-<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">all_input</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="lifetime">&#39;static</span> <span class="ident">DeviceList</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">InputScheme</span><span class="op">&gt;</span> {
+<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">all_input</span>() -&gt; <span class="kw-2">&amp;</span><span class="lifetime">&#39;static</span> <span class="ident">DeviceList</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">InputScheme</span><span class="op">&gt;</span> {
     <span class="kw-2">&amp;</span><span class="ident">DEVICES</span>.<span class="ident">input</span>
 }
 
 <span class="doccomment">/// Returns all devices which implement the [`IrqScheme`].</span>
-<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">all_irq</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="lifetime">&#39;static</span> <span class="ident">DeviceList</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">IrqScheme</span><span class="op">&gt;</span> {
+<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">all_irq</span>() -&gt; <span class="kw-2">&amp;</span><span class="lifetime">&#39;static</span> <span class="ident">DeviceList</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">IrqScheme</span><span class="op">&gt;</span> {
     <span class="kw-2">&amp;</span><span class="ident">DEVICES</span>.<span class="ident">irq</span>
 }
 
 <span class="doccomment">/// Returns all devices which implement the [`NetScheme`].</span>
-<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">all_net</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="lifetime">&#39;static</span> <span class="ident">DeviceList</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">NetScheme</span><span class="op">&gt;</span> {
+<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">all_net</span>() -&gt; <span class="kw-2">&amp;</span><span class="lifetime">&#39;static</span> <span class="ident">DeviceList</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">NetScheme</span><span class="op">&gt;</span> {
     <span class="kw-2">&amp;</span><span class="ident">DEVICES</span>.<span class="ident">net</span>
 }
 
 <span class="doccomment">/// Returns all devices which implement the [`UartScheme`].</span>
-<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">all_uart</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="lifetime">&#39;static</span> <span class="ident">DeviceList</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">UartScheme</span><span class="op">&gt;</span> {
+<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">all_uart</span>() -&gt; <span class="kw-2">&amp;</span><span class="lifetime">&#39;static</span> <span class="ident">DeviceList</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">UartScheme</span><span class="op">&gt;</span> {
     <span class="kw-2">&amp;</span><span class="ident">DEVICES</span>.<span class="ident">uart</span>
 }
 
-<span class="kw">impl</span> <span class="ident">From</span><span class="op">&lt;</span><span class="ident">DeviceError</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="kw">crate</span><span class="ident">::HalError</span> {
-    <span class="kw">fn</span> <span class="ident">from</span>(<span class="ident">err</span>: <span class="ident">DeviceError</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
+<span class="kw">impl</span> <span class="ident">From</span><span class="op">&lt;</span><span class="ident">DeviceError</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident"><span class="kw">crate</span>::HalError</span> {
+    <span class="kw">fn</span> <span class="ident">from</span>(<span class="ident">err</span>: <span class="ident">DeviceError</span>) -&gt; <span class="self">Self</span> {
         <span class="macro">warn!</span>(<span class="string">&quot;{:?}&quot;</span>, <span class="ident">err</span>);
         <span class="self">Self</span>
     }
@@ -290,14 +320,14 @@
     <span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">PhysAddr</span>, <span class="ident">VirtAddr</span>, <span class="ident">KCONFIG</span>, <span class="ident">KHANDLER</span>, <span class="ident">PAGE_SIZE</span>};
 
     <span class="attribute">#[<span class="ident">no_mangle</span>]</span>
-    <span class="kw">extern</span> <span class="string">&quot;C&quot;</span> <span class="kw">fn</span> <span class="ident">virtio_dma_alloc</span>(<span class="ident">pages</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">PhysAddr</span> {
+    <span class="kw">extern</span> <span class="string">&quot;C&quot;</span> <span class="kw">fn</span> <span class="ident">virtio_dma_alloc</span>(<span class="ident">pages</span>: <span class="ident">usize</span>) -&gt; <span class="ident">PhysAddr</span> {
         <span class="kw">let</span> <span class="ident">paddr</span> <span class="op">=</span> <span class="ident">KHANDLER</span>.<span class="ident">frame_alloc_contiguous</span>(<span class="ident">pages</span>, <span class="number">0</span>).<span class="ident">unwrap</span>();
         <span class="macro">trace!</span>(<span class="string">&quot;alloc DMA: paddr={:#x}, pages={}&quot;</span>, <span class="ident">paddr</span>, <span class="ident">pages</span>);
         <span class="ident">paddr</span>
     }
 
     <span class="attribute">#[<span class="ident">no_mangle</span>]</span>
-    <span class="kw">extern</span> <span class="string">&quot;C&quot;</span> <span class="kw">fn</span> <span class="ident">virtio_dma_dealloc</span>(<span class="ident">paddr</span>: <span class="ident">PhysAddr</span>, <span class="ident">pages</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">i32</span> {
+    <span class="kw">extern</span> <span class="string">&quot;C&quot;</span> <span class="kw">fn</span> <span class="ident">virtio_dma_dealloc</span>(<span class="ident">paddr</span>: <span class="ident">PhysAddr</span>, <span class="ident">pages</span>: <span class="ident">usize</span>) -&gt; <span class="ident">i32</span> {
         <span class="kw">for</span> <span class="ident">i</span> <span class="kw">in</span> <span class="number">0</span>..<span class="ident">pages</span> {
             <span class="ident">KHANDLER</span>.<span class="ident">frame_dealloc</span>(<span class="ident">paddr</span> <span class="op">+</span> <span class="ident">i</span> <span class="op">*</span> <span class="ident">PAGE_SIZE</span>);
         }
@@ -306,16 +336,47 @@
     }
 
     <span class="attribute">#[<span class="ident">no_mangle</span>]</span>
-    <span class="kw">extern</span> <span class="string">&quot;C&quot;</span> <span class="kw">fn</span> <span class="ident">virtio_phys_to_virt</span>(<span class="ident">paddr</span>: <span class="ident">PhysAddr</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">VirtAddr</span> {
+    <span class="kw">extern</span> <span class="string">&quot;C&quot;</span> <span class="kw">fn</span> <span class="ident">virtio_phys_to_virt</span>(<span class="ident">paddr</span>: <span class="ident">PhysAddr</span>) -&gt; <span class="ident">VirtAddr</span> {
         <span class="ident">paddr</span> <span class="op">+</span> <span class="ident">KCONFIG</span>.<span class="ident">phys_to_virt_offset</span>
     }
 
     <span class="attribute">#[<span class="ident">no_mangle</span>]</span>
-    <span class="kw">extern</span> <span class="string">&quot;C&quot;</span> <span class="kw">fn</span> <span class="ident">virtio_virt_to_phys</span>(<span class="ident">vaddr</span>: <span class="ident">VirtAddr</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">PhysAddr</span> {
+    <span class="kw">extern</span> <span class="string">&quot;C&quot;</span> <span class="kw">fn</span> <span class="ident">virtio_virt_to_phys</span>(<span class="ident">vaddr</span>: <span class="ident">VirtAddr</span>) -&gt; <span class="ident">PhysAddr</span> {
         <span class="ident">vaddr</span> <span class="op">-</span> <span class="ident">KCONFIG</span>.<span class="ident">phys_to_virt_offset</span>
     }
 }
-</pre></div>
+
+<span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">not</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;libos&quot;</span>))]</span>
+<span class="kw">mod</span> <span class="ident">drivers_ffi</span> {
+    <span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">PhysAddr</span>, <span class="ident">VirtAddr</span>, <span class="ident">KCONFIG</span>, <span class="ident">KHANDLER</span>, <span class="ident">PAGE_SIZE</span>};
+
+    <span class="attribute">#[<span class="ident">no_mangle</span>]</span>
+    <span class="kw">extern</span> <span class="string">&quot;C&quot;</span> <span class="kw">fn</span> <span class="ident">drivers_dma_alloc</span>(<span class="ident">pages</span>: <span class="ident">usize</span>) -&gt; <span class="ident">PhysAddr</span> {
+        <span class="kw">let</span> <span class="ident">paddr</span> <span class="op">=</span> <span class="ident">KHANDLER</span>.<span class="ident">frame_alloc_contiguous</span>(<span class="ident">pages</span>, <span class="number">0</span>).<span class="ident">unwrap</span>();
+        <span class="macro">trace!</span>(<span class="string">&quot;alloc DMA: paddr={:#x}, pages={}&quot;</span>, <span class="ident">paddr</span>, <span class="ident">pages</span>);
+        <span class="ident">paddr</span>
+    }
+
+    <span class="attribute">#[<span class="ident">no_mangle</span>]</span>
+    <span class="kw">extern</span> <span class="string">&quot;C&quot;</span> <span class="kw">fn</span> <span class="ident">drivers_dma_dealloc</span>(<span class="ident">paddr</span>: <span class="ident">PhysAddr</span>, <span class="ident">pages</span>: <span class="ident">usize</span>) -&gt; <span class="ident">i32</span> {
+        <span class="kw">for</span> <span class="ident">i</span> <span class="kw">in</span> <span class="number">0</span>..<span class="ident">pages</span> {
+            <span class="ident">KHANDLER</span>.<span class="ident">frame_dealloc</span>(<span class="ident">paddr</span> <span class="op">+</span> <span class="ident">i</span> <span class="op">*</span> <span class="ident">PAGE_SIZE</span>);
+        }
+        <span class="macro">trace!</span>(<span class="string">&quot;dealloc DMA: paddr={:#x}, pages={}&quot;</span>, <span class="ident">paddr</span>, <span class="ident">pages</span>);
+        <span class="number">0</span>
+    }
+
+    <span class="attribute">#[<span class="ident">no_mangle</span>]</span>
+    <span class="kw">extern</span> <span class="string">&quot;C&quot;</span> <span class="kw">fn</span> <span class="ident">drivers_phys_to_virt</span>(<span class="ident">paddr</span>: <span class="ident">PhysAddr</span>) -&gt; <span class="ident">VirtAddr</span> {
+        <span class="ident">paddr</span> <span class="op">+</span> <span class="ident">KCONFIG</span>.<span class="ident">phys_to_virt_offset</span>
+    }
+
+    <span class="attribute">#[<span class="ident">no_mangle</span>]</span>
+    <span class="kw">extern</span> <span class="string">&quot;C&quot;</span> <span class="kw">fn</span> <span class="ident">drivers_virt_to_phys</span>(<span class="ident">vaddr</span>: <span class="ident">VirtAddr</span>) -&gt; <span class="ident">PhysAddr</span> {
+        <span class="ident">vaddr</span> <span class="op">-</span> <span class="ident">KCONFIG</span>.<span class="ident">phys_to_virt_offset</span>
+    }
+}
+</code></pre></div>
 </section><section id="search" class="content hidden"></section><div id="rustdoc-vars" data-root-path="../../" data-current-crate="kernel_hal" data-search-index-js="../../search-index.js" data-search-js="../../search.js"></div>
     <script src="../../main.js"></script><script src="../../source-script.js"></script><script src="../../source-files.js"></script>
 </body></html>

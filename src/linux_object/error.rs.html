@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `linux-object&#x2F;src&#x2F;error.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>error.rs - source</title><link rel="stylesheet" type="text/css" href="../../normalize.css"><link rel="stylesheet" type="text/css" href="../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../ayu.css" disabled ><script id="default-settings" ></script><script src="../../storage.js"></script><script src="../../crates.js"></script><noscript><link rel="stylesheet" href="../../noscript.css"></noscript><link rel="icon" type="image/svg+xml" href="../../favicon.svg"><link rel="alternate icon" type="image/png" href="../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../favicon-32x32.png"><style type="text/css">#crate-search{background-image:url("../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../linux_object/index.html'><div class='logo-container rust-logo'><img src='../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu" title="themes"><img width="18" height="18" alt="Pick another theme!" src="../../brush.svg"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input"name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" id="help-button" title="help">?</button><a id="settings-menu" href="../../settings.html" title="settings"><img width="18" height="18" alt="Change settings" src="../../wheel.svg"></a></div></form></nav><section id="main" class="content"><div class="example-wrap"><pre class="line-numbers"><span id="1">  1</span>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `linux-object&#x2F;src&#x2F;error.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>error.rs - source</title><link rel="stylesheet" type="text/css" href="../../normalize.css"><link rel="stylesheet" type="text/css" href="../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../ayu.css" disabled ><script id="default-settings" ></script><script src="../../storage.js"></script><script src="../../crates.js"></script><noscript><link rel="stylesheet" href="../../noscript.css"></noscript><link rel="alternate icon" type="image/png" href="../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../favicon-32x32.png"><link rel="icon" type="image/svg+xml" href="../../favicon.svg"><style type="text/css">#crate-search{background-image:url("../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../linux_object/index.html'><div class='logo-container rust-logo'><img src='../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu" title="themes"><img width="18" height="18" alt="Pick another theme!" src="../../brush.svg"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" id="help-button" title="help">?</button><a id="settings-menu" href="../../settings.html" title="settings"><img width="18" height="18" alt="Change settings" src="../../wheel.svg"></a></div></form></nav><section id="main" class="content"><div class="example-wrap"><pre class="line-numbers"><span id="1">  1</span>
 <span id="2">  2</span>
 <span id="3">  3</span>
 <span id="4">  4</span>
@@ -228,8 +228,7 @@
 <span id="228">228</span>
 <span id="229">229</span>
 <span id="230">230</span>
-</pre><pre class="rust">
-<span class="doccomment">//! Linux error codes</span>
+</pre><pre class="rust"><code><span class="doccomment">//! Linux error codes</span>
 <span class="kw">use</span> <span class="ident">core::fmt</span>;
 <span class="kw">use</span> <span class="ident">rcore_fs::vfs::FsError</span>;
 <span class="kw">use</span> <span class="ident">zircon_object::ZxError</span>;
@@ -348,100 +347,100 @@
 
 <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">non_snake_case</span>)]</span>
 <span class="kw">impl</span> <span class="ident">fmt::Display</span> <span class="kw">for</span> <span class="ident">LxError</span> {
-    <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">fmt::Formatter</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">fmt::Result</span> {
-        <span class="kw">use</span> <span class="self">self</span><span class="ident">::LxError</span>::<span class="kw-2">*</span>;
+    <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw-2">&amp;mut</span> <span class="ident">fmt::Formatter</span>) -&gt; <span class="ident">fmt::Result</span> {
+        <span class="kw">use</span> <span class="ident"><span class="self">self</span>::LxError</span>::<span class="kw-2">*</span>;
         <span class="kw">let</span> <span class="ident">explain</span> <span class="op">=</span> <span class="kw">match</span> <span class="self">self</span> {
-            <span class="ident">EPERM</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;Operation not permitted&quot;</span>,
-            <span class="ident">ENOENT</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;No such file or directory&quot;</span>,
-            <span class="ident">ESRCH</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;No such process&quot;</span>,
-            <span class="ident">EINTR</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;Interrupted system call&quot;</span>,
-            <span class="ident">EIO</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;I/O error&quot;</span>,
-            <span class="ident">ENXIO</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;No such device or address&quot;</span>,
-            <span class="ident">E2BIG</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;Argument list too long&quot;</span>,
-            <span class="ident">ENOEXEC</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;Exec format error&quot;</span>,
-            <span class="ident">EBADF</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;Bad file number&quot;</span>,
-            <span class="ident">ECHILD</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;No child processes&quot;</span>,
-            <span class="ident">EAGAIN</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;Try again&quot;</span>,
-            <span class="ident">ENOMEM</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;Out of memory&quot;</span>,
-            <span class="ident">EACCES</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;Permission denied&quot;</span>,
-            <span class="ident">EFAULT</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;Bad address&quot;</span>,
-            <span class="ident">ENOTBLK</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;Block device required&quot;</span>,
-            <span class="ident">EBUSY</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;Device or resource busy&quot;</span>,
-            <span class="ident">EEXIST</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;File exists&quot;</span>,
-            <span class="ident">EXDEV</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;Cross-device link&quot;</span>,
-            <span class="ident">ENODEV</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;No such device&quot;</span>,
-            <span class="ident">ENOTDIR</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;Not a directory&quot;</span>,
-            <span class="ident">EISDIR</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;Is a directory&quot;</span>,
-            <span class="ident">EINVAL</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;Invalid argument&quot;</span>,
-            <span class="ident">ENFILE</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;File table overflow&quot;</span>,
-            <span class="ident">EMFILE</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;Too many open files&quot;</span>,
-            <span class="ident">ENOTTY</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;Not a typewriter&quot;</span>,
-            <span class="ident">ETXTBSY</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;Text file busy&quot;</span>,
-            <span class="ident">EFBIG</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;File too large&quot;</span>,
-            <span class="ident">ENOSPC</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;No space left on device&quot;</span>,
-            <span class="ident">ESPIPE</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;Illegal seek&quot;</span>,
-            <span class="ident">EROFS</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;Read-only file system&quot;</span>,
-            <span class="ident">EMLINK</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;Too many links&quot;</span>,
-            <span class="ident">EPIPE</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;Broken pipe&quot;</span>,
-            <span class="ident">EDOM</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;Math argument out of domain of func&quot;</span>,
-            <span class="ident">ERANGE</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;Math result not representable&quot;</span>,
-            <span class="ident">EDEADLK</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;Resource deadlock would occur&quot;</span>,
-            <span class="ident">ENAMETOOLONG</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;File name too long&quot;</span>,
-            <span class="ident">ENOLCK</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;No record locks available&quot;</span>,
-            <span class="ident">ENOSYS</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;Function not implemented&quot;</span>,
-            <span class="ident">ENOTEMPTY</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;Directory not empty&quot;</span>,
-            <span class="ident">ELOOP</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;Too many symbolic links encountered&quot;</span>,
-            <span class="ident">EIDRM</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;Identifier removed&quot;</span>,
-            <span class="ident">ENOTSOCK</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;Socket operation on non-socket&quot;</span>,
-            <span class="ident">ENOPROTOOPT</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;Protocol not available&quot;</span>,
-            <span class="ident">EPFNOSUPPORT</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;Protocol family not supported&quot;</span>,
-            <span class="ident">EAFNOSUPPORT</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;Address family not supported by protocol&quot;</span>,
-            <span class="ident">ENOBUFS</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;No buffer space available&quot;</span>,
-            <span class="ident">EISCONN</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;Transport endpoint is already connected&quot;</span>,
-            <span class="ident">ENOTCONN</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;Transport endpoint is not connected&quot;</span>,
-            <span class="ident">ECONNREFUSED</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;Connection refused&quot;</span>,
-            <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="string">&quot;Unknown error&quot;</span>,
+            <span class="ident">EPERM</span> =&gt; <span class="string">&quot;Operation not permitted&quot;</span>,
+            <span class="ident">ENOENT</span> =&gt; <span class="string">&quot;No such file or directory&quot;</span>,
+            <span class="ident">ESRCH</span> =&gt; <span class="string">&quot;No such process&quot;</span>,
+            <span class="ident">EINTR</span> =&gt; <span class="string">&quot;Interrupted system call&quot;</span>,
+            <span class="ident">EIO</span> =&gt; <span class="string">&quot;I/O error&quot;</span>,
+            <span class="ident">ENXIO</span> =&gt; <span class="string">&quot;No such device or address&quot;</span>,
+            <span class="ident">E2BIG</span> =&gt; <span class="string">&quot;Argument list too long&quot;</span>,
+            <span class="ident">ENOEXEC</span> =&gt; <span class="string">&quot;Exec format error&quot;</span>,
+            <span class="ident">EBADF</span> =&gt; <span class="string">&quot;Bad file number&quot;</span>,
+            <span class="ident">ECHILD</span> =&gt; <span class="string">&quot;No child processes&quot;</span>,
+            <span class="ident">EAGAIN</span> =&gt; <span class="string">&quot;Try again&quot;</span>,
+            <span class="ident">ENOMEM</span> =&gt; <span class="string">&quot;Out of memory&quot;</span>,
+            <span class="ident">EACCES</span> =&gt; <span class="string">&quot;Permission denied&quot;</span>,
+            <span class="ident">EFAULT</span> =&gt; <span class="string">&quot;Bad address&quot;</span>,
+            <span class="ident">ENOTBLK</span> =&gt; <span class="string">&quot;Block device required&quot;</span>,
+            <span class="ident">EBUSY</span> =&gt; <span class="string">&quot;Device or resource busy&quot;</span>,
+            <span class="ident">EEXIST</span> =&gt; <span class="string">&quot;File exists&quot;</span>,
+            <span class="ident">EXDEV</span> =&gt; <span class="string">&quot;Cross-device link&quot;</span>,
+            <span class="ident">ENODEV</span> =&gt; <span class="string">&quot;No such device&quot;</span>,
+            <span class="ident">ENOTDIR</span> =&gt; <span class="string">&quot;Not a directory&quot;</span>,
+            <span class="ident">EISDIR</span> =&gt; <span class="string">&quot;Is a directory&quot;</span>,
+            <span class="ident">EINVAL</span> =&gt; <span class="string">&quot;Invalid argument&quot;</span>,
+            <span class="ident">ENFILE</span> =&gt; <span class="string">&quot;File table overflow&quot;</span>,
+            <span class="ident">EMFILE</span> =&gt; <span class="string">&quot;Too many open files&quot;</span>,
+            <span class="ident">ENOTTY</span> =&gt; <span class="string">&quot;Not a typewriter&quot;</span>,
+            <span class="ident">ETXTBSY</span> =&gt; <span class="string">&quot;Text file busy&quot;</span>,
+            <span class="ident">EFBIG</span> =&gt; <span class="string">&quot;File too large&quot;</span>,
+            <span class="ident">ENOSPC</span> =&gt; <span class="string">&quot;No space left on device&quot;</span>,
+            <span class="ident">ESPIPE</span> =&gt; <span class="string">&quot;Illegal seek&quot;</span>,
+            <span class="ident">EROFS</span> =&gt; <span class="string">&quot;Read-only file system&quot;</span>,
+            <span class="ident">EMLINK</span> =&gt; <span class="string">&quot;Too many links&quot;</span>,
+            <span class="ident">EPIPE</span> =&gt; <span class="string">&quot;Broken pipe&quot;</span>,
+            <span class="ident">EDOM</span> =&gt; <span class="string">&quot;Math argument out of domain of func&quot;</span>,
+            <span class="ident">ERANGE</span> =&gt; <span class="string">&quot;Math result not representable&quot;</span>,
+            <span class="ident">EDEADLK</span> =&gt; <span class="string">&quot;Resource deadlock would occur&quot;</span>,
+            <span class="ident">ENAMETOOLONG</span> =&gt; <span class="string">&quot;File name too long&quot;</span>,
+            <span class="ident">ENOLCK</span> =&gt; <span class="string">&quot;No record locks available&quot;</span>,
+            <span class="ident">ENOSYS</span> =&gt; <span class="string">&quot;Function not implemented&quot;</span>,
+            <span class="ident">ENOTEMPTY</span> =&gt; <span class="string">&quot;Directory not empty&quot;</span>,
+            <span class="ident">ELOOP</span> =&gt; <span class="string">&quot;Too many symbolic links encountered&quot;</span>,
+            <span class="ident">EIDRM</span> =&gt; <span class="string">&quot;Identifier removed&quot;</span>,
+            <span class="ident">ENOTSOCK</span> =&gt; <span class="string">&quot;Socket operation on non-socket&quot;</span>,
+            <span class="ident">ENOPROTOOPT</span> =&gt; <span class="string">&quot;Protocol not available&quot;</span>,
+            <span class="ident">EPFNOSUPPORT</span> =&gt; <span class="string">&quot;Protocol family not supported&quot;</span>,
+            <span class="ident">EAFNOSUPPORT</span> =&gt; <span class="string">&quot;Address family not supported by protocol&quot;</span>,
+            <span class="ident">ENOBUFS</span> =&gt; <span class="string">&quot;No buffer space available&quot;</span>,
+            <span class="ident">EISCONN</span> =&gt; <span class="string">&quot;Transport endpoint is already connected&quot;</span>,
+            <span class="ident">ENOTCONN</span> =&gt; <span class="string">&quot;Transport endpoint is not connected&quot;</span>,
+            <span class="ident">ECONNREFUSED</span> =&gt; <span class="string">&quot;Connection refused&quot;</span>,
+            <span class="kw">_</span> =&gt; <span class="string">&quot;Unknown error&quot;</span>,
         };
         <span class="macro">write!</span>(<span class="ident">f</span>, <span class="string">&quot;{}&quot;</span>, <span class="ident">explain</span>)
     }
 }
 
 <span class="kw">impl</span> <span class="ident">From</span><span class="op">&lt;</span><span class="ident">ZxError</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">LxError</span> {
-    <span class="kw">fn</span> <span class="ident">from</span>(<span class="ident">e</span>: <span class="ident">ZxError</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
+    <span class="kw">fn</span> <span class="ident">from</span>(<span class="ident">e</span>: <span class="ident">ZxError</span>) -&gt; <span class="self">Self</span> {
         <span class="kw">match</span> <span class="ident">e</span> {
-            <span class="ident">ZxError::INVALID_ARGS</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::EINVAL</span>,
-            <span class="ident">ZxError::NOT_SUPPORTED</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::ENOSYS</span>,
-            <span class="ident">ZxError::ALREADY_EXISTS</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::EEXIST</span>,
-            <span class="ident">ZxError::SHOULD_WAIT</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::EAGAIN</span>,
-            <span class="ident">ZxError::PEER_CLOSED</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::EPIPE</span>,
-            <span class="ident">ZxError::BAD_HANDLE</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::EBADF</span>,
-            <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="macro">unimplemented!</span>(<span class="string">&quot;unknown error type: {:?}&quot;</span>, <span class="ident">e</span>),
+            <span class="ident">ZxError::INVALID_ARGS</span> =&gt; <span class="ident">LxError::EINVAL</span>,
+            <span class="ident">ZxError::NOT_SUPPORTED</span> =&gt; <span class="ident">LxError::ENOSYS</span>,
+            <span class="ident">ZxError::ALREADY_EXISTS</span> =&gt; <span class="ident">LxError::EEXIST</span>,
+            <span class="ident">ZxError::SHOULD_WAIT</span> =&gt; <span class="ident">LxError::EAGAIN</span>,
+            <span class="ident">ZxError::PEER_CLOSED</span> =&gt; <span class="ident">LxError::EPIPE</span>,
+            <span class="ident">ZxError::BAD_HANDLE</span> =&gt; <span class="ident">LxError::EBADF</span>,
+            <span class="kw">_</span> =&gt; <span class="macro">unimplemented!</span>(<span class="string">&quot;unknown error type: {:?}&quot;</span>, <span class="ident">e</span>),
         }
     }
 }
 
 <span class="kw">impl</span> <span class="ident">From</span><span class="op">&lt;</span><span class="ident">FsError</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">LxError</span> {
-    <span class="kw">fn</span> <span class="ident">from</span>(<span class="ident">error</span>: <span class="ident">FsError</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
+    <span class="kw">fn</span> <span class="ident">from</span>(<span class="ident">error</span>: <span class="ident">FsError</span>) -&gt; <span class="self">Self</span> {
         <span class="kw">match</span> <span class="ident">error</span> {
-            <span class="ident">FsError::NotSupported</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::ENOSYS</span>,
-            <span class="ident">FsError::NotFile</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::EISDIR</span>,
-            <span class="ident">FsError::IsDir</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::EISDIR</span>,
-            <span class="ident">FsError::NotDir</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::ENOTDIR</span>,
-            <span class="ident">FsError::EntryNotFound</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::ENOENT</span>,
-            <span class="ident">FsError::EntryExist</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::EEXIST</span>,
-            <span class="ident">FsError::NotSameFs</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::EXDEV</span>,
-            <span class="ident">FsError::InvalidParam</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::EINVAL</span>,
-            <span class="ident">FsError::NoDeviceSpace</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::ENOMEM</span>,
-            <span class="ident">FsError::DirRemoved</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::ENOENT</span>,
-            <span class="ident">FsError::DirNotEmpty</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::ENOTEMPTY</span>,
-            <span class="ident">FsError::WrongFs</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::EINVAL</span>,
-            <span class="ident">FsError::DeviceError</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::EIO</span>,
-            <span class="ident">FsError::IOCTLError</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::EINVAL</span>,
-            <span class="ident">FsError::NoDevice</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::EINVAL</span>,
-            <span class="ident">FsError::Again</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::EAGAIN</span>,
-            <span class="ident">FsError::SymLoop</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::ELOOP</span>,
-            <span class="ident">FsError::Busy</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::EBUSY</span>,
-            <span class="ident">FsError::Interrupted</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::EINTR</span>,
+            <span class="ident">FsError::NotSupported</span> =&gt; <span class="ident">LxError::ENOSYS</span>,
+            <span class="ident">FsError::NotFile</span> =&gt; <span class="ident">LxError::EISDIR</span>,
+            <span class="ident">FsError::IsDir</span> =&gt; <span class="ident">LxError::EISDIR</span>,
+            <span class="ident">FsError::NotDir</span> =&gt; <span class="ident">LxError::ENOTDIR</span>,
+            <span class="ident">FsError::EntryNotFound</span> =&gt; <span class="ident">LxError::ENOENT</span>,
+            <span class="ident">FsError::EntryExist</span> =&gt; <span class="ident">LxError::EEXIST</span>,
+            <span class="ident">FsError::NotSameFs</span> =&gt; <span class="ident">LxError::EXDEV</span>,
+            <span class="ident">FsError::InvalidParam</span> =&gt; <span class="ident">LxError::EINVAL</span>,
+            <span class="ident">FsError::NoDeviceSpace</span> =&gt; <span class="ident">LxError::ENOMEM</span>,
+            <span class="ident">FsError::DirRemoved</span> =&gt; <span class="ident">LxError::ENOENT</span>,
+            <span class="ident">FsError::DirNotEmpty</span> =&gt; <span class="ident">LxError::ENOTEMPTY</span>,
+            <span class="ident">FsError::WrongFs</span> =&gt; <span class="ident">LxError::EINVAL</span>,
+            <span class="ident">FsError::DeviceError</span> =&gt; <span class="ident">LxError::EIO</span>,
+            <span class="ident">FsError::IOCTLError</span> =&gt; <span class="ident">LxError::EINVAL</span>,
+            <span class="ident">FsError::NoDevice</span> =&gt; <span class="ident">LxError::EINVAL</span>,
+            <span class="ident">FsError::Again</span> =&gt; <span class="ident">LxError::EAGAIN</span>,
+            <span class="ident">FsError::SymLoop</span> =&gt; <span class="ident">LxError::ELOOP</span>,
+            <span class="ident">FsError::Busy</span> =&gt; <span class="ident">LxError::EBUSY</span>,
+            <span class="ident">FsError::Interrupted</span> =&gt; <span class="ident">LxError::EINTR</span>,
         }
     }
 }
@@ -449,17 +448,17 @@
 <span class="kw">use</span> <span class="ident">kernel_hal::user::Error</span>;
 
 <span class="kw">impl</span> <span class="ident">From</span><span class="op">&lt;</span><span class="ident">Error</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">LxError</span> {
-    <span class="kw">fn</span> <span class="ident">from</span>(<span class="ident">e</span>: <span class="ident">Error</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
+    <span class="kw">fn</span> <span class="ident">from</span>(<span class="ident">e</span>: <span class="ident">Error</span>) -&gt; <span class="self">Self</span> {
         <span class="kw">match</span> <span class="ident">e</span> {
-            <span class="ident">Error::InvalidUtf8</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::EINVAL</span>,
-            <span class="ident">Error::InvalidPointer</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::EFAULT</span>,
-            <span class="ident">Error::BufferTooSmall</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::ENOBUFS</span>,
-            <span class="ident">Error::InvalidLength</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::EINVAL</span>,
-            <span class="ident">Error::InvalidVectorAddress</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">LxError::EINVAL</span>,
+            <span class="ident">Error::InvalidUtf8</span> =&gt; <span class="ident">LxError::EINVAL</span>,
+            <span class="ident">Error::InvalidPointer</span> =&gt; <span class="ident">LxError::EFAULT</span>,
+            <span class="ident">Error::BufferTooSmall</span> =&gt; <span class="ident">LxError::ENOBUFS</span>,
+            <span class="ident">Error::InvalidLength</span> =&gt; <span class="ident">LxError::EINVAL</span>,
+            <span class="ident">Error::InvalidVectorAddress</span> =&gt; <span class="ident">LxError::EINVAL</span>,
         }
     }
 }
-</pre></div>
+</code></pre></div>
 </section><section id="search" class="content hidden"></section><div id="rustdoc-vars" data-root-path="../../" data-current-crate="linux_object" data-search-index-js="../../search-index.js" data-search-js="../../search.js"></div>
     <script src="../../main.js"></script><script src="../../source-script.js"></script><script src="../../source-files.js"></script>
 </body></html>

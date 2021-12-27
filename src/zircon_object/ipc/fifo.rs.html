@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `zircon-object&#x2F;src&#x2F;ipc&#x2F;fifo.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>fifo.rs - source</title><link rel="stylesheet" type="text/css" href="../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../../ayu.css" disabled ><script id="default-settings" ></script><script src="../../../storage.js"></script><script src="../../../crates.js"></script><noscript><link rel="stylesheet" href="../../../noscript.css"></noscript><link rel="icon" type="image/svg+xml" href="../../../favicon.svg"><link rel="alternate icon" type="image/png" href="../../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../../favicon-32x32.png"><style type="text/css">#crate-search{background-image:url("../../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../../zircon_object/index.html'><div class='logo-container rust-logo'><img src='../../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu" title="themes"><img width="18" height="18" alt="Pick another theme!" src="../../../brush.svg"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input"name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" id="help-button" title="help">?</button><a id="settings-menu" href="../../../settings.html" title="settings"><img width="18" height="18" alt="Change settings" src="../../../wheel.svg"></a></div></form></nav><section id="main" class="content"><div class="example-wrap"><pre class="line-numbers"><span id="1">  1</span>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `zircon-object&#x2F;src&#x2F;ipc&#x2F;fifo.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>fifo.rs - source</title><link rel="stylesheet" type="text/css" href="../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../../ayu.css" disabled ><script id="default-settings" ></script><script src="../../../storage.js"></script><script src="../../../crates.js"></script><noscript><link rel="stylesheet" href="../../../noscript.css"></noscript><link rel="alternate icon" type="image/png" href="../../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../../favicon-32x32.png"><link rel="icon" type="image/svg+xml" href="../../../favicon.svg"><style type="text/css">#crate-search{background-image:url("../../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../../zircon_object/index.html'><div class='logo-container rust-logo'><img src='../../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu" title="themes"><img width="18" height="18" alt="Pick another theme!" src="../../../brush.svg"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" id="help-button" title="help">?</button><a id="settings-menu" href="../../../settings.html" title="settings"><img width="18" height="18" alt="Change settings" src="../../../wheel.svg"></a></div></form></nav><section id="main" class="content"><div class="example-wrap"><pre class="line-numbers"><span id="1">  1</span>
 <span id="2">  2</span>
 <span id="3">  3</span>
 <span id="4">  4</span>
@@ -209,9 +209,8 @@
 <span id="209">209</span>
 <span id="210">210</span>
 <span id="211">211</span>
-</pre><pre class="rust">
-<span class="kw">use</span> {
-    <span class="kw">crate</span><span class="ident">::object</span>::<span class="kw-2">*</span>,
+</pre><pre class="rust"><code><span class="kw">use</span> {
+    <span class="ident"><span class="kw">crate</span>::object</span>::<span class="kw-2">*</span>,
     <span class="ident">alloc::collections::VecDeque</span>,
     <span class="ident">alloc::sync</span>::{<span class="ident">Arc</span>, <span class="ident">Weak</span>},
     <span class="ident">spin::Mutex</span>,
@@ -236,11 +235,11 @@
 }
 
 <span class="macro">impl_kobject!</span>(<span class="ident">Fifo</span>
-    <span class="kw">fn</span> <span class="ident">peer</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">KernelObject</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">peer</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">KernelObject</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">peer</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">peer</span>.<span class="ident">upgrade</span>().<span class="ident">ok_or</span>(<span class="ident">ZxError::PEER_CLOSED</span>)<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(<span class="ident">peer</span>)
     }
-    <span class="kw">fn</span> <span class="ident">related_koid</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">KoID</span> {
+    <span class="kw">fn</span> <span class="ident">related_koid</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">KoID</span> {
         <span class="self">self</span>.<span class="ident">peer</span>.<span class="ident">upgrade</span>().<span class="ident">map</span>(<span class="op">|</span><span class="ident">p</span><span class="op">|</span> <span class="ident">p</span>.<span class="ident">id</span>()).<span class="ident">unwrap_or</span>(<span class="number">0</span>)
     }
 );
@@ -248,7 +247,7 @@
 <span class="kw">impl</span> <span class="ident">Fifo</span> {
     <span class="doccomment">/// Create a FIFO.</span>
     <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">unsafe_code</span>)]</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">create</span>(<span class="ident">elem_count</span>: <span class="ident">usize</span>, <span class="ident">elem_size</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> (<span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span>, <span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span>) {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">create</span>(<span class="ident">elem_count</span>: <span class="ident">usize</span>, <span class="ident">elem_size</span>: <span class="ident">usize</span>) -&gt; (<span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span>, <span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span>) {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">end0</span> <span class="op">=</span> <span class="ident">Arc::new</span>(<span class="ident">Fifo</span> {
             <span class="ident">base</span>: <span class="ident">KObjectBase::with_signal</span>(<span class="ident">Signal::WRITABLE</span>),
             <span class="ident">peer</span>: <span class="ident">Weak::default</span>(),
@@ -265,7 +264,7 @@
         });
         <span class="comment">// no other reference of `end0`</span>
         <span class="kw">unsafe</span> {
-            <span class="ident">Arc::get_mut_unchecked</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">end0</span>).<span class="ident">peer</span> <span class="op">=</span> <span class="ident">Arc::downgrade</span>(<span class="kw-2">&amp;</span><span class="ident">end1</span>);
+            <span class="ident">Arc::get_mut_unchecked</span>(<span class="kw-2">&amp;mut</span> <span class="ident">end0</span>).<span class="ident">peer</span> <span class="op">=</span> <span class="ident">Arc::downgrade</span>(<span class="kw-2">&amp;</span><span class="ident">end1</span>);
         }
         (<span class="ident">end0</span>, <span class="ident">end1</span>)
     }
@@ -281,8 +280,8 @@
     <span class="doccomment">/// The number of elements actually written is returned.</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// `count` must be nonzero.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">write</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">elem_size</span>: <span class="ident">usize</span>, <span class="ident">data</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>], <span class="ident">count</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
-        <span class="kw">if</span> <span class="ident">elem_size</span> <span class="op">!</span><span class="op">=</span> <span class="self">self</span>.<span class="ident">elem_size</span> <span class="op">|</span><span class="op">|</span> <span class="ident">count</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">write</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">elem_size</span>: <span class="ident">usize</span>, <span class="ident">data</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>], <span class="ident">count</span>: <span class="ident">usize</span>) -&gt; <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
+        <span class="kw">if</span> <span class="ident">elem_size</span> <span class="op">!</span><span class="op">=</span> <span class="self">self</span>.<span class="ident">elem_size</span> <span class="op">|</span><span class="op">|</span> <span class="ident">count</span> <span class="op">==</span> <span class="number">0</span> {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::OUT_OF_RANGE</span>);
         }
         <span class="kw">let</span> <span class="ident">count_size</span> <span class="op">=</span> <span class="ident">count</span> <span class="op">*</span> <span class="ident">elem_size</span>;
@@ -291,7 +290,7 @@
         <span class="kw">let</span> <span class="ident">peer</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">peer</span>.<span class="ident">upgrade</span>().<span class="ident">ok_or</span>(<span class="ident">ZxError::PEER_CLOSED</span>)<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">recv_queue</span> <span class="op">=</span> <span class="ident">peer</span>.<span class="ident">recv_queue</span>.<span class="ident">lock</span>();
         <span class="kw">let</span> <span class="ident">rest_capacity</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">capacity</span>() <span class="op">-</span> <span class="ident">recv_queue</span>.<span class="ident">len</span>();
-        <span class="kw">if</span> <span class="ident">rest_capacity</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span> {
+        <span class="kw">if</span> <span class="ident">rest_capacity</span> <span class="op">==</span> <span class="number">0</span> {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::SHOULD_WAIT</span>);
         }
         <span class="kw">if</span> <span class="ident">recv_queue</span>.<span class="ident">is_empty</span>() {
@@ -299,7 +298,7 @@
         }
         <span class="kw">let</span> <span class="ident">write_len</span> <span class="op">=</span> <span class="ident">count_size</span>.<span class="ident">min</span>(<span class="ident">rest_capacity</span>);
         <span class="ident">recv_queue</span>.<span class="ident">extend</span>(<span class="kw-2">&amp;</span><span class="ident">data</span>[..<span class="ident">write_len</span>]);
-        <span class="kw">if</span> <span class="ident">recv_queue</span>.<span class="ident">len</span>() <span class="op">=</span><span class="op">=</span> <span class="self">self</span>.<span class="ident">capacity</span>() {
+        <span class="kw">if</span> <span class="ident">recv_queue</span>.<span class="ident">len</span>() <span class="op">==</span> <span class="self">self</span>.<span class="ident">capacity</span>() {
             <span class="self">self</span>.<span class="ident">base</span>.<span class="ident">signal_clear</span>(<span class="ident">Signal::WRITABLE</span>);
         }
         <span class="prelude-val">Ok</span>(<span class="ident">write_len</span> <span class="op">/</span> <span class="ident">elem_size</span>)
@@ -318,8 +317,8 @@
     <span class="doccomment">/// `data` must have a size of `count * elem_size` bytes.</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// `count` must be nonzero.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">read</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">elem_size</span>: <span class="ident">usize</span>, <span class="ident">data</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> [<span class="ident">u8</span>], <span class="ident">count</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
-        <span class="kw">if</span> <span class="ident">elem_size</span> <span class="op">!</span><span class="op">=</span> <span class="self">self</span>.<span class="ident">elem_size</span> <span class="op">|</span><span class="op">|</span> <span class="ident">count</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">read</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">elem_size</span>: <span class="ident">usize</span>, <span class="ident">data</span>: <span class="kw-2">&amp;mut</span> [<span class="ident">u8</span>], <span class="ident">count</span>: <span class="ident">usize</span>) -&gt; <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
+        <span class="kw">if</span> <span class="ident">elem_size</span> <span class="op">!</span><span class="op">=</span> <span class="self">self</span>.<span class="ident">elem_size</span> <span class="op">|</span><span class="op">|</span> <span class="ident">count</span> <span class="op">==</span> <span class="number">0</span> {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::OUT_OF_RANGE</span>);
         }
         <span class="kw">let</span> <span class="ident">count_size</span> <span class="op">=</span> <span class="ident">count</span> <span class="op">*</span> <span class="ident">elem_size</span>;
@@ -334,7 +333,7 @@
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::SHOULD_WAIT</span>);
         }
         <span class="kw">let</span> <span class="ident">read_size</span> <span class="op">=</span> <span class="ident">count_size</span>.<span class="ident">min</span>(<span class="ident">recv_queue</span>.<span class="ident">len</span>());
-        <span class="kw">if</span> <span class="ident">recv_queue</span>.<span class="ident">len</span>() <span class="op">=</span><span class="op">=</span> <span class="self">self</span>.<span class="ident">capacity</span>() {
+        <span class="kw">if</span> <span class="ident">recv_queue</span>.<span class="ident">len</span>() <span class="op">==</span> <span class="self">self</span>.<span class="ident">capacity</span>() {
             <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">peer</span>) <span class="op">=</span> <span class="ident">peer</span> {
                 <span class="ident">peer</span>.<span class="ident">base</span>.<span class="ident">signal_set</span>(<span class="ident">Signal::WRITABLE</span>);
             }
@@ -349,13 +348,13 @@
     }
 
     <span class="doccomment">/// Get capacity in bytes.</span>
-    <span class="kw">fn</span> <span class="ident">capacity</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
+    <span class="kw">fn</span> <span class="ident">capacity</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">usize</span> {
         <span class="self">self</span>.<span class="ident">elem_size</span> <span class="op">*</span> <span class="self">self</span>.<span class="ident">elem_count</span>
     }
 }
 
 <span class="kw">impl</span> <span class="ident">Drop</span> <span class="kw">for</span> <span class="ident">Fifo</span> {
-    <span class="kw">fn</span> <span class="ident">drop</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) {
+    <span class="kw">fn</span> <span class="ident">drop</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>) {
         <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">peer</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">peer</span>.<span class="ident">upgrade</span>() {
             <span class="ident">peer</span>.<span class="ident">base</span>
                 .<span class="ident">signal_change</span>(<span class="ident">Signal::WRITABLE</span>, <span class="ident">Signal::PEER_CLOSED</span>);
@@ -403,25 +402,25 @@
 
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">buf</span> <span class="op">=</span> [<span class="number">0</span>; <span class="number">15</span>];
         <span class="macro">assert_eq!</span>(
-            <span class="ident">end1</span>.<span class="ident">read</span>(<span class="number">4</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> [<span class="number">0</span>; <span class="number">4</span>], <span class="number">1</span>).<span class="ident">unwrap_err</span>(),
+            <span class="ident">end1</span>.<span class="ident">read</span>(<span class="number">4</span>, <span class="kw-2">&amp;mut</span> [<span class="number">0</span>; <span class="number">4</span>], <span class="number">1</span>).<span class="ident">unwrap_err</span>(),
             <span class="ident">ZxError::OUT_OF_RANGE</span>
         );
-        <span class="macro">assert_eq!</span>(<span class="ident">end1</span>.<span class="ident">read</span>(<span class="number">5</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> [], <span class="number">0</span>).<span class="ident">unwrap_err</span>(), <span class="ident">ZxError::OUT_OF_RANGE</span>);
-        <span class="macro">assert_eq!</span>(<span class="ident">end1</span>.<span class="ident">read</span>(<span class="number">5</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">buf</span>, <span class="number">3</span>).<span class="ident">unwrap</span>(), <span class="number">2</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">end1</span>.<span class="ident">read</span>(<span class="number">5</span>, <span class="kw-2">&amp;mut</span> [], <span class="number">0</span>).<span class="ident">unwrap_err</span>(), <span class="ident">ZxError::OUT_OF_RANGE</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">end1</span>.<span class="ident">read</span>(<span class="number">5</span>, <span class="kw-2">&amp;mut</span> <span class="ident">buf</span>, <span class="number">3</span>).<span class="ident">unwrap</span>(), <span class="number">2</span>);
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">data</span> <span class="op">=</span> (<span class="number">0</span>..<span class="number">10</span>).<span class="ident">collect</span>::<span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span><span class="op">&gt;</span>();
-        <span class="ident">data</span>.<span class="ident">append</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="macro">vec!</span>[<span class="number">0</span>; <span class="number">5</span>]);
+        <span class="ident">data</span>.<span class="ident">append</span>(<span class="kw-2">&amp;mut</span> <span class="macro">vec!</span>[<span class="number">0</span>; <span class="number">5</span>]);
         <span class="macro">assert_eq!</span>(<span class="ident">buf</span>, <span class="ident">data</span>.<span class="ident">as_slice</span>());
-        <span class="macro">assert_eq!</span>(<span class="ident">end1</span>.<span class="ident">read</span>(<span class="number">5</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">buf</span>, <span class="number">3</span>).<span class="ident">unwrap_err</span>(), <span class="ident">ZxError::SHOULD_WAIT</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">end1</span>.<span class="ident">read</span>(<span class="number">5</span>, <span class="kw-2">&amp;mut</span> <span class="ident">buf</span>, <span class="number">3</span>).<span class="ident">unwrap_err</span>(), <span class="ident">ZxError::SHOULD_WAIT</span>);
 
         <span class="ident">drop</span>(<span class="ident">end1</span>);
         <span class="macro">assert_eq!</span>(
             <span class="ident">end0</span>.<span class="ident">write</span>(<span class="number">5</span>, <span class="ident">data</span>.<span class="ident">as_slice</span>(), <span class="number">3</span>).<span class="ident">unwrap_err</span>(),
             <span class="ident">ZxError::PEER_CLOSED</span>
         );
-        <span class="macro">assert_eq!</span>(<span class="ident">end0</span>.<span class="ident">read</span>(<span class="number">5</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">buf</span>, <span class="number">3</span>).<span class="ident">unwrap_err</span>(), <span class="ident">ZxError::PEER_CLOSED</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">end0</span>.<span class="ident">read</span>(<span class="number">5</span>, <span class="kw-2">&amp;mut</span> <span class="ident">buf</span>, <span class="number">3</span>).<span class="ident">unwrap_err</span>(), <span class="ident">ZxError::PEER_CLOSED</span>);
     }
 }
-</pre></div>
+</code></pre></div>
 </section><section id="search" class="content hidden"></section><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="zircon_object" data-search-index-js="../../../search-index.js" data-search-js="../../../search.js"></div>
     <script src="../../../main.js"></script><script src="../../../source-script.js"></script><script src="../../../source-files.js"></script>
 </body></html>

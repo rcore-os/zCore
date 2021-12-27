@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `zircon-object&#x2F;src&#x2F;task&#x2F;thread.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>thread.rs - source</title><link rel="stylesheet" type="text/css" href="../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../../ayu.css" disabled ><script id="default-settings" ></script><script src="../../../storage.js"></script><script src="../../../crates.js"></script><noscript><link rel="stylesheet" href="../../../noscript.css"></noscript><link rel="icon" type="image/svg+xml" href="../../../favicon.svg"><link rel="alternate icon" type="image/png" href="../../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../../favicon-32x32.png"><style type="text/css">#crate-search{background-image:url("../../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../../zircon_object/index.html'><div class='logo-container rust-logo'><img src='../../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu" title="themes"><img width="18" height="18" alt="Pick another theme!" src="../../../brush.svg"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input"name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" id="help-button" title="help">?</button><a id="settings-menu" href="../../../settings.html" title="settings"><img width="18" height="18" alt="Change settings" src="../../../wheel.svg"></a></div></form></nav><section id="main" class="content"><div class="example-wrap"><pre class="line-numbers"><span id="1">  1</span>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `zircon-object&#x2F;src&#x2F;task&#x2F;thread.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>thread.rs - source</title><link rel="stylesheet" type="text/css" href="../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../../ayu.css" disabled ><script id="default-settings" ></script><script src="../../../storage.js"></script><script src="../../../crates.js"></script><noscript><link rel="stylesheet" href="../../../noscript.css"></noscript><link rel="alternate icon" type="image/png" href="../../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../../favicon-32x32.png"><link rel="icon" type="image/svg+xml" href="../../../favicon.svg"><style type="text/css">#crate-search{background-image:url("../../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../../zircon_object/index.html'><div class='logo-container rust-logo'><img src='../../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu" title="themes"><img width="18" height="18" alt="Pick another theme!" src="../../../brush.svg"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" id="help-button" title="help">?</button><a id="settings-menu" href="../../../settings.html" title="settings"><img width="18" height="18" alt="Change settings" src="../../../wheel.svg"></a></div></form></nav><section id="main" class="content"><div class="example-wrap"><pre class="line-numbers"><span id="1">  1</span>
 <span id="2">  2</span>
 <span id="3">  3</span>
 <span id="4">  4</span>
@@ -948,10 +948,9 @@
 <span id="948">948</span>
 <span id="949">949</span>
 <span id="950">950</span>
-</pre><pre class="rust">
-<span class="kw">mod</span> <span class="ident">thread_state</span>;
+</pre><pre class="rust"><code><span class="kw">mod</span> <span class="ident">thread_state</span>;
 
-<span class="kw">pub</span> <span class="kw">use</span> <span class="self">self</span><span class="ident">::thread_state::ThreadStateKind</span>;
+<span class="kw">pub</span> <span class="kw">use</span> <span class="ident"><span class="self">self</span>::thread_state::ThreadStateKind</span>;
 
 <span class="kw">use</span> <span class="ident">alloc</span>::{<span class="ident">boxed::Box</span>, <span class="ident">sync::Arc</span>};
 <span class="kw">use</span> <span class="ident">core::task</span>::{<span class="ident">Context</span>, <span class="ident">Poll</span>, <span class="ident">Waker</span>};
@@ -963,9 +962,9 @@
 <span class="kw">use</span> <span class="ident">kernel_hal::context::UserContext</span>;
 <span class="kw">use</span> <span class="ident">spin::Mutex</span>;
 
-<span class="kw">use</span> <span class="self">self</span><span class="ident">::thread_state::ContextAccessState</span>;
+<span class="kw">use</span> <span class="ident"><span class="self">self</span>::thread_state::ContextAccessState</span>;
 <span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">exception</span>::<span class="kw-2">*</span>, <span class="ident">Process</span>, <span class="ident">Task</span>};
-<span class="kw">use</span> <span class="kw">crate</span><span class="ident">::object</span>::{<span class="ident">KObjectBase</span>, <span class="ident">KoID</span>, <span class="ident">Signal</span>};
+<span class="kw">use</span> <span class="ident"><span class="kw">crate</span>::object</span>::{<span class="ident">KObjectBase</span>, <span class="ident">KoID</span>, <span class="ident">Signal</span>};
 <span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">define_count_helper</span>, <span class="ident">impl_kobject</span>, <span class="ident">ZxError</span>, <span class="ident">ZxResult</span>};
 
 <span class="doccomment">/// Runnable / computation entity</span>
@@ -1042,7 +1041,7 @@
 }
 
 <span class="macro">impl_kobject!</span>(<span class="ident">Thread</span>
-    <span class="kw">fn</span> <span class="ident">related_koid</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">KoID</span> {
+    <span class="kw">fn</span> <span class="ident">related_koid</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">KoID</span> {
         <span class="self">self</span>.<span class="ident">proc</span>.<span class="ident">id</span>()
     }
 );
@@ -1078,13 +1077,13 @@
 }
 
 <span class="kw">impl</span> <span class="ident">ThreadInner</span> {
-    <span class="kw">fn</span> <span class="ident">state</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ThreadState</span> {
+    <span class="kw">fn</span> <span class="ident">state</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">ThreadState</span> {
         <span class="comment">// Dying &gt; Exception &gt; Suspend &gt; Blocked</span>
-        <span class="kw">if</span> <span class="self">self</span>.<span class="ident">suspend_count</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span>
+        <span class="kw">if</span> <span class="self">self</span>.<span class="ident">suspend_count</span> <span class="op">==</span> <span class="number">0</span>
             <span class="op">|</span><span class="op">|</span> <span class="self">self</span>.<span class="ident">context</span>.<span class="ident">is_none</span>()
-            <span class="op">|</span><span class="op">|</span> <span class="self">self</span>.<span class="ident">state</span> <span class="op">=</span><span class="op">=</span> <span class="ident">ThreadState::BlockedException</span>
-            <span class="op">|</span><span class="op">|</span> <span class="self">self</span>.<span class="ident">state</span> <span class="op">=</span><span class="op">=</span> <span class="ident">ThreadState::Dying</span>
-            <span class="op">|</span><span class="op">|</span> <span class="self">self</span>.<span class="ident">state</span> <span class="op">=</span><span class="op">=</span> <span class="ident">ThreadState::Dead</span>
+            <span class="op">|</span><span class="op">|</span> <span class="self">self</span>.<span class="ident">state</span> <span class="op">==</span> <span class="ident">ThreadState::BlockedException</span>
+            <span class="op">|</span><span class="op">|</span> <span class="self">self</span>.<span class="ident">state</span> <span class="op">==</span> <span class="ident">ThreadState::Dying</span>
+            <span class="op">|</span><span class="op">|</span> <span class="self">self</span>.<span class="ident">state</span> <span class="op">==</span> <span class="ident">ThreadState::Dead</span>
         {
             <span class="self">self</span>.<span class="ident">state</span>
         } <span class="kw">else</span> {
@@ -1093,21 +1092,21 @@
     }
 
     <span class="doccomment">/// Change state and update signal.</span>
-    <span class="kw">fn</span> <span class="ident">change_state</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">state</span>: <span class="ident">ThreadState</span>, <span class="ident">base</span>: <span class="kw-2">&amp;</span><span class="ident">KObjectBase</span>) {
+    <span class="kw">fn</span> <span class="ident">change_state</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>, <span class="ident">state</span>: <span class="ident">ThreadState</span>, <span class="ident">base</span>: <span class="kw-2">&amp;</span><span class="ident">KObjectBase</span>) {
         <span class="self">self</span>.<span class="ident">state</span> <span class="op">=</span> <span class="ident">state</span>;
         <span class="kw">match</span> <span class="self">self</span>.<span class="ident">state</span>() {
-            <span class="ident">ThreadState::Dead</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">base</span>.<span class="ident">signal_change</span>(
+            <span class="ident">ThreadState::Dead</span> =&gt; <span class="ident">base</span>.<span class="ident">signal_change</span>(
                 <span class="ident">Signal::THREAD_RUNNING</span> <span class="op">|</span> <span class="ident">Signal::THREAD_SUSPENDED</span>,
                 <span class="ident">Signal::THREAD_TERMINATED</span>,
             ),
-            <span class="ident">ThreadState::New</span> <span class="op">|</span> <span class="ident">ThreadState::Dying</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">base</span>.<span class="ident">signal_clear</span>(
+            <span class="ident">ThreadState::New</span> <span class="op">|</span> <span class="ident">ThreadState::Dying</span> =&gt; <span class="ident">base</span>.<span class="ident">signal_clear</span>(
                 <span class="ident">Signal::THREAD_RUNNING</span> <span class="op">|</span> <span class="ident">Signal::THREAD_SUSPENDED</span> <span class="op">|</span> <span class="ident">Signal::THREAD_TERMINATED</span>,
             ),
-            <span class="ident">ThreadState::Suspended</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">base</span>.<span class="ident">signal_change</span>(
+            <span class="ident">ThreadState::Suspended</span> =&gt; <span class="ident">base</span>.<span class="ident">signal_change</span>(
                 <span class="ident">Signal::THREAD_RUNNING</span> <span class="op">|</span> <span class="ident">Signal::THREAD_TERMINATED</span>,
                 <span class="ident">Signal::THREAD_SUSPENDED</span>,
             ),
-            <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">base</span>.<span class="ident">signal_change</span>(
+            <span class="kw">_</span> =&gt; <span class="ident">base</span>.<span class="ident">signal_change</span>(
                 <span class="ident">Signal::THREAD_TERMINATED</span> <span class="op">|</span> <span class="ident">Signal::THREAD_SUSPENDED</span>,
                 <span class="ident">Signal::THREAD_RUNNING</span>,
             ),
@@ -1128,12 +1127,12 @@
 <span class="kw">type</span> <span class="ident">ThreadFuturePinned</span> <span class="op">=</span> <span class="ident">Pin</span><span class="op">&lt;</span><span class="ident">Box</span><span class="op">&lt;</span><span class="ident">ThreadFuture</span><span class="op">&gt;</span><span class="op">&gt;</span>;
 
 <span class="doccomment">/// The type of a new thread function.</span>
-<span class="kw">pub</span> <span class="kw">type</span> <span class="ident">ThreadFn</span> <span class="op">=</span> <span class="kw">fn</span>(<span class="ident">thread</span>: <span class="ident">CurrentThread</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ThreadFuturePinned</span>;
+<span class="kw">pub</span> <span class="kw">type</span> <span class="ident">ThreadFn</span> <span class="op">=</span> <span class="kw">fn</span>(<span class="ident">thread</span>: <span class="ident">CurrentThread</span>) -&gt; <span class="ident">ThreadFuturePinned</span>;
 
 <span class="kw">impl</span> <span class="ident">Thread</span> {
     <span class="doccomment">/// Create a new thread.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">create</span>(<span class="ident">proc</span>: <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Process</span><span class="op">&gt;</span>, <span class="ident">name</span>: <span class="kw-2">&amp;</span><span class="ident">str</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span><span class="op">&gt;</span> {
-        <span class="self">Self</span><span class="ident">::create_with_ext</span>(<span class="ident">proc</span>, <span class="ident">name</span>, ())
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">create</span>(<span class="ident">proc</span>: <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Process</span><span class="op">&gt;</span>, <span class="ident">name</span>: <span class="kw-2">&amp;</span><span class="ident">str</span>) -&gt; <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+        <span class="ident"><span class="self">Self</span>::create_with_ext</span>(<span class="ident">proc</span>, <span class="ident">name</span>, ())
     }
 
     <span class="doccomment">/// Create a new thread with extension info.</span>
@@ -1155,7 +1154,7 @@
         <span class="ident">proc</span>: <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Process</span><span class="op">&gt;</span>,
         <span class="ident">name</span>: <span class="kw-2">&amp;</span><span class="ident">str</span>,
         <span class="ident">ext</span>: <span class="kw">impl</span> <span class="ident">Any</span> <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+    ) -&gt; <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">thread</span> <span class="op">=</span> <span class="ident">Arc::new</span>(<span class="ident">Thread</span> {
             <span class="ident">base</span>: <span class="ident">KObjectBase::with_name</span>(<span class="ident">name</span>),
             <span class="ident">_counter</span>: <span class="ident">CountHelper::new</span>(),
@@ -1172,26 +1171,26 @@
     }
 
     <span class="doccomment">/// Get the process.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">proc</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Process</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">proc</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Process</span><span class="op">&gt;</span> {
         <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">proc</span>
     }
 
     <span class="doccomment">/// Get the extension info.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">ext</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="ident">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">Any</span> <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">ext</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><span class="ident">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">Any</span> <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span><span class="op">&gt;</span> {
         <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">ext</span>
     }
 
     <span class="doccomment">/// Returns a copy of saved context of current thread, or `Err(ZxError::BAD_STATE)`</span>
     <span class="doccomment">/// if the thread is running.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">context_cloned</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">UserContext</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">context_cloned</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">UserContext</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">with_context</span>(<span class="op">|</span><span class="ident">ctx</span><span class="op">|</span> <span class="ident">ctx</span>.<span class="ident">clone</span>())
     }
 
     <span class="doccomment">/// Access saved context of current thread, or `Err(ZxError::BAD_STATE)` if</span>
     <span class="doccomment">/// the thread is running.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">with_context</span><span class="op">&lt;</span><span class="ident">T</span>, <span class="ident">F</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="ident">F</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">with_context</span><span class="op">&lt;</span><span class="ident">T</span>, <span class="ident">F</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="ident">F</span>) -&gt; <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span>
     <span class="kw">where</span>
-        <span class="ident">F</span>: <span class="ident">FnOnce</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">UserContext</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">T</span>,
+        <span class="ident">F</span>: <span class="ident">FnOnce</span>(<span class="kw-2">&amp;mut</span> <span class="ident">UserContext</span>) -&gt; <span class="ident">T</span>,
     {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">ctx</span>) <span class="op">=</span> <span class="ident">inner</span>.<span class="ident">context</span>.<span class="ident">as_mut</span>() {
@@ -1202,7 +1201,7 @@
     }
 
     <span class="doccomment">/// Start execution on the thread.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">start</span>(<span class="self">self</span>: <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span>, <span class="ident">thread_fn</span>: <span class="ident">ThreadFn</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">start</span>(<span class="self">self</span>: <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span>, <span class="ident">thread_fn</span>: <span class="ident">ThreadFn</span>) -&gt; <span class="ident">ZxResult</span> {
         <span class="self">self</span>.<span class="ident">inner</span>
             .<span class="ident">lock</span>()
             .<span class="ident">change_state</span>(<span class="ident">ThreadState::Running</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">base</span>);
@@ -1220,7 +1219,7 @@
         <span class="ident">arg1</span>: <span class="ident">usize</span>,
         <span class="ident">arg2</span>: <span class="ident">usize</span>,
         <span class="ident">thread_fn</span>: <span class="ident">ThreadFn</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    ) -&gt; <span class="ident">ZxResult</span> {
         <span class="self">self</span>.<span class="ident">with_context</span>(<span class="op">|</span><span class="ident">ctx</span><span class="op">|</span> <span class="ident">ctx</span>.<span class="ident">setup_uspace</span>(<span class="ident">entry</span>, <span class="ident">stack</span>, <span class="ident">arg1</span>, <span class="ident">arg2</span>))<span class="question-mark">?</span>;
         <span class="self">self</span>.<span class="ident">start</span>(<span class="ident">thread_fn</span>)
     }
@@ -1231,13 +1230,13 @@
     <span class="doccomment">/// It will terminate after some cleanups (when `terminate` are called **explicitly** by upper layer).</span>
     <span class="kw">fn</span> <span class="ident">stop</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">killed</span>: <span class="ident">bool</span>) {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
-        <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">=</span><span class="op">=</span> <span class="ident">ThreadState::Dead</span> {
+        <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">==</span> <span class="ident">ThreadState::Dead</span> {
             <span class="kw">return</span>;
         }
         <span class="kw">if</span> <span class="ident">killed</span> {
             <span class="ident">inner</span>.<span class="ident">killed</span> <span class="op">=</span> <span class="bool-val">true</span>;
         }
-        <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">=</span><span class="op">=</span> <span class="ident">ThreadState::Dying</span> {
+        <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">==</span> <span class="ident">ThreadState::Dying</span> {
             <span class="kw">if</span> <span class="ident">killed</span> {
                 <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">killer</span>) <span class="op">=</span> <span class="ident">inner</span>.<span class="ident">killer</span>.<span class="ident">take</span>() {
                     <span class="comment">// It&#39;s ok to ignore the error since the other end could be closed</span>
@@ -1258,7 +1257,7 @@
     }
 
     <span class="doccomment">/// Read one aspect of thread state.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">read_state</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">kind</span>: <span class="ident">ThreadStateKind</span>, <span class="ident">buf</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> [<span class="ident">u8</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">read_state</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">kind</span>: <span class="ident">ThreadStateKind</span>, <span class="ident">buf</span>: <span class="kw-2">&amp;mut</span> [<span class="ident">u8</span>]) -&gt; <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="ident">inner</span>.<span class="ident">state</span>();
         <span class="kw">if</span> <span class="ident">state</span> <span class="op">!</span><span class="op">=</span> <span class="ident">ThreadState::BlockedException</span> <span class="op">&amp;&amp;</span> <span class="ident">state</span> <span class="op">!</span><span class="op">=</span> <span class="ident">ThreadState::Suspended</span> {
@@ -1272,7 +1271,7 @@
     }
 
     <span class="doccomment">/// Write one aspect of thread state.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">write_state</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">kind</span>: <span class="ident">ThreadStateKind</span>, <span class="ident">buf</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">write_state</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">kind</span>: <span class="ident">ThreadStateKind</span>, <span class="ident">buf</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]) -&gt; <span class="ident">ZxResult</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="ident">inner</span>.<span class="ident">state</span>();
         <span class="kw">if</span> <span class="ident">state</span> <span class="op">!</span><span class="op">=</span> <span class="ident">ThreadState::BlockedException</span> <span class="op">&amp;&amp;</span> <span class="ident">state</span> <span class="op">!</span><span class="op">=</span> <span class="ident">ThreadState::Suspended</span> {
@@ -1286,7 +1285,7 @@
     }
 
     <span class="doccomment">/// Get the thread&#39;s information.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_thread_info</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ThreadInfo</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_thread_info</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">ThreadInfo</span> {
         <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="ident">ThreadInfo</span> {
             <span class="ident">state</span>: <span class="ident">inner</span>.<span class="ident">state</span>() <span class="kw">as</span> <span class="ident">u32</span>,
@@ -1299,7 +1298,7 @@
     }
 
     <span class="doccomment">/// Get the thread&#39;s exception report.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_thread_exception_info</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">ExceptionReport</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_thread_exception_info</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">ExceptionReport</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">state</span>() <span class="op">!</span><span class="op">=</span> <span class="ident">ThreadState::BlockedException</span> {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::BAD_STATE</span>);
@@ -1309,7 +1308,7 @@
     }
 
     <span class="doccomment">/// Get the thread state.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">state</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ThreadState</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">state</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">ThreadState</span> {
         <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">state</span>()
     }
 
@@ -1319,7 +1318,7 @@
     }
 
     <span class="doccomment">/// Get the time this thread has run on cpu.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_time</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u64</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_time</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">u64</span> {
         <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">time</span> <span class="kw">as</span> <span class="ident">u64</span>
     }
 
@@ -1329,18 +1328,18 @@
     }
 
     <span class="doccomment">/// Whether this thread is the first thread of a process.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">is_first_thread</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">is_first_thread</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">bool</span> {
         <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">first_thread</span>
     }
 
     <span class="doccomment">/// Get the thread&#39;s flags.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">flags</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ThreadFlag</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">flags</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">ThreadFlag</span> {
         <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">flags</span>
     }
 
     <span class="doccomment">/// Apply `f` to the thread&#39;s flags.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">update_flags</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw">impl</span> <span class="ident">FnOnce</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">ThreadFlag</span>)) {
-        <span class="ident">f</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">flags</span>)
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">update_flags</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw">impl</span> <span class="ident">FnOnce</span>(<span class="kw-2">&amp;mut</span> <span class="ident">ThreadFlag</span>)) {
+        <span class="ident">f</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">flags</span>)
     }
 
     <span class="doccomment">/// Terminate the current running thread.</span>
@@ -1368,7 +1367,7 @@
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="macro">assert_ne!</span>(<span class="ident">inner</span>.<span class="ident">suspend_count</span>, <span class="number">0</span>);
         <span class="ident">inner</span>.<span class="ident">suspend_count</span> <span class="op">-</span><span class="op">=</span> <span class="number">1</span>;
-        <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">suspend_count</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span> {
+        <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">suspend_count</span> <span class="op">==</span> <span class="number">0</span> {
             <span class="kw">let</span> <span class="ident">state</span> <span class="op">=</span> <span class="ident">inner</span>.<span class="ident">state</span>;
             <span class="ident">inner</span>.<span class="ident">change_state</span>(<span class="ident">state</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">base</span>);
             <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">waker</span>) <span class="op">=</span> <span class="ident">inner</span>.<span class="ident">waker</span>.<span class="ident">take</span>() {
@@ -1377,11 +1376,11 @@
         }
     }
 
-    <span class="kw">fn</span> <span class="ident">exceptionate</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Exceptionate</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">exceptionate</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Exceptionate</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">exceptionate</span>.<span class="ident">clone</span>()
     }
 
-    <span class="kw">fn</span> <span class="ident">debug_exceptionate</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Exceptionate</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">debug_exceptionate</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Exceptionate</span><span class="op">&gt;</span> {
         <span class="macro">panic!</span>(<span class="string">&quot;thread do not have debug exceptionate&quot;</span>);
     }
 }
@@ -1399,7 +1398,7 @@
 
 <span class="kw">impl</span> <span class="ident">CurrentThread</span> {
     <span class="doccomment">/// Returns the inner structure `Arc&lt;Thread&gt;`.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">inner</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Thread</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">inner</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Thread</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="number">0</span>.<span class="ident">clone</span>()
     }
 
@@ -1413,7 +1412,7 @@
 
     <span class="doccomment">/// Wait until the thread is ready to run (not suspended),</span>
     <span class="doccomment">/// and then take away its context to run the thread.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">wait_for_run</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw">impl</span> <span class="ident">Future</span><span class="op">&lt;</span><span class="ident">Output</span> <span class="op">=</span> <span class="ident">Box</span><span class="op">&lt;</span><span class="ident">UserContext</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">wait_for_run</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw">impl</span> <span class="ident">Future</span><span class="op">&lt;</span><span class="ident">Output</span> <span class="op">=</span> <span class="ident">Box</span><span class="op">&lt;</span><span class="ident">UserContext</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="attribute">#[<span class="ident">must_use</span> <span class="op">=</span> <span class="string">&quot;wait_for_run does nothing unless polled/`await`-ed&quot;</span>]</span>
         <span class="kw">struct</span> <span class="ident">RunnableChecker</span> {
             <span class="ident">thread</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Thread</span><span class="op">&gt;</span>,
@@ -1421,7 +1420,7 @@
         <span class="kw">impl</span> <span class="ident">Future</span> <span class="kw">for</span> <span class="ident">RunnableChecker</span> {
             <span class="kw">type</span> <span class="ident">Output</span> <span class="op">=</span> <span class="ident">Box</span><span class="op">&lt;</span><span class="ident">UserContext</span><span class="op">&gt;</span>;
 
-            <span class="kw">fn</span> <span class="ident">poll</span>(<span class="self">self</span>: <span class="ident">Pin</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">Self</span><span class="op">&gt;</span>, <span class="ident">cx</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Context</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Poll</span><span class="op">&lt;</span><span class="self">Self</span><span class="ident">::Output</span><span class="op">&gt;</span> {
+            <span class="kw">fn</span> <span class="ident">poll</span>(<span class="self">self</span>: <span class="ident">Pin</span><span class="op">&lt;</span><span class="kw-2">&amp;mut</span> <span class="self">Self</span><span class="op">&gt;</span>, <span class="ident">cx</span>: <span class="kw-2">&amp;mut</span> <span class="ident">Context</span>) -&gt; <span class="ident">Poll</span><span class="op">&lt;</span><span class="ident"><span class="self">Self</span>::Output</span><span class="op">&gt;</span> {
                 <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
                 <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">state</span>() <span class="op">!</span><span class="op">=</span> <span class="ident">ThreadState::Suspended</span> {
                     <span class="comment">// resume:  return the context token from thread object</span>
@@ -1455,14 +1454,14 @@
         <span class="ident">state</span>: <span class="ident">ThreadState</span>,
         <span class="ident">deadline</span>: <span class="ident">Duration</span>,
         <span class="ident">cancel_token</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Receiver</span><span class="op">&lt;</span>()<span class="op">&gt;</span><span class="op">&gt;</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span>
+    ) -&gt; <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span>
     <span class="kw">where</span>
         <span class="ident">F</span>: <span class="ident">Future</span><span class="op">&lt;</span><span class="ident">Output</span> <span class="op">=</span> <span class="ident">FT</span><span class="op">&gt;</span> <span class="op">+</span> <span class="ident">Unpin</span>,
         <span class="ident">FT</span>: <span class="ident">IntoResult</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span>,
     {
         <span class="kw">let</span> (<span class="ident">old_state</span>, <span class="ident">killed</span>) <span class="op">=</span> {
             <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
-            <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">state</span>() <span class="op">=</span><span class="op">=</span> <span class="ident">ThreadState::Dying</span> {
+            <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">state</span>() <span class="op">==</span> <span class="ident">ThreadState::Dying</span> {
                 <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::STOP</span>);
             }
             <span class="kw">let</span> (<span class="ident">sender</span>, <span class="ident">receiver</span>) <span class="op">=</span> <span class="ident">channel</span>();
@@ -1473,21 +1472,21 @@
         };
         <span class="kw">let</span> <span class="ident">ret</span> <span class="op">=</span> <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">cancel_token</span>) <span class="op">=</span> <span class="ident">cancel_token</span> {
             <span class="macro">select_biased!</span> {
-                <span class="ident">ret</span> <span class="op">=</span> <span class="ident">future</span>.<span class="ident">fuse</span>() <span class="op">=</span><span class="op">&gt;</span> <span class="ident">ret</span>.<span class="ident">into_result</span>(),
-                <span class="kw">_</span> <span class="op">=</span> <span class="ident">killed</span>.<span class="ident">fuse</span>() <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::STOP</span>),
-                <span class="kw">_</span> <span class="op">=</span> <span class="ident">kernel_hal::thread::sleep_until</span>(<span class="ident">deadline</span>).<span class="ident">fuse</span>() <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::TIMED_OUT</span>),
-                <span class="kw">_</span> <span class="op">=</span> <span class="ident">cancel_token</span>.<span class="ident">fuse</span>() <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::CANCELED</span>),
+                <span class="ident">ret</span> <span class="op">=</span> <span class="ident">future</span>.<span class="ident">fuse</span>() =&gt; <span class="ident">ret</span>.<span class="ident">into_result</span>(),
+                <span class="kw">_</span> <span class="op">=</span> <span class="ident">killed</span>.<span class="ident">fuse</span>() =&gt; <span class="prelude-val">Err</span>(<span class="ident">ZxError::STOP</span>),
+                <span class="kw">_</span> <span class="op">=</span> <span class="ident">kernel_hal::thread::sleep_until</span>(<span class="ident">deadline</span>).<span class="ident">fuse</span>() =&gt; <span class="prelude-val">Err</span>(<span class="ident">ZxError::TIMED_OUT</span>),
+                <span class="kw">_</span> <span class="op">=</span> <span class="ident">cancel_token</span>.<span class="ident">fuse</span>() =&gt; <span class="prelude-val">Err</span>(<span class="ident">ZxError::CANCELED</span>),
             }
         } <span class="kw">else</span> {
             <span class="macro">select_biased!</span> {
-                <span class="ident">ret</span> <span class="op">=</span> <span class="ident">future</span>.<span class="ident">fuse</span>() <span class="op">=</span><span class="op">&gt;</span> <span class="ident">ret</span>.<span class="ident">into_result</span>(),
-                <span class="kw">_</span> <span class="op">=</span> <span class="ident">killed</span>.<span class="ident">fuse</span>() <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::STOP</span>),
-                <span class="kw">_</span> <span class="op">=</span> <span class="ident">kernel_hal::thread::sleep_until</span>(<span class="ident">deadline</span>).<span class="ident">fuse</span>() <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::TIMED_OUT</span>),
+                <span class="ident">ret</span> <span class="op">=</span> <span class="ident">future</span>.<span class="ident">fuse</span>() =&gt; <span class="ident">ret</span>.<span class="ident">into_result</span>(),
+                <span class="kw">_</span> <span class="op">=</span> <span class="ident">killed</span>.<span class="ident">fuse</span>() =&gt; <span class="prelude-val">Err</span>(<span class="ident">ZxError::STOP</span>),
+                <span class="kw">_</span> <span class="op">=</span> <span class="ident">kernel_hal::thread::sleep_until</span>(<span class="ident">deadline</span>).<span class="ident">fuse</span>() =&gt; <span class="prelude-val">Err</span>(<span class="ident">ZxError::TIMED_OUT</span>),
             }
         };
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="ident">inner</span>.<span class="ident">killer</span> <span class="op">=</span> <span class="prelude-val">None</span>;
-        <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">state</span>() <span class="op">=</span><span class="op">=</span> <span class="ident">ThreadState::Dying</span> {
+        <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">state</span>() <span class="op">==</span> <span class="ident">ThreadState::Dying</span> {
             <span class="kw">return</span> <span class="ident">ret</span>;
         }
         <span class="macro">assert_eq!</span>(<span class="ident">inner</span>.<span class="ident">state</span>, <span class="ident">state</span>);
@@ -1515,7 +1514,7 @@
             <span class="ident">inner</span>.<span class="ident">exception</span> <span class="op">=</span> <span class="prelude-val">Some</span>(<span class="ident">exception</span>.<span class="ident">clone</span>());
             <span class="ident">exception</span>
         };
-        <span class="kw">if</span> <span class="ident">type_</span> <span class="op">=</span><span class="op">=</span> <span class="ident">ExceptionType::ThreadExiting</span> {
+        <span class="kw">if</span> <span class="ident">type_</span> <span class="op">==</span> <span class="ident">ExceptionType::ThreadExiting</span> {
             <span class="kw">let</span> <span class="ident">handled</span> <span class="op">=</span> <span class="self">self</span>
                 .<span class="number">0</span>
                 .<span class="ident">proc</span>()
@@ -1542,7 +1541,7 @@
     <span class="doccomment">/// Run a blocking task when the thread is exited itself and dying.</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// The task will stop running if and once the thread is killed.</span>
-    <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">dying_run</span><span class="op">&lt;</span><span class="ident">F</span>, <span class="ident">T</span>, <span class="ident">FT</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">future</span>: <span class="ident">F</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span>
+    <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">dying_run</span><span class="op">&lt;</span><span class="ident">F</span>, <span class="ident">T</span>, <span class="ident">FT</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">future</span>: <span class="ident">F</span>) -&gt; <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span>
     <span class="kw">where</span>
         <span class="ident">F</span>: <span class="ident">Future</span><span class="op">&lt;</span><span class="ident">Output</span> <span class="op">=</span> <span class="ident">FT</span><span class="op">&gt;</span> <span class="op">+</span> <span class="ident">Unpin</span>,
         <span class="ident">FT</span>: <span class="ident">IntoResult</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span>,
@@ -1557,21 +1556,21 @@
             <span class="ident">receiver</span>
         };
         <span class="macro">select_biased!</span> {
-            <span class="ident">ret</span> <span class="op">=</span> <span class="ident">future</span>.<span class="ident">fuse</span>() <span class="op">=</span><span class="op">&gt;</span> <span class="ident">ret</span>.<span class="ident">into_result</span>(),
-            <span class="kw">_</span> <span class="op">=</span> <span class="ident">killed</span>.<span class="ident">fuse</span>() <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::STOP</span>),
+            <span class="ident">ret</span> <span class="op">=</span> <span class="ident">future</span>.<span class="ident">fuse</span>() =&gt; <span class="ident">ret</span>.<span class="ident">into_result</span>(),
+            <span class="kw">_</span> <span class="op">=</span> <span class="ident">killed</span>.<span class="ident">fuse</span>() =&gt; <span class="prelude-val">Err</span>(<span class="ident">ZxError::STOP</span>),
         }
     }
 }
 
 <span class="kw">impl</span> <span class="ident">core::ops::Deref</span> <span class="kw">for</span> <span class="ident">CurrentThread</span> {
     <span class="kw">type</span> <span class="ident">Target</span> <span class="op">=</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Thread</span><span class="op">&gt;</span>;
-    <span class="kw">fn</span> <span class="ident">deref</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="self">Self</span><span class="ident">::Target</span> {
+    <span class="kw">fn</span> <span class="ident">deref</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><span class="ident"><span class="self">Self</span>::Target</span> {
         <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="number">0</span>
     }
 }
 
 <span class="kw">impl</span> <span class="ident">Drop</span> <span class="kw">for</span> <span class="ident">CurrentThread</span> {
-    <span class="kw">fn</span> <span class="ident">drop</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) {
+    <span class="kw">fn</span> <span class="ident">drop</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>) {
         <span class="self">self</span>.<span class="ident">terminate</span>();
     }
 }
@@ -1583,17 +1582,17 @@
 <span class="doccomment">/// or may not be a `ZxResult`.</span>
 <span class="kw">pub</span> <span class="kw">trait</span> <span class="ident">IntoResult</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> {
     <span class="doccomment">/// Performs the conversion.</span>
-    <span class="kw">fn</span> <span class="ident">into_result</span>(<span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span>;
+    <span class="kw">fn</span> <span class="ident">into_result</span>(<span class="self">self</span>) -&gt; <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span>;
 }
 
 <span class="kw">impl</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> <span class="ident">IntoResult</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">T</span> {
-    <span class="kw">fn</span> <span class="ident">into_result</span>(<span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">into_result</span>(<span class="self">self</span>) -&gt; <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> {
         <span class="prelude-val">Ok</span>(<span class="self">self</span>)
     }
 }
 
 <span class="kw">impl</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> <span class="ident">IntoResult</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> {
-    <span class="kw">fn</span> <span class="ident">into_result</span>(<span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">into_result</span>(<span class="self">self</span>) -&gt; <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> {
         <span class="self">self</span>
     }
 }
@@ -1634,7 +1633,7 @@
 }
 
 <span class="kw">impl</span> <span class="ident">Default</span> <span class="kw">for</span> <span class="ident">ThreadState</span> {
-    <span class="kw">fn</span> <span class="ident">default</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
+    <span class="kw">fn</span> <span class="ident">default</span>() -&gt; <span class="self">Self</span> {
         <span class="ident">ThreadState::New</span>
     }
 }
@@ -1653,7 +1652,7 @@
 }
 
 <span class="kw">impl</span> <span class="ident">ThreadSwitchFuture</span> {
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">thread</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Thread</span><span class="op">&gt;</span>, <span class="ident">future</span>: <span class="ident">ThreadFuturePinned</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">thread</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Thread</span><span class="op">&gt;</span>, <span class="ident">future</span>: <span class="ident">ThreadFuturePinned</span>) -&gt; <span class="self">Self</span> {
         <span class="self">Self</span> {
             <span class="ident">future</span>: <span class="ident">Mutex::new</span>(<span class="ident">future</span>),
             <span class="ident">thread</span>,
@@ -1663,7 +1662,7 @@
 
 <span class="kw">impl</span> <span class="ident">Future</span> <span class="kw">for</span> <span class="ident">ThreadSwitchFuture</span> {
     <span class="kw">type</span> <span class="ident">Output</span> <span class="op">=</span> ();
-    <span class="kw">fn</span> <span class="ident">poll</span>(<span class="self">self</span>: <span class="ident">Pin</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">Self</span><span class="op">&gt;</span>, <span class="ident">cx</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Context</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Poll</span><span class="op">&lt;</span><span class="self">Self</span><span class="ident">::Output</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">poll</span>(<span class="self">self</span>: <span class="ident">Pin</span><span class="op">&lt;</span><span class="kw-2">&amp;mut</span> <span class="self">Self</span><span class="op">&gt;</span>, <span class="ident">cx</span>: <span class="kw-2">&amp;mut</span> <span class="ident">Context</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>) -&gt; <span class="ident">Poll</span><span class="op">&lt;</span><span class="ident"><span class="self">Self</span>::Output</span><span class="op">&gt;</span> {
         <span class="ident">kernel_hal::vm::activate_paging</span>(<span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>().<span class="ident">vmar</span>().<span class="ident">table_phys</span>());
         <span class="self">self</span>.<span class="ident">future</span>.<span class="ident">lock</span>().<span class="ident">as_mut</span>().<span class="ident">poll</span>(<span class="ident">cx</span>)
     }
@@ -1672,8 +1671,8 @@
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">test</span>)]</span>
 <span class="kw">mod</span> <span class="ident">tests</span> {
     <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
-    <span class="kw">use</span> <span class="kw">crate</span><span class="ident">::object</span>::<span class="kw-2">*</span>;
-    <span class="kw">use</span> <span class="kw">crate</span><span class="ident">::task</span>::<span class="kw-2">*</span>;
+    <span class="kw">use</span> <span class="ident"><span class="kw">crate</span>::object</span>::<span class="kw-2">*</span>;
+    <span class="kw">use</span> <span class="ident"><span class="kw">crate</span>::task</span>::<span class="kw-2">*</span>;
     <span class="kw">use</span> <span class="ident">kernel_hal::timer::timer_now</span>;
 
     <span class="attribute">#[<span class="ident">test</span>]</span>
@@ -1716,7 +1715,7 @@
 
         <span class="comment">// check info and state</span>
         <span class="kw">let</span> <span class="ident">info</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_info</span>();
-        <span class="macro">assert!</span>(<span class="ident">info</span>.<span class="ident">started</span> <span class="op">&amp;&amp;</span> <span class="op">!</span><span class="ident">info</span>.<span class="ident">has_exited</span> <span class="op">&amp;&amp;</span> <span class="ident">info</span>.<span class="ident">return_code</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span>);
+        <span class="macro">assert!</span>(<span class="ident">info</span>.<span class="ident">started</span> <span class="op">&amp;&amp;</span> <span class="op">!</span><span class="ident">info</span>.<span class="ident">has_exited</span> <span class="op">&amp;&amp;</span> <span class="ident">info</span>.<span class="ident">return_code</span> <span class="op">==</span> <span class="number">0</span>);
         <span class="macro">assert_eq!</span>(<span class="ident">proc</span>.<span class="ident">status</span>(), <span class="ident">Status::Running</span>);
         <span class="macro">assert_eq!</span>(<span class="ident">thread</span>.<span class="ident">state</span>(), <span class="ident">ThreadState::Running</span>);
 
@@ -1798,7 +1797,7 @@
         <span class="kw">let</span> <span class="ident">thread</span> <span class="op">=</span> <span class="ident">Thread::create</span>(<span class="kw-2">&amp;</span><span class="ident">proc</span>, <span class="string">&quot;thread&quot;</span>).<span class="ident">expect</span>(<span class="string">&quot;failed to create thread&quot;</span>);
 
         <span class="kw">let</span> <span class="ident">info</span> <span class="op">=</span> <span class="ident">thread</span>.<span class="ident">get_thread_info</span>();
-        <span class="macro">assert!</span>(<span class="ident">info</span>.<span class="ident">state</span> <span class="op">=</span><span class="op">=</span> <span class="ident">thread</span>.<span class="ident">state</span>() <span class="kw">as</span> <span class="ident">u32</span> <span class="op">&amp;&amp;</span> <span class="ident">info</span>.<span class="ident">wait_exception_channel_type</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span>);
+        <span class="macro">assert!</span>(<span class="ident">info</span>.<span class="ident">state</span> <span class="op">==</span> <span class="ident">thread</span>.<span class="ident">state</span>() <span class="kw">as</span> <span class="ident">u32</span> <span class="op">&amp;&amp;</span> <span class="ident">info</span>.<span class="ident">wait_exception_channel_type</span> <span class="op">==</span> <span class="number">0</span>);
         <span class="macro">assert_eq!</span>(
             <span class="ident">thread</span>.<span class="ident">get_thread_exception_info</span>().<span class="ident">err</span>(),
             <span class="prelude-val">Some</span>(<span class="ident">ZxError::BAD_STATE</span>)
@@ -1814,7 +1813,7 @@
         <span class="kw">const</span> <span class="ident">SIZE</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="ident">core::mem::size_of</span>::<span class="op">&lt;</span><span class="ident">kernel_hal::context::GeneralRegs</span><span class="op">&gt;</span>();
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">buf</span> <span class="op">=</span> [<span class="number">0</span>; <span class="number">10</span>];
         <span class="macro">assert_eq!</span>(
-            <span class="ident">thread</span>.<span class="ident">read_state</span>(<span class="ident">ThreadStateKind::General</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">buf</span>).<span class="ident">err</span>(),
+            <span class="ident">thread</span>.<span class="ident">read_state</span>(<span class="ident">ThreadStateKind::General</span>, <span class="kw-2">&amp;mut</span> <span class="ident">buf</span>).<span class="ident">err</span>(),
             <span class="prelude-val">Some</span>(<span class="ident">ZxError::BAD_STATE</span>)
         );
         <span class="macro">assert_eq!</span>(
@@ -1825,7 +1824,7 @@
         <span class="ident">thread</span>.<span class="ident">suspend</span>();
 
         <span class="macro">assert_eq!</span>(
-            <span class="ident">thread</span>.<span class="ident">read_state</span>(<span class="ident">ThreadStateKind::General</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">buf</span>).<span class="ident">err</span>(),
+            <span class="ident">thread</span>.<span class="ident">read_state</span>(<span class="ident">ThreadStateKind::General</span>, <span class="kw-2">&amp;mut</span> <span class="ident">buf</span>).<span class="ident">err</span>(),
             <span class="prelude-val">Some</span>(<span class="ident">ZxError::BUFFER_TOO_SMALL</span>)
         );
         <span class="macro">assert_eq!</span>(
@@ -1835,7 +1834,7 @@
 
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">buf</span> <span class="op">=</span> [<span class="number">0</span>; <span class="ident">SIZE</span>];
         <span class="macro">assert!</span>(<span class="ident">thread</span>
-            .<span class="ident">read_state</span>(<span class="ident">ThreadStateKind::General</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">buf</span>)
+            .<span class="ident">read_state</span>(<span class="ident">ThreadStateKind::General</span>, <span class="kw-2">&amp;mut</span> <span class="ident">buf</span>)
             .<span class="ident">is_ok</span>());
         <span class="macro">assert!</span>(<span class="ident">thread</span>.<span class="ident">write_state</span>(<span class="ident">ThreadStateKind::General</span>, <span class="kw-2">&amp;</span><span class="ident">buf</span>).<span class="ident">is_ok</span>());
         <span class="comment">// TODO</span>
@@ -1899,7 +1898,7 @@
         <span class="macro">assert_eq!</span>(<span class="ident">thread</span>.<span class="ident">get_time</span>(), <span class="number">10</span>);
     }
 }
-</pre></div>
+</code></pre></div>
 </section><section id="search" class="content hidden"></section><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="zircon_object" data-search-index-js="../../../search-index.js" data-search-js="../../../search.js"></div>
     <script src="../../../main.js"></script><script src="../../../source-script.js"></script><script src="../../../source-files.js"></script>
 </body></html>

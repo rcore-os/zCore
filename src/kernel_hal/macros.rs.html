@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `kernel-hal&#x2F;src&#x2F;macros.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>macros.rs - source</title><link rel="stylesheet" type="text/css" href="../../normalize.css"><link rel="stylesheet" type="text/css" href="../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../ayu.css" disabled ><script id="default-settings" ></script><script src="../../storage.js"></script><script src="../../crates.js"></script><noscript><link rel="stylesheet" href="../../noscript.css"></noscript><link rel="icon" type="image/svg+xml" href="../../favicon.svg"><link rel="alternate icon" type="image/png" href="../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../favicon-32x32.png"><style type="text/css">#crate-search{background-image:url("../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../kernel_hal/index.html'><div class='logo-container rust-logo'><img src='../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu" title="themes"><img width="18" height="18" alt="Pick another theme!" src="../../brush.svg"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input"name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" id="help-button" title="help">?</button><a id="settings-menu" href="../../settings.html" title="settings"><img width="18" height="18" alt="Change settings" src="../../wheel.svg"></a></div></form></nav><section id="main" class="content"><div class="example-wrap"><pre class="line-numbers"><span id="1">  1</span>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `kernel-hal&#x2F;src&#x2F;macros.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>macros.rs - source</title><link rel="stylesheet" type="text/css" href="../../normalize.css"><link rel="stylesheet" type="text/css" href="../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../ayu.css" disabled ><script id="default-settings" ></script><script src="../../storage.js"></script><script src="../../crates.js"></script><noscript><link rel="stylesheet" href="../../noscript.css"></noscript><link rel="alternate icon" type="image/png" href="../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../favicon-32x32.png"><link rel="icon" type="image/svg+xml" href="../../favicon.svg"><style type="text/css">#crate-search{background-image:url("../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../kernel_hal/index.html'><div class='logo-container rust-logo'><img src='../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu" title="themes"><img width="18" height="18" alt="Pick another theme!" src="../../brush.svg"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" id="help-button" title="help">?</button><a id="settings-menu" href="../../settings.html" title="settings"><img width="18" height="18" alt="Change settings" src="../../wheel.svg"></a></div></form></nav><section id="main" class="content"><div class="example-wrap"><pre class="line-numbers"><span id="1">  1</span>
 <span id="2">  2</span>
 <span id="3">  3</span>
 <span id="4">  4</span>
@@ -174,8 +174,7 @@
 <span id="174">174</span>
 <span id="175">175</span>
 <span id="176">176</span>
-</pre><pre class="rust">
-<span class="macro">macro_rules!</span> <span class="ident">hal_fn_def</span> {
+</pre><pre class="rust"><code><span class="macro">macro_rules!</span> <span class="ident">hal_fn_def</span> {
     (
         $(
             $(<span class="attribute">#[<span class="macro-nonterminal">$</span><span class="macro-nonterminal">inner</span>:<span class="ident">ident</span> $(<span class="macro-nonterminal">$</span><span class="macro-nonterminal">args</span>:<span class="ident">tt</span>)<span class="kw-2">*</span>]</span>)<span class="op">*</span>
@@ -183,7 +182,7 @@
                 $(<span class="macro-nonterminal">$</span><span class="kw">fn</span>:<span class="macro-nonterminal">tt</span>)<span class="op">*</span>
             }
         )<span class="op">+</span>
-    ) <span class="op">=</span><span class="op">&gt;</span> {
+    ) =&gt; {
         $(
             $(<span class="attribute">#[<span class="macro-nonterminal">$</span><span class="macro-nonterminal">inner</span> $(<span class="macro-nonterminal">$</span><span class="macro-nonterminal">args</span>)<span class="kw-2">*</span>]</span>)<span class="op">*</span>
             <span class="macro-nonterminal">$</span><span class="macro-nonterminal">vis</span> <span class="kw">mod</span> <span class="macro-nonterminal">$</span><span class="macro-nonterminal">mod_name</span> {
@@ -203,7 +202,7 @@
             }
         )<span class="op">+</span>
     };
-    () <span class="op">=</span><span class="op">&gt;</span> {};
+    () =&gt; {};
 }
 
 <span class="macro">macro_rules!</span> <span class="macro-nonterminal">hal_fn_impl</span> {
@@ -213,7 +212,7 @@
                 $(<span class="macro-nonterminal">$</span><span class="kw">fn</span>:<span class="macro-nonterminal">item</span>)<span class="op">*</span>
             }
         )<span class="op">+</span>
-    ) <span class="op">=</span><span class="op">&gt;</span> {
+    ) =&gt; {
         $(
             <span class="macro">__hal_fn_impl_no_export!</span> {
                 <span class="kw">impl</span> <span class="kw">mod</span> <span class="macro-nonterminal">$</span><span class="macro-nonterminal">mod_name</span>$(::<span class="macro-nonterminal">$</span><span class="macro-nonterminal">mod_name_more</span>)<span class="op">*</span> {
@@ -224,13 +223,13 @@
             <span class="kw">pub</span> <span class="kw">use</span> <span class="macro-nonterminal">$</span><span class="macro-nonterminal">mod_name</span>$(::<span class="macro-nonterminal">$</span><span class="macro-nonterminal">mod_name_more</span>)<span class="kw-2">*</span>::<span class="kw-2">*</span>;
         )<span class="op">+</span>
     };
-    () <span class="op">=</span><span class="op">&gt;</span> {};
+    () =&gt; {};
 }
 
 <span class="macro">macro_rules!</span> <span class="ident">hal_fn_impl_default</span> {
     (
         $( <span class="macro-nonterminal">$</span><span class="macro-nonterminal">mod_name</span>:<span class="ident">ident</span>$(::<span class="macro-nonterminal">$</span><span class="macro-nonterminal">mod_name_more</span>:<span class="ident">ident</span>)<span class="op">*</span> ),<span class="op">*</span>
-    ) <span class="op">=</span><span class="op">&gt;</span> {
+    ) =&gt; {
         <span class="macro">__hal_fn_impl_no_export!</span> {
             $( <span class="kw">impl</span> <span class="kw">mod</span> <span class="macro-nonterminal">$</span><span class="macro-nonterminal">mod_name</span>$(::<span class="macro-nonterminal">$</span><span class="macro-nonterminal">mod_name_more</span>)<span class="op">*</span> {} )<span class="op">*</span>
         }
@@ -241,12 +240,12 @@
     (
         <span class="kw">mod</span> <span class="macro-nonterminal">$</span><span class="macro-nonterminal">mod_name</span>:<span class="ident">ident</span>;
         $(<span class="attribute">#[<span class="macro-nonterminal">$</span><span class="macro-nonterminal">inner</span>:<span class="ident">ident</span> $(<span class="macro-nonterminal">$</span><span class="macro-nonterminal">args</span>:<span class="ident">tt</span>)<span class="kw-2">*</span>]</span>)<span class="op">*</span>
-        <span class="macro-nonterminal">$</span><span class="macro-nonterminal">vis</span>:<span class="ident">vis</span> <span class="kw">fn</span> <span class="macro-nonterminal">$</span><span class="kw">fn</span>:<span class="macro-nonterminal">ident</span> ( $(<span class="macro-nonterminal">$</span><span class="macro-nonterminal">arg</span>:<span class="ident">ident</span> : <span class="macro-nonterminal">$</span><span class="kw">type</span>:<span class="macro-nonterminal">ty</span>),<span class="op">*</span> ) $( <span class="op">-</span><span class="op">&gt;</span> <span class="macro-nonterminal">$</span><span class="macro-nonterminal">ret</span>:<span class="ident">ty</span> )<span class="question-mark">?</span>;
+        <span class="macro-nonterminal">$</span><span class="macro-nonterminal">vis</span>:<span class="ident">vis</span> <span class="kw">fn</span> <span class="macro-nonterminal">$</span><span class="kw">fn</span>:<span class="macro-nonterminal">ident</span> ( $(<span class="macro-nonterminal">$</span><span class="macro-nonterminal">arg</span>:<span class="ident">ident</span> : <span class="macro-nonterminal">$</span><span class="kw">type</span>:<span class="macro-nonterminal">ty</span>),<span class="op">*</span> ) $( -&gt; <span class="macro-nonterminal">$</span><span class="macro-nonterminal">ret</span>:<span class="ident">ty</span> )<span class="question-mark">?</span>;
         $(<span class="macro-nonterminal">$</span><span class="macro-nonterminal">tail</span>:<span class="ident">tt</span>)<span class="op">*</span>
-    ) <span class="op">=</span><span class="op">&gt;</span> {
+    ) =&gt; {
         $(<span class="attribute">#[<span class="macro-nonterminal">$</span><span class="macro-nonterminal">inner</span> $(<span class="macro-nonterminal">$</span><span class="macro-nonterminal">args</span>)<span class="kw-2">*</span>]</span>)<span class="op">*</span>
         <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">unused_variables</span>)]</span>
-        <span class="kw">fn</span> <span class="macro-nonterminal">$</span><span class="kw">fn</span> ( $(<span class="macro-nonterminal">$</span><span class="macro-nonterminal">arg</span> : <span class="macro-nonterminal">$</span><span class="kw">type</span>),<span class="op">*</span> ) $( <span class="op">-</span><span class="op">&gt;</span> <span class="macro-nonterminal">$</span><span class="macro-nonterminal">ret</span> )<span class="question-mark">?</span> {
+        <span class="kw">fn</span> <span class="macro-nonterminal">$</span><span class="kw">fn</span> ( $(<span class="macro-nonterminal">$</span><span class="macro-nonterminal">arg</span> : <span class="macro-nonterminal">$</span><span class="kw">type</span>),<span class="op">*</span> ) $( -&gt; <span class="macro-nonterminal">$</span><span class="macro-nonterminal">ret</span> )<span class="question-mark">?</span> {
             <span class="macro">unimplemented!</span>(<span class="string">&quot;{}::{}()&quot;</span>, <span class="macro">stringify!</span>(<span class="macro-nonterminal">$</span><span class="macro-nonterminal">mod_name</span>), <span class="macro">stringify!</span>(<span class="macro-nonterminal">$</span><span class="kw">fn</span>));
         }
         <span class="macro">__hal_fn_unimpl!</span> {
@@ -257,29 +256,29 @@
     (
         <span class="kw">mod</span> <span class="macro-nonterminal">$</span><span class="macro-nonterminal">mod_name</span>:<span class="ident">ident</span>;
         $(<span class="attribute">#[<span class="macro-nonterminal">$</span><span class="macro-nonterminal">inner</span>:<span class="ident">ident</span> $(<span class="macro-nonterminal">$</span><span class="macro-nonterminal">args</span>:<span class="ident">tt</span>)<span class="kw-2">*</span>]</span>)<span class="op">*</span>
-        <span class="macro-nonterminal">$</span><span class="macro-nonterminal">vis</span>:<span class="ident">vis</span> <span class="kw">fn</span> <span class="macro-nonterminal">$</span><span class="kw">fn</span>:<span class="macro-nonterminal">ident</span> ( $(<span class="macro-nonterminal">$</span><span class="macro-nonterminal">arg</span>:<span class="ident">ident</span> : <span class="macro-nonterminal">$</span><span class="kw">type</span>:<span class="macro-nonterminal">ty</span>),<span class="op">*</span> ) $( <span class="op">-</span><span class="op">&gt;</span> <span class="macro-nonterminal">$</span><span class="macro-nonterminal">ret</span>:<span class="ident">ty</span> )<span class="question-mark">?</span> <span class="macro-nonterminal">$</span><span class="macro-nonterminal">body</span>:<span class="ident">block</span>
+        <span class="macro-nonterminal">$</span><span class="macro-nonterminal">vis</span>:<span class="ident">vis</span> <span class="kw">fn</span> <span class="macro-nonterminal">$</span><span class="kw">fn</span>:<span class="macro-nonterminal">ident</span> ( $(<span class="macro-nonterminal">$</span><span class="macro-nonterminal">arg</span>:<span class="ident">ident</span> : <span class="macro-nonterminal">$</span><span class="kw">type</span>:<span class="macro-nonterminal">ty</span>),<span class="op">*</span> ) $( -&gt; <span class="macro-nonterminal">$</span><span class="macro-nonterminal">ret</span>:<span class="ident">ty</span> )<span class="question-mark">?</span> <span class="macro-nonterminal">$</span><span class="macro-nonterminal">body</span>:<span class="ident">block</span>
         $(<span class="macro-nonterminal">$</span><span class="macro-nonterminal">tail</span>:<span class="ident">tt</span>)<span class="op">*</span>
-    ) <span class="op">=</span><span class="op">&gt;</span> {
+    ) =&gt; {
         $(<span class="attribute">#[<span class="macro-nonterminal">$</span><span class="macro-nonterminal">inner</span> $(<span class="macro-nonterminal">$</span><span class="macro-nonterminal">args</span>)<span class="kw-2">*</span>]</span>)<span class="op">*</span>
         <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">unused_variables</span>)]</span>
-        <span class="kw">fn</span> <span class="macro-nonterminal">$</span><span class="kw">fn</span> ( $(<span class="macro-nonterminal">$</span><span class="macro-nonterminal">arg</span> : <span class="macro-nonterminal">$</span><span class="kw">type</span>),<span class="op">*</span> ) $( <span class="op">-</span><span class="op">&gt;</span> <span class="macro-nonterminal">$</span><span class="macro-nonterminal">ret</span> )<span class="question-mark">?</span> <span class="macro-nonterminal">$</span><span class="macro-nonterminal">body</span>
+        <span class="kw">fn</span> <span class="macro-nonterminal">$</span><span class="kw">fn</span> ( $(<span class="macro-nonterminal">$</span><span class="macro-nonterminal">arg</span> : <span class="macro-nonterminal">$</span><span class="kw">type</span>),<span class="op">*</span> ) $( -&gt; <span class="macro-nonterminal">$</span><span class="macro-nonterminal">ret</span> )<span class="question-mark">?</span> <span class="macro-nonterminal">$</span><span class="macro-nonterminal">body</span>
         <span class="macro">__hal_fn_unimpl!</span> {
             <span class="kw">mod</span> <span class="macro-nonterminal">$</span><span class="macro-nonterminal">mod_name</span>;
             $(<span class="macro-nonterminal">$</span><span class="macro-nonterminal">tail</span>)<span class="op">*</span>
         }
     };
-    ( <span class="kw">mod</span> <span class="macro-nonterminal">$</span><span class="macro-nonterminal">mod_name</span>:<span class="ident">ident</span>; ) <span class="op">=</span><span class="op">&gt;</span> {};
+    ( <span class="kw">mod</span> <span class="macro-nonterminal">$</span><span class="macro-nonterminal">mod_name</span>:<span class="ident">ident</span>; ) =&gt; {};
 }
 
 <span class="macro">macro_rules!</span> <span class="ident">__hal_fn_export</span> {
     (
         $(<span class="attribute">#[<span class="macro-nonterminal">$</span><span class="macro-nonterminal">inner</span>:<span class="ident">ident</span> $(<span class="macro-nonterminal">$</span><span class="macro-nonterminal">args</span>:<span class="ident">tt</span>)<span class="kw-2">*</span>]</span>)<span class="op">*</span>
-        <span class="macro-nonterminal">$</span><span class="macro-nonterminal">vis</span>:<span class="ident">vis</span> <span class="kw">fn</span> <span class="macro-nonterminal">$</span><span class="kw">fn</span>:<span class="macro-nonterminal">ident</span> ( $(<span class="macro-nonterminal">$</span><span class="macro-nonterminal">arg</span>:<span class="ident">ident</span> : <span class="macro-nonterminal">$</span><span class="kw">type</span>:<span class="macro-nonterminal">ty</span>),<span class="op">*</span> ) $( <span class="op">-</span><span class="op">&gt;</span> <span class="macro-nonterminal">$</span><span class="macro-nonterminal">ret</span>:<span class="ident">ty</span> )<span class="question-mark">?</span>;
+        <span class="macro-nonterminal">$</span><span class="macro-nonterminal">vis</span>:<span class="ident">vis</span> <span class="kw">fn</span> <span class="macro-nonterminal">$</span><span class="kw">fn</span>:<span class="macro-nonterminal">ident</span> ( $(<span class="macro-nonterminal">$</span><span class="macro-nonterminal">arg</span>:<span class="ident">ident</span> : <span class="macro-nonterminal">$</span><span class="kw">type</span>:<span class="macro-nonterminal">ty</span>),<span class="op">*</span> ) $( -&gt; <span class="macro-nonterminal">$</span><span class="macro-nonterminal">ret</span>:<span class="ident">ty</span> )<span class="question-mark">?</span>;
         $(<span class="macro-nonterminal">$</span><span class="macro-nonterminal">tail</span>:<span class="ident">tt</span>)<span class="op">*</span>
-    ) <span class="op">=</span><span class="op">&gt;</span> {
+    ) =&gt; {
         $(<span class="attribute">#[<span class="macro-nonterminal">$</span><span class="macro-nonterminal">inner</span> $(<span class="macro-nonterminal">$</span><span class="macro-nonterminal">args</span>)<span class="kw-2">*</span>]</span>)<span class="op">*</span>
         <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
-        <span class="macro-nonterminal">$</span><span class="macro-nonterminal">vis</span> <span class="kw">fn</span> <span class="macro-nonterminal">$</span><span class="kw">fn</span> ( $(<span class="macro-nonterminal">$</span><span class="macro-nonterminal">arg</span> : <span class="macro-nonterminal">$</span><span class="kw">type</span>),<span class="op">*</span> ) $( <span class="op">-</span><span class="op">&gt;</span> <span class="macro-nonterminal">$</span><span class="macro-nonterminal">ret</span> )<span class="question-mark">?</span> {
+        <span class="macro-nonterminal">$</span><span class="macro-nonterminal">vis</span> <span class="kw">fn</span> <span class="macro-nonterminal">$</span><span class="kw">fn</span> ( $(<span class="macro-nonterminal">$</span><span class="macro-nonterminal">arg</span> : <span class="macro-nonterminal">$</span><span class="kw">type</span>),<span class="op">*</span> ) $( -&gt; <span class="macro-nonterminal">$</span><span class="macro-nonterminal">ret</span> )<span class="question-mark">?</span> {
             <span class="ident">__HalImpl</span>::<span class="macro-nonterminal">$</span><span class="kw">fn</span>( $(<span class="macro-nonterminal">$</span><span class="macro-nonterminal">arg</span>),<span class="op">*</span> )
         }
         <span class="macro">__hal_fn_export!</span> {
@@ -288,19 +287,19 @@
     };
     (
         $(<span class="attribute">#[<span class="macro-nonterminal">$</span><span class="macro-nonterminal">inner</span>:<span class="ident">ident</span> $(<span class="macro-nonterminal">$</span><span class="macro-nonterminal">args</span>:<span class="ident">tt</span>)<span class="kw-2">*</span>]</span>)<span class="op">*</span>
-        <span class="macro-nonterminal">$</span><span class="macro-nonterminal">vis</span>:<span class="ident">vis</span> <span class="kw">fn</span> <span class="macro-nonterminal">$</span><span class="kw">fn</span>:<span class="macro-nonterminal">ident</span> ( $(<span class="macro-nonterminal">$</span><span class="macro-nonterminal">arg</span>:<span class="ident">ident</span> : <span class="macro-nonterminal">$</span><span class="kw">type</span>:<span class="macro-nonterminal">ty</span>),<span class="op">*</span> ) $( <span class="op">-</span><span class="op">&gt;</span> <span class="macro-nonterminal">$</span><span class="macro-nonterminal">ret</span>:<span class="ident">ty</span> )<span class="question-mark">?</span> <span class="macro-nonterminal">$</span><span class="macro-nonterminal">body</span>:<span class="ident">block</span>
+        <span class="macro-nonterminal">$</span><span class="macro-nonterminal">vis</span>:<span class="ident">vis</span> <span class="kw">fn</span> <span class="macro-nonterminal">$</span><span class="kw">fn</span>:<span class="macro-nonterminal">ident</span> ( $(<span class="macro-nonterminal">$</span><span class="macro-nonterminal">arg</span>:<span class="ident">ident</span> : <span class="macro-nonterminal">$</span><span class="kw">type</span>:<span class="macro-nonterminal">ty</span>),<span class="op">*</span> ) $( -&gt; <span class="macro-nonterminal">$</span><span class="macro-nonterminal">ret</span>:<span class="ident">ty</span> )<span class="question-mark">?</span> <span class="macro-nonterminal">$</span><span class="macro-nonterminal">body</span>:<span class="ident">block</span>
         $(<span class="macro-nonterminal">$</span><span class="macro-nonterminal">tail</span>:<span class="ident">tt</span>)<span class="op">*</span>
-    ) <span class="op">=</span><span class="op">&gt;</span> {
+    ) =&gt; {
         $(<span class="attribute">#[<span class="macro-nonterminal">$</span><span class="macro-nonterminal">inner</span> $(<span class="macro-nonterminal">$</span><span class="macro-nonterminal">args</span>)<span class="kw-2">*</span>]</span>)<span class="op">*</span>
         <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
-        <span class="macro-nonterminal">$</span><span class="macro-nonterminal">vis</span> <span class="kw">fn</span> <span class="macro-nonterminal">$</span><span class="kw">fn</span> ( $(<span class="macro-nonterminal">$</span><span class="macro-nonterminal">arg</span> : <span class="macro-nonterminal">$</span><span class="kw">type</span>),<span class="op">*</span> ) $( <span class="op">-</span><span class="op">&gt;</span> <span class="macro-nonterminal">$</span><span class="macro-nonterminal">ret</span> )<span class="question-mark">?</span> {
+        <span class="macro-nonterminal">$</span><span class="macro-nonterminal">vis</span> <span class="kw">fn</span> <span class="macro-nonterminal">$</span><span class="kw">fn</span> ( $(<span class="macro-nonterminal">$</span><span class="macro-nonterminal">arg</span> : <span class="macro-nonterminal">$</span><span class="kw">type</span>),<span class="op">*</span> ) $( -&gt; <span class="macro-nonterminal">$</span><span class="macro-nonterminal">ret</span> )<span class="question-mark">?</span> {
             <span class="ident">__HalImpl</span>::<span class="macro-nonterminal">$</span><span class="kw">fn</span>( $(<span class="macro-nonterminal">$</span><span class="macro-nonterminal">arg</span>),<span class="op">*</span> )
         }
         <span class="macro">__hal_fn_export!</span> {
             $(<span class="macro-nonterminal">$</span><span class="macro-nonterminal">tail</span>)<span class="op">*</span>
         }
     };
-    () <span class="op">=</span><span class="op">&gt;</span> {};
+    () =&gt; {};
 }
 
 <span class="macro">macro_rules!</span> <span class="ident">__hal_fn_impl_no_export</span> {
@@ -310,14 +309,14 @@
                 $(<span class="macro-nonterminal">$</span><span class="kw">fn</span>:<span class="macro-nonterminal">item</span>)<span class="op">*</span>
             }
         )<span class="op">+</span>
-    ) <span class="op">=</span><span class="op">&gt;</span> {
+    ) =&gt; {
         $(
             <span class="kw">impl</span> <span class="macro-nonterminal">$</span><span class="macro-nonterminal">mod_name</span>$(::<span class="macro-nonterminal">$</span><span class="macro-nonterminal">mod_name_more</span>)<span class="kw-2">*</span><span class="ident">::__HalTrait</span> <span class="kw">for</span> <span class="macro-nonterminal">$</span><span class="macro-nonterminal">mod_name</span>$(::<span class="macro-nonterminal">$</span><span class="macro-nonterminal">mod_name_more</span>)<span class="kw-2">*</span><span class="ident">::__HalImpl</span> {
                 $(<span class="macro-nonterminal">$</span><span class="kw">fn</span>)<span class="op">*</span>
             }
         )<span class="op">+</span>
     };
-    () <span class="op">=</span><span class="op">&gt;</span> {};
+    () =&gt; {};
 }
 
 <span class="attribute">#[<span class="macro-nonterminal">cfg</span>(<span class="ident">test</span>)]</span>
@@ -326,18 +325,18 @@
         <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">BASE</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">0x2333</span>;
     }
     <span class="macro">hal_fn_def!</span> {
-        <span class="kw">mod</span> <span class="ident">mod0</span>: <span class="self">self</span><span class="ident">::base</span> {
-            <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">test</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="ident">f32</span> { <span class="number">1.0</span> }
+        <span class="kw">mod</span> <span class="ident">mod0</span>: <span class="ident"><span class="self">self</span>::base</span> {
+            <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">test</span>() -&gt; <span class="ident">f32</span> { <span class="number">1.0</span> }
         }
         <span class="kw">mod</span> <span class="ident">mod1</span> {
-            <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">foo</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> { <span class="number">0</span> }
-            <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">bar</span>(<span class="ident">a</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> { <span class="ident">a</span> }
+            <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">foo</span>() -&gt; <span class="ident">usize</span> { <span class="number">0</span> }
+            <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">bar</span>(<span class="ident">a</span>: <span class="ident">usize</span>) -&gt; <span class="ident">usize</span> { <span class="ident">a</span> }
             <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">unimp</span>();
         }
     }
     <span class="macro">hal_fn_impl!</span> {
-        <span class="kw">impl</span> <span class="kw">mod</span> <span class="self">self</span><span class="ident">::mod1</span> {
-            <span class="kw">fn</span> <span class="ident">foo</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> { <span class="number">233</span> }
+        <span class="kw">impl</span> <span class="kw">mod</span> <span class="ident"><span class="self">self</span>::mod1</span> {
+            <span class="kw">fn</span> <span class="ident">foo</span>() -&gt; <span class="ident">usize</span> { <span class="number">233</span> }
         }
     }
     <span class="macro">hal_fn_impl_default!</span>(<span class="ident">mod0</span>);
@@ -351,7 +350,7 @@
         <span class="comment">// base::unimp(); // unimplemented!</span>
     }
 }
-</pre></div>
+</code></pre></div>
 </section><section id="search" class="content hidden"></section><div id="rustdoc-vars" data-root-path="../../" data-current-crate="kernel_hal" data-search-index-js="../../search-index.js" data-search-js="../../search.js"></div>
     <script src="../../main.js"></script><script src="../../source-script.js"></script><script src="../../source-files.js"></script>
 </body></html>

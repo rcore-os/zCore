@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `linux-syscall&#x2F;src&#x2F;ipc.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>ipc.rs - source</title><link rel="stylesheet" type="text/css" href="../../normalize.css"><link rel="stylesheet" type="text/css" href="../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../ayu.css" disabled ><script id="default-settings" ></script><script src="../../storage.js"></script><script src="../../crates.js"></script><noscript><link rel="stylesheet" href="../../noscript.css"></noscript><link rel="icon" type="image/svg+xml" href="../../favicon.svg"><link rel="alternate icon" type="image/png" href="../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../favicon-32x32.png"><style type="text/css">#crate-search{background-image:url("../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../linux_syscall/index.html'><div class='logo-container rust-logo'><img src='../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu" title="themes"><img width="18" height="18" alt="Pick another theme!" src="../../brush.svg"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input"name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" id="help-button" title="help">?</button><a id="settings-menu" href="../../settings.html" title="settings"><img width="18" height="18" alt="Change settings" src="../../wheel.svg"></a></div></form></nav><section id="main" class="content"><div class="example-wrap"><pre class="line-numbers"><span id="1">  1</span>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `linux-syscall&#x2F;src&#x2F;ipc.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>ipc.rs - source</title><link rel="stylesheet" type="text/css" href="../../normalize.css"><link rel="stylesheet" type="text/css" href="../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../ayu.css" disabled ><script id="default-settings" ></script><script src="../../storage.js"></script><script src="../../crates.js"></script><noscript><link rel="stylesheet" href="../../noscript.css"></noscript><link rel="alternate icon" type="image/png" href="../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../favicon-32x32.png"><link rel="icon" type="image/svg+xml" href="../../favicon.svg"><style type="text/css">#crate-search{background-image:url("../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../linux_syscall/index.html'><div class='logo-container rust-logo'><img src='../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu" title="themes"><img width="18" height="18" alt="Pick another theme!" src="../../brush.svg"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" id="help-button" title="help">?</button><a id="settings-menu" href="../../settings.html" title="settings"><img width="18" height="18" alt="Change settings" src="../../wheel.svg"></a></div></form></nav><section id="main" class="content"><div class="example-wrap"><pre class="line-numbers"><span id="1">  1</span>
 <span id="2">  2</span>
 <span id="3">  3</span>
 <span id="4">  4</span>
@@ -335,8 +335,7 @@
 <span id="335">335</span>
 <span id="336">336</span>
 <span id="337">337</span>
-</pre><pre class="rust">
-<span class="doccomment">//! Syscalls of Inter-Process Communication</span>
+</pre><pre class="rust"><code><span class="doccomment">//! Syscalls of Inter-Process Communication</span>
 <span class="attribute">#![<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
 
 <span class="kw">use</span> <span class="ident">bitflags</span>::<span class="kw-2">*</span>;
@@ -349,7 +348,7 @@
 
 <span class="kw">impl</span> <span class="ident">Syscall</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span> {
     <span class="doccomment">/// returns the semaphore set identifier associated with the argument key</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_semget</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">key</span>: <span class="ident">usize</span>, <span class="ident">nsems</span>: <span class="ident">usize</span>, <span class="ident">flags</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_semget</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">key</span>: <span class="ident">usize</span>, <span class="ident">nsems</span>: <span class="ident">usize</span>, <span class="ident">flags</span>: <span class="ident">usize</span>) -&gt; <span class="ident">SysResult</span> {
         <span class="macro">info!</span>(<span class="string">&quot;semget: key: {} nsems: {} flags: {:#x}&quot;</span>, <span class="ident">key</span>, <span class="ident">nsems</span>, <span class="ident">flags</span>);
 
         <span class="doccomment">/// The maximum semaphores per semaphore set</span>
@@ -367,7 +366,7 @@
     <span class="doccomment">/// semaphore operations</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// performs operations on selected semaphores in the set indicated by semid</span>
-    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">sys_semop</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">id</span>: <span class="ident">usize</span>, <span class="ident">ops</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">SemBuf</span><span class="op">&gt;</span>, <span class="ident">num_ops</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
+    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">sys_semop</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">id</span>: <span class="ident">usize</span>, <span class="ident">ops</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">SemBuf</span><span class="op">&gt;</span>, <span class="ident">num_ops</span>: <span class="ident">usize</span>) -&gt; <span class="ident">SysResult</span> {
         <span class="macro">info!</span>(<span class="string">&quot;semop: id: {}&quot;</span>, <span class="ident">id</span>);
         <span class="kw">let</span> <span class="ident">ops</span> <span class="op">=</span> <span class="ident">ops</span>.<span class="ident">read_array</span>(<span class="ident">num_ops</span>)<span class="question-mark">?</span>;
 
@@ -384,9 +383,9 @@
             <span class="kw">let</span> <span class="ident">sem</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="ident">sem_array</span>[<span class="ident">num</span> <span class="kw">as</span> <span class="ident">usize</span>];
 
             <span class="kw">let</span> <span class="ident">_result</span> <span class="op">=</span> <span class="kw">match</span> <span class="ident">op</span> {
-                <span class="number">1</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">sem</span>.<span class="ident">release</span>(),
-                <span class="op">-</span><span class="number">1</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">sem</span>.<span class="ident">acquire</span>().<span class="kw">await</span><span class="question-mark">?</span>,
-                <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="macro">unimplemented!</span>(<span class="string">&quot;Semaphore: semop.(Not 1/-1)&quot;</span>),
+                <span class="number">1</span> =&gt; <span class="ident">sem</span>.<span class="ident">release</span>(),
+                <span class="op">-</span><span class="number">1</span> =&gt; <span class="ident">sem</span>.<span class="ident">acquire</span>().<span class="kw">await</span><span class="question-mark">?</span>,
+                <span class="kw">_</span> =&gt; <span class="macro">unimplemented!</span>(<span class="string">&quot;Semaphore: semop.(Not 1/-1)&quot;</span>),
             };
             <span class="ident">sem</span>.<span class="ident">set_pid</span>(<span class="self">self</span>.<span class="ident">zircon_process</span>().<span class="ident">id</span>() <span class="kw">as</span> <span class="ident">usize</span>);
             <span class="kw">if</span> <span class="ident">flags</span>.<span class="ident">contains</span>(<span class="ident">SemFlags::SEM_UNDO</span>) {
@@ -400,7 +399,7 @@
     <span class="doccomment">///</span>
     <span class="doccomment">/// performs the control operation specified by cmd on the semaphore set identified by semid,</span>
     <span class="doccomment">/// or on the semnum-th semaphore of that set.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_semctl</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">id</span>: <span class="ident">usize</span>, <span class="ident">num</span>: <span class="ident">usize</span>, <span class="ident">cmd</span>: <span class="ident">usize</span>, <span class="ident">arg</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_semctl</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">id</span>: <span class="ident">usize</span>, <span class="ident">num</span>: <span class="ident">usize</span>, <span class="ident">cmd</span>: <span class="ident">usize</span>, <span class="ident">arg</span>: <span class="ident">usize</span>) -&gt; <span class="ident">SysResult</span> {
         <span class="macro">info!</span>(
             <span class="string">&quot;semctl: id: {}, num: {}, cmd: {} arg: {:#x}&quot;</span>,
             <span class="ident">id</span>, <span class="ident">num</span>, <span class="ident">cmd</span>, <span class="ident">arg</span>
@@ -411,19 +410,19 @@
             .<span class="ident">ok_or</span>(<span class="ident">LxError::EINVAL</span>)<span class="question-mark">?</span>;
 
         <span class="kw">let</span> <span class="ident">cmd</span> <span class="op">=</span> <span class="kw">match</span> <span class="ident">SemctlCmds::try_from</span>(<span class="ident">cmd</span>) {
-            <span class="prelude-val">Ok</span>(<span class="ident">t</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">t</span>,
-            <span class="prelude-val">Err</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> {
+            <span class="prelude-val">Ok</span>(<span class="ident">t</span>) =&gt; <span class="ident">t</span>,
+            <span class="prelude-val">Err</span>(<span class="kw">_</span>) =&gt; {
                 <span class="macro">error!</span>(<span class="string">&quot;invalid semctl cmd: {}&quot;</span>, <span class="ident">cmd</span>);
                 <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">LxError::EINVAL</span>);
             }
         };
         <span class="kw">match</span> <span class="ident">cmd</span> {
-            <span class="ident">SemctlCmds::IPC_RMID</span> <span class="op">=</span><span class="op">&gt;</span> {
+            <span class="ident">SemctlCmds::IPC_RMID</span> =&gt; {
                 <span class="ident">sem_array</span>.<span class="ident">remove</span>();
                 <span class="self">self</span>.<span class="ident">linux_process</span>().<span class="ident">semaphores_remove</span>(<span class="ident">id</span>);
                 <span class="prelude-val">Ok</span>(<span class="number">0</span>)
             }
-            <span class="ident">SemctlCmds::IPC_SET</span> <span class="op">=</span><span class="op">&gt;</span> {
+            <span class="ident">SemctlCmds::IPC_SET</span> =&gt; {
                 <span class="comment">// arg is struct semid_ds</span>
                 <span class="kw">let</span> <span class="ident">ptr</span> <span class="op">=</span> <span class="ident">UserInPtr::from</span>(<span class="ident">arg</span>);
                 <span class="kw">let</span> <span class="ident">ds</span>: <span class="ident">SemidDs</span> <span class="op">=</span> <span class="ident">ptr</span>.<span class="ident">read</span>()<span class="question-mark">?</span>;
@@ -432,26 +431,26 @@
                 <span class="ident">sem_array</span>.<span class="ident">ctime</span>();
                 <span class="prelude-val">Ok</span>(<span class="number">0</span>)
             }
-            <span class="ident">SemctlCmds::IPC_STAT</span> <span class="op">=</span><span class="op">&gt;</span> {
+            <span class="ident">SemctlCmds::IPC_STAT</span> =&gt; {
                 <span class="comment">// arg is struct semid_ds</span>
                 <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">ptr</span> <span class="op">=</span> <span class="ident">UserOutPtr::from</span>(<span class="ident">arg</span>);
                 <span class="ident">ptr</span>.<span class="ident">write</span>(<span class="kw-2">*</span><span class="ident">sem_array</span>.<span class="ident">semid_ds</span>.<span class="ident">lock</span>())<span class="question-mark">?</span>;
                 <span class="prelude-val">Ok</span>(<span class="number">0</span>)
             }
-            <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> {
+            <span class="kw">_</span> =&gt; {
                 <span class="kw">let</span> <span class="ident">sem</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="ident">sem_array</span>[<span class="ident">num</span> <span class="kw">as</span> <span class="ident">usize</span>];
                 <span class="kw">match</span> <span class="ident">cmd</span> {
-                    <span class="ident">SemctlCmds::GETPID</span> <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Ok</span>(<span class="ident">sem</span>.<span class="ident">get_pid</span>()),
-                    <span class="ident">SemctlCmds::GETVAL</span> <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Ok</span>(<span class="ident">sem</span>.<span class="ident">get</span>() <span class="kw">as</span> <span class="ident">usize</span>),
-                    <span class="ident">SemctlCmds::GETNCNT</span> <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Ok</span>(<span class="ident">sem</span>.<span class="ident">get_ncnt</span>()),
-                    <span class="ident">SemctlCmds::GETZCNT</span> <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Ok</span>(<span class="number">0</span>),
-                    <span class="ident">SemctlCmds::SETVAL</span> <span class="op">=</span><span class="op">&gt;</span> {
+                    <span class="ident">SemctlCmds::GETPID</span> =&gt; <span class="prelude-val">Ok</span>(<span class="ident">sem</span>.<span class="ident">get_pid</span>()),
+                    <span class="ident">SemctlCmds::GETVAL</span> =&gt; <span class="prelude-val">Ok</span>(<span class="ident">sem</span>.<span class="ident">get</span>() <span class="kw">as</span> <span class="ident">usize</span>),
+                    <span class="ident">SemctlCmds::GETNCNT</span> =&gt; <span class="prelude-val">Ok</span>(<span class="ident">sem</span>.<span class="ident">get_ncnt</span>()),
+                    <span class="ident">SemctlCmds::GETZCNT</span> =&gt; <span class="prelude-val">Ok</span>(<span class="number">0</span>),
+                    <span class="ident">SemctlCmds::SETVAL</span> =&gt; {
                         <span class="ident">sem</span>.<span class="ident">set</span>(<span class="ident">arg</span> <span class="kw">as</span> <span class="ident">isize</span>);
                         <span class="ident">sem</span>.<span class="ident">set_pid</span>(<span class="self">self</span>.<span class="ident">zircon_process</span>().<span class="ident">id</span>() <span class="kw">as</span> <span class="ident">usize</span>);
                         <span class="ident">sem_array</span>.<span class="ident">ctime</span>();
                         <span class="prelude-val">Ok</span>(<span class="number">0</span>)
                     }
-                    <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="macro">unimplemented!</span>(<span class="string">&quot;Semaphore Semctl cmd: {:?}&quot;</span>, <span class="ident">cmd</span>),
+                    <span class="kw">_</span> =&gt; <span class="macro">unimplemented!</span>(<span class="string">&quot;Semaphore Semctl cmd: {:?}&quot;</span>, <span class="ident">cmd</span>),
                 }
             }
         }
@@ -460,7 +459,7 @@
     <span class="doccomment">/// allocates a shared memory segment</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// returns the identifier of the shared memory segment associated with the value of the argument key</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_shmget</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">key</span>: <span class="ident">usize</span>, <span class="ident">size</span>: <span class="ident">usize</span>, <span class="ident">shmflg</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_shmget</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">key</span>: <span class="ident">usize</span>, <span class="ident">size</span>: <span class="ident">usize</span>, <span class="ident">shmflg</span>: <span class="ident">usize</span>) -&gt; <span class="ident">SysResult</span> {
         <span class="macro">info!</span>(
             <span class="string">&quot;shmget: key: {}, size: {}, shmflg: {:#x}&quot;</span>,
             <span class="ident">key</span>, <span class="ident">size</span>, <span class="ident">shmflg</span>
@@ -477,12 +476,12 @@
     }
 
     <span class="doccomment">/// attaches the shared memory segment identified by shmid to the address space of the calling process.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_shmat</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">id</span>: <span class="ident">usize</span>, <span class="kw-2">mut</span> <span class="ident">addr</span>: <span class="ident">VirtAddr</span>, <span class="ident">shmflg</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_shmat</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">id</span>: <span class="ident">usize</span>, <span class="kw-2">mut</span> <span class="ident">addr</span>: <span class="ident">VirtAddr</span>, <span class="ident">shmflg</span>: <span class="ident">usize</span>) -&gt; <span class="ident">SysResult</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">shm_identifier</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>().<span class="ident">shm_get</span>(<span class="ident">id</span>).<span class="ident">ok_or</span>(<span class="ident">LxError::EINVAL</span>)<span class="question-mark">?</span>;
 
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">zircon_process</span>();
         <span class="kw">let</span> <span class="ident">vmar</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">vmar</span>();
-        <span class="kw">if</span> <span class="ident">addr</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span> {
+        <span class="kw">if</span> <span class="ident">addr</span> <span class="op">==</span> <span class="number">0</span> {
             <span class="comment">// although NULL can be a valid address</span>
             <span class="comment">// but in C, NULL is regarded as allocation failure</span>
             <span class="comment">// so just skip it</span>
@@ -513,7 +512,7 @@
 
     <span class="doccomment">/// detaches the shared memory segment located at the address specified by shmaddr</span>
     <span class="doccomment">/// from the address space of the calling process.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_shmdt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">id</span>: <span class="ident">usize</span>, <span class="ident">addr</span>: <span class="ident">VirtAddr</span>, <span class="ident">shmflg</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_shmdt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">id</span>: <span class="ident">usize</span>, <span class="ident">addr</span>: <span class="ident">VirtAddr</span>, <span class="ident">shmflg</span>: <span class="ident">usize</span>) -&gt; <span class="ident">SysResult</span> {
         <span class="macro">info!</span>(
             <span class="string">&quot;shmdt: id = {}, addr = {:#x}, flag = {:#x}&quot;</span>,
             <span class="ident">id</span>, <span class="ident">addr</span>, <span class="ident">shmflg</span>
@@ -534,42 +533,42 @@
     <span class="doccomment">/// shared memory control</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// performs the control operation specified by cmd on the shared memory segment whose identifier is given in id</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_shmctl</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">id</span>: <span class="ident">usize</span>, <span class="ident">cmd</span>: <span class="ident">usize</span>, <span class="ident">buffer</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_shmctl</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">id</span>: <span class="ident">usize</span>, <span class="ident">cmd</span>: <span class="ident">usize</span>, <span class="ident">buffer</span>: <span class="ident">usize</span>) -&gt; <span class="ident">SysResult</span> {
         <span class="macro">info!</span>(<span class="string">&quot;shmctl: id: {}, cmd: {} buffer: {:#x}&quot;</span>, <span class="ident">id</span>, <span class="ident">cmd</span>, <span class="ident">buffer</span>);
         <span class="kw">let</span> <span class="ident">shm_identifier</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>().<span class="ident">shm_get</span>(<span class="ident">id</span>).<span class="ident">ok_or</span>(<span class="ident">LxError::EINVAL</span>)<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">shm_guard</span> <span class="op">=</span> <span class="ident">shm_identifier</span>.<span class="ident">guard</span>.<span class="ident">lock</span>();
         <span class="kw">let</span> <span class="ident">cmd</span> <span class="op">=</span> <span class="kw">match</span> <span class="ident">ShmctlCmds::try_from</span>(<span class="ident">cmd</span>) {
-            <span class="prelude-val">Ok</span>(<span class="ident">t</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">t</span>,
-            <span class="prelude-val">Err</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> {
+            <span class="prelude-val">Ok</span>(<span class="ident">t</span>) =&gt; <span class="ident">t</span>,
+            <span class="prelude-val">Err</span>(<span class="kw">_</span>) =&gt; {
                 <span class="macro">error!</span>(<span class="string">&quot;invalid semctl cmd: {}&quot;</span>, <span class="ident">cmd</span>);
                 <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">LxError::EINVAL</span>);
             }
         };
         <span class="kw">match</span> <span class="ident">cmd</span> {
-            <span class="ident">ShmctlCmds::IPC_RMID</span> <span class="op">=</span><span class="op">&gt;</span> {
+            <span class="ident">ShmctlCmds::IPC_RMID</span> =&gt; {
                 <span class="ident">shm_guard</span>.<span class="ident">remove</span>();
                 <span class="self">self</span>.<span class="ident">linux_process</span>().<span class="ident">shm_pop</span>(<span class="ident">id</span>);
                 <span class="prelude-val">Ok</span>(<span class="number">0</span>)
             }
-            <span class="ident">ShmctlCmds::IPC_SET</span> <span class="op">=</span><span class="op">&gt;</span> {
+            <span class="ident">ShmctlCmds::IPC_SET</span> =&gt; {
                 <span class="kw">let</span> <span class="ident">buffer</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">ShmidDs</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">buffer</span>.<span class="ident">into</span>();
                 <span class="kw">let</span> <span class="ident">set_ds</span> <span class="op">=</span> <span class="ident">buffer</span>.<span class="ident">read</span>()<span class="question-mark">?</span>;
                 <span class="ident">shm_guard</span>.<span class="ident">set</span>(<span class="kw-2">&amp;</span><span class="ident">set_ds</span>);
                 <span class="ident">shm_guard</span>.<span class="ident">ctime</span>();
                 <span class="prelude-val">Ok</span>(<span class="number">0</span>)
             }
-            <span class="ident">ShmctlCmds::IPC_STAT</span> <span class="op">|</span> <span class="ident">ShmctlCmds::SHM_STAT</span> <span class="op">=</span><span class="op">&gt;</span> {
+            <span class="ident">ShmctlCmds::IPC_STAT</span> <span class="op">|</span> <span class="ident">ShmctlCmds::SHM_STAT</span> =&gt; {
                 <span class="kw">let</span> <span class="ident">shmid_ds</span> <span class="op">=</span> <span class="ident">shm_guard</span>.<span class="ident">shmid_ds</span>.<span class="ident">lock</span>();
                 <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">buffer</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">ShmidDs</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">buffer</span>.<span class="ident">into</span>();
                 <span class="ident">buffer</span>.<span class="ident">write</span>(<span class="kw-2">*</span><span class="ident">shmid_ds</span>)<span class="question-mark">?</span>;
                 <span class="prelude-val">Ok</span>(<span class="number">0</span>)
             }
-            <span class="ident">ShmctlCmds::SHM_INFO</span> <span class="op">=</span><span class="op">&gt;</span> {
+            <span class="ident">ShmctlCmds::SHM_INFO</span> =&gt; {
                 <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">buffer</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">ShmInfo</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">buffer</span>.<span class="ident">into</span>();
                 <span class="ident">buffer</span>.<span class="ident">write</span>(<span class="ident">ShmInfo::default</span>())<span class="question-mark">?</span>;
                 <span class="prelude-val">Ok</span>(<span class="number">0</span>)
             }
-            <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="macro">unimplemented!</span>(<span class="string">&quot;Semaphore Semctl cmd: {:?}&quot;</span>, <span class="ident">cmd</span>),
+            <span class="kw">_</span> =&gt; <span class="macro">unimplemented!</span>(<span class="string">&quot;Semaphore Semctl cmd: {:?}&quot;</span>, <span class="ident">cmd</span>),
         }
     }
 }
@@ -656,7 +655,7 @@
 <span class="doccomment">/// for the fourth argument of semctl()</span>
 <span class="doccomment">///</span>
 <span class="doccomment">/// unused currently</span>
-<span class="kw">pub</span> <span class="ident">union</span> <span class="ident">SemctlUnion</span> {
+<span class="kw">pub</span> <span class="kw">union</span> <span class="ident">SemctlUnion</span> {
     <span class="doccomment">/// Value for SETVAL</span>
     <span class="ident">val</span>: <span class="ident">isize</span>,
     <span class="doccomment">/// Buffer for IPC_STAT, IPC_SET: type semid_ds</span>
@@ -673,7 +672,7 @@
         <span class="kw">const</span> <span class="ident">SEM_UNDO</span> <span class="op">=</span> <span class="number">0x1000</span>;
     }
 }
-</pre></div>
+</code></pre></div>
 </section><section id="search" class="content hidden"></section><div id="rustdoc-vars" data-root-path="../../" data-current-crate="linux_syscall" data-search-index-js="../../search-index.js" data-search-js="../../search.js"></div>
     <script src="../../main.js"></script><script src="../../source-script.js"></script><script src="../../source-files.js"></script>
 </body></html>

@@ -1,1 +1,1 @@
-initSidebarItems({"fn":[["cpu_frequency","Current CPU frequency."],["cpu_id","Current CPU ID."]]});
+initSidebarItems({"fn":[["cpu_frequency","Current CPU frequency in MHz."],["cpu_id","Current CPU ID."]]});

@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `kernel-hal&#x2F;src&#x2F;common&#x2F;context.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>context.rs - source</title><link rel="stylesheet" type="text/css" href="../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../../ayu.css" disabled ><script id="default-settings" ></script><script src="../../../storage.js"></script><script src="../../../crates.js"></script><noscript><link rel="stylesheet" href="../../../noscript.css"></noscript><link rel="icon" type="image/svg+xml" href="../../../favicon.svg"><link rel="alternate icon" type="image/png" href="../../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../../favicon-32x32.png"><style type="text/css">#crate-search{background-image:url("../../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../../kernel_hal/index.html'><div class='logo-container rust-logo'><img src='../../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu" title="themes"><img width="18" height="18" alt="Pick another theme!" src="../../../brush.svg"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input"name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" id="help-button" title="help">?</button><a id="settings-menu" href="../../../settings.html" title="settings"><img width="18" height="18" alt="Change settings" src="../../../wheel.svg"></a></div></form></nav><section id="main" class="content"><div class="example-wrap"><pre class="line-numbers"><span id="1">  1</span>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `kernel-hal&#x2F;src&#x2F;common&#x2F;context.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>context.rs - source</title><link rel="stylesheet" type="text/css" href="../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../../ayu.css" disabled ><script id="default-settings" ></script><script src="../../../storage.js"></script><script src="../../../crates.js"></script><noscript><link rel="stylesheet" href="../../../noscript.css"></noscript><link rel="alternate icon" type="image/png" href="../../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../../favicon-32x32.png"><link rel="icon" type="image/svg+xml" href="../../../favicon.svg"><style type="text/css">#crate-search{background-image:url("../../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../../kernel_hal/index.html'><div class='logo-container rust-logo'><img src='../../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu" title="themes"><img width="18" height="18" alt="Pick another theme!" src="../../../brush.svg"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" id="help-button" title="help">?</button><a id="settings-menu" href="../../../settings.html" title="settings"><img width="18" height="18" alt="Change settings" src="../../../wheel.svg"></a></div></form></nav><section id="main" class="content"><div class="example-wrap"><pre class="line-numbers"><span id="1">  1</span>
 <span id="2">  2</span>
 <span id="3">  3</span>
 <span id="4">  4</span>
@@ -323,8 +323,7 @@
 <span id="323">323</span>
 <span id="324">324</span>
 <span id="325">325</span>
-</pre><pre class="rust">
-<span class="doccomment">//! User context.</span>
+</pre><pre class="rust"><code><span class="doccomment">//! User context.</span>
 
 <span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">MMUFlags</span>, <span class="ident">VirtAddr</span>};
 <span class="kw">use</span> <span class="ident">core::fmt</span>;
@@ -368,21 +367,21 @@
 <span class="kw">impl</span> <span class="ident">TrapReason</span> {
     <span class="doccomment">/// Get [`TrapReason`] from `trap_num` and `error_code` in trap frame for x86.</span>
     <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>)]</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">from</span>(<span class="ident">trap_num</span>: <span class="ident">usize</span>, <span class="ident">error_code</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">from</span>(<span class="ident">trap_num</span>: <span class="ident">usize</span>, <span class="ident">error_code</span>: <span class="ident">usize</span>) -&gt; <span class="self">Self</span> {
         <span class="kw">use</span> <span class="ident">x86::irq</span>::<span class="kw-2">*</span>;
         <span class="kw">const</span> <span class="ident">X86_INT_BASE</span>: <span class="ident">u8</span> <span class="op">=</span> <span class="number">0x20</span>;
         <span class="kw">const</span> <span class="ident">X86_INT_MAX</span>: <span class="ident">u8</span> <span class="op">=</span> <span class="number">0xff</span>;
 
         <span class="comment">// See https://github.com/rcore-os/trapframe-rs/blob/25cb5282aca8ceb4f7fc4dcd61e7e73b67d9ae00/src/arch/x86_64/syscall.S#L117</span>
-        <span class="kw">if</span> <span class="ident">trap_num</span> <span class="op">=</span><span class="op">=</span> <span class="number">0x100</span> {
-            <span class="kw">return</span> <span class="self">Self</span><span class="ident">::Syscall</span>;
+        <span class="kw">if</span> <span class="ident">trap_num</span> <span class="op">==</span> <span class="number">0x100</span> {
+            <span class="kw">return</span> <span class="ident"><span class="self">Self</span>::Syscall</span>;
         }
         <span class="kw">match</span> <span class="ident">trap_num</span> <span class="kw">as</span> <span class="ident">u8</span> {
-            <span class="ident">DEBUG_VECTOR</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">Self</span><span class="ident">::HardwareBreakpoint</span>,
-            <span class="ident">BREAKPOINT_VECTOR</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">Self</span><span class="ident">::SoftwareBreakpoint</span>,
-            <span class="ident">INVALID_OPCODE_VECTOR</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">Self</span><span class="ident">::UndefinedInstruction</span>,
-            <span class="ident">ALIGNMENT_CHECK_VECTOR</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">Self</span><span class="ident">::UnalignedAccess</span>,
-            <span class="ident">PAGE_FAULT_VECTOR</span> <span class="op">=</span><span class="op">&gt;</span> {
+            <span class="ident">DEBUG_VECTOR</span> =&gt; <span class="ident"><span class="self">Self</span>::HardwareBreakpoint</span>,
+            <span class="ident">BREAKPOINT_VECTOR</span> =&gt; <span class="ident"><span class="self">Self</span>::SoftwareBreakpoint</span>,
+            <span class="ident">INVALID_OPCODE_VECTOR</span> =&gt; <span class="ident"><span class="self">Self</span>::UndefinedInstruction</span>,
+            <span class="ident">ALIGNMENT_CHECK_VECTOR</span> =&gt; <span class="ident"><span class="self">Self</span>::UnalignedAccess</span>,
+            <span class="ident">PAGE_FAULT_VECTOR</span> =&gt; {
                 <span class="macro">bitflags::bitflags!</span> {
                     <span class="kw">struct</span> <span class="ident">PageFaultErrorCode</span>: <span class="ident">u32</span> {
                         <span class="kw">const</span> <span class="ident">PRESENT</span> <span class="op">=</span>     <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">0</span>;
@@ -409,30 +408,30 @@
                 <span class="kw">if</span> <span class="ident">code</span>.<span class="ident">contains</span>(<span class="ident">PageFaultErrorCode::RESERVED</span>) {
                     <span class="macro">error!</span>(<span class="string">&quot;page table entry has reserved bits set!&quot;</span>);
                 }
-                <span class="self">Self</span><span class="ident">::PageFault</span>(<span class="ident">fault_vaddr</span>, <span class="ident">flags</span>)
+                <span class="ident"><span class="self">Self</span>::PageFault</span>(<span class="ident">fault_vaddr</span>, <span class="ident">flags</span>)
             }
-            <span class="ident">vec</span> @ <span class="ident">X86_INT_BASE</span>..<span class="op">=</span><span class="ident">X86_INT_MAX</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">Self</span><span class="ident">::Interrupt</span>(<span class="ident">vec</span> <span class="kw">as</span> <span class="ident">usize</span>),
-            <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">Self</span><span class="ident">::GernelFault</span>(<span class="ident">trap_num</span>),
+            <span class="ident">vec</span> @ <span class="ident">X86_INT_BASE</span>..<span class="op">=</span><span class="ident">X86_INT_MAX</span> =&gt; <span class="ident"><span class="self">Self</span>::Interrupt</span>(<span class="ident">vec</span> <span class="kw">as</span> <span class="ident">usize</span>),
+            <span class="kw">_</span> =&gt; <span class="ident"><span class="self">Self</span>::GernelFault</span>(<span class="ident">trap_num</span>),
         }
     }
 
     <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;riscv64&quot;</span>)]</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">from</span>(<span class="ident">scause</span>: <span class="ident">riscv::register::scause::Scause</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">from</span>(<span class="ident">scause</span>: <span class="ident">riscv::register::scause::Scause</span>) -&gt; <span class="self">Self</span> {
         <span class="kw">use</span> <span class="ident">riscv::register::scause</span>::{<span class="ident">Exception</span>, <span class="ident">Trap</span>};
         <span class="kw">let</span> <span class="ident">stval</span> <span class="op">=</span> <span class="ident">riscv::register::stval::read</span>();
         <span class="kw">match</span> <span class="ident">scause</span>.<span class="ident">cause</span>() {
-            <span class="ident">Trap::Exception</span>(<span class="ident">Exception::UserEnvCall</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="self">Self</span><span class="ident">::Syscall</span>,
-            <span class="ident">Trap::Exception</span>(<span class="ident">Exception::Breakpoint</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="self">Self</span><span class="ident">::SoftwareBreakpoint</span>,
-            <span class="ident">Trap::Exception</span>(<span class="ident">Exception::IllegalInstruction</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="self">Self</span><span class="ident">::UndefinedInstruction</span>,
+            <span class="ident">Trap::Exception</span>(<span class="ident">Exception::UserEnvCall</span>) =&gt; <span class="ident"><span class="self">Self</span>::Syscall</span>,
+            <span class="ident">Trap::Exception</span>(<span class="ident">Exception::Breakpoint</span>) =&gt; <span class="ident"><span class="self">Self</span>::SoftwareBreakpoint</span>,
+            <span class="ident">Trap::Exception</span>(<span class="ident">Exception::IllegalInstruction</span>) =&gt; <span class="ident"><span class="self">Self</span>::UndefinedInstruction</span>,
             <span class="ident">Trap::Exception</span>(<span class="ident">Exception::InstructionMisaligned</span>)
-            <span class="op">|</span> <span class="ident">Trap::Exception</span>(<span class="ident">Exception::StoreMisaligned</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="self">Self</span><span class="ident">::UnalignedAccess</span>,
-            <span class="ident">Trap::Exception</span>(<span class="ident">Exception::LoadPageFault</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="self">Self</span><span class="ident">::PageFault</span>(<span class="ident">stval</span>, <span class="ident">MMUFlags::READ</span>),
-            <span class="ident">Trap::Exception</span>(<span class="ident">Exception::StorePageFault</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="self">Self</span><span class="ident">::PageFault</span>(<span class="ident">stval</span>, <span class="ident">MMUFlags::WRITE</span>),
-            <span class="ident">Trap::Exception</span>(<span class="ident">Exception::InstructionPageFault</span>) <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="self">Self</span><span class="ident">::PageFault</span>(<span class="ident">stval</span>, <span class="ident">MMUFlags::EXECUTE</span>)
+            <span class="op">|</span> <span class="ident">Trap::Exception</span>(<span class="ident">Exception::StoreMisaligned</span>) =&gt; <span class="ident"><span class="self">Self</span>::UnalignedAccess</span>,
+            <span class="ident">Trap::Exception</span>(<span class="ident">Exception::LoadPageFault</span>) =&gt; <span class="ident"><span class="self">Self</span>::PageFault</span>(<span class="ident">stval</span>, <span class="ident">MMUFlags::READ</span>),
+            <span class="ident">Trap::Exception</span>(<span class="ident">Exception::StorePageFault</span>) =&gt; <span class="ident"><span class="self">Self</span>::PageFault</span>(<span class="ident">stval</span>, <span class="ident">MMUFlags::WRITE</span>),
+            <span class="ident">Trap::Exception</span>(<span class="ident">Exception::InstructionPageFault</span>) =&gt; {
+                <span class="ident"><span class="self">Self</span>::PageFault</span>(<span class="ident">stval</span>, <span class="ident">MMUFlags::EXECUTE</span>)
             }
-            <span class="ident">Trap::Interrupt</span>(<span class="kw">_</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="self">Self</span><span class="ident">::Interrupt</span>(<span class="ident">scause</span>.<span class="ident">code</span>()),
-            <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">Self</span><span class="ident">::GernelFault</span>(<span class="ident">scause</span>.<span class="ident">code</span>()),
+            <span class="ident">Trap::Interrupt</span>(<span class="kw">_</span>) =&gt; <span class="ident"><span class="self">Self</span>::Interrupt</span>(<span class="ident">scause</span>.<span class="ident">code</span>()),
+            <span class="kw">_</span> =&gt; <span class="ident"><span class="self">Self</span>::GernelFault</span>(<span class="ident">scause</span>.<span class="ident">code</span>()),
         }
     }
 }
@@ -444,13 +443,13 @@
 
 <span class="kw">impl</span> <span class="ident">UserContext</span> {
     <span class="doccomment">/// Create an empty user context.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>() -&gt; <span class="self">Self</span> {
         <span class="kw">let</span> <span class="ident">context</span> <span class="op">=</span> <span class="ident">UserContextInner::default</span>();
         <span class="self">Self</span>(<span class="ident">context</span>)
     }
 
     <span class="doccomment">/// Initialize the context for entry into userspace.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">setup_uspace</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">pc</span>: <span class="ident">usize</span>, <span class="ident">sp</span>: <span class="ident">usize</span>, <span class="ident">arg1</span>: <span class="ident">usize</span>, <span class="ident">arg2</span>: <span class="ident">usize</span>) {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">setup_uspace</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>, <span class="ident">pc</span>: <span class="ident">usize</span>, <span class="ident">sp</span>: <span class="ident">usize</span>, <span class="ident">arg1</span>: <span class="ident">usize</span>, <span class="ident">arg2</span>: <span class="ident">usize</span>) {
         <span class="macro">cfg_if!</span> {
             <span class="kw">if</span> <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>)]</span> {
                 <span class="self">self</span>.<span class="number">0</span>.<span class="ident">general</span>.<span class="ident">rip</span> <span class="op">=</span> <span class="ident">pc</span>;
@@ -480,7 +479,7 @@
     }
 
     <span class="doccomment">/// Switch to user mode.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">enter_uspace</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">enter_uspace</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>) {
         <span class="macro">cfg_if!</span> {
             <span class="kw">if</span> <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;libos&quot;</span>)]</span> {
                 <span class="self">self</span>.<span class="number">0</span>.<span class="ident">run_fncall</span>()
@@ -493,12 +492,12 @@
     <span class="doccomment">/// Returns the `error_code` field of the context.</span>
     <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">any</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>, <span class="ident">doc</span>))]</span>
     <span class="attribute">#[<span class="ident">doc</span>(<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>))]</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">error_code</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">error_code</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">usize</span> {
         <span class="self">self</span>.<span class="number">0</span>.<span class="ident">error_code</span>
     }
 
     <span class="doccomment">/// Returns [`TrapReason`] according to the context.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">trap_reason</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">TrapReason</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">trap_reason</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">TrapReason</span> {
         <span class="macro">cfg_if!</span> {
             <span class="kw">if</span> <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>)]</span> {
                 <span class="ident">TrapReason::from</span>(<span class="self">self</span>.<span class="number">0</span>.<span class="ident">trap_num</span>, <span class="self">self</span>.<span class="number">0</span>.<span class="ident">error_code</span>)
@@ -512,7 +511,7 @@
         }
     }
     <span class="doccomment">/// Returns a `usize` representing the trap reason. (i.e., IDT vector for x86, `scause` for RISC-V)</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">raw_trap_reason</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">raw_trap_reason</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">usize</span> {
         <span class="macro">cfg_if!</span> {
             <span class="kw">if</span> <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>)]</span> {
                 <span class="self">self</span>.<span class="number">0</span>.<span class="ident">trap_num</span>
@@ -527,37 +526,37 @@
     }
 
     <span class="doccomment">/// Returns the reference of general registers.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">general</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="ident">GeneralRegs</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">general</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><span class="ident">GeneralRegs</span> {
         <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="number">0</span>.<span class="ident">general</span>
     }
 
     <span class="doccomment">/// Returns the mutable reference of general registers.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">general_mut</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">GeneralRegs</span> {
-        <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">general</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">general_mut</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>) -&gt; <span class="kw-2">&amp;mut</span> <span class="ident">GeneralRegs</span> {
+        <span class="kw-2">&amp;mut</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">general</span>
     }
 
-    <span class="kw">fn</span> <span class="ident">field_ref</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">which</span>: <span class="ident">UserContextField</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">usize</span> {
+    <span class="kw">fn</span> <span class="ident">field_ref</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>, <span class="ident">which</span>: <span class="ident">UserContextField</span>) -&gt; <span class="kw-2">&amp;mut</span> <span class="ident">usize</span> {
         <span class="macro">cfg_if!</span> {
             <span class="kw">if</span> <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>)]</span> {
                 <span class="kw">match</span> <span class="ident">which</span> {
-                    <span class="ident">UserContextField::InstrPointer</span> <span class="op">=</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">general</span>.<span class="ident">rip</span>,
-                    <span class="ident">UserContextField::StackPointer</span> <span class="op">=</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">general</span>.<span class="ident">rsp</span>,
-                    <span class="ident">UserContextField::ThreadPointer</span> <span class="op">=</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">general</span>.<span class="ident">fsbase</span>,
-                    <span class="ident">UserContextField::ReturnValue</span> <span class="op">=</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">general</span>.<span class="ident">rax</span>,
+                    <span class="ident">UserContextField::InstrPointer</span> =&gt; <span class="kw-2">&amp;mut</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">general</span>.<span class="ident">rip</span>,
+                    <span class="ident">UserContextField::StackPointer</span> =&gt; <span class="kw-2">&amp;mut</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">general</span>.<span class="ident">rsp</span>,
+                    <span class="ident">UserContextField::ThreadPointer</span> =&gt; <span class="kw-2">&amp;mut</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">general</span>.<span class="ident">fsbase</span>,
+                    <span class="ident">UserContextField::ReturnValue</span> =&gt; <span class="kw-2">&amp;mut</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">general</span>.<span class="ident">rax</span>,
                 }
             } <span class="kw">else</span> <span class="kw">if</span> <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;aarch64&quot;</span>)]</span> {
                 <span class="kw">match</span> <span class="ident">which</span> {
-                    <span class="ident">UserContextField::InstrPointer</span> <span class="op">=</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">elr</span>,
-                    <span class="ident">UserContextField::StackPointer</span> <span class="op">=</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">sp</span>,
-                    <span class="ident">UserContextField::ThreadPointer</span> <span class="op">=</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">tpidr</span>,
-                    <span class="ident">UserContextField::ReturnValue</span> <span class="op">=</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">general</span>.<span class="ident">x0</span>,
+                    <span class="ident">UserContextField::InstrPointer</span> =&gt; <span class="kw-2">&amp;mut</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">elr</span>,
+                    <span class="ident">UserContextField::StackPointer</span> =&gt; <span class="kw-2">&amp;mut</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">sp</span>,
+                    <span class="ident">UserContextField::ThreadPointer</span> =&gt; <span class="kw-2">&amp;mut</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">tpidr</span>,
+                    <span class="ident">UserContextField::ReturnValue</span> =&gt; <span class="kw-2">&amp;mut</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">general</span>.<span class="ident">x0</span>,
                 }
             } <span class="kw">else</span> <span class="kw">if</span> <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;riscv64&quot;</span>)]</span> {
                 <span class="kw">match</span> <span class="ident">which</span> {
-                    <span class="ident">UserContextField::InstrPointer</span> <span class="op">=</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">sepc</span>,
-                    <span class="ident">UserContextField::StackPointer</span> <span class="op">=</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">general</span>.<span class="ident">sp</span>,
-                    <span class="ident">UserContextField::ThreadPointer</span> <span class="op">=</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">general</span>.<span class="ident">tp</span>,
-                    <span class="ident">UserContextField::ReturnValue</span> <span class="op">=</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">general</span>.<span class="ident">a0</span>,
+                    <span class="ident">UserContextField::InstrPointer</span> =&gt; <span class="kw-2">&amp;mut</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">sepc</span>,
+                    <span class="ident">UserContextField::StackPointer</span> =&gt; <span class="kw-2">&amp;mut</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">general</span>.<span class="ident">sp</span>,
+                    <span class="ident">UserContextField::ThreadPointer</span> =&gt; <span class="kw-2">&amp;mut</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">general</span>.<span class="ident">tp</span>,
+                    <span class="ident">UserContextField::ReturnValue</span> =&gt; <span class="kw-2">&amp;mut</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">general</span>.<span class="ident">a0</span>,
                 }
             } <span class="kw">else</span> {
                 <span class="macro">unimplemented!</span>()
@@ -566,17 +565,17 @@
     }
 
     <span class="doccomment">/// Read a field of the context.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_field</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">which</span>: <span class="ident">UserContextField</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_field</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>, <span class="ident">which</span>: <span class="ident">UserContextField</span>) -&gt; <span class="ident">usize</span> {
         <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">field_ref</span>(<span class="ident">which</span>)
     }
 
     <span class="doccomment">/// Write a field of the context.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">set_field</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">which</span>: <span class="ident">UserContextField</span>, <span class="ident">value</span>: <span class="ident">usize</span>) {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">set_field</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>, <span class="ident">which</span>: <span class="ident">UserContextField</span>, <span class="ident">value</span>: <span class="ident">usize</span>) {
         <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">field_ref</span>(<span class="ident">which</span>) <span class="op">=</span> <span class="ident">value</span>;
     }
 
     <span class="doccomment">/// Advance the instruction pointer in trap handler on some architecture.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">advance_pc</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">reason</span>: <span class="ident">TrapReason</span>) {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">advance_pc</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>, <span class="ident">reason</span>: <span class="ident">TrapReason</span>) {
         <span class="macro">cfg_if!</span> {
             <span class="kw">if</span> <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;riscv64&quot;</span>)]</span> {
                 <span class="kw">if</span> <span class="kw">let</span> <span class="ident">TrapReason::Syscall</span> <span class="op">=</span> <span class="ident">reason</span> { <span class="self">self</span>.<span class="number">0</span>.<span class="ident">sepc</span> <span class="op">+</span><span class="op">=</span> <span class="number">4</span> }
@@ -588,13 +587,13 @@
 }
 
 <span class="kw">impl</span> <span class="ident">Default</span> <span class="kw">for</span> <span class="ident">UserContext</span> {
-    <span class="kw">fn</span> <span class="ident">default</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
-        <span class="self">Self</span><span class="ident">::new</span>()
+    <span class="kw">fn</span> <span class="ident">default</span>() -&gt; <span class="self">Self</span> {
+        <span class="ident"><span class="self">Self</span>::new</span>()
     }
 }
 
 <span class="kw">impl</span> <span class="ident">fmt::Debug</span> <span class="kw">for</span> <span class="ident">UserContext</span> {
-    <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">fmt::Formatter</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">fmt::Result</span> {
+    <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw-2">&amp;mut</span> <span class="ident">fmt::Formatter</span>) -&gt; <span class="ident">fmt::Result</span> {
         <span class="self">self</span>.<span class="number">0</span>.<span class="ident">fmt</span>(<span class="ident">f</span>)
     }
 }
@@ -628,7 +627,7 @@
 
         <span class="comment">// https://xem.github.io/minix86/manual/intel-x86-and-64-manual-vol1/o_7281d5ea06a5b67a-274.html</span>
         <span class="kw">impl</span> <span class="ident">Default</span> <span class="kw">for</span> <span class="ident">VectorRegs</span> {
-            <span class="kw">fn</span> <span class="ident">default</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
+            <span class="kw">fn</span> <span class="ident">default</span>() -&gt; <span class="self">Self</span> {
                 <span class="ident">VectorRegs</span> {
                     <span class="ident">fcw</span>: <span class="number">0x37f</span>,
                     <span class="ident">mxcsr</span>: <span class="number">0x1f80</span>,
@@ -643,13 +642,13 @@
         <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">U128</span>(<span class="kw">pub</span> [<span class="ident">u64</span>; <span class="number">2</span>]);
 
         <span class="kw">impl</span> <span class="ident">fmt::Debug</span> <span class="kw">for</span> <span class="ident">U128</span> {
-            <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">fmt::Formatter</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">fmt::Result</span> {
+            <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw-2">&amp;mut</span> <span class="ident">fmt::Formatter</span>) -&gt; <span class="ident">fmt::Result</span> {
                 <span class="macro">write!</span>(<span class="ident">f</span>, <span class="string">&quot;{:#016x}_{:016x}&quot;</span>, <span class="self">self</span>.<span class="number">0</span>[<span class="number">1</span>], <span class="self">self</span>.<span class="number">0</span>[<span class="number">0</span>])
             }
         }
     }
 }
-</pre></div>
+</code></pre></div>
 </section><section id="search" class="content hidden"></section><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="kernel_hal" data-search-index-js="../../../search-index.js" data-search-js="../../../search.js"></div>
     <script src="../../../main.js"></script><script src="../../../source-script.js"></script><script src="../../../source-files.js"></script>
 </body></html>

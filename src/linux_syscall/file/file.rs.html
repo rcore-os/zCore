@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `linux-syscall&#x2F;src&#x2F;file&#x2F;file.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>file.rs - source</title><link rel="stylesheet" type="text/css" href="../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../../ayu.css" disabled ><script id="default-settings" ></script><script src="../../../storage.js"></script><script src="../../../crates.js"></script><noscript><link rel="stylesheet" href="../../../noscript.css"></noscript><link rel="icon" type="image/svg+xml" href="../../../favicon.svg"><link rel="alternate icon" type="image/png" href="../../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../../favicon-32x32.png"><style type="text/css">#crate-search{background-image:url("../../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../../linux_syscall/index.html'><div class='logo-container rust-logo'><img src='../../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu" title="themes"><img width="18" height="18" alt="Pick another theme!" src="../../../brush.svg"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input"name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" id="help-button" title="help">?</button><a id="settings-menu" href="../../../settings.html" title="settings"><img width="18" height="18" alt="Change settings" src="../../../wheel.svg"></a></div></form></nav><section id="main" class="content"><div class="example-wrap"><pre class="line-numbers"><span id="1">  1</span>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `linux-syscall&#x2F;src&#x2F;file&#x2F;file.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>file.rs - source</title><link rel="stylesheet" type="text/css" href="../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../../ayu.css" disabled ><script id="default-settings" ></script><script src="../../../storage.js"></script><script src="../../../crates.js"></script><noscript><link rel="stylesheet" href="../../../noscript.css"></noscript><link rel="alternate icon" type="image/png" href="../../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../../favicon-32x32.png"><link rel="icon" type="image/svg+xml" href="../../../favicon.svg"><style type="text/css">#crate-search{background-image:url("../../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../../linux_syscall/index.html'><div class='logo-container rust-logo'><img src='../../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu" title="themes"><img width="18" height="18" alt="Pick another theme!" src="../../../brush.svg"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" id="help-button" title="help">?</button><a id="settings-menu" href="../../../settings.html" title="settings"><img width="18" height="18" alt="Change settings" src="../../../wheel.svg"></a></div></form></nav><section id="main" class="content"><div class="example-wrap"><pre class="line-numbers"><span id="1">  1</span>
 <span id="2">  2</span>
 <span id="3">  3</span>
 <span id="4">  4</span>
@@ -461,8 +461,7 @@
 <span id="461">461</span>
 <span id="462">462</span>
 <span id="463">463</span>
-</pre><pre class="rust">
-<span class="doccomment">//! File operations</span>
+</pre><pre class="rust"><code><span class="doccomment">//! File operations</span>
 <span class="doccomment">//!</span>
 <span class="doccomment">//! - read, pread, readv</span>
 <span class="doccomment">//! - write, pwrite, writev</span>
@@ -482,12 +481,12 @@
     <span class="doccomment">/// - fd – file descriptor</span>
     <span class="doccomment">/// - base – pointer to the buffer to fill with read contents</span>
     <span class="doccomment">/// - len – number of bytes to read</span>
-    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">sys_read</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">fd</span>: <span class="ident">FileDesc</span>, <span class="kw-2">mut</span> <span class="ident">base</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>, <span class="ident">len</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
+    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">sys_read</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">fd</span>: <span class="ident">FileDesc</span>, <span class="kw-2">mut</span> <span class="ident">base</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>, <span class="ident">len</span>: <span class="ident">usize</span>) -&gt; <span class="ident">SysResult</span> {
         <span class="macro">info!</span>(<span class="string">&quot;read: fd={:?}, base={:?}, len={:#x}&quot;</span>, <span class="ident">fd</span>, <span class="ident">base</span>, <span class="ident">len</span>);
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>();
         <span class="kw">let</span> <span class="ident">file_like</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_file_like</span>(<span class="ident">fd</span>)<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">buf</span> <span class="op">=</span> <span class="macro">vec!</span>[<span class="number">0u8</span>; <span class="ident">len</span>];
-        <span class="kw">let</span> <span class="ident">len</span> <span class="op">=</span> <span class="ident">file_like</span>.<span class="ident">read</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">buf</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">len</span> <span class="op">=</span> <span class="ident">file_like</span>.<span class="ident">read</span>(<span class="kw-2">&amp;mut</span> <span class="ident">buf</span>).<span class="kw">await</span><span class="question-mark">?</span>;
         <span class="ident">base</span>.<span class="ident">write_array</span>(<span class="kw-2">&amp;</span><span class="ident">buf</span>[..<span class="ident">len</span>])<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(<span class="ident">len</span>)
     }
@@ -497,7 +496,7 @@
     <span class="doccomment">/// - fd – file descriptor</span>
     <span class="doccomment">/// - base – pointer to the buffer write</span>
     <span class="doccomment">/// - len – number of bytes to write</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_write</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">fd</span>: <span class="ident">FileDesc</span>, <span class="ident">base</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>, <span class="ident">len</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_write</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">fd</span>: <span class="ident">FileDesc</span>, <span class="ident">base</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>, <span class="ident">len</span>: <span class="ident">usize</span>) -&gt; <span class="ident">SysResult</span> {
         <span class="macro">info!</span>(<span class="string">&quot;write: fd={:?}, base={:?}, len={:#x}&quot;</span>, <span class="ident">fd</span>, <span class="ident">base</span>, <span class="ident">len</span>);
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>();
         <span class="kw">let</span> <span class="ident">buf</span> <span class="op">=</span> <span class="ident">base</span>.<span class="ident">read_array</span>(<span class="ident">len</span>)<span class="question-mark">?</span>;
@@ -515,7 +514,7 @@
         <span class="kw-2">mut</span> <span class="ident">base</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>,
         <span class="ident">len</span>: <span class="ident">usize</span>,
         <span class="ident">offset</span>: <span class="ident">u64</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
+    ) -&gt; <span class="ident">SysResult</span> {
         <span class="macro">info!</span>(
             <span class="string">&quot;pread: fd={:?}, base={:?}, len={}, offset={}&quot;</span>,
             <span class="ident">fd</span>, <span class="ident">base</span>, <span class="ident">len</span>, <span class="ident">offset</span>
@@ -523,7 +522,7 @@
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>();
         <span class="kw">let</span> <span class="ident">file_like</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_file_like</span>(<span class="ident">fd</span>)<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">buf</span> <span class="op">=</span> <span class="macro">vec!</span>[<span class="number">0u8</span>; <span class="ident">len</span>];
-        <span class="kw">let</span> <span class="ident">len</span> <span class="op">=</span> <span class="ident">file_like</span>.<span class="ident">read_at</span>(<span class="ident">offset</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">buf</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">len</span> <span class="op">=</span> <span class="ident">file_like</span>.<span class="ident">read_at</span>(<span class="ident">offset</span>, <span class="kw-2">&amp;mut</span> <span class="ident">buf</span>).<span class="kw">await</span><span class="question-mark">?</span>;
         <span class="ident">base</span>.<span class="ident">write_array</span>(<span class="kw-2">&amp;</span><span class="ident">buf</span>[..<span class="ident">len</span>])<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(<span class="ident">len</span>)
     }
@@ -536,7 +535,7 @@
         <span class="ident">base</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>,
         <span class="ident">len</span>: <span class="ident">usize</span>,
         <span class="ident">offset</span>: <span class="ident">u64</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
+    ) -&gt; <span class="ident">SysResult</span> {
         <span class="macro">info!</span>(
             <span class="string">&quot;pwrite: fd={:?}, base={:?}, len={}, offset={}&quot;</span>,
             <span class="ident">fd</span>, <span class="ident">base</span>, <span class="ident">len</span>, <span class="ident">offset</span>
@@ -556,13 +555,13 @@
         <span class="ident">fd</span>: <span class="ident">FileDesc</span>,
         <span class="ident">iov_ptr</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">IoVecOut</span><span class="op">&gt;</span>,
         <span class="ident">iov_count</span>: <span class="ident">usize</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
+    ) -&gt; <span class="ident">SysResult</span> {
         <span class="macro">info!</span>(<span class="string">&quot;readv: fd={:?}, iov={:?}, count={}&quot;</span>, <span class="ident">fd</span>, <span class="ident">iov_ptr</span>, <span class="ident">iov_count</span>);
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">iovs</span> <span class="op">=</span> <span class="ident">iov_ptr</span>.<span class="ident">read_iovecs</span>(<span class="ident">iov_count</span>)<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>();
         <span class="kw">let</span> <span class="ident">file_like</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_file_like</span>(<span class="ident">fd</span>)<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">buf</span> <span class="op">=</span> <span class="macro">vec!</span>[<span class="number">0u8</span>; <span class="ident">iovs</span>.<span class="ident">total_len</span>()];
-        <span class="kw">let</span> <span class="ident">len</span> <span class="op">=</span> <span class="ident">file_like</span>.<span class="ident">read</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">buf</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">len</span> <span class="op">=</span> <span class="ident">file_like</span>.<span class="ident">read</span>(<span class="kw-2">&amp;mut</span> <span class="ident">buf</span>).<span class="kw">await</span><span class="question-mark">?</span>;
         <span class="ident">iovs</span>.<span class="ident">write_from_buf</span>(<span class="kw-2">&amp;</span><span class="ident">buf</span>)<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(<span class="ident">len</span>)
     }
@@ -575,7 +574,7 @@
         <span class="ident">fd</span>: <span class="ident">FileDesc</span>,
         <span class="ident">iov_ptr</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">IoVecIn</span><span class="op">&gt;</span>,
         <span class="ident">iov_count</span>: <span class="ident">usize</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
+    ) -&gt; <span class="ident">SysResult</span> {
         <span class="macro">info!</span>(
             <span class="string">&quot;writev: fd={:?}, iov={:?}, count={}&quot;</span>,
             <span class="ident">fd</span>, <span class="ident">iov_ptr</span>, <span class="ident">iov_count</span>
@@ -590,16 +589,16 @@
 
     <span class="doccomment">/// repositions the offset of the open file associated with the file descriptor fd</span>
     <span class="doccomment">/// to the argument offset according to the directive whence</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_lseek</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">fd</span>: <span class="ident">FileDesc</span>, <span class="ident">offset</span>: <span class="ident">i64</span>, <span class="ident">whence</span>: <span class="ident">u8</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_lseek</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">fd</span>: <span class="ident">FileDesc</span>, <span class="ident">offset</span>: <span class="ident">i64</span>, <span class="ident">whence</span>: <span class="ident">u8</span>) -&gt; <span class="ident">SysResult</span> {
         <span class="kw">const</span> <span class="ident">SEEK_SET</span>: <span class="ident">u8</span> <span class="op">=</span> <span class="number">0</span>;
         <span class="kw">const</span> <span class="ident">SEEK_CUR</span>: <span class="ident">u8</span> <span class="op">=</span> <span class="number">1</span>;
         <span class="kw">const</span> <span class="ident">SEEK_END</span>: <span class="ident">u8</span> <span class="op">=</span> <span class="number">2</span>;
 
         <span class="kw">let</span> <span class="ident">pos</span> <span class="op">=</span> <span class="kw">match</span> <span class="ident">whence</span> {
-            <span class="ident">SEEK_SET</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">SeekFrom::Start</span>(<span class="ident">offset</span> <span class="kw">as</span> <span class="ident">u64</span>),
-            <span class="ident">SEEK_END</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">SeekFrom::End</span>(<span class="ident">offset</span>),
-            <span class="ident">SEEK_CUR</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">SeekFrom::Current</span>(<span class="ident">offset</span>),
-            <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">LxError::EINVAL</span>),
+            <span class="ident">SEEK_SET</span> =&gt; <span class="ident">SeekFrom::Start</span>(<span class="ident">offset</span> <span class="kw">as</span> <span class="ident">u64</span>),
+            <span class="ident">SEEK_END</span> =&gt; <span class="ident">SeekFrom::End</span>(<span class="ident">offset</span>),
+            <span class="ident">SEEK_CUR</span> =&gt; <span class="ident">SeekFrom::Current</span>(<span class="ident">offset</span>),
+            <span class="kw">_</span> =&gt; <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">LxError::EINVAL</span>),
         };
         <span class="macro">info!</span>(<span class="string">&quot;lseek: fd={:?}, pos={:?}&quot;</span>, <span class="ident">fd</span>, <span class="ident">pos</span>);
 
@@ -610,7 +609,7 @@
     }
 
     <span class="doccomment">/// cause the regular file named by path to be truncated to a size of precisely length bytes.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_truncate</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">path</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>, <span class="ident">len</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_truncate</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">path</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>, <span class="ident">len</span>: <span class="ident">usize</span>) -&gt; <span class="ident">SysResult</span> {
         <span class="kw">let</span> <span class="ident">path</span> <span class="op">=</span> <span class="ident">path</span>.<span class="ident">read_cstring</span>()<span class="question-mark">?</span>;
         <span class="macro">info!</span>(<span class="string">&quot;truncate: path={:?}, len={}&quot;</span>, <span class="ident">path</span>, <span class="ident">len</span>);
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>();
@@ -619,7 +618,7 @@
     }
 
     <span class="doccomment">/// cause the regular file referenced by fd to be truncated to a size of precisely length bytes.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_ftruncate</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">fd</span>: <span class="ident">FileDesc</span>, <span class="ident">len</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_ftruncate</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">fd</span>: <span class="ident">FileDesc</span>, <span class="ident">len</span>: <span class="ident">usize</span>) -&gt; <span class="ident">SysResult</span> {
         <span class="macro">info!</span>(<span class="string">&quot;ftruncate: fd={:?}, len={}&quot;</span>, <span class="ident">fd</span>, <span class="ident">len</span>);
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>();
         <span class="ident">proc</span>.<span class="ident">get_file</span>(<span class="ident">fd</span>)<span class="question-mark">?</span>.<span class="ident">set_len</span>(<span class="ident">len</span> <span class="kw">as</span> <span class="ident">u64</span>)<span class="question-mark">?</span>;
@@ -633,7 +632,7 @@
         <span class="ident">in_fd</span>: <span class="ident">FileDesc</span>,
         <span class="ident">offset_ptr</span>: <span class="ident">UserInOutPtr</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span>,
         <span class="ident">count</span>: <span class="ident">usize</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
+    ) -&gt; <span class="ident">SysResult</span> {
         <span class="self">self</span>.<span class="ident">sys_copy_file_range</span>(<span class="ident">in_fd</span>, <span class="ident">offset_ptr</span>, <span class="ident">out_fd</span>, <span class="number">0</span>.<span class="ident">into</span>(), <span class="ident">count</span>, <span class="number">0</span>)
             .<span class="kw">await</span>
     }
@@ -647,7 +646,7 @@
         <span class="kw-2">mut</span> <span class="ident">out_offset</span>: <span class="ident">UserInOutPtr</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span>,
         <span class="ident">count</span>: <span class="ident">usize</span>,
         <span class="ident">flags</span>: <span class="ident">usize</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
+    ) -&gt; <span class="ident">SysResult</span> {
         <span class="macro">info!</span>(
             <span class="string">&quot;copy_file_range: in={:?}, out={:?}, in_offset={:?}, out_offset={:?}, count={}, flags={}&quot;</span>,
             <span class="ident">in_fd</span>, <span class="ident">out_fd</span>, <span class="ident">in_offset</span>, <span class="ident">out_offset</span>, <span class="ident">count</span>, <span class="ident">flags</span>
@@ -680,8 +679,8 @@
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">total_written</span> <span class="op">=</span> <span class="number">0</span>;
         <span class="kw">while</span> <span class="ident">bytes_read</span> <span class="op">&lt;</span> <span class="ident">count</span> {
             <span class="kw">let</span> <span class="ident">len</span> <span class="op">=</span> <span class="ident">buffer</span>.<span class="ident">len</span>().<span class="ident">min</span>(<span class="ident">count</span> <span class="op">-</span> <span class="ident">bytes_read</span>);
-            <span class="kw">let</span> <span class="ident">read_len</span> <span class="op">=</span> <span class="ident">in_file</span>.<span class="ident">read_at</span>(<span class="ident">read_offset</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">buffer</span>[..<span class="ident">len</span>]).<span class="kw">await</span><span class="question-mark">?</span>;
-            <span class="kw">if</span> <span class="ident">read_len</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span> {
+            <span class="kw">let</span> <span class="ident">read_len</span> <span class="op">=</span> <span class="ident">in_file</span>.<span class="ident">read_at</span>(<span class="ident">read_offset</span>, <span class="kw-2">&amp;mut</span> <span class="ident">buffer</span>[..<span class="ident">len</span>]).<span class="kw">await</span><span class="question-mark">?</span>;
+            <span class="kw">if</span> <span class="ident">read_len</span> <span class="op">==</span> <span class="number">0</span> {
                 <span class="kw">break</span>;
             }
             <span class="ident">bytes_read</span> <span class="op">+</span><span class="op">=</span> <span class="ident">read_len</span>;
@@ -691,7 +690,7 @@
             <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">rlen</span> <span class="op">=</span> <span class="ident">read_len</span>;
             <span class="kw">while</span> <span class="ident">bytes_written</span> <span class="op">&lt;</span> <span class="ident">read_len</span> {
                 <span class="kw">let</span> <span class="ident">write_len</span> <span class="op">=</span> <span class="ident">out_file</span>.<span class="ident">write</span>(<span class="kw-2">&amp;</span><span class="ident">buffer</span>[<span class="ident">bytes_written</span>..(<span class="ident">bytes_written</span> <span class="op">+</span> <span class="ident">rlen</span>)])<span class="question-mark">?</span>;
-                <span class="kw">if</span> <span class="ident">write_len</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span> {
+                <span class="kw">if</span> <span class="ident">write_len</span> <span class="op">==</span> <span class="number">0</span> {
                     <span class="macro">info!</span>(
                         <span class="string">&quot;copy_file_range:END_ERR in={:?}, out={:?}, in_offset={:?}, out_offset={:?}, count={} = bytes_read {}, bytes_written {}, write_len {}&quot;</span>,
                         <span class="ident">in_fd</span>, <span class="ident">out_fd</span>, <span class="ident">in_offset</span>, <span class="ident">out_offset</span>, <span class="ident">count</span>, <span class="ident">bytes_read</span>, <span class="ident">bytes_written</span>, <span class="ident">write_len</span>
@@ -717,7 +716,7 @@
     }
 
     <span class="doccomment">/// causes all buffered modifications to file metadata and data to be written to the underlying file systems.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_sync</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_sync</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">SysResult</span> {
         <span class="macro">info!</span>(<span class="string">&quot;sync:&quot;</span>);
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>();
         <span class="ident">proc</span>.<span class="ident">root_inode</span>().<span class="ident">fs</span>().<span class="ident">sync</span>()<span class="question-mark">?</span>;
@@ -726,7 +725,7 @@
 
     <span class="doccomment">/// transfers (&quot;flushes&quot;) all modified in-core data of (i.e., modified buffer cache pages for) the file</span>
     <span class="doccomment">/// referred to by the file descriptor fd to the disk device</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_fsync</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">fd</span>: <span class="ident">FileDesc</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_fsync</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">fd</span>: <span class="ident">FileDesc</span>) -&gt; <span class="ident">SysResult</span> {
         <span class="macro">info!</span>(<span class="string">&quot;fsync: fd={:?}&quot;</span>, <span class="ident">fd</span>);
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>();
         <span class="ident">proc</span>.<span class="ident">get_file</span>(<span class="ident">fd</span>)<span class="question-mark">?</span>.<span class="ident">sync_all</span>()<span class="question-mark">?</span>;
@@ -734,7 +733,7 @@
     }
 
     <span class="doccomment">/// is similar to fsync(), but does not flush modified metadata unless that metadata is needed</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_fdatasync</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">fd</span>: <span class="ident">FileDesc</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_fdatasync</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">fd</span>: <span class="ident">FileDesc</span>) -&gt; <span class="ident">SysResult</span> {
         <span class="macro">info!</span>(<span class="string">&quot;fdatasync: fd={:?}&quot;</span>, <span class="ident">fd</span>);
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>();
         <span class="ident">proc</span>.<span class="ident">get_file</span>(<span class="ident">fd</span>)<span class="question-mark">?</span>.<span class="ident">sync_data</span>()<span class="question-mark">?</span>;
@@ -749,7 +748,7 @@
         <span class="ident">arg1</span>: <span class="ident">usize</span>,
         <span class="ident">arg2</span>: <span class="ident">usize</span>,
         <span class="ident">arg3</span>: <span class="ident">usize</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
+    ) -&gt; <span class="ident">SysResult</span> {
         <span class="macro">info!</span>(
             <span class="string">&quot;ioctl: fd={:?}, request={:#x}, args=[{:#x}, {:#x}, {:#x}]&quot;</span>,
             <span class="ident">fd</span>, <span class="ident">request</span>, <span class="ident">arg1</span>, <span class="ident">arg2</span>, <span class="ident">arg3</span>
@@ -762,15 +761,15 @@
     <span class="doccomment">/// Manipulate a file descriptor.</span>
     <span class="doccomment">/// - cmd – cmd flag</span>
     <span class="doccomment">/// - arg – additional parameters based on cmd</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_fcntl</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">fd</span>: <span class="ident">FileDesc</span>, <span class="ident">cmd</span>: <span class="ident">usize</span>, <span class="ident">arg</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_fcntl</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">fd</span>: <span class="ident">FileDesc</span>, <span class="ident">cmd</span>: <span class="ident">usize</span>, <span class="ident">arg</span>: <span class="ident">usize</span>) -&gt; <span class="ident">SysResult</span> {
         <span class="macro">info!</span>(<span class="string">&quot;fcntl: fd={:?}, cmd={:x}, arg={}&quot;</span>, <span class="ident">fd</span>, <span class="ident">cmd</span>, <span class="ident">arg</span>);
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>();
         <span class="kw">let</span> <span class="ident">file_like</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_file_like</span>(<span class="ident">fd</span>)<span class="question-mark">?</span>;
 
         <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Ok</span>(<span class="ident">cmd</span>) <span class="op">=</span> <span class="ident">FcntlCmd::try_from</span>(<span class="ident">cmd</span>) {
             <span class="kw">match</span> <span class="ident">cmd</span> {
-                <span class="ident">FcntlCmd::GETFD</span> <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Ok</span>(<span class="ident">file_like</span>.<span class="ident">flags</span>().<span class="ident">close_on_exec</span>() <span class="kw">as</span> <span class="ident">usize</span>),
-                <span class="ident">FcntlCmd::SETFD</span> <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="ident">FcntlCmd::GETFD</span> =&gt; <span class="prelude-val">Ok</span>(<span class="ident">file_like</span>.<span class="ident">flags</span>().<span class="ident">close_on_exec</span>() <span class="kw">as</span> <span class="ident">usize</span>),
+                <span class="ident">FcntlCmd::SETFD</span> =&gt; {
                     <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">flags</span> <span class="op">=</span> <span class="ident">file_like</span>.<span class="ident">flags</span>();
                     <span class="kw">if</span> (<span class="ident">arg</span> <span class="op">&amp;</span> <span class="number">1</span>) <span class="op">!</span><span class="op">=</span> <span class="number">0</span> {
                         <span class="ident">flags</span> <span class="op">|</span><span class="op">=</span> <span class="ident">OpenFlags::CLOEXEC</span>;
@@ -780,17 +779,17 @@
                     <span class="ident">file_like</span>.<span class="ident">set_flags</span>(<span class="ident">flags</span>)<span class="question-mark">?</span>;
                     <span class="prelude-val">Ok</span>(<span class="number">0</span>)
                 }
-                <span class="ident">FcntlCmd::GETFL</span> <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Ok</span>(<span class="ident">file_like</span>.<span class="ident">flags</span>().<span class="ident">bits</span>()),
-                <span class="ident">FcntlCmd::SETFL</span> <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="ident">FcntlCmd::GETFL</span> =&gt; <span class="prelude-val">Ok</span>(<span class="ident">file_like</span>.<span class="ident">flags</span>().<span class="ident">bits</span>()),
+                <span class="ident">FcntlCmd::SETFL</span> =&gt; {
                     <span class="ident">file_like</span>.<span class="ident">set_flags</span>(<span class="ident">OpenFlags::from_bits_truncate</span>(<span class="ident">arg</span>))<span class="question-mark">?</span>;
                     <span class="prelude-val">Ok</span>(<span class="number">0</span>)
                 }
-                <span class="ident">FcntlCmd::DUPFD</span> <span class="op">|</span> <span class="ident">FcntlCmd::DUPFD_CLOEXEC</span> <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="ident">FcntlCmd::DUPFD</span> <span class="op">|</span> <span class="ident">FcntlCmd::DUPFD_CLOEXEC</span> =&gt; {
                     <span class="kw">let</span> <span class="ident">new_fd</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_free_fd_from</span>(<span class="ident">arg</span>);
                     <span class="self">self</span>.<span class="ident">sys_dup2</span>(<span class="ident">fd</span>, <span class="ident">new_fd</span>)<span class="question-mark">?</span>;
                     <span class="kw">let</span> <span class="ident">dup</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_file_like</span>(<span class="ident">new_fd</span>)<span class="question-mark">?</span>;
                     <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">flags</span> <span class="op">=</span> <span class="ident">dup</span>.<span class="ident">flags</span>();
-                    <span class="kw">if</span> <span class="ident">cmd</span> <span class="op">=</span><span class="op">=</span> <span class="ident">FcntlCmd::DUPFD_CLOEXEC</span> {
+                    <span class="kw">if</span> <span class="ident">cmd</span> <span class="op">==</span> <span class="ident">FcntlCmd::DUPFD_CLOEXEC</span> {
                         <span class="ident">flags</span> <span class="op">|</span><span class="op">=</span> <span class="ident">OpenFlags::CLOEXEC</span>;
                     } <span class="kw">else</span> {
                         <span class="ident">flags</span> <span class="op">-</span><span class="op">=</span> <span class="ident">OpenFlags::CLOEXEC</span>;
@@ -798,7 +797,7 @@
                     <span class="ident">dup</span>.<span class="ident">set_flags</span>(<span class="ident">flags</span>)<span class="question-mark">?</span>;
                     <span class="prelude-val">Ok</span>(<span class="ident">new_fd</span>.<span class="ident">into</span>())
                 }
-                <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Err</span>(<span class="ident">LxError::EINVAL</span>),
+                <span class="kw">_</span> =&gt; <span class="prelude-val">Err</span>(<span class="ident">LxError::EINVAL</span>),
             }
         } <span class="kw">else</span> {
             <span class="prelude-val">Err</span>(<span class="ident">LxError::EINVAL</span>)
@@ -806,7 +805,7 @@
     }
 
     <span class="doccomment">/// Checks whether the calling process can access the file pathname</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_access</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">path</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>, <span class="ident">mode</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_access</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">path</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>, <span class="ident">mode</span>: <span class="ident">usize</span>) -&gt; <span class="ident">SysResult</span> {
         <span class="self">self</span>.<span class="ident">sys_faccessat</span>(<span class="ident">FileDesc::CWD</span>, <span class="ident">path</span>, <span class="ident">mode</span>, <span class="number">0</span>)
     }
 
@@ -818,7 +817,7 @@
         <span class="ident">path</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>,
         <span class="ident">mode</span>: <span class="ident">usize</span>,
         <span class="ident">flags</span>: <span class="ident">usize</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
+    ) -&gt; <span class="ident">SysResult</span> {
         <span class="comment">// TODO: check permissions based on uid/gid</span>
         <span class="kw">let</span> <span class="ident">path</span> <span class="op">=</span> <span class="ident">path</span>.<span class="ident">read_cstring</span>()<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">flags</span> <span class="op">=</span> <span class="ident">AtFlags::from_bits_truncate</span>(<span class="ident">flags</span>);
@@ -834,12 +833,12 @@
 
     <span class="doccomment">/// change file timestamps with nanosecond precision</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_utimensat</span>(
-        <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
+        <span class="kw-2">&amp;mut</span> <span class="self">self</span>,
         <span class="ident">dirfd</span>: <span class="ident">FileDesc</span>,
         <span class="ident">pathname</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>,
         <span class="ident">times</span>: <span class="ident">UserInOutPtr</span><span class="op">&lt;</span>[<span class="ident">TimeSpec</span>; <span class="number">2</span>]<span class="op">&gt;</span>,
         <span class="ident">flags</span>: <span class="ident">usize</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">SysResult</span> {
+    ) -&gt; <span class="ident">SysResult</span> {
         <span class="macro">info!</span>(
             <span class="string">&quot;utimensat(raw): dirfd: {:?}, pathname: {:?}, times: {:?}, flags: {:#x}&quot;</span>,
             <span class="ident">dirfd</span>, <span class="ident">pathname</span>, <span class="ident">times</span>, <span class="ident">flags</span>
@@ -864,9 +863,9 @@
                 <span class="string">&quot;utimensat: dirfd: {:?}, pathname: {:?}, times: {:?}, flags: {:#x}&quot;</span>,
                 <span class="ident">dirfd</span>, <span class="ident">pathname</span>, <span class="ident">times</span>, <span class="ident">flags</span>
             );
-            <span class="kw">let</span> <span class="ident">follow</span> <span class="op">=</span> <span class="kw">if</span> <span class="ident">flags</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span> {
+            <span class="kw">let</span> <span class="ident">follow</span> <span class="op">=</span> <span class="kw">if</span> <span class="ident">flags</span> <span class="op">==</span> <span class="number">0</span> {
                 <span class="bool-val">true</span>
-            } <span class="kw">else</span> <span class="kw">if</span> <span class="ident">flags</span> <span class="op">=</span><span class="op">=</span> <span class="ident">AtFlags::SYMLINK_NOFOLLOW</span>.<span class="ident">bits</span>() {
+            } <span class="kw">else</span> <span class="kw">if</span> <span class="ident">flags</span> <span class="op">==</span> <span class="ident">AtFlags::SYMLINK_NOFOLLOW</span>.<span class="ident">bits</span>() {
                 <span class="bool-val">false</span>
             } <span class="kw">else</span> {
                 <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">LxError::EINVAL</span>);
@@ -875,7 +874,7 @@
         };
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">metadata</span> <span class="op">=</span> <span class="ident">inode</span>.<span class="ident">metadata</span>()<span class="question-mark">?</span>;
         <span class="kw">if</span> <span class="ident">times</span>[<span class="number">0</span>].<span class="ident">nsec</span> <span class="op">!</span><span class="op">=</span> <span class="ident">UTIME_OMIT</span> {
-            <span class="kw">if</span> <span class="ident">times</span>[<span class="number">0</span>].<span class="ident">nsec</span> <span class="op">=</span><span class="op">=</span> <span class="ident">UTIME_NOW</span> {
+            <span class="kw">if</span> <span class="ident">times</span>[<span class="number">0</span>].<span class="ident">nsec</span> <span class="op">==</span> <span class="ident">UTIME_NOW</span> {
                 <span class="ident">times</span>[<span class="number">0</span>] <span class="op">=</span> <span class="ident">TimeSpec::now</span>();
             }
             <span class="ident">metadata</span>.<span class="ident">atime</span> <span class="op">=</span> <span class="ident">rcore_fs::vfs::Timespec</span> {
@@ -884,7 +883,7 @@
             };
         }
         <span class="kw">if</span> <span class="ident">times</span>[<span class="number">1</span>].<span class="ident">nsec</span> <span class="op">!</span><span class="op">=</span> <span class="ident">UTIME_OMIT</span> {
-            <span class="kw">if</span> <span class="ident">times</span>[<span class="number">1</span>].<span class="ident">nsec</span> <span class="op">=</span><span class="op">=</span> <span class="ident">UTIME_NOW</span> {
+            <span class="kw">if</span> <span class="ident">times</span>[<span class="number">1</span>].<span class="ident">nsec</span> <span class="op">==</span> <span class="ident">UTIME_NOW</span> {
                 <span class="ident">times</span>[<span class="number">1</span>] <span class="op">=</span> <span class="ident">TimeSpec::now</span>();
             }
             <span class="ident">metadata</span>.<span class="ident">mtime</span> <span class="op">=</span> <span class="ident">rcore_fs::vfs::Timespec</span> {
@@ -925,7 +924,7 @@
         <span class="ident">DUPFD_CLOEXEC</span> <span class="op">=</span> <span class="ident">F_LINUX_SPECIFIC_BASE</span> <span class="op">+</span> <span class="number">6</span>,
     }
 }
-</pre></div>
+</code></pre></div>
 </section><section id="search" class="content hidden"></section><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="linux_syscall" data-search-index-js="../../../search-index.js" data-search-js="../../../search.js"></div>
     <script src="../../../main.js"></script><script src="../../../source-script.js"></script><script src="../../../source-files.js"></script>
 </body></html>

@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `zircon-object&#x2F;src&#x2F;vm&#x2F;vmo&#x2F;mod.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>mod.rs - source</title><link rel="stylesheet" type="text/css" href="../../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../../../ayu.css" disabled ><script id="default-settings" ></script><script src="../../../../storage.js"></script><script src="../../../../crates.js"></script><noscript><link rel="stylesheet" href="../../../../noscript.css"></noscript><link rel="icon" type="image/svg+xml" href="../../../../favicon.svg"><link rel="alternate icon" type="image/png" href="../../../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../../../favicon-32x32.png"><style type="text/css">#crate-search{background-image:url("../../../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../../../zircon_object/index.html'><div class='logo-container rust-logo'><img src='../../../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu" title="themes"><img width="18" height="18" alt="Pick another theme!" src="../../../../brush.svg"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input"name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" id="help-button" title="help">?</button><a id="settings-menu" href="../../../../settings.html" title="settings"><img width="18" height="18" alt="Change settings" src="../../../../wheel.svg"></a></div></form></nav><section id="main" class="content"><div class="example-wrap"><pre class="line-numbers"><span id="1">  1</span>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `zircon-object&#x2F;src&#x2F;vm&#x2F;vmo&#x2F;mod.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>mod.rs - source</title><link rel="stylesheet" type="text/css" href="../../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../../../ayu.css" disabled ><script id="default-settings" ></script><script src="../../../../storage.js"></script><script src="../../../../crates.js"></script><noscript><link rel="stylesheet" href="../../../../noscript.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../../../favicon-32x32.png"><link rel="icon" type="image/svg+xml" href="../../../../favicon.svg"><style type="text/css">#crate-search{background-image:url("../../../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../../../zircon_object/index.html'><div class='logo-container rust-logo'><img src='../../../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu" title="themes"><img width="18" height="18" alt="Pick another theme!" src="../../../../brush.svg"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" id="help-button" title="help">?</button><a id="settings-menu" href="../../../../settings.html" title="settings"><img width="18" height="18" alt="Change settings" src="../../../../wheel.svg"></a></div></form></nav><section id="main" class="content"><div class="example-wrap"><pre class="line-numbers"><span id="1">  1</span>
 <span id="2">  2</span>
 <span id="3">  3</span>
 <span id="4">  4</span>
@@ -490,11 +490,10 @@
 <span id="490">490</span>
 <span id="491">491</span>
 <span id="492">492</span>
-</pre><pre class="rust">
-<span class="kw">use</span> {
+</pre><pre class="rust"><code><span class="kw">use</span> {
     <span class="self">self</span>::{<span class="ident">paged</span>::<span class="kw-2">*</span>, <span class="ident">physical</span>::<span class="kw-2">*</span>, <span class="ident">slice</span>::<span class="kw-2">*</span>},
     <span class="kw">super</span>::<span class="kw-2">*</span>,
-    <span class="kw">crate</span><span class="ident">::object</span>::<span class="kw-2">*</span>,
+    <span class="ident"><span class="kw">crate</span>::object</span>::<span class="kw-2">*</span>,
     <span class="ident">alloc</span>::{
         <span class="ident">sync</span>::{<span class="ident">Arc</span>, <span class="ident">Weak</span>},
         <span class="ident">vec::Vec</span>,
@@ -513,7 +512,7 @@
 <span class="macro">kcounter!</span>(<span class="ident">VMO_PAGE_DEALLOC</span>, <span class="string">&quot;vmo.page_dealloc&quot;</span>);
 
 <span class="doccomment">/// The amount of memory committed to VMOs.</span>
-<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">vmo_page_bytes</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
+<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">vmo_page_bytes</span>() -&gt; <span class="ident">usize</span> {
     (<span class="ident">VMO_PAGE_ALLOC</span>.<span class="ident">get</span>() <span class="op">-</span> <span class="ident">VMO_PAGE_DEALLOC</span>.<span class="ident">get</span>()) <span class="op">*</span> <span class="ident">PAGE_SIZE</span>
 }
 
@@ -521,39 +520,39 @@
 <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy::len_without_is_empty</span>)]</span>
 <span class="kw">pub</span> <span class="kw">trait</span> <span class="ident">VMObjectTrait</span>: <span class="ident">Sync</span> <span class="op">+</span> <span class="ident">Send</span> {
     <span class="doccomment">/// Read memory to `buf` from VMO at `offset`.</span>
-    <span class="kw">fn</span> <span class="ident">read</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">offset</span>: <span class="ident">usize</span>, <span class="ident">buf</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> [<span class="ident">u8</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span>;
+    <span class="kw">fn</span> <span class="ident">read</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">offset</span>: <span class="ident">usize</span>, <span class="ident">buf</span>: <span class="kw-2">&amp;mut</span> [<span class="ident">u8</span>]) -&gt; <span class="ident">ZxResult</span>;
 
     <span class="doccomment">/// Write memory from `buf` to VMO at `offset`.</span>
-    <span class="kw">fn</span> <span class="ident">write</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">offset</span>: <span class="ident">usize</span>, <span class="ident">buf</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span>;
+    <span class="kw">fn</span> <span class="ident">write</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">offset</span>: <span class="ident">usize</span>, <span class="ident">buf</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]) -&gt; <span class="ident">ZxResult</span>;
 
     <span class="doccomment">/// Resets the range of bytes in the VMO from `offset` to `offset+len` to 0.</span>
-    <span class="kw">fn</span> <span class="ident">zero</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">offset</span>: <span class="ident">usize</span>, <span class="ident">len</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span>;
+    <span class="kw">fn</span> <span class="ident">zero</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">offset</span>: <span class="ident">usize</span>, <span class="ident">len</span>: <span class="ident">usize</span>) -&gt; <span class="ident">ZxResult</span>;
 
     <span class="doccomment">/// Get the length of VMO.</span>
-    <span class="kw">fn</span> <span class="ident">len</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span>;
+    <span class="kw">fn</span> <span class="ident">len</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">usize</span>;
 
     <span class="doccomment">/// Set the length of VMO.</span>
-    <span class="kw">fn</span> <span class="ident">set_len</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">len</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span>;
+    <span class="kw">fn</span> <span class="ident">set_len</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">len</span>: <span class="ident">usize</span>) -&gt; <span class="ident">ZxResult</span>;
 
     <span class="doccomment">/// Commit a page.</span>
-    <span class="kw">fn</span> <span class="ident">commit_page</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">page_idx</span>: <span class="ident">usize</span>, <span class="ident">flags</span>: <span class="ident">MMUFlags</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">PhysAddr</span><span class="op">&gt;</span>;
+    <span class="kw">fn</span> <span class="ident">commit_page</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">page_idx</span>: <span class="ident">usize</span>, <span class="ident">flags</span>: <span class="ident">MMUFlags</span>) -&gt; <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">PhysAddr</span><span class="op">&gt;</span>;
 
     <span class="doccomment">/// Commit pages with an external function f.</span>
     <span class="doccomment">/// the vmo is internally locked before it calls f,</span>
     <span class="doccomment">/// allowing `VmMapping` to avoid deadlock</span>
     <span class="kw">fn</span> <span class="ident">commit_pages_with</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
-        <span class="ident">f</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="kw">dyn</span> <span class="ident">FnMut</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="kw">dyn</span> <span class="ident">FnMut</span>(<span class="ident">usize</span>, <span class="ident">MMUFlags</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">PhysAddr</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span>;
+        <span class="ident">f</span>: <span class="kw-2">&amp;mut</span> <span class="kw">dyn</span> <span class="ident">FnMut</span>(<span class="kw-2">&amp;mut</span> <span class="kw">dyn</span> <span class="ident">FnMut</span>(<span class="ident">usize</span>, <span class="ident">MMUFlags</span>) -&gt; <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">PhysAddr</span><span class="op">&gt;</span>) -&gt; <span class="ident">ZxResult</span>,
+    ) -&gt; <span class="ident">ZxResult</span>;
 
     <span class="doccomment">/// Commit allocating physical memory.</span>
-    <span class="kw">fn</span> <span class="ident">commit</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">offset</span>: <span class="ident">usize</span>, <span class="ident">len</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span>;
+    <span class="kw">fn</span> <span class="ident">commit</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">offset</span>: <span class="ident">usize</span>, <span class="ident">len</span>: <span class="ident">usize</span>) -&gt; <span class="ident">ZxResult</span>;
 
     <span class="doccomment">/// Decommit allocated physical memory.</span>
-    <span class="kw">fn</span> <span class="ident">decommit</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">offset</span>: <span class="ident">usize</span>, <span class="ident">len</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span>;
+    <span class="kw">fn</span> <span class="ident">decommit</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">offset</span>: <span class="ident">usize</span>, <span class="ident">len</span>: <span class="ident">usize</span>) -&gt; <span class="ident">ZxResult</span>;
 
     <span class="doccomment">/// Create a child VMO.</span>
-    <span class="kw">fn</span> <span class="ident">create_child</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">offset</span>: <span class="ident">usize</span>, <span class="ident">len</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">VMObjectTrait</span><span class="op">&gt;</span><span class="op">&gt;</span>;
+    <span class="kw">fn</span> <span class="ident">create_child</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">offset</span>: <span class="ident">usize</span>, <span class="ident">len</span>: <span class="ident">usize</span>) -&gt; <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">VMObjectTrait</span><span class="op">&gt;</span><span class="op">&gt;</span>;
 
     <span class="doccomment">/// Append a mapping to the VMO&#39;s mapping list.</span>
     <span class="kw">fn</span> <span class="ident">append_mapping</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">_mapping</span>: <span class="ident">Weak</span><span class="op">&lt;</span><span class="ident">VmMapping</span><span class="op">&gt;</span>) {}
@@ -562,34 +561,34 @@
     <span class="kw">fn</span> <span class="ident">remove_mapping</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">_mapping</span>: <span class="ident">Weak</span><span class="op">&lt;</span><span class="ident">VmMapping</span><span class="op">&gt;</span>) {}
 
     <span class="doccomment">/// Complete the VmoInfo.</span>
-    <span class="kw">fn</span> <span class="ident">complete_info</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">info</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">VmoInfo</span>);
+    <span class="kw">fn</span> <span class="ident">complete_info</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">info</span>: <span class="kw-2">&amp;mut</span> <span class="ident">VmoInfo</span>);
 
     <span class="doccomment">/// Get the cache policy.</span>
-    <span class="kw">fn</span> <span class="ident">cache_policy</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">CachePolicy</span>;
+    <span class="kw">fn</span> <span class="ident">cache_policy</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">CachePolicy</span>;
 
     <span class="doccomment">/// Set the cache policy.</span>
-    <span class="kw">fn</span> <span class="ident">set_cache_policy</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">policy</span>: <span class="ident">CachePolicy</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span>;
+    <span class="kw">fn</span> <span class="ident">set_cache_policy</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">policy</span>: <span class="ident">CachePolicy</span>) -&gt; <span class="ident">ZxResult</span>;
 
     <span class="doccomment">/// Count committed pages of the VMO.</span>
-    <span class="kw">fn</span> <span class="ident">committed_pages_in_range</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">start_idx</span>: <span class="ident">usize</span>, <span class="ident">end_idx</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span>;
+    <span class="kw">fn</span> <span class="ident">committed_pages_in_range</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">start_idx</span>: <span class="ident">usize</span>, <span class="ident">end_idx</span>: <span class="ident">usize</span>) -&gt; <span class="ident">usize</span>;
 
     <span class="doccomment">/// Pin the given range of the VMO.</span>
-    <span class="kw">fn</span> <span class="ident">pin</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">_offset</span>: <span class="ident">usize</span>, <span class="ident">_len</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    <span class="kw">fn</span> <span class="ident">pin</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">_offset</span>: <span class="ident">usize</span>, <span class="ident">_len</span>: <span class="ident">usize</span>) -&gt; <span class="ident">ZxResult</span> {
         <span class="prelude-val">Err</span>(<span class="ident">ZxError::NOT_SUPPORTED</span>)
     }
 
     <span class="doccomment">/// Unpin the given range of the VMO.</span>
-    <span class="kw">fn</span> <span class="ident">unpin</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">_offset</span>: <span class="ident">usize</span>, <span class="ident">_len</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    <span class="kw">fn</span> <span class="ident">unpin</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">_offset</span>: <span class="ident">usize</span>, <span class="ident">_len</span>: <span class="ident">usize</span>) -&gt; <span class="ident">ZxResult</span> {
         <span class="prelude-val">Err</span>(<span class="ident">ZxError::NOT_SUPPORTED</span>)
     }
 
     <span class="doccomment">/// Returns true if the object is backed by a contiguous range of physical memory.</span>
-    <span class="kw">fn</span> <span class="ident">is_contiguous</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+    <span class="kw">fn</span> <span class="ident">is_contiguous</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">bool</span> {
         <span class="bool-val">false</span>
     }
 
     <span class="doccomment">/// Returns true if the object is backed by RAM.</span>
-    <span class="kw">fn</span> <span class="ident">is_paged</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+    <span class="kw">fn</span> <span class="ident">is_paged</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">bool</span> {
         <span class="bool-val">false</span>
     }
 }
@@ -621,12 +620,12 @@
 
 <span class="kw">impl</span> <span class="ident">VmObject</span> {
     <span class="doccomment">/// Create a new VMO backing on physical memory allocated in pages.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new_paged</span>(<span class="ident">pages</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
-        <span class="self">Self</span><span class="ident">::new_paged_with_resizable</span>(<span class="bool-val">false</span>, <span class="ident">pages</span>)
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new_paged</span>(<span class="ident">pages</span>: <span class="ident">usize</span>) -&gt; <span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
+        <span class="ident"><span class="self">Self</span>::new_paged_with_resizable</span>(<span class="bool-val">false</span>, <span class="ident">pages</span>)
     }
 
     <span class="doccomment">/// Create a new VMO, which can be resizable, backing on physical memory allocated in pages.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new_paged_with_resizable</span>(<span class="ident">resizable</span>: <span class="ident">bool</span>, <span class="ident">pages</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new_paged_with_resizable</span>(<span class="ident">resizable</span>: <span class="ident">bool</span>, <span class="ident">pages</span>: <span class="ident">usize</span>) -&gt; <span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">base</span> <span class="op">=</span> <span class="ident">KObjectBase::with_signal</span>(<span class="ident">Signal::VMO_ZERO_CHILDREN</span>);
         <span class="ident">Arc::new</span>(<span class="ident">VmObject</span> {
             <span class="ident">resizable</span>,
@@ -638,7 +637,7 @@
     }
 
     <span class="doccomment">/// Create a new VMO representing a piece of contiguous physical memory.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new_physical</span>(<span class="ident">paddr</span>: <span class="ident">PhysAddr</span>, <span class="ident">pages</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new_physical</span>(<span class="ident">paddr</span>: <span class="ident">PhysAddr</span>, <span class="ident">pages</span>: <span class="ident">usize</span>) -&gt; <span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
         <span class="ident">Arc::new</span>(<span class="ident">VmObject</span> {
             <span class="ident">base</span>: <span class="ident">KObjectBase::with_signal</span>(<span class="ident">Signal::VMO_ZERO_CHILDREN</span>),
             <span class="ident">resizable</span>: <span class="bool-val">false</span>,
@@ -649,7 +648,7 @@
     }
 
     <span class="doccomment">/// Create a VM object referring to a specific contiguous range of physical frame.  </span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new_contiguous</span>(<span class="ident">pages</span>: <span class="ident">usize</span>, <span class="ident">align_log2</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new_contiguous</span>(<span class="ident">pages</span>: <span class="ident">usize</span>, <span class="ident">align_log2</span>: <span class="ident">usize</span>) -&gt; <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">vmo</span> <span class="op">=</span> <span class="ident">Arc::new</span>(<span class="ident">VmObject</span> {
             <span class="ident">base</span>: <span class="ident">KObjectBase::with_signal</span>(<span class="ident">Signal::VMO_ZERO_CHILDREN</span>),
             <span class="ident">resizable</span>: <span class="bool-val">false</span>,
@@ -666,7 +665,7 @@
         <span class="ident">resizable</span>: <span class="ident">bool</span>,
         <span class="ident">offset</span>: <span class="ident">usize</span>,
         <span class="ident">len</span>: <span class="ident">usize</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+    ) -&gt; <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">base</span> <span class="op">=</span> <span class="ident">KObjectBase::with_signal</span>(<span class="ident">Signal::VMO_ZERO_CHILDREN</span>);
         <span class="ident">base</span>.<span class="ident">set_name</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">base</span>.<span class="ident">name</span>());
         <span class="kw">let</span> <span class="ident">trait_</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">trait_</span>.<span class="ident">create_child</span>(<span class="ident">offset</span>, <span class="ident">len</span>)<span class="question-mark">?</span>;
@@ -685,7 +684,7 @@
     }
 
     <span class="doccomment">/// Create a child slice as an VMO</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">create_slice</span>(<span class="self">self</span>: <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span>, <span class="ident">offset</span>: <span class="ident">usize</span>, <span class="ident">p_size</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">create_slice</span>(<span class="self">self</span>: <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span>, <span class="ident">offset</span>: <span class="ident">usize</span>, <span class="ident">p_size</span>: <span class="ident">usize</span>) -&gt; <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">size</span> <span class="op">=</span> <span class="ident">roundup_pages</span>(<span class="ident">p_size</span>);
         <span class="comment">// why 32 * PAGE_SIZE? Refered to zircon source codes</span>
         <span class="kw">if</span> <span class="ident">size</span> <span class="op">&lt;</span> <span class="ident">p_size</span> <span class="op">|</span><span class="op">|</span> <span class="ident">size</span> <span class="op">&gt;</span> <span class="ident">usize::MAX</span> <span class="op">&amp;</span> <span class="op">!</span>(<span class="number">32</span> <span class="op">*</span> <span class="ident">PAGE_SIZE</span>) {
@@ -725,13 +724,13 @@
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="ident">inner</span>.<span class="ident">children</span>.<span class="ident">retain</span>(<span class="op">|</span><span class="ident">x</span><span class="op">|</span> <span class="ident">x</span>.<span class="ident">strong_count</span>() <span class="op">!</span><span class="op">=</span> <span class="number">0</span>);
         <span class="ident">inner</span>.<span class="ident">children</span>.<span class="ident">push</span>(<span class="ident">Arc::downgrade</span>(<span class="ident">child</span>));
-        <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">children</span>.<span class="ident">len</span>() <span class="op">=</span><span class="op">=</span> <span class="number">1</span> {
+        <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">children</span>.<span class="ident">len</span>() <span class="op">==</span> <span class="number">1</span> {
             <span class="self">self</span>.<span class="ident">base</span>.<span class="ident">signal_clear</span>(<span class="ident">Signal::VMO_ZERO_CHILDREN</span>);
         }
     }
 
     <span class="doccomment">/// Set the length of this VMO if resizable.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">set_len</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">len</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">set_len</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">len</span>: <span class="ident">usize</span>) -&gt; <span class="ident">ZxResult</span> {
         <span class="kw">let</span> <span class="ident">size</span> <span class="op">=</span> <span class="ident">roundup_pages</span>(<span class="ident">len</span>);
         <span class="kw">if</span> <span class="ident">size</span> <span class="op">&lt;</span> <span class="ident">len</span> {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::OUT_OF_RANGE</span>);
@@ -747,7 +746,7 @@
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">size</span>: <span class="ident">usize</span>,
         <span class="ident">zero_until_offset</span>: <span class="ident">usize</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
+    ) -&gt; <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="kw">let</span> <span class="ident">content_size</span> <span class="op">=</span> <span class="ident">inner</span>.<span class="ident">content_size</span>;
         <span class="kw">let</span> <span class="ident">len</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">trait_</span>.<span class="ident">len</span>();
@@ -770,20 +769,20 @@
     }
 
     <span class="doccomment">/// Get the size of the content stored in the VMO in bytes.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">content_size</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">content_size</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">usize</span> {
         <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="ident">inner</span>.<span class="ident">content_size</span>
     }
 
     <span class="doccomment">/// Get the size of the content stored in the VMO in bytes.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">set_content_size</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">size</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">set_content_size</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">size</span>: <span class="ident">usize</span>) -&gt; <span class="ident">ZxResult</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="ident">inner</span>.<span class="ident">content_size</span> <span class="op">=</span> <span class="ident">size</span>;
         <span class="prelude-val">Ok</span>(())
     }
 
     <span class="doccomment">/// Get information of this VMO.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_info</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">VmoInfo</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_info</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">VmoInfo</span> {
         <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">ret</span> <span class="op">=</span> <span class="ident">VmoInfo</span> {
             <span class="ident">koid</span>: <span class="self">self</span>.<span class="ident">base</span>.<span class="ident">id</span>,
@@ -806,12 +805,12 @@
             <span class="ident">share_count</span>: <span class="ident">inner</span>.<span class="ident">mapping_count</span> <span class="kw">as</span> <span class="ident">u64</span>,
             ..<span class="ident">Default::default</span>()
         };
-        <span class="self">self</span>.<span class="ident">trait_</span>.<span class="ident">complete_info</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">ret</span>);
+        <span class="self">self</span>.<span class="ident">trait_</span>.<span class="ident">complete_info</span>(<span class="kw-2">&amp;mut</span> <span class="ident">ret</span>);
         <span class="ident">ret</span>
     }
 
     <span class="doccomment">/// Set the cache policy.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">set_cache_policy</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">policy</span>: <span class="ident">CachePolicy</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">set_cache_policy</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">policy</span>: <span class="ident">CachePolicy</span>) -&gt; <span class="ident">ZxResult</span> {
         <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="kw">if</span> <span class="op">!</span><span class="ident">inner</span>.<span class="ident">children</span>.<span class="ident">is_empty</span>() {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::BAD_STATE</span>);
@@ -836,18 +835,18 @@
 
     <span class="doccomment">/// Returns an estimate of the number of unique VmAspaces that this object</span>
     <span class="doccomment">/// is mapped into.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">share_count</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">share_count</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">usize</span> {
         <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="ident">inner</span>.<span class="ident">mapping_count</span>
     }
 
     <span class="doccomment">/// Returns true if the object size can be changed.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">is_resizable</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">is_resizable</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">bool</span> {
         <span class="self">self</span>.<span class="ident">resizable</span>
     }
 
     <span class="doccomment">/// Returns true if the object is backed by a contiguous range of physical memory.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">is_contiguous</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">is_contiguous</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">bool</span> {
         <span class="self">self</span>.<span class="ident">trait_</span>.<span class="ident">is_contiguous</span>()
     }
 }
@@ -855,17 +854,17 @@
 <span class="kw">impl</span> <span class="ident">Deref</span> <span class="kw">for</span> <span class="ident">VmObject</span> {
     <span class="kw">type</span> <span class="ident">Target</span> <span class="op">=</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">VMObjectTrait</span><span class="op">&gt;</span>;
 
-    <span class="kw">fn</span> <span class="ident">deref</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="self">Self</span><span class="ident">::Target</span> {
+    <span class="kw">fn</span> <span class="ident">deref</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><span class="ident"><span class="self">Self</span>::Target</span> {
         <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">trait_</span>
     }
 }
 
 <span class="kw">impl</span> <span class="ident">Drop</span> <span class="kw">for</span> <span class="ident">VmObject</span> {
-    <span class="kw">fn</span> <span class="ident">drop</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) {
+    <span class="kw">fn</span> <span class="ident">drop</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>) {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="kw">let</span> <span class="ident">parent</span> <span class="op">=</span> <span class="kw">match</span> <span class="ident">inner</span>.<span class="ident">parent</span>.<span class="ident">upgrade</span>() {
-            <span class="prelude-val">Some</span>(<span class="ident">parent</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">parent</span>,
-            <span class="prelude-val">None</span> <span class="op">=</span><span class="op">&gt;</span> <span class="kw">return</span>,
+            <span class="prelude-val">Some</span>(<span class="ident">parent</span>) =&gt; <span class="ident">parent</span>,
+            <span class="prelude-val">None</span> =&gt; <span class="kw">return</span>,
         };
         <span class="kw">for</span> <span class="ident">child</span> <span class="kw">in</span> <span class="ident">inner</span>.<span class="ident">children</span>.<span class="ident">iter</span>() {
             <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">child</span>) <span class="op">=</span> <span class="ident">child</span>.<span class="ident">upgrade</span>() {
@@ -873,8 +872,8 @@
             }
         }
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">parent_inner</span> <span class="op">=</span> <span class="ident">parent</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
-        <span class="kw">let</span> <span class="ident">children</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">parent_inner</span>.<span class="ident">children</span>;
-        <span class="ident">children</span>.<span class="ident">append</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">inner</span>.<span class="ident">children</span>);
+        <span class="kw">let</span> <span class="ident">children</span> <span class="op">=</span> <span class="kw-2">&amp;mut</span> <span class="ident">parent_inner</span>.<span class="ident">children</span>;
+        <span class="ident">children</span>.<span class="ident">append</span>(<span class="kw-2">&amp;mut</span> <span class="ident">inner</span>.<span class="ident">children</span>);
         <span class="ident">children</span>.<span class="ident">retain</span>(<span class="op">|</span><span class="ident">c</span><span class="op">|</span> <span class="ident">c</span>.<span class="ident">strong_count</span>() <span class="op">!</span><span class="op">=</span> <span class="number">0</span>);
         <span class="kw">for</span> <span class="ident">child</span> <span class="kw">in</span> <span class="ident">children</span>.<span class="ident">iter</span>() {
             <span class="kw">let</span> <span class="ident">child</span> <span class="op">=</span> <span class="ident">child</span>.<span class="ident">upgrade</span>().<span class="ident">unwrap</span>();
@@ -979,11 +978,11 @@
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">read_write</span>(<span class="ident">vmo</span>: <span class="kw-2">&amp;</span><span class="ident">VmObject</span>) {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">buf</span> <span class="op">=</span> [<span class="number">0u8</span>; <span class="number">4</span>];
         <span class="ident">vmo</span>.<span class="ident">write</span>(<span class="number">0</span>, <span class="kw-2">&amp;</span>[<span class="number">0</span>, <span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>]).<span class="ident">unwrap</span>();
-        <span class="ident">vmo</span>.<span class="ident">read</span>(<span class="number">0</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">buf</span>).<span class="ident">unwrap</span>();
+        <span class="ident">vmo</span>.<span class="ident">read</span>(<span class="number">0</span>, <span class="kw-2">&amp;mut</span> <span class="ident">buf</span>).<span class="ident">unwrap</span>();
         <span class="macro">assert_eq!</span>(<span class="kw-2">&amp;</span><span class="ident">buf</span>, <span class="kw-2">&amp;</span>[<span class="number">0</span>, <span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>]);
     }
 }
-</pre></div>
+</code></pre></div>
 </section><section id="search" class="content hidden"></section><div id="rustdoc-vars" data-root-path="../../../../" data-current-crate="zircon_object" data-search-index-js="../../../../search-index.js" data-search-js="../../../../search.js"></div>
     <script src="../../../../main.js"></script><script src="../../../../source-script.js"></script><script src="../../../../source-files.js"></script>
 </body></html>

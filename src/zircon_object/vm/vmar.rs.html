@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `zircon-object&#x2F;src&#x2F;vm&#x2F;vmar.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>vmar.rs - source</title><link rel="stylesheet" type="text/css" href="../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../../ayu.css" disabled ><script id="default-settings" ></script><script src="../../../storage.js"></script><script src="../../../crates.js"></script><noscript><link rel="stylesheet" href="../../../noscript.css"></noscript><link rel="icon" type="image/svg+xml" href="../../../favicon.svg"><link rel="alternate icon" type="image/png" href="../../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../../favicon-32x32.png"><style type="text/css">#crate-search{background-image:url("../../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../../zircon_object/index.html'><div class='logo-container rust-logo'><img src='../../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu" title="themes"><img width="18" height="18" alt="Pick another theme!" src="../../../brush.svg"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input"name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" id="help-button" title="help">?</button><a id="settings-menu" href="../../../settings.html" title="settings"><img width="18" height="18" alt="Change settings" src="../../../wheel.svg"></a></div></form></nav><section id="main" class="content"><div class="example-wrap"><pre class="line-numbers"><span id="1">   1</span>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `zircon-object&#x2F;src&#x2F;vm&#x2F;vmar.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>vmar.rs - source</title><link rel="stylesheet" type="text/css" href="../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../../ayu.css" disabled ><script id="default-settings" ></script><script src="../../../storage.js"></script><script src="../../../crates.js"></script><noscript><link rel="stylesheet" href="../../../noscript.css"></noscript><link rel="alternate icon" type="image/png" href="../../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../../favicon-32x32.png"><link rel="icon" type="image/svg+xml" href="../../../favicon.svg"><style type="text/css">#crate-search{background-image:url("../../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../../zircon_object/index.html'><div class='logo-container rust-logo'><img src='../../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu" title="themes"><img width="18" height="18" alt="Pick another theme!" src="../../../brush.svg"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" id="help-button" title="help">?</button><a id="settings-menu" href="../../../settings.html" title="settings"><img width="18" height="18" alt="Change settings" src="../../../wheel.svg"></a></div></form></nav><section id="main" class="content"><div class="example-wrap"><pre class="line-numbers"><span id="1">   1</span>
 <span id="2">   2</span>
 <span id="3">   3</span>
 <span id="4">   4</span>
@@ -1220,10 +1220,9 @@
 <span id="1220">1220</span>
 <span id="1221">1221</span>
 <span id="1222">1222</span>
-</pre><pre class="rust">
-<span class="kw">use</span> {
+</pre><pre class="rust"><code><span class="kw">use</span> {
     <span class="kw">super</span>::<span class="kw-2">*</span>,
-    <span class="kw">crate</span><span class="ident">::object</span>::<span class="kw-2">*</span>,
+    <span class="ident"><span class="kw">crate</span>::object</span>::<span class="kw-2">*</span>,
     <span class="ident">alloc</span>::{<span class="ident">sync::Arc</span>, <span class="ident">vec</span>, <span class="ident">vec::Vec</span>},
     <span class="ident">bitflags::bitflags</span>,
     <span class="ident">kernel_hal::vm</span>::{
@@ -1259,9 +1258,9 @@
         <span class="kw">const</span> <span class="ident">ALLOW_FAULTS</span>          <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">8</span>;
 
         <span class="doccomment">/// Allow VmMappings to be created inside the region with read, write and execute permissions.</span>
-        <span class="kw">const</span> <span class="ident">CAN_MAP_RXW</span>           <span class="op">=</span> <span class="self">Self</span><span class="ident">::CAN_MAP_READ</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span><span class="ident">::CAN_MAP_EXECUTE</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span><span class="ident">::CAN_MAP_WRITE</span>.<span class="ident">bits</span>;
+        <span class="kw">const</span> <span class="ident">CAN_MAP_RXW</span>           <span class="op">=</span> <span class="ident"><span class="self">Self</span>::CAN_MAP_READ</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="ident"><span class="self">Self</span>::CAN_MAP_EXECUTE</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="ident"><span class="self">Self</span>::CAN_MAP_WRITE</span>.<span class="ident">bits</span>;
         <span class="doccomment">/// Creation flags for root VmAddressRegion</span>
-        <span class="kw">const</span> <span class="ident">ROOT_FLAGS</span>            <span class="op">=</span> <span class="self">Self</span><span class="ident">::CAN_MAP_RXW</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="self">Self</span><span class="ident">::CAN_MAP_SPECIFIC</span>.<span class="ident">bits</span>;
+        <span class="kw">const</span> <span class="ident">ROOT_FLAGS</span>            <span class="op">=</span> <span class="ident"><span class="self">Self</span>::CAN_MAP_RXW</span>.<span class="ident">bits</span> <span class="op">|</span> <span class="ident"><span class="self">Self</span>::CAN_MAP_SPECIFIC</span>.<span class="ident">bits</span>;
     }
 }
 
@@ -1290,7 +1289,7 @@
 
 <span class="kw">impl</span> <span class="ident">VmAddressRegion</span> {
     <span class="doccomment">/// Create a new root VMAR.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new_root</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new_root</span>() -&gt; <span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
         <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;aspace-separate&quot;</span>)]</span>
         <span class="kw">let</span> (<span class="ident">addr</span>, <span class="ident">size</span>) <span class="op">=</span> {
             <span class="kw">use</span> <span class="ident">core::sync::atomic</span>::<span class="kw-2">*</span>;
@@ -1313,7 +1312,7 @@
     }
 
     <span class="doccomment">/// Create a kernel root VMAR.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new_kernel</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new_kernel</span>() -&gt; <span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">kernel_vmar_base</span> <span class="op">=</span> <span class="ident">KERNEL_ASPACE_BASE</span> <span class="kw">as</span> <span class="ident">usize</span>; <span class="comment">// Sorry i hard code because i&#39;m lazy</span>
         <span class="kw">let</span> <span class="ident">kernel_vmar_size</span> <span class="op">=</span> <span class="ident">KERNEL_ASPACE_SIZE</span> <span class="kw">as</span> <span class="ident">usize</span>;
         <span class="ident">Arc::new</span>(<span class="ident">VmAddressRegion</span> {
@@ -1330,9 +1329,9 @@
 
     <span class="doccomment">/// Create a VMAR for guest physical memory.</span>
     <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;hypervisor&quot;</span>)]</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new_guest</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="ident">guest_vmar_base</span> <span class="op">=</span> <span class="kw">crate</span><span class="ident">::hypervisor::GUEST_PHYSICAL_ASPACE_BASE</span> <span class="kw">as</span> <span class="ident">usize</span>;
-        <span class="kw">let</span> <span class="ident">guest_vmar_size</span> <span class="op">=</span> <span class="kw">crate</span><span class="ident">::hypervisor::GUEST_PHYSICAL_ASPACE_SIZE</span> <span class="kw">as</span> <span class="ident">usize</span>;
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new_guest</span>() -&gt; <span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
+        <span class="kw">let</span> <span class="ident">guest_vmar_base</span> <span class="op">=</span> <span class="ident"><span class="kw">crate</span>::hypervisor::GUEST_PHYSICAL_ASPACE_BASE</span> <span class="kw">as</span> <span class="ident">usize</span>;
+        <span class="kw">let</span> <span class="ident">guest_vmar_size</span> <span class="op">=</span> <span class="ident"><span class="kw">crate</span>::hypervisor::GUEST_PHYSICAL_ASPACE_SIZE</span> <span class="kw">as</span> <span class="ident">usize</span>;
         <span class="ident">Arc::new</span>(<span class="ident">VmAddressRegion</span> {
             <span class="ident">flags</span>: <span class="ident">VmarFlags::ROOT_FLAGS</span>,
             <span class="ident">base</span>: <span class="ident">KObjectBase::new</span>(),
@@ -1340,7 +1339,7 @@
             <span class="ident">addr</span>: <span class="ident">guest_vmar_base</span>,
             <span class="ident">size</span>: <span class="ident">guest_vmar_size</span>,
             <span class="ident">parent</span>: <span class="prelude-val">None</span>,
-            <span class="ident">page_table</span>: <span class="ident">Arc::new</span>(<span class="ident">Mutex::new</span>(<span class="kw">crate</span><span class="ident">::hypervisor::VmmPageTable::new</span>())),
+            <span class="ident">page_table</span>: <span class="ident">Arc::new</span>(<span class="ident">Mutex::new</span>(<span class="ident"><span class="kw">crate</span>::hypervisor::VmmPageTable::new</span>())),
             <span class="ident">inner</span>: <span class="ident">Mutex::new</span>(<span class="prelude-val">Some</span>(<span class="ident">VmarInner::default</span>())),
         })
     }
@@ -1352,7 +1351,7 @@
         <span class="ident">len</span>: <span class="ident">usize</span>,
         <span class="ident">flags</span>: <span class="ident">VmarFlags</span>,
         <span class="ident">align</span>: <span class="ident">usize</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+    ) -&gt; <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">allocate</span>(<span class="prelude-val">Some</span>(<span class="ident">offset</span>), <span class="ident">len</span>, <span class="ident">flags</span>, <span class="ident">align</span>)
     }
 
@@ -1363,7 +1362,7 @@
         <span class="ident">len</span>: <span class="ident">usize</span>,
         <span class="ident">flags</span>: <span class="ident">VmarFlags</span>,
         <span class="ident">align</span>: <span class="ident">usize</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+    ) -&gt; <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">guard</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="ident">guard</span>.<span class="ident">as_mut</span>().<span class="ident">ok_or</span>(<span class="ident">ZxError::BAD_STATE</span>)<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">offset</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">determine_offset</span>(<span class="ident">inner</span>, <span class="ident">offset</span>, <span class="ident">len</span>, <span class="ident">align</span>)<span class="question-mark">?</span>;
@@ -1389,7 +1388,7 @@
         <span class="ident">vmo_offset</span>: <span class="ident">usize</span>,
         <span class="ident">len</span>: <span class="ident">usize</span>,
         <span class="ident">flags</span>: <span class="ident">MMUFlags</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">VirtAddr</span><span class="op">&gt;</span> {
+    ) -&gt; <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">VirtAddr</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">map</span>(<span class="prelude-val">Some</span>(<span class="ident">vmar_offset</span>), <span class="ident">vmo</span>, <span class="ident">vmo_offset</span>, <span class="ident">len</span>, <span class="ident">flags</span>)
     }
 
@@ -1401,7 +1400,7 @@
         <span class="ident">vmo_offset</span>: <span class="ident">usize</span>,
         <span class="ident">len</span>: <span class="ident">usize</span>,
         <span class="ident">flags</span>: <span class="ident">MMUFlags</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">VirtAddr</span><span class="op">&gt;</span> {
+    ) -&gt; <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">VirtAddr</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">map_ext</span>(
             <span class="ident">vmar_offset</span>,
             <span class="ident">vmo</span>,
@@ -1426,7 +1425,7 @@
         <span class="ident">flags</span>: <span class="ident">MMUFlags</span>,
         <span class="ident">overwrite</span>: <span class="ident">bool</span>,
         <span class="ident">map_range</span>: <span class="ident">bool</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">VirtAddr</span><span class="op">&gt;</span> {
+    ) -&gt; <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">VirtAddr</span><span class="op">&gt;</span> {
         <span class="kw">if</span> <span class="op">!</span><span class="ident">page_aligned</span>(<span class="ident">vmo_offset</span>) <span class="op">|</span><span class="op">|</span> <span class="op">!</span><span class="ident">page_aligned</span>(<span class="ident">len</span>) <span class="op">|</span><span class="op">|</span> <span class="ident">vmo_offset</span>.<span class="ident">overflowing_add</span>(<span class="ident">len</span>).<span class="number">1</span> {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::INVALID_ARGS</span>);
         }
@@ -1478,8 +1477,8 @@
     <span class="doccomment">/// (i.e. partial overlaps are an error).</span>
     <span class="doccomment">/// If a mapping is only partially in the range, the mapping is split and the requested</span>
     <span class="doccomment">/// portion is unmapped.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">unmap</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">addr</span>: <span class="ident">VirtAddr</span>, <span class="ident">len</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
-        <span class="kw">if</span> <span class="op">!</span><span class="ident">page_aligned</span>(<span class="ident">addr</span>) <span class="op">|</span><span class="op">|</span> <span class="op">!</span><span class="ident">page_aligned</span>(<span class="ident">len</span>) <span class="op">|</span><span class="op">|</span> <span class="ident">len</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">unmap</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">addr</span>: <span class="ident">VirtAddr</span>, <span class="ident">len</span>: <span class="ident">usize</span>) -&gt; <span class="ident">ZxResult</span> {
+        <span class="kw">if</span> <span class="op">!</span><span class="ident">page_aligned</span>(<span class="ident">addr</span>) <span class="op">|</span><span class="op">|</span> <span class="op">!</span><span class="ident">page_aligned</span>(<span class="ident">len</span>) <span class="op">|</span><span class="op">|</span> <span class="ident">len</span> <span class="op">==</span> <span class="number">0</span> {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::INVALID_ARGS</span>);
         }
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">guard</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
@@ -1488,8 +1487,8 @@
     }
 
     <span class="doccomment">/// Must hold self.inner.lock() before calling.</span>
-    <span class="kw">fn</span> <span class="ident">unmap_inner</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">addr</span>: <span class="ident">VirtAddr</span>, <span class="ident">len</span>: <span class="ident">usize</span>, <span class="ident">inner</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">VmarInner</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
-        <span class="kw">if</span> <span class="op">!</span><span class="ident">page_aligned</span>(<span class="ident">addr</span>) <span class="op">|</span><span class="op">|</span> <span class="op">!</span><span class="ident">page_aligned</span>(<span class="ident">len</span>) <span class="op">|</span><span class="op">|</span> <span class="ident">len</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span> {
+    <span class="kw">fn</span> <span class="ident">unmap_inner</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">addr</span>: <span class="ident">VirtAddr</span>, <span class="ident">len</span>: <span class="ident">usize</span>, <span class="ident">inner</span>: <span class="kw-2">&amp;mut</span> <span class="ident">VmarInner</span>) -&gt; <span class="ident">ZxResult</span> {
+        <span class="kw">if</span> <span class="op">!</span><span class="ident">page_aligned</span>(<span class="ident">addr</span>) <span class="op">|</span><span class="op">|</span> <span class="op">!</span><span class="ident">page_aligned</span>(<span class="ident">len</span>) <span class="op">|</span><span class="op">|</span> <span class="ident">len</span> <span class="op">==</span> <span class="number">0</span> {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::INVALID_ARGS</span>);
         }
 
@@ -1506,7 +1505,7 @@
             <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">new</span>) <span class="op">=</span> <span class="ident">map</span>.<span class="ident">cut</span>(<span class="ident">begin</span>, <span class="ident">end</span>) {
                 <span class="ident">new_maps</span>.<span class="ident">push</span>(<span class="ident">new</span>);
             }
-            <span class="ident">map</span>.<span class="ident">size</span>() <span class="op">=</span><span class="op">=</span> <span class="number">0</span>
+            <span class="ident">map</span>.<span class="ident">size</span>() <span class="op">==</span> <span class="number">0</span>
         });
         <span class="ident">inner</span>.<span class="ident">mappings</span>.<span class="ident">extend</span>(<span class="ident">new_maps</span>);
         <span class="kw">for</span> <span class="ident">vmar</span> <span class="kw">in</span> <span class="ident">inner</span>.<span class="ident">children</span>.<span class="ident">drain_filter</span>(<span class="op">|</span><span class="ident">vmar</span><span class="op">|</span> <span class="ident">vmar</span>.<span class="ident">within</span>(<span class="ident">begin</span>, <span class="ident">end</span>)) {
@@ -1518,7 +1517,7 @@
     <span class="doccomment">/// Change protections on a subset of the region of memory in the containing</span>
     <span class="doccomment">/// address space.  If the requested range overlaps with a subregion,</span>
     <span class="doccomment">/// protect() will fail.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">protect</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">addr</span>: <span class="ident">usize</span>, <span class="ident">len</span>: <span class="ident">usize</span>, <span class="ident">flags</span>: <span class="ident">MMUFlags</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">protect</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">addr</span>: <span class="ident">usize</span>, <span class="ident">len</span>: <span class="ident">usize</span>, <span class="ident">flags</span>: <span class="ident">MMUFlags</span>) -&gt; <span class="ident">ZxResult</span> {
         <span class="kw">if</span> <span class="op">!</span><span class="ident">page_aligned</span>(<span class="ident">addr</span>) <span class="op">|</span><span class="op">|</span> <span class="op">!</span><span class="ident">page_aligned</span>(<span class="ident">len</span>) {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::INVALID_ARGS</span>);
         }
@@ -1569,7 +1568,7 @@
     }
 
     <span class="doccomment">/// Unmap all mappings within the VMAR, and destroy all sub-regions of the region.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">destroy</span>(<span class="self">self</span>: <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">destroy</span>(<span class="self">self</span>: <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span>) -&gt; <span class="ident">ZxResult</span> {
         <span class="self">self</span>.<span class="ident">destroy_internal</span>()<span class="question-mark">?</span>;
         <span class="comment">// remove from parent</span>
         <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">parent</span>) <span class="op">=</span> <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">parent</span> {
@@ -1581,7 +1580,7 @@
     }
 
     <span class="doccomment">/// Destroy but do not remove self from parent.</span>
-    <span class="kw">fn</span> <span class="ident">destroy_internal</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    <span class="kw">fn</span> <span class="ident">destroy_internal</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">ZxResult</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">guard</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="ident">guard</span>.<span class="ident">as_mut</span>().<span class="ident">ok_or</span>(<span class="ident">ZxError::BAD_STATE</span>)<span class="question-mark">?</span>;
         <span class="kw">for</span> <span class="ident">vmar</span> <span class="kw">in</span> <span class="ident">inner</span>.<span class="ident">children</span>.<span class="ident">drain</span>(..) {
@@ -1595,7 +1594,7 @@
     }
 
     <span class="doccomment">/// Unmap all mappings and destroy all sub-regions of VMAR.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">clear</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">clear</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">ZxResult</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">guard</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="ident">guard</span>.<span class="ident">as_mut</span>().<span class="ident">ok_or</span>(<span class="ident">ZxError::BAD_STATE</span>)<span class="question-mark">?</span>;
         <span class="kw">for</span> <span class="ident">vmar</span> <span class="kw">in</span> <span class="ident">inner</span>.<span class="ident">children</span>.<span class="ident">drain</span>(..) {
@@ -1606,22 +1605,22 @@
     }
 
     <span class="doccomment">/// Get physical address of the underlying page table.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">table_phys</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">PhysAddr</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">table_phys</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">PhysAddr</span> {
         <span class="self">self</span>.<span class="ident">page_table</span>.<span class="ident">lock</span>().<span class="ident">table_phys</span>()
     }
 
     <span class="doccomment">/// Get start address of this VMAR.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">addr</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">addr</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">usize</span> {
         <span class="self">self</span>.<span class="ident">addr</span>
     }
 
     <span class="doccomment">/// Whether this VMAR is dead.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">is_dead</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">is_dead</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">bool</span> {
         <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">is_none</span>()
     }
 
     <span class="doccomment">/// Whether this VMAR is alive.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">is_alive</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">is_alive</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">bool</span> {
         <span class="op">!</span><span class="self">self</span>.<span class="ident">is_dead</span>()
     }
 
@@ -1632,7 +1631,7 @@
         <span class="ident">offset</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>,
         <span class="ident">len</span>: <span class="ident">usize</span>,
         <span class="ident">align</span>: <span class="ident">usize</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">VirtAddr</span><span class="op">&gt;</span> {
+    ) -&gt; <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">VirtAddr</span><span class="op">&gt;</span> {
         <span class="kw">if</span> <span class="op">!</span><span class="ident">check_aligned</span>(<span class="ident">len</span>, <span class="ident">align</span>) {
             <span class="prelude-val">Err</span>(<span class="ident">ZxError::INVALID_ARGS</span>)
         } <span class="kw">else</span> <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">offset</span>) <span class="op">=</span> <span class="ident">offset</span> {
@@ -1645,14 +1644,14 @@
             <span class="prelude-val">Err</span>(<span class="ident">ZxError::INVALID_ARGS</span>)
         } <span class="kw">else</span> {
             <span class="kw">match</span> <span class="self">self</span>.<span class="ident">find_free_area</span>(<span class="ident">inner</span>, <span class="number">0</span>, <span class="ident">len</span>, <span class="ident">align</span>) {
-                <span class="prelude-val">Some</span>(<span class="ident">offset</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Ok</span>(<span class="ident">offset</span>),
-                <span class="prelude-val">None</span> <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::NO_MEMORY</span>),
+                <span class="prelude-val">Some</span>(<span class="ident">offset</span>) =&gt; <span class="prelude-val">Ok</span>(<span class="ident">offset</span>),
+                <span class="prelude-val">None</span> =&gt; <span class="prelude-val">Err</span>(<span class="ident">ZxError::NO_MEMORY</span>),
             }
         }
     }
 
     <span class="doccomment">/// Test if can create a new mapping at `offset` with `len`.</span>
-    <span class="kw">fn</span> <span class="ident">test_map</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">inner</span>: <span class="kw-2">&amp;</span><span class="ident">VmarInner</span>, <span class="ident">offset</span>: <span class="ident">usize</span>, <span class="ident">len</span>: <span class="ident">usize</span>, <span class="ident">align</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+    <span class="kw">fn</span> <span class="ident">test_map</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">inner</span>: <span class="kw-2">&amp;</span><span class="ident">VmarInner</span>, <span class="ident">offset</span>: <span class="ident">usize</span>, <span class="ident">len</span>: <span class="ident">usize</span>, <span class="ident">align</span>: <span class="ident">usize</span>) -&gt; <span class="ident">bool</span> {
         <span class="macro">debug_assert!</span>(<span class="ident">check_aligned</span>(<span class="ident">offset</span>, <span class="ident">align</span>));
         <span class="macro">debug_assert!</span>(<span class="ident">check_aligned</span>(<span class="ident">len</span>, <span class="ident">align</span>));
         <span class="kw">let</span> <span class="ident">begin</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">addr</span> <span class="op">+</span> <span class="ident">offset</span>;
@@ -1677,7 +1676,7 @@
         <span class="ident">offset_hint</span>: <span class="ident">usize</span>,
         <span class="ident">len</span>: <span class="ident">usize</span>,
         <span class="ident">align</span>: <span class="ident">usize</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
+    ) -&gt; <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
         <span class="comment">// TODO: randomize</span>
         <span class="macro">debug_assert!</span>(<span class="ident">check_aligned</span>(<span class="ident">offset_hint</span>, <span class="ident">align</span>));
         <span class="macro">debug_assert!</span>(<span class="ident">check_aligned</span>(<span class="ident">len</span>, <span class="ident">align</span>));
@@ -1689,28 +1688,28 @@
             .<span class="ident">find</span>(<span class="op">|</span><span class="kw-2">&amp;</span><span class="ident">offset</span><span class="op">|</span> <span class="self">self</span>.<span class="ident">test_map</span>(<span class="ident">inner</span>, <span class="ident">offset</span>, <span class="ident">len</span>, <span class="ident">align</span>))
     }
 
-    <span class="kw">fn</span> <span class="ident">end_addr</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">VirtAddr</span> {
+    <span class="kw">fn</span> <span class="ident">end_addr</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">VirtAddr</span> {
         <span class="self">self</span>.<span class="ident">addr</span> <span class="op">+</span> <span class="self">self</span>.<span class="ident">size</span>
     }
 
-    <span class="kw">fn</span> <span class="ident">overlap</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">begin</span>: <span class="ident">VirtAddr</span>, <span class="ident">end</span>: <span class="ident">VirtAddr</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+    <span class="kw">fn</span> <span class="ident">overlap</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">begin</span>: <span class="ident">VirtAddr</span>, <span class="ident">end</span>: <span class="ident">VirtAddr</span>) -&gt; <span class="ident">bool</span> {
         <span class="op">!</span>(<span class="self">self</span>.<span class="ident">addr</span> <span class="op">&gt;</span><span class="op">=</span> <span class="ident">end</span> <span class="op">|</span><span class="op">|</span> <span class="self">self</span>.<span class="ident">end_addr</span>() <span class="op">&lt;</span><span class="op">=</span> <span class="ident">begin</span>)
     }
 
-    <span class="kw">fn</span> <span class="ident">within</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">begin</span>: <span class="ident">VirtAddr</span>, <span class="ident">end</span>: <span class="ident">VirtAddr</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+    <span class="kw">fn</span> <span class="ident">within</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">begin</span>: <span class="ident">VirtAddr</span>, <span class="ident">end</span>: <span class="ident">VirtAddr</span>) -&gt; <span class="ident">bool</span> {
         <span class="ident">begin</span> <span class="op">&lt;</span><span class="op">=</span> <span class="self">self</span>.<span class="ident">addr</span> <span class="op">&amp;&amp;</span> <span class="self">self</span>.<span class="ident">end_addr</span>() <span class="op">&lt;</span><span class="op">=</span> <span class="ident">end</span>
     }
 
-    <span class="kw">fn</span> <span class="ident">partial_overlap</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">begin</span>: <span class="ident">VirtAddr</span>, <span class="ident">end</span>: <span class="ident">VirtAddr</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+    <span class="kw">fn</span> <span class="ident">partial_overlap</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">begin</span>: <span class="ident">VirtAddr</span>, <span class="ident">end</span>: <span class="ident">VirtAddr</span>) -&gt; <span class="ident">bool</span> {
         <span class="self">self</span>.<span class="ident">overlap</span>(<span class="ident">begin</span>, <span class="ident">end</span>) <span class="op">&amp;&amp;</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">within</span>(<span class="ident">begin</span>, <span class="ident">end</span>)
     }
 
-    <span class="kw">fn</span> <span class="ident">contains</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">vaddr</span>: <span class="ident">VirtAddr</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+    <span class="kw">fn</span> <span class="ident">contains</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">vaddr</span>: <span class="ident">VirtAddr</span>) -&gt; <span class="ident">bool</span> {
         <span class="self">self</span>.<span class="ident">addr</span> <span class="op">&lt;</span><span class="op">=</span> <span class="ident">vaddr</span> <span class="op">&amp;&amp;</span> <span class="ident">vaddr</span> <span class="op">&lt;</span> <span class="self">self</span>.<span class="ident">end_addr</span>()
     }
 
     <span class="doccomment">/// Get information of this VmAddressRegion</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_info</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">VmarInfo</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_info</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">VmarInfo</span> {
         <span class="comment">// pub fn get_info(&amp;self, va: usize) -&gt; VmarInfo {</span>
         <span class="comment">// let _r = self.page_table.lock().query(va);</span>
         <span class="ident">VmarInfo</span> {
@@ -1721,7 +1720,7 @@
     }
 
     <span class="doccomment">/// Get VmarFlags of this VMAR.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_flags</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">VmarFlags</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_flags</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">VmarFlags</span> {
         <span class="self">self</span>.<span class="ident">flags</span>
     }
 
@@ -1738,11 +1737,11 @@
     }
 
     <span class="doccomment">/// Get base address of vdso.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">vdso_base_addr</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">vdso_base_addr</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">guard</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="ident">guard</span>.<span class="ident">as_ref</span>().<span class="ident">unwrap</span>();
         <span class="kw">for</span> <span class="ident">map</span> <span class="kw">in</span> <span class="ident">inner</span>.<span class="ident">mappings</span>.<span class="ident">iter</span>() {
-            <span class="kw">if</span> <span class="ident">map</span>.<span class="ident">vmo</span>.<span class="ident">name</span>().<span class="ident">starts_with</span>(<span class="string">&quot;vdso&quot;</span>) <span class="op">&amp;&amp;</span> <span class="ident">map</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">vmo_offset</span> <span class="op">=</span><span class="op">=</span> <span class="number">0x7000</span> {
+            <span class="kw">if</span> <span class="ident">map</span>.<span class="ident">vmo</span>.<span class="ident">name</span>().<span class="ident">starts_with</span>(<span class="string">&quot;vdso&quot;</span>) <span class="op">&amp;&amp;</span> <span class="ident">map</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">vmo_offset</span> <span class="op">==</span> <span class="number">0x7000</span> {
                 <span class="kw">return</span> <span class="prelude-val">Some</span>(<span class="ident">map</span>.<span class="ident">addr</span>());
             }
         }
@@ -1757,7 +1756,7 @@
     <span class="doccomment">/// Handle page fault happened on this VMAR.</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// The fault virtual address is `vaddr` and the reason is in `flags`.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">handle_page_fault</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">vaddr</span>: <span class="ident">VirtAddr</span>, <span class="ident">flags</span>: <span class="ident">MMUFlags</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">handle_page_fault</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">vaddr</span>: <span class="ident">VirtAddr</span>, <span class="ident">flags</span>: <span class="ident">MMUFlags</span>) -&gt; <span class="ident">ZxResult</span> {
         <span class="kw">let</span> <span class="ident">guard</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="ident">guard</span>.<span class="ident">as_ref</span>().<span class="ident">unwrap</span>();
         <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">contains</span>(<span class="ident">vaddr</span>) {
@@ -1772,7 +1771,7 @@
         <span class="prelude-val">Err</span>(<span class="ident">ZxError::NOT_FOUND</span>)
     }
 
-    <span class="kw">fn</span> <span class="ident">for_each_mapping</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="kw">impl</span> <span class="ident">FnMut</span>(<span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">VmMapping</span><span class="op">&gt;</span>)) {
+    <span class="kw">fn</span> <span class="ident">for_each_mapping</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw-2">&amp;mut</span> <span class="kw">impl</span> <span class="ident">FnMut</span>(<span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">VmMapping</span><span class="op">&gt;</span>)) {
         <span class="kw">let</span> <span class="ident">guard</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="ident">guard</span>.<span class="ident">as_ref</span>().<span class="ident">unwrap</span>();
         <span class="kw">for</span> <span class="ident">map</span> <span class="kw">in</span> <span class="ident">inner</span>.<span class="ident">mappings</span>.<span class="ident">iter</span>() {
@@ -1784,37 +1783,37 @@
     }
 
     <span class="doccomment">/// Clone the entire address space and VMOs from source VMAR. (For Linux fork)</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">fork_from</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">src</span>: <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">fork_from</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">src</span>: <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span>) -&gt; <span class="ident">ZxResult</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">guard</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="ident">guard</span>.<span class="ident">as_mut</span>().<span class="ident">unwrap</span>();
         <span class="ident">inner</span>.<span class="ident">fork_from</span>(<span class="ident">src</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">page_table</span>)
     }
 
     <span class="doccomment">/// Returns statistics about memory used by a task.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_task_stats</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">TaskStatsInfo</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_task_stats</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">TaskStatsInfo</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">task_stats</span> <span class="op">=</span> <span class="ident">TaskStatsInfo::default</span>();
-        <span class="self">self</span>.<span class="ident">for_each_mapping</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="op">|</span><span class="ident">map</span><span class="op">|</span> <span class="ident">map</span>.<span class="ident">fill_in_task_status</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">task_stats</span>));
+        <span class="self">self</span>.<span class="ident">for_each_mapping</span>(<span class="kw-2">&amp;mut</span> <span class="op">|</span><span class="ident">map</span><span class="op">|</span> <span class="ident">map</span>.<span class="ident">fill_in_task_status</span>(<span class="kw-2">&amp;mut</span> <span class="ident">task_stats</span>));
         <span class="ident">task_stats</span>
     }
 
     <span class="doccomment">/// Read from address space.</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// Return the actual number of bytes read.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">read_memory</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">vaddr</span>: <span class="ident">usize</span>, <span class="ident">buf</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> [<span class="ident">u8</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">read_memory</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">vaddr</span>: <span class="ident">usize</span>, <span class="ident">buf</span>: <span class="kw-2">&amp;mut</span> [<span class="ident">u8</span>]) -&gt; <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
         <span class="comment">// TODO: support multiple VMOs</span>
         <span class="kw">let</span> <span class="ident">map</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">find_mapping</span>(<span class="ident">vaddr</span>).<span class="ident">ok_or</span>(<span class="ident">ZxError::NO_MEMORY</span>)<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">map_inner</span> <span class="op">=</span> <span class="ident">map</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="kw">let</span> <span class="ident">vmo_offset</span> <span class="op">=</span> <span class="ident">vaddr</span> <span class="op">-</span> <span class="ident">map_inner</span>.<span class="ident">addr</span> <span class="op">+</span> <span class="ident">map_inner</span>.<span class="ident">vmo_offset</span>;
         <span class="kw">let</span> <span class="ident">size_limit</span> <span class="op">=</span> <span class="ident">map_inner</span>.<span class="ident">addr</span> <span class="op">+</span> <span class="ident">map_inner</span>.<span class="ident">size</span> <span class="op">-</span> <span class="ident">vaddr</span>;
         <span class="kw">let</span> <span class="ident">actual_size</span> <span class="op">=</span> <span class="ident">buf</span>.<span class="ident">len</span>().<span class="ident">min</span>(<span class="ident">size_limit</span>);
-        <span class="ident">map</span>.<span class="ident">vmo</span>.<span class="ident">read</span>(<span class="ident">vmo_offset</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">buf</span>[<span class="number">0</span>..<span class="ident">actual_size</span>])<span class="question-mark">?</span>;
+        <span class="ident">map</span>.<span class="ident">vmo</span>.<span class="ident">read</span>(<span class="ident">vmo_offset</span>, <span class="kw-2">&amp;mut</span> <span class="ident">buf</span>[<span class="number">0</span>..<span class="ident">actual_size</span>])<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(<span class="ident">actual_size</span>)
     }
 
     <span class="doccomment">/// Write to address space.</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// Return the actual number of bytes written.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">write_memory</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">vaddr</span>: <span class="ident">usize</span>, <span class="ident">buf</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">write_memory</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">vaddr</span>: <span class="ident">usize</span>, <span class="ident">buf</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]) -&gt; <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
         <span class="comment">// TODO: support multiple VMOs</span>
         <span class="kw">let</span> <span class="ident">map</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">find_mapping</span>(<span class="ident">vaddr</span>).<span class="ident">ok_or</span>(<span class="ident">ZxError::NO_MEMORY</span>)<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">map_inner</span> <span class="op">=</span> <span class="ident">map</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
@@ -1826,7 +1825,7 @@
     }
 
     <span class="doccomment">/// Find mapping of vaddr</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">find_mapping</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">vaddr</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">VmMapping</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">find_mapping</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">vaddr</span>: <span class="ident">usize</span>) -&gt; <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">VmMapping</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">guard</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="ident">guard</span>.<span class="ident">as_ref</span>().<span class="ident">unwrap</span>();
         <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">mapping</span>) <span class="op">=</span> <span class="ident">inner</span>.<span class="ident">mappings</span>.<span class="ident">iter</span>().<span class="ident">find</span>(<span class="op">|</span><span class="ident">map</span><span class="op">|</span> <span class="ident">map</span>.<span class="ident">contains</span>(<span class="ident">vaddr</span>)) {
@@ -1839,14 +1838,14 @@
     }
 
     <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">test</span>)]</span>
-    <span class="kw">fn</span> <span class="ident">count</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
+    <span class="kw">fn</span> <span class="ident">count</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">usize</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">guard</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="ident">guard</span>.<span class="ident">as_mut</span>().<span class="ident">unwrap</span>();
         <span class="ident">inner</span>.<span class="ident">mappings</span>.<span class="ident">len</span>() <span class="op">+</span> <span class="ident">inner</span>.<span class="ident">children</span>.<span class="ident">len</span>()
     }
 
     <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">test</span>)]</span>
-    <span class="kw">fn</span> <span class="ident">used_size</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
+    <span class="kw">fn</span> <span class="ident">used_size</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">usize</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">guard</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="ident">guard</span>.<span class="ident">as_mut</span>().<span class="ident">unwrap</span>();
         <span class="kw">let</span> <span class="ident">map_size</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="ident">inner</span>.<span class="ident">mappings</span>.<span class="ident">iter</span>().<span class="ident">map</span>(<span class="op">|</span><span class="ident">map</span><span class="op">|</span> <span class="ident">map</span>.<span class="ident">size</span>()).<span class="ident">sum</span>();
@@ -1858,10 +1857,10 @@
 <span class="kw">impl</span> <span class="ident">VmarInner</span> {
     <span class="doccomment">/// Clone the entire address space and VMOs from source VMAR. (For Linux fork)</span>
     <span class="kw">fn</span> <span class="ident">fork_from</span>(
-        <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
+        <span class="kw-2">&amp;mut</span> <span class="self">self</span>,
         <span class="ident">src</span>: <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">VmAddressRegion</span><span class="op">&gt;</span>,
         <span class="ident">page_table</span>: <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Mutex</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">GenericPageTable</span><span class="op">&gt;</span><span class="op">&gt;</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    ) -&gt; <span class="ident">ZxResult</span> {
         <span class="kw">let</span> <span class="ident">src_guard</span> <span class="op">=</span> <span class="ident">src</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="kw">let</span> <span class="ident">src_inner</span> <span class="op">=</span> <span class="ident">src_guard</span>.<span class="ident">as_ref</span>().<span class="ident">unwrap</span>();
         <span class="kw">for</span> <span class="ident">child</span> <span class="kw">in</span> <span class="ident">src_inner</span>.<span class="ident">children</span>.<span class="ident">iter</span>() {
@@ -1914,7 +1913,7 @@
 }
 
 <span class="kw">impl</span> <span class="ident">core::fmt::Debug</span> <span class="kw">for</span> <span class="ident">VmMapping</span> {
-    <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">core::fmt::Formatter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">core::fmt::Result</span> {
+    <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw-2">&amp;mut</span> <span class="ident">core::fmt::Formatter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>) -&gt; <span class="ident">core::fmt::Result</span> {
         <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="ident">f</span>.<span class="ident">debug_struct</span>(<span class="string">&quot;VmMapping&quot;</span>)
             .<span class="ident">field</span>(<span class="string">&quot;addr&quot;</span>, <span class="kw-2">&amp;</span><span class="ident">inner</span>.<span class="ident">addr</span>)
@@ -1936,7 +1935,7 @@
         <span class="ident">permissions</span>: <span class="ident">MMUFlags</span>,
         <span class="ident">flags</span>: <span class="ident">MMUFlags</span>,
         <span class="ident">page_table</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Mutex</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">GenericPageTable</span><span class="op">&gt;</span><span class="op">&gt;</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
+    ) -&gt; <span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">mapping</span> <span class="op">=</span> <span class="ident">Arc::new</span>(<span class="ident">VmMapping</span> {
             <span class="ident">inner</span>: <span class="ident">Mutex::new</span>(<span class="ident">VmMappingInner</span> {
                 <span class="ident">flags</span>: <span class="macro">vec!</span>[<span class="ident">flags</span>; <span class="ident">pages</span>(<span class="ident">size</span>)],
@@ -1956,8 +1955,8 @@
     <span class="doccomment">/// Commit pages to vmo, and map those to frames in page_table.</span>
     <span class="doccomment">/// Temporarily used for development. A standard procedure for</span>
     <span class="doccomment">/// vmo is: create_vmo, op_range(commit), map</span>
-    <span class="kw">fn</span> <span class="ident">map</span>(<span class="self">self</span>: <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
-        <span class="self">self</span>.<span class="ident">vmo</span>.<span class="ident">commit_pages_with</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="op">|</span><span class="ident">commit</span><span class="op">|</span> {
+    <span class="kw">fn</span> <span class="ident">map</span>(<span class="self">self</span>: <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span>) -&gt; <span class="ident">ZxResult</span> {
+        <span class="self">self</span>.<span class="ident">vmo</span>.<span class="ident">commit_pages_with</span>(<span class="kw-2">&amp;mut</span> <span class="op">|</span><span class="ident">commit</span><span class="op">|</span> {
             <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
             <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">page_table</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">page_table</span>.<span class="ident">lock</span>();
             <span class="kw">let</span> <span class="ident">page_num</span> <span class="op">=</span> <span class="ident">inner</span>.<span class="ident">size</span> <span class="op">/</span> <span class="ident">PAGE_SIZE</span>;
@@ -1986,7 +1985,7 @@
             .<span class="ident">expect</span>(<span class="string">&quot;failed to unmap&quot;</span>)
     }
 
-    <span class="kw">fn</span> <span class="ident">fill_in_task_status</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">task_stats</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">TaskStatsInfo</span>) {
+    <span class="kw">fn</span> <span class="ident">fill_in_task_status</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">task_stats</span>: <span class="kw-2">&amp;mut</span> <span class="ident">TaskStatsInfo</span>) {
         <span class="kw">let</span> (<span class="ident">start_idx</span>, <span class="ident">end_idx</span>) <span class="op">=</span> {
             <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
             <span class="kw">let</span> <span class="ident">start_idx</span> <span class="op">=</span> <span class="ident">inner</span>.<span class="ident">vmo_offset</span> <span class="op">/</span> <span class="ident">PAGE_SIZE</span>;
@@ -1995,7 +1994,7 @@
         <span class="ident">task_stats</span>.<span class="ident">mapped_bytes</span> <span class="op">+</span><span class="op">=</span> <span class="self">self</span>.<span class="ident">vmo</span>.<span class="ident">len</span>() <span class="kw">as</span> <span class="ident">u64</span>;
         <span class="kw">let</span> <span class="ident">committed_pages</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">vmo</span>.<span class="ident">committed_pages_in_range</span>(<span class="ident">start_idx</span>, <span class="ident">end_idx</span>);
         <span class="kw">let</span> <span class="ident">share_count</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">vmo</span>.<span class="ident">share_count</span>();
-        <span class="kw">if</span> <span class="ident">share_count</span> <span class="op">=</span><span class="op">=</span> <span class="number">1</span> {
+        <span class="kw">if</span> <span class="ident">share_count</span> <span class="op">==</span> <span class="number">1</span> {
             <span class="ident">task_stats</span>.<span class="ident">private_bytes</span> <span class="op">+</span><span class="op">=</span> (<span class="ident">committed_pages</span> <span class="op">*</span> <span class="ident">PAGE_SIZE</span>) <span class="kw">as</span> <span class="ident">u64</span>;
         } <span class="kw">else</span> {
             <span class="ident">task_stats</span>.<span class="ident">shared_bytes</span> <span class="op">+</span><span class="op">=</span> (<span class="ident">committed_pages</span> <span class="op">*</span> <span class="ident">PAGE_SIZE</span>) <span class="kw">as</span> <span class="ident">u64</span>;
@@ -2006,7 +2005,7 @@
     <span class="doccomment">/// Cut and unmap regions in `[begin, end)`.</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// If it will be split, return another one.</span>
-    <span class="kw">fn</span> <span class="ident">cut</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">begin</span>: <span class="ident">VirtAddr</span>, <span class="ident">end</span>: <span class="ident">VirtAddr</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">cut</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">begin</span>: <span class="ident">VirtAddr</span>, <span class="ident">end</span>: <span class="ident">VirtAddr</span>) -&gt; <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">overlap</span>(<span class="ident">begin</span>, <span class="ident">end</span>) {
             <span class="kw">return</span> <span class="prelude-val">None</span>;
         }
@@ -2067,17 +2066,17 @@
         }
     }
 
-    <span class="kw">fn</span> <span class="ident">overlap</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">begin</span>: <span class="ident">VirtAddr</span>, <span class="ident">end</span>: <span class="ident">VirtAddr</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+    <span class="kw">fn</span> <span class="ident">overlap</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">begin</span>: <span class="ident">VirtAddr</span>, <span class="ident">end</span>: <span class="ident">VirtAddr</span>) -&gt; <span class="ident">bool</span> {
         <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="op">!</span>(<span class="ident">inner</span>.<span class="ident">addr</span> <span class="op">&gt;</span><span class="op">=</span> <span class="ident">end</span> <span class="op">|</span><span class="op">|</span> <span class="ident">inner</span>.<span class="ident">end_addr</span>() <span class="op">&lt;</span><span class="op">=</span> <span class="ident">begin</span>)
     }
 
-    <span class="kw">fn</span> <span class="ident">contains</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">vaddr</span>: <span class="ident">VirtAddr</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+    <span class="kw">fn</span> <span class="ident">contains</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">vaddr</span>: <span class="ident">VirtAddr</span>) -&gt; <span class="ident">bool</span> {
         <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="ident">inner</span>.<span class="ident">addr</span> <span class="op">&lt;</span><span class="op">=</span> <span class="ident">vaddr</span> <span class="op">&amp;&amp;</span> <span class="ident">vaddr</span> <span class="op">&lt;</span> <span class="ident">inner</span>.<span class="ident">end_addr</span>()
     }
 
-    <span class="kw">fn</span> <span class="ident">is_valid_mapping_flags</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">flags</span>: <span class="ident">MMUFlags</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+    <span class="kw">fn</span> <span class="ident">is_valid_mapping_flags</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">flags</span>: <span class="ident">MMUFlags</span>) -&gt; <span class="ident">bool</span> {
         <span class="self">self</span>.<span class="ident">permissions</span>.<span class="ident">contains</span>(<span class="ident">flags</span> <span class="op">&amp;</span> <span class="ident">MMUFlags::RXW</span>)
     }
 
@@ -2096,20 +2095,20 @@
         }
     }
 
-    <span class="kw">fn</span> <span class="ident">size</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
+    <span class="kw">fn</span> <span class="ident">size</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">usize</span> {
         <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">size</span>
     }
 
-    <span class="kw">fn</span> <span class="ident">addr</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">VirtAddr</span> {
+    <span class="kw">fn</span> <span class="ident">addr</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">VirtAddr</span> {
         <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">addr</span>
     }
 
-    <span class="kw">fn</span> <span class="ident">end_addr</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">VirtAddr</span> {
+    <span class="kw">fn</span> <span class="ident">end_addr</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">VirtAddr</span> {
         <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">end_addr</span>()
     }
 
     <span class="doccomment">/// Get MMUFlags of this VmMapping.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_flags</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">vaddr</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">MMUFlags</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_flags</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">vaddr</span>: <span class="ident">usize</span>) -&gt; <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">MMUFlags</span><span class="op">&gt;</span> {
         <span class="kw">if</span> <span class="self">self</span>.<span class="ident">contains</span>(<span class="ident">vaddr</span>) {
             <span class="kw">let</span> <span class="ident">page_id</span> <span class="op">=</span> (<span class="ident">vaddr</span> <span class="op">-</span> <span class="self">self</span>.<span class="ident">addr</span>()) <span class="op">/</span> <span class="ident">PAGE_SIZE</span>;
             <span class="prelude-val">Ok</span>(<span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">flags</span>[<span class="ident">page_id</span>])
@@ -2130,7 +2129,7 @@
                 <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">pg_table</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">page_table</span>.<span class="ident">lock</span>();
                 <span class="kw">for</span> <span class="ident">i</span> <span class="kw">in</span> (<span class="ident">start</span> <span class="op">-</span> <span class="ident">inner</span>.<span class="ident">vmo_offset</span>)..(<span class="ident">end</span> <span class="op">-</span> <span class="ident">inner</span>.<span class="ident">vmo_offset</span>) {
                     <span class="kw">match</span> <span class="ident">op</span> {
-                        <span class="ident">RangeChangeOp::RemoveWrite</span> <span class="op">=</span><span class="op">&gt;</span> {
+                        <span class="ident">RangeChangeOp::RemoveWrite</span> =&gt; {
                             <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">new_flag</span> <span class="op">=</span> <span class="ident">inner</span>.<span class="ident">flags</span>[<span class="ident">i</span>];
                             <span class="ident">new_flag</span>.<span class="ident">remove</span>(<span class="ident">MMUFlags::WRITE</span>);
                             <span class="ident">pg_table</span>
@@ -2138,7 +2137,7 @@
                                 .<span class="ident">ignore</span>()
                                 .<span class="ident">unwrap</span>();
                         }
-                        <span class="ident">RangeChangeOp::Unmap</span> <span class="op">=</span><span class="op">&gt;</span> {
+                        <span class="ident">RangeChangeOp::Unmap</span> =&gt; {
                             <span class="ident">pg_table</span>.<span class="ident">unmap</span>(<span class="ident">inner</span>.<span class="ident">addr</span> <span class="op">+</span> <span class="ident">i</span> <span class="op">*</span> <span class="ident">PAGE_SIZE</span>).<span class="ident">ignore</span>().<span class="ident">unwrap</span>();
                         }
                     };
@@ -2148,7 +2147,7 @@
     }
 
     <span class="doccomment">/// Handle page fault happened on this VmMapping.</span>
-    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">handle_page_fault</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">vaddr</span>: <span class="ident">VirtAddr</span>, <span class="ident">access_flags</span>: <span class="ident">MMUFlags</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">handle_page_fault</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">vaddr</span>: <span class="ident">VirtAddr</span>, <span class="ident">access_flags</span>: <span class="ident">MMUFlags</span>) -&gt; <span class="ident">ZxResult</span> {
         <span class="kw">let</span> <span class="ident">vaddr</span> <span class="op">=</span> <span class="ident">round_down_pages</span>(<span class="ident">vaddr</span>);
         <span class="kw">let</span> (<span class="ident">vmo_offset</span>, <span class="kw-2">mut</span> <span class="ident">flags</span>) <span class="op">=</span> {
             <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
@@ -2174,7 +2173,7 @@
     }
 
     <span class="doccomment">/// Clone VMO and map it to a new page table. (For Linux)</span>
-    <span class="kw">fn</span> <span class="ident">clone_map</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">page_table</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Mutex</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">GenericPageTable</span><span class="op">&gt;</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">clone_map</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">page_table</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Mutex</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">GenericPageTable</span><span class="op">&gt;</span><span class="op">&gt;</span>) -&gt; <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="comment">//这里调用hal protect后,protect()好像会破坏页表</span>
         <span class="kw">let</span> <span class="ident">new_vmo</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">vmo</span>.<span class="ident">create_child</span>(<span class="bool-val">false</span>, <span class="number">0</span>, <span class="self">self</span>.<span class="ident">vmo</span>.<span class="ident">len</span>())<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">mapping</span> <span class="op">=</span> <span class="ident">Arc::new</span>(<span class="ident">VmMapping</span> {
@@ -2189,13 +2188,13 @@
 }
 
 <span class="kw">impl</span> <span class="ident">VmMappingInner</span> {
-    <span class="kw">fn</span> <span class="ident">end_addr</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">VirtAddr</span> {
+    <span class="kw">fn</span> <span class="ident">end_addr</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">VirtAddr</span> {
         <span class="self">self</span>.<span class="ident">addr</span> <span class="op">+</span> <span class="self">self</span>.<span class="ident">size</span>
     }
 }
 
 <span class="kw">impl</span> <span class="ident">Drop</span> <span class="kw">for</span> <span class="ident">VmMapping</span> {
-    <span class="kw">fn</span> <span class="ident">drop</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) {
+    <span class="kw">fn</span> <span class="ident">drop</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>) {
         <span class="self">self</span>.<span class="ident">unmap</span>();
     }
 }
@@ -2282,8 +2281,8 @@
             .<span class="ident">unwrap</span>();
 
         <span class="kw">unsafe</span> {
-            ((<span class="ident">vmar</span>.<span class="ident">addr</span>() <span class="op">+</span> <span class="number">0x2000</span>) <span class="kw">as</span> <span class="kw-2">*</span><span class="kw-2">mut</span> <span class="ident">usize</span>).<span class="ident">write</span>(<span class="ident">MAGIC</span>);
-            <span class="macro">assert_eq!</span>(((<span class="ident">vmar</span>.<span class="ident">addr</span>() <span class="op">+</span> <span class="number">0x12000</span>) <span class="kw">as</span> <span class="kw-2">*</span><span class="kw">const</span> <span class="ident">usize</span>).<span class="ident">read</span>(), <span class="ident">MAGIC</span>);
+            ((<span class="ident">vmar</span>.<span class="ident">addr</span>() <span class="op">+</span> <span class="number">0x2000</span>) <span class="kw">as</span> <span class="kw-2">*mut</span> <span class="ident">usize</span>).<span class="ident">write</span>(<span class="ident">MAGIC</span>);
+            <span class="macro">assert_eq!</span>(((<span class="ident">vmar</span>.<span class="ident">addr</span>() <span class="op">+</span> <span class="number">0x12000</span>) <span class="kw">as</span> <span class="kw-2">*const</span> <span class="ident">usize</span>).<span class="ident">read</span>(), <span class="ident">MAGIC</span>);
         }
     }
 
@@ -2305,7 +2304,7 @@
     }
 
     <span class="kw">impl</span> <span class="ident">Sample</span> {
-        <span class="kw">fn</span> <span class="ident">new</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
+        <span class="kw">fn</span> <span class="ident">new</span>() -&gt; <span class="self">Self</span> {
             <span class="kw">let</span> <span class="ident">root</span> <span class="op">=</span> <span class="ident">VmAddressRegion::new_root</span>();
             <span class="kw">let</span> <span class="ident">child1</span> <span class="op">=</span> <span class="ident">root</span>
                 .<span class="ident">allocate_at</span>(<span class="number">0</span>, <span class="number">0x2000</span>, <span class="ident">VmarFlags::CAN_MAP_RXW</span>, <span class="ident">PAGE_SIZE</span>)
@@ -2424,7 +2423,7 @@
         <span class="macro">assert_eq!</span>(<span class="ident">vmo</span>.<span class="ident">test_read</span>(<span class="number">0</span>), <span class="number">1</span>);
         <span class="macro">assert_eq!</span>(<span class="ident">child_vmo</span>.<span class="ident">test_read</span>(<span class="number">0</span>), <span class="number">1</span>);
         <span class="kw">unsafe</span> {
-            <span class="macro">assert_eq!</span>((<span class="ident">vmar</span>.<span class="ident">addr</span>() <span class="kw">as</span> <span class="kw-2">*</span><span class="kw">const</span> <span class="ident">u8</span>).<span class="ident">read</span>(), <span class="number">1</span>);
+            <span class="macro">assert_eq!</span>((<span class="ident">vmar</span>.<span class="ident">addr</span>() <span class="kw">as</span> <span class="kw-2">*const</span> <span class="ident">u8</span>).<span class="ident">read</span>(), <span class="number">1</span>);
         }
         <span class="ident">vmo</span>.<span class="ident">test_write</span>(<span class="number">0</span>, <span class="number">2</span>);
         <span class="comment">// Here, since the page was copied on write, the actual page used in the vmo should be changed.</span>
@@ -2439,11 +2438,11 @@
         <span class="comment">// so manually simulate the page fault before read to it</span>
         <span class="ident">vmar</span>.<span class="ident">handle_page_fault</span>(<span class="ident">vmar</span>.<span class="ident">addr</span>(), <span class="ident">MMUFlags::READ</span>).<span class="ident">unwrap</span>();
         <span class="kw">unsafe</span> {
-            <span class="macro">assert_eq!</span>((<span class="ident">vmar</span>.<span class="ident">addr</span>() <span class="kw">as</span> <span class="kw-2">*</span><span class="kw">const</span> <span class="ident">u8</span>).<span class="ident">read</span>(), <span class="number">2</span>);
+            <span class="macro">assert_eq!</span>((<span class="ident">vmar</span>.<span class="ident">addr</span>() <span class="kw">as</span> <span class="kw-2">*const</span> <span class="ident">u8</span>).<span class="ident">read</span>(), <span class="number">2</span>);
         }
     }
 }
-</pre></div>
+</code></pre></div>
 </section><section id="search" class="content hidden"></section><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="zircon_object" data-search-index-js="../../../search-index.js" data-search-js="../../../search.js"></div>
     <script src="../../../main.js"></script><script src="../../../source-script.js"></script><script src="../../../source-files.js"></script>
 </body></html>

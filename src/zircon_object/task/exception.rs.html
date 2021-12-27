@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `zircon-object&#x2F;src&#x2F;task&#x2F;exception.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>exception.rs - source</title><link rel="stylesheet" type="text/css" href="../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../../ayu.css" disabled ><script id="default-settings" ></script><script src="../../../storage.js"></script><script src="../../../crates.js"></script><noscript><link rel="stylesheet" href="../../../noscript.css"></noscript><link rel="icon" type="image/svg+xml" href="../../../favicon.svg"><link rel="alternate icon" type="image/png" href="../../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../../favicon-32x32.png"><style type="text/css">#crate-search{background-image:url("../../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../../zircon_object/index.html'><div class='logo-container rust-logo'><img src='../../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu" title="themes"><img width="18" height="18" alt="Pick another theme!" src="../../../brush.svg"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input"name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" id="help-button" title="help">?</button><a id="settings-menu" href="../../../settings.html" title="settings"><img width="18" height="18" alt="Change settings" src="../../../wheel.svg"></a></div></form></nav><section id="main" class="content"><div class="example-wrap"><pre class="line-numbers"><span id="1">  1</span>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `zircon-object&#x2F;src&#x2F;task&#x2F;exception.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>exception.rs - source</title><link rel="stylesheet" type="text/css" href="../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../../ayu.css" disabled ><script id="default-settings" ></script><script src="../../../storage.js"></script><script src="../../../crates.js"></script><noscript><link rel="stylesheet" href="../../../noscript.css"></noscript><link rel="alternate icon" type="image/png" href="../../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../../favicon-32x32.png"><link rel="icon" type="image/svg+xml" href="../../../favicon.svg"><style type="text/css">#crate-search{background-image:url("../../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../../zircon_object/index.html'><div class='logo-container rust-logo'><img src='../../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu" title="themes"><img width="18" height="18" alt="Pick another theme!" src="../../../brush.svg"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" id="help-button" title="help">?</button><a id="settings-menu" href="../../../settings.html" title="settings"><img width="18" height="18" alt="Change settings" src="../../../wheel.svg"></a></div></form></nav><section id="main" class="content"><div class="example-wrap"><pre class="line-numbers"><span id="1">  1</span>
 <span id="2">  2</span>
 <span id="3">  3</span>
 <span id="4">  4</span>
@@ -682,8 +682,7 @@
 <span id="682">682</span>
 <span id="683">683</span>
 <span id="684">684</span>
-</pre><pre class="rust">
-<span class="kw">use</span> <span class="ident">alloc</span>::{<span class="ident">sync::Arc</span>, <span class="ident">vec::Vec</span>};
+</pre><pre class="rust"><code><span class="kw">use</span> <span class="ident">alloc</span>::{<span class="ident">sync::Arc</span>, <span class="ident">vec::Vec</span>};
 <span class="kw">use</span> <span class="ident">core::mem::size_of</span>;
 
 <span class="kw">use</span> <span class="ident">futures::channel::oneshot</span>;
@@ -691,8 +690,8 @@
 <span class="kw">use</span> <span class="ident">spin::Mutex</span>;
 
 <span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">Job</span>, <span class="ident">Task</span>, <span class="ident">Thread</span>};
-<span class="kw">use</span> <span class="kw">crate</span><span class="ident">::ipc</span>::{<span class="ident">Channel</span>, <span class="ident">MessagePacket</span>};
-<span class="kw">use</span> <span class="kw">crate</span><span class="ident">::object</span>::{<span class="ident">Handle</span>, <span class="ident">KObjectBase</span>, <span class="ident">KernelObject</span>, <span class="ident">KoID</span>, <span class="ident">Rights</span>, <span class="ident">Signal</span>};
+<span class="kw">use</span> <span class="ident"><span class="kw">crate</span>::ipc</span>::{<span class="ident">Channel</span>, <span class="ident">MessagePacket</span>};
+<span class="kw">use</span> <span class="ident"><span class="kw">crate</span>::object</span>::{<span class="ident">Handle</span>, <span class="ident">KObjectBase</span>, <span class="ident">KernelObject</span>, <span class="ident">KoID</span>, <span class="ident">Rights</span>, <span class="ident">Signal</span>};
 <span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">impl_kobject</span>, <span class="ident">ZxError</span>, <span class="ident">ZxResult</span>};
 
 <span class="doccomment">/// Kernel-owned exception channel endpoint.</span>
@@ -712,7 +711,7 @@
 
 <span class="kw">impl</span> <span class="ident">Exceptionate</span> {
     <span class="doccomment">/// Create an `Exceptionate`.</span>
-    <span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">type_</span>: <span class="ident">ExceptionChannelType</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">type_</span>: <span class="ident">ExceptionChannelType</span>) -&gt; <span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
         <span class="ident">Arc::new</span>(<span class="ident">Exceptionate</span> {
             <span class="ident">type_</span>,
             <span class="ident">inner</span>: <span class="ident">Mutex::new</span>(<span class="ident">ExceptionateInner::Init</span>),
@@ -725,15 +724,15 @@
     }
 
     <span class="doccomment">/// Create an exception channel endpoint for user.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">create_channel</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">rights</span>: <span class="ident">Rights</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Channel</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">create_channel</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">rights</span>: <span class="ident">Rights</span>) -&gt; <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Channel</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="kw">match</span> <span class="kw-2">&amp;</span><span class="kw-2">*</span><span class="ident">inner</span> {
-            <span class="ident">ExceptionateInner::Shutdown</span> <span class="op">=</span><span class="op">&gt;</span> <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::BAD_STATE</span>),
-            <span class="ident">ExceptionateInner::Bind</span> { <span class="ident">channel</span>, .. } <span class="kw">if</span> <span class="ident">channel</span>.<span class="ident">peer</span>().<span class="ident">is_ok</span>() <span class="op">=</span><span class="op">&gt;</span> {
+            <span class="ident">ExceptionateInner::Shutdown</span> =&gt; <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::BAD_STATE</span>),
+            <span class="ident">ExceptionateInner::Bind</span> { <span class="ident">channel</span>, .. } <span class="kw">if</span> <span class="ident">channel</span>.<span class="ident">peer</span>().<span class="ident">is_ok</span>() =&gt; {
                 <span class="comment">// already has a valid channel</span>
                 <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::ALREADY_BOUND</span>);
             }
-            <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> {}
+            <span class="kw">_</span> =&gt; {}
         }
         <span class="kw">let</span> (<span class="ident">channel</span>, <span class="ident">user_channel</span>) <span class="op">=</span> <span class="ident">Channel::create</span>();
         <span class="kw-2">*</span><span class="ident">inner</span> <span class="op">=</span> <span class="ident">ExceptionateInner::Bind</span> { <span class="ident">channel</span>, <span class="ident">rights</span> };
@@ -741,7 +740,7 @@
     }
 
     <span class="doccomment">/// Whether the user-owned channel endpoint is alive.</span>
-    <span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn</span> <span class="ident">has_channel</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+    <span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn</span> <span class="ident">has_channel</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">bool</span> {
         <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="macro">matches!</span>(<span class="kw-2">&amp;</span><span class="kw-2">*</span><span class="ident">inner</span>, <span class="ident">ExceptionateInner::Bind</span> { <span class="ident">channel</span>, .. } <span class="kw">if</span> <span class="ident">channel</span>.<span class="ident">peer</span>().<span class="ident">is_ok</span>())
     }
@@ -750,15 +749,15 @@
     <span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn</span> <span class="ident">send_exception</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">exception</span>: <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Exception</span><span class="op">&gt;</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">oneshot::Receiver</span><span class="op">&lt;</span>()<span class="op">&gt;</span><span class="op">&gt;</span> {
+    ) -&gt; <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">oneshot::Receiver</span><span class="op">&lt;</span>()<span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="macro">debug!</span>(
             <span class="string">&quot;Exception: {:?} ,try send to {:?}&quot;</span>,
             <span class="ident">exception</span>.<span class="ident">type_</span>, <span class="self">self</span>.<span class="ident">type_</span>
         );
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="kw">let</span> (<span class="ident">channel</span>, <span class="ident">rights</span>) <span class="op">=</span> <span class="kw">match</span> <span class="kw-2">&amp;</span><span class="kw-2">*</span><span class="ident">inner</span> {
-            <span class="ident">ExceptionateInner::Bind</span> { <span class="ident">channel</span>, <span class="ident">rights</span> } <span class="op">=</span><span class="op">&gt;</span> (<span class="ident">channel</span>, <span class="kw-2">*</span><span class="ident">rights</span>),
-            <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::NEXT</span>),
+            <span class="ident">ExceptionateInner::Bind</span> { <span class="ident">channel</span>, <span class="ident">rights</span> } =&gt; (<span class="ident">channel</span>, <span class="kw-2">*</span><span class="ident">rights</span>),
+            <span class="kw">_</span> =&gt; <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::NEXT</span>),
         };
         <span class="kw">let</span> <span class="ident">info</span> <span class="op">=</span> <span class="ident">ExceptionInfo</span> {
             <span class="ident">pid</span>: <span class="ident">exception</span>.<span class="ident">thread</span>.<span class="ident">proc</span>().<span class="ident">id</span>(),
@@ -772,7 +771,7 @@
             <span class="ident">handles</span>: <span class="macro">alloc::vec!</span>[<span class="ident">Handle::new</span>(<span class="ident">object</span>, <span class="ident">Rights::DEFAULT_EXCEPTION</span>)],
         };
         <span class="ident">channel</span>.<span class="ident">write</span>(<span class="ident">msg</span>).<span class="ident">map_err</span>(<span class="op">|</span><span class="ident">err</span><span class="op">|</span> {
-            <span class="kw">if</span> <span class="ident">err</span> <span class="op">=</span><span class="op">=</span> <span class="ident">ZxError::PEER_CLOSED</span> {
+            <span class="kw">if</span> <span class="ident">err</span> <span class="op">==</span> <span class="ident">ZxError::PEER_CLOSED</span> {
                 <span class="kw-2">*</span><span class="ident">inner</span> <span class="op">=</span> <span class="ident">ExceptionateInner::Init</span>;
                 <span class="kw">return</span> <span class="ident">ZxError::NEXT</span>;
             }
@@ -793,7 +792,7 @@
 
 <span class="kw">impl</span> <span class="ident">ExceptionInfo</span> {
     <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">unsafe_code</span>)]</span>
-    <span class="kw">fn</span> <span class="ident">pack</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">pack</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">buf</span>: [<span class="ident">u8</span>; <span class="ident">size_of</span>::<span class="op">&lt;</span><span class="ident">ExceptionInfo</span><span class="op">&gt;</span>()] <span class="op">=</span> <span class="kw">unsafe</span> { <span class="ident">core::mem::transmute_copy</span>(<span class="self">self</span>) };
         <span class="ident">Vec::from</span>(<span class="ident">buf</span>)
     }
@@ -846,7 +845,7 @@
 }
 
 <span class="kw">impl</span> <span class="ident">ExceptionContext</span> {
-    <span class="kw">fn</span> <span class="ident">from_user_context</span>(<span class="ident">ctx</span>: <span class="kw-2">&amp;</span><span class="ident">UserContext</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
+    <span class="kw">fn</span> <span class="ident">from_user_context</span>(<span class="ident">ctx</span>: <span class="kw-2">&amp;</span><span class="ident">UserContext</span>) -&gt; <span class="self">Self</span> {
         <span class="kw">let</span> <span class="ident">fault_vaddr</span> <span class="op">=</span> <span class="kw">if</span> <span class="kw">let</span> <span class="ident">TrapReason::PageFault</span>(<span class="ident">vaddr</span>, <span class="kw">_</span>) <span class="op">=</span> <span class="ident">ctx</span>.<span class="ident">trap_reason</span>() {
             <span class="ident">vaddr</span> <span class="kw">as</span> <span class="ident">u64</span>
         } <span class="kw">else</span> {
@@ -887,7 +886,7 @@
 }
 
 <span class="kw">impl</span> <span class="ident">ExceptionReport</span> {
-    <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">type_</span>: <span class="ident">ExceptionType</span>, <span class="ident">cx</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">UserContext</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
+    <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">type_</span>: <span class="ident">ExceptionType</span>, <span class="ident">cx</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">UserContext</span><span class="op">&gt;</span>) -&gt; <span class="self">Self</span> {
         <span class="ident">ExceptionReport</span> {
             <span class="ident">header</span>: <span class="ident">ExceptionHeader</span> {
                 <span class="ident">type_</span>,
@@ -921,7 +920,7 @@
 
 <span class="kw">impl</span> <span class="ident">ExceptionType</span> {
     <span class="doccomment">/// Is the exception type generated by kernel instead of the hardware.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">is_synth</span>(<span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">is_synth</span>(<span class="self">self</span>) -&gt; <span class="ident">bool</span> {
         (<span class="self">self</span> <span class="kw">as</span> <span class="ident">u32</span>) <span class="op">&amp;</span> (<span class="ident">ExceptionType::Synth</span> <span class="kw">as</span> <span class="ident">u32</span>) <span class="op">!</span><span class="op">=</span> <span class="number">0</span>
     }
 }
@@ -958,7 +957,7 @@
     <span class="doccomment">/// Create an kernel object of `Exception`.</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// Return the object and a `Receiver` of the object dropped event.</span>
-    <span class="kw">fn</span> <span class="ident">create</span>(<span class="ident">exception</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Exception</span><span class="op">&gt;</span>, <span class="ident">rights</span>: <span class="ident">Rights</span>) <span class="op">-</span><span class="op">&gt;</span> (<span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span>, <span class="ident">oneshot::Receiver</span><span class="op">&lt;</span>()<span class="op">&gt;</span>) {
+    <span class="kw">fn</span> <span class="ident">create</span>(<span class="ident">exception</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Exception</span><span class="op">&gt;</span>, <span class="ident">rights</span>: <span class="ident">Rights</span>) -&gt; (<span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span>, <span class="ident">oneshot::Receiver</span><span class="op">&lt;</span>()<span class="op">&gt;</span>) {
         <span class="kw">let</span> (<span class="ident">sender</span>, <span class="ident">receiver</span>) <span class="op">=</span> <span class="ident">oneshot::channel</span>();
         <span class="kw">let</span> <span class="ident">object</span> <span class="op">=</span> <span class="ident">Arc::new</span>(<span class="ident">ExceptionObject</span> {
             <span class="ident">base</span>: <span class="ident">KObjectBase::new</span>(),
@@ -970,7 +969,7 @@
     }
 
     <span class="doccomment">/// Create a handle for the exception&#39;s thread.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_thread_handle</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Handle</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_thread_handle</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">Handle</span> {
         <span class="ident">Handle</span> {
             <span class="ident">object</span>: <span class="self">self</span>.<span class="ident">exception</span>.<span class="ident">thread</span>.<span class="ident">clone</span>(),
             <span class="ident">rights</span>: <span class="self">self</span>.<span class="ident">rights</span> <span class="op">&amp;</span> <span class="ident">Rights::DEFAULT_THREAD</span>,
@@ -978,8 +977,8 @@
     }
 
     <span class="doccomment">/// Create a handle for the exception&#39;s process.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_process_handle</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Handle</span><span class="op">&gt;</span> {
-        <span class="kw">if</span> <span class="self">self</span>.<span class="ident">exception</span>.<span class="ident">current_channel_type</span>() <span class="op">=</span><span class="op">=</span> <span class="ident">ExceptionChannelType::Thread</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_process_handle</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Handle</span><span class="op">&gt;</span> {
+        <span class="kw">if</span> <span class="self">self</span>.<span class="ident">exception</span>.<span class="ident">current_channel_type</span>() <span class="op">==</span> <span class="ident">ExceptionChannelType::Thread</span> {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::ACCESS_DENIED</span>);
         }
         <span class="prelude-val">Ok</span>(<span class="ident">Handle</span> {
@@ -990,45 +989,45 @@
 
     <span class="doccomment">/// Get whether closing the exception handle will</span>
     <span class="doccomment">/// finish exception processing and resume the underlying thread.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">state</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u32</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">state</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">u32</span> {
         <span class="self">self</span>.<span class="ident">exception</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">handled</span> <span class="kw">as</span> <span class="ident">u32</span>
     }
 
     <span class="doccomment">/// Set whether closing the exception handle will</span>
     <span class="doccomment">/// finish exception processing and resume the underlying thread.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">set_state</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">state</span>: <span class="ident">u32</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">set_state</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">state</span>: <span class="ident">u32</span>) -&gt; <span class="ident">ZxResult</span> {
         <span class="kw">if</span> <span class="ident">state</span> <span class="op">&gt;</span> <span class="number">1</span> {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::INVALID_ARGS</span>);
         }
-        <span class="self">self</span>.<span class="ident">exception</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">handled</span> <span class="op">=</span> <span class="ident">state</span> <span class="op">=</span><span class="op">=</span> <span class="number">1</span>;
+        <span class="self">self</span>.<span class="ident">exception</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">handled</span> <span class="op">=</span> <span class="ident">state</span> <span class="op">==</span> <span class="number">1</span>;
         <span class="prelude-val">Ok</span>(())
     }
 
     <span class="doccomment">/// Get whether the debugger gets a &#39;second chance&#39; at handling the exception</span>
     <span class="doccomment">/// if the process-level handler fails to do so.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">strategy</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u32</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">strategy</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">u32</span> {
         <span class="self">self</span>.<span class="ident">exception</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">second_chance</span> <span class="kw">as</span> <span class="ident">u32</span>
     }
 
     <span class="doccomment">/// Set whether the debugger gets a &#39;second chance&#39; at handling the exception</span>
     <span class="doccomment">/// if the process-level handler fails to do so.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">set_strategy</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">strategy</span>: <span class="ident">u32</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">set_strategy</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">strategy</span>: <span class="ident">u32</span>) -&gt; <span class="ident">ZxResult</span> {
         <span class="kw">if</span> <span class="ident">strategy</span> <span class="op">&gt;</span> <span class="number">1</span> {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::INVALID_ARGS</span>);
         }
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">exception</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="kw">match</span> <span class="ident">inner</span>.<span class="ident">current_channel_type</span> {
-            <span class="ident">ExceptionChannelType::Debugger</span> <span class="op">|</span> <span class="ident">ExceptionChannelType::JobDebugger</span> <span class="op">=</span><span class="op">&gt;</span> {
-                <span class="ident">inner</span>.<span class="ident">second_chance</span> <span class="op">=</span> <span class="ident">strategy</span> <span class="op">=</span><span class="op">=</span> <span class="number">1</span>;
+            <span class="ident">ExceptionChannelType::Debugger</span> <span class="op">|</span> <span class="ident">ExceptionChannelType::JobDebugger</span> =&gt; {
+                <span class="ident">inner</span>.<span class="ident">second_chance</span> <span class="op">=</span> <span class="ident">strategy</span> <span class="op">==</span> <span class="number">1</span>;
                 <span class="prelude-val">Ok</span>(())
             }
-            <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::BAD_STATE</span>),
+            <span class="kw">_</span> =&gt; <span class="prelude-val">Err</span>(<span class="ident">ZxError::BAD_STATE</span>),
         }
     }
 }
 
 <span class="kw">impl</span> <span class="ident">Drop</span> <span class="kw">for</span> <span class="ident">ExceptionObject</span> {
-    <span class="kw">fn</span> <span class="ident">drop</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) {
+    <span class="kw">fn</span> <span class="ident">drop</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>) {
         <span class="self">self</span>.<span class="ident">close_signal</span>.<span class="ident">take</span>().<span class="ident">unwrap</span>().<span class="ident">send</span>(()).<span class="ident">ok</span>();
     }
 }
@@ -1049,7 +1048,7 @@
 
 <span class="kw">impl</span> <span class="ident">Exception</span> {
     <span class="doccomment">/// Create an `Exception`.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">thread</span>: <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Thread</span><span class="op">&gt;</span>, <span class="ident">type_</span>: <span class="ident">ExceptionType</span>, <span class="ident">cx</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">UserContext</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">thread</span>: <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Thread</span><span class="op">&gt;</span>, <span class="ident">type_</span>: <span class="ident">ExceptionType</span>, <span class="ident">cx</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">UserContext</span><span class="op">&gt;</span>) -&gt; <span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
         <span class="ident">Arc::new</span>(<span class="ident">Exception</span> {
             <span class="ident">thread</span>: <span class="ident">thread</span>.<span class="ident">clone</span>(),
             <span class="ident">type_</span>,
@@ -1068,22 +1067,22 @@
     <span class="doccomment">/// This happens only when the thread is killed before we send the exception.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">handle</span>(<span class="self">self</span>: <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span>) {
         <span class="kw">let</span> <span class="ident">result</span> <span class="op">=</span> <span class="kw">match</span> <span class="self">self</span>.<span class="ident">type_</span> {
-            <span class="ident">ExceptionType::ProcessStarting</span> <span class="op">=</span><span class="op">&gt;</span> {
+            <span class="ident">ExceptionType::ProcessStarting</span> =&gt; {
                 <span class="self">self</span>.<span class="ident">handle_with</span>(<span class="ident">JobDebuggerIterator::new</span>(<span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>().<span class="ident">job</span>()), <span class="bool-val">true</span>)
                     .<span class="kw">await</span>
             }
-            <span class="ident">ExceptionType::ThreadStarting</span> <span class="op">|</span> <span class="ident">ExceptionType::ThreadExiting</span> <span class="op">=</span><span class="op">&gt;</span> {
+            <span class="ident">ExceptionType::ThreadStarting</span> <span class="op">|</span> <span class="ident">ExceptionType::ThreadExiting</span> =&gt; {
                 <span class="self">self</span>.<span class="ident">handle_with</span>(<span class="prelude-val">Some</span>(<span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>().<span class="ident">debug_exceptionate</span>()), <span class="bool-val">false</span>)
                     .<span class="kw">await</span>
             }
-            <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> {
+            <span class="kw">_</span> =&gt; {
                 <span class="self">self</span>.<span class="ident">handle_with</span>(<span class="ident">ExceptionateIterator::new</span>(<span class="self">self</span>), <span class="bool-val">false</span>)
                     .<span class="kw">await</span>
             }
         };
-        <span class="kw">if</span> <span class="ident">result</span> <span class="op">=</span><span class="op">=</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::NEXT</span>) <span class="op">&amp;&amp;</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">type_</span>.<span class="ident">is_synth</span>() {
+        <span class="kw">if</span> <span class="ident">result</span> <span class="op">==</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::NEXT</span>) <span class="op">&amp;&amp;</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">type_</span>.<span class="ident">is_synth</span>() {
             <span class="comment">// Nobody handled the exception, kill myself</span>
-            <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>().<span class="ident">exit</span>(<span class="kw">super</span><span class="ident">::TASK_RETCODE_SYSCALL_KILL</span>);
+            <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>().<span class="ident">exit</span>(<span class="ident"><span class="kw">super</span>::TASK_RETCODE_SYSCALL_KILL</span>);
         }
     }
 
@@ -1095,12 +1094,12 @@
         <span class="self">self</span>: <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span>,
         <span class="ident">exceptionates</span>: <span class="kw">impl</span> <span class="ident">IntoIterator</span><span class="op">&lt;</span><span class="ident">Item</span> <span class="op">=</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Exceptionate</span><span class="op">&gt;</span><span class="op">&gt;</span>,
         <span class="ident">first_only</span>: <span class="ident">bool</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    ) -&gt; <span class="ident">ZxResult</span> {
         <span class="kw">for</span> <span class="ident">exceptionate</span> <span class="kw">in</span> <span class="ident">exceptionates</span>.<span class="ident">into_iter</span>() {
             <span class="kw">let</span> <span class="ident">closed</span> <span class="op">=</span> <span class="kw">match</span> <span class="ident">exceptionate</span>.<span class="ident">send_exception</span>(<span class="self">self</span>) {
                 <span class="comment">// This channel is not available now!</span>
-                <span class="prelude-val">Err</span>(<span class="ident">ZxError::NEXT</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="kw">continue</span>,
-                <span class="ident">res</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">res</span><span class="question-mark">?</span>,
+                <span class="prelude-val">Err</span>(<span class="ident">ZxError::NEXT</span>) =&gt; <span class="kw">continue</span>,
+                <span class="ident">res</span> =&gt; <span class="ident">res</span><span class="question-mark">?</span>,
             };
             <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">current_channel_type</span> <span class="op">=</span> <span class="ident">exceptionate</span>.<span class="ident">type_</span>;
             <span class="comment">// If this error, the sender is dropped, and the handle should also be closed.</span>
@@ -1118,12 +1117,12 @@
     }
 
     <span class="doccomment">/// Get the exception&#39;s channel type.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">current_channel_type</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ExceptionChannelType</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">current_channel_type</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">ExceptionChannelType</span> {
         <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">current_channel_type</span>
     }
 
     <span class="doccomment">/// Get a report of the exception.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">report</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ExceptionReport</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">report</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">ExceptionReport</span> {
         <span class="self">self</span>.<span class="ident">report</span>.<span class="ident">clone</span>()
     }
 }
@@ -1153,7 +1152,7 @@
 }
 
 <span class="kw">impl</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span> <span class="ident">ExceptionateIterator</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span> {
-    <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">exception</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">Exception</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
+    <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">exception</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">Exception</span>) -&gt; <span class="self">Self</span> {
         <span class="ident">ExceptionateIterator</span> {
             <span class="ident">exception</span>,
             <span class="ident">state</span>: <span class="ident">ExceptionateIteratorState::Debug</span>(<span class="bool-val">false</span>),
@@ -1163,10 +1162,10 @@
 
 <span class="kw">impl</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span> <span class="ident">Iterator</span> <span class="kw">for</span> <span class="ident">ExceptionateIterator</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span> {
     <span class="kw">type</span> <span class="ident">Item</span> <span class="op">=</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Exceptionate</span><span class="op">&gt;</span>;
-    <span class="kw">fn</span> <span class="ident">next</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="self">Self</span><span class="ident">::Item</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">next</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident"><span class="self">Self</span>::Item</span><span class="op">&gt;</span> {
         <span class="kw">loop</span> {
             <span class="kw">match</span> <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">state</span> {
-                <span class="ident">ExceptionateIteratorState::Debug</span>(<span class="ident">second_chance</span>) <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="ident">ExceptionateIteratorState::Debug</span>(<span class="ident">second_chance</span>) =&gt; {
                     <span class="kw">if</span> <span class="kw-2">*</span><span class="ident">second_chance</span> <span class="op">&amp;&amp;</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">exception</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">second_chance</span> {
                         <span class="self">self</span>.<span class="ident">state</span> <span class="op">=</span>
                             <span class="ident">ExceptionateIteratorState::Job</span>(<span class="self">self</span>.<span class="ident">exception</span>.<span class="ident">thread</span>.<span class="ident">proc</span>().<span class="ident">job</span>());
@@ -1180,16 +1179,16 @@
                     };
                     <span class="kw">return</span> <span class="prelude-val">Some</span>(<span class="ident">proc</span>.<span class="ident">debug_exceptionate</span>());
                 }
-                <span class="ident">ExceptionateIteratorState::Thread</span> <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="ident">ExceptionateIteratorState::Thread</span> =&gt; {
                     <span class="self">self</span>.<span class="ident">state</span> <span class="op">=</span> <span class="ident">ExceptionateIteratorState::Process</span>;
                     <span class="kw">return</span> <span class="prelude-val">Some</span>(<span class="self">self</span>.<span class="ident">exception</span>.<span class="ident">thread</span>.<span class="ident">exceptionate</span>());
                 }
-                <span class="ident">ExceptionateIteratorState::Process</span> <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="ident">ExceptionateIteratorState::Process</span> =&gt; {
                     <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">exception</span>.<span class="ident">thread</span>.<span class="ident">proc</span>();
                     <span class="self">self</span>.<span class="ident">state</span> <span class="op">=</span> <span class="ident">ExceptionateIteratorState::Debug</span>(<span class="bool-val">true</span>);
                     <span class="kw">return</span> <span class="prelude-val">Some</span>(<span class="ident">proc</span>.<span class="ident">exceptionate</span>());
                 }
-                <span class="ident">ExceptionateIteratorState::Job</span>(<span class="ident">job</span>) <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="ident">ExceptionateIteratorState::Job</span>(<span class="ident">job</span>) =&gt; {
                     <span class="kw">let</span> <span class="ident">parent</span> <span class="op">=</span> <span class="ident">job</span>.<span class="ident">parent</span>();
                     <span class="kw">let</span> <span class="ident">result</span> <span class="op">=</span> <span class="ident">job</span>.<span class="ident">exceptionate</span>();
                     <span class="self">self</span>.<span class="ident">state</span> <span class="op">=</span> <span class="ident">parent</span>.<span class="ident">map_or</span>(
@@ -1198,7 +1197,7 @@
                     );
                     <span class="kw">return</span> <span class="prelude-val">Some</span>(<span class="ident">result</span>);
                 }
-                <span class="ident">ExceptionateIteratorState::Finished</span> <span class="op">=</span><span class="op">&gt;</span> <span class="kw">return</span> <span class="prelude-val">None</span>,
+                <span class="ident">ExceptionateIteratorState::Finished</span> =&gt; <span class="kw">return</span> <span class="prelude-val">None</span>,
             }
         }
     }
@@ -1211,14 +1210,14 @@
 
 <span class="kw">impl</span> <span class="ident">JobDebuggerIterator</span> {
     <span class="doccomment">/// Create a new JobDebuggerIterator</span>
-    <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">job</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Job</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
+    <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">job</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Job</span><span class="op">&gt;</span>) -&gt; <span class="self">Self</span> {
         <span class="ident">JobDebuggerIterator</span> { <span class="ident">job</span>: <span class="prelude-val">Some</span>(<span class="ident">job</span>) }
     }
 }
 
 <span class="kw">impl</span> <span class="ident">Iterator</span> <span class="kw">for</span> <span class="ident">JobDebuggerIterator</span> {
     <span class="kw">type</span> <span class="ident">Item</span> <span class="op">=</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Exceptionate</span><span class="op">&gt;</span>;
-    <span class="kw">fn</span> <span class="ident">next</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="self">Self</span><span class="ident">::Item</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">next</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident"><span class="self">Self</span>::Item</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">result</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">job</span>.<span class="ident">as_ref</span>().<span class="ident">map</span>(<span class="op">|</span><span class="ident">job</span><span class="op">|</span> <span class="ident">job</span>.<span class="ident">debug_exceptionate</span>());
         <span class="self">self</span>.<span class="ident">job</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">job</span>.<span class="ident">as_ref</span>().<span class="ident">and_then</span>(<span class="op">|</span><span class="ident">job</span><span class="op">|</span> <span class="ident">job</span>.<span class="ident">parent</span>());
         <span class="ident">result</span>
@@ -1228,7 +1227,7 @@
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">test</span>)]</span>
 <span class="kw">mod</span> <span class="ident">tests</span> {
     <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
-    <span class="kw">use</span> <span class="kw">crate</span><span class="ident">::task</span>::<span class="kw-2">*</span>;
+    <span class="kw">use</span> <span class="ident"><span class="kw">crate</span>::task</span>::<span class="kw-2">*</span>;
 
     <span class="attribute">#[<span class="ident">test</span>]</span>
     <span class="kw">fn</span> <span class="ident">exceptionate_iterator</span>() {
@@ -1367,7 +1366,7 @@
         <span class="macro">assert_eq!</span>(<span class="ident">handled_order</span>.<span class="ident">lock</span>().<span class="ident">clone</span>(), <span class="macro">vec!</span>[<span class="number">0</span>, <span class="number">1</span>, <span class="number">3</span>]);
     }
 }
-</pre></div>
+</code></pre></div>
 </section><section id="search" class="content hidden"></section><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="zircon_object" data-search-index-js="../../../search-index.js" data-search-js="../../../search.js"></div>
     <script src="../../../main.js"></script><script src="../../../source-script.js"></script><script src="../../../source-files.js"></script>
 </body></html>

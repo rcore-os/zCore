@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `zircon-syscall&#x2F;src&#x2F;futex.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>futex.rs - source</title><link rel="stylesheet" type="text/css" href="../../normalize.css"><link rel="stylesheet" type="text/css" href="../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../ayu.css" disabled ><script id="default-settings" ></script><script src="../../storage.js"></script><script src="../../crates.js"></script><noscript><link rel="stylesheet" href="../../noscript.css"></noscript><link rel="icon" type="image/svg+xml" href="../../favicon.svg"><link rel="alternate icon" type="image/png" href="../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../favicon-32x32.png"><style type="text/css">#crate-search{background-image:url("../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../zircon_syscall/index.html'><div class='logo-container rust-logo'><img src='../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu" title="themes"><img width="18" height="18" alt="Pick another theme!" src="../../brush.svg"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input"name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" id="help-button" title="help">?</button><a id="settings-menu" href="../../settings.html" title="settings"><img width="18" height="18" alt="Change settings" src="../../wheel.svg"></a></div></form></nav><section id="main" class="content"><div class="example-wrap"><pre class="line-numbers"><span id="1">  1</span>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `zircon-syscall&#x2F;src&#x2F;futex.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>futex.rs - source</title><link rel="stylesheet" type="text/css" href="../../normalize.css"><link rel="stylesheet" type="text/css" href="../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../ayu.css" disabled ><script id="default-settings" ></script><script src="../../storage.js"></script><script src="../../crates.js"></script><noscript><link rel="stylesheet" href="../../noscript.css"></noscript><link rel="alternate icon" type="image/png" href="../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../favicon-32x32.png"><link rel="icon" type="image/svg+xml" href="../../favicon.svg"><style type="text/css">#crate-search{background-image:url("../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../zircon_syscall/index.html'><div class='logo-container rust-logo'><img src='../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu" title="themes"><img width="18" height="18" alt="Pick another theme!" src="../../brush.svg"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" id="help-button" title="help">?</button><a id="settings-menu" href="../../settings.html" title="settings"><img width="18" height="18" alt="Change settings" src="../../wheel.svg"></a></div></form></nav><section id="main" class="content"><div class="example-wrap"><pre class="line-numbers"><span id="1">  1</span>
 <span id="2">  2</span>
 <span id="3">  3</span>
 <span id="4">  4</span>
@@ -105,8 +105,7 @@
 <span id="105">105</span>
 <span id="106">106</span>
 <span id="107">107</span>
-</pre><pre class="rust">
-<span class="kw">use</span> {
+</pre><pre class="rust"><code><span class="kw">use</span> {
     <span class="kw">super</span>::<span class="kw-2">*</span>,
     <span class="ident">zircon_object::task</span>::{<span class="ident">Thread</span>, <span class="ident">ThreadState</span>},
 };
@@ -122,7 +121,7 @@
         <span class="ident">current_value</span>: <span class="ident">i32</span>,
         <span class="ident">new_futex_owner</span>: <span class="ident">HandleValue</span>,
         <span class="ident">deadline</span>: <span class="ident">Deadline</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    ) -&gt; <span class="ident">ZxResult</span> {
         <span class="macro">info!</span>(
             <span class="string">&quot;futex.wait: value_ptr={:#x?}, current_value={:#x}, new_futex_owner={:#x}, deadline={:?}&quot;</span>,
             <span class="ident">value_ptr</span>, <span class="ident">current_value</span>, <span class="ident">new_futex_owner</span>, <span class="ident">deadline</span>
@@ -133,7 +132,7 @@
         <span class="kw">let</span> <span class="ident">value</span> <span class="op">=</span> <span class="ident">value_ptr</span>.<span class="ident">as_ref</span>()<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>();
         <span class="kw">let</span> <span class="ident">futex</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_futex</span>(<span class="ident">value</span>);
-        <span class="kw">let</span> <span class="ident">new_owner</span> <span class="op">=</span> <span class="kw">if</span> <span class="ident">new_futex_owner</span> <span class="op">=</span><span class="op">=</span> <span class="ident">INVALID_HANDLE</span> {
+        <span class="kw">let</span> <span class="ident">new_owner</span> <span class="op">=</span> <span class="kw">if</span> <span class="ident">new_futex_owner</span> <span class="op">==</span> <span class="ident">INVALID_HANDLE</span> {
             <span class="prelude-val">None</span>
         } <span class="kw">else</span> {
             <span class="prelude-val">Some</span>(<span class="ident">proc</span>.<span class="ident">get_object</span>::<span class="op">&lt;</span><span class="ident">Thread</span><span class="op">&gt;</span>(<span class="ident">new_futex_owner</span>)<span class="question-mark">?</span>)
@@ -155,7 +154,7 @@
         <span class="ident">requeue_ptr</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">AtomicI32</span><span class="op">&gt;</span>,
         <span class="ident">requeue_count</span>: <span class="ident">u32</span>,
         <span class="ident">new_requeue_owner</span>: <span class="ident">HandleValue</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    ) -&gt; <span class="ident">ZxResult</span> {
         <span class="macro">info!</span>(
             <span class="string">&quot;futex.requeue: value_ptr={:?}, wake_count={:#x}, current_value={:#x}, requeue_ptr={:?}, requeue_count={:#x}, new_requeue_owner={:?}&quot;</span>,
             <span class="ident">value_ptr</span>, <span class="ident">wake_count</span>, <span class="ident">current_value</span>, <span class="ident">requeue_ptr</span>, <span class="ident">requeue_count</span>, <span class="ident">new_requeue_owner</span>
@@ -165,11 +164,11 @@
         }
         <span class="kw">let</span> <span class="ident">value</span> <span class="op">=</span> <span class="ident">value_ptr</span>.<span class="ident">as_ref</span>()<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">requeue</span> <span class="op">=</span> <span class="ident">requeue_ptr</span>.<span class="ident">as_ref</span>()<span class="question-mark">?</span>;
-        <span class="kw">if</span> <span class="ident">value_ptr</span>.<span class="ident">as_ptr</span>() <span class="op">=</span><span class="op">=</span> <span class="ident">requeue_ptr</span>.<span class="ident">as_ptr</span>() {
+        <span class="kw">if</span> <span class="ident">value_ptr</span>.<span class="ident">as_ptr</span>() <span class="op">==</span> <span class="ident">requeue_ptr</span>.<span class="ident">as_ptr</span>() {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::INVALID_ARGS</span>);
         }
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>();
-        <span class="kw">let</span> <span class="ident">new_requeue_owner</span> <span class="op">=</span> <span class="kw">if</span> <span class="ident">new_requeue_owner</span> <span class="op">=</span><span class="op">=</span> <span class="ident">INVALID_HANDLE</span> {
+        <span class="kw">let</span> <span class="ident">new_requeue_owner</span> <span class="op">=</span> <span class="kw">if</span> <span class="ident">new_requeue_owner</span> <span class="op">==</span> <span class="ident">INVALID_HANDLE</span> {
             <span class="prelude-val">None</span>
         } <span class="kw">else</span> {
             <span class="prelude-val">Some</span>(<span class="ident">proc</span>.<span class="ident">get_object</span>::<span class="op">&lt;</span><span class="ident">Thread</span><span class="op">&gt;</span>(<span class="ident">new_requeue_owner</span>)<span class="question-mark">?</span>)
@@ -189,7 +188,7 @@
     <span class="doccomment">/// Wake some number of threads waiting on a futex.</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// &gt; Waking up zero threads is not an error condition. Passing in an unallocated address for value_ptr is not an error condition.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_futex_wake</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">value_ptr</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">AtomicI32</span><span class="op">&gt;</span>, <span class="ident">count</span>: <span class="ident">u32</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_futex_wake</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">value_ptr</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">AtomicI32</span><span class="op">&gt;</span>, <span class="ident">count</span>: <span class="ident">u32</span>) -&gt; <span class="ident">ZxResult</span> {
         <span class="macro">info!</span>(<span class="string">&quot;futex.wake: value_ptr={:?}, count={:#x}&quot;</span>, <span class="ident">value_ptr</span>, <span class="ident">count</span>);
         <span class="kw">if</span> <span class="ident">value_ptr</span>.<span class="ident">is_null</span>() <span class="op">|</span><span class="op">|</span> <span class="ident">value_ptr</span>.<span class="ident">as_ptr</span>() <span class="kw">as</span> <span class="ident">usize</span> <span class="op">%</span> <span class="number">4</span> <span class="op">!</span><span class="op">=</span> <span class="number">0</span> {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::INVALID_ARGS</span>);
@@ -202,7 +201,7 @@
     }
 
     <span class="doccomment">/// Wake some number of threads waiting on a futex, and move more waiters to another wait queue.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_futex_wake_single_owner</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">value_ptr</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">AtomicI32</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_futex_wake_single_owner</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">value_ptr</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">AtomicI32</span><span class="op">&gt;</span>) -&gt; <span class="ident">ZxResult</span> {
         <span class="macro">info!</span>(<span class="string">&quot;futex.wake_single_owner: value_ptr={:?}&quot;</span>, <span class="ident">value_ptr</span>);
         <span class="kw">if</span> <span class="ident">value_ptr</span>.<span class="ident">is_null</span>() <span class="op">|</span><span class="op">|</span> <span class="ident">value_ptr</span>.<span class="ident">as_ptr</span>() <span class="kw">as</span> <span class="ident">usize</span> <span class="op">%</span> <span class="number">4</span> <span class="op">!</span><span class="op">=</span> <span class="number">0</span> {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::INVALID_ARGS</span>);
@@ -213,7 +212,7 @@
         <span class="prelude-val">Ok</span>(())
     }
 }
-</pre></div>
+</code></pre></div>
 </section><section id="search" class="content hidden"></section><div id="rustdoc-vars" data-root-path="../../" data-current-crate="zircon_syscall" data-search-index-js="../../search-index.js" data-search-js="../../search.js"></div>
     <script src="../../main.js"></script><script src="../../source-script.js"></script><script src="../../source-files.js"></script>
 </body></html>

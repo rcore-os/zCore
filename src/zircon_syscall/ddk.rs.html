@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `zircon-syscall&#x2F;src&#x2F;ddk.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>ddk.rs - source</title><link rel="stylesheet" type="text/css" href="../../normalize.css"><link rel="stylesheet" type="text/css" href="../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../ayu.css" disabled ><script id="default-settings" ></script><script src="../../storage.js"></script><script src="../../crates.js"></script><noscript><link rel="stylesheet" href="../../noscript.css"></noscript><link rel="icon" type="image/svg+xml" href="../../favicon.svg"><link rel="alternate icon" type="image/png" href="../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../favicon-32x32.png"><style type="text/css">#crate-search{background-image:url("../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../zircon_syscall/index.html'><div class='logo-container rust-logo'><img src='../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu" title="themes"><img width="18" height="18" alt="Pick another theme!" src="../../brush.svg"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input"name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" id="help-button" title="help">?</button><a id="settings-menu" href="../../settings.html" title="settings"><img width="18" height="18" alt="Change settings" src="../../wheel.svg"></a></div></form></nav><section id="main" class="content"><div class="example-wrap"><pre class="line-numbers"><span id="1">  1</span>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `zircon-syscall&#x2F;src&#x2F;ddk.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>ddk.rs - source</title><link rel="stylesheet" type="text/css" href="../../normalize.css"><link rel="stylesheet" type="text/css" href="../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../ayu.css" disabled ><script id="default-settings" ></script><script src="../../storage.js"></script><script src="../../crates.js"></script><noscript><link rel="stylesheet" href="../../noscript.css"></noscript><link rel="alternate icon" type="image/png" href="../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../favicon-32x32.png"><link rel="icon" type="image/svg+xml" href="../../favicon.svg"><style type="text/css">#crate-search{background-image:url("../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../zircon_syscall/index.html'><div class='logo-container rust-logo'><img src='../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu" title="themes"><img width="18" height="18" alt="Pick another theme!" src="../../brush.svg"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" id="help-button" title="help">?</button><a id="settings-menu" href="../../settings.html" title="settings"><img width="18" height="18" alt="Change settings" src="../../wheel.svg"></a></div></form></nav><section id="main" class="content"><div class="example-wrap"><pre class="line-numbers"><span id="1">  1</span>
 <span id="2">  2</span>
 <span id="3">  3</span>
 <span id="4">  4</span>
@@ -329,8 +329,7 @@
 <span id="329">329</span>
 <span id="330">330</span>
 <span id="331">331</span>
-</pre><pre class="rust">
-<span class="kw">use</span> {
+</pre><pre class="rust"><code><span class="kw">use</span> {
     <span class="kw">super</span>::<span class="kw-2">*</span>,
     <span class="ident">bitflags::bitflags</span>,
     <span class="ident">kernel_hal::DevVAddr</span>,
@@ -346,7 +345,7 @@
         <span class="ident">desc</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>,
         <span class="ident">desc_size</span>: <span class="ident">usize</span>,
         <span class="kw-2">mut</span> <span class="ident">out</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">HandleValue</span><span class="op">&gt;</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    ) -&gt; <span class="ident">ZxResult</span> {
         <span class="macro">info!</span>(
             <span class="string">&quot;iommu.create: resource={:#x}, type={:#x}, desc={:#x?} desc_size={:#x} out={:#x?}&quot;</span>,
             <span class="ident">resource</span>, <span class="ident">type_</span>, <span class="ident">desc</span>, <span class="ident">desc_size</span>, <span class="ident">out</span>
@@ -381,7 +380,7 @@
         <span class="ident">options</span>: <span class="ident">u32</span>,
         <span class="ident">bti_id</span>: <span class="ident">u64</span>,
         <span class="kw-2">mut</span> <span class="ident">out</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">HandleValue</span><span class="op">&gt;</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    ) -&gt; <span class="ident">ZxResult</span> {
         <span class="macro">info!</span>(
             <span class="string">&quot;bti.create: iommu={:#x}, options={:?}, bti_id={:#x?}&quot;</span>,
             <span class="ident">iommu</span>, <span class="ident">options</span>, <span class="ident">bti_id</span>
@@ -412,7 +411,7 @@
         <span class="kw-2">mut</span> <span class="ident">addrs</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">DevVAddr</span><span class="op">&gt;</span>,
         <span class="ident">addrs_count</span>: <span class="ident">usize</span>,
         <span class="kw-2">mut</span> <span class="ident">out</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">HandleValue</span><span class="op">&gt;</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    ) -&gt; <span class="ident">ZxResult</span> {
         <span class="kw">let</span> <span class="ident">options</span> <span class="op">=</span> <span class="ident">BtiOptions::from_bits_truncate</span>(<span class="ident">options</span>);
         <span class="macro">info!</span>(
             <span class="string">&quot;bti.pin: bti={:#x}, options={:?}, vmo={:#x}, offset={:#x}, size={:#x}, addrs={:#x?}, addrs_count={:#x}&quot;</span>,
@@ -446,7 +445,7 @@
     }
 
     <span class="doccomment">/// Unpins pages that were previously pinned by `zx_bti_pin()`.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_pmt_unpin</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">pmt</span>: <span class="ident">HandleValue</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_pmt_unpin</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">pmt</span>: <span class="ident">HandleValue</span>) -&gt; <span class="ident">ZxResult</span> {
         <span class="macro">info!</span>(<span class="string">&quot;pmt.unpin: pmt={:#x}&quot;</span>, <span class="ident">pmt</span>);
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>();
         <span class="kw">let</span> <span class="ident">pmt</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">remove_object</span>::<span class="op">&lt;</span><span class="ident">PinnedMemoryToken</span><span class="op">&gt;</span>(<span class="ident">pmt</span>)<span class="question-mark">?</span>;
@@ -455,7 +454,7 @@
     }
 
     <span class="doccomment">/// Releases all quarantined PMTs for the given BTI.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_bti_release_quarantine</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">bti</span>: <span class="ident">HandleValue</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_bti_release_quarantine</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">bti</span>: <span class="ident">HandleValue</span>) -&gt; <span class="ident">ZxResult</span> {
         <span class="macro">info!</span>(<span class="string">&quot;bti.release_quarantine: bti = {:#x}&quot;</span>, <span class="ident">bti</span>);
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>();
         <span class="kw">let</span> <span class="ident">bti</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">BusTransactionInitiator</span><span class="op">&gt;</span>(<span class="ident">bti</span>, <span class="ident">Rights::WRITE</span>)<span class="question-mark">?</span>;
@@ -470,7 +469,7 @@
         <span class="ident">resource</span>: <span class="ident">HandleValue</span>,
         <span class="kw-2">mut</span> <span class="ident">acpi_rsdp_ptr</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span>,
         <span class="kw-2">mut</span> <span class="ident">smbios_ptr</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">u64</span><span class="op">&gt;</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    ) -&gt; <span class="ident">ZxResult</span> {
         <span class="macro">info!</span>(<span class="string">&quot;pc_firmware_tables: handle={:?}&quot;</span>, <span class="ident">resource</span>);
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>();
         <span class="ident">proc</span>.<span class="ident">get_object</span>::<span class="op">&lt;</span><span class="ident">Resource</span><span class="op">&gt;</span>(<span class="ident">resource</span>)<span class="question-mark">?</span>
@@ -494,7 +493,7 @@
         <span class="ident">src_num</span>: <span class="ident">usize</span>,
         <span class="ident">options</span>: <span class="ident">u32</span>,
         <span class="kw-2">mut</span> <span class="ident">out</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">HandleValue</span><span class="op">&gt;</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    ) -&gt; <span class="ident">ZxResult</span> {
         <span class="macro">info!</span>(
             <span class="string">&quot;interrupt.create: handle={:?} src_num={:?} options={:?}&quot;</span>,
             <span class="ident">resource</span>, <span class="ident">src_num</span>, <span class="ident">options</span>
@@ -525,7 +524,7 @@
         <span class="ident">port</span>: <span class="ident">HandleValue</span>,
         <span class="ident">key</span>: <span class="ident">u64</span>,
         <span class="ident">options</span>: <span class="ident">u32</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    ) -&gt; <span class="ident">ZxResult</span> {
         <span class="macro">info!</span>(
             <span class="string">&quot;interrupt.bind: interrupt={:?} port={:?} key={:?} options={:?}&quot;</span>,
             <span class="ident">interrupt</span>, <span class="ident">port</span>, <span class="ident">key</span>, <span class="ident">options</span>
@@ -536,9 +535,9 @@
         <span class="kw">if</span> <span class="op">!</span><span class="ident">port</span>.<span class="ident">can_bind_to_interrupt</span>() {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::WRONG_TYPE</span>);
         }
-        <span class="kw">if</span> <span class="ident">options</span> <span class="op">=</span><span class="op">=</span> <span class="ident">InterruptOp::Bind</span> <span class="kw">as</span> <span class="kw">_</span> {
+        <span class="kw">if</span> <span class="ident">options</span> <span class="op">==</span> <span class="ident">InterruptOp::Bind</span> <span class="kw">as</span> <span class="kw">_</span> {
             <span class="ident">interrupt</span>.<span class="ident">bind</span>(<span class="kw-2">&amp;</span><span class="ident">port</span>, <span class="ident">key</span>)
-        } <span class="kw">else</span> <span class="kw">if</span> <span class="ident">options</span> <span class="op">=</span><span class="op">=</span> <span class="ident">InterruptOp::Unbind</span> <span class="kw">as</span> <span class="kw">_</span> {
+        } <span class="kw">else</span> <span class="kw">if</span> <span class="ident">options</span> <span class="op">==</span> <span class="ident">InterruptOp::Unbind</span> <span class="kw">as</span> <span class="kw">_</span> {
             <span class="ident">interrupt</span>.<span class="ident">unbind</span>(<span class="kw-2">&amp;</span><span class="ident">port</span>)
         } <span class="kw">else</span> {
             <span class="prelude-val">Err</span>(<span class="ident">ZxError::INVALID_ARGS</span>)
@@ -551,7 +550,7 @@
         <span class="ident">interrupt</span>: <span class="ident">HandleValue</span>,
         <span class="ident">options</span>: <span class="ident">u32</span>,
         <span class="ident">timestamp</span>: <span class="ident">i64</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    ) -&gt; <span class="ident">ZxResult</span> {
         <span class="macro">info!</span>(
             <span class="string">&quot;interrupt.trigger: interrupt={:?} options={:?} timestamp={:?}&quot;</span>,
             <span class="ident">interrupt</span>, <span class="ident">options</span>, <span class="ident">timestamp</span>
@@ -566,7 +565,7 @@
     <span class="doccomment">/// Acknowledge an interrupt and re-arm it.</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// This system call acknowledges an interrupt object, causing it to be eligible to trigger again (and delivering a packet to the port it is bound to).</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_interrupt_ack</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">interrupt</span>: <span class="ident">HandleValue</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_interrupt_ack</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">interrupt</span>: <span class="ident">HandleValue</span>) -&gt; <span class="ident">ZxResult</span> {
         <span class="macro">info!</span>(<span class="string">&quot;interupt.ack: interrupt={:?}&quot;</span>, <span class="ident">interrupt</span>);
         <span class="kw">let</span> <span class="ident">interrupt</span> <span class="op">=</span> <span class="self">self</span>
             .<span class="ident">thread</span>
@@ -576,7 +575,7 @@
     }
 
     <span class="doccomment">/// Destroys an interrupt object.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_interrupt_destroy</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">interrupt</span>: <span class="ident">HandleValue</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_interrupt_destroy</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">interrupt</span>: <span class="ident">HandleValue</span>) -&gt; <span class="ident">ZxResult</span> {
         <span class="macro">info!</span>(<span class="string">&quot;interupt.destory: interrupt={:?}&quot;</span>, <span class="ident">interrupt</span>);
         <span class="kw">let</span> <span class="ident">interrupt</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>().<span class="ident">get_object</span>::<span class="op">&lt;</span><span class="ident">Interrupt</span><span class="op">&gt;</span>(<span class="ident">interrupt</span>)<span class="question-mark">?</span>;
         <span class="ident">interrupt</span>.<span class="ident">destroy</span>()
@@ -587,7 +586,7 @@
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">interrupt</span>: <span class="ident">HandleValue</span>,
         <span class="kw-2">mut</span> <span class="ident">out</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">i64</span><span class="op">&gt;</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    ) -&gt; <span class="ident">ZxResult</span> {
         <span class="macro">info!</span>(<span class="string">&quot;interrupt.wait: handle={:?}&quot;</span>, <span class="ident">interrupt</span>);
         <span class="macro">assert_eq!</span>(<span class="ident">core::mem::size_of</span>::<span class="op">&lt;</span><span class="ident">PortPacket</span><span class="op">&gt;</span>(), <span class="number">48</span>);
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>();
@@ -630,7 +629,7 @@
 
 <span class="kw">impl</span> <span class="ident">BtiOptions</span> {
     <span class="doccomment">/// Get desired rights of VMO handle.</span>
-    <span class="kw">fn</span> <span class="ident">to_vmo_rights</span>(<span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Rights</span> {
+    <span class="kw">fn</span> <span class="ident">to_vmo_rights</span>(<span class="self">self</span>) -&gt; <span class="ident">Rights</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">rights</span> <span class="op">=</span> <span class="ident">Rights::MAP</span>;
         <span class="kw">if</span> <span class="self">self</span>.<span class="ident">contains</span>(<span class="ident">BtiOptions::PERM_READ</span>) {
             <span class="ident">rights</span>.<span class="ident">insert</span>(<span class="ident">Rights::READ</span>);
@@ -647,7 +646,7 @@
         <span class="ident">rights</span>
     }
 
-    <span class="kw">fn</span> <span class="ident">to_iommu_perms</span>(<span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">IommuPerms</span> {
+    <span class="kw">fn</span> <span class="ident">to_iommu_perms</span>(<span class="self">self</span>) -&gt; <span class="ident">IommuPerms</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">perms</span> <span class="op">=</span> <span class="ident">IommuPerms::empty</span>();
         <span class="kw">if</span> <span class="self">self</span>.<span class="ident">contains</span>(<span class="ident">BtiOptions::PERM_READ</span>) {
             <span class="ident">perms</span>.<span class="ident">insert</span>(<span class="ident">IommuPerms::PERM_READ</span>)
@@ -661,7 +660,7 @@
         <span class="ident">perms</span>
     }
 }
-</pre></div>
+</code></pre></div>
 </section><section id="search" class="content hidden"></section><div id="rustdoc-vars" data-root-path="../../" data-current-crate="zircon_syscall" data-search-index-js="../../search-index.js" data-search-js="../../search.js"></div>
     <script src="../../main.js"></script><script src="../../source-script.js"></script><script src="../../source-files.js"></script>
 </body></html>

@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `zircon-object&#x2F;src&#x2F;dev&#x2F;interrupt&#x2F;mod.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>mod.rs - source</title><link rel="stylesheet" type="text/css" href="../../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../../../ayu.css" disabled ><script id="default-settings" ></script><script src="../../../../storage.js"></script><script src="../../../../crates.js"></script><noscript><link rel="stylesheet" href="../../../../noscript.css"></noscript><link rel="icon" type="image/svg+xml" href="../../../../favicon.svg"><link rel="alternate icon" type="image/png" href="../../../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../../../favicon-32x32.png"><style type="text/css">#crate-search{background-image:url("../../../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../../../zircon_object/index.html'><div class='logo-container rust-logo'><img src='../../../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu" title="themes"><img width="18" height="18" alt="Pick another theme!" src="../../../../brush.svg"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input"name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" id="help-button" title="help">?</button><a id="settings-menu" href="../../../../settings.html" title="settings"><img width="18" height="18" alt="Change settings" src="../../../../wheel.svg"></a></div></form></nav><section id="main" class="content"><div class="example-wrap"><pre class="line-numbers"><span id="1">  1</span>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `zircon-object&#x2F;src&#x2F;dev&#x2F;interrupt&#x2F;mod.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>mod.rs - source</title><link rel="stylesheet" type="text/css" href="../../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../../../ayu.css" disabled ><script id="default-settings" ></script><script src="../../../../storage.js"></script><script src="../../../../crates.js"></script><noscript><link rel="stylesheet" href="../../../../noscript.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../../../favicon-32x32.png"><link rel="icon" type="image/svg+xml" href="../../../../favicon.svg"><style type="text/css">#crate-search{background-image:url("../../../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../../../zircon_object/index.html'><div class='logo-container rust-logo'><img src='../../../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu" title="themes"><img width="18" height="18" alt="Pick another theme!" src="../../../../brush.svg"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" id="help-button" title="help">?</button><a id="settings-menu" href="../../../../settings.html" title="settings"><img width="18" height="18" alt="Change settings" src="../../../../wheel.svg"></a></div></form></nav><section id="main" class="content"><div class="example-wrap"><pre class="line-numbers"><span id="1">  1</span>
 <span id="2">  2</span>
 <span id="3">  3</span>
 <span id="4">  4</span>
@@ -413,14 +413,13 @@
 <span id="413">413</span>
 <span id="414">414</span>
 <span id="415">415</span>
-</pre><pre class="rust">
-<span class="kw">use</span> {
-    <span class="self">self</span><span class="ident">::event_interrupt</span>::<span class="kw-2">*</span>,
-    <span class="self">self</span><span class="ident">::pci_interrupt</span>::<span class="kw-2">*</span>,
-    <span class="self">self</span><span class="ident">::virtual_interrupt</span>::<span class="kw-2">*</span>,
-    <span class="kw">crate</span><span class="ident">::dev::pci::IPciNode</span>,
-    <span class="kw">crate</span><span class="ident">::object</span>::<span class="kw-2">*</span>,
-    <span class="kw">crate</span><span class="ident">::signal</span>::<span class="kw-2">*</span>,
+</pre><pre class="rust"><code><span class="kw">use</span> {
+    <span class="ident"><span class="self">self</span>::event_interrupt</span>::<span class="kw-2">*</span>,
+    <span class="ident"><span class="self">self</span>::pci_interrupt</span>::<span class="kw-2">*</span>,
+    <span class="ident"><span class="self">self</span>::virtual_interrupt</span>::<span class="kw-2">*</span>,
+    <span class="ident"><span class="kw">crate</span>::dev::pci::IPciNode</span>,
+    <span class="ident"><span class="kw">crate</span>::object</span>::<span class="kw-2">*</span>,
+    <span class="ident"><span class="kw">crate</span>::signal</span>::<span class="kw-2">*</span>,
     <span class="ident">alloc</span>::{<span class="ident">boxed::Box</span>, <span class="ident">sync::Arc</span>},
     <span class="ident">bitflags::bitflags</span>,
     <span class="ident">spin::Mutex</span>,
@@ -436,9 +435,9 @@
     <span class="doccomment">/// Unmask the interrupt.</span>
     <span class="kw">fn</span> <span class="ident">unmask</span>(<span class="kw-2">&amp;</span><span class="self">self</span>);
     <span class="doccomment">/// Register the interrupt to the given handler.</span>
-    <span class="kw">fn</span> <span class="ident">register_handler</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">handler</span>: <span class="ident">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">Fn</span>() <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span>;
+    <span class="kw">fn</span> <span class="ident">register_handler</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">handler</span>: <span class="ident">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">Fn</span>() <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span><span class="op">&gt;</span>) -&gt; <span class="ident">ZxResult</span>;
     <span class="doccomment">/// Unregister the interrupt to the given handler.</span>
-    <span class="kw">fn</span> <span class="ident">unregister_handler</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span>;
+    <span class="kw">fn</span> <span class="ident">unregister_handler</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">ZxResult</span>;
 }
 
 <span class="macro">impl_kobject!</span>(<span class="ident">Interrupt</span>);
@@ -467,14 +466,14 @@
 }
 
 <span class="kw">impl</span> <span class="ident">Drop</span> <span class="kw">for</span> <span class="ident">Interrupt</span> {
-    <span class="kw">fn</span> <span class="ident">drop</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) {
+    <span class="kw">fn</span> <span class="ident">drop</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>) {
         <span class="self">self</span>.<span class="ident">destroy</span>().<span class="ident">unwrap</span>();
     }
 }
 
 <span class="kw">impl</span> <span class="ident">Interrupt</span> {
     <span class="doccomment">/// Create a new virtual interrupt.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new_virtual</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new_virtual</span>() -&gt; <span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
         <span class="ident">Arc::new</span>(<span class="ident">Interrupt</span> {
             <span class="ident">base</span>: <span class="ident">KObjectBase::new</span>(),
             <span class="ident">has_vcpu</span>: <span class="bool-val">false</span>,
@@ -485,7 +484,7 @@
     }
 
     <span class="doccomment">/// Create a new physical interrupt.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new_physical</span>(<span class="ident">vector</span>: <span class="ident">usize</span>, <span class="ident">options</span>: <span class="ident">InterruptOptions</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new_physical</span>(<span class="ident">vector</span>: <span class="ident">usize</span>, <span class="ident">options</span>: <span class="ident">InterruptOptions</span>) -&gt; <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">mode</span> <span class="op">=</span> <span class="ident">options</span>.<span class="ident">to_mode</span>();
         <span class="kw">if</span> <span class="ident">mode</span> <span class="op">!</span><span class="op">=</span> <span class="ident">InterruptOptions::MODE_DEFAULT</span> <span class="op">&amp;&amp;</span> <span class="ident">mode</span> <span class="op">!</span><span class="op">=</span> <span class="ident">InterruptOptions::MODE_EDGE_HIGH</span> {
             <span class="macro">unimplemented!</span>();
@@ -509,7 +508,7 @@
     }
 
     <span class="doccomment">/// Create a new PCI interrupt.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new_pci</span>(<span class="ident">device</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">IPciNode</span><span class="op">&gt;</span>, <span class="ident">vector</span>: <span class="ident">u32</span>, <span class="ident">maskable</span>: <span class="ident">bool</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new_pci</span>(<span class="ident">device</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">IPciNode</span><span class="op">&gt;</span>, <span class="ident">vector</span>: <span class="ident">u32</span>, <span class="ident">maskable</span>: <span class="ident">bool</span>) -&gt; <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">interrupt</span> <span class="op">=</span> <span class="ident">Arc::new</span>(<span class="ident">Interrupt</span> {
             <span class="ident">base</span>: <span class="ident">KObjectBase::new</span>(),
             <span class="ident">has_vcpu</span>: <span class="bool-val">false</span>,
@@ -526,12 +525,12 @@
     }
 
     <span class="doccomment">/// Bind the interrupt object to a port.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">bind</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">port</span>: <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Port</span><span class="op">&gt;</span>, <span class="ident">key</span>: <span class="ident">u64</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">bind</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">port</span>: <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Port</span><span class="op">&gt;</span>, <span class="ident">key</span>: <span class="ident">u64</span>) -&gt; <span class="ident">ZxResult</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="kw">match</span> <span class="ident">inner</span>.<span class="ident">state</span> {
-            <span class="ident">InterruptState::Destroy</span> <span class="op">=</span><span class="op">&gt;</span> <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::CANCELED</span>),
-            <span class="ident">InterruptState::Waiting</span> <span class="op">=</span><span class="op">&gt;</span> <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::BAD_STATE</span>),
-            <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> (),
+            <span class="ident">InterruptState::Destroy</span> =&gt; <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::CANCELED</span>),
+            <span class="ident">InterruptState::Waiting</span> =&gt; <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::BAD_STATE</span>),
+            <span class="kw">_</span> =&gt; (),
         }
         <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">port</span>.<span class="ident">is_some</span>() <span class="op">|</span><span class="op">|</span> <span class="self">self</span>.<span class="ident">has_vcpu</span> {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::ALREADY_BOUND</span>);
@@ -544,7 +543,7 @@
         }
         <span class="ident">inner</span>.<span class="ident">port</span> <span class="op">=</span> <span class="prelude-val">Some</span>(<span class="ident">port</span>.<span class="ident">clone</span>());
         <span class="ident">inner</span>.<span class="ident">key</span> <span class="op">=</span> <span class="ident">key</span>;
-        <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">=</span><span class="op">=</span> <span class="ident">InterruptState::Triggered</span> {
+        <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">==</span> <span class="ident">InterruptState::Triggered</span> {
             <span class="ident">inner</span>.<span class="ident">packet_id</span> <span class="op">=</span> <span class="ident">port</span>.<span class="ident">as_ref</span>().<span class="ident">push_interrupt</span>(<span class="ident">inner</span>.<span class="ident">timestamp</span>, <span class="ident">inner</span>.<span class="ident">key</span>);
             <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">=</span> <span class="ident">InterruptState::NeedAck</span>;
         }
@@ -554,12 +553,12 @@
     <span class="doccomment">/// Unbind the interrupt object from a port.</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// Unbinding the port removes previously queued packets to the port.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">unbind</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">port</span>: <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Port</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">unbind</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">port</span>: <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Port</span><span class="op">&gt;</span>) -&gt; <span class="ident">ZxResult</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">port</span>.<span class="ident">is_none</span>() <span class="op">|</span><span class="op">|</span> <span class="ident">inner</span>.<span class="ident">port</span>.<span class="ident">as_ref</span>().<span class="ident">unwrap</span>().<span class="ident">id</span>() <span class="op">!</span><span class="op">=</span> <span class="ident">port</span>.<span class="ident">id</span>() {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::NOT_FOUND</span>);
         }
-        <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">=</span><span class="op">=</span> <span class="ident">InterruptState::Destroy</span> {
+        <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">==</span> <span class="ident">InterruptState::Destroy</span> {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::CANCELED</span>);
         }
         <span class="ident">port</span>.<span class="ident">remove_interrupt</span>(<span class="ident">inner</span>.<span class="ident">packet_id</span>);
@@ -569,18 +568,18 @@
     }
 
     <span class="doccomment">/// Triggers a virtual interrupt object.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">trigger</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">timestamp</span>: <span class="ident">i64</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">trigger</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">timestamp</span>: <span class="ident">i64</span>) -&gt; <span class="ident">ZxResult</span> {
         <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">flags</span>.<span class="ident">contains</span>(<span class="ident">InterruptFlags::VIRTUAL</span>) {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::BAD_STATE</span>);
         }
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
-        <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">timestamp</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span> {
+        <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">timestamp</span> <span class="op">==</span> <span class="number">0</span> {
             <span class="ident">inner</span>.<span class="ident">timestamp</span> <span class="op">=</span> <span class="ident">timestamp</span>;
         }
-        <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">=</span><span class="op">=</span> <span class="ident">InterruptState::Destroy</span> {
+        <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">==</span> <span class="ident">InterruptState::Destroy</span> {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::CANCELED</span>);
         }
-        <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">=</span><span class="op">=</span> <span class="ident">InterruptState::NeedAck</span> <span class="op">&amp;&amp;</span> <span class="ident">inner</span>.<span class="ident">port</span>.<span class="ident">is_some</span>() {
+        <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">==</span> <span class="ident">InterruptState::NeedAck</span> <span class="op">&amp;&amp;</span> <span class="ident">inner</span>.<span class="ident">port</span>.<span class="ident">is_some</span>() {
             <span class="kw">return</span> <span class="prelude-val">Ok</span>(());
         }
         <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">port</span>) <span class="op">=</span> <span class="kw-2">&amp;</span><span class="ident">inner</span>.<span class="ident">port</span> {
@@ -599,15 +598,15 @@
     }
 
     <span class="doccomment">/// Acknowledge the interrupt and re-arm it.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">ack</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">ack</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">ZxResult</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">port</span>.<span class="ident">is_none</span>() {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::BAD_STATE</span>);
         }
-        <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">=</span><span class="op">=</span> <span class="ident">InterruptState::Destroy</span> {
+        <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">==</span> <span class="ident">InterruptState::Destroy</span> {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::CANCELED</span>);
         }
-        <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">=</span><span class="op">=</span> <span class="ident">InterruptState::NeedAck</span> {
+        <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">==</span> <span class="ident">InterruptState::NeedAck</span> {
             <span class="kw">if</span> <span class="self">self</span>.<span class="ident">flags</span>.<span class="ident">contains</span>(<span class="ident">InterruptFlags::UNMASK_PREWAIT</span>) {
                 <span class="self">self</span>.<span class="ident">trait_</span>.<span class="ident">unmask</span>();
             } <span class="kw">else</span> <span class="kw">if</span> <span class="self">self</span>.<span class="ident">flags</span>.<span class="ident">contains</span>(<span class="ident">InterruptFlags::UNMASK_PREWAIT_UNLOCKED</span>) {
@@ -636,14 +635,14 @@
     }
 
     <span class="doccomment">/// Destroy the interrupt.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">destroy</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">destroy</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">ZxResult</span> {
         <span class="self">self</span>.<span class="ident">trait_</span>.<span class="ident">mask</span>();
         <span class="self">self</span>.<span class="ident">trait_</span>.<span class="ident">unregister_handler</span>()<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">port</span>) <span class="op">=</span> <span class="kw-2">&amp;</span><span class="ident">inner</span>.<span class="ident">port</span> {
             <span class="kw">let</span> <span class="ident">in_queue</span> <span class="op">=</span> <span class="ident">port</span>.<span class="ident">remove_interrupt</span>(<span class="ident">inner</span>.<span class="ident">packet_id</span>);
             <span class="kw">match</span> <span class="ident">inner</span>.<span class="ident">state</span> {
-                <span class="ident">InterruptState::NeedAck</span> <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="ident">InterruptState::NeedAck</span> =&gt; {
                     <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">=</span> <span class="ident">InterruptState::Destroy</span>;
                     <span class="kw">if</span> <span class="op">!</span><span class="ident">in_queue</span> {
                         <span class="prelude-val">Err</span>(<span class="ident">ZxError::NOT_FOUND</span>)
@@ -651,11 +650,11 @@
                         <span class="prelude-val">Ok</span>(())
                     }
                 }
-                <span class="ident">InterruptState::Idle</span> <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="ident">InterruptState::Idle</span> =&gt; {
                     <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">=</span> <span class="ident">InterruptState::Destroy</span>;
                     <span class="prelude-val">Ok</span>(())
                 }
-                <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="prelude-val">Ok</span>(()),
+                <span class="kw">_</span> =&gt; <span class="prelude-val">Ok</span>(()),
             }
         } <span class="kw">else</span> {
             <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">=</span> <span class="ident">InterruptState::Destroy</span>;
@@ -665,7 +664,7 @@
     }
 
     <span class="doccomment">/// Wait until the interrupt is triggered.</span>
-    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">wait</span>(<span class="self">self</span>: <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">i64</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">wait</span>(<span class="self">self</span>: <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span>) -&gt; <span class="ident">ZxResult</span><span class="op">&lt;</span><span class="ident">i64</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">defer_unmask</span> <span class="op">=</span> <span class="bool-val">false</span>;
         <span class="kw">let</span> <span class="ident">object</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">clone</span>() <span class="kw">as</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">KernelObject</span><span class="op">&gt;</span>;
         <span class="kw">loop</span> {
@@ -675,23 +674,23 @@
                     <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::BAD_STATE</span>);
                 }
                 <span class="kw">match</span> <span class="ident">inner</span>.<span class="ident">state</span> {
-                    <span class="ident">InterruptState::Destroy</span> <span class="op">=</span><span class="op">&gt;</span> <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::CANCELED</span>),
-                    <span class="ident">InterruptState::Triggered</span> <span class="op">=</span><span class="op">&gt;</span> {
+                    <span class="ident">InterruptState::Destroy</span> =&gt; <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::CANCELED</span>),
+                    <span class="ident">InterruptState::Triggered</span> =&gt; {
                         <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">=</span> <span class="ident">InterruptState::NeedAck</span>;
                         <span class="kw">let</span> <span class="ident">timestamp</span> <span class="op">=</span> <span class="ident">inner</span>.<span class="ident">timestamp</span>;
                         <span class="ident">inner</span>.<span class="ident">timestamp</span> <span class="op">=</span> <span class="number">0</span>;
                         <span class="self">self</span>.<span class="ident">base</span>.<span class="ident">signal_clear</span>(<span class="ident">Signal::INTERRUPT_SIGNAL</span>);
                         <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">timestamp</span>);
                     }
-                    <span class="ident">InterruptState::NeedAck</span> <span class="op">=</span><span class="op">&gt;</span> {
+                    <span class="ident">InterruptState::NeedAck</span> =&gt; {
                         <span class="kw">if</span> <span class="self">self</span>.<span class="ident">flags</span>.<span class="ident">contains</span>(<span class="ident">InterruptFlags::UNMASK_PREWAIT</span>) {
                             <span class="self">self</span>.<span class="ident">trait_</span>.<span class="ident">unmask</span>();
                         } <span class="kw">else</span> <span class="kw">if</span> <span class="self">self</span>.<span class="ident">flags</span>.<span class="ident">contains</span>(<span class="ident">InterruptFlags::UNMASK_PREWAIT_UNLOCKED</span>) {
                             <span class="ident">defer_unmask</span> <span class="op">=</span> <span class="bool-val">true</span>;
                         }
                     }
-                    <span class="ident">InterruptState::Idle</span> <span class="op">=</span><span class="op">&gt;</span> (),
-                    <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::BAD_STATE</span>),
+                    <span class="ident">InterruptState::Idle</span> =&gt; (),
+                    <span class="kw">_</span> =&gt; <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::BAD_STATE</span>),
                 }
                 <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">=</span> <span class="ident">InterruptState::Waiting</span>;
             }
@@ -707,12 +706,12 @@
         <span class="kw">if</span> <span class="self">self</span>.<span class="ident">flags</span>.<span class="ident">contains</span>(<span class="ident">InterruptFlags::MASK_POSTWAIT</span>) {
             <span class="self">self</span>.<span class="ident">trait_</span>.<span class="ident">mask</span>();
         }
-        <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">timestamp</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span> {
+        <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">timestamp</span> <span class="op">==</span> <span class="number">0</span> {
             <span class="comment">// Not sure ZX_CLOCK_MONOTONIC or ZX_CLOCK_UTC</span>
             <span class="ident">inner</span>.<span class="ident">timestamp</span> <span class="op">=</span> <span class="ident">kernel_hal::timer::timer_now</span>().<span class="ident">as_nanos</span>() <span class="kw">as</span> <span class="ident">i64</span>;
         }
         <span class="kw">match</span> <span class="kw-2">&amp;</span><span class="ident">inner</span>.<span class="ident">port</span> {
-            <span class="prelude-val">Some</span>(<span class="ident">port</span>) <span class="op">=</span><span class="op">&gt;</span> {
+            <span class="prelude-val">Some</span>(<span class="ident">port</span>) =&gt; {
                 <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">!</span><span class="op">=</span> <span class="ident">InterruptState::NeedAck</span> {
                     <span class="comment">// TODO: use a function to send the package</span>
                     <span class="ident">inner</span>.<span class="ident">packet_id</span> <span class="op">=</span> <span class="ident">port</span>.<span class="ident">as_ref</span>().<span class="ident">push_interrupt</span>(<span class="ident">inner</span>.<span class="ident">timestamp</span>, <span class="ident">inner</span>.<span class="ident">key</span>);
@@ -724,7 +723,7 @@
                     <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">=</span> <span class="ident">InterruptState::NeedAck</span>;
                 }
             }
-            <span class="prelude-val">None</span> <span class="op">=</span><span class="op">&gt;</span> {
+            <span class="prelude-val">None</span> =&gt; {
                 <span class="self">self</span>.<span class="ident">base</span>.<span class="ident">signal_set</span>(<span class="ident">Signal::INTERRUPT_SIGNAL</span>);
                 <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">=</span> <span class="ident">InterruptState::Triggered</span>;
             }
@@ -742,7 +741,7 @@
 }
 
 <span class="kw">impl</span> <span class="ident">Default</span> <span class="kw">for</span> <span class="ident">InterruptState</span> {
-    <span class="kw">fn</span> <span class="ident">default</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
+    <span class="kw">fn</span> <span class="ident">default</span>() -&gt; <span class="self">Self</span> {
         <span class="ident">InterruptState::Idle</span>
     }
 }
@@ -788,7 +787,7 @@
 
 <span class="kw">impl</span> <span class="ident">InterruptOptions</span> {
     <span class="doccomment">/// Extract the mode bits.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">to_mode</span>(<span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">to_mode</span>(<span class="self">self</span>) -&gt; <span class="self">Self</span> {
         <span class="ident">InterruptOptions::from_bits_truncate</span>(<span class="number">0xe</span>) <span class="op">&amp;</span> <span class="self">self</span>
     }
 }
@@ -829,7 +828,7 @@
         <span class="macro">assert!</span>(<span class="ident">interrupt</span>.<span class="ident">unbind</span>(<span class="kw-2">&amp;</span><span class="ident">port</span>).<span class="ident">is_ok</span>());
     }
 }
-</pre></div>
+</code></pre></div>
 </section><section id="search" class="content hidden"></section><div id="rustdoc-vars" data-root-path="../../../../" data-current-crate="zircon_object" data-search-index-js="../../../../search-index.js" data-search-js="../../../../search.js"></div>
     <script src="../../../../main.js"></script><script src="../../../../source-script.js"></script><script src="../../../../source-files.js"></script>
 </body></html>
