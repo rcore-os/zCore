@@ -6,6 +6,7 @@ pub mod boot;
 pub mod config;
 pub mod cpu;
 pub mod mem;
+pub mod net;
 pub mod thread;
 pub mod timer;
 pub mod vdso;
