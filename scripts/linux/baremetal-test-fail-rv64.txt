@@ -28,7 +28,6 @@
 /libc-test/functional/ipc_sem-static.exe?
 /libc-test/functional/popen.exe?
 /libc-test/regression/sem_close-unmap-static.exe?
-/libc-test/functional/socket-static.exe?
 /libc-test/functional/pthread_cond-static.exe?
 /libc-test/regression/pthread-robust-detach.exe?
 /libc-test/regression/tls_get_new-dtv.exe?
@@ -44,7 +43,6 @@
 /libc-test/regression/statvfs.exe?
 /libc-test/functional/pthread_robust-static.exe?
 /libc-test/functional/tls_align_dlopen.exe?
-/libc-test/functional/socket.exe?
 /libc-test/functional/sem_open.exe?
 /libc-test/regression/pthread_create-oom-static.exe?
 /libc-test/regression/pthread_create-oom.exe?
