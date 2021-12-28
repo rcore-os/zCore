@@ -48,6 +48,7 @@ mod signal;
 mod task;
 mod time;
 mod vm;
+mod net;
 
 /// The struct of Syscall which stores the information about making a syscall
 pub struct Syscall<'a> {
@@ -157,21 +158,28 @@ impl Syscall<'_> {
             Sys::SCHED_GETAFFINITY => self.unimplemented("sched_getaffinity", Ok(0)),
 
             // socket
-            //            Sys::SOCKET => self.sys_socket(a0, a1, a2),
-            //            Sys::CONNECT => self.sys_connect(a0, a1.into(), a2),
-            //            Sys::ACCEPT => self.sys_accept(a0, a1.into(), a2.into()),
+            Sys::SOCKET => self.sys_socket(a0, a1, a2),
+            Sys::CONNECT => self.sys_connect(a0, a1.into(), a2).await,
+            Sys::ACCEPT => self.sys_accept(a0, a1.into(), a2.into()).await,
             //            Sys::ACCEPT4 => self.sys_accept(a0, a1.into(), a2.into()), // use accept for accept4
-            //            Sys::SENDTO => self.sys_sendto(a0, a1.into(), a2, a3, a4.into(), a5),
-            //            Sys::RECVFROM => self.sys_recvfrom(a0, a1.into(), a2, a3, a4.into(), a5.into()),
-            //            Sys::SENDMSG => self.sys_sendmsg(),
-            //            Sys::RECVMSG => self.sys_recvmsg(a0, a1.into(), a2),
-            //            Sys::SHUTDOWN => self.sys_shutdown(a0, a1),
-            //            Sys::BIND => self.sys_bind(a0, a1.into(), a2),
-            //            Sys::LISTEN => self.sys_listen(a0, a1),
-            //            Sys::GETSOCKNAME => self.sys_getsockname(a0, a1.into(), a2.into()),
-            //            Sys::GETPEERNAME => self.sys_getpeername(a0, a1.into(), a2.into()),
-            //            Sys::SETSOCKOPT => self.sys_setsockopt(a0, a1, a2, a3.into(), a4),
-            //            Sys::GETSOCKOPT => self.sys_getsockopt(a0, a1, a2, a3.into(), a4.into()),
+            Sys::SENDTO => self.sys_sendto(a0, a1.into(), a2, a3, a4.into(), a5),
+            Sys::RECVFROM => {
+                self.sys_recvfrom(a0, a1.into(), a2, a3, a4.into(), a5.into())
+                    .await
+            }
+            Sys::SENDMSG => self.unimplemented("sys_sendmsg(),", Ok(0)),
+            Sys::RECVMSG => self.unimplemented("sys_recvmsg(a0, a1.into(), a2),", Ok(0)),
+            Sys::SHUTDOWN => self.sys_shutdown(a0, a1),
+            Sys::BIND => self.sys_bind(a0, a1.into(), a2),
+            Sys::LISTEN => self.sys_listen(a0, a1),
+            Sys::GETSOCKNAME => self.sys_getsockname(a0, a1.into(), a2.into()),
+            Sys::GETPEERNAME => {
+                self.unimplemented("sys_getpeername(a0, a1.into(), a2.into()),", Ok(0))
+            }
+            Sys::SETSOCKOPT => self.sys_setsockopt(a0, a1, a2, a3.into(), a4),
+            Sys::GETSOCKOPT => {
+                self.unimplemented("sys_getsockopt(a0, a1, a2, a3.into(), a4.into()),", Ok(0))
+            }
 
             // process
             Sys::CLONE => self.sys_clone(a0, a1, a2.into(), a3.into(), a4),
