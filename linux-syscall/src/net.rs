@@ -35,9 +35,7 @@ impl Syscall<'_> {
                 2 => Arc::new(Mutex::new(UdpSocketState::new())),
                 3 => match protocol {
                     1 => Arc::new(Mutex::new(UdpSocketState::new())),
-                    _ => {
-                        Arc::new(Mutex::new(UdpSocketState::new()))
-                    }
+                    _ => Arc::new(Mutex::new(UdpSocketState::new())),
                 },
                 _ => return Err(LxError::EINVAL),
             },

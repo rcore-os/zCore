@@ -44,11 +44,11 @@ mod consts {
 mod file;
 mod ipc;
 mod misc;
+mod net;
 mod signal;
 mod task;
 mod time;
 mod vm;
-mod net;
 
 /// The struct of Syscall which stores the information about making a syscall
 pub struct Syscall<'a> {

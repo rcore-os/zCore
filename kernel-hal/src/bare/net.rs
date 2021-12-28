@@ -1,4 +1,3 @@
-
 use smoltcp::{
     iface::{InterfaceBuilder, NeighborCache, Route, Routes},
     phy::{Loopback, Medium},
@@ -14,16 +13,15 @@ use alloc::sync::Arc;
 use alloc::string::String;
 use spin::Mutex;
 
-use crate::drivers::all_net;
 use crate::drivers::add_device;
+use crate::drivers::all_net;
+use zcore_drivers::net::LoopbackInterface;
 use zcore_drivers::scheme::NetScheme;
 use zcore_drivers::Device;
-use zcore_drivers::net::LoopbackInterface;
-
 
 pub fn init() {
     let name = String::from("loopback");
-    warn!("name : {}",name);
+    warn!("name : {}", name);
     // 初始化 一个 协议栈
     // 从外界 接受 一些 配置 参数 如果 没有 选择 默认 的
 
@@ -66,7 +64,6 @@ pub fn init() {
     let dev = Device::Net(Arc::new(loopback_iface));
     add_device(dev);
 }
-
 
 pub fn get_net_device() -> Vec<Arc<dyn NetScheme>> {
     all_net().as_vec().clone()

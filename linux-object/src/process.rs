@@ -8,11 +8,11 @@ use alloc::{
 };
 use core::sync::atomic::AtomicI32;
 
+use crate::net::Socket;
 use hashbrown::HashMap;
 use rcore_fs::vfs::{FileSystem, INode};
-use spin::{Mutex, MutexGuard};
 use smoltcp::socket::SocketHandle;
-use crate::net::Socket;
+use spin::{Mutex, MutexGuard};
 
 use kernel_hal::VirtAddr;
 use zircon_object::{
@@ -366,7 +366,6 @@ impl LinuxProcess {
         let mut inner = self.inner.lock();
         inner.sockets.remove(&fd).map(|_| ()).ok_or(LxError::EBADF)
     }
-
 
     /// Get root INode of the process.
     pub fn root_inode(&self) -> &Arc<dyn INode> {

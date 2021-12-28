@@ -33,7 +33,6 @@ use async_trait::async_trait;
 #[allow(unused_imports)]
 use zircon_object::object::*;
 
-
 /// missing documentation
 #[derive(Debug)]
 pub struct TcpSocketState {
@@ -239,7 +238,7 @@ impl TcpSocketState {
         } else {
             drop(socket);
             drop(sockets);
-            return Err(LxError::EINVAL);
+            Err(LxError::EINVAL)
         }
     }
     /// missing documentation

@@ -58,17 +58,14 @@ pub const PAGE_SIZE: usize = 4096;
 type VirtAddr = usize;
 type PhysAddr = usize;
 
-
 pub mod loopback;
 pub use loopback::LoopbackInterface;
 
-
-use alloc::vec;
 use alloc::sync::Arc;
+use alloc::vec;
 use spin::Mutex;
 
 use smoltcp::socket::SocketSet;
-
 
 lazy_static::lazy_static! {
     pub static ref SOCKETS: Arc<Mutex<SocketSet<'static>>> =

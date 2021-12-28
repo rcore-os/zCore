@@ -1,9 +1,5 @@
 // smoltcp
-use smoltcp::{
-    iface::Interface,
-    phy::Loopback,
-    time::Instant,
-};
+use smoltcp::{iface::Interface, phy::Loopback, time::Instant};
 
 use crate::net::get_sockets;
 use alloc::sync::Arc;
@@ -11,11 +7,11 @@ use alloc::sync::Arc;
 use alloc::string::String;
 use spin::Mutex;
 
-use crate::scheme::{Scheme, NetScheme};
+use crate::scheme::{NetScheme, Scheme};
 use crate::{DeviceError, DeviceResult};
 
-use smoltcp::wire::EthernetAddress;
 use alloc::vec::Vec;
+use smoltcp::wire::EthernetAddress;
 use smoltcp::wire::IpCidr;
 
 #[derive(Clone)]
@@ -44,9 +40,7 @@ impl NetScheme for LoopbackInterface {
         let sockets = get_sockets();
         let mut sockets = sockets.lock();
         match self.iface.lock().poll(&mut sockets, timestamp) {
-            Ok(_) => {
-                Ok(())
-            }
+            Ok(_) => Ok(()),
             Err(err) => {
                 debug!("poll got err {}", err);
                 Err(DeviceError::IoError)
@@ -54,9 +48,13 @@ impl NetScheme for LoopbackInterface {
         }
     }
 
-    fn get_mac(&self) -> EthernetAddress {unimplemented!()}
-    fn get_ifname(&self) -> String {unimplemented!()}
-    fn get_ip_addrrs(&self) -> Vec<IpCidr> {unimplemented!()}
+    fn get_mac(&self) -> EthernetAddress {
+        unimplemented!()
+    }
+    fn get_ifname(&self) -> String {
+        unimplemented!()
+    }
+    fn get_ip_addrrs(&self) -> Vec<IpCidr> {
+        unimplemented!()
+    }
 }
-
-

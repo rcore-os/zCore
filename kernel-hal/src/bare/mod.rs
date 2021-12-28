@@ -11,9 +11,9 @@ cfg_if! {
 
 pub mod boot;
 pub mod mem;
+pub mod net;
 pub mod thread;
 pub mod timer;
-pub mod net;
 
 pub use self::arch::{config, cpu, interrupt, vm};
 pub use super::hal_fn::{rand, vdso};

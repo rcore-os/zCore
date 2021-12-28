@@ -1,7 +1,7 @@
 //! Bootstrap and initialization.
 
-use crate::{KernelConfig, KernelHandler, KCONFIG, KHANDLER};
 use super::net;
+use crate::{KernelConfig, KernelHandler, KCONFIG, KHANDLER};
 
 hal_fn_impl! {
     impl mod crate::hal_fn::boot {

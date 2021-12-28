@@ -13,6 +13,7 @@ pub use tcp::*;
 pub mod udp;
 pub use udp::*;
 
+use spin::Mutex;
 /// missing documentation
 // pub mod raw;
 // pub use raw::*;
@@ -25,7 +26,6 @@ pub use udp::*;
 
 // ============= Socket Set =============
 use zcore_drivers::net::get_sockets;
-use spin::Mutex;
 // lazy_static! {
 //     /// Global SocketSet in smoltcp.
 //     ///
@@ -133,10 +133,10 @@ use smoltcp::time::Instant;
 fn poll_ifaces() {
     for iface in get_net_device().iter() {
         match iface.poll() {
-            Ok(_) => {},
+            Ok(_) => {}
             Err(e) => {
-                warn!("error : {:?}",e)
-            },
+                warn!("error : {:?}", e)
+            }
         }
     }
 }
