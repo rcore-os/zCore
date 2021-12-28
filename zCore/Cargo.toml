@@ -53,5 +53,5 @@ executor = { git = "https://github.com/rcore-os/executor.git", rev = "04b6b7b" }
 
 # Bare-metal mode on x86_64
 [target.'cfg(all(target_os = "none", target_arch = "x86_64"))'.dependencies]
-rboot = { git = "https://github.com/rcore-os/rboot.git", rev = "e1dbac1", default-features = false }
+rboot = { git = "https://github.com/rcore-os/rboot.git", rev = "39d6e24", default-features = false }
 # rvm = { git = "https://github.com/rcore-os/RVM", rev = "e91d625", optional = true }

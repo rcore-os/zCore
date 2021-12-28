@@ -11,6 +11,7 @@ cfg_if! {
 
 pub mod boot;
 pub mod mem;
+pub mod net;
 pub mod thread;
 pub mod timer;
 

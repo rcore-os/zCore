@@ -64,8 +64,6 @@ impl Scheme for RTLxInterface {
             //return true;
             return;
         }
-
-        return;
     }
 }
 
@@ -110,7 +108,7 @@ impl NetScheme for RTLxInterface {
 
     fn send(&self, data: &[u8]) -> DeviceResult<usize> {
         if self.driver.0.lock().can_send() {
-            self.driver.0.lock().geth_send(&data).unwrap();
+            self.driver.0.lock().geth_send(data).unwrap();
             Ok(data.len())
         } else {
             Err(DeviceError::NotReady)
@@ -205,7 +203,7 @@ pub fn rtlx_init<F: Fn(usize, usize) -> Option<usize>>(
     info!("rtl8211f interface up with addr 192.168.0.123/24");
     let rtl8211f_iface = RTLxInterface {
         iface: Arc::new(Mutex::new(iface)),
-        driver: net_driver.clone(),
+        driver: net_driver,
         name: String::from("rtl8211f"),
         irq,
     };
