@@ -1,1 +1,1 @@
-initSidebarItems({"constant":[["PAGE_SIZE",""]],"fn":[["phys_to_virt",""],["virt_to_phys",""]],"struct":[["ProviderImpl",""]],"trait":[["Provider","External functions that drivers must use"]]});
+initSidebarItems({"constant":[["PAGE_SIZE",""]],"fn":[["get_sockets",""],["phys_to_virt",""],["virt_to_phys",""]],"mod":[["loopback",""]],"struct":[["ProviderImpl",""],["SOCKETS",""]],"trait":[["Provider","External functions that drivers must use"]]});
