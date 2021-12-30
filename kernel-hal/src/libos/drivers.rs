@@ -44,7 +44,6 @@ pub(super) fn init() {
         drivers::add_device(Device::Input(Arc::new(MockMouse::default())));
 
         crate::console::init_graphic_console(display);
-
     }
 
     #[cfg(feature = "loopback")]
