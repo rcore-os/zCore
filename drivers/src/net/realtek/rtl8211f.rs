@@ -229,12 +229,12 @@ where
            (v_addr == 0x5fa)
         // mac addr is broadcast
         {
-            let tokens: Vec<&str> = MAC_ADDR.split(":").collect();
+            let tokens: Vec<&str> = MAC_ADDR.split(':').collect();
             for (i, s) in tokens.iter().enumerate() {
                 mac[i] = u8::from_str_radix(s, 16).unwrap();
             }
         } else {
-            mac = mac_addr.clone();
+            mac = *mac_addr;
         }
 
         info!(
@@ -1142,10 +1142,10 @@ where
         }
 
         /* 正常的 TX/RX NORMAL interrupts */
-        if (intr_status & (TX_INT | RX_INT | RX_EARLY_INT | TX_UA_INT)) != 0 {
-            if (intr_status & (TX_INT | RX_INT)) != 0 {
-                status = tx_dma_irq_status::handle_tx_rx as i32;
-            }
+        if (intr_status & (TX_INT | RX_INT | RX_EARLY_INT | TX_UA_INT)) != 0
+            && (intr_status & (TX_INT | RX_INT)) != 0
+        {
+            status = tx_dma_irq_status::handle_tx_rx as i32;
         }
         /* Clear the interrupt by writing a logic 1 to the CSR5[15-0] */
         write_volatile((self.base + GETH_INT_STA) as *mut u32, intr_status & 0x3FFF);
@@ -1200,7 +1200,7 @@ where
                     (*desc).desc1 |= 0b11 << 27;
                     desc = desc.add(1);
                 }
-                count = count + 1;
+                count += 1;
 
                 if count > end {
                     break;
@@ -1432,7 +1432,15 @@ where
 
         match speed {
             1000 => ctrl &= !0x0C,
-            100 | 10 | _ => {
+            100 | 10 => {
+                ctrl |= 0x08;
+                if (speed == 100) {
+                    ctrl |= 0x04;
+                } else {
+                    ctrl &= !0x04;
+                }
+            }
+            _ => {
                 ctrl |= 0x08;
                 if (speed == 100) {
                     ctrl |= 0x04;

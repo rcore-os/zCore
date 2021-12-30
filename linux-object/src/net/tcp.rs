@@ -97,57 +97,6 @@ impl TcpSocketState {
     }
 
     /// missing documentation
-    #[cfg(feature = "e1000")]
-    pub async fn read(&self, data: &mut [u8]) -> (LxResult<usize>, Endpoint) {
-        warn!("tcp read");
-        use core::task::Poll;
-        futures::future::poll_fn(|cx| {
-            self.with(|s| {
-                if s.can_recv() {
-                    warn!("can recv ok");
-                    if let Ok(size) = s.recv_slice(data) {
-                        warn!("--------------Ok size {}", size);
-                        if size > 0 {
-                            let endpoint = s.remote_endpoint();
-                            Poll::Ready((Ok(size), Endpoint::Ip(endpoint)))
-                        } else {
-                            warn!("wait size > 0");
-                            s.register_recv_waker(cx.waker());
-                            s.register_send_waker(cx.waker());
-                            Poll::Pending
-                        }
-                    } else {
-                        warn!("recv_slice not Ok（size）");
-                        Poll::Ready((
-                            Err(LxError::ENOTCONN),
-                            Endpoint::Ip(IpEndpoint::UNSPECIFIED),
-                        ))
-                    }
-                } else {
-                    error!("can not recv");
-                    s.register_recv_waker(cx.waker());
-                    s.register_send_waker(cx.waker());
-                    Poll::Pending
-                }
-            })
-        })
-        .await
-        // let net_sockets = get_net_sockets();
-        // let mut sockets = net_sockets.lock();
-        // let mut socket = sockets.get::<TcpSocket>(self.handle.0);
-        // // if socket.may_recv() {
-        // if let Ok(size) = socket.recv_slice(data) {
-        //     let endpoint = socket.remote_endpoint();
-        //     return (Ok(size), Endpoint::Ip(endpoint));
-        // } else {
-        //     return (
-        //         Err(LxError::ENOTCONN),
-        //         Endpoint::Ip(IpEndpoint::UNSPECIFIED),
-        //     );
-        // }
-    }
-
-    /// missing documentation
     pub fn write(&self, data: &[u8], _sendto_endpoint: Option<Endpoint>) -> SysResult {
         warn!("tcp write");
         let net_sockets = get_sockets();

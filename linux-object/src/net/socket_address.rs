@@ -10,7 +10,6 @@ use crate::net::Endpoint;
 // smoltcp
 pub use smoltcp::wire::{IpAddress, Ipv4Address};
 
-// #
 use crate::net::*;
 use kernel_hal::user::{UserInOutPtr, UserOutPtr};
 // use numeric_enum_macro::numeric_enum;
