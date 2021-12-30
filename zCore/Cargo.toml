@@ -27,6 +27,8 @@ libos = ["kernel-hal/libos", "zcore-loader/libos", "async-std", "chrono", "rcore
 board-qemu = []
 board-d1 = ["link-user-img"]
 
+loopback = ["kernel-hal/loopback"]
+
 [dependencies]
 log = "0.4"
 spin = "0.9"

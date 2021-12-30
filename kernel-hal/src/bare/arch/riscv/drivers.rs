@@ -86,5 +86,11 @@ pub(super) fn init() -> DeviceResult {
         }
     }
 
+    #[cfg(feature = "loopback")]
+    {
+        use crate::net;
+        net::init();
+    }
+
     Ok(())
 }

@@ -507,9 +507,12 @@ impl LinuxProcessInner {
     }
 
     fn get_free_hd(&self) -> SocketHandle {
-        (10000usize..)
+        (SOCKET_FD..)
             .map(|i| i.into())
             .find(|fd| !self.sockets.contains_key(fd))
             .unwrap()
     }
 }
+
+// Temp , TODO warp a struct impl into/from with FileDesc and SocketHandle
+const SOCKET_FD: usize = 10000;

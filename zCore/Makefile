@@ -17,6 +17,8 @@ CMDLINE ?=
 SMP ?= 1
 ACCEL ?=
 
+NET ?= loopback
+
 OBJDUMP ?= rust-objdump --print-imm-hex --x86-asm-syntax=intel
 OBJCOPY ?= rust-objcopy --binary-architecture=$(ARCH)
 
@@ -98,6 +100,10 @@ endif
 ifeq ($(HYPERVISOR), 1)
   features += hypervisor
   ACCEL := 1
+endif
+
+ifeq ($(NET), loopback)
+  features += loopback
 endif
 
 ################ Cargo build args ################

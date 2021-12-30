@@ -114,14 +114,14 @@ impl Drop for GlobalSocketHandle {
 // #[cfg(feature = "e1000")]
 use kernel_hal::net::get_net_device;
 
-#[cfg(feature = "loopback")]
-use hashbrown::HashMap;
-#[cfg(feature = "loopback")]
-use kernel_hal::timer_now;
+// #[cfg(feature = "loopback")]
+// use hashbrown::HashMap;
+// #[cfg(feature = "loopback")]
+// use kernel_hal::timer_now;
 // #[cfg(feature = "loopback")]
 // use net_stack::{NetStack, NET_STACK};
-#[cfg(feature = "loopback")]
-use smoltcp::time::Instant;
+// #[cfg(feature = "loopback")]
+// use smoltcp::time::Instant;
 
 // /// miss doc
 // #[cfg(feature = "loopback")]
