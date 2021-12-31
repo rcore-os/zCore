@@ -1,4 +1,5 @@
 use alloc::boxed::Box;
+use alloc::format;
 
 use zcore_drivers::builder::{DevicetreeDriverBuilder, IoMapper};
 use zcore_drivers::irq::riscv::ScauseIntCode;
@@ -62,7 +63,7 @@ pub(super) fn init() -> DeviceResult {
     }
 
     let irq = drivers::all_irq()
-        .find("riscv-intc")
+        .find(format!("riscv-intc-cpu{}", crate::cpu::cpu_id()).as_str())
         .expect("IRQ device 'riscv-intc' not initialized!");
     // register soft interrupts handler
     irq.register_handler(

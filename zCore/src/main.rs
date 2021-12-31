@@ -7,7 +7,6 @@
 // #![deny(warnings)] // comment this on develop
 
 use core::sync::atomic::{AtomicBool, Ordering};
-use lazy_static::*;
 
 extern crate alloc;
 #[macro_use]
