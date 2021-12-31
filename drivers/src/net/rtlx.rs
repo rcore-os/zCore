@@ -1,13 +1,13 @@
 use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::sync::Arc;
-use alloc::vec;
+// use alloc::vec;
 use alloc::vec::Vec;
 use spin::Mutex;
 
 use smoltcp::iface::*;
 use smoltcp::phy::{self, Device, DeviceCapabilities, Medium};
-use smoltcp::socket::SocketSet;
+// use smoltcp::socket::SocketSet;
 use smoltcp::time::Instant;
 use smoltcp::wire::*;
 use smoltcp::Result;
@@ -49,7 +49,7 @@ impl Scheme for RTLxInterface {
         let handle_tx_rx = 3;
         if status == handle_tx_rx {
             let timestamp = Instant::from_millis(0);
-            let mut sockets = get_sockets();
+            let sockets = get_sockets();
             let mut sockets = sockets.lock();
 
             self.driver.0.lock().int_disable();
@@ -83,7 +83,7 @@ impl NetScheme for RTLxInterface {
 
     fn poll(&self) -> DeviceResult {
         let timestamp = Instant::from_millis(0);
-        let mut sockets = get_sockets();
+        let sockets = get_sockets();
         let mut sockets = sockets.lock();
         match self.iface.lock().poll(&mut sockets, timestamp) {
             Ok(_) => {
