@@ -18,9 +18,9 @@ use super::ProviderImpl;
 use super::PAGE_SIZE;
 //use kernel_hal::drivers::{Driver, DeviceType, NetDriver, DRIVERS, NET_DRIVERS, SOCKETS};
 
+use crate::net::get_sockets;
 use crate::scheme::{NetScheme, Scheme};
 use crate::{DeviceError, DeviceResult};
-use crate::net::get_sockets;
 
 #[derive(Clone)]
 pub struct RTLxDriver(Arc<Mutex<RTL8211F<ProviderImpl>>>);
@@ -49,7 +49,8 @@ impl Scheme for RTLxInterface {
         let handle_tx_rx = 3;
         if status == handle_tx_rx {
             let timestamp = Instant::from_millis(0);
-            let mut sockets = get_sockets().lock(); //引发死锁？
+            let mut sockets = get_sockets();
+            let mut sockets = sockets.lock();
 
             self.driver.0.lock().int_disable();
             match self.iface.lock().poll(&mut sockets, timestamp) {
@@ -82,7 +83,8 @@ impl NetScheme for RTLxInterface {
 
     fn poll(&self) -> DeviceResult {
         let timestamp = Instant::from_millis(0);
-        let mut sockets = get_sockets().lock();
+        let mut sockets = get_sockets();
+        let mut sockets = sockets.lock();
         match self.iface.lock().poll(&mut sockets, timestamp) {
             Ok(_) => {
                 //SOCKET_ACTIVITY.notify_all();
