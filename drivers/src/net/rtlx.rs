@@ -20,6 +20,7 @@ use super::PAGE_SIZE;
 
 use crate::scheme::{NetScheme, Scheme};
 use crate::{DeviceError, DeviceResult};
+use crate::net::get_sockets;
 
 #[derive(Clone)]
 pub struct RTLxDriver(Arc<Mutex<RTL8211F<ProviderImpl>>>);
@@ -48,7 +49,7 @@ impl Scheme for RTLxInterface {
         let handle_tx_rx = 3;
         if status == handle_tx_rx {
             let timestamp = Instant::from_millis(0);
-            let mut sockets = SOCKETS.lock(); //引发死锁？
+            let mut sockets = get_sockets().lock(); //引发死锁？
 
             self.driver.0.lock().int_disable();
             match self.iface.lock().poll(&mut sockets, timestamp) {
@@ -81,7 +82,7 @@ impl NetScheme for RTLxInterface {
 
     fn poll(&self) -> DeviceResult {
         let timestamp = Instant::from_millis(0);
-        let mut sockets = SOCKETS.lock();
+        let mut sockets = get_sockets().lock();
         match self.iface.lock().poll(&mut sockets, timestamp) {
             Ok(_) => {
                 //SOCKET_ACTIVITY.notify_all();
@@ -211,7 +212,7 @@ pub fn rtlx_init<F: Fn(usize, usize) -> Option<usize>>(
 }
 
 //TODO: Global SocketSet
-lazy_static::lazy_static! {
-    pub static ref SOCKETS: Mutex<SocketSet<'static>> =
-        Mutex::new(SocketSet::new(vec![]));
-}
+// lazy_static::lazy_static! {
+//     pub static ref SOCKETS: Mutex<SocketSet<'static>> =
+//         Mutex::new(SocketSet::new(vec![]));
+// }
