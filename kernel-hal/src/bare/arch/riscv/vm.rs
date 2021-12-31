@@ -219,7 +219,7 @@ impl GenericPTE for Rv64PTE {
     }
     fn set_flags(&mut self, flags: MMUFlags, _is_huge: bool) {
         let flags = PTF::from(flags) | PTF::ACCESSED | PTF::DIRTY;
-        debug_assert!(flags.contains(PTF::READABLE | PTF::EXECUTABLE));
+        debug_assert!(flags.intersects(PTF::READABLE | PTF::EXECUTABLE));
         self.0 = (self.0 & PHYS_ADDR_MASK) | flags.bits() as u64;
     }
     fn set_table(&mut self, paddr: PhysAddr) {

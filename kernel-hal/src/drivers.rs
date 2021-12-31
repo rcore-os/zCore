@@ -156,3 +156,34 @@ mod virtio_drivers_ffi {
         vaddr - KCONFIG.phys_to_virt_offset
     }
 }
+
+#[cfg(not(feature = "libos"))]
+mod drivers_ffi {
+    use crate::{PhysAddr, VirtAddr, KCONFIG, KHANDLER, PAGE_SIZE};
+
+    #[no_mangle]
+    extern "C" fn drivers_dma_alloc(pages: usize) -> PhysAddr {
+        let paddr = KHANDLER.frame_alloc_contiguous(pages, 0).unwrap();
+        trace!("alloc DMA: paddr={:#x}, pages={}", paddr, pages);
+        paddr
+    }
+
+    #[no_mangle]
+    extern "C" fn drivers_dma_dealloc(paddr: PhysAddr, pages: usize) -> i32 {
+        for i in 0..pages {
+            KHANDLER.frame_dealloc(paddr + i * PAGE_SIZE);
+        }
+        trace!("dealloc DMA: paddr={:#x}, pages={}", paddr, pages);
+        0
+    }
+
+    #[no_mangle]
+    extern "C" fn drivers_phys_to_virt(paddr: PhysAddr) -> VirtAddr {
+        paddr + KCONFIG.phys_to_virt_offset
+    }
+
+    #[no_mangle]
+    extern "C" fn drivers_virt_to_phys(vaddr: VirtAddr) -> PhysAddr {
+        vaddr - KCONFIG.phys_to_virt_offset
+    }
+}

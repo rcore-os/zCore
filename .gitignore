@@ -21,3 +21,4 @@ stdout-baremetal-test-rv64
 stdout-rv64
 zCore/generic_fw_jump.bin
 zCore/fw_jump.bin
+zCore/src/platform/riscv/boot/kernel-vars.ld

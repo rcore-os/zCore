@@ -90,6 +90,8 @@ async fn handle_user_trap(thread: &CurrentThread, mut ctx: Box<UserContext>) -> 
     }
 
     thread.put_context(ctx);
+
+    let pid = thread.proc().id();
     match reason {
         TrapReason::Interrupt(vector) => {
             kernel_hal::interrupt::handle_irq(vector);
@@ -97,7 +99,10 @@ async fn handle_user_trap(thread: &CurrentThread, mut ctx: Box<UserContext>) -> 
             Ok(())
         }
         TrapReason::PageFault(vaddr, flags) => {
-            info!("page fault from user mode @ {:#x}({:?})", vaddr, flags);
+            warn!(
+                "page fault from user mode @ {:#x}({:?}), pid={}",
+                vaddr, flags, pid
+            );
             let vmar = thread.proc().vmar();
             vmar.handle_page_fault(vaddr, flags).map_err(|err| {
                 error!(
@@ -112,8 +117,9 @@ async fn handle_user_trap(thread: &CurrentThread, mut ctx: Box<UserContext>) -> 
         }
         _ => {
             error!(
-                "unsupported trap from user mode: {:x?} {:#x?}",
+                "unsupported trap from user mode: {:x?}, pid={}, {:#x?}",
                 reason,
+                pid,
                 thread.context_cloned(),
             );
             Err(ZxError::NOT_SUPPORTED)

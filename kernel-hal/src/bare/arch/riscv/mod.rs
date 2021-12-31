@@ -33,12 +33,19 @@ pub fn init_ram_disk() -> Option<&'static mut [u8]> {
 pub fn primary_init_early() {
     let dt = Devicetree::from(phys_to_virt(crate::KCONFIG.dtb_paddr)).unwrap();
     if let Some(cmdline) = dt.bootargs() {
+        info!("Load kernel cmdline from DTB: {:?}", cmdline);
         CMDLINE.init_once_by(cmdline.into());
     }
+    if let Some(time_freq) = dt.timebase_frequency() {
+        info!("Load CPU clock frequency from DTB: {} Hz", time_freq);
+        super::cpu::CPU_FREQ_MHZ.init_once_by((time_freq / 1_000_000) as u16);
+    }
     if let Some(initrd_region) = dt.initrd_region() {
+        info!("Load initrd regions from DTB: {:#x?}", initrd_region);
         INITRD_REGION.init_once_by(Some(initrd_region));
     }
     if let Ok(regions) = dt.memory_regions() {
+        info!("Load memory regions from DTB: {:#x?}", regions);
         MEMORY_REGIONS.init_once_by(regions);
     }
 }
