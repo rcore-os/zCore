@@ -6,7 +6,7 @@ _start:
 
 	#关闭mmu
 	#csrw satp, zero
-
+	bgtz a0, 2f
 	#BSS节清零
 	la t0, sbss
 	la t1, ebss
@@ -56,7 +56,7 @@ _start:
 	.align 12
 	.global bootstack
 bootstack:
-	.space 4096 * 32
+	.space 4096 * 160
 	.global bootstacktop
 bootstacktop:
 

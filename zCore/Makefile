@@ -14,7 +14,7 @@ USER ?=
 ZBI ?= bringup
 CMDLINE ?=
 
-SMP ?= 2
+SMP ?= 5
 ACCEL ?=
 
 OBJDUMP ?= rust-objdump --print-imm-hex --x86-asm-syntax=intel
