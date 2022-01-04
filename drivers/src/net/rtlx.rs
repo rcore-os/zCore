@@ -54,9 +54,8 @@ impl Scheme for RTLxInterface {
 
             self.driver.0.lock().int_disable();
             match self.iface.lock().poll(&mut sockets, timestamp) {
-                Ok(_) => {
-                    //SOCKET_ACTIVITY.notify_all();
-                    debug!("try_handle_interrupt SOCKET_ACTIVITY unimplemented");
+                Ok(b) => {
+                    debug!("nic poll, is changed ?: {}", b);
                 }
                 Err(err) => {
                     error!("poll got err {}", err);
@@ -86,9 +85,8 @@ impl NetScheme for RTLxInterface {
         let sockets = get_sockets();
         let mut sockets = sockets.lock();
         match self.iface.lock().poll(&mut sockets, timestamp) {
-            Ok(_) => {
-                //SOCKET_ACTIVITY.notify_all();
-                error!("poll, SOCKET_ACTIVITY unimplemented");
+            Ok(b) => {
+                debug!("nic poll, is changed ?: {}", b);
                 Ok(())
             }
             Err(err) => {
@@ -195,14 +193,20 @@ pub fn rtlx_init<F: Fn(usize, usize) -> Option<usize>>(
 
     let ethernet_addr = EthernetAddress::from_bytes(&mac);
     let ip_addrs = [IpCidr::new(IpAddress::v4(192, 168, 0, 123), 24)];
+    let default_gateway = Ipv4Address::new(192, 168, 0, 1);
+    static mut ROUTES_STORAGE: [Option<(IpCidr, Route)>; 1] = [None; 1];
+    let mut routes = unsafe { Routes::new(&mut ROUTES_STORAGE[..]) };
+    routes.add_default_ipv4_route(default_gateway).unwrap();
     let neighbor_cache = NeighborCache::new(BTreeMap::new());
     let iface = InterfaceBuilder::new(net_driver.clone())
         .ethernet_addr(ethernet_addr)
         .neighbor_cache(neighbor_cache)
         .ip_addrs(ip_addrs)
+        .routes(routes)
         .finalize();
 
     info!("rtl8211f interface up with addr 192.168.0.123/24");
+    info!("rtl8211f interface up with route 192.168.0.1/24");
     let rtl8211f_iface = RTLxInterface {
         iface: Arc::new(Mutex::new(iface)),
         driver: net_driver,
