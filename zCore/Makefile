@@ -137,7 +137,7 @@ ifeq ($(ARCH), x86_64)
 else ifeq ($(ARCH), riscv64)
   qemu_opts += \
 		-machine virt \
-		-bios fw_jump.bin \
+		-bios default \
 		-m 512M \
 		-no-reboot \
 		-no-shutdown \
@@ -204,7 +204,7 @@ debugrun: $(qemu_disk)
 .PHONY: kernel
 kernel:
 	@echo Building zCore kenel
-	cargo build $(build_args)
+	SMP=$(SMP) cargo build $(build_args)
 
 .PHONY: disasm
 disasm:

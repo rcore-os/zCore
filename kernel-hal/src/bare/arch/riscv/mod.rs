@@ -1,5 +1,4 @@
 mod drivers;
-pub mod sbi;
 mod trap;
 
 pub mod config;
@@ -8,6 +7,7 @@ pub mod interrupt;
 pub mod mem;
 pub mod timer;
 pub mod vm;
+pub mod sbi;
 
 use alloc::{format, boxed::Box, string::String, vec::Vec};
 use core::ops::Range;
