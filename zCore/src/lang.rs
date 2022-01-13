@@ -24,7 +24,9 @@ fn oom(_: Layout) -> ! {
 
 fn backtrace() {
     let s0: u64;
-    unsafe {asm!("mv {0}, fp", out(reg) s0);}
+    unsafe {
+        asm!("mv {0}, fp", out(reg) s0);
+    }
     let mut fp = s0;
     let x = 5;
     println!("fp=0x{:x}", fp);

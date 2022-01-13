@@ -33,7 +33,7 @@ pub extern "C" fn trap_handler(tf: &mut TrapFrame) {
             // log::warn!("sepc={:x}", riscv::register::sepc::read());
             // log::warn!("sstatus.spp={:?}", riscv::register::sstatus::read().spp());
             crate::KHANDLER.handle_page_fault(vaddr, flags)
-        },
+        }
         TrapReason::Interrupt(vector) => crate::interrupt::handle_irq(vector),
         other => panic!("Undefined trap: {:x?} {:#x?}", other, tf),
     }

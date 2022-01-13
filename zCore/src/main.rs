@@ -64,9 +64,9 @@ fn primary_main(config: kernel_hal::KernelConfig) {
 fn secondary_main() {
     while !STARTED.load(Ordering::SeqCst) {}
     // Don't print anything between previous line and next line.
-    // Boot hart has initialized the UART chip, so we will use 
-    // UART for output instead of SBI, but the current HART is 
-    // not mapped to UART MMIO, which means we can't output 
+    // Boot hart has initialized the UART chip, so we will use
+    // UART for output instead of SBI, but the current HART is
+    // not mapped to UART MMIO, which means we can't output
     // until secondary_init is complete.
     kernel_hal::secondary_init();
     utils::wait_for_exit(None)

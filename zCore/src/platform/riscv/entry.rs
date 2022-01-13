@@ -63,7 +63,10 @@ pub extern "C" fn secondary_rust_main(hartid: usize) -> ! {
         asm!("csrr {0}, sstatus", out(reg) sstatus);
         sstatus |= 1 << 18; // 设置
         asm!("csrw sstatus, {0}", in(reg) sstatus);
-        println!("secondary hart: zCore rust_main(hartid: {:x}) sstatus={:x}", hartid, sstatus);
+        println!(
+            "secondary hart: zCore rust_main(hartid: {:x}) sstatus={:x}",
+            hartid, sstatus
+        );
     };
     crate::secondary_main();
     unreachable!()
