@@ -6,9 +6,9 @@ global_asm!(include_str!("boot/boot_d1.asm"));
 global_asm!(include_str!("boot/entry64.asm"));
 
 use super::consts::*;
+use core::str::FromStr;
 use kernel_hal::arch::sbi::{hart_start, send_ipi, SBI_SUCCESS};
 use kernel_hal::KernelConfig;
-use core::str::FromStr;
 
 const SMP: &'static str = core::env!("SMP"); // Get HART number from the environment variable
 
@@ -20,11 +20,16 @@ extern "C" {
 pub extern "C" fn primary_rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
     unsafe {
         asm!("mv tp, {0}", in(reg) hartid);
+        let mut sstatus: usize;
+        asm!("csrr {0}, sstatus", out(reg) sstatus);
+        sstatus |= 1 << 18;
+        asm!("csrw sstatus, {0}", in(reg) sstatus);
+        println!(
+            "boot hart: zCore rust_main(hartid: {}, device_tree_paddr: {:#x}) sstatus={:x}",
+            hartid, device_tree_paddr, sstatus
+        );
     };
-    println!(
-        "boot hart: zCore rust_main(hartid: {}, device_tree_paddr: {:#x})",
-        hartid, device_tree_paddr
-    );
+
     let config = KernelConfig {
         phys_to_virt_offset: PHYSICAL_MEMORY_OFFSET,
         dtb_paddr: device_tree_paddr,
@@ -39,7 +44,7 @@ pub extern "C" fn primary_rust_main(hartid: usize, device_tree_paddr: usize) -> 
             if err_code != SBI_SUCCESS {
                 panic!("start hart{} failed. error code={}", id, err_code);
             }
-            let hart_mask:usize = 1 << id;
+            let hart_mask: usize = 1 << id;
             let err_code = send_ipi(&hart_mask as *const _ as usize);
             if err_code != SBI_SUCCESS {
                 panic!("send ipi to hart{} failed. error code={}", id, err_code);
@@ -54,8 +59,12 @@ pub extern "C" fn primary_rust_main(hartid: usize, device_tree_paddr: usize) -> 
 pub extern "C" fn secondary_rust_main(hartid: usize) -> ! {
     unsafe {
         asm!("mv tp, {0}", in(reg) hartid);
+        let mut sstatus: usize;
+        asm!("csrr {0}, sstatus", out(reg) sstatus);
+        sstatus |= 1 << 18; // 设置
+        asm!("csrw sstatus, {0}", in(reg) sstatus);
+        println!("secondary hart: zCore rust_main(hartid: {:x}) sstatus={:x}", hartid, sstatus);
     };
-    println!("secondary hart: zCore rust_main(hartid: {})", hartid);
     crate::secondary_main();
     unreachable!()
 }
