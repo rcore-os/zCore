@@ -9,7 +9,6 @@ use super::consts::*;
 use core::str::FromStr;
 use kernel_hal::arch::sbi::{hart_start, send_ipi, SBI_SUCCESS};
 use kernel_hal::KernelConfig;
-
 const SMP: &'static str = core::env!("SMP"); // Get HART number from the environment variable
 
 extern "C" {
@@ -55,18 +54,15 @@ pub extern "C" fn primary_rust_main(hartid: usize, device_tree_paddr: usize) -> 
     unreachable!()
 }
 
+// Don't print in this function and use console_write_early if necessary
 #[no_mangle]
 pub extern "C" fn secondary_rust_main(hartid: usize) -> ! {
     unsafe {
         asm!("mv tp, {0}", in(reg) hartid);
         let mut sstatus: usize;
         asm!("csrr {0}, sstatus", out(reg) sstatus);
-        sstatus |= 1 << 18; // 设置
+        sstatus |= 1 << 18; // set SUM=1
         asm!("csrw sstatus, {0}", in(reg) sstatus);
-        println!(
-            "secondary hart: zCore rust_main(hartid: {:x}) sstatus={:x}",
-            hartid, sstatus
-        );
     };
     crate::secondary_main();
     unreachable!()

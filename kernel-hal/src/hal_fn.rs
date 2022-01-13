@@ -127,8 +127,8 @@ hal_fn_def! {
         pub fn msi_register_handler(block: Range<usize>, msi_id: usize, handler: IrqHandler) -> HalResult;
     }
 
-    pub(crate) mod console {
-        pub(crate) fn console_write_early(_s: &str) {}
+    pub mod console {
+        pub fn console_write_early(_s: &str) {}
     }
 
     /// Thread spawning.
