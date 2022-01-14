@@ -1,6 +1,6 @@
 ################ Arguments ################
 
-ARCH ?= riscv64
+ARCH ?= x86_64
 PLATFORM ?= qemu
 MODE ?= release
 LOG ?= warn

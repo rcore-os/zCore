@@ -1434,7 +1434,8 @@ where
 
         match speed {
             1000 => ctrl &= !0x0C,
-            /*100 | 10 |*/ _ => {
+            /*100 | 10 |*/
+            _ => {
                 ctrl |= 0x08;
                 if (speed == 100) {
                     ctrl |= 0x04;
