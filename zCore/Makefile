@@ -178,7 +178,7 @@ all: build
 
 .PHONY: build run test debug
 ifeq ($(LIBOS), 1)
-build: kernel
+build: $(ARCH).img kernel 
 run:
 	cargo run $(build_args) -- $(ARGS)
 test:
@@ -186,7 +186,7 @@ test:
 debug: build
 	gdb --args $(kernel_elf) $(ARGS)
 else
-build: $(kernel_img)
+build: $(ARCH).img $(kernel_img)
 run: build justrun
 debug: build debugrun
 endif
@@ -303,6 +303,14 @@ endif
 	# -a $(VMDISK) $(build_path)/esp.tar /
 	rm $(build_path)/esp.tar
 	vboxmanage startvm zCoreVM
+
+$(ARCH).img:
+	@echo make img
+ifeq ($(ARCH), x86_64)
+	@cd .. && make baremetal-test-img
+else
+	@cd .. && make riscv-image
+endif
 
 $(qemu_disk):
 ifeq ($(ARCH), riscv64)
