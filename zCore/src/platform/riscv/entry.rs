@@ -65,5 +65,4 @@ pub extern "C" fn secondary_rust_main(hartid: usize) -> ! {
         asm!("csrw sstatus, {0}", in(reg) sstatus);
     };
     crate::secondary_main();
-    unreachable!()
 }

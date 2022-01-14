@@ -61,7 +61,7 @@ fn primary_main(config: kernel_hal::KernelConfig) {
 }
 
 #[allow(dead_code)]
-fn secondary_main() {
+fn secondary_main() -> ! {
     while !STARTED.load(Ordering::SeqCst) {}
     // Don't print anything between previous line and next line.
     // Boot hart has initialized the UART chip, so we will use
