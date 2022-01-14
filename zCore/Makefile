@@ -1,6 +1,6 @@
 ################ Arguments ################
 
-ARCH ?= x86_64
+ARCH ?= riscv64
 PLATFORM ?= qemu
 MODE ?= release
 LOG ?= warn
@@ -216,7 +216,7 @@ header:
 
 .PHONY: clippy
 clippy:
-	cargo clippy $(build_args)
+	SMP=$(SMP) cargo clippy $(build_args)
 
 .PHONY: clean
 clean:

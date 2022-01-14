@@ -9,7 +9,7 @@ use super::consts::*;
 use core::str::FromStr;
 use kernel_hal::arch::sbi::{hart_start, send_ipi, SBI_SUCCESS};
 use kernel_hal::KernelConfig;
-const SMP: &'static str = core::env!("SMP"); // Get HART number from the environment variable
+const SMP: &str = core::env!("SMP"); // Get HART number from the environment variable
 
 extern "C" {
     fn secondary_hart_start();

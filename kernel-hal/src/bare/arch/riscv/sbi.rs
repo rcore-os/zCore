@@ -45,11 +45,11 @@ fn sbi_call(eid: usize, fid: usize, arg0: usize, arg1: usize, arg2: usize) -> us
 }
 
 pub fn console_putchar(ch: usize) -> usize {
-    return sbi_call(SBI_CONSOLE_PUTCHAR, 0, ch, 0, 0);
+    sbi_call(SBI_CONSOLE_PUTCHAR, 0, ch, 0, 0)
 }
 
 pub fn console_getchar() -> usize {
-    return sbi_call(SBI_CONSOLE_GETCHAR, 0, 0, 0, 0);
+    sbi_call(SBI_CONSOLE_GETCHAR, 0, 0, 0, 0)
 }
 
 pub fn set_timer(stime_value: u64) -> usize {
@@ -63,15 +63,15 @@ pub fn set_timer(stime_value: u64) -> usize {
     );
 
     #[cfg(target_pointer_width = "64")]
-    return sbi_call(SBI_SET_TIMER, 0, stime_value as usize, 0, 0);
+    sbi_call(SBI_SET_TIMER, 0, stime_value as usize, 0, 0)
 }
 
 pub fn clear_ipi() -> usize {
-    return sbi_call(SBI_CLEAR_IPI, 0, 0, 0, 0);
+    sbi_call(SBI_CLEAR_IPI, 0, 0, 0, 0)
 }
 
 pub fn send_ipi(sipi_value: usize) -> usize {
-    return sbi_call(SBI_SEND_IPI, 0, sipi_value, 0, 0);
+    sbi_call(SBI_SEND_IPI, 0, sipi_value, 0, 0)
 }
 
 /// executing the target hart in supervisor-mode at address
@@ -81,13 +81,13 @@ pub fn send_ipi(sipi_value: usize) -> usize {
 /// set in the a1 register when the hart starts executing
 /// at start_addr.
 pub fn hart_start(hartid: usize, start_addr: usize, opaque: usize) -> usize {
-    return sbi_call(HSM_EID, SBI_HART_START_FID, hartid, start_addr, opaque);
+    sbi_call(HSM_EID, SBI_HART_START_FID, hartid, start_addr, opaque)
 }
 
 /// stop executing the calling hart in supervisor-mode and return
 /// it’s ownership to the SBI implementation.
 pub fn hart_stop() -> usize {
-    return sbi_call(HSM_EID, SBI_HART_STOP_FID, 0, 0, 0);
+    sbi_call(HSM_EID, SBI_HART_STOP_FID, 0, 0, 0)
 }
 
 hal_fn_impl! {
