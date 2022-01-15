@@ -44,6 +44,14 @@ jobs:
         with:
           crate: cargo-binutils
           version: latest
+      - name: Pull prebuilt images
+        run: git lfs pull -I prebuilt/linux/libc-libos.so
+      - name: Install musl toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install musl-tools musl-dev -y
+      - name: Prepare rootfs and libc-test
+        run: make baremetal-test-img
       - name: Build all packages
         run: cargo build
       - name: Build linux LibOS
