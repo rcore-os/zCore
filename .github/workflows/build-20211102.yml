@@ -40,10 +40,11 @@ jobs:
           profile: minimal
           toolchain: nightly-2021-11-02
           components: rust-src, llvm-tools-preview
-      - uses: actions-rs/install@v0.1
+      - uses: actions-rs/toolchain@v1
         with:
-          crate: cargo-binutils
-          version: latest
+          profile: minimal
+          toolchain: nightly-2021-11-02
+          components: rust-src
       - name: Pull prebuilt images
         run: git lfs pull -I prebuilt/linux/libc-libos.so
       - name: Install musl toolchain
