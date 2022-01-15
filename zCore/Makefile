@@ -228,7 +228,7 @@ ifeq ($(ARCH), x86_64)
 	@cd ../rboot && make build
 endif
 
-$(kernel_img): kernel bootloader $(user_img)
+$(kernel_img): kernel bootloader
 ifeq ($(ARCH), x86_64)
   ifeq ($(USER), 1)
 	make -C ../zircon-user
@@ -303,14 +303,6 @@ endif
 	# -a $(VMDISK) $(build_path)/esp.tar /
 	rm $(build_path)/esp.tar
 	vboxmanage startvm zCoreVM
-
-$(ARCH).img:
-	@echo make img
-ifeq ($(ARCH), x86_64)
-	@cd .. && make baremetal-test-img
-else
-	@cd .. && make riscv-image
-endif
 
 $(qemu_disk):
 ifeq ($(ARCH), riscv64)

@@ -40,19 +40,10 @@ jobs:
           profile: minimal
           toolchain: nightly-2021-11-02
           components: rust-src, llvm-tools-preview
-      - uses: actions-rs/toolchain@v1
+      - uses: actions-rs/install@v0.1
         with:
-          profile: minimal
-          toolchain: nightly-2021-11-02
-          components: rust-src
-      - name: Pull prebuilt images
-        run: git lfs pull -I prebuilt/linux/libc-libos.so
-      - name: Install musl toolchain
-        run: |
-          sudo apt-get update
-          sudo apt-get install musl-tools musl-dev -y
-      - name: Prepare rootfs and libc-test
-        run: make baremetal-test-img
+          crate: cargo-binutils
+          version: latest
       - name: Build all packages
         run: cargo build
       - name: Build linux LibOS
