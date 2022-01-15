@@ -4,8 +4,8 @@ ARCH ?= x86_64
 PLATFORM ?= qemu
 MODE ?= release
 LOG ?= warn
-LINUX ?= 1
-LIBOS ?=
+LINUX ?= 
+LIBOS ?= 
 GRAPHIC ?=
 HYPERVISOR ?=
 V ?=
@@ -14,7 +14,7 @@ USER ?=
 ZBI ?= bringup
 CMDLINE ?=
 
-SMP ?= 5
+SMP ?= 1
 ACCEL ?=
 
 OBJDUMP ?= rust-objdump --print-imm-hex --x86-asm-syntax=intel
@@ -178,7 +178,7 @@ all: build
 
 .PHONY: build run test debug
 ifeq ($(LIBOS), 1)
-build: $(ARCH).img kernel 
+build: kernel 
 run:
 	cargo run $(build_args) -- $(ARGS)
 test:
@@ -186,7 +186,7 @@ test:
 debug: build
 	gdb --args $(kernel_elf) $(ARGS)
 else
-build: $(ARCH).img $(kernel_img)
+build: $(kernel_img)
 run: build justrun
 debug: build debugrun
 endif
@@ -228,7 +228,7 @@ ifeq ($(ARCH), x86_64)
 	@cd ../rboot && make build
 endif
 
-$(kernel_img): kernel bootloader
+$(kernel_img): kernel bootloader $(user_img)
 ifeq ($(ARCH), x86_64)
   ifeq ($(USER), 1)
 	make -C ../zircon-user
