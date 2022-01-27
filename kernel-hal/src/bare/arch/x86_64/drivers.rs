@@ -1,5 +1,6 @@
 use alloc::{boxed::Box, sync::Arc};
 
+use zcore_drivers::bus::pci;
 use zcore_drivers::irq::x86::Apic;
 use zcore_drivers::scheme::IrqScheme;
 use zcore_drivers::uart::{BufferedUart, Uart16550Pio};
@@ -27,6 +28,9 @@ pub(super) fn init() -> DeviceResult {
     irq.unmask(trap::X86_ISA_IRQ_COM1)?;
     irq.register_local_apic_handler(trap::X86_INT_APIC_TIMER, Box::new(crate::timer::timer_tick))?;
     drivers::add_device(Device::Irq(irq));
+
+    // PCI scan
+    pci::init();
 
     #[cfg(feature = "graphic")]
     {

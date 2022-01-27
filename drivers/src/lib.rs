@@ -19,6 +19,7 @@ pub mod mock;
 pub mod virtio;
 
 pub mod builder;
+pub mod bus;
 pub mod display;
 pub mod input;
 pub mod io;
