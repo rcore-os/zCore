@@ -16,7 +16,7 @@ use bitflags::bitflags;
 
 use kernel_hal::context::UserContextField;
 use linux_object::thread::{CurrentThreadExt, ThreadExt};
-use linux_object::time::TimeSpec;
+// use linux_object::time::TimeSpec;
 use linux_object::{fs::INodeExt, loader::LinuxElfLoader};
 
 impl Syscall<'_> {
@@ -269,16 +269,6 @@ impl Syscall<'_> {
         let proc = self.zircon_process();
         proc.exit(exit_code as i64);
         Err(LxError::ENOSYS)
-    }
-
-    /// Allows the calling thread to sleep for
-    /// an interval specified with nanosecond precision
-    pub async fn sys_nanosleep(&self, req: UserInPtr<TimeSpec>) -> SysResult {
-        info!("nanosleep: deadline={:?}", req);
-        let duration = req.read()?.into();
-        use kernel_hal::{thread, timer};
-        thread::sleep_until(timer::deadline_after(duration)).await;
-        Ok(0)
     }
 
     //    pub fn sys_set_priority(&self, priority: usize) -> SysResult {

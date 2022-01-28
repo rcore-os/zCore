@@ -41,6 +41,11 @@ libc-test:
 	cd rootfs && git clone git://repo.or.cz/libc-test --depth 1
 	cd rootfs/libc-test && cp config.mak.def config.mak && echo 'CC := musl-gcc' >> config.mak && make -j
 
+rt-test:
+	cd rootfs && git clone https://kernel.googlesource.com/pub/scm/linux/kernel/git/clrkwllms/rt-tests --depth 1
+	cd rootfs/rt-tests && make
+	echo x86 gcc build rt-test,now need manual modificy.
+
 rcore-fs-fuse:
 ifneq ($(shell rcore-fs-fuse dir image git-version), $(rcore_fs_fuse_revision))
 	@echo Installing rcore-fs-fuse

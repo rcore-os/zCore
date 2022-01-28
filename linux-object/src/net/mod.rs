@@ -3,6 +3,7 @@
 
 /// missing documentation
 pub mod socket_address;
+use smoltcp::wire::IpEndpoint;
 pub use socket_address::*;
 
 /// missing documentation
@@ -126,58 +127,6 @@ fn poll_ifaces() {
 }
 
 // ============= SocketHandle =============
-
-// ============= Endpoint =============
-
-use smoltcp::wire::IpEndpoint;
-
-/// missing documentation
-#[derive(Clone, Debug)]
-pub enum Endpoint {
-    /// missing documentation
-    Ip(IpEndpoint),
-    /// missing documentation
-    LinkLevel(LinkLevelEndpoint),
-    /// missing documentation
-    Netlink(NetlinkEndpoint),
-}
-
-/// missing documentation
-#[derive(Clone, Debug)]
-pub struct LinkLevelEndpoint {
-    /// missing documentation
-    pub interface_index: usize,
-}
-
-impl LinkLevelEndpoint {
-    /// missing documentation
-    pub fn new(ifindex: usize) -> Self {
-        LinkLevelEndpoint {
-            interface_index: ifindex,
-        }
-    }
-}
-
-/// missing documentation
-#[derive(Clone, Debug)]
-pub struct NetlinkEndpoint {
-    /// missing documentation
-    pub port_id: u32,
-    /// missing documentation
-    pub multicast_groups_mask: u32,
-}
-
-impl NetlinkEndpoint {
-    /// missing documentation
-    pub fn new(port_id: u32, multicast_groups_mask: u32) -> Self {
-        NetlinkEndpoint {
-            port_id,
-            multicast_groups_mask,
-        }
-    }
-}
-
-// ============= Endpoint =============
 
 // ============= Rand Port =============
 
