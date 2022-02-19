@@ -402,6 +402,18 @@ impl VmAddressRegion {
         !self.is_dead()
     }
 
+    /// get flags of vaddr
+    pub fn get_vaddr_flags(&self, vaddr: usize) -> ZxResult<MMUFlags> {
+        let mut guard = self.inner.lock();
+        let inner = guard.as_mut().ok_or(ZxError::BAD_STATE)?;
+        for mapping in &inner.mappings {
+            if mapping.contains(vaddr) {
+                return mapping.get_flags(vaddr);
+            }
+        }
+        Err(ZxError::NO_MEMORY)
+    }
+
     /// Determine final address with given input `offset` and `len`.
     fn determine_offset(
         &self,

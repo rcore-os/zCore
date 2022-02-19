@@ -28,12 +28,13 @@ use alloc::sync::Arc;
 use core::convert::TryFrom;
 
 use kernel_hal::user::{IoVecIn, IoVecOut, UserInOutPtr, UserInPtr, UserOutPtr};
+use kernel_hal::MMUFlags;
 use linux_object::error::{LxError, SysResult};
 use linux_object::fs::FileDesc;
 use linux_object::process::{wait_child, wait_child_any, LinuxProcess, ProcessExt, RLimit};
 use zircon_object::object::{KernelObject, KoID, Signal};
 use zircon_object::task::{CurrentThread, Process, Thread, ThreadFn};
-use zircon_object::{vm::VirtAddr, ZxError};
+use zircon_object::{vm::VirtAddr, ZxError, ZxResult};
 
 use self::consts::SyscallType as Sys;
 
@@ -61,6 +62,47 @@ pub struct Syscall<'a> {
 }
 
 impl Syscall<'_> {
+    /// convert a usize num to in and out userptr
+    pub fn into_inout_userptr<T>(&self, vaddr: usize) -> ZxResult<UserInOutPtr<T>> {
+        let vmar = self.thread.proc().vmar();
+        let vaddr_flags = vmar.get_vaddr_flags(vaddr)?;
+        if !vaddr_flags.contains(MMUFlags::READ) {
+            if let Err(err) = vmar.handle_page_fault(vaddr, MMUFlags::READ) {
+                panic!("into_out_userptr handle_page_fault:  {:?}", err);
+            }
+        }
+        if !vaddr_flags.contains(MMUFlags::WRITE) {
+            if let Err(err) = vmar.handle_page_fault(vaddr, MMUFlags::WRITE) {
+                panic!("into_out_userptr handle_page_fault:  {:?}", err);
+            }
+        }
+        Ok(vaddr.into())
+    }
+
+    /// convert a usize num to in userptr
+    pub fn into_in_userptr<T>(&self, vaddr: usize) -> ZxResult<UserOutPtr<T>> {
+        let vmar = self.thread.proc().vmar();
+        let vaddr_flags = vmar.get_vaddr_flags(vaddr)?;
+        if vaddr_flags.contains(MMUFlags::READ) {
+            if let Err(err) = vmar.handle_page_fault(vaddr, MMUFlags::READ) {
+                panic!("into_out_userptr handle_page_fault:  {:?}", err);
+            }
+        }
+        Ok(vaddr.into())
+    }
+
+    /// convert a usize num to out userptr
+    pub fn into_out_userptr<T>(&self, vaddr: usize) -> ZxResult<UserOutPtr<T>> {
+        let vmar = self.thread.proc().vmar();
+        let vaddr_flags = vmar.get_vaddr_flags(vaddr)?;
+        if vaddr_flags.contains(MMUFlags::WRITE) {
+            if let Err(err) = vmar.handle_page_fault(vaddr, MMUFlags::WRITE) {
+                panic!("into_out_userptr handle_page_fault:  {:?}", err);
+            }
+        }
+        Ok(vaddr.into())
+    }
+
     /// syscall entry function
     pub async fn syscall(&mut self, num: u32, args: [usize; 6]) -> isize {
         debug!(
@@ -77,6 +119,9 @@ impl Syscall<'_> {
             }
         };
         let [a0, a1, a2, a3, a4, a5] = args;
+        // for reg in args {
+        //     self.check_addr(reg);
+        // }
         let ret = match sys_type {
             Sys::READ => self.sys_read(a0.into(), a1.into(), a2).await,
             Sys::WRITE => self.sys_write(a0.into(), a1.into(), a2),
@@ -186,7 +231,10 @@ impl Syscall<'_> {
             Sys::EXECVE => self.sys_execve(a0.into(), a1.into(), a2.into()),
             Sys::EXIT => self.sys_exit(a0 as _),
             Sys::EXIT_GROUP => self.sys_exit_group(a0 as _),
-            Sys::WAIT4 => self.sys_wait4(a0 as _, a1.into(), a2 as _).await,
+            Sys::WAIT4 => {
+                self.sys_wait4(a0 as _, self.into_out_userptr(a1).unwrap(), a2 as _)
+                    .await
+            }
             Sys::SET_TID_ADDRESS => self.sys_set_tid_address(a0.into()),
             Sys::FUTEX => self.sys_futex(a0, a1 as _, a2 as _, a3.into()).await,
             Sys::TKILL => self.unimplemented("tkill", Ok(0)),
