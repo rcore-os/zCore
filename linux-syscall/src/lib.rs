@@ -28,13 +28,14 @@ use alloc::sync::Arc;
 use core::convert::TryFrom;
 
 use kernel_hal::user::{IoVecIn, IoVecOut, UserInOutPtr, UserInPtr, UserOutPtr};
+use kernel_hal::vm::{PagingError, PagingResult};
 use kernel_hal::MMUFlags;
 use linux_object::error::{LxError, SysResult};
 use linux_object::fs::FileDesc;
 use linux_object::process::{wait_child, wait_child_any, LinuxProcess, ProcessExt, RLimit};
 use zircon_object::object::{KernelObject, KoID, Signal};
 use zircon_object::task::{CurrentThread, Process, Thread, ThreadFn};
-use zircon_object::{vm::VirtAddr, ZxError, ZxResult};
+use zircon_object::{vm::VirtAddr, ZxError};
 
 use self::consts::SyscallType as Sys;
 
@@ -62,25 +63,30 @@ pub struct Syscall<'a> {
 }
 
 impl Syscall<'_> {
-    /// convert a usize num to in and out userptr
-    pub fn into_inout_userptr<T>(&self, vaddr: usize) -> ZxResult<UserInOutPtr<T>> {
-        if 0 == vaddr {
-            return Ok(vaddr.into());
-        }
-
+    fn check_pagefault(&self, vaddr: usize, flags: MMUFlags) -> PagingResult<()> {
         let vmar = self.thread.proc().vmar();
         if !vmar.contains(vaddr) {
-            return Err(ZxError::NO_MEMORY);
+            return Err(PagingError::NoMemory);
         }
 
-        let is_handle_read_pagefault;
-        let is_handle_write_pagefault;
-        if let Ok(vaddr_flags) = vmar.get_vaddr_flags(vaddr) {
-            is_handle_read_pagefault = !vaddr_flags.contains(MMUFlags::READ);
-            is_handle_write_pagefault = !vaddr_flags.contains(MMUFlags::WRITE);
-        } else {
-            is_handle_read_pagefault = true;
-            is_handle_write_pagefault = true;
+        let mut is_handle_read_pagefault = flags.contains(MMUFlags::READ);
+        let mut is_handle_write_pagefault = flags.contains(MMUFlags::WRITE);
+
+        match vmar.get_vaddr_flags(vaddr) {
+            Ok(vaddr_flags) => {
+                is_handle_read_pagefault &= !vaddr_flags.contains(MMUFlags::READ);
+                is_handle_write_pagefault &= !vaddr_flags.contains(MMUFlags::WRITE);
+            }
+            Err(PagingError::NotMapped) => {
+                is_handle_read_pagefault &= true;
+                is_handle_write_pagefault &= true;
+            }
+            Err(PagingError::NoMemory) => {
+                return Err(PagingError::NoMemory);
+            }
+            Err(PagingError::AlreadyMapped) => {
+                panic!("get_vaddr_flags error!!!");
+            }
         }
 
         if is_handle_read_pagefault {
@@ -94,67 +100,37 @@ impl Syscall<'_> {
                 panic!("into_out_userptr handle_page_fault:  {:?}", err);
             }
         }
+        Ok(())
+    }
+
+    /// convert a usize num to in and out userptr
+    pub fn into_inout_userptr<T>(&self, vaddr: usize) -> PagingResult<UserInOutPtr<T>> {
+        if 0 == vaddr {
+            return Ok(vaddr.into());
+        }
+
+        let access_flags = MMUFlags::READ | MMUFlags::WRITE;
+        self.check_pagefault(vaddr, access_flags)?;
         Ok(vaddr.into())
     }
 
     /// convert a usize num to in userptr
-    pub fn into_in_userptr<T>(&self, vaddr: usize) -> ZxResult<UserInPtr<T>> {
+    pub fn into_in_userptr<T>(&self, vaddr: usize) -> PagingResult<UserInPtr<T>> {
         if 0 == vaddr {
             return Ok(vaddr.into());
         }
 
-        let vmar = self.thread.proc().vmar();
-        if !vmar.contains(vaddr) {
-            return Err(ZxError::NO_MEMORY);
-        }
-
-        let is_handle_read_pagefault;
-        if let Ok(vaddr_flags) = vmar.get_vaddr_flags(vaddr) {
-            is_handle_read_pagefault = !vaddr_flags.contains(MMUFlags::READ);
-        } else {
-            is_handle_read_pagefault = true;
-        }
-
-        if is_handle_read_pagefault {
-            error!("handle read pagefault");
-            if let Err(err) = vmar.handle_page_fault(vaddr, MMUFlags::READ) {
-                panic!("into_out_userptr handle_page_fault:  {:?}", err);
-            }
-        }
+        self.check_pagefault(vaddr, MMUFlags::READ)?;
         Ok(vaddr.into())
     }
 
     /// convert a usize num to out userptr
-    pub fn into_out_userptr<T>(&self, vaddr: usize) -> ZxResult<UserOutPtr<T>> {
+    pub fn into_out_userptr<T>(&self, vaddr: usize) -> PagingResult<UserOutPtr<T>> {
         if 0 == vaddr {
             return Ok(vaddr.into());
         }
 
-        let vmar = self.thread.proc().vmar();
-        if !vmar.contains(vaddr) {
-            return Err(ZxError::NO_MEMORY);
-        }
-
-        let is_handle_write_pagefault;
-        if let Ok(vaddr_flags) = vmar.get_vaddr_flags(vaddr) {
-            is_handle_write_pagefault = !vaddr_flags.contains(MMUFlags::WRITE);
-        } else {
-            is_handle_write_pagefault = true;
-        }
-
-        if is_handle_write_pagefault {
-            if let Err(err) = vmar.handle_page_fault(vaddr, MMUFlags::WRITE) {
-                panic!(
-                    "into_out_userptr handle_page_fault:  {:?} vaddr={}",
-                    err, vaddr
-                );
-            }
-        }
-        let f = vmar.get_vaddr_flags(vaddr).unwrap();
-        // warn!("vaddr={:x} flags={:?} before={:?}", vaddr, f, before_flags);
-        if !f.contains(MMUFlags::WRITE) {
-            panic!("handle pagefault error");
-        }
+        self.check_pagefault(vaddr, MMUFlags::WRITE)?;
         Ok(vaddr.into())
     }
 
@@ -174,9 +150,6 @@ impl Syscall<'_> {
             }
         };
         let [a0, a1, a2, a3, a4, a5] = args;
-        // for reg in args {
-        //     self.check_addr(reg);
-        // }
         let ret = match sys_type {
             Sys::READ => {
                 self.sys_read(a0.into(), self.into_out_userptr(a1).unwrap(), a2)

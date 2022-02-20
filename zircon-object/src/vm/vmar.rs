@@ -403,22 +403,19 @@ impl VmAddressRegion {
     }
 
     /// get flags of vaddr
-    pub fn get_vaddr_flags(&self, vaddr: usize) -> ZxResult<MMUFlags> {
+    pub fn get_vaddr_flags(&self, vaddr: usize) -> PagingResult<MMUFlags> {
         let guard = self.inner.lock();
         let inner = guard.as_ref().unwrap();
         if !self.contains(vaddr) {
-            return Err(ZxError::NOT_FOUND);
+            return Err(PagingError::NoMemory);
         }
         if let Some(child) = inner.children.iter().find(|ch| ch.contains(vaddr)) {
             return child.get_vaddr_flags(vaddr);
         }
         if let Some(mapping) = inner.mappings.iter().find(|map| map.contains(vaddr)) {
-            if let Ok((_, flags, _)) = mapping.query_vaddr(vaddr) {
-                return Ok(flags);
-            }
-            return Err(ZxError::INTERNAL);
+            return mapping.query_vaddr(vaddr).map(|(_, flags, _)| flags);
         }
-        Err(ZxError::NO_MEMORY)
+        return Err(PagingError::NoMemory);
     }
 
     /// Determine final address with given input `offset` and `len`.
