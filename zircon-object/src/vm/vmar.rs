@@ -415,7 +415,7 @@ impl VmAddressRegion {
         if let Some(mapping) = inner.mappings.iter().find(|map| map.contains(vaddr)) {
             return mapping.query_vaddr(vaddr).map(|(_, flags, _)| flags);
         }
-        return Err(PagingError::NoMemory);
+        Err(PagingError::NoMemory)
     }
 
     /// Determine final address with given input `offset` and `len`.

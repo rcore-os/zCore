@@ -28,7 +28,9 @@ use alloc::sync::Arc;
 use core::convert::TryFrom;
 
 use kernel_hal::user::{IoVecIn, IoVecOut, UserInOutPtr, UserInPtr, UserOutPtr};
-use kernel_hal::vm::{PagingError, PagingResult};
+#[cfg(target_os = "none")]
+use kernel_hal::vm::PagingError;
+use kernel_hal::vm::PagingResult;
 use kernel_hal::MMUFlags;
 use linux_object::error::{LxError, SysResult};
 use linux_object::fs::FileDesc;
@@ -63,6 +65,12 @@ pub struct Syscall<'a> {
 }
 
 impl Syscall<'_> {
+    #[cfg(not(target_os = "none"))]
+    fn check_pagefault(&self, _vaddr: usize, _flags: MMUFlags) -> PagingResult<()> {
+        Ok(())
+    }
+
+    #[cfg(target_os = "none")]
     fn check_pagefault(&self, vaddr: usize, flags: MMUFlags) -> PagingResult<()> {
         let vmar = self.thread.proc().vmar();
         if !vmar.contains(vaddr) {
@@ -82,6 +90,7 @@ impl Syscall<'_> {
                 is_handle_write_pagefault &= true;
             }
             Err(PagingError::NoMemory) => {
+                warn!("check_pagefault: vaddr(0x{:x}) NoMemory", vaddr);
                 return Err(PagingError::NoMemory);
             }
             Err(PagingError::AlreadyMapped) => {
