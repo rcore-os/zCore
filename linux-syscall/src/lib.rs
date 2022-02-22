@@ -389,8 +389,7 @@ impl Syscall<'_> {
             Sys::SET_TID_ADDRESS => self.sys_set_tid_address(self.into_out_userptr(a0).unwrap()),
             Sys::FUTEX => {
                 // ignore timeout argument when op is wake
-                self.sys_futex(a0, a1 as _, a2 as _, a3)
-                    .await
+                self.sys_futex(a0, a1 as _, a2 as _, a3).await
             }
             Sys::TKILL => self.unimplemented("tkill", Ok(0)),
 
