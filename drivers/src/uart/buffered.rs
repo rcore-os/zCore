@@ -1,6 +1,7 @@
 use alloc::{boxed::Box, collections::VecDeque, string::String, sync::Arc};
 
-use spin::Mutex;
+// use spin::Mutex;
+use lock::spinlock::Mutex;
 
 use crate::scheme::{impl_event_scheme, Scheme, UartScheme};
 use crate::utils::EventListener;

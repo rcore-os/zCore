@@ -10,7 +10,8 @@ use core::{
     task::{Context, Poll},
 };
 use rcore_fs::vfs::*;
-use spin::Mutex;
+// use spin::Mutex;
+use lock::spinlock::Mutex;
 
 #[derive(Clone, PartialEq)]
 #[allow(dead_code)]

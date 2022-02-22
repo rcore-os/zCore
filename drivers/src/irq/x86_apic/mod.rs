@@ -4,7 +4,8 @@ mod lapic;
 
 use core::ops::Range;
 
-use spin::Mutex;
+// use spin::Mutex;
+use lock::spinlock::Mutex;
 
 use self::consts::{X86_INT_BASE, X86_INT_LOCAL_APIC_BASE};
 use self::ioapic::{IoApic, IoApicList};

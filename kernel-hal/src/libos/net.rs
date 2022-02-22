@@ -11,7 +11,8 @@ use alloc::vec::Vec;
 use alloc::sync::Arc;
 
 use alloc::string::String;
-use spin::Mutex;
+// use spin::Mutex;
+use lock::spinlock::Mutex;
 
 use crate::drivers::add_device;
 use crate::drivers::all_net;

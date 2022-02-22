@@ -1,4 +1,5 @@
-use spin::Mutex;
+// use spin::Mutex;
+use lock::spinlock::Mutex;
 use virtio_drivers::{VirtIOGpu as InnerDriver, VirtIOHeader};
 
 use crate::prelude::{ColorFormat, DisplayInfo, FrameBuffer};

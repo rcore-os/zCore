@@ -16,7 +16,8 @@ use alloc::{boxed::Box, vec::Vec};
 use kernel_hal::interrupt;
 use numeric_enum_macro::numeric_enum;
 use region_alloc::RegionAllocator;
-use spin::{Mutex, MutexGuard};
+// use spin::{Mutex, MutexGuard};
+use lock::spinlock::{Mutex, MutexGuard};
 
 numeric_enum! {
     #[repr(u8)]

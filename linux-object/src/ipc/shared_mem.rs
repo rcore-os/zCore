@@ -4,7 +4,8 @@ use crate::error::LxError;
 use crate::time::TimeSpec;
 use alloc::{collections::BTreeMap, sync::Arc, sync::Weak};
 use lazy_static::lazy_static;
-use spin::Mutex;
+// use spin::Mutex;
+use lock::spinlock::Mutex;
 use spin::RwLock;
 use zircon_object::vm::*;
 

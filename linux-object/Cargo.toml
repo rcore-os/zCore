@@ -11,6 +11,7 @@ description = "Linux kernel objects"
 async-trait = "0.1"
 log = "0.4"
 spin = "0.9"
+lock = { path = "../lock" }
 xmas-elf = "0.7"
 bitflags = "1.3"
 hashbrown = "0.9"

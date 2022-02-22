@@ -5,7 +5,8 @@ use crate::signal::{SignalStack, Sigset};
 use alloc::sync::Arc;
 use kernel_hal::user::{Out, UserOutPtr, UserPtr};
 use kernel_hal::VirtAddr;
-use spin::{Mutex, MutexGuard};
+// use spin::{Mutex, MutexGuard};
+use lock::spinlock::{Mutex, MutexGuard};
 use zircon_object::task::{CurrentThread, Process, Thread};
 use zircon_object::ZxResult;
 

@@ -12,7 +12,8 @@ use crate::net::Socket;
 use hashbrown::HashMap;
 use rcore_fs::vfs::{FileSystem, INode};
 use smoltcp::socket::SocketHandle;
-use spin::{Mutex, MutexGuard};
+// use spin::{Mutex, MutexGuard};
+use lock::spinlock::{Mutex, MutexGuard};
 
 use kernel_hal::VirtAddr;
 use zircon_object::{

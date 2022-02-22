@@ -55,7 +55,7 @@
 //! ```
 //! use zircon_object::object::*;
 //! use std::sync::Arc;
-//! use spin::Mutex;
+//! use lock::spinlock::Mutex;
 //!
 //! pub struct SampleObject {
 //!     base: KObjectBase,

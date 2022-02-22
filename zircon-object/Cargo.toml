@@ -15,6 +15,7 @@ elf = ["xmas-elf"]
 [dependencies]
 bitflags = "1.3"
 spin = "0.9"
+lock = { path = "../lock" }
 log = "0.4"
 hashbrown = "0.9"
 downcast-rs = { version = "1.2", default-features = false }

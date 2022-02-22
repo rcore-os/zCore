@@ -13,7 +13,8 @@ use core::task::{Context, Poll};
 use kernel_hal::console::{self, ConsoleWinSize};
 use lazy_static::lazy_static;
 use rcore_fs::vfs::*;
-use spin::Mutex;
+// use spin::Mutex;
+use lock::spinlock::Mutex;
 
 lazy_static! {
     /// STDIN global reference

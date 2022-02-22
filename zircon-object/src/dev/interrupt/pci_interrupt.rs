@@ -1,5 +1,6 @@
 use alloc::{boxed::Box, sync::Arc};
-use spin::Mutex;
+// use spin::Mutex;
+use lock::spinlock::Mutex;
 
 use super::InterruptTrait;
 use crate::dev::pci::{constants::PCIE_IRQRET_MASK, IPciNode};

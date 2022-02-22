@@ -6,6 +6,9 @@ use core::{fmt::Debug, marker::PhantomData, slice};
 use crate::common::vm::*;
 use crate::{mem::PhysFrame, MMUFlags, PhysAddr, VirtAddr};
 
+// use spin::Mutex;
+use lock::spinlock::Mutex;
+
 pub trait PageTableLevel: Sync + Send {
     const LEVEL: usize;
 }
@@ -150,7 +153,7 @@ impl<L: PageTableLevel, PTE: GenericPTE> PageTableImpl<L, PTE> {
     }
 
     fn dump(&self, limit: usize, print_fn: impl Fn(core::fmt::Arguments)) {
-        static LOCK: spin::Mutex<()> = spin::Mutex::new(());
+        static LOCK: Mutex<()> = Mutex::new(());
         let _lock = LOCK.lock();
 
         print_fn(format_args!("Root: {:x?}\n", self.table_phys()));

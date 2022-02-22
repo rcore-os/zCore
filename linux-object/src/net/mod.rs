@@ -13,7 +13,8 @@ pub use tcp::*;
 pub mod udp;
 pub use udp::*;
 
-use spin::Mutex;
+// use spin::Mutex;
+use lock::spinlock::Mutex;
 /// missing documentation
 // pub mod raw;
 // pub use raw::*;

@@ -1,7 +1,8 @@
 use std::collections::VecDeque;
 
 use async_std::{io, io::prelude::*, task};
-use spin::Mutex;
+// use spin::Mutex;
+use lock::spinlock::Mutex;
 
 use crate::scheme::{impl_event_scheme, Scheme, UartScheme};
 use crate::utils::EventListener;

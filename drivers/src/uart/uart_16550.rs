@@ -2,7 +2,8 @@ use core::convert::TryInto;
 use core::ops::{BitAnd, BitOr, Not};
 
 use bitflags::bitflags;
-use spin::Mutex;
+// use spin::Mutex;
+use lock::spinlock::Mutex;
 
 use crate::io::{Io, Mmio, ReadOnly};
 use crate::scheme::{impl_event_scheme, Scheme, UartScheme};

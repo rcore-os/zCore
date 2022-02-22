@@ -16,6 +16,7 @@ graphic = ["zcore-drivers/graphic"]
 [dependencies]
 log = "0.4"
 spin = "0.9"
+lock = { path = "../lock" }
 cfg-if = "1.0"
 bitflags = "1.3"
 trapframe = "0.8.0"
