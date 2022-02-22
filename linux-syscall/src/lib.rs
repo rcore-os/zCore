@@ -90,7 +90,7 @@ impl Syscall<'_> {
                 is_handle_write_pagefault &= true;
             }
             Err(PagingError::NoMemory) => {
-                warn!("check_pagefault: vaddr(0x{:x}) NoMemory", vaddr);
+                error!("check_pagefault: vaddr(0x{:x}) NoMemory", vaddr);
                 return Err(PagingError::NoMemory);
             }
             Err(PagingError::AlreadyMapped) => {
@@ -388,7 +388,8 @@ impl Syscall<'_> {
             }
             Sys::SET_TID_ADDRESS => self.sys_set_tid_address(self.into_out_userptr(a0).unwrap()),
             Sys::FUTEX => {
-                self.sys_futex(a0, a1 as _, a2 as _, self.into_in_userptr(a3).unwrap())
+                // ignore timeout argument when op is wake
+                self.sys_futex(a0, a1 as _, a2 as _, a3)
                     .await
             }
             Sys::TKILL => self.unimplemented("tkill", Ok(0)),
