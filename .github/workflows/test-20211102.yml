@@ -4,7 +4,7 @@ on:
   push:
   pull_request:
   schedule:
-    - cron: '40 3 * * *'  # every day at 3:40
+    - cron: '0 22 * * *'  # every day at 22:00 UTC
 
 jobs:
   test:
@@ -43,8 +43,29 @@ jobs:
       - name: Run benchmarks
         run: cargo bench
 
-  core-test:
+  zircon-core-test-libos:
     runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: 'recursive'
+      - name: Pull prebuilt images
+        run: git lfs pull -I prebuilt/zircon/x64/core-tests.zbi,prebuilt/zircon/x64/libzircon-libos.so,prebuilt/zircon/x64/userboot-libos.so
+      - name: Install dependencies
+        run: pip3 install -r tests/requirements.txt
+      - name: Run fast tests
+        if: github.event_name != 'schedule'
+        run: cd tests && python3 zircon_core_test.py --libos --fast
+      - name: Run full tests
+        if: github.event_name == 'schedule'
+        run: cd tests && python3 zircon_core_test.py --libos
+
+  zircon-core-test-baremetal:
+    runs-on: ubuntu-20.04
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x86_64]
     steps:
       - uses: actions/checkout@v2
         with:
@@ -56,108 +77,101 @@ jobs:
           profile: minimal
           toolchain: nightly-2021-11-02
           components: rust-src
-      - name: Install QEMU
-        run: |
-          sudo apt update
-          sudo apt install qemu-system-x86
-      - name: Build zCore
-        run: cd zCore && make build MODE=release
-      - name: Run core-tests
-        run: |
-          cd scripts
-          pip3 install -r requirements.txt
-          python3 core-tests.py
-
-  libos-core-test:
-    runs-on: ubuntu-20.04
-    steps:
-      - uses: actions/checkout@v2
-      - name: Pull prebuilt images
-        run: git lfs pull -I prebuilt/zircon/x64/core-tests.zbi,prebuilt/zircon/x64/libzircon-libos.so,prebuilt/zircon/x64/userboot-libos.so
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: nightly-2021-11-02
-          components: rust-src
-      - name: Run libos-core-tests
-        run: |
-          cd scripts
-          pip3 install -r requirements.txt
-          python3 unix-core-tests.py
-
-  libos-libc-test:
-    runs-on: ubuntu-20.04
-    steps:
-      - uses: actions/checkout@v2
-      - name: Pull prebuilt images
-        run: git lfs pull -I prebuilt/linux/libc-libos.so
-      - name: Install musl toolchain
-        run: sudo apt-get install musl-tools musl-dev -y
-      - name: Prepare rootfs and libc-test
-        run: make rootfs && make libc-test
-      - name: Run libos-libc-tests
-        run: |
-          cd scripts
-          pip3 install -r requirements.txt
-          python3 libos-libc-tests.py
-          cat linux/test-result.txt
-
-  baremetal-libc-test:
-    runs-on: ubuntu-20.04
-    steps:
-      - uses: actions/checkout@v2
-        with:
-          submodules: 'recursive'
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: nightly-2021-11-02
-          components: rust-src
-      - name: Pull prebuilt images
-        run: git lfs pull -I prebuilt/linux/libc-libos.so
-      - name: Install musl toolchain qemu-system-x86
+      - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install musl-tools musl-dev qemu-system-x86 -y
-      - name: Prepare rootfs and libc-test
-        run: make baremetal-test-img
-      - name: Build kernel
-        run: cd zCore && make build MODE=release LINUX=1 ARCH=x86_64
-      - name: create qemu disk
-        run: cd zCore && make baremetal-qemu-disk MODE=release LINUX=1 ARCH=x86_64
-      - name: Run baremetal-libc-test
+          sudo apt-get install ninja-build -y
+          pip3 install -r tests/requirements.txt
+      - name: Cache QEMU
+        uses: actions/cache@v1
+        with:
+          path: qemu-6.1.0
+          key: qemu-6.1.0-${{ matrix.arch }}
+      - name: Install QEMU
         run: |
-          cd scripts
-          python3 ./baremetal-libc-test.py
+          [ ! -d qemu-6.1.0 ] && wget https://download.qemu.org/qemu-6.1.0.tar.xz \
+            && tar xJf qemu-6.1.0.tar.xz > /dev/null \
+            && cd qemu-6.1.0 && ./configure --target-list=${{ matrix.arch }}-softmmu && cd ..
+          cd qemu-6.1.0 && sudo make install -j
+          qemu-system-${{ matrix.arch }} --version
+      - name: Run fast tests
+        if: github.event_name != 'schedule'
+        run: cd tests && python3 zircon_core_test.py --fast
+      - name: Run full tests
+        if: github.event_name == 'schedule'
+        run: cd tests && python3 zircon_core_test.py
 
-  baremetal-rv64-oscomp-test:
+  linux-libc-test-libos:
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v2
         with:
           submodules: 'recursive'
+      - name: Pull prebuilt images
+        run: git lfs pull -I prebuilt/linux/libc-libos.so
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install musl-tools musl-dev -y
+          pip3 install -r tests/requirements.txt
+      - name: Prepare rootfs
+        run: make rootfs && make libc-test
+      - name: Run fast tests
+        if: github.event_name != 'schedule'
+        run: cd tests && python3 linux_libc_test.py --libos --fast
+      - name: Run full tests
+        if: github.event_name == 'schedule'
+        run: cd tests && python3 linux_libc_test.py --libos
+
+  linux-libc-test-baremetal:
+    runs-on: ubuntu-20.04
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x86_64, riscv64]
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: 'recursive'
+      - name: Pull prebuilt images
+        run: git lfs pull -I prebuilt/linux/libc-libos.so
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
           toolchain: nightly-2021-11-02
           components: rust-src, llvm-tools-preview
-      - uses: actions-rs/install@v0.1
+      - if: matrix.arch == 'riscv64'
+        uses: actions-rs/install@v0.1
         with:
           crate: cargo-binutils
           version: latest
-      - name: Install cargo tools and qemu-system-riscv64
+      - name: Install dependencies
         run: |
-          sudo apt update
-          sudo apt install qemu-utils
-          wget https://github.com/rcore-os/qemu-prebuilt/releases/download/5.2.0-riscv64/qemu-system-riscv64.tar.xz > /dev/null
-          tar xJf qemu-system-riscv64.tar.xz && sudo cp qemu-system-riscv64 /usr/local/bin
-          wget https://github.com/rcore-os/qemu-prebuilt/releases/download/qemu-share/qemu-share.tar.xz > /dev/null
-          tar xJf qemu-share.tar.xz && sudo cp -r qemu /usr/local/share/
-      - name: Prepare rootfs and oscomp
-        run: make riscv-image
-      - name: Build kernel
-        run: cd zCore && make build MODE=release LINUX=1 ARCH=riscv64
-      - name: Run baremetal-libc-test
+          sudo apt-get update
+          sudo apt-get install musl-tools musl-dev ninja-build -y
+          pip3 install -r tests/requirements.txt
+      - name: Cache QEMU
+        uses: actions/cache@v1
+        with:
+          path: qemu-6.1.0
+          key: qemu-6.1.0-${{ matrix.arch }}
+      - name: Install QEMU
         run: |
-          cd scripts
-          python3 baremetal-test-riscv64.py
+          [ ! -d qemu-6.1.0 ] && wget https://download.qemu.org/qemu-6.1.0.tar.xz \
+            && tar xJf qemu-6.1.0.tar.xz > /dev/null \
+            && cd qemu-6.1.0 && ./configure --target-list=${{ matrix.arch }}-softmmu && cd ..
+          cd qemu-6.1.0 && sudo make install -j
+          qemu-system-${{ matrix.arch }} --version
+      - name: Prepare rootfs
+        run: |
+          if [ "${{ matrix.arch }}" = "x86_64" ]; then
+            make baremetal-test-img
+          elif [ "${{ matrix.arch }}" = "riscv64" ]; then
+            make riscv-image
+          fi
+      - name: Run fast tests
+        if: github.event_name != 'schedule'
+        run: cd tests && python3 linux_libc_test.py --arch ${{ matrix.arch }} --fast
+      - name: Run full tests
+        if: github.event_name == 'schedule'
+        run: cd tests && python3 linux_libc_test.py --arch ${{ matrix.arch }}
