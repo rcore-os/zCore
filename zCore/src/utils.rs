@@ -39,11 +39,13 @@ pub fn boot_options() -> BootOptions {
                 std::process::exit(-1);
             }
 
-            let log_level = std::env::var("LOG").unwrap_or_default();
-            let cmdline = if cfg!(feature = "zircon") {
-                args.get(2).cloned().unwrap_or_default()
+            let (cmdline, log_level) = if cfg!(feature = "zircon") {
+                let cmdline = args.get(2).cloned().unwrap_or_default();
+                let options = parse_cmdline(&cmdline);
+                let log_level = String::from(*options.get("LOG").unwrap_or(&""));
+                (cmdline, log_level)
             } else {
-                String::new()
+                (String::new(), std::env::var("LOG").unwrap_or_default())
             };
             BootOptions {
                 cmdline,
@@ -89,10 +91,10 @@ pub fn wait_for_exit(proc: Option<Arc<Process>>) -> ! {
         let future = async move {
             use zircon_object::object::Signal;
             let object: Arc<dyn KernelObject> = proc.clone();
-            let signal = if cfg!(feature = "zircon") {
-                Signal::USER_SIGNAL_0
-            } else {
+            let signal = if cfg!(any(feature = "linux", feature = "baremetal-test")) {
                 Signal::PROCESS_TERMINATED
+            } else {
+                Signal::USER_SIGNAL_0
             };
             object.wait_signal(signal).await;
             check_exit_code(proc)
@@ -120,9 +122,6 @@ pub fn wait_for_exit(proc: Option<Arc<Process>>) -> ! {
         let has_task = executor::run_until_idle();
         if cfg!(feature = "baremetal-test") && !has_task {
             proc.map(check_exit_code);
-            // if let Some(p) = proc {
-            //     check_exit_code(p);
-            // }
             kernel_hal::cpu::reset();
         }
         kernel_hal::interrupt::wait_for_interrupt();
