@@ -170,6 +170,25 @@ pub fn init_driver(dev: &PCIDevice) {
                 return;
             }
         }
+        (0x8086, 0x1539) => {
+            if let Some(BAR::Memory(addr, len, _, _)) = dev.bars[0] {
+                info!(
+                    "Found Intel I211 ethernet controller dev {:?}, addr: {:x?}",
+                    dev, addr
+                );
+                /*
+                let irq = unsafe { enable(dev.loc) };
+                let vaddr = phys_to_virt(addr as usize);
+                info!("Found ixgbe dev {:#x}, irq: {:?}", vaddr, irq);
+                let index = NET_DRIVERS.read().len();
+                PCI_DRIVERS.lock().insert(
+                    dev.loc,
+                    ixgbe::ixgbe_init(name, irq, vaddr, len as usize, index),
+                );
+                */
+                return;
+            }
+        }
         _ => {}
     }
     if dev.id.class == 0x01 && dev.id.subclass == 0x06 {
