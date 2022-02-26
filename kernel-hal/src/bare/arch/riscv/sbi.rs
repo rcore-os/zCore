@@ -32,7 +32,7 @@ pub const SBI_ERR_ALREADY_STOPPED: usize = usize::MAX - 7; // -8
 fn sbi_call(eid: usize, fid: usize, arg0: usize, arg1: usize, arg2: usize) -> usize {
     let ret;
     unsafe {
-        asm!("ecall",
+        core::arch::asm!("ecall",
             in("a0") arg0,
             in("a1") arg1,
             in("a2") arg2,

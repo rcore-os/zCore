@@ -1,3 +1,5 @@
+use core::arch::global_asm;
+
 #[cfg(feature = "board-qemu")]
 global_asm!(include_str!("boot/boot_qemu.asm"));
 #[cfg(feature = "board-d1")]

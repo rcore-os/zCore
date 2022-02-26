@@ -1,5 +1,4 @@
 #![cfg_attr(not(feature = "mock"), no_std)]
-#![feature(asm)]
 #![feature(doc_cfg)]
 
 extern crate alloc;
