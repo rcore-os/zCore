@@ -77,16 +77,15 @@ impl Syscall<'_> {
         timeout_addr: usize,
     ) -> SysResult {
         let op = FutexFlags::from_bits_truncate(op);
-        let timeout;
-        if op.contains(FutexFlags::WAKE) {
-            timeout = self.into_inout_userptr::<TimeSpec>(0).unwrap();
+        let timeout = if op.contains(FutexFlags::WAKE) {
+            self.into_inout_userptr::<TimeSpec>(0).unwrap()
         } else {
             let timeout_result = self.into_inout_userptr::<TimeSpec>(timeout_addr);
-            timeout = match timeout_result {
+            match timeout_result {
                 Ok(t) => t,
                 Err(_e) => return Err(LxError::EACCES),
             }
-        }
+        };
         info!(
             "futex: uaddr: {:#x}, op: {:?}, val: {}, timeout_ptr: {:?}",
             uaddr, op, val, timeout
