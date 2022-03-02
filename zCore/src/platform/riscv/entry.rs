@@ -1,5 +1,3 @@
-use core::arch::global_asm;
-
 #[cfg(feature = "board-qemu")]
 global_asm!(
     include_str!("boot/boot_qemu.asm"),
@@ -13,6 +11,7 @@ global_asm!(
 );
 
 use super::consts::*;
+use core::arch::{asm, global_asm};
 use core::str::FromStr;
 use kernel_hal::arch::sbi::{hart_start, send_ipi, SBI_SUCCESS};
 use kernel_hal::KernelConfig;

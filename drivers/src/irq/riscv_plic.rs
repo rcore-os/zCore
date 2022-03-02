@@ -1,5 +1,5 @@
 use core::ops::Range;
-
+use core::arch::asm;
 use spin::Mutex;
 
 use crate::io::{Io, Mmio};
