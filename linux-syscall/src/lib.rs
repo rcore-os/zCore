@@ -28,6 +28,10 @@ use alloc::sync::Arc;
 use core::convert::TryFrom;
 
 use kernel_hal::user::{IoVecIn, IoVecOut, UserInOutPtr, UserInPtr, UserOutPtr};
+#[cfg(target_os = "none")]
+use kernel_hal::vm::PagingError;
+use kernel_hal::vm::PagingResult;
+use kernel_hal::MMUFlags;
 use linux_object::error::{LxError, SysResult};
 use linux_object::fs::FileDesc;
 use linux_object::process::{wait_child, wait_child_any, LinuxProcess, ProcessExt, RLimit};
@@ -61,9 +65,87 @@ pub struct Syscall<'a> {
 }
 
 impl Syscall<'_> {
+    #[cfg(not(target_os = "none"))]
+    fn check_pagefault(&self, _vaddr: usize, _flags: MMUFlags) -> PagingResult<()> {
+        Ok(())
+    }
+
+    #[cfg(target_os = "none")]
+    fn check_pagefault(&self, vaddr: usize, flags: MMUFlags) -> PagingResult<()> {
+        let vmar = self.thread.proc().vmar();
+        if !vmar.contains(vaddr) {
+            return Err(PagingError::NoMemory);
+        }
+
+        let mut is_handle_read_pagefault = flags.contains(MMUFlags::READ);
+        let mut is_handle_write_pagefault = flags.contains(MMUFlags::WRITE);
+
+        match vmar.get_vaddr_flags(vaddr) {
+            Ok(vaddr_flags) => {
+                is_handle_read_pagefault &= !vaddr_flags.contains(MMUFlags::READ);
+                is_handle_write_pagefault &= !vaddr_flags.contains(MMUFlags::WRITE);
+            }
+            Err(PagingError::NotMapped) => {
+                is_handle_read_pagefault &= true;
+                is_handle_write_pagefault &= true;
+            }
+            Err(PagingError::NoMemory) => {
+                error!("check_pagefault: vaddr(0x{:x}) NoMemory", vaddr);
+                return Err(PagingError::NoMemory);
+            }
+            Err(PagingError::AlreadyMapped) => {
+                panic!("get_vaddr_flags error!!!");
+            }
+        }
+
+        if is_handle_read_pagefault {
+            if let Err(err) = vmar.handle_page_fault(vaddr, MMUFlags::READ) {
+                panic!("into_out_userptr handle_page_fault:  {:?}", err);
+            }
+        }
+
+        if is_handle_write_pagefault {
+            if let Err(err) = vmar.handle_page_fault(vaddr, MMUFlags::WRITE) {
+                panic!("into_out_userptr handle_page_fault:  {:?}", err);
+            }
+        }
+        Ok(())
+    }
+
+    /// convert a usize num to in and out userptr
+    pub fn into_inout_userptr<T>(&self, vaddr: usize) -> PagingResult<UserInOutPtr<T>> {
+        if 0 == vaddr {
+            return Ok(vaddr.into());
+        }
+
+        let access_flags = MMUFlags::READ | MMUFlags::WRITE;
+        self.check_pagefault(vaddr, access_flags)?;
+        Ok(vaddr.into())
+    }
+
+    /// convert a usize num to in userptr
+    pub fn into_in_userptr<T>(&self, vaddr: usize) -> PagingResult<UserInPtr<T>> {
+        if 0 == vaddr {
+            return Ok(vaddr.into());
+        }
+
+        self.check_pagefault(vaddr, MMUFlags::READ)?;
+        Ok(vaddr.into())
+    }
+
+    /// convert a usize num to out userptr
+    pub fn into_out_userptr<T>(&self, vaddr: usize) -> PagingResult<UserOutPtr<T>> {
+        if 0 == vaddr {
+            return Ok(vaddr.into());
+        }
+
+        self.check_pagefault(vaddr, MMUFlags::WRITE)?;
+        Ok(vaddr.into())
+    }
+
     /// syscall entry function
     pub async fn syscall(&mut self, num: u32, args: [usize; 6]) -> isize {
-        debug!(
+        trace!(
             "pid: {} syscall: num={}, args={:x?}",
             self.zircon_process().id(),
             num,
@@ -78,54 +160,121 @@ impl Syscall<'_> {
         };
         let [a0, a1, a2, a3, a4, a5] = args;
         let ret = match sys_type {
-            Sys::READ => self.sys_read(a0.into(), a1.into(), a2).await,
-            Sys::WRITE => self.sys_write(a0.into(), a1.into(), a2),
-            Sys::OPENAT => self.sys_openat(a0.into(), a1.into(), a2, a3),
+            Sys::READ => {
+                self.sys_read(a0.into(), self.into_out_userptr(a1).unwrap(), a2)
+                    .await
+            }
+            Sys::WRITE => self.sys_write(a0.into(), self.into_in_userptr(a1).unwrap(), a2),
+            Sys::OPENAT => self.sys_openat(a0.into(), self.into_in_userptr(a1).unwrap(), a2, a3),
             Sys::CLOSE => self.sys_close(a0.into()),
-            Sys::FSTAT => self.sys_fstat(a0.into(), a1.into()),
-            Sys::NEWFSTATAT => self.sys_fstatat(a0.into(), a1.into(), a2.into(), a3),
+            Sys::FSTAT => self.sys_fstat(a0.into(), self.into_out_userptr(a1).unwrap()),
+            Sys::NEWFSTATAT => self.sys_fstatat(
+                a0.into(),
+                self.into_in_userptr(a1).unwrap(),
+                self.into_out_userptr(a2).unwrap(),
+                a3,
+            ),
             Sys::LSEEK => self.sys_lseek(a0.into(), a1 as i64, a2 as u8),
             Sys::IOCTL => self.sys_ioctl(a0.into(), a1, a2, a3, a4),
-            Sys::PREAD64 => self.sys_pread(a0.into(), a1.into(), a2, a3 as _).await,
-            Sys::PWRITE64 => self.sys_pwrite(a0.into(), a1.into(), a2, a3 as _),
-            Sys::READV => self.sys_readv(a0.into(), a1.into(), a2).await,
-            Sys::WRITEV => self.sys_writev(a0.into(), a1.into(), a2),
-            Sys::SENDFILE => self.sys_sendfile(a0.into(), a1.into(), a2.into(), a3).await,
+            Sys::PREAD64 => {
+                self.sys_pread(a0.into(), self.into_out_userptr(a1).unwrap(), a2, a3 as _)
+                    .await
+            }
+            Sys::PWRITE64 => {
+                self.sys_pwrite(a0.into(), self.into_in_userptr(a1).unwrap(), a2, a3 as _)
+            }
+            Sys::READV => {
+                self.sys_readv(a0.into(), self.into_in_userptr(a1).unwrap(), a2)
+                    .await
+            }
+            Sys::WRITEV => self.sys_writev(a0.into(), self.into_in_userptr(a1).unwrap(), a2),
+            Sys::SENDFILE => {
+                self.sys_sendfile(
+                    a0.into(),
+                    a1.into(),
+                    self.into_inout_userptr(a2).unwrap(),
+                    a3,
+                )
+                .await
+            }
             Sys::FCNTL => self.sys_fcntl(a0.into(), a1, a2),
             Sys::FLOCK => self.sys_flock(a0.into(), a1),
             Sys::FSYNC => self.sys_fsync(a0.into()),
             Sys::FDATASYNC => self.sys_fdatasync(a0.into()),
-            Sys::TRUNCATE => self.sys_truncate(a0.into(), a1),
+            Sys::TRUNCATE => self.sys_truncate(self.into_in_userptr(a0).unwrap(), a1),
             Sys::FTRUNCATE => self.sys_ftruncate(a0.into(), a1),
-            Sys::GETDENTS64 => self.sys_getdents64(a0.into(), a1.into(), a2),
-            Sys::GETCWD => self.sys_getcwd(a0.into(), a1),
-            Sys::CHDIR => self.sys_chdir(a0.into()),
-            Sys::RENAMEAT => self.sys_renameat(a0.into(), a1.into(), a2.into(), a3.into()),
-            Sys::MKDIRAT => self.sys_mkdirat(a0.into(), a1.into(), a2),
-            Sys::LINKAT => self.sys_linkat(a0.into(), a1.into(), a2.into(), a3.into(), a4),
-            Sys::UNLINKAT => self.sys_unlinkat(a0.into(), a1.into(), a2),
+            Sys::GETDENTS64 => {
+                self.sys_getdents64(a0.into(), self.into_out_userptr(a1).unwrap(), a2)
+            }
+            Sys::GETCWD => self.sys_getcwd(self.into_out_userptr(a0).unwrap(), a1),
+            Sys::CHDIR => self.sys_chdir(self.into_in_userptr(a0).unwrap()),
+            Sys::RENAMEAT => self.sys_renameat(
+                a0.into(),
+                self.into_in_userptr(a1).unwrap(),
+                a2.into(),
+                self.into_in_userptr(a3).unwrap(),
+            ),
+            Sys::MKDIRAT => self.sys_mkdirat(a0.into(), self.into_in_userptr(a1).unwrap(), a2),
+            Sys::LINKAT => self.sys_linkat(
+                a0.into(),
+                self.into_in_userptr(a1).unwrap(),
+                a2.into(),
+                self.into_in_userptr(a3).unwrap(),
+                a4,
+            ),
+            Sys::UNLINKAT => self.sys_unlinkat(a0.into(), self.into_in_userptr(a1).unwrap(), a2),
             Sys::SYMLINKAT => self.unimplemented("symlinkat", Err(LxError::EACCES)),
-            Sys::READLINKAT => self.sys_readlinkat(a0.into(), a1.into(), a2.into(), a3),
+            Sys::READLINKAT => self.sys_readlinkat(
+                a0.into(),
+                self.into_in_userptr(a1).unwrap(),
+                self.into_out_userptr(a2).unwrap(),
+                a3,
+            ),
             Sys::FCHMOD => self.unimplemented("fchmod", Ok(0)),
             Sys::FCHMODAT => self.unimplemented("fchmodat", Ok(0)),
             Sys::FCHOWN => self.unimplemented("fchown", Ok(0)),
             Sys::FCHOWNAT => self.unimplemented("fchownat", Ok(0)),
-            Sys::FACCESSAT => self.sys_faccessat(a0.into(), a1.into(), a2, a3),
+            Sys::FACCESSAT => {
+                self.sys_faccessat(a0.into(), self.into_in_userptr(a1).unwrap(), a2, a3)
+            }
             Sys::DUP => self.sys_dup(a0.into()),
             Sys::DUP3 => self.sys_dup2(a0.into(), a1.into()), // TODO: handle `flags`
             Sys::PIPE2 => self.sys_pipe2(a0.into(), a1),      // TODO: handle `flags`
-            Sys::UTIMENSAT => self.sys_utimensat(a0.into(), a1.into(), a2.into(), a3),
+            Sys::UTIMENSAT => {
+                self.sys_utimensat(a0.into(), self.into_in_userptr(a1).unwrap(), a2.into(), a3)
+            }
             Sys::COPY_FILE_RANGE => {
-                self.sys_copy_file_range(a0.into(), a1.into(), a2.into(), a3.into(), a4, a5)
-                    .await
+                self.sys_copy_file_range(
+                    a0.into(),
+                    self.into_inout_userptr(a1).unwrap(),
+                    a2.into(),
+                    self.into_inout_userptr(a3).unwrap(),
+                    a4,
+                    a5,
+                )
+                .await
             }
 
             // io multiplexing
             Sys::PSELECT6 => {
-                self.sys_pselect6(a0, a1.into(), a2.into(), a3.into(), a4.into(), a5)
-                    .await
+                self.sys_pselect6(
+                    a0,
+                    self.into_inout_userptr(a1).unwrap(),
+                    self.into_inout_userptr(a2).unwrap(),
+                    self.into_inout_userptr(a3).unwrap(),
+                    self.into_in_userptr(a4).unwrap(),
+                    a5,
+                )
+                .await
             }
-            Sys::PPOLL => self.sys_ppoll(a0.into(), a1, a2.into()).await, // ignore sigmask
+            Sys::PPOLL => {
+                self.sys_ppoll(
+                    self.into_inout_userptr(a0).unwrap(),
+                    a1,
+                    self.into_in_userptr(a2).unwrap(),
+                )
+                .await
+            } // ignore sigmask
             //            Sys::EPOLL_CREATE1 => self.sys_epoll_create1(a0),
             //            Sys::EPOLL_CTL => self.sys_epoll_ctl(a0, a1, a2, a3.into()),
             //            Sys::EPOLL_PWAIT => self.sys_epoll_pwait(a0, a1.into(), a2, a3, a4),
@@ -147,10 +296,23 @@ impl Syscall<'_> {
             Sys::MADVISE => self.unimplemented("madvise", Ok(0)),
 
             // signal
-            Sys::RT_SIGACTION => self.sys_rt_sigaction(a0, a1.into(), a2.into(), a3),
-            Sys::RT_SIGPROCMASK => self.sys_rt_sigprocmask(a0 as _, a1.into(), a2.into(), a3),
+            Sys::RT_SIGACTION => self.sys_rt_sigaction(
+                a0,
+                self.into_in_userptr(a1).unwrap(),
+                self.into_out_userptr(a2).unwrap(),
+                a3,
+            ),
+            Sys::RT_SIGPROCMASK => self.sys_rt_sigprocmask(
+                a0 as _,
+                self.into_in_userptr(a1).unwrap(),
+                self.into_out_userptr(a2).unwrap(),
+                a3,
+            ),
             // Sys::RT_SIGRETURN => self.sys_rt_sigreturn(),
-            Sys::SIGALTSTACK => self.sys_sigaltstack(a0.into(), a1.into()),
+            Sys::SIGALTSTACK => self.sys_sigaltstack(
+                self.into_in_userptr(a0).unwrap(),
+                self.into_out_userptr(a1).unwrap(),
+            ),
             //            Sys::KILL => self.sys_kill(a0, a1),
 
             // schedule
@@ -160,9 +322,23 @@ impl Syscall<'_> {
             // socket
             Sys::SOCKET => self.sys_socket(a0, a1, a2),
             Sys::CONNECT => self.sys_connect(a0, a1.into(), a2).await,
-            Sys::ACCEPT => self.sys_accept(a0, a1.into(), a2.into()).await,
+            Sys::ACCEPT => {
+                self.sys_accept(
+                    a0,
+                    self.into_out_userptr(a1).unwrap(),
+                    self.into_inout_userptr(a2).unwrap(),
+                )
+                .await
+            }
             //            Sys::ACCEPT4 => self.sys_accept(a0, a1.into(), a2.into()), // use accept for accept4
-            Sys::SENDTO => self.sys_sendto(a0, a1.into(), a2, a3, a4.into(), a5),
+            Sys::SENDTO => self.sys_sendto(
+                a0,
+                self.into_in_userptr(a1).unwrap(),
+                a2,
+                a3,
+                self.into_in_userptr(a4).unwrap(),
+                a5,
+            ),
             Sys::RECVFROM => {
                 self.sys_recvfrom(a0, a1.into(), a2, a3, a4.into(), a5.into())
                     .await
@@ -170,38 +346,70 @@ impl Syscall<'_> {
             Sys::SENDMSG => self.unimplemented("sys_sendmsg(),", Ok(0)),
             Sys::RECVMSG => self.unimplemented("sys_recvmsg(a0, a1.into(), a2),", Ok(0)),
             Sys::SHUTDOWN => self.sys_shutdown(a0, a1),
-            Sys::BIND => self.sys_bind(a0, a1.into(), a2),
+            Sys::BIND => self.sys_bind(a0, self.into_in_userptr(a1).unwrap(), a2),
             Sys::LISTEN => self.sys_listen(a0, a1),
-            Sys::GETSOCKNAME => self.sys_getsockname(a0, a1.into(), a2.into()),
+            Sys::GETSOCKNAME => self.sys_getsockname(
+                a0,
+                self.into_out_userptr(a1).unwrap(),
+                self.into_inout_userptr(a2).unwrap(),
+            ),
             Sys::GETPEERNAME => {
                 self.unimplemented("sys_getpeername(a0, a1.into(), a2.into()),", Ok(0))
             }
-            Sys::SETSOCKOPT => self.sys_setsockopt(a0, a1, a2, a3.into(), a4),
+            Sys::SETSOCKOPT => {
+                self.sys_setsockopt(a0, a1, a2, self.into_in_userptr(a3).unwrap(), a4)
+            }
             Sys::GETSOCKOPT => {
                 self.unimplemented("sys_getsockopt(a0, a1, a2, a3.into(), a4.into()),", Ok(0))
             }
 
             // process
-            Sys::CLONE => self.sys_clone(a0, a1, a2.into(), a3.into(), a4),
-            Sys::EXECVE => self.sys_execve(a0.into(), a1.into(), a2.into()),
+            Sys::CLONE => {
+                // warn!("a2={} a3={}", a2, a3);
+                // self.sys_clone(
+                //     a0,
+                //     a1,
+                //     self.into_out_userptr(a2).unwrap(),
+                //     self.into_out_userptr(a3).unwrap(),
+                //     a4,
+                // )
+                self.sys_clone(a0, a1, a2.into(), a3.into(), a4)
+            }
+            Sys::EXECVE => self.sys_execve(
+                self.into_in_userptr(a0).unwrap(),
+                self.into_in_userptr(a1).unwrap(),
+                self.into_in_userptr(a2).unwrap(),
+            ),
             Sys::EXIT => self.sys_exit(a0 as _),
             Sys::EXIT_GROUP => self.sys_exit_group(a0 as _),
-            Sys::WAIT4 => self.sys_wait4(a0 as _, a1.into(), a2 as _).await,
-            Sys::SET_TID_ADDRESS => self.sys_set_tid_address(a0.into()),
-            Sys::FUTEX => self.sys_futex(a0, a1 as _, a2 as _, a3.into()).await,
+            Sys::WAIT4 => {
+                self.sys_wait4(a0 as _, self.into_out_userptr(a1).unwrap(), a2 as _)
+                    .await
+            }
+            Sys::SET_TID_ADDRESS => self.sys_set_tid_address(self.into_out_userptr(a0).unwrap()),
+            Sys::FUTEX => {
+                // ignore timeout argument when op is wake
+                self.sys_futex(a0, a1 as _, a2 as _, a3).await
+            }
             Sys::TKILL => self.unimplemented("tkill", Ok(0)),
 
             // time
-            Sys::NANOSLEEP => self.sys_nanosleep(a0.into()).await,
+            Sys::NANOSLEEP => self.sys_nanosleep(self.into_in_userptr(a0).unwrap()).await,
             Sys::SETITIMER => self.unimplemented("setitimer", Ok(0)),
-            Sys::GETTIMEOFDAY => self.sys_gettimeofday(a0.into(), a1.into()),
-            Sys::CLOCK_GETTIME => self.sys_clock_gettime(a0, a1.into()),
+            Sys::GETTIMEOFDAY => self.sys_gettimeofday(
+                self.into_out_userptr(a0).unwrap(),
+                self.into_in_userptr(a1).unwrap(),
+            ),
+            Sys::CLOCK_GETTIME => self.sys_clock_gettime(a0, self.into_out_userptr(a1).unwrap()),
 
             // sem
             #[cfg(not(target_arch = "mips"))]
             Sys::SEMGET => self.sys_semget(a0, a1, a2),
             #[cfg(not(target_arch = "mips"))]
-            Sys::SEMOP => self.sys_semop(a0, a1.into(), a2).await,
+            Sys::SEMOP => {
+                self.sys_semop(a0, self.into_in_userptr(a1).unwrap(), a2)
+                    .await
+            }
             #[cfg(not(target_arch = "mips"))]
             Sys::SEMCTL => self.sys_semctl(a0, a1, a2, a3),
 
@@ -218,13 +426,13 @@ impl Syscall<'_> {
             // system
             Sys::GETPID => self.sys_getpid(),
             Sys::GETTID => self.sys_gettid(),
-            Sys::UNAME => self.sys_uname(a0.into()),
+            Sys::UNAME => self.sys_uname(self.into_out_userptr(a0).unwrap()),
             Sys::UMASK => self.unimplemented("umask", Ok(0o777)),
             //            Sys::GETRLIMIT => self.sys_getrlimit(),
             //            Sys::SETRLIMIT => self.sys_setrlimit(),
-            Sys::GETRUSAGE => self.sys_getrusage(a0, a1.into()),
-            Sys::SYSINFO => self.sys_sysinfo(a0.into()),
-            Sys::TIMES => self.sys_times(a0.into()),
+            Sys::GETRUSAGE => self.sys_getrusage(a0, self.into_out_userptr(a1).unwrap()),
+            Sys::SYSINFO => self.sys_sysinfo(self.into_out_userptr(a0).unwrap()),
+            Sys::TIMES => self.sys_times(self.into_out_userptr(a0).unwrap()),
             Sys::GETUID => self.unimplemented("getuid", Ok(0)),
             Sys::GETGID => self.unimplemented("getgid", Ok(0)),
             Sys::SETUID => self.unimplemented("setuid", Ok(0)),
@@ -239,9 +447,16 @@ impl Syscall<'_> {
             //            Sys::SETPRIORITY => self.sys_set_priority(a0),
             Sys::PRCTL => self.unimplemented("prctl", Ok(0)),
             Sys::MEMBARRIER => self.unimplemented("membarrier", Ok(0)),
-            Sys::PRLIMIT64 => self.sys_prlimit64(a0, a1, a2.into(), a3.into()),
+            Sys::PRLIMIT64 => self.sys_prlimit64(
+                a0,
+                a1,
+                self.into_in_userptr(a2).unwrap(),
+                self.into_out_userptr(a3).unwrap(),
+            ),
             //            Sys::REBOOT => self.sys_reboot(a0 as u32, a1 as u32, a2 as u32, a3.into()),
-            Sys::GETRANDOM => self.sys_getrandom(a0.into(), a1 as usize, a2 as u32),
+            Sys::GETRANDOM => {
+                self.sys_getrandom(self.into_out_userptr(a0).unwrap(), a1 as usize, a2 as u32)
+            }
             Sys::RT_SIGQUEUEINFO => self.unimplemented("rt_sigqueueinfo", Ok(0)),
 
             // kernel module
@@ -265,30 +480,55 @@ impl Syscall<'_> {
     async fn x86_64_syscall(&mut self, sys_type: Sys, args: [usize; 6]) -> SysResult {
         let [a0, a1, a2, a3, a4, _a5] = args;
         match sys_type {
-            Sys::OPEN => self.sys_open(a0.into(), a1, a2),
-            Sys::STAT => self.sys_stat(a0.into(), a1.into()),
-            Sys::LSTAT => self.sys_lstat(a0.into(), a1.into()),
-            Sys::POLL => self.sys_poll(a0.into(), a1, a2 as _).await,
-            Sys::ACCESS => self.sys_access(a0.into(), a1),
-            Sys::PIPE => self.sys_pipe(a0.into()),
-            Sys::SELECT => {
-                self.sys_select(a0, a1.into(), a2.into(), a3.into(), a4.into())
+            Sys::OPEN => self.sys_open(self.into_in_userptr(a0).unwrap(), a1, a2),
+            Sys::STAT => self.sys_stat(
+                self.into_in_userptr(a0).unwrap(),
+                self.into_out_userptr(a1).unwrap(),
+            ),
+            Sys::LSTAT => self.sys_lstat(
+                self.into_in_userptr(a0).unwrap(),
+                self.into_out_userptr(a1).unwrap(),
+            ),
+            Sys::POLL => {
+                self.sys_poll(self.into_inout_userptr(a0).unwrap(), a1, a2 as _)
                     .await
+            }
+            Sys::ACCESS => self.sys_access(self.into_in_userptr(a0).unwrap(), a1),
+            Sys::PIPE => self.sys_pipe(self.into_out_userptr(a0).unwrap()),
+            Sys::SELECT => {
+                self.sys_select(
+                    a0,
+                    self.into_inout_userptr(a1).unwrap(),
+                    self.into_inout_userptr(a2).unwrap(),
+                    self.into_inout_userptr(a3).unwrap(),
+                    self.into_in_userptr(a4).unwrap(),
+                )
+                .await
             }
             Sys::DUP2 => self.sys_dup2(a0.into(), a1.into()),
             //            Sys::ALARM => self.unimplemented("alarm", Ok(0)),
             Sys::FORK => self.sys_fork(),
             Sys::VFORK => self.sys_vfork().await,
-            Sys::RENAME => self.sys_rename(a0.into(), a1.into()),
-            Sys::MKDIR => self.sys_mkdir(a0.into(), a1),
-            Sys::RMDIR => self.sys_rmdir(a0.into()),
-            Sys::LINK => self.sys_link(a0.into(), a1.into()),
-            Sys::UNLINK => self.sys_unlink(a0.into()),
-            Sys::READLINK => self.sys_readlink(a0.into(), a1.into(), a2),
+            Sys::RENAME => self.sys_rename(
+                self.into_in_userptr(a0).unwrap(),
+                self.into_in_userptr(a1).unwrap(),
+            ),
+            Sys::MKDIR => self.sys_mkdir(self.into_in_userptr(a0).unwrap(), a1),
+            Sys::RMDIR => self.sys_rmdir(self.into_in_userptr(a0).unwrap()),
+            Sys::LINK => self.sys_link(
+                self.into_in_userptr(a0).unwrap(),
+                self.into_in_userptr(a1).unwrap(),
+            ),
+            Sys::UNLINK => self.sys_unlink(self.into_in_userptr(a0).unwrap()),
+            Sys::READLINK => self.sys_readlink(
+                self.into_in_userptr(a0).unwrap(),
+                self.into_out_userptr(a1).unwrap(),
+                a2,
+            ),
             Sys::CHMOD => self.unimplemented("chmod", Ok(0)),
             Sys::CHOWN => self.unimplemented("chown", Ok(0)),
             Sys::ARCH_PRCTL => self.sys_arch_prctl(a0 as _, a1),
-            Sys::TIME => self.sys_time(a0.into()),
+            Sys::TIME => self.sys_time(self.into_out_userptr(a0).unwrap()),
             //            Sys::EPOLL_CREATE => self.sys_epoll_create(a0),
             //            Sys::EPOLL_WAIT => self.sys_epoll_wait(a0, a1.into(), a2, a3),
             _ => self.unknown_syscall(sys_type),

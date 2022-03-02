@@ -44,6 +44,9 @@ hal_fn_def! {
         /// Convert physical address to virtual address.
         pub(crate) fn phys_to_virt(paddr: PhysAddr) -> VirtAddr;
 
+        /// Convert virtual address to physical address.
+        pub fn virt_to_phys(vaddr: VirtAddr) -> PhysAddr;
+
         /// Returns all free physical memory regions.
         pub fn free_pmem_regions() -> Vec<Range<PhysAddr>>;
 
@@ -124,8 +127,8 @@ hal_fn_def! {
         pub fn msi_register_handler(block: Range<usize>, msi_id: usize, handler: IrqHandler) -> HalResult;
     }
 
-    pub(crate) mod console {
-        pub(crate) fn console_write_early(_s: &str) {}
+    pub mod console {
+        pub fn console_write_early(_s: &str) {}
     }
 
     /// Thread spawning.

@@ -11,6 +11,10 @@ hal_fn_impl! {
             KCONFIG.phys_to_virt_offset + paddr
         }
 
+        fn virt_to_phys(vaddr: VirtAddr) -> PhysAddr {
+            vaddr - KCONFIG.phys_to_virt_offset
+        }
+
         fn free_pmem_regions() -> Vec<Range<PhysAddr>> {
             super::arch::mem::free_pmem_regions()
         }

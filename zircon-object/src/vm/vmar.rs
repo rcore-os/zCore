@@ -4,7 +4,7 @@ use {
     alloc::{sync::Arc, vec, vec::Vec},
     bitflags::bitflags,
     kernel_hal::vm::{
-        GenericPageTable, IgnoreNotMappedErr, Page, PageSize, PageTable, PagingError,
+        GenericPageTable, IgnoreNotMappedErr, Page, PageSize, PageTable, PagingError, PagingResult,
     },
     spin::Mutex,
 };
@@ -402,6 +402,22 @@ impl VmAddressRegion {
         !self.is_dead()
     }
 
+    /// get flags of vaddr
+    pub fn get_vaddr_flags(&self, vaddr: usize) -> PagingResult<MMUFlags> {
+        let guard = self.inner.lock();
+        let inner = guard.as_ref().unwrap();
+        if !self.contains(vaddr) {
+            return Err(PagingError::NoMemory);
+        }
+        if let Some(child) = inner.children.iter().find(|ch| ch.contains(vaddr)) {
+            return child.get_vaddr_flags(vaddr);
+        }
+        if let Some(mapping) = inner.mappings.iter().find(|map| map.contains(vaddr)) {
+            return mapping.query_vaddr(vaddr).map(|(_, flags, _)| flags);
+        }
+        Err(PagingError::NoMemory)
+    }
+
     /// Determine final address with given input `offset` and `len`.
     fn determine_offset(
         &self,
@@ -482,7 +498,8 @@ impl VmAddressRegion {
         self.overlap(begin, end) && !self.within(begin, end)
     }
 
-    fn contains(&self, vaddr: VirtAddr) -> bool {
+    /// return true if vmar contains vaddr, or return false.
+    pub fn contains(&self, vaddr: VirtAddr) -> bool {
         self.addr <= vaddr && vaddr < self.end_addr()
     }
 
@@ -893,6 +910,11 @@ impl VmMapping {
         } else {
             Err(ZxError::NO_MEMORY)
         }
+    }
+
+    /// query vaddr's PhysAddr, PhysAddr, PageSize.
+    pub fn query_vaddr(&self, vaddr: usize) -> PagingResult<(PhysAddr, MMUFlags, PageSize)> {
+        self.page_table.lock().query(vaddr)
     }
 
     /// Remove WRITE flag from the mappings for Copy-on-Write.

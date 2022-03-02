@@ -5,7 +5,8 @@ cfg_if! {
         pub use self::arch::special as x86_64;
     } else if #[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))] {
         #[path = "arch/riscv/mod.rs"]
-        mod arch;
+        pub mod arch;
+        pub use self::arch::sbi;
     }
 }
 

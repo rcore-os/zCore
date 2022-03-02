@@ -9,5 +9,13 @@ hal_fn_impl! {
         fn cpu_frequency() -> u16 {
             *CPU_FREQ_MHZ
         }
+
+        fn cpu_id() -> u8 {
+            let mut cpu_id;
+            unsafe {
+                asm!("mv {0}, tp", out(reg) cpu_id);
+            }
+            cpu_id
+        }
     }
 }

@@ -146,6 +146,7 @@ impl<'a> core::ops::Deref for FrameBuffer<'a> {
 }
 
 impl<'a> core::ops::DerefMut for FrameBuffer<'a> {
+    #[allow(clippy::needless_borrow)]
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.raw
     }

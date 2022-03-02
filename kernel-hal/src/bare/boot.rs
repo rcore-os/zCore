@@ -28,9 +28,11 @@ hal_fn_impl! {
         }
 
         fn secondary_init() {
-            info!("Secondary CPU {} init...", crate::cpu::cpu_id());
+            // info!("Secondary CPU {} init...", crate::cpu::cpu_id());
+            // we can't print anything here, see reason: zcore/main.rs::secondary_main()
             unsafe { trapframe::init() };
             super::arch::secondary_init();
+            // now can print
         }
     }
 }
