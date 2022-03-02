@@ -421,7 +421,6 @@
                 .<span class="ident">query_or_map</span>(<span class="ident">paddr</span> <span class="kw">as</span> <span class="ident">usize</span>, <span class="ident">size</span> <span class="kw">as</span> <span class="ident">usize</span>)
                 .<span class="ident">ok_or</span>(<span class="ident">DeviceError::NoResources</span>)
         });
-
         <span class="kw">use</span> <span class="ident"><span class="kw">crate</span>::irq</span>::<span class="kw-2">*</span>;
         <span class="kw">let</span> <span class="ident">dev</span> <span class="op">=</span> <span class="ident">Device::Irq</span>(<span class="kw">match</span> <span class="ident">comp</span> {
             <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">any</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;riscv32&quot;</span>, <span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;riscv64&quot;</span>))]</span>
@@ -567,6 +566,7 @@
                         <span class="string">&quot;device-tree: register interrupts for {:?}: {:?}, irq_num={}&quot;</span>,
                         <span class="ident">intc</span>.<span class="ident">dev</span>, <span class="ident">dev</span>.<span class="ident">dev</span>, <span class="ident">irq_num</span>
                     );
+
                     <span class="ident">irq</span>.<span class="ident">register_device</span>(<span class="ident">irq_num</span>, <span class="ident">dev</span>.<span class="ident">dev</span>.<span class="ident">inner</span>())<span class="question-mark">?</span>;
                     <span class="comment">// enable the interrupt after registration</span>
                     <span class="ident">irq</span>.<span class="ident">unmask</span>(<span class="ident">irq_num</span>)<span class="question-mark">?</span>;

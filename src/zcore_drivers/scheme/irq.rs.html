@@ -70,6 +70,12 @@
 <span id="70">70</span>
 <span id="71">71</span>
 <span id="72">72</span>
+<span id="73">73</span>
+<span id="74">74</span>
+<span id="75">75</span>
+<span id="76">76</span>
+<span id="77">77</span>
+<span id="78">78</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="ident">alloc::boxed::Box</span>;
 <span class="kw">use</span> <span class="ident">alloc::sync::Arc</span>;
 <span class="kw">use</span> <span class="ident">core::ops::Range</span>;
@@ -139,6 +145,12 @@
         <span class="ident">_msi_id</span>: <span class="ident">usize</span>,
         <span class="ident">_handler</span>: <span class="ident">IrqHandler</span>,
     ) -&gt; <span class="ident">DeviceResult</span> {
+        <span class="macro">unimplemented!</span>()
+    }
+
+    <span class="doccomment">/// Init irq for current cpu.</span>
+    <span class="doccomment">/// Some IRQ hardware requires per-CPU initialization.</span>
+    <span class="kw">fn</span> <span class="ident">init_hart</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) {
         <span class="macro">unimplemented!</span>()
     }
 }

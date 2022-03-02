@@ -210,6 +210,17 @@
 <span id="210">210</span>
 <span id="211">211</span>
 <span id="212">212</span>
+<span id="213">213</span>
+<span id="214">214</span>
+<span id="215">215</span>
+<span id="216">216</span>
+<span id="217">217</span>
+<span id="218">218</span>
+<span id="219">219</span>
+<span id="220">220</span>
+<span id="221">221</span>
+<span id="222">222</span>
+<span id="223">223</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
 <span class="kw">use</span> <span class="ident">bitflags::bitflags</span>;
 <span class="kw">use</span> <span class="ident">linux_object::time</span>::<span class="kw-2">*</span>;
@@ -286,13 +297,24 @@
         <span class="ident">uaddr</span>: <span class="ident">usize</span>,
         <span class="ident">op</span>: <span class="ident">u32</span>,
         <span class="ident">val</span>: <span class="ident">i32</span>,
-        <span class="ident">timeout</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">TimeSpec</span><span class="op">&gt;</span>,
+        <span class="ident">timeout_addr</span>: <span class="ident">usize</span>,
     ) -&gt; <span class="ident">SysResult</span> {
         <span class="kw">let</span> <span class="ident">op</span> <span class="op">=</span> <span class="ident">FutexFlags::from_bits_truncate</span>(<span class="ident">op</span>);
+        <span class="kw">let</span> <span class="ident">timeout</span>;
+        <span class="kw">if</span> <span class="ident">op</span>.<span class="ident">contains</span>(<span class="ident">FutexFlags::WAKE</span>) {
+            <span class="ident">timeout</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">into_inout_userptr</span>::<span class="op">&lt;</span><span class="ident">TimeSpec</span><span class="op">&gt;</span>(<span class="number">0</span>).<span class="ident">unwrap</span>();
+        } <span class="kw">else</span> {
+            <span class="kw">let</span> <span class="ident">timeout_result</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">into_inout_userptr</span>::<span class="op">&lt;</span><span class="ident">TimeSpec</span><span class="op">&gt;</span>(<span class="ident">timeout_addr</span>);
+            <span class="ident">timeout</span> <span class="op">=</span> <span class="kw">match</span> <span class="ident">timeout_result</span> {
+                <span class="prelude-val">Ok</span>(<span class="ident">t</span>) =&gt; <span class="ident">t</span>,
+                <span class="prelude-val">Err</span>(<span class="ident">_e</span>) =&gt; <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">LxError::EACCES</span>),
+            }
+        }
         <span class="macro">info!</span>(
             <span class="string">&quot;futex: uaddr: {:#x}, op: {:?}, val: {}, timeout_ptr: {:?}&quot;</span>,
             <span class="ident">uaddr</span>, <span class="ident">op</span>, <span class="ident">val</span>, <span class="ident">timeout</span>
         );
+
         <span class="kw">if</span> <span class="ident">op</span>.<span class="ident">contains</span>(<span class="ident">FutexFlags::PRIVATE</span>) {
             <span class="macro">warn!</span>(<span class="string">&quot;process-shared futex is unimplemented&quot;</span>);
         }
