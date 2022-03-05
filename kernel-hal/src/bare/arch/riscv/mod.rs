@@ -1,16 +1,17 @@
 mod drivers;
-mod sbi;
 mod trap;
 
 pub mod config;
 pub mod cpu;
 pub mod interrupt;
 pub mod mem;
+pub mod sbi;
 pub mod timer;
 pub mod vm;
 
-use alloc::{string::String, vec::Vec};
+use alloc::{boxed::Box, format, string::String, vec::Vec};
 use core::ops::Range;
+use zcore_drivers::irq::riscv::ScauseIntCode;
 use zcore_drivers::utils::devicetree::Devicetree;
 
 use crate::{mem::phys_to_virt, utils::init_once::InitOnce, PhysAddr};
@@ -55,4 +56,30 @@ pub fn primary_init() {
     timer::init();
 }
 
-pub fn secondary_init() {}
+pub fn secondary_init() {
+    vm::init();
+    let intc = crate::drivers::all_irq()
+        .find(format!("riscv-intc-cpu{}", crate::cpu::cpu_id()).as_str())
+        .expect("IRQ device 'riscv-intc' not initialized!");
+
+    // register soft interrupts handler
+    intc.register_handler(
+        ScauseIntCode::SupervisorSoft as _,
+        Box::new(trap::super_soft),
+    )
+    .unwrap();
+    // register timer interrupts handler
+    intc.register_handler(
+        ScauseIntCode::SupervisorTimer as _,
+        Box::new(trap::super_timer),
+    )
+    .unwrap();
+    intc.unmask(ScauseIntCode::SupervisorSoft as _).unwrap();
+    intc.unmask(ScauseIntCode::SupervisorTimer as _).unwrap();
+
+    let plic = crate::drivers::all_irq()
+        .find("riscv-plic")
+        .expect("IRQ device 'riscv-plic' not initialized!");
+    plic.init_hart();
+    timer::init();
+}

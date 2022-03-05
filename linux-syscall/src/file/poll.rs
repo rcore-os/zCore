@@ -8,7 +8,6 @@ use alloc::boxed::Box;
 use alloc::vec::Vec;
 use bitvec::prelude::{BitVec, Lsb0};
 use core::future::Future;
-use core::mem::size_of;
 use core::pin::Pin;
 use core::task::{Context, Poll};
 use core::time::Duration;
@@ -282,7 +281,7 @@ bitflags! {
 }
 
 /// fd size per item
-const FD_PER_ITEM: usize = 8 * size_of::<u32>();
+const FD_PER_ITEM: usize = u32::BITS as usize;
 /// max Fdset size
 const MAX_FDSET_SIZE: usize = 1024 / FD_PER_ITEM;
 
