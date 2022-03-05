@@ -1,11 +1,17 @@
 #[cfg(feature = "board-qemu")]
-global_asm!(include_str!("boot/boot_qemu.asm"));
-#[cfg(feature = "board-d1")]
-global_asm!(include_str!("boot/boot_d1.asm"));
+global_asm!(
+    include_str!("boot/boot_qemu.asm"),
+    include_str!("boot/entry64.asm"),
+);
 
-global_asm!(include_str!("boot/entry64.asm"));
+#[cfg(feature = "board-d1")]
+global_asm!(
+    include_str!("boot/boot_d1.asm"),
+    include_str!("boot/entry64.asm"),
+);
 
 use super::consts::*;
+use core::arch::{asm, global_asm};
 use core::str::FromStr;
 use kernel_hal::arch::sbi::{hart_start, send_ipi, SBI_SUCCESS};
 use kernel_hal::KernelConfig;

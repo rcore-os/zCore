@@ -35,4 +35,4 @@ acpi = "4.0"
 x2apic = "0.4"
 
 [target.'cfg(any(target_arch = "riscv32", target_arch = "riscv64"))'.dependencies]
-riscv = { git = "https://github.com/rust-embedded/riscv", rev = "418c1053", features = ["inline-asm"] }
+riscv = { git = "https://github.com/rust-embedded/riscv", rev = "cd31989", features = ["inline-asm"] }

@@ -1,3 +1,5 @@
+use core::arch::asm;
+
 // c906
 const FREQUENCY: u64 = 24_000_000; // C906: 24_000_000, Qemu: 10_000_000
 const MMIO_MTIMECMP0: *mut u64 = 0x0200_4000usize as *mut u64;
