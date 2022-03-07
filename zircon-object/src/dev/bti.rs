@@ -5,7 +5,7 @@ use {
     alloc::{sync::Arc, vec::Vec},
     dev::Iommu,
     // spin::Mutex,
-    lock::spinlock::Mutex,
+    lock::mutex::Mutex,
 };
 
 /// Bus Transaction Initiator.

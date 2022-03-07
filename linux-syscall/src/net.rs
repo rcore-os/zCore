@@ -7,7 +7,7 @@ use linux_object::net::TcpSocketState;
 use linux_object::net::UdpSocketState;
 
 // use spin::Mutex;
-use lock::spinlock::Mutex;
+use lock::mutex::Mutex;
 
 impl Syscall<'_> {
     /// net socket

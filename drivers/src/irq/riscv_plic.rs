@@ -1,7 +1,7 @@
 use core::ops::Range;
 
 // use spin::Mutex;
-use lock::spinlock::Mutex;
+use lock::mutex::Mutex;
 
 use crate::io::{Io, Mmio};
 use crate::prelude::IrqHandler;

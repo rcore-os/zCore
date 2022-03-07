@@ -6,7 +6,7 @@ use {
     kernel_hal::vm::{
         GenericPageTable, IgnoreNotMappedErr, Page, PageSize, PageTable, PagingError,
     },
-    spin::Mutex,
+    lock::mutex::Mutex, //spin::Mutex,
 };
 
 bitflags! {

@@ -1,27 +1,33 @@
 use core::cell::{RefCell, RefMut};
 use lazy_static::*;
 
-extern "C" interrupt_ffi {
-    pub fn intr_on();
-    pub fn intr_off();
-    pub fn intr_get() -> bool;
-    pub fn cpu_id() -> u8;
+mod lock_ffi {
+    extern "C" {
+        pub fn intr_on();
+        pub fn intr_off();
+        pub fn intr_get() -> bool;
+        pub fn cpu_id() -> u8;
+    }
 }
 
-pub fn intr_on_() {
-    unsafe { intr_on(); }
+pub fn intr_on() {
+    unsafe {
+        lock_ffi::intr_on();
+    }
 }
 
-pub fn intr_off_() {
-    unsafe { intr_off(); }
+pub fn intr_off() {
+    unsafe {
+        lock_ffi::intr_off();
+    }
 }
 
-pub fn intr_get_() -> bool {
-    unsafe { intr_get() }
+pub fn intr_get() -> bool {
+    unsafe { lock_ffi::intr_get() }
 }
 
-pub fn cpu_id_() -> u8 {
-    unsafe { cpu_id() }
+pub fn cpu_id() -> u8 {
+    unsafe { lock_ffi::cpu_id() }
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -58,15 +64,15 @@ lazy_static! {
 }
 
 pub fn mycpu() -> RefMut<'static, Cpu> {
-    return CPUS[cpu_id_() as usize].0.borrow_mut();
+    return CPUS[cpu_id() as usize].0.borrow_mut();
 }
 
-// push_off/pop_off are like intr_off_()/intr_on_() except that they are matched:
+// push_off/pop_off are like intr_off()/intr_on() except that they are matched:
 // it takes two pop_off()s to undo two push_off()s.  Also, if interrupts
 // are initially off, then push_off, pop_off leaves them off.
 pub(crate) fn push_off() {
-    let old = intr_get_();
-    intr_off_();
+    let old = intr_get();
+    intr_off();
     let mut cpu = mycpu();
     if cpu.noff == 0 {
         cpu.interrupt_enable = old;
@@ -76,11 +82,11 @@ pub(crate) fn push_off() {
 
 pub(crate) fn pop_off() {
     let mut cpu = mycpu();
-    if intr_get_() || cpu.noff < 1 {
+    if intr_get() || cpu.noff < 1 {
         panic!("pop_off");
     }
     cpu.noff -= 1;
     if cpu.noff == 0 && cpu.interrupt_enable {
-        intr_on_();
+        intr_on();
     }
 }

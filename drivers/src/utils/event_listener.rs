@@ -1,7 +1,7 @@
 use alloc::{boxed::Box, vec::Vec};
 
 // use spin::Mutex;
-use lock::spinlock::Mutex;
+use lock::mutex::Mutex;
 
 pub type EventHandler<T = ()> = Box<dyn Fn(&T) + Send + Sync>;
 

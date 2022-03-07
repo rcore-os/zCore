@@ -3,7 +3,7 @@ use core::task::{Context, Poll};
 use core::{any::Any, future::Future, pin::Pin};
 
 // use spin::Mutex;
-use lock::spinlock::Mutex;
+use lock::mutex::Mutex;
 
 use kernel_hal::drivers::prelude::input::{Mouse, MouseFlags, MouseState};
 use kernel_hal::drivers::scheme::{EventScheme, InputScheme};

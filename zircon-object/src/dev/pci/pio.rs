@@ -14,7 +14,7 @@ cfg_if::cfg_if! {
 if #[cfg(all(target_arch = "x86_64", target_os = "none"))] {
     use kernel_hal::x86_64::{pio_read, pio_write};
     // use spin::Mutex;
-use lock::spinlock::Mutex;
+use lock::mutex::Mutex;
 
     static PIO_LOCK: Mutex<()> = Mutex::new(());
     const PCI_CONFIG_ADDR: u16 = 0xcf8;

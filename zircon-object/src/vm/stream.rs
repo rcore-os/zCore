@@ -1,5 +1,5 @@
 use {
-    super::*, crate::object::*, alloc::sync::Arc, lock::spinlock::Mutex, /*spin::Mutex*/
+    super::*, crate::object::*, alloc::sync::Arc, lock::mutex::Mutex, /*spin::Mutex*/
     numeric_enum_macro::numeric_enum,
 };
 

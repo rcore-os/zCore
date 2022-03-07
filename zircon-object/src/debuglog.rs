@@ -5,7 +5,7 @@ use {
     alloc::{sync::Arc, vec::Vec},
     lazy_static::lazy_static,
     // spin::Mutex,
-    lock::spinlock::Mutex,
+    lock::mutex::Mutex,
 };
 
 lazy_static! {

@@ -4,14 +4,15 @@ use core::{
     cell::UnsafeCell,
     fmt,
     hint::spin_loop,
-    marker::PhantomData,
+    // marker::PhantomData,
     mem,
     ops::{Deref, DerefMut},
     sync::atomic::{AtomicUsize, Ordering},
 };
 
+use crate::interrupt::{pop_off, push_off};
+
 pub struct RwLock<T: ?Sized> {
-    // phantom: PhantomData<R>,
     lock: AtomicUsize,
     data: UnsafeCell<T>,
 }
@@ -52,8 +53,8 @@ pub struct RwLockUpgradableGuard<'a, T: 'a + ?Sized> {
 }
 
 // Same unsafe impls as `std::sync::RwLock`
-unsafe impl<T: ?Sized + Send, R> Send for RwLock<T> {}
-unsafe impl<T: ?Sized + Send + Sync, R> Sync for RwLock<T> {}
+unsafe impl<T: ?Sized + Send> Send for RwLock<T> {}
+unsafe impl<T: ?Sized + Send + Sync> Sync for RwLock<T> {}
 
 impl<T> RwLock<T> {
     /// Creates a new spinlock wrapping the supplied data.
@@ -74,13 +75,13 @@ impl<T> RwLock<T> {
     #[inline]
     pub const fn new(data: T) -> Self {
         RwLock {
-            phantom: PhantomData,
+            // phantom: PhantomData,
             lock: AtomicUsize::new(0),
             data: UnsafeCell::new(data),
         }
     }
 
-    /// Consumes this `RwLock`, returning the underlying data.
+    /// Consumes this `RwLock`eturning the underlying data.
     #[inline]
     pub fn into_inner(self) -> T {
         // We know statically that there are no outstanding references to
@@ -189,9 +190,7 @@ impl<T: ?Sized> RwLock<T> {
             }
         }
     }
-}
 
-impl<T: ?Sized, R> RwLock<T> {
     /// Attempt to acquire this lock with shared read access.
     ///
     /// This function will never block and will return immediately if `read`
@@ -216,6 +215,7 @@ impl<T: ?Sized, R> RwLock<T> {
     /// ```
     #[inline]
     pub fn try_read(&self) -> Option<RwLockReadGuard<T>> {
+        push_off();
         let value = self.lock.fetch_add(READER, Ordering::Acquire);
 
         // We check the UPGRADED bit here so that new readers are prevented when an UPGRADED lock is held.
@@ -223,6 +223,7 @@ impl<T: ?Sized, R> RwLock<T> {
         if value & (WRITER | UPGRADED) != 0 {
             // Lock is taken, undo.
             self.lock.fetch_sub(READER, Ordering::Release);
+            pop_off();
             None
         } else {
             Some(RwLockReadGuard {
@@ -285,6 +286,7 @@ impl<T: ?Sized, R> RwLock<T> {
 
     #[inline(always)]
     fn try_write_internal(&self, strong: bool) -> Option<RwLockWriteGuard<T>> {
+        push_off();
         if compare_exchange(
             &self.lock,
             0,
@@ -296,11 +298,12 @@ impl<T: ?Sized, R> RwLock<T> {
         .is_ok()
         {
             Some(RwLockWriteGuard {
-                phantom: PhantomData,
+                // phantom: PhantomData,
                 inner: self,
                 data: unsafe { &mut *self.data.get() },
             })
         } else {
+            pop_off();
             None
         }
     }
@@ -332,15 +335,17 @@ impl<T: ?Sized, R> RwLock<T> {
     /// Tries to obtain an upgradeable lock guard.
     #[inline]
     pub fn try_upgradeable_read(&self) -> Option<RwLockUpgradableGuard<T>> {
+        push_off();
         if self.lock.fetch_or(UPGRADED, Ordering::Acquire) & (WRITER | UPGRADED) == 0 {
             Some(RwLockUpgradableGuard {
-                phantom: PhantomData,
+                // phantom: PhantomData,
                 inner: self,
                 data: unsafe { &*self.data.get() },
             })
         } else {
             // We can't unflip the UPGRADED bit back just yet as there is another upgradeable or write lock.
             // When they unlock, they will clear the bit.
+            pop_off();
             None
         }
     }
@@ -364,7 +369,7 @@ impl<T: ?Sized, R> RwLock<T> {
     }
 }
 
-impl<T: ?Sized + fmt::Debug, R> fmt::Debug for RwLock<T> {
+impl<T: ?Sized + fmt::Debug> fmt::Debug for RwLock<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.try_read() {
             Some(guard) => write!(f, "RwLock {{ data: ")
@@ -375,7 +380,7 @@ impl<T: ?Sized + fmt::Debug, R> fmt::Debug for RwLock<T> {
     }
 }
 
-impl<T: ?Sized + Default, R> Default for RwLock<T> {
+impl<T: ?Sized + Default> Default for RwLock<T> {
     fn default() -> Self {
         Self::new(Default::default())
     }
@@ -418,7 +423,7 @@ impl<'rwlock, T: ?Sized + fmt::Display> fmt::Display for RwLockReadGuard<'rwlock
     }
 }
 
-impl<'rwlock, T: ?Sized> RwLockUpgradableGuard<'rwlock, T, R> {
+impl<'rwlock, T: ?Sized> RwLockUpgradableGuard<'rwlock, T> {
     /// Upgrades an upgradeable lock guard to a writable lock guard.
     ///
     /// ```
@@ -428,21 +433,21 @@ impl<'rwlock, T: ?Sized> RwLockUpgradableGuard<'rwlock, T, R> {
     /// let writable = upgradeable.upgrade();
     /// ```
     #[inline]
-    pub fn upgrade(mut self) -> RwLockWriteGuard<'rwlock, T, R> {
+    pub fn upgrade(mut self) -> RwLockWriteGuard<'rwlock, T> {
         loop {
             self = match self.try_upgrade_internal(false) {
                 Ok(guard) => return guard,
                 Err(e) => e,
             };
 
-            R::relax();
+            spin_loop();
         }
     }
 }
 
-impl<'rwlock, T: ?Sized, R> RwLockUpgradableGuard<'rwlock, T, R> {
+impl<'rwlock, T: ?Sized> RwLockUpgradableGuard<'rwlock, T> {
     #[inline(always)]
-    fn try_upgrade_internal(self, strong: bool) -> Result<RwLockWriteGuard<'rwlock, T, R>, Self> {
+    fn try_upgrade_internal(self, strong: bool) -> Result<RwLockWriteGuard<'rwlock, T>, Self> {
         if compare_exchange(
             &self.inner.lock,
             UPGRADED,
@@ -460,7 +465,7 @@ impl<'rwlock, T: ?Sized, R> RwLockUpgradableGuard<'rwlock, T, R> {
 
             // Upgrade successful
             Ok(RwLockWriteGuard {
-                phantom: PhantomData,
+                // phantom: PhantomData,
                 inner,
                 data: unsafe { &mut *inner.data.get() },
             })
@@ -481,7 +486,7 @@ impl<'rwlock, T: ?Sized, R> RwLockUpgradableGuard<'rwlock, T, R> {
     /// };
     /// ```
     #[inline]
-    pub fn try_upgrade(self) -> Result<RwLockWriteGuard<'rwlock, T, R>, Self> {
+    pub fn try_upgrade(self) -> Result<RwLockWriteGuard<'rwlock, T>, Self> {
         self.try_upgrade_internal(true)
     }
 
@@ -532,19 +537,19 @@ impl<'rwlock, T: ?Sized, R> RwLockUpgradableGuard<'rwlock, T, R> {
     }
 }
 
-impl<'rwlock, T: ?Sized + fmt::Debug, R> fmt::Debug for RwLockUpgradableGuard<'rwlock, T, R> {
+impl<'rwlock, T: ?Sized + fmt::Debug> fmt::Debug for RwLockUpgradableGuard<'rwlock, T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(&**self, f)
     }
 }
 
-impl<'rwlock, T: ?Sized + fmt::Display, R> fmt::Display for RwLockUpgradableGuard<'rwlock, T, R> {
+impl<'rwlock, T: ?Sized + fmt::Display> fmt::Display for RwLockUpgradableGuard<'rwlock, T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Display::fmt(&**self, f)
     }
 }
 
-impl<'rwlock, T: ?Sized, R> RwLockWriteGuard<'rwlock, T, R> {
+impl<'rwlock, T: ?Sized> RwLockWriteGuard<'rwlock, T> {
     /// Downgrades the writable lock guard to a readable, shared lock guard. Cannot fail and is guaranteed not to spin.
     ///
     /// ```
@@ -585,7 +590,7 @@ impl<'rwlock, T: ?Sized, R> RwLockWriteGuard<'rwlock, T, R> {
     /// assert_eq!(*readable, 1);
     /// ```
     #[inline]
-    pub fn downgrade_to_upgradeable(self) -> RwLockUpgradableGuard<'rwlock, T, R> {
+    pub fn downgrade_to_upgradeable(self) -> RwLockUpgradableGuard<'rwlock, T> {
         debug_assert_eq!(
             self.inner.lock.load(Ordering::Acquire) & (WRITER | UPGRADED),
             WRITER
@@ -600,7 +605,7 @@ impl<'rwlock, T: ?Sized, R> RwLockWriteGuard<'rwlock, T, R> {
         mem::forget(self);
 
         RwLockUpgradableGuard {
-            phantom: PhantomData,
+            // phantom: PhantomData,
             inner,
             data: unsafe { &*inner.data.get() },
         }
@@ -626,13 +631,13 @@ impl<'rwlock, T: ?Sized, R> RwLockWriteGuard<'rwlock, T, R> {
     }
 }
 
-impl<'rwlock, T: ?Sized + fmt::Debug, R> fmt::Debug for RwLockWriteGuard<'rwlock, T, R> {
+impl<'rwlock, T: ?Sized + fmt::Debug> fmt::Debug for RwLockWriteGuard<'rwlock, T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(&**self, f)
     }
 }
 
-impl<'rwlock, T: ?Sized + fmt::Display, R> fmt::Display for RwLockWriteGuard<'rwlock, T, R> {
+impl<'rwlock, T: ?Sized + fmt::Display> fmt::Display for RwLockWriteGuard<'rwlock, T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Display::fmt(&**self, f)
     }
@@ -646,7 +651,7 @@ impl<'rwlock, T: ?Sized> Deref for RwLockReadGuard<'rwlock, T> {
     }
 }
 
-impl<'rwlock, T: ?Sized, R> Deref for RwLockUpgradableGuard<'rwlock, T, R> {
+impl<'rwlock, T: ?Sized> Deref for RwLockUpgradableGuard<'rwlock, T> {
     type Target = T;
 
     fn deref(&self) -> &T {
@@ -654,7 +659,7 @@ impl<'rwlock, T: ?Sized, R> Deref for RwLockUpgradableGuard<'rwlock, T, R> {
     }
 }
 
-impl<'rwlock, T: ?Sized, R> Deref for RwLockWriteGuard<'rwlock, T, R> {
+impl<'rwlock, T: ?Sized> Deref for RwLockWriteGuard<'rwlock, T> {
     type Target = T;
 
     fn deref(&self) -> &T {
@@ -662,7 +667,7 @@ impl<'rwlock, T: ?Sized, R> Deref for RwLockWriteGuard<'rwlock, T, R> {
     }
 }
 
-impl<'rwlock, T: ?Sized, R> DerefMut for RwLockWriteGuard<'rwlock, T, R> {
+impl<'rwlock, T: ?Sized> DerefMut for RwLockWriteGuard<'rwlock, T> {
     fn deref_mut(&mut self) -> &mut T {
         self.data
     }
@@ -672,20 +677,22 @@ impl<'rwlock, T: ?Sized> Drop for RwLockReadGuard<'rwlock, T> {
     fn drop(&mut self) {
         debug_assert!(self.lock.load(Ordering::Relaxed) & !(WRITER | UPGRADED) > 0);
         self.lock.fetch_sub(READER, Ordering::Release);
+        pop_off();
     }
 }
 
-impl<'rwlock, T: ?Sized, R> Drop for RwLockUpgradableGuard<'rwlock, T, R> {
+impl<'rwlock, T: ?Sized> Drop for RwLockUpgradableGuard<'rwlock, T> {
     fn drop(&mut self) {
         debug_assert_eq!(
             self.inner.lock.load(Ordering::Relaxed) & (WRITER | UPGRADED),
             UPGRADED
         );
         self.inner.lock.fetch_sub(UPGRADED, Ordering::AcqRel);
+        pop_off();
     }
 }
 
-impl<'rwlock, T: ?Sized, R> Drop for RwLockWriteGuard<'rwlock, T, R> {
+impl<'rwlock, T: ?Sized> Drop for RwLockWriteGuard<'rwlock, T> {
     fn drop(&mut self) {
         debug_assert_eq!(self.inner.lock.load(Ordering::Relaxed) & WRITER, WRITER);
 
@@ -694,6 +701,7 @@ impl<'rwlock, T: ?Sized, R> Drop for RwLockWriteGuard<'rwlock, T, R> {
         self.inner
             .lock
             .fetch_and(!(WRITER | UPGRADED), Ordering::Release);
+        pop_off();
     }
 }
 
@@ -713,365 +721,230 @@ fn compare_exchange(
     }
 }
 
-#[cfg(feature = "lock_api")]
-unsafe impl<R: RelaxStrategy> lock_api_crate::RawRwLock for RwLock<(), R> {
-    type GuardMarker = lock_api_crate::GuardSend;
+// #[cfg(test)]
+// mod tests {
+//     use std::prelude::v1::*;
 
-    const INIT: Self = Self::new(());
+//     use std::sync::atomic::{AtomicUsize, Ordering};
+//     use std::sync::mpsc::channel;
+//     use std::sync::Arc;
+//     use std::thread;
 
-    #[inline(always)]
-    fn lock_exclusive(&self) {
-        // Prevent guard destructor running
-        core::mem::forget(self.write());
-    }
+//     type RwLock<T> = super::RwLock<T>;
 
-    #[inline(always)]
-    fn try_lock_exclusive(&self) -> bool {
-        // Prevent guard destructor running
-        self.try_write().map(|g| core::mem::forget(g)).is_some()
-    }
+//     #[derive(Eq, PartialEq, Debug)]
+//     struct NonCopy(i32);
 
-    #[inline(always)]
-    unsafe fn unlock_exclusive(&self) {
-        drop(RwLockWriteGuard {
-            inner: self,
-            data: &mut (),
-            phantom: PhantomData,
-        });
-    }
+//     #[test]
+//     fn smoke() {
+//         let l = RwLock::new(());
+//         drop(l.read());
+//         drop(l.write());
+//         drop((l.read(), l.read()));
+//         drop(l.write());
+//     }
 
-    #[inline(always)]
-    fn lock_shared(&self) {
-        // Prevent guard destructor running
-        core::mem::forget(self.read());
-    }
+//     // TODO: needs RNG
+//     //#[test]
+//     //fn frob() {
+//     //    static R: RwLock = RwLock::new();
+//     //    const N: usize = 10;
+//     //    const M: usize = 1000;
+//     //
+//     //    let (txx) = channel::<()>();
+//     //    for _ in 0..N {
+//     //        let tx = tx.clone();
+//     //        thread::spawn(move|| {
+//     //            let mut rng = rand::thread_rng();
+//     //            for _ in 0..M {
+//     //                if rng.gen_weighted_bool(N) {
+//     //                    drop(R.write());
+//     //                } else {
+//     //                    drop(R.read());
+//     //                }
+//     //            }
+//     //            drop(tx);
+//     //        });
+//     //    }
+//     //    drop(tx);
+//     //    let _ = rx.recv();
+//     //    unsafe { R.destroy(); }
+//     //}
 
-    #[inline(always)]
-    fn try_lock_shared(&self) -> bool {
-        // Prevent guard destructor running
-        self.try_read().map(|g| core::mem::forget(g)).is_some()
-    }
+//     #[test]
+//     fn test_rw_arc() {
+//         let arc = Arc::new(RwLock::new(0));
+//         let arc2 = arc.clone();
+//         let (txx) = channel();
 
-    #[inline(always)]
-    unsafe fn unlock_shared(&self) {
-        drop(RwLockReadGuard {
-            lock: &self.lock,
-            data: &(),
-        });
-    }
+//         thread::spawn(move || {
+//             let mut lock = arc2.write();
+//             for _ in 0..10 {
+//                 let tmp = *lock;
+//                 *lock = -1;
+//                 thread::yield_now();
+//                 *lock = tmp + 1;
+//             }
+//             tx.send(()).unwrap();
+//         });
 
-    #[inline(always)]
-    fn is_locked(&self) -> bool {
-        self.lock.load(Ordering::Relaxed) != 0
-    }
-}
+//         // Readers try to catch the writer in the act
+//         let mut children = Vec::new();
+//         for _ in 0..5 {
+//             let arc3 = arc.clone();
+//             children.push(thread::spawn(move || {
+//                 let lock = arc3.read();
+//                 assert!(*lock >= 0);
+//             }));
+//         }
 
-#[cfg(feature = "lock_api")]
-unsafe impl<R: RelaxStrategy> lock_api_crate::RawRwLockUpgrade for RwLock<(), R> {
-    #[inline(always)]
-    fn lock_upgradable(&self) {
-        // Prevent guard destructor running
-        core::mem::forget(self.upgradeable_read());
-    }
+//         // Wait for children to pass their asserts
+//         for r in children {
+//             assert!(r.join().is_ok());
+//         }
 
-    #[inline(always)]
-    fn try_lock_upgradable(&self) -> bool {
-        // Prevent guard destructor running
-        self.try_upgradeable_read()
-            .map(|g| core::mem::forget(g))
-            .is_some()
-    }
+//         // Wait for writer to finish
+//         rx.recv().unwrap();
+//         let lock = arc.read();
+//         assert_eq!(*lock, 10);
+//     }
 
-    #[inline(always)]
-    unsafe fn unlock_upgradable(&self) {
-        drop(RwLockUpgradableGuard {
-            inner: self,
-            data: &(),
-            phantom: PhantomData,
-        });
-    }
+//     #[test]
+//     fn test_rw_access_in_unwind() {
+//         let arc = Arc::new(RwLock::new(1));
+//         let arc2 = arc.clone();
+//         let _ = thread::spawn(move || -> () {
+//             struct Unwinder {
+//                 i: Arc<RwLock<isize>>,
+//             }
+//             impl Drop for Unwinder {
+//                 fn drop(&mut self) {
+//                     let mut lock = self.i.write();
+//                     *lock += 1;
+//                 }
+//             }
+//             let _u = Unwinder { i: arc2 };
+//             panic!();
+//         })
+//         .join();
+//         let lock = arc.read();
+//         assert_eq!(*lock, 2);
+//     }
 
-    #[inline(always)]
-    unsafe fn upgrade(&self) {
-        let tmp_guard = RwLockUpgradableGuard {
-            inner: self,
-            data: &(),
-            phantom: PhantomData,
-        };
-        core::mem::forget(tmp_guard.upgrade());
-    }
+//     #[test]
+//     fn test_rwlock_unsized() {
+//         let rw: &RwLock<[i32]> = &RwLock::new([1, 2, 3]);
+//         {
+//             let b = &mut *rw.write();
+//             b[0] = 4;
+//             b[2] = 5;
+//         }
+//         let comp: &[i32] = &[4, 2, 5];
+//         assert_eq!(&*rw.read(), comp);
+//     }
 
-    #[inline(always)]
-    unsafe fn try_upgrade(&self) -> bool {
-        let tmp_guard = RwLockUpgradableGuard {
-            inner: self,
-            data: &(),
-            phantom: PhantomData,
-        };
-        tmp_guard
-            .try_upgrade()
-            .map(|g| core::mem::forget(g))
-            .is_ok()
-    }
-}
+//     #[test]
+//     fn test_rwlock_try_write() {
+//         use std::mem::drop;
 
-#[cfg(feature = "lock_api")]
-unsafe impl<R: RelaxStrategy> lock_api_crate::RawRwLockDowngrade for RwLock<(), R> {
-    unsafe fn downgrade(&self) {
-        let tmp_guard = RwLockWriteGuard {
-            inner: self,
-            data: &mut (),
-            phantom: PhantomData,
-        };
-        core::mem::forget(tmp_guard.downgrade());
-    }
-}
+//         let lock = RwLock::new(0isize);
+//         let read_guard = lock.read();
 
-#[cfg(feature = "lock_api1")]
-unsafe impl lock_api::RawRwLockUpgradeDowngrade for RwLock<()> {
-    unsafe fn downgrade_upgradable(&self) {
-        let tmp_guard = RwLockUpgradableGuard {
-            inner: self,
-            data: &(),
-            phantom: PhantomData,
-        };
-        core::mem::forget(tmp_guard.downgrade());
-    }
+//         let write_result = lock.try_write();
+//         match write_result {
+//             None => (),
+//             Some(_) => assert!(
+//                 false,
+//                 "try_write should not succeed while read_guard is in scope"
+//             ),
+//         }
 
-    unsafe fn downgrade_to_upgradable(&self) {
-        let tmp_guard = RwLockWriteGuard {
-            inner: self,
-            data: &mut (),
-            phantom: PhantomData,
-        };
-        core::mem::forget(tmp_guard.downgrade_to_upgradeable());
-    }
-}
+//         drop(read_guard);
+//     }
 
-#[cfg(test)]
-mod tests {
-    use std::prelude::v1::*;
+//     #[test]
+//     fn test_rw_try_read() {
+//         let m = RwLock::new(0);
+//         ::std::mem::forget(m.write());
+//         assert!(m.try_read().is_none());
+//     }
 
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::mpsc::channel;
-    use std::sync::Arc;
-    use std::thread;
+//     #[test]
+//     fn test_into_inner() {
+//         let m = RwLock::new(NonCopy(10));
+//         assert_eq!(m.into_inner(), NonCopy(10));
+//     }
 
-    type RwLock<T> = super::RwLock<T>;
+//     #[test]
+//     fn test_into_inner_drop() {
+//         struct Foo(Arc<AtomicUsize>);
+//         impl Drop for Foo {
+//             fn drop(&mut self) {
+//                 self.0.fetch_add(1, Ordering::SeqCst);
+//             }
+//         }
+//         let num_drops = Arc::new(AtomicUsize::new(0));
+//         let m = RwLock::new(Foo(num_drops.clone()));
+//         assert_eq!(num_drops.load(Ordering::SeqCst), 0);
+//         {
+//             let _inner = m.into_inner();
+//             assert_eq!(num_drops.load(Ordering::SeqCst), 0);
+//         }
+//         assert_eq!(num_drops.load(Ordering::SeqCst), 1);
+//     }
 
-    #[derive(Eq, PartialEq, Debug)]
-    struct NonCopy(i32);
+//     #[test]
+//     fn test_force_read_decrement() {
+//         let m = RwLock::new(());
+//         ::std::mem::forget(m.read());
+//         ::std::mem::forget(m.read());
+//         ::std::mem::forget(m.read());
+//         assert!(m.try_write().is_none());
+//         unsafe {
+//             m.force_read_decrement();
+//             m.force_read_decrement();
+//         }
+//         assert!(m.try_write().is_none());
+//         unsafe {
+//             m.force_read_decrement();
+//         }
+//         assert!(m.try_write().is_some());
+//     }
 
-    #[test]
-    fn smoke() {
-        let l = RwLock::new(());
-        drop(l.read());
-        drop(l.write());
-        drop((l.read(), l.read()));
-        drop(l.write());
-    }
+//     #[test]
+//     fn test_force_write_unlock() {
+//         let m = RwLock::new(());
+//         ::std::mem::forget(m.write());
+//         assert!(m.try_read().is_none());
+//         unsafe {
+//             m.force_write_unlock();
+//         }
+//         assert!(m.try_read().is_some());
+//     }
 
-    // TODO: needs RNG
-    //#[test]
-    //fn frob() {
-    //    static R: RwLock = RwLock::new();
-    //    const N: usize = 10;
-    //    const M: usize = 1000;
-    //
-    //    let (tx, rx) = channel::<()>();
-    //    for _ in 0..N {
-    //        let tx = tx.clone();
-    //        thread::spawn(move|| {
-    //            let mut rng = rand::thread_rng();
-    //            for _ in 0..M {
-    //                if rng.gen_weighted_bool(N) {
-    //                    drop(R.write());
-    //                } else {
-    //                    drop(R.read());
-    //                }
-    //            }
-    //            drop(tx);
-    //        });
-    //    }
-    //    drop(tx);
-    //    let _ = rx.recv();
-    //    unsafe { R.destroy(); }
-    //}
+//     #[test]
+//     fn test_upgrade_downgrade() {
+//         let m = RwLock::new(());
+//         {
+//             let _r = m.read();
+//             let upg = m.try_upgradeable_read().unwrap();
+//             assert!(m.try_read().is_none());
+//             assert!(m.try_write().is_none());
+//             assert!(upg.try_upgrade().is_err());
+//         }
+//         {
+//             let w = m.write();
+//             assert!(m.try_upgradeable_read().is_none());
+//             let _r = w.downgrade();
+//             assert!(m.try_upgradeable_read().is_some());
+//             assert!(m.try_read().is_some());
+//             assert!(m.try_write().is_none());
+//         }
+//         {
+//             let _u = m.upgradeable_read();
+//             assert!(m.try_upgradeable_read().is_none());
+//         }
 
-    #[test]
-    fn test_rw_arc() {
-        let arc = Arc::new(RwLock::new(0));
-        let arc2 = arc.clone();
-        let (tx, rx) = channel();
-
-        thread::spawn(move || {
-            let mut lock = arc2.write();
-            for _ in 0..10 {
-                let tmp = *lock;
-                *lock = -1;
-                thread::yield_now();
-                *lock = tmp + 1;
-            }
-            tx.send(()).unwrap();
-        });
-
-        // Readers try to catch the writer in the act
-        let mut children = Vec::new();
-        for _ in 0..5 {
-            let arc3 = arc.clone();
-            children.push(thread::spawn(move || {
-                let lock = arc3.read();
-                assert!(*lock >= 0);
-            }));
-        }
-
-        // Wait for children to pass their asserts
-        for r in children {
-            assert!(r.join().is_ok());
-        }
-
-        // Wait for writer to finish
-        rx.recv().unwrap();
-        let lock = arc.read();
-        assert_eq!(*lock, 10);
-    }
-
-    #[test]
-    fn test_rw_access_in_unwind() {
-        let arc = Arc::new(RwLock::new(1));
-        let arc2 = arc.clone();
-        let _ = thread::spawn(move || -> () {
-            struct Unwinder {
-                i: Arc<RwLock<isize>>,
-            }
-            impl Drop for Unwinder {
-                fn drop(&mut self) {
-                    let mut lock = self.i.write();
-                    *lock += 1;
-                }
-            }
-            let _u = Unwinder { i: arc2 };
-            panic!();
-        })
-        .join();
-        let lock = arc.read();
-        assert_eq!(*lock, 2);
-    }
-
-    #[test]
-    fn test_rwlock_unsized() {
-        let rw: &RwLock<[i32]> = &RwLock::new([1, 2, 3]);
-        {
-            let b = &mut *rw.write();
-            b[0] = 4;
-            b[2] = 5;
-        }
-        let comp: &[i32] = &[4, 2, 5];
-        assert_eq!(&*rw.read(), comp);
-    }
-
-    #[test]
-    fn test_rwlock_try_write() {
-        use std::mem::drop;
-
-        let lock = RwLock::new(0isize);
-        let read_guard = lock.read();
-
-        let write_result = lock.try_write();
-        match write_result {
-            None => (),
-            Some(_) => assert!(
-                false,
-                "try_write should not succeed while read_guard is in scope"
-            ),
-        }
-
-        drop(read_guard);
-    }
-
-    #[test]
-    fn test_rw_try_read() {
-        let m = RwLock::new(0);
-        ::std::mem::forget(m.write());
-        assert!(m.try_read().is_none());
-    }
-
-    #[test]
-    fn test_into_inner() {
-        let m = RwLock::new(NonCopy(10));
-        assert_eq!(m.into_inner(), NonCopy(10));
-    }
-
-    #[test]
-    fn test_into_inner_drop() {
-        struct Foo(Arc<AtomicUsize>);
-        impl Drop for Foo {
-            fn drop(&mut self) {
-                self.0.fetch_add(1, Ordering::SeqCst);
-            }
-        }
-        let num_drops = Arc::new(AtomicUsize::new(0));
-        let m = RwLock::new(Foo(num_drops.clone()));
-        assert_eq!(num_drops.load(Ordering::SeqCst), 0);
-        {
-            let _inner = m.into_inner();
-            assert_eq!(num_drops.load(Ordering::SeqCst), 0);
-        }
-        assert_eq!(num_drops.load(Ordering::SeqCst), 1);
-    }
-
-    #[test]
-    fn test_force_read_decrement() {
-        let m = RwLock::new(());
-        ::std::mem::forget(m.read());
-        ::std::mem::forget(m.read());
-        ::std::mem::forget(m.read());
-        assert!(m.try_write().is_none());
-        unsafe {
-            m.force_read_decrement();
-            m.force_read_decrement();
-        }
-        assert!(m.try_write().is_none());
-        unsafe {
-            m.force_read_decrement();
-        }
-        assert!(m.try_write().is_some());
-    }
-
-    #[test]
-    fn test_force_write_unlock() {
-        let m = RwLock::new(());
-        ::std::mem::forget(m.write());
-        assert!(m.try_read().is_none());
-        unsafe {
-            m.force_write_unlock();
-        }
-        assert!(m.try_read().is_some());
-    }
-
-    #[test]
-    fn test_upgrade_downgrade() {
-        let m = RwLock::new(());
-        {
-            let _r = m.read();
-            let upg = m.try_upgradeable_read().unwrap();
-            assert!(m.try_read().is_none());
-            assert!(m.try_write().is_none());
-            assert!(upg.try_upgrade().is_err());
-        }
-        {
-            let w = m.write();
-            assert!(m.try_upgradeable_read().is_none());
-            let _r = w.downgrade();
-            assert!(m.try_upgradeable_read().is_some());
-            assert!(m.try_read().is_some());
-            assert!(m.try_write().is_none());
-        }
-        {
-            let _u = m.upgradeable_read();
-            assert!(m.try_upgradeable_read().is_none());
-        }
-
-        assert!(m.try_upgradeable_read().unwrap().try_upgrade().is_ok());
-    }
-}
+//         assert!(m.try_upgradeable_read().unwrap().try_upgrade().is_ok());
+//     }
+// }

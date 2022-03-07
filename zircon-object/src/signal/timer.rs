@@ -4,7 +4,7 @@ use alloc::boxed::Box;
 use alloc::sync::Arc;
 use core::time::Duration;
 // use spin::Mutex;
-use lock::spinlock::Mutex;
+use lock::mutex::Mutex;
 
 /// An object that may be signaled at some point in the future
 ///

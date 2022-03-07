@@ -1,7 +1,7 @@
 use alloc::{boxed::Box, sync::Arc};
 
 // use spin::Mutex;
-use lock::spinlock::Mutex;
+use lock::mutex::Mutex;
 
 use crate::prelude::{CapabilityType, InputEvent, InputEventType};
 use crate::scheme::{impl_event_scheme, InputScheme};

@@ -13,7 +13,7 @@ use hashbrown::HashMap;
 use rcore_fs::vfs::{FileSystem, INode};
 use smoltcp::socket::SocketHandle;
 // use spin::{Mutex, MutexGuard};
-use lock::spinlock::{Mutex, MutexGuard};
+use lock::mutex::{Mutex, MutexGuard};
 
 use kernel_hal::VirtAddr;
 use zircon_object::{
@@ -485,7 +485,7 @@ impl LinuxProcess {
     }
 
     /// Insert the `SharedGuard` and return its ID
-    pub fn shm_add(&self, shared_guard: Arc<spin::Mutex<ShmGuard>>) -> usize {
+    pub fn shm_add(&self, shared_guard: Arc<Mutex<ShmGuard>>) -> usize {
         self.inner.lock().shm_identifiers.add(shared_guard)
     }
 

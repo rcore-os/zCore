@@ -4,7 +4,7 @@ use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 // use spin::Mutex;
-use lock::spinlock::Mutex;
+use lock::mutex::Mutex;
 
 use smoltcp::iface::*;
 use smoltcp::phy::{self, Device, DeviceCapabilities, Medium};

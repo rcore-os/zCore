@@ -9,7 +9,7 @@ use {
     bitflags::bitflags,
     core::ops::Deref,
     kernel_hal::CachePolicy,
-    spin::Mutex,
+    lock::mutex::Mutex, //spin::Mutex,
 };
 
 mod paged;

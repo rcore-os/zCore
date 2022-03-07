@@ -9,7 +9,8 @@ use {
     core::sync::atomic::*,
     hashbrown::HashMap,
     kernel_hal::{mem::PhysFrame, PAGE_SIZE},
-    spin::{Mutex, MutexGuard},
+    // spin::{Mutex, MutexGuard},
+    lock::mutex::{Mutex, MutexGuard},
 };
 
 enum VMOType {

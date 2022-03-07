@@ -11,7 +11,7 @@ use core::{
 };
 use rcore_fs::vfs::*;
 // use spin::Mutex;
-use lock::spinlock::Mutex;
+use lock::mutex::Mutex;
 
 #[derive(Clone, PartialEq)]
 #[allow(dead_code)]

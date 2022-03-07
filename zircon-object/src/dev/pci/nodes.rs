@@ -17,7 +17,7 @@ use kernel_hal::interrupt;
 use numeric_enum_macro::numeric_enum;
 use region_alloc::RegionAllocator;
 // use spin::{Mutex, MutexGuard};
-use lock::spinlock::{Mutex, MutexGuard};
+use lock::mutex::{Mutex, MutexGuard};
 
 numeric_enum! {
     #[repr(u8)]

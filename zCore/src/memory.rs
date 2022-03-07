@@ -5,7 +5,7 @@ use core::ops::Range;
 use bitmap_allocator::BitAlloc;
 use kernel_hal::PhysAddr;
 // use spin::Mutex;
-use lock::spinlock::Mutex;
+use lock::mutex::Mutex;
 
 use super::platform::consts::*;
 

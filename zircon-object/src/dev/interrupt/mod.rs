@@ -8,7 +8,7 @@ use {
     alloc::{boxed::Box, sync::Arc},
     bitflags::bitflags,
     // spin::Mutex,
-    lock::spinlock::Mutex,
+    lock::mutex::Mutex,
 };
 
 mod event_interrupt;

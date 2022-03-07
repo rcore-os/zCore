@@ -1,16 +1,15 @@
 use core::{
     cell::UnsafeCell,
+    default::Default,
     fmt,
     ops::{Deref, DerefMut},
     sync::atomic::{AtomicBool, Ordering},
-    default::Default,
 };
 
-use crate::interrupt::{cpu_id_, pop_off, push_off};
+use crate::interrupt::{pop_off, push_off};
 
 pub struct Mutex<T: ?Sized> {
     pub(crate) locked: AtomicBool,
-    cpuid: u8,
     data: UnsafeCell<T>,
 }
 
@@ -32,7 +31,6 @@ impl<T> Mutex<T> {
         Mutex {
             locked: AtomicBool::new(false),
             data: UnsafeCell::new(data),
-            cpuid: 0,
         }
     }
 
@@ -54,10 +52,6 @@ impl<T: ?Sized> Mutex<T> {
     #[inline(always)]
     pub fn lock(&self) -> MutexGuard<T> {
         push_off();
-        if self.holding() {
-            panic!("a spinlock can only be locked once by a CPU");
-        }
-
         while self
             .locked
             .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
@@ -68,7 +62,6 @@ impl<T: ?Sized> Mutex<T> {
                 core::hint::spin_loop();
             }
         }
-
         MutexGuard {
             spinlock: self,
             data: unsafe { &mut *self.data.get() },
@@ -78,9 +71,6 @@ impl<T: ?Sized> Mutex<T> {
     #[inline(always)]
     pub fn try_lock(&self) -> Option<MutexGuard<T>> {
         push_off();
-        if self.holding() {
-            panic!("a spinlock can only be locked once by a CPU");
-        }
         if self
             .locked
             .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
@@ -107,13 +97,6 @@ impl<T: ?Sized> Mutex<T> {
     pub fn is_locked(&self) -> bool {
         self.locked.load(Ordering::Relaxed)
     }
-
-    /// Check whether this cpu is holding the lock.
-    /// Interrupts must be off.
-    #[inline(always)]
-    pub fn holding(&self) -> bool {
-        return self.is_locked() && self.cpuid == cpu_id_();
-    }
 }
 
 impl<'a, T: ?Sized + fmt::Display> fmt::Display for MutexGuard<'a, T> {
@@ -138,7 +121,7 @@ impl<'a, T: ?Sized> DerefMut for MutexGuard<'a, T> {
 impl<'a, T: ?Sized> Drop for MutexGuard<'a, T> {
     /// The dropping of the MutexGuard will release the lock it was created from.
     fn drop(&mut self) {
-        if !self.spinlock.holding() {
+        if !self.spinlock.is_locked() {
             panic!("current cpu doesn't hold the lock{}", self.spinlock);
         }
         self.spinlock.locked.store(false, Ordering::Release);
@@ -146,14 +129,17 @@ impl<'a, T: ?Sized> Drop for MutexGuard<'a, T> {
     }
 }
 
+// Not make sence, just to use #[drive(Debug)]
 impl<T: ?Sized> fmt::Display for Mutex<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "Spinlock{{locked={}, cpuid={}}}",
-            self.locked.load(Ordering::Relaxed),
-            self.cpuid,
-        )
+        write!(f, "Mutex{{locked={}}}", self.locked.load(Ordering::Relaxed),)
+    }
+}
+
+// Not make sence, just to use #[drive(Debug)]
+impl<T: ?Sized> fmt::Debug for Mutex<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Mutex{{locked={}}}", self.locked.load(Ordering::Relaxed))
     }
 }
 

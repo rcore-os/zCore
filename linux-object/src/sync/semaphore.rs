@@ -12,7 +12,7 @@ use core::ops::Deref;
 use core::pin::Pin;
 use core::task::{Context, Poll};
 // use spin::Mutex;
-use lock::spinlock::Mutex;
+use lock::mutex::Mutex;
 
 /// A counting, blocking, semaphore.
 pub struct Semaphore {
