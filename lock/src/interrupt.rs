@@ -1,7 +1,7 @@
 use core::cell::{RefCell, RefMut};
 use lazy_static::*;
 
-extern "C" {
+extern "C" interrupt_ffi {
     pub fn intr_on();
     pub fn intr_off();
     pub fn intr_get() -> bool;

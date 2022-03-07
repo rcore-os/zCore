@@ -2,7 +2,8 @@ use {
     crate::object::*,
     alloc::collections::VecDeque,
     alloc::sync::{Arc, Weak},
-    spin::Mutex,
+    // spin::Mutex,
+    lock::spinlock::Mutex,
 };
 
 /// First-In First-Out inter-process queue.

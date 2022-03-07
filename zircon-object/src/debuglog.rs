@@ -4,7 +4,8 @@ use {
     crate::object::*,
     alloc::{sync::Arc, vec::Vec},
     lazy_static::lazy_static,
-    spin::Mutex,
+    // spin::Mutex,
+    lock::spinlock::Mutex,
 };
 
 lazy_static! {
