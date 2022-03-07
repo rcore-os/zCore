@@ -10,8 +10,7 @@ use x86_64::instructions::interrupts;
 hal_fn_impl! {
     impl mod crate::hal_fn::interrupt {
         fn wait_for_interrupt() {
-            interrupts::enable_and_hlt();
-            interrupts::disable();
+            interrupts::hlt();
         }
 
         fn is_valid_irq(gsi: usize) -> bool {

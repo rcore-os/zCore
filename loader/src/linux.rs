@@ -73,7 +73,7 @@ async fn run_user(thread: CurrentThread) {
 
 async fn handle_user_trap(thread: &CurrentThread, mut ctx: Box<UserContext>) -> ZxResult {
     let reason = ctx.trap_reason();
-
+    info!("trap from user mode : {:?}", reason);
     if let TrapReason::Syscall = reason {
         let num = syscall_num(&ctx);
         let args = syscall_args(&ctx);
