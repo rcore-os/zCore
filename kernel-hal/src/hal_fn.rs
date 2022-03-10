@@ -37,6 +37,9 @@ hal_fn_def! {
 
         /// Current CPU frequency in MHz.
         pub fn cpu_frequency() -> u16 { 3000 }
+
+        /// Shutdown/reboot the machine.
+        pub fn reset() -> !;
     }
 
     /// Physical memory operations.

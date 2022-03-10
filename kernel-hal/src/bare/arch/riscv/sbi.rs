@@ -74,6 +74,11 @@ pub fn send_ipi(sipi_value: usize) -> usize {
     sbi_call(SBI_SEND_IPI, 0, sipi_value, 0, 0)
 }
 
+pub fn shutdown() -> ! {
+    sbi_call(SBI_SHUTDOWN, 0, 0, 0, 0);
+    unreachable!();
+}
+
 /// executing the target hart in supervisor-mode at address
 /// specified by start_addr parameter
 ///
