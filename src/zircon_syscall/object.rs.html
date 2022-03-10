@@ -871,7 +871,7 @@
                 <span class="ident">info_ptr</span>.<span class="ident">write</span>(<span class="ident">job</span>.<span class="ident">get_info</span>())<span class="question-mark">?</span>;
             }
             <span class="ident">Topic::ProcessVmos</span> =&gt; {
-                <span class="macro">error!</span>(<span class="string">&quot;A dummy implementation for utest Bti.NoDelayedUnpin, it does not check the reture value&quot;</span>);
+                <span class="macro">warn!</span>(<span class="string">&quot;A dummy implementation for utest Bti.NoDelayedUnpin, it does not check the reture value&quot;</span>);
                 <span class="ident">actual</span>.<span class="ident">write</span>(<span class="number">0</span>)<span class="question-mark">?</span>;
                 <span class="ident">avail</span>.<span class="ident">write</span>(<span class="number">0</span>)<span class="question-mark">?</span>;
             }

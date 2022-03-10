@@ -203,6 +203,9 @@
 <span id="197">197</span>
 <span id="198">198</span>
 <span id="199">199</span>
+<span id="200">200</span>
+<span id="201">201</span>
+<span id="202">202</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="ident">alloc</span>::{<span class="ident">boxed::Box</span>, <span class="ident">string::String</span>, <span class="ident">vec::Vec</span>};
 <span class="kw">use</span> <span class="ident">core</span>::{<span class="ident">future::Future</span>, <span class="ident">ops::Range</span>, <span class="ident">time::Duration</span>};
 
@@ -242,6 +245,9 @@
 
         <span class="doccomment">/// Current CPU frequency in MHz.</span>
         <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">cpu_frequency</span>() -&gt; <span class="ident">u16</span> { <span class="number">3000</span> }
+
+        <span class="doccomment">/// Shutdown/reboot the machine.</span>
+        <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">reset</span>() -&gt; <span class="op">!</span>;
     }
 
     <span class="doccomment">/// Physical memory operations.</span>
