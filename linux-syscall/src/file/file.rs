@@ -13,11 +13,25 @@ use super::*;
 use linux_object::time::TimeSpec;
 
 impl Syscall<'_> {
-    /// Reads from a specified file using a file descriptor. Before using this call,
-    /// you must first obtain a file descriptor using the opensyscall. Returns bytes read successfully.
-    /// - fd – file descriptor
-    /// - base – pointer to the buffer to fill with read contents
-    /// - len – number of bytes to read
+    /// Read from a file descriptor
+    ///
+    /// read() attempts to read up to count bytes from file descriptor fd into the buffer starting at buf.
+    ///
+    /// # argument
+    ///
+    /// * `fd` - file descriptor.
+    /// * `base` - pointer to the buffer to fill with read contents.
+    /// * `len` - number of bytes to read.
+    ///
+    /// # return value
+    ///
+    /// On success, the number of bytes read is returned(zero indicates end of file).  
+    /// On error, LxError is returned, and error enum is set to indicate the error.
+    ///
+    /// # errors
+    ///
+    /// * __EINVAL__ - Invalid value in *flags*.
+    ///
     pub async fn sys_read(&self, fd: FileDesc, mut base: UserOutPtr<u8>, len: usize) -> SysResult {
         info!("read: fd={:?}, base={:?}, len={:#x}", fd, base, len);
         let proc = self.linux_process();
@@ -28,11 +42,25 @@ impl Syscall<'_> {
         Ok(len)
     }
 
-    /// Writes to a specified file using a file descriptor. Before using this call,
-    /// you must first obtain a file descriptor using the open syscall. Returns bytes written successfully.
-    /// - fd – file descriptor
-    /// - base – pointer to the buffer write
-    /// - len – number of bytes to write
+    /// Write to a file descriptor
+    ///
+    /// write() writes up to count bytes from the buffer starting at buf to the file referred to by the file descriptor fd.
+    ///
+    /// # argument
+    ///
+    /// * `fd` - file descriptor.
+    /// * `base` - pointer to the buffer to write.
+    /// * `len` - number of bytes to write.
+    ///
+    /// # return value
+    ///
+    /// On success, the number of bytes written is returned.  
+    /// On error, LxError is returned, and error enum is set to indicate the error.
+    ///
+    /// # errors
+    ///
+    /// * __EINVAL__ - Invalid value in *flags*.
+    ///
     pub fn sys_write(&self, fd: FileDesc, base: UserInPtr<u8>, len: usize) -> SysResult {
         info!("write: fd={:?}, base={:?}, len={:#x}", fd, base, len);
         let proc = self.linux_process();
@@ -42,9 +70,26 @@ impl Syscall<'_> {
         Ok(len)
     }
 
-    /// read from or write to a file descriptor at a given offset
-    /// reads up to count bytes from file descriptor fd at offset offset
-    /// (from the start of the file) into the buffer starting at buf. The file offset is not changed.
+    /// Read from a file descriptor at a given offset
+    ///
+    ///  pread() reads up to count bytes from file descriptor fd at offset offset (from the start of the file) into the buffer starting at buf.  The file offset is not changed.
+    ///
+    /// # argument
+    ///
+    /// * `fd` - file descriptor.
+    /// * `base` - pointer to the buffer to read.
+    /// * `len` - number of bytes to read.
+    /// * `offset` - offset from the start of the file.
+    ///
+    /// # return value
+    ///
+    /// On success, the number of bytes read is returned(zero indicates end of file).  
+    /// On error, LxError is returned, and error enum is set to indicate the error.
+    ///
+    /// # errors
+    ///
+    /// * __EINVAL__ - Invalid value in *flags*.
+    ///
     pub async fn sys_pread(
         &self,
         fd: FileDesc,
@@ -64,8 +109,26 @@ impl Syscall<'_> {
         Ok(len)
     }
 
-    /// writes up to count bytes from the buffer
-    /// starting at buf to the file descriptor fd at offset offset. The file offset is not changed.
+    /// Write to a file descriptor at a given offset
+    ///
+    /// pwrite() writes up to count bytes from the buffer starting at buf to the file descriptor fd at offset offset.  The file offset is not changed.
+    ///
+    /// # argument
+    ///
+    /// * `fd` - file descriptor.
+    /// * `base` - pointer to the buffer to write.
+    /// * `len` - number of bytes to write.
+    /// * `offset` - offset from the start of the file.
+    ///
+    /// # return value
+    ///
+    /// On success, the number of bytes written is returned.  
+    /// On error, LxError is returned, and error enum is set to indicate the error.
+    ///
+    /// # errors
+    ///
+    /// * __EINVAL__ - Invalid value in *flags*.
+    ///
     pub fn sys_pwrite(
         &self,
         fd: FileDesc,
@@ -84,9 +147,25 @@ impl Syscall<'_> {
         Ok(len)
     }
 
-    /// works just like read except that multiple buffers are filled.
-    /// reads iov_count buffers from the file
-    /// associated with the file descriptor fd into the buffers described by iov ("scatter input")
+    /// Read data into multiple buffers
+    ///
+    /// The readv() system call reads iovcnt buffers from the file associated with the file descriptor fd into the buffers described by iov ("scatter input").
+    ///
+    /// # argument
+    ///
+    /// * `fd` - file descriptor.
+    /// * `iov_ptr` - pointer to the io vecter buffer to read.
+    /// * `iov_count` - number of vecter entitiy to read.
+    ///
+    /// # return value
+    ///
+    /// On success, the number of bytes read is returned(zero indicates end of file).  
+    /// On error, LxError is returned, and error enum is set to indicate the error.
+    ///
+    /// # errors
+    ///
+    /// * __EINVAL__ - Invalid value in *flags*.
+    ///
     pub async fn sys_readv(
         &self,
         fd: FileDesc,
@@ -103,9 +182,25 @@ impl Syscall<'_> {
         Ok(len)
     }
 
-    /// works just like write except that multiple buffers are written out.
-    /// writes iov_count buffers of data described
-    /// by iov to the file associated with the file descriptor fd ("gather output").
+    /// Write data into multiple buffers
+    ///
+    /// The writev() system call writes iovcnt buffers of data described by iov to the file associated with the file descriptor fd ("gather output").
+    ///
+    /// # argument
+    ///
+    /// * `fd` - file descriptor.
+    /// * `iov_ptr` - pointer to the io vecter buffer to write.
+    /// * `iov_count` - number of vecter entitiy to write.
+    ///
+    /// # return value
+    ///
+    /// On success, the number of bytes written is returned.  
+    /// On error, LxError is returned, and error enum is set to indicate the error.
+    ///
+    /// # errors
+    ///
+    /// * __EINVAL__ - Invalid value in *flags*.
+    ///
     pub fn sys_writev(
         &self,
         fd: FileDesc,
@@ -124,8 +219,28 @@ impl Syscall<'_> {
         Ok(len)
     }
 
-    /// repositions the offset of the open file associated with the file descriptor fd
-    /// to the argument offset according to the directive whence
+    /// Reposition read/write file offset
+    ///
+    /// lseek() repositions the file offset of the open file description associated with the file descriptor fd to the argument offset according to the directive *whence*.
+    ///
+    /// # argument
+    ///
+    /// * `fd` - file descriptor.
+    /// * `offset` - the bytes of offset.
+    /// * `whence` - the type of offset.
+    ///     1. SEEK_SET - The file offset is set to offset bytes.
+    ///     2. SEEK_CUR - The file offset is set to its current location plus offset bytes.
+    ///     3. SEEK_END - The file offset is set to the size of the file plus offset bytes.
+    ///
+    /// # return value
+    ///
+    /// On success, returns the resulting offset location as measured in bytes from the beginning of the file.  
+    /// On error, LxError is returned, and error enum is set to indicate the error.
+    ///
+    /// # errors
+    ///
+    /// * __EINVAL__ - Invalid value in *flags*.
+    ///
     pub fn sys_lseek(&self, fd: FileDesc, offset: i64, whence: u8) -> SysResult {
         const SEEK_SET: u8 = 0;
         const SEEK_CUR: u8 = 1;
@@ -145,7 +260,24 @@ impl Syscall<'_> {
         Ok(offset as usize)
     }
 
-    /// cause the regular file named by path to be truncated to a size of precisely length bytes.
+    /// Truncate a file to a specified length
+    ///
+    /// The truncate() functions cause the regular file named by path to be truncated to a size of precisely length bytes.
+    ///
+    /// # argument
+    ///
+    /// * `path` - path to the file.
+    /// * `len` - a size of precisely length bytes.
+    ///
+    /// # return value
+    ///
+    /// On success,  zero is returned.  
+    /// On error, LxError is returned, and error enum is set to indicate the error.
+    ///
+    /// # errors
+    ///
+    /// * __EINVAL__ - Invalid value in *flags*.
+    ///
     pub fn sys_truncate(&self, path: UserInPtr<u8>, len: usize) -> SysResult {
         let path = path.read_cstring()?;
         info!("truncate: path={:?}, len={}", path, len);
@@ -154,7 +286,24 @@ impl Syscall<'_> {
         Ok(0)
     }
 
-    /// cause the regular file referenced by fd to be truncated to a size of precisely length bytes.
+    /// Truncate a file to a specified length
+    ///
+    /// The ftruncate() functions cause the regular file referenced by fd to be truncated to a size of precisely length bytes.
+    ///
+    /// # argument
+    ///
+    /// * `fd` - file descriptor.
+    /// * `len` - a size of precisely length bytes.
+    ///
+    /// # return value
+    ///
+    /// On success,  zero is returned.  
+    /// On error, LxError is returned, and error enum is set to indicate the error.
+    ///
+    /// # errors
+    ///
+    /// * __EINVAL__ - Invalid value in *flags*.
+    ///
     pub fn sys_ftruncate(&self, fd: FileDesc, len: usize) -> SysResult {
         info!("ftruncate: fd={:?}, len={}", fd, len);
         let proc = self.linux_process();
@@ -162,7 +311,26 @@ impl Syscall<'_> {
         Ok(0)
     }
 
-    /// copies data between one file descriptor and another.
+    /// Transfer data between file descriptors
+    ///
+    /// sendfile() copies data between one file descriptor and another.
+    ///
+    /// # argument
+    ///
+    /// * `out_fd` - should be a descriptor opened for writing.
+    /// * `in_fd` - should be a file descriptor opened for reading.
+    /// * `offset_ptr` - will be set to the offset of the byte following the last byte that was read.
+    /// * `count` - is the number of bytes to copy between the file descriptors.
+    ///
+    /// # return value
+    ///
+    /// On success, the number of bytes written to out_fd is returned.  
+    /// On error, LxError is returned, and error enum is set to indicate the error.
+    ///
+    /// # errors
+    ///
+    /// * __EINVAL__ - Invalid value in *flags*.
+    ///
     pub async fn sys_sendfile(
         &self,
         out_fd: FileDesc,
@@ -174,7 +342,31 @@ impl Syscall<'_> {
             .await
     }
 
-    /// copies data between one file descriptor and anothe, read from specified offset and write new offset back
+    /// Copy a range of data from one file to another
+    ///
+    /// The copy_file_range() system call performs an in-kernel copy
+    /// between two file descriptors without the additional cost of
+    /// transferring data from the kernel to user space and then back
+    /// into the kernel.
+    ///
+    /// # argument
+    ///
+    /// * `in_fd` - the source file descriptor.
+    /// * `in_offset` - point to a buffer that specifies the starting offset
+    /// * `out_fd` - the target file descriptor.
+    /// * `out_offset` - point to a buffer that specifies the starting offset
+    /// * `count` - is the number of bytes to copy between the file descriptors.
+    /// * `flags` - is provided to allow for future extensions and currently must be set to 0.
+    ///
+    /// # return value
+    ///
+    /// On success, the number of bytes written to out_fd is returned.  
+    /// On error, LxError is returned, and error enum is set to indicate the error.
+    ///
+    /// # errors
+    ///
+    /// * __EINVAL__ - Invalid value in *flags*.
+    ///
     pub async fn sys_copy_file_range(
         &self,
         in_fd: FileDesc,
@@ -252,7 +444,20 @@ impl Syscall<'_> {
         Ok(total_written)
     }
 
-    /// causes all buffered modifications to file metadata and data to be written to the underlying file systems.
+    /// Commit filesystem caches to disk
+    ///
+    /// sync() causes all pending modifications to filesystem metadata
+    /// and cached file data to be written to the underlying filesystems.
+    ///
+    /// # return value
+    ///
+    /// On success, returns 0.  
+    /// On error, LxError is returned, and error enum is set to indicate the error.
+    ///
+    /// # errors
+    ///
+    /// * __EINVAL__ - Invalid value in *flags*.
+    ///
     pub fn sys_sync(&self) -> SysResult {
         info!("sync:");
         let proc = self.linux_process();
@@ -260,8 +465,28 @@ impl Syscall<'_> {
         Ok(0)
     }
 
-    /// transfers ("flushes") all modified in-core data of (i.e., modified buffer cache pages for) the file
-    /// referred to by the file descriptor fd to the disk device
+    /// Synchronize a file's in-core state with storage device
+    ///
+    /// fsync() transfers ("flushes") all modified in-core data of (i.e.,
+    /// modified buffer cache pages for) the file referred to by the file
+    /// descriptor fd to the disk device (or other permanent storage
+    /// device) so that all changed information can be retrieved even if
+    /// the system crashes or is rebooted.
+    ///
+    ///
+    /// # argument
+    ///
+    /// * `fd` - The specified file descriptor.
+    ///
+    /// # return value
+    ///
+    /// On success, returns 0.  
+    /// On error, LxError is returned, and error enum is set to indicate the error.
+    ///
+    /// # errors
+    ///
+    /// * __EINVAL__ - Invalid value in *flags*.
+    ///
     pub fn sys_fsync(&self, fd: FileDesc) -> SysResult {
         info!("fsync: fd={:?}", fd);
         let proc = self.linux_process();
@@ -269,7 +494,25 @@ impl Syscall<'_> {
         Ok(0)
     }
 
-    /// is similar to fsync(), but does not flush modified metadata unless that metadata is needed
+    /// Synchronize a file's in-core state with storage device
+    ///
+    /// fdatasync() is similar to fsync(), but does not flush modified
+    /// metadata unless that metadata is needed in order to allow a
+    /// subsequent data retrieval to be correctly handled.
+    ///
+    /// # argument
+    ///
+    /// * `fd` - The specified file descriptor.
+    ///
+    /// # return value
+    ///
+    /// On success, returns 0.  
+    /// On error, LxError is returned, and error enum is set to indicate the error.
+    ///
+    /// # errors
+    ///
+    /// * __EINVAL__ - Invalid value in *flags*.
+    ///
     pub fn sys_fdatasync(&self, fd: FileDesc) -> SysResult {
         info!("fdatasync: fd={:?}", fd);
         let proc = self.linux_process();
@@ -277,7 +520,27 @@ impl Syscall<'_> {
         Ok(0)
     }
 
-    /// Set parameters of device files.
+    /// Control device
+    ///
+    /// The ioctl() system call manipulates the underlying device
+    /// parameters of special files.
+    ///
+    /// # argument
+    ///
+    /// * `fd` -  must be an open file descriptor.
+    /// * `request` - is a device-dependent request code.
+    ///
+    /// # return value
+    ///
+    /// Usually, on success zero is returned.  A few ioctl() requests use
+    /// the return value as an output parameter and return a nonnegative
+    /// value on success.  
+    /// On error, LxError is returned, and error enum is set to indicate the error.
+    ///
+    /// # errors
+    ///
+    /// * __EINVAL__ - Invalid value in *flags*.
+    ///
     pub fn sys_ioctl(
         &self,
         fd: FileDesc,
@@ -295,9 +558,27 @@ impl Syscall<'_> {
         file_like.ioctl(request, arg1, arg2, arg3)
     }
 
-    /// Manipulate a file descriptor.
-    /// - cmd – cmd flag
-    /// - arg – additional parameters based on cmd
+    /// Manipulate file descriptor
+    ///
+    /// fcntl() performs one of the operations described below on the
+    /// open file descriptor fd.  The operation is determined by cmd.
+    ///
+    /// # argument
+    ///
+    /// * `fd` -  must be an open file descriptor.
+    /// * `cmd` - kind of operation.
+    /// * `arg` - optional required is determined by cmd.
+    ///
+    /// # return value
+    ///
+    /// Usually, on success zero is returned.  A few fcntl() requests use
+    /// the return value as an output parameter on success.  
+    /// On error, LxError is returned, and error enum is set to indicate the error.
+    ///
+    /// # errors
+    ///
+    /// * __EINVAL__ - Invalid value in *flags*.
+    ///
     pub fn sys_fcntl(&self, fd: FileDesc, cmd: usize, arg: usize) -> SysResult {
         info!("fcntl: fd={:?}, cmd={:x}, arg={}", fd, cmd, arg);
         let proc = self.linux_process();
@@ -341,13 +622,49 @@ impl Syscall<'_> {
         }
     }
 
-    /// Checks whether the calling process can access the file pathname
+    /// Check user's permissions for a file
+    ///
+    /// access() checks whether the calling process can access the file pathname.  If pathname is a symbolic link, it is dereferenced.
+    ///
+    /// # argument
+    ///
+    /// * `path` - path to the file.
+    /// * `mode` - specifies the accessibility check(s) to be performed.
+    ///
+    /// # return value
+    ///
+    /// On success, zero is returned.  
+    /// On error, LxError is returned, and error enum is set to indicate the error.
+    ///
+    /// # errors
+    ///
+    /// * __EINVAL__ - Invalid value in *flags*.
+    ///
     pub fn sys_access(&self, path: UserInPtr<u8>, mode: usize) -> SysResult {
         self.sys_faccessat(FileDesc::CWD, path, mode, 0)
     }
 
-    /// Check user's permissions of a file relative to a directory file descriptor
+    /// Check user's permissions for a file
     /// TODO: check permissions based on uid/gid
+    ///
+    /// faccessat() operates in exactly the same way as access().
+    ///
+    /// # argument
+    ///
+    /// * `dirfd` - specifies a file descriptor as the starting point of the relative path.Ignore this when *path* is an absolute path.
+    /// * `path` - path to the file.
+    /// * `mode` - specifies the accessibility check(s) to be performed.
+    /// * `flags` - is constructed by ORing together zero or more of the following values:AT_EACCESS、AT_SYMLINK_NOFOLLOW.
+    ///
+    /// # return value
+    ///
+    /// On success, zero is returned.  
+    /// On error, LxError is returned, and error enum is set to indicate the error.
+    ///
+    /// # errors
+    ///
+    /// * __EINVAL__ - Invalid value in *flags*.
+    ///
     pub fn sys_faccessat(
         &self,
         dirfd: FileDesc,
@@ -368,7 +685,26 @@ impl Syscall<'_> {
         Ok(0)
     }
 
-    /// change file timestamps with nanosecond precision
+    /// Change file timestamps with nanosecond precision
+    ///
+    /// utimensat() update the timestamps of a file with nanosecond precision
+    ///
+    /// # argument
+    ///
+    /// * `dirfd` - specifies a file descriptor.
+    /// * `pathname` - path to the file.
+    /// * `times` - The timestamp to be specified.
+    /// * `flags` - type of control.
+    ///
+    /// # return value
+    ///
+    /// On success, zero is returned.  
+    /// On error, LxError is returned, and error enum is set to indicate the error.
+    ///
+    /// # errors
+    ///
+    /// * __EINVAL__ - Invalid value in *flags*.
+    ///
     pub fn sys_utimensat(
         &mut self,
         dirfd: FileDesc,
