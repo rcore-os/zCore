@@ -20,7 +20,36 @@ use linux_object::time::TimeSpec;
 use linux_object::{fs::INodeExt, loader::LinuxElfLoader};
 
 impl Syscall<'_> {
-    /// Fork the current process. Return the child's PID.
+    /// `fork` creates a new process by duplicating the calling process.
+    /// The new process is referred to as the child process.
+    /// The calling process is referred to as the parent process.
+    ///
+    /// The child process and the parent process run in separate memory spaces.
+    /// At the time of `fork` both memory spaces have the same content.
+    /// Memory writes, file mappings ([`sys_mmap`]) and unmappings ([`sys_munmap`])
+    /// performed by one of the processes do not affect the other.
+    ///
+    /// The child process is an exact duplicate of the parent process except for the following points:
+    ///
+    /// - The child has its own unique process ID, and this PID does not match the ID of any existing process.
+    /// - The child's parent process ID is the same as the parent's process ID.
+    /// - Process resource utilizations ([`sys_getrusage`]) and CPU time counters ([`sys_times`]) are reset to zero in the child.
+    /// - The child does not inherit semaphore adjustments from its parent ([`sys_semop`]).
+    /// - The child does not inherit process-associated record locks from its parent ([`sys_fcntl`]).
+    ///   (On the other hand, it does inherit [`sys_fcntl`] open file description locks and [`sys_flock`] locks from its parent.)
+    ///
+    /// Note the following further points:
+    ///
+    /// - The child process is created with a single thread—the one that called fork().
+    ///   The entire virtual address space of the parent is replicated in the child,
+    ///   including the states of mutexes and condition variables.
+    /// - After a `fork` in a multithreaded program,
+    ///   the child can safely call only async-signal-safe functions (see [`signal-safety`])
+    ///   until such time as it calls [`sys_execve`].
+    /// - The child inherits copies of the parent's set of open file descriptors.
+    ///   Each file descriptor in the child refers to the same open file description (see [`sys_open`])
+    ///   as the corresponding file descriptor in the parent.
+    ///   This means that the two file descriptors share open file status flags and file offset.
     pub fn sys_fork(&self) -> SysResult {
         info!("fork:");
         let new_proc = Process::fork_from(self.zircon_process(), false)?; // old pt NULL here
@@ -34,7 +63,12 @@ impl Syscall<'_> {
         Ok(new_proc.id() as usize)
     }
 
-    /// creates a child process of the calling process, similar to fork but wait for execve
+    /// `sys_vfork`, just like [`sys_fork`], creates a child process of the calling process.
+    /// For details, see [`sys_fork`].
+    ///
+    /// `sys_vfork` differs from [`sys_fork`] in that the calling thread is suspended until the child terminates
+    /// (either normally, by calling [`sys_exit`], or abnormally, after delivery of a fatal signal),
+    /// or it makes a call to [`sys_execve`].
     pub async fn sys_vfork(&self) -> SysResult {
         info!("vfork:");
         let new_proc = Process::fork_from(self.zircon_process(), true)?;
@@ -54,11 +88,12 @@ impl Syscall<'_> {
         Ok(new_proc.id() as usize)
     }
 
-    /// Create a new thread in the current process.
+    /// `sys_clone` create a new thread in the current process.
     /// The new thread's stack pointer will be set to `newsp`,
     /// and thread pointer will be set to `newtls`.
-    /// The child tid will be stored at both `parent_tid` and `child_tid`.
-    /// This is partially implemented for musl only.
+    /// The child TID will be stored at both `parent_tid` and `child_tid`.
+    ///
+    /// > NOTE! This is partially implemented for `musl` only.
     pub fn sys_clone(
         &self,
         flags: usize,
@@ -99,9 +134,44 @@ impl Syscall<'_> {
         Ok(tid as usize)
     }
 
-    /// Wait for a child process exited.
+    /// `sys_wait4` suspends execution of the calling thread
+    /// until a child specified by `pid` argument has changed state.
+    /// By default, `sys_wait4` waits only for terminated children,
+    /// but this behavior is modifiable via the options argument, as described below.
     ///
-    /// Return the PID. Store exit code to `wstatus` if it's not null.
+    /// The value of `pid` can be:
+    ///
+    /// - **-1**: meaning wait for any child process.
+    /// - **0**: meaning wait for any child process whose process group ID is equal to
+    ///          that of the calling process at the time of the call to `sys_wait4`.
+    /// - **>0**: meaning wait for the child whose process ID is equal to the value of `pid`.
+    ///
+    /// The value of options is an OR of zero or more of the following constants:
+    ///
+    /// - **NOHANG**    = 0x000_0001;
+    ///
+    ///   TODO
+    ///
+    /// - **STOPPED**   = 0x000_0002;
+    ///
+    ///   TODO
+    ///
+    /// - **EXITED**    = 0x000_0004;
+    ///
+    ///   TODO
+    ///
+    /// - **CONTINUED** = 0x000_0008;
+    ///
+    ///   TODO
+    ///
+    /// - **NOWAIT**    = 0x100_0000;
+    ///
+    ///   TODO
+    ///
+    /// On success, returns the process ID of the child whose state has changed;
+    /// if `NOHANG` flag was specified and one or more child(ren) specified by pid exist,
+    /// but have not yet changed state, then 0 is returned.
+    /// On failure, -1 is returned.
     pub async fn sys_wait4(
         &self,
         pid: i32,
@@ -145,18 +215,26 @@ impl Syscall<'_> {
         Ok(pid as usize)
     }
 
-    /// Replaces the current ** process ** with a new process image
+    /// `sys_execve` executes the program referred to by `path`.
+    /// This causes the program that is currently being run
+    /// by the calling process to be replaced with a new program,
+    /// with newly initialized stack, heap, and (initialized and uninitialized) data segments.
+    ///
+    /// `path` argument must be a binary executable file.
     ///
     /// `argv` is an array of argument strings passed to the new program.
+    /// By convention, the first of these strings (i.e., `argv[0]`)
+    /// should contain the filename associated with the file being executed.
+    ///
     /// `envp` is an array of strings, conventionally of the form `key=value`,
     /// which are passed as environment to the new program.
     ///
-    /// NOTICE: `argv` & `envp` can not be NULL (different from Linux)
+    /// > NOTICE: `argv` & `envp` can not be NULL (different from Linux).
     ///
-    /// NOTICE: for multi-thread programs
-    /// A call to any exec function from a process with more than one thread
-    /// shall result in all threads being terminated and the new executable image
-    /// being loaded and executed.
+    /// > NOTICE: For multi-thread programs,
+    ///           A call to any exec function from a process with more than one thread
+    ///           shall result in all threads being terminated and the new executable image
+    ///           being loaded and executed.
     pub fn sys_execve(
         &mut self,
         path: UserInPtr<u8>,
@@ -233,14 +311,17 @@ impl Syscall<'_> {
     //        }
     //    }
 
-    /// Get the current thread ID.
+    /// `sys_gettid` returns the caller's thread ID (TID).
+    /// In a single-threaded process, the thread ID is equal to the process ID (PID, as returned by [`getpid`]).
+    /// In a multithreaded process, all threads have the same PID, but each one has a unique TID.
     pub fn sys_gettid(&self) -> SysResult {
         info!("gettid:");
         let tid = self.thread.id();
         Ok(tid as usize)
     }
 
-    /// Get the current process ID.
+    /// `sys_getpid` returns the process ID (PID) of the calling process.
+
     pub fn sys_getpid(&self) -> SysResult {
         info!("getpid:");
         let proc = self.zircon_process();
@@ -248,7 +329,9 @@ impl Syscall<'_> {
         Ok(pid as usize)
     }
 
-    /// Get the parent process ID.
+    /// `sys_getppid` returns the process ID of the parent of the calling process.
+    /// This will be either the ID of the process that created this process using fork(),
+    /// or, if that process has already terminated, 0.
     pub fn sys_getppid(&self) -> SysResult {
         info!("getppid:");
         let proc = self.linux_process();
