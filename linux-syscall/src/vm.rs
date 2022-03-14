@@ -60,7 +60,7 @@ impl Syscall<'_> {
     ///   The mapping is not backed by any file; its contents are initialized to zero.
     ///   Both `fd` and `offset` arguments are ignored.
     ///   The use of `MmapFlags::ANONYMOUS` in conjunction with `MmapFlags::SHARED`
-    ///   cause an `Err(LxError::EINVAL)` be returned.
+    ///   causes an `Err(LxError::EINVAL)` to be returned.
     pub async fn sys_mmap(
         &self,
         addr: usize,

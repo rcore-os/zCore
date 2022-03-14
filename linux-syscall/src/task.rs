@@ -20,23 +20,24 @@ use linux_object::time::TimeSpec;
 use linux_object::{fs::INodeExt, loader::LinuxElfLoader};
 
 impl Syscall<'_> {
-    /// `fork` creates a new process by duplicating the calling process.
+    /// `fork` creates a new process by duplicating the calling process
+    /// (see [linux man fork(2)](https://www.man7.org/linux/man-pages/man2/fork.2.html)).
     /// The new process is referred to as the child process.
     /// The calling process is referred to as the parent process.
     ///
     /// The child process and the parent process run in separate memory spaces.
     /// At the time of `fork` both memory spaces have the same content.
-    /// Memory writes, file mappings ([`sys_mmap`]) and unmappings ([`sys_munmap`])
+    /// Memory writes, file mappings ([`Self::sys_mmap`]) and unmappings ([`Self::sys_munmap`])
     /// performed by one of the processes do not affect the other.
     ///
     /// The child process is an exact duplicate of the parent process except for the following points:
     ///
     /// - The child has its own unique process ID, and this PID does not match the ID of any existing process.
     /// - The child's parent process ID is the same as the parent's process ID.
-    /// - Process resource utilizations ([`sys_getrusage`]) and CPU time counters ([`sys_times`]) are reset to zero in the child.
-    /// - The child does not inherit semaphore adjustments from its parent ([`sys_semop`]).
-    /// - The child does not inherit process-associated record locks from its parent ([`sys_fcntl`]).
-    ///   (On the other hand, it does inherit [`sys_fcntl`] open file description locks and [`sys_flock`] locks from its parent.)
+    /// - Process resource utilizations ([`Self::sys_getrusage`]) and CPU time counters ([`Self::sys_times`]) are reset to zero in the child.
+    /// - The child does not inherit semaphore adjustments from its parent ([`Self::sys_semop`]).
+    /// - The child does not inherit process-associated record locks from its parent ([`Self::sys_fcntl`]).
+    ///   (On the other hand, it does inherit [`Self::sys_fcntl`] open file description locks and [`Self::sys_flock`] locks from its parent.)
     ///
     /// Note the following further points:
     ///
@@ -44,10 +45,10 @@ impl Syscall<'_> {
     ///   The entire virtual address space of the parent is replicated in the child,
     ///   including the states of mutexes and condition variables.
     /// - After a `fork` in a multithreaded program,
-    ///   the child can safely call only async-signal-safe functions (see [`signal-safety`])
-    ///   until such time as it calls [`sys_execve`].
+    ///   the child can safely call only async-signal-safe functions
+    ///   until such time as it calls [`Self::sys_execve`].
     /// - The child inherits copies of the parent's set of open file descriptors.
-    ///   Each file descriptor in the child refers to the same open file description (see [`sys_open`])
+    ///   Each file descriptor in the child refers to the same open file description (see [`Self::sys_open`])
     ///   as the corresponding file descriptor in the parent.
     ///   This means that the two file descriptors share open file status flags and file offset.
     pub fn sys_fork(&self) -> SysResult {
@@ -63,12 +64,13 @@ impl Syscall<'_> {
         Ok(new_proc.id() as usize)
     }
 
-    /// `sys_vfork`, just like [`sys_fork`], creates a child process of the calling process.
-    /// For details, see [`sys_fork`].
+    /// `sys_vfork`, just like [`Self::sys_fork`], creates a child process of the calling process
+    /// (see [linux man vfork(2)](https://www.man7.org/linux/man-pages/man2/vfork.2.html)).
+    /// For details, see [`Self::sys_fork`].
     ///
-    /// `sys_vfork` differs from [`sys_fork`] in that the calling thread is suspended until the child terminates
-    /// (either normally, by calling [`sys_exit`], or abnormally, after delivery of a fatal signal),
-    /// or it makes a call to [`sys_execve`].
+    /// `sys_vfork` differs from [`Self::sys_fork`] in that the calling thread is suspended until the child terminates
+    /// (either normally, by calling [`Self::sys_exit`], or abnormally, after delivery of a fatal signal),
+    /// or it makes a call to [`Self::sys_execve`].
     pub async fn sys_vfork(&self) -> SysResult {
         info!("vfork:");
         let new_proc = Process::fork_from(self.zircon_process(), true)?;
@@ -93,7 +95,9 @@ impl Syscall<'_> {
     /// and thread pointer will be set to `newtls`.
     /// The child TID will be stored at both `parent_tid` and `child_tid`.
     ///
-    /// > NOTE! This is partially implemented for `musl` only.
+    /// > **NOTE!** This system call is not exactly the same as `clone` in Linux.
+    ///
+    /// > **NOTE!** This is partially implemented for `musl` only.
     pub fn sys_clone(
         &self,
         flags: usize,
@@ -135,7 +139,8 @@ impl Syscall<'_> {
     }
 
     /// `sys_wait4` suspends execution of the calling thread
-    /// until a child specified by `pid` argument has changed state.
+    /// until a child specified by `pid` argument has changed state
+    /// (see [linux man wait4(2)](https://www.man7.org/linux/man-pages/man2/wait4.2.html)).
     /// By default, `sys_wait4` waits only for terminated children,
     /// but this behavior is modifiable via the options argument, as described below.
     ///
@@ -215,7 +220,8 @@ impl Syscall<'_> {
         Ok(pid as usize)
     }
 
-    /// `sys_execve` executes the program referred to by `path`.
+    /// `sys_execve` executes the program referred to by `path`
+    /// (see [linux man execve(2)](https://www.man7.org/linux/man-pages/man2/execve.2.html)).
     /// This causes the program that is currently being run
     /// by the calling process to be replaced with a new program,
     /// with newly initialized stack, heap, and (initialized and uninitialized) data segments.
@@ -229,12 +235,12 @@ impl Syscall<'_> {
     /// `envp` is an array of strings, conventionally of the form `key=value`,
     /// which are passed as environment to the new program.
     ///
-    /// > NOTICE: `argv` & `envp` can not be NULL (different from Linux).
+    /// > **NOTE!** Differ from linux, `argv` & `envp` can not be NULL.
     ///
-    /// > NOTICE: For multi-thread programs,
-    ///           A call to any exec function from a process with more than one thread
-    ///           shall result in all threads being terminated and the new executable image
-    ///           being loaded and executed.
+    /// > **NOTE!** For multi-thread programs,
+    ///             A call to any exec function from a process with more than one thread
+    ///             shall result in all threads being terminated and the new executable image
+    ///             being loaded and executed.
     pub fn sys_execve(
         &mut self,
         path: UserInPtr<u8>,
@@ -311,8 +317,9 @@ impl Syscall<'_> {
     //        }
     //    }
 
-    /// `sys_gettid` returns the caller's thread ID (TID).
-    /// In a single-threaded process, the thread ID is equal to the process ID (PID, as returned by [`getpid`]).
+    /// `sys_gettid` returns the caller's thread ID (TID)
+    /// (see [linux man gettid(2)](https://www.man7.org/linux/man-pages/man2/gettid.2.html)).
+    /// In a single-threaded process, the thread ID is equal to the process ID (PID, as returned by [`Self::sys_getpid`]).
     /// In a multithreaded process, all threads have the same PID, but each one has a unique TID.
     pub fn sys_gettid(&self) -> SysResult {
         info!("gettid:");
@@ -320,8 +327,8 @@ impl Syscall<'_> {
         Ok(tid as usize)
     }
 
-    /// `sys_getpid` returns the process ID (PID) of the calling process.
-
+    /// `sys_getpid` returns the process ID (PID) of the calling process
+    /// (see [linux man getpid(2)](https://www.man7.org/linux/man-pages/man2/getpid.2.html)).
     pub fn sys_getpid(&self) -> SysResult {
         info!("getpid:");
         let proc = self.zircon_process();
@@ -329,7 +336,8 @@ impl Syscall<'_> {
         Ok(pid as usize)
     }
 
-    /// `sys_getppid` returns the process ID of the parent of the calling process.
+    /// `sys_getppid` returns the process ID of the parent of the calling process
+    /// (see [linux man getppid(2)](https://www.man7.org/linux/man-pages/man2/getpid.2.html)).
     /// This will be either the ID of the process that created this process using fork(),
     /// or, if that process has already terminated, 0.
     pub fn sys_getppid(&self) -> SysResult {
@@ -339,14 +347,23 @@ impl Syscall<'_> {
         Ok(ppid as usize)
     }
 
-    /// Exit the current thread
+    /// `sys_exit` system call terminates only the calling thread
+    /// (see [linux man _exit(2)](https://www.man7.org/linux/man-pages/man2/exit.2.html),
+    /// this syscall is same as a raw `_exit` in glibc),
+    /// and actions such as reparenting child processes or sending
+    /// SIGCHLD to the parent process are performed only if this is the
+    /// last thread in the thread group.
     pub fn sys_exit(&mut self, exit_code: i32) -> SysResult {
         info!("exit: code={}", exit_code);
         self.thread.exit_linux(exit_code);
         Err(LxError::ENOSYS)
     }
 
-    /// Exit the current thread group (i.e. process)
+    /// `sys_exit_group` is equivalent to [`Self::sys_exit`]
+    /// except that it terminates not only the calling thread
+    /// (see [linux man exit_group(2)](https://www.man7.org/linux/man-pages/man2/exit_group.2.html),
+    /// but all threads in the calling process's thread group.
+    /// As a result, the entire calling process will exit.
     pub fn sys_exit_group(&mut self, exit_code: i32) -> SysResult {
         info!("exit_group: code={}", exit_code);
         let proc = self.zircon_process();
@@ -356,6 +373,14 @@ impl Syscall<'_> {
 
     /// Allows the calling thread to sleep for
     /// an interval specified with nanosecond precision
+    /// (see [linux man nanosleep(2)](https://www.man7.org/linux/man-pages/man2/nanosleep.2.html).
+    ///
+    /// `nanosleep` suspends the execution of the calling thread
+    /// until either at least the time specified in `req` has elapsed,
+    /// or the delivery of a signal that triggers the invocation of a handler
+    /// in the calling thread or that terminates the process.
+    ///
+    /// To represent a duration, see [`TimeSpec`].
     pub async fn sys_nanosleep(&self, req: UserInPtr<TimeSpec>) -> SysResult {
         info!("nanosleep: deadline={:?}", req);
         let duration = req.read()?.into();
@@ -370,8 +395,9 @@ impl Syscall<'_> {
     //        Ok(0)
     //    }
 
-    /// set pointer to thread ID
-    /// returns the caller's thread ID
+    /// `set_tid_address` sets the clear_child_tid value for the calling thread to `tidptr`,
+    /// and return the caller's thread ID
+    /// (see [linux man set_tid_address(2)](https://www.man7.org/linux/man-pages/man2/set_tid_address.2.html).
     pub fn sys_set_tid_address(&self, tidptr: UserOutPtr<i32>) -> SysResult {
         info!("set_tid_address: {:?}", tidptr);
         self.thread.set_tid_address(tidptr);
