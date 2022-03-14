@@ -3,9 +3,7 @@ use bitflags::bitflags;
 use zircon_object::vm::{pages, MMUFlags, VmObject};
 
 impl Syscall<'_> {
-    /// `sys_mmap(...)` creates a new mapping in the virtual address space of the calling process.
-    ///
-    /// # Arguments
+    /// `sys_mmap` creates a new mapping in the virtual address space of the calling process.
     ///
     /// The starting address for the new mapping is specified in `addr`.
     ///
@@ -45,7 +43,7 @@ impl Syscall<'_> {
     ///   Create a private copy-on-write mapping.
     ///   Updates to the mapping are not visible to other processes mapping the same file,
     ///   and are not carried through to the underlying file.
-    ///   It is unspecified whether changes made to the file after the `sys_mmap(...)` call are visible in the mapped region.
+    ///   It is unspecified whether changes made to the file after the `sys_mmap` call are visible in the mapped region.
     ///
     /// - **`MmapFlags::FIXED`**
     ///
@@ -55,22 +53,14 @@ impl Syscall<'_> {
     ///   however, some architectures may impose additional restrictions.
     ///   If the memory region specified by `addr` and `len` overlaps pages of any existing mapping(s),
     ///   then the overlapped part of the existing mapping(s) will be discarded.
-    ///   If the specified address cannot be used, `sys_mmap(...)` will fail.
-    ///
-    ///   Software that aspires to be portable should use the `MmapFlags::FIXED` flag with care,
-    ///   keeping in mind that the exact layout of a process's memory mappings is allowed
-    ///   to change significantly between kernel versions, C library versions,
-    ///   and operating system releases.  Carefully read the discussion of this flag in NOTES!
+    ///   If the specified address cannot be used, `sys_mmap` will fail.
     ///
     /// - **`MmapFlags::ANONYMOUS`**
     ///
     ///   The mapping is not backed by any file; its contents are initialized to zero.
-    ///   The `fd` argument is ignored;
-    ///   however, some implementations require `fd` to be -1 if `MmapFlags::ANONYMOUS` is specified,
-    ///   and portable applications should ensure this.
-    ///   The `offset` argument should be zero.
+    ///   Both `fd` and `offset` arguments are ignored.
     ///   The use of `MmapFlags::ANONYMOUS` in conjunction with `MmapFlags::SHARED`
-    ///   is supported on Linux only since kernel 2.4.
+    ///   cause an `Err(LxError::EINVAL)` be returned.
     pub async fn sys_mmap(
         &self,
         addr: usize,
@@ -110,18 +100,14 @@ impl Syscall<'_> {
         }
     }
 
-    /// `sys_mprotect(...)` changes the access protections for the calling process's memory pages
-    /// containing any part of the address range in the interval [addr, addr+len-1].
+    /// **NOTE!** This syscall is now unimplemented. Calling it always return `Ok(0)`.
+    ///
+    /// `sys_mprotect` changes the access protections for the calling process's memory pages
+    /// containing any part of the address range in the interval `[addr, addr+len-1]`.
     /// `addr` must be aligned to a page boundary.
     ///
     /// If the calling process tries to access memory in a manner that violates the protections,
     /// then the kernel generates a SIGSEGV signal for the process.
-    ///
-    /// # TODO
-    ///
-    /// This syscall is now unimplemented.
-    ///
-    /// # Arguments
     ///
     /// `prot` is a combination of the following access flags:
     /// 0 or a bitwise-or of the other values in the following list:
@@ -152,15 +138,13 @@ impl Syscall<'_> {
     /// Deletes the mappings for the specified address range, and causes further references to addresses
     /// within the range to generate invalid memory references.
     ///
-    /// The `sys_munmap(...)` system call deletes the mappings for the specified address range,
+    /// The `sys_munmap` system call deletes the mappings for the specified address range,
     /// and causes further references to addresses within the range to generate invalid memory references.
     /// The region is also automatically unmapped when the process is terminated.
     /// On the other hand, closing the file descriptor does not unmap the region.
     ///
-    /// The address `addr` must be a multiple of the page size (but `len` need not be).
-    /// All pages containing a part of the indicated range are unmapped,
-    /// and subsequent references to these pages will generate SIGSEGV.
-    /// It is not an error if the indicated range does not contain any mapped pages.
+    /// Both `addr` and `len` must be aligned to the page size, additionally, `len` must greater than 0.
+    /// Otherwise, an `Err(INVALID_ARGS)` is returned.
     pub fn sys_munmap(&self, addr: usize, len: usize) -> SysResult {
         info!("munmap: addr={:#x}, size={:#x}", addr, len);
         let proc = self.thread.proc();
