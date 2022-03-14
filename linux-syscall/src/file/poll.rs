@@ -16,7 +16,10 @@ use linux_object::fs::FileDesc;
 use linux_object::time::*;
 
 impl Syscall<'_> {
-    /// Wait for some event on a file descriptor
+    /// Wait for some event on a file descriptor.
+    /// - ufds - Specify the set of file descriptors to be monitored.
+    /// - nfds - specify the number of items in the ufds array.
+    /// - timeout_msecs - specify the number of milliseconds that poll() should block waiting for a file descriptor to become ready.
     pub async fn sys_poll(
         &mut self,
         mut ufds: UserInOutPtr<PollFd>,
@@ -111,9 +114,12 @@ impl Syscall<'_> {
         result
     }
 
-    /// Wait for some event on a file descriptor
+    /// Wait for some event on a file descriptor.
     ///
-    /// ppoll() allows an application to safely wait until either a file descriptor becomes ready or until a signal is caught
+    /// ppoll() allows an application to safely wait until either a file descriptor becomes ready or until a signal is caught.
+    /// - ufds - specify the set of file descriptors to be monitored.
+    /// - nfds - specify the number of items in the ufds array.
+    /// - timeout - specify the time that poll() should block waiting for a file descriptor to become ready.
     pub async fn sys_ppoll(
         &mut self,
         ufds: UserInOutPtr<PollFd>,
@@ -130,7 +136,13 @@ impl Syscall<'_> {
         self.sys_poll(ufds, nfds, timeout_msecs).await
     }
 
-    /// similar to select, but have sigmask argument
+    /// similar to select, but have sigmask argument.
+    /// - nfds - This argument should be set to the highest-numbered file descriptor in any of the three sets, plus 1.
+    /// - read - The file descriptors in this set are watched to see if they are ready for reading.
+    /// - write - The file descriptors in this set are watched to see if they are ready for writing.
+    /// - err - The file descriptors in this set are watched for "exceptional conditions".
+    /// - timeout - specify the interval that select() should block waiting for a file descriptor to become ready.
+    /// - _sigset - a pointer to a signal mask.
     pub async fn sys_pselect6(
         &mut self,
         nfds: usize,
@@ -147,6 +159,11 @@ impl Syscall<'_> {
     /// waiting until one or more of the file descriptors become "ready" for some class of I/O operation.
     ///
     /// A file descriptor is considered ready if it is possible to perform the corresponding I/O operation (e.g., read) without blocking.
+    /// - nfds - This argument should be set to the highest-numbered file descriptor in any of the three sets, plus 1.
+    /// - read - The file descriptors in this set are watched to see if they are ready for reading.
+    /// - write - The file descriptors in this set are watched to see if they are ready for writing.
+    /// - err - The file descriptors in this set are watched for "exceptional conditions".
+    /// - timeout - specify the interval that select() should block waiting for a file descriptor to become ready.
     pub async fn sys_select(
         &mut self,
         nfds: usize,

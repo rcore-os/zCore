@@ -33,7 +33,11 @@ impl Syscall<'_> {
         Ok(0)
     }
 
-    /// get file status relative to a directory file descriptor
+    /// Get file status relative to a directory file descriptor.
+    /// - dirfd - the directory where `path` is located.
+    /// - path - pointer to the name of the file
+    /// - stat_ptr - pointer to the structure to receive file information
+    /// - flags - specify the access mode the file.
     pub fn sys_fstatat(
         &self,
         dirfd: FileDesc,

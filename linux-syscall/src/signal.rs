@@ -18,7 +18,7 @@ impl Syscall<'_> {
     /// `signum` specifies the signal and can be any valid signal except
     /// `SIGKILL` and `SIGSTOP`.
     ///
-    /// If `act` is non-NULL, the new action for signal signum is installed from `act`. 
+    /// If `act` is non-NULL, the new action for signal signum is installed from `act`.
     /// If `oldact` is non-NULL, the previous action is saved in `oldact`.
     ///
     /// the `SysResult` is an alias for `LxError`

@@ -9,12 +9,19 @@ use super::*;
 use alloc::string::String;
 
 impl Syscall<'_> {
-    /// Opens or creates a file, depending on the flags passed to the call. Returns an integer with the file descriptor.
+    /// Open or create a file, depending on the flags passed to the call. Returns an integer with the file descriptor.
+    /// - path - specify the file to open or create.
+    /// - flags - specify the access mode, creation and state of the file.
+    /// - mode - specify the file mode bits to be applied when a new file is created.
     pub fn sys_open(&self, path: UserInPtr<u8>, flags: usize, mode: usize) -> SysResult {
         self.sys_openat(FileDesc::CWD, path, flags, mode)
     }
 
-    /// open file relative to directory file descriptor
+    /// Open file relative to directory file descriptor.
+    /// - dir_fd - the directory where `path` is located.
+    /// - path - specify the file to open or create.
+    /// - flags - specify the access mode, creation and state of the file.
+    /// - mode - specify the file mode bits to be applied when a new file is created.
     pub fn sys_openat(
         &self,
         dir_fd: FileDesc,
@@ -55,7 +62,8 @@ impl Syscall<'_> {
         Ok(fd.into())
     }
 
-    /// Closes a file descriptor, so that it no longer refers to any file and may be reused.
+    /// Close a file descriptor, so that it no longer refers to any file and may be reused.
+    /// - fd - the file descriptor to be closed.
     pub fn sys_close(&self, fd: FileDesc) -> SysResult {
         info!("close: fd={:?}", fd);
         let proc = self.linux_process();
@@ -63,7 +71,9 @@ impl Syscall<'_> {
         Ok(0)
     }
 
-    /// create a copy of the file descriptor oldfd.
+    /// Create a copy of the file descriptor `fd1`.
+    /// - fd1 - the file descriptor to be copied.
+    /// - fd2 - the file descriptor to be allocated.
     pub fn sys_dup2(&self, fd1: FileDesc, fd2: FileDesc) -> SysResult {
         info!("dup2: from {:?} to {:?}", fd1, fd2);
         let proc = self.linux_process();
@@ -74,7 +84,8 @@ impl Syscall<'_> {
         Ok(fd2.into())
     }
 
-    /// create a copy of the file descriptor fd, and uses the lowest-numbered unused descriptor for the new descriptor.
+    /// create a copy of the file descriptor `fd1`, and uses the lowest-numbered unused descriptor for the new descriptor.
+    /// - fd1 - the file descriptor to be copied.
     pub fn sys_dup(&self, fd1: FileDesc) -> SysResult {
         info!("dup: from {:?}", fd1);
         let proc = self.linux_process();
@@ -83,12 +94,17 @@ impl Syscall<'_> {
         Ok(fd2.into())
     }
 
-    /// Creates a pipe, a unidirectional data channel that can be used for interprocess communication.
+    /// Create a pipe, a unidirectional data channel that can be used for interprocess communication.
+    /// - fds - used to return two file descriptors referring to the ends of the pipe.
+    /// fds\[0], read end of the pipe. fds\[1], write end of the pipe.
     pub fn sys_pipe(&self, fds: UserOutPtr<[i32; 2]>) -> SysResult {
         self.sys_pipe2(fds, 0)
     }
 
-    /// Creates a pipe, a unidirectional data channel that can be used for interprocess communication.
+    /// Create a pipe, a unidirectional data channel that can be used for interprocess communication.
+    /// - fds - used to return two file descriptors referring to the ends of the pipe.
+    /// fds\[0], read end of the pipe. fds\[1], write end of the pipe.
+    /// - flags - specify creation and state of the pipe.
     pub fn sys_pipe2(&self, mut fds: UserOutPtr<[i32; 2]>, flags: usize) -> SysResult {
         info!("pipe2: fds={:?}, flags: {:#x}", fds, flags);
 
@@ -118,8 +134,11 @@ impl Syscall<'_> {
         Ok(0)
     }
 
-    /// apply or remove an advisory lock on an open file
+    /// Apply or remove an advisory lock on an open file.
+    ///
     /// TODO: handle operation
+    /// - fd - the file descriptor of the open file.
+    /// - operation - place or remove a lock.
     pub fn sys_flock(&mut self, fd: FileDesc, operation: usize) -> SysResult {
         bitflags! {
             struct Operation: u8 {

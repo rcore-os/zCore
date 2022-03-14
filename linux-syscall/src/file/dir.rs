@@ -54,7 +54,10 @@ impl Syscall<'_> {
         self.sys_mkdirat(FileDesc::CWD, path, mode)
     }
 
-    /// create directory relative to directory file descriptor
+    /// Create directory relative to directory file descriptor.
+    /// - dirfd - the directory where the `path` to be created resides.
+    /// - path - the directory to be created.
+    /// - mode - specify the mode for the new directory.
     pub fn sys_mkdirat(&self, dirfd: FileDesc, path: UserInPtr<u8>, mode: usize) -> SysResult {
         let path = path.read_cstring()?;
         // TODO: check pathname
@@ -91,7 +94,9 @@ impl Syscall<'_> {
 
     /// get directory entries
     /// TODO: get ino from dirent
-    /// - fd – file describe
+    /// - fd – file descriptor.
+    /// - buf - pointer of buffer which is used to hold directory entries.
+    /// - buf_size - size of `buf`.
     pub fn sys_getdents64(
         &self,
         fd: FileDesc,
@@ -126,13 +131,20 @@ impl Syscall<'_> {
     }
 
     /// creates a new link (also known as a hard link) to an existing file.
+    /// - oldpath - the 'original' file.
+    /// - newpath - the link to be created.
     pub fn sys_link(&self, oldpath: UserInPtr<u8>, newpath: UserInPtr<u8>) -> SysResult {
         self.sys_linkat(FileDesc::CWD, oldpath, FileDesc::CWD, newpath, 0)
     }
 
-    /// create file link relative to directory file descriptors
+    /// create file link relative to directory file descriptors.
     /// If the pathname given in oldpath is relative,
-    /// then it is interpreted relative to the directory referred to by the file descriptor olddirfd
+    /// then it is interpreted relative to the directory referred to by the file descriptor olddirfd.
+    /// - olddirfd - the directory where `oldpath` located.
+    /// - oldpath - the 'original' file.
+    /// - newdirfd - the directory where `newpath` will be created resides.
+    /// - newpath - the link to be created.
+    /// - flags - specify the behavior when creating a link.
     pub fn sys_linkat(
         &self,
         olddirfd: FileDesc,
@@ -157,16 +169,20 @@ impl Syscall<'_> {
         Ok(0)
     }
 
-    /// delete name/possibly file it refers to
+    /// Delete name/possibly file it refers to.
     /// If that name was the last link to a file and no processes have the file open, the file is deleted.
     /// If the name was the last link to a file but any processes still have the file open,
     /// the file will remain in existence until the last file descriptor referring to it is closed.
+    /// - path - the name to be unlinked.
     pub fn sys_unlink(&self, path: UserInPtr<u8>) -> SysResult {
         self.sys_unlinkat(FileDesc::CWD, path, 0)
     }
 
-    /// remove directory entry relative to directory file descriptor
+    /// Remove directory entry relative to directory file descriptor.
     /// The unlinkat() system call operates in exactly the same way as either unlink or rmdir.
+    /// - dirfd - the directory where `path` located.
+    /// - path - the name to be unlinked.
+    /// - flags - specify the behavior when deleting name.
     pub fn sys_unlinkat(&self, dirfd: FileDesc, path: UserInPtr<u8>, flags: usize) -> SysResult {
         let path = path.read_cstring()?;
         let flags = AtFlags::from_bits_truncate(flags);
@@ -186,12 +202,18 @@ impl Syscall<'_> {
         Ok(0)
     }
 
-    /// change name/location of file
+    /// Change name/location of file.
+    /// - oldpath - name of 'original' path.
+    /// - newpath - name of new path.
     pub fn sys_rename(&self, oldpath: UserInPtr<u8>, newpath: UserInPtr<u8>) -> SysResult {
         self.sys_renameat(FileDesc::CWD, oldpath, FileDesc::CWD, newpath)
     }
 
-    /// rename file relative to directory file descriptors
+    /// Rename file relative to directory file descriptors.
+    /// - olddirfd - the directory where `oldpath` located.
+    /// - oldpath - name of 'original' path.
+    /// - newdirfd - the directory where `newpath` located.
+    /// - newpath - name of new path.
     pub fn sys_renameat(
         &self,
         olddirfd: FileDesc,
@@ -215,14 +237,21 @@ impl Syscall<'_> {
         Ok(0)
     }
 
-    /// read value of symbolic link
+    /// Read value of symbolic link.
+    /// - path - the symbolic link to be read.
+    /// - base - a pointer of buffer to hold the contents of symbolic link.
+    /// - len - the length of `base`.
     pub fn sys_readlink(&self, path: UserInPtr<u8>, base: UserOutPtr<u8>, len: usize) -> SysResult {
         self.sys_readlinkat(FileDesc::CWD, path, base, len)
     }
 
-    /// read value of symbolic link relative to directory file descriptor
-    /// readlink() places the contents of the symbolic link path in the buffer base, which has size len
-    /// TODO: recursive link resolution and loop detection
+    /// Read value of symbolic link relative to directory file descriptor.
+    /// readlink() places the contents of the symbolic link path in the buffer base, which has size len.
+    /// TODO: recursive link resolution and loop detection.
+    /// - dirfd - the directory where `path` located.
+    /// - path - the symbolic link to be read.
+    /// - base - a pointer of buffer to hold the contents of symbolic link.
+    /// - len - the length of `base`.
     pub fn sys_readlinkat(
         &self,
         dirfd: FileDesc,

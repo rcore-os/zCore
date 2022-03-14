@@ -17,14 +17,14 @@ impl Syscall<'_> {
     /// a particular process.
     ///
     /// currently `clock` only support `CLOCK_REALTIME`.
-    /// 
+    ///
     /// the `buf` argument is a wrapper of struct `timeval` which has fields:
     /// `sec: usize` and `usec: usize`
-    /// 
+    ///
     /// the SysResult is an alias for `LxError`
     /// which defined in `linux-object/src/error.rs`.
-    /// 
-    /// TODO: CLOCK_REALTIME_ALARM, CLOCK_REALTIME_COARSE, CLOCK_TAI, CLOCK_MONOTONIC, 
+    ///
+    /// TODO: CLOCK_REALTIME_ALARM, CLOCK_REALTIME_COARSE, CLOCK_TAI, CLOCK_MONOTONIC,
     /// CLOCK_MONOTONIC_COARSE, CLOCK_MONOTONIC_RAW, CLOCK_BOOTTIME, CLOCK_BOOTTIME_ALARM,
     /// CLOCK_PROCESS_CPUTIME_ID, CLOCK_THREAD_CPUTIME_ID.
     pub fn sys_clock_gettime(&self, clock: usize, mut buf: UserOutPtr<TimeSpec>) -> SysResult {
@@ -41,13 +41,13 @@ impl Syscall<'_> {
     /// get the time with second and microseconds.
     ///
     /// if `tz` is NULL return an error.
-    /// 
+    ///
     /// the `tv` argument is a wrapper of struct `timeval` which has fields:
     /// `sec: usize` and `usec: usize`
-    /// 
+    ///
     /// the `SysResult` is an alias for `LxError`
     /// which defined in `linux-object/src/error.rs`.
-    
+
     pub fn sys_gettimeofday(
         &mut self,
         mut tv: UserOutPtr<TimeVal>,
@@ -71,9 +71,9 @@ impl Syscall<'_> {
     ///
     /// returns the time as the number of seconds since the Epoch,
     /// 1970-01-01 00:00:00 +0000 (UTC).
-    /// 
+    ///
     /// the `time` argument is a wrapper of `u64`.
-    /// 
+    ///
     /// the `SysResult` is an alias for `LxError`
     /// which defined in `linux-object/src/error.rs`.
     #[cfg(target_arch = "x86_64")]
@@ -91,7 +91,7 @@ impl Syscall<'_> {
     ///
     /// the `rusage` argument is a wrapper of struct `RUsage` which has fields:
     /// `utime: TimeVal` and `stime: TimeVal`
-    /// 
+    ///
     /// the `SysResult` is an alias for `LxError`
     /// which defined in `linux-object/src/error.rs`.
     pub fn sys_getrusage(&mut self, who: usize, mut rusage: UserOutPtr<RUsage>) -> SysResult {
@@ -108,7 +108,7 @@ impl Syscall<'_> {
     /// stores the current process times in the struct tms that buf points to.
     ///
     /// the `buf` argument is a wrapper of `Tms`.
-    /// 
+    ///
     /// the `SysResult` is an alias for `LxError`
     /// which defined in `linux-object/src/error.rs`.
     pub fn sys_times(&mut self, mut buf: UserOutPtr<Tms>) -> SysResult {
