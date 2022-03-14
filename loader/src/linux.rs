@@ -61,7 +61,9 @@ async fn run_user(thread: CurrentThread) {
 
         // run
         trace!("go to user: {:#x?}", ctx);
+        info!("go to user");
         ctx.enter_uspace();
+        // info!("back form user");
         trace!("back from user: {:#x?}", ctx);
 
         // handle trap/interrupt/syscall

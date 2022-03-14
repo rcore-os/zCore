@@ -63,7 +63,7 @@ image: $(OUT_IMG)
 	@qemu-img resize $(OUT_IMG) +5M
 
 
-riscv-image: rcore-fs-fuse riscv-rootfs
+riscv-image: # rcore-fs-fuse riscv-rootfs
 	@echo building riscv.img
 	@rcore-fs-fuse zCore/riscv64.img riscv_rootfs zip
 	@qemu-img resize -f raw zCore/riscv64.img +5M

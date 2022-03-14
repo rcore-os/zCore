@@ -110,6 +110,7 @@ impl INode for Stdin {
                         true
                     }
                 }));
+                info!("stdio poll intr = {}", kernel_hal::interrupt::intr_get());
                 Poll::Pending
             }
         }

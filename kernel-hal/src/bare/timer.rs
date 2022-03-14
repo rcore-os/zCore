@@ -25,7 +25,6 @@ hal_fn_impl! {
         }
 
         fn timer_tick() {
-            info!("timer tick!");
             NAIVE_TIMER.lock().expire(timer_now());
         }
     }
