@@ -28,6 +28,7 @@ pub mod scheme;
 pub mod uart;
 pub mod utils;
 
+/// The error type for external device.
 #[derive(Debug)]
 pub enum DeviceError {
     /// The buffer is too small.
@@ -48,8 +49,10 @@ pub enum DeviceError {
     NotSupported,
 }
 
+/// A type alias for the result of a device operation.
 pub type DeviceResult<T = ()> = core::result::Result<T, DeviceError>;
 
+/// Static shell of shared dynamic device [`Scheme`](crate::scheme::Scheme) types.
 #[derive(Clone)]
 pub enum Device {
     Block(Arc<dyn scheme::BlockScheme>),

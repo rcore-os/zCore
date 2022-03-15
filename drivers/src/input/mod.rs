@@ -1,3 +1,5 @@
+//! Only Mouse currently.
+
 mod mouse;
 
 pub mod input_event_codes;
