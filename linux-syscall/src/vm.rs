@@ -2,7 +2,17 @@ use super::*;
 use bitflags::bitflags;
 use zircon_object::vm::{pages, MMUFlags, VmObject};
 
+/// Syscalls for virtual memory.
+///
+/// # Menu
+///
+/// - [`mmap`](Self::sys_mmap)
+/// - [`mprotect`](Self::sys_mprotect)
+/// - [`munmap`](Self::sys_munmap)
 impl Syscall<'_> {
+    /// Map files or devices into memory
+    /// (see [linux man mmap(2)](https://www.man7.org/linux/man-pages/man2/mmap.2.html)).
+    ///
     /// `sys_mmap` creates a new mapping in the virtual address space of the calling process.
     ///
     /// The starting address for the new mapping is specified in `addr`.
@@ -60,7 +70,7 @@ impl Syscall<'_> {
     ///   The mapping is not backed by any file; its contents are initialized to zero.
     ///   Both `fd` and `offset` arguments are ignored.
     ///   The use of `MmapFlags::ANONYMOUS` in conjunction with `MmapFlags::SHARED`
-    ///   causes an `Err(LxError::EINVAL)` to be returned.
+    ///   causes an [`EINVAL`](LxError::EINVAL) to be returned.
     pub async fn sys_mmap(
         &self,
         addr: usize,
@@ -100,6 +110,9 @@ impl Syscall<'_> {
         }
     }
 
+    /// Set protection on a region of memory
+    /// (see [linux man mprotect(2)](https://www.man7.org/linux/man-pages/man2/mprotect.2.html)).
+    ///
     /// **NOTE!** This syscall is now unimplemented. Calling it always return `Ok(0)`.
     ///
     /// `sys_mprotect` changes the access protections for the calling process's memory pages
@@ -135,6 +148,9 @@ impl Syscall<'_> {
         Ok(0)
     }
 
+    /// Unmap files or devices into memory
+    /// (see [linux man munmap(2)](https://www.man7.org/linux/man-pages/man2/munmap.2.html)).
+    ///
     /// Deletes the mappings for the specified address range, and causes further references to addresses
     /// within the range to generate invalid memory references.
     ///
@@ -144,7 +160,7 @@ impl Syscall<'_> {
     /// On the other hand, closing the file descriptor does not unmap the region.
     ///
     /// Both `addr` and `len` must be aligned to the page size, additionally, `len` must greater than 0.
-    /// Otherwise, an `Err(INVALID_ARGS)` is returned.
+    /// Otherwise, an [`EINVAL`](LxError::EINVAL) is returned.
     pub fn sys_munmap(&self, addr: usize, len: usize) -> SysResult {
         info!("munmap: addr={:#x}, size={:#x}", addr, len);
         let proc = self.thread.proc();

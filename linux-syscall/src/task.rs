@@ -1,14 +1,3 @@
-//! Syscalls for process
-//!
-//! - fork
-//! - vfork
-//! - clone
-//! - wait4
-//! - execve
-//! - gettid
-//! - getpid
-//! - getppid
-
 use super::*;
 use core::fmt::Debug;
 
@@ -19,6 +8,22 @@ use linux_object::thread::{CurrentThreadExt, ThreadExt};
 use linux_object::time::TimeSpec;
 use linux_object::{fs::INodeExt, loader::LinuxElfLoader};
 
+/// Syscalls for process.
+///
+/// # Menu
+///
+/// - [`fork`](Self::sys_fork)
+/// - [`vfork`](Self::sys_vfork)
+/// - [`clone`](Self::sys_clone)
+/// - [`wait4`](Self::sys_wait4)
+/// - [`execve`](Self::sys_execve)
+/// - [`gettid`](Self::sys_gettid)
+/// - [`getpid`](Self::sys_getpid)
+/// - [`getppid`](Self::sys_getppid)
+/// - [`exit`](Self::sys_exit)
+/// - [`exit_group`](Self::sys_exit_group)
+/// - [`nanosleep`](Self::sys_nanosleep)
+/// - [`set_tid_address`](Self::sys_set_tid_address)
 impl Syscall<'_> {
     /// `fork` creates a new process by duplicating the calling process
     /// (see [linux man fork(2)](https://www.man7.org/linux/man-pages/man2/fork.2.html)).
