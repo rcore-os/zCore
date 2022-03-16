@@ -401,11 +401,12 @@ impl Syscall<'_> {
             Sys::NANOSLEEP => self.sys_nanosleep(self.into_in_userptr(a0).unwrap()).await,
             Sys::CLOCK_NANOSLEEP => {
                 self.sys_clock_nanosleep(
-                  a0, 
-                  a1, 
-                  self.into_in_userptr(a2).unwrap(),
-                  self.into_out_userptr(a3).unwrap()
-                ).await
+                    a0,
+                    a1,
+                    self.into_in_userptr(a2).unwrap(),
+                    self.into_out_userptr(a3).unwrap(),
+                )
+                .await
             }
             Sys::SETITIMER => self.unimplemented("setitimer", Ok(0)),
             Sys::GETTIMEOFDAY => self.sys_gettimeofday(
