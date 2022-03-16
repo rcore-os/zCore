@@ -68,7 +68,7 @@ extern "C" fn sig_handler(_sig: libc::c_int, _si: *mut libc::siginfo_t, uc: *mut
             // segmentation violation is rethrown.
             _ => {
                 // switch back to kernel gs
-                asm!(
+                core::arch::asm!(
                     "
                     mov rdi, gs:48
                     syscall

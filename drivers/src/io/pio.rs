@@ -1,3 +1,4 @@
+use core::arch::asm;
 use core::marker::PhantomData;
 
 use super::Io;

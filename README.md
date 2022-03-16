@@ -29,9 +29,10 @@ Environments：
 * [Git LFS](https://git-lfs.github.com)
 
 ### Developing environment info
-- current rustc -- rustc 1.56.0-nightly (08095fc1f 2021-07-26)
-- current rust-toolchain -- nightly-2021-07-27
-- current qemu -- 5.2.0
+
+- current rustc -- rustc 1.60.0-nightly (5e57faa78 2022-01-19)
+- current rust-toolchain -- nightly-2022-01-20
+- current qemu -- 5.2.0 -> 6.2.0
 
 Clone repo and pull prebuilt fuchsia images:
 

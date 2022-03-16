@@ -1,5 +1,5 @@
+use core::arch::asm;
 use core::ops::Range;
-
 use spin::Mutex;
 
 use crate::io::{Io, Mmio};
@@ -16,6 +16,10 @@ const PLIC_CONTEXT_BASE: usize = 0x20_1000;
 const PLIC_CONTEXT_THRESHOLD: usize = 0x0;
 const PLIC_CONTEXT_CLAIM: usize = 0x4 / core::mem::size_of::<u32>();
 
+const PLIC_ENABLE_HART_OFFSET: usize = 0x100 / core::mem::size_of::<u32>();
+const PLIC_PRIORITY_HART_OFFSET: usize = 0x2000 / core::mem::size_of::<u32>();
+const PLIC_CONTEXT_CLAIM_HART_OFFSET: usize = 0x2000 / core::mem::size_of::<u32>();
+
 struct PlicUnlocked {
     priority_base: &'static mut Mmio<u32>,
     enable_base: &'static mut Mmio<u32>,
@@ -28,9 +32,15 @@ pub struct Plic {
 }
 
 impl PlicUnlocked {
+    /// Toggle irq enable on the current hart.
     fn toggle(&mut self, irq_num: usize, enable: bool) {
         debug_assert!(IRQ_RANGE.contains(&irq_num));
-        let mmio = self.enable_base.add(irq_num / 32);
+        let hart_id = cpu_id() as usize;
+        let mmio = self
+            .enable_base
+            .add(PLIC_ENABLE_HART_OFFSET * hart_id)
+            .add(irq_num / 32);
+
         let mask = 1 << (irq_num % 32);
         if enable {
             mmio.write(mmio.read() | mask);
@@ -39,8 +49,14 @@ impl PlicUnlocked {
         }
     }
 
+    /// Ask the PLIC what type of interrupt is occurred on the current hart.
     fn pending_irq(&mut self) -> Option<usize> {
-        let irq_num = self.context_base.add(PLIC_CONTEXT_CLAIM).read() as usize;
+        let hart_id = cpu_id() as usize;
+        let irq_num = self
+            .context_base
+            .add(PLIC_CONTEXT_CLAIM_HART_OFFSET * hart_id)
+            .add(PLIC_CONTEXT_CLAIM)
+            .read() as usize;
         if irq_num == 0 {
             None
         } else {
@@ -48,25 +64,32 @@ impl PlicUnlocked {
         }
     }
 
+    /// Tell the PLIC we've served this IRQ.
     fn eoi(&mut self, irq_num: usize) {
         debug_assert!(IRQ_RANGE.contains(&irq_num));
+        let hart_id = cpu_id() as usize;
         self.context_base
             .add(PLIC_CONTEXT_CLAIM)
+            .add(PLIC_CONTEXT_CLAIM_HART_OFFSET * hart_id)
             .write(irq_num as _);
     }
 
+    /// Set the priority for the irq_num.
     fn set_priority(&mut self, irq_num: usize, priority: u8) {
         debug_assert!(IRQ_RANGE.contains(&irq_num));
         self.priority_base.add(irq_num).write(priority as _);
     }
 
+    /// Set current hart's priority threshold to 0.
     fn set_threshold(&mut self, threshold: u8) {
+        let hart_id = cpu_id() as usize;
         self.context_base
+            .add(PLIC_PRIORITY_HART_OFFSET * hart_id)
             .add(PLIC_CONTEXT_THRESHOLD)
             .write(threshold as _);
     }
 
-    fn init(&mut self) {
+    fn init_hart(&mut self) {
         self.set_threshold(0);
     }
 }
@@ -79,7 +102,7 @@ impl Plic {
             context_base: unsafe { Mmio::<u32>::from_base(base + PLIC_CONTEXT_BASE) },
             manager: IrqManager::new(IRQ_RANGE),
         };
-        inner.init();
+        inner.init_hart();
         Self {
             inner: Mutex::new(inner),
         }
@@ -136,4 +159,16 @@ impl IrqScheme for Plic {
     fn unregister(&self, irq_num: usize) -> DeviceResult {
         self.inner.lock().manager.unregister_handler(irq_num)
     }
+
+    fn init_hart(&self) {
+        self.inner.lock().init_hart();
+    }
+}
+
+fn cpu_id() -> u8 {
+    let mut cpu_id;
+    unsafe {
+        asm!("mv {0}, tp", out(reg) cpu_id);
+    }
+    cpu_id
 }

@@ -214,6 +214,7 @@ impl<P> RTL8211F<P>
 where
     P: Provider,
 {
+    #[allow(clippy::clone_on_copy)]
     pub fn new(mac_addr: &[u8; 6]) -> Self {
         assert_eq!(size_of::<dma_desc>(), 16);
 
@@ -1141,6 +1142,7 @@ where
             status = tx_dma_irq_status::tx_hard_error as i32;
         }
 
+        #[allow(clippy::collapsible_if)]
         /* 正常的 TX/RX NORMAL interrupts */
         if (intr_status & (TX_INT | RX_INT | RX_EARLY_INT | TX_UA_INT)) != 0
             && (intr_status & (TX_INT | RX_INT)) != 0

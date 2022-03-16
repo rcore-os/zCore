@@ -25,10 +25,15 @@ pub(super) fn super_soft() {
 
 #[no_mangle]
 pub extern "C" fn trap_handler(tf: &mut TrapFrame) {
+    // log::warn!("in trap handler");
     let scause = scause::read();
     match TrapReason::from(scause) {
         TrapReason::SoftwareBreakpoint => breakpoint(&mut tf.sepc),
-        TrapReason::PageFault(vaddr, flags) => crate::KHANDLER.handle_page_fault(vaddr, flags),
+        TrapReason::PageFault(vaddr, flags) => {
+            // log::warn!("sepc={:x}", riscv::register::sepc::read());
+            // log::warn!("sstatus.spp={:?}", riscv::register::sstatus::read().spp());
+            crate::KHANDLER.handle_page_fault(vaddr, flags)
+        }
         TrapReason::Interrupt(vector) => crate::interrupt::handle_irq(vector),
         other => panic!("Undefined trap: {:x?} {:#x?}", other, tf),
     }

@@ -291,7 +291,7 @@ impl Syscall<'_> {
                 info_ptr.write(job.get_info())?;
             }
             Topic::ProcessVmos => {
-                error!("A dummy implementation for utest Bti.NoDelayedUnpin, it does not check the reture value");
+                warn!("A dummy implementation for utest Bti.NoDelayedUnpin, it does not check the reture value");
                 actual.write(0)?;
                 avail.write(0)?;
             }

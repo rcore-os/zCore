@@ -1,3 +1,6 @@
 [submodule "rboot"]
 	path = rboot
 	url = https://github.com/rcore-os/rboot.git
+[submodule "tests"]
+	path = tests
+	url = https://github.com/rcore-os/zcore-tests.git

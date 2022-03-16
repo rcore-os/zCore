@@ -1,3 +1,5 @@
+#![allow(unused_imports)]
+
 mod event_listener;
 mod id_allocator;
 mod irq_manager;

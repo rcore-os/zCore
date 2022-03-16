@@ -6,20 +6,33 @@ _start:
 
 	#关闭mmu
 	#csrw satp, zero
-
 	#BSS节清零
 	la t0, sbss
 	la t1, ebss
-	bgeu t0, t1, 2f
+	bgeu t0, t1, secondary_hart_start
 
-1:
+clear_bss_loop:
 	# sd: store double word (64 bits)
 	sd zero, (t0)
 	addi t0, t0, 8
-	bltu t0, t1, 1b
-	
-2:
+	bltu t0, t1, clear_bss_loop
 
+primary_hart:
+	call init_vm
+	lui t0, %hi(primary_rust_main)
+	addi t0, t0, %lo(primary_rust_main)
+	jr t0
+
+
+.globl secondary_hart_start
+secondary_hart_start:
+	csrw sie, zero
+	call init_vm
+	lui t0, %hi(secondary_rust_main)
+	addi t0, t0, %lo(secondary_rust_main)
+	jr t0
+
+init_vm:
 	#la sp, bootstacktop
 	#call rust_main
 
@@ -42,18 +55,18 @@ _start:
 	#刷新TLB
 	sfence.vma
 
-
+	li t0, 4096 * 16
+	mul t0, t0, a0
 	#此时在虚拟内存空间，设置sp为虚拟地址
 	lui sp, %hi(bootstacktop)
-	lui t0, %hi(rust_main)
-	addi t0, t0, %lo(rust_main)
-	jr t0
+	sub sp, sp, t0
+	ret
 
 	.section .bss.stack
 	.align 12
 	.global bootstack
 bootstack:
-	.space 4096 * 32
+	.space 4096 * 160
 	.global bootstacktop
 bootstacktop:
 
