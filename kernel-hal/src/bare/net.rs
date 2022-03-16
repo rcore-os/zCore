@@ -1,3 +1,4 @@
+//! Network Loopback Interface.
 use smoltcp::{
     iface::{InterfaceBuilder, NeighborCache, Route, Routes},
     phy::{Loopback, Medium},
@@ -19,6 +20,7 @@ use zcore_drivers::net::LoopbackInterface;
 use zcore_drivers::scheme::NetScheme;
 use zcore_drivers::Device;
 
+/// Init loopback interface
 pub fn init() {
     let name = String::from("loopback");
     warn!("name : {}", name);
@@ -65,6 +67,7 @@ pub fn init() {
     add_device(dev);
 }
 
+/// Obtaining network devices
 pub fn get_net_device() -> Vec<Arc<dyn NetScheme>> {
     all_net().as_vec().clone()
 }

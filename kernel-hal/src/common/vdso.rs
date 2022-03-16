@@ -53,6 +53,7 @@ impl VdsoConstants {
     }
 }
 
+/// A UTF-8 string
 #[repr(C)]
 pub struct VersionString([u8; 64]);
 

@@ -6,17 +6,24 @@ use core::fmt::{Debug, Formatter};
 use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
 
+/// Represents a user space pointer to a user space address
 #[repr(C)]
 pub struct UserPtr<T, P: Policy> {
     ptr: *mut T,
     mark: PhantomData<P>,
 }
 
+/// Indicates policies implemented in the data flow
 pub trait Policy {}
+/// Indicates Read implemented in the data flow
 pub trait Read: Policy {}
+/// Indicates Write implemented in the data flow
 pub trait Write: Policy {}
+/// Represents data flow from user space to kernel space
 pub enum In {}
+/// Represents data flow from kernel space to user space
 pub enum Out {}
+/// Represents data flow in both kernel space and user space
 pub enum InOut {}
 
 impl Policy for In {}
@@ -27,8 +34,11 @@ impl Write for Out {}
 impl Read for InOut {}
 impl Write for InOut {}
 
+/// A user pointer that only indicates that data is passed from user space into kernel space
 pub type UserInPtr<T> = UserPtr<T, In>;
+/// A user pointer that only indicates that data is passed from kernel space into user space
 pub type UserOutPtr<T> = UserPtr<T, Out>;
+/// User pointer indicating that data can be passed in both directions in user space and kernel space
 pub type UserInOutPtr<T> = UserPtr<T, InOut>;
 
 type Result<T> = core::result::Result<T, Error>;
@@ -199,6 +209,7 @@ impl<P: Write> UserPtr<u8, P> {
     }
 }
 
+/// The struct iovec defines one vector element
 #[derive(Debug)]
 #[repr(C)]
 pub struct IoVec<P: Policy> {
@@ -207,8 +218,9 @@ pub struct IoVec<P: Policy> {
     /// Number of bytes to transfer
     len: usize,
 }
-
+/// A I/O Vector that only indicates that data is passed from user space into kernel space
 pub type IoVecIn = IoVec<In>;
+/// A I/O Vector that only indicates that data is passed from kernel space into user space
 pub type IoVecOut = IoVec<Out>;
 
 /// A valid IoVecs request from user

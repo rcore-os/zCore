@@ -312,6 +312,7 @@ cfg_if! {
         }
 
         // workaround: libcore has bug on Debug print u128 ??
+        /// Unsigned 128-bit
         #[derive(Default, Clone, Copy)]
         #[repr(C, align(16))]
         pub struct U128(pub [u64; 2]);
