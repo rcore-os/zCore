@@ -106,6 +106,7 @@ where
     }
 }
 
+/// MMIO driver for UART 16550
 pub struct Uart16550Mmio<V: 'static>
 where
     V: Copy + BitAnd<Output = V> + BitOr<Output = V> + Not<Output = V>,
@@ -204,6 +205,7 @@ mod pio {
     use super::*;
     use crate::io::Pio;
 
+    /// PIO driver for UART 16550
     pub struct Uart16550Pio {
         inner: Mutex<Uart16550Inner<Pio<u8>>>,
         listener: EventListener,
@@ -236,6 +238,7 @@ mod pio {
     }
 
     impl Uart16550Pio {
+        /// Construct a `Uart16550Pio` whose address starts at `base`.
         pub fn new(base: u16) -> Self {
             let mut uart = Uart16550Inner::<Pio<u8>> {
                 data: Pio::new(base),
