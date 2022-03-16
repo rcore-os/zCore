@@ -95,7 +95,7 @@ impl Syscall<'_> {
         level: usize,
         optname: usize,
         optval: UserOutPtr<u8>,
-        optlen: UserInOutPtr<u32>,
+        optlen: usize,
     ) -> SysResult {
         warn!(
             "sys_getsockopt : sockfd : {:?}, level : {:?}, optname : {:?}, optval : {:?} , optlen : {:?}",
