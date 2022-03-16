@@ -364,7 +364,7 @@ impl Syscall<'_> {
                 self.sys_setsockopt(a0, a1, a2, self.into_in_userptr(a3).unwrap(), a4)
             }
             Sys::GETSOCKOPT => {
-                self.sys_getsockopt(a0, a1, a2, self.into_in_userptr(a3).unwrap(), a4)
+                self.sys_getsockopt(a0, a1, a2, self.into_out_userptr(a3).unwrap(), a4)
             }
 
             // process
