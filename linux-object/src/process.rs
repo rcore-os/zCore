@@ -38,16 +38,17 @@ pub trait ProcessExt {
 }
 
 impl ProcessExt for Process {
+    /// create Linux process
     fn create_linux(job: &Arc<Job>, rootfs: Arc<dyn FileSystem>) -> ZxResult<Arc<Self>> {
         let linux_proc = LinuxProcess::new(rootfs);
         Process::create_with_ext(job, "root", linux_proc)
     }
-
+    /// get linux process
     fn linux(&self) -> &LinuxProcess {
         self.ext().downcast_ref::<LinuxProcess>().unwrap()
     }
 
-    /// [Fork] the process.
+    /// [Fork] linux process.
     ///
     /// [Fork]: http://man7.org/linux/man-pages/man2/fork.2.html
     fn fork_from(parent: &Arc<Self>, vfork: bool) -> ZxResult<Arc<Self>> {
@@ -171,6 +172,7 @@ struct LinuxProcessInner {
     sockets: HashMap<SocketHandle, Arc<Mutex<dyn Socket>>>,
 }
 
+/// linux signal acitons
 #[derive(Clone)]
 struct SignalActions {
     table: [SignalAction; LinuxSignal::RTMAX + 1],
@@ -495,10 +497,12 @@ impl LinuxProcess {
 }
 
 impl LinuxProcessInner {
+    /// get free fd, return a `FileDesc`
     fn get_free_fd(&self) -> FileDesc {
         self.get_free_fd_from(0)
     }
 
+    /// get free fd from an address, return a `FileDesc`
     fn get_free_fd_from(&self, start: usize) -> FileDesc {
         (start..)
             .map(|i| i.into())
@@ -506,6 +510,7 @@ impl LinuxProcessInner {
             .unwrap()
     }
 
+    /// get free hd, return a `SocketHandle`
     fn get_free_hd(&self) -> SocketHandle {
         (10000usize..)
             .map(|i| i.into())

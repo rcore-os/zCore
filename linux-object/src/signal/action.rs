@@ -14,21 +14,29 @@ pub const SIG_IGN: usize = 1;
 pub struct Sigset(u64);
 
 impl Sigset {
+    /// Creates a Sigset that yields nothing.
     pub fn empty() -> Self {
         Sigset(0)
     }
+    /// Returns true if the given pattern matches a Signal of the Sigset.
+    ///
+    /// Returns false if it does not.
     pub fn contains(&self, sig: Signal) -> bool {
         (self.0 >> sig as u64 & 1) != 0
     }
+    /// Inserts a Signal into the Sigset.
     pub fn insert(&mut self, sig: Signal) {
         self.0 |= 1 << sig as u64;
     }
+    /// Inserts a sub-Sigset into the Sigset.
     pub fn insert_set(&mut self, sigset: &Sigset) {
         self.0 |= sigset.0;
     }
+    /// Remove a Signal from the Sigset.
     pub fn remove(&mut self, sig: Signal) {
         self.0 ^= self.0 & (1 << sig as u64);
     }
+    /// Remove a sub-Sigset from the Sigset.
     pub fn remove_set(&mut self, sigset: &Sigset) {
         self.0 ^= self.0 & sigset.0;
     }
@@ -63,6 +71,7 @@ impl Default for SiginfoFields {
     }
 }
 
+/// signal infomation
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct SigInfo {

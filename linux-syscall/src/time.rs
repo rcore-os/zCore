@@ -105,9 +105,10 @@ impl Syscall<'_> {
         Ok(0)
     }
 
-    /// stores the current process times in the struct tms that buf points to.
-    ///
-    /// the `buf` argument is a wrapper of `Tms`.
+    /// get process times.
+    /// 
+    /// - `buf`: - a wrapper of `Tms` where to stores the current process times.
+    /// 
     /// 
     /// the `SysResult` is an alias for `LxError`
     /// which defined in `linux-object/src/error.rs`.

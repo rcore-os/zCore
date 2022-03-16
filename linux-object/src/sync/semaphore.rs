@@ -158,6 +158,7 @@ impl Semaphore {
 }
 
 impl<'a> Drop for SemaphoreGuard<'a> {
+    /// drop the SemaphoreGuard
     fn drop(&mut self) {
         self.sem.release();
     }
@@ -166,6 +167,7 @@ impl<'a> Drop for SemaphoreGuard<'a> {
 impl<'a> Deref for SemaphoreGuard<'a> {
     type Target = Semaphore;
 
+    /// deref the SemaphoreGuard
     fn deref(&self) -> &Self::Target {
         self.sem
     }

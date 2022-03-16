@@ -14,12 +14,14 @@ impl MemBuf {
 }
 
 impl Device for MemBuf {
+    /// Reads a number of bytes starting from a given offset.
     fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
         let slice = self.0.read();
         let len = buf.len().min(slice.len() - offset);
         buf[..len].copy_from_slice(&slice[offset..offset + len]);
         Ok(len)
     }
+    /// Writes a number of bytes starting from a given offset. 
     fn write_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
         let mut slice = self.0.write();
         let len = buf.len().min(slice.len() - offset);

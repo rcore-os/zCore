@@ -104,7 +104,7 @@ impl Stack {
 
 impl Deref for Stack {
     type Target = [u8];
-
+    /// deref the Stack
     fn deref(&self) -> &Self::Target {
         let offset = self.data.len() - (self.stack_top - self.sp);
         &self.data[offset..]

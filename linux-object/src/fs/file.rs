@@ -228,10 +228,12 @@ impl File {
 
 #[async_trait]
 impl FileLike for File {
+    /// Returns open flags.
     fn flags(&self) -> OpenFlags {
         self.inner.read().flags
     }
 
+    /// Set open flags.
     fn set_flags(&self, f: OpenFlags) -> LxResult {
         let flags = &mut self.inner.write().flags;
         flags.set(OpenFlags::APPEND, f.contains(OpenFlags::APPEND));
@@ -240,6 +242,7 @@ impl FileLike for File {
         Ok(())
     }
 
+    /// Duplicate the file.
     fn dup(&self) -> Arc<dyn FileLike> {
         Arc::new(Self {
             base: KObjectBase::new(),
@@ -248,30 +251,37 @@ impl FileLike for File {
         })
     }
 
+    /// read to buffer.
     async fn read(&self, buf: &mut [u8]) -> LxResult<usize> {
         self.inner.write().read(buf).await
     }
 
+    /// write from buffer.
     fn write(&self, buf: &[u8]) -> LxResult<usize> {
         self.inner.write().write(buf)
     }
 
+    /// read to buffer at given offset.
     async fn read_at(&self, offset: u64, buf: &mut [u8]) -> LxResult<usize> {
         self.inner.write().read_at(offset, buf).await
     }
 
+    /// write from buffer at given offset.
     fn write_at(&self, offset: u64, buf: &[u8]) -> LxResult<usize> {
         self.inner.write().write_at(offset, buf)
     }
 
+    /// wait for some event on a file descriptor.
     fn poll(&self) -> LxResult<PollStatus> {
         Ok(self.inner.read().inode.poll()?)
     }
 
+    /// wait for some event on a file descriptor use async.
     async fn async_poll(&self) -> LxResult<PollStatus> {
         Ok(self.inner.read().inode.async_poll().await?)
     }
 
+    /// manipulates the underlying device parameters of special files.
     fn ioctl(&self, request: usize, arg1: usize, _arg2: usize, _arg3: usize) -> LxResult<usize> {
         // ioctl syscall
         self.inner.read().inode.io_control(request as u32, arg1)?;

@@ -23,18 +23,21 @@ impl MemBuf {
 }
 
 impl Device for MemBuf {
+    /// Reads a number of bytes starting from a given offset.
     fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
         let slice = self.0.read();
         let len = buf.len().min(slice.len() - offset);
         buf[..len].copy_from_slice(&slice[offset..offset + len]);
         Ok(len)
     }
+    /// Writes a number of bytes starting from a given offset.
     fn write_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
         let mut slice = self.0.write();
         let len = buf.len().min(slice.len() - offset);
         slice[offset..offset + len].copy_from_slice(&buf[..len]);
         Ok(len)
     }
+    /// return ()
     fn sync(&self) -> Result<()> {
         Ok(())
     }
@@ -53,14 +56,17 @@ impl Block {
 impl BlockDevice for Block {
     const BLOCK_SIZE_LOG2: u8 = 9; // 512
 
+    /// Reads a number of bytes starting from a given offset.
     fn read_at(&self, block_id: usize, buf: &mut [u8]) -> Result<()> {
         self.0.read_block(block_id, buf).map_err(|_| DevError)
     }
 
+    /// Writes a number of bytes starting from a given offset.
     fn write_at(&self, block_id: usize, buf: &[u8]) -> Result<()> {
         self.0.write_block(block_id, buf).map_err(|_| DevError)
     }
 
+    /// flush 
     fn sync(&self) -> Result<()> {
         self.0.flush().map_err(|_| DevError)
     }
