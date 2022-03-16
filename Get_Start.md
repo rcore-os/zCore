@@ -6,14 +6,6 @@
 
 Reimplement [Zircon][zircon] microkernel in safe Rust as a userspace program!
 
-## Quick start for RISCV64
-
-```sh
-make riscv-image
-cd zCore
-make run ARCH=riscv64 LINUX=1
-```
-
 ## Getting started
 
 Environments：
@@ -85,12 +77,14 @@ git clone https://github.com.cnpmjs.org/rcore-os/zCore --recursive
 
   ```sh
   make image
+  # OR
+  make riscv-image
   ```
 
 * step 3: Build and run zcore in  linux-bare-metal mode:
 
   ```sh
-  cd zCore && make run MODE=release LINUX=1 [LOG=warn] [GRAPHIC=on] [ACCEL=1]
+  cd zCore && make run MODE=release LINUX=1 [ARCH=x86_64] [LOG=warn] [GRAPHIC=on] [ACCEL=1]
   ```
 
 #### Run Zircon shell in zircon-bare-metal mode:
