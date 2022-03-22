@@ -74,13 +74,23 @@ impl Syscall<'_> {
         uaddr: usize,
         op: u32,
         val: i32,
-        timeout: UserInPtr<TimeSpec>,
+        timeout_addr: usize,
     ) -> SysResult {
         let op = FutexFlags::from_bits_truncate(op);
+        let timeout = if op.contains(FutexFlags::WAKE) {
+            self.into_inout_userptr::<TimeSpec>(0).unwrap()
+        } else {
+            let timeout_result = self.into_inout_userptr::<TimeSpec>(timeout_addr);
+            match timeout_result {
+                Ok(t) => t,
+                Err(_e) => return Err(LxError::EACCES),
+            }
+        };
         info!(
             "futex: uaddr: {:#x}, op: {:?}, val: {}, timeout_ptr: {:?}",
             uaddr, op, val, timeout
         );
+
         if op.contains(FutexFlags::PRIVATE) {
             warn!("process-shared futex is unimplemented");
         }

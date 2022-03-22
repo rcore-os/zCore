@@ -6,19 +6,26 @@ MODE ?= release
 LOG ?= debug
 LINUX ?= 1
 LIBOS ?=
+TEST ?=
 GRAPHIC ?=
+DISK ?=
 HYPERVISOR ?=
 V ?=
 
 USER ?=
 ZBI ?= bringup
-CMDLINE ?=
 
 SMP ?= 1
 ACCEL ?=
 
 OBJDUMP ?= rust-objdump --print-imm-hex --x86-asm-syntax=intel
 OBJCOPY ?= rust-objcopy --binary-architecture=$(ARCH)
+
+ifeq ($(LINUX), 1)
+  CMDLINE ?= LOG=$(LOG)
+else
+  CMDLINE ?= LOG=$(LOG):TERM=xterm-256color:console.shell=true:virtcon.disable=true
+endif
 
 ifeq ($(LINUX), 1)
   user_img := $(ARCH).img
@@ -89,6 +96,10 @@ else
   endif
 endif
 
+ifeq ($(TEST), 1)
+  features += baremetal-test
+endif
+
 ifeq ($(GRAPHIC), on)
   features += graphic
 else ifeq ($(MAKECMDGOALS), vbox)
@@ -121,32 +132,33 @@ endif
 qemu_opts := -smp $(SMP)
 
 ifeq ($(ARCH), x86_64)
-  baremetal-test-qemu_opts := \
+  qemu_opts += \
 		-machine q35 \
 		-cpu Haswell,+smap,-check,-fsgsbase \
-		-m 4G \
+		-m 1G \
 		-serial mon:stdio \
 		-drive format=raw,if=pflash,readonly=on,file=$(ovmf) \
 		-drive format=raw,file=fat:rw:$(esp) \
-		-device ich9-ahci,id=ahci \
-		-device isa-debug-exit,iobase=0xf4,iosize=0x04 \
 		-nic none
-  qemu_opts += $(baremetal-test-qemu_opts) \
-		-drive format=qcow2,id=userdisk,if=none,file=$(qemu_disk) \
-		-device ide-hd,bus=ahci.0,drive=userdisk
 else ifeq ($(ARCH), riscv64)
   qemu_opts += \
 		-machine virt \
 		-bios default \
 		-m 512M \
 		-no-reboot \
-		-no-shutdown \
 		-serial mon:stdio \
-		-drive format=qcow2,id=userdisk,file=$(qemu_disk) \
-		-device virtio-blk-device,drive=userdisk \
 		-kernel $(kernel_img) \
 		-initrd $(USER_IMG) \
-		-append "LOG=$(LOG)"
+		-append "$(CMDLINE)"
+endif
+
+ifeq ($(DISK), on)
+  ifeq ($(ARCH), x86_64)
+    qemu_opts += -device ide-hd,bus=ahci.0,drive=userdisk
+  else ifeq ($(ARCH), riscv64)
+    qemu_opts += -device virtio-blk-device,drive=userdisk
+  endif
+  qemu_opts += -drive format=qcow2,id=userdisk,if=none,file=$(qemu_disk)
 endif
 
 ifeq ($(GRAPHIC), on)
@@ -160,7 +172,6 @@ ifeq ($(GRAPHIC), on)
   endif
 else
   qemu_opts += -display none -nographic
-  baremetal-test-qemu_opts += -display none -nographic
 endif
 
 ifeq ($(ACCEL), 1)
@@ -193,6 +204,10 @@ endif
 
 .PHONY: justrun
 justrun: $(qemu_disk)
+ifeq ($(ARCH), x86_64)
+	$(sed) 's#initramfs=.*#initramfs=\\EFI\\zCore\\$(notdir $(user_img))#' $(esp)/EFI/Boot/rboot.conf
+	$(sed) 's#cmdline=.*#cmdline=$(CMDLINE)#' $(esp)/EFI/Boot/rboot.conf
+endif
 	$(qemu) $(qemu_opts)
 
 .PHONY: debugrun
@@ -204,7 +219,7 @@ debugrun: $(qemu_disk)
 .PHONY: kernel
 kernel:
 	@echo Building zCore kenel
-	cargo build $(build_args)
+	SMP=$(SMP) cargo build $(build_args)
 
 .PHONY: disasm
 disasm:
@@ -216,7 +231,7 @@ header:
 
 .PHONY: clippy
 clippy:
-	cargo clippy $(build_args)
+	SMP=$(SMP) cargo clippy $(build_args)
 
 .PHONY: clean
 clean:
@@ -238,12 +253,6 @@ ifeq ($(ARCH), x86_64)
 	cp rboot.conf $(esp)/EFI/Boot/rboot.conf
 	cp $(kernel_elf) $(esp)/EFI/zCore/zcore.elf
 	cp $(user_img) $(esp)/EFI/zCore/
-	$(sed) "s/fuchsia.zbi/$(notdir $(user_img))/" $(esp)/EFI/Boot/rboot.conf
-  ifneq ($(CMDLINE),)
-	$(sed) "s#cmdline=.*#cmdline=$(CMDLINE)#" $(esp)/EFI/Boot/rboot.conf
-  else
-	$(sed) "s/LOG=warn/LOG=$(LOG)/" $(esp)/EFI/Boot/rboot.conf
-  endif
 else ifeq ($(ARCH), riscv64)
 	$(OBJCOPY) $(kernel_elf) --strip-all -O binary $@
 endif
@@ -265,21 +274,6 @@ image:
 # for macOS only
 	hdiutil create -fs fat32 -ov -volname EFI -format UDTO -srcfolder $(esp) $(build_path)/zcore.cdr
 	qemu-img convert -f raw $(build_path)/zcore.cdr -O qcow2 $(build_path)/zcore.qcow2
-
-################ Tests ################
-
-.PHONY: baremetal-qemu-disk
-baremetal-qemu-disk:
-	@qemu-img create -f qcow2 $(build_path)/disk.qcow2 100M
-
-.PHONY: baremetal-test
-baremetal-test:
-	cp rboot.conf $(esp)/EFI/Boot/rboot.conf
-	timeout --foreground 8s  $(qemu) $(baremetal-test-qemu_opts)
-
-.PHONY: baremetal-test-rv64
-baremetal-test-rv64: build $(qemu_disk)
-	timeout --foreground 8s $(qemu) $(qemu_opts) -append ROOTPROC=$(ROOTPROC)
 
 ################ Deprecated ################
 

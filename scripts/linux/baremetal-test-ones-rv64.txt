@@ -1,1 +1,0 @@
-/libc-test/functional/argv-static.exe?

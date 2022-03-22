@@ -63,7 +63,6 @@ impl Scheme for RTLxInterface {
             }
             self.driver.0.lock().int_enable();
             //return true;
-            return;
         }
     }
 }

@@ -5,10 +5,15 @@ use lock::mutex::Mutex;
 use crate::prelude::IrqHandler;
 use crate::scheme::{IrqScheme, Scheme};
 use crate::{DeviceError, DeviceResult};
+use alloc::format;
+use alloc::string::String;
+use core::sync::atomic::{AtomicU8, Ordering};
 
 const S_SOFT: usize = 1;
 const S_TIMER: usize = 5;
 const S_EXT: usize = 9;
+
+static INTC_NUM: AtomicU8 = AtomicU8::new(0);
 
 #[repr(usize)]
 pub enum ScauseIntCode {
@@ -18,6 +23,7 @@ pub enum ScauseIntCode {
 }
 
 pub struct Intc {
+    name: String,
     soft_handler: Mutex<Option<IrqHandler>>,
     timer_handler: Mutex<Option<IrqHandler>>,
     ext_handler: Mutex<Option<IrqHandler>>,
@@ -26,6 +32,7 @@ pub struct Intc {
 impl Intc {
     pub fn new() -> Self {
         Self {
+            name: format!("riscv-intc-cpu{}", INTC_NUM.fetch_add(1, Ordering::Relaxed)),
             soft_handler: Mutex::new(None),
             timer_handler: Mutex::new(None),
             ext_handler: Mutex::new(None),
@@ -56,7 +63,7 @@ impl Default for Intc {
 
 impl Scheme for Intc {
     fn name(&self) -> &str {
-        "riscv-intc"
+        self.name.as_str()
     }
 
     fn handle_irq(&self, cause: usize) {

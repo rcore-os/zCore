@@ -3,15 +3,19 @@
 use core::alloc::Layout;
 use core::panic::PanicInfo;
 use log::*;
-//use zircon_object::util::kcounter::KCounterDescriptorArray;
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
+    println!("\n\npanic cpu={}", kernel_hal::cpu::cpu_id());
     println!("\n\n{}", info);
     error!("\n\n{}", info);
-    //error!("{:#?}", KCounterDescriptorArray::get());
-    loop {
-        core::hint::spin_loop();
+
+    if cfg!(feature = "baremetal-test") {
+        kernel_hal::cpu::reset();
+    } else {
+        loop {
+            core::hint::spin_loop();
+        }
     }
 }
 

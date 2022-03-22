@@ -214,6 +214,7 @@ impl<P> RTL8211F<P>
 where
     P: Provider,
 {
+    #[allow(clippy::clone_on_copy)]
     pub fn new(mac_addr: &[u8; 6]) -> Self {
         assert_eq!(size_of::<dma_desc>(), 16);
 
@@ -229,7 +230,7 @@ where
            (v_addr == 0x5fa)
         // mac addr is broadcast
         {
-            let tokens: Vec<&str> = MAC_ADDR.split(":").collect();
+            let tokens: Vec<&str> = MAC_ADDR.split(':').collect();
             for (i, s) in tokens.iter().enumerate() {
                 mac[i] = u8::from_str_radix(s, 16).unwrap();
             }
@@ -1141,6 +1142,7 @@ where
             status = tx_dma_irq_status::tx_hard_error as i32;
         }
 
+        #[allow(clippy::collapsible_if)]
         /* 正常的 TX/RX NORMAL interrupts */
         if (intr_status & (TX_INT | RX_INT | RX_EARLY_INT | TX_UA_INT)) != 0 {
             if (intr_status & (TX_INT | RX_INT)) != 0 {
@@ -1200,7 +1202,7 @@ where
                     (*desc).desc1 |= 0b11 << 27;
                     desc = desc.add(1);
                 }
-                count = count + 1;
+                count += 1;
 
                 if count > end {
                     break;
@@ -1432,7 +1434,8 @@ where
 
         match speed {
             1000 => ctrl &= !0x0C,
-            100 | 10 | _ => {
+            /*100 | 10 |*/
+            _ => {
                 ctrl |= 0x08;
                 if (speed == 100) {
                     ctrl |= 0x04;

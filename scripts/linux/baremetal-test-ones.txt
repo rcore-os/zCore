@@ -1,2 +1,0 @@
-/libc-test/src/functional/argv-static.exe
-/libc-test/src/functional/argv.exe

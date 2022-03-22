@@ -4,7 +4,7 @@ on:
   push:
   pull_request:
   schedule:
-    - cron: '40 3 * * *'  # every day at 3:40
+    - cron: '0 22 * * *'  # every day at 22:00 UTC
 
 jobs:
   check:
@@ -14,7 +14,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly-2021-11-02
+          toolchain: nightly-2022-01-20
           override: true
           components: rust-src, rustfmt, clippy
       - name: Check code format
@@ -38,7 +38,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly-2021-11-02
+          toolchain: nightly-2022-01-20
           components: rust-src, llvm-tools-preview
       - uses: actions-rs/install@v0.1
         with:
@@ -62,7 +62,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly-2021-11-02
+          toolchain: nightly-2022-01-20
           override: true
           target: aarch64-unknown-linux-gnu
       - uses: actions-rs/cargo@v1
@@ -83,7 +83,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly-2021-11-02
+          toolchain: nightly-2022-01-20
           target: x86_64-fuchsia
       - name: Build Zircon user programs
         run: cd zircon-user && make build MODE=release

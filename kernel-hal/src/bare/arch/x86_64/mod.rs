@@ -36,7 +36,7 @@ pub fn primary_init() {
     let stack_fn = |pid: usize| -> usize {
         // split and reuse the current stack
         let mut stack: usize;
-        unsafe { asm!("mov {}, rsp", out(reg) stack) };
+        unsafe { core::arch::asm!("mov {}, rsp", out(reg) stack) };
         stack -= 0x4000 * pid;
         stack
     };
