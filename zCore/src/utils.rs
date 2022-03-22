@@ -99,6 +99,6 @@ pub fn wait_for_exit(proc: Option<Arc<Process>>) -> ! {
     loop {
         #[cfg(not(feature = "libos"))]
         executor::run_until_idle();
-        kernel_hal::interrupt::wait_for_interrupt();
+        // kernel_hal::interrupt::wait_for_interrupt();
     }
 }

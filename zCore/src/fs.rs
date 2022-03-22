@@ -64,7 +64,7 @@ cfg_if! {
 // Hard link rootfs img
 #[cfg(not(feature = "libos"))]
 #[cfg(feature = "link-user-img")]
-global_asm!(concat!(
+core::arch::global_asm!(concat!(
     r#"
     .section .data.img
     .global _user_img_start

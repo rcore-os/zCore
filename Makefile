@@ -4,7 +4,7 @@ ROOTFS_URL := http://dl-cdn.alpinelinux.org/alpine/v3.12/releases/x86_64/$(ROOTF
 RISCV64_ROOTFS_TAR := prebuild.tar.xz
 RISCV64_ROOTFS_URL := https://github.com/rcore-os/libc-test-prebuilt/releases/download/0.1/$(RISCV64_ROOTFS_TAR)
 
-ARCH ?= x86_64
+ARCH ?= riscv64
 rcore_fs_fuse_revision := 7f5eeac
 OUT_IMG := zCore/$(ARCH).img
 TMP_ROOTFS := /tmp/rootfs
@@ -62,8 +62,10 @@ image: $(OUT_IMG)
 	@echo Resizing $(ARCH).img
 	@qemu-img resize $(OUT_IMG) +5M
 
+rcore-user: riscv-rootfs
+	@make -C linux-user zcore-img ARCH=$(ARCH)
 
-riscv-image: # rcore-fs-fuse riscv-rootfs
+riscv-image: rcore-user # rcore-fs-fuse riscv-rootfs
 	@echo building riscv.img
 	@rcore-fs-fuse zCore/riscv64.img riscv_rootfs zip
 	@qemu-img resize -f raw zCore/riscv64.img +5M

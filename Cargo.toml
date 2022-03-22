@@ -21,5 +21,5 @@ lto = true
 [patch.'https://github.com/DeathWish5/kernel-sync']
 lock = { path = "../../ASYNC/kernel-sync" }
 
-[patch.'https://github.com/rcore-os/executor.git']
-executor = { path = "../../ASYNC/PreemptiveScheduler" }
+# [patch.'https://github.com/rcore-os/executor']
+# executor = { path = "../../ASYNC/PreemptiveScheduler" }

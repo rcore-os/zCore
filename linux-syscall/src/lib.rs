@@ -249,6 +249,8 @@ impl Syscall<'_> {
             Sys::FINIT_MODULE => self.unimplemented("finit_module", Err(LxError::ENOSYS)),
             //            Sys::DELETE_MODULE => self.sys_delete_module(a0.into(), a1 as u32),
 
+            Sys::BLOCK_IN_KERNEL => self.sys_block_in_kernel(),
+
             #[cfg(target_arch = "x86_64")]
             _ => self.x86_64_syscall(sys_type, args).await,
             #[cfg(target_arch = "riscv64")]

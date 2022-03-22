@@ -1,6 +1,5 @@
 #![no_main]
 #![cfg_attr(not(feature = "libos"), no_std)]
-#![feature(global_asm)]
 #![feature(lang_items)]
 #![deny(warnings)] // comment this on develop
 
