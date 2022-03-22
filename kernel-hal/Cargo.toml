@@ -52,4 +52,4 @@ x86-smpboot = { git = "https://github.com/rcore-os/x86-smpboot", rev = "43ffedf"
 
 # Bare-metal mode on riscv64
 [target.'cfg(all(target_os = "none", target_arch = "riscv64"))'.dependencies]
-riscv = "0.7.0"
+riscv = { git = "https://github.com/rust-embedded/riscv", rev = "418c1053", features = ["inline-asm"] }

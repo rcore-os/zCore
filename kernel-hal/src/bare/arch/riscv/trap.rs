@@ -27,7 +27,7 @@ pub(super) fn super_soft() {
 pub extern "C" fn trap_handler(tf: &mut TrapFrame) {
     let scause = scause::read();
 
-    info!("trap happened: {:?}", TrapReason::from(scause));
+    trace!("trap happened: {:?}", TrapReason::from(scause));
 
     match TrapReason::from(scause) {
         TrapReason::SoftwareBreakpoint => breakpoint(&mut tf.sepc),

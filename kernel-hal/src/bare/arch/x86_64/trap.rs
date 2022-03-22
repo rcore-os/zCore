@@ -32,7 +32,7 @@ pub extern "C" fn trap_handler(tf: &mut TrapFrame) {
         super::cpu::cpu_id()
     );
 
-    info!("trap happened: {:?}", TrapReason::from(tf.trap_num, tf.error_code));
+    trace!("trap happened: {:?}", TrapReason::from(tf.trap_num, tf.error_code));
 
     match TrapReason::from(tf.trap_num, tf.error_code) {
         TrapReason::HardwareBreakpoint | TrapReason::SoftwareBreakpoint => breakpoint(),
