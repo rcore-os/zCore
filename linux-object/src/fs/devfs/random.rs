@@ -5,8 +5,8 @@ use core::any::Any;
 
 use rcore_fs::vfs::*;
 use rcore_fs_devfs::DevFS;
-// use spin::Mutex;
-use lock::mutex::Mutex;
+use spin::Mutex;
+// use lock::mutex::Mutex;
 
 /// random INode data struct
 pub struct RandomINodeData {

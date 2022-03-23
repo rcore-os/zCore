@@ -2,8 +2,8 @@ use alloc::{boxed::Box, collections::VecDeque, sync::Arc};
 use core::task::{Context, Poll};
 use core::{any::Any, future::Future, mem::size_of, pin::Pin};
 
-// use spin::Mutex;
-use lock::mutex::Mutex;
+use spin::Mutex;
+// use lock::mutex::Mutex;
 
 use kernel_hal::drivers::prelude::{InputEvent, InputEventType};
 use kernel_hal::drivers::scheme::InputScheme;

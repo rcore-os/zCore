@@ -60,7 +60,8 @@ pub fn boot_options() -> BootOptions {
                 cmdline: cmdline.clone(),
                 log_level: String::from(*options.get("LOG").unwrap_or(&"")),
                 #[cfg(feature = "linux")]
-                root_proc: String::from(*options.get("ROOTPROC").unwrap_or(&"/bin/busybox?sh")),
+                // root_proc: String::from(*options.get("ROOTPROC").unwrap_or(&"/bin/busybox?sh")),
+                root_proc: String::from(*options.get("ROOTPROC").unwrap_or(&"/linux-user/ucore/kernel_intr_test")),
             }
         }
     }
@@ -119,11 +120,11 @@ pub fn wait_for_exit(proc: Option<Arc<Process>>) -> ! {
 #[cfg(not(feature = "libos"))]
 pub fn wait_for_exit(proc: Option<Arc<Process>>) -> ! {
     loop {
-        let has_task = executor::run_until_idle();
-        if cfg!(feature = "baremetal-test") && !has_task {
-            proc.map(check_exit_code);
-            kernel_hal::cpu::reset();
-        }
+        executor::run_until_idle();
+        // if cfg!(feature = "baremetal-test") && !has_task {
+        //     proc.map(check_exit_code);
+        //     kernel_hal::cpu::reset();
+        // }
         kernel_hal::interrupt::wait_for_interrupt();
     }
 }

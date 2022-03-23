@@ -3,8 +3,8 @@
 use alloc::{boxed::Box, string::String, sync::Arc};
 
 use async_trait::async_trait;
-// use spin::RwLock;
-use lock::rwlock::RwLock;
+use spin::RwLock;
+// use lock::rwlock::RwLock;
 
 use rcore_fs::vfs::{FileType, FsError, INode, Metadata, PollStatus};
 use zircon_object::object::*;

@@ -1,12 +1,8 @@
 use core::arch::asm;
 use core::ops::Range;
-<<<<<<< HEAD
 
 // use spin::Mutex;
 use lock::mutex::Mutex;
-=======
-use spin::Mutex;
->>>>>>> master
 
 use crate::io::{Io, Mmio};
 use crate::prelude::IrqHandler;

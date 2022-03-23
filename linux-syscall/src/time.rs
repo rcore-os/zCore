@@ -64,7 +64,7 @@ impl Syscall<'_> {
                 continue;
             }
             old = sec;
-            warn!("1 seconds past");
+            warn!("1 seconds past intr = {}", kernel_hal::interrupt::intr_get());
         }
     }
 

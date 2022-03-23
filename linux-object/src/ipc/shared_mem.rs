@@ -4,10 +4,8 @@ use crate::error::LxError;
 use crate::time::TimeSpec;
 use alloc::{collections::BTreeMap, sync::Arc, sync::Weak};
 use lazy_static::lazy_static;
-// use spin::Mutex;
-use lock::mutex::Mutex;
-// use spin::RwLock;
-use lock::rwlock::RwLock;
+use spin::{Mutex, RwLock};
+// use lock::{mutex::Mutex, rwlock::RwLock};
 use zircon_object::vm::*;
 
 lazy_static! {

@@ -17,8 +17,8 @@ use core::cmp::min;
 use core::marker::{Send, Sync};
 use lazy_static::*;
 use region_alloc::RegionAllocator;
-// use spin::Mutex;
-use lock::mutex::Mutex;
+use spin::Mutex;
+// use lock::mutex::Mutex;
 
 /// PCIE Bus Driver.
 pub struct PCIeBusDriver {
