@@ -36,7 +36,13 @@ zircon = ["zcore-loader/zircon"]
 linux = ["zcore-loader/linux", "linux-object", "rcore-fs", "rcore-fs-sfs"]
 
 # Run as LibOS
-libos = ["kernel-hal/libos", "zcore-loader/libos", "async-std", "chrono", "rcore-fs-hostfs"]
+libos = [
+    "kernel-hal/libos",
+    "zcore-loader/libos",
+    "async-std",
+    "chrono",
+    "rcore-fs-hostfs",
+]
 # Run on QEMU
 board-qemu = []
 # Run on Allwinner d1 (riscv only)
@@ -46,20 +52,22 @@ board-d1 = ["link-user-img"]
 log = "0.4"
 spin = "0.9"
 cfg-if = "1.0"
-lazy_static = { version = "1.4", features = ["spin_no_std" ] }
+lazy_static = { version = "1.4", features = ["spin_no_std"] }
 bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator", rev = "b3f9f51" }
-kernel-hal = { path = "../kernel-hal", default-features = false, features = ["smp"] }
+kernel-hal = { path = "../kernel-hal", default-features = false, features = [
+    "smp",
+] }
 zcore-loader = { path = "../loader", default-features = false }
 zircon-object = { path = "../zircon-object" }
 linux-object = { path = "../linux-object", optional = true }
-rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "7c232ec", optional = true }
-rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "7c232ec", optional = true }
+rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "1ec3cdc", optional = true }
+rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "1ec3cdc", optional = true }
 
 # LibOS mode
 [target.'cfg(not(target_os = "none"))'.dependencies]
 async-std = { version = "1.10", optional = true }
 chrono = { version = "0.4", optional = true }
-rcore-fs-hostfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "7c232ec", optional = true }
+rcore-fs-hostfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "1ec3cdc", optional = true }
 
 # Bare-metal mode
 [target.'cfg(target_os = "none")'.dependencies]
