@@ -10,7 +10,7 @@
 //! - access, faccessat
 
 use super::*;
-use linux_object::time::TimeSpec;
+use linux_object::{process::FsInfo, time::TimeSpec};
 
 impl Syscall<'_> {
     /// Reads from a specified file using a file descriptor. Before using this call,
@@ -431,9 +431,94 @@ impl Syscall<'_> {
         inode.set_metadata(&metadata)?;
         Ok(0)
     }
+
+    /// Get filesystem statistics
+    /// (see [linux man statfs(2)](https://man7.org/linux/man-pages/man2/statfs.2.html)).
+    ///
+    /// The `statfs` system call returns information about a mounted filesystem.
+    /// `path` is the pathname of **any file** within the mounted filesystem.
+    /// `buf` is a pointer to a [`StatFs`] structure.
+    pub fn sys_statfs(&self, path: UserInPtr<u8>, mut buf: UserOutPtr<StatFs>) -> SysResult {
+        // check defination of `StatFs`
+        // assert_eq!(120, core::mem::size_of::<StatFs>());
+
+        let path = path.read_cstring()?;
+        info!("statfs: path={:?}, buf={:?}", path, buf);
+
+        // TODO
+        // 现在 `path` 没用到，因为没实现真正的挂载，不可能搞一个非主要文件系统的路径。
+        // 实现挂载之后，要用 `path` 分辨路径在哪个文件系统里，根据对应文件系统的特性返回统计信息。
+        // （以及根据挂载选项填写 `StatFs::f_flags`！）
+
+        let info = self.linux_process().root_inode().fs().info();
+        buf.write(info.into())?;
+        Ok(0)
+    }
+
+    /// Get filesystem statistics
+    /// (see [linux man statfs(2)](https://man7.org/linux/man-pages/man2/statfs.2.html)).
+    ///
+    /// The `fstatfs` system call returns information about a mounted filesystem.
+    /// `fd` is the descriptor referencing an open file.
+    /// `buf` is a pointer to a [`StatFs`] structure.
+    pub fn sys_fstatfs(&self, fd: FileDesc, mut buf: UserOutPtr<StatFs>) -> SysResult {
+        info!("statfs: fd={:?}, buf={:?}", fd, buf);
+
+        let info = self
+            .linux_process()
+            .get_file_like(fd)?
+            .downcast_arc::<File>()
+            .map_err(|_| LxError::EBADF)?
+            .inode()
+            .fs()
+            .info();
+        buf.write(info.into())?;
+        Ok(0)
+    }
 }
 
 const F_LINUX_SPECIFIC_BASE: usize = 1024;
+
+/// The file system statistics struct defined in linux
+/// (see [linux man statfs(2)](https://man7.org/linux/man-pages/man2/statfs.2.html)).
+#[repr(C)]
+pub struct StatFs {
+    f_type: i64,
+    f_bsize: i64,
+    f_blocks: u64,
+    f_bfree: u64,
+    f_bavail: u64,
+    f_files: u64,
+    f_ffree: u64,
+    f_fsid: (i32, i32),
+    f_namelen: isize,
+    f_frsize: isize,
+    f_flags: isize,
+    f_spare: [isize; 4],
+}
+
+impl From<FsInfo> for StatFs {
+    fn from(info: FsInfo) -> Self {
+        StatFs {
+            // TODO 文件系统的魔数，需要 rcore-fs 提供一个渠道获取
+            // 但是这个似乎并没有什么用处，新的 vfs 相关函数都去掉了，也许永远填个常数就好了
+            f_type: 0,
+            f_bsize: info.bsize as _,
+            f_blocks: info.blocks as _,
+            f_bfree: info.bfree as _,
+            f_bavail: info.bavail as _,
+            f_files: info.files as _,
+            f_ffree: info.ffree as _,
+            // 一个由 OS 决定的号码，用于区分文件系统
+            f_fsid: (0, 0),
+            f_namelen: info.namemax as _,
+            f_frsize: info.frsize as _,
+            // TODO 需要先实现挂载
+            f_flags: 0,
+            f_spare: [0; 4],
+        }
+    }
+}
 
 numeric_enum_macro::numeric_enum! {
     #[repr(usize)]
