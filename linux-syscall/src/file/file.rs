@@ -437,11 +437,8 @@ impl Syscall<'_> {
     ///
     /// The `statfs` system call returns information about a mounted filesystem.
     /// `path` is the pathname of **any file** within the mounted filesystem.
-    /// `buf` is a pointer to a [`StatFs`] structure.
+    /// `buf` is a pointer to a `StatFs` structure.
     pub fn sys_statfs(&self, path: UserInPtr<u8>, mut buf: UserOutPtr<StatFs>) -> SysResult {
-        // check defination of `StatFs`
-        // assert_eq!(120, core::mem::size_of::<StatFs>());
-
         let path = path.read_cstring()?;
         info!("statfs: path={:?}, buf={:?}", path, buf);
 
@@ -460,7 +457,7 @@ impl Syscall<'_> {
     ///
     /// The `fstatfs` system call returns information about a mounted filesystem.
     /// `fd` is the descriptor referencing an open file.
-    /// `buf` is a pointer to a [`StatFs`] structure.
+    /// `buf` is a pointer to a `StatFs` structure.
     pub fn sys_fstatfs(&self, fd: FileDesc, mut buf: UserOutPtr<StatFs>) -> SysResult {
         info!("statfs: fd={:?}, buf={:?}", fd, buf);
 
@@ -496,6 +493,9 @@ pub struct StatFs {
     f_flags: isize,
     f_spare: [isize; 4],
 }
+
+// 保证 `StatFs` 的定义和常见的 linux 一致
+static_assertions::const_assert_eq!(120, core::mem::size_of::<StatFs>());
 
 impl From<FsInfo> for StatFs {
     fn from(info: FsInfo) -> Self {
