@@ -19,7 +19,7 @@ impl Syscall<'_> {
             "futex.wait: value_ptr={:#x?}, current_value={:#x}, new_futex_owner={:#x}, deadline={:?}",
             value_ptr, current_value, new_futex_owner, deadline
         );
-        if value_ptr.is_null() || value_ptr.as_ptr() as usize % 4 != 0 {
+        if value_ptr.is_null() || value_ptr.as_addr() % 4 != 0 {
             return Err(ZxError::INVALID_ARGS);
         }
         let value = value_ptr.as_ref()?;
@@ -52,12 +52,12 @@ impl Syscall<'_> {
             "futex.requeue: value_ptr={:?}, wake_count={:#x}, current_value={:#x}, requeue_ptr={:?}, requeue_count={:#x}, new_requeue_owner={:?}",
             value_ptr, wake_count, current_value, requeue_ptr, requeue_count, new_requeue_owner
         );
-        if value_ptr.is_null() || value_ptr.as_ptr() as usize % 4 != 0 {
+        if value_ptr.is_null() || value_ptr.as_addr() % 4 != 0 {
             return Err(ZxError::INVALID_ARGS);
         }
         let value = value_ptr.as_ref()?;
         let requeue = requeue_ptr.as_ref()?;
-        if value_ptr.as_ptr() == requeue_ptr.as_ptr() {
+        if value_ptr.as_addr() == requeue_ptr.as_addr() {
             return Err(ZxError::INVALID_ARGS);
         }
         let proc = self.thread.proc();
@@ -83,7 +83,7 @@ impl Syscall<'_> {
     /// > Waking up zero threads is not an error condition. Passing in an unallocated address for value_ptr is not an error condition.
     pub fn sys_futex_wake(&self, value_ptr: UserInPtr<AtomicI32>, count: u32) -> ZxResult {
         info!("futex.wake: value_ptr={:?}, count={:#x}", value_ptr, count);
-        if value_ptr.is_null() || value_ptr.as_ptr() as usize % 4 != 0 {
+        if value_ptr.is_null() || value_ptr.as_addr() % 4 != 0 {
             return Err(ZxError::INVALID_ARGS);
         }
         let value = value_ptr.as_ref()?;
@@ -96,7 +96,7 @@ impl Syscall<'_> {
     /// Wake some number of threads waiting on a futex, and move more waiters to another wait queue.
     pub fn sys_futex_wake_single_owner(&self, value_ptr: UserInPtr<AtomicI32>) -> ZxResult {
         info!("futex.wake_single_owner: value_ptr={:?}", value_ptr);
-        if value_ptr.is_null() || value_ptr.as_ptr() as usize % 4 != 0 {
+        if value_ptr.is_null() || value_ptr.as_addr() % 4 != 0 {
             return Err(ZxError::INVALID_ARGS);
         }
         let value = value_ptr.as_ref()?;
