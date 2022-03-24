@@ -14,8 +14,7 @@ fn breakpoint(sepc: &mut usize) {
 pub(super) fn super_timer() {
     super::timer::timer_set_next();
     crate::timer::timer_tick();
-
-    error!("time interrupt in kernel, runtime sched yield");
+    debug!("time interrupt in kernel, runtime sched yield");
     executor::sched_yield();
     //发生外界中断时，epc的指令还没有执行，故无需修改epc到下一条
 }
@@ -31,7 +30,6 @@ pub extern "C" fn trap_handler(tf: &mut TrapFrame) {
     let scause = scause::read();
 
     trace!("trap happened: {:?}", TrapReason::from(scause));
-
     match TrapReason::from(scause) {
         TrapReason::SoftwareBreakpoint => breakpoint(&mut tf.sepc),
         TrapReason::PageFault(vaddr, flags) => {

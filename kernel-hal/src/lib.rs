@@ -46,25 +46,3 @@ pub use kernel_handler::KernelHandler;
 #[cfg(any(feature = "smp", doc))]
 #[doc(cfg(feature = "smp"))]
 pub use imp::boot::{primary_init, primary_init_early, secondary_init};
-
-mod interrupt_ffi {
-    #[no_mangle]
-    extern "C" fn intr_on() {
-        super::interrupt::intr_on();
-    }
-
-    #[no_mangle]
-    extern "C" fn intr_off() {
-        super::interrupt::intr_off();
-    }
-
-    #[no_mangle]
-    extern "C" fn intr_get() -> bool {
-        super::interrupt::intr_get()
-    }
-
-    #[no_mangle]
-    extern "C" fn cpu_id() -> u8 {
-        super::cpu::cpu_id()
-    }
-}

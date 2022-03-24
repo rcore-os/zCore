@@ -1,9 +1,9 @@
 ################ Arguments ################
 
-ARCH ?= riscv64
+ARCH ?= x86_64
 PLATFORM ?= qemu
 MODE ?= release
-LOG ?= debug
+LOG ?= warn
 LINUX ?= 1
 LIBOS ?=
 TEST ?=
@@ -18,7 +18,8 @@ ZBI ?= bringup
 SMP ?= 1
 ACCEL ?=
 
-OBJDUMP ?= rust-objdump --print-imm-hex --x86-asm-syntax=intel
+# OBJDUMP ?= rust-objdump --print-imm-hex --x86-asm-syntax=intel
+OBJDUMP ?= riscv64-linux-musl-objdump
 OBJCOPY ?= rust-objcopy --binary-architecture=$(ARCH)
 
 ifeq ($(LINUX), 1)
@@ -210,11 +211,17 @@ ifeq ($(ARCH), x86_64)
 endif
 	$(qemu) $(qemu_opts)
 
+ifeq ($(ARCH), x86_64)
+	gdb := gdb
+else 
+	gdb := riscv64-unknown-elf-gdb
+endif
+
 .PHONY: debugrun
 debugrun: $(qemu_disk)
-	$(qemu) $(qemu_opts) -s -S &
+	$(qemu) $(qemu_opts) -S -gdb tcp::15234 &
 	@sleep 1
-	gdb $(kernel_elf) -tui -x gdbinit
+	$(gdb)
 
 .PHONY: kernel
 kernel:
@@ -223,7 +230,7 @@ kernel:
 
 .PHONY: disasm
 disasm:
-	$(OBJDUMP) -d $(kernel_elf) | less
+	$(OBJDUMP) -d $(kernel_elf) > kernel.asm
 
 .PHONY: header
 header:

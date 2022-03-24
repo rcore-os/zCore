@@ -61,11 +61,10 @@ async fn run_user(thread: CurrentThread) {
 
         // run
         trace!("go to user: {:#x?}", ctx);
-        info!("go to user");
+        kernel_hal::interrupt::intr_off(); // trapframe can't be interrupted
         ctx.enter_uspace();
-        // info!("back form user");
+        kernel_hal::interrupt::intr_on();
         trace!("back from user: {:#x?}", ctx);
-
         // handle trap/interrupt/syscall
         if let Err(err) = handle_user_trap(&thread, ctx).await {
             thread.exit_linux(err as i32);
@@ -75,7 +74,6 @@ async fn run_user(thread: CurrentThread) {
 
 async fn handle_user_trap(thread: &CurrentThread, mut ctx: Box<UserContext>) -> ZxResult {
     let reason = ctx.trap_reason();
-    info!("trap from user mode : {:?}", reason);
     if let TrapReason::Syscall = reason {
         let num = syscall_num(&ctx);
         let args = syscall_args(&ctx);
@@ -86,6 +84,7 @@ async fn handle_user_trap(thread: &CurrentThread, mut ctx: Box<UserContext>) -> 
             thread_fn,
             syscall_entry: kernel_hal::context::syscall_entry as usize,
         };
+        trace!("Syscall : {} {:x?}", num as u32, args);
         let ret = syscall.syscall(num as u32, args).await as usize;
         thread.with_context(|ctx| ctx.set_field(UserContextField::ReturnValue, ret))?;
         return Ok(());

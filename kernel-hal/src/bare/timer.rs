@@ -6,16 +6,25 @@ use core::time::Duration;
 use naive_timer::Timer;
 // use spin::Mutex;
 use lock::mutex::Mutex;
+use core::sync::atomic::{AtomicBool, Ordering};
 
 #[allow(dead_code)]
 pub(super) const TICKS_PER_SEC: u64 = 100;
 
 lazy_static! {
     static ref NAIVE_TIMER: Mutex<Timer> = Mutex::new(Timer::default());
+    static ref FIRST: AtomicBool = AtomicBool::new(false);
 }
 
 hal_fn_impl! {
     impl mod crate::hal_fn::timer {
+        fn timer_set_first() {
+            if FIRST.load(Ordering::Relaxed) == false {
+                FIRST.store(true, Ordering::Relaxed);
+                super::arch::timer_init();
+            }
+        }
+
         fn timer_now() -> Duration {
             super::arch::timer::timer_now()
         }

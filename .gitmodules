@@ -1,9 +1,6 @@
 [submodule "rboot"]
 	path = rboot
 	url = https://github.com/rcore-os/rboot.git
-[submodule "rcore-user"]
-	path = linux-user
-	url = https://github.com/DeathWish5/rcore-user.git
 [submodule "tests"]
 	path = tests
 	url = https://github.com/rcore-os/zcore-tests.git
