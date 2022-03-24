@@ -6,6 +6,8 @@ use core::fmt::{Debug, Formatter};
 use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
 
+use crate::VirtAddr;
+
 /// Wapper of raw pointer from user space.
 #[repr(C)]
 pub struct UserPtr<T, P: Policy> {
@@ -78,10 +80,11 @@ impl<T, P: Policy> UserPtr<T, P> {
     /// Checks if `size` is enough to save a value of `T`,
     /// then constructs a user pointer from its value `addr`.
     pub fn from_addr_size(addr: usize, size: usize) -> Result<Self> {
-        if size < core::mem::size_of::<T>() {
-            return Err(Error::BufferTooSmall);
+        if size >= core::mem::size_of::<T>() {
+            Ok(Self::from(addr))
+        } else {
+            Err(Error::BufferTooSmall)
         }
-        Ok(Self::from(addr))
     }
 
     /// Returns true if the pointer is null.
@@ -100,21 +103,19 @@ impl<T, P: Policy> UserPtr<T, P> {
     }
 
     /// Returns the raw pointer.
-    pub fn as_ptr(&self) -> *mut T {
-        self.ptr
+    pub fn as_addr(&self) -> VirtAddr {
+        self.ptr as _
     }
 
     /// Checks avaliability of the user pointer.
     ///
     /// Returns [`Ok(())`] if it is neither null nor unaligned,
     pub fn check(&self) -> Result<()> {
-        if self.ptr.is_null() {
-            return Err(Error::InvalidPointer);
+        if !self.ptr.is_null() && (self.ptr as usize) % core::mem::align_of::<T>() == 0 {
+            Ok(())
+        } else {
+            Err(Error::InvalidPointer)
         }
-        if (self.ptr as usize) % core::mem::align_of::<T>() != 0 {
-            return Err(Error::InvalidPointer);
-        }
-        Ok(())
     }
 }
 
@@ -134,11 +135,11 @@ impl<T, P: Read> UserPtr<T, P> {
     /// Same as [`read`](Self::read),
     /// but returns [`None`] when pointer is null.
     pub fn read_if_not_null(&self) -> Result<Option<T>> {
-        if self.ptr.is_null() {
-            return Ok(None);
+        if !self.ptr.is_null() {
+            Ok(Some(self.read()?))
+        } else {
+            Ok(None)
         }
-        let value = self.read()?;
-        Ok(Some(value))
     }
 
     /// Copies elements into a new [`Vec`].
@@ -206,23 +207,23 @@ impl<T, P: Write> UserPtr<T, P> {
     /// Same as [`write`](Self::write),
     /// but does nothing and returns [`Ok`] when pointer is null.
     pub fn write_if_not_null(&mut self, value: T) -> Result<()> {
-        if self.ptr.is_null() {
-            return Ok(());
+        if !self.ptr.is_null() {
+            self.write(value)
+        } else {
+            Ok(())
         }
-        self.write(value)
     }
 
     /// Copies `values.len() * size_of<T>` bytes from `values` to `self`.
     /// The source and destination may not overlap.
     pub fn write_array(&mut self, values: &[T]) -> Result<()> {
-        if values.is_empty() {
-            return Ok(());
+        if !values.is_empty() {
+            self.check()?;
+            unsafe {
+                self.ptr
+                    .copy_from_nonoverlapping(values.as_ptr(), values.len())
+            };
         }
-        self.check()?;
-        unsafe {
-            self.ptr
-                .copy_from_nonoverlapping(values.as_ptr(), values.len())
-        };
         Ok(())
     }
 }
@@ -337,20 +338,14 @@ impl<P: Policy> IoVec<P> {
     }
 
     pub fn as_slice(&self) -> Result<&[u8]> {
-        if self.ptr.is_null() {
-            return Err(Error::InvalidVectorAddress);
-        }
-        let slice = unsafe { core::slice::from_raw_parts(self.ptr.as_ptr(), self.len) };
-        Ok(slice)
+        self.as_mut_slice().map(|s| &*s)
     }
-}
 
-impl<P: Write> IoVec<P> {
-    pub fn as_mut_slice(&mut self) -> Result<&mut [u8]> {
-        if self.ptr.is_null() {
-            return Err(Error::InvalidVectorAddress);
+    pub fn as_mut_slice(&self) -> Result<&mut [u8]> {
+        if !self.ptr.is_null() {
+            Ok(unsafe { core::slice::from_raw_parts_mut(self.ptr.ptr, self.len) })
+        } else {
+            Err(Error::InvalidVectorAddress)
         }
-        let slice = unsafe { core::slice::from_raw_parts_mut(self.ptr.as_ptr(), self.len) };
-        Ok(slice)
     }
 }

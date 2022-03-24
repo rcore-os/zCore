@@ -28,7 +28,7 @@ impl Syscall<'_> {
             return Err(LxError::ERANGE);
         }
         buf.write_cstring(&cwd)?;
-        Ok(buf.as_ptr() as usize)
+        Ok(buf.as_addr())
     }
 
     /// Change the current directory.
