@@ -5,13 +5,11 @@ use log::{self, Level, LevelFilter, Log, Metadata, Record};
 pub fn init() {
     static LOGGER: SimpleLogger = SimpleLogger;
     log::set_logger(&LOGGER).unwrap();
-    log::set_max_level(LevelFilter::Info);
+    log::set_max_level(LevelFilter::Warn);
 }
 
 /// Reset max log level.
-pub fn set_max_level(_level: &str) {
-    // log::set_max_level(LevelFilter::Off);
-    // log::set_max_level(LevelFilter::Info);
+pub fn set_max_level(level: &str) {
     log::set_max_level(level.parse().unwrap_or(LevelFilter::Warn));
 }
 

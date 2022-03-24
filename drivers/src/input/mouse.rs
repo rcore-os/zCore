@@ -1,6 +1,5 @@
 use alloc::{boxed::Box, sync::Arc};
 
-// use spin::Mutex;
 use lock::mutex::Mutex;
 
 use crate::prelude::{CapabilityType, InputEvent, InputEventType};

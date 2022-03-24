@@ -89,7 +89,7 @@ impl<M: IoMapper> DevicetreeDriverBuilder<M> {
             match comp {
                 #[cfg(feature = "virtio")]
                 c if c.contains("virtio,mmio") => self.parse_virtio(node, props),
-                // c if c.contains("allwinner,sunxi-gmac") => self.parse_ethernet(node, comp, props),
+                c if c.contains("allwinner,sunxi-gmac") => self.parse_ethernet(node, comp, props),
                 c if c.contains("ns16550a") => self.parse_uart(node, comp, props),
                 c if c.contains("allwinner,sun20i-uart") => self.parse_uart(node, comp, props),
                 _ => Err(DeviceError::NotSupported),

@@ -65,8 +65,7 @@ rcore-fs-hostfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "7c232ec
 # Bare-metal mode
 [target.'cfg(target_os = "none")'.dependencies]
 buddy_system_allocator = "0.7"
-# executor = { git = "https://github.com/rcore-os/executor.git", rev = "85b9335" }
-executor = { path = "../../../ASYNC/PreemptiveScheduler" }
+executor = { git = "https://github.com/DeathWish5/PreemptiveScheduler" }
 
 # Bare-metal mode on x86_64
 [target.'cfg(all(target_os = "none", target_arch = "x86_64"))'.dependencies]

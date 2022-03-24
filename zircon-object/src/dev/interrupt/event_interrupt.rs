@@ -1,6 +1,6 @@
 use kernel_hal::interrupt;
 use {
-    super::*, 
+    super::*,
     spin::Mutex,
     // lock::mutex::Mutex,
 };

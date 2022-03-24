@@ -91,6 +91,6 @@ pub(super) fn intc_init() -> DeviceResult {
         Box::new(super::trap::super_timer),
     )?;
     irq.unmask(ScauseIntCode::SupervisorSoft as _)?;
-    irq.unmask(ScauseIntCode::SupervisorTimer as _)?; 
+    irq.unmask(ScauseIntCode::SupervisorTimer as _)?;
     Ok(())
 }

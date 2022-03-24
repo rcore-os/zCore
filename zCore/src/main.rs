@@ -39,8 +39,6 @@ fn primary_main(config: kernel_hal::KernelConfig) {
     STARTED.store(true, Ordering::SeqCst);
 
     kernel_hal::interrupt::intr_on();
-    // info!("wait for time interrupt");
-    // kernel_hal::interrupt::wait_for_interrupt();
 
     cfg_if! {
         if #[cfg(all(feature = "linux", feature = "zircon"))] {

@@ -4,7 +4,7 @@ ARCH ?= x86_64
 PLATFORM ?= qemu
 MODE ?= release
 LOG ?= warn
-LINUX ?= 1
+LINUX ?=
 LIBOS ?=
 TEST ?=
 GRAPHIC ?=
@@ -18,9 +18,15 @@ ZBI ?= bringup
 SMP ?= 1
 ACCEL ?=
 
-# OBJDUMP ?= rust-objdump --print-imm-hex --x86-asm-syntax=intel
-OBJDUMP ?= riscv64-linux-musl-objdump
+
+OBJDUMP :=
 OBJCOPY ?= rust-objcopy --binary-architecture=$(ARCH)
+
+ifeq ($(ARCH), x86_64)
+  OBJDUMP := rust-objdump --print-imm-hex --x86-asm-syntax=intel
+else ifeq ($(ARCH), riscv64)
+  OBJDUMP := riscv64-linux-musl-objdump
+endif
 
 ifeq ($(LINUX), 1)
   CMDLINE ?= LOG=$(LOG)

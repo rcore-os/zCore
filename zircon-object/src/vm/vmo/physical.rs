@@ -1,6 +1,6 @@
 use {
-    super::*, 
-    alloc::sync::Arc, 
+    super::*,
+    alloc::sync::Arc,
     lock::mutex::Mutex,
     // spin::Mutex,
 };

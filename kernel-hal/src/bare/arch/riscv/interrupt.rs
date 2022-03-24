@@ -17,7 +17,6 @@ hal_fn_impl! {
 
         fn handle_irq(cause: usize) {
             trace!("Handle irq cause: {}", cause);
-            warn!("Handle irq cause: {}", cause);
             crate::drivers::all_irq().first_unwrap().handle_irq(cause)
         }
 
