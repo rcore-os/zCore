@@ -217,10 +217,11 @@ ifeq ($(ARCH), x86_64)
 endif
 	$(qemu) $(qemu_opts)
 
+
 ifeq ($(ARCH), x86_64)
-	gdb := gdb
+  gdb := gdb
 else 
-	gdb := riscv64-unknown-elf-gdb
+  gdb := riscv64-unknown-elf-gdb
 endif
 
 .PHONY: debugrun

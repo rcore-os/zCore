@@ -120,7 +120,7 @@ pub fn wait_for_exit(proc: Option<Arc<Process>>) -> ! {
 pub fn wait_for_exit(proc: Option<Arc<Process>>) -> ! {
     kernel_hal::timer::timer_set_first();
     loop {
-        let has_task = executor::run_until_idle();
+        let _has_task = executor::run_until_idle();
         if cfg!(feature = "baremetal-test") && !has_task {
             proc.map(check_exit_code);
             kernel_hal::cpu::reset();

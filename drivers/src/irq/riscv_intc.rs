@@ -1,6 +1,6 @@
 use riscv::register::sie;
 // use spin::Mutex;
-use lock::mutex::Mutex;
+// use lock::mutex::Mutex;
 use spin::Once;
 
 use crate::prelude::IrqHandler;
