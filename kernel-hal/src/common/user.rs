@@ -120,7 +120,7 @@ impl<T, P: Policy> UserPtr<T, P> {
 }
 
 impl<T, P: Read> UserPtr<T, P> {
-    /// Always returns a shared reference to the value wrapped in [`Ok()`].
+    /// Always returns a shared reference to the value wrapped in [`Ok`].
     pub fn as_ref(&self) -> Result<&'static T> {
         Ok(unsafe { &*self.ptr })
     }
