@@ -6,18 +6,30 @@ use core::fmt::{Debug, Formatter};
 use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
 
+/// Wapper of raw pointer from user space.
 #[repr(C)]
 pub struct UserPtr<T, P: Policy> {
     ptr: *mut T,
     mark: PhantomData<P>,
 }
 
+/// Marker of user pointer policy trait.
 pub trait Policy {}
+
+/// Marks a pointer used to read.
 pub trait Read: Policy {}
+
+/// Marks a pointer used to write.
 pub trait Write: Policy {}
-pub enum In {}
-pub enum Out {}
-pub enum InOut {}
+
+/// Type argument for user pointer used to read.
+pub struct In;
+
+/// Type argument for user pointer used to write.
+pub struct Out;
+
+/// Type argument for user pointer used to both read and write.
+pub struct InOut;
 
 impl Policy for In {}
 impl Policy for Out {}
@@ -31,8 +43,6 @@ pub type UserInPtr<T> = UserPtr<T, In>;
 pub type UserOutPtr<T> = UserPtr<T, Out>;
 pub type UserInOutPtr<T> = UserPtr<T, InOut>;
 
-type Result<T> = core::result::Result<T, Error>;
-
 /// The error type which is returned from user pointer.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Error {
@@ -42,6 +52,8 @@ pub enum Error {
     InvalidLength,
     InvalidVectorAddress,
 }
+
+type Result<T> = core::result::Result<T, Error>;
 
 impl<T, P: Policy> Debug for UserPtr<T, P> {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
@@ -63,6 +75,8 @@ impl<T, P: Policy> From<usize> for UserPtr<T, P> {
 }
 
 impl<T, P: Policy> UserPtr<T, P> {
+    /// Checks if `size` is enough to save a value of `T`,
+    /// then constructs a user pointer from its value `addr`.
     pub fn from_addr_size(addr: usize, size: usize) -> Result<Self> {
         if size < core::mem::size_of::<T>() {
             return Err(Error::BufferTooSmall);
@@ -70,10 +84,14 @@ impl<T, P: Policy> UserPtr<T, P> {
         Ok(Self::from(addr))
     }
 
+    /// Returns true if the pointer is null.
     pub fn is_null(&self) -> bool {
         self.ptr.is_null()
     }
 
+    /// Calculates the offset from a pointer.
+    /// `count` is in units of `T`;
+    /// e.g., a count of 3 represents a pointer offset of `3 * size_of::<T>()` bytes.
     pub fn add(&self, count: usize) -> Self {
         UserPtr {
             ptr: unsafe { self.ptr.add(count) },
@@ -81,10 +99,14 @@ impl<T, P: Policy> UserPtr<T, P> {
         }
     }
 
+    /// Returns the raw pointer.
     pub fn as_ptr(&self) -> *mut T {
         self.ptr
     }
 
+    /// Checks avaliability of the user pointer.
+    ///
+    /// Returns [`Ok(())`] if it is neither null nor unaligned,
     pub fn check(&self) -> Result<()> {
         if self.ptr.is_null() {
             return Err(Error::InvalidPointer);
@@ -97,16 +119,20 @@ impl<T, P: Policy> UserPtr<T, P> {
 }
 
 impl<T, P: Read> UserPtr<T, P> {
+    /// Always returns a shared reference to the value wrapped in [`Ok()`].
     pub fn as_ref(&self) -> Result<&'static T> {
         Ok(unsafe { &*self.ptr })
     }
 
+    /// Reads the value from self without moving it.
+    /// This leaves the memory in self unchanged.
     pub fn read(&self) -> Result<T> {
-        // TODO: check ptr and return err
         self.check()?;
         Ok(unsafe { self.ptr.read() })
     }
 
+    /// Same as [`read`](Self::read),
+    /// but returns [`None`] when pointer is null.
     pub fn read_if_not_null(&self) -> Result<Option<T>> {
         if self.ptr.is_null() {
             return Ok(None);
@@ -115,6 +141,9 @@ impl<T, P: Read> UserPtr<T, P> {
         Ok(Some(value))
     }
 
+    /// Copies elements into a new [`Vec`].
+    ///
+    /// The `len` argument is the number of **elements**, not the number of bytes.
     pub fn read_array(&self, len: usize) -> Result<Vec<T>> {
         if len == 0 {
             return Ok(Vec::default());
@@ -130,6 +159,9 @@ impl<T, P: Read> UserPtr<T, P> {
 }
 
 impl<P: Read> UserPtr<u8, P> {
+    /// Copies chars into a new [`String`].
+    ///
+    /// The `len` argument is the number of **bytes**, not the number of chars.
     pub fn read_string(&self, len: usize) -> Result<String> {
         self.check()?;
         let src = unsafe { core::slice::from_raw_parts(self.ptr, len) };
@@ -137,6 +169,7 @@ impl<P: Read> UserPtr<u8, P> {
         Ok(String::from(s))
     }
 
+    /// Copies an zero-terminated string of c style to a new [`String`].
     pub fn read_cstring(&self) -> Result<String> {
         self.check()?;
         let len = unsafe { (0usize..).find(|&i| *self.ptr.add(i) == 0).unwrap() };
@@ -145,6 +178,8 @@ impl<P: Read> UserPtr<u8, P> {
 }
 
 impl<P: Read> UserPtr<UserPtr<u8, P>, P> {
+    /// Copies a group of zero-terminated string into [`String`]s,
+    /// and collect them into a [`Vec`].
     pub fn read_cstring_array(&self) -> Result<Vec<String>> {
         self.check()?;
         let len = unsafe {
@@ -160,14 +195,16 @@ impl<P: Read> UserPtr<UserPtr<u8, P>, P> {
 }
 
 impl<T, P: Write> UserPtr<T, P> {
+    /// Overwrites a memory location with the given value
+    /// **without** reading or dropping the old value.
     pub fn write(&mut self, value: T) -> Result<()> {
         self.check()?;
-        unsafe {
-            self.ptr.write(value);
-        }
+        unsafe { self.ptr.write(value) };
         Ok(())
     }
 
+    /// Same as [`write`](Self::write),
+    /// but does nothing and returns [`Ok`] when pointer is null.
     pub fn write_if_not_null(&mut self, value: T) -> Result<()> {
         if self.ptr.is_null() {
             return Ok(());
@@ -175,6 +212,8 @@ impl<T, P: Write> UserPtr<T, P> {
         self.write(value)
     }
 
+    /// Copies `values.len() * size_of<T>` bytes from `values` to `self`.
+    /// The source and destination may not overlap.
     pub fn write_array(&mut self, values: &[T]) -> Result<()> {
         if values.is_empty() {
             return Ok(());
@@ -182,19 +221,18 @@ impl<T, P: Write> UserPtr<T, P> {
         self.check()?;
         unsafe {
             self.ptr
-                .copy_from_nonoverlapping(values.as_ptr(), values.len());
-        }
+                .copy_from_nonoverlapping(values.as_ptr(), values.len())
+        };
         Ok(())
     }
 }
 
 impl<P: Write> UserPtr<u8, P> {
+    /// Copies `s` to `self`, then write a `'\0'` for c style string.
     pub fn write_cstring(&mut self, s: &str) -> Result<()> {
         let bytes = s.as_bytes();
         self.write_array(bytes)?;
-        unsafe {
-            self.ptr.add(bytes.len()).write(0);
-        }
+        unsafe { self.ptr.add(bytes.len()).write(0) };
         Ok(())
     }
 }
