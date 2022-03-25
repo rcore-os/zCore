@@ -1,9 +1,9 @@
 use {super::*, core::convert::TryFrom};
 
 impl Syscall<'_> {
-    /// Creates a duplicate of handle.   
+    /// Creates a duplicate of handle.
     ///
-    /// Referring to the same underlying object, with new access rights rights.  
+    /// Referring to the same underlying object, with new access rights rights.
     pub fn sys_handle_duplicate(
         &self,
         handle_value: HandleValue,
@@ -33,7 +33,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    /// Close a handle and reclaim the underlying object if no other handles to it exist.  
+    /// Close a handle and reclaim the underlying object if no other handles to it exist.
     pub fn sys_handle_close(&self, handle: HandleValue) -> ZxResult {
         info!("handle.close: handle={:?}", handle);
         if handle == INVALID_HANDLE {
@@ -44,7 +44,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    /// Close a number of handles.  
+    /// Close a number of handles.
     pub fn sys_handle_close_many(
         &self,
         handles: UserInPtr<HandleValue>,
@@ -55,19 +55,17 @@ impl Syscall<'_> {
             handles, num_handles,
         );
         let proc = self.thread.proc();
-        let handles = handles.read_array(num_handles)?;
-        for handle in handles {
-            if handle == INVALID_HANDLE {
-                continue;
+        for handle in handles.as_slice(num_handles)? {
+            if *handle != INVALID_HANDLE {
+                proc.remove_handle(*handle)?;
             }
-            proc.remove_handle(handle)?;
         }
         Ok(())
     }
 
-    /// Creates a replacement for handle.  
+    /// Creates a replacement for handle.
     ///
-    /// Referring to the same underlying object, with new access rights rights.  
+    /// Referring to the same underlying object, with new access rights rights.
     pub fn sys_handle_replace(
         &self,
         handle_value: HandleValue,

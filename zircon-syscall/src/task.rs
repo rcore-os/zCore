@@ -146,11 +146,10 @@ impl Syscall<'_> {
             "thread.write_state: handle={:#x?}, kind={:#x?}, buf=({:#x?}; {:#x?})",
             handle, kind, buffer, buffer_size,
         );
-        let proc = self.thread.proc();
-        let thread = proc.get_object_with_rights::<Thread>(handle, Rights::WRITE)?;
-        let buf = buffer.read_array(buffer_size)?;
-        thread.write_state(kind, &buf)?;
-        Ok(())
+        self.thread
+            .proc()
+            .get_object_with_rights::<Thread>(handle, Rights::WRITE)?
+            .write_state(kind, buffer.as_slice(buffer_size)?)
     }
 
     /// Sets process as critical to job.
@@ -304,9 +303,10 @@ impl Syscall<'_> {
                     JOB_POL_ABSOLUTE => SetPolicyOptions::Absolute,
                     _ => return Err(ZxError::INVALID_ARGS),
                 };
-                let all_policy =
-                    UserInPtr::<BasicPolicy>::from(policy).read_array(count as usize)?;
-                job.set_policy_basic(policy_option, &all_policy)
+                job.set_policy_basic(
+                    policy_option,
+                    UserInPtr::from(policy).as_slice(count as usize)?,
+                )
             }
             //JOB_POL_BASE_V2 => unimplemented!(),
             JOB_POL_TIMER_SLACK => {
@@ -357,15 +357,17 @@ impl Syscall<'_> {
         mut actual: UserOutPtr<usize>,
     ) -> ZxResult {
         if buffer.is_null() || buffer_size == 0 || buffer_size > MAX_BLOCK {
-            return Err(ZxError::INVALID_ARGS);
+            Err(ZxError::INVALID_ARGS)
+        } else {
+            let len = self
+                .thread
+                .proc()
+                .get_object_with_rights::<Process>(handle_value, Rights::READ | Rights::WRITE)?
+                .vmar()
+                .write_memory(vaddr, buffer.as_slice(buffer_size)?)?;
+            actual.write(len)?;
+            Ok(())
         }
-        let proc = self.thread.proc();
-        let process =
-            proc.get_object_with_rights::<Process>(handle_value, Rights::READ | Rights::WRITE)?;
-        let data = buffer.read_array(buffer_size)?;
-        let len = process.vmar().write_memory(vaddr, &data)?;
-        actual.write(len)?;
-        Ok(())
     }
 }
 

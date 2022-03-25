@@ -35,11 +35,9 @@ impl Syscall<'_> {
     /// - len – number of bytes to write
     pub fn sys_write(&self, fd: FileDesc, base: UserInPtr<u8>, len: usize) -> SysResult {
         info!("write: fd={:?}, base={:?}, len={:#x}", fd, base, len);
-        let proc = self.linux_process();
-        let buf = base.read_array(len)?;
-        let file_like = proc.get_file_like(fd)?;
-        let len = file_like.write(&buf)?;
-        Ok(len)
+        self.linux_process()
+            .get_file_like(fd)?
+            .write(base.as_slice(len)?)
     }
 
     /// read from or write to a file descriptor at a given offset
@@ -77,11 +75,9 @@ impl Syscall<'_> {
             "pwrite: fd={:?}, base={:?}, len={}, offset={}",
             fd, base, len, offset
         );
-        let proc = self.linux_process();
-        let buf = base.read_array(len)?;
-        let file_like = proc.get_file_like(fd)?;
-        let len = file_like.write_at(offset, &buf)?;
-        Ok(len)
+        self.linux_process()
+            .get_file_like(fd)?
+            .write_at(offset, base.as_slice(len)?)
     }
 
     /// works just like read except that multiple buffers are filled.
