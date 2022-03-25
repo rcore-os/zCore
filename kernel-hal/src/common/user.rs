@@ -1,12 +1,12 @@
 //! Read/write user space pointer.
 
-use alloc::string::String;
-use alloc::vec::Vec;
-use core::fmt::{Debug, Formatter};
-use core::marker::PhantomData;
-use core::ops::{Deref, DerefMut};
-
 use crate::VirtAddr;
+use alloc::{string::String, vec::Vec};
+use core::{
+    fmt::{Debug, Formatter},
+    marker::PhantomData,
+    ops::{Deref, DerefMut},
+};
 
 /// Wapper of raw pointer from user space.
 #[repr(C)]
@@ -68,9 +68,9 @@ unsafe impl<T, P: Policy> Send for UserPtr<T, P> {}
 unsafe impl<T, P: Policy> Sync for UserPtr<T, P> {}
 
 impl<T, P: Policy> From<usize> for UserPtr<T, P> {
-    fn from(x: usize) -> Self {
+    fn from(ptr: usize) -> Self {
         UserPtr {
-            ptr: x as _,
+            ptr: ptr as _,
             mark: PhantomData,
         }
     }
@@ -96,7 +96,7 @@ impl<T, P: Policy> UserPtr<T, P> {
     /// `count` is in units of `T`;
     /// e.g., a count of 3 represents a pointer offset of `3 * size_of::<T>()` bytes.
     pub fn add(&self, count: usize) -> Self {
-        UserPtr {
+        Self {
             ptr: unsafe { self.ptr.add(count) },
             mark: PhantomData,
         }
@@ -120,9 +120,9 @@ impl<T, P: Policy> UserPtr<T, P> {
 }
 
 impl<T, P: Read> UserPtr<T, P> {
-    /// Always returns a shared reference to the value wrapped in [`Ok`].
-    pub fn as_ref(&self) -> Result<&'static T> {
-        Ok(unsafe { &*self.ptr })
+    #[allow(clippy::should_implement_trait)]
+    pub fn as_ref(&self) -> &'static T {
+        unsafe { &*self.ptr }
     }
 
     /// Reads the value from self without moving it.
@@ -142,56 +142,62 @@ impl<T, P: Read> UserPtr<T, P> {
         }
     }
 
+    /// Forms a slice from a user pointer and a `len`.
+    pub fn as_slice(&self, len: usize) -> Result<&'static [T]> {
+        if len == 0 {
+            Ok(&[])
+        } else {
+            self.check()?;
+            Ok(unsafe { core::slice::from_raw_parts(self.ptr, len) })
+        }
+    }
+
     /// Copies elements into a new [`Vec`].
     ///
     /// The `len` argument is the number of **elements**, not the number of bytes.
     pub fn read_array(&self, len: usize) -> Result<Vec<T>> {
         if len == 0 {
-            return Ok(Vec::default());
+            Ok(Vec::default())
+        } else {
+            self.check()?;
+            let mut ret = Vec::<T>::with_capacity(len);
+            unsafe {
+                ret.set_len(len);
+                ret.as_mut_ptr().copy_from_nonoverlapping(self.ptr, len);
+            }
+            Ok(ret)
         }
-        self.check()?;
-        let mut ret = Vec::<T>::with_capacity(len);
-        unsafe {
-            ret.set_len(len);
-            ret.as_mut_ptr().copy_from_nonoverlapping(self.ptr, len);
-        }
-        Ok(ret)
     }
 }
 
 impl<P: Read> UserPtr<u8, P> {
-    /// Copies chars into a new [`String`].
-    ///
-    /// The `len` argument is the number of **bytes**, not the number of chars.
-    pub fn read_string(&self, len: usize) -> Result<String> {
-        self.check()?;
-        let src = unsafe { core::slice::from_raw_parts(self.ptr, len) };
-        let s = core::str::from_utf8(src).map_err(|_| Error::InvalidUtf8)?;
-        Ok(String::from(s))
+    /// Forms a utf-8 string slice from a user pointer and a `len`.
+    pub fn as_str(&self, len: usize) -> Result<&'static str> {
+        core::str::from_utf8(self.as_slice(len)?).map_err(|_| Error::InvalidUtf8)
     }
 
     /// Copies an zero-terminated string of c style to a new [`String`].
-    pub fn read_cstring(&self) -> Result<String> {
-        self.check()?;
-        let len = unsafe { (0usize..).find(|&i| *self.ptr.add(i) == 0).unwrap() };
-        self.read_string(len)
+    pub fn as_c_str(&self) -> Result<&'static str> {
+        self.as_str(unsafe { (0usize..).find(|&i| *self.ptr.add(i) == 0).unwrap() })
     }
 }
 
-impl<P: Read> UserPtr<UserPtr<u8, P>, P> {
+impl<P: 'static + Read> UserPtr<UserPtr<u8, P>, P> {
     /// Copies a group of zero-terminated string into [`String`]s,
     /// and collect them into a [`Vec`].
     pub fn read_cstring_array(&self) -> Result<Vec<String>> {
         self.check()?;
-        let len = unsafe {
-            (0usize..)
-                .find(|&i| self.ptr.add(i).read().is_null())
-                .unwrap()
-        };
-        self.read_array(len)?
-            .into_iter()
-            .map(|ptr| ptr.read_cstring())
-            .collect()
+        let mut result = Vec::new();
+        let mut pptr = self.ptr;
+        loop {
+            let sptr = unsafe { pptr.read() };
+            if sptr.is_null() {
+                break;
+            }
+            result.push(sptr.as_c_str()?.into());
+            pptr = unsafe { pptr.add(1) };
+        }
+        Ok(result)
     }
 }
 
@@ -240,7 +246,7 @@ impl<P: Write> UserPtr<u8, P> {
 
 #[derive(Debug)]
 #[repr(C)]
-pub struct IoVec<P: Policy> {
+pub struct IoVec<P: 'static + Policy> {
     /// Starting address
     ptr: UserPtr<u8, P>,
     /// Number of bytes to transfer
@@ -252,7 +258,7 @@ pub type IoVecOut = IoVec<Out>;
 
 /// A valid IoVecs request from user
 #[derive(Debug)]
-pub struct IoVecs<P: Policy> {
+pub struct IoVecs<P: 'static + Policy> {
     vec: Vec<IoVec<P>>,
 }
 
@@ -285,7 +291,7 @@ impl<P: Read> IoVecs<P> {
     pub fn read_to_vec(&self) -> Result<Vec<u8>> {
         let mut buf = Vec::new();
         for vec in self.vec.iter() {
-            buf.extend(vec.ptr.read_array(vec.len)?);
+            buf.extend_from_slice(vec.ptr.as_slice(vec.len)?);
         }
         Ok(buf)
     }

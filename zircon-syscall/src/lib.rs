@@ -308,7 +308,6 @@ impl Syscall<'_> {
                 // atomic_store_explicit(value_ptr, new_value, memory_order_release)
                 UserInPtr::<AtomicI32>::from(a0)
                     .as_ref()
-                    .unwrap()
                     .store(a2 as i32, Ordering::Release);
                 let _ = self.sys_futex_wake(a0.into(), a1 as _);
                 let _ = self.sys_handle_close(a3 as _);

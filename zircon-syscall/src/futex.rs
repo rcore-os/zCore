@@ -22,7 +22,7 @@ impl Syscall<'_> {
         if value_ptr.is_null() || value_ptr.as_addr() % 4 != 0 {
             return Err(ZxError::INVALID_ARGS);
         }
-        let value = value_ptr.as_ref()?;
+        let value = value_ptr.as_ref();
         let proc = self.thread.proc();
         let futex = proc.get_futex(value);
         let new_owner = if new_futex_owner == INVALID_HANDLE {
@@ -55,8 +55,8 @@ impl Syscall<'_> {
         if value_ptr.is_null() || value_ptr.as_addr() % 4 != 0 {
             return Err(ZxError::INVALID_ARGS);
         }
-        let value = value_ptr.as_ref()?;
-        let requeue = requeue_ptr.as_ref()?;
+        let value = value_ptr.as_ref();
+        let requeue = requeue_ptr.as_ref();
         if value_ptr.as_addr() == requeue_ptr.as_addr() {
             return Err(ZxError::INVALID_ARGS);
         }
@@ -86,7 +86,7 @@ impl Syscall<'_> {
         if value_ptr.is_null() || value_ptr.as_addr() % 4 != 0 {
             return Err(ZxError::INVALID_ARGS);
         }
-        let value = value_ptr.as_ref()?;
+        let value = value_ptr.as_ref();
         let proc = self.thread.proc();
         let futex = proc.get_futex(value);
         futex.wake(count as usize);
@@ -99,7 +99,7 @@ impl Syscall<'_> {
         if value_ptr.is_null() || value_ptr.as_addr() % 4 != 0 {
             return Err(ZxError::INVALID_ARGS);
         }
-        let value = value_ptr.as_ref()?;
+        let value = value_ptr.as_ref();
         let proc = self.thread.proc();
         proc.get_futex(value).wake_single_owner();
         Ok(())

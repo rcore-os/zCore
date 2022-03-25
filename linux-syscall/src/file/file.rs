@@ -147,10 +147,9 @@ impl Syscall<'_> {
 
     /// cause the regular file named by path to be truncated to a size of precisely length bytes.
     pub fn sys_truncate(&self, path: UserInPtr<u8>, len: usize) -> SysResult {
-        let path = path.read_cstring()?;
+        let path = path.as_c_str()?;
         info!("truncate: path={:?}, len={}", path, len);
-        let proc = self.linux_process();
-        proc.lookup_inode(&path)?.resize(len)?;
+        self.linux_process().lookup_inode(path)?.resize(len)?;
         Ok(0)
     }
 
@@ -356,7 +355,7 @@ impl Syscall<'_> {
         flags: usize,
     ) -> SysResult {
         // TODO: check permissions based on uid/gid
-        let path = path.read_cstring()?;
+        let path = path.as_c_str()?;
         let flags = AtFlags::from_bits_truncate(flags);
         info!(
             "faccessat: dirfd={:?}, path={:?}, mode={:#o}, flags={:?}",
@@ -364,7 +363,7 @@ impl Syscall<'_> {
         );
         let proc = self.linux_process();
         let follow = !flags.contains(AtFlags::SYMLINK_NOFOLLOW);
-        let _inode = proc.lookup_inode_at(dirfd, &path, follow)?;
+        let _inode = proc.lookup_inode_at(dirfd, path, follow)?;
         Ok(0)
     }
 
@@ -395,7 +394,7 @@ impl Syscall<'_> {
             info!("futimens: fd: {:?}, times: {:?}", fd, times);
             proc.get_file(fd)?.inode()
         } else {
-            let pathname = pathname.read_cstring()?;
+            let pathname = pathname.as_c_str()?;
             info!(
                 "utimensat: dirfd: {:?}, pathname: {:?}, times: {:?}, flags: {:#x}",
                 dirfd, pathname, times, flags
@@ -407,7 +406,7 @@ impl Syscall<'_> {
             } else {
                 return Err(LxError::EINVAL);
             };
-            proc.lookup_inode_at(dirfd, &pathname[..], follow)?
+            proc.lookup_inode_at(dirfd, pathname, follow)?
         };
         let mut metadata = inode.metadata()?;
         if times[0].nsec != UTIME_OMIT {
@@ -439,7 +438,7 @@ impl Syscall<'_> {
     /// `path` is the pathname of **any file** within the mounted filesystem.
     /// `buf` is a pointer to a `StatFs` structure.
     pub fn sys_statfs(&self, path: UserInPtr<u8>, mut buf: UserOutPtr<StatFs>) -> SysResult {
-        let path = path.read_cstring()?;
+        let path = path.as_c_str()?;
         info!("statfs: path={:?}, buf={:?}", path, buf);
 
         // TODO

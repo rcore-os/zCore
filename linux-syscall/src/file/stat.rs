@@ -41,7 +41,7 @@ impl Syscall<'_> {
         mut stat_ptr: UserOutPtr<Stat>,
         flags: usize,
     ) -> SysResult {
-        let path = path.read_cstring()?;
+        let path = path.as_c_str()?;
         let flags = AtFlags::from_bits_truncate(flags);
         info!(
             "fstatat: dirfd={:?}, path={:?}, stat_ptr={:?}, flags={:?}",
@@ -50,7 +50,7 @@ impl Syscall<'_> {
 
         let proc = self.linux_process();
         let follow = !flags.contains(AtFlags::SYMLINK_NOFOLLOW);
-        let inode = proc.lookup_inode_at(dirfd, &path, follow)?;
+        let inode = proc.lookup_inode_at(dirfd, path, follow)?;
         let stat = Stat::from(inode.metadata()?);
         stat_ptr.write(stat)?;
         Ok(0)

@@ -252,7 +252,7 @@ impl Syscall<'_> {
         argv: UserInPtr<UserInPtr<u8>>,
         envp: UserInPtr<UserInPtr<u8>>,
     ) -> SysResult {
-        let path = path.read_cstring()?;
+        let path = path.as_c_str()?;
         let args = argv.read_cstring_array()?;
         let envs = envp.read_cstring_array()?;
         info!(
@@ -268,7 +268,7 @@ impl Syscall<'_> {
 
         // Read program file
         let proc = self.linux_process();
-        let inode = proc.lookup_inode(&path)?;
+        let inode = proc.lookup_inode(path)?;
         let data = inode.read_as_vec()?;
 
         proc.remove_cloexec_files();
@@ -280,10 +280,10 @@ impl Syscall<'_> {
             stack_pages: 8,
             root_inode: proc.root_inode().clone(),
         };
-        let (entry, sp) = loader.load(&vmar, &data, args, envs, path.clone())?;
+        let (entry, sp) = loader.load(&vmar, &data, args, envs, path.into())?;
 
         // Modify exec path
-        proc.set_execute_path(&path);
+        proc.set_execute_path(path);
 
         // TODO: use right signal
         // self.zircon_process().signal_set(Signal::SIGNALED);
