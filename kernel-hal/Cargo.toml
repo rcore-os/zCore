@@ -41,14 +41,14 @@ naive-timer = "0.2.0"
 
 # All mode on x86_64
 [target.'cfg(target_arch = "x86_64")'.dependencies]
-x86 = "0.47"
+x86 = "0.46"
 x86_64 = "0.14"
 
 # Bare-metal mode on x86_64
 [target.'cfg(all(target_os = "none", target_arch = "x86_64"))'.dependencies]
-uefi = "0.12"
-raw-cpuid = "10.2"
-x86-smpboot = { git = "https://github.com/rcore-os/x86-smpboot", rev = "43ffedf" }
+uefi = "0.11"
+raw-cpuid = "9.0"
+x86-smpboot = { git = "https://github.com/rcore-os/x86-smpboot", rev = "1069df3" }
 
 # Bare-metal mode on riscv64
 [target.'cfg(all(target_os = "none", target_arch = "riscv64"))'.dependencies]
