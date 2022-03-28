@@ -1,7 +1,7 @@
 use {
     super::*,
     alloc::sync::Arc,
-    lock::mutex::Mutex,
+    lock::Mutex,
     // spin::Mutex,
 };
 

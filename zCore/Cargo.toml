@@ -45,7 +45,6 @@ board-d1 = ["link-user-img"]
 [dependencies]
 log = "0.4"
 spin = "0.9"
-lock = { git = "https://github.com/DeathWish5/kernel-sync" }
 cfg-if = "1.0"
 lazy_static = { version = "1.4", features = ["spin_no_std" ] }
 bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator", rev = "b3f9f51" }
@@ -61,11 +60,13 @@ rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "7c232ec", 
 async-std = { version = "1.10", optional = true }
 chrono = { version = "0.4", optional = true }
 rcore-fs-hostfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "7c232ec", optional = true }
+lock = { git = "https://github.com/DeathWish5/kernel-sync", features = ["libos"]}
 
 # Bare-metal mode
 [target.'cfg(target_os = "none")'.dependencies]
 buddy_system_allocator = "0.7"
 executor = { git = "https://github.com/DeathWish5/PreemptiveScheduler" }
+lock = { git = "https://github.com/DeathWish5/kernel-sync" }
 
 # Bare-metal mode on x86_64
 [target.'cfg(all(target_os = "none", target_arch = "x86_64"))'.dependencies]

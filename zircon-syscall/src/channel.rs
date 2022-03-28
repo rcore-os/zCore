@@ -1,7 +1,7 @@
 use {
     super::*,
     alloc::{string::String, vec::Vec},
-    // lock::mutex::Mutex,
+    // lock::Mutex,
     spin::Mutex,
     zircon_object::{
         ipc::{Channel, MessagePacket},

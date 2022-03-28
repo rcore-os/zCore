@@ -6,7 +6,7 @@ use core::time::Duration;
 use naive_timer::Timer;
 // use spin::Mutex;
 use core::sync::atomic::{AtomicBool, Ordering};
-use lock::mutex::Mutex;
+use lock::Mutex;
 
 #[allow(dead_code)]
 pub(super) const TICKS_PER_SEC: u64 = 100;

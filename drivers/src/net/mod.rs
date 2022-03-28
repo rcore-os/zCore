@@ -64,7 +64,7 @@ pub use loopback::LoopbackInterface;
 use alloc::sync::Arc;
 use alloc::vec;
 // use spin::Mutex;
-use lock::mutex::Mutex;
+use lock::Mutex;
 
 use smoltcp::socket::SocketSet;
 

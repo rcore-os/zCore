@@ -1,5 +1,5 @@
 // use spin::Mutex;
-use lock::mutex::Mutex;
+use lock::Mutex;
 use virtio_drivers::{VirtIOBlk as InnerDriver, VirtIOHeader};
 
 use crate::scheme::{BlockScheme, Scheme};

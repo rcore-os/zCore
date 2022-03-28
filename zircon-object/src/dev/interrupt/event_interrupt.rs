@@ -2,7 +2,7 @@ use kernel_hal::interrupt;
 use {
     super::*,
     spin::Mutex,
-    // lock::mutex::Mutex,
+    // lock::Mutex,
 };
 
 pub struct EventInterrupt {

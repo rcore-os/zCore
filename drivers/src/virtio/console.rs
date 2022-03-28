@@ -1,7 +1,7 @@
 use core::fmt::{Result, Write};
 
 // use spin::Mutex;
-use lock::mutex::Mutex;
+use lock::Mutex;
 use virtio_drivers::{VirtIOConsole as InnerDriver, VirtIOHeader};
 
 use crate::prelude::DeviceResult;

@@ -3,7 +3,7 @@ use core::ops::{BitAnd, BitOr, Not};
 
 use bitflags::bitflags;
 // use spin::Mutex;
-use lock::mutex::Mutex;
+use lock::Mutex;
 
 use crate::io::{Io, Mmio, ReadOnly};
 use crate::scheme::{impl_event_scheme, Scheme, UartScheme};

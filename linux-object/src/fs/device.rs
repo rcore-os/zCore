@@ -2,7 +2,7 @@
 
 use rcore_fs::dev::{Device, Result};
 // use spin::RwLock;
-use lock::rwlock::RwLock;
+use lock::RwLock;
 
 /// memory buffer for device
 pub struct MemBuf(RwLock<&'static mut [u8]>);

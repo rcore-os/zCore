@@ -10,7 +10,7 @@ use core::{
     task::{Context, Poll},
 };
 use spin::Mutex;
-// use lock::mutex::Mutex;
+// use lock::Mutex;
 
 bitflags! {
     #[derive(Default)]

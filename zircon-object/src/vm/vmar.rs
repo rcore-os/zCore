@@ -6,7 +6,7 @@ use {
     kernel_hal::vm::{
         GenericPageTable, IgnoreNotMappedErr, Page, PageSize, PageTable, PagingError, PagingResult,
     },
-    lock::mutex::Mutex,
+    lock::Mutex,
     // spin::Mutex,
 };
 

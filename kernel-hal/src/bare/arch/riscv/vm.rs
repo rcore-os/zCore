@@ -5,7 +5,7 @@ use core::slice;
 
 use riscv::{asm, register::satp};
 // use spin::Mutex;
-use lock::mutex::Mutex;
+use lock::Mutex;
 
 use crate::utils::page_table::{GenericPTE, PageTableImpl, PageTableLevel3};
 use crate::{mem::phys_to_virt, MMUFlags, PhysAddr, VirtAddr, KCONFIG};

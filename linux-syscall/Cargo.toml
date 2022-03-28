@@ -10,7 +10,6 @@ description = "Linux syscalls implementation"
 [dependencies]
 log = "0.4"
 spin = "0.9"
-lock = { git = "https://github.com/DeathWish5/kernel-sync" }
 bitflags = "1.3"
 numeric-enum-macro = "0.2"
 zircon-object = { path = "../zircon-object" }
@@ -19,3 +18,11 @@ kernel-hal = { path = "../kernel-hal", default-features = false }
 rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "7c232ec" }
 lazy_static = { version = "1.4", features = ["spin_no_std"] }
 bitvec = { version = "0.22", default-features = false, features = ["alloc"] }
+
+# LibOS mode
+[target.'cfg(not(target_os = "none"))'.dependencies]
+lock = { git = "https://github.com/DeathWish5/kernel-sync", features = ["libos"] }
+
+# Bare-metal mode
+[target.'cfg(target_os = "none")'.dependencies]
+lock = { git = "https://github.com/DeathWish5/kernel-sync" }

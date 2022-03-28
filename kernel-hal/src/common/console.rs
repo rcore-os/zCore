@@ -3,7 +3,7 @@
 use crate::drivers;
 use core::fmt::{Arguments, Result, Write};
 // use spin::Mutex;
-use lock::mutex::Mutex;
+use lock::Mutex;
 
 struct SerialWriter;
 

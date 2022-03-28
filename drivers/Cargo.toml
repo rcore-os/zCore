@@ -15,7 +15,6 @@ virtio = ["virtio-drivers"]
 [dependencies]
 log = "0.4"
 spin = "0.9"
-lock = { git = "https://github.com/DeathWish5/kernel-sync" }
 cfg-if = "1.0"
 bitflags = "1.3"
 lazy_static = "1.4"
@@ -27,9 +26,12 @@ rcore-console = { git = "https://github.com/rcore-os/rcore-console", default-fea
 # smoltcp = { git = "https://github.com/smoltcp-rs/smoltcp", rev = "35e833e3", default-features = false, features = ["log", "alloc", "verbose", "proto-ipv4", "proto-ipv6", "proto-igmp", "medium-ip", "medium-ethernet", "socket-raw", "socket-udp", "socket-tcp", "socket-icmp"] }
 smoltcp = { git = "https://gitee.com/gcyyfun/smoltcp", rev="043eb60", default-features = false, features = ["alloc","log", "async", "medium-ethernet","proto-ipv4", "proto-igmp", "socket-icmp", "socket-udp", "socket-tcp", "socket-raw"] }
 
+# LibOS mode
 [target.'cfg(not(target_os = "none"))'.dependencies]
 async-std = { version = "1.10", optional = true }
 sdl2 = { version = "0.34", optional = true }
+
+[target.'cfg(target_os = "none")'.dependencies]
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 acpi = "4.1"

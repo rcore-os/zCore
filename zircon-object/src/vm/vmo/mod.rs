@@ -9,7 +9,7 @@ use {
     bitflags::bitflags,
     core::ops::Deref,
     kernel_hal::CachePolicy,
-    // lock::mutex::Mutex,
+    // lock::Mutex,
     spin::Mutex,
 };
 

@@ -3,7 +3,7 @@ use {
     crate::object::*,
     alloc::sync::Arc,
     numeric_enum_macro::numeric_enum,
-    // lock::mutex::Mutex,
+    // lock::Mutex,
     spin::Mutex,
 };
 

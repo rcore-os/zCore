@@ -7,7 +7,7 @@ use crate::common::vm::*;
 use crate::{mem::PhysFrame, MMUFlags, PhysAddr, VirtAddr};
 
 // use spin::Mutex;
-use lock::mutex::Mutex;
+use lock::Mutex;
 
 pub trait PageTableLevel: Sync + Send {
     const LEVEL: usize;

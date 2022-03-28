@@ -16,7 +16,7 @@ use crate::net::TCP_RECVBUF;
 use crate::net::TCP_SENDBUF;
 use alloc::sync::Arc;
 use spin::Mutex;
-// use lock::mutex::Mutex;
+// use lock::Mutex;
 
 // alloc
 use alloc::boxed::Box;
