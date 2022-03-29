@@ -1,3 +1,5 @@
+//! Uart device driver.
+
 mod buffered;
 mod uart_16550;
 

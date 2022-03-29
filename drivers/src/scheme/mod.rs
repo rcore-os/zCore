@@ -1,5 +1,5 @@
-//! The [`Scheme`] describe some functions must be implemented for device, there are
-//! many [`Scheme`] traits in this mod.
+//! The [`Scheme`] describe some functions must be implemented for different type of devices,
+//! there are many [`Scheme`] traits in this mod.
 //!
 //! If you need to develop a new device, just implement the corresponding trait.
 //!
@@ -26,12 +26,20 @@ pub use irq::IrqScheme;
 pub use net::NetScheme;
 pub use uart::UartScheme;
 
+/// Common of all device drivers.
+///
+/// Every device must says its name and handles interrupts.
 pub trait Scheme: SchemeUpcast + Send + Sync {
+    /// Returns name of the driver.
     fn name(&self) -> &str;
+
+    /// Handles an interrupt.
     fn handle_irq(&self, _irq_num: usize) {}
 }
 
+/// Used to convert a concrete type pointer to a general [`Scheme`] pointer.
 pub trait SchemeUpcast {
+    /// Performs the conversion.
     fn upcast<'a>(self: Arc<Self>) -> Arc<dyn Scheme + 'a>
     where
         Self: 'a;
