@@ -1,1 +1,1 @@
-initSidebarItems({"struct":[["Apic",""]]});
+initSidebarItems({"struct":[["Apic","Advanced Programmable Interrupt Controller"]]});

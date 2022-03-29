@@ -81,7 +81,11 @@
 <span id="75">75</span>
 <span id="76">76</span>
 <span id="77">77</span>
-</pre><pre class="rust"><code><span class="macro">cfg_if::cfg_if!</span> {
+<span id="78">78</span>
+<span id="79">79</span>
+</pre><pre class="rust"><code><span class="doccomment">//! LAN driver, only for Realtek currently.</span>
+
+<span class="macro">cfg_if::cfg_if!</span> {
     <span class="kw">if</span> <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;riscv64&quot;</span>)]</span> {
 <span class="kw">mod</span> <span class="ident">realtek</span>;
 <span class="kw">mod</span> <span class="ident">rtlx</span>;

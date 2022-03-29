@@ -59,7 +59,11 @@
 <span id="53">53</span>
 <span id="54">54</span>
 <span id="55">55</span>
-</pre><pre class="rust"><code><span class="kw">use</span> <span class="ident">core::ops</span>::{<span class="ident">BitAnd</span>, <span class="ident">BitOr</span>, <span class="ident">Not</span>};
+<span id="56">56</span>
+<span id="57">57</span>
+</pre><pre class="rust"><code><span class="doccomment">//! General MMIO and PIO device driver.</span>
+
+<span class="kw">use</span> <span class="ident">core::ops</span>::{<span class="ident">BitAnd</span>, <span class="ident">BitOr</span>, <span class="ident">Not</span>};
 
 <span class="kw">mod</span> <span class="ident">mmio</span>;
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>)]</span>

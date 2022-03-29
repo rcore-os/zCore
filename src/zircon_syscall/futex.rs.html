@@ -132,10 +132,10 @@
             <span class="string">&quot;futex.wait: value_ptr={:#x?}, current_value={:#x}, new_futex_owner={:#x}, deadline={:?}&quot;</span>,
             <span class="ident">value_ptr</span>, <span class="ident">current_value</span>, <span class="ident">new_futex_owner</span>, <span class="ident">deadline</span>
         );
-        <span class="kw">if</span> <span class="ident">value_ptr</span>.<span class="ident">is_null</span>() <span class="op">|</span><span class="op">|</span> <span class="ident">value_ptr</span>.<span class="ident">as_ptr</span>() <span class="kw">as</span> <span class="ident">usize</span> <span class="op">%</span> <span class="number">4</span> <span class="op">!</span><span class="op">=</span> <span class="number">0</span> {
+        <span class="kw">if</span> <span class="ident">value_ptr</span>.<span class="ident">is_null</span>() <span class="op">|</span><span class="op">|</span> <span class="ident">value_ptr</span>.<span class="ident">as_addr</span>() <span class="op">%</span> <span class="number">4</span> <span class="op">!</span><span class="op">=</span> <span class="number">0</span> {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::INVALID_ARGS</span>);
         }
-        <span class="kw">let</span> <span class="ident">value</span> <span class="op">=</span> <span class="ident">value_ptr</span>.<span class="ident">as_ref</span>()<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">value</span> <span class="op">=</span> <span class="ident">value_ptr</span>.<span class="ident">as_ref</span>();
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>();
         <span class="kw">let</span> <span class="ident">futex</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_futex</span>(<span class="ident">value</span>);
         <span class="kw">let</span> <span class="ident">new_owner</span> <span class="op">=</span> <span class="kw">if</span> <span class="ident">new_futex_owner</span> <span class="op">==</span> <span class="ident">INVALID_HANDLE</span> {
@@ -165,12 +165,12 @@
             <span class="string">&quot;futex.requeue: value_ptr={:?}, wake_count={:#x}, current_value={:#x}, requeue_ptr={:?}, requeue_count={:#x}, new_requeue_owner={:?}&quot;</span>,
             <span class="ident">value_ptr</span>, <span class="ident">wake_count</span>, <span class="ident">current_value</span>, <span class="ident">requeue_ptr</span>, <span class="ident">requeue_count</span>, <span class="ident">new_requeue_owner</span>
         );
-        <span class="kw">if</span> <span class="ident">value_ptr</span>.<span class="ident">is_null</span>() <span class="op">|</span><span class="op">|</span> <span class="ident">value_ptr</span>.<span class="ident">as_ptr</span>() <span class="kw">as</span> <span class="ident">usize</span> <span class="op">%</span> <span class="number">4</span> <span class="op">!</span><span class="op">=</span> <span class="number">0</span> {
+        <span class="kw">if</span> <span class="ident">value_ptr</span>.<span class="ident">is_null</span>() <span class="op">|</span><span class="op">|</span> <span class="ident">value_ptr</span>.<span class="ident">as_addr</span>() <span class="op">%</span> <span class="number">4</span> <span class="op">!</span><span class="op">=</span> <span class="number">0</span> {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::INVALID_ARGS</span>);
         }
-        <span class="kw">let</span> <span class="ident">value</span> <span class="op">=</span> <span class="ident">value_ptr</span>.<span class="ident">as_ref</span>()<span class="question-mark">?</span>;
-        <span class="kw">let</span> <span class="ident">requeue</span> <span class="op">=</span> <span class="ident">requeue_ptr</span>.<span class="ident">as_ref</span>()<span class="question-mark">?</span>;
-        <span class="kw">if</span> <span class="ident">value_ptr</span>.<span class="ident">as_ptr</span>() <span class="op">==</span> <span class="ident">requeue_ptr</span>.<span class="ident">as_ptr</span>() {
+        <span class="kw">let</span> <span class="ident">value</span> <span class="op">=</span> <span class="ident">value_ptr</span>.<span class="ident">as_ref</span>();
+        <span class="kw">let</span> <span class="ident">requeue</span> <span class="op">=</span> <span class="ident">requeue_ptr</span>.<span class="ident">as_ref</span>();
+        <span class="kw">if</span> <span class="ident">value_ptr</span>.<span class="ident">as_addr</span>() <span class="op">==</span> <span class="ident">requeue_ptr</span>.<span class="ident">as_addr</span>() {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::INVALID_ARGS</span>);
         }
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>();
@@ -196,10 +196,10 @@
     <span class="doccomment">/// &gt; Waking up zero threads is not an error condition. Passing in an unallocated address for value_ptr is not an error condition.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_futex_wake</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">value_ptr</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">AtomicI32</span><span class="op">&gt;</span>, <span class="ident">count</span>: <span class="ident">u32</span>) -&gt; <span class="ident">ZxResult</span> {
         <span class="macro">info!</span>(<span class="string">&quot;futex.wake: value_ptr={:?}, count={:#x}&quot;</span>, <span class="ident">value_ptr</span>, <span class="ident">count</span>);
-        <span class="kw">if</span> <span class="ident">value_ptr</span>.<span class="ident">is_null</span>() <span class="op">|</span><span class="op">|</span> <span class="ident">value_ptr</span>.<span class="ident">as_ptr</span>() <span class="kw">as</span> <span class="ident">usize</span> <span class="op">%</span> <span class="number">4</span> <span class="op">!</span><span class="op">=</span> <span class="number">0</span> {
+        <span class="kw">if</span> <span class="ident">value_ptr</span>.<span class="ident">is_null</span>() <span class="op">|</span><span class="op">|</span> <span class="ident">value_ptr</span>.<span class="ident">as_addr</span>() <span class="op">%</span> <span class="number">4</span> <span class="op">!</span><span class="op">=</span> <span class="number">0</span> {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::INVALID_ARGS</span>);
         }
-        <span class="kw">let</span> <span class="ident">value</span> <span class="op">=</span> <span class="ident">value_ptr</span>.<span class="ident">as_ref</span>()<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">value</span> <span class="op">=</span> <span class="ident">value_ptr</span>.<span class="ident">as_ref</span>();
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>();
         <span class="kw">let</span> <span class="ident">futex</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_futex</span>(<span class="ident">value</span>);
         <span class="ident">futex</span>.<span class="ident">wake</span>(<span class="ident">count</span> <span class="kw">as</span> <span class="ident">usize</span>);
@@ -209,10 +209,10 @@
     <span class="doccomment">/// Wake some number of threads waiting on a futex, and move more waiters to another wait queue.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_futex_wake_single_owner</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">value_ptr</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">AtomicI32</span><span class="op">&gt;</span>) -&gt; <span class="ident">ZxResult</span> {
         <span class="macro">info!</span>(<span class="string">&quot;futex.wake_single_owner: value_ptr={:?}&quot;</span>, <span class="ident">value_ptr</span>);
-        <span class="kw">if</span> <span class="ident">value_ptr</span>.<span class="ident">is_null</span>() <span class="op">|</span><span class="op">|</span> <span class="ident">value_ptr</span>.<span class="ident">as_ptr</span>() <span class="kw">as</span> <span class="ident">usize</span> <span class="op">%</span> <span class="number">4</span> <span class="op">!</span><span class="op">=</span> <span class="number">0</span> {
+        <span class="kw">if</span> <span class="ident">value_ptr</span>.<span class="ident">is_null</span>() <span class="op">|</span><span class="op">|</span> <span class="ident">value_ptr</span>.<span class="ident">as_addr</span>() <span class="op">%</span> <span class="number">4</span> <span class="op">!</span><span class="op">=</span> <span class="number">0</span> {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::INVALID_ARGS</span>);
         }
-        <span class="kw">let</span> <span class="ident">value</span> <span class="op">=</span> <span class="ident">value_ptr</span>.<span class="ident">as_ref</span>()<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">value</span> <span class="op">=</span> <span class="ident">value_ptr</span>.<span class="ident">as_ref</span>();
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>();
         <span class="ident">proc</span>.<span class="ident">get_futex</span>(<span class="ident">value</span>).<span class="ident">wake_single_owner</span>();
         <span class="prelude-val">Ok</span>(())

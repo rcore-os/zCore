@@ -99,12 +99,11 @@
 <span id="93">93</span>
 <span id="94">94</span>
 <span id="95">95</span>
-<span id="96">96</span>
 </pre><pre class="rust"><code><span class="kw">use</span> {<span class="kw">super</span>::<span class="kw-2">*</span>, <span class="ident">zircon_object::ipc::Socket</span>, <span class="ident">zircon_object::ipc::SocketFlags</span>};
 
 <span class="kw">impl</span> <span class="ident">Syscall</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span> {
-    <span class="doccomment">/// Create a socket.   </span>
-    <span class="doccomment">///   </span>
+    <span class="doccomment">/// Create a socket.</span>
+    <span class="doccomment">///</span>
     <span class="doccomment">/// Socket is a connected pair of bidirectional stream transports, that can move only data, and that have a maximum capacity.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_socket_create</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
@@ -122,9 +121,9 @@
         <span class="prelude-val">Ok</span>(())
     }
 
-    <span class="doccomment">/// Write data to a socket.  </span>
-    <span class="doccomment">///  </span>
-    <span class="doccomment">/// Attempts to write `count: usize` bytes to the socket specified by `handle_value`.  </span>
+    <span class="doccomment">/// Write data to a socket.</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// Attempts to write `count: usize` bytes to the socket specified by `handle_value`.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_socket_write</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">handle_value</span>: <span class="ident">HandleValue</span>,
@@ -137,21 +136,20 @@
             <span class="string">&quot;socket.write: socket={:#x?}, options={:#x?}, buffer={:#x?}, size={:#x?}&quot;</span>,
             <span class="ident">handle_value</span>, <span class="ident">options</span>, <span class="ident">user_bytes</span>, <span class="ident">count</span>,
         );
-        <span class="kw">if</span> <span class="ident">count</span> <span class="op">&gt;</span> <span class="number">0</span> <span class="op">&amp;&amp;</span> <span class="ident">user_bytes</span>.<span class="ident">is_null</span>() {
-            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::INVALID_ARGS</span>);
+        <span class="kw">if</span> (<span class="ident">count</span> <span class="op">==</span> <span class="number">0</span> <span class="op">|</span><span class="op">|</span> <span class="op">!</span><span class="ident">user_bytes</span>.<span class="ident">is_null</span>()) <span class="op">&amp;&amp;</span> <span class="ident">options</span> <span class="op">==</span> <span class="number">0</span> {
+            <span class="kw">let</span> <span class="ident">actual_count</span> <span class="op">=</span> <span class="self">self</span>
+                .<span class="ident">thread</span>
+                .<span class="ident">proc</span>()
+                .<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">Socket</span><span class="op">&gt;</span>(<span class="ident">handle_value</span>, <span class="ident">Rights::WRITE</span>)<span class="question-mark">?</span>
+                .<span class="ident">write</span>(<span class="ident">user_bytes</span>.<span class="ident">as_slice</span>(<span class="ident">count</span>)<span class="question-mark">?</span>)<span class="question-mark">?</span>;
+            <span class="ident">actual_count_ptr</span>.<span class="ident">write_if_not_null</span>(<span class="ident">actual_count</span>)<span class="question-mark">?</span>;
+            <span class="prelude-val">Ok</span>(())
+        } <span class="kw">else</span> {
+            <span class="prelude-val">Err</span>(<span class="ident">ZxError::INVALID_ARGS</span>)
         }
-        <span class="kw">if</span> <span class="ident">options</span> <span class="op">!</span><span class="op">=</span> <span class="number">0</span> {
-            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::INVALID_ARGS</span>);
-        }
-        <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>();
-        <span class="kw">let</span> <span class="ident">socket</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">Socket</span><span class="op">&gt;</span>(<span class="ident">handle_value</span>, <span class="ident">Rights::WRITE</span>)<span class="question-mark">?</span>;
-        <span class="kw">let</span> <span class="ident">data</span> <span class="op">=</span> <span class="ident">user_bytes</span>.<span class="ident">read_array</span>(<span class="ident">count</span>)<span class="question-mark">?</span>;
-        <span class="kw">let</span> <span class="ident">actual_count</span> <span class="op">=</span> <span class="ident">socket</span>.<span class="ident">write</span>(<span class="kw-2">&amp;</span><span class="ident">data</span>)<span class="question-mark">?</span>;
-        <span class="ident">actual_count_ptr</span>.<span class="ident">write_if_not_null</span>(<span class="ident">actual_count</span>)<span class="question-mark">?</span>;
-        <span class="prelude-val">Ok</span>(())
     }
 
-    <span class="doccomment">/// Read data from a socket.  </span>
+    <span class="doccomment">/// Read data from a socket.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_socket_read</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">handle_value</span>: <span class="ident">HandleValue</span>,
@@ -181,7 +179,7 @@
         <span class="prelude-val">Ok</span>(())
     }
 
-    <span class="doccomment">/// Prevent future reading or writing on a socket.   </span>
+    <span class="doccomment">/// Prevent future reading or writing on a socket.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_socket_shutdown</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">socket</span>: <span class="ident">HandleValue</span>, <span class="ident">options</span>: <span class="ident">u32</span>) -&gt; <span class="ident">ZxResult</span> {
         <span class="kw">let</span> <span class="ident">options</span> <span class="op">=</span> <span class="ident">SocketFlags::from_bits_truncate</span>(<span class="ident">options</span>);
         <span class="macro">info!</span>(

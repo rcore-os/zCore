@@ -519,8 +519,16 @@
 <span id="513">513</span>
 <span id="514">514</span>
 <span id="515">515</span>
+<span id="516">516</span>
 </pre><pre class="rust"><code><span class="doccomment">//! Linux Process</span>
 
+<span class="kw">use</span> <span class="kw">crate</span>::{
+    <span class="ident">error</span>::{<span class="ident">LxError</span>, <span class="ident">LxResult</span>},
+    <span class="ident">fs</span>::{<span class="ident">File</span>, <span class="ident">FileDesc</span>, <span class="ident">FileLike</span>, <span class="ident">OpenFlags</span>, <span class="ident">STDIN</span>, <span class="ident">STDOUT</span>},
+    <span class="ident">ipc</span>::<span class="kw-2">*</span>,
+    <span class="ident">net::Socket</span>,
+    <span class="ident">signal</span>::{<span class="ident">Signal</span> <span class="kw">as</span> <span class="ident">LinuxSignal</span>, <span class="ident">SignalAction</span>},
+};
 <span class="kw">use</span> <span class="ident">alloc</span>::{
     <span class="ident">boxed::Box</span>,
     <span class="ident">string::String</span>,
@@ -528,14 +536,11 @@
     <span class="ident">vec::Vec</span>,
 };
 <span class="kw">use</span> <span class="ident">core::sync::atomic::AtomicI32</span>;
-
-<span class="kw">use</span> <span class="ident"><span class="kw">crate</span>::net::Socket</span>;
 <span class="kw">use</span> <span class="ident">hashbrown::HashMap</span>;
+<span class="kw">use</span> <span class="ident">kernel_hal::VirtAddr</span>;
 <span class="kw">use</span> <span class="ident">rcore_fs::vfs</span>::{<span class="ident">FileSystem</span>, <span class="ident">INode</span>};
 <span class="kw">use</span> <span class="ident">smoltcp::socket::SocketHandle</span>;
 <span class="kw">use</span> <span class="ident">spin</span>::{<span class="ident">Mutex</span>, <span class="ident">MutexGuard</span>};
-
-<span class="kw">use</span> <span class="ident">kernel_hal::VirtAddr</span>;
 <span class="kw">use</span> <span class="ident">zircon_object</span>::{
     <span class="ident">object</span>::{<span class="ident">KernelObject</span>, <span class="ident">KoID</span>, <span class="ident">Signal</span>},
     <span class="ident">signal::Futex</span>,
@@ -543,10 +548,7 @@
     <span class="ident">ZxResult</span>,
 };
 
-<span class="kw">use</span> <span class="ident"><span class="kw">crate</span>::error</span>::{<span class="ident">LxError</span>, <span class="ident">LxResult</span>};
-<span class="kw">use</span> <span class="ident"><span class="kw">crate</span>::fs</span>::{<span class="ident">File</span>, <span class="ident">FileDesc</span>, <span class="ident">FileLike</span>, <span class="ident">OpenFlags</span>, <span class="ident">STDIN</span>, <span class="ident">STDOUT</span>};
-<span class="kw">use</span> <span class="ident"><span class="kw">crate</span>::ipc</span>::<span class="kw-2">*</span>;
-<span class="kw">use</span> <span class="ident"><span class="kw">crate</span>::signal</span>::{<span class="ident">Signal</span> <span class="kw">as</span> <span class="ident">LinuxSignal</span>, <span class="ident">SignalAction</span>};
+<span class="kw">pub</span> <span class="kw">use</span> <span class="ident">rcore_fs::vfs::FsInfo</span>;
 
 <span class="doccomment">/// Process extension for linux</span>
 <span class="kw">pub</span> <span class="kw">trait</span> <span class="ident">ProcessExt</span> {

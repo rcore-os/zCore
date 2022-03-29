@@ -341,8 +341,94 @@
 <span id="335">335</span>
 <span id="336">336</span>
 <span id="337">337</span>
-</pre><pre class="rust"><code><span class="doccomment">//! Syscalls of Inter-Process Communication</span>
-<span class="attribute">#![<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
+<span id="338">338</span>
+<span id="339">339</span>
+<span id="340">340</span>
+<span id="341">341</span>
+<span id="342">342</span>
+<span id="343">343</span>
+<span id="344">344</span>
+<span id="345">345</span>
+<span id="346">346</span>
+<span id="347">347</span>
+<span id="348">348</span>
+<span id="349">349</span>
+<span id="350">350</span>
+<span id="351">351</span>
+<span id="352">352</span>
+<span id="353">353</span>
+<span id="354">354</span>
+<span id="355">355</span>
+<span id="356">356</span>
+<span id="357">357</span>
+<span id="358">358</span>
+<span id="359">359</span>
+<span id="360">360</span>
+<span id="361">361</span>
+<span id="362">362</span>
+<span id="363">363</span>
+<span id="364">364</span>
+<span id="365">365</span>
+<span id="366">366</span>
+<span id="367">367</span>
+<span id="368">368</span>
+<span id="369">369</span>
+<span id="370">370</span>
+<span id="371">371</span>
+<span id="372">372</span>
+<span id="373">373</span>
+<span id="374">374</span>
+<span id="375">375</span>
+<span id="376">376</span>
+<span id="377">377</span>
+<span id="378">378</span>
+<span id="379">379</span>
+<span id="380">380</span>
+<span id="381">381</span>
+<span id="382">382</span>
+<span id="383">383</span>
+<span id="384">384</span>
+<span id="385">385</span>
+<span id="386">386</span>
+<span id="387">387</span>
+<span id="388">388</span>
+<span id="389">389</span>
+<span id="390">390</span>
+<span id="391">391</span>
+<span id="392">392</span>
+<span id="393">393</span>
+<span id="394">394</span>
+<span id="395">395</span>
+<span id="396">396</span>
+<span id="397">397</span>
+<span id="398">398</span>
+<span id="399">399</span>
+<span id="400">400</span>
+<span id="401">401</span>
+<span id="402">402</span>
+<span id="403">403</span>
+<span id="404">404</span>
+<span id="405">405</span>
+<span id="406">406</span>
+<span id="407">407</span>
+<span id="408">408</span>
+<span id="409">409</span>
+<span id="410">410</span>
+<span id="411">411</span>
+<span id="412">412</span>
+<span id="413">413</span>
+<span id="414">414</span>
+<span id="415">415</span>
+<span id="416">416</span>
+<span id="417">417</span>
+<span id="418">418</span>
+<span id="419">419</span>
+<span id="420">420</span>
+<span id="421">421</span>
+<span id="422">422</span>
+<span id="423">423</span>
+<span id="424">424</span>
+</pre><pre class="rust"><code><span class="attribute">#![<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
 
 <span class="kw">use</span> <span class="ident">bitflags</span>::<span class="kw-2">*</span>;
 <span class="kw">use</span> <span class="ident">kernel_hal::user</span>::<span class="kw-2">*</span>;
@@ -352,8 +438,55 @@
 
 <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
 
+<span class="doccomment">/// Syscalls of inter-process communication and System V semaphore Set operation.</span>
+<span class="doccomment">///</span>
+<span class="doccomment">/// # Menu</span>
+<span class="doccomment">///</span>
+<span class="doccomment">/// - [`semget`](Self::sys_semget)</span>
+<span class="doccomment">/// - [`semop`](Self::sys_semop)</span>
+<span class="doccomment">/// - [`semctl`](Self::sys_semctl)</span>
+<span class="doccomment">/// - [`shmget`](Self::sys_shmget)</span>
+<span class="doccomment">/// - [`shmat`](Self::sys_shmat)</span>
+<span class="doccomment">/// - [`shmdt`](Self::sys_shmdt)</span>
+<span class="doccomment">/// - [`shmctl`](Self::sys_shmctl)</span>
 <span class="kw">impl</span> <span class="ident">Syscall</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span> {
-    <span class="doccomment">/// returns the semaphore set identifier associated with the argument key</span>
+    <span class="doccomment">/// Get a System V semaphore set identifier</span>
+    <span class="doccomment">/// (see [linux man semget(2)](https://www.man7.org/linux/man-pages/man2/semget.2.html)).</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// The `sys_semget` system call returns</span>
+    <span class="doccomment">/// the System V semaphore set identifier associated with the argument `key`.</span>
+    <span class="doccomment">/// It may be used either to obtain the identifier of a previously created semaphore set</span>
+    <span class="doccomment">/// (when `flags` is zero and `key` is not zero),</span>
+    <span class="doccomment">/// or to create a new set.</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// A new set of `nsems` (number of semaphores) semaphores is created if `key` is zero</span>
+    <span class="doccomment">/// or if no existing semaphore set is associated with `key` and `IpcGetFlag::CREAT` is specified in `semflg`.</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// If `flags` specifies both `IpcGetFlag::CREAT` and `IpcGetFlag::EXCLUSIVE`</span>
+    <span class="doccomment">/// and a semaphore set already exists for key, then `sys_semget` fails with [`EEXIST`](LxError::EEXIST).</span>
+    <span class="doccomment">/// (This is analogous to the effect of the combination `OpenFlags::CREATE | OpenFlags::EXCLUSIVE` for [`sys_open`](Self::sys_open).)</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// Upon creation, the least significant 9 bits of the argument `flags` define</span>
+    <span class="doccomment">/// the permissions (for owner, group, and others) for the semaphore set.</span>
+    <span class="doccomment">/// These bits have the same format, and the same meaning, as the `mode` argument of [`sys_open`](Self::sys_open)</span>
+    <span class="doccomment">/// (though the execute permissions are not meaningful for semaphores,</span>
+    <span class="doccomment">/// and write permissions mean permission to alter semaphore values).</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// When creating a new semaphore set, `sys_semget` initializes the set&#39;s associated data structure,</span>
+    <span class="doccomment">/// semid_ds (see [`sys_semctl`](Self::sys_semctl)), as follows:</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// - sem_perm.cuid and sem_perm.uid are set to the effective user ID of the calling process.</span>
+    <span class="doccomment">/// - sem_perm.cgid and sem_perm.gid are set to the effective group ID of the calling process.</span>
+    <span class="doccomment">/// - The least significant 9 bits of sem_perm.mode are set to the least significant 9 bits of `flags`.</span>
+    <span class="doccomment">/// - sem_nsems is set to the value of nsems.</span>
+    <span class="doccomment">/// - sem_otime is set to 0.</span>
+    <span class="doccomment">/// - sem_ctime is set to the current time.</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// The argument nsems can be 0 (a don&#39;t care) when a semaphore set is not being created.</span>
+    <span class="doccomment">/// Otherwise, nsems must be greater than 0 and</span>
+    <span class="doccomment">/// less than or equal to the maximum number of semaphores per semaphore set (SEMMSL, constant 256).</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// If the semaphore set already exists, the permissions are verified.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_semget</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">key</span>: <span class="ident">usize</span>, <span class="ident">nsems</span>: <span class="ident">usize</span>, <span class="ident">flags</span>: <span class="ident">usize</span>) -&gt; <span class="ident">SysResult</span> {
         <span class="macro">info!</span>(<span class="string">&quot;semget: key: {} nsems: {} flags: {:#x}&quot;</span>, <span class="ident">key</span>, <span class="ident">nsems</span>, <span class="ident">flags</span>);
 
@@ -369,19 +502,40 @@
         <span class="prelude-val">Ok</span>(<span class="ident">id</span>)
     }
 
-    <span class="doccomment">/// semaphore operations</span>
+    <span class="doccomment">/// System V semaphore operations</span>
+    <span class="doccomment">/// (see [linux man semop(2)](https://www.man7.org/linux/man-pages/man2/semop.2.html)).</span>
     <span class="doccomment">///</span>
-    <span class="doccomment">/// performs operations on selected semaphores in the set indicated by semid</span>
+    <span class="doccomment">/// `semop` performs operations on selected semaphores in the set indicated by `id`.</span>
+    <span class="doccomment">/// An array `[SemBuf; num_ops]` pointed to by `ops` specifies an operation to be performed on a single semaphore.</span>
+    <span class="doccomment">/// The declaration of `SemBuf` is like this:</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// ```rust</span>
+    <span class="doccomment">/// struct SemBuf {</span>
+    <span class="doccomment">///    num: u16,</span>
+    <span class="doccomment">///    op: i16,</span>
+    <span class="doccomment">///    flags: i16,</span>
+    <span class="doccomment">/// }</span>
+    <span class="doccomment">/// ```</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// Flags recognized in `SemBuf::flags` are `SemFlags::IPC_NOWAIT` and `SemFlags::SEM_UNDO`.</span>
+    <span class="doccomment">/// If an operation specifies `SEM_UNDO`, it will be automatically undone when the process terminates.</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// Each operation is performed on the `SemBuf::num`-th semaphore of the semaphore set,</span>
+    <span class="doccomment">/// where the first semaphore of the set is numbered 0.</span>
+    <span class="doccomment">/// There are two types of operation, distinguished by the value of `SemBuf::op`.</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// - If `op` is +1, see [`acquire`](linux_object::sync::Semaphore::acquire).</span>
+    <span class="doccomment">/// - If `op` is -1, see [`release`](linux_object::sync::Semaphore::release).</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">sys_semop</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">id</span>: <span class="ident">usize</span>, <span class="ident">ops</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">SemBuf</span><span class="op">&gt;</span>, <span class="ident">num_ops</span>: <span class="ident">usize</span>) -&gt; <span class="ident">SysResult</span> {
         <span class="macro">info!</span>(<span class="string">&quot;semop: id: {}&quot;</span>, <span class="ident">id</span>);
-        <span class="kw">let</span> <span class="ident">ops</span> <span class="op">=</span> <span class="ident">ops</span>.<span class="ident">read_array</span>(<span class="ident">num_ops</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">ops</span> <span class="op">=</span> <span class="ident">ops</span>.<span class="ident">as_slice</span>(<span class="ident">num_ops</span>)<span class="question-mark">?</span>;
 
         <span class="kw">let</span> <span class="ident">sem_array</span> <span class="op">=</span> <span class="self">self</span>
             .<span class="ident">linux_process</span>()
             .<span class="ident">semaphores_get</span>(<span class="ident">id</span>)
             .<span class="ident">ok_or</span>(<span class="ident">LxError::EINVAL</span>)<span class="question-mark">?</span>;
         <span class="ident">sem_array</span>.<span class="ident">otime</span>();
-        <span class="kw">for</span> <span class="kw-2">&amp;</span><span class="ident">SemBuf</span> { <span class="ident">num</span>, <span class="ident">op</span>, <span class="ident">flags</span> } <span class="kw">in</span> <span class="ident">ops</span>.<span class="ident">iter</span>() {
+        <span class="kw">for</span> <span class="kw-2">&amp;</span><span class="ident">SemBuf</span> { <span class="ident">num</span>, <span class="ident">op</span>, <span class="ident">flags</span> } <span class="kw">in</span> <span class="ident">ops</span> {
             <span class="kw">let</span> <span class="ident">flags</span> <span class="op">=</span> <span class="ident">SemFlags::from_bits_truncate</span>(<span class="ident">flags</span>);
             <span class="kw">if</span> <span class="ident">flags</span>.<span class="ident">contains</span>(<span class="ident">SemFlags::IPC_NOWAIT</span>) {
                 <span class="macro">unimplemented!</span>(<span class="string">&quot;Semaphore: semop.IPC_NOWAIT&quot;</span>);
@@ -401,10 +555,15 @@
         <span class="prelude-val">Ok</span>(<span class="number">0</span>)
     }
 
-    <span class="doccomment">/// semaphore control operations</span>
+    <span class="doccomment">/// System V semaphore control operations</span>
+    <span class="doccomment">/// (see [linux man semctl(2)](https://www.man7.org/linux/man-pages/man2/semctl.2.html)).</span>
     <span class="doccomment">///</span>
-    <span class="doccomment">/// performs the control operation specified by cmd on the semaphore set identified by semid,</span>
-    <span class="doccomment">/// or on the semnum-th semaphore of that set.</span>
+    <span class="doccomment">/// `semctl` performs the control operation specified by cmd</span>
+    <span class="doccomment">/// on the System V semaphore set identified by `id`,</span>
+    <span class="doccomment">/// or on the `num`-th semaphore of that set</span>
+    <span class="doccomment">/// (The semaphores in a set are numbered starting at 0).</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// TODO</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_semctl</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">id</span>: <span class="ident">usize</span>, <span class="ident">num</span>: <span class="ident">usize</span>, <span class="ident">cmd</span>: <span class="ident">usize</span>, <span class="ident">arg</span>: <span class="ident">usize</span>) -&gt; <span class="ident">SysResult</span> {
         <span class="macro">info!</span>(
             <span class="string">&quot;semctl: id: {}, num: {}, cmd: {} arg: {:#x}&quot;</span>,
@@ -462,9 +621,12 @@
         }
     }
 
-    <span class="doccomment">/// allocates a shared memory segment</span>
+    <span class="doccomment">/// Allocates a System V shared memory segment</span>
+    <span class="doccomment">/// (see [linux man shmget(2)](https://www.man7.org/linux/man-pages/man2/shmget.2.html)).</span>
     <span class="doccomment">///</span>
-    <span class="doccomment">/// returns the identifier of the shared memory segment associated with the value of the argument key</span>
+    <span class="doccomment">/// `shmget` returns the identifier of the System V shared memory segment</span>
+    <span class="doccomment">/// associated with the value of the argument key.</span>
+    <span class="doccomment">/// Differ from linux, this syscall always create a new set.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_shmget</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">key</span>: <span class="ident">usize</span>, <span class="ident">size</span>: <span class="ident">usize</span>, <span class="ident">shmflg</span>: <span class="ident">usize</span>) -&gt; <span class="ident">SysResult</span> {
         <span class="macro">info!</span>(
             <span class="string">&quot;shmget: key: {}, size: {}, shmflg: {:#x}&quot;</span>,
@@ -481,7 +643,13 @@
         <span class="prelude-val">Ok</span>(<span class="ident">id</span>)
     }
 
-    <span class="doccomment">/// attaches the shared memory segment identified by shmid to the address space of the calling process.</span>
+    <span class="doccomment">/// System V shared memory operations</span>
+    <span class="doccomment">/// (see [linux man shmat(2)](https://www.man7.org/linux/man-pages/man2/shmat.2.html)).</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// `shmat` attaches the System V shared memory segment identified by `id`</span>
+    <span class="doccomment">/// to the address space of the calling process.</span>
+    <span class="doccomment">/// The attaching address is specified by `addr`.</span>
+    <span class="doccomment">/// If `addr` is zero, the system chooses a suitable page-aligned address to attach the segment.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_shmat</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">id</span>: <span class="ident">usize</span>, <span class="kw-2">mut</span> <span class="ident">addr</span>: <span class="ident">VirtAddr</span>, <span class="ident">shmflg</span>: <span class="ident">usize</span>) -&gt; <span class="ident">SysResult</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">shm_identifier</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>().<span class="ident">shm_get</span>(<span class="ident">id</span>).<span class="ident">ok_or</span>(<span class="ident">LxError::EINVAL</span>)<span class="question-mark">?</span>;
 
@@ -516,8 +684,13 @@
         <span class="prelude-val">Ok</span>(<span class="ident">addr</span>)
     }
 
-    <span class="doccomment">/// detaches the shared memory segment located at the address specified by shmaddr</span>
+    <span class="doccomment">/// System V shared memory operations</span>
+    <span class="doccomment">/// (see [linux man shmdt(2)](https://www.man7.org/linux/man-pages/man2/shmdt.2.html)).</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// `shmdt` detaches the shared memory segment located at the address specified by `addr`</span>
     <span class="doccomment">/// from the address space of the calling process.</span>
+    <span class="doccomment">/// The to-be-detached segment must be currently attached with `addr`</span>
+    <span class="doccomment">/// equal to the value returned by the attaching [`sys_shmat`](Self::sys_shmat) call.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_shmdt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">id</span>: <span class="ident">usize</span>, <span class="ident">addr</span>: <span class="ident">VirtAddr</span>, <span class="ident">shmflg</span>: <span class="ident">usize</span>) -&gt; <span class="ident">SysResult</span> {
         <span class="macro">info!</span>(
             <span class="string">&quot;shmdt: id = {}, addr = {:#x}, flag = {:#x}&quot;</span>,
@@ -536,7 +709,8 @@
         <span class="prelude-val">Ok</span>(<span class="number">0</span>)
     }
 
-    <span class="doccomment">/// shared memory control</span>
+    <span class="doccomment">/// System V shared memory operations</span>
+    <span class="doccomment">/// (see [linux man shmctl(2)](https://www.man7.org/linux/man-pages/man2/shmctl.2.html)).</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// performs the control operation specified by cmd on the shared memory segment whose identifier is given in id</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_shmctl</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">id</span>: <span class="ident">usize</span>, <span class="ident">cmd</span>: <span class="ident">usize</span>, <span class="ident">buffer</span>: <span class="ident">usize</span>) -&gt; <span class="ident">SysResult</span> {

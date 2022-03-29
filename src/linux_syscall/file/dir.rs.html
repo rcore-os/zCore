@@ -392,22 +392,22 @@
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">LxError::ERANGE</span>);
         }
         <span class="ident">buf</span>.<span class="ident">write_cstring</span>(<span class="kw-2">&amp;</span><span class="ident">cwd</span>)<span class="question-mark">?</span>;
-        <span class="prelude-val">Ok</span>(<span class="ident">buf</span>.<span class="ident">as_ptr</span>() <span class="kw">as</span> <span class="ident">usize</span>)
+        <span class="prelude-val">Ok</span>(<span class="ident">buf</span>.<span class="ident">as_addr</span>())
     }
 
     <span class="doccomment">/// Change the current directory.</span>
     <span class="doccomment">/// - `path` – pointer to string with name of path</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_chdir</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">path</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>) -&gt; <span class="ident">SysResult</span> {
-        <span class="kw">let</span> <span class="ident">path</span> <span class="op">=</span> <span class="ident">path</span>.<span class="ident">read_cstring</span>()<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">path</span> <span class="op">=</span> <span class="ident">path</span>.<span class="ident">as_c_str</span>()<span class="question-mark">?</span>;
         <span class="macro">info!</span>(<span class="string">&quot;chdir: path={:?}&quot;</span>, <span class="ident">path</span>);
 
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>();
-        <span class="kw">let</span> <span class="ident">inode</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">lookup_inode</span>(<span class="kw-2">&amp;</span><span class="ident">path</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">inode</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">lookup_inode</span>(<span class="ident">path</span>)<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">info</span> <span class="op">=</span> <span class="ident">inode</span>.<span class="ident">metadata</span>()<span class="question-mark">?</span>;
         <span class="kw">if</span> <span class="ident">info</span>.<span class="ident">type_</span> <span class="op">!</span><span class="op">=</span> <span class="ident">FileType::Dir</span> {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">LxError::ENOTDIR</span>);
         }
-        <span class="ident">proc</span>.<span class="ident">change_directory</span>(<span class="kw-2">&amp;</span><span class="ident">path</span>);
+        <span class="ident">proc</span>.<span class="ident">change_directory</span>(<span class="ident">path</span>);
         <span class="prelude-val">Ok</span>(<span class="number">0</span>)
     }
 
@@ -420,14 +420,14 @@
 
     <span class="doccomment">/// create directory relative to directory file descriptor</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_mkdirat</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">dirfd</span>: <span class="ident">FileDesc</span>, <span class="ident">path</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>, <span class="ident">mode</span>: <span class="ident">usize</span>) -&gt; <span class="ident">SysResult</span> {
-        <span class="kw">let</span> <span class="ident">path</span> <span class="op">=</span> <span class="ident">path</span>.<span class="ident">read_cstring</span>()<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">path</span> <span class="op">=</span> <span class="ident">path</span>.<span class="ident">as_c_str</span>()<span class="question-mark">?</span>;
         <span class="comment">// TODO: check pathname</span>
         <span class="macro">info!</span>(
             <span class="string">&quot;mkdirat: dirfd={:?}, path={:?}, mode={:#o}&quot;</span>,
             <span class="ident">dirfd</span>, <span class="ident">path</span>, <span class="ident">mode</span>
         );
 
-        <span class="kw">let</span> (<span class="ident">dir_path</span>, <span class="ident">file_name</span>) <span class="op">=</span> <span class="ident">split_path</span>(<span class="kw-2">&amp;</span><span class="ident">path</span>);
+        <span class="kw">let</span> (<span class="ident">dir_path</span>, <span class="ident">file_name</span>) <span class="op">=</span> <span class="ident">split_path</span>(<span class="ident">path</span>);
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>();
         <span class="kw">let</span> <span class="ident">inode</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">lookup_inode_at</span>(<span class="ident">dirfd</span>, <span class="ident">dir_path</span>, <span class="bool-val">true</span>)<span class="question-mark">?</span>;
         <span class="kw">if</span> <span class="ident">inode</span>.<span class="ident">find</span>(<span class="ident">file_name</span>).<span class="ident">is_ok</span>() {
@@ -439,10 +439,10 @@
     <span class="doccomment">/// Remove a directory.</span>
     <span class="doccomment">/// - path – pointer to string with directory name</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_rmdir</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">path</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>) -&gt; <span class="ident">SysResult</span> {
-        <span class="kw">let</span> <span class="ident">path</span> <span class="op">=</span> <span class="ident">path</span>.<span class="ident">read_cstring</span>()<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">path</span> <span class="op">=</span> <span class="ident">path</span>.<span class="ident">as_c_str</span>()<span class="question-mark">?</span>;
         <span class="macro">info!</span>(<span class="string">&quot;rmdir: path={:?}&quot;</span>, <span class="ident">path</span>);
 
-        <span class="kw">let</span> (<span class="ident">dir_path</span>, <span class="ident">file_name</span>) <span class="op">=</span> <span class="ident">split_path</span>(<span class="kw-2">&amp;</span><span class="ident">path</span>);
+        <span class="kw">let</span> (<span class="ident">dir_path</span>, <span class="ident">file_name</span>) <span class="op">=</span> <span class="ident">split_path</span>(<span class="ident">path</span>);
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>();
         <span class="kw">let</span> <span class="ident">dir_inode</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">lookup_inode</span>(<span class="ident">dir_path</span>)<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">file_inode</span> <span class="op">=</span> <span class="ident">dir_inode</span>.<span class="ident">find</span>(<span class="ident">file_name</span>)<span class="question-mark">?</span>;
@@ -505,8 +505,8 @@
         <span class="ident">newpath</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>,
         <span class="ident">flags</span>: <span class="ident">usize</span>,
     ) -&gt; <span class="ident">SysResult</span> {
-        <span class="kw">let</span> <span class="ident">oldpath</span> <span class="op">=</span> <span class="ident">oldpath</span>.<span class="ident">read_cstring</span>()<span class="question-mark">?</span>;
-        <span class="kw">let</span> <span class="ident">newpath</span> <span class="op">=</span> <span class="ident">newpath</span>.<span class="ident">read_cstring</span>()<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">oldpath</span> <span class="op">=</span> <span class="ident">oldpath</span>.<span class="ident">as_c_str</span>()<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">newpath</span> <span class="op">=</span> <span class="ident">newpath</span>.<span class="ident">as_c_str</span>()<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">flags</span> <span class="op">=</span> <span class="ident">AtFlags::from_bits_truncate</span>(<span class="ident">flags</span>);
         <span class="macro">info!</span>(
             <span class="string">&quot;linkat: olddirfd={:?}, oldpath={:?}, newdirfd={:?}, newpath={:?}, flags={:?}&quot;</span>,
@@ -514,8 +514,8 @@
         );
 
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>();
-        <span class="kw">let</span> (<span class="ident">new_dir_path</span>, <span class="ident">new_file_name</span>) <span class="op">=</span> <span class="ident">split_path</span>(<span class="kw-2">&amp;</span><span class="ident">newpath</span>);
-        <span class="kw">let</span> <span class="ident">inode</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">lookup_inode_at</span>(<span class="ident">olddirfd</span>, <span class="kw-2">&amp;</span><span class="ident">oldpath</span>, <span class="bool-val">true</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> (<span class="ident">new_dir_path</span>, <span class="ident">new_file_name</span>) <span class="op">=</span> <span class="ident">split_path</span>(<span class="ident">newpath</span>);
+        <span class="kw">let</span> <span class="ident">inode</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">lookup_inode_at</span>(<span class="ident">olddirfd</span>, <span class="ident">oldpath</span>, <span class="bool-val">true</span>)<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">new_dir_inode</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">lookup_inode_at</span>(<span class="ident">newdirfd</span>, <span class="ident">new_dir_path</span>, <span class="bool-val">true</span>)<span class="question-mark">?</span>;
         <span class="ident">new_dir_inode</span>.<span class="ident">link</span>(<span class="ident">new_file_name</span>, <span class="kw-2">&amp;</span><span class="ident">inode</span>)<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(<span class="number">0</span>)
@@ -532,7 +532,7 @@
     <span class="doccomment">/// remove directory entry relative to directory file descriptor</span>
     <span class="doccomment">/// The unlinkat() system call operates in exactly the same way as either unlink or rmdir.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_unlinkat</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">dirfd</span>: <span class="ident">FileDesc</span>, <span class="ident">path</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>, <span class="ident">flags</span>: <span class="ident">usize</span>) -&gt; <span class="ident">SysResult</span> {
-        <span class="kw">let</span> <span class="ident">path</span> <span class="op">=</span> <span class="ident">path</span>.<span class="ident">read_cstring</span>()<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">path</span> <span class="op">=</span> <span class="ident">path</span>.<span class="ident">as_c_str</span>()<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">flags</span> <span class="op">=</span> <span class="ident">AtFlags::from_bits_truncate</span>(<span class="ident">flags</span>);
         <span class="macro">info!</span>(
             <span class="string">&quot;unlinkat: dirfd={:?}, path={:?}, flags={:?}&quot;</span>,
@@ -540,7 +540,7 @@
         );
 
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>();
-        <span class="kw">let</span> (<span class="ident">dir_path</span>, <span class="ident">file_name</span>) <span class="op">=</span> <span class="ident">split_path</span>(<span class="kw-2">&amp;</span><span class="ident">path</span>);
+        <span class="kw">let</span> (<span class="ident">dir_path</span>, <span class="ident">file_name</span>) <span class="op">=</span> <span class="ident">split_path</span>(<span class="ident">path</span>);
         <span class="kw">let</span> <span class="ident">dir_inode</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">lookup_inode_at</span>(<span class="ident">dirfd</span>, <span class="ident">dir_path</span>, <span class="bool-val">true</span>)<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">file_inode</span> <span class="op">=</span> <span class="ident">dir_inode</span>.<span class="ident">find</span>(<span class="ident">file_name</span>)<span class="question-mark">?</span>;
         <span class="kw">if</span> <span class="ident">file_inode</span>.<span class="ident">metadata</span>()<span class="question-mark">?</span>.<span class="ident">type_</span> <span class="op">==</span> <span class="ident">FileType::Dir</span> {
@@ -563,16 +563,16 @@
         <span class="ident">newdirfd</span>: <span class="ident">FileDesc</span>,
         <span class="ident">newpath</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>,
     ) -&gt; <span class="ident">SysResult</span> {
-        <span class="kw">let</span> <span class="ident">oldpath</span> <span class="op">=</span> <span class="ident">oldpath</span>.<span class="ident">read_cstring</span>()<span class="question-mark">?</span>;
-        <span class="kw">let</span> <span class="ident">newpath</span> <span class="op">=</span> <span class="ident">newpath</span>.<span class="ident">read_cstring</span>()<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">oldpath</span> <span class="op">=</span> <span class="ident">oldpath</span>.<span class="ident">as_c_str</span>()<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">newpath</span> <span class="op">=</span> <span class="ident">newpath</span>.<span class="ident">as_c_str</span>()<span class="question-mark">?</span>;
         <span class="macro">info!</span>(
             <span class="string">&quot;renameat: olddirfd={:?}, oldpath={:?}, newdirfd={:?}, newpath={:?}&quot;</span>,
             <span class="ident">olddirfd</span>, <span class="ident">oldpath</span>, <span class="ident">newdirfd</span>, <span class="ident">newpath</span>
         );
 
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>();
-        <span class="kw">let</span> (<span class="ident">old_dir_path</span>, <span class="ident">old_file_name</span>) <span class="op">=</span> <span class="ident">split_path</span>(<span class="kw-2">&amp;</span><span class="ident">oldpath</span>);
-        <span class="kw">let</span> (<span class="ident">new_dir_path</span>, <span class="ident">new_file_name</span>) <span class="op">=</span> <span class="ident">split_path</span>(<span class="kw-2">&amp;</span><span class="ident">newpath</span>);
+        <span class="kw">let</span> (<span class="ident">old_dir_path</span>, <span class="ident">old_file_name</span>) <span class="op">=</span> <span class="ident">split_path</span>(<span class="ident">oldpath</span>);
+        <span class="kw">let</span> (<span class="ident">new_dir_path</span>, <span class="ident">new_file_name</span>) <span class="op">=</span> <span class="ident">split_path</span>(<span class="ident">newpath</span>);
         <span class="kw">let</span> <span class="ident">old_dir_inode</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">lookup_inode_at</span>(<span class="ident">olddirfd</span>, <span class="ident">old_dir_path</span>, <span class="bool-val">false</span>)<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">new_dir_inode</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">lookup_inode_at</span>(<span class="ident">newdirfd</span>, <span class="ident">new_dir_path</span>, <span class="bool-val">false</span>)<span class="question-mark">?</span>;
         <span class="ident">old_dir_inode</span>.<span class="ident">move_</span>(<span class="ident">old_file_name</span>, <span class="kw-2">&amp;</span><span class="ident">new_dir_inode</span>, <span class="ident">new_file_name</span>)<span class="question-mark">?</span>;
@@ -594,14 +594,14 @@
         <span class="kw-2">mut</span> <span class="ident">base</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>,
         <span class="ident">len</span>: <span class="ident">usize</span>,
     ) -&gt; <span class="ident">SysResult</span> {
-        <span class="kw">let</span> <span class="ident">path</span> <span class="op">=</span> <span class="ident">path</span>.<span class="ident">read_cstring</span>()<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">path</span> <span class="op">=</span> <span class="ident">path</span>.<span class="ident">as_c_str</span>()<span class="question-mark">?</span>;
         <span class="macro">info!</span>(
             <span class="string">&quot;readlinkat: dirfd={:?}, path={:?}, base={:?}, len={}&quot;</span>,
             <span class="ident">dirfd</span>, <span class="ident">path</span>, <span class="ident">base</span>, <span class="ident">len</span>
         );
 
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>();
-        <span class="kw">let</span> <span class="ident">inode</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">lookup_inode_at</span>(<span class="ident">dirfd</span>, <span class="kw-2">&amp;</span><span class="ident">path</span>, <span class="bool-val">false</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">inode</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">lookup_inode_at</span>(<span class="ident">dirfd</span>, <span class="ident">path</span>, <span class="bool-val">false</span>)<span class="question-mark">?</span>;
         <span class="kw">if</span> <span class="ident">inode</span>.<span class="ident">metadata</span>()<span class="question-mark">?</span>.<span class="ident">type_</span> <span class="op">!</span><span class="op">=</span> <span class="ident">FileType::SymLink</span> {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">LxError::EINVAL</span>);
         }

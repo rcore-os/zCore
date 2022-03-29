@@ -575,6 +575,9 @@
 <span id="569">569</span>
 <span id="570">570</span>
 <span id="571">571</span>
+<span id="572">572</span>
+<span id="573">573</span>
+<span id="574">574</span>
 </pre><pre class="rust"><code><span class="doccomment">//! Linux syscall implementations</span>
 <span class="doccomment">//!</span>
 <span class="doccomment">//! ## Example</span>
@@ -859,8 +862,11 @@
 
             <span class="comment">//            Sys::SOCKETPAIR =&gt; self.unimplemented(&quot;socketpair&quot;, Err(LxError::EACCES)),</span>
             <span class="comment">// file system</span>
-            <span class="ident">Sys::STATFS</span> =&gt; <span class="self">self</span>.<span class="ident">unimplemented</span>(<span class="string">&quot;statfs&quot;</span>, <span class="prelude-val">Err</span>(<span class="ident">LxError::EACCES</span>)),
-            <span class="ident">Sys::FSTATFS</span> =&gt; <span class="self">self</span>.<span class="ident">unimplemented</span>(<span class="string">&quot;fstatfs&quot;</span>, <span class="prelude-val">Err</span>(<span class="ident">LxError::EACCES</span>)),
+            <span class="ident">Sys::STATFS</span> =&gt; <span class="self">self</span>.<span class="ident">sys_statfs</span>(
+                <span class="self">self</span>.<span class="ident">into_in_userptr</span>(<span class="ident">a0</span>).<span class="ident">unwrap</span>(),
+                <span class="self">self</span>.<span class="ident">into_out_userptr</span>(<span class="ident">a1</span>).<span class="ident">unwrap</span>(),
+            ),
+            <span class="ident">Sys::FSTATFS</span> =&gt; <span class="self">self</span>.<span class="ident">sys_fstatfs</span>(<span class="ident">a0</span>.<span class="ident">into</span>(), <span class="self">self</span>.<span class="ident">into_out_userptr</span>(<span class="ident">a1</span>).<span class="ident">unwrap</span>()),
             <span class="ident">Sys::SYNC</span> =&gt; <span class="self">self</span>.<span class="ident">sys_sync</span>(),
             <span class="ident">Sys::MOUNT</span> =&gt; <span class="self">self</span>.<span class="ident">unimplemented</span>(<span class="string">&quot;mount&quot;</span>, <span class="prelude-val">Err</span>(<span class="ident">LxError::EACCES</span>)),
             <span class="ident">Sys::UMOUNT2</span> =&gt; <span class="self">self</span>.<span class="ident">unimplemented</span>(<span class="string">&quot;umount2&quot;</span>, <span class="prelude-val">Err</span>(<span class="ident">LxError::EACCES</span>)),

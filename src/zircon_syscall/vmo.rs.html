@@ -338,7 +338,6 @@
 <span id="332">332</span>
 <span id="333">333</span>
 <span id="334">334</span>
-<span id="335">335</span>
 </pre><pre class="rust"><code><span class="kw">use</span> {
     <span class="kw">super</span>::<span class="kw-2">*</span>,
     <span class="ident">bitflags::bitflags</span>,
@@ -412,8 +411,7 @@
         <span class="kw">if</span> <span class="ident">offset</span> <span class="kw">as</span> <span class="ident">usize</span> <span class="op">&gt;</span> <span class="ident">vmo</span>.<span class="ident">len</span>() <span class="op">|</span><span class="op">|</span> <span class="ident">buf_size</span> <span class="op">&gt;</span> <span class="ident">vmo</span>.<span class="ident">len</span>() <span class="op">-</span> (<span class="ident">offset</span> <span class="kw">as</span> <span class="ident">usize</span>) {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::OUT_OF_RANGE</span>);
         }
-        <span class="ident">vmo</span>.<span class="ident">write</span>(<span class="ident">offset</span> <span class="kw">as</span> <span class="ident">usize</span>, <span class="kw-2">&amp;</span><span class="ident">buf</span>.<span class="ident">read_array</span>(<span class="ident">buf_size</span>)<span class="question-mark">?</span>)<span class="question-mark">?</span>;
-        <span class="prelude-val">Ok</span>(())
+        <span class="ident">vmo</span>.<span class="ident">write</span>(<span class="ident">offset</span> <span class="kw">as</span> <span class="ident">usize</span>, <span class="ident">buf</span>.<span class="ident">as_slice</span>(<span class="ident">buf_size</span>)<span class="question-mark">?</span>)
     }
 
     <span class="doccomment">/// Add execute rights to a VMO.</span>

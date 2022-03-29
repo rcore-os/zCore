@@ -162,12 +162,12 @@
 <span id="156">156</span>
 <span id="157">157</span>
 <span id="158">158</span>
-</pre><pre class="rust"><code><span class="kw">use</span> <span class="ident">alloc::vec::Vec</span>;
-<span class="kw">use</span> <span class="ident">core::ops::Range</span>;
-
-<span class="kw">use</span> <span class="ident">device_tree</span>::{<span class="ident">DeviceTree</span> <span class="kw">as</span> <span class="ident">DeviceTreeInner</span>, <span class="ident">PropError</span>};
+</pre><pre class="rust"><code><span class="doccomment">//! Package of [`device_tree`].</span>
 
 <span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">DeviceError</span>, <span class="ident">DeviceResult</span>, <span class="ident">PhysAddr</span>, <span class="ident">VirtAddr</span>};
+<span class="kw">use</span> <span class="ident">alloc::vec::Vec</span>;
+<span class="kw">use</span> <span class="ident">core::ops::Range</span>;
+<span class="kw">use</span> <span class="ident">device_tree</span>::{<span class="ident">DeviceTree</span> <span class="kw">as</span> <span class="ident">DeviceTreeInner</span>, <span class="ident">PropError</span>};
 
 <span class="kw">pub</span> <span class="kw">use</span> <span class="ident">device_tree</span>::{<span class="ident">util::StringList</span>, <span class="ident">Node</span>};
 

@@ -263,6 +263,9 @@
 <span id="257">257</span>
 <span id="258">258</span>
 <span id="259">259</span>
+<span id="260">260</span>
+<span id="261">261</span>
+<span id="262">262</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="ident">core::convert::TryInto</span>;
 <span class="kw">use</span> <span class="ident">core::ops</span>::{<span class="ident">BitAnd</span>, <span class="ident">BitOr</span>, <span class="ident">Not</span>};
 
@@ -371,6 +374,7 @@
     }
 }
 
+<span class="doccomment">/// MMIO driver for UART 16550</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Uart16550Mmio</span><span class="op">&lt;</span><span class="ident">V</span>: <span class="lifetime">&#39;static</span><span class="op">&gt;</span>
 <span class="kw">where</span>
     <span class="ident">V</span>: <span class="ident">Copy</span> <span class="op">+</span> <span class="ident">BitAnd</span><span class="op">&lt;</span><span class="ident">Output</span> <span class="op">=</span> <span class="ident">V</span><span class="op">&gt;</span> <span class="op">+</span> <span class="ident">BitOr</span><span class="op">&lt;</span><span class="ident">Output</span> <span class="op">=</span> <span class="ident">V</span><span class="op">&gt;</span> <span class="op">+</span> <span class="ident">Not</span><span class="op">&lt;</span><span class="ident">Output</span> <span class="op">=</span> <span class="ident">V</span><span class="op">&gt;</span>,
@@ -469,6 +473,7 @@
     <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
     <span class="kw">use</span> <span class="ident"><span class="kw">crate</span>::io::Pio</span>;
 
+    <span class="doccomment">/// PIO driver for UART 16550</span>
     <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Uart16550Pio</span> {
         <span class="ident">inner</span>: <span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">Uart16550Inner</span><span class="op">&lt;</span><span class="ident">Pio</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span>,
         <span class="ident">listener</span>: <span class="ident">EventListener</span>,
@@ -501,6 +506,7 @@
     }
 
     <span class="kw">impl</span> <span class="ident">Uart16550Pio</span> {
+        <span class="doccomment">/// Construct a `Uart16550Pio` whose address starts at `base`.</span>
         <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">base</span>: <span class="ident">u16</span>) -&gt; <span class="self">Self</span> {
             <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">uart</span> <span class="op">=</span> <span class="ident">Uart16550Inner</span>::<span class="op">&lt;</span><span class="ident">Pio</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span><span class="op">&gt;</span> {
                 <span class="ident">data</span>: <span class="ident">Pio::new</span>(<span class="ident">base</span>),

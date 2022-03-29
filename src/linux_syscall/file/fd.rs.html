@@ -168,7 +168,7 @@
         <span class="ident">mode</span>: <span class="ident">usize</span>,
     ) -&gt; <span class="ident">SysResult</span> {
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>();
-        <span class="kw">let</span> <span class="ident">path</span> <span class="op">=</span> <span class="ident">path</span>.<span class="ident">read_cstring</span>()<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">path</span> <span class="op">=</span> <span class="ident">path</span>.<span class="ident">as_c_str</span>()<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">flags</span> <span class="op">=</span> <span class="ident">OpenFlags::from_bits_truncate</span>(<span class="ident">flags</span>);
         <span class="macro">info!</span>(
             <span class="string">&quot;openat: dir_fd={:?}, path={:?}, flags={:?}, mode={:#o}&quot;</span>,
@@ -176,7 +176,7 @@
         );
 
         <span class="kw">let</span> <span class="ident">inode</span> <span class="op">=</span> <span class="kw">if</span> <span class="ident">flags</span>.<span class="ident">contains</span>(<span class="ident">OpenFlags::CREATE</span>) {
-            <span class="kw">let</span> (<span class="ident">dir_path</span>, <span class="ident">file_name</span>) <span class="op">=</span> <span class="ident">split_path</span>(<span class="kw-2">&amp;</span><span class="ident">path</span>);
+            <span class="kw">let</span> (<span class="ident">dir_path</span>, <span class="ident">file_name</span>) <span class="op">=</span> <span class="ident">split_path</span>(<span class="ident">path</span>);
             <span class="comment">// relative to cwd</span>
             <span class="kw">let</span> <span class="ident">dir_inode</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">lookup_inode_at</span>(<span class="ident">dir_fd</span>, <span class="ident">dir_path</span>, <span class="bool-val">true</span>)<span class="question-mark">?</span>;
             <span class="kw">match</span> <span class="ident">dir_inode</span>.<span class="ident">find</span>(<span class="ident">file_name</span>) {
@@ -192,10 +192,10 @@
                 <span class="prelude-val">Err</span>(<span class="ident">e</span>) =&gt; <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">LxError::from</span>(<span class="ident">e</span>)),
             }
         } <span class="kw">else</span> {
-            <span class="ident">proc</span>.<span class="ident">lookup_inode_at</span>(<span class="ident">dir_fd</span>, <span class="kw-2">&amp;</span><span class="ident">path</span>, <span class="bool-val">true</span>)<span class="question-mark">?</span>
+            <span class="ident">proc</span>.<span class="ident">lookup_inode_at</span>(<span class="ident">dir_fd</span>, <span class="ident">path</span>, <span class="bool-val">true</span>)<span class="question-mark">?</span>
         };
 
-        <span class="kw">let</span> <span class="ident">file</span> <span class="op">=</span> <span class="ident">File::new</span>(<span class="ident">inode</span>, <span class="ident">flags</span>, <span class="ident">path</span>);
+        <span class="kw">let</span> <span class="ident">file</span> <span class="op">=</span> <span class="ident">File::new</span>(<span class="ident">inode</span>, <span class="ident">flags</span>, <span class="ident">path</span>.<span class="ident">into</span>());
         <span class="kw">let</span> <span class="ident">fd</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">add_file</span>(<span class="ident">file</span>)<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(<span class="ident">fd</span>.<span class="ident">into</span>())
     }

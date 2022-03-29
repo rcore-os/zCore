@@ -97,14 +97,12 @@
 <span id="91">91</span>
 <span id="92">92</span>
 <span id="93">93</span>
-<span id="94">94</span>
-<span id="95">95</span>
 </pre><pre class="rust"><code><span class="kw">use</span> {<span class="kw">super</span>::<span class="kw-2">*</span>, <span class="ident">core::convert::TryFrom</span>};
 
 <span class="kw">impl</span> <span class="ident">Syscall</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span> {
-    <span class="doccomment">/// Creates a duplicate of handle.   </span>
+    <span class="doccomment">/// Creates a duplicate of handle.</span>
     <span class="doccomment">///</span>
-    <span class="doccomment">/// Referring to the same underlying object, with new access rights rights.  </span>
+    <span class="doccomment">/// Referring to the same underlying object, with new access rights rights.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_handle_duplicate</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">handle_value</span>: <span class="ident">HandleValue</span>,
@@ -134,7 +132,7 @@
         <span class="prelude-val">Ok</span>(())
     }
 
-    <span class="doccomment">/// Close a handle and reclaim the underlying object if no other handles to it exist.  </span>
+    <span class="doccomment">/// Close a handle and reclaim the underlying object if no other handles to it exist.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_handle_close</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">handle</span>: <span class="ident">HandleValue</span>) -&gt; <span class="ident">ZxResult</span> {
         <span class="macro">info!</span>(<span class="string">&quot;handle.close: handle={:?}&quot;</span>, <span class="ident">handle</span>);
         <span class="kw">if</span> <span class="ident">handle</span> <span class="op">==</span> <span class="ident">INVALID_HANDLE</span> {
@@ -145,7 +143,7 @@
         <span class="prelude-val">Ok</span>(())
     }
 
-    <span class="doccomment">/// Close a number of handles.  </span>
+    <span class="doccomment">/// Close a number of handles.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_handle_close_many</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">handles</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">HandleValue</span><span class="op">&gt;</span>,
@@ -156,19 +154,17 @@
             <span class="ident">handles</span>, <span class="ident">num_handles</span>,
         );
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>();
-        <span class="kw">let</span> <span class="ident">handles</span> <span class="op">=</span> <span class="ident">handles</span>.<span class="ident">read_array</span>(<span class="ident">num_handles</span>)<span class="question-mark">?</span>;
-        <span class="kw">for</span> <span class="ident">handle</span> <span class="kw">in</span> <span class="ident">handles</span> {
-            <span class="kw">if</span> <span class="ident">handle</span> <span class="op">==</span> <span class="ident">INVALID_HANDLE</span> {
-                <span class="kw">continue</span>;
+        <span class="kw">for</span> <span class="ident">handle</span> <span class="kw">in</span> <span class="ident">handles</span>.<span class="ident">as_slice</span>(<span class="ident">num_handles</span>)<span class="question-mark">?</span> {
+            <span class="kw">if</span> <span class="kw-2">*</span><span class="ident">handle</span> <span class="op">!</span><span class="op">=</span> <span class="ident">INVALID_HANDLE</span> {
+                <span class="ident">proc</span>.<span class="ident">remove_handle</span>(<span class="kw-2">*</span><span class="ident">handle</span>)<span class="question-mark">?</span>;
             }
-            <span class="ident">proc</span>.<span class="ident">remove_handle</span>(<span class="ident">handle</span>)<span class="question-mark">?</span>;
         }
         <span class="prelude-val">Ok</span>(())
     }
 
-    <span class="doccomment">/// Creates a replacement for handle.  </span>
+    <span class="doccomment">/// Creates a replacement for handle.</span>
     <span class="doccomment">///</span>
-    <span class="doccomment">/// Referring to the same underlying object, with new access rights rights.  </span>
+    <span class="doccomment">/// Referring to the same underlying object, with new access rights rights.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_handle_replace</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">handle_value</span>: <span class="ident">HandleValue</span>,

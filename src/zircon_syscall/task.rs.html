@@ -383,6 +383,8 @@
 <span id="377">377</span>
 <span id="378">378</span>
 <span id="379">379</span>
+<span id="380">380</span>
+<span id="381">381</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="ident">core::convert::TryFrom</span>;
 <span class="kw">use</span> {<span class="kw">super</span>::<span class="kw-2">*</span>, <span class="ident">zircon_object::task</span>::<span class="kw-2">*</span>};
 
@@ -399,7 +401,7 @@
         <span class="kw-2">mut</span> <span class="ident">proc_handle</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">HandleValue</span><span class="op">&gt;</span>,
         <span class="kw-2">mut</span> <span class="ident">vmar_handle</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">HandleValue</span><span class="op">&gt;</span>,
     ) -&gt; <span class="ident">ZxResult</span> {
-        <span class="kw">let</span> <span class="ident">name</span> <span class="op">=</span> <span class="ident">name</span>.<span class="ident">read_string</span>(<span class="ident">name_size</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">name</span> <span class="op">=</span> <span class="ident">name</span>.<span class="ident">as_str</span>(<span class="ident">name_size</span>)<span class="question-mark">?</span>;
         <span class="macro">info!</span>(
             <span class="string">&quot;proc.create: job={:#x?}, name={:?}, options={:#x?}&quot;</span>,
             <span class="ident">job</span>, <span class="ident">name</span>, <span class="ident">options</span>,
@@ -411,7 +413,7 @@
         <span class="kw">let</span> <span class="ident">job</span> <span class="op">=</span> <span class="ident">proc</span>
             .<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">Job</span><span class="op">&gt;</span>(<span class="ident">job</span>, <span class="ident">Rights::MANAGE_PROCESS</span>)
             .<span class="ident">or_else</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">proc</span>.<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">Job</span><span class="op">&gt;</span>(<span class="ident">job</span>, <span class="ident">Rights::WRITE</span>))<span class="question-mark">?</span>;
-        <span class="kw">let</span> <span class="ident">new_proc</span> <span class="op">=</span> <span class="ident">Process::create</span>(<span class="kw-2">&amp;</span><span class="ident">job</span>, <span class="kw-2">&amp;</span><span class="ident">name</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">new_proc</span> <span class="op">=</span> <span class="ident">Process::create</span>(<span class="kw-2">&amp;</span><span class="ident">job</span>, <span class="ident">name</span>)<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">new_vmar</span> <span class="op">=</span> <span class="ident">new_proc</span>.<span class="ident">vmar</span>();
         <span class="kw">let</span> <span class="ident">proc_handle_value</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">add_handle</span>(<span class="ident">Handle::new</span>(<span class="ident">new_proc</span>, <span class="ident">Rights::DEFAULT_PROCESS</span>));
         <span class="kw">let</span> <span class="ident">vmar_handle_value</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">add_handle</span>(<span class="ident">Handle::new</span>(
@@ -442,7 +444,7 @@
         <span class="ident">options</span>: <span class="ident">u32</span>,
         <span class="kw-2">mut</span> <span class="ident">thread_handle</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">HandleValue</span><span class="op">&gt;</span>,
     ) -&gt; <span class="ident">ZxResult</span> {
-        <span class="kw">let</span> <span class="ident">name</span> <span class="op">=</span> <span class="ident">name</span>.<span class="ident">read_string</span>(<span class="ident">name_size</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">name</span> <span class="op">=</span> <span class="ident">name</span>.<span class="ident">as_str</span>(<span class="ident">name_size</span>)<span class="question-mark">?</span>;
         <span class="macro">info!</span>(
             <span class="string">&quot;thread.create: proc={:#x?}, name={:?}, options={:#x?}&quot;</span>,
             <span class="ident">proc_handle</span>, <span class="ident">name</span>, <span class="ident">options</span>,
@@ -452,7 +454,7 @@
         }
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>();
         <span class="kw">let</span> <span class="ident">process</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">Process</span><span class="op">&gt;</span>(<span class="ident">proc_handle</span>, <span class="ident">Rights::MANAGE_THREAD</span>)<span class="question-mark">?</span>;
-        <span class="kw">let</span> <span class="ident">thread</span> <span class="op">=</span> <span class="ident">Thread::create</span>(<span class="kw-2">&amp;</span><span class="ident">process</span>, <span class="kw-2">&amp;</span><span class="ident">name</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">thread</span> <span class="op">=</span> <span class="ident">Thread::create</span>(<span class="kw-2">&amp;</span><span class="ident">process</span>, <span class="ident">name</span>)<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">handle</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">add_handle</span>(<span class="ident">Handle::new</span>(<span class="ident">thread</span>, <span class="ident">Rights::DEFAULT_THREAD</span>));
         <span class="ident">thread_handle</span>.<span class="ident">write</span>(<span class="ident">handle</span>)<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(())
@@ -531,11 +533,10 @@
             <span class="string">&quot;thread.write_state: handle={:#x?}, kind={:#x?}, buf=({:#x?}; {:#x?})&quot;</span>,
             <span class="ident">handle</span>, <span class="ident">kind</span>, <span class="ident">buffer</span>, <span class="ident">buffer_size</span>,
         );
-        <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>();
-        <span class="kw">let</span> <span class="ident">thread</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">Thread</span><span class="op">&gt;</span>(<span class="ident">handle</span>, <span class="ident">Rights::WRITE</span>)<span class="question-mark">?</span>;
-        <span class="kw">let</span> <span class="ident">buf</span> <span class="op">=</span> <span class="ident">buffer</span>.<span class="ident">read_array</span>(<span class="ident">buffer_size</span>)<span class="question-mark">?</span>;
-        <span class="ident">thread</span>.<span class="ident">write_state</span>(<span class="ident">kind</span>, <span class="kw-2">&amp;</span><span class="ident">buf</span>)<span class="question-mark">?</span>;
-        <span class="prelude-val">Ok</span>(())
+        <span class="self">self</span>.<span class="ident">thread</span>
+            .<span class="ident">proc</span>()
+            .<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">Thread</span><span class="op">&gt;</span>(<span class="ident">handle</span>, <span class="ident">Rights::WRITE</span>)<span class="question-mark">?</span>
+            .<span class="ident">write_state</span>(<span class="ident">kind</span>, <span class="ident">buffer</span>.<span class="ident">as_slice</span>(<span class="ident">buffer_size</span>)<span class="question-mark">?</span>)
     }
 
     <span class="doccomment">/// Sets process as critical to job.</span>
@@ -689,9 +690,10 @@
                     <span class="ident">JOB_POL_ABSOLUTE</span> =&gt; <span class="ident">SetPolicyOptions::Absolute</span>,
                     <span class="kw">_</span> =&gt; <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::INVALID_ARGS</span>),
                 };
-                <span class="kw">let</span> <span class="ident">all_policy</span> <span class="op">=</span>
-                    <span class="ident">UserInPtr</span>::<span class="op">&lt;</span><span class="ident">BasicPolicy</span><span class="op">&gt;</span><span class="ident">::from</span>(<span class="ident">policy</span>).<span class="ident">read_array</span>(<span class="ident">count</span> <span class="kw">as</span> <span class="ident">usize</span>)<span class="question-mark">?</span>;
-                <span class="ident">job</span>.<span class="ident">set_policy_basic</span>(<span class="ident">policy_option</span>, <span class="kw-2">&amp;</span><span class="ident">all_policy</span>)
+                <span class="ident">job</span>.<span class="ident">set_policy_basic</span>(
+                    <span class="ident">policy_option</span>,
+                    <span class="ident">UserInPtr::from</span>(<span class="ident">policy</span>).<span class="ident">as_slice</span>(<span class="ident">count</span> <span class="kw">as</span> <span class="ident">usize</span>)<span class="question-mark">?</span>,
+                )
             }
             <span class="comment">//JOB_POL_BASE_V2 =&gt; unimplemented!(),</span>
             <span class="ident">JOB_POL_TIMER_SLACK</span> =&gt; {
@@ -742,15 +744,17 @@
         <span class="kw-2">mut</span> <span class="ident">actual</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>,
     ) -&gt; <span class="ident">ZxResult</span> {
         <span class="kw">if</span> <span class="ident">buffer</span>.<span class="ident">is_null</span>() <span class="op">|</span><span class="op">|</span> <span class="ident">buffer_size</span> <span class="op">==</span> <span class="number">0</span> <span class="op">|</span><span class="op">|</span> <span class="ident">buffer_size</span> <span class="op">&gt;</span> <span class="ident">MAX_BLOCK</span> {
-            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::INVALID_ARGS</span>);
+            <span class="prelude-val">Err</span>(<span class="ident">ZxError::INVALID_ARGS</span>)
+        } <span class="kw">else</span> {
+            <span class="kw">let</span> <span class="ident">len</span> <span class="op">=</span> <span class="self">self</span>
+                .<span class="ident">thread</span>
+                .<span class="ident">proc</span>()
+                .<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">Process</span><span class="op">&gt;</span>(<span class="ident">handle_value</span>, <span class="ident">Rights::READ</span> <span class="op">|</span> <span class="ident">Rights::WRITE</span>)<span class="question-mark">?</span>
+                .<span class="ident">vmar</span>()
+                .<span class="ident">write_memory</span>(<span class="ident">vaddr</span>, <span class="ident">buffer</span>.<span class="ident">as_slice</span>(<span class="ident">buffer_size</span>)<span class="question-mark">?</span>)<span class="question-mark">?</span>;
+            <span class="ident">actual</span>.<span class="ident">write</span>(<span class="ident">len</span>)<span class="question-mark">?</span>;
+            <span class="prelude-val">Ok</span>(())
         }
-        <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>();
-        <span class="kw">let</span> <span class="ident">process</span> <span class="op">=</span>
-            <span class="ident">proc</span>.<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">Process</span><span class="op">&gt;</span>(<span class="ident">handle_value</span>, <span class="ident">Rights::READ</span> <span class="op">|</span> <span class="ident">Rights::WRITE</span>)<span class="question-mark">?</span>;
-        <span class="kw">let</span> <span class="ident">data</span> <span class="op">=</span> <span class="ident">buffer</span>.<span class="ident">read_array</span>(<span class="ident">buffer_size</span>)<span class="question-mark">?</span>;
-        <span class="kw">let</span> <span class="ident">len</span> <span class="op">=</span> <span class="ident">process</span>.<span class="ident">vmar</span>().<span class="ident">write_memory</span>(<span class="ident">vaddr</span>, <span class="kw-2">&amp;</span><span class="ident">data</span>)<span class="question-mark">?</span>;
-        <span class="ident">actual</span>.<span class="ident">write</span>(<span class="ident">len</span>)<span class="question-mark">?</span>;
-        <span class="prelude-val">Ok</span>(())
     }
 }
 

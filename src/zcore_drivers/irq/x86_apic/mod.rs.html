@@ -176,6 +176,8 @@
 <span id="170">170</span>
 <span id="171">171</span>
 <span id="172">172</span>
+<span id="173">173</span>
+<span id="174">174</span>
 </pre><pre class="rust"><code><span class="kw">mod</span> <span class="ident">consts</span>;
 <span class="kw">mod</span> <span class="ident">ioapic</span>;
 <span class="kw">mod</span> <span class="ident">lapic</span>;
@@ -196,6 +198,7 @@
 
 <span class="kw">type</span> <span class="ident">Phys2VirtFn</span> <span class="op">=</span> <span class="kw">fn</span>(<span class="ident">paddr</span>: <span class="ident">PhysAddr</span>) -&gt; <span class="ident">VirtAddr</span>;
 
+<span class="doccomment">/// Advanced Programmable Interrupt Controller</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Apic</span> {
     <span class="ident">ioapic_list</span>: <span class="ident">IoApicList</span>,
     <span class="ident">manager_ioapic</span>: <span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">IrqManager</span><span class="op">&lt;</span><span class="number">256</span><span class="op">&gt;</span><span class="op">&gt;</span>,
@@ -203,6 +206,7 @@
 }
 
 <span class="kw">impl</span> <span class="ident">Apic</span> {
+    <span class="doccomment">/// Construct a new `Apic`.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">acpi_rsdp</span>: <span class="ident">usize</span>, <span class="ident">phys_to_virt</span>: <span class="ident">Phys2VirtFn</span>) -&gt; <span class="self">Self</span> {
         <span class="self">Self</span> {
             <span class="ident">ioapic_list</span>: <span class="ident">IoApicList::new</span>(<span class="ident">acpi_rsdp</span>, <span class="ident">phys_to_virt</span>),

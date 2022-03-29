@@ -355,20 +355,129 @@
 <span id="349">349</span>
 <span id="350">350</span>
 <span id="351">351</span>
-</pre><pre class="rust"><code><span class="doccomment">//! Syscalls for process</span>
-<span class="doccomment">//!</span>
-<span class="doccomment">//! - fork</span>
-<span class="doccomment">//! - vfork</span>
-<span class="doccomment">//! - clone</span>
-<span class="doccomment">//! - wait4</span>
-<span class="doccomment">//! - execve</span>
-<span class="doccomment">//! - gettid</span>
-<span class="doccomment">//! - getpid</span>
-<span class="doccomment">//! - getppid</span>
-
-<span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
+<span id="352">352</span>
+<span id="353">353</span>
+<span id="354">354</span>
+<span id="355">355</span>
+<span id="356">356</span>
+<span id="357">357</span>
+<span id="358">358</span>
+<span id="359">359</span>
+<span id="360">360</span>
+<span id="361">361</span>
+<span id="362">362</span>
+<span id="363">363</span>
+<span id="364">364</span>
+<span id="365">365</span>
+<span id="366">366</span>
+<span id="367">367</span>
+<span id="368">368</span>
+<span id="369">369</span>
+<span id="370">370</span>
+<span id="371">371</span>
+<span id="372">372</span>
+<span id="373">373</span>
+<span id="374">374</span>
+<span id="375">375</span>
+<span id="376">376</span>
+<span id="377">377</span>
+<span id="378">378</span>
+<span id="379">379</span>
+<span id="380">380</span>
+<span id="381">381</span>
+<span id="382">382</span>
+<span id="383">383</span>
+<span id="384">384</span>
+<span id="385">385</span>
+<span id="386">386</span>
+<span id="387">387</span>
+<span id="388">388</span>
+<span id="389">389</span>
+<span id="390">390</span>
+<span id="391">391</span>
+<span id="392">392</span>
+<span id="393">393</span>
+<span id="394">394</span>
+<span id="395">395</span>
+<span id="396">396</span>
+<span id="397">397</span>
+<span id="398">398</span>
+<span id="399">399</span>
+<span id="400">400</span>
+<span id="401">401</span>
+<span id="402">402</span>
+<span id="403">403</span>
+<span id="404">404</span>
+<span id="405">405</span>
+<span id="406">406</span>
+<span id="407">407</span>
+<span id="408">408</span>
+<span id="409">409</span>
+<span id="410">410</span>
+<span id="411">411</span>
+<span id="412">412</span>
+<span id="413">413</span>
+<span id="414">414</span>
+<span id="415">415</span>
+<span id="416">416</span>
+<span id="417">417</span>
+<span id="418">418</span>
+<span id="419">419</span>
+<span id="420">420</span>
+<span id="421">421</span>
+<span id="422">422</span>
+<span id="423">423</span>
+<span id="424">424</span>
+<span id="425">425</span>
+<span id="426">426</span>
+<span id="427">427</span>
+<span id="428">428</span>
+<span id="429">429</span>
+<span id="430">430</span>
+<span id="431">431</span>
+<span id="432">432</span>
+<span id="433">433</span>
+<span id="434">434</span>
+<span id="435">435</span>
+<span id="436">436</span>
+<span id="437">437</span>
+<span id="438">438</span>
+<span id="439">439</span>
+<span id="440">440</span>
+<span id="441">441</span>
+<span id="442">442</span>
+<span id="443">443</span>
+<span id="444">444</span>
+<span id="445">445</span>
+<span id="446">446</span>
+<span id="447">447</span>
+<span id="448">448</span>
+<span id="449">449</span>
+<span id="450">450</span>
+<span id="451">451</span>
+<span id="452">452</span>
+<span id="453">453</span>
+<span id="454">454</span>
+<span id="455">455</span>
+<span id="456">456</span>
+<span id="457">457</span>
+<span id="458">458</span>
+<span id="459">459</span>
+<span id="460">460</span>
+<span id="461">461</span>
+<span id="462">462</span>
+<span id="463">463</span>
+<span id="464">464</span>
+<span id="465">465</span>
+<span id="466">466</span>
+<span id="467">467</span>
+<span id="468">468</span>
+<span id="469">469</span>
+<span id="470">470</span>
+</pre><pre class="rust"><code><span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
 <span class="kw">use</span> <span class="ident">core::fmt::Debug</span>;
 
+<span class="kw">use</span> <span class="ident">alloc::string::ToString</span>;
 <span class="kw">use</span> <span class="ident">bitflags::bitflags</span>;
 
 <span class="kw">use</span> <span class="ident">kernel_hal::context::UserContextField</span>;
@@ -376,8 +485,54 @@
 <span class="kw">use</span> <span class="ident">linux_object::time::TimeSpec</span>;
 <span class="kw">use</span> <span class="ident">linux_object</span>::{<span class="ident">fs::INodeExt</span>, <span class="ident">loader::LinuxElfLoader</span>};
 
+<span class="doccomment">/// Syscalls for process.</span>
+<span class="doccomment">///</span>
+<span class="doccomment">/// # Menu</span>
+<span class="doccomment">///</span>
+<span class="doccomment">/// - [`fork`](Self::sys_fork)</span>
+<span class="doccomment">/// - [`vfork`](Self::sys_vfork)</span>
+<span class="doccomment">/// - [`clone`](Self::sys_clone)</span>
+<span class="doccomment">/// - [`wait4`](Self::sys_wait4)</span>
+<span class="doccomment">/// - [`execve`](Self::sys_execve)</span>
+<span class="doccomment">/// - [`gettid`](Self::sys_gettid)</span>
+<span class="doccomment">/// - [`getpid`](Self::sys_getpid)</span>
+<span class="doccomment">/// - [`getppid`](Self::sys_getppid)</span>
+<span class="doccomment">/// - [`exit`](Self::sys_exit)</span>
+<span class="doccomment">/// - [`exit_group`](Self::sys_exit_group)</span>
+<span class="doccomment">/// - [`nanosleep`](Self::sys_nanosleep)</span>
+<span class="doccomment">/// - [`set_tid_address`](Self::sys_set_tid_address)</span>
 <span class="kw">impl</span> <span class="ident">Syscall</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span> {
-    <span class="doccomment">/// Fork the current process. Return the child&#39;s PID.</span>
+    <span class="doccomment">/// `fork` creates a new process by duplicating the calling process</span>
+    <span class="doccomment">/// (see [linux man fork(2)](https://www.man7.org/linux/man-pages/man2/fork.2.html)).</span>
+    <span class="doccomment">/// The new process is referred to as the child process.</span>
+    <span class="doccomment">/// The calling process is referred to as the parent process.</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// The child process and the parent process run in separate memory spaces.</span>
+    <span class="doccomment">/// At the time of `fork` both memory spaces have the same content.</span>
+    <span class="doccomment">/// Memory writes, file mappings ([`Self::sys_mmap`]) and unmappings ([`Self::sys_munmap`])</span>
+    <span class="doccomment">/// performed by one of the processes do not affect the other.</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// The child process is an exact duplicate of the parent process except for the following points:</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// - The child has its own unique process ID, and this PID does not match the ID of any existing process.</span>
+    <span class="doccomment">/// - The child&#39;s parent process ID is the same as the parent&#39;s process ID.</span>
+    <span class="doccomment">/// - Process resource utilizations ([`Self::sys_getrusage`]) and CPU time counters ([`Self::sys_times`]) are reset to zero in the child.</span>
+    <span class="doccomment">/// - The child does not inherit semaphore adjustments from its parent ([`Self::sys_semop`]).</span>
+    <span class="doccomment">/// - The child does not inherit process-associated record locks from its parent ([`Self::sys_fcntl`]).</span>
+    <span class="doccomment">///   (On the other hand, it does inherit [`Self::sys_fcntl`] open file description locks and [`Self::sys_flock`] locks from its parent.)</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// Note the following further points:</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// - The child process is created with a single thread—the one that called fork().</span>
+    <span class="doccomment">///   The entire virtual address space of the parent is replicated in the child,</span>
+    <span class="doccomment">///   including the states of mutexes and condition variables.</span>
+    <span class="doccomment">/// - After a `fork` in a multithreaded program,</span>
+    <span class="doccomment">///   the child can safely call only async-signal-safe functions</span>
+    <span class="doccomment">///   until such time as it calls [`Self::sys_execve`].</span>
+    <span class="doccomment">/// - The child inherits copies of the parent&#39;s set of open file descriptors.</span>
+    <span class="doccomment">///   Each file descriptor in the child refers to the same open file description (see [`Self::sys_open`])</span>
+    <span class="doccomment">///   as the corresponding file descriptor in the parent.</span>
+    <span class="doccomment">///   This means that the two file descriptors share open file status flags and file offset.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_fork</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">SysResult</span> {
         <span class="macro">info!</span>(<span class="string">&quot;fork:&quot;</span>);
         <span class="kw">let</span> <span class="ident">new_proc</span> <span class="op">=</span> <span class="ident">Process::fork_from</span>(<span class="self">self</span>.<span class="ident">zircon_process</span>(), <span class="bool-val">false</span>)<span class="question-mark">?</span>; <span class="comment">// old pt NULL here</span>
@@ -391,7 +546,13 @@
         <span class="prelude-val">Ok</span>(<span class="ident">new_proc</span>.<span class="ident">id</span>() <span class="kw">as</span> <span class="ident">usize</span>)
     }
 
-    <span class="doccomment">/// creates a child process of the calling process, similar to fork but wait for execve</span>
+    <span class="doccomment">/// `sys_vfork`, just like [`Self::sys_fork`], creates a child process of the calling process</span>
+    <span class="doccomment">/// (see [linux man vfork(2)](https://www.man7.org/linux/man-pages/man2/vfork.2.html)).</span>
+    <span class="doccomment">/// For details, see [`Self::sys_fork`].</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// `sys_vfork` differs from [`Self::sys_fork`] in that the calling thread is suspended until the child terminates</span>
+    <span class="doccomment">/// (either normally, by calling [`Self::sys_exit`], or abnormally, after delivery of a fatal signal),</span>
+    <span class="doccomment">/// or it makes a call to [`Self::sys_execve`].</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">sys_vfork</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">SysResult</span> {
         <span class="macro">info!</span>(<span class="string">&quot;vfork:&quot;</span>);
         <span class="kw">let</span> <span class="ident">new_proc</span> <span class="op">=</span> <span class="ident">Process::fork_from</span>(<span class="self">self</span>.<span class="ident">zircon_process</span>(), <span class="bool-val">true</span>)<span class="question-mark">?</span>;
@@ -411,11 +572,14 @@
         <span class="prelude-val">Ok</span>(<span class="ident">new_proc</span>.<span class="ident">id</span>() <span class="kw">as</span> <span class="ident">usize</span>)
     }
 
-    <span class="doccomment">/// Create a new thread in the current process.</span>
+    <span class="doccomment">/// `sys_clone` create a new thread in the current process.</span>
     <span class="doccomment">/// The new thread&#39;s stack pointer will be set to `newsp`,</span>
     <span class="doccomment">/// and thread pointer will be set to `newtls`.</span>
-    <span class="doccomment">/// The child tid will be stored at both `parent_tid` and `child_tid`.</span>
-    <span class="doccomment">/// This is partially implemented for musl only.</span>
+    <span class="doccomment">/// The child TID will be stored at both `parent_tid` and `child_tid`.</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// &gt; **NOTE!** This system call is not exactly the same as `clone` in Linux.</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// &gt; **NOTE!** This is partially implemented for `musl` only.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_clone</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">flags</span>: <span class="ident">usize</span>,
@@ -456,9 +620,45 @@
         <span class="prelude-val">Ok</span>(<span class="ident">tid</span> <span class="kw">as</span> <span class="ident">usize</span>)
     }
 
-    <span class="doccomment">/// Wait for a child process exited.</span>
+    <span class="doccomment">/// `sys_wait4` suspends execution of the calling thread</span>
+    <span class="doccomment">/// until a child specified by `pid` argument has changed state</span>
+    <span class="doccomment">/// (see [linux man wait4(2)](https://www.man7.org/linux/man-pages/man2/wait4.2.html)).</span>
+    <span class="doccomment">/// By default, `sys_wait4` waits only for terminated children,</span>
+    <span class="doccomment">/// but this behavior is modifiable via the options argument, as described below.</span>
     <span class="doccomment">///</span>
-    <span class="doccomment">/// Return the PID. Store exit code to `wstatus` if it&#39;s not null.</span>
+    <span class="doccomment">/// The value of `pid` can be:</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// - **-1**: meaning wait for any child process.</span>
+    <span class="doccomment">/// - **0**: meaning wait for any child process whose process group ID is equal to</span>
+    <span class="doccomment">///          that of the calling process at the time of the call to `sys_wait4`.</span>
+    <span class="doccomment">/// - **&gt;0**: meaning wait for the child whose process ID is equal to the value of `pid`.</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// The value of options is an OR of zero or more of the following constants:</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// - **NOHANG**    = 0x000_0001;</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">///   TODO</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// - **STOPPED**   = 0x000_0002;</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">///   TODO</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// - **EXITED**    = 0x000_0004;</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">///   TODO</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// - **CONTINUED** = 0x000_0008;</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">///   TODO</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// - **NOWAIT**    = 0x100_0000;</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">///   TODO</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// On success, returns the process ID of the child whose state has changed;</span>
+    <span class="doccomment">/// if `NOHANG` flag was specified and one or more child(ren) specified by pid exist,</span>
+    <span class="doccomment">/// but have not yet changed state, then 0 is returned.</span>
+    <span class="doccomment">/// On failure, -1 is returned.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">sys_wait4</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">pid</span>: <span class="ident">i32</span>,
@@ -502,25 +702,34 @@
         <span class="prelude-val">Ok</span>(<span class="ident">pid</span> <span class="kw">as</span> <span class="ident">usize</span>)
     }
 
-    <span class="doccomment">/// Replaces the current ** process ** with a new process image</span>
+    <span class="doccomment">/// `sys_execve` executes the program referred to by `path`</span>
+    <span class="doccomment">/// (see [linux man execve(2)](https://www.man7.org/linux/man-pages/man2/execve.2.html)).</span>
+    <span class="doccomment">/// This causes the program that is currently being run</span>
+    <span class="doccomment">/// by the calling process to be replaced with a new program,</span>
+    <span class="doccomment">/// with newly initialized stack, heap, and (initialized and uninitialized) data segments.</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// `path` argument must be a binary executable file.</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// `argv` is an array of argument strings passed to the new program.</span>
+    <span class="doccomment">/// By convention, the first of these strings (i.e., `argv[0]`)</span>
+    <span class="doccomment">/// should contain the filename associated with the file being executed.</span>
+    <span class="doccomment">///</span>
     <span class="doccomment">/// `envp` is an array of strings, conventionally of the form `key=value`,</span>
     <span class="doccomment">/// which are passed as environment to the new program.</span>
     <span class="doccomment">///</span>
-    <span class="doccomment">/// NOTICE: `argv` &amp; `envp` can not be NULL (different from Linux)</span>
+    <span class="doccomment">/// &gt; **NOTE!** Differ from linux, `argv` &amp; `envp` can not be NULL.</span>
     <span class="doccomment">///</span>
-    <span class="doccomment">/// NOTICE: for multi-thread programs</span>
-    <span class="doccomment">/// A call to any exec function from a process with more than one thread</span>
-    <span class="doccomment">/// shall result in all threads being terminated and the new executable image</span>
-    <span class="doccomment">/// being loaded and executed.</span>
+    <span class="doccomment">/// &gt; **NOTE!** For multi-thread programs,</span>
+    <span class="doccomment">///             A call to any exec function from a process with more than one thread</span>
+    <span class="doccomment">///             shall result in all threads being terminated and the new executable image</span>
+    <span class="doccomment">///             being loaded and executed.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_execve</span>(
         <span class="kw-2">&amp;mut</span> <span class="self">self</span>,
         <span class="ident">path</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>,
         <span class="ident">argv</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span><span class="op">&gt;</span>,
         <span class="ident">envp</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     ) -&gt; <span class="ident">SysResult</span> {
-        <span class="kw">let</span> <span class="ident">path</span> <span class="op">=</span> <span class="ident">path</span>.<span class="ident">read_cstring</span>()<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">path</span> <span class="op">=</span> <span class="ident">path</span>.<span class="ident">as_c_str</span>()<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">args</span> <span class="op">=</span> <span class="ident">argv</span>.<span class="ident">read_cstring_array</span>()<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">envs</span> <span class="op">=</span> <span class="ident">envp</span>.<span class="ident">read_cstring_array</span>()<span class="question-mark">?</span>;
         <span class="macro">info!</span>(
@@ -536,22 +745,26 @@
 
         <span class="comment">// Read program file</span>
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>();
-        <span class="kw">let</span> <span class="ident">inode</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">lookup_inode</span>(<span class="kw-2">&amp;</span><span class="ident">path</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">inode</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">lookup_inode</span>(<span class="ident">path</span>)<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">data</span> <span class="op">=</span> <span class="ident">inode</span>.<span class="ident">read_as_vec</span>()<span class="question-mark">?</span>;
 
         <span class="ident">proc</span>.<span class="ident">remove_cloexec_files</span>();
 
+        <span class="comment">// 注意！即将销毁旧应用程序的用户空间，现在将必要的信息拷贝到内核！</span>
+        <span class="comment">// Notice! About to destroy the user space of the old application, now copy the necessary information into kernel!</span>
+        <span class="kw">let</span> <span class="ident">path</span> <span class="op">=</span> <span class="ident">path</span>.<span class="ident">to_string</span>();
         <span class="kw">let</span> <span class="ident">vmar</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">zircon_process</span>().<span class="ident">vmar</span>();
         <span class="ident">vmar</span>.<span class="ident">clear</span>()<span class="question-mark">?</span>;
-        <span class="kw">let</span> <span class="ident">loader</span> <span class="op">=</span> <span class="ident">LinuxElfLoader</span> {
-            <span class="ident">syscall_entry</span>: <span class="self">self</span>.<span class="ident">syscall_entry</span>,
-            <span class="ident">stack_pages</span>: <span class="number">8</span>,
-            <span class="ident">root_inode</span>: <span class="ident">proc</span>.<span class="ident">root_inode</span>().<span class="ident">clone</span>(),
-        };
-        <span class="kw">let</span> (<span class="ident">entry</span>, <span class="ident">sp</span>) <span class="op">=</span> <span class="ident">loader</span>.<span class="ident">load</span>(<span class="kw-2">&amp;</span><span class="ident">vmar</span>, <span class="kw-2">&amp;</span><span class="ident">data</span>, <span class="ident">args</span>, <span class="ident">envs</span>, <span class="ident">path</span>.<span class="ident">clone</span>())<span class="question-mark">?</span>;
 
         <span class="comment">// Modify exec path</span>
         <span class="ident">proc</span>.<span class="ident">set_execute_path</span>(<span class="kw-2">&amp;</span><span class="ident">path</span>);
+
+        <span class="kw">let</span> (<span class="ident">entry</span>, <span class="ident">sp</span>) <span class="op">=</span> <span class="ident">LinuxElfLoader</span> {
+            <span class="ident">syscall_entry</span>: <span class="self">self</span>.<span class="ident">syscall_entry</span>,
+            <span class="ident">stack_pages</span>: <span class="number">8</span>,
+            <span class="ident">root_inode</span>: <span class="ident">proc</span>.<span class="ident">root_inode</span>().<span class="ident">clone</span>(),
+        }
+        .<span class="ident">load</span>(<span class="kw-2">&amp;</span><span class="ident">vmar</span>, <span class="kw-2">&amp;</span><span class="ident">data</span>, <span class="ident">args</span>, <span class="ident">envs</span>, <span class="ident">path</span>)<span class="question-mark">?</span>;
 
         <span class="comment">// TODO: use right signal</span>
         <span class="comment">// self.zircon_process().signal_set(Signal::SIGNALED);</span>
@@ -590,14 +803,18 @@
     <span class="comment">//        }</span>
     <span class="comment">//    }</span>
 
-    <span class="doccomment">/// Get the current thread ID.</span>
+    <span class="doccomment">/// `sys_gettid` returns the caller&#39;s thread ID (TID)</span>
+    <span class="doccomment">/// (see [linux man gettid(2)](https://www.man7.org/linux/man-pages/man2/gettid.2.html)).</span>
+    <span class="doccomment">/// In a single-threaded process, the thread ID is equal to the process ID (PID, as returned by [`Self::sys_getpid`]).</span>
+    <span class="doccomment">/// In a multithreaded process, all threads have the same PID, but each one has a unique TID.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_gettid</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">SysResult</span> {
         <span class="macro">info!</span>(<span class="string">&quot;gettid:&quot;</span>);
         <span class="kw">let</span> <span class="ident">tid</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">id</span>();
         <span class="prelude-val">Ok</span>(<span class="ident">tid</span> <span class="kw">as</span> <span class="ident">usize</span>)
     }
 
-    <span class="doccomment">/// Get the current process ID.</span>
+    <span class="doccomment">/// `sys_getpid` returns the process ID (PID) of the calling process</span>
+    <span class="doccomment">/// (see [linux man getpid(2)](https://www.man7.org/linux/man-pages/man2/getpid.2.html)).</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_getpid</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">SysResult</span> {
         <span class="macro">info!</span>(<span class="string">&quot;getpid:&quot;</span>);
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">zircon_process</span>();
@@ -605,7 +822,10 @@
         <span class="prelude-val">Ok</span>(<span class="ident">pid</span> <span class="kw">as</span> <span class="ident">usize</span>)
     }
 
-    <span class="doccomment">/// Get the parent process ID.</span>
+    <span class="doccomment">/// `sys_getppid` returns the process ID of the parent of the calling process</span>
+    <span class="doccomment">/// (see [linux man getppid(2)](https://www.man7.org/linux/man-pages/man2/getpid.2.html)).</span>
+    <span class="doccomment">/// This will be either the ID of the process that created this process using fork(),</span>
+    <span class="doccomment">/// or, if that process has already terminated, 0.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_getppid</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">SysResult</span> {
         <span class="macro">info!</span>(<span class="string">&quot;getppid:&quot;</span>);
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>();
@@ -613,14 +833,23 @@
         <span class="prelude-val">Ok</span>(<span class="ident">ppid</span> <span class="kw">as</span> <span class="ident">usize</span>)
     }
 
-    <span class="doccomment">/// Exit the current thread</span>
+    <span class="doccomment">/// `sys_exit` system call terminates only the calling thread</span>
+    <span class="doccomment">/// (see [linux man _exit(2)](https://www.man7.org/linux/man-pages/man2/exit.2.html),</span>
+    <span class="doccomment">/// this syscall is same as a raw `_exit` in glibc),</span>
+    <span class="doccomment">/// and actions such as reparenting child processes or sending</span>
+    <span class="doccomment">/// SIGCHLD to the parent process are performed only if this is the</span>
+    <span class="doccomment">/// last thread in the thread group.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_exit</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>, <span class="ident">exit_code</span>: <span class="ident">i32</span>) -&gt; <span class="ident">SysResult</span> {
         <span class="macro">info!</span>(<span class="string">&quot;exit: code={}&quot;</span>, <span class="ident">exit_code</span>);
         <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">exit_linux</span>(<span class="ident">exit_code</span>);
         <span class="prelude-val">Err</span>(<span class="ident">LxError::ENOSYS</span>)
     }
 
-    <span class="doccomment">/// Exit the current thread group (i.e. process)</span>
+    <span class="doccomment">/// `sys_exit_group` is equivalent to [`Self::sys_exit`]</span>
+    <span class="doccomment">/// except that it terminates not only the calling thread</span>
+    <span class="doccomment">/// (see [linux man exit_group(2)](https://www.man7.org/linux/man-pages/man2/exit_group.2.html),</span>
+    <span class="doccomment">/// but all threads in the calling process&#39;s thread group.</span>
+    <span class="doccomment">/// As a result, the entire calling process will exit.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_exit_group</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>, <span class="ident">exit_code</span>: <span class="ident">i32</span>) -&gt; <span class="ident">SysResult</span> {
         <span class="macro">info!</span>(<span class="string">&quot;exit_group: code={}&quot;</span>, <span class="ident">exit_code</span>);
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">zircon_process</span>();
@@ -630,6 +859,14 @@
 
     <span class="doccomment">/// Allows the calling thread to sleep for</span>
     <span class="doccomment">/// an interval specified with nanosecond precision</span>
+    <span class="doccomment">/// (see [linux man nanosleep(2)](https://www.man7.org/linux/man-pages/man2/nanosleep.2.html).</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// `nanosleep` suspends the execution of the calling thread</span>
+    <span class="doccomment">/// until either at least the time specified in `req` has elapsed,</span>
+    <span class="doccomment">/// or the delivery of a signal that triggers the invocation of a handler</span>
+    <span class="doccomment">/// in the calling thread or that terminates the process.</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// To represent a duration, see [`TimeSpec`].</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">sys_nanosleep</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">req</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">TimeSpec</span><span class="op">&gt;</span>) -&gt; <span class="ident">SysResult</span> {
         <span class="macro">info!</span>(<span class="string">&quot;nanosleep: deadline={:?}&quot;</span>, <span class="ident">req</span>);
         <span class="kw">let</span> <span class="ident">duration</span> <span class="op">=</span> <span class="ident">req</span>.<span class="ident">read</span>()<span class="question-mark">?</span>.<span class="ident">into</span>();
@@ -644,8 +881,9 @@
     <span class="comment">//        Ok(0)</span>
     <span class="comment">//    }</span>
 
-    <span class="doccomment">/// set pointer to thread ID</span>
-    <span class="doccomment">/// returns the caller&#39;s thread ID</span>
+    <span class="doccomment">/// `set_tid_address` sets the clear_child_tid value for the calling thread to `tidptr`,</span>
+    <span class="doccomment">/// and return the caller&#39;s thread ID</span>
+    <span class="doccomment">/// (see [linux man set_tid_address(2)](https://www.man7.org/linux/man-pages/man2/set_tid_address.2.html).</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_set_tid_address</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">tidptr</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">i32</span><span class="op">&gt;</span>) -&gt; <span class="ident">SysResult</span> {
         <span class="macro">info!</span>(<span class="string">&quot;set_tid_address: {:?}&quot;</span>, <span class="ident">tidptr</span>);
         <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">set_tid_address</span>(<span class="ident">tidptr</span>);

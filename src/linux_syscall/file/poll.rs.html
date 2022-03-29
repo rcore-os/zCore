@@ -346,8 +346,6 @@
 <span id="340">340</span>
 <span id="341">341</span>
 <span id="342">342</span>
-<span id="343">343</span>
-<span id="344">344</span>
 </pre><pre class="rust"><code><span class="doccomment">//! IO Multiplex operations</span>
 <span class="doccomment">//!</span>
 <span class="doccomment">//! - select, pselect</span>
@@ -657,10 +655,8 @@
             <span class="kw">if</span> <span class="ident">len</span> <span class="op">&gt;</span> <span class="ident">MAX_FDSET_SIZE</span> {
                 <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">LxError::EINVAL</span>);
             }
-            <span class="kw">let</span> <span class="ident">slice</span> <span class="op">=</span> <span class="ident">addr</span>.<span class="ident">read_array</span>(<span class="ident">len</span>)<span class="question-mark">?</span>;
-
             <span class="comment">// save the fdset, and clear it</span>
-            <span class="kw">let</span> <span class="ident">origin</span> <span class="op">=</span> <span class="ident">BitVec::from_vec</span>(<span class="ident">slice</span>);
+            <span class="kw">let</span> <span class="ident">origin</span> <span class="op">=</span> <span class="ident">BitVec::from_slice</span>(<span class="ident">addr</span>.<span class="ident">as_slice</span>(<span class="ident">len</span>)<span class="question-mark">?</span>).<span class="ident">unwrap</span>();
             <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">vec0</span> <span class="op">=</span> <span class="ident">Vec</span>::<span class="op">&lt;</span><span class="ident">u32</span><span class="op">&gt;</span><span class="ident">::new</span>();
             <span class="ident">vec0</span>.<span class="ident">resize</span>(<span class="ident">len</span>, <span class="number">0</span>);
             <span class="ident">addr</span>.<span class="ident">write_array</span>(<span class="kw-2">&amp;</span><span class="ident">vec0</span>)<span class="question-mark">?</span>;

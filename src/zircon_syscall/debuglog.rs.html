@@ -146,12 +146,12 @@
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::INVALID_ARGS</span>);
         }
         <span class="kw">let</span> <span class="ident">datalen</span> <span class="op">=</span> <span class="ident">len</span>.<span class="ident">min</span>(<span class="number">224</span>);
-        <span class="kw">let</span> <span class="ident">data</span> <span class="op">=</span> <span class="ident">buf</span>.<span class="ident">read_string</span>(<span class="ident">datalen</span> <span class="kw">as</span> <span class="ident">usize</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">data</span> <span class="op">=</span> <span class="ident">buf</span>.<span class="ident">as_str</span>(<span class="ident">datalen</span> <span class="kw">as</span> <span class="ident">usize</span>)<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">proc</span>();
         <span class="kw">let</span> <span class="ident">dlog</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_object_with_rights</span>::<span class="op">&lt;</span><span class="ident">DebugLog</span><span class="op">&gt;</span>(<span class="ident">handle_value</span>, <span class="ident">Rights::WRITE</span>)<span class="question-mark">?</span>;
-        <span class="ident">dlog</span>.<span class="ident">write</span>(<span class="ident">Severity::Info</span>, <span class="ident">options</span>, <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">id</span>(), <span class="ident">proc</span>.<span class="ident">id</span>(), <span class="kw-2">&amp;</span><span class="ident">data</span>);
+        <span class="ident">dlog</span>.<span class="ident">write</span>(<span class="ident">Severity::Info</span>, <span class="ident">options</span>, <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">id</span>(), <span class="ident">proc</span>.<span class="ident">id</span>(), <span class="ident">data</span>);
         <span class="comment">// print to kernel console</span>
-        <span class="ident">kernel_hal::console::console_write_str</span>(<span class="kw-2">&amp;</span><span class="ident">data</span>);
+        <span class="ident">kernel_hal::console::console_write_str</span>(<span class="ident">data</span>);
         <span class="kw">if</span> <span class="ident">data</span>.<span class="ident">as_bytes</span>().<span class="ident">last</span>() <span class="op">!</span><span class="op">=</span> <span class="prelude-val">Some</span>(<span class="kw-2">&amp;</span><span class="string">b&#39;\n&#39;</span>) {
             <span class="ident">kernel_hal::console::console_write_str</span>(<span class="string">&quot;\n&quot;</span>);
         }

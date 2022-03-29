@@ -389,7 +389,6 @@
 <span id="383">383</span>
 <span id="384">384</span>
 <span id="385">385</span>
-<span id="386">386</span>
 </pre><pre class="rust"><code><span class="doccomment">//! Zircon syscall implementations</span>
 
 <span class="attribute">#![<span class="ident">no_std</span>]</span>
@@ -700,7 +699,6 @@
                 <span class="comment">// atomic_store_explicit(value_ptr, new_value, memory_order_release)</span>
                 <span class="ident">UserInPtr</span>::<span class="op">&lt;</span><span class="ident">AtomicI32</span><span class="op">&gt;</span><span class="ident">::from</span>(<span class="ident">a0</span>)
                     .<span class="ident">as_ref</span>()
-                    .<span class="ident">unwrap</span>()
                     .<span class="ident">store</span>(<span class="ident">a2</span> <span class="kw">as</span> <span class="ident">i32</span>, <span class="ident">Ordering::Release</span>);
                 <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">sys_futex_wake</span>(<span class="ident">a0</span>.<span class="ident">into</span>(), <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>);
                 <span class="kw">let</span> <span class="kw">_</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">sys_handle_close</span>(<span class="ident">a3</span> <span class="kw">as</span> <span class="kw">_</span>);
