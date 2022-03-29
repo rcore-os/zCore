@@ -71,8 +71,7 @@ impl Syscall<'_> {
         if offset as usize > vmo.len() || buf_size > vmo.len() - (offset as usize) {
             return Err(ZxError::OUT_OF_RANGE);
         }
-        vmo.write(offset as usize, &buf.read_array(buf_size)?)?;
-        Ok(())
+        vmo.write(offset as usize, buf.as_slice(buf_size)?)
     }
 
     /// Add execute rights to a VMO.

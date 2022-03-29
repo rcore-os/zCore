@@ -5,6 +5,7 @@ use core::ops::Range;
 use super::Scheme;
 use crate::DeviceResult;
 
+/// A type alias for
 pub type IrqHandler = Box<dyn Fn() + Send + Sync>;
 
 #[derive(Debug)]

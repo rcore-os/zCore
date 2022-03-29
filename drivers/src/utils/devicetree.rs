@@ -1,9 +1,9 @@
-use alloc::vec::Vec;
-use core::ops::Range;
-
-use device_tree::{DeviceTree as DeviceTreeInner, PropError};
+//! Package of [`device_tree`].
 
 use crate::{DeviceError, DeviceResult, PhysAddr, VirtAddr};
+use alloc::vec::Vec;
+use core::ops::Range;
+use device_tree::{DeviceTree as DeviceTreeInner, PropError};
 
 pub use device_tree::{util::StringList, Node};
 

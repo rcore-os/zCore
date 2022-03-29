@@ -42,15 +42,18 @@ impl Syscall<'_> {
             "fifo.write: handle={:?}, item_size={}, count={:#x}",
             handle_value, elem_size, count
         );
-        if count == 0 {
-            return Err(ZxError::OUT_OF_RANGE);
+        if count != 0 {
+            let data = user_bytes.as_slice(count * elem_size)?;
+            let actual_count = self
+                .thread
+                .proc()
+                .get_object_with_rights::<Fifo>(handle_value, Rights::WRITE)?
+                .write(elem_size, data, count)?;
+            actual_count_ptr.write_if_not_null(actual_count)?;
+            Ok(())
+        } else {
+            Err(ZxError::OUT_OF_RANGE)
         }
-        let proc = self.thread.proc();
-        let fifo = proc.get_object_with_rights::<Fifo>(handle_value, Rights::WRITE)?;
-        let data = user_bytes.read_array(count * elem_size)?;
-        let actual_count = fifo.write(elem_size, &data, count)?;
-        actual_count_ptr.write_if_not_null(actual_count)?;
-        Ok(())
     }
 
     /// Read data from a fifo.

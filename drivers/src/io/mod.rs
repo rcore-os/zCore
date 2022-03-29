@@ -1,3 +1,5 @@
+//! General MMIO and PIO device driver.
+
 use core::ops::{BitAnd, BitOr, Not};
 
 mod mmio;
