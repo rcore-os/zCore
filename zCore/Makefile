@@ -137,6 +137,7 @@ ifeq ($(ARCH), x86_64)
 		-cpu Haswell,+smap,-check,-fsgsbase \
 		-m 1G \
 		-serial mon:stdio \
+		-serial file:/tmp/serial.out \
 		-drive format=raw,if=pflash,readonly=on,file=$(ovmf) \
 		-drive format=raw,file=fat:rw:$(esp) \
 		-nic none
@@ -147,6 +148,7 @@ else ifeq ($(ARCH), riscv64)
 		-m 512M \
 		-no-reboot \
 		-serial mon:stdio \
+		-serial file:/tmp/serial.out \
 		-kernel $(kernel_img) \
 		-initrd $(USER_IMG) \
 		-append "$(CMDLINE)"
