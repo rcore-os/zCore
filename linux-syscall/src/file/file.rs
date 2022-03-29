@@ -456,14 +456,7 @@ impl Syscall<'_> {
     pub fn sys_fstatfs(&self, fd: FileDesc, mut buf: UserOutPtr<StatFs>) -> SysResult {
         info!("statfs: fd={:?}, buf={:?}", fd, buf);
 
-        let info = self
-            .linux_process()
-            .get_file_like(fd)?
-            .downcast_arc::<File>()
-            .map_err(|_| LxError::EBADF)?
-            .inode()
-            .fs()
-            .info();
+        let info = self.linux_process().get_file(fd)?.inode().fs().info();
         buf.write(info.into())?;
         Ok(0)
     }

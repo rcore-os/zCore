@@ -29,7 +29,7 @@ libos = ["kernel-hal/libos", "zircon-object/aspace-separate"]
 [dev-dependencies]
 env_logger = "0.9"
 async-std = { version = "1.10", features = ["attributes"] }
-rcore-fs-hostfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "1ec3cdc" }
+rcore-fs-hostfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "1a3246b" }
 
 [[example]]
 name = "linux-libos"
