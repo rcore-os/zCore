@@ -1,6 +1,7 @@
 use super::*;
 use core::fmt::Debug;
 
+use alloc::string::ToString;
 use bitflags::bitflags;
 
 use kernel_hal::context::UserContextField;
@@ -273,17 +274,21 @@ impl Syscall<'_> {
 
         proc.remove_cloexec_files();
 
+        // 注意！即将销毁旧应用程序的用户空间，现在将必要的信息拷贝到内核！
+        // Notice! About to destroy the user space of the old application, now copy the necessary information into kernel!
+        let path = path.to_string();
         let vmar = self.zircon_process().vmar();
         vmar.clear()?;
-        let loader = LinuxElfLoader {
+
+        // Modify exec path
+        proc.set_execute_path(&path);
+
+        let (entry, sp) = LinuxElfLoader {
             syscall_entry: self.syscall_entry,
             stack_pages: 8,
             root_inode: proc.root_inode().clone(),
-        };
-        let (entry, sp) = loader.load(&vmar, &data, args, envs, path.into())?;
-
-        // Modify exec path
-        proc.set_execute_path(path);
+        }
+        .load(&vmar, &data, args, envs, path)?;
 
         // TODO: use right signal
         // self.zircon_process().signal_set(Signal::SIGNALED);
