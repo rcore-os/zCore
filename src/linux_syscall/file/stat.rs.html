@@ -296,9 +296,6 @@
 <span id="290">290</span>
 <span id="291">291</span>
 <span id="292">292</span>
-<span id="293">293</span>
-<span id="294">294</span>
-<span id="295">295</span>
 </pre><pre class="rust"><code><span class="doccomment">//! File status</span>
 <span class="doccomment">//!</span>
 <span class="doccomment">//! - stat</span>
@@ -327,10 +324,9 @@
     <span class="doccomment">/// - `stat_ptr` – pointer to stat buffer</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_fstat</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">fd</span>: <span class="ident">FileDesc</span>, <span class="kw-2">mut</span> <span class="ident">stat_ptr</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">Stat</span><span class="op">&gt;</span>) -&gt; <span class="ident">SysResult</span> {
         <span class="macro">info!</span>(<span class="string">&quot;fstat: fd={:?}, stat_ptr={:?}&quot;</span>, <span class="ident">fd</span>, <span class="ident">stat_ptr</span>);
-        <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>();
-        <span class="kw">let</span> <span class="ident">file</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_file</span>(<span class="ident">fd</span>)<span class="question-mark">?</span>;
-        <span class="kw">let</span> <span class="ident">stat</span> <span class="op">=</span> <span class="ident">Stat::from</span>(<span class="ident">file</span>.<span class="ident">metadata</span>()<span class="question-mark">?</span>);
-        <span class="ident">stat_ptr</span>.<span class="ident">write</span>(<span class="ident">stat</span>)<span class="question-mark">?</span>;
+
+        <span class="kw">let</span> <span class="ident">meta</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>().<span class="ident">get_file</span>(<span class="ident">fd</span>)<span class="question-mark">?</span>.<span class="ident">metadata</span>()<span class="question-mark">?</span>;
+        <span class="ident">stat_ptr</span>.<span class="ident">write</span>(<span class="ident">meta</span>.<span class="ident">into</span>())<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(<span class="number">0</span>)
     }
 
@@ -349,11 +345,10 @@
             <span class="ident">dirfd</span>, <span class="ident">path</span>, <span class="ident">stat_ptr</span>, <span class="ident">flags</span>
         );
 
-        <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>();
         <span class="kw">let</span> <span class="ident">follow</span> <span class="op">=</span> <span class="op">!</span><span class="ident">flags</span>.<span class="ident">contains</span>(<span class="ident">AtFlags::SYMLINK_NOFOLLOW</span>);
-        <span class="kw">let</span> <span class="ident">inode</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">lookup_inode_at</span>(<span class="ident">dirfd</span>, <span class="ident">path</span>, <span class="ident">follow</span>)<span class="question-mark">?</span>;
-        <span class="kw">let</span> <span class="ident">stat</span> <span class="op">=</span> <span class="ident">Stat::from</span>(<span class="ident">inode</span>.<span class="ident">metadata</span>()<span class="question-mark">?</span>);
-        <span class="ident">stat_ptr</span>.<span class="ident">write</span>(<span class="ident">stat</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">inode</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>().<span class="ident">lookup_inode_at</span>(<span class="ident">dirfd</span>, <span class="ident">path</span>, <span class="ident">follow</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">stat</span> <span class="op">=</span> <span class="ident">inode</span>.<span class="ident">metadata</span>()<span class="question-mark">?</span>;
+        <span class="ident">stat_ptr</span>.<span class="ident">write</span>(<span class="ident">stat</span>.<span class="ident">into</span>())<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(<span class="number">0</span>)
     }
 
@@ -366,21 +361,21 @@
 }
 
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">not</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;mips&quot;</span>))]</span>
-<span class="kw">use</span> <span class="ident">linux_object::fs::vfs::Timespec</span>;
+<span class="kw">use</span> <span class="ident">linux_object::time::TimeSpec</span>;
 
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;mips&quot;</span>)]</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Copy</span>, <span class="ident">Clone</span>, <span class="ident">PartialEq</span>, <span class="ident">Eq</span>, <span class="ident">PartialOrd</span>, <span class="ident">Ord</span>, <span class="ident">Debug</span>, <span class="ident">Hash</span>)]</span>
-<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Timespec</span> {
+<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">TimeSpec</span> {
     <span class="kw">pub</span> <span class="ident">sec</span>: <span class="ident">i32</span>,
     <span class="kw">pub</span> <span class="ident">nsec</span>: <span class="ident">i32</span>,
 }
 
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;mips&quot;</span>)]</span>
-<span class="kw">impl</span> <span class="ident">From</span><span class="op">&lt;</span><span class="ident">linux_object::fs::vfs::Timespec</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">Timespec</span> {
-    <span class="kw">fn</span> <span class="ident">from</span>(<span class="ident">t</span>: <span class="ident">Timespec</span>) -&gt; <span class="self">Self</span> {
-        <span class="ident">Timespec</span> {
+<span class="kw">impl</span> <span class="ident">From</span><span class="op">&lt;</span><span class="ident">linux_object::fs::vfs::TimeSpec</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">TimeSpec</span> {
+    <span class="kw">fn</span> <span class="ident">from</span>(<span class="ident">t</span>: <span class="ident">TimeSpec</span>) -&gt; <span class="self">Self</span> {
+        <span class="ident">TimeSpec</span> {
             <span class="ident">sec</span>: <span class="ident">t</span>.<span class="ident">sec</span> <span class="kw">as</span> <span class="kw">_</span>,
-            <span class="ident">nsec</span>: <span class="ident">t</span>.<span class="ident">nsec</span>,
+            <span class="ident">nsec</span>: <span class="ident">t</span>.<span class="ident">nsec</span> <span class="kw">as</span> <span class="kw">_</span>,
         }
     }
 }
@@ -414,11 +409,11 @@
     <span class="ident">blocks</span>: <span class="ident">u64</span>,
 
     <span class="doccomment">/// last access time</span>
-    <span class="ident">atime</span>: <span class="ident">Timespec</span>,
+    <span class="ident">atime</span>: <span class="ident">TimeSpec</span>,
     <span class="doccomment">/// last modification time</span>
-    <span class="ident">mtime</span>: <span class="ident">Timespec</span>,
+    <span class="ident">mtime</span>: <span class="ident">TimeSpec</span>,
     <span class="doccomment">/// last status change time</span>
-    <span class="ident">ctime</span>: <span class="ident">Timespec</span>,
+    <span class="ident">ctime</span>: <span class="ident">TimeSpec</span>,
 }
 
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;mips&quot;</span>)]</span>
@@ -448,11 +443,11 @@
     <span class="ident">size</span>: <span class="ident">u64</span>,
 
     <span class="doccomment">/// last access time</span>
-    <span class="ident">atime</span>: <span class="ident">Timespec</span>,
+    <span class="ident">atime</span>: <span class="ident">TimeSpec</span>,
     <span class="doccomment">/// last modification time</span>
-    <span class="ident">mtime</span>: <span class="ident">Timespec</span>,
+    <span class="ident">mtime</span>: <span class="ident">TimeSpec</span>,
     <span class="doccomment">/// last status change time</span>
-    <span class="ident">ctime</span>: <span class="ident">Timespec</span>,
+    <span class="ident">ctime</span>: <span class="ident">TimeSpec</span>,
 
     <span class="doccomment">/// blocksize for filesystem I/O</span>
     <span class="ident">blksize</span>: <span class="ident">u32</span>,
@@ -493,27 +488,26 @@
     <span class="ident">blocks</span>: <span class="ident">u64</span>,
 
     <span class="doccomment">/// last access time</span>
-    <span class="ident">atime</span>: <span class="ident">Timespec</span>,
+    <span class="ident">atime</span>: <span class="ident">TimeSpec</span>,
     <span class="doccomment">/// last modification time</span>
-    <span class="ident">mtime</span>: <span class="ident">Timespec</span>,
+    <span class="ident">mtime</span>: <span class="ident">TimeSpec</span>,
     <span class="doccomment">/// last status change time</span>
-    <span class="ident">ctime</span>: <span class="ident">Timespec</span>,
+    <span class="ident">ctime</span>: <span class="ident">TimeSpec</span>,
 }
 
 <span class="kw">impl</span> <span class="ident">From</span><span class="op">&lt;</span><span class="ident">Metadata</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">Stat</span> {
-    <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy::useless_conversion</span>)]</span>
     <span class="kw">fn</span> <span class="ident">from</span>(<span class="ident">info</span>: <span class="ident">Metadata</span>) -&gt; <span class="self">Self</span> {
         <span class="ident">Stat</span> {
-            <span class="ident">dev</span>: <span class="ident">info</span>.<span class="ident">dev</span> <span class="kw">as</span> <span class="ident">u64</span>,
-            <span class="ident">ino</span>: <span class="ident">info</span>.<span class="ident">inode</span> <span class="kw">as</span> <span class="ident">u64</span>,
-            <span class="ident">mode</span>: <span class="ident">StatMode::from_type_mode</span>(<span class="ident">info</span>.<span class="ident">type_</span>, <span class="ident">info</span>.<span class="ident">mode</span> <span class="kw">as</span> <span class="ident">u16</span>),
+            <span class="ident">dev</span>: <span class="ident">info</span>.<span class="ident">dev</span> <span class="kw">as</span> <span class="kw">_</span>,
+            <span class="ident">ino</span>: <span class="ident">info</span>.<span class="ident">inode</span> <span class="kw">as</span> <span class="kw">_</span>,
+            <span class="ident">mode</span>: <span class="ident">StatMode::from_type_mode</span>(<span class="ident">info</span>.<span class="ident">type_</span>, <span class="ident">info</span>.<span class="ident">mode</span> <span class="kw">as</span> <span class="kw">_</span>),
             <span class="ident">nlink</span>: <span class="ident">info</span>.<span class="ident">nlinks</span> <span class="kw">as</span> <span class="kw">_</span>,
-            <span class="ident">uid</span>: <span class="ident">info</span>.<span class="ident">uid</span> <span class="kw">as</span> <span class="ident">u32</span>,
-            <span class="ident">gid</span>: <span class="ident">info</span>.<span class="ident">gid</span> <span class="kw">as</span> <span class="ident">u32</span>,
-            <span class="ident">rdev</span>: <span class="ident">info</span>.<span class="ident">rdev</span> <span class="kw">as</span> <span class="ident">u64</span>,
-            <span class="ident">size</span>: <span class="ident">info</span>.<span class="ident">size</span> <span class="kw">as</span> <span class="ident">u64</span>,
+            <span class="ident">uid</span>: <span class="ident">info</span>.<span class="ident">uid</span> <span class="kw">as</span> <span class="kw">_</span>,
+            <span class="ident">gid</span>: <span class="ident">info</span>.<span class="ident">gid</span> <span class="kw">as</span> <span class="kw">_</span>,
+            <span class="ident">rdev</span>: <span class="ident">info</span>.<span class="ident">rdev</span> <span class="kw">as</span> <span class="kw">_</span>,
+            <span class="ident">size</span>: <span class="ident">info</span>.<span class="ident">size</span> <span class="kw">as</span> <span class="kw">_</span>,
             <span class="ident">blksize</span>: <span class="ident">info</span>.<span class="ident">blk_size</span> <span class="kw">as</span> <span class="kw">_</span>,
-            <span class="ident">blocks</span>: <span class="ident">info</span>.<span class="ident">blocks</span> <span class="kw">as</span> <span class="ident">u64</span>,
+            <span class="ident">blocks</span>: <span class="ident">info</span>.<span class="ident">blocks</span> <span class="kw">as</span> <span class="kw">_</span>,
             <span class="ident">atime</span>: <span class="ident">info</span>.<span class="ident">atime</span>.<span class="ident">into</span>(),
             <span class="ident">mtime</span>: <span class="ident">info</span>.<span class="ident">mtime</span>.<span class="ident">into</span>(),
             <span class="ident">ctime</span>: <span class="ident">info</span>.<span class="ident">ctime</span>.<span class="ident">into</span>(),

@@ -540,13 +540,6 @@
 <span id="534">534</span>
 <span id="535">535</span>
 <span id="536">536</span>
-<span id="537">537</span>
-<span id="538">538</span>
-<span id="539">539</span>
-<span id="540">540</span>
-<span id="541">541</span>
-<span id="542">542</span>
-<span id="543">543</span>
 </pre><pre class="rust"><code><span class="doccomment">//! File operations</span>
 <span class="doccomment">//!</span>
 <span class="doccomment">//! - read, pread, readv</span>
@@ -1005,14 +998,7 @@
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_fstatfs</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">fd</span>: <span class="ident">FileDesc</span>, <span class="kw-2">mut</span> <span class="ident">buf</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">StatFs</span><span class="op">&gt;</span>) -&gt; <span class="ident">SysResult</span> {
         <span class="macro">info!</span>(<span class="string">&quot;statfs: fd={:?}, buf={:?}&quot;</span>, <span class="ident">fd</span>, <span class="ident">buf</span>);
 
-        <span class="kw">let</span> <span class="ident">info</span> <span class="op">=</span> <span class="self">self</span>
-            .<span class="ident">linux_process</span>()
-            .<span class="ident">get_file_like</span>(<span class="ident">fd</span>)<span class="question-mark">?</span>
-            .<span class="ident">downcast_arc</span>::<span class="op">&lt;</span><span class="ident">File</span><span class="op">&gt;</span>()
-            .<span class="ident">map_err</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">LxError::EBADF</span>)<span class="question-mark">?</span>
-            .<span class="ident">inode</span>()
-            .<span class="ident">fs</span>()
-            .<span class="ident">info</span>();
+        <span class="kw">let</span> <span class="ident">info</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>().<span class="ident">get_file</span>(<span class="ident">fd</span>)<span class="question-mark">?</span>.<span class="ident">inode</span>().<span class="ident">fs</span>().<span class="ident">info</span>();
         <span class="ident">buf</span>.<span class="ident">write</span>(<span class="ident">info</span>.<span class="ident">into</span>())<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(<span class="number">0</span>)
     }

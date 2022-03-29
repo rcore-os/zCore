@@ -271,6 +271,17 @@
 <span id="265">265</span>
 <span id="266">266</span>
 <span id="267">267</span>
+<span id="268">268</span>
+<span id="269">269</span>
+<span id="270">270</span>
+<span id="271">271</span>
+<span id="272">272</span>
+<span id="273">273</span>
+<span id="274">274</span>
+<span id="275">275</span>
+<span id="276">276</span>
+<span id="277">277</span>
+<span id="278">278</span>
 </pre><pre class="rust"><code><span class="doccomment">//! Linux file objects</span>
 
 <span class="kw">mod</span> <span class="ident">devfs</span>;
@@ -290,15 +301,18 @@
 
 <span class="kw">use</span> <span class="ident">kernel_hal::drivers</span>;
 <span class="kw">use</span> <span class="ident">rcore_fs::vfs</span>::{<span class="ident">FileSystem</span>, <span class="ident">FileType</span>, <span class="ident">INode</span>, <span class="ident">PollStatus</span>, <span class="prelude-ty">Result</span>};
-<span class="kw">use</span> <span class="ident">rcore_fs_devfs::special</span>::{<span class="ident">NullINode</span>, <span class="ident">ZeroINode</span>};
-<span class="kw">use</span> <span class="ident">rcore_fs_devfs::DevFS</span>;
+<span class="kw">use</span> <span class="ident">rcore_fs_devfs</span>::{
+    <span class="ident">special</span>::{<span class="ident">NullINode</span>, <span class="ident">ZeroINode</span>},
+    <span class="ident">DevFS</span>,
+};
 <span class="kw">use</span> <span class="ident">rcore_fs_mountfs::MountFS</span>;
 <span class="kw">use</span> <span class="ident">rcore_fs_ramfs::RamFS</span>;
 <span class="kw">use</span> <span class="ident">zircon_object</span>::{<span class="ident">object::KernelObject</span>, <span class="ident">vm::VmObject</span>};
 
-<span class="kw">use</span> <span class="self">self</span>::{<span class="ident">devfs::RandomINode</span>, <span class="ident">pseudo::Pseudo</span>};
 <span class="kw">use</span> <span class="ident"><span class="kw">crate</span>::error</span>::{<span class="ident">LxError</span>, <span class="ident">LxResult</span>};
 <span class="kw">use</span> <span class="ident"><span class="kw">crate</span>::process::LinuxProcess</span>;
+<span class="kw">use</span> <span class="ident">devfs::RandomINode</span>;
+<span class="kw">use</span> <span class="ident">pseudo::Pseudo</span>;
 
 <span class="kw">pub</span> <span class="kw">use</span> <span class="ident">file</span>::{<span class="ident">File</span>, <span class="ident">OpenFlags</span>, <span class="ident">SeekFrom</span>};
 <span class="kw">pub</span> <span class="kw">use</span> <span class="ident">pipe::Pipe</span>;
@@ -401,7 +415,7 @@
         .<span class="ident">expect</span>(<span class="string">&quot;failed to mknod /dev/urandom&quot;</span>);
 
     <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">display</span>) <span class="op">=</span> <span class="ident">drivers::all_display</span>().<span class="ident">first</span>() {
-        <span class="kw">use</span> <span class="ident"><span class="self">self</span>::devfs</span>::{<span class="ident">EventDev</span>, <span class="ident">FbDev</span>, <span class="ident">MiceDev</span>};
+        <span class="kw">use</span> <span class="ident">devfs</span>::{<span class="ident">EventDev</span>, <span class="ident">FbDev</span>, <span class="ident">MiceDev</span>};
 
         <span class="comment">// Add framebuffer device at `/dev/fb0`</span>
         <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Err</span>(<span class="ident">e</span>) <span class="op">=</span> <span class="ident">devfs_root</span>.<span class="ident">add</span>(<span class="string">&quot;fb0&quot;</span>, <span class="ident">Arc::new</span>(<span class="ident">FbDev::new</span>(<span class="ident">display</span>.<span class="ident">clone</span>()))) {
@@ -426,6 +440,14 @@
             <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Err</span>(<span class="ident">e</span>) <span class="op">=</span> <span class="ident">input_dev</span>.<span class="ident">add</span>(<span class="kw-2">&amp;</span><span class="ident">fname</span>, <span class="ident">Arc::new</span>(<span class="ident">EventDev::new</span>(<span class="ident">i</span>.<span class="ident">clone</span>(), <span class="ident">id</span>))) {
                 <span class="macro">warn!</span>(<span class="string">&quot;failed to mknod /dev/input/{}: {:?}&quot;</span>, <span class="kw-2">&amp;</span><span class="ident">fname</span>, <span class="ident">e</span>);
             }
+        }
+    }
+
+    <span class="comment">// Add uart devices at `/dev/ttyS{i}`</span>
+    <span class="kw">for</span> (<span class="ident">i</span>, <span class="ident">uart</span>) <span class="kw">in</span> <span class="ident">drivers::all_uart</span>().<span class="ident">as_vec</span>().<span class="ident">iter</span>().<span class="ident">enumerate</span>() {
+        <span class="kw">let</span> <span class="ident">fname</span> <span class="op">=</span> <span class="macro">format!</span>(<span class="string">&quot;ttyS{}&quot;</span>, <span class="ident">i</span>);
+        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Err</span>(<span class="ident">e</span>) <span class="op">=</span> <span class="ident">devfs_root</span>.<span class="ident">add</span>(<span class="kw-2">&amp;</span><span class="ident">fname</span>, <span class="ident">Arc::new</span>(<span class="ident">devfs::UartDev::new</span>(<span class="ident">i</span>, <span class="ident">uart</span>.<span class="ident">clone</span>()))) {
+            <span class="macro">warn!</span>(<span class="string">&quot;failed to mknod /dev/{}: {:?}&quot;</span>, <span class="kw-2">&amp;</span><span class="ident">fname</span>, <span class="ident">e</span>);
         }
     }
 
