@@ -94,8 +94,8 @@ unsafe fn enable(loc: Location) -> Option<usize> {
         if cap_id == PCI_CAP_ID_MSI {
             let orig_ctrl = am.read32(ops, loc, cap_ptr + PCI_MSI_CTRL_CAP);
             // The manual Volume 3 Chapter 10.11 Message Signalled Interrupts
-            // 0 is (usually) the apic id of the bsp.
-            am.write32(ops, loc, cap_ptr + PCI_MSI_ADDR, 0xfee00000 | (0 << 12));
+            // 0 is (usually) the apic id of the bsp. Write "0xfee00000 | (0 << 12)"
+            am.write32(ops, loc, cap_ptr + PCI_MSI_ADDR, 0xfee00000);
             MSI_IRQ += 1;
             let irq = MSI_IRQ;
             assigned_irq = Some(irq as usize);
