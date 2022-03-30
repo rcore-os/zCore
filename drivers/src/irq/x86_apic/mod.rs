@@ -18,6 +18,7 @@ const LAPIC_IRQ_RANGE: Range<usize> = 0..16;
 
 type Phys2VirtFn = fn(paddr: PhysAddr) -> VirtAddr;
 
+/// Advanced Programmable Interrupt Controller
 pub struct Apic {
     ioapic_list: IoApicList,
     manager_ioapic: Mutex<IrqManager<256>>,
@@ -25,6 +26,7 @@ pub struct Apic {
 }
 
 impl Apic {
+    /// Construct a new `Apic`.
     pub fn new(acpi_rsdp: usize, phys_to_virt: Phys2VirtFn) -> Self {
         Self {
             ioapic_list: IoApicList::new(acpi_rsdp, phys_to_virt),

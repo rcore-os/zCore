@@ -95,7 +95,7 @@ mod tests {
     use super::*;
 
     /// A valid virtual address base to mmap.
-    const VBASE: VirtAddr = 0x2_00000000;
+    const VBASE: VirtAddr = 0x0002_0000_0000;
 
     #[test]
     fn map_unmap() {

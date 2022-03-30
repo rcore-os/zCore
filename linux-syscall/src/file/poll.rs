@@ -307,10 +307,8 @@ impl FdSet {
             if len > MAX_FDSET_SIZE {
                 return Err(LxError::EINVAL);
             }
-            let slice = addr.read_array(len)?;
-
             // save the fdset, and clear it
-            let origin = BitVec::from_vec(slice);
+            let origin = BitVec::from_slice(addr.as_slice(len)?).unwrap();
             let mut vec0 = Vec::<u32>::new();
             vec0.resize(len, 0);
             addr.write_array(&vec0)?;
