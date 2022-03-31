@@ -1,3 +1,5 @@
+//! Event handler and device tree.
+
 #![allow(unused_imports)]
 
 mod event_listener;

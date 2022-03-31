@@ -21,6 +21,7 @@ lazy_static = "1.4"
 numeric-enum-macro = "0.2"
 device_tree = { git = "https://github.com/rcore-os/device_tree-rs", rev = "2f2e55f" }
 bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator", rev = "b3f9f51" }
+pci = { git = "https://github.com/rcore-os/pci-rs", rev = "a4e7cea6" }
 virtio-drivers = { git = "https://github.com/rcore-os/virtio-drivers", rev = "2aaf7d6", optional = true }
 rcore-console = { git = "https://github.com/rcore-os/rcore-console", default-features = false, rev = "ca5b1bc", optional = true }
 # smoltcp = { git = "https://github.com/smoltcp-rs/smoltcp", rev = "35e833e3", default-features = false, features = ["log", "alloc", "verbose", "proto-ipv4", "proto-ipv6", "proto-igmp", "medium-ip", "medium-ethernet", "socket-raw", "socket-udp", "socket-tcp", "socket-icmp"] }
@@ -33,6 +34,7 @@ sdl2 = { version = "0.34", optional = true }
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 acpi = "4.0"
 x2apic = "0.4"
+x86_64 = "0.14"
 
 [target.'cfg(any(target_arch = "riscv32", target_arch = "riscv64"))'.dependencies]
 riscv = { git = "https://github.com/rust-embedded/riscv", rev = "cd31989", features = ["inline-asm"] }

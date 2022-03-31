@@ -10,7 +10,7 @@
 //! - access, faccessat
 
 use super::*;
-use linux_object::time::TimeSpec;
+use linux_object::{process::FsInfo, time::TimeSpec};
 
 impl Syscall<'_> {
     /// Reads from a specified file using a file descriptor. Before using this call,
@@ -47,11 +47,9 @@ impl Syscall<'_> {
     /// - len – number of bytes to write
     pub fn sys_write(&self, fd: FileDesc, base: UserInPtr<u8>, len: usize) -> SysResult {
         info!("write: fd={:?}, base={:?}, len={:#x}", fd, base, len);
-        let proc = self.linux_process();
-        let buf = base.read_array(len)?;
-        let file_like = proc.get_file_like(fd)?;
-        let len = file_like.write(&buf)?;
-        Ok(len)
+        self.linux_process()
+            .get_file_like(fd)?
+            .write(base.as_slice(len)?)
     }
 
     /// read from or write to a file descriptor at a given offset
@@ -89,11 +87,9 @@ impl Syscall<'_> {
             "pwrite: fd={:?}, base={:?}, len={}, offset={}",
             fd, base, len, offset
         );
-        let proc = self.linux_process();
-        let buf = base.read_array(len)?;
-        let file_like = proc.get_file_like(fd)?;
-        let len = file_like.write_at(offset, &buf)?;
-        Ok(len)
+        self.linux_process()
+            .get_file_like(fd)?
+            .write_at(offset, base.as_slice(len)?)
     }
 
     /// works just like read except that multiple buffers are filled.
@@ -180,10 +176,9 @@ impl Syscall<'_> {
 
     /// cause the regular file named by path to be truncated to a size of precisely length bytes.
     pub fn sys_truncate(&self, path: UserInPtr<u8>, len: usize) -> SysResult {
-        let path = path.read_cstring()?;
+        let path = path.as_c_str()?;
         info!("truncate: path={:?}, len={}", path, len);
-        let proc = self.linux_process();
-        proc.lookup_inode(&path)?.resize(len)?;
+        self.linux_process().lookup_inode(path)?.resize(len)?;
         Ok(0)
     }
 
@@ -407,7 +402,7 @@ impl Syscall<'_> {
         flags: usize,
     ) -> SysResult {
         // TODO: check permissions based on uid/gid
-        let path = path.read_cstring()?;
+        let path = path.as_c_str()?;
         let flags = AtFlags::from_bits_truncate(flags);
         info!(
             "faccessat: dirfd={:?}, path={:?}, mode={:#o}, flags={:?}",
@@ -415,7 +410,7 @@ impl Syscall<'_> {
         );
         let proc = self.linux_process();
         let follow = !flags.contains(AtFlags::SYMLINK_NOFOLLOW);
-        let _inode = proc.lookup_inode_at(dirfd, &path, follow)?;
+        let _inode = proc.lookup_inode_at(dirfd, path, follow)?;
         Ok(0)
     }
 
@@ -446,7 +441,7 @@ impl Syscall<'_> {
             info!("futimens: fd: {:?}, times: {:?}", fd, times);
             proc.get_file(fd)?.inode()
         } else {
-            let pathname = pathname.read_cstring()?;
+            let pathname = pathname.as_c_str()?;
             info!(
                 "utimensat: dirfd: {:?}, pathname: {:?}, times: {:?}, flags: {:#x}",
                 dirfd, pathname, times, flags
@@ -458,7 +453,7 @@ impl Syscall<'_> {
             } else {
                 return Err(LxError::EINVAL);
             };
-            proc.lookup_inode_at(dirfd, &pathname[..], follow)?
+            proc.lookup_inode_at(dirfd, pathname, follow)?
         };
         let mut metadata = inode.metadata()?;
         if times[0].nsec != UTIME_OMIT {
@@ -482,9 +477,87 @@ impl Syscall<'_> {
         inode.set_metadata(&metadata)?;
         Ok(0)
     }
+
+    /// Get filesystem statistics
+    /// (see [linux man statfs(2)](https://man7.org/linux/man-pages/man2/statfs.2.html)).
+    ///
+    /// The `statfs` system call returns information about a mounted filesystem.
+    /// `path` is the pathname of **any file** within the mounted filesystem.
+    /// `buf` is a pointer to a `StatFs` structure.
+    pub fn sys_statfs(&self, path: UserInPtr<u8>, mut buf: UserOutPtr<StatFs>) -> SysResult {
+        let path = path.as_c_str()?;
+        info!("statfs: path={:?}, buf={:?}", path, buf);
+
+        // TODO
+        // 现在 `path` 没用到，因为没实现真正的挂载，不可能搞一个非主要文件系统的路径。
+        // 实现挂载之后，要用 `path` 分辨路径在哪个文件系统里，根据对应文件系统的特性返回统计信息。
+        // （以及根据挂载选项填写 `StatFs::f_flags`！）
+
+        let info = self.linux_process().root_inode().fs().info();
+        buf.write(info.into())?;
+        Ok(0)
+    }
+
+    /// Get filesystem statistics
+    /// (see [linux man statfs(2)](https://man7.org/linux/man-pages/man2/statfs.2.html)).
+    ///
+    /// The `fstatfs` system call returns information about a mounted filesystem.
+    /// `fd` is the descriptor referencing an open file.
+    /// `buf` is a pointer to a `StatFs` structure.
+    pub fn sys_fstatfs(&self, fd: FileDesc, mut buf: UserOutPtr<StatFs>) -> SysResult {
+        info!("statfs: fd={:?}, buf={:?}", fd, buf);
+
+        let info = self.linux_process().get_file(fd)?.inode().fs().info();
+        buf.write(info.into())?;
+        Ok(0)
+    }
 }
 
 const F_LINUX_SPECIFIC_BASE: usize = 1024;
+
+/// The file system statistics struct defined in linux
+/// (see [linux man statfs(2)](https://man7.org/linux/man-pages/man2/statfs.2.html)).
+#[repr(C)]
+pub struct StatFs {
+    f_type: i64,
+    f_bsize: i64,
+    f_blocks: u64,
+    f_bfree: u64,
+    f_bavail: u64,
+    f_files: u64,
+    f_ffree: u64,
+    f_fsid: (i32, i32),
+    f_namelen: isize,
+    f_frsize: isize,
+    f_flags: isize,
+    f_spare: [isize; 4],
+}
+
+// 保证 `StatFs` 的定义和常见的 linux 一致
+static_assertions::const_assert_eq!(120, core::mem::size_of::<StatFs>());
+
+impl From<FsInfo> for StatFs {
+    fn from(info: FsInfo) -> Self {
+        StatFs {
+            // TODO 文件系统的魔数，需要 rcore-fs 提供一个渠道获取
+            // 但是这个似乎并没有什么用处，新的 vfs 相关函数都去掉了，也许永远填个常数就好了
+            f_type: 0,
+            f_bsize: info.bsize as _,
+            f_blocks: info.blocks as _,
+            f_bfree: info.bfree as _,
+            f_bavail: info.bavail as _,
+            f_files: info.files as _,
+            f_ffree: info.ffree as _,
+            // 一个由 OS 决定的号码，用于区分文件系统
+            f_fsid: (0, 0),
+            f_namelen: info.namemax as _,
+            f_frsize: info.frsize as _,
+            // TODO 需要先实现挂载
+            f_flags: 0,
+            f_spare: [0; 4],
+        }
+    }
+}
 
 numeric_enum_macro::numeric_enum! {
     #[repr(usize)]

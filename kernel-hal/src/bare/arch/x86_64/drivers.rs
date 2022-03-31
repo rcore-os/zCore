@@ -1,5 +1,6 @@
 use alloc::{boxed::Box, sync::Arc};
 
+use zcore_drivers::bus::pci;
 use zcore_drivers::irq::x86::Apic;
 use zcore_drivers::scheme::IrqScheme;
 use zcore_drivers::uart::{BufferedUart, Uart16550Pio};
@@ -11,6 +12,8 @@ use crate::drivers;
 pub(super) fn init_early() -> DeviceResult {
     let uart = Arc::new(Uart16550Pio::new(0x3F8));
     drivers::add_device(Device::Uart(BufferedUart::new(uart)));
+    let uart = Arc::new(Uart16550Pio::new(0x2F8));
+    drivers::add_device(Device::Uart(BufferedUart::new(uart)));
     Ok(())
 }
 
@@ -20,13 +23,21 @@ pub(super) fn init() -> DeviceResult {
         super::special::pc_firmware_tables().0 as usize,
         crate::mem::phys_to_virt,
     ));
-    irq.register_device(
-        trap::X86_ISA_IRQ_COM1,
-        drivers::all_uart().first_unwrap().upcast(),
-    )?;
-    irq.unmask(trap::X86_ISA_IRQ_COM1)?;
+    let uarts = drivers::all_uart();
+    if let Some(u) = uarts.try_get(0) {
+        irq.register_device(trap::X86_ISA_IRQ_COM1, u.clone().upcast())?;
+        irq.unmask(trap::X86_ISA_IRQ_COM1)?;
+
+        if let Some(u) = uarts.try_get(1) {
+            irq.register_device(trap::X86_ISA_IRQ_COM2, u.clone().upcast())?;
+            irq.unmask(trap::X86_ISA_IRQ_COM2)?;
+        }
+    }
     irq.register_local_apic_handler(trap::X86_INT_APIC_TIMER, Box::new(crate::timer::timer_tick))?;
     drivers::add_device(Device::Irq(irq));
+
+    // PCI scan
+    pci::init();
 
     #[cfg(feature = "graphic")]
     {

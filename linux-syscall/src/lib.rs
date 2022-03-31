@@ -282,8 +282,11 @@ impl Syscall<'_> {
 
             //            Sys::SOCKETPAIR => self.unimplemented("socketpair", Err(LxError::EACCES)),
             // file system
-            Sys::STATFS => self.unimplemented("statfs", Err(LxError::EACCES)),
-            Sys::FSTATFS => self.unimplemented("fstatfs", Err(LxError::EACCES)),
+            Sys::STATFS => self.sys_statfs(
+                self.into_in_userptr(a0).unwrap(),
+                self.into_out_userptr(a1).unwrap(),
+            ),
+            Sys::FSTATFS => self.sys_fstatfs(a0.into(), self.into_out_userptr(a1).unwrap()),
             Sys::SYNC => self.sys_sync(),
             Sys::MOUNT => self.unimplemented("mount", Err(LxError::EACCES)),
             Sys::UMOUNT2 => self.unimplemented("umount2", Err(LxError::EACCES)),

@@ -19,11 +19,22 @@ zircon-object = { path = "../zircon-object", features = ["elf"] }
 kernel-hal = { path = "../kernel-hal", default-features = false }
 downcast-rs = { version = "1.2", default-features = false }
 lazy_static = { version = "1.4", features = ["spin_no_std"] }
-rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "7c232ec" }
-rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "7c232ec" }
-rcore-fs-ramfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "7c232ec" }
-rcore-fs-mountfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "7c232ec" }
-rcore-fs-devfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "7c232ec" }
+rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "1a3246b" }
+rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "1a3246b" }
+rcore-fs-ramfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "1a3246b" }
+rcore-fs-mountfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "1a3246b" }
+rcore-fs-devfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "1a3246b" }
 cfg-if = "1.0"
-smoltcp = { git = "https://gitee.com/gcyyfun/smoltcp", rev="043eb60", default-features = false, features = ["alloc","log", "async", "medium-ethernet","proto-ipv4", "proto-igmp", "socket-icmp", "socket-udp", "socket-tcp", "socket-raw"] }
+smoltcp = { git = "https://gitee.com/gcyyfun/smoltcp", rev = "043eb60", default-features = false, features = [
+    "alloc",
+    "log",
+    "async",
+    "medium-ethernet",
+    "proto-ipv4",
+    "proto-igmp",
+    "socket-icmp",
+    "socket-udp",
+    "socket-tcp",
+    "socket-raw",
+] }
 zcore-drivers = { path = "../drivers", features = ["virtio"] }

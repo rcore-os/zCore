@@ -17,15 +17,18 @@ use downcast_rs::impl_downcast;
 
 use kernel_hal::drivers;
 use rcore_fs::vfs::{FileSystem, FileType, INode, PollStatus, Result};
-use rcore_fs_devfs::special::{NullINode, ZeroINode};
-use rcore_fs_devfs::DevFS;
+use rcore_fs_devfs::{
+    special::{NullINode, ZeroINode},
+    DevFS,
+};
 use rcore_fs_mountfs::MountFS;
 use rcore_fs_ramfs::RamFS;
 use zircon_object::{object::KernelObject, vm::VmObject};
 
-use self::{devfs::RandomINode, pseudo::Pseudo};
 use crate::error::{LxError, LxResult};
 use crate::process::LinuxProcess;
+use devfs::RandomINode;
+use pseudo::Pseudo;
 
 pub use file::{File, OpenFlags, SeekFrom};
 pub use pipe::Pipe;
@@ -128,7 +131,7 @@ pub fn create_root_fs(rootfs: Arc<dyn FileSystem>) -> Arc<dyn INode> {
         .expect("failed to mknod /dev/urandom");
 
     if let Some(display) = drivers::all_display().first() {
-        use self::devfs::{EventDev, FbDev, MiceDev};
+        use devfs::{EventDev, FbDev, MiceDev};
 
         // Add framebuffer device at `/dev/fb0`
         if let Err(e) = devfs_root.add("fb0", Arc::new(FbDev::new(display.clone()))) {
@@ -153,6 +156,14 @@ pub fn create_root_fs(rootfs: Arc<dyn FileSystem>) -> Arc<dyn INode> {
             if let Err(e) = input_dev.add(&fname, Arc::new(EventDev::new(i.clone(), id))) {
                 warn!("failed to mknod /dev/input/{}: {:?}", &fname, e);
             }
+        }
+    }
+
+    // Add uart devices at `/dev/ttyS{i}`
+    for (i, uart) in drivers::all_uart().as_vec().iter().enumerate() {
+        let fname = format!("ttyS{}", i);
+        if let Err(e) = devfs_root.add(&fname, Arc::new(devfs::UartDev::new(i, uart.clone()))) {
+            warn!("failed to mknod /dev/{}: {:?}", &fname, e);
         }
     }
 

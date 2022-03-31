@@ -1,4 +1,3 @@
-//! Syscalls of Inter-Process Communication
 #![allow(dead_code)]
 
 use bitflags::*;
@@ -9,8 +8,55 @@ use zircon_object::vm::*;
 
 use super::*;
 
+/// Syscalls of inter-process communication and System V semaphore Set operation.
+///
+/// # Menu
+///
+/// - [`semget`](Self::sys_semget)
+/// - [`semop`](Self::sys_semop)
+/// - [`semctl`](Self::sys_semctl)
+/// - [`shmget`](Self::sys_shmget)
+/// - [`shmat`](Self::sys_shmat)
+/// - [`shmdt`](Self::sys_shmdt)
+/// - [`shmctl`](Self::sys_shmctl)
 impl Syscall<'_> {
-    /// returns the semaphore set identifier associated with the argument key
+    /// Get a System V semaphore set identifier
+    /// (see [linux man semget(2)](https://www.man7.org/linux/man-pages/man2/semget.2.html)).
+    ///
+    /// The `sys_semget` system call returns
+    /// the System V semaphore set identifier associated with the argument `key`.
+    /// It may be used either to obtain the identifier of a previously created semaphore set
+    /// (when `flags` is zero and `key` is not zero),
+    /// or to create a new set.
+    ///
+    /// A new set of `nsems` (number of semaphores) semaphores is created if `key` is zero
+    /// or if no existing semaphore set is associated with `key` and `IpcGetFlag::CREAT` is specified in `semflg`.
+    ///
+    /// If `flags` specifies both `IpcGetFlag::CREAT` and `IpcGetFlag::EXCLUSIVE`
+    /// and a semaphore set already exists for key, then `sys_semget` fails with [`EEXIST`](LxError::EEXIST).
+    /// (This is analogous to the effect of the combination `OpenFlags::CREATE | OpenFlags::EXCLUSIVE` for [`sys_open`](Self::sys_open).)
+    ///
+    /// Upon creation, the least significant 9 bits of the argument `flags` define
+    /// the permissions (for owner, group, and others) for the semaphore set.
+    /// These bits have the same format, and the same meaning, as the `mode` argument of [`sys_open`](Self::sys_open)
+    /// (though the execute permissions are not meaningful for semaphores,
+    /// and write permissions mean permission to alter semaphore values).
+    ///
+    /// When creating a new semaphore set, `sys_semget` initializes the set's associated data structure,
+    /// semid_ds (see [`sys_semctl`](Self::sys_semctl)), as follows:
+    ///
+    /// - sem_perm.cuid and sem_perm.uid are set to the effective user ID of the calling process.
+    /// - sem_perm.cgid and sem_perm.gid are set to the effective group ID of the calling process.
+    /// - The least significant 9 bits of sem_perm.mode are set to the least significant 9 bits of `flags`.
+    /// - sem_nsems is set to the value of nsems.
+    /// - sem_otime is set to 0.
+    /// - sem_ctime is set to the current time.
+    ///
+    /// The argument nsems can be 0 (a don't care) when a semaphore set is not being created.
+    /// Otherwise, nsems must be greater than 0 and
+    /// less than or equal to the maximum number of semaphores per semaphore set (SEMMSL, constant 256).
+    ///
+    /// If the semaphore set already exists, the permissions are verified.
     pub fn sys_semget(&self, key: usize, nsems: usize, flags: usize) -> SysResult {
         info!("semget: key: {} nsems: {} flags: {:#x}", key, nsems, flags);
 
@@ -26,19 +72,40 @@ impl Syscall<'_> {
         Ok(id)
     }
 
-    /// semaphore operations
+    /// System V semaphore operations
+    /// (see [linux man semop(2)](https://www.man7.org/linux/man-pages/man2/semop.2.html)).
     ///
-    /// performs operations on selected semaphores in the set indicated by semid
+    /// `semop` performs operations on selected semaphores in the set indicated by `id`.
+    /// An array `[SemBuf; num_ops]` pointed to by `ops` specifies an operation to be performed on a single semaphore.
+    /// The declaration of `SemBuf` is like this:
+    ///
+    /// ```rust
+    /// struct SemBuf {
+    ///    num: u16,
+    ///    op: i16,
+    ///    flags: i16,
+    /// }
+    /// ```
+    ///
+    /// Flags recognized in `SemBuf::flags` are `SemFlags::IPC_NOWAIT` and `SemFlags::SEM_UNDO`.
+    /// If an operation specifies `SEM_UNDO`, it will be automatically undone when the process terminates.
+    ///
+    /// Each operation is performed on the `SemBuf::num`-th semaphore of the semaphore set,
+    /// where the first semaphore of the set is numbered 0.
+    /// There are two types of operation, distinguished by the value of `SemBuf::op`.
+    ///
+    /// - If `op` is +1, see [`acquire`](linux_object::sync::Semaphore::acquire).
+    /// - If `op` is -1, see [`release`](linux_object::sync::Semaphore::release).
     pub async fn sys_semop(&self, id: usize, ops: UserInPtr<SemBuf>, num_ops: usize) -> SysResult {
         info!("semop: id: {}", id);
-        let ops = ops.read_array(num_ops)?;
+        let ops = ops.as_slice(num_ops)?;
 
         let sem_array = self
             .linux_process()
             .semaphores_get(id)
             .ok_or(LxError::EINVAL)?;
         sem_array.otime();
-        for &SemBuf { num, op, flags } in ops.iter() {
+        for &SemBuf { num, op, flags } in ops {
             let flags = SemFlags::from_bits_truncate(flags);
             if flags.contains(SemFlags::IPC_NOWAIT) {
                 unimplemented!("Semaphore: semop.IPC_NOWAIT");
@@ -58,10 +125,15 @@ impl Syscall<'_> {
         Ok(0)
     }
 
-    /// semaphore control operations
+    /// System V semaphore control operations
+    /// (see [linux man semctl(2)](https://www.man7.org/linux/man-pages/man2/semctl.2.html)).
     ///
-    /// performs the control operation specified by cmd on the semaphore set identified by semid,
-    /// or on the semnum-th semaphore of that set.
+    /// `semctl` performs the control operation specified by cmd
+    /// on the System V semaphore set identified by `id`,
+    /// or on the `num`-th semaphore of that set
+    /// (The semaphores in a set are numbered starting at 0).
+    ///
+    /// TODO
     pub fn sys_semctl(&self, id: usize, num: usize, cmd: usize, arg: usize) -> SysResult {
         info!(
             "semctl: id: {}, num: {}, cmd: {} arg: {:#x}",
@@ -119,9 +191,12 @@ impl Syscall<'_> {
         }
     }
 
-    /// allocates a shared memory segment
+    /// Allocates a System V shared memory segment
+    /// (see [linux man shmget(2)](https://www.man7.org/linux/man-pages/man2/shmget.2.html)).
     ///
-    /// returns the identifier of the shared memory segment associated with the value of the argument key
+    /// `shmget` returns the identifier of the System V shared memory segment
+    /// associated with the value of the argument key.
+    /// Differ from linux, this syscall always create a new set.
     pub fn sys_shmget(&self, key: usize, size: usize, shmflg: usize) -> SysResult {
         info!(
             "shmget: key: {}, size: {}, shmflg: {:#x}",
@@ -138,7 +213,13 @@ impl Syscall<'_> {
         Ok(id)
     }
 
-    /// attaches the shared memory segment identified by shmid to the address space of the calling process.
+    /// System V shared memory operations
+    /// (see [linux man shmat(2)](https://www.man7.org/linux/man-pages/man2/shmat.2.html)).
+    ///
+    /// `shmat` attaches the System V shared memory segment identified by `id`
+    /// to the address space of the calling process.
+    /// The attaching address is specified by `addr`.
+    /// If `addr` is zero, the system chooses a suitable page-aligned address to attach the segment.
     pub fn sys_shmat(&self, id: usize, mut addr: VirtAddr, shmflg: usize) -> SysResult {
         let mut shm_identifier = self.linux_process().shm_get(id).ok_or(LxError::EINVAL)?;
 
@@ -173,8 +254,13 @@ impl Syscall<'_> {
         Ok(addr)
     }
 
-    /// detaches the shared memory segment located at the address specified by shmaddr
+    /// System V shared memory operations
+    /// (see [linux man shmdt(2)](https://www.man7.org/linux/man-pages/man2/shmdt.2.html)).
+    ///
+    /// `shmdt` detaches the shared memory segment located at the address specified by `addr`
     /// from the address space of the calling process.
+    /// The to-be-detached segment must be currently attached with `addr`
+    /// equal to the value returned by the attaching [`sys_shmat`](Self::sys_shmat) call.
     pub fn sys_shmdt(&self, id: usize, addr: VirtAddr, shmflg: usize) -> SysResult {
         info!(
             "shmdt: id = {}, addr = {:#x}, flag = {:#x}",
@@ -193,7 +279,8 @@ impl Syscall<'_> {
         Ok(0)
     }
 
-    /// shared memory control
+    /// System V shared memory operations
+    /// (see [linux man shmctl(2)](https://www.man7.org/linux/man-pages/man2/shmctl.2.html)).
     ///
     /// performs the control operation specified by cmd on the shared memory segment whose identifier is given in id
     pub fn sys_shmctl(&self, id: usize, cmd: usize, buffer: usize) -> SysResult {

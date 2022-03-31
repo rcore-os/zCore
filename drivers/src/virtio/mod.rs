@@ -1,3 +1,5 @@
+//! Packaging of [`virtio-drivers` library](https://github.com/rcore-os/virtio-drivers).
+
 mod blk;
 mod console;
 mod gpu;
