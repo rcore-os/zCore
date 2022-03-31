@@ -194,6 +194,20 @@
 <span id="188">188</span>
 <span id="189">189</span>
 <span id="190">190</span>
+<span id="191">191</span>
+<span id="192">192</span>
+<span id="193">193</span>
+<span id="194">194</span>
+<span id="195">195</span>
+<span id="196">196</span>
+<span id="197">197</span>
+<span id="198">198</span>
+<span id="199">199</span>
+<span id="200">200</span>
+<span id="201">201</span>
+<span id="202">202</span>
+<span id="203">203</span>
+<span id="204">204</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="ident">alloc::vec::Vec</span>;
 <span class="kw">use</span> <span class="ident">core</span>::{<span class="ident">fmt</span>, <span class="ident">ptr::NonNull</span>};
 
@@ -262,9 +276,23 @@
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="kw">unsafe</span> { <span class="ident">IoApicInner::new</span>(<span class="ident">base_vaddr</span> <span class="kw">as</span> <span class="ident">u64</span>) };
         <span class="kw">let</span> <span class="ident">max_entry</span> <span class="op">=</span> <span class="kw">unsafe</span> { <span class="ident">inner</span>.<span class="ident">max_table_entry</span>() };
         <span class="kw">unsafe</span> { <span class="macro">assert_eq!</span>(<span class="ident">id</span>, <span class="ident">inner</span>.<span class="ident">id</span>()) };
-        <span class="comment">// disable all interrupts</span>
+
+        <span class="kw">unsafe</span> {
+            <span class="ident">inner</span>.<span class="ident">init</span>(<span class="ident"><span class="kw">super</span>::X86_INT_BASE</span> <span class="kw">as</span> <span class="ident">u8</span>);
+        }
         <span class="kw">for</span> <span class="ident">i</span> <span class="kw">in</span> <span class="number">0</span>..<span class="ident">max_entry</span> <span class="op">+</span> <span class="number">1</span> {
-            <span class="kw">unsafe</span> { <span class="ident">inner</span>.<span class="ident">disable_irq</span>(<span class="ident">i</span>) }
+            <span class="kw">unsafe</span> {
+                <span class="comment">// disable all interrupts</span>
+                <span class="ident">inner</span>.<span class="ident">disable_irq</span>(<span class="ident">i</span>);
+
+                <span class="comment">// Clean the redirection table</span>
+                <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">entry</span> <span class="op">=</span> <span class="ident">inner</span>.<span class="ident">table_entry</span>(<span class="ident">i</span>);
+                <span class="ident">entry</span>.<span class="ident">set_vector</span>(<span class="number">0</span>);
+                <span class="ident">entry</span>.<span class="ident">set_dest</span>(<span class="number">0</span>);
+                <span class="ident">entry</span>.<span class="ident">set_mode</span>(<span class="ident">IrqMode::Fixed</span>);
+                <span class="ident">entry</span>.<span class="ident">set_flags</span>(<span class="ident">IrqFlags::MASKED</span>);
+                <span class="ident">inner</span>.<span class="ident">set_table_entry</span>(<span class="ident">i</span>, <span class="ident">entry</span>);
+            }
         }
         <span class="self">Self</span> {
             <span class="ident">id</span>,

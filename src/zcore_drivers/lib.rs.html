@@ -106,6 +106,7 @@
 <span id="100">100</span>
 <span id="101">101</span>
 <span id="102">102</span>
+<span id="103">103</span>
 </pre><pre class="rust"><code><span class="doccomment">//! Device drivers of zCore.</span>
 
 <span class="attribute">#![<span class="ident">cfg_attr</span>(<span class="ident">not</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;mock&quot;</span>), <span class="ident">no_std</span>)]</span>
@@ -128,6 +129,7 @@
 <span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">virtio</span>;
 
 <span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">builder</span>;
+<span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">bus</span>;
 <span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">display</span>;
 <span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">input</span>;
 <span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">io</span>;
