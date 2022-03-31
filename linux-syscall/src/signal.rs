@@ -10,6 +10,7 @@
 use super::*;
 use linux_object::signal::{Signal, SignalAction, SignalStack, SignalStackFlags, Sigset};
 use linux_object::thread::ThreadExt;
+use zircon_object::object::Signal as ZirconSignal;
 use numeric_enum_macro::numeric_enum;
 
 impl Syscall<'_> {
@@ -112,4 +113,87 @@ impl Syscall<'_> {
         *old_ss = ss;
         Ok(0)
     }
+
+    /// Send a signal to a process specified by pid
+    /// TODO1: support all the arguments
+    /// TODO2: support all the signals
+    pub fn sys_kill(&self, pid: isize, signum: usize) -> SysResult {
+        // Other signals except SIGKILL are not supported
+        let signal = Signal::try_from(signum as u8).map_err(|_| LxError::EINVAL)?;
+        info!(
+            "kill: thread {} kill process {} with signal {:?}",
+            self.thread.id(),
+            pid,
+            signal
+        );
+        enum SendTarget {
+            EveryProcessInGroup,
+            EveryProcess,
+            EveryProcessInGroupByPID(KoID),
+            Pid(KoID),
+        }
+        let target = match pid {
+            p if p > 0 => SendTarget::Pid(p as KoID),
+            0 => SendTarget::EveryProcessInGroup,
+            -1 => SendTarget::EveryProcess,
+            p if p < -1 => SendTarget::EveryProcessInGroupByPID((-p) as KoID),
+            _ => unimplemented!()
+        };
+        let parent = self.zircon_process().clone();
+        match target {
+            SendTarget::Pid(pid) => {
+                match parent.job().get_child(pid as u64) {
+                    Ok(obj) => {
+                        match signal {
+                            Signal::SIGKILL => obj.signal_set(ZirconSignal::PROCESS_TERMINATED),
+                            _ => unimplemented!()
+                        };
+                        Ok(0)
+                    }
+                    Err(_) => Err(LxError::EINVAL)
+                }
+            }
+            _ => unimplemented!()
+        }
+    }
+
+
+    /// Send a signal to a process specified by pid
+    /// TODO: support all the signals
+    pub fn sys_tkill(&mut self, tid: usize, signum: usize) -> SysResult {
+        // Other signals except SIGKILL are not supported
+        let signal = Signal::try_from(signum as u8).map_err(|_| LxError::EINVAL)?;
+        info!(
+            "tkill: thread {} kill thread {} with signal {:?}",
+            self.thread.id(),
+            tid,
+            signum
+        );
+        let parent = self.zircon_process().clone();
+        match parent.get_child(tid as u64) {
+            Ok(obj) => {
+                match signal {
+                    Signal::SIGRT33 => {
+                        let current_tid = self.thread.id();
+                        if current_tid == (tid as u64) {
+                            // killing myself
+                            self.sys_exit(-1).unwrap();
+                        } else {
+                            let thread: Arc<Thread> = obj.downcast_arc().unwrap();
+                            let mut thread_linux = thread.lock_linux();
+                            thread_linux.signal_mask.insert(signal);
+                            drop(thread_linux);
+                        }
+                    },
+                    _ => unimplemented!()
+                };
+                Ok(0)
+            }
+            Err(_) => Err(LxError::EINVAL)
+        }
+    }
+
+
+
+
 }

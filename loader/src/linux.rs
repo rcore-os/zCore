@@ -59,6 +59,12 @@ async fn run_user(thread: CurrentThread) {
             break;
         }
 
+        // check the signal if was killed
+        if thread.inner().lock_linux().signal_mask.contains(linux_object::signal::Signal::SIGRT33) {
+            thread.exit_linux(-1);
+            // do not break temporarily
+        }
+
         // run
         trace!("go to user: {:#x?}", ctx);
         ctx.enter_uspace();

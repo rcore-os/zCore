@@ -313,7 +313,7 @@ impl Syscall<'_> {
                 self.into_in_userptr(a0).unwrap(),
                 self.into_out_userptr(a1).unwrap(),
             ),
-            //            Sys::KILL => self.sys_kill(a0, a1),
+            Sys::KILL => self.sys_kill(a0 as isize, a1),
 
             // schedule
             Sys::SCHED_YIELD => self.unimplemented("yield", Ok(0)),
@@ -391,7 +391,8 @@ impl Syscall<'_> {
                 // ignore timeout argument when op is wake
                 self.sys_futex(a0, a1 as _, a2 as _, a3).await
             }
-            Sys::TKILL => self.unimplemented("tkill", Ok(0)),
+            Sys::TKILL => self.sys_tkill(a0, a1),
+            Sys::TGKILL => self.unimplemented("tgkill", Ok(0)),
 
             // time
             Sys::NANOSLEEP => self.sys_nanosleep(self.into_in_userptr(a0).unwrap()).await,

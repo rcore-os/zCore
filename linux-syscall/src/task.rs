@@ -210,28 +210,6 @@ impl Syscall<'_> {
     //        Ok(0)
     //    }
     //
-    //    /// Kill the process
-    //    pub fn sys_kill(&self, pid: usize, sig: usize) -> SysResult {
-    //        info!(
-    //            "kill: thread {} kill process {} with signal {}",
-    //            thread::current().id(),
-    //            pid,
-    //            sig
-    //        );
-    //        let current_pid = self.process().pid.get().clone();
-    //        if current_pid == pid {
-    //            // killing myself
-    //            self.sys_exit_group(sig);
-    //        } else {
-    //            if let Some(proc_arc) = PROCESSES.read().get(&pid).and_then(|weak| weak.upgrade()) {
-    //                let mut proc = proc_arc.lock();
-    //                proc.exit(sig);
-    //                Ok(0)
-    //            } else {
-    //                Err(LxError::EINVAL)
-    //            }
-    //        }
-    //    }
 
     /// Get the current thread ID.
     pub fn sys_gettid(&self) -> SysResult {
