@@ -18,7 +18,7 @@ ZBI ?= bringup
 SMP ?= 1
 ACCEL ?=
 
-NET ?= loopback
+NET ?=
 
 OBJDUMP ?= rust-objdump --print-imm-hex --x86-asm-syntax=intel
 OBJCOPY ?= rust-objcopy --binary-architecture=$(ARCH)
