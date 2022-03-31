@@ -1,1 +1,1 @@
-initSidebarItems({"struct":[["RUsage","RUsage for sys_getrusage() ignore other fields for now"],["TimeSpec","TimeSpec struct for clock_gettime, similar to Timespec"],["TimeVal","TimeVal struct for gettimeofday"],["Tms","Tms for times()"]]});
+initSidebarItems({"enum":[["ClockFlags","Clock Flags"],["ClockId","Clock id"]],"fn":[["nanosleep","nanosleep"]],"struct":[["RUsage","RUsage for sys_getrusage() ignore other fields for now"],["TimeSpec","TimeSpec struct for clock_gettime, similar to Timespec"],["TimeVal","TimeVal struct for gettimeofday"],["Tms","Tms for times()"]]});

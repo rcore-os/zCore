@@ -27,11 +27,8 @@
 <span id="21">21</span>
 <span id="22">22</span>
 <span id="23">23</span>
-<span id="24">24</span>
-<span id="25">25</span>
 </pre><pre class="rust"><code><span class="doccomment">//! Bootstrap and initialization.</span>
 
-<span class="kw">use</span> <span class="ident"><span class="kw">super</span>::net</span>;
 <span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">KernelConfig</span>, <span class="ident">KernelHandler</span>, <span class="ident">KCONFIG</span>, <span class="ident">KHANDLER</span>};
 
 <span class="macro">hal_fn_impl!</span> {
@@ -50,7 +47,6 @@
                 <span class="ident"><span class="kw">super</span>::macos::register_sigsegv_handler</span>();
             }
 
-            <span class="ident">net::init</span>();
         }
     }
 }

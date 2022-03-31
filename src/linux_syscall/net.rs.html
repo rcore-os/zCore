@@ -260,6 +260,22 @@
 <span id="254">254</span>
 <span id="255">255</span>
 <span id="256">256</span>
+<span id="257">257</span>
+<span id="258">258</span>
+<span id="259">259</span>
+<span id="260">260</span>
+<span id="261">261</span>
+<span id="262">262</span>
+<span id="263">263</span>
+<span id="264">264</span>
+<span id="265">265</span>
+<span id="266">266</span>
+<span id="267">267</span>
+<span id="268">268</span>
+<span id="269">269</span>
+<span id="270">270</span>
+<span id="271">271</span>
+<span id="272">272</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
 
 <span class="kw">use</span> <span class="ident">linux_object::net::sockaddr_to_endpoint</span>;
@@ -347,6 +363,22 @@
             .<span class="ident">get_socket</span>(<span class="ident">sockfd</span>.<span class="ident">into</span>())<span class="question-mark">?</span>
             .<span class="ident">lock</span>()
             .<span class="ident">setsockopt</span>(<span class="ident">level</span>, <span class="ident">optname</span>, <span class="ident">optval</span>.<span class="ident">as_slice</span>(<span class="ident">optlen</span>)<span class="question-mark">?</span>)
+    }
+
+    <span class="doccomment">/// net getsockopt</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_getsockopt</span>(
+        <span class="kw-2">&amp;mut</span> <span class="self">self</span>,
+        <span class="ident">sockfd</span>: <span class="ident">usize</span>,
+        <span class="ident">level</span>: <span class="ident">usize</span>,
+        <span class="ident">optname</span>: <span class="ident">usize</span>,
+        <span class="ident">optval</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>,
+        <span class="ident">optlen</span>: <span class="ident">usize</span>,
+    ) -&gt; <span class="ident">SysResult</span> {
+        <span class="macro">warn!</span>(
+            <span class="string">&quot;sys_getsockopt : sockfd : {:?}, level : {:?}, optname : {:?}, optval : {:?} , optlen : {:?}&quot;</span>,
+            <span class="ident">sockfd</span>, <span class="ident">level</span>, <span class="ident">optname</span>,<span class="ident">optval</span>,<span class="ident">optlen</span>
+        );
+        <span class="prelude-val">Ok</span>(<span class="number">0</span>)
     }
 
     <span class="doccomment">/// net setsockopt</span>

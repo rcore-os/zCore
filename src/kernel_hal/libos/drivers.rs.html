@@ -52,6 +52,12 @@
 <span id="46">46</span>
 <span id="47">47</span>
 <span id="48">48</span>
+<span id="49">49</span>
+<span id="50">50</span>
+<span id="51">51</span>
+<span id="52">52</span>
+<span id="53">53</span>
+<span id="54">54</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="ident">alloc::sync::Arc</span>;
 
 <span class="kw">use</span> <span class="ident"><span class="kw">crate</span>::drivers</span>;
@@ -98,6 +104,12 @@
         <span class="ident">drivers::add_device</span>(<span class="ident">Device::Input</span>(<span class="ident">Arc::new</span>(<span class="ident">MockMouse::default</span>())));
 
         <span class="ident"><span class="kw">crate</span>::console::init_graphic_console</span>(<span class="ident">display</span>);
+    }
+
+    <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;loopback&quot;</span>)]</span>
+    {
+        <span class="kw">use</span> <span class="ident"><span class="kw">crate</span>::net</span>;
+        <span class="ident">net::init</span>();
     }
 }
 </code></pre></div>

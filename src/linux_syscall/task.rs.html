@@ -474,6 +474,8 @@
 <span id="468">468</span>
 <span id="469">469</span>
 <span id="470">470</span>
+<span id="471">471</span>
+<span id="472">472</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
 <span class="kw">use</span> <span class="ident">core::fmt::Debug</span>;
 
@@ -482,7 +484,7 @@
 
 <span class="kw">use</span> <span class="ident">kernel_hal::context::UserContextField</span>;
 <span class="kw">use</span> <span class="ident">linux_object::thread</span>::{<span class="ident">CurrentThreadExt</span>, <span class="ident">ThreadExt</span>};
-<span class="kw">use</span> <span class="ident">linux_object::time::TimeSpec</span>;
+<span class="comment">// use linux_object::time::TimeSpec;</span>
 <span class="kw">use</span> <span class="ident">linux_object</span>::{<span class="ident">fs::INodeExt</span>, <span class="ident">loader::LinuxElfLoader</span>};
 
 <span class="doccomment">/// Syscalls for process.</span>
@@ -866,15 +868,17 @@
     <span class="doccomment">/// or the delivery of a signal that triggers the invocation of a handler</span>
     <span class="doccomment">/// in the calling thread or that terminates the process.</span>
     <span class="doccomment">///</span>
-    <span class="doccomment">/// To represent a duration, see [`TimeSpec`].</span>
-    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">sys_nanosleep</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">req</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">TimeSpec</span><span class="op">&gt;</span>) -&gt; <span class="ident">SysResult</span> {
-        <span class="macro">info!</span>(<span class="string">&quot;nanosleep: deadline={:?}&quot;</span>, <span class="ident">req</span>);
-        <span class="kw">let</span> <span class="ident">duration</span> <span class="op">=</span> <span class="ident">req</span>.<span class="ident">read</span>()<span class="question-mark">?</span>.<span class="ident">into</span>();
-        <span class="kw">use</span> <span class="ident">kernel_hal</span>::{<span class="ident">thread</span>, <span class="ident">timer</span>};
-        <span class="ident">thread::sleep_until</span>(<span class="ident">timer::deadline_after</span>(<span class="ident">duration</span>)).<span class="kw">await</span>;
-        <span class="prelude-val">Ok</span>(<span class="number">0</span>)
-    }
+    <span class="doccomment">/// To represent a duration, see TimeSpec.</span>
 
+    <span class="comment">/* Deleted by 8278dc13 in Jan 28, 2022
+    pub async fn sys_nanosleep(&amp;self, req: UserInPtr&lt;TimeSpec&gt;) -&gt; SysResult {
+        info!(&quot;nanosleep: deadline={:?}&quot;, req);
+        let duration = req.read()?.into();
+        use kernel_hal::{thread, timer};
+        thread::sleep_until(timer::deadline_after(duration)).await;
+        Ok(0)
+    }
+    */</span>
     <span class="comment">//    pub fn sys_set_priority(&amp;self, priority: usize) -&gt; SysResult {</span>
     <span class="comment">//        let pid = thread::current().id();</span>
     <span class="comment">//        thread_manager().set_priority(pid, priority as u8);</span>

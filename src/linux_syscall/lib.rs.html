@@ -578,6 +578,20 @@
 <span id="572">572</span>
 <span id="573">573</span>
 <span id="574">574</span>
+<span id="575">575</span>
+<span id="576">576</span>
+<span id="577">577</span>
+<span id="578">578</span>
+<span id="579">579</span>
+<span id="580">580</span>
+<span id="581">581</span>
+<span id="582">582</span>
+<span id="583">583</span>
+<span id="584">584</span>
+<span id="585">585</span>
+<span id="586">586</span>
+<span id="587">587</span>
+<span id="588">588</span>
 </pre><pre class="rust"><code><span class="doccomment">//! Linux syscall implementations</span>
 <span class="doccomment">//!</span>
 <span class="doccomment">//! ## Example</span>
@@ -901,6 +915,7 @@
             <span class="comment">// schedule</span>
             <span class="ident">Sys::SCHED_YIELD</span> =&gt; <span class="self">self</span>.<span class="ident">unimplemented</span>(<span class="string">&quot;yield&quot;</span>, <span class="prelude-val">Ok</span>(<span class="number">0</span>)),
             <span class="ident">Sys::SCHED_GETAFFINITY</span> =&gt; <span class="self">self</span>.<span class="ident">unimplemented</span>(<span class="string">&quot;sched_getaffinity&quot;</span>, <span class="prelude-val">Ok</span>(<span class="number">0</span>)),
+            <span class="ident">Sys::SCHED_SETAFFINITY</span> =&gt; <span class="self">self</span>.<span class="ident">unimplemented</span>(<span class="string">&quot;sched_setaffinity&quot;</span>, <span class="prelude-val">Ok</span>(<span class="number">0</span>)),
 
             <span class="comment">// socket</span>
             <span class="ident">Sys::SOCKET</span> =&gt; <span class="self">self</span>.<span class="ident">sys_socket</span>(<span class="ident">a0</span>, <span class="ident">a1</span>, <span class="ident">a2</span>),
@@ -931,19 +946,22 @@
             <span class="ident">Sys::SHUTDOWN</span> =&gt; <span class="self">self</span>.<span class="ident">sys_shutdown</span>(<span class="ident">a0</span>, <span class="ident">a1</span>),
             <span class="ident">Sys::BIND</span> =&gt; <span class="self">self</span>.<span class="ident">sys_bind</span>(<span class="ident">a0</span>, <span class="self">self</span>.<span class="ident">into_in_userptr</span>(<span class="ident">a1</span>).<span class="ident">unwrap</span>(), <span class="ident">a2</span>),
             <span class="ident">Sys::LISTEN</span> =&gt; <span class="self">self</span>.<span class="ident">sys_listen</span>(<span class="ident">a0</span>, <span class="ident">a1</span>),
+
             <span class="ident">Sys::GETSOCKNAME</span> =&gt; <span class="self">self</span>.<span class="ident">sys_getsockname</span>(
                 <span class="ident">a0</span>,
                 <span class="self">self</span>.<span class="ident">into_out_userptr</span>(<span class="ident">a1</span>).<span class="ident">unwrap</span>(),
                 <span class="self">self</span>.<span class="ident">into_inout_userptr</span>(<span class="ident">a2</span>).<span class="ident">unwrap</span>(),
             ),
-            <span class="ident">Sys::GETPEERNAME</span> =&gt; {
-                <span class="self">self</span>.<span class="ident">unimplemented</span>(<span class="string">&quot;sys_getpeername(a0, a1.into(), a2.into()),&quot;</span>, <span class="prelude-val">Ok</span>(<span class="number">0</span>))
-            }
+            <span class="ident">Sys::GETPEERNAME</span> =&gt; <span class="self">self</span>.<span class="ident">sys_getpeername</span>(
+                <span class="ident">a0</span>,
+                <span class="self">self</span>.<span class="ident">into_out_userptr</span>(<span class="ident">a1</span>).<span class="ident">unwrap</span>(),
+                <span class="self">self</span>.<span class="ident">into_inout_userptr</span>(<span class="ident">a2</span>).<span class="ident">unwrap</span>(),
+            ),
             <span class="ident">Sys::SETSOCKOPT</span> =&gt; {
                 <span class="self">self</span>.<span class="ident">sys_setsockopt</span>(<span class="ident">a0</span>, <span class="ident">a1</span>, <span class="ident">a2</span>, <span class="self">self</span>.<span class="ident">into_in_userptr</span>(<span class="ident">a3</span>).<span class="ident">unwrap</span>(), <span class="ident">a4</span>)
             }
             <span class="ident">Sys::GETSOCKOPT</span> =&gt; {
-                <span class="self">self</span>.<span class="ident">unimplemented</span>(<span class="string">&quot;sys_getsockopt(a0, a1, a2, a3.into(), a4.into()),&quot;</span>, <span class="prelude-val">Ok</span>(<span class="number">0</span>))
+                <span class="self">self</span>.<span class="ident">sys_getsockopt</span>(<span class="ident">a0</span>, <span class="ident">a1</span>, <span class="ident">a2</span>, <span class="self">self</span>.<span class="ident">into_out_userptr</span>(<span class="ident">a3</span>).<span class="ident">unwrap</span>(), <span class="ident">a4</span>)
             }
 
             <span class="comment">// process</span>
@@ -978,12 +996,22 @@
 
             <span class="comment">// time</span>
             <span class="ident">Sys::NANOSLEEP</span> =&gt; <span class="self">self</span>.<span class="ident">sys_nanosleep</span>(<span class="self">self</span>.<span class="ident">into_in_userptr</span>(<span class="ident">a0</span>).<span class="ident">unwrap</span>()).<span class="kw">await</span>,
+            <span class="ident">Sys::CLOCK_NANOSLEEP</span> =&gt; {
+                <span class="self">self</span>.<span class="ident">sys_clock_nanosleep</span>(
+                    <span class="ident">a0</span>,
+                    <span class="ident">a1</span>,
+                    <span class="self">self</span>.<span class="ident">into_in_userptr</span>(<span class="ident">a2</span>).<span class="ident">unwrap</span>(),
+                    <span class="self">self</span>.<span class="ident">into_out_userptr</span>(<span class="ident">a3</span>).<span class="ident">unwrap</span>(),
+                )
+                .<span class="kw">await</span>
+            }
             <span class="ident">Sys::SETITIMER</span> =&gt; <span class="self">self</span>.<span class="ident">unimplemented</span>(<span class="string">&quot;setitimer&quot;</span>, <span class="prelude-val">Ok</span>(<span class="number">0</span>)),
             <span class="ident">Sys::GETTIMEOFDAY</span> =&gt; <span class="self">self</span>.<span class="ident">sys_gettimeofday</span>(
                 <span class="self">self</span>.<span class="ident">into_out_userptr</span>(<span class="ident">a0</span>).<span class="ident">unwrap</span>(),
                 <span class="self">self</span>.<span class="ident">into_in_userptr</span>(<span class="ident">a1</span>).<span class="ident">unwrap</span>(),
             ),
             <span class="ident">Sys::CLOCK_GETTIME</span> =&gt; <span class="self">self</span>.<span class="ident">sys_clock_gettime</span>(<span class="ident">a0</span>, <span class="self">self</span>.<span class="ident">into_out_userptr</span>(<span class="ident">a1</span>).<span class="ident">unwrap</span>()),
+            <span class="ident">Sys::CLOCK_GETRES</span> =&gt; <span class="self">self</span>.<span class="ident">unimplemented</span>(<span class="string">&quot;clock_getres&quot;</span>, <span class="prelude-val">Ok</span>(<span class="number">0</span>)),
 
             <span class="comment">// sem</span>
             <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">not</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;mips&quot;</span>))]</span>

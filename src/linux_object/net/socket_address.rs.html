@@ -308,6 +308,54 @@
 <span id="302">302</span>
 <span id="303">303</span>
 <span id="304">304</span>
+<span id="305">305</span>
+<span id="306">306</span>
+<span id="307">307</span>
+<span id="308">308</span>
+<span id="309">309</span>
+<span id="310">310</span>
+<span id="311">311</span>
+<span id="312">312</span>
+<span id="313">313</span>
+<span id="314">314</span>
+<span id="315">315</span>
+<span id="316">316</span>
+<span id="317">317</span>
+<span id="318">318</span>
+<span id="319">319</span>
+<span id="320">320</span>
+<span id="321">321</span>
+<span id="322">322</span>
+<span id="323">323</span>
+<span id="324">324</span>
+<span id="325">325</span>
+<span id="326">326</span>
+<span id="327">327</span>
+<span id="328">328</span>
+<span id="329">329</span>
+<span id="330">330</span>
+<span id="331">331</span>
+<span id="332">332</span>
+<span id="333">333</span>
+<span id="334">334</span>
+<span id="335">335</span>
+<span id="336">336</span>
+<span id="337">337</span>
+<span id="338">338</span>
+<span id="339">339</span>
+<span id="340">340</span>
+<span id="341">341</span>
+<span id="342">342</span>
+<span id="343">343</span>
+<span id="344">344</span>
+<span id="345">345</span>
+<span id="346">346</span>
+<span id="347">347</span>
+<span id="348">348</span>
+<span id="349">349</span>
+<span id="350">350</span>
+<span id="351">351</span>
+<span id="352">352</span>
 </pre><pre class="rust"><code><span class="comment">// core</span>
 
 <span class="kw">use</span> <span class="ident">core::cmp::min</span>;
@@ -315,12 +363,11 @@
 
 <span class="comment">// crate</span>
 <span class="kw">use</span> <span class="ident"><span class="kw">crate</span>::error::LxError</span>;
-<span class="kw">use</span> <span class="ident"><span class="kw">crate</span>::net::Endpoint</span>;
+<span class="comment">// use crate::net::Endpoint;</span>
 
 <span class="comment">// smoltcp</span>
 <span class="kw">pub</span> <span class="kw">use</span> <span class="ident">smoltcp::wire</span>::{<span class="ident">IpAddress</span>, <span class="ident">Ipv4Address</span>};
 
-<span class="comment">// #</span>
 <span class="kw">use</span> <span class="ident"><span class="kw">crate</span>::net</span>::<span class="kw-2">*</span>;
 <span class="kw">use</span> <span class="ident">kernel_hal::user</span>::{<span class="ident">UserInOutPtr</span>, <span class="ident">UserOutPtr</span>};
 <span class="comment">// use numeric_enum_macro::numeric_enum;</span>
@@ -401,6 +448,58 @@
     <span class="kw">pub</span> <span class="ident">data</span>: [<span class="ident">u8</span>; <span class="number">14</span>],
 }
 
+<span class="comment">// ============= Endpoint =============</span>
+
+<span class="kw">use</span> <span class="ident">smoltcp::wire::IpEndpoint</span>;
+
+<span class="doccomment">/// missing documentation</span>
+<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Debug</span>)]</span>
+<span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">Endpoint</span> {
+    <span class="doccomment">/// missing documentation</span>
+    <span class="ident">Ip</span>(<span class="ident">IpEndpoint</span>),
+    <span class="doccomment">/// missing documentation</span>
+    <span class="ident">LinkLevel</span>(<span class="ident">LinkLevelEndpoint</span>),
+    <span class="doccomment">/// missing documentation</span>
+    <span class="ident">Netlink</span>(<span class="ident">NetlinkEndpoint</span>),
+}
+
+<span class="doccomment">/// missing documentation</span>
+<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Debug</span>)]</span>
+<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">LinkLevelEndpoint</span> {
+    <span class="doccomment">/// missing documentation</span>
+    <span class="kw">pub</span> <span class="ident">interface_index</span>: <span class="ident">usize</span>,
+}
+
+<span class="kw">impl</span> <span class="ident">LinkLevelEndpoint</span> {
+    <span class="doccomment">/// missing documentation</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">ifindex</span>: <span class="ident">usize</span>) -&gt; <span class="self">Self</span> {
+        <span class="ident">LinkLevelEndpoint</span> {
+            <span class="ident">interface_index</span>: <span class="ident">ifindex</span>,
+        }
+    }
+}
+
+<span class="doccomment">/// missing documentation</span>
+<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Debug</span>)]</span>
+<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">NetlinkEndpoint</span> {
+    <span class="doccomment">/// missing documentation</span>
+    <span class="kw">pub</span> <span class="ident">port_id</span>: <span class="ident">u32</span>,
+    <span class="doccomment">/// missing documentation</span>
+    <span class="kw">pub</span> <span class="ident">multicast_groups_mask</span>: <span class="ident">u32</span>,
+}
+
+<span class="kw">impl</span> <span class="ident">NetlinkEndpoint</span> {
+    <span class="doccomment">/// missing documentation</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">port_id</span>: <span class="ident">u32</span>, <span class="ident">multicast_groups_mask</span>: <span class="ident">u32</span>) -&gt; <span class="self">Self</span> {
+        <span class="ident">NetlinkEndpoint</span> {
+            <span class="ident">port_id</span>,
+            <span class="ident">multicast_groups_mask</span>,
+        }
+    }
+}
+
+<span class="comment">// ============= Endpoint =============</span>
+
 <span class="kw">impl</span> <span class="ident">From</span><span class="op">&lt;</span><span class="ident">Endpoint</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">SockAddr</span> {
     <span class="kw">fn</span> <span class="ident">from</span>(<span class="ident">endpoint</span>: <span class="ident">Endpoint</span>) -&gt; <span class="self">Self</span> {
         <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">warnings</span>)]</span>
@@ -422,32 +521,29 @@
                 },
                 <span class="kw">_</span> =&gt; <span class="macro">unimplemented!</span>(<span class="string">&quot;only ipv4&quot;</span>),
             }
-
-        <span class="comment">// unix socket 暂时 未开启</span>
-
-        <span class="comment">// } else if let Endpoint::LinkLevel(link_level) = endpoint {</span>
-        <span class="comment">//     SockAddr {</span>
-        <span class="comment">//         addr_ll: SockAddrLl {</span>
-        <span class="comment">//             sll_family: AddressFamily::Packet.into(),</span>
-        <span class="comment">//             sll_protocol: 0,</span>
-        <span class="comment">//             sll_ifindex: link_level.interface_index as u32,</span>
-        <span class="comment">//             sll_hatype: 0,</span>
-        <span class="comment">//             sll_pkttype: 0,</span>
-        <span class="comment">//             sll_halen: 0,</span>
-        <span class="comment">//             sll_addr: [0; 8],</span>
-        <span class="comment">//         },</span>
-        <span class="comment">//     }</span>
-        <span class="comment">// } else if let Endpoint::Netlink(netlink) = endpoint {</span>
-        <span class="comment">//     SockAddr {</span>
-        <span class="comment">//         addr_nl: SockAddrNl {</span>
-        <span class="comment">//             nl_family: AddressFamily::Netlink.into(),</span>
-        <span class="comment">//             nl_pad: 0,</span>
-        <span class="comment">//             nl_pid: netlink.port_id,</span>
-        <span class="comment">//             nl_groups: netlink.multicast_groups_mask,</span>
-        <span class="comment">//         },</span>
-        <span class="comment">//     }</span>
+        } <span class="kw">else</span> <span class="kw">if</span> <span class="kw">let</span> <span class="ident">Endpoint::LinkLevel</span>(<span class="ident">link_level</span>) <span class="op">=</span> <span class="ident">endpoint</span> {
+            <span class="ident">SockAddr</span> {
+                <span class="ident">addr_ll</span>: <span class="ident">SockAddrLl</span> {
+                    <span class="ident">sll_family</span>: <span class="ident">AddressFamily::Packet</span>.<span class="ident">into</span>(),
+                    <span class="ident">sll_protocol</span>: <span class="number">0</span>,
+                    <span class="ident">sll_ifindex</span>: <span class="ident">link_level</span>.<span class="ident">interface_index</span> <span class="kw">as</span> <span class="ident">u32</span>,
+                    <span class="ident">sll_hatype</span>: <span class="number">0</span>,
+                    <span class="ident">sll_pkttype</span>: <span class="number">0</span>,
+                    <span class="ident">sll_halen</span>: <span class="number">0</span>,
+                    <span class="ident">sll_addr</span>: [<span class="number">0</span>; <span class="number">8</span>],
+                },
+            }
+        } <span class="kw">else</span> <span class="kw">if</span> <span class="kw">let</span> <span class="ident">Endpoint::Netlink</span>(<span class="ident">netlink</span>) <span class="op">=</span> <span class="ident">endpoint</span> {
+            <span class="ident">SockAddr</span> {
+                <span class="ident">addr_nl</span>: <span class="ident">SockAddrNl</span> {
+                    <span class="ident">nl_family</span>: <span class="ident">AddressFamily::Netlink</span>.<span class="ident">into</span>(),
+                    <span class="ident">nl_pad</span>: <span class="number">0</span>,
+                    <span class="ident">nl_pid</span>: <span class="ident">netlink</span>.<span class="ident">port_id</span>,
+                    <span class="ident">nl_groups</span>: <span class="ident">netlink</span>.<span class="ident">multicast_groups_mask</span>,
+                },
+            }
         } <span class="kw">else</span> {
-            <span class="macro">unimplemented!</span>(<span class="string">&quot;only ip&quot;</span>);
+            <span class="macro">unimplemented!</span>(<span class="string">&quot;not match&quot;</span>);
         }
     }
 }
