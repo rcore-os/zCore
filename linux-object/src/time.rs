@@ -64,14 +64,23 @@ impl TimeSpec {
     }
 }
 
+impl From<Timespec> for TimeSpec {
+    fn from(t: Timespec) -> Self {
+        Self {
+            sec: t.sec as _,
+            nsec: t.nsec as _,
+        }
+    }
+}
+
 impl From<TimeSpec> for Timespec {
     /// Converts a TimeSpec into a Timespec.
     /// 
     /// This conversion does not allocate or copy memory.
     fn from(t: TimeSpec) -> Self {
-        Timespec {
-            sec: t.sec as i64,
-            nsec: t.nsec as i32,
+        Self {
+            sec: t.sec as _,
+            nsec: t.nsec as _,
         }
     }
 }
@@ -81,7 +90,7 @@ impl From<TimeSpec> for Duration {
     /// 
     /// This conversion does not allocate or copy memory.
     fn from(t: TimeSpec) -> Self {
-        Duration::new(t.sec as u64, t.nsec as u32)
+        Self::new(t.sec as _, t.nsec as _)
     }
 }
 
@@ -90,7 +99,7 @@ impl From<TimeSpec> for TimeVal {
     /// 
     /// This conversion does not allocate or copy memory.   
     fn from(t: TimeSpec) -> Self {
-        TimeVal {
+        Self {
             sec: t.sec,
             usec: t.nsec / 1_000,
         }

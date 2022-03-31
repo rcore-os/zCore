@@ -16,6 +16,6 @@ static_assertions = "1.1.0"
 zircon-object = { path = "../zircon-object" }
 linux-object = { path = "../linux-object" }
 kernel-hal = { path = "../kernel-hal", default-features = false }
-rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "1ec3cdc" }
+rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "1a3246b" }
 lazy_static = { version = "1.4", features = ["spin_no_std"] }
 bitvec = { version = "0.22", default-features = false, features = ["alloc"] }
