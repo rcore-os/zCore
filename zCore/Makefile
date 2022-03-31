@@ -100,6 +100,7 @@ endif
 
 ifeq ($(TEST), 1)
   features += baremetal-test
+  NET := loopback
 endif
 
 ifeq ($(GRAPHIC), on)
