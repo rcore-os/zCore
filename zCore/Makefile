@@ -18,6 +18,8 @@ ZBI ?= bringup
 SMP ?= 1
 ACCEL ?=
 
+NET ?=
+
 OBJDUMP ?= rust-objdump --print-imm-hex --x86-asm-syntax=intel
 OBJCOPY ?= rust-objcopy --binary-architecture=$(ARCH)
 
@@ -98,6 +100,7 @@ endif
 
 ifeq ($(TEST), 1)
   features += baremetal-test
+  NET := loopback
 endif
 
 ifeq ($(GRAPHIC), on)
@@ -109,6 +112,10 @@ endif
 ifeq ($(HYPERVISOR), 1)
   features += hypervisor
   ACCEL := 1
+endif
+
+ifeq ($(NET), loopback)
+  features += loopback
 endif
 
 ################ Cargo build args ################

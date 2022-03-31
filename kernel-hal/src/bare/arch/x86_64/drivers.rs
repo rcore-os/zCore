@@ -57,6 +57,12 @@ pub(super) fn init() -> DeviceResult {
         crate::console::init_graphic_console(display);
     }
 
+    #[cfg(feature = "loopback")]
+    {
+        use crate::net;
+        net::init();
+    }
+
     info!("Drivers init end.");
     Ok(())
 }

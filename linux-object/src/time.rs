@@ -120,3 +120,73 @@ pub struct Tms {
     /// system time of children
     pub tms_cstime: u64,
 }
+
+/// Clock id
+#[derive(Debug)]
+#[repr(usize)]
+pub enum ClockId {
+    /// missing documentation
+    ClockRealTime = 0,
+    /// missing documentation
+    ClockMonotonic = 1,
+    /// missing documentation
+    ClockProcessCpuTimeId = 2,
+    /// missing documentation
+    ClockThreadCpuTimeId = 3,
+    /// missing documentation
+    ClockMonotonicRaw = 4,
+    /// missing documentation
+    ClockRealTimeCoarse = 5,
+    /// missing documentation
+    ClockMonotonicCoarse = 6,
+    /// missing documentation
+    ClockBootTime = 7,
+    /// missing documentation
+    ClockRealTimeAlarm = 8,
+    /// missing documentation
+    ClockBootTimeAlarm = 9,
+}
+
+impl From<usize> for ClockId {
+    fn from(t: usize) -> ClockId {
+        match t {
+            0 => ClockId::ClockRealTime,
+            1 => ClockId::ClockMonotonic,
+            2 => ClockId::ClockProcessCpuTimeId,
+            3 => ClockId::ClockThreadCpuTimeId,
+            4 => ClockId::ClockMonotonicRaw,
+            5 => ClockId::ClockRealTimeCoarse,
+            6 => ClockId::ClockMonotonicCoarse,
+            7 => ClockId::ClockBootTime,
+            8 => ClockId::ClockRealTimeAlarm,
+            9 => ClockId::ClockBootTimeAlarm,
+            _ => unreachable!(),
+        }
+    }
+}
+
+/// Clock Flags
+#[derive(Debug)]
+#[repr(usize)]
+pub enum ClockFlags {
+    /// missing documentation
+    ZeroFlag = 0,
+    /// missing documentation
+    TimerAbsTime = 1,
+}
+
+impl From<usize> for ClockFlags {
+    fn from(t: usize) -> ClockFlags {
+        match t {
+            0 => ClockFlags::ZeroFlag,
+            1 => ClockFlags::TimerAbsTime,
+            _ => unreachable!(),
+        }
+    }
+}
+
+/// nanosleep
+pub async fn nanosleep(dur: Duration) {
+    use kernel_hal::thread;
+    thread::sleep_until(dur).await;
+}

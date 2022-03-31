@@ -21,11 +21,23 @@ impl Syscall<'_> {
     pub async fn sys_read(&self, fd: FileDesc, mut base: UserOutPtr<u8>, len: usize) -> SysResult {
         info!("read: fd={:?}, base={:?}, len={:#x}", fd, base, len);
         let proc = self.linux_process();
-        let file_like = proc.get_file_like(fd)?;
-        let mut buf = vec![0u8; len];
-        let len = file_like.read(&mut buf).await?;
-        base.write_array(&buf[..len])?;
-        Ok(len)
+
+        // TODO wait a new struct to refactor
+        if usize::from(fd) >= SOCKET_FD {
+            let x = usize::from(fd);
+            let socket = proc.get_socket(x.into())?;
+            let mut buf = vec![0u8; len];
+            let (len, _) = socket.lock().read(&mut buf).await;
+            let len = len.unwrap_or(0);
+            base.write_array(&buf[..len])?;
+            Ok(len)
+        } else {
+            let file_like = proc.get_file_like(fd)?;
+            let mut buf = vec![0u8; len];
+            let len = file_like.read(&mut buf).await?;
+            base.write_array(&buf[..len])?;
+            Ok(len)
+        }
     }
 
     /// Writes to a specified file using a file descriptor. Before using this call,
@@ -92,11 +104,23 @@ impl Syscall<'_> {
         info!("readv: fd={:?}, iov={:?}, count={}", fd, iov_ptr, iov_count);
         let mut iovs = iov_ptr.read_iovecs(iov_count)?;
         let proc = self.linux_process();
-        let file_like = proc.get_file_like(fd)?;
-        let mut buf = vec![0u8; iovs.total_len()];
-        let len = file_like.read(&mut buf).await?;
-        iovs.write_from_buf(&buf)?;
-        Ok(len)
+
+        // TODO wait a new struct to refactor
+        if usize::from(fd) >= SOCKET_FD {
+            let x = usize::from(fd);
+            let socket = proc.get_socket(x.into())?;
+            let mut buf = vec![0u8; iovs.total_len()];
+            let (len, _) = socket.lock().read(&mut buf).await;
+            let len = len.unwrap();
+            iovs.write_from_buf(&buf)?;
+            Ok(len)
+        } else {
+            let file_like = proc.get_file_like(fd)?;
+            let mut buf = vec![0u8; iovs.total_len()];
+            let len = file_like.read(&mut buf).await?;
+            iovs.write_from_buf(&buf)?;
+            Ok(len)
+        }
     }
 
     /// works just like write except that multiple buffers are written out.
@@ -115,9 +139,18 @@ impl Syscall<'_> {
         let iovs = iov_ptr.read_iovecs(iov_count)?;
         let buf = iovs.read_to_vec()?;
         let proc = self.linux_process();
-        let file_like = proc.get_file_like(fd)?;
-        let len = file_like.write(&buf)?;
-        Ok(len)
+
+        // TODO wait a new struct to refactor
+        if usize::from(fd) >= SOCKET_FD {
+            let x = usize::from(fd);
+            let socket = proc.get_socket(x.into())?;
+            let len = socket.lock().write(&buf, None)?;
+            Ok(len)
+        } else {
+            let file_like = proc.get_file_like(fd)?;
+            let len = file_like.write(&buf)?;
+            Ok(len)
+        }
     }
 
     /// repositions the offset of the open file associated with the file descriptor fd
@@ -286,8 +319,17 @@ impl Syscall<'_> {
             fd, request, arg1, arg2, arg3
         );
         let proc = self.linux_process();
-        let file_like = proc.get_file_like(fd)?;
-        file_like.ioctl(request, arg1, arg2, arg3)
+
+        // TODO wait a new struct to refactor
+        if usize::from(fd) >= SOCKET_FD {
+            let f = usize::from(fd);
+            let socket = proc.get_socket(f.into())?;
+            let x = socket.lock();
+            x.ioctl(request, arg1, arg2, arg3)
+        } else {
+            let file_like = proc.get_file_like(fd)?;
+            file_like.ioctl(request, arg1, arg2, arg3)
+        }
     }
 
     /// Manipulate a file descriptor.
@@ -296,43 +338,52 @@ impl Syscall<'_> {
     pub fn sys_fcntl(&self, fd: FileDesc, cmd: usize, arg: usize) -> SysResult {
         info!("fcntl: fd={:?}, cmd={:x}, arg={}", fd, cmd, arg);
         let proc = self.linux_process();
-        let file_like = proc.get_file_like(fd)?;
 
-        if let Ok(cmd) = FcntlCmd::try_from(cmd) {
-            match cmd {
-                FcntlCmd::GETFD => Ok(file_like.flags().close_on_exec() as usize),
-                FcntlCmd::SETFD => {
-                    let mut flags = file_like.flags();
-                    if (arg & 1) != 0 {
-                        flags |= OpenFlags::CLOEXEC;
-                    } else {
-                        flags -= OpenFlags::CLOEXEC;
-                    }
-                    file_like.set_flags(flags)?;
-                    Ok(0)
-                }
-                FcntlCmd::GETFL => Ok(file_like.flags().bits()),
-                FcntlCmd::SETFL => {
-                    file_like.set_flags(OpenFlags::from_bits_truncate(arg))?;
-                    Ok(0)
-                }
-                FcntlCmd::DUPFD | FcntlCmd::DUPFD_CLOEXEC => {
-                    let new_fd = proc.get_free_fd_from(arg);
-                    self.sys_dup2(fd, new_fd)?;
-                    let dup = proc.get_file_like(new_fd)?;
-                    let mut flags = dup.flags();
-                    if cmd == FcntlCmd::DUPFD_CLOEXEC {
-                        flags |= OpenFlags::CLOEXEC;
-                    } else {
-                        flags -= OpenFlags::CLOEXEC;
-                    }
-                    dup.set_flags(flags)?;
-                    Ok(new_fd.into())
-                }
-                _ => Err(LxError::EINVAL),
-            }
+        // TODO wait a new struct to refactor
+        if usize::from(fd) >= SOCKET_FD {
+            let f = usize::from(fd);
+            let socket = proc.get_socket(f.into())?;
+            let x = socket.lock();
+            x.fcntl(cmd, arg)
         } else {
-            Err(LxError::EINVAL)
+            let file_like = proc.get_file_like(fd)?;
+
+            if let Ok(cmd) = FcntlCmd::try_from(cmd) {
+                match cmd {
+                    FcntlCmd::GETFD => Ok(file_like.flags().close_on_exec() as usize),
+                    FcntlCmd::SETFD => {
+                        let mut flags = file_like.flags();
+                        if (arg & 1) != 0 {
+                            flags |= OpenFlags::CLOEXEC;
+                        } else {
+                            flags -= OpenFlags::CLOEXEC;
+                        }
+                        file_like.set_flags(flags)?;
+                        Ok(0)
+                    }
+                    FcntlCmd::GETFL => Ok(file_like.flags().bits()),
+                    FcntlCmd::SETFL => {
+                        file_like.set_flags(OpenFlags::from_bits_truncate(arg))?;
+                        Ok(0)
+                    }
+                    FcntlCmd::DUPFD | FcntlCmd::DUPFD_CLOEXEC => {
+                        let new_fd = proc.get_free_fd_from(arg);
+                        self.sys_dup2(fd, new_fd)?;
+                        let dup = proc.get_file_like(new_fd)?;
+                        let mut flags = dup.flags();
+                        if cmd == FcntlCmd::DUPFD_CLOEXEC {
+                            flags |= OpenFlags::CLOEXEC;
+                        } else {
+                            flags -= OpenFlags::CLOEXEC;
+                        }
+                        dup.set_flags(flags)?;
+                        Ok(new_fd.into())
+                    }
+                    _ => Err(LxError::EINVAL),
+                }
+            } else {
+                Err(LxError::EINVAL)
+            }
         }
     }
 
@@ -534,3 +585,6 @@ numeric_enum_macro::numeric_enum! {
         DUPFD_CLOEXEC = F_LINUX_SPECIFIC_BASE + 6,
     }
 }
+
+// Temp , TODO warp a struct impl into/from with FileDesc and SocketHandle
+const SOCKET_FD: usize = 10000;

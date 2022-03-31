@@ -87,6 +87,22 @@ impl Syscall<'_> {
             .setsockopt(level, optname, optval.as_slice(optlen)?)
     }
 
+    /// net getsockopt
+    pub fn sys_getsockopt(
+        &mut self,
+        sockfd: usize,
+        level: usize,
+        optname: usize,
+        optval: UserOutPtr<u8>,
+        optlen: usize,
+    ) -> SysResult {
+        warn!(
+            "sys_getsockopt : sockfd : {:?}, level : {:?}, optname : {:?}, optval : {:?} , optlen : {:?}",
+            sockfd, level, optname,optval,optlen
+        );
+        Ok(0)
+    }
+
     /// net setsockopt
     pub fn sys_sendto(
         &mut self,

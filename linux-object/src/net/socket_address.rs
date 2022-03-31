@@ -5,12 +5,11 @@ use core::mem::size_of;
 
 // crate
 use crate::error::LxError;
-use crate::net::Endpoint;
+// use crate::net::Endpoint;
 
 // smoltcp
 pub use smoltcp::wire::{IpAddress, Ipv4Address};
 
-// #
 use crate::net::*;
 use kernel_hal::user::{UserInOutPtr, UserOutPtr};
 // use numeric_enum_macro::numeric_enum;
@@ -91,6 +90,58 @@ pub struct SockAddrPlaceholder {
     pub data: [u8; 14],
 }
 
+// ============= Endpoint =============
+
+use smoltcp::wire::IpEndpoint;
+
+/// missing documentation
+#[derive(Clone, Debug)]
+pub enum Endpoint {
+    /// missing documentation
+    Ip(IpEndpoint),
+    /// missing documentation
+    LinkLevel(LinkLevelEndpoint),
+    /// missing documentation
+    Netlink(NetlinkEndpoint),
+}
+
+/// missing documentation
+#[derive(Clone, Debug)]
+pub struct LinkLevelEndpoint {
+    /// missing documentation
+    pub interface_index: usize,
+}
+
+impl LinkLevelEndpoint {
+    /// missing documentation
+    pub fn new(ifindex: usize) -> Self {
+        LinkLevelEndpoint {
+            interface_index: ifindex,
+        }
+    }
+}
+
+/// missing documentation
+#[derive(Clone, Debug)]
+pub struct NetlinkEndpoint {
+    /// missing documentation
+    pub port_id: u32,
+    /// missing documentation
+    pub multicast_groups_mask: u32,
+}
+
+impl NetlinkEndpoint {
+    /// missing documentation
+    pub fn new(port_id: u32, multicast_groups_mask: u32) -> Self {
+        NetlinkEndpoint {
+            port_id,
+            multicast_groups_mask,
+        }
+    }
+}
+
+// ============= Endpoint =============
+
 impl From<Endpoint> for SockAddr {
     fn from(endpoint: Endpoint) -> Self {
         #[allow(warnings)]
@@ -112,32 +163,29 @@ impl From<Endpoint> for SockAddr {
                 },
                 _ => unimplemented!("only ipv4"),
             }
-
-        // unix socket 暂时 未开启
-
-        // } else if let Endpoint::LinkLevel(link_level) = endpoint {
-        //     SockAddr {
-        //         addr_ll: SockAddrLl {
-        //             sll_family: AddressFamily::Packet.into(),
-        //             sll_protocol: 0,
-        //             sll_ifindex: link_level.interface_index as u32,
-        //             sll_hatype: 0,
-        //             sll_pkttype: 0,
-        //             sll_halen: 0,
-        //             sll_addr: [0; 8],
-        //         },
-        //     }
-        // } else if let Endpoint::Netlink(netlink) = endpoint {
-        //     SockAddr {
-        //         addr_nl: SockAddrNl {
-        //             nl_family: AddressFamily::Netlink.into(),
-        //             nl_pad: 0,
-        //             nl_pid: netlink.port_id,
-        //             nl_groups: netlink.multicast_groups_mask,
-        //         },
-        //     }
+        } else if let Endpoint::LinkLevel(link_level) = endpoint {
+            SockAddr {
+                addr_ll: SockAddrLl {
+                    sll_family: AddressFamily::Packet.into(),
+                    sll_protocol: 0,
+                    sll_ifindex: link_level.interface_index as u32,
+                    sll_hatype: 0,
+                    sll_pkttype: 0,
+                    sll_halen: 0,
+                    sll_addr: [0; 8],
+                },
+            }
+        } else if let Endpoint::Netlink(netlink) = endpoint {
+            SockAddr {
+                addr_nl: SockAddrNl {
+                    nl_family: AddressFamily::Netlink.into(),
+                    nl_pad: 0,
+                    nl_pid: netlink.port_id,
+                    nl_groups: netlink.multicast_groups_mask,
+                },
+            }
         } else {
-            unimplemented!("only ip");
+            unimplemented!("not match");
         }
     }
 }

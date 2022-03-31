@@ -3,6 +3,7 @@
 
 /// missing documentation
 pub mod socket_address;
+use smoltcp::wire::IpEndpoint;
 pub use socket_address::*;
 
 /// missing documentation
@@ -111,23 +112,7 @@ impl Drop for GlobalSocketHandle {
     }
 }
 
-// #[cfg(feature = "e1000")]
 use kernel_hal::net::get_net_device;
-
-#[cfg(feature = "loopback")]
-use hashbrown::HashMap;
-#[cfg(feature = "loopback")]
-use kernel_hal::timer_now;
-// #[cfg(feature = "loopback")]
-// use net_stack::{NetStack, NET_STACK};
-#[cfg(feature = "loopback")]
-use smoltcp::time::Instant;
-
-// /// miss doc
-// #[cfg(feature = "loopback")]
-// pub fn get_net_stack() -> HashMap<usize, Arc<dyn NetStack>> {
-//     NET_STACK.read().clone()
-// }
 
 /// miss doc
 fn poll_ifaces() {
@@ -141,66 +126,7 @@ fn poll_ifaces() {
     }
 }
 
-// use core::future::Future;
-// use core::pin::Pin;
-// use core::task::Context;
-// use core::task::Poll;
-
-// use smoltcp::socket::TcpSocket;
-
 // ============= SocketHandle =============
-
-// ============= Endpoint =============
-
-use smoltcp::wire::IpEndpoint;
-
-/// missing documentation
-#[derive(Clone, Debug)]
-pub enum Endpoint {
-    /// missing documentation
-    Ip(IpEndpoint),
-    /// missing documentation
-    LinkLevel(LinkLevelEndpoint),
-    /// missing documentation
-    Netlink(NetlinkEndpoint),
-}
-
-/// missing documentation
-#[derive(Clone, Debug)]
-pub struct LinkLevelEndpoint {
-    /// missing documentation
-    pub interface_index: usize,
-}
-
-impl LinkLevelEndpoint {
-    /// missing documentation
-    pub fn new(ifindex: usize) -> Self {
-        LinkLevelEndpoint {
-            interface_index: ifindex,
-        }
-    }
-}
-
-/// missing documentation
-#[derive(Clone, Debug)]
-pub struct NetlinkEndpoint {
-    /// missing documentation
-    pub port_id: u32,
-    /// missing documentation
-    pub multicast_groups_mask: u32,
-}
-
-impl NetlinkEndpoint {
-    /// missing documentation
-    pub fn new(port_id: u32, multicast_groups_mask: u32) -> Self {
-        NetlinkEndpoint {
-            port_id,
-            multicast_groups_mask,
-        }
-    }
-}
-
-// ============= Endpoint =============
 
 // ============= Rand Port =============
 

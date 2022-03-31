@@ -48,6 +48,8 @@ board-qemu = []
 # Run on Allwinner d1 (riscv only)
 board-d1 = ["link-user-img"]
 
+loopback = ["kernel-hal/loopback"]
+
 [dependencies]
 log = "0.4"
 spin = "0.9"

@@ -42,6 +42,11 @@ libc-test:
 	cd rootfs && git clone $(LIBC_TEST_URL) --depth 1
 	cd rootfs/libc-test && cp config.mak.def config.mak && echo 'CC := musl-gcc' >> config.mak && make -j
 
+rt-test:
+	cd rootfs && git clone https://kernel.googlesource.com/pub/scm/linux/kernel/git/clrkwllms/rt-tests --depth 1
+	cd rootfs/rt-tests && make
+	echo x86 gcc build rt-test,now need manual modificy.
+
 rcore-fs-fuse:
 ifneq ($(shell rcore-fs-fuse dir image git-version), $(rcore_fs_fuse_revision))
 	@echo Installing rcore-fs-fuse
@@ -99,3 +104,16 @@ baremetal-test-img: prebuilt/linux/$(ROOTFS_TAR) rcore-fs-fuse
 	@cp prebuilt/linux/libc-libos.so rootfs/lib/ld-musl-x86_64.so.1
 	@echo Resizing $(ARCH).img
 	@qemu-img resize $(OUT_IMG) +5M
+
+baremetal-test:
+	@make -C zCore baremetal-test MODE=release LINUX=1 | tee stdout-baremetal-test
+
+baremetal-test-rv64:
+	@make -C zCore baremetal-test-rv64 ARCH=riscv64 MODE=release LINUX=1 ROOTPROC=$(ROOTPROC) | tee -a stdout-baremetal-test-rv64 | tee stdout-rv64
+
+
+check:
+	cargo fmt --all -- --check
+	cargo clippy --all-features
+	cd zCore && make clippy ARCH=x86_64
+	cd zCore && make clippy ARCH=riscv64 LINUX=1
