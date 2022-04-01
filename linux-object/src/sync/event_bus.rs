@@ -106,6 +106,8 @@ struct EventBusFuture {
 impl Future for EventBusFuture {
     type Output = Event;
 
+    /// Attempt to resolve the future to a final value, 
+    /// registering the current task for wakeup if the value is not yet available.
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let mut lock = self.bus.lock();
         if !(lock.event & self.mask).is_empty() {

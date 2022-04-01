@@ -14,6 +14,15 @@ use numeric_enum_macro::numeric_enum;
 
 impl Syscall<'_> {
     /// Used to change the action taken by a process on receipt of a specific signal.
+    ///
+    /// `signum` specifies the signal and can be any valid signal except
+    /// `SIGKILL` and `SIGSTOP`.
+    ///
+    /// If `act` is non-NULL, the new action for signal signum is installed from `act`. 
+    /// If `oldact` is non-NULL, the previous action is saved in `oldact`.
+    ///
+    /// the `SysResult` is an alias for `LxError`
+    /// which defined in `linux-object/src/error.rs`.
     pub fn sys_rt_sigaction(
         &self,
         signum: usize,
@@ -41,7 +50,23 @@ impl Syscall<'_> {
         Ok(0)
     }
 
-    /// Used to fetch and/or change the signal mask of the calling thread
+    /// Used to fetch and/or change the signal mask of the calling thread.
+    ///
+    /// The signal mask is the set of signals whose
+    /// delivery is currently blocked for the caller.
+    ///
+    /// The behavior of the call is dependent on the value of how,
+    /// as follows.
+    ///
+    /// - `SIG_BLOCK` - The set of blocked signals is the union of the current set
+    /// and the set argument.
+    /// - `SIG_UNBLOCK` - The signals in set are removed from the current set of
+    /// blocked signals.
+    /// It is permissible to attempt to unblock a signal which is not blocked.
+    /// - `SIG_SETMASK` - The set of blocked signals is set to the argument set.
+    ///
+    /// the `SysResult` is an alias for `LxError`
+    /// which defined in `linux-object/src/error.rs`.
     pub fn sys_rt_sigprocmask(
         &mut self,
         how: i32,
@@ -81,7 +106,13 @@ impl Syscall<'_> {
     }
 
     /// Allows a process to define a new alternate signal stack
-    /// and/or retrieve the state of an existing alternate signal stack
+    /// and/or retrieve the state of an existing alternate signal stack.
+    ///
+    /// An alternate signal stack is used during the execution of
+    /// a signal handler if the establishment of that handler requested it.
+    ///
+    /// the `SysResult` is an alias for `LxError`
+    /// which defined in `linux-object/src/error.rs`.
     pub fn sys_sigaltstack(
         &self,
         ss: UserInPtr<SignalStack>,

@@ -22,6 +22,7 @@ impl Pseudo {
 }
 
 impl INode for Pseudo {
+    /// Reads a number of bytes starting from a given offset. 
     fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
         if offset >= self.content.len() {
             return Ok(0);
@@ -30,9 +31,11 @@ impl INode for Pseudo {
         buf[..len].copy_from_slice(&self.content[offset..offset + len]);
         Ok(len)
     }
+    /// Writes a number of bytes starting from a given offset.
     fn write_at(&self, _offset: usize, _buf: &[u8]) -> Result<usize> {
         Err(FsError::NotSupported)
     }
+    /// get the PollStatus
     fn poll(&self) -> Result<PollStatus> {
         Ok(PollStatus {
             read: true,
@@ -40,6 +43,7 @@ impl INode for Pseudo {
             error: false,
         })
     }
+    /// get the metadata
     fn metadata(&self) -> Result<Metadata> {
         Ok(Metadata {
             dev: 0,

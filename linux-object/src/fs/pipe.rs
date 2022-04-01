@@ -150,6 +150,8 @@ impl INode for Pipe {
         impl<'a> Future for PipeFuture<'a> {
             type Output = Result<PollStatus>;
 
+            /// Attempt to resolve the future to a final value, 
+            /// registering the current task for wakeup if the value is not yet available.
             fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
                 if self.pipe.can_read() || self.pipe.can_write() {
                     return Poll::Ready(self.pipe.poll());

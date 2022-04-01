@@ -3,9 +3,17 @@ use bitflags::bitflags;
 use linux_object::time::*;
 
 impl Syscall<'_> {
-    #[cfg(target_arch = "x86_64")]
     /// set architecture-specific thread state
-    /// for x86_64 currently
+    /// for x86_64 currently.
+    ///
+    /// code selects a subfunction and passes argument addr to it;
+    /// addr is interpreted as an usize for both the "set" operations
+    /// and the "get" operations.
+    ///
+    /// currently code only support `ARCH_SET_FS`.
+    ///
+    /// TODO: ARCH_SET_CPUID, ARCH_GET_CPUID, ARCH_GET_FS, ARCH_SET_GS, ARCH_GET_GS.
+    #[cfg(target_arch = "x86_64")]
     pub fn sys_arch_prctl(&mut self, code: i32, addr: usize) -> SysResult {
         const ARCH_SET_FS: i32 = 0x1002;
         match code {
@@ -20,7 +28,15 @@ impl Syscall<'_> {
         }
     }
 
-    /// get name and information about current kernel
+    /// get name and about current kernel.
+    ///
+    /// returns system information in the structure
+    /// pointed to by `buf`.
+    ///
+    /// the `SysResult` is an alias for `LxError`
+    /// which defined in `linux-object/src/error.rs`.
+    ///
+    /// currently support arch: x86_64, aarch64, riscv64
     pub fn sys_uname(&self, buf: UserOutPtr<u8>) -> SysResult {
         info!("uname: buf={:?}", buf);
 
@@ -56,7 +72,39 @@ impl Syscall<'_> {
         Ok(0)
     }
 
-    /// provides a simple way of getting overall system statistics
+    /// provides a simple way of getting overall system statistics.
+    ///
+    /// returns system information in the structure
+    /// pointed to by sys_info.
+    ///
+    /// such as:
+    ///
+    /// - `uptime: u64` - Seconds since boot
+    ///
+    /// - `loads: [u64; 3]` - 1, 5, and 15 minute load averages
+    ///
+    /// - `totalram: u64` - Total usable main memory size
+    ///
+    /// - `freeram: u64` - Available memory size
+    ///
+    /// - `sharedram: u64` - Amount of shared memory
+    ///
+    /// - `bufferram: u64` - Memory used by buffers
+    ///
+    /// - `totalswap: u64` - Total swa Total swap space sizep space size
+    ///
+    /// - `freeswap: u64` - swap space still available
+    ///
+    /// - `procs: u16` - Number of current processes
+    ///
+    /// - `totalhigh: u64` - Total high memory size
+    ///
+    /// - `freehigh: u64` - Available high memory size
+    ///
+    /// - `mem_unit: u32` - Memory unit size in bytes
+    ///
+    /// the `SysResult` is an alias for `LxError`
+    /// which defined in `linux-object/src/error.rs`.
     pub fn sys_sysinfo(&mut self, mut sys_info: UserOutPtr<SysInfo>) -> SysResult {
         let sysinfo = SysInfo::default();
         sys_info.write(sysinfo)?;
@@ -64,10 +112,30 @@ impl Syscall<'_> {
     }
 
     /// provides a method for waiting until a certain condition becomes true.
+    ///
+    /// It is typically used as a
+    /// blocking construct in the context of shared-memory
+    /// synchronization.
+    ///
+    /// When using futexes, the majority of the
+    /// synchronization operations are performed in user space.
+    ///
+    /// A user-
+    /// space program employs the futex() system call only when it is
+    /// likely that the program has to block for a longer time until the
+    /// condition becomes true.  
+    ///
+    /// Other futex() operations can be used to
+    /// wake any processes or threads waiting for a particular condition.
+    ///
     /// - `uaddr` - points to the futex word.
     /// - `op` -  the operation to perform on the futex
     /// - `val` -  a value whose meaning and purpose depends on op
     /// - `timeout` - not support now
+    ///
+    /// the `SysResult` is an alias for `LxError`
+    /// which defined in `linux-object/src/error.rs`.
+    ///
     /// TODO: support timeout
     pub async fn sys_futex(
         &self,
@@ -116,7 +184,29 @@ impl Syscall<'_> {
         }
     }
 
-    /// Combines and extends the functionality of setrlimit() and getrlimit()
+    /// Combines and extends the functionality of setrlimit() and getrlimit().
+    ///
+    /// Each `resource` has an associated soft and hard limit,
+    /// as defined by the `rlimit` structure
+    /// which defined in `linux-object/src/process.rs`.
+    ///
+    /// The soft limit is the value that the kernel enforces
+    /// for the corresponding resource.
+    ///  
+    /// The hard limit acts as a ceiling
+    /// for the soft limit: an unprivileged process may set only its soft limit
+    /// to a value in the range from 0 up to the hard limit,
+    /// and (irreversibly) lower its hard limit.
+    ///
+    /// the `SysResult` is an alias for `LxError`
+    /// which defined in `linux-object/src/error.rs`.
+    ///
+    /// currently resource support: `RLIMIT_STACK`, `RLIMIT_NOFILE`, `RLIMIT_RSS`.
+    ///
+    /// TODO: RLIMIT_AS, RLIMIT_CORE, RLIMIT_CPU,
+    /// RLIMIT_DATA, RLIMIT_FSIZE, RLIMIT_LOCKS,
+    /// RLIMIT_MEMLOCK, RLIMIT_MSGQUEUE, RLIMIT_NICE, RLIMIT_NPROC,
+    /// RLIMIT_RTPRIO, RLIMIT_RTTIME, RLIMIT_SIGPENDING.
     pub fn sys_prlimit64(
         &mut self,
         pid: usize,

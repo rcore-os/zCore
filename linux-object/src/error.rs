@@ -117,6 +117,9 @@ pub enum LxError {
 
 #[allow(non_snake_case)]
 impl fmt::Display for LxError {
+    /// Formats the value using the given formatter. [Read more]
+    /// 
+    /// [Read more]: https://doc.rust-lang.org/std/fmt/trait.Display.html#tymethod.fmt
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use self::LxError::*;
         let explain = match self {
@@ -176,6 +179,9 @@ impl fmt::Display for LxError {
 }
 
 impl From<ZxError> for LxError {
+    /// Converts a ZxError into a LxError.
+    /// 
+    /// This conversion does not allocate or copy memory.
     fn from(e: ZxError) -> Self {
         match e {
             ZxError::INVALID_ARGS => LxError::EINVAL,
@@ -190,6 +196,9 @@ impl From<ZxError> for LxError {
 }
 
 impl From<FsError> for LxError {
+    /// Converts a FsError into a LxError.
+    /// 
+    /// This conversion does not allocate or copy memory.    
     fn from(error: FsError) -> Self {
         match error {
             FsError::NotSupported => LxError::ENOSYS,
@@ -218,6 +227,9 @@ impl From<FsError> for LxError {
 use kernel_hal::user::Error;
 
 impl From<Error> for LxError {
+    /// Converts a Error into a LxError.
+    /// 
+    /// This conversion does not allocate or copy memory. 
     fn from(e: Error) -> Self {
         match e {
             Error::InvalidUtf8 => LxError::EINVAL,

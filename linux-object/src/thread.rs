@@ -25,6 +25,7 @@ pub trait CurrentThreadExt {
 }
 
 impl ThreadExt for Thread {
+    /// create linux thread
     fn create_linux(proc: &Arc<Process>) -> ZxResult<Arc<Self>> {
         let linux_thread = Mutex::new(LinuxThread {
             clear_child_tid: 0.into(),
@@ -34,6 +35,7 @@ impl ThreadExt for Thread {
         Thread::create_with_ext(proc, "", linux_thread)
     }
 
+    /// lock and get Linux thread
     fn lock_linux(&self) -> MutexGuard<'_, LinuxThread> {
         self.ext()
             .downcast_ref::<Mutex<LinuxThread>>()
