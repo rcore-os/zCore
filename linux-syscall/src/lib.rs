@@ -392,7 +392,7 @@ impl Syscall<'_> {
                 self.sys_futex(a0, a1 as _, a2 as _, a3).await
             }
             Sys::TKILL => self.sys_tkill(a0, a1),
-            Sys::TGKILL => self.unimplemented("tgkill", Ok(0)),
+            Sys::TGKILL => self.sys_tgkill(a0, a1, a2),
 
             // time
             Sys::NANOSLEEP => self.sys_nanosleep(self.into_in_userptr(a0).unwrap()).await,

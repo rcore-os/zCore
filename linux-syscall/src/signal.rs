@@ -10,7 +10,6 @@
 use super::*;
 use linux_object::signal::{Signal, SignalAction, SignalStack, SignalStackFlags, Sigset};
 use linux_object::thread::ThreadExt;
-use zircon_object::object::Signal as ZirconSignal;
 use numeric_enum_macro::numeric_enum;
 
 impl Syscall<'_> {
@@ -145,7 +144,16 @@ impl Syscall<'_> {
                 match parent.job().get_child(pid as u64) {
                     Ok(obj) => {
                         match signal {
-                            Signal::SIGKILL => obj.signal_set(ZirconSignal::PROCESS_TERMINATED),
+                            Signal::SIGKILL => {
+                                let current_pid = parent.id();
+                                if current_pid == (pid as u64) {
+                                    // killing myself
+                                    parent.exit(-1);
+                                } else {
+                                    let process: Arc<Process> = obj.downcast_arc().unwrap();
+                                    process.exit(-1);
+                                }
+                            }
                             _ => unimplemented!()
                         };
                         Ok(0)
@@ -158,7 +166,7 @@ impl Syscall<'_> {
     }
 
 
-    /// Send a signal to a process specified by pid
+    /// Send a signal to a thread specified by tid
     /// TODO: support all the signals
     pub fn sys_tkill(&mut self, tid: usize, signum: usize) -> SysResult {
         // Other signals except SIGKILL are not supported
@@ -193,6 +201,42 @@ impl Syscall<'_> {
         }
     }
 
+    /// Send a signal to a thread specified by tgid (i.e., process) and pid
+    /// TODO: support all the signals
+    pub fn sys_tgkill(&mut self, tgid: usize, tid: usize, signum: usize) -> SysResult {
+        // Other signals except SIGKILL are not supported
+        let signal = Signal::try_from(signum as u8).map_err(|_| LxError::EINVAL)?;
+        info!(
+            "tkill: thread {} kill thread {} in process {} with signal {:?}",
+            self.thread.id(),
+            tid,
+            tgid,
+            signum
+        );
+        let parent = self.zircon_process().clone();
+        match parent.job().get_child(tgid as u64).map(|proc| proc.get_child(tid as u64)) {
+            Ok(Ok(obj)) => {
+                match signal {
+                    Signal::SIGRT33 => {
+                        let current_tgid = parent.id();
+                        let current_tid = self.thread.id();
+                        if current_tgid == (tgid as u64) && current_tid == (tid as u64) {
+                            // killing myself
+                            self.sys_exit(-1).unwrap();
+                        } else {
+                            let thread: Arc<Thread> = obj.downcast_arc().unwrap();
+                            let mut thread_linux = thread.lock_linux();
+                            thread_linux.signal_mask.insert(signal);
+                            drop(thread_linux);
+                        }
+                    },
+                    _ => unimplemented!()
+                };
+                Ok(0)
+            }
+            _ => Err(LxError::EINVAL)
+        }
+    }
 
 
 
