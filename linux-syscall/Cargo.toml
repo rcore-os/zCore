@@ -18,3 +18,7 @@ kernel-hal = { path = "../kernel-hal", default-features = false }
 rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "7c232ec" }
 lazy_static = { version = "1.4", features = ["spin_no_std"] }
 bitvec = { version = "0.22", default-features = false, features = ["alloc"] }
+futures = { version = "0.3", default-features = false, features = ["alloc", "async-await"] }
+
+[dev-dependencies]
+async-std = { version = "1.10", features = ["unstable"] }

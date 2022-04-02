@@ -11,11 +11,12 @@
 
 use super::*;
 use core::fmt::Debug;
+use core::mem::size_of;
 
 use bitflags::bitflags;
 
 use kernel_hal::context::UserContextField;
-use linux_object::thread::{CurrentThreadExt, ThreadExt};
+use linux_object::thread::{CurrentThreadExt, RobustList, ThreadExt};
 use linux_object::time::TimeSpec;
 use linux_object::{fs::INodeExt, loader::LinuxElfLoader};
 
@@ -294,6 +295,31 @@ impl Syscall<'_> {
         self.thread.set_tid_address(tidptr);
         let tid = self.thread.id();
         Ok(tid as usize)
+    }
+
+    pub fn sys_get_robust_list(
+        &self,
+        pid: i32,
+        head_ptr: UserOutPtr<UserOutPtr<RobustList>>,
+        len_ptr: UserOutPtr<usize>,
+    ) -> SysResult {
+        warn!("in1 sys_get_robust_list");
+        if pid == 0 {
+            warn!("in2 sys_get_robust_list");
+            return self.thread.get_robust_list(head_ptr, len_ptr);
+        } else {
+            warn!("out sys_get_robust_list");
+        }
+        Ok(0)
+    }
+
+    pub fn sys_set_robust_list(&self, head: UserInPtr<RobustList>, len: usize) -> SysResult {
+        warn!("in sys_set_robust_list");
+        if len != size_of::<RobustList>().into() {
+            return Err(LxError::EINVAL);
+        }
+        self.thread.set_robust_list(head, len);
+        Ok(0)
     }
 }
 

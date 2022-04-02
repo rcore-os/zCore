@@ -241,17 +241,21 @@ impl LinuxProcess {
 
     /// Get futex object.
     #[allow(unsafe_code)]
-    pub fn get_futex(&self, uaddr: VirtAddr) -> Arc<Futex> {
+    pub fn get_futex(&self, uaddr: VirtAddr) -> Option<Arc<Futex>> {
         let mut inner = self.inner.lock();
-        inner
-            .futexes
-            .entry(uaddr)
-            .or_insert_with(|| {
-                // FIXME: check address
-                let value = unsafe { &*(uaddr as *const AtomicI32) };
-                Futex::new(value)
-            })
-            .clone()
+        // if uaddr == 683520 {
+        //     return None;
+        // }
+        Some(
+            inner
+                .futexes
+                .entry(uaddr)
+                .or_insert_with(|| {
+                    let value = unsafe { &*(uaddr as *const AtomicI32) };
+                    Futex::new(value)
+                })
+                .clone(),
+        )
     }
 
     /// Get lowest free fd

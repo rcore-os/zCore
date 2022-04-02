@@ -64,6 +64,8 @@ async fn run_user(thread: CurrentThread) {
         ctx.enter_uspace();
         trace!("back from user: {:#x?}", ctx);
 
+        info!("into kernel: thread id = {}", thread.id());
+
         // handle trap/interrupt/syscall
         if let Err(err) = handle_user_trap(&thread, ctx).await {
             thread.exit_linux(err as i32);

@@ -1,6 +1,13 @@
 use super::*;
 use bitflags::bitflags;
+use core::time::Duration;
+use futures::pin_mut;
+use kernel_hal::timer::timer_now;
 use linux_object::time::*;
+use zircon_object::{
+    task::{IntoResult, ThreadState},
+    ZxResult,
+};
 
 impl Syscall<'_> {
     #[cfg(target_arch = "x86_64")]
@@ -73,7 +80,7 @@ impl Syscall<'_> {
         &self,
         uaddr: usize,
         op: u32,
-        val: i32,
+        val: u32,
         timeout_addr: usize,
     ) -> SysResult {
         let op = FutexFlags::from_bits_truncate(op);
@@ -86,33 +93,65 @@ impl Syscall<'_> {
                 Err(_e) => return Err(LxError::EACCES),
             }
         };
-        info!(
-            "futex: uaddr: {:#x}, op: {:?}, val: {}, timeout_ptr: {:?}",
-            uaddr, op, val, timeout
+        warn!(
+            "Futex: uaddr: {:#x}, op: {}, val: {}, timeout_ptr: {:?}",
+            uaddr,
+            op.bits(),
+            val,
+            timeout
         );
 
         if op.contains(FutexFlags::PRIVATE) {
             warn!("process-shared futex is unimplemented");
         }
-        let futex = self.linux_process().get_futex(uaddr);
-        match op.bits & 0xf {
-            0 => {
-                // FIXME: support timeout
-                let _timeout = timeout.read_if_not_null()?;
-                match futex.wait(val).await {
-                    Ok(_) => Ok(0),
-                    Err(ZxError::BAD_STATE) => Err(LxError::EAGAIN),
-                    Err(e) => Err(e.into()),
+        let futex_op = self.linux_process().get_futex(uaddr);
+        match futex_op {
+            Some(futex) => {
+                match op.bits & 0xf {
+                    0 => {
+                        // FIXME: support timeout
+                        let _timeout = timeout.read_if_not_null()?;
+                        let dur: Duration = match _timeout {
+                            Some(T) => T.into(),
+                            None => Duration::from_secs(0),
+                        };
+                        if dur.as_millis() == 0 {
+                            match futex.wait(val).await {
+                                Ok(_) => {
+                                    return Ok(0);
+                                }
+                                Err(ZxError::BAD_STATE) => {
+                                    return Err(LxError::EAGAIN);
+                                }
+                                Err(e) => {
+                                    return Err(e.into());
+                                }
+                            }
+                        }
+                        warn!("dur: {:?}", dur);
+                        let future = futex.wait(val);
+                        pin_mut!(future);
+                        self.thread
+                            .blocking_run(
+                                future,
+                                ThreadState::BlockedFutex,
+                                timer_now() + dur,
+                                None,
+                            )
+                            .await?;
+                        Ok(0)
+                    }
+                    1 => {
+                        let woken_up_count = futex.wake(val as usize);
+                        Ok(woken_up_count)
+                    }
+                    _ => {
+                        warn!("unsupported futex operation: {:?}", op);
+                        Err(LxError::ENOSYS)
+                    }
                 }
             }
-            1 => {
-                let woken_up_count = futex.wake(val as usize);
-                Ok(woken_up_count)
-            }
-            _ => {
-                warn!("unsupported futex operation: {:?}", op);
-                Err(LxError::ENOSYS)
-            }
+            None => Err(LxError::EAGAIN),
         }
     }
 
@@ -179,6 +218,8 @@ bitflags! {
         const WAIT      = 0;
         /// wakes at most val of the waiters that are waiting on the futex word at the address uaddr.
         const WAKE      = 1;
+        const LOCK_PI = 6;
+        const UNLOCK_PI = 7;
         /// can be employed with all futex operations, tells the kernel that the futex is process-private and not shared with another process
         const PRIVATE   = 0x80;
     }

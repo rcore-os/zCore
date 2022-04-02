@@ -1,9 +1,11 @@
 //! Linux Thread
 
+use crate::error::LxError;
+use crate::error::SysResult;
 use crate::process::ProcessExt;
 use crate::signal::{SignalStack, Sigset};
 use alloc::sync::Arc;
-use kernel_hal::user::{Out, UserOutPtr, UserPtr};
+use kernel_hal::user::{Out, UserInPtr, UserOutPtr, UserPtr};
 use kernel_hal::VirtAddr;
 use spin::{Mutex, MutexGuard};
 use zircon_object::task::{CurrentThread, Process, Thread};
@@ -17,6 +19,14 @@ pub trait ThreadExt {
     fn lock_linux(&self) -> MutexGuard<'_, LinuxThread>;
     /// Set pointer to thread ID.
     fn set_tid_address(&self, tidptr: UserOutPtr<i32>);
+    /// Get robust list.
+    fn get_robust_list(
+        &self,
+        head_ptr: UserOutPtr<UserOutPtr<RobustList>>,
+        len_ptr: UserOutPtr<usize>,
+    ) -> SysResult;
+    /// Set robust list.
+    fn set_robust_list(&self, head: UserInPtr<RobustList>, len: usize);
 }
 
 /// CurrentThread extension for linux
@@ -31,6 +41,8 @@ impl ThreadExt for Thread {
             clear_child_tid: 0.into(),
             signal_mask: Sigset::default(),
             signal_alternate_stack: SignalStack::default(),
+            robust_list: 0.into(),
+            robust_list_len: 0,
         });
         Thread::create_with_ext(proc, "", linux_thread)
     }
@@ -46,6 +58,24 @@ impl ThreadExt for Thread {
     fn set_tid_address(&self, tidptr: UserPtr<i32, Out>) {
         self.lock_linux().clear_child_tid = tidptr;
     }
+
+    fn get_robust_list(
+        &self,
+        mut head_ptr: UserOutPtr<UserOutPtr<RobustList>>,
+        mut len_ptr: UserOutPtr<usize>,
+    ) -> SysResult {
+        // if self.lock_linux().robust_list_len == 0 {
+        //     return Err(LxError::EFAULT);
+        // }
+        head_ptr = (self.lock_linux().robust_list.as_ptr() as *mut RobustList as usize).into();
+        len_ptr = (&self.lock_linux().robust_list_len as *const usize as usize).into();
+        Ok(0)
+    }
+
+    fn set_robust_list(&self, head: UserInPtr<RobustList>, len: usize) {
+        self.lock_linux().robust_list = head;
+        self.lock_linux().robust_list_len = len;
+    }
 }
 
 impl CurrentThreadExt for CurrentThread {
@@ -59,11 +89,22 @@ impl CurrentThreadExt for CurrentThread {
             info!("exit: do futex {:?} wake 1", clear_child_tid);
             clear_child_tid.write(0).unwrap();
             let uaddr = clear_child_tid.as_ptr() as VirtAddr;
-            let futex = self.proc().linux().get_futex(uaddr);
+            let futex = self.proc().linux().get_futex(uaddr).unwrap();
             futex.wake(1);
         }
         self.exit();
     }
+}
+
+/// robust_list
+#[derive(Default)]
+pub struct RobustList {
+    /// head
+    head: usize,
+    /// off
+    pub off: isize,
+    /// pending
+    pending: usize,
 }
 
 /// Linux specific thread information.
@@ -75,4 +116,7 @@ pub struct LinuxThread {
     pub signal_mask: Sigset,
     /// signal alternate stack
     pub signal_alternate_stack: SignalStack,
+    /// robust_list
+    robust_list: UserInPtr<RobustList>,
+    robust_list_len: usize,
 }

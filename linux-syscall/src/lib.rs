@@ -15,7 +15,7 @@
 //!
 
 #![no_std]
-#![deny(warnings, unsafe_code, missing_docs)]
+// #![deny(warnings, unsafe_code, missing_docs)]
 #![allow(clippy::upper_case_acronyms)]
 
 #[macro_use]
@@ -29,8 +29,7 @@ use core::convert::TryFrom;
 
 use kernel_hal::user::{IoVecIn, IoVecOut, UserInOutPtr, UserInPtr, UserOutPtr};
 #[cfg(target_os = "none")]
-use kernel_hal::vm::PagingError;
-use kernel_hal::vm::PagingResult;
+use kernel_hal::vm::{PagingError, PagingResult};
 use kernel_hal::MMUFlags;
 use linux_object::error::{LxError, SysResult};
 use linux_object::fs::FileDesc;
@@ -389,9 +388,38 @@ impl Syscall<'_> {
             Sys::SET_TID_ADDRESS => self.sys_set_tid_address(self.into_out_userptr(a0).unwrap()),
             Sys::FUTEX => {
                 // ignore timeout argument when op is wake
-                self.sys_futex(a0, a1 as _, a2 as _, a3).await
+                warn!(
+                    "All futex parameters: {}, {}, {}, {}, {}, {}",
+                    a0, a1, a2, a3, a4, a5
+                );
+                let ret: Result<UserInOutPtr<usize>, PagingError> = self.into_inout_userptr(a0);
+                match ret {
+                    Ok(value) => {
+                        let ret = self.sys_futex(a0, a1 as _, a2 as _, a3).await;
+                        warn!("Out from futex!!!");
+                        ret
+                    }
+                    Err(err) => {
+                        warn!("Futex err: {:?}", err);
+                        Ok(0)
+                    }
+                }
             }
+            // Sys::FUTEX => self.unimplemented("futex", Ok(0)),
             Sys::TKILL => self.unimplemented("tkill", Ok(0)),
+            Sys::GET_ROBUST_LIST => {
+                warn!("{},{},{}", a0, a1, a2);
+                self.sys_get_robust_list(
+                    a0 as _,
+                    self.into_out_userptr(a1).unwrap(),
+                    self.into_out_userptr(a2).unwrap(),
+                )
+            }
+            // Sys::GET_ROBUST_LIST => self.unimplemented("get_robust_list", Ok(0)),
+            Sys::SET_ROBUST_LIST => {
+                self.sys_set_robust_list(self.into_in_userptr(a0).unwrap(), a1 as _)
+            }
+            // Sys::SET_ROBUST_LIST => self.unimplemented("set_robust_list", Ok(0)),
 
             // time
             Sys::NANOSLEEP => self.sys_nanosleep(self.into_in_userptr(a0).unwrap()).await,
