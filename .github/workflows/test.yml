@@ -175,3 +175,56 @@ jobs:
       - name: Run full tests
         if: github.event_name == 'schedule'
         run: cd tests && python3 linux_libc_test.py --arch ${{ matrix.arch }}
+
+  linux-other-test-baremetal:
+    runs-on: ubuntu-20.04
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x86_64, riscv64]
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: 'recursive'
+      - name: Pull prebuilt images
+        run: git lfs pull -I prebuilt/linux/libc-libos.so
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly-2022-01-20
+          components: rust-src, llvm-tools-preview
+      - if: matrix.arch == 'riscv64'
+        uses: actions-rs/install@v0.1
+        with:
+          crate: cargo-binutils
+          version: latest
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install musl-tools musl-dev ninja-build -y
+          pip3 install -r tests/requirements.txt
+      - name: Cache QEMU
+        uses: actions/cache@v1
+        with:
+          path: qemu-6.1.0
+          key: qemu-6.1.0-${{ matrix.arch }}
+      - name: Install QEMU
+        run: |
+          [ ! -d qemu-6.1.0 ] && wget https://download.qemu.org/qemu-6.1.0.tar.xz \
+            && tar xJf qemu-6.1.0.tar.xz > /dev/null \
+            && cd qemu-6.1.0 && ./configure --target-list=${{ matrix.arch }}-softmmu && cd ..
+          cd qemu-6.1.0 && sudo make install -j
+          qemu-system-${{ matrix.arch }} --version
+      - name: Prepare rootfs
+        run: |
+          if [ "${{ matrix.arch }}" = "x86_64" ]; then
+            make baremetal-test-img
+          elif [ "${{ matrix.arch }}" = "riscv64" ]; then
+            make riscv-image
+          fi
+      - name: Run fast tests
+        if: github.event_name != 'schedule'
+        run: cd tests && python3 linux_other_test.py --arch ${{ matrix.arch }} --fast
+      - name: Run full tests
+        if: github.event_name == 'schedule'
+        run: cd tests && python3 linux_other_test.py --arch ${{ matrix.arch }}
