@@ -59,6 +59,7 @@ async fn run_user(thread: CurrentThread) {
             break;
         }
 
+        info!("back to user: thread id = {}", thread.id());
         // run
         trace!("go to user: {:#x?}", ctx);
         ctx.enter_uspace();

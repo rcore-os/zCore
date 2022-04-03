@@ -61,6 +61,8 @@ pub fn boot_options() -> BootOptions {
                 log_level: String::from(*options.get("LOG").unwrap_or(&"")),
                 #[cfg(feature = "linux")]
                 root_proc: String::from(*options.get("ROOTPROC").unwrap_or(&"/bin/busybox?sh")),
+                // root_proc: String::from(*options.get("ROOTPROC")
+                //     .unwrap_or(&"/libc-test/functional/pthread_robust.exe")),
             }
         }
     }

@@ -363,17 +363,10 @@ impl Syscall<'_> {
             }
 
             // process
-            Sys::CLONE => {
-                // warn!("a2={} a3={}", a2, a3);
-                // self.sys_clone(
-                //     a0,
-                //     a1,
-                //     self.into_out_userptr(a2).unwrap(),
-                //     self.into_out_userptr(a3).unwrap(),
-                //     a4,
-                // )
-                self.sys_clone(a0, a1, a2.into(), a3.into(), a4)
-            }
+            #[cfg(target_arch = "riscv64")]
+            Sys::CLONE => self.sys_clone(a0, a1, a2.into(), a3, a4.into()),
+            #[cfg(target_arch = "x86_64")]
+            Sys::CLONE => self.sys_clone(a0, a1, a2.into(), a4, a3.into()),
             Sys::EXECVE => self.sys_execve(
                 self.into_in_userptr(a0).unwrap(),
                 self.into_in_userptr(a1).unwrap(),
@@ -386,25 +379,7 @@ impl Syscall<'_> {
                     .await
             }
             Sys::SET_TID_ADDRESS => self.sys_set_tid_address(self.into_out_userptr(a0).unwrap()),
-            Sys::FUTEX => {
-                // ignore timeout argument when op is wake
-                warn!(
-                    "All futex parameters: {}, {}, {}, {}, {}, {}",
-                    a0, a1, a2, a3, a4, a5
-                );
-                let ret: Result<UserInOutPtr<usize>, PagingError> = self.into_inout_userptr(a0);
-                match ret {
-                    Ok(value) => {
-                        let ret = self.sys_futex(a0, a1 as _, a2 as _, a3).await;
-                        warn!("Out from futex!!!");
-                        ret
-                    }
-                    Err(err) => {
-                        warn!("Futex err: {:?}", err);
-                        Ok(0)
-                    }
-                }
-            }
+            Sys::FUTEX => self.sys_futex(a0, a1 as _, a2 as _, a3).await,
             // Sys::FUTEX => self.unimplemented("futex", Ok(0)),
             Sys::TKILL => self.unimplemented("tkill", Ok(0)),
             Sys::GET_ROBUST_LIST => {

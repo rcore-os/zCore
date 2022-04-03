@@ -83,7 +83,15 @@ impl Syscall<'_> {
         val: u32,
         timeout_addr: usize,
     ) -> SysResult {
+        if let Err(_) = self.into_inout_userptr::<i32>(uaddr) {
+            return Err(LxError::EINVAL);
+        }
         let op = FutexFlags::from_bits_truncate(op);
+        if !op.contains(FutexFlags::PRIVATE) {
+            warn!("process-shared futex is unimplemented");
+            return Err(LxError::ENOPROTOOPT);
+        }
+        let op = op - FutexFlags::PRIVATE;
         let timeout = if op.contains(FutexFlags::WAKE) {
             self.into_inout_userptr::<TimeSpec>(0).unwrap()
         } else {
@@ -94,63 +102,54 @@ impl Syscall<'_> {
             }
         };
         warn!(
-            "Futex: uaddr: {:#x}, op: {}, val: {}, timeout_ptr: {:?}",
+            "Futex: uaddr: {:#x}, op: {:x}, val: {}, timeout_ptr: {:x?}",
             uaddr,
             op.bits(),
             val,
             timeout
         );
-
-        if op.contains(FutexFlags::PRIVATE) {
-            warn!("process-shared futex is unimplemented");
-        }
         let futex_op = self.linux_process().get_futex(uaddr);
         match futex_op {
-            Some(futex) => {
-                match op.bits & 0xf {
-                    0 => {
-                        // FIXME: support timeout
-                        let _timeout = timeout.read_if_not_null()?;
-                        let dur: Duration = match _timeout {
-                            Some(T) => T.into(),
-                            None => Duration::from_secs(0),
-                        };
-                        if dur.as_millis() == 0 {
-                            match futex.wait(val).await {
-                                Ok(_) => {
-                                    return Ok(0);
-                                }
-                                Err(ZxError::BAD_STATE) => {
-                                    return Err(LxError::EAGAIN);
-                                }
-                                Err(e) => {
-                                    return Err(e.into());
-                                }
-                            }
-                        }
-                        warn!("dur: {:?}", dur);
-                        let future = futex.wait(val);
+            Some(futex) => match op {
+                FutexFlags::WAIT => {
+                    let timeout = timeout.read_if_not_null()?;
+                    let duration: Duration = match timeout {
+                        Some(T) => T.into(),
+                        None => Duration::from_secs(0),
+                    };
+                    let into_lxerror = |e: ZxError| match e {
+                        ZxError::BAD_STATE => LxError::EAGAIN,
+                        e => e.into(),
+                    };
+                    let future = futex.wait(val);
+                    let res = if duration.as_millis() == 0 {
+                        future.await
+                    } else {
+                        warn!("duration: {:?}", duration);
                         pin_mut!(future);
                         self.thread
                             .blocking_run(
                                 future,
                                 ThreadState::BlockedFutex,
-                                timer_now() + dur,
+                                timer_now() + duration,
                                 None,
                             )
-                            .await?;
-                        Ok(0)
-                    }
-                    1 => {
-                        let woken_up_count = futex.wake(val as usize);
-                        Ok(woken_up_count)
-                    }
-                    _ => {
-                        warn!("unsupported futex operation: {:?}", op);
-                        Err(LxError::ENOSYS)
+                            .await
+                    };
+                    match res {
+                        Ok(_) => return Ok(0),
+                        Err(e) => return Err(into_lxerror(e)),
                     }
                 }
-            }
+                FutexFlags::WAKE => {
+                    let woken_up_count = futex.wake(val as usize);
+                    Ok(woken_up_count)
+                }
+                _ => {
+                    warn!("unsupported futex operation: {:?}", op);
+                    Err(LxError::ENOPROTOOPT)
+                }
+            },
             None => Err(LxError::EAGAIN),
         }
     }
@@ -218,7 +217,9 @@ bitflags! {
         const WAIT      = 0;
         /// wakes at most val of the waiters that are waiting on the futex word at the address uaddr.
         const WAKE      = 1;
-        const LOCK_PI = 6;
+        ///
+        const LOCK_PI   = 6;
+        ///
         const UNLOCK_PI = 7;
         /// can be employed with all futex operations, tells the kernel that the futex is process-private and not shared with another process
         const PRIVATE   = 0x80;

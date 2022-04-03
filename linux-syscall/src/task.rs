@@ -65,8 +65,8 @@ impl Syscall<'_> {
         flags: usize,
         newsp: usize,
         mut parent_tid: UserOutPtr<i32>,
-        mut child_tid: UserOutPtr<i32>,
         newtls: usize,
+        mut child_tid: UserOutPtr<i32>,
     ) -> SysResult {
         let _flags = CloneFlags::from_bits_truncate(flags);
         info!(
