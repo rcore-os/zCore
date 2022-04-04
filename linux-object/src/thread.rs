@@ -1,8 +1,9 @@
 //! Linux Thread
 
 use crate::process::ProcessExt;
-use crate::signal::{SignalStack, Sigset};
+use crate::signal::{SignalStack, Sigset, SignalUserContext, Signal};
 use alloc::sync::Arc;
+use kernel_hal::context::{UserContext, UserContextField};
 use kernel_hal::user::{Out, UserOutPtr, UserPtr};
 use kernel_hal::VirtAddr;
 use spin::{Mutex, MutexGuard};
@@ -29,8 +30,10 @@ impl ThreadExt for Thread {
     fn create_linux(proc: &Arc<Process>) -> ZxResult<Arc<Self>> {
         let linux_thread = Mutex::new(LinuxThread {
             clear_child_tid: 0.into(),
+            signals: Sigset::default(),
             signal_mask: Sigset::default(),
             signal_alternate_stack: SignalStack::default(),
+            handling_signal: None,
         });
         Thread::create_with_ext(proc, "", linux_thread)
     }
@@ -71,8 +74,34 @@ pub struct LinuxThread {
     /// Kernel performs futex wake when thread exits.
     /// Ref: <http://man7.org/linux/man-pages/man2/set_tid_address.2.html>
     clear_child_tid: UserOutPtr<i32>,
+    /// Linux signals
+    pub signals: Sigset,
     /// Signal mask
     pub signal_mask: Sigset,
     /// signal alternate stack
     pub signal_alternate_stack: SignalStack,
+    /// handling signals
+    pub handling_signal: Option<u32>,
+}
+
+
+#[allow(unsafe_code)]
+impl LinuxThread {
+    /// Restore the information after the signal handler return
+    pub fn restore_after_handle_signal(&mut self, ctx: &mut UserContext, old_ctx: &UserContext) {
+        let ctx_in_us;
+        unsafe {
+            let stack_top = ctx.get_field(UserContextField::StackPointer) as *mut SignalUserContext;
+            ctx_in_us = &*stack_top;
+        }
+        // error!("ctx: {:#x?} old_ctx: {:#x?} ctx_in_us_pc: {:#x?}", ctx, old_ctx, ctx_in_us);
+        *ctx = *old_ctx;
+        // error!("ctx_in_us_pc: {:#x?}", ctx_in_us.context.get_pc());
+        ctx.set_field(UserContextField::InstrPointer, ctx_in_us.context.get_pc());
+        let mut new_mask = Sigset::empty();
+        new_mask.insert(Signal::SIGRT33);
+        // self.signal_mask = Sigset::new(ctx_in_us.sig_mask as u64);
+        self.signal_mask = new_mask;
+        self.handling_signal = None;
+    }
 }

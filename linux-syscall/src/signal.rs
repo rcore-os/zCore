@@ -23,8 +23,8 @@ impl Syscall<'_> {
     ) -> SysResult {
         let signal = Signal::try_from(signum as u8).map_err(|_| LxError::EINVAL)?;
         info!(
-            "rt_sigaction: signal={:?}, act={:?}, oldact={:?}, sigsetsize={}",
-            signal, act, oldact, sigsetsize
+            "rt_sigaction: signal={:?}, act={:?}, oldact={:?}, sigsetsize={}, thread={}",
+            signal, act, oldact, sigsetsize, self.thread.id()
         );
         if sigsetsize != core::mem::size_of::<Sigset>()
             || signal == Signal::SIGKILL
@@ -60,8 +60,8 @@ impl Syscall<'_> {
         }
         let how = How::try_from(how).map_err(|_| LxError::EINVAL)?;
         info!(
-            "rt_sigprocmask: how={:?}, set={:?}, oldset={:?}, sigsetsize={}",
-            how, set, oldset, sigsetsize
+            "rt_sigprocmask: how={:?}, set={:?}, oldset={:?}, sigsetsize={}, thread={}",
+            how, set, oldset, sigsetsize, self.thread.id()
         );
         if sigsetsize != core::mem::size_of::<Sigset>() {
             return Err(LxError::EINVAL);
@@ -180,21 +180,10 @@ impl Syscall<'_> {
         let parent = self.zircon_process().clone();
         match parent.get_child(tid as u64) {
             Ok(obj) => {
-                match signal {
-                    Signal::SIGRT33 => {
-                        let current_tid = self.thread.id();
-                        if current_tid == (tid as u64) {
-                            // killing myself
-                            self.sys_exit(-1).unwrap();
-                        } else {
-                            let thread: Arc<Thread> = obj.downcast_arc().unwrap();
-                            let mut thread_linux = thread.lock_linux();
-                            thread_linux.signal_mask.insert(signal);
-                            drop(thread_linux);
-                        }
-                    },
-                    _ => unimplemented!()
-                };
+                let thread: Arc<Thread> = obj.downcast_arc().unwrap();
+                let mut thread_linux = thread.lock_linux();
+                thread_linux.signals.insert(signal);
+                drop(thread_linux);
                 Ok(0)
             }
             Err(_) => Err(LxError::EINVAL)
@@ -202,7 +191,6 @@ impl Syscall<'_> {
     }
 
     /// Send a signal to a thread specified by tgid (i.e., process) and pid
-    /// TODO: support all the signals
     pub fn sys_tgkill(&mut self, tgid: usize, tid: usize, signum: usize) -> SysResult {
         // Other signals except SIGKILL are not supported
         let signal = Signal::try_from(signum as u8).map_err(|_| LxError::EINVAL)?;
@@ -226,7 +214,7 @@ impl Syscall<'_> {
                         } else {
                             let thread: Arc<Thread> = obj.downcast_arc().unwrap();
                             let mut thread_linux = thread.lock_linux();
-                            thread_linux.signal_mask.insert(signal);
+                            thread_linux.signals.insert(signal);
                             drop(thread_linux);
                         }
                     },
@@ -238,6 +226,11 @@ impl Syscall<'_> {
         }
     }
 
-
-
+    /// Send a signal to a thread specified by tgid (i.e., process) and pid
+    pub fn sys_rt_sigreturn(&mut self) -> SysResult {
+        let old_ctx = self.thread.fetch_backup_context().unwrap();
+        self.thread.with_context(|ctx| 
+            self.thread.lock_linux().restore_after_handle_signal(ctx, &old_ctx)).unwrap();
+        Ok(0)
+    }
 }

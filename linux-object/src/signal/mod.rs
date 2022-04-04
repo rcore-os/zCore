@@ -7,42 +7,129 @@ mod action;
 
 pub use self::action::*;
 
-/// struct mcontext
-#[repr(C)]
-#[derive(Clone, Debug)]
-pub struct MachineContext {
-    // gregs
-    pub r8: usize,
-    pub r9: usize,
-    pub r10: usize,
-    pub r11: usize,
-    pub r12: usize,
-    pub r13: usize,
-    pub r14: usize,
-    pub r15: usize,
-    pub rdi: usize,
-    pub rsi: usize,
-    pub rbp: usize,
-    pub rbx: usize,
-    pub rdx: usize,
-    pub rax: usize,
-    pub rcx: usize,
-    pub rsp: usize,
-    pub rip: usize,
-    pub eflags: usize,
-    pub cs: u16,
-    pub gs: u16,
-    pub fs: u16,
-    pub _pad: u16,
-    pub err: usize,
-    pub trapno: usize,
-    pub oldmask: usize,
-    pub cr2: usize,
-    // fpregs
-    // TODO
-    pub fpstate: usize,
-    // reserved
-    pub _reserved1: [usize; 8],
+cfg_if::cfg_if! {
+    if #[cfg(target_arch = "x86_64")] {
+        /// struct mcontext
+        #[repr(C)]
+        #[derive(Clone, Debug)]
+        pub struct MachineContext {
+            // gregs
+            pub r8: usize,
+            pub r9: usize,
+            pub r10: usize,
+            pub r11: usize,
+            pub r12: usize,
+            pub r13: usize,
+            pub r14: usize,
+            pub r15: usize,
+            pub rdi: usize,
+            pub rsi: usize,
+            pub rbp: usize,
+            pub rbx: usize,
+            pub rdx: usize,
+            pub rax: usize,
+            pub rcx: usize,
+            pub rsp: usize,
+            pub rip: usize,
+            pub eflags: usize,
+            pub cs: u16,
+            pub gs: u16,
+            pub fs: u16,
+            pub _pad: u16,
+            pub err: usize,
+            pub trapno: usize,
+            pub oldmask: usize,
+            pub cr2: usize,
+            // fpregs
+            // TODO
+            pub fpstate: usize,
+            // reserved
+            pub _reserved1: [usize; 8],
+        }
+
+        impl Default for MachineContext {
+            fn default() -> Self {
+                Self {
+                    // gregs
+                    r8: 0,
+                    r9: 0,
+                    r10: 0,
+                    r11: 0,
+                    r12: 0,
+                    r13: 0,
+                    r14: 0,
+                    r15: 0,
+                    rdi: 0,
+                    rsi: 0,
+                    rbp: 0,
+                    rbx: 0,
+                    rdx: 0,
+                    rax: 0,
+                    rcx: 0,
+                    rsp: 0,
+                    rip: 0,
+                    eflags: 0,
+                    cs: 0,
+                    gs: 0,
+                    fs: 0,
+                    _pad: 0,
+                    err: 0,
+                    trapno: 0,
+                    oldmask: 0,
+                    cr2: 0,
+                    // fpregs
+                    // TODO
+                    fpstate: 0,
+                    // reserved
+                    _reserved1: [0; 8],
+                }
+            }
+        }
+
+        impl MachineContext {
+            pub fn set_pc(&mut self, pc: usize) {
+                self.rip = pc;
+            }
+            pub fn get_pc(&self) -> usize {
+                self.rip
+            }
+        }
+    }
+    else if #[cfg(target_arch = "riscv64")] {
+        /// struct mcontext
+        #[repr(C)]
+        #[derive(Clone, Debug)]
+        pub struct MachineContext {
+            // TODO
+            pub reserved_: [usize; 14],
+            // pc
+            pub pc: usize,
+            // TODO
+            pub reserved: [usize; 17],
+            // fpregs
+            pub fpstate: [usize; 66],
+        }
+
+        impl Default for MachineContext {
+            fn default() -> Self {
+                Self {
+                    reserved_: [0; 14],
+                    pc: 0,
+                    reserved: [0; 17],
+                    fpstate: [0; 66]
+                }
+            }
+        }
+
+        impl MachineContext {
+            pub fn set_pc(&mut self, pc: usize) {
+                self.pc = pc;
+            }
+            pub fn get_pc(&self) -> usize {
+                self.pc
+            }
+        }
+    }
 }
 
 numeric_enum! {
@@ -130,13 +217,13 @@ impl Signal {
 ///
 /// Not exactly the same for now
 #[repr(C)]
-#[derive(Clone)]
+#[derive(Clone, Default, Debug)]
 pub struct SignalUserContext {
     pub flags: usize,
     pub link: usize,
     pub stack: SignalStack,
+    pub sig_mask: u128,
     pub context: MachineContext,
-    pub sig_mask: Sigset,
 }
 
 #[repr(C)]

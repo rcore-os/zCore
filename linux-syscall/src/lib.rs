@@ -308,7 +308,7 @@ impl Syscall<'_> {
                 self.into_out_userptr(a2).unwrap(),
                 a3,
             ),
-            // Sys::RT_SIGRETURN => self.sys_rt_sigreturn(),
+            Sys::RT_SIGRETURN => self.sys_rt_sigreturn(),
             Sys::SIGALTSTACK => self.sys_sigaltstack(
                 self.into_in_userptr(a0).unwrap(),
                 self.into_out_userptr(a1).unwrap(),
@@ -373,7 +373,7 @@ impl Syscall<'_> {
                 //     self.into_out_userptr(a3).unwrap(),
                 //     a4,
                 // )
-                self.sys_clone(a0, a1, a2.into(), a3.into(), a4)
+                self.sys_clone(a0, a1, a2.into(), a3, a4.into())
             }
             Sys::EXECVE => self.sys_execve(
                 self.into_in_userptr(a0).unwrap(),

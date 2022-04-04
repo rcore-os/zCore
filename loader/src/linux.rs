@@ -1,6 +1,7 @@
 //! Run Linux process and manage trap/interrupt/syscall.
 
 use alloc::{boxed::Box, string::String, sync::Arc, vec::Vec};
+use linux_object::signal::{SigInfo, SiginfoFields, SignalUserContext, Sigset};
 use core::{future::Future, pin::Pin};
 
 use kernel_hal::context::{TrapReason, UserContext, UserContextField};
@@ -59,10 +60,12 @@ async fn run_user(thread: CurrentThread) {
             break;
         }
 
-        // check the signal if was killed
-        if thread.inner().lock_linux().signal_mask.contains(linux_object::signal::Signal::SIGRT33) {
-            thread.exit_linux(-1);
-            // do not break temporarily
+        // check the signal and handle
+        let signals = thread.inner().lock_linux().signals;
+        let sigmask = thread.inner().lock_linux().signal_mask;
+        let handling_signal = thread.inner().lock_linux().handling_signal;
+        if signals.mask_with(&sigmask).is_not_empty() && handling_signal.is_none() {
+            handle_signal(&thread, &mut *ctx, sigmask);
         }
 
         // run
@@ -75,6 +78,41 @@ async fn run_user(thread: CurrentThread) {
             thread.exit_linux(err as i32);
         }
     }
+}
+
+fn handle_signal(thread: &CurrentThread, ctx: *mut UserContext, sigmask: Sigset) {
+    let action = thread.proc().linux().signal_action(linux_object::signal::Signal::SIGRT33);
+    let signal_info = SigInfo {
+        signo: 0,
+        errno: 0,
+        code: linux_object::signal::SignalCode::TKILL,
+        field: SiginfoFields::default()
+    };
+    let mut signal_context = SignalUserContext::default();
+    signal_context.sig_mask = sigmask.val() as u128;
+    thread.lock_linux().handling_signal = Some(linux_object::signal::Signal::SIGRT33 as u32);
+    // backup current context and set new context
+    unsafe {
+        thread.backup_context((*ctx).clone());
+        let sp = (*ctx).get_field(UserContextField::StackPointer) - 0x200;
+        let sp = push_stack::<SigInfo>(sp, signal_info);
+        let siginfo_ptr = sp;
+        let pc = (*ctx).get_field(UserContextField::InstrPointer);
+        signal_context.context.set_pc(pc);
+        let sp = push_stack::<SignalUserContext>(sp, signal_context);
+        (*ctx).setup_uspace(action.handler, sp, &[
+            linux_object::signal::Signal::SIGRT33 as usize, siginfo_ptr, sp
+        ]);
+        (*ctx).set_ra(action.restorer);
+        (*ctx).enter_uspace();
+    }
+}
+
+/// Push stack
+pub unsafe fn push_stack<T>(stack_top: usize, val: T) -> usize {
+    let stack_top = (stack_top as *mut T).sub(1);
+    *stack_top = val;
+    stack_top as usize
 }
 
 async fn handle_user_trap(thread: &CurrentThread, mut ctx: Box<UserContext>) -> ZxResult {

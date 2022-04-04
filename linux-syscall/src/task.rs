@@ -64,8 +64,8 @@ impl Syscall<'_> {
         flags: usize,
         newsp: usize,
         mut parent_tid: UserOutPtr<i32>,
-        mut child_tid: UserOutPtr<i32>,
         newtls: usize,
+        mut child_tid: UserOutPtr<i32>,
     ) -> SysResult {
         let _flags = CloneFlags::from_bits_truncate(flags);
         info!(
@@ -201,7 +201,7 @@ impl Syscall<'_> {
         // Workaround, the child process could NOT exit correctly
 
         self.thread
-            .with_context(|ctx| ctx.setup_uspace(entry, sp, 0, 0))?;
+            .with_context(|ctx| ctx.setup_uspace(entry, sp, &[0, 0, 0]))?;
         Ok(0)
     }
 

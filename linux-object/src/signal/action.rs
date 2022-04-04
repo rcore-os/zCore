@@ -14,8 +14,14 @@ pub const SIG_IGN: usize = 1;
 pub struct Sigset(u64);
 
 impl Sigset {
+    pub fn new(val: u64) -> Self {
+        Sigset(val)
+    }
     pub fn empty() -> Self {
         Sigset(0)
+    }
+    pub fn val(&self) -> u64 {
+        self.0
     }
     pub fn contains(&self, sig: Signal) -> bool {
         (self.0 >> sig as u64 & 1) != 0
@@ -31,6 +37,15 @@ impl Sigset {
     }
     pub fn remove_set(&mut self, sigset: &Sigset) {
         self.0 ^= self.0 & sigset.0;
+    }
+    pub fn mask_with(&self, sigset: &Sigset) -> Sigset {
+        Sigset(self.0 & (!sigset.0))
+    }
+    pub fn is_empty(&self) -> bool {
+        self.0 == 0
+    }
+    pub fn is_not_empty(&self) -> bool {
+        self.0 != 0
     }
 }
 
