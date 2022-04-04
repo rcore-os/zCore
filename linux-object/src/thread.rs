@@ -1,6 +1,5 @@
 //! Linux Thread
 
-use crate::error::LxError;
 use crate::error::SysResult;
 use crate::process::ProcessExt;
 use crate::signal::{SignalStack, Sigset};
@@ -22,8 +21,8 @@ pub trait ThreadExt {
     /// Get robust list.
     fn get_robust_list(
         &self,
-        head_ptr: UserOutPtr<UserOutPtr<RobustList>>,
-        len_ptr: UserOutPtr<usize>,
+        _head_ptr: UserOutPtr<UserOutPtr<RobustList>>,
+        _len_ptr: UserOutPtr<usize>,
     ) -> SysResult;
     /// Set robust list.
     fn set_robust_list(&self, head: UserInPtr<RobustList>, len: usize);
@@ -61,14 +60,11 @@ impl ThreadExt for Thread {
 
     fn get_robust_list(
         &self,
-        mut head_ptr: UserOutPtr<UserOutPtr<RobustList>>,
-        mut len_ptr: UserOutPtr<usize>,
+        mut _head_ptr: UserOutPtr<UserOutPtr<RobustList>>,
+        mut _len_ptr: UserOutPtr<usize>,
     ) -> SysResult {
-        // if self.lock_linux().robust_list_len == 0 {
-        //     return Err(LxError::EFAULT);
-        // }
-        head_ptr = (self.lock_linux().robust_list.as_ptr() as *mut RobustList as usize).into();
-        len_ptr = (&self.lock_linux().robust_list_len as *const usize as usize).into();
+        _head_ptr = (self.lock_linux().robust_list.as_ptr() as *mut RobustList as usize).into();
+        _len_ptr = (&self.lock_linux().robust_list_len as *const usize as usize).into();
         Ok(0)
     }
 
@@ -89,7 +85,7 @@ impl CurrentThreadExt for CurrentThread {
             info!("exit: do futex {:?} wake 1", clear_child_tid);
             clear_child_tid.write(0).unwrap();
             let uaddr = clear_child_tid.as_ptr() as VirtAddr;
-            let futex = self.proc().linux().get_futex(uaddr).unwrap();
+            let futex = self.proc().linux().get_futex(uaddr);
             futex.wake(1);
         }
         self.exit();
@@ -100,11 +96,11 @@ impl CurrentThreadExt for CurrentThread {
 #[derive(Default)]
 pub struct RobustList {
     /// head
-    head: usize,
+    pub head: usize,
     /// off
     pub off: isize,
     /// pending
-    pending: usize,
+    pub pending: usize,
 }
 
 /// Linux specific thread information.

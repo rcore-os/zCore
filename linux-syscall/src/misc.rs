@@ -4,10 +4,7 @@ use core::time::Duration;
 use futures::pin_mut;
 use kernel_hal::timer::timer_now;
 use linux_object::time::*;
-use zircon_object::{
-    task::{IntoResult, ThreadState},
-    ZxResult,
-};
+use zircon_object::task::ThreadState;
 
 impl Syscall<'_> {
     #[cfg(target_arch = "x86_64")]
@@ -82,6 +79,8 @@ impl Syscall<'_> {
         op: u32,
         val: u32,
         timeout_addr: usize,
+        uaddr2: usize,
+        _val3: u32,
     ) -> SysResult {
         if let Err(_) = self.into_inout_userptr::<i32>(uaddr) {
             return Err(LxError::EINVAL);
@@ -89,9 +88,15 @@ impl Syscall<'_> {
         let op = FutexFlags::from_bits_truncate(op);
         if !op.contains(FutexFlags::PRIVATE) {
             warn!("process-shared futex is unimplemented");
-            return Err(LxError::ENOPROTOOPT);
+            // return Err(LxError::ENOPROTOOPT);
         }
-        let op = op - FutexFlags::PRIVATE;
+        let mut val2 = 0;
+        if op.contains(FutexFlags::REQUEUE) {
+            if let Err(_) = self.into_inout_userptr::<i32>(uaddr2) {
+                return Err(LxError::EINVAL);
+            }
+            val2 = timeout_addr;
+        }
         let timeout = if op.contains(FutexFlags::WAKE) {
             self.into_inout_userptr::<TimeSpec>(0).unwrap()
         } else {
@@ -102,55 +107,96 @@ impl Syscall<'_> {
             }
         };
         warn!(
-            "Futex: uaddr: {:#x}, op: {:x}, val: {}, timeout_ptr: {:x?}",
+            "Futex: uaddr: {:#x}, op: {:x}, val: {}, timeout_ptr: {:x?}, val2: {}",
             uaddr,
             op.bits(),
             val,
-            timeout
+            timeout,
+            val2,
         );
-        let futex_op = self.linux_process().get_futex(uaddr);
-        match futex_op {
-            Some(futex) => match op {
-                FutexFlags::WAIT => {
-                    let timeout = timeout.read_if_not_null()?;
-                    let duration: Duration = match timeout {
-                        Some(T) => T.into(),
-                        None => Duration::from_secs(0),
-                    };
-                    let into_lxerror = |e: ZxError| match e {
-                        ZxError::BAD_STATE => LxError::EAGAIN,
-                        e => e.into(),
-                    };
-                    let future = futex.wait(val);
-                    let res = if duration.as_millis() == 0 {
-                        future.await
-                    } else {
-                        warn!("duration: {:?}", duration);
-                        pin_mut!(future);
-                        self.thread
-                            .blocking_run(
-                                future,
-                                ThreadState::BlockedFutex,
-                                timer_now() + duration,
-                                None,
-                            )
-                            .await
-                    };
-                    match res {
-                        Ok(_) => return Ok(0),
-                        Err(e) => return Err(into_lxerror(e)),
-                    }
+        let futex = self.linux_process().get_futex(uaddr);
+        let op = op - FutexFlags::PRIVATE;
+        match op {
+            FutexFlags::WAIT => {
+                let timeout = timeout.read_if_not_null()?;
+                let duration: Duration = match timeout {
+                    Some(t) => t.into(),
+                    None => Duration::from_secs(0),
+                };
+                let into_lxerror = |e: ZxError| match e {
+                    ZxError::BAD_STATE => LxError::EAGAIN,
+                    e => e.into(),
+                };
+                let future = futex.wait(val, false, self.thread.id() as i32);
+                let res = if duration.as_millis() == 0 {
+                    future.await
+                } else {
+                    warn!("duration: {:?}", duration);
+                    pin_mut!(future);
+                    self.thread
+                        .blocking_run(
+                            future,
+                            ThreadState::BlockedFutex,
+                            timer_now() + duration,
+                            None,
+                        )
+                        .await
+                };
+                match res {
+                    Ok(_) => return Ok(0),
+                    Err(e) => return Err(into_lxerror(e)),
                 }
-                FutexFlags::WAKE => {
-                    let woken_up_count = futex.wake(val as usize);
-                    Ok(woken_up_count)
+            }
+            FutexFlags::WAKE => {
+                let woken_up_count = futex.wake(val as usize);
+                Ok(woken_up_count)
+            }
+            FutexFlags::LOCK_PI => {
+                let timeout = timeout.read_if_not_null()?;
+                let duration: Duration = match timeout {
+                    Some(t) => t.into(),
+                    None => Duration::from_secs(0),
+                };
+                let into_lxerror = |e: ZxError| match e {
+                    ZxError::BAD_STATE => LxError::EAGAIN,
+                    e => e.into(),
+                };
+                let future = futex.wait(val, true, self.thread.id() as i32);
+                let res = if duration.as_millis() == 0 {
+                    future.await
+                } else {
+                    warn!("duration: {:?}", duration);
+                    pin_mut!(future);
+                    self.thread
+                        .blocking_run(
+                            future,
+                            ThreadState::BlockedFutex,
+                            timer_now() + duration,
+                            None,
+                        )
+                        .await
+                };
+                match res {
+                    Ok(_) => return Ok(0),
+                    Err(e) => return Err(into_lxerror(e)),
                 }
-                _ => {
-                    warn!("unsupported futex operation: {:?}", op);
-                    Err(LxError::ENOPROTOOPT)
+            }
+            FutexFlags::REQUEUE => {
+                let requeue_futex = self.linux_process().get_futex(uaddr2);
+                let into_lxerror = |e: ZxError| match e {
+                    ZxError::BAD_STATE => LxError::EAGAIN,
+                    e => e.into(),
+                };
+                let res = futex.requeue(0, val as usize, val2, &requeue_futex, None, false);
+                match res {
+                    Ok(_) => return Ok(0),
+                    Err(e) => return Err(into_lxerror(e)),
                 }
-            },
-            None => Err(LxError::EAGAIN),
+            }
+            _ => {
+                warn!("unsupported futex operation: {:?}", op);
+                Err(LxError::ENOPROTOOPT)
+            }
         }
     }
 
@@ -217,6 +263,8 @@ bitflags! {
         const WAIT      = 0;
         /// wakes at most val of the waiters that are waiting on the futex word at the address uaddr.
         const WAKE      = 1;
+        ///
+        const REQUEUE   = 3;
         ///
         const LOCK_PI   = 6;
         ///

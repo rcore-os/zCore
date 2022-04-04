@@ -57,8 +57,13 @@ impl Futex {
     ///
     /// [`wait_with_owner`]: Futex::wait_with_owner
     /// [`wake`]: Futex::wake
-    pub fn wait(self: &Arc<Self>, current_value: u32) -> impl Future<Output = ZxResult> {
-        self.wait_with_owner(current_value, None, None)
+    pub fn wait(
+        self: &Arc<Self>,
+        current_value: u32,
+        lock_pi: bool,
+        thread_id: i32,
+    ) -> impl Future<Output = ZxResult> {
+        self.wait_with_owner(current_value, None, None, lock_pi, thread_id)
     }
 
     /// Wake some number of threads waiting on a futex.
@@ -117,12 +122,16 @@ impl Futex {
         current_value: u32,
         thread: Option<Arc<Thread>>,
         new_owner: Option<Arc<Thread>>,
+        lock_pi: bool,
+        thread_id: i32,
     ) -> impl Future<Output = ZxResult> {
         #[must_use = "wait does nothing unless polled/`await`-ed"]
         struct FutexFuture {
             waiter: Arc<Waiter>,
             current_value: u32,
             new_owner: Option<Arc<Thread>>,
+            lock_pi: bool,
+            thread_id: i32,
         }
         impl Future for FutexFuture {
             type Output = ZxResult;
@@ -133,15 +142,29 @@ impl Futex {
                 if inner.woken {
                     // set new owner on success
                     inner.futex.inner.lock().set_owner(self.new_owner.clone());
+                    warn!("Futex Ready!!!");
                     return Poll::Ready(Ok(()));
                 }
                 // first time?
                 if inner.waker.is_none() {
                     // check value
                     let value = inner.futex.value.load(Ordering::SeqCst);
-                    if value as u32 != self.current_value {
-                        warn!("Futex BAD STATE");
-                        return Poll::Ready(Err(ZxError::BAD_STATE));
+                    if self.lock_pi {
+                        if value as u32 == 0 {
+                            warn!("This is {}", self.thread_id);
+                            inner.futex.value.store(self.thread_id, Ordering::SeqCst);
+                        } else {
+                            inner
+                                .futex
+                                .value
+                                .store((value as u32 | 0x80000000) as i32, Ordering::SeqCst);
+                        }
+                        return Poll::Ready(Ok(()));
+                    } else {
+                        if value as u32 != self.current_value {
+                            warn!("Futex BAD_STATE!!!");
+                            return Poll::Ready(Err(ZxError::BAD_STATE));
+                        }
                     }
                     // check new owner
                     let mut futex = inner.futex.inner.lock();
@@ -182,6 +205,8 @@ impl Futex {
             }),
             current_value,
             new_owner,
+            lock_pi,
+            thread_id,
         }
     }
 
@@ -224,11 +249,14 @@ impl Futex {
         requeue_count: usize,
         requeue_futex: &Arc<Futex>,
         new_requeue_owner: Option<Arc<Thread>>,
+        check_value: bool,
     ) -> ZxResult {
         let mut inner = self.inner.lock();
-        // check value
-        if self.value.load(Ordering::SeqCst) != current_value {
-            return Err(ZxError::BAD_STATE);
+        if check_value {
+            // check value
+            if self.value.load(Ordering::SeqCst) != current_value {
+                return Err(ZxError::BAD_STATE);
+            }
         }
         // wake
         for _ in 0..wake_count {

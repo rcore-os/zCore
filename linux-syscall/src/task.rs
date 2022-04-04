@@ -297,6 +297,7 @@ impl Syscall<'_> {
         Ok(tid as usize)
     }
 
+    /// Get robust list.
     pub fn sys_get_robust_list(
         &self,
         pid: i32,
@@ -313,6 +314,7 @@ impl Syscall<'_> {
         Ok(0)
     }
 
+    /// Set robust list.
     pub fn sys_set_robust_list(&self, head: UserInPtr<RobustList>, len: usize) -> SysResult {
         warn!("in sys_set_robust_list");
         if len != size_of::<RobustList>().into() {
