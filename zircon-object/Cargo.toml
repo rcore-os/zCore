@@ -22,10 +22,10 @@ kernel-hal = { path = "../kernel-hal", default-features = false }
 numeric-enum-macro = "0.2"
 futures = { version = "0.3", default-features = false, features = ["alloc", "async-await"] }
 xmas-elf = { version = "0.7", optional = true }
-region-alloc = { git = "https://github.com/rzswh/region-allocator", rev = "122c7a71" }
+region-alloc = { git = "https://github.91chi.fun//https://github.com/rzswh/region-allocator", rev = "122c7a71" }
 lazy_static = { version = "1.4", features = ["spin_no_std" ] }
 cfg-if = "1.0"
-#rvm = { git = "https://github.com/rcore-os/RVM", rev = "382fc60", optional = true }
+#rvm = { git = "https://github.91chi.fun//https://github.com/rcore-os/RVM", rev = "382fc60", optional = true }
 
 [dev-dependencies]
 async-std = { version = "1.10", features = ["attributes", "unstable"] }

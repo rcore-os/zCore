@@ -312,7 +312,7 @@ impl Syscall<'_> {
                 self.into_in_userptr(a0).unwrap(),
                 self.into_out_userptr(a1).unwrap(),
             ),
-            //            Sys::KILL => self.sys_kill(a0, a1),
+            Sys::KILL => self.sys_kill(a0 as isize, a1),
 
             // schedule
             Sys::SCHED_YIELD => self.unimplemented("yield", Ok(0)),
@@ -380,7 +380,6 @@ impl Syscall<'_> {
                 self.sys_futex(a0, a1 as _, a2 as _, a3, a4, a5 as _).await
             }
             // Sys::FUTEX => self.unimplemented("futex", Ok(0)),
-            Sys::TKILL => self.unimplemented("tkill", Ok(0)),
             Sys::GET_ROBUST_LIST => {
                 warn!("{},{},{}", a0, a1, a2);
                 self.sys_get_robust_list(
@@ -394,6 +393,8 @@ impl Syscall<'_> {
                 self.sys_set_robust_list(self.into_in_userptr(a0).unwrap(), a1 as _)
             }
             // Sys::SET_ROBUST_LIST => self.unimplemented("set_robust_list", Ok(0)),
+            Sys::TKILL => self.sys_tkill(a0, a1),
+            Sys::TGKILL => self.sys_tgkill(a0, a1, a2),
 
             // time
             Sys::NANOSLEEP => self.sys_nanosleep(self.into_in_userptr(a0).unwrap()).await,
