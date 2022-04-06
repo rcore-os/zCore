@@ -54,19 +54,18 @@ zircon-object = { path = "../zircon-object" }
 linux-object = { path = "../linux-object", optional = true }
 rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "7c232ec", optional = true }
 rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "7c232ec", optional = true }
+lock = { git = "https://github.com/DeathWish5/kernel-sync" }
+executor = { git = "https://github.com/DeathWish5/PreemptiveScheduler" }
 
 # LibOS mode
 [target.'cfg(not(target_os = "none"))'.dependencies]
 async-std = { version = "1.10", optional = true }
 chrono = { version = "0.4", optional = true }
 rcore-fs-hostfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "7c232ec", optional = true }
-lock = { git = "https://github.com/DeathWish5/kernel-sync", features = ["libos"]}
 
 # Bare-metal mode
 [target.'cfg(target_os = "none")'.dependencies]
 buddy_system_allocator = "0.8"
-executor = { git = "https://github.com/DeathWish5/PreemptiveScheduler" }
-lock = { git = "https://github.com/DeathWish5/kernel-sync" }
 
 # Bare-metal mode on x86_64
 [target.'cfg(all(target_os = "none", target_arch = "x86_64"))'.dependencies]

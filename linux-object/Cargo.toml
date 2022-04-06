@@ -27,11 +27,10 @@ rcore-fs-devfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "7c232ec"
 cfg-if = "1.0"
 smoltcp = { git = "https://gitee.com/gcyyfun/smoltcp", rev="043eb60", default-features = false, features = ["alloc","log", "async", "medium-ethernet","proto-ipv4", "proto-igmp", "socket-icmp", "socket-udp", "socket-tcp", "socket-raw"] }
 zcore-drivers = { path = "../drivers", features = ["virtio"] }
+lock = { git = "https://github.com/DeathWish5/kernel-sync" }
 
 # LibOS mode
 [target.'cfg(not(target_os = "none"))'.dependencies]
-lock = { git = "https://github.com/DeathWish5/kernel-sync", features = ["libos"] }
 
 # Bare-metal mode
 [target.'cfg(target_os = "none")'.dependencies]
-lock = { git = "https://github.com/DeathWish5/kernel-sync" }

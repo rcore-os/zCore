@@ -6,11 +6,11 @@ hal_fn_impl! {
     impl mod crate::hal_fn::interrupt {
         fn wait_for_interrupt() {
             let enable = sstatus::read().sie();
-            if enable == false {
+            if !enable {
                 unsafe { sstatus::set_sie() };
             }
             unsafe { asm::wfi(); }
-            if enable == false {
+            if !enable {
                 unsafe { sstatus::clear_sie() };
             }
         }
