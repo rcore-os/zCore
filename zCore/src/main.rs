@@ -37,14 +37,10 @@ fn primary_main(config: kernel_hal::KernelConfig) {
     memory::init_frame_allocator(&kernel_hal::mem::free_pmem_regions());
     kernel_hal::primary_init();
     STARTED.store(true, Ordering::SeqCst);
-
-    kernel_hal::interrupt::intr_on();
-
     cfg_if! {
         if #[cfg(all(feature = "linux", feature = "zircon"))] {
             panic!("Feature `linux` and `zircon` cannot be enabled at the same time!");
         } else if #[cfg(feature = "linux")] {
-            log::info!("run prog");
             let args = options.root_proc.split('?').map(Into::into).collect(); // parse "arg0?arg1?arg2"
             let envs = alloc::vec!["PATH=/usr/sbin:/usr/bin:/sbin:/bin".into()];
             let rootfs = fs::rootfs();

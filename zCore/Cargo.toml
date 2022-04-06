@@ -64,7 +64,7 @@ lock = { git = "https://github.com/DeathWish5/kernel-sync", features = ["libos"]
 
 # Bare-metal mode
 [target.'cfg(target_os = "none")'.dependencies]
-buddy_system_allocator = "0.7"
+buddy_system_allocator = "0.8"
 executor = { git = "https://github.com/DeathWish5/PreemptiveScheduler" }
 lock = { git = "https://github.com/DeathWish5/kernel-sync" }
 

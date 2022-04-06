@@ -226,6 +226,10 @@ endif
 
 .PHONY: debugrun
 debugrun: $(qemu_disk)
+ifeq ($(ARCH), x86_64)
+	$(sed) 's#initramfs=.*#initramfs=\\EFI\\zCore\\$(notdir $(user_img))#' $(esp)/EFI/Boot/rboot.conf
+	$(sed) 's#cmdline=.*#cmdline=$(CMDLINE)#' $(esp)/EFI/Boot/rboot.conf
+endif
 	$(qemu) $(qemu_opts) -S -gdb tcp::15234 &
 	@sleep 1
 	$(gdb)

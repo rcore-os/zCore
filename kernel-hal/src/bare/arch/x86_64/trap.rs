@@ -24,6 +24,11 @@ fn breakpoint() {
     panic!("\nEXCEPTION: Breakpoint");
 }
 
+pub(super) fn super_timer() {
+    crate::timer::timer_tick();
+    executor::handle_timeout();
+}
+
 #[no_mangle]
 pub extern "C" fn trap_handler(tf: &mut TrapFrame) {
     trace!(

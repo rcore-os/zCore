@@ -60,11 +60,11 @@ async fn run_user(thread: CurrentThread) {
         }
 
         // run
-        trace!("go to user: {:#x?}", ctx);
+        trace!("go to user: tid = {} ctx = {:#x?}", thread.id(), ctx);
         kernel_hal::interrupt::intr_off(); // trapframe can't be interrupted
         ctx.enter_uspace();
         kernel_hal::interrupt::intr_on();
-        trace!("back from user: {:#x?}", ctx);
+        trace!("back from user: tid = {}, ctx = {:#x?}", thread.id(), ctx);
         // handle trap/interrupt/syscall
         if let Err(err) = handle_user_trap(&thread, ctx).await {
             thread.exit_linux(err as i32);

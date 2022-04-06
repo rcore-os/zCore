@@ -14,8 +14,7 @@ fn breakpoint(sepc: &mut usize) {
 pub(super) fn super_timer() {
     super::timer::timer_set_next();
     crate::timer::timer_tick();
-    debug!("time interrupt in kernel, runtime sched yield");
-    executor::sched_yield();
+    executor::handle_timeout();
     //发生外界中断时，epc的指令还没有执行，故无需修改epc到下一条
 }
 

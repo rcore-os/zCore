@@ -77,13 +77,14 @@ pub fn frame_dealloc(target: PhysAddr) {
 
 cfg_if! {
     if #[cfg(not(feature = "libos"))] {
+        const ORDER: usize = 32;
         use buddy_system_allocator::LockedHeap;
 
         /// Global heap allocator
         ///
         /// Available after `memory::init_heap()`.
         #[global_allocator]
-        static HEAP_ALLOCATOR: LockedHeap = LockedHeap::new();
+        static HEAP_ALLOCATOR: LockedHeap<ORDER> = LockedHeap::<ORDER>::new();
 
         /// Initialize the global heap allocator.
         pub fn init_heap() {

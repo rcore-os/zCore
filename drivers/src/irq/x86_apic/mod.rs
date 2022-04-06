@@ -82,9 +82,8 @@ impl Scheme for Apic {
     fn handle_irq(&self, vector: usize) {
         Self::local_apic().eoi();
         let res = if vector >= X86_INT_LOCAL_APIC_BASE {
-            self.manager_lapic
-                .lock()
-                .handle(vector - X86_INT_LOCAL_APIC_BASE)
+            let handler = self.manager_lapic.lock();
+            handler.handle(vector - X86_INT_LOCAL_APIC_BASE)
         } else {
             self.manager_ioapic.lock().handle(vector)
         };
