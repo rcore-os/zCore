@@ -17,3 +17,10 @@ exclude = [
 
 [profile.release]
 lto = true
+
+
+[patch.'https://github.com/DeathWish5/PreemptiveScheduler']
+executor = { path = "../../ASYNC/PreemptiveScheduler" }
+
+[patch.'https://github.com/DeathWish5/kernel-sync']
+lock = { path = "../../ASYNC/kernel-sync" }
