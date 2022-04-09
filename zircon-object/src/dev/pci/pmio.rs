@@ -12,7 +12,7 @@ pub fn pci_bdf_raw_addr(bus: u8, dev: u8, func: u8, offset: u8) -> u32 {
 
 cfg_if::cfg_if! {
 if #[cfg(all(target_arch = "x86_64", target_os = "none"))] {
-    use kernel_hal::x86_64::{Io, Pio};
+    use kernel_hal::x86_64::{Io, Pmio};
     use spin::Mutex;
 
     static PIO_LOCK: Mutex<()> = Mutex::new(());
@@ -20,9 +20,9 @@ if #[cfg(all(target_arch = "x86_64", target_os = "none"))] {
     const PCI_CONFIG_DATA: u16 = 0xcfc;
     const PCI_CONFIG_ENABLE: u32 = 1 << 31;
 
-    pub fn pio_config_read_addr(addr: u32, width: usize) -> ZxResult<u32> {
-        let mut port_cfg = Pio::<u32>::new(PCI_CONFIG_ADDR);
-        let port_data = Pio::<u32>::new(PCI_CONFIG_DATA);
+    pub fn pmio_config_read_addr(addr: u32, width: usize) -> ZxResult<u32> {
+        let mut port_cfg = Pmio::<u32>::new(PCI_CONFIG_ADDR);
+        let port_data = Pmio::<u32>::new(PCI_CONFIG_DATA);
 
         let _lock = PIO_LOCK.lock();
         let shift = ((addr & 0x3) << 3) as usize;
@@ -33,9 +33,9 @@ if #[cfg(all(target_arch = "x86_64", target_os = "none"))] {
         let tmp_val = u32::from_le(port_data.read());
         Ok((tmp_val >> shift) & (((1u64 << width) - 1) as u32))
     }
-    pub fn pio_config_write_addr(addr: u32, val: u32, width: usize) -> ZxResult {
-        let mut port_cfg = Pio::<u32>::new(PCI_CONFIG_ADDR);
-        let mut port_data = Pio::<u32>::new(PCI_CONFIG_DATA);
+    pub fn pmio_config_write_addr(addr: u32, val: u32, width: usize) -> ZxResult {
+        let mut port_cfg = Pmio::<u32>::new(PCI_CONFIG_ADDR);
+        let mut port_data = Pmio::<u32>::new(PCI_CONFIG_DATA);
 
         let _lock = PIO_LOCK.lock();
         let shift = ((addr & 0x3) << 3) as usize;
@@ -54,17 +54,17 @@ if #[cfg(all(target_arch = "x86_64", target_os = "none"))] {
         Ok(())
     }
 } else {
-    pub fn pio_config_read_addr(_addr: u32, _width: usize) -> ZxResult<u32> {
+    pub fn pmio_config_read_addr(_addr: u32, _width: usize) -> ZxResult<u32> {
         Err(ZxError::NOT_SUPPORTED)
     }
-    pub fn pio_config_write_addr(_addr: u32, _val: u32, _width: usize) -> ZxResult {
+    pub fn pmio_config_write_addr(_addr: u32, _val: u32, _width: usize) -> ZxResult {
         Err(ZxError::NOT_SUPPORTED)
     }
 }
 } // cfg_if!
 
 pub fn pio_config_read(bus: u8, dev: u8, func: u8, offset: u8, width: usize) -> ZxResult<u32> {
-    pio_config_read_addr(pci_bdf_raw_addr(bus, dev, func, offset), width)
+    pmio_config_read_addr(pci_bdf_raw_addr(bus, dev, func, offset), width)
 }
 
 pub fn pio_config_write(
@@ -75,5 +75,5 @@ pub fn pio_config_write(
     val: u32,
     width: usize,
 ) -> ZxResult {
-    pio_config_write_addr(pci_bdf_raw_addr(bus, dev, func, offset), val, width)
+    pmio_config_write_addr(pci_bdf_raw_addr(bus, dev, func, offset), val, width)
 }
