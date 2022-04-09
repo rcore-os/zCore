@@ -1,13 +1,10 @@
 //! Define physical frame allocation and dynamic memory allocation.
 
-use core::ops::Range;
-
-use bitmap_allocator::BitAlloc;
-use kernel_hal::PhysAddr;
-// use spin::Mutex;
-use lock::Mutex;
-
 use super::platform::consts::*;
+use bitmap_allocator::BitAlloc;
+use core::ops::Range;
+use kernel_hal::PhysAddr;
+use lock::Mutex;
 
 #[cfg(target_arch = "x86_64")]
 type FrameAlloc = bitmap_allocator::BitAlloc16M; // max 64G
@@ -77,8 +74,13 @@ pub fn frame_dealloc(target: PhysAddr) {
 
 cfg_if! {
     if #[cfg(not(feature = "libos"))] {
+        use buddy_system_allocator::Heap;
+        use core::{
+            alloc::{GlobalAlloc, Layout},
+            ops::Deref,
+            ptr::NonNull,
+        };
         const ORDER: usize = 32;
-        use buddy_system_allocator::LockedHeap;
 
         /// Global heap allocator
         ///
@@ -101,6 +103,37 @@ cfg_if! {
                 "Heap init end: {:#x?}",
                 heap_start..heap_start + KERNEL_HEAP_SIZE
             );
+        }
+
+        pub struct LockedHeap<const ORDER: usize>(Mutex<Heap<ORDER>>);
+
+        impl<const ORDER: usize> LockedHeap<ORDER> {
+            /// Creates an empty heap
+            pub const fn new() -> Self {
+                LockedHeap(Mutex::new(Heap::<ORDER>::new()))
+            }
+        }
+
+        impl<const ORDER: usize> Deref for LockedHeap<ORDER> {
+            type Target = Mutex<Heap<ORDER>>;
+
+            fn deref(&self) -> &Self::Target {
+                &self.0
+            }
+        }
+
+        unsafe impl<const ORDER: usize> GlobalAlloc for LockedHeap<ORDER> {
+            unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+                self.0
+                    .lock()
+                    .alloc(layout)
+                    .ok()
+                    .map_or(0 as *mut u8, |allocation| allocation.as_ptr())
+            }
+
+            unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+                self.0.lock().dealloc(NonNull::new_unchecked(ptr), layout)
+            }
         }
     } else {
         pub fn init_heap() {}
