@@ -87,20 +87,19 @@ pub struct LinuxThread {
 
 #[allow(unsafe_code)]
 impl LinuxThread {
-    /// Restore the information after the signal handler return
+    /// Restore the information after the signal handler returns
     pub fn restore_after_handle_signal(&mut self, ctx: &mut UserContext, old_ctx: &UserContext) {
         let ctx_in_us;
         unsafe {
             let stack_top = ctx.get_field(UserContextField::StackPointer) as *mut SignalUserContext;
             ctx_in_us = &*stack_top;
         }
-        // error!("ctx: {:#x?} old_ctx: {:#x?} ctx_in_us_pc: {:#x?}", ctx, old_ctx, ctx_in_us);
         *ctx = *old_ctx;
-        // error!("ctx_in_us_pc: {:#x?}", ctx_in_us.context.get_pc());
         ctx.set_field(UserContextField::InstrPointer, ctx_in_us.context.get_pc());
         let mut new_mask = Sigset::empty();
+        warn!("FIXME: the signal mask is not correctly restored, because of align issues 
+            of the SignalUserContext with C musl library.");
         new_mask.insert(Signal::SIGRT33);
-        // self.signal_mask = Sigset::new(ctx_in_us.sig_mask as u64);
         self.signal_mask = new_mask;
         self.handling_signal = None;
     }
