@@ -142,29 +142,14 @@ impl Futex {
                 if inner.woken {
                     // set new owner on success
                     inner.futex.inner.lock().set_owner(self.new_owner.clone());
-                    warn!("Futex Ready!!!");
                     return Poll::Ready(Ok(()));
                 }
                 // first time?
                 if inner.waker.is_none() {
                     // check value
                     let value = inner.futex.value.load(Ordering::SeqCst);
-                    if self.lock_pi {
-                        if value as u32 == 0 {
-                            warn!("This is {}", self.thread_id);
-                            inner.futex.value.store(self.thread_id, Ordering::SeqCst);
-                        } else {
-                            inner
-                                .futex
-                                .value
-                                .store((value as u32 | 0x80000000) as i32, Ordering::SeqCst);
-                        }
-                        return Poll::Ready(Ok(()));
-                    } else {
-                        if value as u32 != self.current_value {
-                            warn!("Futex BAD_STATE!!!");
-                            return Poll::Ready(Err(ZxError::BAD_STATE));
-                        }
+                    if value as u32 != self.current_value {
+                        return Poll::Ready(Err(ZxError::BAD_STATE));
                     }
                     // check new owner
                     let mut futex = inner.futex.inner.lock();
@@ -175,7 +160,6 @@ impl Futex {
                     drop(futex);
                     inner.waker.replace(cx.waker().clone());
                 }
-                warn!("Futex pending!!!");
                 Poll::Pending
             }
         }

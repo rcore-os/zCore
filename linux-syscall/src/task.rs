@@ -282,19 +282,14 @@ impl Syscall<'_> {
         head_ptr: UserOutPtr<UserOutPtr<RobustList>>,
         len_ptr: UserOutPtr<usize>,
     ) -> SysResult {
-        warn!("in1 sys_get_robust_list");
         if pid == 0 {
-            warn!("in2 sys_get_robust_list");
             return self.thread.get_robust_list(head_ptr, len_ptr);
-        } else {
-            warn!("out sys_get_robust_list");
         }
         Ok(0)
     }
 
     /// Set robust list.
     pub fn sys_set_robust_list(&self, head: UserInPtr<RobustList>, len: usize) -> SysResult {
-        warn!("in sys_set_robust_list");
         if len != size_of::<RobustList>().into() {
             return Err(LxError::EINVAL);
         }

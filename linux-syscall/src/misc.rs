@@ -71,7 +71,9 @@ impl Syscall<'_> {
     /// - `uaddr` - points to the futex word.
     /// - `op` -  the operation to perform on the futex
     /// - `val` -  a value whose meaning and purpose depends on op
-    /// - `timeout` - not support now
+    /// - `timeout_addr` - provides a timeout for the attempt or acts as val2 when op is REQUEUE
+    /// - `uaddr2` - when op is REQUEUE, points to the target futex
+    /// - `_val3` - is not used
     pub async fn sys_futex(
         &self,
         uaddr: usize,
@@ -129,7 +131,6 @@ impl Syscall<'_> {
                 let res = if duration.as_millis() == 0 {
                     future.await
                 } else {
-                    warn!("Futex duration: {:?}", duration);
                     pin_mut!(future);
                     self.thread
                         .blocking_run(
@@ -150,35 +151,8 @@ impl Syscall<'_> {
                 Ok(woken_up_count)
             }
             FutexFlags::LOCK_PI => {
-                // Still have bugs
-                let timeout = timeout.read_if_not_null()?;
-                let duration: Duration = match timeout {
-                    Some(t) => t.into(),
-                    None => Duration::from_secs(0),
-                };
-                let into_lxerror = |e: ZxError| match e {
-                    ZxError::BAD_STATE => LxError::EAGAIN,
-                    e => e.into(),
-                };
-                let future = futex.wait(val, true, self.thread.id() as i32);
-                let res = if duration.as_millis() == 0 {
-                    future.await
-                } else {
-                    warn!("Futex duration: {:?}", duration);
-                    pin_mut!(future);
-                    self.thread
-                        .blocking_run(
-                            future,
-                            ThreadState::BlockedFutex,
-                            timer_now() + duration,
-                            None,
-                        )
-                        .await
-                };
-                match res {
-                    Ok(_) => return Ok(0),
-                    Err(e) => return Err(into_lxerror(e)),
-                }
+                warn!("futex LOCK_PI is unimplemented");
+                Ok(0)
             }
             FutexFlags::REQUEUE => {
                 let requeue_futex = self.linux_process().get_futex(uaddr2);
@@ -264,9 +238,9 @@ bitflags! {
         const WAKE      = 1;
         /// wakes up a maximum of val waiters that are waiting on the futex at uaddr.  If there are more than val waiters, then the remaining waiters are removed from the wait queue of the source futex at uaddr and added to the wait queue of the target futex at uaddr2.  The val2 argument specifies an upper limit on the number of waiters that are requeued to the futex at uaddr2.
         const REQUEUE   = 3;
-        /// used after an attempt to acquire the lock via an atomic user-mode instruction failed.
+        /// (unsupported) is used after an attempt to acquire the lock via an atomic user-mode instruction failed.
         const LOCK_PI   = 6;
-        /// called when the user-space value at uaddr cannot be changed atomically from a TID (of the owner) to 0.
+        /// (unsupported) is called when the user-space value at uaddr cannot be changed atomically from a TID (of the owner) to 0.
         const UNLOCK_PI = 7;
         /// can be employed with all futex operations, tells the kernel that the futex is process-private and not shared with another process
         const PRIVATE   = 0x80;

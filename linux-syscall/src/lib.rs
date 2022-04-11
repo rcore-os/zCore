@@ -375,18 +375,12 @@ impl Syscall<'_> {
                     .await
             }
             Sys::SET_TID_ADDRESS => self.sys_set_tid_address(self.into_out_userptr(a0).unwrap()),
-            Sys::FUTEX => {
-                info!("Futex: {} {} {} {} {} {}", a0, a1, a2, a3, a4, a5);
-                self.sys_futex(a0, a1 as _, a2 as _, a3, a4, a5 as _).await
-            }
-            Sys::GET_ROBUST_LIST => {
-                warn!("{},{},{}", a0, a1, a2);
-                self.sys_get_robust_list(
-                    a0 as _,
-                    self.into_out_userptr(a1).unwrap(),
-                    self.into_out_userptr(a2).unwrap(),
-                )
-            }
+            Sys::FUTEX => self.sys_futex(a0, a1 as _, a2 as _, a3, a4, a5 as _).await,
+            Sys::GET_ROBUST_LIST => self.sys_get_robust_list(
+                a0 as _,
+                self.into_out_userptr(a1).unwrap(),
+                self.into_out_userptr(a2).unwrap(),
+            ),
             Sys::SET_ROBUST_LIST => {
                 self.sys_set_robust_list(self.into_in_userptr(a0).unwrap(), a1 as _)
             }
