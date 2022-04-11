@@ -124,6 +124,8 @@ impl UserContext {
     }
 
     /// Initialize the context for entry into userspace.
+    /// Note: if the number of args < 3, please fill with zeros
+    /// Eg: ctx.setup_uspace(pc_, sp_, &[arg1, arg2, 0])
     pub fn setup_uspace(&mut self, pc: usize, sp: usize, args: &[usize; 3]) {
         cfg_if! {
             if #[cfg(target_arch = "x86_64")] {
