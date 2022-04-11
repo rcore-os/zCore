@@ -1,7 +1,7 @@
 //! Run Linux process and manage trap/interrupt/syscall.
 
 use alloc::{boxed::Box, string::String, sync::Arc, vec::Vec};
-use linux_object::signal::{SigInfo, SiginfoFields, SignalUserContext, Sigset};
+use linux_object::signal::{SigInfo, SiginfoFields, SignalUserContext, Sigset, Signal, SignalActionFlags};
 use core::{future::Future, pin::Pin};
 
 use kernel_hal::context::{TrapReason, UserContext, UserContextField};
@@ -61,11 +61,14 @@ async fn run_user(thread: CurrentThread) {
         }
 
         // check the signal and handle
-        let signals = thread.inner().lock_linux().signals;
-        let sigmask = thread.inner().lock_linux().signal_mask;
-        let handling_signal = thread.inner().lock_linux().handling_signal;
+        let (signals, sigmask, handling_signal) = 
+            thread.inner().lock_linux().get_signal_info();
         if signals.mask_with(&sigmask).is_not_empty() && handling_signal.is_none() {
-            handle_signal(&thread, &mut *ctx, sigmask);
+            let signal = signals.find_first_not_mask_signal(&sigmask).unwrap();
+            thread.lock_linux().handling_signal = Some(
+                signal as u32
+            );
+            ctx = handle_signal(&thread, ctx, signal, sigmask).await;
         }
 
         // run
@@ -80,8 +83,9 @@ async fn run_user(thread: CurrentThread) {
     }
 }
 
-fn handle_signal(thread: &CurrentThread, ctx: *mut UserContext, sigmask: Sigset) {
-    let action = thread.proc().linux().signal_action(linux_object::signal::Signal::SIGRT33);
+async fn handle_signal(thread: &CurrentThread, mut ctx: Box<UserContext>, signal: Signal, sigmask: Sigset) -> Box<UserContext> {
+    warn!("Not fully implemented SignalInfo, SignalStack, SignalActionFlags except SIGINFO");
+    let action = thread.proc().linux().signal_action(signal);
     let signal_info = SigInfo {
         signo: 0,
         errno: 0,
@@ -90,22 +94,28 @@ fn handle_signal(thread: &CurrentThread, ctx: *mut UserContext, sigmask: Sigset)
     };
     let mut signal_context = SignalUserContext::default();
     signal_context.sig_mask = sigmask.val() as u128;
-    thread.lock_linux().handling_signal = Some(linux_object::signal::Signal::SIGRT33 as u32);
     // backup current context and set new context
     unsafe {
         thread.backup_context((*ctx).clone());
         let sp = (*ctx).get_field(UserContextField::StackPointer) - 0x200;
-        let sp = push_stack::<SigInfo>(sp, signal_info);
-        let siginfo_ptr = sp;
-        let pc = (*ctx).get_field(UserContextField::InstrPointer);
-        signal_context.context.set_pc(pc);
-        let sp = push_stack::<SignalUserContext>(sp, signal_context);
-        (*ctx).setup_uspace(action.handler, sp, &[
-            linux_object::signal::Signal::SIGRT33 as usize, siginfo_ptr, sp
-        ]);
+        if action.flags.contains(SignalActionFlags::SIGINFO) {
+            let sp = push_stack::<SigInfo>(sp, signal_info);
+            let siginfo_ptr = sp;
+            let pc = (*ctx).get_field(UserContextField::InstrPointer);
+            signal_context.context.set_pc(pc);
+            let sp = push_stack::<SignalUserContext>(sp, signal_context);
+            (*ctx).setup_uspace(action.handler, sp, &[
+                linux_object::signal::Signal::SIGRT33 as usize, siginfo_ptr, sp
+            ]);
+        } else {
+            (*ctx).setup_uspace(action.handler, sp, &[
+                signal as usize, 0, 0
+            ]);
+        }
         (*ctx).set_ra(action.restorer);
         (*ctx).enter_uspace();
     }
+    return ctx;
 }
 
 /// Push stack

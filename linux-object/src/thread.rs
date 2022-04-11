@@ -103,4 +103,9 @@ impl LinuxThread {
         self.signal_mask = new_mask;
         self.handling_signal = None;
     }
+
+    /// Get signal info
+    pub fn get_signal_info(&self) -> (Sigset, Sigset, Option<u32>) {
+        return (self.signals, self.signal_mask, self.handling_signal)
+    }
 }
