@@ -1,1 +1,1 @@
-initSidebarItems({"struct":[["Mmio",""],["Pio","Generic PIO"],["ReadOnly",""],["WriteOnly",""]],"trait":[["Io",""]]});
+initSidebarItems({"struct":[["Mmio","Memory-mapped I/O."],["Pmio","Port-mapped I/O."],["ReadOnly","A readonly unit in device address space."],["WriteOnly","A write-only unit in device address space."]],"trait":[["Io","An interface for dealing with device address space access."]]});

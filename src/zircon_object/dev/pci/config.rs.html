@@ -164,7 +164,7 @@
 <span id="158">158</span>
 <span id="159">159</span>
 <span id="160">160</span>
-</pre><pre class="rust"><code><span class="kw">use</span> <span class="ident"><span class="kw">super</span>::pio</span>::{<span class="ident">pio_config_read_addr</span>, <span class="ident">pio_config_write_addr</span>};
+</pre><pre class="rust"><code><span class="kw">use</span> <span class="ident"><span class="kw">super</span>::pmio</span>::{<span class="ident">pmio_config_read_addr</span>, <span class="ident">pmio_config_write_addr</span>};
 <span class="kw">use</span> <span class="ident"><span class="kw">super</span>::PciAddrSpace</span>;
 <span class="kw">use</span> <span class="ident">numeric_enum_macro::numeric_enum</span>;
 
@@ -180,21 +180,21 @@
         <span class="macro">trace!</span>(<span class="string">&quot;read8 @ {:#x?}&quot;</span>, <span class="ident">offset</span>);
         <span class="kw">match</span> <span class="self">self</span>.<span class="ident">addr_space</span> {
             <span class="ident">PciAddrSpace::MMIO</span> =&gt; <span class="kw">unsafe</span> { <span class="ident">u8::from_le</span>(<span class="kw-2">*</span>(<span class="ident">offset</span> <span class="kw">as</span> <span class="kw-2">*const</span> <span class="ident">u8</span>)) },
-            <span class="ident">PciAddrSpace::PIO</span> =&gt; <span class="ident">pio_config_read_addr</span>(<span class="ident">offset</span> <span class="kw">as</span> <span class="ident">u32</span>, <span class="number">8</span>).<span class="ident">unwrap</span>() <span class="kw">as</span> <span class="ident">u8</span>,
+            <span class="ident">PciAddrSpace::PIO</span> =&gt; <span class="ident">pmio_config_read_addr</span>(<span class="ident">offset</span> <span class="kw">as</span> <span class="ident">u32</span>, <span class="number">8</span>).<span class="ident">unwrap</span>() <span class="kw">as</span> <span class="ident">u8</span>,
         }
     }
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">read16_offset</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">addr</span>: <span class="ident">usize</span>) -&gt; <span class="ident">u16</span> {
         <span class="macro">trace!</span>(<span class="string">&quot;read16 @ {:#x?}&quot;</span>, <span class="ident">addr</span>);
         <span class="kw">match</span> <span class="self">self</span>.<span class="ident">addr_space</span> {
             <span class="ident">PciAddrSpace::MMIO</span> =&gt; <span class="kw">unsafe</span> { <span class="ident">u16::from_le</span>(<span class="kw-2">*</span>(<span class="ident">addr</span> <span class="kw">as</span> <span class="kw-2">*const</span> <span class="ident">u16</span>)) },
-            <span class="ident">PciAddrSpace::PIO</span> =&gt; <span class="ident">pio_config_read_addr</span>(<span class="ident">addr</span> <span class="kw">as</span> <span class="ident">u32</span>, <span class="number">16</span>).<span class="ident">unwrap</span>() <span class="kw">as</span> <span class="ident">u16</span>,
+            <span class="ident">PciAddrSpace::PIO</span> =&gt; <span class="ident">pmio_config_read_addr</span>(<span class="ident">addr</span> <span class="kw">as</span> <span class="ident">u32</span>, <span class="number">16</span>).<span class="ident">unwrap</span>() <span class="kw">as</span> <span class="ident">u16</span>,
         }
     }
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">read32_offset</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">addr</span>: <span class="ident">usize</span>) -&gt; <span class="ident">u32</span> {
         <span class="macro">trace!</span>(<span class="string">&quot;read32 @ {:#x?}&quot;</span>, <span class="ident">addr</span>);
         <span class="kw">match</span> <span class="self">self</span>.<span class="ident">addr_space</span> {
             <span class="ident">PciAddrSpace::MMIO</span> =&gt; <span class="kw">unsafe</span> { <span class="ident">u32::from_le</span>(<span class="kw-2">*</span>(<span class="ident">addr</span> <span class="kw">as</span> <span class="kw-2">*const</span> <span class="ident">u32</span>)) },
-            <span class="ident">PciAddrSpace::PIO</span> =&gt; <span class="ident">pio_config_read_addr</span>(<span class="ident">addr</span> <span class="kw">as</span> <span class="ident">u32</span>, <span class="number">32</span>).<span class="ident">unwrap</span>(),
+            <span class="ident">PciAddrSpace::PIO</span> =&gt; <span class="ident">pmio_config_read_addr</span>(<span class="ident">addr</span> <span class="kw">as</span> <span class="ident">u32</span>, <span class="number">32</span>).<span class="ident">unwrap</span>(),
         }
     }
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">read8</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">addr</span>: <span class="ident">PciReg8</span>) -&gt; <span class="ident">u8</span> {
@@ -222,7 +222,7 @@
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">write8_offset</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">addr</span>: <span class="ident">usize</span>, <span class="ident">val</span>: <span class="ident">u8</span>) {
         <span class="kw">match</span> <span class="self">self</span>.<span class="ident">addr_space</span> {
             <span class="ident">PciAddrSpace::MMIO</span> =&gt; <span class="kw">unsafe</span> { <span class="kw-2">*</span>(<span class="ident">addr</span> <span class="kw">as</span> <span class="kw-2">*mut</span> <span class="ident">u8</span>) <span class="op">=</span> <span class="ident">val</span> },
-            <span class="ident">PciAddrSpace::PIO</span> =&gt; <span class="ident">pio_config_write_addr</span>(<span class="ident">addr</span> <span class="kw">as</span> <span class="ident">u32</span>, <span class="ident">val</span> <span class="kw">as</span> <span class="ident">u32</span>, <span class="number">8</span>).<span class="ident">unwrap</span>(),
+            <span class="ident">PciAddrSpace::PIO</span> =&gt; <span class="ident">pmio_config_write_addr</span>(<span class="ident">addr</span> <span class="kw">as</span> <span class="ident">u32</span>, <span class="ident">val</span> <span class="kw">as</span> <span class="ident">u32</span>, <span class="number">8</span>).<span class="ident">unwrap</span>(),
         }
     }
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">write16_offset</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">addr</span>: <span class="ident">usize</span>, <span class="ident">val</span>: <span class="ident">u16</span>) {
@@ -233,13 +233,13 @@
         );
         <span class="kw">match</span> <span class="self">self</span>.<span class="ident">addr_space</span> {
             <span class="ident">PciAddrSpace::MMIO</span> =&gt; <span class="kw">unsafe</span> { <span class="kw-2">*</span>(<span class="ident">addr</span> <span class="kw">as</span> <span class="kw-2">*mut</span> <span class="ident">u16</span>) <span class="op">=</span> <span class="ident">val</span> },
-            <span class="ident">PciAddrSpace::PIO</span> =&gt; <span class="ident">pio_config_write_addr</span>(<span class="ident">addr</span> <span class="kw">as</span> <span class="ident">u32</span>, <span class="ident">val</span> <span class="kw">as</span> <span class="ident">u32</span>, <span class="number">16</span>).<span class="ident">unwrap</span>(),
+            <span class="ident">PciAddrSpace::PIO</span> =&gt; <span class="ident">pmio_config_write_addr</span>(<span class="ident">addr</span> <span class="kw">as</span> <span class="ident">u32</span>, <span class="ident">val</span> <span class="kw">as</span> <span class="ident">u32</span>, <span class="number">16</span>).<span class="ident">unwrap</span>(),
         }
     }
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">write32_offset</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">addr</span>: <span class="ident">usize</span>, <span class="ident">val</span>: <span class="ident">u32</span>) {
         <span class="kw">match</span> <span class="self">self</span>.<span class="ident">addr_space</span> {
             <span class="ident">PciAddrSpace::MMIO</span> =&gt; <span class="kw">unsafe</span> { <span class="kw-2">*</span>(<span class="ident">addr</span> <span class="kw">as</span> <span class="kw-2">*mut</span> <span class="ident">u32</span>) <span class="op">=</span> <span class="ident">val</span> },
-            <span class="ident">PciAddrSpace::PIO</span> =&gt; <span class="ident">pio_config_write_addr</span>(<span class="ident">addr</span> <span class="kw">as</span> <span class="ident">u32</span>, <span class="ident">val</span> <span class="kw">as</span> <span class="ident">u32</span>, <span class="number">32</span>).<span class="ident">unwrap</span>(),
+            <span class="ident">PciAddrSpace::PIO</span> =&gt; <span class="ident">pmio_config_write_addr</span>(<span class="ident">addr</span> <span class="kw">as</span> <span class="ident">u32</span>, <span class="ident">val</span> <span class="kw">as</span> <span class="ident">u32</span>, <span class="number">32</span>).<span class="ident">unwrap</span>(),
         }
     }
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">write8</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">addr</span>: <span class="ident">PciReg8</span>, <span class="ident">val</span>: <span class="ident">u8</span>) {

@@ -61,61 +61,105 @@
 <span id="55">55</span>
 <span id="56">56</span>
 <span id="57">57</span>
-</pre><pre class="rust"><code><span class="doccomment">//! General MMIO and PIO device driver.</span>
+<span id="58">58</span>
+<span id="59">59</span>
+<span id="60">60</span>
+<span id="61">61</span>
+<span id="62">62</span>
+<span id="63">63</span>
+<span id="64">64</span>
+<span id="65">65</span>
+<span id="66">66</span>
+<span id="67">67</span>
+<span id="68">68</span>
+<span id="69">69</span>
+<span id="70">70</span>
+<span id="71">71</span>
+<span id="72">72</span>
+<span id="73">73</span>
+<span id="74">74</span>
+<span id="75">75</span>
+<span id="76">76</span>
+<span id="77">77</span>
+<span id="78">78</span>
+<span id="79">79</span>
+</pre><pre class="rust"><code><span class="comment">// 封装对外设地址空间的访问，包括内存映射 IO 和端口映射 IO。</span>
+<span class="comment">//</span>
+<span class="comment">// 要了解这两种访问外设的方式，查看[维基百科](https://en.wikipedia.org/wiki/Memory-mapped_I/O)。</span>
+<span class="doccomment">//! Peripheral address space access, including memory-mapped IO and port-mapped IO.</span>
+<span class="doccomment">//!</span>
+<span class="doccomment">//! About these two methods of performing I/O, see [wikipedia](https://en.wikipedia.org/wiki/Memory-mapped_I/O).</span>
 
 <span class="kw">use</span> <span class="ident">core::ops</span>::{<span class="ident">BitAnd</span>, <span class="ident">BitOr</span>, <span class="ident">Not</span>};
 
 <span class="kw">mod</span> <span class="ident">mmio</span>;
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>)]</span>
-<span class="kw">mod</span> <span class="ident">pio</span>;
+<span class="kw">mod</span> <span class="ident">pmio</span>;
 
 <span class="kw">pub</span> <span class="kw">use</span> <span class="ident">mmio::Mmio</span>;
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>)]</span>
-<span class="kw">pub</span> <span class="kw">use</span> <span class="ident">pio::Pio</span>;
+<span class="kw">pub</span> <span class="kw">use</span> <span class="ident">pmio::Pmio</span>;
 
+<span class="comment">// 用于处理外设地址空间访问的接口。</span>
+<span class="doccomment">/// An interface for dealing with device address space access.</span>
 <span class="kw">pub</span> <span class="kw">trait</span> <span class="ident">Io</span> {
+    <span class="comment">// 可访问的对象的类型。</span>
+    <span class="doccomment">/// The type of object to access.</span>
     <span class="kw">type</span> <span class="ident">Value</span>: <span class="ident">Copy</span>
         <span class="op">+</span> <span class="ident">BitAnd</span><span class="op">&lt;</span><span class="ident">Output</span> <span class="op">=</span> <span class="ident"><span class="self">Self</span>::Value</span><span class="op">&gt;</span>
         <span class="op">+</span> <span class="ident">BitOr</span><span class="op">&lt;</span><span class="ident">Output</span> <span class="op">=</span> <span class="ident"><span class="self">Self</span>::Value</span><span class="op">&gt;</span>
         <span class="op">+</span> <span class="ident">Not</span><span class="op">&lt;</span><span class="ident">Output</span> <span class="op">=</span> <span class="ident"><span class="self">Self</span>::Value</span><span class="op">&gt;</span>;
 
+    <span class="comment">// 从外设读取值。</span>
+    <span class="doccomment">/// Reads value from device.</span>
     <span class="kw">fn</span> <span class="ident">read</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident"><span class="self">Self</span>::Value</span>;
+
+    <span class="comment">// 向外设写入值。</span>
+    <span class="doccomment">/// Writes `value` to device.</span>
     <span class="kw">fn</span> <span class="ident">write</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>, <span class="ident">value</span>: <span class="ident"><span class="self">Self</span>::Value</span>);
 }
 
+<span class="comment">// 外设地址空间的一个只读单元。</span>
+<span class="doccomment">/// A readonly unit in device address space.</span>
 <span class="attribute">#[<span class="ident">repr</span>(<span class="ident">transparent</span>)]</span>
-<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">ReadOnly</span><span class="op">&lt;</span><span class="ident">I</span><span class="op">&gt;</span> {
-    <span class="ident">inner</span>: <span class="ident">I</span>,
-}
+<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">ReadOnly</span><span class="op">&lt;</span><span class="ident">I</span><span class="op">&gt;</span>(<span class="ident">I</span>);
 
 <span class="kw">impl</span><span class="op">&lt;</span><span class="ident">I</span><span class="op">&gt;</span> <span class="ident">ReadOnly</span><span class="op">&lt;</span><span class="ident">I</span><span class="op">&gt;</span> {
-    <span class="kw">pub</span> <span class="kw">const</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">inner</span>: <span class="ident">I</span>) -&gt; <span class="ident">ReadOnly</span><span class="op">&lt;</span><span class="ident">I</span><span class="op">&gt;</span> {
-        <span class="ident">ReadOnly</span> { <span class="ident">inner</span> }
+    <span class="comment">// 构造外设地址空间的一个只读单元。</span>
+    <span class="doccomment">/// Constructs a readonly unit in device address space.</span>
+    <span class="kw">pub</span> <span class="kw">const</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">inner</span>: <span class="ident">I</span>) -&gt; <span class="self">Self</span> {
+        <span class="self">Self</span>(<span class="ident">inner</span>)
     }
 }
 
 <span class="kw">impl</span><span class="op">&lt;</span><span class="ident">I</span>: <span class="ident">Io</span><span class="op">&gt;</span> <span class="ident">ReadOnly</span><span class="op">&lt;</span><span class="ident">I</span><span class="op">&gt;</span> {
+    <span class="comment">// 从外设读取值。</span>
+    <span class="doccomment">/// Reads value from device.</span>
     <span class="attribute">#[<span class="ident">inline</span>(<span class="ident">always</span>)]</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">read</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">I::Value</span> {
-        <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">read</span>()
+        <span class="self">self</span>.<span class="number">0</span>.<span class="ident">read</span>()
     }
 }
 
+<span class="comment">// 外设地址空间的一个只写单元。</span>
+<span class="doccomment">/// A write-only unit in device address space.</span>
 <span class="attribute">#[<span class="ident">repr</span>(<span class="ident">transparent</span>)]</span>
-<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">WriteOnly</span><span class="op">&lt;</span><span class="ident">I</span><span class="op">&gt;</span> {
-    <span class="ident">inner</span>: <span class="ident">I</span>,
-}
+<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">WriteOnly</span><span class="op">&lt;</span><span class="ident">I</span><span class="op">&gt;</span>(<span class="ident">I</span>);
 
 <span class="kw">impl</span><span class="op">&lt;</span><span class="ident">I</span><span class="op">&gt;</span> <span class="ident">WriteOnly</span><span class="op">&lt;</span><span class="ident">I</span><span class="op">&gt;</span> {
-    <span class="kw">pub</span> <span class="kw">const</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">inner</span>: <span class="ident">I</span>) -&gt; <span class="ident">WriteOnly</span><span class="op">&lt;</span><span class="ident">I</span><span class="op">&gt;</span> {
-        <span class="ident">WriteOnly</span> { <span class="ident">inner</span> }
+    <span class="comment">// 构造外设地址空间的一个只写单元。</span>
+    <span class="doccomment">/// Constructs a write-only unit in device address space.</span>
+    <span class="kw">pub</span> <span class="kw">const</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">inner</span>: <span class="ident">I</span>) -&gt; <span class="self">Self</span> {
+        <span class="self">Self</span>(<span class="ident">inner</span>)
     }
 }
 
 <span class="kw">impl</span><span class="op">&lt;</span><span class="ident">I</span>: <span class="ident">Io</span><span class="op">&gt;</span> <span class="ident">WriteOnly</span><span class="op">&lt;</span><span class="ident">I</span><span class="op">&gt;</span> {
+    <span class="comment">// 向外设写入值。</span>
+    <span class="doccomment">/// Writes `value` to device.</span>
     <span class="attribute">#[<span class="ident">inline</span>(<span class="ident">always</span>)]</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">write</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>, <span class="ident">value</span>: <span class="ident">I::Value</span>) {
-        <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">write</span>(<span class="ident">value</span>)
+        <span class="self">self</span>.<span class="number">0</span>.<span class="ident">write</span>(<span class="ident">value</span>);
     }
 }
 </code></pre></div>

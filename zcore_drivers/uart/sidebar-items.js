@@ -1,1 +1,1 @@
-initSidebarItems({"struct":[["BufferedUart",""],["Uart16550Mmio","MMIO driver for UART 16550"],["Uart16550Pio","PIO driver for UART 16550"]]});
+initSidebarItems({"struct":[["BufferedUart",""],["Uart16550Mmio","MMIO driver for UART 16550"],["Uart16550Pmio","Pmio driver for UART 16550"]]});

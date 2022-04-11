@@ -317,7 +317,7 @@
         <span class="ident">constants</span>::<span class="kw-2">*</span>,
         <span class="ident">pci_init_args</span>::{<span class="ident">PciInitArgsAddrWindows</span>, <span class="ident">PciInitArgsHeader</span>, <span class="ident">PCI_INIT_ARG_MAX_SIZE</span>},
         <span class="ident">MmioPcieAddressProvider</span>, <span class="ident">PCIeBusDriver</span>, <span class="ident">PciAddrSpace</span>, <span class="ident">PciEcamRegion</span>, <span class="ident">PcieDeviceInfo</span>,
-        <span class="ident">PcieDeviceKObject</span>, <span class="ident">PcieIrqMode</span>, <span class="ident">PioPcieAddressProvider</span>,
+        <span class="ident">PcieDeviceKObject</span>, <span class="ident">PcieIrqMode</span>, <span class="ident">PmioPcieAddressProvider</span>,
     },
     <span class="ident">dev</span>::{<span class="ident">Resource</span>, <span class="ident">ResourceKind</span>},
     <span class="ident">vm</span>::{<span class="ident">pages</span>, <span class="ident">VmObject</span>},
@@ -454,7 +454,7 @@
             })<span class="question-mark">?</span>;
             <span class="ident">PCIeBusDriver::set_address_translation_provider</span>(<span class="ident">addr_provider</span>)<span class="question-mark">?</span>;
         } <span class="kw">else</span> <span class="kw">if</span> <span class="ident">addr_win</span>.<span class="ident">cfg_space_type</span> <span class="op">==</span> <span class="ident">PCI_CFG_SPACE_TYPE_PIO</span> {
-            <span class="kw">let</span> <span class="ident">addr_provider</span> <span class="op">=</span> <span class="ident">Arc::new</span>(<span class="ident">PioPcieAddressProvider::default</span>());
+            <span class="kw">let</span> <span class="ident">addr_provider</span> <span class="op">=</span> <span class="ident">Arc::new</span>(<span class="ident">PmioPcieAddressProvider::default</span>());
             <span class="ident">PCIeBusDriver::set_address_translation_provider</span>(<span class="ident">addr_provider</span>)<span class="question-mark">?</span>;
         } <span class="kw">else</span> {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::INVALID_ARGS</span>);

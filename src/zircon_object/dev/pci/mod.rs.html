@@ -76,14 +76,14 @@
 <span class="kw">mod</span> <span class="ident">config</span>;
 <span class="kw">mod</span> <span class="ident">nodes</span>;
 <span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">pci_init_args</span>;
-<span class="kw">mod</span> <span class="ident">pio</span>;
+<span class="kw">mod</span> <span class="ident">pmio</span>;
 
 <span class="kw">pub</span> <span class="kw">use</span> <span class="ident"><span class="self">self</span>::bus</span>::{
     <span class="ident">MmioPcieAddressProvider</span>, <span class="ident">PCIeBusDriver</span>, <span class="ident">PcieDeviceInfo</span>, <span class="ident">PcieDeviceKObject</span>,
-    <span class="ident">PioPcieAddressProvider</span>,
+    <span class="ident">PmioPcieAddressProvider</span>,
 };
 <span class="kw">pub</span> <span class="kw">use</span> <span class="ident"><span class="self">self</span>::nodes</span>::{<span class="ident">IPciNode</span>, <span class="ident">PcieIrqMode</span>};
-<span class="kw">pub</span> <span class="kw">use</span> <span class="ident"><span class="self">self</span>::pio</span>::{<span class="ident">pio_config_read</span>, <span class="ident">pio_config_write</span>};
+<span class="kw">pub</span> <span class="kw">use</span> <span class="ident"><span class="self">self</span>::pmio</span>::{<span class="ident">pio_config_read</span>, <span class="ident">pio_config_write</span>};
 
 <span class="doccomment">/// Type of PCI address space.</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">PartialEq</span>, <span class="ident">Debug</span>)]</span>
