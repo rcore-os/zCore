@@ -1,12 +1,10 @@
-use core::mem::MaybeUninit;
+use super::Io;
 use core::ops::{BitAnd, BitOr, Not};
 
-use super::Io;
-
+// 主存映射 I/O。
+/// Memory-mapped I/O.
 #[repr(transparent)]
-pub struct Mmio<T> {
-    value: MaybeUninit<T>,
-}
+pub struct Mmio<T>(T);
 
 impl<T> Mmio<T> {
     /// # Safety
@@ -25,9 +23,7 @@ impl<T> Mmio<T> {
     }
 
     pub fn add<'a>(&self, offset: usize) -> &'a mut Self {
-        unsafe {
-            Self::from_base(self.value.as_ptr() as usize + offset * core::mem::size_of::<T>())
-        }
+        unsafe { Self::from_base((&self.0 as *const T).add(offset) as _) }
     }
 }
 
@@ -38,10 +34,19 @@ where
     type Value = T;
 
     fn read(&self) -> T {
-        unsafe { core::ptr::read_volatile(self.value.as_ptr()) }
+        unsafe {
+            let val = core::ptr::read_volatile(&self.0 as *const _);
+            #[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))]
+            core::arch::asm!("fence i,r");
+            val
+        }
     }
 
     fn write(&mut self, value: T) {
-        unsafe { core::ptr::write_volatile(self.value.as_mut_ptr(), value) };
+        unsafe {
+            #[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))]
+            core::arch::asm!("fence w,o");
+            core::ptr::write_volatile(&mut self.0 as *mut _, value)
+        };
     }
 }

@@ -26,8 +26,8 @@ hal_fn_impl! {
         fn reset() -> ! {
             info!("shutdown...");
             loop {
-                use zcore_drivers::io::{Io, Pio};
-                Pio::<u16>::new(0x604).write(0x2000);
+                use zcore_drivers::io::{Io, Pmio};
+                Pmio::<u16>::new(0x604).write(0x2000);
                 super::interrupt::wait_for_interrupt();
             }
         }

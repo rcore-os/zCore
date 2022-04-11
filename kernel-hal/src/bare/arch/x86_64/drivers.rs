@@ -3,16 +3,16 @@ use alloc::{boxed::Box, sync::Arc};
 use zcore_drivers::bus::pci;
 use zcore_drivers::irq::x86::Apic;
 use zcore_drivers::scheme::IrqScheme;
-use zcore_drivers::uart::{BufferedUart, Uart16550Pio};
+use zcore_drivers::uart::{BufferedUart, Uart16550Pmio};
 use zcore_drivers::{Device, DeviceResult};
 
 use super::trap;
 use crate::drivers;
 
 pub(super) fn init_early() -> DeviceResult {
-    let uart = Arc::new(Uart16550Pio::new(0x3F8));
+    let uart = Arc::new(Uart16550Pmio::new(0x3F8));
     drivers::add_device(Device::Uart(BufferedUart::new(uart)));
-    let uart = Arc::new(Uart16550Pio::new(0x2F8));
+    let uart = Arc::new(Uart16550Pmio::new(0x2F8));
     drivers::add_device(Device::Uart(BufferedUart::new(uart)));
     Ok(())
 }
