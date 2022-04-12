@@ -18,7 +18,7 @@ ZBI ?= bringup
 SMP ?= 1
 ACCEL ?=
 
-
+NET ?=
 OBJDUMP :=
 OBJCOPY ?= rust-objcopy --binary-architecture=$(ARCH)
 
@@ -105,6 +105,7 @@ endif
 
 ifeq ($(TEST), 1)
   features += baremetal-test
+  NET := loopback
 endif
 
 ifeq ($(GRAPHIC), on)
@@ -116,6 +117,10 @@ endif
 ifeq ($(HYPERVISOR), 1)
   features += hypervisor
   ACCEL := 1
+endif
+
+ifeq ($(NET), loopback)
+  features += loopback
 endif
 
 ################ Cargo build args ################
@@ -144,6 +149,7 @@ ifeq ($(ARCH), x86_64)
 		-cpu Haswell,+smap,-check,-fsgsbase \
 		-m 1G \
 		-serial mon:stdio \
+		-serial file:/tmp/serial.out \
 		-drive format=raw,if=pflash,readonly=on,file=$(ovmf) \
 		-drive format=raw,file=fat:rw:$(esp) \
 		-nic none
@@ -154,6 +160,7 @@ else ifeq ($(ARCH), riscv64)
 		-m 512M \
 		-no-reboot \
 		-serial mon:stdio \
+		-serial file:/tmp/serial.out \
 		-kernel $(kernel_img) \
 		-initrd $(USER_IMG) \
 		-append "$(CMDLINE)"

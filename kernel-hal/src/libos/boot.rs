@@ -1,6 +1,5 @@
 //! Bootstrap and initialization.
 
-use super::net;
 use crate::{KernelConfig, KernelHandler, KCONFIG, KHANDLER};
 
 hal_fn_impl! {
@@ -19,7 +18,6 @@ hal_fn_impl! {
                 super::macos::register_sigsegv_handler();
             }
 
-            net::init();
         }
     }
 }

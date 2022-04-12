@@ -13,6 +13,8 @@ smp = []
 libos = ["nix", "tempfile", "async-std", "bitmap-allocator", "zcore-drivers/mock"]
 graphic = ["zcore-drivers/graphic"]
 
+loopback = []
+
 [dependencies]
 log = "0.4"
 spin = "0.9"
@@ -25,7 +27,6 @@ lazy_static = { version = "1.4", features = ["spin_no_std"] }
 zcore-drivers = { path = "../drivers", features = ["virtio"] }
 lock = { git = "https://github.com/DeathWish5/kernel-sync" }
 smoltcp = { git = "https://gitee.com/gcyyfun/smoltcp", rev="043eb60", default-features = false, features = ["alloc","log", "async", "medium-ethernet","proto-ipv4", "proto-igmp", "socket-icmp", "socket-udp", "socket-tcp", "socket-raw"] }
-
 
 # LibOS mode
 [target.'cfg(not(target_os = "none"))'.dependencies]

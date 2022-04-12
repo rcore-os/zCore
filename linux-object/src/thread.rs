@@ -4,7 +4,6 @@ use crate::process::ProcessExt;
 use crate::signal::{SignalStack, Sigset};
 use alloc::sync::Arc;
 use kernel_hal::user::{Out, UserOutPtr, UserPtr};
-use kernel_hal::VirtAddr;
 use spin::{Mutex, MutexGuard};
 // use lock::mutex::{Mutex, MutexGuard};
 use zircon_object::task::{CurrentThread, Process, Thread};
@@ -59,7 +58,7 @@ impl CurrentThreadExt for CurrentThread {
         if !clear_child_tid.is_null() {
             info!("exit: do futex {:?} wake 1", clear_child_tid);
             clear_child_tid.write(0).unwrap();
-            let uaddr = clear_child_tid.as_ptr() as VirtAddr;
+            let uaddr = clear_child_tid.as_addr();
             let futex = self.proc().linux().get_futex(uaddr);
             futex.wake(1);
         }

@@ -49,12 +49,12 @@ impl Syscall<'_> {
             return Err(ZxError::INVALID_ARGS);
         }
         let datalen = len.min(224);
-        let data = buf.read_string(datalen as usize)?;
+        let data = buf.as_str(datalen as usize)?;
         let proc = self.thread.proc();
         let dlog = proc.get_object_with_rights::<DebugLog>(handle_value, Rights::WRITE)?;
-        dlog.write(Severity::Info, options, self.thread.id(), proc.id(), &data);
+        dlog.write(Severity::Info, options, self.thread.id(), proc.id(), data);
         // print to kernel console
-        kernel_hal::console::console_write_str(&data);
+        kernel_hal::console::console_write_str(data);
         if data.as_bytes().last() != Some(&b'\n') {
             kernel_hal::console::console_write_str("\n");
         }

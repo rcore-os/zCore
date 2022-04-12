@@ -61,6 +61,9 @@ cfg_if! {
     }
 }
 
+#[cfg(feature = "link-user-img")]
+use core::arch::global_asm;
+
 // Hard link rootfs img
 #[cfg(not(feature = "libos"))]
 #[cfg(feature = "link-user-img")]

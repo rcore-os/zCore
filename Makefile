@@ -3,6 +3,7 @@ ROOTFS_URL := http://dl-cdn.alpinelinux.org/alpine/v3.12/releases/x86_64/$(ROOTF
 
 RISCV64_ROOTFS_TAR := prebuild.tar.xz
 RISCV64_ROOTFS_URL := https://github.com/rcore-os/libc-test-prebuilt/releases/download/0.1/$(RISCV64_ROOTFS_TAR)
+LIBC_TEST_URL := https://github.com/rcore-os/libc-test.git
 
 ARCH ?= x86_64
 rcore_fs_fuse_revision := 7f5eeac
@@ -38,8 +39,13 @@ riscv-rootfs:prebuilt/linux/riscv64/$(RISCV64_ROOTFS_TAR)
 	@ln -s busybox riscv_rootfs/bin/ls
 
 libc-test:
-	cd rootfs && git clone git://repo.or.cz/libc-test --depth 1
+	cd rootfs && git clone $(LIBC_TEST_URL) --depth 1
 	cd rootfs/libc-test && cp config.mak.def config.mak && echo 'CC := musl-gcc' >> config.mak && make -j
+
+rt-test:
+	cd rootfs && git clone https://kernel.googlesource.com/pub/scm/linux/kernel/git/clrkwllms/rt-tests --depth 1
+	cd rootfs/rt-tests && make
+	echo x86 gcc build rt-test,now need manual modificy.
 
 rcore-fs-fuse:
 ifneq ($(shell rcore-fs-fuse dir image git-version), $(rcore_fs_fuse_revision))
@@ -89,7 +95,7 @@ baremetal-test-img: prebuilt/linux/$(ROOTFS_TAR) rcore-fs-fuse
 	@tar xf $< -C $(TMP_ROOTFS)
 	@mkdir -p rootfs/lib
 	@cp $(TMP_ROOTFS)/lib/ld-musl-x86_64.so.1 rootfs/lib/
-	@cd rootfs && rm -rf libc-test && git clone git://repo.or.cz/libc-test --depth 1
+	@cd rootfs && rm -rf libc-test && git clone $(LIBC_TEST_URL) --depth 1
 	@cd rootfs/libc-test && cp config.mak.def config.mak && echo 'CC := musl-gcc' >> config.mak && make -j
 	@rcore-fs-fuse $(OUT_IMG) rootfs zip
 # recover rootfs/ld-musl-x86_64.so.1 for zcore usr libos
@@ -97,3 +103,16 @@ baremetal-test-img: prebuilt/linux/$(ROOTFS_TAR) rcore-fs-fuse
 	@cp prebuilt/linux/libc-libos.so rootfs/lib/ld-musl-x86_64.so.1
 	@echo Resizing $(ARCH).img
 	@qemu-img resize $(OUT_IMG) +5M
+
+baremetal-test:
+	@make -C zCore baremetal-test MODE=release LINUX=1 | tee stdout-baremetal-test
+
+baremetal-test-rv64:
+	@make -C zCore baremetal-test-rv64 ARCH=riscv64 MODE=release LINUX=1 ROOTPROC=$(ROOTPROC) | tee -a stdout-baremetal-test-rv64 | tee stdout-rv64
+
+
+check:
+	cargo fmt --all -- --check
+	cargo clippy --all-features
+	cd zCore && make clippy ARCH=x86_64
+	cd zCore && make clippy ARCH=riscv64 LINUX=1

@@ -12,7 +12,7 @@ use {
 
 impl Syscall<'_> {
     #[allow(clippy::too_many_arguments)]
-    /// Read/Receive a message from a channel.  
+    /// Read/Receive a message from a channel.
     pub fn sys_channel_read(
         &self,
         handle_value: HandleValue,
@@ -76,7 +76,7 @@ impl Syscall<'_> {
         }
         Ok(())
     }
-    /// Write a message to a channel.  
+    /// Write a message to a channel.
     pub fn sys_channel_write(
         &self,
         handle_value: HandleValue,
@@ -98,9 +98,9 @@ impl Syscall<'_> {
         }
         let proc = self.thread.proc();
         let data = user_bytes.read_array(num_bytes as usize)?;
-        let handles = user_handles.read_array(num_handles as usize)?;
+        let handles = user_handles.as_slice(num_handles as usize)?;
         let transfer_self = handles.iter().any(|&handle| handle == handle_value);
-        let handles = proc.remove_handles(&handles)?;
+        let handles = proc.remove_handles(handles)?;
         if transfer_self {
             return Err(ZxError::NOT_SUPPORTED);
         }
@@ -116,7 +116,7 @@ impl Syscall<'_> {
         channel.write(MessagePacket { data, handles })?;
         Ok(())
     }
-    /// Create a new channel.   
+    /// Create a new channel.
     pub fn sys_channel_create(
         &self,
         options: u32,
@@ -136,7 +136,7 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    ///   
+    ///
     pub async fn sys_channel_call_noretry(
         &self,
         handle_value: HandleValue,
@@ -163,8 +163,8 @@ impl Syscall<'_> {
         let wr_msg = MessagePacket {
             data: args.wr_bytes.read_array(args.wr_num_bytes as usize)?,
             handles: {
-                let handles = args.wr_handles.read_array(args.wr_num_handles as usize)?;
-                let handles = proc.remove_handles(&handles)?;
+                let handles = args.wr_handles.as_slice(args.wr_num_handles as usize)?;
+                let handles = proc.remove_handles(handles)?;
                 for handle in handles.iter() {
                     if !handle.rights.contains(Rights::TRANSFER) {
                         return Err(ZxError::ACCESS_DENIED);
@@ -213,7 +213,7 @@ impl Syscall<'_> {
             Err(ZxError::BAD_STATE)
         }
     }
-    /// Write a message to a channel.  
+    /// Write a message to a channel.
     pub fn sys_channel_write_etc(
         &self,
         handle: HandleValue,

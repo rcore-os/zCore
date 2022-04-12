@@ -40,8 +40,7 @@ impl PlicUnlocked {
         let hart_id = cpu_id() as usize;
         let mmio = self
             .enable_base
-            .add(PLIC_ENABLE_HART_OFFSET * hart_id)
-            .add(irq_num / 32);
+            .add(PLIC_ENABLE_HART_OFFSET * hart_id + irq_num / 32);
 
         let mask = 1 << (irq_num % 32);
         if enable {
@@ -56,8 +55,7 @@ impl PlicUnlocked {
         let hart_id = cpu_id() as usize;
         let irq_num = self
             .context_base
-            .add(PLIC_CONTEXT_CLAIM_HART_OFFSET * hart_id)
-            .add(PLIC_CONTEXT_CLAIM)
+            .add(PLIC_CONTEXT_CLAIM_HART_OFFSET * hart_id + PLIC_CONTEXT_CLAIM)
             .read() as usize;
         if irq_num == 0 {
             None
@@ -71,8 +69,7 @@ impl PlicUnlocked {
         debug_assert!(IRQ_RANGE.contains(&irq_num));
         let hart_id = cpu_id() as usize;
         self.context_base
-            .add(PLIC_CONTEXT_CLAIM)
-            .add(PLIC_CONTEXT_CLAIM_HART_OFFSET * hart_id)
+            .add(PLIC_CONTEXT_CLAIM + PLIC_CONTEXT_CLAIM_HART_OFFSET * hart_id)
             .write(irq_num as _);
     }
 
@@ -86,8 +83,7 @@ impl PlicUnlocked {
     fn set_threshold(&mut self, threshold: u8) {
         let hart_id = cpu_id() as usize;
         self.context_base
-            .add(PLIC_PRIORITY_HART_OFFSET * hart_id)
-            .add(PLIC_CONTEXT_THRESHOLD)
+            .add(PLIC_PRIORITY_HART_OFFSET * hart_id + PLIC_CONTEXT_THRESHOLD)
             .write(threshold as _);
     }
 

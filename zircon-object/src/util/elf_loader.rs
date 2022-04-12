@@ -208,14 +208,14 @@ impl ElfExt for ElfFile<'_> {
                     };
                     let value = symval + entry.get_addend() as usize;
                     let addr = base + entry.get_offset() as usize;
-                    debug!("GOT write: {:#x} @ {:#x}", value, addr);
+                    trace!("GOT write: {:#x} @ {:#x}", value, addr);
                     vmar.write_memory(addr, &value.to_ne_bytes())
                         .map_err(|_| "Invalid Vmar")?;
                 }
                 REL_RELATIVE | R_RISCV_RELATIVE => {
                     let value = base + entry.get_addend() as usize;
                     let addr = base + entry.get_offset() as usize;
-                    debug!("RELATIVE write: {:#x} @ {:#x}", value, addr);
+                    trace!("RELATIVE write: {:#x} @ {:#x}", value, addr);
                     vmar.write_memory(addr, &value.to_ne_bytes())
                         .map_err(|_| "Invalid Vmar")?;
                 }

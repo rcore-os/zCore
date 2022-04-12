@@ -1,4 +1,4 @@
-use super::pio::{pio_config_read_addr, pio_config_write_addr};
+use super::pmio::{pmio_config_read_addr, pmio_config_write_addr};
 use super::PciAddrSpace;
 use numeric_enum_macro::numeric_enum;
 
@@ -14,21 +14,21 @@ impl PciConfig {
         trace!("read8 @ {:#x?}", offset);
         match self.addr_space {
             PciAddrSpace::MMIO => unsafe { u8::from_le(*(offset as *const u8)) },
-            PciAddrSpace::PIO => pio_config_read_addr(offset as u32, 8).unwrap() as u8,
+            PciAddrSpace::PIO => pmio_config_read_addr(offset as u32, 8).unwrap() as u8,
         }
     }
     pub fn read16_offset(&self, addr: usize) -> u16 {
         trace!("read16 @ {:#x?}", addr);
         match self.addr_space {
             PciAddrSpace::MMIO => unsafe { u16::from_le(*(addr as *const u16)) },
-            PciAddrSpace::PIO => pio_config_read_addr(addr as u32, 16).unwrap() as u16,
+            PciAddrSpace::PIO => pmio_config_read_addr(addr as u32, 16).unwrap() as u16,
         }
     }
     pub fn read32_offset(&self, addr: usize) -> u32 {
         trace!("read32 @ {:#x?}", addr);
         match self.addr_space {
             PciAddrSpace::MMIO => unsafe { u32::from_le(*(addr as *const u32)) },
-            PciAddrSpace::PIO => pio_config_read_addr(addr as u32, 32).unwrap(),
+            PciAddrSpace::PIO => pmio_config_read_addr(addr as u32, 32).unwrap(),
         }
     }
     pub fn read8(&self, addr: PciReg8) -> u8 {
@@ -56,7 +56,7 @@ impl PciConfig {
     pub fn write8_offset(&self, addr: usize, val: u8) {
         match self.addr_space {
             PciAddrSpace::MMIO => unsafe { *(addr as *mut u8) = val },
-            PciAddrSpace::PIO => pio_config_write_addr(addr as u32, val as u32, 8).unwrap(),
+            PciAddrSpace::PIO => pmio_config_write_addr(addr as u32, val as u32, 8).unwrap(),
         }
     }
     pub fn write16_offset(&self, addr: usize, val: u16) {
@@ -67,13 +67,13 @@ impl PciConfig {
         );
         match self.addr_space {
             PciAddrSpace::MMIO => unsafe { *(addr as *mut u16) = val },
-            PciAddrSpace::PIO => pio_config_write_addr(addr as u32, val as u32, 16).unwrap(),
+            PciAddrSpace::PIO => pmio_config_write_addr(addr as u32, val as u32, 16).unwrap(),
         }
     }
     pub fn write32_offset(&self, addr: usize, val: u32) {
         match self.addr_space {
             PciAddrSpace::MMIO => unsafe { *(addr as *mut u32) = val },
-            PciAddrSpace::PIO => pio_config_write_addr(addr as u32, val as u32, 32).unwrap(),
+            PciAddrSpace::PIO => pmio_config_write_addr(addr as u32, val as u32, 32).unwrap(),
         }
     }
     pub fn write8(&self, addr: PciReg8, val: u8) {

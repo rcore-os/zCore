@@ -1,7 +1,10 @@
 [package]
 name = "zcore-loader"
 version = "0.1.0"
-authors = ["Runji Wang <wangrunji0408@163.com>", "Yuekai Jia <equation618@gmail.com>"]
+authors = [
+    "Runji Wang <wangrunji0408@163.com>",
+    "Yuekai Jia <equation618@gmail.com>",
+]
 edition = "2018"
 description = "Linux and Zircon user programs loader and runner."
 
@@ -27,7 +30,7 @@ libos = ["kernel-hal/libos", "zircon-object/aspace-separate"]
 [dev-dependencies]
 env_logger = "0.9"
 async-std = { version = "1.10", features = ["attributes"] }
-rcore-fs-hostfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "7c232ec" }
+rcore-fs-hostfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "1a3246b" }
 
 [[example]]
 name = "linux-libos"
