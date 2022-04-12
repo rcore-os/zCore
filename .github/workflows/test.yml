@@ -218,7 +218,7 @@ jobs:
       - name: Prepare rootfs
         run: |
           if [ "${{ matrix.arch }}" = "x86_64" ]; then
-            make baremetal-test-img
+            make rootfs && make image
           elif [ "${{ matrix.arch }}" = "riscv64" ]; then
             make riscv-image
           fi
