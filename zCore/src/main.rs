@@ -30,7 +30,6 @@ fn primary_main(config: kernel_hal::KernelConfig) {
     logging::init();
     memory::init_heap();
     kernel_hal::primary_init_early(config, &handler::ZcoreKernelHandler);
-
     let options = utils::boot_options();
     logging::set_max_level(&options.log_level);
     info!("Boot options: {:#?}", options);
