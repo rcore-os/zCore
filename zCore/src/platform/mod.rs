@@ -14,5 +14,10 @@ cfg_if! {
         mod entry;
         #[path = "riscv/consts.rs"]
         pub mod consts;
+    } else if #[cfg(target_arch = "aarch64")] {
+        #[path = "aarch64/entry.rs"]
+        mod entry;
+        #[path = "aarch64/consts.rs"]
+        pub mod consts;
     }
 }
