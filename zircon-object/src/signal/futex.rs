@@ -367,10 +367,10 @@ mod tests {
 
                 // inconsistent value should fail.
                 assert_eq!(
-                    futex.requeue(1, 1, 1, &requeue_futex, None),
+                    futex.requeue(1, 1, 1, &requeue_futex, None, true),
                     Err(ZxError::BAD_STATE)
                 );
-                assert!(futex.requeue(2, 1, 1, &requeue_futex, None).is_ok());
+                assert!(futex.requeue(2, 1, 1, &requeue_futex, None, true).is_ok());
                 // 1 waiter waken, 1 waiter moved into `requeue_futex`.
                 assert_eq!(futex.inner.lock().waiter_queue.len(), 0);
                 assert_eq!(requeue_futex.inner.lock().waiter_queue.len(), 1);
