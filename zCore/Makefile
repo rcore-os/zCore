@@ -159,6 +159,15 @@ else ifeq ($(ARCH), riscv64)
 		-kernel $(kernel_img) \
 		-initrd $(USER_IMG) \
 		-append "$(CMDLINE)"
+else ifeq ($(ARCH), aarch64)
+	qemu_opts += \
+		-machine virt,secure=on,virtualization=on, \
+		-cpu cortex-a72 \
+		-m 1G \
+		-serial mon:stdio \
+		-serial file:/tmp/serial.out \
+		-bios aarch64_bin/trusted_edk2_aarch64.bin \
+		-hda fat:rw:disk
 endif
 
 ifeq ($(DISK), on)
@@ -229,6 +238,11 @@ debugrun: $(qemu_disk)
 kernel:
 	@echo Building zCore kenel
 	SMP=$(SMP) cargo build $(build_args)
+ifeq ($(ARCH), aarch64)
+	@mkdir -p disk/EFI/Boot
+	@cp aarch64_bin/aarch64_uefi.efi disk/EFI/Boot/bootaa64.efi
+	@cp ../target/aarch64/release/zcore disk/os
+endif
 
 .PHONY: disasm
 disasm:
@@ -245,6 +259,7 @@ clippy:
 .PHONY: clean
 clean:
 	cargo clean
+	@rm -rf disk
 
 .PHONY: bootloader
 bootloader:

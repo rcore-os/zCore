@@ -484,11 +484,22 @@ impl Syscall<'_> {
             _ => self.x86_64_syscall(sys_type, args).await,
             #[cfg(target_arch = "riscv64")]
             _ => self.riscv64_syscall(sys_type, args).await,
+            #[cfg(target_arch = "aarch64")]
+            _ => self.aarch64_syscall(sys_type, args).await,
         };
         info!("<= {:?}", ret);
         match ret {
             Ok(value) => value as isize,
             Err(err) => -(err as isize),
+        }
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    /// syscall specified for aarch64
+    async fn aarch64_syscall(&mut self, sys_type: Sys, args: [usize; 6]) -> SysResult {
+        debug!("aarch6464_syscall: {:?}, {:?}", sys_type, args);
+        match sys_type {
+            _ => self.unknown_syscall(sys_type),
         }
     }
 
