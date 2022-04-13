@@ -127,7 +127,7 @@ impl Syscall<'_> {
                     ZxError::BAD_STATE => LxError::EAGAIN,
                     e => e.into(),
                 };
-                let future = futex.wait(val);
+                let future = futex.wait(val as _);
                 let res = if duration.as_millis() == 0 {
                     future.await
                 } else {
