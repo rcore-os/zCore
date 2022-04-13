@@ -6,7 +6,7 @@ cfg_if! {
     } else if #[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))] {
         #[path = "arch/riscv/mod.rs"]
         pub mod arch;
-        pub use self::arch::sbi;
+        pub use self::arch::{sbi, timer_interrupt_vector};
     }
 }
 

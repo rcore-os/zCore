@@ -128,7 +128,7 @@ cfg_if! {
                     .lock()
                     .alloc(layout)
                     .ok()
-                    .map_or(0 as *mut u8, |allocation| allocation.as_ptr())
+                    .map_or(core::ptr::null_mut::<u8>(), |allocation| allocation.as_ptr())
             }
 
             unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {

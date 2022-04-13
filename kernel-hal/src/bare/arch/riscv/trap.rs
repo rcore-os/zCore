@@ -1,7 +1,8 @@
-use riscv::register::{scause, sstatus};
+use riscv::register::scause;
 use trapframe::TrapFrame;
 
 use crate::context::TrapReason;
+pub(super) const SUPERVISOR_TIMER_INT_VEC: usize = 5; // scause::Interrupt::SupervisorTimer
 
 fn breakpoint(sepc: &mut usize) {
     info!("Exception::Breakpoint: A breakpoint set @0x{:x} ", sepc);
@@ -31,7 +32,7 @@ pub extern "C" fn trap_handler(tf: &mut TrapFrame) {
         TrapReason::PageFault(vaddr, flags) => crate::KHANDLER.handle_page_fault(vaddr, flags),
         TrapReason::Interrupt(vector) => {
             crate::interrupt::handle_irq(vector);
-            if vector == scause::SupervisorTimer {
+            if vector == SUPERVISOR_TIMER_INT_VEC {
                 executor::handle_timeout();
             }
         }

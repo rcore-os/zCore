@@ -96,6 +96,7 @@ async fn handle_user_trap(thread: &CurrentThread, mut ctx: Box<UserContext>) -> 
     match reason {
         TrapReason::Interrupt(vector) => {
             kernel_hal::interrupt::handle_irq(vector);
+            #[cfg(not(feature = "libos"))]
             if vector == kernel_hal::context::TIMER_INTERRUPT_VEC {
                 kernel_hal::thread::yield_now().await;
             }

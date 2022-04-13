@@ -39,10 +39,8 @@ pub enum TrapReason {
     GernelFault(usize),
 }
 
-#[cfg(target_arch = "x86_64")]
+#[cfg(not(feature = "libos"))]
 pub const TIMER_INTERRUPT_VEC: usize = crate::timer_interrupt_vector();
-#[cfg(target_arch = "riscv64")]
-pub const TIMER_INTERRUPT: usize = riscv::register::scause::SupervisorTimer;
 
 impl TrapReason {
     /// Get [`TrapReason`] from `trap_num` and `error_code` in trap frame for x86.

@@ -19,6 +19,10 @@ static CMDLINE: InitOnce<String> = InitOnce::new_with_default(String::new());
 static INITRD_REGION: InitOnce<Option<Range<PhysAddr>>> = InitOnce::new_with_default(None);
 static MEMORY_REGIONS: InitOnce<Vec<Range<PhysAddr>>> = InitOnce::new_with_default(Vec::new());
 
+pub const fn timer_interrupt_vector() -> usize {
+    trap::SUPERVISOR_TIMER_INT_VEC
+}
+
 pub fn cmdline() -> String {
     CMDLINE.clone()
 }
