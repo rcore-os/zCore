@@ -29,7 +29,8 @@ use core::convert::TryFrom;
 
 use kernel_hal::user::{IoVecIn, IoVecOut, UserInOutPtr, UserInPtr, UserOutPtr};
 #[cfg(target_os = "none")]
-use kernel_hal::vm::{PagingError, PagingResult};
+use kernel_hal::vm::PagingError;
+use kernel_hal::vm::PagingResult;
 use kernel_hal::MMUFlags;
 use linux_object::error::{LxError, SysResult};
 use linux_object::fs::FileDesc;
