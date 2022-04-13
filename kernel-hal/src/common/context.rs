@@ -27,7 +27,7 @@ pub enum UserContextField {
 }
 
 /// Reason of the trap.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum TrapReason {
     Syscall,
     Interrupt(usize),
@@ -38,6 +38,11 @@ pub enum TrapReason {
     UnalignedAccess,
     GernelFault(usize),
 }
+
+#[cfg(target_arch = "x86_64")]
+pub const TIMER_INTERRUPT_VEC: usize = crate::timer_interrupt_vector();
+#[cfg(target_arch = "riscv64")]
+pub const TIMER_INTERRUPT: usize = riscv::register::scause::SupervisorTimer;
 
 impl TrapReason {
     /// Get [`TrapReason`] from `trap_num` and `error_code` in trap frame for x86.

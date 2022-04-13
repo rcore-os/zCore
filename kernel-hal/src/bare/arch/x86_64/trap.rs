@@ -26,7 +26,6 @@ fn breakpoint() {
 
 pub(super) fn super_timer() {
     crate::timer::timer_tick();
-    executor::handle_timeout();
 }
 
 #[no_mangle]
@@ -37,15 +36,15 @@ pub extern "C" fn trap_handler(tf: &mut TrapFrame) {
         super::cpu::cpu_id()
     );
 
-    trace!(
-        "trap happened: {:?}",
-        TrapReason::from(tf.trap_num, tf.error_code)
-    );
-
     match TrapReason::from(tf.trap_num, tf.error_code) {
         TrapReason::HardwareBreakpoint | TrapReason::SoftwareBreakpoint => breakpoint(),
         TrapReason::PageFault(vaddr, flags) => crate::KHANDLER.handle_page_fault(vaddr, flags),
-        TrapReason::Interrupt(vector) => crate::interrupt::handle_irq(vector),
+        TrapReason::Interrupt(vector) => {
+            crate::interrupt::handle_irq(vector);
+            if vector == X86_INT_APIC_TIMER {
+                executor::handle_timeout();
+            }
+        }
         other => panic!("Unhandled trap {:x?} {:#x?}", other, tf),
     }
 }

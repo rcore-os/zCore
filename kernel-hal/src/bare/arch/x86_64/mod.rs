@@ -16,6 +16,10 @@ hal_fn_impl_default!(crate::hal_fn::console);
 use crate::{mem::phys_to_virt, KCONFIG};
 use x86_64::registers::control::{Cr4, Cr4Flags};
 
+pub const fn timer_interrupt_vector() -> usize {
+    trap::X86_INT_APIC_TIMER
+}
+
 pub fn cmdline() -> alloc::string::String {
     KCONFIG.cmdline.into()
 }
