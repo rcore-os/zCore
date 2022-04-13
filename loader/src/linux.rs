@@ -59,10 +59,13 @@ async fn run_user(thread: CurrentThread) {
             break;
         }
 
-        info!("back to user: thread id = {}", thread.id());
-        
         // check the signal if was killed
-        if thread.inner().lock_linux().signal_mask.contains(linux_object::signal::Signal::SIGRT33) {
+        if thread
+            .inner()
+            .lock_linux()
+            .signal_mask
+            .contains(linux_object::signal::Signal::SIGRT33)
+        {
             thread.exit_linux(-1);
             // do not break temporarily
         }
@@ -71,8 +74,6 @@ async fn run_user(thread: CurrentThread) {
         trace!("go to user: {:#x?}", ctx);
         ctx.enter_uspace();
         trace!("back from user: {:#x?}", ctx);
-
-        info!("into kernel: thread id = {}", thread.id());
 
         // handle trap/interrupt/syscall
         if let Err(err) = handle_user_trap(&thread, ctx).await {

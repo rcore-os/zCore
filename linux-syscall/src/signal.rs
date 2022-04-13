@@ -136,7 +136,7 @@ impl Syscall<'_> {
             0 => SendTarget::EveryProcessInGroup,
             -1 => SendTarget::EveryProcess,
             p if p < -1 => SendTarget::EveryProcessInGroupByPID((-p) as KoID),
-            _ => unimplemented!()
+            _ => unimplemented!(),
         };
         let parent = self.zircon_process().clone();
         match target {
@@ -154,17 +154,16 @@ impl Syscall<'_> {
                                     process.exit(-1);
                                 }
                             }
-                            _ => unimplemented!()
+                            _ => unimplemented!(),
                         };
                         Ok(0)
                     }
-                    Err(_) => Err(LxError::EINVAL)
+                    Err(_) => Err(LxError::EINVAL),
                 }
             }
-            _ => unimplemented!()
+            _ => unimplemented!(),
         }
     }
-
 
     /// Send a signal to a thread specified by tid
     /// TODO: support all the signals
@@ -192,12 +191,12 @@ impl Syscall<'_> {
                             thread_linux.signal_mask.insert(signal);
                             drop(thread_linux);
                         }
-                    },
-                    _ => unimplemented!()
+                    }
+                    _ => unimplemented!(),
                 };
                 Ok(0)
             }
-            Err(_) => Err(LxError::EINVAL)
+            Err(_) => Err(LxError::EINVAL),
         }
     }
 
@@ -214,7 +213,11 @@ impl Syscall<'_> {
             signum
         );
         let parent = self.zircon_process().clone();
-        match parent.job().get_child(tgid as u64).map(|proc| proc.get_child(tid as u64)) {
+        match parent
+            .job()
+            .get_child(tgid as u64)
+            .map(|proc| proc.get_child(tid as u64))
+        {
             Ok(Ok(obj)) => {
                 match signal {
                     Signal::SIGRT33 => {
@@ -229,15 +232,12 @@ impl Syscall<'_> {
                             thread_linux.signal_mask.insert(signal);
                             drop(thread_linux);
                         }
-                    },
-                    _ => unimplemented!()
+                    }
+                    _ => unimplemented!(),
                 };
                 Ok(0)
             }
-            _ => Err(LxError::EINVAL)
+            _ => Err(LxError::EINVAL),
         }
     }
-
-
-
 }

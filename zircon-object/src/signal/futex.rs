@@ -57,13 +57,8 @@ impl Futex {
     ///
     /// [`wait_with_owner`]: Futex::wait_with_owner
     /// [`wake`]: Futex::wake
-    pub fn wait(
-        self: &Arc<Self>,
-        current_value: u32,
-        lock_pi: bool,
-        thread_id: i32,
-    ) -> impl Future<Output = ZxResult> {
-        self.wait_with_owner(current_value, None, None, lock_pi, thread_id)
+    pub fn wait(self: &Arc<Self>, current_value: u32) -> impl Future<Output = ZxResult> {
+        self.wait_with_owner(current_value, None, None)
     }
 
     /// Wake some number of threads waiting on a futex.
@@ -122,16 +117,12 @@ impl Futex {
         current_value: u32,
         thread: Option<Arc<Thread>>,
         new_owner: Option<Arc<Thread>>,
-        lock_pi: bool,
-        thread_id: i32,
     ) -> impl Future<Output = ZxResult> {
         #[must_use = "wait does nothing unless polled/`await`-ed"]
         struct FutexFuture {
             waiter: Arc<Waiter>,
             current_value: u32,
             new_owner: Option<Arc<Thread>>,
-            lock_pi: bool,
-            thread_id: i32,
         }
         impl Future for FutexFuture {
             type Output = ZxResult;
@@ -189,8 +180,6 @@ impl Futex {
             }),
             current_value,
             new_owner,
-            lock_pi,
-            thread_id,
         }
     }
 
