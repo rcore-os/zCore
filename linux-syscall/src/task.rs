@@ -290,7 +290,7 @@ impl Syscall<'_> {
 
     /// Set robust list.
     pub fn sys_set_robust_list(&self, head: UserInPtr<RobustList>, len: usize) -> SysResult {
-        if len != size_of::<RobustList>().into() {
+        if len != size_of::<RobustList>() {
             return Err(LxError::EINVAL);
         }
         self.thread.set_robust_list(head, len);

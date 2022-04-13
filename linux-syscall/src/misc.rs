@@ -83,7 +83,7 @@ impl Syscall<'_> {
         uaddr2: usize,
         _val3: u32,
     ) -> SysResult {
-        if let Err(_) = self.into_inout_userptr::<i32>(uaddr) {
+        if self.into_inout_userptr::<i32>(uaddr).is_err() {
             return Err(LxError::EINVAL);
         }
         let op = FutexFlags::from_bits_truncate(op);
@@ -92,7 +92,7 @@ impl Syscall<'_> {
         }
         let mut val2 = 0;
         if op.contains(FutexFlags::REQUEUE) {
-            if let Err(_) = self.into_inout_userptr::<i32>(uaddr2) {
+            if self.into_inout_userptr::<i32>(uaddr2).is_err() {
                 return Err(LxError::EINVAL);
             }
             val2 = timeout_addr;
@@ -142,8 +142,8 @@ impl Syscall<'_> {
                         .await
                 };
                 match res {
-                    Ok(_) => return Ok(0),
-                    Err(e) => return Err(into_lxerror(e)),
+                    Ok(_) => Ok(0),
+                    Err(e) => Err(into_lxerror(e)),
                 }
             }
             FutexFlags::WAKE => {
@@ -162,8 +162,8 @@ impl Syscall<'_> {
                 };
                 let res = futex.requeue(0, val as usize, val2, &requeue_futex, None, false);
                 match res {
-                    Ok(_) => return Ok(0),
-                    Err(e) => return Err(into_lxerror(e)),
+                    Ok(_) => Ok(0),
+                    Err(e) => Err(into_lxerror(e)),
                 }
             }
             _ => {
