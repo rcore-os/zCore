@@ -56,4 +56,4 @@ riscv = { git = "https://github.com/rust-embedded/riscv", rev = "cd31989", featu
 
 [target.'cfg(all(target_os = "none", target_arch = "aarch64"))'.dependencies]
 cortex-a = "7.2.0"
-tock-registers = { version = "0.7.x", default-features = false}
+tock-registers = "0.7"
