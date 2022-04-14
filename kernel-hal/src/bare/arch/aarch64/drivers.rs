@@ -1,5 +1,5 @@
 use crate::drivers;
-use super::serial::Pl011Uart;
+use zcore_drivers::uart::Pl011Uart;
 use zcore_drivers::Device;
 use alloc::sync::Arc;
 use crate::imp::config::UART_ADDR;

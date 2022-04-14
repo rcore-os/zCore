@@ -6,11 +6,12 @@ pub mod mem;
 pub mod timer;
 pub mod trap;
 pub mod vm;
-pub mod serial;
 
 use alloc::string::String;
 use core::ops::Range;
 use crate::{mem::phys_to_virt, utils::init_once::InitOnce, PhysAddr};
+
+hal_fn_impl_default!(crate::hal_fn::console);
 
 static INITRD_REGION: InitOnce<Option<Range<PhysAddr>>> = InitOnce::new_with_default(None);
 static CMDLINE: InitOnce<String> = InitOnce::new_with_default(String::new());
