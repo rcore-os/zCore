@@ -32,7 +32,7 @@ pub fn primary_init_early() {
 }
 
 pub fn primary_init() {
-    unimplemented!()
+    vm::init();
 }
 
 pub fn secondary_init() {

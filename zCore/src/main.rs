@@ -3,6 +3,7 @@
 #![feature(lang_items)]
 #![feature(core_intrinsics)]
 // #![deny(warnings)] // comment this on develop
+#![feature(naked_functions)]
 
 use core::sync::atomic::{AtomicBool, Ordering};
 

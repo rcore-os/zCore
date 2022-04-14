@@ -1,7 +1,19 @@
 use kernel_hal::KernelConfig;
 
+#[naked]
 #[no_mangle]
-pub extern "C" fn _start() -> ! {
+#[link_section = ".text.entry"]
+unsafe extern "C" fn _start() -> ! {
+    core::arch::asm!("
+        adrp    x19, boot_stack_top
+        mov     sp, x19
+        b rust_main",
+        options(noreturn),
+    )
+}
+
+#[no_mangle]
+extern "C" fn rust_main() -> ! {
     let config = KernelConfig {
         rt_services_addr: 0,
         rsdp_addr: 0,

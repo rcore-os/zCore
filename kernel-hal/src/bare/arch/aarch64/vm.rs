@@ -1,15 +1,94 @@
-use crate::{PhysAddr, VirtAddr};
+use crate::{PhysAddr, VirtAddr, KCONFIG};
 use cortex_a::registers::*;
 use tock_registers::interfaces::{Writeable, Readable};
+use crate::hal_fn::mem::phys_to_virt;
 use crate::utils::page_table::{GenericPTE, PageTableImpl, PageTableLevel3};
 use crate::{MMUFlags, PAGE_SIZE};
 use core::fmt::{Debug, Formatter, Result};
+use spin::Mutex;
+
+lazy_static! {
+    static ref KERNEL_PT: Mutex<PageTable> = Mutex::new(init_kernel_page_table().unwrap());
+}
+
+/// remap kernel ELF segments with 4K page
+fn init_kernel_page_table() -> PagingResult<PageTable> {
+    extern "C" {
+        fn stext();
+        fn etext();
+        fn srodata();
+        fn erodata();
+        fn sdata();
+        fn edata();
+        fn sbss();
+        fn ebss();
+
+        fn boot_stack();
+        fn boot_stack_top();
+    }
+
+    let mut pt = PageTable::new();
+    let mut map_range = |start: VirtAddr, end: VirtAddr, flags: MMUFlags| -> PagingResult {
+        pt.map_cont(
+            crate::addr::align_down(start),
+            crate::addr::align_up(end - start),
+            start - KCONFIG.phys_to_virt_offset,
+            flags | MMUFlags::HUGE_PAGE,
+        )
+    };
+
+    map_range(
+        stext as usize,
+        etext as usize,
+        MMUFlags::READ | MMUFlags::EXECUTE,
+    )?;
+    map_range(srodata as usize, erodata as usize, MMUFlags::READ)?;
+    map_range(
+        sdata as usize,
+        edata as usize,
+        MMUFlags::READ | MMUFlags::WRITE,
+    )?;
+    map_range(
+        sbss as usize,
+        ebss as usize,
+        MMUFlags::READ | MMUFlags::WRITE,
+    )?;
+    // stack
+    map_range(
+        boot_stack as usize,
+        boot_stack_top as usize,
+        MMUFlags::READ | MMUFlags::WRITE,
+    )?;
+    // physical frames
+    for r in crate::mem::free_pmem_regions() {
+        map_range(
+            phys_to_virt(r.start),
+            phys_to_virt(r.end),
+            MMUFlags::READ | MMUFlags::WRITE,
+        )?;
+    }
+
+    Ok(pt)
+}
+
+pub fn init() {
+    let mut pt = KERNEL_PT.lock();
+    info!("initialized kernel page table @ {:#x}", pt.table_phys());
+    unsafe {
+        pt.activate();
+    }
+}
+
+pub fn flush_tlb_all() {
+    unsafe { core::arch::asm!("tlbi vmalle1; dsb sy; isb") };
+}
 
 hal_fn_impl! {
     impl mod crate::hal_fn::vm {
         fn activate_paging(vmtoken: PhysAddr) {
             info!("set page_table @ {:#x}", vmtoken);
             TTBR1_EL1.set(vmtoken as _);
+            flush_tlb_all();
         }
 
         fn current_vmtoken() -> PhysAddr {
@@ -153,12 +232,11 @@ impl GenericPTE for AARCH64PTE {
     fn is_leaf(&self) -> bool {
         !PTF::from_bits_truncate(self.0 as usize).intersects(PTF::NON_BLOCK)
     }
-
     fn set_addr(&mut self, paddr: PhysAddr) {
         self.0 = (self.0 & !PHYS_ADDR_MASK as u64) | ((paddr as usize) & PHYS_ADDR_MASK) as u64;
     }
     fn set_flags(&mut self, flags: MMUFlags, _is_huge: bool) {
-        let flags = PTF::from(flags) | PTF::AF;
+        let flags = PTF::from(flags);
         self.0 = (self.0 & PHYS_ADDR_MASK as u64) | flags.bits() as u64;
     }
     fn set_table(&mut self, paddr: PhysAddr) {
