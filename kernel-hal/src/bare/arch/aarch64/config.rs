@@ -7,3 +7,5 @@ pub struct KernelConfig {
     pub rsdp_addr: usize,
     pub phys_to_virt_offset: usize,
 }
+
+pub const UART_ADDR: usize = 0x0900_0000;

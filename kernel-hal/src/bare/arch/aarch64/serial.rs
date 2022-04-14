@@ -2,6 +2,10 @@
 use tock_registers::interfaces::{Readable, Writeable};
 use tock_registers::register_structs;
 use tock_registers::registers::{ReadOnly, ReadWrite};
+use crate::imp::config::UART_ADDR;
+use zcore_drivers::scheme::{UartScheme, EventScheme, Scheme};
+use zcore_drivers::DeviceResult;
+use zcore_drivers::utils::EventHandler;
 
 register_structs! {
     Pl011UartRegs {
@@ -14,14 +18,14 @@ register_structs! {
     }
 }
 
-const UART_ADDR: usize = 0x0900_0000;
 
-struct Pl011Uart {
+
+pub struct Pl011Uart {
     base_vaddr: usize,
 }
 
 impl Pl011Uart {
-    const fn new(base_vaddr: usize) -> Self {
+    pub fn new(base_vaddr: usize) -> Self {
         Self { base_vaddr }
     }
 
@@ -53,6 +57,44 @@ pub fn console_getchar() -> Option<u8> {
     uart.getchar()
 }
 
+impl Scheme for Pl011Uart {
+    fn name(&self) -> &str {
+        "Pl011 ARM series uart"
+    }
+
+    fn handle_irq(&self, _irq_num: usize) {
+        unimplemented!()
+    }
+}
+
+impl EventScheme for Pl011Uart {
+    type Event = ();
+
+    fn trigger(&self, _event: Self::Event) {
+
+    }
+
+    fn subscribe(&self, _handler: EventHandler<Self::Event>, _once: bool) {
+
+    }
+}
+
+impl UartScheme for Pl011Uart {
+    fn try_recv(&self) -> DeviceResult<Option<u8>> {
+        Ok(self.getchar())
+    }
+
+    fn send(&self, ch: u8) -> DeviceResult {
+        Ok(self.putchar(ch))
+    }
+
+    fn write_str(&self, s: &str) -> DeviceResult {
+        for c in s.bytes() {
+            self.send(c)?;
+        }
+        Ok(())
+    }
+}
 
 hal_fn_impl! {
     impl mod crate::hal_fn::console {
