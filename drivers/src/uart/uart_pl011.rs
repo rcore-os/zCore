@@ -2,10 +2,9 @@
 use tock_registers::interfaces::{Readable, Writeable};
 use tock_registers::register_structs;
 use tock_registers::registers::{ReadOnly, ReadWrite};
-use crate::imp::config::UART_ADDR;
-use zcore_drivers::scheme::{UartScheme, EventScheme, Scheme};
-use zcore_drivers::DeviceResult;
-use zcore_drivers::utils::EventHandler;
+use crate::scheme::{UartScheme, EventScheme, Scheme};
+use crate::DeviceResult;
+use crate::utils::EventHandler;
 
 register_structs! {
     Pl011UartRegs {
@@ -47,16 +46,6 @@ impl Pl011Uart {
     }
 }
 
-pub fn console_putchar(c: u8) {
-    let uart = Pl011Uart::new(UART_ADDR);
-    uart.putchar(c);
-}
-
-pub fn console_getchar() -> Option<u8> {
-    let uart = Pl011Uart::new(UART_ADDR);
-    uart.getchar()
-}
-
 impl Scheme for Pl011Uart {
     fn name(&self) -> &str {
         "Pl011 ARM series uart"
@@ -93,15 +82,5 @@ impl UartScheme for Pl011Uart {
             self.send(c)?;
         }
         Ok(())
-    }
-}
-
-hal_fn_impl! {
-    impl mod crate::hal_fn::console {
-        fn console_write_early(s: &str) {
-            for c in s.bytes() {
-                console_putchar(c as u8);
-            }
-        }
     }
 }
