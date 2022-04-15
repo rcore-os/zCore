@@ -93,17 +93,19 @@ async fn handle_signal(thread: &CurrentThread, mut ctx: Box<UserContext>, signal
         field: SiginfoFields::default()
     };
     let mut signal_context = SignalUserContext::default();
-    signal_context.sig_mask = sigmask.val() as u128;
+    signal_context.sig_mask = sigmask;
     // backup current context and set new context
     unsafe {
         thread.backup_context((*ctx).clone());
         let mut sp = (*ctx).get_field(UserContextField::StackPointer) - 0x200;
         let mut siginfo_ptr = 0;
         if action.flags.contains(SignalActionFlags::SIGINFO) {
+            sp &= !0xF;
             sp = push_stack::<SigInfo>(sp, signal_info);
             siginfo_ptr = sp;
             let pc = (*ctx).get_field(UserContextField::InstrPointer);
             signal_context.context.set_pc(pc);
+            sp &= !0xF;
             sp = push_stack::<SignalUserContext>(sp, signal_context);
         }
         cfg_if! { 

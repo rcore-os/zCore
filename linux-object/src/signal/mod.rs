@@ -222,7 +222,7 @@ pub struct SignalUserContext {
     pub flags: usize,
     pub link: usize,
     pub stack: SignalStack,
-    pub sig_mask: u128,
+    pub sig_mask: Sigset,
     pub context: MachineContext,
 }
 
