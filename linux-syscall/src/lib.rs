@@ -529,7 +529,7 @@ impl Syscall<'_> {
     #[cfg(target_arch = "riscv64")]
     async fn riscv64_syscall(&mut self, sys_type: Sys, args: [usize; 6]) -> SysResult {
         debug!("riscv64_syscall: {:?}, {:?}", sys_type, args);
-        //let [a0, a1, a2, a3, a4, _a5] = args;
+        let [a0, a1, a2, a3, a4, _a5] = args;
         match sys_type {
             //Sys::OPEN => self.sys_open(a0.into(), a1, a2),
             Sys::CLONE => self.sys_clone(a0, a1, a2.into(), a3, a4.into()),

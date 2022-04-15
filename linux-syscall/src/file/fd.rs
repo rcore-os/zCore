@@ -24,6 +24,7 @@ impl Syscall<'_> {
     ) -> SysResult {
         let proc = self.linux_process();
         let path = path.read_cstring()?;
+        // hard code special path
         let path = if path == "/dev/shm/testshm" {
             String::from("/testshm")
         } else {
