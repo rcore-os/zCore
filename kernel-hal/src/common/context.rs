@@ -163,8 +163,10 @@ impl UserContext {
         cfg_if! {
             if #[cfg(target_arch = "riscv64")] {
                 self.0.general.ra = _ra;
+            } else if #[cfg(target_arch = "x86_64")] {
+                error!("Please set return addr via stack!");
             } else {
-                unimplemented!("Unsupported arch!")
+                unimplemented!("Unsupported arch!");
             }
         }
     }

@@ -237,6 +237,10 @@ impl Syscall<'_> {
 
     /// Send a signal to a thread specified by tgid (i.e., process) and pid
     pub fn sys_rt_sigreturn(&mut self) -> SysResult {
+        info!(
+            "sigreturn: thread {} returns from handling signal",
+            self.thread.id()
+        );
         let old_ctx = self.thread.fetch_backup_context().unwrap();
         self.thread.with_context(|ctx| 
             self.thread.lock_linux().restore_after_handle_signal(ctx, &old_ctx)).unwrap();

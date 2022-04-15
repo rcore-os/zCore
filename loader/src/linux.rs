@@ -97,22 +97,32 @@ async fn handle_signal(thread: &CurrentThread, mut ctx: Box<UserContext>, signal
     // backup current context and set new context
     unsafe {
         thread.backup_context((*ctx).clone());
-        let sp = (*ctx).get_field(UserContextField::StackPointer) - 0x200;
+        let mut sp = (*ctx).get_field(UserContextField::StackPointer) - 0x200;
+        let mut siginfo_ptr = 0;
         if action.flags.contains(SignalActionFlags::SIGINFO) {
-            let sp = push_stack::<SigInfo>(sp, signal_info);
-            let siginfo_ptr = sp;
+            sp = push_stack::<SigInfo>(sp, signal_info);
+            siginfo_ptr = sp;
             let pc = (*ctx).get_field(UserContextField::InstrPointer);
             signal_context.context.set_pc(pc);
-            let sp = push_stack::<SignalUserContext>(sp, signal_context);
+            sp = push_stack::<SignalUserContext>(sp, signal_context);
+        }
+        cfg_if! { 
+            if #[cfg(target_arch = "x86_64")] {
+                sp &= !0xF;
+                sp = push_stack::<usize>(sp, action.restorer);
+            } else {
+                (*ctx).set_ra(action.restorer);
+            }
+        }
+        if action.flags.contains(SignalActionFlags::SIGINFO) { 
             (*ctx).setup_uspace(action.handler, sp, &[
-                linux_object::signal::Signal::SIGRT33 as usize, siginfo_ptr, sp
-            ]);
+                signal as usize, siginfo_ptr, sp
+                ]);
         } else {
             (*ctx).setup_uspace(action.handler, sp, &[
                 signal as usize, 0, 0
             ]);
         }
-        (*ctx).set_ra(action.restorer);
         (*ctx).enter_uspace();
     }
     return ctx;

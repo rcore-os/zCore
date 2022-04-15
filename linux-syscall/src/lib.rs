@@ -364,17 +364,6 @@ impl Syscall<'_> {
             }
 
             // process
-            Sys::CLONE => {
-                // warn!("a2={} a3={}", a2, a3);
-                // self.sys_clone(
-                //     a0,
-                //     a1,
-                //     self.into_out_userptr(a2).unwrap(),
-                //     self.into_out_userptr(a3).unwrap(),
-                //     a4,
-                // )
-                self.sys_clone(a0, a1, a2.into(), a3, a4.into())
-            }
             Sys::EXECVE => self.sys_execve(
                 self.into_in_userptr(a0).unwrap(),
                 self.into_in_userptr(a1).unwrap(),
@@ -532,6 +521,7 @@ impl Syscall<'_> {
             Sys::TIME => self.sys_time(self.into_out_userptr(a0).unwrap()),
             //            Sys::EPOLL_CREATE => self.sys_epoll_create(a0),
             //            Sys::EPOLL_WAIT => self.sys_epoll_wait(a0, a1.into(), a2, a3),
+            Sys::CLONE => self.sys_clone(a0, a1, a2.into(), a4, a3.into()),
             _ => self.unknown_syscall(sys_type),
         }
     }
@@ -542,6 +532,7 @@ impl Syscall<'_> {
         //let [a0, a1, a2, a3, a4, _a5] = args;
         match sys_type {
             //Sys::OPEN => self.sys_open(a0.into(), a1, a2),
+            Sys::CLONE => self.sys_clone(a0, a1, a2.into(), a3, a4.into()),
             _ => self.unknown_syscall(sys_type),
         }
     }
