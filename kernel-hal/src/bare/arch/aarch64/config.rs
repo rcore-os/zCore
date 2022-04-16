@@ -8,4 +8,4 @@ pub struct KernelConfig {
     pub phys_to_virt_offset: usize,
 }
 
-pub const UART_ADDR: usize = 0x0900_0000;
+pub const UART_ADDR: usize = 0xffff_0000_0900_0000;

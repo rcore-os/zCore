@@ -19,8 +19,8 @@ hal_fn_impl! {
             let psci_system_off = 0x8400_0008 as usize;
             unsafe {
                 core::arch::asm!(
-                    "hvc {0}",
-                    in(reg) psci_system_off
+                    "hvc #0",
+                    in("x0") psci_system_off
                 );
             }
             unreachable!()

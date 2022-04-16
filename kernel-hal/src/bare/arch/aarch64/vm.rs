@@ -22,7 +22,6 @@ fn init_kernel_page_table() -> PagingResult<PageTable> {
         fn edata();
         fn sbss();
         fn ebss();
-
         fn boot_stack();
         fn boot_stack_top();
     }
@@ -33,7 +32,7 @@ fn init_kernel_page_table() -> PagingResult<PageTable> {
             crate::addr::align_down(start),
             crate::addr::align_up(end - start),
             start - KCONFIG.phys_to_virt_offset,
-            flags | MMUFlags::HUGE_PAGE,
+            flags,
         )
     };
 
@@ -59,6 +58,11 @@ fn init_kernel_page_table() -> PagingResult<PageTable> {
         boot_stack_top as usize,
         MMUFlags::READ | MMUFlags::WRITE,
     )?;
+    map_range(
+        0xffff_0000_0900_0000,
+        0xffff_0000_0900_0000 + 4 * 1024 * 1024,
+        MMUFlags::READ | MMUFlags::WRITE,
+    )?;
     // physical frames
     for r in crate::mem::free_pmem_regions() {
         map_range(
@@ -76,6 +80,7 @@ pub fn init() {
     info!("initialized kernel page table @ {:#x}", pt.table_phys());
     unsafe {
         pt.activate();
+        TTBR0_EL1.set(0);
     }
 }
 
@@ -160,14 +165,44 @@ bitflags::bitflags! {
     }
 }
 
+#[repr(u64)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+enum MemType {
+    #[allow(dead_code)]
+    Device = 0,
+    Normal = 1,
+}
+
+impl PTF {
+    const ATTR_INDEX_MASK: u64 = 0b111_00;
+
+    const fn from_mem_type(mem_type: MemType) -> Self {
+        let mut bits = (mem_type as u64) << 2;
+        if matches!(mem_type, MemType::Normal) {
+            bits |= (Self::INNER.bits() | Self::SHAREABLE.bits()) as u64;
+        }
+        Self::from_bits_truncate(bits as usize)
+    }
+
+    #[allow(dead_code)]
+    fn mem_type(&self) -> MemType {
+        let idx = (self.bits() as u64 & Self::ATTR_INDEX_MASK) >> 2;
+        match idx {
+            0 => MemType::Device,
+            1 => MemType::Normal,
+            _ => panic!("Invalid memory attribute index"),
+        }
+    }
+}
+
 impl From<MMUFlags> for PTF {
     fn from(f: MMUFlags) -> Self {
+        let mut flags = Self::from_mem_type(MemType::Normal);
         if f.is_empty() {
-            return PTF::empty();
+            return flags;
         }
-        let mut flags = PTF::empty();
         if f.contains(MMUFlags::READ) {
-            flags |= PTF::VALID ;
+            flags |= PTF::VALID;
         }
         if !f.contains(MMUFlags::WRITE) {
             flags |= PTF::AP_RO;
@@ -233,10 +268,11 @@ impl GenericPTE for AARCH64PTE {
         !PTF::from_bits_truncate(self.0 as usize).intersects(PTF::NON_BLOCK)
     }
     fn set_addr(&mut self, paddr: PhysAddr) {
-        self.0 = (self.0 & !PHYS_ADDR_MASK as u64) | ((paddr as usize) & PHYS_ADDR_MASK) as u64;
+        self.0 = (paddr & PHYS_ADDR_MASK) as u64;
     }
-    fn set_flags(&mut self, flags: MMUFlags, _is_huge: bool) {
-        let flags = PTF::from(flags);
+    fn set_flags(&mut self, flags: MMUFlags, is_huge: bool) {
+        let mut flags = PTF::from(flags) | PTF::AF;
+        if !is_huge { flags |= PTF::NON_BLOCK }
         self.0 = (self.0 & PHYS_ADDR_MASK as u64) | flags.bits() as u64;
     }
     fn set_table(&mut self, paddr: PhysAddr) {

@@ -241,7 +241,7 @@ kernel:
 ifeq ($(ARCH), aarch64)
 	@mkdir -p disk/EFI/Boot
 	@cp aarch64_bin/aarch64_uefi.efi disk/EFI/Boot/bootaa64.efi
-	@cp ../target/aarch64/release/zcore disk/os
+	@cp ../target/aarch64/$(MODE)/zcore disk/os
 endif
 
 .PHONY: disasm
