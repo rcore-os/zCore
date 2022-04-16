@@ -55,7 +55,7 @@ jobs:
         run: pip3 install -r tests/requirements.txt
       - name: Run fast tests
         if: github.event_name != 'schedule'
-        run: cd tests && python3 zircon_core_test.py --libos --fast
+        run: cd tests && python3 zircon_core_test.py --libos --fast --no-failed
       - name: Run full tests
         if: github.event_name == 'schedule'
         run: cd tests && python3 zircon_core_test.py --libos
