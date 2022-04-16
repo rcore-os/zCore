@@ -105,7 +105,7 @@ struct ThreadInner {
     context: Option<Box<UserContext>>,
 
     /// Thread context before handling the signal
-    /// 
+    ///
     /// It only works when executing signal handlers
     context_before: Option<UserContext>,
 
