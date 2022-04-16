@@ -2,9 +2,10 @@
 
 use crate::error::SysResult;
 use crate::process::ProcessExt;
-use crate::signal::{SignalStack, Sigset};
+use crate::signal::{Signal, SignalStack, SignalUserContext, Sigset};
 use alloc::sync::Arc;
-use kernel_hal::user::{Out, UserInPtr, UserOutPtr, UserPtr};
+use kernel_hal::context::{UserContext, UserContextField};
+use kernel_hal::user::{Out, UserOutPtr, UserPtr};
 use kernel_hal::VirtAddr;
 use spin::{Mutex, MutexGuard};
 use zircon_object::task::{CurrentThread, Process, Thread};
@@ -38,10 +39,12 @@ impl ThreadExt for Thread {
     fn create_linux(proc: &Arc<Process>) -> ZxResult<Arc<Self>> {
         let linux_thread = Mutex::new(LinuxThread {
             clear_child_tid: 0.into(),
+            signals: Sigset::default(),
             signal_mask: Sigset::default(),
             signal_alternate_stack: SignalStack::default(),
             robust_list: 0.into(),
             robust_list_len: 0,
+            handling_signal: None,
         });
         Thread::create_with_ext(proc, "", linux_thread)
     }
@@ -108,6 +111,8 @@ pub struct LinuxThread {
     /// Kernel performs futex wake when thread exits.
     /// Ref: <http://man7.org/linux/man-pages/man2/set_tid_address.2.html>
     clear_child_tid: UserOutPtr<i32>,
+    /// Linux signals
+    pub signals: Sigset,
     /// Signal mask
     pub signal_mask: Sigset,
     /// signal alternate stack
@@ -115,4 +120,33 @@ pub struct LinuxThread {
     /// robust_list
     robust_list: UserInPtr<RobustList>,
     robust_list_len: usize,
+    /// handling signals
+    pub handling_signal: Option<u32>,
+}
+
+#[allow(unsafe_code)]
+impl LinuxThread {
+    /// Restore the information after the signal handler returns
+    pub fn restore_after_handle_signal(&mut self, ctx: &mut UserContext, old_ctx: &UserContext) {
+        let ctx_in_us;
+        unsafe {
+            let stack_top = ctx.get_field(UserContextField::StackPointer) as *mut SignalUserContext;
+            ctx_in_us = &*stack_top;
+        }
+        *ctx = *old_ctx;
+        ctx.set_field(UserContextField::InstrPointer, ctx_in_us.context.get_pc());
+        let mut new_mask = Sigset::empty();
+        warn!(
+            "FIXME: the signal mask is not correctly restored, because of align issues 
+            of the SignalUserContext with C musl library."
+        );
+        new_mask.insert(Signal::SIGRT33);
+        self.signal_mask = new_mask;
+        self.handling_signal = None;
+    }
+
+    /// Get signal info
+    pub fn get_signal_info(&self) -> (Sigset, Sigset, Option<u32>) {
+        return (self.signals, self.signal_mask, self.handling_signal);
+    }
 }

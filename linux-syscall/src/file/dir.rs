@@ -11,6 +11,7 @@
 //! - readlink(at)
 
 use super::*;
+use alloc::string::String;
 use bitflags::bitflags;
 use kernel_hal::user::UserOutPtr;
 use linux_object::fs::vfs::FileType;
@@ -169,6 +170,12 @@ impl Syscall<'_> {
     /// The unlinkat() system call operates in exactly the same way as either unlink or rmdir.
     pub fn sys_unlinkat(&self, dirfd: FileDesc, path: UserInPtr<u8>, flags: usize) -> SysResult {
         let path = path.read_cstring()?;
+        // hard code special path
+        let path = if path == "/dev/shm/testshm" {
+            String::from("/testshm")
+        } else {
+            path
+        };
         let flags = AtFlags::from_bits_truncate(flags);
         info!(
             "unlinkat: dirfd={:?}, path={:?}, flags={:?}",

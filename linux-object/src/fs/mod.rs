@@ -126,7 +126,9 @@ pub fn create_root_fs(rootfs: Arc<dyn FileSystem>) -> Arc<dyn INode> {
     devfs_root
         .add("urandom", Arc::new(RandomINode::new(true)))
         .expect("failed to mknod /dev/urandom");
-
+    devfs_root
+        .add("shm", Arc::new(RandomINode::new(true)))
+        .expect("failed to mknod /dev/shm");
     if let Some(display) = drivers::all_display().first() {
         use self::devfs::{EventDev, FbDev, MiceDev};
 
