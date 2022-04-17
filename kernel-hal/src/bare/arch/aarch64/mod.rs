@@ -6,6 +6,7 @@ pub mod mem;
 pub mod timer;
 pub mod trap;
 pub mod vm;
+pub mod gic;
 
 use alloc::string::String;
 use core::ops::Range;
@@ -34,6 +35,8 @@ pub fn primary_init_early() {
 
 pub fn primary_init() {
     vm::init();
+    gic::init();
+    timer::init();
 }
 
 pub fn secondary_init() {

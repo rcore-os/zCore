@@ -3,8 +3,9 @@ use cortex_a::registers::*;
 use tock_registers::interfaces::{Writeable, Readable};
 use crate::hal_fn::mem::phys_to_virt;
 use crate::utils::page_table::{GenericPTE, PageTableImpl, PageTableLevel4};
-use crate::{MMUFlags, PAGE_SIZE};
+use crate::MMUFlags;
 use core::fmt::{Debug, Formatter, Result};
+use crate::imp::config::*;
 use spin::Mutex;
 
 lazy_static! {
@@ -61,6 +62,11 @@ fn init_kernel_page_table() -> PagingResult<PageTable> {
     map_range(
         0xffff_0000_0900_0000,
         0xffff_0000_0900_0000 + 0x1000,
+        MMUFlags::READ | MMUFlags::WRITE,
+    )?;
+    map_range(
+        0xffff_0000_0800_0000,
+        0xffff_0000_0800_0000 + 0x20000,
         MMUFlags::READ | MMUFlags::WRITE,
     )?;
     // physical frames
@@ -242,10 +248,6 @@ impl From<PTF> for MMUFlags {
         ret
     }
 }
-
-const PA_1TB_BITS: usize = 40;
-const PHYS_ADDR_MAX: usize = (1 << PA_1TB_BITS) - 1;
-const PHYS_ADDR_MASK: usize = PHYS_ADDR_MAX & !(PAGE_SIZE - 1);
 
 /// Page table entry.
 #[derive(Clone, Copy)]
