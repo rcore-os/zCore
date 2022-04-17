@@ -6,8 +6,6 @@ pub mod mem;
 pub mod timer;
 pub mod trap;
 pub mod vm;
-pub mod gic;
-
 use alloc::string::String;
 use core::ops::Range;
 use crate::{mem::phys_to_virt, utils::init_once::InitOnce, PhysAddr};
