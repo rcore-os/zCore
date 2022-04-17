@@ -108,9 +108,7 @@ cfg_if::cfg_if! {
         }
 
         impl MachineContext {
-            pub fn set_pc(&mut self, pc: usize) {
-                
-            }
+            pub fn set_pc(&mut self, _pc: usize) {}
             pub fn get_pc(&self) -> usize {
                 0
             }
