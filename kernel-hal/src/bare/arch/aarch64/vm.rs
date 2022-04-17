@@ -2,7 +2,7 @@ use crate::{PhysAddr, VirtAddr, KCONFIG};
 use cortex_a::registers::*;
 use tock_registers::interfaces::{Writeable, Readable};
 use crate::hal_fn::mem::phys_to_virt;
-use crate::utils::page_table::{GenericPTE, PageTableImpl, PageTableLevel3};
+use crate::utils::page_table::{GenericPTE, PageTableImpl, PageTableLevel4};
 use crate::{MMUFlags, PAGE_SIZE};
 use core::fmt::{Debug, Formatter, Result};
 use spin::Mutex;
@@ -60,7 +60,7 @@ fn init_kernel_page_table() -> PagingResult<PageTable> {
     )?;
     map_range(
         0xffff_0000_0900_0000,
-        0xffff_0000_0900_0000 + 4 * 1024 * 1024,
+        0xffff_0000_0900_0000 + 0x1000,
         MMUFlags::READ | MMUFlags::WRITE,
     )?;
     // physical frames
@@ -81,6 +81,7 @@ pub fn init() {
     unsafe {
         pt.activate();
         TTBR0_EL1.set(0);
+        flush_tlb_all();
     }
 }
 
@@ -93,7 +94,6 @@ hal_fn_impl! {
         fn activate_paging(vmtoken: PhysAddr) {
             info!("set page_table @ {:#x}", vmtoken);
             TTBR1_EL1.set(vmtoken as _);
-            flush_tlb_all();
         }
 
         fn current_vmtoken() -> PhysAddr {
@@ -293,5 +293,5 @@ impl Debug for AARCH64PTE {
     }
 }
 
-/// Sv39: Page-Based 39-bit Virtual-Memory System.
-pub type PageTable = PageTableImpl<PageTableLevel3, AARCH64PTE>;
+/// Sv48: Page-Based 48-bit Virtual-Memory System.
+pub type PageTable = PageTableImpl<PageTableLevel4, AARCH64PTE>;

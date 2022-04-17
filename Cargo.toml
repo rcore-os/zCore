@@ -17,4 +17,3 @@ exclude = [
 
 [profile.release]
 lto = true
-debug = true
