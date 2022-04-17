@@ -59,11 +59,13 @@ fn init_kernel_page_table() -> PagingResult<PageTable> {
         boot_stack_top as usize,
         MMUFlags::READ | MMUFlags::WRITE,
     )?;
+    // uart
     map_range(
         0xffff_0000_0900_0000,
         0xffff_0000_0900_0000 + 0x1000,
         MMUFlags::READ | MMUFlags::WRITE,
     )?;
+    // gic
     map_range(
         0xffff_0000_0800_0000,
         0xffff_0000_0800_0000 + 0x20000,

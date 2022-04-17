@@ -2,9 +2,9 @@
 use tock_registers::interfaces::{Readable, Writeable};
 use tock_registers::register_structs;
 use tock_registers::registers::{ReadOnly, ReadWrite};
-use crate::scheme::{UartScheme, EventScheme, Scheme};
+use crate::scheme::{UartScheme, impl_event_scheme, Scheme};
+use crate::utils::EventListener;
 use crate::DeviceResult;
-use crate::utils::EventHandler;
 
 register_structs! {
     Pl011UartRegs {
@@ -21,11 +21,12 @@ register_structs! {
 
 pub struct Pl011Uart {
     base_vaddr: usize,
+    listener: EventListener
 }
 
 impl Pl011Uart {
     pub fn new(base_vaddr: usize) -> Self {
-        Self { base_vaddr }
+        Self { base_vaddr, listener: Default::default() }
     }
 
     const fn regs(&self) -> &Pl011UartRegs {
@@ -56,17 +57,7 @@ impl Scheme for Pl011Uart {
     }
 }
 
-impl EventScheme for Pl011Uart {
-    type Event = ();
-
-    fn trigger(&self, _event: Self::Event) {
-
-    }
-
-    fn subscribe(&self, _handler: EventHandler<Self::Event>, _once: bool) {
-
-    }
-}
+impl_event_scheme!(Pl011Uart);
 
 impl UartScheme for Pl011Uart {
     fn try_recv(&self) -> DeviceResult<Option<u8>> {

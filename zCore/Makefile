@@ -166,7 +166,7 @@ else ifeq ($(ARCH), aarch64)
 		-m 1G \
 		-serial mon:stdio \
 		-serial file:/tmp/serial.out \
-		-bios aarch64_bin/trusted_edk2_aarch64.bin \
+		-bios ../prebuilt/firmware/aarch64/trusted_edk2_aarch64.bin \
 		-hda fat:rw:disk
 endif
 
@@ -240,7 +240,7 @@ kernel:
 	SMP=$(SMP) cargo build $(build_args)
 ifeq ($(ARCH), aarch64)
 	@mkdir -p disk/EFI/Boot
-	@cp aarch64_bin/aarch64_uefi.efi disk/EFI/Boot/bootaa64.efi
+	@cp ../prebuilt/firmware/aarch64/aarch64_uefi.efi disk/EFI/Boot/bootaa64.efi
 	@cp ../target/aarch64/$(MODE)/zcore disk/os
 endif
 
