@@ -96,11 +96,13 @@ async fn handle_signal(
         code: linux_object::signal::SignalCode::TKILL,
         field: SiginfoFields::default(),
     };
-    let mut signal_context = SignalUserContext::default();
-    signal_context.sig_mask = sigmask;
+    let mut signal_context = SignalUserContext {
+        sig_mask: sigmask,
+        ..Default::default()
+    };
     // backup current context and set new context
     unsafe {
-        thread.backup_context((*ctx).clone());
+        thread.backup_context(*ctx);
         let mut sp = (*ctx).get_field(UserContextField::StackPointer) - 0x200;
         let mut siginfo_ptr = 0;
         if action.flags.contains(SignalActionFlags::SIGINFO) {
@@ -127,10 +129,13 @@ async fn handle_signal(
         }
         (*ctx).enter_uspace();
     }
-    return ctx;
+    ctx
 }
 
-/// Push stack
+/// Push a object onto stack
+/// # Safety
+///
+/// This function is handling a raw pointer to the top of the stack .
 pub unsafe fn push_stack<T>(stack_top: usize, val: T) -> usize {
     let stack_top = (stack_top as *mut T).sub(1);
     *stack_top = val;
