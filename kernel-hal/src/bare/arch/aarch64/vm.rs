@@ -61,14 +61,14 @@ fn init_kernel_page_table() -> PagingResult<PageTable> {
     )?;
     // uart
     map_range(
-        0xffff_0000_0900_0000,
-        0xffff_0000_0900_0000 + 0x1000,
+        phys_to_virt(UART_BASE),
+        phys_to_virt(UART_BASE) + UART_SIZE,
         MMUFlags::READ | MMUFlags::WRITE,
     )?;
     // gic
     map_range(
-        0xffff_0000_0800_0000,
-        0xffff_0000_0800_0000 + 0x20000,
+        phys_to_virt(GIC_BASE),
+        phys_to_virt(GIC_BASE) + GIC_SIZE,
         MMUFlags::READ | MMUFlags::WRITE,
     )?;
     // physical frames

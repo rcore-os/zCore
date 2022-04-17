@@ -11,8 +11,8 @@ use crate::imp::config::GIC_BASE;
 use crate::arch::trap::IrqHandlerResult;
 use super::timer::set_next_trigger;
 
-const GICD_BASE: PhysAddr = GIC_BASE;
-const GICC_BASE: PhysAddr = GIC_BASE + 0x10000;
+const GICD_BASE: PhysAddr = GIC_BASE + 0xffff_0000_0000_0000;
+const GICC_BASE: PhysAddr = GIC_BASE + 0xffff_0000_0000_0000 + 0x10000;
 const PPI_BASE: usize = 16;
 const SPI_BASE: usize = 32;
 
