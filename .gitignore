@@ -7,6 +7,7 @@ Cargo.lock
 /prebuilt/linux/alpine*
 /prebuilt/linux/riscv64/prebuild*
 zCore/src/platform/riscv/boot/kernel-vars.ld
+zCore/disk/*
 *.img
 *.log
 .idea
