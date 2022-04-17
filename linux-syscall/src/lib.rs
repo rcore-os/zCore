@@ -527,7 +527,6 @@ impl Syscall<'_> {
             Sys::CLONE => self.sys_clone(a0, a1, a2.into(), a4, a3.into()),
             //            Sys::EPOLL_CREATE => self.sys_epoll_create(a0),
             //            Sys::EPOLL_WAIT => self.sys_epoll_wait(a0, a1.into(), a2, a3),
-            Sys::CLONE => self.sys_clone(a0, a1, a2.into(), a4, a3.into()),
             _ => self.unknown_syscall(sys_type),
         }
     }

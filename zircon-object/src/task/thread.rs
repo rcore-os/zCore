@@ -243,7 +243,7 @@ impl Thread {
     /// Returns a copy of saved context of current thread, or `Err(ZxError::BAD_STATE)`
     /// if the thread is running.
     pub fn context_cloned(&self) -> ZxResult<UserContext> {
-        self.with_context(|ctx| ctx.clone())
+        self.with_context(|ctx| *ctx)
     }
 
     /// Access saved context of current thread, or `Err(ZxError::BAD_STATE)` if

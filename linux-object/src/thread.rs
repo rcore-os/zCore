@@ -147,6 +147,6 @@ impl LinuxThread {
 
     /// Get signal info
     pub fn get_signal_info(&self) -> (Sigset, Sigset, Option<u32>) {
-        return (self.signals, self.signal_mask, self.handling_signal);
+        (self.signals, self.signal_mask, self.handling_signal)
     }
 }
