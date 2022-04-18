@@ -24,7 +24,6 @@ SECTIONS
 
     .data : {
         sdata = .;
-        *(.data.boot_page_table)
         *(.data .data.*)
         *(.sdata .sdata.*)
         . = ALIGN(4K);

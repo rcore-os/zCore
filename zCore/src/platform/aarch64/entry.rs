@@ -1,5 +1,7 @@
 use kernel_hal::KernelConfig;
 
+core::arch::global_asm!(include_str!("space.s"));
+
 #[naked]
 #[no_mangle]
 #[link_section = ".text.entry"]

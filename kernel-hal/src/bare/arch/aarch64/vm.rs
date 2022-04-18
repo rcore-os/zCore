@@ -71,6 +71,12 @@ fn init_kernel_page_table() -> PagingResult<PageTable> {
         phys_to_virt(GIC_BASE) + GIC_SIZE,
         MMUFlags::READ | MMUFlags::WRITE,
     )?;
+    // virtio_drivers
+    map_range(
+        phys_to_virt(VIRTIO_BASE),
+        phys_to_virt(VIRTIO_BASE) + VIRTIO_SIZE,
+        MMUFlags::READ | MMUFlags::WRITE,
+    )?;
     // physical frames
     for r in crate::mem::free_pmem_regions() {
         map_range(

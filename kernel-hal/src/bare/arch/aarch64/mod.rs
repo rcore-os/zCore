@@ -35,6 +35,7 @@ pub fn primary_init_early() {
 
 pub fn primary_init() {
     vm::init();
+    drivers::init();
     gic::init();
     timer::init();
 }
