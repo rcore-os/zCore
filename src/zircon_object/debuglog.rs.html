@@ -130,6 +130,7 @@
 <span id="124">124</span>
 <span id="125">125</span>
 <span id="126">126</span>
+<span id="127">127</span>
 </pre><pre class="rust"><code><span class="doccomment">//! Objects for Kernel Debuglog.</span>
 <span class="kw">use</span> {
     <span class="kw">super</span>::<span class="kw-2">*</span>,
@@ -137,6 +138,7 @@
     <span class="ident">alloc</span>::{<span class="ident">sync::Arc</span>, <span class="ident">vec::Vec</span>},
     <span class="ident">lazy_static::lazy_static</span>,
     <span class="ident">spin::Mutex</span>,
+    <span class="comment">// lock::Mutex,</span>
 };
 
 <span class="macro">lazy_static!</span> {

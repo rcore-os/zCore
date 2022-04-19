@@ -215,11 +215,13 @@
 <span id="209">209</span>
 <span id="210">210</span>
 <span id="211">211</span>
+<span id="212">212</span>
 </pre><pre class="rust"><code><span class="kw">use</span> {
     <span class="ident"><span class="kw">crate</span>::object</span>::<span class="kw-2">*</span>,
     <span class="ident">alloc::collections::VecDeque</span>,
     <span class="ident">alloc::sync</span>::{<span class="ident">Arc</span>, <span class="ident">Weak</span>},
     <span class="ident">spin::Mutex</span>,
+    <span class="comment">// lock::Mutex,</span>
 };
 
 <span class="doccomment">/// First-In First-Out inter-process queue.</span>

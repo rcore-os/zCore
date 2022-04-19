@@ -152,21 +152,17 @@
 <span id="146">146</span>
 <span id="147">147</span>
 <span id="148">148</span>
-<span id="149">149</span>
-<span id="150">150</span>
 </pre><pre class="rust"><code><span class="doccomment">//! Linux Shared memory ipc</span>
 <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
 <span class="kw">use</span> <span class="ident"><span class="kw">crate</span>::error::LxError</span>;
 <span class="kw">use</span> <span class="ident"><span class="kw">crate</span>::time::TimeSpec</span>;
 <span class="kw">use</span> <span class="ident">alloc</span>::{<span class="ident">collections::BTreeMap</span>, <span class="ident">sync::Arc</span>, <span class="ident">sync::Weak</span>};
 <span class="kw">use</span> <span class="ident">lazy_static::lazy_static</span>;
-<span class="kw">use</span> <span class="ident">spin::Mutex</span>;
-<span class="kw">use</span> <span class="ident">spin::RwLock</span>;
+<span class="kw">use</span> <span class="ident">spin</span>::{<span class="ident">Mutex</span>, <span class="ident">RwLock</span>};
 <span class="kw">use</span> <span class="ident">zircon_object::vm</span>::<span class="kw-2">*</span>;
 
 <span class="macro">lazy_static!</span> {
-    <span class="kw">static</span> <span class="kw-2">ref</span> <span class="ident">KEY2SHM</span>: <span class="ident">RwLock</span><span class="op">&lt;</span><span class="ident">BTreeMap</span><span class="op">&lt;</span><span class="ident">u32</span>, <span class="ident">Weak</span><span class="op">&lt;</span><span class="ident">spin::Mutex</span><span class="op">&lt;</span><span class="ident">ShmGuard</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span> <span class="op">=</span>
-        <span class="ident">RwLock::new</span>(<span class="ident">BTreeMap::new</span>());
+    <span class="kw">static</span> <span class="kw-2">ref</span> <span class="ident">KEY2SHM</span>: <span class="ident">RwLock</span><span class="op">&lt;</span><span class="ident">BTreeMap</span><span class="op">&lt;</span><span class="ident">u32</span>, <span class="ident">Weak</span><span class="op">&lt;</span><span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">ShmGuard</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">RwLock::new</span>(<span class="ident">BTreeMap::new</span>());
 }
 
 <span class="doccomment">/// shmid data structure</span>
@@ -199,7 +195,7 @@
     <span class="doccomment">/// Shared memory address</span>
     <span class="kw">pub</span> <span class="ident">addr</span>: <span class="ident">usize</span>,
     <span class="doccomment">/// Shared memory buffer and data</span>
-    <span class="kw">pub</span> <span class="ident">guard</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">spin::Mutex</span><span class="op">&lt;</span><span class="ident">ShmGuard</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+    <span class="kw">pub</span> <span class="ident">guard</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">ShmGuard</span><span class="op">&gt;</span><span class="op">&gt;</span>,
 }
 
 <span class="doccomment">/// shared memory buffer and data</span>
@@ -222,7 +218,7 @@
         <span class="ident">memsize</span>: <span class="ident">usize</span>,
         <span class="ident">flags</span>: <span class="ident">usize</span>,
         <span class="ident">cpid</span>: <span class="ident">u32</span>,
-    ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">spin::Mutex</span><span class="op">&lt;</span><span class="ident">ShmGuard</span><span class="op">&gt;</span><span class="op">&gt;</span>, <span class="ident">LxError</span><span class="op">&gt;</span> {
+    ) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">ShmGuard</span><span class="op">&gt;</span><span class="op">&gt;</span>, <span class="ident">LxError</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">key2shm</span> <span class="op">=</span> <span class="ident">KEY2SHM</span>.<span class="ident">write</span>();
         <span class="kw">let</span> <span class="ident">flag</span> <span class="op">=</span> <span class="ident">IpcGetFlag::from_bits_truncate</span>(<span class="ident">flags</span>);
 
@@ -236,7 +232,7 @@
                 <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">guard</span>);
             }
         }
-        <span class="kw">let</span> <span class="ident">shared_guard</span> <span class="op">=</span> <span class="ident">Arc::new</span>(<span class="ident">spin::Mutex::new</span>(<span class="ident">ShmGuard</span> {
+        <span class="kw">let</span> <span class="ident">shared_guard</span> <span class="op">=</span> <span class="ident">Arc::new</span>(<span class="ident">Mutex::new</span>(<span class="ident">ShmGuard</span> {
             <span class="ident">shared_guard</span>: <span class="ident">VmObject::new_paged</span>(<span class="ident">pages</span>(<span class="ident">memsize</span>)),
             <span class="ident">shmid_ds</span>: <span class="ident">Mutex::new</span>(<span class="ident">ShmidDs</span> {
                 <span class="ident">perm</span>: <span class="ident">IpcPerm</span> {

@@ -592,6 +592,8 @@
 <span id="586">586</span>
 <span id="587">587</span>
 <span id="588">588</span>
+<span id="589">589</span>
+<span id="590">590</span>
 </pre><pre class="rust"><code><span class="doccomment">//! Linux syscall implementations</span>
 <span class="doccomment">//!</span>
 <span class="doccomment">//! ## Example</span>
@@ -1074,6 +1076,8 @@
             <span class="comment">//            Sys::INIT_MODULE =&gt; self.sys_init_module(a0.into(), a1 as usize, a2.into()),</span>
             <span class="ident">Sys::FINIT_MODULE</span> =&gt; <span class="self">self</span>.<span class="ident">unimplemented</span>(<span class="string">&quot;finit_module&quot;</span>, <span class="prelude-val">Err</span>(<span class="ident">LxError::ENOSYS</span>)),
             <span class="comment">//            Sys::DELETE_MODULE =&gt; self.sys_delete_module(a0.into(), a1 as u32),</span>
+            <span class="ident">Sys::BLOCK_IN_KERNEL</span> =&gt; <span class="self">self</span>.<span class="ident">sys_block_in_kernel</span>(),
+
             <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>)]</span>
             <span class="kw">_</span> =&gt; <span class="self">self</span>.<span class="ident">x86_64_syscall</span>(<span class="ident">sys_type</span>, <span class="ident">args</span>).<span class="kw">await</span>,
             <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;riscv64&quot;</span>)]</span>

@@ -110,6 +110,7 @@
 <span id="104">104</span>
 <span id="105">105</span>
 <span id="106">106</span>
+<span id="107">107</span>
 </pre><pre class="rust"><code><span class="kw">use</span> {
     <span class="kw">super</span>::<span class="kw-2">*</span>,
     <span class="ident"><span class="kw">crate</span>::object</span>::<span class="kw-2">*</span>,
@@ -117,6 +118,7 @@
     <span class="ident">alloc</span>::{<span class="ident">sync::Arc</span>, <span class="ident">vec::Vec</span>},
     <span class="ident">dev::Iommu</span>,
     <span class="ident">spin::Mutex</span>,
+    <span class="comment">// lock::Mutex,</span>
 };
 
 <span class="doccomment">/// Bus Transaction Initiator.</span>

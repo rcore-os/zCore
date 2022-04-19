@@ -206,6 +206,18 @@
 <span id="200">200</span>
 <span id="201">201</span>
 <span id="202">202</span>
+<span id="203">203</span>
+<span id="204">204</span>
+<span id="205">205</span>
+<span id="206">206</span>
+<span id="207">207</span>
+<span id="208">208</span>
+<span id="209">209</span>
+<span id="210">210</span>
+<span id="211">211</span>
+<span id="212">212</span>
+<span id="213">213</span>
+<span id="214">214</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="ident">alloc</span>::{<span class="ident">boxed::Box</span>, <span class="ident">string::String</span>, <span class="ident">vec::Vec</span>};
 <span class="kw">use</span> <span class="ident">core</span>::{<span class="ident">future::Future</span>, <span class="ident">ops::Range</span>, <span class="ident">time::Duration</span>};
 
@@ -305,6 +317,15 @@
         <span class="doccomment">/// Is a valid IRQ number.</span>
         <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">is_valid_irq</span>(<span class="ident">vector</span>: <span class="ident">usize</span>) -&gt; <span class="ident">bool</span>;
 
+        <span class="doccomment">/// Enable the interrupts</span>
+        <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">intr_on</span>();
+
+        <span class="doccomment">/// Disable the interrupts</span>
+        <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">intr_off</span>();
+
+        <span class="doccomment">/// Test weather interrupt is enabled</span>
+        <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">intr_get</span>() -&gt; <span class="ident">bool</span>;
+
         <span class="doccomment">/// Disable IRQ.</span>
         <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">mask_irq</span>(<span class="ident">vector</span>: <span class="ident">usize</span>) -&gt; <span class="ident">HalResult</span>;
 
@@ -356,6 +377,9 @@
 
     <span class="doccomment">/// Time and clock functions.</span>
     <span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">timer</span> {
+        <span class="doccomment">/// Set the first time interrupt</span>
+        <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">timer_set_first</span>();
+
         <span class="doccomment">/// Get current time.</span>
         <span class="doccomment">/// TODO: use `Instant` as return type.</span>
         <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">timer_now</span>() -&gt; <span class="ident">Duration</span>;

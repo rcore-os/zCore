@@ -419,6 +419,7 @@
 <span id="413">413</span>
 <span id="414">414</span>
 <span id="415">415</span>
+<span id="416">416</span>
 </pre><pre class="rust"><code><span class="kw">use</span> {
     <span class="ident"><span class="self">self</span>::event_interrupt</span>::<span class="kw-2">*</span>,
     <span class="ident"><span class="self">self</span>::pci_interrupt</span>::<span class="kw-2">*</span>,
@@ -429,6 +430,7 @@
     <span class="ident">alloc</span>::{<span class="ident">boxed::Box</span>, <span class="ident">sync::Arc</span>},
     <span class="ident">bitflags::bitflags</span>,
     <span class="ident">spin::Mutex</span>,
+    <span class="comment">// lock::Mutex,</span>
 };
 
 <span class="kw">mod</span> <span class="ident">event_interrupt</span>;

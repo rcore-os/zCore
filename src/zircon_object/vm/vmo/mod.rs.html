@@ -496,6 +496,7 @@
 <span id="490">490</span>
 <span id="491">491</span>
 <span id="492">492</span>
+<span id="493">493</span>
 </pre><pre class="rust"><code><span class="kw">use</span> {
     <span class="self">self</span>::{<span class="ident">paged</span>::<span class="kw-2">*</span>, <span class="ident">physical</span>::<span class="kw-2">*</span>, <span class="ident">slice</span>::<span class="kw-2">*</span>},
     <span class="kw">super</span>::<span class="kw-2">*</span>,
@@ -507,6 +508,7 @@
     <span class="ident">bitflags::bitflags</span>,
     <span class="ident">core::ops::Deref</span>,
     <span class="ident">kernel_hal::CachePolicy</span>,
+    <span class="comment">// lock::Mutex,</span>
     <span class="ident">spin::Mutex</span>,
 };
 

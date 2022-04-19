@@ -158,6 +158,22 @@
 <span id="152">152</span>
 <span id="153">153</span>
 <span id="154">154</span>
+<span id="155">155</span>
+<span id="156">156</span>
+<span id="157">157</span>
+<span id="158">158</span>
+<span id="159">159</span>
+<span id="160">160</span>
+<span id="161">161</span>
+<span id="162">162</span>
+<span id="163">163</span>
+<span id="164">164</span>
+<span id="165">165</span>
+<span id="166">166</span>
+<span id="167">167</span>
+<span id="168">168</span>
+<span id="169">169</span>
+<span id="170">170</span>
 </pre><pre class="rust"><code><span class="doccomment">//! Syscalls for time</span>
 <span class="doccomment">//! - clock_gettime</span>
 <span class="doccomment">//!</span>
@@ -210,6 +226,22 @@
         <span class="kw">let</span> <span class="ident">sec</span> <span class="op">=</span> <span class="ident">TimeSpec::now</span>().<span class="ident">sec</span>;
         <span class="ident">time</span>.<span class="ident">write</span>(<span class="ident">sec</span> <span class="kw">as</span> <span class="ident">u64</span>)<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(<span class="ident">sec</span>)
+    }
+
+    <span class="doccomment">/// JUST FOR TEST, DO NOT USE IT</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_block_in_kernel</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">SysResult</span> {
+        <span class="comment">// DEAD LOOP</span>
+        <span class="macro">error!</span>(<span class="string">&quot;loop in kernel&quot;</span>);
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">old</span> <span class="op">=</span> <span class="ident">TimeSpec::now</span>().<span class="ident">sec</span>;
+        <span class="kw">loop</span> {
+            <span class="kw">let</span> <span class="ident">sec</span> <span class="op">=</span> <span class="ident">TimeSpec::now</span>().<span class="ident">sec</span>;
+            <span class="kw">if</span> <span class="ident">sec</span> <span class="op">==</span> <span class="ident">old</span> {
+                <span class="ident">core::hint::spin_loop</span>();
+                <span class="kw">continue</span>;
+            }
+            <span class="ident">old</span> <span class="op">=</span> <span class="ident">sec</span>;
+            <span class="macro">warn!</span>(<span class="string">&quot;1 seconds past&quot;</span>);
+        }
     }
 
     <span class="doccomment">/// get resource usage</span>

@@ -213,7 +213,7 @@
 
 <span class="kw">use</span> <span class="ident">acpi::platform::interrupt::InterruptModel</span>;
 <span class="kw">use</span> <span class="ident">acpi</span>::{<span class="ident">AcpiHandler</span>, <span class="ident">AcpiTables</span>, <span class="ident">PhysicalMapping</span>};
-<span class="kw">use</span> <span class="ident">spin::Mutex</span>;
+<span class="kw">use</span> <span class="ident">lock::Mutex</span>;
 <span class="kw">use</span> <span class="ident">x2apic::ioapic</span>::{<span class="ident">IoApic</span> <span class="kw">as</span> <span class="ident">IoApicInner</span>, <span class="ident">IrqFlags</span>, <span class="ident">IrqMode</span>};
 
 <span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">IrqPolarity</span>, <span class="ident">IrqTriggerMode</span>, <span class="ident">Phys2VirtFn</span>};

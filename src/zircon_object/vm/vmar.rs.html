@@ -1256,7 +1256,7 @@
     <span class="ident">kernel_hal::vm</span>::{
         <span class="ident">GenericPageTable</span>, <span class="ident">IgnoreNotMappedErr</span>, <span class="ident">Page</span>, <span class="ident">PageSize</span>, <span class="ident">PageTable</span>, <span class="ident">PagingError</span>, <span class="ident">PagingResult</span>,
     },
-    <span class="ident">spin::Mutex</span>,
+    <span class="ident">lock::Mutex</span>,
 };
 
 <span class="macro">bitflags!</span> {
@@ -1652,12 +1652,12 @@
         <span class="op">!</span><span class="self">self</span>.<span class="ident">is_dead</span>()
     }
 
-    <span class="doccomment">/// get flags of vaddr</span>
+    <span class="doccomment">/// Get flags of vaddr</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_vaddr_flags</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">vaddr</span>: <span class="ident">usize</span>) -&gt; <span class="ident">PagingResult</span><span class="op">&lt;</span><span class="ident">MMUFlags</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">guard</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
         <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="ident">guard</span>.<span class="ident">as_ref</span>().<span class="ident">unwrap</span>();
         <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">contains</span>(<span class="ident">vaddr</span>) {
-            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">PagingError::NoMemory</span>);
+            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">PagingError::NotMapped</span>);
         }
         <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">child</span>) <span class="op">=</span> <span class="ident">inner</span>.<span class="ident">children</span>.<span class="ident">iter</span>().<span class="ident">find</span>(<span class="op">|</span><span class="ident">ch</span><span class="op">|</span> <span class="ident">ch</span>.<span class="ident">contains</span>(<span class="ident">vaddr</span>)) {
             <span class="kw">return</span> <span class="ident">child</span>.<span class="ident">get_vaddr_flags</span>(<span class="ident">vaddr</span>);

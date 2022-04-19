@@ -523,6 +523,7 @@
 <span id="517">517</span>
 <span id="518">518</span>
 <span id="519">519</span>
+<span id="520">520</span>
 </pre><pre class="rust"><code><span class="doccomment">//! Linux Process</span>
 
 <span class="kw">use</span> <span class="kw">crate</span>::{
@@ -544,6 +545,7 @@
 <span class="kw">use</span> <span class="ident">rcore_fs::vfs</span>::{<span class="ident">FileSystem</span>, <span class="ident">INode</span>};
 <span class="kw">use</span> <span class="ident">smoltcp::socket::SocketHandle</span>;
 <span class="kw">use</span> <span class="ident">spin</span>::{<span class="ident">Mutex</span>, <span class="ident">MutexGuard</span>};
+
 <span class="kw">use</span> <span class="ident">zircon_object</span>::{
     <span class="ident">object</span>::{<span class="ident">KernelObject</span>, <span class="ident">KoID</span>, <span class="ident">Signal</span>},
     <span class="ident">signal::Futex</span>,
@@ -1010,7 +1012,7 @@
     }
 
     <span class="doccomment">/// Insert the `SharedGuard` and return its ID</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">shm_add</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">shared_guard</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">spin::Mutex</span><span class="op">&lt;</span><span class="ident">ShmGuard</span><span class="op">&gt;</span><span class="op">&gt;</span>) -&gt; <span class="ident">usize</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">shm_add</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">shared_guard</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">ShmGuard</span><span class="op">&gt;</span><span class="op">&gt;</span>) -&gt; <span class="ident">usize</span> {
         <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">shm_identifiers</span>.<span class="ident">add</span>(<span class="ident">shared_guard</span>)
     }
 

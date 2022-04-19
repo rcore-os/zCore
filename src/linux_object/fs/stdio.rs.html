@@ -228,8 +228,8 @@
 <span class="kw">use</span> <span class="ident">core::task</span>::{<span class="ident">Context</span>, <span class="ident">Poll</span>};
 <span class="kw">use</span> <span class="ident">kernel_hal::console</span>::{<span class="self">self</span>, <span class="ident">ConsoleWinSize</span>};
 <span class="kw">use</span> <span class="ident">lazy_static::lazy_static</span>;
+<span class="kw">use</span> <span class="ident">lock::Mutex</span>;
 <span class="kw">use</span> <span class="ident">rcore_fs::vfs</span>::<span class="kw-2">*</span>;
-<span class="kw">use</span> <span class="ident">spin::Mutex</span>;
 
 <span class="macro">lazy_static!</span> {
     <span class="doccomment">/// STDIN global reference</span>

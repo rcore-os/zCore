@@ -329,6 +329,9 @@
 <span id="323">323</span>
 <span id="324">324</span>
 <span id="325">325</span>
+<span id="326">326</span>
+<span id="327">327</span>
+<span id="328">328</span>
 </pre><pre class="rust"><code><span class="doccomment">//! User context.</span>
 
 <span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">MMUFlags</span>, <span class="ident">VirtAddr</span>};
@@ -358,7 +361,7 @@
 }
 
 <span class="doccomment">/// Reason of the trap.</span>
-<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>)]</span>
+<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>, <span class="ident">PartialEq</span>, <span class="ident">Eq</span>)]</span>
 <span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">TrapReason</span> {
     <span class="ident">Syscall</span>,
     <span class="ident">Interrupt</span>(<span class="ident">usize</span>),
@@ -369,6 +372,9 @@
     <span class="ident">UnalignedAccess</span>,
     <span class="ident">GernelFault</span>(<span class="ident">usize</span>),
 }
+
+<span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">not</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;libos&quot;</span>))]</span>
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">TIMER_INTERRUPT_VEC</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="ident"><span class="kw">crate</span>::timer_interrupt_vector</span>();
 
 <span class="kw">impl</span> <span class="ident">TrapReason</span> {
     <span class="doccomment">/// Get [`TrapReason`] from `trap_num` and `error_code` in trap frame for x86.</span>

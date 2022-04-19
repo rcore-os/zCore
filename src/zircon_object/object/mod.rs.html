@@ -619,6 +619,7 @@
 <span id="613">613</span>
 <span id="614">614</span>
 <span id="615">615</span>
+<span id="616">616</span>
 </pre><pre class="rust"><code><span class="doccomment">//! Kernel object basis.</span>
 <span class="doccomment">//!</span>
 <span class="doccomment">//! # Create new kernel object</span>
@@ -726,6 +727,7 @@
         <span class="ident">task</span>::{<span class="ident">Context</span>, <span class="ident">Poll</span>},
     },
     <span class="ident">downcast_rs</span>::{<span class="ident">impl_downcast</span>, <span class="ident">DowncastSync</span>},
+    <span class="comment">// lock::Mutex,</span>
     <span class="ident">spin::Mutex</span>,
 };
 

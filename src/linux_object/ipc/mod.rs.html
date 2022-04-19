@@ -178,6 +178,7 @@
 <span id="172">172</span>
 <span id="173">173</span>
 <span id="174">174</span>
+<span id="175">175</span>
 </pre><pre class="rust"><code><span class="doccomment">//! Linux Inter-Process Communication</span>
 <span class="attribute">#![<span class="ident">deny</span>(<span class="ident">missing_docs</span>)]</span>
 <span class="kw">mod</span> <span class="ident">semary</span>;
@@ -188,6 +189,7 @@
 <span class="kw">use</span> <span class="ident">alloc::collections::BTreeMap</span>;
 <span class="kw">use</span> <span class="ident">alloc::sync::Arc</span>;
 <span class="kw">use</span> <span class="ident">bitflags</span>::<span class="kw-2">*</span>;
+<span class="kw">use</span> <span class="ident">spin::Mutex</span>;
 
 <span class="doccomment">/// Semaphore table in a process</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Default</span>)]</span>
@@ -310,7 +312,7 @@
 
 <span class="kw">impl</span> <span class="ident">ShmProc</span> {
     <span class="doccomment">/// Insert the `SharedGuard` and return its ID</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">add</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>, <span class="ident">shared_guard</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">spin::Mutex</span><span class="op">&lt;</span><span class="ident">ShmGuard</span><span class="op">&gt;</span><span class="op">&gt;</span>) -&gt; <span class="ident">ShmId</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">add</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>, <span class="ident">shared_guard</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">ShmGuard</span><span class="op">&gt;</span><span class="op">&gt;</span>) -&gt; <span class="ident">ShmId</span> {
         <span class="kw">let</span> <span class="ident">id</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">get_free_id</span>();
         <span class="kw">let</span> <span class="ident">shm_identifier</span> <span class="op">=</span> <span class="ident">ShmIdentifier</span> {
             <span class="ident">addr</span>: <span class="number">0</span>,

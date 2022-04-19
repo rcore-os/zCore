@@ -153,7 +153,21 @@
 <span id="147">147</span>
 <span id="148">148</span>
 <span id="149">149</span>
-</pre><pre class="rust"><code><span class="kw">use</span> {<span class="kw">super</span>::<span class="kw-2">*</span>, <span class="ident"><span class="kw">crate</span>::object</span>::<span class="kw-2">*</span>, <span class="ident">alloc::sync::Arc</span>, <span class="ident">numeric_enum_macro::numeric_enum</span>, <span class="ident">spin::Mutex</span>};
+<span id="150">150</span>
+<span id="151">151</span>
+<span id="152">152</span>
+<span id="153">153</span>
+<span id="154">154</span>
+<span id="155">155</span>
+<span id="156">156</span>
+</pre><pre class="rust"><code><span class="kw">use</span> {
+    <span class="kw">super</span>::<span class="kw-2">*</span>,
+    <span class="ident"><span class="kw">crate</span>::object</span>::<span class="kw-2">*</span>,
+    <span class="ident">alloc::sync::Arc</span>,
+    <span class="ident">numeric_enum_macro::numeric_enum</span>,
+    <span class="comment">// lock::Mutex,</span>
+    <span class="ident">spin::Mutex</span>,
+};
 
 <span class="doccomment">/// A readable, writable, seekable interface to some underlying storage</span>
 <span class="doccomment">///</span>

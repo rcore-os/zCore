@@ -475,7 +475,6 @@
 <span id="469">469</span>
 <span id="470">470</span>
 <span id="471">471</span>
-<span id="472">472</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
 <span class="kw">use</span> <span class="ident">core::fmt::Debug</span>;
 
@@ -771,7 +770,6 @@
         <span class="comment">// TODO: use right signal</span>
         <span class="comment">// self.zircon_process().signal_set(Signal::SIGNALED);</span>
         <span class="comment">// Workaround, the child process could NOT exit correctly</span>
-
         <span class="self">self</span>.<span class="ident">thread</span>
             .<span class="ident">with_context</span>(<span class="op">|</span><span class="ident">ctx</span><span class="op">|</span> <span class="ident">ctx</span>.<span class="ident">setup_uspace</span>(<span class="ident">entry</span>, <span class="ident">sp</span>, <span class="number">0</span>, <span class="number">0</span>))<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(<span class="number">0</span>)

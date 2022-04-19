@@ -136,7 +136,6 @@
 <span id="130">130</span>
 <span id="131">131</span>
 <span id="132">132</span>
-<span id="133">133</span>
 </pre><pre class="rust"><code><span class="doccomment">//! Linux semaphore ipc</span>
 <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
 <span class="kw">use</span> <span class="ident"><span class="kw">crate</span>::error::LxError</span>;
@@ -145,8 +144,7 @@
 <span class="kw">use</span> <span class="ident">alloc</span>::{<span class="ident">collections::BTreeMap</span>, <span class="ident">sync::Arc</span>, <span class="ident">sync::Weak</span>, <span class="ident">vec::Vec</span>};
 <span class="kw">use</span> <span class="ident">core::ops::Index</span>;
 <span class="kw">use</span> <span class="ident">lazy_static</span>::<span class="kw-2">*</span>;
-<span class="kw">use</span> <span class="ident">spin::Mutex</span>;
-<span class="kw">use</span> <span class="ident">spin::RwLock</span>;
+<span class="kw">use</span> <span class="ident">spin</span>::{<span class="ident">Mutex</span>, <span class="ident">RwLock</span>};
 
 <span class="doccomment">/// semid data structure</span>
 <span class="doccomment">///</span>

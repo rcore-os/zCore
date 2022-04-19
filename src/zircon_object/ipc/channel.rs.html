@@ -369,6 +369,7 @@
 <span id="363">363</span>
 <span id="364">364</span>
 <span id="365">365</span>
+<span id="366">366</span>
 </pre><pre class="rust"><code><span class="kw">use</span> {
     <span class="ident"><span class="kw">crate</span>::object</span>::<span class="kw-2">*</span>,
     <span class="ident">alloc::collections::VecDeque</span>,
@@ -379,6 +380,7 @@
     <span class="ident">futures::channel::oneshot</span>::{<span class="self">self</span>, <span class="ident">Sender</span>},
     <span class="ident">hashbrown::HashMap</span>,
     <span class="ident">spin::Mutex</span>,
+    <span class="comment">// lock::Mutex,</span>
 };
 
 <span class="doccomment">/// Bidirectional interprocess communication</span>

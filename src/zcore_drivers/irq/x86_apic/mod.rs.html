@@ -175,16 +175,9 @@
 <span id="169">169</span>
 <span id="170">170</span>
 <span id="171">171</span>
-<span id="172">172</span>
-<span id="173">173</span>
-<span id="174">174</span>
 </pre><pre class="rust"><code><span class="kw">mod</span> <span class="ident">consts</span>;
 <span class="kw">mod</span> <span class="ident">ioapic</span>;
 <span class="kw">mod</span> <span class="ident">lapic</span>;
-
-<span class="kw">use</span> <span class="ident">core::ops::Range</span>;
-
-<span class="kw">use</span> <span class="ident">spin::Mutex</span>;
 
 <span class="kw">use</span> <span class="ident"><span class="self">self</span>::consts</span>::{<span class="ident">X86_INT_BASE</span>, <span class="ident">X86_INT_LOCAL_APIC_BASE</span>};
 <span class="kw">use</span> <span class="ident"><span class="self">self</span>::ioapic</span>::{<span class="ident">IoApic</span>, <span class="ident">IoApicList</span>};
@@ -192,6 +185,8 @@
 <span class="kw">use</span> <span class="ident"><span class="kw">crate</span>::prelude</span>::{<span class="ident">IrqHandler</span>, <span class="ident">IrqPolarity</span>, <span class="ident">IrqTriggerMode</span>};
 <span class="kw">use</span> <span class="ident"><span class="kw">crate</span>::scheme</span>::{<span class="ident">IrqScheme</span>, <span class="ident">Scheme</span>};
 <span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">utils::IrqManager</span>, <span class="ident">DeviceError</span>, <span class="ident">DeviceResult</span>, <span class="ident">PhysAddr</span>, <span class="ident">VirtAddr</span>};
+<span class="kw">use</span> <span class="ident">core::ops::Range</span>;
+<span class="kw">use</span> <span class="ident">lock::Mutex</span>;
 
 <span class="kw">const</span> <span class="ident">IOAPIC_IRQ_RANGE</span>: <span class="ident">Range</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">X86_INT_BASE</span>..<span class="ident">X86_INT_LOCAL_APIC_BASE</span>;
 <span class="kw">const</span> <span class="ident">LAPIC_IRQ_RANGE</span>: <span class="ident">Range</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> <span class="op">=</span> <span class="number">0</span>..<span class="number">16</span>;
@@ -263,9 +258,8 @@
     <span class="kw">fn</span> <span class="ident">handle_irq</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">vector</span>: <span class="ident">usize</span>) {
         <span class="ident"><span class="self">Self</span>::local_apic</span>().<span class="ident">eoi</span>();
         <span class="kw">let</span> <span class="ident">res</span> <span class="op">=</span> <span class="kw">if</span> <span class="ident">vector</span> <span class="op">&gt;</span><span class="op">=</span> <span class="ident">X86_INT_LOCAL_APIC_BASE</span> {
-            <span class="self">self</span>.<span class="ident">manager_lapic</span>
-                .<span class="ident">lock</span>()
-                .<span class="ident">handle</span>(<span class="ident">vector</span> <span class="op">-</span> <span class="ident">X86_INT_LOCAL_APIC_BASE</span>)
+            <span class="kw">let</span> <span class="ident">handler</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">manager_lapic</span>.<span class="ident">lock</span>();
+            <span class="ident">handler</span>.<span class="ident">handle</span>(<span class="ident">vector</span> <span class="op">-</span> <span class="ident">X86_INT_LOCAL_APIC_BASE</span>)
         } <span class="kw">else</span> {
             <span class="self">self</span>.<span class="ident">manager_ioapic</span>.<span class="ident">lock</span>().<span class="ident">handle</span>(<span class="ident">vector</span>)
         };

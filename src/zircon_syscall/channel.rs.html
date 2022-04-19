@@ -361,9 +361,13 @@
 <span id="355">355</span>
 <span id="356">356</span>
 <span id="357">357</span>
+<span id="358">358</span>
+<span id="359">359</span>
 </pre><pre class="rust"><code><span class="kw">use</span> {
     <span class="kw">super</span>::<span class="kw-2">*</span>,
     <span class="ident">alloc</span>::{<span class="ident">string::String</span>, <span class="ident">vec::Vec</span>},
+    <span class="comment">// lock::Mutex,</span>
+    <span class="ident">spin::Mutex</span>,
     <span class="ident">zircon_object</span>::{
         <span class="ident">ipc</span>::{<span class="ident">Channel</span>, <span class="ident">MessagePacket</span>},
         <span class="ident">object</span>::{<span class="ident">obj_type</span>, <span class="ident">HandleInfo</span>},
@@ -683,7 +687,7 @@
     <span class="ident">result</span>: <span class="ident">i32</span>,
 }
 
-<span class="kw">static</span> <span class="ident">TESTS_ARGS</span>: <span class="ident">spin::Mutex</span><span class="op">&lt;</span><span class="ident">String</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">spin::Mutex::new</span>(<span class="ident">String::new</span>());
+<span class="kw">static</span> <span class="ident">TESTS_ARGS</span>: <span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">String</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">Mutex::new</span>(<span class="ident">String::new</span>());
 
 <span class="doccomment">/// HACK: pass arguments to standalone-test</span>
 <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy::naive_bytecount</span>)]</span>
