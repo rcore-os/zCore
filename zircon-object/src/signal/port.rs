@@ -5,7 +5,6 @@ use alloc::collections::{BTreeSet, VecDeque};
 use alloc::sync::Arc;
 use bitflags::bitflags;
 use spin::Mutex;
-// use lock::Mutex;
 
 #[path = "port_packet.rs"]
 mod port_packet;

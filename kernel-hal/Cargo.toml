@@ -37,7 +37,7 @@ bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator", rev =
 
 # Bare-metal mode
 [target.'cfg(target_os = "none")'.dependencies]
-executor = { git = "https://github.com/DeathWish5/PreemptiveScheduler" }
+executor = { git = "https://github.com/DeathWish5/PreemptiveScheduler", rev = "56ac2f6" }
 naive-timer = "0.2.0"
 
 # All mode on x86_64

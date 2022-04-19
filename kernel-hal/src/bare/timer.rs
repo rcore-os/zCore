@@ -3,10 +3,9 @@
 use alloc::boxed::Box;
 use core::time::Duration;
 
-use naive_timer::Timer;
-// use spin::Mutex;
 use core::sync::atomic::{AtomicBool, Ordering};
 use lock::Mutex;
+use naive_timer::Timer;
 
 #[allow(dead_code)]
 pub(super) const TICKS_PER_SEC: u64 = 100;

@@ -6,7 +6,6 @@ use core::{fmt::Debug, marker::PhantomData, slice};
 use crate::common::vm::*;
 use crate::{mem::PhysFrame, MMUFlags, PhysAddr, VirtAddr};
 
-// use spin::Mutex;
 use lock::Mutex;
 
 pub trait PageTableLevel: Sync + Send {

@@ -3,7 +3,6 @@ use core::{fmt, ptr::NonNull};
 
 use acpi::platform::interrupt::InterruptModel;
 use acpi::{AcpiHandler, AcpiTables, PhysicalMapping};
-// use spin::Mutex;
 use lock::Mutex;
 use x2apic::ioapic::{IoApic as IoApicInner, IrqFlags, IrqMode};
 

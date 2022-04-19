@@ -3,7 +3,6 @@
 use alloc::{sync::Arc, vec::Vec};
 use core::convert::From;
 
-// use spin::{RwLock, RwLockReadGuard};
 use lock::{RwLock, RwLockReadGuard};
 
 use zcore_drivers::scheme::{

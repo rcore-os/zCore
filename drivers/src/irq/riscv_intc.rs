@@ -1,6 +1,4 @@
 use riscv::register::sie;
-// use spin::Mutex;
-// use lock::Mutex;
 use spin::Once;
 
 use crate::prelude::IrqHandler;
@@ -23,13 +21,6 @@ pub enum ScauseIntCode {
     SupervisorExternal = S_EXT,
 }
 
-// pub struct Intc {
-//     name: String,
-//     soft_handler: Mutex<Option<IrqHandler>>,
-//     timer_handler: Mutex<Option<IrqHandler>>,
-//     ext_handler: Mutex<Option<IrqHandler>>,
-// }
-
 pub struct Intc {
     name: String,
     soft_handler: Once<IrqHandler>,
@@ -38,15 +29,6 @@ pub struct Intc {
 }
 
 impl Intc {
-    // pub fn new() -> Self {
-    //     Self {
-    //         name: format!("riscv-intc-cpu{}", INTC_NUM.fetch_add(1, Ordering::Relaxed)),
-    //         soft_handler: Mutex::new(None),
-    //         timer_handler: Mutex::new(None),
-    //         ext_handler: Mutex::new(None),
-    //     }
-    // }
-
     pub fn new() -> Self {
         Self {
             name: format!("riscv-intc-cpu{}", INTC_NUM.fetch_add(1, Ordering::Relaxed)),
@@ -55,21 +37,6 @@ impl Intc {
             ext_handler: Once::new(),
         }
     }
-
-    // fn with_handler<F>(&self, cause: usize, op: F) -> DeviceResult
-    // where
-    //     F: FnOnce(&mut Option<IrqHandler>) -> DeviceResult,
-    // {
-    //     match cause {
-    //         S_SOFT => op(&self.soft_handler.lock()),
-    //         S_TIMER => op(&self.timer_handler.lock()),
-    //         S_EXT => op(&mut self.ext_handler.lock()),
-    //         _ => {
-    //             error!("invalid SCAUSE value {:#x}!", cause);
-    //             Err(DeviceError::InvalidParam)
-    //         }
-    //     }
-    // }
 
     fn with_handler<F>(&self, cause: usize, op: F) -> DeviceResult
     where
@@ -97,19 +64,6 @@ impl Scheme for Intc {
     fn name(&self) -> &str {
         self.name.as_str()
     }
-
-    // fn handle_irq(&self, cause: usize) {
-    //     info!("intc handle irq, cause {}", cause);
-    //     self.with_handler(cause, |opt| {
-    //         if let Some(h) = opt {
-    //             h();
-    //         } else {
-    //             warn!("no registered handler for SCAUSE {}!", cause);
-    //         }
-    //         Ok(())
-    //     })
-    //     .unwrap();
-    // }
 
     fn handle_irq(&self, cause: usize) {
         info!("intc handle irq, cause {}", cause);
@@ -167,13 +121,5 @@ impl IrqScheme for Intc {
 
     fn unregister(&self, _cause: usize) -> DeviceResult {
         panic!("unregister intc handler unsupported!");
-        // self.with_handler(cause, |opt| {
-        //     if opt.is_some() {
-        //         *opt = None;
-        //         Ok(())
-        //     } else {
-        //         Err(DeviceError::InvalidParam)
-        //     }
-        // })
     }
 }

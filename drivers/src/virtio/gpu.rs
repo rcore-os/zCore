@@ -1,4 +1,3 @@
-// use spin::Mutex;
 use lock::Mutex;
 use virtio_drivers::{VirtIOGpu as InnerDriver, VirtIOHeader};
 

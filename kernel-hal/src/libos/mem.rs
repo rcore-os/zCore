@@ -5,7 +5,6 @@ use core::ops::Range;
 
 use bitmap_allocator::BitAlloc;
 use spin::Mutex;
-// use lock::Mutex;
 
 use super::mock_mem::MockMemory;
 use crate::{PhysAddr, VirtAddr, PAGE_SIZE};

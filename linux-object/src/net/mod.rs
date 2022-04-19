@@ -15,7 +15,6 @@ pub mod udp;
 pub use udp::*;
 
 use spin::Mutex;
-// use lock::Mutex;
 
 /// missing documentation
 // pub mod raw;

@@ -24,7 +24,6 @@ use crate::net::UDP_METADATA_BUF;
 use crate::net::UDP_RECVBUF;
 use crate::net::UDP_SENDBUF;
 use spin::Mutex;
-// use lock::Mutex;
 
 // alloc
 use alloc::boxed::Box;
@@ -32,7 +31,6 @@ use alloc::sync::Arc;
 use alloc::vec;
 
 // smoltcp
-
 use smoltcp::socket::UdpPacketMetadata;
 use smoltcp::socket::UdpSocket;
 use smoltcp::socket::UdpSocketBuffer;

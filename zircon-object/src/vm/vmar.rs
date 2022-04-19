@@ -7,7 +7,6 @@ use {
         GenericPageTable, IgnoreNotMappedErr, Page, PageSize, PageTable, PagingError, PagingResult,
     },
     lock::Mutex,
-    // spin::Mutex,
 };
 
 bitflags! {

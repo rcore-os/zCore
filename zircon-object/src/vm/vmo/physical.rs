@@ -1,9 +1,4 @@
-use {
-    super::*,
-    alloc::sync::Arc,
-    lock::Mutex,
-    // spin::Mutex,
-};
+use {super::*, alloc::sync::Arc, lock::Mutex};
 
 /// VMO representing a physical range of memory.
 pub struct VMObjectPhysical {

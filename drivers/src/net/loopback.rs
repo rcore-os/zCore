@@ -5,10 +5,7 @@ use crate::net::get_sockets;
 use alloc::sync::Arc;
 
 use alloc::string::String;
-use spin::Mutex;
-
-// TODO: fix this, should use no-irq lock, but can't pass build of libos
-// use lock::Mutex;
+use lock::Mutex;
 
 use crate::scheme::{NetScheme, Scheme};
 use crate::{DeviceError, DeviceResult};

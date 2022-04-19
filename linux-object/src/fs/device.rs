@@ -1,7 +1,6 @@
 //! Implement Device
 
 use rcore_fs::dev::{Device, Result};
-// use spin::RwLock;
 use lock::RwLock;
 
 /// memory buffer for device
