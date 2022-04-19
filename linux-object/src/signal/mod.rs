@@ -61,7 +61,7 @@ cfg_if::cfg_if! {
         #[derive(Clone, Debug)]
         pub struct MachineContext {
             // TODO
-            pub reserved_: [usize; 14],
+            pub reserved_: [usize; 16],
             // pc
             pub pc: usize,
             // TODO
@@ -73,7 +73,7 @@ cfg_if::cfg_if! {
         impl Default for MachineContext {
             fn default() -> Self {
                 Self {
-                    reserved_: [0; 14],
+                    reserved_: [0; 16],
                     pc: 0,
                     reserved: [0; 17],
                     fpstate: [0; 66]

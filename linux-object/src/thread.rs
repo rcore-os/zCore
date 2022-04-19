@@ -136,8 +136,7 @@ impl LinuxThread {
         ctx.set_field(UserContextField::InstrPointer, ctx_in_us.context.get_pc());
         let mut new_mask = Sigset::empty();
         warn!(
-            "FIXME: the signal mask is not correctly restored, because of align issues 
-            of the SignalUserContext with C musl library."
+            "FIXME: the signal mask is not correctly restored, because of align issues of the SignalUserContext with C musl library."
         );
         new_mask.insert(Signal::SIGRT33);
         self.signal_mask = new_mask;
