@@ -106,6 +106,7 @@ where
     }
 }
 
+/// MMIO driver for UART 16550
 pub struct Uart16550Mmio<V: 'static>
 where
     V: Copy + BitAnd<Output = V> + BitOr<Output = V> + Not<Output = V>,
@@ -200,20 +201,21 @@ impl Uart16550Mmio<u32> {
 }
 
 #[cfg(target_arch = "x86_64")]
-mod pio {
+mod pmio {
     use super::*;
-    use crate::io::Pio;
+    use crate::io::Pmio;
 
-    pub struct Uart16550Pio {
-        inner: Mutex<Uart16550Inner<Pio<u8>>>,
+    /// Pmio driver for UART 16550
+    pub struct Uart16550Pmio {
+        inner: Mutex<Uart16550Inner<Pmio<u8>>>,
         listener: EventListener,
     }
 
-    impl_event_scheme!(Uart16550Pio);
+    impl_event_scheme!(Uart16550Pmio);
 
-    impl Scheme for Uart16550Pio {
+    impl Scheme for Uart16550Pmio {
         fn name(&self) -> &str {
-            "uart16550-pio"
+            "uart16550-Pmio"
         }
 
         fn handle_irq(&self, _irq_num: usize) {
@@ -221,7 +223,7 @@ mod pio {
         }
     }
 
-    impl UartScheme for Uart16550Pio {
+    impl UartScheme for Uart16550Pmio {
         fn try_recv(&self) -> DeviceResult<Option<u8>> {
             self.inner.lock().try_recv()
         }
@@ -235,16 +237,17 @@ mod pio {
         }
     }
 
-    impl Uart16550Pio {
+    impl Uart16550Pmio {
+        /// Construct a `Uart16550Pmio` whose address starts at `base`.
         pub fn new(base: u16) -> Self {
-            let mut uart = Uart16550Inner::<Pio<u8>> {
-                data: Pio::new(base),
-                int_en: Pio::new(base + 1),
-                fifo_ctrl: Pio::new(base + 2),
-                line_ctrl: Pio::new(base + 3),
-                modem_ctrl: Pio::new(base + 4),
-                line_sts: ReadOnly::new(Pio::new(base + 5)),
-                modem_sts: ReadOnly::new(Pio::new(base + 6)),
+            let mut uart = Uart16550Inner::<Pmio<u8>> {
+                data: Pmio::new(base),
+                int_en: Pmio::new(base + 1),
+                fifo_ctrl: Pmio::new(base + 2),
+                line_ctrl: Pmio::new(base + 3),
+                modem_ctrl: Pmio::new(base + 4),
+                line_sts: ReadOnly::new(Pmio::new(base + 5)),
+                modem_sts: ReadOnly::new(Pmio::new(base + 6)),
             };
             uart.init();
             Self {
@@ -256,4 +259,4 @@ mod pio {
 }
 
 #[cfg(target_arch = "x86_64")]
-pub use pio::Uart16550Pio;
+pub use pmio::Uart16550Pmio;

@@ -282,8 +282,11 @@ impl Syscall<'_> {
 
             //            Sys::SOCKETPAIR => self.unimplemented("socketpair", Err(LxError::EACCES)),
             // file system
-            Sys::STATFS => self.unimplemented("statfs", Err(LxError::EACCES)),
-            Sys::FSTATFS => self.unimplemented("fstatfs", Err(LxError::EACCES)),
+            Sys::STATFS => self.sys_statfs(
+                self.into_in_userptr(a0).unwrap(),
+                self.into_out_userptr(a1).unwrap(),
+            ),
+            Sys::FSTATFS => self.sys_fstatfs(a0.into(), self.into_out_userptr(a1).unwrap()),
             Sys::SYNC => self.sys_sync(),
             Sys::MOUNT => self.unimplemented("mount", Err(LxError::EACCES)),
             Sys::UMOUNT2 => self.unimplemented("umount2", Err(LxError::EACCES)),
@@ -318,6 +321,7 @@ impl Syscall<'_> {
             // schedule
             Sys::SCHED_YIELD => self.unimplemented("yield", Ok(0)),
             Sys::SCHED_GETAFFINITY => self.unimplemented("sched_getaffinity", Ok(0)),
+            Sys::SCHED_SETAFFINITY => self.unimplemented("sched_setaffinity", Ok(0)),
 
             // socket
             Sys::SOCKET => self.sys_socket(a0, a1, a2),
@@ -348,19 +352,22 @@ impl Syscall<'_> {
             Sys::SHUTDOWN => self.sys_shutdown(a0, a1),
             Sys::BIND => self.sys_bind(a0, self.into_in_userptr(a1).unwrap(), a2),
             Sys::LISTEN => self.sys_listen(a0, a1),
+
             Sys::GETSOCKNAME => self.sys_getsockname(
                 a0,
                 self.into_out_userptr(a1).unwrap(),
                 self.into_inout_userptr(a2).unwrap(),
             ),
-            Sys::GETPEERNAME => {
-                self.unimplemented("sys_getpeername(a0, a1.into(), a2.into()),", Ok(0))
-            }
+            Sys::GETPEERNAME => self.sys_getpeername(
+                a0,
+                self.into_out_userptr(a1).unwrap(),
+                self.into_inout_userptr(a2).unwrap(),
+            ),
             Sys::SETSOCKOPT => {
                 self.sys_setsockopt(a0, a1, a2, self.into_in_userptr(a3).unwrap(), a4)
             }
             Sys::GETSOCKOPT => {
-                self.unimplemented("sys_getsockopt(a0, a1, a2, a3.into(), a4.into()),", Ok(0))
+                self.sys_getsockopt(a0, a1, a2, self.into_out_userptr(a3).unwrap(), a4)
             }
 
             // process
@@ -390,12 +397,22 @@ impl Syscall<'_> {
 
             // time
             Sys::NANOSLEEP => self.sys_nanosleep(self.into_in_userptr(a0).unwrap()).await,
+            Sys::CLOCK_NANOSLEEP => {
+                self.sys_clock_nanosleep(
+                    a0,
+                    a1,
+                    self.into_in_userptr(a2).unwrap(),
+                    self.into_out_userptr(a3).unwrap(),
+                )
+                .await
+            }
             Sys::SETITIMER => self.unimplemented("setitimer", Ok(0)),
             Sys::GETTIMEOFDAY => self.sys_gettimeofday(
                 self.into_out_userptr(a0).unwrap(),
                 self.into_in_userptr(a1).unwrap(),
             ),
             Sys::CLOCK_GETTIME => self.sys_clock_gettime(a0, self.into_out_userptr(a1).unwrap()),
+            Sys::CLOCK_GETRES => self.unimplemented("clock_getres", Ok(0)),
 
             // sem
             #[cfg(not(target_arch = "mips"))]

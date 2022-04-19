@@ -1,3 +1,5 @@
+//! Device drivers of zCore.
+
 #![cfg_attr(not(feature = "mock"), no_std)]
 #![feature(doc_cfg)]
 
@@ -18,6 +20,7 @@ pub mod mock;
 pub mod virtio;
 
 pub mod builder;
+pub mod bus;
 pub mod display;
 pub mod input;
 pub mod io;
@@ -28,6 +31,7 @@ pub mod scheme;
 pub mod uart;
 pub mod utils;
 
+/// The error type for external device.
 #[derive(Debug)]
 pub enum DeviceError {
     /// The buffer is too small.
@@ -48,19 +52,28 @@ pub enum DeviceError {
     NotSupported,
 }
 
+/// A type alias for the result of a device operation.
 pub type DeviceResult<T = ()> = core::result::Result<T, DeviceError>;
 
+/// Static shell of shared dynamic device [`Scheme`](crate::scheme::Scheme) types.
 #[derive(Clone)]
 pub enum Device {
+    /// Block device
     Block(Arc<dyn scheme::BlockScheme>),
+    /// Display device
     Display(Arc<dyn scheme::DisplayScheme>),
+    /// Input device
     Input(Arc<dyn scheme::InputScheme>),
+    /// Interrupt request and handle
     Irq(Arc<dyn scheme::IrqScheme>),
+    /// Network device
     Net(Arc<dyn scheme::NetScheme>),
+    /// Uart port
     Uart(Arc<dyn scheme::UartScheme>),
 }
 
 impl Device {
+    /// Get a general [`Scheme`](scheme::Scheme) from the device.
     pub fn inner(&self) -> Arc<dyn scheme::Scheme> {
         match self {
             Self::Block(d) => d.clone().upcast(),

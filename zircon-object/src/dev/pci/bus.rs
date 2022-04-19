@@ -3,7 +3,7 @@ use super::nodes::{
     SharedLegacyIrqHandler,
 };
 use super::{
-    config::PciConfig, constants::*, pci_init_args::PciIrqSwizzleLut, pio::pci_bdf_raw_addr,
+    config::PciConfig, constants::*, pci_init_args::PciIrqSwizzleLut, pmio::pci_bdf_raw_addr,
     MappedEcamRegion, PciAddrSpace, PciEcamRegion,
 };
 use crate::dev::Interrupt;
@@ -447,9 +447,9 @@ impl PCIeAddressProvider for MmioPcieAddressProvider {
 
 /// Systems that have PIO mapped Config Spaces.
 #[derive(Default)]
-pub struct PioPcieAddressProvider;
+pub struct PmioPcieAddressProvider;
 
-impl PCIeAddressProvider for PioPcieAddressProvider {
+impl PCIeAddressProvider for PmioPcieAddressProvider {
     fn create_config(&self, addr: u64) -> Arc<PciConfig> {
         Arc::new(PciConfig {
             addr_space: PciAddrSpace::PIO,

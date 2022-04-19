@@ -26,10 +26,9 @@ impl Syscall<'_> {
     /// - `stat_ptr` – pointer to stat buffer
     pub fn sys_fstat(&self, fd: FileDesc, mut stat_ptr: UserOutPtr<Stat>) -> SysResult {
         info!("fstat: fd={:?}, stat_ptr={:?}", fd, stat_ptr);
-        let proc = self.linux_process();
-        let file = proc.get_file(fd)?;
-        let stat = Stat::from(file.metadata()?);
-        stat_ptr.write(stat)?;
+
+        let meta = self.linux_process().get_file(fd)?.metadata()?;
+        stat_ptr.write(meta.into())?;
         Ok(0)
     }
 
@@ -41,18 +40,17 @@ impl Syscall<'_> {
         mut stat_ptr: UserOutPtr<Stat>,
         flags: usize,
     ) -> SysResult {
-        let path = path.read_cstring()?;
+        let path = path.as_c_str()?;
         let flags = AtFlags::from_bits_truncate(flags);
         info!(
             "fstatat: dirfd={:?}, path={:?}, stat_ptr={:?}, flags={:?}",
             dirfd, path, stat_ptr, flags
         );
 
-        let proc = self.linux_process();
         let follow = !flags.contains(AtFlags::SYMLINK_NOFOLLOW);
-        let inode = proc.lookup_inode_at(dirfd, &path, follow)?;
-        let stat = Stat::from(inode.metadata()?);
-        stat_ptr.write(stat)?;
+        let inode = self.linux_process().lookup_inode_at(dirfd, path, follow)?;
+        let stat = inode.metadata()?;
+        stat_ptr.write(stat.into())?;
         Ok(0)
     }
 
@@ -65,21 +63,21 @@ impl Syscall<'_> {
 }
 
 #[cfg(not(target_arch = "mips"))]
-use linux_object::fs::vfs::Timespec;
+use linux_object::time::TimeSpec;
 
 #[cfg(target_arch = "mips")]
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
-pub struct Timespec {
+pub struct TimeSpec {
     pub sec: i32,
     pub nsec: i32,
 }
 
 #[cfg(target_arch = "mips")]
-impl From<linux_object::fs::vfs::Timespec> for Timespec {
-    fn from(t: Timespec) -> Self {
-        Timespec {
+impl From<linux_object::fs::vfs::TimeSpec> for TimeSpec {
+    fn from(t: TimeSpec) -> Self {
+        TimeSpec {
             sec: t.sec as _,
-            nsec: t.nsec,
+            nsec: t.nsec as _,
         }
     }
 }
@@ -113,11 +111,11 @@ pub struct Stat {
     blocks: u64,
 
     /// last access time
-    atime: Timespec,
+    atime: TimeSpec,
     /// last modification time
-    mtime: Timespec,
+    mtime: TimeSpec,
     /// last status change time
-    ctime: Timespec,
+    ctime: TimeSpec,
 }
 
 #[cfg(target_arch = "mips")]
@@ -147,11 +145,11 @@ pub struct Stat {
     size: u64,
 
     /// last access time
-    atime: Timespec,
+    atime: TimeSpec,
     /// last modification time
-    mtime: Timespec,
+    mtime: TimeSpec,
     /// last status change time
-    ctime: Timespec,
+    ctime: TimeSpec,
 
     /// blocksize for filesystem I/O
     blksize: u32,
@@ -192,27 +190,26 @@ pub struct Stat {
     blocks: u64,
 
     /// last access time
-    atime: Timespec,
+    atime: TimeSpec,
     /// last modification time
-    mtime: Timespec,
+    mtime: TimeSpec,
     /// last status change time
-    ctime: Timespec,
+    ctime: TimeSpec,
 }
 
 impl From<Metadata> for Stat {
-    #[allow(clippy::useless_conversion)]
     fn from(info: Metadata) -> Self {
         Stat {
-            dev: info.dev as u64,
-            ino: info.inode as u64,
-            mode: StatMode::from_type_mode(info.type_, info.mode as u16),
+            dev: info.dev as _,
+            ino: info.inode as _,
+            mode: StatMode::from_type_mode(info.type_, info.mode as _),
             nlink: info.nlinks as _,
-            uid: info.uid as u32,
-            gid: info.gid as u32,
-            rdev: info.rdev as u64,
-            size: info.size as u64,
+            uid: info.uid as _,
+            gid: info.gid as _,
+            rdev: info.rdev as _,
+            size: info.size as _,
             blksize: info.blk_size as _,
-            blocks: info.blocks as u64,
+            blocks: info.blocks as _,
             atime: info.atime.into(),
             mtime: info.mtime.into(),
             ctime: info.ctime.into(),

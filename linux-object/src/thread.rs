@@ -6,7 +6,6 @@ use crate::signal::{Signal, SignalStack, SignalUserContext, Sigset};
 use alloc::sync::Arc;
 use kernel_hal::context::{UserContext, UserContextField};
 use kernel_hal::user::{Out, UserInPtr, UserOutPtr, UserPtr};
-use kernel_hal::VirtAddr;
 use spin::{Mutex, MutexGuard};
 use zircon_object::task::{CurrentThread, Process, Thread};
 use zircon_object::ZxResult;
@@ -66,7 +65,7 @@ impl ThreadExt for Thread {
         mut _head_ptr: UserOutPtr<UserOutPtr<RobustList>>,
         mut _len_ptr: UserOutPtr<usize>,
     ) -> SysResult {
-        _head_ptr = (self.lock_linux().robust_list.as_ptr() as *mut RobustList as usize).into();
+        _head_ptr = (self.lock_linux().robust_list.as_addr() as *mut RobustList as usize).into();
         _len_ptr = (&self.lock_linux().robust_list_len as *const usize as usize).into();
         Ok(0)
     }
@@ -87,7 +86,7 @@ impl CurrentThreadExt for CurrentThread {
         if !clear_child_tid.is_null() {
             info!("exit: do futex {:?} wake 1", clear_child_tid);
             clear_child_tid.write(0).unwrap();
-            let uaddr = clear_child_tid.as_ptr() as VirtAddr;
+            let uaddr = clear_child_tid.as_addr();
             let futex = self.proc().linux().get_futex(uaddr);
             futex.wake(1);
         }

@@ -1,5 +1,12 @@
 //! Linux Process
 
+use crate::{
+    error::{LxError, LxResult},
+    fs::{File, FileDesc, FileLike, OpenFlags, STDIN, STDOUT},
+    ipc::*,
+    net::Socket,
+    signal::{Signal as LinuxSignal, SignalAction},
+};
 use alloc::{
     boxed::Box,
     string::String,
@@ -7,14 +14,11 @@ use alloc::{
     vec::Vec,
 };
 use core::sync::atomic::AtomicI32;
-
-use crate::net::Socket;
 use hashbrown::HashMap;
+use kernel_hal::VirtAddr;
 use rcore_fs::vfs::{FileSystem, INode};
 use smoltcp::socket::SocketHandle;
 use spin::{Mutex, MutexGuard};
-
-use kernel_hal::VirtAddr;
 use zircon_object::{
     object::{KernelObject, KoID, Signal},
     signal::Futex,
@@ -22,10 +26,7 @@ use zircon_object::{
     ZxResult,
 };
 
-use crate::error::{LxError, LxResult};
-use crate::fs::{File, FileDesc, FileLike, OpenFlags, STDIN, STDOUT};
-use crate::ipc::*;
-use crate::signal::{Signal as LinuxSignal, SignalAction};
+pub use rcore_fs::vfs::FsInfo;
 
 /// Process extension for linux
 pub trait ProcessExt {
@@ -506,9 +507,12 @@ impl LinuxProcessInner {
     }
 
     fn get_free_hd(&self) -> SocketHandle {
-        (10000usize..)
+        (SOCKET_FD..)
             .map(|i| i.into())
             .find(|fd| !self.sockets.contains_key(fd))
             .unwrap()
     }
 }
+
+// Temp , TODO warp a struct impl into/from with FileDesc and SocketHandle
+const SOCKET_FD: usize = 10000;

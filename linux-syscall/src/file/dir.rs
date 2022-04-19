@@ -1,4 +1,4 @@
-//! Directory operations
+﻿//! Directory operations
 //!
 //! - getcwd
 //! - chdir
@@ -11,7 +11,6 @@
 //! - readlink(at)
 
 use super::*;
-use alloc::string::String;
 use bitflags::bitflags;
 use kernel_hal::user::UserOutPtr;
 use linux_object::fs::vfs::FileType;
@@ -29,22 +28,22 @@ impl Syscall<'_> {
             return Err(LxError::ERANGE);
         }
         buf.write_cstring(&cwd)?;
-        Ok(buf.as_ptr() as usize)
+        Ok(buf.as_addr())
     }
 
     /// Change the current directory.
     /// - `path` – pointer to string with name of path
     pub fn sys_chdir(&self, path: UserInPtr<u8>) -> SysResult {
-        let path = path.read_cstring()?;
+        let path = path.as_c_str()?;
         info!("chdir: path={:?}", path);
 
         let proc = self.linux_process();
-        let inode = proc.lookup_inode(&path)?;
+        let inode = proc.lookup_inode(path)?;
         let info = inode.metadata()?;
         if info.type_ != FileType::Dir {
             return Err(LxError::ENOTDIR);
         }
-        proc.change_directory(&path);
+        proc.change_directory(path);
         Ok(0)
     }
 
@@ -57,14 +56,14 @@ impl Syscall<'_> {
 
     /// create directory relative to directory file descriptor
     pub fn sys_mkdirat(&self, dirfd: FileDesc, path: UserInPtr<u8>, mode: usize) -> SysResult {
-        let path = path.read_cstring()?;
+        let path = path.as_c_str()?;
         // TODO: check pathname
         info!(
             "mkdirat: dirfd={:?}, path={:?}, mode={:#o}",
             dirfd, path, mode
         );
 
-        let (dir_path, file_name) = split_path(&path);
+        let (dir_path, file_name) = split_path(path);
         let proc = self.linux_process();
         let inode = proc.lookup_inode_at(dirfd, dir_path, true)?;
         if inode.find(file_name).is_ok() {
@@ -76,10 +75,10 @@ impl Syscall<'_> {
     /// Remove a directory.
     /// - path – pointer to string with directory name
     pub fn sys_rmdir(&self, path: UserInPtr<u8>) -> SysResult {
-        let path = path.read_cstring()?;
+        let path = path.as_c_str()?;
         info!("rmdir: path={:?}", path);
 
-        let (dir_path, file_name) = split_path(&path);
+        let (dir_path, file_name) = split_path(path);
         let proc = self.linux_process();
         let dir_inode = proc.lookup_inode(dir_path)?;
         let file_inode = dir_inode.find(file_name)?;
@@ -142,8 +141,8 @@ impl Syscall<'_> {
         newpath: UserInPtr<u8>,
         flags: usize,
     ) -> SysResult {
-        let oldpath = oldpath.read_cstring()?;
-        let newpath = newpath.read_cstring()?;
+        let oldpath = oldpath.as_c_str()?;
+        let newpath = newpath.as_c_str()?;
         let flags = AtFlags::from_bits_truncate(flags);
         info!(
             "linkat: olddirfd={:?}, oldpath={:?}, newdirfd={:?}, newpath={:?}, flags={:?}",
@@ -151,8 +150,8 @@ impl Syscall<'_> {
         );
 
         let proc = self.linux_process();
-        let (new_dir_path, new_file_name) = split_path(&newpath);
-        let inode = proc.lookup_inode_at(olddirfd, &oldpath, true)?;
+        let (new_dir_path, new_file_name) = split_path(newpath);
+        let inode = proc.lookup_inode_at(olddirfd, oldpath, true)?;
         let new_dir_inode = proc.lookup_inode_at(newdirfd, new_dir_path, true)?;
         new_dir_inode.link(new_file_name, &inode)?;
         Ok(0)
@@ -169,10 +168,10 @@ impl Syscall<'_> {
     /// remove directory entry relative to directory file descriptor
     /// The unlinkat() system call operates in exactly the same way as either unlink or rmdir.
     pub fn sys_unlinkat(&self, dirfd: FileDesc, path: UserInPtr<u8>, flags: usize) -> SysResult {
-        let path = path.read_cstring()?;
+        let path = path.as_c_str()?;
         // hard code special path
         let path = if path == "/dev/shm/testshm" {
-            String::from("/testshm")
+            "/testshm"
         } else {
             path
         };
@@ -183,7 +182,7 @@ impl Syscall<'_> {
         );
 
         let proc = self.linux_process();
-        let (dir_path, file_name) = split_path(&path);
+        let (dir_path, file_name) = split_path(path);
         let dir_inode = proc.lookup_inode_at(dirfd, dir_path, true)?;
         let file_inode = dir_inode.find(file_name)?;
         if file_inode.metadata()?.type_ == FileType::Dir {
@@ -206,16 +205,16 @@ impl Syscall<'_> {
         newdirfd: FileDesc,
         newpath: UserInPtr<u8>,
     ) -> SysResult {
-        let oldpath = oldpath.read_cstring()?;
-        let newpath = newpath.read_cstring()?;
+        let oldpath = oldpath.as_c_str()?;
+        let newpath = newpath.as_c_str()?;
         info!(
             "renameat: olddirfd={:?}, oldpath={:?}, newdirfd={:?}, newpath={:?}",
             olddirfd, oldpath, newdirfd, newpath
         );
 
         let proc = self.linux_process();
-        let (old_dir_path, old_file_name) = split_path(&oldpath);
-        let (new_dir_path, new_file_name) = split_path(&newpath);
+        let (old_dir_path, old_file_name) = split_path(oldpath);
+        let (new_dir_path, new_file_name) = split_path(newpath);
         let old_dir_inode = proc.lookup_inode_at(olddirfd, old_dir_path, false)?;
         let new_dir_inode = proc.lookup_inode_at(newdirfd, new_dir_path, false)?;
         old_dir_inode.move_(old_file_name, &new_dir_inode, new_file_name)?;
@@ -237,14 +236,14 @@ impl Syscall<'_> {
         mut base: UserOutPtr<u8>,
         len: usize,
     ) -> SysResult {
-        let path = path.read_cstring()?;
+        let path = path.as_c_str()?;
         info!(
             "readlinkat: dirfd={:?}, path={:?}, base={:?}, len={}",
             dirfd, path, base, len
         );
 
         let proc = self.linux_process();
-        let inode = proc.lookup_inode_at(dirfd, &path, false)?;
+        let inode = proc.lookup_inode_at(dirfd, path, false)?;
         if inode.metadata()?.type_ != FileType::SymLink {
             return Err(LxError::EINVAL);
         }

@@ -5,14 +5,14 @@ mod caps;
 mod config;
 mod nodes;
 pub mod pci_init_args;
-mod pio;
+mod pmio;
 
 pub use self::bus::{
     MmioPcieAddressProvider, PCIeBusDriver, PcieDeviceInfo, PcieDeviceKObject,
-    PioPcieAddressProvider,
+    PmioPcieAddressProvider,
 };
 pub use self::nodes::{IPciNode, PcieIrqMode};
-pub use self::pio::{pio_config_read, pio_config_write};
+pub use self::pmio::{pio_config_read, pio_config_write};
 
 /// Type of PCI address space.
 #[derive(PartialEq, Debug)]

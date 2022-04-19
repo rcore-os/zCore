@@ -81,11 +81,26 @@ impl Syscall<'_> {
             "sys_setsockopt : sockfd : {:?}, level : {:?}, optname : {:?}, optval : {:?} , optlen : {:?}",
             sockfd, level, optname,optval,optlen
         );
-        let proc = self.linux_process();
-        let data = optval.read_array(optlen)?;
-        let socket = proc.get_socket(sockfd.into())?;
-        let len = socket.lock().setsockopt(level, optname, &data)?;
-        Ok(len)
+        self.linux_process()
+            .get_socket(sockfd.into())?
+            .lock()
+            .setsockopt(level, optname, optval.as_slice(optlen)?)
+    }
+
+    /// net getsockopt
+    pub fn sys_getsockopt(
+        &mut self,
+        sockfd: usize,
+        level: usize,
+        optname: usize,
+        optval: UserOutPtr<u8>,
+        optlen: usize,
+    ) -> SysResult {
+        warn!(
+            "sys_getsockopt : sockfd : {:?}, level : {:?}, optname : {:?}, optval : {:?} , optlen : {:?}",
+            sockfd, level, optname,optval,optlen
+        );
+        Ok(0)
     }
 
     /// net setsockopt
@@ -102,8 +117,6 @@ impl Syscall<'_> {
             "sys_sendto : sockfd : {:?}, buffer : {:?}, length : {:?}, flags : {:?} , optlen : {:?}, addrlen : {:?}",
             sockfd,buffer,length,flags,dest_addr,addrlen
         );
-        let proc = self.linux_process();
-        let data = buffer.read_array(length)?;
         let endpoint = if dest_addr.is_null() {
             None
         } else {
@@ -111,8 +124,9 @@ impl Syscall<'_> {
             let endpoint = sockaddr_to_endpoint(dest_addr.read()?, addrlen)?;
             Some(endpoint)
         };
+        let proc = self.linux_process();
         let socket = proc.get_socket(sockfd.into())?;
-        let len = socket.lock().write(&data, endpoint)?;
+        let len = socket.lock().write(buffer.as_slice(length)?, endpoint)?;
         Ok(len)
     }
 

@@ -55,8 +55,16 @@ init_vm:
 	#刷新TLB
 	sfence.vma
 
-	li t0, 4096 * 16
-	mul t0, t0, a0
+	# t0 = 0
+	xor t0, t0, t0
+	mv t1, a0
+	beqz t1, 2f
+	li t2, 4096 * 16
+1:
+	add t0, t0, t2
+	addi t1, t1, -1
+	bgtz t1, 1b
+2:
 	#此时在虚拟内存空间，设置sp为虚拟地址
 	lui sp, %hi(bootstacktop)
 	sub sp, sp, t0

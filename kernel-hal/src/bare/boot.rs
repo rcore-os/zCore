@@ -1,6 +1,5 @@
 //! Bootstrap and initialization.
 
-use super::net;
 use crate::{KernelConfig, KernelHandler, KCONFIG, KHANDLER};
 
 hal_fn_impl! {
@@ -24,7 +23,6 @@ hal_fn_impl! {
             info!("Primary CPU {} init...", crate::cpu::cpu_id());
             unsafe { trapframe::init() };
             super::arch::primary_init();
-            net::init();
         }
 
         fn secondary_init() {
