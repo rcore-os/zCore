@@ -24,18 +24,24 @@ bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator", rev =
 pci = { git = "https://github.com/rcore-os/pci-rs", rev = "a4e7cea6" }
 virtio-drivers = { git = "https://github.com/rcore-os/virtio-drivers", rev = "2aaf7d6", optional = true }
 rcore-console = { git = "https://github.com/rcore-os/rcore-console", default-features = false, rev = "ca5b1bc", optional = true }
+lock = { git = "https://github.com/DeathWish5/kernel-sync" }
 # smoltcp = { git = "https://github.com/smoltcp-rs/smoltcp", rev = "35e833e3", default-features = false, features = ["log", "alloc", "verbose", "proto-ipv4", "proto-ipv6", "proto-igmp", "medium-ip", "medium-ethernet", "socket-raw", "socket-udp", "socket-tcp", "socket-icmp"] }
 smoltcp = { git = "https://gitee.com/gcyyfun/smoltcp", rev="043eb60", default-features = false, features = ["alloc","log", "async", "medium-ethernet","proto-ipv4", "proto-igmp", "socket-icmp", "socket-udp", "socket-tcp", "socket-raw"] }
 
 [target.'cfg(target_arch = "aarch64")'.dependencies]
 tock-registers = "0.7"
 
+# LibOS mode
 [target.'cfg(not(target_os = "none"))'.dependencies]
 async-std = { version = "1.10", optional = true }
 sdl2 = { version = "0.34", optional = true }
 
+# Bare-metal mode
+[target.'cfg(target_os = "none")'.dependencies]
+
+
 [target.'cfg(target_arch = "x86_64")'.dependencies]
-acpi = "4.0"
+acpi = "4.1"
 x2apic = "0.4"
 x86_64 = "0.14"
 

@@ -9,9 +9,8 @@ pub mod sbi;
 pub mod timer;
 pub mod vm;
 
-use alloc::{boxed::Box, format, string::String, vec::Vec};
+use alloc::{string::String, vec::Vec};
 use core::ops::Range;
-use zcore_drivers::irq::riscv::ScauseIntCode;
 use zcore_drivers::utils::devicetree::Devicetree;
 
 use crate::{mem::phys_to_virt, utils::init_once::InitOnce, PhysAddr};
@@ -19,6 +18,10 @@ use crate::{mem::phys_to_virt, utils::init_once::InitOnce, PhysAddr};
 static CMDLINE: InitOnce<String> = InitOnce::new_with_default(String::new());
 static INITRD_REGION: InitOnce<Option<Range<PhysAddr>>> = InitOnce::new_with_default(None);
 static MEMORY_REGIONS: InitOnce<Vec<Range<PhysAddr>>> = InitOnce::new_with_default(Vec::new());
+
+pub const fn timer_interrupt_vector() -> usize {
+    trap::SUPERVISOR_TIMER_INT_VEC
+}
 
 pub fn cmdline() -> String {
     CMDLINE.clone()
@@ -53,33 +56,20 @@ pub fn primary_init_early() {
 pub fn primary_init() {
     vm::init();
     drivers::init().unwrap();
+    // We should set first time interrupt before run into first user program
+    // timer::init();
+}
+
+pub fn timer_init() {
     timer::init();
 }
 
 pub fn secondary_init() {
     vm::init();
-    let intc = crate::drivers::all_irq()
-        .find(format!("riscv-intc-cpu{}", crate::cpu::cpu_id()).as_str())
-        .expect("IRQ device 'riscv-intc' not initialized!");
-
-    // register soft interrupts handler
-    intc.register_handler(
-        ScauseIntCode::SupervisorSoft as _,
-        Box::new(trap::super_soft),
-    )
-    .unwrap();
-    // register timer interrupts handler
-    intc.register_handler(
-        ScauseIntCode::SupervisorTimer as _,
-        Box::new(trap::super_timer),
-    )
-    .unwrap();
-    intc.unmask(ScauseIntCode::SupervisorSoft as _).unwrap();
-    intc.unmask(ScauseIntCode::SupervisorTimer as _).unwrap();
-
+    drivers::intc_init().unwrap();
     let plic = crate::drivers::all_irq()
         .find("riscv-plic")
         .expect("IRQ device 'riscv-plic' not initialized!");
     plic.init_hart();
-    timer::init();
+    // timer::init();
 }

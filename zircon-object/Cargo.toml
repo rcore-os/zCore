@@ -26,6 +26,13 @@ region-alloc = { git = "https://github.com/rzswh/region-allocator", rev = "122c7
 lazy_static = { version = "1.4", features = ["spin_no_std" ] }
 cfg-if = "1.0"
 #rvm = { git = "https://github.com/rcore-os/RVM", rev = "382fc60", optional = true }
+lock = { git = "https://github.com/DeathWish5/kernel-sync" }
 
 [dev-dependencies]
 async-std = { version = "1.10", features = ["attributes", "unstable"] }
+
+# LibOS mode
+[target.'cfg(not(target_os = "none"))'.dependencies]
+
+# Bare-metal mode
+[target.'cfg(target_os = "none")'.dependencies]

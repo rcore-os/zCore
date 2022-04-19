@@ -1,5 +1,6 @@
 use alloc::{boxed::Box, vec::Vec};
-use spin::Mutex;
+
+use lock::Mutex;
 
 /// A type alias for the closure to handle device event.
 pub type EventHandler<T = ()> = Box<dyn Fn(&T) + Send + Sync>;

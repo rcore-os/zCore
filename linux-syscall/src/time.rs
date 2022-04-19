@@ -52,6 +52,22 @@ impl Syscall<'_> {
         Ok(sec)
     }
 
+    /// JUST FOR TEST, DO NOT USE IT
+    pub fn sys_block_in_kernel(&self) -> SysResult {
+        // DEAD LOOP
+        error!("loop in kernel");
+        let mut old = TimeSpec::now().sec;
+        loop {
+            let sec = TimeSpec::now().sec;
+            if sec == old {
+                core::hint::spin_loop();
+                continue;
+            }
+            old = sec;
+            warn!("1 seconds past");
+        }
+    }
+
     /// get resource usage
     /// currently only support ru_utime and ru_stime:
     /// - `ru_utime`: user CPU time used

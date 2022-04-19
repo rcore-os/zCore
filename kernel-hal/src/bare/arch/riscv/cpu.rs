@@ -1,5 +1,4 @@
 //! CPU information.
-
 use crate::utils::init_once::InitOnce;
 
 pub(super) static CPU_FREQ_MHZ: InitOnce<u16> = InitOnce::new_with_default(10);
