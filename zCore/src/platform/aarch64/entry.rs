@@ -6,7 +6,8 @@ core::arch::global_asm!(include_str!("space.s"));
 #[no_mangle]
 #[link_section = ".text.entry"]
 unsafe extern "C" fn _start() -> ! {
-    core::arch::asm!("
+    core::arch::asm!(
+        "
         adrp    x19, boot_stack_top
         mov     sp, x19
         b rust_main",

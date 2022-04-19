@@ -16,7 +16,7 @@ hal_fn_impl! {
 
         fn reset() -> ! {
             info!("shutdown...");
-            let psci_system_off = 0x8400_0008 as usize;
+            let psci_system_off = 0x8400_0008_usize;
             unsafe {
                 core::arch::asm!(
                     "hvc #0",

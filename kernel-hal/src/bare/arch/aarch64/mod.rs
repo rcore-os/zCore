@@ -1,16 +1,16 @@
 pub mod config;
 pub mod cpu;
 pub mod drivers;
+pub mod gic;
 pub mod interrupt;
 pub mod mem;
 pub mod timer;
 pub mod trap;
 pub mod vm;
-pub mod gic;
 
+use crate::{mem::phys_to_virt, utils::init_once::InitOnce, PhysAddr};
 use alloc::string::String;
 use core::ops::Range;
-use crate::{mem::phys_to_virt, utils::init_once::InitOnce, PhysAddr};
 
 hal_fn_impl_default!(crate::hal_fn::console);
 

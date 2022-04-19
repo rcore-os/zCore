@@ -1,12 +1,12 @@
-use crate::{PhysAddr, VirtAddr, KCONFIG};
-use cortex_a::registers::*;
-use tock_registers::interfaces::{Writeable, Readable};
 use crate::hal_fn::mem::phys_to_virt;
+use crate::imp::config::*;
 use crate::utils::page_table::{GenericPTE, PageTableImpl, PageTableLevel4};
 use crate::MMUFlags;
+use crate::{PhysAddr, VirtAddr, KCONFIG};
 use core::fmt::{Debug, Formatter, Result};
-use crate::imp::config::*;
+use cortex_a::registers::*;
 use spin::Mutex;
+use tock_registers::interfaces::{Readable, Writeable};
 
 lazy_static! {
     static ref KERNEL_PT: Mutex<PageTable> = Mutex::new(init_kernel_page_table().unwrap());
@@ -300,11 +300,14 @@ impl GenericPTE for AARCH64PTE {
     }
     fn set_flags(&mut self, flags: MMUFlags, is_huge: bool) {
         let mut flags = PTF::from(flags) | PTF::AF;
-        if !is_huge { flags |= PTF::NON_BLOCK }
+        if !is_huge {
+            flags |= PTF::NON_BLOCK
+        }
         self.0 = (self.0 & PHYS_ADDR_MASK as u64) | flags.bits() as u64;
     }
     fn set_table(&mut self, paddr: PhysAddr) {
-        self.0 = (((paddr as usize) & PHYS_ADDR_MASK) | PTF::VALID.bits() | PTF::NON_BLOCK.bits()) as u64;
+        self.0 = (((paddr as usize) & PHYS_ADDR_MASK) | PTF::VALID.bits() | PTF::NON_BLOCK.bits())
+            as u64;
     }
     fn clear(&mut self) {
         self.0 = 0

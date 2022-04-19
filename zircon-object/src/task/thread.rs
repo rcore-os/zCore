@@ -715,7 +715,7 @@ impl Future for ThreadSwitchFuture {
     type Output = ();
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         cfg_if! {
-            if #[cfg(target_arch = "aarch64")] {
+            if #[cfg(all(target_os = "none", target_arch = "aarch64"))] {
                 use kernel_hal::arch::config::USER_TABLE_FLAG;
                 kernel_hal::vm::activate_paging(self.thread.proc().vmar().table_phys() | USER_TABLE_FLAG);
             } else {

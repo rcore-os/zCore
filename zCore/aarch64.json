@@ -6,7 +6,7 @@
   "features": "+strict-align,+neon,+fp-armv8",
   "linker": "rust-lld",
   "linker-flavor": "ld.lld",
-  "llvm-target": "aarch64-unknown-none",
+  "llvm-target": "aarch64-unknown-linux-gnu",
   "max-atomic-width": 128,
   "panic-strategy": "abort",
   "relocation-model": "static",

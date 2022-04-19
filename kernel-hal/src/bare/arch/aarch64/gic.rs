@@ -2,14 +2,14 @@
 
 #![allow(dead_code)]
 
+use super::timer::set_next_trigger;
+use crate::imp::config::GIC_BASE;
+use crate::utils::init_once::InitOnce;
+use crate::IrqHandlerResult;
+use crate::{PhysAddr, VirtAddr};
 use tock_registers::interfaces::{Readable, Writeable};
 use tock_registers::register_structs;
 use tock_registers::registers::{ReadOnly, ReadWrite, WriteOnly};
-use crate::utils::init_once::InitOnce;
-use crate::{PhysAddr, VirtAddr};
-use crate::imp::config::GIC_BASE;
-use crate::arch::trap::IrqHandlerResult;
-use super::timer::set_next_trigger;
 
 const GICD_BASE: PhysAddr = GIC_BASE + 0xffff_0000_0000_0000;
 const GICC_BASE: PhysAddr = GIC_BASE + 0xffff_0000_0000_0000 + 0x10000;

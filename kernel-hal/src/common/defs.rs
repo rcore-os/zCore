@@ -35,6 +35,62 @@ numeric_enum! {
     }
 }
 
+cfg_if! {
+    if #[cfg(target_arch = "aarch64")] {
+        #[derive(Debug, Eq, PartialEq)]
+        pub enum IrqHandlerResult {
+            Reschedule,
+            NoReschedule,
+        }
+
+        #[derive(Debug, PartialEq, Eq, Copy, Clone)]
+        pub enum Kind {
+            Synchronous = 0,
+            Irq = 1,
+            Fiq = 2,
+            SError = 3,
+        }
+
+        impl Kind {
+            pub fn from(x: usize) -> Kind {
+                match x {
+                    x if x == Kind::Synchronous as usize => Kind::Synchronous,
+                    x if x == Kind::Irq as usize => Kind::Irq,
+                    x if x == Kind::Fiq as usize => Kind::Fiq,
+                    x if x == Kind::SError as usize => Kind::SError,
+                    _ => panic!("bad kind"),
+                }
+            }
+        }
+
+        #[derive(Debug, PartialEq, Eq, Copy, Clone)]
+        pub enum Source {
+            CurrentSpEl0 = 0,
+            CurrentSpElx = 1,
+            LowerAArch64 = 2,
+            LowerAArch32 = 3,
+        }
+
+        impl Source {
+            pub fn from(x: usize) -> Source {
+                match x {
+                    x if x == Source::CurrentSpEl0 as usize => Source::CurrentSpEl0,
+                    x if x == Source::CurrentSpElx as usize => Source::CurrentSpElx,
+                    x if x == Source::LowerAArch64 as usize => Source::LowerAArch64,
+                    x if x == Source::LowerAArch32 as usize => Source::LowerAArch32,
+                    _ => panic!("bad kind"),
+                }
+            }
+        }
+
+        #[derive(Debug, PartialEq, Eq, Copy, Clone)]
+        pub struct Info {
+            pub source: Source,
+            pub kind: Kind,
+        }
+    }
+}
+
 /// The smallest size of a page (4K).
 pub const PAGE_SIZE: usize = super::vm::PageSize::Size4K as usize;
 

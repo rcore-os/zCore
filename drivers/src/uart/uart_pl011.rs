@@ -1,10 +1,10 @@
 //! PL011 UART.
+use crate::scheme::{impl_event_scheme, Scheme, UartScheme};
+use crate::utils::EventListener;
+use crate::DeviceResult;
 use tock_registers::interfaces::{Readable, Writeable};
 use tock_registers::register_structs;
 use tock_registers::registers::{ReadOnly, ReadWrite};
-use crate::scheme::{UartScheme, impl_event_scheme, Scheme};
-use crate::utils::EventListener;
-use crate::DeviceResult;
 
 register_structs! {
     Pl011UartRegs {
@@ -17,16 +17,17 @@ register_structs! {
     }
 }
 
-
-
 pub struct Pl011Uart {
     base_vaddr: usize,
-    listener: EventListener
+    listener: EventListener,
 }
 
 impl Pl011Uart {
     pub fn new(base_vaddr: usize) -> Self {
-        Self { base_vaddr, listener: Default::default() }
+        Self {
+            base_vaddr,
+            listener: Default::default(),
+        }
     }
 
     const fn regs(&self) -> &Pl011UartRegs {
@@ -65,7 +66,8 @@ impl UartScheme for Pl011Uart {
     }
 
     fn send(&self, ch: u8) -> DeviceResult {
-        Ok(self.putchar(ch))
+        self.putchar(ch);
+        Ok(())
     }
 
     fn write_str(&self, s: &str) -> DeviceResult {

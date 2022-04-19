@@ -1,13 +1,10 @@
 //! ARM Generic Timer.
 
-use core::time::Duration;
-use cortex_a::{
-    registers::*,
-    asm::barrier
-};
-use tock_registers::interfaces::{Readable, Writeable};
 use super::gic::irq_set_mask;
 use crate::timer::TICKS_PER_SEC;
+use core::time::Duration;
+use cortex_a::{asm::barrier, registers::*};
+use tock_registers::interfaces::{Readable, Writeable};
 
 const PHYS_TIMER_IRQ_NUM: usize = 30;
 

@@ -498,9 +498,7 @@ impl Syscall<'_> {
     /// syscall specified for aarch64
     async fn aarch64_syscall(&mut self, sys_type: Sys, args: [usize; 6]) -> SysResult {
         debug!("aarch6464_syscall: {:?}, {:?}", sys_type, args);
-        match sys_type {
-            _ => self.unknown_syscall(sys_type),
-        }
+        self.unknown_syscall(sys_type)
     }
 
     #[cfg(target_arch = "x86_64")]

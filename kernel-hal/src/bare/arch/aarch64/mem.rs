@@ -1,7 +1,7 @@
-use core::ops::Range;
+use crate::imp::config::*;
 use crate::PhysAddr;
 use alloc::vec::Vec;
-use crate::imp::config::*;
+use core::ops::Range;
 
 extern "C" {
     fn ekernel();
