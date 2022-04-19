@@ -33,7 +33,7 @@ smoltcp = { git = "https://gitee.com/gcyyfun/smoltcp", rev="043eb60", default-fe
 nix = { version = "0.23", optional = true }
 tempfile = { version = "3", optional = true }
 async-std = { version = "1.10", optional = true }
-bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator", rev = "b3f9f51", optional = true }
+bitmap-allocator = { git = "https://github.91chi.fun//https://github.com/rcore-os/bitmap-allocator.git", rev = "b3f9f51", optional = true }
 
 # Bare-metal mode
 [target.'cfg(target_os = "none")'.dependencies]
@@ -49,7 +49,7 @@ x86_64 = "0.14"
 [target.'cfg(all(target_os = "none", target_arch = "x86_64"))'.dependencies]
 uefi = "0.11"
 raw-cpuid = "9.0"
-x86-smpboot = { git = "https://github.com/rcore-os/x86-smpboot", rev = "1069df3" }
+x86-smpboot = { git = "https://github.91chi.fun//https://github.com/rcore-os/x86-smpboot", rev = "1069df3" }
 
 # Bare-metal mode on riscv64
 [target.'cfg(all(target_os = "none", target_arch = "riscv64"))'.dependencies]

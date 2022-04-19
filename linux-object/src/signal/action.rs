@@ -1,4 +1,5 @@
 use crate::signal::Signal;
+use _core::convert::TryFrom;
 use bitflags::*;
 
 pub const SIG_ERR: usize = usize::max_value() - 1;
@@ -14,8 +15,14 @@ pub const SIG_IGN: usize = 1;
 pub struct Sigset(u64);
 
 impl Sigset {
+    pub fn new(val: u64) -> Self {
+        Sigset(val)
+    }
     pub fn empty() -> Self {
         Sigset(0)
+    }
+    pub fn val(&self) -> u64 {
+        self.0
     }
     pub fn contains(&self, sig: Signal) -> bool {
         (self.0 >> sig as u64 & 1) != 0
@@ -31,6 +38,24 @@ impl Sigset {
     }
     pub fn remove_set(&mut self, sigset: &Sigset) {
         self.0 ^= self.0 & sigset.0;
+    }
+    pub fn mask_with(&self, mask: &Sigset) -> Sigset {
+        Sigset(self.0 & (!mask.0))
+    }
+    pub fn find_first_not_mask_signal(&self, mask: &Sigset) -> Option<Signal> {
+        let masked_signals = self.0 & (!mask.0);
+        for i in 1..65 {
+            if ((masked_signals >> i) & 1) != 0 {
+                return Some(Signal::try_from(i).unwrap());
+            }
+        }
+        None
+    }
+    pub fn is_empty(&self) -> bool {
+        self.0 == 0
+    }
+    pub fn is_not_empty(&self) -> bool {
+        self.0 != 0
     }
 }
 

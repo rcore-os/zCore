@@ -104,6 +104,11 @@ struct ThreadInner {
     /// It will be taken away when running this thread.
     context: Option<Box<UserContext>>,
 
+    /// Thread context before handling the signal
+    ///
+    /// It only works when executing signal handlers
+    context_before: Option<UserContext>,
+
     /// The number of existing `SuspendToken`.
     suspend_count: usize,
     /// The waker of task when suspending.
@@ -161,6 +166,11 @@ impl ThreadInner {
                 Signal::THREAD_RUNNING,
             ),
         }
+    }
+
+    /// Backup current context
+    fn backup_context(&mut self, context: UserContext) {
+        self.context_before = Some(context);
     }
 }
 
@@ -233,7 +243,7 @@ impl Thread {
     /// Returns a copy of saved context of current thread, or `Err(ZxError::BAD_STATE)`
     /// if the thread is running.
     pub fn context_cloned(&self) -> ZxResult<UserContext> {
-        self.with_context(|ctx| ctx.clone())
+        self.with_context(|ctx| *ctx)
     }
 
     /// Access saved context of current thread, or `Err(ZxError::BAD_STATE)` if
@@ -248,6 +258,18 @@ impl Thread {
         } else {
             Err(ZxError::BAD_STATE)
         }
+    }
+
+    /// Backup current user context before calling signal handler
+    pub fn backup_context(&self, context: UserContext) {
+        let mut inner = self.inner.lock();
+        inner.backup_context(context);
+    }
+
+    /// Fetch the context backup
+    pub fn fetch_backup_context(&self) -> Option<UserContext> {
+        let mut inner = self.inner.lock();
+        inner.context_before.take()
     }
 
     /// Start execution on the thread.
@@ -270,7 +292,7 @@ impl Thread {
         arg2: usize,
         thread_fn: ThreadFn,
     ) -> ZxResult {
-        self.with_context(|ctx| ctx.setup_uspace(entry, stack, arg1, arg2))?;
+        self.with_context(|ctx| ctx.setup_uspace(entry, stack, &[arg1, arg2, 0]))?;
         self.start(thread_fn)
     }
 
