@@ -33,7 +33,7 @@ pub(super) fn init() -> DeviceResult {
             irq.unmask(trap::X86_ISA_IRQ_COM2)?;
         }
     }
-    irq.register_local_apic_handler(trap::X86_INT_APIC_TIMER, Box::new(crate::timer::timer_tick))?;
+    irq.register_local_apic_handler(trap::X86_INT_APIC_TIMER, Box::new(super::trap::super_timer))?;
     drivers::add_device(Device::Irq(irq));
 
     // PCI scan

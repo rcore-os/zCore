@@ -9,6 +9,7 @@ use {
     core::convert::TryInto,
     rvm::{self, Vcpu as VcpuInner},
     spin::Mutex,
+    // lock::Mutex,
 };
 
 /// Virtual CPU within a Guest, which allows for execution within the virtual machine.

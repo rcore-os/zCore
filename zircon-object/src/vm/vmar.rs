@@ -6,7 +6,7 @@ use {
     kernel_hal::vm::{
         GenericPageTable, IgnoreNotMappedErr, Page, PageSize, PageTable, PagingError, PagingResult,
     },
-    spin::Mutex,
+    lock::Mutex,
 };
 
 bitflags! {
@@ -402,12 +402,12 @@ impl VmAddressRegion {
         !self.is_dead()
     }
 
-    /// get flags of vaddr
+    /// Get flags of vaddr
     pub fn get_vaddr_flags(&self, vaddr: usize) -> PagingResult<MMUFlags> {
         let guard = self.inner.lock();
         let inner = guard.as_ref().unwrap();
         if !self.contains(vaddr) {
-            return Err(PagingError::NoMemory);
+            return Err(PagingError::NotMapped);
         }
         if let Some(child) = inner.children.iter().find(|ch| ch.contains(vaddr)) {
             return child.get_vaddr_flags(vaddr);

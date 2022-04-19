@@ -301,3 +301,6 @@
 
 //#define __NR_sysriscv 244
 #define __NR_riscv_flush_icache 259
+
+// JUST FOR TEST
+#define __NR_block_in_kernel 600

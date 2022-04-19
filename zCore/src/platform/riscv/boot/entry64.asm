@@ -38,7 +38,7 @@ init_vm:
 
 	#可清零低12位地址
 	lui t0, %hi(boot_page_table_sv39)
-	li t1, PHY_MEM_OFS #立即数加载
+	li t1, PHY_MEM_OFS # 立即数加载
 	#计算出页表的物理地址
 	sub t0, t0, t1
 
