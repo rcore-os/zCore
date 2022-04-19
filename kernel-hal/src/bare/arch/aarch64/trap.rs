@@ -9,7 +9,7 @@ use tock_registers::interfaces::Readable;
 pub extern "C" fn trap_handler(tf: &mut TrapFrame) {
     let info = Info {
         source: Source::from(tf.trap_num & 0xffff),
-        kind: Kind::from((tf.trap_num >> 12) & 0xffff)
+        kind: Kind::from((tf.trap_num >> 16) & 0xffff)
     };
     debug!("Exception from {:?}", info.source);
     match info.kind {
@@ -17,7 +17,7 @@ pub extern "C" fn trap_handler(tf: &mut TrapFrame) {
             sync_handler(tf);
         },
         Kind::Irq => {
-            irq_handler(tf);
+            crate::interrupt::handle_irq(0);
         },
         _ => {
             panic!("Unsupported exception type: {:?}, TrapFrame: {:?}", info.kind, tf);
@@ -74,13 +74,6 @@ fn sync_handler(tf: &mut TrapFrame) {
     }
 }
 
-fn irq_handler(_tf: &mut TrapFrame) {
-    // TODO: timer and other devices with GIC interrupt controller
-    if super::gic::handle_irq() == IrqHandlerResult::Reschedule {
-        debug!("Timer achieved");
-    }
-}
-
 #[derive(Debug, Eq, PartialEq)]
 pub enum IrqHandlerResult {
     Reschedule,
@@ -96,7 +89,7 @@ pub enum Kind {
 }
 
 impl Kind {
-    fn from(x: usize) -> Kind {
+    pub fn from(x: usize) -> Kind {
         match x {
             x if x == Kind::Synchronous as usize => Kind::Synchronous,
             x if x == Kind::Irq as usize => Kind::Irq,
@@ -116,7 +109,7 @@ pub enum Source {
 }
 
 impl Source {
-    fn from(x: usize) -> Source {
+    pub fn from(x: usize) -> Source {
         match x {
             x if x == Source::CurrentSpEl0 as usize => Source::CurrentSpEl0,
             x if x == Source::CurrentSpElx as usize => Source::CurrentSpElx,
@@ -129,6 +122,6 @@ impl Source {
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub struct Info {
-    source: Source,
-    kind: Kind,
+    pub source: Source,
+    pub kind: Kind,
 }

@@ -106,8 +106,14 @@ pub fn flush_tlb_all() {
 hal_fn_impl! {
     impl mod crate::hal_fn::vm {
         fn activate_paging(vmtoken: PhysAddr) {
-            info!("set page_table @ {:#x}", vmtoken);
-            TTBR1_EL1.set(vmtoken as _);
+            let check_if_user = (vmtoken & USER_TABLE_FLAG) != 0;
+            let vmtoken = vmtoken & PHYS_ADDR_MASK;
+            info!("set {} page_table @ {:#x}", if check_if_user { "user" } else { "kernel" }, vmtoken);
+            if check_if_user {
+                TTBR0_EL1.set(vmtoken as _);
+            } else {
+                TTBR1_EL1.set(vmtoken as _);
+            }
         }
 
         fn current_vmtoken() -> PhysAddr {
@@ -125,6 +131,18 @@ hal_fn_impl! {
                     isb",
                     in(reg) vaddr.unwrap() >> 12
                 );
+            }
+        }
+
+        fn pt_clone_kernel_space(dst_pt_root: PhysAddr, src_pt_root: PhysAddr) {
+            let entry_range = 0x100..0x200;  // 0xffff_0000_8000_0000..0xffff_0000_c000_0000
+            let dst_table = unsafe { core::slice::from_raw_parts_mut(phys_to_virt(dst_pt_root) as *mut AARCH64PTE, 512) };
+            let src_table = unsafe { core::slice::from_raw_parts(phys_to_virt(src_pt_root) as *const AARCH64PTE, 512) };
+            for i in entry_range {
+                dst_table[i] = src_table[i];
+                if dst_table[i].is_unused() {
+                    dst_table[i].0 |= PTF::NG.bits() as u64;
+                }
             }
         }
     }

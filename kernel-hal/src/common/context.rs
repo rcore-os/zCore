@@ -109,6 +109,45 @@ impl TrapReason {
             _ => Self::GernelFault(scause.code()),
         }
     }
+
+    #[cfg(target_arch = "aarch64")]
+    pub fn from(trap_num: usize, _elr: usize) -> Self {
+        // TODO: check if is right
+        use cortex_a::registers::{ESR_EL1, FAR_EL1};
+        use tock_registers::interfaces::Readable;
+        use crate::arch::trap::{Info, Source, Kind};
+        let info = Info {
+            source: Source::from(trap_num & 0xffff),
+            kind: Kind::from((trap_num >> 16) & 0xffff)
+        };
+        let esr = ESR_EL1.extract();
+        match info.kind {
+            Kind::Synchronous => {
+                match esr.read_as_enum(ESR_EL1::EC) {
+                    Some(ESR_EL1::EC::Value::SVC64) => {
+                        Self::Syscall
+                    }
+                    Some(ESR_EL1::EC::Value::DataAbortLowerEL)
+                    | Some(ESR_EL1::EC::Value::DataAbortCurrentEL) => {
+                        Self::PageFault(FAR_EL1.get() as _, MMUFlags::EXECUTE)
+                    }
+                    Some(ESR_EL1::EC::Value::InstrAbortLowerEL)
+                    | Some(ESR_EL1::EC::Value::InstrAbortCurrentEL) => {
+                        Self::UnalignedAccess
+                    }
+                    _ => {
+                        Self::GernelFault(esr.get() as usize)
+                    }
+                }
+            }
+            Kind::Irq => {
+                Self::Interrupt(0)
+            }
+            _ => {
+                Self::GernelFault(esr.get() as usize)
+            }
+        }
+    }
 }
 
 /// User context saved on trap.
@@ -177,7 +216,7 @@ impl UserContext {
             if #[cfg(target_arch = "x86_64")] {
                 TrapReason::from(self.0.trap_num, self.0.error_code)
             } else if #[cfg(target_arch = "aarch64")] {
-                unimplemented!() // ESR_EL1
+                TrapReason::from(self.0.trap_num, self.0.elr)
             } else if #[cfg(target_arch = "riscv64")] {
                 TrapReason::from(riscv::register::scause::read())
             } else {

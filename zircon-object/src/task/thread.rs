@@ -8,6 +8,7 @@ use core::time::Duration;
 use core::{any::Any, future::Future, pin::Pin};
 
 use bitflags::bitflags;
+use cfg_if::cfg_if;
 use futures::{channel::oneshot::*, future::FutureExt, pin_mut, select_biased};
 use kernel_hal::context::UserContext;
 use spin::Mutex;
@@ -713,7 +714,14 @@ impl ThreadSwitchFuture {
 impl Future for ThreadSwitchFuture {
     type Output = ();
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        kernel_hal::vm::activate_paging(self.thread.proc().vmar().table_phys());
+        cfg_if! {
+            if #[cfg(target_arch = "aarch64")] {
+                use kernel_hal::arch::config::USER_TABLE_FLAG;
+                kernel_hal::vm::activate_paging(self.thread.proc().vmar().table_phys() | USER_TABLE_FLAG);
+            } else {
+                kernel_hal::vm::activate_paging(self.thread.proc().vmar().table_phys());
+            }
+        }
         self.future.lock().as_mut().poll(cx)
     }
 }

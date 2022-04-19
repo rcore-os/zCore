@@ -20,3 +20,4 @@ pub const PA_1TB_BITS: usize = 40;
 pub const PHYS_ADDR_MAX: usize = (1 << PA_1TB_BITS) - 1;
 pub const PHYS_ADDR_MASK: usize = PHYS_ADDR_MAX & !(PAGE_SIZE - 1);
 pub const PHYS_MEMORY_END: usize = PHYS_MEMORY_BASE + 100 * 1024 * 1024;
+pub const USER_TABLE_FLAG: usize = 0xabcd_0000_0000_0000;
