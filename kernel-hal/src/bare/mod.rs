@@ -2,11 +2,11 @@ cfg_if! {
     if #[cfg(target_arch = "x86_64")] {
         #[path = "arch/x86_64/mod.rs"]
         mod arch;
-        pub use self::arch::special as x86_64;
+        pub use self::arch::{special as x86_64, timer_interrupt_vector};
     } else if #[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))] {
         #[path = "arch/riscv/mod.rs"]
         pub mod arch;
-        pub use self::arch::sbi;
+        pub use self::arch::{sbi, timer_interrupt_vector};
     }
 }
 

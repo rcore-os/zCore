@@ -3,8 +3,8 @@
 use core::fmt::{Debug, Formatter, Result};
 use core::slice;
 
+use lock::Mutex;
 use riscv::{asm, register::satp};
-use spin::Mutex;
 
 use crate::utils::page_table::{GenericPTE, PageTableImpl, PageTableLevel3};
 use crate::{mem::phys_to_virt, MMUFlags, PhysAddr, VirtAddr, KCONFIG};

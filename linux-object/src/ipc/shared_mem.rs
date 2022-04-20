@@ -4,13 +4,11 @@ use crate::error::LxError;
 use crate::time::TimeSpec;
 use alloc::{collections::BTreeMap, sync::Arc, sync::Weak};
 use lazy_static::lazy_static;
-use spin::Mutex;
-use spin::RwLock;
+use spin::{Mutex, RwLock};
 use zircon_object::vm::*;
 
 lazy_static! {
-    static ref KEY2SHM: RwLock<BTreeMap<u32, Weak<spin::Mutex<ShmGuard>>>> =
-        RwLock::new(BTreeMap::new());
+    static ref KEY2SHM: RwLock<BTreeMap<u32, Weak<Mutex<ShmGuard>>>> = RwLock::new(BTreeMap::new());
 }
 
 /// shmid data structure
@@ -43,7 +41,7 @@ pub struct ShmIdentifier {
     /// Shared memory address
     pub addr: usize,
     /// Shared memory buffer and data
-    pub guard: Arc<spin::Mutex<ShmGuard>>,
+    pub guard: Arc<Mutex<ShmGuard>>,
 }
 
 /// shared memory buffer and data
@@ -66,7 +64,7 @@ impl ShmIdentifier {
         memsize: usize,
         flags: usize,
         cpid: u32,
-    ) -> Result<Arc<spin::Mutex<ShmGuard>>, LxError> {
+    ) -> Result<Arc<Mutex<ShmGuard>>, LxError> {
         let mut key2shm = KEY2SHM.write();
         let flag = IpcGetFlag::from_bits_truncate(flags);
 
@@ -80,7 +78,7 @@ impl ShmIdentifier {
                 return Ok(guard);
             }
         }
-        let shared_guard = Arc::new(spin::Mutex::new(ShmGuard {
+        let shared_guard = Arc::new(Mutex::new(ShmGuard {
             shared_guard: VmObject::new_paged(pages(memsize)),
             shmid_ds: Mutex::new(ShmidDs {
                 perm: IpcPerm {

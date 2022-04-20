@@ -1,6 +1,7 @@
 use core::arch::asm;
 use core::ops::Range;
-use spin::Mutex;
+
+use lock::Mutex;
 
 use crate::io::{Io, Mmio};
 use crate::prelude::IrqHandler;

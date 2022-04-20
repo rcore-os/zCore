@@ -293,7 +293,6 @@ impl Syscall<'_> {
         // TODO: use right signal
         // self.zircon_process().signal_set(Signal::SIGNALED);
         // Workaround, the child process could NOT exit correctly
-
         self.thread
             .with_context(|ctx| ctx.setup_uspace(entry, sp, 0, 0))?;
         Ok(0)

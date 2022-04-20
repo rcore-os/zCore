@@ -5,17 +5,32 @@ use core::ops::Range;
 use crate::drivers::all_irq;
 use crate::drivers::prelude::{IrqHandler, IrqPolarity, IrqTriggerMode};
 use crate::HalResult;
+use x86_64::instructions::interrupts;
 
 hal_fn_impl! {
     impl mod crate::hal_fn::interrupt {
         fn wait_for_interrupt() {
-            use x86_64::instructions::interrupts;
+            let enable = interrupts::are_enabled();
             interrupts::enable_and_hlt();
-            interrupts::disable();
+            if !enable {
+                interrupts::disable();
+            }
         }
 
         fn is_valid_irq(gsi: usize) -> bool {
             all_irq().first_unwrap().is_valid_irq(gsi)
+        }
+
+        fn intr_on() {
+            interrupts::enable();
+        }
+
+        fn intr_off() {
+            interrupts::disable();
+        }
+
+        fn intr_get() -> bool {
+            interrupts::are_enabled()
         }
 
         fn mask_irq(gsi: usize) -> HalResult {

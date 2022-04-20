@@ -1,6 +1,8 @@
 use {
     super::*,
     alloc::{string::String, vec::Vec},
+    // lock::Mutex,
+    spin::Mutex,
     zircon_object::{
         ipc::{Channel, MessagePacket},
         object::{obj_type, HandleInfo},
@@ -320,7 +322,7 @@ pub struct HandleDisposition {
     result: i32,
 }
 
-static TESTS_ARGS: spin::Mutex<String> = spin::Mutex::new(String::new());
+static TESTS_ARGS: Mutex<String> = Mutex::new(String::new());
 
 /// HACK: pass arguments to standalone-test
 #[allow(clippy::naive_bytecount)]

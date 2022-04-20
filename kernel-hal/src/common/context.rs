@@ -27,7 +27,7 @@ pub enum UserContextField {
 }
 
 /// Reason of the trap.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum TrapReason {
     Syscall,
     Interrupt(usize),
@@ -38,6 +38,9 @@ pub enum TrapReason {
     UnalignedAccess,
     GernelFault(usize),
 }
+
+#[cfg(not(feature = "libos"))]
+pub const TIMER_INTERRUPT_VEC: usize = crate::timer_interrupt_vector();
 
 impl TrapReason {
     /// Get [`TrapReason`] from `trap_num` and `error_code` in trap frame for x86.

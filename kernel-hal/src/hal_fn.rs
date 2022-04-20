@@ -97,6 +97,15 @@ hal_fn_def! {
         /// Is a valid IRQ number.
         pub fn is_valid_irq(vector: usize) -> bool;
 
+        /// Enable the interrupts
+        pub fn intr_on();
+
+        /// Disable the interrupts
+        pub fn intr_off();
+
+        /// Test weather interrupt is enabled
+        pub fn intr_get() -> bool;
+
         /// Disable IRQ.
         pub fn mask_irq(vector: usize) -> HalResult;
 
@@ -148,6 +157,9 @@ hal_fn_def! {
 
     /// Time and clock functions.
     pub mod timer {
+        /// Set the first time interrupt
+        pub fn timer_set_first();
+
         /// Get current time.
         /// TODO: use `Instant` as return type.
         pub fn timer_now() -> Duration;

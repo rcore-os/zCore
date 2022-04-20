@@ -2,16 +2,14 @@ mod consts;
 mod ioapic;
 mod lapic;
 
-use core::ops::Range;
-
-use spin::Mutex;
-
 use self::consts::{X86_INT_BASE, X86_INT_LOCAL_APIC_BASE};
 use self::ioapic::{IoApic, IoApicList};
 use self::lapic::LocalApic;
 use crate::prelude::{IrqHandler, IrqPolarity, IrqTriggerMode};
 use crate::scheme::{IrqScheme, Scheme};
 use crate::{utils::IrqManager, DeviceError, DeviceResult, PhysAddr, VirtAddr};
+use core::ops::Range;
+use lock::Mutex;
 
 const IOAPIC_IRQ_RANGE: Range<usize> = X86_INT_BASE..X86_INT_LOCAL_APIC_BASE;
 const LAPIC_IRQ_RANGE: Range<usize> = 0..16;
@@ -83,9 +81,8 @@ impl Scheme for Apic {
     fn handle_irq(&self, vector: usize) {
         Self::local_apic().eoi();
         let res = if vector >= X86_INT_LOCAL_APIC_BASE {
-            self.manager_lapic
-                .lock()
-                .handle(vector - X86_INT_LOCAL_APIC_BASE)
+            let handler = self.manager_lapic.lock();
+            handler.handle(vector - X86_INT_LOCAL_APIC_BASE)
         } else {
             self.manager_ioapic.lock().handle(vector)
         };

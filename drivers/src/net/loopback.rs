@@ -5,7 +5,7 @@ use crate::net::get_sockets;
 use alloc::sync::Arc;
 
 use alloc::string::String;
-use spin::Mutex;
+use lock::Mutex;
 
 use crate::scheme::{NetScheme, Scheme};
 use crate::{DeviceError, DeviceResult};
