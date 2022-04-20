@@ -1,0 +1,8 @@
+target remote 127.0.0.1:15234
+symbol-file ../target/x86_64/release/zcore
+b _start
+# b __alltraps
+b syscall_return
+# b syscall_entry
+display/10i $rip
+

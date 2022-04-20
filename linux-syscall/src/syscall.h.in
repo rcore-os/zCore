@@ -346,3 +346,5 @@
 #define __NR_pidfd_open		434
 #define __NR_clone3		435
 
+// JUST FOR TEST
+#define __NR_block_in_kernel 600

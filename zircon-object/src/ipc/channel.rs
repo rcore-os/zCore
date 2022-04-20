@@ -8,6 +8,7 @@ use {
     futures::channel::oneshot::{self, Sender},
     hashbrown::HashMap,
     spin::Mutex,
+    // lock::Mutex,
 };
 
 /// Bidirectional interprocess communication

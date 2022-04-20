@@ -31,7 +31,6 @@ use alloc::sync::Arc;
 use alloc::vec;
 
 // smoltcp
-
 use smoltcp::socket::UdpPacketMetadata;
 use smoltcp::socket::UdpSocket;
 use smoltcp::socket::UdpSocketBuffer;

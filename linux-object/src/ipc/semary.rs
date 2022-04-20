@@ -6,8 +6,7 @@ use crate::time::*;
 use alloc::{collections::BTreeMap, sync::Arc, sync::Weak, vec::Vec};
 use core::ops::Index;
 use lazy_static::*;
-use spin::Mutex;
-use spin::RwLock;
+use spin::{Mutex, RwLock};
 
 /// semid data structure
 ///
