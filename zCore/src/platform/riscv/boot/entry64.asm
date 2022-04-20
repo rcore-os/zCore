@@ -40,16 +40,16 @@
 # 清零 bss 段，构造启动页表，然后跳转到高地址映射的主核主函数
 # --------------------------------------
 _start:                             # fn _start(hartid: usize, device_tree_paddr: usize) -> ! {{
-    csrw sie, zero                  #     $sie = 0; // 关中断
+    csrw sie,  zero                 #     $sie = 0; // 关中断
                                     #     // 清空 bss 段
-    la t0, sbss                     #     $t0 = sbss;
-    la t1, ebss                     #     $t1 = ebss;
+    la   t0,   sbss                 #     $t0 = sbss;
+    la   t1,   ebss                 #     $t1 = ebss;
                                     #     loop {{
-1:  sd zero, (t0)                   #         *$t0 = 0usize;
-    addi t0, t0, 8                  #         $t0 += 8;
-    bltu t0, t1, 1b                 #         if $t0 < $t1 {{ continue; }}
+1:  sd   zero, (t0)                 #         *$t0 = 0usize;
+    addi t0,   t0, 8                #         $t0 += 8;
+    bltu t0,   t1, 1b               #         if $t0 < $t1 {{ continue; }}
                                     #     }}
-    call init_vm                    #     init_vm(hartid); // 启动虚存，并做一些其他初始化工作
+    call       init_vm              #     init_vm(hartid); // 启动虚存，并做一些其他初始化工作
     jump_cross primary_rust_main    #     primary_rust_main(hartid, device_tree_paddr)
                                     # }}
 # --------------------------------------
@@ -59,7 +59,7 @@ _start:                             # fn _start(hartid: usize, device_tree_paddr
 # --------------------------------------
 _secondary_hart_start:              # fn _secondary_hart_start(hartid: usize) -> ! {{
     csrw sie, zero                  #     $sie = 0;        // 关中断
-    call init_vm                    #     init_vm(hartid); // 启动虚存，并做一些其他初始化工作
+    call       init_vm              #     init_vm(hartid); // 启动虚存，并做一些其他初始化工作
     jump_cross secondary_rust_main  #     secondary_rust_main()
                                     # }}
 # --------------------------------------
@@ -81,18 +81,17 @@ init_vm:                            # fn init_vm(hartid: usize) {{
     add  t0,   t0, t1               #     $t0  += $t1;
     jr   t0                         #     // 跳到高映射的虚地址
                                     #     // 设置启动栈
-1:  mv   t0,   zero                 #     $t0   = 0;
-    mv   t1,   a0                   #     $t1   = hartid;
-    beqz t1,   2f                   #     if $t1 == 0 {{
-    li   t2,   4096 * 16            #         $t2  = 4096 * 16;
-1:  add  t0,   t0, t2               #         $t0 += $t2;
-    addi t1,   t1, -1               #         $t1 -= 1;
-    bgtz t1,   1b                   #         if $t1 > 0 {{ continue; }}
+1:  lui  sp,   %hi(bootstacktop)    #     $sp   = bootstacktop;
+    mv   t0,   a0                   #     $t0   = hartid;
+    beqz t0,   2f                   #     if $t0 != 0 {{
+    li   t1,   -4096 * 16           #         $t1  = -4096 * 16;
+                                    #         loop {{
+1:  add  sp,   sp, t1               #             $sp += $t1;
+    addi t0,   t0, -1               #             $t0 -= 1;
+    bgtz t0,   1b                   #             if $t0 > 0 {{ continue; }}
+                                    #         }}
                                     #     }}
-2:  lui  sp,   %hi(bootstacktop)    #     $sp  = bootstacktop;
-    sub  sp,   sp, t0               #     $sp -= $t0;
-                                    #     // 初始化其他东西
-    mv   tp,   a0                   #     // 设置线程指针
+2:  mv   tp,   a0                   #     // 设置线程指针
     csrrsi x0, sstatus, 18          #     // 使能内核访问用户页
     ret                             # }}
 # --------------------------------------
