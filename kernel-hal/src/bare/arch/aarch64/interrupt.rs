@@ -7,12 +7,20 @@ hal_fn_impl! {
             wfi();
         }
 
-        fn handle_irq(_vector: usize) {
+        fn handle_irq(vector: usize) {
             // TODO: timer and other devices with GIC interrupt controller
             use crate::IrqHandlerResult;
-            if super::gic::handle_irq() == IrqHandlerResult::Reschedule {
+            if super::gic::handle_irq(vector) == IrqHandlerResult::Reschedule {
                 debug!("Timer achieved");
             }
+        }
+
+        fn intr_off() {
+            // TODO: off intr in aarch64
+        }
+
+        fn intr_on() {
+            // TODO: open intr in aarch64
         }
     }
 }

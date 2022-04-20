@@ -196,20 +196,24 @@ pub fn irq_set_mask(vector: usize, masked: bool) {
     (*GIC).as_ref().unwrap().set_enable(vector, !masked);
 }
 
-pub fn handle_irq() -> IrqHandlerResult {
-    if let Some(vector) = (*GIC).as_ref().unwrap().pending_irq() {
-        let res = match vector {
-            30 => {
-                set_next_trigger();
-                IrqHandlerResult::Reschedule
-            }
-            _ => IrqHandlerResult::NoReschedule,
-        };
-        (*GIC).as_ref().unwrap().eoi(vector);
-        res
-    } else {
-        IrqHandlerResult::NoReschedule
-    }
+pub fn handle_irq(vector: usize) -> IrqHandlerResult {
+    let res = match vector {
+        30 => {
+            set_next_trigger();
+            IrqHandlerResult::Reschedule
+        }
+        _ => IrqHandlerResult::NoReschedule,
+    };
+    (*GIC).as_ref().unwrap().eoi(vector);
+    res
+}
+
+pub fn get_irq_num() -> usize {
+    (*GIC)
+        .as_ref()
+        .unwrap()
+        .pending_irq()
+        .expect("No irq number found!")
 }
 
 pub fn init() {

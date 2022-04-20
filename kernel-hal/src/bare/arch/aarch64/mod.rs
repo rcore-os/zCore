@@ -37,9 +37,17 @@ pub fn primary_init() {
     vm::init();
     drivers::init();
     gic::init();
-    timer::init();
 }
 
 pub fn secondary_init() {
     unimplemented!()
+}
+
+pub const fn timer_interrupt_vector() -> usize {
+    30
+}
+
+pub fn timer_init() {
+    debug!("Timer init");
+    timer::init();
 }

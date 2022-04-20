@@ -138,7 +138,18 @@ impl TrapReason {
                 | Some(ESR_EL1::EC::Value::InstrAbortCurrentEL) => Self::UnalignedAccess,
                 _ => Self::GernelFault(esr.get() as usize),
             },
-            Kind::Irq => Self::Interrupt(0),
+            Kind::Irq => Self::Interrupt(
+                #[cfg(not(feature = "libos"))]
+                {
+                    use crate::arch::gic::get_irq_num;
+                    get_irq_num()
+                },
+                #[cfg(feature = "libos")]
+                {
+                    // TODO: interrupt in libOS
+                    usize::MAX
+                },
+            ),
             _ => Self::GernelFault(esr.get() as usize),
         }
     }

@@ -10,6 +10,7 @@ cfg_if! {
     } else if #[cfg(target_arch = "aarch64")] {
         #[path = "arch/aarch64/mod.rs"]
         pub mod arch;
+        pub use self::arch::timer_interrupt_vector;
     }
 }
 
