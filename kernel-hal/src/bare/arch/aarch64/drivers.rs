@@ -9,6 +9,7 @@ use zcore_drivers::Device;
 pub fn init_early() {
     let uart = Pl011Uart::new(phys_to_virt(UART_BASE));
     uart.init();
+    super::gic::irq_set_mask(33, false);
     let uart = Arc::new(uart);
     drivers::add_device(Device::Uart(BufferedUart::new(uart)));
 }

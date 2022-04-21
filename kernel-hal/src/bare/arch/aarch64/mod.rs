@@ -30,13 +30,13 @@ pub fn init_ram_disk() -> Option<&'static mut [u8]> {
 pub fn primary_init_early() {
     // Init cmdline by OS instead of Bootloader
     CMDLINE.init_once_by(String::from("LOG=debug"));
+    gic::init();
     drivers::init_early();
 }
 
 pub fn primary_init() {
     vm::init();
     drivers::init();
-    gic::init();
 }
 
 pub fn secondary_init() {
