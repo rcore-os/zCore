@@ -111,6 +111,8 @@ pub enum LxError {
     EISCONN = 106,
     /// Transport endpoint is not connected
     ENOTCONN = 107,
+    /// Connection timeout
+    ETIMEDOUT = 110,
     /// Connection refused
     ECONNREFUSED = 111,
 }
@@ -184,6 +186,7 @@ impl From<ZxError> for LxError {
             ZxError::SHOULD_WAIT => LxError::EAGAIN,
             ZxError::PEER_CLOSED => LxError::EPIPE,
             ZxError::BAD_HANDLE => LxError::EBADF,
+            ZxError::TIMED_OUT => LxError::ETIMEDOUT,
             _ => unimplemented!("unknown error type: {:?}", e),
         }
     }
