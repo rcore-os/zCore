@@ -226,9 +226,76 @@
 <span id="220">220</span>
 <span id="221">221</span>
 <span id="222">222</span>
+<span id="223">223</span>
+<span id="224">224</span>
+<span id="225">225</span>
+<span id="226">226</span>
+<span id="227">227</span>
+<span id="228">228</span>
+<span id="229">229</span>
+<span id="230">230</span>
+<span id="231">231</span>
+<span id="232">232</span>
+<span id="233">233</span>
+<span id="234">234</span>
+<span id="235">235</span>
+<span id="236">236</span>
+<span id="237">237</span>
+<span id="238">238</span>
+<span id="239">239</span>
+<span id="240">240</span>
+<span id="241">241</span>
+<span id="242">242</span>
+<span id="243">243</span>
+<span id="244">244</span>
+<span id="245">245</span>
+<span id="246">246</span>
+<span id="247">247</span>
+<span id="248">248</span>
+<span id="249">249</span>
+<span id="250">250</span>
+<span id="251">251</span>
+<span id="252">252</span>
+<span id="253">253</span>
+<span id="254">254</span>
+<span id="255">255</span>
+<span id="256">256</span>
+<span id="257">257</span>
+<span id="258">258</span>
+<span id="259">259</span>
+<span id="260">260</span>
+<span id="261">261</span>
+<span id="262">262</span>
+<span id="263">263</span>
+<span id="264">264</span>
+<span id="265">265</span>
+<span id="266">266</span>
+<span id="267">267</span>
+<span id="268">268</span>
+<span id="269">269</span>
+<span id="270">270</span>
+<span id="271">271</span>
+<span id="272">272</span>
+<span id="273">273</span>
+<span id="274">274</span>
+<span id="275">275</span>
+<span id="276">276</span>
+<span id="277">277</span>
+<span id="278">278</span>
+<span id="279">279</span>
+<span id="280">280</span>
+<span id="281">281</span>
+<span id="282">282</span>
+<span id="283">283</span>
+<span id="284">284</span>
+<span id="285">285</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
 <span class="kw">use</span> <span class="ident">bitflags::bitflags</span>;
+<span class="kw">use</span> <span class="ident">core::time::Duration</span>;
+<span class="kw">use</span> <span class="ident">futures::pin_mut</span>;
+<span class="kw">use</span> <span class="ident">kernel_hal::timer::timer_now</span>;
 <span class="kw">use</span> <span class="ident">linux_object::time</span>::<span class="kw-2">*</span>;
+<span class="kw">use</span> <span class="ident">zircon_object::task::ThreadState</span>;
 
 <span class="kw">impl</span> <span class="ident">Syscall</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span> {
     <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>)]</span>
@@ -295,16 +362,32 @@
     <span class="doccomment">/// - `uaddr` - points to the futex word.</span>
     <span class="doccomment">/// - `op` -  the operation to perform on the futex</span>
     <span class="doccomment">/// - `val` -  a value whose meaning and purpose depends on op</span>
-    <span class="doccomment">/// - `timeout` - not support now</span>
-    <span class="doccomment">/// TODO: support timeout</span>
+    <span class="doccomment">/// - `timeout_addr` - provides a timeout for the attempt or acts as val2 when op is REQUEUE</span>
+    <span class="doccomment">/// - `uaddr2` - when op is REQUEUE, points to the target futex</span>
+    <span class="doccomment">/// - `_val3` - is not used</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">sys_futex</span>(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="ident">uaddr</span>: <span class="ident">usize</span>,
         <span class="ident">op</span>: <span class="ident">u32</span>,
-        <span class="ident">val</span>: <span class="ident">i32</span>,
+        <span class="ident">val</span>: <span class="ident">u32</span>,
         <span class="ident">timeout_addr</span>: <span class="ident">usize</span>,
+        <span class="ident">uaddr2</span>: <span class="ident">usize</span>,
+        <span class="ident">_val3</span>: <span class="ident">u32</span>,
     ) -&gt; <span class="ident">SysResult</span> {
+        <span class="kw">if</span> <span class="self">self</span>.<span class="ident">into_inout_userptr</span>::<span class="op">&lt;</span><span class="ident">i32</span><span class="op">&gt;</span>(<span class="ident">uaddr</span>).<span class="ident">is_err</span>() {
+            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">LxError::EINVAL</span>);
+        }
         <span class="kw">let</span> <span class="ident">op</span> <span class="op">=</span> <span class="ident">FutexFlags::from_bits_truncate</span>(<span class="ident">op</span>);
+        <span class="kw">if</span> <span class="op">!</span><span class="ident">op</span>.<span class="ident">contains</span>(<span class="ident">FutexFlags::PRIVATE</span>) {
+            <span class="macro">warn!</span>(<span class="string">&quot;process-shared futex is unimplemented&quot;</span>);
+        }
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">val2</span> <span class="op">=</span> <span class="number">0</span>;
+        <span class="kw">if</span> <span class="ident">op</span>.<span class="ident">contains</span>(<span class="ident">FutexFlags::REQUEUE</span>) {
+            <span class="kw">if</span> <span class="self">self</span>.<span class="ident">into_inout_userptr</span>::<span class="op">&lt;</span><span class="ident">i32</span><span class="op">&gt;</span>(<span class="ident">uaddr2</span>).<span class="ident">is_err</span>() {
+                <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">LxError::EINVAL</span>);
+            }
+            <span class="ident">val2</span> <span class="op">=</span> <span class="ident">timeout_addr</span>;
+        }
         <span class="kw">let</span> <span class="ident">timeout</span> <span class="op">=</span> <span class="kw">if</span> <span class="ident">op</span>.<span class="ident">contains</span>(<span class="ident">FutexFlags::WAKE</span>) {
             <span class="self">self</span>.<span class="ident">into_inout_userptr</span>::<span class="op">&lt;</span><span class="ident">TimeSpec</span><span class="op">&gt;</span>(<span class="number">0</span>).<span class="ident">unwrap</span>()
         } <span class="kw">else</span> {
@@ -314,32 +397,69 @@
                 <span class="prelude-val">Err</span>(<span class="ident">_e</span>) =&gt; <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">LxError::EACCES</span>),
             }
         };
-        <span class="macro">info!</span>(
-            <span class="string">&quot;futex: uaddr: {:#x}, op: {:?}, val: {}, timeout_ptr: {:?}&quot;</span>,
-            <span class="ident">uaddr</span>, <span class="ident">op</span>, <span class="ident">val</span>, <span class="ident">timeout</span>
+        <span class="macro">warn!</span>(
+            <span class="string">&quot;Futex uaddr: {:#x}, op: {:x}, val: {}, timeout_ptr: {:x?}, val2: {}&quot;</span>,
+            <span class="ident">uaddr</span>,
+            <span class="ident">op</span>.<span class="ident">bits</span>(),
+            <span class="ident">val</span>,
+            <span class="ident">timeout</span>,
+            <span class="ident">val2</span>,
         );
-
-        <span class="kw">if</span> <span class="ident">op</span>.<span class="ident">contains</span>(<span class="ident">FutexFlags::PRIVATE</span>) {
-            <span class="macro">warn!</span>(<span class="string">&quot;process-shared futex is unimplemented&quot;</span>);
-        }
         <span class="kw">let</span> <span class="ident">futex</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>().<span class="ident">get_futex</span>(<span class="ident">uaddr</span>);
-        <span class="kw">match</span> <span class="ident">op</span>.<span class="ident">bits</span> <span class="op">&amp;</span> <span class="number">0xf</span> {
-            <span class="number">0</span> =&gt; {
-                <span class="comment">// FIXME: support timeout</span>
-                <span class="kw">let</span> <span class="ident">_timeout</span> <span class="op">=</span> <span class="ident">timeout</span>.<span class="ident">read_if_not_null</span>()<span class="question-mark">?</span>;
-                <span class="kw">match</span> <span class="ident">futex</span>.<span class="ident">wait</span>(<span class="ident">val</span>).<span class="kw">await</span> {
+        <span class="kw">let</span> <span class="ident">op</span> <span class="op">=</span> <span class="ident">op</span> <span class="op">-</span> <span class="ident">FutexFlags::PRIVATE</span>;
+        <span class="kw">match</span> <span class="ident">op</span> {
+            <span class="ident">FutexFlags::WAIT</span> =&gt; {
+                <span class="kw">let</span> <span class="ident">timeout</span> <span class="op">=</span> <span class="ident">timeout</span>.<span class="ident">read_if_not_null</span>()<span class="question-mark">?</span>;
+                <span class="kw">let</span> <span class="ident">duration</span>: <span class="ident">Duration</span> <span class="op">=</span> <span class="kw">match</span> <span class="ident">timeout</span> {
+                    <span class="prelude-val">Some</span>(<span class="ident">t</span>) =&gt; <span class="ident">t</span>.<span class="ident">into</span>(),
+                    <span class="prelude-val">None</span> =&gt; <span class="ident">Duration::from_secs</span>(<span class="number">0</span>),
+                };
+                <span class="kw">let</span> <span class="ident">into_lxerror</span> <span class="op">=</span> <span class="op">|</span><span class="ident">e</span>: <span class="ident">ZxError</span><span class="op">|</span> <span class="kw">match</span> <span class="ident">e</span> {
+                    <span class="ident">ZxError::BAD_STATE</span> =&gt; <span class="ident">LxError::EAGAIN</span>,
+                    <span class="ident">e</span> =&gt; <span class="ident">e</span>.<span class="ident">into</span>(),
+                };
+                <span class="kw">let</span> <span class="ident">future</span> <span class="op">=</span> <span class="ident">futex</span>.<span class="ident">wait</span>(<span class="ident">val</span> <span class="kw">as</span> <span class="kw">_</span>);
+                <span class="kw">let</span> <span class="ident">res</span> <span class="op">=</span> <span class="kw">if</span> <span class="ident">duration</span>.<span class="ident">as_millis</span>() <span class="op">==</span> <span class="number">0</span> {
+                    <span class="ident">future</span>.<span class="kw">await</span>
+                } <span class="kw">else</span> {
+                    <span class="macro">pin_mut!</span>(<span class="ident">future</span>);
+                    <span class="self">self</span>.<span class="ident">thread</span>
+                        .<span class="ident">blocking_run</span>(
+                            <span class="ident">future</span>,
+                            <span class="ident">ThreadState::BlockedFutex</span>,
+                            <span class="ident">timer_now</span>() <span class="op">+</span> <span class="ident">duration</span>,
+                            <span class="prelude-val">None</span>,
+                        )
+                        .<span class="kw">await</span>
+                };
+                <span class="kw">match</span> <span class="ident">res</span> {
                     <span class="prelude-val">Ok</span>(<span class="kw">_</span>) =&gt; <span class="prelude-val">Ok</span>(<span class="number">0</span>),
-                    <span class="prelude-val">Err</span>(<span class="ident">ZxError::BAD_STATE</span>) =&gt; <span class="prelude-val">Err</span>(<span class="ident">LxError::EAGAIN</span>),
-                    <span class="prelude-val">Err</span>(<span class="ident">e</span>) =&gt; <span class="prelude-val">Err</span>(<span class="ident">e</span>.<span class="ident">into</span>()),
+                    <span class="prelude-val">Err</span>(<span class="ident">e</span>) =&gt; <span class="prelude-val">Err</span>(<span class="ident">into_lxerror</span>(<span class="ident">e</span>)),
                 }
             }
-            <span class="number">1</span> =&gt; {
+            <span class="ident">FutexFlags::WAKE</span> =&gt; {
                 <span class="kw">let</span> <span class="ident">woken_up_count</span> <span class="op">=</span> <span class="ident">futex</span>.<span class="ident">wake</span>(<span class="ident">val</span> <span class="kw">as</span> <span class="ident">usize</span>);
                 <span class="prelude-val">Ok</span>(<span class="ident">woken_up_count</span>)
             }
+            <span class="ident">FutexFlags::LOCK_PI</span> =&gt; {
+                <span class="macro">warn!</span>(<span class="string">&quot;futex LOCK_PI is unimplemented&quot;</span>);
+                <span class="prelude-val">Ok</span>(<span class="number">0</span>)
+            }
+            <span class="ident">FutexFlags::REQUEUE</span> =&gt; {
+                <span class="kw">let</span> <span class="ident">requeue_futex</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>().<span class="ident">get_futex</span>(<span class="ident">uaddr2</span>);
+                <span class="kw">let</span> <span class="ident">into_lxerror</span> <span class="op">=</span> <span class="op">|</span><span class="ident">e</span>: <span class="ident">ZxError</span><span class="op">|</span> <span class="kw">match</span> <span class="ident">e</span> {
+                    <span class="ident">ZxError::BAD_STATE</span> =&gt; <span class="ident">LxError::EAGAIN</span>,
+                    <span class="ident">e</span> =&gt; <span class="ident">e</span>.<span class="ident">into</span>(),
+                };
+                <span class="kw">let</span> <span class="ident">res</span> <span class="op">=</span> <span class="ident">futex</span>.<span class="ident">requeue</span>(<span class="number">0</span>, <span class="ident">val</span> <span class="kw">as</span> <span class="ident">usize</span>, <span class="ident">val2</span>, <span class="kw-2">&amp;</span><span class="ident">requeue_futex</span>, <span class="prelude-val">None</span>, <span class="bool-val">false</span>);
+                <span class="kw">match</span> <span class="ident">res</span> {
+                    <span class="prelude-val">Ok</span>(<span class="kw">_</span>) =&gt; <span class="prelude-val">Ok</span>(<span class="number">0</span>),
+                    <span class="prelude-val">Err</span>(<span class="ident">e</span>) =&gt; <span class="prelude-val">Err</span>(<span class="ident">into_lxerror</span>(<span class="ident">e</span>)),
+                }
+            }
             <span class="kw">_</span> =&gt; {
                 <span class="macro">warn!</span>(<span class="string">&quot;unsupported futex operation: {:?}&quot;</span>, <span class="ident">op</span>);
-                <span class="prelude-val">Err</span>(<span class="ident">LxError::ENOSYS</span>)
+                <span class="prelude-val">Err</span>(<span class="ident">LxError::ENOPROTOOPT</span>)
             }
         }
     }
@@ -407,6 +527,12 @@
         <span class="kw">const</span> <span class="ident">WAIT</span>      <span class="op">=</span> <span class="number">0</span>;
         <span class="doccomment">/// wakes at most val of the waiters that are waiting on the futex word at the address uaddr.</span>
         <span class="kw">const</span> <span class="ident">WAKE</span>      <span class="op">=</span> <span class="number">1</span>;
+        <span class="doccomment">/// wakes up a maximum of val waiters that are waiting on the futex at uaddr.  If there are more than val waiters, then the remaining waiters are removed from the wait queue of the source futex at uaddr and added to the wait queue of the target futex at uaddr2.  The val2 argument specifies an upper limit on the number of waiters that are requeued to the futex at uaddr2.</span>
+        <span class="kw">const</span> <span class="ident">REQUEUE</span>   <span class="op">=</span> <span class="number">3</span>;
+        <span class="doccomment">/// (unsupported) is used after an attempt to acquire the lock via an atomic user-mode instruction failed.</span>
+        <span class="kw">const</span> <span class="ident">LOCK_PI</span>   <span class="op">=</span> <span class="number">6</span>;
+        <span class="doccomment">/// (unsupported) is called when the user-space value at uaddr cannot be changed atomically from a TID (of the owner) to 0.</span>
+        <span class="kw">const</span> <span class="ident">UNLOCK_PI</span> <span class="op">=</span> <span class="number">7</span>;
         <span class="doccomment">/// can be employed with all futex operations, tells the kernel that the futex is process-private and not shared with another process</span>
         <span class="kw">const</span> <span class="ident">PRIVATE</span>   <span class="op">=</span> <span class="number">0x80</span>;
     }

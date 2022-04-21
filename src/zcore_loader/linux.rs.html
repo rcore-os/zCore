@@ -166,10 +166,84 @@
 <span id="160">160</span>
 <span id="161">161</span>
 <span id="162">162</span>
+<span id="163">163</span>
+<span id="164">164</span>
+<span id="165">165</span>
+<span id="166">166</span>
+<span id="167">167</span>
+<span id="168">168</span>
+<span id="169">169</span>
+<span id="170">170</span>
+<span id="171">171</span>
+<span id="172">172</span>
+<span id="173">173</span>
+<span id="174">174</span>
+<span id="175">175</span>
+<span id="176">176</span>
+<span id="177">177</span>
+<span id="178">178</span>
+<span id="179">179</span>
+<span id="180">180</span>
+<span id="181">181</span>
+<span id="182">182</span>
+<span id="183">183</span>
+<span id="184">184</span>
+<span id="185">185</span>
+<span id="186">186</span>
+<span id="187">187</span>
+<span id="188">188</span>
+<span id="189">189</span>
+<span id="190">190</span>
+<span id="191">191</span>
+<span id="192">192</span>
+<span id="193">193</span>
+<span id="194">194</span>
+<span id="195">195</span>
+<span id="196">196</span>
+<span id="197">197</span>
+<span id="198">198</span>
+<span id="199">199</span>
+<span id="200">200</span>
+<span id="201">201</span>
+<span id="202">202</span>
+<span id="203">203</span>
+<span id="204">204</span>
+<span id="205">205</span>
+<span id="206">206</span>
+<span id="207">207</span>
+<span id="208">208</span>
+<span id="209">209</span>
+<span id="210">210</span>
+<span id="211">211</span>
+<span id="212">212</span>
+<span id="213">213</span>
+<span id="214">214</span>
+<span id="215">215</span>
+<span id="216">216</span>
+<span id="217">217</span>
+<span id="218">218</span>
+<span id="219">219</span>
+<span id="220">220</span>
+<span id="221">221</span>
+<span id="222">222</span>
+<span id="223">223</span>
+<span id="224">224</span>
+<span id="225">225</span>
+<span id="226">226</span>
+<span id="227">227</span>
+<span id="228">228</span>
+<span id="229">229</span>
+<span id="230">230</span>
+<span id="231">231</span>
+<span id="232">232</span>
+<span id="233">233</span>
 </pre><pre class="rust"><code><span class="doccomment">//! Run Linux process and manage trap/interrupt/syscall.</span>
 
 <span class="kw">use</span> <span class="ident">alloc</span>::{<span class="ident">boxed::Box</span>, <span class="ident">string::String</span>, <span class="ident">sync::Arc</span>, <span class="ident">vec::Vec</span>};
 <span class="kw">use</span> <span class="ident">core</span>::{<span class="ident">future::Future</span>, <span class="ident">pin::Pin</span>};
+<span class="kw">use</span> <span class="ident">linux_object::signal</span>::{
+    <span class="ident">SigInfo</span>, <span class="ident">SiginfoFields</span>, <span class="ident">Signal</span>, <span class="ident">SignalActionFlags</span>, <span class="ident">SignalUserContext</span>, <span class="ident">Sigset</span>,
+};
 
 <span class="kw">use</span> <span class="ident">kernel_hal::context</span>::{<span class="ident">TrapReason</span>, <span class="ident">UserContext</span>, <span class="ident">UserContextField</span>};
 <span class="kw">use</span> <span class="ident">linux_object::fs</span>::{<span class="ident">vfs::FileSystem</span>, <span class="ident">INodeExt</span>};
@@ -227,6 +301,14 @@
             <span class="kw">break</span>;
         }
 
+        <span class="comment">// check the signal and handle</span>
+        <span class="kw">let</span> (<span class="ident">signals</span>, <span class="ident">sigmask</span>, <span class="ident">handling_signal</span>) <span class="op">=</span> <span class="ident">thread</span>.<span class="ident">inner</span>().<span class="ident">lock_linux</span>().<span class="ident">get_signal_info</span>();
+        <span class="kw">if</span> <span class="ident">signals</span>.<span class="ident">mask_with</span>(<span class="kw-2">&amp;</span><span class="ident">sigmask</span>).<span class="ident">is_not_empty</span>() <span class="op">&amp;&amp;</span> <span class="ident">handling_signal</span>.<span class="ident">is_none</span>() {
+            <span class="kw">let</span> <span class="ident">signal</span> <span class="op">=</span> <span class="ident">signals</span>.<span class="ident">find_first_not_mask_signal</span>(<span class="kw-2">&amp;</span><span class="ident">sigmask</span>).<span class="ident">unwrap</span>();
+            <span class="ident">thread</span>.<span class="ident">lock_linux</span>().<span class="ident">handling_signal</span> <span class="op">=</span> <span class="prelude-val">Some</span>(<span class="ident">signal</span> <span class="kw">as</span> <span class="ident">u32</span>);
+            <span class="ident">ctx</span> <span class="op">=</span> <span class="ident">handle_signal</span>(<span class="kw-2">&amp;</span><span class="ident">thread</span>, <span class="ident">ctx</span>, <span class="ident">signal</span>, <span class="ident">sigmask</span>).<span class="kw">await</span>;
+        }
+
         <span class="comment">// run</span>
         <span class="macro">trace!</span>(<span class="string">&quot;go to user: tid = {} ctx = {:#x?}&quot;</span>, <span class="ident">thread</span>.<span class="ident">id</span>(), <span class="ident">ctx</span>);
         <span class="ident">kernel_hal::interrupt::intr_off</span>(); <span class="comment">// trapframe can&#39;t be interrupted</span>
@@ -238,6 +320,66 @@
             <span class="ident">thread</span>.<span class="ident">exit_linux</span>(<span class="ident">err</span> <span class="kw">as</span> <span class="ident">i32</span>);
         }
     }
+}
+
+<span class="kw">async</span> <span class="kw">fn</span> <span class="ident">handle_signal</span>(
+    <span class="ident">thread</span>: <span class="kw-2">&amp;</span><span class="ident">CurrentThread</span>,
+    <span class="kw-2">mut</span> <span class="ident">ctx</span>: <span class="ident">Box</span><span class="op">&lt;</span><span class="ident">UserContext</span><span class="op">&gt;</span>,
+    <span class="ident">signal</span>: <span class="ident">Signal</span>,
+    <span class="ident">sigmask</span>: <span class="ident">Sigset</span>,
+) -&gt; <span class="ident">Box</span><span class="op">&lt;</span><span class="ident">UserContext</span><span class="op">&gt;</span> {
+    <span class="macro">warn!</span>(<span class="string">&quot;Not fully implemented SignalInfo, SignalStack, SignalActionFlags except SIGINFO&quot;</span>);
+    <span class="kw">let</span> <span class="ident">action</span> <span class="op">=</span> <span class="ident">thread</span>.<span class="ident">proc</span>().<span class="ident">linux</span>().<span class="ident">signal_action</span>(<span class="ident">signal</span>);
+    <span class="kw">let</span> <span class="ident">signal_info</span> <span class="op">=</span> <span class="ident">SigInfo</span> {
+        <span class="ident">signo</span>: <span class="number">0</span>,
+        <span class="ident">errno</span>: <span class="number">0</span>,
+        <span class="ident">code</span>: <span class="ident">linux_object::signal::SignalCode::TKILL</span>,
+        <span class="ident">field</span>: <span class="ident">SiginfoFields::default</span>(),
+    };
+    <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">signal_context</span> <span class="op">=</span> <span class="ident">SignalUserContext</span> {
+        <span class="ident">sig_mask</span>: <span class="ident">sigmask</span>,
+        ..<span class="ident">Default::default</span>()
+    };
+    <span class="comment">// backup current context and set new context</span>
+    <span class="kw">unsafe</span> {
+        <span class="ident">thread</span>.<span class="ident">backup_context</span>(<span class="kw-2">*</span><span class="ident">ctx</span>);
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">sp</span> <span class="op">=</span> (<span class="kw-2">*</span><span class="ident">ctx</span>).<span class="ident">get_field</span>(<span class="ident">UserContextField::StackPointer</span>) <span class="op">-</span> <span class="number">0x200</span>;
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">siginfo_ptr</span> <span class="op">=</span> <span class="number">0</span>;
+        <span class="kw">if</span> <span class="ident">action</span>.<span class="ident">flags</span>.<span class="ident">contains</span>(<span class="ident">SignalActionFlags::SIGINFO</span>) {
+            <span class="ident">sp</span> <span class="op">&amp;=</span> <span class="op">!</span><span class="number">0xF</span>;
+            <span class="ident">sp</span> <span class="op">=</span> <span class="ident">push_stack</span>::<span class="op">&lt;</span><span class="ident">SigInfo</span><span class="op">&gt;</span>(<span class="ident">sp</span>, <span class="ident">signal_info</span>);
+            <span class="ident">siginfo_ptr</span> <span class="op">=</span> <span class="ident">sp</span>;
+            <span class="kw">let</span> <span class="ident">pc</span> <span class="op">=</span> (<span class="kw-2">*</span><span class="ident">ctx</span>).<span class="ident">get_field</span>(<span class="ident">UserContextField::InstrPointer</span>);
+            <span class="ident">signal_context</span>.<span class="ident">context</span>.<span class="ident">set_pc</span>(<span class="ident">pc</span>);
+            <span class="ident">sp</span> <span class="op">&amp;=</span> <span class="op">!</span><span class="number">0xF</span>;
+            <span class="ident">sp</span> <span class="op">=</span> <span class="ident">push_stack</span>::<span class="op">&lt;</span><span class="ident">SignalUserContext</span><span class="op">&gt;</span>(<span class="ident">sp</span>, <span class="ident">signal_context</span>);
+        }
+        <span class="macro">cfg_if!</span> {
+            <span class="kw">if</span> <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>)]</span> {
+                <span class="ident">sp</span> <span class="op">&amp;=</span> <span class="op">!</span><span class="number">0xF</span>;
+                <span class="ident">sp</span> <span class="op">=</span> <span class="ident">push_stack</span>::<span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>(<span class="ident">sp</span>, <span class="ident">action</span>.<span class="ident">restorer</span>);
+            } <span class="kw">else</span> {
+                (<span class="kw-2">*</span><span class="ident">ctx</span>).<span class="ident">set_ra</span>(<span class="ident">action</span>.<span class="ident">restorer</span>);
+            }
+        }
+        <span class="kw">if</span> <span class="ident">action</span>.<span class="ident">flags</span>.<span class="ident">contains</span>(<span class="ident">SignalActionFlags::SIGINFO</span>) {
+            (<span class="kw-2">*</span><span class="ident">ctx</span>).<span class="ident">setup_uspace</span>(<span class="ident">action</span>.<span class="ident">handler</span>, <span class="ident">sp</span>, <span class="kw-2">&amp;</span>[<span class="ident">signal</span> <span class="kw">as</span> <span class="ident">usize</span>, <span class="ident">siginfo_ptr</span>, <span class="ident">sp</span>]);
+        } <span class="kw">else</span> {
+            (<span class="kw-2">*</span><span class="ident">ctx</span>).<span class="ident">setup_uspace</span>(<span class="ident">action</span>.<span class="ident">handler</span>, <span class="ident">sp</span>, <span class="kw-2">&amp;</span>[<span class="ident">signal</span> <span class="kw">as</span> <span class="ident">usize</span>, <span class="number">0</span>, <span class="number">0</span>]);
+        }
+        (<span class="kw-2">*</span><span class="ident">ctx</span>).<span class="ident">enter_uspace</span>();
+    }
+    <span class="ident">ctx</span>
+}
+
+<span class="doccomment">/// Push a object onto stack</span>
+<span class="doccomment">/// # Safety</span>
+<span class="doccomment">///</span>
+<span class="doccomment">/// This function is handling a raw pointer to the top of the stack .</span>
+<span class="kw">pub</span> <span class="kw">unsafe</span> <span class="kw">fn</span> <span class="ident">push_stack</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span>(<span class="ident">stack_top</span>: <span class="ident">usize</span>, <span class="ident">val</span>: <span class="ident">T</span>) -&gt; <span class="ident">usize</span> {
+    <span class="kw">let</span> <span class="ident">stack_top</span> <span class="op">=</span> (<span class="ident">stack_top</span> <span class="kw">as</span> <span class="kw-2">*mut</span> <span class="ident">T</span>).<span class="ident">sub</span>(<span class="number">1</span>);
+    <span class="kw-2">*</span><span class="ident">stack_top</span> <span class="op">=</span> <span class="ident">val</span>;
+    <span class="ident">stack_top</span> <span class="kw">as</span> <span class="ident">usize</span>
 }
 
 <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">handle_user_trap</span>(<span class="ident">thread</span>: <span class="kw-2">&amp;</span><span class="ident">CurrentThread</span>, <span class="kw-2">mut</span> <span class="ident">ctx</span>: <span class="ident">Box</span><span class="op">&lt;</span><span class="ident">UserContext</span><span class="op">&gt;</span>) -&gt; <span class="ident">ZxResult</span> {

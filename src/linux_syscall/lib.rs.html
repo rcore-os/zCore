@@ -590,10 +590,6 @@
 <span id="584">584</span>
 <span id="585">585</span>
 <span id="586">586</span>
-<span id="587">587</span>
-<span id="588">588</span>
-<span id="589">589</span>
-<span id="590">590</span>
 </pre><pre class="rust"><code><span class="doccomment">//! Linux syscall implementations</span>
 <span class="doccomment">//!</span>
 <span class="doccomment">//! ## Example</span>
@@ -907,12 +903,12 @@
                 <span class="self">self</span>.<span class="ident">into_out_userptr</span>(<span class="ident">a2</span>).<span class="ident">unwrap</span>(),
                 <span class="ident">a3</span>,
             ),
-            <span class="comment">// Sys::RT_SIGRETURN =&gt; self.sys_rt_sigreturn(),</span>
+            <span class="ident">Sys::RT_SIGRETURN</span> =&gt; <span class="self">self</span>.<span class="ident">sys_rt_sigreturn</span>(),
             <span class="ident">Sys::SIGALTSTACK</span> =&gt; <span class="self">self</span>.<span class="ident">sys_sigaltstack</span>(
                 <span class="self">self</span>.<span class="ident">into_in_userptr</span>(<span class="ident">a0</span>).<span class="ident">unwrap</span>(),
                 <span class="self">self</span>.<span class="ident">into_out_userptr</span>(<span class="ident">a1</span>).<span class="ident">unwrap</span>(),
             ),
-            <span class="comment">//            Sys::KILL =&gt; self.sys_kill(a0, a1),</span>
+            <span class="ident">Sys::KILL</span> =&gt; <span class="self">self</span>.<span class="ident">sys_kill</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="ident">isize</span>, <span class="ident">a1</span>),
 
             <span class="comment">// schedule</span>
             <span class="ident">Sys::SCHED_YIELD</span> =&gt; <span class="self">self</span>.<span class="ident">unimplemented</span>(<span class="string">&quot;yield&quot;</span>, <span class="prelude-val">Ok</span>(<span class="number">0</span>)),
@@ -967,17 +963,6 @@
             }
 
             <span class="comment">// process</span>
-            <span class="ident">Sys::CLONE</span> =&gt; {
-                <span class="comment">// warn!(&quot;a2={} a3={}&quot;, a2, a3);</span>
-                <span class="comment">// self.sys_clone(</span>
-                <span class="comment">//     a0,</span>
-                <span class="comment">//     a1,</span>
-                <span class="comment">//     self.into_out_userptr(a2).unwrap(),</span>
-                <span class="comment">//     self.into_out_userptr(a3).unwrap(),</span>
-                <span class="comment">//     a4,</span>
-                <span class="comment">// )</span>
-                <span class="self">self</span>.<span class="ident">sys_clone</span>(<span class="ident">a0</span>, <span class="ident">a1</span>, <span class="ident">a2</span>.<span class="ident">into</span>(), <span class="ident">a3</span>.<span class="ident">into</span>(), <span class="ident">a4</span>)
-            }
             <span class="ident">Sys::EXECVE</span> =&gt; <span class="self">self</span>.<span class="ident">sys_execve</span>(
                 <span class="self">self</span>.<span class="ident">into_in_userptr</span>(<span class="ident">a0</span>).<span class="ident">unwrap</span>(),
                 <span class="self">self</span>.<span class="ident">into_in_userptr</span>(<span class="ident">a1</span>).<span class="ident">unwrap</span>(),
@@ -990,11 +975,17 @@
                     .<span class="kw">await</span>
             }
             <span class="ident">Sys::SET_TID_ADDRESS</span> =&gt; <span class="self">self</span>.<span class="ident">sys_set_tid_address</span>(<span class="self">self</span>.<span class="ident">into_out_userptr</span>(<span class="ident">a0</span>).<span class="ident">unwrap</span>()),
-            <span class="ident">Sys::FUTEX</span> =&gt; {
-                <span class="comment">// ignore timeout argument when op is wake</span>
-                <span class="self">self</span>.<span class="ident">sys_futex</span>(<span class="ident">a0</span>, <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a2</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a3</span>).<span class="kw">await</span>
+            <span class="ident">Sys::FUTEX</span> =&gt; <span class="self">self</span>.<span class="ident">sys_futex</span>(<span class="ident">a0</span>, <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a2</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a3</span>, <span class="ident">a4</span>, <span class="ident">a5</span> <span class="kw">as</span> <span class="kw">_</span>).<span class="kw">await</span>,
+            <span class="ident">Sys::GET_ROBUST_LIST</span> =&gt; <span class="self">self</span>.<span class="ident">sys_get_robust_list</span>(
+                <span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>,
+                <span class="self">self</span>.<span class="ident">into_out_userptr</span>(<span class="ident">a1</span>).<span class="ident">unwrap</span>(),
+                <span class="self">self</span>.<span class="ident">into_out_userptr</span>(<span class="ident">a2</span>).<span class="ident">unwrap</span>(),
+            ),
+            <span class="ident">Sys::SET_ROBUST_LIST</span> =&gt; {
+                <span class="self">self</span>.<span class="ident">sys_set_robust_list</span>(<span class="self">self</span>.<span class="ident">into_in_userptr</span>(<span class="ident">a0</span>).<span class="ident">unwrap</span>(), <span class="ident">a1</span> <span class="kw">as</span> <span class="kw">_</span>)
             }
-            <span class="ident">Sys::TKILL</span> =&gt; <span class="self">self</span>.<span class="ident">unimplemented</span>(<span class="string">&quot;tkill&quot;</span>, <span class="prelude-val">Ok</span>(<span class="number">0</span>)),
+            <span class="ident">Sys::TKILL</span> =&gt; <span class="self">self</span>.<span class="ident">sys_tkill</span>(<span class="ident">a0</span>, <span class="ident">a1</span>),
+            <span class="ident">Sys::TGKILL</span> =&gt; <span class="self">self</span>.<span class="ident">sys_tgkill</span>(<span class="ident">a0</span>, <span class="ident">a1</span>, <span class="ident">a2</span>),
 
             <span class="comment">// time</span>
             <span class="ident">Sys::NANOSLEEP</span> =&gt; <span class="self">self</span>.<span class="ident">sys_nanosleep</span>(<span class="self">self</span>.<span class="ident">into_in_userptr</span>(<span class="ident">a0</span>).<span class="ident">unwrap</span>()).<span class="kw">await</span>,
@@ -1144,6 +1135,7 @@
             <span class="ident">Sys::CHOWN</span> =&gt; <span class="self">self</span>.<span class="ident">unimplemented</span>(<span class="string">&quot;chown&quot;</span>, <span class="prelude-val">Ok</span>(<span class="number">0</span>)),
             <span class="ident">Sys::ARCH_PRCTL</span> =&gt; <span class="self">self</span>.<span class="ident">sys_arch_prctl</span>(<span class="ident">a0</span> <span class="kw">as</span> <span class="kw">_</span>, <span class="ident">a1</span>),
             <span class="ident">Sys::TIME</span> =&gt; <span class="self">self</span>.<span class="ident">sys_time</span>(<span class="self">self</span>.<span class="ident">into_out_userptr</span>(<span class="ident">a0</span>).<span class="ident">unwrap</span>()),
+            <span class="ident">Sys::CLONE</span> =&gt; <span class="self">self</span>.<span class="ident">sys_clone</span>(<span class="ident">a0</span>, <span class="ident">a1</span>, <span class="ident">a2</span>.<span class="ident">into</span>(), <span class="ident">a4</span>, <span class="ident">a3</span>.<span class="ident">into</span>()),
             <span class="comment">//            Sys::EPOLL_CREATE =&gt; self.sys_epoll_create(a0),</span>
             <span class="comment">//            Sys::EPOLL_WAIT =&gt; self.sys_epoll_wait(a0, a1.into(), a2, a3),</span>
             <span class="kw">_</span> =&gt; <span class="self">self</span>.<span class="ident">unknown_syscall</span>(<span class="ident">sys_type</span>),
@@ -1152,10 +1144,10 @@
 
     <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;riscv64&quot;</span>)]</span>
     <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">riscv64_syscall</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>, <span class="ident">sys_type</span>: <span class="ident">Sys</span>, <span class="ident">args</span>: [<span class="ident">usize</span>; <span class="number">6</span>]) -&gt; <span class="ident">SysResult</span> {
-        <span class="macro">debug!</span>(<span class="string">&quot;riscv64_syscall: {:?}, {:?}&quot;</span>, <span class="ident">sys_type</span>, <span class="ident">args</span>);
-        <span class="comment">//let [a0, a1, a2, a3, a4, _a5] = args;</span>
+        <span class="kw">let</span> [<span class="ident">a0</span>, <span class="ident">a1</span>, <span class="ident">a2</span>, <span class="ident">a3</span>, <span class="ident">a4</span>, <span class="ident">_a5</span>] <span class="op">=</span> <span class="ident">args</span>;
         <span class="kw">match</span> <span class="ident">sys_type</span> {
             <span class="comment">//Sys::OPEN =&gt; self.sys_open(a0.into(), a1, a2),</span>
+            <span class="ident">Sys::CLONE</span> =&gt; <span class="self">self</span>.<span class="ident">sys_clone</span>(<span class="ident">a0</span>, <span class="ident">a1</span>, <span class="ident">a2</span>.<span class="ident">into</span>(), <span class="ident">a3</span>, <span class="ident">a4</span>.<span class="ident">into</span>()),
             <span class="kw">_</span> =&gt; <span class="self">self</span>.<span class="ident">unknown_syscall</span>(<span class="ident">sys_type</span>),
         }
     }

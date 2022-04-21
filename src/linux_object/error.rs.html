@@ -234,6 +234,9 @@
 <span id="228">228</span>
 <span id="229">229</span>
 <span id="230">230</span>
+<span id="231">231</span>
+<span id="232">232</span>
+<span id="233">233</span>
 </pre><pre class="rust"><code><span class="doccomment">//! Linux error codes</span>
 <span class="kw">use</span> <span class="ident">core::fmt</span>;
 <span class="kw">use</span> <span class="ident">rcore_fs::vfs::FsError</span>;
@@ -347,6 +350,8 @@
     <span class="ident">EISCONN</span> <span class="op">=</span> <span class="number">106</span>,
     <span class="doccomment">/// Transport endpoint is not connected</span>
     <span class="ident">ENOTCONN</span> <span class="op">=</span> <span class="number">107</span>,
+    <span class="doccomment">/// Connection timeout</span>
+    <span class="ident">ETIMEDOUT</span> <span class="op">=</span> <span class="number">110</span>,
     <span class="doccomment">/// Connection refused</span>
     <span class="ident">ECONNREFUSED</span> <span class="op">=</span> <span class="number">111</span>,
 }
@@ -420,6 +425,7 @@
             <span class="ident">ZxError::SHOULD_WAIT</span> =&gt; <span class="ident">LxError::EAGAIN</span>,
             <span class="ident">ZxError::PEER_CLOSED</span> =&gt; <span class="ident">LxError::EPIPE</span>,
             <span class="ident">ZxError::BAD_HANDLE</span> =&gt; <span class="ident">LxError::EBADF</span>,
+            <span class="ident">ZxError::TIMED_OUT</span> =&gt; <span class="ident">LxError::ETIMEDOUT</span>,
             <span class="kw">_</span> =&gt; <span class="macro">unimplemented!</span>(<span class="string">&quot;unknown error type: {:?}&quot;</span>, <span class="ident">e</span>),
         }
     }

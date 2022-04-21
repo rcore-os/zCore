@@ -477,13 +477,13 @@
 <span id="471">471</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
 <span class="kw">use</span> <span class="ident">core::fmt::Debug</span>;
+<span class="kw">use</span> <span class="ident">core::mem::size_of</span>;
 
 <span class="kw">use</span> <span class="ident">alloc::string::ToString</span>;
 <span class="kw">use</span> <span class="ident">bitflags::bitflags</span>;
 
 <span class="kw">use</span> <span class="ident">kernel_hal::context::UserContextField</span>;
-<span class="kw">use</span> <span class="ident">linux_object::thread</span>::{<span class="ident">CurrentThreadExt</span>, <span class="ident">ThreadExt</span>};
-<span class="comment">// use linux_object::time::TimeSpec;</span>
+<span class="kw">use</span> <span class="ident">linux_object::thread</span>::{<span class="ident">CurrentThreadExt</span>, <span class="ident">RobustList</span>, <span class="ident">ThreadExt</span>};
 <span class="kw">use</span> <span class="ident">linux_object</span>::{<span class="ident">fs::INodeExt</span>, <span class="ident">loader::LinuxElfLoader</span>};
 
 <span class="doccomment">/// Syscalls for process.</span>
@@ -586,8 +586,8 @@
         <span class="ident">flags</span>: <span class="ident">usize</span>,
         <span class="ident">newsp</span>: <span class="ident">usize</span>,
         <span class="kw-2">mut</span> <span class="ident">parent_tid</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">i32</span><span class="op">&gt;</span>,
-        <span class="kw-2">mut</span> <span class="ident">child_tid</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">i32</span><span class="op">&gt;</span>,
         <span class="ident">newtls</span>: <span class="ident">usize</span>,
+        <span class="kw-2">mut</span> <span class="ident">child_tid</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">i32</span><span class="op">&gt;</span>,
     ) -&gt; <span class="ident">SysResult</span> {
         <span class="kw">let</span> <span class="ident">_flags</span> <span class="op">=</span> <span class="ident">CloneFlags::from_bits_truncate</span>(<span class="ident">flags</span>);
         <span class="macro">info!</span>(
@@ -771,7 +771,7 @@
         <span class="comment">// self.zircon_process().signal_set(Signal::SIGNALED);</span>
         <span class="comment">// Workaround, the child process could NOT exit correctly</span>
         <span class="self">self</span>.<span class="ident">thread</span>
-            .<span class="ident">with_context</span>(<span class="op">|</span><span class="ident">ctx</span><span class="op">|</span> <span class="ident">ctx</span>.<span class="ident">setup_uspace</span>(<span class="ident">entry</span>, <span class="ident">sp</span>, <span class="number">0</span>, <span class="number">0</span>))<span class="question-mark">?</span>;
+            .<span class="ident">with_context</span>(<span class="op">|</span><span class="ident">ctx</span><span class="op">|</span> <span class="ident">ctx</span>.<span class="ident">setup_uspace</span>(<span class="ident">entry</span>, <span class="ident">sp</span>, <span class="kw-2">&amp;</span>[<span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>]))<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(<span class="number">0</span>)
     }
 
@@ -780,28 +780,6 @@
     <span class="comment">//        Ok(0)</span>
     <span class="comment">//    }</span>
     <span class="comment">//</span>
-    <span class="comment">//    /// Kill the process</span>
-    <span class="comment">//    pub fn sys_kill(&amp;self, pid: usize, sig: usize) -&gt; SysResult {</span>
-    <span class="comment">//        info!(</span>
-    <span class="comment">//            &quot;kill: thread {} kill process {} with signal {}&quot;,</span>
-    <span class="comment">//            thread::current().id(),</span>
-    <span class="comment">//            pid,</span>
-    <span class="comment">//            sig</span>
-    <span class="comment">//        );</span>
-    <span class="comment">//        let current_pid = self.process().pid.get().clone();</span>
-    <span class="comment">//        if current_pid == pid {</span>
-    <span class="comment">//            // killing myself</span>
-    <span class="comment">//            self.sys_exit_group(sig);</span>
-    <span class="comment">//        } else {</span>
-    <span class="comment">//            if let Some(proc_arc) = PROCESSES.read().get(&amp;pid).and_then(|weak| weak.upgrade()) {</span>
-    <span class="comment">//                let mut proc = proc_arc.lock();</span>
-    <span class="comment">//                proc.exit(sig);</span>
-    <span class="comment">//                Ok(0)</span>
-    <span class="comment">//            } else {</span>
-    <span class="comment">//                Err(LxError::EINVAL)</span>
-    <span class="comment">//            }</span>
-    <span class="comment">//        }</span>
-    <span class="comment">//    }</span>
 
     <span class="doccomment">/// `sys_gettid` returns the caller&#39;s thread ID (TID)</span>
     <span class="doccomment">/// (see [linux man gettid(2)](https://www.man7.org/linux/man-pages/man2/gettid.2.html)).</span>
@@ -891,6 +869,28 @@
         <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">set_tid_address</span>(<span class="ident">tidptr</span>);
         <span class="kw">let</span> <span class="ident">tid</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">id</span>();
         <span class="prelude-val">Ok</span>(<span class="ident">tid</span> <span class="kw">as</span> <span class="ident">usize</span>)
+    }
+
+    <span class="doccomment">/// Get robust list.</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_get_robust_list</span>(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        <span class="ident">pid</span>: <span class="ident">i32</span>,
+        <span class="ident">head_ptr</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">RobustList</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+        <span class="ident">len_ptr</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>,
+    ) -&gt; <span class="ident">SysResult</span> {
+        <span class="kw">if</span> <span class="ident">pid</span> <span class="op">==</span> <span class="number">0</span> {
+            <span class="kw">return</span> <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">get_robust_list</span>(<span class="ident">head_ptr</span>, <span class="ident">len_ptr</span>);
+        }
+        <span class="prelude-val">Ok</span>(<span class="number">0</span>)
+    }
+
+    <span class="doccomment">/// Set robust list.</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_set_robust_list</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">head</span>: <span class="ident">UserInPtr</span><span class="op">&lt;</span><span class="ident">RobustList</span><span class="op">&gt;</span>, <span class="ident">len</span>: <span class="ident">usize</span>) -&gt; <span class="ident">SysResult</span> {
+        <span class="kw">if</span> <span class="ident">len</span> <span class="op">!</span><span class="op">=</span> <span class="ident">size_of</span>::<span class="op">&lt;</span><span class="ident">RobustList</span><span class="op">&gt;</span>() {
+            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">LxError::EINVAL</span>);
+        }
+        <span class="self">self</span>.<span class="ident">thread</span>.<span class="ident">set_robust_list</span>(<span class="ident">head</span>, <span class="ident">len</span>);
+        <span class="prelude-val">Ok</span>(<span class="number">0</span>)
     }
 }
 

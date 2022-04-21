@@ -282,6 +282,8 @@
 <span id="276">276</span>
 <span id="277">277</span>
 <span id="278">278</span>
+<span id="279">279</span>
+<span id="280">280</span>
 </pre><pre class="rust"><code><span class="doccomment">//! Linux file objects</span>
 
 <span class="kw">mod</span> <span class="ident">devfs</span>;
@@ -413,7 +415,9 @@
     <span class="ident">devfs_root</span>
         .<span class="ident">add</span>(<span class="string">&quot;urandom&quot;</span>, <span class="ident">Arc::new</span>(<span class="ident">RandomINode::new</span>(<span class="bool-val">true</span>)))
         .<span class="ident">expect</span>(<span class="string">&quot;failed to mknod /dev/urandom&quot;</span>);
-
+    <span class="ident">devfs_root</span>
+        .<span class="ident">add</span>(<span class="string">&quot;shm&quot;</span>, <span class="ident">Arc::new</span>(<span class="ident">RandomINode::new</span>(<span class="bool-val">true</span>)))
+        .<span class="ident">expect</span>(<span class="string">&quot;failed to mknod /dev/shm&quot;</span>);
     <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">display</span>) <span class="op">=</span> <span class="ident">drivers::all_display</span>().<span class="ident">first</span>() {
         <span class="kw">use</span> <span class="ident">devfs</span>::{<span class="ident">EventDev</span>, <span class="ident">FbDev</span>, <span class="ident">MiceDev</span>};
 

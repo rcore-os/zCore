@@ -1,1 +1,1 @@
-initSidebarItems({"fn":[["run","Create and run main Linux process"]]});
+initSidebarItems({"fn":[["push_stack","Push a object onto stack"],["run","Create and run main Linux process"]]});

@@ -426,6 +426,9 @@
 <span id="420">420</span>
 <span id="421">421</span>
 <span id="422">422</span>
+<span id="423">423</span>
+<span id="424">424</span>
+<span id="425">425</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
 <span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">object</span>::<span class="kw-2">*</span>, <span class="ident">task::Thread</span>};
 <span class="kw">use</span> <span class="ident">alloc::collections::VecDeque</span>;
@@ -650,11 +653,14 @@
         <span class="ident">requeue_count</span>: <span class="ident">usize</span>,
         <span class="ident">requeue_futex</span>: <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Futex</span><span class="op">&gt;</span>,
         <span class="ident">new_requeue_owner</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Thread</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+        <span class="ident">check_value</span>: <span class="ident">bool</span>,
     ) -&gt; <span class="ident">ZxResult</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
-        <span class="comment">// check value</span>
-        <span class="kw">if</span> <span class="self">self</span>.<span class="ident">value</span>.<span class="ident">load</span>(<span class="ident">Ordering::SeqCst</span>) <span class="op">!</span><span class="op">=</span> <span class="ident">current_value</span> {
-            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::BAD_STATE</span>);
+        <span class="kw">if</span> <span class="ident">check_value</span> {
+            <span class="comment">// check value</span>
+            <span class="kw">if</span> <span class="self">self</span>.<span class="ident">value</span>.<span class="ident">load</span>(<span class="ident">Ordering::SeqCst</span>) <span class="op">!</span><span class="op">=</span> <span class="ident">current_value</span> {
+                <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">ZxError::BAD_STATE</span>);
+            }
         }
         <span class="comment">// wake</span>
         <span class="kw">for</span> <span class="kw">_</span> <span class="kw">in</span> <span class="number">0</span>..<span class="ident">wake_count</span> {
@@ -792,10 +798,10 @@
 
                 <span class="comment">// inconsistent value should fail.</span>
                 <span class="macro">assert_eq!</span>(
-                    <span class="ident">futex</span>.<span class="ident">requeue</span>(<span class="number">1</span>, <span class="number">1</span>, <span class="number">1</span>, <span class="kw-2">&amp;</span><span class="ident">requeue_futex</span>, <span class="prelude-val">None</span>),
+                    <span class="ident">futex</span>.<span class="ident">requeue</span>(<span class="number">1</span>, <span class="number">1</span>, <span class="number">1</span>, <span class="kw-2">&amp;</span><span class="ident">requeue_futex</span>, <span class="prelude-val">None</span>, <span class="bool-val">true</span>),
                     <span class="prelude-val">Err</span>(<span class="ident">ZxError::BAD_STATE</span>)
                 );
-                <span class="macro">assert!</span>(<span class="ident">futex</span>.<span class="ident">requeue</span>(<span class="number">2</span>, <span class="number">1</span>, <span class="number">1</span>, <span class="kw-2">&amp;</span><span class="ident">requeue_futex</span>, <span class="prelude-val">None</span>).<span class="ident">is_ok</span>());
+                <span class="macro">assert!</span>(<span class="ident">futex</span>.<span class="ident">requeue</span>(<span class="number">2</span>, <span class="number">1</span>, <span class="number">1</span>, <span class="kw-2">&amp;</span><span class="ident">requeue_futex</span>, <span class="prelude-val">None</span>, <span class="bool-val">true</span>).<span class="ident">is_ok</span>());
                 <span class="comment">// 1 waiter waken, 1 waiter moved into `requeue_futex`.</span>
                 <span class="macro">assert_eq!</span>(<span class="ident">futex</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">waiter_queue</span>.<span class="ident">len</span>(), <span class="number">0</span>);
                 <span class="macro">assert_eq!</span>(<span class="ident">requeue_futex</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">waiter_queue</span>.<span class="ident">len</span>(), <span class="number">1</span>);

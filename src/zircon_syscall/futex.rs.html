@@ -111,6 +111,7 @@
 <span id="105">105</span>
 <span id="106">106</span>
 <span id="107">107</span>
+<span id="108">108</span>
 </pre><pre class="rust"><code><span class="kw">use</span> {
     <span class="kw">super</span>::<span class="kw-2">*</span>,
     <span class="ident">zircon_object::task</span>::{<span class="ident">Thread</span>, <span class="ident">ThreadState</span>},
@@ -187,6 +188,7 @@
             <span class="ident">requeue_count</span> <span class="kw">as</span> <span class="ident">usize</span>,
             <span class="kw-2">&amp;</span><span class="ident">requeue_futex</span>,
             <span class="ident">new_requeue_owner</span>,
+            <span class="bool-val">true</span>,
         )<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(())
     }
