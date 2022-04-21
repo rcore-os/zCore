@@ -175,7 +175,7 @@ else ifeq ($(ARCH), aarch64)
 		-serial file:/tmp/serial.out \
 		-bios ../prebuilt/firmware/aarch64/trusted_edk2_aarch64.bin \
 		-hda fat:rw:disk \
-		-drive file=../prebuilt/linux/aarch64.img,if=none,format=raw,id=x0 \
+		-drive file=aarch64.img,if=none,format=raw,id=x0 \
 		-device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
 endif
 

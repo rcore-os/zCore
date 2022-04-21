@@ -4,8 +4,10 @@
 Cargo.lock
 /rootfs
 /riscv_rootfs
+/aarch64_rootfs
 /prebuilt/linux/alpine*
 /prebuilt/linux/riscv64/prebuild*
+/prebuilt/linux/aarch64/*
 zCore/src/platform/riscv/boot/kernel-vars.ld
 zCore/disk/*
 *.img

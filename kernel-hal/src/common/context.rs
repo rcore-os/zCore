@@ -206,6 +206,8 @@ impl UserContext {
                 self.0.general.ra = _ra;
             } else if #[cfg(target_arch = "x86_64")] {
                 error!("Please set return addr via stack!");
+            } else if #[cfg(target_arch = "aarch64")] {
+                self.0.general.x30 = _ra;
             } else {
                 unimplemented!("Unsupported arch!");
             }
