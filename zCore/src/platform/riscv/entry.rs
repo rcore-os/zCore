@@ -25,6 +25,7 @@ const GIB_BITS: usize = MIB_BITS + 9; // 1GiB
 // const KIB_MASK: usize = !((1 << KIB_BITS) - 1);
 // const MIB_MASK: usize = !((1 << MIB_BITS) - 1);
 const GIB_MASK: usize = !((1 << GIB_BITS) - 1);
+const SV39_MASK: usize = (1 << (GIB_BITS + 9)) - 1;
 
 /// 填充 `satp`
 const MODE_SV39: usize = 8 << 60;
@@ -55,16 +56,22 @@ pub extern "C" fn primary_rust_main(hartid: usize, device_tree_paddr: usize) -> 
     // 内核的 GiB 页物理页号
     let start_ppn = ((_start as usize) & GIB_MASK) >> KIB_BITS;
     // 内核 GiB 物理页帧在 GiB 页表中的序号
-    let start_pte_index = (_start as usize) >> GIB_BITS;
+    let trampoline_pte_index = (_start as usize) >> GIB_BITS;
+    let mut pte_index = (PHYSICAL_MEMORY_OFFSET & SV39_MASK) >> GIB_BITS;
     // 容纳内核的页表项
     let pte = (start_ppn << 10) | DAGXWRV;
 
     // 构造启动页表
+    // # TODO d1 c906 有扩展 63:59 位的页表项属性
+    // #.quad (1 << 62) | (1 << 61) | (1 << 60) | (0x40000 << 10) | 0xef
     unsafe {
-        // 0x0000_0000_8000_0000 -> 0x8000_0000
-        *BOOT_PAGE_TABLE.0.get_unchecked_mut(start_pte_index) = pte;
-        // 0xffff_ffff_8000_0000 -> 0x8000_0000
-        *BOOT_PAGE_TABLE.0.get_unchecked_mut(510) = pte;
+        *BOOT_PAGE_TABLE.0.get_unchecked_mut(trampoline_pte_index) = pte;
+        let mut page = DAGXWRV;
+        while pte_index < 512 {
+            *BOOT_PAGE_TABLE.0.get_unchecked_mut(pte_index) = page;
+            page += 1 << (GIB_BITS + 10 - KIB_BITS);
+            pte_index += 1;
+        }
     }
 
     // 启动副核
@@ -82,6 +89,7 @@ pub extern "C" fn primary_rust_main(hartid: usize, device_tree_paddr: usize) -> 
         }
     }
 
+    // 使能启动页表
     let sstatus = unsafe { BOOT_PAGE_TABLE.launch(hartid) };
     println!(
         "
