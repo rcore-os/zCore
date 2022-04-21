@@ -1,6 +1,10 @@
 use super::*;
 use bitflags::bitflags;
+use core::time::Duration;
+use futures::pin_mut;
+use kernel_hal::timer::timer_now;
 use linux_object::time::*;
+use zircon_object::task::ThreadState;
 
 impl Syscall<'_> {
     #[cfg(target_arch = "x86_64")]
@@ -67,16 +71,32 @@ impl Syscall<'_> {
     /// - `uaddr` - points to the futex word.
     /// - `op` -  the operation to perform on the futex
     /// - `val` -  a value whose meaning and purpose depends on op
-    /// - `timeout` - not support now
-    /// TODO: support timeout
+    /// - `timeout_addr` - provides a timeout for the attempt or acts as val2 when op is REQUEUE
+    /// - `uaddr2` - when op is REQUEUE, points to the target futex
+    /// - `_val3` - is not used
     pub async fn sys_futex(
         &self,
         uaddr: usize,
         op: u32,
-        val: i32,
+        val: u32,
         timeout_addr: usize,
+        uaddr2: usize,
+        _val3: u32,
     ) -> SysResult {
+        if self.into_inout_userptr::<i32>(uaddr).is_err() {
+            return Err(LxError::EINVAL);
+        }
         let op = FutexFlags::from_bits_truncate(op);
+        if !op.contains(FutexFlags::PRIVATE) {
+            warn!("process-shared futex is unimplemented");
+        }
+        let mut val2 = 0;
+        if op.contains(FutexFlags::REQUEUE) {
+            if self.into_inout_userptr::<i32>(uaddr2).is_err() {
+                return Err(LxError::EINVAL);
+            }
+            val2 = timeout_addr;
+        }
         let timeout = if op.contains(FutexFlags::WAKE) {
             self.into_inout_userptr::<TimeSpec>(0).unwrap()
         } else {
@@ -86,32 +106,69 @@ impl Syscall<'_> {
                 Err(_e) => return Err(LxError::EACCES),
             }
         };
-        info!(
-            "futex: uaddr: {:#x}, op: {:?}, val: {}, timeout_ptr: {:?}",
-            uaddr, op, val, timeout
+        warn!(
+            "Futex uaddr: {:#x}, op: {:x}, val: {}, timeout_ptr: {:x?}, val2: {}",
+            uaddr,
+            op.bits(),
+            val,
+            timeout,
+            val2,
         );
-
-        if op.contains(FutexFlags::PRIVATE) {
-            warn!("process-shared futex is unimplemented");
-        }
         let futex = self.linux_process().get_futex(uaddr);
-        match op.bits & 0xf {
-            0 => {
-                // FIXME: support timeout
-                let _timeout = timeout.read_if_not_null()?;
-                match futex.wait(val).await {
+        let op = op - FutexFlags::PRIVATE;
+        match op {
+            FutexFlags::WAIT => {
+                let timeout = timeout.read_if_not_null()?;
+                let duration: Duration = match timeout {
+                    Some(t) => t.into(),
+                    None => Duration::from_secs(0),
+                };
+                let into_lxerror = |e: ZxError| match e {
+                    ZxError::BAD_STATE => LxError::EAGAIN,
+                    e => e.into(),
+                };
+                let future = futex.wait(val as _);
+                let res = if duration.as_millis() == 0 {
+                    future.await
+                } else {
+                    pin_mut!(future);
+                    self.thread
+                        .blocking_run(
+                            future,
+                            ThreadState::BlockedFutex,
+                            timer_now() + duration,
+                            None,
+                        )
+                        .await
+                };
+                match res {
                     Ok(_) => Ok(0),
-                    Err(ZxError::BAD_STATE) => Err(LxError::EAGAIN),
-                    Err(e) => Err(e.into()),
+                    Err(e) => Err(into_lxerror(e)),
                 }
             }
-            1 => {
+            FutexFlags::WAKE => {
                 let woken_up_count = futex.wake(val as usize);
                 Ok(woken_up_count)
             }
+            FutexFlags::LOCK_PI => {
+                warn!("futex LOCK_PI is unimplemented");
+                Ok(0)
+            }
+            FutexFlags::REQUEUE => {
+                let requeue_futex = self.linux_process().get_futex(uaddr2);
+                let into_lxerror = |e: ZxError| match e {
+                    ZxError::BAD_STATE => LxError::EAGAIN,
+                    e => e.into(),
+                };
+                let res = futex.requeue(0, val as usize, val2, &requeue_futex, None, false);
+                match res {
+                    Ok(_) => Ok(0),
+                    Err(e) => Err(into_lxerror(e)),
+                }
+            }
             _ => {
                 warn!("unsupported futex operation: {:?}", op);
-                Err(LxError::ENOSYS)
+                Err(LxError::ENOPROTOOPT)
             }
         }
     }
@@ -179,6 +236,12 @@ bitflags! {
         const WAIT      = 0;
         /// wakes at most val of the waiters that are waiting on the futex word at the address uaddr.
         const WAKE      = 1;
+        /// wakes up a maximum of val waiters that are waiting on the futex at uaddr.  If there are more than val waiters, then the remaining waiters are removed from the wait queue of the source futex at uaddr and added to the wait queue of the target futex at uaddr2.  The val2 argument specifies an upper limit on the number of waiters that are requeued to the futex at uaddr2.
+        const REQUEUE   = 3;
+        /// (unsupported) is used after an attempt to acquire the lock via an atomic user-mode instruction failed.
+        const LOCK_PI   = 6;
+        /// (unsupported) is called when the user-space value at uaddr cannot be changed atomically from a TID (of the owner) to 0.
+        const UNLOCK_PI = 7;
         /// can be employed with all futex operations, tells the kernel that the futex is process-private and not shared with another process
         const PRIVATE   = 0x80;
     }

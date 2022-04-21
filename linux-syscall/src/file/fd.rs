@@ -24,6 +24,12 @@ impl Syscall<'_> {
     ) -> SysResult {
         let proc = self.linux_process();
         let path = path.as_c_str()?;
+        // hard code special path
+        let path = if path == "/dev/shm/testshm" {
+            "/testshm"
+        } else {
+            path
+        };
         let flags = OpenFlags::from_bits_truncate(flags);
         info!(
             "openat: dir_fd={:?}, path={:?}, flags={:?}, mode={:#o}",
@@ -49,7 +55,6 @@ impl Syscall<'_> {
         } else {
             proc.lookup_inode_at(dir_fd, path, true)?
         };
-
         let file = File::new(inode, flags, path.into());
         let fd = proc.add_file(file)?;
         Ok(fd.into())

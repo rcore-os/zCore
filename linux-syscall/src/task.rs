@@ -1,12 +1,12 @@
 use super::*;
 use core::fmt::Debug;
+use core::mem::size_of;
 
 use alloc::string::ToString;
 use bitflags::bitflags;
 
 use kernel_hal::context::UserContextField;
-use linux_object::thread::{CurrentThreadExt, ThreadExt};
-// use linux_object::time::TimeSpec;
+use linux_object::thread::{CurrentThreadExt, RobustList, ThreadExt};
 use linux_object::{fs::INodeExt, loader::LinuxElfLoader};
 
 /// Syscalls for process.
@@ -109,8 +109,8 @@ impl Syscall<'_> {
         flags: usize,
         newsp: usize,
         mut parent_tid: UserOutPtr<i32>,
-        mut child_tid: UserOutPtr<i32>,
         newtls: usize,
+        mut child_tid: UserOutPtr<i32>,
     ) -> SysResult {
         let _flags = CloneFlags::from_bits_truncate(flags);
         info!(
@@ -294,7 +294,7 @@ impl Syscall<'_> {
         // self.zircon_process().signal_set(Signal::SIGNALED);
         // Workaround, the child process could NOT exit correctly
         self.thread
-            .with_context(|ctx| ctx.setup_uspace(entry, sp, 0, 0))?;
+            .with_context(|ctx| ctx.setup_uspace(entry, sp, &[0, 0, 0]))?;
         Ok(0)
     }
 
@@ -303,28 +303,6 @@ impl Syscall<'_> {
     //        Ok(0)
     //    }
     //
-    //    /// Kill the process
-    //    pub fn sys_kill(&self, pid: usize, sig: usize) -> SysResult {
-    //        info!(
-    //            "kill: thread {} kill process {} with signal {}",
-    //            thread::current().id(),
-    //            pid,
-    //            sig
-    //        );
-    //        let current_pid = self.process().pid.get().clone();
-    //        if current_pid == pid {
-    //            // killing myself
-    //            self.sys_exit_group(sig);
-    //        } else {
-    //            if let Some(proc_arc) = PROCESSES.read().get(&pid).and_then(|weak| weak.upgrade()) {
-    //                let mut proc = proc_arc.lock();
-    //                proc.exit(sig);
-    //                Ok(0)
-    //            } else {
-    //                Err(LxError::EINVAL)
-    //            }
-    //        }
-    //    }
 
     /// `sys_gettid` returns the caller's thread ID (TID)
     /// (see [linux man gettid(2)](https://www.man7.org/linux/man-pages/man2/gettid.2.html)).
@@ -414,6 +392,28 @@ impl Syscall<'_> {
         self.thread.set_tid_address(tidptr);
         let tid = self.thread.id();
         Ok(tid as usize)
+    }
+
+    /// Get robust list.
+    pub fn sys_get_robust_list(
+        &self,
+        pid: i32,
+        head_ptr: UserOutPtr<UserOutPtr<RobustList>>,
+        len_ptr: UserOutPtr<usize>,
+    ) -> SysResult {
+        if pid == 0 {
+            return self.thread.get_robust_list(head_ptr, len_ptr);
+        }
+        Ok(0)
+    }
+
+    /// Set robust list.
+    pub fn sys_set_robust_list(&self, head: UserInPtr<RobustList>, len: usize) -> SysResult {
+        if len != size_of::<RobustList>() {
+            return Err(LxError::EINVAL);
+        }
+        self.thread.set_robust_list(head, len);
+        Ok(0)
     }
 }
 
