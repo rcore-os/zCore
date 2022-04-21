@@ -116,7 +116,7 @@ impl TrapReason {
 
 /// User context saved on trap.
 #[repr(transparent)]
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct UserContext(UserContextInner);
 
 impl UserContext {
@@ -127,31 +127,49 @@ impl UserContext {
     }
 
     /// Initialize the context for entry into userspace.
-    pub fn setup_uspace(&mut self, pc: usize, sp: usize, arg1: usize, arg2: usize) {
+    /// Note: if the number of args < 3, please fill with zeros
+    /// Eg: ctx.setup_uspace(pc_, sp_, &[arg1, arg2, 0])
+    pub fn setup_uspace(&mut self, pc: usize, sp: usize, args: &[usize; 3]) {
         cfg_if! {
             if #[cfg(target_arch = "x86_64")] {
                 self.0.general.rip = pc;
                 self.0.general.rsp = sp;
-                self.0.general.rdi = arg1;
-                self.0.general.rsi = arg2;
+                self.0.general.rdi = args[0];
+                self.0.general.rsi = args[1];
+                self.0.general.rdx = args[2];
                 // IOPL = 3, IF = 1
                 // FIXME: set IOPL = 0 when IO port bitmap is supporte
                 self.0.general.rflags = 0x3000 | 0x200 | 0x2;
             } else if #[cfg(target_arch = "aarch64")] {
                 self.0.elr = pc;
                 self.0.sp = sp;
-                self.0.general.x0 = arg1;
-                self.0.general.x1 = arg2;
+                self.0.general.x0 = args[0];
+                self.0.general.x1 = args[1];
+                self.0.general.x2 = args[2];
                 // Mask SError exceptions (currently unhandled).
                 // TODO
                 self.0.spsr = 1 << 8;
             } else if #[cfg(target_arch = "riscv64")] {
                 self.0.sepc = pc;
                 self.0.general.sp = sp;
-                self.0.general.a0 = arg1;
-                self.0.general.a1 = arg2;
+                self.0.general.a0 = args[0];
+                self.0.general.a1 = args[1];
+                self.0.general.a2 = args[2];
                 // SUM = 1, FS = 0b11, SPIE = 1
                 self.0.sstatus = 1 << 18 | 0b11 << 13 | 1 << 5;
+            }
+        }
+    }
+
+    /// Setup return addr
+    pub fn set_ra(&mut self, _ra: usize) {
+        cfg_if! {
+            if #[cfg(target_arch = "riscv64")] {
+                self.0.general.ra = _ra;
+            } else if #[cfg(target_arch = "x86_64")] {
+                error!("Please set return addr via stack!");
+            } else {
+                unimplemented!("Unsupported arch!");
             }
         }
     }
