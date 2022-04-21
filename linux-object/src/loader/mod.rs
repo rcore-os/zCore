@@ -93,7 +93,7 @@ impl LinuxElfLoader {
             envs,
             auxv: {
                 let mut map = BTreeMap::new();
-                #[cfg(target_arch = "x86_64")]
+                #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
                 {
                     map.insert(abi::AT_BASE, base);
                     map.insert(abi::AT_PHDR, base + elf.header.pt2.ph_offset() as usize);

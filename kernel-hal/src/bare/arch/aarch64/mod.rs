@@ -48,6 +48,5 @@ pub const fn timer_interrupt_vector() -> usize {
 }
 
 pub fn timer_init() {
-    debug!("Timer init");
     timer::init();
 }

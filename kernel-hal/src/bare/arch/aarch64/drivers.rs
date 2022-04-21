@@ -7,7 +7,9 @@ use zcore_drivers::virtio::{VirtIOHeader, VirtIoBlk};
 use zcore_drivers::Device;
 
 pub fn init_early() {
-    let uart = Arc::new(Pl011Uart::new(phys_to_virt(UART_BASE)));
+    let uart = Pl011Uart::new(phys_to_virt(UART_BASE));
+    uart.init();
+    let uart = Arc::new(uart);
     drivers::add_device(Device::Uart(BufferedUart::new(uart)));
 }
 

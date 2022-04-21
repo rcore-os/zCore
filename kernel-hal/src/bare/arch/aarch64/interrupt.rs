@@ -10,6 +10,7 @@ hal_fn_impl! {
         fn handle_irq(vector: usize) {
             // TODO: timer and other devices with GIC interrupt controller
             use crate::IrqHandlerResult;
+            crate::drivers::all_uart().first_unwrap().handle_irq(vector);
             if super::gic::handle_irq(vector) == IrqHandlerResult::Reschedule {
                 debug!("Timer achieved");
             }

@@ -2,7 +2,6 @@
 
 use crate::{MMUFlags, VirtAddr};
 use core::fmt;
-use tock_registers::interfaces::Readable;
 use trapframe::UserContext as UserContextInner;
 
 pub use trapframe::GeneralRegs;
@@ -119,6 +118,7 @@ impl TrapReason {
         // TODO: check if is right
         use crate::{Info, Kind, Source, Syndrome};
         use cortex_a::registers::{ESR_EL1, FAR_EL1};
+        use tock_registers::interfaces::Readable;
 
         let info = Info {
             source: Source::from(trap_num & 0xffff),

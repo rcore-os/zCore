@@ -4,7 +4,7 @@ use crate::utils::EventListener;
 use crate::DeviceResult;
 use tock_registers::interfaces::{Readable, Writeable};
 use tock_registers::register_structs;
-use tock_registers::registers::{ReadOnly, ReadWrite};
+use tock_registers::registers::{ReadOnly, ReadWrite, WriteOnly};
 
 register_structs! {
     Pl011UartRegs {
@@ -13,7 +13,11 @@ register_structs! {
         (0x04 => _reserved0),
         /// Flag Register.
         (0x18 => fr: ReadOnly<u32>),
-        (0x1c => @END),
+        /// Interrupt control register.
+        (0x2c => lcr: ReadWrite<u32>),
+        (0x38 => imsr: WriteOnly<u32>),
+        (0x44 => icr: WriteOnly<u32>),
+        (0x5c => @END),
     }
 }
 
@@ -26,8 +30,19 @@ impl Pl011Uart {
     pub fn new(base_vaddr: usize) -> Self {
         Self {
             base_vaddr,
-            listener: Default::default(),
+            listener: EventListener::new(),
         }
+    }
+
+    pub fn init(&self) {
+        // Disable FIFOs (use character mode instead)
+        let mut lcr = self.regs().lcr.get() as u32;
+        lcr = lcr & !(1 << 4);
+        self.regs().lcr.set(lcr);
+        // Enable IRQs
+        self.regs().imsr.set(1 << 4);
+        // Clear pending interrupts
+        self.regs().icr.set(0x7ff);
     }
 
     const fn regs(&self) -> &Pl011UartRegs {
@@ -54,7 +69,7 @@ impl Scheme for Pl011Uart {
     }
 
     fn handle_irq(&self, _irq_num: usize) {
-        unimplemented!()
+        self.listener.trigger(())
     }
 }
 
