@@ -23,8 +23,12 @@ impl Syscall<'_> {
     ) -> SysResult {
         let signal = Signal::try_from(signum as u8).map_err(|_| LxError::EINVAL)?;
         info!(
-            "rt_sigaction: signal={:?}, act={:?}, oldact={:?}, sigsetsize={}",
-            signal, act, oldact, sigsetsize
+            "rt_sigaction: signal={:?}, act={:?}, oldact={:?}, sigsetsize={}, thread={}",
+            signal,
+            act,
+            oldact,
+            sigsetsize,
+            self.thread.id()
         );
         if sigsetsize != core::mem::size_of::<Sigset>()
             || signal == Signal::SIGKILL
@@ -60,8 +64,12 @@ impl Syscall<'_> {
         }
         let how = How::try_from(how).map_err(|_| LxError::EINVAL)?;
         info!(
-            "rt_sigprocmask: how={:?}, set={:?}, oldset={:?}, sigsetsize={}",
-            how, set, oldset, sigsetsize
+            "rt_sigprocmask: how={:?}, set={:?}, oldset={:?}, sigsetsize={}, thread={}",
+            how,
+            set,
+            oldset,
+            sigsetsize,
+            self.thread.id()
         );
         if sigsetsize != core::mem::size_of::<Sigset>() {
             return Err(LxError::EINVAL);
@@ -110,6 +118,147 @@ impl Syscall<'_> {
             return Err(LxError::EPERM);
         }
         *old_ss = ss;
+        Ok(0)
+    }
+
+    /// Send a signal to a process specified by pid
+    /// TODO: support all the arguments
+    pub fn sys_kill(&self, pid: isize, signum: usize) -> SysResult {
+        let signal = Signal::try_from(signum as u8).map_err(|_| LxError::EINVAL)?;
+        info!(
+            "kill: thread {} kill process {} with signal {:?}",
+            self.thread.id(),
+            pid,
+            signal
+        );
+        warn!(
+            "The sys_kill only supports killing a process (SIGKILL) or sending a signal to
+            an arbitrary thread of a process within the same job as the calling thread. 
+            As for the latter, the signal will be delivered to an arbitrarily selected thread 
+            in the target process that is not blocking the signal."
+        );
+        enum SendTarget {
+            EveryProcessInGroup,
+            EveryProcess,
+            EveryProcessInGroupByPID(KoID),
+            Pid(KoID),
+        }
+        let target = match pid {
+            p if p > 0 => SendTarget::Pid(p as KoID),
+            0 => SendTarget::EveryProcessInGroup,
+            -1 => SendTarget::EveryProcess,
+            p if p < -1 => SendTarget::EveryProcessInGroupByPID((-p) as KoID),
+            _ => unimplemented!(),
+        };
+        let parent = self.zircon_process().clone();
+        match target {
+            SendTarget::Pid(pid) => {
+                match parent.job().get_child(pid as u64) {
+                    Ok(obj) => {
+                        match signal {
+                            Signal::SIGKILL => {
+                                let current_pid = parent.id();
+                                if current_pid == (pid as u64) {
+                                    // killing myself
+                                    parent.exit((128 + Signal::SIGKILL as i32) as i64);
+                                } else {
+                                    let process: Arc<Process> = obj.downcast_arc().unwrap();
+                                    process.exit((128 + Signal::SIGKILL as i32) as i64);
+                                }
+                            }
+                            sig => {
+                                let process: Arc<Process> = obj.downcast_arc().unwrap();
+                                let tids = process.thread_ids();
+                                for tid in tids {
+                                    let thread = process.get_child(tid).unwrap();
+                                    let thread: Arc<Thread> = thread.downcast_arc().unwrap();
+                                    let mut thread_linux = thread.lock_linux();
+                                    if thread_linux.signal_mask.contains(sig) {
+                                        continue;
+                                    } else {
+                                        thread_linux.signals.insert(signal);
+                                        break;
+                                    }
+                                }
+                            }
+                        };
+                        Ok(0)
+                    }
+                    Err(_) => Err(LxError::EINVAL),
+                }
+            }
+            _ => unimplemented!(),
+        }
+    }
+
+    /// Send a signal to a thread specified by tid
+    pub fn sys_tkill(&mut self, tid: usize, signum: usize) -> SysResult {
+        let signal = Signal::try_from(signum as u8).map_err(|_| LxError::EINVAL)?;
+        info!(
+            "tkill: thread {} kill thread {} with signal {:?}",
+            self.thread.id(),
+            tid,
+            signum
+        );
+        let parent = self.zircon_process().clone();
+        match parent.get_child(tid as u64) {
+            Ok(obj) => {
+                let thread: Arc<Thread> = obj.downcast_arc().unwrap();
+                let mut thread_linux = thread.lock_linux();
+                thread_linux.signals.insert(signal);
+                drop(thread_linux);
+                Ok(0)
+            }
+            Err(_) => Err(LxError::EINVAL),
+        }
+    }
+
+    /// Send a signal to a thread specified by tgid (i.e., process) and pid
+    /// Note: the job of the target process should be the same as the calling thread
+    pub fn sys_tgkill(&mut self, tgid: usize, tid: usize, signum: usize) -> SysResult {
+        let signal = Signal::try_from(signum as u8).map_err(|_| LxError::EINVAL)?;
+        info!(
+            "tkill: thread {} kill thread {} in process {} with signal {:?}",
+            self.thread.id(),
+            tid,
+            tgid,
+            signum
+        );
+        warn!(
+            "The signal will be delivered to the target process that 
+            belongs to the same job as the calling thread."
+        );
+        let parent = self.zircon_process().clone();
+        match parent
+            .job()
+            .get_child(tgid as u64)
+            .map(|proc| proc.get_child(tid as u64))
+        {
+            Ok(Ok(obj)) => {
+                let thread: Arc<Thread> = obj.downcast_arc().unwrap();
+                let mut thread_linux = thread.lock_linux();
+                thread_linux.signals.insert(signal);
+                drop(thread_linux);
+                Ok(0)
+            }
+            _ => Err(LxError::EINVAL),
+        }
+    }
+
+    /// Return from handling some signal
+    pub fn sys_rt_sigreturn(&mut self) -> SysResult {
+        info!(
+            "sigreturn: thread {} returns from handling the signal",
+            self.thread.id()
+        );
+        let old_ctx = self.thread.fetch_backup_context().unwrap();
+        self.thread
+            .with_context(|ctx| {
+                self.thread
+                    .lock_linux()
+                    .restore_after_handle_signal(ctx, &old_ctx)
+            })
+            .unwrap();
         Ok(0)
     }
 }

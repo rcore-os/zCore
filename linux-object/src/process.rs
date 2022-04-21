@@ -249,7 +249,6 @@ impl LinuxProcess {
             .futexes
             .entry(uaddr)
             .or_insert_with(|| {
-                // FIXME: check address
                 let value = unsafe { &*(uaddr as *const AtomicI32) };
                 Futex::new(value)
             })

@@ -311,12 +311,12 @@ impl Syscall<'_> {
                 self.into_out_userptr(a2).unwrap(),
                 a3,
             ),
-            // Sys::RT_SIGRETURN => self.sys_rt_sigreturn(),
+            Sys::RT_SIGRETURN => self.sys_rt_sigreturn(),
             Sys::SIGALTSTACK => self.sys_sigaltstack(
                 self.into_in_userptr(a0).unwrap(),
                 self.into_out_userptr(a1).unwrap(),
             ),
-            //            Sys::KILL => self.sys_kill(a0, a1),
+            Sys::KILL => self.sys_kill(a0 as isize, a1),
 
             // schedule
             Sys::SCHED_YIELD => self.unimplemented("yield", Ok(0)),
@@ -371,17 +371,6 @@ impl Syscall<'_> {
             }
 
             // process
-            Sys::CLONE => {
-                // warn!("a2={} a3={}", a2, a3);
-                // self.sys_clone(
-                //     a0,
-                //     a1,
-                //     self.into_out_userptr(a2).unwrap(),
-                //     self.into_out_userptr(a3).unwrap(),
-                //     a4,
-                // )
-                self.sys_clone(a0, a1, a2.into(), a3.into(), a4)
-            }
             Sys::EXECVE => self.sys_execve(
                 self.into_in_userptr(a0).unwrap(),
                 self.into_in_userptr(a1).unwrap(),
@@ -394,11 +383,17 @@ impl Syscall<'_> {
                     .await
             }
             Sys::SET_TID_ADDRESS => self.sys_set_tid_address(self.into_out_userptr(a0).unwrap()),
-            Sys::FUTEX => {
-                // ignore timeout argument when op is wake
-                self.sys_futex(a0, a1 as _, a2 as _, a3).await
+            Sys::FUTEX => self.sys_futex(a0, a1 as _, a2 as _, a3, a4, a5 as _).await,
+            Sys::GET_ROBUST_LIST => self.sys_get_robust_list(
+                a0 as _,
+                self.into_out_userptr(a1).unwrap(),
+                self.into_out_userptr(a2).unwrap(),
+            ),
+            Sys::SET_ROBUST_LIST => {
+                self.sys_set_robust_list(self.into_in_userptr(a0).unwrap(), a1 as _)
             }
-            Sys::TKILL => self.unimplemented("tkill", Ok(0)),
+            Sys::TKILL => self.sys_tkill(a0, a1),
+            Sys::TGKILL => self.sys_tgkill(a0, a1, a2),
 
             // time
             Sys::NANOSLEEP => self.sys_nanosleep(self.into_in_userptr(a0).unwrap()).await,
@@ -557,6 +552,7 @@ impl Syscall<'_> {
             Sys::CHOWN => self.unimplemented("chown", Ok(0)),
             Sys::ARCH_PRCTL => self.sys_arch_prctl(a0 as _, a1),
             Sys::TIME => self.sys_time(self.into_out_userptr(a0).unwrap()),
+            Sys::CLONE => self.sys_clone(a0, a1, a2.into(), a4, a3.into()),
             //            Sys::EPOLL_CREATE => self.sys_epoll_create(a0),
             //            Sys::EPOLL_WAIT => self.sys_epoll_wait(a0, a1.into(), a2, a3),
             _ => self.unknown_syscall(sys_type),
@@ -565,10 +561,10 @@ impl Syscall<'_> {
 
     #[cfg(target_arch = "riscv64")]
     async fn riscv64_syscall(&mut self, sys_type: Sys, args: [usize; 6]) -> SysResult {
-        debug!("riscv64_syscall: {:?}, {:?}", sys_type, args);
-        //let [a0, a1, a2, a3, a4, _a5] = args;
+        let [a0, a1, a2, a3, a4, _a5] = args;
         match sys_type {
             //Sys::OPEN => self.sys_open(a0.into(), a1, a2),
+            Sys::CLONE => self.sys_clone(a0, a1, a2.into(), a3, a4.into()),
             _ => self.unknown_syscall(sys_type),
         }
     }

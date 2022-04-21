@@ -74,6 +74,7 @@ impl Syscall<'_> {
             requeue_count as usize,
             &requeue_futex,
             new_requeue_owner,
+            true,
         )?;
         Ok(())
     }
