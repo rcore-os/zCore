@@ -1,7 +1,13 @@
-/target
+**/.*
+!.github/
+!.vscode/settings.json
+
 **/target
 **/*.rs.bk
+*.img
+*.log
 Cargo.lock
+
 /rootfs
 /riscv_rootfs
 /aarch64_rootfs
@@ -10,9 +16,6 @@ Cargo.lock
 /prebuilt/linux/aarch64/*
 zCore/src/platform/riscv/boot/kernel-vars.ld
 zCore/disk/*
-*.img
-*.log
 .idea
 .DS_Store
-.vscode/
 __pycache__

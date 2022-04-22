@@ -56,8 +56,6 @@ fn primary_main(config: kernel_hal::KernelConfig) {
     }
 }
 
-#[allow(dead_code)]
-#[cfg(not(feature = "libos"))]
 fn secondary_main() -> ! {
     while !STARTED.load(Ordering::SeqCst) {}
     // Don't print anything between previous line and next line.
