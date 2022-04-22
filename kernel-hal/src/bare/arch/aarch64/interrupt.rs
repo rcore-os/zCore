@@ -4,24 +4,29 @@ use cortex_a::asm::wfi;
 hal_fn_impl! {
     impl mod crate::hal_fn::interrupt {
         fn wait_for_interrupt() {
+            intr_on();
             wfi();
+            intr_off();
         }
 
         fn handle_irq(vector: usize) {
             // TODO: timer and other devices with GIC interrupt controller
-            use crate::IrqHandlerResult;
-            crate::drivers::all_uart().first_unwrap().handle_irq(vector);
-            if super::gic::handle_irq(vector) == IrqHandlerResult::Reschedule {
-                debug!("Timer achieved");
+            crate::drivers::all_irq().first_unwrap().handle_irq(vector);
+            if vector == 30 {
+                debug!("Timer");
             }
         }
 
         fn intr_off() {
-            // TODO: off intr in aarch64
+            unsafe {
+                core::arch::asm!("msr daifset, #2");
+            }
         }
 
         fn intr_on() {
-            // TODO: open intr in aarch64
+            unsafe {
+                core::arch::asm!("msr daifclr, #2");
+            }
         }
     }
 }

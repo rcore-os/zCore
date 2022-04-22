@@ -37,12 +37,6 @@ numeric_enum! {
 
 cfg_if! {
     if #[cfg(target_arch = "aarch64")] {
-        #[derive(Debug, Eq, PartialEq)]
-        pub enum IrqHandlerResult {
-            Reschedule,
-            NoReschedule,
-        }
-
         #[derive(Debug, PartialEq, Eq, Copy, Clone)]
         pub enum Kind {
             Synchronous = 0,

@@ -29,8 +29,6 @@ lock = { git = "https://github.com/DeathWish5/kernel-sync" }
 smoltcp = { git = "https://gitee.com/gcyyfun/smoltcp", rev="043eb60", default-features = false, features = ["alloc","log", "async", "medium-ethernet","proto-ipv4", "proto-igmp", "socket-icmp", "socket-udp", "socket-tcp", "socket-raw"] }
 
 [target.'cfg(target_arch = "aarch64")'.dependencies]
-tock-registers = "0.7"
-cortex-a = "7.2.0"
 
 # LibOS mode
 [target.'cfg(not(target_os = "none"))'.dependencies]

@@ -1,7 +1,6 @@
 pub mod config;
 pub mod cpu;
 pub mod drivers;
-pub mod gic;
 pub mod interrupt;
 pub mod mem;
 pub mod timer;
@@ -29,8 +28,7 @@ pub fn init_ram_disk() -> Option<&'static mut [u8]> {
 
 pub fn primary_init_early() {
     // Init cmdline by OS instead of Bootloader
-    CMDLINE.init_once_by(String::from("LOG=debug"));
-    gic::init();
+    CMDLINE.init_once_by(String::from("LOG=warn"));
     drivers::init_early();
 }
 

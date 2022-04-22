@@ -1,10 +1,12 @@
 #![allow(dead_code)]
 #![allow(clippy::identity_op)]
 
+use crate::imp::config::GIC_BASE;
 use crate::{Info, Kind, Source};
 use cortex_a::registers::{ESR_EL1, FAR_EL1};
 use tock_registers::interfaces::Readable;
 use trapframe::TrapFrame;
+use zcore_drivers::irq::armv8_gic::get_irq_num;
 
 #[no_mangle]
 pub extern "C" fn trap_handler(tf: &mut TrapFrame) {
@@ -12,13 +14,13 @@ pub extern "C" fn trap_handler(tf: &mut TrapFrame) {
         source: Source::from(tf.trap_num & 0xffff),
         kind: Kind::from((tf.trap_num >> 16) & 0xffff),
     };
-    debug!("Exception from {:?}", info.source);
+    trace!("Exception from {:?}", info.source);
     match info.kind {
         Kind::Synchronous => {
             sync_handler(tf);
         }
         Kind::Irq => {
-            crate::interrupt::handle_irq(0);
+            crate::interrupt::handle_irq(get_irq_num(GIC_BASE));
         }
         _ => {
             panic!(
@@ -27,7 +29,7 @@ pub extern "C" fn trap_handler(tf: &mut TrapFrame) {
             );
         }
     }
-    debug!("Exception end");
+    trace!("Exception end");
 }
 
 fn sync_handler(tf: &mut TrapFrame) {

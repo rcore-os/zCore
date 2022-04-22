@@ -1,12 +1,9 @@
 //! ARM Generic Timer.
 
-use super::gic::irq_set_mask;
 use crate::timer::TICKS_PER_SEC;
 use core::time::Duration;
 use cortex_a::{asm::barrier, registers::*};
 use tock_registers::interfaces::{Readable, Writeable};
-
-const PHYS_TIMER_IRQ_NUM: usize = 30;
 
 pub fn timer_now() -> Duration {
     unsafe { barrier::isb(barrier::SY) }
@@ -22,5 +19,4 @@ pub fn set_next_trigger() {
 pub fn init() {
     CNTP_CTL_EL0.write(CNTP_CTL_EL0::ENABLE::SET);
     set_next_trigger();
-    irq_set_mask(PHYS_TIMER_IRQ_NUM, false);
 }
