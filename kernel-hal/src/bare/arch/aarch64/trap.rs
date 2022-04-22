@@ -21,7 +21,10 @@ pub extern "C" fn trap_handler(tf: &mut TrapFrame) {
         }
         Kind::Irq => {
             use crate::hal_fn::mem::phys_to_virt;
-            crate::interrupt::handle_irq(get_irq_num(phys_to_virt(GICC_BASE), phys_to_virt(GICD_BASE)));
+            crate::interrupt::handle_irq(get_irq_num(
+                phys_to_virt(GICC_BASE),
+                phys_to_virt(GICD_BASE),
+            ));
         }
         _ => {
             panic!(

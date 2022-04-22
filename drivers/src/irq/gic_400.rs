@@ -37,9 +37,7 @@ struct GicCpuIf {
 impl IntController {
     pub fn new(gicc_base: usize, gicd_base: usize) -> Self {
         Self {
-            gicc: GicCpuIf {
-                address: gicc_base,
-            },
+            gicc: GicCpuIf { address: gicc_base },
             gicd: GicDistIf {
                 address: gicd_base,
                 ncpus: 0,
