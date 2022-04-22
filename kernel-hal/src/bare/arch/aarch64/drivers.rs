@@ -1,10 +1,10 @@
 use crate::arch::timer::set_next_trigger;
 use crate::drivers;
 use crate::hal_fn::mem::phys_to_virt;
-use crate::imp::config::{GIC_BASE, UART_BASE, VIRTIO_BASE};
+use crate::imp::config::{GICC_BASE, GICD_BASE, UART_BASE, VIRTIO_BASE};
 use alloc::boxed::Box;
 use alloc::sync::Arc;
-use zcore_drivers::irq::armv8_gic;
+use zcore_drivers::irq::gic_400;
 use zcore_drivers::scheme::IrqScheme;
 use zcore_drivers::uart::{BufferedUart, Pl011Uart};
 use zcore_drivers::virtio::{VirtIOHeader, VirtIoBlk};
@@ -13,7 +13,9 @@ use zcore_drivers::Device;
 pub fn init_early() {
     let uart = Pl011Uart::new(phys_to_virt(UART_BASE));
     let uart = Arc::new(uart);
-    let gic = armv8_gic::init(GIC_BASE);
+    let gic = gic_400::init(phys_to_virt(GICC_BASE), phys_to_virt(GICD_BASE));
+    gic.irq_enable(30);
+    gic.irq_enable(33);
     gic.register_handler(33, Box::new(handle_uart_irq)).ok();
     gic.register_handler(30, Box::new(set_next_trigger)).ok();
     drivers::add_device(Device::Irq(Arc::new(gic)));

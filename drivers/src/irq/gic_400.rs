@@ -4,6 +4,8 @@ use crate::utils::IrqManager;
 use crate::DeviceResult;
 use lock::Mutex;
 
+pub static GICC_SIZE: usize = 0x1000;
+pub static GICD_SIZE: usize = 0x1000;
 static GICD_CTLR: u32 = 0x000;
 static GICD_TYPER: u32 = 0x004;
 static GICD_ISENABLER: u32 = 0x100;
@@ -17,8 +19,6 @@ static GICC_CTLR: u32 = 0x0000;
 static GICC_PMR: u32 = 0x0004;
 
 pub struct IntController {
-    #[allow(dead_code)]
-    base: usize,
     gicc: GicCpuIf,
     gicd: GicDistIf,
     manager: Mutex<IrqManager<50>>,
@@ -35,14 +35,13 @@ struct GicCpuIf {
 }
 
 impl IntController {
-    pub fn new(base: usize) -> Self {
+    pub fn new(gicc_base: usize, gicd_base: usize) -> Self {
         Self {
-            base,
             gicc: GicCpuIf {
-                address: base + 0xffff_0000_0000_0000 + 0x1_0000,
+                address: gicc_base,
             },
             gicd: GicDistIf {
-                address: base + 0xffff_0000_0000_0000,
+                address: gicd_base,
                 ncpus: 0,
                 nirqs: 0,
             },
@@ -190,14 +189,12 @@ impl GicCpuIf {
     }
 }
 
-pub fn init(base: usize) -> IntController {
-    let mut controller = IntController::new(base);
+pub fn init(gicc_base: usize, gicd_base: usize) -> IntController {
+    let mut controller = IntController::new(gicc_base, gicd_base);
     controller.init();
-    controller.irq_enable(30);
-    controller.irq_enable(33);
     controller
 }
 
-pub fn get_irq_num(gic_base: usize) -> usize {
-    IntController::new(gic_base).pending_irq()
+pub fn get_irq_num(gicc_base: usize, gicd_base: usize) -> usize {
+    IntController::new(gicc_base, gicd_base).pending_irq()
 }

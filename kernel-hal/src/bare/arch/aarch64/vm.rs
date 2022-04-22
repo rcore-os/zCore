@@ -7,6 +7,7 @@ use core::fmt::{Debug, Formatter, Result};
 use cortex_a::registers::*;
 use spin::Mutex;
 use tock_registers::interfaces::{Readable, Writeable};
+use zcore_drivers::irq::gic_400::{GICC_SIZE, GICD_SIZE};
 
 lazy_static! {
     static ref KERNEL_PT: Mutex<PageTable> = Mutex::new(init_kernel_page_table().unwrap());
@@ -67,8 +68,13 @@ fn init_kernel_page_table() -> PagingResult<PageTable> {
     )?;
     // gic
     map_range(
-        phys_to_virt(GIC_BASE),
-        phys_to_virt(GIC_BASE) + GIC_SIZE,
+        phys_to_virt(GICC_BASE),
+        phys_to_virt(GICC_BASE) + GICC_SIZE,
+        MMUFlags::READ | MMUFlags::WRITE,
+    )?;
+    map_range(
+        phys_to_virt(GICD_BASE),
+        phys_to_virt(GICD_BASE) + GICD_SIZE,
         MMUFlags::READ | MMUFlags::WRITE,
     )?;
     // virtio_drivers
