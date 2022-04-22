@@ -7,40 +7,38 @@ SECTIONS
     . = BASE_ADDRESS;
     start = .;
 
+    stext = .;
     .text : {
-        stext = .;
         *(.text.entry)
-    _copy_user_start = .;
-    *(.text.copy_user)
-    _copy_user_end = .;
         *(.text .text.*)
-        . = ALIGN(4K);
-        etext = .;
     }
 
+    . = ALIGN(4K);
+    etext = .;
+    srodata = .;
     .rodata : {
-        srodata = .;
         *(.rodata .rodata.*)
-        erodata = .;
     }
 
+    . = ALIGN(4K);
+    erodata = .;
+    sdata = .;
     .data : {
-        sdata = .;
         *(.data .data.*)
-        edata = .;
     }
 
-    .stack : {
-        *(.bss.stack)
-        . = ALIGN(4K);
-    }
-
+    . = ALIGN(4K);
+    edata = .;
     .bss : {
+        *(.bss.bootstack)
+
+        . = ALIGN(4K);
         sbss = .;
         *(.bss .bss.* .sbss)
-        . = ALIGN(4K);
-        ebss = .;
     }
+
+    . = ALIGN(4K);
+    ebss = .;
 
     PROVIDE(end = .);
 }

@@ -2,7 +2,7 @@
 name = "zcore"
 version = "0.1.0"
 authors = ["PanQL <panqinglin00@163.com>", "Yuekai Jia <equation618@gmail.com>"]
-edition = "2018"
+edition = "2021"
 default-run = "zcore"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -76,6 +76,12 @@ rcore-fs-hostfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "1a3246b
 # Bare-metal mode
 [target.'cfg(target_os = "none")'.dependencies]
 buddy_system_allocator = "0.8"
+
+# RISC-V
+[target.'cfg(any(target_arch = "riscv32", target_arch = "riscv64"))'.dependencies]
+riscv = { git = "https://github.com/rust-embedded/riscv", rev = "cd31989", features = [
+    "inline-asm",
+] }
 
 # Bare-metal mode on x86_64
 [target.'cfg(all(target_os = "none", target_arch = "x86_64"))'.dependencies]
