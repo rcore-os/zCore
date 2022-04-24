@@ -20,6 +20,7 @@ bitflags! {
         const EXECUTE   = 1 << 4;
         const USER      = 1 << 5;
         const HUGE_PAGE = 1 << 6;
+        const DEVICE    = 1 << 7;
         const RXW = Self::READ.bits | Self::WRITE.bits | Self::EXECUTE.bits;
     }
 }

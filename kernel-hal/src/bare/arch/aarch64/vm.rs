@@ -235,7 +235,11 @@ impl PTF {
 
 impl From<MMUFlags> for PTF {
     fn from(f: MMUFlags) -> Self {
-        let mut flags = Self::from_mem_type(MemType::Normal);
+        let mut flags = Self::from_mem_type(if f.contains(MMUFlags::DEVICE) {
+            MemType::Device
+        } else {
+            MemType::Normal
+        });
         if f.is_empty() {
             return flags;
         }
@@ -276,6 +280,9 @@ impl From<PTF> for MMUFlags {
             }
         } else if f.intersects(PTF::PXN) {
             ret |= Self::EXECUTE;
+        }
+        if f.mem_type() == MemType::Device {
+            ret |= Self::DEVICE;
         }
         ret
     }

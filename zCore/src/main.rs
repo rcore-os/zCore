@@ -56,6 +56,7 @@ fn primary_main(config: kernel_hal::KernelConfig) {
     }
 }
 
+#[cfg(not(target_arch = "aarch64"))]
 fn secondary_main() -> ! {
     while !STARTED.load(Ordering::SeqCst) {}
     // Don't print anything between previous line and next line.
