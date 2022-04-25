@@ -66,7 +66,7 @@ impl Scheme for Intc {
     }
 
     fn handle_irq(&self, cause: usize) {
-        info!("intc handle irq, cause {}", cause);
+        trace!("intc handle irq, cause {}", cause);
         self.with_handler(cause, |opt| {
             if let Some(h) = opt.get() {
                 h();

@@ -71,5 +71,4 @@ pub fn secondary_init() {
         .find("riscv-plic")
         .expect("IRQ device 'riscv-plic' not initialized!");
     plic.init_hart();
-    // timer::init();
 }
