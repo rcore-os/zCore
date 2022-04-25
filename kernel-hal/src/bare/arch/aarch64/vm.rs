@@ -64,24 +64,24 @@ fn init_kernel_page_table() -> PagingResult<PageTable> {
     map_range(
         phys_to_virt(UART_BASE),
         phys_to_virt(UART_BASE) + UART_SIZE,
-        MMUFlags::READ | MMUFlags::WRITE,
+        MMUFlags::READ | MMUFlags::WRITE | MMUFlags::DEVICE,
     )?;
     // gic
     map_range(
         phys_to_virt(GICC_BASE),
         phys_to_virt(GICC_BASE) + GICC_SIZE,
-        MMUFlags::READ | MMUFlags::WRITE,
+        MMUFlags::READ | MMUFlags::WRITE | MMUFlags::DEVICE,
     )?;
     map_range(
         phys_to_virt(GICD_BASE),
         phys_to_virt(GICD_BASE) + GICD_SIZE,
-        MMUFlags::READ | MMUFlags::WRITE,
+        MMUFlags::READ | MMUFlags::WRITE | MMUFlags::DEVICE,
     )?;
     // virtio_drivers
     map_range(
         phys_to_virt(VIRTIO_BASE),
         phys_to_virt(VIRTIO_BASE) + VIRTIO_SIZE,
-        MMUFlags::READ | MMUFlags::WRITE,
+        MMUFlags::READ | MMUFlags::WRITE | MMUFlags::DEVICE,
     )?;
     // physical frames
     for r in crate::mem::free_pmem_regions() {

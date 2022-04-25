@@ -20,8 +20,8 @@ ROOTFS_URL := http://dl-cdn.alpinelinux.org/alpine/v3.12/releases/x86_64/$(ROOTF
 RISCV64_ROOTFS_TAR := prebuild.tar.xz
 RISCV64_ROOTFS_URL := https://github.com/rcore-os/libc-test-prebuilt/releases/download/0.1/$(RISCV64_ROOTFS_TAR)
 LIBC_TEST_URL := https://github.com/rcore-os/libc-test.git
-AARCH64_ROOTFS_TAR := aarch64.tar.gz
-AARCH64_ROOTFS_URL := https://github.com/rcore-os/rcore-user/releases/download/v0.1.2/$(AARCH64_ROOTFS_TAR)
+AARCH64_ROOTFS_TAR := alpine-minirootfs-3.15.4-aarch64.tar.gz
+AARCH64_ROOTFS_URL := http://dl-cdn.alpinelinux.org/alpine/v3.15/releases/aarch64/$(AARCH64_ROOTFS_TAR)
 
 CROSS_TOOLCHAIN := http://musl.cc/riscv64-linux-musl-cross.tgz
 PATH := $(PATH):$(PWD)/toolchain/riscv64-linux-musl-cross/bin

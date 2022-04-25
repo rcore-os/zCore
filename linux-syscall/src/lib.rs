@@ -495,8 +495,12 @@ impl Syscall<'_> {
     #[cfg(target_arch = "aarch64")]
     /// syscall specified for aarch64
     async fn aarch64_syscall(&mut self, sys_type: Sys, args: [usize; 6]) -> SysResult {
-        debug!("aarch6464_syscall: {:?}, {:?}", sys_type, args);
-        self.unknown_syscall(sys_type)
+        let [a0, a1, a2, a3, a4, _a5] = args;
+        debug!("aarch6464_syscall: {:?}, args: {:?}", sys_type, args);
+        match sys_type {
+            Sys::CLONE => self.sys_clone(a0, a1, a2.into(), a3, a4.into()),
+            _ => self.unknown_syscall(sys_type)
+        }
     }
 
     #[cfg(target_arch = "x86_64")]
