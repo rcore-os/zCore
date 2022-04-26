@@ -2,7 +2,7 @@
 #![cfg_attr(not(feature = "libos"), no_std)]
 #![feature(lang_items)]
 #![feature(core_intrinsics)]
-// #![deny(warnings)] // comment this on develop
+#![deny(warnings)]
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
@@ -55,6 +55,7 @@ fn primary_main(config: kernel_hal::KernelConfig) {
     }
 }
 
+#[cfg(not(feature = "libos"))]
 fn secondary_main() -> ! {
     while !STARTED.load(Ordering::SeqCst) {}
     // Don't print anything between previous line and next line.
