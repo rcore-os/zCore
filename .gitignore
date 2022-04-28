@@ -8,6 +8,7 @@
 *.log
 Cargo.lock
 
+/toolchain
 /rootfs
 /riscv_rootfs
 /prebuilt/linux/alpine*
