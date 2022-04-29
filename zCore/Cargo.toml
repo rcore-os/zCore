@@ -79,6 +79,7 @@ buddy_system_allocator = "0.8"
 
 # RISC-V
 [target.'cfg(any(target_arch = "riscv32", target_arch = "riscv64"))'.dependencies]
+r0 = "1"
 riscv = { git = "https://github.com/rust-embedded/riscv", rev = "cd31989", features = [
     "inline-asm",
 ] }

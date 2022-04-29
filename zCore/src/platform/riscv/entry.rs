@@ -90,17 +90,20 @@ unsafe extern "C" fn select_stack(hartid: usize) {
 
 /// 主核启动。
 extern "C" fn primary_rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
-    // 清零 bss 段
+    #[cfg(target_arch = "riscv32")]
+    type Word = u32;
+    #[cfg(target_arch = "riscv64")]
+    type Word = u64;
     extern "C" {
-        fn sbss();
-        fn ebss();
+        static mut sbss: Word;
+        static mut ebss: Word;
     }
-    let len = (ebss as usize - sbss as usize) / core::mem::size_of::<usize>();
-    unsafe { core::slice::from_raw_parts_mut(sbss as *mut usize, len) }.fill(0);
+    unsafe { r0::zero_bss(&mut sbss, &mut ebss) };
 
     // 内核的 GiB 页物理页号
     let start_ppn = ((_start as usize) & GIB_MASK) >> KIB_BITS;
     // 内核 GiB 物理页帧在 GiB 页表中的序号
+
     let trampoline_pte_index = (_start as usize) >> GIB_BITS;
     let mut pte_index = (PHYSICAL_MEMORY_OFFSET & SV39_MASK) >> GIB_BITS;
     // 容纳内核的页表项
