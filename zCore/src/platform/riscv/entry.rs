@@ -1,18 +1,9 @@
 use super::consts::PHYSICAL_MEMORY_OFFSET;
-use core::{
-    arch::{asm, global_asm},
-    str::FromStr,
-};
+use core::{arch::asm, str::FromStr};
 use kernel_hal::{
     sbi::{hart_start, send_ipi, shutdown, SBI_SUCCESS},
     KernelConfig,
 };
-
-// 启动页表
-#[repr(align(4096))]
-struct BootPageTable([usize; 512]);
-
-static mut BOOT_PAGE_TABLE: BootPageTable = BootPageTable([0; 512]);
 
 // 各级页面容量
 const KIB_BITS: usize = 12; // 4KiB
@@ -67,18 +58,6 @@ unsafe extern "C" fn _secondary_hart_start(hartid: usize) -> ! {
     )
 }
 
-// 启动栈空间会在 kernel-hal 中重映射，因此必须导出符号
-global_asm!(
-    "\
-    .section .bss.bootstack
-    .align 12
-    .global bootstack
-bootstack:
-    .space 4096 * 16 * 10
-    .global bootstacktop
-bootstacktop:"
-);
-
 /// 根据硬件线程号设置启动栈。
 ///
 /// # Safety
@@ -86,19 +65,25 @@ bootstacktop:"
 /// 裸函数。
 #[naked]
 unsafe extern "C" fn select_stack(hartid: usize) {
-    extern "C" {
-        fn bootstacktop();
-    }
+    const STACK_PAGES_PER_HART: usize = 16;
+    const MAX_HART_NUM: usize = 10;
+
+    const STACK_LEN_PER_HART: usize = (1 << KIB_BITS) * STACK_PAGES_PER_HART;
+    const STACK_LEN_TOTAL: usize = STACK_LEN_PER_HART * MAX_HART_NUM;
+
+    #[link_section = ".bss.bootstack"]
+    static mut BOOT_STACK: [u8; STACK_LEN_TOTAL] = [0u8; STACK_LEN_TOTAL];
+
     asm!(
-        "   mv   t0, a0",
-        "   la   sp, {stack_top}",
-        "   beqz t0, 2f",
-        "   li   t1, -4096 * 16",
+        "   addi t0, a0,  1",
+        "   la   sp, {stack}",
+        "   li   t1, {len_per_hart}",
         "1: add  sp, sp, t1",
         "   addi t0, t0, -1",
         "   bgtz t0, 1b",
         "2: ret",
-        stack_top = sym bootstacktop,
+        stack = sym BOOT_STACK,
+        len_per_hart = const STACK_LEN_PER_HART,
         options(noreturn)
     )
 }
@@ -168,6 +153,12 @@ extern "C" fn secondary_rust_main(hartid: usize) -> ! {
     let _ = unsafe { BOOT_PAGE_TABLE.launch(hartid) };
     crate::secondary_main()
 }
+
+/// 启动页表。
+#[repr(align(4096))]
+struct BootPageTable([usize; 512]);
+
+static mut BOOT_PAGE_TABLE: BootPageTable = BootPageTable([0; 512]);
 
 impl BootPageTable {
     /// 向上跳到距离为 `offset` 的新地址然后继续执行。
