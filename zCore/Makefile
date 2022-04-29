@@ -104,7 +104,7 @@ else
 endif
 
 ifeq ($(PLATFORM), fu740)
-	features += board_fu740 link_user_img
+	features += board_fu740 link-user-img
 endif
 
 ifeq ($(TEST), 1)
