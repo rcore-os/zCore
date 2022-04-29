@@ -2,6 +2,7 @@
 #![cfg_attr(not(feature = "libos"), no_std)]
 #![feature(lang_items)]
 #![feature(core_intrinsics)]
+#![feature(naked_functions, asm_sym)]
 #![deny(warnings)]
 
 use core::sync::atomic::{AtomicBool, Ordering};

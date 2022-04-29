@@ -1,7 +1,10 @@
 [package]
 name = "kernel-hal"
 version = "0.1.0"
-authors = ["Runji Wang <wangrunji0408@163.com>", "Yuekai Jia <equation618@gmail.com>"]
+authors = [
+    "Runji Wang <wangrunji0408@163.com>",
+    "Yuekai Jia <equation618@gmail.com>",
+]
 edition = "2018"
 description = "Kernel HAL interface definations."
 
@@ -10,7 +13,13 @@ description = "Kernel HAL interface definations."
 [features]
 default = ["libos"]
 smp = []
-libos = ["nix", "tempfile", "async-std", "bitmap-allocator", "zcore-drivers/mock"]
+libos = [
+    "nix",
+    "tempfile",
+    "async-std",
+    "bitmap-allocator",
+    "zcore-drivers/mock",
+]
 graphic = ["zcore-drivers/graphic"]
 
 loopback = []
@@ -25,8 +34,19 @@ git-version = "0.3"
 numeric-enum-macro = "0.2"
 lazy_static = { version = "1.4", features = ["spin_no_std"] }
 zcore-drivers = { path = "../drivers", features = ["virtio"] }
-lock = { git = "https://github.com/DeathWish5/kernel-sync" }
-smoltcp = { git = "https://gitee.com/gcyyfun/smoltcp", rev="043eb60", default-features = false, features = ["alloc","log", "async", "medium-ethernet","proto-ipv4", "proto-igmp", "socket-icmp", "socket-udp", "socket-tcp", "socket-raw"] }
+lock = { git = "https://github.com/DeathWish5/kernel-sync", rev = "01b2e70" }
+smoltcp = { git = "https://gitee.com/gcyyfun/smoltcp", rev = "043eb60", default-features = false, features = [
+    "alloc",
+    "log",
+    "async",
+    "medium-ethernet",
+    "proto-ipv4",
+    "proto-igmp",
+    "socket-icmp",
+    "socket-udp",
+    "socket-tcp",
+    "socket-raw",
+] }
 
 # LibOS mode
 [target.'cfg(not(target_os = "none"))'.dependencies]
@@ -53,4 +73,6 @@ x86-smpboot = { git = "https://github.com/rcore-os/x86-smpboot", rev = "1069df3"
 
 # Bare-metal mode on riscv64
 [target.'cfg(all(target_os = "none", target_arch = "riscv64"))'.dependencies]
-riscv = { git = "https://github.com/rust-embedded/riscv", rev = "cd31989", features = ["inline-asm"] }
+riscv = { git = "https://github.com/rust-embedded/riscv", rev = "cd31989", features = [
+    "inline-asm",
+] }
