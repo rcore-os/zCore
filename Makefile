@@ -60,6 +60,9 @@ riscv-rootfs:prebuilt/linux/riscv64/$(RISCV64_ROOTFS_TAR)
 	@tar -xvf $< -C riscv_rootfs --strip-components 1
 	@ln -s busybox riscv_rootfs/bin/ls
 
+linux-user: riscv-rootfs
+	@make -C linux-user zcore-img ARCH=$(ARCH)
+
 libc-test:
 	cd rootfs && git clone $(LIBC_TEST_URL) --depth 1
 	cd rootfs/libc-test && cp config.mak.def config.mak && echo 'CC := musl-gcc' >> config.mak && make -j
@@ -91,7 +94,7 @@ image: $(OUT_IMG)
 	@qemu-img resize $(OUT_IMG) +5M
 
 
-riscv-image: rcore-fs-fuse riscv-rootfs toolchain
+riscv-image: rcore-fs-fuse riscv-rootfs toolchain linux-user
 	@echo building riscv.img
 	@cd riscv_rootfs && mv libc-test libc-test-prebuild
 	@cd riscv_rootfs &&  git clone $(LIBC_TEST_URL) --depth 1

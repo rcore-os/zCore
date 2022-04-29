@@ -248,7 +248,7 @@ kernel:
 	SMP=$(SMP) cargo build $(build_args)
 
 .PHONY: disasm
-disasm:
+disasm: build
 	$(OBJDUMP) -d $(kernel_elf) > kernel.asm
 
 .PHONY: header
