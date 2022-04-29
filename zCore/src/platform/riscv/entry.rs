@@ -10,6 +10,8 @@ use kernel_hal::{
 
 global_asm!(include_str!("boot/entry64.asm"));
 
+#[cfg(feature = "board_fu740")]
+global_asm!(include_str!("boot/boot_fu740.asm"));
 // 启动页表
 #[repr(align(4096))]
 struct BootPageTable([usize; 512]);

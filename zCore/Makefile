@@ -103,6 +103,10 @@ else
   endif
 endif
 
+ifeq ($(PLATFORM), fu740)
+	features += board_fu740 link_user_img
+endif
+
 ifeq ($(TEST), 1)
   features += baremetal-test
   NET := loopback
