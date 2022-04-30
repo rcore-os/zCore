@@ -55,12 +55,12 @@ extern "C" fn primary_rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
         if id != hartid {
             let err_code = hart_start(id, secondary_hart_start as _, 0);
             if err_code != SBI_SUCCESS {
-                panic!("start hart{} failed. error code={}", id, err_code);
+                panic!("start hart{id} failed. error code={err_code}");
             }
             let hart_mask = 1usize << id;
             let err_code = send_ipi(&hart_mask as *const _ as _);
             if err_code != SBI_SUCCESS {
-                panic!("send ipi to hart{} failed. error code={}", id, err_code);
+                panic!("send ipi to hart{id} failed. error code={err_code}");
             }
         }
     }
@@ -68,9 +68,8 @@ extern "C" fn primary_rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
     let sstatus = unsafe { BOOT_PAGE_TABLE.launch(hartid) };
     println!(
         "
-boot hart: zCore rust_main(hartid: {}, device_tree_paddr: {:#x})
-sstatus = {:#x}",
-        hartid, device_tree_paddr, sstatus
+boot hart: zCore rust_main(hartid: {hartid}, device_tree_paddr: {device_tree_paddr:#x})
+sstatus = {sstatus:#x}"
     );
     // 转交控制权
     crate::primary_main(KernelConfig {

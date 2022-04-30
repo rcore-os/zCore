@@ -13,25 +13,24 @@ pub fn set_max_level(level: &str) {
     log::set_max_level(level.parse().unwrap_or(LevelFilter::Warn));
 }
 
+#[inline]
 pub fn print(args: fmt::Arguments) {
     kernel_hal::console::console_write_fmt(args);
 }
 
 #[macro_export]
 macro_rules! print {
-    ($($arg:tt)*) => ({
-        $crate::logging::print(format_args!($($arg)*));
-    });
+    ($($arg:tt)*) => ($crate::logging::print(core::format_args!($($arg)*)));
 }
 
 #[macro_export]
 macro_rules! println {
-    ($fmt:expr) => (print!(concat!($fmt, "\n")));
-    ($fmt:expr, $($arg:tt)*) => (print!(concat!($fmt, "\n"), $($arg)*));
+    () => ($crate::print!("\n"));
+    ($($arg:tt)*) => ($crate::logging::print(core::format_args_nl!($($arg)*)));
 }
 
-#[repr(u8)]
 #[allow(dead_code)]
+#[repr(u8)]
 enum ColorCode {
     Black = 30,
     Red = 31,
@@ -94,21 +93,21 @@ impl Log for SimpleLogger {
         };
         print(with_color!(
             ColorCode::White,
-            "[{} {} {} {}\n",
-            {
+            "[{time} {level} {info} {data}\n",
+            time = {
                 cfg_if! {
                     if #[cfg(feature = "libos")] {
                         use chrono::{TimeZone, Local};
                         Local.timestamp_nanos(now.as_nanos() as _).format("%Y-%m-%d %H:%M:%S%.6f")
                     } else {
                         let micros = now.as_micros();
-                        format_args!("{:>3}.{:06}", micros / 1_000_000, micros % 1_000_000)
+                        format_args!("{s:>3}.{us:06}", s = micros / 1_000_000, us = micros % 1_000_000)
                     }
                 }
             },
-            with_color!(level_color, "{:<5}", level),
-            with_color!(ColorCode::White, "{} {}:{} {}]", cpu_id, pid, tid, target),
-            with_color!(args_color, "{}", record.args()),
+            level = with_color!(level_color, "{level:<5}"),
+            info = with_color!(ColorCode::White, "{cpu_id} {pid}:{tid} {target}]"),
+            data = with_color!(args_color, "{args}", args = record.args()),
         ));
     }
 
