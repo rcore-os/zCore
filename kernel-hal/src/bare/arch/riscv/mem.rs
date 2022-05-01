@@ -23,12 +23,12 @@ pub fn free_pmem_regions() -> Vec<Range<PhysAddr>> {
             }
             if let Some(initrd) = initrd {
                 // no overlap at all
-                if initrd.end <= start || initrd.start >= end {
+                if initrd.end <= start || end <= initrd.start {
                     regions.push(start..end);
                     continue;
                 }
                 // no overlap on the left
-                if initrd.start > start {
+                if start < initrd.start {
                     regions.push(start..align_down(initrd.start));
                 }
                 // no overlap on the right

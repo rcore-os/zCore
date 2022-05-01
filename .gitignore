@@ -13,7 +13,7 @@ Cargo.lock
 /riscv_rootfs
 /prebuilt/linux/alpine*
 /prebuilt/linux/riscv64/prebuild*
-zCore/src/platform/riscv/boot/kernel-vars.ld
+zCore/src/platform/riscv/kernel-vars.ld
 
 .DS_Store
 __pycache__
