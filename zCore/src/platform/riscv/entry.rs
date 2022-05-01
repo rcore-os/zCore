@@ -1,5 +1,6 @@
 use super::{boot_page_table::BootPageTable, consts::PHYSICAL_MEMORY_OFFSET};
-use core::{arch::asm, str::FromStr};
+use core::arch::asm;
+use device_tree::parse_smp;
 use kernel_hal::{
     sbi::{hart_start, send_ipi, shutdown, SBI_SUCCESS},
     KernelConfig,
@@ -48,12 +49,28 @@ static mut BOOT_PAGE_TABLE: BootPageTable = BootPageTable::ZERO;
 extern "C" fn primary_rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
     // 清零 bss 段
     zero_bss();
-    // 初始化启动页表
-    unsafe { BOOT_PAGE_TABLE.init() };
+    // 使能启动页表
+    let sstatus = unsafe {
+        BOOT_PAGE_TABLE.init();
+        BOOT_PAGE_TABLE.launch(hartid)
+    };
+
+    println!();
+    println!("boot page table launched, sstatus = {sstatus:#x}");
+    println!("parse device tree from {device_tree_paddr:#x}");
+    let smp = parse_smp(device_tree_paddr);
+    println!();
+
     // 启动副核
-    for id in 0..usize::from_str(core::env!("SMP")).expect("can't parse SMP as usize.") {
+    println!("smp = {smp}");
+    for id in 0..smp {
         if id != hartid {
-            let err_code = hart_start(id, secondary_hart_start as _, 0);
+            println!("hart{id} is booting...");
+            let err_code = hart_start(
+                id,
+                secondary_hart_start as usize - PHYSICAL_MEMORY_OFFSET,
+                0,
+            );
             if err_code != SBI_SUCCESS {
                 panic!("start hart{id} failed. error code={err_code}");
             }
@@ -62,15 +79,12 @@ extern "C" fn primary_rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
             if err_code != SBI_SUCCESS {
                 panic!("send ipi to hart{id} failed. error code={err_code}");
             }
+        } else {
+            println!("hart{id} is the primary hart.");
         }
     }
-    // 使能启动页表
-    let sstatus = unsafe { BOOT_PAGE_TABLE.launch(hartid) };
-    println!(
-        "
-boot hart: zCore rust_main(hartid: {hartid}, device_tree_paddr: {device_tree_paddr:#x})
-sstatus = {sstatus:#x}"
-    );
+    println!();
+
     // 转交控制权
     crate::primary_main(KernelConfig {
         phys_to_virt_offset: PHYSICAL_MEMORY_OFFSET,
@@ -127,4 +141,87 @@ fn zero_bss() {
         static mut ebss: Word;
     }
     unsafe { r0::zero_bss(&mut sbss, &mut ebss) };
+}
+
+mod device_tree {
+    use super::PHYSICAL_MEMORY_OFFSET;
+    use serde::Deserialize;
+    use serde_device_tree::{
+        buildin::{NodeSeq, Reg, StrSeq},
+        from_raw_mut, Dtb, DtbPtr,
+    };
+
+    #[derive(Deserialize)]
+    pub(super) struct Tree<'a> {
+        compatible: StrSeq<'a>,
+        model: StrSeq<'a>,
+        chosen: Option<Chosen<'a>>,
+        cpus: Cpus<'a>,
+        memory: NodeSeq<'a>,
+    }
+
+    #[derive(Deserialize)]
+    #[serde(rename_all = "kebab-case")]
+    pub(super) struct Chosen<'a> {
+        stdout_path: Option<StrSeq<'a>>,
+    }
+
+    #[derive(Deserialize)]
+    #[serde(rename_all = "kebab-case")]
+    pub(super) struct Cpus<'a> {
+        timebase_frequency: u32,
+        cpu: NodeSeq<'a>,
+    }
+
+    #[allow(dead_code)]
+    #[derive(Deserialize, Debug)]
+    pub(super) struct Cpu<'a> {
+        compatible: StrSeq<'a>,
+        device_type: StrSeq<'a>,
+        status: StrSeq<'a>,
+        #[serde(rename = "riscv,isa")]
+        isa: StrSeq<'a>,
+        #[serde(rename = "mmu-type")]
+        mmu: StrSeq<'a>,
+    }
+
+    #[derive(Deserialize)]
+    pub(super) struct Memory<'a> {
+        device_type: StrSeq<'a>,
+        reg: Reg<'a>,
+    }
+
+    pub(super) fn parse_smp(device_tree_paddr: usize) -> usize {
+        let ptr = DtbPtr::from_raw((device_tree_paddr + PHYSICAL_MEMORY_OFFSET) as _).unwrap();
+        let dtb = Dtb::from(ptr).share();
+        let t: Tree = from_raw_mut(&dtb).unwrap();
+
+        println!("model = {:?}", t.model);
+        println!("compatible = {:?}", t.compatible);
+        if let Some(chosen) = t.chosen {
+            if let Some(stdout_path) = chosen.stdout_path {
+                println!("stdout = {:?}", stdout_path);
+            } else {
+                println!("stdout not chosen");
+            }
+        }
+        println!("cpu timebase frequency = {}", t.cpus.timebase_frequency);
+
+        println!("number of cpu = {}", t.cpus.cpu.len());
+        for cpu in t.cpus.cpu.iter() {
+            println!("cpu@{}: {:?}", cpu.at(), cpu.deserialize::<Cpu>());
+        }
+
+        for item in t.memory.iter() {
+            let mem: Memory = item.deserialize();
+            println!(
+                "memory@{}({:?}): {:#x?}",
+                item.at(),
+                mem.device_type,
+                mem.reg
+            );
+        }
+
+        t.cpus.cpu.len()
+    }
 }
