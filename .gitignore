@@ -12,7 +12,7 @@ Cargo.lock
 /toolchain
 /rootfs
 /riscv_rootfs
-/prebuilt/linux/alpine*
+/prebuilt/linux/**/alpine-minirootfs-*
 /prebuilt/linux/riscv64/prebuild*
 zCore/src/platform/riscv/kernel-vars.ld
 

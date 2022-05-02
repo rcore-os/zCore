@@ -12,8 +12,8 @@
 # doc : cargo doc --open
 # baremetal-test-img : make a x86_64 image for testing
 
-ROOTFS_TAR := alpine-minirootfs-3.12.0-x86_64.tar.gz
-ROOTFS_URL := http://dl-cdn.alpinelinux.org/alpine/v3.12/releases/x86_64/$(ROOTFS_TAR)
+ROOTFS_TAR := alpine-minirootfs-3.15.4-x86_64.tar.gz
+ROOTFS_URL := http://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/x86_64/$(ROOTFS_TAR)
 
 RISCV64_ROOTFS_TAR := prebuild.tar.xz
 RISCV64_ROOTFS_URL := https://github.com/rcore-os/libc-test-prebuilt/releases/download/0.1/$(RISCV64_ROOTFS_TAR)

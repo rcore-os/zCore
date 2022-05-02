@@ -1,5 +1,5 @@
 ﻿[alias]
 xtask = "run --package xtask --"
-init = "xtask init"
+setup = "xtask setup"
 git-proxy = "xtask git-proxy"
 check-style = "xtask check"

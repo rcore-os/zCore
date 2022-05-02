@@ -2,7 +2,12 @@ use clap::{Args, Parser, Subcommand};
 use clap_verbosity_flag::Verbosity;
 use std::{fs::read_to_string, net::Ipv4Addr, process::Command};
 
+mod arch;
 mod dump;
+
+use arch::Arch;
+
+const ALPINE_ROOTFS_VERSION: &str = "3.15.4";
 
 /// Build or test zCore.
 #[derive(Parser)]
@@ -20,7 +25,7 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// First time running.
-    Init,
+    Setup,
     /// Set git proxy.
     ///
     /// Input your proxy port to set the proxy,
@@ -29,7 +34,7 @@ enum Commands {
     /// Update rustup and cargo.
     Update,
     /// Build rootfs
-    Rootfs,
+    Rootfs(Arch),
     /// Build image
     Image,
     /// Check style
@@ -49,7 +54,7 @@ struct Env {
     dump: bool,
 }
 
-#[derive(Args, Debug)]
+#[derive(Args)]
 struct ProxyPort {
     /// Proxy port.
     #[clap(long)]
@@ -64,25 +69,27 @@ fn main() {
     }
 
     match cli.command {
-        Commands::Init => {
+        Commands::Setup => {
             check_git_lfs();
             make_git_lfs();
+            install_fs_fuse();
         }
         Commands::GitProxy(ProxyPort { port }) => {
             if let Some(port) = port {
-                set_proxy(port);
+                set_git_proxy(port);
             } else {
-                unset_proxy();
+                unset_git_proxy();
             }
         }
-        Commands::Update => update(),
-        Commands::Rootfs => {}
+        Commands::Update => update_rustup_cargo(),
+        Commands::Rootfs(arch) => arch.wget_alpine(),
         Commands::Image => {}
-        Commands::Check => check(),
+        Commands::Check => check_style(),
         Commands::Test => {}
     }
 }
 
+/// 检查 LFS 程序是否存在。
 fn check_git_lfs() {
     if let Ok(true) = Command::new("git")
         .arg("lfs")
@@ -95,6 +102,7 @@ fn check_git_lfs() {
     }
 }
 
+/// 初始化 LFS。
 fn make_git_lfs() {
     if !Command::new("git")
         .arg("lfs")
@@ -117,7 +125,8 @@ fn make_git_lfs() {
     }
 }
 
-fn update() {
+/// 更新工具链。
+fn update_rustup_cargo() {
     if !Command::new("rustup")
         .arg("update")
         .status()
@@ -136,7 +145,8 @@ fn update() {
     }
 }
 
-fn set_proxy(port: u16) {
+/// 设置 git 代理。
+fn set_git_proxy(port: u16) {
     let dns = read_to_string("/etc/resolv.conf")
         .unwrap()
         .lines()
@@ -169,7 +179,8 @@ fn set_proxy(port: u16) {
     println!("git proxy = {proxy}");
 }
 
-fn unset_proxy() {
+/// 移除 git 代理。
+fn unset_git_proxy() {
     if !Command::new("git")
         .arg("config")
         .arg("--unset")
@@ -193,7 +204,8 @@ fn unset_proxy() {
     println!("git proxy =");
 }
 
-fn check() {
+/// 风格检查。
+fn check_style() {
     println!("fmt -----------------------------------------");
     #[rustfmt::skip]
     Command::new("cargo").arg("fmt")
@@ -230,6 +242,28 @@ fn check() {
         .arg("-Z").arg("build-std-features=compiler-builtins-mem")
         .current_dir("zCore")
         .env("SMP", "4")
-        .env("PLATFORM", "board-qemu") .status()
+        .env("PLATFORM", "board-qemu")
+        .status()
         .unwrap();
+}
+
+fn install_fs_fuse() {
+    if let Ok(true) = Command::new("rcore-fs-fuse")
+        .arg("--version")
+        .output()
+        .map(|out| out.stdout.starts_with(b"rcore-fs-fuse"))
+    {
+        println!("Rcore-fs-fuse is already installed.");
+        return;
+    }
+    #[rustfmt::skip]
+    let install = Command::new("cargo")
+        .arg("install").arg("rcore-fs-fuse")
+        .arg("--git").arg("https://github.com/rcore-os/rcore-fs")
+        .arg("--rev").arg("1a3246b")
+        .arg("--force")
+        .status();
+    if !install.unwrap().success() {
+        panic!("FAILED: install rcore-fs-fuse");
+    }
 }
