@@ -26,6 +26,8 @@ struct Cli {
 enum Commands {
     /// First time running.
     Setup,
+    /// Install rcore-fs-fuse.
+    FsFuse,
     /// Set git proxy.
     ///
     /// Input your proxy port to set the proxy,
@@ -74,6 +76,9 @@ fn main() {
             make_git_lfs();
             install_fs_fuse();
         }
+        Commands::FsFuse => {
+            install_fs_fuse();
+        }
         Commands::GitProxy(ProxyPort { port }) => {
             if let Some(port) = port {
                 set_git_proxy(port);
@@ -82,7 +87,7 @@ fn main() {
             }
         }
         Commands::Update => update_rustup_cargo(),
-        Commands::Rootfs(arch) => arch.wget_alpine(),
+        Commands::Rootfs(arch) => arch.rootfs(),
         Commands::Image => {}
         Commands::Check => check_style(),
         Commands::Test => {}
@@ -247,6 +252,7 @@ fn check_style() {
         .unwrap();
 }
 
+/// 安装 rcore-fs-fuse。
 fn install_fs_fuse() {
     if let Ok(true) = Command::new("rcore-fs-fuse")
         .arg("--version")

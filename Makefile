@@ -12,18 +12,17 @@
 # doc : cargo doc --open
 # baremetal-test-img : make a x86_64 image for testing
 
-ROOTFS_TAR := alpine-minirootfs-3.15.4-x86_64.tar.gz
-ROOTFS_URL := http://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/x86_64/$(ROOTFS_TAR)
+ROOTFS_TAR := minirootfs.tar.gz
+ROOTFS_URL := http://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/x86_64/alpine-minirootfs-3.15.4-x86_64.tar.gz
 
-RISCV64_ROOTFS_TAR := prebuild.tar.xz
-RISCV64_ROOTFS_URL := https://github.com/rcore-os/libc-test-prebuilt/releases/download/0.1/$(RISCV64_ROOTFS_TAR)
+RISCV64_ROOTFS_TAR := minirootfs.tar.xz
+RISCV64_ROOTFS_URL := https://github.com/rcore-os/libc-test-prebuilt/releases/download/0.1/prebuild.tar.xz
 LIBC_TEST_URL := https://github.com/rcore-os/libc-test.git
 
 CROSS_TOOLCHAIN := http://musl.cc/riscv64-linux-musl-cross.tgz
 PATH := $(PATH):$(PWD)/toolchain/riscv64-linux-musl-cross/bin
 
 ARCH ?= x86_64
-rcore_fs_fuse_revision := 7f5eeac
 OUT_IMG := zCore/$(ARCH).img
 TMP_ROOTFS := /tmp/rootfs
 
@@ -37,28 +36,17 @@ CFLAG := -Wl,--dynamic-linker=/lib/ld-musl-x86_64.so.1
 
 .PHONY: rootfs libc-test rcore-fs-fuse image
 
-prebuilt/linux/$(ROOTFS_TAR):
-	wget $(ROOTFS_URL) -O $@
-
-prebuilt/linux/riscv64/$(RISCV64_ROOTFS_TAR):
-	@wget $(RISCV64_ROOTFS_URL) -O $@
-
 toolchain:
 	@mkdir -p toolchain
 	@cd toolchain && wget $(CROSS_TOOLCHAIN)
 	@cd toolchain && tar xzf riscv64-linux-musl-cross.tgz
 
-rootfs: prebuilt/linux/$(ROOTFS_TAR)
-	rm -rf rootfs && mkdir -p rootfs
-	tar xf $< -C rootfs
-# libc-libos.so (convert syscall to function call) is from https://github.com/rcore-os/musl/tree/rcore
-	cp prebuilt/linux/libc-libos.so rootfs/lib/ld-musl-x86_64.so.1
+rootfs:
+	cargo rootfs x86_64
 	@for VAR in $(BASENAMES); do gcc $(TEST_DIR)$$VAR.c -o $(DEST_DIR)$$VAR $(CFLAG); done
 
-riscv-rootfs:prebuilt/linux/riscv64/$(RISCV64_ROOTFS_TAR)
-	@rm -rf riscv_rootfs && mkdir -p riscv_rootfs
-	@tar -xvf $< -C riscv_rootfs --strip-components 1
-	@ln -s busybox riscv_rootfs/bin/ls
+riscv-rootfs:
+	cargo rootfs riscv64
 
 libc-test:
 	cd rootfs && git clone $(LIBC_TEST_URL) --depth 1
@@ -70,16 +58,13 @@ rt-test:
 	echo x86 gcc build rt-test,now need manual modificy.
 
 rcore-fs-fuse:
-ifneq ($(shell rcore-fs-fuse dir image git-version), $(rcore_fs_fuse_revision))
-	@echo Installing rcore-fs-fuse
-	@cargo install rcore-fs-fuse --git https://github.com/rcore-os/rcore-fs --rev $(rcore_fs_fuse_revision) --force
-endif
+	cargo xtask fs-fuse
 
-$(OUT_IMG): prebuilt/linux/$(ROOTFS_TAR) rcore-fs-fuse
+$(OUT_IMG): rootfs rcore-fs-fuse
 	@echo Generating $(ARCH).img
 	@rm -rf $(TMP_ROOTFS)
 	@mkdir -p $(TMP_ROOTFS)
-	@tar xf $< -C $(TMP_ROOTFS)
+	@tar xf prebuilt/linux/x86_64/$(ROOTFS_TAR) -C $(TMP_ROOTFS)
 	@cp $(TMP_ROOTFS)/lib/ld-musl-x86_64.so.1 rootfs/lib/
 	@rcore-fs-fuse $@ rootfs zip
 # recover rootfs/ld-musl-x86_64.so.1 for zcore usr libos
@@ -90,11 +75,10 @@ image: $(OUT_IMG)
 	@echo Resizing $(ARCH).img
 	@qemu-img resize $(OUT_IMG) +5M
 
-
 riscv-image: rcore-fs-fuse riscv-rootfs toolchain
 	@echo building riscv.img
 	@cd riscv_rootfs && mv libc-test libc-test-prebuild
-	@cd riscv_rootfs &&  git clone $(LIBC_TEST_URL) --depth 1
+	@cd riscv_rootfs && git clone $(LIBC_TEST_URL) --depth 1
 	@cd riscv_rootfs/libc-test && cp config.mak.def config.mak && make ARCH=riscv64 CROSS_COMPILE=riscv64-linux-musl- -j
 	@cd riscv_rootfs && cp libc-test-prebuild/functional/tls_align-static.exe libc-test/src/functional/
 	@rcore-fs-fuse zCore/riscv64.img riscv_rootfs zip
@@ -104,7 +88,8 @@ clean:
 	cargo clean
 	find zCore -maxdepth 1 -name "*.img" -delete
 	rm -rf rootfs
-	rm -rf riscv-rootfs
+	rm -rf riscv_rootfs
+	rm -rf toolchain
 	find zCore/target -type f -name "*.zbi" -delete
 	find zCore/target -type f -name "*.elf" -delete
 	cd linux-syscall/test-oscomp && make clean
@@ -115,11 +100,11 @@ clean:
 doc:
 	cargo doc --open
 
-baremetal-test-img: prebuilt/linux/$(ROOTFS_TAR) rcore-fs-fuse
+baremetal-test-img: rootfs rcore-fs-fuse
 	@echo Generating $(ARCH).img
 	@rm -rf $(TMP_ROOTFS)
 	@mkdir -p $(TMP_ROOTFS)
-	@tar xf $< -C $(TMP_ROOTFS)
+	@tar xf prebuilt/linux/x86_64/$(ROOTFS_TAR) -C $(TMP_ROOTFS)
 	@mkdir -p rootfs/lib
 	@cp $(TMP_ROOTFS)/lib/ld-musl-x86_64.so.1 rootfs/lib/
 	@cd rootfs && rm -rf libc-test && git clone $(LIBC_TEST_URL) --depth 1
