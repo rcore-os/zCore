@@ -47,9 +47,9 @@ jobs:
       - name: Build all packages
         run: cargo build
       - name: Build linux LibOS
-        run: cargo build --features "linux libos"
+        run: cargo build --package zcore --features "linux libos"
       - name: Build zircon LibOS
-        run: cargo build --features "zircon libos"
+        run: cargo build --package zcore --features "zircon libos"
       - name: Build x86_64 bare-metal
         run: cd zCore && make build ARCH=x86_64
       - name: Build riscv64 bare-metal
