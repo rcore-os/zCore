@@ -137,9 +137,5 @@ baremetal-test:
 baremetal-test-rv64:
 	@make -C zCore baremetal-test-rv64 ARCH=riscv64 MODE=release LINUX=1 ROOTPROC=$(ROOTPROC) | tee -a stdout-baremetal-test-rv64 | tee stdout-rv64
 
-
 check:
-	cargo fmt --all -- --check
-	cargo clippy --all-features
-	cd zCore && make clippy ARCH=x86_64
-	cd zCore && make clippy ARCH=riscv64 LINUX=1
+	cargo xtask check

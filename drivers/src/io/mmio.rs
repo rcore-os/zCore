@@ -34,6 +34,7 @@ where
     type Value = T;
 
     fn read(&self) -> T {
+        #[allow(clippy::let_and_return)]
         unsafe {
             let val = core::ptr::read_volatile(&self.0 as *const _);
             #[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))]

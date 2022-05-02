@@ -1,0 +1,17 @@
+[package]
+name = "xtask"
+version = "0.1.0"
+edition = "2021"
+authors = ["YdrMaster <ydrml@hotmail.com>"]
+readme = "README.md"
+build = "build.rs"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+clap = { version = "3.1", features = ["derive"] }
+clap-verbosity-flag = "1.0"
+shadow-rs = "0.11"
+
+[build-dependencies]
+shadow-rs = "0.11"
