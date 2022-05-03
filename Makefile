@@ -13,13 +13,8 @@
 # baremetal-test-img : make a x86_64 image for testing
 
 ROOTFS_TAR := minirootfs.tar.gz
-ROOTFS_URL := http://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/x86_64/alpine-minirootfs-3.15.4-x86_64.tar.gz
-
-RISCV64_ROOTFS_TAR := minirootfs.tar.xz
-RISCV64_ROOTFS_URL := https://github.com/rcore-os/libc-test-prebuilt/releases/download/0.1/prebuild.tar.xz
 LIBC_TEST_URL := https://github.com/rcore-os/libc-test.git
 
-CROSS_TOOLCHAIN := http://musl.cc/riscv64-linux-musl-cross.tgz
 PATH := $(PATH):$(PWD)/toolchain/riscv64-linux-musl-cross/bin
 
 ARCH ?= x86_64
@@ -30,16 +25,11 @@ TMP_ROOTFS := /tmp/rootfs
 TEST_DIR := linux-syscall/test/
 DEST_DIR := rootfs/bin/
 TEST_PATH := $(wildcard $(TEST_DIR)*.c)
-BASENAMES := $(notdir  $(basename $(TEST_PATH)))
+BASENAMES := $(notdir $(basename $(TEST_PATH)))
 
 CFLAG := -Wl,--dynamic-linker=/lib/ld-musl-x86_64.so.1
 
 .PHONY: rootfs libc-test rcore-fs-fuse image
-
-toolchain:
-	@mkdir -p toolchain
-	@cd toolchain && wget $(CROSS_TOOLCHAIN)
-	@cd toolchain && tar xzf riscv64-linux-musl-cross.tgz
 
 rootfs:
 	cargo rootfs x86_64
@@ -75,7 +65,7 @@ image: $(OUT_IMG)
 	@echo Resizing $(ARCH).img
 	@qemu-img resize $(OUT_IMG) +5M
 
-riscv-image: rcore-fs-fuse riscv-rootfs toolchain
+riscv-image: rcore-fs-fuse riscv-rootfs
 	@echo building riscv.img
 	@cd riscv_rootfs && mv libc-test libc-test-prebuild
 	@cd riscv_rootfs && git clone $(LIBC_TEST_URL) --depth 1
