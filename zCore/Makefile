@@ -233,7 +233,7 @@ endif
 
 .PHONY: debugrun
 debugrun: $(qemu_disk)
-	cp .gdbinit_$(MODE) .gdbinit
+	cp .gdbinit_$(ARCH) .gdbinit
 ifeq ($(ARCH), x86_64)
 	$(sed) 's#initramfs=.*#initramfs=\\EFI\\zCore\\$(notdir $(user_img))#' $(esp)/EFI/Boot/rboot.conf
 	$(sed) 's#cmdline=.*#cmdline=$(CMDLINE)#' $(esp)/EFI/Boot/rboot.conf
