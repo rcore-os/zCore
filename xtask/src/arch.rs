@@ -68,6 +68,9 @@ impl Arch {
         }
     }
 
+    /// 构造启动内存文件系统 rootfs。
+    ///
+    /// 将在文件系统中放置必要的库文件，并下载用于交叉编译的工具链。
     pub fn rootfs(&self) {
         self.wget_alpine();
         match self.command {
@@ -76,7 +79,7 @@ impl Arch {
                 const ARCH: &str = "riscv64";
 
                 {
-                    clear(DIR).unwrap();
+                    clear_dir(DIR).unwrap();
                     let tar = detect(&format!("prebuilt/linux/{ARCH}"), "minirootfs").unwrap();
                     #[rustfmt::skip]
                     let res = tar_xf(&tar, Some(DIR))
@@ -102,7 +105,7 @@ impl Arch {
                     let tgz = format!("{dir}.tgz");
 
                     if !Path::new(&tgz).exists() {
-                        clear(DIR).unwrap();
+                        clear_dir(DIR).unwrap();
                         let url = format!("https://musl.cc/{name}.tgz");
                         #[rustfmt::skip]
                         let wget = Command::new("wget")
@@ -113,7 +116,7 @@ impl Arch {
                             panic!("FAILED: wget {url}");
                         }
                     } else {
-                        rm_rf(&dir).unwrap();
+                        rm_r_dir(&dir).unwrap();
                     }
                     if !tar_xf(&tgz, Some(DIR)).status().unwrap().success() {
                         panic!("FAILED: tar xf {tgz}");
@@ -125,7 +128,7 @@ impl Arch {
                 const ARCH: &str = "x86_64";
 
                 {
-                    clear(DIR).unwrap();
+                    clear_dir(DIR).unwrap();
                     let tar = detect(&format!("prebuilt/linux/{ARCH}"), "minirootfs").unwrap();
                     if !tar_xf(&tar, Some(DIR)).status().unwrap().success() {
                         panic!("FAILED: tar xf {tar:?}");
@@ -148,21 +151,36 @@ impl Arch {
 }
 
 /// 递归删除指定目录。
-fn rm_rf(dir: &(impl AsRef<Path> + ?Sized)) -> std::io::Result<()> {
+///
+/// 如果返回 `Ok(())`，`dir` 将不存在。
+///
+/// # Errors
+///
+/// 调用者需要保证 `dir` 是一个目录，或者尚不存在，否则将产生相应的异常。
+fn rm_r_dir(dir: &(impl AsRef<Path> + ?Sized)) -> std::io::Result<()> {
     match remove_dir_all(dir) {
         Err(e) if e.kind() == ErrorKind::NotFound => Ok(()),
         res => res,
     }
 }
 
-/// 清理指定目录。
-fn clear(dir: &(impl AsRef<Path> + ?Sized)) -> std::io::Result<()> {
-    rm_rf(dir)?;
+/// 清理 `dir` 目录。
+///
+/// 如果返回 `Ok(())`，`dir` 将是一个存在的空目录。
+///
+/// # Errors
+///
+/// 调用者需要保证 `dir` 是一个目录，或者尚不存在，否则将产生相应的异常。
+fn clear_dir(dir: &(impl AsRef<Path> + ?Sized)) -> std::io::Result<()> {
+    rm_r_dir(dir)?;
     create_dir_all(dir)?;
     Ok(())
 }
 
-/// 解压指定文件。
+/// 构造将归档文件 `src` 释放到 `dst` 目录下的命令。
+///
+/// 本身不会产生异常，因为命令还没有执行。
+/// 但若 `src` 不是存在的归档文件，或 `dst` 不是存在的目录，将在命令执行时产生对应异常。
 fn tar_xf(src: &impl AsRef<OsStr>, dst: Option<&str>) -> Command {
     let mut cmd = Command::new("tar");
     cmd.arg("xf").arg(src);
@@ -172,7 +190,9 @@ fn tar_xf(src: &impl AsRef<OsStr>, dst: Option<&str>) -> Command {
     cmd
 }
 
-/// 在指定目录根据部分文件名找到指定文件。
+/// 在 `dir` 目录中根据文件名前半部分 `prefix` 找到对应文件。
+///
+/// 不会递归查找。
 fn detect(dir: &impl AsRef<OsStr>, prefix: &str) -> Option<PathBuf> {
     Path::new(dir)
         .read_dir()
