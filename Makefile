@@ -50,29 +50,27 @@ rt-test:
 rcore-fs-fuse:
 	cargo xtask fs-fuse
 
-$(OUT_IMG): rootfs rcore-fs-fuse
-	@echo Generating $(ARCH).img
+image: rootfs rcore-fs-fuse
+	@echo Generating $(OUT_IMG)
 	@rm -rf $(TMP_ROOTFS)
 	@mkdir -p $(TMP_ROOTFS)
 	@tar xf prebuilt/linux/x86_64/$(ROOTFS_TAR) -C $(TMP_ROOTFS)
 	@cp $(TMP_ROOTFS)/lib/ld-musl-x86_64.so.1 rootfs/lib/
-	@rcore-fs-fuse $@ rootfs zip
+	@rcore-fs-fuse $(OUT_IMG) rootfs zip
 # recover rootfs/ld-musl-x86_64.so.1 for zcore usr libos
 # libc-libos.so (convert syscall to function call) is from https://github.com/rcore-os/musl/tree/rcore
 	@cp prebuilt/linux/libc-libos.so rootfs/lib/ld-musl-x86_64.so.1
-
-image: $(OUT_IMG)
-	@echo Resizing $(ARCH).img
+	@echo Resizing $(OUT_IMG)
 	@qemu-img resize $(OUT_IMG) +5M
 
 riscv-image: rcore-fs-fuse riscv-rootfs
-	@echo building riscv.img
+	@echo building $(OUT_IMG)
 	@cd riscv_rootfs && mv libc-test libc-test-prebuild
 	@cd riscv_rootfs && git clone $(LIBC_TEST_URL) --depth 1
 	@cd riscv_rootfs/libc-test && cp config.mak.def config.mak && make ARCH=riscv64 CROSS_COMPILE=riscv64-linux-musl- -j
 	@cd riscv_rootfs && cp libc-test-prebuild/functional/tls_align-static.exe libc-test/src/functional/
-	@rcore-fs-fuse zCore/riscv64.img riscv_rootfs zip
-	@qemu-img resize -f raw zCore/riscv64.img +5M
+	@rcore-fs-fuse $(OUT_IMG) riscv_rootfs zip
+	@qemu-img resize -f raw $(OUT_IMG) +5M
 
 clean:
 	cargo clean
@@ -80,7 +78,7 @@ clean:
 	rm -rf rootfs
 	rm -rf riscv_rootfs
 	rm -rf toolchain
-	find zCore/target -type f -name "*.zbi" -delete
+	find zCore/target -type f -name "*.zbi" -delete`
 	find zCore/target -type f -name "*.elf" -delete
 	cd linux-syscall/test-oscomp && make clean
 	cd linux-syscall/busybox && make clean
@@ -91,7 +89,7 @@ doc:
 	cargo doc --open
 
 baremetal-test-img: rootfs rcore-fs-fuse
-	@echo Generating $(ARCH).img
+	@echo Generating $(OUT_IMG)
 	@rm -rf $(TMP_ROOTFS)
 	@mkdir -p $(TMP_ROOTFS)
 	@tar xf prebuilt/linux/x86_64/$(ROOTFS_TAR) -C $(TMP_ROOTFS)
@@ -103,7 +101,7 @@ baremetal-test-img: rootfs rcore-fs-fuse
 # recover rootfs/ld-musl-x86_64.so.1 for zcore usr libos
 # libc-libos.so (convert syscall to function call) is from https://github.com/rcore-os/musl/tree/rcore
 	@cp prebuilt/linux/libc-libos.so rootfs/lib/ld-musl-x86_64.so.1
-	@echo Resizing $(ARCH).img
+	@echo Resizing $(OUT_IMG)
 	@qemu-img resize $(OUT_IMG) +5M
 
 baremetal-test:
