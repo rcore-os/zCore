@@ -1,3 +1,5 @@
+#![feature(path_file_prefix)]
+
 use clap::{Args, Parser, Subcommand};
 use clap_verbosity_flag::Verbosity;
 use std::{fs::read_to_string, net::Ipv4Addr, path::Path, process::Command};
@@ -28,8 +30,6 @@ struct Cli {
 enum Commands {
     /// First time running.
     Setup,
-    /// Install rcore-fs-fuse.
-    FsFuse,
     /// Clone libc-test.
     LibcTest,
     /// Set git proxy.
@@ -81,9 +81,7 @@ fn main() {
         Commands::Setup => {
             check_git_lfs();
             make_git_lfs();
-            install_fs_fuse();
         }
-        Commands::FsFuse => install_fs_fuse(),
         Commands::LibcTest => clone_libc_test(),
         Commands::GitProxy(ProxyPort { port, global }) => {
             if let Some(port) = port {
@@ -231,28 +229,6 @@ fn check_style() {
         .env("PLATFORM", "board-qemu")
         .status()
         .unwrap();
-}
-
-/// 安装 rcore-fs-fuse。
-fn install_fs_fuse() {
-    if let Ok(true) = Command::new("rcore-fs-fuse")
-        .arg("--version")
-        .output()
-        .map(|out| out.stdout.starts_with(b"rcore-fs-fuse"))
-    {
-        println!("Rcore-fs-fuse is already installed.");
-        return;
-    }
-    #[rustfmt::skip]
-    let install = Command::new("cargo")
-        .arg("install").arg("rcore-fs-fuse")
-        .arg("--git").arg("https://github.com/rcore-os/rcore-fs")
-        .arg("--rev").arg("1a3246b")
-        .arg("--force")
-        .status();
-    if !install.unwrap().success() {
-        panic!("FAILED: install rcore-fs-fuse");
-    }
 }
 
 /// 克隆 libc-test.

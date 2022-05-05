@@ -2,8 +2,7 @@
 use clap::{Args, Subcommand};
 use std::{
     ffi::OsStr,
-    fmt::format,
-    fs::create_dir_all,
+    fs::{create_dir_all, read_dir},
     path::{Path, PathBuf},
     process::Command,
 };
@@ -143,7 +142,28 @@ impl Arch {
                     .unwrap();
                 }
                 {
-                    // 	@for VAR in $(BASENAMES); do gcc $(TEST_DIR)$$VAR.c -o $(DEST_DIR)$$VAR $(CFLAG); done
+                    const TEST_DIR: &str = "linux-syscall/test";
+                    const DEST_DIR: &str = "rootfs/bin/";
+                    // for linux syscall tests
+                    read_dir(TEST_DIR)
+                        .unwrap()
+                        .filter_map(|res| res.ok())
+                        .map(|entry| entry.path())
+                        .filter(|path| path.extension().map_or(false, |ext| ext == OsStr::new("c")))
+                        .for_each(|c| {
+                            let o = format!(
+                                "{DEST_DIR}/{}",
+                                c.file_prefix().and_then(|s| s.to_str()).unwrap()
+                            );
+                            #[rustfmt::skip]
+                            let gcc = Command::new("gcc").arg(&c)
+                                .arg("-o").arg(o)
+                                .arg("-Wl,--dynamic-linker=/lib/ld-musl-x86_64.so.1")
+                                .status().unwrap();
+                            if !gcc.success() {
+                                panic!("FAILED: gcc {c:?}");
+                            }
+                        });
                 }
             }
         }
@@ -151,8 +171,11 @@ impl Arch {
 
     /// 生成镜像
     pub fn image(&self) {
+        install_fs_fuse();
         match self.command {
-            ArchCommands::Riscv64 => todo!(),
+            ArchCommands::Riscv64 => {
+                // TODO 后续
+            }
             ArchCommands::X86_64 => {
                 const ARCH: &str = "x86_64";
                 const TMP_ROOTFS: &str = "/tmp/rootfs";
@@ -188,4 +211,26 @@ fn tar_xf(src: &impl AsRef<OsStr>, dst: Option<&str>) -> Command {
         cmd.arg("-C").arg(dst);
     }
     cmd
+}
+
+/// 安装 rcore-fs-fuse。
+fn install_fs_fuse() {
+    if let Ok(true) = Command::new("rcore-fs-fuse")
+        .arg("--version")
+        .output()
+        .map(|out| out.stdout.starts_with(b"rcore-fs-fuse"))
+    {
+        println!("Rcore-fs-fuse is already installed.");
+        return;
+    }
+    #[rustfmt::skip]
+    let install = Command::new("cargo")
+        .arg("install").arg("rcore-fs-fuse")
+        .arg("--git").arg("https://github.com/rcore-os/rcore-fs")
+        .arg("--rev").arg("1a3246b")
+        .arg("--force")
+        .status();
+    if !install.unwrap().success() {
+        panic!("FAILED: install rcore-fs-fuse");
+    }
 }
