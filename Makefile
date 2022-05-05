@@ -13,7 +13,6 @@
 # baremetal-test-img : make a x86_64 image for testing
 
 ROOTFS_TAR := minirootfs.tar.gz
-LIBC_TEST_URL := https://github.com/rcore-os/libc-test.git
 
 PATH := $(PATH):$(PWD)/toolchain/riscv64-linux-musl-cross/bin
 
@@ -38,8 +37,11 @@ rootfs:
 riscv-rootfs:
 	cargo rootfs riscv64
 
-libc-test:
-	cd rootfs && git clone $(LIBC_TEST_URL) --depth 1
+clone-libc-test:
+	cargo xtask libc-test
+
+libc-test: clone-libc-test
+	cp -r ignored/libc-test rootfs
 	cd rootfs/libc-test && cp config.mak.def config.mak && echo 'CC := musl-gcc' >> config.mak && make -j
 
 rt-test:
@@ -65,7 +67,7 @@ image: rootfs rcore-fs-fuse
 	@echo Resizing $(OUT_IMG)
 	@qemu-img resize $(OUT_IMG) +5M
 
-baremetal-test-img: rootfs rcore-fs-fuse
+baremetal-test-img: rootfs clone-libc-test rcore-fs-fuse
 	@echo Generating $(OUT_IMG)
 	@rm -rf $(TMP_ROOTFS)
 	@mkdir -p $(TMP_ROOTFS)
@@ -73,7 +75,7 @@ baremetal-test-img: rootfs rcore-fs-fuse
 	@mkdir -p rootfs/lib
 	@cp $(TMP_ROOTFS)/lib/ld-musl-x86_64.so.1 rootfs/lib/
 
-	@cd rootfs && rm -rf libc-test && git clone $(LIBC_TEST_URL) --depth 1
+	@rm -rf rootfs/libc-test && cp -r ignored/libc-test rootfs
 	@cd rootfs/libc-test && cp config.mak.def config.mak && echo 'CC := musl-gcc' >> config.mak && make -j
 
 	@rcore-fs-fuse $(OUT_IMG) rootfs zip
@@ -83,10 +85,10 @@ baremetal-test-img: rootfs rcore-fs-fuse
 	@echo Resizing $(OUT_IMG)
 	@qemu-img resize $(OUT_IMG) +5M
 
-riscv-image: rcore-fs-fuse riscv-rootfs
+riscv-image: riscv-rootfs clone-libc-test rcore-fs-fuse
 	@echo Generating $(OUT_IMG)
-	@cd riscv_rootfs && mv libc-test libc-test-prebuild
-	@cd riscv_rootfs && git clone $(LIBC_TEST_URL) --depth 1
+	@mv riscv_rootfs/libc-test riscv_rootfs/libc-test-prebuild
+	@cp -r ignored/libc-test riscv_rootfs
 	@cd riscv_rootfs/libc-test && cp config.mak.def config.mak && make ARCH=riscv64 CROSS_COMPILE=riscv64-linux-musl- -j
 	@cd riscv_rootfs && cp libc-test-prebuild/functional/tls_align-static.exe libc-test/src/functional/
 	@rcore-fs-fuse $(OUT_IMG) riscv_rootfs zip

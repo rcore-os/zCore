@@ -1,9 +1,11 @@
 use clap::{Args, Parser, Subcommand};
 use clap_verbosity_flag::Verbosity;
-use std::{fs::read_to_string, net::Ipv4Addr, process::Command};
+use std::{fs::read_to_string, net::Ipv4Addr, path::Path, process::Command};
 
 mod arch;
+mod dir;
 mod dump;
+mod git;
 
 use arch::Arch;
 
@@ -28,6 +30,8 @@ enum Commands {
     Setup,
     /// Install rcore-fs-fuse.
     FsFuse,
+    /// Clone libc-test.
+    LibcTest,
     /// Set git proxy.
     ///
     /// Input your proxy port to set the proxy,
@@ -79,9 +83,8 @@ fn main() {
             make_git_lfs();
             install_fs_fuse();
         }
-        Commands::FsFuse => {
-            install_fs_fuse();
-        }
+        Commands::FsFuse => install_fs_fuse(),
+        Commands::LibcTest => clone_libc_test(),
         Commands::GitProxy(ProxyPort { port, global }) => {
             if let Some(port) = port {
                 set_git_proxy(global, port);
@@ -99,8 +102,7 @@ fn main() {
 
 /// 检查 LFS 程序是否存在。
 fn check_git_lfs() {
-    if let Ok(true) = Command::new("git")
-        .arg("lfs")
+    if let Ok(true) = git::lfs()
         .arg("version")
         .output()
         .map(|out| out.stdout.starts_with(b"git-lfs/"))
@@ -112,23 +114,11 @@ fn check_git_lfs() {
 
 /// 初始化 LFS。
 fn make_git_lfs() {
-    if !Command::new("git")
-        .arg("lfs")
-        .arg("install")
-        .status()
-        .unwrap()
-        .success()
-    {
+    if !git::lfs().arg("install").status().unwrap().success() {
         panic!("FAILED: git lfs install")
     }
 
-    if !Command::new("git")
-        .arg("lfs")
-        .arg("pull")
-        .status()
-        .unwrap()
-        .success()
-    {
+    if !git::lfs().arg("pull").status().unwrap().success() {
         panic!("FAILED: git lfs pull")
     }
 }
@@ -153,15 +143,6 @@ fn update_rustup_cargo() {
     }
 }
 
-fn git_config(global: bool) -> Command {
-    let mut cmd = Command::new("git");
-    cmd.arg("config");
-    if global {
-        cmd.arg("--global");
-    };
-    cmd
-}
-
 /// 设置 git 代理。
 fn set_git_proxy(global: bool, port: u16) {
     let dns = read_to_string("/etc/resolv.conf")
@@ -174,14 +155,14 @@ fn set_git_proxy(global: bool, port: u16) {
         .expect("FAILED: detect DNS");
     let proxy = format!("socks5://{dns}:{port}");
     #[rustfmt::skip]
-    let git = git_config(global)
+    let git = git::config(global)
         .arg("http.proxy").arg(&proxy)
         .status().unwrap();
     if !git.success() {
         panic!("FAILED: git config --unset http.proxy");
     }
     #[rustfmt::skip]
-    let git = git_config(global)
+    let git = git::config(global)
         .arg("https.proxy").arg(&proxy)
         .status().unwrap();
     if !git.success() {
@@ -193,14 +174,14 @@ fn set_git_proxy(global: bool, port: u16) {
 /// 移除 git 代理。
 fn unset_git_proxy(global: bool) {
     #[rustfmt::skip]
-    let git = git_config(global)
+    let git = git::config(global)
         .arg("--unset").arg("http.proxy")
         .status().unwrap();
     if !git.success() {
         panic!("FAILED: git config --unset http.proxy");
     }
     #[rustfmt::skip]
-    let git = git_config(global)
+    let git = git::config(global)
         .arg("--unset").arg("https.proxy")
         .status().unwrap();
     if !git.success() {
@@ -271,5 +252,24 @@ fn install_fs_fuse() {
         .status();
     if !install.unwrap().success() {
         panic!("FAILED: install rcore-fs-fuse");
+    }
+}
+
+/// 克隆 libc-test.
+fn clone_libc_test() {
+    const DIR: &str = "ignored/libc-test";
+    const URL: &str = "https://github.com/rcore-os/libc-test.git";
+
+    if Path::new(DIR).is_dir() {
+        let pull = git::pull().current_dir(DIR).status();
+        if !pull.unwrap().success() {
+            panic!("FAILED: git pull");
+        }
+    } else {
+        dir::clear(DIR).unwrap();
+        let clone = git::clone(URL, Some(DIR)).status();
+        if !clone.unwrap().success() {
+            panic!("FAILED: git clone {URL}");
+        }
     }
 }

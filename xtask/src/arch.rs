@@ -1,9 +1,8 @@
-﻿use super::ALPINE_ROOTFS_VERSION;
+﻿use super::{dir, ALPINE_ROOTFS_VERSION};
 use clap::{Args, Subcommand};
 use std::{
     ffi::OsStr,
-    fs::{create_dir_all, remove_dir_all},
-    io::ErrorKind,
+    fs::create_dir_all,
     path::{Path, PathBuf},
     process::Command,
 };
@@ -79,8 +78,8 @@ impl Arch {
                 const ARCH: &str = "riscv64";
 
                 {
-                    clear_dir(DIR).unwrap();
-                    let tar = detect(&format!("prebuilt/linux/{ARCH}"), "minirootfs").unwrap();
+                    dir::clear(DIR).unwrap();
+                    let tar = dir::detect(&format!("prebuilt/linux/{ARCH}"), "minirootfs").unwrap();
                     #[rustfmt::skip]
                     let res = tar_xf(&tar, Some(DIR))
                         .arg("--strip-components").arg("1")
@@ -105,7 +104,7 @@ impl Arch {
                     let tgz = format!("{dir}.tgz");
 
                     if !Path::new(&tgz).exists() {
-                        clear_dir(DIR).unwrap();
+                        dir::clear(DIR).unwrap();
                         let url = format!("https://musl.cc/{name}.tgz");
                         #[rustfmt::skip]
                         let wget = Command::new("wget")
@@ -116,7 +115,7 @@ impl Arch {
                             panic!("FAILED: wget {url}");
                         }
                     } else {
-                        rm_r_dir(&dir).unwrap();
+                        dir::rm(&dir).unwrap();
                     }
                     if !tar_xf(&tgz, Some(DIR)).status().unwrap().success() {
                         panic!("FAILED: tar xf {tgz}");
@@ -128,8 +127,8 @@ impl Arch {
                 const ARCH: &str = "x86_64";
 
                 {
-                    clear_dir(DIR).unwrap();
-                    let tar = detect(&format!("prebuilt/linux/{ARCH}"), "minirootfs").unwrap();
+                    dir::clear(DIR).unwrap();
+                    let tar = dir::detect(&format!("prebuilt/linux/{ARCH}"), "minirootfs").unwrap();
                     if !tar_xf(&tar, Some(DIR)).status().unwrap().success() {
                         panic!("FAILED: tar xf {tar:?}");
                     }
@@ -150,33 +149,6 @@ impl Arch {
     }
 }
 
-/// 递归删除指定目录。
-///
-/// 如果返回 `Ok(())`，`dir` 将不存在。
-///
-/// # Errors
-///
-/// 调用者需要保证 `dir` 是一个目录，或者尚不存在，否则将产生相应的异常。
-fn rm_r_dir(dir: &(impl AsRef<Path> + ?Sized)) -> std::io::Result<()> {
-    match remove_dir_all(dir) {
-        Err(e) if e.kind() == ErrorKind::NotFound => Ok(()),
-        res => res,
-    }
-}
-
-/// 清理 `dir` 目录。
-///
-/// 如果返回 `Ok(())`，`dir` 将是一个存在的空目录。
-///
-/// # Errors
-///
-/// 调用者需要保证 `dir` 是一个目录，或者尚不存在，否则将产生相应的异常。
-fn clear_dir(dir: &(impl AsRef<Path> + ?Sized)) -> std::io::Result<()> {
-    rm_r_dir(dir)?;
-    create_dir_all(dir)?;
-    Ok(())
-}
-
 /// 构造将归档文件 `src` 释放到 `dst` 目录下的命令。
 ///
 /// 本身不会产生异常，因为命令还没有执行。
@@ -188,21 +160,4 @@ fn tar_xf(src: &impl AsRef<OsStr>, dst: Option<&str>) -> Command {
         cmd.arg("-C").arg(dst);
     }
     cmd
-}
-
-/// 在 `dir` 目录中根据文件名前半部分 `prefix` 找到对应文件。
-///
-/// 不会递归查找。
-fn detect(dir: &impl AsRef<OsStr>, prefix: &str) -> Option<PathBuf> {
-    Path::new(dir)
-        .read_dir()
-        .ok()?
-        .filter_map(|entry| entry.ok())
-        .filter(|entry| entry.file_type().map_or(false, |ty| ty.is_file()))
-        .map(|entry| entry.path())
-        .find(|path| {
-            path.file_name()
-                .and_then(|s| s.to_str())
-                .map_or(false, |s| s.starts_with(prefix))
-        })
 }

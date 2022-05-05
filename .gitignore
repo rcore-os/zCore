@@ -10,6 +10,7 @@
 Cargo.lock
 
 /toolchain
+/ignored
 /rootfs
 /riscv_rootfs
 /prebuilt/linux/**/minirootfs.tar.*
