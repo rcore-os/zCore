@@ -61,6 +61,9 @@ struct ProxyPort {
     /// Proxy port.
     #[clap(long)]
     port: Option<u16>,
+    /// Global config.
+    #[clap(short, long)]
+    global: bool,
 }
 
 fn main() {
@@ -79,11 +82,11 @@ fn main() {
         Commands::FsFuse => {
             install_fs_fuse();
         }
-        Commands::GitProxy(ProxyPort { port }) => {
+        Commands::GitProxy(ProxyPort { port, global }) => {
             if let Some(port) = port {
-                set_git_proxy(port);
+                set_git_proxy(global, port);
             } else {
-                unset_git_proxy();
+                unset_git_proxy(global);
             }
         }
         Commands::Update => update_rustup_cargo(),
@@ -150,8 +153,17 @@ fn update_rustup_cargo() {
     }
 }
 
+fn git_config(global: bool) -> Command {
+    let mut cmd = Command::new("git");
+    cmd.arg("config");
+    if global {
+        cmd.arg("--global");
+    };
+    cmd
+}
+
 /// 设置 git 代理。
-fn set_git_proxy(port: u16) {
+fn set_git_proxy(global: bool, port: u16) {
     let dns = read_to_string("/etc/resolv.conf")
         .unwrap()
         .lines()
@@ -161,49 +173,37 @@ fn set_git_proxy(port: u16) {
         })
         .expect("FAILED: detect DNS");
     let proxy = format!("socks5://{dns}:{port}");
-    if !Command::new("git")
-        .arg("config")
-        .arg("http.proxy")
-        .arg(&proxy)
-        .status()
-        .unwrap()
-        .success()
-    {
+    #[rustfmt::skip]
+    let git = git_config(global)
+        .arg("http.proxy").arg(&proxy)
+        .status().unwrap();
+    if !git.success() {
         panic!("FAILED: git config --unset http.proxy");
     }
-    if !Command::new("git")
-        .arg("config")
-        .arg("https.proxy")
-        .arg(&proxy)
-        .status()
-        .unwrap()
-        .success()
-    {
+    #[rustfmt::skip]
+    let git = git_config(global)
+        .arg("https.proxy").arg(&proxy)
+        .status().unwrap();
+    if !git.success() {
         panic!("FAILED: git config --unset https.proxy");
     }
     println!("git proxy = {proxy}");
 }
 
 /// 移除 git 代理。
-fn unset_git_proxy() {
-    if !Command::new("git")
-        .arg("config")
-        .arg("--unset")
-        .arg("http.proxy")
-        .status()
-        .unwrap()
-        .success()
-    {
+fn unset_git_proxy(global: bool) {
+    #[rustfmt::skip]
+    let git = git_config(global)
+        .arg("--unset").arg("http.proxy")
+        .status().unwrap();
+    if !git.success() {
         panic!("FAILED: git config --unset http.proxy");
     }
-    if !Command::new("git")
-        .arg("config")
-        .arg("--unset")
-        .arg("https.proxy")
-        .status()
-        .unwrap()
-        .success()
-    {
+    #[rustfmt::skip]
+    let git = git_config(global)
+        .arg("--unset").arg("https.proxy")
+        .status().unwrap();
+    if !git.success() {
         panic!("FAILED: git config --unset https.proxy");
     }
     println!("git proxy =");
