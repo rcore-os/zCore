@@ -167,7 +167,7 @@ jobs:
           if [ "${{ matrix.arch }}" = "x86_64" ]; then
             make baremetal-test-img
           elif [ "${{ matrix.arch }}" = "riscv64" ]; then
-            make riscv-image
+            ARCH=riscv64 make riscv-image
           fi
       - name: Run fast tests
         if: github.event_name != 'schedule'
@@ -220,7 +220,7 @@ jobs:
           if [ "${{ matrix.arch }}" = "x86_64" ]; then
             make rootfs && make image
           elif [ "${{ matrix.arch }}" = "riscv64" ]; then
-            make riscv-image
+            ARCH=riscv64 make riscv-image
           fi
       - name: Run fast tests
         if: github.event_name != 'schedule'
