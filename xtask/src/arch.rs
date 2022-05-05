@@ -2,6 +2,7 @@
 use clap::{Args, Subcommand};
 use std::{
     ffi::OsStr,
+    fmt::format,
     fs::create_dir_all,
     path::{Path, PathBuf},
     process::Command,
@@ -144,6 +145,33 @@ impl Arch {
                 {
                     // 	@for VAR in $(BASENAMES); do gcc $(TEST_DIR)$$VAR.c -o $(DEST_DIR)$$VAR $(CFLAG); done
                 }
+            }
+        }
+    }
+
+    /// 生成镜像
+    pub fn image(&self) {
+        match self.command {
+            ArchCommands::Riscv64 => todo!(),
+            ArchCommands::X86_64 => {
+                const ARCH: &str = "x86_64";
+                const TMP_ROOTFS: &str = "/tmp/rootfs";
+                const ROOTFS_LIB: &str = "rootfs/lib";
+
+                // ld-musl-x86_64.so.1 替换为预编译中的版本
+                dir::clear(TMP_ROOTFS).unwrap();
+                let tar = dir::detect(&format!("prebuilt/linux/{ARCH}"), "minirootfs").unwrap();
+                if !tar_xf(&tar, Some(TMP_ROOTFS)).status().unwrap().success() {
+                    panic!("FAILED: tar xf {tar:?}");
+                }
+                dir::clear(ROOTFS_LIB).unwrap();
+                std::fs::copy(
+                    format!("{TMP_ROOTFS}/lib/ld-musl-x86_64.so.1"),
+                    format!("{ROOTFS_LIB}/ld-musl-x86_64.so.1"),
+                )
+                .unwrap();
+
+                // TODO 后续
             }
         }
     }

@@ -31,11 +31,11 @@ CFLAG := -Wl,--dynamic-linker=/lib/ld-musl-x86_64.so.1
 .PHONY: rootfs libc-test rcore-fs-fuse image
 
 rootfs:
-	cargo rootfs x86_64
+	cargo rootfs $(ARCH)
 	@for VAR in $(BASENAMES); do gcc $(TEST_DIR)$$VAR.c -o $(DEST_DIR)$$VAR $(CFLAG); done
 
 riscv-rootfs:
-	cargo rootfs riscv64
+	cargo rootfs $(ARCH)
 
 clone-libc-test:
 	cargo xtask libc-test
@@ -54,11 +54,7 @@ rcore-fs-fuse:
 
 image: rootfs rcore-fs-fuse
 	@echo Generating $(OUT_IMG)
-	@rm -rf $(TMP_ROOTFS)
-	@mkdir -p $(TMP_ROOTFS)
-	@tar xf prebuilt/linux/x86_64/$(ROOTFS_TAR) -C $(TMP_ROOTFS)
-	@mkdir -p rootfs/lib
-	@cp $(TMP_ROOTFS)/lib/ld-musl-x86_64.so.1 rootfs/lib/
+	cargo image $(ARCH)
 
 	@rcore-fs-fuse $(OUT_IMG) rootfs zip
 # recover rootfs/ld-musl-x86_64.so.1 for zcore usr libos
@@ -67,13 +63,9 @@ image: rootfs rcore-fs-fuse
 	@echo Resizing $(OUT_IMG)
 	@qemu-img resize $(OUT_IMG) +5M
 
-baremetal-test-img: rootfs clone-libc-test rcore-fs-fuse
+baremetal-test-img: clone-libc-test rootfs rcore-fs-fuse
 	@echo Generating $(OUT_IMG)
-	@rm -rf $(TMP_ROOTFS)
-	@mkdir -p $(TMP_ROOTFS)
-	@tar xf prebuilt/linux/x86_64/$(ROOTFS_TAR) -C $(TMP_ROOTFS)
-	@mkdir -p rootfs/lib
-	@cp $(TMP_ROOTFS)/lib/ld-musl-x86_64.so.1 rootfs/lib/
+	cargo image $(ARCH)
 
 	@rm -rf rootfs/libc-test && cp -r ignored/libc-test rootfs
 	@cd rootfs/libc-test && cp config.mak.def config.mak && echo 'CC := musl-gcc' >> config.mak && make -j

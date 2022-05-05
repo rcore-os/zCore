@@ -42,7 +42,7 @@ enum Commands {
     /// Build rootfs
     Rootfs(Arch),
     /// Build image
-    Image,
+    Image(Arch),
     /// Check style
     Check,
     /// Unit test
@@ -94,7 +94,7 @@ fn main() {
         }
         Commands::Update => update_rustup_cargo(),
         Commands::Rootfs(arch) => arch.rootfs(),
-        Commands::Image => {}
+        Commands::Image(arch) => arch.image(),
         Commands::Check => check_style(),
         Commands::Test => {}
     }
