@@ -28,7 +28,7 @@ BASENAMES := $(notdir $(basename $(TEST_PATH)))
 
 CFLAG := -Wl,--dynamic-linker=/lib/ld-musl-x86_64.so.1
 
-.PHONY: rootfs libc-test rcore-fs-fuse image
+.PHONY: rootfs riscv-rootfs clone-libc-test libc-test rt-test rcore-fs-fuse image baremetal-test-img riscv-image check doc clean
 
 rootfs:
 	cargo rootfs $(ARCH)
@@ -40,9 +40,9 @@ riscv-rootfs:
 clone-libc-test:
 	cargo xtask libc-test
 
-libc-test: clone-libc-test
-	cp -r ignored/libc-test rootfs
-	cd rootfs/libc-test && cp config.mak.def config.mak && echo 'CC := musl-gcc' >> config.mak && make -j
+libc-test: clone-libc-test rootfs
+	@rm -rf rootfs/libc-test && cp -r ignored/libc-test rootfs
+	@cd rootfs/libc-test && cp config.mak.def config.mak && echo 'CC := musl-gcc' >> config.mak && make -j
 
 rt-test:
 	cd rootfs && git clone https://kernel.googlesource.com/pub/scm/linux/kernel/git/clrkwllms/rt-tests --depth 1
@@ -63,19 +63,7 @@ image: rootfs rcore-fs-fuse
 	@echo Resizing $(OUT_IMG)
 	@qemu-img resize $(OUT_IMG) +5M
 
-baremetal-test-img: clone-libc-test rootfs rcore-fs-fuse
-	@echo Generating $(OUT_IMG)
-	cargo image $(ARCH)
-
-	@rm -rf rootfs/libc-test && cp -r ignored/libc-test rootfs
-	@cd rootfs/libc-test && cp config.mak.def config.mak && echo 'CC := musl-gcc' >> config.mak && make -j
-
-	@rcore-fs-fuse $(OUT_IMG) rootfs zip
-# recover rootfs/ld-musl-x86_64.so.1 for zcore usr libos
-# libc-libos.so (convert syscall to function call) is from https://github.com/rcore-os/musl/tree/rcore
-	@cp prebuilt/linux/libc-libos.so rootfs/lib/ld-musl-x86_64.so.1
-	@echo Resizing $(OUT_IMG)
-	@qemu-img resize $(OUT_IMG) +5M
+baremetal-test-img: libc-test image
 
 riscv-image: riscv-rootfs clone-libc-test rcore-fs-fuse
 	@echo Generating $(OUT_IMG)
