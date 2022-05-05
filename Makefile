@@ -24,7 +24,8 @@ clone-libc-test:
 	cargo xtask libc-test
 
 libc-test: clone-libc-test rootfs
-	@rm -rf rootfs/libc-test && cp -r ignored/libc-test rootfs
+	@rm -rf rootfs/libc-test
+	@cp -r ignored/libc-test rootfs
 	@cd rootfs/libc-test && cp config.mak.def config.mak && echo 'CC := musl-gcc' >> config.mak && make -j
 
 image: rootfs
@@ -46,8 +47,9 @@ riscv-image: rootfs clone-libc-test
 
 	@mv riscv_rootfs/libc-test riscv_rootfs/libc-test-prebuild
 	@cp -r ignored/libc-test riscv_rootfs
-	@cd riscv_rootfs/libc-test && cp config.mak.def config.mak && make ARCH=riscv64 CROSS_COMPILE=riscv64-linux-musl- -j
-	@cd riscv_rootfs && cp libc-test-prebuild/functional/tls_align-static.exe libc-test/src/functional/
+	@cd riscv_rootfs/libc-test && cp config.mak.def config.mak && make ARCH=$(ARCH) CROSS_COMPILE=$(ARCH)-linux-musl- -j
+	@cp riscv_rootfs/libc-test-prebuild/functional/tls_align-static.exe riscv_rootfs/libc-test/src/functional/
+	@rm -rf riscv_rootfs/libc-test-prebuild
 
 	@rcore-fs-fuse $(OUT_IMG) riscv_rootfs zip
 	@echo Resizing $(OUT_IMG)
