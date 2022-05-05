@@ -7,8 +7,8 @@ use log::*;
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     println!("\n\npanic cpu={}", kernel_hal::cpu::cpu_id());
-    println!("\n\n{}", info);
-    error!("\n\n{}", info);
+    println!("\n\n{info}");
+    error!("\n\n{info}");
 
     if cfg!(feature = "baremetal-test") {
         kernel_hal::cpu::reset();

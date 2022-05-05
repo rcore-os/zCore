@@ -64,7 +64,7 @@ zircon-object = { path = "../zircon-object" }
 linux-object = { path = "../linux-object", optional = true }
 rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "1a3246b", optional = true }
 rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "1a3246b", optional = true }
-lock = { git = "https://github.com/DeathWish5/kernel-sync" }
+lock = { git = "https://github.com/DeathWish5/kernel-sync", rev = "01b2e70" }
 executor = { git = "https://github.com/DeathWish5/PreemptiveScheduler", rev = "56ac2f6" }
 
 # LibOS mode
@@ -79,6 +79,7 @@ buddy_system_allocator = "0.8"
 
 # RISC-V
 [target.'cfg(any(target_arch = "riscv32", target_arch = "riscv64"))'.dependencies]
+r0 = "1"
 riscv = { git = "https://github.com/rust-embedded/riscv", rev = "cd31989", features = [
     "inline-asm",
 ] }

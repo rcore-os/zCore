@@ -19,8 +19,11 @@ kernel-hal = { path = "../kernel-hal", default-features = false }
 rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "1a3246b" }
 lazy_static = { version = "1.4", features = ["spin_no_std"] }
 bitvec = { version = "0.22", default-features = false, features = ["alloc"] }
-lock = { git = "https://github.com/DeathWish5/kernel-sync" }
-futures = { version = "0.3", default-features = false, features = ["alloc", "async-await"] }
+lock = { git = "https://github.com/DeathWish5/kernel-sync", rev = "01b2e70" }
+futures = { version = "0.3", default-features = false, features = [
+    "alloc",
+    "async-await",
+] }
 
 [dev-dependencies]
 async-std = { version = "1.10", features = ["unstable"] }
