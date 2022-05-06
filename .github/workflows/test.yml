@@ -90,7 +90,7 @@ jobs:
           key: qemu-7.0.0-${{ matrix.arch }}
       - name: Install QEMU
         run: |
-          if [ ${{ steps.cache-qemu.outputs.cache-hit }} != 'true' ]; then
+          if [ "${{ steps.cache-qemu.outputs.cache-hit }}" != "true" ]; then
             wget https://download.qemu.org/qemu-7.0.0.tar.xz
             tar -xf qemu-7.0.0.tar.xz
             cd qemu-7.0.0
@@ -168,7 +168,7 @@ jobs:
           key: qemu-7.0.0-${{ matrix.arch }}
       - name: Install QEMU
         run: |
-          if [ ${{ steps.cache-qemu.outputs.cache-hit }} != 'true' ]; then
+          if [ "${{ steps.cache-qemu.outputs.cache-hit }}" != "true" ]; then
             wget https://download.qemu.org/qemu-7.0.0.tar.xz
             tar -xf qemu-7.0.0.tar.xz
             cd qemu-7.0.0
@@ -183,7 +183,12 @@ jobs:
           sudo make install
           qemu-system-${{ matrix.arch }} --version
       - name: Prepare rootfs
-        run: ARCH=${{ matrix.arch }} make test-image
+        run: |
+          if [ "${{ matrix.arch }}" = "x86_64" ]; then
+            make test-image
+          elif [ "${{ matrix.arch }}" = "riscv64" ]; then
+            ARCH=riscv64 make test-image
+          fi
       - name: Run fast tests
         if: github.event_name != 'schedule'
         run: cd tests && python3 linux_libc_test.py --arch ${{ matrix.arch }} --fast
@@ -226,7 +231,7 @@ jobs:
           key: qemu-7.0.0-${{ matrix.arch }}
       - name: Install QEMU
         run: |
-          if [ ${{ steps.cache-qemu.outputs.cache-hit }} != 'true' ]; then
+          if [ "${{ steps.cache-qemu.outputs.cache-hit }}" != "true" ]; then
             wget https://download.qemu.org/qemu-7.0.0.tar.xz
             tar -xf qemu-7.0.0.tar.xz
             cd qemu-7.0.0
@@ -241,7 +246,12 @@ jobs:
           sudo make install
           qemu-system-${{ matrix.arch }} --version
       - name: Prepare rootfs
-        run: ARCH=${{ matrix.arch }} make image
+        run: |
+          if [ "${{ matrix.arch }}" = "x86_64" ]; then
+            make image
+          elif [ "${{ matrix.arch }}" = "riscv64" ]; then
+            ARCH=riscv64 make image
+          fi
       - name: Run fast tests
         if: github.event_name != 'schedule'
         run: cd tests && python3 linux_other_test.py --arch ${{ matrix.arch }} --fast
