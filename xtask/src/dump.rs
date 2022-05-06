@@ -1,5 +1,6 @@
 ﻿shadow_rs::shadow!(build);
 
+/// 打印仓库和编译信息。
 pub fn dump_config() {
     println!(
         "\

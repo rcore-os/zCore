@@ -1,4 +1,4 @@
-﻿use super::{dir, git, ALPINE_ROOTFS_VERSION};
+﻿use super::{dir, git, ALPINE_ROOTFS_VERSION, ALPINE_WEBSITE};
 use clap::{Args, Subcommand};
 use dircpy::copy_dir;
 use std::{
@@ -41,8 +41,6 @@ impl Arch {
             ArchCommands::X86_64 => {
                 const ARCH: &str = "x86_64";
                 const FILE_NAME: &str = "minirootfs.tar.gz";
-                const WEBSITE: &str =
-                    "https://dl-cdn.alpinelinux.org/alpine/latest-stable/releases";
 
                 let local_path = PathBuf::from(format!("prebuilt/linux/{ARCH}/{FILE_NAME}"));
                 if local_path.exists() {
@@ -51,7 +49,7 @@ impl Arch {
                 (
                     local_path,
                     format!(
-                        "{WEBSITE}/{ARCH}/alpine-minirootfs-{ALPINE_ROOTFS_VERSION}-{ARCH}.tar.gz"
+                        "{ALPINE_WEBSITE}/{ARCH}/alpine-minirootfs-{ALPINE_ROOTFS_VERSION}-{ARCH}.tar.gz"
                     ),
                 )
             }

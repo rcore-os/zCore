@@ -1,4 +1,6 @@
-﻿use std::{ffi::OsStr, process::Command};
+﻿//! 操作 git。
+
+use std::{ffi::OsStr, process::Command};
 
 fn git(sub: &(impl AsRef<OsStr> + ?Sized)) -> Command {
     let mut cmd = Command::new("git");

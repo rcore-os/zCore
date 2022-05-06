@@ -1,4 +1,6 @@
-﻿use std::path::{Path, PathBuf};
+﻿//! 操作目录。
+
+use std::path::{Path, PathBuf};
 
 /// 删除指定路径。
 ///

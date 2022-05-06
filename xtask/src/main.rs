@@ -11,7 +11,8 @@ mod git;
 
 use arch::Arch;
 
-const ALPINE_ROOTFS_VERSION: &str = "3.15.4";
+const ALPINE_WEBSITE: &str = "https://dl-cdn.alpinelinux.org/alpine/v3.12/releases";
+const ALPINE_ROOTFS_VERSION: &str = "3.12.0";
 
 /// Build or test zCore.
 #[derive(Parser)]
@@ -28,23 +29,26 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// First time running.
-    Setup,
     /// Set git proxy.
     ///
     /// Input your proxy port to set the proxy,
     /// or leave blank to unset it.
     GitProxy(ProxyPort),
+
+    /// First time running.
+    Setup,
     /// Update rustup and cargo.
     UpdateAll,
     /// Check style
     CheckStyle,
+
     /// Build rootfs
     Rootfs(Arch),
     /// Put libc-test.
     LibcTest(Arch),
     /// Build image
     Image(Arch),
+
     /// Unit test
     Test,
 }
@@ -78,10 +82,6 @@ fn main() {
     }
 
     match cli.command {
-        Commands::Setup => {
-            make_git_lfs();
-            git_submodule_update(true);
-        }
         Commands::GitProxy(ProxyPort { port, global }) => {
             if let Some(port) = port {
                 set_git_proxy(global, port);
@@ -89,12 +89,16 @@ fn main() {
                 unset_git_proxy(global);
             }
         }
+        Commands::Setup => {
+            make_git_lfs();
+            git_submodule_update(true);
+        }
         Commands::UpdateAll => update_all(),
+        Commands::CheckStyle => check_style(),
         Commands::Rootfs(arch) => arch.rootfs(),
         Commands::LibcTest(arch) => arch.libc_test(),
         Commands::Image(arch) => arch.image(),
-        Commands::CheckStyle => check_style(),
-        Commands::Test => {}
+        Commands::Test => todo!(),
     }
 }
 
