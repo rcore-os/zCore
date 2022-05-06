@@ -83,16 +83,26 @@ jobs:
           sudo apt-get install ninja-build -y
           pip3 install -r tests/requirements.txt
       - name: Cache QEMU
-        uses: actions/cache@v1
+        id: cache-qemu
+        uses: actions/cache@v3
         with:
-          path: qemu-6.1.0
-          key: qemu-6.1.0-${{ matrix.arch }}
+          path: qemu-compiled-7.0.0.tar.gz
+          key: qemu-7.0.0-${{ matrix.arch }}
       - name: Install QEMU
         run: |
-          [ ! -d qemu-6.1.0 ] && wget https://download.qemu.org/qemu-6.1.0.tar.xz \
-            && tar xJf qemu-6.1.0.tar.xz > /dev/null \
-            && cd qemu-6.1.0 && ./configure --target-list=${{ matrix.arch }}-softmmu && cd ..
-          cd qemu-6.1.0 && sudo make install -j
+          if [ ${{ steps.cache-qemu.outputs.cache-hit }} != 'true' ]; then
+            wget https://download.qemu.org/qemu-7.0.0.tar.xz
+            tar -xf qemu-7.0.0.tar.xz
+            cd qemu-7.0.0
+            ./configure --target-list=${{ matrix.arch }}-softmmu
+            make -j
+            cd ..
+            tar -czf qemu-compiled-7.0.0.tar.gz qemu-7.0.0
+          else
+            tar -xf qemu-compiled-7.0.0.tar.gz
+          fi
+          cd qemu-7.0.0
+          sudo make install
           qemu-system-${{ matrix.arch }} --version
       - name: Run fast tests
         if: github.event_name != 'schedule'
@@ -151,24 +161,29 @@ jobs:
           sudo apt-get install musl-tools musl-dev ninja-build -y
           pip3 install -r tests/requirements.txt
       - name: Cache QEMU
-        uses: actions/cache@v1
+        id: cache-qemu
+        uses: actions/cache@v3
         with:
-          path: qemu-6.1.0
-          key: qemu-6.1.0-${{ matrix.arch }}
+          path: qemu-compiled-7.0.0.tar.gz
+          key: qemu-7.0.0-${{ matrix.arch }}
       - name: Install QEMU
         run: |
-          [ ! -d qemu-6.1.0 ] && wget https://download.qemu.org/qemu-6.1.0.tar.xz \
-            && tar xJf qemu-6.1.0.tar.xz > /dev/null \
-            && cd qemu-6.1.0 && ./configure --target-list=${{ matrix.arch }}-softmmu && cd ..
-          cd qemu-6.1.0 && sudo make install -j
+          if [ ${{ steps.cache-qemu.outputs.cache-hit }} != 'true' ]; then
+            wget https://download.qemu.org/qemu-7.0.0.tar.xz
+            tar -xf qemu-7.0.0.tar.xz
+            cd qemu-7.0.0
+            ./configure --target-list=${{ matrix.arch }}-softmmu
+            make -j
+            cd ..
+            tar -czf qemu-compiled-7.0.0.tar.gz qemu-7.0.0
+          else
+            tar -xf qemu-compiled-7.0.0.tar.gz
+          fi
+          cd qemu-7.0.0
+          sudo make install
           qemu-system-${{ matrix.arch }} --version
       - name: Prepare rootfs
-        run: |
-          if [ "${{ matrix.arch }}" = "x86_64" ]; then
-            make test-image
-          elif [ "${{ matrix.arch }}" = "riscv64" ]; then
-            ARCH=riscv64 make test-image
-          fi
+        run: ARCH=${{ matrix.arch }} make test-image
       - name: Run fast tests
         if: github.event_name != 'schedule'
         run: cd tests && python3 linux_libc_test.py --arch ${{ matrix.arch }} --fast
@@ -204,24 +219,29 @@ jobs:
           sudo apt-get install musl-tools musl-dev ninja-build -y
           pip3 install -r tests/requirements.txt
       - name: Cache QEMU
-        uses: actions/cache@v1
+        id: cache-qemu
+        uses: actions/cache@v3
         with:
-          path: qemu-6.1.0
-          key: qemu-6.1.0-${{ matrix.arch }}
+          path: qemu-compiled-7.0.0.tar.gz
+          key: qemu-7.0.0-${{ matrix.arch }}
       - name: Install QEMU
         run: |
-          [ ! -d qemu-6.1.0 ] && wget https://download.qemu.org/qemu-6.1.0.tar.xz \
-            && tar xJf qemu-6.1.0.tar.xz > /dev/null \
-            && cd qemu-6.1.0 && ./configure --target-list=${{ matrix.arch }}-softmmu && cd ..
-          cd qemu-6.1.0 && sudo make install -j
+          if [ ${{ steps.cache-qemu.outputs.cache-hit }} != 'true' ]; then
+            wget https://download.qemu.org/qemu-7.0.0.tar.xz
+            tar -xf qemu-7.0.0.tar.xz
+            cd qemu-7.0.0
+            ./configure --target-list=${{ matrix.arch }}-softmmu
+            make -j
+            cd ..
+            tar -czf qemu-compiled-7.0.0.tar.gz qemu-7.0.0
+          else
+            tar -xf qemu-compiled-7.0.0.tar.gz
+          fi
+          cd qemu-7.0.0
+          sudo make install
           qemu-system-${{ matrix.arch }} --version
       - name: Prepare rootfs
-        run: |
-          if [ "${{ matrix.arch }}" = "x86_64" ]; then
-            make image
-          elif [ "${{ matrix.arch }}" = "riscv64" ]; then
-            ARCH=riscv64 make image
-          fi
+        run: ARCH=${{ matrix.arch }} make image
       - name: Run fast tests
         if: github.event_name != 'schedule'
         run: cd tests && python3 linux_other_test.py --arch ${{ matrix.arch }} --fast
