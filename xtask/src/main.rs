@@ -36,15 +36,15 @@ enum Commands {
     /// or leave blank to unset it.
     GitProxy(ProxyPort),
     /// Update rustup and cargo.
-    Update,
+    UpdateAll,
+    /// Check style
+    CheckStyle,
     /// Build rootfs
     Rootfs(Arch),
     /// Put libc-test.
     LibcTest(Arch),
     /// Build image
     Image(Arch),
-    /// Check style
-    Check,
     /// Unit test
     Test,
 }
@@ -79,8 +79,8 @@ fn main() {
 
     match cli.command {
         Commands::Setup => {
-            check_git_lfs();
             make_git_lfs();
+            git_submodule_update(true);
         }
         Commands::GitProxy(ProxyPort { port, global }) => {
             if let Some(port) = port {
@@ -89,29 +89,24 @@ fn main() {
                 unset_git_proxy(global);
             }
         }
-        Commands::Update => update_rustup_cargo(),
+        Commands::UpdateAll => update_all(),
         Commands::Rootfs(arch) => arch.rootfs(),
         Commands::LibcTest(arch) => arch.libc_test(),
         Commands::Image(arch) => arch.image(),
-        Commands::Check => check_style(),
+        Commands::CheckStyle => check_style(),
         Commands::Test => {}
-    }
-}
-
-/// 检查 LFS 程序是否存在。
-fn check_git_lfs() {
-    if let Ok(true) = git::lfs()
-        .arg("version")
-        .output()
-        .map(|out| out.stdout.starts_with(b"git-lfs/"))
-    {
-    } else {
-        panic!("Cannot find git lfs, see https://git-lfs.github.com/ for help.");
     }
 }
 
 /// 初始化 LFS。
 fn make_git_lfs() {
+    if !git::lfs()
+        .arg("version")
+        .output()
+        .map_or(false, |out| out.stdout.starts_with(b"git-lfs/"))
+    {
+        panic!("Cannot find git lfs, see https://git-lfs.github.com/ for help.");
+    }
     if !git::lfs().arg("install").status().unwrap().success() {
         panic!("FAILED: git lfs install")
     }
@@ -121,8 +116,16 @@ fn make_git_lfs() {
     }
 }
 
-/// 更新工具链。
-fn update_rustup_cargo() {
+/// 更新子项目。
+fn git_submodule_update(init: bool) {
+    if !git::submodule_update(init).status().unwrap().success() {
+        panic!("FAILED: git submodule update --init");
+    }
+}
+
+/// 更新工具链和依赖。
+fn update_all() {
+    git_submodule_update(false);
     if !Command::new("rustup")
         .arg("update")
         .status()

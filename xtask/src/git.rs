@@ -37,3 +37,13 @@ pub fn clone(
 pub fn pull() -> Command {
     git("pull")
 }
+
+/// git submodule update --init.
+pub fn submodule_update(init: bool) -> Command {
+    let mut cmd = git("submodule");
+    cmd.arg("update");
+    if init {
+        cmd.arg("--init");
+    }
+    cmd
+}

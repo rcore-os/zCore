@@ -268,7 +268,7 @@ impl Arch {
                 // ld-musl-x86_64.so.1 替换为适用 libos 的版本
                 // # libc-libos.so (convert syscall to function call) is from https://github.com/rcore-os/musl/tree/rcore
                 fs::copy(
-                    format!("prebuilt/linux/libc-libos.so"),
+                    "prebuilt/linux/libc-libos.so",
                     format!("{ROOTFS_LIB}/ld-musl-x86_64.so.1"),
                 )
                 .unwrap();
