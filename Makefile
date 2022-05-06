@@ -15,18 +15,24 @@ PATH := $(PATH):$(PWD)/toolchain/riscv64-linux-musl-cross/bin
 ARCH ?= x86_64
 OUT_IMG := zCore/$(ARCH).img
 
-.PHONY: rootfs clone-libc-test libc-test image baremetal-test-img riscv-image check doc clean
+.PHONY: rootfs libc-test riscv-libc-test image riscv-image test-image riscv-test-image check doc clean
 
 rootfs:
 	cargo rootfs $(ARCH)
 
-clone-libc-test:
+libc-test:
 	cargo xtask libc-test
-
-libc-test: clone-libc-test rootfs
 	@rm -rf rootfs/libc-test
 	@cp -r ignored/libc-test rootfs
 	@cd rootfs/libc-test && cp config.mak.def config.mak && echo 'CC := musl-gcc' >> config.mak && make -j
+
+riscv-libc-test:
+	cargo xtask libc-test
+	@mv riscv_rootfs/libc-test riscv_rootfs/libc-test-prebuild
+	@cp -r ignored/libc-test riscv_rootfs
+	@cd riscv_rootfs/libc-test && cp config.mak.def config.mak && make ARCH=$(ARCH) CROSS_COMPILE=$(ARCH)-linux-musl- -j
+	@cp riscv_rootfs/libc-test-prebuild/functional/tls_align-static.exe riscv_rootfs/libc-test/src/functional/
+	@rm -rf riscv_rootfs/libc-test-prebuild
 
 image: rootfs
 	@echo Generating $(OUT_IMG)
@@ -39,21 +45,16 @@ image: rootfs
 	@echo Resizing $(OUT_IMG)
 	@qemu-img resize $(OUT_IMG) +5M
 
-baremetal-test-img: libc-test image
-
-riscv-image: rootfs clone-libc-test
+riscv-image: rootfs
 	@echo Generating $(OUT_IMG)
 	cargo image $(ARCH)
-
-	@mv riscv_rootfs/libc-test riscv_rootfs/libc-test-prebuild
-	@cp -r ignored/libc-test riscv_rootfs
-	@cd riscv_rootfs/libc-test && cp config.mak.def config.mak && make ARCH=$(ARCH) CROSS_COMPILE=$(ARCH)-linux-musl- -j
-	@cp riscv_rootfs/libc-test-prebuild/functional/tls_align-static.exe riscv_rootfs/libc-test/src/functional/
-	@rm -rf riscv_rootfs/libc-test-prebuild
 
 	@rcore-fs-fuse $(OUT_IMG) riscv_rootfs zip
 	@echo Resizing $(OUT_IMG)
 	@qemu-img resize -f raw $(OUT_IMG) +5M
+
+test-image: rootfs libc-test image
+riscv-test-image: rootfs riscv-libc-test riscv-image
 
 check:
 	cargo xtask check
