@@ -21,18 +21,13 @@ rootfs:
 	cargo rootfs $(ARCH)
 
 libc-test:
-	cargo xtask libc-test
-	@rm -rf rootfs/libc-test
-	@cp -r ignored/libc-test rootfs
-	@cd rootfs/libc-test && cp config.mak.def config.mak && echo 'CC := musl-gcc' >> config.mak && make -j
+	cargo libc-test $(ARCH)
 
 riscv-libc-test:
-	cargo xtask libc-test
-	@mv riscv_rootfs/libc-test riscv_rootfs/libc-test-prebuild
-	@cp -r ignored/libc-test riscv_rootfs
-	@cd riscv_rootfs/libc-test && cp config.mak.def config.mak && make ARCH=$(ARCH) CROSS_COMPILE=$(ARCH)-linux-musl- -j
-	@cp riscv_rootfs/libc-test-prebuild/functional/tls_align-static.exe riscv_rootfs/libc-test/src/functional/
-	@rm -rf riscv_rootfs/libc-test-prebuild
+	cargo libc-test $(ARCH)
+# @cd riscv_rootfs/libc-test && make ARCH=$(ARCH) CROSS_COMPILE=$(ARCH)-linux-musl- -j
+# @cp riscv_rootfs/libc-test-prebuild/functional/tls_align-static.exe riscv_rootfs/libc-test/src/functional/
+# @rm -rf riscv_rootfs/libc-test-prebuild
 
 image: rootfs
 	@echo Generating $(OUT_IMG)

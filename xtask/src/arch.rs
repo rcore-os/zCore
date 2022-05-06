@@ -1,8 +1,10 @@
-﻿use super::{dir, ALPINE_ROOTFS_VERSION};
+﻿use super::{dir, git, ALPINE_ROOTFS_VERSION};
 use clap::{Args, Subcommand};
+use dircpy::copy_dir;
 use std::{
     ffi::OsStr,
-    fs::{create_dir_all, read_dir},
+    fs,
+    io::Write,
     path::{Path, PathBuf},
     process::Command,
 };
@@ -55,7 +57,7 @@ impl Arch {
             }
         };
 
-        create_dir_all(local_path.parent().unwrap()).unwrap();
+        fs::create_dir_all(local_path.parent().unwrap()).unwrap();
 
         #[rustfmt::skip]
         let wget = Command::new("wget")
@@ -135,7 +137,7 @@ impl Arch {
                 }
                 {
                     // libc-libos.so (convert syscall to function call) is from https://github.com/rcore-os/musl/tree/rcore
-                    std::fs::copy(
+                    fs::copy(
                         "prebuilt/linux/libc-libos.so",
                         format!("{DIR}/lib/ld-musl-{ARCH}.so.1"),
                     )
@@ -145,7 +147,7 @@ impl Arch {
                     const TEST_DIR: &str = "linux-syscall/test";
                     const DEST_DIR: &str = "rootfs/bin/";
                     // for linux syscall tests
-                    read_dir(TEST_DIR)
+                    fs::read_dir(TEST_DIR)
                         .unwrap()
                         .filter_map(|res| res.ok())
                         .map(|entry| entry.path())
@@ -169,7 +171,58 @@ impl Arch {
         }
     }
 
-    /// 生成镜像
+    /// 将 libc-test 放入 rootfs。
+    pub fn libc_test(&self) {
+        clone_libc_test();
+        match self.command {
+            ArchCommands::Riscv64 => {
+                const DIR: &str = "riscv_rootfs/libc-test";
+                const PRE: &str = "riscv_rootfs/libc-test-prebuild";
+                fs::rename(DIR, PRE).unwrap();
+                copy_dir("ignored/libc-test", DIR).unwrap();
+                fs::copy(format!("{DIR}/config.mak.def"), format!("{DIR}/config.mak")).unwrap();
+                let make = Command::new("make")
+                    .arg("-j")
+                    .env("ARCH", "riscv64")
+                    .env("CROSS_COMPILE", "riscv64-linux-musl-")
+                    .current_dir(DIR)
+                    .status();
+                if !make.unwrap().success() {
+                    panic!("FAILED: make -j");
+                }
+                fs::copy(
+                    format!("{PRE}/functional/tls_align-static.exe"),
+                    format!("{DIR}/src/functional/tls_align-static.exe"),
+                )
+                .unwrap();
+                dir::rm(PRE).unwrap();
+            }
+            ArchCommands::X86_64 => {
+                const DIR: &str = "rootfs/libc-test";
+
+                dir::rm(DIR).unwrap();
+                copy_dir("ignored/libc-test", DIR).unwrap();
+                fs::copy(format!("{DIR}/config.mak.def"), format!("{DIR}/config.mak")).unwrap();
+                fs::OpenOptions::new()
+                    .append(true)
+                    .open(format!("{DIR}/config.mak"))
+                    .unwrap()
+                    .write_all(b"CC := musl-gcc")
+                    .unwrap();
+                if !Command::new("make")
+                    .arg("-j")
+                    .current_dir(DIR)
+                    .status()
+                    .unwrap()
+                    .success()
+                {
+                    panic!("FAILED: make -j");
+                }
+            }
+        }
+    }
+
+    /// 生成镜像。
     pub fn image(&self) {
         install_fs_fuse();
         match self.command {
@@ -188,7 +241,7 @@ impl Arch {
                     panic!("FAILED: tar xf {tar:?}");
                 }
                 dir::clear(ROOTFS_LIB).unwrap();
-                std::fs::copy(
+                fs::copy(
                     format!("{TMP_ROOTFS}/lib/ld-musl-x86_64.so.1"),
                     format!("{ROOTFS_LIB}/ld-musl-x86_64.so.1"),
                 )
@@ -232,5 +285,24 @@ fn install_fs_fuse() {
         .status();
     if !install.unwrap().success() {
         panic!("FAILED: install rcore-fs-fuse");
+    }
+}
+
+/// 克隆 libc-test.
+fn clone_libc_test() {
+    const DIR: &str = "ignored/libc-test";
+    const URL: &str = "https://github.com/rcore-os/libc-test.git";
+
+    if Path::new(DIR).is_dir() {
+        let pull = git::pull().current_dir(DIR).status();
+        if !pull.unwrap().success() {
+            panic!("FAILED: git pull");
+        }
+    } else {
+        dir::clear(DIR).unwrap();
+        let clone = git::clone(URL, Some(DIR)).status();
+        if !clone.unwrap().success() {
+            panic!("FAILED: git clone {URL}");
+        }
     }
 }

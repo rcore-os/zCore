@@ -2,7 +2,7 @@
 
 use clap::{Args, Parser, Subcommand};
 use clap_verbosity_flag::Verbosity;
-use std::{fs::read_to_string, net::Ipv4Addr, path::Path, process::Command};
+use std::{fs::read_to_string, net::Ipv4Addr, process::Command};
 
 mod arch;
 mod dir;
@@ -30,8 +30,6 @@ struct Cli {
 enum Commands {
     /// First time running.
     Setup,
-    /// Clone libc-test.
-    LibcTest,
     /// Set git proxy.
     ///
     /// Input your proxy port to set the proxy,
@@ -41,6 +39,8 @@ enum Commands {
     Update,
     /// Build rootfs
     Rootfs(Arch),
+    /// Put libc-test.
+    LibcTest(Arch),
     /// Build image
     Image(Arch),
     /// Check style
@@ -82,7 +82,6 @@ fn main() {
             check_git_lfs();
             make_git_lfs();
         }
-        Commands::LibcTest => clone_libc_test(),
         Commands::GitProxy(ProxyPort { port, global }) => {
             if let Some(port) = port {
                 set_git_proxy(global, port);
@@ -92,6 +91,7 @@ fn main() {
         }
         Commands::Update => update_rustup_cargo(),
         Commands::Rootfs(arch) => arch.rootfs(),
+        Commands::LibcTest(arch) => arch.libc_test(),
         Commands::Image(arch) => arch.image(),
         Commands::Check => check_style(),
         Commands::Test => {}
@@ -229,23 +229,4 @@ fn check_style() {
         .env("PLATFORM", "board-qemu")
         .status()
         .unwrap();
-}
-
-/// 克隆 libc-test.
-fn clone_libc_test() {
-    const DIR: &str = "ignored/libc-test";
-    const URL: &str = "https://github.com/rcore-os/libc-test.git";
-
-    if Path::new(DIR).is_dir() {
-        let pull = git::pull().current_dir(DIR).status();
-        if !pull.unwrap().success() {
-            panic!("FAILED: git pull");
-        }
-    } else {
-        dir::clear(DIR).unwrap();
-        let clone = git::clone(URL, Some(DIR)).status();
-        if !clone.unwrap().success() {
-            panic!("FAILED: git clone {URL}");
-        }
-    }
 }
