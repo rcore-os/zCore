@@ -225,16 +225,26 @@ impl Arch {
     /// 生成镜像。
     pub fn image(&self) {
         install_fs_fuse();
-        match self.command {
+        let image = match self.command {
             ArchCommands::Riscv64 => {
-                // TODO 后续
+                const ARCH: &str = "riscv64";
+
+                let image = format!("zCore/{ARCH}.img");
+                #[rustfmt::skip]
+                let fuse = Command::new("rcore-fs-fuse")
+                    .arg(&image).arg("riscv_rootfs").arg("zip")
+                    .status().unwrap();
+                if !fuse.success() {
+                    panic!("FAILED: rcore-fs-fuse");
+                }
+                image
             }
             ArchCommands::X86_64 => {
                 const ARCH: &str = "x86_64";
                 const TMP_ROOTFS: &str = "/tmp/rootfs";
                 const ROOTFS_LIB: &str = "rootfs/lib";
 
-                // ld-musl-x86_64.so.1 替换为预编译中的版本
+                // ld-musl-x86_64.so.1 替换为适用 bare-matel 的版本
                 dir::clear(TMP_ROOTFS).unwrap();
                 let tar = dir::detect(&format!("prebuilt/linux/{ARCH}"), "minirootfs").unwrap();
                 if !tar_xf(&tar, Some(TMP_ROOTFS)).status().unwrap().success() {
@@ -247,8 +257,30 @@ impl Arch {
                 )
                 .unwrap();
 
-                // TODO 后续
+                let image = format!("zCore/{ARCH}.img");
+                #[rustfmt::skip]
+                let fuse = Command::new("rcore-fs-fuse")
+                    .arg(&image).arg("rootfs").arg("zip")
+                    .status().unwrap();
+                if !fuse.success() {
+                    panic!("FAILED: rcore-fs-fuse");
+                }
+                // ld-musl-x86_64.so.1 替换为适用 libos 的版本
+                // # libc-libos.so (convert syscall to function call) is from https://github.com/rcore-os/musl/tree/rcore
+                fs::copy(
+                    format!("prebuilt/linux/libc-libos.so"),
+                    format!("{ROOTFS_LIB}/ld-musl-x86_64.so.1"),
+                )
+                .unwrap();
+                image
             }
+        };
+        #[rustfmt::skip]
+        let resize = Command::new("qemu-img")
+            .arg("resize").arg(image).arg("+5M")
+            .status().unwrap();
+        if !resize.success() {
+            panic!("FAILED: qemu-img resize");
         }
     }
 }
