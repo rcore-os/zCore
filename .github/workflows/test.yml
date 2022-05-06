@@ -10,9 +10,9 @@ jobs:
   test:
     runs-on: ubuntu-20.04
     steps:
-      - uses: actions/checkout@v2
-      - name: Pull prebuilt images
-        run: git lfs pull -I prebuilt/linux/libc-libos.so,prebuilt/zircon/x64/bringup.zbi,prebuilt/zircon/x64/libzircon-libos.so,prebuilt/zircon/x64/userboot-libos.so
+      - uses: actions/checkout@v3
+        with:
+          lfs: true
       - name: Prepare rootfs
         run: make rootfs
       - name: Test
@@ -22,7 +22,7 @@ jobs:
           RUSTFLAGS: '-Zprofile -Ccodegen-units=1 -Copt-level=0 -Coverflow-checks=off -Zpanic_abort_tests -Cpanic=abort'
           RUSTDOCFLAGS: '-Zprofile -Ccodegen-units=1 -Copt-level=0 -Coverflow-checks=off -Zpanic_abort_tests -Cpanic=abort'
       - name: Cache grcov
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: ~/.cargo/bin
           key: ${{ runner.os }}-grcov
@@ -39,18 +39,17 @@ jobs:
   bench:
     runs-on: ubuntu-20.04
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: Run benchmarks
         run: cargo bench
 
   zircon-core-test-libos:
     runs-on: ubuntu-20.04
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
         with:
+          lfs: true
           submodules: 'recursive'
-      - name: Pull prebuilt images
-        run: git lfs pull -I prebuilt/zircon/x64/core-tests.zbi,prebuilt/zircon/x64/libzircon-libos.so,prebuilt/zircon/x64/userboot-libos.so
       - name: Install dependencies
         run: pip3 install -r tests/requirements.txt
       - name: Run fast tests
@@ -67,11 +66,10 @@ jobs:
       matrix:
         arch: [x86_64]
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
         with:
+          lfs: true
           submodules: 'recursive'
-      - name: Pull prebuilt images
-        run: git lfs pull -I prebuilt/zircon/x64/core-tests.zbi,prebuilt/zircon/x64/libzircon.so,prebuilt/zircon/x64/userboot.so
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
@@ -114,11 +112,10 @@ jobs:
   linux-libc-test-libos:
     runs-on: ubuntu-20.04
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
         with:
+          lfs: true
           submodules: 'recursive'
-      - name: Pull prebuilt images
-        run: git lfs pull -I prebuilt/linux/libc-libos.so
       - name: Install dependencies
         run: |
           sudo apt-get update
@@ -140,11 +137,10 @@ jobs:
       matrix:
         arch: [x86_64, riscv64]
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
         with:
+          lfs: true
           submodules: 'recursive'
-      - name: Pull prebuilt images
-        run: git lfs pull -I prebuilt/linux/libc-libos.so
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
@@ -203,11 +199,10 @@ jobs:
       matrix:
         arch: [x86_64, riscv64]
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
         with:
+          lfs: true
           submodules: 'recursive'
-      - name: Pull prebuilt images
-        run: git lfs pull -I prebuilt/linux/libc-libos.so
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal

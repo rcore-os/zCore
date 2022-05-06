@@ -10,7 +10,7 @@ jobs:
   check:
     runs-on: ubuntu-20.04
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
@@ -32,7 +32,7 @@ jobs:
       matrix:
         os: [ubuntu-20.04, macos-latest]
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
         with:
           submodules: 'recursive'
       - uses: actions-rs/toolchain@v1
@@ -58,7 +58,7 @@ jobs:
   build-aarch64:
     runs-on: ubuntu-20.04
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
@@ -77,9 +77,9 @@ jobs:
       matrix:
         os: [ubuntu-20.04, macos-latest]
     steps:
-      - uses: actions/checkout@v2
-      - name: Pull prebuilt images
-        run: git lfs pull -I prebuilt/zircon/x64/libc.so,prebuilt/zircon/x64/libfdio.so,prebuilt/zircon/x64/libunwind.so,prebuilt/zircon/x64/libzircon.so,prebuilt/zircon/x64/Scrt1.o
+      - uses: actions/checkout@v3
+        with:
+          lfs: true
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
@@ -91,6 +91,6 @@ jobs:
   build-doc:
     runs-on: ubuntu-20.04
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: Build docs
         run: cargo doc --no-deps --all-features
