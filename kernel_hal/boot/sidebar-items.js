@@ -1,1 +1,0 @@
-initSidebarItems({"fn":[["cmdline","The kernel command line."],["init_ram_disk","Returns the slice of the initial RAM disk, or `None` if not exist."],["primary_init","The main part of the primary CPU initialization."],["primary_init_early","Initialize the primary CPU at an early stage (before the physical frame allocator)."],["secondary_init","Initialize the secondary CPUs."]]});

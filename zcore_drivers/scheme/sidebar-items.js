@@ -1,1 +1,0 @@
-initSidebarItems({"trait":[["BlockScheme",""],["DisplayScheme",""],["EventScheme",""],["InputScheme",""],["IrqScheme",""],["NetScheme",""],["Scheme","Common of all device drivers."],["SchemeUpcast","Used to convert a concrete type pointer to a general [`Scheme`] pointer."],["UartScheme",""]]});

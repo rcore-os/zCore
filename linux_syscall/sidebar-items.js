@@ -1,1 +1,0 @@
-initSidebarItems({"struct":[["Syscall","The struct of Syscall which stores the information about making a syscall"]]});

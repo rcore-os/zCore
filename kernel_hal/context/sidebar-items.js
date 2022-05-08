@@ -1,1 +1,0 @@
-initSidebarItems({"enum":[["TrapReason","Reason of the trap."],["UserContextField","For reading and writing fields in [`UserContext`]."]],"fn":[["syscall_entry","The syscall entry of function call."]],"struct":[["GeneralRegs","General registers"],["U128",""],["UserContext","User context saved on trap."],["VectorRegs","X86 vector registers."]]});

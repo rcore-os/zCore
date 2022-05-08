@@ -1,3 +1,0 @@
-(function() {var implementors = {};
-implementors["linux_object"] = [{"text":"impl <a class=\"trait\" href=\"linux_object/fs/vfs/trait.INode.html\" title=\"trait linux_object::fs::vfs::INode\">INode</a> for <a class=\"struct\" href=\"linux_object/fs/struct.Pipe.html\" title=\"struct linux_object::fs::Pipe\">Pipe</a>","synthetic":false,"types":["linux_object::fs::pipe::Pipe"]}];
-if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()

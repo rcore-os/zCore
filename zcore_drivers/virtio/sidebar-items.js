@@ -1,1 +1,0 @@
-initSidebarItems({"struct":[["VirtIoBlk",""],["VirtIoConsole",""],["VirtIoGpu",""],["VirtIoInput",""]]});

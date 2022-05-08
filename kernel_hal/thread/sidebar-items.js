@@ -1,1 +1,0 @@
-initSidebarItems({"fn":[["get_tid","Get tid and pid of current task."],["set_tid","Set tid and pid of current task."],["sleep_until","Sleeps until the specified of time."],["spawn","Spawn a new thread."],["yield_now","Yields execution back to the async runtime."]]});

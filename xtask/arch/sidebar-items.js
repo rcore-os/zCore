@@ -1,0 +1,1 @@
+initSidebarItems({"enum":[["ArchCommands",""]],"fn":[["clone_libc_test","克隆 libc-test."],["install_fs_fuse","安装 rcore-fs-fuse。"],["tar_xf","构造将归档文件 `src` 释放到 `dst` 目录下的命令。"]],"struct":[["Arch",""]]});

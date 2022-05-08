@@ -1,1 +1,0 @@
-initSidebarItems({"struct":[["LinuxThread","Linux specific thread information."],["RobustList","robust_list"]],"trait":[["CurrentThreadExt","CurrentThread extension for linux"],["ThreadExt","Thread extension for linux"]]});

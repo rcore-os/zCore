@@ -1,1 +1,0 @@
-initSidebarItems({"constant":[["PCI_INIT_ARG_MAX_ECAM_WINDOWS",""],["PCI_INIT_ARG_MAX_SIZE",""]],"struct":[["PciInitArgsAddrWindows",""],["PciInitArgsHeader",""],["PciInitArgsIrqs",""],["PciIrqSwizzleLut",""]]});

@@ -1,1 +1,0 @@
-initSidebarItems({"mod":[["linux","Run Linux process and manage trap/interrupt/syscall."],["zircon","Run Zircon user program (userboot) and manage trap/interrupt/syscall."]]});
