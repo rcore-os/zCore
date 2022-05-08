@@ -13,6 +13,13 @@ jobs:
       - uses: actions/checkout@v3
         with:
           lfs: true
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly-2022-01-20
+          components: rust-src, llvm-tools-preview, rustfmt, clippy
+      - uses: Swatinem/rust-cache@v1
+
       - name: Prepare rootfs
         run: make rootfs
       - name: Test
@@ -40,8 +47,16 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v3
-      - name: Run benchmarks
-        run: cargo bench
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly-2022-01-20
+          components: rust-src, llvm-tools-preview, rustfmt, clippy
+      - uses: Swatinem/rust-cache@v1
+
+      - uses: actions-rs/cargo@v1
+        with:
+          command: bench
 
   zircon-core-test-libos:
     runs-on: ubuntu-20.04
@@ -50,6 +65,13 @@ jobs:
         with:
           lfs: true
           submodules: 'recursive'
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly-2022-01-20
+          components: rust-src, llvm-tools-preview, rustfmt, clippy
+      - uses: Swatinem/rust-cache@v1
+
       - name: Install dependencies
         run: pip3 install -r tests/requirements.txt
       - name: Run fast tests
@@ -74,7 +96,9 @@ jobs:
         with:
           profile: minimal
           toolchain: nightly-2022-01-20
-          components: rust-src
+          components: rust-src, llvm-tools-preview, rustfmt, clippy
+      - uses: Swatinem/rust-cache@v1
+
       - name: Install dependencies
         run: |
           sudo apt-get update
@@ -116,6 +140,13 @@ jobs:
         with:
           lfs: true
           submodules: 'recursive'
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly-2022-01-20
+          components: rust-src, llvm-tools-preview, rustfmt, clippy
+      - uses: Swatinem/rust-cache@v1
+
       - name: Install dependencies
         run: |
           sudo apt-get update
@@ -145,12 +176,14 @@ jobs:
         with:
           profile: minimal
           toolchain: nightly-2022-01-20
-          components: rust-src, llvm-tools-preview
+          components: rust-src, llvm-tools-preview, rustfmt, clippy
       - if: matrix.arch == 'riscv64'
         uses: actions-rs/install@v0.1
         with:
           crate: cargo-binutils
           version: latest
+      - uses: Swatinem/rust-cache@v1
+
       - name: Install dependencies
         run: |
           sudo apt-get update
@@ -207,12 +240,14 @@ jobs:
         with:
           profile: minimal
           toolchain: nightly-2022-01-20
-          components: rust-src, llvm-tools-preview
+          components: rust-src, llvm-tools-preview, rustfmt, clippy
       - if: matrix.arch == 'riscv64'
         uses: actions-rs/install@v0.1
         with:
           crate: cargo-binutils
           version: latest
+      - uses: Swatinem/rust-cache@v1
+
       - name: Install dependencies
         run: |
           sudo apt-get update
