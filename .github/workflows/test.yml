@@ -10,9 +10,9 @@ jobs:
   test:
     runs-on: ubuntu-20.04
     steps:
-      - uses: actions/checkout@v2
-      - name: Pull prebuilt images
-        run: git lfs pull -I prebuilt/linux/libc-libos.so,prebuilt/zircon/x64/bringup.zbi,prebuilt/zircon/x64/libzircon-libos.so,prebuilt/zircon/x64/userboot-libos.so
+      - uses: actions/checkout@v3
+        with:
+          lfs: true
       - name: Prepare rootfs
         run: make rootfs
       - name: Test
@@ -22,7 +22,7 @@ jobs:
           RUSTFLAGS: '-Zprofile -Ccodegen-units=1 -Copt-level=0 -Coverflow-checks=off -Zpanic_abort_tests -Cpanic=abort'
           RUSTDOCFLAGS: '-Zprofile -Ccodegen-units=1 -Copt-level=0 -Coverflow-checks=off -Zpanic_abort_tests -Cpanic=abort'
       - name: Cache grcov
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: ~/.cargo/bin
           key: ${{ runner.os }}-grcov
@@ -39,18 +39,17 @@ jobs:
   bench:
     runs-on: ubuntu-20.04
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: Run benchmarks
         run: cargo bench
 
   zircon-core-test-libos:
     runs-on: ubuntu-20.04
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
         with:
+          lfs: true
           submodules: 'recursive'
-      - name: Pull prebuilt images
-        run: git lfs pull -I prebuilt/zircon/x64/core-tests.zbi,prebuilt/zircon/x64/libzircon-libos.so,prebuilt/zircon/x64/userboot-libos.so
       - name: Install dependencies
         run: pip3 install -r tests/requirements.txt
       - name: Run fast tests
@@ -67,11 +66,10 @@ jobs:
       matrix:
         arch: [x86_64]
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
         with:
+          lfs: true
           submodules: 'recursive'
-      - name: Pull prebuilt images
-        run: git lfs pull -I prebuilt/zircon/x64/core-tests.zbi,prebuilt/zircon/x64/libzircon.so,prebuilt/zircon/x64/userboot.so
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
@@ -83,16 +81,26 @@ jobs:
           sudo apt-get install ninja-build -y
           pip3 install -r tests/requirements.txt
       - name: Cache QEMU
-        uses: actions/cache@v1
+        id: cache-qemu
+        uses: actions/cache@v3
         with:
-          path: qemu-6.1.0
-          key: qemu-6.1.0-${{ matrix.arch }}
+          path: qemu-compiled-7.0.0.tar.gz
+          key: qemu-7.0.0-${{ matrix.arch }}
       - name: Install QEMU
         run: |
-          [ ! -d qemu-6.1.0 ] && wget https://download.qemu.org/qemu-6.1.0.tar.xz \
-            && tar xJf qemu-6.1.0.tar.xz > /dev/null \
-            && cd qemu-6.1.0 && ./configure --target-list=${{ matrix.arch }}-softmmu && cd ..
-          cd qemu-6.1.0 && sudo make install -j
+          if [ "${{ steps.cache-qemu.outputs.cache-hit }}" != "true" ]; then
+            wget https://download.qemu.org/qemu-7.0.0.tar.xz
+            tar -xf qemu-7.0.0.tar.xz
+            cd qemu-7.0.0
+            ./configure --target-list=${{ matrix.arch }}-softmmu
+            make -j
+            cd ..
+            tar -czf qemu-compiled-7.0.0.tar.gz qemu-7.0.0
+          else
+            tar -xf qemu-compiled-7.0.0.tar.gz
+          fi
+          cd qemu-7.0.0
+          sudo make install
           qemu-system-${{ matrix.arch }} --version
       - name: Run fast tests
         if: github.event_name != 'schedule'
@@ -104,11 +112,10 @@ jobs:
   linux-libc-test-libos:
     runs-on: ubuntu-20.04
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
         with:
+          lfs: true
           submodules: 'recursive'
-      - name: Pull prebuilt images
-        run: git lfs pull -I prebuilt/linux/libc-libos.so
       - name: Install dependencies
         run: |
           sudo apt-get update
@@ -130,11 +137,10 @@ jobs:
       matrix:
         arch: [x86_64, riscv64]
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
         with:
+          lfs: true
           submodules: 'recursive'
-      - name: Pull prebuilt images
-        run: git lfs pull -I prebuilt/linux/libc-libos.so
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
@@ -151,23 +157,33 @@ jobs:
           sudo apt-get install musl-tools musl-dev ninja-build -y
           pip3 install -r tests/requirements.txt
       - name: Cache QEMU
-        uses: actions/cache@v1
+        id: cache-qemu
+        uses: actions/cache@v3
         with:
-          path: qemu-6.1.0
-          key: qemu-6.1.0-${{ matrix.arch }}
+          path: qemu-compiled-7.0.0.tar.gz
+          key: qemu-7.0.0-${{ matrix.arch }}
       - name: Install QEMU
         run: |
-          [ ! -d qemu-6.1.0 ] && wget https://download.qemu.org/qemu-6.1.0.tar.xz \
-            && tar xJf qemu-6.1.0.tar.xz > /dev/null \
-            && cd qemu-6.1.0 && ./configure --target-list=${{ matrix.arch }}-softmmu && cd ..
-          cd qemu-6.1.0 && sudo make install -j
+          if [ "${{ steps.cache-qemu.outputs.cache-hit }}" != "true" ]; then
+            wget https://download.qemu.org/qemu-7.0.0.tar.xz
+            tar -xf qemu-7.0.0.tar.xz
+            cd qemu-7.0.0
+            ./configure --target-list=${{ matrix.arch }}-softmmu
+            make -j
+            cd ..
+            tar -czf qemu-compiled-7.0.0.tar.gz qemu-7.0.0
+          else
+            tar -xf qemu-compiled-7.0.0.tar.gz
+          fi
+          cd qemu-7.0.0
+          sudo make install
           qemu-system-${{ matrix.arch }} --version
       - name: Prepare rootfs
         run: |
           if [ "${{ matrix.arch }}" = "x86_64" ]; then
-            make baremetal-test-img
+            make test-image
           elif [ "${{ matrix.arch }}" = "riscv64" ]; then
-            make riscv-image
+            ARCH=riscv64 make test-image
           fi
       - name: Run fast tests
         if: github.event_name != 'schedule'
@@ -183,11 +199,10 @@ jobs:
       matrix:
         arch: [x86_64, riscv64]
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
         with:
+          lfs: true
           submodules: 'recursive'
-      - name: Pull prebuilt images
-        run: git lfs pull -I prebuilt/linux/libc-libos.so
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
@@ -204,23 +219,33 @@ jobs:
           sudo apt-get install musl-tools musl-dev ninja-build -y
           pip3 install -r tests/requirements.txt
       - name: Cache QEMU
-        uses: actions/cache@v1
+        id: cache-qemu
+        uses: actions/cache@v3
         with:
-          path: qemu-6.1.0
-          key: qemu-6.1.0-${{ matrix.arch }}
+          path: qemu-compiled-7.0.0.tar.gz
+          key: qemu-7.0.0-${{ matrix.arch }}
       - name: Install QEMU
         run: |
-          [ ! -d qemu-6.1.0 ] && wget https://download.qemu.org/qemu-6.1.0.tar.xz \
-            && tar xJf qemu-6.1.0.tar.xz > /dev/null \
-            && cd qemu-6.1.0 && ./configure --target-list=${{ matrix.arch }}-softmmu && cd ..
-          cd qemu-6.1.0 && sudo make install -j
+          if [ "${{ steps.cache-qemu.outputs.cache-hit }}" != "true" ]; then
+            wget https://download.qemu.org/qemu-7.0.0.tar.xz
+            tar -xf qemu-7.0.0.tar.xz
+            cd qemu-7.0.0
+            ./configure --target-list=${{ matrix.arch }}-softmmu
+            make -j
+            cd ..
+            tar -czf qemu-compiled-7.0.0.tar.gz qemu-7.0.0
+          else
+            tar -xf qemu-compiled-7.0.0.tar.gz
+          fi
+          cd qemu-7.0.0
+          sudo make install
           qemu-system-${{ matrix.arch }} --version
       - name: Prepare rootfs
         run: |
           if [ "${{ matrix.arch }}" = "x86_64" ]; then
-            make rootfs && make image
+            make image
           elif [ "${{ matrix.arch }}" = "riscv64" ]; then
-            make riscv-image
+            ARCH=riscv64 make image
           fi
       - name: Run fast tests
         if: github.event_name != 'schedule'

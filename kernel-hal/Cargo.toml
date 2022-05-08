@@ -53,7 +53,7 @@ smoltcp = { git = "https://gitee.com/gcyyfun/smoltcp", rev = "043eb60", default-
 nix = { version = "0.23", optional = true }
 tempfile = { version = "3", optional = true }
 async-std = { version = "1.10", optional = true }
-bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator.git", rev = "b3f9f51", optional = true }
+bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator.git", rev = "88e871a5", optional = true }
 
 # Bare-metal mode
 [target.'cfg(target_os = "none")'.dependencies]
