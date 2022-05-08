@@ -133,25 +133,21 @@ jobs:
           sudo apt-get install ninja-build -y
           pip3 install -r tests/requirements.txt
       - name: Cache QEMU
-        id: cache-qemu
         uses: actions/cache@v3
         with:
-          path: qemu-7.0.0-x86_64-riscv64.tar.gz
+          path: qemu-7.0.0
           key: qemu-7.0.0-x86_64-riscv64
       - name: Install QEMU
         run: |
-          if [ "${{ steps.cache-qemu.outputs.cache-hit }}" != "true" ]; then
+          if [ ! -d qemu-7.0.0 ]; then
             wget https://download.qemu.org/qemu-7.0.0.tar.xz
             tar -xf qemu-7.0.0.tar.xz
             cd qemu-7.0.0
             ./configure --target-list=x86_64-softmmu,riscv64-softmmu
             make -j
-            cd ..
-            tar -czf qemu-7.0.0-x86_64-riscv64.tar.gz qemu-7.0.0
           else
-            tar -xf qemu-7.0.0-x86_64-riscv64.tar.gz
+            cd qemu-7.0.0
           fi
-          cd qemu-7.0.0
           sudo make install
           qemu-system-${{ matrix.arch }} --version
 
@@ -191,25 +187,21 @@ jobs:
           sudo apt-get install musl-tools musl-dev ninja-build -y
           pip3 install -r tests/requirements.txt
       - name: Cache QEMU
-        id: cache-qemu
         uses: actions/cache@v3
         with:
-          path: qemu-7.0.0-x86_64-riscv64.tar.gz
+          path: qemu-7.0.0
           key: qemu-7.0.0-x86_64-riscv64
       - name: Install QEMU
         run: |
-          if [ "${{ steps.cache-qemu.outputs.cache-hit }}" != "true" ]; then
+          if [ ! -d qemu-7.0.0 ]; then
             wget https://download.qemu.org/qemu-7.0.0.tar.xz
             tar -xf qemu-7.0.0.tar.xz
             cd qemu-7.0.0
             ./configure --target-list=x86_64-softmmu,riscv64-softmmu
             make -j
-            cd ..
-            tar -czf qemu-7.0.0-x86_64-riscv64.tar.gz qemu-7.0.0
           else
-            tar -xf qemu-7.0.0-x86_64-riscv64.tar.gz
+            cd qemu-7.0.0
           fi
-          cd qemu-7.0.0
           sudo make install
           qemu-system-${{ matrix.arch }} --version
 
@@ -251,25 +243,21 @@ jobs:
           sudo apt-get install musl-tools musl-dev ninja-build -y
           pip3 install -r tests/requirements.txt
       - name: Cache QEMU
-        id: cache-qemu
         uses: actions/cache@v3
         with:
-          path: qemu-7.0.0-x86_64-riscv64.tar.gz
+          path: qemu-7.0.0
           key: qemu-7.0.0-x86_64-riscv64
       - name: Install QEMU
         run: |
-          if [ "${{ steps.cache-qemu.outputs.cache-hit }}" != "true" ]; then
+          if [ ! -d qemu-7.0.0 ]; then
             wget https://download.qemu.org/qemu-7.0.0.tar.xz
             tar -xf qemu-7.0.0.tar.xz
             cd qemu-7.0.0
             ./configure --target-list=x86_64-softmmu,riscv64-softmmu
             make -j
-            cd ..
-            tar -czf qemu-7.0.0-x86_64-riscv64.tar.gz qemu-7.0.0
           else
-            tar -xf qemu-7.0.0-x86_64-riscv64.tar.gz
+            cd qemu-7.0.0
           fi
-          cd qemu-7.0.0
           sudo make install
           qemu-system-${{ matrix.arch }} --version
 
