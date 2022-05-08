@@ -17,6 +17,7 @@ jobs:
           toolchain: nightly-2022-01-20
           override: true
           components: rust-src, rustfmt, clippy
+      - uses: Swatinem/rust-cache@v1
       - name: Check code format
         run: cargo fmt --all -- --check
       - name: Clippy LibOS
@@ -44,6 +45,7 @@ jobs:
         with:
           crate: cargo-binutils
           version: latest
+      - uses: Swatinem/rust-cache@v1
       - name: Build all packages
         run: cargo build
       - name: Build linux LibOS
@@ -65,6 +67,7 @@ jobs:
           toolchain: nightly-2022-01-20
           override: true
           target: aarch64-unknown-linux-gnu
+      - uses: Swatinem/rust-cache@v1
       - uses: actions-rs/cargo@v1
         with:
           command: build
@@ -85,6 +88,7 @@ jobs:
           profile: minimal
           toolchain: nightly-2022-01-20
           target: x86_64-fuchsia
+      - uses: Swatinem/rust-cache@v1
       - name: Build Zircon user programs
         run: cd zircon-user && make build MODE=release
 
