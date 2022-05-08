@@ -214,12 +214,7 @@ jobs:
           qemu-system-${{ matrix.arch }} --version
 
       - name: Prepare rootfs
-        run: |
-          if [ "${{ matrix.arch }}" = "x86_64" ]; then
-            make test-image
-          elif [ "${{ matrix.arch }}" = "riscv64" ]; then
-            ARCH=riscv64 make test-image
-          fi
+        run: make test-image ARCH=${{ matrix.arch }}
       - name: Run fast tests
         if: github.event_name != 'schedule'
         run: cd tests && python3 linux_libc_test.py --arch ${{ matrix.arch }} --fast
@@ -279,12 +274,7 @@ jobs:
           qemu-system-${{ matrix.arch }} --version
 
       - name: Prepare rootfs
-        run: |
-          if [ "${{ matrix.arch }}" = "x86_64" ]; then
-            make image
-          elif [ "${{ matrix.arch }}" = "riscv64" ]; then
-            ARCH=riscv64 make image
-          fi
+        run: make image ARCH=${{ matrix.arch }}
       - name: Run fast tests
         if: github.event_name != 'schedule'
         run: cd tests && python3 linux_other_test.py --arch ${{ matrix.arch }} --fast

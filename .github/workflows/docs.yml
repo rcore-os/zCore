@@ -9,6 +9,11 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v3
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly-2022-01-20
+      - uses: Swatinem/rust-cache@v1
       - name: Build docs
         run: |
           cargo doc --no-deps --all-features

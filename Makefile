@@ -1,6 +1,6 @@
 # Makefile for top level of zCore
 
-PATH := $(PATH):$(PWD)/toolchain/riscv64-linux-musl-cross/bin
+PATH := $(PATH):$(PWD)/ignored/riscv64-linux-musl-cross/bin
 ARCH ?= x86_64
 
 .PHONY: rootfs libc-test image test-image check doc clean
@@ -27,7 +27,6 @@ clean:
 	find zCore -maxdepth 1 -name "*.img" -delete
 	rm -rf rootfs
 	rm -rf riscv_rootfs
-	rm -rf toolchain
 	find zCore/target -type f -name "*.zbi" -delete
 	find zCore/target -type f -name "*.elf" -delete
 
