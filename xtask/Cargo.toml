@@ -11,7 +11,8 @@ build = "build.rs"
 [dependencies]
 clap = { version = "3.1", features = ["derive"] }
 clap-verbosity-flag = "1.0"
-dircpy = "0.3.9"
+dircpy = "0.3"
+rand = "0.8"
 shadow-rs = "0.11"
 
 [build-dependencies]

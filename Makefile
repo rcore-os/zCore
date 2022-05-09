@@ -3,22 +3,40 @@
 PATH := $(PATH):$(PWD)/ignored/riscv64-linux-musl-cross/bin
 ARCH ?= x86_64
 
-.PHONY: rootfs libc-test image test-image check doc clean
+.PHONY: help setup rootfs libc-test image test-image check doc clean
 
+# print top level help
+help:
+	cargo xtask help
+
+# setup git lfs and git submodules
+setup:
+	cargo setup
+
+# update toolchain and dependencies
+update:
+	cargo update-all
+
+# put rootfs for linux mode
 rootfs:
 	cargo rootfs $(ARCH)
 
+# put libc-test into rootfs
 libc-test:
 	cargo libc-test $(ARCH)
 
-image: rootfs
+# build image from rootfs
+image:
 	cargo image $(ARCH)
 
-test-image: rootfs libc-test image
+# build image with libc-test
+test-image: libc-test image
 
+# check code style
 check:
-	cargo xtask check
+	cargo check-style
 
+# build and open project document
 doc:
 	cargo doc --open
 

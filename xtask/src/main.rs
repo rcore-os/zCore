@@ -1,4 +1,5 @@
 #![feature(path_file_prefix)]
+#![feature(exit_status_error)]
 
 use clap::{Args, Parser, Subcommand};
 use clap_verbosity_flag::Verbosity;
@@ -8,6 +9,7 @@ mod arch;
 mod dir;
 mod dump;
 mod git;
+mod wget;
 
 use arch::Arch;
 
@@ -95,7 +97,7 @@ fn main() {
         }
         Commands::UpdateAll => update_all(),
         Commands::CheckStyle => check_style(),
-        Commands::Rootfs(arch) => arch.rootfs(),
+        Commands::Rootfs(arch) => arch.rootfs(true),
         Commands::LibcTest(arch) => arch.libc_test(),
         Commands::Image(arch) => arch.image(),
         Commands::Test => todo!(),
@@ -111,41 +113,44 @@ fn make_git_lfs() {
     {
         panic!("Cannot find git lfs, see https://git-lfs.github.com/ for help.");
     }
-    if !git::lfs().arg("install").status().unwrap().success() {
-        panic!("FAILED: git lfs install")
-    }
-
-    if !git::lfs().arg("pull").status().unwrap().success() {
-        panic!("FAILED: git lfs pull")
-    }
+    git::lfs()
+        .arg("install")
+        .status()
+        .unwrap()
+        .exit_ok()
+        .expect("FAILED: git lfs install");
+    git::lfs()
+        .arg("pull")
+        .status()
+        .unwrap()
+        .exit_ok()
+        .expect("FAILED: git lfs pull");
 }
 
 /// 更新子项目。
 fn git_submodule_update(init: bool) {
-    if !git::submodule_update(init).status().unwrap().success() {
-        panic!("FAILED: git submodule update --init");
-    }
+    git::submodule_update(init)
+        .status()
+        .unwrap()
+        .exit_ok()
+        .expect("FAILED: git submodule update --init");
 }
 
 /// 更新工具链和依赖。
 fn update_all() {
     git_submodule_update(false);
-    if !Command::new("rustup")
+    Command::new("rustup")
         .arg("update")
         .status()
         .unwrap()
-        .success()
-    {
-        panic!("FAILED: rustup update");
-    }
-    if !Command::new("cargo")
+        .exit_ok()
+        .expect("FAILED: rustup update");
+    Command::new("cargo")
         .arg("update")
         .status()
         .unwrap()
-        .success()
-    {
-        panic!("FAILED: cargo update");
-    }
+        .exit_ok()
+        .expect("FAILED: cargo update");
 }
 
 /// 设置 git 代理。
@@ -160,38 +165,30 @@ fn set_git_proxy(global: bool, port: u16) {
         .expect("FAILED: detect DNS");
     let proxy = format!("socks5://{dns}:{port}");
     #[rustfmt::skip]
-    let git = git::config(global)
+    git::config(global)
         .arg("http.proxy").arg(&proxy)
-        .status().unwrap();
-    if !git.success() {
-        panic!("FAILED: git config --unset http.proxy");
-    }
+        .status().unwrap()
+        .exit_ok().expect("FAILED: git config --unset http.proxy");
     #[rustfmt::skip]
-    let git = git::config(global)
+    git::config(global)
         .arg("https.proxy").arg(&proxy)
-        .status().unwrap();
-    if !git.success() {
-        panic!("FAILED: git config --unset https.proxy");
-    }
+        .status().unwrap()
+        .exit_ok().expect("FAILED: git config --unset https.proxy");
     println!("git proxy = {proxy}");
 }
 
 /// 移除 git 代理。
 fn unset_git_proxy(global: bool) {
     #[rustfmt::skip]
-    let git = git::config(global)
+    git::config(global)
         .arg("--unset").arg("http.proxy")
-        .status().unwrap();
-    if !git.success() {
-        panic!("FAILED: git config --unset http.proxy");
-    }
+        .status().unwrap()
+        .exit_ok().expect("FAILED: git config --unset http.proxy");
     #[rustfmt::skip]
-    let git = git::config(global)
+    git::config(global)
         .arg("--unset").arg("https.proxy")
-        .status().unwrap();
-    if !git.success() {
-        panic!("FAILED: git config --unset https.proxy");
-    }
+        .status().unwrap()
+        .exit_ok().expect("FAILED: git config --unset https.proxy");
     println!("git proxy =");
 }
 

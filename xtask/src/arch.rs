@@ -1,4 +1,4 @@
-﻿use super::{dir, git, ALPINE_ROOTFS_VERSION, ALPINE_WEBSITE};
+﻿use super::{dir, git, wget::wget, ALPINE_ROOTFS_VERSION, ALPINE_WEBSITE};
 use clap::{Args, Subcommand};
 use dircpy::copy_dir;
 use std::{
@@ -10,7 +10,7 @@ use std::{
 };
 
 #[derive(Args)]
-pub struct Arch {
+pub(super) struct Arch {
     #[clap(subcommand)]
     command: ArchCommands,
 }
@@ -24,90 +24,49 @@ enum ArchCommands {
 }
 
 impl Arch {
-    /// 获取 alpine 镜像。
-    fn wget_alpine(&self) {
-        let (local_path, web_url) = match self.command {
-            ArchCommands::Riscv64 => {
-                const ARCH: &str = "riscv64";
-                const FILE_NAME: &str = "minirootfs.tar.xz";
-                const WEB_URL: &str = "https://github.com/rcore-os/libc-test-prebuilt/releases/download/0.1/prebuild.tar.xz";
-
-                let local_path = PathBuf::from(format!("prebuilt/linux/{ARCH}/{FILE_NAME}"));
-                if local_path.exists() {
-                    return;
-                }
-                (local_path, WEB_URL.into())
-            }
-            ArchCommands::X86_64 => {
-                const ARCH: &str = "x86_64";
-                const FILE_NAME: &str = "minirootfs.tar.gz";
-
-                let local_path = PathBuf::from(format!("prebuilt/linux/{ARCH}/{FILE_NAME}"));
-                if local_path.exists() {
-                    return;
-                }
-                (
-                    local_path,
-                    format!(
-                        "{ALPINE_WEBSITE}/{ARCH}/alpine-minirootfs-{ALPINE_ROOTFS_VERSION}-{ARCH}.tar.gz"
-                    ),
-                )
-            }
-        };
-
-        fs::create_dir_all(local_path.parent().unwrap()).unwrap();
-
-        #[rustfmt::skip]
-        let wget = Command::new("wget")
-            .arg(&web_url)
-            .arg("-O").arg(local_path)
-            .status();
-        if !wget.unwrap().success() {
-            panic!("FAILED: wget {web_url}");
-        }
-    }
-
     /// 构造启动内存文件系统 rootfs。
     ///
     /// 将在文件系统中放置必要的库文件，并下载用于交叉编译的工具链。
-    pub fn rootfs(&self) {
+    pub fn rootfs(&self, clear: bool) {
         self.wget_alpine();
         match self.command {
             ArchCommands::Riscv64 => {
                 const DIR: &str = "riscv_rootfs";
                 const ARCH: &str = "riscv64";
 
-                {
-                    dir::clear(DIR).unwrap();
-                    let tar = dir::detect(&format!("prebuilt/linux/{ARCH}"), "minirootfs").unwrap();
-                    #[rustfmt::skip]
-                    let res = tar_xf(&tar, Some(DIR))
-                        .arg("--strip-components").arg("1")
-                        .status().unwrap();
-                    if !res.success() {
-                        panic!("FAILED: tar xf {tar:?}");
-                    }
+                let dir = Path::new(DIR);
+                if dir.is_dir() && !clear {
+                    return;
                 }
-                {
-                    #[rustfmt::skip]
-                    let ln = Command::new("ln")
-                        .arg("-s").arg("busybox").arg("riscv_rootfs/bin/ls")
-                        .status().unwrap();
-                    if !ln.success() {
-                        panic!("FAILED: ln -s busybox riscv_rootfs/bin/ls");
-                    }
-                }
+                dir::clear(dir).unwrap();
+                let tar = dir::detect(&format!("prebuilt/linux/{ARCH}"), "minirootfs").unwrap();
+                #[rustfmt::skip]
+                tar_xf(&tar, Some(DIR))
+                    .arg("--strip-components").arg("1")
+                    .status().unwrap()
+                    .exit_ok().expect("FAILED: tar xf {tar:?}");
+                #[rustfmt::skip]
+                Command::new("ln")
+                    .arg("-s").arg("busybox").arg("riscv_rootfs/bin/ls")
+                    .status().unwrap()
+                    .exit_ok().expect("FAILED: ln -s busybox riscv_rootfs/bin/ls");
             }
             ArchCommands::X86_64 => {
                 const DIR: &str = "rootfs";
                 const ARCH: &str = "x86_64";
 
+                let dir = Path::new(DIR);
+                if dir.is_dir() && !clear {
+                    return;
+                }
                 {
                     dir::clear(DIR).unwrap();
                     let tar = dir::detect(&format!("prebuilt/linux/{ARCH}"), "minirootfs").unwrap();
-                    if !tar_xf(&tar, Some(DIR)).status().unwrap().success() {
-                        panic!("FAILED: tar xf {tar:?}");
-                    }
+                    tar_xf(&tar, Some(DIR))
+                        .status()
+                        .unwrap()
+                        .exit_ok()
+                        .expect("FAILED: tar xf {tar:?}");
                 }
                 {
                     // libc-libos.so (convert syscall to function call) is from https://github.com/rcore-os/musl/tree/rcore
@@ -132,13 +91,11 @@ impl Arch {
                                 c.file_prefix().and_then(|s| s.to_str()).unwrap()
                             );
                             #[rustfmt::skip]
-                            let gcc = Command::new("gcc").arg(&c)
+                            Command::new("gcc").arg(&c)
                                 .arg("-o").arg(o)
                                 .arg("-Wl,--dynamic-linker=/lib/ld-musl-x86_64.so.1")
-                                .status().unwrap();
-                            if !gcc.success() {
-                                panic!("FAILED: gcc {c:?}");
-                            }
+                                .status().unwrap()
+                                .exit_ok().expect("FAILED: gcc {c:?}");
                         });
                 }
             }
@@ -147,6 +104,7 @@ impl Arch {
 
     /// 将 libc-test 放入 rootfs。
     pub fn libc_test(&self) {
+        self.rootfs(false);
         clone_libc_test();
         match self.command {
             ArchCommands::Riscv64 => {
@@ -200,6 +158,7 @@ impl Arch {
 
     /// 生成镜像。
     pub fn image(&self) {
+        self.rootfs(false);
         install_fs_fuse();
         let image = match self.command {
             ArchCommands::Riscv64 => {
@@ -258,6 +217,41 @@ impl Arch {
         if !resize.success() {
             panic!("FAILED: qemu-img resize");
         }
+    }
+
+    /// 获取 alpine 镜像。
+    fn wget_alpine(&self) {
+        let (local_path, web_url) = match self.command {
+            ArchCommands::Riscv64 => {
+                const ARCH: &str = "riscv64";
+                const FILE_NAME: &str = "minirootfs.tar.xz";
+                const WEB_URL: &str = "https://github.com/rcore-os/libc-test-prebuilt/releases/download/0.1/prebuild.tar.xz";
+
+                let local_path = PathBuf::from(format!("prebuilt/linux/{ARCH}/{FILE_NAME}"));
+                if local_path.exists() {
+                    return;
+                }
+                (local_path, WEB_URL.into())
+            }
+            ArchCommands::X86_64 => {
+                const ARCH: &str = "x86_64";
+                const FILE_NAME: &str = "minirootfs.tar.gz";
+
+                let local_path = PathBuf::from(format!("prebuilt/linux/{ARCH}/{FILE_NAME}"));
+                if local_path.exists() {
+                    return;
+                }
+                (
+                    local_path,
+                    format!(
+                        "{ALPINE_WEBSITE}/{ARCH}/alpine-minirootfs-{ALPINE_ROOTFS_VERSION}-{ARCH}.tar.gz"
+                    ),
+                )
+            }
+        };
+
+        fs::create_dir_all(local_path.parent().unwrap()).unwrap();
+        wget(&web_url, &local_path);
     }
 }
 
@@ -322,17 +316,7 @@ fn riscv64_linux_musl_cross() {
     let dir = format!("{DIR}/{NAME}");
     let tgz = format!("{dir}.tgz");
 
-    if !Path::new(&tgz).exists() {
-        let url = format!("https://musl.cc/{NAME}.tgz");
-        #[rustfmt::skip]
-                        let wget = Command::new("wget")
-                            .arg(&url)
-                            .arg("-O").arg(&tgz)
-                            .status().unwrap();
-        if !wget.success() {
-            panic!("FAILED: wget {url}");
-        }
-    }
+    wget(&format!("https://musl.cc/{NAME}.tgz"), &tgz);
     dir::rm(&dir).unwrap();
     if !tar_xf(&tgz, Some(DIR)).status().unwrap().success() {
         panic!("FAILED: tar xf {tgz}");

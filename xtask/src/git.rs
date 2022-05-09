@@ -13,7 +13,7 @@ pub fn lfs() -> Command {
     git("lfs")
 }
 
-/// git config [--global] ...
+/// git config [[--global]] ...
 pub fn config(global: bool) -> Command {
     let mut cmd = git("config");
     if global {
@@ -22,7 +22,7 @@ pub fn config(global: bool) -> Command {
     cmd
 }
 
-/// git clone [dir] ...
+/// git clone [[dir]] ...
 pub fn clone(
     repo: &(impl AsRef<OsStr> + ?Sized),
     dir: Option<&(impl AsRef<OsStr> + ?Sized)>,

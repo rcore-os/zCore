@@ -6,6 +6,10 @@
 
 Reimplement [Zircon][zircon] microkernel in safe Rust as a userspace program!
 
+## Manual
+
+[This](docs/Manual.md) is a new simple chinese manual.
+
 ## Dev Status
 
 🚧 Working In Progress
@@ -24,9 +28,9 @@ make run ARCH=riscv64 LINUX=1
 
 Environments：
 
-* [Rust toolchain](http://rustup.rs)
-* [QEMU](https://www.qemu.org)
-* [Git LFS](https://git-lfs.github.com)
+- [Rust toolchain](http://rustup.rs)
+- [QEMU](https://www.qemu.org)
+- [Git LFS](https://git-lfs.github.com)
 
 ### Developing environment info
 
@@ -48,15 +52,18 @@ For users in China, there's a mirror you can try:
 ```sh
 git clone https://github.com.cnpmjs.org/rcore-os/zCore --recursive
 ```
+
 ### Run zcore in libos mode
+
 #### Run zcore in linux-libos mode
-* step 1: Prepare Alpine Linux rootfs:
+
+- step 1: Prepare Alpine Linux rootfs:
 
   ```sh
   make rootfs
   ```
 
-* step 2: Compile & Run native Linux program (Busybox) in libos mode:
+- step 2: Compile & Run native Linux program (Busybox) in libos mode:
 
   ```sh
   cargo run --release --features "linux libos" -- /bin/busybox [args]
@@ -68,7 +75,7 @@ git clone https://github.com.cnpmjs.org/rcore-os/zCore --recursive
 
 #### Run native Zircon program (shell) in zircon-libos mode:
 
-* step 1: Compile and Run Zircon shell
+- step 1: Compile and Run Zircon shell
 
   ```sh
   cargo run --release --features "zircon libos" -- prebuilt/zircon/x64/bringup.zbi
@@ -77,15 +84,16 @@ git clone https://github.com.cnpmjs.org/rcore-os/zCore --recursive
   The `graphic` and `LOG` options are the same as Linux.
 
 ### Run zcore in bare-metal mode
+
 #### Run Linux shell in  linux-bare-metal mode:
 
-* step 1: Prepare Alpine Linux rootfs:
+- step 1: Prepare Alpine Linux rootfs:
 
   ```sh
   make rootfs
   ```
 
-* step 2: Create Linux rootfs image:
+- step 2: Create Linux rootfs image:
 
   Note: Before below step, you can add some special apps in zCore/rootfs
 
@@ -93,7 +101,7 @@ git clone https://github.com.cnpmjs.org/rcore-os/zCore --recursive
   make image
   ```
 
-* step 3: Build and run zcore in  linux-bare-metal mode:
+- step 3: Build and run zcore in  linux-bare-metal mode:
 
   ```sh
   cd zCore && make run MODE=release LINUX=1 [LOG=warn] [GRAPHIC=on] [ACCEL=1]
@@ -101,13 +109,13 @@ git clone https://github.com.cnpmjs.org/rcore-os/zCore --recursive
 
 #### Run Zircon shell in zircon-bare-metal mode:
 
-* step 1: Build and run zcore in  zircon-bare-metal mode:
+- step 1: Build and run zcore in  zircon-bare-metal mode:
 
   ```sh
   cd zCore && make run MODE=release [LOG=warn] [GRAPHIC=on] [ACCEL=1]
   ```
 
-* step 2: Build and run your own Zircon user programs:
+- step 2: Build and run your own Zircon user programs:
 
   ```sh
   # See template in zircon-user
@@ -118,6 +126,7 @@ git clone https://github.com.cnpmjs.org/rcore-os/zCore --recursive
   ```
 
 ## Testing
+
 ### LibOS Mode Testing
 
 #### Zircon related
@@ -148,6 +157,7 @@ cd scripts && python3 libos-libc-tests.py
 ```
 
 ### Bare-metal Mode Testing
+
 #### Zircon related
 
 Run Zircon official core-tests on bare-metal:
@@ -167,6 +177,7 @@ cd scripts && python3 core-tests.py
 #### x86-64 Linux related
 
 Run Linux musl libc-tests for CI:
+
 ```sh
 ##  Prepare rootfs with libc-test apps
 make baremetal-test-img
@@ -184,6 +195,7 @@ You can use [`scripts/baremetal-libc-test-ones.py`](./scripts/baremetal-libc-tes
 #### riscv-64 Linux related
 
 Run Linux musl libc-tests for CI:
+
 ```sh
 ##  Prepare rootfs with libc-test & oscomp apps
 make riscv-image
@@ -192,25 +204,28 @@ cd scripts && python3 baremetal-test-riscv64.py
 ##
 ```
 
-You can use[ `scripts/baremetal-libc-test-ones-riscv64.py`](./scripts/baremetal-libc-test-ones-riscv64.py) & [`scripts/linux/baremetal-test-ones-rv64.txt`](scripts/linux/baremetal-test-ones-rv64.txt)to test
+You can use[scripts/baremetal-libc-test-ones-riscv64.py](./scripts/baremetal-libc-test-ones-riscv64.py) & [`scripts/linux/baremetal-test-ones-rv64.txt`](scripts/linux/baremetal-test-ones-rv64.txt)to test
 specified apps.
 
 [`scripts/linux/baremetal-test-fail-riscv64.txt`](./scripts/linux/baremetal-test-fail-riscv64.txt)includes all failed riscv-64 apps (We need YOUR HELP to fix bugs!)
 
 ## Graph/Game
 
-snake game: https://github.com/rcore-os/rcore-user/blob/master/app/src/snake.c
+snake game: <https://github.com/rcore-os/rcore-user/blob/master/app/src/snake.c>
 
 ### Step1: compile usr app
+
 We can use musl-gcc compile it in x86_64 mode
 
 ### Step2: change zcore for run snake app first.
+
 change zCore/zCore/main.rs L176
 vec!["/bin/busybox".into(), "sh".into()]
 TO
 vec!["/bin/snake".into(), "sh".into()]
 
 ### Step3: prepare root fs image, run zcore in linux-bare-metal mode
+
 exec:
 
 ```sh
@@ -235,12 +250,15 @@ Operation
   - `Middle`: Pause/Resume
 
 ## Doc
+
 ```
 make doc
 ```
+
 ### RISC-V 64 porting info
 
 - [porting riscv64 doc](./docs/porting-rv64.md)
+
 ## Components
 
 ### Overview
@@ -260,4 +278,5 @@ make doc
 | Exception Handling        | Interrupt  | Signal            |
 
 ### Small Goal & Little Plans
-- https://github.com/rcore-os/zCore/wiki/Plans
+
+- <https://github.com/rcore-os/zCore/wiki/Plans>
