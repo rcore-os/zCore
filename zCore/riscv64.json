@@ -16,10 +16,10 @@
   "linker": "rust-lld",
   "linker-flavor": "ld.lld",
   "pre-link-args": {
-	  "ld.lld": [
-		  "-TzCore/src/platform/riscv/boot/linker64.ld",
-		  "-TzCore/src/platform/riscv/boot/kernel-vars.ld"
-	  ]
+    "ld.lld": [
+      "-TzCore/src/platform/riscv/linker64.ld",
+      "-TzCore/src/platform/riscv/kernel-vars.ld"
+    ]
   },
   "max-atomic-width": 64,
   "panic-strategy": "abort",

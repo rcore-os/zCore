@@ -27,17 +27,11 @@ CROSS_TOOLCHAIN := http://musl.cc/riscv64-linux-musl-cross.tgz
 PATH := $(PATH):$(PWD)/toolchain/riscv64-linux-musl-cross/bin
 
 ARCH ?= x86_64
-rcore_fs_fuse_revision := 7f5eeac
-OUT_IMG := zCore/$(ARCH).img
-TMP_ROOTFS := /tmp/rootfs
 
-# for linux syscall tests
-TEST_DIR := linux-syscall/test/
-DEST_DIR := rootfs/bin/
-TEST_PATH := $(wildcard $(TEST_DIR)*.c)
-BASENAMES := $(notdir  $(basename $(TEST_PATH)))
+.PHONY: rootfs libc-test image test-image check doc clean
 
-CFLAG := -Wl,--dynamic-linker=/lib/ld-musl-x86_64.so.1
+rootfs:
+	cargo rootfs $(ARCH)
 
 .PHONY: rootfs libc-test rcore-fs-fuse image
 
@@ -72,34 +66,18 @@ aarch64-rootfs: prebuilt/linux/aarch64/$(AARCH64_ROOTFS_TAR)
 	@tar -xvf $< -C aarch64_rootfs --strip-components 1
 
 libc-test:
-	cd rootfs && git clone $(LIBC_TEST_URL) --depth 1
-	cd rootfs/libc-test && cp config.mak.def config.mak && echo 'CC := musl-gcc' >> config.mak && make -j
+	cargo libc-test $(ARCH)
 
-rt-test:
-	cd rootfs && git clone https://kernel.googlesource.com/pub/scm/linux/kernel/git/clrkwllms/rt-tests --depth 1
-	cd rootfs/rt-tests && make
-	echo x86 gcc build rt-test,now need manual modificy.
+image: rootfs
+	cargo image $(ARCH)
 
-rcore-fs-fuse:
-ifneq ($(shell rcore-fs-fuse dir image git-version), $(rcore_fs_fuse_revision))
-	@echo Installing rcore-fs-fuse
-	@cargo install rcore-fs-fuse --git https://github.com/rcore-os/rcore-fs --rev $(rcore_fs_fuse_revision) --force
-endif
+test-image: rootfs libc-test image
 
-$(OUT_IMG): prebuilt/linux/$(ROOTFS_TAR) rcore-fs-fuse
-	@echo Generating $(ARCH).img
-	@rm -rf $(TMP_ROOTFS)
-	@mkdir -p $(TMP_ROOTFS)
-	@tar xf $< -C $(TMP_ROOTFS)
-	@cp $(TMP_ROOTFS)/lib/ld-musl-x86_64.so.1 rootfs/lib/
-	@rcore-fs-fuse $@ rootfs zip
-# recover rootfs/ld-musl-x86_64.so.1 for zcore usr libos
-# libc-libos.so (convert syscall to function call) is from https://github.com/rcore-os/musl/tree/rcore
-	@cp prebuilt/linux/libc-libos.so rootfs/lib/ld-musl-x86_64.so.1
+check:
+	cargo xtask check
 
-image: $(OUT_IMG)
-	@echo Resizing $(ARCH).img
-	@qemu-img resize $(OUT_IMG) +5M
+doc:
+	cargo doc --open
 
 
 riscv-image: rcore-fs-fuse riscv-rootfs toolchain
@@ -124,39 +102,8 @@ clean:
 	rm -rf aarch64_rootfs
 	find zCore/target -type f -name "*.zbi" -delete
 	find zCore/target -type f -name "*.elf" -delete
-	cd linux-syscall/test-oscomp && make clean
-	cd linux-syscall/busybox && make clean
-	cd linux-syscall/lua && make clean
-	cd linux-syscall/lmbench && make clean
 
-doc:
-	cargo doc --open
-
-baremetal-test-img: prebuilt/linux/$(ROOTFS_TAR) rcore-fs-fuse
-	@echo Generating $(ARCH).img
-	@rm -rf $(TMP_ROOTFS)
-	@mkdir -p $(TMP_ROOTFS)
-	@tar xf $< -C $(TMP_ROOTFS)
-	@mkdir -p rootfs/lib
-	@cp $(TMP_ROOTFS)/lib/ld-musl-x86_64.so.1 rootfs/lib/
-	@cd rootfs && rm -rf libc-test && git clone $(LIBC_TEST_URL) --depth 1
-	@cd rootfs/libc-test && cp config.mak.def config.mak && echo 'CC := musl-gcc' >> config.mak && make -j
-	@rcore-fs-fuse $(OUT_IMG) rootfs zip
-# recover rootfs/ld-musl-x86_64.so.1 for zcore usr libos
-# libc-libos.so (convert syscall to function call) is from https://github.com/rcore-os/musl/tree/rcore
-	@cp prebuilt/linux/libc-libos.so rootfs/lib/ld-musl-x86_64.so.1
-	@echo Resizing $(ARCH).img
-	@qemu-img resize $(OUT_IMG) +5M
-
-baremetal-test:
-	@make -C zCore baremetal-test MODE=release LINUX=1 | tee stdout-baremetal-test
-
-baremetal-test-rv64:
-	@make -C zCore baremetal-test-rv64 ARCH=riscv64 MODE=release LINUX=1 ROOTPROC=$(ROOTPROC) | tee -a stdout-baremetal-test-rv64 | tee stdout-rv64
-
-
-check:
-	cargo fmt --all -- --check
-	cargo clippy --all-features
-	cd zCore && make clippy ARCH=x86_64
-	cd zCore && make clippy ARCH=riscv64 LINUX=1
+rt-test:
+	cd rootfs && git clone https://kernel.googlesource.com/pub/scm/linux/kernel/git/clrkwllms/rt-tests --depth 1
+	cd rootfs/rt-tests && make
+	echo x86 gcc build rt-test,now need manual modificy.

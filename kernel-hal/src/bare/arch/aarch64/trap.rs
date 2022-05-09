@@ -40,34 +40,30 @@ fn sync_handler(tf: &mut TrapFrame) {
     let esr = ESR_EL1.extract();
     match esr.read_as_enum(ESR_EL1::EC) {
         Some(ESR_EL1::EC::Value::Unknown) => {
-            panic!("Unknown exception @ {:#x}, kernel killed it.", tf.elr);
-            // CurrentTask::get().exit(-1);
+            panic!("Unknown exception @ {:#x}", tf.elr);
         }
         Some(ESR_EL1::EC::Value::SVC64) => {
             debug!("syscall...");
-            // tf.r[0] = syscall(tf.r[8] as _, [tf.r[0] as _, tf.r[1] as _, tf.r[2] as _], tf) as u64
         }
         Some(ESR_EL1::EC::Value::DataAbortLowerEL)
         | Some(ESR_EL1::EC::Value::DataAbortCurrentEL) => {
             let iss = esr.read(ESR_EL1::ISS);
             panic!(
-                "Data Abort @ {:#x}, FAR = {:#x}, ISS = {:#x}, kernel killed it.",
+                "Data Abort @ {:#x}, FAR = {:#x}, ISS = {:#x}",
                 tf.elr,
                 FAR_EL1.get(),
                 iss
             );
-            // CurrentTask::get().exit(-1);
         }
         Some(ESR_EL1::EC::Value::InstrAbortLowerEL)
         | Some(ESR_EL1::EC::Value::InstrAbortCurrentEL) => {
             let iss = esr.read(ESR_EL1::ISS);
             panic!(
-                "Instruction Abort @ {:#x}, FAR = {:#x}, ISS = {:#x}, kernel killed it.",
+                "Instruction Abort @ {:#x}, FAR = {:#x}, ISS = {:#x}",
                 tf.elr,
                 FAR_EL1.get(),
                 iss
             );
-            // CurrentTask::get().exit(-1);
         }
         _ => {
             panic!(

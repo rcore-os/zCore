@@ -1,5 +1,6 @@
 **/.*
 !.github/
+!.cargo/
 !.vscode/settings.json
 
 **/target
@@ -8,10 +9,13 @@
 *.log
 Cargo.lock
 
+/toolchain
+/ignored
 /rootfs
 /riscv_rootfs
 /aarch64_rootfs
 /prebuilt/linux/alpine*
+/prebuilt/linux/**/minirootfs.tar.*
 /prebuilt/linux/riscv64/prebuild*
 /prebuilt/linux/aarch64/*
 zCore/src/platform/riscv/boot/kernel-vars.ld

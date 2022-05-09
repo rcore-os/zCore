@@ -54,15 +54,14 @@ pub fn boot_options() -> BootOptions {
                 root_proc: args[1..].join("?"),
             }
         } else {
+            use alloc::string::ToString;
             let cmdline = kernel_hal::boot::cmdline();
             let options = parse_cmdline(&cmdline);
             BootOptions {
                 cmdline: cmdline.clone(),
-                log_level: String::from(*options.get("LOG").unwrap_or(&"")),
+                log_level: options.get("LOG").unwrap_or(&"").to_string(),
                 #[cfg(feature = "linux")]
-                root_proc: String::from(*options.get("ROOTPROC").unwrap_or(&"/bin/busybox?sh")),
-                // root_proc: String::from(*options.get("ROOTPROC")
-                //     .unwrap_or(&"/libc-test/functional/pthread_mutex.exe")),
+                root_proc: options.get("ROOTPROC").unwrap_or(&"/bin/busybox?sh").to_string(),
             }
         }
     }

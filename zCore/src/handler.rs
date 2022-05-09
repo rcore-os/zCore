@@ -18,9 +18,6 @@ impl KernelHandler for ZcoreKernelHandler {
     }
 
     fn handle_page_fault(&self, fault_vaddr: usize, access_flags: MMUFlags) {
-        panic!(
-            "page fault from kernel mode @ {:#x}({:?})",
-            fault_vaddr, access_flags
-        );
+        panic!("page fault from kernel mode @ {fault_vaddr:#x}({access_flags:?})");
     }
 }
