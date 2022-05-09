@@ -1,5 +1,6 @@
 **/.*
 !.github/
+!.cargo/
 !.vscode/settings.json
 
 **/target
@@ -9,11 +10,12 @@
 Cargo.lock
 
 /toolchain
+/ignored
 /rootfs
 /riscv_rootfs
-/prebuilt/linux/alpine*
+/prebuilt/linux/**/minirootfs.tar.*
 /prebuilt/linux/riscv64/prebuild*
-zCore/src/platform/riscv/boot/kernel-vars.ld
+zCore/src/platform/riscv/kernel-vars.ld
 
 .DS_Store
 __pycache__

@@ -1,7 +1,10 @@
 [package]
 name = "zircon-object"
 version = "0.1.0"
-authors = ["Runji Wang <wangrunji0408@163.com>", "Qinglin Pan <panqinglin00@163.com>"]
+authors = [
+    "Runji Wang <wangrunji0408@163.com>",
+    "Qinglin Pan <panqinglin00@163.com>",
+]
 edition = "2018"
 description = "Zircon kernel objects"
 
@@ -20,13 +23,16 @@ hashbrown = "0.9"
 downcast-rs = { version = "1.2", default-features = false }
 kernel-hal = { path = "../kernel-hal", default-features = false }
 numeric-enum-macro = "0.2"
-futures = { version = "0.3", default-features = false, features = ["alloc", "async-await"] }
+futures = { version = "0.3", default-features = false, features = [
+    "alloc",
+    "async-await",
+] }
 xmas-elf = { version = "0.7", optional = true }
 region-alloc = { git = "https://github.com/rzswh/region-allocator", rev = "122c7a71" }
-lazy_static = { version = "1.4", features = ["spin_no_std" ] }
+lazy_static = { version = "1.4", features = ["spin_no_std"] }
 cfg-if = "1.0"
 #rvm = { git = "https://github.com/rcore-os/RVM", rev = "382fc60", optional = true }
-lock = { git = "https://github.com/DeathWish5/kernel-sync" }
+lock = { git = "https://github.com/DeathWish5/kernel-sync", rev = "01b2e70" }
 
 [dev-dependencies]
 async-std = { version = "1.10", features = ["attributes", "unstable"] }

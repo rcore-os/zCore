@@ -2,5 +2,6 @@
     "files.associations": {
         "unistd.h": "c",
         "time.h": "c"
-    }
+    },
+    "rust-analyzer.cargo.target": "riscv64gc-unknown-none-elf",
 }

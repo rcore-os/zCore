@@ -38,7 +38,7 @@ smoltcp = { git = "https://gitee.com/gcyyfun/smoltcp", rev = "043eb60", default-
     "socket-raw",
 ] }
 zcore-drivers = { path = "../drivers", features = ["virtio"] }
-lock = { git = "https://github.com/DeathWish5/kernel-sync" }
+lock = { git = "https://github.com/DeathWish5/kernel-sync", rev = "01b2e70" }
 
 # LibOS mode
 [target.'cfg(not(target_os = "none"))'.dependencies]

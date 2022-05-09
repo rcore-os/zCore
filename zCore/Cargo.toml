@@ -55,7 +55,7 @@ log = "0.4"
 spin = "0.9"
 cfg-if = "1.0"
 lazy_static = { version = "1.4", features = ["spin_no_std"] }
-bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator", rev = "b3f9f51" }
+bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator", rev = "88e871a5" }
 kernel-hal = { path = "../kernel-hal", default-features = false, features = [
     "smp",
 ] }
@@ -64,7 +64,7 @@ zircon-object = { path = "../zircon-object" }
 linux-object = { path = "../linux-object", optional = true }
 rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "1a3246b", optional = true }
 rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "1a3246b", optional = true }
-lock = { git = "https://github.com/DeathWish5/kernel-sync" }
+lock = { git = "https://github.com/DeathWish5/kernel-sync", rev = "01b2e70"  }
 executor = { git = "https://github.com/DeathWish5/PreemptiveScheduler", rev = "6f5b579" }
 
 # LibOS mode
@@ -79,6 +79,7 @@ buddy_system_allocator = "0.8"
 
 # RISC-V
 [target.'cfg(any(target_arch = "riscv32", target_arch = "riscv64"))'.dependencies]
+r0 = "1"
 riscv = { git = "https://github.com/rust-embedded/riscv", rev = "cd31989", features = [
     "inline-asm",
 ] }
@@ -87,3 +88,8 @@ riscv = { git = "https://github.com/rust-embedded/riscv", rev = "cd31989", featu
 [target.'cfg(all(target_os = "none", target_arch = "x86_64"))'.dependencies]
 rboot = { git = "https://github.com/rcore-os/rboot.git", rev = "39d6e24", default-features = false }
 # rvm = { git = "https://github.com/rcore-os/RVM", rev = "e91d625", optional = true }
+
+# Bare-metal mode on x86_64
+[target.'cfg(all(target_os = "none", not(target_arch = "x86_64")))'.dependencies]
+serde = { version = "1.0", default-features = false, features = ["derive"] }
+serde-device-tree = { git = "https://github.com/YdrMaster/serde-device-tree.git", rev = "af8605f", default-features = false }
