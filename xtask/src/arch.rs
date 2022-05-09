@@ -97,30 +97,6 @@ impl Arch {
                         panic!("FAILED: ln -s busybox riscv_rootfs/bin/ls");
                     }
                 }
-                {
-                    const DIR: &str = "toolchain";
-                    let name = format!("{ARCH}-linux-musl-cross");
-                    let dir = format!("{DIR}/{name}");
-                    let tgz = format!("{dir}.tgz");
-
-                    if !Path::new(&tgz).exists() {
-                        dir::clear(DIR).unwrap();
-                        let url = format!("https://musl.cc/{name}.tgz");
-                        #[rustfmt::skip]
-                        let wget = Command::new("wget")
-                            .arg(&url)
-                            .arg("-O").arg(&tgz)
-                            .status().unwrap();
-                        if !wget.success() {
-                            panic!("FAILED: wget {url}");
-                        }
-                    } else {
-                        dir::rm(&dir).unwrap();
-                    }
-                    if !tar_xf(&tgz, Some(DIR)).status().unwrap().success() {
-                        panic!("FAILED: tar xf {tgz}");
-                    }
-                }
             }
             ArchCommands::X86_64 => {
                 const DIR: &str = "rootfs";
@@ -176,6 +152,8 @@ impl Arch {
             ArchCommands::Riscv64 => {
                 const DIR: &str = "riscv_rootfs/libc-test";
                 const PRE: &str = "riscv_rootfs/libc-test-prebuild";
+
+                riscv64_linux_musl_cross();
                 fs::rename(DIR, PRE).unwrap();
                 copy_dir("ignored/libc-test", DIR).unwrap();
                 fs::copy(format!("{DIR}/config.mak.def"), format!("{DIR}/config.mak")).unwrap();
@@ -205,7 +183,7 @@ impl Arch {
                     .append(true)
                     .open(format!("{DIR}/config.mak"))
                     .unwrap()
-                    .write_all(b"CC := musl-gcc")
+                    .write_all(b"CC := musl-gcc\nAR := ar\nRANLIB := ranlib")
                     .unwrap();
                 if !Command::new("make")
                     .arg("-j")
@@ -334,5 +312,29 @@ fn clone_libc_test() {
         if !clone.unwrap().success() {
             panic!("FAILED: git clone {URL}");
         }
+    }
+}
+
+/// 下载 riscv64-musl 工具链。
+fn riscv64_linux_musl_cross() {
+    const DIR: &str = "ignored";
+    const NAME: &str = "riscv64-linux-musl-cross";
+    let dir = format!("{DIR}/{NAME}");
+    let tgz = format!("{dir}.tgz");
+
+    if !Path::new(&tgz).exists() {
+        let url = format!("https://musl.cc/{NAME}.tgz");
+        #[rustfmt::skip]
+                        let wget = Command::new("wget")
+                            .arg(&url)
+                            .arg("-O").arg(&tgz)
+                            .status().unwrap();
+        if !wget.success() {
+            panic!("FAILED: wget {url}");
+        }
+    }
+    dir::rm(&dir).unwrap();
+    if !tar_xf(&tgz, Some(DIR)).status().unwrap().success() {
+        panic!("FAILED: tar xf {tgz}");
     }
 }
