@@ -7,6 +7,12 @@ pub(super) struct Git {
     cmd: Command,
 }
 
+impl AsRef<Command> for Git {
+    fn as_ref(&self) -> &Command {
+        &self.cmd
+    }
+}
+
 impl AsMut<Command> for Git {
     fn as_mut(&mut self) -> &mut Command {
         &mut self.cmd
@@ -16,7 +22,7 @@ impl AsMut<Command> for Git {
 impl CommandExt for Git {}
 
 impl Git {
-    fn new(sub: &(impl AsRef<OsStr> + ?Sized)) -> Self {
+    fn new(sub: impl AsRef<OsStr>) -> Self {
         let mut git = Self {
             cmd: Command::new("git"),
         };
@@ -36,10 +42,7 @@ impl Git {
         git
     }
 
-    pub fn clone(
-        repo: &(impl AsRef<OsStr> + ?Sized),
-        dir: Option<&(impl AsRef<OsStr> + ?Sized)>,
-    ) -> Self {
+    pub fn clone(repo: impl AsRef<OsStr>, dir: Option<impl AsRef<OsStr>>) -> Self {
         let mut git = Self::new("clone");
         git.arg(repo);
         if let Some(dir) = dir {

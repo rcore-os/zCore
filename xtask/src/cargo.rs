@@ -5,6 +5,12 @@ pub(crate) struct Cargo {
     cmd: Command,
 }
 
+impl AsRef<Command> for Cargo {
+    fn as_ref(&self) -> &Command {
+        &self.cmd
+    }
+}
+
 impl AsMut<Command> for Cargo {
     fn as_mut(&mut self) -> &mut Command {
         &mut self.cmd

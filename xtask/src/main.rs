@@ -11,15 +11,15 @@ use std::{
     fs::read_to_string,
     net::Ipv4Addr,
     path::Path,
-    process::Command,
+    process::{Command, ExitStatus},
 };
 
 mod arch;
 mod cargo;
 mod dir;
+mod download;
 mod dump;
 mod git;
-mod wget;
 
 use arch::Arch;
 use cargo::Cargo;
@@ -197,7 +197,7 @@ fn check_style() {
         .join();
 }
 
-trait CommandExt: AsMut<Command> {
+trait CommandExt: AsRef<Command> + AsMut<Command> {
     fn arg(&mut self, s: impl AsRef<OsStr>) -> &mut Self {
         self.as_mut().arg(s);
         self
@@ -224,30 +224,42 @@ trait CommandExt: AsMut<Command> {
         self
     }
 
+    fn status(&mut self) -> ExitStatus {
+        self.as_mut().status().unwrap()
+    }
+
+    fn info(&self) -> OsString {
+        let cmd = self.as_ref();
+        let mut msg = OsString::new();
+        if let Some(dir) = cmd.get_current_dir() {
+            msg.push("cd ");
+            msg.push(dir);
+            msg.push(" && ");
+        }
+        msg.push(cmd.get_program());
+        for a in cmd.get_args() {
+            msg.push(" ");
+            msg.push(a);
+        }
+        for (k, v) in cmd.get_envs() {
+            msg.push(" ");
+            msg.push(k);
+            if let Some(v) = v {
+                msg.push("=");
+                msg.push(v);
+            }
+        }
+        msg
+    }
+
     fn join(&mut self) {
-        let cmd = self.as_mut();
-        let status = cmd.status().unwrap();
+        let status = self.status();
         if !status.success() {
-            let mut msg = OsString::new();
-            if let Some(dir) = cmd.get_current_dir() {
-                msg.push("cd ");
-                msg.push(dir);
-                msg.push(" && ");
-            }
-            msg.push(cmd.get_program());
-            for a in cmd.get_args() {
-                msg.push(" ");
-                msg.push(a);
-            }
-            for (k, v) in cmd.get_envs() {
-                msg.push(" ");
-                msg.push(k);
-                if let Some(v) = v {
-                    msg.push("=");
-                    msg.push(v);
-                }
-            }
-            panic!("Failed with code {}: {msg:?}", status.code().unwrap());
+            panic!(
+                "Failed with code {}: {:?}",
+                status.code().unwrap(),
+                self.info()
+            );
         }
     }
 }

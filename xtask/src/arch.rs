@@ -1,9 +1,12 @@
 ﻿use crate::{
-    cargo::Cargo, dir, git::Git, wget::wget, CommandExt, ALPINE_ROOTFS_VERSION, ALPINE_WEBSITE,
+    cargo::Cargo,
+    dir,
+    download::{git_clone, wget},
+    CommandExt, ALPINE_ROOTFS_VERSION, ALPINE_WEBSITE,
 };
 use dircpy::copy_dir;
 use std::{
-    ffi::OsStr,
+    ffi::{OsStr, OsString},
     fs,
     io::Write,
     path::{Path, PathBuf},
@@ -106,7 +109,10 @@ impl Arch {
     /// 将 libc-test 放入 rootfs。
     pub fn libc_test(&self) {
         self.rootfs(false);
-        clone_libc_test();
+        git_clone(
+            "https://github.com/rcore-os/libc-test.git",
+            "ignored/libc-test",
+        );
         match self.command {
             ArchCommands::Riscv64 => {
                 const DIR: &str = "riscv_rootfs/libc-test";
@@ -116,15 +122,26 @@ impl Arch {
                 fs::rename(DIR, PRE).unwrap();
                 copy_dir("ignored/libc-test", DIR).unwrap();
                 fs::copy(format!("{DIR}/config.mak.def"), format!("{DIR}/config.mak")).unwrap();
-                let make = Command::new("make")
+                let path = {
+                    let mut path = OsString::new();
+                    if let Ok(current) = std::env::var("PATH") {
+                        path.push(current);
+                        path.push(":"); //$(PWD)/ignored/riscv64-linux-musl-cross/bin
+                    }
+                    path.push(std::env::current_dir().unwrap());
+                    path.push("/ignored/riscv64-linux-musl-cross/bin");
+                    path
+                };
+                Command::new("make")
                     .arg("-j")
                     .env("ARCH", "riscv64")
                     .env("CROSS_COMPILE", "riscv64-linux-musl-")
+                    .env("PATH", path)
                     .current_dir(DIR)
-                    .status();
-                if !make.unwrap().success() {
-                    panic!("FAILED: make -j");
-                }
+                    .status()
+                    .unwrap()
+                    .exit_ok()
+                    .expect("FAILED: make -j");
                 fs::copy(
                     format!("{PRE}/functional/tls_align-static.exe"),
                     format!("{DIR}/src/functional/tls_align-static.exe"),
@@ -284,19 +301,6 @@ fn install_fs_fuse() {
             .args(&["--rev", "1a3246b"])
             .arg("--force")
             .join();
-    }
-}
-
-/// 克隆 libc-test.
-fn clone_libc_test() {
-    const DIR: &str = "ignored/libc-test";
-    const URL: &str = "https://github.com/rcore-os/libc-test.git";
-
-    if Path::new(DIR).is_dir() {
-        Git::pull().current_dir(DIR).join();
-    } else {
-        dir::clear(DIR).unwrap();
-        Git::clone(URL, Some(DIR)).join();
     }
 }
 

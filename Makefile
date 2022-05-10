@@ -1,6 +1,5 @@
 # Makefile for top level of zCore
 
-PATH := $(PATH):$(PWD)/ignored/riscv64-linux-musl-cross/bin
 ARCH ?= x86_64
 
 .PHONY: help setup rootfs libc-test image test-image check doc clean

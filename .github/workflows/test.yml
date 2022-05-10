@@ -101,7 +101,7 @@ jobs:
           sudo apt-get install musl-tools musl-dev -y
           pip3 install -r tests/requirements.txt
       - name: Prepare rootfs
-        run: make rootfs && make libc-test
+        run: make libc-test
       - name: Run fast tests
         if: github.event_name != 'schedule'
         run: cd tests && python3 linux_libc_test.py --libos --fast
