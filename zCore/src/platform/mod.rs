@@ -7,11 +7,10 @@ cfg_if! {
         mod arch;
     } else if #[cfg(target_arch = "riscv64")] {
         #[path = "riscv/mod.rs"]
+        mod arch;
     } else if #[cfg(target_arch = "aarch64")] {
-        #[path = "aarch64/entry.rs"]
-        mod entry;
-        #[path = "aarch64/consts.rs"]
-        pub mod consts;
+        #[path = "aarch64/mod.rs"]
+        mod arch;
     }
 }
 

@@ -28,5 +28,11 @@ hal_fn_impl! {
                 core::arch::asm!("msr daifclr, #2");
             }
         }
+
+        fn intr_get() -> bool {
+            use cortex_a::registers::DAIF;
+            use tock_registers::interfaces::Readable;
+            !DAIF.is_set(DAIF::I)
+        }
     }
 }

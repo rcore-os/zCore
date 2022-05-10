@@ -15,3 +15,4 @@ exclude = ["zircon-user", "rboot"]
 
 [profile.release]
 lto = true
+debug = true

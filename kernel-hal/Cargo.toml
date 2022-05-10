@@ -34,7 +34,7 @@ git-version = "0.3"
 numeric-enum-macro = "0.2"
 lazy_static = { version = "1.4", features = ["spin_no_std"] }
 zcore-drivers = { path = "../drivers", features = ["virtio"] }
-lock = { git = "https://github.com/DeathWish5/kernel-sync", rev = "01b2e70" }
+lock = { git = "https://github.com/Luchangcheng2333/kernel-sync", rev = "1559539" }
 smoltcp = { git = "https://gitee.com/gcyyfun/smoltcp", rev = "043eb60", default-features = false, features = [
     "alloc",
     "log",
@@ -78,6 +78,7 @@ x86-smpboot = { git = "https://github.com/rcore-os/x86-smpboot", rev = "1069df3"
 riscv = { git = "https://github.com/rust-embedded/riscv", rev = "cd31989", features = [
     "inline-asm",
 ] }
+
 [target.'cfg(target_arch = "aarch64")'.dependencies]
 tock-registers = "0.7"
 cortex-a = "7.2.0"
