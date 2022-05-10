@@ -1,15 +1,29 @@
 #![feature(path_file_prefix)]
+#![feature(exit_status_error)]
 
-use clap::{Args, Parser, Subcommand};
+#[macro_use]
+extern crate clap;
+
+use clap::Parser;
 use clap_verbosity_flag::Verbosity;
-use std::{fs::read_to_string, net::Ipv4Addr, process::Command};
+use std::{
+    ffi::{OsStr, OsString},
+    fs::read_to_string,
+    net::Ipv4Addr,
+    path::Path,
+    process::{Command, ExitStatus},
+};
 
 mod arch;
+mod cargo;
 mod dir;
+mod download;
 mod dump;
 mod git;
 
 use arch::Arch;
+use cargo::Cargo;
+use git::Git;
 
 const ALPINE_WEBSITE: &str = "https://dl-cdn.alpinelinux.org/alpine/v3.12/releases";
 const ALPINE_ROOTFS_VERSION: &str = "3.12.0";
@@ -95,7 +109,7 @@ fn main() {
         }
         Commands::UpdateAll => update_all(),
         Commands::CheckStyle => check_style(),
-        Commands::Rootfs(arch) => arch.rootfs(),
+        Commands::Rootfs(arch) => arch.rootfs(true),
         Commands::LibcTest(arch) => arch.libc_test(),
         Commands::Image(arch) => arch.image(),
         Commands::Test => todo!(),
@@ -104,48 +118,33 @@ fn main() {
 
 /// 初始化 LFS。
 fn make_git_lfs() {
-    if !git::lfs()
+    if !Git::lfs()
         .arg("version")
+        .as_mut()
         .output()
         .map_or(false, |out| out.stdout.starts_with(b"git-lfs/"))
     {
         panic!("Cannot find git lfs, see https://git-lfs.github.com/ for help.");
     }
-    if !git::lfs().arg("install").status().unwrap().success() {
-        panic!("FAILED: git lfs install")
-    }
-
-    if !git::lfs().arg("pull").status().unwrap().success() {
-        panic!("FAILED: git lfs pull")
-    }
+    Git::lfs().arg("install").join();
+    Git::lfs().arg("pull").join();
 }
 
 /// 更新子项目。
 fn git_submodule_update(init: bool) {
-    if !git::submodule_update(init).status().unwrap().success() {
-        panic!("FAILED: git submodule update --init");
-    }
+    Git::submodule_update(init).join();
 }
 
 /// 更新工具链和依赖。
 fn update_all() {
     git_submodule_update(false);
-    if !Command::new("rustup")
+    Command::new("rustup")
         .arg("update")
         .status()
         .unwrap()
-        .success()
-    {
-        panic!("FAILED: rustup update");
-    }
-    if !Command::new("cargo")
-        .arg("update")
-        .status()
-        .unwrap()
-        .success()
-    {
-        panic!("FAILED: cargo update");
-    }
+        .exit_ok()
+        .expect("FAILED: rustup update");
+    Cargo::update().join();
 }
 
 /// 设置 git 代理。
@@ -159,81 +158,108 @@ fn set_git_proxy(global: bool, port: u16) {
         })
         .expect("FAILED: detect DNS");
     let proxy = format!("socks5://{dns}:{port}");
-    #[rustfmt::skip]
-    let git = git::config(global)
-        .arg("http.proxy").arg(&proxy)
-        .status().unwrap();
-    if !git.success() {
-        panic!("FAILED: git config --unset http.proxy");
-    }
-    #[rustfmt::skip]
-    let git = git::config(global)
-        .arg("https.proxy").arg(&proxy)
-        .status().unwrap();
-    if !git.success() {
-        panic!("FAILED: git config --unset https.proxy");
-    }
+    Git::config(global).args(&["http.proxy", &proxy]).join();
+    Git::config(global).args(&["http.proxy", &proxy]).join();
     println!("git proxy = {proxy}");
 }
 
 /// 移除 git 代理。
 fn unset_git_proxy(global: bool) {
-    #[rustfmt::skip]
-    let git = git::config(global)
-        .arg("--unset").arg("http.proxy")
-        .status().unwrap();
-    if !git.success() {
-        panic!("FAILED: git config --unset http.proxy");
-    }
-    #[rustfmt::skip]
-    let git = git::config(global)
-        .arg("--unset").arg("https.proxy")
-        .status().unwrap();
-    if !git.success() {
-        panic!("FAILED: git config --unset https.proxy");
-    }
+    Git::config(global).args(&["--unset", "http.proxy"]).join();
+    Git::config(global).args(&["--unset", "https.proxy"]).join();
     println!("git proxy =");
 }
 
 /// 风格检查。
 fn check_style() {
     println!("fmt -----------------------------------------");
-    #[rustfmt::skip]
-    Command::new("cargo").arg("fmt")
-        .arg("--all")
-        .arg("--")
-        .arg("--check")
-        .status()
-        .unwrap();
+    Cargo::fmt().arg("--all").arg("--").arg("--check").join();
     println!("clippy --------------------------------------");
-    #[rustfmt::skip]
-    Command::new("cargo").arg("clippy")
-        .arg("--all-features")
-        .status()
-        .unwrap();
+    Cargo::clippy().all_features().join();
     println!("clippy x86_64 zircon smp=1 ------------------");
-    #[rustfmt::skip]
-    Command::new("cargo").arg("clippy")
-        .arg("--no-default-features")
-        .arg("--features").arg("zircon")
-        .arg("--target").arg("x86_64.json")
-        .arg("-Z").arg("build-std=core,alloc")
-        .arg("-Z").arg("build-std-features=compiler-builtins-mem")
+    Cargo::clippy()
+        .features(false, &["zircon"])
+        .target("x86_64.json")
+        .args(&["-Z", "build-std=core,alloc"])
+        .args(&["-Z", "build-std-features=compiler-builtins-mem"])
         .current_dir("zCore")
         .env("SMP", "1")
-        .status()
-        .unwrap();
+        .join();
     println!("clippy riscv64 linux smp=4 ------------------");
-    #[rustfmt::skip]
-    Command::new("cargo").arg("clippy")
-        .arg("--no-default-features")
-        .arg("--features").arg("linux board-qemu")
-        .arg("--target").arg("riscv64.json")
-        .arg("-Z").arg("build-std=core,alloc")
-        .arg("-Z").arg("build-std-features=compiler-builtins-mem")
+    Cargo::clippy()
+        .features(false, &["linux", "board-qemu"])
+        .target("riscv64.json")
+        .args(&["-Z", "build-std=core,alloc"])
+        .args(&["-Z", "build-std-features=compiler-builtins-mem"])
         .current_dir("zCore")
         .env("SMP", "4")
         .env("PLATFORM", "board-qemu")
-        .status()
-        .unwrap();
+        .join();
+}
+
+trait CommandExt: AsRef<Command> + AsMut<Command> {
+    fn arg(&mut self, s: impl AsRef<OsStr>) -> &mut Self {
+        self.as_mut().arg(s);
+        self
+    }
+
+    fn args<I, S>(&mut self, args: I) -> &mut Self
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<OsStr>,
+    {
+        for arg in args {
+            self.arg(arg);
+        }
+        self
+    }
+
+    fn current_dir(&mut self, dir: impl AsRef<Path>) -> &mut Self {
+        self.as_mut().current_dir(dir);
+        self
+    }
+
+    fn env(&mut self, key: impl AsRef<OsStr>, val: impl AsRef<OsStr>) -> &mut Self {
+        self.as_mut().env(key, val);
+        self
+    }
+
+    fn status(&mut self) -> ExitStatus {
+        self.as_mut().status().unwrap()
+    }
+
+    fn info(&self) -> OsString {
+        let cmd = self.as_ref();
+        let mut msg = OsString::new();
+        if let Some(dir) = cmd.get_current_dir() {
+            msg.push("cd ");
+            msg.push(dir);
+            msg.push(" && ");
+        }
+        msg.push(cmd.get_program());
+        for a in cmd.get_args() {
+            msg.push(" ");
+            msg.push(a);
+        }
+        for (k, v) in cmd.get_envs() {
+            msg.push(" ");
+            msg.push(k);
+            if let Some(v) = v {
+                msg.push("=");
+                msg.push(v);
+            }
+        }
+        msg
+    }
+
+    fn join(&mut self) {
+        let status = self.status();
+        if !status.success() {
+            panic!(
+                "Failed with code {}: {:?}",
+                status.code().unwrap(),
+                self.info()
+            );
+        }
+    }
 }

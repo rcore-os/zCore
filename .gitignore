@@ -6,15 +6,14 @@
 **/target
 **/*.rs.bk
 *.img
+*.bin
 *.log
 Cargo.lock
 
-/toolchain
 /ignored
 /rootfs
 /riscv_rootfs
 /prebuilt/linux/**/minirootfs.tar.*
-/prebuilt/linux/riscv64/prebuild*
 zCore/src/platform/riscv/kernel-vars.ld
 
 .DS_Store
