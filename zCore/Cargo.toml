@@ -83,9 +83,7 @@ buddy_system_allocator = "0.8"
 # RISC-V
 [target.'cfg(any(target_arch = "riscv32", target_arch = "riscv64"))'.dependencies]
 r0 = "1"
-riscv = { git = "https://github.com/rust-embedded/riscv", rev = "cd31989", features = [
-    "inline-asm",
-] }
+riscv = "0.8"
 
 # Bare-metal mode on x86_64
 [target.'cfg(all(target_os = "none", target_arch = "x86_64"))'.dependencies]
@@ -95,4 +93,4 @@ rboot = { git = "https://github.com/rcore-os/rboot.git", rev = "39d6e24", defaul
 # Bare-metal mode on x86_64
 [target.'cfg(all(target_os = "none", not(target_arch = "x86_64")))'.dependencies]
 serde = { version = "1.0", default-features = false, features = ["derive"] }
-serde-device-tree = { git = "https://github.com/YdrMaster/serde-device-tree.git", rev = "af8605f", default-features = false }
+serde-device-tree = { git = "https://github.com/rustsbi/serde-device-tree.git", rev = "114679a", default-features = false }

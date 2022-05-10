@@ -6,10 +6,10 @@
 **/target
 **/*.rs.bk
 *.img
+*.bin
 *.log
 Cargo.lock
 
-/toolchain
 /ignored
 /rootfs
 /riscv_rootfs
@@ -18,8 +18,8 @@ Cargo.lock
 /prebuilt/linux/**/minirootfs.tar.*
 /prebuilt/linux/riscv64/prebuild*
 /prebuilt/linux/aarch64/*
-zCore/src/platform/riscv/boot/kernel-vars.ld
 zCore/disk/*
+zCore/src/platform/riscv/boot/kernel-vars.ld
 .idea
 .DS_Store
 __pycache__
