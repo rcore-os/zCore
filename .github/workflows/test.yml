@@ -18,7 +18,7 @@ jobs:
           profile: minimal
           toolchain: nightly-2022-01-20
           components: rust-src, llvm-tools-preview, rustfmt, clippy
-      - uses: Swatinem/rust-cache@v1
+      # - uses: Swatinem/rust-cache@v1
 
       - name: Prepare rootfs
         run: make rootfs
@@ -52,7 +52,7 @@ jobs:
           profile: minimal
           toolchain: nightly-2022-01-20
           components: rust-src, llvm-tools-preview, rustfmt, clippy
-      - uses: Swatinem/rust-cache@v1
+      # - uses: Swatinem/rust-cache@v1
 
       - uses: actions-rs/cargo@v1
         with:
@@ -71,7 +71,7 @@ jobs:
           profile: minimal
           toolchain: nightly-2022-01-20
           components: rust-src, llvm-tools-preview, rustfmt, clippy
-      - uses: Swatinem/rust-cache@v1
+      # - uses: Swatinem/rust-cache@v1
 
       - name: Install dependencies
         run: pip3 install -r tests/requirements.txt
@@ -95,7 +95,7 @@ jobs:
           profile: minimal
           toolchain: nightly-2022-01-20
           components: rust-src, llvm-tools-preview, rustfmt, clippy
-      - uses: Swatinem/rust-cache@v1
+      # - uses: Swatinem/rust-cache@v1
 
       - name: Install dependencies
         run: |
@@ -128,7 +128,7 @@ jobs:
           profile: minimal
           toolchain: nightly-2022-01-20
           components: rust-src, llvm-tools-preview, rustfmt, clippy
-      - uses: Swatinem/rust-cache@v1
+      # - uses: Swatinem/rust-cache@v1
 
       - name: Install dependencies
         run: |
@@ -183,7 +183,7 @@ jobs:
         with:
           crate: cargo-binutils
           version: latest
-      - uses: Swatinem/rust-cache@v1
+      # - uses: Swatinem/rust-cache@v1
 
       - name: Install dependencies
         run: |
@@ -240,7 +240,7 @@ jobs:
         with:
           crate: cargo-binutils
           version: latest
-      - uses: Swatinem/rust-cache@v1
+      # - uses: Swatinem/rust-cache@v1
 
       - name: Install dependencies
         run: |
