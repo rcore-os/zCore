@@ -1,1 +1,1 @@
-initSidebarItems({"enum":[["ArchCommands",""]],"fn":[["clone_libc_test","克隆 libc-test."],["install_fs_fuse","安装 rcore-fs-fuse。"],["riscv64_linux_musl_cross","下载 riscv64-musl 工具链。"],["tar_xf","构造将归档文件 `src` 释放到 `dst` 目录下的命令。"]],"struct":[["Arch",""]]});
+initSidebarItems({"enum":[["ArchCommands",""]],"fn":[["fuse","制作镜像。"],["riscv64_linux_musl_cross","下载 riscv64-musl 工具链。"]],"struct":[["Arch",""],["Make",""],["Tar",""]]});

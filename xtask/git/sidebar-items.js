@@ -1,1 +1,1 @@
-initSidebarItems({"fn":[["clone","git clone [dir] …"],["config","git config [–global] …"],["git",""],["lfs","git lfs …"],["pull","git pull …"],["submodule_update","git submodule update –init."]]});
+initSidebarItems({"struct":[["Git",""]]});

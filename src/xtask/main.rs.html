@@ -243,18 +243,58 @@
 <span id="237">237</span>
 <span id="238">238</span>
 <span id="239">239</span>
+<span id="240">240</span>
+<span id="241">241</span>
+<span id="242">242</span>
+<span id="243">243</span>
+<span id="244">244</span>
+<span id="245">245</span>
+<span id="246">246</span>
+<span id="247">247</span>
+<span id="248">248</span>
+<span id="249">249</span>
+<span id="250">250</span>
+<span id="251">251</span>
+<span id="252">252</span>
+<span id="253">253</span>
+<span id="254">254</span>
+<span id="255">255</span>
+<span id="256">256</span>
+<span id="257">257</span>
+<span id="258">258</span>
+<span id="259">259</span>
+<span id="260">260</span>
+<span id="261">261</span>
+<span id="262">262</span>
+<span id="263">263</span>
+<span id="264">264</span>
+<span id="265">265</span>
 </pre><pre class="rust"><code><span class="attribute">#![<span class="ident">feature</span>(<span class="ident">path_file_prefix</span>)]</span>
+<span class="attribute">#![<span class="ident">feature</span>(<span class="ident">exit_status_error</span>)]</span>
 
-<span class="kw">use</span> <span class="ident">clap</span>::{<span class="ident">Args</span>, <span class="ident">Parser</span>, <span class="ident">Subcommand</span>};
+<span class="attribute">#[<span class="ident">macro_use</span>]</span>
+<span class="kw">extern</span> <span class="kw">crate</span> <span class="ident">clap</span>;
+
+<span class="kw">use</span> <span class="ident">clap::Parser</span>;
 <span class="kw">use</span> <span class="ident">clap_verbosity_flag::Verbosity</span>;
-<span class="kw">use</span> <span class="ident">std</span>::{<span class="ident">fs::read_to_string</span>, <span class="ident">net::Ipv4Addr</span>, <span class="ident">process::Command</span>};
+<span class="kw">use</span> <span class="ident">std</span>::{
+    <span class="ident">ffi</span>::{<span class="ident">OsStr</span>, <span class="ident">OsString</span>},
+    <span class="ident">fs::read_to_string</span>,
+    <span class="ident">net::Ipv4Addr</span>,
+    <span class="ident">path::Path</span>,
+    <span class="ident">process</span>::{<span class="ident">Command</span>, <span class="ident">ExitStatus</span>},
+};
 
 <span class="kw">mod</span> <span class="ident">arch</span>;
+<span class="kw">mod</span> <span class="ident">cargo</span>;
 <span class="kw">mod</span> <span class="ident">dir</span>;
+<span class="kw">mod</span> <span class="ident">download</span>;
 <span class="kw">mod</span> <span class="ident">dump</span>;
 <span class="kw">mod</span> <span class="ident">git</span>;
 
 <span class="kw">use</span> <span class="ident">arch::Arch</span>;
+<span class="kw">use</span> <span class="ident">cargo::Cargo</span>;
+<span class="kw">use</span> <span class="ident">git::Git</span>;
 
 <span class="kw">const</span> <span class="ident">ALPINE_WEBSITE</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;https://dl-cdn.alpinelinux.org/alpine/v3.12/releases&quot;</span>;
 <span class="kw">const</span> <span class="ident">ALPINE_ROOTFS_VERSION</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;3.12.0&quot;</span>;
@@ -340,7 +380,7 @@
         }
         <span class="ident">Commands::UpdateAll</span> =&gt; <span class="ident">update_all</span>(),
         <span class="ident">Commands::CheckStyle</span> =&gt; <span class="ident">check_style</span>(),
-        <span class="ident">Commands::Rootfs</span>(<span class="ident">arch</span>) =&gt; <span class="ident">arch</span>.<span class="ident">rootfs</span>(),
+        <span class="ident">Commands::Rootfs</span>(<span class="ident">arch</span>) =&gt; <span class="ident">arch</span>.<span class="ident">rootfs</span>(<span class="bool-val">true</span>),
         <span class="ident">Commands::LibcTest</span>(<span class="ident">arch</span>) =&gt; <span class="ident">arch</span>.<span class="ident">libc_test</span>(),
         <span class="ident">Commands::Image</span>(<span class="ident">arch</span>) =&gt; <span class="ident">arch</span>.<span class="ident">image</span>(),
         <span class="ident">Commands::Test</span> =&gt; <span class="macro">todo!</span>(),
@@ -349,48 +389,33 @@
 
 <span class="doccomment">/// 初始化 LFS。</span>
 <span class="kw">fn</span> <span class="ident">make_git_lfs</span>() {
-    <span class="kw">if</span> <span class="op">!</span><span class="ident">git::lfs</span>()
+    <span class="kw">if</span> <span class="op">!</span><span class="ident">Git::lfs</span>()
         .<span class="ident">arg</span>(<span class="string">&quot;version&quot;</span>)
+        .<span class="ident">as_mut</span>()
         .<span class="ident">output</span>()
         .<span class="ident">map_or</span>(<span class="bool-val">false</span>, <span class="op">|</span><span class="ident">out</span><span class="op">|</span> <span class="ident">out</span>.<span class="ident">stdout</span>.<span class="ident">starts_with</span>(<span class="string">b&quot;git-lfs/&quot;</span>))
     {
         <span class="macro">panic!</span>(<span class="string">&quot;Cannot find git lfs, see https://git-lfs.github.com/ for help.&quot;</span>);
     }
-    <span class="kw">if</span> <span class="op">!</span><span class="ident">git::lfs</span>().<span class="ident">arg</span>(<span class="string">&quot;install&quot;</span>).<span class="ident">status</span>().<span class="ident">unwrap</span>().<span class="ident">success</span>() {
-        <span class="macro">panic!</span>(<span class="string">&quot;FAILED: git lfs install&quot;</span>)
-    }
-
-    <span class="kw">if</span> <span class="op">!</span><span class="ident">git::lfs</span>().<span class="ident">arg</span>(<span class="string">&quot;pull&quot;</span>).<span class="ident">status</span>().<span class="ident">unwrap</span>().<span class="ident">success</span>() {
-        <span class="macro">panic!</span>(<span class="string">&quot;FAILED: git lfs pull&quot;</span>)
-    }
+    <span class="ident">Git::lfs</span>().<span class="ident">arg</span>(<span class="string">&quot;install&quot;</span>).<span class="ident">join</span>();
+    <span class="ident">Git::lfs</span>().<span class="ident">arg</span>(<span class="string">&quot;pull&quot;</span>).<span class="ident">join</span>();
 }
 
 <span class="doccomment">/// 更新子项目。</span>
 <span class="kw">fn</span> <span class="ident">git_submodule_update</span>(<span class="ident">init</span>: <span class="ident">bool</span>) {
-    <span class="kw">if</span> <span class="op">!</span><span class="ident">git::submodule_update</span>(<span class="ident">init</span>).<span class="ident">status</span>().<span class="ident">unwrap</span>().<span class="ident">success</span>() {
-        <span class="macro">panic!</span>(<span class="string">&quot;FAILED: git submodule update --init&quot;</span>);
-    }
+    <span class="ident">Git::submodule_update</span>(<span class="ident">init</span>).<span class="ident">join</span>();
 }
 
 <span class="doccomment">/// 更新工具链和依赖。</span>
 <span class="kw">fn</span> <span class="ident">update_all</span>() {
     <span class="ident">git_submodule_update</span>(<span class="bool-val">false</span>);
-    <span class="kw">if</span> <span class="op">!</span><span class="ident">Command::new</span>(<span class="string">&quot;rustup&quot;</span>)
+    <span class="ident">Command::new</span>(<span class="string">&quot;rustup&quot;</span>)
         .<span class="ident">arg</span>(<span class="string">&quot;update&quot;</span>)
         .<span class="ident">status</span>()
         .<span class="ident">unwrap</span>()
-        .<span class="ident">success</span>()
-    {
-        <span class="macro">panic!</span>(<span class="string">&quot;FAILED: rustup update&quot;</span>);
-    }
-    <span class="kw">if</span> <span class="op">!</span><span class="ident">Command::new</span>(<span class="string">&quot;cargo&quot;</span>)
-        .<span class="ident">arg</span>(<span class="string">&quot;update&quot;</span>)
-        .<span class="ident">status</span>()
-        .<span class="ident">unwrap</span>()
-        .<span class="ident">success</span>()
-    {
-        <span class="macro">panic!</span>(<span class="string">&quot;FAILED: cargo update&quot;</span>);
-    }
+        .<span class="ident">exit_ok</span>()
+        .<span class="ident">expect</span>(<span class="string">&quot;FAILED: rustup update&quot;</span>);
+    <span class="ident">Cargo::update</span>().<span class="ident">join</span>();
 }
 
 <span class="doccomment">/// 设置 git 代理。</span>
@@ -404,83 +429,110 @@
         })
         .<span class="ident">expect</span>(<span class="string">&quot;FAILED: detect DNS&quot;</span>);
     <span class="kw">let</span> <span class="ident">proxy</span> <span class="op">=</span> <span class="macro">format!</span>(<span class="string">&quot;socks5://{dns}:{port}&quot;</span>);
-    <span class="attribute">#[<span class="ident">rustfmt::skip</span>]</span>
-    <span class="kw">let</span> <span class="ident">git</span> <span class="op">=</span> <span class="ident">git::config</span>(<span class="ident">global</span>)
-        .<span class="ident">arg</span>(<span class="string">&quot;http.proxy&quot;</span>).<span class="ident">arg</span>(<span class="kw-2">&amp;</span><span class="ident">proxy</span>)
-        .<span class="ident">status</span>().<span class="ident">unwrap</span>();
-    <span class="kw">if</span> <span class="op">!</span><span class="ident">git</span>.<span class="ident">success</span>() {
-        <span class="macro">panic!</span>(<span class="string">&quot;FAILED: git config --unset http.proxy&quot;</span>);
-    }
-    <span class="attribute">#[<span class="ident">rustfmt::skip</span>]</span>
-    <span class="kw">let</span> <span class="ident">git</span> <span class="op">=</span> <span class="ident">git::config</span>(<span class="ident">global</span>)
-        .<span class="ident">arg</span>(<span class="string">&quot;https.proxy&quot;</span>).<span class="ident">arg</span>(<span class="kw-2">&amp;</span><span class="ident">proxy</span>)
-        .<span class="ident">status</span>().<span class="ident">unwrap</span>();
-    <span class="kw">if</span> <span class="op">!</span><span class="ident">git</span>.<span class="ident">success</span>() {
-        <span class="macro">panic!</span>(<span class="string">&quot;FAILED: git config --unset https.proxy&quot;</span>);
-    }
+    <span class="ident">Git::config</span>(<span class="ident">global</span>).<span class="ident">args</span>(<span class="kw-2">&amp;</span>[<span class="string">&quot;http.proxy&quot;</span>, <span class="kw-2">&amp;</span><span class="ident">proxy</span>]).<span class="ident">join</span>();
+    <span class="ident">Git::config</span>(<span class="ident">global</span>).<span class="ident">args</span>(<span class="kw-2">&amp;</span>[<span class="string">&quot;http.proxy&quot;</span>, <span class="kw-2">&amp;</span><span class="ident">proxy</span>]).<span class="ident">join</span>();
     <span class="macro">println!</span>(<span class="string">&quot;git proxy = {proxy}&quot;</span>);
 }
 
 <span class="doccomment">/// 移除 git 代理。</span>
 <span class="kw">fn</span> <span class="ident">unset_git_proxy</span>(<span class="ident">global</span>: <span class="ident">bool</span>) {
-    <span class="attribute">#[<span class="ident">rustfmt::skip</span>]</span>
-    <span class="kw">let</span> <span class="ident">git</span> <span class="op">=</span> <span class="ident">git::config</span>(<span class="ident">global</span>)
-        .<span class="ident">arg</span>(<span class="string">&quot;--unset&quot;</span>).<span class="ident">arg</span>(<span class="string">&quot;http.proxy&quot;</span>)
-        .<span class="ident">status</span>().<span class="ident">unwrap</span>();
-    <span class="kw">if</span> <span class="op">!</span><span class="ident">git</span>.<span class="ident">success</span>() {
-        <span class="macro">panic!</span>(<span class="string">&quot;FAILED: git config --unset http.proxy&quot;</span>);
-    }
-    <span class="attribute">#[<span class="ident">rustfmt::skip</span>]</span>
-    <span class="kw">let</span> <span class="ident">git</span> <span class="op">=</span> <span class="ident">git::config</span>(<span class="ident">global</span>)
-        .<span class="ident">arg</span>(<span class="string">&quot;--unset&quot;</span>).<span class="ident">arg</span>(<span class="string">&quot;https.proxy&quot;</span>)
-        .<span class="ident">status</span>().<span class="ident">unwrap</span>();
-    <span class="kw">if</span> <span class="op">!</span><span class="ident">git</span>.<span class="ident">success</span>() {
-        <span class="macro">panic!</span>(<span class="string">&quot;FAILED: git config --unset https.proxy&quot;</span>);
-    }
+    <span class="ident">Git::config</span>(<span class="ident">global</span>).<span class="ident">args</span>(<span class="kw-2">&amp;</span>[<span class="string">&quot;--unset&quot;</span>, <span class="string">&quot;http.proxy&quot;</span>]).<span class="ident">join</span>();
+    <span class="ident">Git::config</span>(<span class="ident">global</span>).<span class="ident">args</span>(<span class="kw-2">&amp;</span>[<span class="string">&quot;--unset&quot;</span>, <span class="string">&quot;https.proxy&quot;</span>]).<span class="ident">join</span>();
     <span class="macro">println!</span>(<span class="string">&quot;git proxy =&quot;</span>);
 }
 
 <span class="doccomment">/// 风格检查。</span>
 <span class="kw">fn</span> <span class="ident">check_style</span>() {
     <span class="macro">println!</span>(<span class="string">&quot;fmt -----------------------------------------&quot;</span>);
-    <span class="attribute">#[<span class="ident">rustfmt::skip</span>]</span>
-    <span class="ident">Command::new</span>(<span class="string">&quot;cargo&quot;</span>).<span class="ident">arg</span>(<span class="string">&quot;fmt&quot;</span>)
-        .<span class="ident">arg</span>(<span class="string">&quot;--all&quot;</span>)
-        .<span class="ident">arg</span>(<span class="string">&quot;--&quot;</span>)
-        .<span class="ident">arg</span>(<span class="string">&quot;--check&quot;</span>)
-        .<span class="ident">status</span>()
-        .<span class="ident">unwrap</span>();
+    <span class="ident">Cargo::fmt</span>().<span class="ident">arg</span>(<span class="string">&quot;--all&quot;</span>).<span class="ident">arg</span>(<span class="string">&quot;--&quot;</span>).<span class="ident">arg</span>(<span class="string">&quot;--check&quot;</span>).<span class="ident">join</span>();
     <span class="macro">println!</span>(<span class="string">&quot;clippy --------------------------------------&quot;</span>);
-    <span class="attribute">#[<span class="ident">rustfmt::skip</span>]</span>
-    <span class="ident">Command::new</span>(<span class="string">&quot;cargo&quot;</span>).<span class="ident">arg</span>(<span class="string">&quot;clippy&quot;</span>)
-        .<span class="ident">arg</span>(<span class="string">&quot;--all-features&quot;</span>)
-        .<span class="ident">status</span>()
-        .<span class="ident">unwrap</span>();
+    <span class="ident">Cargo::clippy</span>().<span class="ident">all_features</span>().<span class="ident">join</span>();
     <span class="macro">println!</span>(<span class="string">&quot;clippy x86_64 zircon smp=1 ------------------&quot;</span>);
-    <span class="attribute">#[<span class="ident">rustfmt::skip</span>]</span>
-    <span class="ident">Command::new</span>(<span class="string">&quot;cargo&quot;</span>).<span class="ident">arg</span>(<span class="string">&quot;clippy&quot;</span>)
-        .<span class="ident">arg</span>(<span class="string">&quot;--no-default-features&quot;</span>)
-        .<span class="ident">arg</span>(<span class="string">&quot;--features&quot;</span>).<span class="ident">arg</span>(<span class="string">&quot;zircon&quot;</span>)
-        .<span class="ident">arg</span>(<span class="string">&quot;--target&quot;</span>).<span class="ident">arg</span>(<span class="string">&quot;x86_64.json&quot;</span>)
-        .<span class="ident">arg</span>(<span class="string">&quot;-Z&quot;</span>).<span class="ident">arg</span>(<span class="string">&quot;build-std=core,alloc&quot;</span>)
-        .<span class="ident">arg</span>(<span class="string">&quot;-Z&quot;</span>).<span class="ident">arg</span>(<span class="string">&quot;build-std-features=compiler-builtins-mem&quot;</span>)
+    <span class="ident">Cargo::clippy</span>()
+        .<span class="ident">features</span>(<span class="bool-val">false</span>, <span class="kw-2">&amp;</span>[<span class="string">&quot;zircon&quot;</span>])
+        .<span class="ident">target</span>(<span class="string">&quot;x86_64.json&quot;</span>)
+        .<span class="ident">args</span>(<span class="kw-2">&amp;</span>[<span class="string">&quot;-Z&quot;</span>, <span class="string">&quot;build-std=core,alloc&quot;</span>])
+        .<span class="ident">args</span>(<span class="kw-2">&amp;</span>[<span class="string">&quot;-Z&quot;</span>, <span class="string">&quot;build-std-features=compiler-builtins-mem&quot;</span>])
         .<span class="ident">current_dir</span>(<span class="string">&quot;zCore&quot;</span>)
         .<span class="ident">env</span>(<span class="string">&quot;SMP&quot;</span>, <span class="string">&quot;1&quot;</span>)
-        .<span class="ident">status</span>()
-        .<span class="ident">unwrap</span>();
+        .<span class="ident">join</span>();
     <span class="macro">println!</span>(<span class="string">&quot;clippy riscv64 linux smp=4 ------------------&quot;</span>);
-    <span class="attribute">#[<span class="ident">rustfmt::skip</span>]</span>
-    <span class="ident">Command::new</span>(<span class="string">&quot;cargo&quot;</span>).<span class="ident">arg</span>(<span class="string">&quot;clippy&quot;</span>)
-        .<span class="ident">arg</span>(<span class="string">&quot;--no-default-features&quot;</span>)
-        .<span class="ident">arg</span>(<span class="string">&quot;--features&quot;</span>).<span class="ident">arg</span>(<span class="string">&quot;linux board-qemu&quot;</span>)
-        .<span class="ident">arg</span>(<span class="string">&quot;--target&quot;</span>).<span class="ident">arg</span>(<span class="string">&quot;riscv64.json&quot;</span>)
-        .<span class="ident">arg</span>(<span class="string">&quot;-Z&quot;</span>).<span class="ident">arg</span>(<span class="string">&quot;build-std=core,alloc&quot;</span>)
-        .<span class="ident">arg</span>(<span class="string">&quot;-Z&quot;</span>).<span class="ident">arg</span>(<span class="string">&quot;build-std-features=compiler-builtins-mem&quot;</span>)
+    <span class="ident">Cargo::clippy</span>()
+        .<span class="ident">features</span>(<span class="bool-val">false</span>, <span class="kw-2">&amp;</span>[<span class="string">&quot;linux&quot;</span>, <span class="string">&quot;board-qemu&quot;</span>])
+        .<span class="ident">target</span>(<span class="string">&quot;riscv64.json&quot;</span>)
+        .<span class="ident">args</span>(<span class="kw-2">&amp;</span>[<span class="string">&quot;-Z&quot;</span>, <span class="string">&quot;build-std=core,alloc&quot;</span>])
+        .<span class="ident">args</span>(<span class="kw-2">&amp;</span>[<span class="string">&quot;-Z&quot;</span>, <span class="string">&quot;build-std-features=compiler-builtins-mem&quot;</span>])
         .<span class="ident">current_dir</span>(<span class="string">&quot;zCore&quot;</span>)
         .<span class="ident">env</span>(<span class="string">&quot;SMP&quot;</span>, <span class="string">&quot;4&quot;</span>)
         .<span class="ident">env</span>(<span class="string">&quot;PLATFORM&quot;</span>, <span class="string">&quot;board-qemu&quot;</span>)
-        .<span class="ident">status</span>()
-        .<span class="ident">unwrap</span>();
+        .<span class="ident">join</span>();
+}
+
+<span class="kw">trait</span> <span class="ident">CommandExt</span>: <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span> <span class="op">+</span> <span class="ident">AsMut</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">arg</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>, <span class="ident">s</span>: <span class="kw">impl</span> <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">OsStr</span><span class="op">&gt;</span>) -&gt; <span class="kw-2">&amp;mut</span> <span class="self">Self</span> {
+        <span class="self">self</span>.<span class="ident">as_mut</span>().<span class="ident">arg</span>(<span class="ident">s</span>);
+        <span class="self">self</span>
+    }
+
+    <span class="kw">fn</span> <span class="ident">args</span><span class="op">&lt;</span><span class="ident">I</span>, <span class="ident">S</span><span class="op">&gt;</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>, <span class="ident">args</span>: <span class="ident">I</span>) -&gt; <span class="kw-2">&amp;mut</span> <span class="self">Self</span>
+    <span class="kw">where</span>
+        <span class="ident">I</span>: <span class="ident">IntoIterator</span><span class="op">&lt;</span><span class="ident">Item</span> <span class="op">=</span> <span class="ident">S</span><span class="op">&gt;</span>,
+        <span class="ident">S</span>: <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">OsStr</span><span class="op">&gt;</span>,
+    {
+        <span class="kw">for</span> <span class="ident">arg</span> <span class="kw">in</span> <span class="ident">args</span> {
+            <span class="self">self</span>.<span class="ident">arg</span>(<span class="ident">arg</span>);
+        }
+        <span class="self">self</span>
+    }
+
+    <span class="kw">fn</span> <span class="ident">current_dir</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>, <span class="ident">dir</span>: <span class="kw">impl</span> <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">Path</span><span class="op">&gt;</span>) -&gt; <span class="kw-2">&amp;mut</span> <span class="self">Self</span> {
+        <span class="self">self</span>.<span class="ident">as_mut</span>().<span class="ident">current_dir</span>(<span class="ident">dir</span>);
+        <span class="self">self</span>
+    }
+
+    <span class="kw">fn</span> <span class="ident">env</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>, <span class="ident">key</span>: <span class="kw">impl</span> <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">OsStr</span><span class="op">&gt;</span>, <span class="ident">val</span>: <span class="kw">impl</span> <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">OsStr</span><span class="op">&gt;</span>) -&gt; <span class="kw-2">&amp;mut</span> <span class="self">Self</span> {
+        <span class="self">self</span>.<span class="ident">as_mut</span>().<span class="ident">env</span>(<span class="ident">key</span>, <span class="ident">val</span>);
+        <span class="self">self</span>
+    }
+
+    <span class="kw">fn</span> <span class="ident">status</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>) -&gt; <span class="ident">ExitStatus</span> {
+        <span class="self">self</span>.<span class="ident">as_mut</span>().<span class="ident">status</span>().<span class="ident">unwrap</span>()
+    }
+
+    <span class="kw">fn</span> <span class="ident">info</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">OsString</span> {
+        <span class="kw">let</span> <span class="ident">cmd</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">as_ref</span>();
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">msg</span> <span class="op">=</span> <span class="ident">OsString::new</span>();
+        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">dir</span>) <span class="op">=</span> <span class="ident">cmd</span>.<span class="ident">get_current_dir</span>() {
+            <span class="ident">msg</span>.<span class="ident">push</span>(<span class="string">&quot;cd &quot;</span>);
+            <span class="ident">msg</span>.<span class="ident">push</span>(<span class="ident">dir</span>);
+            <span class="ident">msg</span>.<span class="ident">push</span>(<span class="string">&quot; &amp;&amp; &quot;</span>);
+        }
+        <span class="ident">msg</span>.<span class="ident">push</span>(<span class="ident">cmd</span>.<span class="ident">get_program</span>());
+        <span class="kw">for</span> <span class="ident">a</span> <span class="kw">in</span> <span class="ident">cmd</span>.<span class="ident">get_args</span>() {
+            <span class="ident">msg</span>.<span class="ident">push</span>(<span class="string">&quot; &quot;</span>);
+            <span class="ident">msg</span>.<span class="ident">push</span>(<span class="ident">a</span>);
+        }
+        <span class="kw">for</span> (<span class="ident">k</span>, <span class="ident">v</span>) <span class="kw">in</span> <span class="ident">cmd</span>.<span class="ident">get_envs</span>() {
+            <span class="ident">msg</span>.<span class="ident">push</span>(<span class="string">&quot; &quot;</span>);
+            <span class="ident">msg</span>.<span class="ident">push</span>(<span class="ident">k</span>);
+            <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">v</span>) <span class="op">=</span> <span class="ident">v</span> {
+                <span class="ident">msg</span>.<span class="ident">push</span>(<span class="string">&quot;=&quot;</span>);
+                <span class="ident">msg</span>.<span class="ident">push</span>(<span class="ident">v</span>);
+            }
+        }
+        <span class="ident">msg</span>
+    }
+
+    <span class="kw">fn</span> <span class="ident">join</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>) {
+        <span class="kw">let</span> <span class="ident">status</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">status</span>();
+        <span class="kw">if</span> <span class="op">!</span><span class="ident">status</span>.<span class="ident">success</span>() {
+            <span class="macro">panic!</span>(
+                <span class="string">&quot;Failed with code {}: {:?}&quot;</span>,
+                <span class="ident">status</span>.<span class="ident">code</span>().<span class="ident">unwrap</span>(),
+                <span class="self">self</span>.<span class="ident">info</span>()
+            );
+        }
+    }
 }
 </code></pre></div>
 </section><section id="search" class="content hidden"></section></div></main><div id="rustdoc-vars" data-root-path="../../" data-current-crate="xtask" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.60.0-nightly (5e57faa78 2022-01-19)" ></div>

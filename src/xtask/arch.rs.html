@@ -330,25 +330,14 @@
 <span id="324">324</span>
 <span id="325">325</span>
 <span id="326">326</span>
-<span id="327">327</span>
-<span id="328">328</span>
-<span id="329">329</span>
-<span id="330">330</span>
-<span id="331">331</span>
-<span id="332">332</span>
-<span id="333">333</span>
-<span id="334">334</span>
-<span id="335">335</span>
-<span id="336">336</span>
-<span id="337">337</span>
-<span id="338">338</span>
-<span id="339">339</span>
-<span id="340">340</span>
-</pre><pre class="rust"><code><span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">dir</span>, <span class="ident">git</span>, <span class="ident">ALPINE_ROOTFS_VERSION</span>, <span class="ident">ALPINE_WEBSITE</span>};
-<span class="kw">use</span> <span class="ident">clap</span>::{<span class="ident">Args</span>, <span class="ident">Subcommand</span>};
+</pre><pre class="rust"><code><span class="kw">use</span> <span class="kw">crate</span>::{
+    <span class="ident">dir</span>,
+    <span class="ident">download</span>::{<span class="ident">git_clone</span>, <span class="ident">wget</span>},
+    <span class="ident">CommandExt</span>, <span class="ident">ALPINE_ROOTFS_VERSION</span>, <span class="ident">ALPINE_WEBSITE</span>,
+};
 <span class="kw">use</span> <span class="ident">dircpy::copy_dir</span>;
 <span class="kw">use</span> <span class="ident">std</span>::{
-    <span class="ident">ffi::OsStr</span>,
+    <span class="ident">ffi</span>::{<span class="ident">OsStr</span>, <span class="ident">OsString</span>},
     <span class="ident">fs</span>,
     <span class="ident">io::Write</span>,
     <span class="ident">path</span>::{<span class="ident">Path</span>, <span class="ident">PathBuf</span>},
@@ -356,7 +345,7 @@
 };
 
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Args</span>)]</span>
-<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Arch</span> {
+<span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">struct</span> <span class="ident">Arch</span> {
     <span class="attribute">#[<span class="ident">clap</span>(<span class="ident">subcommand</span>)]</span>
     <span class="ident">command</span>: <span class="ident">ArchCommands</span>,
 }
@@ -370,6 +359,167 @@
 }
 
 <span class="kw">impl</span> <span class="ident">Arch</span> {
+    <span class="doccomment">/// 构造启动内存文件系统 rootfs。</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// 将在文件系统中放置必要的库文件，并下载用于交叉编译的工具链。</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">rootfs</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">clear</span>: <span class="ident">bool</span>) {
+        <span class="self">self</span>.<span class="ident">wget_alpine</span>();
+        <span class="kw">match</span> <span class="self">self</span>.<span class="ident">command</span> {
+            <span class="ident">ArchCommands::Riscv64</span> =&gt; {
+                <span class="kw">const</span> <span class="ident">DIR</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;riscv_rootfs&quot;</span>;
+                <span class="kw">const</span> <span class="ident">ARCH</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;riscv64&quot;</span>;
+
+                <span class="kw">let</span> <span class="ident">dir</span> <span class="op">=</span> <span class="ident">Path::new</span>(<span class="ident">DIR</span>);
+                <span class="kw">if</span> <span class="ident">dir</span>.<span class="ident">is_dir</span>() <span class="op">&amp;&amp;</span> <span class="op">!</span><span class="ident">clear</span> {
+                    <span class="kw">return</span>;
+                }
+                <span class="ident">dir::clear</span>(<span class="ident">dir</span>).<span class="ident">unwrap</span>();
+                <span class="kw">let</span> <span class="ident">tar</span> <span class="op">=</span> <span class="ident">dir::detect</span>(<span class="kw-2">&amp;</span><span class="macro">format!</span>(<span class="string">&quot;prebuilt/linux/{ARCH}&quot;</span>), <span class="string">&quot;minirootfs&quot;</span>).<span class="ident">unwrap</span>();
+                <span class="ident">Tar::xf</span>(<span class="kw-2">&amp;</span><span class="ident">tar</span>, <span class="prelude-val">Some</span>(<span class="ident">DIR</span>))
+                    .<span class="ident">args</span>(<span class="kw-2">&amp;</span>[<span class="string">&quot;--strip-components&quot;</span>, <span class="string">&quot;1&quot;</span>])
+                    .<span class="ident">join</span>();
+                <span class="ident">Command::new</span>(<span class="string">&quot;ln&quot;</span>)
+                    .<span class="ident">args</span>(<span class="kw-2">&amp;</span>[<span class="string">&quot;-s&quot;</span>, <span class="string">&quot;busybox&quot;</span>, <span class="string">&quot;riscv_rootfs/bin/ls&quot;</span>])
+                    .<span class="ident">status</span>()
+                    .<span class="ident">unwrap</span>()
+                    .<span class="ident">exit_ok</span>()
+                    .<span class="ident">expect</span>(<span class="string">&quot;FAILED: ln -s busybox riscv_rootfs/bin/ls&quot;</span>);
+            }
+            <span class="ident">ArchCommands::X86_64</span> =&gt; {
+                <span class="kw">const</span> <span class="ident">DIR</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;rootfs&quot;</span>;
+                <span class="kw">const</span> <span class="ident">ARCH</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>;
+
+                <span class="kw">let</span> <span class="ident">dir</span> <span class="op">=</span> <span class="ident">Path::new</span>(<span class="ident">DIR</span>);
+                <span class="kw">if</span> <span class="ident">dir</span>.<span class="ident">is_dir</span>() <span class="op">&amp;&amp;</span> <span class="op">!</span><span class="ident">clear</span> {
+                    <span class="kw">return</span>;
+                }
+                <span class="ident">dir::clear</span>(<span class="ident">DIR</span>).<span class="ident">unwrap</span>();
+                <span class="kw">let</span> <span class="ident">tar</span> <span class="op">=</span> <span class="ident">dir::detect</span>(<span class="kw-2">&amp;</span><span class="macro">format!</span>(<span class="string">&quot;prebuilt/linux/{ARCH}&quot;</span>), <span class="string">&quot;minirootfs&quot;</span>).<span class="ident">unwrap</span>();
+                <span class="ident">Tar::xf</span>(<span class="kw-2">&amp;</span><span class="ident">tar</span>, <span class="prelude-val">Some</span>(<span class="ident">DIR</span>)).<span class="ident">join</span>();
+                <span class="comment">// libc-libos.so (convert syscall to function call) is from https://github.com/rcore-os/musl/tree/rcore</span>
+                <span class="ident">fs::copy</span>(
+                    <span class="string">&quot;prebuilt/linux/libc-libos.so&quot;</span>,
+                    <span class="macro">format!</span>(<span class="string">&quot;{DIR}/lib/ld-musl-{ARCH}.so.1&quot;</span>),
+                )
+                .<span class="ident">unwrap</span>();
+                {
+                    <span class="kw">const</span> <span class="ident">TEST_DIR</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;linux-syscall/test&quot;</span>;
+                    <span class="kw">const</span> <span class="ident">DEST_DIR</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;rootfs/bin/&quot;</span>;
+                    <span class="comment">// for linux syscall tests</span>
+                    <span class="ident">fs::read_dir</span>(<span class="ident">TEST_DIR</span>)
+                        .<span class="ident">unwrap</span>()
+                        .<span class="ident">filter_map</span>(<span class="op">|</span><span class="ident">res</span><span class="op">|</span> <span class="ident">res</span>.<span class="ident">ok</span>())
+                        .<span class="ident">map</span>(<span class="op">|</span><span class="ident">entry</span><span class="op">|</span> <span class="ident">entry</span>.<span class="ident">path</span>())
+                        .<span class="ident">filter</span>(<span class="op">|</span><span class="ident">path</span><span class="op">|</span> <span class="ident">path</span>.<span class="ident">extension</span>().<span class="ident">map_or</span>(<span class="bool-val">false</span>, <span class="op">|</span><span class="ident">ext</span><span class="op">|</span> <span class="ident">ext</span> <span class="op">==</span> <span class="ident">OsStr::new</span>(<span class="string">&quot;c&quot;</span>)))
+                        .<span class="ident">for_each</span>(<span class="op">|</span><span class="ident">c</span><span class="op">|</span> {
+                            <span class="kw">let</span> <span class="ident">o</span> <span class="op">=</span> <span class="macro">format!</span>(
+                                <span class="string">&quot;{DEST_DIR}/{}&quot;</span>,
+                                <span class="ident">c</span>.<span class="ident">file_prefix</span>().<span class="ident">and_then</span>(<span class="op">|</span><span class="ident">s</span><span class="op">|</span> <span class="ident">s</span>.<span class="ident">to_str</span>()).<span class="ident">unwrap</span>()
+                            );
+                            <span class="ident">Command::new</span>(<span class="string">&quot;gcc&quot;</span>)
+                                .<span class="ident">arg</span>(<span class="kw-2">&amp;</span><span class="ident">c</span>)
+                                .<span class="ident">args</span>(<span class="kw-2">&amp;</span>[<span class="string">&quot;-o&quot;</span>, <span class="kw-2">&amp;</span><span class="ident">o</span>])
+                                .<span class="ident">arg</span>(<span class="string">&quot;-Wl,--dynamic-linker=/lib/ld-musl-x86_64.so.1&quot;</span>)
+                                .<span class="ident">status</span>()
+                                .<span class="ident">unwrap</span>()
+                                .<span class="ident">exit_ok</span>()
+                                .<span class="ident">expect</span>(<span class="string">&quot;FAILED: gcc {c:?}&quot;</span>);
+                        });
+                }
+            }
+        }
+    }
+
+    <span class="doccomment">/// 将 libc-test 放入 rootfs。</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">libc_test</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) {
+        <span class="self">self</span>.<span class="ident">rootfs</span>(<span class="bool-val">false</span>);
+        <span class="ident">git_clone</span>(
+            <span class="string">&quot;https://github.com/rcore-os/libc-test.git&quot;</span>,
+            <span class="string">&quot;ignored/libc-test&quot;</span>,
+        );
+        <span class="kw">match</span> <span class="self">self</span>.<span class="ident">command</span> {
+            <span class="ident">ArchCommands::Riscv64</span> =&gt; {
+                <span class="kw">const</span> <span class="ident">DIR</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;riscv_rootfs/libc-test&quot;</span>;
+                <span class="kw">const</span> <span class="ident">PRE</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;riscv_rootfs/libc-test-prebuild&quot;</span>;
+
+                <span class="ident">fs::rename</span>(<span class="ident">DIR</span>, <span class="ident">PRE</span>).<span class="ident">unwrap</span>();
+                <span class="ident">copy_dir</span>(<span class="string">&quot;ignored/libc-test&quot;</span>, <span class="ident">DIR</span>).<span class="ident">unwrap</span>();
+                <span class="ident">fs::copy</span>(<span class="macro">format!</span>(<span class="string">&quot;{DIR}/config.mak.def&quot;</span>), <span class="macro">format!</span>(<span class="string">&quot;{DIR}/config.mak&quot;</span>)).<span class="ident">unwrap</span>();
+                <span class="ident">Make::new</span>(<span class="prelude-val">None</span>)
+                    .<span class="ident">env</span>(<span class="string">&quot;ARCH&quot;</span>, <span class="string">&quot;riscv64&quot;</span>)
+                    .<span class="ident">env</span>(<span class="string">&quot;CROSS_COMPILE&quot;</span>, <span class="string">&quot;riscv64-linux-musl-&quot;</span>)
+                    .<span class="ident">env</span>(<span class="string">&quot;PATH&quot;</span>, <span class="ident">riscv64_linux_musl_cross</span>())
+                    .<span class="ident">current_dir</span>(<span class="ident">DIR</span>)
+                    .<span class="ident">join</span>();
+                <span class="ident">fs::copy</span>(
+                    <span class="macro">format!</span>(<span class="string">&quot;{PRE}/functional/tls_align-static.exe&quot;</span>),
+                    <span class="macro">format!</span>(<span class="string">&quot;{DIR}/src/functional/tls_align-static.exe&quot;</span>),
+                )
+                .<span class="ident">unwrap</span>();
+                <span class="ident">dir::rm</span>(<span class="ident">PRE</span>).<span class="ident">unwrap</span>();
+            }
+            <span class="ident">ArchCommands::X86_64</span> =&gt; {
+                <span class="kw">const</span> <span class="ident">DIR</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;rootfs/libc-test&quot;</span>;
+
+                <span class="ident">dir::rm</span>(<span class="ident">DIR</span>).<span class="ident">unwrap</span>();
+                <span class="ident">copy_dir</span>(<span class="string">&quot;ignored/libc-test&quot;</span>, <span class="ident">DIR</span>).<span class="ident">unwrap</span>();
+                <span class="ident">fs::copy</span>(<span class="macro">format!</span>(<span class="string">&quot;{DIR}/config.mak.def&quot;</span>), <span class="macro">format!</span>(<span class="string">&quot;{DIR}/config.mak&quot;</span>)).<span class="ident">unwrap</span>();
+                <span class="ident">fs::OpenOptions::new</span>()
+                    .<span class="ident">append</span>(<span class="bool-val">true</span>)
+                    .<span class="ident">open</span>(<span class="macro">format!</span>(<span class="string">&quot;{DIR}/config.mak&quot;</span>))
+                    .<span class="ident">unwrap</span>()
+                    .<span class="ident">write_all</span>(<span class="string">b&quot;CC := musl-gcc\nAR := ar\nRANLIB := ranlib&quot;</span>)
+                    .<span class="ident">unwrap</span>();
+                <span class="ident">Make::new</span>(<span class="prelude-val">None</span>).<span class="ident">current_dir</span>(<span class="ident">DIR</span>).<span class="ident">join</span>();
+            }
+        }
+    }
+
+    <span class="doccomment">/// 生成镜像。</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">image</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) {
+        <span class="self">self</span>.<span class="ident">rootfs</span>(<span class="bool-val">false</span>);
+        <span class="kw">let</span> <span class="ident">image</span> <span class="op">=</span> <span class="kw">match</span> <span class="self">self</span>.<span class="ident">command</span> {
+            <span class="ident">ArchCommands::Riscv64</span> =&gt; {
+                <span class="kw">const</span> <span class="ident">ARCH</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;riscv64&quot;</span>;
+
+                <span class="kw">let</span> <span class="ident">image</span> <span class="op">=</span> <span class="macro">format!</span>(<span class="string">&quot;zCore/{ARCH}.img&quot;</span>);
+                <span class="ident">fuse</span>(<span class="string">&quot;riscv_rootfs&quot;</span>, <span class="kw-2">&amp;</span><span class="ident">image</span>);
+                <span class="ident">image</span>
+            }
+            <span class="ident">ArchCommands::X86_64</span> =&gt; {
+                <span class="kw">const</span> <span class="ident">ARCH</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>;
+                <span class="kw">const</span> <span class="ident">TMP_ROOTFS</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;/tmp/rootfs&quot;</span>;
+                <span class="kw">const</span> <span class="ident">ROOTFS_LIB</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;rootfs/lib&quot;</span>;
+
+                <span class="comment">// ld-musl-x86_64.so.1 替换为适用 bare-matel 的版本</span>
+                <span class="ident">dir::clear</span>(<span class="ident">TMP_ROOTFS</span>).<span class="ident">unwrap</span>();
+                <span class="kw">let</span> <span class="ident">tar</span> <span class="op">=</span> <span class="ident">dir::detect</span>(<span class="kw-2">&amp;</span><span class="macro">format!</span>(<span class="string">&quot;prebuilt/linux/{ARCH}&quot;</span>), <span class="string">&quot;minirootfs&quot;</span>).<span class="ident">unwrap</span>();
+                <span class="ident">Tar::xf</span>(<span class="kw-2">&amp;</span><span class="ident">tar</span>, <span class="prelude-val">Some</span>(<span class="ident">TMP_ROOTFS</span>)).<span class="ident">join</span>();
+                <span class="ident">dir::clear</span>(<span class="ident">ROOTFS_LIB</span>).<span class="ident">unwrap</span>();
+                <span class="ident">fs::copy</span>(
+                    <span class="macro">format!</span>(<span class="string">&quot;{TMP_ROOTFS}/lib/ld-musl-x86_64.so.1&quot;</span>),
+                    <span class="macro">format!</span>(<span class="string">&quot;{ROOTFS_LIB}/ld-musl-x86_64.so.1&quot;</span>),
+                )
+                .<span class="ident">unwrap</span>();
+
+                <span class="kw">let</span> <span class="ident">image</span> <span class="op">=</span> <span class="macro">format!</span>(<span class="string">&quot;zCore/{ARCH}.img&quot;</span>);
+                <span class="ident">fuse</span>(<span class="string">&quot;rootfs&quot;</span>, <span class="kw-2">&amp;</span><span class="ident">image</span>);
+                <span class="ident">fs::copy</span>(
+                    <span class="string">&quot;prebuilt/linux/libc-libos.so&quot;</span>,
+                    <span class="macro">format!</span>(<span class="string">&quot;{ROOTFS_LIB}/ld-musl-x86_64.so.1&quot;</span>),
+                )
+                .<span class="ident">unwrap</span>();
+                <span class="ident">image</span>
+            }
+        };
+        <span class="ident">Command::new</span>(<span class="string">&quot;qemu-img&quot;</span>)
+            .<span class="ident">args</span>(<span class="kw-2">&amp;</span>[<span class="string">&quot;resize&quot;</span>, <span class="kw-2">&amp;</span><span class="ident">image</span>, <span class="string">&quot;+5M&quot;</span>])
+            .<span class="ident">status</span>()
+            .<span class="ident">unwrap</span>()
+            .<span class="ident">exit_ok</span>()
+            .<span class="ident">expect</span>(<span class="string">&quot;FAILED: qemu-img resize&quot;</span>);
+    }
+
     <span class="doccomment">/// 获取 alpine 镜像。</span>
     <span class="kw">fn</span> <span class="ident">wget_alpine</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) {
         <span class="kw">let</span> (<span class="ident">local_path</span>, <span class="ident">web_url</span>) <span class="op">=</span> <span class="kw">match</span> <span class="self">self</span>.<span class="ident">command</span> {
@@ -402,287 +552,109 @@
         };
 
         <span class="ident">fs::create_dir_all</span>(<span class="ident">local_path</span>.<span class="ident">parent</span>().<span class="ident">unwrap</span>()).<span class="ident">unwrap</span>();
-
-        <span class="attribute">#[<span class="ident">rustfmt::skip</span>]</span>
-        <span class="kw">let</span> <span class="ident">wget</span> <span class="op">=</span> <span class="ident">Command::new</span>(<span class="string">&quot;wget&quot;</span>)
-            .<span class="ident">arg</span>(<span class="kw-2">&amp;</span><span class="ident">web_url</span>)
-            .<span class="ident">arg</span>(<span class="string">&quot;-O&quot;</span>).<span class="ident">arg</span>(<span class="ident">local_path</span>)
-            .<span class="ident">status</span>();
-        <span class="kw">if</span> <span class="op">!</span><span class="ident">wget</span>.<span class="ident">unwrap</span>().<span class="ident">success</span>() {
-            <span class="macro">panic!</span>(<span class="string">&quot;FAILED: wget {web_url}&quot;</span>);
-        }
-    }
-
-    <span class="doccomment">/// 构造启动内存文件系统 rootfs。</span>
-    <span class="doccomment">///</span>
-    <span class="doccomment">/// 将在文件系统中放置必要的库文件，并下载用于交叉编译的工具链。</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">rootfs</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) {
-        <span class="self">self</span>.<span class="ident">wget_alpine</span>();
-        <span class="kw">match</span> <span class="self">self</span>.<span class="ident">command</span> {
-            <span class="ident">ArchCommands::Riscv64</span> =&gt; {
-                <span class="kw">const</span> <span class="ident">DIR</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;riscv_rootfs&quot;</span>;
-                <span class="kw">const</span> <span class="ident">ARCH</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;riscv64&quot;</span>;
-
-                {
-                    <span class="ident">dir::clear</span>(<span class="ident">DIR</span>).<span class="ident">unwrap</span>();
-                    <span class="kw">let</span> <span class="ident">tar</span> <span class="op">=</span> <span class="ident">dir::detect</span>(<span class="kw-2">&amp;</span><span class="macro">format!</span>(<span class="string">&quot;prebuilt/linux/{ARCH}&quot;</span>), <span class="string">&quot;minirootfs&quot;</span>).<span class="ident">unwrap</span>();
-                    <span class="attribute">#[<span class="ident">rustfmt::skip</span>]</span>
-                    <span class="kw">let</span> <span class="ident">res</span> <span class="op">=</span> <span class="ident">tar_xf</span>(<span class="kw-2">&amp;</span><span class="ident">tar</span>, <span class="prelude-val">Some</span>(<span class="ident">DIR</span>))
-                        .<span class="ident">arg</span>(<span class="string">&quot;--strip-components&quot;</span>).<span class="ident">arg</span>(<span class="string">&quot;1&quot;</span>)
-                        .<span class="ident">status</span>().<span class="ident">unwrap</span>();
-                    <span class="kw">if</span> <span class="op">!</span><span class="ident">res</span>.<span class="ident">success</span>() {
-                        <span class="macro">panic!</span>(<span class="string">&quot;FAILED: tar xf {tar:?}&quot;</span>);
-                    }
-                }
-                {
-                    <span class="attribute">#[<span class="ident">rustfmt::skip</span>]</span>
-                    <span class="kw">let</span> <span class="ident">ln</span> <span class="op">=</span> <span class="ident">Command::new</span>(<span class="string">&quot;ln&quot;</span>)
-                        .<span class="ident">arg</span>(<span class="string">&quot;-s&quot;</span>).<span class="ident">arg</span>(<span class="string">&quot;busybox&quot;</span>).<span class="ident">arg</span>(<span class="string">&quot;riscv_rootfs/bin/ls&quot;</span>)
-                        .<span class="ident">status</span>().<span class="ident">unwrap</span>();
-                    <span class="kw">if</span> <span class="op">!</span><span class="ident">ln</span>.<span class="ident">success</span>() {
-                        <span class="macro">panic!</span>(<span class="string">&quot;FAILED: ln -s busybox riscv_rootfs/bin/ls&quot;</span>);
-                    }
-                }
-            }
-            <span class="ident">ArchCommands::X86_64</span> =&gt; {
-                <span class="kw">const</span> <span class="ident">DIR</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;rootfs&quot;</span>;
-                <span class="kw">const</span> <span class="ident">ARCH</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>;
-
-                {
-                    <span class="ident">dir::clear</span>(<span class="ident">DIR</span>).<span class="ident">unwrap</span>();
-                    <span class="kw">let</span> <span class="ident">tar</span> <span class="op">=</span> <span class="ident">dir::detect</span>(<span class="kw-2">&amp;</span><span class="macro">format!</span>(<span class="string">&quot;prebuilt/linux/{ARCH}&quot;</span>), <span class="string">&quot;minirootfs&quot;</span>).<span class="ident">unwrap</span>();
-                    <span class="kw">if</span> <span class="op">!</span><span class="ident">tar_xf</span>(<span class="kw-2">&amp;</span><span class="ident">tar</span>, <span class="prelude-val">Some</span>(<span class="ident">DIR</span>)).<span class="ident">status</span>().<span class="ident">unwrap</span>().<span class="ident">success</span>() {
-                        <span class="macro">panic!</span>(<span class="string">&quot;FAILED: tar xf {tar:?}&quot;</span>);
-                    }
-                }
-                {
-                    <span class="comment">// libc-libos.so (convert syscall to function call) is from https://github.com/rcore-os/musl/tree/rcore</span>
-                    <span class="ident">fs::copy</span>(
-                        <span class="string">&quot;prebuilt/linux/libc-libos.so&quot;</span>,
-                        <span class="macro">format!</span>(<span class="string">&quot;{DIR}/lib/ld-musl-{ARCH}.so.1&quot;</span>),
-                    )
-                    .<span class="ident">unwrap</span>();
-                }
-                {
-                    <span class="kw">const</span> <span class="ident">TEST_DIR</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;linux-syscall/test&quot;</span>;
-                    <span class="kw">const</span> <span class="ident">DEST_DIR</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;rootfs/bin/&quot;</span>;
-                    <span class="comment">// for linux syscall tests</span>
-                    <span class="ident">fs::read_dir</span>(<span class="ident">TEST_DIR</span>)
-                        .<span class="ident">unwrap</span>()
-                        .<span class="ident">filter_map</span>(<span class="op">|</span><span class="ident">res</span><span class="op">|</span> <span class="ident">res</span>.<span class="ident">ok</span>())
-                        .<span class="ident">map</span>(<span class="op">|</span><span class="ident">entry</span><span class="op">|</span> <span class="ident">entry</span>.<span class="ident">path</span>())
-                        .<span class="ident">filter</span>(<span class="op">|</span><span class="ident">path</span><span class="op">|</span> <span class="ident">path</span>.<span class="ident">extension</span>().<span class="ident">map_or</span>(<span class="bool-val">false</span>, <span class="op">|</span><span class="ident">ext</span><span class="op">|</span> <span class="ident">ext</span> <span class="op">==</span> <span class="ident">OsStr::new</span>(<span class="string">&quot;c&quot;</span>)))
-                        .<span class="ident">for_each</span>(<span class="op">|</span><span class="ident">c</span><span class="op">|</span> {
-                            <span class="kw">let</span> <span class="ident">o</span> <span class="op">=</span> <span class="macro">format!</span>(
-                                <span class="string">&quot;{DEST_DIR}/{}&quot;</span>,
-                                <span class="ident">c</span>.<span class="ident">file_prefix</span>().<span class="ident">and_then</span>(<span class="op">|</span><span class="ident">s</span><span class="op">|</span> <span class="ident">s</span>.<span class="ident">to_str</span>()).<span class="ident">unwrap</span>()
-                            );
-                            <span class="attribute">#[<span class="ident">rustfmt::skip</span>]</span>
-                            <span class="kw">let</span> <span class="ident">gcc</span> <span class="op">=</span> <span class="ident">Command::new</span>(<span class="string">&quot;gcc&quot;</span>).<span class="ident">arg</span>(<span class="kw-2">&amp;</span><span class="ident">c</span>)
-                                .<span class="ident">arg</span>(<span class="string">&quot;-o&quot;</span>).<span class="ident">arg</span>(<span class="ident">o</span>)
-                                .<span class="ident">arg</span>(<span class="string">&quot;-Wl,--dynamic-linker=/lib/ld-musl-x86_64.so.1&quot;</span>)
-                                .<span class="ident">status</span>().<span class="ident">unwrap</span>();
-                            <span class="kw">if</span> <span class="op">!</span><span class="ident">gcc</span>.<span class="ident">success</span>() {
-                                <span class="macro">panic!</span>(<span class="string">&quot;FAILED: gcc {c:?}&quot;</span>);
-                            }
-                        });
-                }
-            }
-        }
-    }
-
-    <span class="doccomment">/// 将 libc-test 放入 rootfs。</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">libc_test</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) {
-        <span class="ident">clone_libc_test</span>();
-        <span class="kw">match</span> <span class="self">self</span>.<span class="ident">command</span> {
-            <span class="ident">ArchCommands::Riscv64</span> =&gt; {
-                <span class="kw">const</span> <span class="ident">DIR</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;riscv_rootfs/libc-test&quot;</span>;
-                <span class="kw">const</span> <span class="ident">PRE</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;riscv_rootfs/libc-test-prebuild&quot;</span>;
-
-                <span class="ident">riscv64_linux_musl_cross</span>();
-                <span class="ident">fs::rename</span>(<span class="ident">DIR</span>, <span class="ident">PRE</span>).<span class="ident">unwrap</span>();
-                <span class="ident">copy_dir</span>(<span class="string">&quot;ignored/libc-test&quot;</span>, <span class="ident">DIR</span>).<span class="ident">unwrap</span>();
-                <span class="ident">fs::copy</span>(<span class="macro">format!</span>(<span class="string">&quot;{DIR}/config.mak.def&quot;</span>), <span class="macro">format!</span>(<span class="string">&quot;{DIR}/config.mak&quot;</span>)).<span class="ident">unwrap</span>();
-                <span class="kw">let</span> <span class="ident">make</span> <span class="op">=</span> <span class="ident">Command::new</span>(<span class="string">&quot;make&quot;</span>)
-                    .<span class="ident">arg</span>(<span class="string">&quot;-j&quot;</span>)
-                    .<span class="ident">env</span>(<span class="string">&quot;ARCH&quot;</span>, <span class="string">&quot;riscv64&quot;</span>)
-                    .<span class="ident">env</span>(<span class="string">&quot;CROSS_COMPILE&quot;</span>, <span class="string">&quot;riscv64-linux-musl-&quot;</span>)
-                    .<span class="ident">current_dir</span>(<span class="ident">DIR</span>)
-                    .<span class="ident">status</span>();
-                <span class="kw">if</span> <span class="op">!</span><span class="ident">make</span>.<span class="ident">unwrap</span>().<span class="ident">success</span>() {
-                    <span class="macro">panic!</span>(<span class="string">&quot;FAILED: make -j&quot;</span>);
-                }
-                <span class="ident">fs::copy</span>(
-                    <span class="macro">format!</span>(<span class="string">&quot;{PRE}/functional/tls_align-static.exe&quot;</span>),
-                    <span class="macro">format!</span>(<span class="string">&quot;{DIR}/src/functional/tls_align-static.exe&quot;</span>),
-                )
-                .<span class="ident">unwrap</span>();
-                <span class="ident">dir::rm</span>(<span class="ident">PRE</span>).<span class="ident">unwrap</span>();
-            }
-            <span class="ident">ArchCommands::X86_64</span> =&gt; {
-                <span class="kw">const</span> <span class="ident">DIR</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;rootfs/libc-test&quot;</span>;
-
-                <span class="ident">dir::rm</span>(<span class="ident">DIR</span>).<span class="ident">unwrap</span>();
-                <span class="ident">copy_dir</span>(<span class="string">&quot;ignored/libc-test&quot;</span>, <span class="ident">DIR</span>).<span class="ident">unwrap</span>();
-                <span class="ident">fs::copy</span>(<span class="macro">format!</span>(<span class="string">&quot;{DIR}/config.mak.def&quot;</span>), <span class="macro">format!</span>(<span class="string">&quot;{DIR}/config.mak&quot;</span>)).<span class="ident">unwrap</span>();
-                <span class="ident">fs::OpenOptions::new</span>()
-                    .<span class="ident">append</span>(<span class="bool-val">true</span>)
-                    .<span class="ident">open</span>(<span class="macro">format!</span>(<span class="string">&quot;{DIR}/config.mak&quot;</span>))
-                    .<span class="ident">unwrap</span>()
-                    .<span class="ident">write_all</span>(<span class="string">b&quot;CC := musl-gcc\nAR := ar\nRANLIB := ranlib&quot;</span>)
-                    .<span class="ident">unwrap</span>();
-                <span class="kw">if</span> <span class="op">!</span><span class="ident">Command::new</span>(<span class="string">&quot;make&quot;</span>)
-                    .<span class="ident">arg</span>(<span class="string">&quot;-j&quot;</span>)
-                    .<span class="ident">current_dir</span>(<span class="ident">DIR</span>)
-                    .<span class="ident">status</span>()
-                    .<span class="ident">unwrap</span>()
-                    .<span class="ident">success</span>()
-                {
-                    <span class="macro">panic!</span>(<span class="string">&quot;FAILED: make -j&quot;</span>);
-                }
-            }
-        }
-    }
-
-    <span class="doccomment">/// 生成镜像。</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">image</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) {
-        <span class="ident">install_fs_fuse</span>();
-        <span class="kw">let</span> <span class="ident">image</span> <span class="op">=</span> <span class="kw">match</span> <span class="self">self</span>.<span class="ident">command</span> {
-            <span class="ident">ArchCommands::Riscv64</span> =&gt; {
-                <span class="kw">const</span> <span class="ident">ARCH</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;riscv64&quot;</span>;
-
-                <span class="kw">let</span> <span class="ident">image</span> <span class="op">=</span> <span class="macro">format!</span>(<span class="string">&quot;zCore/{ARCH}.img&quot;</span>);
-                <span class="attribute">#[<span class="ident">rustfmt::skip</span>]</span>
-                <span class="kw">let</span> <span class="ident">fuse</span> <span class="op">=</span> <span class="ident">Command::new</span>(<span class="string">&quot;rcore-fs-fuse&quot;</span>)
-                    .<span class="ident">arg</span>(<span class="kw-2">&amp;</span><span class="ident">image</span>).<span class="ident">arg</span>(<span class="string">&quot;riscv_rootfs&quot;</span>).<span class="ident">arg</span>(<span class="string">&quot;zip&quot;</span>)
-                    .<span class="ident">status</span>().<span class="ident">unwrap</span>();
-                <span class="kw">if</span> <span class="op">!</span><span class="ident">fuse</span>.<span class="ident">success</span>() {
-                    <span class="macro">panic!</span>(<span class="string">&quot;FAILED: rcore-fs-fuse&quot;</span>);
-                }
-                <span class="ident">image</span>
-            }
-            <span class="ident">ArchCommands::X86_64</span> =&gt; {
-                <span class="kw">const</span> <span class="ident">ARCH</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>;
-                <span class="kw">const</span> <span class="ident">TMP_ROOTFS</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;/tmp/rootfs&quot;</span>;
-                <span class="kw">const</span> <span class="ident">ROOTFS_LIB</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;rootfs/lib&quot;</span>;
-
-                <span class="comment">// ld-musl-x86_64.so.1 替换为适用 bare-matel 的版本</span>
-                <span class="ident">dir::clear</span>(<span class="ident">TMP_ROOTFS</span>).<span class="ident">unwrap</span>();
-                <span class="kw">let</span> <span class="ident">tar</span> <span class="op">=</span> <span class="ident">dir::detect</span>(<span class="kw-2">&amp;</span><span class="macro">format!</span>(<span class="string">&quot;prebuilt/linux/{ARCH}&quot;</span>), <span class="string">&quot;minirootfs&quot;</span>).<span class="ident">unwrap</span>();
-                <span class="kw">if</span> <span class="op">!</span><span class="ident">tar_xf</span>(<span class="kw-2">&amp;</span><span class="ident">tar</span>, <span class="prelude-val">Some</span>(<span class="ident">TMP_ROOTFS</span>)).<span class="ident">status</span>().<span class="ident">unwrap</span>().<span class="ident">success</span>() {
-                    <span class="macro">panic!</span>(<span class="string">&quot;FAILED: tar xf {tar:?}&quot;</span>);
-                }
-                <span class="ident">dir::clear</span>(<span class="ident">ROOTFS_LIB</span>).<span class="ident">unwrap</span>();
-                <span class="ident">fs::copy</span>(
-                    <span class="macro">format!</span>(<span class="string">&quot;{TMP_ROOTFS}/lib/ld-musl-x86_64.so.1&quot;</span>),
-                    <span class="macro">format!</span>(<span class="string">&quot;{ROOTFS_LIB}/ld-musl-x86_64.so.1&quot;</span>),
-                )
-                .<span class="ident">unwrap</span>();
-
-                <span class="kw">let</span> <span class="ident">image</span> <span class="op">=</span> <span class="macro">format!</span>(<span class="string">&quot;zCore/{ARCH}.img&quot;</span>);
-                <span class="attribute">#[<span class="ident">rustfmt::skip</span>]</span>
-                <span class="kw">let</span> <span class="ident">fuse</span> <span class="op">=</span> <span class="ident">Command::new</span>(<span class="string">&quot;rcore-fs-fuse&quot;</span>)
-                    .<span class="ident">arg</span>(<span class="kw-2">&amp;</span><span class="ident">image</span>).<span class="ident">arg</span>(<span class="string">&quot;rootfs&quot;</span>).<span class="ident">arg</span>(<span class="string">&quot;zip&quot;</span>)
-                    .<span class="ident">status</span>().<span class="ident">unwrap</span>();
-                <span class="kw">if</span> <span class="op">!</span><span class="ident">fuse</span>.<span class="ident">success</span>() {
-                    <span class="macro">panic!</span>(<span class="string">&quot;FAILED: rcore-fs-fuse&quot;</span>);
-                }
-                <span class="comment">// ld-musl-x86_64.so.1 替换为适用 libos 的版本</span>
-                <span class="comment">// # libc-libos.so (convert syscall to function call) is from https://github.com/rcore-os/musl/tree/rcore</span>
-                <span class="ident">fs::copy</span>(
-                    <span class="string">&quot;prebuilt/linux/libc-libos.so&quot;</span>,
-                    <span class="macro">format!</span>(<span class="string">&quot;{ROOTFS_LIB}/ld-musl-x86_64.so.1&quot;</span>),
-                )
-                .<span class="ident">unwrap</span>();
-                <span class="ident">image</span>
-            }
-        };
-        <span class="attribute">#[<span class="ident">rustfmt::skip</span>]</span>
-        <span class="kw">let</span> <span class="ident">resize</span> <span class="op">=</span> <span class="ident">Command::new</span>(<span class="string">&quot;qemu-img&quot;</span>)
-            .<span class="ident">arg</span>(<span class="string">&quot;resize&quot;</span>).<span class="ident">arg</span>(<span class="ident">image</span>).<span class="ident">arg</span>(<span class="string">&quot;+5M&quot;</span>)
-            .<span class="ident">status</span>().<span class="ident">unwrap</span>();
-        <span class="kw">if</span> <span class="op">!</span><span class="ident">resize</span>.<span class="ident">success</span>() {
-            <span class="macro">panic!</span>(<span class="string">&quot;FAILED: qemu-img resize&quot;</span>);
-        }
+        <span class="ident">wget</span>(<span class="kw-2">&amp;</span><span class="ident">web_url</span>, <span class="kw-2">&amp;</span><span class="ident">local_path</span>);
     }
 }
 
-<span class="doccomment">/// 构造将归档文件 `src` 释放到 `dst` 目录下的命令。</span>
-<span class="doccomment">///</span>
-<span class="doccomment">/// 本身不会产生异常，因为命令还没有执行。</span>
-<span class="doccomment">/// 但若 `src` 不是存在的归档文件，或 `dst` 不是存在的目录，将在命令执行时产生对应异常。</span>
-<span class="kw">fn</span> <span class="ident">tar_xf</span>(<span class="ident">src</span>: <span class="kw-2">&amp;</span><span class="kw">impl</span> <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">OsStr</span><span class="op">&gt;</span>, <span class="ident">dst</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">str</span><span class="op">&gt;</span>) -&gt; <span class="ident">Command</span> {
-    <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">cmd</span> <span class="op">=</span> <span class="ident">Command::new</span>(<span class="string">&quot;tar&quot;</span>);
-    <span class="ident">cmd</span>.<span class="ident">arg</span>(<span class="string">&quot;xf&quot;</span>).<span class="ident">arg</span>(<span class="ident">src</span>);
-    <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">dst</span>) <span class="op">=</span> <span class="ident">dst</span> {
-        <span class="ident">cmd</span>.<span class="ident">arg</span>(<span class="string">&quot;-C&quot;</span>).<span class="ident">arg</span>(<span class="ident">dst</span>);
-    }
-    <span class="ident">cmd</span>
-}
+<span class="kw">struct</span> <span class="ident">Make</span>(<span class="ident">Command</span>);
 
-<span class="doccomment">/// 安装 rcore-fs-fuse。</span>
-<span class="kw">fn</span> <span class="ident">install_fs_fuse</span>() {
-    <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Ok</span>(<span class="bool-val">true</span>) <span class="op">=</span> <span class="ident">Command::new</span>(<span class="string">&quot;rcore-fs-fuse&quot;</span>)
-        .<span class="ident">arg</span>(<span class="string">&quot;--version&quot;</span>)
-        .<span class="ident">output</span>()
-        .<span class="ident">map</span>(<span class="op">|</span><span class="ident">out</span><span class="op">|</span> <span class="ident">out</span>.<span class="ident">stdout</span>.<span class="ident">starts_with</span>(<span class="string">b&quot;rcore-fs-fuse&quot;</span>))
-    {
-        <span class="macro">println!</span>(<span class="string">&quot;Rcore-fs-fuse is already installed.&quot;</span>);
-        <span class="kw">return</span>;
-    }
-    <span class="attribute">#[<span class="ident">rustfmt::skip</span>]</span>
-    <span class="kw">let</span> <span class="ident">install</span> <span class="op">=</span> <span class="ident">Command::new</span>(<span class="string">&quot;cargo&quot;</span>)
-        .<span class="ident">arg</span>(<span class="string">&quot;install&quot;</span>).<span class="ident">arg</span>(<span class="string">&quot;rcore-fs-fuse&quot;</span>)
-        .<span class="ident">arg</span>(<span class="string">&quot;--git&quot;</span>).<span class="ident">arg</span>(<span class="string">&quot;https://github.com/rcore-os/rcore-fs&quot;</span>)
-        .<span class="ident">arg</span>(<span class="string">&quot;--rev&quot;</span>).<span class="ident">arg</span>(<span class="string">&quot;1a3246b&quot;</span>)
-        .<span class="ident">arg</span>(<span class="string">&quot;--force&quot;</span>)
-        .<span class="ident">status</span>();
-    <span class="kw">if</span> <span class="op">!</span><span class="ident">install</span>.<span class="ident">unwrap</span>().<span class="ident">success</span>() {
-        <span class="macro">panic!</span>(<span class="string">&quot;FAILED: install rcore-fs-fuse&quot;</span>);
+<span class="kw">impl</span> <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">Make</span> {
+    <span class="kw">fn</span> <span class="ident">as_ref</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><span class="ident">Command</span> {
+        <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="number">0</span>
     }
 }
 
-<span class="doccomment">/// 克隆 libc-test.</span>
-<span class="kw">fn</span> <span class="ident">clone_libc_test</span>() {
-    <span class="kw">const</span> <span class="ident">DIR</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;ignored/libc-test&quot;</span>;
-    <span class="kw">const</span> <span class="ident">URL</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;https://github.com/rcore-os/libc-test.git&quot;</span>;
+<span class="kw">impl</span> <span class="ident">AsMut</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">Make</span> {
+    <span class="kw">fn</span> <span class="ident">as_mut</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>) -&gt; <span class="kw-2">&amp;mut</span> <span class="ident">Command</span> {
+        <span class="kw-2">&amp;mut</span> <span class="self">self</span>.<span class="number">0</span>
+    }
+}
 
-    <span class="kw">if</span> <span class="ident">Path::new</span>(<span class="ident">DIR</span>).<span class="ident">is_dir</span>() {
-        <span class="kw">let</span> <span class="ident">pull</span> <span class="op">=</span> <span class="ident">git::pull</span>().<span class="ident">current_dir</span>(<span class="ident">DIR</span>).<span class="ident">status</span>();
-        <span class="kw">if</span> <span class="op">!</span><span class="ident">pull</span>.<span class="ident">unwrap</span>().<span class="ident">success</span>() {
-            <span class="macro">panic!</span>(<span class="string">&quot;FAILED: git pull&quot;</span>);
+<span class="kw">impl</span> <span class="ident">CommandExt</span> <span class="kw">for</span> <span class="ident">Make</span> {}
+
+<span class="kw">impl</span> <span class="ident">Make</span> {
+    <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">j</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>) -&gt; <span class="self">Self</span> {
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">make</span> <span class="op">=</span> <span class="self">Self</span>(<span class="ident">Command::new</span>(<span class="string">&quot;make&quot;</span>));
+        <span class="kw">match</span> <span class="ident">j</span> {
+            <span class="prelude-val">Some</span>(<span class="number">0</span>) =&gt; {}
+            <span class="prelude-val">Some</span>(<span class="ident">j</span>) =&gt; {
+                <span class="ident">make</span>.<span class="ident">arg</span>(<span class="macro">format!</span>(<span class="string">&quot;-j{j}&quot;</span>));
+            }
+            <span class="prelude-val">None</span> =&gt; {
+                <span class="ident">make</span>.<span class="ident">arg</span>(<span class="string">&quot;-j&quot;</span>);
+            }
         }
-    } <span class="kw">else</span> {
-        <span class="ident">dir::clear</span>(<span class="ident">DIR</span>).<span class="ident">unwrap</span>();
-        <span class="kw">let</span> <span class="ident">clone</span> <span class="op">=</span> <span class="ident">git::clone</span>(<span class="ident">URL</span>, <span class="prelude-val">Some</span>(<span class="ident">DIR</span>)).<span class="ident">status</span>();
-        <span class="kw">if</span> <span class="op">!</span><span class="ident">clone</span>.<span class="ident">unwrap</span>().<span class="ident">success</span>() {
-            <span class="macro">panic!</span>(<span class="string">&quot;FAILED: git clone {URL}&quot;</span>);
+        <span class="ident">make</span>
+    }
+}
+
+<span class="kw">struct</span> <span class="ident">Tar</span>(<span class="ident">Command</span>);
+
+<span class="kw">impl</span> <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">Tar</span> {
+    <span class="kw">fn</span> <span class="ident">as_ref</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><span class="ident">Command</span> {
+        <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="number">0</span>
+    }
+}
+
+<span class="kw">impl</span> <span class="ident">AsMut</span><span class="op">&lt;</span><span class="ident">Command</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">Tar</span> {
+    <span class="kw">fn</span> <span class="ident">as_mut</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>) -&gt; <span class="kw-2">&amp;mut</span> <span class="ident">Command</span> {
+        <span class="kw-2">&amp;mut</span> <span class="self">self</span>.<span class="number">0</span>
+    }
+}
+
+<span class="kw">impl</span> <span class="ident">CommandExt</span> <span class="kw">for</span> <span class="ident">Tar</span> {}
+
+<span class="kw">impl</span> <span class="ident">Tar</span> {
+    <span class="kw">fn</span> <span class="ident">xf</span>(<span class="ident">src</span>: <span class="kw-2">&amp;</span><span class="kw">impl</span> <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">OsStr</span><span class="op">&gt;</span>, <span class="ident">dst</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">str</span><span class="op">&gt;</span>) -&gt; <span class="self">Self</span> {
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">cmd</span> <span class="op">=</span> <span class="ident">Command::new</span>(<span class="string">&quot;tar&quot;</span>);
+        <span class="ident">cmd</span>.<span class="ident">arg</span>(<span class="string">&quot;xf&quot;</span>).<span class="ident">arg</span>(<span class="ident">src</span>);
+        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">dst</span>) <span class="op">=</span> <span class="ident">dst</span> {
+            <span class="ident">cmd</span>.<span class="ident">arg</span>(<span class="string">&quot;-C&quot;</span>).<span class="ident">arg</span>(<span class="ident">dst</span>);
         }
+        <span class="self">Self</span>(<span class="ident">cmd</span>)
     }
 }
 
 <span class="doccomment">/// 下载 riscv64-musl 工具链。</span>
-<span class="kw">fn</span> <span class="ident">riscv64_linux_musl_cross</span>() {
+<span class="kw">fn</span> <span class="ident">riscv64_linux_musl_cross</span>() -&gt; <span class="ident">OsString</span> {
     <span class="kw">const</span> <span class="ident">DIR</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;ignored&quot;</span>;
     <span class="kw">const</span> <span class="ident">NAME</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;riscv64-linux-musl-cross&quot;</span>;
     <span class="kw">let</span> <span class="ident">dir</span> <span class="op">=</span> <span class="macro">format!</span>(<span class="string">&quot;{DIR}/{NAME}&quot;</span>);
     <span class="kw">let</span> <span class="ident">tgz</span> <span class="op">=</span> <span class="macro">format!</span>(<span class="string">&quot;{dir}.tgz&quot;</span>);
 
-    <span class="kw">if</span> <span class="op">!</span><span class="ident">Path::new</span>(<span class="kw-2">&amp;</span><span class="ident">tgz</span>).<span class="ident">exists</span>() {
-        <span class="kw">let</span> <span class="ident">url</span> <span class="op">=</span> <span class="macro">format!</span>(<span class="string">&quot;https://musl.cc/{NAME}.tgz&quot;</span>);
-        <span class="attribute">#[<span class="ident">rustfmt::skip</span>]</span>
-                        <span class="kw">let</span> <span class="ident">wget</span> <span class="op">=</span> <span class="ident">Command::new</span>(<span class="string">&quot;wget&quot;</span>)
-                            .<span class="ident">arg</span>(<span class="kw-2">&amp;</span><span class="ident">url</span>)
-                            .<span class="ident">arg</span>(<span class="string">&quot;-O&quot;</span>).<span class="ident">arg</span>(<span class="kw-2">&amp;</span><span class="ident">tgz</span>)
-                            .<span class="ident">status</span>().<span class="ident">unwrap</span>();
-        <span class="kw">if</span> <span class="op">!</span><span class="ident">wget</span>.<span class="ident">success</span>() {
-            <span class="macro">panic!</span>(<span class="string">&quot;FAILED: wget {url}&quot;</span>);
-        }
-    }
+    <span class="ident">wget</span>(<span class="kw-2">&amp;</span><span class="macro">format!</span>(<span class="string">&quot;https://musl.cc/{NAME}.tgz&quot;</span>), <span class="kw-2">&amp;</span><span class="ident">tgz</span>);
     <span class="ident">dir::rm</span>(<span class="kw-2">&amp;</span><span class="ident">dir</span>).<span class="ident">unwrap</span>();
-    <span class="kw">if</span> <span class="op">!</span><span class="ident">tar_xf</span>(<span class="kw-2">&amp;</span><span class="ident">tgz</span>, <span class="prelude-val">Some</span>(<span class="ident">DIR</span>)).<span class="ident">status</span>().<span class="ident">unwrap</span>().<span class="ident">success</span>() {
-        <span class="macro">panic!</span>(<span class="string">&quot;FAILED: tar xf {tgz}&quot;</span>);
+    <span class="ident">Tar::xf</span>(<span class="kw-2">&amp;</span><span class="ident">tgz</span>, <span class="prelude-val">Some</span>(<span class="ident">DIR</span>)).<span class="ident">join</span>();
+
+    <span class="comment">// 将交叉工具链加入 PATH 环境变量</span>
+    <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">path</span> <span class="op">=</span> <span class="ident">OsString::new</span>();
+    <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Ok</span>(<span class="ident">current</span>) <span class="op">=</span> <span class="ident">std::env::var</span>(<span class="string">&quot;PATH&quot;</span>) {
+        <span class="ident">path</span>.<span class="ident">push</span>(<span class="ident">current</span>);
+        <span class="ident">path</span>.<span class="ident">push</span>(<span class="string">&quot;:&quot;</span>);
     }
+    <span class="ident">path</span>.<span class="ident">push</span>(<span class="ident">std::env::current_dir</span>().<span class="ident">unwrap</span>());
+    <span class="ident">path</span>.<span class="ident">push</span>(<span class="string">&quot;/ignored/riscv64-linux-musl-cross/bin&quot;</span>);
+    <span class="ident">path</span>
+}
+
+<span class="doccomment">/// 制作镜像。</span>
+<span class="kw">fn</span> <span class="ident">fuse</span>(<span class="ident">dir</span>: <span class="kw">impl</span> <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">Path</span><span class="op">&gt;</span>, <span class="ident">image</span>: <span class="kw">impl</span> <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">Path</span><span class="op">&gt;</span>) {
+    <span class="kw">use</span> <span class="ident">rcore_fs::vfs::FileSystem</span>;
+    <span class="kw">use</span> <span class="ident">rcore_fs_fuse::zip::zip_dir</span>;
+    <span class="kw">use</span> <span class="ident">rcore_fs_sfs::SimpleFileSystem</span>;
+    <span class="kw">use</span> <span class="ident">std::sync</span>::{<span class="ident">Arc</span>, <span class="ident">Mutex</span>};
+
+    <span class="kw">let</span> <span class="ident">file</span> <span class="op">=</span> <span class="ident">fs::OpenOptions::new</span>()
+        .<span class="ident">read</span>(<span class="bool-val">true</span>)
+        .<span class="ident">write</span>(<span class="bool-val">true</span>)
+        .<span class="ident">create</span>(<span class="bool-val">true</span>)
+        .<span class="ident">truncate</span>(<span class="bool-val">true</span>)
+        .<span class="ident">open</span>(<span class="ident">image</span>)
+        .<span class="ident">expect</span>(<span class="string">&quot;failed to open image&quot;</span>);
+    <span class="kw">const</span> <span class="ident">MAX_SPACE</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">0x1000</span> <span class="op">*</span> <span class="number">0x1000</span> <span class="op">*</span> <span class="number">1024</span>; <span class="comment">// 1G</span>
+    <span class="kw">let</span> <span class="ident">fs</span> <span class="op">=</span> <span class="ident">SimpleFileSystem::create</span>(<span class="ident">Arc::new</span>(<span class="ident">Mutex::new</span>(<span class="ident">file</span>)), <span class="ident">MAX_SPACE</span>)
+        .<span class="ident">expect</span>(<span class="string">&quot;failed to create sfs&quot;</span>);
+    <span class="ident">zip_dir</span>(<span class="ident">dir</span>.<span class="ident">as_ref</span>(), <span class="ident">fs</span>.<span class="ident">root_inode</span>()).<span class="ident">expect</span>(<span class="string">&quot;failed to zip fs&quot;</span>);
 }
 </code></pre></div>
 </section><section id="search" class="content hidden"></section></div></main><div id="rustdoc-vars" data-root-path="../../" data-current-crate="xtask" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.60.0-nightly (5e57faa78 2022-01-19)" ></div>
