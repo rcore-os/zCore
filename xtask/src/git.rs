@@ -1,51 +1,63 @@
 ﻿//! 操作 git。
 
+use crate::CommandExt;
 use std::{ffi::OsStr, process::Command};
 
-fn git(sub: &(impl AsRef<OsStr> + ?Sized)) -> Command {
-    let mut cmd = Command::new("git");
-    cmd.arg(sub);
-    cmd
+pub(super) struct Git {
+    cmd: Command,
 }
 
-/// git lfs ...
-pub fn lfs() -> Command {
-    git("lfs")
-}
-
-/// git config [[--global]] ...
-pub fn config(global: bool) -> Command {
-    let mut cmd = git("config");
-    if global {
-        cmd.arg("--global");
-    };
-    cmd
-}
-
-/// git clone [[dir]] ...
-pub fn clone(
-    repo: &(impl AsRef<OsStr> + ?Sized),
-    dir: Option<&(impl AsRef<OsStr> + ?Sized)>,
-) -> Command {
-    let mut cmd = git("clone");
-    cmd.arg(repo);
-    if let Some(dir) = dir {
-        cmd.arg(dir);
+impl AsMut<Command> for Git {
+    fn as_mut(&mut self) -> &mut Command {
+        &mut self.cmd
     }
-    cmd
 }
 
-/// git pull ...
-pub fn pull() -> Command {
-    git("pull")
-}
+impl CommandExt for Git {}
 
-/// git submodule update --init.
-pub fn submodule_update(init: bool) -> Command {
-    let mut cmd = git("submodule");
-    cmd.arg("update");
-    if init {
-        cmd.arg("--init");
+impl Git {
+    fn new(sub: &(impl AsRef<OsStr> + ?Sized)) -> Self {
+        let mut git = Self {
+            cmd: Command::new("git"),
+        };
+        git.arg(sub);
+        git
     }
-    cmd
+
+    pub fn lfs() -> Self {
+        Self::new("lfs")
+    }
+
+    pub fn config(global: bool) -> Self {
+        let mut git = Self::new("config");
+        if global {
+            git.arg("--global");
+        };
+        git
+    }
+
+    pub fn clone(
+        repo: &(impl AsRef<OsStr> + ?Sized),
+        dir: Option<&(impl AsRef<OsStr> + ?Sized)>,
+    ) -> Self {
+        let mut git = Self::new("clone");
+        git.arg(repo);
+        if let Some(dir) = dir {
+            git.arg(dir);
+        }
+        git
+    }
+
+    pub fn pull() -> Self {
+        Self::new("pull")
+    }
+
+    pub fn submodule_update(init: bool) -> Self {
+        let mut git = Self::new("submodule");
+        git.arg("update");
+        if init {
+            git.arg("--init");
+        }
+        git
+    }
 }

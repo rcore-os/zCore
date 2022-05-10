@@ -1,17 +1,23 @@
 #![feature(path_file_prefix)]
 #![feature(exit_status_error)]
 
-use clap::{Args, Parser, Subcommand};
+#[macro_use]
+extern crate clap;
+
+use clap::Parser;
 use clap_verbosity_flag::Verbosity;
-use std::{fs::read_to_string, net::Ipv4Addr, process::Command};
+use std::{ffi::OsStr, fs::read_to_string, net::Ipv4Addr, path::Path, process::Command};
 
 mod arch;
+mod cargo;
 mod dir;
 mod dump;
 mod git;
 mod wget;
 
 use arch::Arch;
+use cargo::Cargo;
+use git::Git;
 
 const ALPINE_WEBSITE: &str = "https://dl-cdn.alpinelinux.org/alpine/v3.12/releases";
 const ALPINE_ROOTFS_VERSION: &str = "3.12.0";
@@ -106,34 +112,21 @@ fn main() {
 
 /// 初始化 LFS。
 fn make_git_lfs() {
-    if !git::lfs()
+    if !Git::lfs()
         .arg("version")
+        .as_mut()
         .output()
         .map_or(false, |out| out.stdout.starts_with(b"git-lfs/"))
     {
         panic!("Cannot find git lfs, see https://git-lfs.github.com/ for help.");
     }
-    git::lfs()
-        .arg("install")
-        .status()
-        .unwrap()
-        .exit_ok()
-        .expect("FAILED: git lfs install");
-    git::lfs()
-        .arg("pull")
-        .status()
-        .unwrap()
-        .exit_ok()
-        .expect("FAILED: git lfs pull");
+    Git::lfs().arg("install").expect("FAILED: git lfs install");
+    Git::lfs().arg("pull").expect("FAILED: git lfs pull");
 }
 
 /// 更新子项目。
 fn git_submodule_update(init: bool) {
-    git::submodule_update(init)
-        .status()
-        .unwrap()
-        .exit_ok()
-        .expect("FAILED: git submodule update --init");
+    Git::submodule_update(init).expect("FAILED: git submodule update --init");
 }
 
 /// 更新工具链和依赖。
@@ -145,12 +138,7 @@ fn update_all() {
         .unwrap()
         .exit_ok()
         .expect("FAILED: rustup update");
-    Command::new("cargo")
-        .arg("update")
-        .status()
-        .unwrap()
-        .exit_ok()
-        .expect("FAILED: cargo update");
+    Cargo::update().expect("FAILED: cargo update");
 }
 
 /// 设置 git 代理。
@@ -164,73 +152,87 @@ fn set_git_proxy(global: bool, port: u16) {
         })
         .expect("FAILED: detect DNS");
     let proxy = format!("socks5://{dns}:{port}");
-    #[rustfmt::skip]
-    git::config(global)
-        .arg("http.proxy").arg(&proxy)
-        .status().unwrap()
-        .exit_ok().expect("FAILED: git config --unset http.proxy");
-    #[rustfmt::skip]
-    git::config(global)
-        .arg("https.proxy").arg(&proxy)
-        .status().unwrap()
-        .exit_ok().expect("FAILED: git config --unset https.proxy");
+    Git::config(global)
+        .args(&["http.proxy", &proxy])
+        .expect("FAILED: git config --unset http.proxy");
+    Git::config(global)
+        .args(&["http.proxy", &proxy])
+        .expect("FAILED: git config --unset https.proxy");
     println!("git proxy = {proxy}");
 }
 
 /// 移除 git 代理。
 fn unset_git_proxy(global: bool) {
-    #[rustfmt::skip]
-    git::config(global)
-        .arg("--unset").arg("http.proxy")
-        .status().unwrap()
-        .exit_ok().expect("FAILED: git config --unset http.proxy");
-    #[rustfmt::skip]
-    git::config(global)
-        .arg("--unset").arg("https.proxy")
-        .status().unwrap()
-        .exit_ok().expect("FAILED: git config --unset https.proxy");
+    Git::config(global)
+        .args(&["--unset", "http.proxy"])
+        .expect("FAILED: git config --unset http.proxy");
+    Git::config(global)
+        .args(&["--unset", "https.proxy"])
+        .expect("FAILED: git config --unset https.proxy");
     println!("git proxy =");
 }
 
 /// 风格检查。
 fn check_style() {
     println!("fmt -----------------------------------------");
-    #[rustfmt::skip]
-    Command::new("cargo").arg("fmt")
+    Cargo::fmt()
         .arg("--all")
         .arg("--")
         .arg("--check")
-        .status()
-        .unwrap();
+        .expect("FAILED: cargo update");
     println!("clippy --------------------------------------");
-    #[rustfmt::skip]
-    Command::new("cargo").arg("clippy")
-        .arg("--all-features")
-        .status()
-        .unwrap();
+    Cargo::clippy()
+        .all_features()
+        .expect("FAILED: cargo clippy");
     println!("clippy x86_64 zircon smp=1 ------------------");
-    #[rustfmt::skip]
-    Command::new("cargo").arg("clippy")
-        .arg("--no-default-features")
-        .arg("--features").arg("zircon")
-        .arg("--target").arg("x86_64.json")
-        .arg("-Z").arg("build-std=core,alloc")
-        .arg("-Z").arg("build-std-features=compiler-builtins-mem")
+    Cargo::clippy()
+        .features(false, &["zircon"])
+        .target("x86_64.json")
+        .args(&["-Z", "build-std=core,alloc"])
+        .args(&["-Z", "build-std-features=compiler-builtins-mem"])
         .current_dir("zCore")
         .env("SMP", "1")
-        .status()
-        .unwrap();
+        .expect("");
     println!("clippy riscv64 linux smp=4 ------------------");
-    #[rustfmt::skip]
-    Command::new("cargo").arg("clippy")
-        .arg("--no-default-features")
-        .arg("--features").arg("linux board-qemu")
-        .arg("--target").arg("riscv64.json")
-        .arg("-Z").arg("build-std=core,alloc")
-        .arg("-Z").arg("build-std-features=compiler-builtins-mem")
+    Cargo::clippy()
+        .features(false, &["linux", "board-qemu"])
+        .target("riscv64.json")
+        .args(&["-Z", "build-std=core,alloc"])
+        .args(&["-Z", "build-std-features=compiler-builtins-mem"])
         .current_dir("zCore")
         .env("SMP", "4")
         .env("PLATFORM", "board-qemu")
-        .status()
-        .unwrap();
+        .expect("");
+}
+
+trait CommandExt: AsMut<Command> {
+    fn arg(&mut self, s: impl AsRef<OsStr>) -> &mut Self {
+        self.as_mut().arg(s);
+        self
+    }
+
+    fn args<I, S>(&mut self, args: I) -> &mut Self
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<OsStr>,
+    {
+        for arg in args {
+            self.arg(arg);
+        }
+        self
+    }
+
+    fn current_dir(&mut self, dir: impl AsRef<Path>) -> &mut Self {
+        self.as_mut().current_dir(dir);
+        self
+    }
+
+    fn env(&mut self, key: impl AsRef<OsStr>, val: impl AsRef<OsStr>) -> &mut Self {
+        self.as_mut().env(key, val);
+        self
+    }
+
+    fn expect(&mut self, msg: &str) {
+        self.as_mut().status().unwrap().exit_ok().expect(msg);
+    }
 }

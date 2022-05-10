@@ -1,5 +1,6 @@
-﻿use super::{dir, git, wget::wget, ALPINE_ROOTFS_VERSION, ALPINE_WEBSITE};
-use clap::{Args, Subcommand};
+﻿use crate::{
+    cargo::Cargo, dir, git::Git, wget::wget, CommandExt, ALPINE_ROOTFS_VERSION, ALPINE_WEBSITE,
+};
 use dircpy::copy_dir;
 use std::{
     ffi::OsStr,
@@ -276,17 +277,13 @@ fn install_fs_fuse() {
         .map(|out| out.stdout.starts_with(b"rcore-fs-fuse"))
     {
         println!("Rcore-fs-fuse is already installed.");
-        return;
-    }
-    #[rustfmt::skip]
-    let install = Command::new("cargo")
-        .arg("install").arg("rcore-fs-fuse")
-        .arg("--git").arg("https://github.com/rcore-os/rcore-fs")
-        .arg("--rev").arg("1a3246b")
-        .arg("--force")
-        .status();
-    if !install.unwrap().success() {
-        panic!("FAILED: install rcore-fs-fuse");
+    } else {
+        Cargo::new("install")
+            .args(&["install", "rcore-fs-fuse"])
+            .args(&["--git", "https://github.com/rcore-os/rcore-fs"])
+            .args(&["--rev", "1a3246b"])
+            .arg("--force")
+            .expect("FAILED: install rcore-fs-fuse");
     }
 }
 
@@ -296,16 +293,10 @@ fn clone_libc_test() {
     const URL: &str = "https://github.com/rcore-os/libc-test.git";
 
     if Path::new(DIR).is_dir() {
-        let pull = git::pull().current_dir(DIR).status();
-        if !pull.unwrap().success() {
-            panic!("FAILED: git pull");
-        }
+        Git::pull().current_dir(DIR).expect("FAILED: git pull");
     } else {
         dir::clear(DIR).unwrap();
-        let clone = git::clone(URL, Some(DIR)).status();
-        if !clone.unwrap().success() {
-            panic!("FAILED: git clone {URL}");
-        }
+        Git::clone(URL, Some(DIR)).expect(&format!("FAILED: git clone {URL}"));
     }
 }
 
