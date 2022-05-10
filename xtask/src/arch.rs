@@ -44,11 +44,9 @@ impl Arch {
                 }
                 dir::clear(dir).unwrap();
                 let tar = dir::detect(&format!("prebuilt/linux/{ARCH}"), "minirootfs").unwrap();
-                #[rustfmt::skip]
-                tar_xf(&tar, Some(DIR))
-                    .arg("--strip-components").arg("1")
-                    .status().unwrap()
-                    .exit_ok().expect("FAILED: tar xf {tar:?}");
+                Tar::xf(&tar, Some(DIR))
+                    .args(&["--strip-components", "1"])
+                    .join();
                 #[rustfmt::skip]
                 Command::new("ln")
                     .arg("-s").arg("busybox").arg("riscv_rootfs/bin/ls")
@@ -66,11 +64,7 @@ impl Arch {
                 {
                     dir::clear(DIR).unwrap();
                     let tar = dir::detect(&format!("prebuilt/linux/{ARCH}"), "minirootfs").unwrap();
-                    tar_xf(&tar, Some(DIR))
-                        .status()
-                        .unwrap()
-                        .exit_ok()
-                        .expect("FAILED: tar xf {tar:?}");
+                    Tar::xf(&tar, Some(DIR)).join();
                 }
                 {
                     // libc-libos.so (convert syscall to function call) is from https://github.com/rcore-os/musl/tree/rcore
@@ -132,16 +126,12 @@ impl Arch {
                     path.push("/ignored/riscv64-linux-musl-cross/bin");
                     path
                 };
-                Command::new("make")
-                    .arg("-j")
+                Make::new(None)
                     .env("ARCH", "riscv64")
                     .env("CROSS_COMPILE", "riscv64-linux-musl-")
                     .env("PATH", path)
                     .current_dir(DIR)
-                    .status()
-                    .unwrap()
-                    .exit_ok()
-                    .expect("FAILED: make -j");
+                    .join();
                 fs::copy(
                     format!("{PRE}/functional/tls_align-static.exe"),
                     format!("{DIR}/src/functional/tls_align-static.exe"),
@@ -161,15 +151,7 @@ impl Arch {
                     .unwrap()
                     .write_all(b"CC := musl-gcc\nAR := ar\nRANLIB := ranlib")
                     .unwrap();
-                if !Command::new("make")
-                    .arg("-j")
-                    .current_dir(DIR)
-                    .status()
-                    .unwrap()
-                    .success()
-                {
-                    panic!("FAILED: make -j");
-                }
+                Make::new(None).current_dir(DIR).join();
             }
         }
     }
@@ -200,9 +182,7 @@ impl Arch {
                 // ld-musl-x86_64.so.1 替换为适用 bare-matel 的版本
                 dir::clear(TMP_ROOTFS).unwrap();
                 let tar = dir::detect(&format!("prebuilt/linux/{ARCH}"), "minirootfs").unwrap();
-                if !tar_xf(&tar, Some(TMP_ROOTFS)).status().unwrap().success() {
-                    panic!("FAILED: tar xf {tar:?}");
-                }
+                Tar::xf(&tar, Some(TMP_ROOTFS)).join();
                 dir::clear(ROOTFS_LIB).unwrap();
                 fs::copy(
                     format!("{TMP_ROOTFS}/lib/ld-musl-x86_64.so.1"),
@@ -273,19 +253,6 @@ impl Arch {
     }
 }
 
-/// 构造将归档文件 `src` 释放到 `dst` 目录下的命令。
-///
-/// 本身不会产生异常，因为命令还没有执行。
-/// 但若 `src` 不是存在的归档文件，或 `dst` 不是存在的目录，将在命令执行时产生对应异常。
-fn tar_xf(src: &impl AsRef<OsStr>, dst: Option<&str>) -> Command {
-    let mut cmd = Command::new("tar");
-    cmd.arg("xf").arg(src);
-    if let Some(dst) = dst {
-        cmd.arg("-C").arg(dst);
-    }
-    cmd
-}
-
 /// 安装 rcore-fs-fuse。
 fn install_fs_fuse() {
     if let Ok(true) = Command::new("rcore-fs-fuse")
@@ -313,7 +280,64 @@ fn riscv64_linux_musl_cross() {
 
     wget(&format!("https://musl.cc/{NAME}.tgz"), &tgz);
     dir::rm(&dir).unwrap();
-    if !tar_xf(&tgz, Some(DIR)).status().unwrap().success() {
-        panic!("FAILED: tar xf {tgz}");
+    Tar::xf(&tgz, Some(DIR)).join();
+}
+
+struct Make(Command);
+
+impl AsRef<Command> for Make {
+    fn as_ref(&self) -> &Command {
+        &self.0
+    }
+}
+
+impl AsMut<Command> for Make {
+    fn as_mut(&mut self) -> &mut Command {
+        &mut self.0
+    }
+}
+
+impl CommandExt for Make {}
+
+impl Make {
+    fn new(j: Option<usize>) -> Self {
+        let mut make = Self(Command::new("make"));
+        match j {
+            Some(0) => {}
+            Some(j) => {
+                make.arg(format!("-j{j}"));
+            }
+            None => {
+                make.arg("-j");
+            }
+        }
+        make
+    }
+}
+
+struct Tar(Command);
+
+impl AsRef<Command> for Tar {
+    fn as_ref(&self) -> &Command {
+        &self.0
+    }
+}
+
+impl AsMut<Command> for Tar {
+    fn as_mut(&mut self) -> &mut Command {
+        &mut self.0
+    }
+}
+
+impl CommandExt for Tar {}
+
+impl Tar {
+    fn xf(src: &impl AsRef<OsStr>, dst: Option<&str>) -> Self {
+        let mut cmd = Command::new("tar");
+        cmd.arg("xf").arg(src);
+        if let Some(dst) = dst {
+            cmd.arg("-C").arg(dst);
+        }
+        Self(cmd)
     }
 }

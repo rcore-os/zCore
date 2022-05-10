@@ -1,7 +1,7 @@
 ﻿use crate::{dir, git::Git, CommandExt};
 use std::{ffi::OsStr, fs, path::Path, process::Command};
 
-pub fn wget(url: impl AsRef<OsStr>, dst: impl AsRef<Path>) {
+pub(crate) fn wget(url: impl AsRef<OsStr>, dst: impl AsRef<Path>) {
     let dst = dst.as_ref();
     if dst.exists() {
         return;
@@ -26,7 +26,7 @@ pub fn wget(url: impl AsRef<OsStr>, dst: impl AsRef<Path>) {
     }
 }
 
-pub fn git_clone(repo: impl AsRef<OsStr>, dst: impl AsRef<Path>) {
+pub(crate) fn git_clone(repo: impl AsRef<OsStr>, dst: impl AsRef<Path>) {
     let dst = dst.as_ref();
     if dst.is_dir() {
         Git::pull().current_dir(dst).join();
