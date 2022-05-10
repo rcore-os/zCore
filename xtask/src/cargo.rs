@@ -40,10 +40,6 @@ impl Cargo {
         Self::new("clippy")
     }
 
-    pub fn install() -> Self {
-        Self::new("install")
-    }
-
     pub fn all_features(&mut self) -> &mut Self {
         self.arg("--all-features");
         self

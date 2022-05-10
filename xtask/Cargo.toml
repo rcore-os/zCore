@@ -14,6 +14,9 @@ clap-verbosity-flag = "1.0"
 dircpy = "0.3"
 rand = "0.8"
 shadow-rs = "0.11"
+rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "1a3246b" }
+rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "1a3246b" }
+rcore-fs-fuse = { git = "https://github.com/rcore-os/rcore-fs", rev = "1a3246b" }
 
 [build-dependencies]
 shadow-rs = "0.11"

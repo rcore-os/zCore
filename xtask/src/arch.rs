@@ -1,5 +1,4 @@
 ﻿use crate::{
-    cargo::Cargo,
     dir,
     download::{git_clone, wget},
     CommandExt, ALPINE_ROOTFS_VERSION, ALPINE_WEBSITE,
@@ -47,11 +46,12 @@ impl Arch {
                 Tar::xf(&tar, Some(DIR))
                     .args(&["--strip-components", "1"])
                     .join();
-                #[rustfmt::skip]
                 Command::new("ln")
-                    .arg("-s").arg("busybox").arg("riscv_rootfs/bin/ls")
-                    .status().unwrap()
-                    .exit_ok().expect("FAILED: ln -s busybox riscv_rootfs/bin/ls");
+                    .args(&["-s", "busybox", "riscv_rootfs/bin/ls"])
+                    .status()
+                    .unwrap()
+                    .exit_ok()
+                    .expect("FAILED: ln -s busybox riscv_rootfs/bin/ls");
             }
             ArchCommands::X86_64 => {
                 const DIR: &str = "rootfs";
@@ -61,19 +61,15 @@ impl Arch {
                 if dir.is_dir() && !clear {
                     return;
                 }
-                {
-                    dir::clear(DIR).unwrap();
-                    let tar = dir::detect(&format!("prebuilt/linux/{ARCH}"), "minirootfs").unwrap();
-                    Tar::xf(&tar, Some(DIR)).join();
-                }
-                {
-                    // libc-libos.so (convert syscall to function call) is from https://github.com/rcore-os/musl/tree/rcore
-                    fs::copy(
-                        "prebuilt/linux/libc-libos.so",
-                        format!("{DIR}/lib/ld-musl-{ARCH}.so.1"),
-                    )
-                    .unwrap();
-                }
+                dir::clear(DIR).unwrap();
+                let tar = dir::detect(&format!("prebuilt/linux/{ARCH}"), "minirootfs").unwrap();
+                Tar::xf(&tar, Some(DIR)).join();
+                // libc-libos.so (convert syscall to function call) is from https://github.com/rcore-os/musl/tree/rcore
+                fs::copy(
+                    "prebuilt/linux/libc-libos.so",
+                    format!("{DIR}/lib/ld-musl-{ARCH}.so.1"),
+                )
+                .unwrap();
                 {
                     const TEST_DIR: &str = "linux-syscall/test";
                     const DEST_DIR: &str = "rootfs/bin/";
@@ -88,12 +84,14 @@ impl Arch {
                                 "{DEST_DIR}/{}",
                                 c.file_prefix().and_then(|s| s.to_str()).unwrap()
                             );
-                            #[rustfmt::skip]
-                            Command::new("gcc").arg(&c)
-                                .arg("-o").arg(o)
+                            Command::new("gcc")
+                                .arg(&c)
+                                .args(&["-o", &o])
                                 .arg("-Wl,--dynamic-linker=/lib/ld-musl-x86_64.so.1")
-                                .status().unwrap()
-                                .exit_ok().expect("FAILED: gcc {c:?}");
+                                .status()
+                                .unwrap()
+                                .exit_ok()
+                                .expect("FAILED: gcc {c:?}");
                         });
                 }
             }
@@ -159,19 +157,12 @@ impl Arch {
     /// 生成镜像。
     pub fn image(&self) {
         self.rootfs(false);
-        install_fs_fuse();
         let image = match self.command {
             ArchCommands::Riscv64 => {
                 const ARCH: &str = "riscv64";
 
                 let image = format!("zCore/{ARCH}.img");
-                #[rustfmt::skip]
-                let fuse = Command::new("rcore-fs-fuse")
-                    .arg(&image).arg("riscv_rootfs").arg("zip")
-                    .status().unwrap();
-                if !fuse.success() {
-                    panic!("FAILED: rcore-fs-fuse");
-                }
+                fuse("riscv_rootfs", &image);
                 image
             }
             ArchCommands::X86_64 => {
@@ -191,15 +182,7 @@ impl Arch {
                 .unwrap();
 
                 let image = format!("zCore/{ARCH}.img");
-                #[rustfmt::skip]
-                let fuse = Command::new("rcore-fs-fuse")
-                    .arg(&image).arg("rootfs").arg("zip")
-                    .status().unwrap();
-                if !fuse.success() {
-                    panic!("FAILED: rcore-fs-fuse");
-                }
-                // ld-musl-x86_64.so.1 替换为适用 libos 的版本
-                // # libc-libos.so (convert syscall to function call) is from https://github.com/rcore-os/musl/tree/rcore
+                fuse("rootfs", &image);
                 fs::copy(
                     "prebuilt/linux/libc-libos.so",
                     format!("{ROOTFS_LIB}/ld-musl-x86_64.so.1"),
@@ -208,13 +191,12 @@ impl Arch {
                 image
             }
         };
-        #[rustfmt::skip]
-        let resize = Command::new("qemu-img")
-            .arg("resize").arg(image).arg("+5M")
-            .status().unwrap();
-        if !resize.success() {
-            panic!("FAILED: qemu-img resize");
-        }
+        Command::new("qemu-img")
+            .args(&["resize", &image, "+5M"])
+            .status()
+            .unwrap()
+            .exit_ok()
+            .expect("FAILED: qemu-img resize");
     }
 
     /// 获取 alpine 镜像。
@@ -251,36 +233,6 @@ impl Arch {
         fs::create_dir_all(local_path.parent().unwrap()).unwrap();
         wget(&web_url, &local_path);
     }
-}
-
-/// 安装 rcore-fs-fuse。
-fn install_fs_fuse() {
-    if let Ok(true) = Command::new("rcore-fs-fuse")
-        .arg("--version")
-        .output()
-        .map(|out| out.stdout.starts_with(b"rcore-fs-fuse"))
-    {
-        println!("Rcore-fs-fuse is already installed.");
-    } else {
-        Cargo::install()
-            .arg("rcore-fs-fuse")
-            .args(&["--git", "https://github.com/rcore-os/rcore-fs"])
-            .args(&["--rev", "1a3246b"])
-            .arg("--force")
-            .join();
-    }
-}
-
-/// 下载 riscv64-musl 工具链。
-fn riscv64_linux_musl_cross() {
-    const DIR: &str = "ignored";
-    const NAME: &str = "riscv64-linux-musl-cross";
-    let dir = format!("{DIR}/{NAME}");
-    let tgz = format!("{dir}.tgz");
-
-    wget(&format!("https://musl.cc/{NAME}.tgz"), &tgz);
-    dir::rm(&dir).unwrap();
-    Tar::xf(&tgz, Some(DIR)).join();
 }
 
 struct Make(Command);
@@ -340,4 +292,36 @@ impl Tar {
         }
         Self(cmd)
     }
+}
+
+/// 下载 riscv64-musl 工具链。
+fn riscv64_linux_musl_cross() {
+    const DIR: &str = "ignored";
+    const NAME: &str = "riscv64-linux-musl-cross";
+    let dir = format!("{DIR}/{NAME}");
+    let tgz = format!("{dir}.tgz");
+
+    wget(&format!("https://musl.cc/{NAME}.tgz"), &tgz);
+    dir::rm(&dir).unwrap();
+    Tar::xf(&tgz, Some(DIR)).join();
+}
+
+/// 制作镜像。
+fn fuse(dir: impl AsRef<Path>, image: impl AsRef<Path>) {
+    use rcore_fs::vfs::FileSystem;
+    use rcore_fs_fuse::zip::zip_dir;
+    use rcore_fs_sfs::SimpleFileSystem;
+    use std::sync::{Arc, Mutex};
+
+    let file = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(image)
+        .expect("failed to open image");
+    const MAX_SPACE: usize = 0x1000 * 0x1000 * 1024; // 1G
+    let fs = SimpleFileSystem::create(Arc::new(Mutex::new(file)), MAX_SPACE)
+        .expect("failed to create sfs");
+    zip_dir(dir.as_ref(), fs.root_inode()).expect("failed to zip fs");
 }
