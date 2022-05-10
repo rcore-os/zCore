@@ -11,8 +11,8 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v3
-        with:
-          lfs: true
+      - name: Pull prebuilt images
+        run: git lfs pull -I prebuilt/linux/libc-libos.so,prebuilt/zircon/x64/bringup.zbi,prebuilt/zircon/x64/libzircon-libos.so,prebuilt/zircon/x64/userboot-libos.so
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
@@ -63,8 +63,9 @@ jobs:
     steps:
       - uses: actions/checkout@v3
         with:
-          lfs: true
           submodules: 'recursive'
+      - name: Pull prebuilt images
+        run: git lfs pull -I prebuilt/zircon/x64/core-tests.zbi,prebuilt/zircon/x64/libzircon-libos.so,prebuilt/zircon/x64/userboot-libos.so
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
@@ -86,8 +87,9 @@ jobs:
     steps:
       - uses: actions/checkout@v3
         with:
-          lfs: true
           submodules: 'recursive'
+      - name: Pull prebuilt images
+        run: git lfs pull -I prebuilt/linux/libc-libos.so
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
@@ -118,8 +120,9 @@ jobs:
     steps:
       - uses: actions/checkout@v3
         with:
-          lfs: true
           submodules: 'recursive'
+      - name: Pull prebuilt images
+        run: git lfs pull -I prebuilt/zircon/x64/core-tests.zbi,prebuilt/zircon/x64/libzircon.so,prebuilt/zircon/x64/userboot.so
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
@@ -167,8 +170,9 @@ jobs:
     steps:
       - uses: actions/checkout@v3
         with:
-          lfs: true
           submodules: 'recursive'
+      - name: Pull prebuilt images
+        run: git lfs pull -I prebuilt/linux/libc-libos.so
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
@@ -223,8 +227,9 @@ jobs:
     steps:
       - uses: actions/checkout@v3
         with:
-          lfs: true
           submodules: 'recursive'
+      - name: Pull prebuilt images
+        run: git lfs pull -I prebuilt/linux/libc-libos.so
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
