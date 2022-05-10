@@ -110,24 +110,13 @@ impl Arch {
                 const DIR: &str = "riscv_rootfs/libc-test";
                 const PRE: &str = "riscv_rootfs/libc-test-prebuild";
 
-                riscv64_linux_musl_cross();
                 fs::rename(DIR, PRE).unwrap();
                 copy_dir("ignored/libc-test", DIR).unwrap();
                 fs::copy(format!("{DIR}/config.mak.def"), format!("{DIR}/config.mak")).unwrap();
-                let path = {
-                    let mut path = OsString::new();
-                    if let Ok(current) = std::env::var("PATH") {
-                        path.push(current);
-                        path.push(":"); //$(PWD)/ignored/riscv64-linux-musl-cross/bin
-                    }
-                    path.push(std::env::current_dir().unwrap());
-                    path.push("/ignored/riscv64-linux-musl-cross/bin");
-                    path
-                };
                 Make::new(None)
                     .env("ARCH", "riscv64")
                     .env("CROSS_COMPILE", "riscv64-linux-musl-")
-                    .env("PATH", path)
+                    .env("PATH", riscv64_linux_musl_cross())
                     .current_dir(DIR)
                     .join();
                 fs::copy(
@@ -295,7 +284,7 @@ impl Tar {
 }
 
 /// 下载 riscv64-musl 工具链。
-fn riscv64_linux_musl_cross() {
+fn riscv64_linux_musl_cross() -> OsString {
     const DIR: &str = "ignored";
     const NAME: &str = "riscv64-linux-musl-cross";
     let dir = format!("{DIR}/{NAME}");
@@ -304,6 +293,16 @@ fn riscv64_linux_musl_cross() {
     wget(&format!("https://musl.cc/{NAME}.tgz"), &tgz);
     dir::rm(&dir).unwrap();
     Tar::xf(&tgz, Some(DIR)).join();
+
+    // 将交叉工具链加入 PATH 环境变量
+    let mut path = OsString::new();
+    if let Ok(current) = std::env::var("PATH") {
+        path.push(current);
+        path.push(":");
+    }
+    path.push(std::env::current_dir().unwrap());
+    path.push("/ignored/riscv64-linux-musl-cross/bin");
+    path
 }
 
 /// 制作镜像。
