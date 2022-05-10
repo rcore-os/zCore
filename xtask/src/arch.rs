@@ -278,12 +278,12 @@ fn install_fs_fuse() {
     {
         println!("Rcore-fs-fuse is already installed.");
     } else {
-        Cargo::new("install")
-            .args(&["install", "rcore-fs-fuse"])
+        Cargo::install()
+            .arg("rcore-fs-fuse")
             .args(&["--git", "https://github.com/rcore-os/rcore-fs"])
             .args(&["--rev", "1a3246b"])
             .arg("--force")
-            .expect("FAILED: install rcore-fs-fuse");
+            .join();
     }
 }
 
@@ -293,10 +293,10 @@ fn clone_libc_test() {
     const URL: &str = "https://github.com/rcore-os/libc-test.git";
 
     if Path::new(DIR).is_dir() {
-        Git::pull().current_dir(DIR).expect("FAILED: git pull");
+        Git::pull().current_dir(DIR).join();
     } else {
         dir::clear(DIR).unwrap();
-        Git::clone(URL, Some(DIR)).expect(&format!("FAILED: git clone {URL}"));
+        Git::clone(URL, Some(DIR)).join();
     }
 }
 

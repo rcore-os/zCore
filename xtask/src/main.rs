@@ -6,7 +6,13 @@ extern crate clap;
 
 use clap::Parser;
 use clap_verbosity_flag::Verbosity;
-use std::{ffi::OsStr, fs::read_to_string, net::Ipv4Addr, path::Path, process::Command};
+use std::{
+    ffi::{OsStr, OsString},
+    fs::read_to_string,
+    net::Ipv4Addr,
+    path::Path,
+    process::Command,
+};
 
 mod arch;
 mod cargo;
@@ -120,13 +126,13 @@ fn make_git_lfs() {
     {
         panic!("Cannot find git lfs, see https://git-lfs.github.com/ for help.");
     }
-    Git::lfs().arg("install").expect("FAILED: git lfs install");
-    Git::lfs().arg("pull").expect("FAILED: git lfs pull");
+    Git::lfs().arg("install").join();
+    Git::lfs().arg("pull").join();
 }
 
 /// 更新子项目。
 fn git_submodule_update(init: bool) {
-    Git::submodule_update(init).expect("FAILED: git submodule update --init");
+    Git::submodule_update(init).join();
 }
 
 /// 更新工具链和依赖。
@@ -138,7 +144,7 @@ fn update_all() {
         .unwrap()
         .exit_ok()
         .expect("FAILED: rustup update");
-    Cargo::update().expect("FAILED: cargo update");
+    Cargo::update().join();
 }
 
 /// 设置 git 代理。
@@ -152,38 +158,24 @@ fn set_git_proxy(global: bool, port: u16) {
         })
         .expect("FAILED: detect DNS");
     let proxy = format!("socks5://{dns}:{port}");
-    Git::config(global)
-        .args(&["http.proxy", &proxy])
-        .expect("FAILED: git config --unset http.proxy");
-    Git::config(global)
-        .args(&["http.proxy", &proxy])
-        .expect("FAILED: git config --unset https.proxy");
+    Git::config(global).args(&["http.proxy", &proxy]).join();
+    Git::config(global).args(&["http.proxy", &proxy]).join();
     println!("git proxy = {proxy}");
 }
 
 /// 移除 git 代理。
 fn unset_git_proxy(global: bool) {
-    Git::config(global)
-        .args(&["--unset", "http.proxy"])
-        .expect("FAILED: git config --unset http.proxy");
-    Git::config(global)
-        .args(&["--unset", "https.proxy"])
-        .expect("FAILED: git config --unset https.proxy");
+    Git::config(global).args(&["--unset", "http.proxy"]).join();
+    Git::config(global).args(&["--unset", "https.proxy"]).join();
     println!("git proxy =");
 }
 
 /// 风格检查。
 fn check_style() {
     println!("fmt -----------------------------------------");
-    Cargo::fmt()
-        .arg("--all")
-        .arg("--")
-        .arg("--check")
-        .expect("FAILED: cargo update");
+    Cargo::fmt().arg("--all").arg("--").arg("--check").join();
     println!("clippy --------------------------------------");
-    Cargo::clippy()
-        .all_features()
-        .expect("FAILED: cargo clippy");
+    Cargo::clippy().all_features().join();
     println!("clippy x86_64 zircon smp=1 ------------------");
     Cargo::clippy()
         .features(false, &["zircon"])
@@ -192,7 +184,7 @@ fn check_style() {
         .args(&["-Z", "build-std-features=compiler-builtins-mem"])
         .current_dir("zCore")
         .env("SMP", "1")
-        .expect("");
+        .join();
     println!("clippy riscv64 linux smp=4 ------------------");
     Cargo::clippy()
         .features(false, &["linux", "board-qemu"])
@@ -202,7 +194,7 @@ fn check_style() {
         .current_dir("zCore")
         .env("SMP", "4")
         .env("PLATFORM", "board-qemu")
-        .expect("");
+        .join();
 }
 
 trait CommandExt: AsMut<Command> {
@@ -232,7 +224,30 @@ trait CommandExt: AsMut<Command> {
         self
     }
 
-    fn expect(&mut self, msg: &str) {
-        self.as_mut().status().unwrap().exit_ok().expect(msg);
+    fn join(&mut self) {
+        let cmd = self.as_mut();
+        let status = cmd.status().unwrap();
+        if !status.success() {
+            let mut msg = OsString::new();
+            if let Some(dir) = cmd.get_current_dir() {
+                msg.push("cd ");
+                msg.push(dir);
+                msg.push(" && ");
+            }
+            msg.push(cmd.get_program());
+            for a in cmd.get_args() {
+                msg.push(" ");
+                msg.push(a);
+            }
+            for (k, v) in cmd.get_envs() {
+                msg.push(" ");
+                msg.push(k);
+                if let Some(v) = v {
+                    msg.push("=");
+                    msg.push(v);
+                }
+            }
+            panic!("Failed with code {}: {msg:?}", status.code().unwrap());
+        }
     }
 }

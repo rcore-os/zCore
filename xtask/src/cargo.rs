@@ -14,7 +14,7 @@ impl AsMut<Command> for Cargo {
 impl CommandExt for Cargo {}
 
 impl Cargo {
-    pub fn new(sub: &(impl AsRef<OsStr> + ?Sized)) -> Self {
+    fn new(sub: &(impl AsRef<OsStr> + ?Sized)) -> Self {
         let mut git = Self {
             cmd: Command::new("cargo"),
         };
@@ -32,6 +32,10 @@ impl Cargo {
 
     pub fn clippy() -> Self {
         Self::new("clippy")
+    }
+
+    pub fn install() -> Self {
+        Self::new("install")
     }
 
     pub fn all_features(&mut self) -> &mut Self {
