@@ -14,7 +14,7 @@
 
 ### 使用步骤
 
-- 现在 `cargo rootfs {arch}` 将清空已有 `rootfs/{arch}`，然后产生供 zCore 以 linux 模式启动的最小文件系统——只有 `/bin/busybox` 和 `lib/lib/ld-musl-{arch}.so.1` 两个文件；
+- 现在 `cargo rootfs {arch}` 将清空已有 `rootfs/{arch}`，然后产生供 zCore 以 linux 模式启动的最小文件系统——只有 `/bin/busybox` 和 `lib/lib/ld-musl-{arch}.so.1` 两个文件，以及一些指向 busybox 的符号链接；
 - `cargo libc-test {arch}` 命令将向 `rootfs/{arch}` 放入 libc 测试的测例文件，在必要时下载交叉编译工具链；
 - 增加 `cargo other-test {arch}` 命令，向 `rootfs/{arch}` 放入其他测试的测例文件；
 - `cargo image {arch}` 命令将 `rootfs/{arch}` 打包成 `zCore/{arch}.img` 文件，过程中不关心 `rootfs/{arch}` 的内容。因此如需要向文件系统加入文件，在 `image` 之前放入 `rootfs/{arch}` 即可；

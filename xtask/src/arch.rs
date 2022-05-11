@@ -88,6 +88,16 @@ impl Arch {
             ArchCommands::X86_64 => PathBuf::from("prebuilt/linux/libc-libos.so"),
         };
         fs::copy(so, dir.join(libc_so)).unwrap();
+        // 为常用功能建立符号链接
+        const SH: &[&str] = &[
+            "cat", "cp", "echo", "false", "grep", "gzip", "kill", "ln", "ls", "mkdir", "mv",
+            "pidof", "ping", "ping6", "printenv", "ps", "pwd", "rm", "rmdir", "sh", "sleep",
+            "stat", "tar", "touch", "true", "uname", "usleep", "watch",
+        ];
+        let bin = dir.join("bin");
+        for sh in SH {
+            unix::fs::symlink("busybox", bin.join(sh)).unwrap();
+        }
     }
 
     /// 将 libc-test 放入 rootfs。
@@ -133,7 +143,6 @@ impl Arch {
         // 递归 rootfs
         self.rootfs(false);
         let rootfs = self.command.rootfs();
-        unix::fs::symlink("busybox", rootfs.join("bin/ls")).unwrap();
         match self.command {
             ArchCommands::Riscv64 => {
                 let target = self.command.target();
