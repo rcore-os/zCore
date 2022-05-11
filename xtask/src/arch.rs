@@ -30,6 +30,10 @@ impl ArchCommands {
             ArchCommands::X86_64 => "x86_64",
         }
     }
+
+    fn rootfs(&self) -> PathBuf {
+        PathBuf::from_iter(&["rootfs", self.as_str()])
+    }
 }
 
 impl Arch {
@@ -39,17 +43,17 @@ impl Arch {
     ///
     /// 将在文件系统中放置必要的库文件。
     pub fn rootfs(&self, clear: bool) {
+        let dir = self.command.rootfs();
+        if dir.is_dir() && !clear {
+            return;
+        }
+
         self.wget_alpine();
+        let arch_str = self.command.as_str();
         match self.command {
             ArchCommands::Riscv64 => {
-                const ARCH: &str = ArchCommands::Riscv64.as_str();
-
-                let dir = PathBuf::from(format!("rootfs/{ARCH}"));
-                if dir.is_dir() && !clear {
-                    return;
-                }
                 dir::clear(&dir).unwrap();
-                let tar = dir::detect(&format!("prebuilt/linux/{ARCH}"), "minirootfs").unwrap();
+                let tar = dir::detect(&format!("ignored/{arch_str}"), "minirootfs").unwrap();
                 Tar::xf(&tar, Some(&dir))
                     .args(&["--strip-components", "1"])
                     .join();
@@ -59,20 +63,14 @@ impl Arch {
                 unix::fs::symlink("busybox", ls).unwrap();
             }
             ArchCommands::X86_64 => {
-                const ARCH: &str = ArchCommands::X86_64.as_str();
-
-                let dir = PathBuf::from(format!("rootfs/{ARCH}"));
-                if dir.is_dir() && !clear {
-                    return;
-                }
                 {
                     dir::clear(&dir).unwrap();
-                    let tar = dir::detect(&format!("prebuilt/linux/{ARCH}"), "minirootfs").unwrap();
+                    let tar = dir::detect(&format!("ignored/{arch_str}"), "minirootfs").unwrap();
                     Tar::xf(&tar, Some(&dir)).join();
                     // libc-libos.so (convert syscall to function call) is from https://github.com/rcore-os/musl/tree/rcore
                     let mut dir = dir.clone();
                     dir.push("lib");
-                    dir.push(format!("ld-musl-{ARCH}.so.1"));
+                    dir.push(format!("ld-musl-{arch_str}.so.1"));
                     fs::copy("prebuilt/linux/libc-libos.so", dir).unwrap();
                 }
                 {
@@ -175,7 +173,7 @@ impl Arch {
                 dir::clear(&tmp_rootfs).unwrap();
                 dir::clear(&rootfs_lib).unwrap();
 
-                let tar = dir::detect(&format!("prebuilt/linux/{ARCH}"), "minirootfs").unwrap();
+                let tar = dir::detect(&format!("ignored/{ARCH}"), "minirootfs").unwrap();
                 Tar::xf(&tar, Some(&tmp_rootfs)).join();
 
                 fs::copy(
@@ -207,30 +205,29 @@ impl Arch {
 
     /// 获取 alpine 镜像。
     fn wget_alpine(&self) {
+        let arch_str = self.command.as_str();
         let (local_path, web_url) = match self.command {
             ArchCommands::Riscv64 => {
-                const ARCH: &str = "riscv64";
                 const FILE_NAME: &str = "minirootfs.tar.xz";
                 const WEB_URL: &str = "https://github.com/rcore-os/libc-test-prebuilt/releases/download/0.1/prebuild.tar.xz";
 
-                let local_path = PathBuf::from(format!("prebuilt/linux/{ARCH}/{FILE_NAME}"));
+                let local_path = PathBuf::from(format!("ignored/{arch_str}/{FILE_NAME}"));
                 if local_path.exists() {
                     return;
                 }
                 (local_path, WEB_URL.into())
             }
             ArchCommands::X86_64 => {
-                const ARCH: &str = "x86_64";
                 const FILE_NAME: &str = "minirootfs.tar.gz";
 
-                let local_path = PathBuf::from(format!("prebuilt/linux/{ARCH}/{FILE_NAME}"));
+                let local_path = PathBuf::from(format!("ignored/{arch_str}/{FILE_NAME}"));
                 if local_path.exists() {
                     return;
                 }
                 (
                     local_path,
                     format!(
-                        "{ALPINE_WEBSITE}/{ARCH}/alpine-minirootfs-{ALPINE_ROOTFS_VERSION}-{ARCH}.tar.gz"
+                        "{ALPINE_WEBSITE}/{arch_str}/alpine-minirootfs-{ALPINE_ROOTFS_VERSION}-{arch_str}.tar.gz"
                     ),
                 )
             }

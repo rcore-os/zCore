@@ -12,7 +12,6 @@ Cargo.lock
 
 /ignored
 /rootfs
-/prebuilt/linux/**/minirootfs.tar.*
 zCore/src/platform/riscv/kernel-vars.ld
 
 .DS_Store

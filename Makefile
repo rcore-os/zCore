@@ -44,8 +44,6 @@ clean:
 	find zCore -maxdepth 1 -name "*.img" -delete
 	rm -rf rootfs
 	rm -rf riscv_rootfs
-	find zCore/target -type f -name "*.zbi" -delete
-	find zCore/target -type f -name "*.elf" -delete
 
 rt-test:
 	cd rootfs && git clone https://kernel.googlesource.com/pub/scm/linux/kernel/git/clrkwllms/rt-tests --depth 1
