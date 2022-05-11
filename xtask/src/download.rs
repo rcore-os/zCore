@@ -26,6 +26,7 @@ pub(crate) fn wget(url: impl AsRef<OsStr>, dst: impl AsRef<Path>) {
     }
 }
 
+#[allow(unused)]
 pub(crate) fn git_clone(repo: impl AsRef<OsStr>, dst: impl AsRef<Path>) {
     let dst = dst.as_ref();
     if dst.is_dir() {

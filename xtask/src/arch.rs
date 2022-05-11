@@ -1,13 +1,10 @@
-﻿use crate::{
-    dir,
-    download::{git_clone, wget},
-    CommandExt, ALPINE_ROOTFS_VERSION, ALPINE_WEBSITE,
-};
+﻿use crate::{dir, download::wget, CommandExt, ALPINE_ROOTFS_VERSION, ALPINE_WEBSITE};
 use dircpy::copy_dir;
 use std::{
     ffi::{OsStr, OsString},
     fs,
     io::Write,
+    os::unix,
     path::{Path, PathBuf},
     process::Command,
 };
@@ -26,53 +23,62 @@ enum ArchCommands {
     X86_64,
 }
 
+impl ArchCommands {
+    const fn as_str(&self) -> &'static str {
+        match self {
+            ArchCommands::Riscv64 => "riscv64",
+            ArchCommands::X86_64 => "x86_64",
+        }
+    }
+}
+
 impl Arch {
     /// 构造启动内存文件系统 rootfs。
     ///
-    /// 将在文件系统中放置必要的库文件，并下载用于交叉编译的工具链。
+    /// 若 `clear` == true，将清除已存在的目录。
+    ///
+    /// 将在文件系统中放置必要的库文件。
     pub fn rootfs(&self, clear: bool) {
         self.wget_alpine();
         match self.command {
             ArchCommands::Riscv64 => {
-                const DIR: &str = "riscv_rootfs";
-                const ARCH: &str = "riscv64";
+                const ARCH: &str = ArchCommands::Riscv64.as_str();
 
-                let dir = Path::new(DIR);
+                let dir = PathBuf::from(format!("rootfs/{ARCH}"));
                 if dir.is_dir() && !clear {
                     return;
                 }
-                dir::clear(dir).unwrap();
+                dir::clear(&dir).unwrap();
                 let tar = dir::detect(&format!("prebuilt/linux/{ARCH}"), "minirootfs").unwrap();
-                Tar::xf(&tar, Some(DIR))
+                Tar::xf(&tar, Some(&dir))
                     .args(&["--strip-components", "1"])
                     .join();
-                Command::new("ln")
-                    .args(&["-s", "busybox", "riscv_rootfs/bin/ls"])
-                    .status()
-                    .unwrap()
-                    .exit_ok()
-                    .expect("FAILED: ln -s busybox riscv_rootfs/bin/ls");
+                let mut ls = dir;
+                ls.push("bin");
+                ls.push("ls");
+                unix::fs::symlink("busybox", ls).unwrap();
             }
             ArchCommands::X86_64 => {
-                const DIR: &str = "rootfs";
-                const ARCH: &str = "x86_64";
+                const ARCH: &str = ArchCommands::X86_64.as_str();
 
-                let dir = Path::new(DIR);
+                let dir = PathBuf::from(format!("rootfs/{ARCH}"));
                 if dir.is_dir() && !clear {
                     return;
                 }
-                dir::clear(DIR).unwrap();
-                let tar = dir::detect(&format!("prebuilt/linux/{ARCH}"), "minirootfs").unwrap();
-                Tar::xf(&tar, Some(DIR)).join();
-                // libc-libos.so (convert syscall to function call) is from https://github.com/rcore-os/musl/tree/rcore
-                fs::copy(
-                    "prebuilt/linux/libc-libos.so",
-                    format!("{DIR}/lib/ld-musl-{ARCH}.so.1"),
-                )
-                .unwrap();
+                {
+                    dir::clear(&dir).unwrap();
+                    let tar = dir::detect(&format!("prebuilt/linux/{ARCH}"), "minirootfs").unwrap();
+                    Tar::xf(&tar, Some(&dir)).join();
+                    // libc-libos.so (convert syscall to function call) is from https://github.com/rcore-os/musl/tree/rcore
+                    let mut dir = dir.clone();
+                    dir.push("lib");
+                    dir.push(format!("ld-musl-{ARCH}.so.1"));
+                    fs::copy("prebuilt/linux/libc-libos.so", dir).unwrap();
+                }
                 {
                     const TEST_DIR: &str = "linux-syscall/test";
-                    const DEST_DIR: &str = "rootfs/bin/";
+                    let mut dest_dir = dir;
+                    dest_dir.push("bin");
                     // for linux syscall tests
                     fs::read_dir(TEST_DIR)
                         .unwrap()
@@ -80,13 +86,12 @@ impl Arch {
                         .map(|entry| entry.path())
                         .filter(|path| path.extension().map_or(false, |ext| ext == OsStr::new("c")))
                         .for_each(|c| {
-                            let o = format!(
-                                "{DEST_DIR}/{}",
-                                c.file_prefix().and_then(|s| s.to_str()).unwrap()
-                            );
+                            let mut o = dest_dir.clone();
+                            o.push(c.file_prefix().and_then(|s| s.to_str()).unwrap());
                             Command::new("gcc")
                                 .arg(&c)
-                                .args(&["-o", &o])
+                                .arg("-o")
+                                .arg(&o)
                                 .arg("-Wl,--dynamic-linker=/lib/ld-musl-x86_64.so.1")
                                 .status()
                                 .unwrap()
@@ -101,44 +106,46 @@ impl Arch {
     /// 将 libc-test 放入 rootfs。
     pub fn libc_test(&self) {
         self.rootfs(false);
-        git_clone(
-            "https://github.com/rcore-os/libc-test.git",
-            "ignored/libc-test",
-        );
         match self.command {
             ArchCommands::Riscv64 => {
-                const DIR: &str = "riscv_rootfs/libc-test";
-                const PRE: &str = "riscv_rootfs/libc-test-prebuild";
+                const ARCH: &str = ArchCommands::Riscv64.as_str();
 
-                fs::rename(DIR, PRE).unwrap();
-                copy_dir("ignored/libc-test", DIR).unwrap();
-                fs::copy(format!("{DIR}/config.mak.def"), format!("{DIR}/config.mak")).unwrap();
+                let rootfs = format!("rootfs/{ARCH}");
+                let dir = format!("{rootfs}/libc-test");
+                let pre = format!("{rootfs}/libc-test-prebuilt");
+
+                fs::rename(&dir, &pre).unwrap();
+                copy_dir("libc-test", &dir).unwrap();
+                fs::copy(format!("{dir}/config.mak.def"), format!("{dir}/config.mak")).unwrap();
                 Make::new(None)
-                    .env("ARCH", "riscv64")
+                    .env("ARCH", ARCH)
                     .env("CROSS_COMPILE", "riscv64-linux-musl-")
                     .env("PATH", riscv64_linux_musl_cross())
-                    .current_dir(DIR)
+                    .current_dir(&dir)
                     .join();
                 fs::copy(
-                    format!("{PRE}/functional/tls_align-static.exe"),
-                    format!("{DIR}/src/functional/tls_align-static.exe"),
+                    format!("{pre}/functional/tls_align-static.exe"),
+                    format!("{dir}/src/functional/tls_align-static.exe"),
                 )
                 .unwrap();
-                dir::rm(PRE).unwrap();
+                dir::rm(pre).unwrap();
             }
             ArchCommands::X86_64 => {
-                const DIR: &str = "rootfs/libc-test";
+                const ARCH: &str = ArchCommands::X86_64.as_str();
 
-                dir::rm(DIR).unwrap();
-                copy_dir("ignored/libc-test", DIR).unwrap();
-                fs::copy(format!("{DIR}/config.mak.def"), format!("{DIR}/config.mak")).unwrap();
+                let rootfs = format!("rootfs/{ARCH}");
+                let dir = format!("{rootfs}/libc-test");
+
+                dir::rm(&dir).unwrap();
+                copy_dir("libc-test", &dir).unwrap();
+                fs::copy(format!("{dir}/config.mak.def"), format!("{dir}/config.mak")).unwrap();
                 fs::OpenOptions::new()
                     .append(true)
-                    .open(format!("{DIR}/config.mak"))
+                    .open(format!("{dir}/config.mak"))
                     .unwrap()
                     .write_all(b"CC := musl-gcc\nAR := ar\nRANLIB := ranlib")
                     .unwrap();
-                Make::new(None).current_dir(DIR).join();
+                Make::new(None).current_dir(dir).join();
             }
         }
     }
@@ -148,35 +155,45 @@ impl Arch {
         self.rootfs(false);
         let image = match self.command {
             ArchCommands::Riscv64 => {
-                const ARCH: &str = "riscv64";
+                const ARCH: &str = ArchCommands::Riscv64.as_str();
 
+                let rootfs = format!("rootfs/{ARCH}");
                 let image = format!("zCore/{ARCH}.img");
-                fuse("riscv_rootfs", &image);
+                fuse(rootfs, &image);
                 image
             }
             ArchCommands::X86_64 => {
-                const ARCH: &str = "x86_64";
-                const TMP_ROOTFS: &str = "/tmp/rootfs";
-                const ROOTFS_LIB: &str = "rootfs/lib";
+                const ARCH: &str = ArchCommands::X86_64.as_str();
+
+                let tmp: usize = rand::random();
+                let tmp_rootfs = format!("/tmp/{tmp}");
+
+                let rootfs = format!("rootfs/{ARCH}");
+                let rootfs_lib = format!("{rootfs}/lib");
 
                 // ld-musl-x86_64.so.1 替换为适用 bare-matel 的版本
-                dir::clear(TMP_ROOTFS).unwrap();
+                dir::clear(&tmp_rootfs).unwrap();
+                dir::clear(&rootfs_lib).unwrap();
+
                 let tar = dir::detect(&format!("prebuilt/linux/{ARCH}"), "minirootfs").unwrap();
-                Tar::xf(&tar, Some(TMP_ROOTFS)).join();
-                dir::clear(ROOTFS_LIB).unwrap();
+                Tar::xf(&tar, Some(&tmp_rootfs)).join();
+
                 fs::copy(
-                    format!("{TMP_ROOTFS}/lib/ld-musl-x86_64.so.1"),
-                    format!("{ROOTFS_LIB}/ld-musl-x86_64.so.1"),
+                    format!("{tmp_rootfs}/lib/ld-musl-x86_64.so.1"),
+                    format!("{rootfs_lib}/ld-musl-x86_64.so.1"),
+                )
+                .unwrap();
+                dir::rm(tmp_rootfs).unwrap();
+
+                let image = format!("zCore/{ARCH}.img");
+                fuse(rootfs, &image);
+
+                fs::copy(
+                    "prebuilt/linux/libc-libos.so",
+                    format!("{rootfs_lib}/ld-musl-x86_64.so.1"),
                 )
                 .unwrap();
 
-                let image = format!("zCore/{ARCH}.img");
-                fuse("rootfs", &image);
-                fs::copy(
-                    "prebuilt/linux/libc-libos.so",
-                    format!("{ROOTFS_LIB}/ld-musl-x86_64.so.1"),
-                )
-                .unwrap();
                 image
             }
         };
@@ -273,7 +290,7 @@ impl AsMut<Command> for Tar {
 impl CommandExt for Tar {}
 
 impl Tar {
-    fn xf(src: &impl AsRef<OsStr>, dst: Option<&str>) -> Self {
+    fn xf(src: &impl AsRef<OsStr>, dst: Option<impl AsRef<OsStr>>) -> Self {
         let mut cmd = Command::new("tar");
         cmd.arg("xf").arg(src);
         if let Some(dst) = dst {
