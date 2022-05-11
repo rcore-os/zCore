@@ -41,11 +41,10 @@ doc:
 
 clean:
 	cargo clean
-	find zCore -maxdepth 1 -name "*.img" -delete
 	rm -rf rootfs
-	rm -rf riscv_rootfs
+	find zCore -maxdepth 1 -name "*.img" -delete
 
 rt-test:
-	cd rootfs && git clone https://kernel.googlesource.com/pub/scm/linux/kernel/git/clrkwllms/rt-tests --depth 1
-	cd rootfs/rt-tests && make
+	cd rootfs/x86_64 && git clone https://kernel.googlesource.com/pub/scm/linux/kernel/git/clrkwllms/rt-tests --depth 1
+	cd rootfs/x86_64/rt-tests && make
 	echo x86 gcc build rt-test,now need manual modificy.
