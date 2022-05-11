@@ -1,6 +1,9 @@
 ﻿//! 操作目录。
 
-use std::path::{Path, PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 /// 删除指定路径。
 ///
@@ -10,9 +13,17 @@ pub fn rm(path: impl AsRef<Path>) -> std::io::Result<()> {
     if !path.exists() {
         Ok(())
     } else if path.is_dir() {
-        std::fs::remove_dir_all(path)
+        fs::remove_dir_all(path)
     } else {
-        std::fs::remove_file(path)
+        fs::remove_file(path)
+    }
+}
+
+/// 创建 `path` 的父目录。
+pub fn create_parent(path: impl AsRef<Path>) -> std::io::Result<()> {
+    match path.as_ref().parent() {
+        Some(parent) => fs::create_dir_all(parent),
+        None => Ok(()),
     }
 }
 
