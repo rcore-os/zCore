@@ -6,6 +6,7 @@ use std::{
     ffi::{OsStr, OsString},
     fs,
     io::Write,
+    os::unix,
     path::{Path, PathBuf},
     process::Command,
 };
@@ -32,18 +33,15 @@ impl ArchCommands {
         }
     }
 
-    fn rootfs(&self) -> String {
-        format!("rootfs/{}", self.as_str())
-    }
-
-    fn ignored(&self) -> String {
-        format!("ignored/{}", self.as_str())
-    }
-
-    fn libc_test(&self) -> PathBuf {
+    fn rootfs(&self) -> PathBuf {
         let mut path = PathBuf::new();
         path.push("rootfs");
         path.push(self.as_str());
+        path
+    }
+
+    fn libc_test(&self) -> PathBuf {
+        let mut path = self.rootfs();
         path.push("libc-test");
         path
     }
@@ -71,7 +69,7 @@ impl Arch {
     /// 若设置 `clear`，将清除已存在的目录。
     pub fn rootfs(&self, clear: bool) {
         // 若已存在且不需要清空，可以直接退出
-        let dir = PathBuf::from(self.command.rootfs());
+        let dir = self.command.rootfs();
         if dir.is_dir() && !clear {
             return;
         }
@@ -102,54 +100,70 @@ impl Arch {
         copy_dir("libc-test", &dir).unwrap();
         // 编译
         fs::copy(dir.join("config.mak.def"), dir.join("config.mak")).unwrap();
-        fs::OpenOptions::new()
-            .append(true)
-            .open(dir.join("config.mak"))
-            .unwrap()
-            .write_all(b"CC := musl-gcc\nAR := ar\nRANLIB := ranlib")
-            .unwrap();
-        Make::new(None).current_dir(dir).invoke();
+        match self.command {
+            ArchCommands::Riscv64 => {
+                Make::new(None)
+                    .env("ARCH", self.command.as_str())
+                    .env("CROSS_COMPILE", "riscv64-linux-musl-")
+                    .env("PATH", riscv64_linux_musl_cross())
+                    .current_dir(&dir)
+                    .invoke();
+                fs::copy(
+                    self.command
+                        .target()
+                        .join("rootfs/libc-test/functional/tls_align-static.exe"),
+                    dir.join("src/functional/tls_align-static.exe"),
+                )
+                .unwrap();
+            }
+            ArchCommands::X86_64 => {
+                fs::OpenOptions::new()
+                    .append(true)
+                    .open(dir.join("config.mak"))
+                    .unwrap()
+                    .write_all(b"CC := musl-gcc\nAR := ar\nRANLIB := ranlib")
+                    .unwrap();
+                Make::new(None).current_dir(dir).invoke();
+            }
+        }
+    }
 
-        // let arch_str = self.command.as_str();
-        // let rootfs = self.command.rootfs();
-        // let dir = format!("{rootfs}/libc-test");
-        // match self.command {
-        //     ArchCommands::Riscv64 => {
-        //         let pre = format!("{rootfs}/libc-test-prebuilt");
-
-        //         fs::rename(&dir, &pre).unwrap();
-        //         copy_dir("libc-test", &dir).unwrap();
-        //         fs::copy(format!("{dir}/config.mak.def"), format!("{dir}/config.mak")).unwrap();
-        //         Make::new(None)
-        //             .env("ARCH", arch_str)
-        //             .env("CROSS_COMPILE", "riscv64-linux-musl-")
-        //             .env("PATH", riscv64_linux_musl_cross())
-        //             .current_dir(&dir)
-        //             .invoke();
-        //         fs::copy(
-        //             format!("{pre}/functional/tls_align-static.exe"),
-        //             format!("{dir}/src/functional/tls_align-static.exe"),
-        //         )
-        //         .unwrap();
-        //         dir::rm(pre).unwrap();
-        //     }
-        //     ArchCommands::X86_64 => {
-        //         dir::rm(&dir).unwrap();
-        //         copy_dir("libc-test", &dir).unwrap();
-        //         fs::copy(format!("{dir}/config.mak.def"), format!("{dir}/config.mak")).unwrap();
-        //         fs::OpenOptions::new()
-        //             .append(true)
-        //             .open(format!("{dir}/config.mak"))
-        //             .unwrap()
-        //             .write_all(b"CC := musl-gcc\nAR := ar\nRANLIB := ranlib")
-        //             .unwrap();
-        //         Make::new(None).current_dir(dir).invoke();
-        //     }
-        // }
+    /// 将其他测试放入 rootfs。
+    pub fn other_test(&self) {
+        // 递归 rootfs
+        self.rootfs(false);
+        let rootfs = self.command.rootfs();
+        unix::fs::symlink("busybox", rootfs.join("bin/ls")).unwrap();
+        match self.command {
+            ArchCommands::Riscv64 => {
+                let target = self.command.target();
+                copy_dir(target.join("rootfs/oscomp"), rootfs.join("oscomp")).unwrap();
+            }
+            ArchCommands::X86_64 => {
+                let bin = rootfs.join("bin");
+                fs::read_dir("linux-syscall/test")
+                    .unwrap()
+                    .filter_map(|res| res.ok())
+                    .map(|entry| entry.path())
+                    .filter(|path| path.extension().map_or(false, |ext| ext == OsStr::new("c")))
+                    .for_each(|c| {
+                        Command::new("gcc")
+                            .arg(&c)
+                            .arg("-o")
+                            .arg(bin.join(c.file_prefix().unwrap()))
+                            .arg("-Wl,--dynamic-linker=/lib/ld-musl-x86_64.so.1")
+                            .status()
+                            .unwrap()
+                            .exit_ok()
+                            .expect("FAILED: gcc {c:?}");
+                    });
+            }
+        }
     }
 
     /// 生成镜像。
     pub fn image(&self) {
+        // 递归 rootfs
         self.rootfs(false);
         let arch_str = self.command.as_str();
         let image = match self.command {
@@ -160,32 +174,20 @@ impl Arch {
                 image
             }
             ArchCommands::X86_64 => {
-                let tmp: usize = rand::random();
-                let tmp_rootfs = format!("/tmp/{tmp}");
-
-                let rootfs = format!("rootfs/{arch_str}");
-                let rootfs_lib = format!("{rootfs}/lib");
-
-                // ld-musl-x86_64.so.1 替换为适用 bare-matel 的版本
-                dir::clear(&tmp_rootfs).unwrap();
-                dir::clear(&rootfs_lib).unwrap();
-
-                let tar = dir::detect(ArchCommands::X86_64.ignored(), "minirootfs").unwrap();
-                Tar::xf(&tar, Some(&tmp_rootfs)).invoke();
-
+                let target = self.command.target();
+                let rootfs = self.command.rootfs();
                 fs::copy(
-                    format!("{tmp_rootfs}/lib/ld-musl-x86_64.so.1"),
-                    format!("{rootfs_lib}/ld-musl-x86_64.so.1"),
+                    target.join("rootfs/lib/ld-musl-x86_64.so.1"),
+                    rootfs.join("lib/ld-musl-x86_64.so.1"),
                 )
                 .unwrap();
-                dir::rm(tmp_rootfs).unwrap();
 
                 let image = format!("zCore/{arch_str}.img");
-                fuse(rootfs, &image);
+                fuse(&rootfs, &image);
 
                 fs::copy(
                     "prebuilt/linux/libc-libos.so",
-                    format!("{rootfs_lib}/ld-musl-x86_64.so.1"),
+                    rootfs.join("lib/ld-musl-x86_64.so.1"),
                 )
                 .unwrap();
 
@@ -289,14 +291,17 @@ impl Tar {
 
 /// 下载 riscv64-musl 工具链。
 fn riscv64_linux_musl_cross() -> OsString {
-    const DIR: &str = "ignored/riscv64";
     const NAME: &str = "riscv64-linux-musl-cross";
-    let dir = format!("{DIR}/{NAME}");
-    let tgz = format!("{dir}.tgz");
 
-    wget(&format!("https://musl.cc/{NAME}.tgz"), &tgz);
+    let origin = ArchCommands::Riscv64.origin();
+    let target = ArchCommands::Riscv64.target();
+
+    let tgz = origin.join(format!("{NAME}.tgz"));
+    let dir = target.join(NAME);
+
     dir::rm(&dir).unwrap();
-    Tar::xf(&tgz, Some(DIR)).invoke();
+    wget(&format!("https://musl.cc/{NAME}.tgz"), &tgz);
+    Tar::xf(&tgz, Some(target)).invoke();
 
     // 将交叉工具链加入 PATH 环境变量
     let mut path = OsString::new();
@@ -305,8 +310,9 @@ fn riscv64_linux_musl_cross() -> OsString {
         path.push(":");
     }
     path.push(std::env::current_dir().unwrap());
+    path.push("/");
     path.push(dir);
-    path.push("bin");
+    path.push("/bin");
     path
 }
 

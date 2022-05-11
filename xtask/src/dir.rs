@@ -38,6 +38,7 @@ pub fn clear(path: impl AsRef<Path>) -> std::io::Result<()> {
 /// 在 `dir` 目录中根据文件名前半部分 `prefix` 找到对应文件。
 ///
 /// 不会递归查找。
+#[allow(unused)]
 pub fn detect(path: impl AsRef<Path>, prefix: impl AsRef<str>) -> Option<PathBuf> {
     path.as_ref()
         .read_dir()

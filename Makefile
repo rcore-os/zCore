@@ -20,16 +20,17 @@ update:
 rootfs:
 	cargo rootfs $(ARCH)
 
-# put libc-test into rootfs
+# put libc tests into rootfs
 libc-test:
 	cargo libc-test $(ARCH)
+
+# put other tests into rootfs
+other-test:
+	cargo other-test $(ARCH)
 
 # build image from rootfs
 image:
 	cargo image $(ARCH)
-
-# build image with libc-test
-test-image: libc-test image
 
 # check code style
 check:

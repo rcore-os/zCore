@@ -58,8 +58,10 @@ enum Commands {
 
     /// Build rootfs
     Rootfs(Arch),
-    /// Put libc-test.
+    /// Put libc test into rootfs.
     LibcTest(Arch),
+    /// Put other test into rootfs.
+    OtherTest(Arch),
     /// Build image
     Image(Arch),
 
@@ -111,6 +113,7 @@ fn main() {
         Commands::CheckStyle => check_style(),
         Commands::Rootfs(arch) => arch.rootfs(true),
         Commands::LibcTest(arch) => arch.libc_test(),
+        Commands::OtherTest(arch) => arch.other_test(),
         Commands::Image(arch) => arch.image(),
         Commands::Test => todo!(),
     }
